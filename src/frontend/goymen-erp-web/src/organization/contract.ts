@@ -69,6 +69,12 @@ export interface SiteSummary {
   /** Raw server token. Never parsed for business meaning, only labelled. */
   readonly type: string
   readonly isActive: boolean
+  /**
+   * The site's concurrency version (the master edit's `expectedVersion`), same rule as `LocationSummary.version`.
+   * Optional on the wire for readers older than the master edit: without it the site is still listed, but no
+   * site edit is offered, because an edit needs a version this screen can vouch for.
+   */
+  readonly version?: number
 }
 
 export interface LocationSummary {
@@ -169,6 +175,29 @@ export function decodeWorkCenters(raw: unknown): readonly WorkCenterSummary[] | 
   return workCenters
 }
 
+/**
+ * ORG-04 — `GET /api/v1/organization/work-centers/{id}` (`WorkCenterDetail`): the ORG-03 row's own record plus
+ * its `version`. Read-only: the version is kept lossless for a later stale check and is never sent back from
+ * this screen, which has no command.
+ */
+export interface WorkCenterDetail extends WorkCenterSummary {
+  /** Same rule as `LocationSummary.version`: an exactly-representable integer >= 1, or the answer is malformed. */
+  readonly version: number
+}
+
+/**
+ * Fails closed like every decoder here, and adds the one cross-field rule a card needs: the answer must be the
+ * record the route asked for. A 200 carrying another id is not "a card", it is a wrong answer.
+ */
+export function decodeWorkCenterDetail(raw: unknown, requestedId: string): WorkCenterDetail | null {
+  const row = decodeWorkCenter(raw)
+  if (row === null || !isRecord(raw)) return null
+  const { version } = raw
+  if (!isSafeVersion(version)) return null
+  if (row.id.toLowerCase() !== requestedId.toLowerCase()) return null
+  return { ...row, version }
+}
+
 /** The 409 body's `conflict` extension (`ErpVersionConflictContract`). */
 export interface VersionConflict {
   readonly expectedVersion: number
@@ -190,12 +219,15 @@ export function versionToken(version: number): string {
 
 export function decodeSite(raw: unknown): SiteSummary | null {
   if (!isRecord(raw)) return null
-  const { id, code, name, type, isActive } = raw
+  const { id, code, name, type, isActive, version } = raw
   if (!isUuid(id)) return null
   if (!isNonEmptyString(code) || !isNonEmptyString(name)) return null
   if (!isNonEmptyString(type)) return null
   if (typeof isActive !== 'boolean') return null
-  return { id, code, name, type, isActive }
+  if (version === undefined) return { id, code, name, type, isActive }
+  // Present but not an exactly-representable version >= 1 is malformed, never silently dropped.
+  if (!isSafeVersion(version)) return null
+  return { id, code, name, type, isActive, version }
 }
 
 export function decodeSites(raw: unknown): readonly SiteSummary[] | null {
@@ -262,6 +294,22 @@ export function decodeVersionConflict(raw: unknown): VersionConflict | null {
   const { expectedVersion, currentVersion } = conflict
   if (!isSafeVersion(expectedVersion) || !isSafeVersion(currentVersion)) return null
   return { expectedVersion, currentVersion }
+}
+
+/**
+ * The 201 body of a master-data create (`OrganizationCreatedRecord`): the new record's id and its first version.
+ * A replayed 201 carries the same body verbatim, so it names the record the ORIGINAL command created.
+ */
+export interface CreatedRecord {
+  readonly id: string
+  readonly version: number
+}
+
+export function decodeCreatedRecord(raw: unknown): CreatedRecord | null {
+  if (!isRecord(raw)) return null
+  const { id, version } = raw
+  if (!isUuid(id) || !isSafeVersion(version)) return null
+  return { id, version }
 }
 
 /** Total pages for an offset pager. Zero rows is ONE (empty) page, not zero. */

@@ -218,6 +218,10 @@ public sealed class InventoryPhysicalAllocationReadHttpAcceptanceTests(GoymenErp
 
             return Task.FromResult(answer);
         }
+
+        public Task<InventoryLabelPhysicalAllocationsV1> ReadLabelAsync(
+            Guid labelId,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
     }
 
     private sealed class ControlledAuthority : IErpAuthorizationService, IErpAuthorityRevalidationService

@@ -13,6 +13,13 @@ public interface IProductService
     Task<ProductPage> GetPageAsync(ProductListQuery query, CancellationToken cancellationToken);
     Task<ProductCardView?> GetAsync(Guid id, CancellationToken cancellationToken);
     Task<IReadOnlyList<ProductCodeGroup>> GetCodeGroupsAsync(CancellationToken cancellationToken);
+
+    /// <summary>
+    /// §10.2 / §15: the read-only exact-name duplicate candidates for a name being created or edited (a warning to
+    /// compare against; it never blocks a save or an approval). Same global Read authority as the list.
+    /// </summary>
+    Task<ProductDuplicateCandidates> GetDuplicateCandidatesAsync(ProductDuplicateQuery query,
+        CancellationToken cancellationToken);
     Task<ProductReferenceOptions> GetReferenceOptionsAsync(ProductReferenceQuery query, CancellationToken cancellationToken);
     Task<ProductMutationResponse> CreateDraftAsync(CreateProductDraftRequest request,
         string idempotencyKey, CancellationToken cancellationToken);
@@ -26,6 +33,22 @@ public interface IProductService
     /// </summary>
     Task<ProductMutationResponse> ActivateAsync(Guid id, ActivateProductRequest request,
         string idempotencyKey, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// DEC-CAR-003 / PRD-SCOPE-001 (#98) §7.9: takes an Active card out of new use (Active -> Inactive) with a
+    /// stated reason, at the version the actor read. Nothing is deleted: the card, its history and every
+    /// downstream record that names it stay readable; the operational selection reads refuse it from now on.
+    /// Needs the global Product <c>Deactivate</c> authority (PRD-PERM-001 #99: activate/deactivate/reactivate).
+    /// </summary>
+    Task<ProductMutationResponse> DeactivateAsync(Guid id, ChangeProductLifecycleRequest request,
+        string idempotencyKey, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// PRD-PERM-001 (#99): returns an Inactive card to Active with a stated reason, at the version the actor
+    /// read. Needs the global Product <c>Reactivate</c> authority, a grant of its own.
+    /// </summary>
+    Task<ProductMutationResponse> ReactivateAsync(Guid id, ChangeProductLifecycleRequest request,
+        string idempotencyKey, CancellationToken cancellationToken);
 }
 
 /// <summary>
@@ -34,6 +57,16 @@ public interface IProductService
 /// </summary>
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record ActivateProductRequest([property: JsonRequired] string ExpectedVersion);
+
+/// <summary>
+/// The deactivation / reactivation body: the version the actor read and the reason (1..1000 characters after
+/// trimming, no control characters, as for a draft edit). The reason is recorded on the canonical audit event
+/// and shown in the card history; it is not a card field. An unknown member is refused at binding.
+/// </summary>
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+public sealed record ChangeProductLifecycleRequest(
+    [property: JsonRequired] string ExpectedVersion,
+    [property: JsonRequired] string Reason);
 
 public sealed record ProductPage(IReadOnlyList<ProductDraftView> Items, string? NextCursor);
 public sealed record ProductListQuery(string? Q = null, string? Lifecycle = null,

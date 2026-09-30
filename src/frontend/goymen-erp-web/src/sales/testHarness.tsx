@@ -135,19 +135,48 @@ export interface RecordedCall {
   readonly body: string | null
 }
 
+/** DEC-SAL-003: a valid history holding only schedule 0 (the draft as created, nobody changed it). */
+export const ORIGINAL_SCHEDULE = {
+  items: [{
+    scheduleNo: 0, changedBy: null, changedAtUtc: null, requestedDeliveryDate: null,
+    lines: [{ lineId: '00000000-0000-4000-8000-000000000001', lineNo: 1, requestedDeliveryDate: null, slices: [] }],
+  }],
+}
+
 export interface HarnessConfig {
   readonly capabilities?: readonly string[]
   readonly onList?: (url: string, companyId: string | null) => Response | Promise<Response>
   readonly onDetail?: (url: string, companyId: string | null) => Response | Promise<Response>
   readonly onRevisions?: (url: string, companyId: string | null) => Response | Promise<Response>
   readonly onCreate?: (attempt: number, call: RecordedCall) => Response | Promise<Response>
+  /** DEC-SAL-003: GET `/sales/drafts/{id}/delivery-schedules`; default: schedule 0 only (nothing changed). */
+  readonly onDeliverySchedules?: (url: string, companyId: string | null) => Response | Promise<Response>
+  /**
+   * AT-024: GET `/sales/drafts/{id}/delivery-progress`; default: nothing shipped or delivered for the lines of the
+   * detail this harness last served for that draft (a 404 when it served none).
+   */
+  readonly onDeliveryProgress?: (url: string, companyId: string | null) => Response | Promise<Response>
+  /** DEC-SAL-003: a POST on `/sales/drafts/{id}/delivery-schedule`. */
+  readonly onDeliverySchedule?: (call: RecordedCall) => Response | Promise<Response>
   /** SALES-A1: a POST on `/sales/drafts/{id}/(submission|approval|rejection)`. */
   readonly onCommand?: (command: string, call: RecordedCall) => Response | Promise<Response>
+  /** DEC-SAL-005: GET `/sales/drafts/{id}/cancellation-impact` (read only when the user asks for the preview). */
+  readonly onCancellationImpact?: (url: string, companyId: string | null) => Response | Promise<Response>
+  /** DEC-SAL-005: a POST on `/sales/drafts/{id}/cancellation`. */
+  readonly onCancel?: (call: RecordedCall) => Response | Promise<Response>
+  /** AT-007: GET `/sales/drafts/{id}/cancellation`; default: no recorded cancellation. */
+  readonly onCancellation?: (url: string, companyId: string | null) => Response | Promise<Response>
+  /** DEC-SAL-002: a POST on `/sales/drafts/{id}/quantity-revision`. */
+  readonly onQuantityRevision?: (call: RecordedCall) => Response | Promise<Response>
+  /** AT-055: GET `/logistics/dispatch-notes?salesOrderId=…` (read only when the shell holds the Logistics instruction detail). */
+  readonly onDispatchNotes?: (url: string, companyId: string | null) => Response | Promise<Response>
 }
 
 export function installFetch(config: HarnessConfig = {}) {
   const calls: RecordedCall[] = []
   let creates = 0
+  // The last detail body served per detail URL: the default delivery progress describes exactly those lines.
+  const details = new Map<string, unknown>()
   vi.stubGlobal(
     'fetch',
     vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -172,6 +201,31 @@ export function installFetch(config: HarnessConfig = {}) {
       }
       if (url.includes('/sales/drafts')) {
         const command = /\/sales\/drafts\/[^/?]+\/(submission|approval|rejection|withdrawal)$/.exec(url)?.[1]
+        if (call.method === 'POST' && /\/sales\/drafts\/[^/?]+\/delivery-schedule$/.test(url)) {
+          if (config.onDeliverySchedule === undefined) throw new Error('unexpected delivery-schedule update')
+          return config.onDeliverySchedule(call)
+        }
+        if (call.method === 'POST' && /\/sales\/drafts\/[^/?]+\/quantity-revision$/.test(url)) {
+          if (config.onQuantityRevision === undefined) throw new Error('unexpected quantity revision')
+          return config.onQuantityRevision(call)
+        }
+        if (call.method === 'GET' && /\/sales\/drafts\/[^/?]+\/cancellation-impact$/.test(url)) {
+          if (config.onCancellationImpact === undefined) throw new Error('unexpected cancellation-impact read')
+          return config.onCancellationImpact(url, call.companyId)
+        }
+        if (/\/sales\/drafts\/[^/?]+\/cancellation$/.test(url)) {
+          if (call.method === 'POST') {
+            if (config.onCancel === undefined) throw new Error('unexpected cancellation')
+            return config.onCancel(call)
+          }
+          return config.onCancellation?.(url, call.companyId) ?? json({ cancellation: null })
+        }
+        if (call.method === 'GET' && /\/sales\/drafts\/[^/?]+\/delivery-progress$/.test(url)) {
+          return config.onDeliveryProgress?.(url, call.companyId) ?? nothingDelivered(details.get(url.replace(/\/delivery-progress$/, '')))
+        }
+        if (call.method === 'GET' && /\/sales\/drafts\/[^/?]+\/delivery-schedules$/.test(url)) {
+          return config.onDeliverySchedules?.(url, call.companyId) ?? json(ORIGINAL_SCHEDULE)
+        }
         if (call.method === 'POST' && command !== undefined) {
           if (config.onCommand === undefined) throw new Error(`unexpected ${command}`)
           return config.onCommand(command, call)
@@ -186,15 +240,34 @@ export function installFetch(config: HarnessConfig = {}) {
         }
         if (/\/sales\/drafts\/[^?]+/.test(url)) {
           if (config.onDetail === undefined) throw new Error('unexpected detail read')
-          return config.onDetail(url, call.companyId)
+          const response = await config.onDetail(url, call.companyId)
+          if (response.ok) details.set(url, await response.clone().json().catch(() => undefined))
+          return response
         }
         if (config.onList === undefined) throw new Error('unexpected list read')
         return config.onList(url, call.companyId)
+      }
+      if (call.method === 'GET' && url.includes('/logistics/dispatch-notes?')) {
+        if (config.onDispatchNotes === undefined) throw new Error('unexpected dispatch-notes read')
+        return config.onDispatchNotes(url, call.companyId)
       }
       throw new Error(`unexpected fetch: ${url}`)
     }),
   )
   return { calls, salesCalls: () => calls.filter((c) => c.url.includes('/sales/')) }
+}
+
+/** AT-024: the default progress — every line of the served detail, nothing shipped or delivered, the whole quantity remaining. */
+function nothingDelivered(detail: unknown): Response {
+  const body = detail as { draft?: { version?: unknown }; lines?: { lineId: string; lineNo: number; orderUnitId: string; quantity: string }[] } | undefined
+  if (body?.draft === undefined || !Array.isArray(body.lines)) return json({ status: 404 }, 404)
+  return json({
+    draftVersion: body.draft.version,
+    lines: body.lines.map((line) => ({
+      lineId: line.lineId, lineNo: line.lineNo, orderUnitId: line.orderUnitId, ordered: line.quantity,
+      shipped: '0', delivered: '0', remaining: line.quantity, excess: '0',
+    })),
+  })
 }
 
 export interface HarnessSources {

@@ -652,6 +652,44 @@ export function decodeProductPage(raw: unknown): ProductPage | null {
   return { items, nextCursor: (p.nextCursor as string | null) ?? null }
 }
 
+/* ── Duplicate candidates (ProductDuplicateCandidates) ────────────────────── */
+
+/**
+ * `GET /products/duplicate-candidates?name&excludeProductId` — spec §10.2/§15, the read-only duplicate
+ * preview. The server answers ONE decided rule, `exactName`: the cards whose name equals the given one
+ * after the write path's trim, under the name column's Turkish case-insensitive collation, every lifecycle,
+ * the excluded card left out. It is a WARNING to compare against — never a block (§10.2). No other rule is
+ * accepted: an unknown `rule` is malformed, not silently shown as "similar".
+ */
+export const DUPLICATE_RULE_EXACT_NAME = 'exactName'
+
+export interface ProductDuplicateCandidates {
+  readonly rule: typeof DUPLICATE_RULE_EXACT_NAME
+  /** The normalised name the server compared. */
+  readonly name: string
+  readonly exactName: readonly ProductCore[]
+  /** More cards share the name than were listed. */
+  readonly hasMore: boolean
+}
+
+export function decodeDuplicateCandidates(raw: unknown): ProductDuplicateCandidates | null {
+  if (typeof raw !== 'object' || raw === null) return null
+  const d = raw as Record<string, unknown>
+  if (d.rule !== DUPLICATE_RULE_EXACT_NAME) return null
+  if (!isNonEmptyString(d.name, 250)) return null
+  if (typeof d.hasMore !== 'boolean') return null
+  if (!Array.isArray(d.exactName)) return null
+  const items: ProductCore[] = []
+  const seen = new Set<string>()
+  for (const rawItem of d.exactName) {
+    const item = decodeCore(rawItem)
+    if (item === null || seen.has(item.id)) return null
+    seen.add(item.id)
+    items.push(item)
+  }
+  return { rule: DUPLICATE_RULE_EXACT_NAME, name: d.name as string, exactName: items, hasMore: d.hasMore }
+}
+
 /* ── Mutation (ProductMutationResponse) ───────────────────────────────────── */
 
 /**
@@ -820,7 +858,7 @@ export function productFieldErrorsOf(raw: unknown): readonly ProductFieldError[]
  * version step and the recorded reason — not who, until an Identity display source
  * exists for it.
  */
-export const HISTORY_OPERATION = ['DraftCreate', 'DraftBasicEdit', 'Activate'] as const
+export const HISTORY_OPERATION = ['DraftCreate', 'DraftBasicEdit', 'Activate', 'Deactivate', 'Reactivate'] as const
 export type HistoryOperation = (typeof HISTORY_OPERATION)[number]
 
 /** `ProductHistoryFields.All`, in the server's display order. */
@@ -898,7 +936,7 @@ function decodeHistoryEntry(raw: unknown): ProductHistoryEntry | null {
     if (e.versionBefore !== null || e.versionAfter !== '1' || fields.length > 0) return null
   }
   if (operation.known && operation.value !== 'DraftCreate') {
-    // An edit or activation moves the revision by exactly one; compared as integers, never as doubles.
+    // An edit or a lifecycle move moves the revision by exactly one; compared as integers, never as doubles.
     if (typeof e.versionBefore !== 'string') return null
     if (BigInt(e.versionAfter) !== BigInt(e.versionBefore) + BigInt(1)) return null
   }

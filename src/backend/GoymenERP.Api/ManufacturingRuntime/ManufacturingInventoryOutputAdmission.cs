@@ -7,9 +7,9 @@ using GoymenERP.Modules.Product.Application.Contracts;
 namespace GoymenERP.Api.ManufacturingRuntime;
 
 /// <summary>
-/// Validates the explicit Product, location and company-party facts of a Manufacturing output
-/// immediately before the shared Manufacturing/Inventory transaction is staged. Counterparty
-/// identities remain fail-closed until Manufacturing has an accepted owner-backed reference port.
+/// Validates the explicit Product, location and party assertions of a Manufacturing output
+/// immediately before the shared Manufacturing/Inventory transaction is staged. Inventory remains
+/// authoritative for Counterparty ownership and custody through the immutable issued-input trace.
 /// </summary>
 internal sealed class ManufacturingInventoryOutputAdmission(
     IProductStockEligibilityV1 products,
@@ -27,8 +27,8 @@ internal sealed class ManufacturingInventoryOutputAdmission(
             throw Invalid("companyId");
         }
 
-        ValidateCompanyParty(companyId, command.OwnerKind, command.OwnerId, "ownerId");
-        ValidateCompanyParty(companyId, command.CustodianKind, command.CustodianId, "custodianId");
+        ValidatePartyAssertion(companyId, command.OwnerKind, command.OwnerId, "ownerId");
+        ValidatePartyAssertion(companyId, command.CustodianKind, command.CustodianId, "custodianId");
 
         var effectiveOn = DateOnly.FromDateTime(command.OccurredAtUtc.UtcDateTime);
         ProductStockEligibilityV1 product;
@@ -100,7 +100,7 @@ internal sealed class ManufacturingInventoryOutputAdmission(
         }
     }
 
-    private static void ValidateCompanyParty(
+    private static void ValidatePartyAssertion(
         Guid companyId,
         StockPartyKind kind,
         Guid partyId,
@@ -116,10 +116,15 @@ internal sealed class ManufacturingInventoryOutputAdmission(
             return;
         }
 
-        // Customer-owned and subcontract custody are valid Inventory dimensions, but accepting
-        // an arbitrary Counterparty id here would bypass its owner. No accepted Manufacturing
-        // candidate/validation port exists yet, so this path remains retryably unavailable.
-        throw Unavailable();
+        // This only admits a non-empty assertion to the shared transaction. Inventory compares it
+        // with the owner/custodian captured from the issued parent label and rejects any mismatch
+        // before recording the output; Manufacturing does not grant or select a Counterparty here.
+        if (kind == StockPartyKind.Counterparty && partyId != Guid.Empty)
+        {
+            return;
+        }
+
+        throw Invalid(field);
     }
 
     private static ManufacturingInventoryRealizationPortException Invalid(string field) =>

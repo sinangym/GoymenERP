@@ -33,6 +33,7 @@ public sealed class SalesPersistenceModelTests
                  {
                      typeof(DraftNumberRow), typeof(DraftRow), typeof(DraftLineRow), typeof(DraftDeliverySliceRow), typeof(DraftAttemptRow),
                      typeof(DraftRevisionRow), typeof(DraftRevisionLineRow),
+                     typeof(DraftDeliveryScheduleRow), typeof(DraftDeliveryScheduleDateRow), typeof(DraftCancellationRow),
                  })
         {
             var entity = context.Model.FindEntityType(type)!;
@@ -110,7 +111,27 @@ public sealed class SalesPersistenceModelTests
         using var context = Context();
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_InitialSales", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddAttemptOutcome", StringComparison.Ordinal));
+        Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddDeliverySchedules", StringComparison.Ordinal));
+        Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddDraftCancellations", StringComparison.Ordinal));
+        Assert.Equal("20260928090000_AddRevisionReasons", context.Database.GetMigrations().Last());
         Assert.False(context.Database.HasPendingModelChanges());
+    }
+
+    /// <summary>DEC-SAL-002: the reason column's rollback refuses with Sales' own 51057 BEFORE anything is dropped (forward fix).</summary>
+    [Fact]
+    public void The_revision_reason_migration_down_refuses_with_51057_before_it_drops_anything()
+    {
+        var down = new GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations.AddRevisionReasons().DownOperations;
+        Assert.Equal(3, down.Count);
+        var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(down[0]);
+        Assert.Contains("IF EXISTS (SELECT 1 FROM [sales].[DraftRevisions] WHERE [Reason] IS NOT NULL)", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("THROW 51057,", guard.Sql, StringComparison.Ordinal);
+        Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.DropCheckConstraintOperation>(down[1]);
+        var drop = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.DropColumnOperation>(down[2]);
+        Assert.Equal(("sales", "DraftRevisions", "Reason"), (drop.Schema, drop.Table, drop.Name));
+        var up = new GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations.AddRevisionReasons().UpOperations;
+        var column = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.AddColumnOperation>(up[0]);
+        Assert.Equal(("Reason", true, 4000), (column.Name, column.IsNullable, column.MaxLength));
     }
 
     [Theory]
@@ -132,12 +153,22 @@ public sealed class SalesPersistenceModelTests
     [InlineData("edit-draft-header")]
     [InlineData("edit-draft-company")]
     [InlineData("edit-line")]
+    [InlineData("edit-line-unit")]
+    [InlineData("edit-revision-reason")]
     [InlineData("edit-slice")]
     [InlineData("edit-attempt")]
     [InlineData("edit-counter-company")]
     [InlineData("edit-revision")]
     [InlineData("delete-revision")]
     [InlineData("edit-revision-line")]
+    [InlineData("edit-schedule")]
+    [InlineData("delete-schedule")]
+    [InlineData("edit-schedule-date")]
+    [InlineData("delete-schedule-date")]
+    [InlineData("edit-cancellation")]
+    [InlineData("delete-cancellation")]
+    [InlineData("uncancel-draft")]
+    [InlineData("draft-to-unknown-state")]
     public void Drafts_lines_slices_and_attempts_never_change_and_nothing_is_deleted(string fault)
     {
         using var context = Context();
@@ -153,7 +184,14 @@ public sealed class SalesPersistenceModelTests
                 Attach(context, Draft()).CompanyId = CompanyB;
                 break;
             case "edit-line":
-                Attach(context, Line()).Quantity = 2m;
+                // DEC-SAL-002 admits the ordered quantity under a quantity revision; the product binding stays immutable.
+                Attach(context, Line()).ProductVersion = "8";
+                break;
+            case "edit-line-unit":
+                Attach(context, Line()).OrderUnitId = Guid.NewGuid();
+                break;
+            case "edit-revision-reason":
+                Attach(context, Revision()).Reason = "sonradan yazılan gerekçe";
                 break;
             case "edit-slice":
                 Attach(context, Slice()).RequestedDeliveryDate = new DateOnly(2026, 10, 1);
@@ -169,6 +207,35 @@ public sealed class SalesPersistenceModelTests
                 break;
             case "edit-revision-line":
                 Attach(context, RevisionLine()).UnitPrice = "1";
+                break;
+            // DEC-SAL-003: a recorded delivery schedule is append-only — no column of it may change, nothing is deleted.
+            case "edit-schedule":
+                Attach(context, Schedule()).RequestedDeliveryDate = new DateOnly(2026, 11, 1);
+                break;
+            case "delete-schedule":
+                context.DraftDeliverySchedules.Remove(Attach(context, Schedule()));
+                break;
+            case "edit-schedule-date":
+                Attach(context, ScheduleDate()).RequestedDeliveryDate = new DateOnly(2026, 11, 1);
+                break;
+            case "delete-schedule-date":
+                context.DraftDeliveryScheduleDates.Remove(Attach(context, ScheduleDate()));
+                break;
+            // DEC-SAL-005 / AT-007: a recorded cancellation is append-only, and the lifecycle only ever moves Draft → Cancelled.
+            case "edit-cancellation":
+                Attach(context, Cancellation()).Reason = "another reason";
+                break;
+            case "delete-cancellation":
+                context.DraftCancellations.Remove(Attach(context, Cancellation()));
+                break;
+            case "uncancel-draft":
+                var cancelled = Draft();
+                cancelled.State = 2;
+                cancelled.ApprovalState = 3;
+                Attach(context, cancelled).State = 1;
+                break;
+            case "draft-to-unknown-state":
+                Attach(context, Draft()).State = 3;
                 break;
             default:
                 Attach(context, new DraftNumberRow { CompanyId = CompanyA, Next = 2, Version = 1, UpdatedAtUtc = At }).CompanyId = CompanyB;
@@ -191,6 +258,7 @@ public sealed class SalesPersistenceModelTests
     [Theory]
     [InlineData("line-price")]
     [InlineData("line-discount")]
+    [InlineData("line-quantity")]
     [InlineData("header-revision")]
     public void Only_a_lines_commercial_columns_and_the_headers_revision_pass_the_write_guard(string change)
     {
@@ -204,6 +272,12 @@ public sealed class SalesPersistenceModelTests
                 break;
             case "line-discount":
                 Attach(context, Line()).DiscountPercent = "5";
+                break;
+            case "line-quantity":
+                // DEC-SAL-002: the quantity revision moves the ordered quantity and its verbatim text, nothing else.
+                var revised = Attach(context, Line());
+                revised.Quantity = 2m;
+                revised.QuantityText = "2";
                 break;
             default:
                 Attach(context, Draft()).Revision = 1;
@@ -334,6 +408,96 @@ public sealed class SalesPersistenceModelTests
     {
         CompanyId = CompanyA, DraftId = Guid.NewGuid(), Revision = 0, LineNo = 1, LineId = Guid.NewGuid(), ProductId = Guid.NewGuid(), ProductVersion = "7",
         OrderUnitId = Guid.NewGuid(), QuantityText = "1", UnitPrice = "12.50", PriceUnitId = Guid.NewGuid(), DiscountPercent = null,
+    };
+
+    /// <summary>
+    /// DEC-SAL-003: a delivery-schedule change APPENDS a schedule and its dates and moves only the header's version and
+    /// UpdatedAtUtc (both admitted before this head); the existing line and slice rows are never rewritten, so the save
+    /// reaches the provider pipeline without widening what the guard admits.
+    /// </summary>
+    [Fact]
+    public void A_schedule_change_passes_the_write_guard_by_appending_rows_and_moving_only_the_headers_version()
+    {
+        using var context = Context();
+        var header = Attach(context, Draft());
+        header.Version = 2;
+        header.UpdatedAtUtc = At.AddMinutes(1);
+        context.DraftDeliverySchedules.Add(Schedule());
+        context.DraftDeliveryScheduleDates.Add(ScheduleDate());
+
+        Assert.Throws<GuardPassedException>(() => context.SaveChanges());
+    }
+
+    [Fact]
+    public void The_schedule_tables_are_keyed_by_draft_schedule_line_and_slice_and_bound_to_the_draft_and_its_lines()
+    {
+        using var context = Context();
+        var schedules = context.Model.FindEntityType(typeof(DraftDeliveryScheduleRow))!;
+        Assert.Equal(["CompanyId", "DraftId", "ScheduleNo"], schedules.FindPrimaryKey()!.Properties.Select(property => property.Name));
+        Assert.Equal("DraftDeliverySchedules", schedules.GetTableName());
+        var dates = context.Model.FindEntityType(typeof(DraftDeliveryScheduleDateRow))!;
+        Assert.Equal(["CompanyId", "DraftId", "ScheduleNo", "LineNo", "SliceNo"], dates.FindPrimaryKey()!.Properties.Select(property => property.Name));
+        Assert.Contains(dates.GetForeignKeys(), key => key.PrincipalEntityType.ClrType == typeof(DraftDeliveryScheduleRow));
+        Assert.Contains(dates.GetForeignKeys(), key => key.PrincipalEntityType.ClrType == typeof(DraftLineRow));
+        Assert.Contains(schedules.GetForeignKeys(), key => key.PrincipalEntityType.ClrType == typeof(DraftRow));
+        var design = context.GetService<IDesignTimeModel>().Model;
+        Assert.Contains(design.FindEntityType(typeof(DraftDeliveryScheduleDateRow))!.GetCheckConstraints(),
+            constraint => constraint.Name == "CK_DraftDeliveryScheduleDates_Slice");
+    }
+
+    /// <summary>
+    /// DEC-SAL-005: a cancellation APPENDS its row and moves only the header's lifecycle state (Draft → Cancelled), its version
+    /// and UpdatedAtUtc; no line, slice, revision, schedule or approval column is rewritten.
+    /// </summary>
+    [Fact]
+    public void A_cancellation_passes_the_write_guard_by_appending_its_row_and_moving_only_the_headers_state_and_version()
+    {
+        using var context = Context();
+        var header = Draft();
+        header.ApprovalState = 3;
+        Attach(context, header);
+        header.State = 2;
+        header.Version = 5;
+        header.UpdatedAtUtc = At.AddMinutes(1);
+        context.DraftCancellations.Add(Cancellation());
+
+        Assert.Throws<GuardPassedException>(() => context.SaveChanges());
+    }
+
+    [Fact]
+    public void The_cancellation_table_is_keyed_by_the_draft_bound_to_it_and_the_header_state_admits_cancelled_only_beside_approved()
+    {
+        using var context = Context();
+        var cancellations = context.Model.FindEntityType(typeof(DraftCancellationRow))!;
+        Assert.Equal(["CompanyId", "DraftId"], cancellations.FindPrimaryKey()!.Properties.Select(property => property.Name));
+        Assert.Equal("DraftCancellations", cancellations.GetTableName());
+        Assert.Contains(cancellations.GetForeignKeys(), key => key.PrincipalEntityType.ClrType == typeof(DraftRow));
+        Assert.Equal((SalesOrderDraft.MaximumCancellationReasonLength, 128),
+            (cancellations.FindProperty(nameof(DraftCancellationRow.Reason))!.GetMaxLength(), cancellations.FindProperty(nameof(DraftCancellationRow.CancelledBy))!.GetMaxLength()));
+        var design = context.GetService<IDesignTimeModel>().Model;
+        Assert.Equal(["CK_DraftCancellations_Identity", "CK_DraftCancellations_Impact"],
+            design.FindEntityType(typeof(DraftCancellationRow))!.GetCheckConstraints().Select(constraint => constraint.Name).Order(StringComparer.Ordinal));
+        Assert.Equal("[Kind] = 1 AND [State] IN (1, 2) AND [Revision] >= 0 AND ([State] = 1 OR [ApprovalState] = 3)",
+            design.FindEntityType(typeof(DraftRow))!.GetCheckConstraints().Single(constraint => constraint.Name == "CK_Drafts_State").Sql);
+    }
+
+    private static DraftCancellationRow Cancellation() => new()
+    {
+        CompanyId = CompanyA, DraftId = Guid.NewGuid(), Revision = 0, CancelledBy = "synthetic-canceller", CancelledAtUtc = At,
+        Reason = "SENTETIK müşteri vazgeçti", DraftVersion = 5, ImpactToken = new string('b', 64),
+        ImpactJson = "{\"token\":\"x\",\"sources\":[]}", CorrelationId = "synthetic-correlation",
+    };
+
+    private static DraftDeliveryScheduleRow Schedule() => new()
+    {
+        CompanyId = CompanyA, DraftId = Guid.NewGuid(), ScheduleNo = 1, RequestedDeliveryDate = new DateOnly(2026, 10, 1),
+        ChangedBy = "synthetic-planner", ChangedAtUtc = At, DraftVersion = 2, CorrelationId = "synthetic-correlation",
+    };
+
+    private static DraftDeliveryScheduleDateRow ScheduleDate() => new()
+    {
+        CompanyId = CompanyA, DraftId = Guid.NewGuid(), ScheduleNo = 1, LineNo = 1, SliceNo = 1, SliceId = Guid.NewGuid(),
+        RequestedDeliveryDate = new DateOnly(2026, 10, 2),
     };
 
     private static DraftAttemptRow Attempt() => new()

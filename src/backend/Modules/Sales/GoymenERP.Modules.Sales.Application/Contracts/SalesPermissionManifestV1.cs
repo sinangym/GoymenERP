@@ -12,7 +12,7 @@ namespace GoymenERP.Modules.Sales.Application.Contracts;
 /// </summary>
 public static class SalesPermissionManifestV1
 {
-    public const int Version = 6;
+    public const int Version = 9;
     public const string Subject = "Sales";
 
     /// <summary>POST /api/v1/sales/drafts, the reference reads of the draft form, and POST …/{id}/submission (SALES-A1: whoever may create a draft may send it for approval).</summary>
@@ -46,6 +46,37 @@ public static class SalesPermissionManifestV1
     /// </summary>
     public const string OrdersPriceRead = "sales.orders.price.read";
 
+    /// <summary>
+    /// DEC-SAL-003 (KILITLI): "termin güncellemesi planlama/sevkiyat rolündedir ve yeniden onay gerektirmez, ancak
+    /// auditlidir" — POST …/{id}/delivery-schedule, moving the requested delivery dates of the header, the lines and
+    /// their existing slices. A SEPARATE name because the decision gives the update to the planning/shipping role, not
+    /// to the draft's preparer or approver: the create, approve and price names do NOT confer it, and it confers none of
+    /// them (no approval, no price, no line or quantity change). The technical literal is the Sales owner's mapping
+    /// (Business #66 5808295853 / 5811361336: the owner names the literal); company-wide; registration and class are the
+    /// central writer's step; which persona holds it is a human gate.
+    /// </summary>
+    public const string OrdersDeliveryScheduleWrite = "sales.orders.delivery-schedule.write";
+
+    /// <summary>
+    /// DEC-SAL-005 (KILITLI): cancelling an APPROVED order — GET …/{id}/cancellation-impact (the impact preview) and POST
+    /// …/{id}/cancellation. A SEPARATE name because no source says who may cancel: the create, approve, price and schedule
+    /// names do NOT confer it and it confers none of them. Holding it grants no second-person approval, release or reversal
+    /// of any other module's record. Company-wide; registration and its class (Critical = grant-time dual control, if Sinan
+    /// wants a cancellation to need two people) are the central writer's step; which persona holds it is a human gate.
+    /// </summary>
+    public const string OrdersCancel = "sales.orders.cancel";
+
+    /// <summary>
+    /// DEC-SAL-002 (KILITLI): "Cari, ürün, miktar, fiyat, iskonto, para, vade ve risk istisnası değişirse yeni revizyon ve
+    /// yeniden onay gerekir." — POST …/{id}/quantity-revision, replacing the ordered quantity of an order's lines (an approved
+    /// order is archived and re-enters approval). A SEPARATE name because no source says who may change an approved order's
+    /// quantity: the create, approve, price, schedule and cancel names do NOT confer it and it confers none of them (no
+    /// approval — the new revision is approved through <see cref="OrdersApprove"/> as any other). Company-wide; registration
+    /// and class are the central writer's step; which persona holds it is a human gate (NEEDS-SINAN).
+    /// </summary>
+    public const string OrdersQuantityWrite = "sales.orders.quantity.write";
+
     public static IReadOnlySet<string> Names { get; } =
-        new[] { DraftsCreate, DraftsRead, OrdersApprove, OrdersPriceWrite, OrdersPriceRead }.ToFrozenSet(StringComparer.Ordinal);
+        new[] { DraftsCreate, DraftsRead, OrdersApprove, OrdersPriceWrite, OrdersPriceRead, OrdersDeliveryScheduleWrite, OrdersCancel, OrdersQuantityWrite }
+            .ToFrozenSet(StringComparer.Ordinal);
 }

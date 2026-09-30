@@ -5,6 +5,7 @@
 
 import type { PeriodFailure, PeriodUnknown } from './commandApi'
 import type { JournalKind, PeriodStatus } from './contract'
+import type { JournalReversalFailure } from './journalReversalApi'
 
 export const PERIODS_TITLE = 'Muhasebe Dönemleri'
 export const PERIODS_INTRO =
@@ -132,5 +133,84 @@ export function unknownText(unknown: PeriodUnknown): string {
       return 'Sunucunun cevabı okunamadı; işlemin sonucu bilinmiyor.'
     case 'aborted':
       return 'Önceki işlemin sonucu bilinmiyor.'
+  }
+}
+
+// ---------------------------------------------------------------------------------
+// ACC-V1 journal reversal (Business #66/5827281417): propose, then ANOTHER person approves.
+// ---------------------------------------------------------------------------------
+
+export const REVERSAL_TITLE = 'Ters kayıt öner'
+export const REVERSAL_INTRO =
+  'Öneri kaydedilir; asıl fiş değişmez ve ters fiş henüz oluşmaz. Ters fişi, öneriyi yapandan farklı ve onay yetkisi olan bir kişi onaylayınca sistem oluşturur.'
+export const REVERSAL_PERIOD = 'Ters kaydın dönemi (kimlik)'
+export const REVERSAL_TRANSACTION_DATE = 'İşlem tarihi'
+export const REVERSAL_ACCOUNTING_DATE = 'Muhasebe tarihi'
+export const REVERSAL_VALUE_DATE = 'Valör tarihi (isteğe bağlı)'
+export const REVERSAL_REASON = 'Gerekçe'
+export const REVERSAL_SUBMIT = 'Ters kayıt öner'
+export const REVERSAL_PROPOSED = 'Ters kayıt önerisi kaydedildi ve onay bekliyor. Asıl fiş değişmedi.'
+export const REVERSAL_REPLAYED = 'Bu öneri daha önce kaydedilmişti; sunucunun kayıtlı cevabı gösterildi.'
+export const REVERSAL_OPEN_APPROVAL = 'Onay ekranını aç'
+
+export const REVERSAL_APPROVAL_TITLE = 'Ters kayıt onayı'
+export const REVERSAL_OWN_PROPOSAL = 'Bu öneriyi siz hazırladınız; başka bir yetkili onaylamalı. Onay düğmesi size gösterilmez.'
+export const REVERSAL_APPROVE = 'Ters kaydı onayla'
+export const REVERSAL_APPROVED = 'Onaylandı: ters fiş oluşturuldu. Asıl fiş ve ters fiş birbirine bağlı kalır.'
+export const REVERSAL_OPEN_SOURCE = 'Asıl fişi aç'
+export const REVERSAL_OPEN_REVERSAL = 'Ters fişi aç'
+export const REVERSAL_REREAD = 'Öneriyi yeniden oku'
+
+export const REVERSAL_STATUS_LABEL: Readonly<Record<'Pending' | 'Approved' | 'Rejected', string>> = {
+  Pending: 'Onay bekliyor',
+  Approved: 'Onaylandı — ters fiş oluşturuldu',
+  Rejected: 'Reddedildi',
+}
+
+export const REVERSAL_FORM_ISSUE: Readonly<Record<'periodId' | 'transactionDate' | 'accountingDate' | 'valueDate' | 'reason', string>> = {
+  periodId: 'Geçerli bir dönem kimliği girin.',
+  transactionDate: 'İşlem tarihini girin.',
+  accountingDate: 'Muhasebe tarihini girin.',
+  valueDate: 'Valör tarihi geçerli değil.',
+  reason: 'Gerekçe boş olamaz ve 1024 karakteri geçemez.',
+}
+
+const REVERSAL_CODE_TEXT: Readonly<Record<string, string>> = {
+  accounting_journal_reversal_source_journal_not_found: 'Bu şirkette terslenecek fiş bulunamadı.',
+  accounting_journal_reversal_period_not_found: 'Bu şirkette seçilen dönem bulunamadı.',
+  accounting_invalid_reference: 'Fiş veya dönem bağlantısı geçerli değil.',
+  accounting_reversal_of_reversal: 'Bir ters kayıt yeniden terslenemez.',
+  accounting_period_closed: 'Seçilen dönem kapalı; ters kayıt açık bir döneme yapılmalı.',
+  accounting_period_does_not_cover_date: 'Muhasebe tarihi seçilen dönemin içinde değil.',
+  accounting_period_not_open: 'Seçilen dönem henüz onaylanıp açılmadı; öneri beklemede kaldı.',
+  accounting_period_not_found: 'Önerideki dönem artık bulunamıyor.',
+}
+
+export function reversalFailureText(failure: JournalReversalFailure): string {
+  switch (failure.kind) {
+    case 'validation':
+      return 'İstek geçerli değil.'
+    case 'unauthenticated':
+      return 'Oturumunuz sona erdi.'
+    case 'forbidden':
+      return 'Bu işlem için yetkiniz yok. Öneriyi yapan kişi kendi önerisini onaylayamaz.'
+    case 'not-found':
+      return 'Ters kayıt önerisi bulunamadı.'
+    case 'version-conflict':
+      return 'Öneri siz okurken değişti. Güncel hâlini yeniden okuyun.'
+    case 'idempotency-conflict':
+      return 'Bu işlem anahtarı başka bir istekle kullanılmış. Hiçbir şey varsayılmadı.'
+    case 'concurrent-change':
+      return 'Aynı anda başka bir yazma oldu; hiçbir şey kaydedilmedi.'
+    case 'content-conflict':
+      return 'Aynı öneri kimliği başka içerikle kayıtlı; hiçbir şey değişmedi.'
+    case 'not-pending':
+      return 'Öneri artık onay beklemiyor.'
+    case 'posting-conflict':
+      return 'Ters fiş oluşturulamadı; hiçbir şey kaydedilmedi.'
+    case 'rule':
+      return REVERSAL_CODE_TEXT[failure.code] ?? `Kural reddetti (${failure.code}).`
+    case 'unsupported-media':
+      return 'İstek biçimi desteklenmiyor.'
   }
 }

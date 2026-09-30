@@ -169,7 +169,344 @@ public static class OrganizationEndpoints
             .ProducesErpBadRequest()
             .ProducesErpAuthenticatedProblems();
 
+        // ORG-04 (W1-ORG / AV-01, Business #66 5702892195): one work center's read-only card, the location card's
+        // pattern. The work-centre read's own grant and scope; another company's, an out-of-scope and an unknown id
+        // are the same code-less 404, never a 403 that would confirm the row exists. A read: nothing is written.
+        group.MapGet("/work-centers/{id:guid}", async (
+                Guid id,
+                IOrganizationService service,
+                CancellationToken cancellationToken) =>
+        {
+            var workCenter = await service.GetWorkCenterAsync(id, cancellationToken);
+            return workCenter is null
+                ? NotFound()
+                : Results.Ok(workCenter);
+        }).RequireCompanyContext()
+            .RequireAuthorization(ErpPermissions.OrganizationWorkCentersRead)
+            .WithName("GetOrganizationWorkCenterV1")
+            .Produces<WorkCenterDetail>(StatusCodes.Status200OK)
+            .ProducesErpBadRequest()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpAuthenticatedProblems();
+
+        MapMasterDataCommands(group);
+
         return endpoints;
+    }
+
+    /// <summary>
+    /// The site / location / work-centre master edit (first-release outcome "create and edit sites, locations and work
+    /// centres"). The active-state command's protocol: Idempotency-Key required and replayed, <c>expectedVersion</c> on
+    /// every edit (a stale one is a code-less 409 carrying <c>conflict</c>), another company's / out-of-scope / unknown
+    /// records one code-less 404. A create answers 201 with the new record's id and first version; an edit answers 204
+    /// and the fresh state is re-read. A code already used in the company is 422 <c>organization_code_in_use</c>.
+    /// </summary>
+    private static void MapMasterDataCommands(RouteGroupBuilder group)
+    {
+        group.MapPost("/sites", async (
+                CreateSite command,
+                IOrganizationMasterDataService service,
+                ICurrentUser currentUser,
+                ICompanyContext companyContext,
+                ICorrelationContext correlationContext,
+                HttpContext httpContext,
+                CancellationToken cancellationToken) =>
+        {
+            if (!OrganizationMasterDataRules.IsSiteType(command.Type))
+            {
+                return InvalidMasterData("Tesis türü tanımlı tesis türlerinden biri olmalıdır.");
+            }
+
+            return await ExecuteMasterDataCommandAsync(
+                command.Code,
+                command.Name,
+                command.Reason,
+                expectedVersion: null,
+                httpContext,
+                currentUser,
+                companyContext,
+                correlationContext,
+                metadata => service.CreateSiteAsync(command, metadata, cancellationToken),
+                _ => null);
+        }).RequireCompanyContext()
+            .RequireAuthorization(OrganizationPermissionManifestV1.SitesWrite)
+            .WithMasterDataCreateContract<CreateSite>("CreateOrganizationSiteV1");
+
+        group.MapPut("/sites/{id:guid}", async (
+                Guid id,
+                UpdateSite command,
+                IOrganizationMasterDataService service,
+                ICurrentUser currentUser,
+                ICompanyContext companyContext,
+                ICorrelationContext correlationContext,
+                HttpContext httpContext,
+                CancellationToken cancellationToken) =>
+            await ExecuteMasterDataCommandAsync(
+                command.Code,
+                command.Name,
+                command.Reason,
+                command.ExpectedVersion,
+                httpContext,
+                currentUser,
+                companyContext,
+                correlationContext,
+                metadata => service.UpdateSiteAsync(id, command, metadata, cancellationToken),
+                _ => null))
+            .RequireCompanyContext()
+            .RequireAuthorization(OrganizationPermissionManifestV1.SitesWrite)
+            .WithMasterDataUpdateContract<UpdateSite>("UpdateOrganizationSiteV1");
+
+        group.MapPost("/locations", async (
+                CreateLocation command,
+                IOrganizationMasterDataService service,
+                ICurrentUser currentUser,
+                ICompanyContext companyContext,
+                ICorrelationContext correlationContext,
+                HttpContext httpContext,
+                CancellationToken cancellationToken) =>
+        {
+            if (command.SiteId == Guid.Empty)
+            {
+                return InvalidMasterData("Lokasyonun bağlanacağı tesis seçilmelidir.");
+            }
+
+            return await ExecuteMasterDataCommandAsync(
+                command.Code,
+                command.Name,
+                command.Reason,
+                expectedVersion: null,
+                httpContext,
+                currentUser,
+                companyContext,
+                correlationContext,
+                metadata => service.CreateLocationAsync(command, metadata, cancellationToken),
+                created => $"/api/v1/organization/locations/{created.Id}");
+        }).RequireCompanyContext()
+            .RequireAuthorization(OrganizationPermissionManifestV1.LocationsWrite)
+            .WithMasterDataCreateContract<CreateLocation>("CreateOrganizationLocationV1");
+
+        group.MapPut("/locations/{id:guid}", async (
+                Guid id,
+                UpdateLocation command,
+                IOrganizationMasterDataService service,
+                ICurrentUser currentUser,
+                ICompanyContext companyContext,
+                ICorrelationContext correlationContext,
+                HttpContext httpContext,
+                CancellationToken cancellationToken) =>
+            await ExecuteMasterDataCommandAsync(
+                command.Code,
+                command.Name,
+                command.Reason,
+                command.ExpectedVersion,
+                httpContext,
+                currentUser,
+                companyContext,
+                correlationContext,
+                metadata => service.UpdateLocationAsync(id, command, metadata, cancellationToken),
+                _ => null))
+            .RequireCompanyContext()
+            .RequireAuthorization(OrganizationPermissionManifestV1.LocationsWrite)
+            .WithMasterDataUpdateContract<UpdateLocation>("UpdateOrganizationLocationV1");
+
+        group.MapPost("/work-centers", async (
+                CreateWorkCenter command,
+                IOrganizationMasterDataService service,
+                ICurrentUser currentUser,
+                ICompanyContext companyContext,
+                ICorrelationContext correlationContext,
+                HttpContext httpContext,
+                CancellationToken cancellationToken) =>
+        {
+            if (command.LocationId == Guid.Empty)
+            {
+                return InvalidMasterData("İş merkezinin bağlanacağı lokasyon seçilmelidir.");
+            }
+
+            if (!OrganizationMasterDataRules.IsWorkCenterKind(command.Kind))
+            {
+                return InvalidMasterData("İş merkezi türü tanımlı türlerden biri olmalıdır.");
+            }
+
+            return await ExecuteMasterDataCommandAsync(
+                command.Code,
+                command.Name,
+                command.Reason,
+                expectedVersion: null,
+                httpContext,
+                currentUser,
+                companyContext,
+                correlationContext,
+                metadata => service.CreateWorkCenterAsync(command, metadata, cancellationToken),
+                created => $"/api/v1/organization/work-centers/{created.Id}");
+        }).RequireCompanyContext()
+            .RequireAuthorization(OrganizationPermissionManifestV1.WorkCentersWrite)
+            .WithMasterDataCreateContract<CreateWorkCenter>("CreateOrganizationWorkCenterV1");
+
+        group.MapPut("/work-centers/{id:guid}", async (
+                Guid id,
+                UpdateWorkCenter command,
+                IOrganizationMasterDataService service,
+                ICurrentUser currentUser,
+                ICompanyContext companyContext,
+                ICorrelationContext correlationContext,
+                HttpContext httpContext,
+                CancellationToken cancellationToken) =>
+            await ExecuteMasterDataCommandAsync(
+                command.Code,
+                command.Name,
+                command.Reason,
+                command.ExpectedVersion,
+                httpContext,
+                currentUser,
+                companyContext,
+                correlationContext,
+                metadata => service.UpdateWorkCenterAsync(id, command, metadata, cancellationToken),
+                _ => null))
+            .RequireCompanyContext()
+            .RequireAuthorization(OrganizationPermissionManifestV1.WorkCentersWrite)
+            .WithMasterDataUpdateContract<UpdateWorkCenter>("UpdateOrganizationWorkCenterV1");
+    }
+
+    private static RouteHandlerBuilder WithMasterDataCreateContract<TCommand>(
+        this RouteHandlerBuilder builder,
+        string operationName)
+        where TCommand : notnull
+    {
+        return builder
+            .WithIdempotencyContract(
+                StatusCodes.Status201Created,
+                StatusCodes.Status404NotFound,
+                StatusCodes.Status422UnprocessableEntity)
+            .WithName(operationName)
+            .Accepts<TCommand>("application/json")
+            .Produces<OrganizationCreatedRecord>(StatusCodes.Status201Created)
+            .ProducesErpBadRequest()
+            .AllowsCodeLessErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpCodeLessConflict()
+            .ProducesErpUnprocessableEntity(OrganizationProblemCodesV1.CodeInUse)
+            .ProducesErpAuthenticatedProblems();
+    }
+
+    private static RouteHandlerBuilder WithMasterDataUpdateContract<TCommand>(
+        this RouteHandlerBuilder builder,
+        string operationName)
+        where TCommand : notnull
+    {
+        return builder
+            .WithIdempotencyContract(
+                StatusCodes.Status204NoContent,
+                StatusCodes.Status404NotFound,
+                StatusCodes.Status409Conflict,
+                StatusCodes.Status422UnprocessableEntity)
+            .WithName(operationName)
+            .Accepts<TCommand>("application/json")
+            .Produces(StatusCodes.Status204NoContent)
+            .ProducesErpBadRequest()
+            .AllowsCodeLessErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpCodeLessConflict()
+            .ProducesErpUnprocessableEntity(OrganizationProblemCodesV1.CodeInUse)
+            .ProducesErpAuthenticatedProblems();
+    }
+
+    private static async Task<IResult> ExecuteMasterDataCommandAsync(
+        string? code,
+        string? name,
+        string? reason,
+        long? expectedVersion,
+        HttpContext httpContext,
+        ICurrentUser currentUser,
+        ICompanyContext companyContext,
+        ICorrelationContext correlationContext,
+        Func<CommandMetadata, Task<CommandExecutionResult>> execute,
+        Func<OrganizationCreatedRecord, string?> createdLocation)
+    {
+        if (expectedVersion is <= 0)
+        {
+            return Results.Problem(
+                title: "Beklenen sürüm gerekli.",
+                detail: "Düzenleme için sıfırdan büyük beklenen sürüm zorunludur.",
+                statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        if (!OrganizationMasterDataRules.IsValidCode(code))
+        {
+            return InvalidMasterData(
+                $"Kod 1-{OrganizationMasterDataRules.CodeMaximumLength} karakter olmalı ve kontrol karakteri içermemelidir.");
+        }
+
+        if (!OrganizationMasterDataRules.IsValidName(name))
+        {
+            return InvalidMasterData(
+                $"Ad 1-{OrganizationMasterDataRules.NameMaximumLength} karakter olmalı ve kontrol karakteri içermemelidir.");
+        }
+
+        if (!OrganizationMasterDataRules.IsValidReason(reason))
+        {
+            return Results.Problem(
+                title: "Gerekçe gerekli.",
+                detail: "Kritik değişiklik için 1-1000 karakter arasında bir gerekçe girin.",
+                statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        if (!TryReadCommandMetadata(
+                httpContext,
+                currentUser,
+                companyContext,
+                correlationContext,
+                out var metadata))
+        {
+            return Results.Problem(
+                title: "Command bilgisi eksik.",
+                detail: "İşlem için geçerli Idempotency-Key ve correlation bilgisi gerekir.",
+                statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        var execution = await execute(metadata);
+        if (execution.IsReplay)
+        {
+            httpContext.Response.Headers["Idempotency-Replayed"] = "true";
+            httpContext.Response.Headers["Idempotency-Original-Correlation-Id"] =
+                execution.OriginalCorrelationId;
+        }
+
+        var response = execution.Response;
+        if (response.Result == CommandResult.Created)
+        {
+            if (response.StatusCode != StatusCodes.Status201Created || response.Created is null)
+            {
+                throw new InvalidOperationException(
+                    "Organizasyon oluşturma sonucu HTTP durumuyla eşleşmiyor.");
+            }
+
+            return Results.Created(createdLocation(response.Created), response.Created);
+        }
+
+        if (response.Result == CommandResult.CodeInUse)
+        {
+            return Results.Problem(
+                title: response.Title,
+                detail: response.Detail,
+                statusCode: response.StatusCode,
+                extensions: new Dictionary<string, object?>
+                {
+                    ["code"] = OrganizationProblemCodesV1.CodeInUse,
+                });
+        }
+
+        return ToHttpResult(response);
+    }
+
+    private static IResult InvalidMasterData(string detail)
+    {
+        return Results.Problem(
+            title: "Kayıt bilgisi geçersiz.",
+            detail: detail,
+            statusCode: StatusCodes.Status400BadRequest);
     }
 
     private static IResult NotFound()

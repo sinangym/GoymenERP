@@ -3,6 +3,17 @@
 # derived from the gated disposable Product master Read assignment created by the R14 fixture.
 # Denied retains only selector-read; arranger only Organization location-read. All are disposable GDC.
 # The Product issuer has no role, assignment or sign-in actor. No production grant or policy changes.
+# R19 split/merge (user decision 2026-09-27): the disposable r14-transformer is the ONLY holder of
+# inventory.label-transformation.record, beside the label/balance reads of its label detail. No real user and
+# no seeded role receives the name; the real-user mapping stays with persona #66/5802952566.
+# AT-037 stock count (user decision 2026-09-27): the disposable r14-counter is the ONLY holder of
+# inventory.stock-count.record and the disposable r14-count-approver the ONLY holder of inventory.stock-count.approve,
+# each beside the label/balance reads of the label detail — two different actors (maker ≠ checker). No real user and
+# no seeded role receives either name.
+# ST-02 scrap write-off (the AT-037 pattern, maker ≠ checker for every scrap while the scrap approval authority is
+# undecided): the disposable r14-scrapper is the ONLY holder of inventory.stock-scrap.record and the disposable
+# r14-scrap-approver the ONLY holder of inventory.stock-scrap.approve, each beside the label/balance reads. No real
+# user and no seeded role receives either name. r14 now has 8 suite actors (MAX_SUITE_ACTORS).
 services:
   api:
     environment:
@@ -14,6 +25,16 @@ services:
       BootstrapIdentity__Users__3__DisplayName: SENTETIK browser-suite:r14 Inventory denied actor
       BootstrapIdentity__Users__4__UserId: r14-arranger
       BootstrapIdentity__Users__4__DisplayName: SENTETIK browser-suite:r14 Organization arranger
+      BootstrapIdentity__Users__5__UserId: r14-transformer
+      BootstrapIdentity__Users__5__DisplayName: SENTETIK browser-suite:r14 Inventory label transformer
+      BootstrapIdentity__Users__6__UserId: r14-counter
+      BootstrapIdentity__Users__6__DisplayName: SENTETIK browser-suite:r14 Inventory stock counter
+      BootstrapIdentity__Users__7__UserId: r14-count-approver
+      BootstrapIdentity__Users__7__DisplayName: SENTETIK browser-suite:r14 Inventory stock count approver
+      BootstrapIdentity__Users__8__UserId: r14-scrapper
+      BootstrapIdentity__Users__8__DisplayName: SENTETIK browser-suite:r14 Inventory scrap recorder
+      BootstrapIdentity__Users__9__UserId: r14-scrap-approver
+      BootstrapIdentity__Users__9__DisplayName: SENTETIK browser-suite:r14 Inventory scrap approver
       IdentitySeed__Users__5__Id: b2000000-0000-4000-8000-000000000701
       IdentitySeed__Users__5__DisplayName: SENTETIK browser-suite:r14 Inventory recorder
       IdentitySeed__Users__5__ExternalIdentities__0__Id: b2100000-0000-4000-8000-000000000701
@@ -34,6 +55,31 @@ services:
       IdentitySeed__Users__8__ExternalIdentities__0__Id: b2100000-0000-4000-8000-000000000204
       IdentitySeed__Users__8__ExternalIdentities__0__Issuer: urn:goymen:development-bootstrap
       IdentitySeed__Users__8__ExternalIdentities__0__Subject: r14-issuer
+      IdentitySeed__Users__9__Id: b2000000-0000-4000-8000-000000000704
+      IdentitySeed__Users__9__DisplayName: SENTETIK browser-suite:r14 Inventory label transformer
+      IdentitySeed__Users__9__ExternalIdentities__0__Id: b2100000-0000-4000-8000-000000000704
+      IdentitySeed__Users__9__ExternalIdentities__0__Issuer: urn:goymen:development-bootstrap
+      IdentitySeed__Users__9__ExternalIdentities__0__Subject: r14-transformer
+      IdentitySeed__Users__10__Id: b2000000-0000-4000-8000-000000000705
+      IdentitySeed__Users__10__DisplayName: SENTETIK browser-suite:r14 Inventory stock counter
+      IdentitySeed__Users__10__ExternalIdentities__0__Id: b2100000-0000-4000-8000-000000000705
+      IdentitySeed__Users__10__ExternalIdentities__0__Issuer: urn:goymen:development-bootstrap
+      IdentitySeed__Users__10__ExternalIdentities__0__Subject: r14-counter
+      IdentitySeed__Users__11__Id: b2000000-0000-4000-8000-000000000706
+      IdentitySeed__Users__11__DisplayName: SENTETIK browser-suite:r14 Inventory stock count approver
+      IdentitySeed__Users__11__ExternalIdentities__0__Id: b2100000-0000-4000-8000-000000000706
+      IdentitySeed__Users__11__ExternalIdentities__0__Issuer: urn:goymen:development-bootstrap
+      IdentitySeed__Users__11__ExternalIdentities__0__Subject: r14-count-approver
+      IdentitySeed__Users__12__Id: b2000000-0000-4000-8000-000000000707
+      IdentitySeed__Users__12__DisplayName: SENTETIK browser-suite:r14 Inventory scrap recorder
+      IdentitySeed__Users__12__ExternalIdentities__0__Id: b2100000-0000-4000-8000-000000000707
+      IdentitySeed__Users__12__ExternalIdentities__0__Issuer: urn:goymen:development-bootstrap
+      IdentitySeed__Users__12__ExternalIdentities__0__Subject: r14-scrapper
+      IdentitySeed__Users__13__Id: b2000000-0000-4000-8000-000000000708
+      IdentitySeed__Users__13__DisplayName: SENTETIK browser-suite:r14 Inventory scrap approver
+      IdentitySeed__Users__13__ExternalIdentities__0__Id: b2100000-0000-4000-8000-000000000708
+      IdentitySeed__Users__13__ExternalIdentities__0__Issuer: urn:goymen:development-bootstrap
+      IdentitySeed__Users__13__ExternalIdentities__0__Subject: r14-scrap-approver
       IdentitySeed__Roles__5__Id: b3000000-0000-4000-8000-000000000701
       IdentitySeed__Roles__5__Code: BROWSER_R14_RECORDER
       IdentitySeed__Roles__5__Name: SENTETIK browser-suite:r14 Inventory recorder
@@ -52,6 +98,41 @@ services:
       IdentitySeed__Roles__7__Name: SENTETIK browser-suite:r14 Organization arranger
       IdentitySeed__Roles__7__IsSystem: "false"
       IdentitySeed__Roles__7__Permissions__0: organization.locations.read
+      IdentitySeed__Roles__8__Id: b3000000-0000-4000-8000-000000000704
+      IdentitySeed__Roles__8__Code: BROWSER_R14_TRANSFORMER
+      IdentitySeed__Roles__8__Name: SENTETIK browser-suite:r14 Inventory label transformer
+      IdentitySeed__Roles__8__IsSystem: "false"
+      IdentitySeed__Roles__8__Permissions__0: inventory.labels.read
+      IdentitySeed__Roles__8__Permissions__1: inventory.balances.read
+      IdentitySeed__Roles__8__Permissions__2: inventory.label-transformation.record
+      IdentitySeed__Roles__9__Id: b3000000-0000-4000-8000-000000000705
+      IdentitySeed__Roles__9__Code: BROWSER_R14_COUNTER
+      IdentitySeed__Roles__9__Name: SENTETIK browser-suite:r14 Inventory stock counter
+      IdentitySeed__Roles__9__IsSystem: "false"
+      IdentitySeed__Roles__9__Permissions__0: inventory.labels.read
+      IdentitySeed__Roles__9__Permissions__1: inventory.balances.read
+      IdentitySeed__Roles__9__Permissions__2: inventory.stock-count.record
+      IdentitySeed__Roles__10__Id: b3000000-0000-4000-8000-000000000706
+      IdentitySeed__Roles__10__Code: BROWSER_R14_COUNT_APPROVER
+      IdentitySeed__Roles__10__Name: SENTETIK browser-suite:r14 Inventory stock count approver
+      IdentitySeed__Roles__10__IsSystem: "false"
+      IdentitySeed__Roles__10__Permissions__0: inventory.labels.read
+      IdentitySeed__Roles__10__Permissions__1: inventory.balances.read
+      IdentitySeed__Roles__10__Permissions__2: inventory.stock-count.approve
+      IdentitySeed__Roles__11__Id: b3000000-0000-4000-8000-000000000707
+      IdentitySeed__Roles__11__Code: BROWSER_R14_SCRAPPER
+      IdentitySeed__Roles__11__Name: SENTETIK browser-suite:r14 Inventory scrap recorder
+      IdentitySeed__Roles__11__IsSystem: "false"
+      IdentitySeed__Roles__11__Permissions__0: inventory.labels.read
+      IdentitySeed__Roles__11__Permissions__1: inventory.balances.read
+      IdentitySeed__Roles__11__Permissions__2: inventory.stock-scrap.record
+      IdentitySeed__Roles__12__Id: b3000000-0000-4000-8000-000000000708
+      IdentitySeed__Roles__12__Code: BROWSER_R14_SCRAP_APPROVER
+      IdentitySeed__Roles__12__Name: SENTETIK browser-suite:r14 Inventory scrap approver
+      IdentitySeed__Roles__12__IsSystem: "false"
+      IdentitySeed__Roles__12__Permissions__0: inventory.labels.read
+      IdentitySeed__Roles__12__Permissions__1: inventory.balances.read
+      IdentitySeed__Roles__12__Permissions__2: inventory.stock-scrap.approve
       IdentitySeed__Assignments__7__Id: b4000000-0000-4000-8000-000000000701
       IdentitySeed__Assignments__7__UserId: b2000000-0000-4000-8000-000000000701
       IdentitySeed__Assignments__7__RoleId: b3000000-0000-4000-8000-000000000701
@@ -76,3 +157,43 @@ services:
       IdentitySeed__Assignments__9__ApprovedByUserId: 20000000-0000-0000-0000-000000000003
       IdentitySeed__Assignments__9__Scopes__0__Type: Company
       IdentitySeed__Assignments__9__Scopes__0__Id: 10000000-0000-0000-0000-000000000001
+      IdentitySeed__Assignments__10__Id: b4000000-0000-4000-8000-000000000704
+      IdentitySeed__Assignments__10__UserId: b2000000-0000-4000-8000-000000000704
+      IdentitySeed__Assignments__10__RoleId: b3000000-0000-4000-8000-000000000704
+      IdentitySeed__Assignments__10__CompanyId: 10000000-0000-0000-0000-000000000001
+      IdentitySeed__Assignments__10__ValidFromUtc: "2026-01-01T00:00:00+00:00"
+      IdentitySeed__Assignments__10__ApprovedByUserId: 20000000-0000-0000-0000-000000000003
+      IdentitySeed__Assignments__10__Scopes__0__Type: Company
+      IdentitySeed__Assignments__10__Scopes__0__Id: 10000000-0000-0000-0000-000000000001
+      IdentitySeed__Assignments__11__Id: b4000000-0000-4000-8000-000000000705
+      IdentitySeed__Assignments__11__UserId: b2000000-0000-4000-8000-000000000705
+      IdentitySeed__Assignments__11__RoleId: b3000000-0000-4000-8000-000000000705
+      IdentitySeed__Assignments__11__CompanyId: 10000000-0000-0000-0000-000000000001
+      IdentitySeed__Assignments__11__ValidFromUtc: "2026-01-01T00:00:00+00:00"
+      IdentitySeed__Assignments__11__ApprovedByUserId: 20000000-0000-0000-0000-000000000003
+      IdentitySeed__Assignments__11__Scopes__0__Type: Company
+      IdentitySeed__Assignments__11__Scopes__0__Id: 10000000-0000-0000-0000-000000000001
+      IdentitySeed__Assignments__12__Id: b4000000-0000-4000-8000-000000000706
+      IdentitySeed__Assignments__12__UserId: b2000000-0000-4000-8000-000000000706
+      IdentitySeed__Assignments__12__RoleId: b3000000-0000-4000-8000-000000000706
+      IdentitySeed__Assignments__12__CompanyId: 10000000-0000-0000-0000-000000000001
+      IdentitySeed__Assignments__12__ValidFromUtc: "2026-01-01T00:00:00+00:00"
+      IdentitySeed__Assignments__12__ApprovedByUserId: 20000000-0000-0000-0000-000000000003
+      IdentitySeed__Assignments__12__Scopes__0__Type: Company
+      IdentitySeed__Assignments__12__Scopes__0__Id: 10000000-0000-0000-0000-000000000001
+      IdentitySeed__Assignments__13__Id: b4000000-0000-4000-8000-000000000707
+      IdentitySeed__Assignments__13__UserId: b2000000-0000-4000-8000-000000000707
+      IdentitySeed__Assignments__13__RoleId: b3000000-0000-4000-8000-000000000707
+      IdentitySeed__Assignments__13__CompanyId: 10000000-0000-0000-0000-000000000001
+      IdentitySeed__Assignments__13__ValidFromUtc: "2026-01-01T00:00:00+00:00"
+      IdentitySeed__Assignments__13__ApprovedByUserId: 20000000-0000-0000-0000-000000000003
+      IdentitySeed__Assignments__13__Scopes__0__Type: Company
+      IdentitySeed__Assignments__13__Scopes__0__Id: 10000000-0000-0000-0000-000000000001
+      IdentitySeed__Assignments__14__Id: b4000000-0000-4000-8000-000000000708
+      IdentitySeed__Assignments__14__UserId: b2000000-0000-4000-8000-000000000708
+      IdentitySeed__Assignments__14__RoleId: b3000000-0000-4000-8000-000000000708
+      IdentitySeed__Assignments__14__CompanyId: 10000000-0000-0000-0000-000000000001
+      IdentitySeed__Assignments__14__ValidFromUtc: "2026-01-01T00:00:00+00:00"
+      IdentitySeed__Assignments__14__ApprovedByUserId: 20000000-0000-0000-0000-000000000003
+      IdentitySeed__Assignments__14__Scopes__0__Type: Company
+      IdentitySeed__Assignments__14__Scopes__0__Id: 10000000-0000-0000-0000-000000000001

@@ -1,6 +1,7 @@
 using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Inventory.Infrastructure.Persistence;
 using GoymenERP.Modules.Inventory.Infrastructure.Shell;
+using GoymenERP.Modules.Sales.Application.Contracts;
 using GoymenERP.BuildingBlocks.Shell;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -52,6 +53,10 @@ public static class InventoryModuleExtensions
         services.AddScoped<IInventoryOpeningStore>(serviceProvider => serviceProvider.GetRequiredService<InventoryStore>());
         services.AddScoped<IInventoryPhysicalAllocationWriterV1>(serviceProvider =>
             serviceProvider.GetRequiredService<InventoryStore>());
+        services.AddScoped<IInventoryGoodsReceiptSourceV1, InventoryGoodsReceiptSourceService>();
+        // DEC-SAL-005: Inventory answers the Sales-declared active-allocation read over its own company-filtered allocations.
+        // Registered here, in the owner's module (no host file), so that Sales reads allocations only through this port.
+        services.AddScoped<ISalesOrderAllocationReadPortV1, InventorySalesOrderAllocationReadPort>();
         services.TryAddScoped<IInventoryLabelGenealogyReaderV1>(serviceProvider =>
             serviceProvider.GetRequiredService<InventoryStore>());
         // INV-OPEN-1 part 2: the opening-count command; its location and product ports are the host's adapters.

@@ -19,17 +19,24 @@
  * this screen. Deactivation is a state, not a delete.
  */
 
-import { useQuery } from '@tanstack/react-query'
-import { Link, useLocation } from 'react-router'
-import { fetchWorkCenters } from './api'
-import type { WorkCenterSummary } from './contract'
-import { locationDetailPath, ORGANIZATION_CAPABILITY, workCenterListPath } from './capabilities'
+import { useCallback, useState } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { Link, useLocation, useNavigate } from 'react-router'
+import { fetchLocationPage, fetchWorkCenters, PAGE_SIZE_MAX } from './api'
+import type { LocationSummary, WorkCenterSummary } from './contract'
+import { MasterFormLauncher, MasterRecordForm } from './MasterRecordForm'
+import { refreshOrganizationReads } from './refreshOrganizationReads'
+import type { ViewOutcome } from '../shell/uiState'
+import { locationDetailPath, ORGANIZATION_CAPABILITY, workCenterDetailPath, workCenterListPath } from './capabilities'
 import {
   filterWorkCenters, filteredWorkCenterDetailReturn, readWorkCenterLocationFilter,
   WORK_CENTER_LOCATION_TEXT,
 } from './workCenterLocationFilter'
 import {
   LOCATION_NOT_OPENABLE,
+  MASTER_TEXT,
+  WORK_CENTER_CARD_TEXT,
+  WORK_CENTER_KIND_OPTIONS,
   WORK_CENTERS_HEADING,
   WORK_CENTERS_LEAD,
   activeStateLabel,
@@ -85,6 +92,12 @@ function WorkCenterList({ namespace }: { readonly namespace: string | null }) {
       : classifyOutcome(workCentersQuery.data ?? { type: 'malformed' })
   ) as RemoteViewState<readonly WorkCenterSummary[]>
 
+  // The create control is its own grant (work-centers.write + the location read its picker lists from).
+  const canCreate = hasCapability(shell, ORGANIZATION_CAPABILITY.workCenterCreate)
+  const queryClient = useQueryClient()
+  const navigate = useNavigate()
+  const refreshAll = useCallback(() => refreshOrganizationReads(queryClient, namespace), [namespace, queryClient])
+
   if (!singleCompanyContext) {
     return (
       <section aria-labelledby="org-wc-heading" className={styles.page}>
@@ -102,12 +115,30 @@ function WorkCenterList({ namespace }: { readonly namespace: string | null }) {
   }
 
   const rows = state.kind === 'ready' ? filterWorkCenters(state.data, filter) : []
+  // ORG-04: the card is its own route capability, published on the same grant as this list.
+  const canOpenCard = hasCapability(shell, ORGANIZATION_CAPABILITY.workCenterDetail)
   return (
     <section aria-labelledby="org-wc-heading" className={styles.page}>
       <header className={styles.header}>
         <h1 id="org-wc-heading">{WORK_CENTERS_HEADING}</h1>
         <p className={styles.lead}>{WORK_CENTERS_LEAD}</p>
       </header>
+
+      {canCreate && namespace !== null ? (
+        <WorkCenterCreateSection
+          namespace={namespace}
+          companyId={activeCompanyId ?? ''}
+          initialLocationId={filter.kind === 'location' ? filter.locationId : ''}
+          onCreated={async (id) => {
+            await refreshAll()
+            // Save, then reopen: the new work centre's own card, whose way back is this list.
+            await navigate(workCenterDetailPath(id), {
+              state: filteredWorkCenterDetailReturn(namespace, filter.kind === 'location' ? filter.locationId : null),
+            })
+          }}
+          onReload={refreshAll}
+        />
+      ) : null}
 
       {filter.kind !== 'all' ? <nav aria-label={WORK_CENTER_LOCATION_TEXT.label}>
         {filter.kind === 'location' ? <p>{WORK_CENTER_LOCATION_TEXT.label}: {filter.locationId}</p> : null}
@@ -128,7 +159,12 @@ function WorkCenterList({ namespace }: { readonly namespace: string | null }) {
           subject={filter.kind === 'location' ? WORK_CENTER_LOCATION_TEXT.filteredSubject : 'iş merkezleri'}
         />
       ) : (
-        <WorkCenterTable rows={rows} namespace={namespace} filterLocationId={filter.kind === 'location' ? filter.locationId : null} />
+        <WorkCenterTable
+          rows={rows}
+          namespace={namespace}
+          filterLocationId={filter.kind === 'location' ? filter.locationId : null}
+          canOpenCard={canOpenCard}
+        />
       )}
     </section>
   )
@@ -138,10 +174,12 @@ function WorkCenterTable({
   rows,
   namespace,
   filterLocationId,
+  canOpenCard,
 }: {
   readonly rows: readonly WorkCenterSummary[]
   readonly namespace: string | null
   readonly filterLocationId: string | null
+  readonly canOpenCard: boolean
 }) {
   return (
     <div className={styles.tableScroll}>
@@ -162,7 +200,22 @@ function WorkCenterTable({
         <tbody>
           {rows.map((row) => (
             <tr key={row.id}>
-              <td className={styles.codeCell}>{row.code}</td>
+              <td className={styles.codeCell}>
+                {/* ORG-04: the row opens its own card, carrying the same allowlisted return token as the
+                    location link, so the card's way back restores this list and its location filter. */}
+                {canOpenCard ? (
+                  <Link
+                    className={styles.rowLink}
+                    to={workCenterDetailPath(row.id)}
+                    state={filteredWorkCenterDetailReturn(namespace, filterLocationId)}
+                    aria-label={`${WORK_CENTER_CARD_TEXT.openCard}: ${row.code}`}
+                  >
+                    {row.code}
+                  </Link>
+                ) : (
+                  row.code
+                )}
+              </td>
               <td>{row.name}</td>
               <td>{workCenterKindLabel(row.kind)}</td>
               <td>
@@ -228,5 +281,128 @@ function LocationCell({
           both be claims this screen has no source for. */}
       Lokasyon kartını aç
     </Link>
+  )
+}
+
+/** The picker never shows a partial location list: past this many rows it says so instead. */
+const LOCATION_PICKER_MAX_PAGES = 10
+
+type LocationChoices = { readonly kind: 'ready'; readonly items: readonly LocationSummary[] } | { readonly kind: 'too-many' }
+
+/**
+ * Every location the caller may read, for the new work centre's location choice. The location endpoint pages, so this
+ * reads page after page at the server's maximum size until the server's own `totalCount` is reached; a failure on
+ * any page fails the whole list, and a set too large for one select is refused rather than truncated.
+ */
+async function fetchLocationChoices(
+  companyId: string,
+  signal: AbortSignal,
+): Promise<ViewOutcome<LocationChoices>> {
+  const items: LocationSummary[] = []
+  for (let page = 1; page <= LOCATION_PICKER_MAX_PAGES; page += 1) {
+    const outcome = await fetchLocationPage(companyId, { page, pageSize: PAGE_SIZE_MAX }, signal)
+    if (outcome.type !== 'ok-single') return outcome as ViewOutcome<LocationChoices>
+    items.push(...outcome.data.items)
+    if (items.length >= outcome.data.totalCount || outcome.data.items.length === 0) {
+      return { type: 'ok-single', data: { kind: 'ready', items } }
+    }
+  }
+  return { type: 'ok-single', data: { kind: 'too-many' } }
+}
+
+/**
+ * A new work centre on one of the caller's locations. The location list is read only when the form opens. The kind is
+ * chosen once: it is the Manufacturing planning reference's immutable fact. After the 201 the user is taken to the new
+ * record's own card.
+ */
+function WorkCenterCreateSection({
+  namespace,
+  companyId,
+  initialLocationId,
+  onCreated,
+  onReload,
+}: {
+  readonly namespace: string
+  readonly companyId: string
+  readonly initialLocationId: string
+  readonly onCreated: (id: string) => Promise<void>
+  readonly onReload: () => Promise<void>
+}) {
+  const shell = useShellState()
+  const boundary = useAuthBoundary()
+  const [open, setOpen] = useState(false)
+  const choicesQuery = useQuery({
+    queryKey: [namespace, shell.routeEntryGeneration, 'organization-location-choices'],
+    enabled: open,
+    queryFn: async ({ signal }) => {
+      const snapshot = boundary.capture()
+      const outcome = await fetchLocationChoices(companyId, signal)
+      if (outcome.type === 'http' && (outcome.status === 401 || outcome.status === 403)) {
+        boundary.report(outcome.status, snapshot)
+      }
+      return outcome
+    },
+  })
+
+  if (!open) {
+    return <MasterFormLauncher label={MASTER_TEXT.newWorkCenter} saved={null} onOpen={() => setOpen(true)} />
+  }
+
+  if (choicesQuery.isPending) {
+    // The form opens with the list it chooses from, so a filter's location can be preselected and nothing typed is lost.
+    return (
+      <p className={styles.lead} role="status">
+        {MASTER_TEXT.locationsLoading}
+      </p>
+    )
+  }
+
+  const choices = classifyOutcome(choicesQuery.data ?? { type: 'malformed' }) as RemoteViewState<LocationChoices>
+  const ready = choices.kind === 'ready' && choices.data.kind === 'ready' ? choices.data.items : null
+  const unavailable =
+    choices.kind === 'ready' && choices.data.kind === 'too-many'
+        ? MASTER_TEXT.locationsTooMany
+      : ready === null
+        ? MASTER_TEXT.locationsUnavailable
+        : undefined
+
+  return (
+    <MasterRecordForm
+
+      heading={MASTER_TEXT.newWorkCenter}
+      companyId={companyId}
+      dirtyScope="organization.work-center.create"
+      initial={{
+        code: '',
+        name: '',
+        choice: ready !== null && ready.some((location) => location.id === initialLocationId) ? initialLocationId : '',
+      }}
+      choice={{
+        label: MASTER_TEXT.location,
+        options: (ready ?? []).map((location) => ({
+          value: location.id,
+          label: `${location.code} — ${location.name}${location.isActive ? '' : ` (${activeStateLabel(false)})`}`,
+        })),
+        unavailable,
+      }}
+      note={MASTER_TEXT.kindFixed}
+      buildCommand={(values) => ({
+        kind: 'create-work-center',
+        locationId: values.choice,
+        code: values.code,
+        name: values.name,
+        workCenterKind: values.secondChoice,
+        reason: values.reason,
+      })}
+      secondChoice={{
+        label: MASTER_TEXT.kind,
+        options: WORK_CENTER_KIND_OPTIONS.map((kind) => ({ value: kind, label: workCenterKindLabel(kind) })),
+      }}
+      onCreated={async (record) => {
+        await onCreated(record.id)
+      }}
+      onReload={onReload}
+      onCancel={() => setOpen(false)}
+    />
   )
 }

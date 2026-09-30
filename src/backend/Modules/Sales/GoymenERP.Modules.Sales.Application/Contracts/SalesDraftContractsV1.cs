@@ -29,7 +29,8 @@ public sealed record SalesDraftDeliverySliceV1(
     Guid SliceId, Guid OrderUnitId, string Quantity, DateOnly RequestedDeliveryDate);
 
 // SALES-A1 (contract delta): `approvalState` is the internal approval axis — "Preparing",
-// "PendingApproval", "Approved", "Rejected" or (D2) "Withdrawn" — beside the lifecycle `state` ("Draft"), the
+// "PendingApproval", "Approved", "Rejected" or (D2) "Withdrawn" — beside the lifecycle `state` ("Draft", or since
+// DEC-SAL-005 "Cancelled" for an approved order cancelled after its impact preview), the
 // commercial `revision` and the concurrency `version`. Four separate facts, never merged.
 public sealed record SalesOrderDraftSummaryView(
     Guid Id, Guid CompanyId, string DocumentNo, string Kind, string State,
@@ -59,6 +60,49 @@ public sealed record SalesDraftLineCommercialV1(Guid LineId, string? UnitPrice =
 /// </summary>
 public sealed record SalesDraftCommercialRevisionRequest(string ExpectedVersion, IReadOnlyList<SalesDraftLineCommercialV1> Lines);
 
+/// <summary>DEC-SAL-002: one line's new ordered quantity in a quantity revision — the client line id and the exact decimal text (the create's shape).</summary>
+public sealed record SalesDraftLineQuantityV1(Guid LineId, string Quantity);
+
+/// <summary>
+/// DEC-SAL-002 / AT-023: POST …/{id}/quantity-revision — the expected concurrency version, the reason (required; why the order
+/// changes) and EVERY line of the draft exactly once with its new ordered quantity in the line's own order unit. Strict: every
+/// member present, no other member. The unit, product, price and delivery plan do not change here.
+/// </summary>
+public sealed record SalesDraftQuantityRevisionRequest(string ExpectedVersion, string Reason, IReadOnlyList<SalesDraftLineQuantityV1> Lines);
+
+/// <summary>DEC-SAL-003: one existing slice's new requested delivery date, addressed by its client slice id.</summary>
+public sealed record SalesDraftSliceScheduleV1(Guid SliceId, DateOnly RequestedDeliveryDate);
+
+/// <summary>
+/// DEC-SAL-003: one line's new delivery dates — the line's own date (explicit null = none) and a date for EVERY slice the
+/// line already carries (an empty list for a line without slices). Dates only: no quantity, unit or new slice.
+/// </summary>
+public sealed record SalesDraftLineScheduleV1(Guid LineId, DateOnly? RequestedDeliveryDate, IReadOnlyList<SalesDraftSliceScheduleV1> Slices);
+
+/// <summary>
+/// DEC-SAL-003: POST …/{id}/delivery-schedule — the expected concurrency version, the header's requested delivery date
+/// (explicit null = none) and EVERY line exactly once with its dates. Strict: every member present, no other member.
+/// </summary>
+public sealed record SalesDraftDeliveryScheduleRequest(
+    string ExpectedVersion, DateOnly? RequestedDeliveryDate, IReadOnlyList<SalesDraftLineScheduleV1> Lines);
+
+/// <summary>A slice as it stood in one delivery schedule: identity, (unchanged) quantity text and date.</summary>
+public sealed record SalesDraftSliceScheduleViewV1(Guid SliceId, string Quantity, DateOnly RequestedDeliveryDate);
+
+/// <summary>A line's dates in one delivery schedule.</summary>
+public sealed record SalesDraftLineScheduleViewV1(Guid LineId, int LineNo, DateOnly? RequestedDeliveryDate,
+    IReadOnlyList<SalesDraftSliceScheduleViewV1> Slices);
+
+/// <summary>
+/// DEC-SAL-003 ("auditlidir"): one delivery schedule of the draft. Schedule 0 is the draft as created (<c>changedBy</c> and
+/// <c>changedAtUtc</c> null: nobody changed it); every later one is a recorded change with its actor and time.
+/// </summary>
+public sealed record SalesDraftDeliveryScheduleV1(int ScheduleNo, string? ChangedBy, DateTimeOffset? ChangedAtUtc,
+    DateOnly? RequestedDeliveryDate, IReadOnlyList<SalesDraftLineScheduleViewV1> Lines);
+
+/// <summary>GET …/{id}/delivery-schedules: schedule 0 then every recorded change, oldest first; under the draft read.</summary>
+public sealed record SalesOrderDraftDeliverySchedulesResponse(IReadOnlyList<SalesDraftDeliveryScheduleV1> Items);
+
 /// <summary>
 /// K3 P2 (Sinan 5748258299): whether the caller may see a line's commercial fields. NEVER null, and that is the
 /// load-bearing part: an absent price is indistinguishable from a price of nothing and from a price the caller is
@@ -81,12 +125,13 @@ public sealed record SalesDraftRevisionLineV1(
 /// <summary>
 /// An approved revision the draft left behind when its price or discount was changed (K3: the previous
 /// approved snapshot is never deleted): who submitted and who approved it, when it was archived and by
-/// whom, the money profile it was approved under, and its lines.
+/// whom, the money profile it was approved under, and its lines. DEC-SAL-002 (contract delta): <c>reason</c> is why it was
+/// superseded — the quantity revision's required reason; null when a price revision (which has no reason member) archived it.
 /// </summary>
 public sealed record SalesDraftRevisionV1(
     string Revision, string? SubmittedBy, DateTimeOffset? SubmittedAtUtc, string? ApprovedBy, DateTimeOffset? ApprovedAtUtc,
     DateTimeOffset ArchivedAtUtc, string ArchivedBy, Guid MoneyProfileId, string MoneyProfileVersion, int MoneyScale,
-    IReadOnlyList<SalesDraftRevisionLineV1> Lines);
+    IReadOnlyList<SalesDraftRevisionLineV1> Lines, string? Reason);
 
 /// <summary>GET …/{id}/revisions: the archived approved revisions, oldest first; empty for a draft never revised after an approval.</summary>
 public sealed record SalesOrderDraftRevisionsResponse(IReadOnlyList<SalesDraftRevisionV1> Items);
@@ -161,6 +206,24 @@ public static class SalesDraftApiV1
     // "Rev.N", and the history lives on its own route so the S-04 decoder (exact members) keeps working.
     public const string CommercialRevisionPath = "/api/v1/sales/drafts/{id}/commercial-revision";
     public const string RevisionsPath = "/api/v1/sales/drafts/{id}/revisions";
+
+    // DEC-SAL-002 / AT-023: the quantity revision (200 with the detail after the change; same-key replay 200 +
+    // `Idempotency-Replayed`). The detail wire is unchanged (the line's `quantity` carries the new text); the superseded
+    // approved revision, with its reason, is read on the revisions route.
+    public const string QuantityRevisionPath = "/api/v1/sales/drafts/{id}/quantity-revision";
+
+    // DEC-SAL-003: the delivery-schedule update (200 with the detail after the change; same-key replay 200 +
+    // `Idempotency-Replayed`) and the read of the schedule history. The detail wire is unchanged: it carries the
+    // CURRENT dates; the history lives on its own route so the S-04 decoder (exact members) keeps working.
+    public const string DeliverySchedulePath = "/api/v1/sales/drafts/{id}/delivery-schedule";
+    public const string DeliverySchedulesPath = "/api/v1/sales/drafts/{id}/delivery-schedules";
+
+    // DEC-SAL-005 / AT-007: the impact preview (GET, the cancel permission), the cancel command (POST, 200 with the detail
+    // after the change; same-key replay 200 + `Idempotency-Replayed`) and the recorded cancellation (GET, the draft read).
+    // The detail wire is unchanged apart from the lifecycle `state` ("Cancelled"): the facts live on their own route so the
+    // S-04 decoder (exact members) keeps working.
+    public const string CancellationImpactPath = "/api/v1/sales/drafts/{id}/cancellation-impact";
+    public const string CancellationPath = "/api/v1/sales/drafts/{id}/cancellation";
 
     /// <summary>The wire text of a revision number (<c>Rev.0</c>, <c>Rev.1</c>, …).</summary>
     public static string RevisionText(int revision) => $"Rev.{revision.ToString(System.Globalization.CultureInfo.InvariantCulture)}";
@@ -249,11 +312,88 @@ public static class SalesDraftJson
     }
 
     /// <summary>
+    /// DEC-SAL-002: the strict body of a quantity revision — the expected version as on every state command, the reason
+    /// present (at most 4000; the domain requires it non-blank) and 1..500 lines each named once with a positive plain decimal
+    /// quantity text (the create's shape). The domain decides the rest (every current line named, Ö2 in the line's unit, the
+    /// delivery plan still fitting, no-change).
+    /// </summary>
+    public static SalesDraftQuantityRevisionRequest ReadQuantityRevision(string json)
+    {
+        var request = JsonSerializer.Deserialize<SalesDraftQuantityRevisionRequest>(json, Options)
+            ?? throw new JsonException("Request body is required.");
+        if (string.IsNullOrEmpty(request.ExpectedVersion) || request.ExpectedVersion.Length > 19
+            || !Regex.IsMatch(request.ExpectedVersion, "\\A[1-9][0-9]*\\z"))
+            throw new JsonException("Invalid expected version.");
+        if (request.Reason is null || request.Reason.Length > 4000)
+            throw new JsonException("Invalid reason.");
+        if (request.Lines is null || request.Lines.Count is < 1 or > 500)
+            throw new JsonException("Invalid revision lines.");
+        var ids = new HashSet<Guid>();
+        foreach (var line in request.Lines)
+        {
+            if (line is null || line.LineId == Guid.Empty || !ids.Add(line.LineId))
+                throw new JsonException("Invalid line fields.");
+            RequireDecimalShape(line.Quantity, positive: true);
+        }
+
+        return request;
+    }
+
+    /// <summary>
+    /// DEC-SAL-003: the strict body of a delivery-schedule update — the expected version as on every state command, the
+    /// header date present (null allowed), and 1..500 lines each named once, each with its slices named once (at most
+    /// 500). The domain decides the rest (every current line and exactly its current slices, the no-change refusal).
+    /// </summary>
+    public static SalesDraftDeliveryScheduleRequest ReadDeliverySchedule(string json)
+    {
+        var request = JsonSerializer.Deserialize<SalesDraftDeliveryScheduleRequest>(json, Options)
+            ?? throw new JsonException("Request body is required.");
+        if (string.IsNullOrEmpty(request.ExpectedVersion) || request.ExpectedVersion.Length > 19
+            || !Regex.IsMatch(request.ExpectedVersion, "\\A[1-9][0-9]*\\z"))
+            throw new JsonException("Invalid expected version.");
+        if (request.Lines is null || request.Lines.Count is < 1 or > 500)
+            throw new JsonException("Invalid schedule lines.");
+        var ids = new HashSet<Guid>();
+        foreach (var line in request.Lines)
+        {
+            if (line is null || line.LineId == Guid.Empty || !ids.Add(line.LineId) || line.Slices is null || line.Slices.Count > 500)
+                throw new JsonException("Invalid schedule line.");
+            var sliceIds = new HashSet<Guid>();
+            foreach (var slice in line.Slices)
+            {
+                if (slice is null || slice.SliceId == Guid.Empty || !sliceIds.Add(slice.SliceId))
+                    throw new JsonException("Invalid schedule slice.");
+            }
+        }
+
+        return request;
+    }
+
+    /// <summary>
     /// SALES-A1: the strict body of a state command. <c>expectedVersion</c> is required, positive
     /// integer text (as every version on this wire, at most 19 digits); <c>reason</c> is accepted
     /// only where <paramref name="allowReason"/> (the rejection) and is otherwise an unknown member.
     /// The reason's length is the domain's rule (422), not a shape rule.
     /// </summary>
+    /// <summary>
+    /// DEC-SAL-005: the strict cancel body — the expected version (canonical positive integer text), the reason (present, at
+    /// most 4000; the domain requires it non-blank) and the preview token (non-blank, at most 128). Anything else is a shape
+    /// error.
+    /// </summary>
+    public static SalesDraftCancelRequest ReadCancel(string json)
+    {
+        var request = JsonSerializer.Deserialize<SalesDraftCancelRequest>(json, Options)
+            ?? throw new JsonException("Request body is required.");
+        if (string.IsNullOrEmpty(request.ExpectedVersion) || request.ExpectedVersion.Length > 19
+            || !Regex.IsMatch(request.ExpectedVersion, "\\A[1-9][0-9]*\\z"))
+            throw new JsonException("Invalid expected version.");
+        if (request.Reason is null || request.Reason.Length > 4000)
+            throw new JsonException("Invalid reason.");
+        if (string.IsNullOrWhiteSpace(request.ImpactToken) || request.ImpactToken.Length > 128)
+            throw new JsonException("Invalid impact token.");
+        return request;
+    }
+
     public static SalesDraftStateCommandRequest ReadStateCommand(string json, bool allowReason)
     {
         var request = JsonSerializer.Deserialize<SalesDraftStateCommandRequest>(json, Options)

@@ -18,6 +18,7 @@ public sealed class ProductReaderTests
     [InlineData("card")]
     [InlineData("groups")]
     [InlineData("references")]
+    [InlineData("duplicates")]
     public async Task Missing_global_authority_denies_before_cursor_parsing_or_any_database_connection(string operation)
     {
         await using var context = new ProductDbContext(new DbContextOptionsBuilder<ProductDbContext>()
@@ -29,6 +30,8 @@ public sealed class ProductReaderTests
             "page" => reader.GetPageAsync(new(Cursor: "invalid"), default),
             "card" => reader.GetAsync(Guid.NewGuid(), default),
             "references" => reader.GetReferenceOptionsAsync(new(Guid.NewGuid()), default),
+            // Even a malformed name is not judged before the authority: nothing is disclosed.
+            "duplicates" => reader.GetDuplicateCandidatesAsync(new(Name: ""), default),
             _ => (Task)reader.GetCodeGroupsAsync(default),
         });
     }
@@ -94,6 +97,27 @@ public sealed class ProductReaderTests
         Assert.Equal(1, catalog.RegistryReads);
         Assert.Empty(options.Families);
         Assert.Equal(["classes", "families", "units", "trackingPolicies", "templates"], options.UnavailableCatalogs);
+    }
+
+    [Theory]
+    [InlineData(null, null)]
+    [InlineData("   ", null)]
+    [InlineData("Sac", "00000000-0000-0000-0000-000000000000")]
+    public async Task Duplicate_candidates_refuse_a_malformed_query_after_authority_without_a_database_read(
+        string? name, string? exclude)
+    {
+        var authority = new ChangingAuthority();
+        var catalog = new ControlledCatalog(true, () => { });
+        await using var context = Context(catalog);
+        using var cursors = Cursors();
+        var reader = new ProductReader(new(context), cursors, authority);
+
+        var error = await Assert.ThrowsAsync<ProductValidationException>(() => reader.GetDuplicateCandidatesAsync(
+            new(name, exclude is null ? null : Guid.Parse(exclude)), default));
+        Assert.Equal(exclude is null ? ("name", "invalid_name") : ("query", "invalid_metadata"),
+            (Assert.Single(error.Errors).Field, error.Errors[0].Code));
+        Assert.Equal(0, catalog.Reads);
+        Assert.Equal(2, authority.Calls);
     }
 
     [Fact]

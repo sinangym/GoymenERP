@@ -1,11 +1,12 @@
 # l04 (SİPARİŞ, LOG-4b loading-instruction user-flow acceptance): the suite's closed-list API extensions on
 # top of its capability profile, validated by tools/validate_browser_acceptance.py with the merged model
-# (SUITE_API_EXTENSIONS["l04"]: actors + identity; no Product issuer binding — the seed reads and writes
-# no Product data).
+# (SUITE_API_EXTENSIONS["l04"]: actors + identity + a disposable Product issuer used only to materialize
+# the LOG-5 Product fixture; the issuer is not an actor and has no role, assignment, permission or grant).
 #  - Five suite actors appended to the canonical two BootstrapIdentity users (indices 2..6). The browser
 #    suite signs in as the first three on the AUTHORIZED web (X-Development-User, the s03/s04 way); the two
-#    Sales actors exist only for the seed (they submit and approve the seeded draft through the real Sales
-#    API, Ö4: never the same one). The Cari customer is opened by the canonical group-bootstrap-admin (the
+#    Sales actors exist for the seed (they submit and approve the seeded draft through the real Sales
+#    API, Ö4: never the same one); AT-024 also signs in as l04-sales-approver, with its existing
+#    sales.drafts.read only, to read the order's delivery progress on S-04 — no grant is added. The Cari customer is opened by the canonical group-bootstrap-admin (the
 #    fin01 way). The canonical users hold no Logistics permission and are not used by the suite.
 #  - Each actor's Identity user, one role and one company-wide assignment in GDC through the real
 #    IdentityDataSeeder (decision 1), continuing the built-in seed's indices (Users 5, Roles 5,
@@ -14,14 +15,19 @@
 #    read (GET …/loading-instructions/approved-order-lines, under the create name; Sinan §4 #66 5738113623:
 #    the Sevkiyatçı sees orders but never prices — the preparer holds NO Sales grant, and holds the Cari party
 #    read so the customer resolves by NAME: ASSUMPTION-LOG4B-3 below), the loader records
-#    loads, the reader only reads. The two Sales actors (seed only) hold the Sales names.
+#    loads, the reader only reads. The two Sales actors (seed, plus the AT-024 S-04 read) hold the Sales names.
 #    The shell publishes the Logistics list/detail to all three and the new-instruction screen to the
 #    preparer only. Nothing else is granted, no system role is touched.
+#  - AT-025 (user decision 2026-09-28): l04-operations holds ONLY the two operations work list reads (sales L-01,
+#    purchase L-09) plus the Cari, Sales-draft and purchase-order reads its rows and owner links need;
+#    l04-purchase-approver exists for the seed only (purchase order read + approve). Both disposable, GDC only.
 # Every value is synthetic (SENTETIK browser-suite:l04 …) and exists only in the run's disposable
 # database. Not a production grant, role or user.
 services:
   api:
     environment:
+      ProductRuntime__IssuerLocalUserId: b2000000-0000-4000-8000-000000000201
+      ProductRuntime__IssuerExternalIdentityId: b2100000-0000-4000-8000-000000000201
       BootstrapIdentity__Users__2__UserId: l04-preparer
       BootstrapIdentity__Users__2__DisplayName: SENTETIK browser-suite:l04 Logistics preparer
       BootstrapIdentity__Users__3__UserId: l04-loader
@@ -32,6 +38,10 @@ services:
       BootstrapIdentity__Users__5__DisplayName: SENTETIK browser-suite:l04 Sales preparer (seed only)
       BootstrapIdentity__Users__6__UserId: l04-sales-approver
       BootstrapIdentity__Users__6__DisplayName: SENTETIK browser-suite:l04 Sales approver (seed only)
+      BootstrapIdentity__Users__7__UserId: l04-operations
+      BootstrapIdentity__Users__7__DisplayName: SENTETIK browser-suite:l04 Operations work reader
+      BootstrapIdentity__Users__8__UserId: l04-purchase-approver
+      BootstrapIdentity__Users__8__DisplayName: SENTETIK browser-suite:l04 Purchase approver (seed only)
       IdentitySeed__Users__5__Id: b2000000-0000-4000-8000-000000000501
       IdentitySeed__Users__5__DisplayName: SENTETIK browser-suite:l04 Logistics preparer
       IdentitySeed__Users__5__ExternalIdentities__0__Id: b2100000-0000-4000-8000-000000000501
@@ -57,6 +67,11 @@ services:
       IdentitySeed__Users__9__ExternalIdentities__0__Id: b2100000-0000-4000-8000-000000000505
       IdentitySeed__Users__9__ExternalIdentities__0__Issuer: urn:goymen:development-bootstrap
       IdentitySeed__Users__9__ExternalIdentities__0__Subject: l04-sales-approver
+      IdentitySeed__Users__10__Id: b2000000-0000-4000-8000-000000000201
+      IdentitySeed__Users__10__DisplayName: SENTETIK browser-suite:l04 Product issuer
+      IdentitySeed__Users__10__ExternalIdentities__0__Id: b2100000-0000-4000-8000-000000000201
+      IdentitySeed__Users__10__ExternalIdentities__0__Issuer: urn:goymen:development-bootstrap
+      IdentitySeed__Users__10__ExternalIdentities__0__Subject: l04-issuer
       IdentitySeed__Roles__5__Id: b3000000-0000-4000-8000-000000000501
       IdentitySeed__Roles__5__Code: BROWSER_L04_PREPARER
       IdentitySeed__Roles__5__Name: SENTETIK browser-suite:l04 yükleme talimatı hazırlayan rolü
@@ -74,6 +89,22 @@ services:
       IdentitySeed__Roles__6__IsSystem: "false"
       IdentitySeed__Roles__6__Permissions__0: logistics.loads.record
       IdentitySeed__Roles__6__Permissions__1: logistics.loading-instructions.read
+      # LOG-5 acceptance only: existing registered controls compose definite shipment in this disposable suite.
+      IdentitySeed__Roles__6__Permissions__2: logistics.shipments.record
+      IdentitySeed__Roles__6__Permissions__3: logistics.deliveries.record
+      IdentitySeed__Roles__6__Permissions__4: inventory.opening-stock.record
+      IdentitySeed__Roles__6__Permissions__5: inventory.labels.read
+      IdentitySeed__Roles__6__Permissions__6: inventory.balances.read
+      IdentitySeed__Roles__6__Permissions__7: inventory.physical-allocation.write
+      IdentitySeed__Roles__6__Permissions__8: product.operational-selection.read
+      # AT-053 (user decision 2026-09-28): the disposable loader alone records the manual weighbridge ticket.
+      IdentitySeed__Roles__6__Permissions__9: logistics.weighings.record
+      # AT-055 (disposable suite only): the loader, who records the definite shipment, prepares its dispatch-note draft.
+      IdentitySeed__Roles__6__Permissions__10: logistics.dispatch-notes.create
+      # AT-055 lifecycle (user decision 2026-09-30; disposable suite only): the same loader approves (system number, e-İrsaliye
+      # number) and cancels; the reader holds neither, so its cancel is a 403 in the journey.
+      IdentitySeed__Roles__6__Permissions__11: logistics.dispatch-notes.approve
+      IdentitySeed__Roles__6__Permissions__12: logistics.dispatch-notes.cancel
       IdentitySeed__Roles__7__Id: b3000000-0000-4000-8000-000000000503
       IdentitySeed__Roles__7__Code: BROWSER_L04_READER
       IdentitySeed__Roles__7__Name: SENTETIK browser-suite:l04 yükleme talimatı okuyan rolü
@@ -91,6 +122,9 @@ services:
       IdentitySeed__Roles__9__IsSystem: "false"
       IdentitySeed__Roles__9__Permissions__0: sales.orders.approve
       IdentitySeed__Roles__9__Permissions__1: sales.drafts.read
+      # AT-055 (disposable suite only): S-04 links the order's dispatch-note drafts to their instruction; following the
+      # link needs the Logistics instruction read. A read only; no Logistics write.
+      IdentitySeed__Roles__9__Permissions__2: logistics.loading-instructions.read
       IdentitySeed__Assignments__7__Id: b4000000-0000-4000-8000-000000000501
       IdentitySeed__Assignments__7__UserId: b2000000-0000-4000-8000-000000000501
       IdentitySeed__Assignments__7__RoleId: b3000000-0000-4000-8000-000000000501
@@ -131,3 +165,44 @@ services:
       IdentitySeed__Assignments__11__ApprovedByUserId: 20000000-0000-0000-0000-000000000003
       IdentitySeed__Assignments__11__Scopes__0__Type: Company
       IdentitySeed__Assignments__11__Scopes__0__Id: 10000000-0000-0000-0000-000000000001
+      IdentitySeed__Users__11__Id: b2000000-0000-4000-8000-000000000506
+      IdentitySeed__Users__11__DisplayName: SENTETIK browser-suite:l04 Operations work reader
+      IdentitySeed__Users__11__ExternalIdentities__0__Id: b2100000-0000-4000-8000-000000000506
+      IdentitySeed__Users__11__ExternalIdentities__0__Issuer: urn:goymen:development-bootstrap
+      IdentitySeed__Users__11__ExternalIdentities__0__Subject: l04-operations
+      IdentitySeed__Users__12__Id: b2000000-0000-4000-8000-000000000507
+      IdentitySeed__Users__12__DisplayName: SENTETIK browser-suite:l04 Purchase approver (seed only)
+      IdentitySeed__Users__12__ExternalIdentities__0__Id: b2100000-0000-4000-8000-000000000507
+      IdentitySeed__Users__12__ExternalIdentities__0__Issuer: urn:goymen:development-bootstrap
+      IdentitySeed__Users__12__ExternalIdentities__0__Subject: l04-purchase-approver
+      IdentitySeed__Roles__10__Id: b3000000-0000-4000-8000-000000000506
+      IdentitySeed__Roles__10__Code: BROWSER_L04_OPERATIONS
+      IdentitySeed__Roles__10__Name: SENTETIK browser-suite:l04 operasyon işleri okuyan rolü
+      IdentitySeed__Roles__10__IsSystem: "false"
+      IdentitySeed__Roles__10__Permissions__0: logistics.operations-work.sales.read
+      IdentitySeed__Roles__10__Permissions__1: logistics.operations-work.purchase.read
+      IdentitySeed__Roles__10__Permissions__2: counterparty.parties.read
+      IdentitySeed__Roles__10__Permissions__3: sales.drafts.read
+      IdentitySeed__Roles__10__Permissions__4: purchasing.orders.read
+      IdentitySeed__Roles__11__Id: b3000000-0000-4000-8000-000000000507
+      IdentitySeed__Roles__11__Code: BROWSER_L04_PURCHASE_APPROVER
+      IdentitySeed__Roles__11__Name: SENTETIK browser-suite:l04 satın alma onaylayan rolü (seed)
+      IdentitySeed__Roles__11__IsSystem: "false"
+      IdentitySeed__Roles__11__Permissions__0: purchasing.orders.read
+      IdentitySeed__Roles__11__Permissions__1: purchasing.orders.approve
+      IdentitySeed__Assignments__12__Id: b4000000-0000-4000-8000-000000000506
+      IdentitySeed__Assignments__12__UserId: b2000000-0000-4000-8000-000000000506
+      IdentitySeed__Assignments__12__RoleId: b3000000-0000-4000-8000-000000000506
+      IdentitySeed__Assignments__12__CompanyId: 10000000-0000-0000-0000-000000000001
+      IdentitySeed__Assignments__12__ValidFromUtc: "2026-01-01T00:00:00+00:00"
+      IdentitySeed__Assignments__12__ApprovedByUserId: 20000000-0000-0000-0000-000000000003
+      IdentitySeed__Assignments__12__Scopes__0__Type: Company
+      IdentitySeed__Assignments__12__Scopes__0__Id: 10000000-0000-0000-0000-000000000001
+      IdentitySeed__Assignments__13__Id: b4000000-0000-4000-8000-000000000507
+      IdentitySeed__Assignments__13__UserId: b2000000-0000-4000-8000-000000000507
+      IdentitySeed__Assignments__13__RoleId: b3000000-0000-4000-8000-000000000507
+      IdentitySeed__Assignments__13__CompanyId: 10000000-0000-0000-0000-000000000001
+      IdentitySeed__Assignments__13__ValidFromUtc: "2026-01-01T00:00:00+00:00"
+      IdentitySeed__Assignments__13__ApprovedByUserId: 20000000-0000-0000-0000-000000000003
+      IdentitySeed__Assignments__13__Scopes__0__Type: Company
+      IdentitySeed__Assignments__13__Scopes__0__Id: 10000000-0000-0000-0000-000000000001

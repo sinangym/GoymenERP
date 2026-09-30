@@ -8,9 +8,21 @@ public enum SalesDraftKind
     Order = 1,
 }
 
+/// <summary>
+/// The LIFECYCLE axis of an order (DEC-SAL-001: a separate axis from the internal approval; DURUM_MAKINELERI "Yaşam
+/// döngüsü: Taslak / Aktif / Kapalı / İptal"). Only the two states this code can reach exist: <see cref="Draft"/> (every
+/// order, approved or not — "Aktif"/"Kapalı" are not derived here) and <see cref="Cancelled"/> (DEC-SAL-005: an approved
+/// order cancelled after its impact preview; terminal, nothing deleted).
+/// </summary>
 public enum SalesDraftState
 {
     Draft = 1,
+
+    /// <summary>
+    /// DEC-SAL-005 / AT-007: the approved order was cancelled with a reason. Terminal: every mutation entry refuses it.
+    /// The approval axis keeps its facts (who approved stays who approved); the lines, revisions and schedules stay.
+    /// </summary>
+    Cancelled = 2,
 }
 
 /// <summary>
@@ -154,7 +166,14 @@ public sealed class SalesOrderDraft
 
     public SalesDraftKind Kind => SalesDraftKind.Order;
 
-    public SalesDraftState State => SalesDraftState.Draft;
+    /// <summary>The lifecycle axis: <see cref="SalesDraftState.Draft"/> until a recorded cancellation (DEC-SAL-005).</summary>
+    public SalesDraftState State { get; private set; } = SalesDraftState.Draft;
+
+    /// <summary>DEC-SAL-005: the recorded cancellation (who, when, why, which revision); null while the order is not cancelled.</summary>
+    public CancellationFacts? Cancellation { get; private set; }
+
+    /// <summary>The technical bound of a cancellation reason: the note's, as the rejection reason's.</summary>
+    public const int MaximumCancellationReasonLength = MaximumNoteLength;
 
     /// <summary>The internal approval axis (SALES-A1); born <see cref="InternalApprovalState.Preparing"/>.</summary>
     public InternalApprovalState ApprovalState { get; private set; } = InternalApprovalState.Preparing;
@@ -185,7 +204,23 @@ public sealed class SalesOrderDraft
     /// </summary>
     public long Version { get; private set; } = 1;
 
-    public SalesDraftHeader Header { get; }
+    /// <summary>The header facts; only its requested delivery date may move, through <see cref="RescheduleDelivery"/> (DEC-SAL-003).</summary>
+    public SalesDraftHeader Header { get; private set; }
+
+    private readonly List<DeliveryScheduleSnapshot> deliverySchedules = [];
+
+    /// <summary>Schedule 0: the delivery dates as the draft was created; captured before the first recorded change.</summary>
+    private DeliveryScheduleSnapshot? originalSchedule;
+
+    /// <summary>
+    /// DEC-SAL-003: the recorded delivery-schedule changes, oldest first (schedule 1, 2, ...); empty until a planner moved a
+    /// date. Each holds the complete dates after its change; the draft's current dates are the last one's.
+    /// </summary>
+    public IReadOnlyList<DeliveryScheduleSnapshot> DeliverySchedules => deliverySchedules.AsReadOnly();
+
+    /// <summary>The schedule history as shown: schedule 0 (as created) followed by every recorded change.</summary>
+    public IReadOnlyList<DeliveryScheduleSnapshot> DeliveryScheduleHistory =>
+        [originalSchedule ?? CurrentSchedule(0, null, null), .. deliverySchedules];
 
     public MoneyProfileSnapshot Money { get; }
 
@@ -485,6 +520,110 @@ public sealed class SalesOrderDraft
         Touch(now);
     }
 
+    // ---- cancellation of an approved order (DEC-SAL-005, AT-007) ---------------------------------
+
+    /// <summary>
+    /// DEC-SAL-005 (KILITLI): "Sipariş iptalinde aktif tahsis, bağlı satın alma/üretim, irsaliyesiz yükleme, faturalanmamış
+    /// irsaliye ve eşleşmemiş avans/dekont etkisi gösterilir" — "Etki önizlemesi olmadan iptal yok". The domain half: the
+    /// lifecycle moves <c>Draft → Cancelled</c> for an APPROVED order only, with a required reason. What the owners hold
+    /// (allocations, loading, …) is NOT this aggregate's knowledge: the caller reads the impact through the owners' ports and
+    /// refuses the cancellation while any effect exists (the fail-closed reading of an undecided rule, README) BEFORE this
+    /// runs; nothing of another module is released or reversed here.
+    /// <list type="bullet">
+    /// <item><b>Only Approved:</b> a never-approved Rev.0 draft is withdrawn by its preparer (D2), not cancelled; a draft in
+    /// re-approval (Rev.N back in Preparing/PendingApproval/Rejected) has no approved revision in force, and whether it may
+    /// be cancelled is not decided — refused (<see cref="SalesRuleCodes.StateConflict"/>), never guessed.</item>
+    /// <item><b>History stays (AT-007):</b> the approval facts, the revision, the lines, the archived revisions and the
+    /// schedules do not move; only the lifecycle state, the cancellation facts and the version (one step) do.</item>
+    /// <item><b>Terminal:</b> a cancelled order refuses every mutation entry, this one included.</item>
+    /// </list>
+    /// </summary>
+    public CancellationFacts Cancel(long expectedVersion, string actorId, string? reason, CancellationImpactSnapshot impact,
+        DateTimeOffset now)
+    {
+        var actor = RequireActor(actorId);
+        var trimmedReason = RequireCancellable(expectedVersion, reason);
+        RequireImpact(impact);
+        var facts = new CancellationFacts(Revision, actor, now.ToUniversalTime(), trimmedReason, impact);
+        State = SalesDraftState.Cancelled;
+        Cancellation = facts;
+        Touch(now);
+        return facts;
+    }
+
+    /// <summary>
+    /// The cancellation's own preconditions WITHOUT the transition — the expected version, the lifecycle and approval state
+    /// and the reason — so the caller can refuse a stale or wrong-state command before it asks any owner for the impact.
+    /// Returns the trimmed reason. <see cref="Cancel"/> runs the same checks again (its word is final).
+    /// </summary>
+    public string RequireCancellable(long expectedVersion, string? reason)
+    {
+        RequireVersion(expectedVersion);
+        RequireNotCancelled("Sipariş zaten iptal edilmiş.");
+        if (ApprovalState != InternalApprovalState.Approved)
+        {
+            throw StateConflict("Yalnız onaylı sipariş iptal edilir; onaylanmamış taslak geri çekilir.");
+        }
+
+        var trimmedReason = string.IsNullOrWhiteSpace(reason) ? null : reason.Trim();
+        if (trimmedReason is null)
+        {
+            throw new SalesRuleException(SalesRuleCodes.CancellationReasonRequired, "İptal nedeni zorunludur.");
+        }
+
+        if (trimmedReason.Length > MaximumCancellationReasonLength)
+        {
+            throw new SalesRuleException(SalesRuleCodes.CancellationReasonTooLong,
+                $"İptal nedeni en fazla {MaximumCancellationReasonLength} karakterdir.");
+        }
+
+        return trimmedReason;
+    }
+
+    /// <summary>
+    /// The store's rebuild of the recorded cancellation, after the lines, the revisions and the schedules and BEFORE the
+    /// approval axis (whose version floor counts it as one step). It must name the current revision, an actor, a time and
+    /// a reason within the bound; a stored cancellation that does not fit is refused, not repaired.
+    /// </summary>
+    public void RestoreCancellation(CancellationFacts facts)
+    {
+        ArgumentNullException.ThrowIfNull(facts);
+        RequireApprovalNotRestored();
+        if (State != SalesDraftState.Draft || Cancellation is not null || facts.Revision != Revision
+            || string.IsNullOrWhiteSpace(facts.CancelledBy) || facts.CancelledBy.Length > MaximumActorLength
+            || string.IsNullOrWhiteSpace(facts.Reason) || facts.Reason.Length > MaximumCancellationReasonLength
+            || !IsImpact(facts.Impact))
+        {
+            throw new InvalidOperationException("Kayıtlı iptal olguları taslakla uyuşmuyor.");
+        }
+
+        State = SalesDraftState.Cancelled;
+        Cancellation = facts;
+    }
+
+    /// <summary>The impact the cancellation was decided on: a token and at least one source, each named once with a status.</summary>
+    private static void RequireImpact(CancellationImpactSnapshot impact)
+    {
+        if (!IsImpact(impact))
+        {
+            throw new ArgumentException("İptal, kullanıcının gördüğü etki önizlemesiyle (belirteç ve kaynaklar) kaydedilir.", nameof(impact));
+        }
+    }
+
+    private static bool IsImpact(CancellationImpactSnapshot? impact) =>
+        impact is not null && !string.IsNullOrWhiteSpace(impact.Token) && impact.Token.Length <= 128
+        && impact.Sources is { Count: > 0 }
+        && impact.Sources.All(entry => entry is not null && !string.IsNullOrWhiteSpace(entry.Source) && !string.IsNullOrWhiteSpace(entry.Status))
+        && impact.Sources.Select(entry => entry.Source).Distinct(StringComparer.Ordinal).Count() == impact.Sources.Count;
+
+    private void RequireNotCancelled(string message)
+    {
+        if (State == SalesDraftState.Cancelled)
+        {
+            throw new SalesRuleException(SalesRuleCodes.StateConflict, $"{message} (yaşam döngüsü: {State}).");
+        }
+    }
+
     // ---- commercial revision (K3 Head B, Sinan 5748258299) --------------------------------------
 
     /// <summary>
@@ -508,6 +647,8 @@ public sealed class SalesOrderDraft
         ArgumentNullException.ThrowIfNull(inputs);
         // Not RequireDraft(): that guard closes the lines of an approved draft (DEC-SAL-002), and THIS command is the
         // revision that decision points to. Only the lifecycle state is required here; the approval axis is decided below.
+        // DEC-SAL-005: a cancelled order is terminal - no revision re-opens it for approval (a 409, like Withdrawn).
+        RequireNotCancelled("İptal edilmiş siparişin fiyatı değiştirilmez.");
         if (State != SalesDraftState.Draft)
         {
             throw new SalesRuleException(SalesRuleCodes.DraftNotDraft, "Yalnız taslak değiştirilebilir.");
@@ -579,6 +720,299 @@ public sealed class SalesOrderDraft
         return archived;
     }
 
+    // ---- quantity revision (DEC-SAL-002, AT-023) -------------------------------------------------
+
+    /// <summary>The technical bound of a revision reason: the note's, as the rejection and cancellation reasons'.</summary>
+    public const int MaximumRevisionReasonLength = MaximumNoteLength;
+
+    /// <summary>
+    /// DEC-SAL-002 (KILITLI, verbatim): "Cari, ürün, miktar, fiyat, iskonto, para, vade ve risk istisnası değişirse yeni
+    /// revizyon ve yeniden onay gerekir." — "Rev.0 korunur". AT-023: "Onaylı siparişte kritik satır değişikliği eski onayı
+    /// geçersizleştirir." Replaces the ordered QUANTITY of every line — each current line named exactly once, no other — with
+    /// a required reason, under the caller's quantity-write fence. The price revision's shape, step for step:
+    /// <list type="bullet">
+    /// <item>From <c>Preparing</c> or <c>Rejected</c> the quantities simply change (nothing approved is touched; the revision
+    /// number stays). From <c>Approved</c> the approved revision is archived FIRST — its approval facts, money profile, every
+    /// line's quantity text and commercial values as they were, and WHY it is superseded — and only then does the draft
+    /// advance to the next revision, back to <c>Preparing</c> with no approval facts: the changed quantity re-enters
+    /// approval, the previous approved snapshot is never deleted. <c>PendingApproval</c>, <c>Withdrawn</c> and a cancelled
+    /// order are refused (<see cref="SalesRuleCodes.StateConflict"/>).</item>
+    /// <item>Ö2 per line in its OWN order unit (never converted, never rounded); the text must be the value.</item>
+    /// <item>The delivery plan is NOT re-split (DEC-SAL-003's dates-only update does not cover quantities, and no decision
+    /// says how a plan follows a quantity): a new quantity below the line's planned slices is
+    /// <see cref="SalesRuleCodes.SlicesExceedQuantity"/> on that line — a technical scope limit, not a policy.</item>
+    /// <item>A revision that changes no line's value is refused (<see cref="SalesRuleCodes.RevisionNoChange"/>): an approval
+    /// is never discarded for nothing. A value-equal text ("12.50" for 12.5) is no change and keeps the stored text.</item>
+    /// </list>
+    /// What other modules hold for the order (allocations, loading lines) is NOT this aggregate's knowledge: the caller reads
+    /// the owners and refuses while any record exists, BEFORE this runs (the cancellation's fail-closed reading). Returns the
+    /// archived snapshot when one was made (the store persists it in the same save as the draft), else null.
+    /// </summary>
+    public ApprovedRevisionSnapshot? ReviseQuantities(long expectedVersion, IReadOnlyList<LineQuantityInput> inputs, string actorId,
+        string? reason, DateTimeOffset now)
+    {
+        var actor = RequireActor(actorId);
+        var trimmedReason = RequireQuantityRevisable(expectedVersion, reason);
+        ArgumentNullException.ThrowIfNull(inputs);
+
+        if (inputs.Count != lines.Count || inputs.Any(input => input is null)
+            || inputs.Select(input => input.LineId).Distinct().Count() != inputs.Count
+            || inputs.Any(input => lines.All(line => line.Id != input.LineId)))
+        {
+            throw new SalesRuleException(SalesRuleCodes.RevisionLinesMismatch,
+                "Miktar revizyonu taslağın her satırını tam bir kez adlandırır; başka satır adlandıramaz.");
+        }
+
+        var replacements = new List<(SalesOrderDraftLine Line, Quantity Quantity, string Text)>(inputs.Count);
+        foreach (var input in inputs)
+        {
+            var line = lines.Single(candidate => candidate.Id == input.LineId);
+            Quantity quantity;
+            try
+            {
+                quantity = RequireQuantity(input.Quantity, line.OrderUnit);
+                RequireQuantityText(input.QuantityText, input.Quantity);
+                var planned = line.RequestedDeliverySlices.Aggregate(Quantity.Zero(quantity.Unit), (sum, slice) => sum.Add(slice.Quantity));
+                if (planned.IsGreaterThan(quantity))
+                {
+                    throw new SalesRuleException(SalesRuleCodes.SlicesExceedQuantity,
+                        "Yeni miktar satırın termin dilimlerinin toplamından küçük; dilimler bu revizyonda yeniden bölünmez.");
+                }
+            }
+            catch (SalesRuleException exception) when (exception.LineId is null)
+            {
+                // The same rule, now naming the line it is about (the caller answers lines[i].quantity).
+                throw new SalesRuleException(exception.Code, exception.Message, line.Id);
+            }
+
+            replacements.Add((line, quantity, input.QuantityText));
+        }
+
+        if (replacements.All(entry => entry.Line.Quantity.Value == entry.Quantity.Value))
+        {
+            throw new SalesRuleException(SalesRuleCodes.RevisionNoChange,
+                "Miktar revizyonu hiçbir satırın miktarını değiştirmiyor; onay boşuna düşürülmez.");
+        }
+
+        ApprovedRevisionSnapshot? archived = null;
+        if (ApprovalState == InternalApprovalState.Approved)
+        {
+            // The approved revision as it stands, archived BEFORE anything of it changes — with the reason it is superseded.
+            archived = new ApprovedRevisionSnapshot(Revision, Approval, Money.ProfileId, Money.ProfileVersion, Money.Scale,
+                now.ToUniversalTime(), actor,
+                [.. lines.Select(line => new RevisionLineSnapshot(line.Id, line.LineNo, line.Product.ProductId, line.Product.ProductVersion,
+                    line.OrderUnit.UnitId, line.QuantityText, line.Commercial))],
+                trimmedReason);
+            archivedRevisions.Add(archived);
+            Revision += 1;
+            ApprovalState = InternalApprovalState.Preparing;
+            Approval = ApprovalFacts.None;
+        }
+
+        foreach (var (line, quantity, text) in replacements)
+        {
+            // A value-equal text is no change: the stored text stays (Ö2 keeps the client's first spelling).
+            if (line.Quantity.Value != quantity.Value)
+            {
+                line.ReplaceQuantity(quantity, text);
+            }
+        }
+
+        Touch(now);
+        return archived;
+    }
+
+    /// <summary>
+    /// The quantity revision's own preconditions WITHOUT the change — the expected version, the lifecycle and approval state
+    /// and the reason — so the caller can refuse a stale or wrong-state command before it asks any owner (Inventory,
+    /// Logistics) what it holds. Returns the trimmed reason. <see cref="ReviseQuantities"/> runs the same checks again.
+    /// </summary>
+    public string RequireQuantityRevisable(long expectedVersion, string? reason)
+    {
+        RequireVersion(expectedVersion);
+        // Not RequireDraft(): that guard closes the lines of an approved draft (DEC-SAL-002), and THIS command is the
+        // revision that decision points to. DEC-SAL-005: a cancelled order is terminal (a 409, like Withdrawn).
+        RequireNotCancelled("İptal edilmiş siparişin miktarı değiştirilmez.");
+        if (State != SalesDraftState.Draft)
+        {
+            throw new SalesRuleException(SalesRuleCodes.DraftNotDraft, "Yalnız taslak değiştirilebilir.");
+        }
+
+        if (ApprovalState == InternalApprovalState.PendingApproval)
+        {
+            throw StateConflict("Onay bekleyen taslağın miktarı değiştirilmez; önce karar verilir.");
+        }
+
+        if (ApprovalState == InternalApprovalState.Withdrawn)
+        {
+            throw StateConflict("Geri çekilmiş taslak değiştirilmez.");
+        }
+
+        var trimmedReason = string.IsNullOrWhiteSpace(reason) ? null : reason.Trim();
+        if (trimmedReason is null)
+        {
+            throw new SalesRuleException(SalesRuleCodes.RevisionReasonRequired, "Revizyon gerekçesi zorunludur.");
+        }
+
+        if (trimmedReason.Length > MaximumRevisionReasonLength)
+        {
+            throw new SalesRuleException(SalesRuleCodes.RevisionReasonTooLong,
+                $"Revizyon gerekçesi en fazla {MaximumRevisionReasonLength} karakterdir.");
+        }
+
+        return trimmedReason;
+    }
+
+    /// <summary>
+    /// DEC-SAL-003 (KILITLI): "Termin üst bilgi, satır ve miktar dilimleriyle izlenir; termin güncellemesi planlama/sevkiyat
+    /// rolündedir ve yeniden onay gerektirmez, ancak auditlidir." A planner moves the requested delivery dates of the
+    /// header, of every line and of every slice the line already carries.
+    /// <list type="bullet">
+    /// <item><b>No re-approval:</b> the approval axis, its facts and the commercial revision do not move; only the
+    /// concurrency version advances (one step), so consumers keyed on the revision (loading, allocation) are untouched.</item>
+    /// <item><b>Dates only:</b> every current line is named exactly once and, for each, exactly its current slice ids; no
+    /// slice is added, removed or re-split, no quantity changes. Re-splitting is not in the decision's text; it is a
+    /// technical scope limit here, not a policy.</item>
+    /// <item><b>Any state but Withdrawn:</b> the decision names no state; a withdrawn draft is terminal at every mutation
+    /// entry (D2). A change that moves no date is refused (nothing empty is recorded).</item>
+    /// </list>
+    /// Returns the recorded schedule (the complete dates after the change) for the store to append.
+    /// </summary>
+    public DeliveryScheduleSnapshot RescheduleDelivery(long expectedVersion, DateOnly? requestedDeliveryDate,
+        IReadOnlyList<LineScheduleInput> inputs, string actorId, DateTimeOffset now)
+    {
+        RequireVersion(expectedVersion);
+        var actor = RequireActor(actorId);
+        ArgumentNullException.ThrowIfNull(inputs);
+        // DEC-SAL-005: a cancelled order is terminal at every mutation entry, its schedule included (a 409, like Withdrawn).
+        RequireNotCancelled("İptal edilmiş siparişin termini değiştirilmez.");
+        if (State != SalesDraftState.Draft)
+        {
+            throw new SalesRuleException(SalesRuleCodes.DraftNotDraft, "Yalnız taslak değiştirilebilir.");
+        }
+
+        if (ApprovalState == InternalApprovalState.Withdrawn)
+        {
+            throw StateConflict("Geri çekilmiş taslağın termini değiştirilmez.");
+        }
+
+        if (inputs.Count != lines.Count || inputs.Any(input => input is null)
+            || inputs.Select(input => input.LineId).Distinct().Count() != inputs.Count
+            || inputs.Any(input => lines.All(line => line.Id != input.LineId)))
+        {
+            throw new SalesRuleException(SalesRuleCodes.ScheduleLinesMismatch,
+                "Termin güncellemesi taslağın her satırını tam bir kez adlandırır; başka satır adlandıramaz.");
+        }
+
+        var plan = new List<(SalesOrderDraftLine Line, DateOnly? Date, Dictionary<Guid, DateOnly> Slices)>(inputs.Count);
+        foreach (var input in inputs)
+        {
+            var line = lines.Single(candidate => candidate.Id == input.LineId);
+            if (input.Slices is null)
+            {
+                throw new ArgumentException("Termin güncellemesi her satır için dilim listesi ister (boş olabilir).", nameof(inputs));
+            }
+
+            var sliceDates = new Dictionary<Guid, DateOnly>(input.Slices.Count);
+            foreach (var slice in input.Slices)
+            {
+                if (slice is null || !sliceDates.TryAdd(slice.SliceId, slice.RequestedDeliveryDate))
+                {
+                    throw new SalesRuleException(SalesRuleCodes.ScheduleSlicesMismatch,
+                        "Termin güncellemesi satırın her dilimini tam bir kez adlandırır.", line.Id);
+                }
+            }
+
+            if (sliceDates.Count != line.RequestedDeliverySlices.Count
+                || line.RequestedDeliverySlices.Any(slice => !sliceDates.ContainsKey(slice.SliceId)))
+            {
+                throw new SalesRuleException(SalesRuleCodes.ScheduleSlicesMismatch,
+                    "Termin güncellemesi yalnız tarihleri değiştirir: satırın mevcut dilimleri aynen adlandırılır; dilim eklenmez, silinmez, bölünmez.",
+                    line.Id);
+            }
+
+            plan.Add((line, input.RequestedDeliveryDate, sliceDates));
+        }
+
+        var unchanged = Header.RequestedDeliveryDate == requestedDeliveryDate
+            && plan.All(entry => entry.Line.RequestedDeliveryDate == entry.Date
+                && entry.Line.RequestedDeliverySlices.All(slice => entry.Slices[slice.SliceId] == slice.RequestedDeliveryDate));
+        if (unchanged)
+        {
+            throw new SalesRuleException(SalesRuleCodes.ScheduleNoChange, "Termin güncellemesi hiçbir tarihi değiştirmiyor.");
+        }
+
+        originalSchedule ??= CurrentSchedule(0, null, null);
+        Header = Header with { RequestedDeliveryDate = requestedDeliveryDate };
+        foreach (var (line, date, sliceDates) in plan)
+        {
+            line.Reschedule(date, sliceDates);
+        }
+
+        var recorded = CurrentSchedule(deliverySchedules.Count + 1, actor, now.ToUniversalTime());
+        deliverySchedules.Add(recorded);
+        Touch(now);
+        return recorded;
+    }
+
+    /// <summary>
+    /// The store's rebuild of one recorded delivery schedule, oldest first, BEFORE the approval axis (its version floor
+    /// counts one step per schedule). The schedule must be the next number and name exactly the draft's lines and slices
+    /// (ids, positions, quantity texts); its dates are then the draft's current dates. A stored schedule that does not fit
+    /// is refused, not repaired.
+    /// </summary>
+    public void RestoreDeliverySchedule(DeliveryScheduleSnapshot schedule)
+    {
+        ArgumentNullException.ThrowIfNull(schedule);
+        RequireApprovalNotRestored();
+        if (schedule.ScheduleNo != deliverySchedules.Count + 1 || string.IsNullOrWhiteSpace(schedule.ChangedBy)
+            || schedule.ChangedAtUtc is null || schedule.Lines is null || schedule.Lines.Count != lines.Count)
+        {
+            throw new InvalidOperationException("Kayıtlı termin geçmişi taslakla uyuşmuyor.");
+        }
+
+        var plan = new List<(SalesOrderDraftLine Line, LineScheduleSnapshot Stored)>(lines.Count);
+        foreach (var line in lines)
+        {
+            var stored = schedule.Lines.SingleOrDefault(candidate => candidate?.LineId == line.Id);
+            if (stored is null || stored.LineNo != line.LineNo || stored.Slices is null
+                || stored.Slices.Count != line.RequestedDeliverySlices.Count)
+            {
+                throw new InvalidOperationException("Kayıtlı termin satırları taslağın satırlarıyla uyuşmuyor.");
+            }
+
+            for (var index = 0; index < line.RequestedDeliverySlices.Count; index++)
+            {
+                var slice = line.RequestedDeliverySlices[index];
+                var storedSlice = stored.Slices.SingleOrDefault(candidate => candidate?.SliceNo == index + 1);
+                if (storedSlice is null || storedSlice.SliceId != slice.SliceId
+                    || !string.Equals(storedSlice.QuantityText, slice.QuantityText, StringComparison.Ordinal))
+                {
+                    throw new InvalidOperationException("Kayıtlı termin dilimleri satırın dilimleriyle uyuşmuyor.");
+                }
+            }
+
+            plan.Add((line, stored));
+        }
+
+        originalSchedule ??= CurrentSchedule(0, null, null);
+        Header = Header with { RequestedDeliveryDate = schedule.RequestedDeliveryDate };
+        foreach (var (line, stored) in plan)
+        {
+            line.Reschedule(stored.RequestedDeliveryDate,
+                stored.Slices.ToDictionary(slice => slice.SliceId, slice => slice.RequestedDeliveryDate));
+        }
+
+        deliverySchedules.Add(schedule);
+    }
+
+    /// <summary>The draft's delivery dates as they stand now, as schedule <paramref name="scheduleNo"/>.</summary>
+    private DeliveryScheduleSnapshot CurrentSchedule(int scheduleNo, string? changedBy, DateTimeOffset? changedAtUtc) =>
+        new(scheduleNo, Header.RequestedDeliveryDate, changedBy, changedAtUtc,
+            [.. lines.Select(line => new LineScheduleSnapshot(line.Id, line.LineNo, line.RequestedDeliveryDate,
+                [.. line.RequestedDeliverySlices.Select((slice, index) =>
+                    new SliceScheduleSnapshot(slice.SliceId, index + 1, slice.QuantityText, slice.RequestedDeliveryDate))]))]);
+
     /// <summary>The store's rebuild of the stored revision number (no transition; a negative number is refused).</summary>
     /// <summary>
     /// D2: who created the draft, as stored — restored by the store (the envelope's actor at the create), never set by
@@ -640,7 +1074,8 @@ public sealed class SalesOrderDraft
         var expected = archivedRevisions.Count == 0 ? 0 : archivedRevisions[^1].Revision + 1;
         if (snapshot.Revision != expected || snapshot.Revision >= Revision
             || snapshot.Approval.DecidedBy is null || snapshot.Approval.DecidedAtUtc is null || snapshot.Approval.RejectionReason is not null
-            || snapshot.Lines.Count == 0 || string.IsNullOrWhiteSpace(snapshot.ArchivedBy))
+            || snapshot.Lines.Count == 0 || string.IsNullOrWhiteSpace(snapshot.ArchivedBy)
+            || (snapshot.Reason is { } reason && (string.IsNullOrWhiteSpace(reason) || reason.Length > MaximumRevisionReasonLength)))
         {
             throw new InvalidOperationException("Kayıtlı revizyon geçmişi taslakla uyuşmuyor.");
         }
@@ -710,7 +1145,18 @@ public sealed class SalesOrderDraft
             _ => 2,
         };
         var archivedTransitions = checked(3L * archivedRevisions.Count);
-        var consistentVersion = storedVersion >= checked(Version + minimumTransitions + archivedTransitions);
+        // DEC-SAL-003: every recorded delivery-schedule change was exactly one step of its own (restored just before this).
+        var scheduleTransitions = (long)deliverySchedules.Count;
+        // DEC-SAL-005: a recorded cancellation was one step of its own, and only an APPROVED order is ever cancelled - a
+        // stored cancellation beside any other approval state is refused, not repaired.
+        if (State == SalesDraftState.Cancelled && state != InternalApprovalState.Approved)
+        {
+            throw new InvalidOperationException("Kayıtlı iptal yalnız onaylı bir siparişin yanında durur.");
+        }
+
+        var cancellationTransitions = State == SalesDraftState.Cancelled ? 1L : 0L;
+        var consistentVersion = storedVersion >= checked(Version + minimumTransitions + archivedTransitions + scheduleTransitions
+            + cancellationTransitions);
         if (!consistentVersion)
         {
             throw new InvalidOperationException("Kayıtlı sürüm, satırların ve onay geçişlerinin hesabıyla uyuşmuyor.");

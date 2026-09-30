@@ -8,12 +8,17 @@ public sealed record CompanySummary(
     string LegalName,
     bool IsPlaceholder);
 
+/// <param name="Version">
+/// The site's optimistic-concurrency version (starts at 1, moves once per accepted change) — the
+/// <c>expectedVersion</c> a site edit (<c>PUT /organization/sites/{id}</c>) sends back.
+/// </param>
 public sealed record SiteSummary(
     Guid Id,
     string Code,
     string Name,
     string Type,
-    bool IsActive);
+    bool IsActive,
+    long Version);
 
 public sealed record LocationSummary(
     Guid Id,
@@ -37,6 +42,26 @@ public sealed record WorkCenterSummary(
     string Name,
     string Kind,
     bool IsActive,
+    bool CanOpenLocationDetail);
+
+/// <summary>
+/// ORG-04 — one work center's read-only card (W1-ORG / AV-01, Business #66 5702892195). The work-centre row's
+/// facts plus the record's own <paramref name="Version"/>, kept lossless for a later stale check and never a
+/// command authority here (the card writes nothing). No capacity, shift, load, ownership or location label: the
+/// Organization record carries none, and a location's name is its own read.
+/// </summary>
+/// <param name="CanOpenLocationDetail">
+/// The same answer as <see cref="WorkCenterSummary.CanOpenLocationDetail"/>, computed by the same predicate: true
+/// exactly when <c>GET /organization/locations/{LocationId}</c> would answer 200 for this caller.
+/// </param>
+public sealed record WorkCenterDetail(
+    Guid Id,
+    Guid LocationId,
+    string Code,
+    string Name,
+    string Kind,
+    bool IsActive,
+    long Version,
     bool CanOpenLocationDetail);
 
 public sealed record PageResult<T>(
@@ -66,6 +91,8 @@ public enum CommandResult
     NotFound = 2,
     VersionConflict = 3,
     IdempotencyConflict = 4,
+    Created = 5,
+    CodeInUse = 6,
 }
 
 public sealed record CommandExecutionResult(
@@ -81,7 +108,8 @@ public sealed record CommandResponseSnapshot(
     int StatusCode,
     string? Title,
     string? Detail,
-    VersionConflictSnapshot? Conflict = null);
+    VersionConflictSnapshot? Conflict = null,
+    OrganizationCreatedRecord? Created = null);
 
 public sealed record VersionConflictSnapshot(
     long ExpectedVersion,
@@ -111,8 +139,26 @@ public static class CommandResponses
                 409,
                 "Idempotency-Key çakışması.",
                 "Aynı Idempotency-Key farklı bir komut içeriği veya kullanıcıyla tekrar kullanılamaz."),
+            CommandResult.CodeInUse => new CommandResponseSnapshot(
+                result,
+                422,
+                "Kod kullanımda.",
+                "Bu kod şirketteki başka bir kayıtta kullanılıyor; farklı bir kod girin."),
+            CommandResult.Created => throw new ArgumentException(
+                "Created cevabı oluşturulan kaydın kimliğini ve sürümünü içermelidir.",
+                nameof(result)),
             _ => throw new ArgumentOutOfRangeException(nameof(result), result, null),
         };
+    }
+
+    public static CommandResponseSnapshot Created(Guid id, long version)
+    {
+        return new CommandResponseSnapshot(
+            CommandResult.Created,
+            201,
+            null,
+            null,
+            Created: new OrganizationCreatedRecord(id, version));
     }
 
     public static CommandResponseSnapshot VersionConflict(

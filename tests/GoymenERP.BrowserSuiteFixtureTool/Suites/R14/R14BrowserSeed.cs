@@ -11,12 +11,38 @@ namespace GoymenERP.BrowserSuiteFixtureTool.Suites.R14;
 /// R14 materializes Product's fixed stock candidate through its gated owner port, then resolves one
 /// active non-external GDC location through Organization's real public read. The opening count itself
 /// is never seeded: the browser records it through the real Inventory command.
+/// <para>
+/// R19 split/merge (user decision 2026-09-27): <c>inventory.label-transformation.record</c> is held ONLY by the
+/// disposable <see cref="TransformerActor"/> of this per-run database (its role comes from
+/// infra/browser-suites/r14.override.yml); no real user and no seeded role holds it. This seed writes nothing for
+/// it: the R19 spec arranges its source label through the recorder's real opening command. The read-back pins the
+/// capability split: only the transformer is offered the label-detail split/merge control (the recorder, the denied
+/// actor and the arranger are not), and it is not offered the opening workspace.
+/// </para>
+/// <para>
+/// AT-037 stock count (user decision 2026-09-27): <c>inventory.stock-count.record</c> is held ONLY by the disposable
+/// <see cref="CounterActor"/> and <c>inventory.stock-count.approve</c> ONLY by the disposable
+/// <see cref="CountApproverActor"/> — two different actors, so maker ≠ checker is a fact of the grants as well as
+/// of the command. This seed writes nothing for them; the read-back pins that each is offered exactly its own
+/// control beside the label detail and no other r14 actor is offered either.
+/// </para>
+/// <para>
+/// ST-02 scrap write-off (the AT-037 pattern): <c>inventory.stock-scrap.record</c> is held ONLY by the disposable
+/// <see cref="ScrapperActor"/> and <c>inventory.stock-scrap.approve</c> ONLY by the disposable
+/// <see cref="ScrapApproverActor"/>; the read-back pins the same split, and that no other r14 actor (the stock
+/// counters included) is offered either scrap control.
+/// </para>
 /// </summary>
 public sealed class R14BrowserSeed : IBrowserSuiteFixture
 {
     public const string RecorderActor = "r14-recorder";
     public const string DeniedActor = "r14-denied";
     public const string ArrangerActor = "r14-arranger";
+    public const string TransformerActor = "r14-transformer";
+    public const string CounterActor = "r14-counter";
+    public const string CountApproverActor = "r14-count-approver";
+    public const string ScrapperActor = "r14-scrapper";
+    public const string ScrapApproverActor = "r14-scrap-approver";
 
     public static readonly Guid CompanyGdc = Guid.Parse("10000000-0000-0000-0000-000000000001");
     public static readonly Guid CompanyOther = Guid.Parse("10000000-0000-0000-0000-000000000002");
@@ -42,6 +68,11 @@ public sealed class R14BrowserSeed : IBrowserSuiteFixture
     private const string OpeningCapability = "inventory.opening-stock.record";
     private const string LabelDetailCapability = "inventory.stock-positions.list";
     private const string ProductDetailCapability = "product.items.detail";
+    private const string LabelTransformationCapability = "inventory.label-transformation.record";
+    private const string StockCountRecordCapability = "inventory.stock-count.record";
+    private const string StockCountApproveCapability = "inventory.stock-count.approve";
+    private const string StockScrapRecordCapability = "inventory.stock-scrap.record";
+    private const string StockScrapApproveCapability = "inventory.stock-scrap.approve";
 
     public string Suite => "r14";
 
@@ -136,11 +167,68 @@ public sealed class R14BrowserSeed : IBrowserSuiteFixture
             throw new InvalidOperationException("The R14 capability split does not match recorder and denied actors.");
         }
 
+        string[] transformerCapabilities = await CapabilitiesAsync(context, TransformerActor, cancellationToken);
+        string[] arrangerCapabilities = await CapabilitiesAsync(context, ArrangerActor, cancellationToken);
+        if (!transformerCapabilities.Contains(LabelDetailCapability, StringComparer.Ordinal)
+            || !transformerCapabilities.Contains(LabelTransformationCapability, StringComparer.Ordinal)
+            || transformerCapabilities.Contains(OpeningCapability, StringComparer.Ordinal)
+            || recorderCapabilities.Contains(LabelTransformationCapability, StringComparer.Ordinal)
+            || deniedCapabilities.Contains(LabelTransformationCapability, StringComparer.Ordinal)
+            || arrangerCapabilities.Contains(LabelTransformationCapability, StringComparer.Ordinal))
+        {
+            throw new InvalidOperationException(
+                "Only the disposable R19 transformer may hold the label split/merge control, beside the label detail.");
+        }
+
+        string[] counterCapabilities = await CapabilitiesAsync(context, CounterActor, cancellationToken);
+        string[] approverCapabilities = await CapabilitiesAsync(context, CountApproverActor, cancellationToken);
+        string[][] othersCapabilities =
+            [recorderCapabilities, deniedCapabilities, arrangerCapabilities, transformerCapabilities];
+        if (!counterCapabilities.Contains(LabelDetailCapability, StringComparer.Ordinal)
+            || !counterCapabilities.Contains(StockCountRecordCapability, StringComparer.Ordinal)
+            || counterCapabilities.Contains(StockCountApproveCapability, StringComparer.Ordinal)
+            || !approverCapabilities.Contains(LabelDetailCapability, StringComparer.Ordinal)
+            || !approverCapabilities.Contains(StockCountApproveCapability, StringComparer.Ordinal)
+            || approverCapabilities.Contains(StockCountRecordCapability, StringComparer.Ordinal)
+            || othersCapabilities.Any(capabilities =>
+                capabilities.Contains(StockCountRecordCapability, StringComparer.Ordinal)
+                || capabilities.Contains(StockCountApproveCapability, StringComparer.Ordinal)))
+        {
+            throw new InvalidOperationException(
+                "Only the disposable AT-037 counter may record and only the disposable count approver may decide a count.");
+        }
+
+        string[] scrapperCapabilities = await CapabilitiesAsync(context, ScrapperActor, cancellationToken);
+        string[] scrapApproverCapabilities = await CapabilitiesAsync(context, ScrapApproverActor, cancellationToken);
+        string[][] nonScrapCapabilities =
+        [
+            recorderCapabilities, deniedCapabilities, arrangerCapabilities, transformerCapabilities,
+            counterCapabilities, approverCapabilities,
+        ];
+        if (!scrapperCapabilities.Contains(LabelDetailCapability, StringComparer.Ordinal)
+            || !scrapperCapabilities.Contains(StockScrapRecordCapability, StringComparer.Ordinal)
+            || scrapperCapabilities.Contains(StockScrapApproveCapability, StringComparer.Ordinal)
+            || !scrapApproverCapabilities.Contains(LabelDetailCapability, StringComparer.Ordinal)
+            || !scrapApproverCapabilities.Contains(StockScrapApproveCapability, StringComparer.Ordinal)
+            || scrapApproverCapabilities.Contains(StockScrapRecordCapability, StringComparer.Ordinal)
+            || nonScrapCapabilities.Any(capabilities =>
+                capabilities.Contains(StockScrapRecordCapability, StringComparer.Ordinal)
+                || capabilities.Contains(StockScrapApproveCapability, StringComparer.Ordinal)))
+        {
+            throw new InvalidOperationException(
+                "Only the disposable scrapper may record and only the disposable scrap approver may decide a scrap.");
+        }
+
         return new Dictionary<string, string>(StringComparer.Ordinal)
         {
             ["recorderActor"] = RecorderActor,
             ["deniedActor"] = DeniedActor,
             ["arrangerActor"] = ArrangerActor,
+            ["transformerActor"] = TransformerActor,
+            ["counterActor"] = CounterActor,
+            ["countApproverActor"] = CountApproverActor,
+            ["scrapperActor"] = ScrapperActor,
+            ["scrapApproverActor"] = ScrapApproverActor,
             ["companyId"] = CompanyGdc.ToString("D"),
             ["otherCompanyId"] = CompanyOther.ToString("D"),
             ["locationId"] = locationId.ToString("D"),

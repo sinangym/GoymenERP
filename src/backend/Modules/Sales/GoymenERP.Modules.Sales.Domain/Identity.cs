@@ -101,6 +101,32 @@ public static class SalesRuleCodes
     public const string RevisionLinesMismatch = "sales_revision_lines_mismatch";
     /// <summary>A commercial revision that changes no value is refused: an approval is never discarded for nothing (ASSUMPTION-SALESP-5).</summary>
     public const string RevisionNoChange = "sales_revision_no_change";
+    /// <summary>
+    /// DEC-SAL-002 quantity revision: the change carries its reason (the task's "gerekçe ile"); a blank reason is refused,
+    /// never defaulted. The price revision keeps its own shape (no reason member), unchanged.
+    /// </summary>
+    public const string RevisionReasonRequired = "sales_revision_reason_required";
+    /// <summary>A revision reason over the technical bound (the note's) is refused, never cut.</summary>
+    public const string RevisionReasonTooLong = "sales_revision_reason_too_long";
+
+    /// <summary>DEC-SAL-003: a delivery-schedule update must name every current line exactly once and no other line.</summary>
+    public const string ScheduleLinesMismatch = "sales_schedule_lines_mismatch";
+    /// <summary>
+    /// DEC-SAL-003 dates-only scope: a delivery-schedule update names each line's CURRENT slices exactly (same ids,
+    /// none added or removed); the quantities are not re-split. Re-splitting is not in the decision's text and is not
+    /// invented here.
+    /// </summary>
+    public const string ScheduleSlicesMismatch = "sales_schedule_slices_mismatch";
+    /// <summary>A delivery-schedule update that changes no date is refused: no empty audited change is recorded.</summary>
+    public const string ScheduleNoChange = "sales_schedule_no_change";
+
+    /// <summary>
+    /// DEC-SAL-005 / AT-007: a cancellation carries its reason (the master report's "silme yok … sebep ile"); a blank
+    /// reason is refused, never defaulted.
+    /// </summary>
+    public const string CancellationReasonRequired = "sales_cancellation_reason_required";
+    /// <summary>A cancellation reason over the technical bound (the note's) is refused, never cut.</summary>
+    public const string CancellationReasonTooLong = "sales_cancellation_reason_too_long";
 
     public const string TooManySlices = "sales_too_many_slices";
     public const string DuplicateSliceId = "sales_duplicate_slice_id";

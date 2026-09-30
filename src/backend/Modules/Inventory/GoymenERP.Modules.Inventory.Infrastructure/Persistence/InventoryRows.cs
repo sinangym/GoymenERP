@@ -216,6 +216,30 @@ internal sealed class AllocationRow : IInventoryTenantRow
 }
 
 /// <summary>
+/// INV-AL-1 change: one append-only history fact of an allocation change. A resize names the same allocation as
+/// source and target (its version moved from <see cref="SourceVersion"/> to <see cref="SourceVersion"/> + 1); a move
+/// names the released source and the new target allocation (version 1). Kilograms are the remaining kilograms before
+/// (source) and after (target). One change per source version: (company, source allocation, source version) is unique.
+/// </summary>
+internal sealed class AllocationChangeRow : IInventoryTenantRow
+{
+    public Guid Id { get; set; }
+    public Guid CompanyId { get; set; }
+    public int Kind { get; set; }
+    public Guid SourceAllocationId { get; set; }
+    public long SourceVersion { get; set; }
+    public Guid SourceLabelId { get; set; }
+    public decimal SourceRemainingKg { get; set; }
+    public Guid TargetAllocationId { get; set; }
+    public Guid TargetLabelId { get; set; }
+    public decimal TargetRemainingKg { get; set; }
+    public string Reason { get; set; } = string.Empty;
+    public string ChangedBy { get; set; } = string.Empty;
+    public string CorrelationId { get; set; } = string.Empty;
+    public DateTimeOffset ChangedAtUtc { get; set; }
+}
+
+/// <summary>
 /// One unpublished Inventory-owned event stored in the producer transaction. This slice has no
 /// dispatcher and never mutates publication state; the row is append-only.
 /// </summary>
@@ -304,4 +328,96 @@ internal sealed class InventoryCommandRow : IInventoryTenantRow
     public string ResultJson { get; set; } = string.Empty;
     public string CorrelationId { get; set; } = string.Empty;
     public DateTimeOffset RecordedAtUtc { get; set; }
+}
+
+/// <summary>
+/// ST-05 / AT-037: one physical count of one stocked label (DEC-STK-007). The counted position, the label version
+/// and book kg the counter saw, the counted kg and the mandatory reason are kept exactly as recorded; a count
+/// changes no stock. <see cref="PayloadHash"/> is the canonical request, so the same id again is a replay or a
+/// conflict. The recorder is kept for the fail-closed maker≠checker rule and the audit. Append-only.
+/// </summary>
+internal sealed class StockCountRow : IInventoryTenantRow
+{
+    public Guid Id { get; set; }
+    public Guid CompanyId { get; set; }
+    public Guid LabelId { get; set; }
+    public long LabelVersion { get; set; }
+    public int OwnerKind { get; set; }
+    public Guid OwnerId { get; set; }
+    public int CustodianKind { get; set; }
+    public Guid CustodianId { get; set; }
+    public Guid LocationId { get; set; }
+    public Guid ProductId { get; set; }
+    public int Block { get; set; }
+    public decimal BookKg { get; set; }
+    public decimal CountedKg { get; set; }
+    public DateTimeOffset CountedAtUtc { get; set; }
+    public string Reason { get; set; } = string.Empty;
+    public string PayloadHash { get; set; } = string.Empty;
+    public DateTimeOffset RecordedAtUtc { get; set; }
+    public string RecordedBy { get; set; } = string.Empty;
+    public string CorrelationId { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// The one decision on a count difference: approved with the adjustment movement it posted (the schema requires
+/// that movement), or rejected with none. The key (company, count) allows exactly one decision. Append-only.
+/// </summary>
+internal sealed class StockCountDecisionRow : IInventoryTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public Guid CountId { get; set; }
+    public int Decision { get; set; }
+    public string Reason { get; set; } = string.Empty;
+    public Guid? MovementId { get; set; }
+    public string PayloadHash { get; set; } = string.Empty;
+    public DateTimeOffset DecidedAtUtc { get; set; }
+    public string DecidedBy { get; set; } = string.Empty;
+    public string CorrelationId { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// ST-02 scrap write-off: part or all of one stocked label recorded as scrap. The scrapped position, the label
+/// version and book kg the recorder saw, the scrap kg and the mandatory reason are kept exactly as recorded; a
+/// recorded scrap changes no stock. <see cref="PayloadHash"/> is the canonical request, so the same id again is a
+/// replay or a conflict. The recorder is kept for the fail-closed maker≠checker rule and the audit. Append-only.
+/// </summary>
+internal sealed class StockScrapRow : IInventoryTenantRow
+{
+    public Guid Id { get; set; }
+    public Guid CompanyId { get; set; }
+    public Guid LabelId { get; set; }
+    public long LabelVersion { get; set; }
+    public int OwnerKind { get; set; }
+    public Guid OwnerId { get; set; }
+    public int CustodianKind { get; set; }
+    public Guid CustodianId { get; set; }
+    public Guid LocationId { get; set; }
+    public Guid ProductId { get; set; }
+    public int Block { get; set; }
+    public decimal BookKg { get; set; }
+    public decimal ScrapKg { get; set; }
+    public DateTimeOffset ScrappedAtUtc { get; set; }
+    public string Reason { get; set; } = string.Empty;
+    public string PayloadHash { get; set; } = string.Empty;
+    public DateTimeOffset RecordedAtUtc { get; set; }
+    public string RecordedBy { get; set; } = string.Empty;
+    public string CorrelationId { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// The one decision on a scrap: approved with the scrap movement it posted (the schema requires that movement), or
+/// rejected with none. The key (company, scrap) allows exactly one decision. Append-only.
+/// </summary>
+internal sealed class StockScrapDecisionRow : IInventoryTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public Guid ScrapId { get; set; }
+    public int Decision { get; set; }
+    public string Reason { get; set; } = string.Empty;
+    public Guid? MovementId { get; set; }
+    public string PayloadHash { get; set; } = string.Empty;
+    public DateTimeOffset DecidedAtUtc { get; set; }
+    public string DecidedBy { get; set; } = string.Empty;
+    public string CorrelationId { get; set; } = string.Empty;
 }

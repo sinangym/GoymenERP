@@ -95,7 +95,8 @@ describe('C-02 route and capability (G-002 check 5)', () => {
     await findStateBlock('not-found')
     expect(screen.queryByRole('heading', HEADING)).toBeNull()
     expect(screen.queryByRole('link', { name: 'Yeni Cari' })).toBeNull()
-    expect(screen.queryByRole('textbox')).toBeNull()
+    // Inside <main>: the shell toolbar's global search box (AT-002) is not this route's content.
+    expect(within(screen.getByRole('main')).queryByRole('textbox')).toBeNull()
     expect(fetchLog.calls.some((c) => c.url.includes('/counterparties'))).toBe(false)
   })
 
@@ -108,7 +109,8 @@ describe('C-02 route and capability (G-002 check 5)', () => {
     expect(kindSelect().getAttribute('aria-required')).toBe('true')
     expect(legalNameInput().getAttribute('aria-required')).toBe('true')
     expect(tradeNameInput().hasAttribute('required')).toBe(false)
-    expect(screen.getAllByRole('textbox')).toHaveLength(2)
+    // Inside <main>: the shell toolbar's global search box (AT-002) is not one of the form's fields.
+    expect(within(screen.getByRole('main')).getAllByRole('textbox')).toHaveLength(2)
     expect(screen.getAllByRole('checkbox').map((c) => c.getAttribute('id'))).toEqual([
       'cari-create-role-customer',
       'cari-create-role-supplier',

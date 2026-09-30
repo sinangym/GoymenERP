@@ -69,6 +69,11 @@ public sealed record GroupSharedAuditEventEnvelope(
             // #329 (DEC-PRD-010): the card approval raises the version by one, like the draft edit.
             "Activate" => EventType == "product.card.activated.v1" && PermissionCode == "product.card.activate"
                 && EntityVersionBefore is >= 1 and < long.MaxValue && EntityVersionAfter == EntityVersionBefore + 1,
+            // DEC-CAR-003 / PRD-PERM-001 (#99): deactivation and reactivation raise the version by one as well.
+            "Deactivate" => EventType == "product.card.deactivated.v1" && PermissionCode == "product.card.deactivate"
+                && EntityVersionBefore is >= 1 and < long.MaxValue && EntityVersionAfter == EntityVersionBefore + 1,
+            "Reactivate" => EventType == "product.card.reactivated.v1" && PermissionCode == "product.card.reactivate"
+                && EntityVersionBefore is >= 1 and < long.MaxValue && EntityVersionAfter == EntityVersionBefore + 1,
             _ => false,
         };
         if (!validOperation) throw new ArgumentException("The Product audit operation/version transition is invalid.");

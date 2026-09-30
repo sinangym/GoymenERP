@@ -62,6 +62,45 @@ public static class SalesDraftProblemCodesV1
     /// <summary>503: an owner answered a malformed value (another company, another unit, an empty identity).</summary>
     public const string ReferenceProviderInvalid = "reference_provider_invalid";
 
+    /// <summary>
+    /// 503 (AT-024): the delivery owner (Logistics) is not composed or cannot answer the order's recorded deliveries; the
+    /// delivered and remaining quantities are then not shown, never assumed zero. Code-less on the wire.
+    /// </summary>
+    public const string DeliveryProviderUnavailable = "delivery_provider_unavailable";
+
+    /// <summary>
+    /// 503 (DEC-SAL-005): an impact owner that exists on main (Inventory allocations, Logistics loading) is not composed or
+    /// cannot answer at the cancel command; the order is not cancelled on an unread impact. Code-less on the wire.
+    /// </summary>
+    public const string CancellationImpactUnavailable = "cancellation_impact_unavailable";
+
+    /// <summary>
+    /// 409 (DEC-SAL-005, contract delta): an owner records an effect of the order (an active allocation, a loading-instruction
+    /// line) — the fail-closed reading refuses the cancellation; the field errors name each blocking source. Terminal for the
+    /// key (recorded, replayed): after the owner's record is resolved the user reads the preview again and cancels with a new key.
+    /// </summary>
+    public const string CancellationBlocked = "sales_cancellation_blocked";
+
+    /// <summary>
+    /// 409 (DEC-SAL-005, contract delta): the impact now differs from the preview the command names (its token): the order is
+    /// never cancelled on a preview the user did not see. Terminal for the key; the user reads the preview again.
+    /// </summary>
+    public const string CancellationImpactChanged = "sales_cancellation_impact_changed";
+
+    /// <summary>
+    /// 409 (DEC-SAL-002 quantity revision, contract delta): an owner records a link to the order's lines (an active allocation,
+    /// a loading-instruction line) that a changed quantity would leave inconsistent — the fail-closed reading refuses the
+    /// revision, exactly like the cancellation; the field errors name each blocking source. Terminal for the key (recorded,
+    /// replayed): after the owner's record is resolved in its own screen the user revises again with a new key.
+    /// </summary>
+    public const string RevisionBlocked = "sales_revision_blocked";
+
+    /// <summary>
+    /// 503 (DEC-SAL-002 quantity revision): an owner that can link a record to the order (Inventory allocations, Logistics
+    /// loading) is not composed or cannot answer; the quantity is not changed on an unread owner. Code-less on the wire.
+    /// </summary>
+    public const string RevisionImpactUnavailable = "revision_impact_unavailable";
+
     /// <summary>503: the Sales permission name is not registered in the central catalogue yet (setup, not a refusal).</summary>
     public const string PermissionUnregistered = "permission_unregistered";
 
@@ -101,4 +140,7 @@ public sealed record SalesDraftServiceBindings(
     string? ReadPermission = SalesPermissionManifestV1.DraftsRead,
     string? ApprovePermission = SalesPermissionManifestV1.OrdersApprove,
     string? PricePermission = SalesPermissionManifestV1.OrdersPriceWrite,
-    string? PriceReadPermission = SalesPermissionManifestV1.OrdersPriceRead);
+    string? PriceReadPermission = SalesPermissionManifestV1.OrdersPriceRead,
+    string? DeliverySchedulePermission = SalesPermissionManifestV1.OrdersDeliveryScheduleWrite,
+    string? CancelPermission = SalesPermissionManifestV1.OrdersCancel,
+    string? QuantityPermission = SalesPermissionManifestV1.OrdersQuantityWrite);

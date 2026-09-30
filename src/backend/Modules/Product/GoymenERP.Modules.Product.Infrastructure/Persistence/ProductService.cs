@@ -25,6 +25,9 @@ public sealed class ProductService(ProductReader reader, ProductCommandGateway g
     public Task<IReadOnlyList<ProductCodeGroup>> GetCodeGroupsAsync(CancellationToken cancellationToken) =>
         reader.GetCodeGroupsAsync(cancellationToken);
 
+    public Task<ProductDuplicateCandidates> GetDuplicateCandidatesAsync(ProductDuplicateQuery query,
+        CancellationToken cancellationToken) => reader.GetDuplicateCandidatesAsync(query, cancellationToken);
+
     public Task<ProductReferenceOptions> GetReferenceOptionsAsync(ProductReferenceQuery query, CancellationToken cancellationToken) =>
         reader.GetReferenceOptionsAsync(query, cancellationToken);
 
@@ -48,6 +51,20 @@ public sealed class ProductService(ProductReader reader, ProductCommandGateway g
         string idempotencyKey, CancellationToken cancellationToken)
     {
         var prepared = await gateway.PrepareActivateAsync(idempotencyKey, id, request, cancellationToken);
+        return await commands.RunAsync(prepared, cancellationToken);
+    }
+
+    public async Task<ProductMutationResponse> DeactivateAsync(Guid id, ChangeProductLifecycleRequest request,
+        string idempotencyKey, CancellationToken cancellationToken)
+    {
+        var prepared = await gateway.PrepareDeactivateAsync(idempotencyKey, id, request, cancellationToken);
+        return await commands.RunAsync(prepared, cancellationToken);
+    }
+
+    public async Task<ProductMutationResponse> ReactivateAsync(Guid id, ChangeProductLifecycleRequest request,
+        string idempotencyKey, CancellationToken cancellationToken)
+    {
+        var prepared = await gateway.PrepareReactivateAsync(idempotencyKey, id, request, cancellationToken);
         return await commands.RunAsync(prepared, cancellationToken);
     }
 }

@@ -330,6 +330,10 @@ partial class SalesDbContextModelSnapshot : ModelSnapshot
             b.Property<int>("MoneyScale")
                 .HasColumnType("int");
 
+            b.Property<string>("Reason")
+                .HasMaxLength(4000)
+                .HasColumnType("nvarchar(4000)");
+
             b.Property<DateTimeOffset>("SubmittedAtUtc")
                 .HasColumnType("datetimeoffset");
 
@@ -345,6 +349,8 @@ partial class SalesDbContextModelSnapshot : ModelSnapshot
                     t.HasCheckConstraint("CK_DraftRevisions_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [DraftId] <> '00000000-0000-0000-0000-000000000000' AND [Revision] >= 0 AND LEN([SubmittedBy]) > 0 AND LEN([ApprovedBy]) > 0 AND LEN([ArchivedBy]) > 0 AND LEN([CorrelationId]) > 0");
 
                     t.HasCheckConstraint("CK_DraftRevisions_Money", "[MoneyProfileId] <> '00000000-0000-0000-0000-000000000000' AND LEN([MoneyProfileVersion]) > 0 AND [MoneyScale] >= 0");
+
+                    t.HasCheckConstraint("CK_DraftRevisions_Reason", "[Reason] IS NULL OR LEN([Reason]) > 0");
                 });
         });
 
@@ -400,6 +406,130 @@ partial class SalesDbContextModelSnapshot : ModelSnapshot
                     "CK_DraftDeliverySlices_SliceNo",
                     "[SliceNo] >= 1");
             });
+        });
+
+        modelBuilder.Entity("GoymenERP.Modules.Sales.Infrastructure.Persistence.DraftCancellationRow", b =>
+        {
+            b.Property<Guid>("CompanyId")
+                .HasColumnType("uniqueidentifier");
+
+            b.Property<Guid>("DraftId")
+                .HasColumnType("uniqueidentifier");
+
+            b.Property<DateTimeOffset>("CancelledAtUtc")
+                .HasColumnType("datetimeoffset");
+
+            b.Property<string>("CancelledBy")
+                .IsRequired()
+                .HasMaxLength(128)
+                .HasColumnType("nvarchar(128)");
+
+            b.Property<string>("CorrelationId")
+                .IsRequired()
+                .HasMaxLength(128)
+                .HasColumnType("nvarchar(128)");
+
+            b.Property<long>("DraftVersion")
+                .HasColumnType("bigint");
+
+            b.Property<string>("ImpactJson")
+                .IsRequired()
+                .HasColumnType("nvarchar(max)");
+
+            b.Property<string>("ImpactToken")
+                .IsRequired()
+                .HasMaxLength(128)
+                .HasColumnType("nvarchar(128)");
+
+            b.Property<string>("Reason")
+                .IsRequired()
+                .HasMaxLength(4000)
+                .HasColumnType("nvarchar(4000)");
+
+            b.Property<int>("Revision")
+                .HasColumnType("int");
+
+            b.HasKey("CompanyId", "DraftId");
+
+            b.ToTable("DraftCancellations", "sales", t =>
+                {
+                    t.HasCheckConstraint("CK_DraftCancellations_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [DraftId] <> '00000000-0000-0000-0000-000000000000' AND [Revision] >= 0 AND [DraftVersion] >= 5 AND LEN([CancelledBy]) > 0 AND LEN([Reason]) > 0 AND LEN([ImpactToken]) > 0 AND LEN([CorrelationId]) > 0");
+
+                    t.HasCheckConstraint("CK_DraftCancellations_Impact", "ISJSON([ImpactJson]) = 1");
+                });
+        });
+
+        modelBuilder.Entity("GoymenERP.Modules.Sales.Infrastructure.Persistence.DraftDeliveryScheduleDateRow", b =>
+        {
+            b.Property<Guid>("CompanyId")
+                .HasColumnType("uniqueidentifier");
+
+            b.Property<Guid>("DraftId")
+                .HasColumnType("uniqueidentifier");
+
+            b.Property<int>("ScheduleNo")
+                .HasColumnType("int");
+
+            b.Property<int>("LineNo")
+                .HasColumnType("int");
+
+            b.Property<int>("SliceNo")
+                .HasColumnType("int");
+
+            b.Property<DateOnly?>("RequestedDeliveryDate")
+                .HasColumnType("date");
+
+            b.Property<Guid?>("SliceId")
+                .HasColumnType("uniqueidentifier");
+
+            b.HasKey("CompanyId", "DraftId", "ScheduleNo", "LineNo", "SliceNo");
+
+            b.HasIndex("CompanyId", "DraftId", "LineNo");
+
+            b.ToTable("DraftDeliveryScheduleDates", "sales", t =>
+                {
+                    t.HasCheckConstraint("CK_DraftDeliveryScheduleDates_Position", "[LineNo] >= 1 AND [SliceNo] >= 0");
+
+                    t.HasCheckConstraint("CK_DraftDeliveryScheduleDates_Slice", "([SliceNo] = 0 AND [SliceId] IS NULL) OR ([SliceNo] >= 1 AND [SliceId] IS NOT NULL AND [SliceId] <> '00000000-0000-0000-0000-000000000000' AND [RequestedDeliveryDate] IS NOT NULL)");
+                });
+        });
+
+        modelBuilder.Entity("GoymenERP.Modules.Sales.Infrastructure.Persistence.DraftDeliveryScheduleRow", b =>
+        {
+            b.Property<Guid>("CompanyId")
+                .HasColumnType("uniqueidentifier");
+
+            b.Property<Guid>("DraftId")
+                .HasColumnType("uniqueidentifier");
+
+            b.Property<int>("ScheduleNo")
+                .HasColumnType("int");
+
+            b.Property<DateTimeOffset>("ChangedAtUtc")
+                .HasColumnType("datetimeoffset");
+
+            b.Property<string>("ChangedBy")
+                .IsRequired()
+                .HasMaxLength(128)
+                .HasColumnType("nvarchar(128)");
+
+            b.Property<string>("CorrelationId")
+                .IsRequired()
+                .HasMaxLength(128)
+                .HasColumnType("nvarchar(128)");
+
+            b.Property<long>("DraftVersion")
+                .HasColumnType("bigint");
+
+            b.Property<DateOnly?>("RequestedDeliveryDate")
+                .HasColumnType("date");
+
+            b.HasKey("CompanyId", "DraftId", "ScheduleNo");
+
+            b.ToTable("DraftDeliverySchedules", "sales", t =>
+                {
+                    t.HasCheckConstraint("CK_DraftDeliverySchedules_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [DraftId] <> '00000000-0000-0000-0000-000000000000' AND [ScheduleNo] >= 1 AND [DraftVersion] >= 2 AND LEN([ChangedBy]) > 0 AND LEN([CorrelationId]) > 0");
+                });
         });
 
         modelBuilder.Entity("GoymenERP.Modules.Sales.Infrastructure.Persistence.DraftLineRow", b =>
@@ -807,7 +937,7 @@ partial class SalesDbContextModelSnapshot : ModelSnapshot
 
                 t.HasCheckConstraint(
                     "CK_Drafts_State",
-                    "[Kind] = 1 AND [State] = 1 AND [Revision] >= 0");
+                    "[Kind] = 1 AND [State] IN (1, 2) AND [Revision] >= 0 AND ([State] = 1 OR [ApprovalState] = 3)");
 
                 t.HasCheckConstraint(
                     "CK_Drafts_Text",
@@ -872,6 +1002,41 @@ partial class SalesDbContextModelSnapshot : ModelSnapshot
             b.HasOne("GoymenERP.Modules.Sales.Infrastructure.Persistence.DraftLineRow", null)
                 .WithMany()
                 .HasForeignKey("CompanyId", "DraftId", "LineNo")
+                .OnDelete(DeleteBehavior.Restrict)
+                .IsRequired();
+        });
+
+        modelBuilder.Entity("GoymenERP.Modules.Sales.Infrastructure.Persistence.DraftCancellationRow", b =>
+        {
+            b.HasOne("GoymenERP.Modules.Sales.Infrastructure.Persistence.DraftRow", null)
+                .WithMany()
+                .HasForeignKey("CompanyId", "DraftId")
+                .HasPrincipalKey("CompanyId", "Id")
+                .OnDelete(DeleteBehavior.Restrict)
+                .IsRequired();
+        });
+
+        modelBuilder.Entity("GoymenERP.Modules.Sales.Infrastructure.Persistence.DraftDeliveryScheduleDateRow", b =>
+        {
+            b.HasOne("GoymenERP.Modules.Sales.Infrastructure.Persistence.DraftDeliveryScheduleRow", null)
+                .WithMany()
+                .HasForeignKey("CompanyId", "DraftId", "ScheduleNo")
+                .OnDelete(DeleteBehavior.Restrict)
+                .IsRequired();
+
+            b.HasOne("GoymenERP.Modules.Sales.Infrastructure.Persistence.DraftLineRow", null)
+                .WithMany()
+                .HasForeignKey("CompanyId", "DraftId", "LineNo")
+                .OnDelete(DeleteBehavior.Restrict)
+                .IsRequired();
+        });
+
+        modelBuilder.Entity("GoymenERP.Modules.Sales.Infrastructure.Persistence.DraftDeliveryScheduleRow", b =>
+        {
+            b.HasOne("GoymenERP.Modules.Sales.Infrastructure.Persistence.DraftRow", null)
+                .WithMany()
+                .HasForeignKey("CompanyId", "DraftId")
+                .HasPrincipalKey("CompanyId", "Id")
                 .OnDelete(DeleteBehavior.Restrict)
                 .IsRequired();
         });

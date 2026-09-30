@@ -3,21 +3,16 @@
  * Every value is required; there is no default and no fallback, so a run outside the disposable stack
  * fails rather than quietly testing something else.
  *
- * THIS SUITE HAS NO FIXTURE AND NO SEED ENVELOPE, and that is a property of what it is: it writes
- * nothing, and everything it reads — the five seeded work centres and their locations — is already in
- * the built-in organization seed. A suite that seeded data would need the fixture runner and a
+ * THIS SUITE HAS NO FIXTURE AND NO SEED ENVELOPE: everything it reads — the five seeded work centres and
+ * their locations — is already in the built-in organization seed, and what the ORG master-edit cases write
+ * they create themselves through the real screens. A suite that seeded data would need the fixture runner and a
  * `BROWSER_E2E_ORG03_SEED` envelope; this one has nothing to seed.
  *
- * BUT "writes nothing" IS THIS SUITE'S OWN DISCIPLINE, NOT A CHECKED GUARANTEE, and an earlier version
- * of this comment claimed otherwise. Two registries decide that, and org03 is on the writing side of
- * BOTH: the validator's read-only set does not contain it, and the browser workflow resolves it on the
- * arm that reports the suite as writing. The workflow's post-browser SQL verification — the step that
- * would PROVE nothing was written — is conditioned on that resolution, so it does NOT run for org03.
- * Nothing here is therefore machine-checked to be read-only; what holds it is that no case issues a
- * command. Registering the suite read-only is a separate slice (it also touches `.github/**`), and
- * until it lands this comment must not promise the check.
+ * THE SUITE WRITES since the ORG master edit, and it is registered as writing: the validator's read-only set
+ * does not contain it and the browser workflow resolves it on the writing arm. Only org03-editor holds a
+ * write; the reader cases never issue a command.
  *
- * The two actor ids below are therefore CONSTANTS rather than run outputs, and they are the same two
+ * The actor ids below are CONSTANTS rather than run outputs, and they are the same
  * subjects `infra/browser-suites/org03.override.yml` defines in the same head. They are named here once
  * so a spec never types a subject inline: the override and this file must say the same thing, and one
  * place to change is what makes that checkable.
@@ -31,6 +26,17 @@ export const WORK_CENTERS_ONLY_ACTOR = 'org03-work-centers-only'
 
 /** Holds `organization.work-centers.read` + `organization.locations.read`: the row link resolves. */
 export const READER_ACTOR = 'org03-reader'
+
+/**
+ * ORG master edit (user decision 2026-09-27): the only holder of `organization.sites.write`,
+ * `organization.locations.write` and `organization.work-centers.write`, beside the three reads its screens need.
+ * Its cases WRITE (sites, locations, work centres) in the run's disposable database, so they run LAST in the spec:
+ * the read cases above count the five seeded work centres exactly.
+ */
+export const EDITOR_ACTOR = 'org03-editor'
+
+/** GDC, the only company every org03 actor holds an assignment in (infra/browser-suites/org03.override.yml). */
+export const GDC_COMPANY_ID = '10000000-0000-0000-0000-000000000001'
 
 export interface Org03Environment {
   readonly apiBaseUrl: string

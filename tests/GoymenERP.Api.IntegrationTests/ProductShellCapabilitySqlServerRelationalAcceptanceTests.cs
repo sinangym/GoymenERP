@@ -14,7 +14,7 @@ namespace GoymenERP.Api.IntegrationTests;
 
 /// <summary>
 /// Product's real shell capability provider through the real host on a real SQL Server: Product's four
-/// screens follow the global Product authority. The grant is a synthetic, isolated Product master
+/// screens and activation control follow the matching global Product authority. The grant is a synthetic, isolated Product master
 /// assignment in this test's own database; it is not a Sinan or production grant and is never seeded.
 /// </summary>
 public sealed class ProductShellCapabilitySqlServerRelationalAcceptanceTests
@@ -25,7 +25,10 @@ public sealed class ProductShellCapabilitySqlServerRelationalAcceptanceTests
     private static readonly Guid CompanyA = Guid.Parse("10000000-0000-0000-0000-000000000001");
 
     private static readonly string[] ProductCapabilities =
-        ["product.items.create", "product.items.detail", "product.items.edit", "product.items.list"];
+    [
+        "product.items.activate", "product.items.create", "product.items.deactivate", "product.items.detail",
+        "product.items.edit", "product.items.list", "product.items.reactivate",
+    ];
 
     [SqlServerFact]
     public async Task Product_screens_follow_the_global_Product_authority_through_the_real_provider()
@@ -59,9 +62,26 @@ public sealed class ProductShellCapabilitySqlServerRelationalAcceptanceTests
                 await identity.SaveChangesAsync();
             }
 
-            // Granted: all four screens; the other actor, without a Product grant, none.
+            // Granted: all four screens plus the three lifecycle controls; the other actor, without a Product grant, none.
             Assert.Equal(ProductCapabilities, ProductOnly(await ReadAsync(administrator)));
             Assert.Empty(ProductOnly(await ReadAsync(companyOnly)));
+
+            await using (var scope = factory.Services.CreateAsyncScope())
+            {
+                var identity = scope.ServiceProvider.GetRequiredService<IdentityDbContext>();
+                var activation = await identity.Set<ProductMasterAssignment>().SingleAsync(row =>
+                    row.UserId == ActorId && row.Operation == ProductMasterOperation.Activate && row.IsActive);
+                activation.Revoke(Guid.NewGuid(), "Isolated Product activation revocation", DateTimeOffset.UtcNow);
+                await identity.SaveChangesAsync();
+            }
+
+            // Only the approval control goes: the deactivation / reactivation grants are their own.
+            Assert.Equal(
+                [
+                    "product.items.create", "product.items.deactivate", "product.items.detail", "product.items.edit",
+                    "product.items.list", "product.items.reactivate",
+                ],
+                ProductOnly(await ReadAsync(administrator)));
 
             await using (var scope = factory.Services.CreateAsyncScope())
             {

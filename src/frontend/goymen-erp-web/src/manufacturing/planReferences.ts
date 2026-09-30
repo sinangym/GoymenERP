@@ -11,6 +11,8 @@ import type { ViewOutcome } from '../shell/uiState'
 
 export const PARENT_ROLL_CANDIDATES_PATH = `${API_BASE}/inventory/references/parent-rolls`
 export const PARENT_ROLL_CANDIDATE_LIMIT = 25
+/** The owner's widest window (1..100), used to find ONE preselected label among the code matches. */
+export const PARENT_ROLL_PRESELECT_LIMIT = 100
 
 export interface ParentRollLot {
   readonly id: string
@@ -224,8 +226,9 @@ export async function fetchParentRollCandidates(
   companyId: string,
   q = '',
   signal?: AbortSignal,
+  limit: number = PARENT_ROLL_CANDIDATE_LIMIT,
 ): Promise<ViewOutcome<ParentRollCandidates>> {
-  const query = new URLSearchParams({ limit: String(PARENT_ROLL_CANDIDATE_LIMIT) })
+  const query = new URLSearchParams({ limit: String(limit) })
   const search = q.trim()
   if (search !== '') query.set('q', search)
   try {

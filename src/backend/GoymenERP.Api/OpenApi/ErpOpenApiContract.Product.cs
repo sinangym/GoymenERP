@@ -35,8 +35,10 @@ public static partial class ErpOpenApiContract
         operation.Description = "Explicit server-resolved global Product authority is required for this operation. "
             + "X-Company-Id selects the authorized origin, not a Product owner. Company roles alone grant no global access. "
             + "Reads never create data. Responses are private, no-store; a successful read is not a durable write grant.";
-        // Both versioned card writes (draft edit, DEC-PRD-010 activation) answer lifecycle and version conflicts.
-        var versioned = operation.OperationId is "EditProductDraftV1" or "ActivateProductV1";
+        // Every versioned card write (draft edit, DEC-PRD-010 activation, deactivation, reactivation) answers
+        // lifecycle and version conflicts.
+        var versioned = operation.OperationId is "EditProductDraftV1" or "ActivateProductV1"
+            or "DeactivateProductV1" or "ReactivateProductV1";
         if (operation.Parameters is not null)
             foreach (var parameter in operation.Parameters)
             {
@@ -130,7 +132,8 @@ public static partial class ErpOpenApiContract
                 Description = "Lossless positive Int64 decimal string; null only for DraftCreate.",
             };
         }
-        if (type == typeof(EditProductDraftRequest) || type == typeof(ActivateProductRequest))
+        if (type == typeof(EditProductDraftRequest) || type == typeof(ActivateProductRequest)
+            || type == typeof(ChangeProductLifecycleRequest))
         {
             schema.Properties!["expectedVersion"] = new OpenApiSchema { Type = JsonSchemaType.String,
                 MinLength = 1, MaxLength = 19, Pattern = PositiveIntegerStringPattern,

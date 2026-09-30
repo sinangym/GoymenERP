@@ -36,4 +36,21 @@ public static class FinancePermissionNames
 
     // F-03 technical declaration only. Central registration and every real grant remain separate.
     public const string AllocationWrite = "finance.allocation.write";
+
+    // DEC-FIN-016 first release (customer cheque / note portfolio). Owner declarations: the central registry must know
+    // them before the port measures them (until then every portfolio call is Unavailable, 503), and a human grants them.
+    // Collect is the only one with a money effect (one recorded receipt source, one money event); it also needs the
+    // caller's accounting.periods.read (the occurredOn period rule) and finance.bank-account.read (the bank read).
+    public const string CustomerInstrumentRead = "finance.customer-instrument.read";
+    public const string CustomerInstrumentAmountRead = "finance.customer-instrument.amount.read";
+    public const string CustomerInstrumentReceive = "finance.customer-instrument.receive";
+    public const string CustomerInstrumentStatusChange = "finance.customer-instrument.status.change";
+    public const string CustomerInstrumentCollect = "finance.customer-instrument.collect";
+
+    // First-release party ledger (cari hesap ekstresi): a READ only. Its own names because it shows facts no other read
+    // shows together (admitted open items have no read of their own) — owner declarations: until the central registry
+    // knows them the port answers Unavailable (503), and a human grants them. Every amount, total and balance of the
+    // ledger needs the amount read as well.
+    public const string PartyLedgerRead = "finance.party-ledger.read";
+    public const string PartyLedgerAmountRead = "finance.party-ledger.amount.read";
 }

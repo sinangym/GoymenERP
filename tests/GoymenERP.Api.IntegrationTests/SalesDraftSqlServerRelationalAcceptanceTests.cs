@@ -93,7 +93,7 @@ public sealed class SalesDraftSqlServerRelationalAcceptanceTests
                 .ToArray();
         }
 
-        Assert.Equal(["DraftAttempts", "DraftDeliverySlices", "DraftLines", "DraftNumbers", "DraftRevisionLines", "DraftRevisions", "Drafts", "__EFMigrationsHistory"], mapped);
+        Assert.Equal(["DraftAttempts", "DraftCancellations", "DraftDeliveryScheduleDates", "DraftDeliverySchedules", "DraftDeliverySlices", "DraftLines", "DraftNumbers", "DraftRevisionLines", "DraftRevisions", "Drafts", "__EFMigrationsHistory"], mapped);
         Assert.Equal(string.Join(',', mapped), await run.ScalarAsync<string>(
             "SELECT STRING_AGG(name, ',') WITHIN GROUP (ORDER BY name COLLATE Latin1_General_BIN2) FROM sys.tables WHERE schema_id = SCHEMA_ID(N'sales')"));
         // ADR-011 §2: the raw key is not a column; the attempt row holds the command name, the key hash and the actor.

@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useParams } from 'react-router'
-import { fetchPlan } from './api'
-import { MANUFACTURING_CAPABILITY, orderDetailPath, orderListPath } from './capabilities'
+import { fetchPlan, fetchPlanRevisions } from './api'
+import { MANUFACTURING_CAPABILITY, orderDetailPath, orderListPath, planListPath } from './capabilities'
 import {
   approvePlan,
   createOrder,
+  revisePlan,
   pendingPlanLifecycleKey,
   recallPendingPlanLifecycle,
   releasePendingPlanLifecycle,
@@ -13,9 +14,14 @@ import {
   type PendingPlanLifecycle,
   type PlanLifecycleOutcome,
   type PlanLifecycleSnapshot,
+  type RevisePlanRequest,
 } from './planCommandApi'
 import type { ProductionPlanView } from './contract'
 import { TARGET_BASIS_LABEL } from './manufacturingText'
+import { PLAN_EDIT_TEXT, revisionFailureText } from './planEditText'
+import { currentRevision } from './planRevisionContract'
+import { PlanEditForm } from './PlanEditForm'
+import { PlanHistory } from './PlanHistory'
 import { classifyOutcome, type RemoteViewState } from '../shell/uiState'
 import { StateBlock } from '../shell/StateBlock'
 import { useShellState } from '../shell/shellContext'
@@ -33,6 +39,7 @@ type Attempt =
 
 type RefreshExpectation =
   | { readonly kind: 'approved'; readonly approved: ProductionPlanView }
+  | { readonly kind: 'revised'; readonly revised: ProductionPlanView }
   | { readonly kind: 'conflict'; readonly failure: string }
 
 function newId(): string {
@@ -47,7 +54,9 @@ function newId(): string {
 function failureText(
   kind: PlanLifecycleSnapshot['kind'],
   outcome: Extract<PlanLifecycleOutcome<unknown>, { type: 'failed' }>,
+  process: string,
 ): string {
+  if (kind === 'revise') return revisionFailureText(outcome.status, outcome.code, outcome.field, process)
   const subject = kind === 'approve' ? 'Plan onayı' : 'Üretim emri'
   if (outcome.status === 401 || outcome.status === 403) return `${subject} yetkiniz artık geçerli değil.`
   if (outcome.status === 404) return `${subject} için kayıt bu şirket bağlamında bulunamadı.`
@@ -57,6 +66,7 @@ function failureText(
 }
 
 function unknownText(kind: PlanLifecycleSnapshot['kind']): string {
+  if (kind === 'revise') return PLAN_EDIT_TEXT.unknown
   return `${kind === 'approve' ? 'Plan onayının' : 'Emir oluşturmanın'} sonucu bilinmiyor. Aynı istek ve anahtarla yeniden gönderin.`
 }
 
@@ -77,12 +87,17 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
   const actorId = shell.activeContext?.userId ?? null
   const canApprove = hasCapability(shell, MANUFACTURING_CAPABILITY.planApprove)
   const canCreateOrder = hasCapability(shell, MANUFACTURING_CAPABILITY.planOrderCreate)
+  // MFG-PLAN-EDIT: the Draft edit is its own control on the plan save's grant; the server decides again either way.
+  const canEdit = hasCapability(shell, MANUFACTURING_CAPABILITY.planEdit)
   const canOpenOrder = hasCapability(shell, MANUFACTURING_CAPABILITY.orderDetail)
+  // MFG-PLAN-LIST: back to the saved plans, only where the list itself is published to this actor.
+  const canOpenPlanList = hasCapability(shell, MANUFACTURING_CAPABILITY.planList)
   const storeKey = pendingPlanLifecycleKey(shell.sessionEpoch, actorId, companyId, planId)
   const recalled = recallPendingPlanLifecycle(storeKey)
   const [attempt, setAttempt] = useState<Attempt>(() => recalled === null
     ? { phase: 'idle' }
     : { phase: 'unknown', pending: recalled, message: unknownText(recalled.snapshot.kind) })
+  const [editing, setEditing] = useState(false)
   const generation = useRef(0)
   const inFlight = useRef(false)
   const queryKey = useMemo(
@@ -102,10 +117,33 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
     },
   })
   const plan = query.data?.type === 'ok-single' ? query.data.data : null
+  // MFG-PLAN-EDIT: the plan's history, under the same read grant; its last entry is where an edit starts.
+  const historyKey = useMemo(
+    () => [namespace ?? 'no-context', shell.routeEntryGeneration, 'manufacturing-plan-revisions', planId] as const,
+    [namespace, planId, shell.routeEntryGeneration],
+  )
+  const historyQuery = useQuery({
+    queryKey: historyKey,
+    enabled: namespace !== null && companyId !== null && planId !== '',
+    queryFn: async ({ signal }) => {
+      const snapshot = boundary.capture()
+      const outcome = await fetchPlanRevisions(companyId ?? '', planId, signal)
+      if (outcome.type === 'http' && (outcome.status === 401 || outcome.status === 403)) {
+        boundary.report(outcome.status, snapshot)
+      }
+      return outcome
+    },
+  })
+  const history = historyQuery.data?.type === 'ok-single' ? historyQuery.data.data : null
 
   useEffect(() => () => {
     generation.current += 1
   }, [])
+
+  const planProcess = plan?.process ?? ''
+  const allowed = useCallback((kind: PlanLifecycleSnapshot['kind']) =>
+    kind === 'approve' ? canApprove : kind === 'revise' ? canEdit : canCreateOrder,
+  [canApprove, canCreateOrder, canEdit])
 
   const refreshPlan = useCallback(async (expectation: RefreshExpectation) => {
     const security = boundary.capture()
@@ -120,8 +158,16 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
       setAttempt({ phase: 'applied', message: 'Plan onaylandı ve güncel kayıt yeniden okundu.' })
       return
     }
+    if (isCurrent && expectation.kind === 'revised' && fresh.status === 'Draft' && fresh.version === expectation.revised.version) {
+      // The history is read again too: the reopened plan shows the change and where it came from.
+      queryClient.setQueryData(queryKey, refreshed)
+      await queryClient.invalidateQueries({ queryKey: historyKey })
+      setAttempt({ phase: 'applied', message: PLAN_EDIT_TEXT.applied(fresh.version) })
+      return
+    }
     if (isCurrent && expectation.kind === 'conflict') {
       queryClient.setQueryData(queryKey, refreshed)
+      await queryClient.invalidateQueries({ queryKey: historyKey })
       setAttempt({ phase: 'failed', message: `${expectation.failure} Güncel plan yeniden okundu.` })
       return
     }
@@ -130,14 +176,16 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
       refresh: expectation,
       message: expectation.kind === 'approved'
         ? 'Plan onaylandı; güncel kayıt henüz yeniden okunamadı.'
-        : `${expectation.failure} Güncel plan henüz yeniden okunamadı.`,
+        : expectation.kind === 'revised'
+          ? PLAN_EDIT_TEXT.appliedRefreshPending
+          : `${expectation.failure} Güncel plan henüz yeniden okunamadı.`,
     })
-  }, [boundary, companyId, planId, queryClient, queryKey])
+  }, [boundary, companyId, historyKey, planId, queryClient, queryKey])
 
   const send = useCallback(async (pending: PendingPlanLifecycle) => {
     if (companyId === null || actorId === null || inFlight.current) return
     if (pending.companyId !== companyId || pending.actorId !== actorId || pending.planId !== planId) return
-    if (pending.snapshot.kind === 'approve' ? !canApprove : !canCreateOrder) return
+    if (!allowed(pending.snapshot.kind)) return
     inFlight.current = true
     const commandGeneration = ++generation.current
     reservePendingPlanLifecycle(storeKey, pending)
@@ -145,7 +193,9 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
     const security = boundary.capture()
     const outcome = pending.snapshot.kind === 'approve'
       ? await approvePlan(companyId, planId, pending.snapshot)
-      : await createOrder(companyId, planId, pending.snapshot)
+      : pending.snapshot.kind === 'revise'
+        ? await revisePlan(companyId, planId, pending.snapshot)
+        : await createOrder(companyId, planId, pending.snapshot)
     if (commandGeneration !== generation.current) return
     inFlight.current = false
     if (outcome.type === 'failed' && (outcome.status === 401 || outcome.status === 403)) {
@@ -157,8 +207,10 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
     }
     releasePendingPlanLifecycle(storeKey, pending.snapshot.idempotencyKey)
     if (outcome.type === 'failed') {
-      const message = failureText(pending.snapshot.kind, outcome)
+      const message = failureText(pending.snapshot.kind, outcome, planProcess)
       if (outcome.status === 409) {
+        // A stale edit is not continued on stale content: the form closes and reopens from the re-read plan.
+        if (pending.snapshot.kind === 'revise') setEditing(false)
         await refreshPlan({ kind: 'conflict', failure: message })
         return
       }
@@ -167,6 +219,11 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
     }
     if (pending.snapshot.kind === 'approve') {
       await refreshPlan({ kind: 'approved', approved: outcome.resource as ProductionPlanView })
+      return
+    }
+    if (pending.snapshot.kind === 'revise') {
+      setEditing(false)
+      await refreshPlan({ kind: 'revised', revised: outcome.resource as ProductionPlanView })
       return
     }
     const orderId = pending.snapshot.orderId
@@ -181,7 +238,7 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
         ? 'Önceki emir oluşturma sonucu yeniden gösterildi.'
         : 'Üretim emri oluşturuldu.',
     })
-  }, [actorId, boundary, canApprove, canCreateOrder, canOpenOrder, companyId, navigate, planId, refreshPlan, storeKey])
+  }, [actorId, allowed, boundary, canOpenOrder, companyId, navigate, planId, planProcess, refreshPlan, storeKey])
 
   const start = (snapshot: PlanLifecycleSnapshot) => {
     if (companyId === null || actorId === null) return
@@ -208,9 +265,13 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
   }
 
   const busy = attempt.phase === 'sending'
-  const unresolved = attempt.phase === 'unknown' && (
-    attempt.pending.snapshot.kind === 'approve' ? canApprove : canCreateOrder
-  )
+  const unresolved = attempt.phase === 'unknown' && allowed(attempt.pending.snapshot.kind)
+  // The edit starts from the plan's current content: the last history entry, of exactly the version shown.
+  const current = history === null ? null : currentRevision(history)
+  const editable = plan.status === 'Draft' && canEdit
+  const editReady = current !== null && current.planVersion === plan.version
+  const startRevision = (request: RevisePlanRequest) =>
+    start({ kind: 'revise', idempotencyKey: newId(), request })
 
   return (
     <main className={styles.page} aria-labelledby="manufacturing-plan-heading">
@@ -219,7 +280,10 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
           <p className={styles.eyebrow}>ÜRETİM PLANI</p>
           <h1 id="manufacturing-plan-heading">Plan yeniden açıldı</h1>
         </div>
-        <Link to={orderListPath()}>← Üretim emirleri</Link>
+        <div>
+          {canOpenPlanList ? <Link to={planListPath()}>← Üretim planları</Link> : null}{' '}
+          <Link to={orderListPath()}>← Üretim emirleri</Link>
+        </div>
       </header>
       <dl className={styles.facts}>
         <div><dt>Plan</dt><dd className={styles.mono}>{plan.planId}</dd></div>
@@ -253,6 +317,18 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
         </div>
       </section>
 
+      {editing && editable && current !== null && editReady && !unresolved ? (
+        <PlanEditForm
+          key={plan.version}
+          companyId={companyId}
+          plan={plan}
+          current={current}
+          busy={busy}
+          onSubmit={startRevision}
+          onCancel={() => setEditing(false)}
+        />
+      ) : null}
+
       <section className={styles.commandCard} aria-labelledby="manufacturing-plan-next-heading">
         <h2 id="manufacturing-plan-next-heading">Sonraki işlem</h2>
         {unresolved ? (
@@ -281,7 +357,21 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
                 {attempt.message}{attempt.orderId === undefined ? '' : ` Emir: ${attempt.orderId}`}
               </p>
             ) : null}
-            {plan.status === 'Draft' && canApprove ? (
+            {editable && !editing ? (
+              editReady ? (
+                <div className={styles.actions}>
+                  <button type="button" disabled={busy} onClick={() => setEditing(true)}>
+                    {PLAN_EDIT_TEXT.editButton}
+                  </button>
+                </div>
+              ) : (
+                <p className={styles.note}>
+                  {history === null ? PLAN_EDIT_TEXT.historyNotReady : PLAN_EDIT_TEXT.historyStale}
+                </p>
+              )
+            ) : null}
+            {plan.status === 'Approved' && canEdit ? <p className={styles.note}>{PLAN_EDIT_TEXT.approvedNote}</p> : null}
+            {plan.status === 'Draft' && canApprove && !editing ? (
               <div className={styles.actions}>
                 <button
                   type="button"
@@ -308,12 +398,18 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
             {plan.status === 'Approved' && !canCreateOrder ? (
               <p className={styles.note}>Onaylı plan bu ekranda salt okunurdur.</p>
             ) : null}
-            {plan.status === 'Draft' && !canApprove ? (
+            {plan.status === 'Draft' && !canApprove && !canEdit ? (
               <p className={styles.note}>Taslak plan bu ekranda salt okunurdur.</p>
             ) : null}
           </>
         )}
       </section>
+
+      {history === null ? (
+        historyQuery.data !== undefined && historyQuery.data.type !== 'ok-single' ? (
+          <p className={styles.muted} role="status">Plan geçmişi okunamadı.</p>
+        ) : null
+      ) : <PlanHistory history={history} />}
     </main>
   )
 }

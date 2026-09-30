@@ -276,6 +276,110 @@ export const PRODUCT_DETAIL_TEXT = {
     'Birim referansları sunucudan kimlik olarak gelir; birim düzenleme sonraki dilimdedir.',
 } as const
 
+export const PRODUCT_ACTIVATION_TEXT = {
+  submit: 'Ürünü aktifleştir',
+  submitting: 'Aktifleştiriliyor…',
+  globalImpact:
+    'Aktifleştirme ürün kartını grup genelinde kesin işlemlerde kullanılabilir duruma getirir.',
+  success: 'Ürün aktifleştirildi.',
+  replayed: 'Bu aktivasyon daha önce işlenmişti; ikinci bir değişiklik uygulanmadı.',
+  staleTitle: 'Ürün siz bakarken değişti',
+  staleDetail: 'Aktivasyon uygulanmadı. Güncel kartı okuyup yeniden değerlendirin.',
+  lifecycleTitle: 'Ürün artık taslak değil',
+  lifecycleDetail: 'Aktivasyon yalnız taslak ürüne uygulanabilir.',
+  notFound: 'Ürün artık bu bağlamda görünmüyor.',
+  forbidden: 'Bu ürünü aktifleştirme yetkiniz yok.',
+  unauthenticated: 'Oturum sonlandı; aktivasyon uygulanmadı.',
+  failed: 'Aktivasyon uygulanmadı. Kartı yenileyip yeniden deneyin.',
+  unknownTitle: 'Aktivasyon sonucu doğrulanamadı',
+  unknownDetail:
+    'İşlem uygulanmış olabilir. Aynı işlem anahtarıyla tekrar deneyerek sonucu güvenle doğrulayın.',
+  retrySameAttempt: 'Aynı aktivasyonu tekrar dene',
+  refresh: 'Kartı yenile',
+  unsavedTitle: 'Sonucu bilinmeyen aktivasyon var',
+  unsavedDetail: 'Sayfadan ayrılırsanız bu işlemin aynı anahtarla doğrulanması yarıda kalır.',
+  unsavedStay: 'Sayfada kal',
+  unsavedLeave: 'İşlemi bırak',
+} as const
+
+/**
+ * Spec §10.2/§15: the server's exact-name duplicate preview. The texts state the ONE rule the server
+ * applied (same name, Turkish case-insensitive) and what it does NOT do: it never blocks a save or an
+ * approval, never merges, and does not compare technical attributes (no decided rule; NEEDS-SINAN).
+ */
+export const PRODUCT_DUPLICATE_TEXT = {
+  heading: 'Mükerrer kart kontrolü',
+  checking: 'Aynı adlı ürün kartları sunucuda kontrol ediliyor…',
+  none: 'Sunucu kontrolünde bu adla başka ürün kartı yok.',
+  foundTitle: 'Bu adla kayıtlı başka ürün kartları var',
+  foundDetail:
+    'Karşılaştırın: aynı ürünü ikinci kez tanımlamadığınızdan emin olun. Bu uyarı kaydı veya onayı engellemez ve kartları birleştirmez.',
+  rule: 'Kontrol kuralı: aynı ad (Türkçe büyük/küçük harf farkı gözetilmez). Teknik özellik benzerliği bu kontrolde yoktur.',
+  more: 'Aynı adlı daha fazla kart var; tamamı için ürün listesinde arayın.',
+  failed: 'Aynı ad kontrolü yapılamadı. Bu, kaydı veya onayı engellemez.',
+  changedBeforeApproval:
+    'Aynı adlı kartların listesi siz bakarken değişti. Güncel listeyi inceleyin; onaylamak için yeniden basın.',
+} as const
+
+/**
+ * Deactivation / reactivation of a card already in use (DEC-CAR-003, #98 §7.9). The texts say
+ * what the move DOES in both companies and what it does NOT do: nothing is deleted, existing
+ * stock, orders and history stay readable; only new selections refuse the card.
+ */
+export const PRODUCT_LIFECYCLE_TEXT = {
+  deactivate: {
+    open: 'Ürünü pasife al',
+    submit: 'Pasife al',
+    submitting: 'Pasife alınıyor…',
+    impact:
+      'Pasife alınan ürün her iki şirkette yeni sipariş, satın alma, stok ve üretim seçimlerinde kullanılamaz. Hiçbir kayıt silinmez; mevcut stok, sipariş ve geçmiş kayıtlar görünür kalır.',
+    success: 'Ürün pasife alındı.',
+    replayed: 'Bu pasife alma daha önce işlenmişti; ikinci bir değişiklik uygulanmadı.',
+    lifecycleTitle: 'Ürün artık aktif değil',
+    lifecycleDetail: 'Pasife alma yalnız aktif ürüne uygulanabilir.',
+    forbidden: 'Bu ürünü pasife alma yetkiniz yok.',
+    failed: 'Pasife alma uygulanmadı. Kartı yenileyip yeniden deneyin.',
+    unknownTitle: 'Pasife alma sonucu doğrulanamadı',
+    retrySameAttempt: 'Aynı pasife almayı tekrar dene',
+    unsavedTitle: 'Sonucu bilinmeyen pasife alma var',
+  },
+  reactivate: {
+    open: 'Ürünü yeniden aktifleştir',
+    submit: 'Yeniden aktifleştir',
+    submitting: 'Yeniden aktifleştiriliyor…',
+    impact:
+      'Yeniden aktifleştirilen ürün her iki şirkette yeni işlemlerde yeniden seçilebilir olur.',
+    success: 'Ürün yeniden aktifleştirildi.',
+    replayed: 'Bu yeniden aktifleştirme daha önce işlenmişti; ikinci bir değişiklik uygulanmadı.',
+    lifecycleTitle: 'Ürün artık pasif değil',
+    lifecycleDetail: 'Yeniden aktifleştirme yalnız pasif ürüne uygulanabilir.',
+    forbidden: 'Bu ürünü yeniden aktifleştirme yetkiniz yok.',
+    failed: 'Yeniden aktifleştirme uygulanmadı. Kartı yenileyip yeniden deneyin.',
+    unknownTitle: 'Yeniden aktifleştirme sonucu doğrulanamadı',
+    retrySameAttempt: 'Aynı yeniden aktifleştirmeyi tekrar dene',
+    unsavedTitle: 'Sonucu bilinmeyen yeniden aktifleştirme var',
+  },
+  reasonLabel: 'Gerekçe',
+  reasonHint: 'Gerekçe değişiklik geçmişine yazılır ve her iki şirkette görünür.',
+  reasonRequired: 'Gerekçe zorunludur.',
+  reasonTooLong: 'Gerekçe en fazla 1000 karakter olabilir.',
+  reasonInvalid: 'Gerekçe kontrol karakteri içeremez.',
+  cancel: 'Vazgeç',
+  staleTitle: 'Ürün siz bakarken değişti',
+  staleDetail: 'Değişiklik uygulanmadı. Güncel kartı okuyup yeniden değerlendirin.',
+  notFound: 'Ürün artık bu bağlamda görünmüyor.',
+  unauthenticated: 'Oturum sonlandı; değişiklik uygulanmadı.',
+  unknownDetail:
+    'İşlem uygulanmış olabilir. Aynı işlem anahtarıyla tekrar deneyerek sonucu güvenle doğrulayın.',
+  refresh: 'Kartı yenile',
+  unsavedDetail: 'Sayfadan ayrılırsanız bu işlemin aynı anahtarla doğrulanması yarıda kalır.',
+  unsavedStay: 'Sayfada kal',
+  unsavedLeave: 'İşlemi bırak',
+  /** The Inactive banner's own line: when and why, from the newest deactivation in the history. */
+  deactivatedAt: 'Pasife alındığı an',
+  deactivationReason: 'Pasife alma gerekçesi',
+} as const
+
 export const PRODUCT_CREATE_TEXT = {
   title: 'Yeni ürün',
   /**
@@ -488,8 +592,18 @@ export const PRODUCT_HISTORY_TEXT = {
 
 export function historyOperationLabel(operation: HistoryOperationValue): string {
   if (!operation.known) return `${PRODUCT_HISTORY_TEXT.unknownOperation} (${operation.raw})`
-  if (operation.value === 'DraftCreate') return 'Taslak oluşturuldu'
-  return operation.value === 'Activate' ? 'Ürün aktifleştirildi' : 'Temel bilgiler düzenlendi'
+  switch (operation.value) {
+    case 'DraftCreate':
+      return 'Taslak oluşturuldu'
+    case 'Activate':
+      return 'Ürün aktifleştirildi'
+    case 'Deactivate':
+      return 'Ürün pasife alındı'
+    case 'Reactivate':
+      return 'Ürün yeniden aktifleştirildi'
+    default:
+      return 'Temel bilgiler düzenlendi'
+  }
 }
 
 export function historyVersionText(before: string | null, after: string): string {

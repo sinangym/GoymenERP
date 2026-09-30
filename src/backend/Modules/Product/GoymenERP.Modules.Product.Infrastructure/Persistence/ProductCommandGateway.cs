@@ -47,6 +47,16 @@ public sealed class ProductCommandGateway(
         CancellationToken cancellationToken) => ResolveAsync(GroupSharedMasterOperation.Activate,
             ProductCommandIntent.Activate(key, productId, request), productId, cancellationToken);
 
+    public Task<ProductPreparedCommand> PrepareDeactivateAsync(string key, Guid productId,
+        ChangeProductLifecycleRequest request, CancellationToken cancellationToken) =>
+        ResolveAsync(GroupSharedMasterOperation.Deactivate, ProductCommandIntent.Deactivate(key, productId, request),
+            productId, cancellationToken);
+
+    public Task<ProductPreparedCommand> PrepareReactivateAsync(string key, Guid productId,
+        ChangeProductLifecycleRequest request, CancellationToken cancellationToken) =>
+        ResolveAsync(GroupSharedMasterOperation.Reactivate, ProductCommandIntent.Reactivate(key, productId, request),
+            productId, cancellationToken);
+
     // The owner uses this after a whole-attempt rollback/unique race and before
     // relying on any prepared replay. It reuses the canonical response validator
     // and never reconstructs an intent from mutable HTTP inputs or a raw key.
@@ -65,6 +75,10 @@ public sealed class ProductCommandGateway(
             "product.draft.basic-edit.v1" when envelope.ProductId is { } id && id != Guid.Empty => GroupSharedMasterOperation.DraftBasicEdit,
             ProductCommandIntent.ActivateOperation when envelope.ProductId is { } target && target != Guid.Empty
                 => GroupSharedMasterOperation.Activate,
+            ProductCommandIntent.DeactivateOperation when envelope.ProductId is { } deactivated && deactivated != Guid.Empty
+                => GroupSharedMasterOperation.Deactivate,
+            ProductCommandIntent.ReactivateOperation when envelope.ProductId is { } reactivated && reactivated != Guid.Empty
+                => GroupSharedMasterOperation.Reactivate,
             _ => throw new InvalidOperationException("The frozen Product operation or target is invalid."),
         };
         if (prepared.Context.Operation != operation || envelope.Request.ValueKind != JsonValueKind.Object)
@@ -94,8 +108,12 @@ public sealed class ProductCommandGateway(
                 if (terminal.StatusCode != expectedStatus || terminal.SchemaVersion != 1)
                     throw new InvalidOperationException("Stored Product response status/schema is unsupported.");
                 var response = JsonSerializer.Deserialize<ProductMutationResponse>(terminal.ResponseJson, Json);
-                ValidateResponse(response, expectedProductId,
-                    operation == GroupSharedMasterOperation.Activate ? ProductLifecycle.Active : ProductLifecycle.Draft);
+                ValidateResponse(response, expectedProductId, operation switch
+                {
+                    GroupSharedMasterOperation.Activate or GroupSharedMasterOperation.Reactivate => ProductLifecycle.Active,
+                    GroupSharedMasterOperation.Deactivate => ProductLifecycle.Inactive,
+                    _ => ProductLifecycle.Draft,
+                });
                 // Only the documented replay indicator changes. UUID, code, version
                 // and values remain the canonical response of the original write.
                 return new(result.Context, intent, response! with { IsReplay = true }, terminal.OriginalCorrelationId);

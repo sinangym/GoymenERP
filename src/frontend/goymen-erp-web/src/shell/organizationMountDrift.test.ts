@@ -23,13 +23,15 @@ import {
   ORGANIZATION_ROUTE,
   ORGANIZATION_NAV_LABEL,
   locationDetailPath,
+  workCenterDetailPath,
 } from '../organization/capabilities'
 
 describe('shell ↔ Organization lane capability ids', () => {
-  it('declares the same three route ids the lane does', () => {
+  it('declares the same four route ids the lane does', () => {
     expect(CAPABILITY.organizationSitesList).toBe(ORGANIZATION_CAPABILITY.settingsList)
     expect(CAPABILITY.organizationLocationsDetail).toBe(ORGANIZATION_CAPABILITY.locationDetail)
     expect(CAPABILITY.organizationWorkCentersList).toBe(ORGANIZATION_CAPABILITY.workCentersList)
+    expect(CAPABILITY.organizationWorkCentersDetail).toBe(ORGANIZATION_CAPABILITY.workCenterDetail)
   })
 
   it('mounts every ROUTE the lane declares, and nothing that is only a control', () => {
@@ -66,6 +68,7 @@ describe('shell ↔ Organization lane capability ids', () => {
       [CAPABILITY.organizationSitesList, ORGANIZATION_CAPABILITY.settingsList],
       [CAPABILITY.organizationLocationsDetail, ORGANIZATION_CAPABILITY.locationDetail],
       [CAPABILITY.organizationWorkCentersList, ORGANIZATION_CAPABILITY.workCentersList],
+      [CAPABILITY.organizationWorkCentersDetail, ORGANIZATION_CAPABILITY.workCenterDetail],
     ] as const) {
       expect(CAPABILITY_ROUTE[shellId]).toBe(ORGANIZATION_ROUTE[laneId])
       expect(CAPABILITY_NAV_LABEL[shellId]).toBe(ORGANIZATION_NAV_LABEL[laneId])
@@ -90,6 +93,14 @@ describe('shell ↔ Organization lane capability ids', () => {
     // segment, so no url can match both — the #172 P1-2 rule, checked rather than
     // asserted by ordering.
     expect(matchPath(CAPABILITY_ROUTE[CAPABILITY.organizationSitesList], url)).toBeNull()
+
+    // ORG-04: the work-centre card's link helper against its mounted pattern, and the static list never
+    // swallowing a card url (nor the card the list).
+    const cardPattern = CAPABILITY_ROUTE[CAPABILITY.organizationWorkCentersDetail]
+    const cardUrl = workCenterDetailPath('7b1c0f2e-0000-4a00-8000-000000000004')
+    expect(matchPath(cardPattern, cardUrl)?.params.workCenterId).toBe('7b1c0f2e-0000-4a00-8000-000000000004')
+    expect(matchPath(CAPABILITY_ROUTE[CAPABILITY.organizationWorkCentersList], cardUrl)).toBeNull()
+    expect(matchPath(cardPattern, CAPABILITY_ROUTE[CAPABILITY.organizationWorkCentersList])).toBeNull()
   })
 
   it('gives the card no nav entry, so the sidebar gains exactly two entries', () => {
@@ -100,5 +111,7 @@ describe('shell ↔ Organization lane capability ids', () => {
     // `organization.locations.read` never opens ORG-01 and could not be linked from it. The card
     // stays empty — it is still reached from a location row.
     expect(CAPABILITY_NAV_LABEL[CAPABILITY.organizationWorkCentersList]).toBe('İş Merkezleri')
+    // ORG-04 is a card, reached from a work-centre row: no sidebar entry.
+    expect(CAPABILITY_NAV_LABEL[CAPABILITY.organizationWorkCentersDetail]).toBe('')
   })
 })

@@ -29,22 +29,80 @@ writers that observed the same label version cannot both over-allocate it. Creat
 idempotent, audited and versioned; neither writes a stock movement. Release preserves the row and its immutable
 demand/source facts, sets the remaining kg to zero and makes that remainder free again.
 
+An active allocation reserves its remaining kg against every other consumer (Master v3 §7.6 INV-003
+`Serbest Fiziki = Fiziki Mevcut − Aktif Satış Tahsisleri − …`; DEC-STK-004; Business #66/5778472429: active
+allocations are never assumed zero). The Manufacturing input issue
+(`InventoryManufacturingRealizationParticipant`) therefore takes only `StockAllocation.Unreserved` of the exact
+Free position (the position predicate creation deducts) and otherwise refuses with its existing
+409 `inventory_manufacturing_physical_stock_insufficient`, writing nothing; a recorded issue still replays. Only an
+explicit release frees reserved kg. The R13 parent-roll read is unchanged: its `UnblockedPhysicalKg` stays a block
+bucket, not availability.
+
 `ReservedUntilUtc` is optional input only. This predecessor neither invents the Settings default nor auto-releases
 expired allocations. It supports only the locked `sales.order-line` demand kind; future purchase/production/manual
 sources and source conversion are separate accepted slices. Rows created before this lifecycle remain readable with
 null demand facts, so the LOG-5 runtime is not relabelled.
 
-Host publication is **NOT READY**: no approved allocation write permission exists. Issue #66 comment 5805818345 asks
-for the exact existing permission/action mapping. Until that is answered, there is no endpoint, grant, shell route or
-OpenAPI operation. The central host must also read `ISalesOrderLineReferencePortV1`, compare the approved line's
-company/product/version, then revalidate authority/company/actor immediately before this single owner save.
+Host publication: the allocation routes are published under `inventory.physical-allocation.write` (create,
+release, and the INV-AL-1 change below) with their OpenAPI operations. The host reads `ISalesOrderLineReferencePortV1`,
+compares the approved line's company/product/version, then revalidates authority/company/actor immediately before
+the single owner save.
+
+### INV-AL-1 change — revise an existing allocation (2026-09-28)
+
+Decision basis: Master v3 §25.4 ("Tahsisi görüntüle/revize et/serbest bırak" from the stock row / label), AT-063
+("Tahsis Revize … doğru satır bağlamıyla açılır"), DEC-STK-003/004 (allocation is not a movement; atomic, idempotent,
+never above free stock), DEC-STK-005 (no silent release), DEC-SAL-005 (a cancelled order is no approved demand) and
+AGENTS "silme yerine ters kayıt / kopya hareket yok". A change is composed ONLY of the two already-decided allocation
+operations (release + reservation) in one owner save; it chooses no new policy.
+
+| Rule | Where |
+|---|---|
+| `POST /api/v1/inventory/physical-allocations/{id}/change` under the existing `inventory.physical-allocation.write` (no new permission); fresh company-wide authority before and after the Sales owner read | `InventoryPhysicalAllocationHostService.ChangeAsync` |
+| The allocation's order line must STILL be approved (`ISalesOrderLineReferencePortV1`); a cancelled/unapproved line is 422 `inventory_allocation_invalid_reference` — the full release stays available. Product id/version come from the line, never the caller; the stored demand (order, line, product) must match | host + `InventoryStore.ChangeAsync` |
+| **Resize** (target = own label): in place, same id (a loading-instruction line bound to it stays valid), consumed part kept (`Allocated − Remaining` unchanged); an increase must fit the position's unreserved free kg and pass the Sales ownership gate; same kg = 422 `inventory_allocation_change_unchanged`; to 0 kg = use release | `StockAllocation.Resize`, `RequireReservableIncreaseAsync` |
+| **Move** (target = another label of the same product): the source is released with the change reason, a new allocation (client-supplied id) reserves the target's single company-owned-and-held Free position for the same order line — exactly the create rules | `ReservableTargetAsync` |
+| Fences: expected allocation version (409 `inventory_allocation_version_conflict`), expected target label version (409 `inventory_label_version_conflict`), every touched label version is bumped (a pending stock count on it becomes `inventory_stock_count_stale`; a split/merge sees the new version), label RowVersion race = 409 `inventory_concurrent_change`; no stock movement | store + SQL |
+| History: append-only `inventory.AllocationChanges` (kind 1 resize / 2 move, source version + kg → target kg, reason, actor, correlation); one change per source version (unique); `Down` refuses with 51053 while any exists; audit `inventory.physical-allocation.resized.v1` / `.moved.v1` (+ `.created.v1` for the move target), channel from the request (Web) | EF write guard + migration `AddInventoryAllocationChanges` |
+| ADR-011: command `inventory.physical-allocation.change.v1`; the same key and content replays the stored answer (200 + `Idempotency-Replayed`), other content 409 `idempotency_conflict` | `FindChangeReplayAsync` |
+| Read: `GET /api/v1/inventory/labels/{labelId}/physical-allocations` — the label's newest 50 sales allocations with release facts and change history, same authority; foreign/unknown label 404; a mixed-time read is 409 | `SqlInventoryPhysicalAllocationReader.ReadLabelAsync` |
+| UI: ST-02 label detail "Satış tahsisleri" panel (shown with the server-advertised `inventory.physical-allocation.write` control, reached from ST-01's label link) | `LabelAllocationPanel.tsx` |
+
+**Not decided (fail closed / parity with create, recorded — NEEDS-SINAN):**
+
+- `INV-AL-CHANGE-LINE-QTY-01`: whether the total active allocation of a line may exceed the Sales line quantity. The
+  create command does not cap it (the line quantity is in the order unit, not kg); a change keeps parity and does not
+  invent a cap or a unit conversion.
+- `INV-AL-CHANGE-INACTIVE-PRODUCT-01` (#98 item 11, in-flight documents): whether an allocation of an approved line
+  whose product card was deactivated may still be changed or moved. Create does not read the product lifecycle either;
+  no rule is invented here.
+- `INV-AL-CHANGE-AUTHORITY-01`: whether revising needs a separate name or maker≠checker. Until decided, the existing
+  write name (the one release and create use) applies; no new permission or grant.
+- Changing `ReservedUntilUtc`, partial moves (split one allocation over two labels) and non-sales demand kinds are out
+  of this slice.
+- `INV-AL-CHANGE-CANCELLED-DECREASE-01` (#507 review P3, kept as is — a policy choice, not a hardening): a change
+  on a line that is no longer approved (cancelled, or back in approval) is 422 for EVERY part, including a pure
+  decrease that would only give stock back. Only the parts that ADD a reservation (an increase, a move's target) are
+  covered by DEC-STK-003/004 and the create rules; whether a reservation may stay — even a smaller one — on demand
+  that DEC-SAL-005 has cancelled is not decided (DEC-SAL-005 decides the cancellation's impact preview, not what an
+  allocation of a cancelled line may still do). Allowing it would also change the host → writer contract (the product
+  identity comes from the approved line today). The full release stays available and is the decided way to give the
+  stock back.
+- **Cross-module race (declared, not closed here):** the host reads the Sales line and then saves Inventory's rows; no
+  transaction spans the two owners, so a cancellation or revision committed between that read and the save is not
+  seen by this change. The same residual race is already declared on the Sales side — Sales README "Cancellation of an
+  approved order (DEC-SAL-005, AT-007)" (next-module row) and "Quantity revision of an order (DEC-SAL-002, AT-023)"
+  (downstream row) — and is not duplicated or changed by this slice.
 
 ## R13 — draft parent-roll reference predecessor (Business #66/5778472429 A)
 
 `GoymenERP.Modules.Inventory.Application.IInventoryParentRollCandidatesV1.SearchAsync` accepts
 `InventoryParentRollQueryV1(Q, Limit=25)` (label-code search, max64 characters, examined window1..100)
 and returns `Items/SearchWindowFull`. `IInventoryParentRollValidationV1.ValidateAsync` accepts
-`InventoryParentRollSelectionV1(LabelId, ExpectedLabelVersion)`. There is deliberately no PlannedKg:
+`InventoryParentRollSelectionV1(LabelId, ExpectedLabelVersion)`. These public contracts remain context-free.
+The separate in-process `IInventoryContextualParentRollReferencesV1` accepts only exact typed owner/custodian
+kind and ID after the consumer has authorized its commercial context; party roles/accounts/versions and
+location are not inputs. There is deliberately no PlannedKg:
 this read does not choose equality, partial-coil, upper-bound, reservation or availability policy.
 `AddInventoryParentRollReferences()` registers only these owner ports. Central owns HTTP/host publication.
 `InventoryParentRollApiV1` fixes that publication's owner contract at
@@ -57,6 +115,7 @@ document status/kinds, positions' owner/custodian/location, and lossless physica
 loading holds are not deducted. `ProductionUseRequiresRevalidation` is always true. Missing coil is not
 a type discriminator. Blocked/pending-document own-company stock can be a draft reference without being
 released for consumption. Other-owner stock remains visible with `DraftSelectable=false` and context-required;
+supplying its exact stored owner/custodian context makes it draft-selectable without granting use or reserving it;
 no stock means no invented owner/location and a nonselectable no-physical-position result.
 Existing INV-1 `StockLedger.FromStoredBalances` validates the stored state: a label's nonzero buckets
 share one physical place (owner/custodian/location/product), while Free/Blocked buckets remain separate.
@@ -185,6 +244,27 @@ Notes carried from the #293 review (INFO; no change in this slice):
 - **Evidence and outcome.** The evidence is real SQL through the real host with synthetic grants and synthetic stock written through the store. It is **not a user outcome**: no real product card and no accepted opening stock source exist yet (plan §14 T07, Ö1).
 - **No write here.** The receipt (T07 write) waits for the opening-acceptance question on #66 (NEEDS-SINAN 5731613477). The lot record is the next section.
 
+### ST-04 movement timeline on the label detail
+
+`GET /api/v1/inventory/labels/{labelId}/detail` also returns `movementTimeline`: at most the
+newest 100 stored physical movements that contain the requested label, ordered by occurrence time.
+Each entry exposes only Inventory's immutable movement identity/kind/time, stable source identity
+and that label's own direction, owner, custodian, location, block and exact kg lines. Cost and
+source-module payloads are not disclosed. `windowFull=true` means older stored movements exist.
+
+The existing `inventory.labels.read` plus `inventory.balances.read` company-wide fence is reused;
+there is no new permission, route or grant. The detail service reads the bounded timeline twice,
+with fresh authority checks after every awaited owner read, and refuses `409
+inventory_label_detail_read_conflict` if the two captures differ. Unknown enum values, foreign
+product facts, malformed block/release pairs or non-canonical quantities fail closed as `503`.
+This is a read projection over existing `inventory.Movements`; it creates no movement and selects
+no transfer, return, correction or quality policy.
+
+This is the first ST-04 read slice, not the whole ST-04 card: the current ledger has Receipt,
+Issue, Block, Release and Return records. A distinct transfer or reversal record is shown only
+after its separately accepted Inventory writer and semantics exist; this reader does not infer
+either event from unrelated rows.
+
 ## T07 lot record: `MaterialLot`
 
 Card: #66 5733503803 (ÜRÜN). Business accepted it as an independent core slice and set its boundary in #66 5734060341; that text is the contract of this section. It closes none of Q1–Q3 and chooses no policy.
@@ -266,6 +346,148 @@ combined SQL message then carries two GUIDs. The colliding id is read from the n
 anything else is null and the answer stays the retryable `inventory_concurrent_change` — never a made-up
 conflict (`InventoryDuplicateKeyTests`; real SQL: company B offers A's lot and A's label in one call →
 `inventory_lot_conflict`).
+
+## T15 manufacturing realization — customer-owned physical context
+
+`InventoryManufacturingRealizationParticipant` chooses the input issue position from Inventory's single
+free parent-label balance; Manufacturing does not send an owner, custodian or location for that issue.
+The issue result returns the exact stored owner/custodian/location snapshot. An unused-input return posts
+back to that complete issued position. An output may use its separately authorized active output location,
+but its owner and custodian must exactly match the issued parent trace or Inventory refuses
+`inventory_manufacturing_parent_label_context_conflict`. This permits customer-owned/fason material without
+turning caller-supplied ownership into policy. Company filtering, expected label version, idempotent replay
+and the shared transaction remain unchanged; no permission, grant, reservation or Manufacturing policy is
+introduced here.
+
+## T09 goods receipt immutable source and replay
+
+`IInventoryGoodsReceiptSourceV1` reopens one committed Purchasing acceptance from Inventory's
+company-filtered command, whole receipt movement, exact movement line, label and lot rows. It returns
+the original physical `InventoryGoodsReceiptRequestV1` together with the stored
+`InventoryGoodsReceiptResultV1`; a missing or foreign-company acceptance is the same `null`, while an
+incomplete or internally inconsistent graph is `inventory_goods_receipt_unavailable` (503). The
+ordinary read exposes no actor, idempotency key or payload hash and grants no authority: the Purchasing
+consumer keeps its existing read permission and fresh company/actor fences around the awaited call.
+
+For a retry, the already-enlisted `IInventoryGoodsReceiptParticipantV1.ReadReplayAsync` reads by the
+current idempotency key before `StageAsync`. It returns `null` on the first attempt, requires the stored
+actor and acceptance target on a committed key, and otherwise uses the existing
+`inventory_goods_receipt_idempotency_conflict` (409). The host compares its current physical request
+with `OriginalRequest` and still calls `StageAsync`; the participant's stored canonical payload hash is
+the final same-key replay fence. No new endpoint, permission, grant, table or migration is introduced.
+
+This source does not choose first-write receipt facts. In particular, the authorized server source for
+`RequiredDocuments` remains a Purchasing/Business contract dependency; a browser array, empty default
+or synthetic MTC fallback is not accepted as production input.
+
+## ST-05 / AT-037 — stock count with difference reason and authority (DEC-STK-007)
+
+Decision basis: DEC-STK-007 (KILITLI: a count difference needs a reason and authority; a second approval may
+apply to a critical difference; history is never deleted; the reverse/correction chain is audited), AT-037 ("a
+count difference is not final without a reason and an approval"), Master v3 §12.2 (the adjuster and the count
+approver may be different people), DEC-SET-001 (no threshold in code; a missing policy stays fail-closed) and
+#66/5738113623 §2 (the opening-stock exemption does not relax the count-difference second-approval rules).
+
+| Rule | Where | Held by |
+|---|---|---|
+| A count names one stocked label at the version the counter saw, with exactly one stored non-zero position (a label with free AND blocked parts, or none, is `inventory_stock_count_position_conflict`); book = that position's kg, difference = counted − book | `StockCount`, `InventoryStore.RecordStockCountAsync` | domain + store |
+| A reason is mandatory (≤ 1000, trimmed); counted kg is canonical, ≥ 0, ≤ 3 decimals and on the company's approved kg profile at the count date | `ParseStockCount`, `InventoryKilogramScale` | store (400) |
+| Recording changes no stock and bumps no label version; a zero difference closes at once (`NoDifference`) | `InventoryStore.StockCounts.cs` | store |
+| The difference is final only after a decision under `inventory.stock-count.approve`; recording needs `inventory.stock-count.record`; both company-wide, measured fresh twice before the single owner transaction | `InventoryStockCountCommandService` | command (403/503) |
+| **Fail-closed maker≠checker:** every non-zero difference is decided (approved or rejected) by another actor than its counter (`inventory_stock_count_self_approval`). The critical-difference threshold is undecided, so every difference is treated as critical | `DecideStockCountAsync` | store (409) |
+| An approval posts exactly one `CountAdjustment` (kind 6) movement through the ledger — source `inventory.stock-count`/count id, one line In (surplus) or Out (shortage), free or blocked — and bumps the label version; only while the label is still at the counted version (`inventory_stock_count_stale`: count again) and never below the label's active allocations (`inventory_stock_count_allocation_conflict`) | `StockCount.Adjustment`, `StageMovementAsync` | domain + ledger + store |
+| One decision per count: key (company, count); the same decision and note FROM ITS DECIDER is a replay; anything else `inventory_stock_count_already_decided` — the same content from another actor is not their replay: the counter gets `inventory_stock_count_self_approval`, anyone else `inventory_stock_count_already_decided` (#499 review P3; the UI also hides Approve/Reject on a count the viewer recorded in this browser session, the 409 stays authoritative). The same count id with other content is `inventory_stock_count_conflict`. ADR-011 key per command (`inventory.stock-count.record.v1` / `.decide.v1`) in `inventory.Commands` | `StockCountDecisions` PK, `FindDecisionReplayAsync` | SQL + store |
+| Counts, decisions and the adjustment are append-only; `AddInventoryStockCounts.Down` refuses (THROW 51053) while any exists | write guard, migration | EF + SQL |
+| Read: `GET …/labels/{labelId}/stock-counts` (newest 50, `windowFull`) behind the ST-02 fence (labels.read + balances.read, measured before and after); foreign = unknown = 404 | `InventoryStockCountQueryService` | service |
+| After approval, ST-01, the ST-02 balance and timeline (`CountAdjustment`) and a new allocation read the counted kg | existing readers over `Balances` / `Movements` | SQL test |
+
+**Not decided (recorded blockers, no invented value):**
+
+- `INV-R21-CRITICAL-THRESHOLD-01` (relay INV-R20-R21-01 Q2, #66/5840984992, unanswered): which difference is
+  "critical", and whether a smaller one may be self-approved (option B: kg/% threshold + owner). Until decided the
+  store applies maker≠checker to every non-zero difference; option B would add a Settings policy key read at decision
+  time (DEC-SET-001 snapshot), not a code constant.
+- `INV-R21-REASON-LIST-01`: no closed reason list is decided (DEC-STK-007 names "sebep" only); the reason is free
+  text. A closed list, if decided, is an additive `ReasonCode` beside the text.
+- Out of this slice: counting a label with no stored stock ("found stock"), a whole-location count sheet, transfer
+  (R20, INV-R20-R21-01 Q1) and cost/valuation of the adjustment (OPEN-008).
+
+**Central publication (coordinator):** register `inventory.stock-count.record` and `inventory.stock-count.approve`
+(company-wide) in `ErpPermissions`; `builder.Services.AddInventoryStockCounts();` and `app.MapInventoryStockCountEndpoints();`
+in the host; Inventory shell provider controls for both names under ST-01 and the authority re-pin; OpenAPI
+regeneration; guard re-pins of `InventoryDbContext.cs` and the new migration; the three relational test names in
+`tools/relational_inventory/inventory.txt`. Grants are the user's (disposable browser actors only, as R19).
+
+## ST-02 — scrap write-off (hurda/fire çıkışı) and why stock return is not built
+
+**Readiness (checked 2026-09-28 on main `27591d0d`).** No decision names an Inventory scrap write-off by itself:
+DEC-STK-007 (KILITLI) says a stock difference needs a reason and an authority, a critical one may need a second
+approval and history is never deleted; DEC-PRDCT-006/007 place scrap as a separate Manufacturing output class; no
+AT covers an Inventory write-off. So this slice builds only what those decisions allow, on the AT-037 stock-count
+pattern with its fail-closed rule applied to EVERY write-off, and records the rest as open questions.
+
+| Rule | Where | Held by |
+|---|---|---|
+| A scrap names one stocked label at the version the recorder saw, with exactly one stored non-zero position (free or blocked; mixed or none is `inventory_stock_scrap_position_conflict`); book = that position's kg | `StockScrap`, `InventoryStore.RecordStockScrapAsync` | domain + store |
+| The scrap is positive, ≤ 3 decimals, on the company's approved kg profile and never more than the book (`inventory_stock_scrap_exceeds_book`, and `CK_StockScraps_State` in SQL); a reason is mandatory (≤ 1000, trimmed) | `ParseStockScrap`, `InventoryKilogramScale`, `CK_StockScraps_State` | store + SQL |
+| Only the company's own stock in its own custody is scrapped (owner and custodian = the transaction company); anything else is `inventory_stock_scrap_not_own_stock` (fail-closed) | `RecordStockScrapAsync` | store (409) |
+| Recording changes no stock and bumps no label version; what would remain must still cover the label's active allocations (`inventory_stock_scrap_allocation_conflict`) | `InventoryStore.StockScraps.cs` | store |
+| Stock leaves only after a decision under `inventory.stock-scrap.approve`; recording needs `inventory.stock-scrap.record`; both company-wide, measured fresh twice before the single owner transaction. The stock-count names grant nothing here | `InventoryStockScrapCommandService` | command (403/503) |
+| **Fail-closed maker≠checker:** every scrap is decided (approved or rejected) by another actor than its recorder (`inventory_stock_scrap_self_approval`) | `DecideStockScrapAsync` | store (409) |
+| An approval posts exactly one `Scrap` (kind 7) movement — source `inventory.stock-scrap`/scrap id, one Out line of the scrap kg, free OR blocked (scrapping blocked material needs no release, T13), cost `NotCalculated` — and bumps the label version; only while the label is still at the recorded version (`inventory_stock_scrap_stale`) and never below the active allocations | `StockScrap.WriteOff`, `StageMovementAsync` | domain + ledger + store |
+| One decision per scrap: key (company, scrap); same decision and note FROM ITS DECIDER = replay, anything else `inventory_stock_scrap_already_decided` — the recorder sending the decider's content gets `inventory_stock_scrap_self_approval`, anyone else `inventory_stock_scrap_already_decided` (#512 review P3; the UI hides Approve/Reject on a scrap the viewer recorded in this browser session, the 409 stays authoritative); the same scrap id with other content is `inventory_stock_scrap_conflict`; ADR-011 key per command (`inventory.stock-scrap.record.v1` / `.decide.v1`) | `StockScrapDecisions` PK, `FindScrapDecisionReplayAsync` | SQL + store |
+| Scraps, decisions and the movement are append-only; audit `Inventory.StockScrap` (record/approve/reject) + `Inventory.StockMovement`, channel from the caller (Web); `AddInventoryStockScraps.Down` refuses (THROW 51053) while any exists | write guard, migration | EF + SQL |
+| Read: `GET …/labels/{labelId}/stock-scraps` (newest 50, `windowFull`) behind the ST-02 fence; foreign = unknown = 404. After approval ST-01, the ST-02 balance and timeline (`Scrap`) and a new allocation read what remains | `InventoryStockScrapQueryService`, existing readers | service + SQL test |
+
+**Not decided (recorded, no invented value; NEEDS-SINAN candidates):**
+
+- `INV-SCRAP-AUTHORITY-01`: who may approve a scrap, and whether a small scrap may be self-approved (a kg/% threshold
+  would be a Settings policy, DEC-SET-001). Until decided every scrap needs a second actor.
+- `INV-SCRAP-DISPOSITION-01`: whether scrapped kg leave stock (this write-off) or become a sellable scrap label/product
+  (DEC-PRDCT-007: "hurda … ayrı kalite/üretim durumu; düzenli ticari satışta ayrı satış ürününe eşlenebilir"). If a
+  scrap label is decided, it is an additive receipt of a new label linked to this scrap, not a change of this movement.
+- `INV-SCRAP-REASON-LIST-01`: no closed reason list (free text), as `INV-R21-REASON-LIST-01`.
+- Valuation of the written-off kg: OPEN-008 (deferred); the movement carries `NotCalculated`.
+- `INV-SCRAP-OTHER-PARTY-01`: writing off a customer's goods (emanet) or our goods in a fason/external keeper's custody
+  (DEC-STK-008: loss/damage there is its own event). Undecided, so refused fail-closed
+  (`inventory_stock_scrap_not_own_stock`); only company-owned stock in the company's own custody is scrapped.
+
+**Stock return (iade) is NOT built — blocked:** AT-028 ("İade kaynak sipariş, teslimat ve fatura bağını korur") is a
+Sales/Logistics/Finance outcome whose source documents (return request, return delivery note, credit note) have no
+owner contract yet; no decision fixes whether a returned piece re-enters as its original label (the manufacturing
+`Return` kind only covers unused production input) or as a new label, under which owner, and whether it waits in a
+quality hold (DEC-STK-006 names the block kinds, not a return rule). Transfer (DEC-STK-008) stays blocked on
+INV-R20-R21-01 Q1. Inventory will add a return receipt only when the owning module publishes the source document.
+
+**Central publication (coordinator):** register `inventory.stock-scrap.record` / `inventory.stock-scrap.approve`
+(company-wide, not Critical) in `ErpPermissions`; `builder.Services.AddInventoryStockScraps();` in the host (the
+routes are mapped by `MapInventoryEndpoints`); Inventory shell 1.5 (two ST-01 controls) and the InventoryV14 → V15
+chain rows; OpenAPI regeneration (+3 operations); guard re-pins of `Program.cs`, `InventoryDbContext.cs`, the new
+migration and `inventory.txt` (+5 facts); r14 disposable actors `r14-scrapper` / `r14-scrap-approver`.
+
+## Movement kinds and rollback signal (reference)
+
+`StockMovementKind` (stored as `inventory.Movements.Kind`, `CK_Movements_Kind` = `[Kind] BETWEEN 1 AND 7`; the ST-04
+timeline and the web decoder name the same seven):
+
+| Kind | Value | Written by | Lines |
+|---|---|---|---|
+| `Receipt` | 1 | goods receipt (T09), opening stock (INV-OPEN-1), manufacturing output (T15) | In |
+| `Issue` | 2 | definite shipment (LOG-5), manufacturing input issue (T15); FREE stock only | Out |
+| `Block` | 3 | Free → Blocked on the same position, physical total unchanged; only the store's ledger write, no user command yet | one Out + one In |
+| `Release` | 4 | Blocked → Free on the same position, physical total unchanged; only the store's ledger write, no user command yet | one Out + one In |
+| `Return` | 5 | unused manufacturing input back to the same label and position (`AddInventoryManufacturingReturn`) | In |
+| `CountAdjustment` | 6 | an approved stock count difference (ST-05, `AddInventoryStockCounts`) | one In or Out |
+| `Scrap` | 7 | an approved scrap write-off (ST-02, `AddInventoryStockScraps`); free or blocked | one Out |
+
+A new kind widens `CK_Movements_Kind` in its own migration and its `Down` narrows it back only when no row of that kind
+exists. An allocation change, a split/merge and a label version bump write NO movement.
+
+**`THROW 51053` is a shared rollback signal, not an Inventory-owned number.** Every Inventory migration that must not
+be rolled back once its facts exist (`AddInventoryLabelGenealogy`, `AddInventoryManufacturingReturn`,
+`AddInventoryStockCounts`, `AddInventoryAllocationChanges`, `AddInventoryStockScraps`) raises 51053 in `Down`, and
+Finance's `AddManualBankPayments` uses the same number for the same meaning ("facts exist; forward fix"). It is kept
+as is — existing migrations are never renumbered — and the message text names the owner and the facts.
 
 ## dependency_wait
 

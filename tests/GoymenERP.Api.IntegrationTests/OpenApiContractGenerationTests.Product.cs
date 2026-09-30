@@ -20,6 +20,10 @@ public sealed partial class OpenApiContractGenerationTests
         new("get", "/api/v1/products/reference-options", "GetProductReferenceOptionsV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "404:application/problem+json"),
             ParameterValues: ["query:groupId:true:type:string;format:uuid", "query:classId:false:type:string;format:uuid"]),
+        // DEC-PRD-010 (spec PRODUCT-U01-U02-JIT-001 §10.2): the same-name duplicate warning, a read that never blocks.
+        new("get", "/api/v1/products/duplicate-candidates", "GetProductDuplicateCandidatesV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json"),
+            ParameterValues: ["query:name:false:type:string", "query:excludeProductId:false:type:string;format:uuid"]),
         new("get", "/api/v1/products/{id}", "GetProductV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "404:application/problem+json"),
             ParameterValues: ["path:id:true:type:string;format:uuid"]),
@@ -36,6 +40,13 @@ public sealed partial class OpenApiContractGenerationTests
         new("post", "/api/v1/products/{id}/activation", "ActivateProductV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "404:application/problem+json", "409:application/problem+json", "415:", "503:application/problem+json"),
             "#/components/schemas/ActivateProductRequest", ["path:id:true:type:string;format:uuid"]),
+        // DEC-CAR-003 / PRD-PERM-001: Active -> Inactive and back, each under its own global operation and a reason.
+        new("post", "/api/v1/products/{id}/deactivation", "DeactivateProductV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "404:application/problem+json", "409:application/problem+json", "415:", "503:application/problem+json"),
+            "#/components/schemas/ChangeProductLifecycleRequest", ["path:id:true:type:string;format:uuid"]),
+        new("post", "/api/v1/products/{id}/reactivation", "ReactivateProductV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "404:application/problem+json", "409:application/problem+json", "415:", "503:application/problem+json"),
+            "#/components/schemas/ChangeProductLifecycleRequest", ["path:id:true:type:string;format:uuid"]),
     ];
 
     private static readonly IReadOnlyDictionary<string, string> ProductSuccessSchemas = new Dictionary<string, string>(StringComparer.Ordinal)
@@ -43,11 +54,14 @@ public sealed partial class OpenApiContractGenerationTests
         ["GetProductsV1"] = "ref:ProductPage",
         ["GetProductCodeGroupsV1"] = "array:ProductCodeGroup",
         ["GetProductReferenceOptionsV1"] = "ref:ProductReferenceOptions",
+        ["GetProductDuplicateCandidatesV1"] = "ref:ProductDuplicateCandidates",
         ["GetProductV1"] = "ref:ProductCardView",
         ["GetProductHistoryV1"] = "ref:ProductHistoryView",
         ["CreateProductDraftV1"] = "ref:ProductMutationResponse",
         ["EditProductDraftV1"] = "ref:ProductMutationResponse",
         ["ActivateProductV1"] = "ref:ProductMutationResponse",
+        ["DeactivateProductV1"] = "ref:ProductMutationResponse",
+        ["ReactivateProductV1"] = "ref:ProductMutationResponse",
     };
 
     private static bool IsProductOperation(string id) => ProductSuccessSchemas.ContainsKey(id);
@@ -104,14 +118,14 @@ public sealed partial class OpenApiContractGenerationTests
                     ? ["company_context_invalid", "correlation_metadata_invalid", "invalid_cursor", "validation_failed"]
                     : ["company_context_invalid", "correlation_metadata_invalid", "validation_failed"],
                 401 => ["authentication_required"], 404 => ["not_found"],
-                409 => expected.OperationId is "EditProductDraftV1" or "ActivateProductV1"
+                409 => expected.OperationId is "EditProductDraftV1" or "ActivateProductV1" or "DeactivateProductV1" or "ReactivateProductV1"
                     ? ["idempotency_conflict", "lifecycle_conflict", "version_conflict"] : ["idempotency_conflict"],
                 500 => ["internal_error"], 503 => ["product_write_contention"], _ => [],
             };
             Assert.Equal(codes.Length > 0, response.Value.TryGetProperty("x-erp-problem-codes", out var actualCodes));
             if (codes.Length > 0) Assert.Equal(codes, actualCodes.EnumerateArray().Select(value => value.GetString()));
             if (status == 400)
-                Assert.Equal(mutation || expected.OperationId is "GetProductsV1" or "GetProductReferenceOptionsV1",
+                Assert.Equal(mutation || expected.OperationId is "GetProductsV1" or "GetProductReferenceOptionsV1" or "GetProductDuplicateCandidatesV1",
                     response.Value.TryGetProperty(ErpOpenApiContract.EmptyBodyPossibleExtensionName, out var empty) && empty.GetBoolean());
         }
     }
@@ -121,6 +135,9 @@ public sealed partial class OpenApiContractGenerationTests
         var expected = new Dictionary<string, ComponentSchemaExpectation>(StringComparer.Ordinal)
         {
             ["ProductPage"] = ObjectSchema(["items", "nextCursor"], ("items", "type:array;items:ref:ProductDraftView"), ("nextCursor", "type:null|string")),
+            ["ProductDuplicateCandidates"] = ObjectSchema(["rule", "name", "exactName", "hasMore"],
+                ("rule", "type:string"), ("name", "type:string"), ("exactName", "type:array;items:ref:ProductDraftView"),
+                ("hasMore", "type:boolean")),
             ["ProductCodeGroup"] = ObjectSchema(["id", "name", "prefix"], ("id", "type:string;format:uuid"), ("name", "type:string"), ("prefix", "type:string")),
             ["ProductMutationResponse"] = ObjectSchema(["card", "isReplay"], ("card", "ref:ProductCardView"), ("isReplay", "type:boolean")),
             ["ProductHistoryView"] = ObjectSchema(["productId", "entries", "truncated"],
@@ -196,7 +213,8 @@ public sealed partial class OpenApiContractGenerationTests
             ["name", "groupId", "classId", "familyId", "roles", "references"]);
         AssertRequestSchema(schemas.GetProperty("EditProductDraftRequest"), ["expectedVersion", "changes", "reason"], [], ["expectedVersion", "changes", "reason"]);
         AssertRequestSchema(schemas.GetProperty("ActivateProductRequest"), ["expectedVersion"], [], ["expectedVersion"]);
-        foreach (var name in new[] { "CreateProductDraftRequest", "EditProductDraftRequest", "ActivateProductRequest", "ProductDraftChanges", "ProductReferenceChanges", "ProductUnitChanges", "ProductRoleInputs", "ProductRoleInput" })
+        AssertRequestSchema(schemas.GetProperty("ChangeProductLifecycleRequest"), ["expectedVersion", "reason"], [], ["expectedVersion", "reason"]);
+        foreach (var name in new[] { "CreateProductDraftRequest", "EditProductDraftRequest", "ActivateProductRequest", "ChangeProductLifecycleRequest", "ProductDraftChanges", "ProductReferenceChanges", "ProductUnitChanges", "ProductRoleInputs", "ProductRoleInput" })
             Assert.False(schemas.GetProperty(name).GetProperty("additionalProperties").GetBoolean());
         var changes = schemas.GetProperty("ProductDraftChanges");
         Assert.Equal(1, changes.GetProperty("minProperties").GetInt32());
@@ -209,7 +227,7 @@ public sealed partial class OpenApiContractGenerationTests
             Assert.Equal("#/components/schemas/" + target, Assert.Single(schemas.GetProperty(optional).GetProperty("allOf").EnumerateArray()).GetProperty("$ref").GetString());
         Assert.Equal("object", Assert.Single(schemas.GetProperty("OptionalOfIReadOnlyDictionaryOfstringAndJsonElement").GetProperty("allOf").EnumerateArray()).GetProperty("type").GetString());
         Assert.Equal(2, schemas.GetProperty("ProductRoleInput").GetProperty("oneOf").GetArrayLength());
-        foreach (var request in new[] { "EditProductDraftRequest", "ActivateProductRequest" })
+        foreach (var request in new[] { "EditProductDraftRequest", "ActivateProductRequest", "ChangeProductLifecycleRequest" })
         {
             var version = schemas.GetProperty(request).GetProperty("properties").GetProperty("expectedVersion");
             Assert.Equal("string", version.GetProperty("type").GetString());

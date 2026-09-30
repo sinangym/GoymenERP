@@ -3,8 +3,9 @@
  *
  * A journal is a derived accounting record of a source fact (Master §620), never a second money
  * movement. Amounts are the server's text, shown regrouped and never summed, rounded or padded here;
- * the totals are the server's. No voucher is created, approved or reversed on these screens (ACC-V1
- * waits on its decisions), so there is no such button.
+ * the totals are the server's. No voucher is created or approved on these screens. ACC-V1 (#66/5827281417) adds
+ * one control to the detail: PROPOSING a reversal (./JournalReversalPages.tsx), shown only when the server publishes
+ * `accounting.journal-reversals.propose`; the proposal changes nothing until ANOTHER person approves it.
  */
 
 import { useState } from 'react'
@@ -37,6 +38,7 @@ import { contextKey, contextKeyString, hasCapability } from '../shell/shellState
 import { ACCOUNTING_CAPABILITY } from './capabilities'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
 import { StateBlock } from '../shell/StateBlock'
+import { JournalReversalProposePanel } from './JournalReversalPages'
 import styles from './Accounting.module.css'
 
 const GUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -367,6 +369,9 @@ function Detail({ namespace, journalId }: { readonly namespace: string | null; r
       <div className={styles.actions}>
         <Link to={ACCOUNTING_ROUTE.journalsList}>{ALL_JOURNALS}</Link>
       </div>
+      {hasCapability(shell, ACCOUNTING_CAPABILITY.journalReversalPropose) ? (
+        <JournalReversalProposePanel key={journal.journalId} journal={journal} />
+      ) : null}
     </DetailFrame>
   )
 }

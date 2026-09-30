@@ -75,6 +75,9 @@ import { useShellDispatch, useShellState } from '../shell/shellContext'
 import { contextKey, contextKeyString, hasCapability } from '../shell/shellState'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
 import { StateBlock } from '../shell/StateBlock'
+import { MasterFormLauncher, MasterRecordForm } from './MasterRecordForm'
+import { MASTER_TEXT, savedNotice } from './organizationText'
+import { refreshOrganizationReads } from './refreshOrganizationReads'
 import styles from './LocationDetailPage.module.css'
 
 /** Registered with the shell so a company switch with an unsent draft warns first. */
@@ -120,6 +123,7 @@ function LocationDetail({ namespace }: { readonly namespace: string | null }) {
   const scopeMode = shell.activeContext?.scopeMode ?? 'single'
   const singleCompanyContext = scopeMode === 'single' && activeCompanyId !== null
   const canChangeStatus = hasCapability(shell, ORGANIZATION_CAPABILITY.locationStatus)
+  const canEdit = hasCapability(shell, ORGANIZATION_CAPABILITY.locationEdit)
   /**
    * Identity of an outstanding command: session + actor + company + location.
    *
@@ -172,6 +176,12 @@ function LocationDetail({ namespace }: { readonly namespace: string | null }) {
     })
   }, [namespace, queryClient, refetch])
 
+  /** After a master edit: every read of this context, so pickers elsewhere do not paint the old code or name. */
+  const refreshAll = useCallback(async () => {
+    await refetch()
+    await refreshOrganizationReads(queryClient, namespace)
+  }, [namespace, queryClient, refetch])
+
   const state = (
     query.isPending
       ? { kind: 'initial-loading' }
@@ -219,6 +229,13 @@ function LocationDetail({ namespace }: { readonly namespace: string | null }) {
         hasCapability(shell, ORGANIZATION_CAPABILITY.workCentersList) ? (
           <p><Link to={workCenterListPath(state.data.id)}>{WORK_CENTER_LOCATION_TEXT.action}</Link></p>
         ) : null}
+      {canEdit ? (
+        <LocationEditSection
+          location={state.data}
+          companyId={activeCompanyId ?? ''}
+          onRefresh={refreshAll}
+        />
+      ) : null}
       {canChangeStatus ? (
         <ActiveStateSection
           location={state.data}
@@ -301,6 +318,60 @@ function LocationCard({ location }: { readonly location: LocationSummary }) {
         </dd>
       </div>
     </dl>
+  )
+}
+
+/**
+ * The master edit of this location: code and name only. The site and the external flag are fixed at creation, so
+ * the form says so rather than offering them. After a 204 the card is re-read — the form never predicts the saved
+ * values or the next version.
+ */
+function LocationEditSection({
+  location,
+  companyId,
+  onRefresh,
+}: {
+  readonly location: LocationSummary
+  readonly companyId: string
+  readonly onRefresh: () => Promise<void>
+}) {
+  const [open, setOpen] = useState(false)
+  const [saved, setSaved] = useState<null | { readonly replayed: boolean }>(null)
+  if (!open) {
+    return (
+      <MasterFormLauncher
+        label={MASTER_TEXT.editLocation}
+        saved={saved === null ? null : savedNotice(saved.replayed)}
+        onOpen={() => {
+          setSaved(null)
+          setOpen(true)
+        }}
+      />
+    )
+  }
+  return (
+    <MasterRecordForm
+      heading={MASTER_TEXT.editLocation}
+      companyId={companyId}
+      dirtyScope="organization.location.edit"
+      initial={{ code: location.code, name: location.name }}
+      note={MASTER_TEXT.fixedFacts}
+      buildCommand={(values) => ({
+        kind: 'update-location',
+        id: location.id,
+        code: values.code,
+        name: values.name,
+        expectedVersion: location.version,
+        reason: values.reason,
+      })}
+      onUpdated={async (replayed) => {
+        await onRefresh()
+        setSaved({ replayed })
+        setOpen(false)
+      }}
+      onReload={onRefresh}
+      onCancel={() => setOpen(false)}
+    />
   )
 }
 

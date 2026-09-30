@@ -157,6 +157,11 @@ export function productHistory(over: Record<string, unknown> = {}) {
   return { productId: PRODUCT_1, entries: [historyEntry()], truncated: false, ...over }
 }
 
+/** `ProductDuplicateCandidates`: the exact-name rule, no other card by default. */
+export function duplicateCandidates(over: Record<string, unknown> = {}) {
+  return { rule: 'exactName', name: 'Sac', exactName: [], hasMore: false, ...over }
+}
+
 export interface RecordedCall {
   readonly url: string
   readonly method: string
@@ -178,11 +183,18 @@ export interface HarnessConfig {
   readonly onList?: (url: string) => Response | Promise<Response>
   readonly onCard?: (url: string) => Response | Promise<Response>
   readonly onHistory?: (url: string) => Response | Promise<Response>
+  /** `GET /products/duplicate-candidates`; defaults to no other card with the name. */
+  readonly onDuplicates?: (url: string) => Response | Promise<Response>
   readonly onGroups?: () => Response | Promise<Response>
   /** May be deferred, so a test can resolve it in the same batch as a command's answer. */
   readonly onOptions?: (url: string) => Response | Promise<Response>
   readonly onCreate?: (attempt: number, body: string | null) => Response | Promise<Response>
   readonly onEdit?: (attempt: number, body: string | null) => Response | Promise<Response>
+  readonly onActivate?: (attempt: number, body: string | null) => Response | Promise<Response>
+  /** `POST /products/{id}/deactivation`; defaults to an Inactive v8 card. */
+  readonly onDeactivate?: (attempt: number, body: string | null) => Response | Promise<Response>
+  /** `POST /products/{id}/reactivation`; defaults to an Active v8 card. */
+  readonly onReactivate?: (attempt: number, body: string | null) => Response | Promise<Response>
 }
 
 /**
@@ -195,6 +207,9 @@ export function installFetch(config: HarnessConfig = {}) {
   const calls: RecordedCall[] = []
   let createAttempts = 0
   let editAttempts = 0
+  let activationAttempts = 0
+  let deactivationAttempts = 0
+  let reactivationAttempts = 0
 
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === 'string' ? input : input.toString()
@@ -237,8 +252,44 @@ export function installFetch(config: HarnessConfig = {}) {
         )
       }
       if (method === 'POST') {
+        if (/\/products\/[^/?]+\/activation/.test(url)) {
+          activationAttempts += 1
+          return (
+            (await config.onActivate?.(activationAttempts, body)) ??
+            json(
+              mutation({
+                card: productCard({ product: productCore({ lifecycle: 'Active', version: '8' }) }),
+              }),
+            )
+          )
+        }
+        if (/\/products\/[^/?]+\/deactivation/.test(url)) {
+          deactivationAttempts += 1
+          return (
+            (await config.onDeactivate?.(deactivationAttempts, body)) ??
+            json(
+              mutation({
+                card: productCard({ product: productCore({ lifecycle: 'Inactive', version: '8' }) }),
+              }),
+            )
+          )
+        }
+        if (/\/products\/[^/?]+\/reactivation/.test(url)) {
+          reactivationAttempts += 1
+          return (
+            (await config.onReactivate?.(reactivationAttempts, body)) ??
+            json(
+              mutation({
+                card: productCard({ product: productCore({ lifecycle: 'Active', version: '8' }) }),
+              }),
+            )
+          )
+        }
         createAttempts += 1
         return (await config.onCreate?.(createAttempts, body)) ?? json(mutation(), 201)
+      }
+      if (url.includes('/products/duplicate-candidates')) {
+        return (await config.onDuplicates?.(url)) ?? json(duplicateCandidates())
       }
       if (/\/products\/[^/?]+\/history/.test(url)) {
         return (await config.onHistory?.(url)) ?? json(productHistory())

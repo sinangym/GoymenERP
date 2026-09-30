@@ -47,8 +47,13 @@ public static class PurchasingModuleExtensions
         services.AddScoped<IPurchasingStore>(serviceProvider => serviceProvider.GetRequiredService<PurchasingStore>());
         services.AddScoped<PurchaseUnitVerifier>();
         services.TryAddSingleton(new PurchasingServiceBindings());
-        services.AddScoped<IPurchasingService>(CreatePurchasingService);
+        services.AddScoped<PurchasingService>(CreatePurchasingService);
+        services.AddScoped<IPurchasingService>(provider => provider.GetRequiredService<PurchasingService>());
+        services.AddScoped<IPurchaseGoodsReceiptServiceV1>(provider => provider.GetRequiredService<PurchasingService>());
+        services.AddScoped<IPurchaseAcceptanceSourceV1, PurchaseAcceptanceSource>();
         services.AddScoped<IPurchaseSupplyReferencePortV1, PurchaseSupplyReferencePort>();
+        // AT-025: the purchase section of the operations work list reads the approved lines awaiting receipt through this port only.
+        services.AddScoped<IPurchaseOpenLineReadPortV1, PurchaseOpenLineReadPort>();
         return services;
     }
 
@@ -63,7 +68,9 @@ public static class PurchasingModuleExtensions
         serviceProvider.GetRequiredService<PurchaseUnitVerifier>(),
         serviceProvider.GetRequiredService<IPurchasingStore>(),
         serviceProvider.GetRequiredService<PurchasingServiceBindings>(),
-        serviceProvider.GetRequiredService<TimeProvider>());
+        serviceProvider.GetRequiredService<TimeProvider>(),
+        serviceProvider.GetService<IPurchaseGoodsReceiptTransactionV1>(),
+        serviceProvider.GetService<IPurchaseGoodsReceiptReadsV1>());
 
     /// <summary>Applies Purchasing's migrations. Its foreign keys need Organization's tables first.</summary>
     public static async Task InitializePurchasingModuleAsync(this IServiceProvider services, CancellationToken cancellationToken = default)

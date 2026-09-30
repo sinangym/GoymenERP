@@ -24,7 +24,8 @@
           "discountPercent": "0",
           "priceDisclosure": "Visible"
         }
-      ]
+      ],
+      "reason": null
     }
   ]
 }

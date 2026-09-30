@@ -52,6 +52,56 @@ public sealed class ProductHttpContractTests
     }
 
     [Fact]
+    public async Task Duplicate_candidates_bind_the_name_and_exclusion_and_answer_the_exact_name_rule()
+    {
+        var service = new Service();
+        await using var app = await StartAsync(service);
+        using var client = Client(app);
+        var excluded = Guid.NewGuid();
+        using var response = await client.GetAsync(
+            $"{ProductDuplicateRules.Path}?name=%20%20Sac%20&excludeProductId={excluded:D}");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.True(response.Headers.CacheControl!.NoStore);
+        using var json = System.Text.Json.JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var root = json.RootElement;
+        Assert.Equal(["rule", "name", "exactName", "hasMore"], root.EnumerateObject().Select(member => member.Name));
+        Assert.Equal("exactName", root.GetProperty("rule").GetString());
+        // The server compared the name the write path would store: trimmed.
+        Assert.Equal("Sac", root.GetProperty("name").GetString());
+        Assert.Equal(service.Card.Product.Id, root.GetProperty("exactName")[0].GetProperty("id").GetGuid());
+        Assert.False(root.GetProperty("hasMore").GetBoolean());
+        Assert.Equal(excluded, service.LastDuplicateQuery!.ExcludeProductId);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("?name=")]
+    [InlineData("?name=%20%20")]
+    [InlineData("?name=Sac%01")]
+    [InlineData("?name=Sac&excludeProductId=00000000-0000-0000-0000-000000000000")]
+    [InlineData("?name=Sac&excludeProductId=not-a-uuid")]
+    public async Task Duplicate_candidates_refuse_a_name_the_write_path_refuses_or_an_empty_exclusion(string query)
+    {
+        var service = new Service();
+        await using var app = await StartAsync(service);
+        using var client = Client(app);
+        using var response = await client.GetAsync(ProductDuplicateRules.Path + query);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Null(service.LastDuplicateQuery);
+    }
+
+    [Fact]
+    public async Task Duplicate_candidates_without_the_global_read_disclose_nothing()
+    {
+        var service = new Service { Denied = true };
+        await using var app = await StartAsync(service);
+        using var client = Client(app);
+        using var response = await client.GetAsync($"{ProductDuplicateRules.Path}?name=Sac");
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.DoesNotContain("Sac", await response.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Create_and_read_use_one_exact_casing_version_and_time_contract()
     {
         var service = new Service();
@@ -127,6 +177,37 @@ public sealed class ProductHttpContractTests
         using var exact = new StringContent("""{"expectedVersion":"1"}""", System.Text.Encoding.UTF8, "application/json");
         Assert.Equal(HttpStatusCode.Conflict, (await client.PostAsync(path, exact)).StatusCode);
         Assert.Equal(1, service.Activations);
+    }
+
+    [Theory]
+    [InlineData("deactivation", """{"expectedVersion":"2","reason":"Kalktı","lifecycle":"Inactive"}""")]
+    [InlineData("deactivation", """{"expectedVersion":"2","reason":"Kalktı","companyId":"9197acdd-034f-4082-bc66-cebc5c81be53"}""")]
+    [InlineData("deactivation", """{"expectedVersion":2,"reason":"Kalktı"}""")]
+    [InlineData("deactivation", """{"expectedVersion":"2"}""")]
+    [InlineData("deactivation", """{"reason":"Kalktı"}""")]
+    [InlineData("reactivation", """{"expectedVersion":"3","reason":"Döndü","lifecycle":"Active"}""")]
+    [InlineData("reactivation", """{"expectedVersion":"3"}""")]
+    [InlineData("reactivation", """{}""")]
+    public async Task A_lifecycle_body_with_an_unknown_missing_or_numeric_member_does_not_reach_command(string route, string json)
+    {
+        var service = new Service();
+        await using var app = await StartAsync(service);
+        using var client = Client(app);
+        var path = $"/api/v1/products/{service.Card.Product.Id}/{route}";
+        using var body = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
+        Assert.Equal(HttpStatusCode.BadRequest, (await client.PostAsync(path, body)).StatusCode);
+        Assert.Equal((0, 0), (service.Deactivations, service.Reactivations));
+
+        // Control: the exact body reaches only its own command on the same route, and a refusal is a 409 problem.
+        using var exact = new StringContent("""{"expectedVersion":"2","reason":"Gerekçe"}""",
+            System.Text.Encoding.UTF8, "application/json");
+        using var response = await client.PostAsync(path, exact);
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        using var problem = System.Text.Json.JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(ProductApiV1.LifecycleConflict, problem.RootElement.GetProperty("code").GetString());
+        Assert.Equal(route == "deactivation" ? (1, 0) : (0, 1), (service.Deactivations, service.Reactivations));
+        Assert.Equal(new ChangeProductLifecycleRequest("2", "Gerekçe"), service.LastLifecycleRequest);
+        Assert.Equal(0, service.Activations);
     }
 
     [Fact]
@@ -293,6 +374,16 @@ public sealed class ProductHttpContractTests
         }
         public Task<IReadOnlyList<ProductCodeGroup>> GetCodeGroupsAsync(CancellationToken cancellationToken) =>
             Task.FromResult<IReadOnlyList<ProductCodeGroup>>([Group]);
+        public ProductDuplicateQuery? LastDuplicateQuery { get; private set; }
+        public Task<ProductDuplicateCandidates> GetDuplicateCandidatesAsync(ProductDuplicateQuery query,
+            CancellationToken cancellationToken)
+        {
+            Reads++;
+            if (Denied) throw new UnauthorizedAccessException("synthetic Product read refusal");
+            LastDuplicateQuery = ProductDuplicateRules.Normalize(query);
+            return Task.FromResult(new ProductDuplicateCandidates(ProductDuplicateRules.ExactName,
+                LastDuplicateQuery.Name!, [Card.Product], false));
+        }
         public Task<ProductReferenceOptions> GetReferenceOptionsAsync(ProductReferenceQuery query,
             CancellationToken cancellationToken) => Task.FromResult(new ProductReferenceOptions(
                 Group.Id, null, [], [], [], [], [], ["classes", "families", "units", "trackingPolicies", "templates"]));
@@ -305,6 +396,15 @@ public sealed class ProductHttpContractTests
         public Task<ProductMutationResponse> ActivateAsync(Guid id, ActivateProductRequest request,
             string idempotencyKey, CancellationToken cancellationToken)
         { Activations++; throw new ProductOperationException(ProductApiV1.LifecycleConflict, 409); }
+        public int Deactivations { get; private set; }
+        public int Reactivations { get; private set; }
+        public ChangeProductLifecycleRequest? LastLifecycleRequest { get; private set; }
+        public Task<ProductMutationResponse> DeactivateAsync(Guid id, ChangeProductLifecycleRequest request,
+            string idempotencyKey, CancellationToken cancellationToken)
+        { Deactivations++; LastLifecycleRequest = request; throw new ProductOperationException(ProductApiV1.LifecycleConflict, 409); }
+        public Task<ProductMutationResponse> ReactivateAsync(Guid id, ChangeProductLifecycleRequest request,
+            string idempotencyKey, CancellationToken cancellationToken)
+        { Reactivations++; LastLifecycleRequest = request; throw new ProductOperationException(ProductApiV1.LifecycleConflict, 409); }
     }
 
     private sealed class AuditSource(Guid productId) : IProductAuditHistorySourceV1

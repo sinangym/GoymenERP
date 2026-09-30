@@ -21,7 +21,7 @@ import {
   NEGATIVE_EXAMPLE,
   NORMAL_EXAMPLE,
 } from './contractExamples'
-import { buildDraftSaveRequest } from './manualReceiptForm'
+import { buildDraftSaveRequest, emptyManualReceiptFields } from './manualReceiptForm'
 import { bankAccount, bankPage, sourceDetail, sourceSummary } from './testHarness'
 
 const A = EXAMPLE_COMPANY
@@ -41,7 +41,7 @@ describe('normal example', () => {
 
   it('the form builds exactly the example DraftSave create request', () => {
     const built = buildDraftSaveRequest(
-      { treasuryAccountId: EXAMPLE_BANK, amount: '1000', occurredOn: '2026-09-13', valueOn: '', bankReference: '', description: 'SENTETIK/NOT_ENV' },
+      { ...emptyManualReceiptFields(), treasuryAccountId: EXAMPLE_BANK, amount: '1000', occurredOn: '2026-09-13', description: 'SENTETIK/NOT_ENV' },
       {
         party: { partyId: EXAMPLE_PARTY, companyAccountId: EXAMPLE_ACCOUNT },
         identity: { draftId: null, expectedVersion: null },
@@ -157,5 +157,52 @@ describe('fail-closed mutations of the normal resource', () => {
   it('a bank page item from another company is refused', () => {
     expect(decodeBankAccountPage(bankPage(A, [bankAccount('bbbbbbbb-0000-4000-8000-000000000002')]), A).ok).toBe(false)
     expect(decodeBankAccountPage(bankPage(A, [bankAccount(A, { isUsableForReceipt: 'yes' })]), A).ok).toBe(false)
+  })
+})
+
+describe('DEC-FIN-014 customer POS collection detail', () => {
+  const visible = (amount: string) => ({ disclosure: 'Visible', money: { amount, currencyId: EXAMPLE_CURRENCY } })
+  const withPos = (pos: unknown, overrides: Record<string, unknown> = {}) => ({ ...sourceDetail(A, overrides), pos })
+
+  it('decodes gross, commission and net kept apart; a bank transfer has pos null', () => {
+    const decoded = decodeSourceDetail(withPos({ commissionBearer: 'Company', commission: visible('25.5'), bankNet: visible('974.5') }), A)
+    expect(decoded.ok && decoded.value.pos).toEqual({ commissionBearer: 'Company', commission: visible('25.5'), bankNet: visible('974.5') })
+    const transfer = decodeSourceDetail(sourceDetail(A), A)
+    expect(transfer.ok && transfer.value.pos).toBeNull()
+  })
+
+  it.each([
+    ['amounts that do not add up', { commissionBearer: 'Company', commission: visible('25.5'), bankNet: visible('975') }],
+    ['a net equal to zero', { commissionBearer: 'Company', commission: visible('1000'), bankNet: visible('0') }],
+    ['an unknown bearer', { commissionBearer: 'Supplier', commission: visible('25.5'), bankNet: visible('974.5') }],
+    ['a bearer as a number', { commissionBearer: 1, commission: visible('25.5'), bankNet: visible('974.5') }],
+    ['a disclosure other than the gross', { commissionBearer: 'Company', commission: { disclosure: 'Redacted', money: null }, bankNet: visible('974.5') }],
+    ['an unknown member', { commissionBearer: 'Company', commission: visible('25.5'), bankNet: visible('974.5'), rate: '2.5' }],
+    ['a missing member', { commissionBearer: 'Company', commission: visible('25.5') }],
+    ['another currency', { commissionBearer: 'Company', commission: { disclosure: 'Visible', money: { amount: '25.5', currencyId: EXAMPLE_ACCOUNT } }, bankNet: visible('974.5') }],
+  ])('refuses %s', (_label, pos) => expect(decodeSourceDetail(withPos(pos), A).ok).toBe(false))
+
+  it('a Record result without the amount grant decodes with a redacted known unallocated amount', () => {
+    const redacted = { disclosure: 'Redacted', money: null }
+    const decoded = decodeCommandResult({
+      outcome: 'Succeeded',
+      isReplay: true,
+      originalCorrelationId: 'SENTETIK-first',
+      issues: [],
+      resource: withPos({ commissionBearer: 'Company', commission: redacted, bankNet: redacted }, {
+        source: { stage: 'Recorded', amount: redacted },
+        recordedAtUtc: '2026-09-13T08:00:00Z',
+        unallocated: { knowledge: 'Known', amount: redacted },
+      }),
+    }, A)
+    expect(decoded.ok && decoded.value.outcome === 'Succeeded' && decoded.value.resource.unallocated)
+      .toEqual({ knowledge: 'Known', amount: redacted })
+  })
+
+  it('a redacted gross carries redacted POS amounts and no digits', () => {
+    const redacted = { disclosure: 'Redacted', money: null }
+    const decoded = decodeSourceDetail(withPos({ commissionBearer: 'Customer', commission: redacted, bankNet: redacted },
+      { source: { amount: redacted } }), A)
+    expect(decoded.ok && decoded.value.pos).toEqual({ commissionBearer: 'Customer', commission: redacted, bankNet: redacted })
   })
 })

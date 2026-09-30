@@ -157,7 +157,9 @@ public sealed class SalesOrderDraftApprovalTests
             .Select(method => method.Name)
             .Order(StringComparer.Ordinal)
             .ToArray();
-        Assert.Equal(["AddLine", "Approve", "Reject", "ReviseCommercial", "Submit", "Withdraw"], entries);
+        // DEC-SAL-005: the cancellation of an approved order is a mutation entry too (RequireCancellable only reads);
+        // DEC-SAL-002: so is the quantity revision (RequireQuantityRevisable only reads).
+        Assert.Equal(["AddLine", "Approve", "Cancel", "Reject", "RescheduleDelivery", "ReviseCommercial", "ReviseQuantities", "Submit", "Withdraw"], entries);
 
         var draft = Draft();
         draft.Withdraw(2, Preparer, "SENTETIK", T0);
@@ -168,6 +170,15 @@ public sealed class SalesOrderDraftApprovalTests
         Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => draft.Reject(3, Approver, null, T0)));
         Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => draft.Withdraw(3, Preparer, null, T0)));
         Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => draft.ReviseCommercial(3, [Commercial(draft.Lines[0], "13.00", KgUnit, "5")], "synthetic-pricer", T0)));
+        // DEC-SAL-003: the delivery-schedule update is a mutation entry too; a withdrawn draft's dates do not move.
+        Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => draft.RescheduleDelivery(3, Day.AddDays(5),
+            [new LineScheduleInput(draft.Lines[0].Id, Day.AddDays(5), [])], "synthetic-planner", T0)));
+        // DEC-SAL-005: a withdrawn draft was never approved — it is not cancelled either.
+        Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => draft.Cancel(3, Approver, "SENTETIK",
+            new CancellationImpactSnapshot("t", [new("inventory.active-allocations", "None")]), T0)));
+        // DEC-SAL-002: a withdrawn draft's quantities do not move.
+        Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => draft.ReviseQuantities(3,
+            [new LineQuantityInput(draft.Lines[0].Id, "9", 9m)], "synthetic-reviser", "SENTETIK", T0)));
         Assert.Equal(before, (draft.ApprovalState, draft.Version, draft.Revision, draft.Approval, draft.Lines.Count));
         Assert.Equal(InternalApprovalState.Withdrawn, draft.ApprovalState);
     }

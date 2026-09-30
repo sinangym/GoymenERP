@@ -14,8 +14,8 @@ using Microsoft.Extensions.Hosting;
 namespace GoymenERP.Api.IntegrationTests;
 
 /// <summary>
-/// Product's real shell capability provider: Product's four screens (U-01 list and 360 detail, U-02
-/// create and basic edit) are published to the shell and granted only from the global Product
+/// Product's real shell capability provider: Product's four screens and the U-01-360 lifecycle controls
+/// (approve, deactivate, reactivate) are published to the shell and granted only from the matching global Product
 /// authority. These checks need no database; the granted/denied answer through the real host on a real
 /// SQL Server is <see cref="ProductShellCapabilitySqlServerRelationalAcceptanceTests"/>.
 /// </summary>
@@ -33,10 +33,13 @@ public sealed class ProductShellCapabilityProviderTests
         Assert.Equal("PRODUCT", provider.Owner);
         Assert.Equal(
             [
+                ("product.items.activate", "/urun/:productId", GroupSharedMasterOperation.Activate),
                 ("product.items.create", "/urun/yeni", GroupSharedMasterOperation.DraftCreate),
+                ("product.items.deactivate", "/urun/:productId", GroupSharedMasterOperation.Deactivate),
                 ("product.items.detail", "/urun/:productId", GroupSharedMasterOperation.Read),
                 ("product.items.edit", "/urun/:productId/duzenle", GroupSharedMasterOperation.DraftBasicEdit),
                 ("product.items.list", "/urun", GroupSharedMasterOperation.Read),
+                ("product.items.reactivate", "/urun/:productId", GroupSharedMasterOperation.Reactivate),
             ],
             registry.Registrations.Select(registration => (registration.Declaration.CapabilityId,
                 registration.Declaration.RoutePath, registration.Declaration.GlobalProductOperation!.Value)));
@@ -45,8 +48,23 @@ public sealed class ProductShellCapabilityProviderTests
             // Global Product authority, never a company permission.
             Assert.Empty(registration.Declaration.RequiredPermissions);
             Assert.True(registration.Declaration.ImplementationAvailable);
-            Assert.Null(registration.Declaration.ParentCapabilityId);
         });
+        string[] controls =
+        [
+            ProductShellCapabilityProvider.ActivateCapabilityId, ProductShellCapabilityProvider.DeactivateCapabilityId,
+            ProductShellCapabilityProvider.ReactivateCapabilityId,
+        ];
+        Assert.Equal("1.2", provider.ContractVersion);
+        foreach (var control in controls)
+        {
+            var registration = Assert.Single(registry.Registrations,
+                candidate => candidate.Declaration.CapabilityId == control);
+            Assert.Equal(ProductShellCapabilityProvider.DetailCapabilityId, registration.Declaration.ParentCapabilityId);
+            Assert.Equal("product.detail", registration.Declaration.RouteId);
+            Assert.Equal("U-01-360", registration.Declaration.ScreenId);
+        }
+        Assert.All(registry.Registrations.Where(registration => !controls.Contains(registration.Declaration.CapabilityId)),
+            registration => Assert.Null(registration.Declaration.ParentCapabilityId));
     }
 
     [Fact]
@@ -58,8 +76,8 @@ public sealed class ProductShellCapabilityProviderTests
             [new CounterpartyShellCapabilityProvider(), new OrganizationShellCapabilityProvider(), new ProductShellCapabilityProvider()];
 
         Assert.Throws<InvalidOperationException>(() => new ShellCapabilityRegistry(providers,
-            new ShellCapabilityAuthorityCatalog([ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailAndOrganizationV11])));
-        Assert.NotEqual(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailAndOrganizationV11,
+            new ShellCapabilityAuthorityCatalog([ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailAndOrganizationV13])));
+        Assert.NotEqual(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailAndOrganizationV13,
             ShellCapabilityRegistry.ComputeCandidateRevision(providers));
     }
 

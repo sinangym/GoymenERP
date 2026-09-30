@@ -41,6 +41,14 @@ public static class ProductEndpoints
             })).WithName("GetProductReferenceOptionsV1").Produces<ProductReferenceOptions>()
             .WithProductRuntimeContract(notFound: true, primitiveBinding: true);
 
+        // §10.2 / §15: the read-only exact-name duplicate candidates. A warning to compare against, never a block.
+        group.MapGet("/duplicate-candidates", async ([AsParameters] ProductDuplicateQuery query,
+            IProductService service, HttpContext context, CancellationToken cancellationToken) =>
+            await ExecuteAsync(context, async () =>
+                Results.Ok(await service.GetDuplicateCandidatesAsync(query, cancellationToken))))
+            .WithName("GetProductDuplicateCandidatesV1").Produces<ProductDuplicateCandidates>()
+            .WithProductRuntimeContract(primitiveBinding: true);
+
         group.MapGet("/{id:guid}/history", async (Guid id, ProductHistoryReader reader, HttpContext context,
             CancellationToken cancellationToken) => await ExecuteAsync(context, async () =>
                 Results.Ok(await reader.GetAsync(id, cancellationToken))))
@@ -75,6 +83,22 @@ public static class ProductEndpoints
             await ExecuteAsync(context, async () => Results.Ok(await service.ActivateAsync(id, request,
                 ReadIdempotencyKey(context), cancellationToken))))
             .WithName("ActivateProductV1").Produces<ProductMutationResponse>()
+            .WithProductRuntimeContract(mutation: true, notFound: true, primitiveBinding: true).WithIdempotencyContract(200);
+
+        // DEC-CAR-003 / #98 §7.9: an Active card is taken out of new use with a reason (Active -> Inactive); nothing
+        // is deleted. PRD-PERM-001 (#99): each move needs its own explicit global grant (Deactivate / Reactivate).
+        group.MapPost("/{id:guid}/deactivation", async (Guid id, ChangeProductLifecycleRequest request,
+            IProductService service, HttpContext context, CancellationToken cancellationToken) =>
+            await ExecuteAsync(context, async () => Results.Ok(await service.DeactivateAsync(id, request,
+                ReadIdempotencyKey(context), cancellationToken))))
+            .WithName("DeactivateProductV1").Produces<ProductMutationResponse>()
+            .WithProductRuntimeContract(mutation: true, notFound: true, primitiveBinding: true).WithIdempotencyContract(200);
+
+        group.MapPost("/{id:guid}/reactivation", async (Guid id, ChangeProductLifecycleRequest request,
+            IProductService service, HttpContext context, CancellationToken cancellationToken) =>
+            await ExecuteAsync(context, async () => Results.Ok(await service.ReactivateAsync(id, request,
+                ReadIdempotencyKey(context), cancellationToken))))
+            .WithName("ReactivateProductV1").Produces<ProductMutationResponse>()
             .WithProductRuntimeContract(mutation: true, notFound: true, primitiveBinding: true).WithIdempotencyContract(200);
         return endpoints;
     }

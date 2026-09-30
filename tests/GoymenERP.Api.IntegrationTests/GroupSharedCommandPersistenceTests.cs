@@ -31,6 +31,8 @@ public sealed class GroupSharedCommandPersistenceTests
     [InlineData(GroupSharedMasterOperation.DraftCreate, "product.draft.create.v1")]
     [InlineData(GroupSharedMasterOperation.DraftBasicEdit, "product.draft.basic-edit.v1")]
     [InlineData(GroupSharedMasterOperation.Activate, "product.card.activate.v1")]
+    [InlineData(GroupSharedMasterOperation.Deactivate, "product.card.deactivate.v1")]
+    [InlineData(GroupSharedMasterOperation.Reactivate, "product.card.reactivate.v1")]
     public void EachOwnerCommandRestoresFromItsStoredIdentity(GroupSharedMasterOperation operation, string commandName)
     {
         var binding = GroupSharedCommandBinding.Create(Context(operation), Key, Payload);

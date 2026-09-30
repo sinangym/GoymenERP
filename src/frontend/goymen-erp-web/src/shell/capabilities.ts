@@ -138,6 +138,12 @@ export const CAPABILITY = {
    * shape `organizationSitesList` had before #246 published it.
    */
   organizationWorkCentersList: 'organization.work-centers.list',
+  /**
+   * ORG-04 one work centre's read-only card. Route `/ayarlar/organizasyon/is-merkezleri/:workCenterId`,
+   * owner the Organization lane. The same grant as ORG-03 (`organization.work-centers.read`); reached from a
+   * list row, never from the sidebar.
+   */
+  organizationWorkCentersDetail: 'organization.work-centers.detail',
   /** S-02 sales order draft list. Route `/satis/siparisler`, owner the Sales lane (SİPARİŞ). */
   salesDraftsList: 'sales.drafts.list',
   /** S-04 Sales order 360, one draft. Route `/satis/siparisler/:draftId`. A SEPARATE grant from the list. */
@@ -158,6 +164,8 @@ export const CAPABILITY = {
   manufacturingPlansCreate: 'manufacturing.plans.create',
   /** Reopen one stored plan. Route `/uretim/plan/:planId`; reached after create or by record link. */
   manufacturingPlansDetail: 'manufacturing.plans.detail',
+  /** MFG-PLAN-LIST the company's saved plans. Route `/uretim/planlar`; reached from the order list and plan detail. */
+  manufacturingPlansList: 'manufacturing.plans.list',
   /** F-02 manual-receipt draft list. Route `/finans/tahsilatlar`, owner the Finance lane (FİNANS). */
   financeReceiptsList: 'finance.receipts.list',
   /** F-02 new draft, entered from a Cari account (`?partyId&companyAccountId`). Route `/finans/tahsilatlar/yeni`. */
@@ -208,12 +216,20 @@ export const CAPABILITY = {
   inventoryOpeningStockRecord: 'inventory.opening-stock.record',
   /** ST-01 bounded, company-scoped physical stock-position read. */
   inventoryStockPositionsList: 'inventory.stock-positions.list',
+  /** SY-01 read subset "Kullanıcılar ve yetkiler". Route `/ayarlar/kullanicilar-ve-yetkiler`, owner Identity. Read-only. */
+  identityAssignmentsList: 'identity.assignments.list',
+  /** SY-02 read subset: one role's permissions and holders. Reached from a row, never the sidebar. */
+  identityRolesDetail: 'identity.roles.detail',
   /** L-02 loading-instruction list. Route `/lojistik/yukleme-talimatlari`, owner the Sales/Logistics lane (SİPARİŞ). */
   logisticsInstructionsList: 'logistics.instructions.list',
   /** L-03 new loading instruction. Route `/lojistik/yukleme-talimatlari/yeni`. A SEPARATE grant from reading. */
   logisticsInstructionsCreate: 'logistics.instructions.create',
   /** L-02-DETAIL one instruction. Route `/lojistik/yukleme-talimatlari/:instructionId`. A SEPARATE grant from the list. */
   logisticsInstructionsDetail: 'logistics.instructions.detail',
+  /** AT-025 L-01 operations work — the SALES section. Route `/lojistik/operasyon-isleri/satis`. Its own grant. */
+  logisticsOperationsSales: 'logistics.operations-work.sales',
+  /** AT-025 L-09 operations work — the PURCHASE section. Route `/lojistik/operasyon-isleri/satinalma`. Its own grant. */
+  logisticsOperationsPurchase: 'logistics.operations-work.purchase',
   /** P-01 purchase-request list. Route `/satinalma/talepler`, owner the Purchasing lane. */
   purchasingRequestsList: 'purchasing.requests.list',
   /** P-01 new request. Route `/satinalma/talepler/yeni`; reached from the list under K5. */
@@ -227,6 +243,9 @@ export const CAPABILITY = {
   /** P-03-DETAIL one purchase order. Route `/satinalma/siparisler/:orderId`. */
   purchasingOrdersDetail: 'purchasing.orders.detail',
 } as const
+
+/** U-01-360 action-only control. It is deliberately absent from route and nav catalogs. */
+export const PRODUCT_ACTIVATE_CAPABILITY = 'product.items.activate'
 
 export type CapabilityId = (typeof CAPABILITY)[keyof typeof CAPABILITY]
 
@@ -257,6 +276,9 @@ export const CAPABILITY_ROUTE: Record<CapabilityId, string> = {
   // `/ayarlar/organizasyon/is-merkezleri` differ by a static segment, and neither can match the
   // card's `lokasyon/:locationId` — no url matches two of the three (#172 P1-2).
   [CAPABILITY.organizationWorkCentersList]: '/ayarlar/organizasyon/is-merkezleri',
+  // ORG-04: a parameter BELOW the static list. The list never matches the card and the card never matches
+  // `lokasyon/:locationId`, whose static segment differs (#172 P1-2).
+  [CAPABILITY.organizationWorkCentersDetail]: '/ayarlar/organizasyon/is-merkezleri/:workCenterId',
   [CAPABILITY.salesDraftsList]: '/satis/siparisler',
   // Static before the parameter route, the /cari/yeni rule: 'yeni' must never be read as a draft id.
   [CAPABILITY.salesDraftsCreate]: '/satis/siparisler/yeni',
@@ -268,6 +290,8 @@ export const CAPABILITY_ROUTE: Record<CapabilityId, string> = {
   // Static before the parameter route: `yeni` must never be read as a plan id.
   [CAPABILITY.manufacturingPlansCreate]: '/uretim/plan/yeni',
   [CAPABILITY.manufacturingPlansDetail]: '/uretim/plan/:planId',
+  // Its own static segment: `planlar` is never read as `/uretim/plan/:planId`.
+  [CAPABILITY.manufacturingPlansList]: '/uretim/planlar',
   [CAPABILITY.financeReceiptsList]: '/finans/tahsilatlar',
   // Static before the parameter route, the /cari/yeni rule: 'yeni' must never be read as a source id.
   [CAPABILITY.financeReceiptsDraft]: '/finans/tahsilatlar/yeni',
@@ -290,10 +314,14 @@ export const CAPABILITY_ROUTE: Record<CapabilityId, string> = {
   [CAPABILITY.accountingTrialBalance]: '/muhasebe/mizan',
   [CAPABILITY.inventoryOpeningStockRecord]: '/stok/acilis',
   [CAPABILITY.inventoryStockPositionsList]: '/stok/pozisyonlar',
+  [CAPABILITY.identityAssignmentsList]: '/ayarlar/kullanicilar-ve-yetkiler',
+  [CAPABILITY.identityRolesDetail]: '/ayarlar/kullanicilar-ve-yetkiler/roller/:roleId',
   [CAPABILITY.logisticsInstructionsList]: '/lojistik/yukleme-talimatlari',
   // Static before the parameter route, the /cari/yeni rule: 'yeni' must never be read as an instruction id.
   [CAPABILITY.logisticsInstructionsCreate]: '/lojistik/yukleme-talimatlari/yeni',
   [CAPABILITY.logisticsInstructionsDetail]: '/lojistik/yukleme-talimatlari/:instructionId',
+  [CAPABILITY.logisticsOperationsSales]: '/lojistik/operasyon-isleri/satis',
+  [CAPABILITY.logisticsOperationsPurchase]: '/lojistik/operasyon-isleri/satinalma',
   [CAPABILITY.purchasingRequestsList]: '/satinalma/talepler',
   // K5 keeps creation inside the P-01 list. Static `yeni` must never be read as a request id.
   [CAPABILITY.purchasingRequestsCreate]: '/satinalma/talepler/yeni',
@@ -335,6 +363,8 @@ export const CAPABILITY_NAV_LABEL: Record<CapabilityId, string> = {
   // work-centers.read without locations.read never reaches ORG-01 to be linked from it.
   // So Organization's sidebar goes from one entry to two — a list each, no card, no control.
   [CAPABILITY.organizationWorkCentersList]: 'İş Merkezleri',
+  // ORG-04: reached from a work-centre row, never from the sidebar; Organization keeps two entries.
+  [CAPABILITY.organizationWorkCentersDetail]: '',
   [CAPABILITY.salesDraftsList]: 'Sipariş Taslakları',
   [CAPABILITY.salesDraftsCreate]: 'Yeni Sipariş Taslağı',
   // Nor this one: the 360 is reached from a list row, never from the sidebar.
@@ -346,6 +376,8 @@ export const CAPABILITY_NAV_LABEL: Record<CapabilityId, string> = {
   // K5: creation is reached from the order list; detail is reached from the saved plan result.
   [CAPABILITY.manufacturingPlansCreate]: '',
   [CAPABILITY.manufacturingPlansDetail]: '',
+  // MFG-PLAN-LIST: reached from the order list and plan detail, so the sidebar keeps ONE Manufacturing entry.
+  [CAPABILITY.manufacturingPlansList]: '',
   [CAPABILITY.financeReceiptsList]: 'Tahsilat Taslakları',
   [CAPABILITY.financeReceiptsReverseApprove]: 'Ters Kayıt Onayları',
   [CAPABILITY.financeBankAccountsList]: 'Banka Hesapları',
@@ -364,6 +396,9 @@ export const CAPABILITY_NAV_LABEL: Record<CapabilityId, string> = {
   [CAPABILITY.accountingTrialBalance]: '',
   [CAPABILITY.inventoryOpeningStockRecord]: 'Stok Açılışı',
   [CAPABILITY.inventoryStockPositionsList]: 'Stok / Malzeme Pozisyonu',
+  [CAPABILITY.identityAssignmentsList]: 'Kullanıcılar ve yetkiler',
+  // The role card is opened from a row of the access list, never from the sidebar.
+  [CAPABILITY.identityRolesDetail]: '',
   // Not these two: a period is proposed from the M-07 list and a journal opened from a row.
   [CAPABILITY.accountingPeriodsPropose]: '',
   [CAPABILITY.accountingJournalsDetail]: '',
@@ -376,6 +411,9 @@ export const CAPABILITY_NAV_LABEL: Record<CapabilityId, string> = {
   // instruction is opened from a list row — never from the sidebar.
   [CAPABILITY.logisticsInstructionsCreate]: '',
   [CAPABILITY.logisticsInstructionsDetail]: '',
+  // AT-025: one sidebar entry per section, because each section is its own grant.
+  [CAPABILITY.logisticsOperationsSales]: 'Operasyon işleri — Satış',
+  [CAPABILITY.logisticsOperationsPurchase]: 'Operasyon işleri — Satın alma',
   [CAPABILITY.purchasingRequestsList]: 'Satın alma talepleri',
   // K5: create is reached through the list's single action; detail is reached from a row.
   [CAPABILITY.purchasingRequestsCreate]: '',

@@ -7,6 +7,10 @@
  *   GET  …/loading-instructions/{id}                       → LoadingInstructionDetailView
  *   POST …/loading-instructions/{id}/issue                 → 200 (Draft → Issued); replay 200 + header
  *   POST …/loading-instructions/{id}/lines/{lineId}/loads → 200 (a loaded share); replay 200 + header
+ *   POST …/loading-instructions/{id}/weighings             → 200 (AT-053 weighbridge record); replay 200 + header
+ *   POST …/loading-instructions/{id}/dispatch-notes        → 200 (AT-055 dispatch-note draft); replay 200 + header
+ *   POST …/dispatch-notes/{noteId}/approve | cancel | e-dispatch-number → 200 (AT-055 lifecycle); replay 200 + header
+ *   GET  /logistics/dispatch-notes?salesOrderId            → the drafts of one Sales order (the S-04 link)
  *
  * The transport invents no field and carries no business rule. It adds the consumer checks the
  * contract asks for: a command answer is success only when status and `isReplay` agree with the
@@ -26,7 +30,14 @@ import {
   LOGISTICS_PATH,
   MUTATION_STATUS,
   REPLAY_HEADER,
+  SALES_ORDER_DISPATCH_NOTES_PATH,
   decodeApprovedOrderLinePage,
+  decodeSalesOrderDispatchNotes,
+  DISPATCH_NOTE_STATUS,
+  approveDispatchNotePath,
+  cancelDispatchNotePath,
+  dispatchNotesPath,
+  eDispatchNumberPath,
   decodeInstructionDetail,
   decodeInstructionMutation,
   decodeInstructionPage,
@@ -34,7 +45,14 @@ import {
   instructionDetailPath,
   issuePath,
   loadsPath,
+  weighingsPath,
   type ApprovedOrderLinePage,
+  type ApproveDispatchNoteRequest,
+  type CancelDispatchNoteRequest,
+  type CreateDispatchNoteRequest,
+  type DispatchNote,
+  type SalesOrderDispatchNotes,
+  type SetEDispatchNumberRequest,
   type CreateInstructionRequest,
   type InstructionDetail,
   type InstructionMutation,
@@ -42,9 +60,22 @@ import {
   type InstructionStatus,
   type IssueRequest,
   type RecordLoadRequest,
+  type RecordWeighingRequest,
 } from './contract'
 import type { CommandOutcome } from './instructionAttempt'
 import type { ViewOutcome } from '../shell/uiState'
+import { decodeShipmentAllocations, deliveryPath, shipmentPath, SHIPMENT_ALLOCATIONS_PATH,
+  type RecordDeliveryRequest, type RecordShipmentRequest, type ShipmentAllocationPage } from './realizationContract'
+import type { InstructionLine } from './contract'
+import {
+  PURCHASE_WORK_PATH,
+  SALES_WORK_PATH,
+  decodePurchaseWorkPage,
+  decodeSalesWorkPage,
+  type PurchaseWorkRow,
+  type SalesWorkRow,
+  type WorkPage,
+} from './operationsWorkContract'
 
 export const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? '/api/v1'
 const DEV_USER = (import.meta.env.VITE_DEV_USER as string | undefined) ?? 'company-a-user'
@@ -150,6 +181,37 @@ export async function fetchApprovedOrderLines(
   return { type: 'ok-single', data: page }
 }
 
+/* ── AT-025: the operations work list's two separate sections ─────────────── */
+
+/**
+ * One section's page (`sales` → L-01, `purchase` → L-09). Each section is its own route and grant; the decoder takes only
+ * that section's rows and refuses a page naming the other section, so a row can never be shown in the wrong list.
+ */
+export async function fetchSalesWork(cursor: string | null, companyId: string, signal?: AbortSignal): Promise<ViewOutcome<WorkPage<SalesWorkRow>>> {
+  return fetchWork(SALES_WORK_PATH, decodeSalesWorkPage, cursor, companyId, signal)
+}
+
+export async function fetchPurchaseWork(cursor: string | null, companyId: string, signal?: AbortSignal): Promise<ViewOutcome<WorkPage<PurchaseWorkRow>>> {
+  return fetchWork(PURCHASE_WORK_PATH, decodePurchaseWorkPage, cursor, companyId, signal)
+}
+
+async function fetchWork<T>(
+  path: string,
+  decode: (body: unknown) => WorkPage<T> | null,
+  cursor: string | null,
+  companyId: string,
+  signal: AbortSignal | undefined,
+): Promise<ViewOutcome<WorkPage<T>>> {
+  const params = new URLSearchParams({ pageSize: String(PAGE_SIZE) })
+  if (cursor !== null) params.set('cursor', cursor)
+  const raw = await request(`${path}?${params.toString()}`, { headers: headers(companyId) }, signal)
+  if ('failure' in raw) return readFailure(raw.failure)
+  if (raw.status !== 200) return { type: 'http', status: raw.status, body: raw.body }
+  const page = decode(raw.body)
+  if (page === null) return { type: 'malformed' }
+  return { type: 'ok-single', data: page }
+}
+
 /* ── Create ───────────────────────────────────────────────────────────────── */
 
 export interface CreateContext {
@@ -175,7 +237,9 @@ export function describesAttempt(mutation: InstructionMutation, sent: CreateInst
     instruction.companyAccountId !== sent.companyAccountId ||
     instruction.effectiveOn !== sent.effectiveOn ||
     detail.lines.length !== sent.lines.length ||
-    detail.shares.length !== 0
+    detail.shares.length !== 0 ||
+    detail.weighing !== null ||
+    detail.dispatchNotes.length !== 0
   ) {
     return false
   }
@@ -245,7 +309,8 @@ export interface CommandContext {
 
 async function sendTransition(
   path: string,
-  payload: IssueRequest | RecordLoadRequest,
+  payload: IssueRequest | RecordLoadRequest | RecordShipmentRequest | RecordDeliveryRequest | RecordWeighingRequest | CreateDispatchNoteRequest
+    | ApproveDispatchNoteRequest | CancelDispatchNoteRequest | SetEDispatchNumberRequest,
   context: CommandContext,
   signal: AbortSignal | undefined,
 ): Promise<CommandOutcome<InstructionMutation>> {
@@ -299,4 +364,107 @@ export async function recordLoad(
     return { type: 'malformed' }
   }
   return outcome
+}
+
+export async function fetchShipmentAllocations(line: InstructionLine, companyId: string, signal?: AbortSignal): Promise<ViewOutcome<ShipmentAllocationPage>> {
+  const params = new URLSearchParams({ salesOrderId: line.sourceOrderId, salesOrderLineId: line.sourceOrderLineId, limit: '100' })
+  const raw = await request(`${SHIPMENT_ALLOCATIONS_PATH}?${params}`, { headers: headers(companyId) }, signal)
+  if ('failure' in raw) return readFailure(raw.failure)
+  if (raw.status !== 200) return { type: 'http', status: raw.status, body: raw.body }
+  const data = decodeShipmentAllocations(raw.body, companyId, line)
+  return data === null ? { type: 'malformed' } : { type: 'ok-single', data }
+}
+
+export async function recordShipment(lineId: string, payload: RecordShipmentRequest, context: CommandContext,
+  signal?: AbortSignal): Promise<CommandOutcome<InstructionMutation>> {
+  const outcome = await sendTransition(shipmentPath(context.instructionId, lineId), payload, context, signal)
+  if (outcome.type !== 'succeeded') return outcome
+  const shares = outcome.data.detail.shares.filter((share) => share.shareId === payload.shipmentId)
+  const share = shares[0]
+  return shares.length !== 1 || share.kind !== 'Shipped' || share.lineId !== lineId || share.quantity !== payload.quantity
+    || share.measurement !== null || share.sourceShipmentId !== null || Date.parse(share.recordedAtUtc) !== Date.parse(payload.occurredAtUtc)
+    ? { type: 'malformed' } : outcome
+}
+
+export async function recordDelivery(lineId: string, payload: RecordDeliveryRequest, context: CommandContext,
+  signal?: AbortSignal): Promise<CommandOutcome<InstructionMutation>> {
+  const outcome = await sendTransition(deliveryPath(context.instructionId, lineId), payload, context, signal)
+  if (outcome.type !== 'succeeded') return outcome
+  const shares = outcome.data.detail.shares.filter((share) => share.shareId === payload.deliveryId)
+  const share = shares[0]
+  return shares.length !== 1 || share.kind !== 'Delivered' || share.lineId !== lineId || share.quantity !== payload.quantity
+    || share.measurement !== null || share.sourceShipmentId !== payload.sourceShipmentId
+    || Date.parse(share.recordedAtUtc) !== Date.parse(payload.occurredAtUtc) ? { type: 'malformed' } : outcome
+}
+
+/**
+ * AT-053: the vehicle's manual weighbridge record. The answer must be THIS instruction carrying THE record sent — its
+ * id, direction and both weighings as the text sent. Net and difference are the backend's; they are shown, never checked
+ * against a client calculation.
+ */
+export async function recordWeighing(payload: RecordWeighingRequest, context: CommandContext,
+  signal?: AbortSignal): Promise<CommandOutcome<InstructionMutation>> {
+  const outcome = await sendTransition(weighingsPath(context.instructionId), payload, context, signal)
+  if (outcome.type !== 'succeeded') return outcome
+  const weighing = outcome.data.detail.weighing
+  return weighing === null || weighing.weighingId !== payload.weighingId || weighing.direction !== payload.direction
+    || weighing.firstWeighingKg !== payload.firstWeighingKg || weighing.secondWeighingKg !== payload.secondWeighingKg
+    ? { type: 'malformed' } : outcome
+}
+
+/**
+ * AT-055: a dispatch-note DRAFT from definite shipments. The answer must be THIS instruction carrying THE draft sent — its id,
+ * exactly the shipments sent (each once), each line's quantity being that shipment's recorded quantity (the decoder checks it).
+ */
+export async function createDispatchNote(payload: CreateDispatchNoteRequest, context: CommandContext,
+  signal?: AbortSignal): Promise<CommandOutcome<InstructionMutation>> {
+  const outcome = await sendTransition(dispatchNotesPath(context.instructionId), payload, context, signal)
+  if (outcome.type !== 'succeeded') return outcome
+  const note = outcome.data.detail.dispatchNotes.find((candidate) => candidate.dispatchNoteId === payload.dispatchNoteId)
+  const sent = [...payload.shipmentIds].sort()
+  const answered = note === undefined ? [] : note.lines.map((line) => line.shipmentId).sort()
+  return note === undefined || answered.length !== sent.length || answered.some((id, index) => id !== sent[index])
+    ? { type: 'malformed' } : outcome
+}
+
+/** AT-055: the dispatch-note drafts of one Sales order (the S-04 link), read under the Logistics instruction read. */
+export async function fetchSalesOrderDispatchNotes(salesOrderId: string, companyId: string,
+  signal?: AbortSignal): Promise<ViewOutcome<SalesOrderDispatchNotes>> {
+  const params = new URLSearchParams({ salesOrderId })
+  const raw = await request(`${SALES_ORDER_DISPATCH_NOTES_PATH}?${params.toString()}`, { headers: headers(companyId) }, signal)
+  if ('failure' in raw) return readFailure(raw.failure)
+  if (raw.status !== 200) return { type: 'http', status: raw.status, body: raw.body }
+  const data = decodeSalesOrderDispatchNotes(raw.body, salesOrderId)
+  return data === null ? { type: 'malformed' } : { type: 'ok-single', data }
+}
+
+/** The note the answer must carry after a lifecycle command, or null when it does not (another note, another state). */
+async function sendNoteTransition(path: string, payload: ApproveDispatchNoteRequest | CancelDispatchNoteRequest | SetEDispatchNumberRequest,
+  dispatchNoteId: string, context: CommandContext, holds: (note: DispatchNote) => boolean,
+  signal: AbortSignal | undefined): Promise<CommandOutcome<InstructionMutation>> {
+  const outcome = await sendTransition(path, payload, context, signal)
+  if (outcome.type !== 'succeeded') return outcome
+  const note = outcome.data.detail.dispatchNotes.find((candidate) => candidate.dispatchNoteId === dispatchNoteId)
+  return note === undefined || !holds(note) ? { type: 'malformed' } : outcome
+}
+
+/** AT-055: approve (finalise) a Draft note; the answer must carry it Approved WITH its server-assigned series number. */
+export function approveDispatchNote(dispatchNoteId: string, payload: ApproveDispatchNoteRequest, context: CommandContext,
+  signal?: AbortSignal): Promise<CommandOutcome<InstructionMutation>> {
+  return sendNoteTransition(approveDispatchNotePath(context.instructionId, dispatchNoteId), payload, dispatchNoteId, context,
+    (note) => note.status === DISPATCH_NOTE_STATUS.approved && note.number !== null, signal)
+}
+
+/** AT-055: cancel a Draft or Approved note (its shipments are released); the answer must carry it Cancelled with the reason sent. */
+export function cancelDispatchNote(dispatchNoteId: string, payload: CancelDispatchNoteRequest, context: CommandContext,
+  signal?: AbortSignal): Promise<CommandOutcome<InstructionMutation>> {
+  return sendNoteTransition(cancelDispatchNotePath(context.instructionId, dispatchNoteId), payload, dispatchNoteId, context,
+    (note) => note.status === DISPATCH_NOTE_STATUS.cancelled && note.cancelReason === payload.reason, signal)
+}
+
+/** AT-055: record the hand-entered e-İrsaliye number of an Approved note; the answer must carry exactly the number sent. */
+export function setEDispatchNumber(dispatchNoteId: string, payload: SetEDispatchNumberRequest, context: CommandContext,
+  signal?: AbortSignal): Promise<CommandOutcome<InstructionMutation>> {
+  return sendNoteTransition(eDispatchNumberPath(context.instructionId, dispatchNoteId), payload, dispatchNoteId, context,
+    (note) => note.status === DISPATCH_NOTE_STATUS.approved && note.eDispatchNumber === payload.eDispatchNumber, signal)
 }

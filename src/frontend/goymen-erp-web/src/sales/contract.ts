@@ -28,6 +28,17 @@ export const SALES_DRAFT_PATH = '/sales/drafts'
 export const salesDraftDetailPath = (id: string) => `${SALES_DRAFT_PATH}/${encodeURIComponent(id)}`
 export const salesDraftCommercialRevisionPath = (id: string) => `${salesDraftDetailPath(id)}/commercial-revision`
 export const salesDraftRevisionsPath = (id: string) => `${salesDraftDetailPath(id)}/revisions`
+/** DEC-SAL-002 / AT-023: the quantity revision (POST, the quantity control's name). */
+export const salesDraftQuantityRevisionPath = (id: string) => `${salesDraftDetailPath(id)}/quantity-revision`
+/** DEC-SAL-003: the delivery-schedule update (POST) and its history (GET). */
+export const salesDraftDeliverySchedulePath = (id: string) => `${salesDraftDetailPath(id)}/delivery-schedule`
+export const salesDraftDeliverySchedulesPath = (id: string) => `${salesDraftDetailPath(id)}/delivery-schedules`
+/** AT-024: per line the delivered and remaining quantity, read from the delivery owner's records (GET). */
+export const salesDraftDeliveryProgressPath = (id: string) => `${salesDraftDetailPath(id)}/delivery-progress`
+/** DEC-SAL-005: the impact preview of cancelling an approved order (GET, the cancel control's name). */
+export const salesDraftCancellationImpactPath = (id: string) => `${salesDraftDetailPath(id)}/cancellation-impact`
+/** DEC-SAL-005 / AT-007: the cancel command (POST) and the recorded cancellation (GET, the draft read). */
+export const salesDraftCancellationPath = (id: string) => `${salesDraftDetailPath(id)}/cancellation`
 
 /**
  * `SalesDraftApiV1`: a first commit answers 201; the same accepted attempt answers 201 again with
@@ -39,6 +50,12 @@ export const REPLAY_HEADER = 'Idempotency-Replayed'
 export const REV_0 = 'Rev.0'
 export const ORDER_KIND = 'Order' as const
 export const DRAFT_STATE = 'Draft' as const
+/**
+ * DEC-SAL-005: the lifecycle `state` of an APPROVED order cancelled after its impact preview — terminal; its approval facts,
+ * lines and history stay (AT-007). The approval axis still reads `Approved` (who approved stays who approved).
+ */
+export const CANCELLED_STATE = 'Cancelled' as const
+export type LifecycleState = typeof DRAFT_STATE | typeof CANCELLED_STATE
 
 /**
  * SALES-A1: the INTERNAL APPROVAL axis (`InternalApprovalState`), a fourth fact beside the lifecycle
@@ -82,6 +99,92 @@ export interface DraftLineCommercialRequest {
 export interface DraftCommercialRevisionRequest {
   readonly expectedVersion: string
   readonly lines: readonly DraftLineCommercialRequest[]
+}
+
+/** DEC-SAL-002: one line's new ordered quantity, exact decimal text in the line's own order unit. */
+export interface DraftLineQuantityRequest {
+  readonly lineId: string
+  readonly quantity: string
+}
+
+/**
+ * DEC-SAL-002 / AT-023 (`SalesDraftQuantityRevisionRequest`): every member present — the expected version, the reason (why
+ * the order changes; the server refuses a blank one) and every line of the draft exactly once with its new quantity. An
+ * approved order is archived and re-enters approval; the unit, product, price and delivery plan do not change here.
+ */
+export interface DraftQuantityRevisionRequest {
+  readonly expectedVersion: string
+  readonly reason: string
+  readonly lines: readonly DraftLineQuantityRequest[]
+}
+
+/**
+ * DEC-SAL-003 (`SalesDraftDeliveryScheduleRequest`): the planner's delivery-date update — every member present. The header
+ * and line dates may be null (none); every line of the draft exactly once, each with EVERY slice it already carries
+ * (dates only: no quantity, no new or removed slice). No re-approval follows; the server audits the change.
+ */
+export interface DraftSliceScheduleRequest {
+  readonly sliceId: string
+  readonly requestedDeliveryDate: string
+}
+
+export interface DraftLineScheduleRequest {
+  readonly lineId: string
+  readonly requestedDeliveryDate: string | null
+  readonly slices: readonly DraftSliceScheduleRequest[]
+}
+
+export interface DraftDeliveryScheduleRequest {
+  readonly expectedVersion: string
+  readonly requestedDeliveryDate: string | null
+  readonly lines: readonly DraftLineScheduleRequest[]
+}
+
+/** DEC-SAL-003 history: schedule 0 is the draft as created (nobody changed it); every later one is a recorded change. */
+export interface DeliveryScheduleSlice {
+  readonly sliceId: string
+  readonly quantity: string
+  readonly requestedDeliveryDate: string
+}
+
+export interface DeliveryScheduleLine {
+  readonly lineId: string
+  readonly lineNo: number
+  readonly requestedDeliveryDate: string | null
+  readonly slices: readonly DeliveryScheduleSlice[]
+}
+
+export interface DeliverySchedule {
+  readonly scheduleNo: number
+  readonly changedBy: string | null
+  readonly changedAtUtc: string | null
+  readonly requestedDeliveryDate: string | null
+  readonly lines: readonly DeliveryScheduleLine[]
+}
+
+export interface DeliverySchedules {
+  readonly items: readonly DeliverySchedule[]
+}
+
+/**
+ * AT-024: one line's quantities as exact decimal text in the line's order unit — `ordered` (the line), `shipped` and
+ * `delivered` (the delivery owner's recorded totals), `remaining` (ordered − delivered, never below zero) and `excess`
+ * (delivered above the order). Facts only: no completion or tolerance state exists (OPEN-004 is open).
+ */
+export interface DeliveryProgressLine {
+  readonly lineId: string
+  readonly lineNo: number
+  readonly orderUnitId: string
+  readonly ordered: string
+  readonly shipped: string
+  readonly delivered: string
+  readonly remaining: string
+  readonly excess: string
+}
+
+export interface DeliveryProgress {
+  readonly draftVersion: string
+  readonly lines: readonly DeliveryProgressLine[]
 }
 
 /** `SalesDraftApprovalV1`: who submitted / decided and when; null until it happened. Facts, never derived. */
@@ -175,7 +278,8 @@ export interface DraftSummary {
   /** Opaque display text; its format is illustrative in the source. */
   readonly documentNo: string
   readonly kind: typeof ORDER_KIND
-  readonly state: typeof DRAFT_STATE
+  /** The lifecycle axis: `Draft`, or `Cancelled` (DEC-SAL-005) — never merged with the approval axis. */
+  readonly state: LifecycleState
   readonly version: string
   readonly revision: string
   readonly partyId: string
@@ -242,6 +346,8 @@ export interface DraftRevision {
   readonly moneyProfileVersion: string
   readonly moneyScale: number
   readonly lines: readonly DraftRevisionLine[]
+  /** DEC-SAL-002: why this approved revision was superseded (a quantity revision's reason); null when a price revision archived it. */
+  readonly reason: string | null
 }
 
 export interface DraftRevisions {
@@ -327,6 +433,13 @@ export const SALES_PROBLEM_CODE = {
   // (409, terminal for the key), and a rejection reason over the technical bound (422).
   stateConflict: 'sales_state_conflict',
   approvalReasonTooLong: 'sales_approval_reason_too_long',
+  // DEC-SAL-005 (contract deltas): an owner records an effect of the order (the errors name each source) — the fail-closed
+  // reading refuses; and the impact no longer is the preview the command named (read it again).
+  cancellationBlocked: 'sales_cancellation_blocked',
+  cancellationImpactChanged: 'sales_cancellation_impact_changed',
+  // DEC-SAL-002 (contract delta): an owner links a record to the order (allocation, loading line) — the quantity revision is
+  // refused fail-closed, like the cancellation; the errors name each blocking source.
+  revisionBlocked: 'sales_revision_blocked',
 } as const
 
 export type SalesProblemCode = (typeof SALES_PROBLEM_CODE)[keyof typeof SALES_PROBLEM_CODE]
@@ -455,10 +568,11 @@ export function decodeDraftSummary(value: unknown): DraftSummary | null {
     !isReferenceId(o.id) ||
     !isReferenceId(o.companyId) ||
     !isText(o.documentNo, 200) ||
-    // The first slice creates goods Orders in Draft only. Any other kind or state is a
-    // meaning this build was not written for, and is not shown as if it were a Draft.
+    // Goods Orders in Draft, or (DEC-SAL-005) Cancelled — and only an approved order is ever cancelled. Any other kind or
+    // state is a meaning this build was not written for, and is not shown as if it were a Draft.
     o.kind !== ORDER_KIND ||
-    o.state !== DRAFT_STATE ||
+    (o.state !== DRAFT_STATE && o.state !== CANCELLED_STATE) ||
+    (o.state === CANCELLED_STATE && o.approvalState !== APPROVAL_STATE.approved) ||
     !isVersionString(o.version) ||
     (o.version as string).length > LIMITS.versionText ||
     typeof o.revision !== 'string' ||
@@ -480,7 +594,7 @@ export function decodeDraftSummary(value: unknown): DraftSummary | null {
     companyId: o.companyId,
     documentNo: o.documentNo,
     kind: ORDER_KIND,
-    state: DRAFT_STATE,
+    state: o.state === CANCELLED_STATE ? CANCELLED_STATE : DRAFT_STATE,
     version: o.version as string,
     revision: o.revision,
     partyId: o.partyId,
@@ -633,7 +747,7 @@ export function decodeDraftPage(value: unknown): DraftPage | null {
 
 const REVISION_KEYS = [
   'revision', 'submittedBy', 'submittedAtUtc', 'approvedBy', 'approvedAtUtc',
-  'archivedAtUtc', 'archivedBy', 'moneyProfileId', 'moneyProfileVersion', 'moneyScale', 'lines',
+  'archivedAtUtc', 'archivedBy', 'moneyProfileId', 'moneyProfileVersion', 'moneyScale', 'lines', 'reason',
 ] as const
 const REVISION_LINE_KEYS = [
   'lineId', 'lineNo', 'productId', 'productVersion', 'orderUnitId', 'quantity',
@@ -695,7 +809,8 @@ export function decodeDraftRevisions(value: unknown): DraftRevisions | null {
       !isRevisionId(o.moneyProfileId) || !isOwnerVersion(o.moneyProfileVersion) ||
       typeof o.moneyScale !== 'number' || !Number.isInteger(o.moneyScale) ||
       o.moneyScale < 0 || o.moneyScale > 2147483647 ||
-      !Array.isArray(o.lines) || o.lines.length < 1 || o.lines.length > LIMITS.lines
+      !Array.isArray(o.lines) || o.lines.length < 1 || o.lines.length > LIMITS.lines ||
+      !isNullable(o.reason, (v): v is string => isText(v, LIMITS.note) && v.trim().length > 0)
     ) return null
     // Revision is a .NET Int32 on the server. Compare its canonical digits as
     // text: do not lexically sort Rev.10 ahead of Rev.2 or accept duplicate rows.
@@ -720,10 +835,246 @@ export function decodeDraftRevisions(value: unknown): DraftRevisions | null {
       approvedBy: o.approvedBy, approvedAtUtc: o.approvedAtUtc,
       archivedAtUtc: o.archivedAtUtc, archivedBy: o.archivedBy,
       moneyProfileId: o.moneyProfileId, moneyProfileVersion: o.moneyProfileVersion,
-      moneyScale: o.moneyScale, lines,
+      moneyScale: o.moneyScale, lines, reason: o.reason,
     })
   }
   return { items }
+}
+
+/**
+ * DEC-SAL-003: `SalesOrderDraftDeliverySchedulesResponse`, read exactly. Schedule 0 first (no actor, no time), then the
+ * recorded changes in ascending order without a gap, each attributed; every line once with its slices once. A body that
+ * does not fit is not shown as history.
+ */
+export function decodeDeliverySchedules(value: unknown): DeliverySchedules | null {
+  const response = exact(value, ['items'])
+  if (response === null || !Array.isArray(response.items) || response.items.length < 1) return null
+  const items: DeliverySchedule[] = []
+  for (const [index, entry] of response.items.entries()) {
+    const o = exact(entry, ['scheduleNo', 'changedBy', 'changedAtUtc', 'requestedDeliveryDate', 'lines'])
+    if (
+      o === null || o.scheduleNo !== index ||
+      !isNullable(o.changedBy, isRevisionActor) || !isNullable(o.changedAtUtc, isRevisionInstant) ||
+      (index === 0) !== (o.changedBy === null) || (o.changedBy === null) !== (o.changedAtUtc === null) ||
+      !isNullable(o.requestedDeliveryDate, isDateOnly) ||
+      !Array.isArray(o.lines) || o.lines.length < 1 || o.lines.length > LIMITS.lines
+    ) return null
+    const lines: DeliveryScheduleLine[] = []
+    const lineIds = new Set<string>()
+    for (const rawLine of o.lines) {
+      const l = exact(rawLine, ['lineId', 'lineNo', 'requestedDeliveryDate', 'slices'])
+      if (
+        l === null || !isRevisionId(l.lineId) || lineIds.has(l.lineId.toLowerCase()) ||
+        !isPositiveInt(l.lineNo, LIMITS.lines) || !isNullable(l.requestedDeliveryDate, isDateOnly) ||
+        !Array.isArray(l.slices) || l.slices.length > LIMITS.slices
+      ) return null
+      lineIds.add(l.lineId.toLowerCase())
+      const slices: DeliveryScheduleSlice[] = []
+      const sliceIds = new Set<string>()
+      for (const rawSlice of l.slices) {
+        const s = exact(rawSlice, ['sliceId', 'quantity', 'requestedDeliveryDate'])
+        if (
+          s === null || !isRevisionId(s.sliceId) || sliceIds.has(s.sliceId.toLowerCase()) ||
+          !isRevisionDecimal(s.quantity, true) || !isDateOnly(s.requestedDeliveryDate)
+        ) return null
+        sliceIds.add(s.sliceId.toLowerCase())
+        slices.push({ sliceId: s.sliceId, quantity: s.quantity, requestedDeliveryDate: s.requestedDeliveryDate })
+      }
+      lines.push({ lineId: l.lineId, lineNo: l.lineNo, requestedDeliveryDate: l.requestedDeliveryDate, slices })
+    }
+    items.push({
+      scheduleNo: o.scheduleNo, changedBy: o.changedBy, changedAtUtc: o.changedAtUtc,
+      requestedDeliveryDate: o.requestedDeliveryDate, lines,
+    })
+  }
+  return { items }
+}
+
+/**
+ * AT-024: `SalesOrderDraftDeliveryProgressResponse`, read exactly — and only as the progress OF `detail`: the same
+ * version, every line of the detail once in its order with its own order unit and quantity text. Decimal text stays
+ * text (never parsed into a JS number); `ordered` is positive, the others may be zero. A body that does not fit is not
+ * shown as quantities.
+ */
+export function decodeDeliveryProgress(value: unknown, detail: DraftDetail): DeliveryProgress | null {
+  const response = exact(value, ['draftVersion', 'lines'])
+  if (
+    response === null || response.draftVersion !== detail.draft.version ||
+    !Array.isArray(response.lines) || response.lines.length !== detail.lines.length
+  ) return null
+  const lines: DeliveryProgressLine[] = []
+  for (const [index, entry] of response.lines.entries()) {
+    const o = exact(entry, ['lineId', 'lineNo', 'orderUnitId', 'ordered', 'shipped', 'delivered', 'remaining', 'excess'])
+    const line = detail.lines[index]
+    if (
+      o === null || !isRevisionId(o.lineId) || o.lineId.toLowerCase() !== line.lineId.toLowerCase() ||
+      o.lineNo !== line.lineNo || !isRevisionId(o.orderUnitId) ||
+      o.orderUnitId.toLowerCase() !== line.orderUnitId.toLowerCase() || o.ordered !== line.quantity ||
+      !isRevisionDecimal(o.ordered, true) || !isRevisionDecimal(o.shipped, false) ||
+      !isRevisionDecimal(o.delivered, false) || !isRevisionDecimal(o.remaining, false) || !isRevisionDecimal(o.excess, false)
+    ) return null
+    lines.push({
+      lineId: o.lineId, lineNo: o.lineNo, orderUnitId: o.orderUnitId, ordered: o.ordered,
+      shipped: o.shipped, delivered: o.delivered, remaining: o.remaining, excess: o.excess,
+    })
+  }
+  return { draftVersion: response.draftVersion, lines }
+}
+
+/* ── DEC-SAL-005 / AT-007: the cancellation of an approved order ────────────── */
+
+/** The six DEC-SAL-005 categories, the decision's order. */
+export const CANCELLATION_SOURCE = {
+  activeAllocations: 'inventory.active-allocations',
+  linkedPurchasing: 'purchasing.linked-orders',
+  linkedProduction: 'manufacturing.linked-orders',
+  loadingWithoutDispatchNote: 'logistics.loading-without-dispatch-note',
+  uninvoicedDispatchNotes: 'invoicing.uninvoiced-dispatch-notes',
+  unmatchedAdvances: 'finance.unmatched-advances',
+} as const
+export type CancellationSource = (typeof CANCELLATION_SOURCE)[keyof typeof CANCELLATION_SOURCE]
+const CANCELLATION_SOURCES: readonly string[] = Object.values(CANCELLATION_SOURCE)
+
+/**
+ * What the preview knows of one category: the owner answered nothing (`None`) or records (`Present`, blocks); the owner
+ * exists but could not be read (`Unreadable`, blocks — never zero); no module on main records this link (`NoSource`).
+ */
+export const CANCELLATION_STATUS = { none: 'None', present: 'Present', unreadable: 'Unreadable', noSource: 'NoSource' } as const
+export type CancellationStatus = (typeof CANCELLATION_STATUS)[keyof typeof CANCELLATION_STATUS]
+const CANCELLATION_STATUSES: readonly string[] = Object.values(CANCELLATION_STATUS)
+
+export interface CancellationImpactSource {
+  readonly source: CancellationSource
+  readonly status: CancellationStatus
+}
+
+/** One line of the preview; a null member means its owner could not be read — never zero in its place. */
+export interface CancellationImpactLine {
+  readonly lineId: string
+  readonly lineNo: number
+  readonly orderUnitId: string
+  readonly ordered: string
+  readonly activeAllocations: number | null
+  readonly allocatedKg: string | null
+  readonly loadingInstructionLines: number | null
+  readonly instructed: string | null
+  readonly loaded: string | null
+  readonly shipped: string | null
+  readonly delivered: string | null
+}
+
+export interface CancellationImpact {
+  readonly draftVersion: string
+  readonly revision: string
+  readonly cancellable: boolean
+  /** The identity of exactly this preview; the cancel command carries it back. */
+  readonly impactToken: string
+  readonly sources: readonly CancellationImpactSource[]
+  readonly lines: readonly CancellationImpactLine[]
+}
+
+/** `SalesDraftCancelRequest`: every member present; the reason is required (the server trims and bounds it). */
+export interface DraftCancelRequest {
+  readonly expectedVersion: string
+  readonly reason: string
+  readonly impactToken: string
+}
+
+/** AT-007: the recorded cancellation — who, when, why, the revision cancelled and the preview it was decided on. */
+export interface CancellationRecord {
+  readonly revision: string
+  readonly cancelledBy: string
+  readonly cancelledAtUtc: string
+  readonly reason: string
+  readonly impactToken: string
+  readonly sources: readonly CancellationImpactSource[]
+}
+
+export interface CancellationRead {
+  readonly cancellation: CancellationRecord | null
+}
+
+const IMPACT_TOKEN_RE = /^[0-9a-f]{64}$/
+const isCount = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= 2147483647
+
+function decodeCancellationSources(value: unknown): readonly CancellationImpactSource[] | null {
+  if (!Array.isArray(value) || value.length !== CANCELLATION_SOURCES.length) return null
+  const sources: CancellationImpactSource[] = []
+  for (const [index, entry] of value.entries()) {
+    const o = exact(entry, ['source', 'status'])
+    // The decision's six categories, each once, in its order; a status this build does not know is not shown.
+    if (o === null || o.source !== CANCELLATION_SOURCES[index] || typeof o.status !== 'string' || !CANCELLATION_STATUSES.includes(o.status)) return null
+    sources.push({ source: o.source as CancellationSource, status: o.status as CancellationStatus })
+  }
+  return sources
+}
+
+/**
+ * DEC-SAL-005: `SalesOrderDraftCancellationImpactResponse`, read exactly and only as the preview OF `detail` (its version and
+ * revision, every line once in order with its unit and quantity). An owner's numbers are null together or present together,
+ * and null exactly when that owner is Unreadable — a body that does not fit is not shown.
+ */
+export function decodeCancellationImpact(value: unknown, detail: DraftDetail): CancellationImpact | null {
+  const o = exact(value, ['draftVersion', 'revision', 'cancellable', 'impactToken', 'sources', 'lines'])
+  if (
+    o === null || o.draftVersion !== detail.draft.version || o.revision !== detail.draft.revision ||
+    typeof o.cancellable !== 'boolean' || typeof o.impactToken !== 'string' || !IMPACT_TOKEN_RE.test(o.impactToken) ||
+    !Array.isArray(o.lines) || o.lines.length !== detail.lines.length
+  ) return null
+  const sources = decodeCancellationSources(o.sources)
+  if (sources === null) return null
+  const statusOf = (source: CancellationSource) => sources.find((entry) => entry.source === source)?.status
+  const allocationsRead = statusOf(CANCELLATION_SOURCE.activeAllocations) !== CANCELLATION_STATUS.unreadable
+  const loadingRead = statusOf(CANCELLATION_SOURCE.loadingWithoutDispatchNote) !== CANCELLATION_STATUS.unreadable
+  const blocked = sources.some((entry) => entry.status === CANCELLATION_STATUS.present || entry.status === CANCELLATION_STATUS.unreadable)
+  if (o.cancellable && blocked) return null
+  const lines: CancellationImpactLine[] = []
+  for (const [index, entry] of o.lines.entries()) {
+    const l = exact(entry, ['lineId', 'lineNo', 'orderUnitId', 'ordered', 'activeAllocations', 'allocatedKg',
+      'loadingInstructionLines', 'instructed', 'loaded', 'shipped', 'delivered'])
+    const line = detail.lines[index]
+    if (
+      l === null || !isRevisionId(l.lineId) || l.lineId.toLowerCase() !== line.lineId.toLowerCase() || l.lineNo !== line.lineNo ||
+      !isRevisionId(l.orderUnitId) || l.orderUnitId.toLowerCase() !== line.orderUnitId.toLowerCase() || l.ordered !== line.quantity
+    ) return null
+    const allocation = [l.activeAllocations, l.allocatedKg]
+    const loading = [l.loadingInstructionLines, l.instructed, l.loaded, l.shipped, l.delivered]
+    const allocationOk = allocationsRead
+      ? isCount(l.activeAllocations) && isRevisionDecimal(l.allocatedKg, false)
+      : allocation.every((member) => member === null)
+    const loadingOk = loadingRead
+      ? isCount(l.loadingInstructionLines) && [l.instructed, l.loaded, l.shipped, l.delivered].every((member) => isRevisionDecimal(member, false))
+      : loading.every((member) => member === null)
+    if (!allocationOk || !loadingOk) return null
+    lines.push({
+      lineId: l.lineId, lineNo: l.lineNo, orderUnitId: l.orderUnitId, ordered: l.ordered as string,
+      activeAllocations: l.activeAllocations as number | null, allocatedKg: l.allocatedKg as string | null,
+      loadingInstructionLines: l.loadingInstructionLines as number | null, instructed: l.instructed as string | null,
+      loaded: l.loaded as string | null, shipped: l.shipped as string | null, delivered: l.delivered as string | null,
+    })
+  }
+  return { draftVersion: o.draftVersion, revision: o.revision, cancellable: o.cancellable, impactToken: o.impactToken, sources, lines }
+}
+
+/** AT-007: `SalesOrderDraftCancellationResponse`, read exactly: null, or the recorded facts with the preview's categories. */
+export function decodeCancellation(value: unknown): CancellationRead | null {
+  const o = exact(value, ['cancellation'])
+  if (o === null) return null
+  if (o.cancellation === null) return { cancellation: null }
+  const c = exact(o.cancellation, ['revision', 'cancelledBy', 'cancelledAtUtc', 'reason', 'impactToken', 'sources'])
+  if (
+    c === null || typeof c.revision !== 'string' || !REVISION_RE.test(c.revision) || !isRevisionActor(c.cancelledBy) ||
+    !isRevisionInstant(c.cancelledAtUtc) || !isText(c.reason, LIMITS.note) || c.reason.trim().length === 0 ||
+    typeof c.impactToken !== 'string' || !IMPACT_TOKEN_RE.test(c.impactToken)
+  ) return null
+  const sources = decodeCancellationSources(c.sources)
+  if (sources === null) return null
+  return {
+    cancellation: {
+      revision: c.revision, cancelledBy: c.cancelledBy, cancelledAtUtc: c.cancelledAtUtc, reason: c.reason,
+      impactToken: c.impactToken, sources,
+    },
+  }
 }
 
 /**

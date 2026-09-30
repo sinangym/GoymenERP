@@ -21,9 +21,12 @@ import {
   type ManufacturingOutputProductCandidates,
   type OrderListView,
   type OrderStatus,
+  type PlanStatus,
   type ProductionOrderView,
   type ProductionPlanView,
 } from './contract'
+import { decodePlanList, type PlanListView } from './planListContract'
+import { decodePlanRevisions, type PlanRevisionList } from './planRevisionContract'
 import type { ViewOutcome } from '../shell/uiState'
 
 export const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? '/api/v1'
@@ -209,6 +212,41 @@ export async function fetchPlan(
   return plan === null ? { type: 'malformed' } : { type: 'ok-single', data: plan }
 }
 
+/**
+ * `GET /api/v1/manufacturing/plans/{planId}/revisions` — MFG-PLAN-EDIT: the plan's history (revision 0 as created,
+ * then every recorded Draft edit), under the plan read's grant. Another company's plan is the same 404 as an unknown
+ * id; a 503 is a real, retryable answer, as for {@link fetchPlan}. The answer must name the plan asked for.
+ */
+export async function fetchPlanRevisions(
+  companyId: string,
+  planId: string,
+  signal?: AbortSignal,
+): Promise<ViewOutcome<PlanRevisionList>> {
+  let response: Response
+  try {
+    response = await fetch(`${MANUFACTURING_BASE}/plans/${encodeURIComponent(planId)}/revisions`, {
+      headers: { ...devHeaders(), 'X-Company-Id': companyId },
+      cache: 'no-store',
+      signal,
+    })
+  } catch {
+    if (signal?.aborted) return { type: 'fence-stale' }
+    return navigator.onLine ? { type: 'network-error' } : { type: 'offline' }
+  }
+  let body: unknown = null
+  try {
+    body = await response.json()
+  } catch {
+    if (signal?.aborted) return { type: 'fence-stale' }
+    body = null
+  }
+  if (response.status !== 200) return { type: 'http', status: response.status, body }
+  const history = decodePlanRevisions(body)
+  return history === null || history.planId.toLowerCase() !== planId.toLowerCase()
+    ? { type: 'malformed' }
+    : { type: 'ok-single', data: history }
+}
+
 /** What the list asks for; every part is optional and the server decides the page it answers. */
 export interface OrderListQuery {
   readonly pageSize?: number
@@ -252,5 +290,53 @@ export async function fetchOrders(
   }
   if (response.status !== 200) return { type: 'http', status: response.status, body }
   const page = decodeOrderList(body)
+  return page === null ? { type: 'malformed' } : { type: 'ok-single', data: page }
+}
+
+/** What the plan list asks for; every part is optional and the server decides the page it answers. */
+export interface PlanListQuery {
+  readonly pageSize?: number
+  readonly cursor?: string | null
+  readonly status?: PlanStatus | null
+}
+
+/**
+ * `GET /api/v1/manufacturing/plans` — one page of the company's saved plans, newest first (MFG-PLAN-LIST).
+ *
+ * The plan read's own grant (`manufacturing.plans.read`), as {@link fetchPlan}: another company's plan is in no
+ * page. The cursor is the server's own opaque value, sent back unchanged; this layer never builds, parses or guesses
+ * one, and a cursor the server refuses is that 400, never a silent first page. A 503 is a real, retryable answer.
+ */
+export async function fetchPlans(
+  companyId: string,
+  query: PlanListQuery = {},
+  signal?: AbortSignal,
+): Promise<ViewOutcome<PlanListView>> {
+  const search = new URLSearchParams()
+  if (query.pageSize !== undefined) search.set('pageSize', String(query.pageSize))
+  if (query.cursor !== undefined && query.cursor !== null) search.set('cursor', query.cursor)
+  if (query.status !== undefined && query.status !== null) search.set('status', query.status)
+  const suffix = search.toString()
+  let response: Response
+  try {
+    response = await fetch(`${MANUFACTURING_BASE}/plans${suffix.length === 0 ? '' : `?${suffix}`}`, {
+      headers: { ...devHeaders(), 'X-Company-Id': companyId },
+      cache: 'no-store',
+      signal,
+    })
+  } catch {
+    if (signal?.aborted) return { type: 'fence-stale' }
+    return navigator.onLine ? { type: 'network-error' } : { type: 'offline' }
+  }
+  let body: unknown = null
+  try {
+    body = await response.json()
+  } catch {
+    if (signal?.aborted) return { type: 'fence-stale' }
+    body = null
+  }
+  // EXACT 200: `Response.ok` spans all of 2xx, which is not this contract.
+  if (response.status !== 200) return { type: 'http', status: response.status, body }
+  const page = decodePlanList(body)
   return page === null ? { type: 'malformed' } : { type: 'ok-single', data: page }
 }

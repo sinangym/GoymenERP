@@ -1,4 +1,5 @@
 using GoymenERP.BuildingBlocks.Shell;
+using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Logistics.Application.Contracts;
 
 namespace GoymenERP.Modules.Logistics.Infrastructure.Shell;
@@ -18,11 +19,17 @@ namespace GoymenERP.Modules.Logistics.Infrastructure.Shell;
 /// <see cref="LogisticsPermissionManifestV1.InstructionsCreate"/>; recording a load is a server-measured
 /// command on the detail, not a screen. The host registers this provider only after the central catalogue
 /// knows the names, together with its accepted revision.
+/// <para>
+/// 1.2 (AT-025): the operations work list's two SEPARATE sections, one screen each on master v3 §27.8 — L-01 "Sevk Edilebilir
+/// Siparişler" (the sales section: approved sales order lines to load, ship and deliver) and L-09 "Beklenen Alış / Kapı
+/// Kabulü" (the purchase section: approved purchase order lines waiting for goods receipt). Each has its own route and its
+/// own read name, so an actor sees a section only with that section's grant; neither implies the other.
+/// </para>
 /// </summary>
 public sealed class LogisticsShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "LOGISTICS";
-    public const string OwnerContractVersion = "1.0";
+    public const string OwnerContractVersion = "1.2";
 
     public const string ListCapabilityId = "logistics.instructions.list";
     public const string ListRoutePath = "/lojistik/yukleme-talimatlari";
@@ -33,6 +40,14 @@ public sealed class LogisticsShellCapabilityProvider : IShellCapabilityProvider
     public const string DetailCapabilityId = "logistics.instructions.detail";
     public const string DetailRoutePath = "/lojistik/yukleme-talimatlari/:instructionId";
     public const string DetailScreenId = "L-02-DETAIL";
+    public const string ShipmentCapabilityId = "logistics.shipments.record";
+    public const string DeliveryCapabilityId = "logistics.deliveries.record";
+    public const string SalesWorkCapabilityId = "logistics.operations-work.sales";
+    public const string SalesWorkRoutePath = "/lojistik/operasyon-isleri/satis";
+    public const string SalesWorkScreenId = "L-01";
+    public const string PurchaseWorkCapabilityId = "logistics.operations-work.purchase";
+    public const string PurchaseWorkRoutePath = "/lojistik/operasyon-isleri/satinalma";
+    public const string PurchaseWorkScreenId = "L-09";
 
     public string Owner => OwnerId;
 
@@ -49,5 +64,22 @@ public sealed class LogisticsShellCapabilityProvider : IShellCapabilityProvider
         new ShellCapabilityDeclaration(DetailCapabilityId, DetailCapabilityId, DetailRoutePath, DetailScreenId,
             ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, ShellCapabilityContextRequirement.SingleOrAuthorizedMultiCompanyRead,
             ShellCapabilityScopeRequirement.CompanyWide, [LogisticsPermissionManifestV1.InstructionsRead], ImplementationAvailable: true),
+        new ShellCapabilityDeclaration(ShipmentCapabilityId, DetailCapabilityId, DetailRoutePath, DetailScreenId,
+            ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, ShellCapabilityContextRequirement.SingleOrAuthorizedMultiCompanyRead,
+            ShellCapabilityScopeRequirement.CompanyWide,
+            [LogisticsPermissionManifestV1.InstructionsRead, LogisticsPermissionManifestV1.ShipmentsRecord,
+                ErpPermissions.InventoryPhysicalAllocationWrite], ImplementationAvailable: true,
+            ParentCapabilityId: DetailCapabilityId),
+        new ShellCapabilityDeclaration(DeliveryCapabilityId, DetailCapabilityId, DetailRoutePath, DetailScreenId,
+            ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, ShellCapabilityContextRequirement.SingleOrAuthorizedMultiCompanyRead,
+            ShellCapabilityScopeRequirement.CompanyWide,
+            [LogisticsPermissionManifestV1.InstructionsRead, LogisticsPermissionManifestV1.DeliveriesRecord],
+            ImplementationAvailable: true, ParentCapabilityId: DetailCapabilityId),
+        new ShellCapabilityDeclaration(SalesWorkCapabilityId, SalesWorkCapabilityId, SalesWorkRoutePath, SalesWorkScreenId,
+            ShellCapabilityRoutePrecedence.Static, ShellCapabilityContextRequirement.SingleCompany,
+            ShellCapabilityScopeRequirement.CompanyWide, [LogisticsPermissionManifestV1.OperationsSalesWorkRead], ImplementationAvailable: true),
+        new ShellCapabilityDeclaration(PurchaseWorkCapabilityId, PurchaseWorkCapabilityId, PurchaseWorkRoutePath, PurchaseWorkScreenId,
+            ShellCapabilityRoutePrecedence.Static, ShellCapabilityContextRequirement.SingleCompany,
+            ShellCapabilityScopeRequirement.CompanyWide, [LogisticsPermissionManifestV1.OperationsPurchaseWorkRead], ImplementationAvailable: true),
     ];
 }

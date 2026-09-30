@@ -14,13 +14,22 @@ public sealed record ProductStoredPage(IReadOnlyList<ProductStoredRecord> Items,
 
 /// <summary>Product-only relational reads; the application caller rechecks current authority before releasing results.</summary>
 public sealed class ProductReadStore(ProductDbContext context, ILogger<ProductReadStore>? logger = null)
-    : IProductSalesRecordReader
+    : IProductSalesRecordReader, IProductManufacturingTechnicalRecordReader
 {
     public async Task<ProductStoredRecord?> ReadForSalesSelectionAsync(ProductSalesReadScope scope, Guid productId,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(scope);
         var row = await context.Products.AsNoTracking().SingleOrDefaultAsync(product => product.Id == productId, cancellationToken);
+        return row?.ToRecord();
+    }
+
+    public async Task<ProductStoredRecord?> ReadForManufacturingTechnicalSnapshotAsync(
+        ProductManufacturingTechnicalReadScope scope, Guid productId, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(scope);
+        var row = await context.Products.AsNoTracking()
+            .SingleOrDefaultAsync(product => product.Id == productId, cancellationToken);
         return row?.ToRecord();
     }
 
@@ -52,6 +61,31 @@ public sealed class ProductReadStore(ProductDbContext context, ILogger<ProductRe
         var groups = await context.CodeGroups.AsNoTracking().OrderBy(group => group.Name).ThenBy(group => group.Id)
             .ToListAsync(cancellationToken);
         return groups.Select(group => group.ToContract()).ToArray();
+    }
+
+    /// <summary>
+    /// The exact-name duplicate candidates (<see cref="ProductDuplicateRules.ExactName"/>): <c>Name = @name</c> under the
+    /// column's own <c>Turkish_100_CI_AS</c> collation, every lifecycle, the excluded card left out, code order
+    /// (binary collation) then UUID, at most <paramref name="take"/> + 1 rows so the caller knows there are more.
+    /// </summary>
+    public async Task<IReadOnlyList<ProductStoredRecord>> ReadExactNameAsync(GroupSharedMasterReadContext authority,
+        string name, Guid? excludeProductId, int take, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(authority);
+        var rows = await BuildExactNameQuery(name, excludeProductId).Take(take + 1).ToListAsync(cancellationToken);
+        return rows.Select(row => row.ToRecord()).ToArray();
+    }
+
+    public IQueryable<ProductRow> BuildExactNameQuery(string name, Guid? excludeProductId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+        var rows = context.Products.AsNoTracking().Where(row => row.Name == name);
+        if (excludeProductId.HasValue)
+        {
+            var excluded = excludeProductId.Value;
+            rows = rows.Where(row => row.Id != excluded);
+        }
+        return rows.OrderBy(row => row.Code).ThenBy(row => row.Id);
     }
 
     public async Task<ProductStoredPage> ReadPageAsync(GroupSharedMasterReadContext authority,

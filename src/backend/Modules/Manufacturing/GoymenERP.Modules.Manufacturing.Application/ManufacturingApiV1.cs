@@ -31,6 +31,15 @@ public sealed record TargetRequestV1(string? Basis, string? Kg);
 
 public sealed record ApprovePlanRequestV1(long ExpectedVersion);
 
+/// <summary>
+/// MFG-PLAN-EDIT: the Draft plan's new content AS A WHOLE — work center, planned inputs (each with the Inventory label
+/// version the caller read) and the optional target — at the version the caller read, with the user's reason. The
+/// process is not in the request: it is the plan's own and never changes. The same grammar as the plan save.
+/// </summary>
+public sealed record RevisePlanRequestV1(
+    long ExpectedVersion, Guid WorkCenterId, IReadOnlyList<PlannedInputRequestV1>? Inputs, TargetRequestV1? Target,
+    string? Reason);
+
 public sealed record CreateOrderRequestV1(Guid OrderId, Guid PlanId);
 
 /// <summary>The close of the order at the version the caller read; the close chooses nothing else (MFG-4).</summary>
@@ -68,6 +77,25 @@ public sealed record PlanViewV1(
     IReadOnlyList<PlannedInputViewV1> Inputs, TargetViewV1? Target, Guid? ApprovedByUserId, DateTimeOffset? ApprovedAtUtc);
 
 /// <summary>
+/// MFG-PLAN-EDIT: one planned parent roll of a history entry, with the Inventory label version accepted for it
+/// (null only for a plan stored before label versions were kept). The edit form sends it back for a kept roll, and
+/// Inventory revalidates it; a roll whose label moved on is refused and must be selected again.
+/// </summary>
+public sealed record PlanRevisionInputViewV1(Guid ParentRollId, string PlannedKg, string? ExpectedLabelVersion);
+
+/// <summary>
+/// MFG-PLAN-EDIT: one entry of a plan's history. Revision 0 is the plan as created (no reason, no reviser); each later
+/// revision is one Draft edit: the complete content it set, the plan version it produced, its reason, the actor id
+/// that recorded it and when. The last entry is the plan's current content.
+/// </summary>
+public sealed record PlanRevisionViewV1(
+    int Revision, long PlanVersion, Guid WorkCenterId, IReadOnlyList<PlanRevisionInputViewV1> Inputs,
+    TargetViewV1? Target, string? Reason, string? RevisedBy, DateTimeOffset RecordedAtUtc);
+
+/// <summary>MFG-PLAN-EDIT: the plan's history, oldest first.</summary>
+public sealed record PlanRevisionListViewV1(Guid PlanId, IReadOnlyList<PlanRevisionViewV1> Revisions);
+
+/// <summary>
 /// One parent roll's balance from the stored facts: issued − returned = outputs + WIP + unexplained.
 /// The unexplained difference keeps its sign and is never folded into a class.
 /// </summary>
@@ -83,6 +111,22 @@ public sealed record OrderViewV1(
     Guid OrderId, Guid CompanyId, Guid PlanId, Guid WorkCenterId, string Process, string Status, long Version,
     TargetViewV1? Target, RemainingTargetViewV1 RemainingTarget, IReadOnlyList<RollBalanceViewV1> Rolls,
     string CostStatus, Guid? ClosedByUserId, DateTimeOffset? ClosedAtUtc);
+
+/// <summary>
+/// One plan in the plan list (MFG-PLAN-LIST): its stored row only — the work center and process it was bound to,
+/// its status and version, how many parent rolls it plans and their planned mass together, its declared target and
+/// its creation and approval times. No engine answer, no spec, no roll label and no order it may have opened: one
+/// approved plan may open more than one order (#66 5728934213 is open), so the list claims no "converted" state.
+/// </summary>
+public sealed record PlanSummaryViewV1(
+    Guid PlanId, Guid WorkCenterId, string Process, string Status, long Version, int PlannedRollCount,
+    string PlannedInputKg, TargetViewV1? Target, DateTimeOffset CreatedAtUtc, DateTimeOffset? ApprovedAtUtc);
+
+/// <summary>
+/// One page of the company's plans, newest first. <see cref="NextCursor"/> null is the end; the cursor is opaque
+/// and belongs to the company and to the plan list's ordering that produced it.
+/// </summary>
+public sealed record PlanListViewV1(IReadOnlyList<PlanSummaryViewV1> Plans, string? NextCursor);
 
 /// <summary>
 /// One order in the list: its stored facts only — the plan and work center it came from, its status and
@@ -166,6 +210,7 @@ public static class ManufacturingCommandNames
 {
     public const string SavePlan = "manufacturing.plan.save.v1";
     public const string ApprovePlan = "manufacturing.plan.approve.v1";
+    public const string RevisePlan = "manufacturing.plan.revise.v1";
     public const string CreateOrder = "manufacturing.order.create.v1";
     public const string IssueInput = "manufacturing.input.issue.v1";
     public const string ReturnInput = "manufacturing.input.return.v1";
@@ -214,7 +259,9 @@ public sealed partial class ManufacturingCommandService(
     IInventoryParentRollValidationV1? parentRolls = null,
     IOrganizationWorkCenterPlanningReferenceV1? workCenters = null,
     IManufacturingInventoryInputIssuePortV1? inventoryInputIssues = null,
-    IManufacturingInventoryReturnOutputPortV1? inventoryReturnsAndOutputs = null)
+    IManufacturingInventoryReturnOutputPortV1? inventoryReturnsAndOutputs = null,
+    IManufacturingPlanListStore? planList = null,
+    IManufacturingPlanRevisionStore? planRevisions = null)
 {
     /// <summary>Any integer mantissa of this many digits fits a decimal's 96 bits, so such a text converts exactly.</summary>
     private const int ExactDecimalDigits = 28;
@@ -239,39 +286,14 @@ public sealed partial class ManufacturingCommandService(
             return Task.FromResult(Invalid<PlanViewV1>("plan"));
         }
 
-        if (request.Target is { } target && ParseBasis(target.Basis) is null)
+        var content = ParsePlanContent(request.Inputs, request.Target);
+        if (content.InvalidField is { } invalidField)
         {
-            return Task.FromResult(Invalid<PlanViewV1>("target.basis"));
+            return Task.FromResult(Invalid<PlanViewV1>(invalidField));
         }
 
-        var inputs = new List<(Guid ParentRollId, string ExpectedLabelVersion, decimal Kg)>();
-        for (var index = 0; index < request.Inputs.Count; index++)
-        {
-            var input = request.Inputs[index];
-            if (ParseKg(input.PlannedKg) is not { } kg)
-            {
-                return Task.FromResult(Invalid<PlanViewV1>("inputs.plannedKg"));
-            }
-
-            if (!IsPositiveCanonicalInt64(input.ExpectedLabelVersion))
-            {
-                return Task.FromResult(Invalid<PlanViewV1>($"inputs[{index}].expectedLabelVersion"));
-            }
-
-            inputs.Add((input.ParentRollId, input.ExpectedLabelVersion!, kg));
-        }
-
-        decimal? targetKg = null;
-        if (request.Target is { } declared)
-        {
-            if (ParseKg(declared.Kg) is not { } kg)
-            {
-                return Task.FromResult(Invalid<PlanViewV1>("target.kg"));
-            }
-
-            targetKg = kg;
-        }
-
+        var inputs = content.Inputs!;
+        var targetKg = content.TargetKg;
         var canonical = new
         {
             planId = request.PlanId,
@@ -294,38 +316,10 @@ public sealed partial class ManufacturingCommandService(
                     return Refusal<PlanViewV1>(process.Refusal);
                 }
 
-                var today = DateOnly.FromDateTime(timeProvider.GetUtcNow().UtcDateTime);
-                var planned = new List<(Guid ParentRollId, Kilograms Mass, long ExpectedLabelVersion)>();
-                for (var index = 0; index < inputs.Count; index++)
+                var verified = await VerifyPlanContentAsync(inputs, targetKg, cancellationToken);
+                if (verified.Refusal is not null)
                 {
-                    var input = inputs[index];
-                    var mass = await VerifyAsync(input.Kg, today, "inputs.plannedKg", cancellationToken);
-                    if (mass.Refusal is not null)
-                    {
-                        return Refusal<PlanViewV1>(mass.Refusal);
-                    }
-
-                    var reference = await ValidateParentRollAsync(input.ParentRollId, input.ExpectedLabelVersion,
-                        $"inputs[{index}].expectedLabelVersion", cancellationToken);
-                    if (reference is not null)
-                    {
-                        return Refusal<PlanViewV1>(reference);
-                    }
-
-                    planned.Add((input.ParentRollId, mass.Value, long.Parse(input.ExpectedLabelVersion,
-                        NumberStyles.None, CultureInfo.InvariantCulture)));
-                }
-
-                Kilograms? targetMass = null;
-                if (targetKg is { } kg)
-                {
-                    var mass = await VerifyAsync(kg, today, "target.kg", cancellationToken);
-                    if (mass.Refusal is not null)
-                    {
-                        return Refusal<PlanViewV1>(mass.Refusal);
-                    }
-
-                    targetMass = mass.Value;
+                    return Refusal<PlanViewV1>(verified.Refusal);
                 }
 
                 if (await FenceAsync<PlanViewV1>(permission, cancellationToken) is { } fenced)
@@ -336,11 +330,7 @@ public sealed partial class ManufacturingCommandService(
                 // Built behind the fence, so the domain's own refusals (a zero planned mass, a repeated
                 // roll) map like every other refusal.
                 var plan = new ProductionPlan(request.PlanId, companyContext.CompanyId, request.WorkCenterId,
-                    process.Value, planned.Select(input => new PlannedInput(
-                        input.ParentRollId, input.Mass, input.ExpectedLabelVersion)),
-                    request.Target is { } targetRequest && targetMass is { } targetValue
-                        ? new ProductionTarget(ParseBasis(targetRequest.Basis)!.Value, targetValue)
-                        : null);
+                    process.Value, PlannedInputs(verified.Inputs), Target(request.Target, verified.TargetMass));
                 var outcome = await plans.SavePlanAsync(plan, metadata, cancellationToken);
                 var stored = await plans.FindPlanAsync(plan.Id, cancellationToken);
                 return stored is null
@@ -349,6 +339,242 @@ public sealed partial class ManufacturingCommandService(
                         outcome == ManufacturingWriteOutcome.Replayed, null);
             }, stored => PlanView((ProductionPlan)stored), cancellationToken);
     }
+
+    /// <summary>
+    /// MFG-PLAN-EDIT: the Draft edit of a stored plan (<c>POST /plans/{planId}/revision</c>). The new content is taken
+    /// AS A WHOLE with the plan save's grammar and checks — the work center's process from Organization, every mass
+    /// against the company's kilogram profile, every roll's exact label version revalidated by Inventory — plus a
+    /// reason, at the version the caller read. The plan's own rules decide (<c>ProductionPlan.Revise</c>): only a
+    /// Draft, never a plan with a slitting spec, never another process, never a change of nothing; a plan that already
+    /// opened an order is refused as not a draft by the store. Fail-closed order: the stored answer for the key, then
+    /// the stored plan's own state (not found, stale version, not a draft, spec) BEFORE any other owner is asked, then
+    /// the owners, the fresh fence, and one save. ADR-011 as the approval: a success, a not-found and a stale version
+    /// are the key's answer from then on; any other refusal is evaluated again on retry. It chooses no policy.
+    /// </summary>
+    public Task<ManufacturingApiResult<PlanViewV1>> RevisePlanAsync(Guid planId, RevisePlanRequestV1? request,
+        string idempotencyKey, string permission, CancellationToken cancellationToken)
+    {
+        if (planId == Guid.Empty || request is null)
+        {
+            return Task.FromResult(Invalid<PlanViewV1>("plan"));
+        }
+
+        if (request.ExpectedVersion <= 0)
+        {
+            return Task.FromResult(Invalid<PlanViewV1>("expectedVersion"));
+        }
+
+        if (request.WorkCenterId == Guid.Empty || request.Inputs is null || request.Inputs.Count == 0
+            || request.Inputs.Any(input => input is null || input.ParentRollId == Guid.Empty))
+        {
+            return Task.FromResult(Invalid<PlanViewV1>("plan"));
+        }
+
+        var reason = request.Reason?.Trim();
+        if (string.IsNullOrEmpty(reason) || reason.Length > ManufacturingStoreCodes.PlanRevisionReasonMaximumLength
+            || reason.Any(char.IsControl))
+        {
+            return Task.FromResult(Invalid<PlanViewV1>("reason"));
+        }
+
+        var content = ParsePlanContent(request.Inputs, request.Target);
+        if (content.InvalidField is { } invalidField)
+        {
+            return Task.FromResult(Invalid<PlanViewV1>(invalidField));
+        }
+
+        var inputs = content.Inputs!;
+        var targetKg = content.TargetKg;
+        var canonical = new
+        {
+            planId,
+            expectedVersion = request.ExpectedVersion,
+            workCenterId = request.WorkCenterId,
+            inputs = inputs.Select(input => new
+            {
+                rollId = input.ParentRollId,
+                expectedLabelVersion = input.ExpectedLabelVersion,
+                kg = Text(input.Kg),
+            }),
+            target = request.Target is null ? null : new { basis = request.Target.Basis, kg = Text(targetKg!.Value) },
+            reason,
+        };
+
+        return RunAsync<PlanViewV1>(permission, idempotencyKey, ManufacturingCommandNames.RevisePlan, canonical,
+            ManufacturingApiStatus.Ok, async (metadata, _) =>
+            {
+                if (planRevisions is null)
+                {
+                    return new ManufacturingApiResult<PlanViewV1>(ManufacturingApiStatus.Unavailable, null, false, null);
+                }
+
+                // The stored plan answers first: an unknown plan, a stale version, an approved plan or a plan with a
+                // slitting spec is refused before Organization, Settings or Inventory is asked.
+                var current = await plans.FindPlanAsync(planId, cancellationToken);
+                if (current is null)
+                {
+                    return NotFoundResult<PlanViewV1>();
+                }
+
+                current.RequireRevisable(request.ExpectedVersion);
+
+                var process = await ResolveProcessAsync(request.WorkCenterId, cancellationToken);
+                if (process.Refusal is not null)
+                {
+                    return Refusal<PlanViewV1>(process.Refusal);
+                }
+
+                var verified = await VerifyPlanContentAsync(inputs, targetKg, cancellationToken);
+                if (verified.Refusal is not null)
+                {
+                    return Refusal<PlanViewV1>(verified.Refusal);
+                }
+
+                if (await FenceAsync<PlanViewV1>(permission, cancellationToken) is { } fenced)
+                {
+                    return fenced;
+                }
+
+                var revised = await planRevisions.RevisePlanAsync(planId, request.ExpectedVersion, request.WorkCenterId,
+                    process.Value, [.. PlannedInputs(verified.Inputs)], Target(request.Target, verified.TargetMass),
+                    reason, metadata, cancellationToken);
+                return new ManufacturingApiResult<PlanViewV1>(ManufacturingApiStatus.Ok, PlanView(revised), false, null);
+            }, stored => PlanView((ProductionPlan)stored), cancellationToken);
+    }
+
+    /// <summary>
+    /// MFG-PLAN-EDIT: the plan's history under the plan read's grant: revision 0 as created, then every recorded Draft
+    /// edit, oldest first. Another company's plan is the same code-less 404 as an unknown id; without the revision
+    /// port the answer is a retryable 503, never an empty history. It computes nothing and stores nothing.
+    /// </summary>
+    public async Task<ManufacturingApiResult<PlanRevisionListViewV1>> ListPlanRevisionsAsync(Guid planId,
+        CancellationToken cancellationToken)
+    {
+        if (!HasContext())
+        {
+            return Denied<PlanRevisionListViewV1>();
+        }
+
+        if (planId == Guid.Empty)
+        {
+            return NotFoundResult<PlanRevisionListViewV1>();
+        }
+
+        if (planRevisions is null)
+        {
+            return new ManufacturingApiResult<PlanRevisionListViewV1>(ManufacturingApiStatus.Unavailable, null, false, null);
+        }
+
+        try
+        {
+            var revisions = await planRevisions.ListPlanRevisionsAsync(planId, cancellationToken);
+            return revisions is null
+                ? NotFoundResult<PlanRevisionListViewV1>()
+                : new ManufacturingApiResult<PlanRevisionListViewV1>(ManufacturingApiStatus.Ok,
+                    new PlanRevisionListViewV1(planId, [.. revisions.Select(PlanRevisionView)]), false, null);
+        }
+        catch (ManufacturingStoreException exception) when (exception.Code == ManufacturingStoreCodes.ConcurrentChange)
+        {
+            return new ManufacturingApiResult<PlanRevisionListViewV1>(ManufacturingApiStatus.Unavailable, null, false, null);
+        }
+    }
+
+    /// <summary>
+    /// The plan content's grammar, shared by the save and the revision in the save's order: the target basis, every
+    /// planned kilogram, every roll's canonical label version, the target kilogram. The first invalid field is named.
+    /// </summary>
+    private static (List<(Guid ParentRollId, string ExpectedLabelVersion, decimal Kg)>? Inputs, decimal? TargetKg,
+        string? InvalidField) ParsePlanContent(IReadOnlyList<PlannedInputRequestV1> requested, TargetRequestV1? target)
+    {
+        if (target is not null && ParseBasis(target.Basis) is null)
+        {
+            return (null, null, "target.basis");
+        }
+
+        var inputs = new List<(Guid ParentRollId, string ExpectedLabelVersion, decimal Kg)>();
+        for (var index = 0; index < requested.Count; index++)
+        {
+            var input = requested[index];
+            if (ParseKg(input.PlannedKg) is not { } kg)
+            {
+                return (null, null, "inputs.plannedKg");
+            }
+
+            if (!IsPositiveCanonicalInt64(input.ExpectedLabelVersion))
+            {
+                return (null, null, $"inputs[{index}].expectedLabelVersion");
+            }
+
+            inputs.Add((input.ParentRollId, input.ExpectedLabelVersion!, kg));
+        }
+
+        decimal? targetKg = null;
+        if (target is not null)
+        {
+            if (ParseKg(target.Kg) is not { } kg)
+            {
+                return (null, null, "target.kg");
+            }
+
+            targetKg = kg;
+        }
+
+        return (inputs, targetKg, null);
+    }
+
+    /// <summary>
+    /// The owners' checks of a plan content, shared by the save and the revision in the save's order: each roll's mass
+    /// against the company's kilogram profile (at the server's date) and its exact label version against Inventory,
+    /// then the target mass. The first refusal is the answer; nothing is written.
+    /// </summary>
+    private async Task<(List<(Guid ParentRollId, Kilograms Mass, long ExpectedLabelVersion)> Inputs, Kilograms? TargetMass,
+        ManufacturingApiResult<object>? Refusal)> VerifyPlanContentAsync(
+        List<(Guid ParentRollId, string ExpectedLabelVersion, decimal Kg)> inputs, decimal? targetKg,
+        CancellationToken cancellationToken)
+    {
+        var today = DateOnly.FromDateTime(timeProvider.GetUtcNow().UtcDateTime);
+        var planned = new List<(Guid ParentRollId, Kilograms Mass, long ExpectedLabelVersion)>();
+        for (var index = 0; index < inputs.Count; index++)
+        {
+            var input = inputs[index];
+            var mass = await VerifyAsync(input.Kg, today, "inputs.plannedKg", cancellationToken);
+            if (mass.Refusal is not null)
+            {
+                return (planned, null, mass.Refusal);
+            }
+
+            var reference = await ValidateParentRollAsync(input.ParentRollId, input.ExpectedLabelVersion,
+                $"inputs[{index}].expectedLabelVersion", cancellationToken);
+            if (reference is not null)
+            {
+                return (planned, null, reference);
+            }
+
+            planned.Add((input.ParentRollId, mass.Value, long.Parse(input.ExpectedLabelVersion,
+                NumberStyles.None, CultureInfo.InvariantCulture)));
+        }
+
+        Kilograms? targetMass = null;
+        if (targetKg is { } kg)
+        {
+            var mass = await VerifyAsync(kg, today, "target.kg", cancellationToken);
+            if (mass.Refusal is not null)
+            {
+                return (planned, null, mass.Refusal);
+            }
+
+            targetMass = mass.Value;
+        }
+
+        return (planned, targetMass, null);
+    }
+
+    private static IEnumerable<PlannedInput> PlannedInputs(
+        IEnumerable<(Guid ParentRollId, Kilograms Mass, long ExpectedLabelVersion)> verified) =>
+        verified.Select(input => new PlannedInput(input.ParentRollId, input.Mass, input.ExpectedLabelVersion));
+
+    private static ProductionTarget? Target(TargetRequestV1? requested, Kilograms? mass) =>
+        requested is not null && mass is { } value ? new ProductionTarget(ParseBasis(requested.Basis)!.Value, value) : null;
 
     public Task<ManufacturingApiResult<PlanViewV1>> ApprovePlanAsync(Guid planId, ApprovePlanRequestV1? request,
         string idempotencyKey, string permission, CancellationToken cancellationToken)
@@ -769,6 +995,65 @@ public sealed partial class ManufacturingCommandService(
         catch (ManufacturingStoreException exception) when (exception.Code == ManufacturingStoreCodes.ConcurrentChange)
         {
             return new ManufacturingApiResult<OrderListViewV1>(ManufacturingApiStatus.Unavailable, null, false, null);
+        }
+    }
+
+    /// <summary>
+    /// One page of the company's plans, newest first (MFG-PLAN-LIST), the order list's rules: the stored rows only,
+    /// another company's plan in no page, and the same read permission as the plan read (the endpoint's policy).
+    /// <paramref name="status"/> is a <c>PlanStatus</c> name (<c>Draft</c> / <c>Approved</c>) or null (every status);
+    /// <paramref name="cursor"/> is the previous page's, and a cursor of another company, another ordering (an
+    /// order-list cursor included) or no grammar is a 400 on <c>cursor</c>, never a silent first page. Without the
+    /// plan-list port the answer is a retryable 503, never an empty page. It computes nothing and stores nothing.
+    /// </summary>
+    public async Task<ManufacturingApiResult<PlanListViewV1>> ListPlansAsync(int? pageSize, string? cursor,
+        string? status, CancellationToken cancellationToken)
+    {
+        if (!HasContext())
+        {
+            return Denied<PlanListViewV1>();
+        }
+
+        var size = pageSize ?? DefaultPageSize;
+        if (size is < 1 or > MaximumPageSize)
+        {
+            return Invalid<PlanListViewV1>("pageSize");
+        }
+
+        if (cursor is { Length: 0 or > MaximumCursorLength })
+        {
+            return Invalid<PlanListViewV1>("cursor");
+        }
+
+        PlanStatus? requested = null;
+        if (status is not null)
+        {
+            if (ParsePlanStatus(status) is not { } parsed)
+            {
+                return Invalid<PlanListViewV1>("status");
+            }
+
+            requested = parsed;
+        }
+
+        if (planList is null)
+        {
+            return new ManufacturingApiResult<PlanListViewV1>(ManufacturingApiStatus.Unavailable, null, false, null);
+        }
+
+        try
+        {
+            var page = await planList.ListPlansAsync(size, cursor, requested, cancellationToken);
+            return new ManufacturingApiResult<PlanListViewV1>(ManufacturingApiStatus.Ok,
+                new PlanListViewV1([.. page.Plans.Select(PlanSummaryView)], page.NextCursor), false, null);
+        }
+        catch (ManufacturingStoreException exception) when (exception.Code == ManufacturingStoreCodes.ListCursorInvalid)
+        {
+            return Invalid<PlanListViewV1>("cursor");
+        }
+        catch (ManufacturingStoreException exception) when (exception.Code == ManufacturingStoreCodes.ConcurrentChange)
+        {
+            return new ManufacturingApiResult<PlanListViewV1>(ManufacturingApiStatus.Unavailable, null, false, null);
         }
     }
 
@@ -1283,6 +1568,11 @@ public sealed partial class ManufacturingCommandService(
             ? status
             : null;
 
+    private static PlanStatus? ParsePlanStatus(string? text) =>
+        Enum.TryParse<PlanStatus>(text, ignoreCase: false, out var status) && Enum.IsDefined(status) && IsName(text)
+            ? status
+            : null;
+
     private static TargetBasis? ParseBasis(string? text) =>
         Enum.TryParse<TargetBasis>(text, ignoreCase: false, out var basis) && Enum.IsDefined(basis) && IsName(text)
             ? basis
@@ -1299,6 +1589,23 @@ public sealed partial class ManufacturingCommandService(
         [.. plan.Inputs.Select(input => new PlannedInputViewV1(input.ParentRollId, Text(input.PlannedMass.Value)))],
         plan.Target is { } target ? new TargetViewV1(target.Basis.ToString(), Text(target.Mass.Value)) : null,
         plan.ApprovedByUserId, plan.ApprovedAtUtc);
+
+    /// <summary>MFG-PLAN-EDIT: one history entry as text, with the same lossless kilogram text as the plan read.</summary>
+    internal static PlanRevisionViewV1 PlanRevisionView(ManufacturingPlanRevision revision) => new(
+        revision.Revision, revision.PlanVersion, revision.WorkCenterId,
+        [.. revision.Inputs.Select(input => new PlanRevisionInputViewV1(input.ParentRollId, Text(input.PlannedMass.Value),
+            input.ExpectedLabelVersion?.ToString(CultureInfo.InvariantCulture)))],
+        revision.Target is { } target ? new TargetViewV1(target.Basis.ToString(), Text(target.Mass.Value)) : null,
+        revision.Reason, revision.RevisedBy, revision.RecordedAtUtc);
+
+    /// <summary>The stored plan summary as text: the same lossless kilogram text as every other mass here.</summary>
+    internal static PlanSummaryViewV1 PlanSummaryView(ManufacturingPlanSummary summary) => new(
+        summary.PlanId, summary.WorkCenterId, summary.Process.ToString(), summary.Status.ToString(), summary.Version,
+        summary.PlannedRollCount, Text(summary.PlannedInputMass.Value),
+        summary is { TargetBasis: { } basis, TargetMass: { } targetMass }
+            ? new TargetViewV1(basis.ToString(), Text(targetMass.Value))
+            : null,
+        summary.CreatedAtUtc, summary.ApprovedAtUtc);
 
     /// <summary>The stored summary as text: the same lossless kilogram text as every other mass here.</summary>
     internal static OrderSummaryViewV1 OrderSummaryView(ManufacturingOrderSummary summary) => new(

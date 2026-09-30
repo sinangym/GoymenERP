@@ -16,6 +16,7 @@ import {
   problem,
   renderAt,
   requestsFor,
+  type RecordedRequest,
 } from './testHarness'
 
 const LIFECYCLE_CAPABILITIES = [
@@ -28,6 +29,11 @@ const LIFECYCLE_CAPABILITIES = [
 afterEach(() => {
   vi.unstubAllGlobals()
 })
+
+/** The plan read itself; MFG-PLAN-EDIT's history read (`/plans/{id}/revisions`) is a separate request. */
+function planReadRequests(recorded: readonly RecordedRequest[]) {
+  return requestsFor(recorded, `/manufacturing/plans/${PLAN}`, 'GET').filter((request) => !request.url.endsWith('/revisions'))
+}
 
 describe('plan approval and order creation', () => {
   it('approves the read version, re-reads the plan, creates one order and opens its fresh detail', async () => {
@@ -72,7 +78,7 @@ describe('plan approval and order creation', () => {
     expect(approval[0].headers).toMatchObject({ 'X-Company-Id': COMPANY_A })
     expect(approval[0].headers['Idempotency-Key']).toMatch(/^[0-9a-f-]{36}$/i)
     expect(approval[0].body).toEqual({ expectedVersion: 1 })
-    expect(requestsFor(recorded, `/manufacturing/plans/${PLAN}`, 'GET')).toHaveLength(2)
+    expect(planReadRequests(recorded)).toHaveLength(2)
 
     await user.click(screen.getByRole('button', { name: 'Üretim emri oluştur' }))
     await waitFor(() => expect(router.state.location.pathname).toMatch(/^\/uretim\/emir\/[0-9a-f-]{36}$/i))
@@ -217,7 +223,7 @@ describe('plan approval and order creation', () => {
       'Plan onayı uygulanmadı (manufacturing_plan_version_conflict). Güncel plan yeniden okundu.',
     )).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Planı onayla' })).toBeTruthy()
-    expect(requestsFor(recorded, `/manufacturing/plans/${PLAN}`, 'GET')).toHaveLength(3)
+    expect(planReadRequests(recorded)).toHaveLength(3)
     expect(requestsFor(recorded, `/manufacturing/plans/${PLAN}/approval`, 'POST')).toHaveLength(1)
   })
 
@@ -285,5 +291,40 @@ describe('plan approval and order creation', () => {
     expect(screen.queryByRole('button', { name: 'Üretim emri oluştur' })).toBeNull()
     expect(requestsFor(recorded, '/approval', 'POST')).toHaveLength(0)
     expect(requestsFor(recorded, '/manufacturing/orders', 'POST')).toHaveLength(0)
+  })
+})
+
+describe('plan detail navigation', () => {
+  function stubPlan(capabilities: readonly string[]) {
+    return installFetch({
+      capabilities,
+      respond: (url, init) =>
+        url.endsWith(`/manufacturing/plans/${PLAN}`) && (init?.method ?? 'GET') === 'GET' ? json(plan()) : undefined,
+    })
+  }
+
+  it('links back to the plan list only for a holder of the plan-list capability', async () => {
+    const user = userEvent.setup()
+    stubPlan([MANUFACTURING_CAPABILITY.planDetail, MANUFACTURING_CAPABILITY.planList])
+    const { router } = renderAt(`/uretim/plan/${PLAN}`)
+
+    await screen.findByRole('heading', { name: 'Plan yeniden açıldı' })
+    const back = screen.getAllByRole('link', { name: '← Üretim planları' })
+    expect(back).toHaveLength(1)
+    expect(back[0].getAttribute('href')).toBe('/uretim/planlar')
+    // The order-list link beside it is unchanged.
+    expect(screen.getByRole('link', { name: '← Üretim emirleri' }).getAttribute('href')).toBe('/uretim/emirler')
+
+    await user.click(back[0])
+    await waitFor(() => expect(router.state.location.pathname).toBe('/uretim/planlar'))
+  })
+
+  it('draws no plan-list back link when the plan-list capability is absent', async () => {
+    stubPlan([MANUFACTURING_CAPABILITY.planDetail])
+    renderAt(`/uretim/plan/${PLAN}`)
+
+    await screen.findByRole('heading', { name: 'Plan yeniden açıldı' })
+    expect(screen.queryByRole('link', { name: '← Üretim planları' })).toBeNull()
+    expect(screen.getByRole('link', { name: '← Üretim emirleri' })).toBeTruthy()
   })
 })

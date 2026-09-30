@@ -38,6 +38,12 @@ public sealed class ManufacturingShellCapabilitySqlServerRelationalAcceptanceTes
     private const string Facts = "manufacturing.orders.facts";
     private const string List = "manufacturing.orders.list";
 
+    // MFG-PLAN-LIST, in the same ordinal order: create < detail < list.
+    private const string PlanCreate = "manufacturing.plans.create";
+    private const string PlanDetail = "manufacturing.plans.detail";
+    private const string PlanEdit = "manufacturing.plans.edit";
+    private const string PlanList = "manufacturing.plans.list";
+
     private static readonly Guid CompanyA = TestCompanyIds.CompanyA;
     private static readonly Guid CompanyB = TestCompanyIds.CompanyB;
     private static readonly Guid SyntheticSiteOfB = Guid.Parse("5e11e000-0000-4000-8000-0000000000b2");
@@ -117,6 +123,75 @@ public sealed class ManufacturingShellCapabilitySqlServerRelationalAcceptanceTes
             using (var closeOnly = factory.CreateClientFor(TestUsers.NoAssignment, CompanyA))
             {
                 Assert.Empty(ManufacturingOnly(await ReadAsync(closeOnly)));
+            }
+        }
+        finally
+        {
+            await factory.DisposeAsync();
+            SqlConnection.ClearAllPools();
+            await using var connection = new SqlConnection(baseConnection);
+            await connection.OpenAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText = $"""
+                IF DB_ID(N'{factory.DatabaseName}') IS NOT NULL
+                BEGIN
+                    ALTER DATABASE [{factory.DatabaseName}] SET SINGLE_USER WITH ROLLBACK IMMEDIATE;
+                    DROP DATABASE [{factory.DatabaseName}];
+                END
+                """;
+            await command.ExecuteNonQueryAsync();
+        }
+    }
+
+    /// <summary>
+    /// MFG-PLAN-LIST: the plan list opens exactly where the plan read opens — on a company-wide
+    /// <c>manufacturing.plans.read</c> in the context company — beside the plan detail, and nowhere else: the plan
+    /// write alone opens only the create screen, the order read never opens it, a site-scoped read opens nothing
+    /// (K-1), and company A's grant opens nothing in company B.
+    /// </summary>
+    [SqlServerFact]
+    public async Task The_plan_list_follows_the_actors_company_wide_plan_read_in_the_context_company()
+    {
+        var baseConnection = Environment.GetEnvironmentVariable(SqlServerRelationalAcceptanceTests.ConnectionStringEnvironmentVariable)!;
+        var factory = new SqlServerRelationalApiFactory(baseConnection);
+        try
+        {
+            using var startup = factory.CreateClient();
+            using var health = await startup.GetAsync("/health/live");
+            health.EnsureSuccessStatusCode();
+
+            // The plan write alone: the create screen, not the list (a writer is not a reader).
+            await GrantAsync(factory, TestUsers.CompanyA, CompanyA, ErpPermissions.ManufacturingPlansWrite, AccessScopeType.Company, CompanyA);
+            using (var writer = factory.CreateClientFor(TestUsers.CompanyA, CompanyA))
+            {
+                Assert.Equal(new[] { PlanCreate }, ManufacturingOnly(await ReadAsync(writer)));
+            }
+
+            // + the plan read: the plan detail and the plan list open together, on the one grant they share; the
+            // plan-detail edit control (MFG-PLAN-EDIT) needs both the read and the write, so it opens only now.
+            await GrantAsync(factory, TestUsers.CompanyA, CompanyA, ErpPermissions.ManufacturingPlansRead, AccessScopeType.Company, CompanyA);
+            using (var reader = factory.CreateClientFor(TestUsers.CompanyA, CompanyA))
+            {
+                Assert.Equal(new[] { PlanCreate, PlanDetail, PlanEdit, PlanList }, ManufacturingOnly(await ReadAsync(reader)));
+            }
+
+            // The same actor in company B, where it holds only a non-Manufacturing assignment: no plan list there.
+            await GrantAsync(factory, TestUsers.CompanyA, CompanyB, ErpPermissions.OrganizationLocationsRead, AccessScopeType.Company, CompanyB);
+            using (var elsewhere = factory.CreateClientFor(TestUsers.CompanyA, CompanyB))
+            {
+                var snapshot = await ReadAsync(elsewhere);
+                Assert.Contains("organization.sites.list", snapshot.Capabilities);
+                Assert.Empty(ManufacturingOnly(snapshot));
+            }
+
+            // A site-scoped plan read opens nothing (the declarations are company-wide, K-1); the order read
+            // opens the order screens, never the plan list.
+            await GrantAsync(factory, TestUsers.CompanyB, CompanyB, ErpPermissions.OrganizationLocationsRead, AccessScopeType.Company, CompanyB);
+            await GrantAsync(factory, TestUsers.CompanyB, CompanyB, ErpPermissions.ManufacturingPlansRead, AccessScopeType.Site, SyntheticSiteOfB);
+            await GrantAsync(factory, TestUsers.CompanyB, CompanyB, ErpPermissions.ManufacturingOrdersRead, AccessScopeType.Company, CompanyB);
+            using (var siteScoped = factory.CreateClientFor(TestUsers.CompanyB, CompanyB))
+            {
+                Assert.Equal(new[] { Detail, List }, ManufacturingOnly(await ReadAsync(siteScoped)));
             }
         }
         finally

@@ -147,6 +147,8 @@ export const INSTRUCTION_DETAIL_TEXT = {
   shipped: 'Sevk edilen',
   delivered: 'Teslim edilen',
   remainingToLoad: 'Yüklenecek kalan',
+  loadedNotShipped: 'Yüklenmiş, sevk bekleyen',
+  shippedNotDelivered: 'Sevk edilmiş, teslim bekleyen',
   blocked: 'Bloklu',
   sharesHeading: 'Paylar',
   noShares: 'Henüz pay kaydedilmedi.',
@@ -203,6 +205,17 @@ export const PROBLEM_CODE_TEXT: Record<LogisticsProblemCode, string> = {
   [LOGISTICS_PROBLEM_CODE.loadExceedsInstructed]: 'Yükleme payı talimat kalanını aşıyor; pay kaydedilmedi.',
   [LOGISTICS_PROBLEM_CODE.lineBlocked]: 'Satır bloklu; yeni yükleme payı kaydedilmez.',
   [LOGISTICS_PROBLEM_CODE.duplicateShare]: 'Bu yükleme kaydı daha önce işlendi; ikinci kez kaydedilmedi.',
+  [LOGISTICS_PROBLEM_CODE.weighingAlreadyRecorded]:
+    'Bu talimatın kantar tartımı zaten kayıtlı; düzeltme kuralı karara bağlanmadığı için ikinci tartım kaydedilmez.',
+  [LOGISTICS_PROBLEM_CODE.weighingDirectionInconsistent]:
+    'Tartımlar seçilen yönle tutarsız: brüt (dolu araç) tartımı daradan (boş araç) ağır olmalıdır.',
+  [LOGISTICS_PROBLEM_CODE.shipmentAlreadyDispatched]:
+    'Seçilen sevklerden biri zaten bir irsaliyeye bağlı; bir sevk ikinci kez irsaliyeye bağlanamaz. Taslak oluşturulmadı.',
+  [LOGISTICS_PROBLEM_CODE.duplicateDispatchNote]: 'Bu irsaliye taslağı kimliği daha önce kullanıldı; ikinci taslak oluşturulmadı.',
+  [LOGISTICS_PROBLEM_CODE.shipmentNotFound]: 'Seçilen kayıt bu talimatın kesin sevki değil; taslak oluşturulmadı.',
+  [LOGISTICS_PROBLEM_CODE.dispatchNoteState]:
+    'İrsaliyenin durumu bu işleme uygun değil (ör. zaten onaylanmış, iptal edilmiş ya da e-İrsaliye numarası zaten kayıtlı); hiçbir şey değişmedi.',
+  [LOGISTICS_PROBLEM_CODE.eDispatchNumberInUse]: 'Bu e-İrsaliye numarası şirketin başka bir irsaliyesinde kayıtlı; numara kaydedilmedi.',
   [LOGISTICS_PROBLEM_CODE.sameKeyPayloadMismatch]:
     'Aynı işlem anahtarı farklı bir içerikle kullanılmış; bu gönderim uygulanmadı.',
   [LOGISTICS_PROBLEM_CODE.concurrentChange]: 'Aynı anda başka bir kayıt öne geçti; aynı gönderimi tekrar deneyin.',
@@ -214,4 +227,150 @@ export const PROBLEM_CODE_TEXT: Record<LogisticsProblemCode, string> = {
 export function problemCodeText(code: string | null): string | null {
   if (code === null) return null
   return Object.hasOwn(PROBLEM_CODE_TEXT, code) ? PROBLEM_CODE_TEXT[code as LogisticsProblemCode] : null
+}
+
+export const REALIZATION_TEXT = {
+  shipment: 'Kesin sevk kaydet',
+  delivery: 'Teslim kaydet',
+  shipmentNote: 'Seçilen tahsis tüketilir ve tek fiziksel çıkış kaydedilir. Yükleme tek başına bu işlemi yapmaz.',
+  deliveryNote: 'Teslim, seçilen sevke bağlanır. Yeni stok çıkışı oluşturmaz; sevkin kalan miktarını aşamaz.',
+  allocation: 'Tahsis edilmiş etiket',
+  sourceShipment: 'Kaynak sevk',
+  quantity: 'Miktar (kg)',
+  remaining: 'Kalan',
+  line: 'Satır',
+  labelReference: 'Etiket ref.',
+  allocationReference: 'Tahsis ref.',
+  shipmentReference: 'Sevk ref.',
+  choose: 'Seçin',
+  invalid: 'Listeden geçerli bir kaynak seçin ve pozitif miktar girin.',
+  noAllocation: 'Bu sipariş satırında sevk edilebilir aktif tahsis bulunamadı.',
+  windowFull: 'Arama sınırına ulaşıldı; listede olmayan bir tahsisin bulunmadığı sonucuna varılamaz.',
+  noShipment: 'Bu satırda teslim bekleyen bir sevk yok.',
+  refresh: 'Kaynakları yenile',
+} as const
+
+/** AT-053 — the manual weighbridge record (master v3 §27.8 L-06 "Kantar Oturumu": brüt, dara, net ve fark). */
+export const WEIGHING_TEXT = {
+  heading: 'Kantar tartımı',
+  note:
+    'Aracın iki tartımını kantar fişindeki sırayla elle girin. Net ve fark sunucuda hesaplanır. Fark yalnız bir olgudur: ' +
+    'tolerans eşikleri henüz karara bağlanmadığı için kabul/ret değerlendirmesi yapılmaz. Stok hareketi oluşmaz.',
+  none: 'Bu talimat için kantar tartımı kaydedilmedi.',
+  issuedOnly: 'Kantar tartımı yalnız yayımlanmış talimata kaydedilir.',
+  direction: 'Tartım yönü',
+  directionOption: {
+    TareFirst: 'Önce dara (boş araç), sonra brüt (dolu araç)',
+    GrossFirst: 'Önce brüt (dolu araç), sonra dara (boş araç)',
+  },
+  directionShort: { TareFirst: 'Önce dara', GrossFirst: 'Önce brüt' },
+  first: '1. tartım (kg)',
+  second: '2. tartım (kg)',
+  tare: 'Dara (kg)',
+  gross: 'Brüt (kg)',
+  net: 'Net (kg)',
+  loadedAtWeighing: 'Tartım anında yüklenen (kg)',
+  difference: 'Fark: net − yüklenen (kg)',
+  differenceNote: 'Eksi değer tartımın yüklenenden hafif, artı değer ağır olduğunu gösterir. Tolerans değerlendirmesi yoktur.',
+  recordedBy: 'Kaydeden kullanıcı',
+  recordedAt: 'Kayıt zamanı',
+  record: 'Tartımı kaydet',
+  onlyOnce: 'Bir talimata tek kantar tartımı kaydedilir; hatalı bir kaydın nasıl düzeltileceği henüz karara bağlanmadı.',
+  invalidDirection: 'Brüt (dolu araç) tartımı daradan (boş araç) ağır olmalıdır; yönü ve tartımları kontrol edin.',
+} as const
+
+/** AT-055 — the dispatch-note (irsaliye) DRAFT from definite shipments (L-08 Satış İrsaliyesi Hazırlığı). */
+export const DISPATCH_NOTE_TEXT = {
+  heading: 'İrsaliye taslakları',
+  note:
+    'İrsaliye taslağı yalnız kesin sevklerden hazırlanır; her satır, seçilen sevkin sevk edilen miktarıdır. ' +
+    'Bir sevk yalnız bir irsaliyeye bağlanabilir.',
+  undecided:
+    'Onaylanan irsaliyeye şirket serisinden sistem numarası verilir; onaylı irsaliye silinmez, yalnız iptal edilir ve iptal ' +
+    'sevkleri yeni taslak için serbest bırakır (düzeltme = iptal + yeni taslak). Yazdırma şablonu (OPEN-019), resmî e-İrsaliye ' +
+    'gönderimi (DEC-INT-001; e-İrsaliye numarası elle girilir) ve birden çok talimatı tek irsaliyede birleştirme henüz yok.',
+  none: 'Bu talimattan henüz irsaliye taslağı hazırlanmadı.',
+  draft: 'Taslak',
+  approved: 'Onaylandı',
+  cancelled: 'İptal edildi',
+  number: 'İrsaliye no',
+  eDispatchNumber: 'e-İrsaliye no',
+  approvedBy: 'Onaylayan kullanıcı',
+  approvedAt: 'Onay zamanı',
+  cancelledBy: 'İptal eden kullanıcı',
+  cancelledAt: 'İptal zamanı',
+  cancelReason: 'İptal gerekçesi',
+  approve: 'Onayla (numara ver)',
+  cancel: 'İptal et',
+  cancelConfirm: 'İptali kaydet',
+  cancelReasonLabel: 'İptal gerekçesi (zorunlu)',
+  cancelReasonRequired: 'İptal gerekçesi girin (en fazla 500 karakter).',
+  eDispatchNumberLabel: 'e-İrsaliye numarası (16 karakter, ör. GYM2026000000001)',
+  eDispatchNumberSave: 'e-İrsaliye no kaydet',
+  eDispatchNumberInvalid: 'e-İrsaliye numarası 3 harf/rakam ve 13 rakamdan oluşur (ör. GYM2026000000001).',
+  actionsLabel: 'İrsaliye işlemleri',
+  cancelDismiss: 'Vazgeç',
+  reference: 'Taslak kimliği',
+  createdBy: 'Hazırlayan kullanıcı',
+  createdAt: 'Hazırlanma zamanı',
+  caption: 'İrsaliye taslağı satırları — sevk edilen miktarlar',
+  lineNo: 'Sıra',
+  instructionLine: 'Talimat satırı',
+  shipment: 'Sevk ref.',
+  order: 'Sipariş / satır',
+  quantity: 'Sevk edilen miktar',
+  formHeading: 'İrsaliye taslağı hazırla',
+  choose: 'İrsaliyeye bağlanacak sevkler',
+  linked: 'İrsaliyeye bağlı',
+  free: 'İrsaliyesiz',
+  noFreeShipment: 'İrsaliyeye bağlanmamış kesin sevk yok.',
+  issuedOnly: 'İrsaliye taslağı yalnız yayımlanmış talimatın kesin sevklerinden hazırlanır.',
+  create: 'İrsaliye taslağı oluştur',
+  chooseOne: 'En az bir sevk seçin.',
+  shipmentsHeading: 'Kesin sevkler ve irsaliye bağlantısı',
+} as const
+
+/** AT-025 — the operations work list (L-01 sales section, L-09 purchase section). */
+export const OPERATIONS_WORK_TEXT = {
+  heading: 'Operasyon işleri',
+  sections: 'Bölüm',
+  salesTab: 'Satış işleri',
+  purchaseTab: 'Satın alma işleri',
+  salesIntro: 'Onaylı satış siparişlerinin yükleme, sevk ve teslim bekleyen satırları. Satın alma belgeleri bu listede yer almaz.',
+  purchaseIntro: 'Onaylı satın alma siparişlerinin mal kabulü bekleyen satırları. Satış belgeleri bu listede yer almaz.',
+  salesCaption: 'Satış işleri — onaylı satış siparişi satırları, en yeni sipariş önce',
+  purchaseCaption: 'Satın alma işleri — mal kabulü bekleyen onaylı satın alma siparişi satırları, en yeni sipariş önce',
+  filter: 'Gösterilen satırlarda ara',
+  filterHint: 'Arama yalnız yüklenmiş satırlarda yapılır; kalan sayfalar için “Daha fazla göster”i kullanın.',
+  salesSubject: 'satış işleri',
+  purchaseSubject: 'satın alma işleri',
+  order: 'Sipariş',
+  line: 'Satır',
+  customer: 'Müşteri',
+  supplier: 'Tedarikçi',
+  product: 'Ürün',
+  unit: 'Birim',
+  ordered: 'Sipariş miktarı',
+  instructed: 'Talimat verilen',
+  loaded: 'Yüklenen',
+  shipped: 'Sevk edilen',
+  delivered: 'Teslim edilen',
+  requestedDelivery: 'İstenen teslim',
+  effectiveOn: 'Sipariş tarihi',
+  kind: 'Tür',
+  committed: 'Taahhüt',
+  accepted: 'Kabul edilen',
+  remaining: 'Kabul bekleyen',
+  purchaseOrder: 'Satın alma siparişi',
+  noDate: '—',
+  loadMore: 'Daha fazla göster',
+  loadingMore: 'Yükleniyor…',
+  end: 'Listenin sonu.',
+  nextPageFailed: 'Sonraki sayfa alınamadı. Gösterilen satırlar geçerli.',
+  noSection: 'Bu şirkette operasyon işleri için yetkiniz yok.',
+} as const
+
+export const PURCHASE_LINE_KIND_TEXT: Readonly<Record<string, string>> = {
+  General: 'Genel',
+  Technical: 'Teknik',
 }

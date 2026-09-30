@@ -1,5 +1,6 @@
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Audit.Domain.Events;
+using GoymenERP.Modules.Finance.Contracts;
 using GoymenERP.Modules.Audit.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
@@ -51,6 +52,10 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
 
     internal DbSet<OutgoingMoneyEventRow> OutgoingMoneyEvents => Set<OutgoingMoneyEventRow>();
 
+    internal DbSet<CustomerInstrumentRow> CustomerInstruments => Set<CustomerInstrumentRow>();
+
+    internal DbSet<CustomerInstrumentMovementRow> CustomerInstrumentMovements => Set<CustomerInstrumentMovementRow>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         ArgumentNullException.ThrowIfNull(modelBuilder);
@@ -70,6 +75,8 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
         ConfigureReversalProposals(modelBuilder);
         ConfigureManualBankPayments(modelBuilder);
         ConfigureOutgoingMoneyEvents(modelBuilder);
+        ConfigureCustomerInstruments(modelBuilder);
+        ConfigureCustomerInstrumentMovements(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()
             .HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
@@ -105,6 +112,8 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
             table.HasCheckConstraint("CK_ReceiptDrafts_Version", "[Version] >= 1");
             // FIN-T05a: a draft carries no record trace; a recorded source carries who and when.
             table.HasCheckConstraint("CK_ReceiptDrafts_Stage", StageCheck);
+            // DEC-FIN-014: a bank transfer carries no POS fact; a POS collection carries all three.
+            table.HasCheckConstraint("CK_ReceiptDrafts_Pos", PosCheck);
         });
         entity.HasKey(x => x.Id);
         entity.HasAlternateKey(x => new { x.CompanyId, x.Id });
@@ -121,6 +130,9 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
         entity.Property(x => x.CreatedBy).HasMaxLength(128).IsRequired();
         entity.Property(x => x.UpdatedBy).HasMaxLength(128).IsRequired();
         entity.Property(x => x.RecordedBy).HasMaxLength(128);
+        // DEC-FIN-014: exact text like the amount; no database decimal is a money scale.
+        entity.Property(x => x.PosCommissionAmountText).HasColumnType("varchar(max)").IsUnicode(false);
+        entity.Property(x => x.PosBankNetAmountText).HasColumnType("varchar(max)").IsUnicode(false);
         entity.HasIndex(x => new { x.CompanyId, x.UpdatedAtUtc, x.Id });
         // The list's stable order (FIN-T04b): newest created first; an edit never moves a draft between pages.
         entity.HasIndex(x => new { x.CompanyId, x.CreatedAtUtc, x.Id });
@@ -202,6 +214,16 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
         + "([Stage] = 1 AND [RecordedAtUtc] IS NOT NULL AND [RecordedBy] IS NOT NULL AND LEN([RecordedBy]) > 0)";
 
     /// <summary>
+    /// DEC-FIN-014: the POS facts of a receipt source and of its money event are all NULL (a bank transfer) or all set,
+    /// with a known bearer (1 company, 2 customer). The migration that introduced it uses the same text.
+    /// </summary>
+    internal const string PosCheck =
+        "([PosCommissionAmountText] IS NULL AND [PosBankNetAmountText] IS NULL AND [PosCommissionBearer] IS NULL) OR "
+        + "([PosCommissionAmountText] IS NOT NULL AND LEN([PosCommissionAmountText]) > 0 "
+        + "AND [PosBankNetAmountText] IS NOT NULL AND LEN([PosBankNetAmountText]) > 0 "
+        + "AND [PosCommissionBearer] IN (1, 2))";
+
+    /// <summary>
     /// FIN-T05a: one money event per (company, source, kind). Its source is the company's receipt source, and every
     /// fact is non-empty; the row is append-only (the write guard).
     /// </summary>
@@ -217,10 +239,12 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
                 + "AND [CompanyAccountId] <> '00000000-0000-0000-0000-000000000000' "
                 + "AND [TreasuryAccountId] <> '00000000-0000-0000-0000-000000000000' "
                 + "AND [CurrencyId] <> '00000000-0000-0000-0000-000000000000'");
-            table.HasCheckConstraint("CK_MoneyEvents_Kind", "[Kind] IN (1, 2)");
+            // DEC-FIN-016: 3 is a customer instrument's collection (a kind of its own; FIN-T06 does not reverse it).
+            table.HasCheckConstraint("CK_MoneyEvents_Kind", MoneyEventKindCheck);
             table.HasCheckConstraint("CK_MoneyEvents_Text",
                 "LEN([AmountText]) > 0 AND LEN([ProfileId]) > 0 AND LEN([ProfileVersion]) > 0 "
                 + "AND LEN([RecordedBy]) > 0 AND LEN([CorrelationId]) > 0");
+            table.HasCheckConstraint("CK_MoneyEvents_Pos", PosCheck);
         });
         entity.HasKey(x => x.Id);
         entity.Property(x => x.Id).ValueGeneratedNever();
@@ -231,6 +255,8 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
         entity.Property(x => x.ValueOn).HasColumnType("date");
         entity.Property(x => x.RecordedBy).HasMaxLength(128).IsRequired();
         entity.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        entity.Property(x => x.PosCommissionAmountText).HasColumnType("varchar(max)").IsUnicode(false);
+        entity.Property(x => x.PosBankNetAmountText).HasColumnType("varchar(max)").IsUnicode(false);
         // Exactly once: a second event of the same kind for the same source cannot be stored, whoever races.
         entity.HasIndex(x => new { x.CompanyId, x.SourceId, x.Kind }).IsUnique();
         entity.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
@@ -520,14 +546,126 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
         entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
 
-    /// <summary>The command record's target rule; the migration that introduced it uses the same text.</summary>
+    /// <summary>
+    /// The command record's target rule; the migration that last changed it (<c>AddCustomerInstruments</c>, DEC-FIN-016:
+    /// a customer instrument is the sixth target) uses the same text.
+    /// </summary>
     internal const string TargetCheck =
-        "([DraftId] IS NOT NULL AND [DraftId] <> '00000000-0000-0000-0000-000000000000' AND [BankAccountId] IS NULL AND [ReversalProposalId] IS NULL AND [ManualBankPaymentId] IS NULL AND [FinanceAllocationId] IS NULL) OR "
-        + "([BankAccountId] IS NOT NULL AND [BankAccountId] <> '00000000-0000-0000-0000-000000000000' AND [DraftId] IS NULL AND [ReversalProposalId] IS NULL AND [ManualBankPaymentId] IS NULL AND [FinanceAllocationId] IS NULL) OR "
-        + "([ReversalProposalId] IS NOT NULL AND [ReversalProposalId] <> '00000000-0000-0000-0000-000000000000' AND [DraftId] IS NULL AND [BankAccountId] IS NULL AND [ManualBankPaymentId] IS NULL AND [FinanceAllocationId] IS NULL) OR "
-        + "([ManualBankPaymentId] IS NOT NULL AND [ManualBankPaymentId] <> '00000000-0000-0000-0000-000000000000' AND [DraftId] IS NULL AND [BankAccountId] IS NULL AND [ReversalProposalId] IS NULL AND [FinanceAllocationId] IS NULL) OR "
-        + "([FinanceAllocationId] IS NOT NULL AND [FinanceAllocationId] <> '00000000-0000-0000-0000-000000000000' AND [DraftId] IS NULL AND [BankAccountId] IS NULL AND [ReversalProposalId] IS NULL AND [ManualBankPaymentId] IS NULL) OR "
-        + "([DraftId] IS NULL AND [BankAccountId] IS NULL AND [ReversalProposalId] IS NULL AND [ManualBankPaymentId] IS NULL AND [FinanceAllocationId] IS NULL AND JSON_VALUE([ResultJson], '$.outcome') = 'ValidationFailed')";
+        "([DraftId] IS NOT NULL AND [DraftId] <> '00000000-0000-0000-0000-000000000000' AND [BankAccountId] IS NULL AND [ReversalProposalId] IS NULL AND [ManualBankPaymentId] IS NULL AND [FinanceAllocationId] IS NULL AND [CustomerInstrumentId] IS NULL) OR "
+        + "([BankAccountId] IS NOT NULL AND [BankAccountId] <> '00000000-0000-0000-0000-000000000000' AND [DraftId] IS NULL AND [ReversalProposalId] IS NULL AND [ManualBankPaymentId] IS NULL AND [FinanceAllocationId] IS NULL AND [CustomerInstrumentId] IS NULL) OR "
+        + "([ReversalProposalId] IS NOT NULL AND [ReversalProposalId] <> '00000000-0000-0000-0000-000000000000' AND [DraftId] IS NULL AND [BankAccountId] IS NULL AND [ManualBankPaymentId] IS NULL AND [FinanceAllocationId] IS NULL AND [CustomerInstrumentId] IS NULL) OR "
+        + "([ManualBankPaymentId] IS NOT NULL AND [ManualBankPaymentId] <> '00000000-0000-0000-0000-000000000000' AND [DraftId] IS NULL AND [BankAccountId] IS NULL AND [ReversalProposalId] IS NULL AND [FinanceAllocationId] IS NULL AND [CustomerInstrumentId] IS NULL) OR "
+        + "([FinanceAllocationId] IS NOT NULL AND [FinanceAllocationId] <> '00000000-0000-0000-0000-000000000000' AND [DraftId] IS NULL AND [BankAccountId] IS NULL AND [ReversalProposalId] IS NULL AND [ManualBankPaymentId] IS NULL AND [CustomerInstrumentId] IS NULL) OR "
+        + "([CustomerInstrumentId] IS NOT NULL AND [CustomerInstrumentId] <> '00000000-0000-0000-0000-000000000000' AND [DraftId] IS NULL AND [BankAccountId] IS NULL AND [ReversalProposalId] IS NULL AND [ManualBankPaymentId] IS NULL AND [FinanceAllocationId] IS NULL) OR "
+        + "([DraftId] IS NULL AND [BankAccountId] IS NULL AND [ReversalProposalId] IS NULL AND [ManualBankPaymentId] IS NULL AND [FinanceAllocationId] IS NULL AND [CustomerInstrumentId] IS NULL AND JSON_VALUE([ResultJson], '$.outcome') = 'ValidationFailed')";
+
+    /// <summary>The money event kinds (1 recorded receipt, 2 its reversal, 3 a customer instrument's collection).</summary>
+    internal const string MoneyEventKindCheck = "[Kind] IN (1, 2, 3)";
+
+    /// <summary>
+    /// DEC-FIN-016: a customer instrument's status and its bank / collection facts agree. The bank account is held
+    /// only at the bank and after collection; only a collection names its receipt source; a cheque is dishonoured as
+    /// Bounced (4), a note as Protested (5). The migration that introduced it uses the same text.
+    /// </summary>
+    internal const string CustomerInstrumentStateCheck =
+        "([Status] IN (1, 6) AND [TreasuryAccountId] IS NULL AND [CollectionSourceId] IS NULL) OR "
+        + "([Status] = 2 AND [TreasuryAccountId] IS NOT NULL AND [CollectionSourceId] IS NULL) OR "
+        + "([Status] = 3 AND [TreasuryAccountId] IS NOT NULL AND [CollectionSourceId] IS NOT NULL) OR "
+        + "([Status] = 4 AND [Kind] = 1 AND [TreasuryAccountId] IS NULL AND [CollectionSourceId] IS NULL) OR "
+        + "([Status] = 5 AND [Kind] = 2 AND [TreasuryAccountId] IS NULL AND [CollectionSourceId] IS NULL)";
+
+    /// <summary>DEC-FIN-016: a cheque names the bank it is drawn on; a note has none required.</summary>
+    internal const string CustomerInstrumentBankCheck =
+        "[Kind] = 2 OR ([BankName] IS NOT NULL AND LEN([BankName]) > 0)";
+
+    private void ConfigureCustomerInstruments(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<CustomerInstrumentRow>();
+        entity.ToTable("CustomerInstruments", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_CustomerInstruments_Identity",
+                "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [PartyId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [CompanyAccountId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [CurrencyId] <> '00000000-0000-0000-0000-000000000000'");
+            table.HasCheckConstraint("CK_CustomerInstruments_Text",
+                "LEN([SerialNumber]) > 0 AND LEN([Drawer]) > 0 AND LEN([AmountText]) > 0 AND LEN([ProfileId]) > 0 "
+                + "AND LEN([ProfileVersion]) > 0 AND LEN([ReceivedBy]) > 0 AND LEN([UpdatedBy]) > 0");
+            table.HasCheckConstraint("CK_CustomerInstruments_Version", "[Version] >= 1");
+            table.HasCheckConstraint("CK_CustomerInstruments_Kind", "[Kind] IN (1, 2)");
+            table.HasCheckConstraint("CK_CustomerInstruments_Bank", CustomerInstrumentBankCheck);
+            table.HasCheckConstraint("CK_CustomerInstruments_State", CustomerInstrumentStateCheck);
+        });
+        entity.HasKey(x => x.Id);
+        entity.HasAlternateKey(x => new { x.CompanyId, x.Id });
+        entity.Property(x => x.Id).ValueGeneratedNever();
+        entity.Property(x => x.Version).IsConcurrencyToken();
+        entity.Property(x => x.SerialNumber).HasMaxLength(64).IsRequired();
+        entity.Property(x => x.Drawer).HasMaxLength(200).IsRequired();
+        entity.Property(x => x.BankName).HasMaxLength(200);
+        entity.Property(x => x.BranchName).HasMaxLength(200);
+        entity.Property(x => x.DueOn).HasColumnType("date");
+        entity.Property(x => x.ReceivedOn).HasColumnType("date");
+        entity.Property(x => x.StatusChangedOn).HasColumnType("date");
+        // No local digit limit: the shared ExactPositiveDecimalV1 contract sets none.
+        entity.Property(x => x.AmountText).HasColumnType("varchar(max)").IsUnicode(false).IsRequired();
+        entity.Property(x => x.ProfileId).HasMaxLength(36).IsUnicode(false).IsRequired();
+        entity.Property(x => x.ProfileVersion).HasMaxLength(20).IsUnicode(false).IsRequired();
+        entity.Property(x => x.Description).HasMaxLength(1000);
+        entity.Property(x => x.ReceivedBy).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
+        entity.Property(x => x.UpdatedBy).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
+        // The workspace's "araç no mükerrer değil": one instrument per kind, serial, drawer and bank in a company.
+        // Covers every row on purpose: a note has no bank, and SQL Server's unique index treats the NULLs as one value,
+        // so a note is covered too. The filter is on the non-nullable CompanyId, i.e. true for every row: it exists only
+        // because Finance's hand-written migrations carry no target model, and without an explicit filter EF's SQL
+        // Server generator adds the legacy "[BankName] IS NOT NULL" filter, which would exempt every note (#501 SQL).
+        entity.HasIndex(x => new { x.CompanyId, x.Kind, x.SerialNumber, x.Drawer, x.BankName },
+            "UX_CustomerInstruments_Identity").IsUnique().HasFilter("[CompanyId] IS NOT NULL");
+        // Exactly once: a receipt source is the collection of at most one instrument.
+        entity.HasIndex(x => new { x.CompanyId, x.CollectionSourceId }, "UX_CustomerInstruments_CollectionSource")
+            .HasFilter("[CollectionSourceId] IS NOT NULL").IsUnique();
+        // The portfolio list's stable order: newest received first.
+        entity.HasIndex(x => new { x.CompanyId, x.ReceivedAtUtc, x.Id });
+        entity.HasIndex(x => new { x.CompanyId, x.Status, x.DueOn });
+        entity.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasOne<ReceiptDraftRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.CollectionSourceId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
+    private void ConfigureCustomerInstrumentMovements(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<CustomerInstrumentMovementRow>();
+        entity.ToTable("CustomerInstrumentMovements", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_CustomerInstrumentMovements_Identity",
+                "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [InstrumentId] <> '00000000-0000-0000-0000-000000000000'");
+            table.HasCheckConstraint("CK_CustomerInstrumentMovements_Status",
+                "[ToStatus] IN (1, 2, 3, 4, 5, 6) AND ([FromStatus] IS NULL OR [FromStatus] IN (1, 2, 3, 4, 5, 6))");
+            table.HasCheckConstraint("CK_CustomerInstrumentMovements_Version", "[Version] >= 1");
+            table.HasCheckConstraint("CK_CustomerInstrumentMovements_Text",
+                "LEN([RecordedBy]) > 0 AND LEN([CorrelationId]) > 0");
+        });
+        entity.HasKey(x => x.Id);
+        entity.Property(x => x.Id).ValueGeneratedNever();
+        entity.Property(x => x.OccurredOn).HasColumnType("date");
+        entity.Property(x => x.Note).HasMaxLength(500);
+        entity.Property(x => x.RecordedBy).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
+        entity.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        // One step per instrument version, whoever races.
+        entity.HasIndex(x => new { x.CompanyId, x.InstrumentId, x.Version }).IsUnique();
+        entity.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasOne<CustomerInstrumentRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.InstrumentId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
 
     private void ConfigureCommands(ModelBuilder modelBuilder)
     {
@@ -556,6 +694,7 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
         entity.HasIndex(x => new { x.CompanyId, x.ReversalProposalId });
         entity.HasIndex(x => new { x.CompanyId, x.ManualBankPaymentId });
         entity.HasIndex(x => new { x.CompanyId, x.FinanceAllocationId });
+        entity.HasIndex(x => new { x.CompanyId, x.CustomerInstrumentId });
         entity.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
             .OnDelete(DeleteBehavior.Restrict);
         entity.HasOne<ReceiptDraftRow>().WithMany()
@@ -576,6 +715,10 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
             .OnDelete(DeleteBehavior.Restrict);
         entity.HasOne<FinanceAllocationRow>().WithMany()
             .HasForeignKey(x => new { x.CompanyId, x.FinanceAllocationId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasOne<CustomerInstrumentRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.CustomerInstrumentId })
             .HasPrincipalKey(x => new { x.CompanyId, x.Id })
             .OnDelete(DeleteBehavior.Restrict);
         entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
@@ -638,6 +781,13 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
                         "Finans dağıtımı yalnız aktif durumdan sürümlü serbest bırakma ile değişir.");
                 }
 
+                if (entry.Entity is CustomerInstrumentRow instrument
+                    && !IsAllowedCustomerInstrumentChange(entry, instrument))
+                {
+                    throw new InvalidOperationException(
+                        "Müşteri çeki/senedi yalnız izinli bir durum adımıyla, sürümü bir artarak değişir.");
+                }
+
                 string[] allowed = entry.Entity switch
                 {
                     ReceiptDraftRow =>
@@ -650,6 +800,8 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
                         nameof(ReceiptDraftRow.Description), nameof(ReceiptDraftRow.UpdatedAtUtc),
                         nameof(ReceiptDraftRow.UpdatedBy), nameof(ReceiptDraftRow.Stage),
                         nameof(ReceiptDraftRow.RecordedAtUtc), nameof(ReceiptDraftRow.RecordedBy),
+                        nameof(ReceiptDraftRow.PosCommissionAmountText), nameof(ReceiptDraftRow.PosBankNetAmountText),
+                        nameof(ReceiptDraftRow.PosCommissionBearer),
                     ],
                     // Initial approval and D4's two-step IBAN transition; the state-aware guard above
                     // prevents these columns from becoming general-purpose mutable fields.
@@ -697,6 +849,14 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
                         nameof(FinanceSourceAllocationStateRow.UnallocatedAmountText),
                         nameof(FinanceSourceAllocationStateRow.UpdatedBy),
                         nameof(FinanceSourceAllocationStateRow.UpdatedAtUtc),
+                    ],
+                    // DEC-FIN-016: the facts never change; only the status step and its bank / collection trace. The
+                    // state-aware guard above admits only an allowed step. A movement is append-only (no entry here).
+                    CustomerInstrumentRow =>
+                    [
+                        nameof(CustomerInstrumentRow.Status), nameof(CustomerInstrumentRow.TreasuryAccountId),
+                        nameof(CustomerInstrumentRow.CollectionSourceId), nameof(CustomerInstrumentRow.StatusChangedOn),
+                        nameof(CustomerInstrumentRow.UpdatedBy), nameof(CustomerInstrumentRow.UpdatedAtUtc),
                     ],
                     _ => [],
                 };
@@ -753,6 +913,26 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
                && !string.IsNullOrWhiteSpace(current.RecordedBy)
                && current.RecordedAtUtc is not null
                && current.BankResultConfirmed;
+    }
+
+    /// <summary>
+    /// DEC-FIN-016: one allowed status step (<see cref="CustomerInstrumentRules"/>) per save, the version moving by
+    /// exactly one; a collected instrument (its collection source set) never changes again.
+    /// </summary>
+    private static bool IsAllowedCustomerInstrumentChange(
+        Microsoft.EntityFrameworkCore.ChangeTracking.EntityEntry<IFinanceTenantRow> entry,
+        CustomerInstrumentRow current)
+    {
+        var originalStatus = (int)entry.OriginalValues[nameof(CustomerInstrumentRow.Status)]!;
+        var originalVersion = (long)entry.OriginalValues[nameof(CustomerInstrumentRow.Version)]!;
+        var originalCollection = (Guid?)entry.OriginalValues[nameof(CustomerInstrumentRow.CollectionSourceId)];
+        var kind = (CustomerInstrumentKind)current.Kind;
+        var from = (CustomerInstrumentStatus)originalStatus;
+        var to = (CustomerInstrumentStatus)current.Status;
+        return originalCollection is null
+            && current.Version == checked(originalVersion + 1)
+            && Enum.IsDefined(kind) && Enum.IsDefined(from) && Enum.IsDefined(to)
+            && CustomerInstrumentRules.IsAllowedStatusChange(kind, from, to);
     }
 
     private static bool IsAllowedAllocationRelease(

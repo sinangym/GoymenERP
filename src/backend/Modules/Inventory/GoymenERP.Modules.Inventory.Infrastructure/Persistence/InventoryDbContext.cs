@@ -58,6 +58,8 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
 
     internal DbSet<AllocationRow> Allocations => Set<AllocationRow>();
 
+    internal DbSet<AllocationChangeRow> AllocationChanges => Set<AllocationChangeRow>();
+
     internal DbSet<InventoryOutboxRow> OutboxMessages => Set<InventoryOutboxRow>();
 
     internal DbSet<OpeningCountRow> OpeningCounts => Set<OpeningCountRow>();
@@ -65,6 +67,14 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
     internal DbSet<OpeningCountLineRow> OpeningCountLines => Set<OpeningCountLineRow>();
 
     internal DbSet<InventoryCommandRow> Commands => Set<InventoryCommandRow>();
+
+    internal DbSet<StockCountRow> StockCounts => Set<StockCountRow>();
+
+    internal DbSet<StockCountDecisionRow> StockCountDecisions => Set<StockCountDecisionRow>();
+
+    internal DbSet<StockScrapRow> StockScraps => Set<StockScrapRow>();
+
+    internal DbSet<StockScrapDecisionRow> StockScrapDecisions => Set<StockScrapDecisionRow>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -81,9 +91,12 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
         ConfigureMovementLines(modelBuilder);
         ConfigureBalances(modelBuilder);
         ConfigureAllocations(modelBuilder);
+        ConfigureAllocationChanges(modelBuilder);
         ConfigureOutboxMessages(modelBuilder);
         ConfigureOpeningCounts(modelBuilder);
         ConfigureCommands(modelBuilder);
+        ConfigureStockCounts(modelBuilder);
+        ConfigureStockScraps(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()
             .HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
@@ -283,7 +296,7 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
                 "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' "
                 + "AND [SourceId] <> '00000000-0000-0000-0000-000000000000' "
                 + "AND ([SourceLineId] IS NULL OR [SourceLineId] <> '00000000-0000-0000-0000-000000000000')");
-            table.HasCheckConstraint("CK_Movements_Kind", "[Kind] BETWEEN 1 AND 5");
+            table.HasCheckConstraint("CK_Movements_Kind", "[Kind] BETWEEN 1 AND 7");
             table.HasCheckConstraint("CK_Movements_SourceKind", "LEN([SourceKind]) > 0");
             table.HasCheckConstraint("CK_Movements_Cost",
                 "([CostStatus] IN (1, 2) AND [CostAmount] IS NULL AND [CostCurrencyId] IS NULL) OR "
@@ -448,6 +461,64 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
         entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
 
+    /// <summary>
+    /// INV-AL-1 change history: append-only (the write guard refuses any update or delete), both allocations and both
+    /// labels named by (company, id), one change per source allocation version. Kind 1 = resize (source = target),
+    /// 2 = move (source released, target new).
+    /// </summary>
+    private void ConfigureAllocationChanges(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<AllocationChangeRow>();
+        entity.ToTable("AllocationChanges", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_AllocationChanges_Identity",
+                "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [SourceAllocationId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [TargetAllocationId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [SourceLabelId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [TargetLabelId] <> '00000000-0000-0000-0000-000000000000'");
+            table.HasCheckConstraint("CK_AllocationChanges_Kind",
+                "([Kind] = 1 AND [SourceAllocationId] = [TargetAllocationId] AND [SourceLabelId] = [TargetLabelId] "
+                + "AND [TargetRemainingKg] <> [SourceRemainingKg]) "
+                + "OR ([Kind] = 2 AND [SourceAllocationId] <> [TargetAllocationId] AND [SourceLabelId] <> [TargetLabelId])");
+            table.HasCheckConstraint("CK_AllocationChanges_State",
+                "[SourceVersion] >= 1 AND [SourceRemainingKg] > 0 AND [TargetRemainingKg] > 0");
+            table.HasCheckConstraint("CK_AllocationChanges_Text",
+                "LEN(LTRIM(RTRIM([Reason]))) > 0 AND LEN([ChangedBy]) > 0 AND LEN([CorrelationId]) > 0");
+        });
+        entity.HasKey(x => x.Id);
+        entity.Property(x => x.Id).ValueGeneratedNever();
+        entity.Property(x => x.SourceRemainingKg).HasPrecision(18, 3);
+        entity.Property(x => x.TargetRemainingKg).HasPrecision(18, 3);
+        entity.Property(x => x.Reason).HasMaxLength(1000).IsRequired();
+        entity.Property(x => x.ChangedBy).HasMaxLength(128).IsRequired();
+        entity.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        entity.HasIndex(x => new { x.CompanyId, x.SourceAllocationId, x.SourceVersion })
+            .IsUnique()
+            .HasDatabaseName("UX_AllocationChanges_SourceVersion");
+        entity.HasIndex(x => new { x.CompanyId, x.TargetAllocationId })
+            .HasDatabaseName("IX_AllocationChanges_Target");
+        entity.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasOne<AllocationRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.SourceAllocationId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasOne<AllocationRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.TargetAllocationId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasOne<LabelRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.SourceLabelId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasOne<LabelRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.TargetLabelId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
     private void ConfigureOutboxMessages(ModelBuilder modelBuilder)
     {
         var entity = modelBuilder.Entity<InventoryOutboxRow>();
@@ -551,6 +622,142 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
         command.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
 
+    /// <summary>
+    /// ST-05 / AT-037 (DEC-STK-007): a count of one stocked label at its stored position, and at most one decision
+    /// on it. A count names its company's label and location; an approval names the adjustment movement it posted
+    /// (both by (company, id)), a rejection none. Both are append-only: history is never deleted.
+    /// </summary>
+    private void ConfigureStockCounts(ModelBuilder modelBuilder)
+    {
+        var count = modelBuilder.Entity<StockCountRow>();
+        count.ToTable("StockCounts", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_StockCounts_Identity",
+                "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [OwnerId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [CustodianId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [ProductId] <> '00000000-0000-0000-0000-000000000000'");
+            table.HasCheckConstraint("CK_StockCounts_State",
+                "[OwnerKind] IN (1, 2) AND [CustodianKind] IN (1, 2) AND [Block] IN (1, 2) AND [LabelVersion] >= 1 "
+                + "AND [BookKg] > 0 AND [CountedKg] >= 0");
+            table.HasCheckConstraint("CK_StockCounts_Text",
+                "LEN(LTRIM(RTRIM([Reason]))) > 0 AND LEN([PayloadHash]) = 64 AND LEN([RecordedBy]) > 0 "
+                + "AND LEN([CorrelationId]) > 0");
+        });
+        count.HasKey(x => x.Id);
+        count.HasAlternateKey(x => new { x.CompanyId, x.Id });
+        count.Property(x => x.Id).ValueGeneratedNever();
+        count.Property(x => x.BookKg).HasPrecision(18, 3);
+        count.Property(x => x.CountedKg).HasPrecision(18, 3);
+        count.Property(x => x.Reason).HasMaxLength(1000).IsRequired();
+        count.Property(x => x.PayloadHash).HasMaxLength(64).IsUnicode(false).IsRequired();
+        count.Property(x => x.RecordedBy).HasMaxLength(128).IsRequired();
+        count.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        count.HasIndex(x => new { x.CompanyId, x.LabelId, x.RecordedAtUtc, x.Id });
+        count.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        LabelOf(count);
+        LocationOf(count);
+        count.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        var decision = modelBuilder.Entity<StockCountDecisionRow>();
+        decision.ToTable("StockCountDecisions", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_StockCountDecisions_Decision",
+                "([Decision] = 1 AND [MovementId] IS NOT NULL "
+                + "AND [MovementId] <> '00000000-0000-0000-0000-000000000000') "
+                + "OR ([Decision] = 2 AND [MovementId] IS NULL)");
+            table.HasCheckConstraint("CK_StockCountDecisions_Text",
+                "LEN(LTRIM(RTRIM([Reason]))) > 0 AND LEN([PayloadHash]) = 64 AND LEN([DecidedBy]) > 0 "
+                + "AND LEN([CorrelationId]) > 0");
+        });
+        decision.HasKey(x => new { x.CompanyId, x.CountId });
+        decision.Property(x => x.Reason).HasMaxLength(1000).IsRequired();
+        decision.Property(x => x.PayloadHash).HasMaxLength(64).IsUnicode(false).IsRequired();
+        decision.Property(x => x.DecidedBy).HasMaxLength(128).IsRequired();
+        decision.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        decision.HasIndex(x => new { x.CompanyId, x.MovementId })
+            .IsUnique()
+            .HasFilter("[MovementId] IS NOT NULL");
+        decision.HasOne<StockCountRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.CountId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        decision.HasOne<MovementRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.MovementId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        decision.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
+    /// <summary>
+    /// ST-02 scrap write-off: a scrap of one stocked label at its stored position, and at most one decision on it. A
+    /// scrap names its company's label and location; an approval names the scrap movement it posted (both by
+    /// (company, id)), a rejection none. The scrap is positive and never more than the book. Both are append-only.
+    /// </summary>
+    private void ConfigureStockScraps(ModelBuilder modelBuilder)
+    {
+        var scrap = modelBuilder.Entity<StockScrapRow>();
+        scrap.ToTable("StockScraps", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_StockScraps_Identity",
+                "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [OwnerId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [CustodianId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [ProductId] <> '00000000-0000-0000-0000-000000000000'");
+            table.HasCheckConstraint("CK_StockScraps_State",
+                "[OwnerKind] IN (1, 2) AND [CustodianKind] IN (1, 2) AND [Block] IN (1, 2) AND [LabelVersion] >= 1 "
+                + "AND [BookKg] > 0 AND [ScrapKg] > 0 AND [ScrapKg] <= [BookKg]");
+            table.HasCheckConstraint("CK_StockScraps_Text",
+                "LEN(LTRIM(RTRIM([Reason]))) > 0 AND LEN([PayloadHash]) = 64 AND LEN([RecordedBy]) > 0 "
+                + "AND LEN([CorrelationId]) > 0");
+        });
+        scrap.HasKey(x => x.Id);
+        scrap.HasAlternateKey(x => new { x.CompanyId, x.Id });
+        scrap.Property(x => x.Id).ValueGeneratedNever();
+        scrap.Property(x => x.BookKg).HasPrecision(18, 3);
+        scrap.Property(x => x.ScrapKg).HasPrecision(18, 3);
+        scrap.Property(x => x.Reason).HasMaxLength(1000).IsRequired();
+        scrap.Property(x => x.PayloadHash).HasMaxLength(64).IsUnicode(false).IsRequired();
+        scrap.Property(x => x.RecordedBy).HasMaxLength(128).IsRequired();
+        scrap.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        scrap.HasIndex(x => new { x.CompanyId, x.LabelId, x.RecordedAtUtc, x.Id });
+        scrap.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        LabelOf(scrap);
+        LocationOf(scrap);
+        scrap.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        var decision = modelBuilder.Entity<StockScrapDecisionRow>();
+        decision.ToTable("StockScrapDecisions", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_StockScrapDecisions_Decision",
+                "([Decision] = 1 AND [MovementId] IS NOT NULL "
+                + "AND [MovementId] <> '00000000-0000-0000-0000-000000000000') "
+                + "OR ([Decision] = 2 AND [MovementId] IS NULL)");
+            table.HasCheckConstraint("CK_StockScrapDecisions_Text",
+                "LEN(LTRIM(RTRIM([Reason]))) > 0 AND LEN([PayloadHash]) = 64 AND LEN([DecidedBy]) > 0 "
+                + "AND LEN([CorrelationId]) > 0");
+        });
+        decision.HasKey(x => new { x.CompanyId, x.ScrapId });
+        decision.Property(x => x.Reason).HasMaxLength(1000).IsRequired();
+        decision.Property(x => x.PayloadHash).HasMaxLength(64).IsUnicode(false).IsRequired();
+        decision.Property(x => x.DecidedBy).HasMaxLength(128).IsRequired();
+        decision.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        decision.HasIndex(x => new { x.CompanyId, x.MovementId })
+            .IsUnique()
+            .HasFilter("[MovementId] IS NOT NULL");
+        decision.HasOne<StockScrapRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.ScrapId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        decision.HasOne<MovementRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.MovementId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        decision.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
     /// <summary>A row of one label, bound by (company, label) so it can never name another company's label.</summary>
     private static void LabelOf<TRow>(EntityTypeBuilder<TRow> entity)
         where TRow : class, IInventoryTenantRow
@@ -605,6 +812,8 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
                     BalanceRow => [nameof(BalanceRow.QuantityKg)],
                     AllocationRow =>
                     [
+                        // INV-AL-1 change: an in-place resize re-states AllocatedKg (consumed part kept exactly).
+                        nameof(AllocationRow.AllocatedKg),
                         nameof(AllocationRow.RemainingKg), nameof(AllocationRow.Status),
                         nameof(AllocationRow.Version), nameof(AllocationRow.UpdatedAtUtc),
                         nameof(AllocationRow.ReleasedAtUtc), nameof(AllocationRow.ReleaseReason),

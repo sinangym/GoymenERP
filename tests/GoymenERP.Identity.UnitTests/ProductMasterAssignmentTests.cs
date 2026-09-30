@@ -8,6 +8,9 @@ public sealed class ProductMasterAssignmentTests
     [InlineData(ProductMasterOperation.Read)]
     [InlineData(ProductMasterOperation.DraftCreate)]
     [InlineData(ProductMasterOperation.DraftBasicEdit)]
+    [InlineData(ProductMasterOperation.Activate)]
+    [InlineData(ProductMasterOperation.Deactivate)]
+    [InlineData(ProductMasterOperation.Reactivate)]
     public void AssignmentIsOneExplicitOperationAndRevocationPreservesOriginalDecision(ProductMasterOperation operation)
     {
         var grant = Assignment(operation);

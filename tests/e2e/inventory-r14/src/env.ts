@@ -2,6 +2,16 @@ export interface R14Seed {
   readonly recorderActor: string
   readonly deniedActor: string
   readonly arrangerActor: string
+  /** R19: the ONLY actor holding inventory.label-transformation.record (disposable, this per-run database). */
+  readonly transformerActor: string
+  /** AT-037: the ONLY holder of inventory.stock-count.record (disposable). */
+  readonly counterActor: string
+  /** AT-037: the ONLY holder of inventory.stock-count.approve (disposable), never the counter. */
+  readonly countApproverActor: string
+  /** ST-02 scrap: the ONLY holder of inventory.stock-scrap.record (disposable). */
+  readonly scrapperActor: string
+  /** ST-02 scrap: the ONLY holder of inventory.stock-scrap.approve (disposable), never the scrapper. */
+  readonly scrapApproverActor: string
   readonly companyId: string
   readonly otherCompanyId: string
   readonly locationId: string
@@ -53,7 +63,7 @@ export function readEnvironment(): R14Environment {
 
   const raw = JSON.parse(required('BROWSER_E2E_R14_SEED')) as Record<string, unknown>
   const expectedKeys: (keyof R14Seed)[] = [
-    'recorderActor', 'deniedActor', 'arrangerActor', 'companyId', 'otherCompanyId', 'locationId',
+    'recorderActor', 'deniedActor', 'arrangerActor', 'transformerActor', 'counterActor', 'countApproverActor', 'scrapperActor', 'scrapApproverActor', 'companyId', 'otherCompanyId', 'locationId',
     'productId', 'productVersion', 'productUnitId', 'productUnitProfileId',
     'productUnitProfileVersion', 'productCode', 'productName',
   ]
@@ -62,7 +72,10 @@ export function readEnvironment(): R14Environment {
   }
   const seed: R14Seed = {
     recorderActor: text(raw, 'recorderActor'), deniedActor: text(raw, 'deniedActor'),
-    arrangerActor: text(raw, 'arrangerActor'), companyId: text(raw, 'companyId', GUID),
+    arrangerActor: text(raw, 'arrangerActor'), transformerActor: text(raw, 'transformerActor'),
+    counterActor: text(raw, 'counterActor'), countApproverActor: text(raw, 'countApproverActor'),
+    scrapperActor: text(raw, 'scrapperActor'), scrapApproverActor: text(raw, 'scrapApproverActor'),
+    companyId: text(raw, 'companyId', GUID),
     otherCompanyId: text(raw, 'otherCompanyId', GUID), locationId: text(raw, 'locationId', GUID),
     productId: text(raw, 'productId', GUID), productVersion: text(raw, 'productVersion', VERSION),
     productUnitId: text(raw, 'productUnitId', GUID),
@@ -70,7 +83,8 @@ export function readEnvironment(): R14Environment {
     productUnitProfileVersion: text(raw, 'productUnitProfileVersion', VERSION),
     productCode: text(raw, 'productCode'), productName: text(raw, 'productName'),
   }
-  if (new Set([seed.recorderActor, seed.deniedActor, seed.arrangerActor]).size !== 3 ||
+  if (new Set([seed.recorderActor, seed.deniedActor, seed.arrangerActor, seed.transformerActor,
+    seed.counterActor, seed.countApproverActor, seed.scrapperActor, seed.scrapApproverActor]).size !== 8 ||
       seed.companyId === seed.otherCompanyId || !/^SYNR14-[1-9]\d*$/.test(seed.productCode) ||
       seed.productName !== 'SENTETIK browser-suite:r14 stock candidate') {
     throw new Error('BROWSER_E2E_R14_SEED semantic binding is invalid')

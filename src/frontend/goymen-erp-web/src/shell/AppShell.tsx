@@ -15,6 +15,7 @@ import { useShellDispatch, useShellState } from './shellContext'
 import { useShellOrchestrator } from './useShellOrchestrator'
 import { StateBlock } from './StateBlock'
 import { SwitchConfirmDialog } from './SwitchConfirmDialog'
+import { GlobalSearchBox } from '../search/GlobalSearchBox'
 import {
   CAPABILITY,
   CAPABILITY_NAV_LABEL,
@@ -107,6 +108,9 @@ export const NAV_CAPABILITIES: readonly CapabilityId[] = [
   // the same accessible name to one route is what l04's strict-mode violation found, and a screen
   // reader announces it twice.
   CAPABILITY.logisticsInstructionsList,
+  // AT-025: the operations work list's two separate sections, each shown only to an actor holding its own grant.
+  CAPABILITY.logisticsOperationsSales,
+  CAPABILITY.logisticsOperationsPurchase,
   /**
    * P-01 and P-03 are Purchasing's two list entries. Their create actions live inside their lists
    * under K5, and each detail is reached from a row. Submit and approve are controls inside their
@@ -114,6 +118,11 @@ export const NAV_CAPABILITIES: readonly CapabilityId[] = [
    */
   CAPABILITY.purchasingRequestsList,
   CAPABILITY.purchasingOrdersList,
+  /**
+   * SY-01 read subset, listed with the route that serves it. It renders only where the server granted
+   * `identity.assignments.read` company-wide; the role card is reached from a row.
+   */
+  CAPABILITY.identityAssignmentsList,
 ]
 
 export function AppShell() {
@@ -266,6 +275,9 @@ export function AppShell() {
               ))}
             </select>
           </label>
+
+          {/* AT-002: the global search box; it renders only with a searchable owner list grant. */}
+          <GlobalSearchBox />
 
           <div className={styles.user}>{identity ? identity.displayName : '…'}</div>
         </header>

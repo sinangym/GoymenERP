@@ -28,6 +28,23 @@ public enum StockMovementKind
     /// Unlike a receipt, this deliberately adds stock to an already registered piece.
     /// </summary>
     Return = 5,
+
+    /// <summary>
+    /// ST-05 / AT-037: the approved difference of one stock count (DEC-STK-007), posted on the counted
+    /// position of an already registered piece. Exactly one line: In for a surplus, Out for a shortage,
+    /// free or blocked alike (a count is physical). The count it answers stays as the history; a wrong
+    /// adjustment is corrected by a new count, never by editing this one.
+    /// </summary>
+    CountAdjustment = 6,
+
+    /// <summary>
+    /// ST-02 scrap write-off (hurda/fire çıkışı): the approved scrap of part or all of one stocked piece, posted on
+    /// its one stored position. Exactly one Out line, free or blocked alike: this is the movement kind of its own
+    /// that scrapping blocked material needs (T13), so a blocked piece leaves without first being released. The
+    /// scrap document it answers stays as the history; a wrong write-off is corrected by a new count, never by
+    /// editing this one.
+    /// </summary>
+    Scrap = 7,
 }
 
 public enum StockDirection
@@ -204,6 +221,20 @@ public sealed class StockMovement
                 break;
             case StockMovementKind.Release:
                 RequireBlockPair(BlockState.Blocked, BlockState.Free);
+                break;
+            case StockMovementKind.CountAdjustment:
+                if (lines.Length != 1)
+                {
+                    throw Invalid("Sayım farkı hareketi tek satırdır: sayılan pozisyona giriş ya da çıkış.");
+                }
+
+                break;
+            case StockMovementKind.Scrap:
+                if (lines.Length != 1 || lines[0].Direction != StockDirection.Out)
+                {
+                    throw Invalid("Hurda hareketi tek satırdır: hurdaya ayrılan pozisyondan çıkış.");
+                }
+
                 break;
         }
     }

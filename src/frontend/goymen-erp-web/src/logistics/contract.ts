@@ -9,6 +9,9 @@
  *   GET  /api/v1/logistics/loading-instructions/{id}            → LoadingInstructionDetailView
  *   POST /api/v1/logistics/loading-instructions/{id}/issue      → 200 LoadingInstructionResponse (Draft → Issued)
  *   POST /api/v1/logistics/loading-instructions/{id}/lines/{lineId}/loads → 200 LoadingInstructionResponse
+ *   POST /api/v1/logistics/loading-instructions/{id}/dispatch-notes → 200 LoadingInstructionResponse (AT-055 draft)
+ *   POST …/{id}/dispatch-notes/{noteId}/approve | cancel | e-dispatch-number → 200 LoadingInstructionResponse
+ *   GET  /api/v1/logistics/dispatch-notes?salesOrderId            → SalesOrderDispatchNotesView (AT-055, the S-04 link)
  *
  * Rules taken from the source rather than assumed:
  *  - every response member is PRESENT, nullable ones as explicit null; unknown members, wrong case
@@ -27,6 +30,17 @@ export const LOGISTICS_PATH = '/logistics/loading-instructions'
 export const instructionDetailPath = (id: string) => `${LOGISTICS_PATH}/${encodeURIComponent(id)}`
 export const issuePath = (id: string) => `${instructionDetailPath(id)}/issue`
 export const loadsPath = (id: string, lineId: string) => `${instructionDetailPath(id)}/lines/${encodeURIComponent(lineId)}/loads`
+/** AT-053: the instruction's manual weighbridge record (one per instruction). */
+export const weighingsPath = (id: string) => `${instructionDetailPath(id)}/weighings`
+/** AT-055: a dispatch-note (irsaliye) draft from the instruction's definite shipments. */
+export const dispatchNotesPath = (id: string) => `${instructionDetailPath(id)}/dispatch-notes`
+/** AT-055: one dispatch note of the instruction (approve / cancel / e-İrsaliye number live under it). */
+export const dispatchNotePath = (id: string, dispatchNoteId: string) => `${dispatchNotesPath(id)}/${encodeURIComponent(dispatchNoteId)}`
+export const approveDispatchNotePath = (id: string, dispatchNoteId: string) => `${dispatchNotePath(id, dispatchNoteId)}/approve`
+export const cancelDispatchNotePath = (id: string, dispatchNoteId: string) => `${dispatchNotePath(id, dispatchNoteId)}/cancel`
+export const eDispatchNumberPath = (id: string, dispatchNoteId: string) => `${dispatchNotePath(id, dispatchNoteId)}/e-dispatch-number`
+/** AT-055: the dispatch-note drafts of one Sales order (the S-04 link), under the instruction read. */
+export const SALES_ORDER_DISPATCH_NOTES_PATH = '/logistics/dispatch-notes'
 
 /** `LogisticsApiV1`: a first commit answers 201; its replay 201 + `Idempotency-Replayed: true` (ADR-011 §4). */
 export const CREATED_STATUS = 201
@@ -46,6 +60,11 @@ const MEASUREMENTS: readonly string[] = Object.values(MEASUREMENT)
 export const SHARE_KIND = { loaded: 'Loaded', shipped: 'Shipped', delivered: 'Delivered' } as const
 export type ShareKind = (typeof SHARE_KIND)[keyof typeof SHARE_KIND]
 const SHARE_KINDS: readonly string[] = Object.values(SHARE_KIND)
+
+/** WGT-001's direction metadata: which of the two weighings is the empty vehicle (tare). */
+export const WEIGHING_DIRECTION = { tareFirst: 'TareFirst', grossFirst: 'GrossFirst' } as const
+export type WeighingDirection = (typeof WEIGHING_DIRECTION)[keyof typeof WEIGHING_DIRECTION]
+const WEIGHING_DIRECTIONS: readonly string[] = Object.values(WEIGHING_DIRECTION)
 
 /** Technical bounds from `LogisticsJson` / the endpoints. Not owner scale or precision. */
 export const LIMITS = {
@@ -93,6 +112,50 @@ export interface RecordLoadRequest {
   readonly measurement: Measurement
 }
 
+/**
+ * `RecordWeighingRequest` (AT-053): the two weighings as exact kilogram text in the order taken and the direction.
+ * No net, difference, tolerance, operator or time: the backend calculates and stamps them.
+ */
+export interface RecordWeighingRequest {
+  readonly expectedVersion: string
+  readonly weighingId: string
+  readonly direction: WeighingDirection
+  readonly firstWeighingKg: string
+  readonly secondWeighingKg: string
+}
+
+/**
+ * `CreateDispatchNoteRequest` (AT-055): the definite shipments to put on a dispatch-note DRAFT. No quantity, price, number,
+ * date or customer: each line is the recorded shipped quantity, the customer is the instruction's.
+ */
+export interface CreateDispatchNoteRequest {
+  readonly expectedVersion: string
+  readonly dispatchNoteId: string
+  readonly shipmentIds: readonly string[]
+}
+
+/** Approve (finalise) a Draft note: the server assigns the company series number. Only the instruction version is sent. */
+export interface ApproveDispatchNoteRequest {
+  readonly expectedVersion: string
+}
+
+/** Cancel a Draft or Approved note; its shipments are released for a new draft (correction = cancel + new draft). */
+export interface CancelDispatchNoteRequest {
+  readonly expectedVersion: string
+  /** Trimmed, 1..500 characters. */
+  readonly reason: string
+}
+
+/** The official e-İrsaliye number of an Approved note, entered by hand (GİB 16-character form), set once. */
+export interface SetEDispatchNumberRequest {
+  readonly expectedVersion: string
+  readonly eDispatchNumber: string
+}
+
+/** GİB e-document number: 3 letters/digits, then 13 digits (year + sequence). */
+export const E_DISPATCH_NUMBER_PATTERN = /^[A-Z0-9]{3}[0-9]{13}$/
+export const CANCEL_REASON_MAX = 500
+
 /* ── Responses ────────────────────────────────────────────────────────────── */
 
 export interface InstructionSummary {
@@ -137,10 +200,70 @@ export interface LoadingShare {
   readonly recordedAtUtc: string
 }
 
+/**
+ * `LoadingInstructionWeighingView` (AT-053): the manual weighbridge record exactly as the backend calculated it —
+ * tare / gross / net (WGT-001), the kilograms loaded when it was weighed and the SIGNED difference net − loaded
+ * (WGT-002). Facts only: no tolerance verdict exists (OPEN-004), and this client never recomputes any of them.
+ */
+export interface InstructionWeighing {
+  readonly weighingId: string
+  readonly direction: WeighingDirection
+  readonly firstWeighingKg: string
+  readonly secondWeighingKg: string
+  readonly tareKg: string
+  readonly grossKg: string
+  readonly netKg: string
+  readonly loadedKgAtWeighing: string
+  /** Signed exact text: "-120" lighter than loaded, "120" heavier, "0" equal. */
+  readonly differenceKg: string
+  readonly recordedBy: string
+  readonly recordedAtUtc: string
+}
+
+/** Draft → Approved (numbered) → Cancelled; a Draft may be cancelled too. A note is never deleted. */
+export const DISPATCH_NOTE_STATUS = { draft: 'Draft', approved: 'Approved', cancelled: 'Cancelled' } as const
+const DISPATCH_NOTE_STATUSES: readonly string[] = Object.values(DISPATCH_NOTE_STATUS)
+export type DispatchNoteStatus = (typeof DISPATCH_NOTE_STATUS)[keyof typeof DISPATCH_NOTE_STATUS]
+
+/** One line of a dispatch-note draft: one definite shipment and its SHIPPED quantity (exact text), with its line's binding. */
+export interface DispatchNoteLine {
+  readonly lineNo: number
+  readonly shipmentId: string
+  readonly instructionLineId: string
+  readonly sourceOrderId: string
+  readonly sourceOrderLineId: string
+  readonly productId: string
+  readonly unitId: string
+  readonly quantity: string
+}
+
+/**
+ * `DispatchNoteView` (AT-055): a dispatch note of the instruction. `number` is the ERP series number assigned on approval (kept
+ * on a cancelled note that had been approved); `eDispatchNumber` is the separate, hand-entered e-İrsaliye number.
+ */
+export interface DispatchNote {
+  readonly dispatchNoteId: string
+  readonly status: DispatchNoteStatus
+  readonly number: string | null
+  readonly createdBy: string
+  readonly createdAtUtc: string
+  readonly approvedBy: string | null
+  readonly approvedAtUtc: string | null
+  readonly cancelledBy: string | null
+  readonly cancelledAtUtc: string | null
+  readonly cancelReason: string | null
+  readonly eDispatchNumber: string | null
+  readonly lines: readonly DispatchNoteLine[]
+}
+
 export interface InstructionDetail {
   readonly instruction: InstructionSummary
   readonly lines: readonly InstructionLine[]
   readonly shares: readonly LoadingShare[]
+  /** null while none is recorded; the member is always present on the wire. */
+  readonly weighing: InstructionWeighing | null
+  /** AT-055: the dispatch-note drafts made from this instruction's shipments, oldest first (always present, empty when none). */
+  readonly dispatchNotes: readonly DispatchNote[]
 }
 
 export interface InstructionMutation {
@@ -180,6 +303,13 @@ export const LOGISTICS_PROBLEM_CODE = {
   loadExceedsInstructed: 'logistics_load_exceeds_instructed',
   lineBlocked: 'logistics_line_blocked',
   duplicateShare: 'logistics_duplicate_share_id',
+  weighingAlreadyRecorded: 'logistics_weighing_already_recorded',
+  weighingDirectionInconsistent: 'logistics_weighing_direction_inconsistent',
+  shipmentAlreadyDispatched: 'logistics_shipment_already_dispatched',
+  duplicateDispatchNote: 'logistics_duplicate_dispatch_note_id',
+  shipmentNotFound: 'logistics_shipment_not_found',
+  dispatchNoteState: 'logistics_dispatch_note_state',
+  eDispatchNumberInUse: 'logistics_e_dispatch_number_in_use',
   sameKeyPayloadMismatch: 'same_key_payload_mismatch',
   concurrentChange: 'concurrent_change',
   unsupportedUnit: 'unsupported_unit',
@@ -435,9 +565,215 @@ function decodeShare(value: unknown): LoadingShare | null {
   }
 }
 
+const WEIGHING_KEYS = [
+  'weighingId', 'direction', 'firstWeighingKg', 'secondWeighingKg', 'tareKg', 'grossKg', 'netKg', 'loadedKgAtWeighing',
+  'differenceKg', 'recordedBy', 'recordedAtUtc',
+] as const
+
+const SIGNED_QUANTITY_RE = /^-?[0-9]+(?:\.[0-9]+)?$/
+
+/**
+ * The weighbridge record, taken as the backend wrote it. The consumer checks are identity checks only — the
+ * tare and gross are the first / second weighing the direction names — never a recalculation of net or difference.
+ */
+export function decodeWeighing(value: unknown): InstructionWeighing | null {
+  const o = exact(value, WEIGHING_KEYS)
+  if (
+    o === null ||
+    !isReferenceId(o.weighingId) ||
+    typeof o.direction !== 'string' ||
+    !WEIGHING_DIRECTIONS.includes(o.direction) ||
+    !isPositiveQuantityText(o.firstWeighingKg) ||
+    !isPositiveQuantityText(o.secondWeighingKg) ||
+    !isPositiveQuantityText(o.tareKg) ||
+    !isPositiveQuantityText(o.grossKg) ||
+    !isPositiveQuantityText(o.netKg) ||
+    !isQuantityText(o.loadedKgAtWeighing) ||
+    typeof o.differenceKg !== 'string' ||
+    o.differenceKg.length > LIMITS.decimalText ||
+    !SIGNED_QUANTITY_RE.test(o.differenceKg) ||
+    !isText(o.recordedBy, 128) ||
+    !isInstant(o.recordedAtUtc)
+  ) {
+    return null
+  }
+  const tareFirst = o.direction === WEIGHING_DIRECTION.tareFirst
+  if (o.tareKg !== (tareFirst ? o.firstWeighingKg : o.secondWeighingKg) || o.grossKg !== (tareFirst ? o.secondWeighingKg : o.firstWeighingKg)) {
+    return null
+  }
+  return {
+    weighingId: o.weighingId,
+    direction: o.direction as WeighingDirection,
+    firstWeighingKg: o.firstWeighingKg,
+    secondWeighingKg: o.secondWeighingKg,
+    tareKg: o.tareKg,
+    grossKg: o.grossKg,
+    netKg: o.netKg,
+    loadedKgAtWeighing: o.loadedKgAtWeighing,
+    differenceKg: o.differenceKg,
+    recordedBy: o.recordedBy,
+    recordedAtUtc: o.recordedAtUtc,
+  }
+}
+
+const DISPATCH_NOTE_LINE_KEYS = [
+  'lineNo', 'shipmentId', 'instructionLineId', 'sourceOrderId', 'sourceOrderLineId', 'productId', 'unitId', 'quantity',
+] as const
+
+function decodeDispatchNoteLine(value: unknown): DispatchNoteLine | null {
+  const o = exact(value, DISPATCH_NOTE_LINE_KEYS)
+  if (
+    o === null ||
+    !isPositiveInt(o.lineNo, LIMITS.lines) ||
+    !isReferenceId(o.shipmentId) ||
+    !isReferenceId(o.instructionLineId) ||
+    !isReferenceId(o.sourceOrderId) ||
+    !isReferenceId(o.sourceOrderLineId) ||
+    !isReferenceId(o.productId) ||
+    !isReferenceId(o.unitId) ||
+    !isPositiveQuantityText(o.quantity)
+  ) {
+    return null
+  }
+  return {
+    lineNo: o.lineNo,
+    shipmentId: o.shipmentId,
+    instructionLineId: o.instructionLineId,
+    sourceOrderId: o.sourceOrderId,
+    sourceOrderLineId: o.sourceOrderLineId,
+    productId: o.productId,
+    unitId: o.unitId,
+    quantity: o.quantity,
+  }
+}
+
+const DISPATCH_NOTE_KEYS = [
+  'dispatchNoteId', 'status', 'number', 'createdBy', 'createdAtUtc', 'approvedBy', 'approvedAtUtc', 'cancelledBy', 'cancelledAtUtc',
+  'cancelReason', 'eDispatchNumber', 'lines',
+] as const
+
+const isNumberText = (v: unknown): v is string => isText(v, 32)
+const isEDispatchNumber = (v: unknown): v is string => typeof v === 'string' && E_DISPATCH_NUMBER_PATTERN.test(v)
+const isActor = (v: unknown): v is string => isText(v, 128)
+const isReason = (v: unknown): v is string => isText(v, CANCEL_REASON_MAX) && v.trim() === v
+
+/**
+ * The lifecycle shape, member by member: a Draft carries nothing of approval or cancellation; an Approved note has its number,
+ * approver and time (and maybe its e-İrsaliye number); a Cancelled note has its canceller, time and reason, and keeps the
+ * number / approval / e-İrsaliye number only when it had been approved.
+ */
+export function decodeDispatchNote(value: unknown): DispatchNote | null {
+  const o = exact(value, DISPATCH_NOTE_KEYS)
+  if (
+    o === null ||
+    !isReferenceId(o.dispatchNoteId) ||
+    typeof o.status !== 'string' ||
+    !DISPATCH_NOTE_STATUSES.includes(o.status) ||
+    !isNullable(o.number, isNumberText) ||
+    !isActor(o.createdBy) ||
+    !isInstant(o.createdAtUtc) ||
+    !isNullable(o.approvedBy, isActor) ||
+    !isNullable(o.approvedAtUtc, isInstant) ||
+    !isNullable(o.cancelledBy, isActor) ||
+    !isNullable(o.cancelledAtUtc, isInstant) ||
+    !isNullable(o.cancelReason, isReason) ||
+    !isNullable(o.eDispatchNumber, isEDispatchNumber) ||
+    !Array.isArray(o.lines) ||
+    o.lines.length === 0 ||
+    o.lines.length > LIMITS.lines
+  ) {
+    return null
+  }
+  const approved = o.number !== null && o.approvedBy !== null && o.approvedAtUtc !== null
+  const notApproved = o.number === null && o.approvedBy === null && o.approvedAtUtc === null
+  const cancelled = o.cancelledBy !== null && o.cancelledAtUtc !== null && o.cancelReason !== null
+  const notCancelled = o.cancelledBy === null && o.cancelledAtUtc === null && o.cancelReason === null
+  const shapeHolds =
+    (approved || notApproved) &&
+    (cancelled || notCancelled) &&
+    (o.eDispatchNumber === null || approved) &&
+    ((o.status === DISPATCH_NOTE_STATUS.draft && notApproved && notCancelled) ||
+      (o.status === DISPATCH_NOTE_STATUS.approved && approved && notCancelled) ||
+      (o.status === DISPATCH_NOTE_STATUS.cancelled && cancelled))
+  if (!shapeHolds) return null
+  const lines: DispatchNoteLine[] = []
+  for (const [index, entry] of o.lines.entries()) {
+    const line = decodeDispatchNoteLine(entry)
+    if (line === null || line.lineNo !== index + 1) return null
+    lines.push(line)
+  }
+  return {
+    dispatchNoteId: o.dispatchNoteId,
+    status: o.status as DispatchNoteStatus,
+    number: o.number,
+    createdBy: o.createdBy,
+    createdAtUtc: o.createdAtUtc,
+    approvedBy: o.approvedBy,
+    approvedAtUtc: o.approvedAtUtc,
+    cancelledBy: o.cancelledBy,
+    cancelledAtUtc: o.cancelledAtUtc,
+    cancelReason: o.cancelReason,
+    eDispatchNumber: o.eDispatchNumber,
+    lines,
+  }
+}
+
+/**
+ * The dispatch-note drafts, checked against the instruction they came with (identity checks, never a recalculation): every
+ * line names a definite shipment of THIS instruction, on the line and with the quantity text that shipment has, under that
+ * line's order binding, product and unit — and no shipment appears twice across the NON-CANCELLED notes (AT-055: a shipment
+ * is linked to at most one live dispatch note; a cancelled note released its shipments). An ERP number or an e-İrsaliye number
+ * appears on at most one note. An answer breaking any of it is not shown.
+ */
+function decodeDispatchNotes(value: unknown, lines: readonly InstructionLine[], shares: readonly LoadingShare[]): DispatchNote[] | null {
+  if (!Array.isArray(value)) return null
+  const notes: DispatchNote[] = []
+  const noteIds = new Set<string>()
+  const numbers = new Set<string>()
+  const linked = new Set<string>()
+  for (const entry of value) {
+    const note = decodeDispatchNote(entry)
+    if (note === null || noteIds.has(note.dispatchNoteId)) return null
+    noteIds.add(note.dispatchNoteId)
+    for (const number of [note.number === null ? null : `n:${note.number}`, note.eDispatchNumber === null ? null : `e:${note.eDispatchNumber}`]) {
+      if (number === null) continue
+      if (numbers.has(number)) return null
+      numbers.add(number)
+    }
+    const live = note.status !== DISPATCH_NOTE_STATUS.cancelled
+    for (const line of note.lines) {
+      const shipment = shares.find((share) => share.shareId === line.shipmentId)
+      const source = lines.find((candidate) => candidate.lineId === line.instructionLineId)
+      if (
+        (live && linked.has(line.shipmentId)) ||
+        shipment === undefined ||
+        shipment.kind !== SHARE_KIND.shipped ||
+        shipment.lineId !== line.instructionLineId ||
+        shipment.quantity !== line.quantity ||
+        source === undefined ||
+        source.sourceOrderId !== line.sourceOrderId ||
+        source.sourceOrderLineId !== line.sourceOrderLineId ||
+        source.productId !== line.productId ||
+        source.unitId !== line.unitId
+      ) {
+        return null
+      }
+      if (live) linked.add(line.shipmentId)
+    }
+    notes.push(note)
+  }
+  return notes
+}
+
+/** The live (non-cancelled) dispatch note a shipment is on (AT-055), or null while it is on none — a cancelled note released it. */
+export function dispatchNoteOf(detail: InstructionDetail, shipmentId: string): DispatchNote | null {
+  return detail.dispatchNotes.find((note) => note.status !== DISPATCH_NOTE_STATUS.cancelled
+    && note.lines.some((line) => line.shipmentId === shipmentId)) ?? null
+}
+
 /** `expectedId`: the record the caller asked for. A detail of another record is not an answer. */
 export function decodeInstructionDetail(value: unknown, expectedId: string | null): InstructionDetail | null {
-  const o = exact(value, ['instruction', 'lines', 'shares'])
+  const o = exact(value, ['instruction', 'lines', 'shares', 'weighing', 'dispatchNotes'])
   if (o === null) return null
   const instruction = decodeInstructionSummary(o.instruction)
   if (instruction === null || (expectedId !== null && instruction.id !== expectedId)) return null
@@ -461,7 +797,15 @@ export function decodeInstructionDetail(value: unknown, expectedId: string | nul
     shareIds.add(share.shareId)
     shares.push(share)
   }
-  return { instruction, lines, shares }
+  let weighing: InstructionWeighing | null = null
+  if (o.weighing !== null) {
+    weighing = decodeWeighing(o.weighing)
+    // A weighbridge record exists only on an issued instruction.
+    if (weighing === null || instruction.status !== INSTRUCTION_STATUS.issued) return null
+  }
+  const dispatchNotes = decodeDispatchNotes(o.dispatchNotes, lines, shares)
+  if (dispatchNotes === null) return null
+  return { instruction, lines, shares, weighing, dispatchNotes }
 }
 
 export function decodeInstructionMutation(value: unknown): InstructionMutation | null {
@@ -581,4 +925,79 @@ export function decodeApprovedOrderLinePage(value: unknown): ApprovedOrderLinePa
     items.push(item)
   }
   return { items, nextCursor: o.nextCursor }
+}
+
+/* ── AT-055: the dispatch-note drafts of one Sales order (the S-04 link) ─── */
+
+export interface SalesOrderDispatchNoteLine {
+  readonly lineNo: number
+  readonly sourceOrderLineId: string
+  readonly shipmentId: string
+  readonly unitId: string
+  readonly quantity: string
+}
+
+export interface SalesOrderDispatchNote {
+  readonly dispatchNoteId: string
+  readonly instructionId: string
+  readonly status: DispatchNoteStatus
+  readonly number: string | null
+  readonly eDispatchNumber: string | null
+  readonly createdAtUtc: string
+  readonly lines: readonly SalesOrderDispatchNoteLine[]
+}
+
+export interface SalesOrderDispatchNotes {
+  readonly salesOrderId: string
+  readonly items: readonly SalesOrderDispatchNote[]
+  /** true: the list stopped at the server's cap (never a silent cut). */
+  readonly hasMore: boolean
+}
+
+/** `expectedOrderId`: the order asked for; an answer about another order is not this one's. */
+export function decodeSalesOrderDispatchNotes(value: unknown, expectedOrderId: string): SalesOrderDispatchNotes | null {
+  const o = exact(value, ['salesOrderId', 'items', 'hasMore'])
+  if (o === null || o.salesOrderId !== expectedOrderId || !Array.isArray(o.items) || typeof o.hasMore !== 'boolean') return null
+  const items: SalesOrderDispatchNote[] = []
+  const ids = new Set<string>()
+  for (const entry of o.items) {
+    const item = exact(entry, ['dispatchNoteId', 'instructionId', 'status', 'number', 'eDispatchNumber', 'createdAtUtc', 'lines'])
+    if (
+      item === null ||
+      !isReferenceId(item.dispatchNoteId) ||
+      ids.has(item.dispatchNoteId) ||
+      !isReferenceId(item.instructionId) ||
+      typeof item.status !== 'string' ||
+      !DISPATCH_NOTE_STATUSES.includes(item.status) ||
+      !isNullable(item.number, isNumberText) ||
+      !isNullable(item.eDispatchNumber, isEDispatchNumber) ||
+      (item.status === DISPATCH_NOTE_STATUS.draft && item.number !== null) ||
+      (item.status === DISPATCH_NOTE_STATUS.approved && item.number === null) ||
+      (item.eDispatchNumber !== null && item.number === null) ||
+      !isInstant(item.createdAtUtc) ||
+      !Array.isArray(item.lines) ||
+      item.lines.length === 0
+    ) {
+      return null
+    }
+    const lines: SalesOrderDispatchNoteLine[] = []
+    for (const raw of item.lines) {
+      const line = exact(raw, ['lineNo', 'sourceOrderLineId', 'shipmentId', 'unitId', 'quantity'])
+      if (
+        line === null ||
+        !isPositiveInt(line.lineNo, LIMITS.lines) ||
+        !isReferenceId(line.sourceOrderLineId) ||
+        !isReferenceId(line.shipmentId) ||
+        !isReferenceId(line.unitId) ||
+        !isPositiveQuantityText(line.quantity)
+      ) {
+        return null
+      }
+      lines.push({ lineNo: line.lineNo, sourceOrderLineId: line.sourceOrderLineId, shipmentId: line.shipmentId, unitId: line.unitId, quantity: line.quantity })
+    }
+    ids.add(item.dispatchNoteId)
+    items.push({ dispatchNoteId: item.dispatchNoteId, instructionId: item.instructionId, status: item.status as DispatchNoteStatus,
+      number: item.number, eDispatchNumber: item.eDispatchNumber, createdAtUtc: item.createdAtUtc, lines })
+  }
+  return { salesOrderId: o.salesOrderId, items, hasMore: o.hasMore }
 }

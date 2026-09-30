@@ -29,9 +29,30 @@ export const SALES_CAPABILITY = {
 /** K3: the commercial-revision CONTROL on S-04; separate from every routed Sales screen. */
 export const SALES_PRICE_WRITE_CAPABILITY = 'sales.orders.price.write' as const
 
+/**
+ * DEC-SAL-003: the planner's delivery-schedule update CONTROL on S-04 (dates only, no re-approval, audited). The shell
+ * publishes it only to an actor holding `sales.orders.delivery-schedule.write` beside the read.
+ */
+export const SALES_DELIVERY_SCHEDULE_WRITE_CAPABILITY = 'sales.orders.delivery-schedule.write' as const
+
+/**
+ * DEC-SAL-005: the impact-preview + cancel CONTROL on S-04 for an approved order. The shell publishes it only to an actor
+ * holding `sales.orders.cancel` beside the read; create, approve, price and schedule never confer it.
+ */
+export const SALES_CANCEL_CAPABILITY = 'sales.orders.cancel' as const
+
+/**
+ * DEC-SAL-002: the quantity-revision CONTROL on S-04 ("Revizyon oluştur"). The shell publishes it only to an actor holding
+ * `sales.orders.quantity.write` beside the read; create, approve, price, schedule and cancel never confer it.
+ */
+export const SALES_QUANTITY_WRITE_CAPABILITY = 'sales.orders.quantity.write' as const
+
 export type SalesCapabilityId =
   | (typeof SALES_CAPABILITY)[keyof typeof SALES_CAPABILITY]
   | typeof SALES_PRICE_WRITE_CAPABILITY
+  | typeof SALES_DELIVERY_SCHEDULE_WRITE_CAPABILITY
+  | typeof SALES_CANCEL_CAPABILITY
+  | typeof SALES_QUANTITY_WRITE_CAPABILITY
 
 export const SALES_ROUTE = {
   list: '/satis/siparisler',

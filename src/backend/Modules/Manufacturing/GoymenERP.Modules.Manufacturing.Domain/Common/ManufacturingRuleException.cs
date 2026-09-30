@@ -67,6 +67,21 @@ public static class ManufacturingRuleCodes
     public const string PlanLabelNotUsable = "manufacturing_plan_label_not_usable";
 
     /// <summary>
+    /// MFG-PLAN-EDIT: a plan's process never changes; a revision may move it only to a work center of its own process.
+    /// Process chains are open (OPEN-005/007), so no cross-process move is invented.
+    /// </summary>
+    public const string PlanProcessFixed = "manufacturing_plan_process_fixed";
+
+    /// <summary>
+    /// MFG-PLAN-EDIT: a plan that carries a slitting spec is not revised: how the spec balances against the parent
+    /// coil is an open Business question (AT-044, #66 NEEDS-BUSINESS 5741547443).
+    /// </summary>
+    public const string PlanSlittingSpecFixed = "manufacturing_plan_slitting_spec_fixed";
+
+    /// <summary>MFG-PLAN-EDIT: the revision names exactly the plan's current content; nothing is recorded.</summary>
+    public const string PlanRevisionNoChange = "manufacturing_plan_revision_no_change";
+
+    /// <summary>
     /// A stored plan or order does not rebuild under the rules that wrote it (MFG-5): a close trace
     /// with only one of its two parts, a version that is not the one its facts add up to, or a
     /// stored cost the domain cannot have produced. The record is refused, never repaired.

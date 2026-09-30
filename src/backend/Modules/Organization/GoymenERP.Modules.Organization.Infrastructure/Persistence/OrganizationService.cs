@@ -71,7 +71,8 @@ internal sealed class OrganizationService(
                 x.Code,
                 x.Name,
                 x.Type.ToString(),
-                x.IsActive))
+                x.IsActive,
+                x.Version))
             .ToListAsync(cancellationToken);
     }
 
@@ -137,19 +138,7 @@ internal sealed class OrganizationService(
             ErpPermissions.OrganizationWorkCentersRead,
             companyContext.CompanyId,
             cancellationToken);
-        var siteIds = scope.SiteIds.ToArray();
-        var locationIds = scope.LocationIds.ToArray();
-        var workCenterIds = scope.WorkCenterIds.ToArray();
-        var query = dbContext.WorkCenters.AsNoTracking();
-        if (!scope.IsCompanyWide)
-        {
-            query = query.Where(workCenter =>
-                workCenterIds.Contains(workCenter.Id)
-                || locationIds.Contains(workCenter.LocationId)
-                || dbContext.Locations.Any(location =>
-                    location.Id == workCenter.LocationId
-                    && siteIds.Contains(location.SiteId)));
-        }
+        var query = ApplyWorkCenterScope(dbContext.WorkCenters.AsNoTracking(), scope);
 
         // ORG-03 row eligibility (#66 5700319744): a row offers its location card only when
         // the caller may read THAT location. It is answered by the very predicate the card
@@ -190,6 +179,60 @@ internal sealed class OrganizationService(
                 x.IsActive,
                 openableLocationIds.Contains(x.LocationId)))
             .ToListAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// ORG-04: one work center, answered by the list's own scope predicate (<see cref="ApplyWorkCenterScope"/>) on
+    /// <c>organization.work-centers.read</c> under the tenant filter, so "the row is listed" and "the card answers 200"
+    /// cannot disagree. Another company's, an out-of-scope and an unknown id are the same null. The location flag is
+    /// the list's too: the location card's own read predicate on <c>organization.locations.read</c>, and without that
+    /// permission no location query is issued. A read: nothing is written, audited or recorded.
+    /// </summary>
+    public async Task<WorkCenterDetail?> GetWorkCenterAsync(
+        Guid id,
+        CancellationToken cancellationToken)
+    {
+        var scope = await authorizationService.GetPermissionScopeAsync(
+            ErpPermissions.OrganizationWorkCentersRead,
+            companyContext.CompanyId,
+            cancellationToken);
+        var query = ApplyWorkCenterScope(dbContext.WorkCenters.AsNoTracking(), scope)
+            .Where(x => x.Id == id);
+
+        var locationScope = await authorizationService.GetPermissionScopeAsync(
+            ErpPermissions.OrganizationLocationsRead,
+            companyContext.CompanyId,
+            cancellationToken);
+        if (!locationScope.IsGranted)
+        {
+            return await query
+                .Select(x => new WorkCenterDetail(
+                    x.Id,
+                    x.LocationId,
+                    x.Code,
+                    x.Name,
+                    x.Kind.ToString(),
+                    x.IsActive,
+                    x.Version,
+                    false))
+                .SingleOrDefaultAsync(cancellationToken);
+        }
+
+        var openableLocationIds = ApplyLocationScope(
+                dbContext.Locations.AsNoTracking(),
+                locationScope)
+            .Select(location => location.Id);
+        return await query
+            .Select(x => new WorkCenterDetail(
+                x.Id,
+                x.LocationId,
+                x.Code,
+                x.Name,
+                x.Kind.ToString(),
+                x.IsActive,
+                x.Version,
+                openableLocationIds.Contains(x.LocationId)))
+            .SingleOrDefaultAsync(cancellationToken);
     }
 
     public async Task<CommandExecutionResult> SetLocationActiveStateAsync(
@@ -437,26 +480,21 @@ internal sealed class OrganizationService(
         return new CommandExecutionResult(response, true, execution.OriginalCorrelationId);
     }
 
+    /// <summary>
+    /// The work-centre read scope (ORG-03, unchanged): company-wide, or the work centre itself, its location, or its
+    /// location's site. The list and the ORG-04 card both use this one predicate.
+    /// </summary>
+    private IQueryable<GoymenERP.Modules.Organization.Domain.WorkCenters.WorkCenter>
+        ApplyWorkCenterScope(
+            IQueryable<GoymenERP.Modules.Organization.Domain.WorkCenters.WorkCenter> query,
+            PermissionScope scope) =>
+        OrganizationScopes.ApplyWorkCenterScope(dbContext, query, scope);
+
     private IQueryable<GoymenERP.Modules.Organization.Domain.Locations.Location>
         ApplyLocationScope(
             IQueryable<GoymenERP.Modules.Organization.Domain.Locations.Location> query,
-            PermissionScope scope)
-    {
-        if (scope.IsCompanyWide)
-        {
-            return query;
-        }
-
-        var siteIds = scope.SiteIds.ToArray();
-        var locationIds = scope.LocationIds.ToArray();
-        var workCenterIds = scope.WorkCenterIds.ToArray();
-        return query.Where(location =>
-            locationIds.Contains(location.Id)
-            || siteIds.Contains(location.SiteId)
-            || dbContext.WorkCenters.Any(workCenter =>
-                workCenter.LocationId == location.Id
-                && workCenterIds.Contains(workCenter.Id)));
-    }
+            PermissionScope scope) =>
+        OrganizationScopes.ApplyLocationScope(dbContext, query, scope);
 
     private void ValidateCommandMetadata(CommandMetadata metadata)
     {

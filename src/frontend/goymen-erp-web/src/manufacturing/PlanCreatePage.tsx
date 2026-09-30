@@ -1,14 +1,15 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
-import { Link } from 'react-router'
+import { Link, useLocation } from 'react-router'
 import { fetchWorkCenters } from '../organization/api'
 import type { WorkCenterSummary } from '../organization/contract'
 import { useShellState } from '../shell/shellContext'
 import { contextKey, contextKeyString, hasCapability } from '../shell/shellState'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
 import { isKilogramText } from './contract'
-import { MANUFACTURING_CAPABILITY, orderListPath, planDetailPath } from './capabilities'
+import { MANUFACTURING_CAPABILITY, orderListPath, parsePlanCreateLabel, planDetailPath } from './capabilities'
 import {
   fetchParentRollCandidates,
+  PARENT_ROLL_PRESELECT_LIMIT,
   type ParentRollCandidate,
   type ParentRollCandidates,
 } from './planReferences'
@@ -25,6 +26,8 @@ import {
   reservePendingPlanCreate,
   type PendingPlanCreate,
 } from './pendingPlanStore'
+import { PlanPreviewPanel } from './PlanPreviewPanel'
+import { planPreviewInput, usePlanPreview } from './usePlanPreview'
 import styles from './PlanPage.module.css'
 
 type ReadState<T> =
@@ -43,6 +46,19 @@ type Attempt =
       readonly unresolvedSince?: string
     }
   | { readonly phase: 'completed'; readonly result: Extract<SavePlanOutcome, { type: 'applied' }> }
+
+/** AT-063: the roll an ST-01 row named, as far as Inventory's candidate read confirmed it. */
+type Preselection =
+  | { readonly type: 'none' | 'loading' }
+  | { readonly type: 'selected'; readonly labelCode: string }
+  | { readonly type: 'refused'; readonly labelCode: string; readonly code: string }
+  | { readonly type: 'missing'; readonly windowFull: boolean }
+  | { readonly type: 'failed'; readonly message: string }
+
+interface PreselectedLabel {
+  readonly labelId: string
+  readonly labelCode: string
+}
 
 interface SelectedInput {
   readonly candidate: ParentRollCandidate
@@ -86,12 +102,22 @@ export function PlanCreatePage() {
   const shell = useShellState()
   const key = contextKey(shell)
   const namespace = key === null ? null : contextKeyString(key)
-  return <PlanCreate key={`${namespace ?? 'no-context'}:${shell.routeEntryGeneration}`} namespace={namespace} />
+  const location = useLocation()
+  const preselect = parsePlanCreateLabel(location.search)
+  return <PlanCreate
+    key={`${namespace ?? 'no-context'}:${shell.routeEntryGeneration}:${preselect?.labelId ?? ''}`}
+    namespace={namespace}
+    preselect={preselect}
+  />
 }
 
-function PlanCreate({ namespace }: { readonly namespace: string | null }) {
+function PlanCreate({ namespace, preselect }: {
+  readonly namespace: string | null
+  readonly preselect: PreselectedLabel | null
+}) {
   const shell = useShellState()
-  const { capture: captureSecurity, report: reportSecurity } = useAuthBoundary()
+  const authBoundary = useAuthBoundary()
+  const { capture: captureSecurity, report: reportSecurity } = authBoundary
   const companyId = shell.activeContext?.scopeMode === 'single' ? shell.activeContext.companyId : null
   const actorId = shell.activeContext?.userId ?? null
   const storeKey = pendingPlanCreateKey(shell.sessionEpoch, actorId, companyId)
@@ -103,7 +129,10 @@ function PlanCreate({ namespace }: { readonly namespace: string | null }) {
   )
   const [workCenters, setWorkCenters] = useState<ReadState<readonly WorkCenterSummary[]>>({ type: 'loading' })
   const [workCenterId, setWorkCenterId] = useState('')
-  const [search, setSearch] = useState('')
+  const [search, setSearch] = useState(preselect?.labelCode ?? '')
+  const [preselection, setPreselection] = useState<Preselection>({ type: preselect === null ? 'none' : 'loading' })
+  const preselectId = preselect?.labelId ?? null
+  const preselectCode = preselect?.labelCode ?? ''
   const [candidates, setCandidates] = useState<ReadState<ParentRollCandidates>>({ type: 'idle' })
   const [inputs, setInputs] = useState<readonly SelectedInput[]>([])
   const [targetBasis, setTargetBasis] = useState<'' | PlanTargetBasis>('')
@@ -137,6 +166,46 @@ function PlanCreate({ namespace }: { readonly namespace: string | null }) {
       commandGeneration.current += 1
     }
   }, [captureSecurity, companyId, namespace, reportSecurity])
+
+  // AT-063 "Üretim planla" from ST-01: the named label is looked up through the SAME Inventory candidate read a manual
+  // search uses (its code as the query, the owner's widest window) and selected only when that exact id answers as
+  // draft-selectable. Nothing is trusted from the URL; the save still sends the candidate's label version.
+  useEffect(() => {
+    if (companyId === null || preselectId === null) return
+    const controller = new AbortController()
+    const generation = ++candidateGeneration.current
+    async function read(company: string, labelId: string) {
+      setCandidates({ type: 'loading' })
+      const security = captureSecurity()
+      const outcome = await fetchParentRollCandidates(company, preselectCode, controller.signal, PARENT_ROLL_PRESELECT_LIMIT)
+      if (controller.signal.aborted || generation !== candidateGeneration.current) return
+      if (outcome.type === 'http' && (outcome.status === 401 || outcome.status === 403)) {
+        reportSecurity(outcome.status, security)
+      }
+      if (outcome.type !== 'ok-single') {
+        const message = readFailure('Ana rulo', outcome)
+        setCandidates({ type: 'failed', message })
+        setPreselection({ type: 'failed', message })
+        return
+      }
+      setCandidates({ type: 'ready', data: outcome.data })
+      const found = outcome.data.items.find((item) => item.labelId.toLowerCase() === labelId.toLowerCase())
+      if (found === undefined) {
+        setPreselection({ type: 'missing', windowFull: outcome.data.searchWindowFull })
+        return
+      }
+      if (!found.draftSelectable) {
+        setPreselection({ type: 'refused', labelCode: found.labelCode, code: found.draftRefusalCode ?? 'refused' })
+        return
+      }
+      setInputs((current) => current.some((input) => input.candidate.labelId === found.labelId)
+        ? current
+        : [...current, { candidate: found, plannedKg: '' }])
+      setPreselection({ type: 'selected', labelCode: found.labelCode })
+    }
+    void read(companyId, preselectId)
+    return () => controller.abort()
+  }, [captureSecurity, companyId, preselectCode, preselectId, reportSecurity])
 
   const readCandidates = useCallback(async () => {
     if (companyId === null) return
@@ -207,6 +276,29 @@ function PlanCreate({ namespace }: { readonly namespace: string | null }) {
     },
     [actorId, captureSecurity, companyId, reportSecurity, storeKey],
   )
+
+  // AT-061 / AT-062: the button-less backend preview of what is typed (DEC-PRDCT-005). It writes nothing and never
+  // gates the save below.
+  const preview = usePlanPreview(companyId, planPreviewInput(
+    workCenterId,
+    inputs.map(({ candidate, plannedKg }) => ({
+      parentRollId: candidate.labelId,
+      label: candidate.labelCode,
+      labelVersion: candidate.labelVersion,
+      plannedKg,
+    })),
+    targetBasis,
+    targetKg,
+  ), authBoundary)
+
+  function labelOf(parentRollId: string): string {
+    return inputs.find((input) => input.candidate.labelId === parentRollId)?.candidate.labelCode ?? parentRollId
+  }
+
+  function workCenterLabel(id: string): string {
+    const found = workCenters.type === 'ready' ? workCenters.data.find((workCenter) => workCenter.id === id) : undefined
+    return found === undefined ? id : `${found.code} — ${found.name}`
+  }
 
   function addCandidate(candidate: ParentRollCandidate) {
     if (!candidate.draftSelectable || inputs.some((input) => input.candidate.labelId === candidate.labelId)) return
@@ -299,6 +391,23 @@ function PlanCreate({ namespace }: { readonly namespace: string | null }) {
       ) : null}
       {attempt.phase === 'failed' && !unresolved ? <p className={styles.error} role="alert">{attempt.message}</p> : null}
       {formError === null ? null : <p className={styles.error} role="alert">{formError}</p>}
+      {preselection.type === 'loading' ? <p role="status">Stok pozisyonundan seçilen ana rulo aranıyor…</p> : null}
+      {preselection.type === 'selected' ? (
+        <p role="status" className={styles.note}>
+          Stok pozisyonundan seçilen ana rulo eklendi: {preselection.labelCode}. Planlanan kg’ı girin; seçim kayıtta etiket sürümüyle yeniden doğrulanır.
+        </p>
+      ) : null}
+      {preselection.type === 'refused' ? (
+        <p role="alert" className={styles.error}>
+          Stok pozisyonundan seçilen etiket ({preselection.labelCode}) taslak plana eklenemez ({preselection.code}).
+        </p>
+      ) : null}
+      {preselection.type === 'missing' ? (
+        <p role="alert" className={styles.error}>
+          Stok pozisyonundan seçilen etiket ana rulo adayları arasında bulunamadı{preselection.windowFull ? ' (arama penceresi doldu)' : ''}; etiketi elle arayın.
+        </p>
+      ) : null}
+      {preselection.type === 'failed' ? <p role="alert" className={styles.error}>{preselection.message}</p> : null}
       <form className={styles.form} onSubmit={submit} noValidate>
         <fieldset disabled={frozen}>
           <legend>İş merkezi</legend>
@@ -400,6 +509,7 @@ function PlanCreate({ namespace }: { readonly namespace: string | null }) {
             <input id="plan-target-kg" inputMode="decimal" value={targetKg} onChange={(event) => setTargetKg(event.target.value)} />
           </div>
         </fieldset>
+        <PlanPreviewPanel state={preview} labelOf={labelOf} workCenterLabel={workCenterLabel} />
         <div className={styles.actions}>
           <button type="submit" disabled={frozen}>{attempt.phase === 'submitting' ? 'Kaydediliyor…' : 'Taslak planı kaydet'}</button>
         </div>

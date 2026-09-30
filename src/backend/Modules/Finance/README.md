@@ -191,6 +191,155 @@ contract `GoymenERP.Modules.Finance.Contracts` (#258, #261). The contract's own 
   or statement read (FIN-T05b), no legacy direct reversal, no number series (Q2: the source shows its id). FIN-T06's
   governed proposal/checker flow is separate from direct reversal.
 
+## DEC-FIN-014: customer POS collection (first-release "müşteri POS tahsilatı")
+
+> DEC-FIN-014 (KILITLI, K1): customer POS exists, supplier POS does not; the customer's debt closes at the GROSS
+> amount; the bank net and the commission are tracked separately; who bears the commission is decided per transaction.
+
+- **Shape.** A POS collection is the same manual receipt source (F-02), not a new source type: the draft/record
+  routes, the ADR-011 command names, the permission names (`finance.manual-receipt.*`, Ö4's one routine recorder)
+  and the shell controls are unchanged. `ReceiptPreparation` gains an optional `pos` (`commissionAmount`,
+  `commissionBearer` = `Company` | `Customer`); `SourceDetail` gains an optional `pos` (`commissionBearer`,
+  `commission`, `bankNet`, both amounts under the gross's own disclosure). Both are omitted from the JSON when null,
+  so a bank transfer keeps the exact #258 wire shape and the same payload hash, and every stored command result
+  still replays.
+- **Money.** `money.amount` is the GROSS and stays the source amount: F-03 distributes from it and the customer's
+  open item closes at it. The commission is exact text within the Settings profile's scale (zero allowed, never
+  rounded) and strictly below the gross; the bank net is DERIVED by the server (gross − commission) and never
+  accepted from the caller. Refusals: `pos_commission_invalid`, `settings_decimal_scale_exceeded`,
+  `pos_commission_not_below_gross`, `pos_commission_bearer_invalid` (field `pos.commissionAmount` /
+  `pos.commissionBearer`), each a 422 that stores nothing.
+- **One money event.** Record copies the three POS facts into the source's ONE `MoneyEvents` row (a customer credit
+  read takes `AmountText`; a bank inflow read takes `PosBankNetAmountText`). A reversal copies them to the reversing
+  source and event. `CK_ReceiptDrafts_Pos` / `CK_MoneyEvents_Pos`: all three NULL or all three set.
+- **Migration** `20260927120000_AddPosCollectionFacts`: nullable columns plus the two checks; no row is rewritten.
+  Down refuses with Finance's `THROW 51051` while any POS fact is stored.
+- **Detail read (F-03 follow-up).** A recorded source's `unallocated` is now its F-03 allocation state when one
+  exists (it used to be the whole source amount even after an allocation).
+- **Audit.** The record event names `channel` (`BankTransfer` | `Pos`) and the bearer, never an amount; the source
+  channel is the host's (Web over HTTP).
+- **Screen.** F-02's draft form has "Tahsilat şekli" (Banka havalesi / EFT | Müşteri POS); POS asks for the
+  commission and the bearer and previews the net. The detail shows gross / commission / net / bearer apart.
+- **Not here, with the blocker that holds it:**
+  - the journal (bank net / commission expense / customer gross): chart of accounts NEEDS-BUSINESS 5740501573 and
+    voucher approval 5740501655 (ACC-V1); the detail says so;
+  - applying a `Customer` bearer (charging the customer): a charge is an open item, and in the first release open
+    items come only from approved official invoice installments (OPEN-016, DEC-FIN-005); recorded, not applied;
+  - a cash (kasa) collection: no cash-box master is decided (the treasury account is the FS0 bank account);
+  - a customer-role check on the party: the Finance party port carries no role; POS is structurally incoming-only
+    (the outgoing payment contract has no POS member), which is what "tedarikçi POS yoktur" requires;
+  - POS terminal, commission rate, settlement batch or bank statement matching: not decided (OPEN-016).
+
+## DEC-FIN-016: customer cheque / promissory note portfolio (first release)
+
+> DEC-FIN-016 (KILITLI, K1): "Çek ve senet durumları portföy, banka, teminat, ciro, tahsil, karşılıksız, iade/protesto ve
+> ters akışı kapsar." DEC-FIN-006: a cheque or note is a financial source on the same distribution engine (F-03).
+
+- **Customer credit timing = COLLECTION (user decision 2026-09-27).** The customer's debt closes only when the
+  instrument is collected; receiving it closes nothing. The instrument's payment / risk status is tracked SEPARATELY
+  (the risk view below), so the exposure a held cheque stands for is visible without being a money event.
+- **Shape.** Its own aggregate, `finance.CustomerInstruments` (kind `Cheque` | `PromissoryNote`, party + company
+  account, serial, drawer, bank / branch — the bank is required for a cheque —, due date, receipt date, face value as
+  exact text within the Settings profile's scale, currency, status) and the append-only
+  `finance.CustomerInstrumentMovements` (one row per instrument version). The facts never change after the receipt.
+- **Lifecycle (only what the decision names; `CustomerInstrumentRules`).** receive → `InPortfolio`;
+  `DepositForCollection` → `AtBankForCollection` (a Finance bank account: approved, usable, same currency);
+  `WithdrawFromBank` back to the portfolio (the pre-collection reverse flow); `Dishonour` → `Bounced` (cheque,
+  "karşılıksız") | `Protested` (note); `ReturnToCustomer` (from the portfolio or after dishonour); collect →
+  `Collected`. `Collected` and `ReturnedToCustomer` are final. The write guard and `CK_CustomerInstruments_State`
+  hold the same rule in the model and in the database.
+- **Money.** Receiving, depositing, dishonouring and returning have NO money effect: the customer's debt stays open.
+  Collection is the ONE money effect: in one save a recorded receipt source (the manual-bank-receipt shape, so F-02
+  shows it and F-03 distributes it at the face value) and exactly one money event of its own kind
+  (`MoneyEventKinds.CustomerInstrumentCollected` = 3). The instrument names that source once
+  (`UX_CustomerInstruments_CollectionSource`), its version is the concurrency token, and ADR-011 replays the key: a
+  replay, a stale retry or a race never credits the customer twice. At collection the owners are read again (bank
+  account, party account, the Settings profile in effect on the collection date) and the period follows the
+  collection date (K1, the host's `occurredOn` rule). The collection's receipt source is created already recorded at
+  version `1` (it never passed through a draft), so an F-03 allocation of it names `expectedSourceVersion: "1"`. The
+  face value is judged by the approved
+  `finance.manual-bank-receipt.v1` profile, because collection records exactly such a receipt.
+- **HTTP.** `POST /api/v1/finance/customer-instruments` (receive), `POST …/{id}/status-changes`,
+  `POST …/{id}/collection`, `GET …?cursor=` (newest received first), `GET …/{id}` (with the movements and the
+  `availableActions` the actor may take now — the state machine intersected with fresh grants). Commands need an
+  `Idempotency-Key` and answer 200 / 422 / 409 (403 / 503 code-less); the route id must equal the body's (else 400).
+  A missing instrument (422 `instrument_not_found`) and a stale version (409) are the key's terminal answers.
+- **Authority.** Own narrow names (`FinancePermissionNames.CustomerInstrument*`): `finance.customer-instrument.read`,
+  `.amount.read`, `.receive`, `.status.change`, `.collect`. The central registry must know them; until then the port
+  answers `Unavailable` (503). Collection also needs the caller's `finance.bank-account.read` and
+  `accounting.periods.read`, and receiving needs Cari's party read (the party port). Every amount — command result,
+  replay, list, detail — is disclosed only with a fresh `.amount.read` (#497 P2-1).
+- **Audit.** `finance.customer-instrument.received.v1` / `.status-changed.v1` / `.collected.v1` on the instrument, plus
+  `finance.manual-receipt.recorded.v1` (channel `CustomerInstrument`) on the collection's source; no amount in audit
+  JSON; the source channel is the host's (Web over HTTP).
+- **Migration** `20260927180000_AddCustomerInstruments`: the two tables, the command record's sixth target
+  (`CustomerInstrumentId`), `CK_MoneyEvents_Kind` widened to `(1, 2, 3)`. Down refuses with `THROW 51051` while any
+  instrument, movement, instrument command or collection money event is stored.
+- **Screen.** F-02's new-receipt page has "Tahsilat aracı" (bank / POS draft | customer cheque or note); the latter
+  receives into the portfolio. The F-02 list shows the portfolio (hidden for an actor without its read grant) and opens
+  one instrument (`?cekSenet=<id>`) with its facts, history and the server-offered next steps; a collected instrument
+  links to its receipt source. No new route or shell capability.
+- **Risk view (user decision 2026-09-27, read-only).** `GET /api/v1/finance/customer-instruments/risk?asOf=YYYY-MM-DD`
+  (optionally `&partyId=&companyAccountId=`, both or neither, else 400; `asOf` exact ISO, else 400). It is the picture
+  ON `asOf` (point in time, K3 5332370492 P2-1): only instruments received on or before `asOf` count, and each one's
+  state is the status of its last movement dated on or before `asOf`. Every movement carries a business date — the
+  receipt date, the status change's `occurredOn`, the collection date — so no transition falls back to the recording
+  instant; a step recorded later but dated earlier counts from its business date. Per customer account and currency —
+  and their total per currency (the company total, or the one customer's) — the count and exact face sum by risk
+  state on that day: in portfolio not yet due (due on or after `asOf`) / overdue (due before), at the bank
+  for collection, dishonoured (karşılıksız / protestolu), returned, collected, plus the **open exposure** = received and
+  neither collected nor returned (portfolio + bank + dishonoured). Currencies are never added. Every sum, an empty
+  bucket's zero included, is written at the currency scale (P3-1, e.g. `0.00`): the approved Settings profile's scale
+  for the currency on that day, or — when Settings cannot answer for the day — the widest scale of the stored face
+  values of that currency; a digit is never cut. Same read grant as the
+  portfolio (`finance.customer-instrument.read`, no new name); every amount only with `.amount.read` (counts stay).
+  Facts only: no limit, threshold or warning (OPEN-010 stays open); no money effect. Shown on the F-02 list under the
+  portfolio (company view with per-customer lines) and on the new-receipt page for the entered customer account
+  ("Çek/senet riski"). The query is a company-filtered projection; the bucketing is `CustomerInstrumentRiskPolicy`.
+- **Not here, with the blocker that holds it:**
+  - "ciro" (endorsement to a supplier): the customer's credit is decided to come at collection (2026-09-27), so an
+    endorsed, never-collected instrument's credit moment and the supplier-side payment effect still need a decision;
+  - "teminat" (to a bank as collateral): the risk/limit effect needs OPEN-010 (haircut / risk policy) and a credit
+    facility master;
+  - the reverse flow AFTER collection (a collected cheque coming back): FIN-T06 reverses only an original manual
+    receipt, so it refuses the collection source (`finance_reversal_source_not_original_receipt`) until decided;
+  - the journal (portfolio / bank / customer accounts): chart of accounts NEEDS-BUSINESS 5740501573 and voucher
+    approval 5740501655 (ACC-V1);
+  - bank statement matching of the collection: OPEN-016 (no bank integration in the first release);
+  - given (outgoing) cheques / notes and DBS (DEC-FIN-008): not part of this contract.
+
+## First-release party ledger (cari hesap ekstresi)
+
+A READ of one party account's recorded Finance facts (`IPartyLedgerService`, `PartyLedgerService`,
+`GET /api/v1/finance/party-ledger?partyId&companyAccountId&from&to`, exact ISO dates, inclusive range).
+
+- **Rows (derived only from stored facts, never from drafts):** an admitted open item (debit, dated by the UTC day
+  Finance admitted it — the approved official-invoice source carries no document date yet); a recorded receipt's money
+  event (credit; a POS receipt at its gross, DEC-FIN-014); a FIN-T06 reversal counter-event (debit, its OWN row, linked
+  to the original through the approved proposal); a cheque / note collection's money event (credit, linked to the
+  instrument); a recorded payment's outgoing money event (debit). Each is one stored row read once: a replayed command
+  stored nothing new, so nothing is counted twice. A money-event kind the ledger does not know fails the read (500)
+  rather than hiding a row.
+- **Not rows:** drafts (no money event), F-03 allocations (DEC-FIN-006: a distribution is not a second movement; it
+  never moves the balance), portfolio receipts and status changes (no money effect, DEC-FIN-016).
+- **Balance:** per currency (OPEN-012: never converted or added), starting at ZERO on the range's first day —
+  `carryForward = NoneOpen018`: OPEN-018 (devir / carry-forward) is open, so nothing before the range is carried in.
+  Debit balance = the party owes. Exact decimal text; every amount of a currency at the widest scale its rows carry.
+- **Authority:** `finance.party-ledger.read` measured before the read and again after it; every amount, total and
+  balance (and a balance's side) only with a fresh `finance.party-ledger.amount.read`, otherwise `Redacted` /
+  `Unavailable`. The names are owner declarations; until the central registry knows them every call is 503, and a
+  human grants them. Company fence: the tenant-filtered context; the context must be the request's.
+- **Refusals:** 400 for a malformed request (an empty id, `to < from`, a non-ISO date); 422
+  `finance_party_ledger_too_many_entries` above `PartyLedgerRules.MaximumEntries` (1000) rows —
+  ASSUMPTION-FIN-LEDGER-ROWS, a technical response-size guard, refused rather than cut because a cut ledger shows a
+  wrong balance.
+- **Screen:** on the F-02 list (no route or capability of its own yet): `/finans/tahsilatlar?ekstreCari&ekstreHesap&
+  ekstreBaslangic&ekstreBitis`, opened as "Cari ekstre" from the new-receipt page (the customer context) and from a
+  receipt detail. Each row opens its source on the existing screens; an open item has no screen yet.
+- **No migration, no index, no write, no raw SQL.** Tests: unit `PartyLedgerServiceTests`; SQL
+  `FinancePartyLedgerSqlServerRelationalAcceptanceTests` (service on SQL, HTTP through the real permission port);
+  browser fin01 `FIN01-07`.
+
 ## Validation
 
 - `tests/GoymenERP.Finance.UnitTests`: contract and adapter tests, plus `FinanceDraftPersistenceModelTests`. The latter checks schema, filters, the idempotency key, snapshot == model, the write guard and the payload hash, all without a database.
@@ -212,4 +361,18 @@ contract `GoymenERP.Modules.Finance.Contracts` (#258, #261). The contract's own 
   SQL Server: the product's undecided rule refuses and stores nothing; with a synthetic open-period TEST INPUT (not a
   policy) one money event, every answer of its key, company isolation, a race of two records (one event) and the
   51051 Down refusal.
-- None of this is API or browser evidence.
+- DEC-FIN-014: `tests/GoymenERP.Finance.UnitTests/PosCollectionContractTests.cs` (exact net, refusals, wire shape and
+  hash, no supplier POS) and `PosCollectionServiceTests.cs` (in memory: save, reopen, record once, replay, stale
+  version, company fence, Web audit, allocation at gross closes the open item); SQL:
+  `FinanceRecordSqlServerRelationalAcceptanceTests.A_customer_POS_collection_closes_the_debt_at_gross_and_keeps_net_and_commission_in_one_money_event`
+  and `…The_POS_migration_rolls_back_only_while_no_POS_fact_is_stored`; HTTP on SQL:
+  `FinanceCommandApiSqlServerRelationalAcceptanceTests.A_customer_POS_collection_is_saved_reopened_and_recorded_once_over_HTTP`.
+- DEC-FIN-016: `tests/GoymenERP.Finance.UnitTests/CustomerInstrumentContractTests.cs` (the state machine, receive
+  checks, wire shape, payload hash, permission names), `CustomerInstrumentServiceTests.cs` (in memory: receive, reopen,
+  deposit, collect once, replay / stale / other actor, F-03 closes the open item, FIN-T06 refuses the collection
+  source, company fence, Web audit, parsed-JSON redaction) and `CustomerInstrumentPersistenceModelTests.cs` (model and
+  write guard), `CustomerInstrumentRiskPolicyTests.cs` (risk states, exact sums, exposure, redaction) and the service's
+  risk case; SQL: `FinanceCustomerInstrumentSqlServerRelationalAcceptanceTests` (journey, race, redaction, 51051, the
+  risk view) and
+  HTTP on SQL: `FinanceCustomerInstrumentApiSqlServerRelationalAcceptanceTests`; browser: fin01 `FIN01-06`.
+- None of this is browser evidence (except fin01).

@@ -94,6 +94,12 @@ public sealed record CommercialDraftFields(string? UnitPrice, Guid? PriceUnitId,
 /// <summary>K3 Head B: one line's new commercial fields in a commercial revision, addressed by the client line id.</summary>
 public sealed record LineCommercialInput(Guid LineId, CommercialDraftFields Commercial);
 
+/// <summary>
+/// DEC-SAL-002: one line's new ordered quantity in a quantity revision, addressed by the client line id — the client's text
+/// kept verbatim and its exact value (Ö2: validated against the line's own order unit, never rounded, never converted).
+/// </summary>
+public sealed record LineQuantityInput(Guid LineId, string QuantityText, decimal Quantity);
+
 /// <summary>A line as it stood in an approved revision: identity, quantity text and the commercial fields, kept verbatim.</summary>
 public sealed record RevisionLineSnapshot(
     Guid LineId, int LineNo, Guid ProductId, string ProductVersion, Guid OrderUnitId, string QuantityText,
@@ -103,7 +109,53 @@ public sealed record RevisionLineSnapshot(
 /// K3 (Sinan 5748258299): an APPROVED revision archived the moment its price or discount was changed —
 /// the approval facts, the money profile it was approved under and every line's commercial values as
 /// they were. The previous approved snapshot is never deleted; the draft goes on as the next revision.
+/// DEC-SAL-002: a quantity revision archives the same way; <see cref="Reason"/> is WHY this approved revision was
+/// superseded — required by the quantity revision, null for a price revision (which carries no reason member).
 /// </summary>
 public sealed record ApprovedRevisionSnapshot(
     int Revision, ApprovalFacts Approval, Guid MoneyProfileId, string MoneyProfileVersion, int MoneyScale,
-    DateTimeOffset ArchivedAtUtc, string ArchivedBy, IReadOnlyList<RevisionLineSnapshot> Lines);
+    DateTimeOffset ArchivedAtUtc, string ArchivedBy, IReadOnlyList<RevisionLineSnapshot> Lines, string? Reason = null);
+
+/// <summary>DEC-SAL-003: one slice's new requested delivery date, addressed by the slice id the line already carries.</summary>
+public sealed record SliceScheduleInput(Guid SliceId, DateOnly RequestedDeliveryDate);
+
+/// <summary>
+/// DEC-SAL-003: one line's new delivery dates — the line's own requested date (null = none) and a date for EACH of
+/// its current slices. Dates only: the slice ids and quantities stay as they are.
+/// </summary>
+public sealed record LineScheduleInput(Guid LineId, DateOnly? RequestedDeliveryDate, IReadOnlyList<SliceScheduleInput> Slices);
+
+/// <summary>A slice's dates in a delivery schedule: the stable identity, its position, its (unchanged) quantity text and the date.</summary>
+public sealed record SliceScheduleSnapshot(Guid SliceId, int SliceNo, string QuantityText, DateOnly RequestedDeliveryDate);
+
+/// <summary>A line's dates in a delivery schedule.</summary>
+public sealed record LineScheduleSnapshot(Guid LineId, int LineNo, DateOnly? RequestedDeliveryDate, IReadOnlyList<SliceScheduleSnapshot> Slices);
+
+/// <summary>
+/// DEC-SAL-003 ("termin güncellemesi planlama/sevkiyat rolündedir ve yeniden onay gerektirmez, ancak auditlidir"): the
+/// complete delivery dates of a draft after one recorded schedule change — the header's, every line's and every slice's —
+/// with who changed them and when. Schedule 0 is the draft as created (no actor, no time); each recorded change is the
+/// next number. Append-only: an earlier schedule is never rewritten.
+/// </summary>
+public sealed record DeliveryScheduleSnapshot(
+    int ScheduleNo, DateOnly? RequestedDeliveryDate, string? ChangedBy, DateTimeOffset? ChangedAtUtc,
+    IReadOnlyList<LineScheduleSnapshot> Lines);
+
+/// <summary>
+/// DEC-SAL-005 / AT-007: the recorded cancellation of an approved order — the commercial revision that was cancelled, who
+/// cancelled it, when, and the reason (required). Recorded once; the approval facts, the lines, the archived revisions and
+/// the delivery schedules stay exactly as they were ("İptal ve ters işlem geçmişi silmez"). What the owners held when it was
+/// cancelled (the impact the user saw) is kept by the store beside it; the domain decides only the transition.
+/// </summary>
+public sealed record CancellationFacts(
+    int Revision, string CancelledBy, DateTimeOffset CancelledAtUtc, string Reason, CancellationImpactSnapshot Impact);
+
+/// <summary>
+/// DEC-SAL-005: the impact preview the cancellation was decided on, as the caller computed it from the owners' answers —
+/// its token (what the user confirmed) and each source's status (owner answered nothing / no source on main). Opaque text
+/// to the domain: it is kept with the cancellation as history, never interpreted here.
+/// </summary>
+public sealed record CancellationImpactSnapshot(string Token, IReadOnlyList<CancellationImpactEntry> Sources);
+
+/// <summary>One impact source (e.g. <c>inventory.active-allocations</c>) and the status it had when the order was cancelled.</summary>
+public sealed record CancellationImpactEntry(string Source, string Status);

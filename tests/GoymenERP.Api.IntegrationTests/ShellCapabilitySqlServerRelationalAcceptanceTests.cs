@@ -883,6 +883,9 @@ public sealed class ShellCapabilitySqlServerRelationalAcceptanceTests
         // They did not fail because they never RAN: both tests died at their first assert (lines 121 and 168), so the
         // later sites were never reached, and "did not fail" says nothing about them.
         expected.Add(OrganizationShellCapabilityProvider.WorkCenterListCapabilityId);
+        // ORG-04's card stands on the same `organization.work-centers.read` alone, so it is published exactly with the
+        // list for every actor above (same seed reasoning; no separate flag).
+        expected.Add(OrganizationShellCapabilityProvider.WorkCenterDetailCapabilityId);
         Assert.Equal(expected.Order(StringComparer.Ordinal), snapshot.Capabilities);
     }
 

@@ -70,11 +70,45 @@ export interface InventoryLabelGenealogy {
   readonly windowFull: boolean
 }
 
+export interface InventoryLabelMovementLine {
+  readonly sequence: number
+  readonly direction: 'In' | 'Out'
+  readonly ownerKind: 'Company' | 'Counterparty'
+  readonly ownerId: string
+  readonly custodianKind: 'Company' | 'Counterparty'
+  readonly custodianId: string
+  readonly locationId: string
+  readonly productId: string
+  readonly block: 'Free' | 'Blocked'
+  readonly quantityKg: string
+}
+
+export interface InventoryLabelMovement {
+  readonly movementId: string
+  readonly kind: 'Receipt' | 'Issue' | 'Block' | 'Release' | 'Return' | 'CountAdjustment' | 'Scrap'
+  readonly occurredAtUtc: string
+  readonly sourceKind: string
+  readonly sourceId: string
+  readonly sourceLineId: string | null
+  readonly sourceGrain: 'Whole' | 'Line'
+  readonly lines: readonly InventoryLabelMovementLine[]
+}
+
+export interface InventoryLabelMovementTimeline {
+  readonly labelId: string
+  readonly entries: readonly InventoryLabelMovement[]
+  readonly windowFull: boolean
+}
+
 export interface InventoryLabelDetail {
   readonly labelVersion: string
   readonly identity: InventoryLabelIdentity
   readonly balances: InventoryLabelBalances
   readonly genealogy: InventoryLabelGenealogy
+}
+
+export interface InventoryLabelDetailWithMovementTimeline extends InventoryLabelDetail {
+  readonly movementTimeline: InventoryLabelMovementTimeline
 }
 
 type JsonObject = Record<string, unknown>
@@ -182,6 +216,56 @@ function genealogyEdge(value: unknown): InventoryLabelGenealogyEdge | null {
     !guid(source.outputLabelId) || !text(source.outputCode) || !version(source.outputLabelVersion) ||
     !positiveQuantity(source.outputQuantityKg)) return null
   return source as unknown as InventoryLabelGenealogyEdge
+}
+
+function movementLine(value: unknown): InventoryLabelMovementLine | null {
+  const source = record(value)
+  if (source === null || !exact(source, [
+    'sequence', 'direction', 'ownerKind', 'ownerId', 'custodianKind', 'custodianId',
+    'locationId', 'productId', 'block', 'quantityKg',
+  ]) || !Number.isSafeInteger(source.sequence) || (source.sequence as number) < 1 ||
+    (source.direction !== 'In' && source.direction !== 'Out') ||
+    (source.ownerKind !== 'Company' && source.ownerKind !== 'Counterparty') || !guid(source.ownerId) ||
+    (source.custodianKind !== 'Company' && source.custodianKind !== 'Counterparty') || !guid(source.custodianId) ||
+    !guid(source.locationId) || !guid(source.productId) ||
+    (source.block !== 'Free' && source.block !== 'Blocked') || !positiveQuantity(source.quantityKg)) return null
+  return source as unknown as InventoryLabelMovementLine
+}
+
+function movement(value: unknown): InventoryLabelMovement | null {
+  const source = record(value)
+  if (source === null || !exact(source, [
+    'movementId', 'kind', 'occurredAtUtc', 'sourceKind', 'sourceId', 'sourceLineId', 'sourceGrain', 'lines',
+  ]) || !guid(source.movementId) ||
+    !['Receipt', 'Issue', 'Block', 'Release', 'Return', 'CountAdjustment', 'Scrap'].includes(source.kind as string) ||
+    !instant(source.occurredAtUtc) || !text(source.sourceKind) || source.sourceKind !== source.sourceKind.trim() ||
+    source.sourceKind.length > 64 || !guid(source.sourceId) ||
+    (source.sourceLineId !== null && !guid(source.sourceLineId)) ||
+    (source.sourceGrain !== 'Whole' && source.sourceGrain !== 'Line') ||
+    (source.sourceGrain === 'Whole') !== (source.sourceLineId === null) || !Array.isArray(source.lines)) return null
+  const lines = source.lines.map(movementLine)
+  if (lines.length === 0 || lines.some((line) => line === null)) return null
+  const decoded = lines as InventoryLabelMovementLine[]
+  if (new Set(decoded.map((line) => line.sequence)).size !== decoded.length ||
+    decoded.some((line, index) => index > 0 && decoded[index - 1].sequence >= line.sequence) ||
+    ((source.kind === 'Receipt' || source.kind === 'Return') && decoded.some((line) => line.direction !== 'In')) ||
+    source.kind === 'Issue' && decoded.some((line) => line.direction !== 'Out' || line.block === 'Blocked') ||
+    source.kind === 'Scrap' && (decoded.length !== 1 || decoded[0].direction !== 'Out') ||
+    (source.kind === 'Block' || source.kind === 'Release') && !validBlockChange(source.kind, decoded)) return null
+  return { ...(source as unknown as InventoryLabelMovement), lines: decoded }
+}
+
+function validBlockChange(kind: 'Block' | 'Release', lines: readonly InventoryLabelMovementLine[]): boolean {
+  if (lines.length !== 2) return false
+  const from = lines.filter((line) => line.direction === 'Out')
+  const to = lines.filter((line) => line.direction === 'In')
+  if (from.length !== 1 || to.length !== 1) return false
+  return from[0].block === (kind === 'Block' ? 'Free' : 'Blocked') &&
+    to[0].block === (kind === 'Block' ? 'Blocked' : 'Free') &&
+    from[0].ownerKind === to[0].ownerKind && from[0].ownerId === to[0].ownerId &&
+    from[0].custodianKind === to[0].custodianKind && from[0].custodianId === to[0].custodianId &&
+    from[0].locationId === to[0].locationId && from[0].productId === to[0].productId &&
+    from[0].quantityKg === to[0].quantityKg
 }
 
 interface GenealogyLabelFacts {
@@ -303,42 +387,63 @@ export function decodeInventoryLabelGenealogy(
   return { ...(source as unknown as InventoryLabelGenealogy), edges: decoded }
 }
 
+export function decodeInventoryLabelMovementTimeline(
+  value: unknown,
+  expectedLabelId: string,
+): InventoryLabelMovementTimeline | null {
+  const source = record(value)
+  if (source === null || !exact(source, ['labelId', 'entries', 'windowFull']) ||
+    source.labelId !== expectedLabelId || !Array.isArray(source.entries) || source.entries.length > 100 ||
+    typeof source.windowFull !== 'boolean') return null
+  const entries = source.entries.map(movement)
+  if (entries.some((entry) => entry === null)) return null
+  const decoded = entries as InventoryLabelMovement[]
+  if (new Set(decoded.map((entry) => entry.movementId)).size !== decoded.length ||
+    decoded.some((entry, index) => index > 0 && Date.parse(decoded[index - 1].occurredAtUtc) < Date.parse(entry.occurredAtUtc))) return null
+  return { ...(source as unknown as InventoryLabelMovementTimeline), entries: decoded }
+}
+
 export function combineInventoryLabelDetail(
   labelVersion: string,
   identity: InventoryLabelIdentity,
   balances: InventoryLabelBalances,
   genealogy: InventoryLabelGenealogy,
+  movementTimeline: InventoryLabelMovementTimeline,
   expectedCompanyId: string,
   expectedLabelId: string,
-): InventoryLabelDetail | null {
+): InventoryLabelDetailWithMovementTimeline | null {
   if (!version(labelVersion) ||
     identity.companyId !== expectedCompanyId || identity.labelId !== expectedLabelId ||
     balances.labelId !== expectedLabelId || genealogy.labelId !== expectedLabelId ||
+    movementTimeline.labelId !== expectedLabelId ||
     genealogy.labelCode !== identity.code ||
-    balances.positions.some((item) => item.productId !== identity.productId)) return null
-  return { labelVersion, identity, balances, genealogy }
+    balances.positions.some((item) => item.productId !== identity.productId) ||
+    movementTimeline.entries.some((entry) => entry.lines.some((line) => line.productId !== identity.productId))) return null
+  return { labelVersion, identity, balances, genealogy, movementTimeline }
 }
 
 export function decodeInventoryLabelDetail(
   value: unknown,
   expectedCompanyId: string,
   expectedLabelId: string,
-): InventoryLabelDetail | null {
+): InventoryLabelDetailWithMovementTimeline | null {
   const source = record(value)
-  if (source === null || !exact(source, ['labelVersion', 'identity', 'balances', 'genealogy']) ||
+  if (source === null || !exact(source, ['labelVersion', 'identity', 'balances', 'genealogy', 'movementTimeline']) ||
     typeof source.labelVersion !== 'string') return null
   const identity = decodeInventoryLabelIdentity(source.identity)
   const balances = decodeInventoryLabelBalances(source.balances)
   const genealogy = identity === null
     ? null
     : decodeInventoryLabelGenealogy(source.genealogy, expectedLabelId, identity.code)
-  return identity === null || balances === null || genealogy === null
+  const movementTimeline = decodeInventoryLabelMovementTimeline(source.movementTimeline, expectedLabelId)
+  return identity === null || balances === null || genealogy === null || movementTimeline === null
     ? null
     : combineInventoryLabelDetail(
       source.labelVersion,
       identity,
       balances,
       genealogy,
+      movementTimeline,
       expectedCompanyId,
       expectedLabelId,
     )

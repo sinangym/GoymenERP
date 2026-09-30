@@ -1,0 +1,191 @@
+/*
+ * The master edit form (create and edit sites, locations and work centres). The ORG-02 token set and rules:
+ * colour is never the only carrier of an outcome, focus is always visible, and nothing forces the page body to
+ * scroll sideways at 400px.
+ */
+
+.section {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.heading {
+  font-size: 1rem;
+  margin: 0;
+  color: #0f172a;
+}
+
+.form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
+  gap: 12px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.wide {
+  grid-column: 1 / -1;
+}
+
+.label {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.help {
+  margin: 0;
+  font-size: 0.82rem;
+  color: #64748b;
+  max-width: 70ch;
+}
+
+.input,
+.select,
+.textarea {
+  font: inherit;
+  font-size: 0.95rem;
+  color: #0f172a;
+  padding: 9px 11px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  width: 100%;
+  box-sizing: border-box;
+  background: #ffffff;
+}
+.textarea {
+  resize: vertical;
+}
+.input:focus-visible,
+.select:focus-visible,
+.textarea:focus-visible {
+  outline: 2px solid #0b6fe8;
+  outline-offset: 1px;
+  border-color: #0b6fe8;
+}
+.input[aria-invalid='true'],
+.select[aria-invalid='true'],
+.textarea[aria-invalid='true'] {
+  border-color: #dc2626;
+}
+.input:disabled,
+.select:disabled,
+.textarea:disabled,
+.input[readonly],
+.textarea[readonly] {
+  background: #f5f7fa;
+  color: #64748b;
+}
+
+.fieldError {
+  margin: 0;
+  color: #dc2626;
+  font-size: 0.85rem;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  grid-column: 1 / -1;
+}
+
+.primary,
+.secondary {
+  font: inherit;
+  font-size: 0.9rem;
+  border-radius: 8px;
+  padding: 9px 16px;
+  cursor: pointer;
+  min-height: 40px;
+}
+.primary {
+  background: #0b6fe8;
+  border: 1px solid #0b6fe8;
+  color: #ffffff;
+}
+.primary:hover:not(:disabled) {
+  background: #075bc4;
+  border-color: #075bc4;
+}
+.primary:disabled {
+  background: #9dbdea;
+  border-color: #9dbdea;
+  cursor: not-allowed;
+}
+.secondary {
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  color: #0f172a;
+}
+.secondary:hover:not(:disabled) {
+  background: #f5f7fa;
+}
+.secondary:disabled {
+  color: #94a3b8;
+  cursor: not-allowed;
+}
+.primary:focus-visible,
+.secondary:focus-visible {
+  outline: 2px solid #0b6fe8;
+  outline-offset: 2px;
+}
+
+.noticeOk,
+.noticeWarn,
+.noticeError {
+  border-radius: 10px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+  font-size: 0.9rem;
+}
+.noticeOk p,
+.noticeWarn p,
+.noticeError p {
+  margin: 0;
+  max-width: 70ch;
+}
+.noticeOk {
+  background: #e8f5ec;
+  border: 1px solid #bfe3cb;
+  color: #14532d;
+}
+.noticeWarn {
+  background: #fdf3e7;
+  border: 1px solid #f0d3ae;
+  color: #7c3f12;
+}
+.noticeError {
+  background: #fdecec;
+  border: 1px solid #f2c2c2;
+  color: #991b1b;
+}
+.noticeOk:focus-visible,
+.noticeWarn:focus-visible,
+.noticeError:focus-visible {
+  outline: 2px solid #0b6fe8;
+  outline-offset: 2px;
+}
+.noticeTitle {
+  font-weight: 600;
+}
+.conflict {
+  font-variant-numeric: tabular-nums;
+}
+
+.toggle {
+  align-self: flex-start;
+}

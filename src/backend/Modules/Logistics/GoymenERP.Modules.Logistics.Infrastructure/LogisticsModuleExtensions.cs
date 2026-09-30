@@ -48,7 +48,22 @@ public static class LogisticsModuleExtensions
         services.AddScoped<ILogisticsInstructionStore>(serviceProvider => serviceProvider.GetRequiredService<LogisticsStore>());
         services.AddScoped<LoadingUnitVerifier>();
         services.TryAddSingleton(new LogisticsInstructionServiceBindings());
-        services.AddScoped<ILogisticsInstructionService>(CreateInstructionService);
+        services.AddScoped(CreateInstructionService);
+        services.AddScoped<ILogisticsInstructionService>(serviceProvider =>
+            serviceProvider.GetRequiredService<LogisticsInstructionService>());
+        services.AddScoped<ILogisticsRealizationServiceV1>(serviceProvider =>
+            serviceProvider.GetRequiredService<LogisticsInstructionService>());
+        // AT-024: Logistics answers the Sales-declared delivery read over its own company-filtered lines. Registered here,
+        // in the owner's module (no host file), so that Sales reads recorded deliveries only through this port.
+        services.AddScoped<ISalesOrderDeliveryReadPortV1, LogisticsSalesOrderDeliveryReadPort>();
+        // DEC-SAL-005: Logistics answers the Sales-declared loading read (every instruction line of an order, instructed or
+        // loaded included) for the cancellation preview; the owner's module registers it, as the delivery read above.
+        services.AddScoped<ISalesOrderLoadingReadPortV1, LogisticsSalesOrderLoadingReadPort>();
+        // AT-025: the operations work list — two separate sections over the Sales and Purchasing owners' read ports (registered by
+        // those modules) and Logistics's own recorded totals; each section measures its own name.
+        services.AddScoped<ILogisticsOrderLineProgressReader, LogisticsOrderLineProgressReader>();
+        services.TryAddSingleton(new LogisticsOperationsWorkBindings());
+        services.AddScoped<ILogisticsOperationsWorkService, LogisticsOperationsWorkService>();
         return services;
     }
 
@@ -63,7 +78,8 @@ public static class LogisticsModuleExtensions
         serviceProvider.GetRequiredService<LoadingUnitVerifier>(),
         serviceProvider.GetRequiredService<ILogisticsInstructionStore>(),
         serviceProvider.GetRequiredService<LogisticsInstructionServiceBindings>(),
-        serviceProvider.GetRequiredService<TimeProvider>());
+        serviceProvider.GetRequiredService<TimeProvider>(),
+        serviceProvider.GetService<ILogisticsRealizationTransactionRunnerV1>());
 
     /// <summary>Applies Logistics's migrations. Its foreign keys need Organization's tables first.</summary>
     public static async Task InitializeLogisticsModuleAsync(this IServiceProvider services, CancellationToken cancellationToken = default)

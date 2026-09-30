@@ -218,6 +218,47 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
             return Revisions(draftId);
         }
 
+        /// <summary>DEC-SAL-002: what the stub answers a quantity revision with; the calls reach <see cref="QuantityCalls"/>.</summary>
+        public Func<Guid, SalesDraftQuantityRevisionRequest, Task<SalesOrderDraftResponse>> Quantity { get; set; } =
+            (_, _) => throw new SalesDraftServiceException(404, "not_found");
+
+        public List<(Guid DraftId, SalesDraftQuantityRevisionRequest Request, string Key)> QuantityCalls { get; } = [];
+
+        public Task<SalesOrderDraftResponse> ReviseQuantityAsync(Guid draftId, SalesDraftQuantityRevisionRequest request, SalesCommandMetadata metadata,
+            CancellationToken cancellationToken = default)
+        {
+            QuantityCalls.Add((draftId, request, metadata.IdempotencyKey));
+            return Quantity(draftId, request);
+        }
+
+        /// <summary>DEC-SAL-003: the delivery-schedule update and its history; this stub answers nothing it was not given.</summary>
+        public Func<Guid, SalesDraftDeliveryScheduleRequest, Task<SalesOrderDraftResponse>> Schedule { get; set; } =
+            (_, _) => throw new SalesDraftServiceException(404, "not_found");
+
+        public List<(Guid DraftId, SalesDraftDeliveryScheduleRequest Request, string Key)> ScheduleCalls { get; } = [];
+
+        public Task<SalesOrderDraftResponse> RescheduleDeliveryAsync(Guid draftId, SalesDraftDeliveryScheduleRequest request, SalesCommandMetadata metadata,
+            CancellationToken cancellationToken = default)
+        {
+            ScheduleCalls.Add((draftId, request, metadata.IdempotencyKey));
+            return Schedule(draftId, request);
+        }
+
+        public Task<SalesOrderDraftDeliverySchedulesResponse> GetDraftDeliverySchedulesAsync(Guid draftId, CancellationToken cancellationToken = default) =>
+            throw new SalesDraftServiceException(404, "not_found");
+
+        /// <summary>AT-024: what the stub answers the delivery-progress read with; the draft ids asked reach <see cref="ProgressReads"/>.</summary>
+        public Func<Guid, Task<SalesOrderDraftDeliveryProgressResponse>> Progress { get; set; } =
+            _ => throw new SalesDraftServiceException(404, "not_found");
+
+        public List<Guid> ProgressReads { get; } = [];
+
+        public Task<SalesOrderDraftDeliveryProgressResponse> GetDraftDeliveryProgressAsync(Guid draftId, CancellationToken cancellationToken = default)
+        {
+            ProgressReads.Add(draftId);
+            return Progress(draftId);
+        }
+
         public Task<SalesOrderDraftResponse> SubmitDraftAsync(Guid draftId, SalesDraftStateCommandRequest request, SalesCommandMetadata metadata,
             CancellationToken cancellationToken = default) => StateAsync("submit", draftId, request, metadata);
 
@@ -229,6 +270,31 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
 
         public Task<SalesOrderDraftResponse> RejectDraftAsync(Guid draftId, SalesDraftStateCommandRequest request, SalesCommandMetadata metadata,
             CancellationToken cancellationToken = default) => StateAsync("reject", draftId, request, metadata);
+
+        /// <summary>DEC-SAL-005: the preview, the command and the record; what the stub answers and what reached it.</summary>
+        public Func<Guid, Task<SalesOrderDraftCancellationImpactResponse>> Impact { get; set; } =
+            _ => throw new SalesDraftServiceException(404, "not_found");
+
+        public Func<Guid, SalesDraftCancelRequest, Task<SalesOrderDraftResponse>> Cancel { get; set; } =
+            (_, _) => throw new SalesDraftServiceException(404, "not_found");
+
+        public Func<Guid, Task<SalesOrderDraftCancellationResponse>> Cancellation { get; set; } =
+            _ => Task.FromResult(new SalesOrderDraftCancellationResponse(null));
+
+        public List<(Guid DraftId, SalesDraftCancelRequest Request, string Key)> CancelCalls { get; } = [];
+
+        public Task<SalesOrderDraftCancellationImpactResponse> GetCancellationImpactAsync(Guid draftId, CancellationToken cancellationToken = default) =>
+            Impact(draftId);
+
+        public Task<SalesOrderDraftResponse> CancelDraftAsync(Guid draftId, SalesDraftCancelRequest request, SalesCommandMetadata metadata,
+            CancellationToken cancellationToken = default)
+        {
+            CancelCalls.Add((draftId, request, metadata.IdempotencyKey));
+            return Cancel(draftId, request);
+        }
+
+        public Task<SalesOrderDraftCancellationResponse> GetDraftCancellationAsync(Guid draftId, CancellationToken cancellationToken = default) =>
+            Cancellation(draftId);
 
         private Task<SalesOrderDraftResponse> StateAsync(string command, Guid draftId, SalesDraftStateCommandRequest request, SalesCommandMetadata metadata)
         {
@@ -378,7 +444,8 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
             Revisions = _ => Task.FromResult(new SalesOrderDraftRevisionsResponse([
                 new SalesDraftRevisionV1("Rev.0", "SENTETIK-submitter", archivedAt.AddMinutes(-2), "SENTETIK-approver",
                     archivedAt.AddMinutes(-1), archivedAt, "SENTETIK-pricer", moneyProfileId, "7", 2,
-                    [new SalesDraftRevisionLineV1(lineId, 1, Guid.NewGuid(), "3", Guid.NewGuid(), "2.5", "13.00", priceUnitId, "5", SalesPriceDisclosure.Visible)])
+                    [new SalesDraftRevisionLineV1(lineId, 1, Guid.NewGuid(), "3", Guid.NewGuid(), "2.5", "13.00", priceUnitId, "5", SalesPriceDisclosure.Visible)],
+                    null)
             ])),
         };
         using var host = CreateHost(service);
@@ -410,7 +477,150 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
         Assert.Equal("Rev.0", item.GetProperty("revision").GetString());
         Assert.Equal("Visible", item.GetProperty("lines")[0].GetProperty("priceDisclosure").GetString());
         Assert.Equal("13.00", item.GetProperty("lines")[0].GetProperty("unitPrice").GetString());
+        // DEC-SAL-002: the member is present (a price revision archives with no reason).
+        Assert.Equal(JsonValueKind.Null, item.GetProperty("reason").ValueKind);
         Assert.Equal([draftId], service.RevisionReads);
+    }
+
+    /// <summary>
+    /// DEC-SAL-002 / AT-023: the quantity-revision route's wire — one canonical key and the strict body {expectedVersion, reason,
+    /// lines[{lineId, quantity}]} before the service is reached (no unit, price or slice member, no numeric quantity); 200
+    /// with the detail after the change and the replay headers on a replay; a blocked revision is a 409 that names each
+    /// blocking source and carries the replay headers when it is replayed; a 503 stays code-less.
+    /// </summary>
+    [Fact]
+    public async Task Quantity_revision_uses_the_strict_owner_contract_replay_headers_and_a_named_blocked_conflict()
+    {
+        var draftId = Guid.NewGuid();
+        var lineId = Guid.NewGuid();
+        var service = new StubDraftService
+        {
+            Quantity = (_, _) => Task.FromResult(new SalesOrderDraftResponse(Detail(draftId), true, "SENTETIK-quantity-first")),
+        };
+        using var host = CreateHost(service);
+        using var client = CreateClient(host);
+        var path = $"{SalesEndpoints.DraftsPath}/{draftId:D}/quantity-revision";
+
+        foreach (var json in new[]
+                 {
+                     "{}",
+                     $"{{\"expectedVersion\":\"4\",\"lines\":[{{\"lineId\":\"{lineId:D}\",\"quantity\":\"2\"}}]}}",
+                     $"{{\"expectedVersion\":\"4\",\"reason\":\"r\",\"lines\":[{{\"lineId\":\"{lineId:D}\",\"quantity\":2}}]}}",
+                     $"{{\"expectedVersion\":\"4\",\"reason\":\"r\",\"lines\":[{{\"lineId\":\"{lineId:D}\",\"quantity\":\"2\",\"orderUnitId\":\"{lineId:D}\"}}]}}",
+                     $"{{\"expectedVersion\":\"4\",\"reason\":\"r\",\"lines\":[{{\"lineId\":\"{lineId:D}\",\"quantity\":\"0\"}}]}}",
+                 })
+        {
+            using var invalid = new HttpRequestMessage(HttpMethod.Post, path) { Content = new StringContent(json, Encoding.UTF8, "application/json") };
+            invalid.Headers.Add("Idempotency-Key", "SENTETIK-invalid");
+            using var response = await client.SendAsync(invalid);
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+            Assert.Equal("validation_failed", (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString());
+        }
+
+        var body = new SalesDraftQuantityRevisionRequest("4", "SENTETIK neden", [new SalesDraftLineQuantityV1(lineId, "2.5")]);
+        using (var noKey = new HttpRequestMessage(HttpMethod.Post, path)
+               {
+                   Content = new StringContent(JsonSerializer.Serialize(body, SalesDraftJson.Options), Encoding.UTF8, "application/json"),
+               })
+        using (var response = await client.SendAsync(noKey))
+        {
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        }
+
+        Assert.Empty(service.QuantityCalls);
+
+        using (var request = new HttpRequestMessage(HttpMethod.Post, path)
+               {
+                   Content = new StringContent(JsonSerializer.Serialize(body, SalesDraftJson.Options), Encoding.UTF8, "application/json"),
+               })
+        {
+            request.Headers.Add("Idempotency-Key", "SENTETIK-quantity-1");
+            using var response = await client.SendAsync(request);
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            Assert.Equal("true", Assert.Single(response.Headers.GetValues("Idempotency-Replayed")));
+            Assert.Equal("SENTETIK-quantity-first", Assert.Single(response.Headers.GetValues("Idempotency-Original-Correlation-Id")));
+        }
+
+        var call = Assert.Single(service.QuantityCalls);
+        Assert.Equal((draftId, "4", "SENTETIK neden", "SENTETIK-quantity-1"), (call.DraftId, call.Request.ExpectedVersion, call.Request.Reason, call.Key));
+        Assert.Equal((lineId, "2.5"), (Assert.Single(call.Request.Lines).LineId, call.Request.Lines[0].Quantity));
+
+        service.Quantity = (_, _) => throw new SalesDraftServiceException(409, SalesDraftProblemCodesV1.RevisionBlocked,
+            [new("inventory.active-allocations", "Present"), new("logistics.loading-without-dispatch-note", "Present")], true, "SENTETIK-quantity-first");
+        using (var blocked = new HttpRequestMessage(HttpMethod.Post, path)
+               {
+                   Content = new StringContent(JsonSerializer.Serialize(body, SalesDraftJson.Options), Encoding.UTF8, "application/json"),
+               })
+        {
+            blocked.Headers.Add("Idempotency-Key", "SENTETIK-quantity-2");
+            using var refused = await client.SendAsync(blocked);
+            Assert.Equal(HttpStatusCode.Conflict, refused.StatusCode);
+            Assert.Equal("true", Assert.Single(refused.Headers.GetValues("Idempotency-Replayed")));
+            var problem = await refused.Content.ReadFromJsonAsync<JsonElement>();
+            Assert.Equal(SalesDraftProblemCodesV1.RevisionBlocked, problem.GetProperty("code").GetString());
+            Assert.Equal(["inventory.active-allocations", "logistics.loading-without-dispatch-note"],
+                problem.GetProperty("errors").EnumerateArray().Select(error => error.GetProperty("field").GetString()));
+        }
+
+        service.Quantity = (_, _) => throw new SalesDraftServiceException(503, SalesDraftProblemCodesV1.RevisionImpactUnavailable);
+        using var unavailableRequest = new HttpRequestMessage(HttpMethod.Post, path)
+        {
+            Content = new StringContent(JsonSerializer.Serialize(body, SalesDraftJson.Options), Encoding.UTF8, "application/json"),
+        };
+        unavailableRequest.Headers.Add("Idempotency-Key", "SENTETIK-quantity-3");
+        using var unavailable = await client.SendAsync(unavailableRequest);
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, unavailable.StatusCode);
+        Assert.DoesNotContain(SalesDraftProblemCodesV1.RevisionImpactUnavailable, await unavailable.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Delivery_progress_is_a_private_read_of_the_service_answer_and_its_404_and_503_stay_code_less()
+    {
+        var draftId = Guid.NewGuid();
+        var lineId = Guid.NewGuid();
+        var unitId = Guid.NewGuid();
+        var service = new StubDraftService
+        {
+            Progress = id => Task.FromResult(new SalesOrderDraftDeliveryProgressResponse("5",
+                [new SalesDraftLineDeliveryProgressV1(lineId, 1, unitId, "6", "4", "2.5", "3.5", "0")])),
+        };
+        using var host = CreateHost(service);
+        using var client = CreateClient(host);
+        client.DefaultRequestHeaders.Remove("Idempotency-Key");
+        var path = $"{SalesEndpoints.DraftsPath}/{draftId:D}/delivery-progress";
+
+        using (var response = await client.GetAsync(path))
+        {
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            Assert.Contains("no-store", response.Headers.CacheControl!.ToString(), StringComparison.Ordinal);
+            var body = await response.Content.ReadFromJsonAsync<JsonElement>();
+            Assert.Equal(["draftVersion", "lines"], body.EnumerateObject().Select(member => member.Name));
+            Assert.Equal("5", body.GetProperty("draftVersion").GetString());
+            var line = Assert.Single(body.GetProperty("lines").EnumerateArray());
+            Assert.Equal(["lineId", "lineNo", "orderUnitId", "ordered", "shipped", "delivered", "remaining", "excess"],
+                line.EnumerateObject().Select(member => member.Name));
+            Assert.Equal((lineId.ToString("D"), 1, "6", "4", "2.5", "3.5", "0"),
+                (line.GetProperty("lineId").GetString(), line.GetProperty("lineNo").GetInt32(), line.GetProperty("ordered").GetString(),
+                    line.GetProperty("shipped").GetString(), line.GetProperty("delivered").GetString(), line.GetProperty("remaining").GetString(),
+                    line.GetProperty("excess").GetString()));
+        }
+
+        Assert.Equal([draftId], service.ProgressReads);
+
+        service.Progress = _ => throw new SalesDraftServiceException(404, "not_found");
+        using (var missing = await client.GetAsync(path))
+        {
+            Assert.Equal(HttpStatusCode.NotFound, missing.StatusCode);
+            Assert.DoesNotContain("not_found", await missing.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+        }
+
+        foreach (var code in new[] { SalesDraftProblemCodesV1.DeliveryProviderUnavailable, SalesDraftProblemCodesV1.ReferenceProviderInvalid })
+        {
+            service.Progress = _ => throw new SalesDraftServiceException(503, code);
+            using var unavailable = await client.GetAsync(path);
+            Assert.Equal(HttpStatusCode.ServiceUnavailable, unavailable.StatusCode);
+            Assert.DoesNotContain(code, await unavailable.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+        }
     }
 
     [Fact]
@@ -467,6 +677,133 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
         var problem = await refused.Content.ReadFromJsonAsync<JsonElement>();
         Assert.Equal(SalesDraftProblemCodesV1.VersionConflict, problem.GetProperty("code").GetString());
         Assert.Equal("expectedVersion", problem.GetProperty("errors")[0].GetProperty("field").GetString());
+    }
+
+    /// <summary>
+    /// DEC-SAL-005 / AT-007: the three cancellation routes' wire — the preview and the record are private reads whose 404/503
+    /// stay code-less; the command needs one canonical key and the strict body {expectedVersion, reason, impactToken} before
+    /// the service is reached, answers 200 with the detail after the change, and carries the replay headers on a replayed
+    /// result and on a replayed terminal refusal (the blocked cancellation names its blocking source).
+    /// </summary>
+    [Fact]
+    public async Task Cancellation_preview_command_and_record_use_the_strict_owner_contract_and_replay_headers()
+    {
+        var draftId = Guid.NewGuid();
+        var lineId = Guid.NewGuid();
+        var unitId = Guid.NewGuid();
+        var token = new string('d', 64);
+        var service = new StubDraftService
+        {
+            Impact = id => Task.FromResult(new SalesOrderDraftCancellationImpactResponse("4", "Rev.0", false, token,
+                [new(SalesCancellationImpactSourcesV1.ActiveAllocations, SalesCancellationImpactStatusesV1.Present),
+                 new(SalesCancellationImpactSourcesV1.LinkedPurchasing, SalesCancellationImpactStatusesV1.NoSource)],
+                [new(lineId, 1, unitId, "6", 1, "2.5", null, null, null, null, null)])),
+        };
+        using var host = CreateHost(service);
+        using var client = CreateClient(host);
+        client.DefaultRequestHeaders.Remove("Idempotency-Key");
+        var impactPath = $"{SalesEndpoints.DraftsPath}/{draftId:D}/cancellation-impact";
+        var path = $"{SalesEndpoints.DraftsPath}/{draftId:D}/cancellation";
+
+        using (var preview = await client.GetAsync(impactPath))
+        {
+            Assert.Equal(HttpStatusCode.OK, preview.StatusCode);
+            Assert.True(preview.Headers.CacheControl is { Private: true, NoStore: true });
+            var body = await preview.Content.ReadFromJsonAsync<JsonElement>();
+            Assert.Equal(["draftVersion", "revision", "cancellable", "impactToken", "sources", "lines"], body.EnumerateObject().Select(member => member.Name));
+            Assert.Equal(["source", "status"], body.GetProperty("sources")[0].EnumerateObject().Select(member => member.Name));
+            var line = Assert.Single(body.GetProperty("lines").EnumerateArray());
+            Assert.Equal(["lineId", "lineNo", "orderUnitId", "ordered", "activeAllocations", "allocatedKg", "loadingInstructionLines",
+                "instructed", "loaded", "shipped", "delivered"], line.EnumerateObject().Select(member => member.Name));
+            // An owner that could not be read is null on the wire, never 0.
+            Assert.Equal((1, "2.5", JsonValueKind.Null), (line.GetProperty("activeAllocations").GetInt32(), line.GetProperty("allocatedKg").GetString(),
+                line.GetProperty("instructed").ValueKind));
+        }
+
+        foreach (var status in new[] { 404, 503 })
+        {
+            service.Impact = _ => throw new SalesDraftServiceException(status, status == 404 ? "not_found" : SalesDraftProblemCodesV1.CancellationImpactUnavailable);
+            using var refused = await client.GetAsync(impactPath);
+            Assert.Equal(status, (int)refused.StatusCode);
+            Assert.DoesNotContain(SalesDraftProblemCodesV1.CancellationImpactUnavailable, await refused.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+        }
+
+        using (var noKey = new HttpRequestMessage(HttpMethod.Post, path)
+               {
+                   Content = new StringContent($"{{\"expectedVersion\":\"4\",\"reason\":\"x\",\"impactToken\":\"{token}\"}}", Encoding.UTF8, "application/json"),
+               })
+        using (var response = await client.SendAsync(noKey))
+        {
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        }
+
+        foreach (var json in new[]
+                 {
+                     "{}",
+                     $"{{\"expectedVersion\":4,\"reason\":\"x\",\"impactToken\":\"{token}\"}}",
+                     $"{{\"expectedVersion\":\"4\",\"impactToken\":\"{token}\"}}",
+                     "{\"expectedVersion\":\"4\",\"reason\":\"x\",\"impactToken\":\" \"}",
+                     $"{{\"expectedVersion\":\"4\",\"reason\":\"x\",\"impactToken\":\"{token}\",\"extra\":true}}",
+                     $"{{\"expectedVersion\":\"04\",\"reason\":\"x\",\"impactToken\":\"{token}\"}}",
+                 })
+        {
+            using var invalid = StateCommand(draftId, "cancellation", "SENTETIK-invalid", json);
+            using var response = await client.SendAsync(invalid);
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+            Assert.Equal("validation_failed", (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString());
+        }
+
+        Assert.Empty(service.CancelCalls);
+
+        var valid = JsonSerializer.Serialize(new SalesDraftCancelRequest("4", "SENTETIK neden", token), SalesDraftJson.Options);
+        service.Cancel = (id, request) => Task.FromResult(new SalesOrderDraftResponse(Detail(id, "Approved"), request.Reason == "replayed", "SENTETIK-cancel-first"));
+        using (var cancelled = await client.SendAsync(StateCommand(draftId, "cancellation", "SENTETIK-cancel", valid)))
+        {
+            Assert.Equal(HttpStatusCode.OK, cancelled.StatusCode);
+            Assert.False(cancelled.Headers.Contains("Idempotency-Replayed"));
+        }
+
+        Assert.Equal((draftId, "4", "SENTETIK neden", token, "SENTETIK-cancel"),
+            (service.CancelCalls[0].DraftId, service.CancelCalls[0].Request.ExpectedVersion, service.CancelCalls[0].Request.Reason,
+                service.CancelCalls[0].Request.ImpactToken, service.CancelCalls[0].Key));
+
+        using (var replayed = await client.SendAsync(StateCommand(draftId, "cancellation", "SENTETIK-cancel-2",
+                   JsonSerializer.Serialize(new SalesDraftCancelRequest("4", "replayed", token), SalesDraftJson.Options))))
+        {
+            Assert.Equal(HttpStatusCode.OK, replayed.StatusCode);
+            Assert.Equal("true", Assert.Single(replayed.Headers.GetValues("Idempotency-Replayed")));
+            Assert.Equal("SENTETIK-cancel-first", Assert.Single(replayed.Headers.GetValues("Idempotency-Original-Correlation-Id")));
+        }
+
+        service.Cancel = (_, _) => throw new SalesDraftServiceException(409, SalesDraftProblemCodesV1.CancellationBlocked,
+            [new(SalesCancellationImpactSourcesV1.ActiveAllocations, SalesCancellationImpactStatusesV1.Present)], true, "SENTETIK-blocked-first");
+        using (var blocked = await client.SendAsync(StateCommand(draftId, "cancellation", "SENTETIK-blocked", valid)))
+        {
+            Assert.Equal(HttpStatusCode.Conflict, blocked.StatusCode);
+            Assert.Equal("true", Assert.Single(blocked.Headers.GetValues("Idempotency-Replayed")));
+            var problem = await blocked.Content.ReadFromJsonAsync<JsonElement>();
+            Assert.Equal(SalesDraftProblemCodesV1.CancellationBlocked, problem.GetProperty("code").GetString());
+            Assert.Equal(SalesCancellationImpactSourcesV1.ActiveAllocations, problem.GetProperty("errors")[0].GetProperty("field").GetString());
+        }
+
+        service.Cancel = (_, _) => throw new SalesDraftServiceException(503, SalesDraftProblemCodesV1.CancellationImpactUnavailable);
+        using (var unavailable = await client.SendAsync(StateCommand(draftId, "cancellation", "SENTETIK-503", valid)))
+        {
+            Assert.Equal(HttpStatusCode.ServiceUnavailable, unavailable.StatusCode);
+            Assert.DoesNotContain(SalesDraftProblemCodesV1.CancellationImpactUnavailable, await unavailable.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+        }
+
+        service.Cancellation = id => Task.FromResult(new SalesOrderDraftCancellationResponse(new SalesDraftCancellationV1("Rev.0", "SENTETIK-canceller",
+            new DateTimeOffset(2026, 9, 27, 12, 0, 0, TimeSpan.Zero), "SENTETIK neden", token,
+            [new(SalesCancellationImpactSourcesV1.ActiveAllocations, SalesCancellationImpactStatusesV1.None)])));
+        using (var record = await client.GetAsync(path))
+        {
+            Assert.Equal(HttpStatusCode.OK, record.StatusCode);
+            var body = await record.Content.ReadFromJsonAsync<JsonElement>();
+            var cancellation = body.GetProperty("cancellation");
+            Assert.Equal(["revision", "cancelledBy", "cancelledAtUtc", "reason", "impactToken", "sources"], cancellation.EnumerateObject().Select(member => member.Name));
+            Assert.Equal("SENTETIK neden", cancellation.GetProperty("reason").GetString());
+        }
     }
 
     private static HttpRequestMessage StateCommand(Guid draftId, string segment, string idempotencyKey, string json)

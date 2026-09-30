@@ -3,6 +3,7 @@ import type { BankAccountView } from './contract'
 import { EXAMPLE_ACCOUNT, EXAMPLE_BANK, EXAMPLE_COMPANY, EXAMPLE_PARTY, EXAMPLE_PROFILE, NORMAL_EXAMPLE } from './contractExamples'
 import { isDateOnly } from './dateOnly'
 import {
+  bankNetPreview,
   buildDraftSaveRequest,
   emptyManualReceiptFields,
   fieldsFromDraft,
@@ -20,12 +21,10 @@ const CONTEXT = {
 } as const
 
 const FILLED: ManualReceiptFields = {
+  ...emptyManualReceiptFields(),
   treasuryAccountId: EXAMPLE_BANK,
   amount: '1000',
   occurredOn: '2026-09-13',
-  valueOn: '',
-  bankReference: '',
-  description: '',
 }
 
 describe('buildDraftSaveRequest', () => {
@@ -88,5 +87,52 @@ describe('isDateOnly', () => {
     expect(isDateOnly('2028-02-29')).toBe(true)
     expect(isDateOnly('2026-02-29')).toBe(false)
     expect(isDateOnly('2026-9-13')).toBe(false)
+  })
+})
+
+describe('DEC-FIN-014 customer POS collection', () => {
+  const POS: ManualReceiptFields = {
+    ...FILLED,
+    amount: '1000,00',
+    collectionChannel: 'pos',
+    commissionAmount: '25,50',
+    commissionBearer: 'Company',
+  }
+
+  it('sends the gross as the amount and the commission and bearer as typed; the net is never sent', () => {
+    const built = buildDraftSaveRequest(POS, { ...CONTEXT, scale: 2 })
+    if (!built.ok) throw new Error('expected valid')
+    expect(built.request.preparation.money.amount).toBe('1000.00')
+    expect(built.request.preparation.pos).toEqual({ commissionAmount: '25.50', commissionBearer: 'Company' })
+    expect(JSON.stringify(built.request)).not.toMatch(/bankNet/)
+    expect(bankNetPreview(POS)).toBe('974.50')
+  })
+
+  it.each([
+    ['blank commission', { commissionAmount: '' }, 'commissionAmount', 'required'],
+    ['dotted commission', { commissionAmount: '1.000' }, 'commissionAmount', 'format'],
+    ['too precise commission', { commissionAmount: '1,005' }, 'commissionAmount', 'scale-exceeded'],
+    ['commission equal to the gross', { commissionAmount: '1000' }, 'commissionAmount', 'commission-not-below-gross'],
+    ['no bearer chosen', { commissionBearer: '' }, 'commissionBearer', 'bearer-required'],
+  ] as const)('refuses %s', (_label, patch, field, error) => {
+    const built = buildDraftSaveRequest({ ...POS, ...patch }, { ...CONTEXT, scale: 2 })
+    expect(built.ok).toBe(false)
+    if (!built.ok) expect(built.errors[field]).toBe(error)
+  })
+
+  it('a bank transfer ignores leftover POS inputs and sends no pos member', () => {
+    const built = buildDraftSaveRequest({ ...POS, collectionChannel: 'bank-transfer' }, CONTEXT)
+    expect(built.ok && 'pos' in built.request.preparation).toBe(false)
+    expect(bankNetPreview({ ...POS, collectionChannel: 'bank-transfer' })).toBeNull()
+  })
+
+  it('re-opens a POS draft with its commission and bearer', () => {
+    const visible = (amount: string) => ({ disclosure: 'Visible', money: { amount, currencyId: BANK.currencyId } })
+    const decoded = decodeSourceDetail({
+      ...NORMAL_EXAMPLE.draftSaveResult.resource,
+      pos: { commissionBearer: 'Customer', commission: visible('25.5'), bankNet: visible('974.5') },
+    }, EXAMPLE_COMPANY)
+    if (!decoded.ok) throw new Error('fixture must decode')
+    expect(fieldsFromDraft(decoded.value)).toMatchObject({ collectionChannel: 'pos', commissionAmount: '25,5', commissionBearer: 'Customer' })
   })
 })

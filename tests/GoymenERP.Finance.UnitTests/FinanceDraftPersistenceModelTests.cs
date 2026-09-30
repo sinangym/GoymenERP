@@ -187,6 +187,64 @@ public sealed class FinanceDraftPersistenceModelTests
             check.Name == "CK_MoneyEvents_Kind" && check.Sql.Contains("2", StringComparison.Ordinal));
     }
 
+    /// <summary>
+    /// DEC-FIN-014: the POS facts are exact text on the source and its one event, all-or-none by a check, editable only
+    /// while the source is a draft, and never editable on the append-only event.
+    /// </summary>
+    [Fact]
+    public void POS_facts_are_text_all_or_none_editable_on_a_draft_and_frozen_once_recorded()
+    {
+        using (var context = Context())
+        {
+            var model = context.GetService<IDesignTimeModel>().Model;
+            foreach (var (type, check) in new[] { (typeof(ReceiptDraftRow), "CK_ReceiptDrafts_Pos"), (typeof(MoneyEventRow), "CK_MoneyEvents_Pos") })
+            {
+                var design = model.FindEntityType(type)!;
+                Assert.Contains(design.GetCheckConstraints(), constraint =>
+                    constraint.Name == check && constraint.Sql == FinanceDbContext.PosCheck);
+                Assert.Equal("varchar(max)", design.FindProperty("PosCommissionAmountText")!.GetColumnType());
+                Assert.Equal("varchar(max)", design.FindProperty("PosBankNetAmountText")!.GetColumnType());
+                Assert.True(design.FindProperty("PosCommissionBearer")!.IsNullable);
+            }
+        }
+
+        var company = new CompanyContext();
+        company.Set(CompanyA);
+        var memory = new DbContextOptionsBuilder<FinanceDbContext>()
+            .UseInMemoryDatabase($"finance-pos-guard-{Guid.NewGuid():N}").Options;
+        var stored = Draft();
+        using (var context = new FinanceDbContext(memory, company))
+        {
+            context.ReceiptDrafts.Add(stored);
+            context.SaveChanges();
+        }
+
+        using (var context = new FinanceDbContext(memory, company))
+        {
+            var draft = context.ReceiptDrafts.Single(row => row.Id == stored.Id);
+            draft.PosCommissionAmountText = "10";
+            draft.PosBankNetAmountText = "990";
+            draft.PosCommissionBearer = PosCommissionBearers.Company;
+            context.SaveChanges();
+        }
+
+        using (var context = Context())
+        {
+            var recorded = Draft();
+            recorded.Stage = ReceiptStages.Recorded;
+            recorded.RecordedAtUtc = At;
+            recorded.RecordedBy = "synthetic-actor";
+            Attach(context, recorded).PosCommissionAmountText = "1";
+            Assert.Throws<InvalidOperationException>(() => context.SaveChanges());
+        }
+
+        using (var context = Context())
+        {
+            Attach(context, MoneyEvent()).PosBankNetAmountText = "1";
+            Assert.Throws<InvalidOperationException>(() => context.SaveChanges());
+        }
+    }
+
     [Fact]
     public void A_reversal_proposal_has_separate_pending_and_approved_uniqueness_and_immutable_links()
     {

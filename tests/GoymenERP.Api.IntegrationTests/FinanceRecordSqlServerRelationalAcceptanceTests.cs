@@ -189,6 +189,140 @@ public sealed class FinanceRecordSqlServerRelationalAcceptanceTests
     }
 
     /// <summary>
+    /// DEC-FIN-014 (customer POS collection) on a real SQL Server: the POS facts are stored beside the GROSS amount,
+    /// read back after the scope is closed, carried by the ONE money event, replayed once, refused at a stale version,
+    /// invisible to company B, all-or-none in the database itself, and the same source is then distributed (F-03) at
+    /// its gross to the customer's open item, which closes. Owner ports, the open period and the permissions are
+    /// SENTETIK test inputs; no journal is made (chart of accounts, NEEDS-BUSINESS 5740501573).
+    /// </summary>
+    [SqlServerFact]
+    public async Task A_customer_POS_collection_closes_the_debt_at_gross_and_keeps_net_and_commission_in_one_money_event()
+    {
+        await using var run = await Run.StartAsync();
+        var owners = Owners.For(CompanyA);
+        var pos = new PosCollectionInput("25.50", PosCommissionBearer.Company);
+
+        CommandResult saved;
+        await using (var a = run.Service(CompanyA, owners))
+        {
+            saved = await a.Service.DraftSaveAsync(a.Context, Key("pos-save"), Save(owners, "1000.00", pos: pos),
+                CancellationToken.None);
+        }
+
+        Assert.Equal(CommandOutcome.Succeeded, saved.Outcome);
+        var draftId = saved.Resource!.Source.Id;
+        Assert.Equal(("25.50", "974.50", 1), (
+            await run.ScalarAsync<string>("SELECT PosCommissionAmountText FROM finance.ReceiptDrafts WHERE Id = @s", ("@s", draftId)),
+            await run.ScalarAsync<string>("SELECT PosBankNetAmountText FROM finance.ReceiptDrafts WHERE Id = @s", ("@s", draftId)),
+            await run.ScalarAsync<int>("SELECT PosCommissionBearer FROM finance.ReceiptDrafts WHERE Id = @s", ("@s", draftId))));
+
+        // Close and reopen: a new scope reads the stored facts; company B reads nothing.
+        await using (var reader = run.Service(CompanyA, owners, correlation: "SENTETIK-pos-reopen"))
+        {
+            var reopened = await reader.Service.DetailAuthorizedAsync(reader.Context, new SourceDetailRequest(draftId),
+                CancellationToken.None);
+            Assert.Equal((ReadOutcome.Found, "1000.00"), (reopened.Outcome, reopened.Resource!.Source.Amount.Money!.Amount));
+            Assert.Equal((PosCommissionBearer.Company, "25.50", "974.50"), (reopened.Resource.Pos!.CommissionBearer,
+                reopened.Resource.Pos.Commission.Money!.Amount, reopened.Resource.Pos.BankNet.Money!.Amount));
+        }
+
+        await using (var b = run.Service(CompanyB, owners))
+        {
+            Assert.Equal(ReadOutcome.NotFound, (await b.Service.DetailAuthorizedAsync(b.Context,
+                new SourceDetailRequest(draftId), CancellationToken.None)).Outcome);
+        }
+
+        var record = new RecordRequest(draftId, saved.Resource.Source.Version);
+        CommandResult recorded;
+        await using (var a = run.Service(CompanyA, owners))
+        {
+            recorded = await a.Service.RecordAsync(a.Context, Key("pos-record"), record, CancellationToken.None);
+        }
+
+        Assert.Equal((CommandOutcome.Succeeded, "1000.00"), (recorded.Outcome, recorded.Resource!.Unallocated.Amount.Money!.Amount));
+        await using (var a = run.Service(CompanyA, owners, correlation: "SENTETIK-pos-retry"))
+        {
+            var replay = await a.Service.RecordAsync(a.Context, Key("pos-record"), record, CancellationToken.None);
+            Assert.Equal((CommandOutcome.Succeeded, true, run.Correlation), (replay.Outcome, replay.IsReplay, replay.OriginalCorrelationId));
+            Assert.Equal(CommandOutcome.VersionConflict,
+                (await a.Service.RecordAsync(a.Context, Key("pos-record-stale"), record, CancellationToken.None)).Outcome);
+        }
+
+        // ONE money event: the customer's credit is the gross; the net and the commission are its own facts.
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.MoneyEvents WHERE SourceId = @s", ("@s", draftId)));
+        Assert.Equal(("1000.00", "25.50", "974.50", 1), (
+            await run.ScalarAsync<string>("SELECT AmountText FROM finance.MoneyEvents"),
+            await run.ScalarAsync<string>("SELECT PosCommissionAmountText FROM finance.MoneyEvents"),
+            await run.ScalarAsync<string>("SELECT PosBankNetAmountText FROM finance.MoneyEvents"),
+            await run.ScalarAsync<int>("SELECT PosCommissionBearer FROM finance.MoneyEvents")));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType = N'finance.manual-receipt.recorded.v1' AND EntityId = @s "
+            + "AND SourceChannel = N'Web' AND AfterJson LIKE N'%\"channel\":\"Pos\"%'",
+            ("@s", draftId.ToString("D"))));
+
+        // The database keeps the three facts all-or-none, whatever writes it.
+        var halfWritten = await Assert.ThrowsAsync<SqlException>(() => run.ScalarAsync<int>(
+            "UPDATE finance.MoneyEvents SET PosBankNetAmountText = NULL WHERE SourceId = @s; SELECT 1", ("@s", draftId)));
+        Assert.Contains("CK_MoneyEvents_Pos", halfWritten.Message, StringComparison.Ordinal);
+
+        // The next step: the same source is distributed at its gross to the customer's open item, which closes.
+        var openItem = await run.SeedOpenItemAsync(CompanyA, owners.Account, Currency, "1000.00");
+        FinanceAllocationCommandResult allocated;
+        await using (var allocation = run.AllocationService(CompanyA, run.Actor, new SyntheticPermissions()))
+        {
+            allocated = await allocation.Service.CreateAsync(allocation.Context, Key("pos-allocate"),
+                new CreateFinanceAllocationRequest(Guid.NewGuid(), draftId, recorded.Resource.Source.Version,
+                    openItem.Id, openItem.Version, "1000.00", "SENTETIK POS brüt kapama"), CancellationToken.None);
+        }
+
+        Assert.Equal((CommandOutcome.Succeeded, "1000.00"), (allocated.Outcome, allocated.Resource!.Amount));
+        Assert.Equal(("0.00", 2), (
+            await run.ScalarAsync<string>("SELECT OutstandingAmountText FROM finance.OpenItems WHERE Id = @i", ("@i", openItem.Id)),
+            await run.ScalarAsync<int>("SELECT Status FROM finance.OpenItems WHERE Id = @i", ("@i", openItem.Id))));
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.MoneyEvents"));
+        await using (var reader = run.Service(CompanyA, owners, correlation: "SENTETIK-pos-after-allocation"))
+        {
+            var after = (await reader.Service.DetailAuthorizedAsync(reader.Context, new SourceDetailRequest(draftId),
+                CancellationToken.None)).Resource!;
+            Assert.Equal("0.00", after.Unallocated.Amount.Money!.Amount);
+            Assert.Equal("974.50", after.Pos!.BankNet.Money!.Amount);
+        }
+    }
+
+    /// <summary>DEC-FIN-014: a rollback never drops a stored POS commission or bank net (Finance's 51051).</summary>
+    [SqlServerFact]
+    public async Task The_POS_migration_rolls_back_only_while_no_POS_fact_is_stored()
+    {
+        await using var run = await Run.StartAsync();
+        const string beforePos = "20260924113000_AddFinanceAllocations";
+
+        await using (var context = run.Context(CompanyA))
+        {
+            await context.GetService<IMigrator>().MigrateAsync(beforePos);
+            Assert.Equal(0, await run.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM sys.columns WHERE object_id = OBJECT_ID(N'finance.MoneyEvents') AND name LIKE N'Pos%'"));
+            await context.Database.MigrateAsync();
+        }
+
+        var owners = Owners.For(CompanyA);
+        await using (var a = run.Service(CompanyA, owners))
+        {
+            var saved = await a.Service.DraftSaveAsync(a.Context, Key("pos-save"),
+                Save(owners, "10", pos: new PosCollectionInput("0.10", PosCommissionBearer.Customer)), CancellationToken.None);
+            Assert.Equal(CommandOutcome.Succeeded, saved.Outcome);
+        }
+
+        await using (var context = run.Context(CompanyA))
+        {
+            var error = await Assert.ThrowsAsync<SqlException>(() => context.GetService<IMigrator>().MigrateAsync(beforePos));
+            Assert.Equal(51051, error.Number);
+            Assert.EndsWith("_AddPosCollectionFacts", (await context.Database.GetAppliedMigrationsAsync()).Last(), StringComparison.Ordinal);
+        }
+
+        Assert.Equal("9.90", await run.ScalarAsync<string>("SELECT PosBankNetAmountText FROM finance.ReceiptDrafts"));
+    }
+
+    /// <summary>
     /// FIN-T05, Sinan's K1 (#66 5748258299, closes 5745134466): <c>occurredOn</c> decides the open-period
     /// check; <c>valueOn</c> does not move the period and <c>recordedAtUtc</c> is only the audit moment. The
     /// rule is the PRODUCT's (OccurredOnFinanceRecordPeriodRule over the real AccountingPeriodStatusPort) and
@@ -1138,10 +1272,11 @@ public sealed class FinanceRecordSqlServerRelationalAcceptanceTests
     private static CommandMetadata Key(string key) => new CommandMetadata(key);
 
     private static DraftSaveRequest Save(Owners owners, string amount, Guid? draftId = null, string? expectedVersion = null,
-        DateOnly? occurredOn = null, DateOnly? valueOn = null) =>
+        DateOnly? occurredOn = null, DateOnly? valueOn = null, PosCollectionInput? pos = null) =>
         new DraftSaveRequest(draftId, expectedVersion, new ReceiptPreparation(
             owners.Party, owners.Account, owners.Bank, new MoneyText(amount, Currency),
-            new ProfileReference(ProfileId.ToString("D"), "1"), occurredOn ?? OccurredOn, valueOn ?? ValueOn, "SENTETIK-REF", null));
+            new ProfileReference(ProfileId.ToString("D"), "1"), occurredOn ?? OccurredOn, valueOn ?? ValueOn, "SENTETIK-REF", null,
+            pos));
 
     private sealed record Owners(Guid Company, Guid Bank, Guid Party, Guid Account)
     {

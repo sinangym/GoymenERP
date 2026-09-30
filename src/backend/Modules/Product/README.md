@@ -18,6 +18,10 @@ Identity ID mapping, schema/runtime acceptance or production authorization.
 | Reference choices | GET /api/v1/products/reference-options?groupId=...&classId=... | ProductReferenceOptions from authorized catalogues |
 | Draft create | POST /api/v1/products | 201 ProductMutationResponse + Location |
 | Basic Draft edit | PATCH /api/v1/products/{id}/draft | 200 ProductMutationResponse |
+| Approval | POST /api/v1/products/{id}/activation | 200 ProductMutationResponse (Draft -> Active) |
+| Deactivation | POST /api/v1/products/{id}/deactivation | 200 ProductMutationResponse (Active -> Inactive) |
+| Reactivation | POST /api/v1/products/{id}/reactivation | 200 ProductMutationResponse (Inactive -> Active) |
+| Duplicate preview | GET /api/v1/products/duplicate-candidates?name=...&excludeProductId=... | ProductDuplicateCandidates (exact-name warning, never a block) |
 
 The module endpoint source compiles and is exercised using ASP.NET TestServer with
 an explicitly controlled service double. It is NOT mapped into the main host yet.
@@ -498,3 +502,71 @@ mapping in `SqlProductMasterAuthorizationService` (its allowlist admits `Activat
 becomes an explicit case — today `_ => DraftBasicEdit` would read an Activate check as a DraftBasicEdit grant);
 `UnconfiguredProductService.ActivateAsync` in `ProductRuntimeExtensions`; guard pins; the relational
 verifier's five `ProductActivationSqlServerRelationalAcceptanceTests` names; OpenAPI (`ActivateProductV1`).
+
+## Card deactivation and reactivation (Active <-> Inactive)
+
+Sources: DEC-CAR-003 (KILITLI: a used card/product is never deleted, it is taken out of use), PRD-SCOPE-001
+(#98) and section 7.9 of the group-shared master draft (a global Inactive closes new order, purchase, stock and
+production use in both companies; historical records stay visible), PRD-PERM-001 (#99, option A: the pilot
+activate/deactivate/reactivate moves are SYSTEM_ADMINISTRATOR-bounded explicit global grants; a generic
+maker-checker is not an MVP prerequisite), AT-007 / AT-013 (deactivation keeps history; an inactive master is
+not picked for a new transaction but stays visible on old ones).
+
+| Rule | Where |
+|---|---|
+| Only Active becomes Inactive and only Inactive becomes Active, at the version the actor read; one version up; every card value kept; never to or from Draft | `Product.Deactivate` / `Product.Reactivate`, `ProductRow.ApplyLifecycleChange` |
+| Body `{expectedVersion, reason}` (unknown members refused); the reason is trimmed, 1..1000, no control characters, and normalised BEFORE hashing, so surrounding blanks are one logical command | `ChangeProductLifecycleRequest`, `ProductCommandIntent.Deactivate` / `Reactivate` |
+| Each move is its OWN global operation (`Deactivate` = 5, `Reactivate` = 6), measured fresh and again before commit; no other grant (not even `Activate`) opens it, and neither opens the other | `ProductCommandGateway`, the host runner, Identity's explicit arms |
+| Same key + same request replays the stored 200 (`Idempotency-Replayed`, first correlation); another request under the key is `409 idempotency_conflict`; the same key from another origin company is a conflict too | the shared command boundary (`product.card.deactivate.v1` / `product.card.reactivate.v1`) |
+| The wrong source state is `409 lifecycle_conflict`, a stale version `409 version_conflict`, an unknown card `404` | `ProductDraftOperation` |
+| One canonical audit event (`product.card.deactivated.v1` / `product.card.reactivated.v1`), before/after card, the actor's reason and the request's SourceChannel (Web), in the same transaction | the host's audit session |
+| The history shows the move with its reason and time (`Deactivate` / `Reactivate`); an event whose snapshots do not show that exact move is an integrity fault | `ProductHistoryProjector` |
+
+- **What an Inactive card means downstream.** Nothing new is built for it: every operational read already
+  admits only Active (`ProductSalesPreconditions`, `ProductStockPreconditions`, `ProductPurchasePreconditions`,
+  hence the Manufacturing technical snapshot; the sales/stock/purchase candidate readers search only Active
+  cards), and the move raises the version, so a selection held at the old version is `version_conflict`.
+  Existing orders, stock and snapshots keep their copied values; the card itself stays readable (card, list
+  with `lifecycle=Inactive`, history).
+- **Shell.** Provider 1.2 adds the U-01-360 child controls `product.items.deactivate` / `product.items.reactivate`
+  (operations `Deactivate` / `Reactivate`) beside `product.items.activate`.
+- **Not here / open.** Who made the move is not shown (the history carries no actor, #181 section 5.4; an
+  Identity display source is a separate decision). A second approver (maker != checker) for deactivation is
+  not in the sources and is not invented: the move is fail-closed behind its own explicit grant, and nobody
+  holds it outside disposable test databases. The exact treatment of in-flight documents (a draft order line
+  already holding the product) is the draft's open item 11: they are refused at their next Product check and
+  no cascade is run. No bulk deactivation; no grant.
+
+**Central (coordinator), before this runs on the host:** shell authority re-pins for Product 1.2, OpenAPI
+`DeactivateProductV1` / `ReactivateProductV1`, the architecture guard pins (the two new migrations with raw
+SQL, `ProductRuntimeExtensions.cs`, `GroupSharedCommandDbContext.cs`, `tools/relational_inventory/product.txt`)
+and the four new `ProductDeactivationSqlServerRelationalAcceptanceTests` names in the relational inventory.
+
+## Duplicate warning (spec §10.2 / §15, first release)
+
+Sources: spec PRODUCT-U01-U02-JIT-001 §7 (code/alias collision; DB uniqueness settles the minting race), §10.2
+("Code/alias exact collision hard block'tur. Name/technical similarity yalnız warning/compare üretir; kendi başına
+kaydı birleştirmez veya engellemez."), §15 ("duplicate candidate read-only preview"), DEC-PRD-010 (a Draft is not
+used in a firm transaction; approval is its own step) and this README ("Same name is not a duplicate hard block").
+DEC-PRD-010's "mükerrer kontrol" step belongs to the Excel import (AT-019/AT-020), which is not built here.
+
+| Rule | Where |
+|---|---|
+| **Hard block = code/alias.** The code is server-minted; a second holder of a code is refused by the unique keys of `product.Products.Code` and `product.CodeRegistrations` (SQL 2601/2627), the same keys that settle concurrent minting. No check-then-insert. | `ProductDbContext`, `ProductDuplicateCandidatesSqlServerRelationalAcceptanceTests` |
+| **Warning = exact name** (`exactName`): cards whose name equals the given one after the write path's trim (`Product.NormalizeName`), compared as `Name = @name` under the column's own `Turkish_100_CI_AS` (Turkish case-insensitive: İ=i, I=ı; accent-sensitive), every lifecycle, the card being edited/approved excluded, code order, at most 20 (`hasMore` says there are more). No LIKE, score, token or threshold. | `ProductDuplicateRules`, `ProductReadStore.BuildExactNameQuery`, `ProductReader.GetDuplicateCandidatesAsync` |
+| Authority: the global Product `Read` (PRD-PERM-001), measured before the name is even validated (no 400 oracle) and again before the answer is released; `private, no-store`; nothing is written. | `ProductReader`, `ProductEndpoints` |
+| The warning never blocks a create, an edit or an approval; the server applies no duplicate precondition to any command. | `ProductDraftOperation` (unchanged) |
+| UI: the saved-Draft screen, the Draft card (fresh on every open) and the edit page (after the name field is left) list the other cards with links. The approval re-reads the warning before a NEW attempt: if it names other cards than those on screen, nothing is sent and the fresh list is shown; the next press approves. A failed re-read blocks nothing. A same-key retry skips the re-read. | `DuplicateCandidates.tsx`, `duplicateQuery.ts`, `ProductDetailPage.tsx` |
+
+**Open (NEEDS-SINAN, not guessed):** which technical attributes define "the same product" (defining-attribute
+duplicate) and any similarity rule/threshold (§10.2 technical similarity, AI candidates §12); whether approving
+a card that has exact-name candidates must require an explicit, recorded acknowledgement (today: shown, re-read,
+never blocking; the "changed list needs a second press" step is a reversible UX choice, not a policy); whether
+a manual-code/alias command (admin exception, §7) gets its own collision preview.
+
+**Central (coordinator), before this runs on the host:** OpenAPI `GetProductDuplicateCandidatesV1` + schema
+`ProductDuplicateCandidates` (regenerated artifact, additive only), its `OpenApiContractGenerationTests.Product`
+expectation, the `ProductRuntimeExtensions.cs` guard re-pin (the unconfigured service gains the member, which
+throws like its siblings; no new database capability, MigrateAsync stays 2) and the five new
+`ProductDuplicateCandidatesSqlServerRelationalAcceptanceTests` names in `tools/relational_inventory/product.txt`.
+No permission, shell capability, migration or grant changes.

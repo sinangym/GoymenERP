@@ -9,7 +9,11 @@
  *   GET   /api/v1/products/{id}         → ProductCardView (404 not_found)
  *   POST  /api/v1/products              → 201 ProductMutationResponse
  *   PATCH /api/v1/products/{id}/draft   → 200 ProductMutationResponse
+ *   POST  /api/v1/products/{id}/activation → 200 ProductMutationResponse
+ *   POST  /api/v1/products/{id}/deactivation → 200 ProductMutationResponse (Active → Inactive)
+ *   POST  /api/v1/products/{id}/reactivation → 200 ProductMutationResponse (Inactive → Active)
  *   GET   /api/v1/products/{id}/history → ProductHistoryView (module contract; host endpoint requested)
+ *   GET   /api/v1/products/duplicate-candidates?name&excludeProductId → ProductDuplicateCandidates
  *
  * The transport carries no business logic and invents no field:
  *  - `X-Company-Id` on EVERY Product request, from the shell's committed context.
@@ -25,15 +29,16 @@
  *    company or session change into a new context;
  *  - ONE `Idempotency-Key` per logical attempt, supplied by the caller, meeting the
  *    source rule (1..128 printable ASCII, no whitespace or comma);
- *  - success is EXACTLY 201 for create and EXACTLY 200 for edit. Any other status
+ *  - success is EXACTLY 201 for create and EXACTLY 200 for edit/activation. Any other status
  *    is reported as a definite refusal or an unknown outcome, never as success.
  *
- * These routes are PINNED, not LIVE: the module is not mapped into the host and no
- * Product service implementation exists.
+ * The host publishes these routes from the Product module; the client still treats
+ * the generated OpenAPI and the module contract as the only source of wire shape.
  */
 
 import {
   decodeCodeGroupList,
+  decodeDuplicateCandidates,
   decodeProductCard,
   decodeProductHistory,
   decodeProductMutation,
@@ -43,6 +48,7 @@ import {
   type CompletenessEvaluation,
   type ProductCard,
   type ProductCodeGroup,
+  type ProductDuplicateCandidates,
   type ProductHistory,
   type ProductLifecycle,
   type ProductMutationResult,
@@ -246,6 +252,26 @@ export async function fetchProductHistory(
  * grup/UUID/default şirket yok". The create form offers a choice from this read and
  * nothing else; when it fails or returns nothing, creation waits.
  */
+/**
+ * §10.2/§15: the server's exact-name duplicate candidates for `name` (the card being edited or approved is
+ * `excludeProductId`, so it never lists itself). A warning read: a failure here never blocks a save.
+ */
+export async function fetchDuplicateCandidates(
+  name: string,
+  excludeProductId: string | null,
+  origin: ProductOrigin,
+  signal?: AbortSignal,
+): Promise<ViewOutcome<ProductDuplicateCandidates>> {
+  const params = new URLSearchParams({ name })
+  if (excludeProductId !== null) params.set('excludeProductId', excludeProductId)
+  const result = await rawRead(`/products/duplicate-candidates?${params.toString()}`, origin, signal)
+  if ('failure' in result) return failureOutcome(result.failure)
+  if (result.status !== 200) return { type: 'http', status: result.status, body: result.body }
+  const candidates = decodeDuplicateCandidates(result.body)
+  if (candidates === null) return { type: 'malformed' }
+  return { type: 'ok-single', data: candidates }
+}
+
 export async function fetchCodeGroups(
   origin: ProductOrigin,
   signal?: AbortSignal,
@@ -354,6 +380,23 @@ export interface ProductReferenceWrite {
 export interface EditProductDraftPayload {
   readonly expectedVersion: string
   readonly changes: ProductDraftChanges
+  readonly reason: string
+}
+
+/** `ActivateProductRequest{ExpectedVersion}` — no lifecycle or completeness claim is sent. */
+export interface ActivateProductPayload {
+  readonly expectedVersion: string
+}
+
+/**
+ * `ChangeProductLifecycleRequest{ExpectedVersion, Reason}` for deactivation and reactivation.
+ *
+ * The reason is the person's own (trimmed, 1..1000, no control characters): it is recorded on
+ * the canonical audit event and shown in the card history. No lifecycle claim is sent — the
+ * route IS the move, and the server decides whether the card is in the state it moves from.
+ */
+export interface ChangeProductLifecyclePayload {
+  readonly expectedVersion: string
   readonly reason: string
 }
 
@@ -505,6 +548,79 @@ export async function editProductDraft(
    * a state this screen cannot have caused.
    */
   const mutation = decodeProductMutation(result.body, productId, 'Draft')
+  if (mutation === null) return { type: 'malformed' }
+  return { type: 'succeeded', data: mutation }
+}
+
+export async function activateProduct(
+  productId: string,
+  payload: ActivateProductPayload,
+  context: CommandContext,
+  signal?: AbortSignal,
+): Promise<CommandOutcome<ProductMutationResult>> {
+  const result = await sendCommand(
+    `/products/${encodeURIComponent(productId)}/activation`,
+    'POST',
+    payload,
+    context,
+    signal,
+  )
+  if ('failure' in result) return commandFailure(result.failure)
+
+  if (result.status !== 200) {
+    return {
+      type: 'http',
+      status: result.status,
+      code: productProblemCodeOf(result.body),
+      body: result.body,
+    }
+  }
+
+  const mutation = decodeProductMutation(result.body, productId, 'Active')
+  if (mutation === null) return { type: 'malformed' }
+  return { type: 'succeeded', data: mutation }
+}
+
+/**
+ * The two lifecycle moves of a card that is already in use (DEC-CAR-003: a used card is never
+ * deleted; it is taken out of new use). Each is its own global grant; each answers EXACTLY 200
+ * with the card in the state it moved TO, bound to the id that was sent. Anything else is a
+ * definite refusal or an unknown outcome, never a success.
+ */
+export type ProductLifecycleMove = 'deactivate' | 'reactivate'
+
+const LIFECYCLE_MOVE: Record<ProductLifecycleMove, { readonly path: string; readonly to: ProductLifecycle }> = {
+  deactivate: { path: 'deactivation', to: 'Inactive' },
+  reactivate: { path: 'reactivation', to: 'Active' },
+}
+
+export async function changeProductLifecycle(
+  productId: string,
+  move: ProductLifecycleMove,
+  payload: ChangeProductLifecyclePayload,
+  context: CommandContext,
+  signal?: AbortSignal,
+): Promise<CommandOutcome<ProductMutationResult>> {
+  const target = LIFECYCLE_MOVE[move]
+  const result = await sendCommand(
+    `/products/${encodeURIComponent(productId)}/${target.path}`,
+    'POST',
+    payload,
+    context,
+    signal,
+  )
+  if ('failure' in result) return commandFailure(result.failure)
+
+  if (result.status !== 200) {
+    return {
+      type: 'http',
+      status: result.status,
+      code: productProblemCodeOf(result.body),
+      body: result.body,
+    }
+  }
+
+  const mutation = decodeProductMutation(result.body, productId, target.to)
   if (mutation === null) return { type: 'malformed' }
   return { type: 'succeeded', data: mutation }
 }

@@ -22,7 +22,7 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Shell;
 public sealed class SalesShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "SALES";
-    public const string OwnerContractVersion = "1.1";
+    public const string OwnerContractVersion = "1.4";
 
     public const string ListCapabilityId = "sales.drafts.list";
     public const string ListRouteId = "sales.drafts.list";
@@ -47,6 +47,21 @@ public sealed class SalesShellCapabilityProvider : IShellCapabilityProvider
 
     /// <summary>K3: the separate commercial-revision control on S-04; create and approve never confer it.</summary>
     public const string PriceWriteCapabilityId = "sales.orders.price.write";
+
+    /// <summary>DEC-SAL-003: the delivery-schedule update CONTROL of the S-04 detail (read + the schedule-write name).</summary>
+    public const string DeliveryScheduleWriteCapabilityId = "sales.orders.delivery-schedule.write";
+
+    /// <summary>
+    /// DEC-SAL-005: the cancel CONTROL of the S-04 detail (read + the cancel name) — the impact preview and the cancellation of
+    /// an approved order. Create, approve, price and schedule never confer it (shell contract 1.3).
+    /// </summary>
+    public const string CancelCapabilityId = "sales.orders.cancel";
+
+    /// <summary>
+    /// DEC-SAL-002: the quantity-revision CONTROL of the S-04 detail (read + the quantity-write name). Create, approve, price,
+    /// schedule and cancel never confer it (shell contract 1.4).
+    /// </summary>
+    public const string QuantityWriteCapabilityId = "sales.orders.quantity.write";
 
     public string Owner => OwnerId;
 
@@ -101,6 +116,27 @@ public sealed class SalesShellCapabilityProvider : IShellCapabilityProvider
             CapabilityId = PriceWriteCapabilityId,
             ParentCapabilityId = DetailCapabilityId,
             RequiredPermissions = [SalesPermissionManifestV1.DraftsRead, SalesPermissionManifestV1.OrdersPriceWrite],
+        },
+        // DEC-SAL-003: the planner's delivery-schedule update is a control of the detail, like the price revision.
+        detail with
+        {
+            CapabilityId = DeliveryScheduleWriteCapabilityId,
+            ParentCapabilityId = DetailCapabilityId,
+            RequiredPermissions = [SalesPermissionManifestV1.DraftsRead, SalesPermissionManifestV1.OrdersDeliveryScheduleWrite],
+        },
+        // DEC-SAL-005: the impact preview and the cancellation are a control of the detail, like the schedule update.
+        detail with
+        {
+            CapabilityId = CancelCapabilityId,
+            ParentCapabilityId = DetailCapabilityId,
+            RequiredPermissions = [SalesPermissionManifestV1.DraftsRead, SalesPermissionManifestV1.OrdersCancel],
+        },
+        // DEC-SAL-002: the quantity revision is a control of the detail, like the price revision.
+        detail with
+        {
+            CapabilityId = QuantityWriteCapabilityId,
+            ParentCapabilityId = DetailCapabilityId,
+            RequiredPermissions = [SalesPermissionManifestV1.DraftsRead, SalesPermissionManifestV1.OrdersQuantityWrite],
         },
         ];
     }

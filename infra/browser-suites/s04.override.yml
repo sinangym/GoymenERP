@@ -3,7 +3,7 @@
 # (SUITE_API_EXTENSIONS["s04"]: Product issuer + actors + identity). The Product issuer is the existing
 # u02 synthetic identity, rebound to this disposable suite without a role, assignment or sign-in actor; it
 # enables Product's owned migrations/runtime before the gated host materializes one fixed candidate.
-#  - Six suite actors appended to the canonical two BootstrapIdentity users (indices 2..7). The browser
+#  - Seven suite actors appended to the canonical two BootstrapIdentity users (indices 2..8). The browser
 #    suite signs in as each on the AUTHORIZED web (X-Development-User, the s03 way). The canonical users
 #    hold no Sales permission and are not used by the suite.
 #  - Each actor's Identity user, one role and one company-wide assignment in GDC through the real
@@ -18,6 +18,12 @@
 #    the Cari owner as that actor. Nothing else is granted, no system role is touched.
 # Every value is synthetic (SENTETIK browser-suite:s04 …) and exists only in the run's disposable
 # database. Not a production grant, role or user.
+# DEC-SAL-003 (user decision 2026-09-27): a seventh actor, the disposable planner s04-planner, is the ONLY holder of
+# sales.orders.delivery-schedule.write in this run database, beside sales.drafts.read to open its order. No real user
+# and no seeded or other suite role receives the name; the real-user mapping stays a human grant gate.
+# DEC-SAL-005 (user decision 2026-09-27): an eighth actor, the disposable canceller s04-canceller, is the ONLY holder of
+# sales.orders.cancel in this run database, beside sales.drafts.read to open its order; single-person cancel (not
+# Critical). No real user and no seeded or other suite role receives the name; the real-user mapping stays a human gate.
 services:
   api:
     environment:
@@ -41,6 +47,10 @@ services:
       BootstrapIdentity__Users__6__DisplayName: SENTETIK browser-suite:s04 SalesSupport creator
       BootstrapIdentity__Users__7__UserId: s04-ordinary-creator
       BootstrapIdentity__Users__7__DisplayName: SENTETIK browser-suite:s04 ordinary creator
+      BootstrapIdentity__Users__8__UserId: s04-planner
+      BootstrapIdentity__Users__8__DisplayName: SENTETIK browser-suite:s04 Sales delivery planner
+      BootstrapIdentity__Users__9__UserId: s04-canceller
+      BootstrapIdentity__Users__9__DisplayName: SENTETIK browser-suite:s04 Sales order canceller
       IdentitySeed__Users__5__Id: b2000000-0000-4000-8000-000000000401
       IdentitySeed__Users__5__DisplayName: SENTETIK browser-suite:s04 Sales preparer
       IdentitySeed__Users__5__ExternalIdentities__0__Id: b2100000-0000-4000-8000-000000000401
@@ -77,6 +87,16 @@ services:
       IdentitySeed__Users__11__ExternalIdentities__0__Id: b2100000-0000-4000-8000-000000000201
       IdentitySeed__Users__11__ExternalIdentities__0__Issuer: urn:goymen:development-bootstrap
       IdentitySeed__Users__11__ExternalIdentities__0__Subject: s04-issuer
+      IdentitySeed__Users__12__Id: b2000000-0000-4000-8000-000000000407
+      IdentitySeed__Users__12__DisplayName: SENTETIK browser-suite:s04 Sales delivery planner
+      IdentitySeed__Users__12__ExternalIdentities__0__Id: b2100000-0000-4000-8000-000000000407
+      IdentitySeed__Users__12__ExternalIdentities__0__Issuer: urn:goymen:development-bootstrap
+      IdentitySeed__Users__12__ExternalIdentities__0__Subject: s04-planner
+      IdentitySeed__Users__13__Id: b2000000-0000-4000-8000-000000000408
+      IdentitySeed__Users__13__DisplayName: SENTETIK browser-suite:s04 Sales order canceller
+      IdentitySeed__Users__13__ExternalIdentities__0__Id: b2100000-0000-4000-8000-000000000408
+      IdentitySeed__Users__13__ExternalIdentities__0__Issuer: urn:goymen:development-bootstrap
+      IdentitySeed__Users__13__ExternalIdentities__0__Subject: s04-canceller
       IdentitySeed__Roles__5__Id: b3000000-0000-4000-8000-000000000401
       IdentitySeed__Roles__5__Code: BROWSER_S04_PREPARER
       IdentitySeed__Roles__5__Name: SENTETIK browser-suite:s04 sipariş hazırlayan rolü
@@ -100,6 +120,8 @@ services:
       IdentitySeed__Roles__5__Permissions__7: inventory.labels.read
       IdentitySeed__Roles__5__Permissions__8: inventory.balances.read
       IdentitySeed__Roles__5__Permissions__9: inventory.physical-allocation.write
+      # DEC-SAL-002 quantity revision (user decision 2026-09-28): this disposable preparer only, like the price write.
+      IdentitySeed__Roles__5__Permissions__10: sales.orders.quantity.write
       IdentitySeed__Roles__6__Id: b3000000-0000-4000-8000-000000000402
       IdentitySeed__Roles__6__Code: BROWSER_S04_APPROVER
       IdentitySeed__Roles__6__Name: SENTETIK browser-suite:s04 sipariş onaylayan rolü
@@ -139,6 +161,20 @@ services:
       IdentitySeed__Roles__11__Permissions__0: sales.drafts.create
       IdentitySeed__Roles__11__Permissions__1: sales.drafts.read
       IdentitySeed__Roles__11__Permissions__2: sales.orders.approve
+      # DEC-SAL-003: the planner reads its order and moves its delivery dates; nothing else of Sales (no create/approve/price).
+      IdentitySeed__Roles__12__Id: b3000000-0000-4000-8000-000000000408
+      IdentitySeed__Roles__12__Code: BROWSER_S04_PLANNER
+      IdentitySeed__Roles__12__Name: SENTETIK browser-suite:s04 teslim tarihi planlayan rolü
+      IdentitySeed__Roles__12__IsSystem: "false"
+      IdentitySeed__Roles__12__Permissions__0: sales.drafts.read
+      IdentitySeed__Roles__12__Permissions__1: sales.orders.delivery-schedule.write
+      # DEC-SAL-005: the canceller reads its order and cancels it after the impact preview; nothing else of Sales.
+      IdentitySeed__Roles__13__Id: b3000000-0000-4000-8000-000000000409
+      IdentitySeed__Roles__13__Code: BROWSER_S04_CANCELLER
+      IdentitySeed__Roles__13__Name: SENTETIK browser-suite:s04 sipariş iptal eden rolü
+      IdentitySeed__Roles__13__IsSystem: "false"
+      IdentitySeed__Roles__13__Permissions__0: sales.drafts.read
+      IdentitySeed__Roles__13__Permissions__1: sales.orders.cancel
       IdentitySeed__Assignments__7__Id: b4000000-0000-4000-8000-000000000401
       IdentitySeed__Assignments__7__UserId: b2000000-0000-4000-8000-000000000401
       IdentitySeed__Assignments__7__RoleId: b3000000-0000-4000-8000-000000000401
@@ -195,3 +231,19 @@ services:
       IdentitySeed__Assignments__13__ApprovedByUserId: 20000000-0000-0000-0000-000000000003
       IdentitySeed__Assignments__13__Scopes__0__Type: Company
       IdentitySeed__Assignments__13__Scopes__0__Id: 10000000-0000-0000-0000-000000000001
+      IdentitySeed__Assignments__14__Id: b4000000-0000-4000-8000-000000000408
+      IdentitySeed__Assignments__14__UserId: b2000000-0000-4000-8000-000000000407
+      IdentitySeed__Assignments__14__RoleId: b3000000-0000-4000-8000-000000000408
+      IdentitySeed__Assignments__14__CompanyId: 10000000-0000-0000-0000-000000000001
+      IdentitySeed__Assignments__14__ValidFromUtc: "2026-01-01T00:00:00+00:00"
+      IdentitySeed__Assignments__14__ApprovedByUserId: 20000000-0000-0000-0000-000000000003
+      IdentitySeed__Assignments__14__Scopes__0__Type: Company
+      IdentitySeed__Assignments__14__Scopes__0__Id: 10000000-0000-0000-0000-000000000001
+      IdentitySeed__Assignments__15__Id: b4000000-0000-4000-8000-000000000409
+      IdentitySeed__Assignments__15__UserId: b2000000-0000-4000-8000-000000000408
+      IdentitySeed__Assignments__15__RoleId: b3000000-0000-4000-8000-000000000409
+      IdentitySeed__Assignments__15__CompanyId: 10000000-0000-0000-0000-000000000001
+      IdentitySeed__Assignments__15__ValidFromUtc: "2026-01-01T00:00:00+00:00"
+      IdentitySeed__Assignments__15__ApprovedByUserId: 20000000-0000-0000-0000-000000000003
+      IdentitySeed__Assignments__15__Scopes__0__Type: Company
+      IdentitySeed__Assignments__15__Scopes__0__Id: 10000000-0000-0000-0000-000000000001

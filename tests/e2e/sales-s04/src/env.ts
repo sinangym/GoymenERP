@@ -21,6 +21,11 @@
  *   realCompanyAccountId — its company account in `companyId`
  *   deliveryAddressId    — the REAL delivery address written through the real contact-information command
  *   deliveryContactId    — the REAL contact person written the same way
+ *   plannerActor         — DEC-SAL-003: the disposable planner holding ONLY sales.drafts.read +
+ *                          sales.orders.delivery-schedule.write company-wide in `companyId` (user decision 2026-09-27:
+ *                          the name is granted to this per-run test actor only, no real user or role)
+ *   scheduleDraftId      — DEC-SAL-003: a separate one-line Preparing draft the gated writer wrote for the planner's
+ *                          delivery-date journey; the suite submits and approves it through the real API first
  */
 
 export interface S04Seed {
@@ -29,12 +34,14 @@ export interface S04Seed {
   readonly readerActor: string
   readonly supportCreatorActor: string
   readonly ordinaryCreatorActor: string
+  readonly plannerActor: string
   readonly companyId: string
   readonly draftId: string
   readonly supportDraftId: string
   readonly ordinaryApproveDraftId: string
   readonly ordinaryRejectDraftId: string
   readonly withdrawalDraftId: string
+  readonly scheduleDraftId: string
   readonly deliveryDraftId: string
   readonly realPartyId: string
   readonly realCompanyAccountId: string
@@ -117,12 +124,14 @@ export function readEnvironment(): S04Environment {
     readerActor: text(raw, 'readerActor'),
     supportCreatorActor: text(raw, 'supportCreatorActor'),
     ordinaryCreatorActor: text(raw, 'ordinaryCreatorActor'),
+    plannerActor: text(raw, 'plannerActor'),
     companyId: text(raw, 'companyId', true),
     draftId: text(raw, 'draftId', true),
     supportDraftId: text(raw, 'supportDraftId', true),
     ordinaryApproveDraftId: text(raw, 'ordinaryApproveDraftId', true),
     ordinaryRejectDraftId: text(raw, 'ordinaryRejectDraftId', true),
     withdrawalDraftId: text(raw, 'withdrawalDraftId', true),
+    scheduleDraftId: text(raw, 'scheduleDraftId', true),
     deliveryDraftId: text(raw, 'deliveryDraftId', true),
     realPartyId: text(raw, 'realPartyId', true),
     realCompanyAccountId: text(raw, 'realCompanyAccountId', true),
@@ -139,7 +148,14 @@ export function readEnvironment(): S04Environment {
     allocationLabelId: text(raw, 'allocationLabelId', true),
     allocationLabelVersion: positiveVersion(raw, 'allocationLabelVersion'),
   }
-  if (new Set([seed.preparerActor, seed.approverActor, seed.readerActor, seed.supportCreatorActor, seed.ordinaryCreatorActor]).size !== 5) {
+  if (new Set([
+    seed.preparerActor,
+    seed.approverActor,
+    seed.readerActor,
+    seed.supportCreatorActor,
+    seed.ordinaryCreatorActor,
+    seed.plannerActor,
+  ]).size !== 6) {
     throw new Error('BROWSER_E2E_S04_SEED binds the same actor to two personas')
   }
   if (new Set([
@@ -149,7 +165,8 @@ export function readEnvironment(): S04Environment {
     seed.ordinaryApproveDraftId,
     seed.ordinaryRejectDraftId,
     seed.withdrawalDraftId,
-  ]).size !== 6) {
+    seed.scheduleDraftId,
+  ]).size !== 7) {
     throw new Error('BROWSER_E2E_S04_SEED repeats a draft id')
   }
   return { apiBaseUrl, sqlConnection: required('BROWSER_E2E_SQL_CONNECTION'), testedCommit, seed }

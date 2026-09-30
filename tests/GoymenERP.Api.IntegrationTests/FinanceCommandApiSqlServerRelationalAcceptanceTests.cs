@@ -630,6 +630,197 @@ public sealed class FinanceCommandApiSqlServerRelationalAcceptanceTests
     /// the registered unavailable owner without persisting a payment, command, audit or money event.
     /// The period and party owner answers are explicit SENTETIK test ports; no production grant is made.
     /// </summary>
+    /// <summary>
+    /// DEC-FIN-014 over the real host: a customer POS collection travels as the receipt's optional <c>pos</c> member,
+    /// is saved, reopened by GET, recorded once (a replay answers the first correlation, a stale version is 409),
+    /// invisible to company B, audited on the Web channel, and its ONE money event keeps gross, commission and net
+    /// apart. Grants are synthetic test roles over the existing manual-receipt names; the period rule is a test input.
+    /// </summary>
+    [SqlServerFact]
+    public async Task A_customer_POS_collection_is_saved_reopened_and_recorded_once_over_HTTP()
+    {
+        await using var run = await Run.StartAsync(services =>
+        {
+            services.RemoveAll<IFinancePartyAccountPort>();
+            services.AddSingleton<SyntheticGate>();
+            services.AddScoped<IFinancePartyAccountPort, SyntheticParties>();
+            services.RemoveAll<IFinanceRecordPeriodRule>();
+            services.AddScoped<IFinanceRecordPeriodRule, SyntheticOpenPeriodRule>();
+        });
+        var account = await run.ApprovedBankAccountAsync(CompanyA);
+        await run.GrantAsync(Proposer, CompanyA,
+            FinancePermissionNames.DraftSave, FinancePermissionNames.DraftRead, FinancePermissionNames.AmountRead,
+            FinancePermissionNames.Record, "finance.bank-account.read");
+        await run.GrantAsync(Approver, CompanyB, FinancePermissionNames.DraftRead, FinancePermissionNames.AmountRead);
+        using var clerk = run.Client(Proposer, CompanyA);
+        using var foreignCompany = run.Client(Approver, CompanyB);
+
+        var body = Save(account, Party, draftId: null, expectedVersion: null);
+        body = body with
+        {
+            Preparation = body.Preparation with { Pos = new PosCollectionInput("25.50", PosCommissionBearer.Company) },
+        };
+        Guid sourceId;
+        string sourceVersion;
+        using (var saved = await clerk.SendAsync(Post(FinanceEndpoints.DraftsPath, "SENTETIK-pos-save",
+                   Guid.NewGuid().ToString("N"), body)))
+        {
+            Assert.Equal(HttpStatusCode.OK, saved.StatusCode);
+            var resource = (await Json(saved)).GetProperty("resource");
+            sourceId = resource.GetProperty("source").GetProperty("id").GetGuid();
+            sourceVersion = resource.GetProperty("source").GetProperty("version").GetString()!;
+            AssertPos(resource, "Company", "25.50", "974.50");
+        }
+
+        using (var reopened = await clerk.GetAsync($"{FinanceEndpoints.ManualReceiptsPath}/{sourceId:D}"))
+        {
+            Assert.Equal(HttpStatusCode.OK, reopened.StatusCode);
+            var detail = await Json(reopened);
+            Assert.Equal("1000.00", detail.GetProperty("source").GetProperty("amount").GetProperty("money")
+                .GetProperty("amount").GetString());
+            AssertPos(detail, "Company", "25.50", "974.50");
+        }
+
+        using (var foreign = await foreignCompany.GetAsync($"{FinanceEndpoints.ManualReceiptsPath}/{sourceId:D}"))
+        {
+            Assert.Equal(HttpStatusCode.NotFound, foreign.StatusCode);
+        }
+
+        var record = new RecordRequest(sourceId, sourceVersion);
+        var firstCorrelation = Guid.NewGuid().ToString("N");
+        using (var recorded = await clerk.SendAsync(Post($"{FinanceEndpoints.ManualReceiptsPath}/{sourceId:D}/record",
+                   "SENTETIK-pos-record", firstCorrelation, record)))
+        {
+            Assert.Equal(HttpStatusCode.OK, recorded.StatusCode);
+            var resource = (await Json(recorded)).GetProperty("resource");
+            Assert.Equal("Recorded", resource.GetProperty("source").GetProperty("stage").GetString());
+            Assert.Equal("1000.00", resource.GetProperty("unallocated").GetProperty("amount").GetProperty("money")
+                .GetProperty("amount").GetString());
+        }
+
+        using (var replay = await clerk.SendAsync(Post($"{FinanceEndpoints.ManualReceiptsPath}/{sourceId:D}/record",
+                   "SENTETIK-pos-record", Guid.NewGuid().ToString("N"), record)))
+        {
+            Assert.Equal(HttpStatusCode.OK, replay.StatusCode);
+            AssertReplayOf(replay, firstCorrelation);
+        }
+
+        using (var stale = await clerk.SendAsync(Post($"{FinanceEndpoints.ManualReceiptsPath}/{sourceId:D}/record",
+                   "SENTETIK-pos-record-stale", Guid.NewGuid().ToString("N"), record)))
+        {
+            Assert.Equal(HttpStatusCode.Conflict, stale.StatusCode);
+        }
+
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.MoneyEvents WHERE SourceId = @s", ("@s", sourceId)));
+        Assert.Equal(("1000.00", "974.50"), (
+            await run.ScalarAsync<string>("SELECT AmountText FROM finance.MoneyEvents WHERE SourceId = @s", ("@s", sourceId)),
+            await run.ScalarAsync<string>("SELECT PosBankNetAmountText FROM finance.MoneyEvents WHERE SourceId = @s", ("@s", sourceId))));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType = N'finance.manual-receipt.recorded.v1' "
+            + "AND EntityId = @s AND SourceChannel = N'Web'", ("@s", sourceId.ToString("D"))));
+
+        // K3 5330956606 P2-1: a recorder with Record but without amount read gets no amount back — not the gross in
+        // source.amount or unallocated.amount, not the commission or net — from the record, its replay or the detail.
+        await run.GrantAsync(Approver, CompanyA, FinancePermissionNames.DraftRead, FinancePermissionNames.Record,
+            "finance.bank-account.read");
+        using var blindRecorder = run.Client(Approver, CompanyA);
+        Guid secondId;
+        string secondVersion;
+        using (var saved = await clerk.SendAsync(Post(FinanceEndpoints.DraftsPath, "SENTETIK-pos-save-2",
+                   Guid.NewGuid().ToString("N"), body)))
+        {
+            Assert.Equal(HttpStatusCode.OK, saved.StatusCode);
+            var source = (await Json(saved)).GetProperty("resource").GetProperty("source");
+            secondId = source.GetProperty("id").GetGuid();
+            secondVersion = source.GetProperty("version").GetString()!;
+        }
+
+        var blindRecord = new RecordRequest(secondId, secondVersion);
+        var blindAnswers = new List<string>();
+        for (var attempt = 0; attempt < 2; attempt++)
+        {
+            using var recorded = await blindRecorder.SendAsync(Post($"{FinanceEndpoints.ManualReceiptsPath}/{secondId:D}/record",
+                "SENTETIK-pos-record-blind", Guid.NewGuid().ToString("N"), blindRecord));
+            Assert.Equal(HttpStatusCode.OK, recorded.StatusCode);
+            var answer = await Json(recorded);
+            Assert.Equal(attempt == 1, answer.GetProperty("isReplay").GetBoolean());
+            Assert.Equal("Recorded", answer.GetProperty("resource").GetProperty("source").GetProperty("stage").GetString());
+            blindAnswers.Add(answer.GetRawText());
+        }
+
+        using (var detail = await blindRecorder.GetAsync($"{FinanceEndpoints.ManualReceiptsPath}/{secondId:D}"))
+        {
+            Assert.Equal(HttpStatusCode.OK, detail.StatusCode);
+            blindAnswers.Add((await Json(detail)).GetRawText());
+        }
+
+        // Precise, not by substring (company ids contain "1000"): every amount member of every answer is Redacted with
+        // no money, and no JSON string or number anywhere equals one of the stored decimals in any normal form.
+        string[] storedAmounts = ["1000.00", "1000", "1000.0", "25.50", "25.5", "974.50", "974.5"];
+        Assert.All(blindAnswers, answer =>
+        {
+            using var document = JsonDocument.Parse(answer);
+            var root = document.RootElement;
+            var detail = root.TryGetProperty("resource", out var resource) && resource.ValueKind == JsonValueKind.Object
+                ? resource
+                : root;
+            AssertRedacted(detail.GetProperty("source").GetProperty("amount"));
+            AssertRedacted(detail.GetProperty("unallocated").GetProperty("amount"));
+            AssertRedacted(detail.GetProperty("pos").GetProperty("commission"));
+            AssertRedacted(detail.GetProperty("pos").GetProperty("bankNet"));
+            Assert.DoesNotContain(ScalarTokens(root), token => storedAmounts.Contains(token, StringComparer.Ordinal));
+        });
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.MoneyEvents WHERE SourceId = @s", ("@s", secondId)));
+    }
+
+    private static void AssertRedacted(JsonElement amount)
+    {
+        Assert.Equal("Redacted", amount.GetProperty("disclosure").GetString());
+        Assert.Equal(JsonValueKind.Null, amount.GetProperty("money").ValueKind);
+    }
+
+    /// <summary>Every string and number value in the document, whole tokens only (no substring matching).</summary>
+    private static IEnumerable<string> ScalarTokens(JsonElement element)
+    {
+        switch (element.ValueKind)
+        {
+            case JsonValueKind.Object:
+                foreach (var property in element.EnumerateObject())
+                {
+                    foreach (var token in ScalarTokens(property.Value))
+                    {
+                        yield return token;
+                    }
+                }
+
+                break;
+            case JsonValueKind.Array:
+                foreach (var item in element.EnumerateArray())
+                {
+                    foreach (var token in ScalarTokens(item))
+                    {
+                        yield return token;
+                    }
+                }
+
+                break;
+            case JsonValueKind.String:
+                yield return element.GetString()!;
+                break;
+            case JsonValueKind.Number:
+                yield return element.GetRawText();
+                break;
+        }
+    }
+
+    private static void AssertPos(JsonElement detail, string bearer, string commission, string bankNet)
+    {
+        var pos = detail.GetProperty("pos");
+        Assert.Equal(bearer, pos.GetProperty("commissionBearer").GetString());
+        Assert.Equal(commission, pos.GetProperty("commission").GetProperty("money").GetProperty("amount").GetString());
+        Assert.Equal(bankNet, pos.GetProperty("bankNet").GetProperty("money").GetProperty("amount").GetString());
+    }
+
     [SqlServerFact]
     public async Task Manual_bank_payment_is_company_scoped_replayable_and_fails_closed_for_an_unowned_document()
     {
@@ -661,8 +852,12 @@ public sealed class FinanceCommandApiSqlServerRelationalAcceptanceTests
             Assert.Equal(1, await run.ScalarAsync<int>(
                 "SELECT COUNT(*) FROM sys.columns WHERE object_id = OBJECT_ID(N'finance.Commands') "
                 + "AND name = N'ManualBankPaymentId'"));
-            Assert.EndsWith("_AddFinanceAllocations",
-                (await context.Database.GetAppliedMigrationsAsync()).Last(), StringComparison.Ordinal);
+            // The newest Finance migration is DEC-FIN-016's customer instruments, applied right after DEC-FIN-014's
+            // POS facts, which follow F-03's allocations.
+            var applied = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
+            Assert.EndsWith("_AddCustomerInstruments", applied[^1], StringComparison.Ordinal);
+            Assert.EndsWith("_AddPosCollectionFacts", applied[^2], StringComparison.Ordinal);
+            Assert.EndsWith("_AddFinanceAllocations", applied[^3], StringComparison.Ordinal);
         }
         var account = await run.ApprovedBankAccountAsync(CompanyA);
         await run.GrantAsync(Proposer, CompanyA, ManualPaymentPreparerGrants);

@@ -188,6 +188,9 @@ internal sealed class DraftRevisionRow : ISalesTenantRow
     public DateTimeOffset ArchivedAtUtc { get; set; }
     public string ArchivedBy { get; set; } = string.Empty;
     public string CorrelationId { get; set; } = string.Empty;
+
+    /// <summary>DEC-SAL-002: why this approved revision was superseded (the quantity revision's reason); null when a price revision archived it.</summary>
+    public string? Reason { get; set; }
 }
 
 /// <summary>A line of an archived approved revision: identity, quantity text and the commercial fields exactly as they were. Append-only.</summary>
@@ -205,4 +208,56 @@ internal sealed class DraftRevisionLineRow : ISalesTenantRow
     public string? UnitPrice { get; set; }
     public Guid? PriceUnitId { get; set; }
     public string? DiscountPercent { get; set; }
+}
+
+/// <summary>
+/// DEC-SAL-003: one recorded delivery-schedule change of a draft (append-only). Schedule 0 is the draft's own rows as
+/// created and is never written here; a change is the next number, with who changed it, when, the draft version it
+/// produced and the header's requested date after it. Never modified, never deleted.
+/// </summary>
+internal sealed class DraftDeliveryScheduleRow : ISalesTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public Guid DraftId { get; set; }
+    public int ScheduleNo { get; set; }
+    public DateOnly? RequestedDeliveryDate { get; set; }
+    public string ChangedBy { get; set; } = string.Empty;
+    public DateTimeOffset ChangedAtUtc { get; set; }
+    public long DraftVersion { get; set; }
+    public string CorrelationId { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// DEC-SAL-003: the complete dates of one recorded schedule, one row per line (<see cref="SliceNo"/> 0: the line's own
+/// requested date, nullable) and one per existing slice (<see cref="SliceNo"/> &gt;= 1: the slice id and its date, the
+/// quantity untouched). Append-only; the existing line and slice rows are never rewritten.
+/// </summary>
+internal sealed class DraftDeliveryScheduleDateRow : ISalesTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public Guid DraftId { get; set; }
+    public int ScheduleNo { get; set; }
+    public int LineNo { get; set; }
+    public int SliceNo { get; set; }
+    public Guid? SliceId { get; set; }
+    public DateOnly? RequestedDeliveryDate { get; set; }
+}
+
+/// <summary>
+/// DEC-SAL-005 / AT-007: the recorded cancellation of an approved order (append-only, at most one per draft): the revision
+/// cancelled, who, when, why, the draft version it produced, and the impact preview the user confirmed (its token and each
+/// category's status, as JSON). Never modified, never deleted; the draft's other rows stay as they were.
+/// </summary>
+internal sealed class DraftCancellationRow : ISalesTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public Guid DraftId { get; set; }
+    public int Revision { get; set; }
+    public string CancelledBy { get; set; } = string.Empty;
+    public DateTimeOffset CancelledAtUtc { get; set; }
+    public string Reason { get; set; } = string.Empty;
+    public long DraftVersion { get; set; }
+    public string ImpactToken { get; set; } = string.Empty;
+    public string ImpactJson { get; set; } = string.Empty;
+    public string CorrelationId { get; set; } = string.Empty;
 }

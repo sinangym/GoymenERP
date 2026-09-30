@@ -1,8 +1,12 @@
 using GoymenERP.Api.Contracts;
+using GoymenERP.Api.DocumentsRuntime;
 using GoymenERP.Api.Endpoints;
 using GoymenERP.Api.Errors;
+using GoymenERP.Api.LogisticsRuntime;
 using GoymenERP.Api.ManufacturingRuntime;
 using GoymenERP.Api.Multitenancy;
+using GoymenERP.Api.PurchasingRuntime;
+using GoymenERP.Api.Search;
 using GoymenERP.Api.Observability;
 using GoymenERP.Api.OpenApi;
 using GoymenERP.Api.ProductRuntime;
@@ -20,9 +24,11 @@ using GoymenERP.Modules.Accounting.Application.Contracts;
 using GoymenERP.Modules.Audit.Infrastructure;
 using GoymenERP.Modules.Audit.Infrastructure.Persistence;
 using GoymenERP.Modules.Counterparty.Infrastructure;
+using GoymenERP.Modules.Documents.Infrastructure;
 using GoymenERP.Modules.Finance.Contracts;
 using GoymenERP.Modules.Finance.Infrastructure;
 using GoymenERP.Modules.Finance.Infrastructure.Shell;
+using GoymenERP.Modules.Identity.Infrastructure.Shell;
 using GoymenERP.Modules.Idempotency.Infrastructure;
 using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Inventory.Infrastructure;
@@ -204,6 +210,12 @@ builder.Services.AddInventoryModule(
         services.GetRequiredService<AuditSaveChangesInterceptor>()));
 builder.Services.AddInventoryParentRollReferences();
 builder.Services.AddInventoryPhysicalAllocationReads();
+// R19: the label genealogy writer/reader and the fenced split/merge command behind the published route.
+builder.Services.AddInventoryLabelGenealogy();
+// AT-037: the stock count's fenced record/decide commands and the label count read behind the published routes.
+builder.Services.AddInventoryStockCounts();
+// ST-02 scrap write-off: the fenced record/decide commands and the label scrap read behind the published routes.
+builder.Services.AddInventoryStockScraps();
 // INV-OPEN-1 part 2: the opening command's host ports — Organization's company-scoped location module read
 // and Product's stock eligibility (the owners' contracts; no user read, no copy of either owner's rows).
 builder.Services.AddScoped<IInventoryLocationStatusPort, OrganizationInventoryLocationStatusPort>();
@@ -227,6 +239,7 @@ builder.Services.AddScoped<InventoryPhysicalAllocationHostService>();
 // LOG-4a: the loading instruction's customer is the Cari owner's answer (the Sales party port's shape) and its
 // order lines are Sales's approved-line port (registered by the Sales module); nothing of either is copied.
 builder.Services.AddScoped<ILogisticsPartyAccountPortV1, CounterpartyLogisticsPartyAccountPortV1>();
+builder.Services.AddScoped<ILogisticsRealizationTransactionRunnerV1, LogisticsRealizationTransactionRunner>();
 builder.Services.AddLogisticsModule(
     builder.Configuration,
     (services, options) => options.AddInterceptors(
@@ -236,6 +249,11 @@ builder.Services.AddLogisticsModule(
 // so the service answers 503 product_eligibility_unavailable fail-closed until the owner registers it.
 builder.Services.AddScoped<IPurchasingPartyAccountPortV1, CounterpartyPurchasingPartyAccountPortV1>();
 builder.Services.AddScoped<IProductPurchaseEligibilityPortV1, ProductPurchaseEligibilityPort>();
+builder.Services.AddSingleton(new PurchasingServiceBindings(
+    GoodsReceiptPermission: ErpPermissions.PurchasingGoodsReceiptsRecord));
+builder.Services.AddScoped<PurchaseGoodsReceiptHost>();
+builder.Services.AddScoped<IPurchaseGoodsReceiptTransactionV1>(provider => provider.GetRequiredService<PurchaseGoodsReceiptHost>());
+builder.Services.AddScoped<IPurchaseGoodsReceiptReadsV1>(provider => provider.GetRequiredService<PurchaseGoodsReceiptHost>());
 builder.Services.AddPurchasingModule(
     builder.Configuration,
     (services, options) => options.AddInterceptors(
@@ -246,6 +264,12 @@ builder.Services.AddAccountingModule(
     builder.Configuration,
     (services, options) => options.AddInterceptors(
         services.GetRequiredService<AuditSaveChangesInterceptor>()));
+// ERP-000G / AT-065: the document vault (audit interceptor, the Cari party owner link; the development object store and
+// EICAR-only scanner only in Development/Testing; elsewhere the own-server store and Windows Defender scanner when both
+// are configured, otherwise uploads and downloads answer 503, fail-closed).
+builder.Services.AddDocumentsRuntime(builder.Configuration, builder.Environment);
+// AT-002 / ERP-000I: the global search composer and its module-owned sources (Cari, Product, Sales), after the modules.
+builder.Services.AddGlobalSearch();
 // Registered before the shell authority is chosen: the module table maps the provider set.
 builder.Services.AddSingleton<IShellCapabilityProvider, SalesShellCapabilityProvider>();
 // FIN-UI-1a (#325): Finance's (staged) receipt and bank-account screens, before the authority is chosen.
@@ -258,6 +282,9 @@ builder.Services.AddSingleton<IShellCapabilityProvider, LogisticsShellCapability
 builder.Services.AddSingleton<IShellCapabilityProvider, PurchasingShellCapabilityProvider>();
 // ACC-V0b: Accounting's (staged) period, journal and posting-queue screens, before the authority is chosen.
 builder.Services.AddSingleton<IShellCapabilityProvider, AccountingShellCapabilityProvider>();
+// SY-01/SY-02: Identity's read-only users-and-permissions view (identity.assignments.read), before the authority
+// is chosen. No control: assigning and revoking stay blocked (NEEDS-SINAN #66 5738113623, OPEN-013).
+builder.Services.AddSingleton<IShellCapabilityProvider, IdentityShellCapabilityProvider>();
 var shellCapabilityAuthority = C01E2eShellCapabilityActivation.Configure(
     builder.Services,
     builder.Environment,
@@ -313,6 +340,8 @@ app.MapLogisticsEndpoints();
 app.MapPurchasingEndpoints();
 app.MapPurchasingProductCandidateEndpoints();
 app.MapAccountingEndpoints();
+app.MapGlobalSearchEndpoints();
+app.MapDocumentEndpoints();
 app.MapShellEndpoints();
 
 if (!isOpenApiDocumentGeneration
@@ -339,6 +368,8 @@ if (!isOpenApiDocumentGeneration
     await app.Services.InitializePurchasingModuleAsync();
     // After Organization: Accounting's foreign keys reference its tables.
     await app.Services.InitializeAccountingModuleAsync();
+    // After Organization: the document vault's foreign keys reference its tables.
+    await app.Services.InitializeDocumentsModuleAsync();
 }
 
 await app.RunAsync();

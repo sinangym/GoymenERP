@@ -82,8 +82,12 @@ import {
   type AttemptBinding,
 } from './pendingAttempt'
 import styles from './ProductCreatePage.module.css'
+import { DuplicateCandidatesPanel } from './DuplicateCandidates'
+import { useDuplicateCandidates } from './duplicateQuery'
 import { ProductTechnicalFields } from './ProductTechnicalFields'
 import { technicalDraft } from './technicalForm'
+
+const EDIT_DUPLICATE_ID = 'product-edit-duplicate-check'
 
 type EditAttempt = AttemptState<EditProductDraftPayload, ProductMutationResult>
 
@@ -191,6 +195,22 @@ function ProductEditForm({
       },
   )
   const [staleCurrentVersion, setStaleCurrentVersion] = useState<string | null>(null)
+
+  /**
+   * §10.2 duplicate warning for the name being edited: the server's exact-name candidates, this card left
+   * out. Checked for the stored name on open and again when the name field is LEFT (not per keystroke);
+   * shown only while the field still holds the checked name. It never blocks the save.
+   */
+  const [checkedName, setCheckedName] = useState(() => card.product.name.trim())
+  const duplicates = useDuplicateCandidates({
+    name: checkedName,
+    excludeProductId: card.product.id,
+    namespace,
+    entryGeneration,
+    origin,
+    enabled: true,
+  })
+  const showDuplicates = checkedName.length > 0 && values.name.trim() === checkedName
 
   const summaryRef = useRef<HTMLDivElement>(null)
   const fieldRefs = useRef<Partial<Record<EditFieldId, HTMLElement | null>>>({})
@@ -532,16 +552,24 @@ function ProductEditForm({
             maxLength={250}
             disabled={frozen}
             aria-invalid={errors.name !== undefined || undefined}
-            aria-describedby={errors.name !== undefined ? `${EDIT_FIELD.name}-error` : undefined}
+            aria-describedby={
+              [errors.name !== undefined ? `${EDIT_FIELD.name}-error` : '', showDuplicates ? EDIT_DUPLICATE_ID : '']
+                .filter((id) => id !== '')
+                .join(' ') || undefined
+            }
             ref={(el) => {
               fieldRefs.current[EDIT_FIELD.name] = el
             }}
             onChange={(event) => setValues((v) => ({ ...v, name: event.target.value }))}
+            onBlur={() => setCheckedName(values.name.trim())}
           />
           {errors.name !== undefined ? (
             <p id={`${EDIT_FIELD.name}-error`} className={styles.fieldError}>
               {errors.name}
             </p>
+          ) : null}
+          {showDuplicates ? (
+            <DuplicateCandidatesPanel id={EDIT_DUPLICATE_ID} outcome={duplicates.data} canOpenDetail={canOpenDetail} />
           ) : null}
         </div>
 

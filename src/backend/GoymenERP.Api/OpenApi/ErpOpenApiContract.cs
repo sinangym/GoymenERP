@@ -137,9 +137,25 @@ public static partial class ErpOpenApiContract
                         maximumLength: 1000);
                 }
 
-                if (context.JsonTypeInfo.Type == typeof(SetLocationActiveState))
+                if (context.JsonTypeInfo.Type == typeof(SetLocationActiveState)
+                    // ORG master edit: every edit carries the row version it expects and the audited reason, as the
+                    // active-state command does.
+                    || context.JsonTypeInfo.Type == typeof(UpdateSite)
+                    || context.JsonTypeInfo.Type == typeof(UpdateLocation)
+                    || context.JsonTypeInfo.Type == typeof(UpdateWorkCenter))
                 {
                     SetPositiveInteger(schema, "expectedVersion");
+                    AddCanonicalLengthContract(
+                        schema,
+                        "reason",
+                        minimumLength: 1,
+                        maximumLength: 1000);
+                }
+
+                if (context.JsonTypeInfo.Type == typeof(CreateSite)
+                    || context.JsonTypeInfo.Type == typeof(CreateLocation)
+                    || context.JsonTypeInfo.Type == typeof(CreateWorkCenter))
+                {
                     AddCanonicalLengthContract(
                         schema,
                         "reason",
@@ -178,6 +194,37 @@ public static partial class ErpOpenApiContract
                         allowedFlags);
                 }
 
+                // AT-055 (#518 P2): a dispatch note names 1..500 DISTINCT shipments; the lifecycle commands' text shapes.
+                if (context.JsonTypeInfo.Type == typeof(GoymenERP.Modules.Logistics.Application.Contracts.CreateDispatchNoteRequest))
+                {
+                    SetArrayBounds(
+                        schema,
+                        "shipmentIds",
+                        minimumItems: 1,
+                        maximumItems: GoymenERP.Modules.Logistics.Application.Contracts.LogisticsJson.MaximumDispatchNoteShipments,
+                        uniqueItems: true);
+                }
+
+                if (context.JsonTypeInfo.Type == typeof(GoymenERP.Modules.Logistics.Application.Contracts.CancelDispatchNoteRequest))
+                {
+                    SetStringBounds(
+                        schema,
+                        "reason",
+                        minimumLength: 1,
+                        maximumLength: GoymenERP.Modules.Logistics.Application.Contracts.LogisticsJson.CancelReasonMaximumLength,
+                        pattern: null);
+                }
+
+                if (context.JsonTypeInfo.Type == typeof(GoymenERP.Modules.Logistics.Application.Contracts.SetEDispatchNumberRequest))
+                {
+                    SetStringBounds(
+                        schema,
+                        "eDispatchNumber",
+                        minimumLength: 16,
+                        maximumLength: 16,
+                        pattern: GoymenERP.Modules.Logistics.Application.Contracts.LogisticsJson.EDispatchNumberPattern);
+                }
+
                 if (context.JsonTypeInfo.Type == typeof(AuditEventItem))
                 {
                     SetIntegerProperty(schema, "entityVersionBefore", nullable: true);
@@ -194,7 +241,12 @@ public static partial class ErpOpenApiContract
                     || context.JsonTypeInfo.Type == typeof(PartyCoreView)
                     || context.JsonTypeInfo.Type == typeof(CounterpartyListAccount)
                     || context.JsonTypeInfo.Type == typeof(CounterpartyListItem)
-                    || context.JsonTypeInfo.Type == typeof(LocationSummary))
+                    || context.JsonTypeInfo.Type == typeof(LocationSummary)
+                    // ORG-04: the work-center card's row version is the location card's integer, not a string.
+                    || context.JsonTypeInfo.Type == typeof(WorkCenterDetail)
+                    // ORG master edit: the site row and a create's answer carry the same integer row version.
+                    || context.JsonTypeInfo.Type == typeof(SiteSummary)
+                    || context.JsonTypeInfo.Type == typeof(OrganizationCreatedRecord))
                 {
                     SetIntegerProperty(schema, "version", nullable: false);
                 }
@@ -678,6 +730,17 @@ public static partial class ErpOpenApiContract
         if (string.Equals(operation.OperationId, "GetInventoryPhysicalAllocationsV1", StringComparison.Ordinal))
         {
             AddInventoryPhysicalAllocationReadParameters(operation);
+        }
+
+        // AT-055 (#518 P2): the Sales order's dispatch notes are read for exactly one REQUIRED uuid; the route reads it by hand.
+        if (string.Equals(operation.OperationId, "GetSalesOrderDispatchNotesV1", StringComparison.Ordinal))
+        {
+            AddQueryParameter(
+                operation,
+                "salesOrderId",
+                new OpenApiSchema { Type = JsonSchemaType.String, Format = "uuid" },
+                "Required Sales order identifier; the only query member.",
+                required: true);
         }
 
         if (operation.OperationId is "GetInventoryProductCandidatesV1"
@@ -1279,6 +1342,27 @@ public static partial class ErpOpenApiContract
         concreteProperty.MinLength = 1;
         concreteProperty.MaxLength = 19;
         concreteProperty.Pattern = PositiveIntegerStringPattern;
+    }
+
+    private static OpenApiSchema ConcreteProperty(OpenApiSchema schema, string propertyName) =>
+        schema.Properties?.TryGetValue(propertyName, out var property) == true && property is OpenApiSchema concreteProperty
+            ? concreteProperty
+            : throw new InvalidOperationException($"OpenAPI property '{propertyName}' is not a concrete schema.");
+
+    private static void SetArrayBounds(OpenApiSchema schema, string propertyName, int minimumItems, int maximumItems, bool uniqueItems)
+    {
+        var property = ConcreteProperty(schema, propertyName);
+        property.MinItems = minimumItems;
+        property.MaxItems = maximumItems;
+        property.UniqueItems = uniqueItems;
+    }
+
+    private static void SetStringBounds(OpenApiSchema schema, string propertyName, int minimumLength, int maximumLength, string? pattern)
+    {
+        var property = ConcreteProperty(schema, propertyName);
+        property.MinLength = minimumLength;
+        property.MaxLength = maximumLength;
+        property.Pattern = pattern;
     }
 
     private static void SetExactSingleItemArrayProperty(

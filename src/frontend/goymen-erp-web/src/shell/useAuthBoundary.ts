@@ -18,7 +18,7 @@
  * reducer. See `BUSINESS_AUTH_OUTCOME` in ./shellState.ts.
  */
 
-import { useCallback } from 'react'
+import { useCallback, useMemo } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useShellDispatch, useShellState } from './shellContext'
 import { contextKey, contextKeyString } from './shellState'
@@ -33,21 +33,59 @@ export interface AuthBoundary {
   readonly report: (status: number, snapshot: SecuritySnapshot) => void
 }
 
+/**
+ * STABLE IDENTITY. The boundary is keyed on what a snapshot actually contains, not on
+ * the whole shell state object. `capture` used to close over `state` and the hook
+ * returned a fresh `{ capture, report }` every render, so any consumer that put the
+ * boundary (or `capture`) in a dependency list re-ran on EVERY render: an effect
+ * whose cleanup aborts a request in flight turned into a refetch loop that also
+ * aborted the user's submitted search (#483, R19 r14 run 36317283526, ST-01).
+ *
+ * The snapshot is still computed by `captureSecuritySnapshot` from this render's
+ * state, exactly as before; `capture` is simply the same function for as long as
+ * every field of that snapshot is unchanged, and it returns those same values. It
+ * changes the moment any of them changes (actor, session epoch, company, committed
+ * revision, request fence, capability generation, namespace), so a read still
+ * captures the bindings current when it starts. `report` never depended on render
+ * state. The returned object is memoized over the two.
+ */
 export function useAuthBoundary(): AuthBoundary {
   const state = useShellState()
   const dispatch = useShellDispatch()
   const queryClient = useQueryClient()
 
-  const capture = useCallback((): SecuritySnapshot => {
-    const key = contextKey(state)
-    // The actor is read from the COMMITTED context, not from a caller-supplied
-    // value: it is the identity the read is actually authorized under.
-    return captureSecuritySnapshot(
-      state,
-      state.activeContext?.userId ?? null,
-      key === null ? null : contextKeyString(key),
-    )
-  }, [state])
+  const key = contextKey(state)
+  // The actor is read from the COMMITTED context, not from a caller-supplied
+  // value: it is the identity the read is actually authorized under.
+  const current = captureSecuritySnapshot(
+    state,
+    state.activeContext?.userId ?? null,
+    key === null ? null : contextKeyString(key),
+  )
+  const {
+    actorId,
+    sessionEpoch,
+    companyId,
+    committedContextRevision,
+    requestFenceGeneration,
+    capabilityGeneration,
+    namespace,
+  } = current
+
+  // Every SecuritySnapshot field is listed (a new field is a type error here), so
+  // `capture` returns exactly what captureSecuritySnapshot produced for this render.
+  const capture = useCallback(
+    (): SecuritySnapshot => ({
+      actorId,
+      sessionEpoch,
+      companyId,
+      committedContextRevision,
+      requestFenceGeneration,
+      capabilityGeneration,
+      namespace,
+    }),
+    [actorId, sessionEpoch, companyId, committedContextRevision, requestFenceGeneration, capabilityGeneration, namespace],
+  )
 
   const report = useCallback(
     (status: number, snapshot: SecuritySnapshot) => {
@@ -72,7 +110,7 @@ export function useAuthBoundary(): AuthBoundary {
     [dispatch, queryClient],
   )
 
-  return { capture, report }
+  return useMemo(() => ({ capture, report }), [capture, report])
 }
 
 /**

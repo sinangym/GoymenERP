@@ -58,12 +58,13 @@ public sealed class SalesOrderDraftLine
     public UnitProfileSnapshot OrderUnit { get; }
 
     /// <summary>The exact ordered quantity in the order unit's dimension; extra decimals were refused, never rounded.</summary>
-    public Quantity Quantity { get; }
+    public Quantity Quantity { get; private set; }
 
     /// <summary>The quantity text exactly as the client sent it (#257: lossless text retained verbatim).</summary>
-    public string QuantityText { get; }
+    public string QuantityText { get; private set; }
 
-    public DateOnly? RequestedDeliveryDate { get; }
+    /// <summary>The line's requested delivery date; DEC-SAL-003 lets a delivery-schedule update move it (dates only).</summary>
+    public DateOnly? RequestedDeliveryDate { get; private set; }
 
     public string? Note { get; }
 
@@ -73,8 +74,50 @@ public sealed class SalesOrderDraftLine
     internal void ReplaceCommercial(CommercialDraftFields commercial) =>
         Commercial = commercial ?? throw new ArgumentNullException(nameof(commercial));
 
+    /// <summary>
+    /// DEC-SAL-002: the aggregate's quantity revision replaces the ordered quantity and its verbatim text; the rules (Ö2 in
+    /// the line's own unit, the plan still fitting) were applied by the aggregate first. The slices are NOT re-split: a
+    /// plan above the new quantity is an internal invariant here.
+    /// </summary>
+    internal void ReplaceQuantity(Quantity quantity, string quantityText)
+    {
+        if (quantity.IsZero || quantity.Unit != Quantity.Unit || string.IsNullOrWhiteSpace(quantityText))
+        {
+            throw new SalesRuleException(SalesRuleCodes.InternalInvariant, "Satır miktarı sıfır, başka birimde ya da metinsiz olamaz (iç değişmez).");
+        }
+
+        var planned = slices.Aggregate(Quantity.Zero(quantity.Unit), (sum, slice) => sum.Add(slice.Quantity));
+        if (planned.IsGreaterThan(quantity))
+        {
+            throw new SalesRuleException(SalesRuleCodes.InternalInvariant, "Dilimler yeni satır miktarını aşıyor (iç değişmez).");
+        }
+
+        Quantity = quantity;
+        QuantityText = quantityText;
+    }
+
     /// <summary>The requested delivery plan; empty means no slices planned, which is not a delivery.</summary>
     public IReadOnlyList<DeliverySlice> RequestedDeliverySlices => slices.AsReadOnly();
+
+    /// <summary>
+    /// DEC-SAL-003 (dates only): the line's date and the dates of its CURRENT slices, keyed by slice id. The caller (the
+    /// aggregate) has already checked that <paramref name="sliceDates"/> names exactly this line's slices; the slice ids,
+    /// order, quantities and texts stay as they were, so the plan's quantities are not re-split.
+    /// </summary>
+    internal void Reschedule(DateOnly? requestedDeliveryDate, IReadOnlyDictionary<Guid, DateOnly> sliceDates)
+    {
+        ArgumentNullException.ThrowIfNull(sliceDates);
+        if (sliceDates.Count != slices.Count || slices.Any(slice => !sliceDates.ContainsKey(slice.SliceId)))
+        {
+            throw new SalesRuleException(SalesRuleCodes.InternalInvariant, "Termin dilimleri satırın dilimleriyle uyuşmuyor (iç değişmez).");
+        }
+
+        RequestedDeliveryDate = requestedDeliveryDate;
+        for (var index = 0; index < slices.Count; index++)
+        {
+            slices[index] = slices[index] with { RequestedDeliveryDate = sliceDates[slices[index].SliceId] };
+        }
+    }
 
     /// <summary>What the plan does not cover: the ordered quantity minus the slices (never negative, never "delivered").</summary>
     public Quantity UnplannedQuantity =>

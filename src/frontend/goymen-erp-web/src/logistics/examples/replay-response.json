@@ -31,7 +31,9 @@
         "isBlocked": false
       }
     ],
-    "shares": []
+    "shares": [],
+    "weighing": null,
+    "dispatchNotes": []
   },
   "isReplay": true,
   "originalCorrelationId": "corr-1"

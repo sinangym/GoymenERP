@@ -40,6 +40,16 @@ internal sealed class ReceiptDraftRow : IFinanceTenantRow
     public int Stage { get; set; }
     public DateTimeOffset? RecordedAtUtc { get; set; }
     public string? RecordedBy { get; set; }
+
+    /// <summary>
+    /// DEC-FIN-014: a customer POS collection's facts, all three NULL (a bank transfer) or all three set
+    /// (<c>CK_ReceiptDrafts_Pos</c>). <see cref="AmountText"/> is then the GROSS card amount — the customer's debt closes
+    /// at it — and the commission and the bank net are kept apart from it, never subtracted from the customer credit.
+    /// The net is derived by the server (gross − commission), exact text; the bearer is <see cref="PosCommissionBearers"/>.
+    /// </summary>
+    public string? PosCommissionAmountText { get; set; }
+    public string? PosBankNetAmountText { get; set; }
+    public int? PosCommissionBearer { get; set; }
 }
 
 /// <summary>The stored stage of a manual receipt source.</summary>
@@ -74,6 +84,22 @@ internal sealed class MoneyEventRow : IFinanceTenantRow
     public DateTimeOffset RecordedAtUtc { get; set; }
     public string RecordedBy { get; set; } = string.Empty;
     public string CorrelationId { get; set; } = string.Empty;
+
+    /// <summary>
+    /// DEC-FIN-014: the POS facts of the source, copied into its ONE event (all NULL for a bank transfer). The customer
+    /// credit reads <see cref="AmountText"/> (gross); a bank inflow read takes <see cref="PosBankNetAmountText"/> when
+    /// set; the commission is its own fact. Still one row: a POS collection is not three money events.
+    /// </summary>
+    public string? PosCommissionAmountText { get; set; }
+    public string? PosBankNetAmountText { get; set; }
+    public int? PosCommissionBearer { get; set; }
+}
+
+/// <summary>The stored values of <c>PosCommissionBearer</c> (the contract enum's own values).</summary>
+internal static class PosCommissionBearers
+{
+    public const int Company = 1;
+    public const int Customer = 2;
 }
 
 /// <summary>The distinct recorded and reversing manual bank receipt money-event kinds.</summary>
@@ -86,6 +112,13 @@ internal static class MoneyEventKinds
     /// the kind, source link and proposal establish reversal semantics.
     /// </summary>
     public const int ManualBankReceiptReversed = 2;
+
+    /// <summary>
+    /// DEC-FIN-016: the collection of a customer cheque or note — a bank inflow and the customer's credit at the face
+    /// value, read from this one row like a recorded receipt's. A kind of its own, so FIN-T06's reversal (which reverses
+    /// only an original manual receipt) refuses it: the reverse flow after collection is not decided yet.
+    /// </summary>
+    public const int CustomerInstrumentCollected = 3;
 }
 
 /// <summary>R47 manual outgoing bank payment, from preparation through a separately confirmed record.</summary>
@@ -217,9 +250,76 @@ internal sealed class FinanceCommandRow : IFinanceTenantRow
     public Guid? ReversalProposalId { get; set; }
     public Guid? ManualBankPaymentId { get; set; }
     public Guid? FinanceAllocationId { get; set; }
+
+    /// <summary>DEC-FIN-016: a customer cheque / note command's target (receive, status change, collection).</summary>
+    public Guid? CustomerInstrumentId { get; set; }
     public string ResultJson { get; set; } = string.Empty;
     public string CorrelationId { get; set; } = string.Empty;
     public DateTimeOffset RecordedAtUtc { get; set; }
+}
+
+/// <summary>
+/// DEC-FIN-016 first release: a CUSTOMER cheque or promissory note in the company's portfolio. Its facts (kind, party,
+/// serial, drawer, bank, dates, face value and currency) never change after the receipt; only its status moves, one
+/// allowed step at a time (<see cref="GoymenERP.Modules.Finance.Contracts.CustomerInstrumentRules"/>), each step kept in
+/// <see cref="CustomerInstrumentMovementRow"/>. Receiving it has NO money effect; its collection records one receipt
+/// source (<see cref="CollectionSourceId"/>) with one money event, and that is the customer's only credit for it.
+/// The face value is the exact text that passed the Settings profile's scale; no database decimal is a money scale.
+/// </summary>
+internal sealed class CustomerInstrumentRow : IFinanceTenantRow
+{
+    public Guid Id { get; set; }
+    public Guid CompanyId { get; set; }
+    public long Version { get; set; }
+    public int Kind { get; set; }
+    public int Status { get; set; }
+    public Guid PartyId { get; set; }
+    public Guid CompanyAccountId { get; set; }
+    public string SerialNumber { get; set; } = string.Empty;
+    public string Drawer { get; set; } = string.Empty;
+    public string? BankName { get; set; }
+    public string? BranchName { get; set; }
+    public DateOnly DueOn { get; set; }
+    public DateOnly ReceivedOn { get; set; }
+    public Guid CurrencyId { get; set; }
+    public string AmountText { get; set; } = string.Empty;
+    public string ProfileId { get; set; } = string.Empty;
+    public string ProfileVersion { get; set; } = string.Empty;
+    public string? Description { get; set; }
+
+    /// <summary>The Finance bank account while at the bank for collection, and the one it was collected into.</summary>
+    public Guid? TreasuryAccountId { get; set; }
+
+    /// <summary>The business date of the latest status step (the receipt date until the first change).</summary>
+    public DateOnly StatusChangedOn { get; set; }
+
+    /// <summary>The recorded receipt source its collection created; set exactly once, with <c>Collected</c>.</summary>
+    public Guid? CollectionSourceId { get; set; }
+    public string ReceivedBy { get; set; } = string.Empty;
+    public DateTimeOffset ReceivedAtUtc { get; set; }
+    public string UpdatedBy { get; set; } = string.Empty;
+    public DateTimeOffset UpdatedAtUtc { get; set; }
+}
+
+/// <summary>
+/// One append-only step of a customer instrument (DEC-FIN-016): the receipt (no previous status) and every later
+/// status change, keyed by the instrument version it produced, so one version is one step even under a race.
+/// </summary>
+internal sealed class CustomerInstrumentMovementRow : IFinanceTenantRow
+{
+    public Guid Id { get; set; }
+    public Guid CompanyId { get; set; }
+    public Guid InstrumentId { get; set; }
+    public long Version { get; set; }
+    public int? FromStatus { get; set; }
+    public int ToStatus { get; set; }
+    public DateOnly OccurredOn { get; set; }
+    public Guid? TreasuryAccountId { get; set; }
+    public Guid? CollectionSourceId { get; set; }
+    public string? Note { get; set; }
+    public string RecordedBy { get; set; } = string.Empty;
+    public DateTimeOffset RecordedAtUtc { get; set; }
+    public string CorrelationId { get; set; } = string.Empty;
 }
 
 /// <summary>Organization's company, referenced by identity only (the table is Organization's, not migrated here).</summary>

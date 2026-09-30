@@ -15,6 +15,48 @@ public static class InventoryPermissionManifestV1
 
     /// <summary>Create and explicitly release a physical stock allocation. Company-wide.</summary>
     public const string PhysicalAllocationWrite = "inventory.physical-allocation.write";
+
+    /// <summary>
+    /// Record one same-company label split or merge (R19, DEC-LBL-002/003). Company-wide. The literal is the
+    /// owner's technical mapping, confirmed by the coordinator (technical names are not Sinan's to pick,
+    /// #66/5808295853 and #66/5811361336). Who holds it is the user's decision of 2026-09-27: only a disposable
+    /// R19 browser test actor in the per-run database, no real user and no seeded role; the real-user mapping
+    /// stays with the persona card #66/5802952566. A separate Inventory-owned name follows #66/5806047097 by
+    /// ANALOGY only: that ruling decided the STK/T11 physical-allocation command, not split/merge authority.
+    /// Registration and classification (company-wide, not Critical) are the central writer's.
+    /// </summary>
+    public const string LabelTransformationRecord = "inventory.label-transformation.record";
+
+    /// <summary>
+    /// ST-05 / AT-037: record one physical count of one stocked label with its mandatory reason (DEC-STK-007
+    /// "sebep ve yetki"). Company-wide. Recording changes no stock; a difference waits for
+    /// <see cref="StockCountApprove"/>. The literal is the owner's technical mapping (technical names are not
+    /// Sinan's to pick, #66/5808295853 and #66/5811361336); registration, classification and every grant are the
+    /// central writer's and the user's.
+    /// </summary>
+    public const string StockCountRecord = "inventory.stock-count.record";
+
+    /// <summary>
+    /// ST-05 / AT-037: approve (post) or reject one recorded count difference. Company-wide. A separate name from
+    /// <see cref="StockCountRecord"/> because the difference is not final without an approval (AT-037) and the
+    /// adjuster and the approver may be different people (Master v3 §12.2). Registration and grants are central.
+    /// </summary>
+    public const string StockCountApprove = "inventory.stock-count.approve";
+
+    /// <summary>
+    /// ST-02 scrap write-off: record that part or all of one stocked label is scrap, with its mandatory reason.
+    /// Company-wide. Recording changes no stock; the scrap waits for <see cref="StockScrapApprove"/>. The literal is
+    /// the owner's technical mapping, by analogy with <see cref="StockCountRecord"/>; registration, classification
+    /// and every grant are the central writer's and the user's.
+    /// </summary>
+    public const string StockScrapRecord = "inventory.stock-scrap.record";
+
+    /// <summary>
+    /// ST-02 scrap write-off: approve (post) or reject one recorded scrap. Company-wide. A separate name from
+    /// <see cref="StockScrapRecord"/> so the recorder and the approver can be different people (fail-closed
+    /// maker≠checker while the scrap approval authority is undecided). Registration and grants are central.
+    /// </summary>
+    public const string StockScrapApprove = "inventory.stock-scrap.approve";
 }
 
 /// <summary>The opening count as the client sends it: one physical count sheet of one location.</summary>

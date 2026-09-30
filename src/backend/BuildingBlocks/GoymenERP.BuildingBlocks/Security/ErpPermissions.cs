@@ -9,6 +9,17 @@ public static class ErpPermissions
     public const string OrganizationLocationsStatusUpdate =
         "organization.locations.status.update";
 
+    /// <summary>
+    /// Organization master edit (create and edit sites, locations and work centres), the owner's
+    /// OrganizationPermissionManifestV1 names. Sites write is company-wide only (a site has no parent inside the
+    /// company); locations and work-centres write are scoped like <see cref="OrganizationLocationsStatusUpdate"/>.
+    /// None is Critical: no source makes a master-data edit a grant-time dual-control duty. The user's decision of
+    /// 2026-09-27 grants them only to a disposable org03 browser actor; the real-user mapping stays a human gate.
+    /// </summary>
+    public const string OrganizationSitesWrite = "organization.sites.write";
+    public const string OrganizationLocationsWrite = "organization.locations.write";
+    public const string OrganizationWorkCentersWrite = "organization.work-centers.write";
+
     public const string CounterpartyPartiesRead = "counterparty.parties.read";
     public const string CounterpartyPartiesCreate = "counterparty.parties.create";
     public const string CounterpartyPartiesUpdateBasic = "counterparty.parties.update.basic";
@@ -60,6 +71,45 @@ public static class ErpPermissions
     /// not Critical: no approved source adds grant-time dual control for this name.
     /// </summary>
     public const string InventoryPhysicalAllocationWrite = "inventory.physical-allocation.write";
+
+    /// <summary>
+    /// R19 / AT-038: record one same-company label split or merge (DEC-LBL-002/003), the Inventory owner's
+    /// name (<c>InventoryPermissionManifestV1.LabelTransformationRecord</c>, same string). The literal is the
+    /// owner's technical mapping, confirmed by the coordinator (session decision 2026-09-27; technical names are
+    /// not Sinan's, #66/5808295853 and #66/5811361336); a separate Inventory-owned command name follows the
+    /// STK/T11 separation of #66/5806047097 by analogy only. Registration grants nothing: no seeded role and no
+    /// real user receives it; its only grant is a disposable R19 browser test actor in the per-run database, and
+    /// the real-user mapping stays with the persona card #66/5802952566. Company-wide only: the command names
+    /// labels of the server-resolved company and has no narrower scope dimension. Not Critical: no approved
+    /// source adds grant-time dual control for it.
+    /// </summary>
+    public const string InventoryLabelTransformationRecord = "inventory.label-transformation.record";
+
+    /// <summary>
+    /// AT-037 / DEC-STK-007 stock count (user decision 2026-09-27): <c>record</c> enters a counted quantity with a
+    /// mandatory reason on a label's single position; <c>approve</c> decides a pending difference. Until the
+    /// critical-difference threshold is decided (INV-R20-R21-01 Q2, #66/5840984992) every non-zero difference needs
+    /// an actor other than its counter (fail-closed maker≠checker). No seeded role or real user receives either name;
+    /// the only grants are two different disposable r14 browser test actors, and the real-user mapping stays with the
+    /// persona card. Company-wide only, as the label commands. Not Critical: no approved source adds grant-time dual
+    /// control for them.
+    /// </summary>
+    public const string InventoryStockCountRecord = "inventory.stock-count.record";
+
+    /// <inheritdoc cref="InventoryStockCountRecord"/>
+    public const string InventoryStockCountApprove = "inventory.stock-count.approve";
+
+    /// <summary>
+    /// ST-02 scrap write-off (hurda/fire çıkışı), the stock-count pattern: <c>record</c> enters the scrapped kg of a
+    /// label's single position with a mandatory reason; <c>approve</c> decides it and only then posts one Scrap
+    /// movement. Until the scrap approval authority is decided every scrap needs an actor other than its recorder
+    /// (fail-closed maker≠checker). No seeded role or real user receives either name; the only grants are two
+    /// different disposable r14 browser test actors. Company-wide only. Not Critical.
+    /// </summary>
+    public const string InventoryStockScrapRecord = "inventory.stock-scrap.record";
+
+    /// <inheritdoc cref="InventoryStockScrapRecord"/>
+    public const string InventoryStockScrapApprove = "inventory.stock-scrap.approve";
 
     /// <summary>
     /// Finance bank-account master (FS0, #312): names are the Finance owner's technical mapping
@@ -191,6 +241,31 @@ public static class ErpPermissions
     public const string FinanceManualBankPaymentRecord = "finance.manual-bank-payment.record";
 
     /// <summary>
+    /// DEC-FIN-016 customer cheque / promissory-note portfolio: the Finance owner's names
+    /// (FinancePermissionNames, same strings). Registration makes them measurable; it grants nothing — the
+    /// user's decision of 2026-09-27 gives them only to the disposable fin01 browser actor, and the real-user
+    /// mapping stays a human gate. Company-wide only: the portfolio belongs to the server-resolved company and
+    /// has no narrower scope dimension. Not Critical: no source makes receiving, a status change or the
+    /// collection a grant-time dual-control duty. The customer is credited at collection (user decision
+    /// 2026-09-27); the risk view reads under the read name and discloses amounts only with the amount name.
+    /// </summary>
+    public const string FinanceCustomerInstrumentRead = "finance.customer-instrument.read";
+    public const string FinanceCustomerInstrumentAmountRead = "finance.customer-instrument.amount.read";
+    public const string FinanceCustomerInstrumentReceive = "finance.customer-instrument.receive";
+    public const string FinanceCustomerInstrumentStatusChange = "finance.customer-instrument.status.change";
+    public const string FinanceCustomerInstrumentCollect = "finance.customer-instrument.collect";
+
+    /// <summary>
+    /// Finance party ledger (cari hesap ekstresi): the Finance owner's names (FinancePermissionNames, same strings).
+    /// Registration makes them measurable; it grants nothing — the user's decision of 2026-09-28 gives them only to
+    /// the disposable fin01 browser actor, and the real-user mapping stays a human gate. Company-wide only: the
+    /// ledger reads the server-resolved company's recorded facts. Not Critical: reads only; amounts are disclosed
+    /// only with the amount name.
+    /// </summary>
+    public const string FinancePartyLedgerRead = "finance.party-ledger.read";
+    public const string FinancePartyLedgerAmountRead = "finance.party-ledger.amount.read";
+
+    /// <summary>
     /// F-03 allocation commands. Registration makes the Finance owner's permission name available
     /// to endpoint authorization; it grants no role or user access.
     /// </summary>
@@ -269,6 +344,38 @@ public static class ErpPermissions
     public const string SalesOrdersPriceRead = "sales.orders.price.read";
 
     /// <summary>
+    /// DEC-SAL-003 (KILITLI): moving the requested delivery dates of an order (POST …/{id}/delivery-schedule) without
+    /// re-approval, audited — the Sales owner's name (<c>SalesPermissionManifestV1.OrdersDeliveryScheduleWrite</c>, same
+    /// string). The literal is the owner's technical mapping, confirmed by the coordinator (technical names are not
+    /// Sinan's, #66/5808295853 and #66/5811361336). A SEPARATE name because the decision gives the update to the
+    /// planning/shipping role: <see cref="SalesDraftsCreate"/>, <see cref="SalesOrdersApprove"/> and the price names do
+    /// not confer it, and it confers none of them. Registration grants nothing: no seeded role and no real user receives
+    /// it; its only grant (user decision 2026-09-27) is the disposable s04 planner in the per-run browser database, and
+    /// the real-user mapping stays a human gate. Company-wide only, like the other Sales names. Not Critical: no approved
+    /// source adds grant-time dual control for it.
+    /// </summary>
+    public const string SalesOrdersDeliveryScheduleWrite = "sales.orders.delivery-schedule.write";
+
+    /// <summary>
+    /// DEC-SAL-005 / AT-007: cancel an approved order after its impact preview (Sales owner name
+    /// SalesPermissionManifestV1.OrdersCancel). Its own name: create, approve, price and delivery-schedule names do not
+    /// confer it, and it confers none of them. Registration grants nothing: its only grant (user decision 2026-09-27) is
+    /// the disposable s04 canceller in the per-run browser database; the real-user mapping stays a human gate.
+    /// Company-wide only, like the other Sales names. Not Critical: the user decided a single authorised person cancels
+    /// (2026-09-27); no approved source adds grant-time dual control.
+    /// </summary>
+    public const string SalesOrdersCancel = "sales.orders.cancel";
+
+    /// <summary>
+    /// DEC-SAL-002 / AT-023: revise an approved order's line quantities into a new revision that needs re-approval (Sales
+    /// owner name SalesPermissionManifestV1.OrdersQuantityWrite). Its own name: create, approve, price, delivery-schedule
+    /// and cancel names do not confer it. Registration grants nothing: its only grant (user decision 2026-09-28) is the
+    /// disposable s04 preparer in the per-run browser database; the real-user mapping stays a human gate. Company-wide
+    /// only, like the other Sales names. Not Critical: the revision itself returns to the approval flow.
+    /// </summary>
+    public const string SalesOrdersQuantityWrite = "sales.orders.quantity.write";
+
+    /// <summary>
     /// LOG-4a (Business #66 5737790175: the loading instruction on approved order lines, one stock effect): the
     /// Logistics owner's names (LogisticsPermissionManifestV1), the backend owners' technical mapping (Business
     /// #254 5654539215) recorded and confirmed by the coordinator (#66 5743488059). Registered, not granted: no
@@ -284,6 +391,48 @@ public static class ErpPermissions
 
     /// <inheritdoc cref="LogisticsLoadingInstructionsCreate"/>
     public const string LogisticsLoadsRecord = "logistics.loads.record";
+
+    /// <inheritdoc cref="LogisticsLoadingInstructionsCreate"/>
+    public const string LogisticsShipmentsRecord = "logistics.shipments.record";
+
+    /// <inheritdoc cref="LogisticsLoadingInstructionsCreate"/>
+    public const string LogisticsDeliveriesRecord = "logistics.deliveries.record";
+
+    /// <inheritdoc cref="LogisticsLoadingInstructionsCreate"/>
+    public const string LogisticsWeighingsRecord = "logistics.weighings.record";
+
+    /// <summary>
+    /// AT-055: prepare a dispatch-note (irsaliye) DRAFT from an issued instruction's definite shipments (LogisticsPermissionManifestV1;
+    /// L-08). Its own name, aliasing no other. Registered, not granted: no role, seed or user receives it here. Company-wide only.
+    /// Not Critical.
+    /// </summary>
+    public const string LogisticsDispatchNotesCreate = "logistics.dispatch-notes.create";
+
+    /// <summary>
+    /// AT-055 (user decision 2026-09-30): approve (finalise) a dispatch-note draft — the company's gap-free system number is assigned
+    /// on approval — and record the official e-İrsaliye number of an approved note (LogisticsPermissionManifestV1). Its own name.
+    /// No DEC-* documents a maker-checker rule for the irsaliye, so the preparer is not barred from approving
+    /// (ASSUMPTION-AT055-APPROVER); segregating the duties is a grant decision. Registered, not granted: no role, seed or user
+    /// receives it here. Company-wide only. Not Critical: no approved source adds grant-time dual control for this name.
+    /// </summary>
+    public const string LogisticsDispatchNotesApprove = "logistics.dispatch-notes.approve";
+
+    /// <summary>
+    /// AT-055 (user decision 2026-09-30): cancel a draft or an approved dispatch note with a reason — never a delete; the
+    /// cancellation releases its shipments for a new note (LogisticsPermissionManifestV1). Its own name. Registered, not granted.
+    /// Company-wide only. Not Critical.
+    /// </summary>
+    public const string LogisticsDispatchNotesCancel = "logistics.dispatch-notes.cancel";
+
+    /// <summary>
+    /// AT-025: the operations work list's two SEPARATE section reads (LogisticsPermissionManifestV1) — the sales section (L-01) and
+    /// the purchase section (L-09), each its own name so that neither implies the other (Sinan #66 5738113623 §4: each read its own
+    /// name, deny-first). Registered, not granted: no role, seed or user receives them here. Company-wide only. Not Critical.
+    /// </summary>
+    public const string LogisticsOperationsSalesWorkRead = "logistics.operations-work.sales.read";
+
+    /// <inheritdoc cref="LogisticsOperationsSalesWorkRead"/>
+    public const string LogisticsOperationsPurchaseWorkRead = "logistics.operations-work.purchase.read";
 
     /// <summary>
     /// PUR-4a (Business #66 5737790175: the purchase supply link of the core chain): the Purchasing owner's names
@@ -302,6 +451,9 @@ public static class ErpPermissions
 
     /// <inheritdoc cref="PurchasingOrdersCreate"/>
     public const string PurchasingOrdersApprove = "purchasing.orders.approve";
+
+    /// <summary>Records a physical receipt; registered separately from order create/read/approve and grants nothing.</summary>
+    public const string PurchasingGoodsReceiptsRecord = "purchasing.goods-receipts.record";
 
     /// <summary>
     /// ACC-V0a: the Accounting owner's names (AccountingPermissionManifestV1), the backend owners' technical mapping
@@ -340,11 +492,40 @@ public static class ErpPermissions
     /// <inheritdoc cref="AccountingNormalJournalDraftCreate"/>
     public const string AccountingNormalJournalDraftApprove = "accounting.normal-journal.draft.approve";
 
+    /// <summary>
+    /// ACC reversal proposal and approval actions. Registration makes the Accounting owner's exact
+    /// names measurable and grants nothing. Both are company-wide because a journal and its reversal
+    /// proposal belong to the server-resolved company and have no narrower scope dimension. They are
+    /// not Critical: command-time maker-checker is enforced by the Accounting lifecycle, while this
+    /// catalogue does not introduce a grant-time dual-control policy.
+    /// </summary>
+    public const string AccountingJournalReversePropose = "accounting.journal.reverse.propose";
+
+    /// <inheritdoc cref="AccountingJournalReversePropose"/>
+    public const string AccountingJournalReverseApprove = "accounting.journal.reverse.approve";
+
+    /// <summary>
+    /// ERP-000G / AT-065 (document vault core): the vault owner's names (DocumentsPermissionManifestV1). Read lists an
+    /// owner record's documents and downloads a clean version; upload stores a new document on an owner record. Both
+    /// are measured ON TOP of the owner record's own read (the Cari party: counterparty.parties.read), so a document is
+    /// never more visible than its record. Registered, not granted: no role, seed or user receives them here; the only
+    /// grants are the disposable c02 browser actors. Company-wide only: a document is a company record. Not Critical.
+    /// </summary>
+    public const string DocumentsFilesRead = "documents.files.read";
+
+    /// <inheritdoc cref="DocumentsFilesRead"/>
+    public const string DocumentsFilesUpload = "documents.files.upload";
+
     public const string IdentityProfileRead = "identity.profile.read";
     public const string IdentityAccessRequest = "identity.access.request";
     public const string IdentityAccessApprove = "identity.access.approve";
     public const string IdentityRolesManage = "identity.roles.manage";
     public const string IdentityAuditRead = "identity.audit.read";
+    /// <summary>
+    /// SY-01/SY-02 read-only access view: who holds which role, permission and scope in the company. Critical and
+    /// company-wide only (user decision 2026-09-28); no seeded role holds it.
+    /// </summary>
+    public const string IdentityAssignmentsRead = "identity.assignments.read";
 
     public static IReadOnlySet<string> All { get; } = new HashSet<string>(
         [
@@ -353,6 +534,9 @@ public static class ErpPermissions
             OrganizationLocationsRead,
             OrganizationWorkCentersRead,
             OrganizationLocationsStatusUpdate,
+            OrganizationSitesWrite,
+            OrganizationLocationsWrite,
+            OrganizationWorkCentersWrite,
             CounterpartyPartiesRead,
             CounterpartyPartiesCreate,
             CounterpartyPartiesUpdateBasic,
@@ -364,6 +548,9 @@ public static class ErpPermissions
             SalesOrdersApprove,
             SalesOrdersPriceWrite,
             SalesOrdersPriceRead,
+            SalesOrdersDeliveryScheduleWrite,
+            SalesOrdersCancel,
+            SalesOrdersQuantityWrite,
             ManufacturingPlansWrite,
             ManufacturingPlansApprove,
             ManufacturingOrdersCreate,
@@ -375,12 +562,26 @@ public static class ErpPermissions
             InventoryBalancesRead,
             InventoryOpeningStockRecord,
             InventoryPhysicalAllocationWrite,
+            InventoryLabelTransformationRecord,
+            InventoryStockCountRecord,
+            InventoryStockCountApprove,
+            InventoryStockScrapRecord,
+            InventoryStockScrapApprove,
             LogisticsLoadingInstructionsCreate,
             LogisticsLoadingInstructionsRead,
             LogisticsLoadsRecord,
+            LogisticsShipmentsRecord,
+            LogisticsDeliveriesRecord,
+            LogisticsWeighingsRecord,
+            LogisticsDispatchNotesCreate,
+            LogisticsDispatchNotesApprove,
+            LogisticsDispatchNotesCancel,
+            LogisticsOperationsSalesWorkRead,
+            LogisticsOperationsPurchaseWorkRead,
             PurchasingOrdersCreate,
             PurchasingOrdersRead,
             PurchasingOrdersApprove,
+            PurchasingGoodsReceiptsRecord,
             AccountingPeriodsRead,
             AccountingPeriodsPropose,
             AccountingPeriodsApprove,
@@ -389,6 +590,8 @@ public static class ErpPermissions
             AccountingPostingQueuesRead,
             AccountingNormalJournalDraftCreate,
             AccountingNormalJournalDraftApprove,
+            AccountingJournalReversePropose,
+            AccountingJournalReverseApprove,
             FinanceBankAccountRead,
             FinanceBankAccountPropose,
             FinanceBankAccountApprove,
@@ -402,12 +605,22 @@ public static class ErpPermissions
         FinanceManualBankPaymentDraftRead,
         FinanceManualBankPaymentApprove,
         FinanceManualBankPaymentRecord,
+        FinanceCustomerInstrumentRead,
+        FinanceCustomerInstrumentAmountRead,
+        FinanceCustomerInstrumentReceive,
+        FinanceCustomerInstrumentStatusChange,
+        FinanceCustomerInstrumentCollect,
+        FinancePartyLedgerRead,
+        FinancePartyLedgerAmountRead,
         FinanceAllocationWrite,
+            DocumentsFilesRead,
+            DocumentsFilesUpload,
             IdentityProfileRead,
             IdentityAccessRequest,
             IdentityAccessApprove,
             IdentityRolesManage,
             IdentityAuditRead,
+            IdentityAssignmentsRead,
         ],
         StringComparer.Ordinal);
 
@@ -416,6 +629,7 @@ public static class ErpPermissions
             IdentityAccessApprove,
             IdentityRolesManage,
             IdentityAuditRead,
+            IdentityAssignmentsRead,
             FinanceBankAccountPropose,
             FinanceBankAccountApprove,
         ],
@@ -423,6 +637,7 @@ public static class ErpPermissions
 
     public static IReadOnlySet<string> CompanyWideOnly { get; } = new HashSet<string>(
         [
+            OrganizationSitesWrite,
             CounterpartyPartiesRead,
             CounterpartyPartiesCreate,
             CounterpartyPartiesUpdateBasic,
@@ -434,6 +649,9 @@ public static class ErpPermissions
             SalesOrdersApprove,
             SalesOrdersPriceWrite,
             SalesOrdersPriceRead,
+            SalesOrdersDeliveryScheduleWrite,
+            SalesOrdersCancel,
+            SalesOrdersQuantityWrite,
             ManufacturingPlansWrite,
             ManufacturingPlansApprove,
             ManufacturingOrdersCreate,
@@ -445,12 +663,26 @@ public static class ErpPermissions
             InventoryBalancesRead,
             InventoryOpeningStockRecord,
             InventoryPhysicalAllocationWrite,
+            InventoryLabelTransformationRecord,
+            InventoryStockCountRecord,
+            InventoryStockCountApprove,
+            InventoryStockScrapRecord,
+            InventoryStockScrapApprove,
             LogisticsLoadingInstructionsCreate,
             LogisticsLoadingInstructionsRead,
             LogisticsLoadsRecord,
+            LogisticsShipmentsRecord,
+            LogisticsDeliveriesRecord,
+            LogisticsWeighingsRecord,
+            LogisticsDispatchNotesCreate,
+            LogisticsDispatchNotesApprove,
+            LogisticsDispatchNotesCancel,
+            LogisticsOperationsSalesWorkRead,
+            LogisticsOperationsPurchaseWorkRead,
             PurchasingOrdersCreate,
             PurchasingOrdersRead,
             PurchasingOrdersApprove,
+            PurchasingGoodsReceiptsRecord,
             AccountingPeriodsRead,
             AccountingPeriodsPropose,
             AccountingPeriodsApprove,
@@ -459,6 +691,8 @@ public static class ErpPermissions
             AccountingPostingQueuesRead,
             AccountingNormalJournalDraftCreate,
             AccountingNormalJournalDraftApprove,
+            AccountingJournalReversePropose,
+            AccountingJournalReverseApprove,
             FinanceBankAccountRead,
             FinanceBankAccountPropose,
             FinanceBankAccountApprove,
@@ -472,8 +706,18 @@ public static class ErpPermissions
         FinanceManualBankPaymentDraftRead,
         FinanceManualBankPaymentApprove,
         FinanceManualBankPaymentRecord,
+        FinanceCustomerInstrumentRead,
+        FinanceCustomerInstrumentAmountRead,
+        FinanceCustomerInstrumentReceive,
+        FinanceCustomerInstrumentStatusChange,
+        FinanceCustomerInstrumentCollect,
+        FinancePartyLedgerRead,
+        FinancePartyLedgerAmountRead,
         FinanceAllocationWrite,
+            DocumentsFilesRead,
+            DocumentsFilesUpload,
             IdentityAuditRead,
+            IdentityAssignmentsRead,
         ],
         StringComparer.Ordinal);
 

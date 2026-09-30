@@ -94,8 +94,28 @@ export function instructionDetail(
   summary: Record<string, unknown> = {},
   lines: readonly Record<string, unknown>[] = [instructionLine()],
   shares: readonly Record<string, unknown>[] = [],
+  weighing: Record<string, unknown> | null = null,
+  dispatchNotes: readonly Record<string, unknown>[] = [],
 ): Record<string, unknown> {
-  return { instruction: instructionSummary({ lineCount: lines.length, ...summary }), lines, shares }
+  return { instruction: instructionSummary({ lineCount: lines.length, ...summary }), lines, shares, weighing, dispatchNotes }
+}
+
+/** AT-053: a weighbridge record as the backend answers it (its calculation, never the client's). */
+export function weighingRecord(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    weighingId: 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee',
+    direction: 'TareFirst',
+    firstWeighingKg: '15000',
+    secondWeighingKg: '15004.3',
+    tareKg: '15000',
+    grossKg: '15004.3',
+    netKg: '4.3',
+    loadedKgAtWeighing: '4.5',
+    differenceKg: '-0.2',
+    recordedBy: 'SENTETIK-kantar',
+    recordedAtUtc: '2026-09-19T09:20:00Z',
+    ...overrides,
+  }
 }
 
 export function mutation(detail: Record<string, unknown>, isReplay = false, originalCorrelationId = 'corr-1'): Record<string, unknown> {
@@ -140,8 +160,20 @@ export interface HarnessConfig {
   readonly onCreate?: (attempt: number, call: RecordedCall) => Response | Promise<Response>
   readonly onIssue?: (call: RecordedCall) => Response | Promise<Response>
   readonly onLoad?: (lineId: string, call: RecordedCall) => Response | Promise<Response>
+  readonly onShipment?: (lineId: string, call: RecordedCall) => Response | Promise<Response>
+  readonly onDelivery?: (lineId: string, call: RecordedCall) => Response | Promise<Response>
+  readonly onWeighing?: (call: RecordedCall) => Response | Promise<Response>
+  /** AT-055: the dispatch-note draft command. */
+  readonly onDispatchNote?: (call: RecordedCall) => Response | Promise<Response>
+  /** AT-055: approve / cancel / e-dispatch-number on one note. */
+  readonly onDispatchNoteLifecycle?: (kind: string, dispatchNoteId: string, call: RecordedCall) => Response | Promise<Response>
+  readonly onAllocations?: (call: RecordedCall) => Response | Promise<Response>
   /** The price-free approved-order-lines read the picker uses. */
   readonly onApprovedLines?: (url: string, companyId: string | null) => Response | Promise<Response>
+  /** AT-025: the operations work list's sales section read. */
+  readonly onSalesWork?: (url: string, companyId: string | null) => Response | Promise<Response>
+  /** AT-025: the operations work list's purchase section read. */
+  readonly onPurchaseWork?: (url: string, companyId: string | null) => Response | Promise<Response>
 }
 
 export function installFetch(config: HarnessConfig = {}) {
@@ -169,15 +201,46 @@ export function installFetch(config: HarnessConfig = {}) {
           capabilities: config.capabilities ?? ALL_LOGISTICS,
         })
       }
+      if (url.includes('/logistics/operations-work/sales')) {
+        if (config.onSalesWork === undefined) throw new Error('unexpected sales work read')
+        return config.onSalesWork(url, call.companyId)
+      }
+      if (url.includes('/logistics/operations-work/purchase')) {
+        if (config.onPurchaseWork === undefined) throw new Error('unexpected purchase work read')
+        return config.onPurchaseWork(url, call.companyId)
+      }
       if (url.includes('/logistics/loading-instructions/approved-order-lines')) {
         if (config.onApprovedLines === undefined) throw new Error('unexpected approved-order-lines read')
         return config.onApprovedLines(url, call.companyId)
       }
+      if (url.includes('/inventory/physical-allocations')) {
+        if (config.onAllocations === undefined) throw new Error('unexpected allocation read')
+        return config.onAllocations(call)
+      }
       if (url.includes('/logistics/loading-instructions')) {
+        const realization = /\/lines\/([^/?]+)\/(shipments|deliveries)$/.exec(url)
+        if (call.method === 'POST' && realization !== null) {
+          const handle = realization[2] === 'shipments' ? config.onShipment : config.onDelivery
+          if (handle === undefined) throw new Error('unexpected realization')
+          return handle(decodeURIComponent(realization[1]), call)
+        }
         const load = /\/logistics\/loading-instructions\/[^/?]+\/lines\/([^/?]+)\/loads$/.exec(url)?.[1]
         if (call.method === 'POST' && load !== undefined) {
           if (config.onLoad === undefined) throw new Error('unexpected load')
           return config.onLoad(decodeURIComponent(load), call)
+        }
+        const lifecycle = /\/dispatch-notes\/([^/]+)\/(approve|cancel|e-dispatch-number)$/.exec(url)
+        if (call.method === 'POST' && lifecycle !== null) {
+          if (config.onDispatchNoteLifecycle === undefined) throw new Error('unexpected dispatch-note lifecycle command')
+          return config.onDispatchNoteLifecycle(lifecycle[2], decodeURIComponent(lifecycle[1]), call)
+        }
+        if (call.method === 'POST' && /\/dispatch-notes$/.test(url)) {
+          if (config.onDispatchNote === undefined) throw new Error('unexpected dispatch note')
+          return config.onDispatchNote(call)
+        }
+        if (call.method === 'POST' && /\/weighings$/.test(url)) {
+          if (config.onWeighing === undefined) throw new Error('unexpected weighing')
+          return config.onWeighing(call)
         }
         if (call.method === 'POST' && /\/issue$/.test(url)) {
           if (config.onIssue === undefined) throw new Error('unexpected issue')
@@ -231,3 +294,42 @@ export function deferred<T>() {
 
 /** Every word that must never appear on a Logistics screen (Business 5743412166). */
 export const FORBIDDEN_MONEY_WORDS = ['₺', 'fiyat', 'Fiyat', 'price', 'unitPrice', 'iskonto', 'İskonto', 'discount', 'para birimi'] as const
+
+/* ── AT-025: synthetic operations work rows (the LogisticsSalesWorkItemView / LogisticsPurchaseWorkItemView shapes) ── */
+
+export const salesRow = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
+  orderId: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+  documentNo: 'SENTETIK SO-0001',
+  lineId: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
+  lineNo: 1,
+  customerPartyId: '11111111-1111-1111-1111-111111111111',
+  customerName: 'Sentetik Müşteri',
+  productId: '22222222-2222-2222-2222-222222222222',
+  productCode: 'GDC-001',
+  productName: 'Sentetik rulo',
+  unitId: '44444444-4444-4444-4444-444444444444',
+  unitCode: 'kg',
+  ordered: '12.5',
+  instructed: '10',
+  loaded: '8.5',
+  shipped: '4',
+  delivered: '2.25',
+  requestedDeliveryDate: '2026-09-25',
+  ...overrides,
+})
+
+export const purchaseRow = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
+  orderId: 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee',
+  orderEffectiveOn: '2026-09-19',
+  lineId: 'ffffffff-ffff-ffff-ffff-ffffffffffff',
+  lineNo: 1,
+  kind: 'General',
+  supplierPartyId: '33333333-3333-3333-3333-333333333333',
+  supplierName: 'Sentetik Tedarikçi',
+  productId: '22222222-2222-2222-2222-222222222222',
+  unitId: '44444444-4444-4444-4444-444444444444',
+  committed: '100',
+  accepted: '40',
+  remaining: '60',
+  ...overrides,
+})

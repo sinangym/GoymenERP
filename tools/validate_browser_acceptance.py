@@ -120,8 +120,10 @@ _ACTOR_KEY = re.compile(r"^BootstrapIdentity__Users__(0|[1-9][0-9]*)__(UserId|Di
 MAX_SUITE_ACTORS = 8
 SUITE_API_EXTENSIONS = {
     # U-02: the Product runtime's issuer binding, matching the suite seed's local user and
-    # external identity (ÜRÜN, #319 P3).
-    "u02": {"issuer": True, "actors": False, "identity": True},
+    # external identity (ÜRÜN, #319 P3). U-01-360 (#466, user decision 2026-09-27): one disposable
+    # activator actor (u02-activator) with its Identity user and a company membership only; its Product
+    # master Read + Activate grant is written by the gated seed writer, never by this override.
+    "u02": {"issuer": True, "actors": True, "identity": True},
     # ORG-03: extra synthetic development actors after the canonical two (ORG, #319 P3-1), and
     # since the browser slice, their Identity users and grants — no seeded role reads work centres
     # WITHOUT locations, which is exactly the user this suite exists to walk.
@@ -138,8 +140,8 @@ SUITE_API_EXTENSIONS = {
     "s04": {"issuer": True, "actors": True, "identity": True},
     # ACC-01 (FİNANS, ACC-V0b): a preparer and an approver actor with their Identity users and grants.
     "acc01": {"issuer": False, "actors": True, "identity": True},
-    # L-04 (SİPARİŞ): a preparer, a loader and a reader actor plus the two Sales seed actors, with their grants.
-    "l04": {"issuer": False, "actors": True, "identity": True},
+    # L-04 (SİPARİŞ): the actors plus one non-actor Product issuer materialize the real Product fixture.
+    "l04": {"issuer": True, "actors": True, "identity": True},
     # PUR-01 (SATINALMA): the existing Product issuer plus creator, approver and read-only actors with
     # disposable Identity users and grants. The issuer itself has no actor, role, assignment or grant.
     "pur01": {"issuer": True, "actors": True, "identity": True},
@@ -196,10 +198,22 @@ SUITE_IDENTITY_PERMISSIONS = {
     # deliberate. org03 varies the permissions to show a capability boundary; c02 holds them CONSTANT
     # and varies the COMPANY, so that when the other-company actor is refused, permissions cannot be
     # the explanation. A closed list of two, therefore, with no per-actor subset to record.
-    "c02": ("counterparty.parties.create", "counterparty.parties.read"),
-    "org03": ("organization.work-centers.read", "organization.locations.read"),
-    # u02 seeds only the issuer's Identity user, which holds nothing (the issuer-user rule).
-    "u02": (),
+    # SY-01/SY-02 (user decision 2026-09-28): two further actors, c02-access-admin (A) and c02-access-admin-b (B),
+    # hold ONLY identity.assignments.read — the same company-fence design, now for the read-only access view.
+    # ERP-000G / AT-065: c02-creator and c02-other-company also hold the document vault's two names (the same names in
+    # different companies, the suite's design), for the Cari-card document journey (c02-documents.spec.ts).
+    "c02": ("counterparty.parties.create", "counterparty.parties.read", "identity.assignments.read",
+            "documents.files.read", "documents.files.upload"),
+    # ORG master edit (user decision 2026-09-27): a THIRD actor, org03-editor, holds the three reads its
+    # screens need (work-centers, locations, sites) plus the three master-edit writes. The two readers above
+    # keep their exact subsets, so the suite also shows a reader is offered no create/edit control.
+    "org03": ("organization.work-centers.read", "organization.locations.read", "organization.sites.read",
+              "organization.sites.write", "organization.locations.write", "organization.work-centers.write"),
+    # u02: the issuer's Identity user holds nothing (the issuer-user rule). The disposable activator's
+    # membership role carries only the baseline identity.profile.read, which no endpoint or shell
+    # capability uses: it establishes the fresh company membership Product authorization requires and
+    # opens nothing. Its Product authority is the seed's gated SYSTEM_ADMINISTRATOR-role grant (PRD-PERM-001 A).
+    "u02": ("identity.profile.read",),
     # SALES-A1 (coordinator): the approval and the draft's party read, for the v2b positive path.
     "s03": ("sales.drafts.create", "sales.drafts.read", "product.operational-selection.read",
             "counterparty.parties.read", "sales.orders.approve"),
@@ -220,7 +234,7 @@ SUITE_IDENTITY_PERMISSIONS = {
         "inventory.opening-stock.record",
         "product.operational-selection.read",
     ),
-    # The fourteen Finance names and the Cari owner's authorized party read. The list is the complete
+    # The nineteen Finance names and the Cari owner's authorized party read. The list is the complete
     # union of the disposable proposer and approver grants in fin01.override.yml.
     "fin01": (
         "finance.bank-account.read",
@@ -238,15 +252,30 @@ SUITE_IDENTITY_PERMISSIONS = {
         "finance.manual-bank-payment.draft.read",
         "finance.manual-bank-payment.approve",
         "finance.manual-bank-payment.record",
+        # DEC-FIN-016 (user decision 2026-09-27): the disposable fin01-proposer alone holds the five customer
+        # cheque / promissory-note names; the approver holds none of them.
+        "finance.customer-instrument.read",
+        "finance.customer-instrument.amount.read",
+        "finance.customer-instrument.receive",
+        "finance.customer-instrument.status.change",
+        "finance.customer-instrument.collect",
+        # Party ledger (user decision 2026-09-28): the disposable fin01-proposer alone holds the two ledger reads.
+        "finance.party-ledger.read",
+        "finance.party-ledger.amount.read",
     ),
     # SALES-A1's approval axis: the preparer creates and reads, the approver approves and reads, the reader reads.
     # SALES-A2a: the preparer reaches the Cari owner's contact information through its OWN party read.
     # S05 adds the two separate price names to that same disposable preparer; no other actor gains them.
+    # DEC-SAL-003 (user decision 2026-09-27): the disposable s04-planner alone adds the delivery-schedule write
+    # name beside sales.drafts.read; no other s04 actor holds it. DEC-SAL-005 (user decision 2026-09-27): the disposable
+    # s04-canceller alone adds sales.orders.cancel beside sales.drafts.read. DEC-SAL-002 (user decision 2026-09-28): the
+    # disposable preparer alone adds sales.orders.quantity.write, like its price write.
     "s04": ("sales.drafts.create", "sales.drafts.read", "sales.orders.approve",
             "counterparty.parties.read", "counterparty.parties.update.basic",
             "product.operational-selection.read", "sales.orders.price.read", "sales.orders.price.write",
             "inventory.opening-stock.record", "inventory.labels.read", "inventory.balances.read",
-            "inventory.physical-allocation.write"),
+            "inventory.physical-allocation.write", "sales.orders.delivery-schedule.write",
+            "sales.orders.cancel", "sales.orders.quantity.write"),
     # The six Accounting names. The preparer holds .approve on purpose — Ö4 must refuse its OWN proposal
     # although the grant is there — and holds periods.read alone in the second company; the approver holds
     # no journal or queue name, so those routes stay closed to it.
@@ -258,17 +287,36 @@ SUITE_IDENTITY_PERMISSIONS = {
     # approved-lines read reaches Cari through the ACTOR's own grant (the s03/s04 precedent), so without it
     # the owner answers nothing and the picker is silently empty (ASSUMPTION-LOG4B-3).
     "l04": ("logistics.loading-instructions.create", "logistics.loading-instructions.read", "logistics.loads.record",
-            "sales.drafts.create", "sales.drafts.read", "sales.orders.approve", "counterparty.parties.read"),
+            "logistics.shipments.record", "logistics.deliveries.record", "logistics.weighings.record",
+            # AT-055: the disposable loader prepares the dispatch-note draft, approves it and cancels it (user decision 2026-09-30).
+            "logistics.dispatch-notes.create", "logistics.dispatch-notes.approve", "logistics.dispatch-notes.cancel",
+            "sales.drafts.create", "sales.drafts.read", "sales.orders.approve", "counterparty.parties.read",
+            "inventory.opening-stock.record", "inventory.labels.read", "inventory.balances.read",
+            "inventory.physical-allocation.write", "product.operational-selection.read",
+            # AT-025: the disposable l04-operations reader and the seed-only l04-purchase-approver.
+            "logistics.operations-work.sales.read", "logistics.operations-work.purchase.read",
+            "purchasing.orders.read", "purchasing.orders.approve"),
     # PUR-01: the complete union of the disposable creator, approver and reader grants. The creator's
     # two owner-read names are the same intersection the real Purchasing create command already uses;
     # this closed list grants nothing outside the disposable normal profile.
+    # PUR-HOST (#478, user decision #5831467690): the disposable receiver adds only goods-receipts.record, and a
+    # separate stock reader adds only the two Inventory label reads that show the SAME received label.
     "pur01": ("purchasing.orders.read", "purchasing.orders.approve", "purchasing.orders.create",
-              "counterparty.parties.read", "product.operational-selection.read"),
+              "counterparty.parties.read", "product.operational-selection.read",
+              "purchasing.goods-receipts.record", "inventory.labels.read", "inventory.balances.read"),
     # R14: one Inventory recorder with opening and detail reads, one owner-read-only denied actor,
     # and one Organization location reader.
+    # R19 (user decision 2026-09-27): the disposable r14-transformer adds only the split/merge command name
+    # beside the two label reads; no other r14 actor holds it.
+    # AT-037 (user decision 2026-09-27): the disposable r14-counter holds only stock-count.record and the
+    # disposable r14-count-approver only stock-count.approve, each beside the two label reads (maker != checker).
+    # ST-02 scrap write-off: the disposable r14-scrapper holds only stock-scrap.record and the disposable
+    # r14-scrap-approver only stock-scrap.approve, each beside the two label reads (maker != checker).
     "r14": ("inventory.opening-stock.record", "product.operational-selection.read",
             "inventory.labels.read", "inventory.balances.read",
-            "organization.locations.read"),
+            "organization.locations.read", "inventory.label-transformation.record",
+            "inventory.stock-count.record", "inventory.stock-count.approve",
+            "inventory.stock-scrap.record", "inventory.stock-scrap.approve"),
 }
 
 
@@ -419,7 +467,8 @@ def validate_suite_identity(suite: str, extra: dict, actor_ids: list[str]) -> No
 FIXTURE_TOOL_SUITES_DIRECTORY = "tests/GoymenERP.BrowserSuiteFixtureTool/Suites"
 SUITE_FIXTURE_OUTPUTS: dict[str, frozenset[str]] = {
     # ÜRÜN's Suites/U02 seed: the company, gated code group, fixed synthetic technical family and actors.
-    "u02": frozenset({"companyId", "codeGroupId", "technicalFamilyId", "authorizedActor", "unauthorizedActor"}),
+    "u02": frozenset({"companyId", "codeGroupId", "technicalFamilyId", "authorizedActor", "unauthorizedActor",
+                      "activatorActor"}),
     # ORG's Suites/MFG seed (#323 5735635840): the actors, the company, the seeded work centre (read
     # through the real Organization API) and the plan -> approval -> order it writes through the real API.
     # MFG-ORD adds the closer actor; the list and the close need no further seeded row.
@@ -448,27 +497,33 @@ SUITE_FIXTURE_OUTPUTS: dict[str, frozenset[str]] = {
                       "ordinaryApproveDraftId", "ordinaryRejectDraftId", "withdrawalDraftId",
                       "productId", "productVersion", "productUnitId", "productUnitProfileId",
                       "productUnitProfileVersion", "productCode", "productName",
-                      "allocationLineId", "allocationLabelId", "allocationLabelVersion"}),
-    # FİNANS's Suites/ACC01 seed: the two actors and both companies. No Accounting row is seeded — the suite
-    # proposes, approves and closes through the real API, and the second company exists only to show that
-    # GDC's periods never appear there.
+                      "allocationLineId", "allocationLabelId", "allocationLabelVersion",
+                      "plannerActor", "scheduleDraftId"}),
+    # FİNANS's Suites/ACC01 seed: the two actors and both companies. Periods are proposed, approved and closed
+    # through the real API; since ACC-REV-UI phase 1 the seed also installs one fixed SENTETIK posted journal
+    # (gated fixture writer, owner posting path) so ACC01-09 can open M-04 detail and read M-06. Its id is read
+    # from the real API, so the output keys stay these four. The second company only shows GDC's rows never appear.
     "acc01": frozenset({"companyId", "companyBId", "preparerActor", "approverActor"}),
     # SİPARİŞ's Suites/L04 seed: the three actors, both companies, the customer (by id and name), the approved draft
-    # line, the instruction created and issued through the real API, and its open and gated-blocked lines.
+    # line, the instruction created and issued through the real API, its open and gated-blocked lines,
+    # and the shipment allocation/label created for the same disposable journey.
     # The customer's NAME is not exported: seed_export accepts only a GUID or an actor id, and the spec
     # asserts the deterministic SENTETIK label as a constant instead.
     "l04": frozenset({"preparerActor", "loaderActor", "readerActor", "companyId", "otherCompanyId", "customerPartyId",
                       "companyAccountId", "draftId", "approvedLineId", "instructionId", "blockedLineId",
-                      "openLineId"}),
+                      "openLineId", "shipmentAllocationId", "shipmentLabelId"}),
     # SATINALMA's Suites/PUR01 seed: the existing synthetic Draft approval axis plus the separate creator,
     # the real Cari-owned active Supplier account and Product's exact gated purchase-candidate tuple.
-    "pur01": frozenset({"creatorActor", "approverActor", "readerActor", "companyId", "otherCompanyId",
+    "pur01": frozenset({"creatorActor", "approverActor", "readerActor", "receiverActor", "stockReaderActor",
+                        "companyId", "otherCompanyId",
                         "orderId", "lineId", "supplierPartyId", "companyAccountId", "productId",
                         "productVersion", "productUnitId", "productUnitProfileId",
                         "productUnitProfileVersion", "productCode", "productName"}),
     # STOK's Suites/R14 seed: three actors, company fence, active Organization location and Product's
     # exact gated stock-candidate tuple. The browser creates the Inventory record itself.
-    "r14": frozenset({"recorderActor", "deniedActor", "arrangerActor", "companyId", "otherCompanyId",
+    "r14": frozenset({"recorderActor", "deniedActor", "arrangerActor", "transformerActor",
+                      "counterActor", "countApproverActor", "scrapperActor", "scrapApproverActor", "companyId",
+                      "otherCompanyId",
                       "locationId", "productId", "productVersion", "productUnitId",
                       "productUnitProfileId", "productUnitProfileVersion", "productCode", "productName"}),
 }

@@ -249,6 +249,13 @@ class WorkflowTests(unittest.TestCase):
                 "finance.manual-bank-payment.draft.read",
                 "finance.manual-bank-payment.approve",
                 "finance.manual-bank-payment.record",
+                "finance.customer-instrument.read",
+                "finance.customer-instrument.amount.read",
+                "finance.customer-instrument.receive",
+                "finance.customer-instrument.status.change",
+                "finance.customer-instrument.collect",
+                "finance.party-ledger.read",
+                "finance.party-ledger.amount.read",
             ),
             validator.SUITE_IDENTITY_PERMISSIONS["fin01"],
         )
@@ -268,8 +275,43 @@ class WorkflowTests(unittest.TestCase):
                 "inventory.labels.read",
                 "inventory.balances.read",
                 "inventory.physical-allocation.write",
+                # DEC-SAL-003: held only by the disposable s04-planner.
+                "sales.orders.delivery-schedule.write",
+                # DEC-SAL-005: held only by the disposable s04-canceller.
+                "sales.orders.cancel",
+                # DEC-SAL-002: held only by the disposable s04-preparer.
+                "sales.orders.quantity.write",
             ),
             validator.SUITE_IDENTITY_PERMISSIONS["s04"],
+        )
+
+    def test_l04_identity_permissions_include_the_shipment_delivery_and_inventory_axis(self):
+        self.assertEqual(
+            (
+                "logistics.loading-instructions.create",
+                "logistics.loading-instructions.read",
+                "logistics.loads.record",
+                "logistics.shipments.record",
+                "logistics.deliveries.record",
+                "logistics.weighings.record",
+                "logistics.dispatch-notes.create",
+                "logistics.dispatch-notes.approve",
+                "logistics.dispatch-notes.cancel",
+                "sales.drafts.create",
+                "sales.drafts.read",
+                "sales.orders.approve",
+                "counterparty.parties.read",
+                "inventory.opening-stock.record",
+                "inventory.labels.read",
+                "inventory.balances.read",
+                "inventory.physical-allocation.write",
+                "product.operational-selection.read",
+                "logistics.operations-work.sales.read",
+                "logistics.operations-work.purchase.read",
+                "purchasing.orders.read",
+                "purchasing.orders.approve",
+            ),
+            validator.SUITE_IDENTITY_PERMISSIONS["l04"],
         )
 
     def test_pur01_identity_permissions_are_the_creator_owner_reads_and_existing_approval_axis(self):
@@ -280,6 +322,9 @@ class WorkflowTests(unittest.TestCase):
                 "purchasing.orders.create",
                 "counterparty.parties.read",
                 "product.operational-selection.read",
+                "purchasing.goods-receipts.record",
+                "inventory.labels.read",
+                "inventory.balances.read",
             ),
             validator.SUITE_IDENTITY_PERMISSIONS["pur01"],
         )
@@ -292,6 +337,14 @@ class WorkflowTests(unittest.TestCase):
                 "inventory.labels.read",
                 "inventory.balances.read",
                 "organization.locations.read",
+                # R19: held only by the disposable r14-transformer.
+                "inventory.label-transformation.record",
+                # AT-037: record held only by r14-counter, approve only by r14-count-approver.
+                "inventory.stock-count.record",
+                "inventory.stock-count.approve",
+                # ST-02 scrap write-off: record held only by r14-scrapper, approve only by r14-scrap-approver.
+                "inventory.stock-scrap.record",
+                "inventory.stock-scrap.approve",
             ),
             validator.SUITE_IDENTITY_PERMISSIONS["r14"],
         )

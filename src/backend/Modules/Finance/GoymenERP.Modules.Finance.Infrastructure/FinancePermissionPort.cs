@@ -59,6 +59,16 @@ public sealed class FinancePermissionPort(
         FinanceAction.ReadManualBankPayments => FinancePermissionNames.ManualBankPaymentDraftRead,
         FinanceAction.ApproveManualBankPayment => FinancePermissionNames.ManualBankPaymentApprove,
         FinanceAction.RecordManualBankPayment => FinancePermissionNames.ManualBankPaymentRecord,
+        // DEC-FIN-016 first release: the portfolio's own names (FinancePermissionNames). Until the central registry
+        // knows them the port answers Unavailable (503) — "cannot tell", never a refusal.
+        FinanceAction.ReadCustomerInstruments => FinancePermissionNames.CustomerInstrumentRead,
+        FinanceAction.ReadCustomerInstrumentAmount => FinancePermissionNames.CustomerInstrumentAmountRead,
+        FinanceAction.ReceiveCustomerInstrument => FinancePermissionNames.CustomerInstrumentReceive,
+        FinanceAction.ChangeCustomerInstrumentStatus => FinancePermissionNames.CustomerInstrumentStatusChange,
+        FinanceAction.CollectCustomerInstrument => FinancePermissionNames.CustomerInstrumentCollect,
+        // The party ledger's own names; Unavailable (503) until the central registry knows them.
+        FinanceAction.ReadPartyLedger => FinancePermissionNames.PartyLedgerRead,
+        FinanceAction.ReadPartyLedgerAmount => FinancePermissionNames.PartyLedgerAmountRead,
         _ => null,
     };
 

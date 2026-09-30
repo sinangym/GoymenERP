@@ -15,7 +15,12 @@
  * After a recorded transition, and after a refusal that says the record moved (a stale version, a
  * state, the §13 cap, a block, a duplicate share), the detail is re-read — the answer is the server's.
  *
- * No shipment, delivery, stock, allocation or price: none of them exists on this screen (D3, LOG-5).
+ * LOG-5 adds independently capability-gated definite shipment and delivery; load remains non-physical.
+ * AT-053 adds the vehicle's manual weighbridge record (WeighingCommand.tsx): its facts are shown to every reader,
+ * above the shipment / delivery commands that follow it; the form is offered on an Issued instruction without one.
+ * AT-055 adds the dispatch-note (irsaliye) DRAFT (DispatchNoteCommand.tsx): the drafts and their lines are shown to every
+ * reader; the form offers the definite shipments not on a live note (a shipment is linked to at most one non-cancelled note);
+ * each note can be approved (the server numbers it), cancelled with a reason (releasing its shipments) and given its e-İrsaliye no.
  */
 
 import { useRef, useState } from 'react'
@@ -58,6 +63,9 @@ import { contextKey, contextKeyString, hasCapability, type ShellState } from '..
 import { StateBlock } from '../shell/StateBlock'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
 import styles from './LogisticsPages.module.css'
+import { RealizationCommands } from './RealizationCommands'
+import { WeighingFacts, WeighingForm } from './WeighingCommand'
+import { DispatchNoteFacts, DispatchNoteForm, DispatchNoteLifecycles } from './DispatchNoteCommand'
 
 export function InstructionDetailPage() {
   const shell = useShellState()
@@ -112,6 +120,13 @@ export function InstructionDetailPage() {
                 section, or the notice of the command that caused the version step would vanish with it. */}
             <IssueCommand key={`issue:${namespace ?? ''}:${detail.instruction.id}`} shell={shell} detail={detail} companyId={companyId} onRecorded={reread} />
             <LoadForm key={`load:${namespace ?? ''}:${detail.instruction.id}`} shell={shell} detail={detail} companyId={companyId} onRecorded={reread} />
+            <WeighingForm key={`weighing:${namespace ?? ''}:${detail.instruction.id}`} shell={shell} detail={detail} companyId={companyId} onRecorded={reread} />
+            <RealizationCommands key={`realization:${namespace ?? ''}:${shell.routeEntryGeneration}:${detail.instruction.id}`}
+              shell={shell} detail={detail} companyId={companyId} onRecorded={reread} />
+            <DispatchNoteLifecycles key={`dispatch-note-lifecycle:${namespace ?? ''}:${detail.instruction.id}`} shell={shell} detail={detail}
+              companyId={companyId} onRecorded={reread} />
+            <DispatchNoteForm key={`dispatch-note:${namespace ?? ''}:${detail.instruction.id}`} shell={shell} detail={detail} companyId={companyId}
+              onRecorded={reread} />
           </>
         )
       }
@@ -194,6 +209,8 @@ export function InstructionView({
                 <th scope="col" className={styles.numeric}>{T.shipped}</th>
                 <th scope="col" className={styles.numeric}>{T.delivered}</th>
                 <th scope="col" className={styles.numeric}>{T.remainingToLoad}</th>
+                <th scope="col" className={styles.numeric}>{T.loadedNotShipped}</th>
+                <th scope="col" className={styles.numeric}>{T.shippedNotDelivered}</th>
               </tr>
             </thead>
             <tbody>
@@ -220,6 +237,8 @@ export function InstructionView({
                   <td className={styles.numeric}>{line.shipped}</td>
                   <td className={styles.numeric}>{line.delivered}</td>
                   <td className={styles.numeric} data-testid={`logistics-line-${line.lineNo}-remaining`}>{line.remainingToLoad}</td>
+                  <td className={styles.numeric} data-testid={`logistics-line-${line.lineNo}-loaded-not-shipped`}>{line.loadedNotShipped}</td>
+                  <td className={styles.numeric} data-testid={`logistics-line-${line.lineNo}-shipped-not-delivered`}>{line.shippedNotDelivered}</td>
                 </tr>
               ))}
             </tbody>
@@ -260,6 +279,10 @@ export function InstructionView({
           </div>
         )}
       </section>
+
+      <WeighingFacts weighing={detail.weighing} />
+
+      <DispatchNoteFacts detail={detail} />
 
       {commands}
     </article>

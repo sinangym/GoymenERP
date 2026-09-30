@@ -12,10 +12,21 @@ import { classifyOutcome } from '../shell/uiState'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
 import styles from './SalesPages.module.css'
 
-/** Mounted only after the parent detail was successfully read in the same context. */
-export function SalesDraftRevisionHistory({ draftId, draftVersion }: {
+/** A line's quantity as the current detail carries it (the revision after the newest archived one). */
+export interface CurrentLineQuantity {
+  readonly lineId: string
+  readonly quantity: string
+}
+
+/**
+ * Mounted only after the parent detail was successfully read in the same context. DEC-SAL-002: each archived revision shows
+ * why it was superseded and, per line, the quantity of the revision that followed it (the next archived one, or the current
+ * detail for the newest) so the diff is read from the server's own records, never computed from an assumed baseline.
+ */
+export function SalesDraftRevisionHistory({ draftId, draftVersion, currentLines = [] }: {
   readonly draftId: string
   readonly draftVersion: string
+  readonly currentLines?: readonly CurrentLineQuantity[]
 }) {
   const shell = useShellState()
   const key = contextKey(shell)
@@ -50,8 +61,12 @@ export function SalesDraftRevisionHistory({ draftId, draftVersion }: {
       <p className={styles.muted}>{T.note}</p>
       {outcome?.type === 'ok-single' ? (
         outcome.data.items.length === 0 ? <p>{T.empty}</p> :
-          outcome.data.items.map((revision) => (
-            <ArchivedRevision key={revision.revision} revision={revision} />
+          outcome.data.items.map((revision, index, items) => (
+            <ArchivedRevision
+              key={revision.revision}
+              revision={revision}
+              next={index + 1 < items.length ? items[index + 1].lines : currentLines}
+            />
           ))
       ) : (
         <StateBlock
@@ -68,8 +83,12 @@ function Instant({ value }: { readonly value: string | null }) {
   return value === null ? T.unknown : <time dateTime={value}>{formatInstant(value)}</time>
 }
 
-function ArchivedRevision({ revision: r }: { readonly revision: DraftRevision }) {
+function ArchivedRevision({ revision: r, next }: {
+  readonly revision: DraftRevision
+  readonly next: readonly CurrentLineQuantity[]
+}) {
   const headingId = useId()
+  const nextQuantity = (lineId: string) => next.find((line) => line.lineId.toLowerCase() === lineId.toLowerCase())?.quantity ?? null
   return (
     <section className={styles.line} aria-labelledby={headingId} data-testid={`sales-revision-${r.revision}`}>
       <h3 className={styles.lineTitle} id={headingId}>{r.revision}</h3>
@@ -83,6 +102,7 @@ function ArchivedRevision({ revision: r }: { readonly revision: DraftRevision })
         <div><dt>{T.moneyProfile}</dt><dd className={styles.identifier}>{r.moneyProfileId}</dd></div>
         <div><dt>{T.moneyVersion}</dt><dd>{r.moneyProfileVersion}</dd></div>
         <div><dt>{T.moneyScale}</dt><dd>{r.moneyScale}</dd></div>
+        <div><dt>{T.reason}</dt><dd data-testid={`sales-revision-${r.revision}-reason`}>{r.reason ?? T.noReason}</dd></div>
       </dl>
       <div className={styles.tableWrap}>
         <table className={styles.table}>
@@ -90,11 +110,12 @@ function ArchivedRevision({ revision: r }: { readonly revision: DraftRevision })
           <thead><tr>
             <th scope="col">{T.lineNo}</th><th scope="col">{T.lineId}</th>
             <th scope="col">{T.product}</th><th scope="col">{T.productVersion}</th>
-            <th scope="col">{T.orderUnit}</th><th scope="col">{T.quantity}</th>
+            <th scope="col">{T.orderUnit}</th><th scope="col">{T.quantity}</th><th scope="col">{T.nextQuantity}</th>
             <th scope="col">{T.unitPrice}</th><th scope="col">{T.priceUnit}</th><th scope="col">{T.discount}</th>
           </tr></thead>
           <tbody>{r.lines.map((line) => {
             const hidden = line.priceDisclosure === 'Withheld'
+            const following = nextQuantity(line.lineId)
             return (
               <tr key={line.lineId} data-testid={`sales-revision-${r.revision}-line-${line.lineNo}`}>
                 <th scope="row">{line.lineNo}</th>
@@ -103,6 +124,9 @@ function ArchivedRevision({ revision: r }: { readonly revision: DraftRevision })
                 <td>{line.productVersion}</td>
                 <td className={styles.identifier}>{line.orderUnitId}</td>
                 <td className={styles.numeric}>{line.quantity}</td>
+                <td className={styles.numeric} data-testid={`sales-revision-${r.revision}-line-${line.lineNo}-next`}>
+                  {following === null ? T.unknown : following === line.quantity ? following : `${following} (${T.changed})`}
+                </td>
                 <td className={styles.numeric}>{hidden ? T.withheld : line.unitPrice ?? T.notPriced}</td>
                 <td className={styles.identifier}>{hidden ? T.withheld : line.priceUnitId ?? T.notSpecified}</td>
                 <td className={styles.numeric}>{hidden ? T.withheld : line.discountPercent ?? T.notSpecified}</td>

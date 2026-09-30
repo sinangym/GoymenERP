@@ -101,6 +101,72 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
             "SELECT COUNT(*) FROM inventory.Commands WHERE TargetId = @id", ("@id", legacy.IssueId)));
     }
 
+    /// <summary>
+    /// Fail-closed until NEEDS-SINAN #66/5830378162 decides the customer-owned / fason commercial-link grain
+    /// (<see cref="ManufacturingCustomerOwnedInputGuardV1"/>): a customer-owned parent and a company-owned parent in
+    /// third-party custody are both refused at the public issue port with the route's existing 409, inside the
+    /// owner transaction. Nothing is written by either module, a retry is refused again (no replay record exists),
+    /// and the parent label, its balance and the order stay exactly as they were.
+    /// </summary>
+    [SqlServerFact]
+    public async Task Manufacturing_input_issue_refuses_a_customer_owned_or_third_party_custodied_parent_without_any_effect()
+    {
+        await using var run = await StartManufacturingInventoryRunAsync();
+        var customer = Guid.NewGuid();
+        var authority = new ManufacturingHostAuthority(GrantedManufacturingScope());
+        await using var scope = ManufacturingHostScope.Create(run, CompanyA, authority);
+        var port = (IManufacturingInventoryInputIssuePortV1)scope.Host;
+
+        foreach (var (code, ownerKind, ownerId, custodianKind, custodianId) in new[]
+        {
+            ("SYN-MFG-HOST-CUSTOMER", StockPartyKind.Counterparty, customer, StockPartyKind.Company, CompanyA),
+            ("SYN-MFG-HOST-THIRD-PARTY-CUSTODY", StockPartyKind.Company, CompanyA, StockPartyKind.Counterparty, customer),
+        })
+        {
+            var parent = await SeedManufacturingParentAsync(run, code, 100m,
+                ownerKind, ownerId, custodianKind, custodianId);
+            var command = await SeedManufacturingOrderAsync(run, scope.Store, parent.Label.Id,
+                expectedLabelVersion: 2, quantity: 25m);
+            var portCommand = new ManufacturingInventoryInputIssuePortCommandV1(
+                command.OrderId,
+                command.ExpectedOrderVersion,
+                command.IssueId,
+                command.ParentLabelId,
+                command.MovementId,
+                command.Quantity,
+                command.OccurredAtUtc);
+            var metadata = ManufacturingHostMetadata(run, $"refused-{code}");
+
+            var refused = await Assert.ThrowsAsync<ManufacturingInventoryRealizationPortException>(() =>
+                port.IssueAsync(portCommand, metadata, CancellationToken.None));
+            Assert.Equal(
+                (ManufacturingApiStatus.Conflict, InventoryManufacturingRealizationCodesV1.ParentLabelContextConflict),
+                (refused.Status, refused.Code));
+
+            // The same attempt again is refused again: the rollback left no command record to replay.
+            var retried = await Assert.ThrowsAsync<ManufacturingInventoryInputIssueHostException>(() =>
+                scope.Host.IssueAsync(command, metadata));
+            Assert.Equal(ManufacturingCustomerOwnedInputGuardV1.RefusalCode, retried.Code);
+
+            Assert.Equal(0, await run.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM manufacturing.Facts WHERE Id = @id", ("@id", command.IssueId)));
+            Assert.Equal(1L, await run.ScalarAsync<long>(
+                "SELECT Version FROM manufacturing.Orders WHERE Id = @id", ("@id", command.OrderId)));
+            Assert.Equal(0, await run.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM inventory.Movements WHERE Id = @id", ("@id", command.MovementId)));
+            Assert.Equal(0, await run.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM inventory.Commands WHERE TargetId = @id", ("@id", command.IssueId)));
+            Assert.Equal(2L, await run.ScalarAsync<long>(
+                "SELECT Version FROM inventory.Labels WHERE Id = @label", ("@label", command.ParentLabelId)));
+            Assert.Equal(100m, await run.ScalarAsync<decimal>(
+                "SELECT SUM(QuantityKg) FROM inventory.Balances WHERE LabelId = @label",
+                ("@label", command.ParentLabelId)));
+            Assert.Equal(0, await run.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM audit.AuditEvents WHERE CorrelationId = @correlation",
+                ("@correlation", metadata.CorrelationId)));
+        }
+    }
+
     [SqlServerFact]
     public async Task Manufacturing_input_issue_refuses_inventory_orphan_without_backfilling_manufacturing()
     {
@@ -278,6 +344,40 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
     private static async Task<ManufacturingParentSeed> SeedManufacturingParentAsync(
         Run run, string code, decimal quantity) =>
         await SeedManufacturingParentForCompanyAsync(run, CompanyA, code, quantity);
+
+    private static async Task<ManufacturingParentSeed> SeedManufacturingParentAsync(
+        Run run,
+        string code,
+        decimal quantity,
+        StockPartyKind ownerKind,
+        Guid ownerId,
+        StockPartyKind custodianKind,
+        Guid custodianId)
+    {
+        var location = await InventoryHostLocationOfAsync(run, CompanyA);
+        var label = InventoryHostLabel(CompanyA, code);
+        await using var store = InventoryHostStore(run, CompanyA);
+        await store.Labels.SaveLabelAsync(label,
+            InventoryHostMetadata(run) with
+            {
+                CorrelationId = $"mfg-host-customer-label-{Guid.NewGuid():N}",
+            });
+        await store.Movements.RecordMovementAsync(
+            InventoryHostMovement(CompanyA, StockMovementKind.Receipt,
+                new StockSourceReference("synthetic.manufacturing-host-customer-parent", Guid.NewGuid()),
+                InventoryHostIn(new StockPosition(
+                    CompanyA,
+                    new StockOwner(ownerKind, ownerId),
+                    new StockCustodian(custodianKind, custodianId),
+                    location,
+                    label,
+                    BlockState.Free), quantity)),
+            InventoryHostMetadata(run) with
+            {
+                CorrelationId = $"mfg-host-customer-stock-{Guid.NewGuid():N}",
+            });
+        return new ManufacturingParentSeed(label, location);
+    }
 
     private static async Task<ManufacturingParentSeed> SeedManufacturingParentForCompanyAsync(
         Run run, Guid companyId, string code, decimal quantity)

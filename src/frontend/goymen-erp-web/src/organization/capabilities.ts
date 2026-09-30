@@ -31,6 +31,7 @@
  *   organization.locations.status  <- organization.locations.status.update
  *   organization.sites.read        <- organization.sites.read
  *   organization.work-centers.list <- organization.work-centers.read
+ *   organization.work-centers.detail <- organization.work-centers.read (ORG-04, the row's own read)
  *
  * Reading a location and being allowed to deactivate it are DIFFERENT authorities on
  * the server — the endpoints carry different `RequireAuthorization` attributes — so
@@ -96,6 +97,34 @@ export const ORGANIZATION_CAPABILITY = {
    * says per row whether its location card would open. The screen never derives that.
    */
   workCentersList: 'organization.work-centers.list',
+  /**
+   * ORG-04 — one work centre's read-only card (Business #66 5702892195).
+   * Route `/ayarlar/organizasyon/is-merkezleri/:workCenterId`.
+   *
+   * The same grant as ORG-03 and nothing more: the card is the list row's own record, read
+   * by the same scope predicate. The location link inside it follows the record's own
+   * `canOpenLocationDetail`, exactly as the row does; it is never derived here.
+   */
+  workCenterDetail: 'organization.work-centers.detail',
+  /**
+   * Master edit (first-release "create and edit sites, locations and work centres"). CONTROLS, not routes — each
+   * is read with `hasCapability` on the screen that hosts it, like `locationStatus`, and each stands on its
+   * record kind's own write permission, so the read grants never hand out a write surface:
+   *
+   *   organization.sites.manage        <- locations.read + sites.read + organization.sites.write (ORG-01)
+   *   organization.locations.create    <- locations.read + sites.read + organization.locations.write (ORG-01)
+   *   organization.locations.edit      <- locations.read + organization.locations.write (ORG-02)
+   *   organization.work-centers.create <- work-centers.read + locations.read + organization.work-centers.write (ORG-03)
+   *   organization.work-centers.edit   <- work-centers.read + organization.work-centers.write (ORG-04)
+   *
+   * The create controls also need the list they pick a parent from (sites for a location, locations for a work
+   * centre), which is why those reads are part of their grant.
+   */
+  sitesManage: 'organization.sites.manage',
+  locationCreate: 'organization.locations.create',
+  locationEdit: 'organization.locations.edit',
+  workCenterCreate: 'organization.work-centers.create',
+  workCenterEdit: 'organization.work-centers.edit',
 } as const
 
 export type OrganizationCapabilityId =
@@ -106,6 +135,7 @@ export const ORGANIZATION_ROUTE: Record<string, string> = {
   [ORGANIZATION_CAPABILITY.settingsList]: '/ayarlar/organizasyon',
   [ORGANIZATION_CAPABILITY.locationDetail]: '/ayarlar/organizasyon/lokasyon/:locationId',
   [ORGANIZATION_CAPABILITY.workCentersList]: '/ayarlar/organizasyon/is-merkezleri',
+  [ORGANIZATION_CAPABILITY.workCenterDetail]: '/ayarlar/organizasyon/is-merkezleri/:workCenterId',
 }
 
 /**
@@ -120,11 +150,17 @@ export const ORGANIZATION_NAV_LABEL: Record<string, string> = {
   [ORGANIZATION_CAPABILITY.settingsList]: 'Organizasyon',
   [ORGANIZATION_CAPABILITY.locationDetail]: '',
   [ORGANIZATION_CAPABILITY.workCentersList]: 'İş Merkezleri',
+  [ORGANIZATION_CAPABILITY.workCenterDetail]: '',
 }
 
 /** Concrete path to one location's card. */
 export function locationDetailPath(locationId: string): string {
   return `/ayarlar/organizasyon/lokasyon/${encodeURIComponent(locationId)}`
+}
+
+/** Concrete path to one work centre's card (ORG-04). */
+export function workCenterDetailPath(workCenterId: string): string {
+  return `/ayarlar/organizasyon/is-merkezleri/${encodeURIComponent(workCenterId)}`
 }
 
 /** Existing unpaged work-center route; this query only narrows its authorized result in the UI. */

@@ -278,6 +278,199 @@ partial class FinanceDbContextModelSnapshot : ModelSnapshot
             });
         });
 
+        modelBuilder.Entity("GoymenERP.Modules.Finance.Infrastructure.Persistence.CustomerInstrumentMovementRow", b =>
+            {
+                b.Property<Guid>("Id")
+                    .HasColumnType("uniqueidentifier");
+
+                b.Property<Guid?>("CollectionSourceId")
+                    .HasColumnType("uniqueidentifier");
+
+                b.Property<Guid>("CompanyId")
+                    .HasColumnType("uniqueidentifier");
+
+                b.Property<string>("CorrelationId")
+                    .IsRequired()
+                    .HasMaxLength(128)
+                    .HasColumnType("nvarchar(128)");
+
+                b.Property<int?>("FromStatus")
+                    .HasColumnType("int");
+
+                b.Property<Guid>("InstrumentId")
+                    .HasColumnType("uniqueidentifier");
+
+                b.Property<string>("Note")
+                    .HasMaxLength(500)
+                    .HasColumnType("nvarchar(500)");
+
+                b.Property<DateOnly>("OccurredOn")
+                    .HasColumnType("date");
+
+                b.Property<DateTimeOffset>("RecordedAtUtc")
+                    .HasColumnType("datetimeoffset");
+
+                b.Property<string>("RecordedBy")
+                    .IsRequired()
+                    .HasMaxLength(128)
+                    .HasColumnType("nvarchar(128)")
+                    .UseCollation("Latin1_General_100_BIN2");
+
+                b.Property<int>("ToStatus")
+                    .HasColumnType("int");
+
+                b.Property<Guid?>("TreasuryAccountId")
+                    .HasColumnType("uniqueidentifier");
+
+                b.Property<long>("Version")
+                    .HasColumnType("bigint");
+
+                b.HasKey("Id");
+
+                b.HasIndex("CompanyId", "InstrumentId", "Version")
+                    .IsUnique();
+
+                b.ToTable("CustomerInstrumentMovements", "finance", t =>
+                    {
+                        t.HasCheckConstraint("CK_CustomerInstrumentMovements_Identity", "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [InstrumentId] <> '00000000-0000-0000-0000-000000000000'");
+
+                        t.HasCheckConstraint("CK_CustomerInstrumentMovements_Status", "[ToStatus] IN (1, 2, 3, 4, 5, 6) AND ([FromStatus] IS NULL OR [FromStatus] IN (1, 2, 3, 4, 5, 6))");
+
+                        t.HasCheckConstraint("CK_CustomerInstrumentMovements_Text", "LEN([RecordedBy]) > 0 AND LEN([CorrelationId]) > 0");
+
+                        t.HasCheckConstraint("CK_CustomerInstrumentMovements_Version", "[Version] >= 1");
+                    });
+            });
+
+        modelBuilder.Entity("GoymenERP.Modules.Finance.Infrastructure.Persistence.CustomerInstrumentRow", b =>
+            {
+                b.Property<Guid>("Id")
+                    .HasColumnType("uniqueidentifier");
+
+                b.Property<string>("AmountText")
+                    .IsRequired()
+                    .IsUnicode(false)
+                    .HasColumnType("varchar(max)");
+
+                b.Property<string>("BankName")
+                    .HasMaxLength(200)
+                    .HasColumnType("nvarchar(200)");
+
+                b.Property<string>("BranchName")
+                    .HasMaxLength(200)
+                    .HasColumnType("nvarchar(200)");
+
+                b.Property<Guid?>("CollectionSourceId")
+                    .HasColumnType("uniqueidentifier");
+
+                b.Property<Guid>("CompanyAccountId")
+                    .HasColumnType("uniqueidentifier");
+
+                b.Property<Guid>("CompanyId")
+                    .HasColumnType("uniqueidentifier");
+
+                b.Property<Guid>("CurrencyId")
+                    .HasColumnType("uniqueidentifier");
+
+                b.Property<string>("Description")
+                    .HasMaxLength(1000)
+                    .HasColumnType("nvarchar(1000)");
+
+                b.Property<string>("Drawer")
+                    .IsRequired()
+                    .HasMaxLength(200)
+                    .HasColumnType("nvarchar(200)");
+
+                b.Property<DateOnly>("DueOn")
+                    .HasColumnType("date");
+
+                b.Property<int>("Kind")
+                    .HasColumnType("int");
+
+                b.Property<Guid>("PartyId")
+                    .HasColumnType("uniqueidentifier");
+
+                b.Property<string>("ProfileId")
+                    .IsRequired()
+                    .HasMaxLength(36)
+                    .IsUnicode(false)
+                    .HasColumnType("varchar(36)");
+
+                b.Property<string>("ProfileVersion")
+                    .IsRequired()
+                    .HasMaxLength(20)
+                    .IsUnicode(false)
+                    .HasColumnType("varchar(20)");
+
+                b.Property<DateTimeOffset>("ReceivedAtUtc")
+                    .HasColumnType("datetimeoffset");
+
+                b.Property<string>("ReceivedBy")
+                    .IsRequired()
+                    .HasMaxLength(128)
+                    .HasColumnType("nvarchar(128)")
+                    .UseCollation("Latin1_General_100_BIN2");
+
+                b.Property<DateOnly>("ReceivedOn")
+                    .HasColumnType("date");
+
+                b.Property<string>("SerialNumber")
+                    .IsRequired()
+                    .HasMaxLength(64)
+                    .HasColumnType("nvarchar(64)");
+
+                b.Property<int>("Status")
+                    .HasColumnType("int");
+
+                b.Property<DateOnly>("StatusChangedOn")
+                    .HasColumnType("date");
+
+                b.Property<Guid?>("TreasuryAccountId")
+                    .HasColumnType("uniqueidentifier");
+
+                b.Property<DateTimeOffset>("UpdatedAtUtc")
+                    .HasColumnType("datetimeoffset");
+
+                b.Property<string>("UpdatedBy")
+                    .IsRequired()
+                    .HasMaxLength(128)
+                    .HasColumnType("nvarchar(128)")
+                    .UseCollation("Latin1_General_100_BIN2");
+
+                b.Property<long>("Version")
+                    .IsConcurrencyToken()
+                    .HasColumnType("bigint");
+
+                b.HasKey("Id");
+
+                b.HasIndex("CompanyId", "ReceivedAtUtc", "Id");
+
+                b.HasIndex("CompanyId", "Status", "DueOn");
+
+                b.HasIndex(new[] { "CompanyId", "CollectionSourceId" }, "UX_CustomerInstruments_CollectionSource")
+                    .IsUnique()
+                    .HasFilter("[CollectionSourceId] IS NOT NULL");
+
+                b.HasIndex(new[] { "CompanyId", "Kind", "SerialNumber", "Drawer", "BankName" }, "UX_CustomerInstruments_Identity")
+                    .IsUnique()
+                    .HasFilter("[CompanyId] IS NOT NULL");
+
+                b.ToTable("CustomerInstruments", "finance", t =>
+                    {
+                        t.HasCheckConstraint("CK_CustomerInstruments_Bank", "[Kind] = 2 OR ([BankName] IS NOT NULL AND LEN([BankName]) > 0)");
+
+                        t.HasCheckConstraint("CK_CustomerInstruments_Identity", "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [PartyId] <> '00000000-0000-0000-0000-000000000000' AND [CompanyAccountId] <> '00000000-0000-0000-0000-000000000000' AND [CurrencyId] <> '00000000-0000-0000-0000-000000000000'");
+
+                        t.HasCheckConstraint("CK_CustomerInstruments_Kind", "[Kind] IN (1, 2)");
+
+                        t.HasCheckConstraint("CK_CustomerInstruments_State", "([Status] IN (1, 6) AND [TreasuryAccountId] IS NULL AND [CollectionSourceId] IS NULL) OR ([Status] = 2 AND [TreasuryAccountId] IS NOT NULL AND [CollectionSourceId] IS NULL) OR ([Status] = 3 AND [TreasuryAccountId] IS NOT NULL AND [CollectionSourceId] IS NOT NULL) OR ([Status] = 4 AND [Kind] = 1 AND [TreasuryAccountId] IS NULL AND [CollectionSourceId] IS NULL) OR ([Status] = 5 AND [Kind] = 2 AND [TreasuryAccountId] IS NULL AND [CollectionSourceId] IS NULL)");
+
+                        t.HasCheckConstraint("CK_CustomerInstruments_Text", "LEN([SerialNumber]) > 0 AND LEN([Drawer]) > 0 AND LEN([AmountText]) > 0 AND LEN([ProfileId]) > 0 AND LEN([ProfileVersion]) > 0 AND LEN([ReceivedBy]) > 0 AND LEN([UpdatedBy]) > 0");
+
+                        t.HasCheckConstraint("CK_CustomerInstruments_Version", "[Version] >= 1");
+                    });
+            });
+
         modelBuilder.Entity("GoymenERP.Modules.Finance.Infrastructure.Persistence.FinanceAllocationRow", b =>
             {
                 b.Property<Guid>("Id")
@@ -382,6 +575,9 @@ partial class FinanceDbContextModelSnapshot : ModelSnapshot
                 b.Property<Guid?>("DraftId")
                     .HasColumnType("uniqueidentifier");
 
+                b.Property<Guid?>("CustomerInstrumentId")
+                    .HasColumnType("uniqueidentifier");
+
                 b.Property<Guid?>("FinanceAllocationId")
                     .HasColumnType("uniqueidentifier");
 
@@ -408,6 +604,8 @@ partial class FinanceDbContextModelSnapshot : ModelSnapshot
 
                 b.HasIndex("CompanyId", "BankAccountId");
 
+                b.HasIndex("CompanyId", "CustomerInstrumentId");
+
                 b.HasIndex("CompanyId", "DraftId");
 
                 b.HasIndex("CompanyId", "FinanceAllocationId");
@@ -426,7 +624,7 @@ partial class FinanceDbContextModelSnapshot : ModelSnapshot
 
                         t.HasCheckConstraint("CK_Commands_ResultJson", "ISJSON([ResultJson]) = 1");
 
-                        t.HasCheckConstraint("CK_Commands_Target", "([DraftId] IS NOT NULL AND [DraftId] <> '00000000-0000-0000-0000-000000000000' AND [BankAccountId] IS NULL AND [ReversalProposalId] IS NULL AND [ManualBankPaymentId] IS NULL AND [FinanceAllocationId] IS NULL) OR ([BankAccountId] IS NOT NULL AND [BankAccountId] <> '00000000-0000-0000-0000-000000000000' AND [DraftId] IS NULL AND [ReversalProposalId] IS NULL AND [ManualBankPaymentId] IS NULL AND [FinanceAllocationId] IS NULL) OR ([ReversalProposalId] IS NOT NULL AND [ReversalProposalId] <> '00000000-0000-0000-0000-000000000000' AND [DraftId] IS NULL AND [BankAccountId] IS NULL AND [ManualBankPaymentId] IS NULL AND [FinanceAllocationId] IS NULL) OR ([ManualBankPaymentId] IS NOT NULL AND [ManualBankPaymentId] <> '00000000-0000-0000-0000-000000000000' AND [DraftId] IS NULL AND [BankAccountId] IS NULL AND [ReversalProposalId] IS NULL AND [FinanceAllocationId] IS NULL) OR ([FinanceAllocationId] IS NOT NULL AND [FinanceAllocationId] <> '00000000-0000-0000-0000-000000000000' AND [DraftId] IS NULL AND [BankAccountId] IS NULL AND [ReversalProposalId] IS NULL AND [ManualBankPaymentId] IS NULL) OR ([DraftId] IS NULL AND [BankAccountId] IS NULL AND [ReversalProposalId] IS NULL AND [ManualBankPaymentId] IS NULL AND [FinanceAllocationId] IS NULL AND JSON_VALUE([ResultJson], '$.outcome') = 'ValidationFailed')");
+                        t.HasCheckConstraint("CK_Commands_Target", "([DraftId] IS NOT NULL AND [DraftId] <> '00000000-0000-0000-0000-000000000000' AND [BankAccountId] IS NULL AND [ReversalProposalId] IS NULL AND [ManualBankPaymentId] IS NULL AND [FinanceAllocationId] IS NULL AND [CustomerInstrumentId] IS NULL) OR ([BankAccountId] IS NOT NULL AND [BankAccountId] <> '00000000-0000-0000-0000-000000000000' AND [DraftId] IS NULL AND [ReversalProposalId] IS NULL AND [ManualBankPaymentId] IS NULL AND [FinanceAllocationId] IS NULL AND [CustomerInstrumentId] IS NULL) OR ([ReversalProposalId] IS NOT NULL AND [ReversalProposalId] <> '00000000-0000-0000-0000-000000000000' AND [DraftId] IS NULL AND [BankAccountId] IS NULL AND [ManualBankPaymentId] IS NULL AND [FinanceAllocationId] IS NULL AND [CustomerInstrumentId] IS NULL) OR ([ManualBankPaymentId] IS NOT NULL AND [ManualBankPaymentId] <> '00000000-0000-0000-0000-000000000000' AND [DraftId] IS NULL AND [BankAccountId] IS NULL AND [ReversalProposalId] IS NULL AND [FinanceAllocationId] IS NULL AND [CustomerInstrumentId] IS NULL) OR ([FinanceAllocationId] IS NOT NULL AND [FinanceAllocationId] <> '00000000-0000-0000-0000-000000000000' AND [DraftId] IS NULL AND [BankAccountId] IS NULL AND [ReversalProposalId] IS NULL AND [ManualBankPaymentId] IS NULL AND [CustomerInstrumentId] IS NULL) OR ([CustomerInstrumentId] IS NOT NULL AND [CustomerInstrumentId] <> '00000000-0000-0000-0000-000000000000' AND [DraftId] IS NULL AND [BankAccountId] IS NULL AND [ReversalProposalId] IS NULL AND [ManualBankPaymentId] IS NULL AND [FinanceAllocationId] IS NULL) OR ([DraftId] IS NULL AND [BankAccountId] IS NULL AND [ReversalProposalId] IS NULL AND [ManualBankPaymentId] IS NULL AND [FinanceAllocationId] IS NULL AND [CustomerInstrumentId] IS NULL AND JSON_VALUE([ResultJson], '$.outcome') = 'ValidationFailed')");
                     });
             });
         modelBuilder.Entity("GoymenERP.Modules.Finance.Infrastructure.Persistence.FinanceOpenItemRow", b =>
@@ -737,6 +935,17 @@ partial class FinanceDbContextModelSnapshot : ModelSnapshot
             b.Property<Guid>("PartyId")
                 .HasColumnType("uniqueidentifier");
 
+            b.Property<string>("PosBankNetAmountText")
+                .IsUnicode(false)
+                .HasColumnType("varchar(max)");
+
+            b.Property<string>("PosCommissionAmountText")
+                .IsUnicode(false)
+                .HasColumnType("varchar(max)");
+
+            b.Property<int?>("PosCommissionBearer")
+                .HasColumnType("int");
+
             b.Property<string>("ProfileId")
                 .IsRequired()
                 .HasMaxLength(36)
@@ -779,7 +988,11 @@ partial class FinanceDbContextModelSnapshot : ModelSnapshot
 
                 t.HasCheckConstraint(
                     "CK_MoneyEvents_Kind",
-                    "[Kind] IN (1, 2)");
+                    "[Kind] IN (1, 2, 3)");
+
+                t.HasCheckConstraint(
+                    "CK_MoneyEvents_Pos",
+                    "([PosCommissionAmountText] IS NULL AND [PosBankNetAmountText] IS NULL AND [PosCommissionBearer] IS NULL) OR ([PosCommissionAmountText] IS NOT NULL AND LEN([PosCommissionAmountText]) > 0 AND [PosBankNetAmountText] IS NOT NULL AND LEN([PosBankNetAmountText]) > 0 AND [PosCommissionBearer] IN (1, 2))");
 
                 t.HasCheckConstraint(
                     "CK_MoneyEvents_Text",
@@ -897,6 +1110,17 @@ partial class FinanceDbContextModelSnapshot : ModelSnapshot
             b.Property<Guid>("PartyId")
                 .HasColumnType("uniqueidentifier");
 
+            b.Property<string>("PosBankNetAmountText")
+                .IsUnicode(false)
+                .HasColumnType("varchar(max)");
+
+            b.Property<string>("PosCommissionAmountText")
+                .IsUnicode(false)
+                .HasColumnType("varchar(max)");
+
+            b.Property<int?>("PosCommissionBearer")
+                .HasColumnType("int");
+
             b.Property<string>("ProfileId")
                 .IsRequired()
                 .HasMaxLength(36)
@@ -952,6 +1176,10 @@ partial class FinanceDbContextModelSnapshot : ModelSnapshot
                     "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [PartyId] <> '00000000-0000-0000-0000-000000000000' AND [CompanyAccountId] <> '00000000-0000-0000-0000-000000000000' AND [TreasuryAccountId] <> '00000000-0000-0000-0000-000000000000' AND [CurrencyId] <> '00000000-0000-0000-0000-000000000000'");
 
                 t.HasCheckConstraint(
+                    "CK_ReceiptDrafts_Pos",
+                    "([PosCommissionAmountText] IS NULL AND [PosBankNetAmountText] IS NULL AND [PosCommissionBearer] IS NULL) OR ([PosCommissionAmountText] IS NOT NULL AND LEN([PosCommissionAmountText]) > 0 AND [PosBankNetAmountText] IS NOT NULL AND LEN([PosBankNetAmountText]) > 0 AND [PosCommissionBearer] IN (1, 2))");
+
+                t.HasCheckConstraint(
                     "CK_ReceiptDrafts_Stage",
                     "([Stage] = 0 AND [RecordedAtUtc] IS NULL AND [RecordedBy] IS NULL) OR ([Stage] = 1 AND [RecordedAtUtc] IS NOT NULL AND [RecordedBy] IS NOT NULL AND LEN([RecordedBy]) > 0)");
 
@@ -973,6 +1201,37 @@ partial class FinanceDbContextModelSnapshot : ModelSnapshot
                 .OnDelete(DeleteBehavior.Restrict)
                 .IsRequired();
         });
+
+        modelBuilder.Entity("GoymenERP.Modules.Finance.Infrastructure.Persistence.CustomerInstrumentMovementRow", b =>
+            {
+                b.HasOne("GoymenERP.Modules.Finance.Infrastructure.Persistence.OrganizationCompanyReference", null)
+                    .WithMany()
+                    .HasForeignKey("CompanyId")
+                    .OnDelete(DeleteBehavior.Restrict)
+                    .IsRequired();
+
+                b.HasOne("GoymenERP.Modules.Finance.Infrastructure.Persistence.CustomerInstrumentRow", null)
+                    .WithMany()
+                    .HasForeignKey("CompanyId", "InstrumentId")
+                    .HasPrincipalKey("CompanyId", "Id")
+                    .OnDelete(DeleteBehavior.Restrict)
+                    .IsRequired();
+            });
+
+        modelBuilder.Entity("GoymenERP.Modules.Finance.Infrastructure.Persistence.CustomerInstrumentRow", b =>
+            {
+                b.HasOne("GoymenERP.Modules.Finance.Infrastructure.Persistence.OrganizationCompanyReference", null)
+                    .WithMany()
+                    .HasForeignKey("CompanyId")
+                    .OnDelete(DeleteBehavior.Restrict)
+                    .IsRequired();
+
+                b.HasOne("GoymenERP.Modules.Finance.Infrastructure.Persistence.ReceiptDraftRow", null)
+                    .WithMany()
+                    .HasForeignKey("CompanyId", "CollectionSourceId")
+                    .HasPrincipalKey("CompanyId", "Id")
+                    .OnDelete(DeleteBehavior.Restrict);
+            });
 
         modelBuilder.Entity("GoymenERP.Modules.Finance.Infrastructure.Persistence.FinanceAllocationRow", b =>
             {
@@ -1008,6 +1267,12 @@ partial class FinanceDbContextModelSnapshot : ModelSnapshot
                 b.HasOne("GoymenERP.Modules.Finance.Infrastructure.Persistence.BankAccountRow", null)
                     .WithMany()
                     .HasForeignKey("CompanyId", "BankAccountId")
+                    .HasPrincipalKey("CompanyId", "Id")
+                    .OnDelete(DeleteBehavior.Restrict);
+
+                b.HasOne("GoymenERP.Modules.Finance.Infrastructure.Persistence.CustomerInstrumentRow", null)
+                    .WithMany()
+                    .HasForeignKey("CompanyId", "CustomerInstrumentId")
                     .HasPrincipalKey("CompanyId", "Id")
                     .OnDelete(DeleteBehavior.Restrict);
 

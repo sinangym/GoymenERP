@@ -29,6 +29,14 @@ namespace GoymenERP.BrowserSuiteFixtureTool.Suites.S04;
 /// party replays under its step key, the contact information is written only when the fixed address id is
 /// not there yet, the drafts are accepted as already present.
 /// </para>
+/// <para>
+/// DEC-SAL-003 (the delivery-date update): a SEPARATE one-line Preparing draft for the disposable planner, the ONLY
+/// holder of <c>sales.orders.delivery-schedule.write</c> in this run database (user decision 2026-09-27: no real user or
+/// role receives the name). The browser suite submits and approves it through the real API before the planner moves its
+/// dates in the form; nothing here submits, approves or reschedules it. The read-backs below fail the seed by name when
+/// the planner's control or the schedule history route is not served (central: the ErpPermissions registration, the
+/// Sales shell provider 1.2 control and its accepted host authority, and the s04 override's planner role).
+/// </para>
 /// </summary>
 public sealed class S04BrowserSeed : IBrowserSuiteFixture
 {
@@ -37,6 +45,9 @@ public sealed class S04BrowserSeed : IBrowserSuiteFixture
     public const string ReaderActor = "s04-reader";
     public const string SupportCreatorActor = "s04-support-creator";
     public const string OrdinaryCreatorActor = "s04-ordinary-creator";
+
+    /// <summary>DEC-SAL-003: the disposable planner (sales.drafts.read + sales.orders.delivery-schedule.write only).</summary>
+    public const string PlannerActor = "s04-planner";
 
     // Identity's authenticated actor is the canonical user id resolved from the development subject.
     // Fixture CreatedBy must store that same identity, never the external subject/header value.
@@ -71,6 +82,9 @@ public sealed class S04BrowserSeed : IBrowserSuiteFixture
     public static readonly Guid OrdinaryRejectDraftId = Guid.Parse("d1000000-0000-4000-8000-000000000412");
     public static readonly Guid WithdrawalDraftId = Guid.Parse("d1000000-0000-4000-8000-000000000413");
 
+    /// <summary>DEC-SAL-003: the planner's own order (one line, no slice), written Preparing by the preparer.</summary>
+    public static readonly Guid ScheduleDraftId = Guid.Parse("d1000000-0000-4000-8000-000000000414");
+
     // Synthetic owner identities: nothing in Cari, Settings or Product answers them; the draft stores snapshots.
     private static readonly Guid PartyId = Guid.Parse("d2000000-0000-4000-8000-000000000401");
     private static readonly Guid CompanyAccountId = Guid.Parse("d3000000-0000-4000-8000-000000000401");
@@ -97,6 +111,8 @@ public sealed class S04BrowserSeed : IBrowserSuiteFixture
     private static readonly Guid OrdinaryRejectLineId = Guid.Parse("d9000000-0000-4000-8000-000000000412");
     private static readonly Guid WithdrawalProductId = Guid.Parse("d8000000-0000-4000-8000-000000000413");
     private static readonly Guid WithdrawalLineId = Guid.Parse("d9000000-0000-4000-8000-000000000413");
+    private static readonly Guid ScheduleProductId = Guid.Parse("d8000000-0000-4000-8000-000000000414");
+    private static readonly Guid ScheduleLineId = Guid.Parse("d9000000-0000-4000-8000-000000000414");
     private static readonly Guid DeliveryAddressId = Guid.Parse("da000000-0000-4000-8000-000000000401");
     private static readonly Guid DeliveryContactId = Guid.Parse("db000000-0000-4000-8000-000000000401");
     private static readonly Guid AllocationOpeningId = Guid.Parse("dc000000-0000-4000-8000-000000000401");
@@ -125,6 +141,7 @@ public sealed class S04BrowserSeed : IBrowserSuiteFixture
     private const string PhysicalAllocationControl = "inventory.physical-allocation.write";
     private const string AllocationLabelCode = "SYNS04-ALLOC-LABEL-1";
     private const string ApproveControl = "sales.orders.approve";
+    private const string DeliveryScheduleControl = "sales.orders.delivery-schedule.write";
     private const int CustomerRole = 1;
     private const string DeliveryPurpose = "delivery";
     private const string AddressLine1 = "Sanayi Cad. 1";
@@ -232,6 +249,9 @@ public sealed class S04BrowserSeed : IBrowserSuiteFixture
                 OrdinaryRejectProductId, OrdinaryRejectLineId, "ordinary-reject-draft", cancellationToken);
             await EnsureD2DraftAsync(writer, context, WithdrawalDraftId, "SO-D2-WITHDRAW", OrdinaryCreatorIdentityId.ToString("D"),
                 WithdrawalProductId, WithdrawalLineId, "withdrawal-draft", cancellationToken);
+            // DEC-SAL-003: the same one-line shape (the D2 helper), created by the preparer who later submits it.
+            await EnsureD2DraftAsync(writer, context, ScheduleDraftId, "SO-DS-SCHEDULE", PreparerIdentityId.ToString("D"),
+                ScheduleProductId, ScheduleLineId, "schedule-draft", cancellationToken);
         }
 
         // Read back through the real host, as each actor: the fixture is only done when the product actually
@@ -288,6 +308,46 @@ public sealed class S04BrowserSeed : IBrowserSuiteFixture
             {
                 throw new InvalidOperationException($"The approve control is not published to D2 actor {actor}.");
             }
+        }
+
+        // DEC-SAL-003 preflight through the real API: the planner alone gets the delivery-schedule control (a control of
+        // the detail, published beside the list and detail its draft read opens) and nothing else of Sales; it reads its
+        // order as Preparing with one line, and the schedule history route answers schedule 0 only.
+        var planner = Capabilities(await context.GetJsonAsync(PlannerActor, CompanyGdc, "/api/v1/shell/capabilities", cancellationToken));
+        if (!planner.Contains(DeliveryScheduleControl, StringComparer.Ordinal)
+            || !planner.Contains("sales.drafts.detail", StringComparer.Ordinal)
+            || planner.Contains(ApproveControl, StringComparer.Ordinal)
+            || planner.Contains("sales.drafts.create", StringComparer.Ordinal))
+        {
+            throw new InvalidOperationException(
+                "DEC-SAL-003: the delivery-schedule control is not published to the s04 planner alone (central: ErpPermissions, "
+                + "the Sales shell provider 1.2 control with its host authority, and the s04 override's planner role).");
+        }
+
+        foreach (var actor in new[] { PreparerActor, ApproverActor, ReaderActor })
+        {
+            var capabilities = await context.GetJsonAsync(actor, CompanyGdc, "/api/v1/shell/capabilities", cancellationToken);
+            if (Capabilities(capabilities).Contains(DeliveryScheduleControl, StringComparer.Ordinal))
+            {
+                throw new InvalidOperationException($"DEC-SAL-003: the delivery-schedule control must not be published to {actor}.");
+            }
+        }
+
+        var scheduleDetail = await context.GetJsonAsync(PlannerActor, CompanyGdc, $"{DraftsPath}/{ScheduleDraftId:D}", cancellationToken);
+        var scheduleDraft = scheduleDetail.GetProperty("draft");
+        if (scheduleDraft.GetProperty("id").GetGuid() != ScheduleDraftId
+            || scheduleDraft.GetProperty("approvalState").GetString() != "Preparing"
+            || scheduleDetail.GetProperty("lines").GetArrayLength() != 1)
+        {
+            throw new InvalidOperationException("DEC-SAL-003: the planner's order is not a Preparing one-line draft on the real detail route.");
+        }
+
+        var schedules = await context.GetJsonAsync(
+            PlannerActor, CompanyGdc, $"{DraftsPath}/{ScheduleDraftId:D}/delivery-schedules", cancellationToken);
+        if (schedules.GetProperty("items").GetArrayLength() != 1
+            || schedules.GetProperty("items")[0].GetProperty("scheduleNo").GetInt32() != 0)
+        {
+            throw new InvalidOperationException("DEC-SAL-003: the planner's order must start with schedule 0 only on the real history route.");
         }
 
         // SALES-A2a read-backs, as the preparer (sales.drafts.create): the two reference LIST reads answer the REAL
@@ -369,12 +429,14 @@ public sealed class S04BrowserSeed : IBrowserSuiteFixture
             ["readerActor"] = ReaderActor,
             ["supportCreatorActor"] = SupportCreatorActor,
             ["ordinaryCreatorActor"] = OrdinaryCreatorActor,
+            ["plannerActor"] = PlannerActor,
             ["companyId"] = CompanyGdc.ToString("D"),
             ["draftId"] = DraftId.ToString("D"),
             ["supportDraftId"] = SupportDraftId.ToString("D"),
             ["ordinaryApproveDraftId"] = OrdinaryApproveDraftId.ToString("D"),
             ["ordinaryRejectDraftId"] = OrdinaryRejectDraftId.ToString("D"),
             ["withdrawalDraftId"] = WithdrawalDraftId.ToString("D"),
+            ["scheduleDraftId"] = ScheduleDraftId.ToString("D"),
             ["realPartyId"] = customer.PartyId.ToString("D"),
             ["realCompanyAccountId"] = customer.AccountId.ToString("D"),
             ["deliveryAddressId"] = DeliveryAddressId.ToString("D"),

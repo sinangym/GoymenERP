@@ -8,7 +8,7 @@
  * is measured here, while Rev.1 Preparing remains paired with the price/discount endpoint slice.
  */
 
-import { expect, test, type Page, type Response } from '@playwright/test'
+import { expect, test, type APIResponse, type Page } from '@playwright/test'
 import { readEnvironment } from '../src/env.js'
 
 const env = readEnvironment()
@@ -57,7 +57,7 @@ async function command(
   expectedVersion: string,
   key: string,
   reason?: string,
-): Promise<Response> {
+): Promise<APIResponse> {
   return page.request.post(`${env.apiBaseUrl}${DRAFTS_PATH}/${draftId}/${kind}`, {
     headers: {
       [DEVELOPMENT_USER_HEADER]: actor,
@@ -68,7 +68,7 @@ async function command(
   })
 }
 
-async function expectProblem(response: Response, status: number, code: string): Promise<void> {
+async function expectProblem(response: APIResponse, status: number, code: string): Promise<void> {
   expect(response.status()).toBe(status)
   expect((await response.json()) as { code?: unknown }).toMatchObject({ code })
 }
