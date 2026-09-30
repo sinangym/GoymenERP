@@ -155,7 +155,7 @@ public sealed class OrderTargetAndCloseTests
     }
 
     [Fact]
-    public void A_supplied_exact_BAL004_result_separates_the_inclusive_boundary_without_mutating_the_order()
+    public void An_unexplained_gap_requires_an_owned_fire_declaration_and_is_never_an_automatic_numerator()
     {
         var order = Order(target: null);
         order.Issue(MasterRoll, Kg(1_000m));
@@ -169,14 +169,107 @@ public sealed class OrderTargetAndCloseTests
         var outside = order.AssessClosure(Tolerance(0.999m), [Fire(MasterRoll, 10m, 1_000m)]);
 
         Assert.Equal(ClosureDispositionV1.FireDeclarationRequired, inside.Disposition);
-        Assert.Equal((ClosureDispositionV1.FireDeclarationRequired, 10m, 1m),
+        Assert.Equal((ClosureDispositionV1.FireDeclarationRequired, 10m, (decimal?)null),
             (Assert.Single(inside.Rolls).Disposition, inside.Rolls[0].DifferenceKg, inside.Rolls[0].FirePercent));
-        Assert.Equal(ClosureDispositionV1.ApprovalRequired, outside.Disposition);
+        Assert.Equal(ClosureDispositionV1.FireDeclarationRequired, outside.Disposition);
+        Assert.Contains("scrapOrProcessLossDeclaration", Assert.Single(outside.Rolls).MissingParameters);
         Assert.Equal((version, facts, OrderStatus.Open),
             (order.Version, (order.Issues.Count, order.Outputs.Count, order.Returns.Count, order.WipMeasurements.Count),
                 order.Status));
         Assert.Equal(ManufacturingRuleCodes.UnexplainedDifference, Assert.Throws<ManufacturingRuleException>(
             () => order.Close(order.Version, Closer, DateTimeOffset.UnixEpoch)).Code);
+    }
+
+    [Fact]
+    public void Declared_scrap_and_non_stock_process_loss_are_the_numerator_and_second_quality_is_not()
+    {
+        var order = Order(target: null);
+        order.Issue(MasterRoll, Kg(1_000m));
+        order.Declare(MasterRoll, OutputClass.GoodProduct, Kg(800m));
+        order.Declare(MasterRoll, OutputClass.SecondQuality, Kg(50m));
+        order.Declare(MasterRoll, OutputClass.Scrap, Kg(100m));
+        order.Declare(MasterRoll, OutputClass.ProcessLoss, Kg(50m));
+
+        var inclusive = order.AssessClosure(Tolerance(15m), [Fire(MasterRoll, 150m, 1_000m)]);
+        var outside = order.AssessClosure(Tolerance(14.999m), [Fire(MasterRoll, 150m, 1_000m)]);
+
+        Assert.Equal((ClosureDispositionV1.Balanced, 0m, 15m),
+            (inclusive.Disposition, Assert.Single(inclusive.Rolls).DifferenceKg, inclusive.Rolls[0].FirePercent));
+        Assert.Equal(ClosureDispositionV1.ApprovalRequired, outside.Disposition);
+    }
+
+    [Fact]
+    public void Each_declared_fire_component_is_counted_once()
+    {
+        var order = Order(target: null);
+        order.Issue(MasterRoll, Kg(1_000m));
+        order.Declare(MasterRoll, OutputClass.GoodProduct, Kg(980m));
+        order.Declare(MasterRoll, OutputClass.Scrap, Kg(10m));
+        order.Declare(MasterRoll, OutputClass.ProcessLoss, Kg(10m));
+
+        var exact = order.AssessClosure(Tolerance(2m), [Fire(MasterRoll, 20m, 1_000m)]);
+        var doubled = order.AssessClosure(Tolerance(4m), [Fire(MasterRoll, 40m, 1_000m)]);
+
+        Assert.Equal((ClosureDispositionV1.Balanced, 0m, 2m),
+            (exact.Disposition, Assert.Single(exact.Rolls).DifferenceKg, exact.Rolls[0].FirePercent));
+        Assert.Equal((ClosureDispositionV1.Refused, ClosureAssessmentCodesV1.FireMassMismatch, "fireKg"),
+            (doubled.Disposition, Assert.Single(doubled.Rolls).Code, doubled.Rolls[0].RefusedParameter));
+    }
+
+    [Fact]
+    public void BAL004_denominator_is_the_exact_issued_minus_returned_mass()
+    {
+        var order = Order(target: null);
+        order.Issue(MasterRoll, Kg(1_000m));
+        order.Return(MasterRoll, Kg(200m));
+        order.Declare(MasterRoll, OutputClass.GoodProduct, Kg(790m));
+        order.Declare(MasterRoll, OutputClass.Scrap, Kg(5m));
+        order.Declare(MasterRoll, OutputClass.ProcessLoss, Kg(5m));
+
+        var exact = order.AssessClosure(Tolerance(1.25m), [Fire(MasterRoll, 10m, 800m)]);
+        var issuedInsteadOfNet = order.AssessClosure(Tolerance(1.25m), [Fire(MasterRoll, 10m, 1_000m)]);
+
+        Assert.Equal((ClosureDispositionV1.Balanced, 0m, 1.25m),
+            (exact.Disposition, Assert.Single(exact.Rolls).DifferenceKg, exact.Rolls[0].FirePercent));
+        Assert.Equal((ClosureDispositionV1.Refused, ClosureAssessmentCodesV1.NetIssuedMassMismatch, "rawMaterialKg"),
+            (issuedInsteadOfNet.Disposition, Assert.Single(issuedInsteadOfNet.Rolls).Code,
+                issuedInsteadOfNet.Rolls[0].RefusedParameter));
+    }
+
+    [Fact]
+    public void Exception_approval_is_bound_to_actor_reason_order_version_and_policy_version()
+    {
+        var policy = Tolerance(1m);
+        var approval = ClosureExceptionApprovalV1.Create(Closer, "  Teyitli proses sapması  ", 7,
+            policy.PolicyId, policy.PolicyVersion, DateTimeOffset.Parse("2026-09-30T18:30:00+03:00"));
+
+        Assert.Equal("Teyitli proses sapması", approval.Reason);
+        Assert.Equal(DateTimeOffset.Parse("2026-09-30T15:30:00Z"), approval.ApprovedAtUtc);
+        Assert.True(approval.Matches(Closer, 7, policy));
+        Assert.False(approval.Matches(Guid.NewGuid(), 7, policy));
+        Assert.False(approval.Matches(Closer, 8, policy));
+        Assert.False(approval.Matches(Closer, 7, policy with { PolicyVersion = 8 }));
+    }
+
+    [Theory]
+    [InlineData("empty-actor")]
+    [InlineData("empty-reason")]
+    [InlineData("control-reason")]
+    [InlineData("order-version")]
+    [InlineData("policy-id")]
+    [InlineData("policy-version")]
+    [InlineData("time")]
+    public void Invalid_exception_approval_evidence_is_refused(string fault)
+    {
+        var exception = Assert.Throws<ArgumentException>(() => ClosureExceptionApprovalV1.Create(
+            fault == "empty-actor" ? Guid.Empty : Closer,
+            fault == "empty-reason" ? " " : fault == "control-reason" ? "bad\nreason" : "Geçerli gerekçe",
+            fault == "order-version" ? 0 : 7,
+            fault == "policy-id" ? Guid.Empty : Policy,
+            fault == "policy-version" ? 0 : 3,
+            fault == "time" ? default : DateTimeOffset.UnixEpoch));
+
+        Assert.NotEmpty(exception.Message);
     }
 
     [Fact]
@@ -195,7 +288,7 @@ public sealed class OrderTargetAndCloseTests
         Assert.Equal((ClosureDispositionV1.ReviewRequired, -10m,
                 ClosureAssessmentCodesV1.NegativeDifferenceReview),
             (assessment.Rolls[0].Disposition, assessment.Rolls[0].DifferenceKg, assessment.Rolls[0].Code));
-        Assert.Equal((ClosureDispositionV1.FireDeclarationRequired, 10m, 1m),
+        Assert.Equal((ClosureDispositionV1.FireDeclarationRequired, 10m, (decimal?)null),
             (assessment.Rolls[1].Disposition, assessment.Rolls[1].DifferenceKg, assessment.Rolls[1].FirePercent));
         Assert.Equal(ManufacturingRuleCodes.UnexplainedDifference, Assert.Throws<ManufacturingRuleException>(
             () => order.Close(order.Version, Closer, DateTimeOffset.UnixEpoch)).Code);
@@ -212,6 +305,7 @@ public sealed class OrderTargetAndCloseTests
         var order = Order(target: null);
         order.Issue(MasterRoll, Kg(1_000m));
         order.Declare(MasterRoll, OutputClass.GoodProduct, Kg(990m));
+        order.Declare(MasterRoll, OutputClass.ProcessLoss, Kg(10m));
 
         var assessment = order.AssessClosure(Tolerance(1m), [Fire(MasterRoll, fireKg, rawMaterialKg)]);
 
@@ -236,10 +330,10 @@ public sealed class OrderTargetAndCloseTests
         var missing = order.AssessClosure(Tolerance(1m), []);
         var different = order.AssessClosure(Tolerance(1m), [Fire(MasterRoll, 5m, 1_000m)]);
 
-        Assert.Equal(ClosureDispositionV1.Unavailable, missing.Disposition);
-        Assert.Equal(["fireKg", "rawMaterialKg"], Assert.Single(missing.Rolls).MissingParameters);
-        Assert.Equal((ClosureDispositionV1.Refused, ClosureAssessmentCodesV1.FireMassMismatch, "fireKg"),
-            (different.Disposition, Assert.Single(different.Rolls).Code, different.Rolls[0].RefusedParameter));
+        Assert.Equal(ClosureDispositionV1.FireDeclarationRequired, missing.Disposition);
+        Assert.Equal(ClosureDispositionV1.FireDeclarationRequired, different.Disposition);
+        Assert.Contains("scrapOrProcessLossDeclaration", Assert.Single(missing.Rolls).MissingParameters);
+        Assert.Contains("scrapOrProcessLossDeclaration", Assert.Single(different.Rolls).MissingParameters);
         Assert.Equal(0m, order.BalanceOf(MasterRoll).OutputOf(OutputClass.Scrap).Value);
     }
 
@@ -273,8 +367,11 @@ public sealed class OrderTargetAndCloseTests
         order.Declare(MasterRoll, OutputClass.GoodProduct, Kg(1_000m));
         var version = order.Version;
 
-        var assessment = order.AssessClosure(Tolerance(0m), []);
+        var missingDenominator = order.AssessClosure(Tolerance(0m), []);
+        var assessment = order.AssessClosure(Tolerance(0m), [Fire(MasterRoll, 0m, 1_000m)]);
 
+        Assert.Equal(ClosureDispositionV1.Unavailable, missingDenominator.Disposition);
+        Assert.Contains("rawMaterialKg", Assert.Single(missingDenominator.Rolls).MissingParameters);
         Assert.Equal(ClosureDispositionV1.Balanced, assessment.Disposition);
         Assert.Equal(ClosureDispositionV1.Balanced, Assert.Single(assessment.Rolls).Disposition);
         Assert.Equal((version, 0m, OrderStatus.Open),

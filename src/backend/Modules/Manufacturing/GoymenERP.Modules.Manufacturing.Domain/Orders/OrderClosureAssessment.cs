@@ -18,8 +18,54 @@ public sealed record ClosureTolerancePolicySnapshotV1(
     decimal MaximumFirePercent);
 
 /// <summary>
-/// The exact BAL-004 numerator and denominator supplied for one roll. The calculator does not decide which mass is
-/// fire or whether raw material means issued or net-issued mass; those meanings belong to the future owner contract.
+/// The immutable business evidence for one out-of-tolerance close approval. It carries no authority by itself: the
+/// application must freshly prove the dedicated approval permission before it may create and persist this value.
+/// The order and policy versions bind the decision to the exact assessment the approver saw.
+/// </summary>
+public sealed record ClosureExceptionApprovalV1
+{
+    public const int ReasonMaximumLength = 256;
+
+    private ClosureExceptionApprovalV1(Guid approvedByUserId, string reason, long orderVersion,
+        Guid policyId, long policyVersion, DateTimeOffset approvedAtUtc)
+    {
+        ApprovedByUserId = approvedByUserId;
+        Reason = reason;
+        OrderVersion = orderVersion;
+        PolicyId = policyId;
+        PolicyVersion = policyVersion;
+        ApprovedAtUtc = approvedAtUtc;
+    }
+
+    public Guid ApprovedByUserId { get; }
+    public string Reason { get; }
+    public long OrderVersion { get; }
+    public Guid PolicyId { get; }
+    public long PolicyVersion { get; }
+    public DateTimeOffset ApprovedAtUtc { get; }
+
+    public static ClosureExceptionApprovalV1 Create(Guid approvedByUserId, string reason, long orderVersion,
+        Guid policyId, long policyVersion, DateTimeOffset approvedAtUtc)
+    {
+        var normalized = reason?.Trim();
+        if (approvedByUserId == Guid.Empty || string.IsNullOrEmpty(normalized)
+            || normalized.Length > ReasonMaximumLength || normalized.Any(char.IsControl)
+            || orderVersion <= 0 || policyId == Guid.Empty || policyVersion <= 0 || approvedAtUtc == default)
+            throw new ArgumentException("Geçerli onaylayan, gerekçe, emir sürümü, politika sürümü ve zaman zorunludur.");
+
+        return new(approvedByUserId, normalized, orderVersion, policyId, policyVersion,
+            approvedAtUtc.ToUniversalTime());
+    }
+
+    public bool Matches(Guid actorId, long orderVersion, ClosureTolerancePolicySnapshotV1 policy) =>
+        actorId != Guid.Empty && actorId == ApprovedByUserId && orderVersion == OrderVersion
+        && policy is not null && policy.PolicyId == PolicyId && policy.PolicyVersion == PolicyVersion;
+}
+
+/// <summary>
+/// The exact BAL-004 numerator and denominator supplied for one roll. The calculator verifies them against the owned
+/// facts fixed by #66/5917438293: fire is declared scrap plus declared non-stock process loss; raw material is issued
+/// minus returned. Callers cannot reclassify second quality or an unexplained difference through this input.
 /// </summary>
 public sealed record RollScrapPercentInputV1(Guid ParentRollId, ScrapPercentInputV1 Input);
 
@@ -39,6 +85,7 @@ public static class ClosureAssessmentCodesV1
     public const string PolicyScopeMismatch = "manufacturing_closure_policy_scope_mismatch";
     public const string RollInputInvalid = "manufacturing_closure_roll_input_invalid";
     public const string FireMassMismatch = "manufacturing_closure_fire_mass_mismatch";
+    public const string NetIssuedMassMismatch = "manufacturing_closure_net_issued_mass_mismatch";
     public const string NegativeDifferenceReview = "manufacturing_closure_negative_difference_review";
 }
 
@@ -67,9 +114,9 @@ public sealed record OrderClosureAssessmentV1(
     IReadOnlyList<string> MissingParameters);
 
 /// <summary>
-/// OPEN-005 / Ö7 preparation: evaluates the existing BAL-003 differences roll by roll against an explicitly supplied
-/// BAL-004 calculation and per-process policy snapshot. It does not choose BAL-004 inputs, generate a fact, write off a
-/// difference, approve an exception or mutate the order.
+/// OPEN-005 / Ö7 preparation: evaluates the existing BAL-003 facts roll by roll against an explicitly supplied
+/// BAL-004 calculation and per-process policy snapshot. It verifies the calculation against the order's owned facts;
+/// it does not generate a fact, write off a difference, approve an exception or mutate the order.
 /// </summary>
 public static class OrderClosureAssessmentCalculatorV1
 {
@@ -153,17 +200,23 @@ public static class OrderClosureAssessmentCalculatorV1
         decimal maximumFirePercent)
     {
         var difference = balance.Unexplained;
-        if (difference == 0m)
-        {
-            return Roll(balance.ParentRollId, ClosureDispositionV1.Balanced, difference);
-        }
-
         if (difference < 0m)
         {
             return Roll(balance.ParentRollId, ClosureDispositionV1.ReviewRequired, difference,
                 code: ClosureAssessmentCodesV1.NegativeDifferenceReview);
         }
 
+        // #66/5917438293 (3A): fire is exactly the declared scrap plus the declared process loss that was recovered
+        // as neither scrap nor stock. Unexplained is intentionally not one of those declarations and can never be
+        // promoted to fire here; SecondQuality and the other output classes never enter this numerator either.
+        if (difference > 0m)
+        {
+            return Roll(balance.ParentRollId, ClosureDispositionV1.FireDeclarationRequired, difference,
+                missing: ["scrapOrProcessLossDeclaration"]);
+        }
+
+        var fireKg = balance.OutputOf(OutputClass.Scrap).Value
+            + balance.OutputOf(OutputClass.ProcessLoss).Value;
         if (supplied is null)
         {
             return Roll(balance.ParentRollId, ClosureDispositionV1.Unavailable, difference,
@@ -183,20 +236,29 @@ public static class OrderClosureAssessmentCalculatorV1
                 code: calculated.RefusalCode, refusedParameter: calculated.RefusedParameter);
         }
 
-        // The caller must explicitly classify THIS positive BAL-003 gap as the BAL-004 fire numerator. A different
-        // numerator may be valid in another policy, but it cannot silently close this difference.
-        if (supplied.Input.FireKg != difference)
+        // The caller supplies the exact BAL-004 inputs derived from the owned records. Neither a second-quality
+        // output nor either declared fire component may be added again by the caller.
+        if (supplied.Input.FireKg != fireKg)
         {
             return Roll(balance.ParentRollId, ClosureDispositionV1.Refused, difference,
                 firePercent: calculated.Value!.FirePercent, code: ClosureAssessmentCodesV1.FireMassMismatch,
                 refusedParameter: "fireKg");
         }
 
+        // #66/5917438293 (4A): the denominator is exactly issued minus returned for this roll. A positive but
+        // different caller value is just as unsafe as a missing/zero/negative value because it changes the ratio.
+        if (supplied.Input.RawMaterialKg != balance.NetIssued.Value)
+        {
+            return Roll(balance.ParentRollId, ClosureDispositionV1.Refused, difference,
+                firePercent: calculated.Value!.FirePercent, code: ClosureAssessmentCodesV1.NetIssuedMassMismatch,
+                refusedParameter: "rawMaterialKg");
+        }
+
         var firePercent = calculated.Value!.FirePercent;
         return Roll(balance.ParentRollId,
-            firePercent <= maximumFirePercent
-                ? ClosureDispositionV1.FireDeclarationRequired
-                : ClosureDispositionV1.ApprovalRequired,
+            firePercent > maximumFirePercent
+                ? ClosureDispositionV1.ApprovalRequired
+                : ClosureDispositionV1.Balanced,
             difference, firePercent);
     }
 
