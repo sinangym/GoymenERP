@@ -51,7 +51,8 @@ namespace GoymenERP.Modules.Settings.Application;
 /// authorization for any operation: the consuming use case still checks its own permission.
 /// </para>
 /// </summary>
-public sealed class ApprovedSettingsPrerequisiteProvider : ISettingsPrerequisiteProvider, ISettingsMoneyCandidateReader
+public sealed class ApprovedSettingsPrerequisiteProvider : ISettingsPrerequisiteProvider, ISettingsMoneyCandidateReader,
+    ISettingsManufacturingToleranceProviderV1
 {
     /// <summary>
     /// Kept as an alias so existing callers still compile. Consumers map the published contract
@@ -63,6 +64,7 @@ public sealed class ApprovedSettingsPrerequisiteProvider : ISettingsPrerequisite
     private readonly ICurrentUser _currentUser;
     private readonly ApprovedUnitProfileCatalog _catalog;
     private readonly ApprovedMoneyProfileCatalog _money;
+    private readonly ApprovedManufacturingToleranceCatalog _manufacturingTolerance;
     private readonly UnavailableSettingsPrerequisiteProvider _notApprovedYet;
 
     /// <summary>
@@ -71,7 +73,8 @@ public sealed class ApprovedSettingsPrerequisiteProvider : ISettingsPrerequisite
     /// catalogs.
     /// </summary>
     public ApprovedSettingsPrerequisiteProvider(ICompanyContext companyContext, ICurrentUser currentUser)
-        : this(companyContext, currentUser, ApprovedUnitProfileCatalog.Approved, ApprovedMoneyProfileCatalog.Approved)
+        : this(companyContext, currentUser, ApprovedUnitProfileCatalog.Approved, ApprovedMoneyProfileCatalog.Approved,
+            ApprovedManufacturingToleranceCatalog.Approved)
     {
     }
 
@@ -81,7 +84,17 @@ public sealed class ApprovedSettingsPrerequisiteProvider : ISettingsPrerequisite
     /// </summary>
     internal ApprovedSettingsPrerequisiteProvider(
         ICompanyContext companyContext, ICurrentUser currentUser, ApprovedUnitProfileCatalog catalog)
-        : this(companyContext, currentUser, catalog, ApprovedMoneyProfileCatalog.Approved)
+        : this(companyContext, currentUser, catalog, ApprovedMoneyProfileCatalog.Approved,
+            ApprovedManufacturingToleranceCatalog.Approved)
+    {
+    }
+
+    /// <summary>Settings-only synthetic Manufacturing tolerance seam.</summary>
+    internal ApprovedSettingsPrerequisiteProvider(
+        ICompanyContext companyContext, ICurrentUser currentUser,
+        ApprovedManufacturingToleranceCatalog manufacturingTolerance)
+        : this(companyContext, currentUser, ApprovedUnitProfileCatalog.Approved,
+            ApprovedMoneyProfileCatalog.Approved, manufacturingTolerance)
     {
     }
 
@@ -89,15 +102,25 @@ public sealed class ApprovedSettingsPrerequisiteProvider : ISettingsPrerequisite
     internal ApprovedSettingsPrerequisiteProvider(
         ICompanyContext companyContext, ICurrentUser currentUser,
         ApprovedUnitProfileCatalog catalog, ApprovedMoneyProfileCatalog money)
+        : this(companyContext, currentUser, catalog, money, ApprovedManufacturingToleranceCatalog.Approved)
+    {
+    }
+
+    internal ApprovedSettingsPrerequisiteProvider(
+        ICompanyContext companyContext, ICurrentUser currentUser,
+        ApprovedUnitProfileCatalog catalog, ApprovedMoneyProfileCatalog money,
+        ApprovedManufacturingToleranceCatalog manufacturingTolerance)
     {
         ArgumentNullException.ThrowIfNull(companyContext);
         ArgumentNullException.ThrowIfNull(currentUser);
         ArgumentNullException.ThrowIfNull(catalog);
         ArgumentNullException.ThrowIfNull(money);
+        ArgumentNullException.ThrowIfNull(manufacturingTolerance);
         _companyContext = companyContext;
         _currentUser = currentUser;
         _catalog = catalog;
         _money = money;
+        _manufacturingTolerance = manufacturingTolerance;
         _notApprovedYet = new UnavailableSettingsPrerequisiteProvider(companyContext, currentUser);
     }
 
@@ -200,6 +223,40 @@ public sealed class ApprovedSettingsPrerequisiteProvider : ISettingsPrerequisite
         {
             return Task.FromException<IReadOnlyList<MoneyCurrencyCandidateV1>>(exception);
         }
+    }
+
+    public Task<ManufacturingToleranceProfileV1> GetManufacturingToleranceAsync(
+        string process, DateOnly effectiveOn, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!HasCompanyAccess())
+        {
+            return Task.FromException<ManufacturingToleranceProfileV1>(
+                new SettingsPrerequisiteException("settings_access_denied"));
+        }
+
+        var companyId = _companyContext.CompanyId;
+        if (!_manufacturingTolerance.Serves(companyId))
+        {
+            return Task.FromException<ManufacturingToleranceProfileV1>(
+                new SettingsPrerequisiteException("settings_provider_unavailable"));
+        }
+
+        var entry = _manufacturingTolerance.VersionFor(companyId, process, effectiveOn);
+        if (entry is null)
+        {
+            return Task.FromException<ManufacturingToleranceProfileV1>(new SettingsPrerequisiteException(
+                SettingsPrerequisiteCodesV1.ManufacturingToleranceProfileNotFound));
+        }
+
+        return Task.FromResult(new ManufacturingToleranceProfileV1(
+            entry.CompanyId,
+            entry.Process,
+            new ProfileVersionV1(entry.ProfileId, entry.Version),
+            entry.MaximumFirePercent,
+            entry.IsActive,
+            entry.EffectiveFrom,
+            entry.EffectiveThrough));
     }
 
     /// <summary>Not an approved source yet.</summary>
