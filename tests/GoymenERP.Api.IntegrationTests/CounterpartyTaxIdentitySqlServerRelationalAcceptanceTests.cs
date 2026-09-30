@@ -440,12 +440,16 @@ public sealed class CounterpartyTaxIdentitySqlServerRelationalAcceptanceTests
         await using var test = new TaxTest();
         using var maker = test.Client();
         var party = await CreateAsync(maker, "Kısıt");
-        foreach (var malformed in new[] { "12345", "12345678901234", "12345 7890", "123456789A" })
+        foreach (var malformed in new[] { "12345", "12345 7890", "123456789A" })
         {
             var check = await Assert.ThrowsAsync<SqlException>(() => test.ExecuteAsync(
                 $"UPDATE [counterparty].[Parties] SET [TaxIdentityNumber]='{malformed}' WHERE [Id]=@Party;", party));
             Assert.Equal(547, check.Number);
         }
+
+        var oversize = await Assert.ThrowsAsync<SqlException>(() => test.ExecuteAsync(
+            "UPDATE [counterparty].[Parties] SET [TaxIdentityNumber]='12345678901234' WHERE [Id]=@Party;", party));
+        Assert.Equal(2628, oversize.Number);
 
         await EnterAsync(maker, party, Vkn);
         const string insert = """
