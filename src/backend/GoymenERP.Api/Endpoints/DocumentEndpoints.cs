@@ -118,7 +118,7 @@ public static class DocumentEndpoints
             return Results.File(content.Content, content.ContentType, content.FileName);
         })
             .WithName("GetDocumentContentV1")
-            .Produces(StatusCodes.Status200OK, responseType: null, contentType: "application/pdf", "image/png", "image/jpeg")
+            .Produces<Stream>(StatusCodes.Status200OK, "application/pdf", "image/png", "image/jpeg")
             .ProducesErpBadRequest(DocumentProblemCodesV1.ValidationFailed)
             .AllowsEmptyErpBadRequestBody()
             .ProducesErpCodeLessNotFound()

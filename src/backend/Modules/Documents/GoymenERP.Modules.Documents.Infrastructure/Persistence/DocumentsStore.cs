@@ -237,7 +237,7 @@ public sealed class DocumentsStore(DocumentsDbContext dbContext, ICompanyContext
         };
 
     private static StoredDocument Map(LatestDocumentRow row) =>
-        new(row.Id, row.CompanyId, row.OwnerKind, row.OwnerId, row.VersionNo, row.FileName, (DocumentFileKind)row.ContentKind, row.SizeBytes,
+        new StoredDocument(row.Id, row.CompanyId, row.OwnerKind, row.OwnerId, row.VersionNo, row.FileName, (DocumentFileKind)row.ContentKind, row.SizeBytes,
             row.Sha256, row.ObjectKey, (DocumentScanState)row.ScanState, row.ScannerId, row.UploadedBy, row.UploadedAtUtc);
 
     private Task<DocumentAttemptRow?> FindAttemptAsync(string commandName, string keyHash, CancellationToken cancellationToken) =>
