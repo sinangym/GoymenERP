@@ -157,6 +157,22 @@ public sealed class LifecycleTests
         "-NoProfile -NonInteractive -Command \"" + command + "\"")
     { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true })!;
 
+    private static Process StartExitedChild(int exitCode)
+    {
+        var start = new ProcessStartInfo(Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.System), "cmd.exe"))
+        {
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+        };
+        start.ArgumentList.Add("/d");
+        start.ArgumentList.Add("/c");
+        start.ArgumentList.Add($"exit /b {exitCode.ToString(CultureInfo.InvariantCulture)}");
+        return Process.Start(start)!;
+    }
+
     private static void KillQuietly(Process child)
     {
         try { if (!child.HasExited) { child.Kill(); child.WaitForExit(15_000); } }
@@ -459,7 +475,10 @@ public sealed class LifecycleTests
     [Fact]
     public void AFailedChildLaunchEndsTheStartCheckWithANonZeroExitCode()
     {
-        var child = StartChild("exit 3");
+        // The assertion is about Lifecycle observing an already-failed child, not
+        // PowerShell startup. Launch cmd directly so a saturated CI runner cannot
+        // spend the whole lifecycle timeout bootstrapping an unrelated shell.
+        var child = StartExitedChild(3);
         try
         {
             Assert.True(child.WaitForExit(30_000));

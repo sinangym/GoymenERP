@@ -46,6 +46,20 @@ export const ACCESS_ADMIN_ACTOR = 'c02-access-admin'
  */
 export const ACCESS_ADMIN_OTHER_COMPANY_ACTOR = 'c02-access-admin-b'
 
+/**
+ * AT-009 maker (user decision 2026-09-30). Holds `counterparty.parties.create` + `counterparty.parties.read` +
+ * `counterparty.parties.tax-identity.update` AND `counterparty.parties.tax-identity.approve`, company-wide in company
+ * A. It holds approve on purpose: when its own change request offers it no decision (and the server refuses one), the
+ * reason is the maker-checker rule, not a missing grant.
+ */
+export const TAX_MAKER_ACTOR = 'c02-tax-maker'
+
+/**
+ * AT-009 checker. Holds `counterparty.parties.read` + `counterparty.parties.tax-identity.approve` only, company-wide in
+ * company A: the DIFFERENT person who decides the maker's change request.
+ */
+export const TAX_CHECKER_ACTOR = 'c02-tax-checker'
+
 /** Identity user ids of the suite's own actors, as `infra/browser-suites/c02.override.yml` seeds them. */
 export const CREATOR_USER_ID = 'b2000000-0000-4000-8000-000000000401'
 export const OTHER_COMPANY_USER_ID = 'b2000000-0000-4000-8000-000000000402'

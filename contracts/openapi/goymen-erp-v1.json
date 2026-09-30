@@ -20270,6 +20270,1738 @@
         ]
       }
     },
+    "/api/v1/counterparties/{partyId}/tax-identity": {
+      "get": {
+        "tags": [
+          "Counterparty"
+        ],
+        "operationId": "GetCounterpartyTaxIdentityV1",
+        "parameters": [
+          {
+            "name": "partyId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "x-erp-non-empty-uuid": true
+            }
+          },
+          {
+            "name": "X-Correlation-Id",
+            "in": "header",
+            "description": "Optional client correlation identifier; the server creates one when absent.",
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9._:-]+$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Causation-Id",
+            "in": "header",
+            "description": "Optional identifier of the command or event that caused this request.",
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9._:-]+$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Company-Id",
+            "in": "header",
+            "description": "Selected company identifier for this company-scoped request.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "x-erp-non-empty-uuid": true
+            }
+          },
+          {
+            "name": "X-ERP-Counterparty-Contract",
+            "in": "header",
+            "description": "Exact client compatibility declaration. Required for every command and for reads containing zero-role accounts. Before enabling commands, require the matching server acknowledgment on a fresh, successful, validated GET bound to the current API origin, actor/session, selected company and generation. An error response never establishes readiness.",
+            "schema": {
+              "pattern": "^optional-trade-roles-v1$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "headers": {
+              "X-ERP-Counterparty-Contract": {
+                "description": "Optional server acknowledgment, present only after the client-contract filter accepts the exact request declaration. It can accompany handler-generated errors; errors before the filter (including authentication, company resolution and body binding) may omit it. Its presence on an error is not command success or client readiness. Readiness requires a fresh, successful, validated GET with the matching acknowledgment bound to the current API origin, actor/session, selected company and generation. Absence on an error is not proof of an old server.",
+                "schema": {
+                  "pattern": "^optional-trade-roles-v1$",
+                  "type": "string"
+                }
+              },
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CounterpartyTaxIdentityView"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "headers": {
+              "X-ERP-Counterparty-Contract": {
+                "description": "Optional server acknowledgment, present only after the client-contract filter accepts the exact request declaration. It can accompany handler-generated errors; errors before the filter (including authentication, company resolution and body binding) may omit it. Its presence on an error is not command success or client readiness. Readiness requires a fresh, successful, validated GET with the matching acknowledgment bound to the current API origin, actor/session, selected company and generation. Absence on an error is not proof of an old server.",
+                "schema": {
+                  "pattern": "^optional-trade-roles-v1$",
+                  "type": "string"
+                }
+              },
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "company_context_invalid",
+              "correlation_metadata_invalid",
+              "validation_failed"
+            ]
+          },
+          "404": {
+            "description": "Not Found",
+            "headers": {
+              "X-ERP-Counterparty-Contract": {
+                "description": "Optional server acknowledgment, present only after the client-contract filter accepts the exact request declaration. It can accompany handler-generated errors; errors before the filter (including authentication, company resolution and body binding) may omit it. Its presence on an error is not command success or client readiness. Readiness requires a fresh, successful, validated GET with the matching acknowledgment bound to the current API origin, actor/session, selected company and generation. Absence on an error is not proof of an old server.",
+                "schema": {
+                  "pattern": "^optional-trade-roles-v1$",
+                  "type": "string"
+                }
+              },
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "not_found"
+            ]
+          },
+          "409": {
+            "description": "Conflict",
+            "headers": {
+              "X-ERP-Counterparty-Contract": {
+                "description": "Optional server acknowledgment, present only after the client-contract filter accepts the exact request declaration. It can accompany handler-generated errors; errors before the filter (including authentication, company resolution and body binding) may omit it. Its presence on an error is not command success or client readiness. Readiness requires a fresh, successful, validated GET with the matching acknowledgment bound to the current API origin, actor/session, selected company and generation. Absence on an error is not proof of an old server.",
+                "schema": {
+                  "pattern": "^optional-trade-roles-v1$",
+                  "type": "string"
+                }
+              },
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "client_contract_required",
+              "client_contract_unsupported"
+            ]
+          },
+          "401": {
+            "description": "Unauthorized",
+            "headers": {
+              "X-ERP-Counterparty-Contract": {
+                "description": "Optional server acknowledgment, present only after the client-contract filter accepts the exact request declaration. It can accompany handler-generated errors; errors before the filter (including authentication, company resolution and body binding) may omit it. Its presence on an error is not command success or client readiness. Readiness requires a fresh, successful, validated GET with the matching acknowledgment bound to the current API origin, actor/session, selected company and generation. Absence on an error is not proof of an old server.",
+                "schema": {
+                  "pattern": "^optional-trade-roles-v1$",
+                  "type": "string"
+                }
+              },
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "authentication_required"
+            ]
+          },
+          "403": {
+            "description": "Forbidden",
+            "headers": {
+              "X-ERP-Counterparty-Contract": {
+                "description": "Optional server acknowledgment, present only after the client-contract filter accepts the exact request declaration. It can accompany handler-generated errors; errors before the filter (including authentication, company resolution and body binding) may omit it. Its presence on an error is not command success or client readiness. Readiness requires a fresh, successful, validated GET with the matching acknowledgment bound to the current API origin, actor/session, selected company and generation. Absence on an error is not proof of an old server.",
+                "schema": {
+                  "pattern": "^optional-trade-roles-v1$",
+                  "type": "string"
+                }
+              },
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "forbidden"
+            ]
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "headers": {
+              "X-ERP-Counterparty-Contract": {
+                "description": "Optional server acknowledgment, present only after the client-contract filter accepts the exact request declaration. It can accompany handler-generated errors; errors before the filter (including authentication, company resolution and body binding) may omit it. Its presence on an error is not command success or client readiness. Readiness requires a fresh, successful, validated GET with the matching acknowledgment bound to the current API origin, actor/session, selected company and generation. Absence on an error is not proof of an old server.",
+                "schema": {
+                  "pattern": "^optional-trade-roles-v1$",
+                  "type": "string"
+                }
+              },
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "internal_error"
+            ]
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "Counterparty"
+        ],
+        "operationId": "EnterCounterpartyTaxIdentityV1",
+        "parameters": [
+          {
+            "name": "partyId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "x-erp-non-empty-uuid": true
+            }
+          },
+          {
+            "name": "X-Correlation-Id",
+            "in": "header",
+            "description": "Optional client correlation identifier; the server creates one when absent.",
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9._:-]+$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Causation-Id",
+            "in": "header",
+            "description": "Optional identifier of the command or event that caused this request.",
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9._:-]+$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Company-Id",
+            "in": "header",
+            "description": "Selected company identifier for this company-scoped request.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "x-erp-non-empty-uuid": true
+            }
+          },
+          {
+            "name": "X-ERP-Counterparty-Contract",
+            "in": "header",
+            "description": "Exact client compatibility declaration. Required for every command and for reads containing zero-role accounts. Before enabling commands, require the matching server acknowledgment on a fresh, successful, validated GET bound to the current API origin, actor/session, selected company and generation. An error response never establishes readiness.",
+            "required": true,
+            "schema": {
+              "pattern": "^optional-trade-roles-v1$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Unique command key; one non-empty value with at most 128 canonical characters.",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "pattern": "^(?!.*[,])(?=.*\\S).+$",
+              "type": "string",
+              "x-erp-canonicalization": "trim",
+              "x-erp-canonical-max-length": 128
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EnterCounterpartyTaxIdentity"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "No Content",
+            "headers": {
+              "X-ERP-Counterparty-Contract": {
+                "description": "Optional server acknowledgment, present only after the client-contract filter accepts the exact request declaration. It can accompany handler-generated errors; errors before the filter (including authentication, company resolution and body binding) may omit it. Its presence on an error is not command success or client readiness. Readiness requires a fresh, successful, validated GET with the matching acknowledgment bound to the current API origin, actor/session, selected company and generation. Absence on an error is not proof of an old server.",
+                "schema": {
+                  "pattern": "^optional-trade-roles-v1$",
+                  "type": "string"
+                }
+              },
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              },
+              "Idempotency-Replayed": {
+                "description": "True only when the response safely replays an earlier command result.",
+                "schema": {
+                  "type": "boolean"
+                }
+              },
+              "Idempotency-Original-Correlation-Id": {
+                "description": "Original command correlation identifier when the response is a replay.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "headers": {
+              "X-ERP-Counterparty-Contract": {
+                "description": "Optional server acknowledgment, present only after the client-contract filter accepts the exact request declaration. It can accompany handler-generated errors; errors before the filter (including authentication, company resolution and body binding) may omit it. Its presence on an error is not command success or client readiness. Readiness requires a fresh, successful, validated GET with the matching acknowledgment bound to the current API origin, actor/session, selected company and generation. Absence on an error is not proof of an old server.",
+                "schema": {
+                  "pattern": "^optional-trade-roles-v1$",
+                  "type": "string"
+                }
+              },
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "command_metadata_invalid",
+              "company_context_invalid",
+              "correlation_metadata_invalid",
+              "tax_identity_invalid",
+              "validation_failed"
+            ],
+            "x-erp-empty-body-possible": true
+          },
+          "415": {
+            "description": "Unsupported Media Type",
+            "headers": {
+              "X-ERP-Counterparty-Contract": {
+                "description": "Optional server acknowledgment, present only after the client-contract filter accepts the exact request declaration. It can accompany handler-generated errors; errors before the filter (including authentication, company resolution and body binding) may omit it. Its presence on an error is not command success or client readiness. Readiness requires a fresh, successful, validated GET with the matching acknowledgment bound to the current API origin, actor/session, selected company and generation. Absence on an error is not proof of an old server.",
+                "schema": {
+                  "pattern": "^optional-trade-roles-v1$",
+                  "type": "string"
+                }
+              },
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "headers": {
+              "X-ERP-Counterparty-Contract": {
+                "description": "Optional server acknowledgment, present only after the client-contract filter accepts the exact request declaration. It can accompany handler-generated errors; errors before the filter (including authentication, company resolution and body binding) may omit it. Its presence on an error is not command success or client readiness. Readiness requires a fresh, successful, validated GET with the matching acknowledgment bound to the current API origin, actor/session, selected company and generation. Absence on an error is not proof of an old server.",
+                "schema": {
+                  "pattern": "^optional-trade-roles-v1$",
+                  "type": "string"
+                }
+              },
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              },
+              "Idempotency-Replayed": {
+                "description": "True only when the response safely replays an earlier command result.",
+                "schema": {
+                  "type": "boolean"
+                }
+              },
+              "Idempotency-Original-Correlation-Id": {
+                "description": "Original command correlation identifier when the response is a replay.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "not_found"
+            ]
+          },
+          "409": {
+            "description": "Conflict",
+            "headers": {
+              "X-ERP-Counterparty-Contract": {
+                "description": "Optional server acknowledgment, present only after the client-contract filter accepts the exact request declaration. It can accompany handler-generated errors; errors before the filter (including authentication, company resolution and body binding) may omit it. Its presence on an error is not command success or client readiness. Readiness requires a fresh, successful, validated GET with the matching acknowledgment bound to the current API origin, actor/session, selected company and generation. Absence on an error is not proof of an old server.",
+                "schema": {
+                  "pattern": "^optional-trade-roles-v1$",
+                  "type": "string"
+                }
+              },
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              },
+              "Idempotency-Replayed": {
+                "description": "True only when the response safely replays an earlier command result.",
+                "schema": {
+                  "type": "boolean"
+                }
+              },
+              "Idempotency-Original-Correlation-Id": {
+                "description": "Original command correlation identifier when the response is a replay.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "client_contract_required",
+              "client_contract_unsupported",
+              "idempotency_conflict",
+              "tax_identity_change_requires_approval",
+              "version_conflict"
+            ]
+          },
+          "401": {
+            "description": "Unauthorized",
+            "headers": {
+              "X-ERP-Counterparty-Contract": {
+                "description": "Optional server acknowledgment, present only after the client-contract filter accepts the exact request declaration. It can accompany handler-generated errors; errors before the filter (including authentication, company resolution and body binding) may omit it. Its presence on an error is not command success or client readiness. Readiness requires a fresh, successful, validated GET with the matching acknowledgment bound to the current API origin, actor/session, selected company and generation. Absence on an error is not proof of an old server.",
+                "schema": {
+                  "pattern": "^optional-trade-roles-v1$",
+                  "type": "string"
+                }
+              },
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "authentication_required"
+            ]
+          },
+          "403": {
+            "description": "Forbidden",
+            "headers": {
+              "X-ERP-Counterparty-Contract": {
+                "description": "Optional server acknowledgment, present only after the client-contract filter accepts the exact request declaration. It can accompany handler-generated errors; errors before the filter (including authentication, company resolution and body binding) may omit it. Its presence on an error is not command success or client readiness. Readiness requires a fresh, successful, validated GET with the matching acknowledgment bound to the current API origin, actor/session, selected company and generation. Absence on an error is not proof of an old server.",
+                "schema": {
+                  "pattern": "^optional-trade-roles-v1$",
+                  "type": "string"
+                }
+              },
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "forbidden"
+            ]
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "headers": {
+              "X-ERP-Counterparty-Contract": {
+                "description": "Optional server acknowledgment, present only after the client-contract filter accepts the exact request declaration. It can accompany handler-generated errors; errors before the filter (including authentication, company resolution and body binding) may omit it. Its presence on an error is not command success or client readiness. Readiness requires a fresh, successful, validated GET with the matching acknowledgment bound to the current API origin, actor/session, selected company and generation. Absence on an error is not proof of an old server.",
+                "schema": {
+                  "pattern": "^optional-trade-roles-v1$",
+                  "type": "string"
+                }
+              },
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "internal_error"
+            ]
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
+    "/api/v1/counterparties/{partyId}/tax-identity/duplicates": {
+      "post": {
+        "tags": [
+          "Counterparty"
+        ],
+        "operationId": "CheckCounterpartyTaxIdentityDuplicatesV1",
+        "parameters": [
+          {
+            "name": "partyId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "x-erp-non-empty-uuid": true
+            }
+          },
+          {
+            "name": "X-Correlation-Id",
+            "in": "header",
+            "description": "Optional client correlation identifier; the server creates one when absent.",
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9._:-]+$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Causation-Id",
+            "in": "header",
+            "description": "Optional identifier of the command or event that caused this request.",
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9._:-]+$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Company-Id",
+            "in": "header",
+            "description": "Selected company identifier for this company-scoped request.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "x-erp-non-empty-uuid": true
+            }
+          },
+          {
+            "name": "X-ERP-Counterparty-Contract",
+            "in": "header",
+            "description": "Exact client compatibility declaration. Required for every command and for reads containing zero-role accounts. Before enabling commands, require the matching server acknowledgment on a fresh, successful, validated GET bound to the current API origin, actor/session, selected company and generation. An error response never establishes readiness.",
+            "required": true,
+            "schema": {
+              "pattern": "^optional-trade-roles-v1$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CheckCounterpartyTaxIdentityDuplicates"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "headers": {
+              "X-ERP-Counterparty-Contract": {
+                "description": "Optional server acknowledgment, present only after the client-contract filter accepts the exact request declaration. It can accompany handler-generated errors; errors before the filter (including authentication, company resolution and body binding) may omit it. Its presence on an error is not command success or client readiness. Readiness requires a fresh, successful, validated GET with the matching acknowledgment bound to the current API origin, actor/session, selected company and generation. Absence on an error is not proof of an old server.",
+                "schema": {
+                  "pattern": "^optional-trade-roles-v1$",
+                  "type": "string"
+                }
+              },
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CounterpartyTaxIdentityDuplicateCheck"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "headers": {
+              "X-ERP-Counterparty-Contract": {
+                "description": "Optional server acknowledgment, present only after the client-contract filter accepts the exact request declaration. It can accompany handler-generated errors; errors before the filter (including authentication, company resolution and body binding) may omit it. Its presence on an error is not command success or client readiness. Readiness requires a fresh, successful, validated GET with the matching acknowledgment bound to the current API origin, actor/session, selected company and generation. Absence on an error is not proof of an old server.",
+                "schema": {
+                  "pattern": "^optional-trade-roles-v1$",
+                  "type": "string"
+                }
+              },
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "company_context_invalid",
+              "correlation_metadata_invalid",
+              "tax_identity_invalid",
+              "validation_failed"
+            ],
+            "x-erp-empty-body-possible": true
+          },
+          "415": {
+            "description": "Unsupported Media Type",
+            "headers": {
+              "X-ERP-Counterparty-Contract": {
+                "description": "Optional server acknowledgment, present only after the client-contract filter accepts the exact request declaration. It can accompany handler-generated errors; errors before the filter (including authentication, company resolution and body binding) may omit it. Its presence on an error is not command success or client readiness. Readiness requires a fresh, successful, validated GET with the matching acknowledgment bound to the current API origin, actor/session, selected company and generation. Absence on an error is not proof of an old server.",
+                "schema": {
+                  "pattern": "^optional-trade-roles-v1$",
+                  "type": "string"
+                }
+              },
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "headers": {
+              "X-ERP-Counterparty-Contract": {
+                "description": "Optional server acknowledgment, present only after the client-contract filter accepts the exact request declaration. It can accompany handler-generated errors; errors before the filter (including authentication, company resolution and body binding) may omit it. Its presence on an error is not command success or client readiness. Readiness requires a fresh, successful, validated GET with the matching acknowledgment bound to the current API origin, actor/session, selected company and generation. Absence on an error is not proof of an old server.",
+                "schema": {
+                  "pattern": "^optional-trade-roles-v1$",
+                  "type": "string"
+                }
+              },
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "not_found"
+            ]
+          },
+          "409": {
+            "description": "Conflict",
+            "headers": {
+              "X-ERP-Counterparty-Contract": {
+                "description": "Optional server acknowledgment, present only after the client-contract filter accepts the exact request declaration. It can accompany handler-generated errors; errors before the filter (including authentication, company resolution and body binding) may omit it. Its presence on an error is not command success or client readiness. Readiness requires a fresh, successful, validated GET with the matching acknowledgment bound to the current API origin, actor/session, selected company and generation. Absence on an error is not proof of an old server.",
+                "schema": {
+                  "pattern": "^optional-trade-roles-v1$",
+                  "type": "string"
+                }
+              },
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "client_contract_required",
+              "client_contract_unsupported"
+            ]
+          },
+          "401": {
+            "description": "Unauthorized",
+            "headers": {
+              "X-ERP-Counterparty-Contract": {
+                "description": "Optional server acknowledgment, present only after the client-contract filter accepts the exact request declaration. It can accompany handler-generated errors; errors before the filter (including authentication, company resolution and body binding) may omit it. Its presence on an error is not command success or client readiness. Readiness requires a fresh, successful, validated GET with the matching acknowledgment bound to the current API origin, actor/session, selected company and generation. Absence on an error is not proof of an old server.",
+                "schema": {
+                  "pattern": "^optional-trade-roles-v1$",
+                  "type": "string"
+                }
+              },
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "authentication_required"
+            ]
+          },
+          "403": {
+            "description": "Forbidden",
+            "headers": {
+              "X-ERP-Counterparty-Contract": {
+                "description": "Optional server acknowledgment, present only after the client-contract filter accepts the exact request declaration. It can accompany handler-generated errors; errors before the filter (including authentication, company resolution and body binding) may omit it. Its presence on an error is not command success or client readiness. Readiness requires a fresh, successful, validated GET with the matching acknowledgment bound to the current API origin, actor/session, selected company and generation. Absence on an error is not proof of an old server.",
+                "schema": {
+                  "pattern": "^optional-trade-roles-v1$",
+                  "type": "string"
+                }
+              },
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "forbidden"
+            ]
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "headers": {
+              "X-ERP-Counterparty-Contract": {
+                "description": "Optional server acknowledgment, present only after the client-contract filter accepts the exact request declaration. It can accompany handler-generated errors; errors before the filter (including authentication, company resolution and body binding) may omit it. Its presence on an error is not command success or client readiness. Readiness requires a fresh, successful, validated GET with the matching acknowledgment bound to the current API origin, actor/session, selected company and generation. Absence on an error is not proof of an old server.",
+                "schema": {
+                  "pattern": "^optional-trade-roles-v1$",
+                  "type": "string"
+                }
+              },
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "internal_error"
+            ]
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
+    "/api/v1/counterparties/{partyId}/tax-identity/change-request": {
+      "put": {
+        "tags": [
+          "Counterparty"
+        ],
+        "operationId": "RequestCounterpartyTaxIdentityChangeV1",
+        "parameters": [
+          {
+            "name": "partyId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "x-erp-non-empty-uuid": true
+            }
+          },
+          {
+            "name": "X-Correlation-Id",
+            "in": "header",
+            "description": "Optional client correlation identifier; the server creates one when absent.",
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9._:-]+$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Causation-Id",
+            "in": "header",
+            "description": "Optional identifier of the command or event that caused this request.",
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9._:-]+$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Company-Id",
+            "in": "header",
+            "description": "Selected company identifier for this company-scoped request.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "x-erp-non-empty-uuid": true
+            }
+          },
+          {
+            "name": "X-ERP-Counterparty-Contract",
+            "in": "header",
+            "description": "Exact client compatibility declaration. Required for every command and for reads containing zero-role accounts. Before enabling commands, require the matching server acknowledgment on a fresh, successful, validated GET bound to the current API origin, actor/session, selected company and generation. An error response never establishes readiness.",
+            "required": true,
+            "schema": {
+              "pattern": "^optional-trade-roles-v1$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Unique command key; one non-empty value with at most 128 canonical characters.",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "pattern": "^(?!.*[,])(?=.*\\S).+$",
+              "type": "string",
+              "x-erp-canonicalization": "trim",
+              "x-erp-canonical-max-length": 128
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RequestCounterpartyTaxIdentityChange"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "No Content",
+            "headers": {
+              "X-ERP-Counterparty-Contract": {
+                "description": "Optional server acknowledgment, present only after the client-contract filter accepts the exact request declaration. It can accompany handler-generated errors; errors before the filter (including authentication, company resolution and body binding) may omit it. Its presence on an error is not command success or client readiness. Readiness requires a fresh, successful, validated GET with the matching acknowledgment bound to the current API origin, actor/session, selected company and generation. Absence on an error is not proof of an old server.",
+                "schema": {
+                  "pattern": "^optional-trade-roles-v1$",
+                  "type": "string"
+                }
+              },
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              },
+              "Idempotency-Replayed": {
+                "description": "True only when the response safely replays an earlier command result.",
+                "schema": {
+                  "type": "boolean"
+                }
+              },
+              "Idempotency-Original-Correlation-Id": {
+                "description": "Original command correlation identifier when the response is a replay.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "headers": {
+              "X-ERP-Counterparty-Contract": {
+                "description": "Optional server acknowledgment, present only after the client-contract filter accepts the exact request declaration. It can accompany handler-generated errors; errors before the filter (including authentication, company resolution and body binding) may omit it. Its presence on an error is not command success or client readiness. Readiness requires a fresh, successful, validated GET with the matching acknowledgment bound to the current API origin, actor/session, selected company and generation. Absence on an error is not proof of an old server.",
+                "schema": {
+                  "pattern": "^optional-trade-roles-v1$",
+                  "type": "string"
+                }
+              },
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "command_metadata_invalid",
+              "company_context_invalid",
+              "correlation_metadata_invalid",
+              "tax_identity_invalid",
+              "validation_failed"
+            ],
+            "x-erp-empty-body-possible": true
+          },
+          "415": {
+            "description": "Unsupported Media Type",
+            "headers": {
+              "X-ERP-Counterparty-Contract": {
+                "description": "Optional server acknowledgment, present only after the client-contract filter accepts the exact request declaration. It can accompany handler-generated errors; errors before the filter (including authentication, company resolution and body binding) may omit it. Its presence on an error is not command success or client readiness. Readiness requires a fresh, successful, validated GET with the matching acknowledgment bound to the current API origin, actor/session, selected company and generation. Absence on an error is not proof of an old server.",
+                "schema": {
+                  "pattern": "^optional-trade-roles-v1$",
+                  "type": "string"
+                }
+              },
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "headers": {
+              "X-ERP-Counterparty-Contract": {
+                "description": "Optional server acknowledgment, present only after the client-contract filter accepts the exact request declaration. It can accompany handler-generated errors; errors before the filter (including authentication, company resolution and body binding) may omit it. Its presence on an error is not command success or client readiness. Readiness requires a fresh, successful, validated GET with the matching acknowledgment bound to the current API origin, actor/session, selected company and generation. Absence on an error is not proof of an old server.",
+                "schema": {
+                  "pattern": "^optional-trade-roles-v1$",
+                  "type": "string"
+                }
+              },
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              },
+              "Idempotency-Replayed": {
+                "description": "True only when the response safely replays an earlier command result.",
+                "schema": {
+                  "type": "boolean"
+                }
+              },
+              "Idempotency-Original-Correlation-Id": {
+                "description": "Original command correlation identifier when the response is a replay.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "not_found"
+            ]
+          },
+          "409": {
+            "description": "Conflict",
+            "headers": {
+              "X-ERP-Counterparty-Contract": {
+                "description": "Optional server acknowledgment, present only after the client-contract filter accepts the exact request declaration. It can accompany handler-generated errors; errors before the filter (including authentication, company resolution and body binding) may omit it. Its presence on an error is not command success or client readiness. Readiness requires a fresh, successful, validated GET with the matching acknowledgment bound to the current API origin, actor/session, selected company and generation. Absence on an error is not proof of an old server.",
+                "schema": {
+                  "pattern": "^optional-trade-roles-v1$",
+                  "type": "string"
+                }
+              },
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              },
+              "Idempotency-Replayed": {
+                "description": "True only when the response safely replays an earlier command result.",
+                "schema": {
+                  "type": "boolean"
+                }
+              },
+              "Idempotency-Original-Correlation-Id": {
+                "description": "Original command correlation identifier when the response is a replay.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "client_contract_required",
+              "client_contract_unsupported",
+              "idempotency_conflict",
+              "tax_identity_change_pending",
+              "tax_identity_not_set",
+              "tax_identity_unchanged",
+              "version_conflict"
+            ]
+          },
+          "401": {
+            "description": "Unauthorized",
+            "headers": {
+              "X-ERP-Counterparty-Contract": {
+                "description": "Optional server acknowledgment, present only after the client-contract filter accepts the exact request declaration. It can accompany handler-generated errors; errors before the filter (including authentication, company resolution and body binding) may omit it. Its presence on an error is not command success or client readiness. Readiness requires a fresh, successful, validated GET with the matching acknowledgment bound to the current API origin, actor/session, selected company and generation. Absence on an error is not proof of an old server.",
+                "schema": {
+                  "pattern": "^optional-trade-roles-v1$",
+                  "type": "string"
+                }
+              },
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "authentication_required"
+            ]
+          },
+          "403": {
+            "description": "Forbidden",
+            "headers": {
+              "X-ERP-Counterparty-Contract": {
+                "description": "Optional server acknowledgment, present only after the client-contract filter accepts the exact request declaration. It can accompany handler-generated errors; errors before the filter (including authentication, company resolution and body binding) may omit it. Its presence on an error is not command success or client readiness. Readiness requires a fresh, successful, validated GET with the matching acknowledgment bound to the current API origin, actor/session, selected company and generation. Absence on an error is not proof of an old server.",
+                "schema": {
+                  "pattern": "^optional-trade-roles-v1$",
+                  "type": "string"
+                }
+              },
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "forbidden"
+            ]
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "headers": {
+              "X-ERP-Counterparty-Contract": {
+                "description": "Optional server acknowledgment, present only after the client-contract filter accepts the exact request declaration. It can accompany handler-generated errors; errors before the filter (including authentication, company resolution and body binding) may omit it. Its presence on an error is not command success or client readiness. Readiness requires a fresh, successful, validated GET with the matching acknowledgment bound to the current API origin, actor/session, selected company and generation. Absence on an error is not proof of an old server.",
+                "schema": {
+                  "pattern": "^optional-trade-roles-v1$",
+                  "type": "string"
+                }
+              },
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "internal_error"
+            ]
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
+    "/api/v1/counterparties/{partyId}/tax-identity/change-request/decision": {
+      "put": {
+        "tags": [
+          "Counterparty"
+        ],
+        "operationId": "DecideCounterpartyTaxIdentityChangeV1",
+        "parameters": [
+          {
+            "name": "partyId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "x-erp-non-empty-uuid": true
+            }
+          },
+          {
+            "name": "X-Correlation-Id",
+            "in": "header",
+            "description": "Optional client correlation identifier; the server creates one when absent.",
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9._:-]+$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Causation-Id",
+            "in": "header",
+            "description": "Optional identifier of the command or event that caused this request.",
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9._:-]+$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Company-Id",
+            "in": "header",
+            "description": "Selected company identifier for this company-scoped request.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "x-erp-non-empty-uuid": true
+            }
+          },
+          {
+            "name": "X-ERP-Counterparty-Contract",
+            "in": "header",
+            "description": "Exact client compatibility declaration. Required for every command and for reads containing zero-role accounts. Before enabling commands, require the matching server acknowledgment on a fresh, successful, validated GET bound to the current API origin, actor/session, selected company and generation. An error response never establishes readiness.",
+            "required": true,
+            "schema": {
+              "pattern": "^optional-trade-roles-v1$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Unique command key; one non-empty value with at most 128 canonical characters.",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "pattern": "^(?!.*[,])(?=.*\\S).+$",
+              "type": "string",
+              "x-erp-canonicalization": "trim",
+              "x-erp-canonical-max-length": 128
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DecideCounterpartyTaxIdentityChange"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "No Content",
+            "headers": {
+              "X-ERP-Counterparty-Contract": {
+                "description": "Optional server acknowledgment, present only after the client-contract filter accepts the exact request declaration. It can accompany handler-generated errors; errors before the filter (including authentication, company resolution and body binding) may omit it. Its presence on an error is not command success or client readiness. Readiness requires a fresh, successful, validated GET with the matching acknowledgment bound to the current API origin, actor/session, selected company and generation. Absence on an error is not proof of an old server.",
+                "schema": {
+                  "pattern": "^optional-trade-roles-v1$",
+                  "type": "string"
+                }
+              },
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              },
+              "Idempotency-Replayed": {
+                "description": "True only when the response safely replays an earlier command result.",
+                "schema": {
+                  "type": "boolean"
+                }
+              },
+              "Idempotency-Original-Correlation-Id": {
+                "description": "Original command correlation identifier when the response is a replay.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "headers": {
+              "X-ERP-Counterparty-Contract": {
+                "description": "Optional server acknowledgment, present only after the client-contract filter accepts the exact request declaration. It can accompany handler-generated errors; errors before the filter (including authentication, company resolution and body binding) may omit it. Its presence on an error is not command success or client readiness. Readiness requires a fresh, successful, validated GET with the matching acknowledgment bound to the current API origin, actor/session, selected company and generation. Absence on an error is not proof of an old server.",
+                "schema": {
+                  "pattern": "^optional-trade-roles-v1$",
+                  "type": "string"
+                }
+              },
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "command_metadata_invalid",
+              "company_context_invalid",
+              "correlation_metadata_invalid",
+              "validation_failed"
+            ],
+            "x-erp-empty-body-possible": true
+          },
+          "415": {
+            "description": "Unsupported Media Type",
+            "headers": {
+              "X-ERP-Counterparty-Contract": {
+                "description": "Optional server acknowledgment, present only after the client-contract filter accepts the exact request declaration. It can accompany handler-generated errors; errors before the filter (including authentication, company resolution and body binding) may omit it. Its presence on an error is not command success or client readiness. Readiness requires a fresh, successful, validated GET with the matching acknowledgment bound to the current API origin, actor/session, selected company and generation. Absence on an error is not proof of an old server.",
+                "schema": {
+                  "pattern": "^optional-trade-roles-v1$",
+                  "type": "string"
+                }
+              },
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "headers": {
+              "X-ERP-Counterparty-Contract": {
+                "description": "Optional server acknowledgment, present only after the client-contract filter accepts the exact request declaration. It can accompany handler-generated errors; errors before the filter (including authentication, company resolution and body binding) may omit it. Its presence on an error is not command success or client readiness. Readiness requires a fresh, successful, validated GET with the matching acknowledgment bound to the current API origin, actor/session, selected company and generation. Absence on an error is not proof of an old server.",
+                "schema": {
+                  "pattern": "^optional-trade-roles-v1$",
+                  "type": "string"
+                }
+              },
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              },
+              "Idempotency-Replayed": {
+                "description": "True only when the response safely replays an earlier command result.",
+                "schema": {
+                  "type": "boolean"
+                }
+              },
+              "Idempotency-Original-Correlation-Id": {
+                "description": "Original command correlation identifier when the response is a replay.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "not_found"
+            ]
+          },
+          "409": {
+            "description": "Conflict",
+            "headers": {
+              "X-ERP-Counterparty-Contract": {
+                "description": "Optional server acknowledgment, present only after the client-contract filter accepts the exact request declaration. It can accompany handler-generated errors; errors before the filter (including authentication, company resolution and body binding) may omit it. Its presence on an error is not command success or client readiness. Readiness requires a fresh, successful, validated GET with the matching acknowledgment bound to the current API origin, actor/session, selected company and generation. Absence on an error is not proof of an old server.",
+                "schema": {
+                  "pattern": "^optional-trade-roles-v1$",
+                  "type": "string"
+                }
+              },
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              },
+              "Idempotency-Replayed": {
+                "description": "True only when the response safely replays an earlier command result.",
+                "schema": {
+                  "type": "boolean"
+                }
+              },
+              "Idempotency-Original-Correlation-Id": {
+                "description": "Original command correlation identifier when the response is a replay.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "client_contract_required",
+              "client_contract_unsupported",
+              "idempotency_conflict",
+              "tax_identity_change_not_pending",
+              "tax_identity_change_stale",
+              "tax_identity_self_decision",
+              "version_conflict"
+            ]
+          },
+          "401": {
+            "description": "Unauthorized",
+            "headers": {
+              "X-ERP-Counterparty-Contract": {
+                "description": "Optional server acknowledgment, present only after the client-contract filter accepts the exact request declaration. It can accompany handler-generated errors; errors before the filter (including authentication, company resolution and body binding) may omit it. Its presence on an error is not command success or client readiness. Readiness requires a fresh, successful, validated GET with the matching acknowledgment bound to the current API origin, actor/session, selected company and generation. Absence on an error is not proof of an old server.",
+                "schema": {
+                  "pattern": "^optional-trade-roles-v1$",
+                  "type": "string"
+                }
+              },
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "authentication_required"
+            ]
+          },
+          "403": {
+            "description": "Forbidden",
+            "headers": {
+              "X-ERP-Counterparty-Contract": {
+                "description": "Optional server acknowledgment, present only after the client-contract filter accepts the exact request declaration. It can accompany handler-generated errors; errors before the filter (including authentication, company resolution and body binding) may omit it. Its presence on an error is not command success or client readiness. Readiness requires a fresh, successful, validated GET with the matching acknowledgment bound to the current API origin, actor/session, selected company and generation. Absence on an error is not proof of an old server.",
+                "schema": {
+                  "pattern": "^optional-trade-roles-v1$",
+                  "type": "string"
+                }
+              },
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "forbidden"
+            ]
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "headers": {
+              "X-ERP-Counterparty-Contract": {
+                "description": "Optional server acknowledgment, present only after the client-contract filter accepts the exact request declaration. It can accompany handler-generated errors; errors before the filter (including authentication, company resolution and body binding) may omit it. Its presence on an error is not command success or client readiness. Readiness requires a fresh, successful, validated GET with the matching acknowledgment bound to the current API origin, actor/session, selected company and generation. Absence on an error is not proof of an old server.",
+                "schema": {
+                  "pattern": "^optional-trade-roles-v1$",
+                  "type": "string"
+                }
+              },
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "internal_error"
+            ]
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
     "/api/v1/products": {
       "get": {
         "tags": [
@@ -50078,6 +51810,18 @@
         },
         "additionalProperties": false
       },
+      "CheckCounterpartyTaxIdentityDuplicates": {
+        "required": [
+          "taxIdentityNumber"
+        ],
+        "type": "object",
+        "properties": {
+          "taxIdentityNumber": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
       "CloseOrderRequestV1": {
         "required": [
           "expectedVersion"
@@ -50998,6 +52742,209 @@
               "null",
               "string"
             ]
+          }
+        }
+      },
+      "CounterpartyTaxIdentityChangeView": {
+        "required": [
+          "id",
+          "status",
+          "currentTaxIdentityNumber",
+          "proposedTaxIdentityNumber",
+          "proposedKind",
+          "reason",
+          "requestedBy",
+          "requestedAtUtc",
+          "decidedBy",
+          "decidedAtUtc",
+          "decisionNote",
+          "proposedDuplicates"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string"
+          },
+          "currentTaxIdentityNumber": {
+            "type": "string"
+          },
+          "proposedTaxIdentityNumber": {
+            "type": "string"
+          },
+          "proposedKind": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "requestedBy": {
+            "type": "string"
+          },
+          "requestedAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "decidedBy": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "decidedAtUtc": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "decisionNote": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "proposedDuplicates": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CounterpartyTaxIdentityDuplicate"
+            }
+          }
+        }
+      },
+      "CounterpartyTaxIdentityDuplicate": {
+        "required": [
+          "partyId",
+          "code",
+          "legalName",
+          "accountIsActive"
+        ],
+        "type": "object",
+        "properties": {
+          "partyId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "code": {
+            "type": "string"
+          },
+          "legalName": {
+            "type": "string"
+          },
+          "accountIsActive": {
+            "type": "boolean"
+          }
+        }
+      },
+      "CounterpartyTaxIdentityDuplicateCheck": {
+        "required": [
+          "taxIdentityNumber",
+          "kind",
+          "duplicates"
+        ],
+        "type": "object",
+        "properties": {
+          "taxIdentityNumber": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "duplicates": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CounterpartyTaxIdentityDuplicate"
+            }
+          }
+        }
+      },
+      "CounterpartyTaxIdentityView": {
+        "required": [
+          "partyId",
+          "companyId",
+          "version",
+          "taxIdentityNumber",
+          "kind",
+          "duplicates",
+          "pendingChange",
+          "lastDecidedChange",
+          "viewer"
+        ],
+        "type": "object",
+        "properties": {
+          "partyId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "companyId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "version": {
+            "type": "string"
+          },
+          "taxIdentityNumber": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "kind": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "duplicates": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CounterpartyTaxIdentityDuplicate"
+            }
+          },
+          "pendingChange": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/CounterpartyTaxIdentityChangeView"
+              }
+            ]
+          },
+          "lastDecidedChange": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/CounterpartyTaxIdentityChangeView"
+              }
+            ]
+          },
+          "viewer": {
+            "$ref": "#/components/schemas/CounterpartyTaxIdentityViewer"
+          }
+        }
+      },
+      "CounterpartyTaxIdentityViewer": {
+        "required": [
+          "canUpdate",
+          "canApprove",
+          "isRequesterOfPending"
+        ],
+        "type": "object",
+        "properties": {
+          "canUpdate": {
+            "type": "boolean"
+          },
+          "canApprove": {
+            "type": "boolean"
+          },
+          "isRequesterOfPending": {
+            "type": "boolean"
           }
         }
       },
@@ -52144,6 +54091,33 @@
           }
         }
       },
+      "DecideCounterpartyTaxIdentityChange": {
+        "required": [
+          "expectedVersion",
+          "changeRequestId",
+          "decision"
+        ],
+        "type": "object",
+        "properties": {
+          "expectedVersion": {
+            "type": "string"
+          },
+          "changeRequestId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "decision": {
+            "type": "string"
+          },
+          "note": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
       "DecideInventoryStockCountV1": {
         "required": [
           "decision",
@@ -52869,6 +54843,22 @@
             ]
           }
         }
+      },
+      "EnterCounterpartyTaxIdentity": {
+        "required": [
+          "expectedVersion",
+          "taxIdentityNumber"
+        ],
+        "type": "object",
+        "properties": {
+          "expectedVersion": {
+            "type": "string"
+          },
+          "taxIdentityNumber": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
       },
       "ErpCodeLessProblemDetailsContract": {
         "required": [
@@ -60443,6 +62433,26 @@
             ]
           }
         }
+      },
+      "RequestCounterpartyTaxIdentityChange": {
+        "required": [
+          "expectedVersion",
+          "proposedTaxIdentityNumber",
+          "reason"
+        ],
+        "type": "object",
+        "properties": {
+          "expectedVersion": {
+            "type": "string"
+          },
+          "proposedTaxIdentityNumber": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
       },
       "ReturnInventoryInputRequestV1": {
         "required": [

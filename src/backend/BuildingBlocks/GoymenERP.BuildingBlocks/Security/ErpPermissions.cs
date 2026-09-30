@@ -28,6 +28,19 @@ public static class ErpPermissions
         "counterparty.accounts.status.update";
 
     /// <summary>
+    /// AT-009 (user decision 2026-09-30): enter a Cari's first VKN/TCKN and propose a change of an existing one (the
+    /// maker), and approve or reject someone else's proposal (the checker) — the Counterparty owner's names
+    /// (CounterpartyTaxIdentityPermissionsV1). Registered, not granted: no role, seed or user receives them here.
+    /// Company-wide only, as every Counterparty name. Approve is Critical (a VKN/TCKN change is a critical master
+    /// change under CARI-DEC-004, as the bank account is); update is not. Holding approve never lets the proposer
+    /// decide their own request: that is the module's maker-checker rule, not a grant.
+    /// </summary>
+    public const string CounterpartyPartiesTaxIdentityUpdate = "counterparty.parties.tax-identity.update";
+
+    /// <inheritdoc cref="CounterpartyPartiesTaxIdentityUpdate"/>
+    public const string CounterpartyPartiesTaxIdentityApprove = "counterparty.parties.tax-identity.approve";
+
+    /// <summary>
     /// The narrow operational product-selection read (K-1(a), Sinan's decision relayed in Business
     /// #66 5719251344; registration asked for in 5720016574 §3). Registering the name makes it
     /// KNOWN, not granted: no role and no user receives it here, and an actor without an explicit
@@ -542,6 +555,8 @@ public static class ErpPermissions
             CounterpartyPartiesUpdateBasic,
             CounterpartyAccountsCreate,
             CounterpartyAccountsStatusUpdate,
+            CounterpartyPartiesTaxIdentityUpdate,
+            CounterpartyPartiesTaxIdentityApprove,
             ProductOperationalSelectionRead,
             SalesDraftsCreate,
             SalesDraftsRead,
@@ -632,6 +647,7 @@ public static class ErpPermissions
             IdentityAssignmentsRead,
             FinanceBankAccountPropose,
             FinanceBankAccountApprove,
+            CounterpartyPartiesTaxIdentityApprove,
         ],
         StringComparer.Ordinal);
 
@@ -643,6 +659,8 @@ public static class ErpPermissions
             CounterpartyPartiesUpdateBasic,
             CounterpartyAccountsCreate,
             CounterpartyAccountsStatusUpdate,
+            CounterpartyPartiesTaxIdentityUpdate,
+            CounterpartyPartiesTaxIdentityApprove,
             ProductOperationalSelectionRead,
             SalesDraftsCreate,
             SalesDraftsRead,

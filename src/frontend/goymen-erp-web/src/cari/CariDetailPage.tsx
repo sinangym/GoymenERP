@@ -30,6 +30,13 @@ import {
 import { CARI_CONTROL_CAPABILITY, targetIsActive } from './accountStatusContract'
 import { AccountStatusControl, AccountStatusRecoveryNotice } from './AccountStatusControl'
 import { CariCompanyRelationships } from './CariCompanyRelationships'
+import { CariTaxIdentityPanel } from './CariTaxIdentityPanel'
+import {
+  armTaxIdentityDiscard,
+  forgetTaxIdentityAttempt,
+  reconcileTaxIdentityDiscards,
+  taxIdentityBindingForShell,
+} from './pendingTaxIdentityAttempt'
 import { DocumentsPanel } from '../documents/DocumentsPanel'
 import { OWNER_KIND } from '../documents/contract'
 import { useAccountStatusFlow, type AccountStatusApplied } from './useAccountStatusFlow'
@@ -65,7 +72,37 @@ export function CariDetailPage() {
   const key = contextKey(shell)
   const namespace = key === null ? null : contextKeyString(key)
   const { partyId } = useParams()
-  return <CariDetail key={`${namespace ?? 'no-context'}::${partyId ?? ''}`} namespace={namespace} />
+  const scopePartyId = partyId ?? ''
+  const last = useRef<typeof shell | null>(null)
+
+  useEffect(() => {
+    const before = last.current
+    last.current = shell
+    reconcileTaxIdentityDiscards(shell, scopePartyId, API_BASE)
+    if (
+      before !== null &&
+      before.phase === 'confirming-switch' &&
+      shell.phase !== 'confirming-switch' &&
+      shell.phase !== 'idle'
+    ) {
+      forgetTaxIdentityAttempt(taxIdentityBindingForShell(before, scopePartyId, API_BASE))
+    }
+  }, [scopePartyId, shell])
+
+  useEffect(
+    () => () => {
+      const before = last.current
+      if (before !== null && before.phase === 'confirming-switch') {
+        armTaxIdentityDiscard(
+          taxIdentityBindingForShell(before, scopePartyId, API_BASE),
+          before.committedContextRevision,
+        )
+      }
+    },
+    [scopePartyId],
+  )
+
+  return <CariDetail key={`${namespace ?? 'no-context'}::${scopePartyId}`} namespace={namespace} />
 }
 
 function CariDetail({ namespace }: { readonly namespace: string | null }) {
@@ -337,6 +374,16 @@ function CariDetail({ namespace }: { readonly namespace: string | null }) {
             data-party-state={detail.isActive ? 'active' : 'inactive'}
           />
         </dl>
+        {/* AT-009: the party's VKN/TCKN (one per party, like the facts above), its duplicate warning in THIS
+            company, and the maker-checker change. Its own read, bound to the selected company. */}
+        {namespace !== null && activeCompanyId !== null ? (
+          <CariTaxIdentityPanel
+            partyId={detail.id}
+            companyId={activeCompanyId}
+            namespace={namespace}
+            contractContext={contractContext}
+          />
+        ) : null}
       </section>
 
       <section aria-labelledby="cari-account-heading" className={styles.block} data-section="account">
