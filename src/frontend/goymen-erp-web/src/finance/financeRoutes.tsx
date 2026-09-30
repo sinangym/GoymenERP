@@ -33,6 +33,7 @@ import { OfficialInvoiceImportPanel, type OfficialInvoiceImportSourceSelection }
 import { useOfficialInvoiceApprovalTransport } from './officialInvoiceImportApprovalClient'
 import { OFFICIAL_INVOICE_IMPORT_APPROVALS_ROUTE } from './officialInvoiceImportRoutes'
 import { ManualBankPaymentStartPage, type ManualBankPaymentEntryContext } from './ManualBankPaymentStartPage'
+import { CustomerInstrumentPortfolioPage } from './CustomerInstrumentPortfolioPage'
 import {
   ManualBankPaymentCreatePage,
   ManualBankPaymentDetailPage,
@@ -146,6 +147,10 @@ function OfficialInvoiceImportApprovalsRoute() {
 }
 
 export const financeRoutes: RouteObject[] = [
+  {
+    path: FINANCE_ROUTE.customerInstrumentsList.slice(1),
+    element: gate(FINANCE_CAPABILITY.customerInstrumentsList, <CustomerInstrumentPortfolioPage />),
+  },
   { path: FINANCE_ROUTE.receiptsList.slice(1), element: gate(FINANCE_CAPABILITY.receiptsList, <ReceiptListPage />) },
   {
     path: OFFICIAL_INVOICE_IMPORT_APPROVALS_ROUTE.slice(1),

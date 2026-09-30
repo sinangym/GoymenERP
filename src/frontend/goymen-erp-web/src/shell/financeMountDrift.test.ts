@@ -27,6 +27,8 @@ const ROUTED = [
   [CAPABILITY.financeReceiptsList, FINANCE_CAPABILITY.receiptsList, FINANCE_ROUTE.receiptsList],
   [CAPABILITY.financeReceiptsDraft, FINANCE_CAPABILITY.receiptsDraft, FINANCE_ROUTE.receiptsDraft],
   [CAPABILITY.financeReceiptsDetail, FINANCE_CAPABILITY.receiptsDetail, FINANCE_ROUTE.receiptsDetail],
+  [CAPABILITY.financeCustomerInstrumentsList, FINANCE_CAPABILITY.customerInstrumentsList,
+    FINANCE_ROUTE.customerInstrumentsList],
   [
     CAPABILITY.financeReceiptsReverseApprove,
     FINANCE_CAPABILITY.receiptsReverseApprove,
@@ -78,7 +80,7 @@ describe('shell ↔ Finance lane capability ids', () => {
     ).toEqual([...classified].sort())
   })
 
-  it('declares the lane’s nine route ids with the lane’s values and routes', () => {
+  it('declares the lane’s ten route ids with the lane’s values and routes', () => {
     for (const [shellId, laneId, route] of ROUTED) {
       expect(shellId).toBe(laneId)
       expect(CAPABILITY_ROUTE[shellId]).toBe(route)
@@ -118,13 +120,14 @@ describe('shell ↔ Finance lane capability ids', () => {
       FINANCE_ROUTE.manualBankPaymentsCreate)).toBeNull()
   })
 
-  it('gives the two lists and reversal queue nav entries and the other three none', () => {
+  it('gives the three lists and reversal queue nav entries and the other finance routes none', () => {
     const labels: Record<string, string> = {}
     for (const [shellId] of ROUTED) labels[shellId] = CAPABILITY_NAV_LABEL[shellId as CapabilityId]
     expect(labels).toEqual({
       'finance.receipts.list': 'Tahsilat Taslakları',
       'finance.receipts.draft': '',
       'finance.receipts.detail': '',
+      'finance.customer-instruments.list': 'Müşteri Çekleri ve Senetleri',
       'finance.receipts.reverse.approve': 'Ters Kayıt Onayları',
       'finance.bank-accounts.list': 'Banka Hesapları',
       'finance.bank-accounts.propose': '',

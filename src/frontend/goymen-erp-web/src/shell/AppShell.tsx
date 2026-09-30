@@ -88,6 +88,7 @@ export const NAV_CAPABILITIES: readonly CapabilityId[] = [
    * have none. The reversal checker queue is a separate work list and therefore has its own entry.
    */
   CAPABILITY.financeReceiptsList,
+  CAPABILITY.financeCustomerInstrumentsList,
   CAPABILITY.financeReceiptsReverseApprove,
   CAPABILITY.financeBankAccountsList,
   /**
