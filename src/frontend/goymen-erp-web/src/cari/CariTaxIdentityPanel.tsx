@@ -84,17 +84,14 @@ function refusalText(status: number, body: unknown): string {
 }
 
 function canRetryWithFreshView(attempt: FrozenTaxIdentityAttempt, view: TaxIdentityView): boolean {
-  if (attempt.operation === 'enter') {
-    return view.viewer.canUpdate && view.taxIdentityNumber === null && view.pendingChange === null
-  }
-  if (attempt.operation === 'request') {
-    return view.viewer.canUpdate && view.taxIdentityNumber !== null && view.pendingChange === null
-  }
-  return (
-    view.viewer.canApprove &&
-    !view.viewer.isRequesterOfPending &&
-    view.pendingChange?.id === attempt.operation.slice('decide:'.length)
-  )
+  // This is a SAME-key replay of an outcome that is still unknown, not a new
+  // command. A fresh read can already show the first send's committed effect,
+  // so its new-command state preconditions must not hide the only safe replay.
+  // The current operation authority still fences the resend; the server
+  // revalidates the two-person and version rules and returns the stored answer.
+  return attempt.operation === 'enter' || attempt.operation === 'request'
+    ? view.viewer.canUpdate
+    : view.viewer.canApprove
 }
 
 export function CariTaxIdentityPanel({ partyId, companyId, namespace, contractContext }: Props) {

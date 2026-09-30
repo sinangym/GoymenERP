@@ -12,7 +12,12 @@ import {
   recordContractRead,
   resetContractReadiness,
 } from './clientContract'
-import { resetPendingTaxIdentityAttempts } from './pendingTaxIdentityAttempt'
+import {
+  rememberTaxIdentityAttempt,
+  resetPendingTaxIdentityAttempts,
+  taxIdentityBindingForShell,
+  type FrozenTaxIdentityAttempt,
+} from './pendingTaxIdentityAttempt'
 import { ShellDispatchContext, ShellStateContext } from '../shell/shellContext'
 import {
   contextKey,
@@ -103,6 +108,135 @@ afterEach(() => {
 })
 
 describe('Cari tax identity pending attempt across the real shell boundary', () => {
+  it.each([
+    {
+      name: 'enter',
+      operation: 'enter' as const,
+      view: {
+        partyId: PARTY,
+        companyId: COMPANY,
+        version: '2',
+        taxIdentityNumber: '1234567890',
+        kind: 'vkn',
+        duplicates: [],
+        pendingChange: null,
+        lastDecidedChange: null,
+        viewer: { canUpdate: true, canApprove: false, isRequesterOfPending: false },
+      },
+    },
+    {
+      name: 'request',
+      operation: 'request' as const,
+      view: {
+        partyId: PARTY,
+        companyId: COMPANY,
+        version: '2',
+        taxIdentityNumber: '1234567890',
+        kind: 'vkn',
+        duplicates: [],
+        pendingChange: {
+          id: '33333333-3333-3333-3333-333333333333',
+          status: 'pending',
+          currentTaxIdentityNumber: '1234567890',
+          proposedTaxIdentityNumber: '9876543217',
+          proposedKind: 'vkn',
+          reason: 'Levha değişti',
+          requestedBy: 'maker',
+          requestedAtUtc: '2026-09-30T12:00:00Z',
+          decidedBy: null,
+          decidedAtUtc: null,
+          decisionNote: null,
+          proposedDuplicates: [],
+        },
+        lastDecidedChange: null,
+        viewer: { canUpdate: true, canApprove: false, isRequesterOfPending: true },
+      },
+    },
+    {
+      name: 'decision',
+      operation: 'decide:33333333-3333-3333-3333-333333333333' as const,
+      view: {
+        partyId: PARTY,
+        companyId: COMPANY,
+        version: '3',
+        taxIdentityNumber: '9876543217',
+        kind: 'vkn',
+        duplicates: [],
+        pendingChange: null,
+        lastDecidedChange: {
+          id: '33333333-3333-3333-3333-333333333333',
+          status: 'approved',
+          currentTaxIdentityNumber: '1234567890',
+          proposedTaxIdentityNumber: '9876543217',
+          proposedKind: 'vkn',
+          reason: 'Levha değişti',
+          requestedBy: 'maker',
+          requestedAtUtc: '2026-09-30T12:00:00Z',
+          decidedBy: 'checker',
+          decidedAtUtc: '2026-09-30T12:05:00Z',
+          decisionNote: null,
+          proposedDuplicates: [],
+        },
+        viewer: { canUpdate: false, canApprove: true, isRequesterOfPending: false },
+      },
+    },
+  ])('replays a committed $name response-lost attempt after remount even when the fresh view already changed', async ({ operation, view }) => {
+    vi.stubGlobal('navigator', { onLine: true })
+    const namespace = namespaceOf(ready)
+    rememberContract(namespace)
+    const binding = taxIdentityBindingForShell(ready, PARTY, '/api/v1')
+    if (binding === null) throw new Error('test shell must produce a tax-identity attempt binding')
+    const key = `response-lost-${operation}`
+    const body = { operation, originalExpectedVersion: '1' }
+    const sends: Array<{ key: string; companyId: string; body: typeof body }> = []
+    const frozen: FrozenTaxIdentityAttempt = {
+      operation,
+      fingerprint: JSON.stringify(body),
+      key,
+      binding: binding.key,
+      companyId: COMPANY,
+      contract: { origin: '/api/v1', namespace },
+      send: async (context) => {
+        sends.push({ key: context.idempotencyKey, companyId: context.companyId, body })
+        return { type: 'applied', data: null, replayed: true, originalCorrelationId: 'original-correlation' }
+      },
+      okText: 'Stored answer resolved.',
+    }
+    rememberTaxIdentityAttempt(binding, {
+      phase: 'unknown',
+      snapshot: {
+        key,
+        operation: `counterparty.tax-identity:${operation}`,
+        binding: binding.key,
+        payload: frozen,
+      },
+      reason: 'network-error',
+      resends: 0,
+    })
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(JSON.stringify(view), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json', [COUNTERPARTY_CONTRACT_HEADER]: COUNTERPARTY_CONTRACT_VERSION },
+      })),
+    )
+
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } })
+    queryClient.setQueryData(['shell', 'identity'], { type: 'ok-single', data: { userId: USER } })
+    render(
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter>
+          <Harness onReauthorize={() => undefined} />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    )
+
+    await userEvent.setup().click(await screen.findByRole('button', { name: 'Aynı işlemi yeniden gönder' }))
+    await waitFor(() => expect(sends).toHaveLength(1))
+    expect(sends[0]).toEqual({ key, companyId: COMPANY, body })
+    expect(await screen.findByText('Stored answer resolved.')).toBeTruthy()
+  })
+
   it('keeps the original key and body after a retry 403 re-fences and remounts the detail', async () => {
     vi.stubGlobal('navigator', { onLine: true })
     rememberContract(namespaceOf(ready))

@@ -370,6 +370,8 @@ public sealed class CounterpartyTaxIdentitySqlServerRelationalAcceptanceTests
         using var maker = test.Client();
         var existing = await CreateAsync(maker, "Gizli çakışan cari");
         var target = await CreateAsync(maker, "Yetkisi düşen cari");
+        var targetAuditBaseline = await test.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [EntityId]=CONVERT(nvarchar(36), @Party);", target);
         await EnterAsync(maker, existing, Vkn);
 
         interleave.Arm();
@@ -384,8 +386,11 @@ public sealed class CounterpartyTaxIdentitySqlServerRelationalAcceptanceTests
         Assert.DoesNotContain("Gizli çakışan cari", body, StringComparison.Ordinal);
         Assert.Equal(0, await test.ScalarAsync<int>(
             "SELECT COUNT(*) FROM [counterparty].[Parties] WHERE [Id]=@Party AND [TaxIdentityNumber] IS NOT NULL;", target));
-        Assert.Equal(0, await test.ScalarAsync<int>(
+        Assert.Equal(targetAuditBaseline, await test.ScalarAsync<int>(
             "SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [EntityId]=CONVERT(nvarchar(36), @Party);", target));
+        Assert.Equal(0, await test.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [EntityId]=CONVERT(nvarchar(36), @Party) AND [EventType]=@Event;",
+            target, EnteredEvent));
     }
 
     [SqlServerFact]
