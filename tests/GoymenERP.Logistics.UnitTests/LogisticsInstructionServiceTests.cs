@@ -89,6 +89,21 @@ public sealed partial class LogisticsInstructionServiceTests
     }
 
     [Theory]
+    [InlineData("remainder-cancelled", "1", "lines[0].sourceOrderLineId", "remainder_cancelled")]
+    [InlineData("remainder-revised", "2.001", "lines[0].quantity", "exceeds_ordered_quantity")]
+    public async Task A_new_instruction_respects_the_current_approved_remainder(string fault, string quantity, string field, string fieldCode)
+    {
+        var world = new World { OrderLines = { Fault = fault } };
+
+        var refusal = await Assert.ThrowsAsync<LogisticsInstructionServiceException>(() =>
+            world.Service().CreateInstructionAsync(Request(quantity), Metadata("k-remainder")));
+
+        Assert.Equal((409, LogisticsProblemCodesV1.OrderLineState, field, fieldCode),
+            (refusal.Status, refusal.Code, refusal.Errors[0].Field, refusal.Errors[0].Code));
+        Assert.Empty(world.Store.Envelopes);
+    }
+
+    [Theory]
     [InlineData("passive-account", 409, LogisticsProblemCodesV1.AccountState)]
     [InlineData("not-found", 409, LogisticsProblemCodesV1.AccountState)]
     [InlineData("other-company", 409, LogisticsProblemCodesV1.AccountState)]
@@ -180,6 +195,32 @@ public sealed partial class LogisticsInstructionServiceTests
         var unbound = await Assert.ThrowsAsync<LogisticsInstructionServiceException>(() =>
             world.Service().RecordLoadAsync(id, created.Detail.Lines[0].LineId, new RecordLoadRequest("2", Guid.NewGuid(), "1", "Measured"), Metadata("k-load-b")));
         Assert.Equal((503, LogisticsProblemCodesV1.PermissionUnregistered), (unbound.Status, unbound.Code));
+    }
+
+    [Fact]
+    public async Task Every_load_re_reads_the_current_sales_remainder_and_never_exceeds_a_revised_quantity()
+    {
+        var world = new World();
+        var created = await world.Service().CreateInstructionAsync(Request(quantity: "4"), Metadata("k-create-remainder"));
+        var id = created.Detail.Instruction.Id;
+        var lineId = created.Detail.Lines[0].LineId;
+        await world.Service().IssueInstructionAsync(id, new IssueLoadingInstructionRequest("2"), Metadata("k-issue-remainder"));
+
+        world.OrderLines.Fault = "remainder-revised";
+        var loaded = await world.Service().RecordLoadAsync(id, lineId,
+            new RecordLoadRequest("3", Guid.NewGuid(), "2", "Measured"), Metadata("k-load-remainder-1"));
+        Assert.Equal("2", loaded.Detail.Lines[0].Loaded);
+
+        var over = await Assert.ThrowsAsync<LogisticsInstructionServiceException>(() => world.Service().RecordLoadAsync(id, lineId,
+            new RecordLoadRequest("4", Guid.NewGuid(), "0.001", "Measured"), Metadata("k-load-remainder-2")));
+        Assert.Equal((409, LogisticsProblemCodesV1.OrderLineState, "quantity", "exceeds_ordered_quantity"),
+            (over.Status, over.Code, over.Errors[0].Field, over.Errors[0].Code));
+
+        world.OrderLines.Fault = "remainder-cancelled";
+        var cancelled = await Assert.ThrowsAsync<LogisticsInstructionServiceException>(() => world.Service().RecordLoadAsync(id, lineId,
+            new RecordLoadRequest("4", Guid.NewGuid(), "0.001", "Measured"), Metadata("k-load-remainder-3")));
+        Assert.Equal((409, LogisticsProblemCodesV1.OrderLineState, "sourceOrderLineId", "remainder_cancelled"),
+            (cancelled.Status, cancelled.Code, cancelled.Errors[0].Field, cancelled.Errors[0].Code));
     }
 
     [Fact]
@@ -474,7 +515,10 @@ public sealed partial class LogisticsInstructionServiceTests
                 "not-found" => Task.FromResult(new SalesOrderLineReferenceAnswerV1(SalesOrderLineReferenceOutcomeV1.NotFound, null, null)),
                 _ => Task.FromResult(new SalesOrderLineReferenceAnswerV1(SalesOrderLineReferenceOutcomeV1.Approved,
                     new SalesOrderLineReferenceV1(Fault == "other-company" ? Guid.NewGuid() : Company, orderId, lineId, 1,
-                        Fault == "other-customer" ? Guid.NewGuid() : Party, Account, Product, "7", KgUnit, "10", 0, 7), null)),
+                        Fault == "other-customer" ? Guid.NewGuid() : Party, Account, Product, "7", KgUnit,
+                        Fault == "remainder-revised" ? "2" : "10", 0, 7,
+                        Fault == "remainder-cancelled" ? SalesRemainderChangeNamesV1.Cancelled
+                            : Fault == "remainder-revised" ? SalesRemainderChangeNamesV1.Revised : SalesRemainderChangeNamesV1.Open), null)),
             };
         }
     }

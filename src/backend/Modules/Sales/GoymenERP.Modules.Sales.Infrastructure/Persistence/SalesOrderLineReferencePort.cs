@@ -47,7 +47,8 @@ public sealed class SalesOrderLineReferencePort(ISalesOrderDraftStore store, ICo
 
         return new SalesOrderLineReferenceAnswerV1(SalesOrderLineReferenceOutcomeV1.Approved, new SalesOrderLineReferenceV1(
             draft.CompanyId, draft.Id, line.Id, line.LineNo, draft.Header.PartyId, draft.Header.CompanyAccountId,
-            line.Product.ProductId, line.Product.ProductVersion, line.OrderUnit.UnitId, line.QuantityText, draft.Revision, draft.Version), null);
+            line.Product.ProductId, line.Product.ProductVersion, line.OrderUnit.UnitId, line.QuantityText, draft.Revision, draft.Version,
+            RemainderState(line.Remainder)), null);
     }
 
     /// <summary>
@@ -125,6 +126,14 @@ public sealed class SalesOrderLineReferencePort(ISalesOrderDraftStore store, ICo
                         continue;
                     }
 
+                    // An approved cancellation keeps the delivered/loaded history, but there is no remaining demand to offer
+                    // to a new loading instruction. The direct read still carries the state so an existing instruction can
+                    // re-check it immediately before each load.
+                    if (line.Remainder == LineRemainderState.Cancelled)
+                    {
+                        continue;
+                    }
+
                     if (items.Count == pageSize)
                     {
                         // The cap is reached with lines of this draft still unanswered: resume in this draft after the last answered line.
@@ -137,7 +146,7 @@ public sealed class SalesOrderLineReferencePort(ISalesOrderDraftStore store, ICo
                     items.Add(new SalesApprovedLineReferenceV1(draft.CompanyId, draft.Id, draft.DocumentNo, line.Id, line.LineNo,
                         draft.Header.PartyId, draft.Header.CompanyAccountId, line.Product.ProductId, line.Product.ProductVersion,
                         line.Product.Code, line.Product.Name, line.OrderUnit.UnitId, line.OrderUnit.UnitCode, line.QuantityText,
-                        line.RequestedDeliveryDate, draft.Revision));
+                        line.RequestedDeliveryDate, draft.Revision, RemainderState(line.Remainder)));
                 }
 
                 previous = draft;
@@ -163,6 +172,13 @@ public sealed class SalesOrderLineReferencePort(ISalesOrderDraftStore store, ICo
 
     /// <summary>The line page cap (the consumer's endpoint validates the same 1–100).</summary>
     public const int MaximumLinePageSize = 100;
+
+    private static string RemainderState(LineRemainderState state) => state switch
+    {
+        LineRemainderState.Revised => SalesRemainderChangeNamesV1.Revised,
+        LineRemainderState.Cancelled => SalesRemainderChangeNamesV1.Cancelled,
+        _ => SalesRemainderChangeNamesV1.Open,
+    };
 
     /// <summary>The store cursor under which <paramref name="draft"/> is the first draft listed: the page's own cursor, or "after its predecessor".</summary>
     private static string? ListsFirst(string? pageCursor, SalesDraftPage page, SalesOrderDraft draft)

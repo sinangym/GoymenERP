@@ -67,9 +67,15 @@ public sealed partial class LogisticsInstructionService(
         for (var index = 0; index < request.Lines.Count; index++)
         {
             var line = request.Lines[index];
-            var (source, productId) = await ReadOrderLineAsync(scope, request, index, cancellationToken);
+            var (source, productId, orderedQuantity) = await ReadOrderLineAsync(scope, request, index, cancellationToken);
             var quantity = await VerifyUnitAsync(scope, bindings.CreatePermission, line.UnitId, line.Quantity, request.EffectiveOn,
                 $"lines[{index}]", cancellationToken);
+            if (quantity.Value > orderedQuantity)
+            {
+                throw new LogisticsInstructionServiceException(409, LogisticsProblemCodesV1.OrderLineState,
+                    [new($"lines[{index}].quantity", "exceeds_ordered_quantity")]);
+            }
+
             lines.Add((line, source, productId, quantity));
         }
 
@@ -141,8 +147,10 @@ public sealed partial class LogisticsInstructionService(
             {
                 var line = stored.Instruction.Lines.FirstOrDefault(candidate => candidate.Id == lineId)
                     ?? throw new LogisticsInstructionServiceException(404, "not_found");
-                return await VerifyUnitAsync(scope, bindings.RecordPermission, line.UnitId, request.Quantity, stored.EffectiveOn, "load",
+                var quantity = await VerifyUnitAsync(scope, bindings.RecordPermission, line.UnitId, request.Quantity, stored.EffectiveOn, "load",
                     cancellationToken);
+                await RequireCurrentOrderLineAllowsLoadAsync(scope, stored, line, quantity, cancellationToken);
+                return quantity;
             }, cancellationToken);
     }
 
@@ -511,7 +519,8 @@ public sealed partial class LogisticsInstructionService(
     }
 
     /// <summary>D4: only an APPROVED line of this company and this customer is a need; the product and the revision are the Sales owner's answer.</summary>
-    private async Task<(SourceOrderLineRef Source, Guid ProductId)> ReadOrderLineAsync(Scope scope, CreateLoadingInstructionRequest request, int index,
+    private async Task<(SourceOrderLineRef Source, Guid ProductId, decimal OrderedQuantity)> ReadOrderLineAsync(Scope scope,
+        CreateLoadingInstructionRequest request, int index,
         CancellationToken cancellationToken)
     {
         var line = request.Lines[index];
@@ -545,7 +554,21 @@ public sealed partial class LogisticsInstructionService(
                     throw new LogisticsInstructionServiceException(409, LogisticsProblemCodesV1.OrderLineState, [new(field, "customer_mismatch")]);
                 }
 
-                return (new SourceOrderLineRef(approved.OrderId, approved.LineId, approved.Revision), approved.ProductId);
+                RequireKnownRemainderState(approved.RemainderState);
+                if (approved.RemainderState == SalesRemainderChangeNamesV1.Cancelled)
+                {
+                    throw new LogisticsInstructionServiceException(409, LogisticsProblemCodesV1.OrderLineState,
+                        [new(field, "remainder_cancelled")]);
+                }
+
+                if (approved.OrderUnitId != line.UnitId)
+                {
+                    throw new LogisticsInstructionServiceException(409, LogisticsProblemCodesV1.OrderLineState,
+                        [new($"lines[{index}].unitId", "unit_mismatch")]);
+                }
+
+                return (new SourceOrderLineRef(approved.OrderId, approved.LineId, approved.Revision), approved.ProductId,
+                    ReadOwnerQuantity(approved.QuantityText));
             case SalesOrderLineReferenceOutcomeV1.NotApproved:
                 throw new LogisticsInstructionServiceException(409, LogisticsProblemCodesV1.OrderLineState,
                     [new(field, "not_approved"), new($"lines[{index}].approvalState", answer.ApprovalState ?? "unknown")]);
@@ -553,6 +576,80 @@ public sealed partial class LogisticsInstructionService(
                 throw new LogisticsInstructionServiceException(409, LogisticsProblemCodesV1.OrderLineState, [new(field, "invalid_reference")]);
             default:
                 throw new LogisticsInstructionServiceException(503, LogisticsProblemCodesV1.ReferenceProviderInvalid);
+        }
+    }
+
+    /// <summary>
+    /// An existing instruction is not a licence to load an old quantity forever. Immediately before every load, re-read the
+    /// Sales-owned line and enforce its current approved quantity/remainder. This is a read-only cross-module fence: Logistics
+    /// creates no Sales record and Sales creates no Logistics share. A residual change after this read is handled by the next
+    /// load; there is deliberately no cross-module transaction.
+    /// </summary>
+    private async Task RequireCurrentOrderLineAllowsLoadAsync(Scope scope, StoredLoadingInstruction stored, LoadingInstructionLine line,
+        Quantity quantity, CancellationToken cancellationToken)
+    {
+        SalesOrderLineReferenceAnswerV1 answer;
+        try
+        {
+            answer = await GuardedAsync(scope, bindings.RecordPermission,
+                () => orderLines.GetApprovedLineAsync(line.Source.OrderId, line.Source.LineId, cancellationToken), cancellationToken);
+        }
+        catch (LogisticsInstructionServiceException)
+        {
+            throw;
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            throw new LogisticsInstructionServiceException(503, LogisticsProblemCodesV1.SalesProviderUnavailable);
+        }
+
+        if (answer.Outcome != SalesOrderLineReferenceOutcomeV1.Approved || answer.Line is not { } approved)
+        {
+            var code = answer.Outcome == SalesOrderLineReferenceOutcomeV1.NotApproved ? "not_approved" : "invalid_reference";
+            throw new LogisticsInstructionServiceException(409, LogisticsProblemCodesV1.OrderLineState,
+                [new("sourceOrderLineId", code)]);
+        }
+
+        if (approved.CompanyId != scope.CompanyId || approved.OrderId != line.Source.OrderId || approved.LineId != line.Source.LineId
+            || approved.PartyId != stored.Instruction.CustomerPartyId || approved.CompanyAccountId != stored.Instruction.CompanyAccountId
+            || approved.ProductId != line.ProductId || approved.OrderUnitId != line.UnitId || approved.Revision < 0)
+        {
+            throw new LogisticsInstructionServiceException(503, LogisticsProblemCodesV1.ReferenceProviderInvalid);
+        }
+
+        RequireKnownRemainderState(approved.RemainderState);
+        if (approved.RemainderState == SalesRemainderChangeNamesV1.Cancelled)
+        {
+            throw new LogisticsInstructionServiceException(409, LogisticsProblemCodesV1.OrderLineState,
+                [new("sourceOrderLineId", "remainder_cancelled")]);
+        }
+
+        var orderedQuantity = ReadOwnerQuantity(approved.QuantityText);
+        if (line.LoadedQuantity.Value + quantity.Value > orderedQuantity)
+        {
+            throw new LogisticsInstructionServiceException(409, LogisticsProblemCodesV1.OrderLineState,
+                [new("quantity", "exceeds_ordered_quantity")]);
+        }
+    }
+
+    private static void RequireKnownRemainderState(string state)
+    {
+        if (state is not (SalesRemainderChangeNamesV1.Open or SalesRemainderChangeNamesV1.Revised
+            or SalesRemainderChangeNamesV1.Cancelled))
+        {
+            throw new LogisticsInstructionServiceException(503, LogisticsProblemCodesV1.ReferenceProviderInvalid);
+        }
+    }
+
+    private static decimal ReadOwnerQuantity(string quantityText)
+    {
+        try
+        {
+            return ReadQuantityText(quantityText, "sourceOrderLine.quantity");
+        }
+        catch (LogisticsInstructionServiceException)
+        {
+            throw new LogisticsInstructionServiceException(503, LogisticsProblemCodesV1.ReferenceProviderInvalid);
         }
     }
 
