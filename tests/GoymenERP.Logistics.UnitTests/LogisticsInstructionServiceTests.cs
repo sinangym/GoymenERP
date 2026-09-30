@@ -256,6 +256,35 @@ public sealed partial class LogisticsInstructionServiceTests
     }
 
     [Fact]
+    public async Task A_revised_cap_atomically_limits_loaded_total_across_instructions_and_replays_the_refusal()
+    {
+        var world = new World { OrderLines = { Fault = "limit" } };
+        var first = await world.Service().CreateInstructionAsync(Request("2.5"), Metadata("k-cap-create-1"));
+        var second = await world.Service().CreateInstructionAsync(Request("2.5"), Metadata("k-cap-create-2"));
+        await world.Service().IssueInstructionAsync(first.Detail.Instruction.Id, new IssueLoadingInstructionRequest("2"), Metadata("k-cap-issue-1"));
+        await world.Service().IssueInstructionAsync(second.Detail.Instruction.Id, new IssueLoadingInstructionRequest("2"), Metadata("k-cap-issue-2"));
+        await world.Service().RecordLoadAsync(first.Detail.Instruction.Id, first.Detail.Lines[0].LineId,
+            new RecordLoadRequest("3", Guid.NewGuid(), "1.5", "Measured"), Metadata("k-cap-load-1"));
+        await world.Service().RecordLoadAsync(second.Detail.Instruction.Id, second.Detail.Lines[0].LineId,
+            new RecordLoadRequest("3", Guid.NewGuid(), "0.5", "Measured"), Metadata("k-cap-load-2"));
+
+        world.OrderLines.Fault = "load-limit-revised";
+        var callsBefore = world.OrderLines.Calls;
+        var request = new RecordLoadRequest("4", Guid.NewGuid(), "0.001", "Measured");
+        var refusal = await Assert.ThrowsAsync<LogisticsInstructionServiceException>(() => world.Service().RecordLoadAsync(
+            second.Detail.Instruction.Id, second.Detail.Lines[0].LineId, request, Metadata("k-cap-over")));
+        Assert.Equal((409, LogisticsProblemCodesV1.OrderLineAggregateLimitExceeded, false),
+            (refusal.Status, refusal.Code, refusal.IsReplay));
+
+        var replay = await Assert.ThrowsAsync<LogisticsInstructionServiceException>(() => world.Service().RecordLoadAsync(
+            second.Detail.Instruction.Id, second.Detail.Lines[0].LineId, request, Metadata("k-cap-over", "retry-correlation")));
+        Assert.Equal((409, LogisticsProblemCodesV1.OrderLineAggregateLimitExceeded, true, "synthetic-correlation"),
+            (replay.Status, replay.Code, replay.IsReplay, replay.OriginalCorrelationId));
+        Assert.Equal(callsBefore + 1, world.OrderLines.Calls);
+        Assert.Equal(3, world.Store.LoadLimits.Count);
+    }
+
+    [Fact]
     public async Task Authority_is_measured_before_the_replay_and_a_lost_grant_refuses_before_the_store()
     {
         var world = new World { Authority = { Granted = false } };
@@ -540,14 +569,14 @@ public sealed partial class LogisticsInstructionServiceTests
         public Task<SalesOrderLineReferenceAnswerV1> GetApprovedLineAsync(Guid orderId, Guid lineId, CancellationToken cancellationToken = default)
         {
             Calls++;
-            var aggregateLimit = Fault is "limit" or "limit-version-race" or "limit-invalid"
+            var aggregateLimit = Fault is "limit" or "limit-version-race" or "limit-invalid" or "load-limit-revised"
                 ? new SalesOrderLineLoadingLimitV1(
                     Fault == "limit-invalid" ? Guid.NewGuid() : Company,
                     orderId,
                     lineId,
                     KgUnit,
                     Fault == "limit-version-race" && Calls > 1 ? 8 : 7,
-                    "5",
+                    Fault == "load-limit-revised" ? "2" : "5",
                     "Sales",
                     lineId.ToString("D"),
                     Fault == "limit-version-race" && Calls > 1 ? "4" : "3",
@@ -566,7 +595,7 @@ public sealed partial class LogisticsInstructionServiceTests
                         Fault == "remainder-revised" ? "2" : "100000", 0,
                         Fault == "limit-version-race" && Calls > 1 ? 8 : 7,
                         Fault == "remainder-cancelled" ? SalesRemainderChangeNamesV1.Cancelled
-                            : Fault == "remainder-revised" ? SalesRemainderChangeNamesV1.Revised : SalesRemainderChangeNamesV1.Open,
+                            : Fault is "remainder-revised" or "load-limit-revised" ? SalesRemainderChangeNamesV1.Revised : SalesRemainderChangeNamesV1.Open,
                         aggregateLimit), null)),
             };
         }
@@ -598,12 +627,13 @@ public sealed partial class LogisticsInstructionServiceTests
             throw new NotSupportedException();
     }
 
-    private sealed class FakeStore : ILogisticsInstructionStore
+    private sealed class FakeStore : ILogisticsInstructionStore, ILogisticsAggregateLoadStoreV1
     {
         private readonly Dictionary<(string Command, string Key), (string Actor, string Hash, StoredLoadingInstruction? Stored, LogisticsTerminalRefusal? Refusal, string Correlation)> _attempts = [];
         private readonly List<StoredLoadingInstruction> _instructions = [];
         public List<LogisticsWriteEnvelope> Envelopes { get; } = [];
         public List<LogisticsOrderLineAggregateLimit> AggregateLimits { get; } = [];
+        public List<LogisticsOrderLineAggregateLoadLimit> LoadLimits { get; } = [];
         public List<LogisticsTerminalRefusal> Refusals { get; } = [];
         public List<(string Command, Guid Id, long Before, long After)> Transitions { get; } = [];
         public int Replays { get; private set; }
@@ -675,6 +705,28 @@ public sealed partial class LogisticsInstructionServiceTests
             _attempts[(commandName, envelope.IdempotencyKey)] = (envelope.ActorId, requestHash, stored, null, envelope.CorrelationId);
             Transitions.Add((commandName, instructionId, before, stored.Instruction.Version));
             return Task.FromResult<LogisticsStoreResult?>(new LogisticsStoreResult(stored, LogisticsWriteOutcome.Recorded, envelope.CorrelationId));
+        }
+
+        public Task<LogisticsStoreResult?> MutateInstructionWithAggregateLoadLimitAsync(LogisticsWriteEnvelope envelope, string requestHash,
+            string commandName, Guid instructionId, Action<LoadingInstruction, DateTimeOffset> mutate, LogisticsMutationAudit audit,
+            LogisticsOrderLineAggregateLoadLimit aggregateLoadLimit, CancellationToken cancellationToken = default)
+        {
+            if (_attempts.ContainsKey((commandName, envelope.IdempotencyKey)))
+            {
+                return MutateInstructionAsync(envelope, requestHash, commandName, instructionId, mutate, audit, cancellationToken);
+            }
+
+            var loaded = _instructions.SelectMany(stored => stored.Instruction.Lines)
+                .Where(line => line.Source.OrderId == aggregateLoadLimit.OrderId
+                    && line.Source.LineId == aggregateLoadLimit.OrderLineId && line.UnitId == aggregateLoadLimit.UnitId)
+                .Sum(line => line.LoadedQuantity.Value);
+            LoadLimits.Add(aggregateLoadLimit);
+            if (loaded + aggregateLoadLimit.RequestedLoadQuantity > aggregateLoadLimit.MaximumAggregateQuantity)
+            {
+                throw new LogisticsStoreException(LogisticsStoreCodes.AggregateLimitExceeded, "synthetic aggregate load limit");
+            }
+
+            return MutateInstructionAsync(envelope, requestHash, commandName, instructionId, mutate, audit, cancellationToken);
         }
 
         public Task<StoredLoadingInstruction?> FindInstructionAsync(Guid instructionId, CancellationToken cancellationToken = default) =>
