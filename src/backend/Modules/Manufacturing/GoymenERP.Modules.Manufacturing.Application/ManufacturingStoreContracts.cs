@@ -258,6 +258,17 @@ public interface IManufacturingOrderStore
     Task CloseOrderAsync(Guid orderId, long expectedVersion, Guid closedByUserId, DateTimeOffset closedAt,
         ManufacturingCommandMetadata metadata, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Policy-backed close. The store rebuilds the order, derives the fire numerator and net-issued denominator from
+    /// its own facts, verifies the optional exception evidence, and commits the close, immutable decision row, audit
+    /// and ADR-011 command record together. Existing test doubles need not implement this until they exercise the
+    /// policy-backed runtime; production does.
+    /// </summary>
+    Task CloseOrderWithPolicyAsync(Guid orderId, long expectedVersion, Guid closedByUserId, DateTimeOffset closedAt,
+        ClosureTolerancePolicySnapshotV1 policy, ClosureExceptionApprovalV1? exceptionApproval,
+        ManufacturingCommandMetadata metadata, CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException("Policy-backed Manufacturing close store is not available.");
+
     /// <summary>The company's stored order rebuilt from its facts, or null (another company's order is null too).</summary>
     Task<ProductionOrder?> FindOrderAsync(Guid orderId, CancellationToken cancellationToken = default);
 

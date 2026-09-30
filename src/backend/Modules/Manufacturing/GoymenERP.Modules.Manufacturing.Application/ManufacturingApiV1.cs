@@ -215,6 +215,7 @@ public static class ManufacturingCommandNames
     public const string IssueInput = "manufacturing.input.issue.v1";
     public const string ReturnInput = "manufacturing.input.return.v1";
     public const string DeclareOutput = "manufacturing.output.declare.v1";
+    public const string DeclareProcessLoss = "manufacturing.process-loss.declare.v1";
     public const string RecordWorkInProgress = "manufacturing.wip.record.v1";
     public const string CloseOrder = "manufacturing.order.close.v1";
 }
@@ -798,6 +799,13 @@ public sealed partial class ManufacturingCommandService(
             return Task.FromResult(Invalid<OrderViewV1>("outputClass"));
         }
 
+        // ProcessLoss is explicitly non-stock. It must never create an Inventory label or movement through this
+        // stock-output command; RecordProcessLossAsync is the public fixed-class fact path.
+        if (outputClass == OutputClass.ProcessLoss)
+        {
+            return Task.FromResult(Invalid<OrderViewV1>("outputClass"));
+        }
+
         if (string.IsNullOrWhiteSpace(request.LabelCode))
         {
             return Task.FromResult(Invalid<OrderViewV1>("labelCode"));
@@ -911,6 +919,19 @@ public sealed partial class ManufacturingCommandService(
             (valid, mass, at, metadata) => orders.DeclareOutputAsync(orderId, valid.ExpectedVersion, valid.FactId,
                 valid.ParentRollId, outputClass, mass, at, metadata, cancellationToken), cancellationToken);
     }
+
+    /// <summary>
+    /// Records declared non-stock process loss. The class is fixed by the server; the caller supplies only the same
+    /// fact identity/version/roll/mass/time envelope as WIP. No Product, Inventory label, location or movement is
+    /// accepted or created, and unexplained mass is never promoted into this fact.
+    /// </summary>
+    public Task<ManufacturingApiResult<OrderViewV1>> RecordProcessLossAsync(Guid orderId,
+        RecordFactRequestV1? request, string idempotencyKey, string permission,
+        CancellationToken cancellationToken) =>
+        RecordAsync(orderId, request, OutputClass.ProcessLoss, idempotencyKey, permission,
+            ManufacturingCommandNames.DeclareProcessLoss,
+            (fact, mass, at, metadata) => orders.DeclareOutputAsync(orderId, fact.ExpectedVersion, fact.FactId,
+                fact.ParentRollId, OutputClass.ProcessLoss, mass, at, metadata, cancellationToken), cancellationToken);
 
     /// <summary>
     /// Closes the order at the version the caller read (MFG-4, Business 5728619644). The decision is the

@@ -64,6 +64,12 @@ public sealed class ProductionOrder
 
     public DateTimeOffset? ClosedAtUtc { get; private set; }
 
+    /// <summary>The exact Settings profile selected for a policy-backed close; null for an open or legacy order.</summary>
+    public ClosureTolerancePolicySnapshotV1? ClosurePolicy { get; private set; }
+
+    /// <summary>The dedicated exception approval used by an out-of-tolerance close, if one was required.</summary>
+    public ClosureExceptionApprovalV1? ClosureExceptionApproval { get; private set; }
+
     // Read-only views (ÜRÜN #280 P3-1): a cast cannot reach the lists behind them, so the
     // duplicate, roll and closed-order rules below cannot be bypassed.
     public IReadOnlyList<PlannedInput> PlannedInputs => _plannedInputs.AsReadOnly();
@@ -112,7 +118,9 @@ public sealed class ProductionOrder
         IEnumerable<WipMeasurement> wipMeasurements,
         Guid? closedByUserId,
         DateTimeOffset? closedAtUtc,
-        long version)
+        long version,
+        ClosureTolerancePolicySnapshotV1? closurePolicy = null,
+        ClosureExceptionApprovalV1? closureExceptionApproval = null)
     {
         ArgumentNullException.ThrowIfNull(issues);
         ArgumentNullException.ThrowIfNull(returns);
@@ -153,12 +161,33 @@ public sealed class ProductionOrder
 
         if (closedByUserId is { } closedBy && closedAtUtc is { } closedAt)
         {
-            order.Close(order.Version, closedBy, closedAt);
+            if (closurePolicy is null)
+            {
+                if (closureExceptionApproval is not null)
+                {
+                    throw new ManufacturingRuleException(
+                        ManufacturingRuleCodes.StoredRecordInvalid,
+                        "Kayıtlı istisna onayı tolerans profili olmadan taşınamaz.");
+                }
+
+                // Historical rows closed before the policy-backed runtime remain readable. New writes use
+                // CloseWithPolicy and always persist the exact Settings snapshot.
+                order.Close(order.Version, closedBy, closedAt);
+            }
+            else
+            {
+                order.CloseWithPolicy(order.Version, closedBy, closedAt, closurePolicy, closureExceptionApproval);
+            }
         }
         else if (closedByUserId is not null || closedAtUtc is not null)
         {
             throw new ManufacturingRuleException(
                 ManufacturingRuleCodes.StoredRecordInvalid, "Kayıtlı kapanış izi kapatanı ve anı birlikte taşımalı.");
+        }
+        else if (closurePolicy is not null || closureExceptionApproval is not null)
+        {
+            throw new ManufacturingRuleException(
+                ManufacturingRuleCodes.StoredRecordInvalid, "Açık emir kapanış profili veya onayı taşıyamaz.");
         }
 
         if (order.Version != version)
@@ -304,6 +333,79 @@ public sealed class ProductionOrder
         OrderClosureAssessmentCalculatorV1.Assess(this, policy, scrapPercentInputs);
 
     /// <summary>
+    /// The runtime assessment. Both BAL-004 operands are derived from this order's immutable facts: declared Scrap
+    /// plus ProcessLoss over issued minus returned. A caller cannot substitute a class or denominator.
+    /// </summary>
+    public OrderClosureAssessmentV1 AssessClosure(ClosureTolerancePolicySnapshotV1 policy) =>
+        AssessClosure(policy, _plannedInputs.Select(input =>
+        {
+            var balance = BalanceOf(input.ParentRollId);
+            return new RollScrapPercentInputV1(input.ParentRollId, new(
+                balance.OutputOf(OutputClass.Scrap).Value + balance.OutputOf(OutputClass.ProcessLoss).Value,
+                balance.NetIssued.Value));
+        }).ToArray());
+
+    /// <summary>
+    /// The policy-backed close used by the runtime. It persists the exact Settings snapshot and accepts an
+    /// out-of-tolerance result only with immutable evidence created after the application freshly proved the
+    /// dedicated approval permission. The evidence is checked again here against this company, order, actor,
+    /// pre-close order version and policy version; it never supplies authority by itself.
+    /// </summary>
+    public void CloseWithPolicy(long expectedVersion, Guid closedByUserId, DateTimeOffset closedAt,
+        ClosureTolerancePolicySnapshotV1 policy, ClosureExceptionApprovalV1? exceptionApproval)
+    {
+        RequireVersion(expectedVersion);
+        RequireOpen();
+        RequireId(closedByUserId, nameof(closedByUserId));
+        ArgumentNullException.ThrowIfNull(policy);
+
+        var closeAtUtc = closedAt.ToUniversalTime();
+        if (policy.SelectedForDate != DateOnly.FromDateTime(closeAtUtc.UtcDateTime))
+        {
+            throw new ManufacturingRuleException(
+                ClosureAssessmentCodesV1.PolicyScopeMismatch,
+                "Tolerans profili kapanışın UTC iş tarihi için seçilmiş olmalıdır.");
+        }
+
+        if (exceptionApproval is not null && exceptionApproval.ApprovedAtUtc > closeAtUtc)
+        {
+            throw new ManufacturingRuleException(
+                ClosureAssessmentCodesV1.ApprovalInvalid,
+                "Kapanış istisna onayı kapanış anından sonra olamaz.");
+        }
+
+        var assessment = AssessClosure(policy);
+        switch (assessment.Disposition)
+        {
+            case ClosureDispositionV1.Balanced when exceptionApproval is not null:
+                throw new ManufacturingRuleException(
+                    ClosureAssessmentCodesV1.ApprovalUnexpected,
+                    "Tolerans içindeki kapanış istisna onayı taşıyamaz.");
+            case ClosureDispositionV1.Balanced:
+                break;
+            case ClosureDispositionV1.ApprovalRequired when exceptionApproval is null:
+                throw new ManufacturingRuleException(
+                    ClosureAssessmentCodesV1.ApprovalRequired,
+                    "Tolerans dışındaki kapanış için ayrı yetkiyle gerekçeli onay zorunludur.");
+            case ClosureDispositionV1.ApprovalRequired when exceptionApproval is not null && !exceptionApproval.Matches(
+                CompanyId, Id, closedByUserId, Version, policy):
+                throw new ManufacturingRuleException(
+                    ClosureAssessmentCodesV1.ApprovalInvalid,
+                    "Kapanış istisna onayı bu şirket, emir, sürüm, aktör veya politika sürümüne ait değil.");
+            case ClosureDispositionV1.ApprovalRequired:
+                break;
+            default:
+                throw new ManufacturingRuleException(
+                    assessment.Code ?? ClosureAssessmentCodesV1.PolicyInvalid,
+                    "Emir kapanış değerlendirmesi kapanışa izin vermedi.");
+        }
+
+        ClosurePolicy = policy;
+        ClosureExceptionApproval = exceptionApproval;
+        CompleteClose(closedByUserId, closeAtUtc);
+    }
+
+    /// <summary>
     /// Closes the order when EVERY parent roll reconciles on its own (Business #66 5728619644 on
     /// DEC-PRDCT-006/007 and Master v3 §28.9): issued − returned = good + second quality + usable
     /// remnant + scrap + process loss + remaining WIP + unexplained, per roll; rolls never offset
@@ -340,6 +442,11 @@ public sealed class ProductionOrder
                 + string.Join(", ", unaccounted.Select(balance => $"{balance.ParentRollId} ({balance.Unexplained} kg)")));
         }
 
+        CompleteClose(closedByUserId, closedAt);
+    }
+
+    private void CompleteClose(Guid closedByUserId, DateTimeOffset closedAt)
+    {
         ClosedByUserId = closedByUserId;
         ClosedAtUtc = closedAt.ToUniversalTime();
         Status = OrderStatus.Closed;

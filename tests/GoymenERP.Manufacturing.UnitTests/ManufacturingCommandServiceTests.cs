@@ -100,6 +100,41 @@ public sealed class ManufacturingCommandServiceTests
     }
 
     [Fact]
+    public async Task Process_loss_is_a_server_fixed_non_stock_fact_and_never_calls_the_inventory_output_port()
+    {
+        var fixture = new Fixture();
+        var order = await fixture.ApprovedOrderAsync();
+        order.IssueInput(order.Version, Guid.NewGuid(), Roll, new Kilograms(20m), At);
+
+        var result = await fixture.Service.RecordProcessLossAsync(order.Id,
+            new RecordFactRequestV1(Guid.NewGuid(), order.Version, Roll, "2.5", At.AddMinutes(1)),
+            "process-loss-1", Permission, CancellationToken.None);
+
+        Assert.Equal((ManufacturingApiStatus.Ok, 3), (result.Status, result.Resource?.Version));
+        var loss = Assert.Single(order.Outputs);
+        Assert.Equal((OutputClass.ProcessLoss, 2.5m), (loss.Class, loss.Mass.Value));
+        Assert.Empty(fixture.ReturnOutputs.Outputs);
+        Assert.Equal(ManufacturingCommandNames.DeclareProcessLoss, Assert.Single(fixture.Store.Commands).Value.CommandName);
+    }
+
+    [Fact]
+    public async Task Process_loss_is_refused_on_the_inventory_output_path_before_any_owner_call()
+    {
+        var fixture = new Fixture();
+        var order = await fixture.ApprovedOrderAsync();
+
+        var result = await fixture.Service.DeclareInventoryOutputAsync(order.Id,
+            new DeclareInventoryOutputRequestV1(Guid.NewGuid(), order.Version, Roll, "8", "ProcessLoss",
+                Product, "12", Guid.NewGuid(), Guid.NewGuid(), "LOSS-AS-STOCK", null, null, [],
+                "Company", Company, "Company", Company, Location, "Free", Guid.NewGuid(), "2.5", At),
+            "wrong-process-loss-path", Permission, CancellationToken.None);
+
+        Assert.Equal((ManufacturingApiStatus.Invalid, "outputClass"), (result.Status, result.Field));
+        Assert.Empty(fixture.ReturnOutputs.Outputs);
+        Assert.Empty(fixture.Store.Writes);
+    }
+
+    [Fact]
     public async Task Owner_port_version_refusal_keeps_its_code_and_versions_as_the_terminal_replay_answer()
     {
         var fixture = new Fixture();
@@ -1508,8 +1543,17 @@ public sealed class ManufacturingCommandServiceTests
 
         public Task<ManufacturingWriteOutcome> DeclareOutputAsync(Guid orderId, long expectedVersion, Guid outputId,
             Guid parentRollId, OutputClass outputClass, Kilograms mass, DateTimeOffset declaredAt,
-            ManufacturingCommandMetadata metadata, CancellationToken cancellationToken = default) =>
-            throw new NotSupportedException();
+            ManufacturingCommandMetadata metadata, CancellationToken cancellationToken = default)
+        {
+            Guard();
+            OnWrite?.Invoke(metadata);
+            var order = Orders.GetValueOrDefault(orderId)
+                ?? throw new ManufacturingStoreException(ManufacturingStoreCodes.OrderNotFound, "yok");
+            order.DeclareOutput(expectedVersion, outputId, parentRollId, outputClass, mass, declaredAt);
+            Complete(metadata, order);
+            Writes.Add(metadata);
+            return Task.FromResult(ManufacturingWriteOutcome.Recorded);
+        }
 
         public Task<ManufacturingWriteOutcome> RecordWorkInProgressAsync(Guid orderId, long expectedVersion, Guid measurementId,
             Guid parentRollId, Kilograms mass, DateTimeOffset measuredAt, ManufacturingCommandMetadata metadata,

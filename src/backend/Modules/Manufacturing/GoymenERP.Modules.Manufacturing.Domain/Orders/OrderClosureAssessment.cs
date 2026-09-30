@@ -15,7 +15,11 @@ public sealed record ClosureTolerancePolicySnapshotV1(
     Guid PolicyId,
     long PolicyVersion,
     ManufacturingProcess Process,
-    decimal MaximumFirePercent);
+    decimal MaximumFirePercent,
+    bool IsActive,
+    DateOnly EffectiveFrom,
+    DateOnly? EffectiveThrough,
+    DateOnly SelectedForDate);
 
 /// <summary>
 /// The immutable business evidence for one out-of-tolerance close approval. It carries no authority by itself: the
@@ -26,9 +30,11 @@ public sealed record ClosureExceptionApprovalV1
 {
     public const int ReasonMaximumLength = 256;
 
-    private ClosureExceptionApprovalV1(Guid approvedByUserId, string reason, long orderVersion,
+    private ClosureExceptionApprovalV1(Guid companyId, Guid orderId, Guid approvedByUserId, string reason, long orderVersion,
         Guid policyId, long policyVersion, DateTimeOffset approvedAtUtc)
     {
+        CompanyId = companyId;
+        OrderId = orderId;
         ApprovedByUserId = approvedByUserId;
         Reason = reason;
         OrderVersion = orderVersion;
@@ -37,6 +43,8 @@ public sealed record ClosureExceptionApprovalV1
         ApprovedAtUtc = approvedAtUtc;
     }
 
+    public Guid CompanyId { get; }
+    public Guid OrderId { get; }
     public Guid ApprovedByUserId { get; }
     public string Reason { get; }
     public long OrderVersion { get; }
@@ -44,21 +52,25 @@ public sealed record ClosureExceptionApprovalV1
     public long PolicyVersion { get; }
     public DateTimeOffset ApprovedAtUtc { get; }
 
-    public static ClosureExceptionApprovalV1 Create(Guid approvedByUserId, string reason, long orderVersion,
+    public static ClosureExceptionApprovalV1 Create(Guid companyId, Guid orderId, Guid approvedByUserId, string reason,
+        long orderVersion,
         Guid policyId, long policyVersion, DateTimeOffset approvedAtUtc)
     {
         var normalized = reason?.Trim();
-        if (approvedByUserId == Guid.Empty || string.IsNullOrEmpty(normalized)
+        if (companyId == Guid.Empty || orderId == Guid.Empty || approvedByUserId == Guid.Empty
+            || string.IsNullOrEmpty(normalized)
             || normalized.Length > ReasonMaximumLength || normalized.Any(char.IsControl)
             || orderVersion <= 0 || policyId == Guid.Empty || policyVersion <= 0 || approvedAtUtc == default)
             throw new ArgumentException("Geçerli onaylayan, gerekçe, emir sürümü, politika sürümü ve zaman zorunludur.");
 
-        return new(approvedByUserId, normalized, orderVersion, policyId, policyVersion,
+        return new(companyId, orderId, approvedByUserId, normalized, orderVersion, policyId, policyVersion,
             approvedAtUtc.ToUniversalTime());
     }
 
-    public bool Matches(Guid actorId, long orderVersion, ClosureTolerancePolicySnapshotV1 policy) =>
-        actorId != Guid.Empty && actorId == ApprovedByUserId && orderVersion == OrderVersion
+    public bool Matches(Guid companyId, Guid orderId, Guid actorId, long orderVersion,
+        ClosureTolerancePolicySnapshotV1 policy) =>
+        companyId != Guid.Empty && companyId == CompanyId && orderId != Guid.Empty && orderId == OrderId
+        && actorId != Guid.Empty && actorId == ApprovedByUserId && orderVersion == OrderVersion
         && policy is not null && policy.PolicyId == PolicyId && policy.PolicyVersion == PolicyVersion;
 }
 
@@ -82,7 +94,12 @@ public enum ClosureDispositionV1
 public static class ClosureAssessmentCodesV1
 {
     public const string PolicyInvalid = "manufacturing_closure_policy_invalid";
+    public const string PolicyNotEffective = "manufacturing_closure_policy_not_effective";
     public const string PolicyScopeMismatch = "manufacturing_closure_policy_scope_mismatch";
+    public const string FireDeclarationRequired = "manufacturing_closure_fire_declaration_required";
+    public const string ApprovalRequired = "manufacturing_closure_approval_required";
+    public const string ApprovalInvalid = "manufacturing_closure_approval_invalid";
+    public const string ApprovalUnexpected = "manufacturing_closure_approval_unexpected";
     public const string RollInputInvalid = "manufacturing_closure_roll_input_invalid";
     public const string FireMassMismatch = "manufacturing_closure_fire_mass_mismatch";
     public const string NetIssuedMassMismatch = "manufacturing_closure_net_issued_mass_mismatch";
@@ -156,6 +173,19 @@ public static class OrderClosureAssessmentCalculatorV1
                 "maximumFirePercent");
         }
 
+        if (policy.EffectiveThrough is DateOnly through && through < policy.EffectiveFrom)
+        {
+            return Whole(ClosureDispositionV1.Refused, policy, ClosureAssessmentCodesV1.PolicyInvalid,
+                "effectiveThrough");
+        }
+
+        if (!policy.IsActive || policy.SelectedForDate < policy.EffectiveFrom
+            || policy.EffectiveThrough is DateOnly effectiveThrough && policy.SelectedForDate > effectiveThrough)
+        {
+            return Whole(ClosureDispositionV1.Unavailable, policy, ClosureAssessmentCodesV1.PolicyNotEffective,
+                "selectedForDate");
+        }
+
         if (order.CompanyId != policy.CompanyId || order.Process != policy.Process)
         {
             return Whole(ClosureDispositionV1.Unavailable, policy, ClosureAssessmentCodesV1.PolicyScopeMismatch,
@@ -212,6 +242,7 @@ public static class OrderClosureAssessmentCalculatorV1
         if (difference > 0m)
         {
             return Roll(balance.ParentRollId, ClosureDispositionV1.FireDeclarationRequired, difference,
+                code: ClosureAssessmentCodesV1.FireDeclarationRequired,
                 missing: ["scrapOrProcessLossDeclaration"]);
         }
 

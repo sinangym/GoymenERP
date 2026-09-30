@@ -21,12 +21,15 @@ public sealed class OrderTargetAndCloseTests
     private static readonly Guid Planner = Guid.Parse("40000000-0000-0000-0000-00000000b001");
     private static readonly Guid Closer = Guid.Parse("40000000-0000-0000-0000-00000000b002");
     private static readonly Guid Policy = Guid.Parse("50000000-0000-0000-0000-00000000c001");
+    private static readonly DateOnly CloseDate = new(2026, 9, 30);
+    private static readonly DateTimeOffset CloseAt = new(2026, 9, 30, 18, 30, 0, TimeSpan.Zero);
 
     private static Kilograms Kg(decimal value) => new(value);
 
     private static ClosureTolerancePolicySnapshotV1 Tolerance(decimal percent,
         Guid? companyId = null, ManufacturingProcess process = ManufacturingProcess.Slitting) =>
-        new(companyId ?? Company, Policy, 7, process, percent);
+        new(companyId ?? Company, Policy, 7, process, percent, true,
+            new DateOnly(2026, 9, 1), null, CloseDate);
 
     private static RollScrapPercentInputV1 Fire(Guid roll, decimal? fireKg, decimal? rawMaterialKg) =>
         new(roll, new ScrapPercentInputV1(fireKg, rawMaterialKg));
@@ -240,18 +243,25 @@ public sealed class OrderTargetAndCloseTests
     public void Exception_approval_is_bound_to_actor_reason_order_version_and_policy_version()
     {
         var policy = Tolerance(1m);
-        var approval = ClosureExceptionApprovalV1.Create(Closer, "  Teyitli proses sapması  ", 7,
+        var orderId = Guid.NewGuid();
+        var approval = ClosureExceptionApprovalV1.Create(Company, orderId, Closer, "  Teyitli proses sapması  ", 7,
             policy.PolicyId, policy.PolicyVersion, DateTimeOffset.Parse("2026-09-30T18:30:00+03:00"));
 
+        Assert.Equal(Company, approval.CompanyId);
+        Assert.Equal(orderId, approval.OrderId);
         Assert.Equal("Teyitli proses sapması", approval.Reason);
         Assert.Equal(DateTimeOffset.Parse("2026-09-30T15:30:00Z"), approval.ApprovedAtUtc);
-        Assert.True(approval.Matches(Closer, 7, policy));
-        Assert.False(approval.Matches(Guid.NewGuid(), 7, policy));
-        Assert.False(approval.Matches(Closer, 8, policy));
-        Assert.False(approval.Matches(Closer, 7, policy with { PolicyVersion = 8 }));
+        Assert.True(approval.Matches(Company, orderId, Closer, 7, policy));
+        Assert.False(approval.Matches(Guid.NewGuid(), orderId, Closer, 7, policy));
+        Assert.False(approval.Matches(Company, Guid.NewGuid(), Closer, 7, policy));
+        Assert.False(approval.Matches(Company, orderId, Guid.NewGuid(), 7, policy));
+        Assert.False(approval.Matches(Company, orderId, Closer, 8, policy));
+        Assert.False(approval.Matches(Company, orderId, Closer, 7, policy with { PolicyVersion = 8 }));
     }
 
     [Theory]
+    [InlineData("empty-company")]
+    [InlineData("empty-order")]
     [InlineData("empty-actor")]
     [InlineData("empty-reason")]
     [InlineData("control-reason")]
@@ -262,6 +272,8 @@ public sealed class OrderTargetAndCloseTests
     public void Invalid_exception_approval_evidence_is_refused(string fault)
     {
         var exception = Assert.Throws<ArgumentException>(() => ClosureExceptionApprovalV1.Create(
+            fault == "empty-company" ? Guid.Empty : Company,
+            fault == "empty-order" ? Guid.Empty : Guid.NewGuid(),
             fault == "empty-actor" ? Guid.Empty : Closer,
             fault == "empty-reason" ? " " : fault == "control-reason" ? "bad\nreason" : "Geçerli gerekçe",
             fault == "order-version" ? 0 : 7,
@@ -270,6 +282,39 @@ public sealed class OrderTargetAndCloseTests
             fault == "time" ? default : DateTimeOffset.UnixEpoch));
 
         Assert.NotEmpty(exception.Message);
+    }
+
+    [Theory]
+    [InlineData("inactive", ClosureDispositionV1.Unavailable, "selectedForDate")]
+    [InlineData("before-window", ClosureDispositionV1.Unavailable, "selectedForDate")]
+    [InlineData("after-window", ClosureDispositionV1.Unavailable, "selectedForDate")]
+    [InlineData("reversed-window", ClosureDispositionV1.Refused, "effectiveThrough")]
+    public void Inactive_outside_or_malformed_policy_window_fails_closed(
+        string fault, ClosureDispositionV1 disposition, string field)
+    {
+        var order = Order(target: null);
+        order.Issue(MasterRoll, Kg(1_000m));
+        order.Declare(MasterRoll, OutputClass.GoodProduct, Kg(1_000m));
+        var policy = fault switch
+        {
+            "inactive" => Tolerance(0m) with { IsActive = false },
+            "before-window" => Tolerance(0m) with { EffectiveFrom = CloseDate.AddDays(1) },
+            "after-window" => Tolerance(0m) with { EffectiveThrough = CloseDate.AddDays(-1) },
+            _ => Tolerance(0m) with
+            {
+                EffectiveFrom = CloseDate.AddDays(1),
+                EffectiveThrough = CloseDate,
+            },
+        };
+
+        var assessment = order.AssessClosure(policy, [Fire(MasterRoll, 0m, 1_000m)]);
+
+        Assert.Equal(disposition, assessment.Disposition);
+        Assert.Equal(field, assessment.RefusedParameter);
+        Assert.Equal(fault == "reversed-window"
+            ? ClosureAssessmentCodesV1.PolicyInvalid
+            : ClosureAssessmentCodesV1.PolicyNotEffective, assessment.Code);
+        Assert.Equal(OrderStatus.Open, order.Status);
     }
 
     [Fact]
@@ -376,6 +421,101 @@ public sealed class OrderTargetAndCloseTests
         Assert.Equal(ClosureDispositionV1.Balanced, Assert.Single(assessment.Rolls).Disposition);
         Assert.Equal((version, 0m, OrderStatus.Open),
             (order.Version, order.BalanceOf(MasterRoll).Unexplained, order.Status));
+    }
+
+    [Fact]
+    public void Runtime_close_derives_fire_and_net_issued_and_persists_the_exact_policy_without_approval()
+    {
+        var order = Order(target: null);
+        order.Issue(MasterRoll, Kg(1_000m));
+        order.Return(MasterRoll, Kg(200m));
+        order.Declare(MasterRoll, OutputClass.GoodProduct, Kg(790m));
+        order.Declare(MasterRoll, OutputClass.Scrap, Kg(5m));
+        order.Declare(MasterRoll, OutputClass.ProcessLoss, Kg(5m));
+        var policy = Tolerance(1.25m);
+
+        order.CloseWithPolicy(order.Version, Closer, DateTimeOffset.Parse("2026-09-30T18:30:00Z"), policy, null);
+
+        Assert.Equal(OrderStatus.Closed, order.Status);
+        Assert.Equal(policy, order.ClosurePolicy);
+        Assert.Null(order.ClosureExceptionApproval);
+        Assert.Equal(Closer, order.ClosedByUserId);
+    }
+
+    [Fact]
+    public void Runtime_close_requires_exact_exception_evidence_only_above_the_policy_limit()
+    {
+        var order = Order(target: null);
+        order.Issue(MasterRoll, Kg(1_000m));
+        order.Declare(MasterRoll, OutputClass.GoodProduct, Kg(980m));
+        order.Declare(MasterRoll, OutputClass.Scrap, Kg(10m));
+        order.Declare(MasterRoll, OutputClass.ProcessLoss, Kg(10m));
+        var policy = Tolerance(1.999m);
+        var expectedVersion = order.Version;
+
+        Assert.Equal(ClosureAssessmentCodesV1.ApprovalRequired,
+            Assert.Throws<ManufacturingRuleException>(() =>
+                order.CloseWithPolicy(expectedVersion, Closer, CloseAt, policy, null)).Code);
+        var approval = ClosureExceptionApprovalV1.Create(Company, order.Id, Closer,
+            "Proses sorumlusu ölçümü doğruladı", expectedVersion, policy.PolicyId, policy.PolicyVersion,
+            DateTimeOffset.Parse("2026-09-30T18:29:00Z"));
+
+        order.CloseWithPolicy(expectedVersion, Closer, DateTimeOffset.Parse("2026-09-30T18:30:00Z"), policy, approval);
+
+        Assert.Equal(OrderStatus.Closed, order.Status);
+        Assert.Equal(approval, order.ClosureExceptionApproval);
+        Assert.Equal(expectedVersion, approval.OrderVersion);
+    }
+
+    [Fact]
+    public void Runtime_close_refuses_exception_evidence_when_the_policy_does_not_require_it()
+    {
+        var order = Order(target: null);
+        order.Issue(MasterRoll, Kg(1_000m));
+        order.Declare(MasterRoll, OutputClass.GoodProduct, Kg(990m));
+        order.Declare(MasterRoll, OutputClass.Scrap, Kg(10m));
+        var policy = Tolerance(1m);
+        var approval = ClosureExceptionApprovalV1.Create(Company, order.Id, Closer,
+            "Gereksiz onay", order.Version, policy.PolicyId, policy.PolicyVersion, CloseAt.AddMinutes(-1));
+
+        var refusal = Assert.Throws<ManufacturingRuleException>(() =>
+            order.CloseWithPolicy(order.Version, Closer, CloseAt, policy, approval));
+
+        Assert.Equal(ClosureAssessmentCodesV1.ApprovalUnexpected, refusal.Code);
+        Assert.Equal(OrderStatus.Open, order.Status);
+    }
+
+    [Fact]
+    public void Runtime_close_refuses_an_exception_approval_recorded_after_the_close_time()
+    {
+        var order = Order(target: null);
+        order.Issue(MasterRoll, Kg(1_000m));
+        order.Declare(MasterRoll, OutputClass.GoodProduct, Kg(980m));
+        order.Declare(MasterRoll, OutputClass.ProcessLoss, Kg(20m));
+        var policy = Tolerance(1.999m);
+        var approval = ClosureExceptionApprovalV1.Create(Company, order.Id, Closer,
+            "Zamanı geçersiz onay", order.Version, policy.PolicyId, policy.PolicyVersion, CloseAt.AddMinutes(1));
+
+        var refusal = Assert.Throws<ManufacturingRuleException>(() =>
+            order.CloseWithPolicy(order.Version, Closer, CloseAt, policy, approval));
+
+        Assert.Equal(ClosureAssessmentCodesV1.ApprovalInvalid, refusal.Code);
+        Assert.Equal(OrderStatus.Open, order.Status);
+    }
+
+    [Fact]
+    public void Runtime_close_never_turns_positive_unexplained_mass_into_fire()
+    {
+        var order = Order(target: null);
+        order.Issue(MasterRoll, Kg(1_000m));
+        order.Declare(MasterRoll, OutputClass.GoodProduct, Kg(990m));
+
+        var refusal = Assert.Throws<ManufacturingRuleException>(() =>
+            order.CloseWithPolicy(order.Version, Closer, CloseAt, Tolerance(100m), null));
+
+        Assert.Equal(ClosureAssessmentCodesV1.FireDeclarationRequired, refusal.Code);
+        Assert.Equal(OrderStatus.Open, order.Status);
+        Assert.Null(order.ClosurePolicy);
     }
 
     [Fact]

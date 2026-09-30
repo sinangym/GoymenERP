@@ -22,6 +22,16 @@ export const OUTPUT_CLASSES = [
 
 export type OutputClass = (typeof OUTPUT_CLASSES)[number]
 
+/** Output classes that create a real Inventory label/movement. ProcessLoss is explicitly non-stock. */
+export const INVENTORY_OUTPUT_CLASSES = [
+  'GoodProduct',
+  'SecondQuality',
+  'UsableRemnant',
+  'Scrap',
+] as const satisfies readonly OutputClass[]
+
+export type InventoryOutputClass = (typeof INVENTORY_OUTPUT_CLASSES)[number]
+
 export interface ManufacturingOutputProductCandidate {
   readonly productId: string
   readonly productVersion: string
@@ -448,7 +458,13 @@ export function decodeOrder(body: unknown): ProductionOrderView | null {
  * the company's own, company-custodied roll until the customer/fason decision (#66/5830378162) is made: the
  * server refuses any other position at issue. InitialBlock is an explicit user selection, never a client default.
  */
-export const FACT_KINDS = ['input-issues', 'input-returns', 'wip-measurements', 'outputs'] as const
+export const FACT_KINDS = [
+  'input-issues',
+  'input-returns',
+  'wip-measurements',
+  'process-losses',
+  'outputs',
+] as const
 
 export type FactKind = (typeof FACT_KINDS)[number]
 
@@ -483,10 +499,15 @@ export type FactSnapshot =
       readonly expectedParentLabelVersion: null
     })
   | (FactSnapshotBase & {
+      readonly kind: 'process-losses'
+      readonly movementId: null
+      readonly expectedParentLabelVersion: null
+    })
+  | (FactSnapshotBase & {
       readonly kind: 'outputs'
       readonly movementId: string
       readonly expectedParentLabelVersion: string
-      readonly outputClass: OutputClass
+      readonly outputClass: InventoryOutputClass
       readonly productId: string
       readonly expectedProductVersion: string
       readonly lotId: string
@@ -766,9 +787,13 @@ export function decodeOrderList(body: unknown): OrderListView | null {
 export interface CloseSnapshot {
   readonly idempotencyKey: string
   readonly expectedVersion: number
+  /** Present only after the server requires a dedicated, reasoned exception approval. */
+  readonly exceptionReason?: string | null
 }
 
 /** The request body exactly as `CloseOrderRequestV1` names it. */
 export function closeBody(snapshot: CloseSnapshot): Record<string, unknown> {
-  return { expectedVersion: snapshot.expectedVersion }
+  return snapshot.exceptionReason == null
+    ? { expectedVersion: snapshot.expectedVersion }
+    : { expectedVersion: snapshot.expectedVersion, exceptionReason: snapshot.exceptionReason }
 }

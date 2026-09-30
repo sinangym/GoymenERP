@@ -188,6 +188,21 @@ describe('factBody', () => {
     })
   })
 
+  it('keeps process loss on RecordFactRequestV1 without an Inventory identity or movement', () => {
+    expect(factBody({
+      ...base,
+      kind: 'process-losses',
+      movementId: null,
+      expectedParentLabelVersion: null,
+    })).toEqual({
+      factId: base.factId,
+      expectedVersion: 3,
+      parentRollId: ROLL_1,
+      kg: '10.5',
+      occurredAtUtc: '2026-09-18T09:00:00.000Z',
+    })
+  })
+
   it('freezes every explicit company-output identity and version into the strict output body', () => {
     expect(factBody({
       ...base,
@@ -310,6 +325,11 @@ describe('decodeOrderList', () => {
 describe('closeBody', () => {
   it('sends the version the screen read and nothing else', () => {
     expect(closeBody({ idempotencyKey: 'k', expectedVersion: 4 })).toEqual({ expectedVersion: 4 })
+  })
+
+  it('freezes the reason only for the dedicated exception attempt', () => {
+    expect(closeBody({ idempotencyKey: 'k2', expectedVersion: 4, exceptionReason: 'Teknik inceleme tamamlandı.' }))
+      .toEqual({ expectedVersion: 4, exceptionReason: 'Teknik inceleme tamamlandı.' })
   })
 })
 

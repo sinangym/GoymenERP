@@ -201,6 +201,84 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
     }
 
     [SqlServerFact]
+    public async Task A_policy_backed_close_persists_the_exact_decision_and_refuses_to_drop_it()
+    {
+        await using var run = await Run.StartAsync();
+        const string beforeClosureDecision = "20260927180000_AddManufacturingPlanRevisions";
+
+        // The new table is a reversible schema addition while it is empty.
+        await using (var context = run.Context(CompanyA))
+        {
+            var migrator = context.GetService<IMigrator>();
+            await migrator.MigrateAsync(beforeClosureDecision);
+            Assert.Equal(0, await run.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM sys.tables WHERE [name] = N'OrderClosureDecisions' "
+                + "AND [schema_id] = SCHEMA_ID(N'manufacturing')"));
+            await context.Database.MigrateAsync();
+        }
+
+        var (_, orderId) = await run.ApprovedOrderAsync(CompanyA);
+        var policy = new ClosureTolerancePolicySnapshotV1(
+            CompanyA, Guid.NewGuid(), 7, ManufacturingProcess.Slitting, 5m, true,
+            new DateOnly(2026, 9, 1), new DateOnly(2026, 9, 30), DateOnly.FromDateTime(At.UtcDateTime));
+
+        await using (var store = run.Store(CompanyA))
+        {
+            await store.Orders.IssueInputAsync(orderId, 1, Guid.NewGuid(), RollA, Kg(1_000m), At, Metadata(run));
+            await store.Orders.IssueInputAsync(orderId, 2, Guid.NewGuid(), RollB, Kg(500m), At, Metadata(run));
+            await store.Orders.DeclareOutputAsync(orderId, 3, Guid.NewGuid(), RollA, OutputClass.GoodProduct, Kg(900m),
+                At.AddMinutes(1), Metadata(run));
+            await store.Orders.DeclareOutputAsync(orderId, 4, Guid.NewGuid(), RollA, OutputClass.ProcessLoss, Kg(100m),
+                At.AddMinutes(2), Metadata(run));
+            await store.Orders.DeclareOutputAsync(orderId, 5, Guid.NewGuid(), RollB, OutputClass.GoodProduct, Kg(500m),
+                At.AddMinutes(3), Metadata(run));
+
+            var approval = ClosureExceptionApprovalV1.Create(
+                CompanyA, orderId, run.Actor, "Gerçekleşen proses kaybı teknik inceleme ile kabul edildi.",
+                6, policy.PolicyId, policy.PolicyVersion, At.AddMinutes(4));
+            await store.Orders.CloseOrderWithPolicyAsync(
+                orderId, 6, run.Actor, At.AddMinutes(5), policy, approval, Metadata(run));
+        }
+
+        await using (var store = run.Store(CompanyA))
+        {
+            var restored = (await store.Orders.FindOrderAsync(orderId))!;
+            Assert.Equal((OrderStatus.Closed, 7L, policy),
+                (restored.Status, restored.Version, restored.ClosurePolicy));
+            Assert.Equal((CompanyA, orderId, run.Actor, 6L, policy.PolicyId, policy.PolicyVersion),
+                (restored.ClosureExceptionApproval!.CompanyId, restored.ClosureExceptionApproval.OrderId,
+                    restored.ClosureExceptionApproval.ApprovedByUserId, restored.ClosureExceptionApproval.OrderVersion,
+                    restored.ClosureExceptionApproval.PolicyId, restored.ClosureExceptionApproval.PolicyVersion));
+        }
+
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM manufacturing.OrderClosureDecisions WHERE CompanyId = @c AND OrderId = @o "
+            + "AND OrderVersion = 6 AND PolicyId = @p AND PolicyVersion = 7 AND MaximumFirePercent = '5' "
+            + "AND Process = 1 AND IsActive = 1 AND ApprovedByUserId = @a AND ApprovalOrderVersion = 6",
+            ("@c", CompanyA), ("@o", orderId), ("@p", policy.PolicyId), ("@a", run.Actor)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType = N'manufacturing.order.closed.v2' "
+            + "AND EntityId = @o AND CorrelationId = @c", ("@o", orderId.ToString("D")), ("@c", run.Correlation)));
+
+        await using (var otherCompany = run.Context(CompanyB))
+        {
+            Assert.Equal(0, await otherCompany.OrderClosureDecisions.CountAsync());
+        }
+
+        // Once a decision exists, Down is an explicit forward-fix gate and leaves both data and migration intact.
+        await using (var context = run.Context(CompanyA))
+        {
+            var error = await Assert.ThrowsAsync<SqlException>(
+                () => context.GetService<IMigrator>().MigrateAsync(beforeClosureDecision));
+            Assert.Equal(51048, error.Number);
+            Assert.EndsWith("_AddManufacturingOrderClosureDecision",
+                (await context.Database.GetAppliedMigrationsAsync()).Last(), StringComparison.Ordinal);
+        }
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM manufacturing.OrderClosureDecisions WHERE OrderId = @o", ("@o", orderId)));
+    }
+
+    [SqlServerFact]
     public async Task A_close_from_stored_facts_reconciles_each_roll_on_its_own()
     {
         await using var run = await Run.StartAsync();

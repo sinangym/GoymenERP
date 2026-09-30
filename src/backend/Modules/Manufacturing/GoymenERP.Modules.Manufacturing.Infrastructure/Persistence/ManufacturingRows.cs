@@ -127,6 +127,32 @@ internal sealed class OrderInputRow : IManufacturingTenantRow
     public long? ExpectedLabelVersion { get; set; }
 }
 
+/// <summary>
+/// The append-only decision that justified one policy-backed order close. A missing row is valid only for a legacy
+/// order closed before this runtime existed. Company/order come from the composite key; the optional approval fields
+/// are all-or-none and repeat the exact order/policy versions they approved.
+/// </summary>
+internal sealed class OrderClosureDecisionRow : IManufacturingTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public Guid OrderId { get; set; }
+    public long OrderVersion { get; set; }
+    public Guid PolicyId { get; set; }
+    public long PolicyVersion { get; set; }
+    public int Process { get; set; }
+    public string MaximumFirePercent { get; set; } = string.Empty;
+    public bool IsActive { get; set; }
+    public DateOnly EffectiveFrom { get; set; }
+    public DateOnly? EffectiveThrough { get; set; }
+    public DateOnly SelectedForDate { get; set; }
+    public Guid? ApprovedByUserId { get; set; }
+    public string? ApprovalReason { get; set; }
+    public long? ApprovalOrderVersion { get; set; }
+    public Guid? ApprovalPolicyId { get; set; }
+    public long? ApprovalPolicyVersion { get; set; }
+    public DateTimeOffset? ApprovedAtUtc { get; set; }
+}
+
 /// <summary>The kind of a stored realization fact.</summary>
 internal enum FactKind
 {

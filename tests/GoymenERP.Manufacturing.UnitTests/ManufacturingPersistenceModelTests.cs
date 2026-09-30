@@ -20,7 +20,7 @@ public sealed class ManufacturingPersistenceModelTests
 
     private static readonly Type[] TenantRows =
         [typeof(PlanRow), typeof(PlanInputRow), typeof(PlanSlitLineRow), typeof(PlanRevisionRow), typeof(PlanRevisionInputRow),
-            typeof(OrderRow), typeof(OrderInputRow), typeof(FactRow), typeof(CommandRow)];
+            typeof(OrderRow), typeof(OrderInputRow), typeof(OrderClosureDecisionRow), typeof(FactRow), typeof(CommandRow)];
 
     [Fact]
     public void Every_manufacturing_table_is_in_its_schema_and_filtered_by_the_active_company()
@@ -63,6 +63,7 @@ public sealed class ManufacturingPersistenceModelTests
             (typeof(PlanRevisionRow), "PlanId", typeof(PlanRow)),
             (typeof(OrderRow), "PlanId", typeof(PlanRow)),
             (typeof(OrderInputRow), "OrderId", typeof(OrderRow)),
+            (typeof(OrderClosureDecisionRow), "OrderId", typeof(OrderRow)),
             (typeof(FactRow), "OrderId", typeof(OrderRow)),
         })
         {
@@ -102,7 +103,34 @@ public sealed class ManufacturingPersistenceModelTests
             migration => migration.EndsWith("_AddManufacturingInputLabelVersions", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(),
             migration => migration.EndsWith("_AddManufacturingPlanRevisions", StringComparison.Ordinal));
+        Assert.Contains(context.Database.GetMigrations(),
+            migration => migration.EndsWith("_AddManufacturingOrderClosureDecision", StringComparison.Ordinal));
         Assert.False(context.Database.HasPendingModelChanges());
+    }
+
+    [Fact]
+    public void An_order_closure_decision_is_one_append_only_policy_snapshot_with_an_optional_complete_approval()
+    {
+        using var context = Context();
+        var model = context.GetService<IDesignTimeModel>().Model;
+        var decision = model.FindEntityType(typeof(OrderClosureDecisionRow))!;
+
+        Assert.Equal(["CompanyId", "OrderId"],
+            decision.FindPrimaryKey()!.Properties.Select(property => property.Name));
+        Assert.Contains(decision.GetForeignKeys(), key => key.PrincipalEntityType.ClrType == typeof(OrderRow)
+            && key.Properties.Select(property => property.Name).SequenceEqual(["CompanyId", "OrderId"])
+            && key.PrincipalKey.Properties.Select(property => property.Name).SequenceEqual(["CompanyId", "Id"])
+            && key.DeleteBehavior == DeleteBehavior.Restrict);
+
+        var maximumFirePercent = decision.FindProperty(nameof(OrderClosureDecisionRow.MaximumFirePercent))!;
+        Assert.Equal(64, maximumFirePercent.GetMaxLength());
+        Assert.Equal("varchar(64)", maximumFirePercent.GetColumnType());
+        Assert.False(maximumFirePercent.IsNullable);
+
+        var constraintNames = decision.GetCheckConstraints().Select(check => check.Name).ToArray();
+        Assert.Contains("CK_OrderClosureDecisions_Identity", constraintNames);
+        Assert.Contains("CK_OrderClosureDecisions_Window", constraintNames);
+        Assert.Contains("CK_OrderClosureDecisions_Approval", constraintNames);
     }
 
     [Fact]
@@ -170,6 +198,8 @@ public sealed class ManufacturingPersistenceModelTests
     [InlineData("delete-plan-revision")]
     [InlineData("edit-plan-revision-input")]
     [InlineData("delete-plan-revision-input")]
+    [InlineData("edit-order-closure-decision")]
+    [InlineData("delete-order-closure-decision")]
     public void Stored_manufacturing_is_never_deleted_and_only_its_allowed_fields_change(string fault)
     {
         using var context = Context();
@@ -227,6 +257,12 @@ public sealed class ManufacturingPersistenceModelTests
                 break;
             case "delete-plan-revision-input":
                 context.PlanRevisionInputs.Remove(Attach(context, RevisionInput()));
+                break;
+            case "edit-order-closure-decision":
+                Attach(context, ClosureDecision()).MaximumFirePercent = "9.99";
+                break;
+            case "delete-order-closure-decision":
+                context.OrderClosureDecisions.Remove(Attach(context, ClosureDecision()));
                 break;
             default:
                 Attach(context, Order()).CompanyId = CompanyB;
@@ -344,6 +380,20 @@ public sealed class ManufacturingPersistenceModelTests
         CompanyId = CompanyA, Kind = (int)FactKind.InputIssue, Id = Guid.NewGuid(), OrderId = Guid.NewGuid(),
         ParentRollId = Guid.NewGuid(), MassKg = 1m, OccurredAtUtc = At, PayloadHash = new string('0', 64),
         RecordedAtUtc = At, RecordedBy = "synthetic-actor", CorrelationId = "synthetic-correlation",
+    };
+
+    private static OrderClosureDecisionRow ClosureDecision() => new()
+    {
+        CompanyId = CompanyA,
+        OrderId = Guid.NewGuid(),
+        OrderVersion = 1,
+        PolicyId = Guid.NewGuid(),
+        PolicyVersion = 1,
+        Process = 1,
+        MaximumFirePercent = "1.25",
+        IsActive = true,
+        EffectiveFrom = DateOnly.FromDateTime(At.UtcDateTime),
+        SelectedForDate = DateOnly.FromDateTime(At.UtcDateTime),
     };
 
     /// <summary>A context of company A, or of no resolved company at all.</summary>

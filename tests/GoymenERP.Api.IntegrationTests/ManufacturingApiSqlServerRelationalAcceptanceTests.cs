@@ -239,6 +239,57 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
     }
 
     [SqlServerFact]
+    public async Task Process_loss_is_one_replayable_manufacturing_fact_and_creates_no_inventory_label_or_movement()
+    {
+        await using var run = await Run.StartAsync();
+        var user = await run.GrantAsync(TestUsers.CompanyA, CompanyA, AllWrites);
+        var (orderId, roll) = await run.OpenOrderAsync(user);
+        using var client = run.ClientFor(user, CompanyA);
+        var correlation = client.DefaultRequestHeaders.GetValues("X-Correlation-Id").Single();
+
+        var issued = await run.OkAsync(client, $"{Base}/orders/{orderId}/input-issues",
+            Run.Issue(1, roll, "100", At));
+        var labelsBefore = await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM inventory.Labels WHERE CompanyId = @c", ("@c", CompanyA));
+        var movementsBefore = await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM inventory.Movements WHERE CompanyId = @c", ("@c", CompanyA));
+        var factsBefore = await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM manufacturing.Facts WHERE CompanyId = @c", ("@c", CompanyA));
+
+        var request = new RecordFactRequestV1(
+            Guid.NewGuid(), issued.Version, roll, "10", At.AddMinutes(1));
+        using var response = await client.PostWithKeyAsync(
+            $"{Base}/orders/{orderId}/process-losses", request, "process-loss-1");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var recorded = (await response.Content.ReadFromJsonAsync<OrderViewV1>())!;
+        Assert.Equal(issued.Version + 1, recorded.Version);
+        Assert.Equal("10", Assert.Single(recorded.Rolls).OutputsKg[OutputClass.ProcessLoss.ToString()]);
+
+        using var replay = await client.PostWithKeyAsync(
+            $"{Base}/orders/{orderId}/process-losses", request, "process-loss-1");
+        Assert.Equal(HttpStatusCode.OK, replay.StatusCode);
+        Assert.Equal("true", replay.Headers.GetValues("Idempotency-Replayed").Single());
+
+        var fresh = (await client.GetFromJsonAsync<OrderViewV1>($"{Base}/orders/{orderId}"))!;
+        Assert.Equal((recorded.Version, "10"),
+            (fresh.Version, Assert.Single(fresh.Rolls).OutputsKg[OutputClass.ProcessLoss.ToString()]));
+        Assert.Equal(factsBefore + 1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM manufacturing.Facts WHERE CompanyId = @c", ("@c", CompanyA)));
+        Assert.Equal(labelsBefore, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM inventory.Labels WHERE CompanyId = @c", ("@c", CompanyA)));
+        Assert.Equal(movementsBefore, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM inventory.Movements WHERE CompanyId = @c", ("@c", CompanyA)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM manufacturing.Commands WHERE CompanyId = @c "
+            + "AND CommandName = N'manufacturing.process-loss.declare.v1'",
+            ("@c", CompanyA)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityType = N'Manufacturing.ProductionOrder' "
+            + "AND EntityId = @o AND PermissionCode = N'manufacturing.facts.record' AND CorrelationId = @r",
+            ("@o", orderId.ToString("D")), ("@r", correlation)));
+    }
+
+    [SqlServerFact]
     public async Task Each_endpoint_needs_its_own_grant_and_a_refused_write_stores_nothing()
     {
         await using var run = await Run.StartAsync();
