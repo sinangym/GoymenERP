@@ -516,7 +516,9 @@ public sealed partial class LogisticsInstructionServiceTests
                 _ => Task.FromResult(new SalesOrderLineReferenceAnswerV1(SalesOrderLineReferenceOutcomeV1.Approved,
                     new SalesOrderLineReferenceV1(Fault == "other-company" ? Guid.NewGuid() : Company, orderId, lineId, 1,
                         Fault == "other-customer" ? Guid.NewGuid() : Party, Account, Product, "7", KgUnit,
-                        Fault == "remainder-revised" ? "2" : "10", 0, 7,
+                        // The generic approved line must cover the pre-existing weighbridge fixtures (up to 24,000 kg).
+                        // The dedicated revised case remains deliberately capped at 2 kg.
+                        Fault == "remainder-revised" ? "2" : "100000", 0, 7,
                         Fault == "remainder-cancelled" ? SalesRemainderChangeNamesV1.Cancelled
                             : Fault == "remainder-revised" ? SalesRemainderChangeNamesV1.Revised : SalesRemainderChangeNamesV1.Open), null)),
             };
