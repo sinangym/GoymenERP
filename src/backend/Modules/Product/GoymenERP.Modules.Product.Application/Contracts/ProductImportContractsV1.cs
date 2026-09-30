@@ -16,6 +16,12 @@ public static class ProductImportApiV1
     public const string PreviewOperationId = "PreviewProductImportV1";
     public const string ApplyOperationId = "ApplyProductImportV1";
     public const int MaximumRows = 10_000;
+    public const string FileField = "file";
+    public const string LegacyCodeColumnField = "legacyCodeColumn";
+    public const string NameColumnField = "nameColumn";
+    public const string GroupIdColumnField = "groupIdColumn";
+    public const string FileSha256Field = "fileSha256";
+    public const string PreviewTokenField = "previewToken";
 }
 
 public static class ProductImportCodesV1
@@ -31,6 +37,7 @@ public static class ProductImportCodesV1
     public const string TooManyRows = "product_import_too_many_rows";
     public const string PreviewMismatch = "product_import_preview_mismatch";
     public const string NotReady = "product_import_not_ready";
+    public const string InvalidMetadata = "invalid_metadata";
 }
 
 /// <summary>Header names selected by the user. The server resolves them ordinally after trimming.</summary>
@@ -77,6 +84,12 @@ public interface IProductImportPreviewServiceV1
 {
     Task<ProductImportPreviewV1> PreviewAsync(ReadOnlyMemory<byte> workbook,
         ProductImportColumnMappingV1 mapping, CancellationToken cancellationToken);
+}
+
+public interface IProductImportServiceV1 : IProductImportPreviewServiceV1
+{
+    Task<ProductImportResultV1> ApplyAsync(ReadOnlyMemory<byte> workbook,
+        ProductImportApplyBindingV1 binding, string idempotencyKey, CancellationToken cancellationToken);
 }
 
 /// <summary>

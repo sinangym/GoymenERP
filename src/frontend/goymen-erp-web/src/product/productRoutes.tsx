@@ -24,11 +24,12 @@ import {
   PendingAttemptDiscardObserver,
 } from './PendingAttemptDiscardObserver'
 import { createScope } from './pendingAttempt'
-import { PRODUCT_CAPABILITY, PRODUCT_CAPABILITY_ROUTE, type ProductCapabilityId } from './capabilities'
+import { PRODUCT_CAPABILITY, PRODUCT_CAPABILITY_ROUTE, PRODUCT_IMPORT_ROUTE, type ProductCapabilityId } from './capabilities'
 import { ProductListPage } from './ProductListPage'
 import { ProductDetailPage } from './ProductDetailPage'
 import { ProductCreatePage } from './ProductCreatePage'
 import { ProductEditPage } from './ProductEditPage'
+import { ProductImportPage } from './ProductImportPage'
 
 /**
  * `CapabilityRoute` types its prop as the shell's `CapabilityId` union, which does
@@ -60,6 +61,10 @@ export const productRoutes: RouteObject[] = [
   {
     path: PRODUCT_CAPABILITY_ROUTE[PRODUCT_CAPABILITY.productsList].slice(1),
     element: gate(PRODUCT_CAPABILITY.productsList, <ProductListPage />),
+  },
+  {
+    path: PRODUCT_IMPORT_ROUTE.slice(1),
+    element: gate(PRODUCT_CAPABILITY.productsCreate, <ProductImportPage />),
   },
   {
     path: PRODUCT_CAPABILITY_ROUTE[PRODUCT_CAPABILITY.productsCreate].slice(1),

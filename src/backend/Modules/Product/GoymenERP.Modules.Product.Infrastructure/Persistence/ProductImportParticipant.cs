@@ -1,5 +1,6 @@
 using System.Data;
 using System.Data.Common;
+using System.Text.Json;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Product.Application.Contracts;
 using GoymenERP.Modules.Product.Domain.Products;
@@ -8,9 +9,35 @@ using Microsoft.EntityFrameworkCore.Storage;
 
 namespace GoymenERP.Modules.Product.Infrastructure.Persistence;
 
-public sealed record ProductImportWriteResult(
-    IReadOnlyList<ProductImportCreatedV1> Products,
-    IReadOnlyList<ProductCardView> Cards);
+public sealed record ProductImportAuditFact(
+    Guid ProductId,
+    string EventType,
+    long VersionAfter,
+    string BeforeJson,
+    string AfterJson,
+    string Reason);
+
+public sealed record ProductImportWriteResult
+{
+    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
+
+    internal ProductImportWriteResult(IReadOnlyList<ProductImportCreatedV1> products,
+        IReadOnlyList<ProductCardView> cards)
+    {
+        if (products.Count == 0 || products.Count != cards.Count
+            || products.Select((product, index) => product.ProductId != cards[index].Product.Id).Any(mismatch => mismatch))
+            throw new InvalidOperationException("Product import write facts are incomplete.");
+        Products = products.ToArray();
+        Cards = cards.ToArray();
+        AuditFacts = cards.Select(card => new ProductImportAuditFact(card.Product.Id,
+            "product.draft.created.v1", 1, "{}", JsonSerializer.Serialize(card, Json),
+            "Ürün taslağı oluşturma")).ToArray();
+    }
+
+    public IReadOnlyList<ProductImportCreatedV1> Products { get; }
+    public IReadOnlyList<ProductCardView> Cards { get; }
+    public IReadOnlyList<ProductImportAuditFact> AuditFacts { get; }
+}
 
 /// <summary>
 /// Product-owned participant for the Q16 all-or-nothing apply. It borrows the host transaction, performs the same
