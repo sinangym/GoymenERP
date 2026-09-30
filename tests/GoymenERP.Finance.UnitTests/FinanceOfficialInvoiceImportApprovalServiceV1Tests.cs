@@ -187,7 +187,8 @@ public sealed class FinanceOfficialInvoiceImportApprovalServiceV1Tests
     {
         var company = CompanyContext();
         await using var db = Database(company);
-        var authority = new CommandAuthority(PermissionDecision.Allowed, PermissionDecision.Allowed, PermissionDecision.Denied);
+        var authority = new CommandAuthority(
+            [PermissionDecision.Allowed, PermissionDecision.Allowed, PermissionDecision.Denied]);
         var service = Service(db, company, "maker", authority, ReadAuthority());
 
         var result = await service.UploadAsync(Context("maker"), new CommandMetadata("upload-key"), Request(), default);
