@@ -3,7 +3,18 @@
 Owner of this file: FİNANS (`src/finance/**`). Recipient: the shared shell/router owner (CARİ), via
 the coordinator. Nothing here is applied to a shared file by this lane.
 
-Status: **MOUNTED (FIN-UI-1b, #332); provider 1.1 ready for central authority integration.**
+Status: **MOUNTED through provider 1.2; F-03 provider 1.3 awaits central integration.**
+
+## F-03 separate read handoff (Sinan #66/5916282504)
+
+- Capability `finance.allocations.list`, route id `finance.allocations.list`, path `/finans/dagitimlar`, screen `F-03`,
+  permission `finance.allocation.read`, single-company/company-wide.
+- Control `finance.allocations.write` is a child of the list and requires BOTH `finance.allocation.read` and the existing
+  `finance.allocation.write`. Read never implies write; write never implies read.
+- Central owner registers the new permission as known CompanyWideOnly, maps GET collection/detail in
+  `FinanceEndpoints`, adds shell/nav/drift entries, and repins registry authority/fingerprint/OpenAPI atomically.
+- Owner read contract returns the newest 50 allocations and a detail carrying the current open-item version needed by
+  the existing idempotent release command. Every read revalidates company/actor/read authority after awaited DB reads.
 1. `FinanceShellCapabilityProvider` now has nine published declarations (`ImplementationAvailable: true`):
    six routes and three controls.
 2. The HTTP port covers every Finance route (`./httpPort.ts`). Record and reversal proposal are controls

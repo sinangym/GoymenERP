@@ -1,6 +1,12 @@
 import { classifyAllocationReply } from './allocationCommand'
 import type { AllocationCommandRequest, AllocationSettlement } from './allocationCommand'
-import { decodeFinanceAllocationCommandResult } from './allocationContract'
+import {
+  decodeFinanceAllocationCommandResult,
+  decodeFinanceAllocationDetail,
+  decodeFinanceAllocationPage,
+  type FinanceAllocationDetail,
+  type FinanceAllocationPage,
+} from './allocationContract'
 import { isBoundUuid } from './contract'
 import { API_BASE, devHeaders } from './http'
 import type { AttemptBinding } from './receiptCommand'
@@ -15,6 +21,47 @@ export type FinanceAllocationHttpResult =
   | { readonly kind: 'authorization'; readonly status: 401 | 403 }
   | { readonly kind: 'http-rejection'; readonly status: 400 | 415 }
   | { readonly kind: 'settlement'; readonly settlement: AllocationSettlement }
+
+export type FinanceAllocationReadHttpResult<T> =
+  | { readonly kind: 'found'; readonly resource: T }
+  | { readonly kind: 'authorization'; readonly status: 401 | 403 }
+  | { readonly kind: 'not-found' | 'unavailable' | 'malformed' | 'no-reply' }
+
+async function readAllocation<T>(
+  path: string,
+  binding: AttemptBinding,
+  decode: (value: unknown, companyId: string) => { readonly ok: false } | { readonly ok: true; readonly value: T },
+  signal?: AbortSignal,
+): Promise<FinanceAllocationReadHttpResult<T>> {
+  if (!isBoundUuid(binding.companyId)) return { kind: 'malformed' }
+  let response: Response
+  try {
+    response = await fetch(`${API_BASE}${path}`, {
+      method: 'GET', headers: { ...devHeaders(), 'X-Company-Id': binding.companyId, Accept: 'application/json' }, signal,
+    })
+  } catch {
+    return { kind: 'no-reply' }
+  }
+  if (response.status === 401 || response.status === 403) return { kind: 'authorization', status: response.status }
+  if (response.status === 404) return { kind: 'not-found' }
+  if (response.status === 503) return { kind: 'unavailable' }
+  if (response.status !== 200) return { kind: 'malformed' }
+  try {
+    const decoded = decode(await response.json(), binding.companyId)
+    return decoded.ok ? { kind: 'found', resource: decoded.value } : { kind: 'malformed' }
+  } catch (error) {
+    return signal?.aborted || isUnresolvedBodyRead(error) ? { kind: 'no-reply' } : { kind: 'malformed' }
+  }
+}
+
+export const readFinanceAllocations = (binding: AttemptBinding, signal?: AbortSignal) =>
+  readAllocation<FinanceAllocationPage>('/finance/allocations', binding, decodeFinanceAllocationPage, signal)
+
+export const readFinanceAllocation = (binding: AttemptBinding, allocationId: string, signal?: AbortSignal) =>
+  isBoundUuid(allocationId)
+    ? readAllocation<FinanceAllocationDetail>(`/finance/allocations/${encodeURIComponent(allocationId)}`, binding,
+        decodeFinanceAllocationDetail, signal)
+    : Promise.resolve<FinanceAllocationReadHttpResult<FinanceAllocationDetail>>({ kind: 'malformed' })
 
 function malformed(snapshot: FinanceAllocationWireSnapshot): FinanceAllocationHttpResult {
   return {

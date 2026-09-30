@@ -29,6 +29,7 @@ import { createHttpFinancePort } from './httpPort'
 import { ReceiptDetailPage, ReceiptDraftPage, ReceiptListPage } from './ReceiptPages'
 import { ReversalApprovalsPage } from './ReversalApprovalsPage'
 import { ManualBankPaymentStartPage, type ManualBankPaymentEntryContext } from './ManualBankPaymentStartPage'
+import { AllocationPage } from './AllocationPages'
 import {
   ManualBankPaymentCreatePage,
   ManualBankPaymentDetailPage,
@@ -151,5 +152,9 @@ export const financeRoutes: RouteObject[] = [
   {
     path: FINANCE_ROUTE.manualBankPaymentsDetail.slice(1),
     element: gate(FINANCE_CAPABILITY.manualBankPaymentsDetail, <ManualBankPaymentDetailRoute />),
+  },
+  {
+    path: FINANCE_ROUTE.allocationsList.slice(1),
+    element: gate(FINANCE_CAPABILITY.allocationsList, <AllocationPage />),
   },
 ]

@@ -30,7 +30,7 @@ namespace GoymenERP.Modules.Finance.Infrastructure.Shell;
 public sealed class FinanceShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "CHATGPT-BUSINESS/FINANCE";
-    public const string OwnerContractVersion = "1.2";
+    public const string OwnerContractVersion = "1.3";
     public const string ReceiptListScreenId = "F-02";
     public const string ReceiptDraftScreenId = "F-02-NEW";
     public const string ReceiptDetailScreenId = "F-02-DETAIL";
@@ -75,6 +75,11 @@ public sealed class FinanceShellCapabilityProvider : IShellCapabilityProvider
     public const string ManualBankPaymentDetailRoutePath = "/finans/odemeler/:paymentId";
     public const string ManualBankPaymentApproveCapabilityId = "finance.manual-bank-payments.approve";
     public const string ManualBankPaymentRecordCapabilityId = "finance.manual-bank-payments.record";
+    public const string AllocationListScreenId = "F-03";
+    public const string AllocationListCapabilityId = "finance.allocations.list";
+    public const string AllocationListRouteId = "finance.allocations.list";
+    public const string AllocationListRoutePath = "/finans/dagitimlar";
+    public const string AllocationWriteCapabilityId = "finance.allocations.write";
 
     public string Owner => OwnerId;
 
@@ -150,6 +155,17 @@ public sealed class FinanceShellCapabilityProvider : IShellCapabilityProvider
                     FinancePermissionNames.ManualBankPaymentRecord,
                     ErpPermissions.AccountingPeriodsRead,
                 ],
+            },
+            Declaration(AllocationListCapabilityId, AllocationListRouteId, AllocationListRoutePath,
+                AllocationListScreenId, ShellCapabilityRoutePrecedence.Static,
+                [FinancePermissionNames.AllocationRead]),
+            Declaration(AllocationListCapabilityId, AllocationListRouteId, AllocationListRoutePath,
+                AllocationListScreenId, ShellCapabilityRoutePrecedence.Static,
+                [FinancePermissionNames.AllocationRead]) with
+            {
+                CapabilityId = AllocationWriteCapabilityId,
+                ParentCapabilityId = AllocationListCapabilityId,
+                RequiredPermissions = [FinancePermissionNames.AllocationRead, FinancePermissionNames.AllocationWrite],
             },
         ];
     }
