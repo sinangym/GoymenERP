@@ -1626,6 +1626,22 @@ public sealed partial class SalesDraftServiceTests
             return result;
         }
 
+        public List<RemainderChangeFacts> RemainderChanges { get; } = [];
+
+        public async Task<SalesDraftStateResult?> ChangeRemainderAsync(SalesDraftWriteEnvelope envelope, string requestHash, string commandName,
+            Guid draftId, Func<SalesOrderDraft, DateTimeOffset, RemainderChangeFacts> mutate, SalesDraftStateAudit audit,
+            Func<SalesOrderDraft, CancellationToken, Task> beforeWrite, CancellationToken cancellationToken = default)
+        {
+            if (!SalesDraftCommands.IsRemainderCommand(commandName)) throw new ArgumentException("wrong command", nameof(commandName));
+            RemainderChangeFacts? recorded = null;
+            var draft = _drafts.SingleOrDefault(candidate => candidate.Id == draftId);
+            var result = await UpdateDraftStateAsyncCore(envelope, requestHash, commandName, draftId,
+                (target, now) => recorded = mutate(target, now), audit,
+                token => beforeWrite(draft!, token), cancellationToken);
+            if (recorded is not null) RemainderChanges.Add(recorded);
+            return result;
+        }
+
         public Task<SalesDraftStoreResult> StoreDraftAsync(SalesDraftWriteEnvelope envelope, string requestHash, Func<string, SalesOrderDraft> build,
             CancellationToken cancellationToken = default)
         {

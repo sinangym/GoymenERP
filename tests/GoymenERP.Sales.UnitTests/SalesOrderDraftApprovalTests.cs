@@ -159,7 +159,8 @@ public sealed class SalesOrderDraftApprovalTests
             .ToArray();
         // DEC-SAL-005: the cancellation of an approved order is a mutation entry too (RequireCancellable only reads);
         // DEC-SAL-002: so is the quantity revision (RequireQuantityRevisable only reads).
-        Assert.Equal(["AddLine", "Approve", "Cancel", "Reject", "RescheduleDelivery", "ReviseCommercial", "ReviseQuantities", "Submit", "Withdraw"], entries);
+        Assert.Equal(["AddLine", "Approve", "ApproveRemainderChange", "Cancel", "Reject", "RejectRemainderChange",
+            "RequestRemainderChange", "RescheduleDelivery", "ReviseCommercial", "ReviseQuantities", "Submit", "Withdraw"], entries);
 
         var draft = Draft();
         draft.Withdraw(2, Preparer, "SENTETIK", T0);
@@ -179,6 +180,11 @@ public sealed class SalesOrderDraftApprovalTests
         // DEC-SAL-002: a withdrawn draft's quantities do not move.
         Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => draft.ReviseQuantities(3,
             [new LineQuantityInput(draft.Lines[0].Id, "9", 9m)], "synthetic-reviser", "SENTETIK", T0)));
+        Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => draft.RequestRemainderChange(3, draft.Lines[0].Id,
+            RemainderChangeKind.Cancel, null, null, "SENTETIK", new RemainderFloor(1m, 1m, 1m), Approver, T0)));
+        Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => draft.ApproveRemainderChange(3, 1,
+            new RemainderFloor(1m, 1m, 1m), Approver, T0)));
+        Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => draft.RejectRemainderChange(3, 1, Approver, "SENTETIK", T0)));
         Assert.Equal(before, (draft.ApprovalState, draft.Version, draft.Revision, draft.Approval, draft.Lines.Count));
         Assert.Equal(InternalApprovalState.Withdrawn, draft.ApprovalState);
     }
