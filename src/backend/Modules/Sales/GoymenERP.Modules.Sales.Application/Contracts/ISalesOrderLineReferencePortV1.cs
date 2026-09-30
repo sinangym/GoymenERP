@@ -53,7 +53,8 @@ public sealed record SalesApprovedLineReferenceV1(
     string UnitCode,
     string QuantityText,
     DateOnly? RequestedDeliveryDate,
-    int Revision);
+    int Revision,
+    string RemainderState = SalesRemainderChangeNamesV1.Open);
 
 public enum SalesOrderLineReferenceOutcomeV1
 {
@@ -91,4 +92,5 @@ public sealed record SalesOrderLineReferenceV1(
     Guid OrderUnitId,
     string QuantityText,
     int Revision,
-    long Version);
+    long Version,
+    string RemainderState = SalesRemainderChangeNamesV1.Open);
