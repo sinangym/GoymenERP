@@ -256,7 +256,7 @@ public sealed partial class SalesOrderDraft
     }
 
     /// <summary>Called after every history row was restored and before the approval axis.</summary>
-    public void ValidateRemainderRestore()
+    private void ValidateRemainderRestore()
     {
         RequireApprovalNotRestored();
         foreach (var line in lines)

@@ -349,7 +349,6 @@ public sealed class SalesOrderDraftApprovalTests
         var reopened = SalesOrderDraft.Create(draft.Id, Company, draft.DocumentNo, Header(), Money(), T0);
         reopened.AddLine(1, Line(lineId, expectedText, expectedQuantity), T0);
         reopened.RestoreRemainderChange(decided);
-        reopened.ValidateRemainderRestore();
         reopened.RestoreApproval(InternalApprovalState.Approved, approval, draft.Version, draft.UpdatedAtUtc);
 
         Assert.Equal((draft.Id, expectedQuantity, expectedText, expectedRemainder, 6L, InternalApprovalState.Approved),
@@ -384,7 +383,8 @@ public sealed class SalesOrderDraftApprovalTests
         }
 
         draft.RestoreRemainderChange(new RemainderChangeFacts(request, decision));
-        Assert.Throws<InvalidOperationException>(draft.ValidateRemainderRestore);
+        Assert.Throws<InvalidOperationException>(() => draft.RestoreApproval(InternalApprovalState.Approved,
+            new ApprovalFacts(Preparer, T0, Approver, T0.AddMinutes(1), null), 6, T0.AddMinutes(2)));
     }
 
     private static string CodeOf(Action action) => Assert.Throws<SalesRuleException>(action).Code;
