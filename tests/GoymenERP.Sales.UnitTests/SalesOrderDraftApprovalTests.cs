@@ -313,6 +313,51 @@ public sealed class SalesOrderDraftApprovalTests
         Assert.Equal((InternalApprovalState.Preparing, ApprovalFacts.None, 2L), (draft.ApprovalState, draft.Approval, draft.Version));
     }
 
+    [Theory]
+    [InlineData(RemainderChangeKind.Revise)]
+    [InlineData(RemainderChangeKind.Cancel)]
+    public void Approved_remainder_change_keeps_delivered_facts_and_reopens_as_the_same_record(RemainderChangeKind kind)
+    {
+        var lineId = Guid.Parse("88888888-8888-4888-8888-888888888888");
+        var draft = Draft(Line(lineId));
+        draft.Submit(2, Preparer, T0);
+        draft.Approve(3, Approver, T0.AddMinutes(1));
+        var approval = draft.Approval;
+        var requestFloor = new RemainderFloor(0.7m, 0.6m, 0.5m);
+
+        var requested = draft.RequestRemainderChange(4, lineId, kind,
+            kind == RemainderChangeKind.Revise ? "1.1" : null,
+            kind == RemainderChangeKind.Revise ? 1.1m : null,
+            "SENTETIK müşteri kalanı değiştirdi", requestFloor, Preparer, T0.AddMinutes(2));
+
+        Assert.Equal(("1.25", LineRemainderState.Open, 5L),
+            (draft.Lines.Single().QuantityText, draft.Lines.Single().Remainder, draft.Version));
+        Assert.Equal(0.5m, requested.Request.Floor.Delivered);
+
+        var decisionFloor = new RemainderFloor(0.8m, 0.6m, 0.5m);
+        var decided = draft.ApproveRemainderChange(5, requested.Request.ChangeNo, decisionFloor, Approver, T0.AddMinutes(3));
+        var expectedQuantity = kind == RemainderChangeKind.Cancel ? 0.8m : 1.1m;
+        var expectedText = kind == RemainderChangeKind.Cancel ? "0.8" : "1.1";
+        var expectedRemainder = kind == RemainderChangeKind.Cancel ? LineRemainderState.Cancelled : LineRemainderState.Revised;
+
+        Assert.Equal((expectedQuantity, expectedText, expectedRemainder, 6L, 0, InternalApprovalState.Approved),
+            (draft.Lines.Single().Quantity.Value, draft.Lines.Single().QuantityText, draft.Lines.Single().Remainder,
+                draft.Version, draft.Revision, draft.ApprovalState));
+        Assert.Equal(approval, draft.Approval);
+        Assert.Equal((0.5m, RemainderChangeState.Approved), (decided.Decision!.Floor!.Delivered, decided.State));
+
+        var reopened = SalesOrderDraft.Create(draft.Id, Company, draft.DocumentNo, Header(), Money(), T0);
+        reopened.AddLine(1, Line(lineId, expectedText, expectedQuantity), T0);
+        reopened.RestoreRemainderChange(decided);
+        reopened.RestoreApproval(InternalApprovalState.Approved, approval, draft.Version, draft.UpdatedAtUtc);
+
+        Assert.Equal((draft.Id, expectedQuantity, expectedText, expectedRemainder, 6L, InternalApprovalState.Approved),
+            (reopened.Id, reopened.Lines.Single().Quantity.Value, reopened.Lines.Single().QuantityText,
+                reopened.Lines.Single().Remainder, reopened.Version, reopened.ApprovalState));
+        Assert.Equal((requestFloor, decisionFloor),
+            (reopened.RemainderChanges.Single().Request.Floor, reopened.RemainderChanges.Single().Decision!.Floor));
+    }
+
     private static string CodeOf(Action action) => Assert.Throws<SalesRuleException>(action).Code;
 
     private static SalesDraftHeader Header() => new(Guid.Parse("33333333-3333-4333-8333-333333333333"),
@@ -321,22 +366,22 @@ public sealed class SalesOrderDraftApprovalTests
     private static MoneyProfileSnapshot Money() => new(Company, Guid.Parse("55555555-5555-4555-8555-555555555555"),
         SalesOrderDraft.MoneyOperation, Guid.Parse("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"), "3", Day, true, new DateOnly(2026, 9, 1), null, 2);
 
-    private static SalesDraftLineInput Line()
+    private static SalesDraftLineInput Line(Guid? lineId = null, string quantityText = "1.25", decimal quantity = 1.25m)
     {
         var unit = new UnitProfileSnapshot(Company, KgUnit, "kg", "weight", KgProfile, "4", true, 3, 3, true, new DateOnly(2026, 9, 1), null);
         var binding = new UnitBindingSnapshot(Company, KgUnit, KgProfile, "4");
         var product = new ProductSnapshot(Guid.Parse("99999999-9999-4999-8999-999999999999"), "7", "GDC-001", "Sentetik bant", Day, binding, binding, binding);
-        return new SalesDraftLineInput(Guid.NewGuid(), product, unit, "1.25", 1.25m);
+        return new SalesDraftLineInput(lineId ?? Guid.NewGuid(), product, unit, quantityText, quantity);
     }
 
     /// <summary>A one-line draft at version 2 (1 at birth + 1 line).</summary>
     private static LineCommercialInput Commercial(SalesOrderDraftLine line, string? price, Guid? unit, string? discount) =>
         new(line.Id, new CommercialDraftFields(price, unit, discount));
 
-    private static SalesOrderDraft Draft()
+    private static SalesOrderDraft Draft(SalesDraftLineInput? line = null)
     {
         var draft = SalesOrderDraft.Create(Guid.NewGuid(), Company, "SO-2026-000001", Header(), Money(), T0);
-        draft.AddLine(1, Line(), T0);
+        draft.AddLine(1, line ?? Line(), T0);
         return draft;
     }
 }
