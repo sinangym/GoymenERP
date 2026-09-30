@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import detailRaw from './examples/detail-response.json?raw'
 import { decodeDraftDetail, type DraftDetail } from './contract'
 import { SalesDraftRemainderChangePanel } from './SalesDraftRemainderChangePanel'
+import { resetPendingRemainderActions } from './pendingRemainderChanges'
 
 const authBoundary = vi.hoisted(() => ({ capture: vi.fn(() => ({})), report: vi.fn() }))
 vi.mock('../shell/useAuthBoundary', () => ({ useAuthBoundary: () => authBoundary }))
@@ -48,7 +49,7 @@ const remainderChange = (lineId: string, state: 'Pending' | 'Approved') => ({
   loadedAtDecision: state === 'Approved' ? '2' : null,
 })
 
-afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks() })
+afterEach(() => { cleanup(); resetPendingRemainderActions(); vi.unstubAllGlobals(); vi.restoreAllMocks() })
 
 describe('S-04 partial-delivery remainder panel', () => {
   it('shows owner quantities and sends a revise request under one idempotency key', async () => {
@@ -67,6 +68,7 @@ describe('S-04 partial-delivery remainder panel', () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     render(<QueryClientProvider client={client}><SalesDraftRemainderChangePanel detail={current} companyId={current.draft.companyId}
       namespace="test-company" actorId="actor-a" routeEntryGeneration={1}
+      attemptBinding='["actor-a","session-1","company-a","draft-a"]'
       canRequest canDecide={false} onRecorded={recorded} /></QueryClientProvider>)
 
     const panel = await screen.findByTestId('sales-remainder-changes')
@@ -109,6 +111,7 @@ describe('S-04 partial-delivery remainder panel', () => {
     const firstClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     render(<QueryClientProvider client={firstClient}><SalesDraftRemainderChangePanel detail={current} companyId={current.draft.companyId}
       namespace="test-company" actorId="approver-a" routeEntryGeneration={1}
+      attemptBinding='["approver-a","session-1","company-a","draft-a"]'
       canRequest={false} canDecide onRecorded={recorded} /></QueryClientProvider>)
 
     const pending = await screen.findByTestId('sales-remainder-change-1')
@@ -123,12 +126,95 @@ describe('S-04 partial-delivery remainder panel', () => {
     const secondClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     render(<QueryClientProvider client={secondClient}><SalesDraftRemainderChangePanel detail={reopened} companyId={reopened.draft.companyId}
       namespace="test-company" actorId="approver-a" routeEntryGeneration={2}
+      attemptBinding='["approver-a","session-1","company-a","draft-a"]'
       canRequest={false} canDecide onRecorded={vi.fn()} /></QueryClientProvider>)
 
     const reopenedPanel = await screen.findByTestId('sales-remainder-changes')
     expect(await within(reopenedPanel).findByText(/Yüklenen: 2 · Sevk: 2 · Teslim: 1/)).toBeTruthy()
     expect(within(reopenedPanel).getByText(/1\. satır · 5 → 3 · Approved/)).toBeTruthy()
     expect(within(reopenedPanel).queryByRole('button', { name: 'Onayla' })).toBeNull()
+  })
+
+  it('keeps the same key and frozen body after reply loss, remount and a fresh detail version', async () => {
+    const calls: { key: string | null; body: unknown }[] = []
+    let loseReply = true
+    vi.stubGlobal('fetch', vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      if ((init?.method ?? 'GET').toUpperCase() === 'GET') {
+        const current = detail()
+        return new Response(JSON.stringify(remainderRead(current.lines[0].lineId, current.lines[0].orderUnitId)), { status: 200 })
+      }
+      const headers = init?.headers as Record<string, string>
+      calls.push({ key: headers['Idempotency-Key'] ?? null, body: JSON.parse(String(init?.body)) })
+      if (loseReply) {
+        loseReply = false
+        throw new TypeError('synthetic reply loss')
+      }
+      return new Response(JSON.stringify({ detail: approvedBody('5'), isReplay: true, originalCorrelationId: 'c-original' }), {
+        status: 200, headers: { 'Content-Type': 'application/json' },
+      })
+    }))
+
+    const binding = '["actor-a","session-1","company-a","draft-a"]'
+    const first = detail()
+    const firstClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(<QueryClientProvider client={firstClient}><SalesDraftRemainderChangePanel detail={first} companyId={first.draft.companyId}
+      namespace="test-company" actorId="actor-a" routeEntryGeneration={1} attemptBinding={binding}
+      canRequest canDecide={false} onRecorded={vi.fn()} /></QueryClientProvider>)
+    const firstPanel = await screen.findByTestId('sales-remainder-changes')
+    fireEvent.change(within(firstPanel).getByLabelText('İşlem'), { target: { value: 'Revise' } })
+    fireEvent.change(within(firstPanel).getByLabelText('Yeni sipariş miktarı'), { target: { value: '3' } })
+    fireEvent.change(within(firstPanel).getByLabelText('Gerekçe'), { target: { value: 'SENTETIK yanıt kaybı' } })
+    fireEvent.click(within(firstPanel).getByRole('button', { name: 'Onaya gönder' }))
+    expect(await within(firstPanel).findByRole('button', { name: 'Aynı işlemi tekrar dene' })).toBeTruthy()
+
+    cleanup()
+    const recorded = vi.fn()
+    const reopened = detail('5')
+    const secondClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(<QueryClientProvider client={secondClient}><SalesDraftRemainderChangePanel detail={reopened} companyId={reopened.draft.companyId}
+      namespace="test-company" actorId="actor-a" routeEntryGeneration={2} attemptBinding={binding}
+      canRequest canDecide={false} onRecorded={recorded} /></QueryClientProvider>)
+    const reopenedPanel = await screen.findByTestId('sales-remainder-changes')
+    fireEvent.click(await within(reopenedPanel).findByRole('button', { name: 'Aynı işlemi tekrar dene' }))
+    await waitFor(() => expect(recorded).toHaveBeenCalledTimes(1))
+    expect(calls).toHaveLength(2)
+    expect(calls[1]).toEqual(calls[0])
+    expect(calls[1].body).toMatchObject({ expectedVersion: '4', quantity: '3' })
+  })
+
+  it('does not carry a pending action into another binding and an authority revoke cannot resend it', async () => {
+    const current = detail()
+    let posts = 0
+    vi.stubGlobal('fetch', vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      if ((init?.method ?? 'GET').toUpperCase() === 'GET') {
+        return new Response(JSON.stringify(remainderRead(current.lines[0].lineId, current.lines[0].orderUnitId)), { status: 200 })
+      }
+      posts++
+      throw new TypeError('synthetic reply loss')
+    }))
+    const original = '["actor-a","session-1","company-a","draft-a"]'
+    const renderPanel = (binding: string, canRequest: boolean) => {
+      const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      return render(<QueryClientProvider client={client}><SalesDraftRemainderChangePanel detail={current} companyId={current.draft.companyId}
+        namespace="test-company" actorId="actor-a" routeEntryGeneration={1} attemptBinding={binding}
+        canRequest={canRequest} canDecide={false} onRecorded={vi.fn()} /></QueryClientProvider>)
+    }
+    renderPanel(original, true)
+    const panel = await screen.findByTestId('sales-remainder-changes')
+    fireEvent.change(within(panel).getByLabelText('Gerekçe'), { target: { value: 'SENTETIK bağ kontrolü' } })
+    fireEvent.click(within(panel).getByRole('button', { name: 'Onaya gönder' }))
+    expect(await within(panel).findByRole('button', { name: 'Aynı işlemi tekrar dene' })).toBeTruthy()
+    cleanup()
+
+    renderPanel('["actor-b","session-1","company-a","draft-a"]', true)
+    const other = await screen.findByTestId('sales-remainder-changes')
+    expect(within(other).queryByRole('button', { name: 'Aynı işlemi tekrar dene' })).toBeNull()
+    cleanup()
+
+    renderPanel(original, false)
+    const revoked = await screen.findByTestId('sales-remainder-changes')
+    expect(await within(revoked).findByRole('button', { name: 'Aynı işlemi tekrar dene' })).toBeDisabled()
+    expect(posts).toBe(1)
   })
 })
 

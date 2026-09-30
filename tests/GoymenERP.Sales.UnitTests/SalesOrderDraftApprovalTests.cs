@@ -349,6 +349,7 @@ public sealed class SalesOrderDraftApprovalTests
         var reopened = SalesOrderDraft.Create(draft.Id, Company, draft.DocumentNo, Header(), Money(), T0);
         reopened.AddLine(1, Line(lineId, expectedText, expectedQuantity), T0);
         reopened.RestoreRemainderChange(decided);
+        reopened.ValidateRemainderRestore();
         reopened.RestoreApproval(InternalApprovalState.Approved, approval, draft.Version, draft.UpdatedAtUtc);
 
         Assert.Equal((draft.Id, expectedQuantity, expectedText, expectedRemainder, 6L, InternalApprovalState.Approved),
@@ -356,6 +357,34 @@ public sealed class SalesOrderDraftApprovalTests
                 reopened.Lines.Single().Remainder, reopened.Version, reopened.ApprovalState));
         Assert.Equal((requestFloor, decisionFloor),
             (reopened.RemainderChanges.Single().Request.Floor, reopened.RemainderChanges.Single().Decision!.Floor));
+    }
+
+    [Theory]
+    [InlineData("current-quantity")]
+    [InlineData("current-text")]
+    [InlineData("decision-floor")]
+    [InlineData("rejected-result")]
+    public void Corrupt_remainder_history_is_refused_instead_of_repaired(string fault)
+    {
+        var lineId = Guid.Parse("88888888-8888-4888-8888-888888888888");
+        var storedText = fault == "current-text" ? "1.10" : fault == "current-quantity" ? "1.2" : "1.1";
+        var storedValue = fault == "current-quantity" ? 1.2m : 1.1m;
+        var draft = Draft(Line(lineId, storedText, storedValue));
+        var request = new RemainderChangeRequest(1, 0, lineId, 1, RemainderChangeKind.Revise, "1.25", 1.1m, "1.1",
+            "SENTETIK kalan", Preparer, T0, new RemainderFloor(0.7m, 0.6m, 0.5m));
+        var decision = fault == "rejected-result"
+            ? new RemainderChangeDecision(RemainderChangeState.Rejected, Approver, T0.AddMinutes(1), null, 1.1m, "1.1", null)
+            : new RemainderChangeDecision(RemainderChangeState.Approved, Approver, T0.AddMinutes(1), null, 1.1m, "1.1",
+                fault == "decision-floor" ? new RemainderFloor(0.7m, 0.8m, 0.5m) : new RemainderFloor(0.8m, 0.6m, 0.5m));
+
+        if (fault is "decision-floor" or "rejected-result")
+        {
+            Assert.Throws<InvalidOperationException>(() => draft.RestoreRemainderChange(new RemainderChangeFacts(request, decision)));
+            return;
+        }
+
+        draft.RestoreRemainderChange(new RemainderChangeFacts(request, decision));
+        Assert.Throws<InvalidOperationException>(draft.ValidateRemainderRestore);
     }
 
     private static string CodeOf(Action action) => Assert.Throws<SalesRuleException>(action).Code;

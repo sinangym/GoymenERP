@@ -1271,6 +1271,7 @@ public sealed class SalesStore(
             {
                 throw new InvalidOperationException("Kayıtlı kalan kararı isteği olmadan duruyor.");
             }
+            draft.ValidateRemainderRestore();
 
             // DEC-SAL-005: the recorded cancellation, BEFORE the approval axis (its version floor counts it as one step). The
             // header's lifecycle state and the appended row must agree: a cancelled header without its row, or a row beside a

@@ -199,12 +199,13 @@ export function SalesDraftDetailPage() {
       remainderChanges={
         namespace === null || companyId === null || shell.activeContext === null ? null : (
           <SalesDraftRemainderChangePanel
-            key={`remainder:${namespace ?? ''}:${outcome.data.draft.id}:${outcome.data.draft.version}`}
+            key={`remainder:${namespace ?? ''}:${outcome.data.draft.id}`}
             detail={outcome.data}
             companyId={companyId}
             namespace={namespace}
             actorId={shell.activeContext.userId}
             routeEntryGeneration={shell.routeEntryGeneration}
+            attemptBinding={orderAttemptBinding(shell, `sales-order-remainder:${outcome.data.draft.id}`)!}
             canRequest={hasCapability(shell, SALES_QUANTITY_WRITE_CAPABILITY)}
             canDecide={hasCapability(shell, SALES_CAPABILITY.ordersApprove)}
             onRecorded={() => void queryClient.invalidateQueries({ queryKey })}
