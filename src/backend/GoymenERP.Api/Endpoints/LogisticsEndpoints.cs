@@ -229,6 +229,85 @@ public static class LogisticsEndpoints
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();
 
+        // AT-055: a dispatch-note (irsaliye) DRAFT from the issued instruction's definite shipments — each line is a shipment's recorded
+        // shipped quantity; a shipment already on a non-cancelled dispatch note is a recorded terminal 409.
+        group.MapPost("/{id:guid}/dispatch-notes", (Guid id, HttpContext httpContext, [FromServices] ILogisticsInstructionService service,
+                ICorrelationContext correlation, CancellationToken cancellationToken) =>
+            MutateAsync(httpContext, correlation, LogisticsJson.ReadCreateDispatchNote,
+                (body, metadata) => service.CreateDispatchNoteAsync(id, body, metadata, cancellationToken), cancellationToken))
+            .WithName("CreateLoadingInstructionDispatchNoteV1")
+            .WithIdempotencyContract(LogisticsApiV1.MutationStatus, StatusCodes.Status409Conflict)
+            .Accepts<CreateDispatchNoteRequest>("application/json")
+            .Produces<LoadingInstructionResponse>(LogisticsApiV1.MutationStatus)
+            .ProducesErpBadRequest("validation_failed", LogisticsProblemCodesV1.CommandMetadataInvalid)
+            .AllowsEmptyErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpConflict(LogisticsProblemCodesV1.VersionConflict, LogisticsProblemCodesV1.InstructionState,
+                LogisticsProblemCodesV1.ShipmentAlreadyDispatched, LogisticsProblemCodesV1.DuplicateDispatchNote,
+                LogisticsProblemCodesV1.SameKeyPayloadMismatch, LogisticsProblemCodesV1.ConcurrentChange)
+            .ProducesErpUnprocessableEntity("validation_failed", LogisticsProblemCodesV1.ShipmentNotFound)
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+
+        // AT-055 lifecycle (user decision 2026-09-30): approve a draft (the company's next system number, in the same save), cancel a
+        // draft or an approved note with a reason (never a delete; its shipments are released), and the official e-İrsaliye number
+        // of an approved note (once, unique per company). Each: its own name, the instruction version, one key, one audit event.
+        group.MapPost("/{id:guid}/dispatch-notes/{dispatchNoteId:guid}/approve", (Guid id, Guid dispatchNoteId, HttpContext httpContext,
+                [FromServices] ILogisticsInstructionService service, ICorrelationContext correlation, CancellationToken cancellationToken) =>
+            MutateAsync(httpContext, correlation, LogisticsJson.ReadApproveDispatchNote,
+                (body, metadata) => service.ApproveDispatchNoteAsync(id, dispatchNoteId, body, metadata, cancellationToken), cancellationToken))
+            .WithName("ApproveLoadingInstructionDispatchNoteV1")
+            .WithIdempotencyContract(LogisticsApiV1.MutationStatus, StatusCodes.Status409Conflict)
+            .Accepts<ApproveDispatchNoteRequest>("application/json")
+            .Produces<LoadingInstructionResponse>(LogisticsApiV1.MutationStatus)
+            .ProducesErpBadRequest("validation_failed", LogisticsProblemCodesV1.CommandMetadataInvalid)
+            .AllowsEmptyErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpConflict(LogisticsProblemCodesV1.VersionConflict, LogisticsProblemCodesV1.InstructionState,
+                LogisticsProblemCodesV1.DispatchNoteState, LogisticsProblemCodesV1.SameKeyPayloadMismatch, LogisticsProblemCodesV1.ConcurrentChange)
+            .ProducesErpUnprocessableEntity("validation_failed")
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+
+        group.MapPost("/{id:guid}/dispatch-notes/{dispatchNoteId:guid}/cancel", (Guid id, Guid dispatchNoteId, HttpContext httpContext,
+                [FromServices] ILogisticsInstructionService service, ICorrelationContext correlation, CancellationToken cancellationToken) =>
+            MutateAsync(httpContext, correlation, LogisticsJson.ReadCancelDispatchNote,
+                (body, metadata) => service.CancelDispatchNoteAsync(id, dispatchNoteId, body, metadata, cancellationToken), cancellationToken))
+            .WithName("CancelLoadingInstructionDispatchNoteV1")
+            .WithIdempotencyContract(LogisticsApiV1.MutationStatus, StatusCodes.Status409Conflict)
+            .Accepts<CancelDispatchNoteRequest>("application/json")
+            .Produces<LoadingInstructionResponse>(LogisticsApiV1.MutationStatus)
+            .ProducesErpBadRequest("validation_failed", LogisticsProblemCodesV1.CommandMetadataInvalid)
+            .AllowsEmptyErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpConflict(LogisticsProblemCodesV1.VersionConflict, LogisticsProblemCodesV1.InstructionState,
+                LogisticsProblemCodesV1.DispatchNoteState, LogisticsProblemCodesV1.SameKeyPayloadMismatch, LogisticsProblemCodesV1.ConcurrentChange)
+            .ProducesErpUnprocessableEntity("validation_failed")
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+
+        group.MapPost("/{id:guid}/dispatch-notes/{dispatchNoteId:guid}/e-dispatch-number", (Guid id, Guid dispatchNoteId, HttpContext httpContext,
+                [FromServices] ILogisticsInstructionService service, ICorrelationContext correlation, CancellationToken cancellationToken) =>
+            MutateAsync(httpContext, correlation, LogisticsJson.ReadSetEDispatchNumber,
+                (body, metadata) => service.SetEDispatchNumberAsync(id, dispatchNoteId, body, metadata, cancellationToken), cancellationToken))
+            .WithName("SetLoadingInstructionDispatchNoteEDispatchNumberV1")
+            .WithIdempotencyContract(LogisticsApiV1.MutationStatus, StatusCodes.Status409Conflict)
+            .Accepts<SetEDispatchNumberRequest>("application/json")
+            .Produces<LoadingInstructionResponse>(LogisticsApiV1.MutationStatus)
+            .ProducesErpBadRequest("validation_failed", LogisticsProblemCodesV1.CommandMetadataInvalid)
+            .AllowsEmptyErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpConflict(LogisticsProblemCodesV1.VersionConflict, LogisticsProblemCodesV1.InstructionState,
+                LogisticsProblemCodesV1.DispatchNoteState, LogisticsProblemCodesV1.EDispatchNumberInUse, LogisticsProblemCodesV1.SameKeyPayloadMismatch,
+                LogisticsProblemCodesV1.ConcurrentChange)
+            .ProducesErpUnprocessableEntity("validation_failed")
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+
         group.MapPost("/{id:guid}/lines/{lineId:guid}/shipments", (Guid id, Guid lineId, HttpContext httpContext,
                 [FromServices] ILogisticsRealizationServiceV1 service, ICorrelationContext correlation,
                 CancellationToken cancellationToken) =>
@@ -279,7 +358,48 @@ public static class LogisticsEndpoints
             .ProducesErpAuthenticatedProblems();
 
         MapOperationsWork(endpoints);
+        MapSalesOrderDispatchNotes(endpoints);
         return endpoints;
+    }
+
+    /// <summary>
+    /// AT-055, the Sales order view's link (S-04): GET /api/v1/logistics/dispatch-notes?salesOrderId=… — the dispatch-note drafts that
+    /// document shipments of that order, with only its lines, under the instruction read (the drafts are Logistics's; Sales reads
+    /// none of its tables). Exactly one <c>salesOrderId</c>; any other query member is 400. Company-bound, creating nothing.
+    /// </summary>
+    private static void MapSalesOrderDispatchNotes(IEndpointRouteBuilder endpoints)
+    {
+        // The query is read by hand (not bound), so the contract's one REQUIRED uuid parameter is declared by the OpenAPI operation
+        // transformer (ErpOpenApiContract, GetSalesOrderDispatchNotesV1) — never an optional string (#518 P2).
+        endpoints.MapGet(LogisticsApiV1.SalesOrderDispatchNotesPath, async (HttpContext httpContext,
+                [FromServices] ILogisticsInstructionService service, ICorrelationContext correlation, CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext.Response);
+                var query = httpContext.Request.Query;
+                if (query.Count != 1 || !query.TryGetValue("salesOrderId", out var values) || values.Count != 1
+                    || !Guid.TryParseExact(values[0], "D", out var orderId) || orderId == Guid.Empty)
+                {
+                    return Problem(StatusCodes.Status400BadRequest, "validation_failed", correlation);
+                }
+
+                try
+                {
+                    return Results.Json(await service.GetSalesOrderDispatchNotesAsync(orderId, cancellationToken), LogisticsJson.Options);
+                }
+                catch (LogisticsInstructionServiceException exception)
+                {
+                    return Problem(httpContext, exception, correlation);
+                }
+            })
+            .WithTags("Logistics")
+            .RequireAuthorization()
+            .RequireCompanyContext()
+            .WithName("GetSalesOrderDispatchNotesV1")
+            .Produces<SalesOrderDispatchNotesView>()
+            .ProducesErpBadRequest("validation_failed")
+            .AllowsEmptyErpBadRequestBody()
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
     }
 
     /// <summary>

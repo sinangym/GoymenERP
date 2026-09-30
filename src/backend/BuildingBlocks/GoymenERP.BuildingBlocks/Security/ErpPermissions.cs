@@ -402,6 +402,29 @@ public static class ErpPermissions
     public const string LogisticsWeighingsRecord = "logistics.weighings.record";
 
     /// <summary>
+    /// AT-055: prepare a dispatch-note (irsaliye) DRAFT from an issued instruction's definite shipments (LogisticsPermissionManifestV1;
+    /// L-08). Its own name, aliasing no other. Registered, not granted: no role, seed or user receives it here. Company-wide only.
+    /// Not Critical.
+    /// </summary>
+    public const string LogisticsDispatchNotesCreate = "logistics.dispatch-notes.create";
+
+    /// <summary>
+    /// AT-055 (user decision 2026-09-30): approve (finalise) a dispatch-note draft — the company's gap-free system number is assigned
+    /// on approval — and record the official e-İrsaliye number of an approved note (LogisticsPermissionManifestV1). Its own name.
+    /// No DEC-* documents a maker-checker rule for the irsaliye, so the preparer is not barred from approving
+    /// (ASSUMPTION-AT055-APPROVER); segregating the duties is a grant decision. Registered, not granted: no role, seed or user
+    /// receives it here. Company-wide only. Not Critical: no approved source adds grant-time dual control for this name.
+    /// </summary>
+    public const string LogisticsDispatchNotesApprove = "logistics.dispatch-notes.approve";
+
+    /// <summary>
+    /// AT-055 (user decision 2026-09-30): cancel a draft or an approved dispatch note with a reason — never a delete; the
+    /// cancellation releases its shipments for a new note (LogisticsPermissionManifestV1). Its own name. Registered, not granted.
+    /// Company-wide only. Not Critical.
+    /// </summary>
+    public const string LogisticsDispatchNotesCancel = "logistics.dispatch-notes.cancel";
+
+    /// <summary>
     /// AT-025: the operations work list's two SEPARATE section reads (LogisticsPermissionManifestV1) — the sales section (L-01) and
     /// the purchase section (L-09), each its own name so that neither implies the other (Sinan #66 5738113623 §4: each read its own
     /// name, deny-first). Registered, not granted: no role, seed or user receives them here. Company-wide only. Not Critical.
@@ -538,6 +561,9 @@ public static class ErpPermissions
             LogisticsShipmentsRecord,
             LogisticsDeliveriesRecord,
             LogisticsWeighingsRecord,
+            LogisticsDispatchNotesCreate,
+            LogisticsDispatchNotesApprove,
+            LogisticsDispatchNotesCancel,
             LogisticsOperationsSalesWorkRead,
             LogisticsOperationsPurchaseWorkRead,
             PurchasingOrdersCreate,
@@ -634,6 +660,9 @@ public static class ErpPermissions
             LogisticsShipmentsRecord,
             LogisticsDeliveriesRecord,
             LogisticsWeighingsRecord,
+            LogisticsDispatchNotesCreate,
+            LogisticsDispatchNotesApprove,
+            LogisticsDispatchNotesCancel,
             LogisticsOperationsSalesWorkRead,
             LogisticsOperationsPurchaseWorkRead,
             PurchasingOrdersCreate,

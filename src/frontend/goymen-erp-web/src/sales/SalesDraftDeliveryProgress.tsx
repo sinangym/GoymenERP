@@ -5,6 +5,7 @@
  * across mounts: `gcTime` 0), so a delivery recorded in Logistics shows on the next open. Quantities stay decimal text —
  * nothing is computed here. No completion, tolerance or warning is derived (OPEN-004 is open). A body that does not
  * describe exactly this detail (version, lines, units, quantities) is not shown as numbers.
+ * AT-055: under it, the Logistics dispatch-note drafts of this order's shipments, linked to their instruction (SalesDraftDispatchNotes).
  */
 import { useId } from 'react'
 import { useQuery } from '@tanstack/react-query'
@@ -12,6 +13,7 @@ import { fetchDraftDeliveryProgress } from './api'
 import { SALES_CAPABILITY } from './capabilities'
 import type { DraftDetail } from './contract'
 import { ORDER_DETAIL_TEXT } from './salesText'
+import { SalesDraftDispatchNotes } from './SalesDraftDispatchNotes'
 import { useShellState } from '../shell/shellContext'
 import { contextKey, contextKeyString, hasCapability } from '../shell/shellState'
 import { StateBlock } from '../shell/StateBlock'
@@ -78,6 +80,7 @@ export function SalesDraftDeliveryProgress({ detail }: { readonly detail: DraftD
           onRetry={() => void query.refetch()}
         />
       )}
+      <SalesDraftDispatchNotes detail={detail} />
     </section>
   )
 }
