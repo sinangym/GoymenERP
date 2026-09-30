@@ -73,13 +73,13 @@ public sealed partial class LogisticsInstructionSqlServerRelationalAcceptanceTes
         // One draft row, its two lines (the shipments' quantities, in recording order), one recorded attempt, one audit event.
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM logistics.DispatchNotes WHERE InstructionId = @id", ("@id", id)));
         Assert.Equal(2, await run.ScalarAsync<int>("SELECT COUNT(*) FROM logistics.DispatchNoteLines WHERE DispatchNoteId = @note", ("@note", noteId)));
-        Assert.Equal(3m, await run.ScalarAsync<decimal>("SELECT Quantity FROM logistics.DispatchNoteLines WHERE DispatchNoteId = @note AND LineNo = 1", ("@note", noteId)));
-        Assert.Equal(2m, await run.ScalarAsync<decimal>("SELECT Quantity FROM logistics.DispatchNoteLines WHERE DispatchNoteId = @note AND LineNo = 2", ("@note", noteId)));
+        Assert.Equal(3m, await run.ScalarAsync<decimal>("SELECT Quantity FROM logistics.DispatchNoteLines WHERE DispatchNoteId = @note AND [LineNo] = 1", ("@note", noteId)));
+        Assert.Equal(2m, await run.ScalarAsync<decimal>("SELECT Quantity FROM logistics.DispatchNoteLines WHERE DispatchNoteId = @note AND [LineNo] = 2", ("@note", noteId)));
         Assert.Equal(owners.Order, await run.ScalarAsync<Guid>("SELECT TOP 1 SourceOrderId FROM logistics.DispatchNoteLines WHERE DispatchNoteId = @note", ("@note", noteId)));
         Assert.Equal(attemptsBefore + 1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM logistics.LoadingAttempts"));
         Assert.Equal(1, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityId = @id AND EventType = N'logistics.loading-instruction.dispatch-note-drafted.v1' "
-            + "AND SourceChannel = N'Web' AND AfterJson LIKE N'%\"dispatchNotes\":[{%'", ("@id", id.ToString("D"))));
+            + "AND SourceChannel = N'Web' AND AfterJson LIKE N'%\"dispatchNotes\":[[]{%'", ("@id", id.ToString("D"))));
         // A document books nothing: the shipped totals are the shares', unchanged.
         Assert.Equal(5m, await run.ScalarAsync<decimal>("SELECT Shipped FROM logistics.LoadingInstructionLines WHERE LineId = @line", ("@line", first)));
 
