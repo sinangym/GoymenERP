@@ -144,6 +144,20 @@ public sealed class FinanceShellCapabilitySqlServerRelationalAcceptanceTests
                 Assert.Equal(HttpStatusCode.Forbidden, (await saveAndRead.GetAsync(FinanceEndpoints.ManualReceiptsPath)).StatusCode);
             }
 
+            // Customer-instrument reading is an independent company-wide list. It neither implies receipt access
+            // nor borrows that permission, and the actual list endpoint accepts the same actor/company boundary.
+            await GrantAsync(factory, TestUsers.NoAssignment, CompanyB, ErpPermissions.FinanceCustomerInstrumentRead,
+                AccessScopeType.Company, CompanyB);
+            using (var customerInstrumentRead = factory.CreateClientFor(TestUsers.NoAssignment, CompanyB))
+            {
+                Assert.Equal(new[] { "finance.customer-instruments.list" },
+                    FinanceOnly(await ReadAsync(customerInstrumentRead)));
+                Assert.Equal(HttpStatusCode.OK,
+                    (await customerInstrumentRead.GetAsync(FinanceEndpoints.CustomerInstrumentsPath)).StatusCode);
+                Assert.Equal(HttpStatusCode.Forbidden,
+                    (await customerInstrumentRead.GetAsync(FinanceEndpoints.ManualReceiptsPath)).StatusCode);
+            }
+
             // The grants are company A's. The same actor gets a non-Finance assignment in company B, so the
             // company-B context resolves and the answer is measured: no Finance screen there.
             await GrantAsync(factory, TestUsers.CompanyA, CompanyB, ErpPermissions.OrganizationLocationsRead, AccessScopeType.Company, CompanyB);
@@ -158,6 +172,7 @@ public sealed class FinanceShellCapabilitySqlServerRelationalAcceptanceTests
             await GrantAsync(factory, TestUsers.CompanyB, CompanyB, ErpPermissions.OrganizationLocationsRead, AccessScopeType.Company, CompanyB);
             await GrantAsync(factory, TestUsers.CompanyB, CompanyB, FinancePermissionNames.DraftRead, AccessScopeType.Site, SyntheticSiteOfB);
             await GrantAsync(factory, TestUsers.CompanyB, CompanyB, ErpPermissions.FinanceBankAccountRead, AccessScopeType.Site, SyntheticSiteOfB);
+            await GrantAsync(factory, TestUsers.CompanyB, CompanyB, ErpPermissions.FinanceCustomerInstrumentRead, AccessScopeType.Site, SyntheticSiteOfB);
             using (var siteScoped = factory.CreateClientFor(TestUsers.CompanyB, CompanyB))
             {
                 var snapshot = await ReadAsync(siteScoped);

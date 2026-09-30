@@ -30,7 +30,7 @@ namespace GoymenERP.Modules.Finance.Infrastructure.Shell;
 public sealed class FinanceShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "CHATGPT-BUSINESS/FINANCE";
-    public const string OwnerContractVersion = "1.2";
+    public const string OwnerContractVersion = "1.3";
     public const string ReceiptListScreenId = "F-02";
     public const string ReceiptDraftScreenId = "F-02-NEW";
     public const string ReceiptDetailScreenId = "F-02-DETAIL";
@@ -52,6 +52,11 @@ public sealed class FinanceShellCapabilityProvider : IShellCapabilityProvider
     public const string ReceiptDetailRoutePath = "/finans/tahsilatlar/:sourceId";
     public const string ReceiptReversalApprovalRouteId = "finance.receipts.reversal-approvals";
     public const string ReceiptReversalApprovalRoutePath = "/finans/ters-kayit-onaylari";
+
+    public const string CustomerInstrumentListScreenId = "F-02-INSTRUMENTS";
+    public const string CustomerInstrumentListCapabilityId = "finance.customer-instruments.list";
+    public const string CustomerInstrumentListRouteId = "finance.customer-instruments.list";
+    public const string CustomerInstrumentListRoutePath = "/finans/musteri-cek-senetleri";
 
     public const string BankAccountListCapabilityId = "finance.bank-accounts.list";
     public const string BankAccountListRouteId = "finance.bank-accounts";
@@ -116,6 +121,9 @@ public sealed class FinanceShellCapabilityProvider : IShellCapabilityProvider
             Declaration(ReceiptReverseApproveCapabilityId, ReceiptReversalApprovalRouteId,
                 ReceiptReversalApprovalRoutePath, ReceiptReversalApprovalScreenId,
                 ShellCapabilityRoutePrecedence.Static, [FinancePermissionNames.ReverseApprove]),
+            Declaration(CustomerInstrumentListCapabilityId, CustomerInstrumentListRouteId,
+                CustomerInstrumentListRoutePath, CustomerInstrumentListScreenId,
+                ShellCapabilityRoutePrecedence.Static, [ErpPermissions.FinanceCustomerInstrumentRead]),
             bankAccounts,
             Declaration(BankAccountProposeCapabilityId, BankAccountProposeRouteId, BankAccountProposeRoutePath,
                 BankAccountProposeScreenId, ShellCapabilityRoutePrecedence.Static, [ErpPermissions.FinanceBankAccountPropose]),
