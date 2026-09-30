@@ -1,6 +1,9 @@
 using System.Net;
+using System.IO.Compression;
+using System.Net.Http.Headers;
 using GoymenERP.CariAcceptance006;
 using System.Net.Http.Json;
+using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Security.Claims;
@@ -38,6 +41,96 @@ public sealed class ProductGlobalRuntimeSqlServerRelationalAcceptanceTests
     private static readonly Guid CompanyA = Guid.Parse("10000000-0000-0000-0000-000000000001");
     private static readonly Guid CompanyB = Guid.Parse("10000000-0000-0000-0000-000000000002");
     private static readonly Guid GroupId = Guid.Parse("82000000-0000-0000-0000-000000000001");
+
+    [SqlServerFact]
+    public Task ProductImport_PreviewApplyReplayAndDeniedActor_AreAtomic() =>
+        WithDatabaseAsync(async (factory, _) =>
+        {
+            var workbook = ImportWorkbook(("LEGACY-IMPORT-1", "Imported Alpha"),
+                ("LEGACY-IMPORT-2", "Imported Beta"));
+            using var client = factory.CreateClientFor("group-bootstrap-admin", CompanyA);
+            using var deniedClient = factory.CreateClientFor("company-a-user", CompanyA);
+            var before = await SnapshotAsync(factory.DatabaseConnectionString);
+
+            using var deniedPreview = await PreviewImportAsync(deniedClient, workbook);
+            Assert.Equal(HttpStatusCode.Forbidden, deniedPreview.StatusCode);
+            using var previewResponse = await PreviewImportAsync(client, workbook);
+            Assert.Equal(HttpStatusCode.OK, previewResponse.StatusCode);
+            var preview = (await previewResponse.Content.ReadFromJsonAsync<ProductImportPreviewV1>())!;
+            Assert.True(preview.Ready);
+            Assert.Equal(2, preview.Rows.Count);
+            Assert.Equal(before, await SnapshotAsync(factory.DatabaseConnectionString));
+
+            const string key = "product-import-sql-once";
+            using var applied = await ApplyImportAsync(client, workbook, preview, key);
+            Assert.Equal(HttpStatusCode.Created, applied.StatusCode);
+            var first = (await applied.Content.ReadFromJsonAsync<ProductImportResultV1>())!;
+            Assert.False(first.IsReplay);
+            Assert.Equal(2, first.Products.Count);
+            var afterApply = await SnapshotAsync(factory.DatabaseConnectionString);
+
+            using var replay = await ApplyImportAsync(client, workbook, preview, key);
+            Assert.Equal(HttpStatusCode.Created, replay.StatusCode);
+            Assert.Equal("true", Assert.Single(replay.Headers.GetValues("Idempotency-Replayed")));
+            var repeated = (await replay.Content.ReadFromJsonAsync<ProductImportResultV1>())!;
+            Assert.True(repeated.IsReplay);
+            Assert.Equal(first.Products.Select(value => value.ProductId), repeated.Products.Select(value => value.ProductId));
+            Assert.Equal(afterApply, await SnapshotAsync(factory.DatabaseConnectionString));
+
+            await using var sql = new SqlConnection(factory.DatabaseConnectionString);
+            await sql.OpenAsync();
+            await using var counts = sql.CreateCommand();
+            counts.CommandText = """
+                SELECT
+                  (SELECT COUNT(*) FROM [product].[Products] WHERE [Id] IN (@first, @second)),
+                  (SELECT COUNT(*) FROM [audit].[AuditEvents]
+                   WHERE [SubjectKind] = N'GroupSharedProduct' AND [EntityId] IN (@firstText, @secondText)),
+                  (SELECT COUNT(*) FROM [idempotency].[GroupSharedCommandTerminals]
+                   WHERE [CommandName] = N'product.import.v1');
+                """;
+            counts.Parameters.AddWithValue("@first", first.Products[0].ProductId);
+            counts.Parameters.AddWithValue("@second", first.Products[1].ProductId);
+            counts.Parameters.AddWithValue("@firstText", first.Products[0].ProductId.ToString("D"));
+            counts.Parameters.AddWithValue("@secondText", first.Products[1].ProductId.ToString("D"));
+            await using var reader = await counts.ExecuteReaderAsync();
+            Assert.True(await reader.ReadAsync());
+            Assert.Equal(2, reader.GetInt32(0));
+            Assert.Equal(2, reader.GetInt32(1));
+            Assert.Equal(1, reader.GetInt32(2));
+        });
+
+    [SqlServerFact]
+    public Task ProductImport_AuditFailureAndLateRevocation_RollBackProductAuditAndTerminalTogether() =>
+        WithDatabaseAsync(async (factory, observer) =>
+        {
+            var workbook = ImportWorkbook(("LEGACY-ROLLBACK-1", "Rollback Alpha"),
+                ("LEGACY-ROLLBACK-2", "Rollback Beta"));
+            using var client = factory.CreateClientFor("group-bootstrap-admin", CompanyA);
+            using var previewResponse = await PreviewImportAsync(client, workbook);
+            Assert.Equal(HttpStatusCode.OK, previewResponse.StatusCode);
+            var preview = (await previewResponse.Content.ReadFromJsonAsync<ProductImportPreviewV1>())!;
+            var before = await SnapshotAsync(factory.DatabaseConnectionString);
+
+            observer.Callback = (stage, _, _) => stage == ProductCommandAttemptStage.AuditFlushed
+                ? Task.FromException(new InjectedProductFailureException()) : Task.CompletedTask;
+            using var failed = await ApplyImportAsync(client, workbook, preview, "product-import-audit-failure");
+            Assert.Equal(HttpStatusCode.InternalServerError, failed.StatusCode);
+            Assert.Equal(before, await SnapshotAsync(factory.DatabaseConnectionString));
+
+            observer.Callback = async (stage, _, cancellationToken) =>
+            {
+                if (stage != ProductCommandAttemptStage.BeforeCommit) return;
+                await using var scope = factory.Services.CreateAsyncScope();
+                var identity = scope.ServiceProvider.GetRequiredService<IdentityDbContext>();
+                var grant = await identity.Set<ProductMasterAssignment>().SingleAsync(row => row.UserId == ActorId
+                    && row.Operation == ProductMasterOperation.DraftCreate, cancellationToken);
+                grant.Revoke(Guid.NewGuid(), "Synthetic isolated SQL import revocation", DateTimeOffset.UtcNow);
+                await identity.SaveChangesAsync(cancellationToken);
+            };
+            using var revoked = await ApplyImportAsync(client, workbook, preview, "product-import-late-revocation");
+            Assert.Equal(HttpStatusCode.Forbidden, revoked.StatusCode);
+            Assert.Equal(before, await SnapshotAsync(factory.DatabaseConnectionString));
+        });
 
     [SqlServerFact]
     public Task ProductSalesCandidateWindow_FiltersAndBoundsRealSqlWithoutWrites() =>
@@ -731,6 +824,90 @@ public sealed class ProductGlobalRuntimeSqlServerRelationalAcceptanceTests
         { Content = JsonContent.Create(new CreateProductDraftRequest(name, groupId ?? GroupId)) };
         request.Headers.Add("Idempotency-Key", key);
         return client.SendAsync(request);
+    }
+
+    private static async Task<HttpResponseMessage> PreviewImportAsync(HttpClient client, byte[] workbook)
+    {
+        using var content = ImportForm(workbook);
+        return await client.PostAsync(ProductImportApiV1.PreviewPath, content);
+    }
+
+    private static async Task<HttpResponseMessage> ApplyImportAsync(HttpClient client, byte[] workbook,
+        ProductImportPreviewV1 preview, string key)
+    {
+        using var content = ImportForm(workbook);
+        content.Add(new StringContent(preview.FileSha256), ProductImportApiV1.FileSha256Field);
+        content.Add(new StringContent(preview.PreviewToken), ProductImportApiV1.PreviewTokenField);
+        using var request = new HttpRequestMessage(HttpMethod.Post, ProductImportApiV1.ApplyPath) { Content = content };
+        request.Headers.Add(ProductApiV1.IdempotencyHeader, key);
+        return await client.SendAsync(request);
+    }
+
+    private static MultipartFormDataContent ImportForm(byte[] workbook)
+    {
+        var content = new MultipartFormDataContent();
+        var file = new ByteArrayContent(workbook);
+        file.Headers.ContentType = new MediaTypeHeaderValue("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+        content.Add(file, ProductImportApiV1.FileField, "product-import.xlsx");
+        content.Add(new StringContent("Eski Kod"), ProductImportApiV1.LegacyCodeColumnField);
+        content.Add(new StringContent("Ürün Adı"), ProductImportApiV1.NameColumnField);
+        content.Add(new StringContent("Grup Kimliği"), ProductImportApiV1.GroupIdColumnField);
+        return content;
+    }
+
+    private static byte[] ImportWorkbook(params (string LegacyCode, string Name)[] rows)
+    {
+        var sheet = new StringBuilder("""
+            <?xml version="1.0" encoding="UTF-8"?>
+            <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>
+            <row r="1"><c r="A1" t="inlineStr"><is><t>Eski Kod</t></is></c><c r="B1" t="inlineStr"><is><t>Ürün Adı</t></is></c><c r="C1" t="inlineStr"><is><t>Grup Kimliği</t></is></c></row>
+            """);
+        for (var index = 0; index < rows.Length; index++)
+        {
+            var row = index + 2;
+            sheet.Append($"<row r=\"{row}\"><c r=\"A{row}\" t=\"inlineStr\"><is><t>{rows[index].LegacyCode}</t></is></c>")
+                .Append($"<c r=\"B{row}\" t=\"inlineStr\"><is><t>{rows[index].Name}</t></is></c>")
+                .Append($"<c r=\"C{row}\" t=\"inlineStr\"><is><t>{GroupId:D}</t></is></c></row>");
+        }
+        sheet.Append("</sheetData></worksheet>");
+
+        using var output = new MemoryStream();
+        using (var archive = new ZipArchive(output, ZipArchiveMode.Create, leaveOpen: true))
+        {
+            WriteWorkbookEntry(archive, "[Content_Types].xml", """
+                <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+                <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+                  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+                  <Default Extension="xml" ContentType="application/xml"/>
+                  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+                  <Override PartName="/xl/worksheets/import.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+                </Types>
+                """);
+            WriteWorkbookEntry(archive, "_rels/.rels", """
+                <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+                <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+                  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+                </Relationships>
+                """);
+            WriteWorkbookEntry(archive, "xl/workbook.xml", """
+                <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+                <workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Ürünler" sheetId="1" r:id="rIdImport"/></sheets></workbook>
+                """);
+            WriteWorkbookEntry(archive, "xl/_rels/workbook.xml.rels", """
+                <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+                <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+                  <Relationship Id="rIdImport" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/import.xml"/>
+                </Relationships>
+                """);
+            WriteWorkbookEntry(archive, "xl/worksheets/import.xml", sheet.ToString());
+        }
+        return output.ToArray();
+    }
+
+    private static void WriteWorkbookEntry(ZipArchive archive, string path, string content)
+    {
+        using var writer = new StreamWriter(archive.CreateEntry(path).Open(), new UTF8Encoding(false));
+        writer.Write(content);
     }
 
     private static Task<HttpResponseMessage> EditAsync(HttpClient client, Guid id, string key, string version, string name)

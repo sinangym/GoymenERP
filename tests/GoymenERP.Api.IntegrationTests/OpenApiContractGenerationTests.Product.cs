@@ -33,6 +33,12 @@ public sealed partial class OpenApiContractGenerationTests
         new("post", "/api/v1/products", "CreateProductDraftV1",
             AuthenticatedResponses("201:application/json", "400:application/problem+json", "409:application/problem+json", "415:", "503:application/problem+json"),
             "#/components/schemas/CreateProductDraftRequest"),
+        new("post", "/api/v1/products/imports/preview", "PreviewProductImportV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "415:"),
+            "#/components/schemas/ProductImportPreviewFormV1", RequestMediaType: "multipart/form-data"),
+        new("post", "/api/v1/products/imports", "ApplyProductImportV1",
+            AuthenticatedResponses("201:application/json", "400:application/problem+json", "409:application/problem+json", "415:", "503:application/problem+json"),
+            "#/components/schemas/ProductImportApplyFormV1", RequestMediaType: "multipart/form-data"),
         new("patch", "/api/v1/products/{id}/draft", "EditProductDraftV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "404:application/problem+json", "409:application/problem+json", "415:", "503:application/problem+json"),
             "#/components/schemas/EditProductDraftRequest", ["path:id:true:type:string;format:uuid"]),
@@ -58,6 +64,8 @@ public sealed partial class OpenApiContractGenerationTests
         ["GetProductV1"] = "ref:ProductCardView",
         ["GetProductHistoryV1"] = "ref:ProductHistoryView",
         ["CreateProductDraftV1"] = "ref:ProductMutationResponse",
+        ["PreviewProductImportV1"] = "ref:ProductImportPreviewV1",
+        ["ApplyProductImportV1"] = "ref:ProductImportResultV1",
         ["EditProductDraftV1"] = "ref:ProductMutationResponse",
         ["ActivateProductV1"] = "ref:ProductMutationResponse",
         ["DeactivateProductV1"] = "ref:ProductMutationResponse",
@@ -75,13 +83,15 @@ public sealed partial class OpenApiContractGenerationTests
         Assert.Contains("global Product authority", actual.Value.GetProperty("description").GetString(), StringComparison.Ordinal);
         Assert.Equal(expected.Parameters, ReadParameters(actual.Value).Where(parameter => parameter.Location != "header")
             .Select(parameter => $"{parameter.Location}:{parameter.Name}:{parameter.Required.ToString().ToLowerInvariant()}:{parameter.Schema}"));
-        var mutation = expected.Method is "post" or "patch";
-        if (mutation)
+        var mutation = expected.Method is "post" or "patch" && expected.OperationId != "PreviewProductImportV1";
+        var multipart = expected.OperationId is "PreviewProductImportV1" or "ApplyProductImportV1";
+        if (expected.Method is "post" or "patch")
         {
             var body = actual.Value.GetProperty("requestBody");
             Assert.True(body.GetProperty("required").GetBoolean());
-            Assert.Equal(["application/json"], body.GetProperty("content").EnumerateObject().Select(property => property.Name));
-            Assert.Equal(expected.RequestSchemaReference, body.GetProperty("content").GetProperty("application/json")
+            var mediaType = multipart ? "multipart/form-data" : "application/json";
+            Assert.Equal([mediaType], body.GetProperty("content").EnumerateObject().Select(property => property.Name));
+            Assert.Equal(expected.RequestSchemaReference, body.GetProperty("content").GetProperty(mediaType)
                 .GetProperty("schema").GetProperty("$ref").GetString());
         }
         else Assert.False(actual.Value.TryGetProperty("requestBody", out _));
@@ -125,7 +135,8 @@ public sealed partial class OpenApiContractGenerationTests
             Assert.Equal(codes.Length > 0, response.Value.TryGetProperty("x-erp-problem-codes", out var actualCodes));
             if (codes.Length > 0) Assert.Equal(codes, actualCodes.EnumerateArray().Select(value => value.GetString()));
             if (status == 400)
-                Assert.Equal(mutation || expected.OperationId is "GetProductsV1" or "GetProductReferenceOptionsV1" or "GetProductDuplicateCandidatesV1",
+                Assert.Equal(mutation || expected.OperationId is "GetProductsV1" or "GetProductReferenceOptionsV1"
+                        or "GetProductDuplicateCandidatesV1" or "PreviewProductImportV1",
                     response.Value.TryGetProperty(ErpOpenApiContract.EmptyBodyPossibleExtensionName, out var empty) && empty.GetBoolean());
         }
     }
@@ -140,6 +151,22 @@ public sealed partial class OpenApiContractGenerationTests
                 ("hasMore", "type:boolean")),
             ["ProductCodeGroup"] = ObjectSchema(["id", "name", "prefix"], ("id", "type:string;format:uuid"), ("name", "type:string"), ("prefix", "type:string")),
             ["ProductMutationResponse"] = ObjectSchema(["card", "isReplay"], ("card", "ref:ProductCardView"), ("isReplay", "type:boolean")),
+            ["ProductImportPreviewV1"] = ObjectSchema(["fileSha256", "previewToken", "sourceRowCount", "rows", "errors"],
+                ("fileSha256", "type:string"), ("previewToken", "type:string"), ("sourceRowCount", "type:integer;format:int32"),
+                ("rows", "type:array;items:ref:ProductImportSourceRowV1"),
+                ("errors", "type:array;items:ref:ProductImportErrorV1"), ("ready", "type:boolean")),
+            ["ProductImportSourceRowV1"] = ObjectSchema(["rowNumber", "legacyCode", "name", "groupId"],
+                ("rowNumber", "type:integer;format:int32"), ("legacyCode", "type:string"), ("name", "type:string"),
+                ("groupId", "type:string;format:uuid")),
+            ["ProductImportErrorV1"] = ObjectSchema(["rowNumber", "field", "code", "message"],
+                ("rowNumber", "type:null|integer;format:int32"), ("field", "type:string"), ("code", "type:string"),
+                ("message", "type:string")),
+            ["ProductImportResultV1"] = ObjectSchema(["products", "isReplay", "originalCorrelationId"],
+                ("products", "type:array;items:ref:ProductImportCreatedV1"), ("isReplay", "type:boolean"),
+                ("originalCorrelationId", "type:string")),
+            ["ProductImportCreatedV1"] = ObjectSchema(["productId", "code", "legacyCode", "name", "groupId"],
+                ("productId", "type:string;format:uuid"), ("code", "type:string"), ("legacyCode", "type:string"),
+                ("name", "type:string"), ("groupId", "type:string;format:uuid")),
             ["ProductHistoryView"] = ObjectSchema(["productId", "entries", "truncated"],
                 ("productId", "type:string;format:uuid"), ("entries", "type:array;items:ref:ProductHistoryEntryView"),
                 ("truncated", "type:boolean")),
@@ -214,6 +241,12 @@ public sealed partial class OpenApiContractGenerationTests
         AssertRequestSchema(schemas.GetProperty("EditProductDraftRequest"), ["expectedVersion", "changes", "reason"], [], ["expectedVersion", "changes", "reason"]);
         AssertRequestSchema(schemas.GetProperty("ActivateProductRequest"), ["expectedVersion"], [], ["expectedVersion"]);
         AssertRequestSchema(schemas.GetProperty("ChangeProductLifecycleRequest"), ["expectedVersion", "reason"], [], ["expectedVersion", "reason"]);
+        AssertRequestSchema(schemas.GetProperty("ProductImportPreviewFormV1"),
+            ["file", "legacyCodeColumn", "nameColumn", "groupIdColumn"], [],
+            ["file", "legacyCodeColumn", "nameColumn", "groupIdColumn"]);
+        AssertRequestSchema(schemas.GetProperty("ProductImportApplyFormV1"),
+            ["file", "legacyCodeColumn", "nameColumn", "groupIdColumn", "fileSha256", "previewToken"], [],
+            ["file", "legacyCodeColumn", "nameColumn", "groupIdColumn", "fileSha256", "previewToken"]);
         foreach (var name in new[] { "CreateProductDraftRequest", "EditProductDraftRequest", "ActivateProductRequest", "ChangeProductLifecycleRequest", "ProductDraftChanges", "ProductReferenceChanges", "ProductUnitChanges", "ProductRoleInputs", "ProductRoleInput" })
             Assert.False(schemas.GetProperty(name).GetProperty("additionalProperties").GetBoolean());
         var changes = schemas.GetProperty("ProductDraftChanges");

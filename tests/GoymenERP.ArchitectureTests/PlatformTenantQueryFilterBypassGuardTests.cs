@@ -213,8 +213,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // product
             // DEC-CAR-003: +4 ProductDeactivationSqlServerRelationalAcceptanceTests facts (d7dbec7f… -> ddeead62…).
             // DEC-PRD-010: +5 ProductDuplicateCandidatesSqlServerRelationalAcceptanceTests facts (ddeead62… -> d434c2b8…).
+            // Q16 / AT-020: +2 Product import API SQL facts (d434c2b8… -> d55c1945…).
             ["tools/relational_inventory/product.txt"] =
-                "d434c2b81e15574d21933413649fb40a5cc045008b5d7c9bd0eb7358807b495b",
+                "d55c1945682818478490eaac4d706a47d4d54456c5fb0234abdf64064732d5a0",
 
             // purchasing
             ["tools/relational_inventory/purchasing.txt"] =
@@ -245,7 +246,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         {
             ["src/backend/Modules/Audit/GoymenERP.Modules.Audit.Infrastructure/"
              + "Persistence/AuditDbContext.cs"] =
-                "6339a82c26df4406eded3c5560a346056253b7b58df2c0c69d9614a6eb3e41a1",
+                "8fc4d19d4f7efb61d62dcb0f0ed44bce7254ee897aaaf6621c27f0e03ba1ec7a",
             ["src/backend/Modules/Idempotency/"
              + "GoymenERP.Modules.Idempotency.Infrastructure/Persistence/"
              + "CommandExecutionDbContext.cs"] =
@@ -329,7 +330,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 "4d2cfcc27f7a0cfc252302ac715232a77beb955a4b65274ea7e2ea541bd4ceaa",
             ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/"
              + "Persistence/ProductDbContext.cs"] =
-                "0ba53cfdf07084818f737c9f21b2ce4a04a44f5fe89603a89f31791c5b4871da",
+                "73bb50001f9e508255714d4d5b8ae683149122f3c3a682234d8de1e47eb9b3b1",
             ["src/backend/Modules/Idempotency/GoymenERP.Modules.Idempotency.Infrastructure/"
              // Re-measured for DEC-CAR-003: the terminal command-name check admits the Product deactivate/reactivate
              // commands beside activate; no query filter, key or table change.
@@ -403,8 +404,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // reactivate members, which throw like its siblings; no new database capability, MigrateAsync stays 2.
                 // Re-measured for DEC-PRD-010: the denied Product service gains the read-only duplicate-candidates
                 // member, which throws like its siblings; no new database capability, MigrateAsync stays 2.
+                // Re-measured for Q16 import: DI adds the owner preview/service and the host transaction runner;
+                // initialization still owns exactly the same two migrations.
                 ["src/backend/GoymenERP.Api/ProductRuntime/ProductRuntimeExtensions.cs"] =
-                    new("2c5296cb5cc9fa5eaad8a926b3d1cea3617f7322961f5b3044d20bc17d9f4c25",
+                    new("2e6c3ae4c82822302907e58599083645900b0d38355d08aa9e0ca2b2e060acf3",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["MigrateAsync"] = 2 }),
                 // Re-measured for PRD-UNIT-1: the Product participant gets Settings' unit-identity catalog
@@ -413,8 +416,14 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     new("36ee56a13d31b3c4aea130b801db15b983768eacfc2f5827047059ead463ed36",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Microsoft.Data.SqlClient"] = 1, ["SqlConnection"] = 1 }),
+                // Q16 / AT-020: one reviewed host runner borrows one SQL connection/transaction for Product,
+                // canonical audit batch and the single idempotency terminal. It creates no context or provider.
+                ["src/backend/GoymenERP.Api/ProductRuntime/ProductImportSqlCommandRunner.cs"] =
+                    new("06e51fdd53406a46d7fd1778a7c3493d49f88b887a5189382d1de044ae933ab7",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Microsoft.Data.SqlClient"] = 1, ["SqlConnection"] = 1 }),
                 ["src/backend/Modules/Audit/GoymenERP.Modules.Audit.Infrastructure/Services/GroupSharedAuditSession.cs"] =
-                    new("08e6b2c930864ac99b64ad52ad83602b3446e2a86d9d8be4867f2204b3fbf3d0",
+                    new("efbf67c36b5848e6f2d05e989f3aac1636c7e202da94aee750757a43b33fccfe",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["System.Data.Common"] = 1, ["DbConnection"] = 1 }),
                 ["src/backend/Modules/Audit/"
