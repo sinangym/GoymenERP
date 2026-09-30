@@ -18,7 +18,6 @@ import { decodeSourceDetailFor, isBoundUuid, type SourceDetail } from './contrac
 import {
   FINANCE_CAPABILITY,
   FINANCE_ROUTE,
-  INSTRUMENT_QUERY,
   LEDGER_QUERY,
   partyLedgerPath,
   receiptDetailPath,
@@ -39,7 +38,7 @@ import {
   SOURCE_SUBJECT,
 } from './financeText'
 import { ManualReceiptDraftForm } from './ManualReceiptDraftForm'
-import { CustomerInstrumentPortfolio, CustomerInstrumentReceiveForm } from './CustomerInstruments'
+import { CustomerInstrumentReceiveForm } from './CustomerInstruments'
 import { CustomerInstrumentRiskBlock } from './CustomerInstrumentRisk'
 import styles from './Finance.module.css'
 
@@ -115,19 +114,13 @@ function SourcePartyLedgerLink({ sourceId }: { readonly sourceId: string }) {
 
 export function ReceiptListPage() {
   const navigate = useNavigate()
-  const [search, setSearch] = useSearchParams()
-  const selected = search.get(INSTRUMENT_QUERY)
+  const [search] = useSearchParams()
   if (search.has(LEDGER_QUERY.party) || search.has(LEDGER_QUERY.account)) return <PartyLedgerPage search={search} />
   return (
     <section aria-labelledby="finance-receipts-title">
       <h1 id="finance-receipts-title">{RECEIPTS_TITLE}</h1>
       <p className={styles.notice}>{RECEIPTS_NOTICE}</p>
       <FinanceSourceList onOpen={(sourceId) => navigate(receiptDetailPath(sourceId))} />
-      {/* DEC-FIN-016: the customer cheque / note portfolio; hidden for an actor without its own read grant. */}
-      <CustomerInstrumentPortfolio
-        selectedId={isBoundUuid(selected) ? selected : null}
-        onSelect={(instrumentId) => setSearch(instrumentId === null ? {} : { [INSTRUMENT_QUERY]: instrumentId })}
-      />
     </section>
   )
 }
