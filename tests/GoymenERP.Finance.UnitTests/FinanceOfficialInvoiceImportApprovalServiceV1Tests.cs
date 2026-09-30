@@ -20,6 +20,31 @@ public sealed class FinanceOfficialInvoiceImportApprovalServiceV1Tests
     private static readonly Guid Account = Guid.Parse("70000000-0000-0000-0000-000000000007");
     private static readonly Guid Currency = Guid.Parse("80000000-0000-0000-0000-000000000008");
 
+    public static TheoryData<string?> InvalidBatchVersions => new()
+    {
+        null,
+        string.Empty,
+        new string('v', 129),
+    };
+
+    [Theory]
+    [MemberData(nameof(InvalidBatchVersions))]
+    public async Task Invalid_batch_version_is_refused_before_payload_hashing(string? batchVersion)
+    {
+        var company = CompanyContext();
+        await using var db = Database(company);
+        var service = Service(db, company, "maker", RepeatingCommandAuthority(PermissionDecision.Allowed), ReadAuthority());
+
+        var result = await service.UploadAsync(Context("maker"), new CommandMetadata("upload-key"),
+            Request() with { BatchVersion = batchVersion! }, default);
+
+        Assert.Equal(CommandOutcome.ValidationFailed, result.Outcome);
+        Assert.Contains(result.Issues, issue => issue.Field == "batchVersion"
+            && issue.Code == "finance_open_item_batch_version_invalid");
+        Assert.Empty(await db.OfficialInvoiceImportBatches.AsNoTracking().ToListAsync());
+        Assert.Empty(await db.OfficialInvoiceImportCommands.AsNoTracking().ToListAsync());
+    }
+
     [Fact]
     public async Task Upload_persists_an_immutable_pending_snapshot_but_does_not_publish_it()
     {
@@ -107,6 +132,57 @@ public sealed class FinanceOfficialInvoiceImportApprovalServiceV1Tests
     }
 
     [Fact]
+    public async Task Same_key_with_another_body_conflicts_only_after_a_fresh_authority_fence()
+    {
+        var company = CompanyContext();
+        await using var db = Database(company);
+        var service = Service(db, company, "maker", RepeatingCommandAuthority(PermissionDecision.Allowed), ReadAuthority());
+        await service.UploadAsync(Context("maker"), new CommandMetadata("upload-key"), Request(), default);
+
+        var changed = Request() with { Utf8Csv = Encoding.UTF8.GetBytes("different-body") };
+        var result = await service.UploadAsync(Context("maker"), new CommandMetadata("upload-key"), changed, default);
+
+        Assert.Equal(CommandOutcome.IdempotencyConflict, result.Outcome);
+        Assert.Null(result.Resource);
+        Assert.Single(await db.OfficialInvoiceImportBatches.AsNoTracking().ToListAsync());
+    }
+
+    [Fact]
+    public async Task Permission_revoked_during_prior_read_hides_the_existing_key_and_conflict()
+    {
+        var company = CompanyContext();
+        await using var db = Database(company);
+        var writer = Service(db, company, "maker", RepeatingCommandAuthority(PermissionDecision.Allowed), ReadAuthority());
+        await writer.UploadAsync(Context("maker"), new CommandMetadata("upload-key"), Request(), default);
+        var revoked = Service(db, company, "maker",
+            new CommandAuthority([PermissionDecision.Allowed, PermissionDecision.Denied]), ReadAuthority());
+
+        var result = await revoked.UploadAsync(Context("maker"), new CommandMetadata("upload-key"),
+            Request() with { Utf8Csv = Encoding.UTF8.GetBytes("different-body") }, default);
+
+        Assert.Equal(CommandOutcome.Denied, result.Outcome);
+        Assert.Null(result.Resource);
+    }
+
+    [Fact]
+    public async Task Company_context_change_during_prior_read_hides_the_existing_key_and_replay()
+    {
+        var company = new MutableCompanyContext(Company);
+        await using var db = Database(company);
+        var writer = Service(db, company, "maker", RepeatingCommandAuthority(PermissionDecision.Allowed), ReadAuthority());
+        await writer.UploadAsync(Context("maker"), new CommandMetadata("upload-key"), Request(), default);
+        var changing = new CommandAuthority(
+            [PermissionDecision.Allowed, PermissionDecision.Allowed],
+            call => { if (call == 2) company.Set(Guid.NewGuid()); });
+        var reader = Service(db, company, "maker", changing, ReadAuthority());
+
+        var result = await reader.UploadAsync(Context("maker"), new CommandMetadata("upload-key"), Request(), default);
+
+        Assert.Equal(CommandOutcome.Denied, result.Outcome);
+        Assert.Null(result.Resource);
+    }
+
+    [Fact]
     public async Task Permission_revoked_before_upload_save_refuses_and_writes_nothing()
     {
         var company = CompanyContext();
@@ -179,18 +255,33 @@ public sealed class FinanceOfficialInvoiceImportApprovalServiceV1Tests
         public bool CanAccessCompany(Guid companyId) => AllowedCompanyIds.Contains(companyId);
     }
 
-    private sealed class CommandAuthority(params PermissionDecision[] decisions)
-        : IFinanceOfficialInvoiceImportApprovalAuthorityV1
+    private sealed class CommandAuthority : IFinanceOfficialInvoiceImportApprovalAuthorityV1
     {
-        private readonly Queue<PermissionDecision> _decisions = new(decisions);
+        private readonly Queue<PermissionDecision> decisions;
+        private readonly Action<int>? onCall;
+
+        public CommandAuthority(PermissionDecision[] decisions, Action<int>? onCall = null)
+        {
+            this.decisions = new Queue<PermissionDecision>(decisions);
+            this.onCall = onCall;
+        }
+
         public int Calls { get; private set; }
 
         public Task<PermissionDecision> CheckAsync(FinanceContext context,
             FinanceOfficialInvoiceImportAuthorityActionV1 action, Guid batchId, CancellationToken cancellationToken)
         {
             Calls++;
-            return Task.FromResult(_decisions.Count == 0 ? PermissionDecision.Denied : _decisions.Dequeue());
+            onCall?.Invoke(Calls);
+            return Task.FromResult(decisions.Count == 0 ? PermissionDecision.Denied : decisions.Dequeue());
         }
+    }
+
+    private sealed class MutableCompanyContext(Guid companyId) : ICompanyContext
+    {
+        public bool IsResolved => CompanyId != Guid.Empty;
+        public Guid CompanyId { get; private set; } = companyId;
+        public void Set(Guid value) => CompanyId = value;
     }
 
     private sealed class Authority(params PermissionDecision[] decisions) : IFinanceOpenItemSourceAuthority

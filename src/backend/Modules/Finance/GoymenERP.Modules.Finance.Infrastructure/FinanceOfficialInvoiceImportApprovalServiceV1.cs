@@ -64,6 +64,15 @@ public sealed class FinanceOfficialInvoiceImportApprovalServiceV1(
         {
             return Refused(context, CommandOutcome.ValidationFailed, Issue("context", "finance_value_does_not_fit"));
         }
+        if (request.BatchId == Guid.Empty)
+        {
+            return Refused(context, CommandOutcome.ValidationFailed, Issue("batchId", "identity_required"));
+        }
+        if (!ValidIdentity(request.BatchVersion))
+        {
+            return Refused(context, CommandOutcome.ValidationFailed,
+                Issue("batchVersion", "finance_open_item_batch_version_invalid"));
+        }
 
         var keyHash = FinanceCommandKeys.Hash(metadata.IdempotencyKey);
         var payloadHash = UploadPayloadHash(request);
@@ -268,13 +277,16 @@ public sealed class FinanceOfficialInvoiceImportApprovalServiceV1(
     {
         var prior = await dbContext.OfficialInvoiceImportCommands.AsNoTracking()
             .SingleOrDefaultAsync(row => row.CommandName == command && row.IdempotencyKeyHash == keyHash, cancellationToken);
+        if (await FenceAsync(context, action, batchId, cancellationToken) is { } denied)
+        {
+            return denied;
+        }
         if (prior is null) return null;
         if (!string.Equals(prior.ActorId, context.ActorId, StringComparison.Ordinal)
             || !string.Equals(prior.PayloadHash, payloadHash, StringComparison.Ordinal))
         {
             return Refused(context, CommandOutcome.IdempotencyConflict);
         }
-        if (await FenceAsync(context, action, batchId, cancellationToken) is { } denied) return denied;
         var stored = JsonSerializer.Deserialize<FinanceOfficialInvoiceImportApprovalResultV1>(prior.ResultJson, Json)
             ?? throw new InvalidOperationException("Kayıtlı resmî fatura import sonucu okunamadı.");
         return stored with { IsReplay = true };
@@ -304,7 +316,8 @@ public sealed class FinanceOfficialInvoiceImportApprovalServiceV1(
     {
         if (!SameContext(context)) return Refused(context, CommandOutcome.Denied);
         var decision = await commandAuthority.CheckAsync(context, action, batchId, cancellationToken);
-        if (decision == PermissionDecision.Allowed && SameContext(context)) return null;
+        if (!SameContext(context)) return Refused(context, CommandOutcome.Denied);
+        if (decision == PermissionDecision.Allowed) return null;
         return decision == PermissionDecision.Denied
             ? Refused(context, CommandOutcome.Denied)
             : Refused(context, CommandOutcome.Unavailable, Issue("permission", "finance_permission_mapping_unavailable"));
