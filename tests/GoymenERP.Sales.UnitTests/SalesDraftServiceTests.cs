@@ -1171,7 +1171,7 @@ public sealed partial class SalesDraftServiceTests
         Assert.True(replay.IsReplay);
         Assert.Equal(("synthetic-correlation", "5", true), (replay.OriginalCorrelationId,
             replay.Detail.Draft.Version, replay.Detail.CustomerAcceptance.IsCurrentRevisionAccepted));
-        Assert.Single(world.Store.Transitions.Where(item => item.Command == SalesDraftCommands.RecordCustomerAcceptanceV1));
+        Assert.Single(world.Store.Transitions, item => item.Command == SalesDraftCommands.RecordCustomerAcceptanceV1);
 
         var revised = await world.Service().ReviseCommercialAsync(created.Draft.Id,
             Revision("5", new SalesDraftLineCommercialV1(created.Lines[0].LineId, "13.00", KgUnit, "5")), Metadata("k-r1"));
