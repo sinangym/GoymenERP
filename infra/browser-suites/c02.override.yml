@@ -128,3 +128,53 @@ services:
       IdentitySeed__Assignments__10__ApprovedByUserId: 20000000-0000-0000-0000-000000000003
       IdentitySeed__Assignments__10__Scopes__0__Type: Company
       IdentitySeed__Assignments__10__Scopes__0__Id: 10000000-0000-0000-0000-000000000002
+      # AT-009 VKN/TCKN maker-checker (user decision 2026-09-30), company A only. The MAKER creates the cards and
+      # holds update AND approve, so that when its own change request offers it no decision (and the server refuses
+      # one), the reason is the maker-checker rule, not a missing grant. The CHECKER holds read + approve only and is
+      # the different person who decides. Neither holds the document vault's names, so the Cari card's documents
+      # panel stays silent for them (its 403 renders nothing). Disposable suite actors; no seeded or real role
+      # receives these names.
+      BootstrapIdentity__Users__6__UserId: c02-tax-maker
+      BootstrapIdentity__Users__6__DisplayName: SENTETIK browser-suite:c02 VKN/TCKN giren ve talep eden
+      BootstrapIdentity__Users__7__UserId: c02-tax-checker
+      BootstrapIdentity__Users__7__DisplayName: SENTETIK browser-suite:c02 VKN/TCKN değişikliğini onaylayan
+      IdentitySeed__Users__9__Id: b2000000-0000-4000-8000-000000000405
+      IdentitySeed__Users__9__DisplayName: SENTETIK browser-suite:c02 VKN/TCKN giren ve talep eden
+      IdentitySeed__Users__9__ExternalIdentities__0__Id: b2100000-0000-4000-8000-000000000405
+      IdentitySeed__Users__9__ExternalIdentities__0__Issuer: urn:goymen:development-bootstrap
+      IdentitySeed__Users__9__ExternalIdentities__0__Subject: c02-tax-maker
+      IdentitySeed__Users__10__Id: b2000000-0000-4000-8000-000000000406
+      IdentitySeed__Users__10__DisplayName: SENTETIK browser-suite:c02 VKN/TCKN değişikliğini onaylayan
+      IdentitySeed__Users__10__ExternalIdentities__0__Id: b2100000-0000-4000-8000-000000000406
+      IdentitySeed__Users__10__ExternalIdentities__0__Issuer: urn:goymen:development-bootstrap
+      IdentitySeed__Users__10__ExternalIdentities__0__Subject: c02-tax-checker
+      IdentitySeed__Roles__9__Id: b3000000-0000-4000-8000-000000000405
+      IdentitySeed__Roles__9__Code: BROWSER_C02_TAX_MAKER
+      IdentitySeed__Roles__9__Name: SENTETIK browser-suite:c02 VKN/TCKN giriş ve değişiklik talebi rolü
+      IdentitySeed__Roles__9__IsSystem: "false"
+      IdentitySeed__Roles__9__Permissions__0: counterparty.parties.create
+      IdentitySeed__Roles__9__Permissions__1: counterparty.parties.read
+      IdentitySeed__Roles__9__Permissions__2: counterparty.parties.tax-identity.update
+      IdentitySeed__Roles__9__Permissions__3: counterparty.parties.tax-identity.approve
+      IdentitySeed__Roles__10__Id: b3000000-0000-4000-8000-000000000406
+      IdentitySeed__Roles__10__Code: BROWSER_C02_TAX_CHECKER
+      IdentitySeed__Roles__10__Name: SENTETIK browser-suite:c02 VKN/TCKN değişikliği onay rolü
+      IdentitySeed__Roles__10__IsSystem: "false"
+      IdentitySeed__Roles__10__Permissions__0: counterparty.parties.read
+      IdentitySeed__Roles__10__Permissions__1: counterparty.parties.tax-identity.approve
+      IdentitySeed__Assignments__11__Id: b4000000-0000-4000-8000-000000000405
+      IdentitySeed__Assignments__11__UserId: b2000000-0000-4000-8000-000000000405
+      IdentitySeed__Assignments__11__RoleId: b3000000-0000-4000-8000-000000000405
+      IdentitySeed__Assignments__11__CompanyId: 10000000-0000-0000-0000-000000000001
+      IdentitySeed__Assignments__11__ValidFromUtc: "2026-01-01T00:00:00+00:00"
+      IdentitySeed__Assignments__11__ApprovedByUserId: 20000000-0000-0000-0000-000000000003
+      IdentitySeed__Assignments__11__Scopes__0__Type: Company
+      IdentitySeed__Assignments__11__Scopes__0__Id: 10000000-0000-0000-0000-000000000001
+      IdentitySeed__Assignments__12__Id: b4000000-0000-4000-8000-000000000406
+      IdentitySeed__Assignments__12__UserId: b2000000-0000-4000-8000-000000000406
+      IdentitySeed__Assignments__12__RoleId: b3000000-0000-4000-8000-000000000406
+      IdentitySeed__Assignments__12__CompanyId: 10000000-0000-0000-0000-000000000001
+      IdentitySeed__Assignments__12__ValidFromUtc: "2026-01-01T00:00:00+00:00"
+      IdentitySeed__Assignments__12__ApprovedByUserId: 20000000-0000-0000-0000-000000000003
+      IdentitySeed__Assignments__12__Scopes__0__Type: Company
+      IdentitySeed__Assignments__12__Scopes__0__Id: 10000000-0000-0000-0000-000000000001

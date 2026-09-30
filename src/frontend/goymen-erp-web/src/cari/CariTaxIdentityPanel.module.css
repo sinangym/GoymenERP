@@ -1,0 +1,122 @@
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+  min-width: 0;
+}
+
+.title {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #1a2233;
+  margin: 0;
+}
+
+.value {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.95rem;
+  overflow-wrap: anywhere;
+}
+
+.muted {
+  color: #55607a;
+  font-size: 0.85rem;
+  margin: 0;
+}
+
+.warning {
+  border: 1px solid #e0b252;
+  background: #fff8e6;
+  border-radius: 6px;
+  padding: 10px 12px;
+  font-size: 0.85rem;
+}
+.warning p {
+  margin: 0 0 4px;
+}
+.warning ul {
+  margin: 4px 0 0;
+  padding-left: 18px;
+}
+
+.pending {
+  border: 1px solid #9db4e0;
+  background: #f1f5fd;
+  border-radius: 6px;
+  padding: 10px 12px;
+  font-size: 0.85rem;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.pending dl {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 2px 12px;
+  margin: 0;
+}
+.pending dt {
+  color: #55607a;
+}
+.pending dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: 28rem;
+}
+.form label {
+  font-size: 0.85rem;
+  color: #1a2233;
+}
+.form input,
+.form textarea {
+  font: inherit;
+  padding: 6px 8px;
+  border: 1px solid #b9c1d1;
+  border-radius: 4px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.button {
+  font: inherit;
+  font-size: 0.9rem;
+  border: 1px solid #b9c1d1;
+  border-radius: 4px;
+  padding: 6px 12px;
+  background: #fff;
+  color: #1f5fd0;
+  cursor: pointer;
+}
+.button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+.button:focus-visible {
+  outline: 2px solid #1f5fd0;
+  outline-offset: 2px;
+}
+
+.error {
+  color: #a3261b;
+  font-size: 0.85rem;
+  margin: 0;
+}
+
+.ok {
+  color: #1c6b3a;
+  font-size: 0.85rem;
+  margin: 0;
+}
