@@ -132,6 +132,68 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             destinationLocation, "Company", CompanyA, At,
             [new(lineId, own.LabelId, own.LabelVersion.ToString(), "10")]);
 
+        var baselineEffects = (
+            Transfers: await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.Transfers"),
+            Lines: await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.TransferLines"),
+            Commands: await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.Commands"),
+            Audits: await run.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityType = N'Inventory.Transfer'"));
+        var invalidPlans = new[]
+        {
+            plan with { Lines = [plan.Lines[0], plan.Lines[0] with { LineId = Guid.NewGuid() }] },
+            plan with { Lines = [plan.Lines[0], plan.Lines[0] with { LabelId = Guid.NewGuid() }] },
+            plan with
+            {
+                DestinationLocationId = sourceLocation,
+                DestinationCustodianKind = "Company",
+                DestinationCustodianId = CompanyA,
+            },
+        };
+        await using (var scope = run.Store(CompanyA))
+        {
+            foreach (var invalid in invalidPlans)
+            {
+                var refused = await Assert.ThrowsAsync<InventoryTransferException>(
+                    () => scope.Store.PlanAsync(invalid, Metadata(run), Authorized));
+                Assert.Equal((400, InventoryTransferCodesV1.ValidationFailed), (refused.Status, refused.Code));
+            }
+        }
+
+        var hiddenLabel = plan with
+        {
+            Lines = [plan.Lines[0] with { LabelId = foreign.LabelId, ExpectedLabelVersion = foreign.LabelVersion.ToString() }],
+        };
+        var revokedFenceCalls = 0;
+        Task RevokeAfterReferenceRead(CancellationToken cancellationToken)
+        {
+            revokedFenceCalls++;
+            return Task.FromException(new InventoryTransferException(403, InventoryTransferCodesV1.Forbidden));
+        }
+
+        await using (var scope = run.Store(CompanyA))
+        {
+            var revoked = await Assert.ThrowsAsync<InventoryTransferException>(
+                () => scope.Store.PlanAsync(hiddenLabel, Metadata(run), RevokeAfterReferenceRead));
+            Assert.Equal((403, InventoryTransferCodesV1.Forbidden, 1),
+                (revoked.Status, revoked.Code, revokedFenceCalls));
+
+            var hidden = await Assert.ThrowsAsync<InventoryTransferException>(
+                () => scope.Store.PlanAsync(hiddenLabel, Metadata(run), Authorized));
+            Assert.Equal((404, InventoryTransferCodesV1.LabelNotFound), (hidden.Status, hidden.Code));
+
+            var badSource = await Assert.ThrowsAsync<InventoryTransferException>(() => scope.Store.PlanAsync(
+                plan with { SourceLocationId = Guid.NewGuid() }, Metadata(run), Authorized));
+            Assert.Equal((409, InventoryTransferCodesV1.SourcePositionConflict),
+                (badSource.Status, badSource.Code));
+        }
+
+        Assert.Equal(baselineEffects, (
+            Transfers: await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.Transfers"),
+            Lines: await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.TransferLines"),
+            Commands: await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.Commands"),
+            Audits: await run.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityType = N'Inventory.Transfer'")));
+
         var foreignLocation = await run.LocationOfAsync(CompanyB);
         var foreignTransferId = Guid.NewGuid();
         await using (var foreignScope = run.Store(CompanyB))

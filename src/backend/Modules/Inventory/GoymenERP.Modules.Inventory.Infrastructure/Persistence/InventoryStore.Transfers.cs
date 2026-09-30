@@ -72,9 +72,20 @@ public sealed partial class InventoryStore : IInventoryTransferWriterV1, IInvent
             return new(priorView, true, prior.CorrelationId);
         }
 
-        var transfer = new InventoryTransfer(request.TransferId, companyId, request.SourceLocationId,
-            parsed.SourceCustodian, request.DestinationLocationId, parsed.DestinationCustodian,
-            request.PlannedAtUtc, parsed.Lines);
+        await RequirePlanReferencesAsync(companyId, request.SourceLocationId, parsed.Lines,
+            freshAuthorityFence, cancellationToken);
+
+        InventoryTransfer transfer;
+        try
+        {
+            transfer = new InventoryTransfer(request.TransferId, companyId, request.SourceLocationId,
+                parsed.SourceCustodian, request.DestinationLocationId, parsed.DestinationCustodian,
+                request.PlannedAtUtc, parsed.Lines);
+        }
+        catch (InventoryRuleException exception)
+        {
+            throw TransferError(400, InventoryTransferCodesV1.ValidationFailed, exception);
+        }
         var now = timeProvider.GetUtcNow();
         var row = new InventoryTransferRow
         {
@@ -687,7 +698,39 @@ public sealed partial class InventoryStore : IInventoryTransferWriterV1, IInvent
             lines.Add(new(line.LineId, line.LabelId, version, quantity));
         }
 
+        if ((request.SourceLocationId == request.DestinationLocationId && source == destination)
+            || lines.Select(line => line.LineId).Distinct().Count() != lines.Count
+            || lines.Select(line => line.LabelId).Distinct().Count() != lines.Count)
+        {
+            throw TransferError(400, InventoryTransferCodesV1.ValidationFailed);
+        }
+
         return (source, destination, lines.ToArray());
+    }
+
+    private async Task RequirePlanReferencesAsync(
+        Guid companyId,
+        Guid sourceLocationId,
+        IReadOnlyList<InventoryTransferPlanLine> lines,
+        Func<CancellationToken, Task> freshAuthorityFence,
+        CancellationToken cancellationToken)
+    {
+        var labelIds = lines.Select(line => line.LabelId).ToArray();
+        var labelCount = await dbContext.Labels.AsNoTracking()
+            .CountAsync(row => labelIds.Contains(row.Id), cancellationToken);
+        var sourceExists = await dbContext.Set<OrganizationLocationReference>().AsNoTracking()
+            .AnyAsync(row => row.CompanyId == companyId && row.Id == sourceLocationId, cancellationToken);
+        await RequireFreshAuthorityAsync(freshAuthorityFence, cancellationToken);
+
+        if (labelCount != labelIds.Length)
+        {
+            throw TransferError(404, InventoryTransferCodesV1.LabelNotFound);
+        }
+
+        if (!sourceExists)
+        {
+            throw TransferError(409, InventoryTransferCodesV1.SourcePositionConflict);
+        }
     }
 
     private static InventoryTransferDocumentReference ParseDocument(InventoryTransferDocumentReferenceV1? value)
