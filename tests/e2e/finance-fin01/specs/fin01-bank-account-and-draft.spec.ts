@@ -714,8 +714,10 @@ test.describe.serial('FIN-01 bank account and draft (real API, real SQL)', () =>
     await expect.poll(() => riskCells(page, 'openExposure')).toEqual(['1', '1.500,00'])
     await expect.poll(() => riskCells(page, 'collected')).toEqual(['0', '0,00'])
 
-    // Close and reopen: a fresh navigation lists it on F-02 and opens it from the row.
-    await page.goto('/finans/tahsilatlar')
+    // Close and reopen: the canonical portfolio navigation lists it and opens the same record from the row.
+    await page.goto('/finans')
+    await page.getByRole('link', { name: 'Müşteri Çekleri ve Senetleri', exact: true }).click()
+    await expect(page).toHaveURL('/finans/musteri-cek-senetleri')
     const row = page.getByRole('row').filter({ has: page.getByRole('rowheader', { name: CHEQUE_SERIAL, exact: true }) })
     await expect(row).toHaveCount(1, { timeout: 30_000 })
     await expect(row).toContainText('Portföyde')
@@ -781,7 +783,7 @@ test.describe.serial('FIN-01 bank account and draft (real API, real SQL)', () =>
 
     // Reopen: the instrument is Collected with two movements and the same one source; that source is a recorded
     // receipt of the face value, open for distribution (F-03) like any receipt.
-    await page.goto(`/finans/tahsilatlar?cekSenet=${instrumentId}`)
+    await page.goto(`/finans/musteri-cek-senetleri?cekSenet=${instrumentId}`)
     const reopened = page.getByRole('region', { name: `Müşteri çeki · ${CHEQUE_SERIAL}`, exact: true })
     await expect(reopened).toBeVisible({ timeout: 30_000 })
     await expect(reopened.getByText('Tahsil edildi', { exact: true })).toBeVisible()
@@ -812,7 +814,7 @@ test.describe.serial('FIN-01 bank account and draft (real API, real SQL)', () =>
     })
     expect(second.status).toBe(200)
     const secondId = second.body.resource!.id!
-    await page.goto(`/finans/tahsilatlar?cekSenet=${secondId}`)
+    await page.goto(`/finans/musteri-cek-senetleri?cekSenet=${secondId}`)
     const bouncedPanel = page.getByRole('region', { name: `Müşteri çeki · ${BOUNCED_SERIAL}`, exact: true })
     await expect(bouncedPanel).toBeVisible({ timeout: 30_000 })
     await bouncedPanel.getByRole('button', { name: 'Karşılıksız olarak işaretle', exact: true }).click()
@@ -861,7 +863,7 @@ test.describe.serial('FIN-01 bank account and draft (real API, real SQL)', () =>
       customers: [{ figures: { collected: { count: 1 }, dishonoured: { count: 1 }, openExposure: { count: 1 } } }],
     })
 
-    await page.goto(`/finans/tahsilatlar?cekSenet=${instrumentId}`)
+    await page.goto(`/finans/musteri-cek-senetleri?cekSenet=${instrumentId}`)
     await reopened.getByRole('link', { name: 'Tahsilat kaydını aç', exact: true }).click()
     await expect(page).toHaveURL(new RegExp(`/finans/tahsilatlar/${sourceId}$`))
     await expect(page.getByText('Kesin kaynak kaydı.', { exact: false })).toBeVisible({ timeout: 30_000 })
