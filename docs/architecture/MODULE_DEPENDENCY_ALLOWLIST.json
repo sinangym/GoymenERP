@@ -68,6 +68,12 @@
       "reason": "Audit insert and Logistics loading-instruction writes share one EF SaveChanges and SQL transaction (LOG-4a (#350); same pattern as Organization)."
     },
     {
+      "source": "src/backend/Modules/Documents/GoymenERP.Modules.Documents.Infrastructure/GoymenERP.Modules.Documents.Infrastructure.csproj",
+      "target": "src/backend/Modules/Audit/GoymenERP.Modules.Audit.Infrastructure/GoymenERP.Modules.Audit.Infrastructure.csproj",
+      "adr": "docs/adr/ADR-009-audit-and-correlation.md",
+      "reason": "Audit insert and the document vault's upload writes (blob, document, version, link, attempt) share one EF SaveChanges and SQL transaction (ERP-000G / AT-065; same pattern as Organization)."
+    },
+    {
       "source": "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/GoymenERP.Modules.Purchasing.Infrastructure.csproj",
       "target": "src/backend/Modules/Audit/GoymenERP.Modules.Audit.Infrastructure/GoymenERP.Modules.Audit.Infrastructure.csproj",
       "adr": "docs/adr/ADR-009-audit-and-correlation.md",
