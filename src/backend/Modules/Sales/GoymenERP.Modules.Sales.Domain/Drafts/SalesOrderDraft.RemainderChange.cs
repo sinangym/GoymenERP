@@ -237,11 +237,11 @@ public sealed partial class SalesOrderDraft
             && !string.IsNullOrWhiteSpace(request.OrderedQuantityText)
             && !string.IsNullOrWhiteSpace(request.Reason) && request.Reason.Length <= MaximumRemainderReasonLength
             && !string.IsNullOrWhiteSpace(request.RequestedBy) && request.RequestedBy.Length <= MaximumActorLength
-            && request.Floor is not null
+            && request.Floor is not null && IsRestorableFloor(line, request.Floor)
             && (request.Kind == RemainderChangeKind.Cancel
                 ? request.RequestedQuantity is null && request.RequestedQuantityText is null
-                : request.RequestedQuantity is > 0m && !string.IsNullOrWhiteSpace(request.RequestedQuantityText))
-            && (decision is null || IsDecision(request, decision));
+                : request.RequestedQuantity is > 0m && MatchesQuantityText(request.RequestedQuantity, request.RequestedQuantityText))
+            && (decision is null || IsDecision(request, decision, line));
         if (!consistent || line!.Remainder == LineRemainderState.Cancelled)
         {
             throw new InvalidOperationException("Kayıtlı kalan değişikliği geçmişi taslakla uyuşmuyor.");
@@ -255,17 +255,74 @@ public sealed partial class SalesOrderDraft
         remainderChanges.Add(facts);
     }
 
-    private static bool IsDecision(RemainderChangeRequest request, RemainderChangeDecision decision) =>
+    /// <summary>Called after every history row was restored and before the approval axis.</summary>
+    public void ValidateRemainderRestore()
+    {
+        RequireApprovalNotRestored();
+        foreach (var line in lines)
+        {
+            var latestApproved = remainderChanges.LastOrDefault(change => change.Request.LineId == line.Id
+                && change.Decision?.Outcome == RemainderChangeState.Approved);
+            if (latestApproved is null)
+            {
+                if (line.Remainder != LineRemainderState.Open)
+                {
+                    throw new InvalidOperationException("Kayıtlı satırın kalan durumu geçmişsiz değişmiş.");
+                }
+                continue;
+            }
+
+            var decision = latestApproved.Decision!;
+            var expectedState = latestApproved.Request.Kind == RemainderChangeKind.Cancel
+                ? LineRemainderState.Cancelled : LineRemainderState.Revised;
+            if (decision.ResultQuantity is not { } result || decision.ResultQuantityText is null
+                || line.Quantity.Value != result || !string.Equals(line.QuantityText, decision.ResultQuantityText, StringComparison.Ordinal)
+                || line.Remainder != expectedState)
+            {
+                throw new InvalidOperationException("Kayıtlı satır miktarı son onaylı kalan değişikliğiyle uyuşmuyor.");
+            }
+        }
+    }
+
+    private static bool IsDecision(RemainderChangeRequest request, RemainderChangeDecision decision, SalesOrderDraftLine line) =>
         !string.IsNullOrWhiteSpace(decision.DecidedBy) && decision.DecidedBy.Length <= MaximumActorLength
         && (decision.Reason is null || (decision.Reason.Length > 0 && decision.Reason.Length <= MaximumRemainderReasonLength))
         && decision.Outcome switch
         {
-            RemainderChangeState.Approved => decision.ResultQuantity is > 0m && !string.IsNullOrWhiteSpace(decision.ResultQuantityText)
-                && decision.Floor is not null && decision.Reason is null
-                && (request.Kind == RemainderChangeKind.Cancel || decision.ResultQuantity == request.RequestedQuantity),
+            RemainderChangeState.Approved => decision.ResultQuantity is > 0m
+                && MatchesQuantityText(decision.ResultQuantity, decision.ResultQuantityText)
+                && decision.Floor is not null && IsRestorableFloor(line, decision.Floor) && decision.Reason is null
+                && (request.Kind == RemainderChangeKind.Cancel
+                    ? decision.ResultQuantity == decision.Floor.Loaded
+                    : decision.ResultQuantity == request.RequestedQuantity
+                        && string.Equals(decision.ResultQuantityText, request.RequestedQuantityText, StringComparison.Ordinal)),
             RemainderChangeState.Rejected => decision.ResultQuantity is null && decision.ResultQuantityText is null && decision.Floor is null,
             _ => false,
         };
+
+    private static bool MatchesQuantityText(decimal? value, string? text) =>
+        value is > 0m && !string.IsNullOrWhiteSpace(text)
+        && decimal.TryParse(text, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var parsed) && parsed == value;
+
+    private static bool IsRestorableFloor(SalesOrderDraftLine line, RemainderFloor floor)
+    {
+        if (floor.Delivered < 0m || floor.Delivered > floor.Shipped || floor.Shipped > floor.Loaded || floor.Shipped == 0m)
+        {
+            return false;
+        }
+
+        try
+        {
+            _ = Quantity.Of(floor.Loaded, line.Quantity.Unit);
+            _ = Quantity.Of(floor.Shipped, line.Quantity.Unit);
+            _ = Quantity.Of(floor.Delivered, line.Quantity.Unit);
+            return true;
+        }
+        catch (ArgumentException)
+        {
+            return false;
+        }
+    }
 
     private static string RequireRemainderReason(string? reason)
     {

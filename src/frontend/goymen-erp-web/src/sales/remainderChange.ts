@@ -80,6 +80,16 @@ const instant = (value: unknown) => typeof value === 'string' && value.trim() !=
 const nullableInstant = (value: unknown) => value === null || instant(value)
 const oneOf = <T extends string>(value: unknown, choices: readonly T[]): value is T =>
   typeof value === 'string' && choices.includes(value as T)
+const compareDecimal = (left: string, right: string): number => {
+  const [leftWhole, leftFraction = ''] = left.split('.')
+  const [rightWhole, rightFraction = ''] = right.split('.')
+  const scale = Math.max(leftFraction.length, rightFraction.length)
+  const scaledLeft = BigInt(`${leftWhole}${leftFraction.padEnd(scale, '0')}`)
+  const scaledRight = BigInt(`${rightWhole}${rightFraction.padEnd(scale, '0')}`)
+  return scaledLeft < scaledRight ? -1 : scaledLeft > scaledRight ? 1 : 0
+}
+const validFloor = (loaded: string, shipped: string, delivered: string) =>
+  compareDecimal(delivered, shipped) <= 0 && compareDecimal(shipped, loaded) <= 0
 
 function decodeLine(value: unknown): RemainderLine | null {
   const o = exact(value, ['lineId', 'lineNo', 'orderUnitId', 'quantity', 'remainder', 'loaded', 'shipped', 'delivered', 'minimumQuantity'])
@@ -87,6 +97,8 @@ function decodeLine(value: unknown): RemainderLine | null {
     || !isReferenceId(o.orderUnitId) || !decimal(o.quantity)
     || !oneOf(o.remainder, Object.values(LINE_REMAINDER)) || !nullableDecimal(o.loaded) || !nullableDecimal(o.shipped)
     || !nullableDecimal(o.delivered) || !nullableDecimal(o.minimumQuantity)) return null
+  if (o.loaded !== null && o.shipped !== null && o.delivered !== null && o.minimumQuantity !== null
+    && (!validFloor(o.loaded, o.shipped, o.delivered) || compareDecimal(o.loaded, o.minimumQuantity) !== 0)) return null
   return o as unknown as RemainderLine
 }
 
@@ -105,8 +117,21 @@ function decodeChange(value: unknown): RemainderChange | null {
     || !(o.decidedBy === null || text(o.decidedBy)) || !nullableInstant(o.decidedAtUtc)
     || !(o.decisionReason === null || text(o.decisionReason, true)) || !nullableDecimal(o.resultQuantity)
     || !nullableDecimal(o.loadedAtDecision)) return null
-  if ((o.kind === REMAINDER_KIND.cancel) !== (o.requestedQuantity === null)) return null
-  if ((o.state === REMAINDER_STATE.pending) !== (o.decidedBy === null && o.decidedAtUtc === null)) return null
+  if ((o.kind === REMAINDER_KIND.cancel) !== (o.requestedQuantity === null)
+    || !validFloor(o.loadedAtRequest as string, o.shippedAtRequest as string, o.deliveredAtRequest as string)) return null
+  const noDecision = o.decidedBy === null && o.decidedAtUtc === null && o.decisionReason === null
+    && o.resultQuantity === null && o.loadedAtDecision === null
+  const approved = text(o.decidedBy) && instant(o.decidedAtUtc) && o.decisionReason === null
+    && decimal(o.resultQuantity) && decimal(o.loadedAtDecision)
+    && compareDecimal(o.loadedAtDecision as string, o.resultQuantity as string) <= 0
+    && (o.kind === REMAINDER_KIND.cancel
+      ? compareDecimal(o.resultQuantity as string, o.loadedAtDecision as string) === 0
+      : o.requestedQuantity !== null && compareDecimal(o.resultQuantity as string, o.requestedQuantity) === 0)
+  const rejected = text(o.decidedBy) && instant(o.decidedAtUtc)
+    && (o.decisionReason === null || text(o.decisionReason, true)) && o.resultQuantity === null && o.loadedAtDecision === null
+  if ((o.state === REMAINDER_STATE.pending && !noDecision)
+    || (o.state === REMAINDER_STATE.approved && !approved)
+    || (o.state === REMAINDER_STATE.rejected && !rejected)) return null
   return o as unknown as RemainderChange
 }
 
@@ -119,6 +144,8 @@ export function decodeRemainderChanges(value: unknown): RemainderChanges | null 
   if (lines.some((line) => line === null) || items.some((item) => item === null)) return null
   const lineIds = new Set(lines.map((line) => line!.lineId))
   if (lineIds.size !== lines.length || items.some((item) => !lineIds.has(item!.lineId))) return null
+  if (o.floorStatus === REMAINDER_FLOOR.readable && lines.some((line) =>
+    line!.loaded === null || line!.shipped === null || line!.delivered === null || line!.minimumQuantity === null)) return null
   if (o.floorStatus === REMAINDER_FLOOR.unreadable && lines.some((line) =>
     line!.loaded !== null || line!.shipped !== null || line!.delivered !== null || line!.minimumQuantity !== null)) return null
   return { draftVersion: o.draftVersion, floorStatus: o.floorStatus, lines: lines as RemainderLine[], items: items as RemainderChange[] }

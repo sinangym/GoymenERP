@@ -8,12 +8,16 @@ import {
   REMAINDER_FLOOR,
   REMAINDER_KIND,
   REMAINDER_STATE,
-  type RemainderChangeRequest,
-  type RemainderDecisionRequest,
 } from './remainderChange'
 import { StateBlock } from '../shell/StateBlock'
 import { classifyOutcome } from '../shell/uiState'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
+import {
+  recallPendingRemainderAction,
+  rememberPendingRemainderAction,
+  settlePendingRemainderAction,
+  type PendingRemainderAction,
+} from './pendingRemainderChanges'
 import styles from './SalesPages.module.css'
 
 const TEXT = {
@@ -31,18 +35,15 @@ const TEXT = {
   stateUnavailable: 'Yalnız onaylı ve iptal edilmemiş siparişin kısmi teslimat kalanı değiştirilebilir.',
 } as const
 
-type PendingAction =
-  | { readonly kind: 'request'; readonly key: string; readonly payload: RemainderChangeRequest }
-  | { readonly kind: 'approval' | 'rejection'; readonly key: string; readonly changeNo: number; readonly payload: RemainderDecisionRequest }
-
 export function SalesDraftRemainderChangePanel({
-  detail, companyId, namespace, actorId, routeEntryGeneration, canRequest, canDecide, onRecorded,
+  detail, companyId, namespace, actorId, routeEntryGeneration, attemptBinding, canRequest, canDecide, onRecorded,
 }: {
   readonly detail: DraftDetail
   readonly companyId: string
   readonly namespace: string
   readonly actorId: string
   readonly routeEntryGeneration: number
+  readonly attemptBinding: string
   readonly canRequest: boolean
   readonly canDecide: boolean
   readonly onRecorded: () => void
@@ -54,7 +55,7 @@ export function SalesDraftRemainderChangePanel({
   const [quantity, setQuantity] = useState('')
   const [reason, setReason] = useState('')
   const [decisionReasons, setDecisionReasons] = useState<Record<number, string>>({})
-  const [pending, setPending] = useState<PendingAction | null>(null)
+  const [pending, setPending] = useState<PendingRemainderAction | null>(() => recallPendingRemainderAction(attemptBinding))
   const [notice, setNotice] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const query = useQuery({
@@ -72,7 +73,7 @@ export function SalesDraftRemainderChangePanel({
   const stateAllowsRequest = detail.draft.state !== CANCELLED_STATE && detail.draft.approvalState === APPROVAL_STATE.approved
     && changes?.floorStatus === REMAINDER_FLOOR.readable && selected?.remainder !== LINE_REMAINDER.cancelled
 
-  async function execute(action: PendingAction) {
+  async function execute(action: PendingRemainderAction) {
     const permitted = action.kind === 'request' ? canRequest : canDecide
     if (!permitted) {
       setNotice(TEXT.authorityLost)
@@ -89,9 +90,10 @@ export function SalesDraftRemainderChangePanel({
     finish(action, outcome)
   }
 
-  function finish(action: PendingAction, outcome: OrderCommandOutcome<DraftMutation>) {
+  function finish(action: PendingRemainderAction, outcome: OrderCommandOutcome<DraftMutation>) {
     setBusy(false)
     if (outcome.type === 'succeeded') {
+      settlePendingRemainderAction(attemptBinding, action.key)
       setPending(null)
       setNotice(TEXT.completed)
       setReason('')
@@ -104,6 +106,7 @@ export function SalesDraftRemainderChangePanel({
       setNotice(TEXT.unknown)
       return
     }
+    settlePendingRemainderAction(attemptBinding, action.key)
     setPending(null)
     setNotice(`${TEXT.failed}${outcome.type === 'http' && outcome.problem?.code ? ` (${outcome.problem.code})` : ''}`)
     if (outcome.type === 'http' && outcome.status === 409) onRecorded()
@@ -114,20 +117,22 @@ export function SalesDraftRemainderChangePanel({
       setNotice(TEXT.invalid)
       return
     }
-    const action: PendingAction = {
+    const action: PendingRemainderAction = {
       kind: 'request', key: generateOrderAttemptKey(),
       payload: { expectedVersion: detail.draft.version, lineId: selected.lineId, kind,
         quantity: kind === REMAINDER_KIND.cancel ? null : quantity.trim(), reason },
     }
+    rememberPendingRemainderAction(attemptBinding, action)
     setPending(action)
     void execute(action)
   }
 
   function decide(changeNo: number, decision: 'approval' | 'rejection') {
-    const action: PendingAction = {
+    const action: PendingRemainderAction = {
       kind: decision, key: generateOrderAttemptKey(), changeNo,
       payload: { expectedVersion: detail.draft.version, reason: decision === 'rejection' ? (decisionReasons[changeNo] ?? '') || null : null },
     }
+    rememberPendingRemainderAction(attemptBinding, action)
     setPending(action)
     void execute(action)
   }
