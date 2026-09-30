@@ -369,6 +369,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         "src/backend/GoymenERP.Api/ManufacturingRuntime/ManufacturingInventoryInputIssueHost.cs";
     private const string ReviewedManufacturingInventoryReturnOutputHostPath =
         "src/backend/GoymenERP.Api/ManufacturingRuntime/ManufacturingInventoryReturnOutputHost.cs";
+    private const string ReviewedProductRuntimeExtensionsPath =
+        "src/backend/GoymenERP.Api/ProductRuntime/ProductRuntimeExtensions.cs";
+    private const string ReviewedProductImportSqlCommandRunnerPath =
+        "src/backend/GoymenERP.Api/ProductRuntime/ProductImportSqlCommandRunner.cs";
+    private const string ReviewedProductImportParticipantPath =
+        "src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/"
+        + "Persistence/ProductImportParticipant.cs";
     private static readonly IReadOnlyDictionary<string, (string ContextTypeName, int ExpectedCount)>
         ReviewedRuntimeContextConstructions =
             new Dictionary<string, (string ContextTypeName, int ExpectedCount)>(StringComparer.Ordinal)
@@ -382,7 +389,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 [ReviewedFinanceOpenItemSourceAdmissionServicePath] = ("FinanceDbContext", 1),
                 [ReviewedAccountingStorePath] = ("AccountingDbContext", 2),
                 [ReviewedManufacturingInventoryInputIssueHostPath] = ("ManufacturingDbContext", 2),
-                [ReviewedManufacturingInventoryReturnOutputHostPath] = ("ManufacturingDbContext", 1)
+                [ReviewedManufacturingInventoryReturnOutputHostPath] = ("ManufacturingDbContext", 1),
+                [ReviewedProductRuntimeExtensionsPath] = ("IdentityDbContext", 1),
+                [ReviewedProductImportSqlCommandRunnerPath] = ("AuditDbContext", 1)
             };
     private const string ReviewedManualBankPaymentServicePath =
         "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
@@ -406,7 +415,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // member, which throws like its siblings; no new database capability, MigrateAsync stays 2.
                 // Re-measured for Q16 import: DI adds the owner preview/service and the host transaction runner;
                 // initialization still owns exactly the same two migrations.
-                ["src/backend/GoymenERP.Api/ProductRuntime/ProductRuntimeExtensions.cs"] =
+                [ReviewedProductRuntimeExtensionsPath] =
                     new("2e6c3ae4c82822302907e58599083645900b0d38355d08aa9e0ca2b2e060acf3",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["MigrateAsync"] = 2 }),
@@ -418,10 +427,16 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         { ["Microsoft.Data.SqlClient"] = 1, ["SqlConnection"] = 1 }),
                 // Q16 / AT-020: one reviewed host runner borrows one SQL connection/transaction for Product,
                 // canonical audit batch and the single idempotency terminal. It creates no context or provider.
-                ["src/backend/GoymenERP.Api/ProductRuntime/ProductImportSqlCommandRunner.cs"] =
+                [ReviewedProductImportSqlCommandRunnerPath] =
                     new("06e51fdd53406a46d7fd1778a7c3493d49f88b887a5189382d1de044ae933ab7",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Microsoft.Data.SqlClient"] = 1, ["SqlConnection"] = 1 }),
+                // Product owner participant borrows the host connection/transaction; it creates no provider and
+                // commits nothing. The central runner remains the only commit owner.
+                [ReviewedProductImportParticipantPath] =
+                    new("270d184afcea8a3070ce270eebdaf26da18d73852550731e40cb3985fd48af1c",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["System.Data.Common"] = 1, ["DbConnection"] = 3 }),
                 ["src/backend/Modules/Audit/GoymenERP.Modules.Audit.Infrastructure/Services/GroupSharedAuditSession.cs"] =
                     new("efbf67c36b5848e6f2d05e989f3aac1636c7e202da94aee750757a43b33fccfe",
                         new Dictionary<string, int>(StringComparer.Ordinal)
