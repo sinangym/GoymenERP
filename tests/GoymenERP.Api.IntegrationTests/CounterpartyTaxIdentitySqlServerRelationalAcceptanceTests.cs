@@ -81,10 +81,11 @@ public sealed class CounterpartyTaxIdentitySqlServerRelationalAcceptanceTests
         }
 
         // The warning before saving the same number on the second card…
-        var check = await ReadAsync(maker, $"{PathFor(second)}/duplicates?number={Vkn}");
+        var check = await CheckDuplicatesAsync(maker, second, Vkn);
         var warned = Assert.Single(check.GetProperty("duplicates").EnumerateArray());
         Assert.Equal(first, warned.GetProperty("partyId").GetGuid());
-        using (var badCheck = await maker.GetAsync($"{PathFor(second)}/duplicates?number=1234567891"))
+        using (var badCheck = await maker.PostAsJsonAsync($"{PathFor(second)}/duplicates",
+                   new { taxIdentityNumber = "1234567891" }))
         {
             Assert.Equal(HttpStatusCode.BadRequest, badCheck.StatusCode);
             Assert.Equal("tax_identity_invalid", (await JsonAsync(badCheck)).GetProperty("code").GetString());
@@ -130,6 +131,9 @@ public sealed class CounterpartyTaxIdentitySqlServerRelationalAcceptanceTests
 
         Assert.Equal(2, await test.ScalarAsync<int>(
             "SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [EventType]=@Event;", first, EnteredEvent));
+        Assert.Equal(0, await test.ScalarAsync<int>(
+            $"SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [EventType]=@Event AND [AfterJson] LIKE N'%{Vkn}%';",
+            first, EnteredEvent));
     }
 
     [SqlServerFact]
@@ -442,6 +446,13 @@ public sealed class CounterpartyTaxIdentitySqlServerRelationalAcceptanceTests
     private static async Task<JsonElement> ReadAsync(HttpClient client, string path)
     {
         using var response = await client.GetAsync(path);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        return await JsonAsync(response);
+    }
+
+    private static async Task<JsonElement> CheckDuplicatesAsync(HttpClient client, Guid party, string number)
+    {
+        using var response = await client.PostAsJsonAsync($"{PathFor(party)}/duplicates", new { taxIdentityNumber = number });
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         return await JsonAsync(response);
     }

@@ -46,6 +46,11 @@ public sealed record EnterCounterpartyTaxIdentity(
     [property: JsonRequired] string ExpectedVersion,
     [property: JsonRequired] string TaxIdentityNumber);
 
+/// <summary>A duplicate-warning probe whose sensitive number travels in the JSON body, never the URL.</summary>
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+public sealed record CheckCounterpartyTaxIdentityDuplicates(
+    [property: JsonRequired] string TaxIdentityNumber);
+
 /// <summary>A change of an existing number, held pending until another person decides it.</summary>
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record RequestCounterpartyTaxIdentityChange(

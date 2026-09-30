@@ -164,7 +164,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
             // counterparty
             ["tools/relational_inventory/counterparty.txt"] =
-                "d48699c522a9e01c908834bacc8f6cb3778bd910cae257dc5addffd6ae55b229",
+                "307380e3c49a0244380b1d70ca29ee00afd46e208bc3a7aff9e20cdc37ff1442",
 
             // finance
             // DEC-FIN-014: +3 POS collection SQL facts (b18c13d9… -> 7af8ecf1…).

@@ -130,7 +130,7 @@ describe('AT-009 VKN/TCKN on the Cari card', () => {
   it('refuses an invalid number on the client, warns about a duplicate, saves on the explicit second click and re-reads', async () => {
     let stored: string | null = null
     const calls = install((call) => {
-      if (call.method === 'GET' && call.url.includes('/duplicates')) {
+      if (call.method === 'POST' && call.url.endsWith('/duplicates')) {
         return json({
           taxIdentityNumber: '1234567890',
           kind: 'vkn',
@@ -187,7 +187,7 @@ describe('AT-009 VKN/TCKN on the Cari card', () => {
 
   it('offers a change request for an existing number, never a direct overwrite, and sends the reason', async () => {
     const calls = install((call) => {
-      if (call.method === 'GET' && call.url.includes('/duplicates')) {
+      if (call.method === 'POST' && call.url.endsWith('/duplicates')) {
         return json({ taxIdentityNumber: '9876543217', kind: 'vkn', duplicates: [] })
       }
       if (call.method === 'GET') {

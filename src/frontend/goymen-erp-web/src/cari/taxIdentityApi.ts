@@ -1,5 +1,5 @@
 /**
- * AT-009 transport — `…/counterparties/{partyId}/tax-identity` (GET view, GET duplicates, PUT enter,
+ * AT-009 transport — `…/counterparties/{partyId}/tax-identity` (GET view, POST duplicate probe, PUT enter,
  * PUT change-request, PUT change-request/decision).
  *
  * Same thin hand-written shape as ./contactInformationApi.ts. The reads send the client-contract declaration and the
@@ -69,6 +69,46 @@ async function getJson<T>(
   return data === null ? { type: 'malformed' } : { type: 'ok', data }
 }
 
+async function postJson<T>(
+  path: string,
+  companyId: string,
+  payload: unknown,
+  decode: (raw: unknown) => T | null,
+  signal?: AbortSignal,
+): Promise<TaxReadOutcome<T>> {
+  let response: Response
+  try {
+    response = await fetch(`${API_BASE}${path}`, {
+      method: 'POST',
+      headers: {
+        ...devHeaders(),
+        ...contractRequestHeader(),
+        'X-Company-Id': companyId,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+      signal,
+    })
+  } catch (error) {
+    if (signal?.aborted) return { type: 'aborted' }
+    if (!navigator.onLine) return { type: 'offline' }
+    if (error instanceof TypeError) return { type: 'network-error' }
+    throw error
+  }
+
+  let body: unknown = null
+  try {
+    body = await response.json()
+  } catch {
+    if (signal?.aborted) return { type: 'aborted' }
+    body = null
+  }
+
+  if (response.status !== 200) return { type: 'http', status: response.status, code: taxProblemCodeOf(body) }
+  const data = decode(body)
+  return data === null ? { type: 'malformed' } : { type: 'ok', data }
+}
+
 export function fetchTaxIdentity(
   partyId: string,
   companyId: string,
@@ -84,9 +124,10 @@ export function checkTaxIdentityDuplicates(
   number: string,
   signal?: AbortSignal,
 ): Promise<TaxReadOutcome<TaxDuplicateCheck>> {
-  return getJson(
-    `${taxIdentityPath(partyId)}/duplicates?number=${encodeURIComponent(number)}`,
+  return postJson(
+    `${taxIdentityPath(partyId)}/duplicates`,
     companyId,
+    { taxIdentityNumber: number },
     (raw) => decodeTaxDuplicateCheck(raw, number),
     signal,
   )

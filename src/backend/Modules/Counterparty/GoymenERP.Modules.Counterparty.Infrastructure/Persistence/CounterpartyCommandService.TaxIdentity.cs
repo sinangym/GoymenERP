@@ -37,6 +37,7 @@ internal sealed partial class CounterpartyCommandService : ICounterpartyTaxIdent
     {
         await RequireCompanyWidePermissionAsync(ErpPermissions.CounterpartyPartiesRead, cancellationToken);
         var companyId = companyContext.CompanyId;
+        var actorId = currentUser.UserId ?? throw new UnauthorizedAccessException("Cari okuması kimliği doğrulanmış kullanıcı ister.");
         var party = await FindFencedPartyAsync(companyId, partyId, tracking: false, cancellationToken);
         if (party is null)
         {
@@ -58,6 +59,7 @@ internal sealed partial class CounterpartyCommandService : ICounterpartyTaxIdent
             : await FindDuplicatesAsync(companyId, partyId, party.TaxIdentityNumber, cancellationToken);
         var canUpdate = await HasCompanyWideAsync(CounterpartyTaxIdentityPermissionsV1.Update, cancellationToken);
         var canApprove = await HasCompanyWideAsync(CounterpartyTaxIdentityPermissionsV1.Approve, cancellationToken);
+        await RequireTaxIdentityReadStillAsync(companyId, actorId, additionalPermission: null, cancellationToken);
         return new CounterpartyTaxIdentityView(
             party.Id,
             companyId,
@@ -79,16 +81,21 @@ internal sealed partial class CounterpartyCommandService : ICounterpartyTaxIdent
     public async Task<CounterpartyTaxIdentityDuplicateCheck?> CheckDuplicatesAsync(
         Guid partyId, string taxIdentityNumber, CancellationToken cancellationToken)
     {
+        await RequireCompanyWidePermissionAsync(CounterpartyTaxIdentityPermissionsV1.Update, cancellationToken);
         await RequireCompanyWidePermissionAsync(ErpPermissions.CounterpartyPartiesRead, cancellationToken);
         var number = ParseTaxIdentity(taxIdentityNumber);
         var companyId = companyContext.CompanyId;
+        var actorId = currentUser.UserId ?? throw new UnauthorizedAccessException("Cari okuması kimliği doğrulanmış kullanıcı ister.");
         var party = await FindFencedPartyAsync(companyId, partyId, tracking: false, cancellationToken);
-        return party is null
+        var result = party is null
             ? null
             : new CounterpartyTaxIdentityDuplicateCheck(
                 number.Value,
                 KindOf(number),
                 await FindDuplicatesAsync(companyId, partyId, number.Value, cancellationToken));
+        await RequireTaxIdentityReadStillAsync(
+            companyId, actorId, CounterpartyTaxIdentityPermissionsV1.Update, cancellationToken);
+        return result;
     }
 
     public async Task<CounterpartyCommandExecution> EnterTaxIdentityAsync(
@@ -100,6 +107,8 @@ internal sealed partial class CounterpartyCommandService : ICounterpartyTaxIdent
         var scope = await RequireCompanyWidePermissionAsync(
             CounterpartyTaxIdentityPermissionsV1.Update, cancellationToken);
         await RequireCompanyWidePermissionAsync(ErpPermissions.CounterpartyPartiesRead, cancellationToken);
+        Func<CancellationToken, Task> beforeSave = token => RequireTaxIdentityCommandStillAsync(
+            metadata, CounterpartyTaxIdentityPermissionsV1.Update, token);
         RequirePartyId(partyId);
         var expectedVersion = CounterpartyContactInformationEditor.ParseVersion(command.ExpectedVersion);
         var number = ParseTaxIdentity(command.TaxIdentityNumber);
@@ -113,27 +122,28 @@ internal sealed partial class CounterpartyCommandService : ICounterpartyTaxIdent
         var existing = await FindCommandExecutionAsync(EnterTaxIdentityCommandName, keyHash, cancellationToken);
         if (existing is not null)
         {
+            await beforeSave(cancellationToken);
             return ReplayFenced(existing, requestHash, metadata, party is not null);
         }
 
         if (party is null)
         {
             return await CompleteCommandAsync(EnterTaxIdentityCommandName, Responses.NotFound(),
-                keyHash, requestHash, metadata, null, cancellationToken);
+                keyHash, requestHash, metadata, null, cancellationToken, beforeSave);
         }
 
         if (party.Version != expectedVersion)
         {
             return await CompleteCommandAsync(EnterTaxIdentityCommandName,
                 Responses.VersionConflict(expectedVersion, party.Version),
-                keyHash, requestHash, metadata, null, cancellationToken);
+                keyHash, requestHash, metadata, null, cancellationToken, beforeSave);
         }
 
         if (party.TaxIdentityNumber is not null)
         {
             return await CompleteCommandAsync(EnterTaxIdentityCommandName,
                 TaxResponses.Refused(CounterpartyCommandResult.TaxIdentityChangeRequiresApproval),
-                keyHash, requestHash, metadata, null, cancellationToken);
+                keyHash, requestHash, metadata, null, cancellationToken, beforeSave);
         }
 
         var beforeVersion = party.Version;
@@ -154,7 +164,7 @@ internal sealed partial class CounterpartyCommandService : ICounterpartyTaxIdent
             metadata.CorrelationId, metadata.CausationId, metadata.IdempotencyKey));
 
         var result = await CompleteCommandAsync(EnterTaxIdentityCommandName, Responses.Succeeded(),
-            keyHash, requestHash, metadata, new PartyConcurrencyContext(partyId, expectedVersion), cancellationToken);
+            keyHash, requestHash, metadata, new PartyConcurrencyContext(partyId, expectedVersion), cancellationToken, beforeSave);
         LogTaxIdentityCommand("enter", metadata, partyId, result);
         return result;
     }
@@ -168,6 +178,8 @@ internal sealed partial class CounterpartyCommandService : ICounterpartyTaxIdent
         var scope = await RequireCompanyWidePermissionAsync(
             CounterpartyTaxIdentityPermissionsV1.Update, cancellationToken);
         await RequireCompanyWidePermissionAsync(ErpPermissions.CounterpartyPartiesRead, cancellationToken);
+        Func<CancellationToken, Task> beforeSave = token => RequireTaxIdentityCommandStillAsync(
+            metadata, CounterpartyTaxIdentityPermissionsV1.Update, token);
         RequirePartyId(partyId);
         var expectedVersion = CounterpartyContactInformationEditor.ParseVersion(command.ExpectedVersion);
         var proposed = ParseTaxIdentity(command.ProposedTaxIdentityNumber);
@@ -184,6 +196,7 @@ internal sealed partial class CounterpartyCommandService : ICounterpartyTaxIdent
             RequestTaxIdentityChangeCommandName, keyHash, cancellationToken);
         if (existing is not null)
         {
+            await beforeSave(cancellationToken);
             return ReplayFenced(existing, requestHash, metadata, party is not null);
         }
 
@@ -201,7 +214,7 @@ internal sealed partial class CounterpartyCommandService : ICounterpartyTaxIdent
         if (refusal is not null)
         {
             return await CompleteCommandAsync(RequestTaxIdentityChangeCommandName, refusal,
-                keyHash, requestHash, metadata, null, cancellationToken);
+                keyHash, requestHash, metadata, null, cancellationToken, beforeSave);
         }
 
         var request = new PartyTaxIdentityChangeRequest(
@@ -227,7 +240,7 @@ internal sealed partial class CounterpartyCommandService : ICounterpartyTaxIdent
         try
         {
             result = await CompleteCommandAsync(RequestTaxIdentityChangeCommandName, Responses.Succeeded(),
-                keyHash, requestHash, metadata, null, cancellationToken);
+                keyHash, requestHash, metadata, null, cancellationToken, beforeSave);
         }
         catch (DbUpdateException)
         {
@@ -241,7 +254,7 @@ internal sealed partial class CounterpartyCommandService : ICounterpartyTaxIdent
 
             result = await CompleteCommandAsync(RequestTaxIdentityChangeCommandName,
                 TaxResponses.Refused(CounterpartyCommandResult.TaxIdentityChangePending),
-                keyHash, requestHash, metadata, null, cancellationToken);
+                keyHash, requestHash, metadata, null, cancellationToken, beforeSave);
         }
 
         LogTaxIdentityCommand("change-request", metadata, partyId, result);
@@ -257,6 +270,8 @@ internal sealed partial class CounterpartyCommandService : ICounterpartyTaxIdent
         var scope = await RequireCompanyWidePermissionAsync(
             CounterpartyTaxIdentityPermissionsV1.Approve, cancellationToken);
         await RequireCompanyWidePermissionAsync(ErpPermissions.CounterpartyPartiesRead, cancellationToken);
+        Func<CancellationToken, Task> beforeSave = token => RequireTaxIdentityCommandStillAsync(
+            metadata, CounterpartyTaxIdentityPermissionsV1.Approve, token);
         RequirePartyId(partyId);
         var expectedVersion = CounterpartyContactInformationEditor.ParseVersion(command.ExpectedVersion);
         if (command.ChangeRequestId == Guid.Empty)
@@ -289,6 +304,7 @@ internal sealed partial class CounterpartyCommandService : ICounterpartyTaxIdent
             DecideTaxIdentityChangeCommandName, keyHash, cancellationToken);
         if (existing is not null)
         {
+            await beforeSave(cancellationToken);
             return ReplayFenced(existing, requestHash, metadata, party is not null);
         }
 
@@ -315,7 +331,7 @@ internal sealed partial class CounterpartyCommandService : ICounterpartyTaxIdent
         if (refusal is not null)
         {
             return await CompleteCommandAsync(DecideTaxIdentityChangeCommandName, refusal,
-                keyHash, requestHash, metadata, null, cancellationToken);
+                keyHash, requestHash, metadata, null, cancellationToken, beforeSave);
         }
 
         var now = DateTimeOffset.UtcNow;
@@ -373,7 +389,7 @@ internal sealed partial class CounterpartyCommandService : ICounterpartyTaxIdent
         }
 
         var result = await CompleteCommandAsync(DecideTaxIdentityChangeCommandName, Responses.Succeeded(),
-            keyHash, requestHash, metadata, new PartyConcurrencyContext(partyId, expectedVersion), cancellationToken);
+            keyHash, requestHash, metadata, new PartyConcurrencyContext(partyId, expectedVersion), cancellationToken, beforeSave);
         LogTaxIdentityCommand(approve ? "approve" : "reject", metadata, partyId, result);
         return result;
     }
@@ -444,6 +460,33 @@ internal sealed partial class CounterpartyCommandService : ICounterpartyTaxIdent
         return scope.IsGranted && scope.IsCompanyWide;
     }
 
+    private async Task RequireTaxIdentityReadStillAsync(
+        Guid companyId, string actorId, string? additionalPermission, CancellationToken cancellationToken)
+    {
+        if (!currentUser.IsAuthenticated
+            || !string.Equals(currentUser.UserId, actorId, StringComparison.Ordinal)
+            || !companyContext.IsResolved
+            || companyContext.CompanyId != companyId
+            || !currentUser.CanAccessCompany(companyId))
+        {
+            throw new UnauthorizedAccessException("Cari vergi/kimlik okuma bağlamı değişti.");
+        }
+
+        await RequireCompanyWidePermissionAsync(ErpPermissions.CounterpartyPartiesRead, cancellationToken);
+        if (additionalPermission is not null)
+        {
+            await RequireCompanyWidePermissionAsync(additionalPermission, cancellationToken);
+        }
+    }
+
+    private async Task RequireTaxIdentityCommandStillAsync(
+        CounterpartyCommandMetadata metadata, string permission, CancellationToken cancellationToken)
+    {
+        ValidateCommandMetadata(metadata);
+        await RequireCompanyWidePermissionAsync(permission, cancellationToken);
+        await RequireCompanyWidePermissionAsync(ErpPermissions.CounterpartyPartiesRead, cancellationToken);
+    }
+
     private static TaxIdentityNumber ParseTaxIdentity(string? value) =>
         TaxIdentityNumber.TryParse(value, out var number, out var problem)
             ? number
@@ -486,7 +529,7 @@ internal sealed partial class CounterpartyCommandService : ICounterpartyTaxIdent
             proposedDuplicates);
 
     private static string SerializeTaxIdentitySnapshot(string? number, long version) =>
-        JsonSerializer.Serialize(new { TaxIdentityNumber = number, Version = version });
+        JsonSerializer.Serialize(new { TaxIdentityNumber = MaskTaxIdentity(number), Version = version });
 
     private static string SerializeChangeRequestSnapshot(PartyTaxIdentityChangeRequest request) =>
         JsonSerializer.Serialize(new
@@ -494,8 +537,8 @@ internal sealed partial class CounterpartyCommandService : ICounterpartyTaxIdent
             request.Id,
             request.CompanyId,
             request.PartyId,
-            request.CurrentTaxIdentityNumber,
-            request.ProposedTaxIdentityNumber,
+            CurrentTaxIdentityNumber = MaskTaxIdentity(request.CurrentTaxIdentityNumber),
+            ProposedTaxIdentityNumber = MaskTaxIdentity(request.ProposedTaxIdentityNumber),
             request.PartyVersionAtRequest,
             Status = request.Status.ToString(),
             request.RequestedBy,
@@ -503,6 +546,10 @@ internal sealed partial class CounterpartyCommandService : ICounterpartyTaxIdent
             request.DecisionNote,
             request.Version,
         });
+
+    private static string? MaskTaxIdentity(string? number) => number is null
+        ? null
+        : $"{new string('*', number.Length - 4)}{number[^4..]}";
 
     private void LogTaxIdentityCommand(
         string operation, CounterpartyCommandMetadata metadata, Guid partyId, CounterpartyCommandExecution result)

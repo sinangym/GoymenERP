@@ -14,8 +14,8 @@ namespace GoymenERP.Api.Endpoints;
 /// <list type="bullet">
 /// <item><c>GET …/{partyId}/tax-identity</c> — the number, its kind, the duplicate WARNING (other cards of the active
 /// company with the same number), the pending change and the last decided one, and what this reader may do.</item>
-/// <item><c>GET …/{partyId}/tax-identity/duplicates?number=</c> — the same warning for a candidate before saving; an
-/// invalid number is 400 <c>tax_identity_invalid</c>.</item>
+/// <item><c>POST …/{partyId}/tax-identity/duplicates</c> — the same warning for a candidate before saving; the number
+/// travels only in the JSON body and an invalid number is 400 <c>tax_identity_invalid</c>.</item>
 /// <item><c>PUT …/{partyId}/tax-identity</c> — first entry (204). A party that already has a number answers 409
 /// <c>tax_identity_change_requires_approval</c>.</item>
 /// <item><c>PUT …/{partyId}/tax-identity/change-request</c> — propose a change (204); it stays pending.</item>
@@ -68,21 +68,20 @@ public static partial class CounterpartyEndpoints
             .ProducesErpConflict(CounterpartyClientContract.RequiredCode, CounterpartyClientContract.UnsupportedCode)
             .ProducesErpAuthenticatedProblems();
 
-        group.MapGet("/{partyId:guid}/tax-identity/duplicates", async (
-            Guid partyId, string? number, ICounterpartyTaxIdentityService service,
+        group.MapPost("/{partyId:guid}/tax-identity/duplicates", async (
+            Guid partyId, CheckCounterpartyTaxIdentityDuplicates command, ICounterpartyTaxIdentityService service,
             HttpContext context, CancellationToken cancellationToken) =>
         {
             SetPrivateNoStore(context.Response.Headers);
-            var query = context.Request.Query;
-            if (query.Count != 1 || !query.TryGetValue("number", out var numbers) || numbers.Count != 1)
+            if (context.Request.Query.Count != 0)
             {
                 return ValidationProblem("Cari vergi/kimlik kontrolü geçersiz.",
-                    "Yalnız tek bir 'number' sorgu parametresi kabul edilir.");
+                    "Vergi/kimlik numarası yalnız JSON gövdesinde kabul edilir; sorgu parametresi kabul edilmez.");
             }
 
             try
             {
-                var check = await service.CheckDuplicatesAsync(partyId, number ?? string.Empty, cancellationToken);
+                var check = await service.CheckDuplicatesAsync(partyId, command.TaxIdentityNumber, cancellationToken);
                 return check is null ? NotFound() : Results.Ok(check);
             }
             catch (CounterpartyTaxIdentityInvalidException exception)
@@ -96,10 +95,13 @@ public static partial class CounterpartyEndpoints
         })
             .RequireCompanyContext()
             .RequireAuthorization(ErpPermissions.CounterpartyPartiesRead)
+            .RequireAuthorization(CounterpartyTaxIdentityPermissionsV1.Update)
             .RequiresNonEmptyGuidPathParameter("partyId")
             .WithName("CheckCounterpartyTaxIdentityDuplicatesV1")
+            .Accepts<CheckCounterpartyTaxIdentityDuplicates>("application/json")
             .Produces<CounterpartyTaxIdentityDuplicateCheck>(StatusCodes.Status200OK)
             .ProducesErpBadRequest(CounterpartyProblemCodesV1.ValidationFailed, CounterpartyProblemCodesV1.TaxIdentityInvalid)
+            .ProducesErpUnsupportedMediaType()
             .ProducesErpNotFound(CounterpartyProblemCodesV1.NotFound)
             .ProducesErpConflict(CounterpartyClientContract.RequiredCode, CounterpartyClientContract.UnsupportedCode)
             .ProducesErpAuthenticatedProblems();

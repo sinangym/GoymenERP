@@ -267,7 +267,8 @@ internal sealed partial class CounterpartyCommandService(
         string requestHash,
         CounterpartyCommandMetadata metadata,
         ConcurrencyContext? concurrencyContext,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Func<CancellationToken, Task>? beforeSave = null)
     {
         dbContext.CommandExecutions.Add(CommandExecution.Complete(new CommandExecutionData(
             Guid.NewGuid(),
@@ -285,6 +286,11 @@ internal sealed partial class CounterpartyCommandService(
 
         try
         {
+            if (beforeSave is not null)
+            {
+                await beforeSave(cancellationToken);
+            }
+
             await dbContext.SaveChangesAsync(cancellationToken);
             return new CounterpartyCommandExecution(
                 response,
@@ -324,7 +330,8 @@ internal sealed partial class CounterpartyCommandService(
                 requestHash,
                 metadata,
                 concurrencyContext: null,
-                cancellationToken);
+                cancellationToken: cancellationToken,
+                beforeSave: beforeSave);
         }
         catch (DbUpdateException)
         {
@@ -336,6 +343,11 @@ internal sealed partial class CounterpartyCommandService(
             if (winner is null)
             {
                 throw;
+            }
+
+            if (beforeSave is not null)
+            {
+                await beforeSave(cancellationToken);
             }
 
             return ResolveExistingExecution(winner, requestHash, metadata);
