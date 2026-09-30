@@ -183,8 +183,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // DEC-SAL-005: +1 allocation-blocks-cancellation SQL fact (4e783c62… -> 953d329a…).
             // INV-AL-1: +8 allocation-change SQL facts (953d329a… -> 1ca5b9e1…).
             // ST-02 scrap write-off: +5 stock-scrap SQL facts (1ca5b9e1… -> bd676b05…).
+            // R20 transfer lifecycle: +3 transfer SQL facts (bd676b05… -> c74360d3…).
             ["tools/relational_inventory/inventory.txt"] =
-                "bd676b053e5fe215c843a4e4ba12bac534de01f6f660788f9e148f069fa9ef6d",
+                "c74360d37bf5d49d587914828189f8849975accfc1a74bee734395fd284b65ba",
 
             // logistics
             // AT-053: +4 weighbridge SQL facts (81c1ff0b… -> 264898d7…).
