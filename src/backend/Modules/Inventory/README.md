@@ -478,8 +478,14 @@ A material label remains one physical piece. Partial acceptance means accepting 
 lines. This v1 contract exposes no partial kg for one label; the existing label split must happen first. Active
 allocations block dispatch, every command uses exact transfer/label versions and idempotency/audit metadata, and
 tenant filters plus composite foreign keys keep company scope fail closed. The owner registration publishes no
-destination adapter, route or grant. Central publication must register `inventory.stock-transfer.write`, provide the
-destination-owner adapter, route/OpenAPI mapping and authority classification before runtime activation.
+destination adapter, route or grant. The destination-owner port is checked at plan and again at acceptance, with a
+fresh authority fence after each awaited owner read. The transactional writer repeats that captured company/actor
+fence after persistence reads, before any replay disclosure and immediately before the single save; a refused final
+fence clears every staged movement/transfer/audit row. Dispatch keeps the initially validated label/balance
+concurrency tokens tracked through the save, so an intervening allocation or stock write fails closed instead of
+moving stale stock. Central publication must register
+`inventory.stock-transfer.write`, provide the destination-owner adapter, route/OpenAPI mapping and authority
+classification before runtime activation.
 
 ## Movement kinds and rollback signal (reference)
 

@@ -11,6 +11,7 @@ public sealed class InventoryTransferCommandService : IInventoryTransferCommandV
     private readonly ICurrentUser currentUser;
     private readonly IErpAuthorityRevalidationService authority;
     private readonly IInventoryTransferDestinationPortV1 destination;
+    private readonly IInventoryTransferReaderV1 reader;
     private readonly IInventoryTransferWriterV1 writer;
     private readonly Func<string, bool> isKnownPermission;
 
@@ -19,8 +20,9 @@ public sealed class InventoryTransferCommandService : IInventoryTransferCommandV
         ICurrentUser currentUser,
         IErpAuthorityRevalidationService authority,
         IInventoryTransferDestinationPortV1 destination,
+        IInventoryTransferReaderV1 reader,
         IInventoryTransferWriterV1 writer)
-        : this(companyContext, currentUser, authority, destination, writer, ErpPermissions.IsKnown)
+        : this(companyContext, currentUser, authority, destination, reader, writer, ErpPermissions.IsKnown)
     {
     }
 
@@ -29,6 +31,7 @@ public sealed class InventoryTransferCommandService : IInventoryTransferCommandV
         ICurrentUser currentUser,
         IErpAuthorityRevalidationService authority,
         IInventoryTransferDestinationPortV1 destination,
+        IInventoryTransferReaderV1 reader,
         IInventoryTransferWriterV1 writer,
         Func<string, bool> isKnownPermission)
     {
@@ -36,6 +39,7 @@ public sealed class InventoryTransferCommandService : IInventoryTransferCommandV
         this.currentUser = currentUser ?? throw new ArgumentNullException(nameof(currentUser));
         this.authority = authority ?? throw new ArgumentNullException(nameof(authority));
         this.destination = destination ?? throw new ArgumentNullException(nameof(destination));
+        this.reader = reader ?? throw new ArgumentNullException(nameof(reader));
         this.writer = writer ?? throw new ArgumentNullException(nameof(writer));
         this.isKnownPermission = isKnownPermission ?? throw new ArgumentNullException(nameof(isKnownPermission));
     }
@@ -47,11 +51,78 @@ public sealed class InventoryTransferCommandService : IInventoryTransferCommandV
     {
         ArgumentNullException.ThrowIfNull(request);
         var scope = await RequireAsync(cancellationToken);
+        await RequireDestinationAsync(scope, request.DestinationLocationId, request.DestinationCustodianKind,
+            request.DestinationCustodianId, cancellationToken);
+        var metadata = await FinalizeAsync(scope, transport, cancellationToken);
+        return await writer.PlanAsync(request, metadata, token => FreshAuthorityFenceAsync(scope, token),
+            cancellationToken);
+    }
+
+    public async Task<InventoryTransferResultV1> DispatchAsync(
+        Guid transferId,
+        DispatchInventoryTransferV1 request,
+        InventoryCommandMetadata transport,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        var scope = await RequireAsync(cancellationToken);
+        var metadata = await FinalizeAsync(scope, transport, cancellationToken);
+        return await writer.DispatchAsync(transferId, request, metadata, token => FreshAuthorityFenceAsync(scope, token),
+            cancellationToken);
+    }
+
+    public async Task<InventoryTransferResultV1> AcceptLineAsync(
+        Guid transferId,
+        Guid lineId,
+        AcceptInventoryTransferLineV1 request,
+        InventoryCommandMetadata transport,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        var scope = await RequireAsync(cancellationToken);
+        InventoryTransferViewV1? transfer;
+        try
+        {
+            transfer = await reader.ReadAsync(transferId, cancellationToken);
+        }
+        catch (InventoryTransferException)
+        {
+            throw;
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            throw new InventoryTransferException(503, InventoryTransferCodesV1.Unavailable, exception);
+        }
+
+        scope = await MeasureAsync(scope, cancellationToken);
+        if (transfer is null)
+        {
+            throw new InventoryTransferException(404, InventoryTransferCodesV1.TransferNotFound);
+        }
+        if (transfer.CompanyId != scope.CompanyId)
+        {
+            throw new InventoryTransferException(503, InventoryTransferCodesV1.Unavailable);
+        }
+
+        await RequireDestinationAsync(scope, transfer.DestinationLocationId, transfer.DestinationCustodianKind,
+            transfer.DestinationCustodianId, cancellationToken);
+        var metadata = await FinalizeAsync(scope, transport, cancellationToken);
+        return await writer.AcceptLineAsync(transferId, lineId, request, metadata,
+            token => FreshAuthorityFenceAsync(scope, token), cancellationToken);
+    }
+
+    private async Task RequireDestinationAsync(
+        Scope scope,
+        Guid locationId,
+        string custodianKind,
+        Guid custodianId,
+        CancellationToken cancellationToken)
+    {
         InventoryTransferDestinationStatusV1 destinationStatus;
         try
         {
-            destinationStatus = await destination.CheckAsync(scope.CompanyId, request.DestinationLocationId,
-                request.DestinationCustodianKind, request.DestinationCustodianId, cancellationToken);
+            destinationStatus = await destination.CheckAsync(scope.CompanyId, locationId, custodianKind,
+                custodianId, cancellationToken);
         }
         catch (InventoryTransferException)
         {
@@ -75,34 +146,6 @@ public sealed class InventoryTransferCommandService : IInventoryTransferCommandV
                 _ => new InventoryTransferException(503, InventoryTransferCodesV1.Unavailable),
             };
         }
-
-        var metadata = await FinalizeAsync(scope, transport, cancellationToken);
-        return await writer.PlanAsync(request, metadata, cancellationToken);
-    }
-
-    public async Task<InventoryTransferResultV1> DispatchAsync(
-        Guid transferId,
-        DispatchInventoryTransferV1 request,
-        InventoryCommandMetadata transport,
-        CancellationToken cancellationToken = default)
-    {
-        ArgumentNullException.ThrowIfNull(request);
-        var scope = await RequireAsync(cancellationToken);
-        var metadata = await FinalizeAsync(scope, transport, cancellationToken);
-        return await writer.DispatchAsync(transferId, request, metadata, cancellationToken);
-    }
-
-    public async Task<InventoryTransferResultV1> AcceptLineAsync(
-        Guid transferId,
-        Guid lineId,
-        AcceptInventoryTransferLineV1 request,
-        InventoryCommandMetadata transport,
-        CancellationToken cancellationToken = default)
-    {
-        ArgumentNullException.ThrowIfNull(request);
-        var scope = await RequireAsync(cancellationToken);
-        var metadata = await FinalizeAsync(scope, transport, cancellationToken);
-        return await writer.AcceptLineAsync(transferId, lineId, request, metadata, cancellationToken);
     }
 
     private async Task<Scope> RequireAsync(CancellationToken cancellationToken)
@@ -156,6 +199,9 @@ public sealed class InventoryTransferCommandService : IInventoryTransferCommandV
         if (!measured.IsGranted || !measured.IsCompanyWide || !Matches(scope)) throw Forbidden();
         return scope with { RoleCodes = [.. measured.RoleCodes.Order(StringComparer.Ordinal)] };
     }
+
+    private async Task FreshAuthorityFenceAsync(Scope scope, CancellationToken cancellationToken) =>
+        _ = await MeasureAsync(scope, cancellationToken);
 
     private bool Matches(Scope scope) => currentUser.IsAuthenticated
         && string.Equals(currentUser.UserId, scope.ActorId, StringComparison.Ordinal)

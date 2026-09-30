@@ -86,12 +86,14 @@ public interface IInventoryTransferWriterV1
     Task<InventoryTransferResultV1> PlanAsync(
         PlanInventoryTransferV1 request,
         InventoryCommandMetadata metadata,
+        Func<CancellationToken, Task> freshAuthorityFence,
         CancellationToken cancellationToken = default);
 
     Task<InventoryTransferResultV1> DispatchAsync(
         Guid transferId,
         DispatchInventoryTransferV1 request,
         InventoryCommandMetadata metadata,
+        Func<CancellationToken, Task> freshAuthorityFence,
         CancellationToken cancellationToken = default);
 
     Task<InventoryTransferResultV1> AcceptLineAsync(
@@ -99,6 +101,7 @@ public interface IInventoryTransferWriterV1
         Guid lineId,
         AcceptInventoryTransferLineV1 request,
         InventoryCommandMetadata metadata,
+        Func<CancellationToken, Task> freshAuthorityFence,
         CancellationToken cancellationToken = default);
 }
 

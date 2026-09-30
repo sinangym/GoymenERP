@@ -207,7 +207,8 @@ public sealed class InventoryTransferTests
 
         await world.Service().PlanAsync(PlanRequest(), Transport(""));
 
-        Assert.Equal([InventoryPermissionManifestV1.StockTransferWrite, InventoryPermissionManifestV1.StockTransferWrite],
+        Assert.Equal([InventoryPermissionManifestV1.StockTransferWrite, InventoryPermissionManifestV1.StockTransferWrite,
+                InventoryPermissionManifestV1.StockTransferWrite],
             world.Authority.Measured);
         Assert.Equal(1, world.Destination.Calls);
         var call = Assert.Single(world.Writer.Calls);
@@ -232,6 +233,61 @@ public sealed class InventoryTransferTests
 
         await Refused(world.Service().PlanAsync(PlanRequest(), Transport("actor")), 403,
             InventoryTransferCodesV1.Forbidden);
+
+        Assert.Empty(world.Writer.Calls);
+    }
+
+    [Fact]
+    public async Task Acceptance_reloads_the_stored_target_and_revalidates_authority_after_its_owner_read()
+    {
+        var world = new CommandWorld();
+        world.Reader.Result = TransferView(Company);
+        world.Destination.During = () => world.Authority.Granted = false;
+
+        await Refused(world.Service().AcceptLineAsync(world.Reader.Result.TransferId, Guid.NewGuid(),
+            AcceptRequest(), Transport("actor")), 403, InventoryTransferCodesV1.Forbidden);
+
+        Assert.Equal(1, world.Destination.Calls);
+        Assert.Empty(world.Writer.Calls);
+    }
+
+    [Fact]
+    public async Task Acceptance_revalidates_after_the_transfer_read_before_disclosing_not_found()
+    {
+        var world = new CommandWorld();
+        world.Reader.During = () => world.Authority.Granted = false;
+
+        await Refused(world.Service().AcceptLineAsync(Guid.NewGuid(), Guid.NewGuid(),
+            AcceptRequest(), Transport("actor")), 403, InventoryTransferCodesV1.Forbidden);
+
+        Assert.Equal(1, world.Reader.Calls);
+        Assert.Equal(2, world.Authority.Measured.Count);
+        Assert.Empty(world.Writer.Calls);
+    }
+
+    [Fact]
+    public async Task Acceptance_uses_the_stored_target_then_writes_after_the_final_authority_fence()
+    {
+        var world = new CommandWorld();
+        world.Reader.Result = TransferView(Company);
+
+        await world.Service().AcceptLineAsync(world.Reader.Result.TransferId, Guid.NewGuid(),
+            AcceptRequest(), Transport("actor"));
+
+        Assert.Equal(1, world.Reader.Calls);
+        Assert.Equal(1, world.Destination.Calls);
+        Assert.Equal(4, world.Authority.Measured.Count);
+        Assert.Equal("accept", Assert.Single(world.Writer.Calls).Operation);
+    }
+
+    [Fact]
+    public async Task Revocation_at_the_writer_fence_refuses_without_recording_the_command()
+    {
+        var world = new CommandWorld();
+        world.Writer.BeforeFence = () => world.Authority.Granted = false;
+
+        await Refused(world.Service().DispatchAsync(Guid.NewGuid(), DispatchRequest(), Transport("actor")),
+            403, InventoryTransferCodesV1.Forbidden);
 
         Assert.Empty(world.Writer.Calls);
     }
@@ -360,6 +416,9 @@ public sealed class InventoryTransferTests
     private static DispatchInventoryTransferV1 DispatchRequest() =>
         new("1", At.AddHours(1), new("inventory.transfer.outgoing", Guid.NewGuid(), null));
 
+    private static AcceptInventoryTransferLineV1 AcceptRequest() =>
+        new("2", At.AddHours(2), new("inventory.transfer.incoming", Guid.NewGuid(), null));
+
     private static InventoryCommandMetadata Transport(string actor) =>
         new(actor, "ignored", ["ignored"], "corr-1", null, "key-1", "Web");
 
@@ -389,7 +448,7 @@ public sealed class InventoryTransferTests
         public bool Known { get; init; } = true;
 
         public InventoryTransferCommandService Service() =>
-            new(Context, User, Authority, Destination, Writer, _ => Known);
+            new(Context, User, Authority, Destination, Reader, Writer, _ => Known);
 
         public InventoryTransferQueryService Query() => new(Context, User, Authority, Reader);
     }
@@ -448,29 +507,45 @@ public sealed class InventoryTransferTests
     private sealed class TestWriter : IInventoryTransferWriterV1
     {
         public List<(string Operation, InventoryCommandMetadata Metadata)> Calls { get; } = [];
+        public Action? BeforeFence { get; set; }
         private readonly InventoryTransferResultV1 result = new(TransferView(Company), false, "corr-1");
 
         public Task<InventoryTransferResultV1> PlanAsync(PlanInventoryTransferV1 request,
-            InventoryCommandMetadata metadata, CancellationToken cancellationToken = default) => Answer("plan", metadata);
+            InventoryCommandMetadata metadata, Func<CancellationToken, Task> freshAuthorityFence,
+            CancellationToken cancellationToken = default) =>
+            Answer("plan", metadata, freshAuthorityFence, cancellationToken);
 
         public Task<InventoryTransferResultV1> DispatchAsync(Guid transferId, DispatchInventoryTransferV1 request,
-            InventoryCommandMetadata metadata, CancellationToken cancellationToken = default) => Answer("dispatch", metadata);
+            InventoryCommandMetadata metadata, Func<CancellationToken, Task> freshAuthorityFence,
+            CancellationToken cancellationToken = default) =>
+            Answer("dispatch", metadata, freshAuthorityFence, cancellationToken);
 
         public Task<InventoryTransferResultV1> AcceptLineAsync(Guid transferId, Guid lineId,
             AcceptInventoryTransferLineV1 request, InventoryCommandMetadata metadata,
-            CancellationToken cancellationToken = default) => Answer("accept", metadata);
+            Func<CancellationToken, Task> freshAuthorityFence, CancellationToken cancellationToken = default) =>
+            Answer("accept", metadata, freshAuthorityFence, cancellationToken);
 
-        private Task<InventoryTransferResultV1> Answer(string operation, InventoryCommandMetadata metadata)
+        private async Task<InventoryTransferResultV1> Answer(string operation, InventoryCommandMetadata metadata,
+            Func<CancellationToken, Task> freshAuthorityFence, CancellationToken cancellationToken)
         {
+            BeforeFence?.Invoke();
+            await freshAuthorityFence(cancellationToken);
             Calls.Add((operation, metadata));
-            return Task.FromResult(result);
+            return result;
         }
     }
 
     private sealed class TestReader : IInventoryTransferReaderV1
     {
         public InventoryTransferViewV1? Result { get; set; }
-        public Task<InventoryTransferViewV1?> ReadAsync(Guid transferId, CancellationToken cancellationToken = default) =>
-            Task.FromResult(Result);
+        public int Calls { get; private set; }
+        public Action? During { get; set; }
+
+        public Task<InventoryTransferViewV1?> ReadAsync(Guid transferId, CancellationToken cancellationToken = default)
+        {
+            Calls++;
+            During?.Invoke();
+            return Task.FromResult(Result);
+        }
     }
 }
