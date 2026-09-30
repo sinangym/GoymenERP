@@ -29,6 +29,7 @@ import { ProductListPage } from './ProductListPage'
 import { ProductDetailPage } from './ProductDetailPage'
 import { ProductCreatePage } from './ProductCreatePage'
 import { ProductEditPage } from './ProductEditPage'
+import { priceListRoutes } from './priceLists/priceListRoutes'
 
 /**
  * `CapabilityRoute` types its prop as the shell's `CapabilityId` union, which does
@@ -101,4 +102,9 @@ export const productRoutes: RouteObject[] = [
       </ActivationPendingAttemptScope>
     ),
   },
+  /**
+   * AT-018 U-05 price lists (company-scoped, their own capability ids and routes under `/fiyat-listeleri`, see
+   * ./priceLists/capabilities.ts). Spread here so the shell mounts them with no shell edit.
+   */
+  ...priceListRoutes,
 ]
