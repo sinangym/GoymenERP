@@ -54,6 +54,11 @@ public sealed class SalesOrderLineReferencePort(ISalesOrderDraftStore store, ICo
             return new SalesOrderLineReferenceAnswerV1(SalesOrderLineReferenceOutcomeV1.NotApproved, null, draft.ApprovalState.ToString());
         }
 
+        if (!draft.IsCustomerAccepted)
+        {
+            return new SalesOrderLineReferenceAnswerV1(SalesOrderLineReferenceOutcomeV1.NotApproved, null, "CustomerAcceptancePending");
+        }
+
         return new SalesOrderLineReferenceAnswerV1(SalesOrderLineReferenceOutcomeV1.Approved, new SalesOrderLineReferenceV1(
             draft.CompanyId, draft.Id, line.Id, line.LineNo, draft.Header.PartyId, draft.Header.CompanyAccountId,
             line.Product.ProductId, line.Product.ProductVersion, line.OrderUnit.UnitId, line.QuantityText, draft.Revision, draft.Version,
@@ -122,7 +127,8 @@ public sealed class SalesOrderLineReferencePort(ISalesOrderDraftStore store, ICo
             {
                 // DEC-SAL-005: a cancelled order is still listed as Approved by the store's approval filter (its facts stay), but
                 // its lines are no longer offered to a consumer's picker.
-                if (draft.ApprovalState != InternalApprovalState.Approved || draft.State == SalesDraftState.Cancelled)
+                if (draft.ApprovalState != InternalApprovalState.Approved || draft.State == SalesDraftState.Cancelled
+                    || !draft.IsCustomerAccepted)
                 {
                     previous = draft;
                     continue;

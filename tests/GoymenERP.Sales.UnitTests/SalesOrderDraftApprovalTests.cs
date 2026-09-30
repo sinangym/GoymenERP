@@ -159,7 +159,7 @@ public sealed class SalesOrderDraftApprovalTests
             .ToArray();
         // DEC-SAL-005: the cancellation of an approved order is a mutation entry too (RequireCancellable only reads);
         // DEC-SAL-002: so is the quantity revision (RequireQuantityRevisable only reads).
-        Assert.Equal(["AddLine", "Approve", "ApproveRemainderChange", "Cancel", "Reject", "RejectRemainderChange",
+        Assert.Equal(["AddLine", "Approve", "ApproveRemainderChange", "Cancel", "RecordCustomerAcceptance", "Reject", "RejectRemainderChange",
             "RequestRemainderChange", "RescheduleDelivery", "ReviseCommercial", "ReviseQuantities", "Submit", "Withdraw"], entries);
 
         var draft = Draft();
@@ -170,6 +170,7 @@ public sealed class SalesOrderDraftApprovalTests
         Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => draft.Approve(3, Approver, T0)));
         Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => draft.Reject(3, Approver, null, T0)));
         Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => draft.Withdraw(3, Preparer, null, T0)));
+        Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => draft.RecordCustomerAcceptance(3, Approver, T0)));
         Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => draft.ReviseCommercial(3, [Commercial(draft.Lines[0], "13.00", KgUnit, "5")], "synthetic-pricer", T0)));
         // DEC-SAL-003: the delivery-schedule update is a mutation entry too; a withdrawn draft's dates do not move.
         Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => draft.RescheduleDelivery(3, Day.AddDays(5),
@@ -389,6 +390,34 @@ public sealed class SalesOrderDraftApprovalTests
 
     private static string CodeOf(Action action) => Assert.Throws<SalesRuleException>(action).Code;
 
+    [Fact]
+    public void New_order_waits_for_customer_acceptance_and_a_revision_requires_a_fresh_acceptance()
+    {
+        var draft = Draft(customerAcceptanceRequired: true);
+        draft.Submit(2, Preparer, T0);
+        draft.Approve(3, Approver, T0.AddMinutes(1));
+        Assert.False(draft.IsCustomerAccepted);
+
+        draft.RecordCustomerAcceptance(4, "synthetic-customer-acceptor", T0.AddMinutes(2));
+        Assert.True(draft.IsCustomerAccepted);
+        Assert.Equal((0, "synthetic-customer-acceptor", 5L),
+            (draft.CustomerAcceptance!.Revision, draft.CustomerAcceptance.AcceptedBy, draft.Version));
+
+        draft.ReviseCommercial(5, [Commercial(draft.Lines[0], "13.00", KgUnit, "5")], "synthetic-pricer", T0.AddMinutes(3));
+        Assert.False(draft.IsCustomerAccepted);
+        Assert.Equal(0, draft.CustomerAcceptance.Revision);
+    }
+
+    [Fact]
+    public void Legacy_order_needs_no_synthetic_customer_acceptance()
+    {
+        var draft = Draft();
+        draft.Submit(2, Preparer, T0);
+        draft.Approve(3, Approver, T0);
+        Assert.True(draft.IsCustomerAccepted);
+        Assert.Null(draft.CustomerAcceptance);
+    }
+
     private static SalesDraftHeader Header() => new(Guid.Parse("33333333-3333-4333-8333-333333333333"),
         Guid.Parse("44444444-4444-4444-8444-444444444444"), Guid.Parse("55555555-5555-4555-8555-555555555555"), Day);
 
@@ -407,9 +436,10 @@ public sealed class SalesOrderDraftApprovalTests
     private static LineCommercialInput Commercial(SalesOrderDraftLine line, string? price, Guid? unit, string? discount) =>
         new(line.Id, new CommercialDraftFields(price, unit, discount));
 
-    private static SalesOrderDraft Draft(SalesDraftLineInput? line = null)
+    private static SalesOrderDraft Draft(SalesDraftLineInput? line = null, bool customerAcceptanceRequired = false)
     {
-        var draft = SalesOrderDraft.Create(Guid.NewGuid(), Company, "SO-2026-000001", Header(), Money(), T0);
+        var draft = SalesOrderDraft.Create(Guid.NewGuid(), Company, "SO-2026-000001", Header(), Money(), T0,
+            customerAcceptanceRequired);
         draft.AddLine(1, line ?? Line(), T0);
         return draft;
     }

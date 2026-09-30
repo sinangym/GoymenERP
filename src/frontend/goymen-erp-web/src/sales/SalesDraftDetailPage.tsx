@@ -78,7 +78,12 @@ import {
   type OrderAttemptSnapshot,
   type OrderAttemptState,
 } from './orderAttempt'
-import { SALES_CAPABILITY, SALES_QUANTITY_WRITE_CAPABILITY, SALES_ROUTE } from './capabilities'
+import {
+  SALES_CAPABILITY,
+  SALES_CUSTOMER_ACCEPTANCE_RECORD_CAPABILITY,
+  SALES_QUANTITY_WRITE_CAPABILITY,
+  SALES_ROUTE,
+} from './capabilities'
 import { APPROVAL_STATE_TEXT, ORDER_DETAIL_TEXT as T, ORDER_DRAFT_TEXT, problemCodeText } from './salesText'
 import { SALES_PROBLEM_CODE } from './contract'
 import { classifyOutcome } from '../shell/uiState'
@@ -314,7 +319,7 @@ export function DraftView({
   /** DEC-SAL-005 / AT-007: the impact preview and cancel control, or the recorded cancellation of a cancelled order. */
   readonly cancellation?: React.ReactNode
 }) {
-  const { draft, approval } = detail
+  const { draft, approval, customerAcceptance } = detail
   const withdrawn = draft.approvalState === APPROVAL_STATE.withdrawn
   const cancelled = draft.state === CANCELLED_STATE
   return (
@@ -408,6 +413,28 @@ export function DraftView({
               <dd data-testid="sales-approval-reason">{approval.rejectionReason ?? T.approval.noReason}</dd>
             </div>
           ) : null}
+          <div>
+            <dt>{T.approval.customerAcceptance}</dt>
+            <dd data-testid="sales-customer-acceptance-state">
+              {!customerAcceptance.required
+                ? T.approval.customerAcceptanceLegacy
+                : customerAcceptance.isCurrentRevisionAccepted
+                  ? T.approval.customerAcceptanceRecorded
+                  : T.approval.customerAcceptancePending}
+            </dd>
+          </div>
+          {customerAcceptance.acceptedBy === null ? null : (
+            <div>
+              <dt>{T.approval.customerAcceptedBy}</dt>
+              <dd>{customerAcceptance.acceptedBy}</dd>
+            </div>
+          )}
+          {customerAcceptance.acceptedAtUtc === null ? null : (
+            <div>
+              <dt>{T.approval.customerAcceptedAt}</dt>
+              <dd>{formatInstant(customerAcceptance.acceptedAtUtc)} ({customerAcceptance.acceptedRevision})</dd>
+            </div>
+          )}
         </dl>
         {linkedEffects ?? <SalesDraftLinkedEffectsUnbound />}
         {draft.approvalState === APPROVAL_STATE.approved && !cancelled ? <p className={styles.muted}>{T.approval.approvedNote}</p> : null}
@@ -611,6 +638,7 @@ function ApprovalCommands({
   const { draft } = detail
   const canSubmit = hasCapability(shell, SALES_CAPABILITY.draftsCreate)
   const canDecide = hasCapability(shell, SALES_CAPABILITY.ordersApprove)
+  const canAcceptCustomer = hasCapability(shell, SALES_CUSTOMER_ACCEPTANCE_RECORD_CAPABILITY)
   const [attempt, setAttempt] = useState<CommandAttempt>({ phase: 'idle' })
   const [command, setCommand] = useState<DraftStateCommand | null>(null)
   const [reason, setReason] = useState('')
@@ -635,7 +663,10 @@ function ApprovalCommands({
   // A commercial revision can return an approved order to Preparing. D2's easy withdrawal
   // must not be offered once approved history exists; the server remains the authority.
   const offerWithdraw = canSubmit && ownDraft && unapproved && draft.revision === 'Rev.0'
-  if (!offerSubmit && !offerDecision && !offerWithdraw && !ownDecisionWithheld && attempt.phase === 'idle') return null
+  const offerCustomerAcceptance = canAcceptCustomer && draft.state !== CANCELLED_STATE
+    && draft.approvalState === APPROVAL_STATE.approved && detail.customerAcceptance.required
+    && !detail.customerAcceptance.isCurrentRevisionAccepted
+  if (!offerSubmit && !offerDecision && !offerWithdraw && !offerCustomerAcceptance && !ownDecisionWithheld && attempt.phase === 'idle') return null
 
   async function send(kind: DraftStateCommand, snapshot: OrderAttemptSnapshot<DraftStateCommandRequest>) {
     const previous = attemptRef.current
@@ -743,6 +774,11 @@ function ApprovalCommands({
             {T.approval.withdraw}
           </button>
         </>
+      ) : null}
+      {offerCustomerAcceptance ? (
+        <button type="button" className={styles.primaryButton} disabled={frozen} onClick={() => start('customer-acceptance')}>
+          {T.approval.recordCustomerAcceptance}
+        </button>
       ) : null}
     </div>
   )

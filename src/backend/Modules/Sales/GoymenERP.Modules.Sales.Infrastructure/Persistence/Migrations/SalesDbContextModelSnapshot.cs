@@ -79,6 +79,19 @@ partial class SalesDbContextModelSnapshot : ModelSnapshot
                 .HasMaxLength(128)
                 .HasColumnType("nvarchar(128)");
 
+            b.Property<DateTimeOffset?>("CustomerAcceptedAtUtc")
+                .HasColumnType("datetimeoffset");
+
+            b.Property<string>("CustomerAcceptedBy")
+                .HasMaxLength(128)
+                .HasColumnType("nvarchar(128)");
+
+            b.Property<int?>("CustomerAcceptedRevision")
+                .HasColumnType("int");
+
+            b.Property<bool>("CustomerAcceptanceRequired")
+                .HasColumnType("bit");
+
             b.Property<string>("EntityType")
                 .IsRequired()
                 .HasMaxLength(160)
@@ -1077,6 +1090,10 @@ partial class SalesDbContextModelSnapshot : ModelSnapshot
                 t.HasCheckConstraint(
                     "CK_Drafts_Approval",
                     "([ApprovalState] = 1 AND [SubmittedBy] IS NULL AND [SubmittedAtUtc] IS NULL AND [DecidedBy] IS NULL AND [DecidedAtUtc] IS NULL AND [RejectionReason] IS NULL) OR ([ApprovalState] = 2 AND [SubmittedBy] IS NOT NULL AND LEN([SubmittedBy]) > 0 AND [SubmittedAtUtc] IS NOT NULL AND [DecidedBy] IS NULL AND [DecidedAtUtc] IS NULL AND [RejectionReason] IS NULL) OR ([ApprovalState] = 3 AND [SubmittedBy] IS NOT NULL AND LEN([SubmittedBy]) > 0 AND [SubmittedAtUtc] IS NOT NULL AND [DecidedBy] IS NOT NULL AND LEN([DecidedBy]) > 0 AND [DecidedAtUtc] IS NOT NULL AND [RejectionReason] IS NULL) OR ([ApprovalState] = 4 AND [SubmittedBy] IS NOT NULL AND LEN([SubmittedBy]) > 0 AND [SubmittedAtUtc] IS NOT NULL AND [DecidedBy] IS NOT NULL AND LEN([DecidedBy]) > 0 AND [DecidedAtUtc] IS NOT NULL AND ([RejectionReason] IS NULL OR LEN([RejectionReason]) > 0)) OR ([ApprovalState] = 5 AND [DecidedBy] IS NOT NULL AND LEN([DecidedBy]) > 0 AND [DecidedAtUtc] IS NOT NULL AND (([SubmittedBy] IS NULL AND [SubmittedAtUtc] IS NULL) OR ([SubmittedBy] IS NOT NULL AND LEN([SubmittedBy]) > 0 AND [SubmittedAtUtc] IS NOT NULL)) AND ([RejectionReason] IS NULL OR LEN([RejectionReason]) > 0))");
+
+                t.HasCheckConstraint(
+                    "CK_Drafts_CustomerAcceptance",
+                    "([CustomerAcceptanceRequired] = 0 AND [CustomerAcceptedRevision] IS NULL AND [CustomerAcceptedBy] IS NULL AND [CustomerAcceptedAtUtc] IS NULL) OR ([CustomerAcceptanceRequired] = 1 AND (([CustomerAcceptedRevision] IS NULL AND [CustomerAcceptedBy] IS NULL AND [CustomerAcceptedAtUtc] IS NULL) OR ([CustomerAcceptedRevision] IS NOT NULL AND [CustomerAcceptedRevision] >= 0 AND [CustomerAcceptedRevision] <= [Revision] AND [CustomerAcceptedBy] IS NOT NULL AND LEN([CustomerAcceptedBy]) > 0 AND [CustomerAcceptedAtUtc] IS NOT NULL)))");
 
                 t.HasCheckConstraint(
                     "CK_Drafts_Identity",

@@ -46,6 +46,12 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
         + "OR ([ApprovalState] = 4 AND [SubmittedBy] IS NOT NULL AND LEN([SubmittedBy]) > 0 AND [SubmittedAtUtc] IS NOT NULL AND [DecidedBy] IS NOT NULL AND LEN([DecidedBy]) > 0 AND [DecidedAtUtc] IS NOT NULL AND ([RejectionReason] IS NULL OR LEN([RejectionReason]) > 0)) "
         + "OR ([ApprovalState] = 5 AND [DecidedBy] IS NOT NULL AND LEN([DecidedBy]) > 0 AND [DecidedAtUtc] IS NOT NULL AND (([SubmittedBy] IS NULL AND [SubmittedAtUtc] IS NULL) OR ([SubmittedBy] IS NOT NULL AND LEN([SubmittedBy]) > 0 AND [SubmittedAtUtc] IS NOT NULL)) AND ([RejectionReason] IS NULL OR LEN([RejectionReason]) > 0))";
 
+    internal const string CustomerAcceptanceConstraint =
+        "([CustomerAcceptanceRequired] = 0 AND [CustomerAcceptedRevision] IS NULL AND [CustomerAcceptedBy] IS NULL AND [CustomerAcceptedAtUtc] IS NULL) "
+        + "OR ([CustomerAcceptanceRequired] = 1 AND (([CustomerAcceptedRevision] IS NULL AND [CustomerAcceptedBy] IS NULL AND [CustomerAcceptedAtUtc] IS NULL) "
+        + "OR ([CustomerAcceptedRevision] IS NOT NULL AND [CustomerAcceptedRevision] >= 0 AND [CustomerAcceptedRevision] <= [Revision] "
+        + "AND [CustomerAcceptedBy] IS NOT NULL AND LEN([CustomerAcceptedBy]) > 0 AND [CustomerAcceptedAtUtc] IS NOT NULL)))";
+
     /// <summary>
     /// UX_DraftAttempts_DraftId: a stored draft is born from exactly one create attempt. Since SALES-A1 the
     /// state commands (submit / approve / reject) record their own attempts against the same draft, one per
@@ -187,6 +193,7 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
             table.HasCheckConstraint("CK_Drafts_State", StateConstraint);
             // SALES-A1: the approval facts follow the approval state exactly (a row cannot say "approved" without a decision).
             table.HasCheckConstraint("CK_Drafts_Approval", ApprovalConstraint);
+            table.HasCheckConstraint("CK_Drafts_CustomerAcceptance", CustomerAcceptanceConstraint);
             table.HasCheckConstraint("CK_Drafts_Version", "[Version] >= 1");
             table.HasCheckConstraint("CK_Drafts_Text",
                 "LEN([DocumentNo]) > 0 AND LEN([MoneyOperation]) > 0 AND LEN([MoneyProfileVersion]) > 0 AND LEN([CreatedBy]) > 0 AND LEN([CorrelationId]) > 0");
@@ -223,6 +230,7 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
         entity.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
         entity.Property(x => x.SubmittedBy).HasMaxLength(SalesOrderDraft.MaximumActorLength);
         entity.Property(x => x.DecidedBy).HasMaxLength(SalesOrderDraft.MaximumActorLength);
+        entity.Property(x => x.CustomerAcceptedBy).HasMaxLength(SalesOrderDraft.MaximumActorLength);
         entity.Property(x => x.RejectionReason).HasMaxLength(SalesOrderDraft.MaximumRejectionReasonLength);
         entity.HasIndex(x => new { x.CompanyId, x.ApprovalState, x.CreatedAtUtc, x.Id }).HasDatabaseName("IX_Drafts_CompanyId_ApprovalState_CreatedAtUtc_Id");
         entity.HasIndex(x => new { x.CompanyId, x.DocumentNo }).IsUnique().HasDatabaseName("UX_Drafts_DocumentNo");

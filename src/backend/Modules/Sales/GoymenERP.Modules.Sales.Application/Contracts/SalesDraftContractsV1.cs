@@ -44,6 +44,13 @@ public sealed record SalesDraftApprovalV1(
     string? DecidedBy, DateTimeOffset? DecidedAtUtc,
     string? RejectionReason);
 
+public sealed record SalesDraftCustomerAcceptanceV1(
+    bool Required,
+    string? AcceptedRevision,
+    string? AcceptedBy,
+    DateTimeOffset? AcceptedAtUtc,
+    bool IsCurrentRevisionAccepted);
+
 /// <summary>
 /// SALES-A1: the body of a state command (submission / approval / rejection): the expected
 /// concurrency version as text (the same shape as every version on this wire) and, for a
@@ -161,6 +168,7 @@ public sealed record SalesOrderDraftDetailView(
     SalesDraftOwnerReferenceV1? SourceStrategy,
     SalesDraftOwnerReferenceV1? Package,
     SalesDraftApprovalV1 Approval,
+    SalesDraftCustomerAcceptanceV1 CustomerAcceptance,
     bool IsOwnDraft,
     bool IsOwnDecisionRestricted);
 
@@ -195,6 +203,7 @@ public static class SalesDraftApiV1
     public const string SubmissionPath = "/api/v1/sales/drafts/{id}/submission";
     public const string ApprovalPath = "/api/v1/sales/drafts/{id}/approval";
     public const string RejectionPath = "/api/v1/sales/drafts/{id}/rejection";
+    public const string CustomerAcceptancePath = "/api/v1/sales/drafts/{id}/customer-acceptance";
 
     /// <summary>D2: POST …/{id}/withdrawal — the preparer takes back their own not-yet-approved draft (own state, own trail, no deletion).</summary>
     public const string WithdrawalPath = "/api/v1/sales/drafts/{id}/withdrawal";

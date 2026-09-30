@@ -62,6 +62,13 @@
     "decidedAtUtc": null,
     "rejectionReason": null
   },
+  "customerAcceptance": {
+    "required": false,
+    "acceptedRevision": null,
+    "acceptedBy": null,
+    "acceptedAtUtc": null,
+    "isCurrentRevisionAccepted": true
+  },
   "isOwnDraft": false,
   "isOwnDecisionRestricted": false
 }

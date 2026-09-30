@@ -71,6 +71,7 @@ export function SalesDraftRemainderChangePanel({
   const changes = query.data?.type === 'ok-single' ? query.data.data : null
   const selected = useMemo(() => changes?.lines.find((line) => line.lineId === lineId) ?? null, [changes, lineId])
   const stateAllowsRequest = detail.draft.state !== CANCELLED_STATE && detail.draft.approvalState === APPROVAL_STATE.approved
+    && detail.customerAcceptance.isCurrentRevisionAccepted
     && changes?.floorStatus === REMAINDER_FLOOR.readable && selected?.remainder !== LINE_REMAINDER.cancelled
 
   async function execute(action: PendingRemainderAction) {
