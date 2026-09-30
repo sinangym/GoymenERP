@@ -5,7 +5,7 @@ namespace GoymenERP.Counterparty.UnitTests;
 public sealed class CounterpartyProblemCodesV1Tests
 {
     [Fact]
-    public void Registry_ContainsSevenUniqueStableMachineCodes()
+    public void Registry_ContainsUniqueStableMachineCodes()
     {
         var codes = new[]
         {
@@ -16,9 +16,17 @@ public sealed class CounterpartyProblemCodesV1Tests
             CounterpartyProblemCodesV1.AlreadyLinked,
             CounterpartyProblemCodesV1.VersionConflict,
             CounterpartyProblemCodesV1.IdempotencyConflict,
+            CounterpartyProblemCodesV1.TaxIdentityInvalid,
+            CounterpartyProblemCodesV1.TaxIdentityChangeRequiresApproval,
+            CounterpartyProblemCodesV1.TaxIdentityNotSet,
+            CounterpartyProblemCodesV1.TaxIdentityUnchanged,
+            CounterpartyProblemCodesV1.TaxIdentityChangePending,
+            CounterpartyProblemCodesV1.TaxIdentityChangeNotPending,
+            CounterpartyProblemCodesV1.TaxIdentityChangeStale,
+            CounterpartyProblemCodesV1.TaxIdentitySelfDecision,
         };
 
-        Assert.Equal(7, codes.Distinct(StringComparer.Ordinal).Count());
+        Assert.Equal(15, codes.Distinct(StringComparer.Ordinal).Count());
         Assert.All(codes, code => Assert.Matches("^[a-z]+(?:_[a-z]+)*$", code));
     }
 
@@ -33,6 +41,17 @@ public sealed class CounterpartyProblemCodesV1Tests
     [InlineData(
         CounterpartyCommandResult.AlreadyLinked,
         CounterpartyProblemCodesV1.AlreadyLinked)]
+    [InlineData(
+        CounterpartyCommandResult.TaxIdentityChangeRequiresApproval,
+        CounterpartyProblemCodesV1.TaxIdentityChangeRequiresApproval)]
+    [InlineData(CounterpartyCommandResult.TaxIdentityNotSet, CounterpartyProblemCodesV1.TaxIdentityNotSet)]
+    [InlineData(CounterpartyCommandResult.TaxIdentityUnchanged, CounterpartyProblemCodesV1.TaxIdentityUnchanged)]
+    [InlineData(CounterpartyCommandResult.TaxIdentityChangePending, CounterpartyProblemCodesV1.TaxIdentityChangePending)]
+    [InlineData(
+        CounterpartyCommandResult.TaxIdentityChangeNotPending,
+        CounterpartyProblemCodesV1.TaxIdentityChangeNotPending)]
+    [InlineData(CounterpartyCommandResult.TaxIdentityChangeStale, CounterpartyProblemCodesV1.TaxIdentityChangeStale)]
+    [InlineData(CounterpartyCommandResult.TaxIdentitySelfDecision, CounterpartyProblemCodesV1.TaxIdentitySelfDecision)]
     public void RequiredForProblem_MapsEveryPersistedTerminalFailure(
         CounterpartyCommandResult result,
         string expectedCode)

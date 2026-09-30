@@ -37,8 +37,8 @@ const artifactsDir = required('BROWSER_E2E_ARTIFACTS_DIR')
 export default defineConfig({
   testDir: path.join(here, 'cari-c02', 'specs'),
   // The create/reopen journey, then the AT-004 read-only access view (alphabetical, serial; the second reads nothing
-  // the first writes).
-  testMatch: /(^|[\\/])c02-(create-and-reopen|identity-access-view)\.spec\.ts$/,
+  // the first writes), then the AT-009 VKN/TCKN journey (its own cards; maker and checker actors).
+  testMatch: /(^|[\\/])c02-(create-and-reopen|identity-access-view|tax-identity)\.spec\.ts$/,
   fullyParallel: false,
   workers: 1,
   retries: 0,

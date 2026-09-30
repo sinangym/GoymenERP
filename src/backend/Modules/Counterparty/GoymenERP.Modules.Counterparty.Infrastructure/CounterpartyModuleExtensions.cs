@@ -63,6 +63,8 @@ public static class CounterpartyModuleExtensions
             provider.GetRequiredService<CounterpartyCommandService>());
         services.AddScoped<ICounterpartyContactInformationService>(provider =>
             provider.GetRequiredService<CounterpartyCommandService>());
+        services.AddScoped<ICounterpartyTaxIdentityService>(provider =>
+            provider.GetRequiredService<CounterpartyCommandService>());
         services.AddScoped<ICounterpartyCompanyAccountLinkService, CounterpartyCompanyAccountLinkService>();
         services.AddScoped<
             ICounterpartyMutationRelationshipVerifier,

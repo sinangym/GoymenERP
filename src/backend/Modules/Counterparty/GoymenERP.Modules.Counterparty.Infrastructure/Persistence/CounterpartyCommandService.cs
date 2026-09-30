@@ -266,7 +266,7 @@ internal sealed partial class CounterpartyCommandService(
         string idempotencyKeyHash,
         string requestHash,
         CounterpartyCommandMetadata metadata,
-        AccountConcurrencyContext? concurrencyContext,
+        ConcurrencyContext? concurrencyContext,
         CancellationToken cancellationToken)
     {
         dbContext.CommandExecutions.Add(CommandExecution.Complete(new CommandExecutionData(
@@ -303,13 +303,15 @@ internal sealed partial class CounterpartyCommandService(
                 return ResolveExistingExecution(winner, requestHash, metadata);
             }
 
-            var currentVersion = await dbContext.CompanyPartyAccounts
-                .AsNoTracking()
-                .Where(x =>
-                    x.CompanyId == metadata.CompanyId
-                    && x.PartyId == concurrencyContext.PartyId)
-                .Select(x => (long?)x.Version)
-                .SingleOrDefaultAsync(cancellationToken);
+            var currentVersion = concurrencyContext is PartyConcurrencyContext
+                ? await ReadFencedPartyVersionAsync(metadata.CompanyId, concurrencyContext.PartyId, cancellationToken)
+                : await dbContext.CompanyPartyAccounts
+                    .AsNoTracking()
+                    .Where(x =>
+                        x.CompanyId == metadata.CompanyId
+                        && x.PartyId == concurrencyContext.PartyId)
+                    .Select(x => (long?)x.Version)
+                    .SingleOrDefaultAsync(cancellationToken);
             var terminalResponse = currentVersion.HasValue
                 ? Responses.VersionConflict(
                     concurrencyContext.ExpectedVersion,
@@ -609,9 +611,19 @@ internal sealed partial class CounterpartyCommandService(
         long ExpectedVersion,
         string Reason);
 
-    private sealed record AccountConcurrencyContext(
+    private abstract record ConcurrencyContext(
         Guid PartyId,
         long ExpectedVersion);
+
+    /// <summary>A company-account command: fenced on the account's version.</summary>
+    private sealed record AccountConcurrencyContext(
+        Guid PartyId,
+        long ExpectedVersion) : ConcurrencyContext(PartyId, ExpectedVersion);
+
+    /// <summary>An AT-009 tax-identity command: fenced on the Party's version, read through the company's account.</summary>
+    private sealed record PartyConcurrencyContext(
+        Guid PartyId,
+        long ExpectedVersion) : ConcurrencyContext(PartyId, ExpectedVersion);
 
     private static class Responses
     {

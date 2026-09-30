@@ -26,6 +26,7 @@ import {
 import { CARI_CONTROL_CAPABILITY, targetIsActive } from './accountStatusContract'
 import { AccountStatusControl, AccountStatusRecoveryNotice } from './AccountStatusControl'
 import { CariCompanyRelationships } from './CariCompanyRelationships'
+import { CariTaxIdentityPanel } from './CariTaxIdentityPanel'
 import { useAccountStatusFlow, type AccountStatusApplied } from './useAccountStatusFlow'
 import type { CounterpartyDetail } from './detailContract'
 import { classifyOutcome, type RemoteViewState } from '../shell/uiState'
@@ -331,6 +332,16 @@ function CariDetail({ namespace }: { readonly namespace: string | null }) {
             data-party-state={detail.isActive ? 'active' : 'inactive'}
           />
         </dl>
+        {/* AT-009: the party's VKN/TCKN (one per party, like the facts above), its duplicate warning in THIS
+            company, and the maker-checker change. Its own read, bound to the selected company. */}
+        {namespace !== null && activeCompanyId !== null ? (
+          <CariTaxIdentityPanel
+            partyId={detail.id}
+            companyId={activeCompanyId}
+            namespace={namespace}
+            contractContext={contractContext}
+          />
+        ) : null}
       </section>
 
       <section aria-labelledby="cari-account-heading" className={styles.block} data-section="account">
