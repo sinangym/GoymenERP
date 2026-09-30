@@ -4,6 +4,9 @@ import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createMemoryRouter } from 'react-router'
 import { CariTaxIdentityPanel } from './CariTaxIdentityPanel'
+import { TAX_IDENTITY_TEXT } from './taxIdentity'
+import { resetPendingTaxIdentityAttempts } from './pendingTaxIdentityAttempt'
+import { ShellDispatchContext } from '../shell/shellContext'
 import {
   COUNTERPARTY_CONTRACT_HEADER,
   COUNTERPARTY_CONTRACT_VERSION,
@@ -112,17 +115,28 @@ function renderPanel() {
     [
       {
         path: '*',
-        element: (
-          <CariTaxIdentityPanel partyId={PARTY} companyId={COMPANY} namespace={NAMESPACE} contractContext={CONTRACT} />
-        ),
+        element: <TaxIdentityPanelHarness />,
       },
     ],
     { initialEntries: [`/cari/${PARTY}`] },
   )
   render(
     <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
+      <ShellDispatchContext.Provider value={() => undefined}>
+        <RouterProvider router={router} />
+      </ShellDispatchContext.Provider>
     </QueryClientProvider>,
+  )
+}
+
+function TaxIdentityPanelHarness() {
+  return (
+    <CariTaxIdentityPanel
+      partyId={PARTY}
+      companyId={COMPANY}
+      namespace={NAMESPACE}
+      contractContext={CONTRACT}
+    />
   )
 }
 
@@ -143,6 +157,7 @@ afterEach(() => {
   vi.unstubAllGlobals()
   vi.restoreAllMocks()
   resetContractReadiness()
+  resetPendingTaxIdentityAttempts()
 })
 
 describe('AT-009 VKN/TCKN on the Cari card', () => {
@@ -323,7 +338,7 @@ describe('AT-009 VKN/TCKN on the Cari card', () => {
     const input = await screen.findByLabelText('VKN (10 hane) veya TCKN (11 hane)')
     await user.type(input, '10000000146')
     await user.click(screen.getByRole('button', { name: 'Kaydet' }))
-    await screen.findByText('Sunucunun işlemi alıp almadığı bilinmiyor.')
+    await screen.findByText(TAX_IDENTITY_TEXT.unknownOutcome)
     await user.clear(input)
     await user.type(input, '1234567890')
     const frozenSubmit = screen.getByRole('button', { name: 'Kaydet' })
