@@ -15,6 +15,8 @@ namespace GoymenERP.Modules.Product.Infrastructure.Persistence;
 public sealed class ProductImportWorkbookReader : IProductImportWorkbookReaderV1
 {
     private const int MaximumLegacyCodeLength = ProductCode.MaximumPrefixLength + 1 + 19;
+    // A valid import can reference at most three cells per accepted row plus the header row.
+    private const int MaximumSharedStrings = (ProductImportApiV1.MaximumRows + 1) * 3;
 
     public ProductImportPreviewV1 Read(ReadOnlyMemory<byte> workbook, ProductImportColumnMappingV1 mapping,
         IReadOnlySet<string> existingCodes, IReadOnlySet<Guid> existingGroupIds)
@@ -33,32 +35,47 @@ public sealed class ProductImportWorkbookReader : IProductImportWorkbookReaderV1
             using var stream = new MemoryStream(frozenWorkbook, writable: false);
             using var archive = new ZipArchive(stream, ZipArchiveMode.Read, leaveOpen: false);
             var shared = ReadSharedStrings(archive);
-            var rows = ReadFirstSheet(archive, shared).ToArray();
-            if (rows.Length == 0)
+            var columns = RequiredColumns(mapping);
+            var mappedHeaders = columns.Values.Select(value => value.Trim()).ToHashSet(StringComparer.Ordinal);
+            var selectedColumns = new HashSet<int>();
+            using var rows = ReadFirstSheet(archive, shared, mappedHeaders, selectedColumns).GetEnumerator();
+            if (!rows.MoveNext())
             {
                 errors.Add(Error(null, "workbook", ProductImportCodesV1.InvalidWorkbook, "Çalışma sayfası boş."));
-                return Preview(fileHash, mapping, rows.Length, accepted, errors);
+                return Preview(fileHash, mapping, 0, accepted, errors);
             }
 
-            var headers = rows[0].Cells.Where(cell => cell.IsLosslessText)
+            var headers = rows.Current.Cells.Where(cell => cell.IsLosslessText)
                 .ToDictionary(cell => cell.Value.Trim(), cell => cell.Column, StringComparer.Ordinal);
-            var columns = RequiredColumns(mapping);
             foreach (var (field, header) in columns)
                 if (string.IsNullOrWhiteSpace(header) || !headers.ContainsKey(header.Trim()))
                     errors.Add(Error(1, field, ProductImportCodesV1.RequiredColumnMissing, $"'{header}' kolonu bulunamadı."));
-            if (errors.Count > 0) return Preview(fileHash, mapping, Math.Max(0, rows.Length - 1), accepted, errors);
-
-            var sourceRows = rows.Skip(1).Where(row => row.Cells.Any(cell => !string.IsNullOrWhiteSpace(cell.Value))).ToArray();
-            if (sourceRows.Length > ProductImportApiV1.MaximumRows)
+            if (errors.Count > 0)
             {
-                errors.Add(Error(null, "workbook", ProductImportCodesV1.TooManyRows,
-                    $"En fazla {ProductImportApiV1.MaximumRows} veri satırı kabul edilir."));
-                return Preview(fileHash, mapping, sourceRows.Length, accepted, errors);
+                var observedRows = 0;
+                while (observedRows <= ProductImportApiV1.MaximumRows && rows.MoveNext())
+                    if (rows.Current.HasAnyValue) observedRows++;
+                return Preview(fileHash, mapping, observedRows, accepted, errors);
             }
 
+            foreach (var header in columns.Values) selectedColumns.Add(headers[header.Trim()]);
+
+            var sourceRowCount = 0;
             var seen = new HashSet<string>(StringComparer.Ordinal);
-            foreach (var row in sourceRows)
+            // Consume the worksheet once and retain only the three mapped cells for each row.
+            while (rows.MoveNext())
             {
+                var row = rows.Current;
+                if (!row.HasAnyValue) continue;
+                sourceRowCount++;
+                if (sourceRowCount > ProductImportApiV1.MaximumRows)
+                {
+                    accepted.Clear();
+                    errors.Clear();
+                    errors.Add(Error(null, "workbook", ProductImportCodesV1.TooManyRows,
+                        $"En fazla {ProductImportApiV1.MaximumRows} veri satırı kabul edilir."));
+                    return Preview(fileHash, mapping, sourceRowCount, accepted, errors);
+                }
                 var legacyCell = Cell(row, headers[mapping.LegacyCode.Trim()]);
                 var nameCell = Cell(row, headers[mapping.Name.Trim()]);
                 var groupCell = Cell(row, headers[mapping.GroupId.Trim()]);
@@ -98,7 +115,7 @@ public sealed class ProductImportWorkbookReader : IProductImportWorkbookReaderV1
                     accepted.Add(new(row.Number, legacy, normalizedName, groupId));
             }
 
-            return Preview(fileHash, mapping, sourceRows.Length, accepted, errors);
+            return Preview(fileHash, mapping, sourceRowCount, accepted, errors);
         }
         catch (Exception exception) when (exception is InvalidDataException or XmlException or IOException or FormatException
                                           or ArgumentException)
@@ -127,6 +144,7 @@ public sealed class ProductImportWorkbookReader : IProductImportWorkbookReaderV1
         while (reader.Read())
         {
             if (reader.NodeType != XmlNodeType.Element || reader.LocalName != "si") continue;
+            if (values.Count == MaximumSharedStrings) break;
             using var item = reader.ReadSubtree();
             var value = new StringBuilder();
             while (item.Read())
@@ -137,17 +155,24 @@ public sealed class ProductImportWorkbookReader : IProductImportWorkbookReaderV1
         return values;
     }
 
-    private static IEnumerable<SheetRow> ReadFirstSheet(ZipArchive archive, IReadOnlyList<string> shared)
+    private static IEnumerable<SheetRow> ReadFirstSheet(
+        ZipArchive archive,
+        IReadOnlyList<string> shared,
+        IReadOnlySet<string> mappedHeaders,
+        ISet<int> selectedColumns)
     {
         var entry = FirstWorksheet(archive);
         using var reader = XmlReader.Create(entry.Open(), SafeXml());
         var cells = new List<SheetCell>();
         var rowNumber = 0;
+        var firstRow = true;
+        var hasAnyValue = false;
         while (reader.Read())
         {
             if (reader.NodeType == XmlNodeType.Element && reader.LocalName == "row")
             {
                 cells.Clear();
+                hasAnyValue = false;
                 rowNumber = int.TryParse(reader.GetAttribute("r"), NumberStyles.None, CultureInfo.InvariantCulture, out var parsed)
                     ? parsed : rowNumber + 1;
             }
@@ -157,11 +182,28 @@ public sealed class ProductImportWorkbookReader : IProductImportWorkbookReaderV1
                 var type = reader.GetAttribute("t");
                 var column = Column(reference);
                 var value = ReadCell(reader.ReadSubtree(), type, shared);
-                cells.Add(new(column, value.Value, value.IsLosslessText));
+                hasAnyValue |= !string.IsNullOrWhiteSpace(value.Value);
+                if (firstRow)
+                {
+                    var header = value.Value.Trim();
+                    if (value.IsLosslessText && mappedHeaders.Contains(header))
+                    {
+                        if (cells.Any(cell => string.Equals(cell.Value.Trim(), header, StringComparison.Ordinal)))
+                            throw new InvalidDataException("Eşlenen kolon başlığı yineleniyor.");
+                        cells.Add(new(column, value.Value, true));
+                    }
+                }
+                else if (selectedColumns.Contains(column))
+                {
+                    if (cells.Any(cell => cell.Column == column))
+                        throw new InvalidDataException("Aynı hücre bir satırda yineleniyor.");
+                    cells.Add(new(column, value.Value, value.IsLosslessText));
+                }
             }
             else if (reader.NodeType == XmlNodeType.EndElement && reader.LocalName == "row")
             {
-                yield return new(rowNumber, cells.ToArray());
+                yield return new(rowNumber, cells.ToArray(), hasAnyValue);
+                firstRow = false;
             }
         }
     }
@@ -237,8 +279,13 @@ public sealed class ProductImportWorkbookReader : IProductImportWorkbookReaderV1
         }
         if (formula) throw new InvalidDataException("Formül hücreleri içe aktarılamaz.");
         if (type == "inlineStr") return new(inline.ToString(), true);
-        if (type == "s" && int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var index)
-                        && index >= 0 && index < shared.Count) return new(shared[index], true);
+        if (type == "s")
+        {
+            if (!int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var index)
+                || index < 0 || index >= shared.Count)
+                throw new InvalidDataException("Paylaşılan metin başvurusu sınır dışında.");
+            return new(shared[index], true);
+        }
         if (type == "str") return new(value ?? inline.ToString(), true);
         return new(value ?? inline.ToString(), false);
     }
@@ -271,7 +318,7 @@ public sealed class ProductImportWorkbookReader : IProductImportWorkbookReaderV1
         MaxCharactersInDocument = 16_000_000,
     };
 
-    private sealed record SheetRow(int Number, IReadOnlyList<SheetCell> Cells);
+    private sealed record SheetRow(int Number, IReadOnlyList<SheetCell> Cells, bool HasAnyValue);
     private sealed record SheetCell(int Column, string Value, bool IsLosslessText);
     private sealed record SheetValue(string Value, bool IsLosslessText);
 }

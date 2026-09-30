@@ -43,6 +43,8 @@ export interface ProductImportResult {
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const SHA256 = /^[0-9A-F]{64}$/
+const MAXIMUM_IMPORT_ROWS = 10_000
+const FIRST_REJECTED_ROW_COUNT = MAXIMUM_IMPORT_ROWS + 1
 
 function object(value: unknown): Record<string, unknown> | null {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -66,7 +68,7 @@ export function decodeProductImportPreview(value: unknown): ProductImportPreview
   if (raw === null || typeof raw.fileSha256 !== 'string' || !SHA256.test(raw.fileSha256)
     || typeof raw.previewToken !== 'string' || !SHA256.test(raw.previewToken)
     || typeof raw.sourceRowCount !== 'number' || !Number.isInteger(raw.sourceRowCount) || raw.sourceRowCount < 0
-    || raw.sourceRowCount > 10_000 || !Array.isArray(raw.rows) || !Array.isArray(raw.errors)
+    || raw.sourceRowCount > FIRST_REJECTED_ROW_COUNT || !Array.isArray(raw.rows) || !Array.isArray(raw.errors)
     || typeof raw.ready !== 'boolean') return null
 
   const rows: ProductImportSourceRow[] = []
@@ -97,6 +99,11 @@ export function decodeProductImportPreview(value: unknown): ProductImportPreview
   }
 
   const ready = raw.ready
+  if (Number(raw.sourceRowCount) === FIRST_REJECTED_ROW_COUNT) {
+    const tooManyRows = errors.length === 1 && errors[0]?.rowNumber === null
+      && errors[0]?.field === 'workbook' && errors[0]?.code === 'product_import_too_many_rows'
+    if (ready || rows.length !== 0 || !tooManyRows) return null
+  }
   if (ready && (Number(raw.sourceRowCount) === 0 || errors.length > 0
     || rows.length !== Number(raw.sourceRowCount))) return null
   return {

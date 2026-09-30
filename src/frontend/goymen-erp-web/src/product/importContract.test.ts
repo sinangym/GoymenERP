@@ -19,6 +19,25 @@ describe('Product import wire contract', () => {
     expect(decodeProductImportPreview({ ...value, sourceRowCount: 2 })).toBeNull()
   })
 
+  it('accepts only the canonical first-over-limit rejected preview', () => {
+    const rejected = {
+      fileSha256: HASH_A,
+      previewToken: HASH_B,
+      sourceRowCount: 10_001,
+      rows: [],
+      errors: [{ rowNumber: null, field: 'workbook', code: 'product_import_too_many_rows', message: 'En fazla 10000 veri satırı kabul edilir.' }],
+      ready: false,
+    }
+
+    expect(decodeProductImportPreview(rejected)?.errors[0]?.code).toBe('product_import_too_many_rows')
+    expect(decodeProductImportPreview({ ...rejected, ready: true })).toBeNull()
+    expect(decodeProductImportPreview({ ...rejected, rows: [
+      { rowNumber: 2, legacyCode: 'OLD-1', name: 'Rulo', groupId: GROUP_SAC },
+    ] })).toBeNull()
+    expect(decodeProductImportPreview({ ...rejected, errors: [] })).toBeNull()
+    expect(decodeProductImportPreview({ ...rejected, sourceRowCount: 10_002 })).toBeNull()
+  })
+
   it('rejects duplicate identities in an apply result', () => {
     const product = { productId: PRODUCT_1, code: 'SAC-1', legacyCode: 'OLD-1', name: 'Rulo', groupId: GROUP_SAC }
     expect(decodeProductImportResult({ products: [product], isReplay: false, originalCorrelationId: 'corr-1' }))

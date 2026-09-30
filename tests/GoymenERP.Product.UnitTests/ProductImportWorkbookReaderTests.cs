@@ -145,6 +145,48 @@ public sealed class ProductImportWorkbookReaderTests
     }
 
     [Fact]
+    public void Preview_stops_at_the_first_row_above_the_limit_and_returns_only_the_canonical_rejection()
+    {
+        var rows = Enumerable.Range(1, ProductImportApiV1.MaximumRows + 1)
+            .Select(index => (IReadOnlyList<string>)[
+                $"OLD-{index:D5}", $"Ürün {index}", Group.ToString("D")])
+            .ToArray();
+
+        var result = Reader().Read(Workbook(["Eski Kod", "Ürün Adı", "Grup Kimliği"], rows),
+            Mapping, EmptyCodes(), Groups());
+
+        Assert.False(result.Ready);
+        Assert.Equal(ProductImportApiV1.MaximumRows + 1, result.SourceRowCount);
+        Assert.Empty(result.Rows);
+        var error = Assert.Single(result.Errors);
+        Assert.Equal((null, "workbook", ProductImportCodesV1.TooManyRows),
+            (error.RowNumber, error.Field, error.Code));
+    }
+
+    [Fact]
+    public void Preview_refuses_a_shared_string_reference_beyond_the_bounded_import_table()
+    {
+        const int firstOutOfRangeIndex = (ProductImportApiV1.MaximumRows + 1) * 3;
+        var shared = new StringBuilder("<?xml version=\"1.0\" encoding=\"UTF-8\"?><sst xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\">");
+        for (var index = 0; index <= firstOutOfRangeIndex; index++) shared.Append("<si><t>x</t></si>");
+        shared.Append("</sst>");
+        var sheet = $$"""
+            <?xml version="1.0" encoding="UTF-8"?>
+            <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>
+              <row r="1"><c r="A1" t="inlineStr"><is><t>Eski Kod</t></is></c><c r="B1" t="inlineStr"><is><t>Ürün Adı</t></is></c><c r="C1" t="inlineStr"><is><t>Grup Kimliği</t></is></c></row>
+              <row r="2"><c r="A2" t="s"><v>{{firstOutOfRangeIndex}}</v></c><c r="B2" t="inlineStr"><is><t>Ürün</t></is></c><c r="C2" t="inlineStr"><is><t>{{Group:D}}</t></is></c></row>
+            </sheetData></worksheet>
+            """;
+
+        var result = Reader().Read(WorkbookPackage(sheet, sharedStrings: shared.ToString()),
+            Mapping, EmptyCodes(), Groups());
+
+        Assert.False(result.Ready);
+        Assert.Empty(result.Rows);
+        Assert.Single(result.Errors, error => error.Code == ProductImportCodesV1.InvalidWorkbook);
+    }
+
+    [Fact]
     public void Preview_rejects_missing_mapping_columns_and_malformed_files()
     {
         var missing = Reader().Read(Workbook(["Kod", "Ad"], ["A", "B"]), Mapping, EmptyCodes(), Groups());
