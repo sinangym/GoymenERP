@@ -10,6 +10,7 @@ using GoymenERP.Modules.Purchasing.Infrastructure.Fixtures;
 using GoymenERP.Modules.Sales.Infrastructure.Fixtures;
 using GoymenERP.Modules.Settings.Application;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace GoymenERP.Api.Shell;
 
@@ -87,6 +88,11 @@ internal static class C01E2eFixtureWriterActivation
         // pur01: one synthetic Draft Purchasing order. Approval and replay remain real API commands.
         services.AddPurchaseOrderFixtureStore();
         services.AddScoped<C01E2ePurchaseOrderFixtureWriter>();
+        // mfg01: an explicitly disposable 5% tolerance exists only inside the complete runner gate.
+        // Production keeps ApprovedSettingsPrerequisiteProvider and its intentionally empty catalog.
+        services.RemoveAll<ISettingsManufacturingToleranceProviderV1>();
+        services.AddScoped<ISettingsManufacturingToleranceProviderV1,
+            C01E2eManufacturingToleranceFixtureProvider>();
         return true;
     }
 
@@ -170,6 +176,48 @@ internal static class C01E2eFixtureWriterActivation
             }
             CompanyId = companyId;
         }
+    }
+}
+
+/// <summary>
+/// Browser-suite-only Manufacturing tolerance reference. It is a fixed fixture snapshot, not a fallback,
+/// production catalog, permission or close authority.
+/// </summary>
+internal sealed class C01E2eManufacturingToleranceFixtureProvider(
+    ICompanyContext companyContext,
+    ICurrentUser currentUser) : ISettingsManufacturingToleranceProviderV1
+{
+    private static readonly Guid ProfileId = Guid.Parse("7f100000-0000-4000-8000-000000000005");
+
+    public Task<ManufacturingToleranceProfileV1> GetManufacturingToleranceAsync(
+        string process,
+        DateOnly effectiveOn,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!currentUser.IsAuthenticated
+            || string.IsNullOrWhiteSpace(currentUser.UserId)
+            || !companyContext.IsResolved
+            || companyContext.CompanyId != ApprovedUnitProfileCatalog.GdcCompanyId
+            || !currentUser.CanAccessCompany(companyContext.CompanyId))
+        {
+            throw new SettingsPrerequisiteException("settings_access_denied");
+        }
+
+        if (!SettingsManufacturingProcessesV1.IsCanonical(process))
+        {
+            throw new SettingsPrerequisiteException(
+                SettingsPrerequisiteCodesV1.ManufacturingToleranceProfileNotFound);
+        }
+
+        return Task.FromResult(new ManufacturingToleranceProfileV1(
+            companyContext.CompanyId,
+            process,
+            new ProfileVersionV1(ProfileId, 1),
+            5m,
+            true,
+            new DateOnly(2026, 1, 1),
+            new DateOnly(2026, 12, 31)));
     }
 }
 

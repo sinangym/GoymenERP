@@ -354,6 +354,9 @@ public sealed partial class OpenApiContractGenerationTests
         new("post", "/api/v1/manufacturing/orders/{orderId}/wip-measurements", "RecordManufacturingWorkInProgressV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "415:", "409:application/problem+json", "422:application/problem+json", "503:application/problem+json", "404:application/problem+json"),
             "#/components/schemas/RecordFactRequestV1", ["path:orderId:true:type:string;format:uuid"]),
+        new("post", "/api/v1/manufacturing/orders/{orderId}/process-losses", "DeclareManufacturingProcessLossV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "415:", "409:application/problem+json", "422:application/problem+json", "503:application/problem+json", "404:application/problem+json"),
+            "#/components/schemas/RecordFactRequestV1", ["path:orderId:true:type:string;format:uuid"]),
         new("post", "/api/v1/manufacturing/orders/{orderId}/outputs", "DeclareManufacturingOutputV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "415:", "409:application/problem+json", "422:application/problem+json", "503:application/problem+json", "404:application/problem+json"),
             "#/components/schemas/DeclareInventoryOutputRequestV1", ["path:orderId:true:type:string;format:uuid"]),
@@ -777,6 +780,7 @@ public sealed partial class OpenApiContractGenerationTests
             ["IssueManufacturingInputV1"] = "ref:OrderViewV1",
             ["ReturnManufacturingInputV1"] = "ref:OrderViewV1",
             ["RecordManufacturingWorkInProgressV1"] = "ref:OrderViewV1",
+            ["DeclareManufacturingProcessLossV1"] = "ref:OrderViewV1",
             ["DeclareManufacturingOutputV1"] = "ref:OrderViewV1",
             ["GetManufacturingOrderV1"] = "ref:OrderViewV1",
             ["SaveFinanceManualReceiptDraftV1"] = "ref:CommandResult",
@@ -951,6 +955,7 @@ public sealed partial class OpenApiContractGenerationTests
         "IssueManufacturingInputV1",
         "ReturnManufacturingInputV1",
         "RecordManufacturingWorkInProgressV1",
+        "DeclareManufacturingProcessLossV1",
         "DeclareManufacturingOutputV1",
         "GetManufacturingOrderV1",
         "SaveFinanceManualReceiptDraftV1",
@@ -1082,6 +1087,7 @@ public sealed partial class OpenApiContractGenerationTests
         "IssueManufacturingInputV1",
         "ReturnManufacturingInputV1",
         "RecordManufacturingWorkInProgressV1",
+        "DeclareManufacturingProcessLossV1",
         "DeclareManufacturingOutputV1",
         "SaveFinanceManualReceiptDraftV1",
         "RecordFinanceManualReceiptV1",
@@ -1181,6 +1187,7 @@ public sealed partial class OpenApiContractGenerationTests
                 ["IssueManufacturingInputV1"] = [StatusCodes.Status200OK, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict],
                 ["ReturnManufacturingInputV1"] = [StatusCodes.Status200OK, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict],
                 ["RecordManufacturingWorkInProgressV1"] = [StatusCodes.Status200OK, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict],
+                ["DeclareManufacturingProcessLossV1"] = [StatusCodes.Status200OK, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict],
                 ["DeclareManufacturingOutputV1"] = [StatusCodes.Status200OK, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict],
                 // ADR-011 §7 (#325): a recorded 409/422 terminal refusal is replayed too.
                 ["SaveFinanceManualReceiptDraftV1"] =
@@ -1325,6 +1332,7 @@ public sealed partial class OpenApiContractGenerationTests
         "IssueManufacturingInputV1",
         "ReturnManufacturingInputV1",
         "RecordManufacturingWorkInProgressV1",
+        "DeclareManufacturingProcessLossV1",
         "DeclareManufacturingOutputV1",
         "SaveFinanceManualReceiptDraftV1",
         "RecordFinanceManualReceiptV1",
@@ -1451,6 +1459,7 @@ public sealed partial class OpenApiContractGenerationTests
         "IssueManufacturingInputV1:404",
         "ReturnManufacturingInputV1:404",
         "RecordManufacturingWorkInProgressV1:404",
+        "DeclareManufacturingProcessLossV1:404",
         "DeclareManufacturingOutputV1:404",
         "GetManufacturingOrderV1:404",
         "GetFinanceManualReceiptV1:404",
@@ -1526,6 +1535,7 @@ public sealed partial class OpenApiContractGenerationTests
         "IssueManufacturingInputV1:400",
         "ReturnManufacturingInputV1:400",
         "RecordManufacturingWorkInProgressV1:400",
+        "DeclareManufacturingProcessLossV1:400",
         "DeclareManufacturingOutputV1:400",
         "SaveFinanceManualReceiptDraftV1:400",
         "RecordFinanceManualReceiptV1:400",
@@ -1601,6 +1611,13 @@ public sealed partial class OpenApiContractGenerationTests
         "manufacturing_return_already_recorded", "manufacturing_return_exceeds_issued",
         "manufacturing_roll_not_in_order", "manufacturing_roll_not_issued",
         "manufacturing_stored_record_invalid", "manufacturing_unexplained_difference",
+        "manufacturing_closure_policy_invalid", "manufacturing_closure_policy_not_effective",
+        "manufacturing_closure_policy_scope_mismatch", "manufacturing_closure_fire_declaration_required",
+        "manufacturing_closure_approval_required", "manufacturing_closure_approval_invalid",
+        "manufacturing_closure_approval_unexpected", "manufacturing_closure_roll_input_invalid",
+        "manufacturing_closure_fire_mass_mismatch", "manufacturing_closure_net_issued_mass_mismatch",
+        "manufacturing_closure_negative_difference_review",
+        "settings_manufacturing_tolerance_profile_not_found",
         "manufacturing_value_does_not_fit",
         "manufacturing_wip_already_measured", "manufacturing_wip_measurement_not_latest",
         "manufacturing_work_center_not_found", "settings_unit_profile_not_found",
@@ -1747,6 +1764,9 @@ public sealed partial class OpenApiContractGenerationTests
             ["RecordManufacturingWorkInProgressV1:400"] = ["manufacturing_request_invalid"],
             ["RecordManufacturingWorkInProgressV1:409"] = ManufacturingConflictCodes,
             ["RecordManufacturingWorkInProgressV1:422"] = ManufacturingUnprocessableCodes,
+            ["DeclareManufacturingProcessLossV1:400"] = ["manufacturing_request_invalid"],
+            ["DeclareManufacturingProcessLossV1:409"] = ManufacturingConflictCodes,
+            ["DeclareManufacturingProcessLossV1:422"] = ManufacturingUnprocessableCodes,
             ["DeclareManufacturingOutputV1:400"] = ManufacturingBadRequestCodes,
             ["DeclareManufacturingOutputV1:409"] = ManufacturingInventoryRealizationConflictCodes,
             ["DeclareManufacturingOutputV1:422"] = ManufacturingUnprocessableCodes,
@@ -3865,7 +3885,8 @@ public sealed partial class OpenApiContractGenerationTests
                     ("reason", "type:string")),
                 ["CloseOrderRequestV1"] = ObjectSchema(
                     ["expectedVersion"],
-                    ("expectedVersion", "type:integer|string;format:int64")),
+                    ("expectedVersion", "type:integer|string;format:int64"),
+                    ("exceptionReason", "type:null|string")),
 // shared request/success: []
                 ["PeriodCommandRequestV1"] = ObjectSchema(
                     ["expectedVersion"],
@@ -4955,9 +4976,9 @@ public sealed partial class OpenApiContractGenerationTests
         Assert.Equal("JWT", bearer.Value.GetProperty("bearerFormat").GetString());
 
         var operations = ReadOperations(root.GetProperty("paths"));
-        Assert.Equal(180, operations.Count);
+        Assert.Equal(181, operations.Count);
         Assert.Equal(
-            180,
+            181,
             operations.Select(operation => operation.OperationId)
                 .Distinct(StringComparer.Ordinal)
                 .Count());

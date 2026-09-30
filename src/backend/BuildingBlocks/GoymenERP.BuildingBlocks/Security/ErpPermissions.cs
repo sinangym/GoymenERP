@@ -159,6 +159,14 @@ public static class ErpPermissions
     public const string ManufacturingOrdersClose = "manufacturing.orders.close";
 
     /// <summary>
+    /// Approves a reasoned Manufacturing close whose persisted Settings snapshot proves the fire ratio is
+    /// outside tolerance. Registered company-wide but deliberately not granted by any production role.
+    /// It never replaces the normal close permission.
+    /// </summary>
+    public const string ManufacturingOrdersCloseExceptionApprove =
+        "manufacturing.orders.close-exception.approve";
+
+    /// <summary>
     /// K4.4 (ORG): reading one production plan back. Its own name because approving a plan is not
     /// reading one, and because until now a plan could be created and approved but **never read
     /// again** — there was no plan read at any layer above the store. Registered, not granted.
@@ -557,6 +565,7 @@ public static class ErpPermissions
             ManufacturingFactsRecord,
             ManufacturingOrdersRead,
             ManufacturingOrdersClose,
+            ManufacturingOrdersCloseExceptionApprove,
             ManufacturingPlansRead,
             InventoryLabelsRead,
             InventoryBalancesRead,
@@ -658,6 +667,7 @@ public static class ErpPermissions
             ManufacturingFactsRecord,
             ManufacturingOrdersRead,
             ManufacturingOrdersClose,
+            ManufacturingOrdersCloseExceptionApprove,
             ManufacturingPlansRead,
             InventoryLabelsRead,
             InventoryBalancesRead,

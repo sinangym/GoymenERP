@@ -345,6 +345,10 @@ public static class ManufacturingEndpoints
             (service, orderId, request, key, cancellationToken) =>
                 service.RecordWorkInProgressAsync(orderId, request, key, ErpPermissions.ManufacturingFactsRecord,
                     cancellationToken));
+        MapFact(group, "/orders/{orderId:guid}/process-losses", "DeclareManufacturingProcessLossV1",
+            (service, orderId, request, key, cancellationToken) =>
+                service.RecordProcessLossAsync(orderId, request, key, ErpPermissions.ManufacturingFactsRecord,
+                    cancellationToken));
 
         group.MapPost("/orders/{orderId:guid}/outputs", async (
                 Guid orderId,
@@ -362,8 +366,9 @@ public static class ManufacturingEndpoints
             .Produces<OrderViewV1>(StatusCodes.Status200OK)
             .WithWriteProblems(notFound: true);
 
-        // MFG-ORD: the close of an order at the version the caller read. The rule is the domain's
-        // (MFG-4, Business 5728619644): no tolerance, no write-off, and an unexplained difference is a
+        // MFG-ORD: the close of an order at the version the caller read. The persisted Settings snapshot
+        // supplies the exact company/process/date tolerance; a reasoned out-of-tolerance close additionally
+        // requires the dedicated exception permission. Neither permission supplies a tolerance value.
         // 422 naming its code. One attempt per Idempotency-Key, like every other write here.
         group.MapPost("/orders/{orderId:guid}/close", async (
                 Guid orderId,
@@ -372,7 +377,9 @@ public static class ManufacturingEndpoints
                 HttpContext httpContext,
                 CancellationToken cancellationToken) =>
             await WriteAsync(httpContext, key => service.CloseOrderAsync(orderId, request, key,
-                ErpPermissions.ManufacturingOrdersClose, cancellationToken)))
+                ErpPermissions.ManufacturingOrdersClose,
+                ErpPermissions.ManufacturingOrdersCloseExceptionApprove,
+                cancellationToken)))
             .RequireCompanyContext()
             .RequireAuthorization(ErpPermissions.ManufacturingOrdersClose)
             .WithIdempotencyContract(StatusCodes.Status200OK, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict)
@@ -682,6 +689,18 @@ internal static class ManufacturingProblemCodes
         ManufacturingRuleCodes.PlanNotApproved,
         ManufacturingRuleCodes.OrderClosed,
         ManufacturingRuleCodes.UnexplainedDifference,
+        GoymenERP.Modules.Manufacturing.Domain.Orders.ClosureAssessmentCodesV1.PolicyInvalid,
+        GoymenERP.Modules.Manufacturing.Domain.Orders.ClosureAssessmentCodesV1.PolicyNotEffective,
+        GoymenERP.Modules.Manufacturing.Domain.Orders.ClosureAssessmentCodesV1.PolicyScopeMismatch,
+        GoymenERP.Modules.Manufacturing.Domain.Orders.ClosureAssessmentCodesV1.FireDeclarationRequired,
+        GoymenERP.Modules.Manufacturing.Domain.Orders.ClosureAssessmentCodesV1.ApprovalRequired,
+        GoymenERP.Modules.Manufacturing.Domain.Orders.ClosureAssessmentCodesV1.ApprovalInvalid,
+        GoymenERP.Modules.Manufacturing.Domain.Orders.ClosureAssessmentCodesV1.ApprovalUnexpected,
+        GoymenERP.Modules.Manufacturing.Domain.Orders.ClosureAssessmentCodesV1.RollInputInvalid,
+        GoymenERP.Modules.Manufacturing.Domain.Orders.ClosureAssessmentCodesV1.FireMassMismatch,
+        GoymenERP.Modules.Manufacturing.Domain.Orders.ClosureAssessmentCodesV1.NetIssuedMassMismatch,
+        GoymenERP.Modules.Manufacturing.Domain.Orders.ClosureAssessmentCodesV1.NegativeDifferenceReview,
+        GoymenERP.Modules.Settings.Application.Contracts.V1.SettingsPrerequisiteCodesV1.ManufacturingToleranceProfileNotFound,
         ManufacturingRuleCodes.RollNotInOrder,
         ManufacturingRuleCodes.RollNotIssued,
         ManufacturingRuleCodes.InputAlreadyIssued,

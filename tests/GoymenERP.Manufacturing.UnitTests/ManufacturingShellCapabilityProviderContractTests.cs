@@ -25,8 +25,8 @@ public sealed class ManufacturingShellCapabilityProviderContractTests
         var provider = new ManufacturingShellCapabilityProvider();
         var declarations = provider.GetDeclarations();
 
-        Assert.Equal(("MANUFACTURING", "1.4"), (provider.Owner, provider.ContractVersion));
-        Assert.Equal(10, declarations.Count);
+        Assert.Equal(("MANUFACTURING", "1.5"), (provider.Owner, provider.ContractVersion));
+        Assert.Equal(11, declarations.Count);
         foreach (var declaration in declarations)
         {
             Assert.Contains($"'{declaration.CapabilityId}'", source);
@@ -37,6 +37,15 @@ public sealed class ManufacturingShellCapabilityProviderContractTests
             Assert.Null(declaration.GlobalProductOperation);
             Assert.True(declaration.ImplementationAvailable);
         }
+
+        var exceptionApproval = Assert.Single(declarations,
+            declaration => declaration.CapabilityId ==
+                ManufacturingShellCapabilityProvider.CloseExceptionApproveCapabilityId);
+        Assert.Equal(ManufacturingShellCapabilityProvider.DetailCapabilityId,
+            exceptionApproval.ParentCapabilityId);
+        Assert.Equal(
+            [ErpPermissions.ManufacturingOrdersRead, ErpPermissions.ManufacturingOrdersCloseExceptionApprove],
+            exceptionApproval.RequiredPermissions);
 
         var detail = Assert.Single(declarations, item => item.CapabilityId == "manufacturing.orders.detail");
         Assert.Equal(
