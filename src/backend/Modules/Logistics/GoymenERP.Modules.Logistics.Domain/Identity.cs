@@ -49,9 +49,12 @@ public static class LogisticsRuleCodes
     public const string WeighingDirectionInconsistent = "logistics_weighing_direction_inconsistent";
     public const string WeighingUnitUnsupported = "logistics_weighing_unit_unsupported";
 
-    // AT-055 dispatch-note draft: a definite shipment is linked to at most one dispatch note.
+    // AT-055 dispatch note: a definite shipment is on at most one non-cancelled dispatch note; approve / cancel / e-İrsaliye number.
     public const string ShipmentAlreadyDispatched = "logistics_shipment_already_dispatched";
     public const string DuplicateDispatchNoteId = "logistics_duplicate_dispatch_note_id";
+    public const string DispatchNoteNotFound = "logistics_dispatch_note_not_found";
+    public const string DispatchNoteState = "logistics_dispatch_note_state";
+    public const string EDispatchNumberInUse = "logistics_e_dispatch_number_in_use";
 
     /// <summary>
     /// A line-level guard fired although the aggregate had already checked the same bound. The

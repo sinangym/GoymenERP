@@ -109,4 +109,78 @@ public sealed class DispatchNoteDraftTests
 
         Assert.Equal(4m, Assert.Single(draft.Lines).Quantity.Value);
     }
+
+    [Fact]
+    public void Approve_cancel_and_the_e_dispatch_number_are_steps_in_order_and_a_cancel_releases_the_shipments()
+    {
+        var (instruction, _, _, shipments, _) = Shipped();
+        var id = Guid.NewGuid();
+        var draft = instruction.CreateDispatchNoteDraft(10, id, [shipments[0], shipments[1]], "preparer", T0);
+        Assert.Equal((1, 1, DispatchNoteStatus.Draft), (draft.CreatedStep, instruction.DispatchSteps, draft.Status));
+
+        // Approve: Draft → Approved at the next step and version; the number is the store's, given once right after.
+        var approved = instruction.ApproveDispatchNote(11, id, " approver ", T0);
+        Assert.Equal((DispatchNoteStatus.Approved, "approver", 2, (DispatchNoteNumber?)null, 12L),
+            (approved.Status, approved.ApprovedBy, approved.ApprovedStep, approved.Number, instruction.Version));
+        var numbered = instruction.AssignDispatchNoteNumber(id, DispatchNoteNumber.Of("IRS", 7));
+        Assert.Equal(("IRS-000007", 12L, 2), (numbered.Number!.Text, instruction.Version, instruction.DispatchSteps));
+        Assert.Equal(LogisticsRuleCodes.InternalInvariant, CodeOf(() => instruction.AssignDispatchNoteNumber(id, DispatchNoteNumber.Of("IRS", 8))));
+        Assert.Equal(LogisticsRuleCodes.DispatchNoteState, CodeOf(() => instruction.ApproveDispatchNote(12, id, "approver", T0)));
+        // An approved note still holds its shipments.
+        Assert.Equal(LogisticsRuleCodes.ShipmentAlreadyDispatched,
+            CodeOf(() => instruction.CreateDispatchNoteDraft(12, Guid.NewGuid(), [shipments[0]], "preparer", T0)));
+
+        // The e-İrsaliye number: the GİB shape, once, only on an approved note.
+        Assert.Throws<ArgumentException>(() => instruction.SetEDispatchNumber(12, id, "abc2026000000001", "clerk", T0));
+        var recorded = instruction.SetEDispatchNumber(12, id, "ABC2026000000001", "clerk", T0);
+        Assert.Equal(("ABC2026000000001", 3, "IRS-000007"), (recorded.EDispatchNumber, recorded.EDispatchNumberStep, recorded.Number!.Text));
+        Assert.Equal(LogisticsRuleCodes.DispatchNoteState, CodeOf(() => instruction.SetEDispatchNumber(13, id, "ABC2026000000002", "clerk", T0)));
+
+        // Cancel: with a reason, never a delete; the number stays; the shipments are released.
+        Assert.Throws<ArgumentException>(() => instruction.CancelDispatchNote(13, id, "clerk", "  ", T0));
+        Assert.Throws<ArgumentException>(() => instruction.CancelDispatchNote(13, id, "clerk", new string('x', 501), T0));
+        var cancelled = instruction.CancelDispatchNote(13, id, "clerk", " yanlış araç ", T0);
+        Assert.Equal((DispatchNoteStatus.Cancelled, "yanlış araç", 4, "IRS-000007", 14L),
+            (cancelled.Status, cancelled.CancelReason, cancelled.CancelledStep, cancelled.Number!.Text, instruction.Version));
+        Assert.Null(instruction.DispatchNoteOf(shipments[0]));
+        Assert.Equal(LogisticsRuleCodes.DispatchNoteState, CodeOf(() => instruction.CancelDispatchNote(14, id, "clerk", "again", T0)));
+        Assert.Equal(LogisticsRuleCodes.DispatchNoteState, CodeOf(() => instruction.SetEDispatchNumber(14, id, "ABC2026000000003", "clerk", T0)));
+
+        // Correction = a new draft from the released shipments; the cancelled note stays, its id and e-number are never reused.
+        var correction = instruction.CreateDispatchNoteDraft(14, Guid.NewGuid(), [shipments[0]], "preparer", T0);
+        Assert.Equal((5, correction.DispatchNoteId, 2), (correction.CreatedStep, instruction.DispatchNoteOf(shipments[0]), instruction.DispatchNotes.Count));
+        Assert.Equal(LogisticsRuleCodes.DuplicateDispatchNoteId, CodeOf(() => instruction.CreateDispatchNoteDraft(15, id, [shipments[1]], "preparer", T0)));
+        instruction.ApproveDispatchNote(15, correction.DispatchNoteId, "approver", T0);
+        instruction.AssignDispatchNoteNumber(correction.DispatchNoteId, DispatchNoteNumber.Of("IRS", 8));
+        Assert.Equal(LogisticsRuleCodes.EDispatchNumberInUse,
+            CodeOf(() => instruction.SetEDispatchNumber(16, correction.DispatchNoteId, "ABC2026000000001", "clerk", T0)));
+
+        // A draft can be cancelled too, without ever getting a number.
+        var loose = instruction.CreateDispatchNoteDraft(16, Guid.NewGuid(), [shipments[1]], "preparer", T0);
+        var looseCancelled = instruction.CancelDispatchNote(17, loose.DispatchNoteId, "clerk", "vazgeçildi", T0);
+        Assert.Equal((DispatchNoteStatus.Cancelled, (DispatchNoteNumber?)null, (int?)null), (looseCancelled.Status, looseCancelled.Number, looseCancelled.ApprovedStep));
+        Assert.Null(instruction.DispatchNoteOf(shipments[1]));
+
+        // An unknown note, a stale version, a missing actor: nothing moves.
+        Assert.Equal(LogisticsRuleCodes.DispatchNoteNotFound, CodeOf(() => instruction.ApproveDispatchNote(18, Guid.NewGuid(), "approver", T0)));
+        Assert.Throws<LogisticsVersionConflictException>(() => instruction.CancelDispatchNote(3, correction.DispatchNoteId, "clerk", "x", T0));
+        Assert.Throws<ArgumentException>(() => instruction.ApproveDispatchNote(18, correction.DispatchNoteId, " ", T0));
+        Assert.Equal((18L, 8), (instruction.Version, instruction.DispatchSteps));
+    }
+
+    [Fact]
+    public void The_system_number_and_the_e_dispatch_number_have_their_own_shapes()
+    {
+        Assert.Equal("IRS-000042", DispatchNoteNumber.Of("IRS", 42).Text);
+        Assert.Equal("IRS-1234567", DispatchNoteNumber.Of("IRS", 1234567).Text);
+        Assert.Throws<ArgumentOutOfRangeException>(() => DispatchNoteNumber.Of("IRS", 0));
+        Assert.Throws<ArgumentException>(() => DispatchNoteNumber.Of(" ", 1));
+        Assert.Throws<ArgumentException>(() => DispatchNoteNumber.Of("TOOLONGSERIES", 1));
+        Assert.True(LoadingInstruction.IsEDispatchNumber("GYM2026000000001"));
+        Assert.True(LoadingInstruction.IsEDispatchNumber("A1B2026000000001"));
+        foreach (var text in new[] { null, "", "gym2026000000001", "GYM202600000001", "GYM20260000000011", "GY-2026000000001", "GYM2026A00000001" })
+        {
+            Assert.False(LoadingInstruction.IsEDispatchNumber(text));
+        }
+    }
 }

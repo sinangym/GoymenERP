@@ -485,10 +485,13 @@ export const ORDER_DETAIL_TEXT = {
   dispatchNotes: {
     heading: 'İrsaliye taslakları',
     note:
-      'Bu siparişin kesin sevklerinden Lojistik modülünde hazırlanan irsaliye taslakları. Her sevk yalnız bir irsaliyeye bağlanır. ' +
-      'Resmî irsaliye numarası ve kesinleştirme henüz karara bağlanmadı.',
+      'Bu siparişin kesin sevklerinden Lojistik modülünde hazırlanan irsaliyeler ve durumları. Her sevk yalnız bir iptal edilmemiş ' +
+      'irsaliyeye bağlanır; onaylanan irsaliye şirket serisinden numara alır, iptal edilen irsaliye görünür kalır.',
     none: 'Bu siparişin sevklerinden henüz irsaliye taslağı hazırlanmadı.',
     draft: 'İrsaliye taslağı',
+    status: { Draft: 'Taslak', Approved: 'Onaylandı', Cancelled: 'İptal edildi' },
+    number: 'İrsaliye no',
+    eDispatchNumber: 'e-İrsaliye no',
     line: 'Satır',
     more: 'Daha fazla taslak var; tamamı yükleme talimatlarında görünür.',
     subject: 'irsaliye taslakları',

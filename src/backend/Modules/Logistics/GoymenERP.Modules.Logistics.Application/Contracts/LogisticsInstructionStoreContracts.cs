@@ -40,8 +40,14 @@ public static class LogisticsCommands
     /// <summary>AT-055: a dispatch-note draft from the instruction's definite shipments (one version step, no share).</summary>
     public const string CreateDispatchNoteV1 = "logistics.loading-instruction.create-dispatch-note.v1";
 
+    /// <summary>AT-055 lifecycle (user decision 2026-09-30): approve (the system number), cancel (releases the shipments), e-İrsaliye number.</summary>
+    public const string ApproveDispatchNoteV1 = "logistics.loading-instruction.approve-dispatch-note.v1";
+    public const string CancelDispatchNoteV1 = "logistics.loading-instruction.cancel-dispatch-note.v1";
+    public const string SetEDispatchNumberV1 = "logistics.loading-instruction.set-e-dispatch-number.v1";
+
     public static bool IsMutation(string commandName) =>
-        commandName is IssueV1 or RecordLoadV1 or RecordShipmentV1 or RecordDeliveryV1 or RecordWeighingV1 or CreateDispatchNoteV1;
+        commandName is IssueV1 or RecordLoadV1 or RecordShipmentV1 or RecordDeliveryV1 or RecordWeighingV1 or CreateDispatchNoteV1
+            or ApproveDispatchNoteV1 or CancelDispatchNoteV1 or SetEDispatchNumberV1;
 
     public static bool IsKnown(string commandName) => commandName == CreateV1 || IsMutation(commandName);
 }
@@ -115,7 +121,7 @@ public interface ILogisticsInstructionStore
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// AT-055: the context company's dispatch-note drafts with at least one line on a shipment of <paramref name="salesOrderId"/>'s
+    /// AT-055: the context company's dispatch notes (every state) with at least one line on a shipment of <paramref name="salesOrderId"/>'s
     /// lines, oldest first, at most <paramref name="limit"/> (the caller asks one more to know whether more exist). Untracked; creates
     /// nothing. Another company's drafts are invisible.
     /// </summary>
@@ -123,13 +129,15 @@ public interface ILogisticsInstructionStore
         CancellationToken cancellationToken = default);
 }
 
-/// <summary>One stored dispatch-note draft as the Sales order view needs it: the draft, its instruction and only this order's lines.</summary>
+/// <summary>One stored dispatch note as the Sales order view needs it: the note, its state and numbers, its instruction and only this order's lines.</summary>
 public sealed record StoredDispatchNoteReference(
     Guid DispatchNoteId,
     Guid InstructionId,
     DispatchNoteStatus Status,
     DateTimeOffset CreatedAtUtc,
-    IReadOnlyList<StoredDispatchNoteOrderLine> Lines);
+    IReadOnlyList<StoredDispatchNoteOrderLine> Lines,
+    DispatchNoteNumber? Number = null,
+    string? EDispatchNumber = null);
 
 /// <summary>One line of a stored draft on the asked order: the order line, the shipment, the shipped quantity and its unit.</summary>
 public sealed record StoredDispatchNoteOrderLine(int LineNo, Guid SourceOrderLineId, Guid ShipmentId, Guid UnitId, decimal Quantity);

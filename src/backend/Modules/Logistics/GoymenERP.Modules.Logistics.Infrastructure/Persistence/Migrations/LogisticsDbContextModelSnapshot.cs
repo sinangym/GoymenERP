@@ -186,6 +186,9 @@ partial class LogisticsDbContextModelSnapshot : ModelSnapshot
                 .HasPrecision(18, 3)
                 .HasColumnType("decimal(18,3)");
 
+            b.Property<bool>("Released")
+                .HasColumnType("bit");
+
             b.Property<Guid>("ShipmentId")
                 .HasColumnType("uniqueidentifier");
 
@@ -205,7 +208,8 @@ partial class LogisticsDbContextModelSnapshot : ModelSnapshot
 
             b.HasIndex("CompanyId", "InstructionId", "ShipmentId")
                 .IsUnique()
-                .HasDatabaseName("UX_DispatchNoteLines_ShipmentId");
+                .HasDatabaseName("UX_DispatchNoteLines_ShipmentId")
+                .HasFilter("[Released] = 0");
 
             b.ToTable("DispatchNoteLines", "logistics", t =>
             {
@@ -234,6 +238,30 @@ partial class LogisticsDbContextModelSnapshot : ModelSnapshot
             b.Property<Guid>("DispatchNoteId")
                 .HasColumnType("uniqueidentifier");
 
+            b.Property<DateTimeOffset?>("ApprovedAtUtc")
+                .HasColumnType("datetimeoffset");
+
+            b.Property<string>("ApprovedBy")
+                .HasMaxLength(128)
+                .HasColumnType("nvarchar(128)");
+
+            b.Property<int?>("ApprovedStep")
+                .HasColumnType("int");
+
+            b.Property<string>("CancelReason")
+                .HasMaxLength(500)
+                .HasColumnType("nvarchar(500)");
+
+            b.Property<DateTimeOffset?>("CancelledAtUtc")
+                .HasColumnType("datetimeoffset");
+
+            b.Property<string>("CancelledBy")
+                .HasMaxLength(128)
+                .HasColumnType("nvarchar(128)");
+
+            b.Property<int?>("CancelledStep")
+                .HasColumnType("int");
+
             b.Property<DateTimeOffset>("CreatedAtUtc")
                 .HasColumnType("datetimeoffset");
 
@@ -242,8 +270,33 @@ partial class LogisticsDbContextModelSnapshot : ModelSnapshot
                 .HasMaxLength(128)
                 .HasColumnType("nvarchar(128)");
 
+            b.Property<int>("CreatedStep")
+                .HasColumnType("int");
+
+            b.Property<string>("EDispatchNumber")
+                .HasMaxLength(16)
+                .IsUnicode(false)
+                .HasColumnType("varchar(16)");
+
+            b.Property<DateTimeOffset?>("EDispatchNumberSetAtUtc")
+                .HasColumnType("datetimeoffset");
+
+            b.Property<string>("EDispatchNumberSetBy")
+                .HasMaxLength(128)
+                .HasColumnType("nvarchar(128)");
+
+            b.Property<int?>("EDispatchNumberStep")
+                .HasColumnType("int");
+
             b.Property<int>("NoteNo")
                 .HasColumnType("int");
+
+            b.Property<long?>("SequenceNo")
+                .HasColumnType("bigint");
+
+            b.Property<string>("SeriesCode")
+                .HasMaxLength(8)
+                .HasColumnType("nvarchar(8)");
 
             b.Property<int>("SharesBefore")
                 .HasColumnType("int");
@@ -257,23 +310,74 @@ partial class LogisticsDbContextModelSnapshot : ModelSnapshot
                 .IsUnique()
                 .HasDatabaseName("UX_DispatchNotes_DispatchNoteId");
 
+            b.HasIndex("CompanyId", "EDispatchNumber")
+                .IsUnique()
+                .HasDatabaseName("UX_DispatchNotes_EDispatchNumber")
+                .HasFilter("[EDispatchNumber] IS NOT NULL");
+
             b.HasIndex("CompanyId", "InstructionId", "NoteNo")
                 .IsUnique()
                 .HasDatabaseName("UX_DispatchNotes_NoteNo");
 
+            b.HasIndex("CompanyId", "SeriesCode", "SequenceNo")
+                .IsUnique()
+                .HasDatabaseName("UX_DispatchNotes_Number")
+                .HasFilter("[SeriesCode] IS NOT NULL AND [SequenceNo] IS NOT NULL");
+
             b.ToTable("DispatchNotes", "logistics", t =>
             {
+                t.HasCheckConstraint(
+                    "CK_DispatchNotes_Approval",
+                    "([ApprovedStep] IS NULL AND [ApprovedBy] IS NULL AND [ApprovedAtUtc] IS NULL AND [SeriesCode] IS NULL AND [SequenceNo] IS NULL AND [Status] IN (1, 3)) OR ([ApprovedStep] IS NOT NULL AND [ApprovedBy] IS NOT NULL AND [ApprovedAtUtc] IS NOT NULL AND [SeriesCode] IS NOT NULL AND [SequenceNo] IS NOT NULL AND [ApprovedStep] > [CreatedStep] AND LEN([ApprovedBy]) > 0 AND LEN([SeriesCode]) > 0 AND [SequenceNo] >= 1 AND [Status] IN (2, 3))");
+
+                t.HasCheckConstraint(
+                    "CK_DispatchNotes_Cancellation",
+                    "([CancelledStep] IS NULL AND [CancelledBy] IS NULL AND [CancelledAtUtc] IS NULL AND [CancelReason] IS NULL AND [Status] IN (1, 2)) OR ([CancelledStep] IS NOT NULL AND [CancelledBy] IS NOT NULL AND [CancelledAtUtc] IS NOT NULL AND [CancelReason] IS NOT NULL AND [CancelledStep] > [CreatedStep] AND ([ApprovedStep] IS NULL OR [CancelledStep] > [ApprovedStep]) AND LEN([CancelledBy]) > 0 AND LEN([CancelReason]) > 0 AND [Status] = 3)");
+
+                t.HasCheckConstraint(
+                    "CK_DispatchNotes_EDispatchNumber",
+                    "([EDispatchNumberStep] IS NULL AND [EDispatchNumber] IS NULL AND [EDispatchNumberSetBy] IS NULL AND [EDispatchNumberSetAtUtc] IS NULL) OR ([EDispatchNumberStep] IS NOT NULL AND [EDispatchNumber] IS NOT NULL AND [EDispatchNumberSetBy] IS NOT NULL AND [EDispatchNumberSetAtUtc] IS NOT NULL AND [ApprovedStep] IS NOT NULL AND [EDispatchNumberStep] > [ApprovedStep] AND ([CancelledStep] IS NULL OR [EDispatchNumberStep] < [CancelledStep]) AND LEN([EDispatchNumber]) = 16 AND LEN([EDispatchNumberSetBy]) > 0)");
+
                 t.HasCheckConstraint(
                     "CK_DispatchNotes_Identity",
                     "[DispatchNoteId] <> '00000000-0000-0000-0000-000000000000' AND LEN([CreatedBy]) > 0");
 
                 t.HasCheckConstraint(
                     "CK_DispatchNotes_Order",
-                    "[NoteNo] >= 1 AND [SharesBefore] >= 1");
+                    "[NoteNo] >= 1 AND [SharesBefore] >= 1 AND [CreatedStep] >= 1");
 
                 t.HasCheckConstraint(
                     "CK_DispatchNotes_Status",
-                    "[Status] IN (1)");
+                    "[Status] IN (1, 2, 3)");
+            });
+        });
+
+        modelBuilder.Entity("GoymenERP.Modules.Logistics.Infrastructure.Persistence.DispatchNoteSeriesRow", b =>
+        {
+            b.Property<Guid>("CompanyId")
+                .HasColumnType("uniqueidentifier");
+
+            b.Property<string>("SeriesCode")
+                .HasMaxLength(8)
+                .HasColumnType("nvarchar(8)");
+
+            b.Property<DateTimeOffset>("CreatedAtUtc")
+                .HasColumnType("datetimeoffset");
+
+            b.Property<long>("LastSequenceNo")
+                .IsConcurrencyToken()
+                .HasColumnType("bigint");
+
+            b.Property<DateTimeOffset>("UpdatedAtUtc")
+                .HasColumnType("datetimeoffset");
+
+            b.HasKey("CompanyId", "SeriesCode");
+
+            b.ToTable("DispatchNoteSeries", "logistics", t =>
+            {
+                t.HasCheckConstraint(
+                    "CK_DispatchNoteSeries_Sequence",
+                    "LEN([SeriesCode]) > 0 AND [LastSequenceNo] >= 1");
             });
         });
 
@@ -666,6 +770,15 @@ partial class LogisticsDbContextModelSnapshot : ModelSnapshot
                 .WithMany()
                 .HasForeignKey("CompanyId", "InstructionId")
                 .HasPrincipalKey("CompanyId", "Id")
+                .OnDelete(DeleteBehavior.Restrict)
+                .IsRequired();
+        });
+
+        modelBuilder.Entity("GoymenERP.Modules.Logistics.Infrastructure.Persistence.DispatchNoteSeriesRow", b =>
+        {
+            b.HasOne("GoymenERP.Modules.Logistics.Infrastructure.Persistence.OrganizationCompanyReference", null)
+                .WithMany()
+                .HasForeignKey("CompanyId")
                 .OnDelete(DeleteBehavior.Restrict)
                 .IsRequired();
         });

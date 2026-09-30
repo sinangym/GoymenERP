@@ -10,6 +10,7 @@
  *   POST /api/v1/logistics/loading-instructions/{id}/issue      → 200 LoadingInstructionResponse (Draft → Issued)
  *   POST /api/v1/logistics/loading-instructions/{id}/lines/{lineId}/loads → 200 LoadingInstructionResponse
  *   POST /api/v1/logistics/loading-instructions/{id}/dispatch-notes → 200 LoadingInstructionResponse (AT-055 draft)
+ *   POST …/{id}/dispatch-notes/{noteId}/approve | cancel | e-dispatch-number → 200 LoadingInstructionResponse
  *   GET  /api/v1/logistics/dispatch-notes?salesOrderId            → SalesOrderDispatchNotesView (AT-055, the S-04 link)
  *
  * Rules taken from the source rather than assumed:
@@ -33,6 +34,11 @@ export const loadsPath = (id: string, lineId: string) => `${instructionDetailPat
 export const weighingsPath = (id: string) => `${instructionDetailPath(id)}/weighings`
 /** AT-055: a dispatch-note (irsaliye) draft from the instruction's definite shipments. */
 export const dispatchNotesPath = (id: string) => `${instructionDetailPath(id)}/dispatch-notes`
+/** AT-055: one dispatch note of the instruction (approve / cancel / e-İrsaliye number live under it). */
+export const dispatchNotePath = (id: string, dispatchNoteId: string) => `${dispatchNotesPath(id)}/${encodeURIComponent(dispatchNoteId)}`
+export const approveDispatchNotePath = (id: string, dispatchNoteId: string) => `${dispatchNotePath(id, dispatchNoteId)}/approve`
+export const cancelDispatchNotePath = (id: string, dispatchNoteId: string) => `${dispatchNotePath(id, dispatchNoteId)}/cancel`
+export const eDispatchNumberPath = (id: string, dispatchNoteId: string) => `${dispatchNotePath(id, dispatchNoteId)}/e-dispatch-number`
 /** AT-055: the dispatch-note drafts of one Sales order (the S-04 link), under the instruction read. */
 export const SALES_ORDER_DISPATCH_NOTES_PATH = '/logistics/dispatch-notes'
 
@@ -128,6 +134,28 @@ export interface CreateDispatchNoteRequest {
   readonly shipmentIds: readonly string[]
 }
 
+/** Approve (finalise) a Draft note: the server assigns the company series number. Only the instruction version is sent. */
+export interface ApproveDispatchNoteRequest {
+  readonly expectedVersion: string
+}
+
+/** Cancel a Draft or Approved note; its shipments are released for a new draft (correction = cancel + new draft). */
+export interface CancelDispatchNoteRequest {
+  readonly expectedVersion: string
+  /** Trimmed, 1..500 characters. */
+  readonly reason: string
+}
+
+/** The official e-İrsaliye number of an Approved note, entered by hand (GİB 16-character form), set once. */
+export interface SetEDispatchNumberRequest {
+  readonly expectedVersion: string
+  readonly eDispatchNumber: string
+}
+
+/** GİB e-document number: 3 letters/digits, then 13 digits (year + sequence). */
+export const E_DISPATCH_NUMBER_PATTERN = /^[A-Z0-9]{3}[0-9]{13}$/
+export const CANCEL_REASON_MAX = 500
+
 /* ── Responses ────────────────────────────────────────────────────────────── */
 
 export interface InstructionSummary {
@@ -192,8 +220,9 @@ export interface InstructionWeighing {
   readonly recordedAtUtc: string
 }
 
-/** The only dispatch-note state that exists: finalising, numbering, cancelling and submission are not decided. */
-export const DISPATCH_NOTE_STATUS = { draft: 'Draft' } as const
+/** Draft → Approved (numbered) → Cancelled; a Draft may be cancelled too. A note is never deleted. */
+export const DISPATCH_NOTE_STATUS = { draft: 'Draft', approved: 'Approved', cancelled: 'Cancelled' } as const
+const DISPATCH_NOTE_STATUSES: readonly string[] = Object.values(DISPATCH_NOTE_STATUS)
 export type DispatchNoteStatus = (typeof DISPATCH_NOTE_STATUS)[keyof typeof DISPATCH_NOTE_STATUS]
 
 /** One line of a dispatch-note draft: one definite shipment and its SHIPPED quantity (exact text), with its line's binding. */
@@ -208,12 +237,22 @@ export interface DispatchNoteLine {
   readonly quantity: string
 }
 
-/** `DispatchNoteView` (AT-055): a draft of the instruction. No number member exists (not decided). */
+/**
+ * `DispatchNoteView` (AT-055): a dispatch note of the instruction. `number` is the ERP series number assigned on approval (kept
+ * on a cancelled note that had been approved); `eDispatchNumber` is the separate, hand-entered e-İrsaliye number.
+ */
 export interface DispatchNote {
   readonly dispatchNoteId: string
   readonly status: DispatchNoteStatus
+  readonly number: string | null
   readonly createdBy: string
   readonly createdAtUtc: string
+  readonly approvedBy: string | null
+  readonly approvedAtUtc: string | null
+  readonly cancelledBy: string | null
+  readonly cancelledAtUtc: string | null
+  readonly cancelReason: string | null
+  readonly eDispatchNumber: string | null
   readonly lines: readonly DispatchNoteLine[]
 }
 
@@ -269,6 +308,8 @@ export const LOGISTICS_PROBLEM_CODE = {
   shipmentAlreadyDispatched: 'logistics_shipment_already_dispatched',
   duplicateDispatchNote: 'logistics_duplicate_dispatch_note_id',
   shipmentNotFound: 'logistics_shipment_not_found',
+  dispatchNoteState: 'logistics_dispatch_note_state',
+  eDispatchNumberInUse: 'logistics_e_dispatch_number_in_use',
   sameKeyPayloadMismatch: 'same_key_payload_mismatch',
   concurrentChange: 'concurrent_change',
   unsupportedUnit: 'unsupported_unit',
@@ -606,49 +647,105 @@ function decodeDispatchNoteLine(value: unknown): DispatchNoteLine | null {
   }
 }
 
+const DISPATCH_NOTE_KEYS = [
+  'dispatchNoteId', 'status', 'number', 'createdBy', 'createdAtUtc', 'approvedBy', 'approvedAtUtc', 'cancelledBy', 'cancelledAtUtc',
+  'cancelReason', 'eDispatchNumber', 'lines',
+] as const
+
+const isNumberText = (v: unknown): v is string => isText(v, 32)
+const isEDispatchNumber = (v: unknown): v is string => typeof v === 'string' && E_DISPATCH_NUMBER_PATTERN.test(v)
+const isActor = (v: unknown): v is string => isText(v, 128)
+const isReason = (v: unknown): v is string => isText(v, CANCEL_REASON_MAX) && v.trim() === v
+
+/**
+ * The lifecycle shape, member by member: a Draft carries nothing of approval or cancellation; an Approved note has its number,
+ * approver and time (and maybe its e-İrsaliye number); a Cancelled note has its canceller, time and reason, and keeps the
+ * number / approval / e-İrsaliye number only when it had been approved.
+ */
 export function decodeDispatchNote(value: unknown): DispatchNote | null {
-  const o = exact(value, ['dispatchNoteId', 'status', 'createdBy', 'createdAtUtc', 'lines'])
+  const o = exact(value, DISPATCH_NOTE_KEYS)
   if (
     o === null ||
     !isReferenceId(o.dispatchNoteId) ||
-    o.status !== DISPATCH_NOTE_STATUS.draft ||
-    !isText(o.createdBy, 128) ||
+    typeof o.status !== 'string' ||
+    !DISPATCH_NOTE_STATUSES.includes(o.status) ||
+    !isNullable(o.number, isNumberText) ||
+    !isActor(o.createdBy) ||
     !isInstant(o.createdAtUtc) ||
+    !isNullable(o.approvedBy, isActor) ||
+    !isNullable(o.approvedAtUtc, isInstant) ||
+    !isNullable(o.cancelledBy, isActor) ||
+    !isNullable(o.cancelledAtUtc, isInstant) ||
+    !isNullable(o.cancelReason, isReason) ||
+    !isNullable(o.eDispatchNumber, isEDispatchNumber) ||
     !Array.isArray(o.lines) ||
     o.lines.length === 0 ||
     o.lines.length > LIMITS.lines
   ) {
     return null
   }
+  const approved = o.number !== null && o.approvedBy !== null && o.approvedAtUtc !== null
+  const notApproved = o.number === null && o.approvedBy === null && o.approvedAtUtc === null
+  const cancelled = o.cancelledBy !== null && o.cancelledAtUtc !== null && o.cancelReason !== null
+  const notCancelled = o.cancelledBy === null && o.cancelledAtUtc === null && o.cancelReason === null
+  const shapeHolds =
+    (approved || notApproved) &&
+    (cancelled || notCancelled) &&
+    (o.eDispatchNumber === null || approved) &&
+    ((o.status === DISPATCH_NOTE_STATUS.draft && notApproved && notCancelled) ||
+      (o.status === DISPATCH_NOTE_STATUS.approved && approved && notCancelled) ||
+      (o.status === DISPATCH_NOTE_STATUS.cancelled && cancelled))
+  if (!shapeHolds) return null
   const lines: DispatchNoteLine[] = []
   for (const [index, entry] of o.lines.entries()) {
     const line = decodeDispatchNoteLine(entry)
     if (line === null || line.lineNo !== index + 1) return null
     lines.push(line)
   }
-  return { dispatchNoteId: o.dispatchNoteId, status: DISPATCH_NOTE_STATUS.draft, createdBy: o.createdBy, createdAtUtc: o.createdAtUtc, lines }
+  return {
+    dispatchNoteId: o.dispatchNoteId,
+    status: o.status as DispatchNoteStatus,
+    number: o.number,
+    createdBy: o.createdBy,
+    createdAtUtc: o.createdAtUtc,
+    approvedBy: o.approvedBy,
+    approvedAtUtc: o.approvedAtUtc,
+    cancelledBy: o.cancelledBy,
+    cancelledAtUtc: o.cancelledAtUtc,
+    cancelReason: o.cancelReason,
+    eDispatchNumber: o.eDispatchNumber,
+    lines,
+  }
 }
 
 /**
  * The dispatch-note drafts, checked against the instruction they came with (identity checks, never a recalculation): every
  * line names a definite shipment of THIS instruction, on the line and with the quantity text that shipment has, under that
- * line's order binding, product and unit — and no shipment appears twice across the drafts (AT-055: a shipment is linked to
- * at most one dispatch note). An answer breaking any of it is not shown.
+ * line's order binding, product and unit — and no shipment appears twice across the NON-CANCELLED notes (AT-055: a shipment
+ * is linked to at most one live dispatch note; a cancelled note released its shipments). An ERP number or an e-İrsaliye number
+ * appears on at most one note. An answer breaking any of it is not shown.
  */
 function decodeDispatchNotes(value: unknown, lines: readonly InstructionLine[], shares: readonly LoadingShare[]): DispatchNote[] | null {
   if (!Array.isArray(value)) return null
   const notes: DispatchNote[] = []
   const noteIds = new Set<string>()
+  const numbers = new Set<string>()
   const linked = new Set<string>()
   for (const entry of value) {
     const note = decodeDispatchNote(entry)
     if (note === null || noteIds.has(note.dispatchNoteId)) return null
     noteIds.add(note.dispatchNoteId)
+    for (const number of [note.number === null ? null : `n:${note.number}`, note.eDispatchNumber === null ? null : `e:${note.eDispatchNumber}`]) {
+      if (number === null) continue
+      if (numbers.has(number)) return null
+      numbers.add(number)
+    }
+    const live = note.status !== DISPATCH_NOTE_STATUS.cancelled
     for (const line of note.lines) {
       const shipment = shares.find((share) => share.shareId === line.shipmentId)
       const source = lines.find((candidate) => candidate.lineId === line.instructionLineId)
       if (
-        linked.has(line.shipmentId) ||
+        (live && linked.has(line.shipmentId)) ||
         shipment === undefined ||
         shipment.kind !== SHARE_KIND.shipped ||
         shipment.lineId !== line.instructionLineId ||
@@ -661,16 +758,17 @@ function decodeDispatchNotes(value: unknown, lines: readonly InstructionLine[], 
       ) {
         return null
       }
-      linked.add(line.shipmentId)
+      if (live) linked.add(line.shipmentId)
     }
     notes.push(note)
   }
   return notes
 }
 
-/** The dispatch note a shipment is on (AT-055), or null while it is on none. */
+/** The live (non-cancelled) dispatch note a shipment is on (AT-055), or null while it is on none — a cancelled note released it. */
 export function dispatchNoteOf(detail: InstructionDetail, shipmentId: string): DispatchNote | null {
-  return detail.dispatchNotes.find((note) => note.lines.some((line) => line.shipmentId === shipmentId)) ?? null
+  return detail.dispatchNotes.find((note) => note.status !== DISPATCH_NOTE_STATUS.cancelled
+    && note.lines.some((line) => line.shipmentId === shipmentId)) ?? null
 }
 
 /** `expectedId`: the record the caller asked for. A detail of another record is not an answer. */
@@ -843,6 +941,8 @@ export interface SalesOrderDispatchNote {
   readonly dispatchNoteId: string
   readonly instructionId: string
   readonly status: DispatchNoteStatus
+  readonly number: string | null
+  readonly eDispatchNumber: string | null
   readonly createdAtUtc: string
   readonly lines: readonly SalesOrderDispatchNoteLine[]
 }
@@ -861,13 +961,19 @@ export function decodeSalesOrderDispatchNotes(value: unknown, expectedOrderId: s
   const items: SalesOrderDispatchNote[] = []
   const ids = new Set<string>()
   for (const entry of o.items) {
-    const item = exact(entry, ['dispatchNoteId', 'instructionId', 'status', 'createdAtUtc', 'lines'])
+    const item = exact(entry, ['dispatchNoteId', 'instructionId', 'status', 'number', 'eDispatchNumber', 'createdAtUtc', 'lines'])
     if (
       item === null ||
       !isReferenceId(item.dispatchNoteId) ||
       ids.has(item.dispatchNoteId) ||
       !isReferenceId(item.instructionId) ||
-      item.status !== DISPATCH_NOTE_STATUS.draft ||
+      typeof item.status !== 'string' ||
+      !DISPATCH_NOTE_STATUSES.includes(item.status) ||
+      !isNullable(item.number, isNumberText) ||
+      !isNullable(item.eDispatchNumber, isEDispatchNumber) ||
+      (item.status === DISPATCH_NOTE_STATUS.draft && item.number !== null) ||
+      (item.status === DISPATCH_NOTE_STATUS.approved && item.number === null) ||
+      (item.eDispatchNumber !== null && item.number === null) ||
       !isInstant(item.createdAtUtc) ||
       !Array.isArray(item.lines) ||
       item.lines.length === 0
@@ -890,7 +996,8 @@ export function decodeSalesOrderDispatchNotes(value: unknown, expectedOrderId: s
       lines.push({ lineNo: line.lineNo, sourceOrderLineId: line.sourceOrderLineId, shipmentId: line.shipmentId, unitId: line.unitId, quantity: line.quantity })
     }
     ids.add(item.dispatchNoteId)
-    items.push({ dispatchNoteId: item.dispatchNoteId, instructionId: item.instructionId, status: DISPATCH_NOTE_STATUS.draft, createdAtUtc: item.createdAtUtc, lines })
+    items.push({ dispatchNoteId: item.dispatchNoteId, instructionId: item.instructionId, status: item.status as DispatchNoteStatus,
+      number: item.number, eDispatchNumber: item.eDispatchNumber, createdAtUtc: item.createdAtUtc, lines })
   }
   return { salesOrderId: o.salesOrderId, items, hasMore: o.hasMore }
 }

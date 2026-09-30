@@ -5,7 +5,8 @@
  * full (`#irsaliye-{id}`). Sales stores nothing of it and reads no Logistics table. Shown only to a holder of the Logistics
  * instruction detail (the link's own screen, the operations-work rule "a row opens its owner's screen only with that
  * screen's grant"); nothing is read otherwise. Read afresh on every open (`gcTime` 0); a body that does not describe this
- * order is not shown. No number exists on a draft (numbering is not decided), so a draft is named by its short reference.
+ * order is not shown. Each note shows its state (Taslak / Onaylandı / İptal edildi), its ERP number once approved and its
+ * e-İrsaliye number when entered; a cancelled note stays listed. The link names the note by its short reference.
  */
 import { useId } from 'react'
 import { useQuery } from '@tanstack/react-query'
@@ -66,7 +67,14 @@ export function SalesDraftDispatchNotes({ detail }: { readonly detail: DraftDeta
                   data-testid={`sales-dispatch-note-link-${note.dispatchNoteId}`}>
                   {T.draft} …{note.dispatchNoteId.slice(-8)}
                 </Link>{' '}
-                · {formatInstant(note.createdAtUtc)} ·{' '}
+                · <span data-testid={`sales-dispatch-note-status-${note.dispatchNoteId}`}>{T.status[note.status]}</span>
+                {note.number === null ? null : (
+                  <> · {T.number}: <span data-testid={`sales-dispatch-note-number-${note.dispatchNoteId}`}>{note.number}</span></>
+                )}
+                {note.eDispatchNumber === null ? null : (
+                  <> · {T.eDispatchNumber}: <span data-testid={`sales-dispatch-note-e-number-${note.dispatchNoteId}`}>{note.eDispatchNumber}</span></>
+                )}
+                {' '}· {formatInstant(note.createdAtUtc)} ·{' '}
                 {note.lines.map((line) => `${T.line} ${lineNo(line.sourceOrderLineId)}: ${line.quantity}`).join(', ')}
               </li>
             ))}

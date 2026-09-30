@@ -137,21 +137,39 @@ public sealed class LogisticsPersistenceModelTests
         Assert.Equal(("DispatchNotes", "DispatchNoteLines"), (notes.GetTableName(), lines.GetTableName()));
         Assert.Equal(["CompanyId", "InstructionId", "DispatchNoteId"], notes.FindPrimaryKey()!.Properties.Select(property => property.Name).ToArray());
         Assert.Equal(["CompanyId", "InstructionId", "DispatchNoteId", "LineNo"], lines.FindPrimaryKey()!.Properties.Select(property => property.Name).ToArray());
-        // AT-055: the single-link guard, over non-nullable columns (so no filter is needed or allowed to narrow it).
+        // AT-055: the single-link guard, over non-nullable columns, filtered to the lines NOT released — a shipment is on at most one
+        // non-cancelled note, and a cancelled note's shipments can be put on a new one (user decision 2026-09-30).
         var single = lines.GetIndexes().Single(index => index.GetDatabaseName() == "UX_DispatchNoteLines_ShipmentId");
         Assert.True(single.IsUnique);
-        Assert.Null(single.GetFilter());
+        Assert.Equal("[Released] = 0", single.GetFilter());
         Assert.Equal(["CompanyId", "InstructionId", "ShipmentId"], single.Properties.Select(property => property.Name).ToArray());
         Assert.All(single.Properties, property => Assert.False(property.IsNullable));
+        Assert.False(lines.FindProperty(nameof(DispatchNoteLineRow.Released))!.IsNullable);
         Assert.True(notes.GetIndexes().Single(index => index.GetDatabaseName() == "UX_DispatchNotes_DispatchNoteId").IsUnique);
         Assert.Equal((18, 3), (lines.FindProperty(nameof(DispatchNoteLineRow.Quantity))!.GetPrecision(), lines.FindProperty(nameof(DispatchNoteLineRow.Quantity))!.GetScale()));
-        Assert.Contains(notes.GetCheckConstraints(), check => check.Name == "CK_DispatchNotes_Status" && check.Sql == "[Status] IN (1)");
-        // Not decided, so absent: a number, a finalisation, a cancellation or an e-document column.
+        Assert.Contains(notes.GetCheckConstraints(), check => check.Name == "CK_DispatchNotes_Status" && check.Sql == "[Status] IN (1, 2, 3)");
+        // The system number (company, series, sequence) and the e-İrsaliye number (company, number) are unique when present.
+        var number = notes.GetIndexes().Single(index => index.GetDatabaseName() == "UX_DispatchNotes_Number");
+        Assert.Equal((true, "[SeriesCode] IS NOT NULL AND [SequenceNo] IS NOT NULL"), (number.IsUnique, number.GetFilter()));
+        Assert.Equal(["CompanyId", "SeriesCode", "SequenceNo"], number.Properties.Select(property => property.Name).ToArray());
+        var eDispatch = notes.GetIndexes().Single(index => index.GetDatabaseName() == "UX_DispatchNotes_EDispatchNumber");
+        Assert.Equal((true, "[EDispatchNumber] IS NOT NULL"), (eDispatch.IsUnique, eDispatch.GetFilter()));
+        Assert.Equal(["CompanyId", "EDispatchNumber"], eDispatch.Properties.Select(property => property.Name).ToArray());
+        Assert.Equal(["CK_DispatchNotes_Approval", "CK_DispatchNotes_Cancellation", "CK_DispatchNotes_EDispatchNumber", "CK_DispatchNotes_Identity",
+                "CK_DispatchNotes_Order", "CK_DispatchNotes_Status"],
+            notes.GetCheckConstraints().Select(check => check.Name!).Order(StringComparer.Ordinal).ToArray());
+        // The company series: a tenant row whose last number is the approval's optimistic concurrency token.
+        var series = model.FindEntityType(typeof(DispatchNoteSeriesRow))!;
+        Assert.Equal(("DispatchNoteSeries", LogisticsDbContext.Schema), (series.GetTableName(), series.GetSchema()));
+        Assert.Single(series.GetDeclaredQueryFilters());
+        Assert.Equal(["CompanyId", "SeriesCode"], series.FindPrimaryKey()!.Properties.Select(property => property.Name).ToArray());
+        Assert.True(series.FindProperty(nameof(DispatchNoteSeriesRow.LastSequenceNo))!.IsConcurrencyToken);
+        Assert.All(series.GetForeignKeys(), key => Assert.Equal("CompanyId", key.Properties[0].Name));
+        // Price-free: no price or amount column on a note or a line.
         Assert.DoesNotContain(notes.GetProperties().Concat(lines.GetProperties()), property =>
-            property.Name.Contains("Number", StringComparison.OrdinalIgnoreCase) || property.Name.Contains("Final", StringComparison.OrdinalIgnoreCase)
-            || property.Name.Contains("Cancel", StringComparison.OrdinalIgnoreCase) || property.Name.Contains("Price", StringComparison.OrdinalIgnoreCase)
-            || property.Name.Contains("Ettn", StringComparison.OrdinalIgnoreCase));
+            property.Name.Contains("Price", StringComparison.OrdinalIgnoreCase) || property.Name.Contains("Amount", StringComparison.OrdinalIgnoreCase));
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddDispatchNoteDrafts", StringComparison.Ordinal));
+        Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddDispatchNoteLifecycle", StringComparison.Ordinal));
         Assert.False(context.Database.HasPendingModelChanges());
     }
 
@@ -166,6 +184,127 @@ public sealed class LogisticsPersistenceModelTests
         Assert.Equal(["DispatchNoteLines", "DispatchNotes"],
             down.Skip(1).Select(operation => Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.DropTableOperation>(operation).Name).ToArray());
     }
+
+    [Fact]
+    public void The_lifecycle_migration_writes_the_explicit_filters_and_checks_of_the_model_and_its_down_refuses_with_51056_first()
+    {
+        var migration = new GoymenERP.Modules.Logistics.Infrastructure.Persistence.Migrations.AddDispatchNoteLifecycle();
+        var up = migration.UpOperations;
+        // The hand-written filters and checks are the model's own text (DispatchNoteSchema), so the two cannot drift.
+        var indexes = up.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.CreateIndexOperation>().ToDictionary(index => index.Name, index => index);
+        Assert.Equal((true, DispatchNoteSchema.ActiveLineFilter), (indexes["UX_DispatchNoteLines_ShipmentId"].IsUnique, indexes["UX_DispatchNoteLines_ShipmentId"].Filter));
+        Assert.Equal((true, DispatchNoteSchema.NumberFilter), (indexes["UX_DispatchNotes_Number"].IsUnique, indexes["UX_DispatchNotes_Number"].Filter));
+        Assert.Equal((true, DispatchNoteSchema.EDispatchNumberFilter),
+            (indexes["UX_DispatchNotes_EDispatchNumber"].IsUnique, indexes["UX_DispatchNotes_EDispatchNumber"].Filter));
+        var checks = up.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.AddCheckConstraintOperation>().ToDictionary(check => check.Name, check => check.Sql);
+        Assert.Equal(DispatchNoteSchema.StatusCheck, checks["CK_DispatchNotes_Status"]);
+        Assert.Equal(DispatchNoteSchema.OrderCheck, checks["CK_DispatchNotes_Order"]);
+        Assert.Equal(DispatchNoteSchema.ApprovalCheck, checks["CK_DispatchNotes_Approval"]);
+        Assert.Equal(DispatchNoteSchema.CancellationCheck, checks["CK_DispatchNotes_Cancellation"]);
+        Assert.Equal(DispatchNoteSchema.EDispatchNumberCheck, checks["CK_DispatchNotes_EDispatchNumber"]);
+        var seriesTable = up.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.CreateTableOperation>().Single();
+        Assert.Equal(DispatchNoteSchema.SeriesCheck, Assert.Single(seriesTable.CheckConstraints).Sql);
+        // The old unfiltered key is dropped before the column it is filtered on is used; the backfill precedes the new Order check.
+        var names = up.Select(operation => operation switch
+        {
+            Microsoft.EntityFrameworkCore.Migrations.Operations.DropIndexOperation drop => "drop:" + drop.Name,
+            Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation => "sql",
+            Microsoft.EntityFrameworkCore.Migrations.Operations.AddCheckConstraintOperation check => "check:" + check.Name,
+            _ => operation.GetType().Name,
+        }).ToList();
+        Assert.True(names.IndexOf("drop:UX_DispatchNoteLines_ShipmentId") < names.IndexOf("sql"));
+        Assert.True(names.IndexOf("sql") < names.IndexOf("check:CK_DispatchNotes_Order"));
+        Assert.Contains("SET [CreatedStep] = [NoteNo]", Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(up.Single(operation =>
+            operation is Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation)).Sql, StringComparison.Ordinal);
+
+        var down = migration.DownOperations;
+        var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(down[0]);
+        Assert.Contains("EXISTS (SELECT 1 FROM [logistics].[DispatchNoteSeries])", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("EXISTS (SELECT 1 FROM [logistics].[DispatchNotes] WHERE [Status] <> 1)", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("EXISTS (SELECT 1 FROM [logistics].[DispatchNoteLines] WHERE [Released] = 1)", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("THROW 51056,", guard.Sql, StringComparison.Ordinal);
+        Assert.Single(down.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+        // Rolled back, the previous unfiltered key returns.
+        var restored = Assert.Single(down.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.CreateIndexOperation>());
+        Assert.Equal(("UX_DispatchNoteLines_ShipmentId", true, null), (restored.Name, restored.IsUnique, restored.Filter));
+    }
+
+    [Fact]
+    public async Task A_dispatch_note_only_moves_forward_and_the_series_only_by_one()
+    {
+        // A line is released once, never re-linked in place.
+        await using (var context = Context())
+        {
+            var row = NoteLine();
+            row.Released = true;
+            context.DispatchNoteLines.Attach(row);
+            row.Released = false;
+            var refusal = await Assert.ThrowsAsync<InvalidOperationException>(() => context.SaveChangesAsync());
+            Assert.Contains("bir kez serbest", refusal.Message, StringComparison.Ordinal);
+        }
+
+        // A set-once column is never rewritten or cleared.
+        foreach (var change in new Action<DispatchNoteRow>[] { row => row.CancelReason = "başka", row => row.SequenceNo = null, row => row.EDispatchNumber = "XYZ2026000000009" })
+        {
+            await using var context = Context();
+            var row = Note();
+            row.Status = 3;
+            row.SeriesCode = "IRS";
+            row.SequenceNo = 1;
+            row.CancelReason = "gerekçe";
+            row.EDispatchNumber = "ABC2026000000001";
+            context.DispatchNotes.Attach(row);
+            change(row);
+            var refusal = await Assert.ThrowsAsync<InvalidOperationException>(() => context.SaveChangesAsync());
+            Assert.Contains("bir kez yazılır", refusal.Message, StringComparison.Ordinal);
+        }
+
+        // The status never goes back (a cancelled note is not revived).
+        await using (var context = Context())
+        {
+            var row = Note();
+            row.Status = 3;
+            context.DispatchNotes.Attach(row);
+            row.Status = 1;
+            var refusal = await Assert.ThrowsAsync<InvalidOperationException>(() => context.SaveChangesAsync());
+            Assert.Contains("yalnız ileri", refusal.Message, StringComparison.Ordinal);
+        }
+
+        // The series climbs by exactly one.
+        await using (var context = Context())
+        {
+            var row = new DispatchNoteSeriesRow { CompanyId = CompanyA, SeriesCode = "IRS", LastSequenceNo = 4, CreatedAtUtc = DateTimeOffset.UtcNow, UpdatedAtUtc = DateTimeOffset.UtcNow };
+            context.DispatchNoteSeries.Attach(row);
+            row.LastSequenceNo = 6;
+            var refusal = await Assert.ThrowsAsync<InvalidOperationException>(() => context.SaveChangesAsync());
+            Assert.Contains("birer birer", refusal.Message, StringComparison.Ordinal);
+        }
+
+        // A note's identity never moves, and nothing is deleted.
+        await using (var context = Context())
+        {
+            var row = Note();
+            context.DispatchNotes.Attach(row);
+            row.CreatedBy = "başkası";
+            var refusal = await Assert.ThrowsAsync<InvalidOperationException>(() => context.SaveChangesAsync());
+            Assert.Contains("izinli alan", refusal.Message, StringComparison.Ordinal);
+        }
+
+        await using (var context = Context())
+        {
+            var row = Note();
+            context.DispatchNotes.Attach(row);
+            context.Entry(row).State = EntityState.Deleted;
+            var refusal = await Assert.ThrowsAsync<InvalidOperationException>(() => context.SaveChangesAsync());
+            Assert.Contains("silinmez", refusal.Message, StringComparison.Ordinal);
+        }
+    }
+
+    private static DispatchNoteRow Note() => new()
+    {
+        CompanyId = CompanyA, InstructionId = Guid.NewGuid(), DispatchNoteId = Guid.NewGuid(), NoteNo = 1, Status = 1, SharesBefore = 1, CreatedBy = "actor",
+        CreatedAtUtc = DateTimeOffset.UtcNow, CreatedStep = 1,
+    };
 
     [Fact]
     public async Task A_stored_dispatch_note_line_is_never_rewritten_or_deleted()
@@ -268,13 +407,21 @@ public sealed class LogisticsPersistenceModelTests
             declarations.Where(declaration => declaration.ParentCapabilityId is null)
                 .Select(declaration => (declaration.CapabilityId, declaration.RoutePath, declaration.RequiredPermissions.Single()))
                 .OrderBy(item => item.CapabilityId, StringComparer.Ordinal).ToArray());
-        Assert.Equal(9, LogisticsPermissionManifestV1.Names.Count);
+        Assert.Equal(11, LogisticsPermissionManifestV1.Names.Count);
         Assert.Equal("logistics.shipments.record", LogisticsPermissionManifestV1.ShipmentsRecord);
         Assert.Equal("logistics.deliveries.record", LogisticsPermissionManifestV1.DeliveriesRecord);
-        Assert.Equal(9, LogisticsPermissionManifestV1.Names.Distinct(StringComparer.Ordinal).Count());
-        // AT-055: the dispatch-note draft has its own name and, like the weighbridge record, no shell declaration.
+        Assert.Equal(11, LogisticsPermissionManifestV1.Names.Distinct(StringComparer.Ordinal).Count());
+        // AT-055: the dispatch note's three names (prepare, approve, cancel), each its own and, like the weighbridge record, with no
+        // shell declaration (server-measured commands on the detail).
         Assert.Equal("logistics.dispatch-notes.create", LogisticsPermissionManifestV1.DispatchNotesCreate);
-        Assert.DoesNotContain(declarations, declaration => declaration.RequiredPermissions.Contains(LogisticsPermissionManifestV1.DispatchNotesCreate));
+        Assert.Equal("logistics.dispatch-notes.approve", LogisticsPermissionManifestV1.DispatchNotesApprove);
+        Assert.Equal("logistics.dispatch-notes.cancel", LogisticsPermissionManifestV1.DispatchNotesCancel);
+        foreach (var name in new[] { LogisticsPermissionManifestV1.DispatchNotesCreate, LogisticsPermissionManifestV1.DispatchNotesApprove,
+                     LogisticsPermissionManifestV1.DispatchNotesCancel })
+        {
+            Assert.Contains(name, LogisticsPermissionManifestV1.Names);
+            Assert.DoesNotContain(declarations, declaration => declaration.RequiredPermissions.Contains(name));
+        }
         // AT-053: the weighbridge record has its own name and, like recording a load, no shell declaration (a server-measured command on the detail).
         Assert.Equal("logistics.weighings.record", LogisticsPermissionManifestV1.WeighingsRecord);
         Assert.DoesNotContain(declarations, declaration => declaration.RequiredPermissions.Contains(LogisticsPermissionManifestV1.WeighingsRecord));

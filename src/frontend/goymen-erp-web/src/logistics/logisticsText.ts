@@ -213,6 +213,9 @@ export const PROBLEM_CODE_TEXT: Record<LogisticsProblemCode, string> = {
     'Seçilen sevklerden biri zaten bir irsaliyeye bağlı; bir sevk ikinci kez irsaliyeye bağlanamaz. Taslak oluşturulmadı.',
   [LOGISTICS_PROBLEM_CODE.duplicateDispatchNote]: 'Bu irsaliye taslağı kimliği daha önce kullanıldı; ikinci taslak oluşturulmadı.',
   [LOGISTICS_PROBLEM_CODE.shipmentNotFound]: 'Seçilen kayıt bu talimatın kesin sevki değil; taslak oluşturulmadı.',
+  [LOGISTICS_PROBLEM_CODE.dispatchNoteState]:
+    'İrsaliyenin durumu bu işleme uygun değil (ör. zaten onaylanmış, iptal edilmiş ya da e-İrsaliye numarası zaten kayıtlı); hiçbir şey değişmedi.',
+  [LOGISTICS_PROBLEM_CODE.eDispatchNumberInUse]: 'Bu e-İrsaliye numarası şirketin başka bir irsaliyesinde kayıtlı; numara kaydedilmedi.',
   [LOGISTICS_PROBLEM_CODE.sameKeyPayloadMismatch]:
     'Aynı işlem anahtarı farklı bir içerikle kullanılmış; bu gönderim uygulanmadı.',
   [LOGISTICS_PROBLEM_CODE.concurrentChange]: 'Aynı anda başka bir kayıt öne geçti; aynı gönderimi tekrar deneyin.',
@@ -283,10 +286,30 @@ export const DISPATCH_NOTE_TEXT = {
     'İrsaliye taslağı yalnız kesin sevklerden hazırlanır; her satır, seçilen sevkin sevk edilen miktarıdır. ' +
     'Bir sevk yalnız bir irsaliyeye bağlanabilir.',
   undecided:
-    'Resmî irsaliye numarası, kesinleştirme, iptal, yazdırma şablonu ve e-İrsaliye gönderimi henüz karara bağlanmadı; ' +
-    'bu ekranda yalnız taslak hazırlanır ve görüntülenir.',
+    'Onaylanan irsaliyeye şirket serisinden sistem numarası verilir; onaylı irsaliye silinmez, yalnız iptal edilir ve iptal ' +
+    'sevkleri yeni taslak için serbest bırakır (düzeltme = iptal + yeni taslak). Yazdırma şablonu (OPEN-019), resmî e-İrsaliye ' +
+    'gönderimi (DEC-INT-001; e-İrsaliye numarası elle girilir) ve birden çok talimatı tek irsaliyede birleştirme henüz yok.',
   none: 'Bu talimattan henüz irsaliye taslağı hazırlanmadı.',
   draft: 'Taslak',
+  approved: 'Onaylandı',
+  cancelled: 'İptal edildi',
+  number: 'İrsaliye no',
+  eDispatchNumber: 'e-İrsaliye no',
+  approvedBy: 'Onaylayan kullanıcı',
+  approvedAt: 'Onay zamanı',
+  cancelledBy: 'İptal eden kullanıcı',
+  cancelledAt: 'İptal zamanı',
+  cancelReason: 'İptal gerekçesi',
+  approve: 'Onayla (numara ver)',
+  cancel: 'İptal et',
+  cancelConfirm: 'İptali kaydet',
+  cancelReasonLabel: 'İptal gerekçesi (zorunlu)',
+  cancelReasonRequired: 'İptal gerekçesi girin (en fazla 500 karakter).',
+  eDispatchNumberLabel: 'e-İrsaliye numarası (16 karakter, ör. GYM2026000000001)',
+  eDispatchNumberSave: 'e-İrsaliye no kaydet',
+  eDispatchNumberInvalid: 'e-İrsaliye numarası 3 harf/rakam ve 13 rakamdan oluşur (ör. GYM2026000000001).',
+  actionsLabel: 'İrsaliye işlemleri',
+  cancelDismiss: 'Vazgeç',
   reference: 'Taslak kimliği',
   createdBy: 'Hazırlayan kullanıcı',
   createdAt: 'Hazırlanma zamanı',

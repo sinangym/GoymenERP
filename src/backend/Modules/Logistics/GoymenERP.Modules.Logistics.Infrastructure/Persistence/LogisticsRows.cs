@@ -79,9 +79,12 @@ internal sealed class LoadingAttemptRow : ILogisticsTenantRow
 }
 
 /// <summary>
-/// AT-055: a dispatch-note (irsaliye) DRAFT of an instruction, append-only. <see cref="NoteNo"/> is its order among the
-/// instruction's drafts (not a document number — numbering is not decided); <see cref="SharesBefore"/> is the share count it
-/// was made after, so the rebuild replays it at that point. Status 1 = Draft is the only state.
+/// AT-055: a dispatch note (irsaliye) of an instruction. <see cref="NoteNo"/> is its order among the instruction's notes (not a
+/// document number); <see cref="SharesBefore"/> is the share count it was made after, so the rebuild replays it at that point.
+/// Status 1 = Draft, 2 = Approved, 3 = Cancelled (user decision 2026-09-30). The row is never deleted: approval fills the
+/// approval columns and the system number (<see cref="SeriesCode"/> + <see cref="SequenceNo"/>), cancellation the cancellation
+/// columns, and the e-İrsaliye number its own columns — each once, each with the instruction's dispatch-note step
+/// (<c>…Step</c>) the rebuild replays it at. SQL Server holds the shape of each group as a check constraint.
 /// </summary>
 internal sealed class DispatchNoteRow : ILogisticsTenantRow
 {
@@ -93,12 +96,42 @@ internal sealed class DispatchNoteRow : ILogisticsTenantRow
     public int SharesBefore { get; set; }
     public string CreatedBy { get; set; } = string.Empty;
     public DateTimeOffset CreatedAtUtc { get; set; }
+    public int CreatedStep { get; set; }
+    public string? SeriesCode { get; set; }
+    public long? SequenceNo { get; set; }
+    public string? ApprovedBy { get; set; }
+    public DateTimeOffset? ApprovedAtUtc { get; set; }
+    public int? ApprovedStep { get; set; }
+    public string? CancelledBy { get; set; }
+    public DateTimeOffset? CancelledAtUtc { get; set; }
+    public string? CancelReason { get; set; }
+    public int? CancelledStep { get; set; }
+    public string? EDispatchNumber { get; set; }
+    public string? EDispatchNumberSetBy { get; set; }
+    public DateTimeOffset? EDispatchNumberSetAtUtc { get; set; }
+    public int? EDispatchNumberStep { get; set; }
 }
 
 /// <summary>
-/// AT-055: one line of a dispatch-note draft — one definite shipment of the instruction and its shipped quantity, with the
-/// instruction line's Sales binding, product and unit copied for the Sales order read. The key (company, instruction,
-/// shipment) is UNIQUE: a shipment is on at most one dispatch note, in SQL Server too.
+/// AT-055 (user decision 2026-09-30): a company's dispatch-note number series — the last sequence number given. Approval
+/// increments it in the note's own save, with <see cref="LastSequenceNo"/> as the optimistic concurrency token: two approvals
+/// racing for the same number cannot both commit (the loser changes nothing and is told to retry), so the sequence is
+/// gap-free and never duplicated; the notes' filtered unique key (company, series, sequence) holds it too.
+/// </summary>
+internal sealed class DispatchNoteSeriesRow : ILogisticsTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public string SeriesCode { get; set; } = string.Empty;
+    public long LastSequenceNo { get; set; }
+    public DateTimeOffset CreatedAtUtc { get; set; }
+    public DateTimeOffset UpdatedAtUtc { get; set; }
+}
+
+/// <summary>
+/// AT-055: one line of a dispatch note — one definite shipment of the instruction and its shipped quantity, with the
+/// instruction line's Sales binding, product and unit copied for the Sales order read. <see cref="Released"/> turns true (once)
+/// when the note is cancelled; the key (company, instruction, shipment) is UNIQUE over the lines NOT released: a shipment is on
+/// at most one non-cancelled dispatch note, in SQL Server too.
 /// </summary>
 internal sealed class DispatchNoteLineRow : ILogisticsTenantRow
 {
@@ -113,6 +146,7 @@ internal sealed class DispatchNoteLineRow : ILogisticsTenantRow
     public Guid ProductId { get; set; }
     public Guid UnitId { get; set; }
     public decimal Quantity { get; set; }
+    public bool Released { get; set; }
 }
 
 /// <summary>

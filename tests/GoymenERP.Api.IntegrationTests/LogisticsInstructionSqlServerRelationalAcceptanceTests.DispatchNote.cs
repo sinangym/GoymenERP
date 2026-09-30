@@ -30,25 +30,25 @@ public sealed partial class LogisticsInstructionSqlServerRelationalAcceptanceTes
         new LogisticsMutationAudit("logistics.loading-instruction.dispatch-note-drafted.v1", "CreateDispatchNote", "SENTETIK irsaliye taslağı");
 
     /// <summary>An issued two-line instruction with 5 kg loaded on each line and three definite shipments (3, 2 on line 1; 4.5 on line 2): version 8.</summary>
-    private static async Task<(Guid Id, Guid First, Guid Second, Guid[] Shipments)> ShippedInstructionAsync(Run run, Owners owners)
+    private static async Task<(Guid Id, Guid First, Guid Second, Guid[] Shipments)> ShippedInstructionAsync(Run run, Owners owners, string prefix = "")
     {
         await using var a = run.Store(owners.Company);
-        var stored = (await a.Store.StoreInstructionAsync(run.Envelope("k-create"), Hash("create-1"), Day, () => Instruction(owners, lines: 2))).Instruction.Instruction;
+        var stored = (await a.Store.StoreInstructionAsync(run.Envelope(prefix + "k-create"), Hash(prefix + "create-1"), Day, () => Instruction(owners, lines: 2))).Instruction.Instruction;
         var id = stored.Id;
         var first = stored.Lines[0].Id;
         var second = stored.Lines[1].Id;
         Guid[] shipments = [Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid()];
-        await a.Store.MutateInstructionAsync(run.Envelope("k-issue"), Hash("issue-3"), LogisticsCommands.IssueV1, id, (instruction, now) => instruction.Issue(3, now), Issued);
-        await a.Store.MutateInstructionAsync(run.Envelope("k-load-1"), Hash("load-4"), LogisticsCommands.RecordLoadV1, id,
+        await a.Store.MutateInstructionAsync(run.Envelope(prefix + "k-issue"), Hash(prefix + "issue-3"), LogisticsCommands.IssueV1, id, (instruction, now) => instruction.Issue(3, now), Issued);
+        await a.Store.MutateInstructionAsync(run.Envelope(prefix + "k-load-1"), Hash(prefix + "load-4"), LogisticsCommands.RecordLoadV1, id,
             (instruction, now) => instruction.RecordLoad(4, Guid.NewGuid(), first, Kg(5m), MeasurementKind.Measured, now), Loaded);
-        await a.Store.MutateInstructionAsync(run.Envelope("k-load-2"), Hash("load-5"), LogisticsCommands.RecordLoadV1, id,
+        await a.Store.MutateInstructionAsync(run.Envelope(prefix + "k-load-2"), Hash(prefix + "load-5"), LogisticsCommands.RecordLoadV1, id,
             (instruction, now) => instruction.RecordLoad(5, Guid.NewGuid(), second, Kg(5m), MeasurementKind.Measured, now), Loaded);
         // The shipment share alone (its Inventory half is proven by the hosted shipment tests): the dispatch note reads the share.
-        await a.Store.MutateInstructionAsync(run.Envelope("k-ship-1"), Hash("ship-6"), LogisticsCommands.RecordShipmentV1, id,
+        await a.Store.MutateInstructionAsync(run.Envelope(prefix + "k-ship-1"), Hash(prefix + "ship-6"), LogisticsCommands.RecordShipmentV1, id,
             (instruction, now) => instruction.MarkShipped(6, shipments[0], first, Kg(3m), now), Shipped);
-        await a.Store.MutateInstructionAsync(run.Envelope("k-ship-2"), Hash("ship-7"), LogisticsCommands.RecordShipmentV1, id,
+        await a.Store.MutateInstructionAsync(run.Envelope(prefix + "k-ship-2"), Hash(prefix + "ship-7"), LogisticsCommands.RecordShipmentV1, id,
             (instruction, now) => instruction.MarkShipped(7, shipments[1], second, Kg(4.5m), now), Shipped);
-        await a.Store.MutateInstructionAsync(run.Envelope("k-ship-3"), Hash("ship-8"), LogisticsCommands.RecordShipmentV1, id,
+        await a.Store.MutateInstructionAsync(run.Envelope(prefix + "k-ship-3"), Hash(prefix + "ship-8"), LogisticsCommands.RecordShipmentV1, id,
             (instruction, now) => instruction.MarkShipped(8, shipments[2], first, Kg(2m), now), Shipped);
         return (id, first, second, shipments);
     }
@@ -142,7 +142,7 @@ public sealed partial class LogisticsInstructionSqlServerRelationalAcceptanceTes
         var noteB = Guid.NewGuid();
 
         const string InsertNote = "INSERT INTO [logistics].[DispatchNotes] ([CompanyId], [InstructionId], [DispatchNoteId], [NoteNo], [Status], [SharesBefore], "
-            + "[CreatedBy], [CreatedAtUtc]) VALUES (@company, @id, @note, @no, @status, 5, N'SENTETIK', SYSDATETIMEOFFSET())";
+            + "[CreatedBy], [CreatedAtUtc], [CreatedStep]) VALUES (@company, @id, @note, @no, @status, 5, N'SENTETIK', SYSDATETIMEOFFSET(), @no)";
         const string InsertLine = "INSERT INTO [logistics].[DispatchNoteLines] ([CompanyId], [InstructionId], [DispatchNoteId], [LineNo], [ShipmentId], "
             + "[InstructionLineId], [SourceOrderId], [SourceOrderLineId], [ProductId], [UnitId], [Quantity]) "
             + "VALUES (@company, @id, @note, @line, @shipment, @instructionLine, @order, NEWID(), NEWID(), NEWID(), @quantity)";
@@ -165,14 +165,16 @@ public sealed partial class LogisticsInstructionSqlServerRelationalAcceptanceTes
             TryAsync(InsertLine, ("@company", CompanyA), ("@id", id), ("@note", note), ("@line", line), ("@shipment", shipment),
                 ("@instructionLine", first), ("@order", owners.Order), ("@quantity", quantity));
 
-        // Only the Draft state exists (547); a line needs its draft (547, the foreign key); a zero quantity is refused (547).
+        // An Approved (2) or Cancelled (3) row without its lifecycle group is refused (547; the lifecycle's own shape is proven by
+        // The_database_holds_the_lifecycle_shape_…); a line needs its draft (547, the foreign key); a zero quantity is refused (547).
         Assert.Equal(547, await Note(noteA, 1, status: 2));
+        Assert.Equal(547, await Note(noteA, 1, status: 3));
         Assert.Equal(547, await Line(noteA, 1, shipments[0]));
         Assert.Equal(0, await Note(noteA, 1));
         Assert.Equal(0, await Note(noteB, 2));
         Assert.Equal(547, await Line(noteA, 1, shipments[0], quantity: 0m));
 
-        // AT-055 in the schema: the same shipment on a second line — of another draft or of the same one — is the unique key (2601).
+        // AT-055 in the schema: the same shipment on a second ACTIVE line — of another draft or of the same one — is the filtered unique key (2601).
         Assert.Equal(0, await Line(noteA, 1, shipments[0]));
         Assert.Equal(2601, await Line(noteB, 1, shipments[0]));
         Assert.Equal(2601, await Line(noteA, 2, shipments[0]));
@@ -194,8 +196,10 @@ public sealed partial class LogisticsInstructionSqlServerRelationalAcceptanceTes
         await using (var context = new LogisticsDbContext(options, companyContext))
         {
             var applied = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
-            Assert.EndsWith("_AddDispatchNoteDrafts", applied[^1], StringComparison.Ordinal);
-            await context.GetService<IMigrator>().MigrateAsync(applied[^2]);
+            // The lifecycle migration (AT-055, 2026-09-30) follows the drafts' one; on empty tables both roll back.
+            Assert.EndsWith("_AddDispatchNoteLifecycle", applied[^1], StringComparison.Ordinal);
+            Assert.EndsWith("_AddDispatchNoteDrafts", applied[^2], StringComparison.Ordinal);
+            await context.GetService<IMigrator>().MigrateAsync(applied[^3]);
             Assert.Equal(0, await run.ScalarAsync<int>(TablesExist));
             await context.Database.MigrateAsync();
             Assert.Equal(2, await run.ScalarAsync<int>(TablesExist));
@@ -212,8 +216,12 @@ public sealed partial class LogisticsInstructionSqlServerRelationalAcceptanceTes
         await using (var context = new LogisticsDbContext(options, companyContext))
         {
             var applied = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
-            var error = await Assert.ThrowsAsync<SqlException>(() => context.GetService<IMigrator>().MigrateAsync(applied[^2]));
+            var error = await Assert.ThrowsAsync<SqlException>(() => context.GetService<IMigrator>().MigrateAsync(applied[^3]));
             Assert.Equal(51056, error.Number);
+            // A plain draft is the previous schema's shape, so the lifecycle migration may roll back before the drafts' Down refuses;
+            // the drafts' tables and the draft stay either way, and re-applying restores the lifecycle schema.
+            Assert.Contains(await context.Database.GetAppliedMigrationsAsync(), migration => migration.EndsWith("_AddDispatchNoteDrafts", StringComparison.Ordinal));
+            await context.Database.MigrateAsync();
             Assert.Equal(applied, await context.Database.GetAppliedMigrationsAsync());
         }
 

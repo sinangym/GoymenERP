@@ -202,7 +202,7 @@ public sealed class LogisticsInstructionHttpAcceptanceTests(GoymenErpApiFactory 
         // same key, the recorded terminal 409 for a shipment already on a draft, and a body carrying a quantity refused before the service.
         var id = Guid.NewGuid();
         var shipment = Guid.NewGuid();
-        var note = new DispatchNoteView(Guid.NewGuid(), "Draft", "SENTETIK-sevkiyat", DateTimeOffset.UtcNow,
+        var note = new DispatchNoteView(Guid.NewGuid(), "Draft", null, "SENTETIK-sevkiyat", DateTimeOffset.UtcNow, null, null, null, null, null, null,
             [new DispatchNoteLineView(1, shipment, Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), "3")]);
         var service = new StubService { Draft = () => Task.FromResult(new LoadingInstructionResponse(Detail(id) with { DispatchNotes = [note] }, false, "SENTETIK-corr")) };
         using var host = CreateHost(service);
@@ -213,7 +213,11 @@ public sealed class LogisticsInstructionHttpAcceptanceTests(GoymenErpApiFactory 
         {
             Assert.Equal(HttpStatusCode.OK, response.StatusCode);
             var answered = Assert.Single((await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("detail").GetProperty("dispatchNotes").EnumerateArray());
-            Assert.Equal(["dispatchNoteId", "status", "createdBy", "createdAtUtc", "lines"], answered.EnumerateObject().Select(property => property.Name).ToArray());
+            // Every member is on the wire, the absent ones as null: the system number and the e-İrsaliye number are two members.
+            Assert.Equal(["dispatchNoteId", "status", "number", "createdBy", "createdAtUtc", "approvedBy", "approvedAtUtc", "cancelledBy", "cancelledAtUtc",
+                    "cancelReason", "eDispatchNumber", "lines"],
+                answered.EnumerateObject().Select(property => property.Name).ToArray());
+            Assert.Equal(JsonValueKind.Null, answered.GetProperty("number").ValueKind);
             var line = Assert.Single(answered.GetProperty("lines").EnumerateArray());
             Assert.Equal(["lineNo", "shipmentId", "instructionLineId", "sourceOrderId", "sourceOrderLineId", "productId", "unitId", "quantity"],
                 line.EnumerateObject().Select(property => property.Name).ToArray());
@@ -260,7 +264,7 @@ public sealed class LogisticsInstructionHttpAcceptanceTests(GoymenErpApiFactory 
         var service = new StubService
         {
             OrderNotes = salesOrderId => Task.FromResult(new SalesOrderDispatchNotesView(salesOrderId,
-                [new SalesOrderDispatchNoteView(Guid.NewGuid(), Guid.NewGuid(), "Draft", DateTimeOffset.UtcNow,
+                [new SalesOrderDispatchNoteView(Guid.NewGuid(), Guid.NewGuid(), "Approved", "IRS-000001", null, DateTimeOffset.UtcNow,
                     [new SalesOrderDispatchNoteLineView(1, Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), "2.5")])], false)),
         };
         using var host = CreateHost(service);
@@ -273,7 +277,9 @@ public sealed class LogisticsInstructionHttpAcceptanceTests(GoymenErpApiFactory 
             Assert.Equal(["salesOrderId", "items", "hasMore"], body.EnumerateObject().Select(property => property.Name).ToArray());
             Assert.Equal(order, body.GetProperty("salesOrderId").GetGuid());
             var item = Assert.Single(body.GetProperty("items").EnumerateArray());
-            Assert.Equal(["dispatchNoteId", "instructionId", "status", "createdAtUtc", "lines"], item.EnumerateObject().Select(property => property.Name).ToArray());
+            Assert.Equal(["dispatchNoteId", "instructionId", "status", "number", "eDispatchNumber", "createdAtUtc", "lines"],
+                item.EnumerateObject().Select(property => property.Name).ToArray());
+            Assert.Equal(("Approved", "IRS-000001"), (item.GetProperty("status").GetString(), item.GetProperty("number").GetString()));
         }
 
         foreach (var query in new[] { "", "?salesOrderId=nope", $"?salesOrderId={order:D}&pageSize=1", $"?salesOrderId={order:D}&salesOrderId={order:D}",
@@ -284,6 +290,72 @@ public sealed class LogisticsInstructionHttpAcceptanceTests(GoymenErpApiFactory 
         }
 
         Assert.Equal(1, service.Calls);
+    }
+
+    [Fact]
+    public async Task The_lifecycle_routes_bind_the_instruction_and_the_note_and_refuse_a_loose_body_before_the_service()
+    {
+        // AT-055 lifecycle wire (user decision 2026-09-30): approve / cancel / e-İrsaliye number answer 200 with the instruction; the
+        // recorded terminal 409s carry their codes; a body with another member, a padded or over-long reason, or an e-İrsaliye
+        // number out of the GİB shape is refused before the service.
+        var id = Guid.NewGuid();
+        var noteId = Guid.NewGuid();
+        var approved = new DispatchNoteView(noteId, "Approved", "IRS-000001", "SENTETIK-sevkiyat", DateTimeOffset.UtcNow, "SENTETIK-onay", DateTimeOffset.UtcNow,
+            null, null, null, null, [new DispatchNoteLineView(1, Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), "3")]);
+        var service = new StubService { Lifecycle = _ => Task.FromResult(new LoadingInstructionResponse(Detail(id) with { DispatchNotes = [approved] }, false, "SENTETIK-corr")) };
+        using var host = CreateHost(service);
+        using var client = CreateClient(host);
+
+        foreach (var (segment, body) in new[]
+                 {
+                     ("approve", """{"expectedVersion":"7"}"""),
+                     ("cancel", """{"expectedVersion":"7","reason":"Yanlış araç"}"""),
+                     ("e-dispatch-number", """{"expectedVersion":"7","eDispatchNumber":"GYM2026000000001"}"""),
+                 })
+        {
+            using var response = await client.SendAsync(Post($"{id:D}/dispatch-notes/{noteId:D}/{segment}", $"SENTETIK-{segment}", body));
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            var note = Assert.Single((await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("detail").GetProperty("dispatchNotes").EnumerateArray());
+            Assert.Equal("IRS-000001", note.GetProperty("number").GetString());
+        }
+
+        Assert.Equal(["approve", "cancel", "e-dispatch-number"], service.LifecycleCalls.Select(call => call.Command).ToArray());
+        Assert.All(service.LifecycleCalls, call => Assert.Equal((id, noteId), (call.InstructionId, call.DispatchNoteId)));
+        Assert.Equal("Yanlış araç", Assert.IsType<CancelDispatchNoteRequest>(service.LifecycleCalls[1].Request).Reason);
+
+        foreach (var code in new[] { LogisticsProblemCodesV1.DispatchNoteState, LogisticsProblemCodesV1.EDispatchNumberInUse })
+        {
+            service.Lifecycle = _ => throw new LogisticsInstructionServiceException(409, code, [new("status", code)]);
+            using var response = await client.SendAsync(Post($"{id:D}/dispatch-notes/{noteId:D}/e-dispatch-number", $"SENTETIK-{code}",
+                """{"expectedVersion":"8","eDispatchNumber":"GYM2026000000002"}"""));
+            Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+            Assert.Equal(code, (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString());
+        }
+
+        var calls = service.Calls;
+        var longReason = new string('x', 501);
+        foreach (var (segment, loose) in new[]
+                 {
+                     ("approve", """{"expectedVersion":"7","number":"IRS-000009"}"""),
+                     ("approve", """{}"""),
+                     ("cancel", """{"expectedVersion":"7"}"""),
+                     ("cancel", """{"expectedVersion":"7","reason":"  "}"""),
+                     ("cancel", """{"expectedVersion":"7","reason":" padded"}"""),
+                     ("cancel", "{\"expectedVersion\":\"7\",\"reason\":\"" + longReason + "\"}"),
+                     ("e-dispatch-number", """{"expectedVersion":"7","eDispatchNumber":"gym2026000000001"}"""),
+                     ("e-dispatch-number", """{"expectedVersion":"7","eDispatchNumber":"GYM202600000001"}"""),
+                     ("e-dispatch-number", """{"expectedVersion":"7","eDispatchNumber":"GYM2026000000001","number":"IRS-000001"}"""),
+                 })
+        {
+            using var response = await client.SendAsync(Post($"{id:D}/dispatch-notes/{noteId:D}/{segment}", "SENTETIK-loose", loose));
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        }
+
+        Assert.Equal(calls, service.Calls);
+        // A note id that is not a uuid never reaches a route.
+        using var notGuid = await client.SendAsync(Post($"{id:D}/dispatch-notes/not-a-note/approve", "SENTETIK-not-guid", """{"expectedVersion":"7"}"""));
+        Assert.Equal(HttpStatusCode.NotFound, notGuid.StatusCode);
+        Assert.Equal(calls, service.Calls);
     }
 
     private static string CreateBody() =>
@@ -356,6 +428,34 @@ public sealed class LogisticsInstructionHttpAcceptanceTests(GoymenErpApiFactory 
         {
             Calls++;
             return Draft();
+        }
+
+        public Func<string, Task<LoadingInstructionResponse>> Lifecycle { get; set; } = _ => throw new InvalidOperationException("not expected");
+
+        public List<(string Command, Guid InstructionId, Guid DispatchNoteId, object Request)> LifecycleCalls { get; } = [];
+
+        public Task<LoadingInstructionResponse> ApproveDispatchNoteAsync(Guid instructionId, Guid dispatchNoteId, ApproveDispatchNoteRequest request,
+            LogisticsCommandMetadata metadata, CancellationToken cancellationToken = default)
+        {
+            Calls++;
+            LifecycleCalls.Add(("approve", instructionId, dispatchNoteId, request));
+            return Lifecycle("approve");
+        }
+
+        public Task<LoadingInstructionResponse> CancelDispatchNoteAsync(Guid instructionId, Guid dispatchNoteId, CancelDispatchNoteRequest request,
+            LogisticsCommandMetadata metadata, CancellationToken cancellationToken = default)
+        {
+            Calls++;
+            LifecycleCalls.Add(("cancel", instructionId, dispatchNoteId, request));
+            return Lifecycle("cancel");
+        }
+
+        public Task<LoadingInstructionResponse> SetEDispatchNumberAsync(Guid instructionId, Guid dispatchNoteId, SetEDispatchNumberRequest request,
+            LogisticsCommandMetadata metadata, CancellationToken cancellationToken = default)
+        {
+            Calls++;
+            LifecycleCalls.Add(("e-dispatch-number", instructionId, dispatchNoteId, request));
+            return Lifecycle("e-dispatch-number");
         }
 
         public Func<Guid, Task<SalesOrderDispatchNotesView>> OrderNotes { get; set; } = _ => throw new InvalidOperationException("not expected");

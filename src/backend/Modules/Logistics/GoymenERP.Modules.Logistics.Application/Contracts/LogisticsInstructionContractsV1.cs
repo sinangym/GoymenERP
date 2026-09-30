@@ -46,11 +46,31 @@ public sealed record RecordWeighingRequest(string ExpectedVersion, Guid Weighing
 
 /// <summary>
 /// POST …/{id}/dispatch-notes (AT-055): a dispatch-note (irsaliye) DRAFT from definite shipments of an issued instruction — the
-/// shipment ids to put on it (each a recorded shipment of this instruction, named once, not yet on a dispatch note). The draft
-/// id is the client's (one draft per id). No quantity, price, number, date or customer is sent: each line is the recorded
-/// shipped quantity, the customer is the instruction's, and the backend stamps the preparer and the time.
+/// shipment ids to put on it (each a recorded shipment of this instruction, named once, not on a non-cancelled dispatch note).
+/// The draft id is the client's (one note per id, never reused in the company). No quantity, price, number, date or customer is
+/// sent: each line is the recorded shipped quantity, the customer is the instruction's, and the backend stamps the preparer and
+/// the time.
 /// </summary>
 public sealed record CreateDispatchNoteRequest(string ExpectedVersion, Guid DispatchNoteId, IReadOnlyList<Guid> ShipmentIds);
+
+/// <summary>
+/// POST …/{id}/dispatch-notes/{dispatchNoteId}/approve (AT-055, user decision 2026-09-30): the draft becomes Approved and gets
+/// the company's next system number (series + gap-free sequence) in the same save. The instruction version is the precondition.
+/// </summary>
+public sealed record ApproveDispatchNoteRequest(string ExpectedVersion);
+
+/// <summary>
+/// POST …/{id}/dispatch-notes/{dispatchNoteId}/cancel (AT-055, user decision 2026-09-30): a draft or an approved note is
+/// cancelled — never deleted — with the reason (trimmed text, 1–500 characters); its shipments are released for a new note.
+/// </summary>
+public sealed record CancelDispatchNoteRequest(string ExpectedVersion, string Reason);
+
+/// <summary>
+/// POST …/{id}/dispatch-notes/{dispatchNoteId}/e-dispatch-number (AT-055, user decision 2026-09-30): the official e-İrsaliye
+/// number of an approved note, entered by the user (a later integration writes the same field); the GİB shape
+/// (<see cref="LogisticsJson.EDispatchNumberPattern"/>), set once, unique per company, kept apart from the system number.
+/// </summary>
+public sealed record SetEDispatchNumberRequest(string ExpectedVersion, string EDispatchNumber);
 
 // ---- views --------------------------------------------------------------------------------------
 
@@ -86,21 +106,23 @@ public sealed record DispatchNoteLineView(
     int LineNo, Guid ShipmentId, Guid InstructionLineId, Guid SourceOrderId, Guid SourceOrderLineId, Guid ProductId, Guid UnitId, string Quantity);
 
 /// <summary>
-/// A dispatch-note draft of the instruction (AT-055). <paramref name="Status"/> is always "Draft": finalising, numbering,
-/// cancelling and official submission are not decided (DEC-INT-001), so there is no number member. <paramref name="CreatedBy"/>
-/// is the preparer's user id.
+/// A dispatch note of the instruction (AT-055). <paramref name="Status"/> is "Draft" | "Approved" | "Cancelled".
+/// <paramref name="Number"/> is the system (ERP) number given on approval ("IRS-000001"; null for a draft and for a draft
+/// cancelled before approval; a cancelled note keeps it). <paramref name="EDispatchNumber"/> is the official e-İrsaliye number
+/// entered on an approved note, apart from the system number. Actors are user ids; nothing is ever deleted.
 /// </summary>
-public sealed record DispatchNoteView(Guid DispatchNoteId, string Status, string CreatedBy, DateTimeOffset CreatedAtUtc,
-    IReadOnlyList<DispatchNoteLineView> Lines);
+public sealed record DispatchNoteView(Guid DispatchNoteId, string Status, string? Number, string CreatedBy, DateTimeOffset CreatedAtUtc,
+    string? ApprovedBy, DateTimeOffset? ApprovedAtUtc, string? CancelledBy, DateTimeOffset? CancelledAtUtc, string? CancelReason,
+    string? EDispatchNumber, IReadOnlyList<DispatchNoteLineView> Lines);
 
 /// <param name="Weighing">The manual weighbridge record, or null while none is recorded (always present on the wire).</param>
-/// <param name="DispatchNotes">The dispatch-note drafts prepared from this instruction's shipments, oldest first (always present; empty when none).</param>
+/// <param name="DispatchNotes">The dispatch notes prepared from this instruction's shipments, oldest first, cancelled ones included (always present; empty when none).</param>
 public sealed record LoadingInstructionDetailView(
     LoadingInstructionSummaryView Instruction,
     IReadOnlyList<LoadingInstructionLineView> Lines,
     IReadOnlyList<LoadingShareView> Shares,
-    LoadingInstructionWeighingView? Weighing = null,
-    IReadOnlyList<DispatchNoteView>? DispatchNotes = null);
+    LoadingInstructionWeighingView? Weighing,
+    IReadOnlyList<DispatchNoteView> DispatchNotes);
 
 /// <summary>
 /// AT-055, the Sales order view's link (S-04): the dispatch-note drafts that document shipments of one Sales order, with only
@@ -109,8 +131,9 @@ public sealed record LoadingInstructionDetailView(
 /// </summary>
 public sealed record SalesOrderDispatchNotesView(Guid SalesOrderId, IReadOnlyList<SalesOrderDispatchNoteView> Items, bool HasMore);
 
-public sealed record SalesOrderDispatchNoteView(Guid DispatchNoteId, Guid InstructionId, string Status, DateTimeOffset CreatedAtUtc,
-    IReadOnlyList<SalesOrderDispatchNoteLineView> Lines);
+/// <summary>One dispatch note on the asked order: its state, its system number and e-İrsaliye number when present, and this order's lines.</summary>
+public sealed record SalesOrderDispatchNoteView(Guid DispatchNoteId, Guid InstructionId, string Status, string? Number, string? EDispatchNumber,
+    DateTimeOffset CreatedAtUtc, IReadOnlyList<SalesOrderDispatchNoteLineView> Lines);
 
 /// <summary>One line of the draft on the asked order: the order line, the shipment and the shipped quantity (exact text) in its unit.</summary>
 public sealed record SalesOrderDispatchNoteLineView(int LineNo, Guid SourceOrderLineId, Guid ShipmentId, Guid UnitId, string Quantity);
@@ -176,11 +199,20 @@ public static class LogisticsProblemCodesV1
     /// <summary>422 (AT-053): the two weighings contradict the declared direction (the gross must be heavier than the tare).</summary>
     public const string WeighingDirectionInconsistent = "logistics_weighing_direction_inconsistent";
 
-    /// <summary>409, terminal (§7; AT-055): a named shipment is already on a dispatch note; a shipment is linked to at most one.</summary>
+    /// <summary>409, terminal (§7; AT-055): a named shipment is already on a non-cancelled dispatch note; a shipment is on at most one.</summary>
     public const string ShipmentAlreadyDispatched = "logistics_shipment_already_dispatched";
 
-    /// <summary>409, terminal (§7): the draft id is already a dispatch note of this instruction (under another key).</summary>
+    /// <summary>409, terminal (§7): the note id is already a dispatch note of this company — of this or another instruction, even a cancelled one.</summary>
     public const string DuplicateDispatchNote = "logistics_duplicate_dispatch_note_id";
+
+    /// <summary>
+    /// 409, terminal (§7; AT-055 lifecycle): the dispatch note is not in the state the command needs — approve needs a Draft,
+    /// cancel a Draft or Approved note, the e-İrsaliye number an Approved note without one.
+    /// </summary>
+    public const string DispatchNoteState = "logistics_dispatch_note_state";
+
+    /// <summary>409, terminal (§7): the e-İrsaliye number is already on another dispatch note of this company.</summary>
+    public const string EDispatchNumberInUse = "logistics_e_dispatch_number_in_use";
 
     /// <summary>422 (AT-055): a named id is not a recorded definite shipment of this instruction.</summary>
     public const string ShipmentNotFound = "logistics_shipment_not_found";
@@ -226,7 +258,9 @@ public sealed record LogisticsInstructionServiceBindings(
     string? ShipmentPermission = LogisticsPermissionManifestV1.ShipmentsRecord,
     string? DeliveryPermission = LogisticsPermissionManifestV1.DeliveriesRecord,
     string? WeighingPermission = LogisticsPermissionManifestV1.WeighingsRecord,
-    string? DispatchNotePermission = LogisticsPermissionManifestV1.DispatchNotesCreate);
+    string? DispatchNotePermission = LogisticsPermissionManifestV1.DispatchNotesCreate,
+    string? DispatchNoteApprovePermission = LogisticsPermissionManifestV1.DispatchNotesApprove,
+    string? DispatchNoteCancelPermission = LogisticsPermissionManifestV1.DispatchNotesCancel);
 
 /// <summary>Constructed by the server, never bound from the request body.</summary>
 public sealed record LogisticsCommandMetadata(string IdempotencyKey, string CorrelationId, string? CausationId, DateTimeOffset RequestedAtUtc);
@@ -244,7 +278,16 @@ public static class LogisticsApiV1
     /// <summary>AT-055: a dispatch-note draft from the instruction's definite shipments.</summary>
     public const string DispatchNotesPath = "/api/v1/logistics/loading-instructions/{id}/dispatch-notes";
 
-    /// <summary>AT-055: the dispatch-note drafts of one Sales order (query <c>salesOrderId</c>), for the Sales order view's link.</summary>
+    /// <summary>AT-055: approve a draft (the system number is assigned).</summary>
+    public const string ApproveDispatchNotePath = "/api/v1/logistics/loading-instructions/{id}/dispatch-notes/{dispatchNoteId}/approve";
+
+    /// <summary>AT-055: cancel a draft or an approved note (its shipments are released).</summary>
+    public const string CancelDispatchNotePath = "/api/v1/logistics/loading-instructions/{id}/dispatch-notes/{dispatchNoteId}/cancel";
+
+    /// <summary>AT-055: record the official e-İrsaliye number of an approved note.</summary>
+    public const string EDispatchNumberPath = "/api/v1/logistics/loading-instructions/{id}/dispatch-notes/{dispatchNoteId}/e-dispatch-number";
+
+    /// <summary>AT-055: the dispatch notes of one Sales order (query <c>salesOrderId</c>), for the Sales order view's link.</summary>
     public const string SalesOrderDispatchNotesPath = "/api/v1/logistics/dispatch-notes";
 
     /// <summary>LOG-4b: the price-free approved-order-lines read for the picker (the create name).</summary>
@@ -356,6 +399,53 @@ public static class LogisticsJson
 
         return request;
     }
+
+    public static ApproveDispatchNoteRequest ReadApproveDispatchNote(string json)
+    {
+        var request = JsonSerializer.Deserialize<ApproveDispatchNoteRequest>(json, Options)
+            ?? throw new JsonException("Request body is required.");
+        RequireVersionShape(request.ExpectedVersion);
+        return request;
+    }
+
+    public static CancelDispatchNoteRequest ReadCancelDispatchNote(string json)
+    {
+        var request = JsonSerializer.Deserialize<CancelDispatchNoteRequest>(json, Options)
+            ?? throw new JsonException("Request body is required.");
+        RequireVersionShape(request.ExpectedVersion);
+        // Canonical text only: the client trims; a blank, padded or over-long reason is the caller's shape error.
+        if (string.IsNullOrWhiteSpace(request.Reason) || !string.Equals(request.Reason, request.Reason.Trim(), StringComparison.Ordinal)
+            || request.Reason.Length > CancelReasonMaximumLength)
+        {
+            throw new JsonException("Invalid cancellation reason.");
+        }
+
+        return request;
+    }
+
+    public static SetEDispatchNumberRequest ReadSetEDispatchNumber(string json)
+    {
+        var request = JsonSerializer.Deserialize<SetEDispatchNumberRequest>(json, Options)
+            ?? throw new JsonException("Request body is required.");
+        RequireVersionShape(request.ExpectedVersion);
+        if (request.EDispatchNumber is null || !EDispatchNumberText.IsMatch(request.EDispatchNumber))
+        {
+            throw new JsonException("Invalid e-dispatch number.");
+        }
+
+        return request;
+    }
+
+    /// <summary>The widest cancellation reason (the column; the domain's own cap).</summary>
+    public const int CancelReasonMaximumLength = 500;
+
+    /// <summary>The most shipments one dispatch note names (the OpenAPI <c>maxItems</c>).</summary>
+    public const int MaximumDispatchNoteShipments = MaximumLines;
+
+    /// <summary>The GİB e-document number: 3 upper-case letters/digits, then 13 digits (4-digit year + 9-digit sequence).</summary>
+    public const string EDispatchNumberPattern = "^[A-Z0-9]{3}[0-9]{13}$";
+
+    private static readonly Regex EDispatchNumberText = new("\\A[A-Z0-9]{3}[0-9]{13}\\z", RegexOptions.CultureInvariant);
 
     private static void RequireVersionShape(string? text)
     {

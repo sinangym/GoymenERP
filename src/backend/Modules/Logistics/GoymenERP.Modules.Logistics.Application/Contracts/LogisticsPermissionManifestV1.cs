@@ -49,7 +49,21 @@ public static class LogisticsPermissionManifestV1
     /// </summary>
     public const string DispatchNotesCreate = "logistics.dispatch-notes.create";
 
+    /// <summary>
+    /// AT-055 (user decision 2026-09-30): approve (finalise) a dispatch-note draft — the system series number is assigned on
+    /// approval — and record the official e-İrsaliye number on an approved note. Its own name, apart from preparing the draft.
+    /// No maker-checker rule is documented for the irsaliye (no DEC-* names one), so the preparer is not barred from approving
+    /// (ASSUMPTION-AT055-APPROVER); segregating the two is a grant decision.
+    /// </summary>
+    public const string DispatchNotesApprove = "logistics.dispatch-notes.approve";
+
+    /// <summary>
+    /// AT-055 (user decision 2026-09-30): cancel a draft or an approved dispatch note with a reason (never a delete); the
+    /// cancellation releases its shipments for a new note. Its own name.
+    /// </summary>
+    public const string DispatchNotesCancel = "logistics.dispatch-notes.cancel";
+
     public static readonly IReadOnlyList<string> Names =
         [InstructionsCreate, InstructionsRead, LoadsRecord, ShipmentsRecord, DeliveriesRecord, WeighingsRecord, OperationsSalesWorkRead, OperationsPurchaseWorkRead,
-            DispatchNotesCreate];
+            DispatchNotesCreate, DispatchNotesApprove, DispatchNotesCancel];
 }

@@ -10,6 +10,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { decodeInstructionDetail } from './contract'
+import { resetPendingInstructionAttempts } from './pendingInstructionAttempts'
 import { DISPATCH_NOTE_TEXT as T, INSTRUCTION_DETAIL_TEXT, PROBLEM_CODE_TEXT } from './logisticsText'
 import {
   DRAFT,
@@ -31,6 +32,7 @@ import {
 
 afterEach(() => {
   cleanup()
+  resetPendingInstructionAttempts()
   vi.unstubAllGlobals()
   vi.restoreAllMocks()
 })
@@ -46,11 +48,19 @@ const shares = [
   { shareId: SHIP_2, lineId: LINE, kind: 'Shipped', quantity: '1.5', measurement: null, sourceShipmentId: null, recordedAtUtc: '2026-09-19T09:30:00Z' },
 ]
 
-const note = (id: string, shipmentIds: readonly string[]) => ({
+const note = (id: string, shipmentIds: readonly string[], state: Record<string, unknown> = {}) => ({
   dispatchNoteId: id,
   status: 'Draft',
+  number: null,
   createdBy: 'SENTETIK-sevkiyat',
   createdAtUtc: '2026-09-19T09:40:00Z',
+  approvedBy: null,
+  approvedAtUtc: null,
+  cancelledBy: null,
+  cancelledAtUtc: null,
+  cancelReason: null,
+  eDispatchNumber: null,
+  ...state,
   lines: shipmentIds.map((shipmentId, index) => ({
     lineNo: index + 1,
     shipmentId,
@@ -173,5 +183,150 @@ describe('AT-055 dispatch-note draft on L-02-DETAIL', () => {
     expect(decodeInstructionDetail(issued([{ ...changed, number: 'IRS-1' }]), INSTRUCTION)).toBeNull()
     const { dispatchNotes: _omitted, ...withoutMember } = issued()
     expect(decodeInstructionDetail(withoutMember, INSTRUCTION)).toBeNull()
+  })
+})
+
+const APPROVED = { status: 'Approved', number: 'IRS-000001', approvedBy: 'SENTETIK-onay', approvedAtUtc: '2026-09-19T09:50:00Z' }
+const cancelledFrom = (base: Record<string, unknown>, reason: string) => ({
+  ...base, status: 'Cancelled', cancelledBy: 'SENTETIK-iptal', cancelledAtUtc: '2026-09-19T10:00:00Z', cancelReason: reason,
+})
+
+describe('AT-055 dispatch-note approval, cancellation and e-İrsaliye number on L-02-DETAIL', () => {
+  it('approving a draft sends only the version under its own key and shows the server-assigned number after the re-read', async () => {
+    let state: Record<string, unknown> = {}
+    const lifecycle: string[] = []
+    const harness = installFetch({
+      onDetail: () => json(issued([note(NOTE, [SHIP_1], state)], state.status === undefined ? '7' : '8')),
+      onDispatchNoteLifecycle: (kind, id) => {
+        lifecycle.push(`${kind}:${id}`)
+        state = APPROVED
+        return json(mutation(issued([note(NOTE, [SHIP_1], state)], '8')))
+      },
+    })
+    renderLogisticsApp(path)
+    const panel = await screen.findByTestId(`logistics-dispatch-note-lifecycle-${NOTE}`)
+    await userEvent.click(within(panel).getByTestId('logistics-dispatch-note-approve'))
+    await waitFor(() => expect(within(screen.getByTestId(`logistics-dispatch-note-${NOTE}`)).getByTestId('logistics-dispatch-note-number').textContent)
+      .toBe('IRS-000001'))
+    const block = screen.getByTestId(`logistics-dispatch-note-${NOTE}`)
+    expect(within(block).getByTestId('logistics-dispatch-note-status').textContent).toBe(T.approved)
+    expect(lifecycle).toEqual([`approve:${NOTE}`])
+    const post = harness.logisticsCalls().filter((call) => call.method === 'POST')
+    expect(post).toHaveLength(1)
+    expect(post[0].url).toBe(`/api/v1/logistics/loading-instructions/${INSTRUCTION}/dispatch-notes/${NOTE}/approve`)
+    expect(JSON.parse(post[0].body ?? '{}')).toEqual({ expectedVersion: '7' })
+    expect(post[0].idempotencyKey).not.toBeNull()
+    // An approved note offers no second approval; it offers cancellation and the e-İrsaliye number.
+    const approvedPanel = screen.getByTestId(`logistics-dispatch-note-lifecycle-${NOTE}`)
+    await waitFor(() => expect(within(approvedPanel).queryByTestId('logistics-dispatch-note-approve')).toBeNull())
+    expect(within(approvedPanel).getByTestId('logistics-dispatch-note-cancel')).toBeTruthy()
+    expect(within(approvedPanel).getByTestId('logistics-dispatch-note-e-number-form')).toBeTruthy()
+  })
+
+  it('an approve answer without a number is not success (the outcome stays unknown)', async () => {
+    installFetch({
+      onDetail: () => json(issued([note(NOTE, [SHIP_1])], '7')),
+      onDispatchNoteLifecycle: () => json(mutation(issued([note(NOTE, [SHIP_1])], '8'))),
+    })
+    renderLogisticsApp(path)
+    await userEvent.click(within(await screen.findByTestId(`logistics-dispatch-note-lifecycle-${NOTE}`)).getByTestId('logistics-dispatch-note-approve'))
+    await screen.findByText(INSTRUCTION_DETAIL_TEXT.command.unknown)
+  })
+
+  it('cancelling requires a reason, sends it trimmed, keeps the cancelled note visible and frees its shipment for a new draft', async () => {
+    let cancelled = false
+    const lifecycle: string[] = []
+    const harness = installFetch({
+      onDetail: () => json(cancelled
+        ? issued([cancelledFrom(note(NOTE, [SHIP_1], APPROVED), 'Yanlış araç')], '9')
+        : issued([note(NOTE, [SHIP_1], APPROVED)], '8')),
+      onDispatchNoteLifecycle: (kind) => {
+        lifecycle.push(kind)
+        cancelled = true
+        return json(mutation(issued([cancelledFrom(note(NOTE, [SHIP_1], APPROVED), 'Yanlış araç')], '9')))
+      },
+    })
+    renderLogisticsApp(path)
+    // The approved note holds SHIP_1: it cannot be picked for another draft.
+    expect((within(await screen.findByTestId(`logistics-dispatch-note-shipment-${SHIP_1}`)).getByRole('checkbox') as HTMLInputElement).disabled).toBe(true)
+    const panel = screen.getByTestId(`logistics-dispatch-note-lifecycle-${NOTE}`)
+    await userEvent.click(within(panel).getByTestId('logistics-dispatch-note-cancel'))
+    await userEvent.click(within(panel).getByTestId('logistics-dispatch-note-cancel-confirm'))
+    await within(panel).findByText(T.cancelReasonRequired)
+    expect(harness.logisticsCalls().filter((call) => call.method === 'POST')).toHaveLength(0)
+    await userEvent.type(within(panel).getByTestId('logistics-dispatch-note-cancel-reason-input'), '  Yanlış araç  ')
+    await userEvent.click(within(panel).getByTestId('logistics-dispatch-note-cancel-confirm'))
+
+    await waitFor(() => expect(within(screen.getByTestId(`logistics-dispatch-note-${NOTE}`)).getByTestId('logistics-dispatch-note-status').textContent)
+      .toBe(T.cancelled))
+    const block = screen.getByTestId(`logistics-dispatch-note-${NOTE}`)
+    expect(within(block).getByTestId('logistics-dispatch-note-number').textContent).toBe('IRS-000001')
+    expect(within(block).getByTestId('logistics-dispatch-note-cancel-reason').textContent).toBe('Yanlış araç')
+    expect(lifecycle).toEqual(['cancel'])
+    const post = harness.logisticsCalls().filter((call) => call.method === 'POST')
+    expect(post).toHaveLength(1)
+    expect(post[0].url).toBe(`/api/v1/logistics/loading-instructions/${INSTRUCTION}/dispatch-notes/${NOTE}/cancel`)
+    expect(JSON.parse(post[0].body ?? '{}')).toEqual({ expectedVersion: '8', reason: 'Yanlış araç' })
+    // Released: SHIP_1 is pickable again (correction = cancel + new draft).
+    await waitFor(() =>
+      expect((within(screen.getByTestId(`logistics-dispatch-note-shipment-${SHIP_1}`)).getByRole('checkbox') as HTMLInputElement).disabled).toBe(false))
+  })
+
+  it('the e-İrsaliye number is validated and uppercased before it is sent, and a number in use is explained', async () => {
+    const harness = installFetch({
+      onDetail: () => json(issued([note(NOTE, [SHIP_1], APPROVED)], '8')),
+      onDispatchNoteLifecycle: () =>
+        json({ status: 409, title: 'Conflict', code: 'logistics_e_dispatch_number_in_use', correlationId: 'c',
+          errors: [{ field: 'eDispatchNumber', code: 'logistics_e_dispatch_number_in_use' }] }, 409),
+    })
+    renderLogisticsApp(path)
+    const panel = await screen.findByTestId(`logistics-dispatch-note-lifecycle-${NOTE}`)
+    const input = within(panel).getByTestId('logistics-dispatch-note-e-number-input')
+    await userEvent.type(input, 'GYM12')
+    await userEvent.click(within(panel).getByTestId('logistics-dispatch-note-e-number-save'))
+    await within(panel).findByText(T.eDispatchNumberInvalid)
+    expect(harness.logisticsCalls().filter((call) => call.method === 'POST')).toHaveLength(0)
+    await userEvent.clear(input)
+    await userEvent.type(input, 'gym2026000000001')
+    await userEvent.click(within(panel).getByTestId('logistics-dispatch-note-e-number-save'))
+    await waitFor(() => expect(screen.getByTestId('logistics-dispatch-note-lifecycle-notice').textContent).toBe(
+      `${INSTRUCTION_DETAIL_TEXT.command.conflict} ${PROBLEM_CODE_TEXT['logistics_e_dispatch_number_in_use' as keyof typeof PROBLEM_CODE_TEXT]}`))
+    const post = harness.logisticsCalls().filter((call) => call.method === 'POST')
+    expect(post[0].url).toBe(`/api/v1/logistics/loading-instructions/${INSTRUCTION}/dispatch-notes/${NOTE}/e-dispatch-number`)
+    expect(JSON.parse(post[0].body ?? '{}')).toEqual({ expectedVersion: '8', eDispatchNumber: 'GYM2026000000001' })
+  })
+
+  it('reopening shows the states, numbers and the e-İrsaliye number; a cancelled note offers no command', async () => {
+    const OTHER = '70707070-7070-4070-8070-707070707070'
+    installFetch({
+      onDetail: () => json(issued([
+        cancelledFrom(note(NOTE, [SHIP_1], { ...APPROVED, eDispatchNumber: 'GYM2026000000001' }), 'Düzeltme'),
+        note(OTHER, [SHIP_1], { ...APPROVED, number: 'IRS-000002' }),
+      ], '11')),
+    })
+    renderLogisticsApp(path)
+    const first = await screen.findByTestId(`logistics-dispatch-note-${NOTE}`)
+    expect(within(first).getByTestId('logistics-dispatch-note-status').textContent).toBe(T.cancelled)
+    expect(within(first).getByTestId('logistics-dispatch-note-e-number').textContent).toBe('GYM2026000000001')
+    const second = screen.getByTestId(`logistics-dispatch-note-${OTHER}`)
+    expect(within(second).getByTestId('logistics-dispatch-note-number').textContent).toBe('IRS-000002')
+    expect(screen.queryByTestId(`logistics-dispatch-note-lifecycle-${NOTE}`)).toBeNull()
+    expect(screen.getByTestId(`logistics-dispatch-note-lifecycle-${OTHER}`)).toBeTruthy()
+  })
+
+  it('the decoder holds the lifecycle shape: a number only once approved, a reason only when cancelled, one live link, unique numbers', () => {
+    const OTHER = '70707070-7070-4070-8070-707070707070'
+    expect(decodeInstructionDetail(issued([note(NOTE, [SHIP_1], APPROVED)]), INSTRUCTION)?.dispatchNotes[0].number).toBe('IRS-000001')
+    expect(decodeInstructionDetail(issued([note(NOTE, [SHIP_1], { status: 'Approved' })]), INSTRUCTION)).toBeNull()
+    expect(decodeInstructionDetail(issued([note(NOTE, [SHIP_1], { status: 'Cancelled' })]), INSTRUCTION)).toBeNull()
+    expect(decodeInstructionDetail(issued([note(NOTE, [SHIP_1], { cancelReason: 'x' })]), INSTRUCTION)).toBeNull()
+    expect(decodeInstructionDetail(issued([note(NOTE, [SHIP_1], { eDispatchNumber: 'GYM2026000000001' })]), INSTRUCTION)).toBeNull()
+    expect(decodeInstructionDetail(issued([note(NOTE, [SHIP_1], { ...APPROVED, eDispatchNumber: 'bad' })]), INSTRUCTION)).toBeNull()
+    // A cancelled draft (never approved) has no number; its shipment may be on a new live note.
+    const released = issued([cancelledFrom(note(NOTE, [SHIP_1]), 'Hata'), note(OTHER, [SHIP_1])])
+    expect(decodeInstructionDetail(released, INSTRUCTION)?.dispatchNotes).toHaveLength(2)
+    // Two live notes on one shipment, or one ERP number twice, is not an answer.
+    expect(decodeInstructionDetail(issued([note(NOTE, [SHIP_1], APPROVED), note(OTHER, [SHIP_1])]), INSTRUCTION)).toBeNull()
+    expect(decodeInstructionDetail(issued([cancelledFrom(note(NOTE, [SHIP_1], APPROVED), 'x'), note(OTHER, [SHIP_1], APPROVED)]), INSTRUCTION)).toBeNull()
   })
 })

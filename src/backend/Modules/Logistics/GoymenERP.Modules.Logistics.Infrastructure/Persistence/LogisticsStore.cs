@@ -4,6 +4,7 @@ using System.Text.Json;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Audit.Application.Contracts;
 using GoymenERP.Modules.Logistics.Application.Contracts;
+using GoymenERP.Modules.Logistics.Domain;
 using GoymenERP.Modules.Logistics.Domain.Loading;
 using GoymenERP.Modules.Logistics.Domain.Quantities;
 using Microsoft.Data.SqlClient;
@@ -14,7 +15,8 @@ namespace GoymenERP.Modules.Logistics.Infrastructure.Persistence;
 /// <summary>
 /// The Logistics store of the server-resolved company (LOG-4a; the Sales SALES-P2 shape). One call is
 /// one save; a stored instruction is rebuilt through the domain in recording order (lines, issue, then
-/// every share as the command that recorded it, the weighing and the dispatch-note drafts at their share position), so a corrupt row is refused, not repaired, and the
+/// every share as the command that recorded it, the weighing at its share position and every dispatch-note step — create, approve,
+/// cancel, e-İrsaliye number — in its order), so a corrupt row is refused, not repaired, and the
 /// stored version must be the one the rebuild reaches. Block toggles are not an event in this slice
 /// (no owner source yet): a blocked line is restored with one block at the end, and a line that was
 /// blocked and unblocked cannot be represented — LOG-5 stores the block source's events.
@@ -182,7 +184,7 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
         RequireCommand(commandName);
         if (!LogisticsCommands.IsMutation(commandName))
         {
-            throw new ArgumentException("Yalnız yayımlama, pay ve kantar tartımı komutları bir talimatı değiştirir.", nameof(commandName));
+            throw new ArgumentException("Yalnız yayımlama, pay, kantar tartımı ve irsaliye komutları bir talimatı değiştirir.", nameof(commandName));
         }
 
         if (string.IsNullOrWhiteSpace(audit.EventType) || string.IsNullOrWhiteSpace(audit.Operation) || string.IsNullOrWhiteSpace(audit.Reason))
@@ -222,29 +224,61 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
         var shareRows = await dbContext.Shares.AsNoTracking().Where(share => share.InstructionId == instructionId).OrderBy(share => share.ShareNo)
             .ToListAsync(cancellationToken);
         var weighingRow = await dbContext.Weighings.AsNoTracking().SingleOrDefaultAsync(weighing => weighing.InstructionId == instructionId, cancellationToken);
-        var noteRows = await dbContext.DispatchNotes.AsNoTracking().Where(note => note.InstructionId == instructionId).OrderBy(note => note.NoteNo)
+        // AT-055: the dispatch notes and their lines are tracked too — a lifecycle step writes its columns and releases lines in place.
+        var noteRows = await dbContext.DispatchNotes.Where(note => note.InstructionId == instructionId).OrderBy(note => note.NoteNo)
             .ToListAsync(cancellationToken);
-        var noteLineRows = await dbContext.DispatchNoteLines.AsNoTracking().Where(line => line.InstructionId == instructionId)
+        var noteLineRows = await dbContext.DispatchNoteLines.Where(line => line.InstructionId == instructionId)
             .ToListAsync(cancellationToken);
         var instruction = Restore(row, lineRows, shareRows, weighingRow, noteRows, noteLineRows);
         var versionBefore = instruction.Version;
         var before = Snapshot(instruction);
         var sharesBefore = instruction.Shares.Count;
         var weighingBefore = instruction.Weighing;
-        var notesBefore = instruction.DispatchNotes.Count;
+        var notesBefore = instruction.DispatchNotes.ToArray();
+        var stepsBefore = instruction.DispatchSteps;
         var now = timeProvider.GetUtcNow();
         // The domain decides; a refusal leaves the tracked rows untouched (nothing below has run).
         mutate(instruction, now);
         var weighingAdded = weighingBefore is null && instruction.Weighing is not null;
-        var noteAdded = instruction.DispatchNotes.Count == notesBefore + 1;
+        var noteAdded = instruction.DispatchNotes.Count == notesBefore.Length + 1;
+        var notesChanged = Enumerable.Range(0, Math.Min(notesBefore.Length, instruction.DispatchNotes.Count))
+            .Where(index => !ReferenceEquals(notesBefore[index], instruction.DispatchNotes[index])).ToArray();
+        var dispatchStep = noteAdded || notesChanged.Length > 0;
         if (instruction.Version != versionBefore + 1 || instruction.Id != row.Id || instruction.CompanyId != companyId
             || instruction.Shares.Count > sharesBefore + 1 || instruction.Lines.Count != lineRows.Count
             || (weighingBefore is not null && !ReferenceEquals(weighingBefore, instruction.Weighing))
             || (weighingAdded && instruction.Shares.Count != sharesBefore)
-            || (instruction.DispatchNotes.Count != notesBefore && !noteAdded)
-            || (noteAdded && (instruction.Shares.Count != sharesBefore || weighingAdded)))
+            || (instruction.DispatchNotes.Count != notesBefore.Length && !noteAdded)
+            || (noteAdded && notesChanged.Length > 0) || notesChanged.Length > 1
+            || instruction.DispatchSteps != stepsBefore + (dispatchStep ? 1 : 0)
+            || (dispatchStep && (instruction.Shares.Count != sharesBefore || weighingAdded)))
         {
-            throw new InvalidOperationException("Bir komut tam olarak bir sürüm ilerletir ve en fazla bir pay, bir kantar tartımı ya da bir irsaliye taslağı ekler.");
+            throw new InvalidOperationException(
+                "Bir komut tam olarak bir sürüm ilerletir ve en fazla bir pay, bir kantar tartımı ya da bir irsaliye adımı (taslak, onay, iptal, e-İrsaliye no) ekler.");
+        }
+
+        if (noteAdded && await DispatchNoteIdTakenAsync(instruction.DispatchNotes[^1].DispatchNoteId, instruction.Id, cancellationToken))
+        {
+            // #518 P2: a note id is one note in the COMPANY. Reused on another instruction it is the same terminal refusal as on this
+            // one (recorded under the key), never a unique-key race answered as concurrent_change.
+            dbContext.ChangeTracker.Clear();
+            throw new LogisticsRuleException(LogisticsRuleCodes.DuplicateDispatchNoteId, "Bu irsaliye kimliği şirketin başka bir talimatında kullanılıyor.");
+        }
+
+        DispatchNoteDraft? changedNote = notesChanged.Length == 1 ? instruction.DispatchNotes[notesChanged[0]] : null;
+        if (changedNote is { EDispatchNumber: { } eDispatchNumber } && notesBefore[notesChanged[0]].EDispatchNumber is null
+            && await dbContext.DispatchNotes.AsNoTracking().AnyAsync(note => note.EDispatchNumber == eDispatchNumber
+                && note.DispatchNoteId != changedNote.DispatchNoteId, cancellationToken))
+        {
+            // Unique per company: another instruction's note carries it (this instruction's own were refused by the aggregate).
+            dbContext.ChangeTracker.Clear();
+            throw new LogisticsRuleException(LogisticsRuleCodes.EDispatchNumberInUse, "Bu e-İrsaliye numarası şirketin başka bir irsaliyesinde kayıtlı.");
+        }
+
+        if (changedNote is { Status: DispatchNoteStatus.Approved, Number: null })
+        {
+            // The system number, in this same save: the company series moves by one under its concurrency token.
+            changedNote = instruction.AssignDispatchNoteNumber(changedNote.DispatchNoteId, await NextDispatchNoteNumberAsync(companyId, now, cancellationToken));
         }
 
         row.Status = (int)instruction.Status;
@@ -302,7 +336,12 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
 
         if (noteAdded)
         {
-            AddDispatchNote(companyId, instruction, instruction.DispatchNotes[^1], notesBefore + 1, actorId);
+            AddDispatchNote(companyId, instruction, instruction.DispatchNotes[^1], notesBefore.Length + 1, actorId);
+        }
+
+        if (changedNote is not null)
+        {
+            WriteDispatchNoteStep(noteRows.Single(candidate => candidate.DispatchNoteId == changedNote.DispatchNoteId), changedNote, noteLineRows, actorId);
         }
 
         dbContext.Attempts.Add(Attempt(companyId, commandName, keyHash, requestHash, actorId, envelope, instruction.Id, now));
@@ -325,6 +364,7 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
             NoteNo = noteNo,
             Status = (int)note.Status,
             SharesBefore = note.SharesBefore,
+            CreatedStep = note.CreatedStep,
             // The preparer is this write's actor (its column width is the envelope's, measured above).
             CreatedBy = string.Equals(note.CreatedBy, actorId, StringComparison.Ordinal)
                 ? actorId
@@ -350,6 +390,84 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
             });
         }
     }
+
+    /// <summary>
+    /// AT-055 lifecycle: writes the one step the domain took on a stored note — its status and the group that step fills (approval
+    /// with the system number, cancellation, or the e-İrsaliye number), each by this write's actor; a cancellation releases the
+    /// note's lines so the filtered single-link key lets their shipments onto a new note. The write guard refuses anything else.
+    /// </summary>
+    private static void WriteDispatchNoteStep(DispatchNoteRow row, DispatchNoteDraft note, IReadOnlyList<DispatchNoteLineRow> lineRows, string actorId)
+    {
+        string Actor(string? value) => string.Equals(value, actorId, StringComparison.Ordinal)
+            ? actorId
+            : throw new InvalidOperationException("İrsaliye adımını yapan, bu yazmanın aktörüdür.");
+
+        if (row.ApprovedStep is null && note.ApprovedStep is { } approvedStep)
+        {
+            row.ApprovedBy = Actor(note.ApprovedBy);
+            row.ApprovedAtUtc = note.ApprovedAtUtc;
+            row.ApprovedStep = approvedStep;
+            row.SeriesCode = note.Number?.SeriesCode ?? throw new InvalidOperationException("Onaylanan irsaliyenin numarası yok.");
+            row.SequenceNo = note.Number.SequenceNo;
+        }
+
+        if (row.CancelledStep is null && note.CancelledStep is { } cancelledStep)
+        {
+            row.CancelledBy = Actor(note.CancelledBy);
+            row.CancelledAtUtc = note.CancelledAtUtc;
+            row.CancelReason = note.CancelReason;
+            row.CancelledStep = cancelledStep;
+            foreach (var line in lineRows.Where(candidate => candidate.DispatchNoteId == note.DispatchNoteId))
+            {
+                line.Released = true;
+            }
+        }
+
+        if (row.EDispatchNumberStep is null && note.EDispatchNumberStep is { } eDispatchStep)
+        {
+            row.EDispatchNumber = note.EDispatchNumber;
+            row.EDispatchNumberSetBy = Actor(note.EDispatchNumberSetBy);
+            row.EDispatchNumberSetAtUtc = note.EDispatchNumberSetAtUtc;
+            row.EDispatchNumberStep = eDispatchStep;
+        }
+
+        row.Status = (int)note.Status;
+    }
+
+    /// <summary>
+    /// The company's next system number (user decision 2026-09-30: company-based series, gap-free, concurrency-safe). The series row
+    /// is read tracked and moved by one in the approval's own save; its last number is the concurrency token, so a concurrent
+    /// approval that read the same number fails its UPDATE (or, for a company's first number, its INSERT on the key) and nothing
+    /// of it is saved — the loser answers a retryable <c>concurrent_change</c>, never a gap or a duplicate. A stored note already
+    /// at or above the next number means the series was tampered with: refused, not repaired.
+    /// </summary>
+    private async Task<DispatchNoteNumber> NextDispatchNoteNumberAsync(Guid companyId, DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        const string seriesCode = DispatchNoteNumber.DefaultSeriesCode;
+        var series = await dbContext.DispatchNoteSeries.SingleOrDefaultAsync(candidate => candidate.SeriesCode == seriesCode, cancellationToken);
+        if (series is null)
+        {
+            series = new DispatchNoteSeriesRow { CompanyId = companyId, SeriesCode = seriesCode, LastSequenceNo = 1, CreatedAtUtc = now, UpdatedAtUtc = now };
+            dbContext.DispatchNoteSeries.Add(series);
+        }
+        else
+        {
+            series.LastSequenceNo = checked(series.LastSequenceNo + 1);
+            series.UpdatedAtUtc = now;
+        }
+
+        var next = series.LastSequenceNo;
+        if (await dbContext.DispatchNotes.AsNoTracking().AnyAsync(note => note.SeriesCode == seriesCode && note.SequenceNo >= next, cancellationToken))
+        {
+            throw new InvalidOperationException("İrsaliye serisinin son numarası kayıtlı irsaliyelerin gerisinde; seri onarılmaz, reddedilir.");
+        }
+
+        return DispatchNoteNumber.Of(seriesCode, next);
+    }
+
+    private Task<bool> DispatchNoteIdTakenAsync(Guid dispatchNoteId, Guid instructionId, CancellationToken cancellationToken) =>
+        dbContext.DispatchNotes.AsNoTracking().AnyAsync(note => note.DispatchNoteId == dispatchNoteId && note.InstructionId != instructionId,
+            cancellationToken);
 
     public async Task<StoredLoadingInstruction?> FindInstructionAsync(Guid instructionId, CancellationToken cancellationToken = default)
     {
@@ -387,7 +505,9 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
         return [.. notes.Select(note => new StoredDispatchNoteReference(note.DispatchNoteId, note.InstructionId, (DispatchNoteStatus)note.Status,
             note.CreatedAtUtc,
             [.. lines.Where(line => line.DispatchNoteId == note.DispatchNoteId).OrderBy(line => line.LineNo)
-                .Select(line => new StoredDispatchNoteOrderLine(line.LineNo, line.SourceOrderLineId, line.ShipmentId, line.UnitId, line.Quantity))]))];
+                .Select(line => new StoredDispatchNoteOrderLine(line.LineNo, line.SourceOrderLineId, line.ShipmentId, line.UnitId, line.Quantity))],
+            note.SeriesCode is { } series && note.SequenceNo is { } sequence ? DispatchNoteNumber.Of(series, sequence) : null,
+            note.EDispatchNumber))];
     }
 
     public async Task<LogisticsInstructionPage> ListInstructionsAsync(int pageSize, string? cursor, LoadingInstructionStatus? status = null,
@@ -478,11 +598,17 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
         }
 
         if (notes.Where((note, index) => note.NoteNo != index + 1 || note.SharesBefore < 1 || note.SharesBefore > shares.Count
-                || (index > 0 && note.SharesBefore < notes[index - 1].SharesBefore)).Any()
+                || (index > 0 && (note.SharesBefore < notes[index - 1].SharesBefore || note.CreatedStep <= notes[index - 1].CreatedStep))).Any()
             || noteLines.Any(line => !notes.Any(note => note.DispatchNoteId == line.DispatchNoteId)))
         {
             throw new InvalidOperationException("Kayıtlı irsaliye taslaklarının sırası paylarla uyuşmuyor.");
         }
+
+        // AT-055 lifecycle: every dispatch-note step (create, approve, cancel, e-İrsaliye number) in the order it was taken — the
+        // steps are exactly 1..n. A create waits for its share position; the other steps need no share, so each follows the step
+        // before it.
+        var steps = DispatchNoteSteps(notes);
+        var nextStep = 0;
 
         for (var index = 0; index <= shares.Count; index++)
         {
@@ -491,9 +617,11 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
                 RestoreWeighing(instruction, weighing);
             }
 
-            foreach (var note in notes.Where(note => note.SharesBefore == index))
+            while (nextStep < steps.Count && (steps[nextStep].Kind != DispatchStepKind.Create || steps[nextStep].Note.SharesBefore == index))
             {
-                RestoreDispatchNote(instruction, note, [.. noteLines.Where(line => line.DispatchNoteId == note.DispatchNoteId).OrderBy(line => line.LineNo)]);
+                var (_, kind, note) = steps[nextStep++];
+                RestoreDispatchStep(instruction, kind, note,
+                    [.. noteLines.Where(line => line.DispatchNoteId == note.DispatchNoteId).OrderBy(line => line.LineNo)]);
             }
 
             if (index == shares.Count)
@@ -520,6 +648,13 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
             }
         }
 
+        if (nextStep != steps.Count
+            || notes.Any(note => instruction.DispatchNotes.Single(candidate => candidate.DispatchNoteId == note.DispatchNoteId).Status != (DispatchNoteStatus)note.Status)
+            || noteLines.Any(line => line.Released != (notes.Single(note => note.DispatchNoteId == line.DispatchNoteId).Status == (int)DispatchNoteStatus.Cancelled)))
+        {
+            throw new InvalidOperationException("Kayıtlı irsaliye adımları, durumları ya da satırların serbest bırakılışı yeniden kurulanla uyuşmuyor.");
+        }
+
         foreach (var line in lines.Where(line => line.IsBlocked))
         {
             instruction.BlockLine(instruction.Version, line.LineId, row.UpdatedAtUtc);
@@ -542,16 +677,98 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
         return instruction;
     }
 
+    private enum DispatchStepKind
+    {
+        Create = 0,
+        Approve = 1,
+        Cancel = 2,
+        EDispatchNumber = 3,
+    }
+
+    /// <summary>The stored notes' steps in their order; a gap, a repeat or an unknown status is a corrupt record, refused.</summary>
+    private static List<(int Step, DispatchStepKind Kind, DispatchNoteRow Note)> DispatchNoteSteps(IReadOnlyList<DispatchNoteRow> notes)
+    {
+        var steps = new List<(int Step, DispatchStepKind Kind, DispatchNoteRow Note)>();
+        foreach (var note in notes)
+        {
+            if (!Enum.IsDefined((DispatchNoteStatus)note.Status))
+            {
+                throw new InvalidOperationException("Kayıtlı irsaliye durumu bilinmiyor.");
+            }
+
+            steps.Add((note.CreatedStep, DispatchStepKind.Create, note));
+            if (note.ApprovedStep is { } approved)
+            {
+                steps.Add((approved, DispatchStepKind.Approve, note));
+            }
+
+            if (note.CancelledStep is { } cancelled)
+            {
+                steps.Add((cancelled, DispatchStepKind.Cancel, note));
+            }
+
+            if (note.EDispatchNumberStep is { } eDispatch)
+            {
+                steps.Add((eDispatch, DispatchStepKind.EDispatchNumber, note));
+            }
+        }
+
+        steps.Sort((left, right) => left.Step.CompareTo(right.Step));
+        if (steps.Where((step, index) => step.Step != index + 1).Any())
+        {
+            throw new InvalidOperationException("Kayıtlı irsaliye adımları 1'den başlayan kesintisiz bir sıra değil.");
+        }
+
+        return steps;
+    }
+
+    private static void RestoreDispatchStep(LoadingInstruction instruction, DispatchStepKind kind, DispatchNoteRow row, IReadOnlyList<DispatchNoteLineRow> lines)
+    {
+        DispatchNoteDraft restored;
+        switch (kind)
+        {
+            case DispatchStepKind.Create:
+                RestoreDispatchNote(instruction, row, lines);
+                return;
+            case DispatchStepKind.Approve:
+                instruction.ApproveDispatchNote(instruction.Version, row.DispatchNoteId, row.ApprovedBy!, row.ApprovedAtUtc!.Value);
+                restored = instruction.AssignDispatchNoteNumber(row.DispatchNoteId, DispatchNoteNumber.Of(row.SeriesCode!, row.SequenceNo!.Value));
+                if (restored.ApprovedStep != row.ApprovedStep)
+                {
+                    throw new InvalidOperationException("Kayıtlı irsaliye onayının adımı yeniden kurulanla uyuşmuyor.");
+                }
+
+                return;
+            case DispatchStepKind.Cancel:
+                restored = instruction.CancelDispatchNote(instruction.Version, row.DispatchNoteId, row.CancelledBy!, row.CancelReason!, row.CancelledAtUtc!.Value);
+                if (restored.CancelledStep != row.CancelledStep || restored.CancelReason != row.CancelReason)
+                {
+                    throw new InvalidOperationException("Kayıtlı irsaliye iptalinin adımı ya da gerekçesi yeniden kurulanla uyuşmuyor.");
+                }
+
+                return;
+            default:
+                restored = instruction.SetEDispatchNumber(instruction.Version, row.DispatchNoteId, row.EDispatchNumber!, row.EDispatchNumberSetBy!,
+                    row.EDispatchNumberSetAtUtc!.Value);
+                if (restored.EDispatchNumberStep != row.EDispatchNumberStep)
+                {
+                    throw new InvalidOperationException("Kayıtlı e-İrsaliye numarasının adımı yeniden kurulanla uyuşmuyor.");
+                }
+
+                return;
+        }
+    }
+
     private static void RestoreDispatchNote(LoadingInstruction instruction, DispatchNoteRow row, IReadOnlyList<DispatchNoteLineRow> lines)
     {
-        if (row.Status != (int)DispatchNoteStatus.Draft || lines.Count == 0)
+        if (lines.Count == 0)
         {
-            throw new InvalidOperationException("Kayıtlı irsaliye taslağı durumu ya da satırları okunamadı.");
+            throw new InvalidOperationException("Kayıtlı irsaliye taslağının satırları okunamadı.");
         }
 
         var restored = instruction.CreateDispatchNoteDraft(instruction.Version, row.DispatchNoteId, [.. lines.Select(line => line.ShipmentId)],
             row.CreatedBy, row.CreatedAtUtc);
-        if (restored.Lines.Count != lines.Count || restored.SharesBefore != row.SharesBefore)
+        if (restored.Lines.Count != lines.Count || restored.SharesBefore != row.SharesBefore || restored.CreatedStep != row.CreatedStep)
         {
             throw new InvalidOperationException("Kayıtlı irsaliye taslağı yeniden kurulan taslakla uyuşmuyor.");
         }
@@ -634,10 +851,13 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
                 difference = weighing.DifferenceKg, recordedBy = weighing.RecordedBy,
             }
             : null,
-        // AT-055: the dispatch-note drafts in the audit trail — which shipment is on which draft, with its shipped quantity.
+        // AT-055: the dispatch notes in the audit trail — which shipment is on which note, with its shipped quantity, and the
+        // lifecycle: the system number and approver, the canceller and the reason, the e-İrsaliye number.
         dispatchNotes = instruction.DispatchNotes.Select(note => new
         {
             dispatchNoteId = note.DispatchNoteId, status = note.Status.ToString(), createdBy = note.CreatedBy,
+            number = note.Number?.Text, approvedBy = note.ApprovedBy, cancelledBy = note.CancelledBy, cancelReason = note.CancelReason,
+            eDispatchNumber = note.EDispatchNumber,
             lines = note.Lines.Select(line => new { line.LineNo, line.ShipmentId, line.InstructionLineId, quantity = line.Quantity.Value }),
         }),
     }, Json);

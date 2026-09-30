@@ -48,8 +48,10 @@
  *   L04-09 AT-055 loader: a dispatch-note DRAFT prepared in the detail from L04-05's definite shipment; reopening shows it with
  *          the shipped quantity (2) as its one line and the shipment no longer pickable; the same key replays with one draft;
  *          a second draft for the same shipment is 409 logistics_shipment_already_dispatched; the reader is 403; one audit on
- *          the Web channel; no Inventory movement; the Sales reader's S-04 lists the draft and its link opens the instruction
- *          at the draft
+ *          the Web channel; no Inventory movement; the Sales reader's S-04 lists the draft (state Taslak) and its link opens
+ *          the instruction at the draft; then the loader approves it (series number IRS-nnnnnn), records its e-İrsaliye number,
+ *          cancels it with a reason (the reader is 403), prepares a NEW draft from the released shipment, and a reload shows
+ *          both notes with their states and the cancelled note's numbers
  */
 
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
@@ -969,10 +971,84 @@ test('L04-09 AT-055: the loader drafts a dispatch note from the definite shipmen
     const link = sales.getByTestId(`sales-dispatch-note-link-${sent.dispatchNoteId}`)
     await expect(link).toBeVisible({ timeout: 30_000 })
     await expect(sales.getByTestId(`sales-dispatch-note-${sent.dispatchNoteId}`)).toContainText('Satır 1: 2')
+    await expect(sales.getByTestId(`sales-dispatch-note-status-${sent.dispatchNoteId}`)).toHaveText('Taslak')
     await link.click()
     await expect(sales).toHaveURL(new RegExp(`/lojistik/yukleme-talimatlari/${createdId}#irsaliye-${sent.dispatchNoteId}$`))
     await expect(sales.getByTestId(`logistics-dispatch-note-${sent.dispatchNoteId}`)).toBeVisible({ timeout: 30_000 })
     await sales.close()
+
+    // Lifecycle (user decision 2026-09-30): the loader approves the draft in the detail — the server assigns the company series
+    // number — then records the hand-entered e-İrsaliye number, then cancels it with a reason. The cancelled note stays visible
+    // with its number, and its shipment is released: a NEW draft is prepared from the same shipment (correction = cancel + new).
+    const notePath = `${draftPath}/${sent.dispatchNoteId}`
+    const panel = page.getByTestId(`logistics-dispatch-note-lifecycle-${sent.dispatchNoteId}`)
+    const approveAnswer = page.waitForResponse((response) => response.request().method() === 'POST'
+      && new URL(response.url()).pathname === `${notePath}/approve`)
+    await panel.getByTestId('logistics-dispatch-note-approve').click()
+    const approved = await approveAnswer
+    expect(approved.status()).toBe(200)
+    expect(approved.request().postDataJSON()).toEqual({ expectedVersion: reading.instruction.version })
+    await expect(block.getByTestId('logistics-dispatch-note-status')).toHaveText('Onaylandı')
+    await expect(block.getByTestId('logistics-dispatch-note-number')).toHaveText(/^IRS-\d{6}$/)
+    const erpNumber = (await block.getByTestId('logistics-dispatch-note-number').textContent()) ?? ''
+
+    // A per-run e-İrsaliye number (GİB form: 3 characters + 13 digits), unique per company.
+    const eNumber = `GYM${String(Date.now()).padStart(13, '0').slice(-13)}`
+    const eAnswer = page.waitForResponse((response) => response.request().method() === 'POST'
+      && new URL(response.url()).pathname === `${notePath}/e-dispatch-number`)
+    await panel.getByTestId('logistics-dispatch-note-e-number-input').fill(eNumber.toLowerCase())
+    await panel.getByTestId('logistics-dispatch-note-e-number-save').click()
+    const eSaved = await eAnswer
+    expect(eSaved.status()).toBe(200)
+    expect((eSaved.request().postDataJSON() as { eDispatchNumber: string }).eDispatchNumber).toBe(eNumber)
+    await expect(block.getByTestId('logistics-dispatch-note-e-number')).toHaveText(eNumber)
+
+    // The reader holds neither lifecycle grant.
+    const readerApprove = await page.request.post(`${env.apiBaseUrl}${notePath}/cancel`, {
+      headers: {
+        [DEVELOPMENT_USER_HEADER]: readerActor, 'X-Company-Id': companyId, 'Content-Type': 'application/json',
+        'X-Correlation-Id': `browser-suite-l04-dispatch-cancel-reader-${Date.now()}`, 'Idempotency-Key': `browser-suite:l04:dispatch-cancel-reader:${Date.now()}`,
+      },
+      data: { expectedVersion: (await readInstruction(page, loaderActor, createdId)).instruction.version, reason: 'SENTETIK reader' },
+    })
+    expect(readerApprove.status()).toBe(403)
+
+    const cancelAnswer = page.waitForResponse((response) => response.request().method() === 'POST'
+      && new URL(response.url()).pathname === `${notePath}/cancel`)
+    await panel.getByTestId('logistics-dispatch-note-cancel').click()
+    await panel.getByTestId('logistics-dispatch-note-cancel-reason-input').fill('SENTETIK düzeltme: yanlış araç')
+    await panel.getByTestId('logistics-dispatch-note-cancel-confirm').click()
+    expect((await cancelAnswer).status()).toBe(200)
+    await expect(block.getByTestId('logistics-dispatch-note-status')).toHaveText('İptal edildi')
+    await expect(block.getByTestId('logistics-dispatch-note-number')).toHaveText(erpNumber)
+    await expect(block.getByTestId('logistics-dispatch-note-cancel-reason')).toHaveText('SENTETIK düzeltme: yanlış araç')
+
+    // Released: the shipment is pickable again and a new draft documents it.
+    const pick = page.getByTestId(`logistics-dispatch-note-shipment-${shipment.shareId}`).getByRole('checkbox')
+    await expect(pick).toBeEnabled()
+    await pick.check()
+    const redraftAnswer = page.waitForResponse((response) => response.request().method() === 'POST' && new URL(response.url()).pathname === draftPath)
+    await page.getByTestId('logistics-dispatch-note-button').click()
+    const redrafted = await redraftAnswer
+    expect(redrafted.status()).toBe(200)
+    const resent = redrafted.request().postDataJSON() as { dispatchNoteId: string; shipmentIds: string[] }
+    expect(resent.dispatchNoteId).not.toBe(sent.dispatchNoteId)
+    expect(resent.shipmentIds).toEqual([shipment.shareId])
+
+    // Reopen: both notes are visible with their states; the cancelled one keeps its number and e-İrsaliye number.
+    await page.reload()
+    await openDetail(page, createdId)
+    const cancelledBlock = page.getByTestId(`logistics-dispatch-note-${sent.dispatchNoteId}`)
+    await expect(cancelledBlock.getByTestId('logistics-dispatch-note-status')).toHaveText('İptal edildi')
+    await expect(cancelledBlock.getByTestId('logistics-dispatch-note-number')).toHaveText(erpNumber)
+    await expect(cancelledBlock.getByTestId('logistics-dispatch-note-e-number')).toHaveText(eNumber)
+    const newBlock = page.getByTestId(`logistics-dispatch-note-${resent.dispatchNoteId}`)
+    await expect(newBlock.getByTestId('logistics-dispatch-note-status')).toHaveText('Taslak')
+    await expect(newBlock.getByTestId('logistics-dispatch-note-line-1-quantity')).toHaveText('2')
+    await expect(page.getByTestId(`logistics-dispatch-note-shipment-${shipment.shareId}`).getByRole('checkbox')).toBeDisabled()
+
+    const final = await counts()
+    expect([final.notes, final.lines, final.movements, final.audits]).toEqual([2, 2, start.movements, 2])
   } finally {
     await pool.close()
   }
