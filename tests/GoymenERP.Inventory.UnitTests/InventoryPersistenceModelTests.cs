@@ -25,6 +25,9 @@ public sealed class InventoryPersistenceModelTests
             typeof(BalanceRow), typeof(SourceGrainRow), typeof(OpeningCountRow), typeof(OpeningCountLineRow),
             typeof(InventoryCommandRow), typeof(AllocationRow), typeof(InventoryOutboxRow),
             typeof(StockCountRow), typeof(StockCountDecisionRow), typeof(AllocationChangeRow),
+            typeof(InventoryTransferRow), typeof(InventoryTransferLineRow),
+            typeof(InventoryTransferDispatchRow), typeof(InventoryTransferDispatchLineRow),
+            typeof(InventoryTransferBucketRow), typeof(InventoryTransferAcceptanceRow),
         ];
 
     [Fact]
@@ -167,6 +170,8 @@ public sealed class InventoryPersistenceModelTests
             migration => migration.EndsWith("_AddInventoryAllocationChanges", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(),
             migration => migration.EndsWith("_AddInventoryStockScraps", StringComparison.Ordinal));
+        Assert.Contains(context.Database.GetMigrations(),
+            migration => migration.EndsWith("_AddInventoryTransfers", StringComparison.Ordinal));
         Assert.False(context.Database.HasPendingModelChanges());
     }
 

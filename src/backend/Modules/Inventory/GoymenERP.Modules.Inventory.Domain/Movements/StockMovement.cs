@@ -45,6 +45,18 @@ public enum StockMovementKind
     /// editing this one.
     /// </summary>
     Scrap = 7,
+
+    /// <summary>
+    /// DEC-STK-008 first leg: every line removes one dispatched whole-label bucket from its stored physical place.
+    /// Free and Blocked buckets are both preserved by the transfer aggregate; this is relocation, not fulfilment.
+    /// </summary>
+    TransferDispatch = 8,
+
+    /// <summary>
+    /// DEC-STK-008 second leg: every line restores one dispatched whole-label bucket at the accepted destination,
+    /// with the same owner, product, label, block and kilograms and the new stored location/custodian.
+    /// </summary>
+    TransferAccept = 9,
 }
 
 public enum StockDirection
@@ -235,6 +247,12 @@ public sealed class StockMovement
                     throw Invalid("Hurda hareketi tek satırdır: hurdaya ayrılan pozisyondan çıkış.");
                 }
 
+                break;
+            case StockMovementKind.TransferDispatch:
+                RequireAll(StockDirection.Out, "Transfer çıkışının bütün satırları çıkış olmalıdır.");
+                break;
+            case StockMovementKind.TransferAccept:
+                RequireAll(StockDirection.In, "Transfer kabulünün bütün satırları giriş olmalıdır.");
                 break;
         }
     }
