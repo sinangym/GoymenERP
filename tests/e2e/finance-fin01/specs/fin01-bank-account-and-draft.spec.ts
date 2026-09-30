@@ -715,7 +715,7 @@ test.describe.serial('FIN-01 bank account and draft (real API, real SQL)', () =>
     await expect.poll(() => riskCells(page, 'collected')).toEqual(['0', '0,00'])
 
     // Close and reopen: the canonical portfolio navigation lists it and opens the same record from the row.
-    await page.goto('/finans')
+    await page.goto('/finans/tahsilatlar')
     await page.getByRole('link', { name: 'Müşteri Çekleri ve Senetleri', exact: true }).click()
     await expect(page).toHaveURL('/finans/musteri-cek-senetleri')
     const row = page.getByRole('row').filter({ has: page.getByRole('rowheader', { name: CHEQUE_SERIAL, exact: true }) })
