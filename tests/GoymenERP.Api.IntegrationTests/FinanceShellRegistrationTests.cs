@@ -61,9 +61,9 @@ public sealed class FinanceShellRegistrationTests
         // each route or control service measures its own Finance permission afresh.
         Assert.Equal(15, finance.Length);
         Assert.All(finance, item => Assert.True(item.Declaration.ImplementationAvailable));
-        // Sales 1.4 (DEC-SAL-002): three screens plus the approve, commercial-revision, delivery-schedule, cancel and
-        // quantity-revision controls.
-        Assert.Equal(8, registry.Registrations.Count(item => item.Owner == SalesShellCapabilityProvider.OwnerId));
+        // Sales 1.5: three screens plus approve, customer-acceptance, commercial-revision,
+        // delivery-schedule, cancel and quantity-revision controls.
+        Assert.Equal(9, registry.Registrations.Count(item => item.Owner == SalesShellCapabilityProvider.OwnerId));
     }
 
     [Fact]

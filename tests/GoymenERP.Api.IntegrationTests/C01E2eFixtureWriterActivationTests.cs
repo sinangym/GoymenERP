@@ -7,6 +7,7 @@ using GoymenERP.Modules.Product.Infrastructure.Fixtures;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using GoymenERP.Modules.Settings.Application.Contracts.V1;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
 
@@ -37,6 +38,8 @@ public sealed class C01E2eFixtureWriterActivationTests
         Assert.False(C01E2eFixtureWriterActivation.Configure(
             services, new TestHostEnvironment("Testing"), Configuration(new Dictionary<string, string?>())));
         Assert.DoesNotContain(services, descriptor =>
+            descriptor.ImplementationType == typeof(C01E2eManufacturingToleranceFixtureProvider));
+        Assert.DoesNotContain(services, descriptor =>
             descriptor.ServiceType == typeof(C01E2eProductMasterAssignmentFixtureWriter)
             || descriptor.ServiceType == typeof(IProductMasterAssignmentFixtureStore)
             || descriptor.ServiceType == typeof(C01E2eProductTechnicalCardFixtureWriter)
@@ -55,6 +58,9 @@ public sealed class C01E2eFixtureWriterActivationTests
 
         Assert.True(C01E2eFixtureWriterActivation.Configure(
             services, new TestHostEnvironment("Testing"), Configuration(Gate)));
+        var tolerance = Assert.Single(services, descriptor =>
+            descriptor.ServiceType == typeof(ISettingsManufacturingToleranceProviderV1));
+        Assert.Equal(typeof(C01E2eManufacturingToleranceFixtureProvider), tolerance.ImplementationType);
         Assert.Single(services, descriptor =>
             descriptor.ServiceType == typeof(C01E2eProductMasterAssignmentFixtureWriter));
         Assert.Single(services, descriptor =>
@@ -116,6 +122,7 @@ public sealed class C01E2eFixtureWriterActivationTests
         Assert.DoesNotContain(services, descriptor =>
             descriptor.ServiceType == typeof(C01E2eProductMasterAssignmentFixtureWriter)
             || descriptor.ServiceType == typeof(C01E2eProductTechnicalCardFixtureWriter)
+            || descriptor.ImplementationType == typeof(C01E2eManufacturingToleranceFixtureProvider)
             || descriptor.ServiceType == typeof(IProductTechnicalCardFixtureStore)
             || descriptor.ServiceType == typeof(C01E2eProductSalesCandidateFixtureWriter)
             || descriptor.ServiceType == typeof(IProductSalesCandidateFixtureStore)

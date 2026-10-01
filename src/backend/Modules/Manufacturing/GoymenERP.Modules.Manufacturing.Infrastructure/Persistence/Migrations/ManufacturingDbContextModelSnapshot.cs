@@ -296,6 +296,81 @@ partial class ManufacturingDbContextModelSnapshot : ModelSnapshot
             });
         });
 
+        modelBuilder.Entity("GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.OrderClosureDecisionRow", b =>
+        {
+            b.Property<Guid>("CompanyId")
+                .HasColumnType("uniqueidentifier");
+
+            b.Property<Guid>("OrderId")
+                .HasColumnType("uniqueidentifier");
+
+            b.Property<long>("OrderVersion")
+                .HasColumnType("bigint");
+
+            b.Property<Guid>("PolicyId")
+                .HasColumnType("uniqueidentifier");
+
+            b.Property<long>("PolicyVersion")
+                .HasColumnType("bigint");
+
+            b.Property<int>("Process")
+                .HasColumnType("int");
+
+            b.Property<string>("MaximumFirePercent")
+                .IsRequired()
+                .HasMaxLength(64)
+                .IsUnicode(false)
+                .HasColumnType("varchar(64)");
+
+            b.Property<bool>("IsActive")
+                .HasColumnType("bit");
+
+            b.Property<DateOnly>("EffectiveFrom")
+                .HasColumnType("date");
+
+            b.Property<DateOnly?>("EffectiveThrough")
+                .HasColumnType("date");
+
+            b.Property<DateOnly>("SelectedForDate")
+                .HasColumnType("date");
+
+            b.Property<Guid?>("ApprovedByUserId")
+                .HasColumnType("uniqueidentifier");
+
+            b.Property<string>("ApprovalReason")
+                .HasMaxLength(256)
+                .HasColumnType("nvarchar(256)");
+
+            b.Property<long?>("ApprovalOrderVersion")
+                .HasColumnType("bigint");
+
+            b.Property<Guid?>("ApprovalPolicyId")
+                .HasColumnType("uniqueidentifier");
+
+            b.Property<long?>("ApprovalPolicyVersion")
+                .HasColumnType("bigint");
+
+            b.Property<DateTimeOffset?>("ApprovedAtUtc")
+                .HasColumnType("datetimeoffset");
+
+            b.HasKey("CompanyId", "OrderId");
+
+            b.ToTable("OrderClosureDecisions", "manufacturing", t =>
+            {
+                t.HasCheckConstraint(
+                    "CK_OrderClosureDecisions_Approval",
+                    "([ApprovedByUserId] IS NULL AND [ApprovalReason] IS NULL AND [ApprovalOrderVersion] IS NULL AND [ApprovalPolicyId] IS NULL AND [ApprovalPolicyVersion] IS NULL AND [ApprovedAtUtc] IS NULL) OR ([ApprovedByUserId] IS NOT NULL AND [ApprovedByUserId] <> '00000000-0000-0000-0000-000000000000' AND [ApprovalReason] IS NOT NULL AND LEN([ApprovalReason]) > 0 AND [ApprovalOrderVersion] IS NOT NULL AND [ApprovalOrderVersion] = [OrderVersion] AND [ApprovalPolicyId] IS NOT NULL AND [ApprovalPolicyId] = [PolicyId] AND [ApprovalPolicyVersion] IS NOT NULL AND [ApprovalPolicyVersion] = [PolicyVersion] AND [ApprovedAtUtc] IS NOT NULL)");
+
+                t.HasCheckConstraint(
+                    "CK_OrderClosureDecisions_Identity",
+                    "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [OrderId] <> '00000000-0000-0000-0000-000000000000' AND [PolicyId] <> '00000000-0000-0000-0000-000000000000' AND [OrderVersion] >= 1 AND [PolicyVersion] >= 1 AND [Process] IN (1, 2, 3, 4, 5) AND LEN([MaximumFirePercent]) > 0 AND [IsActive] = 1");
+
+                t.HasCheckConstraint(
+                    "CK_OrderClosureDecisions_Window",
+                    "([EffectiveThrough] IS NULL OR [EffectiveThrough] >= [EffectiveFrom]) AND [SelectedForDate] >= [EffectiveFrom] AND ([EffectiveThrough] IS NULL OR [SelectedForDate] <= [EffectiveThrough])");
+            });
+        });
+
         modelBuilder.Entity("GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.OrderInputRow", b =>
         {
             b.Property<Guid>("CompanyId")
@@ -742,6 +817,16 @@ partial class ManufacturingDbContextModelSnapshot : ModelSnapshot
         });
 
         modelBuilder.Entity("GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.OrderInputRow", b =>
+        {
+            b.HasOne("GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.OrderRow", null)
+                .WithMany()
+                .HasForeignKey("CompanyId", "OrderId")
+                .HasPrincipalKey("CompanyId", "Id")
+                .OnDelete(DeleteBehavior.Restrict)
+                .IsRequired();
+        });
+
+        modelBuilder.Entity("GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.OrderClosureDecisionRow", b =>
         {
             b.HasOne("GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.OrderRow", null)
                 .WithMany()

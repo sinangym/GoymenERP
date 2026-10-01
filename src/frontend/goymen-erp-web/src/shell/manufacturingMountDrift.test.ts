@@ -40,7 +40,11 @@ describe('shell ↔ Manufacturing lane capability ids', () => {
     expect([...shellManufacturingIds].sort()).toEqual([...laneRouteIds].sort())
     // The fact forms and the close are controls of the order screen, not routes: a control in this
     // table would mount a screen that does not exist.
-    for (const control of [MANUFACTURING_CAPABILITY.orderFacts, MANUFACTURING_CAPABILITY.orderClose]) {
+    for (const control of [
+      MANUFACTURING_CAPABILITY.orderFacts,
+      MANUFACTURING_CAPABILITY.orderClose,
+      MANUFACTURING_CAPABILITY.orderCloseExceptionApprove,
+    ]) {
       expect(shellManufacturingIds.has(control)).toBe(false)
       expect(MANUFACTURING_ROUTE[control]).toBeUndefined()
     }

@@ -42,8 +42,11 @@ public sealed record RevisePlanRequestV1(
 
 public sealed record CreateOrderRequestV1(Guid OrderId, Guid PlanId);
 
-/// <summary>The close of the order at the version the caller read; the close chooses nothing else (MFG-4).</summary>
-public sealed record CloseOrderRequestV1(long ExpectedVersion);
+/// <summary>
+/// The close of the order at the version the caller read. <see cref="ExceptionReason"/> is absent on the normal
+/// attempt and may be supplied only after the server requires the separately authorized tolerance exception.
+/// </summary>
+public sealed record CloseOrderRequestV1(long ExpectedVersion, string? ExceptionReason = null);
 
 /// <summary>An input issue, an unused-input return or a WIP reading of one parent roll, at its own time (R6).</summary>
 public sealed record RecordFactRequestV1(
@@ -215,6 +218,7 @@ public static class ManufacturingCommandNames
     public const string IssueInput = "manufacturing.input.issue.v1";
     public const string ReturnInput = "manufacturing.input.return.v1";
     public const string DeclareOutput = "manufacturing.output.declare.v1";
+    public const string DeclareProcessLoss = "manufacturing.process-loss.declare.v1";
     public const string RecordWorkInProgress = "manufacturing.wip.record.v1";
     public const string CloseOrder = "manufacturing.order.close.v1";
 }
@@ -261,7 +265,8 @@ public sealed partial class ManufacturingCommandService(
     IManufacturingInventoryInputIssuePortV1? inventoryInputIssues = null,
     IManufacturingInventoryReturnOutputPortV1? inventoryReturnsAndOutputs = null,
     IManufacturingPlanListStore? planList = null,
-    IManufacturingPlanRevisionStore? planRevisions = null)
+    IManufacturingPlanRevisionStore? planRevisions = null,
+    ISettingsManufacturingToleranceProviderV1? manufacturingTolerances = null)
 {
     /// <summary>Any integer mantissa of this many digits fits a decimal's 96 bits, so such a text converts exactly.</summary>
     private const int ExactDecimalDigits = 28;
@@ -308,7 +313,7 @@ public sealed partial class ManufacturingCommandService(
         };
 
         return RunAsync<PlanViewV1>(permission, idempotencyKey, ManufacturingCommandNames.SavePlan, canonical,
-            ManufacturingApiStatus.Created, async (metadata, _) =>
+            ManufacturingApiStatus.Created, async (metadata, _, _) =>
             {
                 var process = await ResolveProcessAsync(request.WorkCenterId, cancellationToken);
                 if (process.Refusal is not null)
@@ -401,7 +406,7 @@ public sealed partial class ManufacturingCommandService(
         };
 
         return RunAsync<PlanViewV1>(permission, idempotencyKey, ManufacturingCommandNames.RevisePlan, canonical,
-            ManufacturingApiStatus.Ok, async (metadata, _) =>
+            ManufacturingApiStatus.Ok, async (metadata, _, _) =>
             {
                 if (planRevisions is null)
                 {
@@ -585,7 +590,8 @@ public sealed partial class ManufacturingCommandService(
         }
 
         return RunAsync<PlanViewV1>(permission, idempotencyKey, ManufacturingCommandNames.ApprovePlan,
-            new { planId, expectedVersion = request.ExpectedVersion }, ManufacturingApiStatus.Ok, async (metadata, actor) =>
+            new { planId, expectedVersion = request.ExpectedVersion }, ManufacturingApiStatus.Ok,
+            async (metadata, actor, _) =>
             {
                 var approved = await plans.ApprovePlanAsync(planId, request.ExpectedVersion, actor,
                     timeProvider.GetUtcNow(), metadata, cancellationToken);
@@ -602,7 +608,8 @@ public sealed partial class ManufacturingCommandService(
         }
 
         return RunAsync<OrderViewV1>(permission, idempotencyKey, ManufacturingCommandNames.CreateOrder,
-            new { orderId = request.OrderId, planId = request.PlanId }, ManufacturingApiStatus.Created, async (metadata, _) =>
+            new { orderId = request.OrderId, planId = request.PlanId }, ManufacturingApiStatus.Created,
+            async (metadata, _, _) =>
             {
                 var outcome = await orders.CreateOrderAsync(request.OrderId, request.PlanId, metadata, cancellationToken);
                 return await OrderResultAsync(request.OrderId, ManufacturingApiStatus.Created,
@@ -646,7 +653,7 @@ public sealed partial class ManufacturingCommandService(
         };
 
         return RunAsync<OrderViewV1>(permission, idempotencyKey, ManufacturingCommandNames.IssueInput,
-            canonical, ManufacturingApiStatus.Ok, async (metadata, _) =>
+            canonical, ManufacturingApiStatus.Ok, async (metadata, _, _) =>
             {
                 if (inventoryInputIssues is null)
                 {
@@ -718,7 +725,7 @@ public sealed partial class ManufacturingCommandService(
         };
 
         return RunAsync<OrderViewV1>(permission, idempotencyKey, ManufacturingCommandNames.ReturnInput,
-            canonical, ManufacturingApiStatus.Ok, async (metadata, _) =>
+            canonical, ManufacturingApiStatus.Ok, async (metadata, _, _) =>
             {
                 if (inventoryReturnsAndOutputs is null)
                 {
@@ -798,6 +805,13 @@ public sealed partial class ManufacturingCommandService(
             return Task.FromResult(Invalid<OrderViewV1>("outputClass"));
         }
 
+        // ProcessLoss is explicitly non-stock. It must never create an Inventory label or movement through this
+        // stock-output command; RecordProcessLossAsync is the public fixed-class fact path.
+        if (outputClass == OutputClass.ProcessLoss)
+        {
+            return Task.FromResult(Invalid<OrderViewV1>("outputClass"));
+        }
+
         if (string.IsNullOrWhiteSpace(request.LabelCode))
         {
             return Task.FromResult(Invalid<OrderViewV1>("labelCode"));
@@ -864,7 +878,7 @@ public sealed partial class ManufacturingCommandService(
         };
 
         return RunAsync<OrderViewV1>(permission, idempotencyKey, ManufacturingCommandNames.DeclareOutput,
-            canonical, ManufacturingApiStatus.Ok, async (metadata, _) =>
+            canonical, ManufacturingApiStatus.Ok, async (metadata, _, _) =>
             {
                 if (inventoryReturnsAndOutputs is null)
                 {
@@ -913,34 +927,162 @@ public sealed partial class ManufacturingCommandService(
     }
 
     /// <summary>
-    /// Closes the order at the version the caller read (MFG-4, Business 5728619644). The decision is the
-    /// domain's and nothing here softens it: every planned roll must account for its own issued mass, a
-    /// surplus on one roll never covers a gap on another, remaining WIP stays on the order as its own
-    /// position, and an unexplained difference refuses the close with
-    /// <see cref="ManufacturingRuleCodes.UnexplainedDifference"/> (422) — there is no tolerance and no
-    /// write-off. A closed order refuses a second close with <see cref="ManufacturingRuleCodes.OrderClosed"/>;
-    /// the same <c>Idempotency-Key</c> replays the first close's answer (ADR-011 §4), and a stale
-    /// <see cref="CloseOrderRequestV1.ExpectedVersion"/> is a recorded terminal conflict (§7).
+    /// Records declared non-stock process loss. The class is fixed by the server; the caller supplies only the same
+    /// fact identity/version/roll/mass/time envelope as WIP. No Product, Inventory label, location or movement is
+    /// accepted or created, and unexplained mass is never promoted into this fact.
+    /// </summary>
+    public Task<ManufacturingApiResult<OrderViewV1>> RecordProcessLossAsync(Guid orderId,
+        RecordFactRequestV1? request, string idempotencyKey, string permission,
+        CancellationToken cancellationToken) =>
+        RecordAsync(orderId, request, OutputClass.ProcessLoss, idempotencyKey, permission,
+            ManufacturingCommandNames.DeclareProcessLoss,
+            (fact, mass, at, metadata) => orders.DeclareOutputAsync(orderId, fact.ExpectedVersion, fact.FactId,
+                fact.ParentRollId, OutputClass.ProcessLoss, mass, at, metadata, cancellationToken), cancellationToken);
+
+    /// <summary>
+    /// Closes the order at the version the caller read. Settings supplies the exact company/process/date tolerance;
+    /// Manufacturing persists it and derives fire (Scrap + ProcessLoss) and net issued mass from its own facts. A
+    /// positive unexplained difference still requires an explicit fact. An out-of-tolerance result requires the
+    /// separate permission passed by the host and a reason bound to company/order/actor/order version/policy version.
+    /// A closed order refuses a second close; the same key replays the first answer (ADR-011 §4), and a stale version
+    /// is a recorded terminal conflict (§7).
     /// </summary>
     public Task<ManufacturingApiResult<OrderViewV1>> CloseOrderAsync(Guid orderId, CloseOrderRequestV1? request,
-        string idempotencyKey, string permission, CancellationToken cancellationToken)
+        string idempotencyKey, string permission, CancellationToken cancellationToken) =>
+        CloseOrderAsync(orderId, request, idempotencyKey, permission, exceptionApprovalPermission: null,
+            cancellationToken);
+
+    /// <summary>The host-bound overload that names the dedicated exception permission without importing host policy.</summary>
+    public Task<ManufacturingApiResult<OrderViewV1>> CloseOrderAsync(Guid orderId, CloseOrderRequestV1? request,
+        string idempotencyKey, string permission, string? exceptionApprovalPermission,
+        CancellationToken cancellationToken)
     {
         if (orderId == Guid.Empty || request is null || request.ExpectedVersion <= 0)
         {
             return Task.FromResult(Invalid<OrderViewV1>("expectedVersion"));
         }
 
+        var exceptionReason = request.ExceptionReason?.Trim();
+        if (request.ExceptionReason is not null
+            && (string.IsNullOrEmpty(exceptionReason)
+                || exceptionReason.Length > ClosureExceptionApprovalV1.ReasonMaximumLength
+                || exceptionReason.Any(char.IsControl)))
+        {
+            return Task.FromResult(Invalid<OrderViewV1>("exceptionReason"));
+        }
+
+        // The published normal-close command predates exception approval. Its canonical payload omitted the
+        // optional member, so an absent reason must keep that exact hash for immutable ADR-011 replay.
+        object canonicalRequest = exceptionReason is null
+            ? new { orderId, expectedVersion = request.ExpectedVersion }
+            : new { orderId, expectedVersion = request.ExpectedVersion, exceptionReason };
+
         return RunAsync<OrderViewV1>(permission, idempotencyKey, ManufacturingCommandNames.CloseOrder,
-            new { orderId, expectedVersion = request.ExpectedVersion }, ManufacturingApiStatus.Ok,
-            async (metadata, actor) =>
+            canonicalRequest, ManufacturingApiStatus.Ok,
+            async (metadata, actor, companyId) =>
             {
+                var current = await orders.FindOrderAsync(orderId, cancellationToken);
+                if (current is null)
+                {
+                    return NotFoundResult<OrderViewV1>();
+                }
+
+                // Stored state answers before another owner is asked: stale/closed never query Settings.
+                current.RequireClosable(request.ExpectedVersion);
+                if (manufacturingTolerances is null)
+                {
+                    return new ManufacturingApiResult<OrderViewV1>(ManufacturingApiStatus.Unavailable, null, false,
+                        "settings_provider_unavailable");
+                }
+
+                var closedAt = timeProvider.GetUtcNow().ToUniversalTime();
+                var selectedForDate = DateOnly.FromDateTime(closedAt.UtcDateTime);
+                var requestedProcess = current.Process.ToString();
+                ManufacturingToleranceProfileV1 profile;
+                try
+                {
+                    profile = await manufacturingTolerances.GetManufacturingToleranceAsync(
+                        requestedProcess, selectedForDate, cancellationToken);
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (SettingsPrerequisiteException exception)
+                {
+                    var status = exception.Code switch
+                    {
+                        "settings_access_denied" => ManufacturingApiStatus.Denied,
+                        "settings_provider_unavailable" or "settings_profile_invalid" =>
+                            ManufacturingApiStatus.Unavailable,
+                        _ => ManufacturingApiStatus.Unprocessable,
+                    };
+                    return new ManufacturingApiResult<OrderViewV1>(status, null, false, exception.Code);
+                }
+
+                if (profile.CompanyId != current.CompanyId
+                    || !string.Equals(profile.Process, requestedProcess, StringComparison.Ordinal))
+                {
+                    return new ManufacturingApiResult<OrderViewV1>(ManufacturingApiStatus.Unavailable, null, false,
+                        ClosureAssessmentCodesV1.PolicyScopeMismatch);
+                }
+
+                var policy = new ClosureTolerancePolicySnapshotV1(
+                    profile.CompanyId, profile.Profile.ProfileId, profile.Profile.Version, current.Process,
+                    profile.MaximumFirePercent, profile.IsActive, profile.EffectiveFrom, profile.EffectiveThrough,
+                    selectedForDate);
+                var assessment = current.AssessClosure(policy);
+                if (assessment.Disposition is not (ClosureDispositionV1.Balanced
+                    or ClosureDispositionV1.ApprovalRequired))
+                {
+                    var status = assessment.Disposition == ClosureDispositionV1.Unavailable
+                        ? ManufacturingApiStatus.Unavailable
+                        : ManufacturingApiStatus.Unprocessable;
+                    return new ManufacturingApiResult<OrderViewV1>(status, null, false,
+                        assessment.Code ?? ClosureAssessmentCodesV1.PolicyInvalid, assessment.RefusedParameter);
+                }
+
+                ClosureExceptionApprovalV1? approval = null;
+                if (assessment.Disposition == ClosureDispositionV1.ApprovalRequired)
+                {
+                    if (exceptionReason is null)
+                    {
+                        return new ManufacturingApiResult<OrderViewV1>(ManufacturingApiStatus.Unprocessable, null,
+                            false, ClosureAssessmentCodesV1.ApprovalRequired);
+                    }
+
+                    if (string.IsNullOrWhiteSpace(exceptionApprovalPermission)
+                        || await FenceAsync<OrderViewV1>(exceptionApprovalPermission, cancellationToken) is not null)
+                    {
+                        return Denied<OrderViewV1>();
+                    }
+
+                    approval = ClosureExceptionApprovalV1.Create(
+                        current.CompanyId, current.Id, actor, exceptionReason, current.Version,
+                        policy.PolicyId, policy.PolicyVersion, closedAt);
+                }
+                else if (exceptionReason is not null)
+                {
+                    return new ManufacturingApiResult<OrderViewV1>(ManufacturingApiStatus.Unprocessable, null, false,
+                        ClosureAssessmentCodesV1.ApprovalUnexpected);
+                }
+
                 if (await FenceAsync<OrderViewV1>(permission, cancellationToken) is { } fenced)
                 {
                     return fenced;
                 }
 
-                await orders.CloseOrderAsync(orderId, request.ExpectedVersion, actor, timeProvider.GetUtcNow(), metadata,
-                    cancellationToken);
+                if (approval is not null
+                    && await FenceAsync<OrderViewV1>(exceptionApprovalPermission!, cancellationToken) is { } approvalFenced)
+                {
+                    return approvalFenced;
+                }
+
+                var persistenceAuthority = new ManufacturingPersistenceAuthorityFenceV1(companyId, actor,
+                    token => RevalidateClosePersistenceAuthorityAsync(companyId, actor, permission,
+                        approval is null ? null : exceptionApprovalPermission, token));
+                await orders.CloseOrderWithPolicyAsync(orderId, request.ExpectedVersion, actor, closedAt, policy,
+                    approval, persistenceAuthority, metadata, cancellationToken);
                 return await OrderResultAsync(orderId, ManufacturingApiStatus.Ok, isReplay: false, cancellationToken);
             }, stored => OrderView((ProductionOrder)stored), cancellationToken);
     }
@@ -1190,7 +1332,7 @@ public sealed partial class ManufacturingCommandService(
         };
 
         return RunAsync<OrderViewV1>(permission, idempotencyKey, commandName, canonical, ManufacturingApiStatus.Ok,
-            async (metadata, _) =>
+            async (metadata, _, _) =>
             {
                 var mass = await VerifyAsync(kg, DateOnly.FromDateTime(occurredAt.UtcDateTime), "kg", cancellationToken);
                 if (mass.Refusal is not null)
@@ -1217,7 +1359,7 @@ public sealed partial class ManufacturingCommandService(
     /// </summary>
     private async Task<ManufacturingApiResult<T>> RunAsync<T>(string permission, string idempotencyKey, string commandName,
         object canonicalRequest, ManufacturingApiStatus successStatus,
-        Func<ManufacturingCommandMetadata, Guid, Task<ManufacturingApiResult<T>>> write, Func<object, T> view,
+        Func<ManufacturingCommandMetadata, Guid, Guid, Task<ManufacturingApiResult<T>>> write, Func<object, T> view,
         CancellationToken cancellationToken)
         where T : class
     {
@@ -1226,8 +1368,9 @@ public sealed partial class ManufacturingCommandService(
             return Denied<T>();
         }
 
-        var scope = await authority.RevalidatePermissionScopeAsync(permission, companyContext.CompanyId, cancellationToken);
-        if (!scope.IsGranted || !scope.IsCompanyWide || !HasContext())
+        var companyId = companyContext.CompanyId;
+        var scope = await authority.RevalidatePermissionScopeAsync(permission, companyId, cancellationToken);
+        if (!scope.IsGranted || !scope.IsCompanyWide || !HasCapturedContext(companyId, actor))
         {
             return Denied<T>();
         }
@@ -1255,7 +1398,7 @@ public sealed partial class ManufacturingCommandService(
         ManufacturingApiResult<T> result;
         try
         {
-            result = await write(metadata, actor);
+            result = await write(metadata, actor, companyId);
         }
         catch (ManufacturingInventoryRealizationPortException exception)
         {
@@ -1279,6 +1422,10 @@ public sealed partial class ManufacturingCommandService(
             return await commands.FindCommandAsync(commandName, keyHash, cancellationToken) is { } winner
                 ? Answer<T>(winner, actorId, requestHash)
                 : new ManufacturingApiResult<T>(ManufacturingApiStatus.Conflict, null, false, exception.Code);
+        }
+        catch (ManufacturingStoreException exception) when (exception.Code == ManufacturingStoreCodes.AuthorityDenied)
+        {
+            result = Denied<T>();
         }
         catch (ManufacturingStoreException exception)
         {
@@ -1374,6 +1521,39 @@ public sealed partial class ManufacturingCommandService(
     {
         var scope = await authority.RevalidatePermissionScopeAsync(permission, companyContext.CompanyId, cancellationToken);
         return scope.IsGranted && scope.IsCompanyWide && HasContext() ? null : Denied<T>();
+    }
+
+    /// <summary>
+    /// Final policy-close authority measured for the company and actor captured by <see cref="RunAsync{T}"/>.
+    /// Each await is followed by the same-context check; an exception close must retain both grants.
+    /// </summary>
+    private async Task<bool> RevalidateClosePersistenceAuthorityAsync(Guid companyId, Guid actorId,
+        string closePermission, string? exceptionApprovalPermission, CancellationToken cancellationToken)
+    {
+        if (!HasCapturedContext(companyId, actorId))
+        {
+            return false;
+        }
+
+        var closeScope = await authority.RevalidatePermissionScopeAsync(
+            closePermission, companyId, cancellationToken);
+        if (!closeScope.IsGranted || !closeScope.IsCompanyWide || !HasCapturedContext(companyId, actorId))
+        {
+            return false;
+        }
+
+        if (exceptionApprovalPermission is not null)
+        {
+            var exceptionScope = await authority.RevalidatePermissionScopeAsync(
+                exceptionApprovalPermission, companyId, cancellationToken);
+            if (!exceptionScope.IsGranted || !exceptionScope.IsCompanyWide
+                || !HasCapturedContext(companyId, actorId))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private async Task<(Kilograms Value, ManufacturingApiResult<object>? Refusal)> VerifyAsync(decimal value, DateOnly effectiveOn,
@@ -1529,6 +1709,9 @@ public sealed partial class ManufacturingCommandService(
         companyContext.IsResolved && companyContext.CompanyId != Guid.Empty && currentUser.IsAuthenticated
         && !string.IsNullOrWhiteSpace(currentUser.UserId) && currentUser.CanAccessCompany(companyContext.CompanyId)
         && correlation.IsResolved;
+
+    private bool HasCapturedContext(Guid companyId, Guid actorId) =>
+        HasContext() && companyContext.CompanyId == companyId && ActorGuid() == actorId;
 
     private Guid? ActorGuid() => Guid.TryParse(currentUser.UserId, out var actor) && actor != Guid.Empty ? actor : null;
 

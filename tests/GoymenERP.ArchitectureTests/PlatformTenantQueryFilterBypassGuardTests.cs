@@ -81,7 +81,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // production uses the own-server store and Defender when both are configured and answers 503 otherwise
     // (abe26a09… -> c027dce9…); no code line changed.
     private const string ReviewedOpenApiStartupFingerprint =
-        "c027dce99291e2837daa360c4d5d8f16e2eb2759cbd3171b512c81bdd801f453";
+        "b838d9662faf01b027c6b963f417aa6bf5751c3ba97a143be632057da8f44f04";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedProductManufacturingTechnicalRegistrationPath =
@@ -196,9 +196,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 "c596982944d43155ce986a641a1e4fb3093ad1c97b9f5bafba7d369286dd57bc",
 
             // manufacturing
-            // MFG-PLAN-EDIT: +6 plan-revision SQL facts (a72e6367… -> 02711b6c…).
+            // MFG close: owner-added closure/tolerance SQL facts extend the exact Manufacturing discovery inventory.
             ["tools/relational_inventory/manufacturing.txt"] =
-                "02711b6cffa15804383ef6c1b1d510a6d7af07e3c261b594a58243d35efa8133",
+                "38590e95d1191cd563890aa427ed01f96e8f233b5c39485536f3edace06f90da",
 
             // organization
             // ORG master edit: +2 OrganizationMasterDataSqlServerRelationalAcceptanceTests facts (6b504dac… -> 3bad6ad8…).
@@ -299,7 +299,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // same CompanyId query filter and a company-leading key and FK to the plan.
             ["src/backend/Modules/Manufacturing/GoymenERP.Modules.Manufacturing.Infrastructure/"
              + "Persistence/ManufacturingDbContext.cs"] =
-                "4f2265e7aa941aae91cd35b280f8ae327686d167dfd039110ea850e63ade2a42",
+                "4601d8c230d326696ef6774dd88ce62430ff310d4ef5ccaf2a5b32f45a3426fb",
             // FIN-T04a (#305): company-scoped like Organization; every tenant row and AuditEvent
             // carries the CompanyId filter. A standard entry, not an exception.
             // Re-measured for DEC-FIN-014: nullable POS fact columns on ReceiptDrafts and MoneyEvents; no new table,
@@ -756,7 +756,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Manufacturing/"
                  + "GoymenERP.Modules.Manufacturing.Infrastructure/Persistence/ManufacturingStore.cs"] =
                     new(
-                        "4b36190fe08f10dffb809bf0d7bf2be8f8f4dbd2fa10caf790177c0428d12afe",
+                        "41145ed8470576203eb58215810b51ddd27d82c2fe7229a592a28db1a4e2a484",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -1205,6 +1205,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // revision is stored; the THROW precedes both DropTables. Forward fix.
                 ["src/backend/Modules/Manufacturing/GoymenERP.Modules.Manufacturing.Infrastructure/Persistence/Migrations/20260927180000_AddManufacturingPlanRevisions.cs"] =
                     new("39a0d9bdb1ed7f19934491b4177708af32ef45fadf7c7ebbf1010fa372b6ec23",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
+                // MFG close: Down refuses with the module-owned 51048 while an immutable closure decision exists.
+                // The refusal precedes the drop, so the supported recovery is an explicit forward fix.
+                ["src/backend/Modules/Manufacturing/GoymenERP.Modules.Manufacturing.Infrastructure/Persistence/Migrations/20260930220000_AddManufacturingOrderClosureDecision.cs"] =
+                    new("f20280c9fa754dd73f91bd880c68f6eccfba9d10e9396fcd1b5efe956a0f0996",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 1 }),
                 // INV-OPEN-1 part 2: each Down's only raw SQL is the Inventory refusal (51046) while an opening
