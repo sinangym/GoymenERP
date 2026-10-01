@@ -12,7 +12,6 @@ export interface RemainderChangeRequest {
   readonly quantity: string | null
   readonly reason: string
 }
-
 export interface RemainderDecisionRequest {
   readonly expectedVersion: string
   readonly reason: string | null
@@ -152,4 +151,3 @@ export function decodeRemainderChanges(value: unknown): RemainderChanges | null 
     line!.loaded !== null || line!.shipped !== null || line!.delivered !== null || line!.minimumQuantity !== null)) return null
   return { draftVersion: o.draftVersion, floorStatus: o.floorStatus, lines: lines as RemainderLine[], items: items as RemainderChange[] }
 }
-
