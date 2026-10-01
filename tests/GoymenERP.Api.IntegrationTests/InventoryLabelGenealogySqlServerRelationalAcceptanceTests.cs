@@ -200,6 +200,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             Assert.Equal(0, await run.ScalarAsync<int>(
                 "SELECT COUNT(*) FROM sys.tables WHERE schema_id = SCHEMA_ID(N'inventory') AND name LIKE N'LabelTransformation%'"));
             await context.GetService<IMigrator>().MigrateAsync(currentMigration);
+            await context.Database.MigrateAsync();
         }
 
         var source = await SeedFreePhysicalSourceAsync(run, CompanyA, "SYN-GENEALOGY-DOWN", 10m);
@@ -209,6 +210,9 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
                 SplitRequest(source.LabelId, source.LabelVersion, "SYN-GENEALOGY-DOWN-OUT", quantity: "5"),
                 Metadata(run));
         }
+
+        await RemoveSyntheticProductVersionsForHistoricalMigrationAsync(
+            run, "SYN-GENEALOGY-DOWN", expectedLabels: 3);
 
         await using (var context = run.Context(CompanyA))
         {

@@ -1018,7 +1018,7 @@ public sealed partial class InventoryStore(
 
     /// <summary>The label facts a position needs (company, product, id); prints and documents do not matter there.</summary>
     private static MaterialLabel IdentityOnly(LabelRow row) =>
-        new(row.Id, row.CompanyId, row.Code, row.ProductId, row.LotId, row.ProductVersion);
+        new MaterialLabel(row.Id, row.CompanyId, row.Code, row.ProductId, row.LotId, row.ProductVersion);
 
     private static StockPosition Position(Guid companyId, int ownerKind, Guid ownerId, int custodianKind, Guid custodianId,
         Guid locationId, MaterialLabel label, int block) =>

@@ -313,6 +313,9 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             await raw.SaveChangesAsync();
         }
 
+        await RemoveSyntheticProductVersionsForHistoricalMigrationAsync(
+            run, "SYN-ROLLBACK", expectedLabels: 1);
+
         await using (var context = run.Context(CompanyA))
         {
             var error = await Assert.ThrowsAsync<SqlException>(

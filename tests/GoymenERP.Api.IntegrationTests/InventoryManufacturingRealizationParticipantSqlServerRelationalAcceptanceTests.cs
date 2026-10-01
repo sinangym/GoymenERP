@@ -391,6 +391,9 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         await CommitReturnAsync(run, ReturnRequest(orderId, parent.Label.Id, issued.ParentLabelVersion, "4"),
             ManufacturingMetadata(run, "down-return"));
 
+        await RemoveSyntheticProductVersionsForHistoricalMigrationAsync(
+            run, "SYN-MFG-PARENT-DOWN", expectedLabels: 1);
+
         await using var context = run.Context(CompanyA);
         var error = await Assert.ThrowsAsync<SqlException>(() => context.GetService<IMigrator>()
             .MigrateAsync("20260924013338_AddInventoryPhysicalAllocationLifecycle"));
