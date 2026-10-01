@@ -4,8 +4,6 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Xml;
 using GoymenERP.Modules.Product.Application.Contracts;
-using GoymenERP.Modules.Product.Domain.Products;
-
 namespace GoymenERP.Modules.Product.Infrastructure.Persistence;
 
 /// <summary>
@@ -14,7 +12,6 @@ namespace GoymenERP.Modules.Product.Infrastructure.Persistence;
 /// </summary>
 public sealed class ProductImportWorkbookReader : IProductImportWorkbookReaderV1
 {
-    private const int MaximumLegacyCodeLength = ProductCode.MaximumPrefixLength + 1 + 19;
     // A valid import can reference at most three cells per accepted row plus the header row.
     private const int MaximumSharedStrings = (ProductImportApiV1.MaximumRows + 1) * 3;
 
@@ -84,7 +81,7 @@ public sealed class ProductImportWorkbookReader : IProductImportWorkbookReaderV1
                 else if (legacyCell is not { IsLosslessText: true })
                     errors.Add(Error(row.Number, "legacyCode", ProductImportCodesV1.InvalidLegacyCode,
                         "Eski kod metin hücresi olmalıdır."));
-                else if (legacy.Length > MaximumLegacyCodeLength || legacy.Any(char.IsControl))
+                else if (!ProductCodeRegistration.IsStorageCompatibleLegacyCode(legacy))
                     errors.Add(Error(row.Number, "legacyCode", ProductImportCodesV1.InvalidLegacyCode, "Eski kod biçimi geçersiz."));
                 else if (!seen.Add(legacy))
                     errors.Add(Error(row.Number, "legacyCode", ProductImportCodesV1.RepeatedLegacyCode, "Dosyada aynı eski kod birden çok kez bulunuyor."));

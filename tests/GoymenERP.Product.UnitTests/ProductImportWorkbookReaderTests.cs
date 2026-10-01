@@ -128,6 +128,24 @@ public sealed class ProductImportWorkbookReaderTests
     }
 
     [Fact]
+    public void Preview_preserves_windows_1252_aliases_and_rejects_unrepresentable_unicode_aliases()
+    {
+        var workbook = Workbook(
+            ["Eski Kod", "Ürün Adı", "Grup Kimliği"],
+            ["OLD-É-€", "Kaynaksız dönüşmez", Group.ToString("D")],
+            ["OLD-旧", "Varchar kayıpsız saklayamaz", Group.ToString("D")]);
+
+        var result = Reader().Read(workbook, Mapping, EmptyCodes(), Groups());
+
+        Assert.False(result.Ready);
+        Assert.Equal(2, result.SourceRowCount);
+        Assert.Equal("OLD-É-€", Assert.Single(result.Rows).LegacyCode);
+        var error = Assert.Single(result.Errors);
+        Assert.Equal(((int?)3, "legacyCode", ProductImportCodesV1.InvalidLegacyCode),
+            (error.RowNumber, error.Field, error.Code));
+    }
+
+    [Fact]
     public void Preview_rejects_repeated_and_already_registered_legacy_codes_without_updating_them()
     {
         var workbook = Workbook(
