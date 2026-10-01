@@ -33,6 +33,9 @@ public sealed class FinanceManualReceiptNormalJournalSourceProviderV1Tests
         Assert.NotNull(resolved);
         Assert.Same(rule, resolved!.Rule);
         Assert.Equal(Currency, resolved.CurrencyId);
+        Assert.Equal("2", resolved.SourceVersion);
+        Assert.Equal("finance-profile", resolved.OwnerProfileId);
+        Assert.Equal("7", resolved.OwnerProfileVersion);
         Assert.Equal([FinanceAction.ReadAmount, FinanceAction.ReadSources], permissions.Actions);
         Assert.Equal(Company, receipt.Context!.CompanyId);
         Assert.Equal(Actor.ToString("D"), receipt.Context.ActorId);

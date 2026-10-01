@@ -1,6 +1,6 @@
 import { fireEvent, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { ACCOUNTING_CAPABILITY, normalDraftApprovalPath } from './capabilities'
+import { ACCOUNTING_CAPABILITY, ACCOUNTING_ROUTE, normalDraftApprovalPath } from './capabilities'
 import { COMPANY_A, installFetch, json, renderAt, requestsFor } from './testHarness'
 
 const COMPANY = COMPANY_A
@@ -11,6 +11,20 @@ const PERIOD = 'a0000000-0000-4000-8000-000000000005'
 const ACCOUNT_1 = 'a0000000-0000-4000-8000-000000000006'
 const ACCOUNT_2 = 'a0000000-0000-4000-8000-000000000007'
 const CURRENCY = 'a0000000-0000-4000-8000-000000000008'
+const PREPARATION = 'b'.repeat(64)
+
+function preparation(overrides: Record<string, unknown> = {}) {
+  return {
+    companyId: COMPANY, sourceId: SOURCE, preparationVersion: PREPARATION, sourceVersion: '2',
+    ownerProfileId: 'finance-profile', ownerProfileVersion: '7', currencyId: CURRENCY,
+    postingPurpose: 'approved-purpose', postingRuleVersion: 'approved-rule-v1',
+    accountPlanSourceVersion: 'mikro-v1', accountPlanSourceSha256: 'a'.repeat(64),
+    mappings: [
+      { mappingKey: 'debit', side: 'Debit', accountId: ACCOUNT_1, accountCode: '100', accountName: 'Kasa' },
+      { mappingKey: 'credit', side: 'Credit', accountId: ACCOUNT_2, accountCode: '120', accountName: 'Alicilar' },
+    ], ...overrides,
+  }
+}
 
 function draft(overrides: Record<string, unknown> = {}) {
   return {
@@ -30,6 +44,75 @@ function draft(overrides: Record<string, unknown> = {}) {
 afterEach(() => {
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
+})
+
+describe('normal journal source-bound creation', () => {
+  it('submits approved choices and the exact preparation version', async () => {
+    const recorded = installFetch({
+      capabilities: [ACCOUNTING_CAPABILITY.normalDraftCreate],
+      respond: (url, init) => {
+        if (url.endsWith(`/normal-journal-draft-sources/${SOURCE}`)) return json(preparation())
+        if (url.endsWith('/normal-journal-drafts') && init?.method === 'POST') return json(draft(), 201)
+        return undefined
+      },
+    })
+    renderAt(ACCOUNTING_ROUTE.normalDraftCreate)
+    fireEvent.change(screen.getByLabelText('Kaynak kimliği'), { target: { value: SOURCE } })
+    await screen.findByText('Onaylı ayna mikro-v1; kural approved-rule-v1.')
+    const accounts = screen.getAllByLabelText('Onaylı hesap')
+    fireEvent.change(accounts[0], { target: { value: ACCOUNT_1 } })
+    fireEvent.change(accounts[1], { target: { value: ACCOUNT_2 } })
+    fireEvent.change(screen.getByLabelText('İşlem tarihi'), { target: { value: '2026-09-24' } })
+    fireEvent.change(screen.getByLabelText('Muhasebe tarihi'), { target: { value: '2026-09-24' } })
+    const amounts = screen.getAllByLabelText('Tutar')
+    fireEvent.change(amounts[0], { target: { value: '10.25' } })
+    fireEvent.change(amounts[1], { target: { value: '10.25' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Taslağı kaydet' }))
+
+    await screen.findByText('Normal fiş taslağı kaydedildi')
+    const command = requestsFor(recorded, '/normal-journal-drafts', 'POST').at(-1)
+    expect(command?.body).toMatchObject({
+      sourceId: SOURCE,
+      expectedPreparationVersion: PREPARATION,
+      lines: [
+        { accountId: ACCOUNT_1, side: 'Debit', amount: '10.25' },
+        { accountId: ACCOUNT_2, side: 'Credit', amount: '10.25' },
+      ],
+    })
+  })
+
+  it('surfaces stale preparation and refreshes the chooser without changing the sent body', async () => {
+    let reads = 0
+    const recorded = installFetch({
+      capabilities: [ACCOUNTING_CAPABILITY.normalDraftCreate],
+      respond: (url, init) => {
+        if (url.endsWith(`/normal-journal-draft-sources/${SOURCE}`)) {
+          reads += 1
+          return json(preparation({ preparationVersion: (reads === 1 ? 'b' : 'c').repeat(64) }))
+        }
+        if (url.endsWith('/normal-journal-drafts') && init?.method === 'POST') {
+          return json({ code: 'accounting_normal_journal_preparation_version_conflict' }, 409)
+        }
+        return undefined
+      },
+    })
+    renderAt(ACCOUNTING_ROUTE.normalDraftCreate)
+    fireEvent.change(screen.getByLabelText('Kaynak kimliği'), { target: { value: SOURCE } })
+    await screen.findByText('Onaylı ayna mikro-v1; kural approved-rule-v1.')
+    const accounts = screen.getAllByLabelText('Onaylı hesap')
+    fireEvent.change(accounts[0], { target: { value: ACCOUNT_1 } })
+    fireEvent.change(accounts[1], { target: { value: ACCOUNT_2 } })
+    fireEvent.change(screen.getByLabelText('İşlem tarihi'), { target: { value: '2026-09-24' } })
+    fireEvent.change(screen.getByLabelText('Muhasebe tarihi'), { target: { value: '2026-09-24' } })
+    screen.getAllByLabelText('Tutar').forEach(input => fireEvent.change(input, { target: { value: '10.25' } }))
+    fireEvent.click(screen.getByRole('button', { name: 'Taslağı kaydet' }))
+
+    await screen.findByText('Onaylı hesap hazırlığı değişti. Seçimleri yenileyin.')
+    const command = requestsFor(recorded, '/normal-journal-drafts', 'POST')[0]
+    expect(command.body).toMatchObject({ expectedPreparationVersion: PREPARATION })
+    fireEvent.click(screen.getByRole('button', { name: 'Hazırlığı yenile' }))
+    await waitFor(() => expect(reads).toBe(2))
+  })
 })
 
 describe('normal journal approval interaction', () => {

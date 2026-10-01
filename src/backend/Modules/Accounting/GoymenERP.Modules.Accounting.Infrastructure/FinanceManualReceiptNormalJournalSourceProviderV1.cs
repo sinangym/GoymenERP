@@ -73,7 +73,8 @@ public sealed class FinanceManualReceiptNormalJournalSourceProviderV1(
         var read = await financePermissions.CheckAsync(
             context, FinanceAction.ReadSources, sourceId, cancellationToken);
         return read == PermissionDecision.Allowed && SameContext(companyId, actor)
-            ? new NormalJournalDraftServerSourceV1(rule, source.CurrencyId)
+            ? new NormalJournalDraftServerSourceV1(
+                rule, source.CurrencyId, source.Version, detail.Profile.ProfileId, detail.Profile.Version)
             : null;
     }
 
