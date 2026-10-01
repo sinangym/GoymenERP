@@ -86,6 +86,10 @@ public sealed partial class LogisticsInstructionSqlServerRelationalAcceptanceTes
             source = Assert.IsType<StoredApprovedDispatchInvoiceSource>(
                 await freshReader.Store.FindApprovedDispatchInvoiceSourceAsync(noteId));
         }
+        await using (var approvedForeignReader = run.Store(CompanyB))
+        {
+            Assert.Null(await approvedForeignReader.Store.FindApprovedDispatchInvoiceSourceAsync(noteId));
+        }
 
         Assert.Equal((CompanyA, noteId, instruction.Id, stored.Instruction.Version, owners.Party, owners.Account, "IRS-000001", (string?)null),
             (source.CompanyId, source.DispatchNoteId, source.InstructionId, source.InstructionVersion,
