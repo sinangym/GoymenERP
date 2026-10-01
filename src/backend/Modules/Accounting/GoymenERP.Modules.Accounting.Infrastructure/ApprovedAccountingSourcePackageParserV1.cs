@@ -158,7 +158,7 @@ public sealed class ApprovedAccountingSourcePackageParserV1 : IApprovedAccountin
                     ApprovedAccountingSourcePackageCodesV1.SideUnknown);
                 valid = false;
             }
-            if (sourceId == Guid.Empty || currencyId == Guid.Empty || accountId == Guid.Empty || !valid) continue;
+            if (sourceId == Guid.Empty || currencyId == Guid.Empty || accountId == Guid.Empty || side is null || !valid) continue;
             rows.Add(new MappingCsvRow(rowNumber, sourceId, fields[1], fields[2], fields[3], fields[4],
                 currencyId, fields[6], fields[7], fields[8], side.Value, accountId));
         }
