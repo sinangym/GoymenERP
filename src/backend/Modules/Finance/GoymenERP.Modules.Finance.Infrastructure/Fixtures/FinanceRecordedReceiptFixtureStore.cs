@@ -40,16 +40,18 @@ public static class FinanceRecordedReceiptFixtureStoreRegistration
 {
     public static IServiceCollection AddFinanceRecordedReceiptFixtureStore(this IServiceCollection services)
     {
-        services.AddScoped<IFinanceRecordedReceiptFixtureStore>(provider =>
-        {
-            provider.GetRequiredService<ICompanyContext>()
-                .Set(ApprovedMoneyProfileCatalog.GdcTurkishLiraV1.CompanyId);
-            return new FinanceRecordedReceiptFixtureStore(
-                provider.GetRequiredService<FinanceDbContext>(),
-                provider.GetRequiredService<IAuditEventCollector>(),
-                provider.GetRequiredService<TimeProvider>());
-        });
+        services.AddScoped<IFinanceRecordedReceiptFixtureStore>(CreateStore);
         return services;
+    }
+
+    private static IFinanceRecordedReceiptFixtureStore CreateStore(IServiceProvider provider)
+    {
+        provider.GetRequiredService<ICompanyContext>()
+            .Set(ApprovedMoneyProfileCatalog.GdcTurkishLiraV1.CompanyId);
+        return new FinanceRecordedReceiptFixtureStore(
+            provider.GetRequiredService<FinanceDbContext>(),
+            provider.GetRequiredService<IAuditEventCollector>(),
+            provider.GetRequiredService<TimeProvider>());
     }
 
     public static IServiceCollection AddFinanceRecordedReceiptFixtureReadStore(this IServiceCollection services)
@@ -244,7 +246,8 @@ internal sealed class FinanceRecordedReceiptFixtureStore(
     private sealed class FixtureBankAccountReader(Guid companyId, Guid currencyId) : IFinanceBankAccountReader
     {
         private readonly BankAccountView _account =
-            new(TreasuryAccountId, companyId, currencyId, "SENTETIK ACC01 Treasury", true, true, "1");
+            new BankAccountView(TreasuryAccountId, companyId, currencyId,
+                "SENTETIK ACC01 Treasury", true, true, "1");
 
         public Task<ReadResult<BankAccountPage>> ListAuthorizedAsync(FinanceContext context,
             CancellationToken cancellationToken)
