@@ -68,6 +68,8 @@ internal sealed class PriceListLineRow : IProductPriceListTenantRow
     public Guid LineId { get; set; }
     public Guid ProductId { get; set; }
     public Guid PriceUnitId { get; set; }
+    public decimal LowerQuantity { get; set; }
+    public decimal? UpperQuantity { get; set; }
     public decimal UnitPrice { get; set; }
     public decimal? FloorUnitPrice { get; set; }
 }

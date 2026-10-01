@@ -70,8 +70,15 @@ public sealed class ProductPriceListPersistenceTests
         Assert.Equal(["CompanyId", "PriceListId", "VersionNo", "LineId"], lines.FindPrimaryKey()!.Properties.Select(property => property.Name));
         Assert.Equal((19, 4), (lines.FindProperty(nameof(PriceListLineRow.UnitPrice))!.GetPrecision(),
             lines.FindProperty(nameof(PriceListLineRow.UnitPrice))!.GetScale()));
+        Assert.Equal((18, 3), (lines.FindProperty(nameof(PriceListLineRow.LowerQuantity))!.GetPrecision(),
+            lines.FindProperty(nameof(PriceListLineRow.LowerQuantity))!.GetScale()));
+        Assert.Equal((18, 3), (lines.FindProperty(nameof(PriceListLineRow.UpperQuantity))!.GetPrecision(),
+            lines.FindProperty(nameof(PriceListLineRow.UpperQuantity))!.GetScale()));
         Assert.Contains(lines.GetCheckConstraints(), check => check.Name == "CK_PriceListLines_Price"
             && check.Sql.Contains("[FloorUnitPrice] <= [UnitPrice]", StringComparison.Ordinal));
+        Assert.Contains(lines.GetCheckConstraints(), check => check.Name == "CK_PriceListLines_QuantityTier"
+            && check.Sql.Contains("[UpperQuantity] > [LowerQuantity]", StringComparison.Ordinal));
+        Assert.Contains(lines.GetIndexes(), index => index.GetDatabaseName() == "IX_PriceListLines_QuantityTier");
         Assert.Contains(lines.GetForeignKeys(), key => key.PrincipalEntityType.ClrType == typeof(PriceListProductReference));
     }
 

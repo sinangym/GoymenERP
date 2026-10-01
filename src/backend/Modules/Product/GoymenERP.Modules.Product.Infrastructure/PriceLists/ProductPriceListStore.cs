@@ -363,6 +363,8 @@ internal sealed class ProductPriceListStore(
             row.LineNo = line.LineNo;
             row.ProductId = line.ProductId;
             row.PriceUnitId = line.PriceUnitId;
+            row.LowerQuantity = line.LowerQuantity;
+            row.UpperQuantity = line.UpperQuantity;
             row.UnitPrice = line.UnitPrice;
             row.FloorUnitPrice = line.FloorUnitPrice;
         }
@@ -392,6 +394,8 @@ internal sealed class ProductPriceListStore(
         LineId = line.LineId,
         ProductId = line.ProductId,
         PriceUnitId = line.PriceUnitId,
+        LowerQuantity = line.LowerQuantity,
+        UpperQuantity = line.UpperQuantity,
         UnitPrice = line.UnitPrice,
         FloorUnitPrice = line.FloorUnitPrice,
     };
@@ -401,7 +405,8 @@ internal sealed class ProductPriceListStore(
         var versions = versionRows.Select(version => PriceListVersion.Restore(version.VersionId, version.VersionNo, version.ValidFrom,
             version.ValidThrough, (PriceListVersionState)version.State,
             lineRows.Where(line => line.VersionNo == version.VersionNo)
-                .Select(line => new PriceListLine(line.LineId, line.LineNo, line.ProductId, line.PriceUnitId, line.UnitPrice, line.FloorUnitPrice))
+                .Select(line => new PriceListLine(line.LineId, line.LineNo, line.ProductId, line.PriceUnitId, line.UnitPrice,
+                    line.FloorUnitPrice, line.LowerQuantity, line.UpperQuantity))
                 .ToList(),
             version.CreatedBy, version.CreatedAtUtc, version.PublishedBy, version.PublishedAtUtc)).ToList();
         return PriceList.Restore(row.Id, row.CompanyId, row.Name, row.CurrencyCode, (PriceListChannel)row.Channel,
@@ -463,6 +468,8 @@ internal sealed class ProductPriceListStore(
                 lineId = line.LineId,
                 productId = line.ProductId,
                 priceUnitId = line.PriceUnitId,
+                lowerQuantity = ProductPriceListWire.FormatQuantity(line.LowerQuantity),
+                upperQuantity = line.UpperQuantity is { } upper ? ProductPriceListWire.FormatQuantity(upper) : null,
                 unitPrice = ProductPriceListWire.FormatPrice(line.UnitPrice),
                 floorUnitPrice = line.FloorUnitPrice is { } floor ? ProductPriceListWire.FormatPrice(floor) : null,
             }),

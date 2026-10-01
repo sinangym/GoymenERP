@@ -74,7 +74,7 @@ public sealed class PriceListDomainTests
         var duplicate = Assert.Throws<PriceListRuleException>(() => PriceList.Create(Guid.NewGuid(), Company, "L", "TRY", PriceListChannel.Sales,
             PriceListVatBasis.ExcludingVat, Guid.NewGuid(), Today, null,
             [Line(ProductA, 10m), Line(ProductA, 11m)], "u", Now));
-        Assert.Equal((PriceListRuleCodes.DuplicateProductUnit, "lines[1].productId"), (duplicate.Code, duplicate.Field));
+        Assert.Equal((PriceListRuleCodes.QuantityTierOverlap, "lines[1].lowerQuantity"), (duplicate.Code, duplicate.Field));
 
         var validity = Assert.Throws<PriceListRuleException>(() => PriceList.Create(Guid.NewGuid(), Company, "L", "TRY", PriceListChannel.Sales,
             PriceListVatBasis.ExcludingVat, Guid.NewGuid(), Today, Today.AddDays(-1), [], "u", Now));
@@ -164,6 +164,50 @@ public sealed class PriceListDomainTests
     }
 
     [Fact]
+    public void Quantity_tiers_are_lower_inclusive_upper_exclusive_reject_overlap_and_leave_gaps_empty()
+    {
+        var first = Guid.NewGuid();
+        var second = Guid.NewGuid();
+        var third = Guid.NewGuid();
+        var otherUnit = Guid.NewGuid();
+        var otherUnitLine = Guid.NewGuid();
+        var list = PriceList.Create(Guid.NewGuid(), Company, "Kademeli", "TRY", PriceListChannel.Sales,
+            PriceListVatBasis.ExcludingVat, Guid.NewGuid(), Today, null,
+            [
+                new PriceListLineInput(first, ProductA, Kg, 100m, null, 0m, 10m),
+                new PriceListLineInput(second, ProductA, Kg, 90m, null, 10m, 20m),
+                new PriceListLineInput(third, ProductA, Kg, 80m, null, 25m, null),
+                new PriceListLineInput(otherUnitLine, ProductA, otherUnit, 70m, null, 0m, 20m),
+            ], "u", Now);
+        var version = list.Versions[0];
+
+        Assert.Equal(first, version.LineFor(ProductA, Kg, 9.999m)!.LineId);
+        Assert.Equal(second, version.LineFor(ProductA, Kg, 10m)!.LineId);
+        Assert.Null(version.LineFor(ProductA, Kg, 20m));
+        Assert.Equal(third, version.LineFor(ProductA, Kg, 25m)!.LineId);
+        Assert.Equal(otherUnitLine, version.LineFor(ProductA, otherUnit, 10m)!.LineId);
+        Assert.Null(version.LineFor(ProductA, Kg));
+
+        var overlap = Assert.Throws<PriceListRuleException>(() => PriceList.Create(Guid.NewGuid(), Company, "Çakışan", "TRY",
+            PriceListChannel.Sales, PriceListVatBasis.ExcludingVat, Guid.NewGuid(), Today, null,
+            [
+                new PriceListLineInput(Guid.NewGuid(), ProductA, Kg, 100m, null, 0m, 10m),
+                new PriceListLineInput(Guid.NewGuid(), ProductA, Kg, 90m, null, 9m, 20m),
+            ], "u", Now));
+        Assert.Equal(PriceListRuleCodes.QuantityTierOverlap, overlap.Code);
+
+        var empty = Assert.Throws<PriceListRuleException>(() => PriceList.Create(Guid.NewGuid(), Company, "Boş", "TRY",
+            PriceListChannel.Sales, PriceListVatBasis.ExcludingVat, Guid.NewGuid(), Today, null,
+            [new PriceListLineInput(Guid.NewGuid(), ProductA, Kg, 100m, null, 10m, 10m)], "u", Now));
+        Assert.Equal(PriceListRuleCodes.InvalidQuantityTier, empty.Code);
+
+        var scale = Assert.Throws<PriceListRuleException>(() => PriceList.Create(Guid.NewGuid(), Company, "Ölçek", "TRY",
+            PriceListChannel.Sales, PriceListVatBasis.ExcludingVat, Guid.NewGuid(), Today, null,
+            [new PriceListLineInput(Guid.NewGuid(), ProductA, Kg, 100m, null, 0m, 10.0001m)], "u", Now));
+        Assert.Equal(PriceListRuleCodes.QuantityScaleExceeded, scale.Code);
+    }
+
+    [Fact]
     public void Restore_refuses_gaps_two_drafts_and_unordered_published_starts()
     {
         var version1 = PriceListVersion.Restore(Guid.NewGuid(), 1, Today, null, PriceListVersionState.Published,
@@ -208,6 +252,9 @@ public sealed class PriceListDomainTests
         Assert.Null(ProductPriceListWire.ParseVersion("0"));
         Assert.Equal("42000.50", ProductPriceListWire.FormatPrice(ProductPriceListWire.ParsePrice("42000.50")!.Value));
         Assert.Equal("40000", PriceList.Format(PriceList.Normalize(40000.0000m)));
+        Assert.Equal(10m, ProductPriceListWire.ParseQuantity("10.000"));
+        Assert.Null(ProductPriceListWire.ParseQuantity("10.0001"));
+        Assert.Null(ProductPriceListWire.ParseQuantity("-1"));
     }
 
     private static PriceList NewList() => PriceList.Create(Guid.NewGuid(), Company, " Yurt içi satış ", "TRY", PriceListChannel.Sales,

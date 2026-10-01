@@ -281,6 +281,10 @@ namespace GoymenERP.Modules.Product.Infrastructure.PriceLists.Migrations
                     b.Property<int>("LineNo")
                         .HasColumnType("int");
 
+                    b.Property<decimal>("LowerQuantity")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
                     b.Property<Guid>("PriceUnitId")
                         .HasColumnType("uniqueidentifier");
 
@@ -290,6 +294,10 @@ namespace GoymenERP.Modules.Product.Infrastructure.PriceLists.Migrations
                     b.Property<decimal>("UnitPrice")
                         .HasPrecision(19, 4)
                         .HasColumnType("decimal(19,4)");
+
+                    b.Property<decimal?>("UpperQuantity")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
 
                     b.HasKey("CompanyId", "PriceListId", "VersionNo", "LineId");
 
@@ -301,11 +309,16 @@ namespace GoymenERP.Modules.Product.Infrastructure.PriceLists.Migrations
                     b.HasIndex("CompanyId", "PriceListId", "VersionNo", "LineNo")
                         .HasDatabaseName("IX_PriceListLines_LineNo");
 
+                    b.HasIndex("CompanyId", "PriceListId", "VersionNo", "ProductId", "PriceUnitId", "LowerQuantity")
+                        .HasDatabaseName("IX_PriceListLines_QuantityTier");
+
                     b.ToTable("PriceListLines", "product", t =>
                         {
                             t.HasCheckConstraint("CK_PriceListLines_Identity", "[LineId] <> '00000000-0000-0000-0000-000000000000' AND [ProductId] <> '00000000-0000-0000-0000-000000000000' AND [PriceUnitId] <> '00000000-0000-0000-0000-000000000000' AND [LineNo] >= 1");
 
                             t.HasCheckConstraint("CK_PriceListLines_Price", "[UnitPrice] > 0 AND ([FloorUnitPrice] IS NULL OR ([FloorUnitPrice] > 0 AND [FloorUnitPrice] <= [UnitPrice]))");
+
+                            t.HasCheckConstraint("CK_PriceListLines_QuantityTier", "[LowerQuantity] >= 0 AND ([UpperQuantity] IS NULL OR [UpperQuantity] > [LowerQuantity])");
                         });
                 });
 

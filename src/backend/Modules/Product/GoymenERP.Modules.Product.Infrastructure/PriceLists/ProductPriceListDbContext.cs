@@ -144,6 +144,8 @@ public sealed class ProductPriceListDbContext(DbContextOptions<ProductPriceListD
                 $"[LineId] <> {EmptyGuid} AND [ProductId] <> {EmptyGuid} AND [PriceUnitId] <> {EmptyGuid} AND [LineNo] >= 1");
             table.HasCheckConstraint("CK_PriceListLines_Price",
                 "[UnitPrice] > 0 AND ([FloorUnitPrice] IS NULL OR ([FloorUnitPrice] > 0 AND [FloorUnitPrice] <= [UnitPrice]))");
+            table.HasCheckConstraint("CK_PriceListLines_QuantityTier",
+                "[LowerQuantity] >= 0 AND ([UpperQuantity] IS NULL OR [UpperQuantity] > [LowerQuantity])");
         });
         // Keyed by the client line id, so a Draft revision updates a kept line in place, removes a dropped one and adds a new
         // one without ever re-using a key in one save. Product/unit uniqueness within a version is the aggregate's rule (a
@@ -151,6 +153,10 @@ public sealed class ProductPriceListDbContext(DbContextOptions<ProductPriceListD
         entity.HasKey(x => new { x.CompanyId, x.PriceListId, x.VersionNo, x.LineId });
         entity.HasIndex(x => new { x.CompanyId, x.PriceListId, x.VersionNo, x.LineNo }).HasDatabaseName("IX_PriceListLines_LineNo");
         entity.HasIndex(x => new { x.CompanyId, x.ProductId }).HasDatabaseName("IX_PriceListLines_CompanyId_ProductId");
+        entity.HasIndex(x => new { x.CompanyId, x.PriceListId, x.VersionNo, x.ProductId, x.PriceUnitId, x.LowerQuantity })
+            .HasDatabaseName("IX_PriceListLines_QuantityTier");
+        entity.Property(x => x.LowerQuantity).HasPrecision(18, 3);
+        entity.Property(x => x.UpperQuantity).HasPrecision(18, 3);
         entity.Property(x => x.UnitPrice).HasPrecision(19, 4);
         entity.Property(x => x.FloorUnitPrice).HasPrecision(19, 4);
         entity.HasOne<PriceListVersionRow>().WithMany()

@@ -73,7 +73,12 @@ public sealed class ProductPriceListSqlServerRelationalAcceptanceTests
             Assert.Equal(ProductPriceListCodesV1.VersionConflict, staleReplay.Code);
 
             var revised = await scope.Service.ReviseDraftAsync(listId, new RevisePriceListDraftRequestV1("1", "SENTETIK yurt içi satış",
-                ProductPriceListWire.FormatDate(today), null, [new PriceListLineRequestV1(keptLine, ProductId, Kg, "41000", null)]),
+                ProductPriceListWire.FormatDate(today), null,
+                [
+                    new PriceListLineRequestV1(keptLine, ProductId, Kg, "41000", null, "0", "10"),
+                    new PriceListLineRequestV1(Guid.NewGuid(), ProductId, Kg, "40000", null, "10", "20"),
+                    new PriceListLineRequestV1(Guid.NewGuid(), ProductId, Kg, "39000", null, "25", null),
+                ]),
                 Metadata("revise-1"));
             Assert.Equal(("2", "41000"), (revised.PriceList.Version, revised.PriceList.Versions[0].Lines[0].UnitPrice));
         }
@@ -84,13 +89,17 @@ public sealed class ProductPriceListSqlServerRelationalAcceptanceTests
             Assert.Equal(("Published", "Active", (int?)1), (published.PriceList.Versions[0].State, published.PriceList.Versions[0].Status,
                 published.PriceList.ActiveVersionNo));
 
-            var reference = Assert.Single(await scope.Reader.SearchAsync(ProductId, [Kg], "TRY", today));
+            Assert.Empty(await scope.Reader.SearchAsync(ProductId, [Kg], "TRY", today));
+            var reference = Assert.Single(await scope.QuantityReader.SearchAsync(ProductId, Kg, 9.999m, "TRY", today));
             Assert.Equal((listId, 1, 41000m, (decimal?)null, "ExcludingVat", "Sales"),
                 (reference.PriceListId, reference.VersionNo, reference.UnitPrice, reference.FloorUnitPrice, reference.VatBasis, reference.Channel));
-            Assert.Empty(await scope.Reader.SearchAsync(ProductId, [Kg], "USD", today));
-            Assert.Empty(await scope.Reader.SearchAsync(ProductId, [Kg], "TRY", today.AddDays(-1)));
-            Assert.NotNull(await scope.Reader.GetAsync(listId, 1, ProductId, Kg, today));
-            Assert.Null(await scope.Reader.GetAsync(listId, 2, ProductId, Kg, today));
+            Assert.Equal(40000m, Assert.Single(await scope.QuantityReader.SearchAsync(ProductId, Kg, 10m, "TRY", today)).UnitPrice);
+            Assert.Empty(await scope.QuantityReader.SearchAsync(ProductId, Kg, 20m, "TRY", today));
+            Assert.Equal(39000m, Assert.Single(await scope.QuantityReader.SearchAsync(ProductId, Kg, 25m, "TRY", today)).UnitPrice);
+            Assert.Empty(await scope.QuantityReader.SearchAsync(ProductId, Kg, 10m, "USD", today));
+            Assert.Empty(await scope.QuantityReader.SearchAsync(ProductId, Kg, 10m, "TRY", today.AddDays(-1)));
+            Assert.NotNull(await scope.QuantityReader.GetAsync(listId, 1, ProductId, Kg, 10m, today));
+            Assert.Null(await scope.QuantityReader.GetAsync(listId, 2, ProductId, Kg, 10m, today));
         }
 
         // Another company sees neither the list nor its prices.
@@ -98,7 +107,11 @@ public sealed class ProductPriceListSqlServerRelationalAcceptanceTests
         {
             Assert.Equal(404, (await Assert.ThrowsAsync<ProductPriceListException>(() => scope.Service.GetAsync(listId))).Status);
             Assert.Empty(await scope.Reader.SearchAsync(ProductId, [Kg], "TRY", today));
+            Assert.Empty(await scope.QuantityReader.SearchAsync(ProductId, Kg, 10m, "TRY", today));
         }
+
+        Assert.Equal(3, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM product.PriceListLines WHERE PriceListId = @id AND LowerQuantity >= 0", listId));
 
         Assert.Equal(3, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityType = N'Product.PriceList' AND EntityId = @id", listId.ToString("D")));
@@ -207,11 +220,13 @@ public sealed class ProductPriceListSqlServerRelationalAcceptanceTests
     }
 
     private sealed class RequestScope(AsyncServiceScope scope, ProductPriceListService service, IProductPriceReferenceReaderV1 reader,
-        ProductPriceListDbContext context) : IAsyncDisposable
+        IProductQuantityPriceReferenceReaderV1 quantityReader, ProductPriceListDbContext context) : IAsyncDisposable
     {
         public ProductPriceListService Service => service;
 
         public IProductPriceReferenceReaderV1 Reader => reader;
+
+        public IProductQuantityPriceReferenceReaderV1 QuantityReader => quantityReader;
 
         public ProductPriceListDbContext Context => context;
 
@@ -269,7 +284,8 @@ public sealed class ProductPriceListSqlServerRelationalAcceptanceTests
                 provider.GetRequiredService<GoymenERP.Modules.Audit.Application.Contracts.IAuditEventCollector>(), TimeProvider.System);
             var service = new ProductPriceListService(provider.GetRequiredService<ICompanyContext>(), user, new Granted(), store, TimeProvider.System,
                 null, _ => true);
-            return new RequestScope(scope, service, new ProductPriceReferenceReader(store, provider.GetRequiredService<ICompanyContext>()), context);
+            var reader = new ProductPriceReferenceReader(store, provider.GetRequiredService<ICompanyContext>());
+            return new RequestScope(scope, service, reader, reader, context);
         }
 
         public async Task<T> ScalarAsync<T>(string sql, object? id = null)

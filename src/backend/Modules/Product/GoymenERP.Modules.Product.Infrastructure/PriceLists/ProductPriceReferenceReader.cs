@@ -10,7 +10,8 @@ namespace GoymenERP.Modules.Product.Infrastructure.PriceLists;
 /// port carries no authority (the Logistics D6 pattern): Sales measures its own price name before asking. No company
 /// context is refused before any read. Nothing is created, cached or copied.
 /// </summary>
-internal sealed class ProductPriceReferenceReader(ProductPriceListStore store, ICompanyContext companyContext) : IProductPriceReferenceReaderV1
+internal sealed class ProductPriceReferenceReader(ProductPriceListStore store, ICompanyContext companyContext)
+    : IProductPriceReferenceReaderV1, IProductQuantityPriceReferenceReaderV1
 {
     public async Task<IReadOnlyList<ProductPriceReferenceV1>> SearchAsync(Guid productId, IReadOnlyCollection<Guid> priceUnitIds,
         string currencyCode, DateOnly on, CancellationToken cancellationToken = default)
@@ -56,6 +57,43 @@ internal sealed class ProductPriceReferenceReader(ProductPriceListStore store, I
         return version.LineFor(productId, priceUnitId) is { } line ? Reference(list, version, line) : null;
     }
 
+    public async Task<IReadOnlyList<ProductPriceReferenceV1>> SearchAsync(Guid productId, Guid priceUnitId, decimal quantity,
+        string currencyCode, DateOnly on, CancellationToken cancellationToken = default)
+    {
+        RequireCompany();
+        if (productId == Guid.Empty || priceUnitId == Guid.Empty || quantity <= 0m || string.IsNullOrWhiteSpace(currencyCode))
+        {
+            return [];
+        }
+
+        var lists = await store.FindListsPricingAsync(productId, currencyCode, cancellationToken);
+        return [.. lists.OrderBy(list => list.Name, StringComparer.CurrentCulture).ThenBy(list => list.Id)
+            .Select(list => (List: list, Version: list.ResolveOn(on)))
+            .Where(pair => pair.Version is not null)
+            .Select(pair => (pair.List, Version: pair.Version!, Line: pair.Version!.LineFor(productId, priceUnitId, quantity)))
+            .Where(pair => pair.Line is not null)
+            .Select(pair => Reference(pair.List, pair.Version, pair.Line!))];
+    }
+
+    public async Task<ProductPriceReferenceV1?> GetAsync(Guid priceListId, int versionNo, Guid productId, Guid priceUnitId,
+        decimal quantity, DateOnly on, CancellationToken cancellationToken = default)
+    {
+        RequireCompany();
+        if (quantity <= 0m)
+        {
+            return null;
+        }
+
+        var list = await store.LoadAsync(priceListId, cancellationToken);
+        if (list is null || list.Channel != PriceListChannel.Sales || list.ResolveOn(on) is not { } version
+            || version.VersionNo != versionNo)
+        {
+            return null;
+        }
+
+        return version.LineFor(productId, priceUnitId, quantity) is { } line ? Reference(list, version, line) : null;
+    }
+
     private void RequireCompany()
     {
         if (!companyContext.IsResolved || companyContext.CompanyId == Guid.Empty)
@@ -66,5 +104,6 @@ internal sealed class ProductPriceReferenceReader(ProductPriceListStore store, I
 
     private static ProductPriceReferenceV1 Reference(PriceList list, PriceListVersion version, PriceListLine line) =>
         new(list.Id, list.Name, version.Id, version.VersionNo, version.ValidFrom, version.ValidThrough, line.ProductId, line.PriceUnitId,
-            list.CurrencyCode, list.Channel.ToString(), list.VatBasis.ToString(), line.UnitPrice, line.FloorUnitPrice);
+            list.CurrencyCode, list.Channel.ToString(), list.VatBasis.ToString(), line.UnitPrice, line.FloorUnitPrice,
+            line.LowerQuantity, line.UpperQuantity);
 }

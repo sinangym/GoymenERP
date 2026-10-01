@@ -142,6 +142,8 @@ namespace GoymenERP.Modules.Product.Infrastructure.PriceLists.Migrations
                     LineNo = table.Column<int>(type: "int", nullable: false),
                     ProductId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
                     PriceUnitId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    LowerQuantity = table.Column<decimal>(type: "decimal(18,3)", precision: 18, scale: 3, nullable: false),
+                    UpperQuantity = table.Column<decimal>(type: "decimal(18,3)", precision: 18, scale: 3, nullable: true),
                     UnitPrice = table.Column<decimal>(type: "decimal(19,4)", precision: 19, scale: 4, nullable: false),
                     FloorUnitPrice = table.Column<decimal>(type: "decimal(19,4)", precision: 19, scale: 4, nullable: true)
                 },
@@ -150,6 +152,7 @@ namespace GoymenERP.Modules.Product.Infrastructure.PriceLists.Migrations
                     table.PrimaryKey("PK_PriceListLines", x => new { x.CompanyId, x.PriceListId, x.VersionNo, x.LineId });
                     table.CheckConstraint("CK_PriceListLines_Identity", "[LineId] <> '00000000-0000-0000-0000-000000000000' AND [ProductId] <> '00000000-0000-0000-0000-000000000000' AND [PriceUnitId] <> '00000000-0000-0000-0000-000000000000' AND [LineNo] >= 1");
                     table.CheckConstraint("CK_PriceListLines_Price", "[UnitPrice] > 0 AND ([FloorUnitPrice] IS NULL OR ([FloorUnitPrice] > 0 AND [FloorUnitPrice] <= [UnitPrice]))");
+                    table.CheckConstraint("CK_PriceListLines_QuantityTier", "[LowerQuantity] >= 0 AND ([UpperQuantity] IS NULL OR [UpperQuantity] > [LowerQuantity])");
                     table.ForeignKey(
                         name: "FK_PriceListLines_PriceListVersions_CompanyId_PriceListId_VersionNo",
                         columns: x => new { x.CompanyId, x.PriceListId, x.VersionNo },
@@ -185,6 +188,12 @@ namespace GoymenERP.Modules.Product.Infrastructure.PriceLists.Migrations
                 schema: "product",
                 table: "PriceListLines",
                 columns: new[] { "CompanyId", "PriceListId", "VersionNo", "LineNo" });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_PriceListLines_QuantityTier",
+                schema: "product",
+                table: "PriceListLines",
+                columns: new[] { "CompanyId", "PriceListId", "VersionNo", "ProductId", "PriceUnitId", "LowerQuantity" });
 
             migrationBuilder.CreateIndex(
                 name: "IX_PriceListLines_ProductId",

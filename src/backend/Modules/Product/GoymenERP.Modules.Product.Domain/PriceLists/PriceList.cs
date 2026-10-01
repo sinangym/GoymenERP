@@ -27,8 +27,11 @@ public sealed class PriceList
     public const int MaximumVersions = 1000;
     /// <summary>Technical cap for a stored unit price (decimal(19,4)); an order applies its own money profile's scale on top.</summary>
     public const int PriceScale = 4;
+    /// <summary>Quantity bounds use the Sales ordered-quantity storage shape; values are never rounded.</summary>
+    public const int QuantityScale = 3;
     /// <summary>decimal(19,4): at most 15 integer digits.</summary>
     public const decimal PriceBound = 1_000_000_000_000_000m;
+    public const decimal QuantityBound = 1_000_000_000_000_000m;
 
     private readonly List<PriceListVersion> versions;
 
@@ -142,7 +145,8 @@ public sealed class PriceList
             ?? throw new PriceListRuleException(PriceListRuleCodes.NoPublishedVersion, "versionNo",
                 "Yeni sürüm yayımlanmış bir sürümden açılır.");
         var carried = latest.Lines
-            .Select(line => new PriceListLineInput(Guid.NewGuid(), line.ProductId, line.PriceUnitId, line.UnitPrice, line.FloorUnitPrice))
+            .Select(line => new PriceListLineInput(Guid.NewGuid(), line.ProductId, line.PriceUnitId, line.UnitPrice,
+                line.FloorUnitPrice, line.LowerQuantity, line.UpperQuantity))
             .ToList();
         var next = PriceListVersion.CreateDraft(versionId, versions[^1].VersionNo + 1, validFrom, validThrough, carried, actor, now);
         versions.Add(next);
@@ -375,8 +379,18 @@ public sealed class PriceListVersion
 
     public DateTimeOffset? PublishedAtUtc { get; }
 
+    /// <summary>Legacy untiered lookup: only an explicit [0, infinity) base tier may answer without quantity.</summary>
     public PriceListLine? LineFor(Guid productId, Guid priceUnitId) =>
-        lines.SingleOrDefault(line => line.ProductId == productId && line.PriceUnitId == priceUnitId);
+        lines.SingleOrDefault(line => line.ProductId == productId && line.PriceUnitId == priceUnitId
+            && line.LowerQuantity == 0m && line.UpperQuantity is null);
+
+    /// <summary>The exact lower-inclusive / upper-exclusive tier. A gap returns null; no adjacent tier is inferred.</summary>
+    public PriceListLine? LineFor(Guid productId, Guid priceUnitId, decimal quantity) =>
+        quantity > 0m && quantity < PriceList.QuantityBound
+            && PriceList.Scale(PriceList.Normalize(quantity)) <= PriceList.QuantityScale
+            ? lines.SingleOrDefault(line => line.ProductId == productId && line.PriceUnitId == priceUnitId
+                && quantity >= line.LowerQuantity && (line.UpperQuantity is null || quantity < line.UpperQuantity.Value))
+            : null;
 
     internal static PriceListVersion CreateDraft(Guid id, int versionNo, DateOnly validFrom, DateOnly? validThrough,
         IReadOnlyList<PriceListLineInput> inputs, string createdBy, DateTimeOffset createdAtUtc)
@@ -405,7 +419,7 @@ public sealed class PriceListVersion
         RequireValidity(validFrom, validThrough);
         var ordered = storedLines.OrderBy(line => line.LineNo).ToList();
         var rebuilt = BuildLines(ordered.Select(line => new PriceListLineInput(line.LineId, line.ProductId, line.PriceUnitId,
-            line.UnitPrice, line.FloorUnitPrice)).ToList());
+            line.UnitPrice, line.FloorUnitPrice, line.LowerQuantity, line.UpperQuantity)).ToList());
         if (ordered.Where((line, index) => line.LineNo != index + 1).Any())
         {
             throw new InvalidOperationException("Kayıtlı fiyat satırları 1'den başlayıp boşluksuz numaralanır.");
@@ -451,10 +465,22 @@ public sealed class PriceListVersion
                 throw new PriceListRuleException(PriceListRuleCodes.DuplicateIdentity, $"{field}.lineId", "Satır kimliği tekrar edemez.");
             }
 
-            if (built.Any(line => line.ProductId == input.ProductId && line.PriceUnitId == input.PriceUnitId))
+            RequireQuantity(input.LowerQuantity, allowZero: true, $"{field}.lowerQuantity");
+            if (input.UpperQuantity is { } upper)
             {
-                throw new PriceListRuleException(PriceListRuleCodes.DuplicateProductUnit, $"{field}.productId",
-                    "Aynı ürün aynı fiyat biriminde bir sürümde bir kez fiyatlanır.");
+                RequireQuantity(upper, allowZero: false, $"{field}.upperQuantity");
+                if (upper <= input.LowerQuantity)
+                {
+                    throw new PriceListRuleException(PriceListRuleCodes.InvalidQuantityTier, $"{field}.upperQuantity",
+                        "Üst miktar alt miktardan büyük olmalıdır.");
+                }
+            }
+
+            if (built.Any(line => line.ProductId == input.ProductId && line.PriceUnitId == input.PriceUnitId
+                && Overlaps(line.LowerQuantity, line.UpperQuantity, input.LowerQuantity, input.UpperQuantity)))
+            {
+                throw new PriceListRuleException(PriceListRuleCodes.QuantityTierOverlap, $"{field}.lowerQuantity",
+                    "Aynı ürün ve fiyat birimindeki miktar kademeleri çakışamaz.");
             }
 
             RequirePrice(input.UnitPrice, $"{field}.unitPrice");
@@ -469,7 +495,9 @@ public sealed class PriceListVersion
             }
 
             built.Add(new PriceListLine(input.LineId, index + 1, input.ProductId, input.PriceUnitId, PriceList.Normalize(input.UnitPrice),
-                input.FloorUnitPrice is { } normalizedFloor ? PriceList.Normalize(normalizedFloor) : null));
+                input.FloorUnitPrice is { } normalizedFloor ? PriceList.Normalize(normalizedFloor) : null,
+                PriceList.Normalize(input.LowerQuantity),
+                input.UpperQuantity is { } normalizedUpper ? PriceList.Normalize(normalizedUpper) : null));
         }
 
         return built;
@@ -488,13 +516,34 @@ public sealed class PriceListVersion
                 $"Fiyat en fazla {PriceList.PriceScale} ondalık taşır; fazlası yuvarlanmaz, reddedilir.");
         }
     }
+
+    private static void RequireQuantity(decimal value, bool allowZero, string field)
+    {
+        if (value < 0m || (!allowZero && value == 0m) || value >= PriceList.QuantityBound)
+        {
+            throw new PriceListRuleException(PriceListRuleCodes.InvalidQuantityTier, field,
+                "Miktar sınırı negatif olamaz ve kayıt alanına sığmalıdır.");
+        }
+
+        if (PriceList.Scale(PriceList.Normalize(value)) > PriceList.QuantityScale)
+        {
+            throw new PriceListRuleException(PriceListRuleCodes.QuantityScaleExceeded, field,
+                $"Miktar sınırı en fazla {PriceList.QuantityScale} ondalık taşır; yuvarlanmaz.");
+        }
+    }
+
+    private static bool Overlaps(decimal leftLower, decimal? leftUpper, decimal rightLower, decimal? rightUpper) =>
+        (leftUpper is null || rightLower < leftUpper.Value)
+        && (rightUpper is null || leftLower < rightUpper.Value);
 }
 
-/// <summary>One product price in one price unit.</summary>
-public sealed record PriceListLine(Guid LineId, int LineNo, Guid ProductId, Guid PriceUnitId, decimal UnitPrice, decimal? FloorUnitPrice);
+/// <summary>One product price in one price unit and one lower-inclusive / upper-exclusive quantity tier.</summary>
+public sealed record PriceListLine(Guid LineId, int LineNo, Guid ProductId, Guid PriceUnitId, decimal UnitPrice,
+    decimal? FloorUnitPrice, decimal LowerQuantity = 0m, decimal? UpperQuantity = null);
 
 /// <summary>A line as a command gives it; the line number is its position.</summary>
-public sealed record PriceListLineInput(Guid LineId, Guid ProductId, Guid PriceUnitId, decimal UnitPrice, decimal? FloorUnitPrice);
+public sealed record PriceListLineInput(Guid LineId, Guid ProductId, Guid PriceUnitId, decimal UnitPrice,
+    decimal? FloorUnitPrice, decimal LowerQuantity = 0m, decimal? UpperQuantity = null);
 
 public enum PriceListChannel
 {
@@ -538,6 +587,9 @@ public static class PriceListRuleCodes
     public const string InvalidPrice = "price_list_invalid_price";
     public const string PriceScaleExceeded = "price_list_price_scale_exceeded";
     public const string FloorAbovePrice = "price_list_floor_above_price";
+    public const string InvalidQuantityTier = "price_list_invalid_quantity_tier";
+    public const string QuantityScaleExceeded = "price_list_quantity_scale_exceeded";
+    public const string QuantityTierOverlap = "price_list_quantity_tier_overlap";
     public const string NoDraftVersion = "price_list_no_draft_version";
     public const string DraftVersionOpen = "price_list_draft_version_open";
     public const string NoPublishedVersion = "price_list_no_published_version";

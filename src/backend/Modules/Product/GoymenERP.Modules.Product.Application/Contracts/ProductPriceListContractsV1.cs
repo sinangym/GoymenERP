@@ -125,7 +125,9 @@ public sealed record PriceListLineRequestV1(
     [property: JsonRequired] Guid ProductId,
     [property: JsonRequired] Guid PriceUnitId,
     [property: JsonRequired] string UnitPrice,
-    string? FloorUnitPrice = null);
+    string? FloorUnitPrice = null,
+    string LowerQuantity = "0",
+    string? UpperQuantity = null);
 
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record CreatePriceListRequestV1(
@@ -162,7 +164,7 @@ public sealed record PublishPriceListVersionRequestV1(
 // ---- responses ------------------------------------------------------------------------------------
 
 public sealed record PriceListLineViewV1(Guid LineId, int LineNo, Guid ProductId, string? ProductCode, string? ProductName,
-    Guid PriceUnitId, string UnitPrice, string? FloorUnitPrice);
+    Guid PriceUnitId, string UnitPrice, string? FloorUnitPrice, string LowerQuantity = "0", string? UpperQuantity = null);
 
 /// <summary><c>state</c> is stored (Draft / Published); <c>status</c> is derived for today (Draft / Planned / Active / Ended).</summary>
 public sealed record PriceListVersionViewV1(Guid VersionId, int VersionNo, string State, string Status, string ValidFrom,
@@ -229,6 +231,9 @@ public static partial class ProductPriceListWire
     [GeneratedRegex("^(0|[1-9][0-9]{0,14})(\\.[0-9]{1,4})?$", RegexOptions.CultureInvariant)]
     private static partial Regex PriceText();
 
+    [GeneratedRegex("^(0|[1-9][0-9]{0,14})(\\.[0-9]{1,3})?$", RegexOptions.CultureInvariant)]
+    private static partial Regex QuantityText();
+
     [GeneratedRegex("^[0-9]{4}-[0-9]{2}-[0-9]{2}$", RegexOptions.CultureInvariant)]
     private static partial Regex DateText();
 
@@ -238,6 +243,13 @@ public static partial class ProductPriceListWire
     /// <summary>Exact decimal text → value, keeping the written scale ("12.50" stays 12.50); null when the shape is wrong.</summary>
     public static decimal? ParsePrice(string? text) =>
         text is not null && PriceText().IsMatch(text)
+        && decimal.TryParse(text, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var value)
+            ? value
+            : null;
+
+    /// <summary>Exact quantity text in the selected price unit; no conversion or rounding.</summary>
+    public static decimal? ParseQuantity(string? text) =>
+        text is not null && QuantityText().IsMatch(text)
         && decimal.TryParse(text, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var value)
             ? value
             : null;
@@ -256,6 +268,8 @@ public static partial class ProductPriceListWire
     public static string FormatDate(DateOnly date) => date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
 
     public static string FormatPrice(decimal value) => value.ToString(CultureInfo.InvariantCulture);
+
+    public static string FormatQuantity(decimal value) => value.ToString(CultureInfo.InvariantCulture);
 }
 
 // ---- the Sales-facing reference read (the port carries no authority; the consumer fences its own names) --------------
@@ -277,7 +291,9 @@ public sealed record ProductPriceReferenceV1(
     string Channel,
     string VatBasis,
     decimal UnitPrice,
-    decimal? FloorUnitPrice);
+    decimal? FloorUnitPrice,
+    decimal LowerQuantity = 0m,
+    decimal? UpperQuantity = null);
 
 /// <summary>
 /// Product's answer to "which list prices apply to this product on this date?" for the Sales order line. Only Sales
@@ -293,4 +309,18 @@ public interface IProductPriceReferenceReaderV1
     /// <summary>The exact reference a line names, if that published version still prices the product in the unit on the date.</summary>
     Task<ProductPriceReferenceV1?> GetAsync(Guid priceListId, int versionNo, Guid productId, Guid priceUnitId, DateOnly on,
         CancellationToken cancellationToken = default);
+}
+
+/// <summary>
+/// Product's quantity-aware Sales reference. The quantity is expressed in the exact price unit identity; this contract
+/// never converts units. The matching interval is lower-inclusive and
+/// upper-exclusive. A gap returns no answer, and no default or adjacent tier is inferred.
+/// </summary>
+public interface IProductQuantityPriceReferenceReaderV1
+{
+    Task<IReadOnlyList<ProductPriceReferenceV1>> SearchAsync(Guid productId, Guid priceUnitId, decimal quantity,
+        string currencyCode, DateOnly on, CancellationToken cancellationToken = default);
+
+    Task<ProductPriceReferenceV1?> GetAsync(Guid priceListId, int versionNo, Guid productId, Guid priceUnitId,
+        decimal quantity, DateOnly on, CancellationToken cancellationToken = default);
 }

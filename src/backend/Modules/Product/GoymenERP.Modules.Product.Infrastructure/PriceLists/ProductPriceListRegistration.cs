@@ -45,6 +45,7 @@ public static class ProductPriceListRegistration
         services.AddScoped(CreateStore);
         services.AddScoped<IProductPriceListServiceV1>(CreateService);
         services.AddScoped<IProductPriceReferenceReaderV1>(CreateReader);
+        services.AddScoped<IProductQuantityPriceReferenceReaderV1>(CreateReader);
         return services;
     }
 

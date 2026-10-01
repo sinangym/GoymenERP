@@ -419,9 +419,26 @@ public sealed class ProductPriceListService : IProductPriceListServiceV1
                 }
             }
 
-            if (price is { } unitPrice)
+            var lowerQuantity = ProductPriceListWire.ParseQuantity(line.LowerQuantity);
+            decimal? upperQuantity = null;
+            if (lowerQuantity is null)
             {
-                inputs.Add(new PriceListLineInput(line.LineId, line.ProductId, line.PriceUnitId, unitPrice, floor));
+                errors.Add(new($"lines[{index}].lowerQuantity", ProductPriceListCodesV1.InvalidDecimal));
+            }
+
+            if (line.UpperQuantity is not null)
+            {
+                upperQuantity = ProductPriceListWire.ParseQuantity(line.UpperQuantity);
+                if (upperQuantity is null)
+                {
+                    errors.Add(new($"lines[{index}].upperQuantity", ProductPriceListCodesV1.InvalidDecimal));
+                }
+            }
+
+            if (price is { } unitPrice && lowerQuantity is { } lower)
+            {
+                inputs.Add(new PriceListLineInput(line.LineId, line.ProductId, line.PriceUnitId, unitPrice, floor, lower,
+                    upperQuantity));
             }
         }
 
@@ -484,7 +501,9 @@ public sealed class ProductPriceListService : IProductPriceListServiceV1
                     products.TryGetValue(line.ProductId, out var product) ? product.Code : null,
                     products.TryGetValue(line.ProductId, out var named) ? named.Name : null,
                     line.PriceUnitId, ProductPriceListWire.FormatPrice(line.UnitPrice),
-                    line.FloorUnitPrice is { } floor ? ProductPriceListWire.FormatPrice(floor) : null)).ToList())).ToList());
+                    line.FloorUnitPrice is { } floor ? ProductPriceListWire.FormatPrice(floor) : null,
+                    ProductPriceListWire.FormatQuantity(line.LowerQuantity),
+                    line.UpperQuantity is { } upper ? ProductPriceListWire.FormatQuantity(upper) : null)).ToList())).ToList());
     }
 
     private static PriceListSummaryV1 Summary(PriceList list, DateOnly today)
