@@ -187,7 +187,9 @@ describe('AllocationPage', () => {
     )
 
     const form = await screen.findByRole('form', { name: 'Finansal dağıtım oluştur' })
+    await screen.findByRole('option', { name: 'RC-MOUNT-1' })
     fireEvent.change(screen.getByLabelText('Gerçekleşmiş tahsilat kaynağı'), { target: { value: SOURCE } })
+    await screen.findByRole('option', { name: approvedBatch.batchVersion })
     fireEvent.change(await screen.findByLabelText('Onaylı fatura kaynağı'), { target: { value: BATCH } })
     await screen.findByRole('option', { name: '2026-10-31 - 125.50' })
     fireEvent.change(screen.getByLabelText('Açık kalem'), { target: { value: ITEM } })
