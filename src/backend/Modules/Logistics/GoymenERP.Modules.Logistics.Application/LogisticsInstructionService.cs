@@ -38,7 +38,8 @@ public sealed partial class LogisticsInstructionService(
     ILogisticsInstructionStore store,
     LogisticsInstructionServiceBindings bindings,
     TimeProvider timeProvider,
-    ILogisticsRealizationTransactionRunnerV1? realization = null) : ILogisticsInstructionService, ILogisticsRealizationServiceV1
+    ILogisticsRealizationTransactionRunnerV1? realization = null) : ILogisticsInstructionService, ILogisticsRealizationServiceV1,
+    IApprovedDispatchInvoiceSourceV1
 {
     private const int DefaultPageSize = 50;
     private const int MaximumPageSize = 100;
