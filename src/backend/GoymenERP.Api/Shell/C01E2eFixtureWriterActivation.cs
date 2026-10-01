@@ -205,6 +205,13 @@ public sealed class C01E2eApprovedNormalJournalSourceBindingCatalog :
     private readonly object _gate = new();
     private ApprovedNormalJournalSourceBindingV1? _binding;
 
+    public C01E2eApprovedNormalJournalSourceBindingCatalog()
+    {
+    }
+
+    public C01E2eApprovedNormalJournalSourceBindingCatalog(FinanceRecordedReceiptFixtureOutput source) =>
+        Bind(source);
+
     public void Bind(FinanceRecordedReceiptFixtureOutput source)
     {
         ArgumentNullException.ThrowIfNull(source);
@@ -221,38 +228,44 @@ public sealed class C01E2eApprovedNormalJournalSourceBindingCatalog :
                 throw new InvalidOperationException("The ACC01 fixture catalog cannot bind another source.");
             }
 
-            var debit = new AccountRef(source.CompanyId, DebitAccountId);
-            var credit = new AccountRef(source.CompanyId, CreditAccountId);
-            var mirror = new AccountPlanMirrorV1(
-                source.CompanyId,
-                "SENTETIK-ACC01-MIRROR-V1",
-                new string('a', 64),
-                ApprovedBy,
-                ApprovedAt,
-                [
-                    new AccountPlanMirrorRowV1(debit, "SENTETIK-100", "Sentetik borc hesabi"),
-                    new AccountPlanMirrorRowV1(credit, "SENTETIK-120", "Sentetik alacak hesabi"),
-                ]);
-            var rule = new NormalJournalPostingRuleV1(
-                mirror,
-                "approved-normal-journal",
-                "SENTETIK-ACC01-RULE-V1",
-                ApprovedBy,
-                ApprovedAt,
-                [
-                    new NormalJournalMappingV1("approved-debit", PostingSide.Debit, debit),
-                    new NormalJournalMappingV1("approved-credit", PostingSide.Credit, credit),
-                ]);
-            _binding = new ApprovedNormalJournalSourceBindingV1(
-                source.CompanyId,
-                source.SourceId,
-                NormalJournalSourceKindsV1.RecordedManualReceipt,
-                source.SourceVersion,
-                source.OwnerProfileId,
-                source.OwnerProfileVersion,
-                source.CurrencyId,
-                rule);
+            _binding = CreateBinding(source);
         }
+    }
+
+    internal static ApprovedNormalJournalSourceBindingV1 CreateBinding(
+        FinanceRecordedReceiptFixtureOutput source)
+    {
+        var debit = new AccountRef(source.CompanyId, DebitAccountId);
+        var credit = new AccountRef(source.CompanyId, CreditAccountId);
+        var mirror = new AccountPlanMirrorV1(
+            source.CompanyId,
+            "SENTETIK-ACC01-MIRROR-V1",
+            new string('a', 64),
+            ApprovedBy,
+            ApprovedAt,
+            [
+                new AccountPlanMirrorRowV1(debit, "SENTETIK-100", "Sentetik borc hesabi"),
+                new AccountPlanMirrorRowV1(credit, "SENTETIK-120", "Sentetik alacak hesabi"),
+            ]);
+        var rule = new NormalJournalPostingRuleV1(
+            mirror,
+            "approved-normal-journal",
+            "SENTETIK-ACC01-RULE-V1",
+            ApprovedBy,
+            ApprovedAt,
+            [
+                new NormalJournalMappingV1("approved-debit", PostingSide.Debit, debit),
+                new NormalJournalMappingV1("approved-credit", PostingSide.Credit, credit),
+            ]);
+        return new ApprovedNormalJournalSourceBindingV1(
+            source.CompanyId,
+            source.SourceId,
+            NormalJournalSourceKindsV1.RecordedManualReceipt,
+            source.SourceVersion,
+            source.OwnerProfileId,
+            source.OwnerProfileVersion,
+            source.CurrencyId,
+            rule);
     }
 
     public Task<NormalJournalPostingRuleV1?> ResolveAsync(Guid companyId, Guid sourceId, string sourceKind,
@@ -296,6 +309,39 @@ public sealed class C01E2eFinanceNormalJournalSourceFixtureWriter
         _catalog.Bind(await _finance.EnsureAsync(cancellationToken));
 }
 
+internal sealed class C01E2eApprovedNormalJournalSourceReadCatalog(
+    IFinanceRecordedReceiptFixtureReadStore finance) : IApprovedNormalJournalSourceBindingCatalogV1
+{
+    public async Task<NormalJournalPostingRuleV1?> ResolveAsync(
+        Guid companyId,
+        Guid sourceId,
+        string sourceKind,
+        string sourceVersion,
+        string ownerProfileId,
+        string ownerProfileVersion,
+        Guid currencyId,
+        CancellationToken cancellationToken = default)
+    {
+        if (!string.Equals(sourceKind, NormalJournalSourceKindsV1.RecordedManualReceipt,
+                StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        var exact = await finance.FindExactAsync(
+            companyId,
+            sourceId,
+            sourceVersion,
+            ownerProfileId,
+            ownerProfileVersion,
+            currencyId,
+            cancellationToken);
+        return exact is null
+            ? null
+            : C01E2eApprovedNormalJournalSourceBindingCatalog.CreateBinding(exact).Rule;
+    }
+}
+
 /// <summary>
 /// Opens fixed read-only reference data in the disposable browser API only. This is deliberately
 /// separate from the in-process fixture-writer gate: no writer key or writer service reaches the web API.
@@ -308,6 +354,7 @@ internal static class BrowserSuiteApiReadFixtureActivation
     internal const string RunIdConfigurationKey = "BrowserSuiteApi:RunId";
     internal const string ComposeProjectConfigurationKey = "BrowserSuiteApi:ComposeProject";
     internal const string ManufacturingProfile = "mfg";
+    internal const string AccountingProfile = "acc01";
 
     private static readonly string[] ConfigurationKeys =
     [
@@ -333,20 +380,33 @@ internal static class BrowserSuiteApiReadFixtureActivation
         }
 
         RequireGate(environment, configuration);
-        services.RemoveAll<ISettingsManufacturingToleranceProviderV1>();
-        services.AddScoped<ISettingsManufacturingToleranceProviderV1,
-            C01E2eManufacturingToleranceFixtureProvider>();
+        var profile = configuration[ProfileConfigurationKey];
+        if (string.Equals(profile, ManufacturingProfile, StringComparison.Ordinal))
+        {
+            services.RemoveAll<ISettingsManufacturingToleranceProviderV1>();
+            services.AddScoped<ISettingsManufacturingToleranceProviderV1,
+                C01E2eManufacturingToleranceFixtureProvider>();
+        }
+        else if (string.Equals(profile, AccountingProfile, StringComparison.Ordinal))
+        {
+            services.AddFinanceRecordedReceiptFixtureReadStore();
+            services.RemoveAll<IApprovedNormalJournalSourceBindingCatalogV1>();
+            services.AddScoped<IApprovedNormalJournalSourceBindingCatalogV1,
+                C01E2eApprovedNormalJournalSourceReadCatalog>();
+        }
+
         return true;
     }
 
     private static void RequireGate(IHostEnvironment environment, IConfiguration configuration)
     {
+        var profile = configuration[ProfileConfigurationKey];
         if (!environment.IsEnvironment("Testing")
-            || !string.Equals(configuration[ProfileConfigurationKey], ManufacturingProfile, StringComparison.Ordinal)
+            || profile is not (ManufacturingProfile or AccountingProfile)
             || !string.Equals(configuration[DisposableConfigurationKey], "CONFIRMED", StringComparison.Ordinal))
         {
             throw new InvalidOperationException(
-                "Browser-suite API read fixtures require the confirmed mfg Testing profile.");
+                "Browser-suite API read fixtures require a confirmed supported Testing profile.");
         }
 
         var testedCommit = configuration[TestedCommitConfigurationKey] ?? string.Empty;

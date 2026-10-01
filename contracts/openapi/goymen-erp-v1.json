@@ -60731,7 +60731,8 @@
             }
           }
         }
-      },      "NormalJournalDraftViewV1": {
+      },
+      "NormalJournalDraftViewV1": {
         "required": [
           "draftId",
           "companyId",
@@ -60752,7 +60753,6 @@
           "transactionDate",
           "accountingDate",
           "valueDate",
-          "expectedPreparationVersion",
           "lines"
         ],
         "type": "object",
@@ -60846,12 +60846,6 @@
               "string"
             ],
             "format": "date"
-          },
-          "expectedPreparationVersion": {
-            "type": [
-              "null",
-              "string"
-            ]
           },
           "lines": {
             "type": "array",

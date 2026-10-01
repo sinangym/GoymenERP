@@ -99,12 +99,8 @@ public sealed class Acc01BrowserSeed : IBrowserSuiteFixture
 
         // ACC01-10 consumes one separately gated synthetic Finance receipt, created through Finance's owner service.
         // Both reads below are real authorized HTTP and fail closed if that prerequisite/authority is absent.
-        var financeRead = await context.GetJsonAsync(PreparerActor, CompanyGdc, FinanceSourcesPath, cancellationToken);
-        if (financeRead.GetProperty("outcome").GetString() != "Found")
-        {
-            throw new InvalidOperationException("The real Finance source list did not return a Found result for acc01.");
-        }
-        var sourcePage = financeRead.GetProperty("resource");
+        var sourcePage = await context.GetJsonAsync(
+            PreparerActor, CompanyGdc, FinanceSourcesPath, cancellationToken);
         if (sourcePage.GetProperty("companyId").GetGuid() != CompanyGdc)
         {
             throw new InvalidOperationException("The acc01 Finance source list answered another company.");

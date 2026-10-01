@@ -119,6 +119,19 @@ internal static class BrowserSuiteSeedOutputValidator
             };
         }
 
+        if (string.Equals(suite, "acc01", StringComparison.Ordinal))
+        {
+            return key switch
+            {
+                "normalSourceLabel" => IsAcc01SourceLabel(value),
+                "normalOccurredOn" => value == "2026-09-24",
+                "normalAmount" => value == "10.25",
+                "normalDebitLabel" => value == "SENTETIK-100 - Sentetik borc hesabi (Borç)",
+                "normalCreditLabel" => value == "SENTETIK-120 - Sentetik alacak hesabi (Alacak)",
+                _ => false,
+            };
+        }
+
         if (!string.Equals(suite, "pur01", StringComparison.Ordinal))
         {
             return false;
@@ -143,6 +156,20 @@ internal static class BrowserSuiteSeedOutputValidator
         or "planRefusalRollCode" or "outputUiRollCode" or "outputProductVersion"
         or "outputRequiredDocuments" or "outputOwnerKind" or "outputCustodianKind"
         or "outputInitialBlock";
+
+    private static bool IsAcc01SourceLabel(string value)
+    {
+        const string suffix = " - 2026-09-24";
+        if (!value.EndsWith(suffix, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        var sourceNumber = value[..^suffix.Length];
+        return Guid.TryParseExact(sourceNumber, "D", out var sourceId)
+            && sourceId != Guid.Empty
+            && string.Equals(sourceNumber, sourceId.ToString("D"), StringComparison.Ordinal);
+    }
 
     private static bool IsPositiveDecimal(string value)
     {

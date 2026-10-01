@@ -5245,7 +5245,7 @@ public sealed partial class OpenApiContractGenerationTests
         var operations = ReadOperations(root.GetProperty("paths"));
         Assert.Equal(192, operations.Count);
         Assert.Equal(
-            191,
+            192,
             operations.Select(operation => operation.OperationId)
                 .Distinct(StringComparer.Ordinal)
                 .Count());

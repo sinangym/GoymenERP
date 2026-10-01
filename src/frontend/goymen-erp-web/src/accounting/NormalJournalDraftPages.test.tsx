@@ -15,19 +15,16 @@ const PREPARATION = 'B'.repeat(64)
 
 function sourcePage() {
   return {
-    outcome: 'Found',
-    resource: {
-      companyId: COMPANY,
-      items: [{
-        id: SOURCE, companyId: COMPANY, sourceNumber: 'SENTETIK-TAHSILAT-1', version: '2', stage: 'Recorded',
-        partyId: 'a0000000-0000-4000-8000-000000000009',
-        companyAccountId: 'a0000000-0000-4000-8000-000000000010',
-        treasuryAccountId: 'a0000000-0000-4000-8000-000000000011', currencyId: CURRENCY,
-        occurredOn: '2026-09-24', valueOn: null,
-        amount: { disclosure: 'Visible', money: { amount: '10.25', currencyId: CURRENCY } },
-      }],
-      nextCursor: null,
-    },
+    companyId: COMPANY,
+    items: [{
+      id: SOURCE, companyId: COMPANY, sourceNumber: 'SENTETIK-TAHSILAT-1', version: '2', stage: 'Recorded',
+      partyId: 'a0000000-0000-4000-8000-000000000009',
+      companyAccountId: 'a0000000-0000-4000-8000-000000000010',
+      treasuryAccountId: 'a0000000-0000-4000-8000-000000000011', currencyId: CURRENCY,
+      occurredOn: '2026-09-24', valueOn: null,
+      amount: { disclosure: 'Visible', money: { amount: '10.25', currencyId: CURRENCY } },
+    }],
+    nextCursor: null,
   }
 }
 
@@ -145,16 +142,13 @@ describe('normal journal source-bound creation', () => {
           const cursor = new URL(url, 'http://test').searchParams.get('cursor')
           if (cursor === null) return json({
             ...firstSource,
-            resource: {
-              ...firstSource.resource,
-              items: firstSource.resource.items.map(source => ({
-                ...source,
-                id: 'a0000000-0000-4000-8000-000000000099',
-                sourceNumber: 'SENTETIK-TASLAK-ILK-SAYFA',
-                stage: 'Draft',
-              })),
-              nextCursor: 'recorded-page',
-            },
+            items: firstSource.items.map(source => ({
+              ...source,
+              id: 'a0000000-0000-4000-8000-000000000099',
+              sourceNumber: 'SENTETIK-TASLAK-ILK-SAYFA',
+              stage: 'Draft',
+            })),
+            nextCursor: 'recorded-page',
           })
           if (cursor === 'recorded-page') return json(sourcePage())
         }

@@ -92,7 +92,7 @@ ENVELOPE_KEYS = (
     "GOYMEN_ERP_C01_E2E_RUN_ID",
     "GOYMEN_ERP_C01_E2E_COMPOSE_PROJECT",
 )
-MFG_API_READ_FIXTURE_KEYS = (
+API_READ_FIXTURE_KEYS = (
     "BrowserSuiteApi__Profile",
     "BrowserSuiteApi__Disposable",
     "BrowserSuiteApi__TestedCommit",
@@ -735,19 +735,19 @@ def validate_suite_compose(model: dict, suite: str, expected_commit: str, expect
             require(not key.startswith("C01E2e__") and not key.startswith("GOYMEN_ERP_C01_E2E_"),
                     f"normal profile API must not carry the disposable capability envelope ({key})")
         expected_keys = CANONICAL_API_ENVIRONMENT_KEYS - set(ENVELOPE_KEYS)
-        if suite == "mfg":
-            expected_keys |= set(MFG_API_READ_FIXTURE_KEYS)
-            require(environment.get("BrowserSuiteApi__Profile") == "mfg",
-                    "mfg API read fixture profile must be mfg")
+        if suite in ("mfg", "acc01"):
+            expected_keys |= set(API_READ_FIXTURE_KEYS)
+            require(environment.get("BrowserSuiteApi__Profile") == suite,
+                    f"{suite} API read fixture profile must be {suite}")
             require(environment.get("BrowserSuiteApi__Disposable") == "CONFIRMED",
-                    "mfg API read fixture must be explicitly disposable")
+                    f"{suite} API read fixture must be explicitly disposable")
             require(environment.get("BrowserSuiteApi__TestedCommit") == expected_commit,
-                    "mfg API read fixture source SHA drift")
+                    f"{suite} API read fixture source SHA drift")
             require(environment.get("BrowserSuiteApi__RunId") == expected_project.split("-")[-2],
-                    "mfg API read fixture run id drift")
+                    f"{suite} API read fixture run id drift")
             require(environment.get("BrowserSuiteApi__ComposeProject") == expected_project,
-                    "mfg API read fixture compose project drift")
-            for key in MFG_API_READ_FIXTURE_KEYS:
+                    f"{suite} API read fixture compose project drift")
+            for key in API_READ_FIXTURE_KEYS:
                 canonical_environment.pop(key, None)
         # Only to let the canonical rules run: the envelope values they expect, never sent to the API.
         canonical_environment.update({

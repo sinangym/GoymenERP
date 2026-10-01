@@ -1,6 +1,7 @@
 using GoymenERP.Api.Shell;
 using GoymenERP.BrowserSuiteFixtureTool;
 using GoymenERP.BuildingBlocks.Shell;
+using GoymenERP.Modules.Accounting.Application;
 using GoymenERP.Modules.Counterparty.Infrastructure.Shell;
 using GoymenERP.Modules.Finance.Infrastructure.Fixtures;
 using GoymenERP.Modules.Product.Infrastructure.Fixtures;
@@ -140,6 +141,39 @@ public sealed class BrowserSuiteHostEnvelopeTests
     }
 
     [Fact]
+    public void Acc01_output_validation_accepts_only_its_closed_normal_journal_scalar_contract()
+    {
+        BrowserSuiteSeedOutputValidator.Validate(
+            "acc01",
+            new Dictionary<string, string>
+            {
+                ["normalSourceLabel"] = "b7400000-0000-4000-8000-00000000ac01 - 2026-09-24",
+                ["normalOccurredOn"] = "2026-09-24",
+                ["normalAmount"] = "10.25",
+                ["normalDebitLabel"] = "SENTETIK-100 - Sentetik borc hesabi (Borç)",
+                ["normalCreditLabel"] = "SENTETIK-120 - Sentetik alacak hesabi (Alacak)",
+            },
+            new HashSet<string>(StringComparer.Ordinal));
+    }
+
+    [Theory]
+    [InlineData("normalSourceLabel", "b7400000-0000-4000-8000-00000000ac02 - 2026-09-24")]
+    [InlineData("normalOccurredOn", "2026-09-25")]
+    [InlineData("normalAmount", "10.250")]
+    [InlineData("normalDebitLabel", "SENTETIK-100 - Sentetik borc hesabi")]
+    [InlineData("normalCreditLabel", "SENTETIK-120 - Sentetik alacak hesabi ")]
+    [InlineData("unexpected", "10.25")]
+    public void Acc01_output_validation_rejects_values_outside_its_closed_normal_journal_scalar_contract(
+        string key,
+        string value)
+    {
+        Assert.Throws<InvalidOperationException>(() => BrowserSuiteSeedOutputValidator.Validate(
+            "acc01",
+            new Dictionary<string, string> { [key] = value },
+            new HashSet<string>(StringComparer.Ordinal)));
+    }
+
+    [Fact]
     public void Mfg_output_validation_accepts_only_its_closed_fixture_scalar_contract()
     {
         BrowserSuiteSeedOutputValidator.Validate(
@@ -262,6 +296,27 @@ public sealed class BrowserSuiteHostEnvelopeTests
             Assert.Null(Environment.GetEnvironmentVariable("GOYMEN_ERP_C01_E2E_SQLSERVER_CONNECTION"));
             Assert.Equal([typeof(C01E2eCariListDetailShellCapabilityProvider)], ProviderTypes(host));
             AssertFixtureWritersRegistered(host);
+        });
+    }
+
+    [Fact]
+    public void An_acc01_disposable_api_opens_only_the_exact_read_binding()
+    {
+        WithProcessEnvelope(() =>
+        {
+            var api = BaseApiEnvironment();
+            api["BrowserSuiteApi__Profile"] = "acc01";
+            api["BrowserSuiteApi__Disposable"] = "CONFIRMED";
+            api["BrowserSuiteApi__TestedCommit"] = Commit;
+            api["BrowserSuiteApi__RunId"] = RunId;
+            api["BrowserSuiteApi__ComposeProject"] = ComposeProject;
+            using var host = StartedHost(api);
+
+            var registered = host.Services.GetRequiredService<IServiceProviderIsService>();
+            Assert.False(registered.IsService(typeof(C01E2eFinanceNormalJournalSourceFixtureWriter)));
+            Assert.False(registered.IsService(typeof(IFinanceRecordedReceiptFixtureStore)));
+            Assert.IsType<C01E2eApprovedNormalJournalSourceReadCatalog>(
+                host.Services.GetRequiredService<IApprovedNormalJournalSourceBindingCatalogV1>());
         });
     }
 

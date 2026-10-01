@@ -22,14 +22,14 @@ const CURRENCY = 'ffffffff-ffff-4fff-8fff-fffffffffff6'
 const PREPARATION = 'a'.repeat(64)
 
 function sourceReads(url: string): Response | undefined {
-  if (url.includes('/finance/manual-receipts')) return json({ outcome: 'Found', resource: {
+  if (url.includes('/finance/manual-receipts')) return json({
     companyId: COMPANY_A, items: [{
       id: SOURCE, companyId: COMPANY_A, sourceNumber: 'SENTETIK-AUTH-1', version: '2', stage: 'Recorded',
       partyId: DRAFT, companyAccountId: DEBIT, treasuryAccountId: CREDIT, currencyId: CURRENCY,
       occurredOn: '2026-09-24', valueOn: null,
       amount: { disclosure: 'Visible', money: { amount: '10.00', currencyId: CURRENCY } },
     }], nextCursor: null,
-  } })
+  })
   if (url.endsWith(`/accounting/normal-journal-draft-sources/${SOURCE}`)) return json({
     companyId: COMPANY_A, sourceId: SOURCE, preparationVersion: PREPARATION, sourceVersion: '2',
     ownerProfileId: 'finance-profile', ownerProfileVersion: '7', currencyId: CURRENCY,

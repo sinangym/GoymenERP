@@ -6,6 +6,7 @@ using GoymenERP.Modules.Audit.Application.Contracts;
 using GoymenERP.Modules.Finance.Contracts;
 using GoymenERP.Modules.Finance.Infrastructure.Persistence;
 using GoymenERP.Modules.Settings.Application;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace GoymenERP.Modules.Finance.Infrastructure.Fixtures;
@@ -23,16 +24,95 @@ public interface IFinanceRecordedReceiptFixtureStore
     Task<FinanceRecordedReceiptFixtureOutput> EnsureAsync(CancellationToken cancellationToken);
 }
 
+public interface IFinanceRecordedReceiptFixtureReadStore
+{
+    Task<FinanceRecordedReceiptFixtureOutput?> FindExactAsync(
+        Guid companyId,
+        Guid sourceId,
+        string sourceVersion,
+        string ownerProfileId,
+        string ownerProfileVersion,
+        Guid currencyId,
+        CancellationToken cancellationToken);
+}
+
 public static class FinanceRecordedReceiptFixtureStoreRegistration
 {
     public static IServiceCollection AddFinanceRecordedReceiptFixtureStore(this IServiceCollection services)
     {
         services.AddScoped<IFinanceRecordedReceiptFixtureStore>(provider =>
-            new FinanceRecordedReceiptFixtureStore(
+        {
+            provider.GetRequiredService<ICompanyContext>()
+                .Set(ApprovedMoneyProfileCatalog.GdcTurkishLiraV1.CompanyId);
+            return new FinanceRecordedReceiptFixtureStore(
                 provider.GetRequiredService<FinanceDbContext>(),
                 provider.GetRequiredService<IAuditEventCollector>(),
-                provider.GetRequiredService<TimeProvider>()));
+                provider.GetRequiredService<TimeProvider>());
+        });
         return services;
+    }
+
+    public static IServiceCollection AddFinanceRecordedReceiptFixtureReadStore(this IServiceCollection services)
+    {
+        services.AddScoped<IFinanceRecordedReceiptFixtureReadStore, FinanceRecordedReceiptFixtureReadStore>();
+        return services;
+    }
+}
+
+internal sealed class FinanceRecordedReceiptFixtureReadStore(FinanceDbContext dbContext)
+    : IFinanceRecordedReceiptFixtureReadStore
+{
+    private static readonly Guid ActorId = Guid.Parse("b2100000-0000-4000-8000-00000000ac01");
+    private static readonly Guid PartyId = Guid.Parse("b7100000-0000-4000-8000-00000000ac01");
+    private static readonly Guid CompanyAccountId = Guid.Parse("b7200000-0000-4000-8000-00000000ac01");
+    private static readonly Guid TreasuryAccountId = Guid.Parse("b7300000-0000-4000-8000-00000000ac01");
+
+    public async Task<FinanceRecordedReceiptFixtureOutput?> FindExactAsync(
+        Guid companyId,
+        Guid sourceId,
+        string sourceVersion,
+        string ownerProfileId,
+        string ownerProfileVersion,
+        Guid currencyId,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var profile = ApprovedMoneyProfileCatalog.GdcTurkishLiraV1;
+        var expectedProfileId = profile.ProfileId.ToString("D");
+        var expectedProfileVersion = profile.Version.ToString(CultureInfo.InvariantCulture);
+        if (companyId != profile.CompanyId || sourceId == Guid.Empty || currencyId != profile.CurrencyId
+            || !string.Equals(sourceVersion, "2", StringComparison.Ordinal)
+            || !string.Equals(ownerProfileId, expectedProfileId, StringComparison.Ordinal)
+            || !string.Equals(ownerProfileVersion, expectedProfileVersion, StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        var actor = ActorId.ToString("D");
+        var found = await dbContext.ReceiptDrafts.AsNoTracking().AnyAsync(row =>
+            row.Id == sourceId
+            && row.CompanyId == companyId
+            && row.Version == 2
+            && row.Stage == ReceiptStages.Recorded
+            && row.PartyId == PartyId
+            && row.CompanyAccountId == CompanyAccountId
+            && row.TreasuryAccountId == TreasuryAccountId
+            && row.CurrencyId == currencyId
+            && row.AmountText == "10.25"
+            && row.ProfileId == expectedProfileId
+            && row.ProfileVersion == expectedProfileVersion
+            && row.OccurredOn == new DateOnly(2026, 9, 24)
+            && row.ValueOn == null
+            && row.BankReference == "SENTETIK-ACC01-RECEIPT"
+            && row.Description == "SENTETIK browser-suite:acc01 recorded Finance source"
+            && row.CreatedBy == actor
+            && row.UpdatedBy == actor
+            && row.RecordedBy == actor,
+            cancellationToken);
+        return found
+            ? new FinanceRecordedReceiptFixtureOutput(
+                companyId, sourceId, sourceVersion, ownerProfileId, ownerProfileVersion, currencyId)
+            : null;
     }
 }
 
@@ -50,7 +130,6 @@ internal sealed class FinanceRecordedReceiptFixtureStore(
     private static readonly Guid PartyId = Guid.Parse("b7100000-0000-4000-8000-00000000ac01");
     private static readonly Guid CompanyAccountId = Guid.Parse("b7200000-0000-4000-8000-00000000ac01");
     private static readonly Guid TreasuryAccountId = Guid.Parse("b7300000-0000-4000-8000-00000000ac01");
-    private const string Actor = "acc01-preparer";
     private const string Role = "BROWSER_ACC01_PREPARER";
 
     public async Task<FinanceRecordedReceiptFixtureOutput> EnsureAsync(CancellationToken cancellationToken)
@@ -74,7 +153,11 @@ internal sealed class FinanceRecordedReceiptFixtureStore(
             new FinanceAuditEnvelope(FinancePermissionNames.Record, [Role], SourceChannels.System),
             new FixtureOpenPeriodRule());
 
-        var context = new FinanceContext(profile.CompanyId, Actor, "sentetik-acc01-receipt-save", null);
+        var context = new FinanceContext(
+            profile.CompanyId,
+            ActorId.ToString("D"),
+            "sentetik-acc01-receipt-save",
+            null);
         var save = await service.DraftSaveAsync(
             context,
             new CommandMetadata("sentetik-acc01-receipt-save-v1"),
