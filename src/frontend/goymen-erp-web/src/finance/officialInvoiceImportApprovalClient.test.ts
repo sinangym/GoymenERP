@@ -156,11 +156,15 @@ describe('official invoice application HTTP client', () => {
     batchId, companyId, batchVersion: batch.batchVersion, batchChecksum: batch.batchChecksum,
     openItems: [openItem],
   }
-  const successBody = (fresh: unknown = applied, admittedIds: readonly string[] = [openItem.id]) => ({
+  const successBody = (
+    fresh: unknown = applied,
+    admittedIds: readonly string[] = [openItem.id],
+    isReplay = false,
+  ) => ({
     preview: { templateVersion: batch.templateVersion, sourceSha256: batch.batchChecksum,
       batch: detail.preview.batch, issues: [], isValid: true },
     approvedSource: { outcome: 'Found', resource: detail.preview.batch },
-    admission: { outcome: 'Succeeded', openItemIds: admittedIds, isReplay: false,
+    admission: { outcome: 'Succeeded', openItemIds: admittedIds, isReplay,
       originalCorrelationId: 'corr-1', issues: [] },
     freshRead: { outcome: 'Found', resource: fresh },
     isSucceeded: true,
@@ -249,11 +253,42 @@ describe('official invoice application HTTP client', () => {
 
   it.each([
     ['partially allocated', { ...openItem, outstandingAmount: '250.50', status: 1, version: '2' }],
+    ['closed', { ...openItem, outstandingAmount: '0', status: 2, version: '3' }],
+  ])('accepts a consistent %s item on fresh reopen', async (_label, current) => {
+    const fresh = { ...applied, openItems: [current] }
+    const client = createOfficialInvoiceImportClient(
+      context, boundary(), vi.fn().mockResolvedValue(json(fresh)),
+    )
+
+    await expect(client.reopen(batchId, new AbortController().signal))
+      .resolves.toMatchObject({ batchId, openItems: [current] })
+  })
+
+  it.each([
+    ['outstanding above original', { ...openItem, originalAmount: '10', outstandingAmount: '20', status: 1 }],
+    ['open item with zero outstanding', { ...openItem, outstandingAmount: '0', status: 1 }],
+    ['closed item with outstanding money', { ...openItem, outstandingAmount: '1', status: 2 }],
+  ])('rejects an inconsistent %s item on fresh reopen', async (_label, current) => {
+    const fresh = { ...applied, openItems: [current] }
+    const client = createOfficialInvoiceImportClient(
+      context, boundary(), vi.fn().mockResolvedValue(json(fresh)),
+    )
+
+    await expect(client.reopen(batchId, new AbortController().signal))
+      .rejects.toThrow('official-invoice-reopen-malformed')
+  })
+
+  it.each([
+    ['partially allocated', { ...openItem, outstandingAmount: '250.50', status: 1, version: '2' }],
     ['fully allocated', { ...openItem, outstandingAmount: '0', status: 2, version: '3' }],
   ])('accepts a valid %s current item on same-key replay', async (_label, current) => {
     const fresh = { ...applied, openItems: [current] }
     const client = createOfficialInvoiceImportClient(
-      context, boundary(), vi.fn().mockResolvedValue(json(successBody(fresh))),
+      context, boundary(), vi.fn().mockResolvedValue(json(
+        successBody(fresh, [openItem.id], true),
+        200,
+        { 'Idempotency-Replayed': 'true' },
+      )),
     )
 
     await expect(client.apply(source, file, 'same-key', new AbortController().signal))
