@@ -330,9 +330,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // company-leading key) and the allocation write guard admitting an AllocatedKg resize.
             // Re-measured for the ST-02 scrap write-off: StockScraps and StockScrapDecisions, each with the CompanyId
             // query filter and a company-leading key, and the Scrap movement kind (CK_Movements_Kind 1..7).
+            // Re-measured for R20 same-company transfers: every transfer aggregate row stays company-filtered and
+            // company-keyed, while movement kinds 8/9 remain inside Inventory's reviewed write guards.
             ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/"
              + "Persistence/InventoryDbContext.cs"] =
-                "4d2cfcc27f7a0cfc252302ac715232a77beb955a4b65274ea7e2ea541bd4ceaa",
+                "d83dd8fa37516148c7c25ec6ec32a8d0641aa067c1b120b3cfd13d57e62544af",
             ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/"
              + "Persistence/ProductDbContext.cs"] =
                 "0ba53cfdf07084818f737c9f21b2ce4a04a44f5fe89603a89f31791c5b4871da",
@@ -1038,6 +1040,17 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "20260924210000_AddManufacturingInputLabelVersions.cs"] =
                     new(
                         "6ed747c9211a2809fdc8f96e2f2d239292d3609a35abad397a09d2dd5a29699c",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 1
+                        }),
+                // Inventory transfer and transfer-movement history is durable; Down uses one reviewed statement
+                // to refuse downgrade while either surface contains data.
+                ["src/backend/Modules/Inventory/"
+                 + "GoymenERP.Modules.Inventory.Infrastructure/Persistence/Migrations/"
+                 + "20260930182024_AddInventoryTransfers.cs"] =
+                    new(
+                        "347436e9b814863c397b9a7c201718726424ed5af7cf23cdc6dd7fc0badf55e8",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Sql"] = 1
