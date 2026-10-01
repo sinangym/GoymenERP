@@ -315,7 +315,7 @@ SUITE_IDENTITY_PERMISSIONS = {
             "inventory.physical-allocation.write", "product.operational-selection.read",
             # AT-025: the disposable l04-operations reader and the seed-only l04-purchase-approver.
             "logistics.operations-work.sales.read", "logistics.operations-work.purchase.read",
-            "purchasing.orders.read", "purchasing.orders.approve"),
+            "purchasing.orders.read", "purchasing.goods-receipts.record", "purchasing.orders.approve"),
     # PUR-01: the complete union of the disposable creator, approver and reader grants. The creator's
     # two owner-read names are the same intersection the real Purchasing create command already uses;
     # this closed list grants nothing outside the disposable normal profile.
@@ -533,7 +533,8 @@ SUITE_FIXTURE_OUTPUTS: dict[str, frozenset[str]] = {
     # asserts the deterministic SENTETIK label as a constant instead.
     "l04": frozenset({"preparerActor", "loaderActor", "readerActor", "companyId", "otherCompanyId", "customerPartyId",
                       "companyAccountId", "draftId", "approvedLineId", "instructionId", "blockedLineId",
-                      "openLineId", "shipmentAllocationId", "shipmentLabelId"}),
+                      "openLineId", "shipmentAllocationId", "shipmentLabelId",
+                      "shipmentReceiptAcceptanceId", "shipmentReceiptMovementId"}),
     # SATINALMA's Suites/PUR01 seed: the existing synthetic Draft approval axis plus the separate creator,
     # the real Cari-owned active Supplier account and Product's exact gated purchase-candidate tuple.
     "pur01": frozenset({"creatorActor", "approverActor", "readerActor", "receiverActor", "stockReaderActor",

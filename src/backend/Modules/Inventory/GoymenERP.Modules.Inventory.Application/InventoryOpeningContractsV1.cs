@@ -57,6 +57,12 @@ public static class InventoryPermissionManifestV1
     /// maker≠checker while the scrap approval authority is undecided). Registration and grants are central.
     /// </summary>
     public const string StockScrapApprove = "inventory.stock-scrap.approve";
+
+    /// <summary>
+    /// INV-R20: plan, dispatch and accept a same-company two-leg stock transfer. One technical write name mirrors the
+    /// transfer aggregate; registration/classification and every grant remain central/user-owned.
+    /// </summary>
+    public const string StockTransferWrite = "inventory.stock-transfer.write";
 }
 
 /// <summary>The opening count as the client sends it: one physical count sheet of one location.</summary>

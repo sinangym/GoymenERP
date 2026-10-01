@@ -135,6 +135,23 @@ describe('Inventory label detail contract', () => {
     expect(combineInventoryLabelDetail('3', decodedIdentity, decodedBalances, decodedGenealogy, wrongProduct, COMPANY, LABEL)).toBeNull()
   })
 
+  it('decodes transfer dispatch and acceptance movement directions and rejects mismatches', () => {
+    const entry = movementTimeline().entries[0]
+    const transfer = (kind: 'TransferDispatch' | 'TransferAccept', direction: 'In' | 'Out') => ({
+      ...movementTimeline(),
+      entries: [{ ...entry, kind, lines: entry.lines.map((line) => ({ ...line, direction })) }],
+    })
+
+    expect(decodeInventoryLabelMovementTimeline(transfer('TransferDispatch', 'Out'), LABEL)?.entries[0].kind)
+      .toBe('TransferDispatch')
+    expect(decodeInventoryLabelMovementTimeline(transfer('TransferAccept', 'In'), LABEL)?.entries[0].kind)
+      .toBe('TransferAccept')
+    expect(decodeInventoryLabelMovementTimeline(transfer('TransferDispatch', 'In'), LABEL)).toBeNull()
+    expect(decodeInventoryLabelMovementTimeline(transfer('TransferAccept', 'Out'), LABEL)).toBeNull()
+    expect(decodeInventoryLabelMovementTimeline({ ...movementTimeline(), entries: [{ ...entry, kind: 'TransferLost' }] }, LABEL))
+      .toBeNull()
+  })
+
   it('fails closed for impossible or internally inconsistent transformation groups', () => {
     const [first, second] = genealogy().edges
     const decode = (edges: unknown[]) => decodeInventoryLabelGenealogy({ ...genealogy(), edges }, LABEL, 'LBL-100')

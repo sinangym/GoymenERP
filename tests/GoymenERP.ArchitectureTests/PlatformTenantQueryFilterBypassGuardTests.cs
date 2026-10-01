@@ -186,8 +186,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // DEC-SAL-005: +1 allocation-blocks-cancellation SQL fact (4e783c62… -> 953d329a…).
             // INV-AL-1: +8 allocation-change SQL facts (953d329a… -> 1ca5b9e1…).
             // ST-02 scrap write-off: +5 stock-scrap SQL facts (1ca5b9e1… -> bd676b05…).
+            // R20 transfer lifecycle: +3 transfer SQL facts (bd676b05… -> c74360d3…).
             ["tools/relational_inventory/inventory.txt"] =
-                "bd676b053e5fe215c843a4e4ba12bac534de01f6f660788f9e148f069fa9ef6d",
+                "c74360d37bf5d49d587914828189f8849975accfc1a74bee734395fd284b65ba",
 
             // logistics
             // AT-053: +4 weighbridge SQL facts (81c1ff0b… -> 264898d7…).
@@ -217,8 +218,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // product
             // DEC-CAR-003: +4 ProductDeactivationSqlServerRelationalAcceptanceTests facts (d7dbec7f… -> ddeead62…).
             // DEC-PRD-010: +5 ProductDuplicateCandidatesSqlServerRelationalAcceptanceTests facts (ddeead62… -> d434c2b8…).
+            // Q16 / AT-020: +3 Product import API SQL facts (d434c2b8… -> 9958c91f…).
             ["tools/relational_inventory/product.txt"] =
-                "d434c2b81e15574d21933413649fb40a5cc045008b5d7c9bd0eb7358807b495b",
+                "9958c91fff4979e50c43ebc591fdde24afc395a88e61203371b43829b8b6c6a5",
 
             // purchasing
             ["tools/relational_inventory/purchasing.txt"] =
@@ -250,7 +252,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         {
             ["src/backend/Modules/Audit/GoymenERP.Modules.Audit.Infrastructure/"
              + "Persistence/AuditDbContext.cs"] =
-                "6339a82c26df4406eded3c5560a346056253b7b58df2c0c69d9614a6eb3e41a1",
+                "8fc4d19d4f7efb61d62dcb0f0ed44bce7254ee897aaaf6621c27f0e03ba1ec7a",
             ["src/backend/Modules/Idempotency/"
              + "GoymenERP.Modules.Idempotency.Infrastructure/Persistence/"
              + "CommandExecutionDbContext.cs"] =
@@ -331,12 +333,14 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // company-leading key) and the allocation write guard admitting an AllocatedKg resize.
             // Re-measured for the ST-02 scrap write-off: StockScraps and StockScrapDecisions, each with the CompanyId
             // query filter and a company-leading key, and the Scrap movement kind (CK_Movements_Kind 1..7).
+            // Re-measured for R20 same-company transfers: every transfer aggregate row stays company-filtered and
+            // company-keyed, while movement kinds 8/9 remain inside Inventory's reviewed write guards.
             ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/"
              + "Persistence/InventoryDbContext.cs"] =
-                "4d2cfcc27f7a0cfc252302ac715232a77beb955a4b65274ea7e2ea541bd4ceaa",
+                "d83dd8fa37516148c7c25ec6ec32a8d0641aa067c1b120b3cfd13d57e62544af",
             ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/"
              + "Persistence/ProductDbContext.cs"] =
-                "0ba53cfdf07084818f737c9f21b2ce4a04a44f5fe89603a89f31791c5b4871da",
+                "6979e3af6bf17bd2c7071431dc1dbc808c2c1c5609fe187d782dadb1412761d3",
             ["src/backend/Modules/Idempotency/GoymenERP.Modules.Idempotency.Infrastructure/"
              // Re-measured for DEC-CAR-003: the terminal command-name check admits the Product deactivate/reactivate
              // commands beside activate; no query filter, key or table change.
@@ -375,6 +379,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         "src/backend/GoymenERP.Api/ManufacturingRuntime/ManufacturingInventoryInputIssueHost.cs";
     private const string ReviewedManufacturingInventoryReturnOutputHostPath =
         "src/backend/GoymenERP.Api/ManufacturingRuntime/ManufacturingInventoryReturnOutputHost.cs";
+    private const string ReviewedProductRuntimeExtensionsPath =
+        "src/backend/GoymenERP.Api/ProductRuntime/ProductRuntimeExtensions.cs";
+    private const string ReviewedProductImportSqlCommandRunnerPath =
+        "src/backend/GoymenERP.Api/ProductRuntime/ProductImportSqlCommandRunner.cs";
+    private const string ReviewedProductImportParticipantPath =
+        "src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/"
+        + "Persistence/ProductImportParticipant.cs";
     private static readonly IReadOnlyDictionary<string, (string ContextTypeName, int ExpectedCount)>
         ReviewedRuntimeContextConstructions =
             new Dictionary<string, (string ContextTypeName, int ExpectedCount)>(StringComparer.Ordinal)
@@ -398,7 +409,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "FinanceAllocationReadService.cs"] = ("FinanceDbContext", 1),
                 [ReviewedAccountingStorePath] = ("AccountingDbContext", 2),
                 [ReviewedManufacturingInventoryInputIssueHostPath] = ("ManufacturingDbContext", 2),
-                [ReviewedManufacturingInventoryReturnOutputHostPath] = ("ManufacturingDbContext", 1)
+                [ReviewedManufacturingInventoryReturnOutputHostPath] = ("ManufacturingDbContext", 1),
+                [ReviewedProductRuntimeExtensionsPath] = ("IdentityDbContext", 1),
+                [ReviewedProductImportSqlCommandRunnerPath] = ("AuditDbContext", 1)
             };
     private const string ReviewedManualBankPaymentServicePath =
         "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
@@ -420,8 +433,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // reactivate members, which throw like its siblings; no new database capability, MigrateAsync stays 2.
                 // Re-measured for DEC-PRD-010: the denied Product service gains the read-only duplicate-candidates
                 // member, which throws like its siblings; no new database capability, MigrateAsync stays 2.
-                ["src/backend/GoymenERP.Api/ProductRuntime/ProductRuntimeExtensions.cs"] =
-                    new("2c5296cb5cc9fa5eaad8a926b3d1cea3617f7322961f5b3044d20bc17d9f4c25",
+                // Re-measured for Q16 import: DI adds the owner preview/service and the host transaction runner;
+                // initialization still owns exactly the same two migrations.
+                [ReviewedProductRuntimeExtensionsPath] =
+                    new("2e6c3ae4c82822302907e58599083645900b0d38355d08aa9e0ca2b2e060acf3",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["MigrateAsync"] = 2 }),
                 // Re-measured for PRD-UNIT-1: the Product participant gets Settings' unit-identity catalog
@@ -430,8 +445,20 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     new("36ee56a13d31b3c4aea130b801db15b983768eacfc2f5827047059ead463ed36",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Microsoft.Data.SqlClient"] = 1, ["SqlConnection"] = 1 }),
+                // Q16 / AT-020: one reviewed host runner borrows one SQL connection/transaction for Product,
+                // canonical audit batch and the single idempotency terminal. It creates no context or provider.
+                [ReviewedProductImportSqlCommandRunnerPath] =
+                    new("bd3105e907778f1ca845fd4572a14f69fda5542da4f3c72869ec22dc40655b8d",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Microsoft.Data.SqlClient"] = 1, ["SqlConnection"] = 1 }),
+                // Product owner participant borrows the host connection/transaction; it creates no provider and
+                // commits nothing. The central runner remains the only commit owner.
+                [ReviewedProductImportParticipantPath] =
+                    new("270d184afcea8a3070ce270eebdaf26da18d73852550731e40cb3985fd48af1c",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["System.Data.Common"] = 1, ["DbConnection"] = 3 }),
                 ["src/backend/Modules/Audit/GoymenERP.Modules.Audit.Infrastructure/Services/GroupSharedAuditSession.cs"] =
-                    new("08e6b2c930864ac99b64ad52ad83602b3446e2a86d9d8be4867f2204b3fbf3d0",
+                    new("efbf67c36b5848e6f2d05e989f3aac1636c7e202da94aee750757a43b33fccfe",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["System.Data.Common"] = 1, ["DbConnection"] = 1 }),
                 ["src/backend/Modules/Audit/"
@@ -626,12 +653,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         }),
                 // ACC-3 (#298): the Accounting initializer's one provider branch, as Organization.
                 // Re-fingerprinted for ACC reversal: its lifecycle and proposal store are registered;
-                // Ensure/Migrate counts remain unchanged.
+                // Ensure/Migrate counts remain unchanged. Re-fingerprinted for the approved Finance receipt
+                // source binding provider registration; the database initialization surface is unchanged.
                 ["src/backend/Modules/Accounting/"
                  + "GoymenERP.Modules.Accounting.Infrastructure/"
                  + "AccountingModuleExtensions.cs"] =
                     new(
-                        "49b2f9a5ab78048fc9db63293aef4379b0d1f65f361e28c731d90e7bba32dcdd",
+                        "bb4fa94002e875a288f21c51ced7d63565e65fd57bfed4c85e01868420fde057",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -1080,6 +1108,17 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "20260924210000_AddManufacturingInputLabelVersions.cs"] =
                     new(
                         "6ed747c9211a2809fdc8f96e2f2d239292d3609a35abad397a09d2dd5a29699c",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 1
+                        }),
+                // Inventory transfer and transfer-movement history is durable; Down uses one reviewed statement
+                // to refuse downgrade while either surface contains data.
+                ["src/backend/Modules/Inventory/"
+                 + "GoymenERP.Modules.Inventory.Infrastructure/Persistence/Migrations/"
+                 + "20260930182024_AddInventoryTransfers.cs"] =
+                    new(
+                        "347436e9b814863c397b9a7c201718726424ed5af7cf23cdc6dd7fc0badf55e8",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Sql"] = 1
