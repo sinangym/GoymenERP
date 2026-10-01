@@ -846,7 +846,8 @@ test('L04-08 AT-025: the operations work list keeps sales and purchase work in s
   const purchaseRow = page.getByTestId(`operations-purchase-row-${PURCHASE_LINE_ID}`)
   await expect(purchaseRow).toBeVisible({ timeout: 30_000 })
   await expect(purchaseRow).toContainText(SUPPLIER_NAME)
-  await expect(purchaseRow.locator('td').last()).toHaveText('7')
+  // The same seeded 7 kg PO line remains after its real 2 kg receipt, with exactly 5 kg open.
+  await expect(purchaseRow.locator('td').last()).toHaveText('5')
   await expect(page.getByTestId('operations-purchase-table')).not.toContainText(DOCUMENT_NO)
   await expect(page.getByTestId(`operations-sales-row-${approvedLineId}`)).toHaveCount(0)
   await expectNoPriceText(page)
