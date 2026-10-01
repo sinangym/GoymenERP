@@ -1061,7 +1061,7 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
             dbContext.ChangeTracker.Clear();
             throw Refused(LogisticsStoreCodes.ConcurrentChange, "Talimat başka bir yazmayla değişti; hiçbir şey kaydedilmedi.", exception);
         }
-        catch (DbUpdateException exception) when (exception.InnerException is SqlException { Number: 1205 })
+        catch (Exception exception) when (ContainsSqlException(exception, 1205))
         {
             dbContext.ChangeTracker.Clear();
             throw Refused(LogisticsStoreCodes.ConcurrentChange, "Aggregate yazma yarışı kaybedildi; hiçbir şey kaydedilmedi.", exception);
@@ -1073,6 +1073,19 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
             dbContext.ChangeTracker.Clear();
             throw Refused(LogisticsStoreCodes.ConcurrentChange, "Kalıcı tekillik kuralı başka bir yazmanın lehine sonuçlandı; hiçbir şey kaydedilmedi.", exception);
         }
+    }
+
+    private static bool ContainsSqlException(Exception exception, int number)
+    {
+        for (Exception? current = exception; current is not null; current = current.InnerException)
+        {
+            if (current is SqlException sqlException && sqlException.Number == number)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private Guid RequireResolvedCompany() =>

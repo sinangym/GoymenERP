@@ -837,7 +837,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         // replayed at its share position, plus the Sales order read; SqlClient count unchanged.
                         // Re-fingerprinted for the AT-055 lifecycle (#518): approve/cancel/e-İrsaliye steps written in the same save,
                         // the company series moved under its token, every step replayed in order; SqlClient count unchanged.
-                        "ca27bb79907bd8a3649e9f59896f6a92ccd9e9d4c46c55b6d4887945f5015b19",
+                        // Re-fingerprinted for the cross-instruction aggregate deadlock closure: SQL 1205 is mapped through
+                        // the existing replay-safe wrapper chain; no new database API and SqlClient count unchanged.
+                        "c676798a69d795428354af2b1140d763f49a75caf4c869e8a8a2025cc7a228c2",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1

@@ -231,9 +231,16 @@ public sealed class SalesOrderQuantityRevisionSqlServerRelationalAcceptanceTests
 
         await using var context = run.SalesContext(CompanyA);
         var applied = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
-        Assert.EndsWith("_AddRevisionReasons", applied[^1], StringComparison.Ordinal);
-        var error = await Assert.ThrowsAsync<SqlException>(() => context.GetService<IMigrator>().MigrateAsync(applied[^2]));
+        var revisionReasons = Array.FindIndex(applied,
+            migration => migration.EndsWith("_AddRevisionReasons", StringComparison.Ordinal));
+        Assert.True(revisionReasons > 0);
+        var migrator = context.GetService<IMigrator>();
+        await migrator.MigrateAsync(applied[revisionReasons]);
+        Assert.Equal(applied[..(revisionReasons + 1)], await context.Database.GetAppliedMigrationsAsync());
+        var error = await Assert.ThrowsAsync<SqlException>(() => migrator.MigrateAsync(applied[revisionReasons - 1]));
         Assert.Equal(51057, error.Number);
+        Assert.Equal(applied[..(revisionReasons + 1)], await context.Database.GetAppliedMigrationsAsync());
+        await context.Database.MigrateAsync();
         Assert.Equal(applied, await context.Database.GetAppliedMigrationsAsync());
         // The rebuilt order carries its archived Rev.0 with the reason (the store's restore reads it back through the domain).
         await using var reader = run.SalesStore(CompanyA);
