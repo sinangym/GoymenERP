@@ -16,6 +16,7 @@ public static class NormalJournalSourceKindsV1
 /// </summary>
 public sealed record ApprovedNormalJournalSourceBindingV1(
     Guid CompanyId,
+    Guid SourceId,
     string SourceKind,
     string SourceVersion,
     string OwnerProfileId,
@@ -27,6 +28,7 @@ public interface IApprovedNormalJournalSourceBindingCatalogV1
 {
     Task<NormalJournalPostingRuleV1?> ResolveAsync(
         Guid companyId,
+        Guid sourceId,
         string sourceKind,
         string sourceVersion,
         string ownerProfileId,
@@ -59,7 +61,7 @@ public sealed class ApprovedNormalJournalSourceBindingCatalogV1
         {
             ArgumentNullException.ThrowIfNull(binding);
             ArgumentNullException.ThrowIfNull(binding.Rule);
-            RequireIdentity(binding.CompanyId, binding.CurrencyId);
+            RequireIdentity(binding.CompanyId, binding.SourceId, binding.CurrencyId);
             RequireText(binding.SourceVersion, nameof(binding.SourceVersion));
             RequireText(binding.OwnerProfileId, nameof(binding.OwnerProfileId));
             RequireText(binding.OwnerProfileVersion, nameof(binding.OwnerProfileVersion));
@@ -71,7 +73,7 @@ public sealed class ApprovedNormalJournalSourceBindingCatalogV1
                     nameof(bindings));
             }
 
-            var key = new BindingKey(binding.CompanyId, binding.SourceKind, binding.SourceVersion,
+            var key = new BindingKey(binding.CompanyId, binding.SourceId, binding.SourceKind, binding.SourceVersion,
                 binding.OwnerProfileId, binding.OwnerProfileVersion, binding.CurrencyId);
             if (!rules.TryAdd(key, binding.Rule))
             {
@@ -84,6 +86,7 @@ public sealed class ApprovedNormalJournalSourceBindingCatalogV1
 
     public Task<NormalJournalPostingRuleV1?> ResolveAsync(
         Guid companyId,
+        Guid sourceId,
         string sourceKind,
         string sourceVersion,
         string ownerProfileId,
@@ -92,7 +95,7 @@ public sealed class ApprovedNormalJournalSourceBindingCatalogV1
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        if (companyId == Guid.Empty || currencyId == Guid.Empty
+        if (companyId == Guid.Empty || sourceId == Guid.Empty || currencyId == Guid.Empty
             || !string.Equals(sourceKind, NormalJournalSourceKindsV1.RecordedManualReceipt,
                 StringComparison.Ordinal)
             || !IsCanonical(sourceVersion) || !IsCanonical(ownerProfileId)
@@ -101,16 +104,16 @@ public sealed class ApprovedNormalJournalSourceBindingCatalogV1
             return Task.FromResult<NormalJournalPostingRuleV1?>(null);
         }
 
-        _rules.TryGetValue(new BindingKey(companyId, sourceKind, sourceVersion,
+        _rules.TryGetValue(new BindingKey(companyId, sourceId, sourceKind, sourceVersion,
             ownerProfileId, ownerProfileVersion, currencyId), out var rule);
         return Task.FromResult(rule);
     }
 
-    private static void RequireIdentity(Guid companyId, Guid currencyId)
+    private static void RequireIdentity(Guid companyId, Guid sourceId, Guid currencyId)
     {
-        if (companyId == Guid.Empty || currencyId == Guid.Empty)
+        if (companyId == Guid.Empty || sourceId == Guid.Empty || currencyId == Guid.Empty)
         {
-            throw new ArgumentException("Binding company and currency are required.");
+            throw new ArgumentException("Binding company, source and currency are required.");
         }
     }
 
@@ -127,6 +130,7 @@ public sealed class ApprovedNormalJournalSourceBindingCatalogV1
 
     private sealed record BindingKey(
         Guid CompanyId,
+        Guid SourceId,
         string SourceKind,
         string SourceVersion,
         string OwnerProfileId,

@@ -47,6 +47,7 @@ public sealed class FinanceManualReceiptNormalJournalSourceProviderV1(
         var source = detail.Source;
         var rule = await bindings.ResolveAsync(
             companyId,
+            source.Id,
             NormalJournalSourceKindsV1.RecordedManualReceipt,
             source.Version,
             detail.Profile.ProfileId,

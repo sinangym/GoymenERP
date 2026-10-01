@@ -14,6 +14,7 @@ public sealed class FinanceManualReceiptNormalJournalSourceProviderV1Tests
     private static readonly Guid Company = Guid.Parse("85000000-0000-0000-0000-000000000001");
     private static readonly Guid Actor = Guid.Parse("85000000-0000-0000-0000-000000000002");
     private static readonly Guid Source = Guid.Parse("85000000-0000-0000-0000-000000000003");
+    private static readonly Guid OtherSource = Guid.Parse("85000000-0000-0000-0000-00000000000a");
     private static readonly Guid Currency = Guid.Parse("85000000-0000-0000-0000-000000000004");
     private static readonly Guid Debit = Guid.Parse("85000000-0000-0000-0000-000000000005");
     private static readonly Guid Credit = Guid.Parse("85000000-0000-0000-0000-000000000006");
@@ -79,6 +80,38 @@ public sealed class FinanceManualReceiptNormalJournalSourceProviderV1Tests
         Assert.Null(await provider.ResolveAsync(Company, Source));
     }
 
+    [Fact]
+    public async Task Same_version_profile_and_currency_cannot_reuse_another_sources_binding()
+    {
+        var provider = Provider(
+            new FixedReceipt(Detail(sourceId: OtherSource)),
+            new SequencePermissions(PermissionDecision.Allowed, PermissionDecision.Allowed),
+            Catalog(Rule()));
+
+        Assert.Null(await provider.ResolveAsync(Company, OtherSource));
+    }
+
+    [Fact]
+    public async Task Different_sources_can_resolve_different_explicitly_approved_rules()
+    {
+        var first = Rule();
+        var second = Rule("synthetic-purpose-2", "synthetic-rule-v2");
+        var catalog = new ApprovedNormalJournalSourceBindingCatalogV1(
+        [
+            Binding(first),
+            Binding(second, OtherSource),
+        ]);
+        var provider = Provider(
+            new FixedReceipt(Detail(sourceId: OtherSource)),
+            new SequencePermissions(PermissionDecision.Allowed, PermissionDecision.Allowed),
+            catalog);
+
+        var resolved = await provider.ResolveAsync(Company, OtherSource);
+
+        Assert.NotNull(resolved);
+        Assert.Same(second, resolved!.Rule);
+    }
+
     [Theory]
     [InlineData(PermissionDecision.Denied, PermissionDecision.Allowed)]
     [InlineData(PermissionDecision.Allowed, PermissionDecision.Denied)]
@@ -115,8 +148,10 @@ public sealed class FinanceManualReceiptNormalJournalSourceProviderV1Tests
     private static ApprovedNormalJournalSourceBindingCatalogV1 Catalog(
         NormalJournalPostingRuleV1 rule) => new([Binding(rule)]);
 
-    private static ApprovedNormalJournalSourceBindingV1 Binding(NormalJournalPostingRuleV1 rule) => new(
+    private static ApprovedNormalJournalSourceBindingV1 Binding(
+        NormalJournalPostingRuleV1 rule, Guid? sourceId = null) => new(
         Company,
+        sourceId ?? Source,
         NormalJournalSourceKindsV1.RecordedManualReceipt,
         "2",
         "finance-profile",
@@ -124,7 +159,9 @@ public sealed class FinanceManualReceiptNormalJournalSourceProviderV1Tests
         Currency,
         rule);
 
-    private static NormalJournalPostingRuleV1 Rule()
+    private static NormalJournalPostingRuleV1 Rule(
+        string postingPurpose = "synthetic-purpose",
+        string version = "synthetic-rule-v1")
     {
         var at = DateTimeOffset.Parse("2026-10-01T09:00:00Z");
         var debit = new AccountRef(Company, Debit);
@@ -134,7 +171,7 @@ public sealed class FinanceManualReceiptNormalJournalSourceProviderV1Tests
             new AccountPlanMirrorRowV1(debit, "SYNTHETIC-001", "Synthetic debit"),
             new AccountPlanMirrorRowV1(credit, "SYNTHETIC-002", "Synthetic credit"),
         ]);
-        return new NormalJournalPostingRuleV1(mirror, "synthetic-purpose", "synthetic-rule-v1", Actor, at,
+        return new NormalJournalPostingRuleV1(mirror, postingPurpose, version, Actor, at,
         [
             new NormalJournalMappingV1("synthetic-debit", PostingSide.Debit, debit),
             new NormalJournalMappingV1("synthetic-credit", PostingSide.Credit, credit),
@@ -144,12 +181,13 @@ public sealed class FinanceManualReceiptNormalJournalSourceProviderV1Tests
     private static SourceDetail Detail(
         SourceStage stage = SourceStage.Recorded,
         AmountDisclosure disclosure = AmountDisclosure.Visible,
-        Guid? reversesSourceId = null)
+        Guid? reversesSourceId = null,
+        Guid? sourceId = null)
     {
         var money = disclosure == AmountDisclosure.Visible ? new MoneyText("10.25", Currency) : null;
         var amount = new AmountView(disclosure, money);
         var summary = new SourceSummary(
-            Source,
+            sourceId ?? Source,
             Company,
             "FIN-0001",
             "2",
