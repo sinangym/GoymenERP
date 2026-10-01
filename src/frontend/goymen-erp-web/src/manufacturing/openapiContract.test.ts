@@ -109,12 +109,17 @@ describe('Manufacturing port ↔ canonical OpenAPI', () => {
     expect(decodeOrder(order({ target: { basis: 'GoodOutputMass', kg: '900' } }))).not.toBeNull()
   })
 
-  it('reads exactly the properties PlanViewV1 and its parts declare, all required', () => {
+  it('reads exactly the current PlanViewV1 properties and keeps additive legacy projections optional', () => {
     expect(Object.keys(plan()).sort()).toEqual(names('PlanViewV1'))
     expect(Object.keys(plannedInput(ROLL_1)).sort()).toEqual(names('PlannedInputViewV1'))
-    for (const name of ['PlanViewV1', 'PlannedInputViewV1']) {
-      expect([...(schema(name).required ?? [])].sort()).toEqual(names(name))
-    }
+    expect([...(schema('PlanViewV1').required ?? [])].sort()).toEqual(
+      names('PlanViewV1').filter((name) => name !== 'calculation'),
+    )
+    expect([...(schema('PlannedInputViewV1').required ?? [])].sort()).toEqual(
+      names('PlannedInputViewV1').filter((name) => name !== 'technicalSnapshot'),
+    )
+    expect(plan()).toMatchObject({ calculation: null })
+    expect(plannedInput(ROLL_1)).toMatchObject({ technicalSnapshot: null })
     // The fixture the screen tests use decodes, so the decoder reads these very names — and the
     // approved shape decodes too, which the Draft fixture alone would not show.
     expect(decodePlan(plan({ target: { basis: 'GoodOutputMass', kg: '900' } }))).not.toBeNull()

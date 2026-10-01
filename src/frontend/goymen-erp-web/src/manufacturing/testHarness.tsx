@@ -77,7 +77,7 @@ export function roll(parentRollId: string, overrides: Record<string, unknown> = 
 
 /** A synthetic `PlannedInputViewV1`, in the server's JSON shape. */
 export function plannedInput(parentRollId: string, plannedKg = '1000.125') {
-  return { parentRollId, plannedKg }
+  return { parentRollId, plannedKg, technicalSnapshot: null }
 }
 
 /** A synthetic captured Product/Settings snapshot. It is component data, never real fixture evidence. */
@@ -139,6 +139,7 @@ export function plan(overrides: Record<string, unknown> = {}) {
     target: null,
     approvedByUserId: null,
     approvedAtUtc: null,
+    calculation: null,
     ...overrides,
   }
 }

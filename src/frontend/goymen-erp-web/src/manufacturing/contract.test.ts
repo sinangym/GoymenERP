@@ -347,6 +347,20 @@ describe('decodePlan', () => {
     expect(decoded?.approvedByUserId).toBeNull()
   })
 
+  it('normalizes a legacy response that omits both additive technical projections', () => {
+    const current = plan()
+    const { calculation: _calculation, ...legacyPlan } = current
+    const legacyInputs = current.inputs.map((input) => {
+      const { technicalSnapshot: _technicalSnapshot, ...legacyInput } = input
+      return legacyInput
+    })
+
+    const decoded = decodePlan({ ...legacyPlan, inputs: legacyInputs })
+
+    expect(decoded?.calculation).toBeNull()
+    expect(decoded?.inputs.every((input) => input.technicalSnapshot === null)).toBe(true)
+  })
+
   it('keeps the captured source and the matching backend calculation on a reopened plan', () => {
     const body = plan({
       inputs: [
