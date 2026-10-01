@@ -3,16 +3,14 @@ import { useQuery } from '@tanstack/react-query'
 import { Link, useParams } from 'react-router'
 import { parseAmountInput } from '../finance/decimalText'
 import { isDateOnly } from '../finance/dateOnly'
-import { decodeReadResult, decodeSourcePage, type SourcePage, type SourceSummary } from '../finance/contract'
-import { useFinanceRead } from '../finance/financePort'
-import type { FinanceReceiptPort, FinanceScope, PortReply } from '../finance/port'
+import type { SourcePage, SourceSummary } from '../finance/contract'
 import { StateBlock } from '../shell/StateBlock'
 import { useShellState } from '../shell/shellContext'
 import { classifyOutcome, type RemoteViewState } from '../shell/uiState'
 import { contextKey, contextKeyString, hasCapability } from '../shell/shellState'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
 import { fetchNormalJournalDraft } from './api'
-import { fetchNormalJournalDraftSource } from './normalJournalSourceApi'
+import { fetchNormalJournalDraftSource, fetchNormalJournalSources } from './normalJournalSourceApi'
 import {
   ACCOUNTING_CAPABILITY,
   ACCOUNTING_ROUTE,
@@ -32,36 +30,6 @@ type LineForm = { readonly accountId: string; readonly side: NormalJournalSide; 
 function sourceLabel(source: SourceSummary): string {
   const number = GUID.test(source.sourceNumber) ? `Kaynak ref. ...${source.id.slice(-8)}` : source.sourceNumber
   return `${number} - ${source.occurredOn}`
-}
-
-async function readAllAuthorizedSources(
-  port: FinanceReceiptPort,
-  scope: FinanceScope,
-  signal: AbortSignal,
-): Promise<PortReply> {
-  const items: SourceSummary[] = []
-  const sourceIds = new Set<string>()
-  const cursors = new Set<string>()
-  let cursor: string | null = null
-  while (true) {
-    const reply = await port.listSources(scope, { cursor }, signal)
-    if (reply.kind === 'no-reply') return reply
-    const decoded = decodeReadResult(reply.body, resource => decodeSourcePage(resource, scope.companyId))
-    if (!decoded.ok) return { kind: 'body', body: undefined }
-    if (decoded.value.outcome !== 'Found') return reply
-    for (const source of decoded.value.resource.items) {
-      if (sourceIds.has(source.id)) return { kind: 'body', body: undefined }
-      sourceIds.add(source.id)
-      items.push(source)
-    }
-    const next = decoded.value.resource.nextCursor
-    if (next === null) break
-    if (cursors.has(next)) return { kind: 'body', body: undefined }
-    cursors.add(next)
-    cursor = next
-  }
-  const resource: SourcePage = { companyId: scope.companyId, items, nextCursor: null }
-  return { kind: 'body', body: { outcome: 'Found', resource } }
 }
 
 export function NormalJournalDraftCreatePage() {
@@ -106,10 +74,24 @@ function NormalJournalDraftCreate({ namespace, attemptOwner }: { readonly namesp
   )
   const sending = snapshot !== null && outcome === null
   const unresolved = outcome?.type === 'unknown'
-  const sourceList = useFinanceRead('normal-journal-source-picker', [],
-    readAllAuthorizedSources, decodeSourcePage)
-  const authorizedSources = sourceList.state.kind === 'ready'
-    ? sourceList.state.data.items.filter(source => source.stage === 'Recorded') : []
+  const sourceListQuery = useQuery({
+    queryKey: [namespace, shell.routeEntryGeneration, 'accounting', 'normal-journal-source-picker'],
+    queryFn: async ({ signal }) => {
+      const security = boundary.capture()
+      const answer = await fetchNormalJournalSources(companyId ?? '', signal)
+      if (answer.type === 'http' && (answer.status === 401 || answer.status === 403)) boundary.report(answer.status, security)
+      return answer
+    },
+    enabled: single && canCreate,
+    retry: false,
+    staleTime: 0,
+    refetchOnMount: 'always',
+  })
+  const sourceListState = (sourceListQuery.isPending
+    ? { kind: 'initial-loading' }
+    : classifyOutcome(sourceListQuery.data ?? { type: 'malformed' })) as RemoteViewState<SourcePage>
+  const authorizedSources = sourceListState.kind === 'ready'
+    ? sourceListState.data.items.filter(source => source.stage === 'Recorded') : []
   const sourceIsValid = GUID.test(sourceId)
   const preparationQuery = useQuery({
     queryKey: [namespace, shell.routeEntryGeneration, 'accounting', 'normal-journal-source', sourceId],
@@ -191,7 +173,7 @@ function NormalJournalDraftCreate({ namespace, attemptOwner }: { readonly namesp
     {outcome?.type === 'failed' ? <p role="alert" className={styles.error}>İstek reddedildi: {outcome.failure.kind}</p> : null}
     <form className={styles.page} noValidate onSubmit={submit}>
       <div className={styles.form}>
-        <label className={styles.control}>Onaylı finans kaynağı<select value={sourceId} disabled={sending || unresolved || sourceList.state.kind !== 'ready'} onChange={event => {
+        <label className={styles.control}>Onaylı finans kaynağı<select value={sourceId} disabled={sending || unresolved || sourceListState.kind !== 'ready'} onChange={event => {
           setSourceId(event.target.value)
           setSnapshot(null)
           setOutcome(null)
@@ -202,7 +184,7 @@ function NormalJournalDraftCreate({ namespace, attemptOwner }: { readonly namesp
         <label className={styles.control}>Muhasebe tarihi<input type="date" value={accountingDate} disabled={sending || unresolved} onChange={event => setAccountingDate(event.target.value)} /></label>
         <label className={styles.control}>Valör tarihi<input type="date" value={valueDate} disabled={sending || unresolved} onChange={event => setValueDate(event.target.value)} /></label>
       </div>
-      {sourceList.state.kind !== 'ready' ? <StateBlock state={sourceList.state} subject="yetkili finans kaynakları" onRetry={sourceList.refetch} /> : null}
+      {sourceListState.kind !== 'ready' ? <StateBlock state={sourceListState} subject="yetkili finans kaynakları" onRetry={() => void sourceListQuery.refetch()} /> : null}
       {sourceIsValid && preparationQuery.isPending ? <StateBlock state={{ kind: 'initial-loading' }} subject="onaylı hesap hazırlığı" /> : null}
       {sourceIsValid && preparationQuery.data !== undefined && preparationQuery.data.type !== 'ok-single'
         ? <p role="alert" className={styles.error}>Kaynağın onaylı hesap hazırlığı okunamadı.</p> : null}

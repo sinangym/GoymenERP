@@ -22,14 +22,14 @@ const CURRENCY = 'ffffffff-ffff-4fff-8fff-fffffffffff6'
 const PREPARATION = 'a'.repeat(64)
 
 function sourceReads(url: string): Response | undefined {
-  if (url.includes('/finance/manual-receipts')) return json({ outcome: 'Found', resource: {
+  if (url.includes('/finance/manual-receipts')) return json({
     companyId: COMPANY_A, items: [{
       id: SOURCE, companyId: COMPANY_A, sourceNumber: 'SENTETIK-AUTH-1', version: '2', stage: 'Recorded',
       partyId: DRAFT, companyAccountId: DEBIT, treasuryAccountId: CREDIT, currencyId: CURRENCY,
       occurredOn: '2026-09-24', valueOn: null,
       amount: { disclosure: 'Visible', money: { amount: '10.00', currencyId: CURRENCY } },
     }], nextCursor: null,
-  } })
+  })
   if (url.endsWith(`/accounting/normal-journal-draft-sources/${SOURCE}`)) return json({
     companyId: COMPANY_A, sourceId: SOURCE, preparationVersion: PREPARATION, sourceVersion: '2',
     ownerProfileId: 'finance-profile', ownerProfileVersion: '7', currencyId: CURRENCY,
@@ -91,6 +91,54 @@ afterEach(() => {
 })
 
 describe('normal journal command security and company fences', () => {
+  it('reports a source-list 401 to the current auth boundary', async () => {
+    installFetch({
+      capabilities: [ACCOUNTING_CAPABILITY.normalDraftCreate],
+      respond: (url) => url.includes('/finance/manual-receipts') ? json({ status: 401 }, 401) : undefined,
+    })
+    renderAt(ACCOUNTING_ROUTE.normalDraftCreate)
+    expect(await screen.findByText(/Oturum sonlandı/i)).toBeTruthy()
+  })
+
+  it('reports a source-list 403 and suppresses the current create capability', async () => {
+    installFetch({
+      capabilities: [ACCOUNTING_CAPABILITY.normalDraftCreate],
+      respond: (url) => url.includes('/finance/manual-receipts') ? json({ status: 403 }, 403) : undefined,
+    })
+    renderAt(ACCOUNTING_ROUTE.normalDraftCreate)
+    await waitFor(() => expect(screen.queryByRole('heading', { name: 'Yeni normal fiş taslağı' })).toBeNull())
+    expect(screen.getByText(/bulunamadı/i)).toBeTruthy()
+  })
+
+  it('does not report a late source-list 401 after another company becomes current', async () => {
+    let release: ((response: Response) => void) | null = null
+    let companyAReadStarted = false
+    const delayed = new Promise<Response>(resolve => { release = resolve })
+    installFetch({
+      capabilities: [ACCOUNTING_CAPABILITY.normalDraftCreate],
+      respond: (url, init) => {
+        if (!url.includes('/finance/manual-receipts')) return undefined
+        const company = new Headers(init?.headers).get('X-Company-Id')
+        if (company === COMPANY_A) {
+          companyAReadStarted = true
+          return delayed
+        }
+        if (company === COMPANY_B) return json({ companyId: COMPANY_B, items: [], nextCursor: null })
+        return undefined
+      },
+    })
+    renderAt(ACCOUNTING_ROUTE.normalDraftCreate)
+    await waitFor(() => expect(companyAReadStarted).toBe(true))
+    fireEvent.change(screen.getByRole('combobox', { name: 'Şirket' }), { target: { value: COMPANY_B } })
+    await waitFor(() => expect((screen.getByRole('combobox', { name: 'Şirket' }) as HTMLSelectElement).value).toBe(COMPANY_B))
+    await act(async () => {
+      release?.(json({ status: 401 }, 401))
+      await delayed
+    })
+    await screen.findByLabelText(/Onaylı finans kaynağı/i)
+    expect(screen.queryByText(/Oturum sonlandı/i)).toBeNull()
+  })
+
   it('drops a late company-A create result after company B becomes the committed context', async () => {
     installFetch({ capabilities: [ACCOUNTING_CAPABILITY.normalDraftCreate], respond: (url) => sourceReads(url) })
     const normalFetch = globalThis.fetch

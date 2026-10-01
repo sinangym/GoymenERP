@@ -12,8 +12,6 @@ import type { ReactNode } from 'react'
 import type { RouteObject } from 'react-router'
 import { CapabilityRoute } from '../shell/CapabilityRoute'
 import type { CapabilityId } from '../shell/capabilities'
-import { FinancePortProvider } from '../finance/financePort'
-import { createHttpFinancePort } from '../finance/httpPort'
 import { ACCOUNTING_CAPABILITY, ACCOUNTING_ROUTE, type AccountingCapabilityId } from './capabilities'
 import { PeriodsPage } from './PeriodsPage'
 import { PeriodProposePage } from './PeriodProposePage'
@@ -37,13 +35,10 @@ function gate(capability: AccountingCapabilityId, children: ReactNode) {
   return <CapabilityRoute capability={capability as CapabilityId}>{children}</CapabilityRoute>
 }
 
-const financePort = createHttpFinancePort()
-
 export const accountingRoutes: RouteObject[] = [
   {
     path: ACCOUNTING_ROUTE.normalDraftCreate.slice(1),
-    element: gate(ACCOUNTING_CAPABILITY.normalDraftCreate,
-      <FinancePortProvider port={financePort}><NormalJournalDraftCreatePage /></FinancePortProvider>),
+    element: gate(ACCOUNTING_CAPABILITY.normalDraftCreate, <NormalJournalDraftCreatePage />),
   },
   {
     path: ACCOUNTING_ROUTE.normalDraftDetail.slice(1),
