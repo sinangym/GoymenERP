@@ -20,6 +20,11 @@ import {
   receiptDetailPath,
   receiptDraftPath,
 } from '../finance/capabilities'
+import { financeRoutes } from '../finance/financeRoutes'
+import {
+  OFFICIAL_INVOICE_IMPORT_APPROVALS_ROUTE,
+  OFFICIAL_INVOICE_IMPORT_UPLOAD_ROUTE,
+} from '../finance/officialInvoiceImportRoutes'
 
 const ROUTED = [
   [CAPABILITY.financeReceiptsList, FINANCE_CAPABILITY.receiptsList, FINANCE_ROUTE.receiptsList],
@@ -27,6 +32,10 @@ const ROUTED = [
   [CAPABILITY.financeReceiptsDetail, FINANCE_CAPABILITY.receiptsDetail, FINANCE_ROUTE.receiptsDetail],
   [CAPABILITY.financeCustomerInstrumentsList, FINANCE_CAPABILITY.customerInstrumentsList,
     FINANCE_ROUTE.customerInstrumentsList],
+  [CAPABILITY.financeOfficialInvoiceImportUpload, FINANCE_CAPABILITY.officialInvoiceImportUpload,
+    FINANCE_ROUTE.officialInvoiceImportUpload],
+  [CAPABILITY.financeOfficialInvoiceImportApprove, FINANCE_CAPABILITY.officialInvoiceImportApprove,
+    FINANCE_ROUTE.officialInvoiceImportApprove],
   [
     CAPABILITY.financeReceiptsReverseApprove,
     FINANCE_CAPABILITY.receiptsReverseApprove,
@@ -61,6 +70,13 @@ const CONTROLS: readonly string[] = [
 ]
 
 describe('shell ↔ Finance lane capability ids', () => {
+  it('mounts the official-invoice uploader and checker once under their own authority boundaries', () => {
+    expect(financeRoutes.filter((route) => route.path === OFFICIAL_INVOICE_IMPORT_UPLOAD_ROUTE.slice(1)))
+      .toHaveLength(1)
+    expect(financeRoutes.filter((route) => route.path === OFFICIAL_INVOICE_IMPORT_APPROVALS_ROUTE.slice(1)))
+      .toHaveLength(1)
+  })
+
   it('classifies every lane id as either routed or a control', () => {
     // Without this, an unclassified id still fails — but as a phantom MISSING MOUNT in the next
     // case, which is how finance.receipts.record read at f3800f3c: "expected 5 to equal 6", sending
@@ -73,7 +89,7 @@ describe('shell ↔ Finance lane capability ids', () => {
     ).toEqual([...classified].sort())
   })
 
-  it('declares the lane’s ten route ids with the lane’s values and routes', () => {
+  it('declares the lane’s twelve route ids with the lane’s values and routes', () => {
     for (const [shellId, laneId, route] of ROUTED) {
       expect(shellId).toBe(laneId)
       expect(CAPABILITY_ROUTE[shellId]).toBe(route)
@@ -113,7 +129,7 @@ describe('shell ↔ Finance lane capability ids', () => {
       FINANCE_ROUTE.manualBankPaymentsCreate)).toBeNull()
   })
 
-  it('gives the three lists and reversal queue nav entries and the other finance routes none', () => {
+  it('gives the Finance work lists and import actions nav entries and the other finance routes none', () => {
     const labels: Record<string, string> = {}
     for (const [shellId] of ROUTED) labels[shellId] = CAPABILITY_NAV_LABEL[shellId as CapabilityId]
     expect(labels).toEqual({
@@ -121,6 +137,8 @@ describe('shell ↔ Finance lane capability ids', () => {
       'finance.receipts.draft': '',
       'finance.receipts.detail': '',
       'finance.customer-instruments.list': 'Müşteri Çekleri ve Senetleri',
+      'finance.official-invoice-import.upload': 'Onaylı fatura taksit kaynağı yükle',
+      'finance.official-invoice-import.approve': 'Resmî fatura aktarım onayları',
       'finance.receipts.reverse.approve': 'Ters Kayıt Onayları',
       'finance.bank-accounts.list': 'Banka Hesapları',
       'finance.bank-accounts.propose': '',

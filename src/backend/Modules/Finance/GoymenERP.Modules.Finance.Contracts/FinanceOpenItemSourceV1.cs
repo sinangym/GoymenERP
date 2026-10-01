@@ -48,6 +48,29 @@ public interface IApprovedFinanceOpenItemSourcePort
 }
 
 /// <summary>
+/// One company-scoped page of approved canonical batches that an authenticated user may select.
+/// The page is produced by the trusted official-file adapter; it is not an upload contract and
+/// does not let a browser assert that a file, mapping or invoice is approved.
+/// </summary>
+public sealed record ApprovedFinanceOpenItemSourcePage(
+    Guid CompanyId,
+    IReadOnlyList<ApprovedFinanceOpenItemSourceBatch> Items,
+    string? NextCursor);
+
+/// <summary>
+/// Read side of the approved-file adapter. Implementations must return only batches whose actual
+/// carrier checksum and mapping approval were verified outside Finance. Finance validates every
+/// returned canonical batch again before exposing it and re-reads the selected batch on admission.
+/// </summary>
+public interface IApprovedFinanceOpenItemSourceCatalogPort
+{
+    Task<ReadResult<ApprovedFinanceOpenItemSourcePage>> ListApprovedAsync(
+        FinanceContext context,
+        string? cursor,
+        CancellationToken cancellationToken);
+}
+
+/// <summary>
 /// Host-owned fresh authority measurement. No permission string or grant is declared here; an
 /// unmapped production composition must remain unavailable.
 /// </summary>
@@ -72,5 +95,13 @@ public interface IFinanceOpenItemSourceAdmissionService
         FinanceContext context,
         CommandMetadata metadata,
         FinanceOpenItemSourceReference source,
+        CancellationToken cancellationToken);
+}
+
+public interface IFinanceOpenItemSourceSelectionService
+{
+    Task<ReadResult<ApprovedFinanceOpenItemSourcePage>> ListApprovedAsync(
+        FinanceContext context,
+        string? cursor,
         CancellationToken cancellationToken);
 }

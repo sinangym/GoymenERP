@@ -8,7 +8,7 @@
  * permission, and otherwise closes onto the neutral not-found block and calls nothing.
  */
 
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { useNavigate, useParams, useSearchParams, type RouteObject } from 'react-router'
 import { CapabilityRoute } from '../shell/CapabilityRoute'
 import type { CapabilityId } from '../shell/capabilities'
@@ -28,6 +28,14 @@ import { FinancePortProvider } from './financePort'
 import { createHttpFinancePort } from './httpPort'
 import { ReceiptDetailPage, ReceiptDraftPage, ReceiptListPage } from './ReceiptPages'
 import { ReversalApprovalsPage } from './ReversalApprovalsPage'
+import { OfficialInvoiceImportApprovalsPage } from './OfficialInvoiceImportApprovalsPage'
+import { OfficialInvoiceImportUploadPage } from './OfficialInvoiceImportUploadPage'
+import { OfficialInvoiceImportPanel, type OfficialInvoiceImportSourceSelection } from './OfficialInvoiceImportPanel'
+import { useOfficialInvoiceApprovalTransport } from './officialInvoiceImportApprovalClient'
+import {
+  OFFICIAL_INVOICE_IMPORT_APPROVALS_ROUTE,
+  OFFICIAL_INVOICE_IMPORT_UPLOAD_ROUTE,
+} from './officialInvoiceImportRoutes'
 import { ManualBankPaymentStartPage, type ManualBankPaymentEntryContext } from './ManualBankPaymentStartPage'
 import { CustomerInstrumentPortfolioPage } from './CustomerInstrumentPortfolioPage'
 import {
@@ -126,12 +134,36 @@ function ManualBankPaymentDetailRoute() {
     onOpen={(id) => navigate(manualBankPaymentDetailPath(id))} />
 }
 
+function OfficialInvoiceImportApprovalsRoute() {
+  const transport = useOfficialInvoiceApprovalTransport()
+  const [source, setSource] = useState<OfficialInvoiceImportSourceSelection | null>(null)
+  return transport === null
+    ? <StateBlock state={{ kind: 'not-found' }} subject="resmi fatura aktarım onayları" />
+    : source === null
+      ? <OfficialInvoiceImportApprovalsPage client={transport.client} context={transport.context}
+          onApprovedSource={(batch) => setSource({
+            batchId: batch.batchId,
+            batchVersion: batch.batchVersion,
+            displayName: `Resmî fatura ${batch.batchId}`,
+          })} />
+      : <OfficialInvoiceImportPanel source={source} client={transport.applicationClient}
+          attemptContext={transport.context} />
+}
+
 export const financeRoutes: RouteObject[] = [
   {
     path: FINANCE_ROUTE.customerInstrumentsList.slice(1),
     element: gate(FINANCE_CAPABILITY.customerInstrumentsList, <CustomerInstrumentPortfolioPage />),
   },
   { path: FINANCE_ROUTE.receiptsList.slice(1), element: gate(FINANCE_CAPABILITY.receiptsList, <ReceiptListPage />) },
+  {
+    path: OFFICIAL_INVOICE_IMPORT_UPLOAD_ROUTE.slice(1),
+    element: gate(FINANCE_CAPABILITY.officialInvoiceImportUpload, <OfficialInvoiceImportUploadPage />),
+  },
+  {
+    path: OFFICIAL_INVOICE_IMPORT_APPROVALS_ROUTE.slice(1),
+    element: gate(FINANCE_CAPABILITY.officialInvoiceImportApprove, <OfficialInvoiceImportApprovalsRoute />),
+  },
   // Static `yeni` before `:sourceId`, so it is never read as a source id.
   { path: FINANCE_ROUTE.receiptsDraft.slice(1), element: gate(FINANCE_CAPABILITY.receiptsDraft, <ReceiptDraftPage />) },
   { path: FINANCE_ROUTE.receiptsDetail.slice(1), element: gate(FINANCE_CAPABILITY.receiptsDetail, <ReceiptDetailPage />) },

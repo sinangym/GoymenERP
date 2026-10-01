@@ -256,6 +256,8 @@ class WorkflowTests(unittest.TestCase):
                 "finance.customer-instrument.collect",
                 "finance.party-ledger.read",
                 "finance.party-ledger.amount.read",
+                "finance.official-invoice-import.upload",
+                "finance.official-invoice-import.approve",
             ),
             validator.SUITE_IDENTITY_PERMISSIONS["fin01"],
         )
