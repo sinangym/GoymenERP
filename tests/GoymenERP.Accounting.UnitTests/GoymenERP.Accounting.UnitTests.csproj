@@ -15,5 +15,6 @@
     <ProjectReference Include="../../src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Application/GoymenERP.Modules.Accounting.Application.csproj" />
     <ProjectReference Include="../../src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Domain/GoymenERP.Modules.Accounting.Domain.csproj" />
     <ProjectReference Include="../../src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Infrastructure/GoymenERP.Modules.Accounting.Infrastructure.csproj" />
+    <ProjectReference Include="../../src/backend/Modules/Finance/GoymenERP.Modules.Finance.Contracts/GoymenERP.Modules.Finance.Contracts.csproj" />
   </ItemGroup>
 </Project>
