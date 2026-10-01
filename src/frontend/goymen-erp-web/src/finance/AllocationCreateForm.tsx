@@ -75,32 +75,32 @@ export function AllocationCreateFields(props: AllocationCreateFieldsProps) {
     props.onSubmit()
   }
   return <form aria-label="Finansal dağıtım oluştur" onSubmit={submit} noValidate>
-    <label>Gerçekleşmiş tahsilat kaynağı
-      <select value={props.sourceId} disabled={props.frozen} onChange={(event) => props.onSource(event.target.value)}>
-        <option value="">Seçin</option>
-        {props.sources.map((source) => <option key={source.id} value={source.id}>{source.label}</option>)}
-      </select>
-    </label>
+    <label htmlFor="finance-allocation-source">Gerçekleşmiş tahsilat kaynağı</label>
+    <select id="finance-allocation-source" value={props.sourceId} disabled={props.frozen}
+      onChange={(event) => props.onSource(event.target.value)}>
+      <option value="">Seçin</option>
+      {props.sources.map((source) => <option key={source.id} value={source.id}>{source.label}</option>)}
+    </select>
     {props.onSourcePrevious === undefined ? null
       : <button type="button" disabled={props.frozen} onClick={props.onSourcePrevious}>Önceki tahsilat kaynakları</button>}
     {props.onSourceNext === undefined ? null
       : <button type="button" disabled={props.frozen} onClick={props.onSourceNext}>Sonraki tahsilat kaynakları</button>}
-    <label>Onaylı fatura kaynağı
-      <select value={props.batchId} disabled={props.frozen} onChange={(event) => props.onBatch(event.target.value)}>
-        <option value="">Seçin</option>
-        {props.batches.map((batch) => <option key={batch.id} value={batch.id}>{batch.label}</option>)}
-      </select>
-    </label>
+    <label htmlFor="finance-allocation-batch">Onaylı fatura kaynağı</label>
+    <select id="finance-allocation-batch" value={props.batchId} disabled={props.frozen}
+      onChange={(event) => props.onBatch(event.target.value)}>
+      <option value="">Seçin</option>
+      {props.batches.map((batch) => <option key={batch.id} value={batch.id}>{batch.label}</option>)}
+    </select>
     {props.onBatchPrevious === undefined ? null
       : <button type="button" disabled={props.frozen} onClick={props.onBatchPrevious}>Önceki fatura kaynakları</button>}
     {props.onBatchNext === undefined ? null
       : <button type="button" disabled={props.frozen} onClick={props.onBatchNext}>Sonraki fatura kaynakları</button>}
-    <label>Açık kalem
-      <select value={props.openItemId} disabled={props.frozen} onChange={(event) => props.onOpenItem(event.target.value)}>
-        <option value="">Seçin</option>
-        {props.openItems.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
-      </select>
-    </label>
+    <label htmlFor="finance-allocation-open-item">Açık kalem</label>
+    <select id="finance-allocation-open-item" value={props.openItemId} disabled={props.frozen}
+      onChange={(event) => props.onOpenItem(event.target.value)}>
+      <option value="">Seçin</option>
+      {props.openItems.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
+    </select>
     <label>Dağıtım tutarı
       <input value={props.amount} disabled={props.frozen} inputMode="decimal"
         onChange={(event) => props.onAmount(event.target.value)} />

@@ -154,6 +154,12 @@ describe('AllocationCreateFields', () => {
       onAmount={onAmount} onReason={onReason} onSubmit={onSubmit}
     />)
     expect((screen.getByRole('button', { name: 'Dağıtım oluştur' }) as HTMLButtonElement).disabled).toBe(true)
+    expect(screen.getByRole('combobox', { name: 'Gerçekleşmiş tahsilat kaynağı', exact: true }))
+      .toBe(screen.getByLabelText('Gerçekleşmiş tahsilat kaynağı', { exact: true }))
+    expect(screen.getByRole('combobox', { name: 'Onaylı fatura kaynağı', exact: true }))
+      .toBe(screen.getByLabelText('Onaylı fatura kaynağı', { exact: true }))
+    expect(screen.getByRole('combobox', { name: 'Açık kalem', exact: true }))
+      .toBe(screen.getByLabelText('Açık kalem', { exact: true }))
     fireEvent.change(screen.getByLabelText('Gerçekleşmiş tahsilat kaynağı'), { target: { value: SOURCE } })
     fireEvent.change(screen.getByLabelText('Onaylı fatura kaynağı'), { target: { value: BATCH } })
     fireEvent.change(screen.getByLabelText('Açık kalem'), { target: { value: ITEM } })
