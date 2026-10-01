@@ -1221,7 +1221,7 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
         {
             var location = await ScalarAsync<Guid>(
                 "SELECT TOP (1) Id FROM organization.Locations WHERE CompanyId = @c ORDER BY Id", ("@c", CompanyA));
-            var label = new MaterialLabel(Guid.NewGuid(), CompanyA, code, Product, Lot);
+            var label = new MaterialLabel(Guid.NewGuid(), CompanyA, code, Product, Lot, ProductFixture.ProductVersion);
             var owner = new StockOwner(StockPartyKind.Company, CompanyA);
             var custodian = new StockCustodian(StockPartyKind.Company, CompanyA);
             var position = new StockPosition(CompanyA, owner, custodian, location, label, BlockState.Free);
