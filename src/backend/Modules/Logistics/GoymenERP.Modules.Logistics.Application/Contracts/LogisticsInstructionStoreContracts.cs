@@ -168,6 +168,13 @@ public interface ILogisticsInstructionStore
     /// </summary>
     Task<IReadOnlyList<StoredDispatchNoteReference>> ListSalesOrderDispatchNotesAsync(Guid salesOrderId, int limit,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Finds one approved, non-cancelled dispatch note in the context company for the native invoice source reader.
+    /// The read is untracked and creates no financial, stock or consumption record.
+    /// </summary>
+    Task<StoredApprovedDispatchInvoiceSource?> FindApprovedDispatchInvoiceSourceAsync(Guid dispatchNoteId,
+        CancellationToken cancellationToken = default);
 }
 
 /// <summary>One stored dispatch note as the Sales order view needs it: the note, its state and numbers, its instruction and only this order's lines.</summary>
@@ -182,6 +189,28 @@ public sealed record StoredDispatchNoteReference(
 
 /// <summary>One line of a stored draft on the asked order: the order line, the shipment, the shipped quantity and its unit.</summary>
 public sealed record StoredDispatchNoteOrderLine(int LineNo, Guid SourceOrderLineId, Guid ShipmentId, Guid UnitId, decimal Quantity);
+
+/// <summary>The exact Logistics-owned facts of one approved, active dispatch note.</summary>
+public sealed record StoredApprovedDispatchInvoiceSource(
+    Guid CompanyId,
+    Guid DispatchNoteId,
+    Guid InstructionId,
+    long InstructionVersion,
+    Guid CustomerPartyId,
+    Guid CompanyAccountId,
+    DispatchNoteNumber? Number,
+    string? EDispatchNumber,
+    DateTimeOffset? ApprovedAtUtc,
+    IReadOnlyList<StoredApprovedDispatchInvoiceSourceLine> Lines);
+
+public sealed record StoredApprovedDispatchInvoiceSourceLine(
+    int LineNo,
+    Guid SourceOrderId,
+    Guid SourceOrderLineId,
+    Guid ShipmentId,
+    Guid ProductId,
+    Guid UnitId,
+    decimal Quantity);
 
 /// <summary>Optional atomic extension used only when Sales supplies a resolved loading cap.</summary>
 public interface ILogisticsAggregateLoadStoreV1
