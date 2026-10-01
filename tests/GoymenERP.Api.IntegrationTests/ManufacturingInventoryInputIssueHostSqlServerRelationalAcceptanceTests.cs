@@ -28,6 +28,7 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
 {
     private static readonly Guid InventoryHostProduct =
         Guid.Parse("9b000000-0000-4000-8000-000000000451");
+    private const string InventoryHostProductVersion = "synthetic-manufacturing-host-v1";
     private static readonly Guid InventoryHostLotA =
         Guid.Parse("9b000000-0000-4000-8000-000000000452");
     private static readonly Guid InventoryHostLotB =
@@ -487,7 +488,7 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
 
     private static MaterialLabel InventoryHostLabel(Guid companyId, string code) =>
         new(Guid.NewGuid(), companyId, code, InventoryHostProduct,
-            companyId == CompanyA ? InventoryHostLotA : InventoryHostLotB);
+            companyId == CompanyA ? InventoryHostLotA : InventoryHostLotB, InventoryHostProductVersion);
 
     private static StockPosition InventoryHostPosition(
         Guid companyId, Guid locationId, MaterialLabel label, BlockState block) =>
