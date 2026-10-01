@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using System.Globalization;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Sales.Application.Contracts;
 using GoymenERP.Modules.Sales.Domain.Drafts;
@@ -18,7 +19,15 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence;
 public sealed class SalesOrderLineReferencePort(ISalesOrderDraftStore store, ICompanyContext companyContext) : ISalesOrderLineReferencePortV1
 {
     public async Task<SalesOrderLineReferenceAnswerV1> GetApprovedLineAsync(Guid orderId, Guid lineId,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) =>
+        await GetApprovedLineCoreAsync(orderId, lineId, null, cancellationToken);
+
+    public async Task<SalesOrderLineReferenceAnswerV1> GetApprovedLineForLoadingAsync(Guid orderId, Guid lineId, DateOnly effectiveOn,
+        CancellationToken cancellationToken = default) =>
+        await GetApprovedLineCoreAsync(orderId, lineId, effectiveOn, cancellationToken);
+
+    private async Task<SalesOrderLineReferenceAnswerV1> GetApprovedLineCoreAsync(Guid orderId, Guid lineId, DateOnly? effectiveOn,
+        CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         if (orderId == Guid.Empty || lineId == Guid.Empty)
@@ -45,9 +54,18 @@ public sealed class SalesOrderLineReferencePort(ISalesOrderDraftStore store, ICo
             return new SalesOrderLineReferenceAnswerV1(SalesOrderLineReferenceOutcomeV1.NotApproved, null, draft.ApprovalState.ToString());
         }
 
+        if (!draft.IsCustomerAccepted)
+        {
+            return new SalesOrderLineReferenceAnswerV1(SalesOrderLineReferenceOutcomeV1.NotApproved, null, "CustomerAcceptancePending");
+        }
+
         return new SalesOrderLineReferenceAnswerV1(SalesOrderLineReferenceOutcomeV1.Approved, new SalesOrderLineReferenceV1(
             draft.CompanyId, draft.Id, line.Id, line.LineNo, draft.Header.PartyId, draft.Header.CompanyAccountId,
-            line.Product.ProductId, line.Product.ProductVersion, line.OrderUnit.UnitId, line.QuantityText, draft.Revision, draft.Version), null);
+            line.Product.ProductId, line.Product.ProductVersion, line.OrderUnit.UnitId, line.QuantityText, draft.Revision, draft.Version,
+            RemainderState(line.Remainder), effectiveOn is not { } on ? null : new SalesOrderLineLoadingLimitV1(
+                draft.CompanyId, draft.Id, line.Id, line.OrderUnit.UnitId, draft.Version, line.QuantityText,
+                SalesOrderLineLoadingLimitSourcesV1.ApprovedOrderQuantity, line.Id.ToString("D"),
+                draft.Version.ToString(CultureInfo.InvariantCulture), on)), null);
     }
 
     /// <summary>
@@ -109,7 +127,8 @@ public sealed class SalesOrderLineReferencePort(ISalesOrderDraftStore store, ICo
             {
                 // DEC-SAL-005: a cancelled order is still listed as Approved by the store's approval filter (its facts stay), but
                 // its lines are no longer offered to a consumer's picker.
-                if (draft.ApprovalState != InternalApprovalState.Approved || draft.State == SalesDraftState.Cancelled)
+                if (draft.ApprovalState != InternalApprovalState.Approved || draft.State == SalesDraftState.Cancelled
+                    || !draft.IsCustomerAccepted)
                 {
                     previous = draft;
                     continue;
@@ -121,6 +140,14 @@ public sealed class SalesOrderLineReferencePort(ISalesOrderDraftStore store, ICo
                 foreach (var line in draft.Lines.OrderBy(candidate => candidate.LineNo))
                 {
                     if (line.LineNo <= skipThrough)
+                    {
+                        continue;
+                    }
+
+                    // An approved cancellation keeps the delivered/loaded history, but there is no remaining demand to offer
+                    // to a new loading instruction. The direct read still carries the state so an existing instruction can
+                    // re-check it immediately before each load.
+                    if (line.Remainder == LineRemainderState.Cancelled)
                     {
                         continue;
                     }
@@ -137,7 +164,7 @@ public sealed class SalesOrderLineReferencePort(ISalesOrderDraftStore store, ICo
                     items.Add(new SalesApprovedLineReferenceV1(draft.CompanyId, draft.Id, draft.DocumentNo, line.Id, line.LineNo,
                         draft.Header.PartyId, draft.Header.CompanyAccountId, line.Product.ProductId, line.Product.ProductVersion,
                         line.Product.Code, line.Product.Name, line.OrderUnit.UnitId, line.OrderUnit.UnitCode, line.QuantityText,
-                        line.RequestedDeliveryDate, draft.Revision));
+                        line.RequestedDeliveryDate, draft.Revision, RemainderState(line.Remainder)));
                 }
 
                 previous = draft;
@@ -163,6 +190,13 @@ public sealed class SalesOrderLineReferencePort(ISalesOrderDraftStore store, ICo
 
     /// <summary>The line page cap (the consumer's endpoint validates the same 1–100).</summary>
     public const int MaximumLinePageSize = 100;
+
+    private static string RemainderState(LineRemainderState state) => state switch
+    {
+        LineRemainderState.Revised => SalesRemainderChangeNamesV1.Revised,
+        LineRemainderState.Cancelled => SalesRemainderChangeNamesV1.Cancelled,
+        _ => SalesRemainderChangeNamesV1.Open,
+    };
 
     /// <summary>The store cursor under which <paramref name="draft"/> is the first draft listed: the page's own cursor, or "after its predecessor".</summary>
     private static string? ListsFirst(string? pageCursor, SalesDraftPage page, SalesOrderDraft draft)

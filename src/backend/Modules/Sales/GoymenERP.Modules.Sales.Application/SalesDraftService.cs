@@ -129,7 +129,9 @@ public sealed partial class SalesDraftService(
         {
             stored = await store.StoreDraftAsync(envelope, requestHash, documentNo =>
             {
-                var draft = SalesOrderDraft.Create(Guid.NewGuid(), scope.CompanyId, documentNo, header, money, now);
+                // Q9 cutover: only orders created after this deployment require customer acceptance.
+                var draft = SalesOrderDraft.Create(Guid.NewGuid(), scope.CompanyId, documentNo, header, money, now,
+                    customerAcceptanceRequired: true);
                 foreach (var input in lineInputs)
                 {
                     draft.AddLine(draft.Version, input, now);
@@ -332,6 +334,15 @@ public sealed partial class SalesDraftService(
         StateCommandAsync(draftId, request, metadata, SalesDraftCommands.ApproveV1, bindings.ApprovePermission,
             (draft, actor, expected, now) => draft.Approve(expected, actor, now),
             new SalesDraftStateAudit("sales.order-draft.approved.v1", "Approve", "Satış sipariş taslağı iç onay aldı"),
+            cancellationToken);
+
+    public Task<SalesOrderDraftResponse> RecordCustomerAcceptanceAsync(Guid draftId, SalesDraftStateCommandRequest request,
+        SalesCommandMetadata metadata, CancellationToken cancellationToken = default) =>
+        StateCommandAsync(draftId, request, metadata, SalesDraftCommands.RecordCustomerAcceptanceV1,
+            bindings.CustomerAcceptancePermission,
+            (draft, actor, expected, now) => draft.RecordCustomerAcceptance(expected, actor, now),
+            new SalesDraftStateAudit("sales.order-draft.customer-acceptance-recorded.v1", "RecordCustomerAcceptance",
+                "Satış siparişinin güncel revizyonu için müşteri kabulü kaydedildi"),
             cancellationToken);
 
     public Task<SalesOrderDraftResponse> RejectDraftAsync(Guid draftId, SalesDraftStateCommandRequest request,
@@ -1372,7 +1383,11 @@ public sealed partial class SalesDraftService(
             Reference(draft.Header.DeliveryAddress), Reference(draft.Header.Contact), Reference(draft.Header.Responsible),
             Reference(draft.Header.PaymentTerms), Reference(draft.Header.SourceStrategy), Reference(draft.Header.Package),
             new SalesDraftApprovalV1(draft.Approval.SubmittedBy, draft.Approval.SubmittedAtUtc, draft.Approval.DecidedBy,
-                draft.Approval.DecidedAtUtc, draft.Approval.RejectionReason), isOwnDraft, isOwnDecisionRestricted);
+                draft.Approval.DecidedAtUtc, draft.Approval.RejectionReason),
+            new SalesDraftCustomerAcceptanceV1(draft.CustomerAcceptanceRequired,
+                draft.CustomerAcceptance is null ? null : SalesDraftApiV1.RevisionText(draft.CustomerAcceptance.Revision),
+                draft.CustomerAcceptance?.AcceptedBy, draft.CustomerAcceptance?.AcceptedAtUtc, draft.IsCustomerAccepted),
+            isOwnDraft, isOwnDecisionRestricted);
 
     private static SalesDraftRevisionV1 Revision(ApprovedRevisionSnapshot archived, SalesPriceDisclosure disclosure) =>
         new(SalesDraftApiV1.RevisionText(archived.Revision), archived.Approval.SubmittedBy, archived.Approval.SubmittedAtUtc,

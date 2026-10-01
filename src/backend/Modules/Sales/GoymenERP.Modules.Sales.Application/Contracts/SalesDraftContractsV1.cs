@@ -44,6 +44,13 @@ public sealed record SalesDraftApprovalV1(
     string? DecidedBy, DateTimeOffset? DecidedAtUtc,
     string? RejectionReason);
 
+public sealed record SalesDraftCustomerAcceptanceV1(
+    bool Required,
+    string? AcceptedRevision,
+    string? AcceptedBy,
+    DateTimeOffset? AcceptedAtUtc,
+    bool IsCurrentRevisionAccepted);
+
 /// <summary>
 /// SALES-A1: the body of a state command (submission / approval / rejection): the expected
 /// concurrency version as text (the same shape as every version on this wire) and, for a
@@ -161,6 +168,7 @@ public sealed record SalesOrderDraftDetailView(
     SalesDraftOwnerReferenceV1? SourceStrategy,
     SalesDraftOwnerReferenceV1? Package,
     SalesDraftApprovalV1 Approval,
+    SalesDraftCustomerAcceptanceV1 CustomerAcceptance,
     bool IsOwnDraft,
     bool IsOwnDecisionRestricted);
 
@@ -195,6 +203,7 @@ public static class SalesDraftApiV1
     public const string SubmissionPath = "/api/v1/sales/drafts/{id}/submission";
     public const string ApprovalPath = "/api/v1/sales/drafts/{id}/approval";
     public const string RejectionPath = "/api/v1/sales/drafts/{id}/rejection";
+    public const string CustomerAcceptancePath = "/api/v1/sales/drafts/{id}/customer-acceptance";
 
     /// <summary>D2: POST …/{id}/withdrawal — the preparer takes back their own not-yet-approved draft (own state, own trail, no deletion).</summary>
     public const string WithdrawalPath = "/api/v1/sales/drafts/{id}/withdrawal";
@@ -224,6 +233,14 @@ public static class SalesDraftApiV1
     // S-04 decoder (exact members) keeps working.
     public const string CancellationImpactPath = "/api/v1/sales/drafts/{id}/cancellation-impact";
     public const string CancellationPath = "/api/v1/sales/drafts/{id}/cancellation";
+
+    // Partial delivery (user decision 2026-09-30): the remainder change of a partly delivered line — requested (POST, the
+    // quantity-write name), approved or rejected by an approver (POST, the approve name; 200 with the detail after the step,
+    // same-key replay 200 + `Idempotency-Replayed`), and the lines' remainder facts with every recorded change (GET, the draft
+    // read). The detail wire is unchanged: the line's `quantity` carries the approved quantity.
+    public const string RemainderChangesPath = "/api/v1/sales/drafts/{id}/remainder-changes";
+    public const string RemainderApprovalPath = "/api/v1/sales/drafts/{id}/remainder-changes/{changeNo}/approval";
+    public const string RemainderRejectionPath = "/api/v1/sales/drafts/{id}/remainder-changes/{changeNo}/rejection";
 
     /// <summary>The wire text of a revision number (<c>Rev.0</c>, <c>Rev.1</c>, …).</summary>
     public static string RevisionText(int revision) => $"Rev.{revision.ToString(System.Globalization.CultureInfo.InvariantCulture)}";

@@ -374,6 +374,95 @@ public sealed class SalesDraftApprovalSqlServerRelationalAcceptanceTests
         Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType = N'sales.order-draft.rejected.v1'"));
     }
 
+    [SqlServerFact]
+    public async Task Customer_acceptance_is_persisted_replayed_invalidated_by_revision_and_legacy_orders_keep_their_cutover_behavior()
+    {
+        await using var run = await Run.StartAsync();
+        var owners = Owners.For(CompanyA);
+        SalesOrderDraft required;
+        SalesOrderDraft legacy;
+        Guid requiredLineId;
+
+        await using (var a = run.Store(CompanyA))
+        {
+            required = (await a.Store.StoreDraftAsync(run.Envelope("k-q9-create"), Hash("q9-create"),
+                documentNo => Draft(owners, documentNo, T0, customerAcceptanceRequired: true))).Draft;
+            requiredLineId = required.Lines[0].Id;
+            await a.Store.UpdateDraftStateAsync(run.Envelope("k-q9-submit"), Hash("q9-submit"), SalesDraftCommands.SubmitV1,
+                required.Id, (draft, now) => draft.Submit(2, run.Actor, now), Submitted);
+            await a.Store.UpdateDraftStateAsync(run.Envelope("k-q9-approve", actor: "SENTETIK-approver"), Hash("q9-approve"),
+                SalesDraftCommands.ApproveV1, required.Id, (draft, now) => draft.Approve(3, "SENTETIK-approver", now), Approved);
+            Assert.Equal(SalesOrderLineReferenceOutcomeV1.NotApproved,
+                (await a.Port.GetApprovedLineAsync(required.Id, requiredLineId)).Outcome);
+
+            var accepted = (await a.Store.UpdateDraftStateAsync(run.Envelope("k-q9-accept", actor: "SENTETIK-customer"), Hash("q9-accept"),
+                SalesDraftCommands.RecordCustomerAcceptanceV1, required.Id,
+                (draft, now) => draft.RecordCustomerAcceptance(4, "SENTETIK-customer", now), CustomerAccepted))!;
+            Assert.Equal((SalesDraftWriteOutcome.Recorded, 5L, 0, true),
+                (accepted.Outcome, accepted.Draft.Version, accepted.Draft.CustomerAcceptance!.Revision, accepted.Draft.IsCustomerAccepted));
+            var replay = (await a.Store.UpdateDraftStateAsync(run.Envelope("k-q9-accept", correlation: "SENTETIK-q9-retry", actor: "SENTETIK-customer"),
+                Hash("q9-accept"), SalesDraftCommands.RecordCustomerAcceptanceV1, required.Id,
+                (_, _) => throw new InvalidOperationException("a replay never mutates"), CustomerAccepted))!;
+            Assert.Equal((SalesDraftWriteOutcome.Replayed, run.Correlation, 5L),
+                (replay.Outcome, replay.OriginalCorrelationId, replay.Draft.Version));
+            Assert.Equal(SalesOrderLineReferenceOutcomeV1.Approved,
+                (await a.Port.GetApprovedLineAsync(required.Id, requiredLineId)).Outcome);
+
+            LineCommercialInput[] revisedPrice = [new(requiredLineId, new CommercialDraftFields("13.00", KgUnit, "5"))];
+            await a.Store.ReviseDraftCommercialAsync(run.Envelope("k-q9-revise", actor: "SENTETIK-pricer"), Hash("q9-revise"),
+                SalesDraftCommands.ReviseCommercialV1, required.Id,
+                (draft, now) => draft.ReviseCommercial(5, revisedPrice, "SENTETIK-pricer", now), Revised,
+                static _ => Task.CompletedTask);
+            await a.Store.UpdateDraftStateAsync(run.Envelope("k-q9-submit-r1"), Hash("q9-submit-r1"), SalesDraftCommands.SubmitV1,
+                required.Id, (draft, now) => draft.Submit(6, run.Actor, now), Submitted);
+            await a.Store.UpdateDraftStateAsync(run.Envelope("k-q9-approve-r1", actor: "SENTETIK-approver"), Hash("q9-approve-r1"),
+                SalesDraftCommands.ApproveV1, required.Id, (draft, now) => draft.Approve(7, "SENTETIK-approver", now), Approved);
+            Assert.Equal(SalesOrderLineReferenceOutcomeV1.NotApproved,
+                (await a.Port.GetApprovedLineAsync(required.Id, requiredLineId)).Outcome);
+            var acceptedR1 = (await a.Store.UpdateDraftStateAsync(run.Envelope("k-q9-accept-r1", actor: "SENTETIK-customer"), Hash("q9-accept-r1"),
+                SalesDraftCommands.RecordCustomerAcceptanceV1, required.Id,
+                (draft, now) => draft.RecordCustomerAcceptance(8, "SENTETIK-customer", now), CustomerAccepted))!;
+            Assert.Equal((9L, 1, true),
+                (acceptedR1.Draft.Version, acceptedR1.Draft.CustomerAcceptance!.Revision, acceptedR1.Draft.IsCustomerAccepted));
+            Assert.Equal(SalesOrderLineReferenceOutcomeV1.Approved,
+                (await a.Port.GetApprovedLineAsync(required.Id, requiredLineId)).Outcome);
+
+            legacy = (await a.Store.StoreDraftAsync(run.Envelope("k-q9-legacy-create"), Hash("q9-legacy-create"),
+                documentNo => Draft(owners, documentNo, T0.AddMinutes(1)))).Draft;
+            await a.Store.UpdateDraftStateAsync(run.Envelope("k-q9-legacy-submit"), Hash("q9-legacy-submit"), SalesDraftCommands.SubmitV1,
+                legacy.Id, (draft, now) => draft.Submit(2, run.Actor, now), Submitted);
+            await a.Store.UpdateDraftStateAsync(run.Envelope("k-q9-legacy-approve", actor: "SENTETIK-approver"), Hash("q9-legacy-approve"),
+                SalesDraftCommands.ApproveV1, legacy.Id, (draft, now) => draft.Approve(3, "SENTETIK-approver", now), Approved);
+            Assert.Equal(SalesOrderLineReferenceOutcomeV1.Approved,
+                (await a.Port.GetApprovedLineAsync(legacy.Id, legacy.Lines[0].Id)).Outcome);
+        }
+
+        Assert.Equal((true, 1, "SENTETIK-customer", 9L), (
+            await run.ScalarAsync<bool>("SELECT [CustomerAcceptanceRequired] FROM [sales].[Drafts] WHERE [Id] = @id", ("@id", required.Id)),
+            await run.ScalarAsync<int>("SELECT [CustomerAcceptedRevision] FROM [sales].[Drafts] WHERE [Id] = @id", ("@id", required.Id)),
+            await run.ScalarAsync<string>("SELECT [CustomerAcceptedBy] FROM [sales].[Drafts] WHERE [Id] = @id", ("@id", required.Id)),
+            await run.ScalarAsync<long>("SELECT [Version] FROM [sales].[Drafts] WHERE [Id] = @id", ("@id", required.Id))));
+        Assert.Equal((false, 0), (
+            await run.ScalarAsync<bool>("SELECT [CustomerAcceptanceRequired] FROM [sales].[Drafts] WHERE [Id] = @id", ("@id", legacy.Id)),
+            await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[Drafts] WHERE [Id] = @id AND [CustomerAcceptedRevision] IS NOT NULL", ("@id", legacy.Id))));
+        Assert.Equal(2, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM [sales].[DraftAttempts] WHERE [DraftId] = @id AND [CommandName] = @command AND [Outcome] = 1",
+            ("@id", required.Id), ("@command", SalesDraftCommands.RecordCustomerAcceptanceV1)));
+        Assert.Equal(2, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [EntityId] = @id AND [EventType] = N'sales.order-draft.customer-acceptance-recorded.v1'",
+            ("@id", required.Id.ToString("D"))));
+        Assert.Equal(0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [CorrelationId] = N'SENTETIK-q9-retry'"));
+
+        await using var context = run.Context(CompanyA);
+        var applied = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
+        var previous = Assert.Single(applied, migration => migration.EndsWith("_AddDraftRemainderChanges", StringComparison.Ordinal));
+        var rollback = await Assert.ThrowsAsync<SqlException>(() => context.GetService<IMigrator>().MigrateAsync(previous));
+        Assert.Equal(51060, rollback.Number);
+        Assert.EndsWith("_AddDraftCustomerAcceptance", Assert.Single(await context.Database.GetAppliedMigrationsAsync(),
+            migration => migration.EndsWith("_AddDraftCustomerAcceptance", StringComparison.Ordinal)), StringComparison.Ordinal);
+    }
+
     /// <summary>
     /// ÜRÜN #338 P3-2: the approval migration's Down is a forward fix while any draft has left Preparing —
     /// THROW 51045 (the module rule of 51041–51044), the history unchanged, the facts untouched.
@@ -639,19 +728,15 @@ public sealed class SalesDraftApprovalSqlServerRelationalAcceptanceTests
 
         await using var context = run.Context(CompanyA);
         var applied = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
-        // DEC-SAL-005's cancellations, DEC-SAL-003's schedules, the linked-refusal migration, D2 and K3 Head B sit on top of
-        // approval. With no cancellation, no schedule and no linked refusal, rollback reaches approval; its guard then
-        // refuses (51045), leaving approval facts intact.
-        Assert.EndsWith("_AddRevisionReasons", applied[^1], StringComparison.Ordinal);
-        Assert.EndsWith("_AddDraftCancellations", applied[^2], StringComparison.Ordinal);
-        Assert.EndsWith("_AddDeliverySchedules", applied[^3], StringComparison.Ordinal);
-        Assert.EndsWith("_LinkMutationRefusalsToDrafts", applied[^4], StringComparison.Ordinal);
-        Assert.EndsWith("_AddDraftWithdrawal", applied[^5], StringComparison.Ordinal);
-        Assert.EndsWith("_AddDraftRevisions", applied[^6], StringComparison.Ordinal);
-        Assert.EndsWith("_AddDraftApproval", applied[^7], StringComparison.Ordinal);
-        var error = await Assert.ThrowsAsync<SqlException>(() => context.GetService<IMigrator>().MigrateAsync(applied[^8]));
+        var approval = Array.FindIndex(applied,
+            migration => migration.EndsWith("_AddDraftApproval", StringComparison.Ordinal));
+        Assert.True(approval > 0);
+        var migrator = context.GetService<IMigrator>();
+        await migrator.MigrateAsync(applied[approval]);
+        Assert.Equal(applied[..(approval + 1)], await context.Database.GetAppliedMigrationsAsync());
+        var error = await Assert.ThrowsAsync<SqlException>(() => migrator.MigrateAsync(applied[approval - 1]));
         Assert.Equal(51045, error.Number);
-        Assert.Equal(applied[..^6], await context.Database.GetAppliedMigrationsAsync());
+        Assert.Equal(applied[..(approval + 1)], await context.Database.GetAppliedMigrationsAsync());
         Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sys.tables WHERE schema_id = SCHEMA_ID(N'sales') AND name IN (N'DraftRevisions', N'DraftRevisionLines')"));
         Assert.Equal(1, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM sys.check_constraints WHERE [name] = N'CK_Drafts_State' AND schema_id = SCHEMA_ID(N'sales') AND definition LIKE N'%[[]Revision]=(0)%'"));
@@ -709,7 +794,7 @@ public sealed class SalesDraftApprovalSqlServerRelationalAcceptanceTests
         // The sales schema's tables, by name: no money, no stock, no shipment table exists here for a withdrawal to touch.
         var tables = await run.ScalarAsync<string>(
             "SELECT STRING_AGG([name], N',') WITHIN GROUP (ORDER BY [name]) FROM sys.tables WHERE schema_id = SCHEMA_ID(N'sales') AND [name] <> N'__EFMigrationsHistory'");
-        Assert.Equal("DraftAttempts,DraftCancellations,DraftDeliveryScheduleDates,DraftDeliverySchedules,DraftDeliverySlices,DraftLines,DraftNumbers,DraftRevisionLines,DraftRevisions,Drafts", tables);
+        Assert.Equal("DraftAttempts,DraftCancellations,DraftDeliveryScheduleDates,DraftDeliverySchedules,DraftDeliverySlices,DraftLines,DraftNumbers,DraftRemainderChanges,DraftRemainderDecisions,DraftRevisionLines,DraftRevisions,Drafts", tables);
         async Task<(int Drafts, int Lines, int Slices, int Numbers, int Revisions, int RevisionLines)> QuietCountsAsync() => (
             await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[Drafts] WHERE [CompanyId] = @c", ("@c", CompanyA)),
             await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[DraftLines] WHERE [CompanyId] = @c", ("@c", CompanyA)),
@@ -926,27 +1011,27 @@ public sealed class SalesDraftApprovalSqlServerRelationalAcceptanceTests
     public async Task The_linked_refusal_migration_preserves_legacy_replay_and_new_refusals_use_the_company_scoped_draft()
     {
         await using var run = await Run.StartAsync();
-        string[] applied;
-        await using (var context = run.Context(CompanyA))
-        {
-            applied = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
-            // DEC-SAL-002's reasons, DEC-SAL-005's cancellations and DEC-SAL-003's schedules sit on top (none here, so they roll back freely).
-            Assert.EndsWith("_AddRevisionReasons", applied[^1], StringComparison.Ordinal);
-            Assert.EndsWith("_AddDraftCancellations", applied[^2], StringComparison.Ordinal);
-            Assert.EndsWith("_AddDeliverySchedules", applied[^3], StringComparison.Ordinal);
-            Assert.EndsWith("_LinkMutationRefusalsToDrafts", applied[^4], StringComparison.Ordinal);
-            Assert.EndsWith("_AddDraftWithdrawal", applied[^5], StringComparison.Ordinal);
-            await context.GetService<IMigrator>().MigrateAsync(applied[^5]);
-        }
-
         var owners = Owners.For(CompanyA);
         SalesOrderDraft draft;
-        var refusal = new SalesDraftTerminalRefusal(409, SalesDraftProblemCodesV1.StateConflict,
-            [new("approvalState", SalesRuleCodes.StateConflict)]);
         await using (var a = run.Store(CompanyA))
         {
             draft = (await a.Store.StoreDraftAsync(run.Envelope("k-create-legacy"), Hash("create-legacy"),
                 documentNo => Draft(owners, documentNo, T0))).Draft;
+        }
+
+        string[] applied;
+        await using (var context = run.Context(CompanyA))
+        {
+            applied = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
+            // Later empty Sales migrations roll back freely; target the withdrawal migration by identity, never by a brittle tail offset.
+            var withdrawal = Assert.Single(applied, migration => migration.EndsWith("_AddDraftWithdrawal", StringComparison.Ordinal));
+            await context.GetService<IMigrator>().MigrateAsync(withdrawal);
+        }
+
+        var refusal = new SalesDraftTerminalRefusal(409, SalesDraftProblemCodesV1.StateConflict,
+            [new("approvalState", SalesRuleCodes.StateConflict)]);
+        await using (var a = run.Store(CompanyA))
+        {
             await a.Store.RecordRefusalAsync(run.Envelope("k-legacy-refusal"), Hash("legacy-refusal"), refusal,
                 default, SalesDraftCommands.WithdrawV1);
         }
@@ -979,10 +1064,13 @@ public sealed class SalesDraftApprovalSqlServerRelationalAcceptanceTests
 
         await using (var context = run.Context(CompanyA))
         {
-            // The empty revision-reason, cancellations and schedules migrations roll back first; the linked refusal then refuses (51046).
-            var error = await Assert.ThrowsAsync<SqlException>(() => context.GetService<IMigrator>().MigrateAsync(applied[^5]));
+            // Every later empty migration rolls back first; the linked refusal then refuses (51046).
+            var withdrawal = Assert.Single(applied, migration => migration.EndsWith("_AddDraftWithdrawal", StringComparison.Ordinal));
+            var linked = Array.FindIndex(applied, migration => migration.EndsWith("_LinkMutationRefusalsToDrafts", StringComparison.Ordinal));
+            Assert.True(linked >= 0);
+            var error = await Assert.ThrowsAsync<SqlException>(() => context.GetService<IMigrator>().MigrateAsync(withdrawal));
             Assert.Equal(51046, error.Number);
-            Assert.Equal(applied[..^3], await context.Database.GetAppliedMigrationsAsync());
+            Assert.Equal(applied[..(linked + 1)], await context.Database.GetAppliedMigrationsAsync());
         }
     }
 
@@ -1008,16 +1096,12 @@ public sealed class SalesDraftApprovalSqlServerRelationalAcceptanceTests
 
         await using var context = run.Context(CompanyA);
         var applied = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
-        // DEC-SAL-005's empty cancellations, DEC-SAL-003's empty schedules and the unlinked refusal migration roll back;
-        // D2's guard then refuses (51050).
-        Assert.EndsWith("_AddRevisionReasons", applied[^1], StringComparison.Ordinal);
-        Assert.EndsWith("_AddDraftCancellations", applied[^2], StringComparison.Ordinal);
-        Assert.EndsWith("_AddDeliverySchedules", applied[^3], StringComparison.Ordinal);
-        Assert.EndsWith("_LinkMutationRefusalsToDrafts", applied[^4], StringComparison.Ordinal);
-        Assert.EndsWith("_AddDraftWithdrawal", applied[^5], StringComparison.Ordinal);
-        var error = await Assert.ThrowsAsync<SqlException>(() => context.GetService<IMigrator>().MigrateAsync(applied[^6]));
+        // Every later empty migration rolls back; D2's guard then refuses (51050).
+        var withdrawal = Array.FindIndex(applied, migration => migration.EndsWith("_AddDraftWithdrawal", StringComparison.Ordinal));
+        Assert.True(withdrawal > 0);
+        var error = await Assert.ThrowsAsync<SqlException>(() => context.GetService<IMigrator>().MigrateAsync(applied[withdrawal - 1]));
         Assert.Equal(51050, error.Number);
-        Assert.Equal(applied[..^4], await context.Database.GetAppliedMigrationsAsync());
+        Assert.Equal(applied[..(withdrawal + 1)], await context.Database.GetAppliedMigrationsAsync());
         Assert.Equal(1, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM sys.check_constraints WHERE [name] = N'CK_Drafts_Approval' AND schema_id = SCHEMA_ID(N'sales') AND definition LIKE N'%[[]ApprovalState]=(5)%'"));
         Assert.Equal(5, await run.ScalarAsync<int>("SELECT [ApprovalState] FROM [sales].[Drafts] WHERE [Id] = @id", ("@id", draft.Id)));
@@ -1028,6 +1112,7 @@ public sealed class SalesDraftApprovalSqlServerRelationalAcceptanceTests
     private static readonly SalesDraftStateAudit Approved = new("sales.order-draft.approved.v1", "Approve", "SENTETIK onaylandı");
     private static readonly SalesDraftStateAudit Rejected = new("sales.order-draft.rejected.v1", "Reject", "SENTETIK reddedildi");
     private static readonly SalesDraftStateAudit Revised = new("sales.order-draft.commercial-revised.v1", "ReviseCommercial", "SENTETIK fiyat revize edildi");
+    private static readonly SalesDraftStateAudit CustomerAccepted = new("sales.order-draft.customer-acceptance-recorded.v1", "RecordCustomerAcceptance", "SENTETIK müşteri kabulü");
 
     private static HttpRequestMessage Command(Guid draftId, string segment, string idempotencyKey, string json, string correlationId)
     {
@@ -1051,11 +1136,13 @@ public sealed class SalesDraftApprovalSqlServerRelationalAcceptanceTests
     /// Version ladder for a case: 1 + lines, then +1 per RECORDED transition or revision; a REFUSED command (409/422/403)
     /// records at most an attempt and advances nothing — expect the same version after it as before it.
     /// </summary>
-    private static SalesOrderDraft Draft(Owners owners, string documentNo, DateTimeOffset at, int lines = 1)
+    private static SalesOrderDraft Draft(Owners owners, string documentNo, DateTimeOffset at, int lines = 1,
+        bool customerAcceptanceRequired = false)
     {
         var header = new SalesDraftHeader(owners.Party, owners.Account, Currency, Day);
         var money = new MoneyProfileSnapshot(owners.Company, Currency, SalesOrderDraft.MoneyOperation, MoneyProfile, "3", Day, true, From, null, 2);
-        var draft = SalesOrderDraft.Create(Guid.NewGuid(), owners.Company, documentNo, header, money, at);
+        var draft = SalesOrderDraft.Create(Guid.NewGuid(), owners.Company, documentNo, header, money, at,
+            customerAcceptanceRequired);
         var unit = new UnitProfileSnapshot(owners.Company, KgUnit, "kg", "weight", KgProfile, "4", true, 3, 3, true, From, null);
         var binding = new UnitBindingSnapshot(owners.Company, KgUnit, KgProfile, "4");
         var product = new ProductSnapshot(Product, "7", "GDC-001", "Sentetik bant", Day, binding, binding, binding);

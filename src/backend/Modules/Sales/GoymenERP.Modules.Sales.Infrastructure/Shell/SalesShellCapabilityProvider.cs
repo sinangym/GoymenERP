@@ -22,7 +22,7 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Shell;
 public sealed class SalesShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "SALES";
-    public const string OwnerContractVersion = "1.4";
+    public const string OwnerContractVersion = "1.5";
 
     public const string ListCapabilityId = "sales.drafts.list";
     public const string ListRouteId = "sales.drafts.list";
@@ -62,6 +62,9 @@ public sealed class SalesShellCapabilityProvider : IShellCapabilityProvider
     /// schedule and cancel never confer it (shell contract 1.4).
     /// </summary>
     public const string QuantityWriteCapabilityId = "sales.orders.quantity.write";
+
+    /// <summary>Q9: records customer acceptance of the current approved revision; a child control of S-04.</summary>
+    public const string CustomerAcceptanceRecordCapabilityId = "sales.orders.customer-acceptance.record";
 
     public string Owner => OwnerId;
 
@@ -137,6 +140,12 @@ public sealed class SalesShellCapabilityProvider : IShellCapabilityProvider
             CapabilityId = QuantityWriteCapabilityId,
             ParentCapabilityId = DetailCapabilityId,
             RequiredPermissions = [SalesPermissionManifestV1.DraftsRead, SalesPermissionManifestV1.OrdersQuantityWrite],
+        },
+        detail with
+        {
+            CapabilityId = CustomerAcceptanceRecordCapabilityId,
+            ParentCapabilityId = DetailCapabilityId,
+            RequiredPermissions = [SalesPermissionManifestV1.DraftsRead, SalesPermissionManifestV1.OrdersCustomerAcceptanceRecord],
         },
         ];
     }

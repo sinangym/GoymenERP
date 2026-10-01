@@ -389,6 +389,14 @@ public static class ErpPermissions
     public const string SalesOrdersQuantityWrite = "sales.orders.quantity.write";
 
     /// <summary>
+    /// Q9: records the customer's acceptance of the current internally approved Sales order revision. Its own
+    /// name: draft read, create, internal approval and quantity write do not confer it. Registration grants
+    /// nothing; only the disposable s04 acceptance actor receives it in that run database. Company-wide only,
+    /// like the other Sales commands. Not Critical: no approved source adds grant-time dual control.
+    /// </summary>
+    public const string SalesOrdersCustomerAcceptanceRecord = "sales.orders.customer-acceptance.record";
+
+    /// <summary>
     /// LOG-4a (Business #66 5737790175: the loading instruction on approved order lines, one stock effect): the
     /// Logistics owner's names (LogisticsPermissionManifestV1), the backend owners' technical mapping (Business
     /// #254 5654539215) recorded and confirmed by the coordinator (#66 5743488059). Registered, not granted: no
@@ -566,6 +574,7 @@ public static class ErpPermissions
             SalesOrdersDeliveryScheduleWrite,
             SalesOrdersCancel,
             SalesOrdersQuantityWrite,
+            SalesOrdersCustomerAcceptanceRecord,
             ManufacturingPlansWrite,
             ManufacturingPlansApprove,
             ManufacturingOrdersCreate,
@@ -670,6 +679,7 @@ public static class ErpPermissions
             SalesOrdersDeliveryScheduleWrite,
             SalesOrdersCancel,
             SalesOrdersQuantityWrite,
+            SalesOrdersCustomerAcceptanceRecord,
             ManufacturingPlansWrite,
             ManufacturingPlansApprove,
             ManufacturingOrdersCreate,

@@ -356,11 +356,22 @@ public static class SalesEndpoints
         MapCancellationImpact(drafts);
         MapCancelCommand(drafts);
         MapCancellation(drafts);
+        MapRemainderChanges(drafts);
+        MapRemainderChangeCommand(drafts);
+        MapRemainderDecisionCommand(drafts, "approval", "ApproveSalesOrderDraftRemainderChangeV1", allowReason: false,
+            (service, id, changeNo, body, metadata, cancellationToken) =>
+                service.ApproveRemainderChangeAsync(id, changeNo, body, metadata, cancellationToken));
+        MapRemainderDecisionCommand(drafts, "rejection", "RejectSalesOrderDraftRemainderChangeV1", allowReason: true,
+            (service, id, changeNo, body, metadata, cancellationToken) =>
+                service.RejectRemainderChangeAsync(id, changeNo, body, metadata, cancellationToken));
         MapStateCommand(drafts, "/{id:guid}/submission", "SubmitSalesOrderDraftV1", allowReason: false,
             (service, id, body, metadata, cancellationToken) => service.SubmitDraftAsync(id, body, metadata, cancellationToken),
             unprocessableCodes: ["validation_failed"]);
         MapStateCommand(drafts, "/{id:guid}/approval", "ApproveSalesOrderDraftV1", allowReason: false,
             (service, id, body, metadata, cancellationToken) => service.ApproveDraftAsync(id, body, metadata, cancellationToken),
+            unprocessableCodes: []);
+        MapStateCommand(drafts, "/{id:guid}/customer-acceptance", "RecordSalesOrderDraftCustomerAcceptanceV1", allowReason: false,
+            (service, id, body, metadata, cancellationToken) => service.RecordCustomerAcceptanceAsync(id, body, metadata, cancellationToken),
             unprocessableCodes: []);
         MapStateCommand(drafts, "/{id:guid}/rejection", "RejectSalesOrderDraftV1", allowReason: true,
             (service, id, body, metadata, cancellationToken) => service.RejectDraftAsync(id, body, metadata, cancellationToken),
@@ -368,6 +379,161 @@ public static class SalesEndpoints
         MapStateCommand(drafts, "/{id:guid}/withdrawal", "WithdrawSalesOrderDraftV1", allowReason: true,
             (service, id, body, metadata, cancellationToken) => service.WithdrawDraftAsync(id, body, metadata, cancellationToken),
             unprocessableCodes: [SalesDraftProblemCodesV1.ApprovalReasonTooLong]);
+    }
+
+    private static void MapRemainderChanges(RouteGroupBuilder drafts)
+    {
+        drafts.MapGet("/{id:guid}/remainder-changes", async (
+            Guid id,
+            HttpContext httpContext,
+            [FromServices] ISalesDraftService service,
+            ICorrelationContext correlation,
+            CancellationToken cancellationToken) =>
+        {
+            SetPrivateNoStore(httpContext.Response);
+            try
+            {
+                return Results.Json(await service.GetRemainderChangesAsync(id, cancellationToken), SalesDraftJson.Options);
+            }
+            catch (SalesDraftServiceException exception)
+            {
+                return DraftProblem(exception, correlation);
+            }
+        })
+            .WithName("GetSalesOrderDraftRemainderChangesV1")
+            .Produces<SalesOrderDraftRemainderChangesResponse>()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+    }
+
+    private static void MapRemainderChangeCommand(RouteGroupBuilder drafts)
+    {
+        drafts.MapPost("/{id:guid}/remainder-changes", async (
+            Guid id,
+            HttpContext httpContext,
+            [FromServices] ISalesDraftService service,
+            ICorrelationContext correlation,
+            CancellationToken cancellationToken) =>
+        {
+            SetPrivateNoStore(httpContext.Response);
+            if (!TryReadIdempotencyKey(httpContext.Request.Headers, out var idempotencyKey) || !correlation.IsResolved)
+            {
+                return DraftProblem(StatusCodes.Status400BadRequest, SalesDraftProblemCodesV1.CommandMetadataInvalid, correlation);
+            }
+
+            if (!httpContext.Request.HasJsonContentType())
+            {
+                return Results.StatusCode(StatusCodes.Status415UnsupportedMediaType);
+            }
+
+            SalesDraftRemainderChangeRequest body;
+            try
+            {
+                using var reader = new StreamReader(httpContext.Request.Body, Encoding.UTF8);
+                body = SalesDraftRemainderJson.ReadChange(await reader.ReadToEndAsync(cancellationToken));
+            }
+            catch (JsonException)
+            {
+                return DraftProblem(StatusCodes.Status400BadRequest, "validation_failed", correlation);
+            }
+
+            return await ExecuteRemainderCommand(httpContext, correlation,
+                metadata => service.RequestRemainderChangeAsync(id, body, metadata, cancellationToken), idempotencyKey);
+        })
+            .WithName("RequestSalesOrderDraftRemainderChangeV1")
+            .WithIdempotencyContract(SalesDraftApiV1.StateCommandStatus, StatusCodes.Status409Conflict)
+            .Accepts<SalesDraftRemainderChangeRequest>("application/json")
+            .Produces<SalesOrderDraftResponse>(SalesDraftApiV1.StateCommandStatus)
+            .ProducesErpBadRequest("validation_failed", SalesDraftProblemCodesV1.CommandMetadataInvalid)
+            .AllowsEmptyErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpConflict(SalesDraftProblemCodesV1.VersionConflict, SalesDraftProblemCodesV1.StateConflict,
+                SalesDraftProblemCodesV1.RemainderBlocked, SalesDraftProblemCodesV1.SameKeyPayloadMismatch,
+                SalesDraftProblemCodesV1.ConcurrentChange)
+            .ProducesErpUnprocessableEntity("validation_failed")
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+    }
+
+    private static void MapRemainderDecisionCommand(RouteGroupBuilder drafts, string segment, string name, bool allowReason,
+        Func<ISalesDraftService, Guid, int, SalesDraftRemainderDecisionRequest, SalesCommandMetadata, CancellationToken,
+            Task<SalesOrderDraftResponse>> command)
+    {
+        drafts.MapPost($"/{{id:guid}}/remainder-changes/{{changeNo:int:min(1)}}/{segment}", async (
+            Guid id,
+            int changeNo,
+            HttpContext httpContext,
+            [FromServices] ISalesDraftService service,
+            ICorrelationContext correlation,
+            CancellationToken cancellationToken) =>
+        {
+            SetPrivateNoStore(httpContext.Response);
+            if (!TryReadIdempotencyKey(httpContext.Request.Headers, out var idempotencyKey) || !correlation.IsResolved)
+            {
+                return DraftProblem(StatusCodes.Status400BadRequest, SalesDraftProblemCodesV1.CommandMetadataInvalid, correlation);
+            }
+
+            if (!httpContext.Request.HasJsonContentType())
+            {
+                return Results.StatusCode(StatusCodes.Status415UnsupportedMediaType);
+            }
+
+            SalesDraftRemainderDecisionRequest body;
+            try
+            {
+                using var reader = new StreamReader(httpContext.Request.Body, Encoding.UTF8);
+                body = SalesDraftRemainderJson.ReadDecision(await reader.ReadToEndAsync(cancellationToken), allowReason);
+            }
+            catch (JsonException)
+            {
+                return DraftProblem(StatusCodes.Status400BadRequest, "validation_failed", correlation);
+            }
+
+            return await ExecuteRemainderCommand(httpContext, correlation,
+                metadata => command(service, id, changeNo, body, metadata, cancellationToken), idempotencyKey);
+        })
+            .WithName(name)
+            .WithIdempotencyContract(SalesDraftApiV1.StateCommandStatus, StatusCodes.Status409Conflict)
+            .Accepts<SalesDraftRemainderDecisionRequest>("application/json")
+            .Produces<SalesOrderDraftResponse>(SalesDraftApiV1.StateCommandStatus)
+            .ProducesErpBadRequest("validation_failed", SalesDraftProblemCodesV1.CommandMetadataInvalid)
+            .AllowsEmptyErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpConflict(SalesDraftProblemCodesV1.VersionConflict, SalesDraftProblemCodesV1.StateConflict,
+                SalesDraftProblemCodesV1.RemainderBlocked, SalesDraftProblemCodesV1.SameKeyPayloadMismatch,
+                SalesDraftProblemCodesV1.ConcurrentChange)
+            .ProducesErpUnprocessableEntity("validation_failed", SalesDraftProblemCodesV1.ApprovalReasonTooLong)
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+    }
+
+    private static async Task<IResult> ExecuteRemainderCommand(HttpContext httpContext, ICorrelationContext correlation,
+        Func<SalesCommandMetadata, Task<SalesOrderDraftResponse>> command, string idempotencyKey)
+    {
+        try
+        {
+            var response = await command(new SalesCommandMetadata(idempotencyKey, correlation.CorrelationId,
+                correlation.CausationId, DateTimeOffset.UtcNow));
+            if (response.IsReplay)
+            {
+                ApplyReplayHeaders(httpContext, response.OriginalCorrelationId);
+            }
+
+            return Results.Json(response, SalesDraftJson.Options, statusCode: SalesDraftApiV1.StateCommandStatus);
+        }
+        catch (SalesDraftServiceException exception)
+        {
+            if (exception.IsReplay)
+            {
+                ApplyReplayHeaders(httpContext, exception.OriginalCorrelationId
+                    ?? throw new InvalidOperationException("Replayed refusal without its original correlation."));
+            }
+
+            return DraftProblem(exception, correlation);
+        }
     }
 
     /// <summary>
