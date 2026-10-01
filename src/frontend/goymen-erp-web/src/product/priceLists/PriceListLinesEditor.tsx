@@ -48,6 +48,8 @@ export function PriceListLinesEditor({
       priceUnitId: option.units[0]?.unitId ?? '',
       unitPrice: '',
       floorUnitPrice: '',
+      lowerQuantity: '0',
+      upperQuantity: '',
     }])
   }
 
@@ -84,6 +86,16 @@ export function PriceListLinesEditor({
             {T.floorUnitPrice}
             <input inputMode="decimal" value={row.floorUnitPrice} aria-label={`${index + 1}. ${T.floorUnitPrice}`}
               onChange={(event) => change(row.lineId, { floorUnitPrice: event.target.value })} />
+          </label>
+          <label>
+            {T.lowerQuantity}
+            <input inputMode="decimal" value={row.lowerQuantity} aria-label={`${index + 1}. ${T.lowerQuantity}`}
+              onChange={(event) => change(row.lineId, { lowerQuantity: event.target.value })} />
+          </label>
+          <label>
+            {T.upperQuantity}
+            <input inputMode="decimal" value={row.upperQuantity} aria-label={`${index + 1}. ${T.upperQuantity}`}
+              onChange={(event) => change(row.lineId, { upperQuantity: event.target.value })} />
           </label>
           <button type="button" className={styles.linkButton} onClick={() => onChange(rows.filter((candidate) => candidate.lineId !== row.lineId))}>
             {T.removeLine}

@@ -46,6 +46,10 @@ export const PRICE_LIST_TEXT = {
   priceUnit: 'Fiyat birimi',
   unitPrice: 'Liste fiyatı',
   floorUnitPrice: 'Alt fiyat (isteğe bağlı)',
+  lowerQuantity: 'Alt miktar (dahil)',
+  upperQuantity: 'Üst miktar (hariç, boş: sınırsız)',
+  quantityTier: 'Miktar aralığı',
+  quantityRange: (lower: string, upper: string | null) => upper === null ? `${lower} ve üzeri` : `${lower} ≤ miktar < ${upper}`,
   noLines: 'Satır yok. Yayımlamak için en az bir satır gerekir.',
   unitRole: { Sales: 'satış birimi', Stock: 'stok birimi' } as Record<string, string>,
 
@@ -88,6 +92,8 @@ export const PRICE_LIST_TEXT = {
     price: (lineNo: number) => `${lineNo}. satır: liste fiyatı en fazla 4 ondalıklı bir tutar olmalıdır (ör. 42000,50).`,
     floor: (lineNo: number) => `${lineNo}. satır: alt fiyat en fazla 4 ondalıklı bir tutar olmalıdır.`,
     unit: (lineNo: number) => `${lineNo}. satır: fiyat birimini seçin.`,
+    lowerQuantity: (lineNo: number) => `${lineNo}. satır: alt miktar en fazla 3 ondalıklı, sıfır veya pozitif olmalıdır.`,
+    upperQuantity: (lineNo: number) => `${lineNo}. satır: üst miktar en fazla 3 ondalıklı, sıfır veya pozitif olmalıdır.`,
   },
 } as const
 
@@ -112,6 +118,9 @@ export const PRICE_LIST_CODE_TEXT: Record<string, string> = {
   price_list_floor_above_price: 'Alt fiyat liste fiyatını aşamaz.',
   price_list_price_scale_exceeded: 'Fiyat en fazla 4 ondalık taşır.',
   price_list_invalid_price: 'Fiyat sıfırdan büyük olmalıdır.',
+  price_list_invalid_quantity_tier: 'Üst miktar, alt miktardan büyük olmalıdır.',
+  price_list_quantity_scale_exceeded: 'Miktar en fazla 3 ondalık taşır.',
+  price_list_quantity_tier_overlap: 'Aynı ürün ve fiyat birimindeki miktar aralıkları çakışamaz.',
   price_list_invalid_validity: 'Bitiş tarihi başlangıçtan önce olamaz.',
   price_list_invalid_name: 'Liste adı geçersiz.',
   price_list_invalid_currency: 'Para birimi geçersiz.',

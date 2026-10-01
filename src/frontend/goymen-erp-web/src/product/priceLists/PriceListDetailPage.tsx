@@ -118,6 +118,7 @@ function VersionView({ version }: { readonly version: PriceListVersion }) {
               <tr>
                 <th scope="col">{T.product}</th>
                 <th scope="col">{T.priceUnit}</th>
+                <th scope="col">{T.quantityTier}</th>
                 <th scope="col" className={styles.numeric}>{T.unitPrice}</th>
                 <th scope="col" className={styles.numeric}>{T.floorUnitPrice}</th>
               </tr>
@@ -127,6 +128,7 @@ function VersionView({ version }: { readonly version: PriceListVersion }) {
                 <tr key={line.lineId}>
                   <td>{line.productCode === null ? line.productId : `${line.productCode} · ${line.productName ?? ''}`}</td>
                   <td className={styles.identifier}>{line.priceUnitId}</td>
+                  <td data-testid="price-list-line-quantity-tier">{T.quantityRange(line.lowerQuantity.replace('.', ','), line.upperQuantity?.replace('.', ',') ?? null)}</td>
                   <td className={styles.numeric} data-testid="price-list-line-price">{formatMoneyText(line.unitPrice)}</td>
                   <td className={styles.numeric}>{line.floorUnitPrice === null ? T.none : formatMoneyText(line.floorUnitPrice)}</td>
                 </tr>

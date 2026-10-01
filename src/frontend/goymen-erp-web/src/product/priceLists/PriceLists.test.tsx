@@ -32,7 +32,7 @@ function json(body: unknown, status = 200, headers: Record<string, string> = {})
 
 function line(overrides: Record<string, unknown> = {}) {
   return { lineId: 'l1', lineNo: 1, productId: PRODUCT, productCode: 'SYN-1', productName: 'Sentetik bant', priceUnitId: KG,
-    unitPrice: '42000.5', floorUnitPrice: '40000', ...overrides }
+    unitPrice: '42000.5', floorUnitPrice: '40000', lowerQuantity: '0', upperQuantity: null, ...overrides }
 }
 
 function version(overrides: Record<string, unknown> = {}) {
@@ -153,7 +153,8 @@ describe('U-05 price lists', () => {
     const sent = JSON.parse(posts[0].body ?? '{}') as Record<string, unknown>
     expect(sent).toMatchObject({ name: 'Yurt içi satış', currencyCode: 'TRY', channel: 'Sales', vatBasis: 'ExcludingVat', validFrom: '2026-10-01',
       validThrough: null })
-    expect((sent.lines as Record<string, unknown>[])[0]).toMatchObject({ productId: PRODUCT, priceUnitId: KG, unitPrice: '42000.5', floorUnitPrice: '40000' })
+    expect((sent.lines as Record<string, unknown>[])[0]).toMatchObject({ productId: PRODUCT, priceUnitId: KG, unitPrice: '42000.5', floorUnitPrice: '40000',
+      lowerQuantity: '0', upperQuantity: null })
   })
 
   it('does not send a price it cannot read', async () => {
@@ -172,7 +173,7 @@ describe('U-05 price lists', () => {
   })
 
   it('revises the draft with the expected version, publishes it and reopens it as the server stored it', async () => {
-    let state = view()
+    let state = view({ versions: [version({ lines: [line({ lowerQuantity: '10', upperQuantity: '20' })] })] })
     const harness = install({
       onDetail: () => json(state),
       onCommand: (call) => {
@@ -189,6 +190,8 @@ describe('U-05 price lists', () => {
     await userEvent.click(await screen.findByTestId('price-list-edit'))
     const price = screen.getByLabelText(`1. ${T.unitPrice}`)
     expect((price as HTMLInputElement).value).toBe('42000,5')
+    expect((screen.getByLabelText(`1. ${T.lowerQuantity}`) as HTMLInputElement).value).toBe('10')
+    expect((screen.getByLabelText(`1. ${T.upperQuantity}`) as HTMLInputElement).value).toBe('20')
     await userEvent.clear(price)
     await userEvent.type(price, '41000')
     await userEvent.clear(screen.getByLabelText(`1. ${T.floorUnitPrice}`))
@@ -196,7 +199,8 @@ describe('U-05 price lists', () => {
     await waitFor(() => expect(screen.getByTestId('price-list-version').textContent).toBe('2'))
     const revision = JSON.parse(harness.posts()[0].body ?? '{}') as Record<string, unknown>
     expect(revision).toMatchObject({ expectedVersion: '1', name: 'Yurt içi satış', validFrom: '2026-10-01' })
-    expect((revision.lines as Record<string, unknown>[])[0]).toMatchObject({ lineId: 'l1', unitPrice: '41000', floorUnitPrice: null })
+    expect((revision.lines as Record<string, unknown>[])[0]).toMatchObject({ lineId: 'l1', unitPrice: '41000', floorUnitPrice: null,
+      lowerQuantity: '10', upperQuantity: '20' })
 
     await userEvent.click(screen.getByTestId('price-list-publish'))
     await waitFor(() => expect(screen.getByTestId('price-list-version-1-status').textContent).toBe('Geçerli'))
