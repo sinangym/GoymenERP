@@ -610,6 +610,7 @@ test('L04-05 the purchase-receipt label crosses allocation, one stock exit, ship
     })
     expect(replayedDelivery.status()).toBe(200)
     expect(replayedDelivery.headers()['idempotency-replayed']).toBe('true')
+    expect(await effects(shipmentBody.movementId)).toEqual(shippedEffects)
     const afterReplay = await readInstruction(page, loaderActor, createdId)
     expect(afterReplay.shares.filter((share) => share.kind === 'Delivered')).toHaveLength(1)
     expect(afterReplay.instruction.version).toBe(final.instruction.version)
