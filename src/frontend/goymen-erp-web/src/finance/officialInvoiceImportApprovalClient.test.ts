@@ -5,6 +5,7 @@ import {
   createOfficialInvoiceImportClient,
 } from './officialInvoiceImportApprovalClient'
 import type { OfficialInvoiceApprovalAttemptContext } from './OfficialInvoiceImportApprovalsPage'
+import type { OfficialInvoiceOpenItem } from './OfficialInvoiceImportPanel'
 
 const companyId = '10000000-0000-0000-0000-000000000001'
 const batchId = '11111111-1111-4111-8111-111111111111'
@@ -143,8 +144,8 @@ describe('official invoice approval HTTP client', () => {
 describe('official invoice application HTTP client', () => {
   const source = { batchId, batchVersion: batch.batchVersion, displayName: 'Resmî fatura' }
   const file = { arrayBuffer: async () => new TextEncoder().encode('invoice,csv').buffer } as File
-  const openItem = {
-    id: '88888888-8888-4888-8888-888888888888', companyId,
+  const openItem: OfficialInvoiceOpenItem = {
+    id: row.openItemId, companyId,
     sourceKind: 'official.invoice-installment.v1', sourceDocumentId: row.sourceDocumentId,
     sourceInstallmentId: row.sourceInstallmentId, sourceVersion: row.sourceVersion,
     sourceBatchId: batchId, sourceBatchVersion: batch.batchVersion, sourceBatchChecksum: batch.batchChecksum,
@@ -155,7 +156,7 @@ describe('official invoice application HTTP client', () => {
     batchId, companyId, batchVersion: batch.batchVersion, batchChecksum: batch.batchChecksum,
     openItems: [openItem],
   }
-  const successBody = (fresh = applied, admittedIds: readonly string[] = [openItem.id]) => ({
+  const successBody = (fresh: unknown = applied, admittedIds: readonly string[] = [openItem.id]) => ({
     preview: { templateVersion: batch.templateVersion, sourceSha256: batch.batchChecksum,
       batch: detail.preview.batch, issues: [], isValid: true },
     approvedSource: { outcome: 3, resource: detail.preview.batch },

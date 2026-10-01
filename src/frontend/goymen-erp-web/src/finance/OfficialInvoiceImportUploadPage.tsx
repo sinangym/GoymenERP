@@ -2,13 +2,17 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { OfficialInvoicePendingBatch } from './officialInvoiceImportApprovalContract'
 import {
   useOfficialInvoiceUploadTransport,
+  type OfficialInvoicePreparedFile,
   type OfficialInvoiceUploadAttemptContext,
   type OfficialInvoiceUploadClient,
 } from './officialInvoiceImportUploadClient'
-import styles from './FinancePages.module.css'
+import type { OfficialInvoiceImportPreview } from './OfficialInvoiceImportPanel'
+import styles from './Finance.module.css'
 
 interface FrozenUpload {
   readonly file: File
+  readonly prepared: OfficialInvoicePreparedFile
+  readonly preview: OfficialInvoiceImportPreview
   readonly batchId: string
   readonly batchVersion: string
   readonly idempotencyKey: string
@@ -47,8 +51,9 @@ export function OfficialInvoiceImportUploadForm({ context, client }: {
   const [file, setFile] = useState<File | null>(remembered?.file ?? null)
   const [batchVersion, setBatchVersion] = useState(remembered?.batchVersion ?? '')
   const [attempt, setAttempt] = useState<FrozenUpload | null>(remembered)
-  const [phase, setPhase] = useState<'idle' | 'sending' | 'unknown' | 'conflicted' | 'refused' | 'succeeded'>(
+  const [phase, setPhase] = useState<'idle' | 'previewing' | 'ready' | 'sending' | 'unknown' | 'conflicted' | 'refused' | 'succeeded'>(
     remembered === null ? 'idle' : 'unknown')
+  const [preview, setPreview] = useState<OfficialInvoiceImportPreview | null>(remembered?.preview ?? null)
   const [batch, setBatch] = useState<OfficialInvoicePendingBatch | null>(null)
   const [issues, setIssues] = useState<readonly { readonly field: string; readonly code: string }[]>([])
   const active = useRef<AbortController | null>(null)
@@ -58,13 +63,40 @@ export function OfficialInvoiceImportUploadForm({ context, client }: {
     active.current = null
   }, [])
 
+  async function runPreview() {
+    if (file === null || batchVersion.trim().length === 0 || attempt !== null) return
+    setPhase('previewing')
+    setIssues([])
+    const controller = new AbortController()
+    active.current?.abort()
+    active.current = controller
+    const batchId = crypto.randomUUID()
+    const idempotencyKey = crypto.randomUUID()
+    try {
+      const prepared = await client.prepare(file)
+      if (controller.signal.aborted || active.current !== controller) return
+      const reply = await client.preview(batchId, batchVersion.trim(), prepared, controller.signal)
+      if (controller.signal.aborted || active.current !== controller) return
+      active.current = null
+      if (reply.kind === 'ready') {
+        const frozen = { file, prepared, preview: reply.preview, batchId,
+          batchVersion: batchVersion.trim(), idempotencyKey }
+        setAttempt(frozen)
+        setPreview(reply.preview)
+        setPhase('ready')
+      } else if (reply.kind === 'refused') {
+        setIssues(reply.issues)
+        setPhase('refused')
+      } else {
+        setPhase('idle')
+      }
+    } catch {
+      if (!controller.signal.aborted) setPhase('idle')
+    }
+  }
+
   async function upload() {
-    const frozen = attempt ?? (file === null || batchVersion.trim().length === 0 ? null : {
-      file,
-      batchId: crypto.randomUUID(),
-      batchVersion: batchVersion.trim(),
-      idempotencyKey: crypto.randomUUID(),
-    })
+    const frozen = attempt
     if (frozen === null) return
     unresolved.set(key, frozen)
     setAttempt(frozen)
@@ -73,22 +105,25 @@ export function OfficialInvoiceImportUploadForm({ context, client }: {
     const controller = new AbortController()
     active.current?.abort()
     active.current = controller
-    const reply = await client.upload(frozen.batchId, frozen.batchVersion, frozen.file, frozen.idempotencyKey, controller.signal)
+    const reply = await client.upload(frozen.batchId, frozen.batchVersion, frozen.prepared, frozen.idempotencyKey, controller.signal)
     if (controller.signal.aborted || active.current !== controller) return
     active.current = null
     if (reply.kind === 'succeeded') {
       unresolved.delete(key)
       setAttempt(null)
+      setPreview(null)
       setBatch(reply.batch)
       setPhase('succeeded')
     } else if (reply.kind === 'refused') {
       unresolved.delete(key)
       setAttempt(null)
+      setPreview(null)
       setIssues(reply.issues)
       setPhase('refused')
     } else if (reply.kind === 'conflicted') {
       unresolved.delete(key)
       setAttempt(null)
+      setPreview(null)
       setPhase('conflicted')
     } else {
       setPhase(reply.kind)
@@ -103,14 +138,18 @@ export function OfficialInvoiceImportUploadForm({ context, client }: {
       <div className={styles.form}>
         <label htmlFor="official-invoice-upload-version">Kaynak sürümü</label>
         <input id="official-invoice-upload-version" value={batchVersion} disabled={frozen}
-          onChange={(event) => setBatchVersion(event.target.value)} />
+          onChange={(event) => { setBatchVersion(event.target.value); setPreview(null); setPhase('idle') }} />
         <label htmlFor="official-invoice-upload-file">UTF-8 CSV dosyası</label>
         <input id="official-invoice-upload-file" type="file" accept=".csv,text/csv" disabled={frozen}
-          onChange={(event) => setFile(event.target.files?.[0] ?? null)} />
-        <button type="button" disabled={phase === 'sending' || file === null || batchVersion.trim().length === 0} onClick={upload}>
+          onChange={(event) => { setFile(event.target.files?.[0] ?? null); setPreview(null); setPhase('idle') }} />
+        <button type="button" disabled={frozen || phase === 'previewing' || file === null || batchVersion.trim().length === 0}
+          onClick={runPreview}>Önizle</button>
+        <button type="button" disabled={attempt === null || phase === 'sending'} onClick={upload}>
           {phase === 'unknown' ? 'Aynı anahtar ve dosyayla yeniden gönder' : 'Onaya gönder'}
         </button>
       </div>
+      {phase === 'previewing' ? <p role="status">Seçilen dosya doğrulanıyor…</p> : null}
+      {preview === null ? null : <p role="status">Önizleme hazır. SHA-256: {preview.sourceSha256}</p>}
       {phase === 'sending' ? <p role="status">Fatura kaynağı bekleyen onaya kaydediliyor…</p> : null}
       {phase === 'unknown' ? <p role="status">Sonuç bilinmiyor; yeni işlem üretmeden aynı istek yeniden gönderilebilir.</p> : null}
       {phase === 'conflicted' ? <p role="alert">Aynı işlem anahtarı farklı içerikle çakıştı; yeni kayıt yapılmadı.</p> : null}

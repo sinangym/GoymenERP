@@ -8,6 +8,8 @@ using GoymenERP.Modules.Finance.Infrastructure;
 using GoymenERP.Modules.Finance.Infrastructure.Persistence;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 
 namespace GoymenERP.Api.IntegrationTests;
 
@@ -120,6 +122,46 @@ public sealed class FinanceOfficialInvoiceImportApprovalSqlServerRelationalAccep
             ("@company", unknownCompany)));
     }
 
+    [SqlServerFact]
+    public async Task Approval_migration_refuses_nonempty_history_and_stays_applied()
+    {
+        await using var run = await Run.StartAsync();
+        await using (var maker = run.Service(Company, "SENTETIK-maker", new AllowAuthority()))
+        {
+            Assert.Equal(CommandOutcome.Succeeded,
+                (await maker.Service.UploadAsync(maker.Context, new CommandMetadata("rollback-guard"), Request(), default)).Outcome);
+        }
+
+        await using var context = run.Context(Company);
+        var migrator = context.GetService<IMigrator>();
+        var error = await Assert.ThrowsAsync<SqlException>(() =>
+            migrator.MigrateAsync("20260927180000_AddCustomerInstruments"));
+
+        Assert.Equal(51051, error.Number);
+        Assert.Contains("forward-fix", error.Message, StringComparison.Ordinal);
+        Assert.EndsWith("_AddOfficialInvoiceImportApprovalV1",
+            (await context.Database.GetAppliedMigrationsAsync()).Last(), StringComparison.Ordinal);
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.OfficialInvoiceImportBatches"));
+    }
+
+    [SqlServerFact]
+    public async Task Approval_migration_rolls_back_and_reapplies_when_history_is_empty()
+    {
+        await using var run = await Run.StartAsync();
+        await using var context = run.Context(Company);
+        var migrator = context.GetService<IMigrator>();
+
+        await migrator.MigrateAsync("20260927180000_AddCustomerInstruments");
+        Assert.Equal(0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM sys.tables WHERE schema_id = SCHEMA_ID(N'finance') AND name LIKE N'OfficialInvoiceImport%'"));
+
+        await context.Database.MigrateAsync();
+        Assert.Equal(3, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM sys.tables WHERE schema_id = SCHEMA_ID(N'finance') AND name LIKE N'OfficialInvoiceImport%'"));
+        Assert.EndsWith("_AddOfficialInvoiceImportApprovalV1",
+            (await context.Database.GetAppliedMigrationsAsync()).Last(), StringComparison.Ordinal);
+    }
+
     private static FinanceOfficialInvoiceImportPreviewRequestV1 Request(Guid? company = null)
     {
         var suffix = company?.ToString("N") ?? "known";
@@ -155,6 +197,13 @@ public sealed class FinanceOfficialInvoiceImportApprovalSqlServerRelationalAccep
             return run;
         }
 
+        public FinanceDbContext Context(Guid company)
+        {
+            var companyContext = new CompanyContext();
+            companyContext.Set(company);
+            return new FinanceDbContext(Options(Factory), companyContext);
+        }
+
         public Scope Service(Guid company, string actor, IFinanceOfficialInvoiceImportApprovalAuthorityV1 authority)
         {
             var companyContext = new CompanyContext();
@@ -171,9 +220,9 @@ public sealed class FinanceOfficialInvoiceImportApprovalSqlServerRelationalAccep
                 new FinanceOfficialInvoiceImportParserV1(), authority, new ReadAuthority(), collector,
                 new FinanceOfficialInvoiceImportAuditEnvelopesV1(
                     new FinanceAuditEnvelope(FinanceOfficialInvoiceImportPermissionNamesV1.Upload,
-                        ["SENTETIK-FINANCE"], "SQL"),
+                        ["SENTETIK-FINANCE"], "Integration"),
                     new FinanceAuditEnvelope(FinanceOfficialInvoiceImportPermissionNamesV1.Approve,
-                        ["SENTETIK-FINANCE"], "SQL")),
+                        ["SENTETIK-FINANCE"], "Integration")),
                 TimeProvider.System);
             return new Scope(db, service, new FinanceContext(company, actor, $"fin-import-{Guid.NewGuid():N}", null));
         }

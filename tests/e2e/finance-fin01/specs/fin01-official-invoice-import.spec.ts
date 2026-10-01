@@ -83,6 +83,20 @@ test.describe.serial('FIN01 official invoice import (real API, real SQL, real Ch
       mimeType: 'text/csv',
       buffer: Buffer.from(csv, 'utf8'),
     })
+    const uploadPreviewAnswer = maker.waitForResponse((response) => response.url().endsWith(PREVIEW)
+      && response.request().method() === 'POST')
+    await maker.getByRole('button', { name: 'Önizle', exact: true }).click()
+    const uploadPreview = await uploadPreviewAnswer
+    expect(uploadPreview.status()).toBe(200)
+    const uploadPreviewBody = await uploadPreview.json() as {
+      readonly sourceSha256?: unknown
+      readonly batch?: { readonly batchId?: unknown; readonly batchVersion?: unknown; readonly batchChecksum?: unknown }
+    }
+    expect(uploadPreviewBody.sourceSha256).toMatch(/^[0-9a-f]{64}$/)
+    expect(uploadPreviewBody.batch).toMatchObject({
+      batchVersion,
+      batchChecksum: uploadPreviewBody.sourceSha256,
+    })
     const uploadPost = maker.waitForRequest((request) => request.url().endsWith(BATCHES) && request.method() === 'POST')
     const uploadAnswer = maker.waitForResponse((response) => response.url().endsWith(BATCHES)
       && response.request().method() === 'POST')
@@ -91,6 +105,7 @@ test.describe.serial('FIN01 official invoice import (real API, real SQL, real Ch
     const uploadBody = uploadSent.postDataJSON() as { readonly batchId: string; readonly batchVersion: string; readonly utf8Csv: string }
     const batchId = uploadBody.batchId
     expect(batchId).toMatch(/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i)
+    expect(uploadPreviewBody.batch?.batchId).toBe(batchId)
     expect(uploadBody).toEqual({ batchId, batchVersion, utf8Csv: Buffer.from(csv, 'utf8').toString('base64') })
     expect(uploadSent.headers()['idempotency-key']).toMatch(/^[0-9a-f-]{36}$/i)
     const uploaded = await uploadAnswer
@@ -103,6 +118,7 @@ test.describe.serial('FIN01 official invoice import (real API, real SQL, real Ch
         batchId,
         companyId: env.seed.companyId,
         batchVersion,
+        batchChecksum: uploadPreviewBody.sourceSha256,
         status: 'Pending',
         version: '1',
         uploadedBy: env.seed.proposerActor,

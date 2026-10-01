@@ -235,7 +235,7 @@ function bytesToBase64(bytes: Uint8Array): string {
   return btoa(binary)
 }
 
-function decodeImportPreview(
+export function decodeImportPreview(
   value: unknown,
   source: OfficialInvoiceImportSourceSelection,
   companyId: string,
