@@ -56800,6 +56800,121 @@
           }
         }
       },
+      "CapturedPlanFamilyRevisionViewV1": {
+        "required": [
+          "familyId",
+          "familyCode",
+          "sourceRevision"
+        ],
+        "type": "object",
+        "properties": {
+          "familyId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "familyCode": {
+            "type": "string"
+          },
+          "sourceRevision": {
+            "type": "string"
+          }
+        }
+      },
+      "CapturedPlanKilogramUnitViewV1": {
+        "required": [
+          "companyId",
+          "unitId",
+          "unitCode",
+          "profileId",
+          "profileVersion"
+        ],
+        "type": "object",
+        "properties": {
+          "companyId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "unitId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "unitCode": {
+            "type": "string"
+          },
+          "profileId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "profileVersion": {
+            "type": "string"
+          }
+        }
+      },
+      "CapturedPlanTechnicalSnapshotViewV1": {
+        "required": [
+          "productId",
+          "productVersion",
+          "family",
+          "template",
+          "thicknessMm",
+          "widthMm",
+          "unitKg",
+          "effectiveOn"
+        ],
+        "type": "object",
+        "properties": {
+          "productId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "productVersion": {
+            "type": "string"
+          },
+          "family": {
+            "$ref": "#/components/schemas/CapturedPlanFamilyRevisionViewV1"
+          },
+          "template": {
+            "$ref": "#/components/schemas/CapturedPlanTemplateRevisionViewV1"
+          },
+          "thicknessMm": {
+            "type": "string"
+          },
+          "widthMm": {
+            "type": "string"
+          },
+          "unitKg": {
+            "$ref": "#/components/schemas/CapturedPlanKilogramUnitViewV1"
+          },
+          "effectiveOn": {
+            "type": "string",
+            "format": "date"
+          }
+        }
+      },
+      "CapturedPlanTemplateRevisionViewV1": {
+        "required": [
+          "templateId",
+          "templateVersion",
+          "templateCode",
+          "sourceRevision"
+        ],
+        "type": "object",
+        "properties": {
+          "templateId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "templateVersion": {
+            "type": "string"
+          },
+          "templateCode": {
+            "type": "string"
+          },
+          "sourceRevision": {
+            "type": "string"
+          }
+        }
+      },
       "ChangeInventoryPhysicalAllocationRequestV1": {
         "required": [
           "expectedAllocationVersion",
@@ -64999,6 +65114,16 @@
           },
           "plannedKg": {
             "type": "string"
+          },
+          "technicalSnapshot": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/CapturedPlanTechnicalSnapshotViewV1"
+              }
+            ]
           }
         }
       },
@@ -65410,6 +65535,16 @@
               "string"
             ],
             "format": "date-time"
+          },
+          "calculation": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PlanPreviewViewV1"
+              }
+            ]
           }
         }
       },
