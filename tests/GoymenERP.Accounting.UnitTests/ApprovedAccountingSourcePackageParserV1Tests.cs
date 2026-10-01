@@ -138,6 +138,101 @@ public sealed class ApprovedAccountingSourcePackageParserV1Tests
         Assert.Contains(result.Issues, issue => issue.Code == ApprovedAccountingSourcePackageCodesV1.Utf8Invalid);
     }
 
+    [Fact]
+    public void Different_mapping_keys_may_use_the_same_account_and_side()
+    {
+        var mappings = ApprovedAccountingSourcePackageTemplateV1.MappingsHeader + "\n"
+            + Mapping("debit-a", "Debit", Debit) + "\n"
+            + Mapping("debit-b", "Debit", Debit) + "\n"
+            + Mapping("credit", "Credit", Credit) + "\n";
+
+        var result = Parser().Preview(Trusted(), Request(Bytes(Accounts()), Bytes(mappings)));
+
+        Assert.True(result.IsValid);
+        Assert.Equal(3, Assert.Single(result.Package!.Bindings).Rule.Mappings.Count);
+    }
+
+    [Fact]
+    public void The_same_mapping_key_and_side_is_refused()
+    {
+        var mappings = ApprovedAccountingSourcePackageTemplateV1.MappingsHeader + "\n"
+            + Mapping("debit", "Debit", Debit) + "\n"
+            + Mapping("debit", "Debit", Credit) + "\n"
+            + Mapping("credit", "Credit", Credit) + "\n";
+
+        var result = Parser().Preview(Trusted(), Request(Bytes(Accounts()), Bytes(mappings)));
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Issues, issue =>
+            issue.Code == ApprovedAccountingSourcePackageCodesV1.MappingDuplicate);
+    }
+
+    [Fact]
+    public void A_file_over_the_byte_limit_is_refused()
+    {
+        var tooLarge = new byte[ApprovedAccountingSourcePackageTemplateV1.MaximumBytesPerFile + 1];
+
+        var result = Parser().Preview(Trusted(), Request(tooLarge, Bytes(Mappings())));
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Issues, issue => issue.File == "accounts.csv"
+            && issue.Code == ApprovedAccountingSourcePackageCodesV1.FileTooLarge);
+    }
+
+    [Fact]
+    public void A_file_over_the_row_limit_is_refused()
+    {
+        var accounts = new StringBuilder(ApprovedAccountingSourcePackageTemplateV1.AccountsHeader + "\n");
+        for (var index = 1; index <= ApprovedAccountingSourcePackageTemplateV1.MaximumRowsPerFile + 1; index++)
+        {
+            accounts.Append(GuidFrom(index).ToString("D"))
+                .Append(',').Append(index).Append(",Account ").Append(index).Append('\n');
+        }
+
+        var result = Parser().Preview(Trusted(), Request(Bytes(accounts.ToString()), Bytes(Mappings())));
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Issues, issue => issue.File == "accounts.csv"
+            && issue.Code == ApprovedAccountingSourcePackageCodesV1.RowLimitExceeded);
+    }
+
+    [Fact]
+    public void A_non_exact_header_is_refused()
+    {
+        var accounts = "accountId,accountName,accountCode\n" + $"{Debit:D},Kasa,100\n";
+
+        var result = Parser().Preview(Trusted(), Request(Bytes(accounts), Bytes(Mappings())));
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Issues, issue => issue.File == "accounts.csv"
+            && issue.Code == ApprovedAccountingSourcePackageCodesV1.HeaderInvalid);
+    }
+
+    [Fact]
+    public void An_unclosed_csv_quote_is_refused()
+    {
+        var accounts = ApprovedAccountingSourcePackageTemplateV1.AccountsHeader + "\n"
+            + $"{Debit:D},100,\"Kasa\n";
+
+        var result = Parser().Preview(Trusted(), Request(Bytes(accounts), Bytes(Mappings())));
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Issues, issue => issue.File == "accounts.csv"
+            && issue.Code == ApprovedAccountingSourcePackageCodesV1.RowShapeInvalid);
+    }
+
+    [Fact]
+    public void A_mapping_file_with_only_its_header_is_refused()
+    {
+        var mappings = ApprovedAccountingSourcePackageTemplateV1.MappingsHeader + "\n";
+
+        var result = Parser().Preview(Trusted(), Request(Bytes(Accounts()), Bytes(mappings)));
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Issues, issue => issue.File == "posting-mappings.csv"
+            && issue.Code == ApprovedAccountingSourcePackageCodesV1.FileEmpty);
+    }
+
     private static ApprovedAccountingSourcePackageParserV1 Parser() => new();
 
     private static TrustedAccountingSourceApprovalContextV1 Trusted() =>
@@ -163,6 +258,9 @@ public sealed class ApprovedAccountingSourcePackageParserV1Tests
         + $"{Currency:D},approved-normal-receipt,posting-rule-v1,{key},{side},{accountId:D}";
 
     private static byte[] Bytes(string value) => Encoding.UTF8.GetBytes(value);
+
+    private static Guid GuidFrom(int value) =>
+        Guid.Parse($"a5000000-0000-4000-8000-{value:D12}");
 
     private static string Sha(ReadOnlyMemory<byte> bytes) =>
         Convert.ToHexString(SHA256.HashData(bytes.Span)).ToLowerInvariant();

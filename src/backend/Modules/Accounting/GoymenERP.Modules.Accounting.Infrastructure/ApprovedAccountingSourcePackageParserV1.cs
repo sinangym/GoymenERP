@@ -191,7 +191,6 @@ public sealed class ApprovedAccountingSourcePackageParserV1 : IApprovedAccountin
             }
 
             var seenMappings = new HashSet<(string Key, PostingSide Side)>();
-            var seenAccounts = new HashSet<(PostingSide Side, Guid AccountId)>();
             var mappings = new List<NormalJournalMappingV1>();
             foreach (var row in group)
             {
@@ -201,8 +200,7 @@ public sealed class ApprovedAccountingSourcePackageParserV1 : IApprovedAccountin
                         ApprovedAccountingSourcePackageCodesV1.MappedAccountUnknown);
                     continue;
                 }
-                if (!seenMappings.Add((row.MappingKey, row.Side))
-                    || !seenAccounts.Add((row.Side, row.AccountId)))
+                if (!seenMappings.Add((row.MappingKey, row.Side)))
                 {
                     Reject(issues, MappingsFile, row.RowNumber, "mappingKey",
                         ApprovedAccountingSourcePackageCodesV1.MappingDuplicate);
