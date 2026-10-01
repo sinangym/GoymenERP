@@ -432,7 +432,7 @@ public sealed partial class OpenApiContractGenerationTests
         new("get", "/api/v1/finance/allocations", "GetFinanceAllocationsV1",
             AuthenticatedResponses("200:application/json", "503:application/problem+json")),
         new("get", "/api/v1/finance/allocations/{allocationId}", "GetFinanceAllocationV1",
-            AuthenticatedResponses("200:application/json", "404:", "503:application/problem+json"),
+            AuthenticatedResponses("200:application/json", "404:application/problem+json", "503:application/problem+json"),
             ParameterValues: ["path:allocationId:true:type:string;format:uuid"]),
         new("post", "/api/v1/finance/allocations", "CreateFinanceAllocationV1",
             AuthenticatedResponses("200:application/json", "422:application/json", "409:application/json", "400:application/problem+json", "415:", "503:application/problem+json"),
@@ -1029,6 +1029,8 @@ public sealed partial class OpenApiContractGenerationTests
         "GetFinanceManualBankPaymentV1",
         "ApproveFinanceManualBankPaymentV1",
         "RecordFinanceManualBankPaymentV1",
+        "GetFinanceAllocationsV1",
+        "GetFinanceAllocationV1",
         "CreateFinanceAllocationV1",
         "ReleaseFinanceAllocationV1",
         "GetSalesAccountReferencesV1",
@@ -1572,6 +1574,7 @@ public sealed partial class OpenApiContractGenerationTests
         "GetOrganizationWorkCenterV1:404",
         "GetIdentityAccessUserV1:404",
         "GetIdentityAccessRoleV1:404",
+        "GetFinanceAllocationV1:404",
         "GetInventoryLabelV1:404",
         "GetInventoryLabelBalancesV1:404",
         "GetInventoryLabelDetailV1:404",
@@ -5425,9 +5428,9 @@ public sealed partial class OpenApiContractGenerationTests
         Assert.Equal("JWT", bearer.Value.GetProperty("bearerFormat").GetString());
 
         var operations = ReadOperations(root.GetProperty("paths"));
-        Assert.Equal(199, operations.Count);
+        Assert.Equal(201, operations.Count);
         Assert.Equal(
-            199,
+            201,
             operations.Select(operation => operation.OperationId)
                 .Distinct(StringComparer.Ordinal)
                 .Count());

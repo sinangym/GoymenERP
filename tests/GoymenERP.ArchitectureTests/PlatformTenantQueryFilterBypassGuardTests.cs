@@ -171,7 +171,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // DEC-FIN-014: +3 POS collection SQL facts (b18c13d9… -> 7af8ecf1…).
             // DEC-FIN-016: +6 customer cheque / note SQL facts (7af8ecf1… -> de54339e…).
             // Party ledger: +2 SQL facts (de54339e… -> 84295fb2…).
-            // Official invoice approval: +3 checker list/detail/approve/reopen and migration rollback SQL facts.`r`n            // F-03 allocation read: +1 company/fresh-authority list/detail/reopen SQL fact.
+            // Official invoice approval: +3 checker list/detail/approve/reopen and migration rollback SQL facts.
+            // F-03 allocation read: +1 company/fresh-authority list/detail/reopen SQL fact.
             ["tools/relational_inventory/finance.txt"] =
                 "3f1aa0985339bd5ca3cc5db8128f0ac3d2266c67056a19d1439cfcd2957ee2c0",
 
@@ -393,6 +394,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "FinanceOfficialInvoiceImportPendingApprovalReadServiceV1.cs"] = ("FinanceDbContext", 12),
                 ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
                  + "FinanceOfficialInvoiceImportReadPortV1.cs"] = ("FinanceDbContext", 2),
+                ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
+                 + "FinanceAllocationReadService.cs"] = ("FinanceDbContext", 1),
                 [ReviewedAccountingStorePath] = ("AccountingDbContext", 2),
                 [ReviewedManufacturingInventoryInputIssueHostPath] = ("ManufacturingDbContext", 2),
                 [ReviewedManufacturingInventoryReturnOutputHostPath] = ("ManufacturingDbContext", 1)
@@ -655,7 +658,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "GoymenERP.Modules.Finance.Infrastructure/"
                  + "FinanceModuleExtensions.cs"] =
                     new(
-                        "4ffceef1f7aa1faf0774564486c25d8ecdec0e9197670d7424a13189008e07d9",
+                        "8ce601f343ad4c3501f730f4800c420ce08b66fd1e1c1e5240b2e5299e1f3689",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -709,6 +712,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         {
                             ["Microsoft.Data.SqlClient"] = 1
                         }),
+                // F-03 reads use only the tenant-filtered FinanceDbContext through EF/DI. The exact
+                // fingerprint and empty API inventory keep direct SQL and filter-bypass surfaces closed.
+                ["src/backend/Modules/Finance/"
+                 + "GoymenERP.Modules.Finance.Infrastructure/FinanceAllocationReadService.cs"] =
+                    new(
+                        "21cbb8f380c192ff6f61e51d059c1e44c885f110faf75166fd77cc04502e31de",
+                        new Dictionary<string, int>(StringComparer.Ordinal)),
                 // F-03 source admission uses the tenant-filtered FinanceDbContext. SqlClient is
                 // referenced only to classify 2601/2627 races after SaveChanges; there is no direct
                 // connection, command, raw SQL or query-filter bypass surface.
