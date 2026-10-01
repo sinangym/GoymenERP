@@ -241,6 +241,33 @@ class ComposeContractTests(unittest.TestCase):
         }
         self.assertEqual(sab_uploaded, set(validator.SAB_ARTIFACT_UPLOAD_ALLOWLIST))
 
+    def test_api_start_failure_diagnostics_are_masked_job_log_only(self):
+        workflow = (ROOT / ".github" / "workflows" / "c01-real-browser-e2e.yml").read_text(
+            encoding="utf-8"
+        )
+        start = workflow.split("      - name: Build and start disposable SQL/API", 1)[1].split(
+            "      - name:", 1
+        )[0]
+
+        self.assertIn("ps --all", start)
+        self.assertIn("logs --no-color --tail 80 api || true", start)
+        self.assertNotIn("artifacts/", start)
+        self.assertNotIn("secrets.", start)
+        self.assertNotIn("env", start)
+        self.assertEqual(
+            validator.C01_ARTIFACT_UPLOAD_ALLOWLIST,
+            (
+                "c01-e2e-api-preflight.json",
+                "c01-e2e-evidence.json",
+                "c01-e2e-fixture-evidence.json",
+                "c01-e2e-junit.xml",
+                "c01-e2e-network-summary.json",
+                "c01-e2e-post-browser-sql-evidence.json",
+                "c01-e2e-html-report/index.html",
+                "container-logs/compose-ps.txt",
+            ),
+        )
+
 
 class ArtifactPrivacyTests(unittest.TestCase):
     def setUp(self):

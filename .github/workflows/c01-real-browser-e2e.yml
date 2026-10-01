@@ -131,7 +131,11 @@ jobs:
           done
           docker compose \
             -p "$C01_E2E_COMPOSE_PROJECT" \
-            -f "$C01_E2E_COMPOSE_FILE" ps
+            -f "$C01_E2E_COMPOSE_FILE" ps --all
+          # Diagnostics stay in the masked job log; runtime logs are never uploaded as artifacts.
+          docker compose \
+            -p "$C01_E2E_COMPOSE_PROJECT" \
+            -f "$C01_E2E_COMPOSE_FILE" logs --no-color --tail 80 api || true
           exit 1
 
       - name: Materialize and verify canonical C-01 fixture

@@ -269,9 +269,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // query filter and a company-leading key, plus the lifecycle column on Drafts.
             // Re-fingerprinted for DEC-SAL-002: the nullable Reason column on DraftRevisions and the line write guard
             // admitting Quantity/QuantityText under a quantity revision; no new table, query filter or key.
+            // Re-fingerprinted for Q9: the customer-acceptance facts and their approval-state constraint remain on the
+            // same company-filtered Draft row; no query-filter bypass, direct database surface or tenant key changed.
             ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/"
              + "Persistence/SalesDbContext.cs"] =
-                "1b70585645b2157833050e750d1c3c3cf335616e4752efa2491614b127b7111c",
+                "2d2d3545b6c7da474d5e4577b413ed0090028036fe18f241941fb7de4f0c4692",
             // LOG-4a: company-scoped like Organization; every tenant row (instructions, lines, shares, attempts) and
             // AuditEvent carries the CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/"
