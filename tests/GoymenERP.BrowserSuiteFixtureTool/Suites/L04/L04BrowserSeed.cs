@@ -169,7 +169,8 @@ public sealed class L04BrowserSeed : IBrowserSuiteFixture
                 new { expectedVersion = draftVersion.ToString(System.Globalization.CultureInfo.InvariantCulture) }, "approve", cancellationToken);
         }
 
-        await EnsureShipmentAllocationAsync(context, shipmentReceipt.CurrentLabelVersion, cancellationToken);
+        // Freeze the allocation command body across replay; the fresh label version is evidence only.
+        await EnsureShipmentAllocationAsync(context, shipmentReceipt.ReceiptLabelVersion, cancellationToken);
 
         JsonElement approved = await context.GetJsonAsync(SalesApproverActor, CompanyGdc, $"{DraftsPath}/{DraftId:D}", cancellationToken);
         JsonElement approvedDraft = approved.GetProperty("draft");
