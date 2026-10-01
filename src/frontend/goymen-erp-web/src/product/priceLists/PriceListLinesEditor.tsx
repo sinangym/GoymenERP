@@ -118,8 +118,7 @@ export function PriceListLinesEditor({
             {options.items.map((option) => (
               <li key={option.productId}>
                 <span>{option.code} · {option.name}</span>
-                <button type="button" className={styles.secondaryButton} onClick={() => add(option)}
-                  disabled={rows.some((row) => row.productId === option.productId && row.priceUnitId === option.units[0]?.unitId)}>
+                <button type="button" className={styles.secondaryButton} onClick={() => add(option)}>
                   {T.addLine}
                 </button>
               </li>
