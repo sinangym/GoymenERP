@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using System.Security.Claims;
 using System.Text.Encodings.Web;
 using GoymenERP.Api.Endpoints;
+using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Product.Application;
 using GoymenERP.Modules.Product.Application.Contracts;
 using GoymenERP.Modules.Product.Domain.Products;
@@ -326,6 +327,9 @@ public sealed class ProductHttpContractTests
         builder.Services.AddAuthentication("fixture").AddScheme<AuthenticationSchemeOptions, FixtureAuthentication>("fixture", _ => { });
         builder.Services.AddAuthorization();
         builder.Services.AddSingleton<IProductService>(service);
+        builder.Services.AddSingleton<IProductImportServiceV1>(new FailClosedProductImportService());
+        builder.Services.AddSingleton<IGroupSharedMasterAuthorizationService,
+            UnconfiguredGroupSharedMasterAuthorizationService>();
         builder.Services.AddSingleton<IProductAuditHistorySourceV1>(audit ?? new AuditSource(service.Card.Product.Id));
         builder.Services.AddScoped<ProductHistoryReader>();
         var app = builder.Build();
@@ -335,6 +339,19 @@ public sealed class ProductHttpContractTests
         app.MapProductEndpoints();
         await app.StartAsync();
         return app;
+    }
+
+    private sealed class FailClosedProductImportService : IProductImportServiceV1
+    {
+        private static UnauthorizedAccessException Denied() =>
+            new("Synthetic Product import is unavailable in this isolated host.");
+
+        public Task<ProductImportPreviewV1> PreviewAsync(ReadOnlyMemory<byte> workbook,
+            ProductImportColumnMappingV1 mapping, CancellationToken cancellationToken) => throw Denied();
+
+        public Task<ProductImportResultV1> ApplyAsync(ReadOnlyMemory<byte> workbook,
+            ProductImportApplyBindingV1 binding, string idempotencyKey,
+            CancellationToken cancellationToken) => throw Denied();
     }
 
     private sealed class FixtureAuthentication(IOptionsMonitor<AuthenticationSchemeOptions> options,

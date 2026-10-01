@@ -87,6 +87,10 @@ export function createScope(): string {
   return 'product.create'
 }
 
+export function importScope(): string {
+  return 'product.import'
+}
+
 export function editScope(productId: string): string {
   return `product.edit:${productId}`
 }

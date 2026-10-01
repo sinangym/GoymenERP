@@ -1,10 +1,12 @@
 using GoymenERP.Api.Multitenancy;
 using GoymenERP.Api.OpenApi;
+using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Product.Application;
 using GoymenERP.Modules.Product.Application.Contracts;
 using GoymenERP.Modules.Product.Domain.Products;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Routing;
 
@@ -54,6 +56,35 @@ public static class ProductEndpoints
                 Results.Ok(await reader.GetAsync(id, cancellationToken))))
             .WithName("GetProductHistoryV1").Produces<ProductHistoryView>()
             .WithProductRuntimeContract(notFound: true);
+
+        group.MapPost("/imports/preview", async (HttpContext context, IProductImportServiceV1 service,
+            IGroupSharedMasterAuthorizationService authority, CancellationToken cancellationToken) =>
+        {
+            if (!IsMultipart(context.Request)) return Results.StatusCode(StatusCodes.Status415UnsupportedMediaType);
+            return await ExecuteAsync(context, async () =>
+            {
+                var form = await ProductImportRequestBoundary.ReadAsync(context, authority, apply: false, cancellationToken);
+                return Results.Ok(await service.PreviewAsync(form.Workbook, form.Mapping, cancellationToken));
+            });
+        }).WithName(ProductImportApiV1.PreviewOperationId).Produces<ProductImportPreviewV1>()
+            .Accepts<ProductImportPreviewFormV1>("multipart/form-data")
+            .WithProductRuntimeContract(primitiveBinding: true).Produces(413).Produces(415);
+
+        group.MapPost("/imports", async (HttpContext context, IProductImportServiceV1 service,
+            IGroupSharedMasterAuthorizationService authority, CancellationToken cancellationToken) =>
+        {
+            if (!IsMultipart(context.Request)) return Results.StatusCode(StatusCodes.Status415UnsupportedMediaType);
+            return await ExecuteAsync(context, async () =>
+            {
+                var form = await ProductImportRequestBoundary.ReadAsync(context, authority, apply: true, cancellationToken);
+                var binding = new ProductImportApplyBindingV1(form.FileSha256!, form.PreviewToken!, form.Mapping);
+                var result = await service.ApplyAsync(form.Workbook, binding, ReadIdempotencyKey(context), cancellationToken);
+                return Results.Created(ProductImportApiV1.ApplyPath, result);
+            });
+        }).WithName(ProductImportApiV1.ApplyOperationId).Produces<ProductImportResultV1>(201)
+            .Accepts<ProductImportApplyFormV1>("multipart/form-data")
+            .WithProductRuntimeContract(mutation: true, primitiveBinding: true).WithIdempotencyContract(201)
+            .Produces(413);
 
         group.MapGet("/{id:guid}", async (Guid id, IProductService service, HttpContext context,
             CancellationToken cancellationToken) => await ExecuteAsync(context, async () =>
@@ -115,10 +146,17 @@ public static class ProductEndpoints
         return values[0]!;
     }
 
+    private static bool IsMultipart(HttpRequest request) => request.HasFormContentType
+        && (request.ContentType ?? string.Empty).StartsWith("multipart/form-data", StringComparison.OrdinalIgnoreCase);
+
     private static async Task<IResult> ExecuteAsync(HttpContext context, Func<Task<IResult>> execute)
     {
         context.Response.Headers.CacheControl = "private, no-store";
         try { return await execute(); }
+        catch (ProductImportPayloadTooLargeException)
+        {
+            return Results.StatusCode(StatusCodes.Status413PayloadTooLarge);
+        }
         catch (ProductValidationException exception)
         {
             return Results.Problem(statusCode: 400, extensions: new Dictionary<string, object?>
@@ -144,4 +182,95 @@ public static class ProductEndpoints
 
     private static IResult Problem(string code, int statusCode) => Results.Problem(statusCode: statusCode,
         extensions: new Dictionary<string, object?> { ["code"] = code });
+}
+
+internal sealed record ProductImportForm(byte[] Workbook, ProductImportColumnMappingV1 Mapping,
+    string? FileSha256, string? PreviewToken);
+
+internal sealed class ProductImportPayloadTooLargeException : Exception;
+
+internal static class ProductImportRequestBoundary
+{
+    private const long MultipartOverheadBytes = 64L * 1024;
+    internal const long MultipartBodyLengthLimit = FormOptions.DefaultMultipartBodyLengthLimit;
+    internal const long MaximumWorkbookBytes = MultipartBodyLengthLimit - MultipartOverheadBytes;
+
+    internal static async Task<ProductImportForm> ReadAsync(HttpContext context,
+        IGroupSharedMasterAuthorizationService authority, bool apply, CancellationToken cancellationToken)
+    {
+        var snapshot = await authority.GetSnapshotAsync(GroupSharedMasterKind.Product,
+            GroupSharedMasterOperation.DraftCreate, cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
+        _ = GroupSharedMasterCommandContext.FromServerDecision(snapshot, GroupSharedMasterOperation.DraftCreate);
+
+        var request = context.Request;
+        if (request.ContentLength is { } declaredLength && declaredLength > MultipartBodyLengthLimit)
+            throw new ProductImportPayloadTooLargeException();
+
+        var sizeFeature = context.Features.Get<IHttpMaxRequestBodySizeFeature>();
+        if (sizeFeature is { IsReadOnly: false }) sizeFeature.MaxRequestBodySize = MultipartBodyLengthLimit;
+
+        string[] fields = apply
+            ? [ProductImportApiV1.LegacyCodeColumnField, ProductImportApiV1.NameColumnField,
+                ProductImportApiV1.GroupIdColumnField, ProductImportApiV1.FileSha256Field, ProductImportApiV1.PreviewTokenField]
+            : [ProductImportApiV1.LegacyCodeColumnField, ProductImportApiV1.NameColumnField,
+                ProductImportApiV1.GroupIdColumnField];
+        context.Features.Set<IFormFeature>(new FormFeature(request, new FormOptions
+        {
+            MultipartBodyLengthLimit = MultipartBodyLengthLimit,
+            ValueCountLimit = fields.Length + 1,
+            MultipartHeadersCountLimit = 8,
+        }));
+
+        IFormCollection form;
+        try
+        {
+            form = await request.ReadFormAsync(cancellationToken);
+        }
+        catch (BadHttpRequestException exception) when (exception.StatusCode == StatusCodes.Status413PayloadTooLarge)
+        {
+            throw new ProductImportPayloadTooLargeException();
+        }
+        catch (Exception exception) when (exception is InvalidDataException or BadHttpRequestException or IOException)
+        {
+            throw new ProductValidationException([new("file", ProductImportCodesV1.InvalidWorkbook)]);
+        }
+
+        if (form.Keys.Count != fields.Length || !form.Keys.All(fields.Contains)
+            || fields.Any(field => form[field].Count != 1)
+            || form.Files.Count != 1
+            || !string.Equals(form.Files[0].Name, ProductImportApiV1.FileField, StringComparison.Ordinal))
+            throw new ProductValidationException([new("form", ProductImportCodesV1.InvalidMetadata)]);
+
+        var file = form.Files[0];
+        if (file.Length > MaximumWorkbookBytes) throw new ProductImportPayloadTooLargeException();
+        await using var stream = file.OpenReadStream();
+        using var buffer = new MemoryStream(file.Length > 0 ? checked((int)file.Length) : 0);
+        await stream.CopyToAsync(buffer, cancellationToken);
+        var mapping = new ProductImportColumnMappingV1(form[ProductImportApiV1.LegacyCodeColumnField].ToString(),
+            form[ProductImportApiV1.NameColumnField].ToString(), form[ProductImportApiV1.GroupIdColumnField].ToString());
+        return new ProductImportForm(buffer.ToArray(), mapping,
+            apply ? form[ProductImportApiV1.FileSha256Field].ToString() : null,
+            apply ? form[ProductImportApiV1.PreviewTokenField].ToString() : null);
+    }
+}
+
+/// <summary>OpenAPI-only shape; the endpoint enforces exact multipart fields itself.</summary>
+public class ProductImportPreviewFormV1
+{
+    public required IFormFile File { get; init; }
+    public required string LegacyCodeColumn { get; init; }
+    public required string NameColumn { get; init; }
+    public required string GroupIdColumn { get; init; }
+}
+
+/// <summary>OpenAPI-only apply shape; the endpoint binds the exact preview and immutable workbook bytes.</summary>
+public sealed class ProductImportApplyFormV1
+{
+    public required IFormFile File { get; init; }
+    public required string LegacyCodeColumn { get; init; }
+    public required string NameColumn { get; init; }
+    public required string GroupIdColumn { get; init; }
+    public required string FileSha256 { get; init; }
+    public required string PreviewToken { get; init; }
 }
