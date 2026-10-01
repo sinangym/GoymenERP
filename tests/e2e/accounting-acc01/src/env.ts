@@ -24,6 +24,12 @@ export interface Acc01Seed {
   readonly companyBId: string
   readonly preparerActor: string
   readonly approverActor: string
+  readonly normalSourceLabel: string
+  readonly normalOccurredOn: string
+  readonly normalAmount: string
+  readonly normalDebitLabel: string
+  readonly normalCreditLabel: string
+  readonly openPeriodId: string
 }
 
 export interface Acc01Environment {
@@ -61,6 +67,12 @@ export function readEnvironment(): Acc01Environment {
     companyBId: text(raw, 'companyBId', true),
     preparerActor: text(raw, 'preparerActor'),
     approverActor: text(raw, 'approverActor'),
+    normalSourceLabel: text(raw, 'normalSourceLabel'),
+    normalOccurredOn: text(raw, 'normalOccurredOn'),
+    normalAmount: text(raw, 'normalAmount'),
+    normalDebitLabel: text(raw, 'normalDebitLabel'),
+    normalCreditLabel: text(raw, 'normalCreditLabel'),
+    openPeriodId: text(raw, 'openPeriodId', true),
   }
   if (seed.preparerActor === seed.approverActor) {
     throw new Error('BROWSER_E2E_ACC01_SEED binds the same actor as preparer and approver (Ö4)')

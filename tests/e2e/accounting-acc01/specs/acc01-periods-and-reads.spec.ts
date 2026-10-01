@@ -26,6 +26,8 @@
  *   ACC01-09 (ACC-V1 reversal UI, phase 1) the preparer opens the posted journal from M-04 on the published M-04
  *            detail, closes and reopens it, and M-06 Mizan totals exactly its posted lines; the reversal propose
  *            control and approval screen stay staged; the approver (no journal name) gets neither screen.
+ *   ACC01-10 selects an authorized recorded Finance source and approved accounts by visible labels, saves a normal
+ *            draft, closes/reopens the same record, approves it and follows the posted journal into M-06.
  *
  * NOTHING IS FULFILLED LOCALLY: the interceptions are the Development identity rewrite and, in ACC01-05,
  * withholding the browser's DELIVERY of a real answer the server really gave (the mfg / org03 pattern). Every
@@ -484,5 +486,73 @@ test.describe.serial('ACC-01 periods and reads (real API, real SQL)', () => {
     } finally {
       await approverContext.close()
     }
+  })
+
+  test('ACC01-10 an authorized Finance source becomes one normal draft, posted journal and trial-balance effect', async ({ page, context }) => {
+    const rewritten = await asActor(context, env.seed.preparerActor)
+    const answered = watchAnswers(page)
+    await page.goto('/muhasebe/normal-fisler/yeni')
+    await expect(page.getByRole('heading', { level: 1, name: 'Yeni normal fiş taslağı', exact: true })).toBeVisible({ timeout: 30_000 })
+
+    await page.getByLabel('Onaylı finans kaynağı', { exact: true }).selectOption({ label: env.seed.normalSourceLabel })
+    await expect(page.getByText(/Onaylı ayna .*; kural .*/)).toBeVisible({ timeout: 30_000 })
+    const accounts = page.getByLabel('Onaylı hesap', { exact: true })
+    await accounts.nth(0).selectOption({ label: env.seed.normalDebitLabel })
+    await accounts.nth(1).selectOption({ label: env.seed.normalCreditLabel })
+    await page.getByLabel('İşlem tarihi', { exact: true }).fill(env.seed.normalOccurredOn)
+    await page.getByLabel('Muhasebe tarihi', { exact: true }).fill(env.seed.normalOccurredOn)
+    const amountInput = env.seed.normalAmount.replace('.', ',')
+    await page.getByLabel('Tutar', { exact: true }).nth(0).fill(amountInput)
+    await page.getByLabel('Tutar', { exact: true }).nth(1).fill(amountInput)
+
+    const createAnswer = page.waitForResponse(response =>
+      new URL(response.url()).pathname === '/api/v1/accounting/normal-journal-drafts'
+        && response.request().method() === 'POST')
+    await page.getByRole('button', { name: 'Taslağı kaydet', exact: true }).click()
+    const createdResponse = await createAnswer
+    expect(createdResponse.status()).toBe(201)
+    const created = await createdResponse.json() as { draftId: string; sourceId: string; status: string }
+    expect(created.status).toBe('Draft')
+    await expect(page.getByRole('heading', { level: 1, name: 'Normal fiş taslağı kaydedildi', exact: true })).toBeVisible()
+
+    const reopenRead = page.waitForResponse(response =>
+      new URL(response.url()).pathname === `/api/v1/accounting/normal-journal-drafts/${created.draftId}`
+        && response.request().method() === 'GET')
+    await page.getByRole('link', { name: 'Kaydı kapat ve yeniden aç', exact: true }).click()
+    const reopenedResponse = await reopenRead
+    expect(reopenedResponse.status()).toBe(200)
+    const reopened = await reopenedResponse.json() as { draftId: string; sourceId: string; status: string }
+    expect(reopened).toMatchObject({ draftId: created.draftId, sourceId: created.sourceId, status: 'Draft' })
+    await expect(page).toHaveURL(new RegExp(`/muhasebe/normal-fisler/${created.draftId}$`))
+    await expect(page.getByText('Draft', { exact: true })).toBeVisible()
+    await expect(page.locator('body')).not.toContainText(created.sourceId)
+
+    await page.getByRole('link', { name: 'Onay ekranını aç', exact: true }).click()
+    await page.getByLabel('Açık dönem kimliği', { exact: true }).fill(env.seed.openPeriodId)
+    const approvalAnswer = page.waitForResponse(response =>
+      new URL(response.url()).pathname === `/api/v1/accounting/normal-journal-drafts/${created.draftId}/approval`
+        && response.request().method() === 'POST')
+    await page.getByRole('button', { name: 'Normal taslağı onayla', exact: true }).click()
+    const approvedResponse = await approvalAnswer
+    expect(approvedResponse.status()).toBe(200)
+    const approved = await approvedResponse.json() as { draftId: string; sourceId: string; status: string; postedJournalId: string }
+    expect(approved).toMatchObject({ draftId: created.draftId, sourceId: created.sourceId, status: 'Approved' })
+
+    await page.getByRole('link', { name: 'Oluşturulan fişi aç', exact: true }).click()
+    await expect(page).toHaveURL(new RegExp(`/muhasebe/fisler/${approved.postedJournalId}$`))
+    await expect(page.getByRole('heading', { level: 1, name: 'Muhasebe fişi', exact: true })).toBeVisible({ timeout: 30_000 })
+
+    await page.goto('/muhasebe/mizan')
+    await page.getByLabel('Başlangıç muhasebe tarihi', { exact: true }).fill(env.seed.normalOccurredOn)
+    await page.getByLabel('Bitiş muhasebe tarihi', { exact: true }).fill(env.seed.normalOccurredOn)
+    const reportAnswer = page.waitForResponse(response =>
+      new URL(response.url()).pathname === '/api/v1/accounting/trial-balance' && response.request().method() === 'GET')
+    await page.getByRole('button', { name: 'Mizanı getir', exact: true }).click()
+    expect((await reportAnswer).status()).toBe(200)
+    const totals = page.locator('table tfoot tr').getByRole('cell')
+    await expect(totals.nth(0)).toHaveText(trAmount(env.seed.normalAmount))
+    await expect(totals.nth(1)).toHaveText(trAmount(env.seed.normalAmount))
+    await expect(totals.nth(2)).toHaveText('Dengeli')
+    expectEveryAnswerRewritten(answered, rewritten)
   })
 })
