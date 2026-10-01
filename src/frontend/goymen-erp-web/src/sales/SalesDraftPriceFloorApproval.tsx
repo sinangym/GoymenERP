@@ -30,6 +30,13 @@ export function SalesDraftPriceFloorApproval({ shell, detail, companyId, onRecor
   const attemptRef = useRef(attempt)
   const pricing = query.data?.type === 'ok-single' ? query.data.data : null
   const pending = pricing?.lines.filter((line) => line.floorException !== null && line.floorException.approvedBy === null) ?? []
+  const unresolvedSnapshot = liveSnapshot(attempt)
+  const approvalRows = unresolvedSnapshot === null
+    ? pending.map((line) => ({ lineId: line.lineId, lineNo: line.lineNo }))
+    : unresolvedSnapshot.payload.lines.map((line) => ({
+        lineId: line.lineId,
+        lineNo: pricing?.lines.find((candidate) => candidate.lineId === line.lineId)?.lineNo ?? 0,
+      }))
 
   function setAttemptState(next: PriceFloorApprovalAttempt) {
     attemptRef.current = next
@@ -50,7 +57,8 @@ export function SalesDraftPriceFloorApproval({ shell, detail, companyId, onRecor
     if (next.phase === 'completed' || (next.phase === 'failed' && next.failure === 'conflict')) onRecorded()
   }
 
-  if (!hasCapability(shell, SALES_PRICE_FLOOR_EXCEPTION_APPROVE_CAPABILITY) || pending.length === 0 || pricing === null) return null
+  if (!hasCapability(shell, SALES_PRICE_FLOOR_EXCEPTION_APPROVE_CAPABILITY) || pricing === null
+    || (approvalRows.length === 0 && attempt.phase === 'idle')) return null
   const frozen = attempt.phase !== 'idle'
 
   function start() {
@@ -84,7 +92,7 @@ export function SalesDraftPriceFloorApproval({ shell, detail, companyId, onRecor
     <section className={styles.actions} aria-label={T.floorApproval.heading} data-testid="sales-price-floor-approval">
       <h3>{T.floorApproval.heading}</h3>
       <p className={styles.muted}>{T.floorApproval.note}</p>
-      {pending.map((line) => (
+      {approvalRows.map((line) => (
         <label key={line.lineId} htmlFor={`sales-floor-reason-${line.lineId}`}>
           {T.floorApproval.reason(line.lineNo)}
           <textarea id={`sales-floor-reason-${line.lineId}`} value={reasons[line.lineId] ?? ''} disabled={frozen} maxLength={4000}
@@ -103,7 +111,7 @@ export function SalesDraftPriceFloorApproval({ shell, detail, companyId, onRecor
           <button type="button" className={styles.secondaryButton} onClick={leave}>{T.floorApproval.abandon}</button>
         </>
       ) : null}
-      {attempt.phase === 'failed' ? (
+      {attempt.phase === 'failed' && !isOutcomeStillUnknown(attempt) ? (
         <button type="button" className={styles.secondaryButton} onClick={() => setAttemptState({ phase: 'idle' })}>
           {T.floorApproval.correct}
         </button>

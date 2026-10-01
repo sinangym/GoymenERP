@@ -89,7 +89,10 @@ describe('AT-018 list price on the order line', () => {
       })),
       onPriceFloorExceptionApproval: (call) => {
         posts.push(call)
-        if (posts.length === 1) throw new TypeError('SENTETIK bağlantı kesildi')
+        if (posts.length === 1) {
+          approved = true
+          throw new TypeError('SENTETIK sunucu kaydetti, yanıt kayboldu')
+        }
         approved = true
         return json({ detail: detail('4', { unitPrice: '39000', priceUnitId: KG }), isReplay: true,
           originalCorrelationId: 'floor-c1' }, 200, { 'Idempotency-Replayed': 'true' })
@@ -109,6 +112,41 @@ describe('AT-018 list price on the order line', () => {
     await waitFor(() => expect(posts).toHaveLength(2))
     expect(posts[1].idempotencyKey).toBe(posts[0].idempotencyKey)
     expect(posts[1].body).toBe(posts[0].body)
+  })
+
+  it.each([401, 403, 409])('keeps the unresolved snapshot after a retry refusal %s and never offers a new-key correction', async (status) => {
+    let sends = 0
+    const posts: RecordedCall[] = []
+    installFetch({
+      capabilities: [...ALL_SALES, SALES_PRICE_FLOOR_EXCEPTION_APPROVE_CAPABILITY],
+      onDetail: () => json(detail('3', { unitPrice: '39000', priceUnitId: KG })),
+      onLinePricing: () => json(pricing('3', {
+        unitPrice: '39000', priceUnitId: KG, priceSource: 'Manual', priceReference: reference, netUnitPrice: '39000',
+        floorException: { requestedBy: 'maker', requestedAtUtc: '2026-10-01T08:00:00Z', approvedBy: null,
+          approvedAtUtc: null, reason: null },
+      })),
+      onPriceFloorExceptionApproval: (call) => {
+        posts.push(call)
+        sends += 1
+        if (sends === 1) throw new TypeError('SENTETIK belirsiz sonuç')
+        if (sends === 2) return json({ status, title: 'SENTETIK refusal' }, status)
+        return json({ detail: detail('4', { unitPrice: '39000', priceUnitId: KG }), isReplay: true,
+          originalCorrelationId: 'floor-c2' }, 200, { 'Idempotency-Replayed': 'true' })
+      },
+    })
+    renderSalesApp(path)
+
+    const control = await screen.findByTestId('sales-price-floor-approval')
+    await userEvent.type(within(control).getByLabelText(P.floorApproval.reason(1)), 'SENTETIK sözleşme')
+    await userEvent.click(within(control).getByRole('button', { name: P.floorApproval.approve }))
+    await userEvent.click(await within(control).findByRole('button', { name: P.floorApproval.retry }))
+    expect(await within(control).findByText(P.floorApproval.unknown)).toBeTruthy()
+    expect(within(control).queryByRole('button', { name: P.floorApproval.correct })).toBeNull()
+    await userEvent.click(within(control).getByRole('button', { name: P.floorApproval.retry }))
+
+    await waitFor(() => expect(posts).toHaveLength(3))
+    expect(new Set(posts.map((call) => call.idempotencyKey)).size).toBe(1)
+    expect(new Set(posts.map((call) => call.body)).size).toBe(1)
   })
 
   it('accepts the existing 4000-character approval reason bound and rejects a larger response', () => {
