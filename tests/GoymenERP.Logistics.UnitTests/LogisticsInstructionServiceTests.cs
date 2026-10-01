@@ -67,6 +67,29 @@ public sealed partial class LogisticsInstructionServiceTests
     }
 
     [Fact]
+    public async Task A_create_aggregate_limit_refusal_is_terminal_replayed_and_has_zero_instruction_effect()
+    {
+        var world = new World { OrderLines = { Fault = "limit" } };
+        world.Store.CreateFault = new LogisticsStoreException(LogisticsStoreCodes.AggregateLimitExceeded, "synthetic aggregate cap");
+        var request = Request(quantity: "1.25");
+
+        var refusal = await Assert.ThrowsAsync<LogisticsInstructionServiceException>(() =>
+            world.Service().CreateInstructionAsync(request, Metadata("k-create-cap")));
+        Assert.Equal((409, LogisticsProblemCodesV1.OrderLineAggregateLimitExceeded, false, "lines", LogisticsStoreCodes.AggregateLimitExceeded),
+            (refusal.Status, refusal.Code, refusal.IsReplay, refusal.Errors[0].Field, refusal.Errors[0].Code));
+        var ownerCalls = world.OrderLines.Calls;
+
+        var replay = await Assert.ThrowsAsync<LogisticsInstructionServiceException>(() =>
+            world.Service().CreateInstructionAsync(request, Metadata("k-create-cap", correlation: "retry-correlation")));
+        Assert.Equal((409, LogisticsProblemCodesV1.OrderLineAggregateLimitExceeded, true, "synthetic-correlation"),
+            (replay.Status, replay.Code, replay.IsReplay, replay.OriginalCorrelationId));
+        Assert.Equal(ownerCalls, world.OrderLines.Calls);
+        Assert.Empty(world.Store.Envelopes);
+        Assert.Empty(world.Store.AggregateLimits);
+        Assert.Single(world.Store.Refusals);
+    }
+
+    [Fact]
     public async Task A_sales_limit_revision_change_between_prepare_and_store_is_refused_before_any_write()
     {
         var world = new World { OrderLines = { Fault = "limit-version-race" } };
@@ -638,6 +661,7 @@ public sealed partial class LogisticsInstructionServiceTests
         public List<(string Command, Guid Id, long Before, long After)> Transitions { get; } = [];
         public int Replays { get; private set; }
         private long _lastSequenceNo;
+        public Exception? CreateFault { get; set; }
         public Func<string, Exception?>? MutateFault { get; set; }
         public Action<LogisticsWriteEnvelope, string, string>? BeforeRefusal { get; set; }
 
@@ -656,6 +680,7 @@ public sealed partial class LogisticsInstructionServiceTests
                 return Task.FromResult(new LogisticsStoreResult(attempt.Stored!, LogisticsWriteOutcome.Replayed, attempt.Correlation));
             }
 
+            if (CreateFault is { } fault) throw fault;
             var stored = new StoredLoadingInstruction(build(), effectiveOn);
             _instructions.Add(stored);
             _attempts[(LogisticsCommands.CreateV1, envelope.IdempotencyKey)] = (envelope.ActorId, requestHash, stored, null, envelope.CorrelationId);

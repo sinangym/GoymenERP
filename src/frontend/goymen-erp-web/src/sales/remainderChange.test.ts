@@ -12,7 +12,7 @@ const valid = () => ({
     changeNo: 1, revision: 'Rev.0', lineId, lineNo: 1, kind: 'Revise', state: 'Approved', orderedQuantity: '5',
     requestedQuantity: '3', reason: 'Müşteri kalan miktarı değiştirdi', requestedBy: 'sales-preparer',
     requestedAtUtc: '2026-09-30T10:00:00Z', loadedAtRequest: '2', shippedAtRequest: '2', deliveredAtRequest: '1',
-    decidedBy: 'sales-approver', decidedAtUtc: '2026-09-30T10:05:00Z', decisionReason: null,
+    decidedBy: 'sales-approver', decidedAtUtc: '2026-09-30T10:05:00Z', decisionReason: null as string | null,
     resultQuantity: '3', loadedAtDecision: '2',
   }],
 })
