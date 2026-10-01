@@ -123,6 +123,24 @@ describe('InventoryLabelDetailPage', () => {
     expect(screen.getByText('Gerekli belgeler: MTC')).not.toBeNull()
     expect(api.detail).toHaveBeenCalledWith(COMPANY, LABEL, expect.any(AbortSignal))
   })
+  it('renders transfer dispatch and acceptance movements in the existing timeline', async () => {
+    const base = fixture()
+    api.detail.mockResolvedValue({ type: 'ok-single', data: {
+      ...base,
+      movementTimeline: { ...base.movementTimeline, entries: [
+        { ...base.movementTimeline.entries[0], kind: 'TransferDispatch', lines: [
+          { ...base.movementTimeline.entries[0].lines[0], direction: 'Out' },
+        ] },
+        { ...base.movementTimeline.entries[0], movementId: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
+          kind: 'TransferAccept', lines: base.movementTimeline.entries[0].lines },
+      ] },
+    } })
+
+    mount(); await ready()
+
+    expect(screen.getByText('Transfer çıkışı')).not.toBeNull()
+    expect(screen.getByText('Transfer kabulü')).not.toBeNull()
+  })
   it('keeps a forbidden read in the shared terminal error state', async () => {
     api.detail.mockResolvedValueOnce({ type: 'http', status: 403, body: { status: 403 } }); mount()
     expect(await screen.findByText(/yetkiniz yok/i)).not.toBeNull()

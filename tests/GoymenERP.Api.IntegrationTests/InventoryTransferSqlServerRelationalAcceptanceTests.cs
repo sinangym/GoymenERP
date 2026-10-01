@@ -38,6 +38,10 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             var planned = await scope.Store.PlanAsync(plan, planMetadata, Authorized);
             Assert.Equal((false, "1", "Planned"),
                 (planned.IsReplay, planned.Transfer.Version, planned.Transfer.Status));
+            var keyReplay = Assert.IsType<InventoryTransferResultV1>(await scope.Store.ReplayPlanAsync(plan,
+                planMetadata with { CorrelationId = $"retry-{Guid.NewGuid():N}" }, Authorized));
+            Assert.True(keyReplay.IsReplay);
+            Assert.Equal(planMetadata.CorrelationId, keyReplay.OriginalCorrelationId);
             var replay = await scope.Store.PlanAsync(plan,
                 planMetadata with { IdempotencyKey = Guid.NewGuid().ToString("N") }, Authorized);
             Assert.True(replay.IsReplay);
@@ -88,6 +92,11 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
                 firstAcceptMetadata with { CorrelationId = $"retry-{Guid.NewGuid():N}" }, Authorized);
             Assert.True(replay.IsReplay);
             Assert.Equal(firstAcceptMetadata.CorrelationId, replay.OriginalCorrelationId);
+            var keyReplay = Assert.IsType<InventoryTransferResultV1>(await scope.Store.ReplayAcceptLineAsync(
+                transferId, firstLine, firstAccept,
+                firstAcceptMetadata with { CorrelationId = $"retry-{Guid.NewGuid():N}" }, Authorized));
+            Assert.True(keyReplay.IsReplay);
+            Assert.Equal(firstAcceptMetadata.CorrelationId, keyReplay.OriginalCorrelationId);
         }
 
         Assert.Equal(10m, await TransferLabelKgAsync(run, first.LabelId));

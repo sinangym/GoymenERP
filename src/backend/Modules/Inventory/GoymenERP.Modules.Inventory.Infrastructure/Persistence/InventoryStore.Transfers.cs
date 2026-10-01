@@ -23,6 +23,21 @@ public sealed partial class InventoryStore : IInventoryTransferWriterV1, IInvent
     internal const string AcceptTransferLineCommand = "inventory.transfer.accept-line.v1";
     private const string TransferEntityType = "Inventory.Transfer";
 
+    public async Task<InventoryTransferResultV1?> ReplayPlanAsync(
+        PlanInventoryTransferV1 request,
+        InventoryCommandMetadata metadata,
+        Func<CancellationToken, Task> freshAuthorityFence,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(freshAuthorityFence);
+        RequireTransferCall(metadata);
+        var parsed = ParsePlan(request);
+        return await FindTransferKeyReplayAsync(PlanTransferCommand,
+            GenealogyHash(metadata.IdempotencyKey.Trim()), PlanPayloadHash(request, parsed), metadata.ActorId,
+            freshAuthorityFence, cancellationToken);
+    }
+
     public async Task<InventoryTransferResultV1> PlanAsync(
         PlanInventoryTransferV1 request,
         InventoryCommandMetadata metadata,
@@ -35,24 +50,7 @@ public sealed partial class InventoryStore : IInventoryTransferWriterV1, IInvent
         var parsed = ParsePlan(request);
         var companyId = companyContext.CompanyId;
         var keyHash = GenealogyHash(metadata.IdempotencyKey.Trim());
-        var payloadHash = GenealogyPayloadHash(new
-        {
-            request.TransferId,
-            request.SourceLocationId,
-            sourceCustodianKind = (int)parsed.SourceCustodian.Kind,
-            request.SourceCustodianId,
-            request.DestinationLocationId,
-            destinationCustodianKind = (int)parsed.DestinationCustodian.Kind,
-            request.DestinationCustodianId,
-            plannedAtUtc = request.PlannedAtUtc.UtcDateTime.ToString("O", CultureInfo.InvariantCulture),
-            lines = parsed.Lines.Select(line => new
-            {
-                line.LineId,
-                line.LabelId,
-                line.ExpectedLabelVersion,
-                plannedKg = line.PlannedQuantity.ToString(),
-            }),
-        });
+        var payloadHash = PlanPayloadHash(request, parsed);
         if (await FindTransferKeyReplayAsync(PlanTransferCommand, keyHash, payloadHash, metadata.ActorId,
                 freshAuthorityFence, cancellationToken) is { } keyReplay)
         {
@@ -310,6 +308,23 @@ public sealed partial class InventoryStore : IInventoryTransferWriterV1, IInvent
             payloadHash, freshAuthorityFence, cancellationToken);
     }
 
+    public async Task<InventoryTransferResultV1?> ReplayAcceptLineAsync(
+        Guid transferId,
+        Guid lineId,
+        AcceptInventoryTransferLineV1 request,
+        InventoryCommandMetadata metadata,
+        Func<CancellationToken, Task> freshAuthorityFence,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(freshAuthorityFence);
+        RequireTransferCall(metadata);
+        var (_, _, payloadHash) = AcceptLinePayload(transferId, lineId, request);
+        return await FindTransferKeyReplayAsync(AcceptTransferLineCommand,
+            GenealogyHash(metadata.IdempotencyKey.Trim()), payloadHash, metadata.ActorId,
+            freshAuthorityFence, cancellationToken);
+    }
+
     public async Task<InventoryTransferResultV1> AcceptLineAsync(
         Guid transferId,
         Guid lineId,
@@ -321,23 +336,8 @@ public sealed partial class InventoryStore : IInventoryTransferWriterV1, IInvent
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(freshAuthorityFence);
         RequireTransferCall(metadata);
-        if (transferId == Guid.Empty || lineId == Guid.Empty
-            || !TryVersion(request.ExpectedTransferVersion, out var expectedVersion)
-            || request.AcceptedAtUtc.Offset != TimeSpan.Zero)
-        {
-            throw TransferError(400, InventoryTransferCodesV1.ValidationFailed);
-        }
-
-        var document = ParseDocument(request.IncomingDocument);
+        var (expectedVersion, document, payloadHash) = AcceptLinePayload(transferId, lineId, request);
         var keyHash = GenealogyHash(metadata.IdempotencyKey.Trim());
-        var payloadHash = GenealogyPayloadHash(new
-        {
-            transferId,
-            lineId,
-            expectedVersion,
-            acceptedAtUtc = request.AcceptedAtUtc.UtcDateTime.ToString("O", CultureInfo.InvariantCulture),
-            document,
-        });
         if (await FindTransferKeyReplayAsync(AcceptTransferLineCommand, keyHash, payloadHash, metadata.ActorId,
                 freshAuthorityFence, cancellationToken) is { } keyReplay)
         {
@@ -708,6 +708,50 @@ public sealed partial class InventoryStore : IInventoryTransferWriterV1, IInvent
         }
 
         return (source, destination, lines.ToArray());
+    }
+
+    private static string PlanPayloadHash(
+        PlanInventoryTransferV1 request,
+        (StockCustodian SourceCustodian, StockCustodian DestinationCustodian,
+            InventoryTransferPlanLine[] Lines) parsed) => GenealogyPayloadHash(new
+        {
+            request.TransferId,
+            request.SourceLocationId,
+            sourceCustodianKind = (int)parsed.SourceCustodian.Kind,
+            request.SourceCustodianId,
+            request.DestinationLocationId,
+            destinationCustodianKind = (int)parsed.DestinationCustodian.Kind,
+            request.DestinationCustodianId,
+            plannedAtUtc = request.PlannedAtUtc.UtcDateTime.ToString("O", CultureInfo.InvariantCulture),
+            lines = parsed.Lines.Select(line => new
+            {
+                line.LineId,
+                line.LabelId,
+                line.ExpectedLabelVersion,
+                plannedKg = line.PlannedQuantity.ToString(),
+            }),
+        });
+
+    private static (long ExpectedVersion, InventoryTransferDocumentReference Document, string PayloadHash)
+        AcceptLinePayload(Guid transferId, Guid lineId, AcceptInventoryTransferLineV1 request)
+    {
+        if (transferId == Guid.Empty || lineId == Guid.Empty
+            || !TryVersion(request.ExpectedTransferVersion, out var expectedVersion)
+            || request.AcceptedAtUtc.Offset != TimeSpan.Zero)
+        {
+            throw TransferError(400, InventoryTransferCodesV1.ValidationFailed);
+        }
+
+        var document = ParseDocument(request.IncomingDocument);
+        var payloadHash = GenealogyPayloadHash(new
+        {
+            transferId,
+            lineId,
+            expectedVersion,
+            acceptedAtUtc = request.AcceptedAtUtc.UtcDateTime.ToString("O", CultureInfo.InvariantCulture),
+            document,
+        });
+        return (expectedVersion, document, payloadHash);
     }
 
     private async Task RequirePlanReferencesAsync(

@@ -83,6 +83,12 @@ public sealed record InventoryTransferResultV1(
 /// </summary>
 public interface IInventoryTransferWriterV1
 {
+    Task<InventoryTransferResultV1?> ReplayPlanAsync(
+        PlanInventoryTransferV1 request,
+        InventoryCommandMetadata metadata,
+        Func<CancellationToken, Task> freshAuthorityFence,
+        CancellationToken cancellationToken = default);
+
     Task<InventoryTransferResultV1> PlanAsync(
         PlanInventoryTransferV1 request,
         InventoryCommandMetadata metadata,
@@ -92,6 +98,14 @@ public interface IInventoryTransferWriterV1
     Task<InventoryTransferResultV1> DispatchAsync(
         Guid transferId,
         DispatchInventoryTransferV1 request,
+        InventoryCommandMetadata metadata,
+        Func<CancellationToken, Task> freshAuthorityFence,
+        CancellationToken cancellationToken = default);
+
+    Task<InventoryTransferResultV1?> ReplayAcceptLineAsync(
+        Guid transferId,
+        Guid lineId,
+        AcceptInventoryTransferLineV1 request,
         InventoryCommandMetadata metadata,
         Func<CancellationToken, Task> freshAuthorityFence,
         CancellationToken cancellationToken = default);

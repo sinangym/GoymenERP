@@ -51,6 +51,13 @@ public sealed class InventoryTransferCommandService : IInventoryTransferCommandV
     {
         ArgumentNullException.ThrowIfNull(request);
         var scope = await RequireAsync(cancellationToken);
+        var replayMetadata = await FinalizeAsync(scope, transport, cancellationToken);
+        if (await writer.ReplayPlanAsync(request, replayMetadata,
+                token => FreshAuthorityFenceAsync(scope, token), cancellationToken) is { } replay)
+        {
+            return replay;
+        }
+
         await RequireDestinationAsync(scope, request.DestinationLocationId, request.DestinationCustodianKind,
             request.DestinationCustodianId, cancellationToken);
         var metadata = await FinalizeAsync(scope, transport, cancellationToken);
@@ -80,6 +87,13 @@ public sealed class InventoryTransferCommandService : IInventoryTransferCommandV
     {
         ArgumentNullException.ThrowIfNull(request);
         var scope = await RequireAsync(cancellationToken);
+        var replayMetadata = await FinalizeAsync(scope, transport, cancellationToken);
+        if (await writer.ReplayAcceptLineAsync(transferId, lineId, request, replayMetadata,
+                token => FreshAuthorityFenceAsync(scope, token), cancellationToken) is { } replay)
+        {
+            return replay;
+        }
+
         InventoryTransferViewV1? transfer;
         try
         {

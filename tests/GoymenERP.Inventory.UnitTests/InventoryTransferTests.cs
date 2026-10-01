@@ -208,13 +208,58 @@ public sealed class InventoryTransferTests
         await world.Service().PlanAsync(PlanRequest(), Transport(""));
 
         Assert.Equal([InventoryPermissionManifestV1.StockTransferWrite, InventoryPermissionManifestV1.StockTransferWrite,
-                InventoryPermissionManifestV1.StockTransferWrite, InventoryPermissionManifestV1.StockTransferWrite],
+                InventoryPermissionManifestV1.StockTransferWrite, InventoryPermissionManifestV1.StockTransferWrite,
+                InventoryPermissionManifestV1.StockTransferWrite],
             world.Authority.Measured);
         Assert.Equal(1, world.Destination.Calls);
         var call = Assert.Single(world.Writer.Calls);
         Assert.Equal(("plan", "actor", InventoryPermissionManifestV1.StockTransferWrite),
             (call.Operation, call.Metadata.ActorId, call.Metadata.PermissionCode));
         Assert.Equal(["transfer.a", "transfer.b"], call.Metadata.RoleCodes);
+    }
+
+    [Theory]
+    [InlineData("plan")]
+    [InlineData("accept")]
+    public async Task Stored_success_replays_before_an_inactive_destination_is_consulted(string operation)
+    {
+        var world = new CommandWorld();
+        world.Destination.Status = InventoryTransferDestinationStatusV1.Inactive;
+        world.Writer.ReplayResult = new(TransferView(Company), true, "original-correlation");
+
+        var result = operation == "plan"
+            ? await world.Service().PlanAsync(PlanRequest(), Transport("actor"))
+            : await world.Service().AcceptLineAsync(Guid.NewGuid(), Guid.NewGuid(),
+                AcceptRequest(), Transport("actor"));
+
+        Assert.True(result.IsReplay);
+        Assert.Equal("original-correlation", result.OriginalCorrelationId);
+        Assert.Equal(0, world.Destination.Calls);
+        Assert.Equal(0, world.Reader.Calls);
+        Assert.Empty(world.Writer.Calls);
+        Assert.Equal(operation, Assert.Single(world.Writer.ReplayCalls));
+    }
+
+    [Theory]
+    [InlineData("revoked")]
+    [InlineData("company")]
+    [InlineData("actor")]
+    public async Task Stored_success_is_hidden_when_authority_or_scope_changes_at_the_replay_fence(string fault)
+    {
+        var world = new CommandWorld();
+        world.Writer.ReplayResult = new(TransferView(Company), true, "original-correlation");
+        world.Writer.BeforeReplayFence = fault switch
+        {
+            "revoked" => () => world.Authority.Granted = false,
+            "company" => () => world.Context.CompanyId = Guid.NewGuid(),
+            _ => () => world.User.UserId = "other",
+        };
+
+        await Refused(world.Service().PlanAsync(PlanRequest(), Transport("actor")), 403,
+            InventoryTransferCodesV1.Forbidden);
+
+        Assert.Empty(world.Writer.Calls);
+        Assert.Equal(0, world.Destination.Calls);
     }
 
     [Theory]
@@ -261,7 +306,7 @@ public sealed class InventoryTransferTests
             AcceptRequest(), Transport("actor")), 403, InventoryTransferCodesV1.Forbidden);
 
         Assert.Equal(1, world.Reader.Calls);
-        Assert.Equal(2, world.Authority.Measured.Count);
+        Assert.Equal(3, world.Authority.Measured.Count);
         Assert.Empty(world.Writer.Calls);
     }
 
@@ -339,7 +384,7 @@ public sealed class InventoryTransferTests
 
         Assert.Equal(1, world.Reader.Calls);
         Assert.Equal(1, world.Destination.Calls);
-        Assert.Equal(5, world.Authority.Measured.Count);
+        Assert.Equal(6, world.Authority.Measured.Count);
         Assert.Equal("accept", Assert.Single(world.Writer.Calls).Operation);
     }
 
@@ -612,8 +657,16 @@ public sealed class InventoryTransferTests
     private sealed class TestWriter : IInventoryTransferWriterV1
     {
         public List<(string Operation, InventoryCommandMetadata Metadata)> Calls { get; } = [];
+        public List<string> ReplayCalls { get; } = [];
         public Action? BeforeFence { get; set; }
+        public Action? BeforeReplayFence { get; set; }
+        public InventoryTransferResultV1? ReplayResult { get; set; }
         private readonly InventoryTransferResultV1 result = new(TransferView(Company), false, "corr-1");
+
+        public Task<InventoryTransferResultV1?> ReplayPlanAsync(PlanInventoryTransferV1 request,
+            InventoryCommandMetadata metadata, Func<CancellationToken, Task> freshAuthorityFence,
+            CancellationToken cancellationToken = default) =>
+            Replay("plan", freshAuthorityFence, cancellationToken);
 
         public Task<InventoryTransferResultV1> PlanAsync(PlanInventoryTransferV1 request,
             InventoryCommandMetadata metadata, Func<CancellationToken, Task> freshAuthorityFence,
@@ -624,6 +677,11 @@ public sealed class InventoryTransferTests
             InventoryCommandMetadata metadata, Func<CancellationToken, Task> freshAuthorityFence,
             CancellationToken cancellationToken = default) =>
             Answer("dispatch", metadata, freshAuthorityFence, cancellationToken);
+
+        public Task<InventoryTransferResultV1?> ReplayAcceptLineAsync(Guid transferId, Guid lineId,
+            AcceptInventoryTransferLineV1 request, InventoryCommandMetadata metadata,
+            Func<CancellationToken, Task> freshAuthorityFence, CancellationToken cancellationToken = default) =>
+            Replay("accept", freshAuthorityFence, cancellationToken);
 
         public Task<InventoryTransferResultV1> AcceptLineAsync(Guid transferId, Guid lineId,
             AcceptInventoryTransferLineV1 request, InventoryCommandMetadata metadata,
@@ -637,6 +695,16 @@ public sealed class InventoryTransferTests
             await freshAuthorityFence(cancellationToken);
             Calls.Add((operation, metadata));
             return result;
+        }
+
+        private async Task<InventoryTransferResultV1?> Replay(string operation,
+            Func<CancellationToken, Task> freshAuthorityFence, CancellationToken cancellationToken)
+        {
+            ReplayCalls.Add(operation);
+            if (ReplayResult is null) return null;
+            BeforeReplayFence?.Invoke();
+            await freshAuthorityFence(cancellationToken);
+            return ReplayResult;
         }
     }
 
