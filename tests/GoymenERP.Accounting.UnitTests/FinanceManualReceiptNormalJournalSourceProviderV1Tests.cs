@@ -4,6 +4,7 @@ using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Accounting.Application;
 using GoymenERP.Modules.Accounting.Domain;
 using GoymenERP.Modules.Accounting.Domain.Journals;
+using GoymenERP.Modules.Accounting.Domain.Posting;
 using GoymenERP.Modules.Accounting.Infrastructure;
 using GoymenERP.Modules.Finance.Contracts;
 
