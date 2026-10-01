@@ -3,6 +3,8 @@ import { useQuery } from '@tanstack/react-query'
 import { Link, useParams } from 'react-router'
 import { parseAmountInput } from '../finance/decimalText'
 import { isDateOnly } from '../finance/dateOnly'
+import { decodeSourcePage, type SourceSummary } from '../finance/contract'
+import { useFinanceRead } from '../finance/financePort'
 import { StateBlock } from '../shell/StateBlock'
 import { useShellState } from '../shell/shellContext'
 import { classifyOutcome, type RemoteViewState } from '../shell/uiState'
@@ -19,11 +21,17 @@ import {
 } from './capabilities'
 import type { CreateNormalJournalDraftLine, CreateNormalJournalDraftRequest, NormalJournalDraft, NormalJournalSide } from './contract'
 import { sendNormalJournalCommand, type NormalJournalCommandOutcome, type NormalJournalCommandSnapshot } from './normalJournalApi'
+import { clearNormalJournalCreate, recallNormalJournalCreate, storeNormalJournalCreate } from './normalJournalCreateAttempt'
 import styles from './Accounting.module.css'
 
 const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const newId = () => crypto.randomUUID()
 type LineForm = { readonly accountId: string; readonly side: NormalJournalSide; readonly amount: string }
+
+function sourceLabel(source: SourceSummary): string {
+  const number = GUID.test(source.sourceNumber) ? `Kaynak ref. ...${source.id.slice(-8)}` : source.sourceNumber
+  return `${number} - ${source.occurredOn}`
+}
 
 export function NormalJournalDraftCreatePage() {
   const shell = useShellState()
@@ -32,10 +40,10 @@ export function NormalJournalDraftCreatePage() {
     return <StateBlock state={{ kind: 'initial-loading' }} subject="muhasebe şirket bağlamı" />
   }
   const namespace = contextKeyString(key)
-  return <NormalJournalDraftCreate key={`${namespace ?? 'none'}:${shell.routeEntryGeneration}`} />
+  return <NormalJournalDraftCreate key={`${namespace ?? 'none'}:${shell.routeEntryGeneration}`} namespace={namespace} />
 }
 
-function NormalJournalDraftCreate() {
+function NormalJournalDraftCreate({ namespace }: { readonly namespace: string }) {
   const shell = useShellState()
   const boundary = useAuthBoundary()
   const mountedRef = useRef(true)
@@ -47,25 +55,40 @@ function NormalJournalDraftCreate() {
   }, [])
   const companyId = shell.activeContext?.companyId ?? null
   const single = shell.activeContext?.scopeMode === 'single' && companyId !== null
-  const [sourceId, setSourceId] = useState('')
-  const [transactionDate, setTransactionDate] = useState('')
-  const [accountingDate, setAccountingDate] = useState('')
-  const [valueDate, setValueDate] = useState('')
-  const [lines, setLines] = useState<readonly LineForm[]>([
+  const canCreate = hasCapability(shell, ACCOUNTING_CAPABILITY.normalDraftCreate)
+  const recovered = useRef(recallNormalJournalCreate(namespace))
+  const [sourceId, setSourceId] = useState(recovered.current?.request.sourceId ?? '')
+  const [transactionDate, setTransactionDate] = useState(recovered.current?.request.transactionDate ?? '')
+  const [accountingDate, setAccountingDate] = useState(recovered.current?.request.accountingDate ?? '')
+  const [valueDate, setValueDate] = useState(recovered.current?.request.valueDate ?? '')
+  const [lines, setLines] = useState<readonly LineForm[]>(recovered.current?.request.lines ?? [
     { accountId: '', side: 'Debit', amount: '' },
     { accountId: '', side: 'Credit', amount: '' },
   ])
   const [error, setError] = useState<string | null>(null)
-  const [snapshot, setSnapshot] = useState<NormalJournalCommandSnapshot | null>(null)
-  const [outcome, setOutcome] = useState<NormalJournalCommandOutcome | null>(null)
+  const [snapshot, setSnapshot] = useState<NormalJournalCommandSnapshot | null>(recovered.current)
+  const [outcome, setOutcome] = useState<NormalJournalCommandOutcome | null>(
+    recovered.current === null ? null : { type: 'unknown', reason: 'network' },
+  )
   const sending = snapshot !== null && outcome === null
   const unresolved = outcome?.type === 'unknown'
+  const sourceList = useFinanceRead('normal-journal-source-picker', [],
+    (port, scope, signal) => port.listSources(scope, { cursor: null }, signal), decodeSourcePage)
+  const authorizedSources = sourceList.state.kind === 'ready'
+    ? sourceList.state.data.items.filter(source => source.stage === 'Recorded') : []
   const sourceIsValid = GUID.test(sourceId)
   const preparationQuery = useQuery({
-    queryKey: ['accounting', 'normal-journal-source', companyId, sourceId],
-    queryFn: ({ signal }) => fetchNormalJournalDraftSource(companyId ?? '', sourceId, signal),
-    enabled: single && sourceIsValid,
+    queryKey: [namespace, shell.routeEntryGeneration, 'accounting', 'normal-journal-source', sourceId],
+    queryFn: async ({ signal }) => {
+      const security = boundary.capture()
+      const answer = await fetchNormalJournalDraftSource(companyId ?? '', sourceId, signal)
+      if (answer.type === 'http' && (answer.status === 401 || answer.status === 403)) boundary.report(answer.status, security)
+      return answer
+    },
+    enabled: single && canCreate && sourceIsValid,
     retry: false,
+    staleTime: 0,
+    refetchOnMount: 'always',
   })
   const preparation = preparationQuery.data?.type === 'ok-single' ? preparationQuery.data.data : null
   const shownPreparation = useRef<string | null>(null)
@@ -80,6 +103,8 @@ function NormalJournalDraftCreate() {
   if (!single) return <Frame title="Normal fiş taslağı"><StateBlock state={{ kind: 'no-authorized-company' }} subject="normal fiş taslağı" /></Frame>
 
   const send = async (next: NormalJournalCommandSnapshot) => {
+    if (next.operation === 'create' && !canCreate) return
+    if (next.operation === 'create') storeNormalJournalCreate(namespace, next)
     setSnapshot(next)
     setOutcome(null)
     const security = boundary.capture()
@@ -88,12 +113,13 @@ function NormalJournalDraftCreate() {
       if (answer.failure.kind === 'unauthenticated') boundary.report(401, security)
       if (answer.failure.kind === 'forbidden') boundary.report(403, security)
     }
+    if (next.operation === 'create' && answer.type !== 'unknown') clearNormalJournalCreate(namespace)
     if (mountedRef.current) setOutcome(answer)
   }
 
   const submit = (event: React.FormEvent) => {
     event.preventDefault()
-    if (sending || unresolved || outcome?.type === 'applied') return
+    if (!canCreate || sending || unresolved || outcome?.type === 'applied') return
     if (!GUID.test(sourceId) || !isDateOnly(transactionDate) || !isDateOnly(accountingDate)
         || (valueDate !== '' && !isDateOnly(valueDate))) return setError('Kaynak ve tarihler geçerli olmalıdır.')
     if (preparation === null) return setError('Kaynağın onaylı hesap hazırlığı yüklenmelidir.')
@@ -128,27 +154,28 @@ function NormalJournalDraftCreate() {
     {outcome?.type === 'failed' ? <p role="alert" className={styles.error}>İstek reddedildi: {outcome.failure.kind}</p> : null}
     <form className={styles.page} noValidate onSubmit={submit}>
       <div className={styles.form}>
-        <label className={styles.control}>Kaynak kimliği<input value={sourceId} disabled={sending || unresolved} onChange={event => {
+        <label className={styles.control}>Onaylı finans kaynağı<select value={sourceId} disabled={sending || unresolved || sourceList.state.kind !== 'ready'} onChange={event => {
           setSourceId(event.target.value)
           setSnapshot(null)
           setOutcome(null)
           setError(null)
           setLines(current => current.map(line => ({ ...line, accountId: '' })))
-        }} /></label>
+        }}><option value="">Kaynak seçin</option>{authorizedSources.map(source => <option key={source.id} value={source.id}>{sourceLabel(source)}</option>)}</select></label>
         <label className={styles.control}>İşlem tarihi<input type="date" value={transactionDate} disabled={sending || unresolved} onChange={event => setTransactionDate(event.target.value)} /></label>
         <label className={styles.control}>Muhasebe tarihi<input type="date" value={accountingDate} disabled={sending || unresolved} onChange={event => setAccountingDate(event.target.value)} /></label>
         <label className={styles.control}>Valör tarihi<input type="date" value={valueDate} disabled={sending || unresolved} onChange={event => setValueDate(event.target.value)} /></label>
       </div>
+      {sourceList.state.kind !== 'ready' ? <StateBlock state={sourceList.state} subject="yetkili finans kaynakları" onRetry={sourceList.refetch} /> : null}
       {sourceIsValid && preparationQuery.isPending ? <StateBlock state={{ kind: 'initial-loading' }} subject="onaylı hesap hazırlığı" /> : null}
       {sourceIsValid && preparationQuery.data !== undefined && preparationQuery.data.type !== 'ok-single'
         ? <p role="alert" className={styles.error}>Kaynağın onaylı hesap hazırlığı okunamadı.</p> : null}
       {preparation ? <p className={styles.help}>Onaylı ayna {preparation.accountPlanSourceVersion}; kural {preparation.postingRuleVersion}.</p> : null}
       {lines.map((line, index) => <div className={styles.form} key={index}>
-        <label className={styles.control}>Onaylı hesap<select value={line.accountId} disabled={sending || unresolved || preparation === null} onChange={event => {
-          const mapping = preparation?.mappings.find(candidate => candidate.accountId === event.target.value)
+        <label className={styles.control}>Onaylı hesap<select value={line.accountId === '' ? '' : `${line.side}:${line.accountId}`} disabled={sending || unresolved || preparation === null} onChange={event => {
+          const mapping = preparation?.mappings.find(candidate => `${candidate.side}:${candidate.accountId}` === event.target.value)
           setLines(current => current.map((item, i) => i === index
             ? { ...item, accountId: mapping?.accountId ?? '', side: mapping?.side ?? item.side } : item))
-        }}><option value="">Hesap seçin</option>{preparation?.mappings.map(mapping => <option key={`${mapping.side}:${mapping.accountId}`} value={mapping.accountId}>{mapping.accountCode} - {mapping.accountName} ({mapping.side === 'Debit' ? 'Borç' : 'Alacak'})</option>)}</select></label>
+        }}><option value="">Hesap seçin</option>{preparation?.mappings.map(mapping => <option key={`${mapping.side}:${mapping.accountId}`} value={`${mapping.side}:${mapping.accountId}`}>{mapping.accountCode} - {mapping.accountName} ({mapping.side === 'Debit' ? 'Borç' : 'Alacak'})</option>)}</select></label>
         <label className={styles.control}>Tutar<input inputMode="decimal" value={line.amount} disabled={sending || unresolved} onChange={event => setLines(current => current.map((item, i) => i === index ? { ...item, amount: event.target.value } : item))} /></label>
         {lines.length > 2 ? <button type="button" disabled={sending || unresolved} onClick={() => setLines(current => current.filter((_, i) => i !== index))}>Satırı kaldır</button> : null}
       </div>)}
@@ -224,7 +251,7 @@ function NormalJournalDraftDetail({ draftId, mode }: { readonly draftId: string;
     void send({ operation: 'approve', idempotencyKey: newId(), draftId, expectedVersion: draft.version, periodId })
   }
   return <Frame title="Normal fiş taslağı">
-    <dl className={styles.form}><div className={styles.control}><dt>Durum</dt><dd>{draft.status}</dd></div><div className={styles.control}><dt>Sürüm</dt><dd>{draft.version}</dd></div><div className={styles.control}><dt>Kaynak</dt><dd className={styles.mono}>{draft.sourceId}</dd></div><div className={styles.control}><dt>Posting rule</dt><dd>{draft.postingRuleVersion}</dd></div></dl>
+    <dl className={styles.form}><div className={styles.control}><dt>Durum</dt><dd>{draft.status}</dd></div><div className={styles.control}><dt>Sürüm</dt><dd>{draft.version}</dd></div><div className={styles.control}><dt>Kaynak</dt><dd>Kaynak ref. ...{draft.sourceId.slice(-8)}</dd></div><div className={styles.control}><dt>Posting rule</dt><dd>{draft.postingRuleVersion}</dd></div></dl>
     <div className={styles.tableWrap}><table className={styles.table}><thead><tr><th>Satır</th><th>Hesap</th><th>Taraf</th><th className={styles.amount}>Tutar</th></tr></thead><tbody>{draft.lines.map(line => <tr key={line.lineNumber}><td>{line.lineNumber}</td><td className={styles.mono}>{line.accountId}</td><td>{line.side === 'Debit' ? 'Borç' : 'Alacak'}</td><td className={styles.amount}>{line.amount}</td></tr>)}</tbody></table></div>
     {outcome?.type === 'unknown' ? <div role="alert" className={styles.noticeWarn}>Onay sonucu bilinmiyor.<button type="button" onClick={() => snapshot && void send(snapshot, true)}>Aynı isteği yeniden gönder</button></div> : null}
     {outcome?.type === 'failed' ? <p role="alert" className={styles.error}>Onay reddedildi: {outcome.failure.kind}</p> : null}

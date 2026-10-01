@@ -13,6 +13,24 @@ const ACCOUNT_2 = 'a0000000-0000-4000-8000-000000000007'
 const CURRENCY = 'a0000000-0000-4000-8000-000000000008'
 const PREPARATION = 'b'.repeat(64)
 
+function sourcePage() {
+  return {
+    outcome: 'Found',
+    resource: {
+      companyId: COMPANY,
+      items: [{
+        id: SOURCE, companyId: COMPANY, sourceNumber: 'SENTETIK-TAHSILAT-1', version: '2', stage: 'Recorded',
+        partyId: 'a0000000-0000-4000-8000-000000000009',
+        companyAccountId: 'a0000000-0000-4000-8000-000000000010',
+        treasuryAccountId: 'a0000000-0000-4000-8000-000000000011', currencyId: CURRENCY,
+        occurredOn: '2026-09-24', valueOn: null,
+        amount: { disclosure: 'Visible', money: { amount: '10.25', currencyId: CURRENCY } },
+      }],
+      nextCursor: null,
+    },
+  }
+}
+
 function preparation(overrides: Record<string, unknown> = {}) {
   return {
     companyId: COMPANY, sourceId: SOURCE, preparationVersion: PREPARATION, sourceVersion: '2',
@@ -51,28 +69,31 @@ describe('normal journal source-bound creation', () => {
     const recorded = installFetch({
       capabilities: [ACCOUNTING_CAPABILITY.normalDraftCreate],
       respond: (url, init) => {
+        if (url.includes('/finance/manual-receipts')) return json(sourcePage())
         if (url.endsWith(`/normal-journal-draft-sources/${SOURCE}`)) return json(preparation())
         if (url.endsWith('/normal-journal-drafts') && init?.method === 'POST') return json(draft(), 201)
         return undefined
       },
     })
     renderAt(ACCOUNTING_ROUTE.normalDraftCreate)
-    fireEvent.change(screen.getByLabelText('Kaynak kimliği'), { target: { value: SOURCE } })
+    fireEvent.change(await screen.findByLabelText('Onaylı finans kaynağı'), { target: { value: SOURCE } })
     await screen.findByText('Onaylı ayna mikro-v1; kural approved-rule-v1.')
     const accounts = screen.getAllByLabelText('Onaylı hesap')
-    fireEvent.change(accounts[0], { target: { value: ACCOUNT_1 } })
-    fireEvent.change(accounts[1], { target: { value: ACCOUNT_2 } })
+    fireEvent.change(accounts[0], { target: { value: `Debit:${ACCOUNT_1}` } })
+    fireEvent.change(accounts[1], { target: { value: `Credit:${ACCOUNT_2}` } })
     fireEvent.change(screen.getByLabelText('İşlem tarihi'), { target: { value: '2026-09-24' } })
     fireEvent.change(screen.getByLabelText('Muhasebe tarihi'), { target: { value: '2026-09-24' } })
     const amounts = screen.getAllByLabelText('Tutar')
-    fireEvent.change(amounts[0], { target: { value: '10.25' } })
-    fireEvent.change(amounts[1], { target: { value: '10.25' } })
+    fireEvent.change(amounts[0], { target: { value: '10,25' } })
+    fireEvent.change(amounts[1], { target: { value: '10,25' } })
     fireEvent.click(screen.getByRole('button', { name: 'Taslağı kaydet' }))
 
     await screen.findByText('Normal fiş taslağı kaydedildi')
     const command = requestsFor(recorded, '/normal-journal-drafts', 'POST').at(-1)
     expect(command?.body).toMatchObject({
       sourceId: SOURCE,
+      transactionDate: '2026-09-24',
+      accountingDate: '2026-09-24',
       expectedPreparationVersion: PREPARATION,
       lines: [
         { accountId: ACCOUNT_1, side: 'Debit', amount: '10.25' },
@@ -86,6 +107,7 @@ describe('normal journal source-bound creation', () => {
     const recorded = installFetch({
       capabilities: [ACCOUNTING_CAPABILITY.normalDraftCreate],
       respond: (url, init) => {
+        if (url.includes('/finance/manual-receipts')) return json(sourcePage())
         if (url.endsWith(`/normal-journal-draft-sources/${SOURCE}`)) {
           reads += 1
           return json(preparation({ preparationVersion: (reads === 1 ? 'b' : 'c').repeat(64) }))
@@ -97,14 +119,14 @@ describe('normal journal source-bound creation', () => {
       },
     })
     renderAt(ACCOUNTING_ROUTE.normalDraftCreate)
-    fireEvent.change(screen.getByLabelText('Kaynak kimliği'), { target: { value: SOURCE } })
+    fireEvent.change(await screen.findByLabelText('Onaylı finans kaynağı'), { target: { value: SOURCE } })
     await screen.findByText('Onaylı ayna mikro-v1; kural approved-rule-v1.')
     const accounts = screen.getAllByLabelText('Onaylı hesap')
-    fireEvent.change(accounts[0], { target: { value: ACCOUNT_1 } })
-    fireEvent.change(accounts[1], { target: { value: ACCOUNT_2 } })
+    fireEvent.change(accounts[0], { target: { value: `Debit:${ACCOUNT_1}` } })
+    fireEvent.change(accounts[1], { target: { value: `Credit:${ACCOUNT_2}` } })
     fireEvent.change(screen.getByLabelText('İşlem tarihi'), { target: { value: '2026-09-24' } })
     fireEvent.change(screen.getByLabelText('Muhasebe tarihi'), { target: { value: '2026-09-24' } })
-    screen.getAllByLabelText('Tutar').forEach(input => fireEvent.change(input, { target: { value: '10.25' } }))
+    screen.getAllByLabelText('Tutar').forEach(input => fireEvent.change(input, { target: { value: '10,25' } }))
     fireEvent.click(screen.getByRole('button', { name: 'Taslağı kaydet' }))
 
     await screen.findByText('Onaylı hesap hazırlığı değişti. Seçimleri yenileyin.')
@@ -112,6 +134,44 @@ describe('normal journal source-bound creation', () => {
     expect(command.body).toMatchObject({ expectedPreparationVersion: PREPARATION })
     fireEvent.click(screen.getByRole('button', { name: 'Hazırlığı yenile' }))
     await waitFor(() => expect(reads).toBe(2))
+  })
+
+  it('recalls an unknown create after close and re-entry and retries the exact key and body', async () => {
+    let creates = 0
+    const recorded = installFetch({
+      capabilities: [ACCOUNTING_CAPABILITY.normalDraftCreate],
+      respond: (url, init) => {
+        if (url.includes('/finance/manual-receipts')) return json(sourcePage())
+        if (url.endsWith(`/normal-journal-draft-sources/${SOURCE}`)) return json(preparation())
+        if (url.endsWith('/normal-journal-drafts') && init?.method === 'POST') {
+          creates += 1
+          if (creates === 1) throw new TypeError('network')
+          return json(draft(), 201)
+        }
+        return undefined
+      },
+    })
+    const first = renderAt(ACCOUNTING_ROUTE.normalDraftCreate)
+    fireEvent.change(await screen.findByLabelText('Onaylı finans kaynağı'), { target: { value: SOURCE } })
+    await screen.findByText('Onaylı ayna mikro-v1; kural approved-rule-v1.')
+    const accounts = screen.getAllByLabelText('Onaylı hesap')
+    fireEvent.change(accounts[0], { target: { value: `Debit:${ACCOUNT_1}` } })
+    fireEvent.change(accounts[1], { target: { value: `Credit:${ACCOUNT_2}` } })
+    fireEvent.change(screen.getByLabelText('İşlem tarihi'), { target: { value: '2026-09-24' } })
+    fireEvent.change(screen.getByLabelText('Muhasebe tarihi'), { target: { value: '2026-09-24' } })
+    screen.getAllByLabelText('Tutar').forEach(input => fireEvent.change(input, { target: { value: '10,25' } }))
+    fireEvent.click(screen.getByRole('button', { name: 'Taslağı kaydet' }))
+    await screen.findByRole('button', { name: 'Aynı isteği yeniden gönder' })
+
+    first.view.unmount()
+    renderAt(ACCOUNTING_ROUTE.normalDraftCreate)
+    fireEvent.click(await screen.findByRole('button', { name: 'Aynı isteği yeniden gönder' }))
+    await screen.findByText('Normal fiş taslağı kaydedildi')
+
+    const commands = requestsFor(recorded, '/normal-journal-drafts', 'POST')
+    expect(commands).toHaveLength(2)
+    expect(commands[1].headers['Idempotency-Key']).toBe(commands[0].headers['Idempotency-Key'])
+    expect(commands[1].body).toEqual(commands[0].body)
   })
 })
 
