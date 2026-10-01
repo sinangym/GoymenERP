@@ -342,34 +342,51 @@ public sealed partial class LogisticsInstructionSqlServerRelationalAcceptanceTes
         var owners = Owners.For(CompanyA);
         var orderLineId = Guid.NewGuid();
 
-        async Task<object> WriteAsync(string suffix)
+        async Task<(string Suffix, LoadingInstruction Instruction, object Result)> WriteAsync(string suffix)
         {
             var instruction = InstructionForOrderLine(owners, orderLineId, 3m);
             var line = Assert.Single(instruction.Lines);
             await using var writer = run.Store(CompanyA);
             try
             {
-                return (await writer.Store.StoreInstructionAsync(run.Envelope($"k-aggregate-race-{suffix}"),
+                var result = await writer.Store.StoreInstructionAsync(run.Envelope($"k-aggregate-race-{suffix}"),
                     Hash($"aggregate-race-{suffix}"), Day, () => instruction,
-                    aggregateLimits: [AggregateLimit(line.Id, owners, orderLineId, 5m, 7, 3)])).Outcome;
+                    aggregateLimits: [AggregateLimit(line.Id, owners, orderLineId, 5m, 7, 3)]);
+                return (suffix, instruction, result.Outcome);
             }
             catch (LogisticsStoreException exception)
             {
-                return exception.Code;
+                return (suffix, instruction, exception.Code);
             }
         }
 
         var results = await Task.WhenAll(Task.Run(() => WriteAsync("a")), Task.Run(() => WriteAsync("b")));
 
-        Assert.Single(results, result => result is LogisticsWriteOutcome.Recorded);
-        Assert.Single(results, result => result is string code
+        var winner = Assert.Single(results, result => result.Result is LogisticsWriteOutcome.Recorded);
+        Assert.Single(results, result => result.Result is string code
             && code is LogisticsStoreCodes.AggregateLimitExceeded or LogisticsStoreCodes.ConcurrentChange);
+        await using (var replay = run.Store(CompanyA))
+        {
+            var replayed = await replay.Store.StoreInstructionAsync(
+                run.Envelope($"k-aggregate-race-{winner.Suffix}", correlation: "SENTETIK-race-replay"),
+                Hash($"aggregate-race-{winner.Suffix}"), Day,
+                () => throw new InvalidOperationException("a replay never rebuilds"),
+                aggregateLimits: [AggregateLimit(Assert.Single(winner.Instruction.Lines).Id, owners, orderLineId, 1m, 99, 99)]);
+            Assert.Equal((LogisticsWriteOutcome.Replayed, winner.Instruction.Id, run.Correlation),
+                (replayed.Outcome, replayed.Instruction.Instruction.Id, replayed.OriginalCorrelationId));
+        }
+
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM logistics.LoadingInstructions"));
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM logistics.LoadingInstructionLines"));
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM logistics.LoadingAttempts"));
         Assert.Equal(3m, await run.ScalarAsync<decimal>(
             "SELECT SUM(Instructed) FROM logistics.LoadingInstructionLines WHERE CompanyId = @company AND SourceOrderId = @order AND SourceOrderLineId = @line",
             ("@company", CompanyA), ("@order", owners.Order), ("@line", orderLineId)));
         Assert.Equal(1, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType = N'logistics.loading-instruction.created.v1'"));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityId = @id AND EventType = N'logistics.loading-instruction.created.v1'",
+            ("@id", winner.Instruction.Id.ToString("D"))));
     }
 
     [SqlServerFact]
