@@ -363,6 +363,44 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
     }
 
     [SqlServerFact]
+    public async Task A_historical_label_without_product_version_replays_and_extends_but_a_new_label_requires_it()
+    {
+        await using var run = await Run.StartAsync();
+        var label = NewLabel(CompanyA, "SYN-LEGACY-PRODUCT-VERSION");
+        await using (var a = run.Store(CompanyA))
+        {
+            Assert.Equal(InventoryWriteOutcome.Recorded, await a.Labels.SaveLabelAsync(label, Metadata(run)));
+        }
+
+        await run.ExecuteAsync("UPDATE inventory.Labels SET ProductVersion = NULL WHERE Id = @id", ("@id", label.Id));
+        await using (var a = run.Store(CompanyA))
+        {
+            var historical = (await a.Labels.FindLabelAsync(label.Id))!;
+            Assert.Null(historical.ProductVersion);
+            Assert.Equal(InventoryWriteOutcome.Replayed,
+                await a.Labels.SaveLabelAsync(historical, Metadata(run)));
+
+            historical.Print(At, "synthetic-operator");
+            Assert.Equal(InventoryWriteOutcome.Recorded,
+                await a.Labels.SaveLabelAsync(historical, Metadata(run)));
+
+            var versionlessNew = new MaterialLabel(Guid.NewGuid(), CompanyA,
+                "SYN-NEW-WITHOUT-PRODUCT-VERSION", Product, LotA);
+            Assert.Equal(InventoryStoreCodes.ValueDoesNotFit,
+                (await Assert.ThrowsAsync<InventoryStoreException>(() =>
+                    a.Labels.SaveLabelAsync(versionlessNew, Metadata(run)))).Code);
+        }
+
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM inventory.Labels WHERE Id = @id AND ProductVersion IS NULL",
+            ("@id", label.Id)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM inventory.LabelPrints WHERE LabelId = @id", ("@id", label.Id)));
+        Assert.Equal(0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM inventory.Labels WHERE Code = N'SYN-NEW-WITHOUT-PRODUCT-VERSION'"));
+    }
+
+    [SqlServerFact]
     public async Task A_known_cost_offered_again_at_another_scale_is_a_replay()
     {
         // #293 SİPARİŞ P3-2: 5.00 and 5 are one amount; the stored movement is the same content.
@@ -710,6 +748,53 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         // One audit event each: the lot, two labels, two receipts and the count; none for the replay.
         Assert.Equal(6, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM audit.AuditEvents WHERE CorrelationId = @c", ("@c", run.Correlation)));
+    }
+
+    [SqlServerFact]
+    public async Task A_pre_product_version_opening_replays_without_backfill_or_hash_rewrite()
+    {
+        await using var run = await Run.StartAsync();
+        var location = await run.LocationOfAsync(CompanyA);
+        var lot = new MaterialLot(Guid.NewGuid(), CompanyA, Product);
+        var count = new OpeningCount(Guid.NewGuid(), CompanyA, location, new DateOnly(2026, 9, 19),
+            "SYN-SHEET-LEGACY-HASH",
+            [new(Guid.NewGuid(), lot, new MaterialLabel(Guid.NewGuid(), CompanyA,
+                "SYN-OPEN-LEGACY-HASH", Product, lot.Id, "product-v1"), Kilograms.Positive(5m))]);
+        await using (var a = run.Store(CompanyA))
+        {
+            Assert.Equal(InventoryWriteOutcome.Recorded, await a.Opening.RecordAsync(count, Metadata(run)));
+        }
+
+        var legacyHash = InventoryStore.LegacyOpeningHash(count);
+        await run.ExecuteAsync("UPDATE inventory.OpeningCounts SET ContentHash = @hash WHERE Id = @id",
+            ("@hash", legacyHash), ("@id", count.Id));
+        await run.ExecuteAsync("UPDATE inventory.Labels SET ProductVersion = NULL WHERE Id = @id",
+            ("@id", count.Lines[0].Label.Id));
+
+        var legacyLabel = new MaterialLabel(count.Lines[0].Label.Id, CompanyA,
+            count.Lines[0].Label.Code, Product, lot.Id);
+        var legacyCount = new OpeningCount(count.Id, count.CompanyId, count.LocationId, count.CountedOn,
+            count.SheetReference,
+            [new(count.Lines[0].Id, lot, legacyLabel, count.Lines[0].Quantity)]);
+
+        await using (var a = run.Store(CompanyA))
+        {
+            Assert.Equal(InventoryWriteOutcome.Replayed, await a.Opening.RecordAsync(legacyCount, Metadata(run)));
+            var changed = new OpeningCount(count.Id, count.CompanyId, count.LocationId, count.CountedOn,
+                "SYN-SHEET-LEGACY-HASH-CHANGED", legacyCount.Lines);
+            Assert.Equal(InventoryStoreCodes.OpeningConflict,
+                (await Assert.ThrowsAsync<InventoryStoreException>(() =>
+                    a.Opening.RecordAsync(changed, Metadata(run)))).Code);
+        }
+
+        Assert.Equal(legacyHash, await run.ScalarAsync<string>(
+            "SELECT ContentHash FROM inventory.OpeningCounts WHERE Id = @id", ("@id", count.Id)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM inventory.Labels WHERE Id = @id AND ProductVersion IS NULL",
+            ("@id", count.Lines[0].Label.Id)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM inventory.Movements WHERE SourceKind = N'inventory.opening-count' AND SourceId = @id",
+            ("@id", count.Id)));
     }
 
     /// <summary>
