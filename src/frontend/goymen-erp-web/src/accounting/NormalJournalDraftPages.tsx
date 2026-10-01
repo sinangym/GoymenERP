@@ -173,13 +173,13 @@ function NormalJournalDraftCreate({ namespace, attemptOwner }: { readonly namesp
     {outcome?.type === 'failed' ? <p role="alert" className={styles.error}>İstek reddedildi: {outcome.failure.kind}</p> : null}
     <form className={styles.page} noValidate onSubmit={submit}>
       <div className={styles.form}>
-        <label className={styles.control}>Onaylı finans kaynağı<select value={sourceId} disabled={sending || unresolved || sourceListState.kind !== 'ready'} onChange={event => {
+        <div className={styles.control}><label htmlFor="normal-journal-source">Onaylı finans kaynağı</label><select id="normal-journal-source" value={sourceId} disabled={sending || unresolved || sourceListState.kind !== 'ready'} onChange={event => {
           setSourceId(event.target.value)
           setSnapshot(null)
           setOutcome(null)
           setError(null)
           setLines(current => current.map(line => ({ ...line, accountId: '' })))
-        }}><option value="">Kaynak seçin</option>{authorizedSources.map(source => <option key={source.id} value={source.id}>{sourceLabel(source)}</option>)}</select></label>
+        }}><option value="">Kaynak seçin</option>{authorizedSources.map(source => <option key={source.id} value={source.id}>{sourceLabel(source)}</option>)}</select></div>
         <label className={styles.control}>İşlem tarihi<input type="date" value={transactionDate} disabled={sending || unresolved} onChange={event => setTransactionDate(event.target.value)} /></label>
         <label className={styles.control}>Muhasebe tarihi<input type="date" value={accountingDate} disabled={sending || unresolved} onChange={event => setAccountingDate(event.target.value)} /></label>
         <label className={styles.control}>Valör tarihi<input type="date" value={valueDate} disabled={sending || unresolved} onChange={event => setValueDate(event.target.value)} /></label>
@@ -190,11 +190,11 @@ function NormalJournalDraftCreate({ namespace, attemptOwner }: { readonly namesp
         ? <p role="alert" className={styles.error}>Kaynağın onaylı hesap hazırlığı okunamadı.</p> : null}
       {preparation ? <p className={styles.help}>Onaylı ayna {preparation.accountPlanSourceVersion}; kural {preparation.postingRuleVersion}.</p> : null}
       {lines.map((line, index) => <div className={styles.form} key={index}>
-        <label className={styles.control}>Onaylı hesap<select value={line.accountId === '' ? '' : `${line.side}:${line.accountId}`} disabled={sending || unresolved || preparation === null} onChange={event => {
+        <div className={styles.control}><label htmlFor={`normal-journal-account-${index}`}>Onaylı hesap</label><select id={`normal-journal-account-${index}`} value={line.accountId === '' ? '' : `${line.side}:${line.accountId}`} disabled={sending || unresolved || preparation === null} onChange={event => {
           const mapping = preparation?.mappings.find(candidate => `${candidate.side}:${candidate.accountId}` === event.target.value)
           setLines(current => current.map((item, i) => i === index
             ? { ...item, accountId: mapping?.accountId ?? '', side: mapping?.side ?? item.side } : item))
-        }}><option value="">Hesap seçin</option>{preparation?.mappings.map(mapping => <option key={`${mapping.side}:${mapping.accountId}`} value={`${mapping.side}:${mapping.accountId}`}>{mapping.accountCode} - {mapping.accountName} ({mapping.side === 'Debit' ? 'Borç' : 'Alacak'})</option>)}</select></label>
+        }}><option value="">Hesap seçin</option>{preparation?.mappings.map(mapping => <option key={`${mapping.side}:${mapping.accountId}`} value={`${mapping.side}:${mapping.accountId}`}>{mapping.accountCode} - {mapping.accountName} ({mapping.side === 'Debit' ? 'Borç' : 'Alacak'})</option>)}</select></div>
         <label className={styles.control}>Tutar<input inputMode="decimal" value={line.amount} disabled={sending || unresolved} onChange={event => setLines(current => current.map((item, i) => i === index ? { ...item, amount: event.target.value } : item))} /></label>
         {lines.length > 2 ? <button type="button" disabled={sending || unresolved} onClick={() => setLines(current => current.filter((_, i) => i !== index))}>Satırı kaldır</button> : null}
       </div>)}
