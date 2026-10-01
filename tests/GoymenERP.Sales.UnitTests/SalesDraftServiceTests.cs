@@ -1575,7 +1575,8 @@ public sealed partial class SalesDraftServiceTests
             Guid draftId, Func<SalesOrderDraft, DateTimeOffset, ApprovedRevisionSnapshot?> mutate, SalesDraftStateAudit audit,
             Func<CancellationToken, Task> beforeWrite, CancellationToken cancellationToken = default)
         {
-            if (commandName != SalesDraftCommands.ReviseCommercialV1) throw new ArgumentException("wrong command", nameof(commandName));
+            if (commandName is not (SalesDraftCommands.ReviseCommercialV1 or SalesDraftCommands.ApprovePriceFloorExceptionsV1))
+                throw new ArgumentException("wrong command", nameof(commandName));
             ApprovedRevisionSnapshot? archived = null;
             var result = await UpdateDraftStateAsyncCore(envelope, requestHash, commandName, draftId,
                 (draft, now) => archived = mutate(draft, now), audit, beforeWrite, cancellationToken);

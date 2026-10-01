@@ -94,12 +94,13 @@ public sealed record OwnerReference(Guid Id, string ExpectedVersion);
 /// </para>
 public sealed record CommercialDraftFields(string? UnitPrice, Guid? PriceUnitId, string? DiscountPercent,
     PriceReferenceSnapshot? Reference = null, string? DiscountAmount = null, string? SurchargePercent = null,
-    string? SurchargeAmount = null)
+    string? SurchargeAmount = null, PriceFloorExceptionSnapshot? FloorException = null)
 {
     public static CommercialDraftFields None { get; } = new(null, null, null);
 
     /// <summary>Whether anything beyond K3's three fields is present (the reference or an AT-018 adjustment).</summary>
-    public bool HasPricingDetail => Reference is not null || DiscountAmount is not null || SurchargePercent is not null || SurchargeAmount is not null;
+    public bool HasPricingDetail => Reference is not null || DiscountAmount is not null || SurchargePercent is not null
+        || SurchargeAmount is not null || FloorException is not null;
 
     /// <summary>"Reference" when the unit price is the reference's list price, "Manual" when it was overwritten; null without a price.</summary>
     public string? PriceSource => UnitPrice is null ? null
@@ -114,6 +115,22 @@ public sealed record CommercialDraftFields(string? UnitPrice, Guid? PriceUnitId,
 public sealed record PriceReferenceSnapshot(Guid PriceListId, string PriceListName, int VersionNo, DateOnly ValidFrom, DateOnly? ValidThrough,
     string CurrencyCode, Guid PriceUnitId, string UnitPrice, string? FloorUnitPrice, string VatBasis,
     string LowerQuantity, string? UpperQuantity);
+
+/// <summary>
+/// The reasoned maker-checker exception for one exact below-floor commercial snapshot. Pending has no approver facts;
+/// approved has all three. Any commercial revision replaces this snapshot, so approval never floats to another price,
+/// list version or calculated net.
+/// </summary>
+public sealed record PriceFloorExceptionSnapshot(
+    string RequestedBy, DateTimeOffset RequestedAtUtc, Guid PriceListId, int PriceListVersionNo, Guid PriceUnitId,
+    string UnitPrice, string NetUnitPrice, string FloorUnitPrice,
+    string? ApprovedBy = null, DateTimeOffset? ApprovedAtUtc = null, string? Reason = null)
+{
+    public bool IsApproved => ApprovedBy is not null && ApprovedAtUtc is not null && Reason is not null;
+}
+
+/// <summary>One current below-floor line and the approver's required reason.</summary>
+public sealed record LinePriceFloorExceptionApprovalInput(Guid LineId, string Reason);
 
 /// <summary>K3 Head B: one line's new commercial fields in a commercial revision, addressed by the client line id.</summary>
 public sealed record LineCommercialInput(Guid LineId, CommercialDraftFields Commercial);

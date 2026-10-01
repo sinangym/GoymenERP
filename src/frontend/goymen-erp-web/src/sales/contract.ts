@@ -27,6 +27,8 @@ export const SALES_CONTRACT_STATUS = 'PINNED_SOURCE' as const
 export const SALES_DRAFT_PATH = '/sales/drafts'
 export const salesDraftDetailPath = (id: string) => `${SALES_DRAFT_PATH}/${encodeURIComponent(id)}`
 export const salesDraftCommercialRevisionPath = (id: string) => `${salesDraftDetailPath(id)}/commercial-revision`
+export const salesDraftPriceFloorExceptionApprovalPath = (id: string) =>
+  `${salesDraftDetailPath(id)}/below-floor-exception-approval`
 export const salesDraftRevisionsPath = (id: string) => `${salesDraftDetailPath(id)}/revisions`
 /** DEC-SAL-002 / AT-023: the quantity revision (POST, the quantity control's name). */
 export const salesDraftQuantityRevisionPath = (id: string) => `${salesDraftDetailPath(id)}/quantity-revision`
@@ -107,6 +109,11 @@ export interface DraftLineCommercialRequest {
 export interface DraftCommercialRevisionRequest {
   readonly expectedVersion: string
   readonly lines: readonly DraftLineCommercialRequest[]
+}
+
+export interface DraftPriceFloorExceptionApprovalRequest {
+  readonly expectedVersion: string
+  readonly lines: readonly { readonly lineId: string; readonly reason: string }[]
 }
 
 /** DEC-SAL-002: one line's new ordered quantity, exact decimal text in the line's own order unit. */

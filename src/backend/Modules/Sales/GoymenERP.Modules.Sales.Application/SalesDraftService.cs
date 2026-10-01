@@ -458,6 +458,96 @@ public sealed partial class SalesDraftService(
         return Response(scope, result.Draft, result.Outcome == SalesDraftWriteOutcome.Replayed, result.OriginalCorrelationId, await DiscloseAsync(scope, cancellationToken));
     }
 
+    /// <summary>
+    /// Reasoned maker-checker approval of every current below-floor line. This command changes no price; it binds the
+    /// approving actor and reason to the current immutable list/version/unit/net/floor snapshot and is invalidated by the
+    /// next commercial revision. Its dedicated permission confers neither price write nor order approval.
+    /// </summary>
+    public async Task<SalesOrderDraftResponse> ApprovePriceFloorExceptionsAsync(Guid draftId,
+        SalesDraftPriceFloorExceptionApprovalRequest request, SalesCommandMetadata metadata,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(metadata);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var permission = bindings.PriceFloorExceptionApprovePermission;
+        var scope = await RequireAsync(permission, cancellationToken);
+        if (!long.TryParse(request.ExpectedVersion, NumberStyles.None, CultureInfo.InvariantCulture, out var expectedVersion)
+            || expectedVersion < 1 || request.Lines is null)
+        {
+            throw new SalesDraftServiceException(400, "validation_failed", [new("expectedVersion", "validation_failed")]);
+        }
+
+        const string commandName = SalesDraftCommands.ApprovePriceFloorExceptionsV1;
+        var requestHash = SalesDraftRequestHash.Compute(commandName, draftId, request);
+        var envelope = Envelope(scope, metadata, permission!);
+        var replay = await FindReplayAsync(scope, permission, envelope, requestHash, commandName, cancellationToken);
+        if (replay is not null)
+        {
+            return await ReplayedAsync(scope, replay, cancellationToken);
+        }
+        if (draftId == Guid.Empty)
+        {
+            throw new SalesDraftServiceException(404, "not_found");
+        }
+
+        var inputs = request.Lines.Select(line => new LinePriceFloorExceptionApprovalInput(line.LineId, line.Reason)).ToArray();
+        var audit = new SalesDraftStateAudit("sales.order-draft.price-floor-exceptions-approved.v1", "ApprovePriceFloorExceptions",
+            "Satış siparişi taban fiyat istisnaları farklı yetkili tarafından gerekçeli onaylandı");
+        SalesDraftStateResult? result;
+        try
+        {
+            result = await store.ReviseDraftCommercialAsync(envelope, requestHash, commandName, draftId,
+                (draft, now) =>
+                {
+                    draft.ApprovePriceFloorExceptions(expectedVersion, inputs, scope.ActorId, now);
+                    return null;
+                }, audit, async writeCancellationToken =>
+                {
+                    scope = await RequireStillAsync(scope, permission, writeCancellationToken);
+                }, cancellationToken);
+        }
+        catch (SalesVersionConflictException exception)
+        {
+            throw await TerminalAsync(scope, envelope, requestHash, new SalesDraftTerminalRefusal(409,
+                SalesDraftProblemCodesV1.VersionConflict, [new("expectedVersion", exception.Code)]), cancellationToken,
+                commandName, draftId);
+        }
+        catch (SalesRuleException exception) when (exception.Code == SalesRuleCodes.StateConflict)
+        {
+            throw await TerminalAsync(scope, envelope, requestHash, new SalesDraftTerminalRefusal(409,
+                SalesDraftProblemCodesV1.StateConflict, [new("approvalState", exception.Code)]), cancellationToken,
+                commandName, draftId);
+        }
+        catch (SalesRuleException exception)
+        {
+            var index = exception.LineId is { } lineId
+                ? request.Lines.ToList().FindIndex(line => line.LineId == lineId)
+                : -1;
+            var field = index < 0 ? "lines" : $"lines[{index}].reason";
+            throw new SalesDraftServiceException(422, "validation_failed", [new(field, exception.Code)]);
+        }
+        catch (ArgumentException)
+        {
+            throw new SalesDraftServiceException(400, "validation_failed");
+        }
+        catch (SalesDraftStoreException exception) when (exception.Code == SalesDraftStoreCodes.ConcurrentChange)
+        {
+            var won = await FindReplayAsync(scope, permission, envelope, requestHash, commandName, cancellationToken);
+            if (won is null) throw Store(exception);
+            return await ReplayedAsync(scope, won, cancellationToken);
+        }
+        catch (SalesDraftStoreException exception)
+        {
+            throw Store(exception);
+        }
+
+        if (result is null) throw new SalesDraftServiceException(404, "not_found");
+        return Response(scope, result.Draft, result.Outcome == SalesDraftWriteOutcome.Replayed,
+            result.OriginalCorrelationId, await DiscloseAsync(scope, cancellationToken));
+    }
+
     /// <summary>The field a revision refusal is answered on: the line's index in the request and the field its code is about, else the whole `lines` member.</summary>
     private static string RevisionField(SalesDraftCommercialRevisionRequest request, SalesRuleException exception)
     {

@@ -431,12 +431,37 @@ public sealed class SalesOrderDraft
                     "Referans liste fiyatı satırın fiyat biriminde olmalıdır.");
             }
 
-            if (reference.FloorUnitPrice is { } floor
-                && SalesLinePriceCalculator.NetUnitPrice(commercial) is { } net && net < SalesLinePriceCalculator.Parse(floor))
+            ValidateFloorException(commercial, reference);
+        }
+    }
+
+    private static void ValidateFloorException(CommercialDraftFields commercial, PriceReferenceSnapshot reference)
+    {
+        var net = SalesLinePriceCalculator.NetUnitPrice(commercial);
+        var belowFloor = reference.FloorUnitPrice is { } floor && net is { } value
+            && value < SalesLinePriceCalculator.Parse(floor);
+        if (!belowFloor)
+        {
+            if (commercial.FloorException is not null)
             {
-                throw new SalesRuleException(SalesRuleCodes.PriceBelowFloor,
-                    "Net fiyat liste alt fiyatının altında; istisna onayı tanımlı olmadığından kaydedilmez.");
+                throw new SalesRuleException(SalesRuleCodes.InternalInvariant, "Taban altı olmayan fiyat istisna kaydı taşıyamaz.");
             }
+            return;
+        }
+
+        if (commercial.FloorException is not { } exception)
+        {
+            return;
+        }
+
+        if (exception.PriceListId != reference.PriceListId || exception.PriceListVersionNo != reference.VersionNo
+            || exception.PriceUnitId != commercial.PriceUnitId || exception.UnitPrice != commercial.UnitPrice
+            || exception.NetUnitPrice != SalesLinePriceCalculator.Format(net!.Value)
+            || exception.FloorUnitPrice != reference.FloorUnitPrice
+            || string.IsNullOrWhiteSpace(exception.RequestedBy)
+            || (exception.IsApproved && string.Equals(exception.RequestedBy, exception.ApprovedBy, StringComparison.Ordinal)))
+        {
+            throw new SalesRuleException(SalesRuleCodes.InternalInvariant, "Taban fiyat istisnası bağlı olduğu ticari değerlerle uyuşmuyor.");
         }
     }
 
@@ -488,6 +513,7 @@ public sealed class SalesOrderDraft
         RequireVersion(expectedVersion);
         var actor = RequireActor(actorId);
         RequireStorable();
+        RequirePriceFloorExceptionsApproved();
         if (ApprovalState is not (InternalApprovalState.Preparing or InternalApprovalState.Rejected))
         {
             throw StateConflict("Yalnız hazırlanan ya da reddedilmiş taslak onaya gönderilir.");
@@ -511,6 +537,7 @@ public sealed class SalesOrderDraft
     {
         RequireVersion(expectedVersion);
         var actor = RequireActor(actorId);
+        RequirePriceFloorExceptionsApproved();
         if (ApprovalState != InternalApprovalState.PendingApproval)
         {
             throw StateConflict("Yalnız onay bekleyen taslak onaylanır.");
@@ -754,7 +781,7 @@ public sealed class SalesOrderDraft
                 throw new SalesRuleException(exception.Code, exception.Message, line.Id);
             }
 
-            replacements.Add((line, fields));
+            replacements.Add((line, PrepareFloorException(fields, actor, now)));
         }
 
         if (replacements.All(pair => pair.Line.Commercial == pair.Fields))
@@ -784,6 +811,97 @@ public sealed class SalesOrderDraft
 
         Touch(now);
         return archived;
+    }
+
+    /// <summary>
+    /// Approves all current below-floor line snapshots as one keyed mutation. The approver must differ from every requester;
+    /// reasons are required and bounded by the existing Sales approval-reason limit. No price is changed or recomputed here.
+    /// </summary>
+    public void ApprovePriceFloorExceptions(long expectedVersion, IReadOnlyList<LinePriceFloorExceptionApprovalInput> inputs,
+        string actorId, DateTimeOffset now)
+    {
+        RequireVersion(expectedVersion);
+        var actor = RequireActor(actorId);
+        ArgumentNullException.ThrowIfNull(inputs);
+        RequireNotCancelled("İptal edilmiş siparişin fiyat istisnası onaylanmaz.");
+        if (!LinesAreOpen)
+        {
+            throw StateConflict("Fiyat istisnası yalnız hazırlanan veya reddedilmiş taslakta onaylanır.");
+        }
+
+        var belowFloor = lines.Where(line => IsBelowFloor(line.Commercial)).ToArray();
+        if (belowFloor.Length == 0 || inputs.Count != belowFloor.Length
+            || inputs.Select(input => input.LineId).Distinct().Count() != inputs.Count
+            || inputs.Any(input => belowFloor.All(line => line.Id != input.LineId)))
+        {
+            throw new SalesRuleException(SalesRuleCodes.PriceFloorExceptionLinesMismatch,
+                "İstisna onayı mevcut taban altı satırların her birini tam bir kez adlandırır.");
+        }
+
+        var approvals = new List<(SalesOrderDraftLine Line, PriceFloorExceptionSnapshot Exception, string Reason)>(belowFloor.Length);
+        foreach (var input in inputs)
+        {
+            var line = belowFloor.Single(candidate => candidate.Id == input.LineId);
+            var exception = line.Commercial.FloorException
+                ?? throw new SalesRuleException(SalesRuleCodes.PriceFloorExceptionPending, "Satırın onaylanabilir güncel istisna talebi yok.", line.Id);
+            if (exception.IsApproved)
+            {
+                throw new SalesRuleException(SalesRuleCodes.RevisionNoChange, "Taban fiyat istisnası zaten onaylı.", line.Id);
+            }
+            if (string.Equals(exception.RequestedBy, actor, StringComparison.Ordinal))
+            {
+                throw new SalesRuleException(SalesRuleCodes.PriceFloorExceptionSameActor,
+                    "Taban fiyat istisnasını isteyen aktör aynı istisnayı onaylayamaz.", line.Id);
+            }
+            var reason = string.IsNullOrWhiteSpace(input.Reason) ? null : input.Reason.Trim();
+            if (reason is null)
+            {
+                throw new SalesRuleException(SalesRuleCodes.PriceFloorExceptionReasonRequired, "İstisna onay gerekçesi zorunludur.", line.Id);
+            }
+            if (reason.Length > MaximumRejectionReasonLength)
+            {
+                throw new SalesRuleException(SalesRuleCodes.ApprovalReasonTooLong,
+                    $"İstisna onay gerekçesi en fazla {MaximumRejectionReasonLength} karakterdir.", line.Id);
+            }
+            approvals.Add((line, exception, reason));
+        }
+
+        foreach (var (line, exception, reason) in approvals)
+        {
+            line.ReplaceCommercial(line.Commercial with
+            {
+                FloorException = exception with { ApprovedBy = actor, ApprovedAtUtc = now.ToUniversalTime(), Reason = reason }
+            });
+        }
+        Touch(now);
+    }
+
+    private static CommercialDraftFields PrepareFloorException(CommercialDraftFields commercial, string actor, DateTimeOffset now)
+    {
+        if (!IsBelowFloor(commercial))
+        {
+            return commercial with { FloorException = null };
+        }
+        var reference = commercial.Reference!;
+        return commercial with
+        {
+            FloorException = new PriceFloorExceptionSnapshot(actor, now.ToUniversalTime(), reference.PriceListId, reference.VersionNo,
+                commercial.PriceUnitId!.Value, commercial.UnitPrice!, SalesLinePriceCalculator.NetUnitPriceText(commercial)!,
+                reference.FloorUnitPrice!)
+        };
+    }
+
+    private static bool IsBelowFloor(CommercialDraftFields commercial) =>
+        commercial.Reference?.FloorUnitPrice is { } floor && SalesLinePriceCalculator.NetUnitPrice(commercial) is { } net
+        && net < SalesLinePriceCalculator.Parse(floor);
+
+    private void RequirePriceFloorExceptionsApproved()
+    {
+        if (lines.Any(line => IsBelowFloor(line.Commercial) && line.Commercial.FloorException?.IsApproved != true))
+        {
+            throw new SalesRuleException(SalesRuleCodes.PriceFloorExceptionPending,
+                "Taban fiyatın altındaki her satır farklı yetkili tarafından gerekçeli onaylanmalıdır.");
+        }
     }
 
     // ---- quantity revision (DEC-SAL-002, AT-023) -------------------------------------------------

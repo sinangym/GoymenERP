@@ -77,7 +77,16 @@ public sealed record SalesDraftPriceReferenceV1(Guid PriceListId, string PriceLi
 /// </summary>
 public sealed record SalesDraftLinePricingV1(Guid LineId, int LineNo, string? UnitPrice, Guid? PriceUnitId, string? PriceSource,
     SalesDraftPriceReferenceV1? PriceReference, string? DiscountPercent, string? DiscountAmount, string? SurchargePercent,
-    string? SurchargeAmount, string? NetUnitPrice);
+    string? SurchargeAmount, string? NetUnitPrice, SalesDraftPriceFloorExceptionV1? FloorException);
+
+public sealed record SalesDraftPriceFloorExceptionV1(string RequestedBy, DateTimeOffset RequestedAtUtc,
+    string? ApprovedBy, DateTimeOffset? ApprovedAtUtc, string? Reason);
+
+public sealed record SalesDraftPriceFloorExceptionApprovalLineV1(Guid LineId, string Reason);
+
+/// <summary>Every current below-floor line exactly once; each approval carries its stored reason.</summary>
+public sealed record SalesDraftPriceFloorExceptionApprovalRequest(string ExpectedVersion,
+    IReadOnlyList<SalesDraftPriceFloorExceptionApprovalLineV1> Lines);
 
 /// <summary>GET …/{id}/line-pricing (price read): every line's pricing at the draft's current version.</summary>
 public sealed record SalesOrderDraftLinePricingResponse(string Version, IReadOnlyList<SalesDraftLinePricingV1> Lines);

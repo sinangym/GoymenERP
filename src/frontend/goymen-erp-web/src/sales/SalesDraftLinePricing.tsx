@@ -48,7 +48,8 @@ function PricingFacts({ line }: { readonly line: LinePricing }) {
           {reference === null ? T.noReference
             : `${T.referenceText(reference.priceListName, reference.versionNo, reference.unitPrice, reference.currencyCode)}`
               + (reference.floorUnitPrice === null ? '' : ` (${T.floorText(reference.floorUnitPrice)})`)
-              + ` (${T.tierText(reference.lowerQuantity, reference.upperQuantity)})`}
+              + ` (${T.tierText(reference.lowerQuantity, reference.upperQuantity)})`
+              + ` (${T.vatExclusive})`}
         </dd>
       </div>
       <div>
@@ -73,6 +74,14 @@ function PricingFacts({ line }: { readonly line: LinePricing }) {
         <dt>{T.net}</dt>
         <dd data-testid={`sales-line-${line.lineNo}-net`}>{line.netUnitPrice ?? T.none}</dd>
       </div>
+      {line.floorException === null ? null : (
+        <div>
+          <dt>{T.floorException}</dt>
+          <dd data-testid={`sales-line-${line.lineNo}-floor-exception`}>
+            {line.floorException.approvedBy === null ? T.floorExceptionPending : T.floorExceptionApproved(line.floorException.reason!)}
+          </dd>
+        </div>
+      )}
     </dl>
   )
 }

@@ -61,7 +61,8 @@ public sealed partial class SalesDraftService
             () => reader.SearchAsync(line.Product.ProductId, priceUnitId, line.Quantity.Value, currencyCode,
                 draft.Money.EffectiveOn, cancellationToken), cancellationToken);
         return new SalesOrderDraftPriceReferencesResponse(line.Id, currencyCode, draft.Money.EffectiveOn,
-            [.. answers.Where(answer => answer.ProductId == line.Product.ProductId && answer.PriceUnitId == priceUnitId)
+            [.. answers.Where(answer => answer.ProductId == line.Product.ProductId && answer.PriceUnitId == priceUnitId
+                    && string.Equals(answer.VatBasis, "ExcludingVat", StringComparison.Ordinal))
                 .Select(answer => Wire(Snapshot(answer)))]);
     }
 
@@ -105,7 +106,8 @@ public sealed partial class SalesDraftService
             var answer = await GuardedAsync(scope, permission,
                 () => reader.GetAsync(reference.PriceListId, reference.VersionNo, draftLine.Product.ProductId, priceUnit,
                     draftLine.Quantity.Value, draft.Money.EffectiveOn, cancellationToken), cancellationToken);
-            if (answer is null || answer.ProductId != draftLine.Product.ProductId || answer.PriceUnitId != priceUnit)
+            if (answer is null || answer.ProductId != draftLine.Product.ProductId || answer.PriceUnitId != priceUnit
+                || !string.Equals(answer.VatBasis, "ExcludingVat", StringComparison.Ordinal))
             {
                 errors.Add(new($"lines[{index}].priceReference", SalesDraftProblemCodesV1.PriceReferenceUnavailable));
                 continue;
@@ -180,5 +182,9 @@ public sealed partial class SalesDraftService
     private static SalesDraftLinePricingV1 Pricing(Guid lineId, int lineNo, CommercialDraftFields commercial) =>
         new(lineId, lineNo, commercial.UnitPrice, commercial.PriceUnitId, commercial.PriceSource,
             commercial.Reference is { } reference ? Wire(reference) : null, commercial.DiscountPercent, commercial.DiscountAmount,
-            commercial.SurchargePercent, commercial.SurchargeAmount, SalesLinePriceCalculator.NetUnitPriceText(commercial));
+            commercial.SurchargePercent, commercial.SurchargeAmount, SalesLinePriceCalculator.NetUnitPriceText(commercial),
+            commercial.FloorException is { } exception
+                ? new SalesDraftPriceFloorExceptionV1(exception.RequestedBy, exception.RequestedAtUtc, exception.ApprovedBy,
+                    exception.ApprovedAtUtc, exception.Reason)
+                : null);
 }

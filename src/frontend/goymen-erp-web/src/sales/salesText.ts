@@ -579,13 +579,28 @@ export const REVISION_HISTORY_TEXT = {
  */
 export const LINE_PRICING_TEXT = {
   heading: 'Satır fiyatları',
-  note: 'Liste fiyatı referanstır ve değiştirilene kadar varsayılan fiyattır; iskonto ve vade farkı ayrı gösterilir. Net fiyatı sunucu hesaplar.',
+  note: 'Liste fiyatı KDV hariç net referanstır ve değiştirilene kadar varsayılan fiyattır; iskonto ve vade farkı ayrı gösterilir. Net fiyatı sunucu hesaplar.',
   withheld: 'Fiyat ayrıntılarını görme yetkiniz yok.',
   unreadable: 'Satır fiyat ayrıntıları okunamadı.',
   reference: 'Referans liste fiyatı',
   noReference: 'Referans yok (elle fiyat)',
   referenceText: (name: string, versionNo: number, price: string, currency: string) => `${name} · Sürüm ${versionNo}: ${price} ${currency}`,
   floorText: (floor: string) => `alt fiyat ${floor}`,
+  vatExclusive: 'KDV hariç net',
+  floorException: 'Taban fiyat istisnası',
+  floorExceptionPending: 'Farklı yetkilinin gerekçeli onayı bekleniyor',
+  floorExceptionApproved: (reason: string) => `Onaylandı: ${reason}`,
+  floorApproval: {
+    heading: 'Taban fiyat istisna onayı',
+    note: 'Görünen satırlar mevcut fiyat listesi sürümüne ve sunucunun net fiyatına bağlıdır. Talep eden aktör bu onayı veremez.',
+    reason: (lineNo: number) => `${lineNo}. satır onay gerekçesi`,
+    approve: 'İstisnaları onayla',
+    submitting: 'İstisna onayı gönderiliyor…',
+    unknown: 'Sonuç alınamadı; aynı anahtar ve gövdeyle yeniden deneyin.',
+    failed: 'İstisna onaylanmadı. Güncel kaydı okuyup gerekçeleri düzeltin.',
+    retry: 'Aynı onayı yeniden dene',
+    correct: 'Gerekçeleri düzelt',
+  },
   tierText: (lower: string, upper: string | null) => upper === null
     ? `miktar ${lower} ve üzeri`
     : `miktar ${lower} dahil, ${upper} hariç`,

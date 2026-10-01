@@ -48,6 +48,7 @@ import {
   decodeCancellationImpact,
   decodeProblem,
   salesDraftCommercialRevisionPath,
+  salesDraftPriceFloorExceptionApprovalPath,
   salesDraftDeliverySchedulePath,
   salesDraftDeliverySchedulesPath,
   salesDraftDeliveryProgressPath,
@@ -63,6 +64,7 @@ import {
   type DeliverySlice,
   type DraftCreateRequest,
   type DraftCommercialRevisionRequest,
+  type DraftPriceFloorExceptionApprovalRequest,
   type DraftQuantityRevisionRequest,
   type DraftDeliveryScheduleRequest,
   type DeliverySchedules,
@@ -690,6 +692,36 @@ export async function sendDraftCommercialRevision(
   ) {
     return { type: 'malformed' }
   }
+  return { type: 'succeeded', data: mutation }
+}
+
+/** Reasoned maker-checker approval of the current below-floor snapshots; same keyed mutation envelope. */
+export async function sendDraftPriceFloorExceptionApproval(
+  payload: DraftPriceFloorExceptionApprovalRequest,
+  context: CommandContext,
+  signal?: AbortSignal,
+): Promise<OrderCommandOutcome<DraftMutation>> {
+  const raw = await request(
+    salesDraftPriceFloorExceptionApprovalPath(context.draftId),
+    {
+      method: 'POST',
+      headers: { ...headers(context.companyId), 'Content-Type': 'application/json', 'Idempotency-Key': context.idempotencyKey },
+      body: JSON.stringify(payload),
+    },
+    signal,
+  )
+  if ('failure' in raw) {
+    if (raw.failure === 'aborted') return { type: 'aborted' }
+    if (raw.failure === 'offline') return { type: 'offline' }
+    return { type: 'network-error' }
+  }
+  if (raw.status !== STATE_COMMAND_STATUS) {
+    if (raw.status >= 200 && raw.status < 300) return { type: 'malformed' }
+    return { type: 'http', status: raw.status, problem: decodeProblem(raw.body, raw.status) }
+  }
+  const mutation = decodeDraftMutation(raw.body)
+  if (mutation === null || mutation.isReplay !== raw.replayed || mutation.detail.draft.id !== context.draftId
+    || mutation.detail.draft.companyId !== context.companyId) return { type: 'malformed' }
   return { type: 'succeeded', data: mutation }
 }
 

@@ -54,6 +54,18 @@ public sealed class SalesLinePricingTests
     }
 
     [Fact]
+    public void The_floor_exception_round_trips_with_the_exact_price_snapshot_and_actor_facts()
+    {
+        var requestedAt = new DateTimeOffset(2026, 10, 1, 8, 0, 0, TimeSpan.Zero);
+        var reference = Reference("100", "95");
+        var exception = new PriceFloorExceptionSnapshot("maker", requestedAt, reference.PriceListId, reference.VersionNo,
+            Unit, "90", "90", "95", "checker", requestedAt.AddMinutes(5), "SENTETIK gerekçe");
+        var fields = new CommercialDraftFields("90", Unit, null, reference, FloorException: exception);
+
+        Assert.Equal(fields, SalesLinePricingJson.Restore("90", Unit, null, SalesLinePricingJson.Serialize(fields)));
+    }
+
+    [Fact]
     public void The_line_pricing_migration_down_refuses_with_51064_before_it_drops_anything()
     {
         var migration = new AddLinePricing();

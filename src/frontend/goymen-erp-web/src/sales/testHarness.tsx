@@ -170,6 +170,8 @@ export interface HarnessConfig {
   readonly onQuantityRevision?: (call: RecordedCall) => Response | Promise<Response>
   /** K3 / AT-018: a POST on `/sales/drafts/{id}/commercial-revision`. */
   readonly onCommercialRevision?: (call: RecordedCall) => Response | Promise<Response>
+  /** Reasoned maker-checker approval of the current below-floor price snapshots. */
+  readonly onPriceFloorExceptionApproval?: (call: RecordedCall) => Response | Promise<Response>
   /** AT-018: GET `/sales/drafts/{id}/line-pricing`; default: 404 (the pricing is shown as unreadable). */
   readonly onLinePricing?: (url: string, companyId: string | null) => Response | Promise<Response>
   /** AT-018: GET `/sales/drafts/{id}/lines/{lineId}/price-references`. */
@@ -212,6 +214,10 @@ export function installFetch(config: HarnessConfig = {}) {
         if (call.method === 'POST' && /\/sales\/drafts\/[^/?]+\/commercial-revision$/.test(url)) {
           if (config.onCommercialRevision === undefined) throw new Error('unexpected commercial revision')
           return config.onCommercialRevision(call)
+        }
+        if (call.method === 'POST' && /\/sales\/drafts\/[^/?]+\/below-floor-exception-approval$/.test(url)) {
+          if (config.onPriceFloorExceptionApproval === undefined) throw new Error('unexpected price-floor exception approval')
+          return config.onPriceFloorExceptionApproval(call)
         }
         if (call.method === 'GET' && /\/sales\/drafts\/[^/?]+\/line-pricing$/.test(url)) {
           return config.onLinePricing?.(url, call.companyId) ?? json({ status: 404 }, 404)

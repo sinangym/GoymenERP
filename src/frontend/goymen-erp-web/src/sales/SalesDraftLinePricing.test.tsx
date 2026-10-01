@@ -9,7 +9,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import detailResponseRaw from './examples/detail-response.json?raw'
-import { SALES_PRICE_WRITE_CAPABILITY } from './capabilities'
+import { SALES_PRICE_FLOOR_EXCEPTION_APPROVE_CAPABILITY, SALES_PRICE_WRITE_CAPABILITY } from './capabilities'
 import { LINE_PRICING_TEXT as P, ORDER_DETAIL_TEXT } from './salesText'
 import { decodeReference } from './linePricing'
 import { ALL_SALES, COMPANY_A, KG, installFetch, json, renderSalesApp, type RecordedCall } from './testHarness'
@@ -48,13 +48,18 @@ describe('price tier wire bounds', () => {
     const decoded = decodeReference({ ...reference, lowerQuantity: '10.000', upperQuantity: '20.000' })
     expect(decoded && [decoded.lowerQuantity, decoded.upperQuantity]).toEqual(['10.000', '20.000'])
   })
+
+  it('accepts only the decided VAT-exclusive net basis', () => {
+    expect(decodeReference(reference)?.vatBasis).toBe('ExcludingVat')
+    expect(decodeReference({ ...reference, vatBasis: 'IncludingVat' })).toBeNull()
+  })
 })
 
 function pricing(version: string, over: Record<string, unknown> = {}) {
   return {
     version,
     lines: [{ lineId: LINE, lineNo: 1, unitPrice: null, priceUnitId: null, priceSource: null, priceReference: null, discountPercent: null,
-      discountAmount: null, surchargePercent: null, surchargeAmount: null, netUnitPrice: null, ...over }],
+      discountAmount: null, surchargePercent: null, surchargeAmount: null, netUnitPrice: null, floorException: null, ...over }],
   }
 }
 
@@ -67,6 +72,40 @@ afterEach(() => {
 const path = '/satis/siparisler/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
 
 describe('AT-018 list price on the order line', () => {
+  it('retries an unknown floor approval with the exact same key and body and accepts the replay', async () => {
+    let approved = false
+    const posts: RecordedCall[] = []
+    installFetch({
+      capabilities: [...ALL_SALES, SALES_PRICE_FLOOR_EXCEPTION_APPROVE_CAPABILITY],
+      onDetail: () => json(detail(approved ? '4' : '3', { unitPrice: '39000', priceUnitId: KG })),
+      onLinePricing: () => json(pricing(approved ? '4' : '3', {
+        unitPrice: '39000', priceUnitId: KG, priceSource: 'Manual', priceReference: reference, netUnitPrice: '39000',
+        floorException: approved
+          ? { requestedBy: 'maker', requestedAtUtc: '2026-10-01T08:00:00Z', approvedBy: 'checker',
+              approvedAtUtc: '2026-10-01T08:05:00Z', reason: 'SENTETIK sözleşme' }
+          : { requestedBy: 'maker', requestedAtUtc: '2026-10-01T08:00:00Z', approvedBy: null, approvedAtUtc: null, reason: null },
+      })),
+      onPriceFloorExceptionApproval: (call) => {
+        posts.push(call)
+        if (posts.length === 1) throw new TypeError('SENTETIK bağlantı kesildi')
+        approved = true
+        return json({ detail: detail('4', { unitPrice: '39000', priceUnitId: KG }), isReplay: true,
+          originalCorrelationId: 'floor-c1' }, 200, { 'Idempotency-Replayed': 'true' })
+      },
+    })
+    renderSalesApp(path)
+
+    const control = await screen.findByTestId('sales-price-floor-approval')
+    await userEvent.type(within(control).getByLabelText(P.floorApproval.reason(1)), 'SENTETIK sözleşme')
+    await userEvent.click(within(control).getByRole('button', { name: P.floorApproval.approve }))
+    expect(await within(control).findByText(P.floorApproval.unknown)).toBeTruthy()
+    await userEvent.click(within(control).getByRole('button', { name: P.floorApproval.retry }))
+
+    await waitFor(() => expect(posts).toHaveLength(2))
+    expect(posts[1].idempotencyKey).toBe(posts[0].idempotencyKey)
+    expect(posts[1].body).toBe(posts[0].body)
+  })
+
   it('uses the list price as reference and default, adds a discount and a surcharge, and reads back the server net', async () => {
     let saved = false
     const posts: RecordedCall[] = []
@@ -108,6 +147,7 @@ describe('AT-018 list price on the order line', () => {
     // Reopened from the server: the reference, the source, the adjustments and the net are all visible.
     expect(screen.getByTestId('sales-line-1-reference').textContent).toContain('Yurt içi satış · Sürüm 2: 42000.50 TRY')
     expect(screen.getByTestId('sales-line-1-reference').textContent).toContain(P.tierText('10', '20'))
+    expect(screen.getByTestId('sales-line-1-reference').textContent).toContain(P.vatExclusive)
     expect(screen.getByTestId('sales-line-1-source').textContent).toBe(P.sourceReference)
     expect(screen.getByTestId('sales-line-1-discount-adjustment').textContent).toBe('%3')
     expect(screen.getByTestId('sales-line-1-surcharge').textContent).toBe('%1.5')

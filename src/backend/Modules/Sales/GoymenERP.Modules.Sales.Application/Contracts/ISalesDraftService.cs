@@ -32,6 +32,9 @@ public interface ISalesDraftService
     // advances to the next one, back in preparation; and the read of the archived revisions (`sales.drafts.read`).
     Task<SalesOrderDraftResponse> ReviseCommercialAsync(Guid draftId, SalesDraftCommercialRevisionRequest request,
         SalesCommandMetadata metadata, CancellationToken cancellationToken = default);
+    Task<SalesOrderDraftResponse> ApprovePriceFloorExceptionsAsync(Guid draftId,
+        SalesDraftPriceFloorExceptionApprovalRequest request, SalesCommandMetadata metadata,
+        CancellationToken cancellationToken = default);
     /// <summary>AT-018 / AT-021: every line's reference, adjustments and net (price read).</summary>
     Task<SalesOrderDraftLinePricingResponse> GetDraftLinePricingAsync(Guid draftId, CancellationToken cancellationToken = default);
 

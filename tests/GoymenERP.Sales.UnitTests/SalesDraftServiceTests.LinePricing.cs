@@ -102,19 +102,70 @@ public sealed partial class SalesDraftServiceTests
     }
 
     [Fact]
-    public async Task A_net_below_the_list_floor_is_refused_on_the_line_and_nothing_is_stored()
+    public async Task A_net_below_the_list_floor_is_pending_until_a_different_actor_approves_every_line_with_a_reason()
     {
         var world = new World { PriceReferences = new FakePriceReferences { Price = 12.50m, Floor = 12m } };
+        world.Bindings = world.Bindings with { PriceFloorExceptionApprovePermission = SchedulePermission };
         var created = (await world.Service().CreateDraftAsync(Request(), Metadata("k-1"))).Detail;
         var lineId = created.Lines[0].LineId;
 
-        var refused = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().ReviseCommercialAsync(created.Draft.Id,
+        var revised = await world.Service().ReviseCommercialAsync(created.Draft.Id,
             Revision(created.Draft.Version, new SalesDraftLineCommercialV1(lineId, "12.50", KgUnit, "10",
-                new SalesDraftPriceReferenceRequestV1(PriceList, 1))), Metadata("k-r1")));
+                new SalesDraftPriceReferenceRequestV1(PriceList, 1))), Metadata("k-r1"));
+        var pending = Assert.Single((await world.Service().GetDraftLinePricingAsync(created.Draft.Id)).Lines).FloorException!;
+        Assert.Equal((Actor, null, null), (pending.RequestedBy, pending.ApprovedBy, pending.Reason));
 
-        Assert.Equal((422, "lines[0].unitPrice", SalesRuleCodes.PriceBelowFloor), (refused.Status, Assert.Single(refused.Errors).Field,
-            Assert.Single(refused.Errors).Code));
-        Assert.DoesNotContain(world.Store.Transitions, item => item.Command == SalesDraftCommands.ReviseCommercialV1);
+        var blocked = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().SubmitDraftAsync(created.Draft.Id,
+            new SalesDraftStateCommandRequest(revised.Detail.Draft.Version), Metadata("k-submit-blocked")));
+        Assert.Equal(SalesRuleCodes.PriceFloorExceptionPending, Assert.Single(blocked.Errors).Code);
+
+        world.User.Id = "synthetic-approver";
+        var stale = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().ApprovePriceFloorExceptionsAsync(created.Draft.Id,
+            new SalesDraftPriceFloorExceptionApprovalRequest("1",
+                [new SalesDraftPriceFloorExceptionApprovalLineV1(lineId, "SENTETIK müşteri sözleşmesi")]), Metadata("k-floor-stale")));
+        Assert.Equal(409, stale.Status);
+        var approved = await world.Service().ApprovePriceFloorExceptionsAsync(created.Draft.Id,
+            new SalesDraftPriceFloorExceptionApprovalRequest(revised.Detail.Draft.Version,
+                [new SalesDraftPriceFloorExceptionApprovalLineV1(lineId, "SENTETIK müşteri sözleşmesi")]), Metadata("k-floor-approve"));
+        Assert.Equal("synthetic-approver", Assert.Single((await world.Service().GetDraftLinePricingAsync(created.Draft.Id)).Lines)
+            .FloorException!.ApprovedBy);
+        await world.Service().SubmitDraftAsync(created.Draft.Id,
+            new SalesDraftStateCommandRequest(approved.Detail.Draft.Version), Metadata("k-submit"));
+
+        var replay = await world.Service().ApprovePriceFloorExceptionsAsync(created.Draft.Id,
+            new SalesDraftPriceFloorExceptionApprovalRequest(revised.Detail.Draft.Version,
+                [new SalesDraftPriceFloorExceptionApprovalLineV1(lineId, "SENTETIK müşteri sözleşmesi")]), Metadata("k-floor-approve"));
+        Assert.True(replay.IsReplay);
+        Assert.Single(world.Store.Transitions, item => item.Command == SalesDraftCommands.ApprovePriceFloorExceptionsV1);
+        var changedBody = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().ApprovePriceFloorExceptionsAsync(created.Draft.Id,
+            new SalesDraftPriceFloorExceptionApprovalRequest(revised.Detail.Draft.Version,
+                [new SalesDraftPriceFloorExceptionApprovalLineV1(lineId, "SENTETIK başka gerekçe")]), Metadata("k-floor-approve")));
+        Assert.Equal(409, changedBody.Status);
+    }
+
+    [Fact]
+    public async Task A_floor_exception_refuses_the_requester_and_a_revoked_approver_without_a_second_effect()
+    {
+        var world = new World { PriceReferences = new FakePriceReferences { Price = 12.50m, Floor = 12m } };
+        world.Bindings = world.Bindings with { PriceFloorExceptionApprovePermission = SchedulePermission };
+        var created = (await world.Service().CreateDraftAsync(Request(), Metadata("k-floor-create"))).Detail;
+        var lineId = created.Lines[0].LineId;
+        var revised = await world.Service().ReviseCommercialAsync(created.Draft.Id,
+            Revision(created.Draft.Version, new SalesDraftLineCommercialV1(lineId, "12.50", KgUnit, "10",
+                new SalesDraftPriceReferenceRequestV1(PriceList, 1))), Metadata("k-floor-revise"));
+        var request = new SalesDraftPriceFloorExceptionApprovalRequest(revised.Detail.Draft.Version,
+            [new SalesDraftPriceFloorExceptionApprovalLineV1(lineId, "SENTETIK gerekçe")]);
+
+        var same = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().ApprovePriceFloorExceptionsAsync(
+            created.Draft.Id, request, Metadata("k-floor-same")));
+        Assert.Equal(SalesRuleCodes.PriceFloorExceptionSameActor, Assert.Single(same.Errors).Code);
+
+        world.User.Id = "synthetic-approver";
+        world.Store.OnStore = () => world.Authority.Denied.Add(SchedulePermission);
+        var revoked = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().ApprovePriceFloorExceptionsAsync(
+            created.Draft.Id, request, Metadata("k-floor-revoked")));
+        Assert.Equal(403, revoked.Status);
+        Assert.DoesNotContain(world.Store.Transitions, item => item.Command == SalesDraftCommands.ApprovePriceFloorExceptionsV1);
     }
 
     [Fact]
@@ -141,6 +192,24 @@ public sealed partial class SalesDraftServiceTests
         var both = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().ReviseCommercialAsync(created.Draft.Id,
             Revision(created.Draft.Version, named with { DiscountPercent = "5", DiscountAmount = "1" }), Metadata("k-r3")));
         Assert.Equal(("lines", SalesRuleCodes.AdjustmentKindConflict), (Assert.Single(both.Errors).Field, Assert.Single(both.Errors).Code));
+        Assert.DoesNotContain(world.Store.Transitions, item => item.Command == SalesDraftCommands.ReviseCommercialV1);
+    }
+
+    [Fact]
+    public async Task Only_vat_exclusive_net_list_prices_are_offered_or_accepted()
+    {
+        var references = new FakePriceReferences { Price = 12.50m, VatBasis = "IncludingVat" };
+        var world = new World { PriceReferences = references };
+        var created = (await world.Service().CreateDraftAsync(Request(), Metadata("k-vat"))).Detail;
+        var lineId = created.Lines[0].LineId;
+
+        Assert.Empty((await world.Service().GetLinePriceReferencesAsync(created.Draft.Id, lineId)).Items);
+        var refused = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().ReviseCommercialAsync(created.Draft.Id,
+            Revision(created.Draft.Version, new SalesDraftLineCommercialV1(lineId, "12.50", KgUnit, null,
+                new SalesDraftPriceReferenceRequestV1(PriceList, 1))), Metadata("k-vat-revision")));
+
+        Assert.Equal((422, "lines[0].priceReference", SalesDraftProblemCodesV1.PriceReferenceUnavailable),
+            (refused.Status, Assert.Single(refused.Errors).Field, Assert.Single(refused.Errors).Code));
         Assert.DoesNotContain(world.Store.Transitions, item => item.Command == SalesDraftCommands.ReviseCommercialV1);
     }
 
@@ -179,6 +248,7 @@ public sealed partial class SalesDraftServiceTests
         public decimal? SecondPrice { get; set; }
         public decimal SecondLowerQuantity { get; set; } = 10m;
         public decimal? SecondUpperQuantity { get; set; } = 20m;
+        public string VatBasis { get; set; } = "ExcludingVat";
         public (Guid List, int Version, Guid Product, Guid Unit, decimal Quantity, DateOnly On)? LastGet { get; private set; }
 
         public Task<IReadOnlyList<ProductPriceReferenceV1>> SearchAsync(Guid productId, Guid priceUnitId, decimal quantity,
@@ -213,7 +283,7 @@ public sealed partial class SalesDraftServiceTests
         }
 
         private ProductPriceReferenceV1 Reference(Guid productId, Guid unitId, decimal price, decimal lower, decimal? upper) =>
-            new(PriceList, "SENTETIK liste", Guid.NewGuid(), 1, Day, null, productId, unitId, Currency, "Sales", "ExcludingVat", price, Floor,
+            new(PriceList, "SENTETIK liste", Guid.NewGuid(), 1, Day, null, productId, unitId, Currency, "Sales", VatBasis, price, Floor,
                 lower, upper);
     }
 }

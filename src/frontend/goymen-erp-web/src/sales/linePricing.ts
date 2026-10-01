@@ -27,7 +27,7 @@ export interface LinePriceReference {
   readonly priceUnitId: string
   readonly unitPrice: string
   readonly floorUnitPrice: string | null
-  readonly vatBasis: string
+  readonly vatBasis: 'ExcludingVat'
   readonly lowerQuantity: string
   readonly upperQuantity: string | null
 }
@@ -46,6 +46,15 @@ export interface LinePricing {
   readonly surchargePercent: string | null
   readonly surchargeAmount: string | null
   readonly netUnitPrice: string | null
+  readonly floorException: PriceFloorException | null
+}
+
+export interface PriceFloorException {
+  readonly requestedBy: string
+  readonly requestedAtUtc: string
+  readonly approvedBy: string | null
+  readonly approvedAtUtc: string | null
+  readonly reason: string | null
 }
 
 export interface DraftLinePricing {
@@ -98,7 +107,7 @@ export function decodeReference(value: unknown): LinePriceReference | null {
   const upperKey = upperQuantity === null ? null : quantityKey(upperQuantity)
   if (o === null || !isText(o.priceListId) || !isText(o.priceListName) || !isCount(o.versionNo) || !isDate(o.validFrom)
     || !(o.validThrough === null || isDate(o.validThrough)) || !isText(o.currencyCode) || !isText(o.priceUnitId)
-    || !isDecimal(o.unitPrice) || !isNullableDecimal(o.floorUnitPrice) || !isText(o.vatBasis)
+    || !isDecimal(o.unitPrice) || !isNullableDecimal(o.floorUnitPrice) || o.vatBasis !== 'ExcludingVat'
     || typeof lowerQuantity !== 'string' || !(upperQuantity === null || typeof upperQuantity === 'string')
     || lowerKey === null || (upperQuantity !== null && (upperKey === null || upperKey <= lowerKey))) return null
   return {
@@ -109,7 +118,15 @@ export function decodeReference(value: unknown): LinePriceReference | null {
 }
 
 const PRICING_KEYS = ['lineId', 'lineNo', 'unitPrice', 'priceUnitId', 'priceSource', 'priceReference', 'discountPercent', 'discountAmount',
-  'surchargePercent', 'surchargeAmount', 'netUnitPrice'] as const
+  'surchargePercent', 'surchargeAmount', 'netUnitPrice', 'floorException'] as const
+
+function decodeFloorException(value: unknown): PriceFloorException | null {
+  const o = exact(value, ['requestedBy', 'requestedAtUtc', 'approvedBy', 'approvedAtUtc', 'reason'])
+  if (o === null || !isText(o.requestedBy) || typeof o.requestedAtUtc !== 'string' || Number.isNaN(Date.parse(o.requestedAtUtc))) return null
+  const pending = o.approvedBy === null && o.approvedAtUtc === null && o.reason === null
+  const approved = isText(o.approvedBy) && typeof o.approvedAtUtc === 'string' && !Number.isNaN(Date.parse(o.approvedAtUtc)) && isText(o.reason)
+  return pending || approved ? o as unknown as PriceFloorException : null
+}
 
 export function decodeDraftLinePricing(value: unknown): DraftLinePricing | null {
   const response = exact(value, ['version', 'lines'])
@@ -125,12 +142,14 @@ export function decodeDraftLinePricing(value: unknown): DraftLinePricing | null 
       || !isNullableDecimal(o.surchargeAmount) || !isNullableDecimal(o.netUnitPrice)) return null
     const reference = o.priceReference === null ? null : decodeReference(o.priceReference)
     if (o.priceReference !== null && reference === null) return null
+    const floorException = o.floorException === null ? null : decodeFloorException(o.floorException)
+    if (o.floorException !== null && floorException === null) return null
     // A price and its net travel together; a source without a price is off-contract.
     if ((o.unitPrice === null) !== (o.netUnitPrice === null) || (o.unitPrice === null) !== (o.priceSource === null)) return null
     lines.push({
       lineId: o.lineId, lineNo: o.lineNo, unitPrice: o.unitPrice, priceUnitId: o.priceUnitId, priceSource: o.priceSource,
       priceReference: reference, discountPercent: o.discountPercent, discountAmount: o.discountAmount, surchargePercent: o.surchargePercent,
-      surchargeAmount: o.surchargeAmount, netUnitPrice: o.netUnitPrice,
+      surchargeAmount: o.surchargeAmount, netUnitPrice: o.netUnitPrice, floorException,
     })
   }
   return { version: response.version, lines }

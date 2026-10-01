@@ -341,7 +341,7 @@ public sealed class SalesStore(
     {
         ArgumentNullException.ThrowIfNull(beforeWrite);
         RequireCommand(commandName);
-        if (commandName != SalesDraftCommands.ReviseCommercialV1)
+        if (commandName is not (SalesDraftCommands.ReviseCommercialV1 or SalesDraftCommands.ApprovePriceFloorExceptionsV1))
         {
             throw new ArgumentException("Yalnız fiyat revizyonu komutu satırların ticari alanlarını değiştirir.", nameof(commandName));
         }
@@ -1193,7 +1193,8 @@ public sealed class SalesStore(
     {
         if (commandName is not (SalesDraftCommands.CreateV1 or SalesDraftCommands.SubmitV1 or SalesDraftCommands.ApproveV1
             or SalesDraftCommands.RejectV1 or SalesDraftCommands.ReviseCommercialV1 or SalesDraftCommands.WithdrawV1
-            or SalesDraftCommands.RescheduleDeliveryV1 or SalesDraftCommands.CancelV1 or SalesDraftCommands.ReviseQuantityV1))
+            or SalesDraftCommands.ApprovePriceFloorExceptionsV1 or SalesDraftCommands.RescheduleDeliveryV1
+            or SalesDraftCommands.CancelV1 or SalesDraftCommands.ReviseQuantityV1))
         {
             throw new ArgumentException("Bilinmeyen Sales komut adı.", nameof(commandName));
         }

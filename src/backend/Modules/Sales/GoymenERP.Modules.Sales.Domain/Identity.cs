@@ -115,6 +115,14 @@ public static class SalesRuleCodes
     /// (fail-closed), never passed silently (ASSUMPTION-PRL-5).
     /// </summary>
     public const string PriceBelowFloor = "sales_price_below_floor";
+    /// <summary>A below-floor commercial snapshot exists but its separate exception is not approved.</summary>
+    public const string PriceFloorExceptionPending = "sales_price_floor_exception_pending";
+    /// <summary>The exception command must name every current below-floor line exactly once.</summary>
+    public const string PriceFloorExceptionLinesMismatch = "sales_price_floor_exception_lines_mismatch";
+    /// <summary>The actor who requested the current exception cannot approve it.</summary>
+    public const string PriceFloorExceptionSameActor = "sales_price_floor_exception_same_actor";
+    /// <summary>An exception approval reason is required.</summary>
+    public const string PriceFloorExceptionReasonRequired = "sales_price_floor_exception_reason_required";
     /// <summary>A commercial revision must name every current line exactly once and no other line.</summary>
     public const string RevisionLinesMismatch = "sales_revision_lines_mismatch";
     /// <summary>A commercial revision that changes no value is refused: an approval is never discarded for nothing (ASSUMPTION-SALESP-5).</summary>

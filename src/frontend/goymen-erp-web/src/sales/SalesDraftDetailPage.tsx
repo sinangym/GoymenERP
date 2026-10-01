@@ -88,6 +88,7 @@ import { StateBlock } from '../shell/StateBlock'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
 import { SalesDraftCommercialRevisionForm } from './SalesDraftCommercialRevisionForm'
 import { SalesDraftLinePricing } from './SalesDraftLinePricing'
+import { SalesDraftPriceFloorApproval } from './SalesDraftPriceFloorApproval'
 import { SalesDraftRevisionHistory } from './SalesDraftRevisionHistory'
 import { SalesDraftQuantityRevisionForm } from './SalesDraftQuantityRevisionForm'
 import { SalesDraftAllocationPanel } from './SalesDraftAllocationPanel'
@@ -250,6 +251,13 @@ export function SalesDraftDetailPage() {
           <>
             {/* AT-018 / AT-021: the reference list price, the adjustments and the server's net, for a caller who may see prices. */}
             <SalesDraftLinePricing shell={shell} detail={outcome.data} companyId={companyId} />
+            <SalesDraftPriceFloorApproval
+              key={`floor:${namespace ?? ''}:${outcome.data.draft.id}`}
+              shell={shell}
+              detail={outcome.data}
+              companyId={companyId}
+              onRecorded={() => void queryClient.invalidateQueries({ queryKey })}
+            />
             <SalesDraftCommercialRevisionForm
               key={`price:${namespace ?? ''}:${outcome.data.draft.id}`}
               shell={shell}
