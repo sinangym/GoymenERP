@@ -295,7 +295,7 @@ test.describe.serial('FIN01 official invoice import (real API, real SQL, real Ch
       readonly batchVersion: string
       readonly openItems: readonly {
         readonly id: string
-        readonly status: string
+        readonly status: number
         readonly outstandingAmount: string
         readonly version: string
       }[]
@@ -314,7 +314,7 @@ test.describe.serial('FIN01 official invoice import (real API, real SQL, real Ch
         originalAmount: amount,
         outstandingAmount: amount,
         dueOn,
-        status: 'Open',
+        status: 1,
         version: '1',
       }],
     })
@@ -403,22 +403,24 @@ test.describe.serial('FIN01 official invoice import (real API, real SQL, real Ch
       },
     })
 
-    let hiddenAllocationRequest: Request | null = null
-    let hiddenAllocationStatus: number | null = null
-    let hiddenAllocationBody: unknown = null
+    const hiddenAllocation: {
+      request: Request | null
+      status: number | null
+      body: unknown
+    } = { request: null, status: null, body: null }
     await checker.route('**/api/v1/finance/allocations', async (route) => {
       const request = route.request()
-      if (request.method() !== 'POST' || hiddenAllocationRequest !== null) {
+      if (request.method() !== 'POST' || hiddenAllocation.request !== null) {
         await route.fallback()
         return
       }
-      hiddenAllocationRequest = request
+      hiddenAllocation.request = request
       checkerRewritten.add(request)
       const actual = await route.fetch({
         headers: { ...request.headers(), 'x-development-user': env.seed.approverActor },
       })
-      hiddenAllocationStatus = actual.status()
-      hiddenAllocationBody = await actual.json() as unknown
+      hiddenAllocation.status = actual.status()
+      hiddenAllocation.body = await actual.json() as unknown
       await route.fulfill({ status: 503, body: '' })
     })
 
@@ -437,10 +439,11 @@ test.describe.serial('FIN01 official invoice import (real API, real SQL, real Ch
     await expect(allocationForm.getByRole('button', { name: 'Aynı anahtarla yeniden dene', exact: true }))
       .toBeVisible({ timeout: 30_000 })
 
-    expect(hiddenAllocationStatus, JSON.stringify(hiddenAllocationBody)).toBe(200)
-    expect(hiddenAllocationRequest).not.toBeNull()
-    const allocationKey = hiddenAllocationRequest!.headers()['idempotency-key']
-    const allocationBody = hiddenAllocationRequest!.postDataJSON() as {
+    expect(hiddenAllocation.status, JSON.stringify(hiddenAllocation.body)).toBe(200)
+    const capturedAllocationRequest = hiddenAllocation.request
+    if (capturedAllocationRequest === null) throw new Error('allocation create request was not captured')
+    const allocationKey = capturedAllocationRequest.headers()['idempotency-key']
+    const allocationBody = capturedAllocationRequest.postDataJSON() as {
       readonly allocationId: string
       readonly sourceId: string
       readonly expectedSourceVersion: string
@@ -460,7 +463,7 @@ test.describe.serial('FIN01 official invoice import (real API, real SQL, real Ch
       amount,
       reason: 'SENTETIK FIN01 aynı kayıt kapama',
     })
-    expect(hiddenAllocationBody).toMatchObject({
+    expect(hiddenAllocation.body).toMatchObject({
       outcome: 'Succeeded',
       isReplay: false,
       resource: {
@@ -515,7 +518,7 @@ test.describe.serial('FIN01 official invoice import (real API, real SQL, real Ch
     expect(closedBatch.status).toBe(200)
     expect(closedBatch.body).toMatchObject({
       batchId,
-      openItems: [{ id: openItemId, outstandingAmount: '0.00', status: 'Closed', version: '2' }],
+      openItems: [{ id: openItemId, outstandingAmount: '0.00', status: 2, version: '2' }],
     })
 
     expect(allocationList.companyId).toBe(env.seed.companyId)
@@ -611,7 +614,7 @@ test.describe.serial('FIN01 official invoice import (real API, real SQL, real Ch
     expect(reopenedBatch.status).toBe(200)
     expect(reopenedBatch.body).toMatchObject({
       batchId,
-      openItems: [{ id: openItemId, outstandingAmount: amount, status: 'Open', version: '3' }],
+      openItems: [{ id: openItemId, outstandingAmount: amount, status: 1, version: '3' }],
     })
 
     expectEveryAnswerRewritten(makerAnswers, makerRewritten)
