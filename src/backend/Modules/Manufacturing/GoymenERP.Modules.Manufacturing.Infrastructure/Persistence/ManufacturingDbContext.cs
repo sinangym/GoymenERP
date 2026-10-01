@@ -55,7 +55,9 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
         + "AND [TechnicalKilogramUnitCode] IS NOT NULL AND LEN([TechnicalKilogramUnitCode]) > 0 "
         + "AND [TechnicalKilogramProfileId] IS NOT NULL AND [TechnicalKilogramProfileId] <> '00000000-0000-0000-0000-000000000000' "
         + "AND [TechnicalKilogramProfileVersion] IS NOT NULL AND LEN([TechnicalKilogramProfileVersion]) > 0 "
-        + "AND [TechnicalEffectiveOn] IS NOT NULL AND [TechnicalThicknessMm] > 0 AND [TechnicalWidthMm] > 0)";
+        + "AND [TechnicalEffectiveOn] IS NOT NULL "
+        + "AND [TechnicalThicknessMm] IS NOT NULL AND [TechnicalThicknessMm] > 0 "
+        + "AND [TechnicalWidthMm] IS NOT NULL AND [TechnicalWidthMm] > 0)";
 
     internal DbSet<PlanRow> Plans => Set<PlanRow>();
 
