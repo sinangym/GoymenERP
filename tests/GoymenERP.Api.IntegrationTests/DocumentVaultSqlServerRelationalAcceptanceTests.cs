@@ -103,8 +103,8 @@ public sealed class DocumentVaultSqlServerRelationalAcceptanceTests
             "SELECT COUNT(*) FROM documents.DocumentLinks WHERE CompanyId = @company AND OwnerKind = @kind AND OwnerId = @owner",
             ("@company", CompanyA), ("@kind", DocumentOwnerLinkKindsV1.InventoryMaterialLabel), ("@owner", labelId)));
         Assert.Equal(1, await run.ScalarAsync<int>(
-            "SELECT COUNT(*) FROM documents.DocumentAttempts WHERE CompanyId = @company AND IdempotencyKey = N'k-label'",
-            ("@company", CompanyA)));
+            "SELECT COUNT(*) FROM documents.DocumentAttempts WHERE CompanyId = @company AND DocumentId = @document AND CommandName = @command",
+            ("@company", CompanyA), ("@document", first.Document.Id), ("@command", DocumentCommands.UploadV1)));
     }
 
     [SqlServerFact]
