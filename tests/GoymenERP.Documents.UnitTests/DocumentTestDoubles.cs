@@ -40,17 +40,32 @@ internal sealed class GrantedAuthority : IErpAuthorityRevalidationService
 }
 
 /// <summary>The Cari owner as a set of (company, party) pairs the actor may read.</summary>
-internal sealed class FixedOwnerPort(ICompanyContext companyContext, HashSet<(Guid Company, Guid Party)> readable) : IDocumentOwnerLinkPortV1
+internal sealed class FixedOwnerPort(
+    ICompanyContext companyContext,
+    HashSet<(Guid Company, Guid Party)> readable,
+    Dictionary<(Guid Company, Guid Party), DocumentOwnerAccessV1> outcomes) : IDocumentOwnerLinkPortV1
 {
     public HashSet<(Guid Company, Guid Party)> Readable => readable;
 
     public int Calls { get; private set; }
+
+    public Exception? Error { get; set; }
 
     public string Kind => DocumentOwnerLinkKindsV1.CounterpartyParty;
 
     public Task<DocumentOwnerAccessV1> CheckReadableAsync(Guid ownerId, CancellationToken cancellationToken = default)
     {
         Calls++;
+        if (Error is not null)
+        {
+            throw Error;
+        }
+
+        if (companyContext.IsResolved && outcomes.TryGetValue((companyContext.CompanyId, ownerId), out var outcome))
+        {
+            return Task.FromResult(outcome);
+        }
+
         return Task.FromResult(companyContext.IsResolved && Readable.Contains((companyContext.CompanyId, ownerId))
             ? DocumentOwnerAccessV1.Readable
             : DocumentOwnerAccessV1.NotFound);
@@ -198,7 +213,7 @@ internal sealed class Harness
         Correlation = new CorrelationContext();
         Correlation.Set($"SENTETIK-{Guid.NewGuid():N}", null, SourceChannels.Web, "127.0.0.1", "SENTETIK-agent");
         User = new FixedUser(actor, CompanyA, CompanyB);
-        Owner = new FixedOwnerPort(Company, World.Readable);
+        Owner = new FixedOwnerPort(Company, World.Readable, World.OwnerOutcomes);
 
         Store = new MemoryDocumentStore(Company, World);
         Objects = World.Objects;
@@ -248,6 +263,8 @@ internal sealed class Harness
         public MemoryObjectStore Objects { get; } = new();
 
         public HashSet<(Guid Company, Guid Party)> Readable { get; } = [];
+
+        public Dictionary<(Guid Company, Guid Party), DocumentOwnerAccessV1> OwnerOutcomes { get; } = [];
 
         public List<StoredDocument> Documents { get; } = [];
 

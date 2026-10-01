@@ -333,6 +333,68 @@ public sealed class DocumentServiceTests
         await Refused(400, new Harness(CompanyA, world: world).Grant(Read).Service.ListAsync("sales.order", Party));
     }
 
+    [Theory]
+    [InlineData(DocumentOwnerAccessV1.NotFound, 404, null)]
+    [InlineData(DocumentOwnerAccessV1.Denied, 404, null)]
+    [InlineData(DocumentOwnerAccessV1.Conflict, 409, DocumentProblemCodesV1.ConcurrentChange)]
+    [InlineData(DocumentOwnerAccessV1.Unavailable, 503, "service_unavailable")]
+    [InlineData((DocumentOwnerAccessV1)99, 503, "service_unavailable")]
+    public async Task Owner_outcomes_are_mapped_exhaustively_without_disclosure(
+        DocumentOwnerAccessV1 outcome, int status, string? code)
+    {
+        var world = World();
+        world.OwnerOutcomes[(CompanyA, Party)] = outcome;
+        var refusal = await Refused(status,
+            new Harness(CompanyA, world: world).Grant(Read).Service.ListAsync(DocumentOwnerLinkKindsV1.CounterpartyParty, Party));
+        if (code is not null)
+        {
+            Assert.Equal(code, refusal.Code);
+        }
+    }
+
+    [Theory]
+    [InlineData(DocumentOwnerAccessV1.Conflict, 409)]
+    [InlineData(DocumentOwnerAccessV1.Unavailable, 503)]
+    public async Task Upload_replay_and_write_fence_fail_closed_for_nonterminal_owner_reads(
+        DocumentOwnerAccessV1 outcome, int status)
+    {
+        var initial = World();
+        initial.OwnerOutcomes[(CompanyA, Party)] = outcome;
+        var beforeWrite = new Harness(CompanyA, new FixedScanner(DocumentScanVerdictV1.Clean), world: initial).Grant(Upload);
+        await Refused(status, beforeWrite.Service.UploadAsync(Harness.Upload(Party, Pdf), beforeWrite.Metadata("k-owner-initial")));
+        Assert.Empty(initial.Documents);
+        Assert.Empty(initial.Attempts);
+
+        var fencedWorld = World();
+        var fenced = new Harness(CompanyA, new FixedScanner(DocumentScanVerdictV1.Clean), world: fencedWorld).Grant(Upload);
+        fenced.Store.BeforeWrite = () => fencedWorld.OwnerOutcomes[(CompanyA, Party)] = outcome;
+        await Refused(status, fenced.Service.UploadAsync(Harness.Upload(Party, Pdf), fenced.Metadata("k-owner-fence")));
+        Assert.Empty(fencedWorld.Documents);
+        Assert.Empty(fencedWorld.Attempts);
+
+        var replayWorld = World();
+        var writer = new Harness(CompanyA, new FixedScanner(DocumentScanVerdictV1.Clean), world: replayWorld).Grant(Upload);
+        await writer.Service.UploadAsync(Harness.Upload(Party, Pdf), writer.Metadata("k-owner-replay"));
+        replayWorld.OwnerOutcomes[(CompanyA, Party)] = outcome;
+        var replay = new Harness(CompanyA, new FixedScanner(DocumentScanVerdictV1.Clean), world: replayWorld).Grant(Upload);
+        await Refused(status, replay.Service.UploadAsync(Harness.Upload(Party, Pdf), replay.Metadata("k-owner-replay")));
+        Assert.Single(replayWorld.Documents);
+        Assert.Single(replayWorld.Attempts);
+    }
+
+    [Fact]
+    public async Task Owner_port_faults_fail_closed_but_cancellation_propagates()
+    {
+        var unavailable = new Harness(CompanyA, world: World()).Grant(Read);
+        unavailable.Owner.Error = new InvalidOperationException("SENTETIK-owner-fault");
+        await Refused(503, unavailable.Service.ListAsync(DocumentOwnerLinkKindsV1.CounterpartyParty, Party));
+
+        var cancelled = new Harness(CompanyA, world: World()).Grant(Read);
+        cancelled.Owner.Error = new OperationCanceledException();
+        await Assert.ThrowsAsync<OperationCanceledException>(() =>
+            cancelled.Service.ListAsync(DocumentOwnerLinkKindsV1.CounterpartyParty, Party));
+    }
+
     private static Harness.SharedWorld World()
     {
         var world = new Harness.SharedWorld();

@@ -76,6 +76,38 @@ public sealed class DocumentVaultSqlServerRelationalAcceptanceTests
     }
 
     [SqlServerFact]
+    public async Task An_inventory_material_label_link_is_stored_once_replayed_and_remains_company_scoped()
+    {
+        await using var run = await Run.StartAsync();
+        var labelId = Guid.Parse("d0c00000-0000-4000-8000-00000000a065");
+        DocumentStoreResult first;
+        await using (var a = run.Store(CompanyA))
+        {
+            first = await a.Store.StoreUploadAsync(run.Envelope("k-label"), Hash("label-upload"),
+                Upload(CompanyA, labelId, Pdf, "Etiket.pdf", DocumentOwnerLinkKindsV1.InventoryMaterialLabel), PermitWriteAsync);
+            var replay = await a.Store.StoreUploadAsync(run.Envelope("k-label", correlation: "SENTETIK-label-retry"), Hash("label-upload"),
+                Upload(CompanyA, labelId, Pdf, "Etiket.pdf", DocumentOwnerLinkKindsV1.InventoryMaterialLabel), PermitWriteAsync);
+
+            Assert.False(first.IsReplay);
+            Assert.True(replay.IsReplay);
+            Assert.Equal(first.Document.Id, replay.Document.Id);
+            Assert.Single(await a.Store.ListByOwnerAsync(DocumentOwnerLinkKindsV1.InventoryMaterialLabel, labelId, 10));
+        }
+
+        await using (var b = run.Store(CompanyB))
+        {
+            Assert.Empty(await b.Store.ListByOwnerAsync(DocumentOwnerLinkKindsV1.InventoryMaterialLabel, labelId, 10));
+        }
+
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM documents.DocumentOwnerLinks WHERE CompanyId = @company AND OwnerKind = @kind AND OwnerId = @owner",
+            ("@company", CompanyA), ("@kind", DocumentOwnerLinkKindsV1.InventoryMaterialLabel), ("@owner", labelId)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM documents.CommandAttempts WHERE CompanyId = @company AND IdempotencyKey = N'k-label'",
+            ("@company", CompanyA)));
+    }
+
+    [SqlServerFact]
     public async Task An_upload_is_one_save_with_its_blob_attempt_and_web_audit_and_the_same_key_replays_without_a_second_row()
     {
         await using var run = await Run.StartAsync();
@@ -385,10 +417,11 @@ public sealed class DocumentVaultSqlServerRelationalAcceptanceTests
 
     private static string Hash(string text) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(text)));
 
-    private static NewDocumentUpload Upload(Guid company, Guid party, byte[] content, string fileName)
+    private static NewDocumentUpload Upload(Guid company, Guid party, byte[] content, string fileName,
+        string ownerKind = DocumentOwnerLinkKindsV1.CounterpartyParty)
     {
         var sha = DocumentContentHash.Compute(content);
-        return new NewDocumentUpload(Guid.NewGuid(), DocumentOwnerLink.TryCreate(DocumentOwnerLinkKindsV1.CounterpartyParty, party)!,
+        return new NewDocumentUpload(Guid.NewGuid(), DocumentOwnerLink.TryCreate(ownerKind, party)!,
             DocumentFileName.TryCreate(fileName)!, DocumentContentPolicy.Info(DocumentFileKind.Pdf), content.LongLength, sha,
             DocumentObjectKeys.For(company, sha), DocumentScanState.Clean, "SENTETIK-scanner-v1", T0);
     }
