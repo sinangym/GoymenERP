@@ -100,10 +100,10 @@ public sealed class DocumentVaultSqlServerRelationalAcceptanceTests
         }
 
         Assert.Equal(1, await run.ScalarAsync<int>(
-            "SELECT COUNT(*) FROM documents.DocumentOwnerLinks WHERE CompanyId = @company AND OwnerKind = @kind AND OwnerId = @owner",
+            "SELECT COUNT(*) FROM documents.DocumentLinks WHERE CompanyId = @company AND OwnerKind = @kind AND OwnerId = @owner",
             ("@company", CompanyA), ("@kind", DocumentOwnerLinkKindsV1.InventoryMaterialLabel), ("@owner", labelId)));
         Assert.Equal(1, await run.ScalarAsync<int>(
-            "SELECT COUNT(*) FROM documents.CommandAttempts WHERE CompanyId = @company AND IdempotencyKey = N'k-label'",
+            "SELECT COUNT(*) FROM documents.DocumentAttempts WHERE CompanyId = @company AND IdempotencyKey = N'k-label'",
             ("@company", CompanyA)));
     }
 
