@@ -6,7 +6,6 @@ using GoymenERP.Modules.Logistics.Infrastructure.Fixtures;
 using GoymenERP.Modules.Product.Infrastructure.Fixtures;
 using GoymenERP.Modules.Purchasing.Infrastructure.Fixtures;
 using GoymenERP.Modules.Sales.Infrastructure.Fixtures;
-using GoymenERP.Modules.Settings.Application.Contracts.V1;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace GoymenERP.BrowserSuiteFixtureTool.Suites.L04;
@@ -51,7 +50,8 @@ public sealed class L04BrowserSeed : IBrowserSuiteFixture
     public static readonly Guid OpenLineId = Guid.Parse("e3000000-0000-4000-8000-000000000401");
     public static readonly Guid BlockedLineId = Guid.Parse("e3000000-0000-4000-8000-000000000402");
     public const string DocumentNo = "SENTETIK browser-suite:l04 SO-0001";
-    public const string ProductName = "SENTETIK browser-suite:l04 rulo 1,25 × 1240";
+    public const string ProductName = "SENTETIK browser-suite:purchase-to-delivery candidate";
+    private const string JourneyFixtureLabel = "SENTETIK browser-suite:";
     // Business 5745076917: the customer select shows the Cari NAME (trade name, else legal name). The seed's party has
     // no trade name, so the price-free read's customerName is its legal name = context.Label("Yükleme müşterisi").
     public const string CustomerName = "SENTETIK browser-suite:l04 Yükleme müşterisi";
@@ -59,20 +59,19 @@ public sealed class L04BrowserSeed : IBrowserSuiteFixture
     // AT-025: the purchase order waiting for goods receipt (deterministic ids, the pur01 way), and its supplier's Cari name.
     public static readonly Guid PurchaseOrderId = Guid.Parse("e7000000-0000-4000-8000-000000000401");
     public static readonly Guid PurchaseLineId = Guid.Parse("e7100000-0000-4000-8000-000000000401");
-    private static readonly Guid PurchaseProductId = Guid.Parse("e7200000-0000-4000-8000-000000000401");
     public const string SupplierName = "SENTETIK browser-suite:l04 Operasyon tedarikçisi";
 
     // Synthetic owner snapshots the Sales fixture stores (no Product or Settings money answer is asked for them).
     private static readonly Guid CurrencyId = Guid.Parse("e4000000-0000-4000-8000-000000000401");
     private static readonly Guid MoneyProfileId = Guid.Parse("e5000000-0000-4000-8000-000000000401");
-    private static readonly Guid OpeningCountId = Guid.Parse("e6000000-0000-4000-8000-000000000401");
-    private static readonly Guid OpeningLineId = Guid.Parse("e6100000-0000-4000-8000-000000000401");
+    private static readonly Guid ShipmentReceiptAcceptanceId = Guid.Parse("e6000000-0000-4000-8000-000000000401");
+    private static readonly Guid ShipmentReceiptMovementId = Guid.Parse("e6100000-0000-4000-8000-000000000401");
     private static readonly Guid ShipmentLabelId = Guid.Parse("e6200000-0000-4000-8000-000000000401");
     private static readonly Guid ShipmentLotId = Guid.Parse("e6300000-0000-4000-8000-000000000401");
     private static readonly Guid ShipmentAllocationId = Guid.Parse("e6400000-0000-4000-8000-000000000401");
+    private const string ShipmentLabelCode = "SYNL04-RECEIPT-LABEL-1";
 
     private static readonly DateOnly BusinessDate = new DateOnly(2026, 9, 19);
-    private static readonly DateOnly EffectiveFrom = new DateOnly(2026, 9, 18);
     private static readonly DateTimeOffset At = new DateTimeOffset(2026, 9, 19, 9, 0, 0, TimeSpan.Zero);
 
     private const int CustomerRole = 1;
@@ -85,7 +84,6 @@ public sealed class L04BrowserSeed : IBrowserSuiteFixture
     private const string DraftsPath = "/api/v1/sales/drafts";
     private const string InstructionsPath = "/api/v1/logistics/loading-instructions";
     private const string ApprovedLinesPath = InstructionsPath + "/approved-order-lines";
-    private const string OpeningCountsPath = "/api/v1/inventory/opening-counts";
     private const string PhysicalAllocationsPath = "/api/v1/inventory/physical-allocations";
     private const string OrganizationLocationsPath = "/api/v1/organization/locations?page=1&pageSize=100";
     private const string CapabilitiesPath = "/api/v1/shell/capabilities";
@@ -105,14 +103,20 @@ public sealed class L04BrowserSeed : IBrowserSuiteFixture
                 .EnsureAsync(cancellationToken);
         }
 
-        ProductSalesCandidateFixtureOutput product;
+        ProductPurchaseSalesStockJourneyFixtureOutput product;
         await using (var productScope = context.Services.CreateAsyncScope())
         {
-            product = await productScope.ServiceProvider.GetRequiredService<C01E2eProductSalesCandidateFixtureWriter>()
+            product = await productScope.ServiceProvider.GetRequiredService<C01E2eProductPurchaseSalesStockJourneyFixtureWriter>()
                 .EnsureAsync(cancellationToken);
         }
+        if (product.CompanyId != CompanyGdc)
+        {
+            throw new InvalidOperationException("The Product purchase-to-delivery fixture answered another company.");
+        }
 
-        string shipmentLabelVersion = await EnsureShipmentLabelAsync(context, product, cancellationToken);
+        Guid receiptLocationId = await ResolveReceiptLocationAsync(context, cancellationToken);
+        ShipmentReceipt shipmentReceipt = await EnsureApprovedPurchaseOrderAndReceiptAsync(
+            context, product, receiptLocationId, cancellationToken);
 
         // 1) The customer, through the real Cari API.
         CariBrowserAccount customer = await CariBrowserSeed.OpenPartyWithAccountAsync(
@@ -127,12 +131,13 @@ public sealed class L04BrowserSeed : IBrowserSuiteFixture
                     DraftId,
                     CompanyGdc,
                     DocumentNo,
-                    context.Label(string.Empty).TrimEnd(),
-                    BusinessDate,
-                    new SalesDraftFixtureOwners(customer.PartyId, customer.AccountId, CurrencyId, MoneyProfileId, EffectiveFrom),
+                    JourneyFixtureLabel,
+                    product.EffectiveOn,
+                    new SalesDraftFixtureOwners(customer.PartyId, customer.AccountId, CurrencyId, MoneyProfileId, product.EffectiveOn),
                     [
-                        new SalesDraftFixtureLine(LineId, product.ProductId, "L04-COIL", ProductName,
-                            product.UnitId, product.ProfileId, "kg", "weight", IsKilogram: true, Scale: 3, "6", 6m),
+                        new SalesDraftFixtureLine(LineId, product.ProductId, product.Code, product.Name,
+                            product.UnitId, product.ProfileId, "kg", "weight", IsKilogram: true, Scale: 3, "6", 6m,
+                            ProductVersion: product.ProductVersion),
                     ],
                     context.Label("seed"),
                     context.IdempotencyKey("draft"),
@@ -163,7 +168,7 @@ public sealed class L04BrowserSeed : IBrowserSuiteFixture
                 new { expectedVersion = draftVersion.ToString(System.Globalization.CultureInfo.InvariantCulture) }, "approve", cancellationToken);
         }
 
-        await EnsureShipmentAllocationAsync(context, shipmentLabelVersion, cancellationToken);
+        await EnsureShipmentAllocationAsync(context, shipmentReceipt.LabelVersion, cancellationToken);
 
         JsonElement approved = await context.GetJsonAsync(SalesApproverActor, CompanyGdc, $"{DraftsPath}/{DraftId:D}", cancellationToken);
         JsonElement approvedDraft = approved.GetProperty("draft");
@@ -244,8 +249,7 @@ public sealed class L04BrowserSeed : IBrowserSuiteFixture
             throw new InvalidOperationException("The reader does not see the seeded instruction in the real list.");
         }
 
-        // 4) AT-025: one approved purchase order waiting for goods receipt, and the operations actor's two separate sections.
-        await EnsureApprovedPurchaseOrderAsync(context, cancellationToken);
+        // 4) AT-025: the same partially received purchase order remains in work with 5 kg open, beside the Sales section.
         JsonElement salesWork = await context.GetJsonAsync(OperationsActor, CompanyGdc, SalesWorkPath, cancellationToken);
         JsonElement purchaseWork = await context.GetJsonAsync(OperationsActor, CompanyGdc, PurchaseWorkPath, cancellationToken);
         string salesWorkJson = salesWork.GetRawText();
@@ -307,6 +311,8 @@ public sealed class L04BrowserSeed : IBrowserSuiteFixture
             ["openLineId"] = OpenLineId.ToString("D"),
             ["shipmentAllocationId"] = ShipmentAllocationId.ToString("D"),
             ["shipmentLabelId"] = ShipmentLabelId.ToString("D"),
+            ["shipmentReceiptAcceptanceId"] = shipmentReceipt.AcceptanceId.ToString("D"),
+            ["shipmentReceiptMovementId"] = shipmentReceipt.MovementId.ToString("D"),
         };
     }
 
@@ -314,7 +320,11 @@ public sealed class L04BrowserSeed : IBrowserSuiteFixture
     /// AT-025: the supplier through the real Cari API, the order through the gated Purchasing fixture writer (Draft), then the
     /// approval through the real Purchasing API by the seed-only approver; a re-run finds it Approved and leaves it.
     /// </summary>
-    private static async Task EnsureApprovedPurchaseOrderAsync(BrowserSuiteFixtureContext context, CancellationToken cancellationToken)
+    private static async Task<ShipmentReceipt> EnsureApprovedPurchaseOrderAndReceiptAsync(
+        BrowserSuiteFixtureContext context,
+        ProductPurchaseSalesStockJourneyFixtureOutput product,
+        Guid locationId,
+        CancellationToken cancellationToken)
     {
         CariBrowserAccount supplier = await CariBrowserSeed.OpenPartyWithAccountAsync(
             context, CariActor, CompanyGdc, "supplier", "Operasyon tedarikçisi", SupplierRole, cancellationToken);
@@ -328,7 +338,8 @@ public sealed class L04BrowserSeed : IBrowserSuiteFixture
                     supplier.PartyId,
                     supplier.AccountId,
                     BusinessDate,
-                    new PurchaseOrderFixtureLine(PurchaseLineId, PurchaseProductId, "1", SettingsUnitIdentitiesV1.Kilogram, IsKilogram: true, Quantity: 7m),
+                    new PurchaseOrderFixtureLine(PurchaseLineId, product.ProductId, product.ProductVersion,
+                        product.UnitId, IsKilogram: true, Quantity: 7m),
                     context.Label(string.Empty).TrimEnd(),
                     context.Label("purchase-seed"),
                     context.IdempotencyKey("purchase-order"),
@@ -350,13 +361,96 @@ public sealed class L04BrowserSeed : IBrowserSuiteFixture
             detail = await context.GetJsonAsync(PurchaseApproverActor, CompanyGdc, $"{PurchaseOrdersPath}/{PurchaseOrderId:D}", cancellationToken);
         }
 
-        if (detail.GetProperty("order").GetProperty("status").GetString() != "Approved"
+        JsonElement order = detail.GetProperty("order");
+        if (order.GetProperty("status").GetString() != "Approved"
             || detail.GetProperty("lines").GetArrayLength() != 1
             || detail.GetProperty("lines")[0].GetProperty("lineId").GetGuid() != PurchaseLineId
-            || detail.GetProperty("lines")[0].GetProperty("remaining").GetString() != "7")
+            || detail.GetProperty("lines")[0].GetProperty("productId").GetGuid() != product.ProductId
+            || detail.GetProperty("lines")[0].GetProperty("productVersion").GetString() != product.ProductVersion)
         {
-            throw new InvalidOperationException("The seeded purchase order is not an APPROVED one-line order with 7 kg waiting for receipt.");
+            throw new InvalidOperationException("The seeded purchase order is not an APPROVED one-line order for the journey product.");
         }
+
+        string receiptsPath = $"{PurchaseOrdersPath}/{PurchaseOrderId:D}/goods-receipts";
+        JsonElement page = await context.GetJsonAsync(OperationsActor, CompanyGdc, receiptsPath, cancellationToken);
+        JsonElement[] existing = page.GetProperty("items").EnumerateArray()
+            .Where(item => item.GetProperty("acceptanceId").GetGuid() == ShipmentReceiptAcceptanceId)
+            .ToArray();
+        if (existing.Length > 1)
+        {
+            throw new InvalidOperationException("The l04 purchase order has duplicate receipt rows for the shipment acceptance.");
+        }
+
+        JsonElement receipt;
+        if (existing.Length == 1)
+        {
+            receipt = existing[0];
+        }
+        else
+        {
+            JsonElement response = await context.PostJsonAsync(
+                OperationsActor,
+                CompanyGdc,
+                $"{PurchaseOrdersPath}/{PurchaseOrderId:D}/lines/{PurchaseLineId:D}/goods-receipts",
+                new
+                {
+                    expectedPurchaseOrderVersion = order.GetProperty("version").GetString(),
+                    expectedProductVersion = product.ProductVersion,
+                    acceptanceId = ShipmentReceiptAcceptanceId,
+                    acceptedQuantity = "2",
+                    measuredQuantityKg = "2",
+                    locationId,
+                    lotId = ShipmentLotId,
+                    labelId = ShipmentLabelId,
+                    labelCode = ShipmentLabelCode,
+                    heatNumber = (string?)null,
+                    coilNumber = (string?)null,
+                    movementId = ShipmentReceiptMovementId,
+                    occurredAtUtc = At.AddMinutes(5),
+                },
+                "shipment-goods-receipt",
+                cancellationToken);
+            receipt = response.GetProperty("receipt");
+        }
+
+        if (receipt.GetProperty("companyId").GetGuid() != CompanyGdc
+            || receipt.GetProperty("acceptanceId").GetGuid() != ShipmentReceiptAcceptanceId
+            || receipt.GetProperty("purchaseOrderId").GetGuid() != PurchaseOrderId
+            || receipt.GetProperty("purchaseOrderLineId").GetGuid() != PurchaseLineId
+            || receipt.GetProperty("productId").GetGuid() != product.ProductId
+            || receipt.GetProperty("productVersion").GetString() != product.ProductVersion
+            || receipt.GetProperty("unitId").GetGuid() != product.UnitId
+            || receipt.GetProperty("acceptedQuantity").GetString() != "2"
+            || receipt.GetProperty("remainingQuantity").GetString() != "5"
+            || receipt.GetProperty("lotId").GetGuid() != ShipmentLotId
+            || receipt.GetProperty("labelId").GetGuid() != ShipmentLabelId
+            || receipt.GetProperty("labelCode").GetString() != ShipmentLabelCode
+            || receipt.GetProperty("movementId").GetGuid() != ShipmentReceiptMovementId
+            || receipt.GetProperty("locationId").GetGuid() != locationId
+            || receipt.GetProperty("measuredQuantityKg").GetString() != "2"
+            || receipt.GetProperty("initialBlock").GetString() != "Free")
+        {
+            throw new InvalidOperationException("The real goods-receipt command did not return the exact journey label and receipt.");
+        }
+
+        JsonElement receivedOrder = await context.GetJsonAsync(
+            OperationsActor, CompanyGdc, $"{PurchaseOrdersPath}/{PurchaseOrderId:D}", cancellationToken);
+        if (receivedOrder.GetProperty("lines")[0].GetProperty("remaining").GetString() != "5")
+        {
+            throw new InvalidOperationException("The partially received purchase line does not retain exactly 5 kg open.");
+        }
+
+        JsonElement label = await context.GetJsonAsync(
+            LoaderActor, CompanyGdc, $"/api/v1/inventory/labels/{ShipmentLabelId:D}/detail", cancellationToken);
+        string labelVersion = receipt.GetProperty("labelVersion").GetString()
+            ?? throw new InvalidOperationException("The goods-receipt label version is missing.");
+        if (label.GetProperty("labelVersion").GetString() != labelVersion
+            || label.GetProperty("identity").GetProperty("productId").GetGuid() != product.ProductId)
+        {
+            throw new InvalidOperationException("The reopened Inventory label does not match the goods-receipt journey tuple.");
+        }
+
+        return new ShipmentReceipt(ShipmentReceiptAcceptanceId, ShipmentReceiptMovementId, labelVersion);
     }
 
     /// <summary>The seeded instruction through the real API: its create key replays on a re-run, so the id is stable.</summary>
@@ -388,8 +482,9 @@ public sealed class L04BrowserSeed : IBrowserSuiteFixture
         return instructionId;
     }
 
-    private static async Task<string> EnsureShipmentLabelAsync(BrowserSuiteFixtureContext context,
-        ProductSalesCandidateFixtureOutput product, CancellationToken cancellationToken)
+    private static async Task<Guid> ResolveReceiptLocationAsync(
+        BrowserSuiteFixtureContext context,
+        CancellationToken cancellationToken)
     {
         JsonElement locations = await context.GetJsonAsync(CariActor, CompanyGdc, OrganizationLocationsPath, cancellationToken);
         Guid locationId = locations.GetProperty("items").EnumerateArray()
@@ -402,41 +497,10 @@ public sealed class L04BrowserSeed : IBrowserSuiteFixture
             throw new InvalidOperationException("The l04 shipment prerequisite has no active non-external GDC location.");
         }
 
-        JsonElement opening = await context.PostJsonAsync(LoaderActor, CompanyGdc, OpeningCountsPath, new
-        {
-            countId = OpeningCountId,
-            locationId,
-            countedOn = ProductSalesCandidateFixture.EffectiveOn,
-            sheetReference = context.Label("shipment opening"),
-            lines = new[]
-            {
-                new
-                {
-                    lineId = OpeningLineId,
-                    labelId = ShipmentLabelId,
-                    labelCode = "SYNL04-SHIP-LABEL-1",
-                    lotId = ShipmentLotId,
-                    heatNumber = (string?)null,
-                    coilNumber = (string?)null,
-                    productId = product.ProductId,
-                    productVersion = product.ProductVersion,
-                    quantityKg = "2",
-                },
-            },
-        }, "shipment-opening", cancellationToken);
-        JsonElement opened = opening.GetProperty("lines").EnumerateArray().Single();
-        if (opened.GetProperty("labelId").GetGuid() != ShipmentLabelId
-            || opened.GetProperty("productId").GetGuid() != product.ProductId
-            || opened.GetProperty("quantityKg").GetString() != "2")
-        {
-            throw new InvalidOperationException("The real opening command returned another l04 shipment prerequisite.");
-        }
-
-        JsonElement label = await context.GetJsonAsync(
-            LoaderActor, CompanyGdc, $"/api/v1/inventory/labels/{ShipmentLabelId:D}/detail", cancellationToken);
-        return label.GetProperty("labelVersion").GetString()
-            ?? throw new InvalidOperationException("The l04 shipment label version is missing.");
+        return locationId;
     }
+
+    private sealed record ShipmentReceipt(Guid AcceptanceId, Guid MovementId, string LabelVersion);
 
     private static async Task EnsureShipmentAllocationAsync(BrowserSuiteFixtureContext context,
         string labelVersion, CancellationToken cancellationToken)

@@ -78,6 +78,8 @@ const {
   openLineId,
   shipmentAllocationId,
   shipmentLabelId,
+  shipmentReceiptAcceptanceId,
+  shipmentReceiptMovementId,
 } = env.seed
 const INSTRUCTIONS_PATH = '/api/v1/logistics/loading-instructions'
 const APPROVED_LINES_PATH = `${INSTRUCTIONS_PATH}/approved-order-lines`
@@ -94,7 +96,7 @@ const SALES_READER_ACTOR = 'l04-sales-approver'
 const SALES_DETAIL_ROUTE = `/satis/siparisler/${draftId}`
 // The seeded approved draft has ONE line of "6" kg (L04BrowserSeed); only L04-05 ships (2) and delivers (1.5) on it.
 const ORDERED = '6'
-const PRODUCT_NAME = 'SENTETIK browser-suite:l04 rulo 1,25 × 1240'
+const PRODUCT_NAME = 'SENTETIK browser-suite:purchase-to-delivery candidate'
 // Business 5743412166 (Sevkiyatçı rule): no price or finance word on these screens, in any language the app uses.
 const PRICE_WORDS = ['₺', 'TRY', 'fiyat', 'Fiyat', 'price', 'Price', 'unitPrice', 'tutar', 'Tutar', 'iskonto', 'İskonto', 'para birimi']
 
@@ -446,7 +448,7 @@ test('L04-04 on the seeded instruction the blocked line refuses a load and the o
   expect(after.lines.find((line) => line.lineId === openLineId)?.loaded).toBe('1')
 })
 
-test('L04-05 shipment consumes one allocation and one stock exit; reopen replay and delivery add no Inventory effect; the Sales order shows the delivery and its replay adds nothing (AT-024)', async ({ page }) => {
+test('L04-05 the purchase-receipt label crosses allocation, one stock exit, shipment and delivery without a second Inventory effect (AT-024)', async ({ page }) => {
   await signInAs(page, loaderActor)
   if (createdId === '') createdId = recallCreatedId()
   await openDetail(page, createdId)
@@ -470,9 +472,22 @@ test('L04-05 shipment consumes one allocation and one stock exit; reopen replay 
         .input('companyId', sql.UniqueIdentifier, companyId)
         .input('labelId', sql.UniqueIdentifier, shipmentLabelId)
         .input('allocationId', sql.UniqueIdentifier, shipmentAllocationId)
+        .input('acceptanceId', sql.UniqueIdentifier, shipmentReceiptAcceptanceId)
+        .input('receiptMovementId', sql.UniqueIdentifier, shipmentReceiptMovementId)
         .input('movementId', sql.UniqueIdentifier, movementId ?? '00000000-0000-0000-0000-000000000000')
         .query(`
           SELECT
+            (SELECT COUNT(*) FROM purchasing.PurchaseAcceptanceShares
+               WHERE CompanyId=@companyId AND AcceptanceId=@acceptanceId) AS receiptAcceptance,
+            (SELECT COUNT(*) FROM inventory.Movements
+               WHERE CompanyId=@companyId AND Id=@receiptMovementId
+                 AND SourceKind=N'purchasing.goods-acceptance' AND SourceId=@acceptanceId) AS receiptMovement,
+            (SELECT COUNT(DISTINCT movement.Id)
+               FROM inventory.Movements movement
+               INNER JOIN inventory.MovementLines movementLine
+                 ON movementLine.CompanyId=movement.CompanyId AND movementLine.MovementId=movement.Id
+              WHERE movement.CompanyId=@companyId AND movement.SourceKind=N'inventory.opening-count'
+                AND movementLine.LabelId=@labelId) AS openingMovements,
             (SELECT COUNT(*) FROM inventory.Allocations WHERE CompanyId=@companyId AND Id=@allocationId AND LabelId=@labelId) AS allocations,
             (SELECT COUNT(*) FROM inventory.Allocations WHERE CompanyId=@companyId AND Id=@allocationId
                AND Status=2 AND Version=2 AND RemainingKg=0) AS consumed,
@@ -482,10 +497,17 @@ test('L04-05 shipment consumes one allocation and one stock exit; reopen replay 
                  ON movementLine.CompanyId=movement.CompanyId AND movementLine.MovementId=movement.Id
               WHERE movement.CompanyId=@companyId AND movementLine.LabelId=@labelId) AS movements,
             (SELECT COUNT(*) FROM inventory.Movements WHERE CompanyId=@companyId AND Id=@movementId) AS shipmentMovement`)
-      return result.recordset[0] as { allocations: number; consumed: number; movements: number; shipmentMovement: number }
+      return result.recordset[0] as {
+        receiptAcceptance: number; receiptMovement: number; openingMovements: number
+        allocations: number; consumed: number; movements: number; shipmentMovement: number
+      }
     }
 
-    expect(await effects()).toEqual({ allocations: 1, consumed: 0, movements: 1, shipmentMovement: 0 })
+    const receiptOnly = {
+      receiptAcceptance: 1, receiptMovement: 1, openingMovements: 0,
+      allocations: 1, consumed: 0, movements: 1, shipmentMovement: 0,
+    }
+    expect(await effects()).toEqual(receiptOnly)
 
     const shipmentPath = `${INSTRUCTIONS_PATH}/${createdId}/lines/${line.lineId}/shipments`
     const attempts: { readonly key: string | null; readonly body: string | null }[] = []
@@ -515,7 +537,10 @@ test('L04-05 shipment consumes one allocation and one stock exit; reopen replay 
     const recorded = await readInstruction(page, loaderActor, createdId)
     const shipped = recorded.shares.find((share) => share.kind === 'Shipped' && share.shareId === shipmentBody.shipmentId)
     expect(shipped).toMatchObject({ lineId: line.lineId, quantity: '2', sourceShipmentId: null })
-    expect(await effects(shipmentBody.movementId)).toEqual({ allocations: 1, consumed: 1, movements: 2, shipmentMovement: 1 })
+    const shippedEffects = {
+      ...receiptOnly, consumed: 1, movements: 2, shipmentMovement: 1,
+    }
+    expect(await effects(shipmentBody.movementId)).toEqual(shippedEffects)
 
     await page.getByRole('link', { name: '← Yükleme talimatları', exact: true }).click()
     await expect(page.getByRole('heading', { level: 1, name: 'Yükleme talimatları', exact: true })).toBeVisible()
@@ -531,7 +556,7 @@ test('L04-05 shipment consumes one allocation and one stock exit; reopen replay 
     expect(replay.headers()['idempotency-replayed']).toBe('true')
     expect(attempts).toHaveLength(2)
     expect(attempts[1]).toEqual(attempts[0])
-    expect(await effects(shipmentBody.movementId)).toEqual({ allocations: 1, consumed: 1, movements: 2, shipmentMovement: 1 })
+    expect(await effects(shipmentBody.movementId)).toEqual(shippedEffects)
 
     // AT-024, before the delivery: the Sales reader's S-04 shows the definite shipment and nothing delivered yet.
     const sales = await page.context().newPage()
@@ -555,7 +580,7 @@ test('L04-05 shipment consumes one allocation and one stock exit; reopen replay 
     expect(delivered.status()).toBe(200)
     expect((await delivered.request().postDataJSON()) as { sourceShipmentId: string }).toMatchObject({ sourceShipmentId: shipmentBody.shipmentId })
     expect(inventoryCalls).toEqual([])
-    expect(await effects(shipmentBody.movementId)).toEqual({ allocations: 1, consumed: 1, movements: 2, shipmentMovement: 1 })
+    expect(await effects(shipmentBody.movementId)).toEqual(shippedEffects)
 
     await page.goto(LIST_ROUTE)
     await openDetail(page, createdId)
