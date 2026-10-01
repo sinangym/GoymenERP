@@ -36,6 +36,18 @@ internal static class BrowserSuiteSeedOutputValidator
                 continue;
             }
 
+            if (string.Equals(suite, "acc01", StringComparison.Ordinal)
+                && IsAcc01ScalarKey(key))
+            {
+                if (!IsSuiteSpecificScalar(suite, key, value))
+                {
+                    throw new InvalidOperationException(
+                        $"Seed output '{key}' must match its exact ACC01 scalar contract.");
+                }
+
+                continue;
+            }
+
             if (!isGuid && !actors.Contains(value) && !IsSuiteSpecificScalar(suite, key, value))
             {
                 throw new InvalidOperationException(
@@ -156,6 +168,10 @@ internal static class BrowserSuiteSeedOutputValidator
         or "planRefusalRollCode" or "outputUiRollCode" or "outputProductVersion"
         or "outputRequiredDocuments" or "outputOwnerKind" or "outputCustodianKind"
         or "outputInitialBlock";
+
+    private static bool IsAcc01ScalarKey(string key) => key is
+        "normalSourceLabel" or "normalOccurredOn" or "normalAmount"
+        or "normalDebitLabel" or "normalCreditLabel";
 
     private static bool IsAcc01SourceLabel(string value)
     {

@@ -276,6 +276,22 @@ class WorkflowTests(unittest.TestCase):
         with self.assertRaisesRegex(validator.ContractError, "closed list"):
             validator.seed_export("acc01", unknown)
 
+    def test_acc01_fixture_output_rejects_guid_and_actor_fallback_for_every_scalar(self):
+        scalar_keys = {
+            "normalSourceLabel", "normalOccurredOn", "normalAmount",
+            "normalDebitLabel", "normalCreditLabel",
+        }
+        for key in scalar_keys:
+            for value in (
+                "10000000-0000-0000-0000-000000000001",
+                "acc01-preparer",
+            ):
+                seed = self._acc01_seed()
+                seed[key] = value
+                with self.subTest(key=key, value=value):
+                    with self.assertRaises(validator.ContractError):
+                        validator.seed_export("acc01", seed)
+
     def test_fin01_identity_permissions_match_the_owner_fixture_closed_list(self):
         self.assertEqual(
             (

@@ -181,6 +181,27 @@ public sealed class BrowserSuiteHostEnvelopeTests
             new HashSet<string>(StringComparer.Ordinal)));
     }
 
+    [Theory]
+    [InlineData("normalSourceLabel")]
+    [InlineData("normalOccurredOn")]
+    [InlineData("normalAmount")]
+    [InlineData("normalDebitLabel")]
+    [InlineData("normalCreditLabel")]
+    public void Acc01_output_validation_does_not_accept_guid_or_actor_fallback(string key)
+    {
+        foreach (var value in new[]
+                 {
+                     "10000000-0000-0000-0000-000000000001",
+                     "acc01-preparer",
+                 })
+        {
+            Assert.Throws<InvalidOperationException>(() => BrowserSuiteSeedOutputValidator.Validate(
+                "acc01",
+                new Dictionary<string, string> { [key] = value },
+                new HashSet<string>(["acc01-preparer"], StringComparer.Ordinal)));
+        }
+    }
+
     [Fact]
     public void Mfg_output_validation_accepts_only_its_closed_fixture_scalar_contract()
     {
