@@ -58805,7 +58805,6 @@
           "labelVersion",
           "labelCode",
           "productId",
-          "productVersion",
           "lot",
           "heatNumber",
           "coilNumber",
@@ -58818,7 +58817,8 @@
           "positions",
           "draftSelectable",
           "draftRefusalCode",
-          "productionUseRequiresRevalidation"
+          "productionUseRequiresRevalidation",
+          "productVersion"
         ],
         "type": "object",
         "properties": {
@@ -58839,9 +58839,6 @@
           "productId": {
             "type": "string",
             "format": "uuid"
-          },
-          "productVersion": {
-            "type": "string"
           },
           "lot": {
             "$ref": "#/components/schemas/InventoryLotV1"
@@ -58899,6 +58896,9 @@
           },
           "productionUseRequiresRevalidation": {
             "type": "boolean"
+          },
+          "productVersion": {
+            "type": "string"
           }
         }
       },
