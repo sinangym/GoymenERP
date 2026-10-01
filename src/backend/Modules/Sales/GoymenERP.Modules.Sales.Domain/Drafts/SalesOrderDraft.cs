@@ -1194,6 +1194,10 @@ public sealed partial class SalesOrderDraft
         {
             throw new InvalidOperationException("Kayıtlı onay olguları kayıtlı onay durumuyla uyuşmuyor.");
         }
+        if (CustomerAcceptance?.Revision == Revision && state != InternalApprovalState.Approved)
+        {
+            throw new InvalidOperationException("Güncel revizyon müşteri kabulü yalnız onaylı siparişle birlikte geri yüklenir.");
+        }
 
         // The lines' version is a FLOOR the transitions raise: a submitted draft has had at least one, a decided
         // one at least two — and (K3 Head B) every archived approved revision carried its own submission, its

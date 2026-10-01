@@ -409,6 +409,27 @@ public sealed class SalesOrderDraftApprovalTests
     }
 
     [Fact]
+    public void Restore_refuses_a_current_revision_acceptance_beside_every_non_approved_state()
+    {
+        var cases = new (InternalApprovalState State, ApprovalFacts Facts, long Version)[]
+        {
+            (InternalApprovalState.Preparing, ApprovalFacts.None, 3),
+            (InternalApprovalState.PendingApproval, new ApprovalFacts(Preparer, T0, null, null, null), 4),
+            (InternalApprovalState.Rejected, new ApprovalFacts(Preparer, T0, Approver, T0.AddMinutes(1), "synthetic rejection"), 5),
+        };
+
+        foreach (var (state, facts, version) in cases)
+        {
+            var draft = Draft(customerAcceptanceRequired: true);
+            draft.RestoreCustomerAcceptance(new CustomerAcceptanceFacts(0, "synthetic-customer-acceptor", T0));
+
+            var failure = Assert.Throws<InvalidOperationException>(() =>
+                draft.RestoreApproval(state, facts, version, T0.AddMinutes(2)));
+            Assert.Contains("Güncel revizyon müşteri kabulü", failure.Message, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
     public void Legacy_order_needs_no_synthetic_customer_acceptance()
     {
         var draft = Draft();
