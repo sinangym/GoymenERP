@@ -1084,7 +1084,8 @@ public sealed partial class ManufacturingCommandService(
                 await orders.CloseOrderWithPolicyAsync(orderId, request.ExpectedVersion, actor, closedAt, policy,
                     approval, persistenceAuthority, metadata, cancellationToken);
                 return await OrderResultAsync(orderId, ManufacturingApiStatus.Ok, isReplay: false, cancellationToken);
-            }, stored => OrderView((ProductionOrder)stored), cancellationToken);
+            }, stored => OrderView((ProductionOrder)stored), cancellationToken,
+            storedAnswerPermission: exceptionReason is null ? null : exceptionApprovalPermission ?? string.Empty);
     }
 
     /// <summary>
@@ -1360,7 +1361,7 @@ public sealed partial class ManufacturingCommandService(
     private async Task<ManufacturingApiResult<T>> RunAsync<T>(string permission, string idempotencyKey, string commandName,
         object canonicalRequest, ManufacturingApiStatus successStatus,
         Func<ManufacturingCommandMetadata, Guid, Guid, Task<ManufacturingApiResult<T>>> write, Func<object, T> view,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, string? storedAnswerPermission = null)
         where T : class
     {
         if (!HasContext() || ActorGuid() is not { } actor)
@@ -1379,10 +1380,34 @@ public sealed partial class ManufacturingCommandService(
         var keyHash = Sha256(idempotencyKey.Trim());
         var requestHash = Sha256(commandName + "|" + JsonSerializer.Serialize(canonicalRequest, Json));
 
+        async Task<ManufacturingApiResult<T>> AnswerStoredAsync(ManufacturingCommandRecord stored)
+        {
+            // A reasoned close is still a privileged exception when its immutable answer is replayed or won by a
+            // concurrent attempt. Re-measure that dedicated grant after finding the record, against the company and
+            // actor captured above. Normal/legacy close replay deliberately has no additional permission here.
+            if (storedAnswerPermission is not null)
+            {
+                if (string.IsNullOrWhiteSpace(storedAnswerPermission) || !HasCapturedContext(companyId, actor))
+                {
+                    return Denied<T>();
+                }
+
+                var storedAnswerScope = await authority.RevalidatePermissionScopeAsync(
+                    storedAnswerPermission, companyId, cancellationToken);
+                if (!storedAnswerScope.IsGranted || !storedAnswerScope.IsCompanyWide
+                    || !HasCapturedContext(companyId, actor))
+                {
+                    return Denied<T>();
+                }
+            }
+
+            return Answer<T>(stored, actorId, requestHash);
+        }
+
         // §4/§3: a stored answer for this command and key, after the fence and before any other read.
         if (await commands.FindCommandAsync(commandName, keyHash, cancellationToken) is { } prior)
         {
-            return Answer<T>(prior, actorId, requestHash);
+            return await AnswerStoredAsync(prior);
         }
 
         ManufacturingApiResult<T>? completed = null;
@@ -1420,7 +1445,7 @@ public sealed partial class ManufacturingCommandService(
         {
             // §8: the same key's other attempt may have won; then its record is the answer.
             return await commands.FindCommandAsync(commandName, keyHash, cancellationToken) is { } winner
-                ? Answer<T>(winner, actorId, requestHash)
+                ? await AnswerStoredAsync(winner)
                 : new ManufacturingApiResult<T>(ManufacturingApiStatus.Conflict, null, false, exception.Code);
         }
         catch (ManufacturingStoreException exception) when (exception.Code == ManufacturingStoreCodes.AuthorityDenied)
@@ -1475,7 +1500,7 @@ public sealed partial class ManufacturingCommandService(
                     or ManufacturingApiStatus.Unavailable
                 ? result
                 : await commands.FindCommandAsync(commandName, keyHash, cancellationToken) is { } winner
-                    ? Answer<T>(winner, actorId, requestHash)
+                    ? await AnswerStoredAsync(winner)
                     : result;
         }
 
@@ -1487,7 +1512,7 @@ public sealed partial class ManufacturingCommandService(
         catch (ManufacturingStoreException exception) when (exception.Code == ManufacturingStoreCodes.ConcurrentChange)
         {
             return await commands.FindCommandAsync(commandName, keyHash, cancellationToken) is { } winner
-                ? Answer<T>(winner, actorId, requestHash)
+                ? await AnswerStoredAsync(winner)
                 : result;
         }
     }

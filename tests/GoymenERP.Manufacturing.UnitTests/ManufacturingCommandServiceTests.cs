@@ -1092,6 +1092,58 @@ public sealed class ManufacturingCommandServiceTests
     }
 
     [Fact]
+    public async Task A_reasoned_close_replay_remeasures_exception_authority_before_returning_its_immutable_answer()
+    {
+        const string key = "close-approved";
+        const string reason = "Ölçüm ve proses sorumlusu teyidi";
+        var fixture = new Fixture();
+        fixture.Settings.Tolerance = fixture.Settings.Tolerance with { MaximumFirePercent = 5m };
+        var order = await fixture.FireOrderAsync();
+        var read = order.Version;
+
+        var closed = await fixture.Service.CloseOrderAsync(
+            order.Id, new CloseOrderRequestV1(read, $"  {reason}  "), key,
+            ClosePermission, CloseExceptionPermission, CancellationToken.None);
+        Assert.Equal((ManufacturingApiStatus.Ok, false, OrderStatus.Closed),
+            (closed.Status, closed.IsReplay, order.Status));
+        var stored = Assert.Single(fixture.Store.Commands).Value;
+        var toleranceReads = fixture.Settings.ToleranceAsked;
+        var effects = (fixture.Store.Writes.Count, fixture.Store.PolicyDecisions.Count, fixture.Store.AuditEvents.Count);
+        Assert.Equal((1, 1, 1), effects);
+
+        fixture.Authority.Permissions.Clear();
+        fixture.Authority.Scopes.Enqueue(Scope(companyWide: true, "PRODUCTION_OPERATOR"));
+        fixture.Authority.Scopes.Enqueue(PermissionScope.Denied);
+        var revoked = await fixture.Service.CloseOrderAsync(
+            order.Id, new CloseOrderRequestV1(read, reason), key,
+            ClosePermission, CloseExceptionPermission, CancellationToken.None);
+
+        Assert.Equal((ManufacturingApiStatus.Denied, ManufacturingApiCodes.AuthorityDenied, false),
+            (revoked.Status, revoked.Code, revoked.IsReplay));
+        Assert.Null(revoked.Resource);
+        Assert.Equal([ClosePermission, CloseExceptionPermission], fixture.Authority.Permissions);
+        Assert.Equal(toleranceReads, fixture.Settings.ToleranceAsked);
+        Assert.Equal(effects,
+            (fixture.Store.Writes.Count, fixture.Store.PolicyDecisions.Count, fixture.Store.AuditEvents.Count));
+        Assert.Same(stored, Assert.Single(fixture.Store.Commands).Value);
+
+        fixture.Authority.Permissions.Clear();
+        fixture.Authority.Scopes.Enqueue(Scope(companyWide: true, "PRODUCTION_OPERATOR"));
+        fixture.Authority.Scopes.Enqueue(Scope(companyWide: true, "PRODUCTION_SUPERVISOR"));
+        var replay = await fixture.Service.CloseOrderAsync(
+            order.Id, new CloseOrderRequestV1(read, reason), key,
+            ClosePermission, CloseExceptionPermission, CancellationToken.None);
+
+        Assert.Equal((ManufacturingApiStatus.Ok, true, "corr-1", order.Id),
+            (replay.Status, replay.IsReplay, replay.OriginalCorrelationId, replay.Resource!.OrderId));
+        Assert.Equal([ClosePermission, CloseExceptionPermission], fixture.Authority.Permissions);
+        Assert.Equal(toleranceReads, fixture.Settings.ToleranceAsked);
+        Assert.Equal(effects,
+            (fixture.Store.Writes.Count, fixture.Store.PolicyDecisions.Count, fixture.Store.AuditEvents.Count));
+        Assert.Same(stored, Assert.Single(fixture.Store.Commands).Value);
+    }
+
+    [Fact]
     public async Task Exception_authority_revoked_after_the_store_read_leaves_no_close_effect()
     {
         var fixture = new Fixture();
