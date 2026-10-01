@@ -72,21 +72,32 @@ function exact(value: unknown, keys: readonly string[]): Obj | null {
 
 const DECIMAL = /^[0-9]+(?:\.[0-9]+)?$/
 const DATE = /^\d{4}-\d{2}-\d{2}$/
+const QUANTITY = /^(0|[1-9][0-9]{0,14})(?:\.([0-9]{1,3}))?$/
 const isText = (v: unknown): v is string => typeof v === 'string' && v.length > 0 && v.length <= 256
 const isDecimal = (v: unknown): v is string => typeof v === 'string' && v.length <= 64 && DECIMAL.test(v)
 const isNullableDecimal = (v: unknown): v is string | null => v === null || isDecimal(v)
 const isDate = (v: unknown): v is string => typeof v === 'string' && DATE.test(v)
 const isCount = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v >= 1
 
+/** Product's decimal(18,3) quantity shape as an exact lexicographically comparable key; no JS Number conversion or rounding. */
+function quantityKey(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  const match = QUANTITY.exec(value)
+  if (match === null) return null
+  return `${match[1].padStart(15, '0')}${(match[2] ?? '').padEnd(3, '0')}`
+}
+
 const REFERENCE_KEYS = ['priceListId', 'priceListName', 'versionNo', 'validFrom', 'validThrough', 'currencyCode', 'priceUnitId', 'unitPrice',
   'floorUnitPrice', 'vatBasis', 'lowerQuantity', 'upperQuantity'] as const
 
 export function decodeReference(value: unknown): LinePriceReference | null {
   const o = exact(value, REFERENCE_KEYS)
+  const lowerKey = quantityKey(o?.lowerQuantity)
+  const upperKey = o?.upperQuantity === null ? null : quantityKey(o?.upperQuantity)
   if (o === null || !isText(o.priceListId) || !isText(o.priceListName) || !isCount(o.versionNo) || !isDate(o.validFrom)
     || !(o.validThrough === null || isDate(o.validThrough)) || !isText(o.currencyCode) || !isText(o.priceUnitId)
     || !isDecimal(o.unitPrice) || !isNullableDecimal(o.floorUnitPrice) || !isText(o.vatBasis)
-    || !isDecimal(o.lowerQuantity) || !isNullableDecimal(o.upperQuantity)) return null
+    || lowerKey === null || (o.upperQuantity !== null && (upperKey === null || upperKey <= lowerKey))) return null
   return {
     priceListId: o.priceListId, priceListName: o.priceListName, versionNo: o.versionNo, validFrom: o.validFrom,
     validThrough: o.validThrough, currencyCode: o.currencyCode, priceUnitId: o.priceUnitId, unitPrice: o.unitPrice,

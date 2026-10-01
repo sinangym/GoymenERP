@@ -11,6 +11,7 @@ import userEvent from '@testing-library/user-event'
 import detailResponseRaw from './examples/detail-response.json?raw'
 import { SALES_PRICE_WRITE_CAPABILITY } from './capabilities'
 import { LINE_PRICING_TEXT as P, ORDER_DETAIL_TEXT } from './salesText'
+import { decodeReference } from './linePricing'
 import { ALL_SALES, COMPANY_A, KG, installFetch, json, renderSalesApp, type RecordedCall } from './testHarness'
 
 type Body = Record<string, unknown> & { draft: Record<string, unknown>; lines: Record<string, unknown>[] }
@@ -30,6 +31,24 @@ const reference = {
   priceUnitId: KG, unitPrice: '42000.50', floorUnitPrice: '40000', vatBasis: 'ExcludingVat',
   lowerQuantity: '10', upperQuantity: '20',
 }
+
+describe('price tier wire bounds', () => {
+  it.each([
+    ['0', null, true],
+    ['10', '20', true],
+    ['1.0001', '2', false],
+    ['10', '10', false],
+    ['20', '10', false],
+    ['1000000000000000', null, false],
+  ] as const)('decodes lower %s and upper %s only inside Product quantity bounds', (lowerQuantity, upperQuantity, accepted) => {
+    expect(decodeReference({ ...reference, lowerQuantity, upperQuantity }) !== null).toBe(accepted)
+  })
+
+  it('preserves accepted quantity text without Number conversion or rounding', () => {
+    const decoded = decodeReference({ ...reference, lowerQuantity: '10.000', upperQuantity: '20.000' })
+    expect(decoded && [decoded.lowerQuantity, decoded.upperQuantity]).toEqual(['10.000', '20.000'])
+  })
+})
 
 function pricing(version: string, over: Record<string, unknown> = {}) {
   return {
