@@ -338,7 +338,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 "d83dd8fa37516148c7c25ec6ec32a8d0641aa067c1b120b3cfd13d57e62544af",
             ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/"
              + "Persistence/ProductDbContext.cs"] =
-                "73bb50001f9e508255714d4d5b8ae683149122f3c3a682234d8de1e47eb9b3b1",
+                "6979e3af6bf17bd2c7071431dc1dbc808c2c1c5609fe187d782dadb1412761d3",
             ["src/backend/Modules/Idempotency/GoymenERP.Modules.Idempotency.Infrastructure/"
              // Re-measured for DEC-CAR-003: the terminal command-name check admits the Product deactivate/reactivate
              // commands beside activate; no query filter, key or table change.
@@ -641,12 +641,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         }),
                 // ACC-3 (#298): the Accounting initializer's one provider branch, as Organization.
                 // Re-fingerprinted for ACC reversal: its lifecycle and proposal store are registered;
-                // Ensure/Migrate counts remain unchanged.
+                // Ensure/Migrate counts remain unchanged. Re-fingerprinted for the approved Finance receipt
+                // source binding provider registration; the database initialization surface is unchanged.
                 ["src/backend/Modules/Accounting/"
                  + "GoymenERP.Modules.Accounting.Infrastructure/"
                  + "AccountingModuleExtensions.cs"] =
                     new(
-                        "49b2f9a5ab78048fc9db63293aef4379b0d1f65f361e28c731d90e7bba32dcdd",
+                        "bb4fa94002e875a288f21c51ced7d63565e65fd57bfed4c85e01868420fde057",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,

@@ -91,7 +91,7 @@ class FixtureListTests(unittest.TestCase):
                 "preparerActor", "loaderActor", "readerActor", "companyId", "otherCompanyId",
                 "customerPartyId", "companyAccountId", "draftId", "approvedLineId",
                 "instructionId", "blockedLineId", "openLineId", "shipmentAllocationId",
-                "shipmentLabelId",
+                "shipmentLabelId", "shipmentReceiptAcceptanceId", "shipmentReceiptMovementId",
             }),
             browser.SUITE_FIXTURE_OUTPUTS["l04"])
 
