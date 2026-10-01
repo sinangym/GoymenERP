@@ -1,7 +1,7 @@
-import { expect, test, type BrowserContext, type Page, type Request, type Response, type Route } from '@playwright/test'
-import { loadFin01Env } from '../support/fin01-env'
+import { expect, test, type BrowserContext, type Page, type Request, type Route } from '@playwright/test'
+import { readEnvironment } from '../src/env.js'
 
-const env = loadFin01Env()
+const env = readEnvironment()
 
 async function asActor(context: BrowserContext, actor: string): Promise<Set<Request>> {
   const rewritten = new Set<Request>()
@@ -25,74 +25,36 @@ function expectEveryAnswerRewritten(answered: readonly Request[], rewritten: Rea
   expect(foreign, 'every API answer must belong to a request sent as the bound actor').toEqual([])
 }
 
-function isAllocationList(response: Response): boolean {
-  return response.request().method() === 'GET'
-    && new URL(response.url()).pathname === '/api/v1/finance/allocations'
-}
+test('FIN01 allocation reader is fail-closed for proposer and mounted for the authorized reader', async ({ browser }) => {
+  const proposerContext = await browser.newContext()
+  const proposerRewritten = await asActor(proposerContext, env.seed.proposerActor)
+  const proposer = await proposerContext.newPage()
+  const proposerAnswers = watchAnswers(proposer)
+  await proposer.goto('/finans')
+  const refused = await proposer.evaluate(async (companyId) => {
+    const response = await fetch('/api/v1/finance/allocations', {
+      headers: { 'X-Company-Id': companyId },
+    })
+    return { status: response.status, body: await response.text() }
+  }, env.seed.companyId)
+  expect(refused.status, refused.body).toBe(403)
+  expectEveryAnswerRewritten(proposerAnswers, proposerRewritten)
+  await proposerContext.close()
 
-test('FIN01 allocation reader closes and reopens the same persisted allocation', async ({ page, context }) => {
-  const rewritten = await asActor(context, env.seed.proposerActor)
-  const answered = watchAnswers(page)
-
-  const firstList = page.waitForResponse(isAllocationList)
-  await page.goto('/finans/dagitimlar')
-  const listResponse = await firstList
-  expect(listResponse.status()).toBe(200)
-  const list = await listResponse.json() as {
-    readonly companyId: string
-    readonly items: readonly {
-      readonly id: string
-      readonly companyId: string
-      readonly sourceId: string
-      readonly openItemId: string
-      readonly amount: string
-      readonly status: string
-    }[]
-  }
+  const approverContext = await browser.newContext()
+  const approverRewritten = await asActor(approverContext, env.seed.approverActor)
+  const approver = await approverContext.newPage()
+  const approverAnswers = watchAnswers(approver)
+  const listAnswer = approver.waitForResponse((response) => response.request().method() === 'GET'
+    && new URL(response.url()).pathname === '/api/v1/finance/allocations')
+  await approver.goto('/finans/dagitimlar')
+  const listResponse = await listAnswer
+  const list = await listResponse.json() as { readonly companyId?: unknown; readonly items?: unknown }
+  expect(listResponse.status(), JSON.stringify(list)).toBe(200)
   expect(list.companyId).toBe(env.seed.companyId)
-  expect(list.items.length).toBeGreaterThan(0)
-  const persisted = list.items[0]!
-  expect(persisted.companyId).toBe(env.seed.companyId)
-
-  const row = page.getByRole('row').filter({ hasText: persisted.sourceId }).filter({ hasText: persisted.openItemId })
-  await expect(row).toContainText(persisted.amount)
-  await expect(row).toContainText(persisted.status === 'Active' ? 'Aktif' : 'Bırakıldı')
-
-  const detailPath = `/api/v1/finance/allocations/${persisted.id}`
-  const firstDetail = page.waitForResponse((response) => response.request().method() === 'GET'
-    && new URL(response.url()).pathname === detailPath)
-  await row.getByRole('button', { name: 'Aç', exact: true }).click()
-  const firstDetailResponse = await firstDetail
-  expect(firstDetailResponse.status()).toBe(200)
-  const firstDetailBody = await firstDetailResponse.json() as {
-    readonly allocation: {
-      readonly id: string
-      readonly companyId: string
-      readonly sourceId: string
-      readonly openItemId: string
-    }
-  }
-  expect(firstDetailBody.allocation).toMatchObject({
-    id: persisted.id,
-    companyId: env.seed.companyId,
-    sourceId: persisted.sourceId,
-    openItemId: persisted.openItemId,
-  })
-  await expect(page).toHaveURL(new RegExp(`dagitim=${persisted.id}`))
-  await expect(page.getByRole('region', { name: 'Dağıtım detayı' })).toContainText(persisted.id)
-  await expect(page.getByRole('button', { name: 'Dağıtımı bırak' })).toHaveCount(0)
-
-  await page.getByRole('button', { name: 'Kapat', exact: true }).click()
-  await expect(page.getByRole('region', { name: 'Dağıtım detayı' })).toHaveCount(0)
-  await expect(page).not.toHaveURL(/dagitim=/)
-
-  const reopenedDetail = page.waitForResponse((response) => response.request().method() === 'GET'
-    && new URL(response.url()).pathname === detailPath)
-  await row.getByRole('button', { name: 'Aç', exact: true }).click()
-  const reopenedResponse = await reopenedDetail
-  expect(reopenedResponse.status()).toBe(200)
-  const reopenedBody = await reopenedResponse.json() as { readonly allocation: { readonly id: string } }
-  expect(reopenedBody.allocation.id).toBe(persisted.id)
-  await expect(page.getByRole('region', { name: 'Dağıtım detayı' })).toContainText(persisted.id)
-  expectEveryAnswerRewritten(answered, rewritten)
+  expect(Array.isArray(list.items)).toBe(true)
+  await expect(approver.getByRole('heading', { level: 1, name: 'Finansal dağıtımlar', exact: true }))
+    .toBeVisible({ timeout: 30_000 })
+  expectEveryAnswerRewritten(approverAnswers, approverRewritten)
+  await approverContext.close()
 })

@@ -18,7 +18,18 @@ const env = readEnvironment()
 const BATCHES = '/api/v1/finance/official-invoice-import-batches'
 const PREVIEW = '/api/v1/finance/official-invoice-imports/preview'
 const APPLY = '/api/v1/finance/official-invoice-imports/apply'
+const BANK_ACCOUNTS = '/api/v1/finance/bank-accounts'
+const RECEIPT_DRAFTS = '/api/v1/finance/manual-receipts/drafts'
+const ALLOCATIONS = '/api/v1/finance/allocations'
 const HEADER = 'openItemId,sourceDocumentId,sourceInstallmentId,sourceVersion,partyId,companyAccountId,currencyId,amount,dueOn'
+
+function syntheticTurkishIban(): string {
+  const bban = randomUUID().replaceAll('-', '').slice(0, 22)
+    .split('').map((character) => (Number.parseInt(character, 16) % 10).toString()).join('')
+  let remainder = 0
+  for (const digit of `${bban}292700`) remainder = ((remainder * 10) + Number(digit)) % 97
+  return `TR${String(98 - remainder).padStart(2, '0')}${bban}`
+}
 
 async function asActor(context: BrowserContext, actor: string): Promise<Set<Request>> {
   const rewritten = new Set<Request>()
@@ -51,16 +62,50 @@ test.describe.serial('FIN01 official invoice import (real API, real SQL, real Ch
     const sourceVersion = 'SENTETIK-invoice-v1'
     const amount = '432.10'
     const dueOn = '2026-10-31'
+    const allocationAccountName = `SENTETIK FIN01 Dağıtım TL ${Date.now()}`
+    const allocationAccountIban = syntheticTurkishIban()
 
     const makerContext = await browser.newContext()
     const makerRewritten = await asActor(makerContext, env.seed.proposerActor)
     const maker = await makerContext.newPage()
     const makerAnswers = watchAnswers(maker)
     await maker.goto('/finans/banka-hesaplari/yeni')
-    const tryOption = maker.getByLabel('Para birimi', { exact: true }).locator('option', { hasText: /^TRY — / })
+    const currency = maker.getByLabel('Para birimi', { exact: true })
+    const tryOption = currency.locator('option', { hasText: /^TRY — / })
     await expect(tryOption).toHaveCount(1, { timeout: 30_000 })
     const currencyId = await tryOption.getAttribute('value')
     expect(currencyId).toMatch(/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i)
+    await maker.getByLabel('Hesap adı', { exact: true }).fill(allocationAccountName)
+    await maker.getByLabel('Banka adı', { exact: true }).fill('SENTETIK FIN01 Dağıtım Bankası')
+    await maker.getByLabel('Hesap türü', { exact: true }).fill('SENTETIK Vadesiz TL')
+    await maker.getByLabel('Bu hesap ödeme/tahsilatta kullanılacak', { exact: true }).check()
+    await maker.getByLabel('IBAN', { exact: true }).fill(allocationAccountIban)
+    await currency.selectOption(currencyId!)
+    const bankProposalPost = maker.waitForRequest((request) => request.url().endsWith(BANK_ACCOUNTS)
+      && request.method() === 'POST')
+    const bankProposalAnswer = maker.waitForResponse((response) => response.url().endsWith(BANK_ACCOUNTS)
+      && response.request().method() === 'POST')
+    await maker.getByRole('button', { name: 'Öner', exact: true }).click()
+    const bankProposalSent = await bankProposalPost
+    expect(bankProposalSent.postDataJSON()).toEqual({
+      displayName: allocationAccountName,
+      currencyId,
+      bankName: 'SENTETIK FIN01 Dağıtım Bankası',
+      accountType: 'SENTETIK Vadesiz TL',
+      moneyMovementEligible: true,
+      branchName: null,
+      branchCode: null,
+      iban: allocationAccountIban,
+      accountNumber: null,
+    })
+    const bankProposal = await bankProposalAnswer
+    const bankProposalBody = await bankProposal.json() as {
+      readonly resource?: { readonly id?: unknown; readonly status?: unknown; readonly version?: unknown }
+    }
+    expect(bankProposal.status(), JSON.stringify(bankProposalBody)).toBe(200)
+    expect(bankProposalBody.resource).toMatchObject({ status: 'Pending', version: '1' })
+    expect(bankProposalBody.resource?.id).toEqual(expect.stringMatching(/^[0-9a-f-]{36}$/))
+    const bankAccountId = bankProposalBody.resource!.id as string
 
     const csv = [HEADER, [
       openItemId,
@@ -141,14 +186,28 @@ test.describe.serial('FIN01 official invoice import (real API, real SQL, real Ch
       body: { ...uploadBody, batchId: foreignBatchId },
     })
     expect(foreignUpload.status, foreignUpload.body).toBe(403)
-    expectEveryAnswerRewritten(makerAnswers, makerRewritten)
-    await makerContext.close()
 
     const checkerContext = await browser.newContext()
     const checkerRewritten = await asActor(checkerContext, env.seed.approverActor)
     const checker = await checkerContext.newPage()
     const checkerAnswers = watchAnswers(checker)
     expect(env.seed.approverActor).not.toBe(env.seed.proposerActor)
+
+    await checker.goto('/finans/banka-hesaplari')
+    const accountRow = checker.getByRole('row').filter({ hasText: allocationAccountName })
+    await expect(accountRow).toContainText('Onay bekliyor', { timeout: 30_000 })
+    await accountRow.getByRole('button', { name: new RegExp(`Onayla: ${allocationAccountName}`) }).click()
+    const bankApprovalPost = checker.waitForRequest((request) =>
+      new URL(request.url()).pathname === `${BANK_ACCOUNTS}/${bankAccountId}/approval`
+      && request.method() === 'POST')
+    const bankApprovalAnswer = checker.waitForResponse((response) =>
+      new URL(response.url()).pathname === `${BANK_ACCOUNTS}/${bankAccountId}/approval`
+      && response.request().method() === 'POST')
+    await checker.getByRole('button', { name: 'Evet, onayla', exact: true }).click()
+    const bankApprovalSent = await bankApprovalPost
+    expect(bankApprovalSent.postDataJSON()).toEqual({ expectedVersion: '1' })
+    expect((await bankApprovalAnswer).status()).toBe(200)
+    await expect(accountRow).toContainText('Onaylı', { timeout: 15_000 })
 
     await checker.goto('/finans')
     await checker.getByRole('link', { name: 'Resmî fatura aktarım onayları', exact: true }).click()
@@ -230,7 +289,18 @@ test.describe.serial('FIN01 official invoice import (real API, real SQL, real Ch
       return { status: response.status, body: await response.json() as unknown }
     }, { batchId, companyId: env.seed.companyId })
     expect(fresh.status).toBe(200)
-    expect(fresh.body).toMatchObject({
+    const freshBody = fresh.body as {
+      readonly batchId: string
+      readonly companyId: string
+      readonly batchVersion: string
+      readonly openItems: readonly {
+        readonly id: string
+        readonly status: string
+        readonly outstandingAmount: string
+        readonly version: string
+      }[]
+    }
+    expect(freshBody).toMatchObject({
       batchId,
       companyId: env.seed.companyId,
       batchVersion,
@@ -244,6 +314,7 @@ test.describe.serial('FIN01 official invoice import (real API, real SQL, real Ch
         originalAmount: amount,
         outstandingAmount: amount,
         dueOn,
+        status: 'Open',
         version: '1',
       }],
     })
@@ -272,6 +343,250 @@ test.describe.serial('FIN01 official invoice import (real API, real SQL, real Ch
       }],
     })
     await expect(checker.getByText("1 açık kalem Finans'tan yeniden okundu.", { exact: true })).toBeVisible()
+
+    const receiptEntry = new URLSearchParams({ partyId: env.seed.partyId, companyAccountId: env.seed.companyAccountId })
+    await maker.goto(`/finans/tahsilatlar/yeni?${receiptEntry.toString()}`)
+    await expect(maker.getByRole('heading', { level: 1, name: 'Yeni tahsilat taslağı', exact: true }))
+      .toBeVisible({ timeout: 30_000 })
+    await maker.getByLabel('Banka hesabı', { exact: true }).selectOption({ label: allocationAccountName })
+    await maker.getByLabel('Banka işlem tarihi', { exact: true }).fill('2026-09-18')
+    await maker.getByLabel(/^Tutar/).fill(amount.replace('.', ','))
+    const receiptDraftPost = maker.waitForRequest((request) => request.url().endsWith(RECEIPT_DRAFTS)
+      && request.method() === 'POST')
+    const receiptDraftAnswer = maker.waitForResponse((response) => response.url().endsWith(RECEIPT_DRAFTS)
+      && response.request().method() === 'POST')
+    await maker.getByRole('button', { name: 'Taslağı kaydet', exact: true }).click()
+    const receiptDraftSent = await receiptDraftPost
+    expect(receiptDraftSent.postDataJSON()).toMatchObject({
+      draftId: null,
+      expectedVersion: null,
+      preparation: {
+        partyId: env.seed.partyId,
+        companyAccountId: env.seed.companyAccountId,
+        money: { amount },
+      },
+    })
+    const receiptDraft = await receiptDraftAnswer
+    const receiptDraftBody = await receiptDraft.json() as {
+      readonly resource?: {
+        readonly source?: { readonly id?: unknown; readonly stage?: unknown; readonly version?: unknown }
+      }
+    }
+    expect(receiptDraft.status(), JSON.stringify(receiptDraftBody)).toBe(200)
+    expect(receiptDraftBody.resource?.source).toMatchObject({ stage: 'Draft', version: '1' })
+    expect(receiptDraftBody.resource?.source?.id).toEqual(expect.stringMatching(/^[0-9a-f-]{36}$/))
+    const sourceId = receiptDraftBody.resource!.source!.id as string
+
+    const recorded = await maker.evaluate(async ({ sourceId: id, companyId }) => {
+      const body = { draftId: id, expectedVersion: '1' }
+      const key = `SENTETIK-FIN01-record-${crypto.randomUUID()}`
+      const response = await fetch(`/api/v1/finance/manual-receipts/${id}/record`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Idempotency-Key': key, 'X-Company-Id': companyId },
+        body: JSON.stringify(body),
+      })
+      return { status: response.status, body: await response.json() as unknown }
+    }, { sourceId, companyId: env.seed.companyId })
+    expect(recorded.status).toBe(200)
+    expect(recorded.body).toMatchObject({
+      outcome: 'Succeeded',
+      isReplay: false,
+      resource: {
+        source: {
+          id: sourceId,
+          companyId: env.seed.companyId,
+          companyAccountId: env.seed.companyAccountId,
+          currencyId,
+          stage: 'Recorded',
+          version: '2',
+        },
+      },
+    })
+
+    const allocationId = randomUUID()
+    const allocationBody = {
+      allocationId,
+      sourceId,
+      expectedSourceVersion: '2',
+      openItemId,
+      expectedOpenItemVersion: '1',
+      amount,
+      reason: 'SENTETIK FIN01 aynı kayıt kapama',
+    }
+    const allocationKey = `SENTETIK-FIN01-allocation-${randomUUID()}`
+    const createdAllocation = await checker.evaluate(async ({ path, key, body, companyId }) => {
+      const response = await fetch(path, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Idempotency-Key': key, 'X-Company-Id': companyId },
+        body: JSON.stringify(body),
+      })
+      return {
+        status: response.status,
+        replayed: response.headers.get('Idempotency-Replayed'),
+        body: await response.json() as unknown,
+      }
+    }, { path: ALLOCATIONS, key: allocationKey, body: allocationBody, companyId: env.seed.companyId })
+    expect(createdAllocation.status).toBe(200)
+    expect(createdAllocation.replayed).not.toBe('true')
+    expect(createdAllocation.body).toMatchObject({
+      outcome: 'Succeeded',
+      isReplay: false,
+      resource: {
+        id: allocationId,
+        companyId: env.seed.companyId,
+        sourceId,
+        openItemId,
+        amount,
+        status: 'Active',
+        version: '1',
+      },
+    })
+    const replayedAllocation = await checker.evaluate(async ({ path, key, body, companyId }) => {
+      const response = await fetch(path, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Idempotency-Key': key, 'X-Company-Id': companyId },
+        body: JSON.stringify(body),
+      })
+      return {
+        status: response.status,
+        replayed: response.headers.get('Idempotency-Replayed'),
+        body: await response.json() as unknown,
+      }
+    }, { path: ALLOCATIONS, key: allocationKey, body: allocationBody, companyId: env.seed.companyId })
+    expect(replayedAllocation.status).toBe(200)
+    expect(replayedAllocation.replayed).toBe('true')
+    expect(replayedAllocation.body).toMatchObject({
+      outcome: 'Succeeded',
+      isReplay: true,
+      resource: { id: allocationId, status: 'Active', version: '1' },
+    })
+
+    const closedBatch = await checker.evaluate(async ({ id, companyId }) => {
+      const response = await fetch(`/api/v1/finance/official-invoice-imports/${id}`, {
+        headers: { 'X-Company-Id': companyId },
+      })
+      return { status: response.status, body: await response.json() as unknown }
+    }, { id: batchId, companyId: env.seed.companyId })
+    expect(closedBatch.status).toBe(200)
+    expect(closedBatch.body).toMatchObject({
+      batchId,
+      openItems: [{ id: openItemId, outstandingAmount: '0.00', status: 'Closed', version: '2' }],
+    })
+
+    const allocationListAnswer = checker.waitForResponse((response) =>
+      new URL(response.url()).pathname === ALLOCATIONS && response.request().method() === 'GET')
+    await checker.goto('/finans/dagitimlar')
+    const allocationListResponse = await allocationListAnswer
+    expect(allocationListResponse.status()).toBe(200)
+    const allocationList = await allocationListResponse.json() as {
+      readonly companyId: string
+      readonly items: readonly { readonly id: string; readonly sourceId: string; readonly openItemId: string }[]
+    }
+    expect(allocationList.companyId).toBe(env.seed.companyId)
+    expect(allocationList.items.filter((item) => item.id === allocationId)).toEqual([
+      expect.objectContaining({ id: allocationId, sourceId, openItemId }),
+    ])
+    const allocationRow = checker.getByRole('row').filter({ hasText: sourceId }).filter({ hasText: openItemId })
+    await expect(allocationRow).toHaveCount(1)
+    const allocationDetailPath = `${ALLOCATIONS}/${allocationId}`
+    const allocationDetailAnswer = checker.waitForResponse((response) =>
+      new URL(response.url()).pathname === allocationDetailPath && response.request().method() === 'GET')
+    await allocationRow.getByRole('button', { name: 'Aç', exact: true }).click()
+    const allocationDetailResponse = await allocationDetailAnswer
+    expect(allocationDetailResponse.status()).toBe(200)
+    const allocationDetail = await allocationDetailResponse.json() as unknown
+    expect(allocationDetail).toMatchObject({
+      allocation: {
+        id: allocationId,
+        companyId: env.seed.companyId,
+        sourceId,
+        openItemId,
+        status: 'Active',
+        version: '1',
+      },
+      openItemVersion: '2',
+    })
+    const allocationRegion = checker.getByRole('region', { name: 'Dağıtım detayı' })
+    await expect(allocationRegion).toContainText(allocationId)
+    await checker.getByRole('button', { name: 'Kapat', exact: true }).click()
+    await expect(allocationRegion).toHaveCount(0)
+    const reopenedAllocationAnswer = checker.waitForResponse((response) =>
+      new URL(response.url()).pathname === allocationDetailPath && response.request().method() === 'GET')
+    await allocationRow.getByRole('button', { name: 'Aç', exact: true }).click()
+    const reopenedAllocation = await reopenedAllocationAnswer
+    expect(reopenedAllocation.status()).toBe(200)
+    expect(await reopenedAllocation.json()).toMatchObject(allocationDetail)
+    await expect(checker.getByRole('region', { name: 'Dağıtım detayı' })).toContainText(allocationId)
+
+    const releaseForm = checker.getByRole('form', { name: 'Dağıtımı bırak' })
+    await releaseForm.getByLabel('Bırakma nedeni', { exact: true }).fill('SENTETIK FIN01 aynı kayıt yeniden açma')
+    const releasePath = `${allocationDetailPath}/release`
+    const releasePost = checker.waitForRequest((request) => new URL(request.url()).pathname === releasePath
+      && request.method() === 'POST')
+    const releaseAnswer = checker.waitForResponse((response) => new URL(response.url()).pathname === releasePath
+      && response.request().method() === 'POST')
+    await releaseForm.getByRole('button', { name: 'Dağıtımı bırak', exact: true }).click()
+    const releaseSent = await releasePost
+    const releaseKey = releaseSent.headers()['idempotency-key']
+    const releaseBody = releaseSent.postDataJSON()
+    expect(releaseKey).toMatch(/^[0-9a-f-]{36}$/i)
+    expect(releaseBody).toEqual({
+      allocationId,
+      expectedAllocationVersion: '1',
+      expectedOpenItemVersion: '2',
+      reason: 'SENTETIK FIN01 aynı kayıt yeniden açma',
+    })
+    const releaseResponse = await releaseAnswer
+    const releaseResponseBody = await releaseResponse.json() as unknown
+    expect(releaseResponse.status(), JSON.stringify(releaseResponseBody)).toBe(200)
+    expect(releaseResponseBody).toMatchObject({
+      outcome: 'Succeeded',
+      isReplay: false,
+      resource: { id: allocationId, status: 'Released', version: '2' },
+    })
+    const replayedRelease = await checker.evaluate(async ({ path, key, body, companyId }) => {
+      const response = await fetch(path, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Idempotency-Key': key, 'X-Company-Id': companyId },
+        body: JSON.stringify(body),
+      })
+      return {
+        status: response.status,
+        replayed: response.headers.get('Idempotency-Replayed'),
+        body: await response.json() as unknown,
+      }
+    }, { path: releasePath, key: releaseKey, body: releaseBody, companyId: env.seed.companyId })
+    expect(replayedRelease.status).toBe(200)
+    expect(replayedRelease.replayed).toBe('true')
+    expect(replayedRelease.body).toMatchObject({
+      outcome: 'Succeeded',
+      isReplay: true,
+      resource: { id: allocationId, status: 'Released', version: '2' },
+    })
+
+    const releasedDetail = await checker.evaluate(async ({ path, companyId }) => {
+      const response = await fetch(path, { headers: { 'X-Company-Id': companyId } })
+      return { status: response.status, body: await response.json() as unknown }
+    }, { path: allocationDetailPath, companyId: env.seed.companyId })
+    expect(releasedDetail.status).toBe(200)
+    expect(releasedDetail.body).toMatchObject({
+      allocation: { id: allocationId, sourceId, openItemId, status: 'Released', version: '2' },
+      openItemVersion: '3',
+    })
+    const reopenedBatch = await checker.evaluate(async ({ id, companyId }) => {
+      const response = await fetch(`/api/v1/finance/official-invoice-imports/${id}`, {
+        headers: { 'X-Company-Id': companyId },
+      })
+      return { status: response.status, body: await response.json() as unknown }
+    }, { id: batchId, companyId: env.seed.companyId })
+    expect(reopenedBatch.status).toBe(200)
+    expect(reopenedBatch.body).toMatchObject({
+      batchId,
+      openItems: [{ id: openItemId, outstandingAmount: amount, status: 'Open', version: '3' }],
+    })
+
+    expectEveryAnswerRewritten(makerAnswers, makerRewritten)
+    await makerContext.close()
     expectEveryAnswerRewritten(checkerAnswers, checkerRewritten)
     await checkerContext.close()
   })
