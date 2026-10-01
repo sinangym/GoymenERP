@@ -649,6 +649,77 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
             note.EDispatchNumber))];
     }
 
+    public async Task<StoredApprovedDispatchInvoiceSource?> FindApprovedDispatchInvoiceSourceAsync(Guid dispatchNoteId,
+        CancellationToken cancellationToken = default)
+    {
+        RequireResolvedCompany();
+        if (dispatchNoteId == Guid.Empty)
+        {
+            return null;
+        }
+
+        // One statement keeps the approved header, current aggregate version and every active line on the same read snapshot.
+        // All three sets carry the Logistics company query filter, so a foreign-company id is indistinguishable from unknown.
+        var rows = await (
+            from note in dbContext.DispatchNotes.AsNoTracking()
+            join instruction in dbContext.Instructions.AsNoTracking()
+                on new { note.CompanyId, Id = note.InstructionId } equals new { instruction.CompanyId, Id = instruction.Id }
+            join line in dbContext.DispatchNoteLines.AsNoTracking()
+                on new { note.CompanyId, note.InstructionId, note.DispatchNoteId }
+                equals new { line.CompanyId, line.InstructionId, line.DispatchNoteId }
+            where note.DispatchNoteId == dispatchNoteId
+                && note.Status == (int)DispatchNoteStatus.Approved
+                && !line.Released
+            orderby line.LineNo
+            select new
+            {
+                note.CompanyId,
+                note.DispatchNoteId,
+                note.InstructionId,
+                InstructionVersion = instruction.Version,
+                instruction.CustomerPartyId,
+                instruction.CompanyAccountId,
+                note.SeriesCode,
+                note.SequenceNo,
+                note.EDispatchNumber,
+                note.ApprovedAtUtc,
+                line.LineNo,
+                line.SourceOrderId,
+                line.SourceOrderLineId,
+                line.ShipmentId,
+                line.ProductId,
+                line.UnitId,
+                line.Quantity,
+            }).ToListAsync(cancellationToken);
+
+        if (rows.Count == 0)
+        {
+            return null;
+        }
+
+        var header = rows[0];
+        return new StoredApprovedDispatchInvoiceSource(
+            header.CompanyId,
+            header.DispatchNoteId,
+            header.InstructionId,
+            header.InstructionVersion,
+            header.CustomerPartyId,
+            header.CompanyAccountId,
+            header.SeriesCode is { } series && header.SequenceNo is { } sequence
+                ? DispatchNoteNumber.Of(series, sequence)
+                : null,
+            header.EDispatchNumber,
+            header.ApprovedAtUtc,
+            [.. rows.Select(line => new StoredApprovedDispatchInvoiceSourceLine(
+                line.LineNo,
+                line.SourceOrderId,
+                line.SourceOrderLineId,
+                line.ShipmentId,
+                line.ProductId,
+                line.UnitId,
+                line.Quantity))]);
+    }
+
     public async Task<LogisticsInstructionPage> ListInstructionsAsync(int pageSize, string? cursor, LoadingInstructionStatus? status = null,
         CancellationToken cancellationToken = default)
     {

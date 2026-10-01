@@ -198,7 +198,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // AT-055 lifecycle (#518, user decision 2026-09-30): +6 approve/cancel/e-İrsaliye/numbering SQL facts (010fcbd6… -> c5969829…).
             // #527: +3 cross-instruction Sales line-limit atomicity facts (c5969829… -> fc08c53d…).
             ["tools/relational_inventory/logistics.txt"] =
-                "fc08c53d24fe830812aa2323406c70ef862ccae2c5bbbe498d503b3b0e65173a",
+                "070eff4266fc48494692df627022d189e2dfa22711a8e17cc8644ef83a920787",
 
             // manufacturing
             // MFG close: owner-added closure/tolerance SQL facts extend the exact Manufacturing discovery inventory.
@@ -849,7 +849,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // the provider branch and its token counts are unchanged. Re-fingerprinted for AT-025: the operations
                     // work list's progress reader, bindings and service registrations; token counts unchanged.
                     new(
-                        "c40c93ba0e67221a2af009a6d77545b8a914e9d7112a38e68c1cda5c64f80e37",
+                        "436d04b0e002a5f02d1f38385ec695e2b2759d1d4c0df45872889187ed9d263e",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -880,7 +880,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         // the company series moved under its token, every step replayed in order; SqlClient count unchanged.
                         // Re-fingerprinted for the cross-instruction aggregate deadlock closure: SQL 1205 is mapped through
                         // the existing replay-safe wrapper chain; no new database API and SqlClient count unchanged.
-                        "c676798a69d795428354af2b1140d763f49a75caf4c869e8a8a2025cc7a228c2",
+                        "4f1426d8104f07b281efe8235989d925911385aed989c4bd3e6f542880ea59eb",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
