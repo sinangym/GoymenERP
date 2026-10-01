@@ -134,20 +134,20 @@ describe('AllocationPage', () => {
 
   it('mounts with existing capabilities and opens the exact created id through a fresh detail GET', async () => {
     let created: typeof allocation | null = null
-    let sentBody: Record<string, string> | null = null
+    const sentBody: { current: Record<string, string> | null } = { current: null }
     let detailReads = 0
     const fetchMock = vi.fn(async (request: RequestInfo | URL, init?: RequestInit) => {
       const url = new URL(String(request), 'http://localhost')
       const method = init?.method ?? 'GET'
       if (url.pathname === '/api/v1/finance/allocations' && method === 'POST') {
-        sentBody = JSON.parse(String(init?.body)) as Record<string, string>
+        sentBody.current = JSON.parse(String(init?.body)) as Record<string, string>
         created = {
           ...allocation,
-          id: sentBody.allocationId,
-          sourceId: sentBody.sourceId,
-          openItemId: sentBody.openItemId,
-          amount: sentBody.amount,
-          reason: sentBody.reason,
+          id: sentBody.current.allocationId,
+          sourceId: sentBody.current.sourceId,
+          openItemId: sentBody.current.openItemId,
+          amount: sentBody.current.amount,
+          reason: sentBody.current.reason,
         }
         return new Response(JSON.stringify({
           outcome: 'Succeeded', resource: created, isReplay: false, originalCorrelationId: '', issues: [],
@@ -196,8 +196,11 @@ describe('AllocationPage', () => {
     fireEvent.submit(form)
 
     const region = await screen.findByRole('region', { name: 'Dağıtım detayı' })
-    expect(sentBody?.allocationId).toMatch(/^[0-9a-f-]{36}$/i)
-    expect(region.textContent).toContain(sentBody?.allocationId)
+    const submitted = sentBody.current
+    expect(submitted).not.toBeNull()
+    if (submitted === null) throw new Error('The allocation POST body was not captured.')
+    expect(submitted.allocationId).toMatch(/^[0-9a-f-]{36}$/i)
+    expect(region.textContent).toContain(submitted.allocationId)
     expect(detailReads).toBe(1)
   })
 

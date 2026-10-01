@@ -3,6 +3,7 @@ import {
   decodeAppliedAllocationOpenItemBatch,
   decodeApprovedAllocationOpenItemSourcePage,
   type ApprovedAllocationOpenItemSourceBatch,
+  type ApprovedAllocationOpenItemSourceRow,
 } from './allocationSelectionContract'
 
 const COMPANY = '11111111-1111-4111-8111-111111111111'
@@ -15,7 +16,7 @@ const ACCOUNT = '77777777-7777-4777-8777-777777777777'
 const CURRENCY = '88888888-8888-4888-8888-888888888888'
 const CHECKSUM = 'a'.repeat(64)
 
-const row = {
+const row: ApprovedAllocationOpenItemSourceRow = {
   openItemId: ITEM,
   sourceDocumentId: DOCUMENT,
   sourceInstallmentId: INSTALLMENT,
