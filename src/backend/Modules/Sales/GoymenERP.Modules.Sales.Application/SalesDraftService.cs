@@ -473,10 +473,19 @@ public sealed partial class SalesDraftService(
 
         var permission = bindings.PriceFloorExceptionApprovePermission;
         var scope = await RequireAsync(permission, cancellationToken);
+        var validationErrors = new List<SalesDraftFieldError>();
         if (!long.TryParse(request.ExpectedVersion, NumberStyles.None, CultureInfo.InvariantCulture, out var expectedVersion)
-            || expectedVersion < 1 || request.Lines is null)
+            || expectedVersion < 1)
         {
-            throw new SalesDraftServiceException(400, "validation_failed", [new("expectedVersion", "validation_failed")]);
+            validationErrors.Add(new("expectedVersion", "validation_failed"));
+        }
+        if (request.Lines is null || request.Lines.Any(static line => line is null))
+        {
+            validationErrors.Add(new("lines", "validation_failed"));
+        }
+        if (validationErrors.Count > 0)
+        {
+            throw new SalesDraftServiceException(400, "validation_failed", validationErrors);
         }
 
         const string commandName = SalesDraftCommands.ApprovePriceFloorExceptionsV1;
@@ -492,7 +501,7 @@ public sealed partial class SalesDraftService(
             throw new SalesDraftServiceException(404, "not_found");
         }
 
-        var inputs = request.Lines.Select(line => new LinePriceFloorExceptionApprovalInput(line.LineId, line.Reason)).ToArray();
+        var inputs = request.Lines.Select(line => new LinePriceFloorExceptionApprovalInput(line!.LineId, line.Reason)).ToArray();
         var audit = new SalesDraftStateAudit("sales.order-draft.price-floor-exceptions-approved.v1", "ApprovePriceFloorExceptions",
             "Satış siparişi taban fiyat istisnaları farklı yetkili tarafından gerekçeli onaylandı");
         SalesDraftStateResult? result;

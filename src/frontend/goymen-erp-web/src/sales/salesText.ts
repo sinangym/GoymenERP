@@ -599,6 +599,7 @@ export const LINE_PRICING_TEXT = {
     unknown: 'Sonuç alınamadı; aynı anahtar ve gövdeyle yeniden deneyin.',
     failed: 'İstisna onaylanmadı. Güncel kaydı okuyup gerekçeleri düzeltin.',
     retry: 'Aynı onayı yeniden dene',
+    abandon: 'Bu denemeyi bırak',
     correct: 'Gerekçeleri düzelt',
   },
   tierText: (lower: string, upper: string | null) => upper === null

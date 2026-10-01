@@ -207,6 +207,11 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
             return Commercial(draftId, request);
         }
 
+        public Task<SalesOrderDraftResponse> ApprovePriceFloorExceptionsAsync(Guid draftId,
+            SalesDraftPriceFloorExceptionApprovalRequest request, SalesCommandMetadata metadata,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(new SalesOrderDraftResponse(Detail(draftId), false, "SENTETIK-corr"));
+
         public Func<Guid, Task<SalesOrderDraftRevisionsResponse>> Revisions { get; set; } =
             _ => Task.FromResult(new SalesOrderDraftRevisionsResponse([]));
 

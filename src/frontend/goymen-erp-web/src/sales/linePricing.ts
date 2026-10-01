@@ -83,6 +83,7 @@ const DECIMAL = /^[0-9]+(?:\.[0-9]+)?$/
 const DATE = /^\d{4}-\d{2}-\d{2}$/
 const QUANTITY = /^(0|[1-9][0-9]{0,14})(?:\.([0-9]{1,3}))?$/
 const isText = (v: unknown): v is string => typeof v === 'string' && v.length > 0 && v.length <= 256
+const isApprovalReason = (v: unknown): v is string => typeof v === 'string' && v.trim().length > 0 && v.length <= 4000
 const isDecimal = (v: unknown): v is string => typeof v === 'string' && v.length <= 64 && DECIMAL.test(v)
 const isNullableDecimal = (v: unknown): v is string | null => v === null || isDecimal(v)
 const isDate = (v: unknown): v is string => typeof v === 'string' && DATE.test(v)
@@ -124,7 +125,8 @@ function decodeFloorException(value: unknown): PriceFloorException | null {
   const o = exact(value, ['requestedBy', 'requestedAtUtc', 'approvedBy', 'approvedAtUtc', 'reason'])
   if (o === null || !isText(o.requestedBy) || typeof o.requestedAtUtc !== 'string' || Number.isNaN(Date.parse(o.requestedAtUtc))) return null
   const pending = o.approvedBy === null && o.approvedAtUtc === null && o.reason === null
-  const approved = isText(o.approvedBy) && typeof o.approvedAtUtc === 'string' && !Number.isNaN(Date.parse(o.approvedAtUtc)) && isText(o.reason)
+  const approved = isText(o.approvedBy) && typeof o.approvedAtUtc === 'string' && !Number.isNaN(Date.parse(o.approvedAtUtc))
+    && isApprovalReason(o.reason)
   return pending || approved ? o as unknown as PriceFloorException : null
 }
 

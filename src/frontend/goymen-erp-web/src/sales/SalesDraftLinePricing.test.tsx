@@ -11,7 +11,8 @@ import userEvent from '@testing-library/user-event'
 import detailResponseRaw from './examples/detail-response.json?raw'
 import { SALES_PRICE_FLOOR_EXCEPTION_APPROVE_CAPABILITY, SALES_PRICE_WRITE_CAPABILITY } from './capabilities'
 import { LINE_PRICING_TEXT as P, ORDER_DETAIL_TEXT } from './salesText'
-import { decodeReference } from './linePricing'
+import { decodeDraftLinePricing, decodeReference } from './linePricing'
+import { resetPendingPriceFloorApprovals } from './pendingPriceFloorApprovals'
 import { ALL_SALES, COMPANY_A, KG, installFetch, json, renderSalesApp, type RecordedCall } from './testHarness'
 
 type Body = Record<string, unknown> & { draft: Record<string, unknown>; lines: Record<string, unknown>[] }
@@ -64,6 +65,7 @@ function pricing(version: string, over: Record<string, unknown> = {}) {
 }
 
 afterEach(() => {
+  resetPendingPriceFloorApprovals()
   cleanup()
   vi.unstubAllGlobals()
   vi.restoreAllMocks()
@@ -93,17 +95,31 @@ describe('AT-018 list price on the order line', () => {
           originalCorrelationId: 'floor-c1' }, 200, { 'Idempotency-Replayed': 'true' })
       },
     })
-    renderSalesApp(path)
+    const firstRender = renderSalesApp(path)
 
     const control = await screen.findByTestId('sales-price-floor-approval')
     await userEvent.type(within(control).getByLabelText(P.floorApproval.reason(1)), 'SENTETIK sözleşme')
     await userEvent.click(within(control).getByRole('button', { name: P.floorApproval.approve }))
     expect(await within(control).findByText(P.floorApproval.unknown)).toBeTruthy()
-    await userEvent.click(within(control).getByRole('button', { name: P.floorApproval.retry }))
+    firstRender.unmount()
+    renderSalesApp(path)
+    const reopened = await screen.findByTestId('sales-price-floor-approval')
+    await userEvent.click(within(reopened).getByRole('button', { name: P.floorApproval.retry }))
 
     await waitFor(() => expect(posts).toHaveLength(2))
     expect(posts[1].idempotencyKey).toBe(posts[0].idempotencyKey)
     expect(posts[1].body).toBe(posts[0].body)
+  })
+
+  it('accepts the existing 4000-character approval reason bound and rejects a larger response', () => {
+    const floorException = {
+      requestedBy: 'maker', requestedAtUtc: '2026-10-01T08:00:00Z', approvedBy: 'checker',
+      approvedAtUtc: '2026-10-01T08:05:00Z', reason: 'x'.repeat(4000),
+    }
+    expect(decodeDraftLinePricing(pricing('4', { unitPrice: '39000', priceUnitId: KG, priceSource: 'Manual',
+      netUnitPrice: '39000', floorException }))).not.toBeNull()
+    expect(decodeDraftLinePricing(pricing('4', { unitPrice: '39000', priceUnitId: KG, priceSource: 'Manual',
+      netUnitPrice: '39000', floorException: { ...floorException, reason: 'x'.repeat(4001) } }))).toBeNull()
   })
 
   it('uses the list price as reference and default, adds a discount and a surcharge, and reads back the server net', async () => {

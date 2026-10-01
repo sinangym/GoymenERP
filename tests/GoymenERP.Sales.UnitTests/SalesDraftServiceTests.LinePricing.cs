@@ -169,6 +169,21 @@ public sealed partial class SalesDraftServiceTests
     }
 
     [Fact]
+    public async Task A_null_floor_exception_line_is_a_controlled_400_before_projection_or_store_access()
+    {
+        var world = new World();
+        world.Bindings = world.Bindings with { PriceFloorExceptionApprovePermission = SchedulePermission };
+        var request = new SalesDraftPriceFloorExceptionApprovalRequest("1", [null!]);
+
+        var refused = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().ApprovePriceFloorExceptionsAsync(
+            Guid.NewGuid(), request, Metadata("k-floor-null")));
+
+        Assert.Equal((400, "lines", "validation_failed"),
+            (refused.Status, Assert.Single(refused.Errors).Field, Assert.Single(refused.Errors).Code));
+        Assert.Empty(world.Store.Transitions);
+    }
+
+    [Fact]
     public async Task A_version_that_no_longer_prices_the_line_another_currency_or_two_discount_kinds_are_refused_before_the_save()
     {
         var references = new FakePriceReferences { Price = 12.50m, Missing = true };
