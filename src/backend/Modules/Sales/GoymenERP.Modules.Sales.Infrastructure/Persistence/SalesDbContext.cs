@@ -46,6 +46,13 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
         + "OR ([ApprovalState] = 4 AND [SubmittedBy] IS NOT NULL AND LEN([SubmittedBy]) > 0 AND [SubmittedAtUtc] IS NOT NULL AND [DecidedBy] IS NOT NULL AND LEN([DecidedBy]) > 0 AND [DecidedAtUtc] IS NOT NULL AND ([RejectionReason] IS NULL OR LEN([RejectionReason]) > 0)) "
         + "OR ([ApprovalState] = 5 AND [DecidedBy] IS NOT NULL AND LEN([DecidedBy]) > 0 AND [DecidedAtUtc] IS NOT NULL AND (([SubmittedBy] IS NULL AND [SubmittedAtUtc] IS NULL) OR ([SubmittedBy] IS NOT NULL AND LEN([SubmittedBy]) > 0 AND [SubmittedAtUtc] IS NOT NULL)) AND ([RejectionReason] IS NULL OR LEN([RejectionReason]) > 0))";
 
+    internal const string CustomerAcceptanceConstraint =
+        "([CustomerAcceptanceRequired] = 0 AND [CustomerAcceptedRevision] IS NULL AND [CustomerAcceptedBy] IS NULL AND [CustomerAcceptedAtUtc] IS NULL) "
+        + "OR ([CustomerAcceptanceRequired] = 1 AND (([CustomerAcceptedRevision] IS NULL AND [CustomerAcceptedBy] IS NULL AND [CustomerAcceptedAtUtc] IS NULL) "
+        + "OR ([CustomerAcceptedRevision] IS NOT NULL AND [CustomerAcceptedRevision] >= 0 AND [CustomerAcceptedRevision] <= [Revision] "
+        + "AND ([CustomerAcceptedRevision] < [Revision] OR [ApprovalState] = 3) "
+        + "AND [CustomerAcceptedBy] IS NOT NULL AND LEN([CustomerAcceptedBy]) > 0 AND [CustomerAcceptedAtUtc] IS NOT NULL)))";
+
     /// <summary>
     /// UX_DraftAttempts_DraftId: a stored draft is born from exactly one create attempt. Since SALES-A1 the
     /// state commands (submit / approve / reject) record their own attempts against the same draft, one per
@@ -88,6 +95,32 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
     /// <summary>DEC-SAL-005 / AT-007: the recorded cancellation of an approved order (append-only, at most one per draft).</summary>
     internal DbSet<DraftCancellationRow> DraftCancellations => Set<DraftCancellationRow>();
 
+    /// <summary>Partial delivery (user decision 2026-09-30): the requested remainder changes (append-only).</summary>
+    internal DbSet<DraftRemainderChangeRow> DraftRemainderChanges => Set<DraftRemainderChangeRow>();
+
+    /// <summary>Partial delivery: the decision on each remainder change (append-only, at most one per change).</summary>
+    internal DbSet<DraftRemainderDecisionRow> DraftRemainderDecisions => Set<DraftRemainderDecisionRow>();
+
+    /// <summary>CK_DraftRemainderChanges_Kind: a cancel carries no quantity; a revise carries a positive quantity and its text.</summary>
+    internal const string RemainderKindConstraint =
+        "([Kind] = 1 AND [RequestedQuantity] IS NULL AND [RequestedQuantityText] IS NULL) "
+        + "OR ([Kind] = 2 AND [RequestedQuantity] > 0 AND [RequestedQuantityText] IS NOT NULL AND LEN([RequestedQuantityText]) > 0)";
+
+    /// <summary>CK_DraftRemainderChanges_Floor: the owner's totals in their own order, a recorded shipment (a partly delivered line).</summary>
+    internal const string RemainderFloorConstraint =
+        "[DeliveredQuantity] >= 0 AND [DeliveredQuantity] <= [ShippedQuantity] AND [ShippedQuantity] <= [LoadedQuantity] AND [ShippedQuantity] > 0";
+
+    /// <summary>
+    /// CK_DraftRemainderDecisions_Outcome: an approval (2) carries the resulting quantity and the owner's totals read at the
+    /// approval, no reason; a rejection (3) carries none of those and an optional non-blank reason.
+    /// </summary>
+    internal const string RemainderOutcomeConstraint =
+        "([Outcome] = 2 AND [ResultQuantity] > 0 AND [ResultQuantityText] IS NOT NULL AND LEN([ResultQuantityText]) > 0 AND [Reason] IS NULL "
+        + "AND [LoadedQuantity] IS NOT NULL AND [ShippedQuantity] IS NOT NULL AND [DeliveredQuantity] IS NOT NULL "
+        + "AND [DeliveredQuantity] >= 0 AND [DeliveredQuantity] <= [ShippedQuantity] AND [ShippedQuantity] <= [LoadedQuantity] AND [ResultQuantity] >= [LoadedQuantity]) "
+        + "OR ([Outcome] = 3 AND [ResultQuantity] IS NULL AND [ResultQuantityText] IS NULL AND [LoadedQuantity] IS NULL AND [ShippedQuantity] IS NULL "
+        + "AND [DeliveredQuantity] IS NULL AND ([Reason] IS NULL OR LEN([Reason]) > 0))";
+
     /// <summary>
     /// CK_Drafts_State: the kind is Order; the lifecycle is Draft (1) or, since DEC-SAL-005, Cancelled (2) — and only an
     /// APPROVED order (approval state 3) is ever cancelled; the revision is a counter.
@@ -110,6 +143,7 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
         ConfigureDraftRevisions(modelBuilder);
         ConfigureDraftDeliverySchedules(modelBuilder);
         ConfigureDraftCancellations(modelBuilder);
+        ConfigureDraftRemainderChanges(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()
             .HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
@@ -160,6 +194,7 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
             table.HasCheckConstraint("CK_Drafts_State", StateConstraint);
             // SALES-A1: the approval facts follow the approval state exactly (a row cannot say "approved" without a decision).
             table.HasCheckConstraint("CK_Drafts_Approval", ApprovalConstraint);
+            table.HasCheckConstraint("CK_Drafts_CustomerAcceptance", CustomerAcceptanceConstraint);
             table.HasCheckConstraint("CK_Drafts_Version", "[Version] >= 1");
             table.HasCheckConstraint("CK_Drafts_Text",
                 "LEN([DocumentNo]) > 0 AND LEN([MoneyOperation]) > 0 AND LEN([MoneyProfileVersion]) > 0 AND LEN([CreatedBy]) > 0 AND LEN([CorrelationId]) > 0");
@@ -196,6 +231,7 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
         entity.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
         entity.Property(x => x.SubmittedBy).HasMaxLength(SalesOrderDraft.MaximumActorLength);
         entity.Property(x => x.DecidedBy).HasMaxLength(SalesOrderDraft.MaximumActorLength);
+        entity.Property(x => x.CustomerAcceptedBy).HasMaxLength(SalesOrderDraft.MaximumActorLength);
         entity.Property(x => x.RejectionReason).HasMaxLength(SalesOrderDraft.MaximumRejectionReasonLength);
         entity.HasIndex(x => new { x.CompanyId, x.ApprovalState, x.CreatedAtUtc, x.Id }).HasDatabaseName("IX_Drafts_CompanyId_ApprovalState_CreatedAtUtc_Id");
         entity.HasIndex(x => new { x.CompanyId, x.DocumentNo }).IsUnique().HasDatabaseName("UX_Drafts_DocumentNo");
@@ -366,6 +402,67 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
         cancellation.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
 
+    // Partial delivery (user decision 2026-09-30): the remainder changes and their decisions — append-only history beside the
+    // draft. The line's approved quantity lives on the line row (the quantity revision's writable columns).
+    private void ConfigureDraftRemainderChanges(ModelBuilder modelBuilder)
+    {
+        var change = modelBuilder.Entity<DraftRemainderChangeRow>();
+        change.ToTable("DraftRemainderChanges", Schema, table =>
+        {
+            // The smallest version a request can produce: create (1), one line (2), submit (3), approve (4), request (5).
+            table.HasCheckConstraint("CK_DraftRemainderChanges_Identity",
+                "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [DraftId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [LineId] <> '00000000-0000-0000-0000-000000000000' AND [ChangeNo] >= 1 AND [Revision] >= 0 AND [LineNo] >= 1 "
+                + "AND [DraftVersion] >= 5 AND LEN([OrderedQuantityText]) > 0 AND LEN([Reason]) > 0 AND LEN([RequestedBy]) > 0 AND LEN([CorrelationId]) > 0");
+            table.HasCheckConstraint("CK_DraftRemainderChanges_Kind", RemainderKindConstraint);
+            table.HasCheckConstraint("CK_DraftRemainderChanges_Floor", RemainderFloorConstraint);
+        });
+        change.HasKey(x => new { x.CompanyId, x.DraftId, x.ChangeNo });
+        change.HasIndex(x => new { x.CompanyId, x.DraftId, x.DraftVersion }).IsUnique().HasDatabaseName("UX_DraftRemainderChanges_DraftVersion");
+        change.Property(x => x.OrderedQuantityText).HasMaxLength(128).IsRequired();
+        change.Property(x => x.RequestedQuantity).HasPrecision(18, 3);
+        change.Property(x => x.RequestedQuantityText).HasMaxLength(128);
+        change.Property(x => x.Reason).HasMaxLength(SalesOrderDraft.MaximumRemainderReasonLength).IsRequired();
+        change.Property(x => x.RequestedBy).HasMaxLength(SalesOrderDraft.MaximumActorLength).IsRequired();
+        change.Property(x => x.LoadedQuantity).HasPrecision(18, 3);
+        change.Property(x => x.ShippedQuantity).HasPrecision(18, 3);
+        change.Property(x => x.DeliveredQuantity).HasPrecision(18, 3);
+        change.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        change.HasOne<DraftRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.DraftId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        change.HasOne<DraftLineRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.DraftId, x.LineNo })
+            .OnDelete(DeleteBehavior.Restrict);
+        change.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        var decision = modelBuilder.Entity<DraftRemainderDecisionRow>();
+        decision.ToTable("DraftRemainderDecisions", Schema, table =>
+        {
+            // The smallest version a decision can produce: the request's (5) plus the decision (6).
+            table.HasCheckConstraint("CK_DraftRemainderDecisions_Identity",
+                "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [DraftId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [ChangeNo] >= 1 AND [DraftVersion] >= 6 AND LEN([DecidedBy]) > 0 AND LEN([CorrelationId]) > 0");
+            table.HasCheckConstraint("CK_DraftRemainderDecisions_Outcome", RemainderOutcomeConstraint);
+        });
+        decision.HasKey(x => new { x.CompanyId, x.DraftId, x.ChangeNo });
+        decision.HasIndex(x => new { x.CompanyId, x.DraftId, x.DraftVersion }).IsUnique().HasDatabaseName("UX_DraftRemainderDecisions_DraftVersion");
+        decision.Property(x => x.DecidedBy).HasMaxLength(SalesOrderDraft.MaximumActorLength).IsRequired();
+        decision.Property(x => x.Reason).HasMaxLength(SalesOrderDraft.MaximumRemainderReasonLength);
+        decision.Property(x => x.ResultQuantity).HasPrecision(18, 3);
+        decision.Property(x => x.ResultQuantityText).HasMaxLength(128);
+        decision.Property(x => x.LoadedQuantity).HasPrecision(18, 3);
+        decision.Property(x => x.ShippedQuantity).HasPrecision(18, 3);
+        decision.Property(x => x.DeliveredQuantity).HasPrecision(18, 3);
+        decision.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        decision.HasOne<DraftRemainderChangeRow>().WithOne()
+            .HasForeignKey<DraftRemainderDecisionRow>(x => new { x.CompanyId, x.DraftId, x.ChangeNo })
+            .HasPrincipalKey<DraftRemainderChangeRow>(x => new { x.CompanyId, x.DraftId, x.ChangeNo })
+            .OnDelete(DeleteBehavior.Restrict);
+        decision.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
     // K3 Head B: the archived approved revisions and their lines — append-only history beside the draft.
     private void ConfigureDraftRevisions(ModelBuilder modelBuilder)
     {
@@ -453,7 +550,8 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
                     [
                         nameof(DraftRow.UpdatedAtUtc), nameof(DraftRow.ApprovalState), nameof(DraftRow.SubmittedBy), nameof(DraftRow.SubmittedAtUtc),
                         nameof(DraftRow.DecidedBy), nameof(DraftRow.DecidedAtUtc), nameof(DraftRow.RejectionReason), nameof(DraftRow.Revision),
-                        nameof(DraftRow.State),
+                        nameof(DraftRow.State), nameof(DraftRow.CustomerAcceptedRevision), nameof(DraftRow.CustomerAcceptedBy),
+                        nameof(DraftRow.CustomerAcceptedAtUtc),
                     ],
                     // K3 Head B — a DELIBERATE narrowing of "lines never change", declared here and in the PR: ONLY the three
                     // commercial columns may change, under a commercial revision; DEC-SAL-002 widens it by exactly the ordered
@@ -471,6 +569,9 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
                     DraftDeliveryScheduleDateRow => [],
                     // DEC-SAL-005: a recorded cancellation is APPEND-ONLY — no column of it may change afterwards.
                     DraftCancellationRow => [],
+                    // Partial delivery: a remainder request and its decision are APPEND-ONLY — no column may change afterwards.
+                    DraftRemainderChangeRow => [],
+                    DraftRemainderDecisionRow => [],
                     _ => [],
                 };
                 if (entry.Entity is DraftRow)
@@ -479,6 +580,27 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
                     if (state.IsModified && !((int)state.OriginalValue! == (int)SalesDraftState.Draft && (int)state.CurrentValue! == (int)SalesDraftState.Cancelled))
                     {
                         throw new InvalidOperationException("Satış siparişinin yaşam döngüsü yalnız Taslak → İptal yönünde değişir.");
+                    }
+
+                    var acceptedRevision = entry.Property(nameof(DraftRow.CustomerAcceptedRevision));
+                    var acceptedBy = entry.Property(nameof(DraftRow.CustomerAcceptedBy));
+                    var acceptedAt = entry.Property(nameof(DraftRow.CustomerAcceptedAtUtc));
+                    if (acceptedRevision.IsModified || acceptedBy.IsModified || acceptedAt.IsModified)
+                    {
+                        var required = entry.Property(nameof(DraftRow.CustomerAcceptanceRequired));
+                        var approval = entry.Property(nameof(DraftRow.ApprovalState));
+                        var revision = entry.Property(nameof(DraftRow.Revision));
+                        var currentAcceptedRevision = (int?)acceptedRevision.CurrentValue;
+                        var originalAcceptedRevision = (int?)acceptedRevision.OriginalValue;
+                        if (required.IsModified || required.CurrentValue is not true || approval.IsModified
+                            || approval.CurrentValue is not (int)InternalApprovalState.Approved || revision.IsModified
+                            || currentAcceptedRevision is null || currentAcceptedRevision != (int)revision.CurrentValue!
+                            || originalAcceptedRevision is { } previous && previous >= currentAcceptedRevision
+                            || acceptedBy.CurrentValue is not string actor || string.IsNullOrWhiteSpace(actor)
+                            || acceptedAt.CurrentValue is not DateTimeOffset)
+                        {
+                            throw new InvalidOperationException("Müşteri kabulü yalnız onaylı güncel revizyona ileri bir geçiş olarak kaydedilir.");
+                        }
                     }
                 }
 

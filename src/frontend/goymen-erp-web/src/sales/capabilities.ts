@@ -26,6 +26,9 @@ export const SALES_CAPABILITY = {
   ordersApprove: 'sales.orders.approve',
 } as const
 
+/** Q9: non-routed control for recording customer acceptance of the current approved revision. */
+export const SALES_CUSTOMER_ACCEPTANCE_RECORD_CAPABILITY = 'sales.orders.customer-acceptance.record' as const
+
 /** K3: the commercial-revision CONTROL on S-04; separate from every routed Sales screen. */
 export const SALES_PRICE_WRITE_CAPABILITY = 'sales.orders.price.write' as const
 
@@ -53,6 +56,7 @@ export type SalesCapabilityId =
   | typeof SALES_DELIVERY_SCHEDULE_WRITE_CAPABILITY
   | typeof SALES_CANCEL_CAPABILITY
   | typeof SALES_QUANTITY_WRITE_CAPABILITY
+  | typeof SALES_CUSTOMER_ACCEPTANCE_RECORD_CAPABILITY
 
 export const SALES_ROUTE = {
   list: '/satis/siparisler',

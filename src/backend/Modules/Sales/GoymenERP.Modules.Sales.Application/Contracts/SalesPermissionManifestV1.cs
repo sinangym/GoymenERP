@@ -12,7 +12,7 @@ namespace GoymenERP.Modules.Sales.Application.Contracts;
 /// </summary>
 public static class SalesPermissionManifestV1
 {
-    public const int Version = 9;
+    public const int Version = 10;
     public const string Subject = "Sales";
 
     /// <summary>POST /api/v1/sales/drafts, the reference reads of the draft form, and POST …/{id}/submission (SALES-A1: whoever may create a draft may send it for approval).</summary>
@@ -28,6 +28,12 @@ public static class SalesPermissionManifestV1
     /// implied by the name.
     /// </summary>
     public const string OrdersApprove = "sales.orders.approve";
+
+    /// <summary>
+    /// Records customer acceptance of an internally approved order revision. Separate from internal approval,
+    /// create and read; registration belongs to Central and the real grant remains a human boundary.
+    /// </summary>
+    public const string OrdersCustomerAcceptanceRecord = "sales.orders.customer-acceptance.record";
 
     /// <summary>
     /// K3 (Sinan 5748258299, closes 5745151414): writing a unit price or a discount on an order line —
@@ -77,6 +83,6 @@ public static class SalesPermissionManifestV1
     public const string OrdersQuantityWrite = "sales.orders.quantity.write";
 
     public static IReadOnlySet<string> Names { get; } =
-        new[] { DraftsCreate, DraftsRead, OrdersApprove, OrdersPriceWrite, OrdersPriceRead, OrdersDeliveryScheduleWrite, OrdersCancel, OrdersQuantityWrite }
+        new[] { DraftsCreate, DraftsRead, OrdersApprove, OrdersCustomerAcceptanceRecord, OrdersPriceWrite, OrdersPriceRead, OrdersDeliveryScheduleWrite, OrdersCancel, OrdersQuantityWrite }
             .ToFrozenSet(StringComparer.Ordinal);
 }

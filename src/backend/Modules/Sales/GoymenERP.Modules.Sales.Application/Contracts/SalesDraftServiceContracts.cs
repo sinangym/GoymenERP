@@ -101,6 +101,20 @@ public static class SalesDraftProblemCodesV1
     /// </summary>
     public const string RevisionImpactUnavailable = "revision_impact_unavailable";
 
+    /// <summary>
+    /// 409 (partial delivery remainder change, contract delta): the change would reduce a line below what an ACTIVE Inventory
+    /// allocation still reserves for it (kg: the active kilograms above new quantity − shipped; a count line: any active
+    /// allocation, kilograms and pieces are never compared). Sales releases nothing: the user releases or resizes the allocation in
+    /// Inventory first. Terminal for the key (recorded, replayed); field errors name the blocking source.
+    /// </summary>
+    public const string RemainderBlocked = "sales_remainder_blocked";
+
+    /// <summary>
+    /// 503 (partial delivery remainder change): the delivery owner (Logistics' loading read) or the allocation owner is not
+    /// composed or cannot answer; no remainder is changed on an unread floor. Code-less on the wire.
+    /// </summary>
+    public const string RemainderFloorUnavailable = "remainder_floor_unavailable";
+
     /// <summary>503: the Sales permission name is not registered in the central catalogue yet (setup, not a refusal).</summary>
     public const string PermissionUnregistered = "permission_unregistered";
 
@@ -143,4 +157,5 @@ public sealed record SalesDraftServiceBindings(
     string? PriceReadPermission = SalesPermissionManifestV1.OrdersPriceRead,
     string? DeliverySchedulePermission = SalesPermissionManifestV1.OrdersDeliveryScheduleWrite,
     string? CancelPermission = SalesPermissionManifestV1.OrdersCancel,
-    string? QuantityPermission = SalesPermissionManifestV1.OrdersQuantityWrite);
+    string? QuantityPermission = SalesPermissionManifestV1.OrdersQuantityWrite,
+    string? CustomerAcceptancePermission = SalesPermissionManifestV1.OrdersCustomerAcceptanceRecord);

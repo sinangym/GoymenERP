@@ -569,13 +569,21 @@ class IssuerUserRuleTests(unittest.TestCase):
     def test_the_checked_in_override_files_pass_their_profiles(self):
         # Every owner override in infra/browser-suites is valid against its suite's profile model.
         directory = ROOT / browser.SUITE_OVERRIDE_DIRECTORY
+        compose_bindings = {
+            "${C01_E2E_TESTED_COMMIT:?C01_E2E_TESTED_COMMIT must be set}": profile_tests.COMMIT,
+            "${GOYMEN_ERP_C01_E2E_RUN_ID:?GOYMEN_ERP_C01_E2E_RUN_ID must be set}":
+                profile_tests.PROJECT.split("-")[-2],
+            "${GOYMEN_ERP_C01_E2E_COMPOSE_PROJECT:?GOYMEN_ERP_C01_E2E_COMPOSE_PROJECT must be set}":
+                profile_tests.PROJECT,
+        }
         for path in sorted(directory.glob("*.override.yml")) if directory.is_dir() else []:
             suite = path.name.split(".", 1)[0]
             environment = {}
             for line in path.read_text(encoding="utf-8").splitlines():
                 match = re.fullmatch(r"      ([A-Za-z0-9_]+): (.+)", line)
                 if match:
-                    environment[match.group(1)] = match.group(2).strip('"')
+                    raw = match.group(2).strip('"')
+                    environment[match.group(1)] = compose_bindings.get(raw, raw)
             with self.subTest(suite=suite):
                 self.assertTrue(environment)
                 self._validate(environment, suite)

@@ -49,6 +49,20 @@ narrow permissions; declarations do not grant them.
 
 Serialize with the other lanes' mounts; two lanes must not edit `router.tsx` in parallel.
 
+## Pending dedicated customer-instrument read route
+
+The existing customer cheque / note portfolio no longer relies on the receipt-list route. The Finance-owned route is:
+
+| Capability id | Route | Existing required permission |
+|---|---|---|
+| `finance.customer-instruments.list` | `/finans/musteri-cek-senetleri` | `finance.customer-instrument.read` |
+
+The shared-shell/authority single writer must register this route as a Company-wide read capability and mount the
+updated `financeRoutes`. It must not add `finance.receipts` as a second required permission. The existing receive and
+state-change controls remain separate; this route grants no command authority. Add one navigation label such as
+"Müşteri Çekleri ve Senetleri" only through the central mount, and refresh the registry/fingerprint/OpenAPI evidence
+there. Until that binding lands, the route remains fail-closed.
+
 ## Evidence boundary
 
 Component/DOM tests use a recording port and real pending promises (SENTETIK/NOT_ENV); HTTP mapping

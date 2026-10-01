@@ -92,6 +92,13 @@ ENVELOPE_KEYS = (
     "GOYMEN_ERP_C01_E2E_RUN_ID",
     "GOYMEN_ERP_C01_E2E_COMPOSE_PROJECT",
 )
+MFG_API_READ_FIXTURE_KEYS = (
+    "BrowserSuiteApi__Profile",
+    "BrowserSuiteApi__Disposable",
+    "BrowserSuiteApi__TestedCommit",
+    "BrowserSuiteApi__RunId",
+    "BrowserSuiteApi__ComposeProject",
+)
 CANONICAL_API_ENVIRONMENT_KEYS = frozenset({
     "ASPNETCORE_ENVIRONMENT",
     "DB_PROVIDER",
@@ -202,8 +209,11 @@ SUITE_IDENTITY_PERMISSIONS = {
     # hold ONLY identity.assignments.read — the same company-fence design, now for the read-only access view.
     # ERP-000G / AT-065: c02-creator and c02-other-company also hold the document vault's two names (the same names in
     # different companies, the suite's design), for the Cari-card document journey (c02-documents.spec.ts).
+    # AT-009 (user decision 2026-09-30): c02-tax-maker (A) holds create + read + the two VKN/TCKN names, c02-tax-checker
+    # (A) holds read + approve only — the maker-checker pair of the Cari card's VKN/TCKN journey.
     "c02": ("counterparty.parties.create", "counterparty.parties.read", "identity.assignments.read",
-            "documents.files.read", "documents.files.upload"),
+            "documents.files.read", "documents.files.upload",
+            "counterparty.parties.tax-identity.update", "counterparty.parties.tax-identity.approve"),
     # ORG master edit (user decision 2026-09-27): a THIRD actor, org03-editor, holds the three reads its
     # screens need (work-centers, locations, sites) plus the three master-edit writes. The two readers above
     # keep their exact subsets, so the suite also shows a reader is offered no create/edit control.
@@ -228,6 +238,7 @@ SUITE_IDENTITY_PERMISSIONS = {
         "manufacturing.facts.record",
         "manufacturing.orders.read",
         "manufacturing.orders.close",
+        "manufacturing.orders.close-exception.approve",
         "organization.work-centers.read",
         "inventory.labels.read",
         "inventory.balances.read",
@@ -275,7 +286,8 @@ SUITE_IDENTITY_PERMISSIONS = {
             "product.operational-selection.read", "sales.orders.price.read", "sales.orders.price.write",
             "inventory.opening-stock.record", "inventory.labels.read", "inventory.balances.read",
             "inventory.physical-allocation.write", "sales.orders.delivery-schedule.write",
-            "sales.orders.cancel", "sales.orders.quantity.write"),
+            "sales.orders.cancel", "sales.orders.quantity.write",
+            "sales.orders.customer-acceptance.record"),
     # The six Accounting names. The preparer holds .approve on purpose — Ö4 must refuse its OWN proposal
     # although the grant is there — and holds periods.read alone in the second company; the approver holds
     # no journal or queue name, so those routes stay closed to it.
@@ -719,6 +731,20 @@ def validate_suite_compose(model: dict, suite: str, expected_commit: str, expect
             require(not key.startswith("C01E2e__") and not key.startswith("GOYMEN_ERP_C01_E2E_"),
                     f"normal profile API must not carry the disposable capability envelope ({key})")
         expected_keys = CANONICAL_API_ENVIRONMENT_KEYS - set(ENVELOPE_KEYS)
+        if suite == "mfg":
+            expected_keys |= set(MFG_API_READ_FIXTURE_KEYS)
+            require(environment.get("BrowserSuiteApi__Profile") == "mfg",
+                    "mfg API read fixture profile must be mfg")
+            require(environment.get("BrowserSuiteApi__Disposable") == "CONFIRMED",
+                    "mfg API read fixture must be explicitly disposable")
+            require(environment.get("BrowserSuiteApi__TestedCommit") == expected_commit,
+                    "mfg API read fixture source SHA drift")
+            require(environment.get("BrowserSuiteApi__RunId") == expected_project.split("-")[-2],
+                    "mfg API read fixture run id drift")
+            require(environment.get("BrowserSuiteApi__ComposeProject") == expected_project,
+                    "mfg API read fixture compose project drift")
+            for key in MFG_API_READ_FIXTURE_KEYS:
+                canonical_environment.pop(key, None)
         # Only to let the canonical rules run: the envelope values they expect, never sent to the API.
         canonical_environment.update({
             "C01E2e__EnableListCapability": "true",

@@ -15,7 +15,7 @@ namespace GoymenERP.Api.IntegrationTests;
 /// <summary>
 /// Manufacturing's published shell capability provider through the real host on a real SQL Server
 /// (MFG-UI-F, the S03-c pattern; MFG-ORD adds the order list and the close control): the screens and the
-/// two controls follow the Manufacturing permissions of the actor in the context company. The grants are synthetic, isolated role assignments in
+/// three controls follow the Manufacturing permissions of the actor in the context company. The grants are synthetic, isolated role assignments in
 /// this test's own database; they are not a Sinan or production grant and are never seeded.
 /// <list type="bullet">
 /// <item>no grant opens nothing;</item>
@@ -32,8 +32,9 @@ namespace GoymenERP.Api.IntegrationTests;
 /// </summary>
 public sealed class ManufacturingShellCapabilitySqlServerRelationalAcceptanceTests
 {
-    // Ordinal order, as the snapshot projection sorts them: close < detail < facts < list.
+    // Ordinal order, as the snapshot projection sorts them: close < close-exception < detail < facts < list.
     private const string Close = "manufacturing.orders.close";
+    private const string CloseException = "manufacturing.orders.close-exception-approve";
     private const string Detail = "manufacturing.orders.detail";
     private const string Facts = "manufacturing.orders.facts";
     private const string List = "manufacturing.orders.list";
@@ -118,8 +119,19 @@ public sealed class ManufacturingShellCapabilitySqlServerRelationalAcceptanceTes
                 Assert.Equal(new[] { Close, Detail, List }, ManufacturingOnly(await ReadAsync(closer)));
             }
 
+            // The reasoned exception is a separate permission and control; it never arrives with normal close.
+            await GrantAsync(factory, TestUsers.CompanyB, CompanyB,
+                ErpPermissions.ManufacturingOrdersCloseExceptionApprove, AccessScopeType.Company, CompanyB);
+            using (var exceptionApprover = factory.CreateClientFor(TestUsers.CompanyB, CompanyB))
+            {
+                Assert.Equal(new[] { Close, CloseException, Detail, List },
+                    ManufacturingOnly(await ReadAsync(exceptionApprover)));
+            }
+
             // The close alone, on a fresh actor: a control never opens without its parent's read.
             await GrantAsync(factory, TestUsers.NoAssignment, CompanyA, ErpPermissions.ManufacturingOrdersClose, AccessScopeType.Company, CompanyA);
+            await GrantAsync(factory, TestUsers.NoAssignment, CompanyA,
+                ErpPermissions.ManufacturingOrdersCloseExceptionApprove, AccessScopeType.Company, CompanyA);
             using (var closeOnly = factory.CreateClientFor(TestUsers.NoAssignment, CompanyA))
             {
                 Assert.Empty(ManufacturingOnly(await ReadAsync(closeOnly)));

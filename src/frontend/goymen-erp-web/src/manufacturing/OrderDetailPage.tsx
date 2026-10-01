@@ -20,8 +20,9 @@
  *    (./factAttempt.ts, ./pendingFactStore.ts).
  *  - Without `manufacturing.orders.facts` no form is drawn (card D3), and without
  *    `manufacturing.orders.close` no close button is drawn; the server enforces either way.
- *  - The close (MFG-ORD) sends the version this screen read, under its own frozen key, and
- *    shows the server's refusal by its code — no tolerance and no write-off is offered here.
+ *  - The close (MFG-ORD) sends the version this screen read, under its own frozen key. Settings supplies the
+ *    tolerance; this screen supplies no percentage. A dedicated capability may answer the server's exception
+ *    requirement with a frozen reason, while unexplained mass remains a missing fact.
  */
 
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
@@ -39,6 +40,7 @@ import type { InventoryLabelDetailWithMovementTimeline } from '../inventory/labe
 import { INVENTORY_STOCK_POSITIONS_CAPABILITY } from '../inventory/capabilities'
 import {
   FACT_KINDS,
+  INVENTORY_OUTPUT_CLASSES,
   OUTPUT_CLASSES,
   isKilogramText,
   type CloseSnapshot,
@@ -141,6 +143,10 @@ function OrderDetail({ namespace }: { readonly namespace: string | null }) {
   const canReadInventoryLabel = hasCapability(shell, INVENTORY_STOCK_POSITIONS_CAPABILITY)
   // A third authority (MFG-ORD): recording a fact never closes an order.
   const canClose = hasCapability(shell, MANUFACTURING_CAPABILITY.orderClose)
+  const canApproveCloseException = hasCapability(
+    shell,
+    MANUFACTURING_CAPABILITY.orderCloseExceptionApprove,
+  )
   const storeKey = pendingFactKey(
     shell.sessionEpoch,
     shell.activeContext?.userId ?? null,
@@ -220,7 +226,12 @@ function OrderDetail({ namespace }: { readonly namespace: string | null }) {
         />
       ) : null}
       {canClose ? (
-        <CloseSection order={order} companyId={activeCompanyId ?? ''} onRefresh={refresh} />
+        <CloseSection
+          order={order}
+          companyId={activeCompanyId ?? ''}
+          canApproveException={canApproveCloseException}
+          onRefresh={refresh}
+        />
       ) : null}
     </Frame>
   )
@@ -324,8 +335,9 @@ function MassBalancePanel({
 /**
  * The close (MFG-ORD), a control of this screen for a holder of `manufacturing.orders.close`.
  *
- *  - The rule is the server's and the text only repeats the decided one (MFG-4): no tolerance is
- *    offered here, nothing is written off and no condition is added.
+ *  - The server selects the exact Settings tolerance. This screen never supplies a percentage. Only a holder
+ *    of the separate exception capability can answer `manufacturing_closure_approval_required`, and must give
+ *    a reason. An unexplained difference remains a missing fact and never enters that approval path.
  *  - The version sent is the one this screen READ. The attempt is frozen once — key and version
  *    together — so a re-send of an unknown outcome is the same command (ADR-011), never a second
  *    close. A new attempt is a new key.
@@ -334,13 +346,17 @@ function MassBalancePanel({
 function CloseSection({
   order,
   companyId,
+  canApproveException,
   onRefresh,
 }: {
   readonly order: ProductionOrderView
   readonly companyId: string
+  readonly canApproveException: boolean
   readonly onRefresh: () => Promise<void>
 }) {
   const [attempt, setAttempt] = useState<CloseAttempt>({ phase: 'idle' })
+  const [exceptionReason, setExceptionReason] = useState('')
+  const [exceptionError, setExceptionError] = useState<string | null>(null)
 
   const send = async (snapshot: CloseSnapshot) => {
     setAttempt({ phase: 'sending', snapshot })
@@ -351,6 +367,16 @@ function CloseSection({
       return
     }
     if (outcome.type === 'failed') {
+      if (
+        canApproveException &&
+        outcome.failure.kind === 'rule' &&
+        outcome.failure.code === 'manufacturing_closure_approval_required'
+      ) {
+        setExceptionReason('')
+        setExceptionError(null)
+        setAttempt({ phase: 'approval-required' })
+        return
+      }
       setAttempt({ phase: 'refused', failure: outcome.failure })
       // The order moved on, or another writer committed: the screen reads it again so the next
       // decision is taken on the current figures.
@@ -360,6 +386,17 @@ function CloseSection({
       return
     }
     setAttempt({ phase: 'unknown', snapshot, unknown: outcome.unknown })
+  }
+
+  const approveException = () => {
+    const reason = exceptionReason.trim()
+    if (reason.length === 0) {
+      setExceptionError(CLOSE_TEXT.exceptionReasonRequired)
+      return
+    }
+
+    setExceptionError(null)
+    void send({ idempotencyKey: newId(), expectedVersion: order.version, exceptionReason: reason })
   }
 
   return (
@@ -383,6 +420,31 @@ function CloseSection({
           <button type="button" onClick={() => setAttempt({ phase: 'idle' })}>
             {CLOSE_TEXT.cancel}
           </button>
+        </div>
+      ) : attempt.phase === 'approval-required' ? (
+        <div className={styles.section} data-testid="close-exception-approval">
+          <h3>{CLOSE_TEXT.exceptionHeading}</h3>
+          <p className={styles.help}>{CLOSE_TEXT.exceptionHelp}</p>
+          <div className={styles.form}>
+            <div className={styles.control}>
+              <label htmlFor="mfg-close-exception-reason">{CLOSE_TEXT.exceptionReason}</label>
+              <textarea
+                id="mfg-close-exception-reason"
+                value={exceptionReason}
+                maxLength={256}
+                rows={3}
+                onChange={(event) => {
+                  setExceptionReason(event.target.value)
+                  setExceptionError(null)
+                }}
+              />
+            </div>
+          </div>
+          {exceptionError === null ? null : <p role="alert">{exceptionError}</p>}
+          <div className={styles.actions}>
+            <button type="button" onClick={approveException}>{CLOSE_TEXT.exceptionConfirm}</button>
+            <button type="button" onClick={() => setAttempt({ phase: 'idle' })}>{CLOSE_TEXT.cancel}</button>
+          </div>
         </div>
       ) : attempt.phase === 'unknown' ? (
         <div className={styles.actions}>
@@ -431,6 +493,7 @@ function CloseSection({
 type CloseAttempt =
   | { readonly phase: 'idle' }
   | { readonly phase: 'confirming' }
+  | { readonly phase: 'approval-required' }
   | { readonly phase: 'sending'; readonly snapshot: CloseSnapshot }
   | { readonly phase: 'applied'; readonly replayed: boolean }
   | { readonly phase: 'refused'; readonly failure: FactFailure }
@@ -581,7 +644,7 @@ interface FormValues {
   readonly kg: string
   /** `datetime-local` value, read as the browser's local time and sent as UTC. */
   readonly occurredAt: string
-  readonly outputClass: '' | (typeof OUTPUT_CLASSES)[number]
+  readonly outputClass: '' | (typeof INVENTORY_OUTPUT_CLASSES)[number]
   readonly productId: string
   readonly locationId: string
   readonly labelCode: string
@@ -943,7 +1006,7 @@ function FactSection({
               kind: form.kind,
               movementId: newId(),
               expectedParentLabelVersion: labelState?.kind === 'ready' ? labelState.data.labelVersion : '',
-              outputClass: form.outputClass as (typeof OUTPUT_CLASSES)[number],
+              outputClass: form.outputClass as (typeof INVENTORY_OUTPUT_CLASSES)[number],
               productId: selectedProduct?.productId ?? '',
               expectedProductVersion: selectedProduct?.productVersion ?? '',
               lotId: newId(),
@@ -1073,7 +1136,7 @@ function FactSection({
                   })}
                 >
                   <option value="">Seçin</option>
-                  {OUTPUT_CLASSES.map((outputClass) => (
+                  {INVENTORY_OUTPUT_CLASSES.map((outputClass) => (
                     <option key={outputClass} value={outputClass}>{OUTPUT_CLASS_LABEL[outputClass]}</option>
                   ))}
                 </select>

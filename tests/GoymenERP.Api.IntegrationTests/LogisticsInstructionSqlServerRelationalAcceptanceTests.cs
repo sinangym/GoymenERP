@@ -235,6 +235,161 @@ public sealed partial class LogisticsInstructionSqlServerRelationalAcceptanceTes
     }
 
     [SqlServerFact]
+    public async Task Loaded_total_across_two_instructions_is_capped_atomically_by_the_fresh_sales_line_limit()
+    {
+        await using var run = await Run.StartAsync();
+        var owners = Owners.For(CompanyA);
+        var orderLineId = Guid.NewGuid();
+        var first = InstructionForOrderLine(owners, orderLineId, 2.5m);
+        var second = InstructionForOrderLine(owners, orderLineId, 2.5m);
+        var firstLine = Assert.Single(first.Lines);
+        var secondLine = Assert.Single(second.Lines);
+
+        await using (var a = run.Store(CompanyA))
+        {
+            await a.Store.StoreInstructionAsync(run.Envelope("k-load-cap-create-1"), Hash("load-cap-create-1"), Day,
+                () => first, aggregateLimits: [AggregateLimit(firstLine.Id, owners, orderLineId, 5m, 7, 3)]);
+            await a.Store.MutateInstructionAsync(run.Envelope("k-load-cap-issue-1"), Hash("load-cap-issue-1"),
+                LogisticsCommands.IssueV1, first.Id, (instruction, now) => instruction.Issue(2, now), Issued);
+
+            await a.Store.StoreInstructionAsync(run.Envelope("k-load-cap-create-2"), Hash("load-cap-create-2"), Day,
+                () => second, aggregateLimits: [AggregateLimit(secondLine.Id, owners, orderLineId, 5m, 7, 3)]);
+            await a.Store.MutateInstructionAsync(run.Envelope("k-load-cap-issue-2"), Hash("load-cap-issue-2"),
+                LogisticsCommands.IssueV1, second.Id, (instruction, now) => instruction.Issue(2, now), Issued);
+        }
+
+        await using (var a = run.Store(CompanyA))
+        {
+            var aggregateStore = Assert.IsAssignableFrom<ILogisticsAggregateLoadStoreV1>(a.Store);
+            var firstLoaded = await aggregateStore.MutateInstructionWithAggregateLoadLimitAsync(
+                run.Envelope("k-load-cap-1"), Hash("load-cap-1"), LogisticsCommands.RecordLoadV1, first.Id,
+                (instruction, now) => instruction.RecordLoad(3, Guid.NewGuid(), firstLine.Id, Kg(1.5m), MeasurementKind.Measured, now),
+                Loaded, AggregateLoadLimit(firstLine.Id, owners, orderLineId, 2.5m, 1.5m));
+            Assert.Equal((4L, 1.5m), (firstLoaded!.Instruction.Instruction.Version,
+                firstLoaded.Instruction.Instruction.Lines[0].LoadedQuantity.Value));
+
+            var secondLoaded = await aggregateStore.MutateInstructionWithAggregateLoadLimitAsync(
+                run.Envelope("k-load-cap-2"), Hash("load-cap-2"), LogisticsCommands.RecordLoadV1, second.Id,
+                (instruction, now) => instruction.RecordLoad(3, Guid.NewGuid(), secondLine.Id, Kg(0.5m), MeasurementKind.Measured, now),
+                Loaded, AggregateLoadLimit(secondLine.Id, owners, orderLineId, 2.5m, 0.5m));
+            Assert.Equal((4L, 0.5m), (secondLoaded!.Instruction.Instruction.Version,
+                secondLoaded.Instruction.Instruction.Lines[0].LoadedQuantity.Value));
+
+            var refused = await Assert.ThrowsAsync<LogisticsStoreException>(() =>
+                aggregateStore.MutateInstructionWithAggregateLoadLimitAsync(
+                    run.Envelope("k-load-cap-over"), Hash("load-cap-over"), LogisticsCommands.RecordLoadV1, second.Id,
+                    (instruction, now) => instruction.RecordLoad(4, Guid.NewGuid(), secondLine.Id, Kg(0.501m), MeasurementKind.Measured, now),
+                    Loaded, AggregateLoadLimit(secondLine.Id, owners, orderLineId, 2.5m, 0.501m)));
+            Assert.Equal(LogisticsStoreCodes.AggregateLimitExceeded, refused.Code);
+
+            var unchanged = await a.Store.FindInstructionAsync(second.Id);
+            Assert.Equal((4L, 0.5m), (unchanged!.Instruction.Version, unchanged.Instruction.Lines[0].LoadedQuantity.Value));
+        }
+
+        Assert.Equal(2m, await run.ScalarAsync<decimal>(
+            "SELECT SUM(Loaded) FROM logistics.LoadingInstructionLines WHERE CompanyId = @company AND SourceOrderId = @order AND SourceOrderLineId = @line",
+            ("@company", CompanyA), ("@order", owners.Order), ("@line", orderLineId)));
+    }
+
+    [SqlServerFact]
+    public async Task A_resolved_sales_line_limit_caps_all_instructions_atomically_and_replay_never_recomputes_the_snapshot()
+    {
+        await using var run = await Run.StartAsync();
+        var owners = Owners.For(CompanyA);
+        var orderLineId = Guid.NewGuid();
+        var first = InstructionForOrderLine(owners, orderLineId, 3m);
+        var firstLine = Assert.Single(first.Lines);
+        var firstLimit = AggregateLimit(firstLine.Id, owners, orderLineId, 5m, 7, 3);
+        Guid firstId;
+
+        await using (var a = run.Store(CompanyA))
+        {
+            var stored = await a.Store.StoreInstructionAsync(run.Envelope("k-aggregate-first"), Hash("aggregate-first"), Day,
+                () => first, aggregateLimits: [firstLimit]);
+            firstId = stored.Instruction.Instruction.Id;
+
+            var replay = await a.Store.StoreInstructionAsync(run.Envelope("k-aggregate-first", correlation: "SENTETIK-replay"),
+                Hash("aggregate-first"), Day, () => throw new InvalidOperationException("a replay never rebuilds"),
+                aggregateLimits: [AggregateLimit(firstLine.Id, owners, orderLineId, 1m, 99, 99)]);
+            Assert.Equal((LogisticsWriteOutcome.Replayed, firstId, run.Correlation),
+                (replay.Outcome, replay.Instruction.Instruction.Id, replay.OriginalCorrelationId));
+        }
+
+        var second = InstructionForOrderLine(owners, orderLineId, 3m);
+        var secondLine = Assert.Single(second.Lines);
+        await using (var a = run.Store(CompanyA))
+        {
+            var refusal = await Assert.ThrowsAsync<LogisticsStoreException>(() =>
+                a.Store.StoreInstructionAsync(run.Envelope("k-aggregate-second"), Hash("aggregate-second"), Day,
+                    () => second, aggregateLimits: [AggregateLimit(secondLine.Id, owners, orderLineId, 5m, 7, 3)]));
+            Assert.Equal(LogisticsStoreCodes.AggregateLimitExceeded, refusal.Code);
+        }
+
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM logistics.LoadingInstructions"));
+        Assert.Equal(3m, await run.ScalarAsync<decimal>(
+            "SELECT SUM(Instructed) FROM logistics.LoadingInstructionLines WHERE CompanyId = @company AND SourceOrderId = @order AND SourceOrderLineId = @line",
+            ("@company", CompanyA), ("@order", owners.Order), ("@line", orderLineId)));
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM logistics.LoadingAttempts"));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityId = @id AND EventType = N'logistics.loading-instruction.created.v1'",
+            ("@id", firstId.ToString("D"))));
+    }
+
+    [SqlServerFact]
+    public async Task Concurrent_instructions_for_the_same_sales_line_never_exceed_the_resolved_limit()
+    {
+        await using var run = await Run.StartAsync();
+        var owners = Owners.For(CompanyA);
+        var orderLineId = Guid.NewGuid();
+
+        async Task<(string Suffix, LoadingInstruction Instruction, object Result)> WriteAsync(string suffix)
+        {
+            var instruction = InstructionForOrderLine(owners, orderLineId, 3m);
+            var line = Assert.Single(instruction.Lines);
+            await using var writer = run.Store(CompanyA);
+            try
+            {
+                var result = await writer.Store.StoreInstructionAsync(run.Envelope($"k-aggregate-race-{suffix}"),
+                    Hash($"aggregate-race-{suffix}"), Day, () => instruction,
+                    aggregateLimits: [AggregateLimit(line.Id, owners, orderLineId, 5m, 7, 3)]);
+                return (suffix, instruction, result.Outcome);
+            }
+            catch (LogisticsStoreException exception)
+            {
+                return (suffix, instruction, exception.Code);
+            }
+        }
+
+        var results = await Task.WhenAll(Task.Run(() => WriteAsync("a")), Task.Run(() => WriteAsync("b")));
+
+        var winner = Assert.Single(results, result => result.Result is LogisticsWriteOutcome.Recorded);
+        Assert.Single(results, result => result.Result is string code
+            && code is LogisticsStoreCodes.AggregateLimitExceeded or LogisticsStoreCodes.ConcurrentChange);
+        await using (var replay = run.Store(CompanyA))
+        {
+            var replayed = await replay.Store.StoreInstructionAsync(
+                run.Envelope($"k-aggregate-race-{winner.Suffix}", correlation: "SENTETIK-race-replay"),
+                Hash($"aggregate-race-{winner.Suffix}"), Day,
+                () => throw new InvalidOperationException("a replay never rebuilds"),
+                aggregateLimits: [AggregateLimit(Assert.Single(winner.Instruction.Lines).Id, owners, orderLineId, 1m, 99, 99)]);
+            Assert.Equal((LogisticsWriteOutcome.Replayed, winner.Instruction.Id, run.Correlation),
+                (replayed.Outcome, replayed.Instruction.Instruction.Id, replayed.OriginalCorrelationId));
+        }
+
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM logistics.LoadingInstructions"));
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM logistics.LoadingInstructionLines"));
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM logistics.LoadingAttempts"));
+        Assert.Equal(3m, await run.ScalarAsync<decimal>(
+            "SELECT SUM(Instructed) FROM logistics.LoadingInstructionLines WHERE CompanyId = @company AND SourceOrderId = @order AND SourceOrderLineId = @line",
+            ("@company", CompanyA), ("@order", owners.Order), ("@line", orderLineId)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType = N'logistics.loading-instruction.created.v1'"));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityId = @id AND EventType = N'logistics.loading-instruction.created.v1'",
+            ("@id", winner.Instruction.Id.ToString("D"))));
+    }
+
+    [SqlServerFact]
     public async Task The_routes_answer_only_with_fresh_grants_and_only_for_the_context_company()
     {
         await using var run = await Run.StartAsync();
@@ -668,6 +823,26 @@ public sealed partial class LogisticsInstructionSqlServerRelationalAcceptanceTes
 
         return instruction;
     }
+
+    private static LoadingInstruction InstructionForOrderLine(Owners owners, Guid orderLineId, decimal quantity)
+    {
+        var instruction = LoadingInstruction.Create(Guid.NewGuid(), owners.Company, owners.Party, owners.Account, T0);
+        instruction.AddLine(instruction.Version, Guid.NewGuid(), new SourceOrderLineRef(owners.Order, orderLineId, 0),
+            Guid.NewGuid(), KgUnit, null, Kg(quantity), T0);
+        return instruction;
+    }
+
+    private static LogisticsOrderLineAggregateLimit AggregateLimit(Guid instructionLineId, Owners owners, Guid orderLineId,
+        decimal maximum, long salesOrderVersion, long sourceVersion) =>
+        new(instructionLineId, owners.Company, owners.Order, orderLineId, KgUnit, salesOrderVersion, maximum,
+            maximum.ToString(System.Globalization.CultureInfo.InvariantCulture), "Sales", orderLineId.ToString("D"),
+            sourceVersion.ToString(System.Globalization.CultureInfo.InvariantCulture), Day);
+
+    private static LogisticsOrderLineAggregateLoadLimit AggregateLoadLimit(Guid instructionLineId, Owners owners, Guid orderLineId,
+        decimal maximum, decimal requested) =>
+        new(instructionLineId, owners.Company, owners.Order, orderLineId, KgUnit, 7, maximum,
+            maximum.ToString(System.Globalization.CultureInfo.InvariantCulture), requested,
+            requested.ToString(System.Globalization.CultureInfo.InvariantCulture), "Sales", orderLineId.ToString("D"), "3", Day);
 
     private static string Create(Owners owners) =>
         $$"""{"customerPartyId":"{{owners.Party:D}}","companyAccountId":"{{owners.Account:D}}","effectiveOn":"2026-09-19","lines":[{"lineId":"{{Guid.NewGuid():D}}","sourceOrderId":"{{owners.Order:D}}","sourceOrderLineId":"{{Guid.NewGuid():D}}","unitId":"{{KgUnit:D}}","quantity":"6"}]}""";

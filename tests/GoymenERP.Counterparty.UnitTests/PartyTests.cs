@@ -40,6 +40,9 @@ public sealed class PartyTests
         Assert.False(typeof(Party).GetProperty(nameof(Party.LegalName))!.SetMethod?.IsPublic ?? false);
         Assert.False(typeof(Party).GetProperty(nameof(Party.TradeName))!.SetMethod?.IsPublic ?? false);
         Assert.False(typeof(Party).GetProperty(nameof(Party.IsActive))!.SetMethod?.IsPublic ?? false);
+        // AT-009: the one Party mutation (its VKN/TCKN) is internal to the module; the write guard and the maker-checker
+        // command are its only way in.
+        Assert.False(typeof(Party).GetProperty(nameof(Party.TaxIdentityNumber))!.SetMethod?.IsPublic ?? false);
     }
 
     [Fact]

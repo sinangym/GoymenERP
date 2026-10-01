@@ -29,6 +29,7 @@ import { createHttpFinancePort } from './httpPort'
 import { ReceiptDetailPage, ReceiptDraftPage, ReceiptListPage } from './ReceiptPages'
 import { ReversalApprovalsPage } from './ReversalApprovalsPage'
 import { ManualBankPaymentStartPage, type ManualBankPaymentEntryContext } from './ManualBankPaymentStartPage'
+import { CustomerInstrumentPortfolioPage } from './CustomerInstrumentPortfolioPage'
 import {
   ManualBankPaymentCreatePage,
   ManualBankPaymentDetailPage,
@@ -126,6 +127,10 @@ function ManualBankPaymentDetailRoute() {
 }
 
 export const financeRoutes: RouteObject[] = [
+  {
+    path: FINANCE_ROUTE.customerInstrumentsList.slice(1),
+    element: gate(FINANCE_CAPABILITY.customerInstrumentsList, <CustomerInstrumentPortfolioPage />),
+  },
   { path: FINANCE_ROUTE.receiptsList.slice(1), element: gate(FINANCE_CAPABILITY.receiptsList, <ReceiptListPage />) },
   // Static `yeni` before `:sourceId`, so it is never read as a source id.
   { path: FINANCE_ROUTE.receiptsDraft.slice(1), element: gate(FINANCE_CAPABILITY.receiptsDraft, <ReceiptDraftPage />) },

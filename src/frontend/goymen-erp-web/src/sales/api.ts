@@ -74,6 +74,14 @@ import type { OrderCommandOutcome } from './orderAttempt'
 import type { ViewOutcome } from '../shell/uiState'
 import type { OrderDraftOptions } from './orderDraftForm'
 import { isReferenceId } from './wirePrimitives'
+import {
+  decodeRemainderChanges,
+  remainderChangesPath,
+  remainderDecisionPath,
+  type RemainderChangeRequest,
+  type RemainderChanges,
+  type RemainderDecisionRequest,
+} from './remainderChange'
 
 export const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? '/api/v1'
 const DEV_USER = (import.meta.env.VITE_DEV_USER as string | undefined) ?? 'company-a-user'
@@ -204,6 +212,19 @@ export async function fetchDraftDeliveryProgress(
   if (raw.status !== 200) return { type: 'http', status: raw.status, body: raw.body }
   const progress = decodeDeliveryProgress(raw.body, detail)
   return progress === null ? { type: 'malformed' } : { type: 'ok-single', data: progress }
+}
+
+/** Partial-delivery remainder facts; owner quantities stay nullable when the Logistics read is unavailable. */
+export async function fetchDraftRemainderChanges(
+  detail: DraftDetail,
+  companyId: string,
+  signal?: AbortSignal,
+): Promise<ViewOutcome<RemainderChanges>> {
+  const raw = await request(remainderChangesPath(detail.draft.id), { headers: headers(companyId) }, signal)
+  if ('failure' in raw) return readFailure(raw.failure)
+  if (raw.status !== 200) return { type: 'http', status: raw.status, body: raw.body }
+  const changes = decodeRemainderChanges(raw.body)
+  return changes === null || changes.draftVersion !== detail.draft.version ? { type: 'malformed' } : { type: 'ok-single', data: changes }
 }
 
 /**
@@ -571,6 +592,43 @@ export interface CommandContext {
   /** The draft the command was sent for; an answer about another record is not this command's. */
   readonly draftId: string
 }
+
+async function sendDraftRemainderMutation(
+  path: string,
+  payload: RemainderChangeRequest | RemainderDecisionRequest,
+  context: CommandContext,
+  signal?: AbortSignal,
+): Promise<OrderCommandOutcome<DraftMutation>> {
+  const raw = await request(path, {
+    method: 'POST',
+    headers: { ...headers(context.companyId), 'Content-Type': 'application/json', 'Idempotency-Key': context.idempotencyKey },
+    body: JSON.stringify(payload),
+  }, signal)
+  if ('failure' in raw) {
+    if (raw.failure === 'aborted') return { type: 'aborted' }
+    if (raw.failure === 'offline') return { type: 'offline' }
+    return { type: 'network-error' }
+  }
+  if (raw.status !== STATE_COMMAND_STATUS) {
+    if (raw.status >= 200 && raw.status < 300) return { type: 'malformed' }
+    return { type: 'http', status: raw.status, problem: decodeProblem(raw.body, raw.status) }
+  }
+  const mutation = decodeDraftMutation(raw.body)
+  if (mutation === null || mutation.isReplay !== raw.replayed || mutation.detail.draft.id !== context.draftId
+    || mutation.detail.draft.companyId !== context.companyId) return { type: 'malformed' }
+  return { type: 'succeeded', data: mutation }
+}
+
+export const sendRemainderChangeRequest = (payload: RemainderChangeRequest, context: CommandContext, signal?: AbortSignal) =>
+  sendDraftRemainderMutation(remainderChangesPath(context.draftId), payload, context, signal)
+
+export const sendRemainderChangeDecision = (
+  changeNo: number,
+  decision: 'approval' | 'rejection',
+  payload: RemainderDecisionRequest,
+  context: CommandContext,
+  signal?: AbortSignal,
+) => sendDraftRemainderMutation(remainderDecisionPath(context.draftId, changeNo, decision), payload, context, signal)
 
 /**
  * One state command (submission / approval / rejection): 200 with the draft after the transition

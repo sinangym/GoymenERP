@@ -16,6 +16,13 @@ public interface ISalesOrderLineReferencePortV1
     Task<SalesOrderLineReferenceAnswerV1> GetApprovedLineAsync(Guid orderId, Guid lineId, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Logistics-specific read for an effective-dated loading cap. Existing consumers keep the identity-only read above;
+    /// implementations that have not yet published a loading source remain compatible and answer their normal line.
+    /// </summary>
+    Task<SalesOrderLineReferenceAnswerV1> GetApprovedLineForLoadingAsync(Guid orderId, Guid lineId, DateOnly effectiveOn,
+        CancellationToken cancellationToken = default) => GetApprovedLineAsync(orderId, lineId, cancellationToken);
+
+    /// <summary>
     /// LOG-4b: the company's APPROVED order lines for loading as a LINE page — <paramref name="pageSize"/>
     /// (1–100) caps the lines actually returned, whatever the drafts' line counts (FİNANS #358 P2) — newest
     /// draft first, by the Sales owner's opaque, company-bound COMPOSITE cursor (draft + line position, so a
@@ -53,7 +60,8 @@ public sealed record SalesApprovedLineReferenceV1(
     string UnitCode,
     string QuantityText,
     DateOnly? RequestedDeliveryDate,
-    int Revision);
+    int Revision,
+    string RemainderState = SalesRemainderChangeNamesV1.Open);
 
 public enum SalesOrderLineReferenceOutcomeV1
 {
@@ -74,6 +82,30 @@ public sealed record SalesOrderLineReferenceAnswerV1(
     string? ApprovalState);
 
 /// <summary>
+/// OPEN-004 consumer boundary: Sales has already resolved the line override or the versioned Settings
+/// product-group default into one maximum total loading-instruction quantity in the order unit. Logistics
+/// never calculates a percentage, chooses a default or converts a unit. Null on the line means that the
+/// source is unavailable; it is never repaired into zero.
+/// </summary>
+public sealed record SalesOrderLineLoadingLimitV1(
+    Guid CompanyId,
+    Guid OrderId,
+    Guid LineId,
+    Guid UnitId,
+    long SalesOrderVersion,
+    string MaximumAggregateQuantityText,
+    string SourceOwner,
+    string SourceId,
+    string SourceVersion,
+    DateOnly EffectiveOn);
+
+public static class SalesOrderLineLoadingLimitSourcesV1
+{
+    /// <summary>User decision 5917438293 option 7B: without a defined profile, the approved order quantity is the cap.</summary>
+    public const string ApprovedOrderQuantity = "SalesOrderQuantity";
+}
+
+/// <summary>
 /// The approved line's identity facts as stored: the company, the order and the line, the
 /// customer (party + company account), the product and its version as the Product owner answered
 /// it, the order unit, the exact quantity text (Ö2: kept verbatim), the commercial revision and the
@@ -91,4 +123,6 @@ public sealed record SalesOrderLineReferenceV1(
     Guid OrderUnitId,
     string QuantityText,
     int Revision,
-    long Version);
+    long Version,
+    string RemainderState = SalesRemainderChangeNamesV1.Open,
+    SalesOrderLineLoadingLimitV1? LoadingLimit = null);

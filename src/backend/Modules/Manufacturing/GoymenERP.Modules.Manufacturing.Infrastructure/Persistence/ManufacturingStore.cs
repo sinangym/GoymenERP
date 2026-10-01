@@ -562,6 +562,100 @@ public sealed class ManufacturingStore(
         await SaveAsync(cancellationToken);
     }
 
+    public async Task CloseOrderWithPolicyAsync(Guid orderId, long expectedVersion, Guid closedByUserId,
+        DateTimeOffset closedAt, ClosureTolerancePolicySnapshotV1 policy,
+        ClosureExceptionApprovalV1? exceptionApproval,
+        ManufacturingPersistenceAuthorityFenceV1 persistenceAuthority,
+        ManufacturingCommandMetadata metadata, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(policy);
+        ArgumentNullException.ThrowIfNull(persistenceAuthority);
+        RequireMetadata(metadata);
+        var companyId = RequireResolvedCompany();
+        var row = await dbContext.Orders.SingleOrDefaultAsync(candidate => candidate.Id == orderId, cancellationToken)
+            ?? throw Refused(ManufacturingStoreCodes.OrderNotFound, "Bu şirketin böyle bir emri yok.");
+        var order = await RestoreOrderAsync(row, cancellationToken);
+        var versionBefore = order.Version;
+
+        // The application-level checks protect the reads. This final fresh fence runs after all stored facts have
+        // been rebuilt and before the domain object or EF change tracker is changed, leaving no order, decision,
+        // audit or command effect when either the captured context or a required permission has gone away.
+        if (!await persistenceAuthority.RevalidateAsync(companyId, closedByUserId, cancellationToken))
+        {
+            throw Refused(ManufacturingStoreCodes.AuthorityDenied,
+                "Üretim emri kapanış yetkisi kalıcılık sınırında doğrulanamadı; hiçbir şey kaydedilmedi.");
+        }
+
+        order.CloseWithPolicy(expectedVersion, closedByUserId, closedAt, policy, exceptionApproval);
+
+        dbContext.OrderClosureDecisions.Add(new OrderClosureDecisionRow
+        {
+            CompanyId = companyId,
+            OrderId = order.Id,
+            OrderVersion = versionBefore,
+            PolicyId = policy.PolicyId,
+            PolicyVersion = policy.PolicyVersion,
+            Process = (int)policy.Process,
+            MaximumFirePercent = Canonical(policy.MaximumFirePercent),
+            IsActive = policy.IsActive,
+            EffectiveFrom = policy.EffectiveFrom,
+            EffectiveThrough = policy.EffectiveThrough,
+            SelectedForDate = policy.SelectedForDate,
+            ApprovedByUserId = exceptionApproval?.ApprovedByUserId,
+            ApprovalReason = exceptionApproval?.Reason,
+            ApprovalOrderVersion = exceptionApproval?.OrderVersion,
+            ApprovalPolicyId = exceptionApproval?.PolicyId,
+            ApprovalPolicyVersion = exceptionApproval?.PolicyVersion,
+            ApprovedAtUtc = exceptionApproval?.ApprovedAtUtc,
+        });
+
+        row.Status = (int)order.Status;
+        row.ClosedByUserId = order.ClosedByUserId;
+        row.ClosedAtUtc = order.ClosedAtUtc;
+        row.Version = order.Version;
+        row.UpdatedAtUtc = timeProvider.GetUtcNow();
+        Audit(metadata, companyId, OrderEntityType, order.Id, "manufacturing.order.closed.v2", "CloseWithPolicy",
+            versionBefore, order.Version, before: JsonSerializer.Serialize(new { status = "Open" }, Json),
+            after: JsonSerializer.Serialize(new
+            {
+                status = "Closed",
+                tolerance = new
+                {
+                    policy.PolicyId,
+                    policy.PolicyVersion,
+                    process = policy.Process.ToString(),
+                    maximumFirePercent = Canonical(policy.MaximumFirePercent),
+                    policy.IsActive,
+                    policy.EffectiveFrom,
+                    policy.EffectiveThrough,
+                    policy.SelectedForDate,
+                },
+                exceptionApproval = exceptionApproval is null ? null : new
+                {
+                    exceptionApproval.ApprovedByUserId,
+                    exceptionApproval.Reason,
+                    exceptionApproval.OrderVersion,
+                    exceptionApproval.PolicyId,
+                    exceptionApproval.PolicyVersion,
+                    exceptionApproval.ApprovedAtUtc,
+                },
+                balances = order.PlannedInputs.Select(input => order.BalanceOf(input.ParentRollId)).Select(balance => new
+                {
+                    balance.ParentRollId,
+                    issued = balance.Issued.Value,
+                    returned = balance.Returned.Value,
+                    fire = balance.OutputOf(OutputClass.Scrap).Value
+                        + balance.OutputOf(OutputClass.ProcessLoss).Value,
+                    netIssued = balance.NetIssued.Value,
+                    workInProgress = balance.WorkInProgress.Value,
+                    unexplained = balance.Unexplained,
+                }),
+            }, Json),
+            exceptionApproval?.Reason ?? "Üretim emri tolerans profiliyle kapanışı");
+        Complete(metadata, companyId, order);
+        await SaveAsync(cancellationToken);
+    }
+
     /// <summary>
     /// One page of this company's orders from the order rows and their input snapshot: no fact is
     /// read and no balance is computed (a balance is the order read's answer, roll by roll). The
@@ -845,11 +939,13 @@ public sealed class ManufacturingStore(
         var facts = await dbContext.Facts.AsNoTracking()
             .Where(fact => fact.OrderId == row.Id)
             .ToListAsync(cancellationToken);
+        var closureDecision = await dbContext.OrderClosureDecisions.AsNoTracking()
+            .SingleOrDefaultAsync(decision => decision.OrderId == row.Id, cancellationToken);
         IEnumerable<FactRow> Of(FactKind kind) => facts.Where(fact => fact.Kind == (int)kind);
 
         try
         {
-            return RestoreOrder(row, inputs, Of);
+            return RestoreOrder(row, inputs, Of, closureDecision);
         }
         catch (ManufacturingRuleException exception) when (exception.Code == ManufacturingRuleCodes.StoredRecordInvalid)
         {
@@ -872,7 +968,10 @@ public sealed class ManufacturingStore(
     }
 
     private static ProductionOrder RestoreOrder(OrderRow row, IReadOnlyList<OrderInputRow> inputs,
-        Func<FactKind, IEnumerable<FactRow>> Of) =>
+        Func<FactKind, IEnumerable<FactRow>> Of, OrderClosureDecisionRow? closureDecision)
+    {
+        var (policy, approval) = RestoreClosureDecision(closureDecision);
+        return
         ProductionOrder.Restore(
             row.Id, row.PlanId, row.CompanyId, row.WorkCenterId, (ManufacturingProcess)row.Process,
             Target(row.TargetBasis, row.TargetKg),
@@ -886,7 +985,42 @@ public sealed class ManufacturingStore(
                 (OutputClass)(fact.OutputClass ?? 0), new Kilograms(fact.MassKg), fact.OccurredAtUtc, Cost(fact.CostStatus))),
             Of(FactKind.WipMeasurement).Select(fact => new WipMeasurement(fact.Id, fact.ParentRollId, new Kilograms(fact.MassKg),
                 fact.OccurredAtUtc)),
-            row.ClosedByUserId, row.ClosedAtUtc, row.Version);
+            row.ClosedByUserId, row.ClosedAtUtc, row.Version, policy, approval);
+    }
+
+    private static (ClosureTolerancePolicySnapshotV1? Policy, ClosureExceptionApprovalV1? Approval)
+        RestoreClosureDecision(OrderClosureDecisionRow? row)
+    {
+        if (row is null)
+        {
+            return (null, null);
+        }
+
+        try
+        {
+            if (!decimal.TryParse(row.MaximumFirePercent, NumberStyles.AllowDecimalPoint,
+                    CultureInfo.InvariantCulture, out var maximumFirePercent))
+            {
+                throw new ArgumentException("Kayıtlı tolerans yüzdesi decimal değildir.");
+            }
+
+            var policy = new ClosureTolerancePolicySnapshotV1(
+                row.CompanyId, row.PolicyId, row.PolicyVersion, (ManufacturingProcess)row.Process,
+                maximumFirePercent, row.IsActive, row.EffectiveFrom, row.EffectiveThrough, row.SelectedForDate);
+            var approval = row.ApprovedByUserId is not Guid approvedBy
+                ? null
+                : ClosureExceptionApprovalV1.Create(
+                    row.CompanyId, row.OrderId, approvedBy, row.ApprovalReason!,
+                    row.ApprovalOrderVersion ?? 0, row.ApprovalPolicyId ?? Guid.Empty,
+                    row.ApprovalPolicyVersion ?? 0, row.ApprovedAtUtc ?? default);
+            return (policy, approval);
+        }
+        catch (ArgumentException)
+        {
+            throw new ManufacturingRuleException(
+                ManufacturingRuleCodes.StoredRecordInvalid, "Kayıtlı kapanış kararı geçersiz.");
+        }
+    }
 
     /// <summary>
     /// A plan has a slitting spec exactly when it has slit lines; a winding target without lines is a

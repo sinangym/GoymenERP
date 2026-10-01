@@ -28,6 +28,19 @@ public static class ErpPermissions
         "counterparty.accounts.status.update";
 
     /// <summary>
+    /// AT-009 (user decision 2026-09-30): enter a Cari's first VKN/TCKN and propose a change of an existing one (the
+    /// maker), and approve or reject someone else's proposal (the checker) — the Counterparty owner's names
+    /// (CounterpartyTaxIdentityPermissionsV1). Registered, not granted: no role, seed or user receives them here.
+    /// Company-wide only, as every Counterparty name. Approve is Critical (a VKN/TCKN change is a critical master
+    /// change under CARI-DEC-004, as the bank account is); update is not. Holding approve never lets the proposer
+    /// decide their own request: that is the module's maker-checker rule, not a grant.
+    /// </summary>
+    public const string CounterpartyPartiesTaxIdentityUpdate = "counterparty.parties.tax-identity.update";
+
+    /// <inheritdoc cref="CounterpartyPartiesTaxIdentityUpdate"/>
+    public const string CounterpartyPartiesTaxIdentityApprove = "counterparty.parties.tax-identity.approve";
+
+    /// <summary>
     /// The narrow operational product-selection read (K-1(a), Sinan's decision relayed in Business
     /// #66 5719251344; registration asked for in 5720016574 §3). Registering the name makes it
     /// KNOWN, not granted: no role and no user receives it here, and an actor without an explicit
@@ -157,6 +170,14 @@ public static class ErpPermissions
     /// decision, not this file's.
     /// </summary>
     public const string ManufacturingOrdersClose = "manufacturing.orders.close";
+
+    /// <summary>
+    /// Approves a reasoned Manufacturing close whose persisted Settings snapshot proves the fire ratio is
+    /// outside tolerance. Registered company-wide but deliberately not granted by any production role.
+    /// It never replaces the normal close permission.
+    /// </summary>
+    public const string ManufacturingOrdersCloseExceptionApprove =
+        "manufacturing.orders.close-exception.approve";
 
     /// <summary>
     /// K4.4 (ORG): reading one production plan back. Its own name because approving a plan is not
@@ -376,6 +397,14 @@ public static class ErpPermissions
     public const string SalesOrdersQuantityWrite = "sales.orders.quantity.write";
 
     /// <summary>
+    /// Q9: records the customer's acceptance of the current internally approved Sales order revision. Its own
+    /// name: draft read, create, internal approval and quantity write do not confer it. Registration grants
+    /// nothing; only the disposable s04 acceptance actor receives it in that run database. Company-wide only,
+    /// like the other Sales commands. Not Critical: no approved source adds grant-time dual control.
+    /// </summary>
+    public const string SalesOrdersCustomerAcceptanceRecord = "sales.orders.customer-acceptance.record";
+
+    /// <summary>
     /// LOG-4a (Business #66 5737790175: the loading instruction on approved order lines, one stock effect): the
     /// Logistics owner's names (LogisticsPermissionManifestV1), the backend owners' technical mapping (Business
     /// #254 5654539215) recorded and confirmed by the coordinator (#66 5743488059). Registered, not granted: no
@@ -542,6 +571,8 @@ public static class ErpPermissions
             CounterpartyPartiesUpdateBasic,
             CounterpartyAccountsCreate,
             CounterpartyAccountsStatusUpdate,
+            CounterpartyPartiesTaxIdentityUpdate,
+            CounterpartyPartiesTaxIdentityApprove,
             ProductOperationalSelectionRead,
             SalesDraftsCreate,
             SalesDraftsRead,
@@ -551,12 +582,14 @@ public static class ErpPermissions
             SalesOrdersDeliveryScheduleWrite,
             SalesOrdersCancel,
             SalesOrdersQuantityWrite,
+            SalesOrdersCustomerAcceptanceRecord,
             ManufacturingPlansWrite,
             ManufacturingPlansApprove,
             ManufacturingOrdersCreate,
             ManufacturingFactsRecord,
             ManufacturingOrdersRead,
             ManufacturingOrdersClose,
+            ManufacturingOrdersCloseExceptionApprove,
             ManufacturingPlansRead,
             InventoryLabelsRead,
             InventoryBalancesRead,
@@ -632,6 +665,7 @@ public static class ErpPermissions
             IdentityAssignmentsRead,
             FinanceBankAccountPropose,
             FinanceBankAccountApprove,
+            CounterpartyPartiesTaxIdentityApprove,
         ],
         StringComparer.Ordinal);
 
@@ -643,6 +677,8 @@ public static class ErpPermissions
             CounterpartyPartiesUpdateBasic,
             CounterpartyAccountsCreate,
             CounterpartyAccountsStatusUpdate,
+            CounterpartyPartiesTaxIdentityUpdate,
+            CounterpartyPartiesTaxIdentityApprove,
             ProductOperationalSelectionRead,
             SalesDraftsCreate,
             SalesDraftsRead,
@@ -652,12 +688,14 @@ public static class ErpPermissions
             SalesOrdersDeliveryScheduleWrite,
             SalesOrdersCancel,
             SalesOrdersQuantityWrite,
+            SalesOrdersCustomerAcceptanceRecord,
             ManufacturingPlansWrite,
             ManufacturingPlansApprove,
             ManufacturingOrdersCreate,
             ManufacturingFactsRecord,
             ManufacturingOrdersRead,
             ManufacturingOrdersClose,
+            ManufacturingOrdersCloseExceptionApprove,
             ManufacturingPlansRead,
             InventoryLabelsRead,
             InventoryBalancesRead,

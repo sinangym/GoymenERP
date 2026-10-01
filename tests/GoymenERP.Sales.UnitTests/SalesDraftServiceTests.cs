@@ -1142,6 +1142,52 @@ public sealed partial class SalesDraftServiceTests
     }
 
     [Fact]
+    public async Task Customer_acceptance_replays_once_and_a_commercial_revision_requires_a_fresh_acceptance()
+    {
+        var world = new World
+        {
+            // Central registers the production name in its own composition change. This service proof binds the
+            // new operation to an already-known test permission without creating a role, grant or admin exception.
+            Bindings = new SalesDraftServiceBindings(CreatePermission, ReadPermission, ApprovePermission, PricePermission,
+                PriceReadPermission, SchedulePermission, CancelPermission, QuantityPermission, ApprovePermission),
+        };
+        var created = (await world.Service().CreateDraftAsync(Request(), Metadata("k-create"))).Detail;
+        Assert.Equal((true, (string?)null, false), (created.CustomerAcceptance.Required,
+            created.CustomerAcceptance.AcceptedRevision, created.CustomerAcceptance.IsCurrentRevisionAccepted));
+
+        await world.Service().SubmitDraftAsync(created.Draft.Id, Command("2"), Metadata("k-submit"));
+        await world.Service().ApproveDraftAsync(created.Draft.Id, Command("3"), Metadata("k-approve"));
+        var accepted = await world.Service().RecordCustomerAcceptanceAsync(created.Draft.Id, Command("4"), Metadata("k-accept"));
+        Assert.Equal(("5", SalesDraftApiV1.Rev0, Actor, true), (accepted.Detail.Draft.Version,
+            accepted.Detail.CustomerAcceptance.AcceptedRevision, accepted.Detail.CustomerAcceptance.AcceptedBy,
+            accepted.Detail.CustomerAcceptance.IsCurrentRevisionAccepted));
+        Assert.Equal((SalesDraftCommands.RecordCustomerAcceptanceV1, ApprovePermission,
+                "sales.order-draft.customer-acceptance-recorded.v1"),
+            (world.Store.Transitions[^1].Command, world.Store.Transitions[^1].Envelope.PermissionCode,
+                world.Store.Transitions[^1].Audit.EventType));
+
+        var replay = await world.Service().RecordCustomerAcceptanceAsync(created.Draft.Id, Command("4"),
+            Metadata("k-accept", correlation: "retry"));
+        Assert.True(replay.IsReplay);
+        Assert.Equal(("synthetic-correlation", "5", true), (replay.OriginalCorrelationId,
+            replay.Detail.Draft.Version, replay.Detail.CustomerAcceptance.IsCurrentRevisionAccepted));
+        Assert.Single(world.Store.Transitions, item => item.Command == SalesDraftCommands.RecordCustomerAcceptanceV1);
+
+        var revised = await world.Service().ReviseCommercialAsync(created.Draft.Id,
+            Revision("5", new SalesDraftLineCommercialV1(created.Lines[0].LineId, "13.00", KgUnit, "5")), Metadata("k-r1"));
+        Assert.Equal(("6", "Rev.1", SalesDraftApiV1.Rev0, false), (revised.Detail.Draft.Version, revised.Detail.Draft.Revision,
+            revised.Detail.CustomerAcceptance.AcceptedRevision, revised.Detail.CustomerAcceptance.IsCurrentRevisionAccepted));
+
+        await world.Service().SubmitDraftAsync(created.Draft.Id, Command("6"), Metadata("k-submit-r1"));
+        await world.Service().ApproveDraftAsync(created.Draft.Id, Command("7"), Metadata("k-approve-r1"));
+        var acceptedRevision = await world.Service().RecordCustomerAcceptanceAsync(created.Draft.Id, Command("8"), Metadata("k-accept-r1"));
+        Assert.Equal(("9", "Rev.1", true), (acceptedRevision.Detail.Draft.Version,
+            acceptedRevision.Detail.CustomerAcceptance.AcceptedRevision,
+            acceptedRevision.Detail.CustomerAcceptance.IsCurrentRevisionAccepted));
+        Assert.Equal(2, world.Store.Transitions.Count(item => item.Command == SalesDraftCommands.RecordCustomerAcceptanceV1));
+    }
+
+    [Fact]
     public async Task A_rejection_carries_its_reason_returns_the_draft_to_the_preparer_and_a_resubmission_is_allowed()
     {
         var world = new World();
@@ -1623,6 +1669,22 @@ public sealed partial class SalesDraftServiceTests
                 (target, now) => recorded = mutate(target, impact!, now), audit,
                 async token => impact = await beforeWrite(draft!, token), cancellationToken);
             if (recorded is not null) Cancellations.Add(recorded);
+            return result;
+        }
+
+        public List<RemainderChangeFacts> RemainderChanges { get; } = [];
+
+        public async Task<SalesDraftStateResult?> ChangeRemainderAsync(SalesDraftWriteEnvelope envelope, string requestHash, string commandName,
+            Guid draftId, Func<SalesOrderDraft, DateTimeOffset, RemainderChangeFacts> mutate, SalesDraftStateAudit audit,
+            Func<SalesOrderDraft, CancellationToken, Task> beforeWrite, CancellationToken cancellationToken = default)
+        {
+            if (!SalesDraftCommands.IsRemainderCommand(commandName)) throw new ArgumentException("wrong command", nameof(commandName));
+            RemainderChangeFacts? recorded = null;
+            var draft = _drafts.SingleOrDefault(candidate => candidate.Id == draftId);
+            var result = await UpdateDraftStateAsyncCore(envelope, requestHash, commandName, draftId,
+                (target, now) => recorded = mutate(target, now), audit,
+                token => beforeWrite(draft!, token), cancellationToken);
+            if (recorded is not null) RemainderChanges.Add(recorded);
             return result;
         }
 

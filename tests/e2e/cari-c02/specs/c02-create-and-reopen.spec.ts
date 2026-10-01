@@ -131,7 +131,7 @@ test('C02-02 closing and reopening the card reads the SAME record back from the 
   await page.goto(createdPartyPath)
 
   await expect(page.getByRole('heading', { name: new RegExp(LEGAL_NAME) })).toBeVisible()
-  await expect(page.getByRole('heading', { name: CARD_IDENTITY_HEADING })).toBeVisible()
+  await expect(page.getByRole('heading', { name: CARD_IDENTITY_HEADING, exact: true })).toBeVisible()
 
   // The list IS published in this head, so the card's return is live and must work — the guards
   // added alongside suppress it only when the list is absent, and a guard that suppressed it here

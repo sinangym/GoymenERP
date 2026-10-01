@@ -251,14 +251,18 @@ public sealed class SalesOrderCancellationSqlServerRelationalAcceptanceTests
 
         await using var context = run.SalesContext(CompanyA);
         var applied = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
-        Assert.EndsWith("_AddRevisionReasons", applied[^1], StringComparison.Ordinal);
-        Assert.EndsWith("_AddDraftCancellations", applied[^2], StringComparison.Ordinal);
-        var error = await Assert.ThrowsAsync<SqlException>(() => context.GetService<IMigrator>().MigrateAsync(applied[^3]));
+        var cancellation = Array.FindIndex(applied,
+            migration => migration.EndsWith("_AddDraftCancellations", StringComparison.Ordinal));
+        Assert.True(cancellation > 0);
+        var migrator = context.GetService<IMigrator>();
+        await migrator.MigrateAsync(applied[cancellation]);
+        Assert.Equal(applied[..(cancellation + 1)], await context.Database.GetAppliedMigrationsAsync());
+        var error = await Assert.ThrowsAsync<SqlException>(() => migrator.MigrateAsync(applied[cancellation - 1]));
         Assert.Equal(51055, error.Number);
-        Assert.Equal(applied[..^1], await context.Database.GetAppliedMigrationsAsync());
+        Assert.Equal(applied[..(cancellation + 1)], await context.Database.GetAppliedMigrationsAsync());
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[DraftCancellations] WHERE [DraftId] = @id", ("@id", draft.Id)));
-        // The empty AddRevisionReasons above it did roll back (no reason stored), so the schema is one migration behind
-        // the model; re-apply it before reading the order back through the current model.
+        // Later empty migrations rolled back before the cancellation guard; restore the current schema before
+        // rebuilding the order through the current model.
         await context.Database.MigrateAsync();
         Assert.Equal(applied, await context.Database.GetAppliedMigrationsAsync());
         // The rebuilt order carries its cancellation (the store's restore reads the row back through the domain).
