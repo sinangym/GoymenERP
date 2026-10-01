@@ -192,8 +192,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // AT-025: +3 operations work list SQL facts (264898d7… -> e410a445…).
             // AT-055: +4 dispatch-note draft SQL facts (e410a445… -> 010fcbd6…).
             // AT-055 lifecycle (#518, user decision 2026-09-30): +6 approve/cancel/e-İrsaliye/numbering SQL facts (010fcbd6… -> c5969829…).
+            // #527: +3 cross-instruction Sales line-limit atomicity facts (c5969829… -> fc08c53d…).
             ["tools/relational_inventory/logistics.txt"] =
-                "c596982944d43155ce986a641a1e4fb3093ad1c97b9f5bafba7d369286dd57bc",
+                "fc08c53d24fe830812aa2323406c70ef862ccae2c5bbbe498d503b3b0e65173a",
 
             // manufacturing
             // MFG close: owner-added closure/tolerance SQL facts extend the exact Manufacturing discovery inventory.
@@ -226,8 +227,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // AT-024: +2 SalesDeliveryProgressSqlServerRelationalAcceptanceTests facts (00189b7b… -> 719d0d03…).
             // DEC-SAL-005: +4 SalesOrderCancellationSqlServerRelationalAcceptanceTests facts (719d0d03… -> 5508f4ed…).
             // DEC-SAL-002: +4 SalesOrderQuantityRevisionSqlServerRelationalAcceptanceTests facts (5508f4ed… -> 3ef99851…).
+            // #527 Q9: +1 customer-acceptance persistence/replay/cutover fact (3ef99851… -> dd3c72d9…).
             ["tools/relational_inventory/sales.txt"] =
-                "3ef9985194153ac76a55345420d5ae31018a6be9156636f6656b31f48c97fb4d",
+                "dd3c72d9ee80f398024d5a2e0c6470d99a91260686b6c35b6ad31c8bf2427eae",
         };
     private const string ContinuousIntegrationWorkflowPath = ".github/workflows/ci.yml";
     private const string ReviewedContinuousIntegrationWorkflowFingerprint =
