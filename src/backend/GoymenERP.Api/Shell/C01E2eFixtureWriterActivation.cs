@@ -73,6 +73,10 @@ internal static class C01E2eFixtureWriterActivation
         // r14: Product's fixed Active stock candidate. It is not made Sellable or Purchasable.
         services.AddProductStockCandidateFixtureStore(CreateProductFixtureUnitProfiles);
         services.AddScoped<C01E2eProductStockCandidateFixtureWriter>();
+        // l04: Product's separate fixed Active+Purchasable+Sellable card, shared by the purchase,
+        // stock and sales readers only inside this complete runner-bound fixture gate.
+        services.AddProductPurchaseSalesStockJourneyFixtureStore(CreateProductFixtureUnitProfiles);
+        services.AddScoped<C01E2eProductPurchaseSalesStockJourneyFixtureWriter>();
         // s04 (SALES-A1 browser acceptance): Sales's draft port (SİPARİŞ's), behind the same gate.
         services.AddSalesDraftFixtureStore();
         services.AddScoped<C01E2eSalesDraftFixtureWriter>();
@@ -458,6 +462,27 @@ public sealed class C01E2eProductStockCandidateFixtureWriter
 
     public Task<ProductStockCandidateFixtureOutput> EnsureAsync(CancellationToken cancellationToken) =>
         _store.EnsureAsync(cancellationToken);
+}
+
+/// <summary>
+/// Exposes Product's fixed l04 purchase-to-delivery card only inside the complete browser-runner gate.
+/// The Product-owned port accepts no caller-selected identity, product, role or business value.
+/// </summary>
+public sealed class C01E2eProductPurchaseSalesStockJourneyFixtureWriter
+{
+    private readonly IProductPurchaseSalesStockJourneyFixtureStore _store;
+
+    public C01E2eProductPurchaseSalesStockJourneyFixtureWriter(
+        IHostEnvironment environment,
+        IConfiguration configuration,
+        IProductPurchaseSalesStockJourneyFixtureStore store)
+    {
+        C01E2eFixtureWriterActivation.RequireGate(environment, configuration);
+        _store = store;
+    }
+
+    public Task<ProductPurchaseSalesStockJourneyFixtureOutput> EnsureAsync(
+        CancellationToken cancellationToken) => _store.EnsureAsync(cancellationToken);
 }
 
 /// <summary>
