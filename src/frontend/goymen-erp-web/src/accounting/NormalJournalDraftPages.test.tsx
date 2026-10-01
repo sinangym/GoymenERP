@@ -56,6 +56,11 @@ function draft(overrides: Record<string, unknown> = {}) {
   }
 }
 
+async function selectRecordedSource() {
+  await screen.findByRole('option', { name: /SENTETIK-TAHSILAT-1/ })
+  fireEvent.change(screen.getByLabelText('Onaylı finans kaynağı'), { target: { value: SOURCE } })
+}
+
 afterEach(() => {
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
@@ -73,7 +78,7 @@ describe('normal journal source-bound creation', () => {
       },
     })
     renderAt(ACCOUNTING_ROUTE.normalDraftCreate)
-    fireEvent.change(await screen.findByLabelText('Onaylı finans kaynağı'), { target: { value: SOURCE } })
+    await selectRecordedSource()
     await screen.findByText('Onaylı ayna mikro-v1; kural approved-rule-v1.')
     const accounts = screen.getAllByLabelText('Onaylı hesap')
     fireEvent.change(accounts[0], { target: { value: `Debit:${ACCOUNT_1}` } })
@@ -116,7 +121,7 @@ describe('normal journal source-bound creation', () => {
       },
     })
     renderAt(ACCOUNTING_ROUTE.normalDraftCreate)
-    fireEvent.change(await screen.findByLabelText('Onaylı finans kaynağı'), { target: { value: SOURCE } })
+    await selectRecordedSource()
     await screen.findByText('Onaylı ayna mikro-v1; kural approved-rule-v1.')
     const accounts = screen.getAllByLabelText('Onaylı hesap')
     fireEvent.change(accounts[0], { target: { value: `Debit:${ACCOUNT_1}` } })
@@ -159,7 +164,7 @@ describe('normal journal source-bound creation', () => {
     renderAt(ACCOUNTING_ROUTE.normalDraftCreate)
     const picker = await screen.findByLabelText('Onaylı finans kaynağı')
     expect(screen.queryByRole('option', { name: /SENTETIK-TASLAK-ILK-SAYFA/ })).toBeNull()
-    screen.getByRole('option', { name: /SENTETIK-TAHSILAT-1/ })
+    await screen.findByRole('option', { name: /SENTETIK-TAHSILAT-1/ })
     expect(requestsFor(recorded, '/finance/manual-receipts', 'GET')).toHaveLength(2)
     fireEvent.change(picker, { target: { value: SOURCE } })
     await screen.findByText('Onaylı ayna mikro-v1; kural approved-rule-v1.')
@@ -182,7 +187,7 @@ describe('normal journal source-bound creation', () => {
       },
     })
     const first = renderAt(ACCOUNTING_ROUTE.normalDraftCreate)
-    fireEvent.change(await screen.findByLabelText('Onaylı finans kaynağı'), { target: { value: SOURCE } })
+    await selectRecordedSource()
     await screen.findByText('Onaylı ayna mikro-v1; kural approved-rule-v1.')
     const accounts = screen.getAllByLabelText('Onaylı hesap')
     fireEvent.change(accounts[0], { target: { value: `Debit:${ACCOUNT_1}` } })

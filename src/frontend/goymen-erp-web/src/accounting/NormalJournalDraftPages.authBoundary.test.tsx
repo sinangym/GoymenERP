@@ -72,7 +72,8 @@ function draft() {
 }
 
 async function fillCreateForm() {
-  fireEvent.change(await screen.findByLabelText(/Onaylı finans kaynağı/i), { target: { value: SOURCE } })
+  await screen.findByRole('option', { name: /SENTETIK-AUTH-1/ })
+  fireEvent.change(screen.getByLabelText(/Onaylı finans kaynağı/i), { target: { value: SOURCE } })
   await screen.findByText(/Onaylı ayna 1; kural 1/i)
   fireEvent.change(screen.getByLabelText(/İşlem tarihi/i), { target: { value: '2026-09-24' } })
   fireEvent.change(screen.getByLabelText(/Muhasebe tarihi/i), { target: { value: '2026-09-24' } })
@@ -106,8 +107,8 @@ describe('normal journal command security and company fences', () => {
       respond: (url) => url.includes('/finance/manual-receipts') ? json({ status: 403 }, 403) : undefined,
     })
     renderAt(ACCOUNTING_ROUTE.normalDraftCreate)
-    await waitFor(() => expect(screen.queryByRole('heading', { name: 'Yeni normal fiş taslağı' })).toBeNull())
-    expect(screen.getByText(/bulunamadı/i)).toBeTruthy()
+    await waitFor(() => expect(document.querySelector('[data-state="not-found"]')).not.toBeNull())
+    expect(screen.queryByRole('heading', { name: 'Yeni normal fiş taslağı' })).toBeNull()
   })
 
   it('does not report a late source-list 401 after another company becomes current', async () => {
