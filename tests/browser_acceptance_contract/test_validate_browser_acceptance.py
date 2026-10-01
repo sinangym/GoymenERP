@@ -265,6 +265,37 @@ class WorkflowTests(unittest.TestCase):
             validator.SUITE_IDENTITY_PERMISSIONS["fin01"],
         )
 
+    def test_fin01_fixture_output_requires_the_read_only_actor(self):
+        seed = {
+            "companyId": "10000000-0000-0000-0000-000000000001",
+            "partyId": "b1000000-0000-4000-8000-00000000f101",
+            "companyAccountId": "b1000000-0000-4000-8000-00000000f102",
+            "proposerActor": "fin01-proposer",
+            "approverActor": "fin01-approver",
+            "readerActor": "fin01-reader",
+        }
+
+        exported = validator.seed_export("fin01", seed)
+        prefix, payload = exported.split("=", 1)
+
+        self.assertEqual("BROWSER_E2E_FIN01_SEED", prefix)
+        self.assertEqual(seed, json.loads(payload))
+        self.assertEqual(frozenset(seed), validator.SUITE_FIXTURE_OUTPUTS["fin01"])
+        for key in ("readerActor", "unexpectedActor"):
+            malformed = dict(seed)
+            if key == "readerActor":
+                malformed.pop(key)
+            else:
+                malformed[key] = "fin01-unlisted"
+            with self.subTest(key=key):
+                with self.assertRaises(validator.ContractError):
+                    validator.seed_export("fin01", malformed)
+
+        duplicate = dict(seed)
+        duplicate["readerActor"] = duplicate["approverActor"]
+        with self.assertRaisesRegex(validator.ContractError, "distinct"):
+            validator.seed_export("fin01", duplicate)
+
     def test_s04_identity_permissions_accept_customer_acceptance_and_reject_unlisted_grants(self):
         permissions = validator.SUITE_IDENTITY_PERMISSIONS["s04"]
         self.assertEqual(

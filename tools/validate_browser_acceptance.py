@@ -246,7 +246,7 @@ SUITE_IDENTITY_PERMISSIONS = {
         "product.operational-selection.read",
     ),
     # The Finance names and the Cari owner's authorized party read. The list is the complete
-    # union of the disposable proposer and approver grants in fin01.override.yml.
+    # union of the disposable proposer, approver and read-only allocation reader grants in fin01.override.yml.
     "fin01": (
         "finance.bank-account.read",
         "finance.bank-account.propose",
@@ -503,8 +503,10 @@ SUITE_FIXTURE_OUTPUTS: dict[str, frozenset[str]] = {
         "outputCustodianId", "outputLocationId", "outputInitialBlock",
     }),
     # FİNANS's Suites/Fin01 seed (#332): the company, the customer opened through the real Cari API and
-    # its company account, and the two suite actors. No SQL, no gated writer, no Finance row.
-    "fin01": frozenset({"companyId", "partyId", "companyAccountId", "proposerActor", "approverActor"}),
+    # its company account, and the three suite actors. No SQL, no gated writer, no Finance row.
+    "fin01": frozenset({
+        "companyId", "partyId", "companyAccountId", "proposerActor", "approverActor", "readerActor",
+    }),
     # SİPARİŞ's Suites/S04 seed: the three actors, the company and the one Preparing draft written through
     # the gated Sales draft writer (C01E2eSalesDraftFixtureWriter).
     # SALES-A2a adds the second draft the delivery-reference path uses, the real party and its company
@@ -569,6 +571,9 @@ def seed_export(suite: str, seed: object) -> str:
     require(set(seed) == set(expected),
             f"seed output keys are not the closed list: missing {sorted(expected - set(seed))}, "
             f"extra {sorted(set(seed) - expected)}")
+    if suite == "fin01":
+        actors = [seed[key] for key in ("proposerActor", "approverActor", "readerActor")]
+        require(len(set(actors)) == len(actors), "fin01 seed actors must be distinct")
     mfg_actor_keys = frozenset({"recorderActor", "readerActor", "closerActor"})
     mfg_exact_text = {
         "issueRollCode": "SYN-MFG-ROLL-2",
