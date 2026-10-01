@@ -36,6 +36,8 @@ public static class FinancePermissionNames
 
     // F-03 technical declaration only. Central registration and every real grant remain separate.
     public const string AllocationWrite = "finance.allocation.write";
+    // Sinan #66/5916282504: viewing/reopening is independent from create/release.
+    public const string AllocationRead = "finance.allocation.read";
 
     // DEC-FIN-016 first release (customer cheque / note portfolio). Owner declarations: the central registry must know
     // them before the port measures them (until then every portfolio call is Unavailable, 503), and a human grants them.

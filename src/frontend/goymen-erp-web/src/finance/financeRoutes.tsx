@@ -38,6 +38,7 @@ import {
 } from './officialInvoiceImportRoutes'
 import { ManualBankPaymentStartPage, type ManualBankPaymentEntryContext } from './ManualBankPaymentStartPage'
 import { CustomerInstrumentPortfolioPage } from './CustomerInstrumentPortfolioPage'
+import { AllocationPage } from './AllocationPages'
 import {
   ManualBankPaymentCreatePage,
   ManualBankPaymentDetailPage,
@@ -188,5 +189,9 @@ export const financeRoutes: RouteObject[] = [
   {
     path: FINANCE_ROUTE.manualBankPaymentsDetail.slice(1),
     element: gate(FINANCE_CAPABILITY.manualBankPaymentsDetail, <ManualBankPaymentDetailRoute />),
+  },
+  {
+    path: FINANCE_ROUTE.allocationsList.slice(1),
+    element: gate(FINANCE_CAPABILITY.allocationsList, <AllocationPage />),
   },
 ]

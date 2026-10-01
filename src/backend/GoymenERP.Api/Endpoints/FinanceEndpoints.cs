@@ -631,6 +631,48 @@ public static class FinanceEndpoints
 
     private static void MapFinanceAllocationEndpoints(IEndpointRouteBuilder endpoints)
     {
+        endpoints.MapGet(AllocationsPath, async (
+                HttpContext httpContext,
+                IFinanceAllocationReadService service,
+                ICompanyContext companyContext,
+                ICurrentUser currentUser,
+                ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext);
+                return Read(await service.ListAuthorizedAsync(
+                    Context(companyContext, currentUser, correlation), cancellationToken));
+            })
+            .WithName("GetFinanceAllocationsV1")
+            .WithTags("Finance")
+            .RequireAuthorization(ErpPermissions.FinanceAllocationRead)
+            .RequireCompanyContext()
+            .Produces<FinanceAllocationPage>()
+            .ProducesErpAuthenticatedProblems()
+            .ProducesErpServiceUnavailable();
+
+        endpoints.MapGet(AllocationsPath + "/{allocationId:guid}", async (
+                Guid allocationId,
+                HttpContext httpContext,
+                IFinanceAllocationReadService service,
+                ICompanyContext companyContext,
+                ICurrentUser currentUser,
+                ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext);
+                return Read(await service.GetAuthorizedAsync(
+                    Context(companyContext, currentUser, correlation), allocationId, cancellationToken));
+            })
+            .WithName("GetFinanceAllocationV1")
+            .WithTags("Finance")
+            .RequireAuthorization(ErpPermissions.FinanceAllocationRead)
+            .RequireCompanyContext()
+            .Produces<FinanceAllocationDetail>()
+            .ProducesErpAuthenticatedProblems()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpServiceUnavailable();
+
         endpoints.MapPost(AllocationsPath, async (
                 HttpContext httpContext,
                 IFinanceAllocationService service,

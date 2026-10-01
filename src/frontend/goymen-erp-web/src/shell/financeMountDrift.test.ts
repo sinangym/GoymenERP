@@ -36,6 +36,7 @@ const ROUTED = [
     FINANCE_ROUTE.officialInvoiceImportUpload],
   [CAPABILITY.financeOfficialInvoiceImportApprove, FINANCE_CAPABILITY.officialInvoiceImportApprove,
     FINANCE_ROUTE.officialInvoiceImportApprove],
+  [CAPABILITY.financeAllocationsList, FINANCE_CAPABILITY.allocationsList, FINANCE_ROUTE.allocationsList],
   [
     CAPABILITY.financeReceiptsReverseApprove,
     FINANCE_CAPABILITY.receiptsReverseApprove,
@@ -67,6 +68,7 @@ const CONTROLS: readonly string[] = [
   FINANCE_CAPABILITY.receiptsReversePropose,
   FINANCE_CAPABILITY.manualBankPaymentsApprove,
   FINANCE_CAPABILITY.manualBankPaymentsRecord,
+  FINANCE_CAPABILITY.allocationsWrite,
 ]
 
 describe('shell ↔ Finance lane capability ids', () => {
@@ -139,6 +141,7 @@ describe('shell ↔ Finance lane capability ids', () => {
       'finance.customer-instruments.list': 'Müşteri Çekleri ve Senetleri',
       'finance.official-invoice-import.upload': 'Onaylı fatura taksit kaynağı yükle',
       'finance.official-invoice-import.approve': 'Resmî fatura aktarım onayları',
+      'finance.allocations.list': 'Finansal Dağıtımlar',
       'finance.receipts.reverse.approve': 'Ters Kayıt Onayları',
       'finance.bank-accounts.list': 'Banka Hesapları',
       'finance.bank-accounts.propose': '',

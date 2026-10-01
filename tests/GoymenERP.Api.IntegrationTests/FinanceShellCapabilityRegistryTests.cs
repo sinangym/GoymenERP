@@ -24,6 +24,8 @@ public sealed class FinanceShellCapabilityRegistryTests
 
         Assert.Equal(
             [
+                ("finance.allocations.list", "F-03", null),
+                ("finance.allocations.write", "F-03", "finance.allocations.list"),
                 ("finance.bank-accounts.approve", "F-04", "finance.bank-accounts.list"),
                 ("finance.bank-accounts.list", "F-04", null),
                 ("finance.bank-accounts.propose", "F-04-NEW", null),
@@ -64,7 +66,7 @@ public sealed class FinanceShellCapabilityRegistryTests
         var registry = new ShellCapabilityRegistry(providers,
             new ShellCapabilityAuthorityCatalog([ShellCapabilityRegistry.ComputeCandidateRevision(providers)]));
 
-        Assert.Equal(17, registry.Registrations.Count(registration => registration.Owner == FinanceShellCapabilityProvider.OwnerId));
+        Assert.Equal(19, registry.Registrations.Count(registration => registration.Owner == FinanceShellCapabilityProvider.OwnerId));
     }
 
     [Fact]

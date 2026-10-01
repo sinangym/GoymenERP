@@ -28,6 +28,7 @@ public sealed class Fin01BrowserSeed : IBrowserSuiteFixture
 
     private const string BankAccountMasterPath = "/api/v1/finance/bank-accounts/master";
     private const string AccountingPeriodsPath = "/api/v1/accounting/periods";
+    private const string AllocationsPath = "/api/v1/finance/allocations";
     private const int CustomerRole = 1;
 
     public string Suite => "fin01";
@@ -65,6 +66,12 @@ public sealed class Fin01BrowserSeed : IBrowserSuiteFixture
             {
                 throw new InvalidOperationException($"The bank-account master answered {actor} for another company.");
             }
+        }
+
+        var allocations = await context.GetJsonAsync(ApproverActor, CompanyGdc, AllocationsPath, cancellationToken);
+        if (allocations.GetProperty("companyId").GetGuid() != CompanyGdc)
+        {
+            throw new InvalidOperationException("The allocation list answered the fin01 approver for another company.");
         }
 
         return new Dictionary<string, string>(StringComparer.Ordinal)

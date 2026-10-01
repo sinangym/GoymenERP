@@ -52,6 +52,17 @@ export interface ReleaseFinanceAllocationRequest {
   readonly reason: string
 }
 
+export interface FinanceAllocationPage {
+  readonly companyId: string
+  readonly items: readonly FinanceAllocation[]
+  readonly windowFull: boolean
+}
+
+export interface FinanceAllocationDetail {
+  readonly allocation: FinanceAllocation
+  readonly openItemVersion: string
+}
+
 const FAIL = { ok: false } as const
 const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const VERSION = /^[1-9][0-9]*$/
@@ -145,4 +156,29 @@ export function decodeFinanceAllocationCommandResult(
     originalCorrelationId: source.originalCorrelationId,
     issues: issues as ValidationIssue[],
   })
+}
+
+export function decodeFinanceAllocationPage(value: unknown, companyId: string): Decoded<FinanceAllocationPage> {
+  const source = record(value)
+  if (source === null || !exact(source, ['companyId', 'items', 'windowFull']) || source.companyId !== companyId
+      || !Array.isArray(source.items) || typeof source.windowFull !== 'boolean') return FAIL
+  const items: FinanceAllocation[] = []
+  const allocationIds = new Set<string>()
+  for (const item of source.items) {
+    const decoded = decodeFinanceAllocation(item, companyId)
+    if (!decoded.ok) return FAIL
+    if (allocationIds.has(decoded.value.id)) return FAIL
+    allocationIds.add(decoded.value.id)
+    items.push(decoded.value)
+  }
+  if (items.length > 50 || (source.windowFull && items.length !== 50)) return FAIL
+  return ok({ companyId, items, windowFull: source.windowFull })
+}
+
+export function decodeFinanceAllocationDetail(value: unknown, companyId: string): Decoded<FinanceAllocationDetail> {
+  const source = record(value)
+  if (source === null || !exact(source, ['allocation', 'openItemVersion'])
+      || !text(source.openItemVersion) || !VERSION.test(source.openItemVersion)) return FAIL
+  const allocation = decodeFinanceAllocation(source.allocation, companyId)
+  return allocation.ok ? ok({ allocation: allocation.value, openItemVersion: source.openItemVersion }) : FAIL
 }

@@ -175,6 +175,7 @@ export const CAPABILITY = {
   financeCustomerInstrumentsList: 'finance.customer-instruments.list',
   financeOfficialInvoiceImportUpload: 'finance.official-invoice-import.upload',
   financeOfficialInvoiceImportApprove: 'finance.official-invoice-import.approve',
+  financeAllocationsList: 'finance.allocations.list',
   /** FIN-T06 pending reversal checker queue. Route `/finans/ters-kayit-onaylari`. */
   financeReceiptsReverseApprove: 'finance.receipts.reverse.approve',
   /** F-04 bank-account master. Route `/finans/banka-hesaplari`. */
@@ -302,6 +303,7 @@ export const CAPABILITY_ROUTE: Record<CapabilityId, string> = {
   [CAPABILITY.financeCustomerInstrumentsList]: '/finans/musteri-cek-senetleri',
   [CAPABILITY.financeOfficialInvoiceImportUpload]: '/finans/onayli-fatura-taksit-kaynagi-yukle',
   [CAPABILITY.financeOfficialInvoiceImportApprove]: '/finans/resmi-fatura-aktarim-onaylari',
+  [CAPABILITY.financeAllocationsList]: '/finans/dagitimlar',
   [CAPABILITY.financeReceiptsReverseApprove]: '/finans/ters-kayit-onaylari',
   [CAPABILITY.financeBankAccountsList]: '/finans/banka-hesaplari',
   [CAPABILITY.financeBankAccountsPropose]: '/finans/banka-hesaplari/yeni',
@@ -388,6 +390,7 @@ export const CAPABILITY_NAV_LABEL: Record<CapabilityId, string> = {
   [CAPABILITY.financeCustomerInstrumentsList]: 'Müşteri Çekleri ve Senetleri',
   [CAPABILITY.financeOfficialInvoiceImportUpload]: 'Onaylı fatura taksit kaynağı yükle',
   [CAPABILITY.financeOfficialInvoiceImportApprove]: 'Resmî fatura aktarım onayları',
+  [CAPABILITY.financeAllocationsList]: 'Finansal Dağıtımlar',
   [CAPABILITY.financeReceiptsReverseApprove]: 'Ters Kayıt Onayları',
   [CAPABILITY.financeBankAccountsList]: 'Banka Hesapları',
   // None of these three: the new draft is entered from a Cari account, the detail from a list row and

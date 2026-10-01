@@ -304,6 +304,12 @@ public static class ErpPermissions
     public const string FinanceAllocationWrite = "finance.allocation.write";
 
     /// <summary>
+    /// F-03 allocation list/detail reads. Separate from create/release; registration grants no role
+    /// or user access. Company-wide only because allocations have no narrower approved scope.
+    /// </summary>
+    public const string FinanceAllocationRead = "finance.allocation.read";
+
+    /// <summary>
     /// Sales order drafts (SALES-API, #321): the Sales owner's names (SalesPermissionManifestV1, same
     /// strings). Registered, not granted: no seeded role and no user receives them; who holds them is a
     /// human gate. Company-wide only: a draft belongs to the server-resolved company and the routes filter
@@ -659,6 +665,7 @@ public static class ErpPermissions
         FinancePartyLedgerRead,
         FinancePartyLedgerAmountRead,
         FinanceAllocationWrite,
+        FinanceAllocationRead,
             DocumentsFilesRead,
             DocumentsFilesUpload,
             IdentityProfileRead,
@@ -767,6 +774,7 @@ public static class ErpPermissions
         FinancePartyLedgerRead,
         FinancePartyLedgerAmountRead,
         FinanceAllocationWrite,
+        FinanceAllocationRead,
             DocumentsFilesRead,
             DocumentsFilesUpload,
             IdentityAuditRead,

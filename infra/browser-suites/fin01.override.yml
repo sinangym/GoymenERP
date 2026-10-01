@@ -23,7 +23,8 @@
 #                   finance.manual-receipt.reverse.approve, accounting.periods.read, and manual outgoing-payment
 #                   draft read / approve / record. Its final record revalidates the selected party/account through
 #                   the Cari owner, so this disposable actor also holds counterparty.parties.read. The same
-#                   checker alone lists/details/approves official-invoice batches, then reads the approved source.
+#                   checker alone lists/details/approves official-invoice batches, then reads the approved source and
+#                   creates/reopens/releases its F-03 allocation with separate read/write permissions.
 services:
   api:
     environment:
@@ -78,6 +79,8 @@ services:
       IdentitySeed__Roles__6__Permissions__7: counterparty.parties.read
       IdentitySeed__Roles__6__Permissions__8: finance.official-invoice-import.approve
       IdentitySeed__Roles__6__Permissions__9: finance.manual-receipt.draft.read
+      IdentitySeed__Roles__6__Permissions__10: finance.allocation.read
+      IdentitySeed__Roles__6__Permissions__11: finance.allocation.write
       IdentitySeed__Assignments__7__Id: b4000000-0000-4000-8000-00000000f101
       IdentitySeed__Assignments__7__UserId: b2000000-0000-4000-8000-00000000f101
       IdentitySeed__Assignments__7__RoleId: b3000000-0000-4000-8000-00000000f101

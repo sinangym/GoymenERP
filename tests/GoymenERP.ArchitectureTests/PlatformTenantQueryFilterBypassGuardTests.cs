@@ -171,9 +171,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // DEC-FIN-014: +3 POS collection SQL facts (b18c13d9… -> 7af8ecf1…).
             // DEC-FIN-016: +6 customer cheque / note SQL facts (7af8ecf1… -> de54339e…).
             // Party ledger: +2 SQL facts (de54339e… -> 84295fb2…).
-            // Official invoice approval: +3 checker list/detail/approve/reopen and migration rollback SQL facts.
+            // Official invoice approval: +3 checker list/detail/approve/reopen and migration rollback SQL facts.`r`n            // F-03 allocation read: +1 company/fresh-authority list/detail/reopen SQL fact.
             ["tools/relational_inventory/finance.txt"] =
-                "c62f753dacaec26c69da67b80e5b427b6e80ba3c265f8c6815392aef497c0f49",
+                "3f1aa0985339bd5ca3cc5db8128f0ac3d2266c67056a19d1439cfcd2957ee2c0",
 
             // identity
             // SY-01/SY-02: +2 IdentityAccessViewSqlServerRelationalAcceptanceTests facts (b159330c… -> a521143a…).
