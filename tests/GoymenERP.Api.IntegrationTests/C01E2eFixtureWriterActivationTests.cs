@@ -4,6 +4,7 @@ using GoymenERP.Modules.Identity.Domain.Assignments;
 using GoymenERP.Modules.Identity.Infrastructure.Fixtures;
 using GoymenERP.Modules.Identity.Infrastructure.Persistence;
 using GoymenERP.Modules.Product.Infrastructure.Fixtures;
+using GoymenERP.Modules.Settings.Application;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -30,6 +31,16 @@ public sealed class C01E2eFixtureWriterActivationTests
         [C01E2eFixtureWriterActivation.ComposeProjectConfigurationKey] = "goymen-c01-35384984300-1",
     };
 
+    private static readonly Dictionary<string, string?> ApiReadGate = new()
+    {
+        [BrowserSuiteApiReadFixtureActivation.ProfileConfigurationKey] =
+            BrowserSuiteApiReadFixtureActivation.ManufacturingProfile,
+        [BrowserSuiteApiReadFixtureActivation.DisposableConfigurationKey] = "CONFIRMED",
+        [BrowserSuiteApiReadFixtureActivation.TestedCommitConfigurationKey] = Commit,
+        [BrowserSuiteApiReadFixtureActivation.RunIdConfigurationKey] = "35384984300",
+        [BrowserSuiteApiReadFixtureActivation.ComposeProjectConfigurationKey] = "goymen-c01-35384984300-1",
+    };
+
     [Fact]
     public void Without_any_key_nothing_is_registered()
     {
@@ -49,6 +60,49 @@ public sealed class C01E2eFixtureWriterActivationTests
             || descriptor.ServiceType == typeof(C01E2eAccountingOpenPeriodFixtureWriter)
             || descriptor.ServiceType == typeof(IAccountingOpenPeriodFixtureStore)
             || descriptor.ServiceType == typeof(IAccountingPostedJournalFixtureStore));
+    }
+
+    [Fact]
+    public void Normal_api_without_the_read_fixture_gate_keeps_the_approved_Settings_provider()
+    {
+        var services = new ServiceCollection();
+        services.AddScoped<ISettingsManufacturingToleranceProviderV1, ApprovedSettingsPrerequisiteProvider>();
+
+        Assert.False(BrowserSuiteApiReadFixtureActivation.Configure(
+            services, new TestHostEnvironment("Testing"), Configuration(new Dictionary<string, string?>())));
+        var provider = Assert.Single(services, descriptor =>
+            descriptor.ServiceType == typeof(ISettingsManufacturingToleranceProviderV1));
+        Assert.Equal(typeof(ApprovedSettingsPrerequisiteProvider), provider.ImplementationType);
+    }
+
+    [Fact]
+    public void Exact_disposable_mfg_api_gate_replaces_only_the_read_only_tolerance_provider()
+    {
+        var services = new ServiceCollection();
+        services.AddScoped<ISettingsManufacturingToleranceProviderV1, ApprovedSettingsPrerequisiteProvider>();
+
+        Assert.True(BrowserSuiteApiReadFixtureActivation.Configure(
+            services, new TestHostEnvironment("Testing"), Configuration(ApiReadGate)));
+        var provider = Assert.Single(services, descriptor =>
+            descriptor.ServiceType == typeof(ISettingsManufacturingToleranceProviderV1));
+        Assert.Equal(typeof(C01E2eManufacturingToleranceFixtureProvider), provider.ImplementationType);
+        Assert.DoesNotContain(services, descriptor =>
+            descriptor.ServiceType == typeof(C01E2eProductMasterAssignmentFixtureWriter)
+            || descriptor.ServiceType == typeof(IProductMasterAssignmentFixtureStore));
+    }
+
+    [Fact]
+    public void A_partial_or_non_Testing_api_read_fixture_gate_fails_closed()
+    {
+        var partial = new Dictionary<string, string?>
+        {
+            [BrowserSuiteApiReadFixtureActivation.ProfileConfigurationKey] =
+                BrowserSuiteApiReadFixtureActivation.ManufacturingProfile,
+        };
+        Assert.Throws<InvalidOperationException>(() => BrowserSuiteApiReadFixtureActivation.Configure(
+            new ServiceCollection(), new TestHostEnvironment("Testing"), Configuration(partial)));
+        Assert.Throws<InvalidOperationException>(() => BrowserSuiteApiReadFixtureActivation.Configure(
+            new ServiceCollection(), new TestHostEnvironment("Production"), Configuration(ApiReadGate)));
     }
 
     [Fact]
