@@ -49,6 +49,7 @@ export const NAV_CAPABILITIES: readonly CapabilityId[] = [
    */
   CAPABILITY.productItemsList,
   CAPABILITY.financeManualBankPaymentsList,
+  CAPABILITY.financeAllocationsList,
   /**
    * Listed together with the route that serves it, on purpose: a nav entry whose route
    * is not mounted is a link to the not-found block. It still renders only where the

@@ -67,6 +67,13 @@ import { NAV_CAPABILITIES } from './AppShell'
 import { CAPABILITY, CAPABILITY_NAV_LABEL, type CapabilityId } from './capabilities'
 
 describe('nav entry points', () => {
+  it('publishes the Finance allocation work list through exactly one named shell entry', () => {
+    expect(
+      NAV_CAPABILITIES.filter((capability) => capability === CAPABILITY.financeAllocationsList),
+    ).toEqual([CAPABILITY.financeAllocationsList])
+    expect(CAPABILITY_NAV_LABEL[CAPABILITY.financeAllocationsList]).toBe('Finansal Dağıtımlar')
+  })
+
   it('gives every nav entry a non-empty label — no nameless link can be rendered', () => {
     const nameless = NAV_CAPABILITIES.filter((capability) => !CAPABILITY_NAV_LABEL[capability]?.trim())
     expect(nameless).toEqual([])

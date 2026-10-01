@@ -88,13 +88,20 @@ describe('AllocationPage', () => {
 
   it('ignores a late detail 403 after the company context has changed', async () => {
     const late = deferred<Response>()
-    let listReads = 0
-    const fetchMock = vi.fn(async (request: RequestInfo | URL) => {
+    const detailCompanies: string[] = []
+    const fetchMock = vi.fn(async (request: RequestInfo | URL, init?: RequestInit) => {
       const url = String(request)
-      if (url.endsWith(`/${ID}`)) return late.promise
-      listReads += 1
-      const company = listReads === 1 ? COMPANY_A : COMPANY_B
-      return new Response(JSON.stringify(page(company)), { status: 200 })
+      const company =
+        request instanceof Request
+          ? request.headers.get('X-Company-Id')
+          : new Headers(init?.headers).get('X-Company-Id')
+      if (url.endsWith(`/${ID}`)) {
+        detailCompanies.push(company ?? '')
+        return company === COMPANY_A ? late.promise : new Response(null, { status: 404 })
+      }
+      return new Response(JSON.stringify(page(company === COMPANY_B ? COMPANY_B : COMPANY_A)), {
+        status: 200,
+      })
     })
     vi.stubGlobal('fetch', fetchMock)
     renderFinance(
@@ -105,9 +112,11 @@ describe('AllocationPage', () => {
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
     const companyB = shellFor(COMPANY_B, 2, [FINANCE_CAPABILITY.allocationsList])
     await commitContext(companyB)
+    await waitFor(() => expect(detailCompanies).toContain(COMPANY_B))
     await act(async () => late.resolve(new Response(null, { status: 403 })))
     await waitFor(() => expect(currentShell().activeContext?.companyId).toBe(COMPANY_B))
     expect(currentShell().requestFenceGeneration).toBe(companyB.requestFenceGeneration)
+    expect(detailCompanies).toContain(COMPANY_A)
     expect(screen.queryByText(SOURCE)).toBeNull()
   })
 
