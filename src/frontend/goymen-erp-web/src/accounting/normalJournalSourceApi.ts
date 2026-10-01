@@ -1,12 +1,12 @@
 import type { ViewOutcome } from '../shell/uiState'
 import { decodeSourcePage, type SourcePage, type SourceSummary } from '../finance/contract'
-import { ACCOUNTING_BASE, devHeaders } from './api'
+import { ACCOUNTING_BASE, API_BASE, devHeaders } from './api'
 import {
   decodeNormalJournalDraftSourcePreparation,
   type NormalJournalDraftSourcePreparation,
 } from './contract'
 
-const FINANCE_SOURCES = '/api/v1/finance/manual-receipts'
+const FINANCE_SOURCES = `${API_BASE}/finance/manual-receipts`
 
 export async function fetchNormalJournalSources(
   companyId: string,
