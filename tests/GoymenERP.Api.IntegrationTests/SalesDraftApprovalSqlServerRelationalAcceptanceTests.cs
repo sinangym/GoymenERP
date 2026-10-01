@@ -459,8 +459,8 @@ public sealed class SalesDraftApprovalSqlServerRelationalAcceptanceTests
         var previous = Assert.Single(applied, migration => migration.EndsWith("_AddDraftRemainderChanges", StringComparison.Ordinal));
         var rollback = await Assert.ThrowsAsync<SqlException>(() => context.GetService<IMigrator>().MigrateAsync(previous));
         Assert.Equal(51060, rollback.Number);
-        Assert.EndsWith("_AddDraftCustomerAcceptance", Assert.Single((await context.Database.GetAppliedMigrationsAsync())
-            .Where(migration => migration.EndsWith("_AddDraftCustomerAcceptance", StringComparison.Ordinal))), StringComparison.Ordinal);
+        Assert.EndsWith("_AddDraftCustomerAcceptance", Assert.Single(await context.Database.GetAppliedMigrationsAsync(),
+            migration => migration.EndsWith("_AddDraftCustomerAcceptance", StringComparison.Ordinal)), StringComparison.Ordinal);
     }
 
     /// <summary>

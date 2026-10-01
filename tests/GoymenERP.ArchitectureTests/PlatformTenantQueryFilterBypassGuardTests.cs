@@ -268,7 +268,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // admitting Quantity/QuantityText under a quantity revision; no new table, query filter or key.
             ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/"
              + "Persistence/SalesDbContext.cs"] =
-                "b4c7b466c44a76837285248281fa52192455a3c83956c4dd38242aad6da4f71e",
+                "1b70585645b2157833050e750d1c3c3cf335616e4752efa2491614b127b7111c",
             // LOG-4a: company-scoped like Organization; every tenant row (instructions, lines, shares, attempts) and
             // AuditEvent carries the CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/"
@@ -800,7 +800,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         // replayed at its share position, plus the Sales order read; SqlClient count unchanged.
                         // Re-fingerprinted for the AT-055 lifecycle (#518): approve/cancel/e-İrsaliye steps written in the same save,
                         // the company series moved under its token, every step replayed in order; SqlClient count unchanged.
-                        "30dcae9c8dd828ee39aae3b69683e0d38fd910dad11823d351862b8ee112afcf",
+                        "ca27bb79907bd8a3649e9f59896f6a92ccd9e9d4c46c55b6d4887945f5015b19",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -927,7 +927,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // Re-fingerprinted for DEC-SAL-002: the price and quantity revisions share one archive-and-save
                     // core (still a single save through the filtered context); SqlClient count unchanged.
                     new(
-                        "383c57f5cc883c43982005cf1489145475723a3acd58d58b3b30ba5c55bc0baf",
+                        "7c29833d5f51472c65a404483d604372ee99283925bb43cd631eb38f2f9be875",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -1111,6 +1111,16 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // revision reason is stored; the THROW precedes the DropColumn. Forward fix.
                 ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20260928090000_AddRevisionReasons.cs"] =
                     new("236f74197308a8e753fa2b74cc25070be726c0de4ea0ab38f785e3f60284a8a3",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
+                // Q9 remainder changes are immutable order facts; Down refuses before dropping them.
+                ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20260930171959_AddDraftRemainderChanges.cs"] =
+                    new("38f3b04fce07c3260eab79e0d225030148e032e5041eda9b7963777cd12e4b28",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
+                // Q9 customer acceptance is immutable; Down refuses before removing the acceptance columns.
+                ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20260930223000_AddDraftCustomerAcceptance.cs"] =
+                    new("faf491c8f59d0fe55a0f929d91c20468134d07b816fd468389e3ae632f9f64a6",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 1 }),
                 // AT-053: the Down's only raw SQL is Logistics' module refusal (51056, used by no other migration) while
