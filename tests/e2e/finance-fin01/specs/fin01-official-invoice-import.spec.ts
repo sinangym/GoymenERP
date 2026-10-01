@@ -53,6 +53,16 @@ function expectEveryAnswerRewritten(answered: readonly Request[], rewritten: Rea
     'every API answer must belong to the actor-bound browser context').toEqual([])
 }
 
+async function canonicalActorId(page: Page): Promise<string> {
+  const identity = await page.evaluate(async () => {
+    const response = await fetch('/api/v1/identity/me')
+    return { status: response.status, body: await response.json() as { readonly userId?: unknown } }
+  })
+  expect(identity.status, JSON.stringify(identity.body)).toBe(200)
+  expect(identity.body.userId).toEqual(expect.stringMatching(/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i))
+  return identity.body.userId as string
+}
+
 test.describe.serial('FIN01 official invoice import (real API, real SQL, real Chromium)', () => {
   test('different checker approves, applies once and reopens the exact Finance open item', async ({ browser }) => {
     const openItemId = randomUUID()
@@ -69,6 +79,7 @@ test.describe.serial('FIN01 official invoice import (real API, real SQL, real Ch
     const makerRewritten = await asActor(makerContext, env.seed.proposerActor)
     const maker = await makerContext.newPage()
     const makerAnswers = watchAnswers(maker)
+    const makerActorId = await canonicalActorId(maker)
     await maker.goto('/finans/banka-hesaplari/yeni')
     const currency = maker.getByLabel('Para birimi', { exact: true })
     const tryOption = currency.locator('option', { hasText: /^TRY — / })
@@ -191,7 +202,7 @@ test.describe.serial('FIN01 official invoice import (real API, real SQL, real Ch
         batchChecksum: uploadPreviewBody.sourceSha256,
         status: 'Pending',
         version: '1',
-        uploadedBy: env.seed.proposerActor,
+        uploadedBy: makerActorId,
         approvedBy: null,
       },
     })
@@ -216,7 +227,9 @@ test.describe.serial('FIN01 official invoice import (real API, real SQL, real Ch
     const checkerRewritten = await asActor(checkerContext, env.seed.approverActor)
     const checker = await checkerContext.newPage()
     const checkerAnswers = watchAnswers(checker)
+    const checkerActorId = await canonicalActorId(checker)
     expect(env.seed.approverActor).not.toBe(env.seed.proposerActor)
+    expect(checkerActorId).not.toBe(makerActorId)
 
     await checker.goto('/finans/banka-hesaplari')
     const accountRow = checker.getByRole('row').filter({ hasText: allocationAccountName })
@@ -262,7 +275,7 @@ test.describe.serial('FIN01 official invoice import (real API, real SQL, real Ch
       readonly resource?: { readonly status?: unknown; readonly version?: unknown; readonly approvedBy?: unknown }
     }
     expect(approval.status(), JSON.stringify(approvalBody)).toBe(200)
-    expect(approvalBody.resource).toMatchObject({ status: 'Approved', version: '2', approvedBy: env.seed.approverActor })
+    expect(approvalBody.resource).toMatchObject({ status: 'Approved', version: '2', approvedBy: checkerActorId })
     await expect(checker.getByText('Kaynak onaylandı. Sürüm 2.', { exact: true })).toBeVisible()
 
     await checker.getByRole('button', { name: 'Onaylanan kaynağı aktar', exact: true }).click()
