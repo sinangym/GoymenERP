@@ -852,12 +852,13 @@ public sealed class FinanceCommandApiSqlServerRelationalAcceptanceTests
             Assert.Equal(1, await run.ScalarAsync<int>(
                 "SELECT COUNT(*) FROM sys.columns WHERE object_id = OBJECT_ID(N'finance.Commands') "
                 + "AND name = N'ManualBankPaymentId'"));
-            // The newest Finance migration is DEC-FIN-016's customer instruments, applied right after DEC-FIN-014's
-            // POS facts, which follow F-03's allocations.
+            // The newest Finance migration is the official-invoice approval source. It follows DEC-FIN-016's customer
+            // instruments, which remain after DEC-FIN-014's POS facts and F-03's allocations.
             var applied = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
-            Assert.EndsWith("_AddCustomerInstruments", applied[^1], StringComparison.Ordinal);
-            Assert.EndsWith("_AddPosCollectionFacts", applied[^2], StringComparison.Ordinal);
-            Assert.EndsWith("_AddFinanceAllocations", applied[^3], StringComparison.Ordinal);
+            Assert.EndsWith("_AddOfficialInvoiceImportApprovalV1", applied[^1], StringComparison.Ordinal);
+            Assert.EndsWith("_AddCustomerInstruments", applied[^2], StringComparison.Ordinal);
+            Assert.EndsWith("_AddPosCollectionFacts", applied[^3], StringComparison.Ordinal);
+            Assert.EndsWith("_AddFinanceAllocations", applied[^4], StringComparison.Ordinal);
         }
         var account = await run.ApprovedBankAccountAsync(CompanyA);
         await run.GrantAsync(Proposer, CompanyA, ManualPaymentPreparerGrants);

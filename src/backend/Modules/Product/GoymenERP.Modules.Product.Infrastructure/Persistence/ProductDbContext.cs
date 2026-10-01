@@ -196,6 +196,13 @@ public sealed class ProductDbContext(DbContextOptions<ProductDbContext> options)
         return base.SaveChangesAsync(acceptAllChangesOnSuccess: true, cancellationToken);
     }
 
+    internal Task<int> FlushImportEnlistedAsync(ProductImportParticipant participant, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(participant);
+        participant.ValidateFlush(this);
+        return base.SaveChangesAsync(acceptAllChangesOnSuccess: true, cancellationToken);
+    }
+
     internal Task<int> AddTechnicalCardFixtureAsync(CancellationToken cancellationToken)
     {
         // Fixed test data only; no arbitrary release input and no public SaveChanges enrollment.

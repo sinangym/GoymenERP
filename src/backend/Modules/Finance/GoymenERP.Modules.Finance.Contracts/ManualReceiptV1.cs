@@ -93,7 +93,7 @@ public enum FinanceAction
     ProposeBankAccountIbanChange, ApproveBankAccountIbanChange,
     SaveManualBankPaymentDraft, ReadManualBankPayments,
     ApproveManualBankPayment, RecordManualBankPayment,
-    WriteAllocation,
+    WriteAllocation, ReadAllocation,
     // DEC-FIN-016 first release: the customer cheque / note portfolio. Its own narrow names, because the portfolio's
     // lifecycle is not a receipt draft's; only collection creates a (recorded) receipt source.
     ReadCustomerInstruments, ReadCustomerInstrumentAmount, ReceiveCustomerInstrument,

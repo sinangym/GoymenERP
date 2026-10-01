@@ -245,8 +245,8 @@ SUITE_IDENTITY_PERMISSIONS = {
         "inventory.opening-stock.record",
         "product.operational-selection.read",
     ),
-    # The nineteen Finance names and the Cari owner's authorized party read. The list is the complete
-    # union of the disposable proposer and approver grants in fin01.override.yml.
+    # The Finance names and the Cari owner's authorized party read. The list is the complete
+    # union of the disposable proposer, approver and read-only allocation reader grants in fin01.override.yml.
     "fin01": (
         "finance.bank-account.read",
         "finance.bank-account.propose",
@@ -273,6 +273,14 @@ SUITE_IDENTITY_PERMISSIONS = {
         # Party ledger (user decision 2026-09-28): the disposable fin01-proposer alone holds the two ledger reads.
         "finance.party-ledger.read",
         "finance.party-ledger.amount.read",
+        # Official-invoice acceptance: proposer uploads; a different approver lists/details/approves and
+        # reaches the approved source through the existing manual-receipt draft read.
+        "finance.official-invoice-import.upload",
+        "finance.official-invoice-import.approve",
+        # F-03 same-record acceptance: the disposable approver reopens and releases the exact
+        # allocation created from the imported open item. These are existing Finance permissions.
+        "finance.allocation.read",
+        "finance.allocation.write",
     ),
     # SALES-A1's approval axis: the preparer creates and reads, the approver approves and reads, the reader reads.
     # SALES-A2a: the preparer reaches the Cari owner's contact information through its OWN party read.
@@ -496,8 +504,10 @@ SUITE_FIXTURE_OUTPUTS: dict[str, frozenset[str]] = {
         "outputCustodianId", "outputLocationId", "outputInitialBlock",
     }),
     # FİNANS's Suites/Fin01 seed (#332): the company, the customer opened through the real Cari API and
-    # its company account, and the two suite actors. No SQL, no gated writer, no Finance row.
-    "fin01": frozenset({"companyId", "partyId", "companyAccountId", "proposerActor", "approverActor"}),
+    # its company account, and the three suite actors. No SQL, no gated writer, no Finance row.
+    "fin01": frozenset({
+        "companyId", "partyId", "companyAccountId", "proposerActor", "approverActor", "readerActor",
+    }),
     # SİPARİŞ's Suites/S04 seed: the three actors, the company and the one Preparing draft written through
     # the gated Sales draft writer (C01E2eSalesDraftFixtureWriter).
     # SALES-A2a adds the second draft the delivery-reference path uses, the real party and its company
@@ -565,6 +575,9 @@ def seed_export(suite: str, seed: object) -> str:
     require(set(seed) == set(expected),
             f"seed output keys are not the closed list: missing {sorted(expected - set(seed))}, "
             f"extra {sorted(set(seed) - expected)}")
+    if suite == "fin01":
+        actors = [seed[key] for key in ("proposerActor", "approverActor", "readerActor")]
+        require(len(set(actors)) == len(actors), "fin01 seed actors must be distinct")
     mfg_actor_keys = frozenset({"recorderActor", "readerActor", "closerActor"})
     mfg_exact_text = {
         "issueRollCode": "SYN-MFG-ROLL-2",

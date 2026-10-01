@@ -37,11 +37,21 @@ public sealed class AuditDbContext(
 
     internal async Task AppendGroupSharedAsync(AuditEvent auditEvent, CancellationToken cancellationToken)
     {
-        _ = auditEvent.ToGroupSharedIntegrityData();
+        ArgumentNullException.ThrowIfNull(auditEvent);
+        await AppendGroupSharedBatchAsync([auditEvent], cancellationToken);
+    }
+
+    internal async Task AppendGroupSharedBatchAsync(IReadOnlyList<AuditEvent> auditEvents,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(auditEvents);
+        if (auditEvents.Count == 0)
+            throw new InvalidOperationException("At least one canonical group-shared audit event is required.");
+        foreach (var auditEvent in auditEvents) _ = auditEvent.ToGroupSharedIntegrityData();
         if (!Database.IsRelational() || Database.CurrentTransaction is null || groupSharedProductId.HasValue
             || ChangeTracker.Entries().Any())
             throw new InvalidOperationException("A fresh enlisted Audit writer context is required.");
-        AuditEvents.Add(auditEvent);
+        AuditEvents.AddRange(auditEvents);
         await base.SaveChangesAsync(acceptAllChangesOnSuccess: true, cancellationToken);
     }
 

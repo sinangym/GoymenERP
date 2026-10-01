@@ -49,6 +49,7 @@ import {
 import {
   PRODUCT_CAPABILITY,
   PRODUCT_CAPABILITY_ROUTE,
+  PRODUCT_IMPORT_ROUTE,
   productDetailPath,
 } from './capabilities'
 import {
@@ -340,12 +341,17 @@ function ProductList({ namespace }: { readonly namespace: string | null }) {
           <p className={styles.scopeNote}>{PRODUCT_LIST_TEXT.scopeNote}</p>
         </div>
         {canCreate ? (
-          <Link
-            className={styles.primaryAction}
-            to={PRODUCT_CAPABILITY_ROUTE[PRODUCT_CAPABILITY.productsCreate]}
-          >
-            {PRODUCT_LIST_TEXT.createAction}
-          </Link>
+          <div className={styles.headerActions}>
+            <Link className={styles.secondaryAction} to={PRODUCT_IMPORT_ROUTE}>
+              Excel’den içe aktar
+            </Link>
+            <Link
+              className={styles.primaryAction}
+              to={PRODUCT_CAPABILITY_ROUTE[PRODUCT_CAPABILITY.productsCreate]}
+            >
+              {PRODUCT_LIST_TEXT.createAction}
+            </Link>
+          </div>
         ) : null}
       </header>
 

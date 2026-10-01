@@ -168,6 +168,7 @@ export interface RecordedCall {
   readonly companyId: string | null
   readonly idempotencyKey: string | null
   readonly body: string | null
+  readonly formData: FormData | null
 }
 
 export interface HarnessConfig {
@@ -195,6 +196,8 @@ export interface HarnessConfig {
   readonly onDeactivate?: (attempt: number, body: string | null) => Response | Promise<Response>
   /** `POST /products/{id}/reactivation`; defaults to an Active v8 card. */
   readonly onReactivate?: (attempt: number, body: string | null) => Response | Promise<Response>
+  readonly onImportPreview?: (body: FormData) => Response | Promise<Response>
+  readonly onImportApply?: (attempt: number, body: FormData) => Response | Promise<Response>
 }
 
 /**
@@ -210,18 +213,21 @@ export function installFetch(config: HarnessConfig = {}) {
   let activationAttempts = 0
   let deactivationAttempts = 0
   let reactivationAttempts = 0
+  let importAttempts = 0
 
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === 'string' ? input : input.toString()
     const headers = (init?.headers ?? {}) as Record<string, string>
     const method = (init?.method ?? 'GET').toUpperCase()
     const body = typeof init?.body === 'string' ? init.body : null
+    const formData = init?.body instanceof FormData ? init.body : null
     calls.push({
       url,
       method,
       companyId: headers['X-Company-Id'] ?? null,
       idempotencyKey: headers['Idempotency-Key'] ?? null,
       body,
+      formData,
     })
 
     if (url.includes('/identity/me')) return json(IDENTITY)
@@ -244,6 +250,13 @@ export function installFetch(config: HarnessConfig = {}) {
       return (await config.onOptions?.(url)) ?? json(referenceOptions())
     }
     if (url.includes('/products')) {
+      if (url.includes('/products/imports/preview') && method === 'POST' && formData !== null) {
+        return (await config.onImportPreview?.(formData)) ?? json({}, 501)
+      }
+      if (url.endsWith('/products/imports') && method === 'POST' && formData !== null) {
+        importAttempts += 1
+        return (await config.onImportApply?.(importAttempts, formData)) ?? json({}, 501)
+      }
       if (method === 'PATCH') {
         editAttempts += 1
         return (

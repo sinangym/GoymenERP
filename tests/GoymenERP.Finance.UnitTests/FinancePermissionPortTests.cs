@@ -171,6 +171,13 @@ public sealed class FinancePermissionPortTests
 
     private static FinanceContext Context() => new FinanceContext(Company, Actor, "SENTETIK-correlation", null);
 
+    [Fact]
+    public void Allocation_read_and_write_have_distinct_names()
+    {
+        Assert.Equal("finance.allocation.read", FinancePermissionPort.NameOf(FinanceAction.ReadAllocation));
+        Assert.Equal("finance.allocation.write", FinancePermissionPort.NameOf(FinanceAction.WriteAllocation));
+    }
+
     private static FinancePermissionPort Port(FixedAuthority authority)
     {
         var company = new CompanyContext();

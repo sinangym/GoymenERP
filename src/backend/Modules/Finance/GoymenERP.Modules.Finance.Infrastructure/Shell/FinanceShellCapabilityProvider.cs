@@ -30,7 +30,7 @@ namespace GoymenERP.Modules.Finance.Infrastructure.Shell;
 public sealed class FinanceShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "CHATGPT-BUSINESS/FINANCE";
-    public const string OwnerContractVersion = "1.3";
+    public const string OwnerContractVersion = "1.5";
     public const string ReceiptListScreenId = "F-02";
     public const string ReceiptDraftScreenId = "F-02-NEW";
     public const string ReceiptDetailScreenId = "F-02-DETAIL";
@@ -57,6 +57,14 @@ public sealed class FinanceShellCapabilityProvider : IShellCapabilityProvider
     public const string CustomerInstrumentListCapabilityId = "finance.customer-instruments.list";
     public const string CustomerInstrumentListRouteId = "finance.customer-instruments.list";
     public const string CustomerInstrumentListRoutePath = "/finans/musteri-cek-senetleri";
+    public const string OfficialInvoiceImportUploadScreenId = "F-02-OFFICIAL-INVOICE-UPLOAD";
+    public const string OfficialInvoiceImportApprovalScreenId = "F-02-OFFICIAL-INVOICE-APPROVALS";
+    public const string OfficialInvoiceImportUploadCapabilityId = "finance.official-invoice-import.upload";
+    public const string OfficialInvoiceImportUploadRouteId = "finance.official-invoice-import.upload";
+    public const string OfficialInvoiceImportUploadRoutePath = "/finans/onayli-fatura-taksit-kaynagi-yukle";
+    public const string OfficialInvoiceImportApprovalCapabilityId = "finance.official-invoice-import.approve";
+    public const string OfficialInvoiceImportApprovalRouteId = "finance.official-invoice-import.approve";
+    public const string OfficialInvoiceImportApprovalRoutePath = "/finans/resmi-fatura-aktarim-onaylari";
 
     public const string BankAccountListCapabilityId = "finance.bank-accounts.list";
     public const string BankAccountListRouteId = "finance.bank-accounts";
@@ -80,6 +88,11 @@ public sealed class FinanceShellCapabilityProvider : IShellCapabilityProvider
     public const string ManualBankPaymentDetailRoutePath = "/finans/odemeler/:paymentId";
     public const string ManualBankPaymentApproveCapabilityId = "finance.manual-bank-payments.approve";
     public const string ManualBankPaymentRecordCapabilityId = "finance.manual-bank-payments.record";
+    public const string AllocationListScreenId = "F-03";
+    public const string AllocationListCapabilityId = "finance.allocations.list";
+    public const string AllocationListRouteId = "finance.allocations.list";
+    public const string AllocationListRoutePath = "/finans/dagitimlar";
+    public const string AllocationWriteCapabilityId = "finance.allocations.write";
 
     public string Owner => OwnerId;
 
@@ -124,6 +137,12 @@ public sealed class FinanceShellCapabilityProvider : IShellCapabilityProvider
             Declaration(CustomerInstrumentListCapabilityId, CustomerInstrumentListRouteId,
                 CustomerInstrumentListRoutePath, CustomerInstrumentListScreenId,
                 ShellCapabilityRoutePrecedence.Static, [ErpPermissions.FinanceCustomerInstrumentRead]),
+            Declaration(OfficialInvoiceImportUploadCapabilityId, OfficialInvoiceImportUploadRouteId,
+                OfficialInvoiceImportUploadRoutePath, OfficialInvoiceImportUploadScreenId,
+                ShellCapabilityRoutePrecedence.Static, [FinanceOfficialInvoiceImportPermissionNamesV1.Upload]),
+            Declaration(OfficialInvoiceImportApprovalCapabilityId, OfficialInvoiceImportApprovalRouteId,
+                OfficialInvoiceImportApprovalRoutePath, OfficialInvoiceImportApprovalScreenId,
+                ShellCapabilityRoutePrecedence.Static, [FinanceOfficialInvoiceImportPermissionNamesV1.Approve]),
             bankAccounts,
             Declaration(BankAccountProposeCapabilityId, BankAccountProposeRouteId, BankAccountProposeRoutePath,
                 BankAccountProposeScreenId, ShellCapabilityRoutePrecedence.Static, [ErpPermissions.FinanceBankAccountPropose]),
@@ -158,6 +177,17 @@ public sealed class FinanceShellCapabilityProvider : IShellCapabilityProvider
                     FinancePermissionNames.ManualBankPaymentRecord,
                     ErpPermissions.AccountingPeriodsRead,
                 ],
+            },
+            Declaration(AllocationListCapabilityId, AllocationListRouteId, AllocationListRoutePath,
+                AllocationListScreenId, ShellCapabilityRoutePrecedence.Static,
+                [FinancePermissionNames.AllocationRead]),
+            Declaration(AllocationListCapabilityId, AllocationListRouteId, AllocationListRoutePath,
+                AllocationListScreenId, ShellCapabilityRoutePrecedence.Static,
+                [FinancePermissionNames.AllocationRead]) with
+            {
+                CapabilityId = AllocationWriteCapabilityId,
+                ParentCapabilityId = AllocationListCapabilityId,
+                RequiredPermissions = [FinancePermissionNames.AllocationRead, FinancePermissionNames.AllocationWrite],
             },
         ];
     }
