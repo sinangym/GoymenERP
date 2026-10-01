@@ -481,8 +481,9 @@ public sealed class L04BrowserSeed : IBrowserSuiteFixture
                 effectiveOn = "2026-09-19",
                 lines = new[]
                 {
-                    new { lineId = OpenLineId, sourceOrderId = DraftId, sourceOrderLineId = LineId, unitId, quantity = "4" },
-                    new { lineId = BlockedLineId, sourceOrderId = DraftId, sourceOrderLineId = LineId, unitId, quantity = "2" },
+                    // Keep the negative instruction inside the 6 kg order so the separate 4.5 kg UI journey remains valid.
+                    new { lineId = OpenLineId, sourceOrderId = DraftId, sourceOrderLineId = LineId, unitId, quantity = "1" },
+                    new { lineId = BlockedLineId, sourceOrderId = DraftId, sourceOrderLineId = LineId, unitId, quantity = "0.5" },
                 },
             },
             "instruction",
