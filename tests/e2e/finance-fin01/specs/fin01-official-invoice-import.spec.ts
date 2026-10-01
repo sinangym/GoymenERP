@@ -100,10 +100,35 @@ test.describe.serial('FIN01 official invoice import (real API, real SQL, real Ch
     })
     const bankProposal = await bankProposalAnswer
     const bankProposalBody = await bankProposal.json() as {
-      readonly resource?: { readonly id?: unknown; readonly status?: unknown; readonly version?: unknown }
+      readonly outcome?: unknown
+      readonly isReplay?: unknown
+      readonly originalCorrelationId?: unknown
+      readonly issues?: unknown
+      readonly resource?: {
+        readonly id?: unknown
+        readonly companyId?: unknown
+        readonly currencyId?: unknown
+        readonly displayName?: unknown
+        readonly isActive?: unknown
+        readonly isUsableForReceipt?: unknown
+        readonly version?: unknown
+      }
     }
     expect(bankProposal.status(), JSON.stringify(bankProposalBody)).toBe(200)
-    expect(bankProposalBody.resource).toMatchObject({ status: 'Pending', version: '1' })
+    expect(bankProposalBody).toMatchObject({
+      outcome: 'Succeeded',
+      isReplay: false,
+      issues: [],
+      resource: {
+        companyId: env.seed.companyId,
+        currencyId,
+        displayName: allocationAccountName,
+        isActive: false,
+        isUsableForReceipt: false,
+        version: '1',
+      },
+    })
+    expect(bankProposalBody.originalCorrelationId).toEqual(expect.stringMatching(/\S/))
     expect(bankProposalBody.resource?.id).toEqual(expect.stringMatching(/^[0-9a-f-]{36}$/))
     const bankAccountId = bankProposalBody.resource!.id as string
 
