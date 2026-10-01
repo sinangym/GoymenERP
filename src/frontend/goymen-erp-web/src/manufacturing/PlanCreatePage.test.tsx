@@ -38,6 +38,7 @@ function candidate(labelId = ROLL_1, overrides: Record<string, unknown> = {}) {
     labelVersion: labelId === ROLL_1 ? '7' : '12',
     labelCode: labelId === ROLL_1 ? 'LBL-0007' : 'LBL-0012',
     productId: PRODUCT,
+    productVersion: labelId === ROLL_1 ? 'release-A.02' : 'release-B.04',
     lot: { id: LOT, heatNumber: 'H-12', coilNumber: null },
     heatNumber: 'H-12',
     coilNumber: null,

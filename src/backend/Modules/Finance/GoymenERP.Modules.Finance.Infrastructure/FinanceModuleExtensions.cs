@@ -82,6 +82,7 @@ public static class FinanceModuleExtensions
         services.AddScoped<IReversalProposalService>(provider =>
             provider.GetRequiredService<ReversalProposalService>());
         services.AddScoped<IFinanceAllocationService>(CreateAllocationService);
+        services.AddScoped<IFinanceAllocationReadService, FinanceAllocationReadService>();
         // DEC-FIN-016 first release: the customer cheque / note portfolio, on the same owners and period rule.
         services.AddScoped<ICustomerInstrumentService>(CreateCustomerInstrumentService);
         // The first-release party ledger (cari hesap ekstresi): a read over the recorded facts above, no writer.

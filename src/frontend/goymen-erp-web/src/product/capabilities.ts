@@ -95,3 +95,6 @@ export function productDetailPath(productId: string): string {
 export function productEditPath(productId: string): string {
   return `/urun/${encodeURIComponent(productId)}/duzenle`
 }
+
+/** Q16 Excel import reuses the existing DraftCreate authority; it is not a new capability. */
+export const PRODUCT_IMPORT_ROUTE = '/urun/ice-aktar'

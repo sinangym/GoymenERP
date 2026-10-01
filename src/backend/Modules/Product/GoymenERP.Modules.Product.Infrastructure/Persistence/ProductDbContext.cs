@@ -196,6 +196,13 @@ public sealed class ProductDbContext(DbContextOptions<ProductDbContext> options)
         return base.SaveChangesAsync(acceptAllChangesOnSuccess: true, cancellationToken);
     }
 
+    internal Task<int> FlushImportEnlistedAsync(ProductImportParticipant participant, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(participant);
+        participant.ValidateFlush(this);
+        return base.SaveChangesAsync(acceptAllChangesOnSuccess: true, cancellationToken);
+    }
+
     internal Task<int> AddTechnicalCardFixtureAsync(CancellationToken cancellationToken)
     {
         // Fixed test data only; no arbitrary release input and no public SaveChanges enrollment.
@@ -254,6 +261,22 @@ public sealed class ProductDbContext(DbContextOptions<ProductDbContext> options)
         var group = Fixtures.ProductStockCandidateFixture.Group();
         var counter = ProductCodeCounter.ForGroup(group);
         var row = ProductRow.FromRecord(Fixtures.ProductStockCandidateFixture.Record());
+        if (counter.Advance().Value != row.Code) throw new InvalidOperationException("Invalid fixture code.");
+        CodeGroups.Add(group);
+        CodeCounters.Add(counter);
+        Products.Add(row);
+        CodeRegistrations.Add(ProductCodeRegistration.Current(row));
+        return base.SaveChangesAsync(acceptAllChangesOnSuccess: true, cancellationToken);
+    }
+
+    internal Task<int> AddPurchaseSalesStockJourneyFixtureAsync(CancellationToken cancellationToken)
+    {
+        // Fixed test-only card, group, counter and registration; no arbitrary input or public writer enrollment.
+        if (ChangeTracker.Entries().Any())
+            throw new InvalidOperationException("A purchase-to-delivery fixture requires a clean Product context.");
+        var group = Fixtures.ProductPurchaseSalesStockJourneyFixture.Group();
+        var counter = ProductCodeCounter.ForGroup(group);
+        var row = ProductRow.FromRecord(Fixtures.ProductPurchaseSalesStockJourneyFixture.Record());
         if (counter.Advance().Value != row.Code) throw new InvalidOperationException("Invalid fixture code.");
         CodeGroups.Add(group);
         CodeCounters.Add(counter);

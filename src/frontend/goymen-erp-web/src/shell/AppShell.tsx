@@ -49,6 +49,7 @@ export const NAV_CAPABILITIES: readonly CapabilityId[] = [
    */
   CAPABILITY.productItemsList,
   CAPABILITY.financeManualBankPaymentsList,
+  CAPABILITY.financeAllocationsList,
   /**
    * Listed together with the route that serves it, on purpose: a nav entry whose route
    * is not mounted is a link to the not-found block. It still renders only where the
@@ -88,6 +89,8 @@ export const NAV_CAPABILITIES: readonly CapabilityId[] = [
    */
   CAPABILITY.financeReceiptsList,
   CAPABILITY.financeCustomerInstrumentsList,
+  CAPABILITY.financeOfficialInvoiceImportUpload,
+  CAPABILITY.financeOfficialInvoiceImportApprove,
   CAPABILITY.financeReceiptsReverseApprove,
   CAPABILITY.financeBankAccountsList,
   /**
@@ -209,11 +212,11 @@ export function AppShell() {
   const navItems = NAV_CAPABILITIES.filter((capability) =>
     hasCapability(state, capability),
   ).map((capability) => ({
+    key: capability,
     capability,
     path: CAPABILITY_ROUTE[capability],
     label: CAPABILITY_NAV_LABEL[capability],
   }))
-
   return (
     <div className={styles.shell}>
       <a className={styles.skipLink} href="#main-content">
@@ -227,7 +230,7 @@ export function AppShell() {
         {navItems.length > 0 ? (
           <ul className={styles.navList}>
             {navItems.map((entry) => (
-              <li key={entry.capability}>
+              <li key={entry.key}>
                 <NavLink
                   to={entry.path}
                   className={({ isActive }) => (isActive ? styles.navLinkActive : styles.navLink)}

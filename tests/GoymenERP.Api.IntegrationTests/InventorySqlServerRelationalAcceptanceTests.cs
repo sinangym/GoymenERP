@@ -670,11 +670,17 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         }
 
         var orphan = RawLabel(CompanyA, Guid.NewGuid());
-        await using (var raw = run.Context(CompanyA))
-        {
-            raw.Labels.Add(orphan);
-            await raw.SaveChangesAsync();
-        }
+        // This row belongs to the historical schema. Current EF includes columns that did not exist yet.
+        await run.ExecuteAsync(
+            """
+            INSERT INTO inventory.Labels
+                (Id, CompanyId, Code, ProductId, LotId, RequiredDocumentsJson, Version, CreatedAtUtc, UpdatedAtUtc)
+            VALUES (@id, @company, @code, @product, @lot, @documents, @version, @created, @updated);
+            """,
+            ("@id", orphan.Id), ("@company", orphan.CompanyId), ("@code", orphan.Code),
+            ("@product", orphan.ProductId), ("@lot", orphan.LotId),
+            ("@documents", orphan.RequiredDocumentsJson), ("@version", orphan.Version),
+            ("@created", orphan.CreatedAtUtc), ("@updated", orphan.UpdatedAtUtc));
 
         await using (var context = run.Context(CompanyA))
         {
@@ -691,6 +697,36 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         Assert.Equal(1, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM inventory.Labels WHERE Id = @id AND LotId = @lot AND Version = 1",
             ("@id", orphan.Id), ("@lot", orphan.LotId)));
+    }
+
+    [SqlServerFact]
+    public async Task Product_version_provenance_blocks_rollback_without_losing_the_label()
+    {
+        const string previousMigration = "20260930182024_AddInventoryTransfers";
+        const string currentMigration = "20261001160000_AddInventoryLabelProductVersion";
+        await using var run = await Run.StartAsync();
+        var label = NewLabel(CompanyA, "SYN-PRODUCT-VERSION-DOWN");
+        await using (var scope = run.Store(CompanyA))
+        {
+            await scope.Labels.SaveLabelAsync(label, Metadata(run));
+        }
+
+        await using (var context = run.Context(CompanyA))
+        {
+            var refused = await Assert.ThrowsAsync<SqlException>(
+                () => context.GetService<IMigrator>().MigrateAsync(previousMigration));
+            Assert.Equal(51054, refused.Number);
+            Assert.Equal(currentMigration, (await context.Database.GetAppliedMigrationsAsync()).Last());
+        }
+
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            """
+            SELECT COUNT(*)
+            FROM inventory.Labels
+            WHERE Id = @id AND CompanyId = @company AND Code = @code AND ProductId = @product
+              AND LotId = @lot AND ProductVersion = @productVersion AND Version = 1;
+            """, ("@id", label.Id), ("@company", label.CompanyId), ("@code", label.Code),
+            ("@product", label.ProductId), ("@lot", label.LotId), ("@productVersion", label.ProductVersion!)));
     }
 
     /// <summary>

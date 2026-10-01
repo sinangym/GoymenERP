@@ -1,3 +1,4 @@
+using System.Globalization;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Sales.Domain.Drafts;
 using GoymenERP.Modules.Sales.Infrastructure.Persistence;
@@ -74,7 +75,8 @@ public sealed record SalesDraftFixtureLine(
     bool IsKilogram,
     int Scale,
     string QuantityText,
-    decimal Quantity);
+    decimal Quantity,
+    string ProductVersion = "1");
 
 /// <summary><paramref name="Added"/> is false when the draft was already present (a re-run); <paramref name="Version"/> is the stored one.</summary>
 public sealed record SalesDraftFixtureOutcome(Guid DraftId, long Version, bool Added);
@@ -113,6 +115,11 @@ internal sealed class SalesDraftFixtureStore(SalesDbContext dbContext, ICompanyC
         if (string.IsNullOrWhiteSpace(request.CreatedBy) || string.IsNullOrWhiteSpace(request.CorrelationId))
         {
             throw new InvalidOperationException("A fixture draft names its writer and its correlation.");
+        }
+
+        if (request.Lines.Any(line => !IsCanonicalPositiveVersion(line.ProductVersion)))
+        {
+            throw new InvalidOperationException("A fixture draft needs a canonical positive product version for every line.");
         }
 
         // The context is the ambient one of the fixture runner's scope: bound here, and only to the request's company.
@@ -157,7 +164,7 @@ internal sealed class SalesDraftFixtureStore(SalesDbContext dbContext, ICompanyC
             var unit = new UnitProfileSnapshot(request.CompanyId, line.UnitId, line.UnitCode, line.DimensionCode, line.UnitProfileId,
                 SnapshotVersion, line.IsKilogram, line.Scale, line.Scale, IsActive: true, owners.EffectiveFrom, EffectiveThrough: null);
             var binding = new UnitBindingSnapshot(request.CompanyId, line.UnitId, line.UnitProfileId, SnapshotVersion);
-            var product = new ProductSnapshot(line.ProductId, SnapshotVersion, line.ProductCode, line.ProductName, request.BusinessDate,
+            var product = new ProductSnapshot(line.ProductId, line.ProductVersion, line.ProductCode, line.ProductName, request.BusinessDate,
                 binding, binding, binding);
             draft.AddLine(draft.Version, new SalesDraftLineInput(line.LineId, product, unit, line.QuantityText, line.Quantity), request.At);
         }
@@ -168,4 +175,9 @@ internal sealed class SalesDraftFixtureStore(SalesDbContext dbContext, ICompanyC
 
     private static OwnerReference? Reference(SalesDraftFixtureOwnerReference? reference) =>
         reference is null ? null : new OwnerReference(reference.Id, reference.Version);
+
+    private static bool IsCanonicalPositiveVersion(string version) =>
+        version.Length > 0 && version[0] != '0'
+        && long.TryParse(version, NumberStyles.None, CultureInfo.InvariantCulture, out long parsed)
+        && parsed > 0 && parsed.ToString(CultureInfo.InvariantCulture) == version;
 }

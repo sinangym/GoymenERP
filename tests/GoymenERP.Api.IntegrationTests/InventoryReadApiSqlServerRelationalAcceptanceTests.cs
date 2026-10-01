@@ -501,7 +501,7 @@ public sealed class InventoryReadApiSqlServerRelationalAcceptanceTests
             return (T)(await command.ExecuteScalarAsync())!;
         }
 
-        private async Task ExecuteAsync(string sql, params (string Name, object Value)[] parameters)
+        public async Task ExecuteAsync(string sql, params (string Name, object Value)[] parameters)
         {
             await using var connection = new SqlConnection(Factory.DatabaseConnectionString);
             await connection.OpenAsync();
