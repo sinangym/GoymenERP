@@ -614,12 +614,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         }),
                 // ACC-3 (#298): the Accounting initializer's one provider branch, as Organization.
                 // Re-fingerprinted for ACC reversal: its lifecycle and proposal store are registered;
-                // Ensure/Migrate counts remain unchanged.
+                // Ensure/Migrate counts remain unchanged. Re-fingerprinted for the approved Finance receipt
+                // source binding provider registration; the database initialization surface is unchanged.
                 ["src/backend/Modules/Accounting/"
                  + "GoymenERP.Modules.Accounting.Infrastructure/"
                  + "AccountingModuleExtensions.cs"] =
                     new(
-                        "49b2f9a5ab78048fc9db63293aef4379b0d1f65f361e28c731d90e7bba32dcdd",
+                        "bb4fa94002e875a288f21c51ced7d63565e65fd57bfed4c85e01868420fde057",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
