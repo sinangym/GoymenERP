@@ -15,6 +15,7 @@ public sealed record CreateNormalJournalDraftRequestV1(
     DateOnly TransactionDate,
     DateOnly AccountingDate,
     DateOnly? ValueDate,
+    string? ExpectedPreparationVersion,
     IReadOnlyList<CreateNormalJournalDraftLineRequestV1> Lines);
 
 public sealed record ApproveNormalJournalDraftRequestV1(long ExpectedVersion, Guid PeriodId);
@@ -23,7 +24,12 @@ public sealed record ApproveNormalJournalDraftRequestV1(long ExpectedVersion, Gu
 /// Exact server-owned preparation inputs. A public request cannot provide the company, actor,
 /// currency, account-plan mirror, posting purpose, rule version, mapping keys or approval provenance.
 /// </summary>
-public sealed record NormalJournalDraftServerSourceV1(NormalJournalPostingRuleV1 Rule, Guid CurrencyId);
+public sealed record NormalJournalDraftServerSourceV1(
+    NormalJournalPostingRuleV1 Rule,
+    Guid CurrencyId,
+    string? SourceVersion = null,
+    string? OwnerProfileId = null,
+    string? OwnerProfileVersion = null);
 
 public interface INormalJournalDraftServerSourceProviderV1
 {
@@ -69,6 +75,7 @@ public sealed class NormalJournalDraftPublicServiceV1(
         }
 
         if (request.TransactionDate == default || request.AccountingDate == default
+            || !NormalJournalDraftSourcePreparationV1.IsPreparationVersion(request.ExpectedPreparationVersion)
             || request.Lines is null || request.Lines.Count < 2)
         {
             return Invalid("lines");
@@ -93,6 +100,20 @@ public sealed class NormalJournalDraftPublicServiceV1(
             parsedLines.Add((line.AccountId, side, amount));
         }
 
+        var command = new NormalJournalPreparedCreateCommandV2(
+            request.DraftId,
+            request.SourceId,
+            request.TransactionDate,
+            request.AccountingDate,
+            request.ValueDate,
+            request.ExpectedPreparationVersion!.ToUpperInvariant(),
+            [.. parsedLines.Select(line => new NormalJournalPreparedCreateLineV2(
+                line.AccountId, line.Side, line.Amount))]);
+        if (await lifecycle.TryReplayPreparedCreateAsync(command, idempotencyKey, cancellationToken) is { } replay)
+        {
+            return replay;
+        }
+
         var source = await sources.ResolveAsync(company, request.SourceId, cancellationToken);
         if (source is null)
         {
@@ -103,6 +124,19 @@ public sealed class NormalJournalDraftPublicServiceV1(
         if (source.CurrencyId == Guid.Empty || source.Rule.Mirror.CompanyId != company)
         {
             return Unprocessable(AccountingErrorCodes.InvalidReference);
+        }
+
+        var preparation = NormalJournalDraftSourcePreparationV1.TryCreate(company, request.SourceId, source);
+        if (preparation is null)
+        {
+            return new AccountingApiResult<NormalJournalDraftViewV1>(
+                AccountingApiStatus.Unavailable, null, false, null);
+        }
+        if (!string.Equals(preparation.PreparationVersion, command.ExpectedPreparationVersion,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return new AccountingApiResult<NormalJournalDraftViewV1>(AccountingApiStatus.Conflict,
+                null, false, NormalJournalDraftPreparationCodesV1.VersionConflict);
         }
 
         var proposed = new List<ProposedLine>(request.Lines.Count);
@@ -138,7 +172,7 @@ public sealed class NormalJournalDraftPublicServiceV1(
             var prepared = NormalJournalDraftV1.Prepare(
                 JournalKind.Original, posting, version: 1, actor, source.Rule.Mirror, source.Rule);
             return prepared.Draft is { } draft
-                ? await lifecycle.CreateAsync(draft, idempotencyKey, cancellationToken)
+                ? await lifecycle.CreatePreparedAsync(draft, command, idempotencyKey, cancellationToken)
                 : Unprocessable(AccountingErrorCodes.InvalidReference);
         }
         catch (AccountingDomainException exception)

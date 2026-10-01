@@ -53073,6 +53073,208 @@
         ]
       }
     },
+    "/api/v1/accounting/normal-journal-draft-sources/{sourceId}": {
+      "get": {
+        "tags": [
+          "Accounting"
+        ],
+        "operationId": "GetAccountingNormalJournalDraftSourceV1",
+        "parameters": [
+          {
+            "name": "sourceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "X-Correlation-Id",
+            "in": "header",
+            "description": "Optional client correlation identifier; the server creates one when absent.",
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9._:-]+$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Causation-Id",
+            "in": "header",
+            "description": "Optional identifier of the command or event that caused this request.",
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9._:-]+$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Company-Id",
+            "in": "header",
+            "description": "Selected company identifier for this company-scoped request.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "x-erp-non-empty-uuid": true
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NormalJournalDraftSourcePreparationV1"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "accounting_request_invalid",
+              "company_context_invalid",
+              "correlation_metadata_invalid"
+            ]
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "service_unavailable"
+            ]
+          },
+          "401": {
+            "description": "Unauthorized",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "authentication_required"
+            ]
+          },
+          "403": {
+            "description": "Forbidden",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "forbidden"
+            ]
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "internal_error"
+            ]
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
     "/api/v1/accounting/normal-journal-drafts": {
       "post": {
         "tags": [
@@ -53247,6 +53449,7 @@
               "accounting_normal_journal_draft_content_conflict",
               "accounting_normal_journal_draft_not_pending",
               "accounting_normal_journal_draft_posting_conflict",
+              "accounting_normal_journal_preparation_version_conflict",
               "accounting_period_conflict",
               "accounting_period_overlap",
               "accounting_period_preparer_conflict",
@@ -53814,6 +54017,7 @@
               "accounting_normal_journal_draft_content_conflict",
               "accounting_normal_journal_draft_not_pending",
               "accounting_normal_journal_draft_posting_conflict",
+              "accounting_normal_journal_preparation_version_conflict",
               "accounting_period_conflict",
               "accounting_period_overlap",
               "accounting_period_preparer_conflict",
@@ -58244,6 +58448,7 @@
           "transactionDate",
           "accountingDate",
           "valueDate",
+          "expectedPreparationVersion",
           "lines"
         ],
         "type": "object",
@@ -58270,6 +58475,12 @@
               "string"
             ],
             "format": "date"
+          },
+          "expectedPreparationVersion": {
+            "type": [
+              "null",
+              "string"
+            ]
           },
           "lines": {
             "type": "array",
@@ -63876,6 +64087,95 @@
           },
           "amount": {
             "type": "string"
+          }
+        }
+      },
+      "NormalJournalDraftSourceMappingV1": {
+        "required": [
+          "mappingKey",
+          "side",
+          "accountId",
+          "accountCode",
+          "accountName"
+        ],
+        "type": "object",
+        "properties": {
+          "mappingKey": {
+            "type": "string"
+          },
+          "side": {
+            "type": "string"
+          },
+          "accountId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "accountCode": {
+            "type": "string"
+          },
+          "accountName": {
+            "type": "string"
+          }
+        }
+      },
+      "NormalJournalDraftSourcePreparationV1": {
+        "required": [
+          "companyId",
+          "sourceId",
+          "preparationVersion",
+          "sourceVersion",
+          "ownerProfileId",
+          "ownerProfileVersion",
+          "currencyId",
+          "postingPurpose",
+          "postingRuleVersion",
+          "accountPlanSourceVersion",
+          "accountPlanSourceSha256",
+          "mappings"
+        ],
+        "type": "object",
+        "properties": {
+          "companyId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sourceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "preparationVersion": {
+            "type": "string"
+          },
+          "sourceVersion": {
+            "type": "string"
+          },
+          "ownerProfileId": {
+            "type": "string"
+          },
+          "ownerProfileVersion": {
+            "type": "string"
+          },
+          "currencyId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "postingPurpose": {
+            "type": "string"
+          },
+          "postingRuleVersion": {
+            "type": "string"
+          },
+          "accountPlanSourceVersion": {
+            "type": "string"
+          },
+          "accountPlanSourceSha256": {
+            "type": "string"
+          },
+          "mappings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NormalJournalDraftSourceMappingV1"
+            }
           }
         }
       },

@@ -699,6 +699,10 @@ public sealed partial class OpenApiContractGenerationTests
             ParameterValues: ["query:fromAccountingDate:true:type:string;format:date", "query:throughAccountingDate:true:type:string;format:date", "query:currencyId:false:type:string;format:uuid"]),
         new("get", "/api/v1/accounting/posting-queues", "GetAccountingPostingQueuesV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "503:application/problem+json")),
+        new("get", "/api/v1/accounting/normal-journal-draft-sources/{sourceId}",
+            "GetAccountingNormalJournalDraftSourceV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "503:application/problem+json"),
+            ParameterValues: ["path:sourceId:true:type:string;format:uuid"]),
         new("post", "/api/v1/accounting/normal-journal-drafts", "CreateAccountingNormalJournalDraftV1",
             AuthenticatedResponses("201:application/json", "400:application/problem+json", "415:", "409:application/problem+json", "422:application/problem+json", "503:application/problem+json"),
             "#/components/schemas/CreateNormalJournalDraftRequestV1"),
@@ -951,6 +955,7 @@ public sealed partial class OpenApiContractGenerationTests
             ["GetAccountingJournalV1"] = "ref:JournalDetailV1",
             ["GetAccountingTrialBalanceV1"] = "ref:TrialBalanceReportV1",
             ["GetAccountingPostingQueuesV1"] = "ref:PostingQueuesV1",
+            ["GetAccountingNormalJournalDraftSourceV1"] = "ref:NormalJournalDraftSourcePreparationV1",
             ["CreateAccountingNormalJournalDraftV1"] = "ref:NormalJournalDraftViewV1",
             ["GetAccountingNormalJournalDraftV1"] = "ref:NormalJournalDraftViewV1",
             ["ApproveAccountingNormalJournalDraftV1"] = "ref:NormalJournalDraftViewV1",
@@ -1138,6 +1143,7 @@ public sealed partial class OpenApiContractGenerationTests
         "GetAccountingJournalV1",
         "GetAccountingTrialBalanceV1",
         "GetAccountingPostingQueuesV1",
+        "GetAccountingNormalJournalDraftSourceV1",
         "CreateAccountingNormalJournalDraftV1",
         "GetAccountingNormalJournalDraftV1",
         "ApproveAccountingNormalJournalDraftV1",
@@ -2101,12 +2107,13 @@ public sealed partial class OpenApiContractGenerationTests
             ["GetAccountingJournalV1:400"] = ["accounting_request_invalid"],
             ["GetAccountingTrialBalanceV1:400"] = ["accounting_request_invalid"],
             ["GetAccountingPostingQueuesV1:400"] = ["accounting_request_invalid"],
+            ["GetAccountingNormalJournalDraftSourceV1:400"] = ["accounting_request_invalid"],
             ["CreateAccountingNormalJournalDraftV1:400"] = ["accounting_request_invalid"],
-            ["CreateAccountingNormalJournalDraftV1:409"] = ["accounting_concurrent_change", "accounting_normal_journal_draft_content_conflict", "accounting_normal_journal_draft_not_pending", "accounting_normal_journal_draft_posting_conflict", "accounting_period_conflict", "accounting_period_overlap", "accounting_period_preparer_conflict", "accounting_version_conflict", "idempotency_conflict"],
+            ["CreateAccountingNormalJournalDraftV1:409"] = ["accounting_concurrent_change", "accounting_normal_journal_draft_content_conflict", "accounting_normal_journal_draft_not_pending", "accounting_normal_journal_draft_posting_conflict", "accounting_normal_journal_preparation_version_conflict", "accounting_period_conflict", "accounting_period_overlap", "accounting_period_preparer_conflict", "accounting_version_conflict", "idempotency_conflict"],
             ["CreateAccountingNormalJournalDraftV1:422"] = ["accounting_company_mismatch", "accounting_invalid_reference", "accounting_journal_line_invalid", "accounting_journal_too_few_lines", "accounting_journal_unbalanced", "accounting_period_already_closed", "accounting_period_closed", "accounting_period_does_not_cover_date", "accounting_period_invalid", "accounting_period_not_open", "accounting_period_not_proposed", "accounting_value_does_not_fit"],
             ["GetAccountingNormalJournalDraftV1:400"] = ["accounting_request_invalid"],
             ["ApproveAccountingNormalJournalDraftV1:400"] = ["accounting_request_invalid"],
-            ["ApproveAccountingNormalJournalDraftV1:409"] = ["accounting_concurrent_change", "accounting_normal_journal_draft_content_conflict", "accounting_normal_journal_draft_not_pending", "accounting_normal_journal_draft_posting_conflict", "accounting_period_conflict", "accounting_period_overlap", "accounting_period_preparer_conflict", "accounting_version_conflict", "idempotency_conflict"],
+            ["ApproveAccountingNormalJournalDraftV1:409"] = ["accounting_concurrent_change", "accounting_normal_journal_draft_content_conflict", "accounting_normal_journal_draft_not_pending", "accounting_normal_journal_draft_posting_conflict", "accounting_normal_journal_preparation_version_conflict", "accounting_period_conflict", "accounting_period_overlap", "accounting_period_preparer_conflict", "accounting_version_conflict", "idempotency_conflict"],
             ["ApproveAccountingNormalJournalDraftV1:422"] = ["accounting_company_mismatch", "accounting_invalid_reference", "accounting_journal_line_invalid", "accounting_journal_too_few_lines", "accounting_journal_unbalanced", "accounting_period_already_closed", "accounting_period_closed", "accounting_period_does_not_cover_date", "accounting_period_invalid", "accounting_period_not_open", "accounting_period_not_proposed", "accounting_value_does_not_fit"],
             ["ProposeAccountingJournalReversalV1:400"] = ["accounting_request_invalid"],
             ["ProposeAccountingJournalReversalV1:409"] = ["accounting_concurrent_change", "accounting_journal_reversal_not_pending", "accounting_journal_reversal_posting_conflict", "accounting_journal_reversal_proposal_content_conflict", "accounting_journal_reversal_version_conflict", "accounting_period_conflict", "accounting_period_overlap", "accounting_period_preparer_conflict", "accounting_version_conflict", "idempotency_conflict"],
@@ -2434,6 +2441,27 @@ public sealed partial class OpenApiContractGenerationTests
                     ("side", "type:string"),
                     ("accountId", "type:string;format:uuid"),
                     ("amount", "type:string")),
+                ["NormalJournalDraftSourceMappingV1"] = ObjectSchema(
+                    ["mappingKey", "side", "accountId", "accountCode", "accountName"],
+                    ("mappingKey", "type:string"),
+                    ("side", "type:string"),
+                    ("accountId", "type:string;format:uuid"),
+                    ("accountCode", "type:string"),
+                    ("accountName", "type:string")),
+                ["NormalJournalDraftSourcePreparationV1"] = ObjectSchema(
+                    ["companyId", "sourceId", "preparationVersion", "sourceVersion", "ownerProfileId", "ownerProfileVersion", "currencyId", "postingPurpose", "postingRuleVersion", "accountPlanSourceVersion", "accountPlanSourceSha256", "mappings"],
+                    ("companyId", "type:string;format:uuid"),
+                    ("sourceId", "type:string;format:uuid"),
+                    ("preparationVersion", "type:string"),
+                    ("sourceVersion", "type:string"),
+                    ("ownerProfileId", "type:string"),
+                    ("ownerProfileVersion", "type:string"),
+                    ("currencyId", "type:string;format:uuid"),
+                    ("postingPurpose", "type:string"),
+                    ("postingRuleVersion", "type:string"),
+                    ("accountPlanSourceVersion", "type:string"),
+                    ("accountPlanSourceSha256", "type:string"),
+                    ("mappings", "type:array;items:ref:NormalJournalDraftSourceMappingV1")),
                 ["NormalJournalDraftViewV1"] = ObjectSchema(
                     ["draftId", "companyId", "version", "status", "preparedByUserId", "preparedAtUtc", "approvedByUserId", "approvedAtUtc", "periodId", "postedJournalId", "sourceId", "postingPurpose", "postingRuleVersion", "accountPlanSourceVersion", "accountPlanSourceSha256", "currencyId", "transactionDate", "accountingDate", "valueDate", "lines"],
                     ("draftId", "type:string;format:uuid"),
@@ -4282,12 +4310,13 @@ public sealed partial class OpenApiContractGenerationTests
                     ("side", "type:string"),
                     ("amount", "type:string")),
                 ["CreateNormalJournalDraftRequestV1"] = ObjectSchema(
-                    ["draftId", "sourceId", "transactionDate", "accountingDate", "valueDate", "lines"],
+                    ["draftId", "sourceId", "transactionDate", "accountingDate", "valueDate", "expectedPreparationVersion", "lines"],
                     ("draftId", "type:string;format:uuid"),
                     ("sourceId", "type:string;format:uuid"),
                     ("transactionDate", "type:string;format:date"),
                     ("accountingDate", "type:string;format:date"),
                     ("valueDate", "type:null|string;format:date"),
+                    ("expectedPreparationVersion", "type:null|string"),
                     ("lines", "type:array;items:ref:CreateNormalJournalDraftLineRequestV1")),
                 ["ProposeAccountingJournalReversalRequestV1"] = ObjectSchema(
                     ["proposalId", "sourceJournalId", "periodId", "transactionDate", "accountingDate", "valueDate", "reason"],
@@ -5429,9 +5458,9 @@ public sealed partial class OpenApiContractGenerationTests
         Assert.Equal("JWT", bearer.Value.GetProperty("bearerFormat").GetString());
 
         var operations = ReadOperations(root.GetProperty("paths"));
-        Assert.Equal(203, operations.Count);
+        Assert.Equal(204, operations.Count);
         Assert.Equal(
-            203,
+            204,
             operations.Select(operation => operation.OperationId)
                 .Distinct(StringComparer.Ordinal)
                 .Count());

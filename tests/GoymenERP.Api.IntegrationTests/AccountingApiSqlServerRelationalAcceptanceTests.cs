@@ -23,6 +23,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace GoymenERP.Api.IntegrationTests;
 
@@ -39,6 +40,8 @@ public sealed class AccountingApiSqlServerRelationalAcceptanceTests
     private const string JournalsPath = "/api/v1/accounting/journals";
     private const string QueuesPath = "/api/v1/accounting/posting-queues";
     private const string ReversalProposalsPath = "/api/v1/accounting/journal-reversal-proposals";
+    private const string NormalDraftsPath = "/api/v1/accounting/normal-journal-drafts";
+    private const string NormalDraftSourcesPath = "/api/v1/accounting/normal-journal-draft-sources";
     private const string Preparer = TestUsers.CompanyA;
     private const string Approver = TestUsers.CompanyAViewer;
     private static readonly Guid CompanyA = TestCompanyIds.CompanyA;
@@ -60,6 +63,103 @@ public sealed class AccountingApiSqlServerRelationalAcceptanceTests
     ];
 
     private static readonly JsonSerializerOptions Web = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+
+    /// <summary>
+    /// ACC-COA prepared normal-draft creation over the real host and SQL. A stale preparation writes nothing;
+    /// a successful command is replayed from the Accounting command log even after the provider advances; and
+    /// changed content under that key is refused without a second draft, command, audit or journal.
+    /// The mutable provider is test-scoped and supplies only approved synthetic mirror/rule snapshots.
+    /// </summary>
+    [SqlServerFact]
+    public async Task A_prepared_normal_draft_is_stale_safe_and_replays_one_sql_effect_after_provider_changes()
+    {
+        var sourceId = Guid.NewGuid();
+        var draftId = Guid.NewGuid();
+        var debitId = Guid.NewGuid();
+        var creditId = Guid.NewGuid();
+        var provider = new MutableNormalJournalSourceProvider(
+            PreparedSource(debitId, creditId, "mirror-v1", 'a', "rule-v1"));
+        await using var run = await Run.StartAsync(services =>
+        {
+            services.RemoveAll<INormalJournalDraftServerSourceProviderV1>();
+            services.AddSingleton<INormalJournalDraftServerSourceProviderV1>(provider);
+        });
+        await run.GrantAsync(Preparer, CompanyA, NormalJournalPermissionNamesV1.DraftCreate);
+        using var client = run.Client(Preparer, CompanyA);
+
+        using var preparationAResponse = await client.GetAsync($"{NormalDraftSourcesPath}/{sourceId:D}");
+        Assert.Equal(HttpStatusCode.OK, preparationAResponse.StatusCode);
+        var preparationA = await Json(preparationAResponse);
+        var versionA = preparationA.GetProperty("preparationVersion").GetString();
+        Assert.True(NormalJournalDraftSourcePreparationV1.IsPreparationVersion(versionA));
+
+        provider.Advance(PreparedSource(debitId, creditId, "mirror-v2", 'b', "rule-v2"));
+        var staleKey = $"SENTETIK-normal-stale-{Guid.NewGuid():N}";
+        var staleRequest = PreparedRequest(draftId, sourceId, debitId, creditId, versionA!);
+        using (var stale = await client.SendAsync(Post(
+                   NormalDraftsPath, staleKey, Guid.NewGuid().ToString("N"), staleRequest)))
+        {
+            Assert.Equal(HttpStatusCode.Conflict, stale.StatusCode);
+            Assert.Equal(NormalJournalDraftPreparationCodesV1.VersionConflict, Code(await Json(stale)));
+        }
+
+        Assert.Equal(0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM accounting.NormalJournalDrafts WHERE Id = @id", ("@id", draftId)));
+        Assert.Equal(0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM accounting.Commands WHERE CommandName = @n",
+            ("@n", NormalJournalCommandNamesV1.CreatePreparedDraft)));
+        Assert.Equal(0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityType = N'Accounting.NormalJournalDraft' AND EntityId = @id",
+            ("@id", draftId.ToString("D"))));
+
+        using var preparationBResponse = await client.GetAsync($"{NormalDraftSourcesPath}/{sourceId:D}");
+        Assert.Equal(HttpStatusCode.OK, preparationBResponse.StatusCode);
+        var versionB = (await Json(preparationBResponse)).GetProperty("preparationVersion").GetString();
+        Assert.True(NormalJournalDraftSourcePreparationV1.IsPreparationVersion(versionB));
+        Assert.NotEqual(versionA, versionB);
+
+        var accepted = PreparedRequest(draftId, sourceId, debitId, creditId, versionB!);
+        var acceptedKey = $"SENTETIK-normal-accepted-{Guid.NewGuid():N}";
+        var acceptedCorrelation = Guid.NewGuid().ToString("N");
+        using (var created = await client.SendAsync(Post(NormalDraftsPath, acceptedKey, acceptedCorrelation, accepted)))
+        {
+            Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+            var body = await Json(created);
+            Assert.Equal(draftId, body.GetProperty("draftId").GetGuid());
+            Assert.Equal("Draft", body.GetProperty("status").GetString());
+        }
+
+        var callsAfterCreate = provider.Calls;
+        provider.Advance(PreparedSource(debitId, creditId, "mirror-v3", 'c', "rule-v3"));
+        using (var replay = await client.SendAsync(Post(
+                   NormalDraftsPath, acceptedKey, Guid.NewGuid().ToString("N"), accepted)))
+        {
+            Assert.Equal(HttpStatusCode.Created, replay.StatusCode);
+            AssertReplayOf(replay, acceptedCorrelation);
+            Assert.Equal(draftId, (await Json(replay)).GetProperty("draftId").GetGuid());
+        }
+        Assert.Equal(callsAfterCreate, provider.Calls);
+
+        var changed = PreparedRequest(draftId, sourceId, debitId, creditId, versionB!, "11.25");
+        using (var conflict = await client.SendAsync(Post(
+                   NormalDraftsPath, acceptedKey, Guid.NewGuid().ToString("N"), changed)))
+        {
+            Assert.Equal(HttpStatusCode.Conflict, conflict.StatusCode);
+            Assert.Equal("idempotency_conflict", Code(await Json(conflict)));
+        }
+        Assert.Equal(callsAfterCreate, provider.Calls);
+
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM accounting.NormalJournalDrafts WHERE Id = @id", ("@id", draftId)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM accounting.Commands WHERE CommandName = @n",
+            ("@n", NormalJournalCommandNamesV1.CreatePreparedDraft)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityType = N'Accounting.NormalJournalDraft' AND EntityId = @id",
+            ("@id", draftId.ToString("D"))));
+        Assert.Equal(0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM accounting.Journals WHERE Id = @id", ("@id", draftId)));
+    }
 
     /// <summary>
     /// ACC-V1 reversal over the public route and real SQL: the maker stores one pending proposal and
@@ -948,6 +1048,49 @@ public sealed class AccountingApiSqlServerRelationalAcceptanceTests
                 new ProposedLine("synthetic-credit-key", credit, PostingSide.Credit, amount),
             ]);
 
+    private static CreateNormalJournalDraftRequestV1 PreparedRequest(
+        Guid draftId,
+        Guid sourceId,
+        Guid debitId,
+        Guid creditId,
+        string preparationVersion,
+        string amount = "10.25") =>
+        new(
+            draftId,
+            sourceId,
+            new DateOnly(2026, 9, 24),
+            new DateOnly(2026, 9, 24),
+            null,
+            preparationVersion,
+            [
+                new CreateNormalJournalDraftLineRequestV1(debitId, "Debit", amount),
+                new CreateNormalJournalDraftLineRequestV1(creditId, "Credit", amount),
+            ]);
+
+    private static NormalJournalDraftServerSourceV1 PreparedSource(
+        Guid debitId,
+        Guid creditId,
+        string mirrorVersion,
+        char mirrorHash,
+        string ruleVersion)
+    {
+        var approvedAt = DateTimeOffset.Parse("2026-09-24T12:00:00Z");
+        var approver = Guid.Parse("a2000000-0000-4000-8000-000000000099");
+        var debit = new AccountRef(CompanyA, debitId);
+        var credit = new AccountRef(CompanyA, creditId);
+        var mirror = new AccountPlanMirrorV1(CompanyA, mirrorVersion, new string(mirrorHash, 64), approver, approvedAt,
+        [
+            new AccountPlanMirrorRowV1(debit, "SENTETIK-100", "Sentetik borc hesabi"),
+            new AccountPlanMirrorRowV1(credit, "SENTETIK-120", "Sentetik alacak hesabi"),
+        ]);
+        var rule = new NormalJournalPostingRuleV1(mirror, "approved-normal-journal", ruleVersion, approver, approvedAt,
+        [
+            new NormalJournalMappingV1("approved-debit", PostingSide.Debit, debit),
+            new NormalJournalMappingV1("approved-credit", PostingSide.Credit, credit),
+        ]);
+        return new NormalJournalDraftServerSourceV1(rule, Lira, "2", "finance-profile", "7");
+    }
+
     private static HttpRequestMessage Post<T>(string path, string key, string correlation, T body)
     {
         var request = new HttpRequestMessage(HttpMethod.Post, path)
@@ -1001,11 +1144,11 @@ public sealed class AccountingApiSqlServerRelationalAcceptanceTests
 
         public Guid Writer { get; } = Guid.NewGuid();
 
-        public static async Task<Run> StartAsync()
+        public static async Task<Run> StartAsync(Action<IServiceCollection>? configureServices = null)
         {
             var baseConnectionString = Environment.GetEnvironmentVariable(
                 SqlServerRelationalAcceptanceTests.ConnectionStringEnvironmentVariable)!;
-            var factory = new SqlServerRelationalApiFactory(baseConnectionString);
+            var factory = new SqlServerRelationalApiFactory(baseConnectionString, configureServices);
             var run = new Run(baseConnectionString, factory);
             using var client = factory.CreateClient();
             using var health = await client.GetAsync("/health/live");
@@ -1115,6 +1258,25 @@ public sealed class AccountingApiSqlServerRelationalAcceptanceTests
                 END;
                 """;
             await command.ExecuteNonQueryAsync();
+        }
+    }
+
+    private sealed class MutableNormalJournalSourceProvider(NormalJournalDraftServerSourceV1 source)
+        : INormalJournalDraftServerSourceProviderV1
+    {
+        private NormalJournalDraftServerSourceV1 current = source;
+
+        public int Calls { get; private set; }
+
+        public void Advance(NormalJournalDraftServerSourceV1 next) => current = next;
+
+        public Task<NormalJournalDraftServerSourceV1?> ResolveAsync(
+            Guid companyId,
+            Guid sourceId,
+            CancellationToken cancellationToken = default)
+        {
+            Calls++;
+            return Task.FromResult<NormalJournalDraftServerSourceV1?>(current);
         }
     }
 

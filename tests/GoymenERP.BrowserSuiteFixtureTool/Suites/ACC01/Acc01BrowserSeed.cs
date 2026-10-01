@@ -31,6 +31,8 @@ public sealed class Acc01BrowserSeed : IBrowserSuiteFixture
 
     private const string PeriodsPath = "/api/v1/accounting/periods";
     private const string JournalsPath = "/api/v1/accounting/journals";
+    private const string FinanceSourcesPath = "/api/v1/finance/manual-receipts";
+    private const string NormalDraftSourcesPath = "/api/v1/accounting/normal-journal-draft-sources";
 
     public string Suite => "acc01";
 
@@ -44,6 +46,7 @@ public sealed class Acc01BrowserSeed : IBrowserSuiteFixture
         }
 
         await new Acc01PostedJournalFixtureWriter(context.Services).EnsureAsync(cancellationToken);
+        await new Acc01NormalJournalSourceFixtureWriter(context.Services).EnsureAsync(cancellationToken);
 
         foreach (var (actor, company) in new[]
                  {
@@ -94,12 +97,57 @@ public sealed class Acc01BrowserSeed : IBrowserSuiteFixture
             throw new InvalidOperationException("The real journal read did not answer the fixture's two posted lines.");
         }
 
+        // ACC01-10 consumes one separately gated synthetic Finance receipt, created through Finance's owner service.
+        // Both reads below are real authorized HTTP and fail closed if that prerequisite/authority is absent.
+        var sourcePage = await context.GetJsonAsync(
+            PreparerActor, CompanyGdc, FinanceSourcesPath, cancellationToken);
+        if (sourcePage.GetProperty("companyId").GetGuid() != CompanyGdc)
+        {
+            throw new InvalidOperationException("The acc01 Finance source list answered another company.");
+        }
+        var recorded = sourcePage.GetProperty("items").EnumerateArray()
+            .Where(item => item.GetProperty("stage").GetString() == "Recorded")
+            .ToArray();
+        if (recorded.Length != 1)
+        {
+            throw new InvalidOperationException("The acc01 prerequisite must expose exactly one recorded Finance source.");
+        }
+        var source = recorded[0];
+        var sourceId = source.GetProperty("id").GetGuid();
+        var sourceNumber = source.GetProperty("sourceNumber").GetString();
+        var occurredOn = source.GetProperty("occurredOn").GetString();
+        var amount = source.GetProperty("amount").GetProperty("money").GetProperty("amount").GetString();
+        if (sourceId == Guid.Empty || string.IsNullOrWhiteSpace(sourceNumber)
+            || string.IsNullOrWhiteSpace(occurredOn) || string.IsNullOrWhiteSpace(amount))
+        {
+            throw new InvalidOperationException("The acc01 recorded Finance source has incomplete visible facts.");
+        }
+
+        var preparation = await context.GetJsonAsync(PreparerActor, CompanyGdc,
+            $"{NormalDraftSourcesPath}/{sourceId:D}", cancellationToken);
+        if (preparation.GetProperty("companyId").GetGuid() != CompanyGdc
+            || preparation.GetProperty("sourceId").GetGuid() != sourceId)
+        {
+            throw new InvalidOperationException("The normal-journal preparation is not bound to the acc01 Finance source.");
+        }
+        var mappings = preparation.GetProperty("mappings").EnumerateArray().ToArray();
+        var debit = mappings.Single(mapping => mapping.GetProperty("side").GetString() == "Debit");
+        var credit = mappings.Single(mapping => mapping.GetProperty("side").GetString() == "Credit");
+        static string MappingLabel(JsonElement mapping, string side) =>
+            $"{mapping.GetProperty("accountCode").GetString()} - {mapping.GetProperty("accountName").GetString()} ({side})";
+
         return new Dictionary<string, string>(StringComparer.Ordinal)
         {
             ["companyId"] = CompanyGdc.ToString("D"),
             ["companyBId"] = CompanyGsp.ToString("D"),
             ["preparerActor"] = PreparerActor,
             ["approverActor"] = ApproverActor,
+            ["normalSourceLabel"] = $"Kaynak ref. ...{sourceId.ToString("D")[^8..]} - {occurredOn}",
+            ["normalOccurredOn"] = occurredOn,
+            ["normalAmount"] = amount,
+            ["normalDebitLabel"] = MappingLabel(debit, "Borç"),
+            ["normalCreditLabel"] = MappingLabel(credit, "Alacak"),
+            ["openPeriodId"] = AccountingPostedJournalFixture.PeriodId.ToString("D"),
         };
     }
 

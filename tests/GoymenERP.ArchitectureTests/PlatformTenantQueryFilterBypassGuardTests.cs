@@ -160,7 +160,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         {
             // accounting
             ["tools/relational_inventory/accounting.txt"] =
-                "03817947a1e8f6352ca23eab78cdc2be4813ed54c5963c064e7bf371f9b4d4fc",
+                "40ffe6a52ddfbb445fdf2e168fdddd196b3db324259fa68b9429c5c35990da09",
 
             // counterparty
             // AT-009: +2 real-SQL fresh-authority interleavings (duplicate read and same-key winner replay).
@@ -662,7 +662,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "GoymenERP.Modules.Accounting.Infrastructure/"
                  + "AccountingModuleExtensions.cs"] =
                     new(
-                        "bb4fa94002e875a288f21c51ced7d63565e65fd57bfed4c85e01868420fde057",
+                        "e0f369a72edfb66b1e45b59d18cb0580ab70ae38e47dadfb264751396041c2d3",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,

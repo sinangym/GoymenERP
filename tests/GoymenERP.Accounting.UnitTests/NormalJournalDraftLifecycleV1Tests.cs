@@ -140,6 +140,49 @@ public sealed class NormalJournalDraftLifecycleV1Tests
             line => Assert.Equal("credit", line.MappingKey));
     }
 
+    [Fact]
+    public async Task Prepared_v2_replay_is_answered_from_the_command_log_and_changed_fingerprint_conflicts()
+    {
+        var draft = Draft();
+        var command = PreparedCommand(draft, new string('a', 64));
+        var store = new MemoryStore(Record());
+        var authority = new PermissionAuthority(create: Granted(), approve: Granted());
+        var service = Service(store, authority);
+
+        var first = await service.CreatePreparedAsync(draft, command, "prepared-v2-key");
+        var replay = await Service(store, authority)
+            .TryReplayPreparedCreateAsync(command, "prepared-v2-key");
+        var conflict = await Service(store, authority).TryReplayPreparedCreateAsync(
+            command with { ExpectedPreparationVersion = new string('b', 64) }, "prepared-v2-key");
+
+        Assert.Equal(AccountingApiStatus.Created, first.Status);
+        Assert.NotNull(replay);
+        Assert.Equal(AccountingApiStatus.Created, replay!.Status);
+        Assert.True(replay.IsReplay);
+        Assert.NotNull(conflict);
+        Assert.Equal(AccountingApiStatus.Conflict, conflict!.Status);
+        Assert.Equal(AccountingApiCodes.IdempotencyConflict, conflict.Code);
+        Assert.Equal(1, store.Creates);
+        Assert.Equal(1, store.Completions);
+    }
+
+    [Fact]
+    public async Task Prepared_v2_replay_requires_fresh_create_authority()
+    {
+        var draft = Draft();
+        var command = PreparedCommand(draft, new string('a', 64));
+        var store = new MemoryStore(Record());
+        var granted = new PermissionAuthority(create: Granted(), approve: Granted());
+        await Service(store, granted).CreatePreparedAsync(draft, command, "prepared-authority-key");
+
+        var denied = await Service(store,
+            new PermissionAuthority(create: PermissionScope.Denied, approve: Granted()))
+            .TryReplayPreparedCreateAsync(command, "prepared-authority-key");
+
+        Assert.NotNull(denied);
+        Assert.Equal(AccountingApiStatus.Denied, denied!.Status);
+    }
+
     private static NormalJournalDraftServiceV1 Service(
         MemoryStore store,
         IErpAuthorityRevalidationService authority)
@@ -158,6 +201,18 @@ public sealed class NormalJournalDraftLifecycleV1Tests
             user,
             new FixedCorrelation());
     }
+
+    private static NormalJournalPreparedCreateCommandV2 PreparedCommand(
+        NormalJournalDraftV1 draft,
+        string preparationVersion) => new(
+            draft.Id,
+            draft.Request.Source.SourceId,
+            draft.Request.Dates.TransactionDate,
+            draft.Request.Dates.AccountingDate,
+            draft.Request.Dates.ValueDate,
+            preparationVersion,
+            [.. draft.Request.Lines.Select(line => new NormalJournalPreparedCreateLineV2(
+                line.Account!.Value.AccountId, line.Side, line.Amount!.Value))]);
 
     private static NormalJournalDraftRecordV1 Record()
         => Record(Draft());

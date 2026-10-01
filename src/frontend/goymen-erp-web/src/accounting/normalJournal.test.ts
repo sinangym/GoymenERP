@@ -9,6 +9,7 @@ const ACTOR = 'a0000000-0000-4000-8000-000000000004'
 const ACCOUNT_1 = 'a0000000-0000-4000-8000-000000000005'
 const ACCOUNT_2 = 'a0000000-0000-4000-8000-000000000006'
 const CURRENCY = 'a0000000-0000-4000-8000-000000000007'
+const PREPARATION = 'b'.repeat(64)
 
 function draft(overrides: Record<string, unknown> = {}) {
   return {
@@ -49,6 +50,7 @@ describe('normal journal commands', () => {
     const fetchMock = vi.fn(async () => new Response(JSON.stringify(draft()), { status: 201, headers: { 'Content-Type': 'application/json' } }))
     vi.stubGlobal('fetch', fetchMock)
     const request = { draftId: DRAFT, sourceId: SOURCE, transactionDate: '2026-09-24', accountingDate: '2026-09-24', valueDate: null,
+      expectedPreparationVersion: PREPARATION,
       lines: [{ accountId: ACCOUNT_1, side: 'Debit' as const, amount: '10.25' }, { accountId: ACCOUNT_2, side: 'Credit' as const, amount: '10.25' }] }
     const result = await sendNormalJournalCommand(COMPANY, { operation: 'create', idempotencyKey: 'key-1', request })
     expect(result.type).toBe('applied')

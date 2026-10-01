@@ -43,6 +43,7 @@ public static class AccountingEndpoints
     [
         .. PeriodConflictCodes,
         NormalJournalDraftStoreCodesV1.ContentConflict,
+        NormalJournalDraftPreparationCodesV1.VersionConflict,
         NormalJournalDraftStoreCodesV1.NotPending,
         NormalJournalDraftStoreCodesV1.PostingConflict,
     ];
@@ -219,6 +220,21 @@ public static class AccountingEndpoints
             .RequireAuthorization(AccountingPermissionManifestV1.JournalsRead)
             .WithName("GetAccountingTrialBalanceV1")
             .Produces<TrialBalanceReportV1>(StatusCodes.Status200OK)
+            .WithReadProblems(notFound: false);
+
+        group.MapGet("/normal-journal-draft-sources/{sourceId:guid}", async (
+                Guid sourceId,
+                NormalJournalDraftSourceReadServiceV1 service,
+                HttpContext httpContext,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext.Response.Headers);
+                return ToHttpResult(httpContext, await service.ReadAsync(sourceId, cancellationToken), null);
+            })
+            .RequireCompanyContext()
+            .RequireAuthorization(NormalJournalPermissionNamesV1.DraftCreate)
+            .WithName("GetAccountingNormalJournalDraftSourceV1")
+            .Produces<NormalJournalDraftSourcePreparationV1>(StatusCodes.Status200OK)
             .WithReadProblems(notFound: false);
 
         group.MapPost("/normal-journal-drafts", async (

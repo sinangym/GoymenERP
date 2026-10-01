@@ -92,7 +92,7 @@ ENVELOPE_KEYS = (
     "GOYMEN_ERP_C01_E2E_RUN_ID",
     "GOYMEN_ERP_C01_E2E_COMPOSE_PROJECT",
 )
-MFG_API_READ_FIXTURE_KEYS = (
+API_READ_FIXTURE_KEYS = (
     "BrowserSuiteApi__Profile",
     "BrowserSuiteApi__Disposable",
     "BrowserSuiteApi__TestedCommit",
@@ -296,11 +296,12 @@ SUITE_IDENTITY_PERMISSIONS = {
             "inventory.physical-allocation.write", "sales.orders.delivery-schedule.write",
             "sales.orders.cancel", "sales.orders.quantity.write",
             "sales.orders.customer-acceptance.record"),
-    # The six Accounting names. The preparer holds .approve on purpose — Ö4 must refuse its OWN proposal
-    # although the grant is there — and holds periods.read alone in the second company; the approver holds
-    # no journal or queue name, so those routes stay closed to it.
+    # Accounting's six screen names plus the exact existing Finance reads and normal-draft create/approve
+    # used by ACC01-10. They are grants only in this disposable runner database.
     "acc01": ("accounting.periods.read", "accounting.periods.propose", "accounting.periods.approve",
-              "accounting.periods.close", "accounting.journals.read", "accounting.posting-queues.read"),
+              "accounting.periods.close", "accounting.journals.read", "accounting.posting-queues.read",
+              "finance.manual-receipt.draft.read", "finance.manual-receipt.amount.read",
+              "accounting.normal-journal.draft.create", "accounting.normal-journal.draft.approve"),
     # LOG-4a's three Logistics names; the Sales names stay on the two Sales seed actors (the preparer holds none:
     # the picker reads the price-free Logistics approved-lines read under the create name, Sinan §4).
     # ... and the Cari party read the preparer needs to see the customer by name at all: the price-free
@@ -524,8 +525,10 @@ SUITE_FIXTURE_OUTPUTS: dict[str, frozenset[str]] = {
     # FİNANS's Suites/ACC01 seed: the two actors and both companies. Periods are proposed, approved and closed
     # through the real API; since ACC-REV-UI phase 1 the seed also installs one fixed SENTETIK posted journal
     # (gated fixture writer, owner posting path) so ACC01-09 can open M-04 detail and read M-06. Its id is read
-    # from the real API, so the output keys stay these four. The second company only shows GDC's rows never appear.
-    "acc01": frozenset({"companyId", "companyBId", "preparerActor", "approverActor"}),
+    # from real APIs. ACC01-10 additionally exports the exact source and approved mapping labels.
+    "acc01": frozenset({"companyId", "companyBId", "preparerActor", "approverActor",
+                         "normalSourceLabel", "normalOccurredOn", "normalAmount",
+                         "normalDebitLabel", "normalCreditLabel", "openPeriodId"}),
     # SİPARİŞ's Suites/L04 seed: the three actors, both companies, the customer (by id and name), the approved draft
     # line, the instruction created and issued through the real API, its open and gated-blocked lines,
     # and the shipment allocation/label created for the same disposable journey.
@@ -591,6 +594,13 @@ def seed_export(suite: str, seed: object) -> str:
         "outputCustodianKind": "Company",
         "outputInitialBlock": "Free",
     }
+    acc01_exact_text = {
+        "normalOccurredOn": "2026-09-24",
+        "normalAmount": "10.25",
+        "normalDebitLabel": "SENTETIK-100 - Sentetik borc hesabi (Borç)",
+        "normalCreditLabel": "SENTETIK-120 - Sentetik alacak hesabi (Alacak)",
+    }
+    acc01_scalar_keys = frozenset(acc01_exact_text) | {"normalSourceLabel"}
     mfg_guid_keys = expected - mfg_actor_keys - frozenset(mfg_exact_text) - {"outputProductVersion"}
     for key, value in seed.items():
         require(isinstance(value, str), f"seed output {key} must be a string")
@@ -607,6 +617,14 @@ def seed_export(suite: str, seed: object) -> str:
             else:
                 require(mfg_exact_text.get(key) == value,
                         f"mfg seed output {key} must match its exact closed-contract value")
+            continue
+        if suite == "acc01" and key in acc01_scalar_keys:
+            if key == "normalSourceLabel":
+                require(re.fullmatch(r"Kaynak ref\. \.\.\.[0-9a-f]{8} - 2026-09-24", value) is not None,
+                        "acc01 seed output normalSourceLabel must match its exact closed-contract pattern")
+            else:
+                require(acc01_exact_text[key] == value,
+                        f"acc01 seed output {key} must match its exact closed-contract value")
             continue
         is_s04_version = suite == "s04" and key in {"productVersion", "productUnitProfileVersion",
                                                      "allocationLabelVersion"} \
@@ -630,7 +648,7 @@ def seed_export(suite: str, seed: object) -> str:
         require(is_guid or is_actor or is_s04_version or is_s04_code or is_s04_name
                 or is_pur01_version or is_pur01_code or is_pur01_name
                 or is_r14_version or is_r14_code or is_r14_name,
-                f"seed output {key} must be a GUID or an actor id or an approved suite Product value")
+                f"seed output {key} must be a GUID or an actor id or an approved suite scalar value")
     if suite == "mfg":
         require(seed["outputOwnerId"] == seed["companyId"],
                 "mfg output owner must be the seeded company")
@@ -745,19 +763,19 @@ def validate_suite_compose(model: dict, suite: str, expected_commit: str, expect
             require(not key.startswith("C01E2e__") and not key.startswith("GOYMEN_ERP_C01_E2E_"),
                     f"normal profile API must not carry the disposable capability envelope ({key})")
         expected_keys = CANONICAL_API_ENVIRONMENT_KEYS - set(ENVELOPE_KEYS)
-        if suite == "mfg":
-            expected_keys |= set(MFG_API_READ_FIXTURE_KEYS)
-            require(environment.get("BrowserSuiteApi__Profile") == "mfg",
-                    "mfg API read fixture profile must be mfg")
+        if suite in ("mfg", "acc01"):
+            expected_keys |= set(API_READ_FIXTURE_KEYS)
+            require(environment.get("BrowserSuiteApi__Profile") == suite,
+                    f"{suite} API read fixture profile must be {suite}")
             require(environment.get("BrowserSuiteApi__Disposable") == "CONFIRMED",
-                    "mfg API read fixture must be explicitly disposable")
+                    f"{suite} API read fixture must be explicitly disposable")
             require(environment.get("BrowserSuiteApi__TestedCommit") == expected_commit,
-                    "mfg API read fixture source SHA drift")
+                    f"{suite} API read fixture source SHA drift")
             require(environment.get("BrowserSuiteApi__RunId") == expected_project.split("-")[-2],
-                    "mfg API read fixture run id drift")
+                    f"{suite} API read fixture run id drift")
             require(environment.get("BrowserSuiteApi__ComposeProject") == expected_project,
-                    "mfg API read fixture compose project drift")
-            for key in MFG_API_READ_FIXTURE_KEYS:
+                    f"{suite} API read fixture compose project drift")
+            for key in API_READ_FIXTURE_KEYS:
                 canonical_environment.pop(key, None)
         # Only to let the canonical rules run: the envelope values they expect, never sent to the API.
         canonical_environment.update({
