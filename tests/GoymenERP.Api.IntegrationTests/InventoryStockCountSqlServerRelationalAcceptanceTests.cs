@@ -264,6 +264,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             Assert.Equal(0, await run.ScalarAsync<int>(
                 "SELECT COUNT(*) FROM sys.tables WHERE schema_id = SCHEMA_ID(N'inventory') AND name LIKE N'StockCount%'"));
             await context.GetService<IMigrator>().MigrateAsync(currentMigration);
+            await context.Database.MigrateAsync();
         }
 
         var source = await SeedFreePhysicalSourceAsync(run, CompanyA, "SYN-COUNT-DOWN", 10m);
@@ -271,6 +272,9 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         {
             await scope.Store.RecordStockCountAsync(Count(source.LabelId, source.LabelVersion, "9"), Metadata(run));
         }
+
+        await RemoveSyntheticProductVersionsForHistoricalMigrationAsync(
+            run, "SYN-COUNT-DOWN", expectedLabels: 1);
 
         await using (var context = run.Context(CompanyA))
         {

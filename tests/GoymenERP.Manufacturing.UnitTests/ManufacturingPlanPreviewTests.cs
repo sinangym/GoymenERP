@@ -25,6 +25,8 @@ namespace GoymenERP.Manufacturing.UnitTests;
 public sealed class ManufacturingPlanPreviewTests
 {
     private const string Permission = "manufacturing.plans.write";
+    // ProductStockCandidateFixture creates draft v1 and activates it; c161e0e7 publishes that exact accepted v2.
+    private const string AcceptedProductFixtureVersion = "2";
     private static readonly Guid Company = Guid.Parse("10000000-0000-0000-0000-000000000001");
     private static readonly Guid Actor = Guid.Parse("a1000000-0000-0000-0000-00000000000a");
     private static readonly Guid WorkCenter = Guid.Parse("c1000000-0000-0000-0000-00000000000c");
@@ -428,7 +430,8 @@ public sealed class ManufacturingPlanPreviewTests
             return Task.FromResult(new InventoryParentRollReferenceV1(
                 Company, selection.LabelId, selection.ExpectedLabelVersion, "LBL-1", Guid.NewGuid(),
                 new InventoryLotV1(Guid.NewGuid(), null, null), null, null, "Complete", [], [], "10", "10", "0", [],
-                DraftSelectable: true, DraftRefusalCode: null, ProductionUseRequiresRevalidation: true));
+                DraftSelectable: true, DraftRefusalCode: null, ProductionUseRequiresRevalidation: true)
+            { ProductVersion = AcceptedProductFixtureVersion });
         }
     }
 

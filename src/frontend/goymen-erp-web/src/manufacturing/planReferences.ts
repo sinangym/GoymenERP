@@ -37,6 +37,8 @@ export interface ParentRollCandidate {
   readonly labelVersion: string
   readonly labelCode: string
   readonly productId: string
+  /** Immutable Product-card version captured by Inventory when the label was created. */
+  readonly productVersion: string
   readonly lot: ParentRollLot
   readonly heatNumber: string | null
   readonly coilNumber: string | null
@@ -61,6 +63,8 @@ export interface ParentRollCandidates {
 const GUID = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/
 const VERSION = /^[1-9][0-9]*$/
 const KG = /^(0|[1-9][0-9]*)(\.[0-9]*[1-9])?$/
+const PRODUCT_VERSION_MAX_LENGTH = 128
+const CONTROL = /[\u0000-\u001f\u007f-\u009f]/
 
 type Json = Record<string, unknown>
 
@@ -82,6 +86,15 @@ function guid(value: unknown): value is string {
 
 function text(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0
+}
+
+/** Product versions are opaque owner tokens, not Inventory's numeric label version. */
+function productVersion(value: unknown): value is string {
+  return typeof value === 'string'
+    && value.length > 0
+    && value.length <= PRODUCT_VERSION_MAX_LENGTH
+    && value === value.trim()
+    && !CONTROL.test(value)
 }
 
 function nullableText(value: unknown): value is string | null {
@@ -145,6 +158,7 @@ function decodeCandidate(value: unknown): ParentRollCandidate | null {
       'labelVersion',
       'labelCode',
       'productId',
+      'productVersion',
       'lot',
       'heatNumber',
       'coilNumber',
@@ -165,6 +179,7 @@ function decodeCandidate(value: unknown): ParentRollCandidate | null {
     !VERSION.test(source.labelVersion) ||
     !text(source.labelCode) ||
     !guid(source.productId) ||
+    !productVersion(source.productVersion) ||
     !nullableText(source.heatNumber) ||
     !nullableText(source.coilNumber) ||
     !text(source.documentStatus) ||

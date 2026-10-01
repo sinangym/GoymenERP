@@ -3929,7 +3929,7 @@ public sealed partial class OpenApiContractGenerationTests
                     ("activeAllocationKg", "type:string"),
                     ("availableKg", "type:string")),
                 ["InventoryParentRollReferenceV1"] = ObjectSchema(
-                    ["companyId", "labelId", "labelVersion", "labelCode", "productId", "lot",
+                    ["companyId", "labelId", "labelVersion", "labelCode", "productId", "productVersion", "lot",
                         "heatNumber", "coilNumber", "documentStatus", "requiredDocuments", "attachedDocuments",
                         "physicalKg", "unblockedPhysicalKg", "blockedPhysicalKg", "positions", "draftSelectable",
                         "draftRefusalCode", "productionUseRequiresRevalidation"],
@@ -3938,6 +3938,7 @@ public sealed partial class OpenApiContractGenerationTests
                     ("labelVersion", "type:string"),
                     ("labelCode", "type:string"),
                     ("productId", "type:string;format:uuid"),
+                    ("productVersion", "type:string"),
                     ("lot", "ref:InventoryLotV1"),
                     ("heatNumber", "type:null|string"),
                     ("coilNumber", "type:null|string"),

@@ -367,6 +367,7 @@ public sealed class InventoryOpeningCommandService(
             {
                 var lot = new MaterialLot(line.LotId, companyId, line.ProductId, line.HeatNumber, line.CoilNumber);
                 var label = new MaterialLabel(line.LabelId, companyId, line.LabelCode, line.ProductId, line.LotId,
+                    line.ProductVersion,
                     heatNumber: line.HeatNumber, coilNumber: line.CoilNumber);
                 lines.Add(new OpeningCountLine(line.LineId, lot, label, quantity));
             }

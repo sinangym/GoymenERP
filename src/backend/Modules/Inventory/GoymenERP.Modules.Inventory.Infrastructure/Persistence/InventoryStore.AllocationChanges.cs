@@ -145,7 +145,7 @@ public sealed partial class InventoryStore
             row.ReleaseReason = request.Reason;
 
             var identity = new MaterialLabel(targetLabel.Id, targetLabel.CompanyId, targetLabel.Code, targetLabel.ProductId,
-                targetLabel.LotId);
+                targetLabel.LotId, targetLabel.ProductVersion);
             var position = new StockPosition(companyId,
                 new StockOwner((StockPartyKind)target.OwnerKind, target.OwnerId),
                 new StockCustodian((StockPartyKind)target.CustodianKind, target.CustodianId),
@@ -353,7 +353,8 @@ public sealed partial class InventoryStore
             new StockOwner((StockPartyKind)row.OwnerKind, row.OwnerId),
             new StockCustodian((StockPartyKind)row.CustodianKind, row.CustodianId),
             row.LocationId,
-            new MaterialLabel(label.Id, label.CompanyId, label.Code, label.ProductId, label.LotId),
+            new MaterialLabel(label.Id, label.CompanyId, label.Code, label.ProductId, label.LotId,
+                label.ProductVersion),
             (BlockState)row.Block);
 
     private static void BumpLabel(LabelRow label, DateTimeOffset now)

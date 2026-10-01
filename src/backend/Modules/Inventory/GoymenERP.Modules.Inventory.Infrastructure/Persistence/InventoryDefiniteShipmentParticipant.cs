@@ -315,6 +315,7 @@ public sealed class InventoryDefiniteShipmentParticipant : IInventoryDefiniteShi
                 new LabelDocumentAttachment(item.Kind, item.AttachedAtUtc, item.AttachedBy))
             .ToListAsync(cancellationToken);
         return MaterialLabel.Restore(row.Id, row.CompanyId, row.Code, row.ProductId, row.LotId,
+            row.ProductVersion,
             required, row.HeatNumber, row.CoilNumber, [], documents);
     }
 

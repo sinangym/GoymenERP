@@ -61773,7 +61773,8 @@
           "positions",
           "draftSelectable",
           "draftRefusalCode",
-          "productionUseRequiresRevalidation"
+          "productionUseRequiresRevalidation",
+          "productVersion"
         ],
         "type": "object",
         "properties": {
@@ -61851,6 +61852,9 @@
           },
           "productionUseRequiresRevalidation": {
             "type": "boolean"
+          },
+          "productVersion": {
+            "type": "string"
           }
         }
       },

@@ -18,6 +18,7 @@ function candidate(overrides: Record<string, unknown> = {}) {
     labelVersion: '7',
     labelCode: 'LBL-0007',
     productId: PRODUCT,
+    productVersion: 'release-A.02',
     lot: { id: LOT, heatNumber: 'H-12', coilNumber: null },
     heatNumber: 'H-12',
     coilNumber: null,
@@ -49,10 +50,14 @@ function candidate(overrides: Record<string, unknown> = {}) {
 afterEach(() => vi.unstubAllGlobals())
 
 describe('decodeParentRollCandidates', () => {
-  it('preserves label version, physical facts and selection/revalidation flags', () => {
+  it('preserves the numeric label version and the independent opaque Product version', () => {
     const body = { items: [candidate()], searchWindowFull: true }
 
     expect(decodeParentRollCandidates(body)).toEqual(body)
+    expect(decodeParentRollCandidates(body)?.items[0]).toMatchObject({
+      labelVersion: '7',
+      productVersion: 'release-A.02',
+    })
   })
 
   it('keeps a visible customer-owned reference nonselectable without inventing fason context', () => {
@@ -79,6 +84,14 @@ describe('decodeParentRollCandidates', () => {
   it.each([
     { ...candidate(), extra: true },
     candidate({ labelVersion: '07' }),
+    (() => {
+      const { productVersion: _missing, ...item } = candidate()
+      return item
+    })(),
+    candidate({ productVersion: '' }),
+    candidate({ productVersion: ' release-A.02' }),
+    candidate({ productVersion: 'x'.repeat(129) }),
+    candidate({ productVersion: 'release\u0000A' }),
     candidate({ unblockedPhysicalKg: '1000.500' }),
     candidate({ productionUseRequiresRevalidation: false }),
     candidate({ draftSelectable: true, draftRefusalCode: 'inventory_parent_roll_context_required' }),

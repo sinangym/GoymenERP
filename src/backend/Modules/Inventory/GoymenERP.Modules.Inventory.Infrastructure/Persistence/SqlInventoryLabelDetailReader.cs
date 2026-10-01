@@ -86,6 +86,7 @@ internal sealed class SqlInventoryLabelDetailReader(InventoryDbContext db) : IIn
                 row.Code,
                 row.ProductId,
                 row.LotId,
+                row.ProductVersion,
                 JsonSerializer.Deserialize<string[]>(row.RequiredDocumentsJson)
                     ?? throw Error(503, InventoryLabelDetailCodesV1.Unavailable),
                 row.HeatNumber,

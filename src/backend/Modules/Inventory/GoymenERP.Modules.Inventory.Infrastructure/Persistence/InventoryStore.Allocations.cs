@@ -92,7 +92,8 @@ public sealed partial class InventoryStore
             throw AllocationError(409, InventoryAllocationCodesV1.InsufficientFreeStock);
         }
 
-        var identity = new MaterialLabel(label.Id, label.CompanyId, label.Code, label.ProductId, label.LotId);
+        var identity = new MaterialLabel(label.Id, label.CompanyId, label.Code, label.ProductId, label.LotId,
+            label.ProductVersion);
         var position = new StockPosition(companyId,
             new StockOwner((StockPartyKind)source.OwnerKind, source.OwnerId),
             new StockCustodian((StockPartyKind)source.CustodianKind, source.CustodianId),
@@ -189,7 +190,8 @@ public sealed partial class InventoryStore
 
         var label = await dbContext.Labels.SingleOrDefaultAsync(candidate => candidate.Id == row.LabelId, cancellationToken)
             ?? throw new InvalidOperationException("Kayıtlı tahsisin etiketi bulunamadı.");
-        var identity = new MaterialLabel(label.Id, label.CompanyId, label.Code, label.ProductId, label.LotId);
+        var identity = new MaterialLabel(label.Id, label.CompanyId, label.Code, label.ProductId, label.LotId,
+            label.ProductVersion);
         var position = new StockPosition(companyId,
             new StockOwner((StockPartyKind)row.OwnerKind, row.OwnerId),
             new StockCustodian((StockPartyKind)row.CustodianKind, row.CustodianId),

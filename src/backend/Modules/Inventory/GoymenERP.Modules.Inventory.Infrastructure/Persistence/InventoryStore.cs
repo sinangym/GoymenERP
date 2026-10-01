@@ -170,6 +170,7 @@ public sealed partial class InventoryStore(
         var now = timeProvider.GetUtcNow();
         if (stored is null)
         {
+            RequireNewLabelFits(label);
             var lotProductId = lotOfThisCall is not null && lotOfThisCall.Id == label.LotId
                 ? lotOfThisCall.ProductId
                 : await dbContext.Lots.AsNoTracking().Where(row => row.Id == label.LotId)
@@ -186,6 +187,7 @@ public sealed partial class InventoryStore(
                 CompanyId = label.CompanyId,
                 Code = label.Code,
                 ProductId = label.ProductId,
+                ProductVersion = label.ProductVersion,
                 LotId = label.LotId,
                 HeatNumber = label.HeatNumber,
                 CoilNumber = label.CoilNumber,
@@ -452,9 +454,23 @@ public sealed partial class InventoryStore(
             .SingleOrDefaultAsync(row => row.Id == count.Id, cancellationToken);
         if (stored is not null)
         {
-            return string.Equals(stored.ContentHash, hash, StringComparison.Ordinal)
-                ? InventoryWriteOutcome.Replayed
-                : throw Refused(InventoryStoreCodes.OpeningConflict, "Aynı açılış sayımı kimliği farklı içerikle verildi.");
+            if (string.Equals(stored.ContentHash, hash, StringComparison.Ordinal))
+            {
+                return InventoryWriteOutcome.Replayed;
+            }
+
+            if (string.Equals(stored.ContentHash, LegacyOpeningHash(count), StringComparison.Ordinal)
+                && await IsLegacyOpeningWithoutProductVersionAsync(count.Id, count.Lines.Count, cancellationToken))
+            {
+                return InventoryWriteOutcome.Replayed;
+            }
+
+            throw Refused(InventoryStoreCodes.OpeningConflict, "Aynı açılış sayımı kimliği farklı içerikle verildi.");
+        }
+
+        foreach (var line in count.Lines)
+        {
+            RequireNewLabelFits(line.Label);
         }
 
         // Counted kilograms against the company's approved kg profile on the counted-on date (fail-closed).
@@ -518,6 +534,7 @@ public sealed partial class InventoryStore(
                 CompanyId = label.CompanyId,
                 Code = label.Code,
                 ProductId = label.ProductId,
+                ProductVersion = label.ProductVersion,
                 LotId = label.LotId,
                 HeatNumber = label.HeatNumber,
                 CoilNumber = label.CoilNumber,
@@ -807,7 +824,7 @@ public sealed partial class InventoryStore(
         var documents = await dbContext.LabelDocuments.AsNoTracking().Where(row => ids.Contains(row.LabelId))
             .ToListAsync(cancellationToken);
         return rows.ToDictionary(row => row.Id, row => MaterialLabel.Restore(row.Id, row.CompanyId, row.Code, row.ProductId,
-            row.LotId, JsonSerializer.Deserialize<string[]>(row.RequiredDocumentsJson, Json)
+            row.LotId, row.ProductVersion, JsonSerializer.Deserialize<string[]>(row.RequiredDocumentsJson, Json)
                 ?? throw new InvalidOperationException("Kayıtlı etiketin belge gereksinimi okunamadı."),
             row.HeatNumber, row.CoilNumber,
             prints.Where(print => print.LabelId == row.Id).OrderBy(print => print.Sequence).Select(ToPrint),
@@ -926,6 +943,37 @@ public sealed partial class InventoryStore(
         }
     }
 
+    private static void RequireNewLabelFits(MaterialLabel label)
+    {
+        RequireLabelFits(label);
+        if (label.ProductVersion is null)
+        {
+            throw Refused(InventoryStoreCodes.ValueDoesNotFit,
+                "Etiket yeni bir stok etkisine kaydedilirken ürün sürümü zorunludur.");
+        }
+    }
+
+    private async Task<bool> IsLegacyOpeningWithoutProductVersionAsync(Guid countId, int expectedLineCount,
+        CancellationToken cancellationToken)
+    {
+        var labelIds = await dbContext.OpeningCountLines.AsNoTracking()
+            .Where(row => row.CountId == countId)
+            .Select(row => row.LabelId)
+            .ToListAsync(cancellationToken);
+        if (labelIds.Count != expectedLineCount || labelIds.Count == 0
+            || labelIds.Distinct().Count() != labelIds.Count)
+        {
+            return false;
+        }
+
+        var productVersions = await dbContext.Labels.AsNoTracking()
+            .Where(row => labelIds.Contains(row.Id))
+            .Select(row => row.ProductVersion)
+            .ToListAsync(cancellationToken);
+        return productVersions.Count == labelIds.Count
+            && productVersions.All(productVersion => productVersion is null);
+    }
+
     private static void RequireLotFits(MaterialLot lot)
     {
         if ((lot.HeatNumber?.Length ?? 0) > MaterialLot.MaximumTraceLength
@@ -950,7 +998,9 @@ public sealed partial class InventoryStore(
     /// <summary>A replay repeats the stored facts exactly; the code's spelling included.</summary>
     private static bool SameIdentity(LabelRow row, MaterialLabel label) =>
         row.CompanyId == label.CompanyId && string.Equals(row.Code, label.Code, StringComparison.Ordinal)
-        && row.ProductId == label.ProductId && row.LotId == label.LotId
+        && row.ProductId == label.ProductId
+        && string.Equals(row.ProductVersion, label.ProductVersion, StringComparison.Ordinal)
+        && row.LotId == label.LotId
         && string.Equals(row.HeatNumber, label.HeatNumber, StringComparison.Ordinal)
         && string.Equals(row.CoilNumber, label.CoilNumber, StringComparison.Ordinal)
         && string.Equals(row.RequiredDocumentsJson,
@@ -968,7 +1018,7 @@ public sealed partial class InventoryStore(
 
     /// <summary>The label facts a position needs (company, product, id); prints and documents do not matter there.</summary>
     private static MaterialLabel IdentityOnly(LabelRow row) =>
-        new MaterialLabel(row.Id, row.CompanyId, row.Code, row.ProductId, row.LotId);
+        new MaterialLabel(row.Id, row.CompanyId, row.Code, row.ProductId, row.LotId, row.ProductVersion);
 
     private static StockPosition Position(Guid companyId, int ownerKind, Guid ownerId, int custodianKind, Guid custodianId,
         Guid locationId, MaterialLabel label, int block) =>
@@ -1049,6 +1099,38 @@ public sealed partial class InventoryStore(
                 {
                     id = line.Label.Id,
                     code = line.Label.Code,
+                    productVersion = line.Label.ProductVersion,
+                    heat = line.Label.HeatNumber,
+                    coil = line.Label.CoilNumber,
+                    requiredDocuments = line.Label.RequiredDocuments.Order(StringComparer.Ordinal),
+                    prints = line.Label.Prints.Count,
+                    documents = line.Label.DocumentAttachments.Count,
+                },
+            }),
+        }, Json);
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical))).ToLowerInvariant();
+    }
+
+    /// <summary>
+    /// Canonical opening identity used before label ProductVersion became durable. It is accepted only when the
+    /// stored opening's labels still have null provenance; it is never written for a new opening or used to backfill.
+    /// </summary>
+    internal static string LegacyOpeningHash(OpeningCount count)
+    {
+        var canonical = JsonSerializer.Serialize(new
+        {
+            locationId = count.LocationId,
+            countedOn = count.CountedOn.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+            sheetReference = count.SheetReference,
+            lines = count.Lines.Select(line => new
+            {
+                id = line.Id,
+                quantityKg = line.Quantity.ToString(),
+                lot = new { id = line.Lot.Id, productId = line.Lot.ProductId, heat = line.Lot.HeatNumber, coil = line.Lot.CoilNumber },
+                label = new
+                {
+                    id = line.Label.Id,
+                    code = line.Label.Code,
                     heat = line.Label.HeatNumber,
                     coil = line.Label.CoilNumber,
                     requiredDocuments = line.Label.RequiredDocuments.Order(StringComparer.Ordinal),
@@ -1083,6 +1165,7 @@ public sealed partial class InventoryStore(
         label.Id,
         label.Code,
         label.ProductId,
+        label.ProductVersion,
         label.LotId,
         requiredDocuments = label.RequiredDocuments.Order(StringComparer.Ordinal),
         documentStatus = label.DocumentStatus.ToString(),
