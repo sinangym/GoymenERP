@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net.Http.Json;
 using System.Text.Json;
 using GoymenERP.Api.Shell;
@@ -168,7 +169,7 @@ public sealed class L04BrowserSeed : IBrowserSuiteFixture
                 new { expectedVersion = draftVersion.ToString(System.Globalization.CultureInfo.InvariantCulture) }, "approve", cancellationToken);
         }
 
-        await EnsureShipmentAllocationAsync(context, shipmentReceipt.LabelVersion, cancellationToken);
+        await EnsureShipmentAllocationAsync(context, shipmentReceipt.CurrentLabelVersion, cancellationToken);
 
         JsonElement approved = await context.GetJsonAsync(SalesApproverActor, CompanyGdc, $"{DraftsPath}/{DraftId:D}", cancellationToken);
         JsonElement approvedDraft = approved.GetProperty("draft");
@@ -440,17 +441,31 @@ public sealed class L04BrowserSeed : IBrowserSuiteFixture
             throw new InvalidOperationException("The partially received purchase line does not retain exactly 5 kg open.");
         }
 
+        string receiptLabelVersion = receipt.GetProperty("labelVersion").GetString()
+            ?? throw new InvalidOperationException("The goods-receipt label version is missing.");
+        if (!IsCanonicalVersion(receiptLabelVersion))
+        {
+            throw new InvalidOperationException("The goods-receipt label version is not canonical.");
+        }
+
         JsonElement label = await context.GetJsonAsync(
             LoaderActor, CompanyGdc, $"/api/v1/inventory/labels/{ShipmentLabelId:D}/detail", cancellationToken);
-        string labelVersion = receipt.GetProperty("labelVersion").GetString()
-            ?? throw new InvalidOperationException("The goods-receipt label version is missing.");
-        if (label.GetProperty("labelVersion").GetString() != labelVersion
-            || label.GetProperty("identity").GetProperty("productId").GetGuid() != product.ProductId)
+        JsonElement identity = label.GetProperty("identity");
+        string currentLabelVersion = label.GetProperty("labelVersion").GetString()
+            ?? throw new InvalidOperationException("The reopened Inventory label version is missing.");
+        if (!IsCanonicalVersion(currentLabelVersion)
+            || identity.GetProperty("labelId").GetGuid() != ShipmentLabelId
+            || identity.GetProperty("companyId").GetGuid() != CompanyGdc
+            || identity.GetProperty("productId").GetGuid() != product.ProductId)
         {
             throw new InvalidOperationException("The reopened Inventory label does not match the goods-receipt journey tuple.");
         }
 
-        return new ShipmentReceipt(ShipmentReceiptAcceptanceId, ShipmentReceiptMovementId, labelVersion);
+        return new ShipmentReceipt(
+            ShipmentReceiptAcceptanceId,
+            ShipmentReceiptMovementId,
+            receiptLabelVersion,
+            currentLabelVersion);
     }
 
     /// <summary>The seeded instruction through the real API: its create key replays on a re-run, so the id is stable.</summary>
@@ -500,7 +515,16 @@ public sealed class L04BrowserSeed : IBrowserSuiteFixture
         return locationId;
     }
 
-    private sealed record ShipmentReceipt(Guid AcceptanceId, Guid MovementId, string LabelVersion);
+    private static bool IsCanonicalVersion(string value) =>
+        value.Length > 0 && value[0] != '0'
+        && long.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out long parsed)
+        && parsed > 0 && parsed.ToString(CultureInfo.InvariantCulture) == value;
+
+    private sealed record ShipmentReceipt(
+        Guid AcceptanceId,
+        Guid MovementId,
+        string ReceiptLabelVersion,
+        string CurrentLabelVersion);
 
     private static async Task EnsureShipmentAllocationAsync(BrowserSuiteFixtureContext context,
         string labelVersion, CancellationToken cancellationToken)
