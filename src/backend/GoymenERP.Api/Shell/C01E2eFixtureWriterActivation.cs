@@ -1,7 +1,11 @@
 using GoymenERP.Api.ProductRuntime;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
+using GoymenERP.Modules.Accounting.Application;
+using GoymenERP.Modules.Accounting.Domain.Journals;
+using GoymenERP.Modules.Accounting.Domain.Posting;
 using GoymenERP.Modules.Accounting.Infrastructure.Fixtures;
+using GoymenERP.Modules.Finance.Infrastructure.Fixtures;
 using GoymenERP.Modules.Identity.Infrastructure.Fixtures;
 using GoymenERP.Modules.Logistics.Infrastructure.Fixtures;
 using GoymenERP.Modules.Product.Infrastructure.Fixtures;
@@ -89,6 +93,14 @@ internal static class C01E2eFixtureWriterActivation
         // acc01 ACC01-09: Accounting's fixed SENTETIK posted journal in the fin01 Open period above, through the owner's
         // posting path. The seed's host scope has no request user, so its amount check reads Settings as the fixture identity.
         services.AddAccountingPostedJournalFixtureStore(CreateAccountingFixtureSettings);
+        // ACC01-10: one recorded Finance source plus one exact approved Accounting mirror/rule. Both
+        // exist only behind this complete gate; the normal host retains the empty production catalog.
+        services.AddFinanceRecordedReceiptFixtureStore();
+        services.RemoveAll<IApprovedNormalJournalSourceBindingCatalogV1>();
+        services.AddSingleton<C01E2eApprovedNormalJournalSourceBindingCatalog>();
+        services.AddSingleton<IApprovedNormalJournalSourceBindingCatalogV1>(provider =>
+            provider.GetRequiredService<C01E2eApprovedNormalJournalSourceBindingCatalog>());
+        services.AddScoped<C01E2eFinanceNormalJournalSourceFixtureWriter>();
         // pur01: one synthetic Draft Purchasing order. Approval and replay remain real API commands.
         services.AddPurchaseOrderFixtureStore();
         services.AddScoped<C01E2ePurchaseOrderFixtureWriter>();
@@ -181,6 +193,107 @@ internal static class C01E2eFixtureWriterActivation
             CompanyId = companyId;
         }
     }
+}
+
+public sealed class C01E2eApprovedNormalJournalSourceBindingCatalog :
+    IApprovedNormalJournalSourceBindingCatalogV1
+{
+    private static readonly Guid ApprovedBy = Guid.Parse("b2100000-0000-4000-8000-00000000ac02");
+    private static readonly Guid DebitAccountId = Guid.Parse("b7000000-0000-4000-8000-000000000711");
+    private static readonly Guid CreditAccountId = Guid.Parse("b7000000-0000-4000-8000-000000000712");
+    private static readonly DateTimeOffset ApprovedAt = new(2026, 9, 24, 12, 0, 0, TimeSpan.Zero);
+    private readonly object _gate = new();
+    private ApprovedNormalJournalSourceBindingV1? _binding;
+
+    public void Bind(FinanceRecordedReceiptFixtureOutput source)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        lock (_gate)
+        {
+            if (_binding is not null)
+            {
+                if (_binding.CompanyId == source.CompanyId && _binding.SourceId == source.SourceId
+                    && string.Equals(_binding.SourceVersion, source.SourceVersion, StringComparison.Ordinal))
+                {
+                    return;
+                }
+
+                throw new InvalidOperationException("The ACC01 fixture catalog cannot bind another source.");
+            }
+
+            var debit = new AccountRef(source.CompanyId, DebitAccountId);
+            var credit = new AccountRef(source.CompanyId, CreditAccountId);
+            var mirror = new AccountPlanMirrorV1(
+                source.CompanyId,
+                "SENTETIK-ACC01-MIRROR-V1",
+                new string('a', 64),
+                ApprovedBy,
+                ApprovedAt,
+                [
+                    new AccountPlanMirrorRowV1(debit, "SENTETIK-100", "Sentetik borc hesabi"),
+                    new AccountPlanMirrorRowV1(credit, "SENTETIK-120", "Sentetik alacak hesabi"),
+                ]);
+            var rule = new NormalJournalPostingRuleV1(
+                mirror,
+                "approved-normal-journal",
+                "SENTETIK-ACC01-RULE-V1",
+                ApprovedBy,
+                ApprovedAt,
+                [
+                    new NormalJournalMappingV1("approved-debit", PostingSide.Debit, debit),
+                    new NormalJournalMappingV1("approved-credit", PostingSide.Credit, credit),
+                ]);
+            _binding = new ApprovedNormalJournalSourceBindingV1(
+                source.CompanyId,
+                source.SourceId,
+                NormalJournalSourceKindsV1.RecordedManualReceipt,
+                source.SourceVersion,
+                source.OwnerProfileId,
+                source.OwnerProfileVersion,
+                source.CurrencyId,
+                rule);
+        }
+    }
+
+    public Task<NormalJournalPostingRuleV1?> ResolveAsync(Guid companyId, Guid sourceId, string sourceKind,
+        string sourceVersion, string ownerProfileId, string ownerProfileVersion, Guid currencyId,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        lock (_gate)
+        {
+            var binding = _binding;
+            var match = binding is not null
+                && binding.CompanyId == companyId
+                && binding.SourceId == sourceId
+                && string.Equals(binding.SourceKind, sourceKind, StringComparison.Ordinal)
+                && string.Equals(binding.SourceVersion, sourceVersion, StringComparison.Ordinal)
+                && string.Equals(binding.OwnerProfileId, ownerProfileId, StringComparison.Ordinal)
+                && string.Equals(binding.OwnerProfileVersion, ownerProfileVersion, StringComparison.Ordinal)
+                && binding.CurrencyId == currencyId;
+            return Task.FromResult<NormalJournalPostingRuleV1?>(match ? binding!.Rule : null);
+        }
+    }
+}
+
+public sealed class C01E2eFinanceNormalJournalSourceFixtureWriter
+{
+    private readonly IFinanceRecordedReceiptFixtureStore _finance;
+    private readonly C01E2eApprovedNormalJournalSourceBindingCatalog _catalog;
+
+    public C01E2eFinanceNormalJournalSourceFixtureWriter(
+        IHostEnvironment environment,
+        IConfiguration configuration,
+        IFinanceRecordedReceiptFixtureStore finance,
+        C01E2eApprovedNormalJournalSourceBindingCatalog catalog)
+    {
+        C01E2eFixtureWriterActivation.RequireGate(environment, configuration);
+        _finance = finance;
+        _catalog = catalog;
+    }
+
+    public async Task EnsureAsync(CancellationToken cancellationToken) =>
+        _catalog.Bind(await _finance.EnsureAsync(cancellationToken));
 }
 
 /// <summary>

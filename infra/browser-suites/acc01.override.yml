@@ -2,15 +2,14 @@
 #
 # Owner: FİNANS (Accounting owner; suite owner). Validated with the merged model by
 # tools/validate_browser_acceptance.py once the central writer registers the `acc01` suite
-# (SUITES / its staged Accounting profile, SUITE_API_EXTENSIONS["acc01"] = actors + identity,
-# SUITE_IDENTITY_PERMISSIONS["acc01"] = the six accounting.* names below).
+# (SUITES / normal profile, actors + identity, and the closed permission tuple below).
 #
 # Two synthetic actors after the canonical two, each with its Identity user, synthetic roles and
 # company-wide assignments. Company-wide because every Accounting name is CompanyWideOnly. Disposable
 # test database only: no production user, role or permission.
 #   acc01-preparer (GDC): proposes periods and reads the journals and queues —
-#                   accounting.periods.read / .propose / .approve, accounting.journals.read,
-#                   accounting.posting-queues.read. It holds .approve ON PURPOSE: Ö4 must refuse its own
+#                   Accounting period/journal/queue names, Finance source reads and normal-draft create/approve.
+#                   It holds both approve names ON PURPOSE: each owner still enforces its own transition rules.
 #                   proposal although it holds the grant.
 #   acc01-preparer (GSP): accounting.periods.read only — company B, to show GDC's periods never appear there.
 #   acc01-approver (GDC): approves another person's proposal (Ö4) and closes (Ö5) —
@@ -42,6 +41,10 @@ services:
       IdentitySeed__Roles__5__Permissions__2: accounting.periods.approve
       IdentitySeed__Roles__5__Permissions__3: accounting.journals.read
       IdentitySeed__Roles__5__Permissions__4: accounting.posting-queues.read
+      IdentitySeed__Roles__5__Permissions__5: finance.manual-receipt.draft.read
+      IdentitySeed__Roles__5__Permissions__6: finance.manual-receipt.amount.read
+      IdentitySeed__Roles__5__Permissions__7: accounting.normal-journal.draft.create
+      IdentitySeed__Roles__5__Permissions__8: accounting.normal-journal.draft.approve
       IdentitySeed__Roles__6__Id: b3000000-0000-4000-8000-00000000ac02
       IdentitySeed__Roles__6__Code: BROWSER_ACC01_APPROVER
       IdentitySeed__Roles__6__Name: SENTETIK ACC01 Approver

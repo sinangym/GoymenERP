@@ -2,6 +2,7 @@ using GoymenERP.Api.Shell;
 using GoymenERP.BrowserSuiteFixtureTool;
 using GoymenERP.BuildingBlocks.Shell;
 using GoymenERP.Modules.Counterparty.Infrastructure.Shell;
+using GoymenERP.Modules.Finance.Infrastructure.Fixtures;
 using GoymenERP.Modules.Product.Infrastructure.Fixtures;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
@@ -216,6 +217,9 @@ public sealed class BrowserSuiteHostEnvelopeTests
             Assert.False(registered.IsService(typeof(IProductPurchaseCandidateFixtureStore)));
             Assert.False(registered.IsService(typeof(C01E2eProductStockCandidateFixtureWriter)));
             Assert.False(registered.IsService(typeof(IProductStockCandidateFixtureStore)));
+            Assert.False(registered.IsService(typeof(C01E2eFinanceNormalJournalSourceFixtureWriter)));
+            Assert.False(registered.IsService(typeof(IFinanceRecordedReceiptFixtureStore)));
+            Assert.False(registered.IsService(typeof(C01E2eApprovedNormalJournalSourceBindingCatalog)));
         });
     }
 
@@ -294,6 +298,9 @@ public sealed class BrowserSuiteHostEnvelopeTests
         Assert.True(registered.IsService(typeof(IProductPurchaseCandidateFixtureStore)));
         Assert.True(registered.IsService(typeof(C01E2eProductStockCandidateFixtureWriter)));
         Assert.True(registered.IsService(typeof(IProductStockCandidateFixtureStore)));
+        Assert.True(registered.IsService(typeof(C01E2eFinanceNormalJournalSourceFixtureWriter)));
+        Assert.True(registered.IsService(typeof(IFinanceRecordedReceiptFixtureStore)));
+        Assert.True(registered.IsService(typeof(C01E2eApprovedNormalJournalSourceBindingCatalog)));
     }
 
     // The normal-profile container's identity keys (infra/docker-compose.browser-normal.yml); Testing

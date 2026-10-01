@@ -46,6 +46,7 @@ public sealed class Acc01BrowserSeed : IBrowserSuiteFixture
         }
 
         await new Acc01PostedJournalFixtureWriter(context.Services).EnsureAsync(cancellationToken);
+        await new Acc01NormalJournalSourceFixtureWriter(context.Services).EnsureAsync(cancellationToken);
 
         foreach (var (actor, company) in new[]
                  {
@@ -96,9 +97,8 @@ public sealed class Acc01BrowserSeed : IBrowserSuiteFixture
             throw new InvalidOperationException("The real journal read did not answer the fixture's two posted lines.");
         }
 
-        // ACC01-10 consumes one separately gated synthetic Finance receipt. This seed never creates a Finance row:
-        // the complete browser host must register the Finance owner's prerequisite and grant this actor the existing
-        // read name. Both reads below are real authorized HTTP and fail closed if that prerequisite/authority is absent.
+        // ACC01-10 consumes one separately gated synthetic Finance receipt, created through Finance's owner service.
+        // Both reads below are real authorized HTTP and fail closed if that prerequisite/authority is absent.
         var financeRead = await context.GetJsonAsync(PreparerActor, CompanyGdc, FinanceSourcesPath, cancellationToken);
         if (financeRead.GetProperty("outcome").GetString() != "Found")
         {

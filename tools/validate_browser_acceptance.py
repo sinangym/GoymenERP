@@ -288,11 +288,12 @@ SUITE_IDENTITY_PERMISSIONS = {
             "inventory.physical-allocation.write", "sales.orders.delivery-schedule.write",
             "sales.orders.cancel", "sales.orders.quantity.write",
             "sales.orders.customer-acceptance.record"),
-    # The six Accounting names. The preparer holds .approve on purpose — Ö4 must refuse its OWN proposal
-    # although the grant is there — and holds periods.read alone in the second company; the approver holds
-    # no journal or queue name, so those routes stay closed to it.
+    # Accounting's six screen names plus the exact existing Finance reads and normal-draft create/approve
+    # used by ACC01-10. They are grants only in this disposable runner database.
     "acc01": ("accounting.periods.read", "accounting.periods.propose", "accounting.periods.approve",
-              "accounting.periods.close", "accounting.journals.read", "accounting.posting-queues.read"),
+              "accounting.periods.close", "accounting.journals.read", "accounting.posting-queues.read",
+              "finance.manual-receipt.draft.read", "finance.manual-receipt.amount.read",
+              "accounting.normal-journal.draft.create", "accounting.normal-journal.draft.approve"),
     # LOG-4a's three Logistics names; the Sales names stay on the two Sales seed actors (the preparer holds none:
     # the picker reads the price-free Logistics approved-lines read under the create name, Sinan §4).
     # ... and the Cari party read the preparer needs to see the customer by name at all: the price-free
@@ -514,8 +515,10 @@ SUITE_FIXTURE_OUTPUTS: dict[str, frozenset[str]] = {
     # FİNANS's Suites/ACC01 seed: the two actors and both companies. Periods are proposed, approved and closed
     # through the real API; since ACC-REV-UI phase 1 the seed also installs one fixed SENTETIK posted journal
     # (gated fixture writer, owner posting path) so ACC01-09 can open M-04 detail and read M-06. Its id is read
-    # from the real API, so the output keys stay these four. The second company only shows GDC's rows never appear.
-    "acc01": frozenset({"companyId", "companyBId", "preparerActor", "approverActor"}),
+    # from real APIs. ACC01-10 additionally exports the exact source and approved mapping labels.
+    "acc01": frozenset({"companyId", "companyBId", "preparerActor", "approverActor",
+                         "normalSourceLabel", "normalOccurredOn", "normalAmount",
+                         "normalDebitLabel", "normalCreditLabel", "openPeriodId"}),
     # SİPARİŞ's Suites/L04 seed: the three actors, both companies, the customer (by id and name), the approved draft
     # line, the instruction created and issued through the real API, its open and gated-blocked lines,
     # and the shipment allocation/label created for the same disposable journey.
