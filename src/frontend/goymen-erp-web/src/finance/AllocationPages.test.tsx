@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
 import { AllocationPage } from './AllocationPages'
 import { FINANCE_CAPABILITY, FINANCE_ROUTE } from './capabilities'
-import { COMPANY_A, renderFinance, shellFor } from './testHarness'
+import { clearAllocationReleaseAttemptStore } from './allocationReleaseAttempt'
+import { COMPANY_A, COMPANY_B, commitContext, currentShell, renderFinance, shellFor } from './testHarness'
 
 const ID = '22222222-2222-4222-8222-222222222222'
 const SOURCE = '33333333-3333-4333-8333-333333333333'
@@ -20,17 +21,36 @@ const allocation = {
 
 afterEach(() => {
   cleanup()
+  clearAllocationReleaseAttemptStore()
   vi.unstubAllGlobals()
 })
 
+function page(companyId = COMPANY_A) {
+  return { companyId, items: companyId === COMPANY_A ? [allocation] : [], windowFull: false }
+}
+
+function detail() {
+  return { allocation, openItemVersion: '7' }
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((done) => { resolve = done })
+  return { promise, resolve }
+}
+
 describe('AllocationPage', () => {
   it('lets an allocation-read-only actor list and reopen without receipt capabilities', async () => {
+    const secondDetail = deferred<Response>()
+    let detailReads = 0
     const fetchMock = vi.fn(async (request: RequestInfo | URL) => {
       const url = String(request)
-      const body = url.endsWith(`/${ID}`)
-        ? { allocation, openItemVersion: '7' }
-        : { companyId: COMPANY_A, items: [allocation], windowFull: false }
-      return new Response(JSON.stringify(body), { status: 200 })
+      if (url.endsWith(`/${ID}`)) {
+        detailReads += 1
+        if (detailReads === 2) return secondDetail.promise
+        return new Response(JSON.stringify(detail()), { status: 200 })
+      }
+      return new Response(JSON.stringify(page()), { status: 200 })
     })
     vi.stubGlobal('fetch', fetchMock)
     renderFinance(
@@ -46,17 +66,170 @@ describe('AllocationPage', () => {
     expect(screen.queryByRole('region', { name: 'Dağıtım detayı' })).toBeNull()
 
     fireEvent.click(screen.getByRole('button', { name: 'Aç' }))
+    await waitFor(() => expect(detailReads).toBe(2))
+    expect(screen.queryByRole('region', { name: 'Dağıtım detayı' })).toBeNull()
+    await act(async () => secondDetail.resolve(new Response(JSON.stringify(detail()), { status: 200 })))
     expect((await screen.findByRole('region', { name: 'Dağıtım detayı' })).textContent).toContain(ID)
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3))
   })
 
-  it('keeps a forbidden read fail-closed', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(null, { status: 403 })))
+  it.each([401, 403] as const)('reports a current list %i to the shared auth boundary', async (status) => {
+    const initial = shellFor(COMPANY_A, 1, [FINANCE_CAPABILITY.allocationsList])
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(null, { status })))
+    renderFinance(
+      <MemoryRouter initialEntries={[FINANCE_ROUTE.allocationsList]}><AllocationPage /></MemoryRouter>,
+      { port: null, shell: initial },
+    )
+    await waitFor(() => expect(status === 401
+      ? currentShell().sessionInvalid
+      : currentShell().requestFenceGeneration > initial.requestFenceGeneration).toBe(true))
+    expect(screen.queryByText(SOURCE)).toBeNull()
+  })
+
+  it('ignores a late detail 403 after the company context has changed', async () => {
+    const late = deferred<Response>()
+    let listReads = 0
+    const fetchMock = vi.fn(async (request: RequestInfo | URL) => {
+      const url = String(request)
+      if (url.endsWith(`/${ID}`)) return late.promise
+      listReads += 1
+      const company = listReads === 1 ? COMPANY_A : COMPANY_B
+      return new Response(JSON.stringify(page(company)), { status: 200 })
+    })
+    vi.stubGlobal('fetch', fetchMock)
     renderFinance(
       <MemoryRouter initialEntries={[FINANCE_ROUTE.allocationsList]}><AllocationPage /></MemoryRouter>,
       { port: null, shell: shellFor(COMPANY_A, 1, [FINANCE_CAPABILITY.allocationsList]) },
     )
-    await screen.findByText('Bu içeriğe erişim yetkiniz bulunmuyor.')
+    fireEvent.click(await screen.findByRole('button', { name: 'Aç' }))
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
+    const companyB = shellFor(COMPANY_B, 2, [FINANCE_CAPABILITY.allocationsList])
+    await commitContext(companyB)
+    await act(async () => late.resolve(new Response(null, { status: 403 })))
+    await waitFor(() => expect(currentShell().activeContext?.companyId).toBe(COMPANY_B))
+    expect(currentShell().requestFenceGeneration).toBe(companyB.requestFenceGeneration)
     expect(screen.queryByText(SOURCE)).toBeNull()
+  })
+
+  it.each([401, 403] as const)('reports a current release %i and sends no replacement key', async (status) => {
+    const initial = shellFor(COMPANY_A, 1,
+      [FINANCE_CAPABILITY.allocationsList, FINANCE_CAPABILITY.allocationsWrite])
+    const fetchMock = vi.fn(async (request: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(request)
+      if (init?.method === 'POST') return new Response(null, { status })
+      return new Response(JSON.stringify(url.endsWith(`/${ID}`) ? detail() : page()), { status: 200 })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    renderFinance(
+      <MemoryRouter initialEntries={[`${FINANCE_ROUTE.allocationsList}?dagitim=${ID}`]}><AllocationPage /></MemoryRouter>,
+      { port: null, shell: initial },
+    )
+    fireEvent.change(await screen.findByLabelText('Bırakma nedeni'), { target: { value: 'Yanlış dağıtım' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Dağıtımı bırak' }))
+    await waitFor(() => expect(status === 401
+      ? currentShell().sessionInvalid
+      : currentShell().requestFenceGeneration > initial.requestFenceGeneration).toBe(true))
+    expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(1)
+  })
+
+  it('recovers an in-flight release after remount with its immutable key and body', async () => {
+    const firstPost = deferred<Response>()
+    const postCalls: RequestInit[] = []
+    const fetchMock = vi.fn(async (request: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(request)
+      if (init?.method === 'POST') {
+        postCalls.push(init)
+        if (postCalls.length === 1) return firstPost.promise
+        return new Response(null, { status: 503 })
+      }
+      return new Response(JSON.stringify(url.endsWith(`/${ID}`) ? detail() : page()), { status: 200 })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const ui = () => <MemoryRouter initialEntries={[`${FINANCE_ROUTE.allocationsList}?dagitim=${ID}`]}>
+      <AllocationPage />
+    </MemoryRouter>
+    const view = renderFinance(ui(), { port: null, shell: shellFor(COMPANY_A, 1,
+      [FINANCE_CAPABILITY.allocationsList, FINANCE_CAPABILITY.allocationsWrite]) })
+
+    fireEvent.change(await screen.findByLabelText('Bırakma nedeni'), { target: { value: 'Yanlış dağıtım' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Dağıtımı bırak' }))
+    await waitFor(() => expect(postCalls).toHaveLength(1))
+    view.remount(ui())
+
+    const frozenReason = await screen.findByLabelText('Bırakma nedeni')
+    expect((frozenReason as HTMLInputElement).disabled).toBe(true)
+    expect((frozenReason as HTMLInputElement).value).toBe('Yanlış dağıtım')
+    fireEvent.click(screen.getByRole('button', { name: 'Aynı anahtarla yeniden dene' }))
+    await waitFor(() => expect(postCalls).toHaveLength(2))
+
+    const firstHeaders = new Headers(postCalls[0].headers)
+    const secondHeaders = new Headers(postCalls[1].headers)
+    expect(secondHeaders.get('Idempotency-Key')).toBe(firstHeaders.get('Idempotency-Key'))
+    expect(postCalls[1].body).toBe(postCalls[0].body)
+  })
+
+  it('keeps an unknown release through 403 and restores its same-key retry only after current capability returns', async () => {
+    const postStatuses = [503, 403, 503]
+    const postCalls: RequestInit[] = []
+    const initial = shellFor(COMPANY_A, 1,
+      [FINANCE_CAPABILITY.allocationsList, FINANCE_CAPABILITY.allocationsWrite])
+    const fetchMock = vi.fn(async (request: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(request)
+      if (init?.method === 'POST') {
+        postCalls.push(init)
+        return new Response(null, { status: postStatuses[postCalls.length - 1] })
+      }
+      return new Response(JSON.stringify(url.endsWith(`/${ID}`) ? detail() : page()), { status: 200 })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    renderFinance(
+      <MemoryRouter initialEntries={[`${FINANCE_ROUTE.allocationsList}?dagitim=${ID}`]}><AllocationPage /></MemoryRouter>,
+      { port: null, shell: initial },
+    )
+
+    fireEvent.change(await screen.findByLabelText('Bırakma nedeni'), { target: { value: 'Yanlış dağıtım' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Dağıtımı bırak' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Aynı anahtarla yeniden dene' }))
+    await waitFor(() => expect(postCalls).toHaveLength(2))
+    await waitFor(() => expect(currentShell().requestFenceGeneration).toBeGreaterThan(initial.requestFenceGeneration))
+
+    await commitContext(shellFor(COMPANY_A, 2,
+      [FINANCE_CAPABILITY.allocationsList, FINANCE_CAPABILITY.allocationsWrite]))
+    fireEvent.click(await screen.findByRole('button', { name: 'Aynı anahtarla yeniden dene' }))
+    await waitFor(() => expect(postCalls).toHaveLength(3))
+
+    const keys = postCalls.map((call) => new Headers(call.headers).get('Idempotency-Key'))
+    expect(new Set(keys).size).toBe(1)
+    expect(postCalls.map((call) => call.body)).toEqual([postCalls[0].body, postCalls[0].body, postCalls[0].body])
+  })
+
+  it.each([400, 415] as const)('keeps an unknown release after a retry receives %i', async (status) => {
+    const postStatuses = [503, status, 503]
+    const postCalls: RequestInit[] = []
+    const fetchMock = vi.fn(async (request: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(request)
+      if (init?.method === 'POST') {
+        postCalls.push(init)
+        return new Response(null, { status: postStatuses[postCalls.length - 1] })
+      }
+      return new Response(JSON.stringify(url.endsWith(`/${ID}`) ? detail() : page()), { status: 200 })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    renderFinance(
+      <MemoryRouter initialEntries={[`${FINANCE_ROUTE.allocationsList}?dagitim=${ID}`]}><AllocationPage /></MemoryRouter>,
+      { port: null, shell: shellFor(COMPANY_A, 1,
+        [FINANCE_CAPABILITY.allocationsList, FINANCE_CAPABILITY.allocationsWrite]) },
+    )
+
+    fireEvent.change(await screen.findByLabelText('Bırakma nedeni'), { target: { value: 'Yanlış dağıtım' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Dağıtımı bırak' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Aynı anahtarla yeniden dene' }))
+    await waitFor(() => expect(postCalls).toHaveLength(2))
+    fireEvent.click(await screen.findByRole('button', { name: 'Aynı anahtarla yeniden dene' }))
+    await waitFor(() => expect(postCalls).toHaveLength(3))
+
+    const keys = postCalls.map((call) => new Headers(call.headers).get('Idempotency-Key'))
+    expect(new Set(keys).size).toBe(1)
+    expect(postCalls.map((call) => call.body)).toEqual([postCalls[0].body, postCalls[0].body, postCalls[0].body])
   })
 })
