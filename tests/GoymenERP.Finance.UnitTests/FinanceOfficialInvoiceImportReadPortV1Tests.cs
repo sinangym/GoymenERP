@@ -50,6 +50,30 @@ public sealed class FinanceOfficialInvoiceImportReadPortV1Tests
     }
 
     [Fact]
+    public async Task Authority_unavailable_before_or_after_read_preserves_the_unavailable_outcome()
+    {
+        var company = CompanyContext();
+        await using var db = Database(company);
+        db.OpenItems.Add(Row());
+        await db.SaveChangesAsync();
+
+        foreach (var decisions in new[]
+                 {
+                     new[] { PermissionDecision.Unavailable },
+                     new[] { PermissionDecision.Allowed, PermissionDecision.Unavailable },
+                 })
+        {
+            var service = new FinanceOfficialInvoiceImportReadPortV1(
+                db, company, new User("actor", Company), new Authority(decisions));
+
+            var result = await service.ReadAsync(Context(), Batch, default);
+
+            Assert.Equal(ReadOutcome.Unavailable, result.Outcome);
+            Assert.Null(result.Resource);
+        }
+    }
+
+    [Fact]
     public async Task Wrong_company_refuses_before_authority_or_database_read()
     {
         var company = CompanyContext();

@@ -28,7 +28,7 @@ public sealed class FinanceOfficialInvoiceImportReadPortV1(
         var before = await authority.CheckAsync(context, batchId, cancellationToken);
         if (before != PermissionDecision.Allowed || !SameContext(context))
         {
-            return Refused(ReadOutcome.Denied);
+            return Refused(!SameContext(context) ? ReadOutcome.Denied : Refusal(before));
         }
 
         var rows = await dbContext.OpenItems.AsNoTracking()
@@ -57,7 +57,7 @@ public sealed class FinanceOfficialInvoiceImportReadPortV1(
         var after = await authority.CheckAsync(context, batchId, cancellationToken);
         if (after != PermissionDecision.Allowed || !SameContext(context))
         {
-            return Refused(ReadOutcome.Denied);
+            return Refused(!SameContext(context) ? ReadOutcome.Denied : Refusal(after));
         }
 
         if (rows.Count == 0)
@@ -91,4 +91,7 @@ public sealed class FinanceOfficialInvoiceImportReadPortV1(
 
     private static ReadResult<FinanceOfficialInvoiceAppliedBatchV1> Refused(ReadOutcome outcome) =>
         new(outcome, null);
+
+    private static ReadOutcome Refusal(PermissionDecision decision) =>
+        decision == PermissionDecision.Unavailable ? ReadOutcome.Unavailable : ReadOutcome.Denied;
 }

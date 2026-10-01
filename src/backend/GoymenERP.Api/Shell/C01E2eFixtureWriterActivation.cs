@@ -180,6 +180,87 @@ internal static class C01E2eFixtureWriterActivation
 }
 
 /// <summary>
+/// Opens fixed read-only reference data in the disposable browser API only. This is deliberately
+/// separate from the in-process fixture-writer gate: no writer key or writer service reaches the web API.
+/// </summary>
+internal static class BrowserSuiteApiReadFixtureActivation
+{
+    internal const string ProfileConfigurationKey = "BrowserSuiteApi:Profile";
+    internal const string DisposableConfigurationKey = "BrowserSuiteApi:Disposable";
+    internal const string TestedCommitConfigurationKey = "BrowserSuiteApi:TestedCommit";
+    internal const string RunIdConfigurationKey = "BrowserSuiteApi:RunId";
+    internal const string ComposeProjectConfigurationKey = "BrowserSuiteApi:ComposeProject";
+    internal const string ManufacturingProfile = "mfg";
+
+    private static readonly string[] ConfigurationKeys =
+    [
+        ProfileConfigurationKey,
+        DisposableConfigurationKey,
+        TestedCommitConfigurationKey,
+        RunIdConfigurationKey,
+        ComposeProjectConfigurationKey,
+    ];
+
+    internal static bool Configure(
+        IServiceCollection services,
+        IHostEnvironment environment,
+        IConfiguration configuration)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(environment);
+        ArgumentNullException.ThrowIfNull(configuration);
+
+        if (!ConfigurationKeys.Any(key => configuration[key] is not null))
+        {
+            return false;
+        }
+
+        RequireGate(environment, configuration);
+        services.RemoveAll<ISettingsManufacturingToleranceProviderV1>();
+        services.AddScoped<ISettingsManufacturingToleranceProviderV1,
+            C01E2eManufacturingToleranceFixtureProvider>();
+        return true;
+    }
+
+    private static void RequireGate(IHostEnvironment environment, IConfiguration configuration)
+    {
+        if (!environment.IsEnvironment("Testing")
+            || !string.Equals(configuration[ProfileConfigurationKey], ManufacturingProfile, StringComparison.Ordinal)
+            || !string.Equals(configuration[DisposableConfigurationKey], "CONFIRMED", StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                "Browser-suite API read fixtures require the confirmed mfg Testing profile.");
+        }
+
+        var testedCommit = configuration[TestedCommitConfigurationKey] ?? string.Empty;
+        if (testedCommit.Length != 40
+            || testedCommit.Any(character => character is not (>= '0' and <= '9') and not (>= 'a' and <= 'f')))
+        {
+            throw new InvalidOperationException(
+                "Browser-suite API read fixtures require the exact lowercase tested commit.");
+        }
+
+        var runId = configuration[RunIdConfigurationKey] ?? string.Empty;
+        if (runId.Length == 0 || runId.Any(character => character is < '0' or > '9'))
+        {
+            throw new InvalidOperationException(
+                "Browser-suite API read fixtures require a numeric runner id.");
+        }
+
+        var composeProject = configuration[ComposeProjectConfigurationKey] ?? string.Empty;
+        var expectedPrefix = $"goymen-c01-{runId}-";
+        var attempt = composeProject.StartsWith(expectedPrefix, StringComparison.Ordinal)
+            ? composeProject[expectedPrefix.Length..]
+            : string.Empty;
+        if (attempt.Length == 0 || attempt.Any(character => character is < '0' or > '9'))
+        {
+            throw new InvalidOperationException(
+                "Browser-suite API read fixtures require the runner-bound compose project.");
+        }
+    }
+}
+
+/// <summary>
 /// Browser-suite-only Manufacturing tolerance reference. It is a fixed fixture snapshot, not a fallback,
 /// production catalog, permission or close authority.
 /// </summary>

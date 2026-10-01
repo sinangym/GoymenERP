@@ -81,7 +81,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // production uses the own-server store and Defender when both are configured and answers 503 otherwise
     // (abe26a09… -> c027dce9…); no code line changed.
     private const string ReviewedOpenApiStartupFingerprint =
-        "5e224aa0da2016d9349a20de42258ea7acc620b907edf3b1df898e63d797c965";
+        "523ae4b10dc629736621cb288b6ccfaf038269deecd251a4789037b37ec498a5";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedProductManufacturingTechnicalRegistrationPath =
@@ -773,7 +773,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         new Dictionary<string, int>(StringComparer.Ordinal)),
                 ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
                  + "FinanceOfficialInvoiceImportReadPortV1.cs"] =
-                    new("3b1219281b32e5f8b8e6c02319922412f77d5b0d817ee8bdd4930d74e2b80e62",
+                    new("90607f231d56e82c7b7803245e745815026e687bf141cea08ded21648fda51dc",
                         new Dictionary<string, int>(StringComparer.Ordinal)),
                 // MFG-5 (#303): the Manufacturing initializer's one provider branch, as Organization.
                 // Re-measured for MFG-API (#313): the command surface registrations (mass verifier and
