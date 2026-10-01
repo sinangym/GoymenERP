@@ -3,6 +3,7 @@ using System.Text;
 using GoymenERP.Modules.Accounting.Application;
 using GoymenERP.Modules.Accounting.Domain;
 using GoymenERP.Modules.Accounting.Domain.Journals;
+using GoymenERP.Modules.Accounting.Domain.Posting;
 
 namespace GoymenERP.Modules.Accounting.Infrastructure;
 
