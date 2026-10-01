@@ -41,21 +41,21 @@ test('FIN01 allocation reader is fail-closed for proposer and mounted for the au
   expectEveryAnswerRewritten(proposerAnswers, proposerRewritten)
   await proposerContext.close()
 
-  const approverContext = await browser.newContext()
-  const approverRewritten = await asActor(approverContext, env.seed.approverActor)
-  const approver = await approverContext.newPage()
-  const approverAnswers = watchAnswers(approver)
-  const listAnswer = approver.waitForResponse((response) => response.request().method() === 'GET'
+  const readerContext = await browser.newContext()
+  const readerRewritten = await asActor(readerContext, env.seed.readerActor)
+  const reader = await readerContext.newPage()
+  const readerAnswers = watchAnswers(reader)
+  const listAnswer = reader.waitForResponse((response) => response.request().method() === 'GET'
     && new URL(response.url()).pathname === '/api/v1/finance/allocations')
-  await approver.goto('/finans/dagitimlar')
+  await reader.goto('/finans/dagitimlar')
   const listResponse = await listAnswer
   const list = await listResponse.json() as { readonly companyId?: unknown; readonly items?: unknown }
   expect(listResponse.status(), JSON.stringify(list)).toBe(200)
   expect(list.companyId).toBe(env.seed.companyId)
   expect(Array.isArray(list.items)).toBe(true)
-  await expect(approver.getByRole('heading', { level: 1, name: 'Finansal dağıtımlar', exact: true }))
+  await expect(reader.getByRole('heading', { level: 1, name: 'Finansal dağıtımlar', exact: true }))
     .toBeVisible({ timeout: 30_000 })
-  await expect(approver.getByRole('form', { name: 'Finansal dağıtım oluştur' })).toHaveCount(0)
-  expectEveryAnswerRewritten(approverAnswers, approverRewritten)
-  await approverContext.close()
+  await expect(reader.getByRole('form', { name: 'Finansal dağıtım oluştur' })).toHaveCount(0)
+  expectEveryAnswerRewritten(readerAnswers, readerRewritten)
+  await readerContext.close()
 })
