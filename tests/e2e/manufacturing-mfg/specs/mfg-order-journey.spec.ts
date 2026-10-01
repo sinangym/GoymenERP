@@ -642,9 +642,10 @@ test.describe('MFG order screen (real API, real SQL)', () => {
     expectEveryAnswerRewritten(answered, rewritten)
   })
 
-  test('a closer is refused while a roll is unexplained, and closes it once the mass is accounted', async ({ page, context }) => {
-    // MFG-4 (Business 5728619644) through the real stack: 1000 issued, 600 declared → refused with the
-    // rule's own code; the remaining 400 declared → accepted. No tolerance anywhere.
+  test('a closer declares fire, then closes an out-of-tolerance order with a reasoned exception', async ({ page, context }) => {
+    // Policy-backed close through the real stack: 1000 issued, 600 declared → explicit fire is still required;
+    // the remaining 400 is declared as Scrap → the disposable 5% profile requires the separately authorized,
+    // reasoned exception. The production Settings catalog stays empty.
     const arranged = await arrangeOpenOrder(env, env.seed.rolls.close)
     const issued = await issueThroughApi(env, arranged, arranged.version, '1000')
     const partial = await declareThroughApi(env, arranged, issued.version as number, 'GoodProduct', '600')
@@ -660,19 +661,31 @@ test.describe('MFG order screen (real API, real SQL)', () => {
     await page.getByRole('button', { name: 'Emri kapat', exact: true }).click()
     await page.getByRole('button', { name: 'Evet, emri kapat', exact: true }).click()
     const sent = await refusedPost
-    expect(sent.postDataJSON()).toMatchObject({ expectedVersion: partial.version })
+    expect(sent.postDataJSON()).toMatchObject({ expectedVersion: partial.version, exceptionReason: null })
     expect(sent.headers()['idempotency-key']).toMatch(/^[0-9a-f-]{36}$/)
-    await expect(page.getByTestId('close-refusal')).toContainText('açıklanamayan kütle farkı')
+    await expect(page.getByTestId('close-refusal')).toContainText('açıklanamayan pozitif fark')
     expect((await readOrder(env, arranged.orderId)).status).toBe('Open')
 
-    // The missing 400 kg is declared through the real API; the screen re-reads and the close is accepted.
+    // The missing 400 kg is declared through the real API. The normal close then receives the server's
+    // approval-required result; only the dedicated capability exposes the reasoned follow-up.
     const balanced = await declareThroughApi(env, arranged, partial.version as number, 'Scrap', '400')
     await page.reload()
     await expect(page.getByRole('heading', { name: 'Emri kapat' })).toBeVisible()
-    const acceptedPost = page.waitForRequest((request) => CLOSE_RE.test(request.url()) && request.method() === 'POST')
+    const approvalPost = page.waitForRequest((request) => CLOSE_RE.test(request.url()) && request.method() === 'POST')
     await page.getByRole('button', { name: 'Emri kapat', exact: true }).click()
     await page.getByRole('button', { name: 'Evet, emri kapat', exact: true }).click()
-    expect((await acceptedPost).postDataJSON()).toMatchObject({ expectedVersion: balanced.version })
+    const approvalRequest = await approvalPost
+    expect(approvalRequest.postDataJSON()).toMatchObject({ expectedVersion: balanced.version, exceptionReason: null })
+    await expect(page.getByTestId('close-exception-approval')).toBeVisible()
+
+    const reason = 'Gerçek fire kaydı teknik olarak doğrulandı.'
+    await page.getByLabel('Onay gerekçesi').fill(reason)
+    const acceptedPost = page.waitForRequest((request) => CLOSE_RE.test(request.url()) && request.method() === 'POST'
+      && request.postDataJSON()?.exceptionReason === reason)
+    await page.getByRole('button', { name: 'Gerekçeyle onayla ve kapat' }).click()
+    const acceptedRequest = await acceptedPost
+    expect(acceptedRequest.postDataJSON()).toMatchObject({ expectedVersion: balanced.version, exceptionReason: reason })
+    expect(acceptedRequest.headers()['idempotency-key']).not.toBe(approvalRequest.headers()['idempotency-key'])
     await expect(page.getByText('Emir kapatıldı', { exact: true })).toBeVisible()
     await expect(page.getByTestId('order-already-closed')).toBeVisible()
 

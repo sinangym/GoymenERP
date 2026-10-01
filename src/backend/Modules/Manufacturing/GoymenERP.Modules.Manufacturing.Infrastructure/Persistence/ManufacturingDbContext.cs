@@ -2,6 +2,7 @@ using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Audit.Domain.Events;
 using GoymenERP.Modules.Audit.Infrastructure.Persistence;
 using GoymenERP.Modules.Manufacturing.Application;
+using GoymenERP.Modules.Manufacturing.Domain.Orders;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -46,6 +47,8 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
 
     internal DbSet<OrderInputRow> OrderInputs => Set<OrderInputRow>();
 
+    internal DbSet<OrderClosureDecisionRow> OrderClosureDecisions => Set<OrderClosureDecisionRow>();
+
     internal DbSet<FactRow> Facts => Set<FactRow>();
 
     internal DbSet<CommandRow> Commands => Set<CommandRow>();
@@ -64,6 +67,7 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
         ConfigurePlanRevisions(modelBuilder);
         ConfigureOrders(modelBuilder);
         ConfigureOrderInputs(modelBuilder);
+        ConfigureOrderClosureDecisions(modelBuilder);
         ConfigureFacts(modelBuilder);
         ConfigureCommands(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
@@ -262,6 +266,39 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
         entity.HasKey(x => new { x.CompanyId, x.OrderId, x.ParentRollId });
         entity.HasIndex(x => new { x.CompanyId, x.OrderId, x.Sequence }).IsUnique();
         entity.Property(x => x.PlannedKg).HasPrecision(18, 3);
+        OrderOf(entity);
+        entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
+    private void ConfigureOrderClosureDecisions(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<OrderClosureDecisionRow>();
+        entity.ToTable("OrderClosureDecisions", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_OrderClosureDecisions_Identity",
+                "[CompanyId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [OrderId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [PolicyId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [OrderVersion] >= 1 AND [PolicyVersion] >= 1 AND [Process] IN (1, 2, 3, 4, 5) "
+                + "AND LEN([MaximumFirePercent]) > 0 AND [IsActive] = 1");
+            table.HasCheckConstraint("CK_OrderClosureDecisions_Window",
+                "([EffectiveThrough] IS NULL OR [EffectiveThrough] >= [EffectiveFrom]) "
+                + "AND [SelectedForDate] >= [EffectiveFrom] "
+                + "AND ([EffectiveThrough] IS NULL OR [SelectedForDate] <= [EffectiveThrough])");
+            table.HasCheckConstraint("CK_OrderClosureDecisions_Approval",
+                "([ApprovedByUserId] IS NULL AND [ApprovalReason] IS NULL AND [ApprovalOrderVersion] IS NULL "
+                + "AND [ApprovalPolicyId] IS NULL AND [ApprovalPolicyVersion] IS NULL AND [ApprovedAtUtc] IS NULL) "
+                + "OR ([ApprovedByUserId] IS NOT NULL AND [ApprovedByUserId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [ApprovalReason] IS NOT NULL AND LEN([ApprovalReason]) > 0 "
+                + "AND [ApprovalOrderVersion] IS NOT NULL AND [ApprovalOrderVersion] = [OrderVersion] "
+                + "AND [ApprovalPolicyId] IS NOT NULL AND [ApprovalPolicyId] = [PolicyId] "
+                + "AND [ApprovalPolicyVersion] IS NOT NULL AND [ApprovalPolicyVersion] = [PolicyVersion] "
+                + "AND [ApprovedAtUtc] IS NOT NULL)");
+        });
+        entity.HasKey(x => new { x.CompanyId, x.OrderId });
+        entity.Property(x => x.MaximumFirePercent).HasMaxLength(64).IsUnicode(false).IsRequired();
+        entity.Property(x => x.ApprovalReason)
+            .HasMaxLength(ClosureExceptionApprovalV1.ReasonMaximumLength);
         OrderOf(entity);
         entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
