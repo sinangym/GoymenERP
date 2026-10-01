@@ -230,11 +230,17 @@ public sealed partial class SalesOrderDraft
         var request = facts.Request;
         var line = lines.SingleOrDefault(candidate => candidate.Id == request.LineId);
         var decision = facts.Decision;
+        var previous = remainderChanges.LastOrDefault(change => change.Request.LineId == request.LineId);
+        var previousEffectiveQuantityText = previous?.Decision?.Outcome == RemainderChangeState.Approved
+            ? previous.Decision.ResultQuantityText
+            : previous?.Request.OrderedQuantityText;
         var consistent = request.ChangeNo == remainderChanges.Count + 1
             && PendingRemainderChange is null
             && line is not null && line.LineNo == request.LineNo
             && Enum.IsDefined(request.Kind) && request.Revision >= 0 && request.Revision <= Revision
             && !string.IsNullOrWhiteSpace(request.OrderedQuantityText)
+            && (previousEffectiveQuantityText is null
+                || string.Equals(request.OrderedQuantityText, previousEffectiveQuantityText, StringComparison.Ordinal))
             && !string.IsNullOrWhiteSpace(request.Reason) && request.Reason.Length <= MaximumRemainderReasonLength
             && !string.IsNullOrWhiteSpace(request.RequestedBy) && request.RequestedBy.Length <= MaximumActorLength
             && request.Floor is not null && IsRestorableFloor(line, request.Floor)
