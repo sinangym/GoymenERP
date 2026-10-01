@@ -575,9 +575,10 @@ public sealed class SalesDraftApiSqlServerRelationalAcceptanceTests
             await ExecuteAsync(
                 "INSERT INTO sales.Drafts (Id, CompanyId, DocumentNo, Kind, State, Revision, Version, PartyId, CompanyAccountId, CurrencyId, "
                 + "BusinessDate, MoneyOperation, MoneyProfileId, MoneyProfileVersion, MoneyEffectiveOn, MoneyIsActive, MoneyEffectiveFrom, "
-                + "MoneyScale, CreatedAtUtc, UpdatedAtUtc, CreatedBy, CorrelationId, ApprovalState) VALUES (@id, @c, N'SO-2026-000001', 1, 1, 0, 2, NEWID(), "
+                + "MoneyScale, CreatedAtUtc, UpdatedAtUtc, CreatedBy, CorrelationId, ApprovalState, CustomerAcceptanceRequired) "
+                + "VALUES (@id, @c, N'SO-2026-000001', 1, 1, 0, 2, NEWID(), "
                 + "NEWID(), NEWID(), '2026-09-18', N'sales.order-draft.v1', NEWID(), N'3', '2026-09-18', 1, '2026-09-01', 2, "
-                + "SYSDATETIMEOFFSET(), SYSDATETIMEOFFSET(), N'SENTETIK-actor', N'SENTETIK-correlation', 1)",
+                + "SYSDATETIMEOFFSET(), SYSDATETIMEOFFSET(), N'SENTETIK-actor', N'SENTETIK-correlation', 1, 0)",
                 ("@id", id), ("@c", company));
             await ExecuteAsync(
                 "INSERT INTO sales.DraftLines (CompanyId, DraftId, [LineNo], LineId, ProductId, ProductVersion, ProductCode, ProductName, "
