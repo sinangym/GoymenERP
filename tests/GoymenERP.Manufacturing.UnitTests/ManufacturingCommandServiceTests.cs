@@ -23,6 +23,8 @@ namespace GoymenERP.Manufacturing.UnitTests;
 public sealed class ManufacturingCommandServiceTests
 {
     private const string Permission = "manufacturing.facts.record";
+    // ProductStockCandidateFixture creates draft v1 and activates it; c161e0e7 publishes that exact accepted v2.
+    private const string AcceptedProductFixtureVersion = "2";
     private const string ClosePermission = "manufacturing.orders.close";
     private const string CloseExceptionPermission = "manufacturing.orders.close-exception.approve";
     private const string LabelVersion = "7";
@@ -1729,7 +1731,8 @@ public sealed class ManufacturingCommandServiceTests
             return Task.FromResult(new InventoryParentRollReferenceV1(
                 Company, selection.LabelId, selection.ExpectedLabelVersion, "LBL-1", Guid.NewGuid(),
                 new InventoryLotV1(Guid.NewGuid(), null, null), null, null, "Complete", [], [], "10", "10", "0", [],
-                DraftSelectable: true, DraftRefusalCode: null, ProductionUseRequiresRevalidation: true));
+                DraftSelectable: true, DraftRefusalCode: null, ProductionUseRequiresRevalidation: true)
+            { ProductVersion = AcceptedProductFixtureVersion });
         }
     }
 
