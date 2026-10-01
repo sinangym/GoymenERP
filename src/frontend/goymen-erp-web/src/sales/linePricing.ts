@@ -92,16 +92,19 @@ const REFERENCE_KEYS = ['priceListId', 'priceListName', 'versionNo', 'validFrom'
 
 export function decodeReference(value: unknown): LinePriceReference | null {
   const o = exact(value, REFERENCE_KEYS)
-  const lowerKey = quantityKey(o?.lowerQuantity)
-  const upperKey = o?.upperQuantity === null ? null : quantityKey(o?.upperQuantity)
+  const lowerQuantity = o?.lowerQuantity
+  const upperQuantity = o?.upperQuantity
+  const lowerKey = quantityKey(lowerQuantity)
+  const upperKey = upperQuantity === null ? null : quantityKey(upperQuantity)
   if (o === null || !isText(o.priceListId) || !isText(o.priceListName) || !isCount(o.versionNo) || !isDate(o.validFrom)
     || !(o.validThrough === null || isDate(o.validThrough)) || !isText(o.currencyCode) || !isText(o.priceUnitId)
     || !isDecimal(o.unitPrice) || !isNullableDecimal(o.floorUnitPrice) || !isText(o.vatBasis)
-    || lowerKey === null || (o.upperQuantity !== null && (upperKey === null || upperKey <= lowerKey))) return null
+    || typeof lowerQuantity !== 'string' || !(upperQuantity === null || typeof upperQuantity === 'string')
+    || lowerKey === null || (upperQuantity !== null && (upperKey === null || upperKey <= lowerKey))) return null
   return {
     priceListId: o.priceListId, priceListName: o.priceListName, versionNo: o.versionNo, validFrom: o.validFrom,
     validThrough: o.validThrough, currencyCode: o.currencyCode, priceUnitId: o.priceUnitId, unitPrice: o.unitPrice,
-    floorUnitPrice: o.floorUnitPrice, vatBasis: o.vatBasis, lowerQuantity: o.lowerQuantity, upperQuantity: o.upperQuantity,
+    floorUnitPrice: o.floorUnitPrice, vatBasis: o.vatBasis, lowerQuantity, upperQuantity,
   }
 }
 

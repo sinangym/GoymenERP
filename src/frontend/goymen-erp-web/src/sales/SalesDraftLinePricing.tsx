@@ -47,7 +47,7 @@ function PricingFacts({ line }: { readonly line: LinePricing }) {
         <dd data-testid={`sales-line-${line.lineNo}-reference`}>
           {reference === null ? T.noReference
             : `${T.referenceText(reference.priceListName, reference.versionNo, reference.unitPrice, reference.currencyCode)}`
-              + (reference.floorUnitPrice === null ? '' : ` (${T.floorText(reference.floorUnitPrice)})`)}
+              + (reference.floorUnitPrice === null ? '' : ` (${T.floorText(reference.floorUnitPrice)})`)
               + ` (${T.tierText(reference.lowerQuantity, reference.upperQuantity)})`}
         </dd>
       </div>
