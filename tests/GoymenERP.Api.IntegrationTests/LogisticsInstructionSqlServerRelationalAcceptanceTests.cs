@@ -383,6 +383,8 @@ public sealed partial class LogisticsInstructionSqlServerRelationalAcceptanceTes
             "SELECT SUM(Instructed) FROM logistics.LoadingInstructionLines WHERE CompanyId = @company AND SourceOrderId = @order AND SourceOrderLineId = @line",
             ("@company", CompanyA), ("@order", owners.Order), ("@line", orderLineId)));
         Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType = N'logistics.loading-instruction.created.v1'"));
+        Assert.Equal(1, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityId = @id AND EventType = N'logistics.loading-instruction.created.v1'",
             ("@id", winner.Instruction.Id.ToString("D"))));
     }
