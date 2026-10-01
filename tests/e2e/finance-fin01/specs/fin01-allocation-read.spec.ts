@@ -55,6 +55,7 @@ test('FIN01 allocation reader is fail-closed for proposer and mounted for the au
   expect(Array.isArray(list.items)).toBe(true)
   await expect(approver.getByRole('heading', { level: 1, name: 'Finansal dağıtımlar', exact: true }))
     .toBeVisible({ timeout: 30_000 })
+  await expect(approver.getByRole('form', { name: 'Finansal dağıtım oluştur' })).toHaveCount(0)
   expectEveryAnswerRewritten(approverAnswers, approverRewritten)
   await approverContext.close()
 })

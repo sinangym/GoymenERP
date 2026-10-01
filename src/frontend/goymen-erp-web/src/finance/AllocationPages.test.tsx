@@ -12,6 +12,11 @@ const ID = '22222222-2222-4222-8222-222222222222'
 const SOURCE = '33333333-3333-4333-8333-333333333333'
 const ITEM = '44444444-4444-4444-8444-444444444444'
 const CURRENCY = '55555555-5555-4555-8555-555555555555'
+const BATCH = '66666666-6666-4666-8666-666666666666'
+const DOCUMENT = '77777777-7777-4777-8777-777777777777'
+const INSTALLMENT = '88888888-8888-4888-8888-888888888888'
+const ACCOUNT = '99999999-9999-4999-8999-999999999999'
+const CHECKSUM = 'a'.repeat(64)
 
 const allocation = {
   id: ID, companyId: COMPANY_A, sourceId: SOURCE, openItemId: ITEM, currencyId: CURRENCY,
@@ -37,6 +42,47 @@ function deferred<T>() {
   let resolve!: (value: T) => void
   const promise = new Promise<T>((done) => { resolve = done })
   return { promise, resolve }
+}
+
+const sourceSummary = {
+  id: SOURCE, companyId: COMPANY_A, sourceNumber: 'RC-MOUNT-1', version: '2', stage: 'Recorded',
+  partyId: DOCUMENT, companyAccountId: ACCOUNT, treasuryAccountId: BATCH, currencyId: CURRENCY,
+  occurredOn: '2026-09-18', valueOn: null,
+  amount: { disclosure: 'Visible', money: { amount: '125.50', currencyId: CURRENCY } },
+}
+
+const sourceDetail = {
+  source: sourceSummary,
+  profile: { profileId: SOURCE, version: '1' },
+  bankReference: null,
+  description: null,
+  recordedAtUtc: '2026-09-18T10:00:00Z',
+  reversalSourceId: null,
+  reversesSourceId: null,
+  unallocated: { knowledge: 'Known', amount: {
+    disclosure: 'Visible', money: { amount: '125.50', currencyId: CURRENCY },
+  } },
+  pos: null,
+}
+
+const approvedBatch = {
+  batchId: BATCH, companyId: COMPANY_A, batchVersion: 'invoice-batch-v1', batchChecksum: CHECKSUM,
+  rows: [{
+    openItemId: ITEM, sourceDocumentId: DOCUMENT, sourceInstallmentId: INSTALLMENT,
+    sourceVersion: 'invoice-v1', documentKind: 'official-invoice-installment', partyId: DOCUMENT,
+    companyAccountId: ACCOUNT, currencyId: CURRENCY, amount: '125.50', dueOn: '2026-10-31',
+  }],
+}
+
+const appliedBatch = {
+  batchId: BATCH, companyId: COMPANY_A, batchVersion: approvedBatch.batchVersion, batchChecksum: CHECKSUM,
+  openItems: [{
+    id: ITEM, companyId: COMPANY_A, sourceKind: 'official.invoice-installment.v1',
+    sourceDocumentId: DOCUMENT, sourceInstallmentId: INSTALLMENT, sourceVersion: 'invoice-v1',
+    sourceBatchId: BATCH, sourceBatchVersion: approvedBatch.batchVersion, sourceBatchChecksum: CHECKSUM,
+    partyId: DOCUMENT, companyAccountId: ACCOUNT, currencyId: CURRENCY,
+    originalAmount: '125.50', outstandingAmount: '125.50', dueOn: '2026-10-31', status: 1, version: '1',
+  }],
 }
 
 describe('AllocationPage', () => {
@@ -71,6 +117,88 @@ describe('AllocationPage', () => {
     await act(async () => secondDetail.resolve(new Response(JSON.stringify(detail()), { status: 200 })))
     expect((await screen.findByRole('region', { name: 'Dağıtım detayı' })).textContent).toContain(ID)
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3))
+  })
+
+  it.each([
+    [FINANCE_CAPABILITY.allocationsList, FINANCE_CAPABILITY.receiptsList],
+    [FINANCE_CAPABILITY.allocationsList, FINANCE_CAPABILITY.allocationsWrite],
+  ])('does not mount create unless both allocation-write and receipt-read capabilities are current', async (...capabilities) => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify(page()), { status: 200 })))
+    renderFinance(
+      <MemoryRouter initialEntries={[FINANCE_ROUTE.allocationsList]}><AllocationPage /></MemoryRouter>,
+      { port: null, shell: shellFor(COMPANY_A, 1, capabilities) },
+    )
+    await screen.findByText(SOURCE)
+    expect(screen.queryByRole('form', { name: 'Finansal dağıtım oluştur' })).toBeNull()
+  })
+
+  it('mounts with existing capabilities and opens the exact created id through a fresh detail GET', async () => {
+    let created: typeof allocation | null = null
+    let sentBody: Record<string, string> | null = null
+    let detailReads = 0
+    const fetchMock = vi.fn(async (request: RequestInfo | URL, init?: RequestInit) => {
+      const url = new URL(String(request), 'http://localhost')
+      const method = init?.method ?? 'GET'
+      if (url.pathname === '/api/v1/finance/allocations' && method === 'POST') {
+        sentBody = JSON.parse(String(init?.body)) as Record<string, string>
+        created = {
+          ...allocation,
+          id: sentBody.allocationId,
+          sourceId: sentBody.sourceId,
+          openItemId: sentBody.openItemId,
+          amount: sentBody.amount,
+          reason: sentBody.reason,
+        }
+        return new Response(JSON.stringify({
+          outcome: 'Succeeded', resource: created, isReplay: false, originalCorrelationId: '', issues: [],
+        }), { status: 200 })
+      }
+      if (created !== null && url.pathname === `/api/v1/finance/allocations/${created.id}`) {
+        detailReads += 1
+        return new Response(JSON.stringify({ allocation: created, openItemVersion: '2' }), { status: 200 })
+      }
+      if (url.pathname === '/api/v1/finance/allocations') {
+        return new Response(JSON.stringify({
+          companyId: COMPANY_A, items: created === null ? [] : [created], windowFull: false,
+        }), { status: 200 })
+      }
+      if (url.pathname === `/api/v1/finance/manual-receipts/${SOURCE}`) {
+        return new Response(JSON.stringify(sourceDetail), { status: 200 })
+      }
+      if (url.pathname === '/api/v1/finance/manual-receipts') {
+        return new Response(JSON.stringify({ companyId: COMPANY_A, items: [sourceSummary], nextCursor: null }), { status: 200 })
+      }
+      if (url.pathname === '/api/v1/finance/official-invoice-imports/approved-sources') {
+        return new Response(JSON.stringify({ companyId: COMPANY_A, items: [approvedBatch], nextCursor: null }), { status: 200 })
+      }
+      if (url.pathname === `/api/v1/finance/official-invoice-imports/${BATCH}`) {
+        return new Response(JSON.stringify(appliedBatch), { status: 200 })
+      }
+      throw new Error(`Unexpected request: ${url.pathname}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    renderFinance(
+      <MemoryRouter initialEntries={[FINANCE_ROUTE.allocationsList]}><AllocationPage /></MemoryRouter>,
+      { port: null, shell: shellFor(COMPANY_A, 1, [
+        FINANCE_CAPABILITY.allocationsList,
+        FINANCE_CAPABILITY.allocationsWrite,
+        FINANCE_CAPABILITY.receiptsList,
+      ]) },
+    )
+
+    const form = await screen.findByRole('form', { name: 'Finansal dağıtım oluştur' })
+    fireEvent.change(screen.getByLabelText('Gerçekleşmiş tahsilat kaynağı'), { target: { value: SOURCE } })
+    fireEvent.change(await screen.findByLabelText('Onaylı fatura kaynağı'), { target: { value: BATCH } })
+    await screen.findByRole('option', { name: '2026-10-31 - 125.50' })
+    fireEvent.change(screen.getByLabelText('Açık kalem'), { target: { value: ITEM } })
+    fireEvent.change(screen.getByLabelText('Dağıtım tutarı'), { target: { value: '125,50' } })
+    fireEvent.change(screen.getByLabelText('Dağıtım nedeni'), { target: { value: 'SENTETIK parent mount' } })
+    fireEvent.submit(form)
+
+    const region = await screen.findByRole('region', { name: 'Dağıtım detayı' })
+    expect(sentBody?.allocationId).toMatch(/^[0-9a-f-]{36}$/i)
+    expect(region.textContent).toContain(sentBody?.allocationId)
+    expect(detailReads).toBe(1)
   })
 
   it.each([401, 403] as const)('reports a current list %i to the shared auth boundary', async (status) => {

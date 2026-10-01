@@ -403,8 +403,55 @@ test.describe.serial('FIN01 official invoice import (real API, real SQL, real Ch
       },
     })
 
-    const allocationId = randomUUID()
-    const allocationBody = {
+    let hiddenAllocationRequest: Request | null = null
+    let hiddenAllocationStatus: number | null = null
+    let hiddenAllocationBody: unknown = null
+    await checker.route('**/api/v1/finance/allocations', async (route) => {
+      const request = route.request()
+      if (request.method() !== 'POST' || hiddenAllocationRequest !== null) {
+        await route.fallback()
+        return
+      }
+      hiddenAllocationRequest = request
+      checkerRewritten.add(request)
+      const actual = await route.fetch({
+        headers: { ...request.headers(), 'x-development-user': env.seed.approverActor },
+      })
+      hiddenAllocationStatus = actual.status()
+      hiddenAllocationBody = await actual.json() as unknown
+      await route.fulfill({ status: 503, body: '' })
+    })
+
+    const initialAllocationListAnswer = checker.waitForResponse((response) =>
+      new URL(response.url()).pathname === ALLOCATIONS && response.request().method() === 'GET')
+    await checker.goto('/finans/dagitimlar')
+    expect((await initialAllocationListAnswer).status()).toBe(200)
+    const allocationForm = checker.getByRole('form', { name: 'Finansal dağıtım oluştur' })
+    await expect(allocationForm).toBeVisible({ timeout: 30_000 })
+    await allocationForm.getByLabel('Gerçekleşmiş tahsilat kaynağı', { exact: true }).selectOption(sourceId)
+    await allocationForm.getByLabel('Onaylı fatura kaynağı', { exact: true }).selectOption(batchId)
+    await allocationForm.getByLabel('Açık kalem', { exact: true }).selectOption(openItemId)
+    await allocationForm.getByLabel('Dağıtım tutarı', { exact: true }).fill(amount.replace('.', ','))
+    await allocationForm.getByLabel('Dağıtım nedeni', { exact: true }).fill('SENTETIK FIN01 aynı kayıt kapama')
+    await allocationForm.getByRole('button', { name: 'Dağıtım oluştur', exact: true }).click()
+    await expect(allocationForm.getByRole('button', { name: 'Aynı anahtarla yeniden dene', exact: true }))
+      .toBeVisible({ timeout: 30_000 })
+
+    expect(hiddenAllocationStatus, JSON.stringify(hiddenAllocationBody)).toBe(200)
+    expect(hiddenAllocationRequest).not.toBeNull()
+    const allocationKey = hiddenAllocationRequest!.headers()['idempotency-key']
+    const allocationBody = hiddenAllocationRequest!.postDataJSON() as {
+      readonly allocationId: string
+      readonly sourceId: string
+      readonly expectedSourceVersion: string
+      readonly openItemId: string
+      readonly expectedOpenItemVersion: string
+      readonly amount: string
+      readonly reason: string
+    }
+    const allocationId = allocationBody.allocationId
+    expect(allocationKey).toMatch(/^[0-9a-f-]{36}$/i)
+    expect(allocationBody).toEqual({
       allocationId,
       sourceId,
       expectedSourceVersion: '2',
@@ -412,23 +459,8 @@ test.describe.serial('FIN01 official invoice import (real API, real SQL, real Ch
       expectedOpenItemVersion: '1',
       amount,
       reason: 'SENTETIK FIN01 aynı kayıt kapama',
-    }
-    const allocationKey = `SENTETIK-FIN01-allocation-${randomUUID()}`
-    const createdAllocation = await checker.evaluate(async ({ path, key, body, companyId }) => {
-      const response = await fetch(path, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Idempotency-Key': key, 'X-Company-Id': companyId },
-        body: JSON.stringify(body),
-      })
-      return {
-        status: response.status,
-        replayed: response.headers.get('Idempotency-Replayed'),
-        body: await response.json() as unknown,
-      }
-    }, { path: ALLOCATIONS, key: allocationKey, body: allocationBody, companyId: env.seed.companyId })
-    expect(createdAllocation.status).toBe(200)
-    expect(createdAllocation.replayed).not.toBe('true')
-    expect(createdAllocation.body).toMatchObject({
+    })
+    expect(hiddenAllocationBody).toMatchObject({
       outcome: 'Succeeded',
       isReplay: false,
       resource: {
@@ -441,25 +473,38 @@ test.describe.serial('FIN01 official invoice import (real API, real SQL, real Ch
         version: '1',
       },
     })
-    const replayedAllocation = await checker.evaluate(async ({ path, key, body, companyId }) => {
-      const response = await fetch(path, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Idempotency-Key': key, 'X-Company-Id': companyId },
-        body: JSON.stringify(body),
-      })
-      return {
-        status: response.status,
-        replayed: response.headers.get('Idempotency-Replayed'),
-        body: await response.json() as unknown,
-      }
-    }, { path: ALLOCATIONS, key: allocationKey, body: allocationBody, companyId: env.seed.companyId })
-    expect(replayedAllocation.status).toBe(200)
-    expect(replayedAllocation.replayed).toBe('true')
-    expect(replayedAllocation.body).toMatchObject({
+
+    const allocationDetailPath = `${ALLOCATIONS}/${allocationId}`
+    const replayPost = checker.waitForRequest((request) => new URL(request.url()).pathname === ALLOCATIONS
+      && request.method() === 'POST')
+    const replayAnswer = checker.waitForResponse((response) => new URL(response.url()).pathname === ALLOCATIONS
+      && response.request().method() === 'POST')
+    const refreshedAllocationListAnswer = checker.waitForResponse((response) =>
+      new URL(response.url()).pathname === ALLOCATIONS && response.request().method() === 'GET')
+    const allocationDetailAnswer = checker.waitForResponse((response) =>
+      new URL(response.url()).pathname === allocationDetailPath && response.request().method() === 'GET')
+    await allocationForm.getByRole('button', { name: 'Aynı anahtarla yeniden dene', exact: true }).click()
+    const replaySent = await replayPost
+    expect(replaySent.headers()['idempotency-key']).toBe(allocationKey)
+    expect(replaySent.postDataJSON()).toEqual(allocationBody)
+    const replayedAllocation = await replayAnswer
+    const replayedAllocationBody = await replayedAllocation.json() as unknown
+    expect(replayedAllocation.status(), JSON.stringify(replayedAllocationBody)).toBe(200)
+    expect(replayedAllocation.headers()['idempotency-replayed']).toBe('true')
+    expect(replayedAllocationBody).toMatchObject({
       outcome: 'Succeeded',
       isReplay: true,
       resource: { id: allocationId, status: 'Active', version: '1' },
     })
+    const refreshedAllocationListResponse = await refreshedAllocationListAnswer
+    expect(refreshedAllocationListResponse.status()).toBe(200)
+    const allocationList = await refreshedAllocationListResponse.json() as {
+      readonly companyId: string
+      readonly items: readonly { readonly id: string; readonly sourceId: string; readonly openItemId: string }[]
+    }
+    const allocationDetailResponse = await allocationDetailAnswer
+    expect(allocationDetailResponse.status()).toBe(200)
+    const allocationDetail = await allocationDetailResponse.json() as unknown
 
     const closedBatch = await checker.evaluate(async ({ id, companyId }) => {
       const response = await fetch(`/api/v1/finance/official-invoice-imports/${id}`, {
@@ -473,28 +518,12 @@ test.describe.serial('FIN01 official invoice import (real API, real SQL, real Ch
       openItems: [{ id: openItemId, outstandingAmount: '0.00', status: 'Closed', version: '2' }],
     })
 
-    const allocationListAnswer = checker.waitForResponse((response) =>
-      new URL(response.url()).pathname === ALLOCATIONS && response.request().method() === 'GET')
-    await checker.goto('/finans/dagitimlar')
-    const allocationListResponse = await allocationListAnswer
-    expect(allocationListResponse.status()).toBe(200)
-    const allocationList = await allocationListResponse.json() as {
-      readonly companyId: string
-      readonly items: readonly { readonly id: string; readonly sourceId: string; readonly openItemId: string }[]
-    }
     expect(allocationList.companyId).toBe(env.seed.companyId)
     expect(allocationList.items.filter((item) => item.id === allocationId)).toEqual([
       expect.objectContaining({ id: allocationId, sourceId, openItemId }),
     ])
     const allocationRow = checker.getByRole('row').filter({ hasText: sourceId }).filter({ hasText: openItemId })
     await expect(allocationRow).toHaveCount(1)
-    const allocationDetailPath = `${ALLOCATIONS}/${allocationId}`
-    const allocationDetailAnswer = checker.waitForResponse((response) =>
-      new URL(response.url()).pathname === allocationDetailPath && response.request().method() === 'GET')
-    await allocationRow.getByRole('button', { name: 'Aç', exact: true }).click()
-    const allocationDetailResponse = await allocationDetailAnswer
-    expect(allocationDetailResponse.status()).toBe(200)
-    const allocationDetail = await allocationDetailResponse.json() as unknown
     expect(allocationDetail).toMatchObject({
       allocation: {
         id: allocationId,

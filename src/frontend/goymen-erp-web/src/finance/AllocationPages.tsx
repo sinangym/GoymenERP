@@ -6,6 +6,7 @@ import { useShellState } from '../shell/shellContext'
 import { hasCapability } from '../shell/shellState'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
 import { FINANCE_CAPABILITY } from './capabilities'
+import { AllocationCreateForm } from './AllocationCreateForm'
 import { isBoundUuid } from './contract'
 import { useFinanceBinding } from './financePort'
 import { readFinanceAllocation, readFinanceAllocations, sendFinanceAllocationCommand } from './allocationHttp'
@@ -34,6 +35,7 @@ export function AllocationPage() {
   const selected = search.get(SELECTED)
   const allocationId = isBoundUuid(selected) ? selected : null
   const canWrite = hasCapability(shell, FINANCE_CAPABILITY.allocationsWrite)
+  const canCreate = canWrite && hasCapability(shell, FINANCE_CAPABILITY.receiptsList)
   const namespace = bound?.namespace ?? 'unbound'
   const list = useQuery({
     queryKey: [namespace, 'finance', 'allocations'], enabled: bound !== null,
@@ -65,6 +67,7 @@ export function AllocationPage() {
   return <section aria-labelledby="finance-allocations-title" className={styles.page}>
     <h1 id="finance-allocations-title">Finansal dağıtımlar</h1>
     <p className={styles.notice}>Mevcut finans kaynağının açık kaleme dağıtımıdır; ikinci bir para hareketi oluşturmaz.</p>
+    {canCreate ? <AllocationCreateForm onCreated={openAllocation} /> : null}
     <AllocationList result={list.data} loading={list.data === undefined} onOpen={openAllocation} />
     {allocationId === null ? null : <AllocationDetailPanel result={detail.data}
       loading={detail.data === undefined || detail.isFetching}
