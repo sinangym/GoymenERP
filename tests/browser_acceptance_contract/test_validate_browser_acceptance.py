@@ -260,7 +260,8 @@ class WorkflowTests(unittest.TestCase):
             validator.SUITE_IDENTITY_PERMISSIONS["fin01"],
         )
 
-    def test_s04_identity_permissions_include_the_allocation_fixture_axis(self):
+    def test_s04_identity_permissions_accept_customer_acceptance_and_reject_unlisted_grants(self):
+        permissions = validator.SUITE_IDENTITY_PERMISSIONS["s04"]
         self.assertEqual(
             (
                 "sales.drafts.create",
@@ -281,9 +282,13 @@ class WorkflowTests(unittest.TestCase):
                 "sales.orders.cancel",
                 # DEC-SAL-002: held only by the disposable s04-preparer.
                 "sales.orders.quantity.write",
+                # Q9: held only by that same disposable preparer; no production grant is widened.
+                "sales.orders.customer-acceptance.record",
             ),
-            validator.SUITE_IDENTITY_PERMISSIONS["s04"],
+            permissions,
         )
+        self.assertIn("sales.orders.customer-acceptance.record", permissions)
+        self.assertNotIn("counterparty.parties.create", permissions)
 
     def test_l04_identity_permissions_include_the_shipment_delivery_and_inventory_axis(self):
         self.assertEqual(
