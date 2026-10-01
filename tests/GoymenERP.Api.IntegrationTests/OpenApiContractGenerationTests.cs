@@ -3451,6 +3451,34 @@ public sealed partial class OpenApiContractGenerationTests
                     ("siteId", "type:string;format:uuid"),
                     ("siteCode", "type:string"),
                     ("siteName", "type:string")),
+                ["CapturedPlanFamilyRevisionViewV1"] = ObjectSchema(
+                    ["familyId", "familyCode", "sourceRevision"],
+                    ("familyId", "type:string;format:uuid"),
+                    ("familyCode", "type:string"),
+                    ("sourceRevision", "type:string")),
+                ["CapturedPlanTemplateRevisionViewV1"] = ObjectSchema(
+                    ["templateId", "templateVersion", "templateCode", "sourceRevision"],
+                    ("templateId", "type:string;format:uuid"),
+                    ("templateVersion", "type:string"),
+                    ("templateCode", "type:string"),
+                    ("sourceRevision", "type:string")),
+                ["CapturedPlanKilogramUnitViewV1"] = ObjectSchema(
+                    ["companyId", "unitId", "unitCode", "profileId", "profileVersion"],
+                    ("companyId", "type:string;format:uuid"),
+                    ("unitId", "type:string;format:uuid"),
+                    ("unitCode", "type:string"),
+                    ("profileId", "type:string;format:uuid"),
+                    ("profileVersion", "type:string")),
+                ["CapturedPlanTechnicalSnapshotViewV1"] = ObjectSchema(
+                    ["productId", "productVersion", "family", "template", "thicknessMm", "widthMm", "unitKg", "effectiveOn"],
+                    ("productId", "type:string;format:uuid"),
+                    ("productVersion", "type:string"),
+                    ("family", "ref:CapturedPlanFamilyRevisionViewV1"),
+                    ("template", "ref:CapturedPlanTemplateRevisionViewV1"),
+                    ("thicknessMm", "type:string"),
+                    ("widthMm", "type:string"),
+                    ("unitKg", "ref:CapturedPlanKilogramUnitViewV1"),
+                    ("effectiveOn", "type:string;format:date")),
                 ["OrderViewV1"] = ObjectSchema(
                     ["orderId", "companyId", "planId", "workCenterId", "process", "status", "version", "target", "remainingTarget", "rolls", "costStatus", "closedByUserId", "closedAtUtc"],
                     ("orderId", "type:string;format:uuid"),
@@ -3469,7 +3497,8 @@ public sealed partial class OpenApiContractGenerationTests
                 ["PlannedInputViewV1"] = ObjectSchema(
                     ["parentRollId", "plannedKg"],
                     ("parentRollId", "type:string;format:uuid"),
-                    ("plannedKg", "type:string")),
+                    ("plannedKg", "type:string"),
+                    ("technicalSnapshot", "oneOf:ref:CapturedPlanTechnicalSnapshotViewV1|type:null")),
                 ["PlanViewV1"] = ObjectSchema(
                     ["planId", "companyId", "workCenterId", "process", "status", "version", "inputs", "target", "approvedByUserId", "approvedAtUtc"],
                     ("planId", "type:string;format:uuid"),
@@ -3481,7 +3510,8 @@ public sealed partial class OpenApiContractGenerationTests
                     ("inputs", "type:array;items:ref:PlannedInputViewV1"),
                     ("target", "oneOf:ref:TargetViewV1|type:null"),
                     ("approvedByUserId", "type:null|string;format:uuid"),
-                    ("approvedAtUtc", "type:null|string;format:date-time")),
+                    ("approvedAtUtc", "type:null|string;format:date-time"),
+                    ("calculation", "oneOf:ref:PlanPreviewViewV1|type:null")),
                 ["RemainingTargetViewV1"] = ObjectSchema(
                     ["basis", "targetKg", "achievedKg", "remainingKg"],
                     ("basis", "type:null|string"),

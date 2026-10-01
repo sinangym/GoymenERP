@@ -202,8 +202,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
             // manufacturing
             // MFG close: owner-added closure/tolerance SQL facts extend the exact Manufacturing discovery inventory.
+            // MFG technical snapshot: +4 migration/constraint SQL facts (38590e95... -> b1f5f069...).
             ["tools/relational_inventory/manufacturing.txt"] =
-                "38590e95d1191cd563890aa427ed01f96e8f233b5c39485536f3edace06f90da",
+                "b1f5f0699d4f191553794ddab1f9473be1a83d907d1b048d8d10463df194501e",
 
             // organization
             // ORG master edit: +2 OrganizationMasterDataSqlServerRelationalAcceptanceTests facts (6b504dac… -> 3bad6ad8…).
@@ -306,9 +307,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // CompanyId filter. A standard entry, not an exception.
             // Re-measured for MFG-PLAN-EDIT: the append-only PlanRevisions / PlanRevisionInputs tables, each with the
             // same CompanyId query filter and a company-leading key and FK to the plan.
+            // Re-measured for immutable Product/Settings technical snapshots on creation and revision inputs.
             ["src/backend/Modules/Manufacturing/GoymenERP.Modules.Manufacturing.Infrastructure/"
              + "Persistence/ManufacturingDbContext.cs"] =
-                "4601d8c230d326696ef6774dd88ce62430ff310d4ef5ccaf2a5b32f45a3426fb",
+                "159728a7fab1f1e61acd038f484a0d067bdbafc7057d0093f1346ccc2206470a",
             // FIN-T04a (#305): company-scoped like Organization; every tenant row and AuditEvent
             // carries the CompanyId filter. A standard entry, not an exception.
             // Re-measured for DEC-FIN-014: nullable POS fact columns on ReceiptDrafts and MoneyEvents; no new table,
@@ -831,10 +833,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // unchanged (1). Re-fingerprinted for MFG-PLAN-EDIT: the Draft revision append and the history read,
                 // company-resolved through the filtered context; no connection, command or raw SQL; SqlClient count
                 // unchanged (1).
+                // Re-fingerprinted for technical snapshot persistence and stored-plan restoration; SqlClient count
+                // remains recognition-only and unchanged (1).
                 ["src/backend/Modules/Manufacturing/"
                  + "GoymenERP.Modules.Manufacturing.Infrastructure/Persistence/ManufacturingStore.cs"] =
                     new(
-                        "41145ed8470576203eb58215810b51ddd27d82c2fe7229a592a28db1a4e2a484",
+                        "dac9a3b1fbd2ea93398063b6a35513b1abe69cebe709fb7e880894f12783373d",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -1104,6 +1108,17 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         ReviewedMigrationMutationSources =
             new Dictionary<string, ReviewedMigrationMutationSource>(StringComparer.Ordinal)
             {
+                // Manufacturing technical snapshots are immutable provenance; Down uses one reviewed statement to
+                // refuse downgrade before either creation or revision provenance can be dropped.
+                ["src/backend/Modules/Manufacturing/"
+                 + "GoymenERP.Modules.Manufacturing.Infrastructure/Persistence/Migrations/"
+                 + "20261001200000_AddManufacturingPlanTechnicalSnapshots.cs"] =
+                    new(
+                        "253f3953a27b7f1b6938e1bd16ef83bb9a55b6c093b51fa504271cdae2d56b7e",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 1
+                        }),
                 // Manufacturing input label versions are durable; Down uses one reviewed statement
                 // to refuse downgrade while any trusted accepted version remains.
                 ["src/backend/Modules/Manufacturing/"
