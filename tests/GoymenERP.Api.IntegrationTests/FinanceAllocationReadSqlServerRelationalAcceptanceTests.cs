@@ -185,7 +185,33 @@ public sealed class FinanceAllocationReadSqlServerRelationalAcceptanceTests
                 var openItemId = Guid.NewGuid();
                 var sourceId = Guid.NewGuid();
                 var allocationId = Guid.NewGuid();
+                var partyId = Guid.NewGuid();
+                var companyAccountId = Guid.NewGuid();
+                var currencyId = Guid.Parse("55555555-5555-4555-8555-555555555555");
+                var createdAt = first.AddSeconds(index);
                 latest = allocationId;
+                db.ReceiptDrafts.Add(new ReceiptDraftRow
+                {
+                    Id = sourceId,
+                    CompanyId = companyId,
+                    Version = 2,
+                    PartyId = partyId,
+                    CompanyAccountId = companyAccountId,
+                    TreasuryAccountId = Guid.NewGuid(),
+                    CurrencyId = currencyId,
+                    AmountText = "125.50",
+                    ProfileId = Guid.NewGuid().ToString("D"),
+                    ProfileVersion = "1",
+                    OccurredOn = DateOnly.FromDateTime(createdAt.UtcDateTime),
+                    ValueOn = DateOnly.FromDateTime(createdAt.UtcDateTime),
+                    CreatedAtUtc = createdAt,
+                    CreatedBy = "synthetic-f03-fixture",
+                    UpdatedAtUtc = createdAt,
+                    UpdatedBy = "synthetic-f03-fixture",
+                    Stage = ReceiptStages.Recorded,
+                    RecordedAtUtc = createdAt,
+                    RecordedBy = "synthetic-f03-fixture",
+                });
                 db.OpenItems.Add(new FinanceOpenItemRow
                 {
                     Id = openItemId,
@@ -197,17 +223,17 @@ public sealed class FinanceAllocationReadSqlServerRelationalAcceptanceTests
                     SourceBatchId = batchId,
                     SourceBatchVersion = "1",
                     SourceBatchChecksum = checksum,
-                    PartyId = Guid.NewGuid(),
-                    CompanyAccountId = Guid.NewGuid(),
-                    CurrencyId = Guid.Parse("55555555-5555-4555-8555-555555555555"),
+                    PartyId = partyId,
+                    CompanyAccountId = companyAccountId,
+                    CurrencyId = currencyId,
                     OriginalAmountText = "125.50",
                     OutstandingAmountText = "0",
                     Status = FinanceOpenItemStatuses.Closed,
                     Version = 7,
                     CreatedBy = "synthetic-f03-fixture",
-                    CreatedAtUtc = first.AddSeconds(index),
+                    CreatedAtUtc = createdAt,
                     UpdatedBy = "synthetic-f03-fixture",
-                    UpdatedAtUtc = first.AddSeconds(index),
+                    UpdatedAtUtc = createdAt,
                 });
                 db.Allocations.Add(new FinanceAllocationRow
                 {
@@ -215,13 +241,13 @@ public sealed class FinanceAllocationReadSqlServerRelationalAcceptanceTests
                     CompanyId = companyId,
                     SourceId = sourceId,
                     OpenItemId = openItemId,
-                    CurrencyId = Guid.Parse("55555555-5555-4555-8555-555555555555"),
+                    CurrencyId = currencyId,
                     AmountText = "125.50",
                     Reason = "SENTETIK real-SQL read fixture",
                     Status = FinanceAllocationStatuses.Active,
                     Version = 1,
                     CreatedBy = "synthetic-f03-fixture",
-                    CreatedAtUtc = first.AddSeconds(index),
+                    CreatedAtUtc = createdAt,
                 });
             }
 
