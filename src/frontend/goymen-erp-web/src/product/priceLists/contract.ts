@@ -169,12 +169,19 @@ const isMoney = (value: unknown): value is string => isText(value) && MONEY.test
 const isQuantity = (value: unknown): value is string => isText(value) && QUANTITY.test(value)
 const isDate = (value: unknown): value is string => isText(value) && DATE.test(value)
 
+/** Exact decimal(18,3) comparison after syntax validation; no floating-point conversion or rounding. */
+function quantityAtoms(value: string): bigint {
+  const [integer, fraction = ''] = value.split('.')
+  return (BigInt(integer) * 1000n) + BigInt(fraction.padEnd(3, '0'))
+}
+
 function decodeLine(value: unknown): PriceListLine | null {
   if (!isObject(value)) return null
   const { lineId, lineNo, productId, productCode, productName, priceUnitId, unitPrice, floorUnitPrice, lowerQuantity, upperQuantity } = value
   if (!isText(lineId) || !isCount(lineNo) || !isText(productId) || !isNullableText(productCode) || !isNullableText(productName)
     || !isText(priceUnitId) || !isMoney(unitPrice) || !(floorUnitPrice === null || isMoney(floorUnitPrice))
     || !isQuantity(lowerQuantity) || !(upperQuantity === null || isQuantity(upperQuantity))) return null
+  if (upperQuantity !== null && quantityAtoms(upperQuantity) <= quantityAtoms(lowerQuantity)) return null
   return { lineId, lineNo, productId, productCode, productName, priceUnitId, unitPrice, floorUnitPrice, lowerQuantity, upperQuantity }
 }
 

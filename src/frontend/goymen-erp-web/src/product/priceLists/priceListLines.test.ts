@@ -41,6 +41,14 @@ describe('price-list quantity tier transport', () => {
     const withoutBounds = structuredClone(body)
     delete (withoutBounds.versions[0].lines[0] as Partial<PriceListLine>).lowerQuantity
     expect(decodePriceListView(withoutBounds)).toBeNull()
+
+    const equalBounds = structuredClone(body)
+    equalBounds.versions[0].lines[0].upperQuantity = '10.125'
+    expect(decodePriceListView(equalBounds)).toBeNull()
+
+    const reversedBounds = structuredClone(body)
+    reversedBounds.versions[0].lines[0].upperQuantity = '10.124'
+    expect(decodePriceListView(reversedBounds)).toBeNull()
   })
 
   it('accepts the explicit untiered compatibility interval and enforces only the wire decimal scale locally', () => {
