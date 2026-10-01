@@ -184,6 +184,7 @@ services:
       IdentitySeed__Roles__10__Permissions__2: counterparty.parties.read
       IdentitySeed__Roles__10__Permissions__3: sales.drafts.read
       IdentitySeed__Roles__10__Permissions__4: purchasing.orders.read
+      IdentitySeed__Roles__10__Permissions__5: purchasing.goods-receipts.record
       IdentitySeed__Roles__11__Id: b3000000-0000-4000-8000-000000000507
       IdentitySeed__Roles__11__Code: BROWSER_L04_PURCHASE_APPROVER
       IdentitySeed__Roles__11__Name: SENTETIK browser-suite:l04 satın alma onaylayan rolü (seed)

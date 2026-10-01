@@ -55,7 +55,9 @@ public sealed class SalesDraftFixtureStoreSqlServerRelationalAcceptanceTests
         {
             var restored = await scope.Store.FindDraftAsync(DraftId);
             Assert.NotNull(restored);
-            Assert.Equal((InternalApprovalState.Preparing, 3L, 2, $"{Label} rulo"), (restored.ApprovalState, restored.Version, restored.Lines.Count, restored.Lines[0].Product.Name));
+            Assert.Equal((InternalApprovalState.Preparing, 3L, 2, $"{Label} rulo", "2", "1"),
+                (restored.ApprovalState, restored.Version, restored.Lines.Count, restored.Lines[0].Product.Name,
+                    restored.Lines[0].Product.ProductVersion, restored.Lines[1].Product.ProductVersion));
             var submitted = await scope.Store.UpdateDraftStateAsync(run.Envelope("k-submit"), Hash("submit-3"), SalesDraftCommands.SubmitV1, DraftId,
                 (draft, now) => draft.Submit(3, "SENTETIK-preparer", now), Submitted);
             Assert.NotNull(submitted);
@@ -80,6 +82,8 @@ public sealed class SalesDraftFixtureStoreSqlServerRelationalAcceptanceTests
                 Request(CompanyA, DraftId, $"{Label} SO-0002"), CancellationToken.None));
             await Assert.ThrowsAsync<InvalidOperationException>(() => scope.Fixture.EnsureAsync(
                 Request(CompanyA, Guid.NewGuid(), "SO-2026-000009"), CancellationToken.None));
+            await Assert.ThrowsAsync<InvalidOperationException>(() => scope.Fixture.EnsureAsync(
+                Request(CompanyA, Guid.NewGuid(), $"{Label} SO-0004", productVersion: "01"), CancellationToken.None));
         }
 
         await using (var scope = run.Open(CompanyB))
@@ -92,12 +96,12 @@ public sealed class SalesDraftFixtureStoreSqlServerRelationalAcceptanceTests
         Assert.Equal((1, 2, 1, 1, 2, 4L), await run.CountsAsync(DraftId));
     }
 
-    private static SalesDraftFixtureRequest Request(Guid company, Guid draftId, string documentNo) =>
+    private static SalesDraftFixtureRequest Request(Guid company, Guid draftId, string documentNo, string productVersion = "2") =>
         new(draftId, company, documentNo, Label, Day,
             new SalesDraftFixtureOwners(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), From),
             [
                 new SalesDraftFixtureLine(Guid.NewGuid(), Guid.NewGuid(), "S04-COIL", $"{Label} rulo", Guid.NewGuid(), Guid.NewGuid(),
-                    "kg", "weight", IsKilogram: true, Scale: 3, "1.250", 1.250m),
+                    "kg", "weight", IsKilogram: true, Scale: 3, "1.250", 1.250m, productVersion),
                 new SalesDraftFixtureLine(Guid.NewGuid(), Guid.NewGuid(), "S04-SHEET", $"{Label} levha", Guid.NewGuid(), Guid.NewGuid(),
                     "adet", "count", IsKilogram: false, Scale: 0, "3", 3m),
             ],
