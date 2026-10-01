@@ -85,6 +85,21 @@ class WorkflowTests(unittest.TestCase):
     workflow = WORKFLOW.read_text(encoding="utf-8")
 
     @staticmethod
+    def _acc01_seed():
+        return {
+            "companyId": "10000000-0000-0000-0000-000000000001",
+            "companyBId": "10000000-0000-0000-0000-000000000002",
+            "preparerActor": "acc01-preparer",
+            "approverActor": "acc01-approver",
+            "normalSourceLabel": "Kaynak ref. ...0000ac01 - 2026-09-24",
+            "normalOccurredOn": "2026-09-24",
+            "normalAmount": "10.25",
+            "normalDebitLabel": "SENTETIK-100 - Sentetik borc hesabi (Borç)",
+            "normalCreditLabel": "SENTETIK-120 - Sentetik alacak hesabi (Alacak)",
+            "openPeriodId": "10000000-0000-0000-0000-000000000003",
+        }
+
+    @staticmethod
     def _mfg_seed():
         company_id = "10000000-0000-0000-0000-000000000001"
         return {
@@ -231,6 +246,35 @@ class WorkflowTests(unittest.TestCase):
             ),
             validator.SUITE_IDENTITY_PERMISSIONS["mfg"],
         )
+
+    def test_acc01_fixture_output_is_the_exact_current_closed_contract(self):
+        seed = self._acc01_seed()
+        exported = validator.seed_export("acc01", seed)
+        prefix, payload = exported.split("=", 1)
+
+        self.assertEqual("BROWSER_E2E_ACC01_SEED", prefix)
+        self.assertEqual(seed, json.loads(payload))
+        self.assertEqual(frozenset(seed), validator.SUITE_FIXTURE_OUTPUTS["acc01"])
+
+    def test_acc01_fixture_output_rejects_every_noncanonical_scalar_and_unknown_key(self):
+        invalid_values = {
+            "normalSourceLabel": "Kaynak ref. ...0000AC01 - 2026-09-24",
+            "normalOccurredOn": "2026-09-25",
+            "normalAmount": "10.250",
+            "normalDebitLabel": "SENTETIK-100 - Sentetik borc hesabi",
+            "normalCreditLabel": "SENTETIK-120 - Sentetik alacak hesabi (Alacak) ",
+        }
+        for key, value in invalid_values.items():
+            seed = self._acc01_seed()
+            seed[key] = value
+            with self.subTest(key=key, value=value):
+                with self.assertRaises(validator.ContractError):
+                    validator.seed_export("acc01", seed)
+
+        unknown = self._acc01_seed()
+        unknown["unexpected"] = "10.25"
+        with self.assertRaisesRegex(validator.ContractError, "closed list"):
+            validator.seed_export("acc01", unknown)
 
     def test_fin01_identity_permissions_match_the_owner_fixture_closed_list(self):
         self.assertEqual(

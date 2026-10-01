@@ -594,6 +594,12 @@ def seed_export(suite: str, seed: object) -> str:
         "outputCustodianKind": "Company",
         "outputInitialBlock": "Free",
     }
+    acc01_exact_text = {
+        "normalOccurredOn": "2026-09-24",
+        "normalAmount": "10.25",
+        "normalDebitLabel": "SENTETIK-100 - Sentetik borc hesabi (Borç)",
+        "normalCreditLabel": "SENTETIK-120 - Sentetik alacak hesabi (Alacak)",
+    }
     mfg_guid_keys = expected - mfg_actor_keys - frozenset(mfg_exact_text) - {"outputProductVersion"}
     for key, value in seed.items():
         require(isinstance(value, str), f"seed output {key} must be a string")
@@ -630,10 +636,14 @@ def seed_export(suite: str, seed: object) -> str:
             and re.fullmatch(r"SYNR14-[1-9][0-9]*", value) is not None
         is_r14_name = suite == "r14" and key == "productName" \
             and value == "SENTETIK browser-suite:r14 stock candidate"
+        is_acc01_source_label = suite == "acc01" and key == "normalSourceLabel" \
+            and re.fullmatch(r"Kaynak ref\. \.\.\.[0-9a-f]{8} - 2026-09-24", value) is not None
+        is_acc01_exact_text = suite == "acc01" and acc01_exact_text.get(key) == value
         require(is_guid or is_actor or is_s04_version or is_s04_code or is_s04_name
                 or is_pur01_version or is_pur01_code or is_pur01_name
-                or is_r14_version or is_r14_code or is_r14_name,
-                f"seed output {key} must be a GUID or an actor id or an approved suite Product value")
+                or is_r14_version or is_r14_code or is_r14_name
+                or is_acc01_source_label or is_acc01_exact_text,
+                f"seed output {key} must be a GUID, an actor id or an approved suite scalar value")
     if suite == "mfg":
         require(seed["outputOwnerId"] == seed["companyId"],
                 "mfg output owner must be the seeded company")
