@@ -9,6 +9,7 @@ import { classifyOutcome, type RemoteViewState } from '../shell/uiState'
 import { contextKey, contextKeyString, hasCapability } from '../shell/shellState'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
 import { fetchNormalJournalDraft } from './api'
+import { fetchNormalJournalDraftSource } from './normalJournalSourceApi'
 import {
   ACCOUNTING_CAPABILITY,
   ACCOUNTING_ROUTE,
@@ -59,6 +60,22 @@ function NormalJournalDraftCreate() {
   const [outcome, setOutcome] = useState<NormalJournalCommandOutcome | null>(null)
   const sending = snapshot !== null && outcome === null
   const unresolved = outcome?.type === 'unknown'
+  const sourceIsValid = GUID.test(sourceId)
+  const preparationQuery = useQuery({
+    queryKey: ['accounting', 'normal-journal-source', companyId, sourceId],
+    queryFn: ({ signal }) => fetchNormalJournalDraftSource(companyId ?? '', sourceId, signal),
+    enabled: single && sourceIsValid,
+    retry: false,
+  })
+  const preparation = preparationQuery.data?.type === 'ok-single' ? preparationQuery.data.data : null
+  const shownPreparation = useRef<string | null>(null)
+  useEffect(() => {
+    const next = preparation?.preparationVersion ?? null
+    if (next !== null && shownPreparation.current !== null && shownPreparation.current !== next) {
+      setLines(current => current.map(line => ({ ...line, accountId: '' })))
+    }
+    shownPreparation.current = next
+  }, [preparation?.preparationVersion])
 
   if (!single) return <Frame title="Normal fiş taslağı"><StateBlock state={{ kind: 'no-authorized-company' }} subject="normal fiş taslağı" /></Frame>
 
@@ -79,6 +96,7 @@ function NormalJournalDraftCreate() {
     if (sending || unresolved || outcome?.type === 'applied') return
     if (!GUID.test(sourceId) || !isDateOnly(transactionDate) || !isDateOnly(accountingDate)
         || (valueDate !== '' && !isDateOnly(valueDate))) return setError('Kaynak ve tarihler geçerli olmalıdır.')
+    if (preparation === null) return setError('Kaynağın onaylı hesap hazırlığı yüklenmelidir.')
     const requestLines: CreateNormalJournalDraftLine[] = []
     for (const line of lines) {
       const amount = parseAmountInput(line.amount)
@@ -86,7 +104,8 @@ function NormalJournalDraftCreate() {
       requestLines.push({ accountId: line.accountId, side: line.side, amount: amount.wire })
     }
     const request: CreateNormalJournalDraftRequest = {
-      draftId: newId(), sourceId, transactionDate, accountingDate, valueDate: valueDate || null, lines: requestLines,
+      draftId: newId(), sourceId, transactionDate, accountingDate, valueDate: valueDate || null,
+      expectedPreparationVersion: preparation.preparationVersion, lines: requestLines,
     }
     setError(null)
     void send({ operation: 'create', idempotencyKey: newId(), request })
@@ -109,18 +128,33 @@ function NormalJournalDraftCreate() {
     {outcome?.type === 'failed' ? <p role="alert" className={styles.error}>İstek reddedildi: {outcome.failure.kind}</p> : null}
     <form className={styles.page} noValidate onSubmit={submit}>
       <div className={styles.form}>
-        <label className={styles.control}>Kaynak kimliği<input value={sourceId} disabled={sending || unresolved} onChange={event => setSourceId(event.target.value)} /></label>
+        <label className={styles.control}>Kaynak kimliği<input value={sourceId} disabled={sending || unresolved} onChange={event => {
+          setSourceId(event.target.value)
+          setSnapshot(null)
+          setOutcome(null)
+          setError(null)
+          setLines(current => current.map(line => ({ ...line, accountId: '' })))
+        }} /></label>
         <label className={styles.control}>İşlem tarihi<input type="date" value={transactionDate} disabled={sending || unresolved} onChange={event => setTransactionDate(event.target.value)} /></label>
         <label className={styles.control}>Muhasebe tarihi<input type="date" value={accountingDate} disabled={sending || unresolved} onChange={event => setAccountingDate(event.target.value)} /></label>
         <label className={styles.control}>Valör tarihi<input type="date" value={valueDate} disabled={sending || unresolved} onChange={event => setValueDate(event.target.value)} /></label>
       </div>
+      {sourceIsValid && preparationQuery.isPending ? <StateBlock state={{ kind: 'initial-loading' }} subject="onaylı hesap hazırlığı" /> : null}
+      {sourceIsValid && preparationQuery.data !== undefined && preparationQuery.data.type !== 'ok-single'
+        ? <p role="alert" className={styles.error}>Kaynağın onaylı hesap hazırlığı okunamadı.</p> : null}
+      {preparation ? <p className={styles.help}>Onaylı ayna {preparation.accountPlanSourceVersion}; kural {preparation.postingRuleVersion}.</p> : null}
       {lines.map((line, index) => <div className={styles.form} key={index}>
-        <label className={styles.control}>Hesap kimliği<input value={line.accountId} disabled={sending || unresolved} onChange={event => setLines(current => current.map((item, i) => i === index ? { ...item, accountId: event.target.value } : item))} /></label>
-        <label className={styles.control}>Taraf<select value={line.side} disabled={sending || unresolved} onChange={event => setLines(current => current.map((item, i) => i === index ? { ...item, side: event.target.value as NormalJournalSide } : item))}><option value="Debit">Borç</option><option value="Credit">Alacak</option></select></label>
+        <label className={styles.control}>Onaylı hesap<select value={line.accountId} disabled={sending || unresolved || preparation === null} onChange={event => {
+          const mapping = preparation?.mappings.find(candidate => candidate.accountId === event.target.value)
+          setLines(current => current.map((item, i) => i === index
+            ? { ...item, accountId: mapping?.accountId ?? '', side: mapping?.side ?? item.side } : item))
+        }}><option value="">Hesap seçin</option>{preparation?.mappings.map(mapping => <option key={`${mapping.side}:${mapping.accountId}`} value={mapping.accountId}>{mapping.accountCode} - {mapping.accountName} ({mapping.side === 'Debit' ? 'Borç' : 'Alacak'})</option>)}</select></label>
         <label className={styles.control}>Tutar<input inputMode="decimal" value={line.amount} disabled={sending || unresolved} onChange={event => setLines(current => current.map((item, i) => i === index ? { ...item, amount: event.target.value } : item))} /></label>
         {lines.length > 2 ? <button type="button" disabled={sending || unresolved} onClick={() => setLines(current => current.filter((_, i) => i !== index))}>Satırı kaldır</button> : null}
       </div>)}
-      <div className={styles.actions}><button type="button" disabled={sending || unresolved} onClick={() => setLines(current => [...current, { accountId: '', side: 'Debit', amount: '' }])}>Satır ekle</button><button type="submit" disabled={sending || unresolved}>Taslağı kaydet</button><Link to={ACCOUNTING_ROUTE.journalsList}>Formu kapat</Link></div>
+      <div className={styles.actions}><button type="button" disabled={sending || unresolved || preparation === null} onClick={() => setLines(current => [...current, { accountId: '', side: 'Debit', amount: '' }])}>Satır ekle</button><button type="submit" disabled={sending || unresolved || preparation === null}>Taslağı kaydet</button><Link to={ACCOUNTING_ROUTE.journalsList}>Formu kapat</Link></div>
+      {outcome?.type === 'failed' && outcome.failure.kind === 'preparation-version-conflict'
+        ? <p role="alert" className={styles.noticeWarn}>Onaylı hesap hazırlığı değişti. Seçimleri yenileyin.<button type="button" onClick={() => void preparationQuery.refetch()}>Hazırlığı yenile</button></p> : null}
       {error ? <p role="alert" className={styles.error}>{error}</p> : null}
     </form>
   </Frame>
