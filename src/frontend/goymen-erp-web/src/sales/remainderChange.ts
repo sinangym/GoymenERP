@@ -73,11 +73,13 @@ const exact = (value: unknown, keys: readonly string[]): Obj | null => {
   const actual = Object.keys(object)
   return actual.length === keys.length && actual.every((key) => keys.includes(key)) ? object : null
 }
-const text = (value: unknown, allowEmpty = false) => typeof value === 'string' && (allowEmpty || value.trim().length > 0)
-const decimal = (value: unknown) => typeof value === 'string' && DECIMAL.test(value)
-const nullableDecimal = (value: unknown) => value === null || decimal(value)
-const instant = (value: unknown) => typeof value === 'string' && value.trim() !== '' && !Number.isNaN(Date.parse(value))
-const nullableInstant = (value: unknown) => value === null || instant(value)
+const text = (value: unknown, allowEmpty = false): value is string =>
+  typeof value === 'string' && (allowEmpty || value.trim().length > 0)
+const decimal = (value: unknown): value is string => typeof value === 'string' && DECIMAL.test(value)
+const nullableDecimal = (value: unknown): value is string | null => value === null || decimal(value)
+const instant = (value: unknown): value is string =>
+  typeof value === 'string' && value.trim() !== '' && !Number.isNaN(Date.parse(value))
+const nullableInstant = (value: unknown): value is string | null => value === null || instant(value)
 const oneOf = <T extends string>(value: unknown, choices: readonly T[]): value is T =>
   typeof value === 'string' && choices.includes(value as T)
 const compareDecimal = (left: string, right: string): number => {

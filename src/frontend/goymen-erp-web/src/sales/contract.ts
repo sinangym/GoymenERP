@@ -735,7 +735,7 @@ export function decodeDraftDetail(value: unknown, expectedId: string | null): Dr
 function decodeCustomerAcceptance(value: unknown, currentRevision: string): CustomerAcceptanceFacts | null {
   const o = exact(value, ['required', 'acceptedRevision', 'acceptedBy', 'acceptedAtUtc', 'isCurrentRevisionAccepted'])
   if (o === null || typeof o.required !== 'boolean' || typeof o.isCurrentRevisionAccepted !== 'boolean') return null
-  if (!isNullable(o.acceptedRevision, (v): v is string => /^Rev\.(0|[1-9][0-9]*)$/.test(v))) return null
+  if (!isNullable(o.acceptedRevision, (v): v is string => typeof v === 'string' && /^Rev\.(0|[1-9][0-9]*)$/.test(v))) return null
   if (!isNullable(o.acceptedBy, (v): v is string => isText(v, 128)) || !isNullable(o.acceptedAtUtc, isInstant)) return null
   const empty = o.acceptedRevision === null && o.acceptedBy === null && o.acceptedAtUtc === null
   const complete = o.acceptedRevision !== null && o.acceptedBy !== null && o.acceptedAtUtc !== null

@@ -4,9 +4,9 @@
  * This file creates one public draft/line, submits and approves it, records customer acceptance for that exact
  * approved revision, then proves both remainder decisions on the same line. A request never mutates quantity;
  * rejection keeps the order unchanged; approval applies the owner-backed floor; replay is one effect. The final
- * browser close/reopen reads the same server record. Nothing is mocked or intercepted. The test creates, issues and loads
- * a real Logistics instruction bound to this exact draft/line, so the remainder floor is non-zero. It does not record a
- * shipment or delivery and therefore does not call this a partially-delivered acceptance.
+ * browser close/reopen reads the same server record. Nothing is mocked or intercepted. The test creates, issues, loads and
+ * definitely ships a real Logistics instruction bound to this exact draft/line, so the remainder floor contains a real
+ * partial shipment. It does not record a delivery.
  *
  * The suite creates no actor or grant. The existing preparer owns `sales.orders.quantity.write`, the existing
  * approver owns `sales.orders.approve`, and one existing disposable actor must be published with the already
@@ -33,6 +33,8 @@ const {
   productId,
   productVersion,
   productUnitId,
+  allocationLabelId,
+  allocationLabelVersion,
 } = seed
 
 const DRAFTS_PATH = '/api/v1/sales/drafts'
@@ -43,6 +45,8 @@ const QUANTITY_WRITE = 'sales.orders.quantity.write'
 const CUSTOMER_ACCEPTANCE_RECORD = 'sales.orders.customer-acceptance.record'
 const LOGISTICS_INSTRUCTION_CREATE = 'logistics.loading-instructions.create'
 const LOGISTICS_LOAD_RECORD = 'logistics.loads.record'
+const LOGISTICS_SHIPMENT_RECORD = 'logistics.shipments.record'
+const INVENTORY_ALLOCATION_WRITE = 'inventory.physical-allocation.write'
 const LOGISTICS_AGGREGATE_LIMIT_EXCEEDED = 'logistics_order_line_aggregate_limit_exceeded'
 const BUSINESS_DATE = '2026-09-18'
 const RUN = testedCommit.slice(0, 12)
@@ -106,6 +110,13 @@ interface LoadingInstructionResponse {
       readonly sourceOrderLineId: string
       readonly instructed: string
       readonly loaded: string
+    }[]
+    readonly shares: readonly {
+      readonly shareId: string
+      readonly lineId: string
+      readonly kind: string
+      readonly quantity: string
+      readonly sourceShipmentId: string | null
     }[]
   }
   readonly isReplay: boolean
@@ -180,6 +191,13 @@ test('S04-RM-01 one accepted order rejects then approves a remainder change; clo
     throw new Error(
       `BLOCKED: the s04 disposable fixture publishes no actor with ${LOGISTICS_LOAD_RECORD}; `
       + 'Cari/Central must grant that exact existing Logistics permission to one existing disposable actor, not a role.',
+    )
+  }
+  const logisticsShipmentActor = await findActorWith(request, LOGISTICS_SHIPMENT_RECORD, INVENTORY_ALLOCATION_WRITE)
+  if (logisticsShipmentActor === undefined) {
+    throw new Error(
+      `BLOCKED: the s04 disposable fixture publishes no actor with ${LOGISTICS_SHIPMENT_RECORD} and ${INVENTORY_ALLOCATION_WRITE}; `
+      + 'Cari/Central must bind those exact existing capabilities to one existing disposable actor, not a role.',
     )
   }
 
@@ -339,10 +357,50 @@ test('S04-RM-01 one accepted order rejects then approves a remainder change; clo
     lineId: logisticsLineId, sourceOrderId: draftId, sourceOrderLineId: lineId, loaded: '2',
   })
 
+  const allocationId = randomUUID()
+  const allocationCreated = await request.post(`${apiBaseUrl}/api/v1/inventory/physical-allocations`, {
+    headers: commandHeaders(preparerActor, `SENTETIK-s04-rm-allocation-${RUN}`),
+    data: {
+      allocationId,
+      salesOrderId: draftId,
+      salesOrderLineId: lineId,
+      labelId: allocationLabelId,
+      expectedLabelVersion: allocationLabelVersion,
+      quantityKg: '1',
+      reason: 'SENTETIK browser-suite:s04 aynı sipariş satırı kesin sevkiyat tahsisi',
+      reservedUntilUtc: null,
+    },
+  })
+  expect(allocationCreated.status(), 'the real Inventory allocation binds the same Sales line').toBe(201)
+  expect(await allocationCreated.json()).toMatchObject({ allocationId, status: 'Active', version: '1', remainingKg: '1' })
+
+  const shipmentId = randomUUID()
+  const shipmentRecorded = await request.post(
+    `${apiBaseUrl}/api/v1/logistics/loading-instructions/${instructionId}/lines/${logisticsLineId}/shipments`,
+    {
+      headers: commandHeaders(logisticsShipmentActor, `SENTETIK-s04-rm-log-shipment-${RUN}`),
+      data: {
+        expectedVersion: loadedInstruction.detail.instruction.version,
+        shipmentId,
+        allocationId,
+        expectedAllocationVersion: '1',
+        expectedLabelVersion: allocationLabelVersion,
+        movementId: randomUUID(),
+        quantity: '1',
+        occurredAtUtc: '2026-09-18T12:00:00Z',
+      },
+    },
+  )
+  expect(shipmentRecorded.status(), 'the public Logistics shipment consumes the same-line allocation').toBe(200)
+  const shippedInstruction = (await shipmentRecorded.json()) as LoadingInstructionResponse
+  expect(shippedInstruction.detail.shares.find((share) => share.shareId === shipmentId)).toMatchObject({
+    lineId: logisticsLineId, kind: 'Shipped', quantity: '1', sourceShipmentId: null,
+  })
+
   const nonZeroFloor = await readRemainders(request, draftId, readerActor)
   expect(nonZeroFloor.floorStatus).toBe('Readable')
   expect(nonZeroFloor.lines.find((line) => line.lineId === lineId)).toMatchObject({
-    quantity: ORDERED_QUANTITY, loaded: '2', shipped: '0', delivered: '0', minimumQuantity: '2',
+    quantity: ORDERED_QUANTITY, loaded: '2', shipped: '1', delivered: '0', minimumQuantity: '2',
   })
 
   await openDetail(page, draftId, preparerActor)
@@ -445,12 +503,12 @@ test('S04-RM-01 one accepted order rejects then approves a remainder change; clo
   expect(fresh.lines.find((line) => line.lineId === lineId)?.quantity).toBe(REVISED_QUANTITY)
   expect(remainder.floorStatus).toBe('Readable')
   expect(exactLine).toMatchObject({
-    quantity: REVISED_QUANTITY, remainder: 'Revised', loaded: '2', shipped: '0', delivered: '0', minimumQuantity: '2',
+    quantity: REVISED_QUANTITY, remainder: 'Revised', loaded: '2', shipped: '1', delivered: '0', minimumQuantity: '2',
   })
   expect(remainder.items).toHaveLength(2)
   expect(remainder.items[1]).toMatchObject({
     changeNo: 2, state: 'Approved', requestedQuantity: REVISED_QUANTITY,
-    resultQuantity: REVISED_QUANTITY, loadedAtRequest: '2', loadedAtDecision: '2',
+    resultQuantity: REVISED_QUANTITY, loadedAtRequest: '2', shippedAtRequest: '1', deliveredAtRequest: '0', loadedAtDecision: '2',
   })
 
   await openDetail(page, draftId, readerActor)

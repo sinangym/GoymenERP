@@ -129,6 +129,12 @@ public sealed partial class LogisticsInstructionService(
             var won = await FindReplayAsync(scope, bindings.CreatePermission, envelope, requestHash, LogisticsCommands.CreateV1, cancellationToken);
             return won is null ? throw Store(exception) : Replayed(won);
         }
+        catch (LogisticsStoreException exception) when (exception.Code == LogisticsStoreCodes.AggregateLimitExceeded)
+        {
+            return await TerminalAsync(envelope, requestHash, LogisticsCommands.CreateV1,
+                new LogisticsTerminalRefusal(409, LogisticsProblemCodesV1.OrderLineAggregateLimitExceeded,
+                    [new("lines", exception.Code)]), cancellationToken);
+        }
         catch (LogisticsStoreException exception)
         {
             throw Store(exception);
