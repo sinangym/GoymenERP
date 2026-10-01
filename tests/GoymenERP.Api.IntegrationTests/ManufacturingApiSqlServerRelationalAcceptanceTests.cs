@@ -257,6 +257,10 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
             "SELECT COUNT(*) FROM inventory.Movements WHERE CompanyId = @c", ("@c", CompanyA));
         var factsBefore = await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM manufacturing.Facts WHERE CompanyId = @c", ("@c", CompanyA));
+        var auditsBefore = await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityType = N'Manufacturing.ProductionOrder' "
+            + "AND EntityId = @o AND PermissionCode = N'manufacturing.facts.record' AND CorrelationId = @r",
+            ("@o", orderId.ToString("D")), ("@r", correlation));
 
         var request = new RecordFactRequestV1(
             Guid.NewGuid(), issued.Version, roll, "10", At.AddMinutes(1));
@@ -266,6 +270,11 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
         var recorded = (await response.Content.ReadFromJsonAsync<OrderViewV1>())!;
         Assert.Equal(issued.Version + 1, recorded.Version);
         Assert.Equal("10", Assert.Single(recorded.Rolls).OutputsKg[OutputClass.ProcessLoss.ToString()]);
+        var auditsAfterRecord = await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityType = N'Manufacturing.ProductionOrder' "
+            + "AND EntityId = @o AND PermissionCode = N'manufacturing.facts.record' AND CorrelationId = @r",
+            ("@o", orderId.ToString("D")), ("@r", correlation));
+        Assert.Equal(auditsBefore + 1, auditsAfterRecord);
 
         using var replay = await client.PostWithKeyAsync(
             $"{Base}/orders/{orderId}/process-losses", request, "process-loss-1");
@@ -285,7 +294,7 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
             "SELECT COUNT(*) FROM manufacturing.Commands WHERE CompanyId = @c "
             + "AND CommandName = N'manufacturing.process-loss.declare.v1'",
             ("@c", CompanyA)));
-        Assert.Equal(1, await run.ScalarAsync<int>(
+        Assert.Equal(auditsAfterRecord, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityType = N'Manufacturing.ProductionOrder' "
             + "AND EntityId = @o AND PermissionCode = N'manufacturing.facts.record' AND CorrelationId = @r",
             ("@o", orderId.ToString("D")), ("@r", correlation)));

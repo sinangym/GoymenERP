@@ -971,8 +971,14 @@ public sealed partial class ManufacturingCommandService(
             return Task.FromResult(Invalid<OrderViewV1>("exceptionReason"));
         }
 
+        // The published normal-close command predates exception approval. Its canonical payload omitted the
+        // optional member, so an absent reason must keep that exact hash for immutable ADR-011 replay.
+        object canonicalRequest = exceptionReason is null
+            ? new { orderId, expectedVersion = request.ExpectedVersion }
+            : new { orderId, expectedVersion = request.ExpectedVersion, exceptionReason };
+
         return RunAsync<OrderViewV1>(permission, idempotencyKey, ManufacturingCommandNames.CloseOrder,
-            new { orderId, expectedVersion = request.ExpectedVersion, exceptionReason }, ManufacturingApiStatus.Ok,
+            canonicalRequest, ManufacturingApiStatus.Ok,
             async (metadata, actor, companyId) =>
             {
                 var current = await orders.FindOrderAsync(orderId, cancellationToken);

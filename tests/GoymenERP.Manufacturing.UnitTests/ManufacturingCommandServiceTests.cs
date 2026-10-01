@@ -1,4 +1,7 @@
 using System.Reflection;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Observability;
 using GoymenERP.BuildingBlocks.Security;
@@ -997,6 +1000,66 @@ public sealed class ManufacturingCommandServiceTests
     }
 
     [Fact]
+    public async Task A_legacy_normal_close_success_replays_without_rehashing_null_reason_or_any_new_effect()
+    {
+        const string key = "legacy-close-1";
+        var fixture = new Fixture();
+        var order = await fixture.BalancedOrderAsync();
+        var read = order.Version;
+        order.Close(read, Actor, At);
+
+        var storedView = new OrderViewV1(
+            order.Id, Company, order.PlanId, order.WorkCenterId, order.Process.ToString(), order.Status.ToString(),
+            order.Version, null, new RemainingTargetViewV1(null, null, null, null),
+            [new RollBalanceViewV1(Roll, "1000", "100", "0", "100",
+                Enum.GetValues<OutputClass>().ToDictionary(
+                    outputClass => outputClass.ToString(),
+                    outputClass => outputClass == OutputClass.GoodProduct ? "100" : "0",
+                    StringComparer.Ordinal),
+                "0", "0", true)],
+            nameof(CostStatus.NotCalculated), Actor, At);
+        var storedResult = new ManufacturingApiResult<OrderViewV1>(
+            ManufacturingApiStatus.Ok, storedView, false, null);
+        var json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+        var keyHash = TestSha256(key);
+        var legacyRequestHash = TestSha256(ManufacturingCommandNames.CloseOrder + "|"
+            + JsonSerializer.Serialize(new { orderId = order.Id, expectedVersion = read }, json));
+        var legacy = new ManufacturingCommandRecord(
+            ManufacturingCommandNames.CloseOrder,
+            keyHash,
+            Actor.ToString("D"),
+            legacyRequestHash,
+            JsonSerializer.Serialize(storedResult, json),
+            "corr-legacy");
+        fixture.Store.Commands.Add((ManufacturingCommandNames.CloseOrder, keyHash), legacy);
+
+        var replay = await fixture.Service.CloseOrderAsync(
+            order.Id, new CloseOrderRequestV1(read), key, ClosePermission, CancellationToken.None);
+
+        Assert.Equal((ManufacturingApiStatus.Ok, true, "corr-legacy", order.Id, order.Version),
+            (replay.Status, replay.IsReplay, replay.OriginalCorrelationId,
+                replay.Resource!.OrderId, replay.Resource.Version));
+
+        var changedPayload = await fixture.Service.CloseOrderAsync(
+            order.Id, new CloseOrderRequestV1(read, "Yeni istisna gerekçesi"), key,
+            ClosePermission, CloseExceptionPermission, CancellationToken.None);
+        Assert.Equal((ManufacturingApiStatus.Conflict, ManufacturingApiCodes.IdempotencyConflict, false),
+            (changedPayload.Status, changedPayload.Code, changedPayload.IsReplay));
+
+        fixture.User.ActorId = OtherActor;
+        var changedActor = await fixture.Service.CloseOrderAsync(
+            order.Id, new CloseOrderRequestV1(read), key, ClosePermission, CancellationToken.None);
+        Assert.Equal((ManufacturingApiStatus.Conflict, ManufacturingApiCodes.IdempotencyConflict, false),
+            (changedActor.Status, changedActor.Code, changedActor.IsReplay));
+
+        Assert.Equal(0, fixture.Settings.ToleranceAsked);
+        Assert.Empty(fixture.Store.PolicyDecisions);
+        Assert.Empty(fixture.Store.AuditEvents);
+        Assert.Empty(fixture.Store.Writes);
+        Assert.Same(legacy, Assert.Single(fixture.Store.Commands).Value);
+    }
+
+    [Fact]
     public async Task An_out_of_tolerance_close_requires_a_reason_and_the_dedicated_fresh_permission()
     {
         var fixture = new Fixture();
@@ -1524,6 +1587,9 @@ public sealed class ManufacturingCommandServiceTests
     {
         public override DateTimeOffset GetUtcNow() => At;
     }
+
+    private static string TestSha256(string value) =>
+        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value)));
 
     private sealed class MutableCompanyContext(Guid companyId) : ICompanyContext
     {
