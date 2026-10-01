@@ -13,12 +13,13 @@
  * Until then this file fails at its first capability assertion — it never tests something else.
  *
  * The cases are one serial journey, in file order:
- *   S04-PL-01 the preparer creates a price list for the seed's REAL product in the browser (price 42000.50, floor 40000, from
- *             today), saves, closes and reopens it as a Draft, publishes it; it reads "Geçerli"
- *   S04-PL-02 the preparer creates an order for today through the real API, opens it, fetches the line's list price and uses it
+ *   S04-PL-01 the preparer creates two touching tiers for the seed's REAL product in the browser ([0,10) at 42000.50 and
+ *             [10,20) at 43000, both floor 40000, from today), saves, closes and reopens them as a Draft, publishes it;
+ *             it reads "Geçerli"
+ *   S04-PL-02 the preparer creates an order of exactly 10 for today through the real API, opens it, fetches the second tier and uses it
  *             (reference + default), gives 3 % discount and 1.5 % surcharge, saves; close/reopen shows the reference, "Liste
- *             fiyatı", %3, %1.5 and the server's net 41351.592275
- *   S04-PL-03 a 10 % discount (net 37800.45 < floor 40000) is refused 422 sales_price_below_floor and nothing changes
+ *             fiyatı", [10,20), %3, %1.5 and the server's net 42335.65
+ *   S04-PL-03 a 10 % discount (net 38700 < floor 40000) is refused 422 sales_price_below_floor and nothing changes
  */
 
 import { randomUUID } from 'node:crypto'
@@ -68,8 +69,15 @@ test('S04-PL-01 a price list is created, saved, closed, reopened and published o
   await page.getByLabel('Ürün ara (kod veya ad)').fill(productCode)
   await page.getByRole('button', { name: 'Ara' }).click()
   await page.getByTestId('price-list-product-options').getByRole('button', { name: 'Listeye ekle' }).first().click()
+  await page.getByTestId('price-list-product-options').getByRole('button', { name: 'Listeye ekle' }).first().click()
   await page.getByLabel('1. Liste fiyatı').fill('42000,50')
   await page.getByLabel('1. Alt fiyat (isteğe bağlı)').fill('40000')
+  await page.getByLabel('1. Alt miktar (dahil)').fill('0')
+  await page.getByLabel('1. Üst miktar (hariç, boş: sınırsız)').fill('10')
+  await page.getByLabel('2. Liste fiyatı').fill('43000')
+  await page.getByLabel('2. Alt fiyat (isteğe bağlı)').fill('40000')
+  await page.getByLabel('2. Alt miktar (dahil)').fill('10')
+  await page.getByLabel('2. Üst miktar (hariç, boş: sınırsız)').fill('20')
 
   const created = page.waitForResponse((response) => response.request().method() === 'POST'
     && new URL(response.url()).pathname === '/api/v1/price-lists')
@@ -84,11 +92,13 @@ test('S04-PL-01 a price list is created, saved, closed, reopened and published o
   await page.getByRole('link', { name: LIST_NAME }).click()
   await expect(page.getByTestId('price-list-version-1-status')).toHaveText('Taslak')
   await expect(page.getByTestId('price-list-line-price').first()).toHaveText('42.000,5')
+  await expect(page.getByTestId('price-list-line-quantity-tier')).toHaveText(['0 ≤ miktar < 10', '10 ≤ miktar < 20'])
 
   await page.getByTestId('price-list-publish').click()
   await expect(page.getByTestId('price-list-version-1-status')).toHaveText('Geçerli')
   await page.reload()
   await expect(page.getByTestId('price-list-version-1-status')).toHaveText('Geçerli')
+  await expect(page.getByTestId('price-list-line-quantity-tier')).toHaveText(['0 ≤ miktar < 10', '10 ≤ miktar < 20'])
   await expect(page.getByTestId('price-list-publish')).toHaveCount(0)
 })
 
@@ -105,7 +115,7 @@ test('S04-PL-02 the order line takes the list price as reference and default, ad
     data: {
       kind: 'Order', partyId: realPartyId, companyAccountId: realCompanyAccountId, businessDate: TODAY, currencyId: lira!.currencyId,
       lines: [{
-        lineId, productId, expectedProductVersion: productVersion, orderUnitId: productUnitId, quantity: '5',
+        lineId, productId, expectedProductVersion: productVersion, orderUnitId: productUnitId, quantity: '10',
         unitPrice: null, priceUnitId: null, requestedDeliveryDate: null, note: null, requestedDeliverySlices: null, discountPercent: null,
       }],
       requestedDeliveryDate: null, note: null, deliveryAddress: null, contact: null, responsible: null, paymentTerms: null,
@@ -124,7 +134,7 @@ test('S04-PL-02 the order line takes the list price as reference and default, ad
   await expect(form.getByTestId('sales-price-choices-1')).toContainText(LIST_NAME)
   await form.getByTestId('sales-price-choices-1').getByRole('listitem').filter({ hasText: LIST_NAME })
     .getByRole('button', { name: 'Bu fiyatı kullan' }).click()
-  await expect(form.getByLabel('Birim fiyat')).toHaveValue('42000.5')
+  await expect(form.getByLabel('Birim fiyat')).toHaveValue('43000')
   await form.getByLabel('İskonto %').fill('3')
   await form.getByLabel('Vade farkı', { exact: true }).fill('1.5')
   await form.getByRole('button', { name: 'Fiyat ve iskontoyu kaydet' }).click()
@@ -137,15 +147,16 @@ test('S04-PL-02 the order line takes the list price as reference and default, ad
   await expect(page.getByTestId('sales-line-1-source')).toHaveText('Liste fiyatı')
   await expect(page.getByTestId('sales-line-1-discount-adjustment')).toHaveText('%3')
   await expect(page.getByTestId('sales-line-1-surcharge')).toHaveText('%1.5')
-  await expect(page.getByTestId('sales-line-1-net')).toHaveText('41351.592275')
+  await expect(page.getByTestId('sales-line-1-reference')).toContainText('miktar 10 dahil, 20 hariç')
+  await expect(page.getByTestId('sales-line-1-net')).toHaveText('42335.65')
 
   const pricing = await request.get(`${apiBaseUrl}${DRAFTS_PATH}/${journey.draftId}/line-pricing`, { headers: readHeaders(preparerActor) })
   expect(pricing.status()).toBe(200)
   expect(((await pricing.json()) as { readonly lines: readonly Record<string, unknown>[] }).lines[0]).toMatchObject({
-    lineId, priceSource: 'Reference', discountPercent: '3', surchargePercent: '1.5', netUnitPrice: '41351.592275',
+    lineId, unitPrice: '43000', priceSource: 'Reference', discountPercent: '3', surchargePercent: '1.5', netUnitPrice: '42335.65',
     priceReference: {
       priceListId: journey.priceListId, versionNo: 1, currencyCode: 'TRY', floorUnitPrice: '40000',
-      lowerQuantity: '0', upperQuantity: null,
+      unitPrice: '43000', lowerQuantity: '10', upperQuantity: '20',
     },
   })
 })
@@ -159,7 +170,7 @@ test('S04-PL-03 a net below the list floor is refused and nothing changes', asyn
     data: {
       expectedVersion: before.draft.version,
       lines: [{
-        lineId: journey.lineId, unitPrice: '42000.5', priceUnitId: productUnitId, discountPercent: '10',
+        lineId: journey.lineId, unitPrice: '43000', priceUnitId: productUnitId, discountPercent: '10',
         priceReference: { priceListId: journey.priceListId, versionNo: 1 }, discountAmount: null, surchargePercent: null, surchargeAmount: null,
       }],
     },
