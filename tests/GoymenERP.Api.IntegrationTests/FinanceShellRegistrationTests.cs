@@ -4,6 +4,7 @@ using GoymenERP.Modules.Counterparty.Infrastructure.Shell;
 using GoymenERP.Modules.Finance.Infrastructure.Shell;
 using GoymenERP.Modules.Organization.Infrastructure.Shell;
 using GoymenERP.Modules.Product.Infrastructure.Shell;
+using GoymenERP.Modules.Sales.Application.Contracts;
 using GoymenERP.Modules.Sales.Infrastructure.Shell;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -31,7 +32,7 @@ public sealed class FinanceShellRegistrationTests
 
         var actual = ShellCapabilityRegistry.ComputeCandidateRevision(providers);
         Assert.True(
-            string.Equals(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV14AndPublishedFinanceV12, actual,
+            string.Equals(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV15AndPublishedFinanceV13, actual,
                 StringComparison.Ordinal),
             $"Finance normal-host authority drifted. Actual: {actual}");
     }
@@ -49,7 +50,7 @@ public sealed class FinanceShellRegistrationTests
         var authority = C01E2eShellCapabilityActivation.Configure(services, new TestingEnvironment(),
             new ConfigurationBuilder().Build());
 
-        Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV14AndPublishedFinanceV12,
+        Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV15AndPublishedFinanceV13,
             authority);
         using var container = services.BuildServiceProvider();
         var registry = new ShellCapabilityRegistry(container.GetServices<IShellCapabilityProvider>(),
@@ -59,11 +60,37 @@ public sealed class FinanceShellRegistrationTests
             .ToArray();
         // Seven routes plus record and reversal-propose controls. A declaration still grants nothing:
         // each route or control service measures its own Finance permission afresh.
-        Assert.Equal(14, finance.Length);
+        Assert.Equal(15, finance.Length);
         Assert.All(finance, item => Assert.True(item.Declaration.ImplementationAvailable));
-        // Sales 1.4 (DEC-SAL-002): three screens plus the approve, commercial-revision, delivery-schedule, cancel and
-        // quantity-revision controls.
-        Assert.Equal(8, registry.Registrations.Count(item => item.Owner == SalesShellCapabilityProvider.OwnerId));
+        // Sales 1.5: three routes plus six detail controls. Pin identities, parents and authorities here instead of
+        // accepting a blind declaration count: another control, parent or permission must receive its own review.
+        var sales = registry.Registrations
+            .Where(item => item.Owner == SalesShellCapabilityProvider.OwnerId)
+            .Select(item => (
+                item.Declaration.CapabilityId,
+                item.Declaration.ParentCapabilityId,
+                Permissions: string.Join("+", item.Declaration.RequiredPermissions)))
+            .ToArray();
+        Assert.Equal(
+            [
+                (SalesShellCapabilityProvider.CreateCapabilityId, (string?)null, SalesPermissionManifestV1.DraftsCreate),
+                (SalesShellCapabilityProvider.DetailCapabilityId, null, SalesPermissionManifestV1.DraftsRead),
+                (SalesShellCapabilityProvider.ListCapabilityId, null, SalesPermissionManifestV1.DraftsRead),
+                (SalesShellCapabilityProvider.ApproveCapabilityId, SalesShellCapabilityProvider.DetailCapabilityId,
+                    $"{SalesPermissionManifestV1.DraftsRead}+{SalesPermissionManifestV1.OrdersApprove}"),
+                (SalesShellCapabilityProvider.CancelCapabilityId, SalesShellCapabilityProvider.DetailCapabilityId,
+                    $"{SalesPermissionManifestV1.DraftsRead}+{SalesPermissionManifestV1.OrdersCancel}"),
+                (SalesShellCapabilityProvider.CustomerAcceptanceRecordCapabilityId,
+                    SalesShellCapabilityProvider.DetailCapabilityId,
+                    $"{SalesPermissionManifestV1.DraftsRead}+{SalesPermissionManifestV1.OrdersCustomerAcceptanceRecord}"),
+                (SalesShellCapabilityProvider.DeliveryScheduleWriteCapabilityId, SalesShellCapabilityProvider.DetailCapabilityId,
+                    $"{SalesPermissionManifestV1.DraftsRead}+{SalesPermissionManifestV1.OrdersDeliveryScheduleWrite}"),
+                (SalesShellCapabilityProvider.PriceWriteCapabilityId, SalesShellCapabilityProvider.DetailCapabilityId,
+                    $"{SalesPermissionManifestV1.DraftsRead}+{SalesPermissionManifestV1.OrdersPriceWrite}"),
+                (SalesShellCapabilityProvider.QuantityWriteCapabilityId, SalesShellCapabilityProvider.DetailCapabilityId,
+                    $"{SalesPermissionManifestV1.DraftsRead}+{SalesPermissionManifestV1.OrdersQuantityWrite}"),
+            ],
+            sales);
     }
 
     [Fact]

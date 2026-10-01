@@ -10,6 +10,7 @@ using GoymenERP.Modules.Purchasing.Infrastructure.Fixtures;
 using GoymenERP.Modules.Sales.Infrastructure.Fixtures;
 using GoymenERP.Modules.Settings.Application;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace GoymenERP.Api.Shell;
 
@@ -87,6 +88,11 @@ internal static class C01E2eFixtureWriterActivation
         // pur01: one synthetic Draft Purchasing order. Approval and replay remain real API commands.
         services.AddPurchaseOrderFixtureStore();
         services.AddScoped<C01E2ePurchaseOrderFixtureWriter>();
+        // mfg01: an explicitly disposable 5% tolerance exists only inside the complete runner gate.
+        // Production keeps ApprovedSettingsPrerequisiteProvider and its intentionally empty catalog.
+        services.RemoveAll<ISettingsManufacturingToleranceProviderV1>();
+        services.AddScoped<ISettingsManufacturingToleranceProviderV1,
+            C01E2eManufacturingToleranceFixtureProvider>();
         return true;
     }
 
@@ -170,6 +176,129 @@ internal static class C01E2eFixtureWriterActivation
             }
             CompanyId = companyId;
         }
+    }
+}
+
+/// <summary>
+/// Opens fixed read-only reference data in the disposable browser API only. This is deliberately
+/// separate from the in-process fixture-writer gate: no writer key or writer service reaches the web API.
+/// </summary>
+internal static class BrowserSuiteApiReadFixtureActivation
+{
+    internal const string ProfileConfigurationKey = "BrowserSuiteApi:Profile";
+    internal const string DisposableConfigurationKey = "BrowserSuiteApi:Disposable";
+    internal const string TestedCommitConfigurationKey = "BrowserSuiteApi:TestedCommit";
+    internal const string RunIdConfigurationKey = "BrowserSuiteApi:RunId";
+    internal const string ComposeProjectConfigurationKey = "BrowserSuiteApi:ComposeProject";
+    internal const string ManufacturingProfile = "mfg";
+
+    private static readonly string[] ConfigurationKeys =
+    [
+        ProfileConfigurationKey,
+        DisposableConfigurationKey,
+        TestedCommitConfigurationKey,
+        RunIdConfigurationKey,
+        ComposeProjectConfigurationKey,
+    ];
+
+    internal static bool Configure(
+        IServiceCollection services,
+        IHostEnvironment environment,
+        IConfiguration configuration)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(environment);
+        ArgumentNullException.ThrowIfNull(configuration);
+
+        if (!ConfigurationKeys.Any(key => configuration[key] is not null))
+        {
+            return false;
+        }
+
+        RequireGate(environment, configuration);
+        services.RemoveAll<ISettingsManufacturingToleranceProviderV1>();
+        services.AddScoped<ISettingsManufacturingToleranceProviderV1,
+            C01E2eManufacturingToleranceFixtureProvider>();
+        return true;
+    }
+
+    private static void RequireGate(IHostEnvironment environment, IConfiguration configuration)
+    {
+        if (!environment.IsEnvironment("Testing")
+            || !string.Equals(configuration[ProfileConfigurationKey], ManufacturingProfile, StringComparison.Ordinal)
+            || !string.Equals(configuration[DisposableConfigurationKey], "CONFIRMED", StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                "Browser-suite API read fixtures require the confirmed mfg Testing profile.");
+        }
+
+        var testedCommit = configuration[TestedCommitConfigurationKey] ?? string.Empty;
+        if (testedCommit.Length != 40
+            || testedCommit.Any(character => character is not (>= '0' and <= '9') and not (>= 'a' and <= 'f')))
+        {
+            throw new InvalidOperationException(
+                "Browser-suite API read fixtures require the exact lowercase tested commit.");
+        }
+
+        var runId = configuration[RunIdConfigurationKey] ?? string.Empty;
+        if (runId.Length == 0 || runId.Any(character => character is < '0' or > '9'))
+        {
+            throw new InvalidOperationException(
+                "Browser-suite API read fixtures require a numeric runner id.");
+        }
+
+        var composeProject = configuration[ComposeProjectConfigurationKey] ?? string.Empty;
+        var expectedPrefix = $"goymen-c01-{runId}-";
+        var attempt = composeProject.StartsWith(expectedPrefix, StringComparison.Ordinal)
+            ? composeProject[expectedPrefix.Length..]
+            : string.Empty;
+        if (attempt.Length == 0 || attempt.Any(character => character is < '0' or > '9'))
+        {
+            throw new InvalidOperationException(
+                "Browser-suite API read fixtures require the runner-bound compose project.");
+        }
+    }
+}
+
+/// <summary>
+/// Browser-suite-only Manufacturing tolerance reference. It is a fixed fixture snapshot, not a fallback,
+/// production catalog, permission or close authority.
+/// </summary>
+internal sealed class C01E2eManufacturingToleranceFixtureProvider(
+    ICompanyContext companyContext,
+    ICurrentUser currentUser) : ISettingsManufacturingToleranceProviderV1
+{
+    private static readonly Guid ProfileId = Guid.Parse("7f100000-0000-4000-8000-000000000005");
+
+    public Task<ManufacturingToleranceProfileV1> GetManufacturingToleranceAsync(
+        string process,
+        DateOnly effectiveOn,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!currentUser.IsAuthenticated
+            || string.IsNullOrWhiteSpace(currentUser.UserId)
+            || !companyContext.IsResolved
+            || companyContext.CompanyId != ApprovedUnitProfileCatalog.GdcCompanyId
+            || !currentUser.CanAccessCompany(companyContext.CompanyId))
+        {
+            throw new SettingsPrerequisiteException("settings_access_denied");
+        }
+
+        if (!SettingsManufacturingProcessesV1.IsCanonical(process))
+        {
+            throw new SettingsPrerequisiteException(
+                SettingsPrerequisiteCodesV1.ManufacturingToleranceProfileNotFound);
+        }
+
+        return Task.FromResult(new ManufacturingToleranceProfileV1(
+            companyContext.CompanyId,
+            process,
+            new ProfileVersionV1(ProfileId, 1),
+            5m,
+            true,
+            new DateOnly(2026, 1, 1),
+            new DateOnly(2026, 12, 31)));
     }
 }
 

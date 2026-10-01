@@ -355,6 +355,7 @@ public static partial class CounterpartyEndpoints
             .ProducesErpAuthenticatedProblems();
 
         MapContactInformationEndpoints(group);
+        MapTaxIdentityEndpoints(group);
         return endpoints;
     }
 

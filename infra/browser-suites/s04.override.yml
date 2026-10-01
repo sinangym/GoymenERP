@@ -122,6 +122,9 @@ services:
       IdentitySeed__Roles__5__Permissions__9: inventory.physical-allocation.write
       # DEC-SAL-002 quantity revision (user decision 2026-09-28): this disposable preparer only, like the price write.
       IdentitySeed__Roles__5__Permissions__10: sales.orders.quantity.write
+      # Q9 acceptance only: the existing disposable preparer records customer acceptance after internal approval.
+      # Registration/grant is limited to this run database; no production role or user is widened.
+      IdentitySeed__Roles__5__Permissions__11: sales.orders.customer-acceptance.record
       IdentitySeed__Roles__6__Id: b3000000-0000-4000-8000-000000000402
       IdentitySeed__Roles__6__Code: BROWSER_S04_APPROVER
       IdentitySeed__Roles__6__Name: SENTETIK browser-suite:s04 sipariş onaylayan rolü

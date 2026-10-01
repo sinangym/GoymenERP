@@ -35,7 +35,7 @@ public sealed class CounterpartySqlServerRelationalAcceptanceTests
             await connection.OpenAsync();
 
             Assert.Equal(
-                4,
+                5,
                 await ScalarAsync<int>(
                     connection,
                     "SELECT COUNT(*) FROM [counterparty].[__EFMigrationsHistory];"));

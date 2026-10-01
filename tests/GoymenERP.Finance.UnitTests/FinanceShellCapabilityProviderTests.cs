@@ -17,7 +17,7 @@ public sealed class FinanceShellCapabilityProviderTests
     {
         var declarations = new FinanceShellCapabilityProvider().GetDeclarations();
 
-        Assert.Equal(14, declarations.Count);
+        Assert.Equal(15, declarations.Count);
         Assert.All(declarations, declaration => Assert.True(declaration.ImplementationAvailable));
     }
 
@@ -28,7 +28,7 @@ public sealed class FinanceShellCapabilityProviderTests
         var byId = provider.GetDeclarations().ToDictionary(declaration => declaration.CapabilityId, StringComparer.Ordinal);
 
         Assert.Equal("CHATGPT-BUSINESS/FINANCE", provider.Owner);
-        Assert.Equal("1.2", provider.ContractVersion);
+        Assert.Equal("1.3", provider.ContractVersion);
         (string Capability, string Route, string Path, string Screen, ShellCapabilityRoutePrecedence Precedence, string[] Permissions)[] expected =
         [
             ("finance.receipts.list", "finance.receipts", "/finans/tahsilatlar", "F-02", ShellCapabilityRoutePrecedence.Static,
@@ -46,6 +46,9 @@ public sealed class FinanceShellCapabilityProviderTests
             ("finance.receipts.reverse.approve", "finance.receipts.reversal-approvals", "/finans/ters-kayit-onaylari",
                 "F-02-REVERSAL-APPROVAL", ShellCapabilityRoutePrecedence.Static,
                 [FinancePermissionNames.ReverseApprove]),
+            ("finance.customer-instruments.list", "finance.customer-instruments.list", "/finans/musteri-cek-senetleri",
+                "F-02-INSTRUMENTS", ShellCapabilityRoutePrecedence.Static,
+                [ErpPermissions.FinanceCustomerInstrumentRead]),
             ("finance.bank-accounts.list", "finance.bank-accounts", "/finans/banka-hesaplari", "F-04",
                 ShellCapabilityRoutePrecedence.Static, [ErpPermissions.FinanceBankAccountRead]),
             ("finance.bank-accounts.propose", "finance.bank-accounts.new", "/finans/banka-hesaplari/yeni", "F-04-NEW",
@@ -155,7 +158,7 @@ public sealed class FinanceShellCapabilityProviderTests
 
         // The registry refuses a screen id shared by two routes (ValidateUnique on ScreenId).
         Assert.Equal(routes.Length, routes.Select(item => item.ScreenId).Distinct(StringComparer.Ordinal).Count());
-        Assert.Equal(["F-02", "F-02-DETAIL", "F-02-NEW", "F-02-PAYMENT-DETAIL", "F-02-PAYMENT-NEW",
+        Assert.Equal(["F-02", "F-02-DETAIL", "F-02-INSTRUMENTS", "F-02-NEW", "F-02-PAYMENT-DETAIL", "F-02-PAYMENT-NEW",
                 "F-02-PAYMENTS", "F-02-REVERSAL-APPROVAL", "F-04", "F-04-NEW"],
             routes.Select(item => item.ScreenId).Order(StringComparer.Ordinal));
     }

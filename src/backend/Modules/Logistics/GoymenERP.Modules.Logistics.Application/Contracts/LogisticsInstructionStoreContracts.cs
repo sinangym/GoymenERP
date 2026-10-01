@@ -60,6 +60,7 @@ public static class LogisticsStoreCodes
     public const string ConcurrentChange = "logistics_concurrent_change";
     public const string ValueDoesNotFit = "logistics_value_does_not_fit";
     public const string InvalidCursor = "logistics_invalid_cursor";
+    public const string AggregateLimitExceeded = "logistics_order_line_aggregate_limit_exceeded";
 }
 
 public sealed class LogisticsStoreException(string code, string message, Exception? innerException = null)
@@ -72,6 +73,45 @@ public sealed class LogisticsStoreException(string code, string message, Excepti
 public sealed record StoredLoadingInstruction(LoadingInstruction Instruction, DateOnly EffectiveOn);
 
 public sealed record LogisticsStoreResult(StoredLoadingInstruction Instruction, LogisticsWriteOutcome Outcome, string OriginalCorrelationId);
+
+/// <summary>
+/// A Sales-resolved OPEN-004 ceiling prepared for the Logistics store. The maximum is already in the
+/// order unit; the store only aggregates instruction quantities and compares. The immutable source tuple
+/// is written into the create audit snapshot.
+/// </summary>
+public sealed record LogisticsOrderLineAggregateLimit(
+    Guid InstructionLineId,
+    Guid CompanyId,
+    Guid OrderId,
+    Guid OrderLineId,
+    Guid UnitId,
+    long SalesOrderVersion,
+    decimal MaximumAggregateQuantity,
+    string MaximumAggregateQuantityText,
+    string SourceOwner,
+    string SourceId,
+    string SourceVersion,
+    DateOnly EffectiveOn);
+
+/// <summary>
+/// The fresh Sales cap and this load's quantity, checked by the Logistics store in the same serializable transaction as
+/// the load mutation. The total is every instruction line linked to the same Sales line.
+/// </summary>
+public sealed record LogisticsOrderLineAggregateLoadLimit(
+    Guid InstructionLineId,
+    Guid CompanyId,
+    Guid OrderId,
+    Guid OrderLineId,
+    Guid UnitId,
+    long SalesOrderVersion,
+    decimal MaximumAggregateQuantity,
+    string MaximumAggregateQuantityText,
+    decimal RequestedLoadQuantity,
+    string RequestedLoadQuantityText,
+    string SourceOwner,
+    string SourceId,
+    string SourceVersion,
+    DateOnly EffectiveOn);
 
 /// <summary>ADR-011 §7: a terminal refusal recorded under the attempt key (stale version, cap, block, state), answered again on the same key.</summary>
 public sealed record LogisticsTerminalRefusal(int Status, string Code, IReadOnlyList<LogisticsFieldError> Errors);
@@ -95,7 +135,8 @@ public interface ILogisticsInstructionStore
 {
     /// <summary>Stores a new instruction the caller built (Draft, ≥1 line), or answers the same attempt again.</summary>
     Task<LogisticsStoreResult> StoreInstructionAsync(LogisticsWriteEnvelope envelope, string requestHash, DateOnly effectiveOn,
-        Func<LoadingInstruction> build, CancellationToken cancellationToken = default);
+        Func<LoadingInstruction> build, CancellationToken cancellationToken = default,
+        IReadOnlyList<LogisticsOrderLineAggregateLimit>? aggregateLimits = null);
 
     Task<LogisticsReplay?> FindReplayAsync(LogisticsWriteEnvelope envelope, string requestHash, string commandName,
         CancellationToken cancellationToken = default);
@@ -141,6 +182,14 @@ public sealed record StoredDispatchNoteReference(
 
 /// <summary>One line of a stored draft on the asked order: the order line, the shipment, the shipped quantity and its unit.</summary>
 public sealed record StoredDispatchNoteOrderLine(int LineNo, Guid SourceOrderLineId, Guid ShipmentId, Guid UnitId, decimal Quantity);
+
+/// <summary>Optional atomic extension used only when Sales supplies a resolved loading cap.</summary>
+public interface ILogisticsAggregateLoadStoreV1
+{
+    Task<LogisticsStoreResult?> MutateInstructionWithAggregateLoadLimitAsync(LogisticsWriteEnvelope envelope, string requestHash,
+        string commandName, Guid instructionId, Action<LoadingInstruction, DateTimeOffset> mutate, LogisticsMutationAudit audit,
+        LogisticsOrderLineAggregateLoadLimit aggregateLoadLimit, CancellationToken cancellationToken = default);
+}
 
 /// <summary>The canonical content of a command for the replay identity (R3): the strict wire shape, serialised and hashed.</summary>
 public static class LogisticsRequestHash

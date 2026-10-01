@@ -34,6 +34,7 @@ export const FACT_KIND_LABEL: Record<FactKind, string> = {
   'input-issues': 'Girdi çıkışı',
   'input-returns': 'Kullanılmayan girdi iadesi',
   'wip-measurements': 'WIP ölçümü',
+  'process-losses': 'Stok dışı proses kaybı',
   outputs: 'Üretim çıktısı',
 }
 
@@ -41,6 +42,8 @@ export const FACT_KIND_HELP: Record<FactKind, string> = {
   'input-issues': 'Ana rulodan üretime verilen kütle.',
   'input-returns': 'Çıkıp kullanılmayan ve geri dönen kütle; çıkandan fazla olamaz.',
   'wip-measurements': 'Rulonun üzerindeki yarı işlenmiş kütlenin son okuması; öncekinden sonra olmalı.',
+  'process-losses':
+    'Açıkça ölçülen stok dışı proses kaybı; Inventory etiketi veya stok hareketi oluşturmaz.',
   outputs:
     'Yeni ürün etiketi ve stok hareketi aynı işlemde kaydedilir; sahiplik, bu emrin Inventory girdi çıkışından alınır.',
 }
@@ -67,7 +70,7 @@ export const ENGINE_UNAVAILABLE = 'Hesaplanamıyor — eksik girdi:'
 export const ENGINE_REFUSED = 'Hesap reddedildi:'
 /** BAL-004 / BAL-006: why the order cannot supply their inputs yet (no number is guessed). */
 export const SCRAP_PERCENT_NOTE =
-  'Fire yüzdesinde hangi sınıfların fire sayılacağı ve hangi kütlenin taban olacağı iş kararı bekliyor.'
+  'Fire yüzdesi, beyan edilmiş hurda ile stok dışı proses kaybının toplamını çıkıştan iade düşülmüş hammaddeye böler. Açıklanamayan fark fire sayılmaz.'
 export const ACTUAL_UNIT_KG_NOTE = 'Fiilî birim kg için emirde adet kaydı yok; adet, adet üreten süreçlerle gelecek.'
 export const REMAINING_UNAVAILABLE = 'Planda beyan edilmiş bir hedef yok; kalan hedef hesaplanmaz.'
 export const KG_FORMAT_HELP = 'Nokta ile ondalık, işaretsiz (ör. 1250.5). Ondalık sınırı şirketin kg profilinden gelir.'
@@ -134,19 +137,26 @@ export const ORDER_LIST_TEXT = {
 } as const
 
 /**
- * MFG-ORD close. The rule is the decided one (MFG-4, Business 5728619644) in the user's words —
- * no tolerance is offered, no write-off is suggested and no new condition is introduced here.
+ * MFG-ORD close. Fire remains explicit Scrap + ProcessLoss and the server selects the exact Settings
+ * tolerance snapshot. An out-of-tolerance close is a separate, reasoned authority; this text never
+ * invents a percentage or promotes an unexplained difference to fire.
  */
 export const CLOSE_TEXT = {
   heading: 'Emri kapat',
   help:
     'Kapanış, her ana rulonun kendi kütlesini açıklamasını ister: bir rulodaki fazla, başka bir rulodaki eksiği ' +
-    'kapatmaz. Kalan WIP emirde kendi pozisyonu olarak durur ve kapanışı engellemez. Açıklanamayan fark varsa emir ' +
-    'kapanmaz; fark tolerans ile geçilmez ve hiçbir sınıfa yazılmaz.',
+    'kapatmaz. Kalan WIP emirde kendi pozisyonu olarak durur ve kapanışı engellemez. Fire yalnız kaydedilmiş hurda ve ' +
+    'proses kaybıdır; sunucu geçerli şirket/proses toleransını seçer. Açıklanamayan fark tolerans ile geçilmez.',
   action: 'Emri kapat',
   confirmQuestion: 'Emir kapatılsın mı? Kapanan emre yeni gerçekleşme yazılamaz.',
   confirm: 'Evet, emri kapat',
   cancel: 'Vazgeç',
+  exceptionHeading: 'Tolerans dışı kapanış onayı',
+  exceptionHelp:
+    'Sunucu bu kapanış için ayrı onay istedi. Gerekçe, okuduğunuz emir sürümü ve seçilen tolerans profiliyle birlikte kaydedilir.',
+  exceptionReason: 'Onay gerekçesi',
+  exceptionReasonRequired: 'Onay gerekçesi zorunludur.',
+  exceptionConfirm: 'Gerekçeyle onayla ve kapat',
   sending: 'Gönderiliyor…',
   resend: 'Aynı işlem anahtarıyla yeniden gönder',
   appliedTitle: 'Emir kapatıldı',
@@ -171,6 +181,20 @@ const RULE_TEXT: Record<string, string> = {
   manufacturing_unexplained_difference:
     'Emir kapanmadı: en az bir ana ruloda açıklanamayan kütle farkı var. Fark tolerans ile geçilmez ve bir sınıfa ' +
     'yazılmaz; eksik kalan çıktı, iade ya da WIP kaydı tamamlandığında kapanış yeniden denenebilir.',
+  manufacturing_closure_fire_declaration_required:
+    'Emir kapanmadı: açıklanamayan pozitif fark önce hurda veya stok dışı proses kaybı olarak açıkça kaydedilmelidir.',
+  manufacturing_closure_approval_required:
+    'Kaydedilmiş fire seçilen toleransın dışında; kapanış ayrı yetki ve gerekçeli onay istiyor.',
+  manufacturing_closure_policy_not_effective:
+    'Kapanış tarihinde etkin bir üretim tolerans profili yok.',
+  manufacturing_closure_policy_scope_mismatch:
+    'Seçilen üretim tolerans profili bu şirket veya prosese ait değil.',
+  manufacturing_closure_policy_invalid:
+    'Üretim tolerans profili geçersiz olduğu için emir kapatılamadı.',
+  manufacturing_closure_approval_invalid:
+    'Kapanış onayı güncel şirket, emir, sürüm veya tolerans profiliyle eşleşmiyor.',
+  manufacturing_closure_approval_unexpected:
+    'Bu kapanış tolerans içinde; istisna onayı gönderilmemelidir.',
   manufacturing_roll_not_in_order: 'Bu ana rulo emirde yok.',
   manufacturing_roll_not_issued: 'Bu ana rulodan henüz girdi çıkışı yapılmadı.',
   manufacturing_input_already_issued: 'Bu olgu kimliğiyle bir girdi çıkışı zaten var.',

@@ -364,6 +364,7 @@ public sealed partial class SalesDraftServiceTests
         var approved = await ApprovedAsync(world);
         var line = approved.Lines[0];
         Owners(world);
+        await world.Service().RecordCustomerAcceptanceAsync(approved.Draft.Id, Command("4"), Metadata("k-accept-before-cancel"));
         var token = (await world.Service().GetCancellationImpactAsync(approved.Draft.Id)).ImpactToken;
 
         // Before: the line port answers the approved line and lists it for a consumer's picker.
@@ -373,21 +374,21 @@ public sealed partial class SalesDraftServiceTests
         Assert.Equal(SalesOrderLineReferenceOutcomeV1.Approved, (await port.GetApprovedLineAsync(approved.Draft.Id, line.LineId)).Outcome);
         Assert.Single((await port.ListApprovedLinesAsync(10, null)).Items);
 
-        await world.Service().CancelDraftAsync(approved.Draft.Id, new SalesDraftCancelRequest("4", "neden", token), Metadata("k-cancel"));
+        await world.Service().CancelDraftAsync(approved.Draft.Id, new SalesDraftCancelRequest("5", "neden", token), Metadata("k-cancel"));
 
         var answer = await port.GetApprovedLineAsync(approved.Draft.Id, line.LineId);
         Assert.Equal((SalesOrderLineReferenceOutcomeV1.NotApproved, "Cancelled"), (answer.Outcome, answer.ApprovalState));
         Assert.Empty((await port.ListApprovedLinesAsync(10, null)).Items);
 
         var reschedule = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().RescheduleDeliveryAsync(approved.Draft.Id,
-            new SalesDraftDeliveryScheduleRequest("5", Day.AddDays(30),
+            new SalesDraftDeliveryScheduleRequest("6", Day.AddDays(30),
                 [new SalesDraftLineScheduleV1(line.LineId, Day.AddDays(31), [.. line.RequestedDeliverySlices!.Select(slice => new SalesDraftSliceScheduleV1(slice.SliceId, Day.AddDays(32)))])]),
             Metadata("k-reschedule")));
         Assert.Equal((409, SalesDraftProblemCodesV1.StateConflict), Status(reschedule));
         var revise = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().ReviseCommercialAsync(approved.Draft.Id,
-            new SalesDraftCommercialRevisionRequest("5", [new SalesDraftLineCommercialV1(line.LineId, "10", KgUnit)]), Metadata("k-revise")));
+            new SalesDraftCommercialRevisionRequest("6", [new SalesDraftLineCommercialV1(line.LineId, "10", KgUnit)]), Metadata("k-revise")));
         Assert.Equal((409, SalesDraftProblemCodesV1.StateConflict), Status(revise));
-        var submit = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().SubmitDraftAsync(approved.Draft.Id, Command("5"), Metadata("k-submit-2")));
+        var submit = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().SubmitDraftAsync(approved.Draft.Id, Command("6"), Metadata("k-submit-2")));
         Assert.Equal((409, SalesDraftProblemCodesV1.StateConflict), Status(submit));
         // Still readable as history: the detail, the list (its lifecycle column says Cancelled) and the delivery progress.
         Assert.Equal("Cancelled", Assert.Single((await world.Service().GetDraftListAsync(new SalesOrderDraftListQuery())).Items, item => item.Id == approved.Draft.Id).State);

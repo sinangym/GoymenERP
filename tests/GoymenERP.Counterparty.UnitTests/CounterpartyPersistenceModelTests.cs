@@ -4,6 +4,8 @@ using GoymenERP.Modules.Counterparty.Domain.Accounts;
 using GoymenERP.Modules.Counterparty.Domain.Parties;
 using GoymenERP.Modules.Counterparty.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Metadata;
 using System.Linq.Expressions;
 
 namespace GoymenERP.Counterparty.UnitTests;
@@ -64,6 +66,93 @@ public sealed class CounterpartyPersistenceModelTests
     }
 
     [Fact]
+    public void Model_StoresTheTaxIdentityWithAFilteredNonUniqueLookupAndOnePendingChangePerParty()
+    {
+        var companyId = Guid.NewGuid();
+        using var dbContext = CreateContext(ResolvedCompanyContext(companyId));
+        var model = dbContext.GetService<IDesignTimeModel>().Model;
+        var partyEntity = model.FindEntityType(typeof(Party))!;
+        var number = partyEntity.FindProperty(nameof(Party.TaxIdentityNumber))!;
+        Assert.True(number.IsNullable);
+        Assert.Equal(11, number.GetMaxLength());
+        Assert.False(number.IsUnicode());
+        // AT-009: a duplicate is a warning, so the lookup index is NOT unique; its filter is written out explicitly.
+        var lookup = Assert.Single(partyEntity.GetIndexes(),
+            index => index.Properties.Select(property => property.Name)
+                .SequenceEqual([nameof(Party.TaxIdentityNumber)]));
+        Assert.False(lookup.IsUnique);
+        Assert.Equal("[TaxIdentityNumber] IS NOT NULL", lookup.GetFilter());
+        Assert.Contains(partyEntity.GetCheckConstraints(), check => check.Name == "CK_Parties_TaxIdentityNumber");
+
+        var requestEntity = model.FindEntityType(typeof(PartyTaxIdentityChangeRequest))!;
+        Assert.Equal("counterparty", requestEntity.GetSchema());
+        Assert.Equal("PartyTaxIdentityChangeRequests", requestEntity.GetTableName());
+        var pending = Assert.Single(requestEntity.GetIndexes(), index => index.IsUnique);
+        Assert.Equal(
+            [nameof(PartyTaxIdentityChangeRequest.CompanyId), nameof(PartyTaxIdentityChangeRequest.PartyId)],
+            pending.Properties.Select(property => property.Name));
+        Assert.Equal("[Status] = N'Pending'", pending.GetFilter());
+        Assert.Equal("UX_PartyTaxIdentityChangeRequests_Pending", pending.GetDatabaseName());
+        Assert.Contains(requestEntity.GetCheckConstraints(),
+            check => check.Name == "CK_PartyTaxIdentityChangeRequests_Decision"
+                && check.Sql.Contains("[DecidedBy] <> [RequestedBy]", StringComparison.Ordinal));
+        // Company-scoped like every other company row of this context.
+        Assert.Single(requestEntity.GetDeclaredQueryFilters());
+        Assert.Contains(requestEntity.GetForeignKeys(),
+            foreignKey => foreignKey.PrincipalEntityType.GetTableName() == "Companies");
+        Assert.Contains(requestEntity.GetForeignKeys(),
+            foreignKey => foreignKey.PrincipalEntityType.ClrType == typeof(Party));
+    }
+
+    [Fact]
+    public void SaveChanges_AllowsATaxIdentityOnlyPartyChangeAndStillRejectsAnyOtherPartyEdit()
+    {
+        var companyId = Guid.NewGuid();
+        using var dbContext = CreateContext(ResolvedCompanyContext(companyId));
+        var party = new Party(Guid.NewGuid(), PartyCode.Parse("CAR-000001"), PartyKind.LegalEntity, "Göymen Test Cari");
+        dbContext.Parties.Attach(party);
+        party.EnterTaxIdentityNumber(TaxIdentityNumber.Parse("1234567890"), DateTimeOffset.UtcNow);
+        dbContext.ChangeTracker.DetectChanges();
+        Assert.Equal(EntityState.Modified, dbContext.Entry(party).State);
+        // The guard lets this through; the (absent) database is what fails next, not the guard.
+        var passed = Assert.ThrowsAny<Exception>(() => dbContext.SaveChanges());
+        Assert.DoesNotContain("doğrudan değiştirilemez", passed.Message, StringComparison.Ordinal);
+
+        dbContext.ChangeTracker.Clear();
+        var other = new Party(Guid.NewGuid(), PartyCode.Parse("CAR-000002"), PartyKind.LegalEntity, "Başka Cari");
+        dbContext.Parties.Attach(other);
+        dbContext.Entry(other).Property(value => value.LegalName).CurrentValue = "Yeni Unvan";
+        var refused = Assert.Throws<InvalidOperationException>(() => dbContext.SaveChanges());
+        Assert.Contains("doğrudan değiştirilemez", refused.Message, StringComparison.Ordinal);
+
+        dbContext.ChangeTracker.Clear();
+        var mixed = new Party(Guid.NewGuid(), PartyCode.Parse("CAR-000003"), PartyKind.LegalEntity, "Karışık Cari");
+        dbContext.Parties.Attach(mixed);
+        mixed.EnterTaxIdentityNumber(TaxIdentityNumber.Parse("9876543217"), DateTimeOffset.UtcNow);
+        dbContext.Entry(mixed).Property(value => value.LegalName).CurrentValue = "Gizli Unvan Değişikliği";
+        Assert.Throws<InvalidOperationException>(() => dbContext.SaveChanges());
+    }
+
+    [Fact]
+    public void SaveChanges_RejectsAChangeRequestOfAnotherCompanyAndItsDeletion()
+    {
+        var companyId = Guid.NewGuid();
+        using var dbContext = CreateContext(ResolvedCompanyContext(companyId));
+        var foreign = new PartyTaxIdentityChangeRequest(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), "1234567890",
+            TaxIdentityNumber.Parse("9876543217"), 2, "Neden", "maker", DateTimeOffset.UtcNow);
+        dbContext.PartyTaxIdentityChangeRequests.Add(foreign);
+        var exception = Assert.Throws<InvalidOperationException>(() => dbContext.SaveChanges());
+        Assert.Contains("şirket bağlamı", exception.Message, StringComparison.Ordinal);
+
+        dbContext.ChangeTracker.Clear();
+        var own = new PartyTaxIdentityChangeRequest(Guid.NewGuid(), companyId, Guid.NewGuid(), "1234567890",
+            TaxIdentityNumber.Parse("9876543217"), 2, "Neden", "maker", DateTimeOffset.UtcNow);
+        dbContext.PartyTaxIdentityChangeRequests.Attach(own);
+        dbContext.PartyTaxIdentityChangeRequests.Remove(own);
+        Assert.Throws<InvalidOperationException>(() => dbContext.SaveChanges());
+    }
+
+    [Fact]
     public void Model_DoesNotIntroduceDeferredSensitiveIdentifiers()
     {
         using var dbContext = CreateContext();
@@ -72,6 +161,7 @@ public sealed class CounterpartyPersistenceModelTests
             .Select(property => property.Name)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
+        // AT-009 stores VKN/TCKN as the party's TaxIdentityNumber (asserted above); MERSİS and IBAN stay deferred.
         Assert.DoesNotContain("Vkn", propertyNames);
         Assert.DoesNotContain("Tckn", propertyNames);
         Assert.DoesNotContain("Mersis", propertyNames);
@@ -88,6 +178,9 @@ public sealed class CounterpartyPersistenceModelTests
         Assert.Contains(
             "20260910120000_AllowCounterpartyAccountNoRole",
             dbContext.Database.GetMigrations());
+        Assert.Equal(
+            "20260930150000_AddPartyTaxIdentity",
+            dbContext.Database.GetMigrations().Last());
         Assert.False(dbContext.Database.HasPendingModelChanges());
     }
 

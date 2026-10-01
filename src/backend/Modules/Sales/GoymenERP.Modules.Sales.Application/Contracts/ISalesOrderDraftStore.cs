@@ -46,6 +46,9 @@ public static class SalesDraftCommands
     /// <summary>SALES-A1: POST /api/v1/sales/drafts/{id}/rejection — PendingApproval → Rejected.</summary>
     public const string RejectV1 = "sales.order-draft.reject.v1";
 
+    /// <summary>Q9: POST /api/v1/sales/drafts/{id}/customer-acceptance.</summary>
+    public const string RecordCustomerAcceptanceV1 = "sales.order-draft.customer-acceptance.record.v1";
+
     /// <summary>K3 Head B: POST /api/v1/sales/drafts/{id}/commercial-revision — the commercial fields of every line replaced; an approved draft is archived and advances a revision.</summary>
     public const string ReviseCommercialV1 = "sales.order-draft.revise-commercial.v1";
 
@@ -61,8 +64,20 @@ public static class SalesDraftCommands
     /// <summary>DEC-SAL-005: POST /api/v1/sales/drafts/{id}/cancellation — an approved order's lifecycle Draft → Cancelled after its impact preview.</summary>
     public const string CancelV1 = "sales.order-draft.cancel.v1";
 
+    /// <summary>Partial delivery: POST /api/v1/sales/drafts/{id}/remainder-changes — a remainder cancel/revise is requested (nothing on the line moves).</summary>
+    public const string RequestRemainderChangeV1 = "sales.order-draft.request-remainder-change.v1";
+
+    /// <summary>Partial delivery: POST …/remainder-changes/{changeNo}/approval — the pending change is applied on the floor read afresh.</summary>
+    public const string ApproveRemainderChangeV1 = "sales.order-draft.approve-remainder-change.v1";
+
+    /// <summary>Partial delivery: POST …/remainder-changes/{changeNo}/rejection — the pending change is closed; nothing changes.</summary>
+    public const string RejectRemainderChangeV1 = "sales.order-draft.reject-remainder-change.v1";
+
+    public static bool IsRemainderCommand(string commandName) =>
+        commandName is RequestRemainderChangeV1 or ApproveRemainderChangeV1 or RejectRemainderChangeV1;
+
     public static bool IsStateCommand(string commandName) =>
-        commandName is SubmitV1 or ApproveV1 or RejectV1 or WithdrawV1;
+        commandName is SubmitV1 or ApproveV1 or RejectV1 or WithdrawV1 or RecordCustomerAcceptanceV1;
 }
 
 /// <summary>The stable refusal codes of the Sales draft store, beside the domain's own rule codes.</summary>
@@ -249,6 +264,20 @@ public interface ISalesOrderDraftStore
         Guid draftId, Func<SalesOrderDraft, DateTimeOffset, ApprovedRevisionSnapshot?> mutate, SalesDraftStateAudit audit,
         Func<SalesOrderDraft, CancellationToken, Task> beforeWrite, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Partial delivery (user decision 2026-09-30): one remainder change step, one save — the state command's key rules
+    /// (§3/§4/§7/§8). <paramref name="beforeWrite"/> receives the draft as read (tracked header and lines) and is the caller's
+    /// last word before the mutation — its fences, the domain's own preconditions and the owners' floor read afresh; any refusal
+    /// it throws leaves nothing written. <paramref name="mutate"/> is the domain's request / approval / rejection and returns the
+    /// change as recorded. The store APPENDS the request row (request) or the decision row (approval, rejection), writes an
+    /// approved change's line quantity columns, the header's version, the attempt record and the audit event — or nothing at
+    /// all. The approval axis, the revision, the slices and the commercial columns never move (checked). The command must be one
+    /// of <see cref="SalesDraftCommands.IsRemainderCommand"/>.
+    /// </summary>
+    Task<SalesDraftStateResult?> ChangeRemainderAsync(SalesDraftWriteEnvelope envelope, string requestHash, string commandName,
+        Guid draftId, Func<SalesOrderDraft, DateTimeOffset, RemainderChangeFacts> mutate, SalesDraftStateAudit audit,
+        Func<SalesOrderDraft, CancellationToken, Task> beforeWrite, CancellationToken cancellationToken = default);
+
     Task<SalesOrderDraft?> FindDraftAsync(Guid draftId, CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -318,6 +347,25 @@ public static class SalesDraftRequestHash
         ArgumentException.ThrowIfNullOrWhiteSpace(commandName);
         return Hash(JsonSerializer.Serialize(
             new { command = commandName, draftId, request.ExpectedVersion, request.Reason, request.ImpactToken }, SalesDraftJson.Options));
+    }
+
+    /// <summary>Partial delivery: the canonical content of a remainder change request (command, draft, version, line, kind, quantity text, reason as sent).</summary>
+    public static string Compute(string commandName, Guid draftId, SalesDraftRemainderChangeRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentException.ThrowIfNullOrWhiteSpace(commandName);
+        return Hash(JsonSerializer.Serialize(
+            new { command = commandName, draftId, request.ExpectedVersion, request.LineId, request.Kind, request.Quantity, request.Reason },
+            SalesDraftJson.Options));
+    }
+
+    /// <summary>Partial delivery: the canonical content of a remainder decision (command, draft, change number, version, reason as sent).</summary>
+    public static string Compute(string commandName, Guid draftId, int changeNo, SalesDraftRemainderDecisionRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentException.ThrowIfNullOrWhiteSpace(commandName);
+        return Hash(JsonSerializer.Serialize(
+            new { command = commandName, draftId, changeNo, request.ExpectedVersion, request.Reason }, SalesDraftJson.Options));
     }
 
     private static string Hash(string canonical) =>

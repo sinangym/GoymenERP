@@ -155,6 +155,7 @@ builder.Services.AddScoped<IFinanceDraftContextEndpointService, FinanceDraftCont
 builder.Services.AddSingleton<IFinanceDraftReadBinding, ManualReceiptDraftReadBinding>();
 builder.Services.AddScoped<ISettingsPrerequisiteProvider, ApprovedSettingsPrerequisiteProvider>();
 builder.Services.AddScoped<ISettingsMoneyCandidateReader, ApprovedSettingsPrerequisiteProvider>();
+builder.Services.AddScoped<ISettingsManufacturingToleranceProviderV1, ApprovedSettingsPrerequisiteProvider>();
 // PRD-UNIT-1: the company-independent unit identities of the approved catalog (immutable source data).
 builder.Services.AddSingleton<ISettingsUnitIdentityCatalogV1, ApprovedSettingsUnitIdentityCatalog>();
 builder.Services.AddScoped<ISalesAccountSelectionSourceV1, CounterpartySalesAccountSelectionSourceV1>();
@@ -292,6 +293,12 @@ var shellCapabilityAuthority = C01E2eShellCapabilityActivation.Configure(
 // BROWSER-CI a2 part 2: the gated fixture writers exist only inside the browser-suite fixture runner's
 // in-process host (Testing + its exact run binding); nowhere else are they registered.
 C01E2eFixtureWriterActivation.Configure(
+    builder.Services,
+    builder.Environment,
+    builder.Configuration);
+// MFG browser acceptance: the compose-bound disposable API may replace only the read-only Settings
+// tolerance provider. Fixture-writer keys and writer services remain confined to the in-process runner.
+BrowserSuiteApiReadFixtureActivation.Configure(
     builder.Services,
     builder.Environment,
     builder.Configuration);

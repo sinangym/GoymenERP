@@ -57,7 +57,7 @@ public sealed class CounterpartyAuditEventTenantGuardSqlServerRelationalAcceptan
                     companyACorrelation,
                     companyBCorrelation));
             Assert.Equal(
-                4,
+                5,
                 await ScalarAsync<int>(
                     factory.DatabaseConnectionString,
                     "SELECT COUNT(*) FROM [counterparty].[__EFMigrationsHistory];"));

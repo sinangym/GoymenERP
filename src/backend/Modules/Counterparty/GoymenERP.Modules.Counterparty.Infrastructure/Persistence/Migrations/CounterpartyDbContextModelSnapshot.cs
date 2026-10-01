@@ -267,6 +267,11 @@ partial class CounterpartyDbContextModelSnapshot : ModelSnapshot
                 .ValueGeneratedOnAddOrUpdate()
                 .HasColumnType("rowversion");
 
+            b.Property<string>("TaxIdentityNumber")
+                .HasMaxLength(11)
+                .IsUnicode(false)
+                .HasColumnType("varchar(11)");
+
             b.Property<string>("TradeName")
                 .HasMaxLength(200)
                 .HasColumnType("nvarchar(200)");
@@ -285,6 +290,9 @@ partial class CounterpartyDbContextModelSnapshot : ModelSnapshot
 
             b.HasIndex("IsActive");
 
+            b.HasIndex("TaxIdentityNumber")
+                .HasFilter("[TaxIdentityNumber] IS NOT NULL");
+
             b.ToTable("Parties", "counterparty", t =>
             {
                 t.HasCheckConstraint(
@@ -296,8 +304,113 @@ partial class CounterpartyDbContextModelSnapshot : ModelSnapshot
                     "[Kind] IN (N'LegalEntity', N'NaturalPerson')");
 
                 t.HasCheckConstraint(
+                    "CK_Parties_TaxIdentityNumber",
+                    "[TaxIdentityNumber] IS NULL OR (LEN([TaxIdentityNumber]) IN (10, 11) AND DATALENGTH([TaxIdentityNumber]) = LEN([TaxIdentityNumber]) AND [TaxIdentityNumber] COLLATE Latin1_General_100_BIN2 NOT LIKE '%[^0-9]%')");
+
+                t.HasCheckConstraint(
                     "CK_Parties_Version",
                     "[Version] >= 1");
+            });
+        });
+
+        modelBuilder.Entity("GoymenERP.Modules.Counterparty.Domain.Parties.PartyTaxIdentityChangeRequest", b =>
+        {
+            b.Property<Guid>("Id")
+                .ValueGeneratedOnAdd()
+                .HasColumnType("uniqueidentifier");
+
+            b.Property<Guid>("CompanyId")
+                .HasColumnType("uniqueidentifier");
+
+            b.Property<string>("CurrentTaxIdentityNumber")
+                .IsRequired()
+                .HasMaxLength(11)
+                .IsUnicode(false)
+                .HasColumnType("varchar(11)");
+
+            b.Property<DateTimeOffset?>("DecidedAtUtc")
+                .HasColumnType("datetimeoffset");
+
+            b.Property<string>("DecidedBy")
+                .HasMaxLength(128)
+                .HasColumnType("nvarchar(128)");
+
+            b.Property<string>("DecisionNote")
+                .HasMaxLength(1000)
+                .HasColumnType("nvarchar(1000)");
+
+            b.Property<Guid>("PartyId")
+                .HasColumnType("uniqueidentifier");
+
+            b.Property<long>("PartyVersionAtRequest")
+                .HasColumnType("bigint");
+
+            b.Property<string>("ProposedTaxIdentityNumber")
+                .IsRequired()
+                .HasMaxLength(11)
+                .IsUnicode(false)
+                .HasColumnType("varchar(11)");
+
+            b.Property<string>("Reason")
+                .IsRequired()
+                .HasMaxLength(1000)
+                .HasColumnType("nvarchar(1000)");
+
+            b.Property<DateTimeOffset>("RequestedAtUtc")
+                .HasColumnType("datetimeoffset");
+
+            b.Property<string>("RequestedBy")
+                .IsRequired()
+                .HasMaxLength(128)
+                .HasColumnType("nvarchar(128)");
+
+            b.Property<byte[]>("RowVersion")
+                .IsConcurrencyToken()
+                .IsRequired()
+                .ValueGeneratedOnAddOrUpdate()
+                .HasColumnType("rowversion");
+
+            b.Property<string>("Status")
+                .IsRequired()
+                .HasMaxLength(16)
+                .HasColumnType("nvarchar(16)");
+
+            b.Property<long>("Version")
+                .IsConcurrencyToken()
+                .HasColumnType("bigint");
+
+            b.HasKey("Id");
+
+            b.HasIndex("PartyId");
+
+            b.HasIndex("CompanyId", "PartyId")
+                .IsUnique()
+                .HasDatabaseName("UX_PartyTaxIdentityChangeRequests_Pending")
+                .HasFilter("[Status] = N'Pending'");
+
+            b.HasIndex("CompanyId", "PartyId", "RequestedAtUtc");
+
+            b.ToTable("PartyTaxIdentityChangeRequests", "counterparty", t =>
+            {
+                t.HasCheckConstraint(
+                    "CK_PartyTaxIdentityChangeRequests_Current",
+                    "LEN([CurrentTaxIdentityNumber]) IN (10, 11) AND DATALENGTH([CurrentTaxIdentityNumber]) = LEN([CurrentTaxIdentityNumber]) AND [CurrentTaxIdentityNumber] COLLATE Latin1_General_100_BIN2 NOT LIKE '%[^0-9]%'");
+
+                t.HasCheckConstraint(
+                    "CK_PartyTaxIdentityChangeRequests_Decision",
+                    "([Status] = N'Pending' AND [DecidedBy] IS NULL AND [DecidedAtUtc] IS NULL AND [DecisionNote] IS NULL) OR ([Status] <> N'Pending' AND [DecidedBy] IS NOT NULL AND [DecidedAtUtc] IS NOT NULL AND [DecidedBy] <> [RequestedBy])");
+
+                t.HasCheckConstraint(
+                    "CK_PartyTaxIdentityChangeRequests_Proposed",
+                    "LEN([ProposedTaxIdentityNumber]) IN (10, 11) AND DATALENGTH([ProposedTaxIdentityNumber]) = LEN([ProposedTaxIdentityNumber]) AND [ProposedTaxIdentityNumber] COLLATE Latin1_General_100_BIN2 NOT LIKE '%[^0-9]%' AND [ProposedTaxIdentityNumber] <> [CurrentTaxIdentityNumber]");
+
+                t.HasCheckConstraint(
+                    "CK_PartyTaxIdentityChangeRequests_Status",
+                    "[Status] IN (N'Pending', N'Approved', N'Rejected')");
+
+                t.HasCheckConstraint(
+                    "CK_PartyTaxIdentityChangeRequests_Version",
+                    "[Version] >= 1 AND [PartyVersionAtRequest] >= 1");
             });
         });
 
@@ -417,6 +530,23 @@ partial class CounterpartyDbContextModelSnapshot : ModelSnapshot
                     null)
                 .WithMany()
                 .HasForeignKey("CompanyId")
+                .OnDelete(DeleteBehavior.Restrict)
+                .IsRequired();
+        });
+
+        modelBuilder.Entity("GoymenERP.Modules.Counterparty.Domain.Parties.PartyTaxIdentityChangeRequest", b =>
+        {
+            b.HasOne(
+                    "GoymenERP.Modules.Counterparty.Infrastructure.Persistence.CounterpartyDbContext+OrganizationCompanyReference",
+                    null)
+                .WithMany()
+                .HasForeignKey("CompanyId")
+                .OnDelete(DeleteBehavior.Restrict)
+                .IsRequired();
+
+            b.HasOne("GoymenERP.Modules.Counterparty.Domain.Parties.Party", null)
+                .WithMany()
+                .HasForeignKey("PartyId")
                 .OnDelete(DeleteBehavior.Restrict)
                 .IsRequired();
         });

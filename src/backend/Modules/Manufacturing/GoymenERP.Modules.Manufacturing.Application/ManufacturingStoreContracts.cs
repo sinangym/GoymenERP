@@ -63,6 +63,9 @@ public enum ManufacturingWriteOutcome
 /// <summary>The stable refusal codes of the Manufacturing store, beside the domain's own rule codes.</summary>
 public static class ManufacturingStoreCodes
 {
+    /// <summary>The final persistence-bound authority fence no longer grants this exact company and actor.</summary>
+    public const string AuthorityDenied = "manufacturing_authority_denied";
+
     /// <summary>The record's company is not the server-resolved company context (or there is none).</summary>
     public const string CompanyContextMismatch = "manufacturing_company_context_mismatch";
 
@@ -107,6 +110,43 @@ public static class ManufacturingStoreCodes
     /// listed: a cursor is never guessed and never silently restarted at the first page.
     /// </summary>
     public const string ListCursorInvalid = "manufacturing_list_cursor_invalid";
+}
+
+/// <summary>
+/// The final authority fence of a policy-backed close. The application captures the request's exact company and actor;
+/// the store invokes the fresh check after rebuilding the stored order and immediately before any close, decision,
+/// audit or command-completion state is staged.
+/// </summary>
+public sealed class ManufacturingPersistenceAuthorityFenceV1
+{
+    private readonly Func<CancellationToken, Task<bool>> _revalidate;
+
+    public ManufacturingPersistenceAuthorityFenceV1(Guid companyId, Guid actorId,
+        Func<CancellationToken, Task<bool>> revalidate)
+    {
+        if (companyId == Guid.Empty)
+        {
+            throw new ArgumentException("Şirket kimliği boş olamaz.", nameof(companyId));
+        }
+
+        if (actorId == Guid.Empty)
+        {
+            throw new ArgumentException("Kullanıcı kimliği boş olamaz.", nameof(actorId));
+        }
+
+        CompanyId = companyId;
+        ActorId = actorId;
+        _revalidate = revalidate ?? throw new ArgumentNullException(nameof(revalidate));
+    }
+
+    public Guid CompanyId { get; }
+
+    public Guid ActorId { get; }
+
+    public Task<bool> RevalidateAsync(Guid companyId, Guid actorId, CancellationToken cancellationToken = default) =>
+        companyId == CompanyId && actorId == ActorId
+            ? _revalidate(cancellationToken)
+            : Task.FromResult(false);
 }
 
 /// <summary>A manufacturing record could not be written; <see cref="Code"/> says why. Nothing was stored.</summary>
@@ -257,6 +297,19 @@ public interface IManufacturingOrderStore
     /// </summary>
     Task CloseOrderAsync(Guid orderId, long expectedVersion, Guid closedByUserId, DateTimeOffset closedAt,
         ManufacturingCommandMetadata metadata, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Policy-backed close. The store rebuilds the order, derives the fire numerator and net-issued denominator from
+    /// its own facts, invokes the captured company/actor authority fence immediately before staging any change,
+    /// verifies the optional exception evidence, and commits the close, immutable decision row, audit and ADR-011
+    /// command record together. Existing test doubles need not implement this until they exercise the policy-backed
+    /// runtime; production does.
+    /// </summary>
+    Task CloseOrderWithPolicyAsync(Guid orderId, long expectedVersion, Guid closedByUserId, DateTimeOffset closedAt,
+        ClosureTolerancePolicySnapshotV1 policy, ClosureExceptionApprovalV1? exceptionApproval,
+        ManufacturingPersistenceAuthorityFenceV1 persistenceAuthority, ManufacturingCommandMetadata metadata,
+        CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException("Policy-backed Manufacturing close store is not available.");
 
     /// <summary>The company's stored order rebuilt from its facts, or null (another company's order is null too).</summary>
     Task<ProductionOrder?> FindOrderAsync(Guid orderId, CancellationToken cancellationToken = default);

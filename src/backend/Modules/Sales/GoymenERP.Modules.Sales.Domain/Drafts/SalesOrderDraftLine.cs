@@ -96,6 +96,25 @@ public sealed class SalesOrderDraftLine
         QuantityText = quantityText;
     }
 
+    /// <summary>
+    /// Partial delivery (user decision 2026-09-30): whether the undelivered remainder of this line was changed through an
+    /// APPROVED remainder change — <see cref="LineRemainderState.Open"/> until then, <see cref="LineRemainderState.Revised"/>
+    /// after a revised quantity, <see cref="LineRemainderState.Cancelled"/> after the remainder was cancelled (the quantity is
+    /// then what the delivery owner had loaded; nothing more is loadable). Set only by the aggregate.
+    /// </summary>
+    public LineRemainderState Remainder { get; private set; } = LineRemainderState.Open;
+
+    /// <summary>The aggregate's approved remainder change marks the line; a cancelled remainder is final.</summary>
+    internal void MarkRemainder(LineRemainderState state)
+    {
+        if (state == LineRemainderState.Open || Remainder == LineRemainderState.Cancelled)
+        {
+            throw new SalesRuleException(SalesRuleCodes.InternalInvariant, "İptal edilmiş kalan yeniden açılmaz (iç değişmez).");
+        }
+
+        Remainder = state;
+    }
+
     /// <summary>The requested delivery plan; empty means no slices planned, which is not a delivery.</summary>
     public IReadOnlyList<DeliverySlice> RequestedDeliverySlices => slices.AsReadOnly();
 
