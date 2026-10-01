@@ -258,6 +258,8 @@ class WorkflowTests(unittest.TestCase):
                 "finance.party-ledger.amount.read",
                 "finance.official-invoice-import.upload",
                 "finance.official-invoice-import.approve",
+                "finance.allocation.read",
+                "finance.allocation.write",
             ),
             validator.SUITE_IDENTITY_PERMISSIONS["fin01"],
         )

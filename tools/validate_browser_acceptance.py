@@ -269,6 +269,10 @@ SUITE_IDENTITY_PERMISSIONS = {
         # reaches the approved source through the existing manual-receipt draft read.
         "finance.official-invoice-import.upload",
         "finance.official-invoice-import.approve",
+        # F-03 same-record acceptance: the disposable approver reopens and releases the exact
+        # allocation created from the imported open item. These are existing Finance permissions.
+        "finance.allocation.read",
+        "finance.allocation.write",
     ),
     # SALES-A1's approval axis: the preparer creates and reads, the approver approves and reads, the reader reads.
     # SALES-A2a: the preparer reaches the Cari owner's contact information through its OWN party read.
