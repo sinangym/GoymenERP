@@ -328,7 +328,7 @@ function decodeOpenItem(
     || !(value.dueOn === null || (typeof value.dueOn === 'string' && ISO_DATE.test(value.dueOn)))
     || (value.status !== 1 && value.status !== 2) || (requireOpen && value.status !== 1)
     || typeof value.version !== 'string' || !POSITIVE_INTEGER.test(value.version)) return null
-  return {
+  const item: OfficialInvoiceOpenItem = {
     id: value.id as string,
     companyId: value.companyId as string,
     sourceKind: value.sourceKind,
@@ -347,6 +347,7 @@ function decodeOpenItem(
     status: value.status,
     version: value.version,
   }
+  return currentAmountIsConsistent(item, item.originalAmount) ? item : null
 }
 
 const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
