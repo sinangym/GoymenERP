@@ -104,6 +104,19 @@ public sealed record StockPosition
         Block = block;
     }
 
+    private StockPosition(StockPosition source, StockCustodian custodian, Guid locationId)
+    {
+        CompanyId = source.CompanyId;
+        Owner = source.Owner;
+        Custodian = custodian.Id == Guid.Empty
+            ? throw new InventoryRuleException(InventoryRuleCodes.MissingReference, "Gözeten taraf zorunludur.")
+            : custodian;
+        LocationId = StockIds.Require(locationId, "Fiziksel konum");
+        ProductId = source.ProductId;
+        LabelId = source.LabelId;
+        Block = source.Block;
+    }
+
     /// <summary>The company the transaction is recorded under (Organization identity).</summary>
     public Guid CompanyId { get; }
 
@@ -127,6 +140,12 @@ public sealed record StockPosition
         Enum.IsDefined(block)
             ? new(this, block)
             : throw new InventoryRuleException(InventoryRuleCodes.MissingReference, "Blokaj durumu tanımsız.");
+
+    /// <summary>
+    /// The same physical piece after a same-company transfer. Ownership, product, label and block state are preserved;
+    /// only its custodian and physical location change.
+    /// </summary>
+    public StockPosition Relocate(StockCustodian custodian, Guid locationId) => new(this, custodian, locationId);
 
     /// <summary>
     /// The same physical place of the same piece, whatever its block state: company, owner,

@@ -1089,6 +1089,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         public IInventoryLabelStore Labels => store;
         public IInventoryMovementStore Movements => store;
         public IInventoryOpeningStore Opening => store;
+        public IInventoryTransferReaderV1 Transfers => store;
         public InventoryDbContext DbContext => dbContext;
         public InventoryStore Store => store;
 
