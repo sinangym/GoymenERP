@@ -23,6 +23,8 @@ public static class FinanceEndpoints
     public const string AllocationsPath = "/api/v1/finance/allocations";
     public const string CustomerInstrumentsPath = "/api/v1/finance/customer-instruments";
     public const string PartyLedgerPath = "/api/v1/finance/party-ledger";
+    public const string OfficialInvoiceImportsPath = "/api/v1/finance/official-invoice-imports";
+    public const string OfficialInvoiceImportBatchesPath = "/api/v1/finance/official-invoice-import-batches";
     private const string IdempotencyHeaderName = "Idempotency-Key";
     private const int MaximumIdempotencyKeyLength = 128;
     private static readonly JsonSerializerOptions ContractJson = FinanceJson.CreateOptions();
@@ -84,7 +86,282 @@ public static class FinanceEndpoints
         MapFinanceAllocationEndpoints(endpoints);
         MapCustomerInstrumentEndpoints(endpoints);
         MapBankAccountEndpoints(endpoints);
+        MapOfficialInvoiceImportEndpoints(endpoints);
         return endpoints;
+    }
+
+    private static void MapOfficialInvoiceImportEndpoints(IEndpointRouteBuilder endpoints)
+    {
+        endpoints.MapPost($"{OfficialInvoiceImportsPath}/preview", async (
+                HttpContext httpContext,
+                IFinanceOfficialInvoiceImportApplicationServiceV1 application,
+                IFinanceOfficialInvoiceImportApprovalAuthorityV1 authority,
+                ICompanyContext companyContext,
+                ICurrentUser currentUser,
+                ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext);
+                if (await ReadBodyAsync<FinanceOfficialInvoiceImportPreviewRequestV1>(httpContext, cancellationToken)
+                    is not { } request)
+                {
+                    return httpContext.Request.HasJsonContentType()
+                        ? Results.Problem(statusCode: StatusCodes.Status400BadRequest)
+                        : Results.StatusCode(StatusCodes.Status415UnsupportedMediaType);
+                }
+
+                var context = Context(companyContext, currentUser, correlation);
+                var permission = await CheckOfficialInvoicePreviewAuthorityAsync(
+                    authority, context, request.BatchId, cancellationToken);
+                if (permission != PermissionDecision.Allowed)
+                {
+                    return Results.Problem(statusCode: permission == PermissionDecision.Denied
+                        ? StatusCodes.Status403Forbidden
+                        : StatusCodes.Status503ServiceUnavailable);
+                }
+
+                return Results.Json(application.Preview(context, request), ContractJson);
+            })
+            .WithName("PreviewFinanceOfficialInvoiceImportV1")
+            .WithTags("Finance")
+            .RequireAuthorization()
+            .RequireCompanyContext()
+            .Accepts<FinanceOfficialInvoiceImportPreviewRequestV1>("application/json")
+            .Produces<FinanceOfficialInvoiceImportPreviewV1>()
+            .ProducesErpAuthenticatedProblems()
+            .ProducesErpBadRequest()
+            .AllowsEmptyErpBadRequestBody()
+            .AllowsCodeLessErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpServiceUnavailable();
+
+        endpoints.MapPost(OfficialInvoiceImportBatchesPath, async (
+                HttpContext httpContext,
+                IFinanceOfficialInvoiceImportApprovalServiceV1 approval,
+                ICompanyContext companyContext,
+                ICurrentUser currentUser,
+                ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext);
+                if (!TryReadIdempotencyKey(httpContext.Request.Headers, out var key))
+                    return Results.Problem(statusCode: StatusCodes.Status400BadRequest);
+                if (await ReadBodyAsync<FinanceOfficialInvoiceImportPreviewRequestV1>(httpContext, cancellationToken)
+                    is not { } request)
+                    return httpContext.Request.HasJsonContentType()
+                        ? Results.Problem(statusCode: StatusCodes.Status400BadRequest)
+                        : Results.StatusCode(StatusCodes.Status415UnsupportedMediaType);
+
+                var result = await approval.UploadAsync(Context(companyContext, currentUser, correlation),
+                    new CommandMetadata(key), request, cancellationToken);
+                return Command(httpContext, result, result.Outcome, result.IsReplay, result.OriginalCorrelationId);
+            })
+            .WithName("UploadFinanceOfficialInvoiceImportBatchV1")
+            .WithTags("Finance")
+            .RequireAuthorization()
+            .RequireCompanyContext()
+            .WithIdempotencyContract(StatusCodes.Status200OK, StatusCodes.Status409Conflict,
+                StatusCodes.Status422UnprocessableEntity)
+            .Accepts<FinanceOfficialInvoiceImportPreviewRequestV1>("application/json")
+            .Produces<FinanceOfficialInvoiceImportApprovalResultV1>(StatusCodes.Status200OK)
+            .Produces<FinanceOfficialInvoiceImportApprovalResultV1>(StatusCodes.Status409Conflict)
+            .Produces<FinanceOfficialInvoiceImportApprovalResultV1>(StatusCodes.Status422UnprocessableEntity)
+            .ProducesErpAuthenticatedProblems()
+            .ProducesErpBadRequest()
+            .AllowsEmptyErpBadRequestBody()
+            .AllowsCodeLessErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpServiceUnavailable();
+
+        endpoints.MapGet($"{OfficialInvoiceImportBatchesPath}/pending", async (
+                [FromQuery] string? cursor,
+                HttpContext httpContext,
+                IFinanceOfficialInvoiceImportPendingApprovalReadServiceV1 pending,
+                ICompanyContext companyContext,
+                ICurrentUser currentUser,
+                ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext);
+                return Read(await pending.ListAsync(Context(companyContext, currentUser, correlation), cursor,
+                    cancellationToken));
+            })
+            .WithName("GetPendingFinanceOfficialInvoiceImportBatchesV1")
+            .WithTags("Finance")
+            .RequireAuthorization()
+            .RequireCompanyContext()
+            .Produces<FinanceOfficialInvoiceImportPendingBatchPageV1>()
+            .ProducesErpAuthenticatedProblems()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpServiceUnavailable();
+
+        endpoints.MapGet($"{OfficialInvoiceImportBatchesPath}/{{batchId:guid}}", async (
+                Guid batchId,
+                HttpContext httpContext,
+                IFinanceOfficialInvoiceImportPendingApprovalReadServiceV1 pending,
+                ICompanyContext companyContext,
+                ICurrentUser currentUser,
+                ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext);
+                return Read(await pending.GetAsync(Context(companyContext, currentUser, correlation), batchId,
+                    cancellationToken));
+            })
+            .WithName("GetFinanceOfficialInvoiceImportPendingBatchV1")
+            .WithTags("Finance")
+            .RequireAuthorization()
+            .RequireCompanyContext()
+            .Produces<FinanceOfficialInvoiceImportPendingBatchDetailV1>()
+            .ProducesErpAuthenticatedProblems()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpServiceUnavailable();
+
+        endpoints.MapPost($"{OfficialInvoiceImportBatchesPath}/{{batchId:guid}}/approval", async (
+                Guid batchId,
+                HttpContext httpContext,
+                IFinanceOfficialInvoiceImportApprovalServiceV1 approval,
+                ICompanyContext companyContext,
+                ICurrentUser currentUser,
+                ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext);
+                if (!TryReadIdempotencyKey(httpContext.Request.Headers, out var key))
+                    return Results.Problem(statusCode: StatusCodes.Status400BadRequest);
+                if (await ReadBodyAsync<FinanceOfficialInvoiceImportApproveRequestV1>(httpContext, cancellationToken)
+                    is not { } request || request.BatchId != batchId)
+                    return httpContext.Request.HasJsonContentType()
+                        ? Results.Problem(statusCode: StatusCodes.Status400BadRequest)
+                        : Results.StatusCode(StatusCodes.Status415UnsupportedMediaType);
+
+                var result = await approval.ApproveAsync(Context(companyContext, currentUser, correlation),
+                    new CommandMetadata(key), request, cancellationToken);
+                return Command(httpContext, result, result.Outcome, result.IsReplay, result.OriginalCorrelationId);
+            })
+            .WithName("ApproveFinanceOfficialInvoiceImportBatchV1")
+            .WithTags("Finance")
+            .RequireAuthorization()
+            .RequireCompanyContext()
+            .WithIdempotencyContract(StatusCodes.Status200OK, StatusCodes.Status409Conflict,
+                StatusCodes.Status422UnprocessableEntity)
+            .Accepts<FinanceOfficialInvoiceImportApproveRequestV1>("application/json")
+            .Produces<FinanceOfficialInvoiceImportApprovalResultV1>(StatusCodes.Status200OK)
+            .Produces<FinanceOfficialInvoiceImportApprovalResultV1>(StatusCodes.Status409Conflict)
+            .Produces<FinanceOfficialInvoiceImportApprovalResultV1>(StatusCodes.Status422UnprocessableEntity)
+            .ProducesErpAuthenticatedProblems()
+            .ProducesErpBadRequest()
+            .AllowsEmptyErpBadRequestBody()
+            .AllowsCodeLessErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpServiceUnavailable();
+
+        endpoints.MapGet($"{OfficialInvoiceImportsPath}/approved-sources", async (
+                [FromQuery] string? cursor,
+                HttpContext httpContext,
+                IFinanceOpenItemSourceSelectionService selection,
+                ICompanyContext companyContext,
+                ICurrentUser currentUser,
+                ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext);
+                return Read(await selection.ListApprovedAsync(Context(companyContext, currentUser, correlation), cursor,
+                    cancellationToken));
+            })
+            .WithName("GetFinanceApprovedOfficialInvoiceImportSourcesV1")
+            .WithTags("Finance")
+            .RequireAuthorization()
+            .RequireCompanyContext()
+            .Produces<ApprovedFinanceOpenItemSourcePage>()
+            .ProducesErpAuthenticatedProblems()
+            .ProducesErpServiceUnavailable();
+
+        endpoints.MapPost($"{OfficialInvoiceImportsPath}/apply", async (
+                HttpContext httpContext,
+                IFinanceOfficialInvoiceImportApplicationServiceV1 application,
+                ICompanyContext companyContext,
+                ICurrentUser currentUser,
+                ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext);
+                if (!TryReadIdempotencyKey(httpContext.Request.Headers, out var key))
+                    return Results.Problem(statusCode: StatusCodes.Status400BadRequest);
+                if (await ReadBodyAsync<FinanceOfficialInvoiceImportPreviewRequestV1>(httpContext, cancellationToken)
+                    is not { } request)
+                    return httpContext.Request.HasJsonContentType()
+                        ? Results.Problem(statusCode: StatusCodes.Status400BadRequest)
+                        : Results.StatusCode(StatusCodes.Status415UnsupportedMediaType);
+
+                var result = await application.ApplyAsync(Context(companyContext, currentUser, correlation),
+                    new CommandMetadata(key), request, cancellationToken);
+                return OfficialInvoiceApply(httpContext, result);
+            })
+            .WithName("ApplyFinanceOfficialInvoiceImportV1")
+            .WithTags("Finance")
+            .RequireAuthorization()
+            .RequireCompanyContext()
+            .WithIdempotencyContract(StatusCodes.Status200OK, StatusCodes.Status409Conflict,
+                StatusCodes.Status422UnprocessableEntity)
+            .Accepts<FinanceOfficialInvoiceImportPreviewRequestV1>("application/json")
+            .Produces<FinanceOfficialInvoiceImportApplyResultV1>(StatusCodes.Status200OK)
+            .Produces<FinanceOfficialInvoiceImportApplyResultV1>(StatusCodes.Status409Conflict)
+            .Produces<FinanceOfficialInvoiceImportApplyResultV1>(StatusCodes.Status422UnprocessableEntity)
+            .ProducesErpAuthenticatedProblems()
+            .ProducesErpBadRequest()
+            .AllowsEmptyErpBadRequestBody()
+            .AllowsCodeLessErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpServiceUnavailable();
+
+        endpoints.MapGet($"{OfficialInvoiceImportsPath}/{{batchId:guid}}", async (
+                Guid batchId,
+                HttpContext httpContext,
+                IFinanceOfficialInvoiceImportApplicationServiceV1 application,
+                ICompanyContext companyContext,
+                ICurrentUser currentUser,
+                ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext);
+                return Read(await application.ReopenAsync(Context(companyContext, currentUser, correlation), batchId,
+                    cancellationToken));
+            })
+            .WithName("GetFinanceOfficialInvoiceImportV1")
+            .WithTags("Finance")
+            .RequireAuthorization()
+            .RequireCompanyContext()
+            .Produces<FinanceOfficialInvoiceAppliedBatchV1>()
+            .ProducesErpAuthenticatedProblems()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpServiceUnavailable();
+    }
+
+    internal static async Task<PermissionDecision> CheckOfficialInvoicePreviewAuthorityAsync(
+        IFinanceOfficialInvoiceImportApprovalAuthorityV1 authority,
+        FinanceContext context,
+        Guid batchId,
+        CancellationToken cancellationToken)
+    {
+        var upload = await authority.CheckAsync(context,
+            FinanceOfficialInvoiceImportAuthorityActionV1.Upload, batchId, cancellationToken);
+        if (upload == PermissionDecision.Allowed)
+        {
+            return PermissionDecision.Allowed;
+        }
+
+        var approve = await authority.CheckAsync(context,
+            FinanceOfficialInvoiceImportAuthorityActionV1.Approve, batchId, cancellationToken);
+        if (approve == PermissionDecision.Allowed)
+        {
+            return PermissionDecision.Allowed;
+        }
+
+        return upload == PermissionDecision.Unavailable || approve == PermissionDecision.Unavailable
+            ? PermissionDecision.Unavailable
+            : PermissionDecision.Denied;
     }
 
     /// <summary>
@@ -379,6 +656,48 @@ public static class FinanceEndpoints
 
     private static void MapFinanceAllocationEndpoints(IEndpointRouteBuilder endpoints)
     {
+        endpoints.MapGet(AllocationsPath, async (
+                HttpContext httpContext,
+                IFinanceAllocationReadService service,
+                ICompanyContext companyContext,
+                ICurrentUser currentUser,
+                ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext);
+                return Read(await service.ListAuthorizedAsync(
+                    Context(companyContext, currentUser, correlation), cancellationToken));
+            })
+            .WithName("GetFinanceAllocationsV1")
+            .WithTags("Finance")
+            .RequireAuthorization(ErpPermissions.FinanceAllocationRead)
+            .RequireCompanyContext()
+            .Produces<FinanceAllocationPage>()
+            .ProducesErpAuthenticatedProblems()
+            .ProducesErpServiceUnavailable();
+
+        endpoints.MapGet(AllocationsPath + "/{allocationId:guid}", async (
+                Guid allocationId,
+                HttpContext httpContext,
+                IFinanceAllocationReadService service,
+                ICompanyContext companyContext,
+                ICurrentUser currentUser,
+                ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext);
+                return Read(await service.GetAuthorizedAsync(
+                    Context(companyContext, currentUser, correlation), allocationId, cancellationToken));
+            })
+            .WithName("GetFinanceAllocationV1")
+            .WithTags("Finance")
+            .RequireAuthorization(ErpPermissions.FinanceAllocationRead)
+            .RequireCompanyContext()
+            .Produces<FinanceAllocationDetail>()
+            .ProducesErpAuthenticatedProblems()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpServiceUnavailable();
+
         endpoints.MapPost(AllocationsPath, async (
                 HttpContext httpContext,
                 IFinanceAllocationService service,
@@ -1226,6 +1545,45 @@ public static class FinanceEndpoints
             _ => throw new InvalidOperationException("Finance command returned an undefined outcome."),
         };
     }
+
+    private static IResult OfficialInvoiceApply(HttpContext httpContext,
+        FinanceOfficialInvoiceImportApplyResultV1 result)
+    {
+        if (result.Admission is { IsReplay: true } admission)
+        {
+            httpContext.Response.Headers["Idempotency-Replayed"] = "true";
+            httpContext.Response.Headers["Idempotency-Original-Correlation-Id"] = admission.OriginalCorrelationId;
+        }
+
+        if (!result.Preview.IsValid) return Results.Json(result, ContractJson,
+            statusCode: StatusCodes.Status422UnprocessableEntity);
+        if (result.ApprovedSource is { Outcome: not ReadOutcome.Found } source)
+            return OfficialInvoiceReadFailure(source.Outcome);
+        if (result.Admission is { Outcome: not CommandOutcome.Succeeded } command)
+            return command.Outcome switch
+            {
+                CommandOutcome.ValidationFailed => Results.Json(result, ContractJson,
+                    statusCode: StatusCodes.Status422UnprocessableEntity),
+                CommandOutcome.VersionConflict or CommandOutcome.IdempotencyConflict => Results.Json(result, ContractJson,
+                    statusCode: StatusCodes.Status409Conflict),
+                CommandOutcome.Denied => Results.Problem(statusCode: StatusCodes.Status403Forbidden),
+                CommandOutcome.Unavailable => Results.Problem(statusCode: StatusCodes.Status503ServiceUnavailable),
+                _ => throw new InvalidOperationException("Finance official invoice admission returned an invalid outcome."),
+            };
+        if (result.FreshRead is { Outcome: not ReadOutcome.Found } read)
+            return OfficialInvoiceReadFailure(read.Outcome);
+        if (!result.IsSucceeded)
+            throw new InvalidOperationException("Finance official invoice import returned an incomplete success graph.");
+        return Results.Json(result, ContractJson);
+    }
+
+    private static IResult OfficialInvoiceReadFailure(ReadOutcome outcome) => outcome switch
+    {
+        ReadOutcome.NotFound => Results.Problem(statusCode: StatusCodes.Status404NotFound),
+        ReadOutcome.Denied => Results.Problem(statusCode: StatusCodes.Status403Forbidden),
+        ReadOutcome.Unavailable => Results.Problem(statusCode: StatusCodes.Status503ServiceUnavailable),
+        _ => throw new InvalidOperationException("Finance official invoice read returned an invalid outcome."),
+    };
 
     /// <summary>The strict contract body (FinanceJson: unknown members and missing required ones refused); null when absent, not JSON, or malformed.</summary>
     private static async Task<T?> ReadBodyAsync<T>(HttpContext httpContext, CancellationToken cancellationToken) where T : class

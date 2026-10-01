@@ -141,6 +141,17 @@ public static class ErpPermissions
     public const string FinanceBankAccountApprove = "finance.bank-account.approve";
 
     /// <summary>
+    /// Finance official-invoice import commands. Registration makes the Finance owner's exact names
+    /// measurable and grants nothing. Both are company-wide because the batch belongs to the
+    /// server-resolved company and has no narrower scope dimension. They are not Critical; the
+    /// owner service enforces uploader/approver separation at command time.
+    /// </summary>
+    public const string FinanceOfficialInvoiceImportUpload = "finance.official-invoice-import.upload";
+
+    /// <inheritdoc cref="FinanceOfficialInvoiceImportUpload"/>
+    public const string FinanceOfficialInvoiceImportApprove = "finance.official-invoice-import.approve";
+
+    /// <summary>
     /// Manufacturing API (MFG-API, #313): the owner's technical mapping of its routes (Business
     /// #254 5654539215), accepted by the coordinator (K-1). Registering the names makes them KNOWN,
     /// not granted: no role and no user receives them here; the grant is a human gate (K-3).
@@ -291,6 +302,12 @@ public static class ErpPermissions
     /// to endpoint authorization; it grants no role or user access.
     /// </summary>
     public const string FinanceAllocationWrite = "finance.allocation.write";
+
+    /// <summary>
+    /// F-03 allocation list/detail reads. Separate from create/release; registration grants no role
+    /// or user access. Company-wide only because allocations have no narrower approved scope.
+    /// </summary>
+    public const string FinanceAllocationRead = "finance.allocation.read";
 
     /// <summary>
     /// Sales order drafts (SALES-API, #321): the Sales owner's names (SalesPermissionManifestV1, same
@@ -628,6 +645,8 @@ public static class ErpPermissions
             FinanceBankAccountRead,
             FinanceBankAccountPropose,
             FinanceBankAccountApprove,
+            FinanceOfficialInvoiceImportUpload,
+            FinanceOfficialInvoiceImportApprove,
             FinanceManualReceiptDraftSave,
             FinanceManualReceiptDraftRead,
             FinanceManualReceiptAmountRead,
@@ -646,6 +665,7 @@ public static class ErpPermissions
         FinancePartyLedgerRead,
         FinancePartyLedgerAmountRead,
         FinanceAllocationWrite,
+        FinanceAllocationRead,
             DocumentsFilesRead,
             DocumentsFilesUpload,
             IdentityProfileRead,
@@ -734,6 +754,8 @@ public static class ErpPermissions
             FinanceBankAccountRead,
             FinanceBankAccountPropose,
             FinanceBankAccountApprove,
+            FinanceOfficialInvoiceImportUpload,
+            FinanceOfficialInvoiceImportApprove,
             FinanceManualReceiptDraftSave,
             FinanceManualReceiptDraftRead,
             FinanceManualReceiptAmountRead,
@@ -752,6 +774,7 @@ public static class ErpPermissions
         FinancePartyLedgerRead,
         FinancePartyLedgerAmountRead,
         FinanceAllocationWrite,
+        FinanceAllocationRead,
             DocumentsFilesRead,
             DocumentsFilesUpload,
             IdentityAuditRead,

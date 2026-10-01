@@ -1178,13 +1178,13 @@ test.describe.serial('FIN-01 bank account and draft (real API, real SQL)', () =>
     expectEveryAnswerRewritten(answered, rewritten)
   })
 
-  test('FIN01-04 the approver has no draft screens and the ungranted profile no Finance screen', async ({ page, context }) => {
+  test('FIN01-04 the approver has no receipt create screen and the ungranted profile no Finance screen', async ({ page, context }) => {
     await asActor(context, env.seed.approverActor)
     let financeRequests = 0
     page.on('request', (request) => {
       if (FINANCE_API.test(request.url()) && new URL(request.url()).pathname.includes('/manual-receipts')) financeRequests += 1
     })
-    await page.goto('/finans/tahsilatlar')
+    await page.goto('/finans/tahsilatlar/yeni')
     await expect(page.locator('[data-state="not-found"]')).toBeVisible({ timeout: 30_000 })
     expect(financeRequests).toBe(0)
 

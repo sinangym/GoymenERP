@@ -17,7 +17,7 @@ public sealed class FinanceShellCapabilityProviderTests
     {
         var declarations = new FinanceShellCapabilityProvider().GetDeclarations();
 
-        Assert.Equal(15, declarations.Count);
+        Assert.Equal(19, declarations.Count);
         Assert.All(declarations, declaration => Assert.True(declaration.ImplementationAvailable));
     }
 
@@ -28,7 +28,7 @@ public sealed class FinanceShellCapabilityProviderTests
         var byId = provider.GetDeclarations().ToDictionary(declaration => declaration.CapabilityId, StringComparer.Ordinal);
 
         Assert.Equal("CHATGPT-BUSINESS/FINANCE", provider.Owner);
-        Assert.Equal("1.3", provider.ContractVersion);
+        Assert.Equal("1.5", provider.ContractVersion);
         (string Capability, string Route, string Path, string Screen, ShellCapabilityRoutePrecedence Precedence, string[] Permissions)[] expected =
         [
             ("finance.receipts.list", "finance.receipts", "/finans/tahsilatlar", "F-02", ShellCapabilityRoutePrecedence.Static,
@@ -49,6 +49,12 @@ public sealed class FinanceShellCapabilityProviderTests
             ("finance.customer-instruments.list", "finance.customer-instruments.list", "/finans/musteri-cek-senetleri",
                 "F-02-INSTRUMENTS", ShellCapabilityRoutePrecedence.Static,
                 [ErpPermissions.FinanceCustomerInstrumentRead]),
+            ("finance.official-invoice-import.upload", "finance.official-invoice-import.upload",
+                "/finans/onayli-fatura-taksit-kaynagi-yukle", "F-02-OFFICIAL-INVOICE-UPLOAD",
+                ShellCapabilityRoutePrecedence.Static, [FinanceOfficialInvoiceImportPermissionNamesV1.Upload]),
+            ("finance.official-invoice-import.approve", "finance.official-invoice-import.approve",
+                "/finans/resmi-fatura-aktarim-onaylari", "F-02-OFFICIAL-INVOICE-APPROVALS",
+                ShellCapabilityRoutePrecedence.Static, [FinanceOfficialInvoiceImportPermissionNamesV1.Approve]),
             ("finance.bank-accounts.list", "finance.bank-accounts", "/finans/banka-hesaplari", "F-04",
                 ShellCapabilityRoutePrecedence.Static, [ErpPermissions.FinanceBankAccountRead]),
             ("finance.bank-accounts.propose", "finance.bank-accounts.new", "/finans/banka-hesaplari/yeni", "F-04-NEW",
@@ -72,6 +78,11 @@ public sealed class FinanceShellCapabilityProviderTests
                 "F-02-PAYMENT-DETAIL", ShellCapabilityRoutePrecedence.ParameterizedAfterStatic,
                 [FinancePermissionNames.ManualBankPaymentDraftRead, FinancePermissionNames.ManualBankPaymentRecord,
                     ErpPermissions.AccountingPeriodsRead]),
+            ("finance.allocations.list", "finance.allocations.list", "/finans/dagitimlar", "F-03",
+                ShellCapabilityRoutePrecedence.Static, [FinancePermissionNames.AllocationRead]),
+            ("finance.allocations.write", "finance.allocations.list", "/finans/dagitimlar", "F-03",
+                ShellCapabilityRoutePrecedence.Static,
+                [FinancePermissionNames.AllocationRead, FinancePermissionNames.AllocationWrite]),
         ];
 
         Assert.Equal(expected.Select(item => item.Capability).Order(StringComparer.Ordinal), byId.Keys.Order(StringComparer.Ordinal));
@@ -123,7 +134,7 @@ public sealed class FinanceShellCapabilityProviderTests
         Assert.Equal(paymentDetail.CapabilityId, paymentRecord.ParentCapabilityId);
         Assert.Superset(paymentDetail.RequiredPermissions.ToHashSet(StringComparer.Ordinal),
             paymentRecord.RequiredPermissions.ToHashSet(StringComparer.Ordinal));
-        Assert.Equal(5, declarations.Count(item => item.ParentCapabilityId is not null));
+        Assert.Equal(6, declarations.Count(item => item.ParentCapabilityId is not null));
     }
 
     [Fact]
@@ -158,8 +169,10 @@ public sealed class FinanceShellCapabilityProviderTests
 
         // The registry refuses a screen id shared by two routes (ValidateUnique on ScreenId).
         Assert.Equal(routes.Length, routes.Select(item => item.ScreenId).Distinct(StringComparer.Ordinal).Count());
-        Assert.Equal(["F-02", "F-02-DETAIL", "F-02-INSTRUMENTS", "F-02-NEW", "F-02-PAYMENT-DETAIL", "F-02-PAYMENT-NEW",
-                "F-02-PAYMENTS", "F-02-REVERSAL-APPROVAL", "F-04", "F-04-NEW"],
+        Assert.Equal(["F-02", "F-02-DETAIL", "F-02-INSTRUMENTS", "F-02-NEW",
+                "F-02-OFFICIAL-INVOICE-APPROVALS", "F-02-OFFICIAL-INVOICE-UPLOAD",
+                "F-02-PAYMENT-DETAIL", "F-02-PAYMENT-NEW",
+                "F-02-PAYMENTS", "F-02-REVERSAL-APPROVAL", "F-03", "F-04", "F-04-NEW"],
             routes.Select(item => item.ScreenId).Order(StringComparer.Ordinal));
     }
 }

@@ -42,6 +42,12 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
     internal DbSet<FinanceOpenItemRow> OpenItems => Set<FinanceOpenItemRow>();
     internal DbSet<FinanceOpenItemSourceBatchRow> OpenItemSourceBatches => Set<FinanceOpenItemSourceBatchRow>();
 
+    internal DbSet<FinanceOfficialInvoiceImportBatchRow> OfficialInvoiceImportBatches => Set<FinanceOfficialInvoiceImportBatchRow>();
+
+    internal DbSet<FinanceOfficialInvoiceImportApprovalRow> OfficialInvoiceImportApprovals => Set<FinanceOfficialInvoiceImportApprovalRow>();
+
+    internal DbSet<FinanceOfficialInvoiceImportCommandRow> OfficialInvoiceImportCommands => Set<FinanceOfficialInvoiceImportCommandRow>();
+
     internal DbSet<FinanceSourceAllocationStateRow> SourceAllocationStates => Set<FinanceSourceAllocationStateRow>();
 
     internal DbSet<FinanceAllocationRow> Allocations => Set<FinanceAllocationRow>();
@@ -69,6 +75,7 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
         ConfigureCommands(modelBuilder);
         ConfigureMoneyEvents(modelBuilder);
         ConfigureOpenItemSourceBatches(modelBuilder);
+        ConfigureOfficialInvoiceImports(modelBuilder);
         ConfigureOpenItems(modelBuilder);
         ConfigureSourceAllocationStates(modelBuilder);
         ConfigureAllocations(modelBuilder);
@@ -337,6 +344,72 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
         entity.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
             .OnDelete(DeleteBehavior.Restrict);
         entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
+    private void ConfigureOfficialInvoiceImports(ModelBuilder modelBuilder)
+    {
+        var batch = modelBuilder.Entity<FinanceOfficialInvoiceImportBatchRow>();
+        batch.ToTable("OfficialInvoiceImportBatches", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_OfficialInvoiceImportBatches_Identity",
+                "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000'");
+            table.HasCheckConstraint("CK_OfficialInvoiceImportBatches_Content",
+                "LEN([BatchVersion]) > 0 AND LEN([BatchChecksum]) = 64 AND LEN([TemplateVersion]) > 0 AND DATALENGTH([FileBytes]) > 0 AND ISJSON([SourceRowsJson]) = 1 AND [RowCount] > 0 AND LEN([UploadedBy]) > 0 AND LEN([CorrelationId]) > 0");
+        });
+        batch.HasKey(x => x.Id);
+        batch.HasAlternateKey(x => new { x.CompanyId, x.Id });
+        batch.Property(x => x.Id).ValueGeneratedNever();
+        batch.Property(x => x.BatchVersion).HasMaxLength(128).IsUnicode(false).IsRequired();
+        batch.Property(x => x.BatchChecksum).HasMaxLength(64).IsUnicode(false).IsFixedLength().IsRequired();
+        batch.Property(x => x.TemplateVersion).HasMaxLength(128).IsUnicode(false).IsRequired();
+        batch.Property(x => x.FileBytes).IsRequired();
+        batch.Property(x => x.SourceRowsJson).IsRequired();
+        batch.Property(x => x.UploadedBy).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
+        batch.Property(x => x.CorrelationId).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
+        batch.Property(x => x.CausationId).HasMaxLength(128).UseCollation(IdentityCollation);
+        batch.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId).OnDelete(DeleteBehavior.Restrict);
+        batch.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        var approval = modelBuilder.Entity<FinanceOfficialInvoiceImportApprovalRow>();
+        approval.ToTable("OfficialInvoiceImportApprovals", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_OfficialInvoiceImportApprovals_Identity",
+                "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [BatchId] <> '00000000-0000-0000-0000-000000000000'");
+            table.HasCheckConstraint("CK_OfficialInvoiceImportApprovals_MakerChecker",
+                "LEN([UploadedBy]) > 0 AND LEN([ApprovedBy]) > 0 AND [UploadedBy] <> [ApprovedBy] AND LEN([CorrelationId]) > 0");
+        });
+        approval.HasKey(x => x.Id);
+        approval.Property(x => x.Id).ValueGeneratedNever();
+        approval.Property(x => x.UploadedBy).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
+        approval.Property(x => x.ApprovedBy).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
+        approval.Property(x => x.CorrelationId).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
+        approval.Property(x => x.CausationId).HasMaxLength(128).UseCollation(IdentityCollation);
+        approval.HasIndex(x => new { x.CompanyId, x.BatchId }).IsUnique();
+        approval.HasOne<FinanceOfficialInvoiceImportBatchRow>().WithOne()
+            .HasForeignKey<FinanceOfficialInvoiceImportApprovalRow>(x => new { x.CompanyId, x.BatchId })
+            .HasPrincipalKey<FinanceOfficialInvoiceImportBatchRow>(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        approval.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        var command = modelBuilder.Entity<FinanceOfficialInvoiceImportCommandRow>();
+        command.ToTable("OfficialInvoiceImportCommands", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_OfficialInvoiceImportCommands_Identity",
+                "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [BatchId] <> '00000000-0000-0000-0000-000000000000'");
+            table.HasCheckConstraint("CK_OfficialInvoiceImportCommands_Content",
+                "LEN([CommandName]) > 0 AND LEN([IdempotencyKeyHash]) = 64 AND LEN([ActorId]) > 0 AND LEN([PayloadHash]) = 64 AND ISJSON([ResultJson]) = 1 AND LEN([CorrelationId]) > 0");
+        });
+        command.HasKey(x => x.Id);
+        command.Property(x => x.Id).ValueGeneratedNever();
+        command.Property(x => x.CommandName).HasMaxLength(128).IsUnicode(false).IsRequired();
+        command.Property(x => x.IdempotencyKeyHash).HasMaxLength(64).IsUnicode(false).IsFixedLength().IsRequired();
+        command.Property(x => x.ActorId).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
+        command.Property(x => x.PayloadHash).HasMaxLength(64).IsUnicode(false).IsFixedLength().IsRequired();
+        command.Property(x => x.ResultJson).IsRequired();
+        command.Property(x => x.CorrelationId).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
+        command.HasIndex(x => new { x.CompanyId, x.CommandName, x.IdempotencyKeyHash }).IsUnique();
+        command.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId).OnDelete(DeleteBehavior.Restrict);
+        command.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
 
     private void ConfigureOpenItems(ModelBuilder modelBuilder)
@@ -727,6 +800,16 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
     private void ApplyWriteGuards()
     {
         FinanceAuditEventTenantGuard.Validate(this, companyContext);
+
+        if (ChangeTracker.Entries<FinanceOfficialInvoiceImportBatchRow>()
+                .Any(entry => entry.State is EntityState.Modified or EntityState.Deleted)
+            || ChangeTracker.Entries<FinanceOfficialInvoiceImportApprovalRow>()
+                .Any(entry => entry.State is EntityState.Modified or EntityState.Deleted)
+            || ChangeTracker.Entries<FinanceOfficialInvoiceImportCommandRow>()
+                .Any(entry => entry.State is EntityState.Modified or EntityState.Deleted))
+        {
+            throw new InvalidOperationException("Resmî fatura import kaynak, onay ve komut kayıtları append-only'dir.");
+        }
 
         foreach (var entry in ChangeTracker.Entries<IFinanceTenantRow>())
         {
