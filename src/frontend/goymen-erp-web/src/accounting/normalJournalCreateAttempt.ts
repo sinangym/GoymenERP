@@ -2,7 +2,7 @@ import type { NormalJournalCommandSnapshot } from './normalJournalApi'
 
 const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const DATE = /^\d{4}-\d{2}-\d{2}$/
-const HASH = /^[0-9a-f]{64}$/
+const HASH = /^[0-9a-fA-F]{64}$/
 const PREFIX = 'goymen:accounting:normal-journal:create:'
 
 export type NormalJournalCreateSnapshot = Extract<NormalJournalCommandSnapshot, { readonly operation: 'create' }>

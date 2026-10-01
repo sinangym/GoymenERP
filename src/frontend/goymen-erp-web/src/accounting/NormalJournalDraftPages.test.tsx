@@ -11,7 +11,7 @@ const PERIOD = 'a0000000-0000-4000-8000-000000000005'
 const ACCOUNT_1 = 'a0000000-0000-4000-8000-000000000006'
 const ACCOUNT_2 = 'a0000000-0000-4000-8000-000000000007'
 const CURRENCY = 'a0000000-0000-4000-8000-000000000008'
-const PREPARATION = 'b'.repeat(64)
+const PREPARATION = 'B'.repeat(64)
 
 function sourcePage() {
   return {
@@ -110,7 +110,7 @@ describe('normal journal source-bound creation', () => {
         if (url.includes('/finance/manual-receipts')) return json(sourcePage())
         if (url.endsWith(`/normal-journal-draft-sources/${SOURCE}`)) {
           reads += 1
-          return json(preparation({ preparationVersion: (reads === 1 ? 'b' : 'c').repeat(64) }))
+          return json(preparation({ preparationVersion: (reads === 1 ? 'B' : 'C').repeat(64) }))
         }
         if (url.endsWith('/normal-journal-drafts') && init?.method === 'POST') {
           return json({ code: 'accounting_normal_journal_preparation_version_conflict' }, 409)
@@ -136,6 +136,41 @@ describe('normal journal source-bound creation', () => {
     await waitFor(() => expect(reads).toBe(2))
   })
 
+  it('reads every authorized source page before offering a recorded source', async () => {
+    const firstSource = sourcePage()
+    const recorded = installFetch({
+      capabilities: [ACCOUNTING_CAPABILITY.normalDraftCreate],
+      respond: (url) => {
+        if (url.includes('/finance/manual-receipts')) {
+          const cursor = new URL(url, 'http://test').searchParams.get('cursor')
+          if (cursor === null) return json({
+            ...firstSource,
+            resource: {
+              ...firstSource.resource,
+              items: firstSource.resource.items.map(source => ({
+                ...source,
+                id: 'a0000000-0000-4000-8000-000000000099',
+                sourceNumber: 'SENTETIK-TASLAK-ILK-SAYFA',
+                stage: 'Draft',
+              })),
+              nextCursor: 'recorded-page',
+            },
+          })
+          if (cursor === 'recorded-page') return json(sourcePage())
+        }
+        if (url.endsWith(`/normal-journal-draft-sources/${SOURCE}`)) return json(preparation())
+        return undefined
+      },
+    })
+    renderAt(ACCOUNTING_ROUTE.normalDraftCreate)
+    const picker = await screen.findByLabelText('Onaylı finans kaynağı')
+    expect(screen.queryByRole('option', { name: /SENTETIK-TASLAK-ILK-SAYFA/ })).toBeNull()
+    screen.getByRole('option', { name: /SENTETIK-TAHSILAT-1/ })
+    expect(requestsFor(recorded, '/finance/manual-receipts', 'GET')).toHaveLength(2)
+    fireEvent.change(picker, { target: { value: SOURCE } })
+    await screen.findByText('Onaylı ayna mikro-v1; kural approved-rule-v1.')
+  })
+
   it('recalls an unknown create after close and re-entry and retries the exact key and body', async () => {
     let creates = 0
     const recorded = installFetch({
@@ -146,6 +181,7 @@ describe('normal journal source-bound creation', () => {
         if (url.endsWith('/normal-journal-drafts') && init?.method === 'POST') {
           creates += 1
           if (creates === 1) throw new TypeError('network')
+          if (creates === 2) return json({ status: 401 }, 401)
           return json(draft(), 201)
         }
         return undefined
@@ -164,14 +200,21 @@ describe('normal journal source-bound creation', () => {
     await screen.findByRole('button', { name: 'Aynı isteği yeniden gönder' })
 
     first.view.unmount()
+    const second = renderAt(ACCOUNTING_ROUTE.normalDraftCreate)
+    fireEvent.click(await screen.findByRole('button', { name: 'Aynı isteği yeniden gönder' }))
+    await screen.findByText(/Oturum sonlandı/i)
+
+    second.view.unmount()
     renderAt(ACCOUNTING_ROUTE.normalDraftCreate)
     fireEvent.click(await screen.findByRole('button', { name: 'Aynı isteği yeniden gönder' }))
     await screen.findByText('Normal fiş taslağı kaydedildi')
 
     const commands = requestsFor(recorded, '/normal-journal-drafts', 'POST')
-    expect(commands).toHaveLength(2)
-    expect(commands[1].headers['Idempotency-Key']).toBe(commands[0].headers['Idempotency-Key'])
-    expect(commands[1].body).toEqual(commands[0].body)
+    expect(commands).toHaveLength(3)
+    for (const command of commands.slice(1)) {
+      expect(command.headers['Idempotency-Key']).toBe(commands[0].headers['Idempotency-Key'])
+      expect(command.body).toEqual(commands[0].body)
+    }
   })
 })
 

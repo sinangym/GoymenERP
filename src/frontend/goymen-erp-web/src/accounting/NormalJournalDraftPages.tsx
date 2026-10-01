@@ -3,8 +3,9 @@ import { useQuery } from '@tanstack/react-query'
 import { Link, useParams } from 'react-router'
 import { parseAmountInput } from '../finance/decimalText'
 import { isDateOnly } from '../finance/dateOnly'
-import { decodeSourcePage, type SourceSummary } from '../finance/contract'
+import { decodeReadResult, decodeSourcePage, type SourcePage, type SourceSummary } from '../finance/contract'
 import { useFinanceRead } from '../finance/financePort'
+import type { FinanceReceiptPort, FinanceScope, PortReply } from '../finance/port'
 import { StateBlock } from '../shell/StateBlock'
 import { useShellState } from '../shell/shellContext'
 import { classifyOutcome, type RemoteViewState } from '../shell/uiState'
@@ -33,6 +34,36 @@ function sourceLabel(source: SourceSummary): string {
   return `${number} - ${source.occurredOn}`
 }
 
+async function readAllAuthorizedSources(
+  port: FinanceReceiptPort,
+  scope: FinanceScope,
+  signal: AbortSignal,
+): Promise<PortReply> {
+  const items: SourceSummary[] = []
+  const sourceIds = new Set<string>()
+  const cursors = new Set<string>()
+  let cursor: string | null = null
+  while (true) {
+    const reply = await port.listSources(scope, { cursor }, signal)
+    if (reply.kind === 'no-reply') return reply
+    const decoded = decodeReadResult(reply.body, resource => decodeSourcePage(resource, scope.companyId))
+    if (!decoded.ok) return { kind: 'body', body: undefined }
+    if (decoded.value.outcome !== 'Found') return reply
+    for (const source of decoded.value.resource.items) {
+      if (sourceIds.has(source.id)) return { kind: 'body', body: undefined }
+      sourceIds.add(source.id)
+      items.push(source)
+    }
+    const next = decoded.value.resource.nextCursor
+    if (next === null) break
+    if (cursors.has(next)) return { kind: 'body', body: undefined }
+    cursors.add(next)
+    cursor = next
+  }
+  const resource: SourcePage = { companyId: scope.companyId, items, nextCursor: null }
+  return { kind: 'body', body: { outcome: 'Found', resource } }
+}
+
 export function NormalJournalDraftCreatePage() {
   const shell = useShellState()
   const key = contextKey(shell)
@@ -40,10 +71,13 @@ export function NormalJournalDraftCreatePage() {
     return <StateBlock state={{ kind: 'initial-loading' }} subject="muhasebe şirket bağlamı" />
   }
   const namespace = contextKeyString(key)
-  return <NormalJournalDraftCreate key={`${namespace ?? 'none'}:${shell.routeEntryGeneration}`} namespace={namespace} />
+  const context = shell.activeContext
+  const attemptOwner = context?.scopeMode === 'single' && context.companyId !== null
+    ? `${context.companyId}:${context.userId}` : 'unbound'
+  return <NormalJournalDraftCreate key={`${namespace ?? 'none'}:${shell.routeEntryGeneration}`} namespace={namespace} attemptOwner={attemptOwner} />
 }
 
-function NormalJournalDraftCreate({ namespace }: { readonly namespace: string }) {
+function NormalJournalDraftCreate({ namespace, attemptOwner }: { readonly namespace: string; readonly attemptOwner: string }) {
   const shell = useShellState()
   const boundary = useAuthBoundary()
   const mountedRef = useRef(true)
@@ -56,7 +90,7 @@ function NormalJournalDraftCreate({ namespace }: { readonly namespace: string })
   const companyId = shell.activeContext?.companyId ?? null
   const single = shell.activeContext?.scopeMode === 'single' && companyId !== null
   const canCreate = hasCapability(shell, ACCOUNTING_CAPABILITY.normalDraftCreate)
-  const recovered = useRef(recallNormalJournalCreate(namespace))
+  const recovered = useRef(recallNormalJournalCreate(attemptOwner))
   const [sourceId, setSourceId] = useState(recovered.current?.request.sourceId ?? '')
   const [transactionDate, setTransactionDate] = useState(recovered.current?.request.transactionDate ?? '')
   const [accountingDate, setAccountingDate] = useState(recovered.current?.request.accountingDate ?? '')
@@ -73,7 +107,7 @@ function NormalJournalDraftCreate({ namespace }: { readonly namespace: string })
   const sending = snapshot !== null && outcome === null
   const unresolved = outcome?.type === 'unknown'
   const sourceList = useFinanceRead('normal-journal-source-picker', [],
-    (port, scope, signal) => port.listSources(scope, { cursor: null }, signal), decodeSourcePage)
+    readAllAuthorizedSources, decodeSourcePage)
   const authorizedSources = sourceList.state.kind === 'ready'
     ? sourceList.state.data.items.filter(source => source.stage === 'Recorded') : []
   const sourceIsValid = GUID.test(sourceId)
@@ -104,7 +138,7 @@ function NormalJournalDraftCreate({ namespace }: { readonly namespace: string })
 
   const send = async (next: NormalJournalCommandSnapshot) => {
     if (next.operation === 'create' && !canCreate) return
-    if (next.operation === 'create') storeNormalJournalCreate(namespace, next)
+    if (next.operation === 'create') storeNormalJournalCreate(attemptOwner, next)
     setSnapshot(next)
     setOutcome(null)
     const security = boundary.capture()
@@ -113,7 +147,10 @@ function NormalJournalDraftCreate({ namespace }: { readonly namespace: string })
       if (answer.failure.kind === 'unauthenticated') boundary.report(401, security)
       if (answer.failure.kind === 'forbidden') boundary.report(403, security)
     }
-    if (next.operation === 'create' && answer.type !== 'unknown') clearNormalJournalCreate(namespace)
+    if (next.operation === 'create' && (answer.type === 'applied'
+      || (answer.type === 'failed' && answer.failure.kind !== 'unauthenticated' && answer.failure.kind !== 'forbidden'))) {
+      clearNormalJournalCreate(attemptOwner)
+    }
     if (mountedRef.current) setOutcome(answer)
   }
 
