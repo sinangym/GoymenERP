@@ -185,8 +185,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // INV-AL-1: +8 allocation-change SQL facts (953d329a… -> 1ca5b9e1…).
             // ST-02 scrap write-off: +5 stock-scrap SQL facts (1ca5b9e1… -> bd676b05…).
             // R20 transfer lifecycle: +3 transfer SQL facts (bd676b05… -> c74360d3…).
+            // Product-version provenance rollback: +1 isolated no-loss SQL fact (c444f707… -> d9cb549b…).
             ["tools/relational_inventory/inventory.txt"] =
-                "c444f707f41906d33d3a3d3f4dd60062c84d817b195a8decf12edab37d1fccc4",
+                "d9cb549b717482b66e26d03109fd2fc07bbcbb9037cea1e77b25ace66a3db5c9",
 
             // logistics
             // AT-053: +4 weighbridge SQL facts (81c1ff0b… -> 264898d7…).
@@ -612,10 +613,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // key error itself (SqlException.Errors 2601/2627); SqlClient count unchanged (1).
                 // Re-fingerprinted for INV-OPEN-1 part 2 on top of #341: the opening count's PK collision
                 // uses the same key-error read ('PK_OpeningCounts'); SqlClient count unchanged (1).
+                // Re-fingerprinted for Product-version provenance rollback isolation: the target-typed MaterialLabel
+                // construction is explicit so it cannot be mistaken for InventoryDbContext; SqlClient count stays 1.
                 ["src/backend/Modules/Inventory/"
                  + "GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventoryStore.cs"] =
                     new(
-                        "be46c2b86b6d0636f1d2d27dbbe9b8ce17b3e721e9f622724f8cf66133946979",
+                        "82cf58243d6dfde8e47495da2729a9afbe855db237023edaa98c5d846e498907",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
