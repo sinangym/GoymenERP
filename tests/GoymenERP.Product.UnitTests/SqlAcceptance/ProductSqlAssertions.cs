@@ -64,6 +64,49 @@ internal static class ProductSqlAssertions
         UniqueCurrentCodes(after);
     }
 
+    public static void ImportedBatch(ProductSqlSnapshot before, ProductSqlSnapshot after,
+        IReadOnlyList<ProductImportCreatedV1> imported)
+    {
+        Assert.NotEmpty(imported);
+        Assert.Equal(imported.Count, imported.Select(item => item.ProductId).Distinct().Count());
+        Assert.Equal(imported.Count, imported.Select(item => item.Code).Distinct(StringComparer.Ordinal).Count());
+        Assert.Equal(imported.Count, imported.Select(item => item.LegacyCode).Distinct(StringComparer.Ordinal).Count());
+        Assert.Equal(before.Products.Count + imported.Count, after.Products.Count);
+        CatalogUnchanged(before, after);
+        Assert.Equal(before.Products.ToArray(),
+            after.Products.Where(row => before.Products.Any(old => old.Id == row.Id)).ToArray());
+        Assert.Equal(before.Registrations.Count + imported.Count * 2, after.Registrations.Count);
+        Assert.Equal(before.Registrations.ToArray(),
+            after.Registrations.Where(row => before.Registrations.Any(old => old.Code == row.Code)).ToArray());
+
+        var sequences = new Dictionary<string, long>(StringComparer.Ordinal);
+        foreach (var item in imported)
+        {
+            var row = Assert.Single(after.Products, row => row.Id == item.ProductId);
+            Assert.Equal(item.Code, row.Code);
+            Assert.Equal(item.Name, row.Name);
+            Assert.Equal(item.GroupId, row.GroupId);
+            Assert.Equal(1, row.Version);
+            Assert.Equal((int)ProductLifecycle.Draft, row.Lifecycle);
+            Assert.Equal(row.CreatedAtUtc, row.UpdatedAtUtc);
+            Assert.DoesNotContain(before.Products, old => old.Id == row.Id);
+            Assert.DoesNotContain(before.Registrations, old => old.Code == item.LegacyCode);
+            Assert.Equal(item.ProductId,
+                Assert.Single(after.Registrations, registration => registration.Code == item.Code && registration.IsCurrent).ProductId);
+            Assert.Equal(item.ProductId,
+                Assert.Single(after.Registrations, registration => registration.Code == item.LegacyCode && !registration.IsCurrent).ProductId);
+            var (prefix, sequence) = SplitCode(item.Code);
+            Assert.Equal(Assert.Single(after.Groups, group => group.Id == item.GroupId).Prefix, prefix);
+            sequences[prefix] = Math.Max(sequences.GetValueOrDefault(prefix), sequence);
+        }
+
+        Assert.Equal(before.Counters.Where(row => !sequences.ContainsKey(row.Prefix)).ToArray(),
+            after.Counters.Where(row => !sequences.ContainsKey(row.Prefix)).ToArray());
+        foreach (var (prefix, maximum) in sequences)
+            Assert.Equal(maximum, Assert.Single(after.Counters, row => row.Prefix == prefix).LastSequence);
+        UniqueCurrentCodes(after);
+    }
+
     public static void Edited(ProductSqlSnapshot before, ProductSqlSnapshot after, ProductMutationResponse response)
     {
         Assert.False(response.IsReplay);

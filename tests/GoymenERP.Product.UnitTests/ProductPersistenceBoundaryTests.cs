@@ -72,6 +72,17 @@ public sealed class ProductPersistenceBoundaryTests
         Assert.Throws(errorType, () => record.RestoreReferences());
     }
 
+    [Fact]
+    public void Legacy_code_registration_preserves_storage_compatible_identity_and_rejects_lossy_unicode()
+    {
+        var row = ProductRow.FromRecord(ProductStoredRecord.Capture(Draft(), new()));
+
+        var registration = ProductCodeRegistration.Legacy(row, " OLD-É-€ ");
+
+        Assert.Equal("OLD-É-€", registration.Code);
+        Assert.Throws<ArgumentException>(() => ProductCodeRegistration.Legacy(row, "OLD-旧"));
+    }
+
     private static ProductEntity Draft() => ProductEntity.CreateDraft(Guid.NewGuid(), ProductCode.FromSequence("TEST", 1),
         "Sac", Guid.NewGuid(), null, null,
         new(ProductRoleState.NotEvaluated, ProductRoleState.Manual(false), ProductRoleState.Manual(true),

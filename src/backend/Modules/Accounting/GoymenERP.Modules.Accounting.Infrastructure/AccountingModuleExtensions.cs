@@ -57,8 +57,10 @@ public static class AccountingModuleExtensions
         services.AddScoped<IAccountingJournalReversalProposalStoreV1>(serviceProvider =>
             serviceProvider.GetRequiredService<AccountingStore>());
         services.TryAddSingleton<NormalJournalPermissionBindingV1>();
+        services.TryAddSingleton<IApprovedNormalJournalSourceBindingCatalogV1,
+            ApprovedNormalJournalSourceBindingCatalogV1>();
         services.TryAddScoped<INormalJournalDraftServerSourceProviderV1,
-            UnavailableNormalJournalDraftServerSourceProviderV1>();
+            FinanceManualReceiptNormalJournalSourceProviderV1>();
         services.AddScoped<NormalJournalDraftApprovalPolicyV1>();
         services.AddScoped<NormalJournalDraftServiceV1>();
         services.AddScoped<INormalJournalDraftLifecycleV1>(serviceProvider =>

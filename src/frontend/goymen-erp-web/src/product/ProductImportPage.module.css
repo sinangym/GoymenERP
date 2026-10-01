@@ -1,0 +1,15 @@
+.page { display: flex; flex-direction: column; gap: 16px; }
+.header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; }
+.header h1, .header p, .panel h2 { margin: 0; }
+.header p { margin-top: 4px; color: #55607a; }
+.panel { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; padding: 14px; border: 1px solid #d5dbe6; border-radius: 6px; background: #fff; }
+.mapping { display: flex; gap: 12px; flex-wrap: wrap; }
+.panel label { display: flex; flex-direction: column; gap: 4px; color: #55607a; font-size: .88rem; }
+.panel input { padding: 7px 9px; border: 1px solid #d5dbe6; border-radius: 4px; font: inherit; color: #1a2233; }
+.panel button { padding: 7px 12px; border: 1px solid #0b6fe8; border-radius: 4px; background: #0b6fe8; color: #fff; font: inherit; cursor: pointer; }
+.panel button:disabled { opacity: .55; cursor: default; }
+.panelHeading { width: 100%; display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.panel table { width: 100%; border-collapse: collapse; font-size: .88rem; }
+.panel th, .panel td { padding: 7px 9px; text-align: left; border-bottom: 1px solid #eef1f6; vertical-align: top; }
+.panel th { color: #55607a; background: #f7f9fc; }
+.panel ul { margin: 0; padding-left: 20px; }

@@ -78,7 +78,7 @@ export interface ProductOrigin {
   readonly companyId: string
 }
 
-function originHeaders(origin: ProductOrigin): Record<string, string> {
+export function originHeaders(origin: ProductOrigin): Record<string, string> {
   return { ...devHeaders(), 'X-Company-Id': origin.companyId }
 }
 

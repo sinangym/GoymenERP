@@ -58,6 +58,15 @@ public static class ProductRuntimeExtensions
         services.AddScoped<IProductAuditHistorySourceV1, ProductAuditHistorySource>();
         services.AddScoped<ProductHistoryReader>();
         services.AddScoped<ProductCommandGateway>();
+        services.AddScoped<ProductImportCommandGateway>();
+        services.AddSingleton<IProductImportWorkbookReaderV1, ProductImportWorkbookReader>();
+        services.AddScoped<IProductImportCatalogReader, ProductImportCatalogReader>();
+        services.AddScoped<ProductImportPreviewService>();
+        services.AddScoped<IProductImportPreviewServiceV1>(provider =>
+            provider.GetRequiredService<ProductRuntimeOptions>().IsEnabled
+                ? provider.GetRequiredService<ProductImportPreviewService>()
+                : new UnconfiguredProductImportService());
+        services.AddScoped<ProductImportService>();
         services.AddScoped<ProductReadStore>();
         services.AddSingleton<ProductCursorCodec>(provider =>
         {
@@ -70,9 +79,12 @@ public static class ProductRuntimeExtensions
         services.AddProductManufacturingTechnicalSnapshot(provider =>
             provider.GetRequiredService<ProductRuntimeOptions>().IsEnabled);
         services.AddScoped<IProductDraftCommandRunner, ProductSqlCommandRunner>();
+        services.AddScoped<IProductImportCommandRunner, ProductImportSqlCommandRunner>();
         services.TryAddSingleton<IProductCommandAttemptObserver, NullProductCommandAttemptObserver>();
         services.AddScoped<IProductService>(provider => provider.GetRequiredService<ProductRuntimeOptions>().IsEnabled
             ? provider.GetRequiredService<ProductService>() : new UnconfiguredProductService());
+        services.AddScoped<IProductImportServiceV1>(provider => provider.GetRequiredService<ProductRuntimeOptions>().IsEnabled
+            ? provider.GetRequiredService<ProductImportService>() : new UnconfiguredProductImportService());
         // Product's four screens in the shell, granted only from the global Product authority.
         services.AddSingleton<IShellCapabilityProvider, ProductShellCapabilityProvider>();
         // C3: the Product owner's operational-selection runtimes (sales and stock), composed as the
@@ -201,4 +213,16 @@ internal sealed class UnconfiguredProductService : IProductService
     public Task<ProductMutationResponse> ActivateAsync(Guid id, ActivateProductRequest request, string idempotencyKey, CancellationToken cancellationToken) => throw Denied();
     public Task<ProductMutationResponse> DeactivateAsync(Guid id, ChangeProductLifecycleRequest request, string idempotencyKey, CancellationToken cancellationToken) => throw Denied();
     public Task<ProductMutationResponse> ReactivateAsync(Guid id, ChangeProductLifecycleRequest request, string idempotencyKey, CancellationToken cancellationToken) => throw Denied();
+}
+
+internal sealed class UnconfiguredProductImportService : IProductImportServiceV1
+{
+    private static UnauthorizedAccessException Denied() =>
+        new("Explicit global Product import authority is unconfigured.");
+
+    public Task<ProductImportPreviewV1> PreviewAsync(ReadOnlyMemory<byte> workbook,
+        ProductImportColumnMappingV1 mapping, CancellationToken cancellationToken) => throw Denied();
+
+    public Task<ProductImportResultV1> ApplyAsync(ReadOnlyMemory<byte> workbook,
+        ProductImportApplyBindingV1 binding, string idempotencyKey, CancellationToken cancellationToken) => throw Denied();
 }

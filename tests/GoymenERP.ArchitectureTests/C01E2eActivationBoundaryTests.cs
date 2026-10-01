@@ -106,6 +106,13 @@ public sealed class C01E2eActivationBoundaryTests
                 + "ProductStockCandidateFixtureStore.cs",
             ],
             BackendFilesContaining("AddProductStockCandidateFixtureStore"));
+        Assert.Equal(
+            [
+                "src/backend/GoymenERP.Api/Shell/C01E2eFixtureWriterActivation.cs",
+                "src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/Fixtures/"
+                + "ProductPurchaseSalesStockJourneyFixtureStore.cs",
+            ],
+            BackendFilesContaining("AddProductPurchaseSalesStockJourneyFixtureStore"));
         // s04: Sales's draft port, the same shape. SalesDbContext has no second save path: the store saves
         // through the context's public SaveChangesAsync under its own write guards.
         Assert.Equal(
@@ -214,6 +221,25 @@ public sealed class C01E2eActivationBoundaryTests
             ["src/backend/GoymenERP.Api/Shell/C01E2eFixtureWriterActivation.cs"],
             BackendFilesContaining("AddProductStockCandidateFixtureStore(")
                 .Where(path => !path.EndsWith("ProductStockCandidateFixtureStore.cs", StringComparison.Ordinal))
+                .ToArray());
+    }
+
+    [Fact]
+    public void ProductPurchaseSalesStockJourneyFixtureSave_HasOneCallerBehindTheGatedActivation()
+    {
+        Assert.Equal(
+            [
+                "src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/Fixtures/"
+                + "ProductPurchaseSalesStockJourneyFixtureStore.cs",
+                "src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/Persistence/"
+                + "ProductDbContext.cs",
+            ],
+            BackendFilesContaining("AddPurchaseSalesStockJourneyFixtureAsync"));
+        Assert.Equal(
+            ["src/backend/GoymenERP.Api/Shell/C01E2eFixtureWriterActivation.cs"],
+            BackendFilesContaining("AddProductPurchaseSalesStockJourneyFixtureStore(")
+                .Where(path => !path.EndsWith(
+                    "ProductPurchaseSalesStockJourneyFixtureStore.cs", StringComparison.Ordinal))
                 .ToArray());
     }
 

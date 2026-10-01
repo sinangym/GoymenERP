@@ -315,6 +315,7 @@ class WorkflowTests(unittest.TestCase):
                 "logistics.operations-work.sales.read",
                 "logistics.operations-work.purchase.read",
                 "purchasing.orders.read",
+                "purchasing.goods-receipts.record",
                 "purchasing.orders.approve",
             ),
             validator.SUITE_IDENTITY_PERMISSIONS["l04"],
