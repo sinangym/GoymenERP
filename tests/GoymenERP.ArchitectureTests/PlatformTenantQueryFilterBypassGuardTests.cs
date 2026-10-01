@@ -186,7 +186,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // ST-02 scrap write-off: +5 stock-scrap SQL facts (1ca5b9e1… -> bd676b05…).
             // R20 transfer lifecycle: +3 transfer SQL facts (bd676b05… -> c74360d3…).
             ["tools/relational_inventory/inventory.txt"] =
-                "c74360d37bf5d49d587914828189f8849975accfc1a74bee734395fd284b65ba",
+                "c444f707f41906d33d3a3d3f4dd60062c84d817b195a8decf12edab37d1fccc4",
 
             // logistics
             // AT-053: +4 weighbridge SQL facts (81c1ff0b… -> 264898d7…).
@@ -334,7 +334,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // company-keyed, while movement kinds 8/9 remain inside Inventory's reviewed write guards.
             ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/"
              + "Persistence/InventoryDbContext.cs"] =
-                "d83dd8fa37516148c7c25ec6ec32a8d0641aa067c1b120b3cfd13d57e62544af",
+                "0110da12e20416827ef1e477539a884e01b6bb36398a11ed1fcc563e02bfa0b6",
             ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/"
              + "Persistence/ProductDbContext.cs"] =
                 "0ba53cfdf07084818f737c9f21b2ce4a04a44f5fe89603a89f31791c5b4871da",
@@ -539,7 +539,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // context-construction or direct-database exemption.
                 [ReviewedInventoryDefiniteShipmentParticipantPath] =
                     new(
-                        "f5869bb2657be3f7e33750d8154695a9ac5ec81fcae1b5f0fef7757d97b48e7e",
+                        "9aec0b823987c573ffd9d94e55192d5c80d49e29ef6ac713c02e07583ee00df7",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["System.Data.Common"] = 1,
@@ -579,7 +579,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // catch filter, as the other module stores do. No connection, command or raw SQL.
                 ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/InventoryOpeningCommandService.cs"] =
                     new(
-                        "3c4f8e7cac8ed19b0416e3ae4d9e945e14aec07eeae53960806bdbcdccfd3e50",
+                        "82bd0cb0160a13dd34a97319da4336762fdbc8f24dee650e5389fbce980e70a2",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -591,7 +591,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Inventory/"
                  + "GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventoryStore.cs"] =
                     new(
-                        "12716da734992fa1e4a9396c3d85a4c9bbeae21e7cebd086388c4e4de1fb415e",
+                        "be46c2b86b6d0636f1d2d27dbbe9b8ce17b3e721e9f622724f8cf66133946979",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -599,7 +599,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Inventory/"
                  + "GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventoryStore.Allocations.cs"] =
                     new(
-                        "4eb75d0a7ba908d92a4582bc1676b7c0236bf14735a934aa733bfe519bdcd34a",
+                        "6ea71ce123d8c94d27aacd26f8e18385391d2a055bb5be230a6ff164510f958f",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -610,7 +610,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Inventory/"
                  + "GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventoryStore.AllocationChanges.cs"] =
                     new(
-                        "3c12e295b72be8cb095c086f96a560639996e83e27d54aaaafb6ae189b29f218",
+                        "7df810e1999bdf2c3e32e4a4e49750de396b2cc03a5079b82ab1f2db18b2a5d2",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -830,7 +830,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // pinned; changes require a fresh source review rather than broadening this allowlist.
                 [ReviewedInventoryGoodsReceiptParticipantPath] =
                     new(
-                        "ba39f52d1b9b210f2eba12520e439be1ccdf0933b20e406104a534c50a26be6d",
+                        "acf2f2e6f6c34e6a585c255c4ca89c69ee8098a465ee2ea5a55d18ea904bde0a",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["System.Data.Common"] = 1,
@@ -858,7 +858,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     new(
                         // Re-measured at the #479 forward onto main e1ffefe8: #479's customer-owned issue context
                         // (17e9470a…) and #489's Sales-reservation deduction (a3d8f262…) combined; neither parent's value.
-                        "3f82b2eccdd7153921235a3c43937135e78f8c0c14ebe517ba831dd82bf080ed",
+                        "cc4dd486312f168917484c0e36379dc754a915516ac4acd611eb12fbda6165d2",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["System.Data.Common"] = 1,
@@ -1051,6 +1051,16 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "20260930182024_AddInventoryTransfers.cs"] =
                     new(
                         "347436e9b814863c397b9a7c201718726424ed5af7cf23cdc6dd7fc0badf55e8",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 1
+                        }),
+                // ProductVersion provenance is durable; Down refuses while any label stores it.
+                ["src/backend/Modules/Inventory/"
+                 + "GoymenERP.Modules.Inventory.Infrastructure/Persistence/Migrations/"
+                 + "20261001160000_AddInventoryLabelProductVersion.cs"] =
+                    new(
+                        "9d3f1dd752d292a6013ebc6844ad66f0b630cbdaed9b284fa681f79f9ebee2a1",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Sql"] = 1

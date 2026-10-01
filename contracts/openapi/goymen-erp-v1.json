@@ -58318,6 +58318,7 @@
           "labelVersion",
           "labelCode",
           "productId",
+          "productVersion",
           "lot",
           "heatNumber",
           "coilNumber",
@@ -58351,6 +58352,9 @@
           "productId": {
             "type": "string",
             "format": "uuid"
+          },
+          "productVersion": {
+            "type": "string"
           },
           "lot": {
             "$ref": "#/components/schemas/InventoryLotV1"
