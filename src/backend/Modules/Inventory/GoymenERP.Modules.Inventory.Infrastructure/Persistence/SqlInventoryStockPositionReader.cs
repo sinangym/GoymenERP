@@ -97,6 +97,7 @@ internal sealed class SqlInventoryStockPositionReader(InventoryDbContext db) : I
             row.Code,
             row.ProductId,
             row.LotId,
+            row.ProductVersion,
             JsonSerializer.Deserialize<string[]>(row.RequiredDocumentsJson)
                 ?? throw new InventoryStockPositionException(503, InventoryStockPositionCodesV1.Unavailable),
             row.HeatNumber,

@@ -98,6 +98,7 @@ internal sealed class InventoryParentRollService(ICompanyContext company, ICurre
         var label = record.Label;
         if (label.CompanyId != companyId || record.Lot.CompanyId != companyId || record.Version <= 0
             || record.Lot.Id != label.LotId || record.Lot.ProductId != label.ProductId
+            || label.ProductVersion is null
             || record.Balances.Any(b => b.Position.CompanyId != companyId || b.Position.LabelId != label.Id
                 || b.Position.ProductId != label.ProductId)) throw Error(503, InventoryParentRollCodesV1.Unavailable);
         // Reuse INV-1's existing stored-state invariant; never silently reinterpret a corrupt label
@@ -119,7 +120,10 @@ internal sealed class InventoryParentRollService(ICompanyContext company, ICurre
             label.ProductId, new(record.Lot.Id, record.Lot.HeatNumber, record.Lot.CoilNumber), label.HeatNumber,
             label.CoilNumber, label.DocumentStatus.ToString(), [.. label.RequiredDocuments.Order(StringComparer.Ordinal)],
             [.. label.AttachedDocuments.Order(StringComparer.Ordinal)], balances.PhysicalKg, balances.FreeKg,
-            balances.BlockedKg, balances.Positions, refusal is null, refusal, ProductionUseRequiresRevalidation: true);
+            balances.BlockedKg, balances.Positions, refusal is null, refusal, ProductionUseRequiresRevalidation: true)
+        {
+            ProductVersion = label.ProductVersion,
+        };
     }
 
     private static bool Matches(InventoryPositionV1 position, InventoryParentRollPositionContextV1 context) =>

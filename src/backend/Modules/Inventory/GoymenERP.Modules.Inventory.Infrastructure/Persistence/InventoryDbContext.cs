@@ -174,6 +174,8 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
             table.HasCheckConstraint("CK_Labels_Identity",
                 "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' "
                 + "AND [ProductId] <> '00000000-0000-0000-0000-000000000000' AND [LotId] <> '00000000-0000-0000-0000-000000000000'");
+            table.HasCheckConstraint("CK_Labels_ProductVersion",
+                "[ProductVersion] IS NULL OR LEN([ProductVersion]) > 0");
             table.HasCheckConstraint("CK_Labels_Code", "LEN([Code]) > 0");
             table.HasCheckConstraint("CK_Labels_RequiredDocumentsJson", "ISJSON([RequiredDocumentsJson]) = 1");
             table.HasCheckConstraint("CK_Labels_Version", "[Version] >= 1");
@@ -185,6 +187,7 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
         entity.Property(x => x.HeatNumber).HasMaxLength(64);
         entity.Property(x => x.CoilNumber).HasMaxLength(64);
         entity.Property(x => x.RequiredDocumentsJson).HasColumnType("nvarchar(max)").IsRequired();
+        entity.Property(x => x.ProductVersion).HasMaxLength(MaterialLabel.MaximumProductVersionLength);
         entity.Property(x => x.Version).IsConcurrencyToken();
         entity.Property(x => x.RowVersion).IsRowVersion();
         entity.HasIndex(x => new { x.CompanyId, x.Code }).IsUnique();

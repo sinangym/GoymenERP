@@ -88,6 +88,8 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.OpeningCountLines"),
             await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.Movements WHERE SourceKind = N'inventory.opening-count'"),
             await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.Commands")));
+        Assert.Equal(2, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM inventory.Labels WHERE ProductVersion = N'1'"));
         Assert.Equal(2230.5m, await run.ScalarAsync<decimal>(
             "SELECT SUM(b.QuantityKg) FROM inventory.Balances b JOIN inventory.OpeningCountLines l ON l.CompanyId = b.CompanyId AND l.LabelId = b.LabelId"));
         // The lot of each piece, two labels, two receipts and the count: all under the first correlation only.
@@ -265,7 +267,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
 
         var lot = new MaterialLot(Guid.NewGuid(), CompanyA, Product);
         var countOfA = new OpeningCount(id, CompanyA, locationA, CountedOn, "SYN-SHEET-OF-A",
-            [new(Guid.NewGuid(), lot, new MaterialLabel(Guid.NewGuid(), CompanyA, "SYN-SHARED-A", Product, lot.Id), Kilograms.Positive(3m))]);
+            [new(Guid.NewGuid(), lot, new MaterialLabel(Guid.NewGuid(), CompanyA, "SYN-SHARED-A", Product, lot.Id, "1"), Kilograms.Positive(3m))]);
         await using (var a = run.Store(CompanyA))
         {
             var error = await Assert.ThrowsAsync<InventoryStoreException>(() => a.Opening.RecordAsync(countOfA, Metadata(run)));
@@ -296,7 +298,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         await using (var a = run.Store(CompanyA))
         {
             await a.Opening.RecordAsync(new OpeningCount(Guid.NewGuid(), CompanyA, location, CountedOn, "SYN-SHEET-ROLLBACK",
-                [new(Guid.NewGuid(), lot, new MaterialLabel(Guid.NewGuid(), CompanyA, "SYN-ROLLBACK", Product, lot.Id), Kilograms.Positive(4m))]),
+                [new(Guid.NewGuid(), lot, new MaterialLabel(Guid.NewGuid(), CompanyA, "SYN-ROLLBACK", Product, lot.Id, "1"), Kilograms.Positive(4m))]),
                 Metadata(run));
         }
 

@@ -35,6 +35,7 @@ internal sealed class LabelRow : IInventoryTenantRow
     public Guid CompanyId { get; set; }
     public string Code { get; set; } = string.Empty;
     public Guid ProductId { get; set; }
+    public string? ProductVersion { get; set; }
     public Guid LotId { get; set; }
     public string? HeatNumber { get; set; }
     public string? CoilNumber { get; set; }

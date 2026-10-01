@@ -41,8 +41,20 @@ public sealed class MaterialLabel
 
     /// <summary>The longest label code this module stores.</summary>
     public const int MaximumCodeLength = 64;
+    public const int MaximumProductVersionLength = 128;
 
+    /// <summary>
+    /// Rehydrates a historical identity whose Product version was not persisted. Inventory refuses this unknown
+    /// provenance when registering a new label or publishing a technical parent-roll reference.
+    /// </summary>
     public MaterialLabel(Guid id, Guid companyId, string code, Guid productId, Guid lotId,
+        IEnumerable<string>? requiredDocuments = null, string? heatNumber = null, string? coilNumber = null)
+        : this(id, companyId, code, productId, lotId, productVersion: null,
+            requiredDocuments, heatNumber, coilNumber)
+    {
+    }
+
+    public MaterialLabel(Guid id, Guid companyId, string code, Guid productId, Guid lotId, string? productVersion,
         IEnumerable<string>? requiredDocuments = null, string? heatNumber = null, string? coilNumber = null)
     {
         Id = RequireId(id, "Etiket");
@@ -50,6 +62,7 @@ public sealed class MaterialLabel
         Code = RequireCode(code);
         ProductId = RequireId(productId, "Ürün");
         LotId = RequireId(lotId, "Lot");
+        ProductVersion = productVersion is null ? null : RequireProductVersion(productVersion);
         this.requiredDocuments = new HashSet<string>(StringComparer.Ordinal);
         foreach (var document in requiredDocuments ?? [])
         {
@@ -78,6 +91,13 @@ public sealed class MaterialLabel
     public string Code { get; }
 
     public Guid ProductId { get; }
+
+    /// <summary>
+    /// The exact Product card version captured when this physical identity was created. Null exists only for
+    /// historical rows written before Inventory persisted this provenance; consumers requiring technical Product
+    /// facts must fail closed rather than replace it with the current Product version.
+    /// </summary>
+    public string? ProductVersion { get; }
 
     public Guid LotId { get; }
 
@@ -185,11 +205,20 @@ public sealed class MaterialLabel
     /// </summary>
     public static MaterialLabel Restore(Guid id, Guid companyId, string code, Guid productId, Guid lotId,
         IEnumerable<string> requiredDocuments, string? heatNumber, string? coilNumber,
+        IEnumerable<LabelPrint> prints, IEnumerable<LabelDocumentAttachment> attachments) =>
+        Restore(id, companyId, code, productId, lotId, productVersion: null, requiredDocuments,
+            heatNumber, coilNumber, prints, attachments);
+
+    /// <summary>Rebuilds a stored label including its immutable Product provenance when known.</summary>
+    public static MaterialLabel Restore(Guid id, Guid companyId, string code, Guid productId, Guid lotId,
+        string? productVersion,
+        IEnumerable<string> requiredDocuments, string? heatNumber, string? coilNumber,
         IEnumerable<LabelPrint> prints, IEnumerable<LabelDocumentAttachment> attachments)
     {
         ArgumentNullException.ThrowIfNull(prints);
         ArgumentNullException.ThrowIfNull(attachments);
-        var label = new MaterialLabel(id, companyId, code, productId, lotId, requiredDocuments, heatNumber, coilNumber);
+        var label = new MaterialLabel(id, companyId, code, productId, lotId, productVersion,
+            requiredDocuments, heatNumber, coilNumber);
         foreach (var print in prints)
         {
             ArgumentNullException.ThrowIfNull(print);
@@ -222,6 +251,17 @@ public sealed class MaterialLabel
         return code.Length <= MaximumCodeLength
             ? code
             : throw Invalid($"Etiket kodu en fazla {MaximumCodeLength} karakterdir.");
+    }
+
+    private static string RequireProductVersion(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value) || value.Length > MaximumProductVersionLength
+            || !string.Equals(value, value.Trim(), StringComparison.Ordinal) || value.Any(char.IsControl))
+        {
+            throw Invalid("Ürün sürümü boş olamaz, değiştirilmez ve kayıt alanına sığmalıdır.");
+        }
+
+        return value;
     }
 
     private static string RequireToken(string? value) =>

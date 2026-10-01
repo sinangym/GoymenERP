@@ -9,6 +9,35 @@ namespace GoymenERP.Inventory.UnitTests;
 public sealed class MaterialLabelTests
 {
     [Fact]
+    public void A_new_label_keeps_the_exact_opaque_product_version()
+    {
+        var label = new MaterialLabel(Label1, CompanyA, CodeOf(Label1), BandProduct, Lot1, "product-v7");
+
+        Assert.Equal("product-v7", label.ProductVersion);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData(" 1")]
+    [InlineData("1 ")]
+    [InlineData("line\nbreak")]
+    public void A_supplied_product_version_must_be_a_bounded_unchanged_token(string version)
+    {
+        var error = Assert.Throws<InventoryRuleException>(() =>
+            new MaterialLabel(Label1, CompanyA, CodeOf(Label1), BandProduct, Lot1, version));
+
+        Assert.Equal(InventoryRuleCodes.InvalidLabelOperation, error.Code);
+    }
+
+    [Fact]
+    public void An_oversized_product_version_is_refused_instead_of_truncated()
+    {
+        var version = new string('v', MaterialLabel.MaximumProductVersionLength + 1);
+        Assert.Equal(InventoryRuleCodes.InvalidLabelOperation, Assert.Throws<InventoryRuleException>(() =>
+            new MaterialLabel(Label1, CompanyA, CodeOf(Label1), BandProduct, Lot1, version)).Code);
+    }
+
+    [Fact]
     public void A_reprint_is_the_same_physical_identity_with_an_audited_print()
     {
         var label = new MaterialLabel(Label1, CompanyA, CodeOf(Label1), BandProduct, Lot1);
@@ -171,6 +200,7 @@ public sealed class MaterialLabelTests
         Assert.Equal(original.DocumentAttachments, restored.DocumentAttachments);
         Assert.Equal(LabelDocumentStatus.Complete, restored.DocumentStatus);
         Assert.Equal(("SYN-HEAT-1", (string?)null), (restored.HeatNumber, restored.CoilNumber));
+        Assert.Null(restored.ProductVersion);
     }
 
     [Theory]

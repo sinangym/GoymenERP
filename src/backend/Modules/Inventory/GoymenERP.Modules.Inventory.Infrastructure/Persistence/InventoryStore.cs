@@ -186,6 +186,7 @@ public sealed partial class InventoryStore(
                 CompanyId = label.CompanyId,
                 Code = label.Code,
                 ProductId = label.ProductId,
+                ProductVersion = label.ProductVersion,
                 LotId = label.LotId,
                 HeatNumber = label.HeatNumber,
                 CoilNumber = label.CoilNumber,
@@ -518,6 +519,7 @@ public sealed partial class InventoryStore(
                 CompanyId = label.CompanyId,
                 Code = label.Code,
                 ProductId = label.ProductId,
+                ProductVersion = label.ProductVersion,
                 LotId = label.LotId,
                 HeatNumber = label.HeatNumber,
                 CoilNumber = label.CoilNumber,
@@ -807,7 +809,7 @@ public sealed partial class InventoryStore(
         var documents = await dbContext.LabelDocuments.AsNoTracking().Where(row => ids.Contains(row.LabelId))
             .ToListAsync(cancellationToken);
         return rows.ToDictionary(row => row.Id, row => MaterialLabel.Restore(row.Id, row.CompanyId, row.Code, row.ProductId,
-            row.LotId, JsonSerializer.Deserialize<string[]>(row.RequiredDocumentsJson, Json)
+            row.LotId, row.ProductVersion, JsonSerializer.Deserialize<string[]>(row.RequiredDocumentsJson, Json)
                 ?? throw new InvalidOperationException("Kayıtlı etiketin belge gereksinimi okunamadı."),
             row.HeatNumber, row.CoilNumber,
             prints.Where(print => print.LabelId == row.Id).OrderBy(print => print.Sequence).Select(ToPrint),
@@ -915,6 +917,12 @@ public sealed partial class InventoryStore(
 
     private static void RequireLabelFits(MaterialLabel label)
     {
+        if (label.ProductVersion is null)
+        {
+            throw Refused(InventoryStoreCodes.ValueDoesNotFit,
+                "Etiket yeni bir stok etkisine kaydedilirken ürün sürümü zorunludur.");
+        }
+
         var tooLong = (label.HeatNumber?.Length ?? 0) > 64 || (label.CoilNumber?.Length ?? 0) > 64
             || label.RequiredDocuments.Any(kind => kind.Length > DocumentKindMaximumLength)
             || label.Prints.Any(print => print.PrintedBy.Length > ActorMaximumLength || (print.Reason?.Length ?? 0) > ReasonMaximumLength)
@@ -950,7 +958,9 @@ public sealed partial class InventoryStore(
     /// <summary>A replay repeats the stored facts exactly; the code's spelling included.</summary>
     private static bool SameIdentity(LabelRow row, MaterialLabel label) =>
         row.CompanyId == label.CompanyId && string.Equals(row.Code, label.Code, StringComparison.Ordinal)
-        && row.ProductId == label.ProductId && row.LotId == label.LotId
+        && row.ProductId == label.ProductId
+        && string.Equals(row.ProductVersion, label.ProductVersion, StringComparison.Ordinal)
+        && row.LotId == label.LotId
         && string.Equals(row.HeatNumber, label.HeatNumber, StringComparison.Ordinal)
         && string.Equals(row.CoilNumber, label.CoilNumber, StringComparison.Ordinal)
         && string.Equals(row.RequiredDocumentsJson,
@@ -968,7 +978,7 @@ public sealed partial class InventoryStore(
 
     /// <summary>The label facts a position needs (company, product, id); prints and documents do not matter there.</summary>
     private static MaterialLabel IdentityOnly(LabelRow row) =>
-        new MaterialLabel(row.Id, row.CompanyId, row.Code, row.ProductId, row.LotId);
+        new(row.Id, row.CompanyId, row.Code, row.ProductId, row.LotId, row.ProductVersion);
 
     private static StockPosition Position(Guid companyId, int ownerKind, Guid ownerId, int custodianKind, Guid custodianId,
         Guid locationId, MaterialLabel label, int block) =>
@@ -1049,6 +1059,7 @@ public sealed partial class InventoryStore(
                 {
                     id = line.Label.Id,
                     code = line.Label.Code,
+                    productVersion = line.Label.ProductVersion,
                     heat = line.Label.HeatNumber,
                     coil = line.Label.CoilNumber,
                     requiredDocuments = line.Label.RequiredDocuments.Order(StringComparer.Ordinal),
@@ -1083,6 +1094,7 @@ public sealed partial class InventoryStore(
         label.Id,
         label.Code,
         label.ProductId,
+        label.ProductVersion,
         label.LotId,
         requiredDocuments = label.RequiredDocuments.Order(StringComparer.Ordinal),
         documentStatus = label.DocumentStatus.ToString(),
