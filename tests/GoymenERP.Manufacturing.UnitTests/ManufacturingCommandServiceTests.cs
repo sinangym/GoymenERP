@@ -11,6 +11,7 @@ using GoymenERP.Modules.Manufacturing.Domain.Common;
 using GoymenERP.Modules.Manufacturing.Domain.Orders;
 using GoymenERP.Modules.Manufacturing.Domain.Plans;
 using GoymenERP.Modules.Organization.Application.Contracts;
+using GoymenERP.Modules.Product.Application.Contracts;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
 
 namespace GoymenERP.Manufacturing.UnitTests;
@@ -428,7 +429,7 @@ public sealed class ManufacturingCommandServiceTests
             Assert.Single(fixture.Store.Plans[result.Resource.PlanId].Inputs).ExpectedLabelVersion);
         Assert.Equal(new[] { DateOnly.FromDateTime(At.UtcDateTime), DateOnly.FromDateTime(At.UtcDateTime) }, fixture.Settings.Days);
         Assert.Equal(new InventoryParentRollSelectionV1(Roll, LabelVersion), Assert.Single(fixture.ParentRolls.Selections));
-        Assert.Equal(["authority", "work-center", "settings", "parent-roll", "authority"], fixture.Calls);
+        Assert.Equal(["authority", "work-center", "settings", "parent-roll", "product", "authority"], fixture.Calls);
     }
 
     [Theory]
@@ -651,6 +652,7 @@ public sealed class ManufacturingCommandServiceTests
             CancellationToken.None);
         Assert.Equal(ManufacturingApiStatus.Created, created.Status);
         Assert.Equal(1, fixture.ParentRolls.Asked);
+        Assert.Equal(1, fixture.ProductSnapshots.Asked);
         Assert.Single(fixture.WorkCenters.Requests);
 
         fixture.ParentRolls.Exception = new InventoryParentRollException(503, InventoryParentRollCodesV1.Unavailable);
@@ -658,6 +660,7 @@ public sealed class ManufacturingCommandServiceTests
             CancellationToken.None);
         Assert.Equal((ManufacturingApiStatus.Created, true), (replay.Status, replay.IsReplay));
         Assert.Equal(1, fixture.ParentRolls.Asked);
+        Assert.Equal(1, fixture.ProductSnapshots.Asked);
         Assert.Single(fixture.WorkCenters.Requests);
 
         var mismatch = await fixture.Service.SavePlanAsync(Plan("8", request.PlanId), "key-1",
@@ -665,6 +668,7 @@ public sealed class ManufacturingCommandServiceTests
         Assert.Equal((ManufacturingApiStatus.Conflict, ManufacturingApiCodes.IdempotencyConflict, false),
             (mismatch.Status, mismatch.Code, mismatch.IsReplay));
         Assert.Equal(1, fixture.ParentRolls.Asked);
+        Assert.Equal(1, fixture.ProductSnapshots.Asked);
         Assert.Single(fixture.WorkCenters.Requests);
     }
 
@@ -753,7 +757,7 @@ public sealed class ManufacturingCommandServiceTests
 
         Assert.Equal((ManufacturingApiStatus.Denied, ManufacturingApiCodes.AuthorityDenied),
             (result.Status, result.Code));
-        Assert.Equal(["authority", "work-center", "settings", "parent-roll", "authority"], fixture.Calls);
+        Assert.Equal(["authority", "work-center", "settings", "parent-roll", "product", "authority"], fixture.Calls);
         Assert.Single(fixture.ParentRolls.Selections);
         Assert.Empty(fixture.Store.Commands);
         Assert.Empty(fixture.Store.Writes);
@@ -1492,12 +1496,14 @@ public sealed class ManufacturingCommandServiceTests
             Authority = new AuthorityPort(Calls) { Scope = Scope(companyWide: true, "PRODUCTION_OPERATOR") };
             ParentRolls = new ParentRollPort(Calls);
             WorkCenters = new WorkCenterPort(Calls);
+            ProductSnapshots = new ProductSnapshotPort(Calls);
             InputIssues = new InputIssuePort(Store);
             ReturnOutputs = new ReturnOutputPort(Store);
             Correlation = correlation;
             Service = new ManufacturingCommandService(Store, Store, Store, new ManufacturingMassVerifier(Settings), Authority,
                 CompanyContext, User, correlation, new FixedTime(), ParentRolls, withWorkCenters ? WorkCenters : null,
-                InputIssues, ReturnOutputs, manufacturingTolerances: Settings);
+                InputIssues, ReturnOutputs, manufacturingTolerances: Settings,
+                productTechnicalSnapshots: ProductSnapshots);
         }
 
         public List<string> Calls { get; } = [];
@@ -1515,6 +1521,8 @@ public sealed class ManufacturingCommandServiceTests
         public ParentRollPort ParentRolls { get; }
 
         public WorkCenterPort WorkCenters { get; }
+
+        public ProductSnapshotPort ProductSnapshots { get; }
 
         public InputIssuePort InputIssues { get; }
 
@@ -1759,6 +1767,32 @@ public sealed class ManufacturingCommandServiceTests
             return Task.FromResult(Missing
                 ? null
                 : new OrganizationWorkCenterPlanningReferenceV1(ReturnedId, Kind));
+        }
+    }
+
+    private sealed class ProductSnapshotPort(List<string> calls) : IProductManufacturingTechnicalSnapshotV1
+    {
+        public int Asked { get; private set; }
+
+        public Task<ProductManufacturingTechnicalSnapshotResultV1> ReadAsync(
+            ProductManufacturingTechnicalSnapshotSelectionV1 selection, CancellationToken cancellationToken)
+        {
+            Asked++;
+            calls.Add("product");
+            return Task.FromResult(new ProductManufacturingTechnicalSnapshotResultV1(
+                new ProductManufacturingTechnicalSnapshotV1(
+                    selection.ProductId,
+                    selection.ExpectedProductVersion,
+                    new ProductManufacturingFamilyRevisionV1(Guid.Parse("f1000000-0000-0000-0000-000000000001"),
+                        "COIL", "family-r1"),
+                    new ProductManufacturingTemplateRevisionV1(Guid.Parse("f2000000-0000-0000-0000-000000000002"),
+                        "3", "COIL-SHEET", "template-r3"),
+                    2m,
+                    1500m,
+                    new ProductManufacturingKilogramUnitV1(Company, SettingsUnitIdentitiesV1.Kilogram, "kg",
+                        Guid.Parse("4a790fdc-2a6b-5126-835f-d3a13d28b71c"), "1"),
+                    selection.EffectiveOn),
+                []));
         }
     }
 

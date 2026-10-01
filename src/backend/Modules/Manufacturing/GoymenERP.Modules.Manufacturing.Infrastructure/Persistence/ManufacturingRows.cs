@@ -6,6 +6,28 @@ internal interface IManufacturingTenantRow
     Guid CompanyId { get; }
 }
 
+/// <summary>The nullable-on-legacy, all-or-none technical provenance shared by plan input rows.</summary>
+internal interface IPlanTechnicalSnapshotRow
+{
+    Guid? TechnicalProductId { get; set; }
+    string? TechnicalProductVersion { get; set; }
+    Guid? TechnicalFamilyId { get; set; }
+    string? TechnicalFamilyCode { get; set; }
+    string? TechnicalFamilySourceRevision { get; set; }
+    Guid? TechnicalTemplateId { get; set; }
+    string? TechnicalTemplateVersion { get; set; }
+    string? TechnicalTemplateCode { get; set; }
+    string? TechnicalTemplateSourceRevision { get; set; }
+    Guid? TechnicalKilogramUnitCompanyId { get; set; }
+    Guid? TechnicalKilogramUnitId { get; set; }
+    string? TechnicalKilogramUnitCode { get; set; }
+    Guid? TechnicalKilogramProfileId { get; set; }
+    string? TechnicalKilogramProfileVersion { get; set; }
+    DateOnly? TechnicalEffectiveOn { get; set; }
+    decimal? TechnicalThicknessMm { get; set; }
+    decimal? TechnicalWidthMm { get; set; }
+}
+
 /// <summary>
 /// A production plan. Its content (company, work center, process, target and inputs) never changes;
 /// only the approval and the version do. <see cref="PayloadHash"/> is the canonical content hash
@@ -36,7 +58,7 @@ internal sealed class PlanRow : IManufacturingTenantRow
 }
 
 /// <summary>One planned parent roll of a plan, in the plan's own order. Never changes.</summary>
-internal sealed class PlanInputRow : IManufacturingTenantRow
+internal sealed class PlanInputRow : IManufacturingTenantRow, IPlanTechnicalSnapshotRow
 {
     public Guid CompanyId { get; set; }
     public Guid PlanId { get; set; }
@@ -44,6 +66,23 @@ internal sealed class PlanInputRow : IManufacturingTenantRow
     public int Sequence { get; set; }
     public decimal PlannedKg { get; set; }
     public long? ExpectedLabelVersion { get; set; }
+    public Guid? TechnicalProductId { get; set; }
+    public string? TechnicalProductVersion { get; set; }
+    public Guid? TechnicalFamilyId { get; set; }
+    public string? TechnicalFamilyCode { get; set; }
+    public string? TechnicalFamilySourceRevision { get; set; }
+    public Guid? TechnicalTemplateId { get; set; }
+    public string? TechnicalTemplateVersion { get; set; }
+    public string? TechnicalTemplateCode { get; set; }
+    public string? TechnicalTemplateSourceRevision { get; set; }
+    public Guid? TechnicalKilogramUnitCompanyId { get; set; }
+    public Guid? TechnicalKilogramUnitId { get; set; }
+    public string? TechnicalKilogramUnitCode { get; set; }
+    public Guid? TechnicalKilogramProfileId { get; set; }
+    public string? TechnicalKilogramProfileVersion { get; set; }
+    public DateOnly? TechnicalEffectiveOn { get; set; }
+    public decimal? TechnicalThicknessMm { get; set; }
+    public decimal? TechnicalWidthMm { get; set; }
 }
 
 /// <summary>
@@ -83,7 +122,7 @@ internal sealed class PlanRevisionRow : IManufacturingTenantRow
 /// MFG-PLAN-EDIT: one planned parent roll of a recorded revision, in the revision's own order, with the Inventory
 /// label version accepted for it. The complete input set of the revision; append-only.
 /// </summary>
-internal sealed class PlanRevisionInputRow : IManufacturingTenantRow
+internal sealed class PlanRevisionInputRow : IManufacturingTenantRow, IPlanTechnicalSnapshotRow
 {
     public Guid CompanyId { get; set; }
     public Guid PlanId { get; set; }
@@ -92,6 +131,23 @@ internal sealed class PlanRevisionInputRow : IManufacturingTenantRow
     public int Sequence { get; set; }
     public decimal PlannedKg { get; set; }
     public long ExpectedLabelVersion { get; set; }
+    public Guid? TechnicalProductId { get; set; }
+    public string? TechnicalProductVersion { get; set; }
+    public Guid? TechnicalFamilyId { get; set; }
+    public string? TechnicalFamilyCode { get; set; }
+    public string? TechnicalFamilySourceRevision { get; set; }
+    public Guid? TechnicalTemplateId { get; set; }
+    public string? TechnicalTemplateVersion { get; set; }
+    public string? TechnicalTemplateCode { get; set; }
+    public string? TechnicalTemplateSourceRevision { get; set; }
+    public Guid? TechnicalKilogramUnitCompanyId { get; set; }
+    public Guid? TechnicalKilogramUnitId { get; set; }
+    public string? TechnicalKilogramUnitCode { get; set; }
+    public Guid? TechnicalKilogramProfileId { get; set; }
+    public string? TechnicalKilogramProfileVersion { get; set; }
+    public DateOnly? TechnicalEffectiveOn { get; set; }
+    public decimal? TechnicalThicknessMm { get; set; }
+    public decimal? TechnicalWidthMm { get; set; }
 }
 
 /// <summary>

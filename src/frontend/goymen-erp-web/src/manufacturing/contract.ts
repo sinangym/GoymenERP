@@ -11,6 +11,8 @@
  * figures beside another's.
  */
 
+import { decodePlanPreview, type PlanPreview } from './planPreviewContract'
+
 /** The five output classes of DEC-PRDCT-006, by their server names. */
 export const OUTPUT_CLASSES = [
   'GoodProduct',
@@ -84,10 +86,34 @@ export interface RemainingTarget {
 
 export type PlanStatus = 'Draft' | 'Approved'
 
+export interface CapturedPlanTechnicalSnapshot {
+  readonly productId: string
+  readonly productVersion: string
+  readonly family: { readonly familyId: string; readonly familyCode: string; readonly sourceRevision: string }
+  readonly template: {
+    readonly templateId: string
+    readonly templateVersion: string
+    readonly templateCode: string
+    readonly sourceRevision: string
+  }
+  readonly thicknessMm: string
+  readonly widthMm: string
+  readonly unitKg: {
+    readonly companyId: string
+    readonly unitId: string
+    readonly unitCode: string
+    readonly profileId: string
+    readonly profileVersion: string
+  }
+  readonly effectiveOn: string
+}
+
 /** One planned parent roll of a plan: the kilogram is the plan's figure, not a measured one. */
 export interface PlannedInput {
   readonly parentRollId: string
   readonly plannedKg: string
+  /** Null for a legacy stored plan; never filled from the current Product card by the client. */
+  readonly technicalSnapshot: CapturedPlanTechnicalSnapshot | null
 }
 
 /**
@@ -108,6 +134,8 @@ export interface ProductionPlanView {
   readonly target: { readonly basis: string; readonly kg: string } | null
   readonly approvedByUserId: string | null
   readonly approvedAtUtc: string | null
+  /** Null only when replaying a historical command JSON that predates the additive projection. */
+  readonly calculation: PlanPreview | null
 }
 
 export interface ProductionOrderView {
@@ -332,7 +360,60 @@ function decodePlannedInput(value: unknown): PlannedInput | null {
   if (!isObject(value)) return null
   const parentRollId = guid(value.parentRollId)
   const plannedKg = kg(value.plannedKg)
-  return parentRollId === null || plannedKg === null ? null : { parentRollId, plannedKg }
+  const technicalSnapshot = value.technicalSnapshot === undefined || value.technicalSnapshot === null
+    ? null
+    : decodeTechnicalSnapshot(value.technicalSnapshot)
+  return parentRollId === null || plannedKg === null || technicalSnapshot === undefined
+    ? null
+    : { parentRollId, plannedKg, technicalSnapshot }
+}
+
+function decodeTechnicalSnapshot(value: unknown): CapturedPlanTechnicalSnapshot | undefined {
+  if (!isObject(value) || !hasExactKeys(value, [
+    'productId', 'productVersion', 'family', 'template', 'thicknessMm', 'widthMm', 'unitKg', 'effectiveOn',
+  ])) return undefined
+  if (!isObject(value.family) || !hasExactKeys(value.family, ['familyId', 'familyCode', 'sourceRevision'])) return undefined
+  if (!isObject(value.template) || !hasExactKeys(value.template,
+    ['templateId', 'templateVersion', 'templateCode', 'sourceRevision'])) return undefined
+  if (!isObject(value.unitKg) || !hasExactKeys(value.unitKg,
+    ['companyId', 'unitId', 'unitCode', 'profileId', 'profileVersion'])) return undefined
+  const productId = nonNilGuid(value.productId)
+  const familyId = nonNilGuid(value.family.familyId)
+  const templateId = nonNilGuid(value.template.templateId)
+  const companyId = nonNilGuid(value.unitKg.companyId)
+  const unitId = nonNilGuid(value.unitKg.unitId)
+  const profileId = nonNilGuid(value.unitKg.profileId)
+  const thicknessMm = kg(value.thicknessMm)
+  const widthMm = kg(value.widthMm)
+  if (productId === null || familyId === null || templateId === null || companyId === null
+    || unitId === null || profileId === null || thicknessMm === null || thicknessMm === '0'
+    || widthMm === null || widthMm === '0' || !requiredText(value.productVersion)
+    || !requiredText(value.family.familyCode) || !requiredText(value.family.sourceRevision)
+    || !requiredText(value.template.templateVersion) || !requiredText(value.template.templateCode)
+    || !requiredText(value.template.sourceRevision) || !requiredText(value.unitKg.unitCode)
+    || !requiredText(value.unitKg.profileVersion)
+    || typeof value.effectiveOn !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value.effectiveOn)) return undefined
+  return {
+    productId,
+    productVersion: value.productVersion,
+    family: { familyId, familyCode: value.family.familyCode, sourceRevision: value.family.sourceRevision },
+    template: {
+      templateId,
+      templateVersion: value.template.templateVersion,
+      templateCode: value.template.templateCode,
+      sourceRevision: value.template.sourceRevision,
+    },
+    thicknessMm,
+    widthMm,
+    unitKg: {
+      companyId,
+      unitId,
+      unitCode: value.unitKg.unitCode,
+      profileId,
+      profileVersion: value.unitKg.profileVersion,
+    },
+    effectiveOn: value.effectiveOn,
+  }
 }
 
 /**
@@ -354,6 +435,9 @@ export function decodePlan(body: unknown): ProductionPlanView | null {
   const target = decodeTarget(body.target)
   const approvedByUserId = nullableGuid(body.approvedByUserId)
   const approvedAtUtc = nullableInstant(body.approvedAtUtc)
+  const calculation = body.calculation === undefined || body.calculation === null
+    ? null
+    : decodePlanPreview(body.calculation)
   if (
     planId === null ||
     companyId === null ||
@@ -362,6 +446,7 @@ export function decodePlan(body: unknown): ProductionPlanView | null {
     target === undefined ||
     approvedByUserId === undefined ||
     approvedAtUtc === undefined ||
+    (body.calculation !== undefined && body.calculation !== null && calculation === null) ||
     typeof body.process !== 'string' ||
     (body.status !== 'Draft' && body.status !== 'Approved') ||
     !Array.isArray(body.inputs)
@@ -380,6 +465,17 @@ export function decodePlan(body: unknown): ProductionPlanView | null {
     if (input === null) return null
     inputs.push(input)
   }
+  if (inputs.some((input) => input.technicalSnapshot !== null
+    && input.technicalSnapshot.unitKg.companyId.toLowerCase() !== companyId.toLowerCase())) return null
+  if (calculation !== null) {
+    if (calculation.workCenterId.toLowerCase() !== workCenterId.toLowerCase()
+      || calculation.process !== body.process || calculation.plannedRollCount !== inputs.length
+      || calculation.rolls.length !== inputs.length) return null
+    for (let index = 0; index < inputs.length; index += 1) {
+      if (calculation.rolls[index].parentRollId.toLowerCase() !== inputs[index].parentRollId.toLowerCase()
+        || calculation.rolls[index].plannedKg !== inputs[index].plannedKg) return null
+    }
+  }
   return {
     planId,
     companyId,
@@ -391,6 +487,7 @@ export function decodePlan(body: unknown): ProductionPlanView | null {
     target,
     approvedByUserId,
     approvedAtUtc,
+    calculation,
   }
 }
 

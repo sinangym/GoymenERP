@@ -80,6 +80,52 @@ export function plannedInput(parentRollId: string, plannedKg = '1000.125') {
   return { parentRollId, plannedKg }
 }
 
+/** A synthetic captured Product/Settings snapshot. It is component data, never real fixture evidence. */
+export function technicalSnapshot(overrides: Record<string, unknown> = {}) {
+  return {
+    productId: 'f0000000-0000-4000-8000-000000000001',
+    productVersion: '2',
+    family: { familyId: 'f0000000-0000-4000-8000-000000000002', familyCode: 'COIL', sourceRevision: 'family-r1' },
+    template: {
+      templateId: 'f0000000-0000-4000-8000-000000000003',
+      templateVersion: '3',
+      templateCode: 'COIL-SHEET',
+      sourceRevision: 'template-r3',
+    },
+    thicknessMm: '2',
+    widthMm: '1500',
+    unitKg: {
+      companyId: COMPANY_A,
+      unitId: 'f0000000-0000-4000-8000-000000000004',
+      unitCode: 'kg',
+      profileId: 'f0000000-0000-4000-8000-000000000005',
+      profileVersion: '1',
+    },
+    effectiveOn: '2026-09-30',
+    ...overrides,
+  }
+}
+
+/** A synthetic stored calculation projection aligned with the default plan fixture. */
+export function planCalculation(overrides: Record<string, unknown> = {}) {
+  return {
+    calculatorVersion: 'GDC-PLAN-CALC/1',
+    workCenterId: WORK_CENTER,
+    process: 'Slitting',
+    plannedRollCount: 2,
+    plannedInputKg: '1500.625',
+    target: null,
+    answers: [],
+    rolls: [
+      { parentRollId: ROLL_1, plannedKg: '1000.125', answers: [] },
+      { parentRollId: ROLL_2, plannedKg: '500.5', answers: [] },
+    ],
+    missingParameters: ['densityKgPerCubicMetre'],
+    hasRefusal: false,
+    ...overrides,
+  }
+}
+
 /** A synthetic `PlanViewV1`, in the server's JSON shape. */
 export function plan(overrides: Record<string, unknown> = {}) {
   return {

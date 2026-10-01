@@ -257,6 +257,46 @@ public sealed class StoredRecordTests
     }
 
     [Fact]
+    public void A_captured_technical_snapshot_is_versioned_plan_content_while_legacy_hash_bytes_stay_exact()
+    {
+        var planId = Guid.NewGuid();
+        var legacy = new ProductionPlan(planId, Company, WorkCenter, ManufacturingProcess.Slitting,
+            [new PlannedInput(RollA, Kg(10_000m), 7)]);
+        var captured = new ProductionPlan(planId, Company, WorkCenter, ManufacturingProcess.Slitting,
+            [new PlannedInput(RollA, Kg(10_000m), 7, Snapshot(2m, 1500m))]);
+        var changedWidth = new ProductionPlan(planId, Company, WorkCenter, ManufacturingProcess.Slitting,
+            [new PlannedInput(RollA, Kg(10_000m), 7, Snapshot(2m, 1499m))]);
+
+        const string legacyCanonical = "manufacturing.plan.v1|10000000-0000-0000-0000-000000000001|"
+            + "20000000-0000-0000-0000-00000000c001|1|-|30000000-0000-0000-0000-00000000a001:10000@7;";
+        var legacyExpected = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
+            System.Text.Encoding.UTF8.GetBytes(legacyCanonical))).ToLowerInvariant();
+
+        Assert.Equal(legacyExpected, ManufacturingStore.PlanHash(legacy));
+        Assert.NotEqual(legacyExpected, ManufacturingStore.PlanHash(captured));
+        Assert.NotEqual(ManufacturingStore.PlanHash(captured), ManufacturingStore.PlanHash(changedWidth));
+    }
+
+    private static PlanTechnicalParameterSnapshotV1 Snapshot(decimal thicknessMm, decimal widthMm) => new(
+        Guid.Parse("50000000-0000-0000-0000-000000000001"),
+        "2",
+        Guid.Parse("50000000-0000-0000-0000-000000000002"),
+        "COIL",
+        "family-r1",
+        Guid.Parse("50000000-0000-0000-0000-000000000003"),
+        "3",
+        "COIL-SHEET",
+        "template-r3",
+        Company,
+        Guid.Parse("50000000-0000-0000-0000-000000000004"),
+        "kg",
+        Guid.Parse("50000000-0000-0000-0000-000000000005"),
+        "1",
+        new DateOnly(2026, 9, 30),
+        thicknessMm,
+        widthMm);
+
+    [Fact]
     public void A_slitting_spec_is_plan_content_its_lines_order_counts_and_winding_target_all_count()
     {
         var id = Guid.NewGuid();

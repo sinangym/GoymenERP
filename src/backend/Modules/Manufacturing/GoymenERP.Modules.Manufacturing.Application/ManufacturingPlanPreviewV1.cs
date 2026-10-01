@@ -125,7 +125,8 @@ public sealed partial class ManufacturingCommandService
         }
 
         return new ManufacturingApiResult<PlanPreviewViewV1>(ManufacturingApiStatus.Ok,
-            PlanPreviewView(plan.WorkCenterId, ProductionPlanCalculatorV1.Calculate(plan, PlanCalculationParameters.Unknown)),
+            PlanPreviewView(plan.WorkCenterId, ProductionPlanCalculatorV1.Calculate(plan,
+                PlanCalculationParameters.FromCapturedSnapshots(plan.Inputs))),
             false, null);
     }
 

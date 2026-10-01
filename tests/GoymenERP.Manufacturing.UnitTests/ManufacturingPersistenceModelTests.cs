@@ -1,5 +1,6 @@
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Audit.Domain.Events;
+using GoymenERP.Modules.Manufacturing.Domain.Plans;
 using GoymenERP.Modules.Manufacturing.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -105,7 +106,36 @@ public sealed class ManufacturingPersistenceModelTests
             migration => migration.EndsWith("_AddManufacturingPlanRevisions", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(),
             migration => migration.EndsWith("_AddManufacturingOrderClosureDecision", StringComparison.Ordinal));
+        Assert.Contains(context.Database.GetMigrations(),
+            migration => migration.EndsWith("_AddManufacturingPlanTechnicalSnapshots", StringComparison.Ordinal));
         Assert.False(context.Database.HasPendingModelChanges());
+    }
+
+    [Fact]
+    public void Plan_creation_and_revision_inputs_store_the_same_nullable_all_or_none_technical_snapshot()
+    {
+        using var context = Context();
+        var model = context.GetService<IDesignTimeModel>().Model;
+
+        foreach (var (type, constraintName) in new[]
+        {
+            (typeof(PlanInputRow), "CK_PlanInputs_TechnicalSnapshot"),
+            (typeof(PlanRevisionInputRow), "CK_PlanRevisionInputs_TechnicalSnapshot"),
+        })
+        {
+            var entity = model.FindEntityType(type)!;
+            Assert.Equal(PlanTechnicalParameterSnapshotV1.MaximumProductVersionLength,
+                entity.FindProperty(nameof(PlanInputRow.TechnicalProductVersion))!.GetMaxLength());
+            Assert.Equal(PlanTechnicalParameterSnapshotV1.MaximumCodeLength,
+                entity.FindProperty(nameof(PlanInputRow.TechnicalFamilyCode))!.GetMaxLength());
+            Assert.Equal(18, entity.FindProperty(nameof(PlanInputRow.TechnicalThicknessMm))!.GetPrecision());
+            Assert.Equal(3, entity.FindProperty(nameof(PlanInputRow.TechnicalThicknessMm))!.GetScale());
+            Assert.True(entity.FindProperty(nameof(PlanInputRow.TechnicalProductId))!.IsNullable);
+            var sql = entity.GetCheckConstraints().Single(check => check.Name == constraintName).Sql;
+            Assert.Contains("[TechnicalKilogramUnitCompanyId] = [CompanyId]", sql, StringComparison.Ordinal);
+            Assert.Contains("[TechnicalThicknessMm] > 0", sql, StringComparison.Ordinal);
+            Assert.Contains("[TechnicalWidthMm] > 0", sql, StringComparison.Ordinal);
+        }
     }
 
     [Fact]

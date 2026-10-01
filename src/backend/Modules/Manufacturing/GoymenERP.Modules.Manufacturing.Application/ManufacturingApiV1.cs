@@ -13,6 +13,7 @@ using GoymenERP.Modules.Manufacturing.Domain.Engines.Balance;
 using GoymenERP.Modules.Manufacturing.Domain.Orders;
 using GoymenERP.Modules.Manufacturing.Domain.Plans;
 using GoymenERP.Modules.Organization.Application.Contracts;
+using GoymenERP.Modules.Product.Application.Contracts;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
 
 namespace GoymenERP.Modules.Manufacturing.Application;
@@ -71,13 +72,37 @@ public sealed record DeclareInventoryOutputRequestV1(
 public sealed record DeclareOutputRequestV1(
     Guid FactId, long ExpectedVersion, Guid ParentRollId, string? OutputClass, string? Kg, DateTimeOffset? OccurredAtUtc);
 
-public sealed record PlannedInputViewV1(Guid ParentRollId, string PlannedKg);
+public sealed record CapturedPlanFamilyRevisionViewV1(Guid FamilyId, string FamilyCode, string SourceRevision);
+
+public sealed record CapturedPlanTemplateRevisionViewV1(
+    Guid TemplateId, string TemplateVersion, string TemplateCode, string SourceRevision);
+
+public sealed record CapturedPlanKilogramUnitViewV1(
+    Guid CompanyId, Guid UnitId, string UnitCode, Guid ProfileId, string ProfileVersion);
+
+/// <summary>
+/// Product/Settings facts captured for this exact planned Inventory label. Null on legacy plans;
+/// legacy is unavailable and is never filled by reading the current Product card.
+/// </summary>
+public sealed record CapturedPlanTechnicalSnapshotViewV1(
+    Guid ProductId,
+    string ProductVersion,
+    CapturedPlanFamilyRevisionViewV1 Family,
+    CapturedPlanTemplateRevisionViewV1 Template,
+    string ThicknessMm,
+    string WidthMm,
+    CapturedPlanKilogramUnitViewV1 UnitKg,
+    DateOnly EffectiveOn);
+
+public sealed record PlannedInputViewV1(
+    Guid ParentRollId, string PlannedKg, CapturedPlanTechnicalSnapshotViewV1? TechnicalSnapshot = null);
 
 public sealed record TargetViewV1(string Basis, string Kg);
 
 public sealed record PlanViewV1(
     Guid PlanId, Guid CompanyId, Guid WorkCenterId, string Process, string Status, long Version,
-    IReadOnlyList<PlannedInputViewV1> Inputs, TargetViewV1? Target, Guid? ApprovedByUserId, DateTimeOffset? ApprovedAtUtc);
+    IReadOnlyList<PlannedInputViewV1> Inputs, TargetViewV1? Target, Guid? ApprovedByUserId, DateTimeOffset? ApprovedAtUtc,
+    PlanPreviewViewV1? Calculation = null);
 
 /// <summary>
 /// MFG-PLAN-EDIT: one planned parent roll of a history entry, with the Inventory label version accepted for it
@@ -266,7 +291,8 @@ public sealed partial class ManufacturingCommandService(
     IManufacturingInventoryReturnOutputPortV1? inventoryReturnsAndOutputs = null,
     IManufacturingPlanListStore? planList = null,
     IManufacturingPlanRevisionStore? planRevisions = null,
-    ISettingsManufacturingToleranceProviderV1? manufacturingTolerances = null)
+    ISettingsManufacturingToleranceProviderV1? manufacturingTolerances = null,
+    IProductManufacturingTechnicalSnapshotV1? productTechnicalSnapshots = null)
 {
     /// <summary>Any integer mantissa of this many digits fits a decimal's 96 bits, so such a text converts exactly.</summary>
     private const int ExactDecimalDigits = 28;
@@ -532,13 +558,15 @@ public sealed partial class ManufacturingCommandService(
     /// against the company's kilogram profile (at the server's date) and its exact label version against Inventory,
     /// then the target mass. The first refusal is the answer; nothing is written.
     /// </summary>
-    private async Task<(List<(Guid ParentRollId, Kilograms Mass, long ExpectedLabelVersion)> Inputs, Kilograms? TargetMass,
+    private async Task<(List<(Guid ParentRollId, Kilograms Mass, long ExpectedLabelVersion,
+            PlanTechnicalParameterSnapshotV1 TechnicalSnapshot)> Inputs, Kilograms? TargetMass,
         ManufacturingApiResult<object>? Refusal)> VerifyPlanContentAsync(
         List<(Guid ParentRollId, string ExpectedLabelVersion, decimal Kg)> inputs, decimal? targetKg,
         CancellationToken cancellationToken)
     {
         var today = DateOnly.FromDateTime(timeProvider.GetUtcNow().UtcDateTime);
-        var planned = new List<(Guid ParentRollId, Kilograms Mass, long ExpectedLabelVersion)>();
+        var planned = new List<(Guid ParentRollId, Kilograms Mass, long ExpectedLabelVersion,
+            PlanTechnicalParameterSnapshotV1 TechnicalSnapshot)>();
         for (var index = 0; index < inputs.Count; index++)
         {
             var input = inputs[index];
@@ -550,13 +578,20 @@ public sealed partial class ManufacturingCommandService(
 
             var reference = await ValidateParentRollAsync(input.ParentRollId, input.ExpectedLabelVersion,
                 $"inputs[{index}].expectedLabelVersion", cancellationToken);
-            if (reference is not null)
+            if (reference.Refusal is not null)
             {
-                return (planned, null, reference);
+                return (planned, null, reference.Refusal);
+            }
+
+            var technical = await ReadTechnicalSnapshotAsync(reference.Reference!, today,
+                $"inputs[{index}].parentRollId", cancellationToken);
+            if (technical.Refusal is not null)
+            {
+                return (planned, null, technical.Refusal);
             }
 
             planned.Add((input.ParentRollId, mass.Value, long.Parse(input.ExpectedLabelVersion,
-                NumberStyles.None, CultureInfo.InvariantCulture)));
+                NumberStyles.None, CultureInfo.InvariantCulture), technical.Snapshot!));
         }
 
         Kilograms? targetMass = null;
@@ -575,8 +610,10 @@ public sealed partial class ManufacturingCommandService(
     }
 
     private static IEnumerable<PlannedInput> PlannedInputs(
-        IEnumerable<(Guid ParentRollId, Kilograms Mass, long ExpectedLabelVersion)> verified) =>
-        verified.Select(input => new PlannedInput(input.ParentRollId, input.Mass, input.ExpectedLabelVersion));
+        IEnumerable<(Guid ParentRollId, Kilograms Mass, long ExpectedLabelVersion,
+            PlanTechnicalParameterSnapshotV1 TechnicalSnapshot)> verified) =>
+        verified.Select(input => new PlannedInput(input.ParentRollId, input.Mass, input.ExpectedLabelVersion,
+            input.TechnicalSnapshot));
 
     private static ProductionTarget? Target(TargetRequestV1? requested, Kilograms? mass) =>
         requested is not null && mass is { } value ? new ProductionTarget(ParseBasis(requested.Basis)!.Value, value) : null;
@@ -1618,13 +1655,14 @@ public sealed partial class ManufacturingCommandService(
     /// decides draft selectability; Manufacturing only closes the cross-module result into its existing
     /// status channel and verifies the successful answer still names this company and selection.
     /// </summary>
-    private async Task<ManufacturingApiResult<object>?> ValidateParentRollAsync(Guid labelId,
+    private async Task<(InventoryParentRollReferenceV1? Reference, ManufacturingApiResult<object>? Refusal)>
+        ValidateParentRollAsync(Guid labelId,
         string expectedLabelVersion, string expectedVersionField, CancellationToken cancellationToken)
     {
         if (parentRolls is null)
         {
-            return new ManufacturingApiResult<object>(ManufacturingApiStatus.Unavailable, null, false,
-                InventoryParentRollCodesV1.Unavailable);
+            return (null, new ManufacturingApiResult<object>(ManufacturingApiStatus.Unavailable, null, false,
+                InventoryParentRollCodesV1.Unavailable));
         }
 
         try
@@ -1634,12 +1672,14 @@ public sealed partial class ManufacturingCommandService(
             return reference.CompanyId == companyContext.CompanyId
                    && reference.LabelId == labelId
                    && string.Equals(reference.LabelVersion, expectedLabelVersion, StringComparison.Ordinal)
+                   && reference.ProductId != Guid.Empty
+                   && !string.IsNullOrWhiteSpace(reference.ProductVersion)
                    && reference.DraftSelectable
                    && reference.DraftRefusalCode is null
                    && reference.ProductionUseRequiresRevalidation
-                ? null
-                : new ManufacturingApiResult<object>(ManufacturingApiStatus.Unavailable, null, false,
-                    InventoryParentRollCodesV1.Unavailable);
+                ? (reference, null)
+                : (null, new ManufacturingApiResult<object>(ManufacturingApiStatus.Unavailable, null, false,
+                    InventoryParentRollCodesV1.Unavailable));
         }
         catch (OperationCanceledException)
         {
@@ -1647,7 +1687,7 @@ public sealed partial class ManufacturingCommandService(
         }
         catch (InventoryParentRollException exception)
         {
-            return exception switch
+            return (null, exception switch
             {
                 { StatusCode: 400, Code: InventoryParentRollCodesV1.InvalidVersion } =>
                     Invalid<object>(expectedVersionField),
@@ -1663,12 +1703,84 @@ public sealed partial class ManufacturingCommandService(
                     new ManufacturingApiResult<object>(ManufacturingApiStatus.Unavailable, null, false, exception.Code),
                 _ => new ManufacturingApiResult<object>(ManufacturingApiStatus.Unavailable, null, false,
                     InventoryParentRollCodesV1.Unavailable),
-            };
+            });
         }
         catch (Exception)
         {
-            return new ManufacturingApiResult<object>(ManufacturingApiStatus.Unavailable, null, false,
-                InventoryParentRollCodesV1.Unavailable);
+            return (null, new ManufacturingApiResult<object>(ManufacturingApiStatus.Unavailable, null, false,
+                InventoryParentRollCodesV1.Unavailable));
+        }
+    }
+
+    /// <summary>
+    /// Copies Product's positive answer for the exact Inventory-bound Product version. Product field
+    /// errors are the existing product-ineligible 422 on this parent-roll selection; denials disclose
+    /// no owner detail, and absent or malformed positive answers fail closed as unavailable.
+    /// </summary>
+    private async Task<(PlanTechnicalParameterSnapshotV1? Snapshot, ManufacturingApiResult<object>? Refusal)>
+        ReadTechnicalSnapshotAsync(InventoryParentRollReferenceV1 reference, DateOnly effectiveOn, string field,
+            CancellationToken cancellationToken)
+    {
+        if (productTechnicalSnapshots is null)
+        {
+            return (null, new ManufacturingApiResult<object>(ManufacturingApiStatus.Unavailable, null, false, null));
+        }
+
+        try
+        {
+            var answer = await productTechnicalSnapshots.ReadAsync(
+                new ProductManufacturingTechnicalSnapshotSelectionV1(
+                    reference.ProductId, reference.ProductVersion, effectiveOn), cancellationToken);
+            if (answer.Errors.Count > 0)
+            {
+                return (null, new ManufacturingApiResult<object>(ManufacturingApiStatus.Unprocessable, null, false,
+                    InventoryOpeningCodesV1.ProductIneligible, field));
+            }
+
+            if (answer.Snapshot is not { } snapshot
+                || snapshot.ProductId != reference.ProductId
+                || !string.Equals(snapshot.ProductVersion, reference.ProductVersion, StringComparison.Ordinal)
+                || snapshot.UnitKg.CompanyId != companyContext.CompanyId
+                || snapshot.EffectiveOn != effectiveOn)
+            {
+                return (null, new ManufacturingApiResult<object>(ManufacturingApiStatus.Unavailable, null, false, null));
+            }
+
+            return (new PlanTechnicalParameterSnapshotV1(
+                snapshot.ProductId,
+                snapshot.ProductVersion,
+                snapshot.Family.FamilyId,
+                snapshot.Family.FamilyCode,
+                snapshot.Family.SourceRevision,
+                snapshot.Template.TemplateId,
+                snapshot.Template.TemplateVersion,
+                snapshot.Template.TemplateCode,
+                snapshot.Template.SourceRevision,
+                snapshot.UnitKg.CompanyId,
+                snapshot.UnitKg.UnitId,
+                snapshot.UnitKg.UnitCode,
+                snapshot.UnitKg.ProfileId,
+                snapshot.UnitKg.ProfileVersion,
+                snapshot.EffectiveOn,
+                snapshot.ThicknessMm,
+                snapshot.WidthMm), null);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (ProductOperationException exception) when (exception.StatusCode is 401 or 403)
+        {
+            return (null, Denied<object>());
+        }
+        catch (SettingsPrerequisiteException exception)
+        {
+            return (null, new ManufacturingApiResult<object>(ManufacturingApiStatus.Unavailable, null, false,
+                exception.Code));
+        }
+        catch (Exception)
+        {
+            return (null, new ManufacturingApiResult<object>(ManufacturingApiStatus.Unavailable, null, false, null));
         }
     }
 
@@ -1794,9 +1906,24 @@ public sealed partial class ManufacturingCommandService(
 
     internal static PlanViewV1 PlanView(ProductionPlan plan) => new(
         plan.Id, plan.CompanyId, plan.WorkCenterId, plan.Process.ToString(), plan.Status.ToString(), plan.Version,
-        [.. plan.Inputs.Select(input => new PlannedInputViewV1(input.ParentRollId, Text(input.PlannedMass.Value)))],
+        [.. plan.Inputs.Select(input => new PlannedInputViewV1(input.ParentRollId, Text(input.PlannedMass.Value),
+            TechnicalSnapshotView(input.TechnicalSnapshot)))],
         plan.Target is { } target ? new TargetViewV1(target.Basis.ToString(), Text(target.Mass.Value)) : null,
-        plan.ApprovedByUserId, plan.ApprovedAtUtc);
+        plan.ApprovedByUserId, plan.ApprovedAtUtc,
+        PlanPreviewView(plan.WorkCenterId, ProductionPlanCalculatorV1.Calculate(plan,
+            PlanCalculationParameters.FromCapturedSnapshots(plan.Inputs))));
+
+    private static CapturedPlanTechnicalSnapshotViewV1? TechnicalSnapshotView(
+        PlanTechnicalParameterSnapshotV1? snapshot) => snapshot is null ? null : new(
+        snapshot.ProductId,
+        snapshot.ProductVersion,
+        new(snapshot.FamilyId, snapshot.FamilyCode, snapshot.FamilySourceRevision),
+        new(snapshot.TemplateId, snapshot.TemplateVersion, snapshot.TemplateCode, snapshot.TemplateSourceRevision),
+        Text(snapshot.ThicknessMm),
+        Text(snapshot.WidthMm),
+        new(snapshot.KilogramUnitCompanyId, snapshot.KilogramUnitId, snapshot.KilogramUnitCode,
+            snapshot.KilogramProfileId, snapshot.KilogramProfileVersion),
+        snapshot.EffectiveOn);
 
     /// <summary>MFG-PLAN-EDIT: one history entry as text, with the same lossless kilogram text as the plan read.</summary>
     internal static PlanRevisionViewV1 PlanRevisionView(ManufacturingPlanRevision revision) => new(

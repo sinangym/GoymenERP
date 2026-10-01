@@ -26,8 +26,10 @@ import {
   orderList,
   orderSummary,
   plan,
+  planCalculation,
   roll,
   rollBalance,
+  technicalSnapshot,
   unavailable,
 } from './testHarness'
 
@@ -343,6 +345,41 @@ describe('decodePlan', () => {
     expect(decoded?.inputs.map((input) => input.plannedKg)).toEqual(['1000.125', '500.5'])
     expect(decoded?.target).toEqual({ basis: 'GoodOutputMass', kg: '900' })
     expect(decoded?.approvedByUserId).toBeNull()
+  })
+
+  it('keeps the captured source and the matching backend calculation on a reopened plan', () => {
+    const body = plan({
+      inputs: [
+        { parentRollId: ROLL_1, plannedKg: '1000.125', technicalSnapshot: technicalSnapshot() },
+        { parentRollId: 'e0000000-0000-4000-8000-000000000002', plannedKg: '500.5', technicalSnapshot: null },
+      ],
+      calculation: planCalculation(),
+    })
+
+    const decoded = decodePlan(body)
+
+    expect(decoded?.inputs[0].technicalSnapshot).toMatchObject({
+      productVersion: '2', thicknessMm: '2', widthMm: '1500', effectiveOn: '2026-09-30',
+    })
+    expect(decoded?.inputs[1].technicalSnapshot).toBeNull()
+    expect(decoded?.calculation?.calculatorVersion).toBe('GDC-PLAN-CALC/1')
+  })
+
+  it('fails closed when snapshot company or calculation roll identity drifts from the plan', () => {
+    const foreignSnapshot = technicalSnapshot({
+      unitKg: { ...technicalSnapshot().unitKg, companyId: 'bbbbbbbb-0000-0000-0000-000000000002' },
+    })
+    expect(decodePlan(plan({
+      inputs: [{ parentRollId: ROLL_1, plannedKg: '1000.125', technicalSnapshot: foreignSnapshot }],
+    }))).toBeNull()
+    expect(decodePlan(plan({
+      calculation: planCalculation({
+        rolls: [
+          { parentRollId: 'e0000000-0000-4000-8000-000000000099', plannedKg: '1000.125', answers: [] },
+          { parentRollId: 'e0000000-0000-4000-8000-000000000002', plannedKg: '500.5', answers: [] },
+        ],
+      }),
+    }))).toBeNull()
   })
 
   it('reads an approved plan as approved, with both halves of the approval', () => {

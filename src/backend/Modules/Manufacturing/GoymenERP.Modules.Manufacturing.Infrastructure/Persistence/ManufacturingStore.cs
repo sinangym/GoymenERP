@@ -102,7 +102,7 @@ public sealed class ManufacturingStore(
         var sequence = 0;
         foreach (var input in plan.Inputs)
         {
-            dbContext.PlanInputs.Add(new PlanInputRow
+            var row = new PlanInputRow
             {
                 CompanyId = plan.CompanyId,
                 PlanId = plan.Id,
@@ -110,7 +110,9 @@ public sealed class ManufacturingStore(
                 Sequence = ++sequence,
                 PlannedKg = input.PlannedMass.Value,
                 ExpectedLabelVersion = input.ExpectedLabelVersion,
-            });
+            };
+            CaptureTechnicalSnapshot(row, input.TechnicalSnapshot);
+            dbContext.PlanInputs.Add(row);
         }
 
         // MFG-6: the slitting spec is plan content, stored in the same save.
@@ -352,7 +354,7 @@ public sealed class ManufacturingStore(
         var sequence = 0;
         foreach (var input in plan.Inputs)
         {
-            dbContext.PlanRevisionInputs.Add(new PlanRevisionInputRow
+            var inputRow = new PlanRevisionInputRow
             {
                 CompanyId = companyId,
                 PlanId = plan.Id,
@@ -361,7 +363,9 @@ public sealed class ManufacturingStore(
                 Sequence = ++sequence,
                 PlannedKg = input.PlannedMass.Value,
                 ExpectedLabelVersion = input.ExpectedLabelVersion!.Value,
-            });
+            };
+            CaptureTechnicalSnapshot(inputRow, input.TechnicalSnapshot);
+            dbContext.PlanRevisionInputs.Add(inputRow);
         }
 
         row.Version = plan.Version;
@@ -396,14 +400,14 @@ public sealed class ManufacturingStore(
         {
             new ManufacturingPlanRevision(0, 1, row.WorkCenterId,
                 [.. created.Select(input => new PlannedInput(input.ParentRollId, new Kilograms(input.PlannedKg),
-                    input.ExpectedLabelVersion))],
+                    input.ExpectedLabelVersion, RestoreTechnicalSnapshot(input)))],
                 Target(row.TargetBasis, row.TargetKg), Reason: null, RevisedBy: null, row.CreatedAtUtc),
         };
         history.AddRange(headers.Select(header => new ManufacturingPlanRevision(header.RevisionNo, header.PlanVersion,
             header.WorkCenterId,
             [.. revisionInputs.Where(input => input.RevisionNo == header.RevisionNo)
                 .Select(input => new PlannedInput(input.ParentRollId, new Kilograms(input.PlannedKg),
-                    input.ExpectedLabelVersion))],
+                    input.ExpectedLabelVersion, RestoreTechnicalSnapshot(input)))],
             Target(header.TargetBasis, header.TargetKg), header.Reason, header.RevisedBy, header.RevisedAtUtc)));
         return history;
     }
@@ -882,13 +886,13 @@ public sealed class ManufacturingStore(
         // MFG-PLAN-EDIT: the revisions are replayed through the domain's own rule, in their order, before the approval.
         return ProductionPlan.Restore(row.Id, row.CompanyId, row.WorkCenterId, (ManufacturingProcess)row.Process,
             inputs.Select(input => new PlannedInput(input.ParentRollId, new Kilograms(input.PlannedKg),
-                input.ExpectedLabelVersion)),
+                input.ExpectedLabelVersion, RestoreTechnicalSnapshot(input))),
             Target(row.TargetBasis, row.TargetKg), row.ApprovedByUserId, row.ApprovedAtUtc, row.Version,
             Spec(lines, row.WindingTargetKg),
             headers.Select(header => new PlanRevisionContent(header.WorkCenterId,
                 [.. revisionInputs.Where(input => input.RevisionNo == header.RevisionNo)
                     .Select(input => new PlannedInput(input.ParentRollId, new Kilograms(input.PlannedKg),
-                        input.ExpectedLabelVersion))],
+                        input.ExpectedLabelVersion, RestoreTechnicalSnapshot(input)))],
                 Target(header.TargetBasis, header.TargetKg))));
     }
 
@@ -1073,6 +1077,29 @@ public sealed class ManufacturingStore(
                 builder.Append('@').Append(expectedLabelVersion.ToString(CultureInfo.InvariantCulture));
             }
 
+            if (input.TechnicalSnapshot is { } technical)
+            {
+                // A versioned extension: legacy inputs append nothing, preserving their exact historical hash bytes.
+                builder.Append("#technical.v1|");
+                AppendToken(builder, technical.ProductId.ToString("D"));
+                AppendToken(builder, technical.ProductVersion);
+                AppendToken(builder, technical.FamilyId.ToString("D"));
+                AppendToken(builder, technical.FamilyCode);
+                AppendToken(builder, technical.FamilySourceRevision);
+                AppendToken(builder, technical.TemplateId.ToString("D"));
+                AppendToken(builder, technical.TemplateVersion);
+                AppendToken(builder, technical.TemplateCode);
+                AppendToken(builder, technical.TemplateSourceRevision);
+                AppendToken(builder, technical.KilogramUnitCompanyId.ToString("D"));
+                AppendToken(builder, technical.KilogramUnitId.ToString("D"));
+                AppendToken(builder, technical.KilogramUnitCode);
+                AppendToken(builder, technical.KilogramProfileId.ToString("D"));
+                AppendToken(builder, technical.KilogramProfileVersion);
+                AppendToken(builder, technical.EffectiveOn.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
+                AppendToken(builder, Canonical(technical.ThicknessMm));
+                AppendToken(builder, Canonical(technical.WidthMm));
+            }
+
             builder.Append(';');
         }
 
@@ -1110,6 +1137,86 @@ public sealed class ManufacturingStore(
     private static string Canonical(decimal value) =>
         (value / 1.0000000000000000000000000000m).ToString(CultureInfo.InvariantCulture);
 
+    private static void AppendToken(StringBuilder builder, string value) =>
+        builder.Append(value.Length.ToString(CultureInfo.InvariantCulture)).Append(':').Append(value).Append('|');
+
+    private static void CaptureTechnicalSnapshot(IPlanTechnicalSnapshotRow row,
+        PlanTechnicalParameterSnapshotV1? snapshot)
+    {
+        if (snapshot is null)
+        {
+            return;
+        }
+
+        row.TechnicalProductId = snapshot.ProductId;
+        row.TechnicalProductVersion = snapshot.ProductVersion;
+        row.TechnicalFamilyId = snapshot.FamilyId;
+        row.TechnicalFamilyCode = snapshot.FamilyCode;
+        row.TechnicalFamilySourceRevision = snapshot.FamilySourceRevision;
+        row.TechnicalTemplateId = snapshot.TemplateId;
+        row.TechnicalTemplateVersion = snapshot.TemplateVersion;
+        row.TechnicalTemplateCode = snapshot.TemplateCode;
+        row.TechnicalTemplateSourceRevision = snapshot.TemplateSourceRevision;
+        row.TechnicalKilogramUnitCompanyId = snapshot.KilogramUnitCompanyId;
+        row.TechnicalKilogramUnitId = snapshot.KilogramUnitId;
+        row.TechnicalKilogramUnitCode = snapshot.KilogramUnitCode;
+        row.TechnicalKilogramProfileId = snapshot.KilogramProfileId;
+        row.TechnicalKilogramProfileVersion = snapshot.KilogramProfileVersion;
+        row.TechnicalEffectiveOn = snapshot.EffectiveOn;
+        row.TechnicalThicknessMm = snapshot.ThicknessMm;
+        row.TechnicalWidthMm = snapshot.WidthMm;
+    }
+
+    private static PlanTechnicalParameterSnapshotV1? RestoreTechnicalSnapshot(IPlanTechnicalSnapshotRow row)
+    {
+        var values = new object?[]
+        {
+            row.TechnicalProductId, row.TechnicalProductVersion, row.TechnicalFamilyId, row.TechnicalFamilyCode,
+            row.TechnicalFamilySourceRevision, row.TechnicalTemplateId, row.TechnicalTemplateVersion,
+            row.TechnicalTemplateCode, row.TechnicalTemplateSourceRevision, row.TechnicalKilogramUnitCompanyId,
+            row.TechnicalKilogramUnitId, row.TechnicalKilogramUnitCode, row.TechnicalKilogramProfileId,
+            row.TechnicalKilogramProfileVersion, row.TechnicalEffectiveOn, row.TechnicalThicknessMm,
+            row.TechnicalWidthMm,
+        };
+        if (values.All(value => value is null))
+        {
+            return null;
+        }
+
+        if (values.Any(value => value is null))
+        {
+            throw new ManufacturingRuleException(ManufacturingRuleCodes.StoredRecordInvalid,
+                "Kayıtlı plan girdisinin teknik snapshot'ı eksik.");
+        }
+
+        try
+        {
+            return new PlanTechnicalParameterSnapshotV1(
+                row.TechnicalProductId!.Value,
+                row.TechnicalProductVersion!,
+                row.TechnicalFamilyId!.Value,
+                row.TechnicalFamilyCode!,
+                row.TechnicalFamilySourceRevision!,
+                row.TechnicalTemplateId!.Value,
+                row.TechnicalTemplateVersion!,
+                row.TechnicalTemplateCode!,
+                row.TechnicalTemplateSourceRevision!,
+                row.TechnicalKilogramUnitCompanyId!.Value,
+                row.TechnicalKilogramUnitId!.Value,
+                row.TechnicalKilogramUnitCode!,
+                row.TechnicalKilogramProfileId!.Value,
+                row.TechnicalKilogramProfileVersion!,
+                row.TechnicalEffectiveOn!.Value,
+                row.TechnicalThicknessMm!.Value,
+                row.TechnicalWidthMm!.Value);
+        }
+        catch (ArgumentException exception)
+        {
+            throw new ManufacturingRuleException(ManufacturingRuleCodes.StoredRecordInvalid,
+                $"Kayıtlı plan girdisinin teknik snapshot'ı geçersiz ({exception.ParamName}).");
+        }
+    }
+
     private static string Hash(string canonical) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical))).ToLowerInvariant();
 
@@ -1127,6 +1234,7 @@ public sealed class ManufacturingStore(
                 input.ParentRollId,
                 kg = input.PlannedMass.Value,
                 input.ExpectedLabelVersion,
+                technical = input.TechnicalSnapshot,
             }),
             slitting = new
             {
@@ -1148,6 +1256,7 @@ public sealed class ManufacturingStore(
             input.ParentRollId,
             kg = input.PlannedMass.Value,
             input.ExpectedLabelVersion,
+            technical = input.TechnicalSnapshot,
         }),
         plan.ApprovedByUserId,
         plan.ApprovedAtUtc,

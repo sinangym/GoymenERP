@@ -8,7 +8,8 @@ namespace GoymenERP.Modules.Manufacturing.Domain.Plans;
 /// </summary>
 public sealed record PlannedInput
 {
-    public PlannedInput(Guid parentRollId, Kilograms plannedMass, long? expectedLabelVersion = null)
+    public PlannedInput(Guid parentRollId, Kilograms plannedMass, long? expectedLabelVersion = null,
+        PlanTechnicalParameterSnapshotV1? technicalSnapshot = null)
     {
         if (parentRollId == Guid.Empty)
         {
@@ -29,6 +30,7 @@ public sealed record PlannedInput
         ParentRollId = parentRollId;
         PlannedMass = plannedMass;
         ExpectedLabelVersion = expectedLabelVersion;
+        TechnicalSnapshot = technicalSnapshot;
     }
 
     public Guid ParentRollId { get; }
@@ -40,4 +42,10 @@ public sealed record PlannedInput
     /// gerçekleşmeye katılamaz; yeni planlar bu sürümü emir snapshot'ına taşır.
     /// </summary>
     public long? ExpectedLabelVersion { get; }
+
+    /// <summary>
+    /// Product/Settings facts captured when this exact Inventory label version was admitted to the
+    /// plan. Null only for legacy rows; null is unavailable and is never backfilled by a current read.
+    /// </summary>
+    public PlanTechnicalParameterSnapshotV1? TechnicalSnapshot { get; }
 }

@@ -7,6 +7,7 @@ using GoymenERP.Modules.Manufacturing.Domain.Common;
 using GoymenERP.Modules.Manufacturing.Domain.Orders;
 using GoymenERP.Modules.Manufacturing.Domain.Plans;
 using GoymenERP.Modules.Organization.Application.Contracts;
+using GoymenERP.Modules.Product.Application.Contracts;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
 
 namespace GoymenERP.Manufacturing.UnitTests;
@@ -173,7 +174,7 @@ public sealed class ManufacturingPlanRevisionTests
         Assert.Equal("800.5", Assert.Single(view.Inputs).PlannedKg);
         Assert.Equal(new TargetViewV1("GoodOutputMass", "700"), view.Target);
         // The owners, in the save's order, after the stored plan: Organization, Settings, Inventory, then the fence.
-        Assert.Equal(["authority", "find-plan", "work-center", "settings", "parent-roll", "authority", "revise"],
+        Assert.Equal(["authority", "find-plan", "work-center", "settings", "parent-roll", "product", "authority", "revise"],
             fixture.Calls.Where(call => call != "find-command"));
         Assert.Equal((OtherLine, ManufacturingProcess.Slitting, "Tolerans dışı bobin için yeniden planlandı"),
             (fixture.Store.LastRevision!.Value.WorkCenterId, fixture.Store.LastRevision.Value.Process,
@@ -421,9 +422,10 @@ public sealed class ManufacturingPlanRevisionTests
             Authority = new AuthorityPort(Calls);
             ParentRolls = new ParentRollPort(Calls);
             WorkCenters = new WorkCenterPort(Calls);
+            ProductSnapshots = new ProductSnapshotPort(Calls);
             Service = new ManufacturingCommandService(Store, Store, Store, new ManufacturingMassVerifier(new SettingsPort(Calls)),
                 Authority, company, User, correlation, new FixedTime(), ParentRolls, WorkCenters,
-                planRevisions: withRevisions ? Store : null);
+                planRevisions: withRevisions ? Store : null, productTechnicalSnapshots: ProductSnapshots);
         }
 
         public List<string> Calls { get; } = [];
@@ -435,6 +437,8 @@ public sealed class ManufacturingPlanRevisionTests
         public ParentRollPort ParentRolls { get; }
 
         public WorkCenterPort WorkCenters { get; }
+
+        public ProductSnapshotPort ProductSnapshots { get; }
 
         public User User { get; } = new();
 
@@ -514,6 +518,29 @@ public sealed class ManufacturingPlanRevisionTests
             calls.Add("work-center");
             return Task.FromResult<OrganizationWorkCenterPlanningReferenceV1?>(
                 new OrganizationWorkCenterPlanningReferenceV1(workCenterId, Kind));
+        }
+    }
+
+    private sealed class ProductSnapshotPort(List<string> calls) : IProductManufacturingTechnicalSnapshotV1
+    {
+        public Task<ProductManufacturingTechnicalSnapshotResultV1> ReadAsync(
+            ProductManufacturingTechnicalSnapshotSelectionV1 selection, CancellationToken cancellationToken)
+        {
+            calls.Add("product");
+            return Task.FromResult(new ProductManufacturingTechnicalSnapshotResultV1(
+                new ProductManufacturingTechnicalSnapshotV1(
+                    selection.ProductId,
+                    selection.ExpectedProductVersion,
+                    new ProductManufacturingFamilyRevisionV1(Guid.Parse("f1000000-0000-0000-0000-000000000001"),
+                        "COIL", "family-r1"),
+                    new ProductManufacturingTemplateRevisionV1(Guid.Parse("f2000000-0000-0000-0000-000000000002"),
+                        "3", "COIL-SHEET", "template-r3"),
+                    2m,
+                    1500m,
+                    new ProductManufacturingKilogramUnitV1(Company, SettingsUnitIdentitiesV1.Kilogram, "kg",
+                        Guid.Parse("4a790fdc-2a6b-5126-835f-d3a13d28b71c"), "1"),
+                    selection.EffectiveOn),
+                []));
         }
     }
 

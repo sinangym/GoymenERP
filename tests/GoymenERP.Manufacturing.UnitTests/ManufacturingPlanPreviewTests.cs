@@ -11,6 +11,7 @@ using GoymenERP.Modules.Manufacturing.Domain.Engines.Slitting;
 using GoymenERP.Modules.Manufacturing.Domain.Orders;
 using GoymenERP.Modules.Manufacturing.Domain.Plans;
 using GoymenERP.Modules.Organization.Application.Contracts;
+using GoymenERP.Modules.Product.Application.Contracts;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
 
 namespace GoymenERP.Manufacturing.UnitTests;
@@ -135,6 +136,27 @@ public sealed class ManufacturingPlanPreviewTests
     }
 
     [Fact]
+    public void Captured_dimensions_stay_on_their_own_roll_and_legacy_inputs_stay_unknown()
+    {
+        var snapshotA = CapturedSnapshot(2m, 1500m);
+        var snapshotB = CapturedSnapshot(1.25m, 900m);
+        var inputs = new[]
+        {
+            new PlannedInput(RollA, new Kilograms(1000m), 7, snapshotA),
+            new PlannedInput(RollB, new Kilograms(250m), 12, snapshotB),
+            new PlannedInput(Guid.NewGuid(), new Kilograms(100m), 1),
+        };
+
+        var parameters = PlanCalculationParameters.FromCapturedSnapshots(inputs);
+
+        Assert.Equal(2m, parameters.Rolls![RollA]["thicknessMm"]);
+        Assert.Equal(1500m, parameters.Rolls[RollA]["parentWidthMm"]);
+        Assert.Equal(1.25m, parameters.Rolls[RollB]["inputThicknessMm"]);
+        Assert.Equal(900m, parameters.Rolls[RollB]["widthMm"]);
+        Assert.DoesNotContain(inputs[2].ParentRollId, parameters.Rolls.Keys);
+    }
+
+    [Fact]
     public void A_roll_value_wins_over_the_plan_value_and_a_spec_feeds_the_slitting_lines()
     {
         var parameters = new PlanCalculationParameters(
@@ -231,7 +253,7 @@ public sealed class ManufacturingPlanPreviewTests
         var stored = fixture.Store.Plans[saved.Resource!.PlanId];
 
         var ofStored = ManufacturingCommandService.PlanPreviewView(stored.WorkCenterId,
-            ProductionPlanCalculatorV1.Calculate(stored, PlanCalculationParameters.Unknown));
+            ProductionPlanCalculatorV1.Calculate(stored, PlanCalculationParameters.FromCapturedSnapshots(stored.Inputs)));
         Assert.Equal(JsonSerializer.Serialize(ofStored, Json), JsonSerializer.Serialize(preview.Resource, Json));
 
         var view = preview.Resource!;
@@ -250,7 +272,7 @@ public sealed class ManufacturingPlanPreviewTests
         var preview = await fixture.Service.PreviewPlanAsync(Request("10"), Permission, CancellationToken.None);
 
         Assert.Equal(ManufacturingApiStatus.Ok, preview.Status);
-        Assert.Equal(["authority", "work-center", "settings", "parent-roll", "authority"], fixture.Calls);
+        Assert.Equal(["authority", "work-center", "settings", "parent-roll", "product", "authority"], fixture.Calls);
         Assert.Equal(new InventoryParentRollSelectionV1(RollA, "7"), Assert.Single(fixture.ParentRolls.Selections));
     }
 
@@ -322,6 +344,34 @@ public sealed class ManufacturingPlanPreviewTests
     }
 
     [Fact]
+    public async Task Product_field_denial_and_unavailable_answers_fail_closed_before_the_final_fence()
+    {
+        var field = new Fixture();
+        field.ProductSnapshots.Errors = [new ProductFieldError("references.attributes.WIDTH", "required")];
+        var fieldAnswer = await field.Service.PreviewPlanAsync(Request("10"), Permission, CancellationToken.None);
+
+        var denied = new Fixture();
+        denied.ProductSnapshots.Exception = new ProductOperationException("product_access_denied", 403);
+        var deniedAnswer = await denied.Service.PreviewPlanAsync(Request("10"), Permission, CancellationToken.None);
+
+        var unavailable = new Fixture();
+        unavailable.ProductSnapshots.Exception = new ProductOperationException(
+            "product_manufacturing_technical_snapshot_unavailable", 503);
+        var unavailableAnswer = await unavailable.Service.PreviewPlanAsync(Request("10"), Permission, CancellationToken.None);
+
+        Assert.Equal((ManufacturingApiStatus.Unprocessable, InventoryOpeningCodesV1.ProductIneligible,
+            "inputs[0].parentRollId"), (fieldAnswer.Status, fieldAnswer.Code, fieldAnswer.Field));
+        Assert.Equal((ManufacturingApiStatus.Denied, ManufacturingApiCodes.AuthorityDenied),
+            (deniedAnswer.Status, deniedAnswer.Code));
+        Assert.Equal(ManufacturingApiStatus.Unavailable, unavailableAnswer.Status);
+        Assert.All(new[] { field, denied, unavailable }, fixture =>
+        {
+            Assert.Equal(["authority", "work-center", "settings", "parent-roll", "product"], fixture.Calls);
+            Assert.Empty(fixture.Store.Writes);
+        });
+    }
+
+    [Fact]
     public async Task Without_a_fresh_company_wide_grant_nothing_is_asked()
     {
         var siteScoped = new Fixture();
@@ -347,6 +397,25 @@ public sealed class ManufacturingPlanPreviewTests
     private static PlanPreviewRequestV1 Request(string kg) =>
         new(WorkCenter, [new PlannedInputRequestV1(RollA, kg, "7")], null);
 
+    private static PlanTechnicalParameterSnapshotV1 CapturedSnapshot(decimal thicknessMm, decimal widthMm) => new(
+        Guid.Parse("f0000000-0000-0000-0000-000000000001"),
+        AcceptedProductFixtureVersion,
+        Guid.Parse("f1000000-0000-0000-0000-000000000001"),
+        "COIL",
+        "family-r1",
+        Guid.Parse("f2000000-0000-0000-0000-000000000002"),
+        "3",
+        "COIL-SHEET",
+        "template-r3",
+        Company,
+        SettingsUnitIdentitiesV1.Kilogram,
+        "kg",
+        Guid.Parse("4a790fdc-2a6b-5126-835f-d3a13d28b71c"),
+        "1",
+        DateOnly.FromDateTime(At.UtcDateTime),
+        thicknessMm,
+        widthMm);
+
     private sealed class Fixture
     {
         public Fixture(bool withWorkCenters = true)
@@ -359,8 +428,10 @@ public sealed class ManufacturingPlanPreviewTests
             Authority = new AuthorityPort(Calls);
             ParentRolls = new ParentRollPort(Calls);
             WorkCenters = new WorkCenterPort(Calls);
+            ProductSnapshots = new ProductSnapshotPort(Calls);
             Service = new ManufacturingCommandService(Store, Store, Store, new ManufacturingMassVerifier(new SettingsPort(Calls)),
-                Authority, company, User, correlation, new FixedTime(), ParentRolls, withWorkCenters ? WorkCenters : null);
+                Authority, company, User, correlation, new FixedTime(), ParentRolls, withWorkCenters ? WorkCenters : null,
+                productTechnicalSnapshots: ProductSnapshots);
             Store.Calls = Calls;
         }
 
@@ -373,6 +444,8 @@ public sealed class ManufacturingPlanPreviewTests
         public ParentRollPort ParentRolls { get; }
 
         public WorkCenterPort WorkCenters { get; }
+
+        public ProductSnapshotPort ProductSnapshots { get; }
 
         public User User { get; } = new();
 
@@ -446,6 +519,40 @@ public sealed class ManufacturingPlanPreviewTests
             return Task.FromResult<OrganizationWorkCenterPlanningReferenceV1?>(
                 new OrganizationWorkCenterPlanningReferenceV1(workCenterId, Kind));
         }
+    }
+
+    private sealed class ProductSnapshotPort(List<string> calls) : IProductManufacturingTechnicalSnapshotV1
+    {
+        public Exception? Exception { get; set; }
+
+        public IReadOnlyList<ProductFieldError> Errors { get; set; } = [];
+
+        public Task<ProductManufacturingTechnicalSnapshotResultV1> ReadAsync(
+            ProductManufacturingTechnicalSnapshotSelectionV1 selection, CancellationToken cancellationToken)
+        {
+            calls.Add("product");
+            if (Exception is { } exception)
+            {
+                throw exception;
+            }
+
+            return Task.FromResult(new ProductManufacturingTechnicalSnapshotResultV1(
+                Errors.Count == 0 ? TechnicalSnapshot(selection) : null, Errors));
+        }
+
+        private static ProductManufacturingTechnicalSnapshotV1 TechnicalSnapshot(
+            ProductManufacturingTechnicalSnapshotSelectionV1 selection) => new(
+            selection.ProductId,
+            selection.ExpectedProductVersion,
+            new ProductManufacturingFamilyRevisionV1(Guid.Parse("f1000000-0000-0000-0000-000000000001"),
+                "COIL", "family-r1"),
+            new ProductManufacturingTemplateRevisionV1(Guid.Parse("f2000000-0000-0000-0000-000000000002"),
+                "3", "COIL-SHEET", "template-r3"),
+            2m,
+            1500m,
+            new ProductManufacturingKilogramUnitV1(Company, SettingsUnitIdentitiesV1.Kilogram, "kg",
+                Guid.Parse("4a790fdc-2a6b-5126-835f-d3a13d28b71c"), "1"),
+            selection.EffectiveOn);
     }
 
     private sealed class SettingsPort(List<string> calls) : ISettingsPrerequisiteProvider
