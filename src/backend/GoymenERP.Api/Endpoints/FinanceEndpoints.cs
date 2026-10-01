@@ -111,8 +111,8 @@ public static class FinanceEndpoints
                 }
 
                 var context = Context(companyContext, currentUser, correlation);
-                var permission = await authority.CheckAsync(context,
-                    FinanceOfficialInvoiceImportAuthorityActionV1.Upload, request.BatchId, cancellationToken);
+                var permission = await CheckOfficialInvoicePreviewAuthorityAsync(
+                    authority, context, request.BatchId, cancellationToken);
                 if (permission != PermissionDecision.Allowed)
                 {
                     return Results.Problem(statusCode: permission == PermissionDecision.Denied
@@ -337,6 +337,31 @@ public static class FinanceEndpoints
             .ProducesErpAuthenticatedProblems()
             .ProducesErpCodeLessNotFound()
             .ProducesErpServiceUnavailable();
+    }
+
+    internal static async Task<PermissionDecision> CheckOfficialInvoicePreviewAuthorityAsync(
+        IFinanceOfficialInvoiceImportApprovalAuthorityV1 authority,
+        FinanceContext context,
+        Guid batchId,
+        CancellationToken cancellationToken)
+    {
+        var upload = await authority.CheckAsync(context,
+            FinanceOfficialInvoiceImportAuthorityActionV1.Upload, batchId, cancellationToken);
+        if (upload == PermissionDecision.Allowed)
+        {
+            return PermissionDecision.Allowed;
+        }
+
+        var approve = await authority.CheckAsync(context,
+            FinanceOfficialInvoiceImportAuthorityActionV1.Approve, batchId, cancellationToken);
+        if (approve == PermissionDecision.Allowed)
+        {
+            return PermissionDecision.Allowed;
+        }
+
+        return upload == PermissionDecision.Unavailable || approve == PermissionDecision.Unavailable
+            ? PermissionDecision.Unavailable
+            : PermissionDecision.Denied;
     }
 
     /// <summary>

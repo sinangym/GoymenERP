@@ -66,6 +66,34 @@ describe('OfficialInvoiceImportUploadForm', () => {
       .toBeLessThan(upload.mock.invocationCallOrder[0])
   })
 
+  it('freezes the selected file and version while an asynchronous preview is in flight', async () => {
+    vi.spyOn(globalThis.crypto, 'randomUUID')
+      .mockReturnValueOnce(batchId).mockReturnValueOnce(idempotencyKey)
+    let release!: (value: typeof prepared) => void
+    const preparing = new Promise<typeof prepared>((resolve) => { release = resolve })
+    const api = client(vi.fn())
+    ;(api.prepare as ReturnType<typeof vi.fn>).mockReturnValueOnce(preparing)
+    render(<OfficialInvoiceImportUploadForm context={context} client={api} />)
+    const selectedFile = chooseFileAndVersion()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Önizle' }))
+    const version = screen.getByLabelText('Kaynak sürümü') as HTMLInputElement
+    const file = screen.getByLabelText('UTF-8 CSV dosyası') as HTMLInputElement
+    await waitFor(() => {
+      expect(version.disabled).toBe(true)
+      expect(file.disabled).toBe(true)
+    })
+    fireEvent.change(version, { target: { value: 'invoice-v2' } })
+    fireEvent.change(file, { target: { files: [new File(['other'], 'other.csv')] } })
+    release(prepared)
+
+    await screen.findByText(/Önizleme hazır/)
+    expect(api.prepare).toHaveBeenCalledWith(selectedFile)
+    expect(api.preview).toHaveBeenCalledWith(
+      batchId, 'invoice-v1', prepared, expect.any(AbortSignal),
+    )
+  })
+
   it('retries an unknown result with the exact frozen payload and key', async () => {
     vi.spyOn(globalThis.crypto, 'randomUUID')
       .mockReturnValueOnce(batchId).mockReturnValueOnce(idempotencyKey)

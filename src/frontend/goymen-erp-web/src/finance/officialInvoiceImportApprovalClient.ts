@@ -23,7 +23,7 @@ import {
   type OfficialInvoicePendingDetail,
   type OfficialInvoicePendingPage,
 } from './officialInvoiceImportApprovalContract'
-import { isNonNegativeDecimalText, isPositiveDecimalText } from './decimalText'
+import { isNonNegativeDecimalText, isPositiveDecimalText, positiveDifference, sameDecimal } from './decimalText'
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? '/api/v1'
 const DEV_USER = (import.meta.env.VITE_DEV_USER as string | undefined) ?? 'company-a-user'
@@ -177,9 +177,9 @@ async function applyImport(
     return preview === null ? { kind: 'unknown' } : { kind: 'refused', issues: preview.issues }
   }
   if (!isObject(body) || body.isSucceeded !== true || !isObject(body.approvedSource)
-    || body.approvedSource.outcome !== 3
+    || body.approvedSource.outcome !== 'Found'
     || !isObject(body.admission) || body.admission.outcome !== 'Succeeded'
-    || !isObject(body.freshRead) || body.freshRead.outcome !== 3) return { kind: 'unknown' }
+    || !isObject(body.freshRead) || body.freshRead.outcome !== 'Found') return { kind: 'unknown' }
   const preview = decodeImportPreview(body.preview, source, context.companyId)
   if (preview === null || preview.issues.length !== 0) return { kind: 'unknown' }
   const previewRows = isObject(body.preview) && body.preview.isValid === true
@@ -191,7 +191,7 @@ async function applyImport(
     batchVersion: source.batchVersion,
     batchChecksum: preview.sourceSha256,
     rows: approvedRows,
-    requireOpen: true,
+    requireOpen: false,
   })
   if (batch === null || !sameAdmissionIds(body.admission, batch.openItems.map((item) => item.id))) {
     return { kind: 'unknown' }
@@ -388,8 +388,15 @@ function sameRows(rows: readonly Record<string, unknown>[], items: readonly Offi
       && item.sourceInstallmentId === row.sourceInstallmentId && item.sourceVersion === row.sourceVersion
       && item.partyId === row.partyId && item.companyAccountId === row.companyAccountId
       && item.currencyId === row.currencyId && item.originalAmount === row.amount
-      && item.outstandingAmount === row.amount && item.dueOn === row.dueOn
+      && currentAmountIsConsistent(item, row.amount as string) && item.dueOn === row.dueOn
   })
+}
+
+function currentAmountIsConsistent(item: OfficialInvoiceOpenItem, original: string): boolean {
+  const isZero = sameDecimal(item.outstandingAmount, '0')
+  if ((item.status === 1 && isZero) || (item.status === 2 && !isZero)) return false
+  return sameDecimal(item.outstandingAmount, original)
+    || positiveDifference(original, item.outstandingAmount) !== null
 }
 
 function sameSourceRows(left: readonly Record<string, unknown>[], right: readonly Record<string, unknown>[]): boolean {
@@ -425,7 +432,7 @@ function decodeApplyConflict(
     || !Array.isArray(value.admission.openItemIds) || value.admission.openItemIds.length !== 0
     || value.admission.isReplay !== false || typeof value.admission.originalCorrelationId !== 'string'
     || !Array.isArray(value.admission.issues) || !isObject(value.approvedSource)
-    || value.approvedSource.outcome !== 3 || !isObject(value.preview)) return false
+    || value.approvedSource.outcome !== 'Found' || !isObject(value.preview)) return false
   const preview = decodeImportPreview(value.preview, source, companyId)
   if (preview === null || preview.issues.length !== 0 || value.preview.isValid !== true) return false
   const previewRows = decodeApprovedSource(value.preview.batch, source, companyId, preview.sourceSha256)

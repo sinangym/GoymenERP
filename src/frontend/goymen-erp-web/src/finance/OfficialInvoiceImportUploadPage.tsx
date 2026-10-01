@@ -64,7 +64,9 @@ export function OfficialInvoiceImportUploadForm({ context, client }: {
   }, [])
 
   async function runPreview() {
-    if (file === null || batchVersion.trim().length === 0 || attempt !== null) return
+    const selectedFile = file
+    const selectedBatchVersion = batchVersion.trim()
+    if (selectedFile === null || selectedBatchVersion.length === 0 || attempt !== null) return
     setPhase('previewing')
     setIssues([])
     const controller = new AbortController()
@@ -73,14 +75,14 @@ export function OfficialInvoiceImportUploadForm({ context, client }: {
     const batchId = crypto.randomUUID()
     const idempotencyKey = crypto.randomUUID()
     try {
-      const prepared = await client.prepare(file)
+      const prepared = await client.prepare(selectedFile)
       if (controller.signal.aborted || active.current !== controller) return
-      const reply = await client.preview(batchId, batchVersion.trim(), prepared, controller.signal)
+      const reply = await client.preview(batchId, selectedBatchVersion, prepared, controller.signal)
       if (controller.signal.aborted || active.current !== controller) return
       active.current = null
       if (reply.kind === 'ready') {
-        const frozen = { file, prepared, preview: reply.preview, batchId,
-          batchVersion: batchVersion.trim(), idempotencyKey }
+        const frozen = { file: selectedFile, prepared, preview: reply.preview, batchId,
+          batchVersion: selectedBatchVersion, idempotencyKey }
         setAttempt(frozen)
         setPreview(reply.preview)
         setPhase('ready')
@@ -131,16 +133,17 @@ export function OfficialInvoiceImportUploadForm({ context, client }: {
   }
 
   const frozen = attempt !== null
+  const editingLocked = frozen || phase === 'previewing'
   return (
     <section aria-labelledby="official-invoice-upload-title">
       <h1 id="official-invoice-upload-title">Onaylı fatura taksit kaynağı yükle</h1>
       <p className={styles.notice}>Dosya önce bekleyen kaynak olarak kaydedilir; başka bir yetkili onaylamadan Finans açık kalemi oluşmaz.</p>
       <div className={styles.form}>
         <label htmlFor="official-invoice-upload-version">Kaynak sürümü</label>
-        <input id="official-invoice-upload-version" value={batchVersion} disabled={frozen}
+        <input id="official-invoice-upload-version" value={batchVersion} disabled={editingLocked}
           onChange={(event) => { setBatchVersion(event.target.value); setPreview(null); setPhase('idle') }} />
         <label htmlFor="official-invoice-upload-file">UTF-8 CSV dosyası</label>
-        <input id="official-invoice-upload-file" type="file" accept=".csv,text/csv" disabled={frozen}
+        <input id="official-invoice-upload-file" type="file" accept=".csv,text/csv" disabled={editingLocked}
           onChange={(event) => { setFile(event.target.files?.[0] ?? null); setPreview(null); setPhase('idle') }} />
         <button type="button" disabled={frozen || phase === 'previewing' || file === null || batchVersion.trim().length === 0}
           onClick={runPreview}>Önizle</button>

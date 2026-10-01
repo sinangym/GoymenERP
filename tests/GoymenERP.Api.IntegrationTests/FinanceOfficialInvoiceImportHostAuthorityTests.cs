@@ -1,4 +1,5 @@
 using GoymenERP.Api.Shell;
+using GoymenERP.Api.Endpoints;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Finance.Contracts;
@@ -24,6 +25,22 @@ public sealed class FinanceOfficialInvoiceImportHostAuthorityTests
         Assert.Equal([FinanceOfficialInvoiceImportPermissionNamesV1.Upload], revalidation.Permissions);
         Assert.Equal(["FINANCE-UPLOAD"], authority.RoleCodesOf(
             FinanceOfficialInvoiceImportAuthorityActionV1.Upload));
+    }
+
+    [Fact]
+    public async Task Preview_accepts_the_existing_checker_authority_without_granting_upload()
+    {
+        var revalidation = new Revalidation(PermissionScope.Denied, Allowed("FINANCE-APPROVE"));
+        var authority = Create(revalidation);
+
+        var result = await FinanceEndpoints.CheckOfficialInvoicePreviewAuthorityAsync(
+            authority, Context(), Guid.NewGuid(), CancellationToken.None);
+
+        Assert.Equal(PermissionDecision.Allowed, result);
+        Assert.Equal(
+            [FinanceOfficialInvoiceImportPermissionNamesV1.Upload,
+                FinanceOfficialInvoiceImportPermissionNamesV1.Approve],
+            revalidation.Permissions);
     }
 
     [Fact]
