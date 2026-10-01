@@ -91,7 +91,10 @@ public sealed record PlanTechnicalParameterSnapshotV1
 
     private static decimal RequireMeasure(decimal value, string name)
     {
-        if (value <= 0m || value.Scale > 3)
+        // Product admits a measure when reducing its encoded scale to three decimals changes no
+        // numeric value. Keep the same exact rule here: 2.0000 is valid, while 2.0001 is refused;
+        // neither value is rounded into a different technical fact.
+        if (value <= 0m || decimal.Round(value, 3, MidpointRounding.ToZero) != value)
         {
             throw new ArgumentOutOfRangeException(name, value,
                 "Teknik ölçü pozitif ve en fazla üç ondalıklı olmalıdır.");

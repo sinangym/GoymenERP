@@ -187,6 +187,32 @@ public sealed class ManufacturingPlanRevisionTests
     }
 
     [Fact]
+    public async Task A_revision_captures_a_numerically_exact_trailing_zero_measure_and_refuses_a_real_fourth_decimal()
+    {
+        var accepted = new Fixture();
+        accepted.ProductSnapshots.ThicknessMm = 2.0000m;
+        var plan = accepted.StoreDraft();
+
+        var result = await accepted.Service.RevisePlanAsync(plan.Id, Request(1, OtherLine, "800", "7"),
+            "key-exact", Permission, CancellationToken.None);
+
+        Assert.Equal(ManufacturingApiStatus.Ok, result.Status);
+        var captured = Assert.Single(accepted.Store.Plans[plan.Id].Inputs).TechnicalSnapshot!;
+        Assert.Equal(2m, captured.ThicknessMm);
+        Assert.Equal((byte)4, captured.ThicknessMm.Scale);
+
+        var refused = new Fixture();
+        refused.ProductSnapshots.ThicknessMm = 2.0001m;
+        var unchanged = refused.StoreDraft();
+        var invalid = await refused.Service.RevisePlanAsync(unchanged.Id, Request(1, OtherLine, "800", "7"),
+            "key-inexact", Permission, CancellationToken.None);
+
+        Assert.Equal(ManufacturingApiStatus.Unavailable, invalid.Status);
+        Assert.Equal(1L, unchanged.Version);
+        Assert.Empty(refused.Store.Writes);
+    }
+
+    [Fact]
     public async Task The_same_key_replays_the_answer_and_another_request_under_it_is_a_conflict()
     {
         var fixture = new Fixture();
@@ -523,6 +549,8 @@ public sealed class ManufacturingPlanRevisionTests
 
     private sealed class ProductSnapshotPort(List<string> calls) : IProductManufacturingTechnicalSnapshotV1
     {
+        public decimal ThicknessMm { get; set; } = 2m;
+
         public Task<ProductManufacturingTechnicalSnapshotResultV1> ReadAsync(
             ProductManufacturingTechnicalSnapshotSelectionV1 selection, CancellationToken cancellationToken)
         {
@@ -535,7 +563,7 @@ public sealed class ManufacturingPlanRevisionTests
                         "COIL", "family-r1"),
                     new ProductManufacturingTemplateRevisionV1(Guid.Parse("f2000000-0000-0000-0000-000000000002"),
                         "3", "COIL-SHEET", "template-r3"),
-                    2m,
+                    ThicknessMm,
                     1500m,
                     new ProductManufacturingKilogramUnitV1(Company, SettingsUnitIdentitiesV1.Kilogram, "kg",
                         Guid.Parse("4a790fdc-2a6b-5126-835f-d3a13d28b71c"), "1"),

@@ -432,6 +432,34 @@ public sealed class ManufacturingCommandServiceTests
         Assert.Equal(["authority", "work-center", "settings", "parent-roll", "product", "authority"], fixture.Calls);
     }
 
+    [Fact]
+    public async Task Product_measure_trailing_zeroes_are_captured_exactly_while_a_real_fourth_decimal_is_refused()
+    {
+        var accepted = new Fixture();
+        accepted.ProductSnapshots.ThicknessMm = 2.0000m;
+
+        var result = await accepted.Service.SavePlanAsync(
+            new SavePlanRequestV1(Guid.NewGuid(), WorkCenter,
+                [new PlannedInputRequestV1(Roll, "1000", LabelVersion)], null),
+            "key-exact", "manufacturing.plans.write", CancellationToken.None);
+
+        Assert.Equal(ManufacturingApiStatus.Created, result.Status);
+        var captured = Assert.Single(Assert.Single(accepted.Store.Plans.Values).Inputs).TechnicalSnapshot!;
+        Assert.Equal(2m, captured.ThicknessMm);
+        Assert.Equal((byte)4, captured.ThicknessMm.Scale);
+
+        var refused = new Fixture();
+        refused.ProductSnapshots.ThicknessMm = 2.0001m;
+        var invalid = await refused.Service.SavePlanAsync(
+            new SavePlanRequestV1(Guid.NewGuid(), WorkCenter,
+                [new PlannedInputRequestV1(Roll, "1000", LabelVersion)], null),
+            "key-inexact", "manufacturing.plans.write", CancellationToken.None);
+
+        Assert.Equal(ManufacturingApiStatus.Unavailable, invalid.Status);
+        Assert.Empty(refused.Store.Plans);
+        Assert.Empty(refused.Store.Writes);
+    }
+
     [Theory]
     [InlineData("Slitting", ManufacturingProcess.Slitting, 1)]
     [InlineData("ColdRolling", ManufacturingProcess.ColdRolling, 2)]
@@ -1774,6 +1802,8 @@ public sealed class ManufacturingCommandServiceTests
     {
         public int Asked { get; private set; }
 
+        public decimal ThicknessMm { get; set; } = 2m;
+
         public Task<ProductManufacturingTechnicalSnapshotResultV1> ReadAsync(
             ProductManufacturingTechnicalSnapshotSelectionV1 selection, CancellationToken cancellationToken)
         {
@@ -1787,7 +1817,7 @@ public sealed class ManufacturingCommandServiceTests
                         "COIL", "family-r1"),
                     new ProductManufacturingTemplateRevisionV1(Guid.Parse("f2000000-0000-0000-0000-000000000002"),
                         "3", "COIL-SHEET", "template-r3"),
-                    2m,
+                    ThicknessMm,
                     1500m,
                     new ProductManufacturingKilogramUnitV1(Company, SettingsUnitIdentitiesV1.Kilogram, "kg",
                         Guid.Parse("4a790fdc-2a6b-5126-835f-d3a13d28b71c"), "1"),

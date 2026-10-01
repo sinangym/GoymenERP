@@ -189,6 +189,46 @@ function requiredText(value: unknown): value is string {
   return typeof value === 'string' && value.length > 0 && value === value.trim()
 }
 
+function boundedSnapshotText(value: unknown, maximumLength: number): value is string {
+  return requiredText(value) && value.length <= maximumLength && !/[\u0000-\u001f\u007f-\u009f]/.test(value)
+}
+
+function snapshotMeasure(value: unknown): string | null {
+  const decoded = kg(value)
+  if (decoded === null || decoded === '0') return null
+  const separator = decoded.indexOf('.')
+  return separator < 0 || decoded.length - separator - 1 <= 3 ? decoded : null
+}
+
+function calendarDate(value: unknown): value is string {
+  if (typeof value !== 'string') return false
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value)
+  if (match === null) return false
+  const year = Number(match[1])
+  const month = Number(match[2])
+  const day = Number(match[3])
+  if (year < 1 || month < 1 || month > 12 || day < 1 || (year === 1 && month === 1 && day === 1)) return false
+  const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0)
+  const days = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+  return day <= days[month - 1]
+}
+
+function exactDecimalSum(values: readonly string[]): string {
+  const parts = values.map((value) => {
+    const [integer, fraction = ''] = value.split('.')
+    return { integer, fraction }
+  })
+  const scale = parts.reduce((maximum, part) => Math.max(maximum, part.fraction.length), 0)
+  const factor = 10n ** BigInt(scale)
+  const total = parts.reduce((sum, part) =>
+    sum + BigInt(part.integer) * factor
+      + BigInt((part.fraction + '0'.repeat(scale)).slice(0, scale) || '0'), 0n)
+  if (scale === 0) return total.toString()
+  const raw = total.toString().padStart(scale + 1, '0')
+  const fraction = raw.slice(-scale).replace(/0+$/, '')
+  return fraction.length === 0 ? raw.slice(0, -scale) : `${raw.slice(0, -scale)}.${fraction}`
+}
+
 function guid(value: unknown): string | null {
   return typeof value === 'string' && GUID.test(value) ? value : null
 }
@@ -383,16 +423,19 @@ function decodeTechnicalSnapshot(value: unknown): CapturedPlanTechnicalSnapshot 
   const companyId = nonNilGuid(value.unitKg.companyId)
   const unitId = nonNilGuid(value.unitKg.unitId)
   const profileId = nonNilGuid(value.unitKg.profileId)
-  const thicknessMm = kg(value.thicknessMm)
-  const widthMm = kg(value.widthMm)
+  const thicknessMm = snapshotMeasure(value.thicknessMm)
+  const widthMm = snapshotMeasure(value.widthMm)
   if (productId === null || familyId === null || templateId === null || companyId === null
-    || unitId === null || profileId === null || thicknessMm === null || thicknessMm === '0'
-    || widthMm === null || widthMm === '0' || !requiredText(value.productVersion)
-    || !requiredText(value.family.familyCode) || !requiredText(value.family.sourceRevision)
-    || !requiredText(value.template.templateVersion) || !requiredText(value.template.templateCode)
-    || !requiredText(value.template.sourceRevision) || !requiredText(value.unitKg.unitCode)
-    || !requiredText(value.unitKg.profileVersion)
-    || typeof value.effectiveOn !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value.effectiveOn)) return undefined
+    || unitId === null || profileId === null || thicknessMm === null || widthMm === null
+    || !boundedSnapshotText(value.productVersion, 128)
+    || !boundedSnapshotText(value.family.familyCode, 64)
+    || !boundedSnapshotText(value.family.sourceRevision, 64)
+    || !boundedSnapshotText(value.template.templateVersion, 64)
+    || !boundedSnapshotText(value.template.templateCode, 64)
+    || !boundedSnapshotText(value.template.sourceRevision, 64)
+    || !boundedSnapshotText(value.unitKg.unitCode, 64)
+    || !boundedSnapshotText(value.unitKg.profileVersion, 64)
+    || !calendarDate(value.effectiveOn)) return undefined
   return {
     productId,
     productVersion: value.productVersion,
@@ -470,7 +513,11 @@ export function decodePlan(body: unknown): ProductionPlanView | null {
   if (calculation !== null) {
     if (calculation.workCenterId.toLowerCase() !== workCenterId.toLowerCase()
       || calculation.process !== body.process || calculation.plannedRollCount !== inputs.length
-      || calculation.rolls.length !== inputs.length) return null
+      || calculation.rolls.length !== inputs.length
+      || calculation.plannedInputKg !== exactDecimalSum(inputs.map((input) => input.plannedKg))) return null
+    if ((target === null) !== (calculation.target === null)) return null
+    if (target !== null && calculation.target !== null
+      && (calculation.target.basis !== target.basis || calculation.target.kg !== target.kg)) return null
     for (let index = 0; index < inputs.length; index += 1) {
       if (calculation.rolls[index].parentRollId.toLowerCase() !== inputs[index].parentRollId.toLowerCase()
         || calculation.rolls[index].plannedKg !== inputs[index].plannedKg) return null

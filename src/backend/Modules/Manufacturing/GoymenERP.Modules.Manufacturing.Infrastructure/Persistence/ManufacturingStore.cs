@@ -68,6 +68,7 @@ public sealed class ManufacturingStore(
 
         RequireFits(plan.Inputs.Select(input => input.PlannedMass).Concat(plan.Target is { } t ? [t.Mass] : [])
             .Concat(plan.Spec?.WindingTargetKg is { } winding ? [winding] : []));
+        RequireTechnicalSnapshotFits(plan.Inputs);
         // A band width is a decimal(18,3) millimetre: beyond the column it is refused, never cut.
         if (plan.Spec is { } widths && widths.Lines.Any(line => line.BandWidthMm >= Decimal18Scale3Limit))
         {
@@ -319,6 +320,7 @@ public sealed class ManufacturingStore(
         }
 
         RequireFits(inputs.Select(input => input.PlannedMass).Concat(target is { } declared ? [declared.Mass] : []));
+        RequireTechnicalSnapshotFits(inputs);
 
         var row = await dbContext.Plans.SingleOrDefaultAsync(candidate => candidate.Id == planId, cancellationToken)
             ?? throw Refused(ManufacturingStoreCodes.PlanNotFound, "Bu şirketin böyle bir planı yok.");
@@ -1368,6 +1370,20 @@ public sealed class ManufacturingStore(
         if (masses.Any(mass => mass.Value >= Decimal18Scale3Limit))
         {
             throw Refused(ManufacturingStoreCodes.ValueDoesNotFit, "Kütle kayıt alanına sığmıyor; kesilmez, reddedilir.");
+        }
+    }
+
+    private static void RequireTechnicalSnapshotFits(IEnumerable<PlannedInput> inputs)
+    {
+        // Persistence capacity, not a production tolerance: both immutable dimensions use
+        // decimal(18,3). Refuse before any read or tracked mutation, and never truncate.
+        if (inputs.Select(input => input.TechnicalSnapshot)
+            .Where(snapshot => snapshot is not null)
+            .Any(snapshot => snapshot!.ThicknessMm >= Decimal18Scale3Limit
+                || snapshot.WidthMm >= Decimal18Scale3Limit))
+        {
+            throw Refused(ManufacturingStoreCodes.ValueDoesNotFit,
+                "Teknik ölçü kayıt alanına sığmıyor; kesilmez, reddedilir.");
         }
     }
 

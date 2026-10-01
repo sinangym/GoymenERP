@@ -342,12 +342,69 @@ public sealed class ManufacturingPersistenceModelTests
         Assert.Equal(refused, storeError?.Code == GoymenERP.Modules.Manufacturing.Application.ManufacturingStoreCodes.ValueDoesNotFit);
     }
 
+    [Theory]
+    [InlineData("create", "thickness", "999999999999999.999", false)]
+    [InlineData("create", "thickness", "1000000000000000", true)]
+    [InlineData("create", "thickness", "1000000000000000.001", true)]
+    [InlineData("create", "width", "999999999999999.999", false)]
+    [InlineData("create", "width", "1000000000000000", true)]
+    [InlineData("create", "width", "1000000000000000.001", true)]
+    [InlineData("revise", "thickness", "999999999999999.999", false)]
+    [InlineData("revise", "thickness", "1000000000000000", true)]
+    [InlineData("revise", "thickness", "1000000000000000.001", true)]
+    [InlineData("revise", "width", "999999999999999.999", false)]
+    [InlineData("revise", "width", "1000000000000000", true)]
+    [InlineData("revise", "width", "1000000000000000.001", true)]
+    public async Task Technical_dimensions_use_the_decimal_18_3_exclusive_bound_before_create_or_revision_mutates(
+        string operation, string dimension, string text, bool refused)
+    {
+        using var context = Context();
+        var store = new ManufacturingStore(context, CompanyContextOf(CompanyA),
+            new GoymenERP.Modules.Audit.Infrastructure.Services.AuditEventCollector(), TimeProvider.System);
+        var value = decimal.Parse(text, System.Globalization.CultureInfo.InvariantCulture);
+        var snapshot = TechnicalSnapshot(
+            dimension == "thickness" ? value : 1m,
+            dimension == "width" ? value : 1m);
+        var input = new PlannedInput(Guid.NewGuid(),
+            new GoymenERP.Modules.Manufacturing.Domain.Common.Kilograms(1m), 1, snapshot);
+        var metadata = new GoymenERP.Modules.Manufacturing.Application.ManufacturingCommandMetadata(
+            "synthetic-actor", "synthetic.manufacturing.test-write", ["SYNTHETIC"], "synthetic-correlation", null,
+            "synthetic-key", "Web");
+
+        var error = await Assert.ThrowsAnyAsync<Exception>(async () =>
+        {
+            if (operation == "create")
+            {
+                await store.SavePlanAsync(new ProductionPlan(Guid.NewGuid(), CompanyA, Guid.NewGuid(),
+                    ManufacturingProcess.Slitting, [input]), metadata);
+            }
+            else
+            {
+                await store.RevisePlanAsync(Guid.NewGuid(), 1, Guid.NewGuid(), ManufacturingProcess.Slitting,
+                    [input], null, "sentetik gerekçe", metadata);
+            }
+        });
+
+        var storeError = error as GoymenERP.Modules.Manufacturing.Application.ManufacturingStoreException;
+        Assert.Equal(refused,
+            storeError?.Code == GoymenERP.Modules.Manufacturing.Application.ManufacturingStoreCodes.ValueDoesNotFit);
+        Assert.Empty(context.ChangeTracker.Entries());
+    }
+
     private static CompanyContext CompanyContextOf(Guid company)
     {
         var context = new CompanyContext();
         context.Set(company);
         return context;
     }
+
+    private static PlanTechnicalParameterSnapshotV1 TechnicalSnapshot(decimal thicknessMm, decimal widthMm) => new(
+        Guid.Parse("50000000-0000-0000-0000-000000000001"), "2",
+        Guid.Parse("50000000-0000-0000-0000-000000000002"), "COIL", "family-r1",
+        Guid.Parse("50000000-0000-0000-0000-000000000003"), "3", "COIL-SHEET", "template-r3",
+        CompanyA, Guid.Parse("50000000-0000-0000-0000-000000000004"), "kg",
+        Guid.Parse("50000000-0000-0000-0000-000000000005"), "1", new DateOnly(2026, 9, 30),
+        thicknessMm, widthMm);
 
     private static T Attach<T>(ManufacturingDbContext context, T row) where T : class
     {
