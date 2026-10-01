@@ -40,6 +40,8 @@ const MOVEMENT_KIND_TEXT = {
   Return: 'İade',
   CountAdjustment: 'Sayım farkı',
   Scrap: 'Hurda çıkışı',
+  TransferDispatch: 'Transfer çıkışı',
+  TransferAccept: 'Transfer kabulü',
 } as const
 
 const DIRECTION_TEXT = { In: 'Giriş', Out: 'Çıkış' } as const
