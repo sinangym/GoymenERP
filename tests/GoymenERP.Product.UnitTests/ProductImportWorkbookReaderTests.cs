@@ -87,6 +87,25 @@ public sealed class ProductImportWorkbookReaderTests
     }
 
     [Fact]
+    public void Preview_translates_an_overflowing_cell_column_to_invalid_workbook()
+    {
+        var sheet = """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>
+              <row r="1"><c r="AAAAAAAA1" t="inlineStr"><is><t>Eski Kod</t></is></c></row>
+            </sheetData></worksheet>
+            """;
+
+        var result = Reader().Read(WorkbookPackage(sheet), Mapping, EmptyCodes(), Groups());
+
+        Assert.False(result.Ready);
+        Assert.Empty(result.Rows);
+        var error = Assert.Single(result.Errors);
+        Assert.Equal((null, "workbook", ProductImportCodesV1.InvalidWorkbook),
+            (error.RowNumber, error.Field, error.Code));
+    }
+
+    [Fact]
     public void Preview_never_treats_style_dependent_numeric_cells_as_lossless_legacy_codes()
     {
         var sheet = """

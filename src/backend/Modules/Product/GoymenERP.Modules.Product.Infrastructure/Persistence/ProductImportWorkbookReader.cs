@@ -303,8 +303,16 @@ public sealed class ProductImportWorkbookReader : IProductImportWorkbookReaderV1
     private static int Column(string reference)
     {
         var value = 0;
-        foreach (var character in reference.TakeWhile(char.IsAsciiLetter))
-            value = checked(value * 26 + (char.ToUpperInvariant(character) - 'A' + 1));
+        try
+        {
+            foreach (var character in reference.TakeWhile(char.IsAsciiLetter))
+                value = checked(value * 26 + (char.ToUpperInvariant(character) - 'A' + 1));
+        }
+        catch (OverflowException exception)
+        {
+            throw new InvalidDataException("Hücre sütunu geçersiz.", exception);
+        }
+
         if (value == 0) throw new InvalidDataException("Hücre sütunu geçersiz.");
         return value;
     }
