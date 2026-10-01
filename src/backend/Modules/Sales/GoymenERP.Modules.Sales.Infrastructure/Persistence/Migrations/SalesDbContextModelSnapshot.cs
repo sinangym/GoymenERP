@@ -79,19 +79,6 @@ partial class SalesDbContextModelSnapshot : ModelSnapshot
                 .HasMaxLength(128)
                 .HasColumnType("nvarchar(128)");
 
-            b.Property<DateTimeOffset?>("CustomerAcceptedAtUtc")
-                .HasColumnType("datetimeoffset");
-
-            b.Property<string>("CustomerAcceptedBy")
-                .HasMaxLength(128)
-                .HasColumnType("nvarchar(128)");
-
-            b.Property<int?>("CustomerAcceptedRevision")
-                .HasColumnType("int");
-
-            b.Property<bool>("CustomerAcceptanceRequired")
-                .HasColumnType("bit");
-
             b.Property<string>("EntityType")
                 .IsRequired()
                 .HasMaxLength(160)
@@ -952,6 +939,19 @@ partial class SalesDbContextModelSnapshot : ModelSnapshot
 
             b.Property<Guid>("CurrencyId")
                 .HasColumnType("uniqueidentifier");
+
+            b.Property<DateTimeOffset?>("CustomerAcceptedAtUtc")
+                .HasColumnType("datetimeoffset");
+
+            b.Property<string>("CustomerAcceptedBy")
+                .HasMaxLength(128)
+                .HasColumnType("nvarchar(128)");
+
+            b.Property<int?>("CustomerAcceptedRevision")
+                .HasColumnType("int");
+
+            b.Property<bool>("CustomerAcceptanceRequired")
+                .HasColumnType("bit");
 
             b.Property<DateTimeOffset?>("DecidedAtUtc")
                 .HasColumnType("datetimeoffset");
