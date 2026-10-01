@@ -296,6 +296,12 @@ C01E2eFixtureWriterActivation.Configure(
     builder.Services,
     builder.Environment,
     builder.Configuration);
+// MFG browser acceptance: the compose-bound disposable API may replace only the read-only Settings
+// tolerance provider. Fixture-writer keys and writer services remain confined to the in-process runner.
+BrowserSuiteApiReadFixtureActivation.Configure(
+    builder.Services,
+    builder.Environment,
+    builder.Configuration);
 builder.Services.AddSingleton(new ShellCapabilityAuthorityCatalog(
     [shellCapabilityAuthority]));
 builder.Services.AddErpAuthentication(builder.Configuration, builder.Environment);

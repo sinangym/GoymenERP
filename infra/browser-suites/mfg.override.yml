@@ -18,6 +18,11 @@
 services:
   api:
     environment:
+      BrowserSuiteApi__Profile: mfg
+      BrowserSuiteApi__Disposable: CONFIRMED
+      BrowserSuiteApi__TestedCommit: ${C01_E2E_TESTED_COMMIT:?C01_E2E_TESTED_COMMIT must be set}
+      BrowserSuiteApi__RunId: ${GOYMEN_ERP_C01_E2E_RUN_ID:?GOYMEN_ERP_C01_E2E_RUN_ID must be set}
+      BrowserSuiteApi__ComposeProject: ${GOYMEN_ERP_C01_E2E_COMPOSE_PROJECT:?GOYMEN_ERP_C01_E2E_COMPOSE_PROJECT must be set}
       ProductRuntime__IssuerLocalUserId: b2000000-0000-4000-8000-000000000201
       ProductRuntime__IssuerExternalIdentityId: b2100000-0000-4000-8000-000000000201
       BootstrapIdentity__Users__2__UserId: mfg-recorder

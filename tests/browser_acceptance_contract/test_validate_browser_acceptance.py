@@ -222,6 +222,7 @@ class WorkflowTests(unittest.TestCase):
                 "manufacturing.facts.record",
                 "manufacturing.orders.read",
                 "manufacturing.orders.close",
+                "manufacturing.orders.close-exception.approve",
                 "organization.work-centers.read",
                 "inventory.labels.read",
                 "inventory.balances.read",

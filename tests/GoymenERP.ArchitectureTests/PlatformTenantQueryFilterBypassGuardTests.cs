@@ -81,7 +81,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // production uses the own-server store and Defender when both are configured and answers 503 otherwise
     // (abe26a09… -> c027dce9…); no code line changed.
     private const string ReviewedOpenApiStartupFingerprint =
-        "b838d9662faf01b027c6b963f417aa6bf5751c3ba97a143be632057da8f44f04";
+        "18bff3ae4ffafeefdaeb3907ce56743de1840bc9e20a66eed602abf224a81b3d";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedProductManufacturingTechnicalRegistrationPath =
