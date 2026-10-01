@@ -28,6 +28,8 @@ export interface LinePriceReference {
   readonly unitPrice: string
   readonly floorUnitPrice: string | null
   readonly vatBasis: string
+  readonly lowerQuantity: string
+  readonly upperQuantity: string | null
 }
 
 export type PriceSource = 'Reference' | 'Manual'
@@ -77,17 +79,18 @@ const isDate = (v: unknown): v is string => typeof v === 'string' && DATE.test(v
 const isCount = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v >= 1
 
 const REFERENCE_KEYS = ['priceListId', 'priceListName', 'versionNo', 'validFrom', 'validThrough', 'currencyCode', 'priceUnitId', 'unitPrice',
-  'floorUnitPrice', 'vatBasis'] as const
+  'floorUnitPrice', 'vatBasis', 'lowerQuantity', 'upperQuantity'] as const
 
 export function decodeReference(value: unknown): LinePriceReference | null {
   const o = exact(value, REFERENCE_KEYS)
   if (o === null || !isText(o.priceListId) || !isText(o.priceListName) || !isCount(o.versionNo) || !isDate(o.validFrom)
     || !(o.validThrough === null || isDate(o.validThrough)) || !isText(o.currencyCode) || !isText(o.priceUnitId)
-    || !isDecimal(o.unitPrice) || !isNullableDecimal(o.floorUnitPrice) || !isText(o.vatBasis)) return null
+    || !isDecimal(o.unitPrice) || !isNullableDecimal(o.floorUnitPrice) || !isText(o.vatBasis)
+    || !isDecimal(o.lowerQuantity) || !isNullableDecimal(o.upperQuantity)) return null
   return {
     priceListId: o.priceListId, priceListName: o.priceListName, versionNo: o.versionNo, validFrom: o.validFrom,
     validThrough: o.validThrough, currencyCode: o.currencyCode, priceUnitId: o.priceUnitId, unitPrice: o.unitPrice,
-    floorUnitPrice: o.floorUnitPrice, vatBasis: o.vatBasis,
+    floorUnitPrice: o.floorUnitPrice, vatBasis: o.vatBasis, lowerQuantity: o.lowerQuantity, upperQuantity: o.upperQuantity,
   }
 }
 

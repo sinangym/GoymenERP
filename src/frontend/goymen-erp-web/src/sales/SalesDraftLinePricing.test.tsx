@@ -28,6 +28,7 @@ function detail(version: string, line: Record<string, unknown> = {}): Body {
 const reference = {
   priceListId: LIST, priceListName: 'Yurt içi satış', versionNo: 2, validFrom: '2026-09-01', validThrough: null, currencyCode: 'TRY',
   priceUnitId: KG, unitPrice: '42000.50', floorUnitPrice: '40000', vatBasis: 'ExcludingVat',
+  lowerQuantity: '10', upperQuantity: '20',
 }
 
 function pricing(version: string, over: Record<string, unknown> = {}) {
@@ -87,6 +88,7 @@ describe('AT-018 list price on the order line', () => {
     })
     // Reopened from the server: the reference, the source, the adjustments and the net are all visible.
     expect(screen.getByTestId('sales-line-1-reference').textContent).toContain('Yurt içi satış · Sürüm 2: 42000.50 TRY')
+    expect(screen.getByTestId('sales-line-1-reference').textContent).toContain(P.tierText('10', '20'))
     expect(screen.getByTestId('sales-line-1-source').textContent).toBe(P.sourceReference)
     expect(screen.getByTestId('sales-line-1-discount-adjustment').textContent).toBe('%3')
     expect(screen.getByTestId('sales-line-1-surcharge').textContent).toBe('%1.5')

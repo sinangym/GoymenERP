@@ -48,6 +48,7 @@ function PricingFacts({ line }: { readonly line: LinePricing }) {
           {reference === null ? T.noReference
             : `${T.referenceText(reference.priceListName, reference.versionNo, reference.unitPrice, reference.currencyCode)}`
               + (reference.floorUnitPrice === null ? '' : ` (${T.floorText(reference.floorUnitPrice)})`)}
+              + ` (${T.tierText(reference.lowerQuantity, reference.upperQuantity)})`}
         </dd>
       </div>
       <div>

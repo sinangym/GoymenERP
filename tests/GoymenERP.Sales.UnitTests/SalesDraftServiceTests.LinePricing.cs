@@ -19,7 +19,7 @@ public sealed partial class SalesDraftServiceTests
     {
         var references = new FakePriceReferences { Price = 12.50m, Floor = 10m };
         var world = new World { PriceReferences = references };
-        var created = (await world.Service().CreateDraftAsync(Request(), Metadata("k-1"))).Detail;
+        var created = (await world.Service().CreateDraftAsync(RequestWithQuantity("5", null), Metadata("k-1"))).Detail;
         var lineId = created.Lines[0].LineId;
 
         var offered = await world.Service().GetLinePriceReferencesAsync(created.Draft.Id, lineId);
@@ -40,6 +40,49 @@ public sealed partial class SalesDraftServiceTests
         Assert.Equal(("SENTETIK liste", "10", "ExcludingVat", "0", "10"), (pricing.PriceReference.PriceListName,
             pricing.PriceReference.FloorUnitPrice, pricing.PriceReference.VatBasis, pricing.PriceReference.LowerQuantity,
             pricing.PriceReference.UpperQuantity));
+    }
+
+    [Fact]
+    public async Task Quantity_at_a_touching_upper_bound_selects_the_second_tier_and_a_gap_has_no_automatic_price()
+    {
+        var references = new FakePriceReferences
+        {
+            Price = 12.50m,
+            UpperQuantity = 10m,
+            SecondPrice = 11m,
+            SecondLowerQuantity = 10m,
+            SecondUpperQuantity = 20m
+        };
+        var world = new World { PriceReferences = references };
+        var created = (await world.Service().CreateDraftAsync(RequestWithQuantity("10", null), Metadata("k-tier"))).Detail;
+        var lineId = created.Lines[0].LineId;
+
+        var candidate = Assert.Single((await world.Service().GetLinePriceReferencesAsync(created.Draft.Id, lineId)).Items);
+        Assert.Equal(("11", "10", "20"), (candidate.UnitPrice, candidate.LowerQuantity, candidate.UpperQuantity));
+
+        await world.Service().ReviseCommercialAsync(created.Draft.Id, Revision(created.Draft.Version,
+            new SalesDraftLineCommercialV1(lineId, "11", KgUnit, null, new SalesDraftPriceReferenceRequestV1(PriceList, 1))),
+            Metadata("k-tier-price"));
+        var saved = Assert.Single((await world.Service().GetDraftLinePricingAsync(created.Draft.Id)).Lines).PriceReference!;
+        Assert.Equal(("10", "20"), (saved.LowerQuantity, saved.UpperQuantity));
+
+        var gapReferences = new FakePriceReferences
+        {
+            Price = 12.50m,
+            UpperQuantity = 10m,
+            SecondPrice = 11m,
+            SecondLowerQuantity = 11m,
+            SecondUpperQuantity = 20m
+        };
+        var gapWorld = new World { PriceReferences = gapReferences };
+        var gapDraft = (await gapWorld.Service().CreateDraftAsync(RequestWithQuantity("10", null), Metadata("k-gap"))).Detail;
+        var gapLineId = gapDraft.Lines[0].LineId;
+        Assert.Empty((await gapWorld.Service().GetLinePriceReferencesAsync(gapDraft.Draft.Id, gapLineId)).Items);
+        var unavailable = await Assert.ThrowsAsync<SalesDraftServiceException>(() => gapWorld.Service().ReviseCommercialAsync(gapDraft.Draft.Id,
+            Revision(gapDraft.Draft.Version,
+                new SalesDraftLineCommercialV1(gapLineId, "11", KgUnit, null, new SalesDraftPriceReferenceRequestV1(PriceList, 1))),
+            Metadata("k-gap-price")));
+        Assert.Equal(SalesDraftProblemCodesV1.PriceReferenceUnavailable, Assert.Single(unavailable.Errors).Code);
     }
 
     [Fact]
@@ -133,25 +176,44 @@ public sealed partial class SalesDraftServiceTests
         public bool Missing { get; set; }
         public decimal LowerQuantity { get; set; }
         public decimal? UpperQuantity { get; set; } = 10m;
+        public decimal? SecondPrice { get; set; }
+        public decimal SecondLowerQuantity { get; set; } = 10m;
+        public decimal? SecondUpperQuantity { get; set; } = 20m;
         public (Guid List, int Version, Guid Product, Guid Unit, decimal Quantity, DateOnly On)? LastGet { get; private set; }
 
         public Task<IReadOnlyList<ProductPriceReferenceV1>> SearchAsync(Guid productId, Guid priceUnitId, decimal quantity,
             string currencyCode, DateOnly on, CancellationToken cancellationToken = default) =>
-            Task.FromResult<IReadOnlyList<ProductPriceReferenceV1>>(Missing || currencyCode != Currency || priceUnitId != KgUnit
-                || quantity < LowerQuantity || (UpperQuantity is { } upper && quantity >= upper)
-                ? []
-                : [Reference(productId, priceUnitId)]);
+            Task.FromResult<IReadOnlyList<ProductPriceReferenceV1>>(Select(productId, priceUnitId, quantity, currencyCode) is { } selected
+                ? [selected]
+                : []);
 
         public Task<ProductPriceReferenceV1?> GetAsync(Guid priceListId, int versionNo, Guid productId, Guid priceUnitId,
             decimal quantity, DateOnly on, CancellationToken cancellationToken = default)
         {
             LastGet = (priceListId, versionNo, productId, priceUnitId, quantity, on);
-            return Task.FromResult(Missing || priceListId != PriceList || priceUnitId != KgUnit || quantity < LowerQuantity
-                || (UpperQuantity is { } upper && quantity >= upper) ? null : Reference(productId, priceUnitId));
+            return Task.FromResult(priceListId != PriceList ? null : Select(productId, priceUnitId, quantity, Currency));
         }
 
-        private ProductPriceReferenceV1 Reference(Guid productId, Guid unitId) =>
-            new(PriceList, "SENTETIK liste", Guid.NewGuid(), 1, Day, null, productId, unitId, Currency, "Sales", "ExcludingVat", Price, Floor,
-                LowerQuantity, UpperQuantity);
+        private ProductPriceReferenceV1? Select(Guid productId, Guid unitId, decimal quantity, string currencyCode)
+        {
+            if (Missing || currencyCode != Currency || unitId != KgUnit)
+            {
+                return null;
+            }
+
+            if (quantity >= LowerQuantity && (UpperQuantity is null || quantity < UpperQuantity))
+            {
+                return Reference(productId, unitId, Price, LowerQuantity, UpperQuantity);
+            }
+
+            return SecondPrice is { } second && quantity >= SecondLowerQuantity
+                && (SecondUpperQuantity is null || quantity < SecondUpperQuantity)
+                ? Reference(productId, unitId, second, SecondLowerQuantity, SecondUpperQuantity)
+                : null;
+        }
+
+        private ProductPriceReferenceV1 Reference(Guid productId, Guid unitId, decimal price, decimal lower, decimal? upper) =>
+            new(PriceList, "SENTETIK liste", Guid.NewGuid(), 1, Day, null, productId, unitId, Currency, "Sales", "ExcludingVat", price, Floor,
+                lower, upper);
     }
 }

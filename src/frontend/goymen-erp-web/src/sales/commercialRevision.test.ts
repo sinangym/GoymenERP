@@ -62,7 +62,7 @@ describe('commercial revision payload', () => {
     const reference = {
       priceListId: '55555555-5555-4555-8555-555555555555', priceListName: 'Yurt içi', versionNo: 2, validFrom: '2026-10-01',
       validThrough: null, currencyCode: 'TRY', priceUnitId: '22222222-2222-4222-8222-222222222222', unitPrice: '42000.50',
-      floorUnitPrice: '40000', vatBasis: 'ExcludingVat',
+      floorUnitPrice: '40000', vatBasis: 'ExcludingVat', lowerQuantity: '10', upperQuantity: '20',
     }
     const built = buildCommercialRevisionRequest('7', [row({ unitPrice: '42000.50', reference, discountKind: 'amount', discountPercent: '500',
       surchargeKind: 'percent', surchargeValue: '1.5' })])

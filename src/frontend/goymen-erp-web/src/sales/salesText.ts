@@ -586,6 +586,9 @@ export const LINE_PRICING_TEXT = {
   noReference: 'Referans yok (elle fiyat)',
   referenceText: (name: string, versionNo: number, price: string, currency: string) => `${name} · Sürüm ${versionNo}: ${price} ${currency}`,
   floorText: (floor: string) => `alt fiyat ${floor}`,
+  tierText: (lower: string, upper: string | null) => upper === null
+    ? `miktar ${lower} ve üzeri`
+    : `miktar ${lower} dahil, ${upper} hariç`,
   source: 'Fiyat kaynağı',
   sourceReference: 'Liste fiyatı',
   sourceManual: 'Elle girildi',

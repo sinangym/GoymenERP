@@ -10,8 +10,10 @@ public sealed class SalesLinePricingTests
 {
     private static readonly Guid Unit = Guid.Parse("66666666-6666-4666-8666-666666666666");
 
-    private static PriceReferenceSnapshot Reference(string price = "100", string? floor = null) =>
-        new(Guid.Parse("abababab-abab-4bab-8bab-abababababab"), "SENTETIK", 2, new DateOnly(2026, 10, 1), null, "TRY", Unit, price, floor, "ExcludingVat");
+    private static PriceReferenceSnapshot Reference(string price = "100", string? floor = null,
+        string lowerQuantity = "10", string? upperQuantity = "20") =>
+        new(Guid.Parse("abababab-abab-4bab-8bab-abababababab"), "SENTETIK", 2, new DateOnly(2026, 10, 1), null, "TRY", Unit,
+            price, floor, "ExcludingVat", lowerQuantity, upperQuantity);
 
     [Theory]
     [InlineData("100", null, null, null, null, "100")]
@@ -43,7 +45,9 @@ public sealed class SalesLinePricingTests
         Assert.Null(SalesLinePricingJson.Serialize(new CommercialDraftFields("1", Unit, "5")));
         var fields = new CommercialDraftFields("98", Unit, null, Reference("100", "95"), "2", null, "1.5");
         var json = SalesLinePricingJson.Serialize(fields)!;
-        Assert.Equal(fields, SalesLinePricingJson.Restore("98", Unit, null, json));
+        var restored = SalesLinePricingJson.Restore("98", Unit, null, json);
+        Assert.Equal(fields, restored);
+        Assert.Equal(("10", "20"), (restored.Reference!.LowerQuantity, restored.Reference.UpperQuantity));
         Assert.Throws<InvalidOperationException>(() => SalesLinePricingJson.Restore("98", Unit, null, "{\"unknown\":1}"));
         Assert.Throws<InvalidOperationException>(() => SalesLinePricingJson.Restore("98", Unit, null,
             "{\"reference\":null,\"discountAmount\":null,\"surchargePercent\":null,\"surchargeAmount\":null}"));

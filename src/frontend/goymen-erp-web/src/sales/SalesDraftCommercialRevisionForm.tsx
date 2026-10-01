@@ -181,7 +181,8 @@ export function SalesDraftCommercialRevisionForm({
             <p data-testid={`sales-price-reference-${row.lineNo}`}>
               {P.reference}: {row.reference === null ? P.noReference
                 : P.referenceText(row.reference.priceListName, row.reference.versionNo, row.reference.unitPrice, row.reference.currencyCode)
-                  + (row.reference.floorUnitPrice === null ? '' : ` (${P.floorText(row.reference.floorUnitPrice)})`)}
+                  + (row.reference.floorUnitPrice === null ? '' : ` (${P.floorText(row.reference.floorUnitPrice)})`)
+                  + ` (${P.tierText(row.reference.lowerQuantity, row.reference.upperQuantity)})`}
             </p>
             <div className={styles.actions}>
               <button type="button" className={styles.secondaryButton} onClick={() => void loadReferences(row.lineId)}
@@ -199,7 +200,8 @@ export function SalesDraftCommercialRevisionForm({
                 {choice.items.map((item) => (
                   <li key={`${item.priceListId}:${item.versionNo}:${item.priceUnitId}`}>
                     {P.referenceText(item.priceListName, item.versionNo, item.unitPrice, item.currencyCode)}
-                    {item.floorUnitPrice === null ? '' : ` (${P.floorText(item.floorUnitPrice)})`}{' '}
+                    {item.floorUnitPrice === null ? '' : ` (${P.floorText(item.floorUnitPrice)})`}
+                    {` (${P.tierText(item.lowerQuantity, item.upperQuantity)})`}{' '}
                     <button type="button" className={styles.secondaryButton} onClick={() => chooseReference(row.lineId, item)}>{P.useReference}</button>
                   </li>
                 ))}

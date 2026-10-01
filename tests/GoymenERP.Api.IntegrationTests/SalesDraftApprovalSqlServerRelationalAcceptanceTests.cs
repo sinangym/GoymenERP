@@ -1079,7 +1079,8 @@ public sealed class SalesDraftApprovalSqlServerRelationalAcceptanceTests
     {
         await using var run = await Run.StartAsync();
         var owners = Owners.For(CompanyA);
-        var reference = new PriceReferenceSnapshot(Guid.NewGuid(), "SENTETIK liste", 2, Day, null, "TRY", KgUnit, "12.5", "10", "ExcludingVat");
+        var reference = new PriceReferenceSnapshot(Guid.NewGuid(), "SENTETIK liste", 2, Day, null, "TRY", KgUnit, "12.5", "10", "ExcludingVat",
+            "10", "20");
         var fields = new CommercialDraftFields("12.50", KgUnit, null, reference, "0.50", "1.5", null);
         SalesOrderDraft draft;
         await using (var a = run.Store(CompanyA))
@@ -1096,6 +1097,8 @@ public sealed class SalesDraftApprovalSqlServerRelationalAcceptanceTests
         {
             var reopened = (await b.Store.FindDraftAsync(draft.Id))!;
             Assert.Equal(fields, reopened.Lines[0].Commercial);
+            Assert.Equal(("10", "20"), (reopened.Lines[0].Commercial.Reference!.LowerQuantity,
+                reopened.Lines[0].Commercial.Reference.UpperQuantity));
             Assert.Equal(("Reference", "12.18"), (reopened.Lines[0].Commercial.PriceSource, SalesLinePriceCalculator.NetUnitPriceText(reopened.Lines[0].Commercial)));
         }
 
