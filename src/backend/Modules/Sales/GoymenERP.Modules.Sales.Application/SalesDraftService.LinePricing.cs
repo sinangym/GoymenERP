@@ -11,7 +11,7 @@ namespace GoymenERP.Modules.Sales.Application;
 /// its default until the person changes it; the person may overwrite the price, give a discount (percent or amount) and a
 /// maturity surcharge (vade farkı, percent or amount); the reference and the adjustments stay visible and the net is the
 /// one calculator's (<see cref="SalesLinePriceCalculator"/>). Sales asks the Product owner through
-/// <see cref="IProductPriceReferenceReaderV1"/> (the port carries no authority: Sales measures its own price names, fenced
+/// <see cref="IProductQuantityPriceReferenceReaderV1"/> (the port carries no authority: Sales measures its own price names, fenced
 /// after every awaited owner read) in the draft's currency (Settings money profile's code) on the draft's business date.
 /// </summary>
 public sealed partial class SalesDraftService
@@ -54,11 +54,14 @@ public sealed partial class SalesDraftService
         var line = draft.Lines.SingleOrDefault(candidate => candidate.Id == lineId)
             ?? throw new SalesDraftServiceException(404, "not_found");
         var currencyCode = await CurrencyCodeAsync(scope, permission, draft, cancellationToken);
-        Guid[] units = [.. new[] { line.Product.SalesUnit.UnitId, line.OrderUnit.UnitId, line.Product.StockUnit.UnitId }.Distinct()];
+        // The Product owner does not convert quantities. The current accepted Sales path prices in the exact order unit;
+        // future cross-unit pricing needs an owner-approved conversion contract rather than reusing this quantity.
+        var priceUnitId = line.OrderUnit.UnitId;
         var answers = await GuardedAsync(scope, permission,
-            () => reader.SearchAsync(line.Product.ProductId, units, currencyCode, draft.Money.EffectiveOn, cancellationToken), cancellationToken);
+            () => reader.SearchAsync(line.Product.ProductId, priceUnitId, line.Quantity.Value, currencyCode,
+                draft.Money.EffectiveOn, cancellationToken), cancellationToken);
         return new SalesOrderDraftPriceReferencesResponse(line.Id, currencyCode, draft.Money.EffectiveOn,
-            [.. answers.Where(answer => answer.ProductId == line.Product.ProductId && units.Contains(answer.PriceUnitId))
+            [.. answers.Where(answer => answer.ProductId == line.Product.ProductId && answer.PriceUnitId == priceUnitId)
                 .Select(answer => Wire(Snapshot(answer)))]);
     }
 
@@ -92,9 +95,16 @@ public sealed partial class SalesDraftService
             }
 
             var reference = line.PriceReference!;
+            if (priceUnit != draftLine.OrderUnit.UnitId)
+            {
+                // No quantity conversion is owned by Sales. A price in another unit cannot be tier-selected safely.
+                errors.Add(new($"lines[{index}].priceReference", SalesDraftProblemCodesV1.PriceReferenceUnavailable));
+                continue;
+            }
+
             var answer = await GuardedAsync(scope, permission,
-                () => reader.GetAsync(reference.PriceListId, reference.VersionNo, draftLine.Product.ProductId, priceUnit, draft.Money.EffectiveOn,
-                    cancellationToken), cancellationToken);
+                () => reader.GetAsync(reference.PriceListId, reference.VersionNo, draftLine.Product.ProductId, priceUnit,
+                    draftLine.Quantity.Value, draft.Money.EffectiveOn, cancellationToken), cancellationToken);
             if (answer is null || answer.ProductId != draftLine.Product.ProductId || answer.PriceUnitId != priceUnit)
             {
                 errors.Add(new($"lines[{index}].priceReference", SalesDraftProblemCodesV1.PriceReferenceUnavailable));
@@ -158,11 +168,14 @@ public sealed partial class SalesDraftService
     private static PriceReferenceSnapshot Snapshot(ProductPriceReferenceV1 answer) =>
         new(answer.PriceListId, answer.PriceListName, answer.VersionNo, answer.ValidFrom, answer.ValidThrough, answer.CurrencyCode,
             answer.PriceUnitId, SalesLinePriceCalculator.Format(answer.UnitPrice),
-            answer.FloorUnitPrice is { } floor ? SalesLinePriceCalculator.Format(floor) : null, answer.VatBasis);
+            answer.FloorUnitPrice is { } floor ? SalesLinePriceCalculator.Format(floor) : null, answer.VatBasis,
+            SalesLinePriceCalculator.Format(answer.LowerQuantity),
+            answer.UpperQuantity is { } upper ? SalesLinePriceCalculator.Format(upper) : null);
 
     private static SalesDraftPriceReferenceV1 Wire(PriceReferenceSnapshot reference) =>
         new(reference.PriceListId, reference.PriceListName, reference.VersionNo, reference.ValidFrom, reference.ValidThrough,
-            reference.CurrencyCode, reference.PriceUnitId, reference.UnitPrice, reference.FloorUnitPrice, reference.VatBasis);
+            reference.CurrencyCode, reference.PriceUnitId, reference.UnitPrice, reference.FloorUnitPrice, reference.VatBasis,
+            reference.LowerQuantity, reference.UpperQuantity);
 
     private static SalesDraftLinePricingV1 Pricing(Guid lineId, int lineNo, CommercialDraftFields commercial) =>
         new(lineId, lineNo, commercial.UnitPrice, commercial.PriceUnitId, commercial.PriceSource,

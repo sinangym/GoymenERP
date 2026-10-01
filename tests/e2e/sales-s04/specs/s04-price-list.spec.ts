@@ -143,7 +143,10 @@ test('S04-PL-02 the order line takes the list price as reference and default, ad
   expect(pricing.status()).toBe(200)
   expect(((await pricing.json()) as { readonly lines: readonly Record<string, unknown>[] }).lines[0]).toMatchObject({
     lineId, priceSource: 'Reference', discountPercent: '3', surchargePercent: '1.5', netUnitPrice: '41351.592275',
-    priceReference: { priceListId: journey.priceListId, versionNo: 1, currencyCode: 'TRY', floorUnitPrice: '40000' },
+    priceReference: {
+      priceListId: journey.priceListId, versionNo: 1, currencyCode: 'TRY', floorUnitPrice: '40000',
+      lowerQuantity: '0', upperQuantity: null,
+    },
   })
 })
 

@@ -67,7 +67,8 @@ public sealed record SalesDraftPriceReferenceRequestV1(Guid PriceListId, int Ver
 
 /// <summary>AT-018: a list price as the Product owner answers it, copied onto the line at the revision (exact text).</summary>
 public sealed record SalesDraftPriceReferenceV1(Guid PriceListId, string PriceListName, int VersionNo, DateOnly ValidFrom,
-    DateOnly? ValidThrough, string CurrencyCode, Guid PriceUnitId, string UnitPrice, string? FloorUnitPrice, string VatBasis);
+    DateOnly? ValidThrough, string CurrencyCode, Guid PriceUnitId, string UnitPrice, string? FloorUnitPrice, string VatBasis,
+    string LowerQuantity, string? UpperQuantity);
 
 /// <summary>
 /// AT-018 / AT-021 / master §10.2: one line's price as the line carries it — the reference list price, the line's own unit

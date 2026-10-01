@@ -112,7 +112,8 @@ public sealed record CommercialDraftFields(string? UnitPrice, Guid? PriceUnitId,
 /// optional floor, all as exact text.
 /// </summary>
 public sealed record PriceReferenceSnapshot(Guid PriceListId, string PriceListName, int VersionNo, DateOnly ValidFrom, DateOnly? ValidThrough,
-    string CurrencyCode, Guid PriceUnitId, string UnitPrice, string? FloorUnitPrice, string VatBasis);
+    string CurrencyCode, Guid PriceUnitId, string UnitPrice, string? FloorUnitPrice, string VatBasis,
+    string LowerQuantity, string? UpperQuantity);
 
 /// <summary>K3 Head B: one line's new commercial fields in a commercial revision, addressed by the client line id.</summary>
 public sealed record LineCommercialInput(Guid LineId, CommercialDraftFields Commercial);

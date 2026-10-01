@@ -1323,7 +1323,7 @@ public sealed partial class SalesDraftServiceTests
         /// <summary>DEC-SAL-005: the loading owner's read port (Logistics); null = not composed.</summary>
         public ISalesOrderLoadingReadPortV1? Loadings { get; set; }
         /// <summary>AT-018: the Product price-list reference read; null = not composed.</summary>
-        public IProductPriceReferenceReaderV1? PriceReferences { get; set; }
+        public IProductQuantityPriceReferenceReaderV1? PriceReferences { get; set; }
         public FixedActiveRoleCodeReader ActiveRoleCodes { get; } = new();
         public SalesDraftServiceBindings Bindings { get; set; } = new(CreatePermission, ReadPermission, ApprovePermission, PricePermission, PriceReadPermission, SchedulePermission,
             CancelPermission, QuantityPermission);

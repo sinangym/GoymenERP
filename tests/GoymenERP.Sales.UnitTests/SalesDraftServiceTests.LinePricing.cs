@@ -24,21 +24,22 @@ public sealed partial class SalesDraftServiceTests
 
         var offered = await world.Service().GetLinePriceReferencesAsync(created.Draft.Id, lineId);
         var candidate = Assert.Single(offered.Items);
-        Assert.Equal((PriceList, 1, "12.5", "10", "TRY", Day), (candidate.PriceListId, candidate.VersionNo, candidate.UnitPrice,
-            candidate.FloorUnitPrice, offered.CurrencyCode, offered.On));
+        Assert.Equal((PriceList, 1, "12.5", "10", "0", "10", "TRY", Day), (candidate.PriceListId, candidate.VersionNo,
+            candidate.UnitPrice, candidate.FloorUnitPrice, candidate.LowerQuantity, candidate.UpperQuantity, offered.CurrencyCode, offered.On));
 
         var revised = await world.Service().ReviseCommercialAsync(created.Draft.Id, Revision(created.Draft.Version,
             new SalesDraftLineCommercialV1(lineId, "12.50", KgUnit, "10", new SalesDraftPriceReferenceRequestV1(PriceList, 1),
                 SurchargePercent: "2")), Metadata("k-r1"));
         Assert.Equal("12.50", revised.Detail.Lines[0].UnitPrice);
         // The owner was asked for exactly this list version, the line's product and price unit, on the draft's business date.
-        Assert.Equal((PriceList, 1, Product, KgUnit, Day), references.LastGet);
+        Assert.Equal((PriceList, 1, Product, KgUnit, 5m, Day), references.LastGet);
 
         var pricing = Assert.Single((await world.Service().GetDraftLinePricingAsync(created.Draft.Id)).Lines);
         Assert.Equal(("Reference", "12.5", "10", "2", "11.475"), (pricing.PriceSource, pricing.PriceReference!.UnitPrice, pricing.DiscountPercent,
             pricing.SurchargePercent, pricing.NetUnitPrice));
-        Assert.Equal(("SENTETIK liste", "10", "ExcludingVat"), (pricing.PriceReference.PriceListName, pricing.PriceReference.FloorUnitPrice,
-            pricing.PriceReference.VatBasis));
+        Assert.Equal(("SENTETIK liste", "10", "ExcludingVat", "0", "10"), (pricing.PriceReference.PriceListName,
+            pricing.PriceReference.FloorUnitPrice, pricing.PriceReference.VatBasis, pricing.PriceReference.LowerQuantity,
+            pricing.PriceReference.UpperQuantity));
     }
 
     [Fact]
@@ -124,28 +125,33 @@ public sealed partial class SalesDraftServiceTests
         Assert.Equal(404, (await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().GetLinePriceReferencesAsync(created.Draft.Id, Guid.NewGuid()))).Status);
     }
 
-    private sealed class FakePriceReferences : IProductPriceReferenceReaderV1
+    private sealed class FakePriceReferences : IProductQuantityPriceReferenceReaderV1
     {
         public decimal Price { get; set; }
         public decimal? Floor { get; set; }
         public string Currency { get; set; } = "TRY";
         public bool Missing { get; set; }
-        public (Guid List, int Version, Guid Product, Guid Unit, DateOnly On)? LastGet { get; private set; }
+        public decimal LowerQuantity { get; set; }
+        public decimal? UpperQuantity { get; set; } = 10m;
+        public (Guid List, int Version, Guid Product, Guid Unit, decimal Quantity, DateOnly On)? LastGet { get; private set; }
 
-        public Task<IReadOnlyList<ProductPriceReferenceV1>> SearchAsync(Guid productId, IReadOnlyCollection<Guid> priceUnitIds, string currencyCode,
-            DateOnly on, CancellationToken cancellationToken = default) =>
-            Task.FromResult<IReadOnlyList<ProductPriceReferenceV1>>(Missing || currencyCode != Currency
+        public Task<IReadOnlyList<ProductPriceReferenceV1>> SearchAsync(Guid productId, Guid priceUnitId, decimal quantity,
+            string currencyCode, DateOnly on, CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<ProductPriceReferenceV1>>(Missing || currencyCode != Currency || priceUnitId != KgUnit
+                || quantity < LowerQuantity || (UpperQuantity is { } upper && quantity >= upper)
                 ? []
-                : [.. priceUnitIds.Where(unit => unit == KgUnit).Select(unit => Reference(productId, unit))]);
+                : [Reference(productId, priceUnitId)]);
 
-        public Task<ProductPriceReferenceV1?> GetAsync(Guid priceListId, int versionNo, Guid productId, Guid priceUnitId, DateOnly on,
-            CancellationToken cancellationToken = default)
+        public Task<ProductPriceReferenceV1?> GetAsync(Guid priceListId, int versionNo, Guid productId, Guid priceUnitId,
+            decimal quantity, DateOnly on, CancellationToken cancellationToken = default)
         {
-            LastGet = (priceListId, versionNo, productId, priceUnitId, on);
-            return Task.FromResult(Missing || priceListId != PriceList ? null : Reference(productId, priceUnitId));
+            LastGet = (priceListId, versionNo, productId, priceUnitId, quantity, on);
+            return Task.FromResult(Missing || priceListId != PriceList || priceUnitId != KgUnit || quantity < LowerQuantity
+                || (UpperQuantity is { } upper && quantity >= upper) ? null : Reference(productId, priceUnitId));
         }
 
         private ProductPriceReferenceV1 Reference(Guid productId, Guid unitId) =>
-            new(PriceList, "SENTETIK liste", Guid.NewGuid(), 1, Day, null, productId, unitId, Currency, "Sales", "ExcludingVat", Price, Floor);
+            new(PriceList, "SENTETIK liste", Guid.NewGuid(), 1, Day, null, productId, unitId, Currency, "Sales", "ExcludingVat", Price, Floor,
+                LowerQuantity, UpperQuantity);
     }
 }
