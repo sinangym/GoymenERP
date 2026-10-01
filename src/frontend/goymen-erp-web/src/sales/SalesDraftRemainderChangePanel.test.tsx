@@ -169,6 +169,7 @@ describe('S-04 partial-delivery remainder panel', () => {
     fireEvent.change(within(firstPanel).getByLabelText('Gerekçe'), { target: { value: 'SENTETIK yanıt kaybı' } })
     fireEvent.click(within(firstPanel).getByRole('button', { name: 'Onaya gönder' }))
     expect(await within(firstPanel).findByRole('button', { name: 'Aynı işlemi tekrar dene' })).toBeTruthy()
+    expect((within(firstPanel).getByRole('button', { name: 'Onaya gönder' }) as HTMLButtonElement).disabled).toBe(true)
 
     cleanup()
     const recorded = vi.fn()
@@ -179,7 +180,9 @@ describe('S-04 partial-delivery remainder panel', () => {
       namespace="test-company" actorId="actor-a" routeEntryGeneration={2} attemptBinding={binding}
       canRequest canDecide={false} onRecorded={recorded} /></QueryClientProvider>)
     const reopenedPanel = await screen.findByTestId('sales-remainder-changes')
-    fireEvent.click(await within(reopenedPanel).findByRole('button', { name: 'Aynı işlemi tekrar dene' }))
+    const retry = await within(reopenedPanel).findByRole('button', { name: 'Aynı işlemi tekrar dene' })
+    expect((within(reopenedPanel).getByRole('button', { name: 'Onaya gönder' }) as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.click(retry)
     await waitFor(() => expect(recorded).toHaveBeenCalledTimes(1))
     expect(calls).toHaveLength(2)
     expect(calls[1]).toEqual(calls[0])
@@ -220,5 +223,75 @@ describe('S-04 partial-delivery remainder panel', () => {
     expect((await within(revoked).findByRole('button', { name: 'Aynı işlemi tekrar dene' }) as HTMLButtonElement).disabled).toBe(true)
     expect(posts).toBe(1)
   })
-})
 
+  it('accepts a canonical positive fraction below one and refuses zero or non-canonical quantities', async () => {
+    const current = detail()
+    const posts: unknown[] = []
+    vi.stubGlobal('fetch', vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      if ((init?.method ?? 'GET').toUpperCase() === 'GET') {
+        const read = remainderRead(current.lines[0].lineId, current.lines[0].orderUnitId)
+        return new Response(JSON.stringify({ ...read, lines: [{ ...read.lines[0], loaded: '0.2', shipped: '0.2', delivered: '0.1', minimumQuantity: '0.2' }] }), { status: 200 })
+      }
+      posts.push(JSON.parse(String(init?.body)))
+      return new Response(JSON.stringify({ detail: approvedBody('5', '0.5'), isReplay: false, originalCorrelationId: 'c-fraction' }), {
+        status: 200, headers: { 'Content-Type': 'application/json' },
+      })
+    }))
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(<QueryClientProvider client={client}><SalesDraftRemainderChangePanel detail={current} companyId={current.draft.companyId}
+      namespace="test-company" actorId="actor-a" routeEntryGeneration={1} attemptBinding="fraction-binding"
+      canRequest canDecide={false} onRecorded={vi.fn()} /></QueryClientProvider>)
+    const panel = await screen.findByTestId('sales-remainder-changes')
+    fireEvent.change(await within(panel).findByLabelText('İşlem'), { target: { value: 'Revise' } })
+    fireEvent.change(within(panel).getByLabelText('Gerekçe'), { target: { value: 'SENTETIK kesirli kalan' } })
+    const quantity = within(panel).getByLabelText('Yeni sipariş miktarı')
+    for (const invalid of ['0', '0.0', '-0.5', '.5', '01', '1.0']) {
+      fireEvent.change(quantity, { target: { value: invalid } })
+      fireEvent.click(within(panel).getByRole('button', { name: 'Onaya gönder' }))
+    }
+    expect(posts).toHaveLength(0)
+    fireEvent.change(quantity, { target: { value: '0.5' } })
+    fireEvent.click(within(panel).getByRole('button', { name: 'Onaya gönder' }))
+    await waitFor(() => expect(posts).toEqual([expect.objectContaining({ quantity: '0.5' })]))
+  })
+
+  it('a late terminal answer after remount clears an unknown retry without minting another action', async () => {
+    const current = detail()
+    let resolveFirst!: (response: Response) => void
+    const firstAnswer = new Promise<Response>((resolve) => { resolveFirst = resolve })
+    const calls: { key: string | null; body: unknown }[] = []
+    vi.stubGlobal('fetch', vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      if ((init?.method ?? 'GET').toUpperCase() === 'GET') {
+        return new Response(JSON.stringify(remainderRead(current.lines[0].lineId, current.lines[0].orderUnitId)), { status: 200 })
+      }
+      const headers = init?.headers as Record<string, string>
+      calls.push({ key: headers['Idempotency-Key'] ?? null, body: JSON.parse(String(init?.body)) })
+      if (calls.length === 1) return firstAnswer
+      throw new TypeError('synthetic retry reply loss')
+    }))
+    const binding = 'late-response-binding'
+    const firstClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(<QueryClientProvider client={firstClient}><SalesDraftRemainderChangePanel detail={current} companyId={current.draft.companyId}
+      namespace="test-company" actorId="actor-a" routeEntryGeneration={1} attemptBinding={binding}
+      canRequest canDecide={false} onRecorded={vi.fn()} /></QueryClientProvider>)
+    const firstPanel = await screen.findByTestId('sales-remainder-changes')
+    fireEvent.change(await within(firstPanel).findByLabelText('Gerekçe'), { target: { value: 'SENTETIK geç cevap' } })
+    fireEvent.click(within(firstPanel).getByRole('button', { name: 'Onaya gönder' }))
+    await waitFor(() => expect(calls).toHaveLength(1))
+    cleanup()
+
+    const secondClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(<QueryClientProvider client={secondClient}><SalesDraftRemainderChangePanel detail={current} companyId={current.draft.companyId}
+      namespace="test-company" actorId="actor-a" routeEntryGeneration={2} attemptBinding={binding}
+      canRequest canDecide={false} onRecorded={vi.fn()} /></QueryClientProvider>)
+    const reopened = await screen.findByTestId('sales-remainder-changes')
+    fireEvent.click(await within(reopened).findByRole('button', { name: 'Aynı işlemi tekrar dene' }))
+    expect(await within(reopened).findByRole('button', { name: 'Aynı işlemi tekrar dene' })).toBeTruthy()
+    resolveFirst(new Response(JSON.stringify({ detail: approvedBody('5'), isReplay: false, originalCorrelationId: 'c-late' }), {
+      status: 200, headers: { 'Content-Type': 'application/json' },
+    }))
+    await waitFor(() => expect(within(reopened).queryByRole('button', { name: 'Aynı işlemi tekrar dene' })).toBeNull())
+    expect(calls).toHaveLength(2)
+    expect(calls[1]).toEqual(calls[0])
+  })
+})

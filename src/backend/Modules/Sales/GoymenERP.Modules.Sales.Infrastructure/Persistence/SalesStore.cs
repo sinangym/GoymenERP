@@ -1450,7 +1450,7 @@ public sealed class SalesStore(
             or SalesDraftCommands.RejectV1 or SalesDraftCommands.ReviseCommercialV1 or SalesDraftCommands.WithdrawV1
             or SalesDraftCommands.RescheduleDeliveryV1 or SalesDraftCommands.CancelV1 or SalesDraftCommands.ReviseQuantityV1
             or SalesDraftCommands.RequestRemainderChangeV1 or SalesDraftCommands.ApproveRemainderChangeV1
-            or SalesDraftCommands.RejectRemainderChangeV1))
+            or SalesDraftCommands.RejectRemainderChangeV1 or SalesDraftCommands.RecordCustomerAcceptanceV1))
         {
             throw new ArgumentException("Bilinmeyen Sales komut adı.", nameof(commandName));
         }

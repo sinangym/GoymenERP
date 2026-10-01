@@ -1,8 +1,9 @@
-import { useId, useMemo, useState } from 'react'
+import { useEffect, useId, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { fetchDraftRemainderChanges, sendRemainderChangeDecision, sendRemainderChangeRequest } from './api'
 import { APPROVAL_STATE, CANCELLED_STATE, type DraftDetail, type DraftMutation } from './contract'
 import { generateOrderAttemptKey, type OrderCommandOutcome } from './orderAttempt'
+import { isPositiveDecimalString } from './wirePrimitives'
 import {
   LINE_REMAINDER,
   REMAINDER_FLOOR,
@@ -16,6 +17,7 @@ import {
   recallPendingRemainderAction,
   rememberPendingRemainderAction,
   settlePendingRemainderAction,
+  subscribePendingRemainderAction,
   type PendingRemainderAction,
 } from './pendingRemainderChanges'
 import styles from './SalesPages.module.css'
@@ -58,6 +60,7 @@ export function SalesDraftRemainderChangePanel({
   const [pending, setPending] = useState<PendingRemainderAction | null>(() => recallPendingRemainderAction(attemptBinding))
   const [notice, setNotice] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  useEffect(() => subscribePendingRemainderAction(attemptBinding, setPending), [attemptBinding])
   const query = useQuery({
     queryKey: [namespace, actorId, routeEntryGeneration, 'sales-remainder-changes', companyId, detail.draft.id, detail.draft.version],
     queryFn: async ({ signal }) => {
@@ -103,8 +106,9 @@ export function SalesDraftRemainderChangePanel({
       return
     }
     if (outcome.type === 'offline' || outcome.type === 'network-error' || outcome.type === 'aborted' || outcome.type === 'malformed') {
-      setPending(action)
-      setNotice(TEXT.unknown)
+      const remembered = recallPendingRemainderAction(attemptBinding)
+      setPending(remembered?.key === action.key ? remembered : null)
+      if (remembered?.key === action.key) setNotice(TEXT.unknown)
       return
     }
     settlePendingRemainderAction(attemptBinding, action.key)
@@ -114,7 +118,7 @@ export function SalesDraftRemainderChangePanel({
   }
 
   function requestChange() {
-    if (selected === null || reason.trim() === '' || (kind === REMAINDER_KIND.revise && !/^(?:0*[1-9]\d*)(?:\.\d+)?$/.test(quantity.trim()))) {
+    if (selected === null || reason.trim() === '' || (kind === REMAINDER_KIND.revise && !isPositiveDecimalString(quantity.trim()))) {
       setNotice(TEXT.invalid)
       return
     }
@@ -123,9 +127,13 @@ export function SalesDraftRemainderChangePanel({
       payload: { expectedVersion: detail.draft.version, lineId: selected.lineId, kind,
         quantity: kind === REMAINDER_KIND.cancel ? null : quantity.trim(), reason },
     }
-    rememberPendingRemainderAction(attemptBinding, action)
-    setPending(action)
-    void execute(action)
+    const reserved = rememberPendingRemainderAction(attemptBinding, action)
+    setPending(reserved)
+    if (reserved.key !== action.key) {
+      setNotice(TEXT.unknown)
+      return
+    }
+    void execute(reserved)
   }
 
   function decide(changeNo: number, decision: 'approval' | 'rejection') {
@@ -133,9 +141,13 @@ export function SalesDraftRemainderChangePanel({
       kind: decision, key: generateOrderAttemptKey(), changeNo,
       payload: { expectedVersion: detail.draft.version, reason: decision === 'rejection' ? (decisionReasons[changeNo] ?? '') || null : null },
     }
-    rememberPendingRemainderAction(attemptBinding, action)
-    setPending(action)
-    void execute(action)
+    const reserved = rememberPendingRemainderAction(attemptBinding, action)
+    setPending(reserved)
+    if (reserved.key !== action.key) {
+      setNotice(TEXT.unknown)
+      return
+    }
+    void execute(reserved)
   }
 
   return (
@@ -150,17 +162,17 @@ export function SalesDraftRemainderChangePanel({
           {canRequest ? (
             <div className={styles.actions} data-testid="sales-remainder-request">
               <label htmlFor="sales-remainder-line">{TEXT.line}</label>
-              <select id="sales-remainder-line" value={lineId} disabled={busy} onChange={(event) => setLineId(event.target.value)}>
+              <select id="sales-remainder-line" value={lineId} disabled={busy || pending !== null} onChange={(event) => setLineId(event.target.value)}>
                 {changes?.lines.map((line) => <option key={line.lineId} value={line.lineId}>{line.lineNo}. satır · {line.quantity}</option>)}
               </select>
               <label htmlFor="sales-remainder-kind">{TEXT.kind}</label>
-              <select id="sales-remainder-kind" value={kind} disabled={busy} onChange={(event) => setKind(event.target.value as typeof kind)}>
+              <select id="sales-remainder-kind" value={kind} disabled={busy || pending !== null} onChange={(event) => setKind(event.target.value as typeof kind)}>
                 <option value={REMAINDER_KIND.cancel}>{TEXT.cancel}</option><option value={REMAINDER_KIND.revise}>{TEXT.revise}</option>
               </select>
-              {kind === REMAINDER_KIND.revise ? <><label htmlFor="sales-remainder-quantity">{TEXT.quantity}</label><input id="sales-remainder-quantity" inputMode="decimal" value={quantity} disabled={busy} onChange={(event) => setQuantity(event.target.value)} /></> : null}
+              {kind === REMAINDER_KIND.revise ? <><label htmlFor="sales-remainder-quantity">{TEXT.quantity}</label><input id="sales-remainder-quantity" inputMode="decimal" value={quantity} disabled={busy || pending !== null} onChange={(event) => setQuantity(event.target.value)} /></> : null}
               <label htmlFor="sales-remainder-reason">{TEXT.reason}</label>
-              <textarea id="sales-remainder-reason" maxLength={4000} value={reason} disabled={busy} onChange={(event) => setReason(event.target.value)} />
-              <button type="button" className={styles.primaryButton} disabled={busy || !stateAllowsRequest} onClick={requestChange}>{TEXT.request}</button>
+              <textarea id="sales-remainder-reason" maxLength={4000} value={reason} disabled={busy || pending !== null} onChange={(event) => setReason(event.target.value)} />
+              <button type="button" className={styles.primaryButton} disabled={busy || pending !== null || !stateAllowsRequest} onClick={requestChange}>{TEXT.request}</button>
               {!stateAllowsRequest ? <p className={styles.muted}>{TEXT.stateUnavailable}</p> : null}
             </div>
           ) : null}
@@ -174,10 +186,10 @@ export function SalesDraftRemainderChangePanel({
               <p className={styles.muted}>{item.reason} · {item.requestedBy}</p>
               {item.state === REMAINDER_STATE.pending && canDecide ? <div className={styles.actions}>
                 <label htmlFor={`sales-remainder-reject-${item.changeNo}`}>{TEXT.decisionReason}</label>
-                <input id={`sales-remainder-reject-${item.changeNo}`} value={decisionReasons[item.changeNo] ?? ''} disabled={busy}
+                <input id={`sales-remainder-reject-${item.changeNo}`} value={decisionReasons[item.changeNo] ?? ''} disabled={busy || pending !== null}
                   onChange={(event) => setDecisionReasons((current) => ({ ...current, [item.changeNo]: event.target.value }))} />
-                <button type="button" className={styles.primaryButton} disabled={busy} onClick={() => decide(item.changeNo, 'approval')}>{TEXT.approve}</button>
-                <button type="button" className={styles.secondaryButton} disabled={busy} onClick={() => decide(item.changeNo, 'rejection')}>{TEXT.reject}</button>
+                <button type="button" className={styles.primaryButton} disabled={busy || pending !== null} onClick={() => decide(item.changeNo, 'approval')}>{TEXT.approve}</button>
+                <button type="button" className={styles.secondaryButton} disabled={busy || pending !== null} onClick={() => decide(item.changeNo, 'rejection')}>{TEXT.reject}</button>
               </div> : null}
             </article>
           ))}
@@ -186,4 +198,3 @@ export function SalesDraftRemainderChangePanel({
     </section>
   )
 }
-

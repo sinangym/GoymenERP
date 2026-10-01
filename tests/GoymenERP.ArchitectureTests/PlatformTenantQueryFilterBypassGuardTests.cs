@@ -273,7 +273,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // same company-filtered Draft row; no query-filter bypass, direct database surface or tenant key changed.
             ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/"
              + "Persistence/SalesDbContext.cs"] =
-                "2d2d3545b6c7da474d5e4577b413ed0090028036fe18f241941fb7de4f0c4692",
+                "ffc908cec035161607d6eadefd46a83d9ee0d83352e199928722c2896708fb3a",
             // LOG-4a: company-scoped like Organization; every tenant row (instructions, lines, shares, attempts) and
             // AuditEvent carries the CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/"
@@ -964,7 +964,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // Re-fingerprinted for DEC-SAL-002: the price and quantity revisions share one archive-and-save
                     // core (still a single save through the filtered context); SqlClient count unchanged.
                     new(
-                        "7c29833d5f51472c65a404483d604372ee99283925bb43cd631eb38f2f9be875",
+                        "c53c13c5384b22755c54dc4b2f86615e430636d65f34a5fd7916b77d02acf757",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
