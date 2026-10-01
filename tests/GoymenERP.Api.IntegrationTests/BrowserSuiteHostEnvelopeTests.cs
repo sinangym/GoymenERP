@@ -310,15 +310,21 @@ public sealed class BrowserSuiteHostEnvelopeTests
     [Fact]
     public void An_acc01_disposable_api_opens_only_the_exact_read_binding()
     {
-        WithProcessEnvelope(() =>
+        WithoutProcessEnvelope(() =>
         {
-            var api = BaseApiEnvironment();
-            api["BrowserSuiteApi__Profile"] = "acc01";
-            api["BrowserSuiteApi__Disposable"] = "CONFIRMED";
-            api["BrowserSuiteApi__TestedCommit"] = Commit;
-            api["BrowserSuiteApi__RunId"] = RunId;
-            api["BrowserSuiteApi__ComposeProject"] = ComposeProject;
-            using var host = StartedHost(api);
+            using var baseHost = new GoymenErpApiFactory();
+            using var host = baseHost.WithWebHostBuilder(builder =>
+            {
+                builder.UseSetting("BrowserSuiteApi:Profile", "acc01");
+                builder.UseSetting("BrowserSuiteApi:Disposable", "CONFIRMED");
+                builder.UseSetting("BrowserSuiteApi:TestedCommit", Commit);
+                builder.UseSetting("BrowserSuiteApi:RunId", RunId);
+                builder.UseSetting("BrowserSuiteApi:ComposeProject", ComposeProject);
+            });
+            using (host.CreateClient())
+            {
+                // Build Program as a normal API test host with only the exact acc01 read gate.
+            }
 
             var registered = host.Services.GetRequiredService<IServiceProviderIsService>();
             Assert.False(registered.IsService(typeof(C01E2eFinanceNormalJournalSourceFixtureWriter)));
