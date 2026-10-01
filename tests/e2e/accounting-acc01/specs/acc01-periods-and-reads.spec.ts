@@ -491,10 +491,22 @@ test.describe.serial('ACC-01 periods and reads (real API, real SQL)', () => {
   test('ACC01-10 an authorized Finance source becomes one normal draft, posted journal and trial-balance effect', async ({ page, context }) => {
     const rewritten = await asActor(context, env.seed.preparerActor)
     const answered = watchAnswers(page)
+    const sourceRead = page.waitForResponse(response =>
+      new URL(response.url()).pathname === '/api/v1/finance/manual-receipts'
+        && response.request().method() === 'GET')
     await page.goto('/muhasebe/normal-fisler/yeni')
     await expect(page.getByRole('heading', { level: 1, name: 'Yeni normal fiş taslağı', exact: true })).toBeVisible({ timeout: 30_000 })
 
-    await page.getByLabel('Onaylı finans kaynağı', { exact: true }).selectOption({ label: env.seed.normalSourceLabel })
+    const sourceResponse = await sourceRead
+    expect(sourceResponse.status()).toBe(200)
+    const sourcePage = await sourceResponse.json() as { items: Array<{ id: string; stage: string }> }
+    const recordedSources = sourcePage.items.filter(source => source.stage === 'Recorded')
+    expect(recordedSources).toHaveLength(1)
+    const sourcePicker = page.getByLabel('Onaylı finans kaynağı', { exact: true })
+    const sourceOption = sourcePicker.locator(`option[value="${recordedSources[0].id}"]`)
+    await expect(sourceOption).toHaveText(env.seed.normalSourceLabel)
+    await expect(sourcePicker).toBeEnabled()
+    await sourcePicker.selectOption(recordedSources[0].id)
     await expect(page.getByText(/Onaylı ayna .*; kural .*/)).toBeVisible({ timeout: 30_000 })
     const accounts = page.getByLabel('Onaylı hesap', { exact: true })
     await accounts.nth(0).selectOption({ label: env.seed.normalDebitLabel })
