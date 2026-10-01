@@ -108,9 +108,10 @@ public sealed partial class InventoryStore : IInventoryTransferWriterV1, IInvent
         };
         dbContext.Transfers.Add(row);
         var sequence = 0;
+        var stagedLines = new List<InventoryTransferLineRow>(transfer.Lines.Count);
         foreach (var line in transfer.Lines)
         {
-            dbContext.TransferLines.Add(new InventoryTransferLineRow
+            var stagedLine = new InventoryTransferLineRow
             {
                 CompanyId = companyId,
                 TransferId = transfer.Id,
@@ -119,11 +120,12 @@ public sealed partial class InventoryStore : IInventoryTransferWriterV1, IInvent
                 LabelId = line.LabelId,
                 ExpectedLabelVersion = line.ExpectedLabelVersion,
                 PlannedKg = line.PlannedQuantity.Value,
-            });
+            };
+            stagedLines.Add(stagedLine);
+            dbContext.TransferLines.Add(stagedLine);
         }
 
-        var view = TransferView(row, dbContext.TransferLines.Local.Where(line => line.TransferId == row.Id).ToArray(),
-            dispatch: null, [], []);
+        var view = TransferView(row, stagedLines, dispatch: null, [], []);
         dbContext.Commands.Add(TransferCommandRow(PlanTransferCommand, keyHash, payloadHash, metadata, row.Id, view));
         Audit(metadata, companyId, TransferEntityType, row.Id, "inventory.transfer.planned.v1", "Plan",
             null, row.Version, "{}", JsonSerializer.Serialize(view, Json), "Transfer planlandı");

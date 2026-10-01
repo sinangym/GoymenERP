@@ -371,7 +371,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
                 acceptInterleaveSource.LabelId, CompanyA, "SYN-TRANSFER-ACCEPT-INTERLEAVE", Product, LotA);
             var mutation = Movement(CompanyA, StockMovementKind.Receipt,
                 new StockSourceReference("synthetic.transfer-accept-interleave", Guid.NewGuid()),
-                In(Position(CompanyA, sourceLocation, label,
+                In(Position(CompanyA, destinationLocation, label,
                     GoymenERP.Modules.Inventory.Domain.Stock.BlockState.Free), 1m));
             await using var mutator = run.Store(CompanyA);
             Assert.Equal(InventoryWriteOutcome.Recorded,
@@ -385,7 +385,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
                 MutateLabelBetweenValidationAndStaging));
             Assert.Equal((409, InventoryTransferCodesV1.ConcurrentChange), (raced.Status, raced.Code));
         }
-        Assert.Equal((0, 0, 1m, sourceLocation, acceptInterleaveSource.LabelVersion + 2), (
+        Assert.Equal((0, 0, 1m, destinationLocation, acceptInterleaveSource.LabelVersion + 2), (
             await run.ScalarAsync<int>(
                 "SELECT COUNT(*) FROM inventory.TransferAcceptances WHERE TransferId = @id",
                 ("@id", acceptInterleavePlan.TransferId)),
