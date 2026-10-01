@@ -1,6 +1,8 @@
 import { useEffect, useRef, type ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link, useLocation, useParams } from 'react-router'
+import { DocumentsPanel } from '../documents/DocumentsPanel'
+import { OWNER_KIND } from '../documents/contract'
 import { productDetailPath } from '../product/capabilities'
 import { CAPABILITY } from '../shell/capabilities'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
@@ -282,5 +284,13 @@ function InventoryLabelDetailView({ namespace, labelId, target, stockSearch }: {
       <p>Ekli belge: {identity.documents.length}</p>
       <p>Basım: {identity.prints.length}</p>
     </section>
+
+    <DocumentsPanel
+      ownerKind={OWNER_KIND.inventoryMaterialLabel}
+      ownerId={identity.labelId}
+      companyId={companyId}
+      namespace={namespace}
+      entryGeneration={shell.routeEntryGeneration}
+    />
   </main>
 }

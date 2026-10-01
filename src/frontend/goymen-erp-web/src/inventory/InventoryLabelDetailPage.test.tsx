@@ -21,11 +21,18 @@ const MOVEMENT = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
 const OTHER_COMPANY = '99999999-9999-9999-9999-999999999999'
 const clients: QueryClient[] = []
 const api = vi.hoisted(() => ({ detail: vi.fn() }))
+const documents = vi.hoisted(() => ({ panel: vi.fn() }))
 const scenario = vi.hoisted(() => ({
   companyId: '11111111-1111-1111-1111-111111111111', namespace: 'SENTETIK-a' as string | null,
   generation: 1, canReadProduct: true, canReadLabel: true, report: vi.fn(),
 }))
 vi.mock('./labelDetailApi', () => ({ fetchInventoryLabelDetail: api.detail }))
+vi.mock('../documents/DocumentsPanel', () => ({
+  DocumentsPanel: (props: unknown) => {
+    documents.panel(props)
+    return <section data-testid="inventory-label-documents" />
+  },
+}))
 vi.mock('../shell/shellContext', () => ({
   useShellState: () => ({ sessionEpoch: 1, routeEntryGeneration: scenario.generation,
     activeContext: { userId: 'actor-a', companyId: scenario.companyId, scopeMode: 'single', capabilities: [] } }),
@@ -103,6 +110,7 @@ beforeEach(() => {
   scenario.companyId = COMPANY; scenario.namespace = 'SENTETIK-a'; scenario.generation = 1
   scenario.canReadProduct = true; scenario.canReadLabel = true; scenario.report.mockReset()
   api.detail.mockReset().mockResolvedValue({ type: 'ok-single', data: fixture() })
+  documents.panel.mockReset()
 })
 afterEach(() => { cleanup(); clients.splice(0).forEach((client) => client.clear()) })
 
@@ -122,6 +130,13 @@ describe('InventoryLabelDetailPage', () => {
     expect(screen.getByRole('link', { name: 'LBL-100' }).getAttribute('href')).toBe(inventoryLabelDetailPath(LABEL))
     expect(screen.getByText('Gerekli belgeler: MTC')).not.toBeNull()
     expect(api.detail).toHaveBeenCalledWith(COMPANY, LABEL, expect.any(AbortSignal))
+    expect(documents.panel).toHaveBeenCalledWith({
+      ownerKind: 'inventory.material-label',
+      ownerId: LABEL,
+      companyId: COMPANY,
+      namespace: 'SENTETIK-a',
+      entryGeneration: 1,
+    })
   })
   it('renders transfer dispatch and acceptance movements in the existing timeline', async () => {
     const base = fixture()
@@ -186,10 +201,12 @@ describe('InventoryLabelDetailPage', () => {
     api.detail.mockImplementationOnce(() => new Promise((done) => { resolve = done }))
     const view = mount(); await waitFor(() => expect(api.detail).toHaveBeenCalledTimes(1))
     scenario.companyId = OTHER_COMPANY; scenario.namespace = 'SENTETIK-b'
+    documents.panel.mockClear()
     api.detail.mockResolvedValue({ type: 'http', status: 404 }); view.refresh()
     await screen.findByText('Bulunamadı — etiket')
     await act(async () => resolve({ type: 'ok-single', data: fixture() }))
     expect(productLink()).toBeNull(); expect(screen.queryByText(PRODUCT)).toBeNull()
+    expect(documents.panel).not.toHaveBeenCalled()
   })
   it('reports 401 and hides all record navigation', async () => {
     api.detail.mockResolvedValueOnce({ type: 'http', status: 401 }); mount()
