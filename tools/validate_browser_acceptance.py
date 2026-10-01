@@ -648,7 +648,7 @@ def seed_export(suite: str, seed: object) -> str:
         require(is_guid or is_actor or is_s04_version or is_s04_code or is_s04_name
                 or is_pur01_version or is_pur01_code or is_pur01_name
                 or is_r14_version or is_r14_code or is_r14_name,
-                f"seed output {key} must be a GUID, an actor id or an approved suite scalar value")
+                f"seed output {key} must be a GUID or an actor id or an approved suite scalar value")
     if suite == "mfg":
         require(seed["outputOwnerId"] == seed["companyId"],
                 "mfg output owner must be the seeded company")
