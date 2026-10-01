@@ -388,6 +388,26 @@ public sealed class SalesOrderDraftApprovalTests
             new ApprovalFacts(Preparer, T0, Approver, T0.AddMinutes(1), null), 6, T0.AddMinutes(2)));
     }
 
+    [Fact]
+    public void Restore_refuses_a_later_remainder_request_whose_ordered_quantity_breaks_the_same_line_history()
+    {
+        var lineId = Guid.Parse("88888888-8888-4888-8888-888888888888");
+        var draft = Draft(Line(lineId, "0.9", 0.9m));
+        var firstRequest = new RemainderChangeRequest(1, 0, lineId, 1, RemainderChangeKind.Revise, "1.25", 1.1m, "1.1",
+            "SENTETIK ilk kalan", Preparer, T0, new RemainderFloor(0.7m, 0.6m, 0.5m));
+        var firstDecision = new RemainderChangeDecision(RemainderChangeState.Approved, Approver, T0.AddMinutes(1), null,
+            1.1m, "1.1", new RemainderFloor(0.8m, 0.6m, 0.5m));
+        draft.RestoreRemainderChange(new RemainderChangeFacts(firstRequest, firstDecision));
+
+        var corruptSecondRequest = new RemainderChangeRequest(2, 0, lineId, 1, RemainderChangeKind.Revise, "99", 0.9m, "0.9",
+            "SENTETIK ikinci kalan", Preparer, T0.AddMinutes(2), new RemainderFloor(0.8m, 0.6m, 0.5m));
+        var secondDecision = new RemainderChangeDecision(RemainderChangeState.Approved, Approver, T0.AddMinutes(3), null,
+            0.9m, "0.9", new RemainderFloor(0.8m, 0.6m, 0.5m));
+
+        Assert.Throws<InvalidOperationException>(() =>
+            draft.RestoreRemainderChange(new RemainderChangeFacts(corruptSecondRequest, secondDecision)));
+    }
+
     private static string CodeOf(Action action) => Assert.Throws<SalesRuleException>(action).Code;
 
     [Fact]

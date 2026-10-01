@@ -550,7 +550,8 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
                     [
                         nameof(DraftRow.UpdatedAtUtc), nameof(DraftRow.ApprovalState), nameof(DraftRow.SubmittedBy), nameof(DraftRow.SubmittedAtUtc),
                         nameof(DraftRow.DecidedBy), nameof(DraftRow.DecidedAtUtc), nameof(DraftRow.RejectionReason), nameof(DraftRow.Revision),
-                        nameof(DraftRow.State),
+                        nameof(DraftRow.State), nameof(DraftRow.CustomerAcceptedRevision), nameof(DraftRow.CustomerAcceptedBy),
+                        nameof(DraftRow.CustomerAcceptedAtUtc),
                     ],
                     // K3 Head B — a DELIBERATE narrowing of "lines never change", declared here and in the PR: ONLY the three
                     // commercial columns may change, under a commercial revision; DEC-SAL-002 widens it by exactly the ordered
@@ -579,6 +580,27 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
                     if (state.IsModified && !((int)state.OriginalValue! == (int)SalesDraftState.Draft && (int)state.CurrentValue! == (int)SalesDraftState.Cancelled))
                     {
                         throw new InvalidOperationException("Satış siparişinin yaşam döngüsü yalnız Taslak → İptal yönünde değişir.");
+                    }
+
+                    var acceptedRevision = entry.Property(nameof(DraftRow.CustomerAcceptedRevision));
+                    var acceptedBy = entry.Property(nameof(DraftRow.CustomerAcceptedBy));
+                    var acceptedAt = entry.Property(nameof(DraftRow.CustomerAcceptedAtUtc));
+                    if (acceptedRevision.IsModified || acceptedBy.IsModified || acceptedAt.IsModified)
+                    {
+                        var required = entry.Property(nameof(DraftRow.CustomerAcceptanceRequired));
+                        var approval = entry.Property(nameof(DraftRow.ApprovalState));
+                        var revision = entry.Property(nameof(DraftRow.Revision));
+                        var currentAcceptedRevision = (int?)acceptedRevision.CurrentValue;
+                        var originalAcceptedRevision = (int?)acceptedRevision.OriginalValue;
+                        if (required.IsModified || required.CurrentValue is not true || approval.IsModified
+                            || approval.CurrentValue is not (int)InternalApprovalState.Approved || revision.IsModified
+                            || currentAcceptedRevision is null || currentAcceptedRevision != (int)revision.CurrentValue!
+                            || originalAcceptedRevision is { } previous && previous >= currentAcceptedRevision
+                            || acceptedBy.CurrentValue is not string actor || string.IsNullOrWhiteSpace(actor)
+                            || acceptedAt.CurrentValue is not DateTimeOffset)
+                        {
+                            throw new InvalidOperationException("Müşteri kabulü yalnız onaylı güncel revizyona ileri bir geçiş olarak kaydedilir.");
+                        }
                     }
                 }
 
