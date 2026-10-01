@@ -147,17 +147,25 @@ public sealed class BrowserSuiteHostEnvelopeTests
             "acc01",
             new Dictionary<string, string>
             {
-                ["normalSourceLabel"] = "b7400000-0000-4000-8000-00000000ac01 - 2026-09-24",
+                ["normalSourceLabel"] = "Kaynak ref. ...0000ac01 - 2026-09-24",
                 ["normalOccurredOn"] = "2026-09-24",
                 ["normalAmount"] = "10.25",
                 ["normalDebitLabel"] = "SENTETIK-100 - Sentetik borc hesabi (Borç)",
                 ["normalCreditLabel"] = "SENTETIK-120 - Sentetik alacak hesabi (Alacak)",
             },
             new HashSet<string>(StringComparer.Ordinal));
+
+        BrowserSuiteSeedOutputValidator.Validate(
+            "acc01",
+            new Dictionary<string, string>
+            {
+                ["normalSourceLabel"] = "Kaynak ref. ...0000ac02 - 2026-09-24",
+            },
+            new HashSet<string>(StringComparer.Ordinal));
     }
 
     [Theory]
-    [InlineData("normalSourceLabel", "b7400000-0000-4000-8000-00000000ac02 - 2026-09-24")]
+    [InlineData("normalSourceLabel", "Kaynak ref. ...0000AC01 - 2026-09-24")]
     [InlineData("normalOccurredOn", "2026-09-25")]
     [InlineData("normalAmount", "10.250")]
     [InlineData("normalDebitLabel", "SENTETIK-100 - Sentetik borc hesabi")]

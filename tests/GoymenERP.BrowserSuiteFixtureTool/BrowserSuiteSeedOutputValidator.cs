@@ -159,16 +159,17 @@ internal static class BrowserSuiteSeedOutputValidator
 
     private static bool IsAcc01SourceLabel(string value)
     {
+        const string prefix = "Kaynak ref. ...";
         const string suffix = " - 2026-09-24";
-        if (!value.EndsWith(suffix, StringComparison.Ordinal))
+        if (!value.StartsWith(prefix, StringComparison.Ordinal)
+            || !value.EndsWith(suffix, StringComparison.Ordinal))
         {
             return false;
         }
 
-        var sourceNumber = value[..^suffix.Length];
-        return Guid.TryParseExact(sourceNumber, "D", out var sourceId)
-            && sourceId != Guid.Empty
-            && string.Equals(sourceNumber, sourceId.ToString("D"), StringComparison.Ordinal);
+        var tail = value[prefix.Length..^suffix.Length];
+        return tail.Length == 8
+            && tail.All(character => character is (>= '0' and <= '9') or (>= 'a' and <= 'f'));
     }
 
     private static bool IsPositiveDecimal(string value)

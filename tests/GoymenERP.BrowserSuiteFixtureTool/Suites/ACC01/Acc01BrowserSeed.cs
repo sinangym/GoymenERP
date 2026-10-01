@@ -142,7 +142,7 @@ public sealed class Acc01BrowserSeed : IBrowserSuiteFixture
             ["companyBId"] = CompanyGsp.ToString("D"),
             ["preparerActor"] = PreparerActor,
             ["approverActor"] = ApproverActor,
-            ["normalSourceLabel"] = $"{sourceNumber} - {occurredOn}",
+            ["normalSourceLabel"] = $"Kaynak ref. ...{sourceId.ToString("D")[^8..]} - {occurredOn}",
             ["normalOccurredOn"] = occurredOn,
             ["normalAmount"] = amount,
             ["normalDebitLabel"] = MappingLabel(debit, "Borç"),
