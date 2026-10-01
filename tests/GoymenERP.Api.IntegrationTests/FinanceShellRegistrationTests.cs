@@ -73,22 +73,22 @@ public sealed class FinanceShellRegistrationTests
             .ToArray();
         Assert.Equal(
             [
-                (SalesShellCapabilityProvider.ListCapabilityId, (string?)null, SalesPermissionManifestV1.DraftsRead),
-                (SalesShellCapabilityProvider.CreateCapabilityId, null, SalesPermissionManifestV1.DraftsCreate),
+                (SalesShellCapabilityProvider.CreateCapabilityId, (string?)null, SalesPermissionManifestV1.DraftsCreate),
                 (SalesShellCapabilityProvider.DetailCapabilityId, null, SalesPermissionManifestV1.DraftsRead),
+                (SalesShellCapabilityProvider.ListCapabilityId, null, SalesPermissionManifestV1.DraftsRead),
                 (SalesShellCapabilityProvider.ApproveCapabilityId, SalesShellCapabilityProvider.DetailCapabilityId,
                     $"{SalesPermissionManifestV1.DraftsRead}+{SalesPermissionManifestV1.OrdersApprove}"),
-                (SalesShellCapabilityProvider.PriceWriteCapabilityId, SalesShellCapabilityProvider.DetailCapabilityId,
-                    $"{SalesPermissionManifestV1.DraftsRead}+{SalesPermissionManifestV1.OrdersPriceWrite}"),
-                (SalesShellCapabilityProvider.DeliveryScheduleWriteCapabilityId, SalesShellCapabilityProvider.DetailCapabilityId,
-                    $"{SalesPermissionManifestV1.DraftsRead}+{SalesPermissionManifestV1.OrdersDeliveryScheduleWrite}"),
                 (SalesShellCapabilityProvider.CancelCapabilityId, SalesShellCapabilityProvider.DetailCapabilityId,
                     $"{SalesPermissionManifestV1.DraftsRead}+{SalesPermissionManifestV1.OrdersCancel}"),
-                (SalesShellCapabilityProvider.QuantityWriteCapabilityId, SalesShellCapabilityProvider.DetailCapabilityId,
-                    $"{SalesPermissionManifestV1.DraftsRead}+{SalesPermissionManifestV1.OrdersQuantityWrite}"),
                 (SalesShellCapabilityProvider.CustomerAcceptanceRecordCapabilityId,
                     SalesShellCapabilityProvider.DetailCapabilityId,
                     $"{SalesPermissionManifestV1.DraftsRead}+{SalesPermissionManifestV1.OrdersCustomerAcceptanceRecord}"),
+                (SalesShellCapabilityProvider.DeliveryScheduleWriteCapabilityId, SalesShellCapabilityProvider.DetailCapabilityId,
+                    $"{SalesPermissionManifestV1.DraftsRead}+{SalesPermissionManifestV1.OrdersDeliveryScheduleWrite}"),
+                (SalesShellCapabilityProvider.PriceWriteCapabilityId, SalesShellCapabilityProvider.DetailCapabilityId,
+                    $"{SalesPermissionManifestV1.DraftsRead}+{SalesPermissionManifestV1.OrdersPriceWrite}"),
+                (SalesShellCapabilityProvider.QuantityWriteCapabilityId, SalesShellCapabilityProvider.DetailCapabilityId,
+                    $"{SalesPermissionManifestV1.DraftsRead}+{SalesPermissionManifestV1.OrdersQuantityWrite}"),
             ],
             sales);
     }
