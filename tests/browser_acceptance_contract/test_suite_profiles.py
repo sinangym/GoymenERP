@@ -257,6 +257,8 @@ MFG_API_READ_FIXTURE = {
     "BrowserSuiteApi__ComposeProject": PROJECT,
 }
 
+ACC01_API_READ_FIXTURE = dict(MFG_API_READ_FIXTURE, BrowserSuiteApi__Profile="acc01")
+
 
 def actors(suite, count, start=2):
     result = {}
@@ -298,6 +300,19 @@ class SuiteExtensionTests(unittest.TestCase):
                     broken[key] = "wrong"
                     with self.assertRaises(browser.ContractError):
                         browser.validate_suite_compose(extended("mfg", broken), "mfg", COMMIT, PROJECT)
+
+    def test_acc01_api_read_fixture_requires_the_exact_disposable_run_binding(self):
+        no_identity = {"acc01": dict(browser.SUITE_API_EXTENSIONS["acc01"],
+                                     issuer=False, actors=False, identity=False)}
+        with mock.patch.dict(browser.SUITE_API_EXTENSIONS, no_identity):
+            browser.validate_suite_compose(
+                extended("acc01", ACC01_API_READ_FIXTURE), "acc01", COMMIT, PROJECT)
+            for key in ACC01_API_READ_FIXTURE:
+                with self.subTest(key=key):
+                    broken = dict(ACC01_API_READ_FIXTURE)
+                    broken[key] = "wrong"
+                    with self.assertRaises(browser.ContractError):
+                        browser.validate_suite_compose(extended("acc01", broken), "acc01", COMMIT, PROJECT)
 
     def test_an_extension_is_refused_for_a_suite_whose_list_does_not_allow_it(self):
         cases = (

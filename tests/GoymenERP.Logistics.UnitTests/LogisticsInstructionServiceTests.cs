@@ -512,6 +512,7 @@ public sealed partial class LogisticsInstructionServiceTests
     {
         public bool Granted { get; set; } = true;
         public string? DeniedPermission { get; set; }
+        public int? DenyOnCall { get; set; }
         public int Calls { get; private set; }
         public string? LastPermission { get; private set; }
 
@@ -519,7 +520,8 @@ public sealed partial class LogisticsInstructionServiceTests
         {
             Calls++;
             LastPermission = permission;
-            return Task.FromResult(new PermissionScope(Granted && permission != DeniedPermission, true, new HashSet<string>(["ROLE-A"], StringComparer.Ordinal),
+            return Task.FromResult(new PermissionScope(Granted && permission != DeniedPermission && (DenyOnCall is null || Calls < DenyOnCall),
+                true, new HashSet<string>(["ROLE-A"], StringComparer.Ordinal),
                 new HashSet<Guid>(), new HashSet<Guid>(), new HashSet<Guid>()));
         }
     }
@@ -788,6 +790,41 @@ public sealed partial class LogisticsInstructionServiceTests
         }
 
         public int SalesOrderReads { get; private set; }
+
+        public int InvoiceSourceReads { get; private set; }
+
+        public Task<StoredApprovedDispatchInvoiceSource?> FindApprovedDispatchInvoiceSourceAsync(Guid dispatchNoteId,
+            CancellationToken cancellationToken = default)
+        {
+            InvoiceSourceReads++;
+            foreach (var stored in _instructions)
+            {
+                var note = stored.Instruction.DispatchNotes.SingleOrDefault(candidate => candidate.DispatchNoteId == dispatchNoteId);
+                if (note is not { Status: DispatchNoteStatus.Approved })
+                {
+                    continue;
+                }
+
+                return Task.FromResult<StoredApprovedDispatchInvoiceSource?>(new StoredApprovedDispatchInvoiceSource(
+                    stored.Instruction.CompanyId,
+                    note.DispatchNoteId,
+                    stored.Instruction.Id,
+                    stored.Instruction.Version,
+                    stored.Instruction.CustomerPartyId,
+                    stored.Instruction.CompanyAccountId,
+                    note.Number,
+                    note.EDispatchNumber,
+                    note.ApprovedAtUtc,
+                    [.. note.Lines.Select(line =>
+                    {
+                        var source = stored.Instruction.Lines.Single(candidate => candidate.Id == line.InstructionLineId);
+                        return new StoredApprovedDispatchInvoiceSourceLine(line.LineNo, source.Source.OrderId, source.Source.LineId,
+                            line.ShipmentId, source.ProductId, source.UnitId, line.Quantity.Value);
+                    })]));
+            }
+
+            return Task.FromResult<StoredApprovedDispatchInvoiceSource?>(null);
+        }
 
         private static void Check((string Actor, string Hash, StoredLoadingInstruction? Stored, LogisticsTerminalRefusal? Refusal, string Correlation) attempt,
             LogisticsWriteEnvelope envelope, string requestHash)
