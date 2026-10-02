@@ -150,6 +150,8 @@ public sealed class ProductPriceListService : IProductPriceListServiceV1
                 return winner;
             }
 
+            // Name existence is company business data. Do not disclose it after authority changed while the lookup/replay awaits ran.
+            await RequireStillAsync(permission, scope, cancellationToken);
             throw new ProductPriceListException(409, ProductPriceListCodesV1.DuplicateName, [new("name", ProductPriceListCodesV1.DuplicateName)]);
         }
 
