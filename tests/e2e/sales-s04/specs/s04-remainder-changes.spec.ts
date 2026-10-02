@@ -43,13 +43,11 @@ const CAPABILITIES_PATH = '/api/v1/shell/capabilities'
 const DEVELOPMENT_USER_HEADER = 'X-Development-User'
 const QUANTITY_WRITE = 'sales.orders.quantity.write'
 const CUSTOMER_ACCEPTANCE_RECORD = 'sales.orders.customer-acceptance.record'
-const LOGISTICS_INSTRUCTION_CREATE = 'logistics.loading-instructions.create'
-const LOGISTICS_INSTRUCTION_READ = 'logistics.loading-instructions.read'
-const LOGISTICS_LOAD_RECORD = 'logistics.loads.record'
-const LOGISTICS_SHIPMENT_RECORD = 'logistics.shipments.record'
-const LOGISTICS_DISPATCH_NOTE_CREATE = 'logistics.dispatch-notes.create'
-const LOGISTICS_DISPATCH_NOTE_APPROVE = 'logistics.dispatch-notes.approve'
-const INVENTORY_ALLOCATION_WRITE = 'inventory.physical-allocation.write'
+const LOGISTICS_CREATE_CAPABILITY = 'logistics.instructions.create'
+const LOGISTICS_DETAIL_CAPABILITY = 'logistics.instructions.detail'
+const LOGISTICS_SHIPMENT_CAPABILITY = 'logistics.shipments.record'
+const LOGISTICS_PREPARER_ACTOR = 's04-logistics-preparer'
+const LOGISTICS_LOADER_ACTOR = 's04-logistics-loader'
 const LOGISTICS_AGGREGATE_LIMIT_EXCEEDED = 'logistics_order_line_aggregate_limit_exceeded'
 const BUSINESS_DATE = '2026-09-18'
 const RUN = testedCommit.slice(0, 12)
@@ -163,7 +161,7 @@ async function capabilitiesOf(request: APIRequestContext, actor: string): Promis
 
 async function findActorWith(request: APIRequestContext, ...capabilities: readonly string[]): Promise<string | undefined> {
   const actors = [preparerActor, approverActor, readerActor, supportCreatorActor, ordinaryCreatorActor, plannerActor,
-    's04-logistics-preparer', 's04-logistics-loader']
+    LOGISTICS_PREPARER_ACTOR, LOGISTICS_LOADER_ACTOR]
   for (const actor of actors) {
     const published = await capabilitiesOf(request, actor)
     if (capabilities.every((capability) => published.includes(capability))) return actor
@@ -204,36 +202,19 @@ test('S04-RM-01 one accepted order revises then cancels only its remainder while
       + 'Cari/Central must grant that exact accepted narrow permission to one existing disposable actor, not a role.',
     )
   }
-  const logisticsPreparerActor = await findActorWith(request, LOGISTICS_INSTRUCTION_CREATE)
-  if (logisticsPreparerActor === undefined) {
-    throw new Error(
-      `BLOCKED: the s04 disposable fixture publishes no actor with ${LOGISTICS_INSTRUCTION_CREATE}; `
-      + 'Cari/Central must grant that exact existing Logistics permission to one existing disposable actor, not a role.',
-    )
-  }
-  const logisticsLoaderActor = await findActorWith(request, LOGISTICS_LOAD_RECORD)
-  if (logisticsLoaderActor === undefined) {
-    throw new Error(
-      `BLOCKED: the s04 disposable fixture publishes no actor with ${LOGISTICS_LOAD_RECORD}; `
-      + 'Cari/Central must grant that exact existing Logistics permission to one existing disposable actor, not a role.',
-    )
-  }
-  const logisticsShipmentActor = await findActorWith(request, LOGISTICS_SHIPMENT_RECORD, INVENTORY_ALLOCATION_WRITE)
-  if (logisticsShipmentActor === undefined) {
-    throw new Error(
-      `BLOCKED: the s04 disposable fixture publishes no actor with ${LOGISTICS_SHIPMENT_RECORD} and ${INVENTORY_ALLOCATION_WRITE}; `
-      + 'Cari/Central must bind those exact existing capabilities to one existing disposable actor, not a role.',
-    )
-  }
-  const logisticsDispatchActor = await findActorWith(request, LOGISTICS_INSTRUCTION_READ, LOGISTICS_LOAD_RECORD,
-    LOGISTICS_DISPATCH_NOTE_CREATE, LOGISTICS_DISPATCH_NOTE_APPROVE)
-  if (logisticsDispatchActor === undefined) {
-    throw new Error(
-      `BLOCKED: the s04 disposable fixture publishes no loader with ${LOGISTICS_INSTRUCTION_READ}, ${LOGISTICS_LOAD_RECORD}, `
-      + `${LOGISTICS_DISPATCH_NOTE_CREATE} and ${LOGISTICS_DISPATCH_NOTE_APPROVE}; Cari/Central must bind those exact existing `
-      + 'capabilities to the dedicated disposable loader, not invent a role.',
-    )
-  }
+  const logisticsPreparerActor = LOGISTICS_PREPARER_ACTOR
+  expect(await capabilitiesOf(request, logisticsPreparerActor)).toEqual(expect.arrayContaining([
+    LOGISTICS_CREATE_CAPABILITY, LOGISTICS_DETAIL_CAPABILITY,
+  ]))
+  const logisticsLoaderActor = LOGISTICS_LOADER_ACTOR
+  expect(await capabilitiesOf(request, logisticsLoaderActor)).toEqual(expect.arrayContaining([
+    LOGISTICS_DETAIL_CAPABILITY, LOGISTICS_SHIPMENT_CAPABILITY,
+  ]))
+  // The shipment shell capability is itself the accepted three-permission fence (instruction read + shipment record +
+  // Inventory physical-allocation write). Load and dispatch-note commands have no shell capability declaration; their strict
+  // public POST status/body checks below prove those backend operation permissions without fabricating capability names.
+  const logisticsShipmentActor = logisticsLoaderActor
+  const logisticsDispatchActor = logisticsLoaderActor
 
   const currencies = await request.get(`${apiBaseUrl}${CURRENCIES_PATH}?effectiveOn=${BUSINESS_DATE}`, {
     headers: readHeaders(preparerActor),
