@@ -34,7 +34,6 @@ const {
   productVersion,
   productUnitId,
   allocationLabelId,
-  allocationLabelVersion,
 } = seed
 
 const DRAFTS_PATH = '/api/v1/sales/drafts'
@@ -134,6 +133,11 @@ interface LoadingInstructionResponse {
   readonly isReplay: boolean
 }
 
+interface InventoryLabelDetail {
+  readonly labelVersion: string
+  readonly identity: { readonly labelId: string }
+}
+
 function readHeaders(actor: string): Record<string, string> {
   return { [DEVELOPMENT_USER_HEADER]: actor, 'X-Company-Id': companyId }
 }
@@ -150,6 +154,18 @@ async function readInstruction(request: APIRequestContext, instructionId: string
   const detail = (await response.json()) as LoadingInstructionResponse['detail']
   expect(detail.instruction.id).toBe(instructionId)
   return detail
+}
+
+async function readLabelVersion(request: APIRequestContext, actor: string): Promise<string> {
+  const response = await request.get(`${apiBaseUrl}/api/v1/inventory/labels/${allocationLabelId}/detail`, {
+    headers: readHeaders(actor),
+  })
+  expect(response.status(), `the real Inventory label detail answers ${actor}`).toBe(200)
+  const detail = (await response.json()) as InventoryLabelDetail
+  expect(detail.identity.labelId.toLowerCase(), 'the fresh Inventory detail is the reserved allocation label')
+    .toBe(allocationLabelId.toLowerCase())
+  expect(detail.labelVersion, 'the fresh Inventory label version is a positive decimal text').toMatch(/^[1-9][0-9]*$/)
+  return detail.labelVersion
 }
 
 async function capabilitiesOf(request: APIRequestContext, actor: string): Promise<readonly string[]> {
@@ -373,6 +389,7 @@ test('S04-RM-01 one accepted order revises then cancels only its remainder while
   })
 
   const allocationId = randomUUID()
+  const labelVersionBeforeAllocation = await readLabelVersion(request, preparerActor)
   const allocationCreated = await request.post(`${apiBaseUrl}/api/v1/inventory/physical-allocations`, {
     headers: commandHeaders(preparerActor, `SENTETIK-s04-rm-allocation-${RUN}`),
     data: {
@@ -380,7 +397,7 @@ test('S04-RM-01 one accepted order revises then cancels only its remainder while
       salesOrderId: draftId,
       salesOrderLineId: lineId,
       labelId: allocationLabelId,
-      expectedLabelVersion: allocationLabelVersion,
+      expectedLabelVersion: labelVersionBeforeAllocation,
       quantityKg: '1',
       reason: 'SENTETIK browser-suite:s04 aynı sipariş satırı kesin sevkiyat tahsisi',
       reservedUntilUtc: null,
@@ -389,6 +406,7 @@ test('S04-RM-01 one accepted order revises then cancels only its remainder while
   expect(allocationCreated.status(), 'the real Inventory allocation binds the same Sales line').toBe(201)
   expect(await allocationCreated.json()).toMatchObject({ allocationId, status: 'Active', version: '1', remainingKg: '1' })
 
+  const labelVersionBeforeShipment = await readLabelVersion(request, preparerActor)
   const shipmentId = randomUUID()
   const shipmentRecorded = await request.post(
     `${apiBaseUrl}/api/v1/logistics/loading-instructions/${instructionId}/lines/${logisticsLineId}/shipments`,
@@ -399,7 +417,7 @@ test('S04-RM-01 one accepted order revises then cancels only its remainder while
         shipmentId,
         allocationId,
         expectedAllocationVersion: '1',
-        expectedLabelVersion: allocationLabelVersion,
+        expectedLabelVersion: labelVersionBeforeShipment,
         movementId: randomUUID(),
         quantity: '1',
         occurredAtUtc: '2026-09-18T12:00:00Z',
