@@ -13,6 +13,13 @@ SPEC = importlib.util.spec_from_file_location("summarize_trx", MODULE_PATH)
 assert SPEC is not None and SPEC.loader is not None
 SUMMARIZER = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(SUMMARIZER)
+VERIFIER_PATH = REPOSITORY_ROOT / "tools" / "verify_rcsi_relational_acceptance.py"
+VERIFIER_SPEC = importlib.util.spec_from_file_location(
+    "verify_rcsi_relational_acceptance_for_safe_summary", VERIFIER_PATH
+)
+assert VERIFIER_SPEC is not None and VERIFIER_SPEC.loader is not None
+VERIFIER = importlib.util.module_from_spec(VERIFIER_SPEC)
+VERIFIER_SPEC.loader.exec_module(VERIFIER)
 
 
 def trx(results: str, definitions: str) -> str:
@@ -90,7 +97,9 @@ class SafeTrxSummaryTests(unittest.TestCase):
 
     def test_invalid_metadata_and_empty_results_are_rejected(self) -> None:
         with self.assertRaisesRegex(RuntimeError, "40-character"):
-            SUMMARIZER.build_summary([], "not-a-head", "backend", "tests", 50)
+            SUMMARIZER.build_summary(
+                [], "not-a-head", "b" * 40, "backend", "tests", 50
+            )
         with self.assertRaisesRegex(RuntimeError, "no test results"):
             self._summary(trx("", ""))
 
@@ -102,6 +111,14 @@ class SafeTrxSummaryTests(unittest.TestCase):
         self.assertEqual(2, workflow.count("actions/upload-artifact@v7"))
         self.assertIn("artifacts/ci-safe-test-summary/backend.json", workflow)
         self.assertIn("artifacts/ci-safe-test-summary/relational.json", workflow)
+        self.assertEqual(2, workflow.count("--source-head"))
+        self.assertEqual(2, workflow.count("--tested-commit \"$(git rev-parse HEAD)\""))
+        self.assertIn(
+            "--trx-output artifacts/ci-test-results/relational/broad.trx", workflow
+        )
+        self.assertIn(
+            "--trx-output artifacts/ci-test-results/relational/rcsi.trx", workflow
+        )
         self.assertNotIn("path: artifacts/ci-test-results", workflow)
         self.assertIn("permissions:\n  contents: read", workflow)
         self.assertNotIn("continue-on-error", workflow)
@@ -111,10 +128,36 @@ class SafeTrxSummaryTests(unittest.TestCase):
             path = Path(directory) / "result.trx"
             path.write_text(source, encoding="utf-8")
             summary = SUMMARIZER.build_summary(
-                [path], "a" * 40, "backend", "test-suite", limit
+                [path], "a" * 40, "b" * 40, "backend", "test-suite", limit
             )
         encoded = json.dumps(summary, sort_keys=True)
         return summary, encoded
+
+
+class RcsiTrxOutputSelectionTests(unittest.TestCase):
+    def test_default_and_explicit_modes_bind_logger_to_the_selected_trx_name(self) -> None:
+        repository_root = REPOSITORY_ROOT.resolve()
+        temporary_directory = Path(tempfile.gettempdir()) / "goymen-rcsi-default"
+        cases = (
+            (None, temporary_directory / "rcsi.trx", "trx;LogFileName=rcsi.trx"),
+            (
+                Path("artifacts/ci-test-results/relational/broad.trx"),
+                repository_root / "artifacts/ci-test-results/relational/broad.trx",
+                "trx;LogFileName=broad.trx",
+            ),
+            (
+                Path("artifacts/ci-test-results/relational/rcsi.trx"),
+                repository_root / "artifacts/ci-test-results/relational/rcsi.trx",
+                "trx;LogFileName=rcsi.trx",
+            ),
+        )
+        for requested, expected_path, expected_logger in cases:
+            with self.subTest(requested=requested):
+                selected = VERIFIER.resolve_trx_path(
+                    repository_root, requested, temporary_directory
+                )
+                self.assertEqual(expected_path, selected)
+                self.assertEqual(expected_logger, VERIFIER.trx_logger(selected))
 
 
 if __name__ == "__main__":

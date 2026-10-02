@@ -94,13 +94,15 @@ def parse_trx(path: Path) -> tuple[Counter[str], Counter[tuple[str | None, str]]
 
 def build_summary(
     trx_paths: list[Path],
-    head: str,
+    source_head: str,
+    tested_commit: str,
     job: str,
     phase: str,
     failure_group_limit: int,
 ) -> dict[str, object]:
-    if not HEAD_PATTERN.fullmatch(head):
-        raise RuntimeError("Exact head must be a 40-character hexadecimal commit id.")
+    for label, value in (("source head", source_head), ("tested commit", tested_commit)):
+        if not HEAD_PATTERN.fullmatch(value):
+            raise RuntimeError(f"{label} must be a 40-character hexadecimal commit id.")
     for label, value in (("job", job), ("phase", phase)):
         if not LABEL_PATTERN.fullmatch(value):
             raise RuntimeError(f"{label} must be a canonical lower-case label.")
@@ -130,7 +132,8 @@ def build_summary(
     reported_groups = safe_groups[:failure_group_limit]
     return {
         "schemaVersion": 1,
-        "exactHead": head.lower(),
+        "sourceHead": source_head.lower(),
+        "testedCommit": tested_commit.lower(),
         "job": job,
         "phase": phase,
         "totals": {
@@ -150,7 +153,8 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--trx-directory", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
-    parser.add_argument("--head", required=True)
+    parser.add_argument("--source-head", required=True)
+    parser.add_argument("--tested-commit", required=True)
     parser.add_argument("--job", required=True)
     parser.add_argument("--phase", required=True)
     parser.add_argument(
@@ -164,7 +168,8 @@ def main() -> int:
     trx_paths = sorted(args.trx_directory.rglob("*.trx"))
     summary = build_summary(
         trx_paths,
-        args.head,
+        args.source_head,
+        args.tested_commit,
         args.job,
         args.phase,
         args.failure_group_limit,

@@ -79,7 +79,8 @@ jobs:
           python3 -I -S -B tools/ci/summarize_trx.py \
           --trx-directory artifacts/ci-test-results/backend \
           --output artifacts/ci-safe-test-summary/backend.json \
-          --head "${{ github.event.pull_request.head.sha || github.sha }}" \
+          --source-head "${{ github.event.pull_request.head.sha || github.sha }}" \
+          --tested-commit "$(git rev-parse HEAD)" \
           --job backend \
           --phase test-suite
 
@@ -229,7 +230,8 @@ jobs:
           python3 -I -S -B tools/ci/summarize_trx.py \
           --trx-directory artifacts/ci-test-results/relational \
           --output artifacts/ci-safe-test-summary/relational.json \
-          --head "${{ github.event.pull_request.head.sha || github.sha }}" \
+          --source-head "${{ github.event.pull_request.head.sha || github.sha }}" \
+          --tested-commit "$(git rev-parse HEAD)" \
           --job relational \
           --phase sql-acceptance
 

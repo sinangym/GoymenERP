@@ -315,6 +315,23 @@ def verify_broad_trx_results(path: Path, discovered: tuple[str, ...]) -> list[st
     return report
 
 
+def resolve_trx_path(
+    repository_root: Path,
+    requested_output: Path | None,
+    temporary_directory: Path,
+) -> Path:
+    if requested_output is None:
+        return temporary_directory / "rcsi.trx"
+    trx_path = (repository_root / requested_output).resolve()
+    if not trx_path.is_relative_to(repository_root) or trx_path.suffix.lower() != ".trx":
+        raise RuntimeError("TRX output must be a .trx file inside the repository.")
+    return trx_path
+
+
+def trx_logger(trx_path: Path) -> str:
+    return f"trx;LogFileName={trx_path.name}"
+
+
 def run_checked(arguments: list[str], repository_root: Path) -> subprocess.CompletedProcess[str]:
     result = subprocess.run(
         arguments,
@@ -407,11 +424,12 @@ def main() -> int:
                     tempfile.TemporaryDirectory(prefix="goymen-rcsi-trx-")
                 )
             )
-            trx_path = results_directory / "rcsi.trx"
         else:
-            trx_path = (repository_root / args.trx_output).resolve()
-            if not trx_path.is_relative_to(repository_root) or trx_path.suffix.lower() != ".trx":
-                raise RuntimeError("TRX output must be a .trx file inside the repository.")
+            results_directory = repository_root
+        trx_path = resolve_trx_path(
+            repository_root, args.trx_output, results_directory
+        )
+        if args.trx_output is not None:
             results_directory = trx_path.parent
             results_directory.mkdir(parents=True, exist_ok=True)
             trx_path.unlink(missing_ok=True)
@@ -431,7 +449,7 @@ def main() -> int:
                 "--results-directory",
                 str(results_directory),
                 "--logger",
-                "trx;LogFileName=rcsi.trx",
+                trx_logger(trx_path),
             ],
             repository_root,
         )
