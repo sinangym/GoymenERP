@@ -74,7 +74,7 @@ test('S04-PL-01 a price list is created, saved, closed, reopened and published o
   await expect(page.getByLabel('Para birimi (ISO, ör. TRY)')).toHaveValue('TRY')
   await page.getByLabel('Geçerlilik başlangıcı').fill(TODAY)
   await page.getByLabel('Ürün ara (kod veya ad)').fill(productCode)
-  await page.getByRole('button', { name: 'Ara' }).click()
+  await page.getByTestId('price-list-lines').getByRole('button', { name: 'Ara', exact: true }).click()
   await page.getByTestId('price-list-product-options').getByRole('button', { name: 'Listeye ekle' }).first().click()
   await page.getByTestId('price-list-product-options').getByRole('button', { name: 'Listeye ekle' }).first().click()
   await page.getByLabel('1. Liste fiyatı').fill('42000,50')
