@@ -40,6 +40,7 @@ interface DraftReading {
     readonly approvalState: string
     readonly version: string
     readonly revision: string
+    readonly commercialStage: 'Quote' | 'Order'
   }
   readonly customerAcceptance: {
     readonly required: boolean
@@ -146,7 +147,7 @@ test('S04-CA-01 customer acceptance reopens and replays once, then Rev.1 require
   const created = (await createdResponse.json()) as DraftCommandResponse
   const draftId = created.detail.draft.id
   expect(created.detail).toMatchObject({
-    draft: { id: draftId, revision: 'Rev.0', approvalState: 'Preparing' },
+    draft: { id: draftId, revision: 'Rev.0', approvalState: 'Preparing', commercialStage: 'Quote' },
     customerAcceptance: { required: true, acceptedRevision: null, isCurrentRevisionAccepted: false },
     lines: [{ lineId, orderUnitId: productUnitId }],
   })
@@ -154,11 +155,12 @@ test('S04-CA-01 customer acceptance reopens and replays once, then Rev.1 require
   const submitted = await stateCommand(request, draftId, preparerActor, 'submission', created.detail.draft.version, 'submit-r0')
   const approved = await stateCommand(request, draftId, approverActor, 'approval', submitted.detail.draft.version, 'approve-r0')
   expect(approved.detail).toMatchObject({
-    draft: { id: draftId, revision: 'Rev.0', approvalState: 'Approved' },
+    draft: { id: draftId, revision: 'Rev.0', approvalState: 'Approved', commercialStage: 'Quote' },
     customerAcceptance: { acceptedRevision: null, isCurrentRevisionAccepted: false },
   })
 
   await openDetail(page, draftId, acceptanceActor)
+  await expect(page.getByTestId('sales-draft-commercial-stage')).toHaveText('Teklif')
   await expect(page.getByTestId('sales-customer-acceptance-state')).toContainText('Güncel revizyon için bekleniyor')
 
   let routedAttempts = 0
@@ -224,7 +226,7 @@ test('S04-CA-01 customer acceptance reopens and replays once, then Rev.1 require
   expect(accepted).toMatchObject({
     isReplay: false,
     detail: {
-      draft: { id: draftId, revision: 'Rev.0', approvalState: 'Approved' },
+      draft: { id: draftId, revision: 'Rev.0', approvalState: 'Approved', commercialStage: 'Order' },
       customerAcceptance: {
         acceptedRevision: 'Rev.0', acceptedBy: ACCEPTANCE_ACTOR_IDENTITY_ID, isCurrentRevisionAccepted: true,
       },
@@ -237,21 +239,24 @@ test('S04-CA-01 customer acceptance reopens and replays once, then Rev.1 require
     isReplay: true,
     originalCorrelationId: accepted.originalCorrelationId,
     detail: {
-      draft: { id: draftId, revision: 'Rev.0', version: acceptedVersion },
+      draft: { id: draftId, revision: 'Rev.0', version: acceptedVersion, commercialStage: 'Order' },
       customerAcceptance: {
         acceptedRevision: 'Rev.0', acceptedBy: ACCEPTANCE_ACTOR_IDENTITY_ID, acceptedAtUtc, isCurrentRevisionAccepted: true,
       },
     },
   })
   await expect(commands.getByTestId('sales-approval-notice')).toContainText('Bu işlem daha önce kaydedilmişti')
+  await expect(page.getByTestId('sales-draft-commercial-stage')).toHaveText('Sipariş')
+  await page.unroute(`**${DRAFTS_PATH}/${draftId}/customer-acceptance`)
 
   await page.goto('/satis/siparisler')
   await expect(page).toHaveURL(/\/satis\/siparisler$/)
   await openDetail(page, draftId, acceptanceActor)
+  await expect(page.getByTestId('sales-draft-commercial-stage')).toHaveText('Sipariş')
   await expect(page.getByTestId('sales-customer-acceptance-state')).toContainText('Güncel revizyon kabul edildi')
   const reopened = await readDraft(request, draftId, acceptanceActor)
   expect(reopened).toMatchObject({
-    draft: { id: draftId, revision: 'Rev.0', version: acceptedVersion, approvalState: 'Approved' },
+    draft: { id: draftId, revision: 'Rev.0', version: acceptedVersion, approvalState: 'Approved', commercialStage: 'Order' },
     customerAcceptance: {
       acceptedRevision: 'Rev.0', acceptedBy: ACCEPTANCE_ACTOR_IDENTITY_ID, acceptedAtUtc, isCurrentRevisionAccepted: true,
     },
@@ -283,7 +288,7 @@ test('S04-CA-01 customer acceptance reopens and replays once, then Rev.1 require
   expect(revisionResponse.status()).toBe(200)
   const revised = (await revisionResponse.json()) as DraftCommandResponse
   expect(revised.detail).toMatchObject({
-    draft: { id: draftId, revision: 'Rev.1', approvalState: 'Preparing' },
+    draft: { id: draftId, revision: 'Rev.1', approvalState: 'Preparing', commercialStage: 'Quote' },
     customerAcceptance: {
       acceptedRevision: 'Rev.0', acceptedBy: ACCEPTANCE_ACTOR_IDENTITY_ID, acceptedAtUtc, isCurrentRevisionAccepted: false,
     },
@@ -292,10 +297,13 @@ test('S04-CA-01 customer acceptance reopens and replays once, then Rev.1 require
   expect(revised.detail.draft.version).not.toBe(acceptedVersion)
 
   const resubmitted = await stateCommand(request, draftId, preparerActor, 'submission', revised.detail.draft.version, 'submit-r1')
-  await stateCommand(request, draftId, approverActor, 'approval', resubmitted.detail.draft.version, 'approve-r1')
+  const approvedRevisionOne = await stateCommand(request, draftId, approverActor, 'approval', resubmitted.detail.draft.version, 'approve-r1')
+  expect(approvedRevisionOne.detail.draft).toMatchObject({
+    id: draftId, revision: 'Rev.1', approvalState: 'Approved', commercialStage: 'Quote',
+  })
   const revisionOne = await readDraft(request, draftId, acceptanceActor)
   expect(revisionOne).toMatchObject({
-    draft: { id: draftId, revision: 'Rev.1', approvalState: 'Approved' },
+    draft: { id: draftId, revision: 'Rev.1', approvalState: 'Approved', commercialStage: 'Quote' },
     customerAcceptance: {
       acceptedRevision: 'Rev.0', acceptedBy: ACCEPTANCE_ACTOR_IDENTITY_ID, acceptedAtUtc, isCurrentRevisionAccepted: false,
     },
@@ -305,7 +313,47 @@ test('S04-CA-01 customer acceptance reopens and replays once, then Rev.1 require
   await page.goto('/satis/siparisler')
   await openDetail(page, draftId, acceptanceActor)
   await expect(page.getByTestId('sales-draft-approval-state')).toHaveText('Onaylı')
+  await expect(page.getByTestId('sales-draft-commercial-stage')).toHaveText('Teklif')
   await expect(page.getByTestId('sales-customer-acceptance-state')).toContainText('Güncel revizyon için bekleniyor')
-  await expect(page.getByTestId('sales-approval-commands')
-    .getByRole('button', { name: 'Müşteri kabulünü kaydet' })).toBeVisible()
+  const revisionOneAcceptanceButton = page.getByTestId('sales-approval-commands')
+    .getByRole('button', { name: 'Müşteri kabulünü kaydet' })
+  await expect(revisionOneAcceptanceButton).toBeVisible()
+  const revisionOneAcceptanceAnswered = page.waitForResponse((candidate) => candidate.request().method() === 'POST'
+    && new URL(candidate.url()).pathname === `${DRAFTS_PATH}/${draftId}/customer-acceptance`)
+  await revisionOneAcceptanceButton.click()
+  const revisionOneAcceptanceResponse = await revisionOneAcceptanceAnswered
+  expect(revisionOneAcceptanceResponse.status()).toBe(200)
+  const acceptedRevisionOne = (await revisionOneAcceptanceResponse.json()) as DraftCommandResponse
+  expect(acceptedRevisionOne).toMatchObject({
+    isReplay: false,
+    detail: {
+      draft: { id: draftId, revision: 'Rev.1', approvalState: 'Approved', commercialStage: 'Order' },
+      customerAcceptance: {
+        acceptedRevision: 'Rev.1', acceptedBy: ACCEPTANCE_ACTOR_IDENTITY_ID, isCurrentRevisionAccepted: true,
+      },
+    },
+  })
+  await expect(page.getByTestId('sales-draft-commercial-stage')).toHaveText('Sipariş')
+  await expect(page.getByTestId('sales-customer-acceptance-state')).toContainText('Güncel revizyon kabul edildi')
+
+  await page.goto('/satis/siparisler')
+  await openDetail(page, draftId, acceptanceActor)
+  await expect(page.getByTestId('sales-draft-commercial-stage')).toHaveText('Sipariş')
+  const revisionOneAcceptedFresh = await readDraft(request, draftId, acceptanceActor)
+  expect(revisionOneAcceptedFresh).toMatchObject({
+    draft: {
+      id: draftId,
+      revision: 'Rev.1',
+      version: acceptedRevisionOne.detail.draft.version,
+      approvalState: 'Approved',
+      commercialStage: 'Order',
+    },
+    customerAcceptance: {
+      acceptedRevision: 'Rev.1',
+      acceptedBy: ACCEPTANCE_ACTOR_IDENTITY_ID,
+      acceptedAtUtc: acceptedRevisionOne.detail.customerAcceptance.acceptedAtUtc,
+      isCurrentRevisionAccepted: true,
+    },
+    lines: [{ lineId, unitPrice: '13.00', priceUnitId: productUnitId, discountPercent: '5' }],
+  })
 })
