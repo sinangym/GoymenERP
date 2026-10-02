@@ -381,10 +381,6 @@ namespace GoymenERP.Modules.Product.Infrastructure.PriceLists.Migrations
                         .HasMaxLength(128)
                         .HasColumnType("nvarchar(128)");
 
-                    b.Property<string>("PreparerActorIdsJson")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
                     b.Property<string>("CurrencyCode")
                         .IsRequired()
                         .HasMaxLength(3)
@@ -459,6 +455,10 @@ namespace GoymenERP.Modules.Product.Infrastructure.PriceLists.Migrations
                         .IsRequired()
                         .HasMaxLength(128)
                         .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("PreparerActorIdsJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<DateTimeOffset?>("PublishedAtUtc")
                         .HasColumnType("datetimeoffset");
