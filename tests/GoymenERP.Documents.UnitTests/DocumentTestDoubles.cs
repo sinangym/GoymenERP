@@ -80,6 +80,8 @@ internal sealed class MemoryObjectStore : IDocumentObjectStoreV1
 
     public bool Fail { get; set; }
 
+    public Action? BeforeRead { get; set; }
+
     public Task PutAsync(string key, ReadOnlyMemory<byte> content, string sha256, CancellationToken cancellationToken = default)
     {
         if (Fail)
@@ -102,6 +104,7 @@ internal sealed class MemoryObjectStore : IDocumentObjectStoreV1
 
     public Task<byte[]?> ReadAsync(string key, CancellationToken cancellationToken = default)
     {
+        BeforeRead?.Invoke();
         if (Fail)
         {
             throw new DocumentObjectStoreUnavailableException("SENTETIK");
@@ -142,6 +145,8 @@ internal sealed class MemoryDocumentStore(ICompanyContext companyContext, Harnes
 
     public Action? BeforeFindByContent { get; set; }
 
+    public Action? BeforeList { get; set; }
+
     public Task<DocumentStoreResult?> FindReplayAsync(DocumentWriteEnvelope envelope, string requestHash, string commandName,
         CancellationToken cancellationToken = default)
     {
@@ -181,9 +186,13 @@ internal sealed class MemoryDocumentStore(ICompanyContext companyContext, Harnes
     public Task<StoredDocument?> FindDocumentAsync(Guid documentId, CancellationToken cancellationToken = default) =>
         Task.FromResult(Visible().SingleOrDefault(document => document.Id == documentId));
 
-    public Task<IReadOnlyList<StoredDocument>> ListByOwnerAsync(string ownerKind, Guid ownerId, int limit, CancellationToken cancellationToken = default) =>
-        Task.FromResult<IReadOnlyList<StoredDocument>>([.. Visible().Where(document => document.OwnerKind == ownerKind && document.OwnerId == ownerId)
-            .OrderByDescending(document => document.UploadedAtUtc).Take(limit)]);
+    public Task<IReadOnlyList<StoredDocument>> ListByOwnerAsync(string ownerKind, Guid ownerId, int limit, CancellationToken cancellationToken = default)
+    {
+        BeforeList?.Invoke();
+        return Task.FromResult<IReadOnlyList<StoredDocument>>(
+            [.. Visible().Where(document => document.OwnerKind == ownerKind && document.OwnerId == ownerId)
+                .OrderByDescending(document => document.UploadedAtUtc).Take(limit)]);
+    }
 
     public Task<IReadOnlyList<StoredDocument>> FindByContentAsync(string sha256, Guid excludingDocumentId, int limit,
         CancellationToken cancellationToken = default)
