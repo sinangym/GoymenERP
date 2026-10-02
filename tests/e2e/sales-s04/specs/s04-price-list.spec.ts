@@ -179,7 +179,7 @@ test('S04-PL-03 below-floor pricing is saved pending and a different actor appro
   expect(await capabilitiesOf(request, preparerActor)).toContain('sales.orders.price-floor-exception.approve')
   expect(await capabilitiesOf(request, readerActor)).not.toContain('sales.orders.price-floor-exception.approve')
   expect(await capabilitiesOf(request, approverActor)).toEqual(expect.arrayContaining([
-    'sales.drafts.detail', 'sales.orders.price.read', 'sales.orders.price-floor-exception.approve',
+    'sales.drafts.detail', 'sales.orders.price-floor-exception.approve',
   ]))
 
   await page.setExtraHTTPHeaders({ 'X-Development-User': preparerActor })
@@ -212,6 +212,27 @@ test('S04-PL-03 below-floor pricing is saved pending and a different actor appro
   }
   expect(pendingPricing.lines[0]).toMatchObject({
     lineId: journey.lineId, netUnitPrice: '38700',
+    floorException: { requestedBy: preparerActor, approvedBy: null, reason: null },
+  })
+
+  // Price read is an endpoint permission, not a shell capability. Prove the approver's existing disposable grant
+  // against the raw server read that the checker UI needs, and pin it to this exact pending list snapshot.
+  const approverPricingResponse = await request.get(`${apiBaseUrl}${DRAFTS_PATH}/${journey.draftId}/line-pricing`, {
+    headers: readHeaders(approverActor),
+  })
+  expect(approverPricingResponse.status()).toBe(200)
+  const approverPricing = (await approverPricingResponse.json()) as {
+    readonly version: string
+    readonly lines: readonly { readonly lineId: string; readonly priceReference: {
+      readonly priceListId: string; readonly versionNo: number
+    } | null; readonly floorException: {
+      readonly requestedBy: string; readonly approvedBy: string | null; readonly reason: string | null
+    } | null }[]
+  }
+  expect(approverPricing.version).toBe(pendingDraft.draft.version)
+  expect(approverPricing.lines[0]).toMatchObject({
+    lineId: journey.lineId,
+    priceReference: { priceListId: journey.priceListId, versionNo: 1 },
     floorException: { requestedBy: preparerActor, approvedBy: null, reason: null },
   })
 
