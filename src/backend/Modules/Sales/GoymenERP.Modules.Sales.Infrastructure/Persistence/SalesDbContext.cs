@@ -53,6 +53,11 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
         + "AND ([CustomerAcceptedRevision] < [Revision] OR [ApprovalState] = 3) "
         + "AND [CustomerAcceptedBy] IS NOT NULL AND LEN([CustomerAcceptedBy]) > 0 AND [CustomerAcceptedAtUtc] IS NOT NULL)))";
 
+    internal const string RevisionCustomerAcceptanceConstraint =
+        "([CustomerAcceptedRevision] IS NULL AND [CustomerAcceptedBy] IS NULL AND [CustomerAcceptedAtUtc] IS NULL) "
+        + "OR ([CustomerAcceptedRevision] = [Revision] AND [CustomerAcceptedBy] IS NOT NULL "
+        + "AND LEN([CustomerAcceptedBy]) > 0 AND [CustomerAcceptedAtUtc] IS NOT NULL)";
+
     /// <summary>
     /// UX_DraftAttempts_DraftId: a stored draft is born from exactly one create attempt. Since SALES-A1 the
     /// state commands (submit / approve / reject) record their own attempts against the same draft, one per
@@ -479,6 +484,7 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
                 "[MoneyProfileId] <> '00000000-0000-0000-0000-000000000000' AND LEN([MoneyProfileVersion]) > 0 AND [MoneyScale] >= 0");
             // DEC-SAL-002: a quantity revision's reason is non-blank; a price revision archives with none (AddRevisionReasons).
             table.HasCheckConstraint("CK_DraftRevisions_Reason", "[Reason] IS NULL OR LEN([Reason]) > 0");
+            table.HasCheckConstraint("CK_DraftRevisions_CustomerAcceptance", RevisionCustomerAcceptanceConstraint);
         });
         revision.HasKey(x => new { x.CompanyId, x.DraftId, x.Revision });
         revision.Property(x => x.SubmittedBy).HasMaxLength(128).IsRequired();
@@ -486,6 +492,7 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
         revision.Property(x => x.ArchivedBy).HasMaxLength(128).IsRequired();
         revision.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
         revision.Property(x => x.MoneyProfileVersion).HasMaxLength(128).IsRequired();
+        revision.Property(x => x.CustomerAcceptedBy).HasMaxLength(SalesOrderDraft.MaximumActorLength);
         revision.Property(x => x.Reason).HasMaxLength(SalesOrderDraft.MaximumRevisionReasonLength);
         revision.HasOne<DraftRow>().WithMany()
             .HasForeignKey(x => new { x.CompanyId, x.DraftId })

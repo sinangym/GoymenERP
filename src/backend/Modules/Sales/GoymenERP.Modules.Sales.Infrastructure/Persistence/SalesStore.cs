@@ -470,6 +470,9 @@ public sealed class SalesStore(
                 ArchivedAtUtc = archived.ArchivedAtUtc,
                 ArchivedBy = archived.ArchivedBy,
                 CorrelationId = envelope.CorrelationId.Trim(),
+                CustomerAcceptedRevision = archived.CustomerAcceptance?.Revision,
+                CustomerAcceptedBy = archived.CustomerAcceptance?.AcceptedBy,
+                CustomerAcceptedAtUtc = archived.CustomerAcceptance?.AcceptedAtUtc,
                 Reason = archived.Reason,
             });
             foreach (var line in archived.Lines)
@@ -1173,6 +1176,23 @@ public sealed class SalesStore(
         _ = now;
     }
 
+    private static CustomerAcceptanceFacts? ArchivedCustomerAcceptance(DraftRevisionRow row)
+    {
+        var empty = row.CustomerAcceptedRevision is null && row.CustomerAcceptedBy is null && row.CustomerAcceptedAtUtc is null;
+        if (empty)
+        {
+            return null;
+        }
+
+        if (row.CustomerAcceptedRevision != row.Revision || string.IsNullOrWhiteSpace(row.CustomerAcceptedBy)
+            || row.CustomerAcceptedAtUtc is null)
+        {
+            throw new InvalidOperationException("Kayıtlı revizyonun müşteri kabul olgusu eksik veya başka revizyona ait.");
+        }
+
+        return new CustomerAcceptanceFacts(row.CustomerAcceptedRevision.Value, row.CustomerAcceptedBy, row.CustomerAcceptedAtUtc.Value);
+    }
+
     /// <summary>Rebuilds stored drafts through the domain: every rule of a new draft holds again, and the stored version must be the one the rebuild reaches.</summary>
     private async Task<IReadOnlyList<SalesOrderDraft>> RestoreAsync(IReadOnlyList<DraftRow> rows, CancellationToken cancellationToken)
     {
@@ -1245,7 +1265,8 @@ public sealed class SalesStore(
                     [.. revisionLines.Where(line => line.DraftId == row.Id && line.Revision == archived.Revision).OrderBy(line => line.LineNo)
                         .Select(line => new RevisionLineSnapshot(line.LineId, line.LineNo, line.ProductId, line.ProductVersion, line.OrderUnitId,
                             line.QuantityText, SalesLinePricingJson.Restore(line.UnitPrice, line.PriceUnitId, line.DiscountPercent, line.PricingJson)))],
-                    archived.Reason));
+                    archived.Reason,
+                    ArchivedCustomerAcceptance(archived)));
             }
 
             // DEC-SAL-003: every recorded delivery schedule, oldest first, BEFORE the approval axis (its version floor counts

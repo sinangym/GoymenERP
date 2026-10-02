@@ -879,7 +879,8 @@ public sealed partial class SalesOrderDraft
             archived = new ApprovedRevisionSnapshot(Revision, Approval, Money.ProfileId, Money.ProfileVersion, Money.Scale,
                 now.ToUniversalTime(), actor,
                 [.. lines.Select(line => new RevisionLineSnapshot(line.Id, line.LineNo, line.Product.ProductId, line.Product.ProductVersion,
-                    line.OrderUnit.UnitId, line.QuantityText, line.Commercial))]);
+                    line.OrderUnit.UnitId, line.QuantityText, line.Commercial))],
+                CustomerAcceptance: CustomerAcceptance?.Revision == Revision ? CustomerAcceptance : null);
             archivedRevisions.Add(archived);
             Revision += 1;
             ApprovalState = InternalApprovalState.Preparing;
@@ -1078,7 +1079,8 @@ public sealed partial class SalesOrderDraft
                 now.ToUniversalTime(), actor,
                 [.. lines.Select(line => new RevisionLineSnapshot(line.Id, line.LineNo, line.Product.ProductId, line.Product.ProductVersion,
                     line.OrderUnit.UnitId, line.QuantityText, line.Commercial))],
-                trimmedReason);
+                trimmedReason,
+                CustomerAcceptance?.Revision == Revision ? CustomerAcceptance : null);
             archivedRevisions.Add(archived);
             Revision += 1;
             ApprovalState = InternalApprovalState.Preparing;
@@ -1364,6 +1366,10 @@ public sealed partial class SalesOrderDraft
         if (snapshot.Revision != expected || snapshot.Revision >= Revision
             || snapshot.Approval.DecidedBy is null || snapshot.Approval.DecidedAtUtc is null || snapshot.Approval.RejectionReason is not null
             || snapshot.Lines.Count == 0 || string.IsNullOrWhiteSpace(snapshot.ArchivedBy)
+            || (!CustomerAcceptanceRequired && snapshot.CustomerAcceptance is not null)
+            || (snapshot.CustomerAcceptance is { } acceptance
+                && (acceptance.Revision != snapshot.Revision || string.IsNullOrWhiteSpace(acceptance.AcceptedBy)
+                    || acceptance.AcceptedBy.Length > MaximumActorLength))
             || (snapshot.Reason is { } reason && (string.IsNullOrWhiteSpace(reason) || reason.Length > MaximumRevisionReasonLength)))
         {
             throw new InvalidOperationException("Kayıtlı revizyon geçmişi taslakla uyuşmuyor.");

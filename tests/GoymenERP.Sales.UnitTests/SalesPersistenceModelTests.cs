@@ -115,8 +115,27 @@ public sealed class SalesPersistenceModelTests
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddDraftCancellations", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddRevisionReasons", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddLinePricing", StringComparison.Ordinal));
-        Assert.Equal("20260930223000_AddDraftCustomerAcceptance", context.Database.GetMigrations().Last());
+        Assert.Equal("20261002153000_AddDraftRevisionCustomerAcceptance", context.Database.GetMigrations().Last());
         Assert.False(context.Database.HasPendingModelChanges());
+    }
+
+    [Fact]
+    public void Archived_revision_customer_acceptance_is_nullable_exact_revision_evidence_and_rollback_is_guarded()
+    {
+        using var context = Context();
+        var revisions = context.Model.FindEntityType(typeof(DraftRevisionRow))!;
+        Assert.True(revisions.FindProperty(nameof(DraftRevisionRow.CustomerAcceptedRevision))!.IsNullable);
+        Assert.True(revisions.FindProperty(nameof(DraftRevisionRow.CustomerAcceptedBy))!.IsNullable);
+        Assert.True(revisions.FindProperty(nameof(DraftRevisionRow.CustomerAcceptedAtUtc))!.IsNullable);
+        Assert.Equal(SalesDbContext.RevisionCustomerAcceptanceConstraint,
+            revisions.GetCheckConstraints().Single(constraint => constraint.Name == "CK_DraftRevisions_CustomerAcceptance").Sql);
+
+        var migration = new GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations.AddDraftRevisionCustomerAcceptance();
+        Assert.Equal(4, migration.UpOperations.Count);
+        Assert.All(migration.UpOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.AddColumnOperation>(),
+            column => Assert.True(column.IsNullable));
+        var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(migration.DownOperations[0]);
+        Assert.Contains("THROW 51065", guard.Sql, StringComparison.Ordinal);
     }
 
     /// <summary>DEC-SAL-002: the reason column's rollback refuses with Sales' own 51057 BEFORE anything is dropped (forward fix).</summary>

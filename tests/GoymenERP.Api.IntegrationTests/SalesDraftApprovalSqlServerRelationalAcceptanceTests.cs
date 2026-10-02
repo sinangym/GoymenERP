@@ -38,7 +38,7 @@ namespace GoymenERP.Api.IntegrationTests;
 /// drafts are built from ISOLATED SYNTHETIC owner snapshots (the store validates nothing about the
 /// owners); this proves the approval slice, not a sale. Every identity is SENTETIK / NOT_ENV.
 /// </summary>
-public sealed class SalesDraftApprovalSqlServerRelationalAcceptanceTests
+public sealed partial class SalesDraftApprovalSqlServerRelationalAcceptanceTests
 {
     private static readonly Guid CompanyA = TestCompanyIds.CompanyA;
     private static readonly Guid CompanyB = TestCompanyIds.CompanyB;

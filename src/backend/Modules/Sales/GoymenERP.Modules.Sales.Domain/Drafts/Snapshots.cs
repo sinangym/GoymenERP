@@ -155,7 +155,8 @@ public sealed record RevisionLineSnapshot(
 /// </summary>
 public sealed record ApprovedRevisionSnapshot(
     int Revision, ApprovalFacts Approval, Guid MoneyProfileId, string MoneyProfileVersion, int MoneyScale,
-    DateTimeOffset ArchivedAtUtc, string ArchivedBy, IReadOnlyList<RevisionLineSnapshot> Lines, string? Reason = null);
+    DateTimeOffset ArchivedAtUtc, string ArchivedBy, IReadOnlyList<RevisionLineSnapshot> Lines, string? Reason = null,
+    CustomerAcceptanceFacts? CustomerAcceptance = null);
 
 /// <summary>DEC-SAL-003: one slice's new requested delivery date, addressed by the slice id the line already carries.</summary>
 public sealed record SliceScheduleInput(Guid SliceId, DateOnly RequestedDeliveryDate);

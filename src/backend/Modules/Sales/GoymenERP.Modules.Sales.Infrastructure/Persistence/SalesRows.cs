@@ -195,6 +195,11 @@ internal sealed class DraftRevisionRow : ISalesTenantRow
     public string ArchivedBy { get; set; } = string.Empty;
     public string CorrelationId { get; set; } = string.Empty;
 
+    /// <summary>The exact customer acceptance of this revision when it was archived; null when absent or not required.</summary>
+    public int? CustomerAcceptedRevision { get; set; }
+    public string? CustomerAcceptedBy { get; set; }
+    public DateTimeOffset? CustomerAcceptedAtUtc { get; set; }
+
     /// <summary>DEC-SAL-002: why this approved revision was superseded (the quantity revision's reason); null when a price revision archived it.</summary>
     public string? Reason { get; set; }
 }
