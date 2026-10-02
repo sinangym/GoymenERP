@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { INVENTORY_STOCK_POSITIONS_CAPABILITY } from '../inventory/capabilities'
+import type { InventoryLabelIdentity } from '../inventory/labelDetailContract'
 import { MANUFACTURING_CAPABILITY } from './capabilities'
 import {
   CLOSER_CAPABILITIES,
@@ -97,12 +98,13 @@ function labelDetail(
       lotId: LOT,
       heatNumber: null,
       coilNumber: null,
+      classification: null,
       documentStatus: 'Complete',
       requiredDocuments: [],
       documents: [],
       prints: [],
       lot: { id: LOT, heatNumber: null, coilNumber: null },
-    },
+    } satisfies InventoryLabelIdentity,
     balances: {
       labelId: ROLL_1,
       physicalKg,
