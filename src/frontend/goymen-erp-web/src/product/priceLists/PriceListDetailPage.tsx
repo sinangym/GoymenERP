@@ -19,7 +19,13 @@ import { PRICE_LIST_CAPABILITY, PRICE_LIST_ROUTE } from './capabilities'
 import { formatDate, formatMoneyText, isWireDate, todayText, type PriceListVersion, type PriceListView } from './contract'
 import { PriceListLinesEditor } from './PriceListLinesEditor'
 import { buildLines, rowsFromLines, type PriceListLineRow } from './priceListLines'
-import { isPriceListAttemptFrozen, livePriceListSnapshot, newIdentity } from './priceListAttempt'
+import {
+  hasRetainedPriceListAttempt,
+  isPriceListAttemptFrozen,
+  livePriceListSnapshot,
+  newIdentity,
+  priceListBinding,
+} from './priceListAttempt'
 import { PRICE_LIST_TEXT as T, VERSION_STATUS_TEXT } from './priceListText'
 import { attemptNotice, fieldErrorTexts, usePriceListCommand } from './usePriceListCommand'
 import styles from './PriceListPages.module.css'
@@ -61,6 +67,11 @@ export function PriceListDetailPage() {
   const view = outcome.data
   const reread = () => void queryClient.invalidateQueries({ queryKey: ['price-lists'] })
   const draft = view.versions.find((version) => version.state === 'Draft') ?? null
+  const publishScope = `product.price-list.publish:${view.id}`
+  const startScope = `product.price-list.start:${view.id}`
+  const publishRecovery = hasRetainedPriceListAttempt(priceListBinding(shell, publishScope))
+  const startRecovery = hasRetainedPriceListAttempt(priceListBinding(shell, startScope))
+  const canStart = draft === null && view.versions.some((version) => version.state === 'Published')
   return (
     <article className={styles.page} aria-labelledby="price-list-detail-heading">
       {backLink}
@@ -83,11 +94,11 @@ export function PriceListDetailPage() {
           {draft !== null && hasCapability(shell, PRICE_LIST_CAPABILITY.edit)
             ? <DraftEditor key={`draft:${view.id}:${draft.versionNo}`} shell={shell} view={view} draft={draft} companyId={companyId} onChanged={reread} />
             : null}
-          {draft !== null && hasCapability(shell, PRICE_LIST_CAPABILITY.publish)
-            ? <PublishCommand key={`publish:${view.id}:${draft.versionNo}`} shell={shell} view={view} draft={draft} onChanged={reread} />
+          {(draft !== null || publishRecovery) && hasCapability(shell, PRICE_LIST_CAPABILITY.publish)
+            ? <PublishCommand key={`publish:${view.id}`} shell={shell} view={view} draft={draft} onChanged={reread} />
             : null}
-          {draft === null && view.versions.some((version) => version.state === 'Published') && hasCapability(shell, PRICE_LIST_CAPABILITY.edit)
-            ? <StartVersionCommand key={`start:${view.id}:${view.versions.length}`} shell={shell} view={view} onChanged={reread} />
+          {(canStart || startRecovery) && hasCapability(shell, PRICE_LIST_CAPABILITY.edit)
+            ? <StartVersionCommand key={`start:${view.id}`} shell={shell} view={view} canStart={canStart} onChanged={reread} />
             : null}
         </>
       )}
@@ -243,28 +254,33 @@ function DraftEditor({ shell, view, draft, companyId, onChanged }: {
 function PublishCommand({ shell, view, draft, onChanged }: {
   readonly shell: ShellState
   readonly view: PriceListView
-  readonly draft: PriceListVersion
+  readonly draft: PriceListVersion | null
   readonly onChanged: () => void
 }) {
   const command = usePriceListCommand(shell, `product.price-list.publish:${view.id}`, onChanged, onChanged)
   const frozen = isPriceListAttemptFrozen(command.attempt)
   return (
     <section className={styles.section} aria-label={T.publish}>
-      <p className={styles.muted}>{T.publishNote}</p>
-      <div className={styles.actions}>
-        <button type="button" className={styles.primaryButton} disabled={frozen} data-testid="price-list-publish"
-          onClick={() => command.submit({ kind: 'publish', priceListId: view.id, payload: { expectedVersion: view.version, versionNo: draft.versionNo } })}>
-          {T.publish} ({T.versionTitle(draft.versionNo)})
-        </button>
-      </div>
+      {draft === null ? null : (
+        <>
+          <p className={styles.muted}>{T.publishNote}</p>
+          <div className={styles.actions}>
+            <button type="button" className={styles.primaryButton} disabled={frozen} data-testid="price-list-publish"
+              onClick={() => command.submit({ kind: 'publish', priceListId: view.id, payload: { expectedVersion: view.version, versionNo: draft.versionNo } })}>
+              {T.publish} ({T.versionTitle(draft.versionNo)})
+            </button>
+          </div>
+        </>
+      )}
       <CommandNotice attempt={command.attempt} success={T.notice.published} retry={command.retry} abandon={command.abandon} />
     </section>
   )
 }
 
-function StartVersionCommand({ shell, view, onChanged }: {
+function StartVersionCommand({ shell, view, canStart, onChanged }: {
   readonly shell: ShellState
   readonly view: PriceListView
+  readonly canStart: boolean
   readonly onChanged: () => void
 }) {
   const [versionId] = useState(() => newIdentity())
@@ -287,19 +303,23 @@ function StartVersionCommand({ shell, view, onChanged }: {
 
   return (
     <section className={styles.section} aria-label={T.startVersion}>
-      <p className={styles.muted}>{T.startVersionNote}</p>
-      <fieldset className={styles.fieldset} disabled={frozen}>
-        <div className={styles.grid}>
-          <label htmlFor="price-list-next-valid-from">{T.validFrom}</label>
-          <input id="price-list-next-valid-from" type="date" value={validFrom} onChange={(event) => setValidFrom(event.target.value)} />
-          <label htmlFor="price-list-next-valid-through">{T.validThrough}</label>
-          <input id="price-list-next-valid-through" type="date" value={validThrough} onChange={(event) => setValidThrough(event.target.value)} />
-        </div>
-      </fieldset>
-      {localError === null ? null : <p role="alert" className={styles.notice} data-tone="error">{localError}</p>}
-      <div className={styles.actions}>
-        <button type="button" className={styles.secondaryButton} onClick={start} disabled={frozen} data-testid="price-list-start-version">{T.startVersion}</button>
-      </div>
+      {!canStart ? null : (
+        <>
+          <p className={styles.muted}>{T.startVersionNote}</p>
+          <fieldset className={styles.fieldset} disabled={frozen}>
+            <div className={styles.grid}>
+              <label htmlFor="price-list-next-valid-from">{T.validFrom}</label>
+              <input id="price-list-next-valid-from" type="date" value={validFrom} onChange={(event) => setValidFrom(event.target.value)} />
+              <label htmlFor="price-list-next-valid-through">{T.validThrough}</label>
+              <input id="price-list-next-valid-through" type="date" value={validThrough} onChange={(event) => setValidThrough(event.target.value)} />
+            </div>
+          </fieldset>
+          {localError === null ? null : <p role="alert" className={styles.notice} data-tone="error">{localError}</p>}
+          <div className={styles.actions}>
+            <button type="button" className={styles.secondaryButton} onClick={start} disabled={frozen} data-testid="price-list-start-version">{T.startVersion}</button>
+          </div>
+        </>
+      )}
       <CommandNotice attempt={command.attempt} success={T.notice.started} retry={command.retry} abandon={command.abandon} />
     </section>
   )

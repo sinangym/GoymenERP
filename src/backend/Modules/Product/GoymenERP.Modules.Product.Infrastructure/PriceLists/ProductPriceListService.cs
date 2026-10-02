@@ -143,6 +143,13 @@ public sealed class ProductPriceListService : IProductPriceListServiceV1
         await RequireStillAsync(permission, scope, cancellationToken);
         if (await store.NameExistsAsync(list.Name, null, cancellationToken))
         {
+            // The first lookup may have missed an identical request that committed while Product/name facts were awaited.
+            // Only that exact company/actor/payload attempt replays; another name holder stays a duplicate-name conflict.
+            if (await ReplayAsync(envelope, requestHash, ProductPriceListCommandsV1.CreateV1, permission, scope, cancellationToken) is { } winner)
+            {
+                return winner;
+            }
+
             throw new ProductPriceListException(409, ProductPriceListCodesV1.DuplicateName, [new("name", ProductPriceListCodesV1.DuplicateName)]);
         }
 
