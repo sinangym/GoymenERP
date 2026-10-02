@@ -487,6 +487,7 @@ public sealed partial class SalesDraftService(
         {
             throw new SalesDraftServiceException(400, "validation_failed", validationErrors);
         }
+        var lines = request.Lines!;
 
         const string commandName = SalesDraftCommands.ApprovePriceFloorExceptionsV1;
         var requestHash = SalesDraftRequestHash.Compute(commandName, draftId, request);
@@ -501,7 +502,7 @@ public sealed partial class SalesDraftService(
             throw new SalesDraftServiceException(404, "not_found");
         }
 
-        var inputs = request.Lines.Select(line => new LinePriceFloorExceptionApprovalInput(line!.LineId, line.Reason)).ToArray();
+        var inputs = lines.Select(line => new LinePriceFloorExceptionApprovalInput(line!.LineId, line.Reason)).ToArray();
         var audit = new SalesDraftStateAudit("sales.order-draft.price-floor-exceptions-approved.v1", "ApprovePriceFloorExceptions",
             "Satış siparişi taban fiyat istisnaları farklı yetkili tarafından gerekçeli onaylandı");
         SalesDraftStateResult? result;
@@ -532,7 +533,7 @@ public sealed partial class SalesDraftService(
         catch (SalesRuleException exception)
         {
             var index = exception.LineId is { } lineId
-                ? request.Lines.ToList().FindIndex(line => line.LineId == lineId)
+                ? lines.ToList().FindIndex(line => line.LineId == lineId)
                 : -1;
             var field = index < 0 ? "lines" : $"lines[{index}].reason";
             throw new SalesDraftServiceException(422, "validation_failed", [new(field, exception.Code)]);

@@ -296,6 +296,15 @@ public static class SalesDraftRequestHash
         return Hash(JsonSerializer.Serialize(new { command = commandName, draftId, request.ExpectedVersion, request.Lines }, SalesDraftJson.Options));
     }
 
+    /// <summary>Price-floor approval replay identity: command, draft, expected version and every line/reason in request order.</summary>
+    public static string Compute(string commandName, Guid draftId, SalesDraftPriceFloorExceptionApprovalRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentException.ThrowIfNullOrWhiteSpace(commandName);
+        return Hash(JsonSerializer.Serialize(
+            new { command = commandName, draftId, request.ExpectedVersion, request.Lines }, SalesDraftJson.Options));
+    }
+
     /// <summary>DEC-SAL-002: the canonical content of a quantity revision — the command, the draft, the expected version, the reason as sent and every line's quantity text in the order given.</summary>
     public static string Compute(string commandName, Guid draftId, SalesDraftQuantityRevisionRequest request)
     {

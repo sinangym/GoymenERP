@@ -59,6 +59,7 @@ export function SalesDraftPriceFloorApproval({ shell, detail, companyId, onRecor
 
   if (!hasCapability(shell, SALES_PRICE_FLOOR_EXCEPTION_APPROVE_CAPABILITY) || pricing === null
     || (approvalRows.length === 0 && attempt.phase === 'idle')) return null
+  const currentPricing = pricing
   const frozen = attempt.phase !== 'idle'
 
   function start() {
@@ -68,7 +69,7 @@ export function SalesDraftPriceFloorApproval({ shell, detail, companyId, onRecor
     if (binding === null) return
     const decision = decideSubmit(attemptRef.current, {
       path: `${detail.draft.id}/below-floor-exception-approval`, binding, companyId,
-      payload: { expectedVersion: pricing.version, lines },
+      payload: { expectedVersion: currentPricing.version, lines },
     }, generateOrderAttemptKey)
     if (decision.type === 'send') void send(decision.snapshot)
   }
