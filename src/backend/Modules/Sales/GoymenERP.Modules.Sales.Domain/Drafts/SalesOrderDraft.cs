@@ -329,7 +329,7 @@ public sealed partial class SalesOrderDraft
         var quantity = RequireQuantity(input.Quantity, input.OrderUnit);
         RequireQuantityText(input.QuantityText, input.Quantity);
         var commercial = input.Commercial ?? CommercialDraftFields.None;
-        RequireCommercial(commercial, input.Product);
+        RequireCommercial(commercial, input.Product, input.LineId);
 
         var slices = RequireSlices(input.RequestedDeliverySlices, input.OrderUnit, quantity);
         var line = new SalesOrderDraftLine(input.LineId, lines.Count + 1, input.Product, input.OrderUnit, quantity,
@@ -351,7 +351,7 @@ public sealed partial class SalesOrderDraft
     /// an un-priced line is not free and not zero. Nothing is computed from these values in this slice.
     /// Who may WRITE them is the caller's fence (the separate price-write permission), never this class.
     /// </summary>
-    private void RequireCommercial(CommercialDraftFields commercial, ProductSnapshot product)
+    private void RequireCommercial(CommercialDraftFields commercial, ProductSnapshot product, Guid lineId)
     {
         if ((commercial.UnitPrice is null) != (commercial.PriceUnitId is null))
         {
@@ -390,7 +390,7 @@ public sealed partial class SalesOrderDraft
             }
         }
 
-        RequirePricingDetail(commercial, line.Id);
+        RequirePricingDetail(commercial, lineId);
     }
 
     /// <summary>
@@ -854,7 +854,7 @@ public sealed partial class SalesOrderDraft
             var fields = input.Commercial ?? CommercialDraftFields.None;
             try
             {
-                RequireCommercial(fields, line.Product);
+                RequireCommercial(fields, line.Product, line.Id);
             }
             catch (SalesRuleException exception)
             {
