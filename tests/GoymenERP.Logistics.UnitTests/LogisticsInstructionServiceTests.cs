@@ -793,11 +793,16 @@ public sealed partial class LogisticsInstructionServiceTests
 
         public int InvoiceSourceReads { get; private set; }
         public int? InvoiceSourceRevisionOverride { get; set; }
+        public string? InvoiceSourceIntegrityFault { get; set; }
 
         public Task<StoredApprovedDispatchInvoiceSource?> FindApprovedDispatchInvoiceSourceAsync(Guid dispatchNoteId,
             CancellationToken cancellationToken = default)
         {
             InvoiceSourceReads++;
+            if (InvoiceSourceIntegrityFault is not null)
+            {
+                throw new LogisticsStoreException(LogisticsStoreCodes.InvoiceSourceInvalid, InvoiceSourceIntegrityFault);
+            }
             foreach (var stored in _instructions)
             {
                 var note = stored.Instruction.DispatchNotes.SingleOrDefault(candidate => candidate.DispatchNoteId == dispatchNoteId);

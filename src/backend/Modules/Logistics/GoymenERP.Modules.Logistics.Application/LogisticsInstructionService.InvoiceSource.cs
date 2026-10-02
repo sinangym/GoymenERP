@@ -22,6 +22,10 @@ public sealed partial class LogisticsInstructionService
             stored = await GuardedAsync(scope, bindings.ReadPermission,
                 () => store.FindApprovedDispatchInvoiceSourceAsync(dispatchNoteId, cancellationToken), cancellationToken);
         }
+        catch (LogisticsStoreException exception) when (exception.Code == LogisticsStoreCodes.InvoiceSourceInvalid)
+        {
+            throw new LogisticsInstructionServiceException(503, LogisticsProblemCodesV1.ReferenceProviderInvalid);
+        }
         catch (LogisticsStoreException exception)
         {
             throw Store(exception);

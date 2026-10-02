@@ -92,6 +92,29 @@ public sealed partial class LogisticsInstructionServiceTests
         Assert.Equal(transitions, world.Store.Transitions.Count);
     }
 
+    [Theory]
+    [InlineData("missing-loading-line")]
+    [InlineData("mismatched-loading-line")]
+    public async Task An_invalid_immutable_loading_link_is_provider_invalid_after_the_fresh_fence_and_writes_nothing(string fault)
+    {
+        var (world, instructionId, _, firstShipment, _) = await ShippedWorld();
+        var draft = DispatchNote("6", firstShipment);
+        await world.Service().CreateDispatchNoteAsync(instructionId, draft, Metadata("invoice-link-create"));
+        await world.Service().ApproveDispatchNoteAsync(instructionId, draft.DispatchNoteId,
+            new ApproveDispatchNoteRequest("7"), Metadata("invoice-link-approve"));
+        var authorityCalls = world.Authority.Calls;
+        var transitions = world.Store.Transitions.Count;
+        world.Store.InvoiceSourceIntegrityFault = fault;
+
+        var invalid = await Assert.ThrowsAsync<LogisticsInstructionServiceException>(() =>
+            world.Service().GetApprovedDispatchInvoiceSourceAsync(draft.DispatchNoteId));
+
+        Assert.Equal((503, LogisticsProblemCodesV1.ReferenceProviderInvalid), (invalid.Status, invalid.Code));
+        Assert.Equal(authorityCalls + 2, world.Authority.Calls);
+        Assert.Equal(1, world.Store.InvoiceSourceReads);
+        Assert.Equal(transitions, world.Store.Transitions.Count);
+    }
+
     private static bool IsMoneyOrConsumptionMember(string name) =>
         name.Contains("Price", StringComparison.OrdinalIgnoreCase)
         || name.Contains("Amount", StringComparison.OrdinalIgnoreCase)

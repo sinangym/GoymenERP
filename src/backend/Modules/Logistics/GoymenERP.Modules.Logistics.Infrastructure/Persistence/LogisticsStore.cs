@@ -707,7 +707,7 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
 
         if (rows.Any(line => line.SourceOrderRevision is null || !line.SourceOrderMatches))
         {
-            throw new LogisticsStoreException(LogisticsStoreCodes.ValueDoesNotFit,
+            throw new LogisticsStoreException(LogisticsStoreCodes.InvoiceSourceInvalid,
                 "İrsaliye satırının değişmez yükleme kaynağı eksik veya uyuşmuyor.");
         }
 
