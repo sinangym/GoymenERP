@@ -46,6 +46,8 @@ public sealed class SalesLinePricingTests
         Assert.True(SalesLinePriceCalculator.TryParseExact("79228162514264337593543950335", out var maximum));
         Assert.Equal(decimal.MaxValue, maximum);
         Assert.Throws<OverflowException>(() => SalesLinePriceCalculator.NetUnitPrice(
+            new CommercialDraftFields("1", Unit, "0.0000000000000000000000000001")));
+        Assert.Throws<OverflowException>(() => SalesLinePriceCalculator.NetUnitPrice(
             new CommercialDraftFields("79228162514264337593543950335", Unit, null, SurchargePercent: "100")));
     }
 

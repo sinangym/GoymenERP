@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Numerics;
 
 namespace GoymenERP.Modules.Sales.Domain.Drafts;
 
@@ -23,15 +24,18 @@ public static class SalesLinePriceCalculator
             return null;
         }
 
-        var price = Parse(priceText);
-        var discount = commercial.DiscountPercent is { } percent ? checked(price * Parse(percent)) / 100m
-            : commercial.DiscountAmount is { } amount ? Parse(amount)
-            : 0m;
-        var discounted = checked(price - discount);
-        var surcharge = commercial.SurchargePercent is { } surchargePercent ? checked(discounted * Parse(surchargePercent)) / 100m
-            : commercial.SurchargeAmount is { } surchargeAmount ? Parse(surchargeAmount)
-            : 0m;
-        return checked(discounted + surcharge);
+        var price = ExactDecimal.Parse(priceText);
+        var discount = commercial.DiscountPercent is { } percent
+            ? price.Multiply(ExactDecimal.Parse(percent)).DivideBy100()
+            : commercial.DiscountAmount is { } amount ? ExactDecimal.Parse(amount) : ExactDecimal.Zero;
+        var discounted = price.Subtract(discount);
+        var surcharge = commercial.SurchargePercent is { } surchargePercent
+            ? discounted.Multiply(ExactDecimal.Parse(surchargePercent)).DivideBy100()
+            : commercial.SurchargeAmount is { } surchargeAmount ? ExactDecimal.Parse(surchargeAmount) : ExactDecimal.Zero;
+        var net = discounted.Add(surcharge);
+        return net.TryToDecimal(out var result)
+            ? result
+            : throw new OverflowException("The exact net price is not representable by System.Decimal.");
     }
 
     /// <summary>The net as exact text with no trailing zeros ("41790" / "41790.25"); null without a price.</summary>
@@ -79,6 +83,67 @@ public static class SalesLinePriceCalculator
         if (integer.Length == 0) integer = "0";
         fraction = fraction.TrimEnd('0');
         return fraction.Length == 0 ? integer : $"{integer}.{fraction}";
+    }
+
+    /// <summary>
+    /// Arbitrary-precision decimal arithmetic for the formula's intermediate values. Conversion to System.Decimal happens
+    /// only once, after the exact net is known, so multiplication or division can never silently round a business value.
+    /// </summary>
+    private readonly record struct ExactDecimal(BigInteger Mantissa, int Scale)
+    {
+        public static ExactDecimal Zero { get; } = new(BigInteger.Zero, 0);
+
+        public static ExactDecimal Parse(string text)
+        {
+            var dot = text.IndexOf('.');
+            var scale = dot < 0 ? 0 : text.Length - dot - 1;
+            var digits = dot < 0 ? text : text.Remove(dot, 1);
+            return Create(BigInteger.Parse(digits, CultureInfo.InvariantCulture), scale);
+        }
+
+        public ExactDecimal Add(ExactDecimal other)
+        {
+            var scale = Math.Max(Scale, other.Scale);
+            return Create(ScaleTo(Mantissa, Scale, scale) + ScaleTo(other.Mantissa, other.Scale, scale), scale);
+        }
+
+        public ExactDecimal Subtract(ExactDecimal other)
+        {
+            var scale = Math.Max(Scale, other.Scale);
+            return Create(ScaleTo(Mantissa, Scale, scale) - ScaleTo(other.Mantissa, other.Scale, scale), scale);
+        }
+
+        public ExactDecimal Multiply(ExactDecimal other) => Create(Mantissa * other.Mantissa, checked(Scale + other.Scale));
+
+        public ExactDecimal DivideBy100() => Create(Mantissa, checked(Scale + 2));
+
+        public bool TryToDecimal(out decimal value) => TryParseExact(ToText(), out value);
+
+        private string ToText()
+        {
+            var negative = Mantissa.Sign < 0;
+            var digits = BigInteger.Abs(Mantissa).ToString(CultureInfo.InvariantCulture);
+            if (Scale > 0)
+            {
+                digits = digits.Length <= Scale
+                    ? $"0.{new string('0', Scale - digits.Length)}{digits}"
+                    : $"{digits[..^Scale]}.{digits[^Scale..]}";
+            }
+            return negative ? $"-{digits}" : digits;
+        }
+
+        private static ExactDecimal Create(BigInteger mantissa, int scale)
+        {
+            while (scale > 0 && mantissa % 10 == 0)
+            {
+                mantissa /= 10;
+                scale -= 1;
+            }
+            return new ExactDecimal(mantissa, scale);
+        }
+
+        private static BigInteger ScaleTo(BigInteger mantissa, int currentScale, int targetScale) =>
+            currentScale == targetScale ? mantissa : mantissa * BigInteger.Pow(10, targetScale - currentScale);
     }
 
     /// <summary>Whether two exact texts are the same value ("42000.50" = "42000.5").</summary>
