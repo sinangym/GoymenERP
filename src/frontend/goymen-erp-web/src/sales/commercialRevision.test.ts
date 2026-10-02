@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildCommercialRevisionRequest, type CommercialRevisionRow } from './commercialRevision'
+import { buildCommercialRevisionRequest, commercialRowsFromFreshPricing, type CommercialRevisionRow } from './commercialRevision'
 
 const row = (over: Partial<CommercialRevisionRow> = {}): CommercialRevisionRow => ({
   lineId: '11111111-1111-4111-8111-111111111111',
@@ -14,6 +14,19 @@ const row = (over: Partial<CommercialRevisionRow> = {}): CommercialRevisionRow =
   surchargeKind: 'percent',
   surchargeValue: '',
   ...over,
+})
+
+describe('fresh commercial pricing snapshot', () => {
+  it('requires the same version and the exact full line set', () => {
+    const detail = { draft: { id: 'd', version: '7' }, lines: [{ lineId: 'a' }, { lineId: 'b' }] } as never
+    const line = (lineId: string) => ({ lineId, discountAmount: null, surchargeAmount: null, surchargePercent: null,
+      priceReference: null })
+    expect(commercialRowsFromFreshPricing(detail, { version: '7', lines: [line('a'), line('b')] } as never)).toHaveLength(2)
+    expect(commercialRowsFromFreshPricing(detail, { version: '6', lines: [line('a'), line('b')] } as never)).toBeNull()
+    expect(commercialRowsFromFreshPricing(detail, { version: '7', lines: [line('a')] } as never)).toBeNull()
+    expect(commercialRowsFromFreshPricing(detail, { version: '7', lines: [line('a'), line('x')] } as never)).toBeNull()
+    expect(commercialRowsFromFreshPricing(detail, { version: '7', lines: [line('a'), line('a')] } as never)).toBeNull()
+  })
 })
 
 describe('commercial revision payload', () => {

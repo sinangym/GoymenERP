@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { fetchLinePriceReferences, sendDraftCommercialRevision } from './api'
-import { buildCommercialRevisionRequest, commercialRowsFromDetail, type AdjustmentKind, type CommercialRevisionRow } from './commercialRevision'
+import { buildCommercialRevisionRequest, commercialRowsFromFreshPricing, type AdjustmentKind, type CommercialRevisionRow } from './commercialRevision'
 import { APPROVAL_STATE, CANCELLED_STATE, SALES_PROBLEM_CODE, type DraftCommercialRevisionRequest, type DraftDetail, type DraftMutation } from './contract'
 import type { LinePriceReference } from './linePricing'
 import {
@@ -45,8 +45,9 @@ export function SalesDraftCommercialRevisionForm({
 }) {
   const pricing = useDraftLinePricing(shell, detail, companyId)
   const pricingData = pricing.data?.type === 'ok-single' ? pricing.data.data : null
+  const freshRows = commercialRowsFromFreshPricing(detail, pricingData)
   const [initial] = useState(() => recallCommercialRevisionAttempt(orderAttemptBinding(shell, scopeOf(detail.draft.id))))
-  const [rows, setRows] = useState<readonly CommercialRevisionRow[]>(() => initial?.rows ?? commercialRowsFromDetail(detail, pricingData))
+  const [rows, setRows] = useState<readonly CommercialRevisionRow[]>(() => initial?.rows ?? freshRows ?? [])
   const [attempt, setAttempt] = useState<RevisionAttempt>(() => initial?.attempt ?? { phase: 'idle' })
   const [localError, setLocalError] = useState<string | null>(null)
   const [choices, setChoices] = useState<Readonly<Record<string, ReferenceChoices>>>({})
@@ -54,8 +55,8 @@ export function SalesDraftCommercialRevisionForm({
 
   useEffect(() => {
     // The rows follow the server (a re-read detail, or the pricing of this version arriving) unless an attempt is live.
-    if (attemptRef.current.phase !== 'submitting' && !isOutcomeStillUnknown(attemptRef.current)) {
-      setRows(commercialRowsFromDetail(detail, pricingData))
+    if (freshRows !== null && attemptRef.current.phase !== 'submitting' && !isOutcomeStillUnknown(attemptRef.current)) {
+      setRows(freshRows)
     }
   }, [detail, pricingData])
 
@@ -94,7 +95,6 @@ export function SalesDraftCommercialRevisionForm({
     setAttemptState(next)
     rememberCommercialRevisionAttempt(snapshot.binding, next, submittedRows)
     if (next.phase === 'completed') {
-      setRows(commercialRowsFromDetail(next.result.detail, null))
       onRecorded()
     } else if (next.phase === 'failed' && next.failure === 'conflict') {
       onRecorded()
@@ -103,6 +103,7 @@ export function SalesDraftCommercialRevisionForm({
 
   function start() {
     setLocalError(null)
+    if (freshRows === null) return
     const built = buildCommercialRevisionRequest(detail.draft.version, rows)
     if (!built.ok) {
       setLocalError(text.localError(built.lineNo, built.reason))
@@ -168,6 +169,7 @@ export function SalesDraftCommercialRevisionForm({
       <h3>{text.heading}</h3>
       <p className={styles.muted}>{detail.draft.approvalState === APPROVAL_STATE.approved ? text.approvedWarning : text.description}</p>
       {!stateAllowsRevision ? <p className={styles.muted}>{text.stateUnavailable}</p> : null}
+      {freshRows === null ? <p className={styles.notice} data-testid="sales-price-pricing-unavailable">{text.pricingUnavailable}</p> : null}
       {localError === null ? null : <p role="alert" className={styles.notice}>{localError}</p>}
       {notice === null ? null : <p role={attempt.phase === 'failed' ? 'alert' : 'status'} className={styles.notice}>{notice}</p>}
       {lineErrors.map((message) => <p key={message} className={styles.notice} data-testid="sales-price-line-error">{message}</p>)}
@@ -259,7 +261,7 @@ export function SalesDraftCommercialRevisionForm({
           <button type="button" className={styles.linkButton} onClick={leave}>{text.abandon}</button>
         </>
       ) : null}
-      <button type="button" className={styles.primaryButton} disabled={frozen || !stateAllowsRevision} onClick={start}>
+      <button type="button" className={styles.primaryButton} disabled={frozen || !stateAllowsRevision || freshRows === null} onClick={start}>
         {text.submit}
       </button>
     </div>

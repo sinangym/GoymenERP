@@ -574,14 +574,17 @@ public sealed partial class SalesDraftService(
     {
         var member = exception.Code switch
         {
-            SalesRuleCodes.PriceScaleExceeded or SalesRuleCodes.PriceUnitPairing => "unitPrice",
+            SalesRuleCodes.PriceScaleExceeded or SalesRuleCodes.PriceUnitPairing or SalesRuleCodes.PriceValueUnrepresentable
+                or SalesRuleCodes.PriceCalculationOverflow => "unitPrice",
             SalesRuleCodes.PriceUnitUnsupported => "priceUnitId",
-            SalesRuleCodes.DiscountOutOfRange or SalesRuleCodes.DiscountWithoutPrice => "discountPercent",
+            SalesRuleCodes.DiscountOutOfRange or SalesRuleCodes.DiscountWithoutPrice
+                or SalesRuleCodes.DiscountPercentUnrepresentable => "discountPercent",
             // AT-018 / AT-021: the reference and the visible adjustments.
             SalesRuleCodes.PriceBelowFloor or SalesRuleCodes.AdjustmentWithoutPrice => "unitPrice",
             SalesRuleCodes.PriceReferenceMismatch => "priceReference",
-            SalesRuleCodes.DiscountExceedsPrice => "discountAmount",
-            SalesRuleCodes.SurchargeOutOfRange => "surchargePercent",
+            SalesRuleCodes.DiscountExceedsPrice or SalesRuleCodes.DiscountAmountUnrepresentable => "discountAmount",
+            SalesRuleCodes.SurchargeOutOfRange or SalesRuleCodes.SurchargePercentUnrepresentable => "surchargePercent",
+            SalesRuleCodes.SurchargeAmountUnrepresentable => "surchargeAmount",
             SalesRuleCodes.AdjustmentKindConflict or SalesRuleCodes.AdjustmentScaleExceeded => null,
             _ => null,
         };

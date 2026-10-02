@@ -390,7 +390,7 @@ public sealed partial class SalesOrderDraft
             }
         }
 
-        RequirePricingDetail(commercial);
+        RequirePricingDetail(commercial, line.Id);
     }
 
     /// <summary>
@@ -400,10 +400,22 @@ public sealed partial class SalesOrderDraft
     /// (<see cref="SalesLinePriceCalculator"/>) is not below it (AT-021, fail-closed: no exception approver is decided).
     /// Whether the reference is the Product owner's current answer is the caller's check (it reads the owner).
     /// </summary>
-    private void RequirePricingDetail(CommercialDraftFields commercial)
+    private void RequirePricingDetail(CommercialDraftFields commercial, Guid lineId)
     {
+        RequireRepresentable(commercial.UnitPrice, SalesRuleCodes.PriceValueUnrepresentable,
+            "Birim fiyat decimal türünde kayıpsız temsil edilemiyor.", lineId);
+        RequireRepresentable(commercial.DiscountPercent, SalesRuleCodes.DiscountPercentUnrepresentable,
+            "İskonto yüzdesi decimal türünde kayıpsız temsil edilemiyor.", lineId);
+        RequireRepresentable(commercial.DiscountAmount, SalesRuleCodes.DiscountAmountUnrepresentable,
+            "İskonto tutarı decimal türünde kayıpsız temsil edilemiyor.", lineId);
+        RequireRepresentable(commercial.SurchargePercent, SalesRuleCodes.SurchargePercentUnrepresentable,
+            "Vade farkı yüzdesi decimal türünde kayıpsız temsil edilemiyor.", lineId);
+        RequireRepresentable(commercial.SurchargeAmount, SalesRuleCodes.SurchargeAmountUnrepresentable,
+            "Vade farkı tutarı decimal türünde kayıpsız temsil edilemiyor.", lineId);
+
         if (!commercial.HasPricingDetail)
         {
+            RequireCalculable(commercial, lineId);
             return;
         }
 
@@ -449,6 +461,29 @@ public sealed partial class SalesOrderDraft
             }
 
             ValidateFloorException(commercial, reference);
+        }
+
+        RequireCalculable(commercial, lineId);
+    }
+
+    private static void RequireRepresentable(string? value, string code, string message, Guid lineId)
+    {
+        if (value is not null && !SalesLinePriceCalculator.TryParseExact(value, out _))
+        {
+            throw new SalesRuleException(code, message, lineId);
+        }
+    }
+
+    private static void RequireCalculable(CommercialDraftFields commercial, Guid lineId)
+    {
+        try
+        {
+            _ = SalesLinePriceCalculator.NetUnitPrice(commercial);
+        }
+        catch (OverflowException)
+        {
+            throw new SalesRuleException(SalesRuleCodes.PriceCalculationOverflow,
+                "Fiyat, iskonto ve vade farkı hesabı decimal sınırını aşıyor.", lineId);
         }
     }
 
@@ -943,6 +978,11 @@ public sealed partial class SalesOrderDraft
 
     private void RequirePriceFloorExceptionsApproved()
     {
+        foreach (var line in lines)
+        {
+            RequirePriceReferenceQuantity(line, line.Quantity.Value);
+        }
+
         if (lines.Any(line => IsBelowFloor(line.Commercial) && line.Commercial.FloorException?.IsApproved != true))
         {
             throw new SalesRuleException(SalesRuleCodes.PriceFloorExceptionPending,
@@ -1018,6 +1058,11 @@ public sealed partial class SalesOrderDraft
             replacements.Add((line, quantity, input.QuantityText));
         }
 
+        foreach (var (line, quantity, _) in replacements)
+        {
+            RequirePriceReferenceQuantity(line, quantity.Value);
+        }
+
         if (replacements.All(entry => entry.Line.Quantity.Value == entry.Quantity.Value))
         {
             throw new SalesRuleException(SalesRuleCodes.RevisionNoChange,
@@ -1050,6 +1095,19 @@ public sealed partial class SalesOrderDraft
 
         Touch(now);
         return archived;
+    }
+
+    private static void RequirePriceReferenceQuantity(SalesOrderDraftLine line, decimal quantity)
+    {
+        if (line.Commercial.Reference is not { } reference) return;
+
+        var lower = SalesLinePriceCalculator.Parse(reference.LowerQuantity);
+        var upper = reference.UpperQuantity is null ? (decimal?)null : SalesLinePriceCalculator.Parse(reference.UpperQuantity);
+        if (quantity < lower || upper is { } boundary && quantity >= boundary)
+        {
+            throw new SalesRuleException(SalesRuleCodes.PriceReferenceQuantityMismatch,
+                "Yeni miktar seçili liste fiyatı kademesinin dışında; önce fiyat referansını açıkça revize edin.", line.Id);
+        }
     }
 
     /// <summary>

@@ -252,6 +252,27 @@ public sealed partial class SalesDraftServiceTests
         Assert.Equal(404, (await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().GetLinePriceReferencesAsync(created.Draft.Id, Guid.NewGuid()))).Status);
     }
 
+    [Fact]
+    public async Task Unrepresentable_percentage_and_representable_overflow_are_field_refusals_with_no_effect()
+    {
+        var world = new World();
+        var created = (await world.Service().CreateDraftAsync(Request(), Metadata("k-number-create"))).Detail;
+        var lineId = created.Lines[0].LineId;
+
+        var tiny = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().ReviseCommercialAsync(created.Draft.Id,
+            Revision(created.Draft.Version, new SalesDraftLineCommercialV1(lineId, "1", KgUnit,
+                "0.00000000000000000000000000001")), Metadata("k-number-tiny")));
+        Assert.Equal((422, "lines[0].discountPercent", SalesRuleCodes.DiscountPercentUnrepresentable),
+            (tiny.Status, Assert.Single(tiny.Errors).Field, Assert.Single(tiny.Errors).Code));
+
+        var overflow = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().ReviseCommercialAsync(created.Draft.Id,
+            Revision(created.Draft.Version, new SalesDraftLineCommercialV1(lineId, "79228162514264337593543950335", KgUnit,
+                SurchargePercent: "100")), Metadata("k-number-overflow")));
+        Assert.Equal((422, "lines[0].unitPrice", SalesRuleCodes.PriceCalculationOverflow),
+            (overflow.Status, Assert.Single(overflow.Errors).Field, Assert.Single(overflow.Errors).Code));
+        Assert.DoesNotContain(world.Store.Transitions, item => item.Command == SalesDraftCommands.ReviseCommercialV1);
+    }
+
     private sealed class FakePriceReferences : IProductQuantityPriceReferenceReaderV1
     {
         public decimal Price { get; set; }

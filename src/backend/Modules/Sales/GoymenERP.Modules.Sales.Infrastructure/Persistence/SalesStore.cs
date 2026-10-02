@@ -1116,6 +1116,7 @@ public sealed class SalesStore(
             line.LineNo, line.Commercial.UnitPrice, line.Commercial.PriceUnitId, line.Commercial.DiscountPercent,
             // AT-018 / AT-021: the reference, the visible adjustments and the net in the audit trail.
             line.Commercial.Reference, line.Commercial.DiscountAmount, line.Commercial.SurchargePercent, line.Commercial.SurchargeAmount,
+            line.Commercial.FloorException,
             netUnitPrice = SalesLinePriceCalculator.NetUnitPriceText(line.Commercial),
         }).ToArray(),
     };

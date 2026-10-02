@@ -47,6 +47,16 @@ export function commercialRowsFromDetail(detail: DraftDetail, pricing: DraftLine
   })
 }
 
+/** A writable commercial snapshot must describe this exact draft version and every current line exactly once. */
+export function commercialRowsFromFreshPricing(detail: DraftDetail, pricing: DraftLinePricing | null): readonly CommercialRevisionRow[] | null {
+  if (pricing === null || pricing.version !== detail.draft.version || pricing.lines.length !== detail.lines.length) return null
+  const currentIds = new Set(detail.lines.map((line) => line.lineId))
+  const pricedIds = new Set(pricing.lines.map((line) => line.lineId))
+  if (pricedIds.size !== pricing.lines.length || pricedIds.size !== currentIds.size) return null
+  for (const lineId of currentIds) if (!pricedIds.has(lineId)) return null
+  return commercialRowsFromDetail(detail, pricing)
+}
+
 const nullableText = (value: string): string | null => {
   const trimmed = value.trim()
   return trimmed === '' ? null : trimmed
