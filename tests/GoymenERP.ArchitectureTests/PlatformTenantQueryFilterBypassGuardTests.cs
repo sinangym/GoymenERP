@@ -81,7 +81,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // production uses the own-server store and Defender when both are configured and answers 503 otherwise
     // (abe26a09… -> c027dce9…); no code line changed.
     private const string ReviewedOpenApiStartupFingerprint =
-        "0ec3d4dc12330cf1859e009e233cc9d26067170b06ac5616eed5402844cfb602";
+        "8dcb616014df8cdf45ab0c1406633d9b42c9e35282c2e1f30c7d17b2824d802e";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedProductManufacturingTechnicalRegistrationPath =
@@ -221,7 +221,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // DEC-PRD-010: +5 ProductDuplicateCandidatesSqlServerRelationalAcceptanceTests facts (ddeead62… -> d434c2b8…).
             // Q16 / AT-020: +3 Product import API SQL facts (d434c2b8… -> 9958c91f…).
             ["tools/relational_inventory/product.txt"] =
-                "1d1c0d11b125229550b624897c912674ba6a52c645b212c301966bd8e29bfac8",
+                "d7861da457c0e85579e4daa620c68e217e5b56e873b021cd442f751b148de46e",
 
             // purchasing
             ["tools/relational_inventory/purchasing.txt"] =
@@ -346,7 +346,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // existing Product card context; every durable row and audit event carries CompanyId.
             ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/"
              + "PriceLists/ProductPriceListDbContext.cs"] =
-                "b1a0ff3c3c898c9ed36de2cb506a52ddc55f0cd16e297937a0076278cb16a772",
+                "322378acff34afd47965275efc1cc677bee0859af1b63fcd048e46dbacf03662",
             ["src/backend/Modules/Idempotency/GoymenERP.Modules.Idempotency.Infrastructure/"
              // Re-measured for DEC-CAR-003: the terminal command-name check admits the Product deactivate/reactivate
              // commands beside activate; no query filter, key or table change.
@@ -478,7 +478,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/"
                  + "PriceLists/ProductPriceListStore.cs"] =
                     new(
-                        "af55978f2c389f1826e45710ff15a1f4ab55e20562e10bd7ed4d35b0d8654e94",
+                        "ea3481d674648b893796c93b15dab32e0a7a49b7c9ba0a1ef686f2d8a6afac2d",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -1134,7 +1134,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/PriceLists/"
                  + "Migrations/20260930113416_AddProductPriceLists.cs"] =
                     new(
-                        "3dc916bf719614f051367995bfeed184565a0ee2e210e3c32870dc0b939d890c",
+                        "f4223440444ebc7327b176f085ae98ed6f67d126e830fbe2d9887bd573cb7dba",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Sql"] = 1

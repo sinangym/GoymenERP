@@ -200,7 +200,7 @@ builder.Services.AddIdentityModule(
         databaseStartupMode == DatabaseStartupMode.Initialize);
 builder.Services.AddProductRuntime(builder.Configuration, builder.Environment);
 // AT-018: company-scoped price-list persistence, its two Sales reference readers and owner service.
-builder.Services.AddProductPriceLists(
+builder.Services.AddProductPriceListHost(
     builder.Configuration,
     (services, options) => options.AddInterceptors(
         services.GetRequiredService<AuditSaveChangesInterceptor>()));
@@ -375,7 +375,10 @@ if (!isOpenApiDocumentGeneration
     await app.Services.InitializeInventoryModuleAsync();
     await app.Services.InitializeProductRuntimeAsync();
     // After Organization and Product: price-list rows reference both owner tables.
-    await app.Services.InitializeProductPriceListsAsync();
+    if (app.Services.GetRequiredService<ProductRuntimeOptions>().IsEnabled)
+    {
+        await app.Services.InitializeProductPriceListsAsync();
+    }
     // After Organization: Finance's foreign keys reference its tables.
     await app.Services.InitializeFinancePersistenceAsync();
     // After Organization: Sales's foreign keys reference its tables.
