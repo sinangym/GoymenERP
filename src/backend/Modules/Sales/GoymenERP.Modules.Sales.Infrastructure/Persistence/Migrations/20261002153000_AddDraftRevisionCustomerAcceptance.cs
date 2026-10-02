@@ -31,7 +31,8 @@ public sealed class AddDraftRevisionCustomerAcceptance : Migration
     protected override void Down(MigrationBuilder migrationBuilder)
     {
         migrationBuilder.Sql("""
-            IF EXISTS (SELECT 1 FROM [sales].[DraftRevisions] WHERE [CustomerAcceptedRevision] IS NOT NULL)
+            IF EXISTS (SELECT 1 FROM [sales].[DraftRevisions]
+                       WHERE [CustomerAcceptedRevision] IS NOT NULL OR [CustomerAcceptedBy] IS NOT NULL OR [CustomerAcceptedAtUtc] IS NOT NULL)
                 THROW 51065, 'Sales archived revision customer acceptance requires a forward fix.', 1;
             """);
         migrationBuilder.DropCheckConstraint(name: "CK_DraftRevisions_CustomerAcceptance", schema: "sales", table: "DraftRevisions");

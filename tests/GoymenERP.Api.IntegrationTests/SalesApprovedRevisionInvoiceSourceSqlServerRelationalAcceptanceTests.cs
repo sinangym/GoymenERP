@@ -1,6 +1,9 @@
 using GoymenERP.Modules.Sales.Application.Contracts;
 using GoymenERP.Modules.Sales.Domain;
 using GoymenERP.Modules.Sales.Domain.Drafts;
+using Microsoft.Data.SqlClient;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 
 namespace GoymenERP.Api.IntegrationTests;
 
@@ -61,6 +64,62 @@ public sealed partial class SalesDraftApprovalSqlServerRelationalAcceptanceTests
         Assert.Equal(1, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM sales.DraftRevisions WHERE DraftId = @id AND Revision = 0 "
             + "AND CustomerAcceptedRevision = 0 AND CustomerAcceptedBy = @actor AND CustomerAcceptedAtUtc IS NOT NULL",
+            ("@id", draft.Id), ("@actor", run.Actor)));
+
+        foreach (var partialTuple in new[]
+                 {
+                     "[CustomerAcceptedRevision] = NULL",
+                     "[CustomerAcceptedBy] = NULL",
+                     "[CustomerAcceptedAtUtc] = NULL",
+                 })
+        {
+            var refusal = await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync(
+                $"UPDATE [sales].[DraftRevisions] SET {partialTuple} WHERE [DraftId] = @id AND [Revision] = 0",
+                ("@id", draft.Id)));
+            Assert.Equal(547, refusal.Number);
+        }
+
+        SalesOrderDraft legacy;
+        Guid legacyLineId;
+        await using (var legacyWrite = run.Store(CompanyA))
+        {
+            legacy = (await legacyWrite.Store.StoreDraftAsync(run.Envelope("invoice-legacy-create"), Hash("invoice-legacy-create"),
+                documentNo => Draft(owners, documentNo, T0.AddMinutes(1), customerAcceptanceRequired: false))).Draft;
+            legacyLineId = legacy.Lines[0].Id;
+            var submitted = (await legacyWrite.Store.UpdateDraftStateAsync(run.Envelope("invoice-legacy-submit"), Hash("invoice-legacy-submit"),
+                SalesDraftCommands.SubmitV1, legacy.Id, (stored, now) => stored.Submit(legacy.Version, run.Actor, now), Submitted))!;
+            var approved = (await legacyWrite.Store.UpdateDraftStateAsync(run.Envelope("invoice-legacy-approve"), Hash("invoice-legacy-approve"),
+                SalesDraftCommands.ApproveV1, legacy.Id,
+                (stored, now) => stored.Approve(submitted.Draft.Version, "SENTETIK-approver", now), Approved))!;
+            await legacyWrite.Store.ReviseDraftCommercialAsync(run.Envelope("invoice-legacy-archive"), Hash("invoice-legacy-archive"),
+                SalesDraftCommands.ReviseCommercialV1, legacy.Id,
+                (stored, now) => stored.ReviseCommercial(approved.Draft.Version,
+                    [new LineCommercialInput(legacyLineId, new CommercialDraftFields("12.50", KgUnit, null))], run.Actor, now),
+                Revised, _ => Task.CompletedTask);
+        }
+
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM sales.DraftRevisions WHERE DraftId = @id AND Revision = 0 "
+            + "AND CustomerAcceptedRevision IS NULL AND CustomerAcceptedBy IS NULL AND CustomerAcceptedAtUtc IS NULL",
+            ("@id", legacy.Id)));
+        await using (var legacyRead = run.Store(CompanyA))
+        {
+            var authority = new RecordingAuthority(SalesPermissionManifestV1.DraftsRead, SalesPermissionManifestV1.OrdersPriceRead);
+            var answer = await ((IApprovedSalesRevisionInvoiceSourceV1)run.Service(legacyRead, run.Actor, authority))
+                .ReadAsync(legacy.Id, 0, [legacyLineId]);
+            Assert.Equal(ApprovedSalesRevisionInvoiceSourceOutcomeV1.Available, answer.Outcome);
+            Assert.Equal(new SalesRevisionCustomerAcceptanceV1(false, null, null, null), answer.Source!.CustomerAcceptance);
+        }
+
+        await using (var migrationContext = run.Context(CompanyA))
+        {
+            var refusal = await Assert.ThrowsAsync<SqlException>(() => migrationContext.GetService<IMigrator>()
+                .MigrateAsync("20260930223000_AddDraftCustomerAcceptance"));
+            Assert.Equal(51065, refusal.Number);
+        }
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM sales.DraftRevisions WHERE DraftId = @id AND CustomerAcceptedRevision = 0 "
+            + "AND CustomerAcceptedBy = @actor AND CustomerAcceptedAtUtc IS NOT NULL",
             ("@id", draft.Id), ("@actor", run.Actor)));
     }
 }

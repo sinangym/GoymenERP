@@ -55,7 +55,7 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
 
     internal const string RevisionCustomerAcceptanceConstraint =
         "([CustomerAcceptedRevision] IS NULL AND [CustomerAcceptedBy] IS NULL AND [CustomerAcceptedAtUtc] IS NULL) "
-        + "OR ([CustomerAcceptedRevision] = [Revision] AND [CustomerAcceptedBy] IS NOT NULL "
+        + "OR ([CustomerAcceptedRevision] IS NOT NULL AND [CustomerAcceptedRevision] = [Revision] AND [CustomerAcceptedBy] IS NOT NULL "
         + "AND LEN([CustomerAcceptedBy]) > 0 AND [CustomerAcceptedAtUtc] IS NOT NULL)";
 
     /// <summary>

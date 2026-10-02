@@ -518,7 +518,7 @@ partial class SalesDbContextModelSnapshot : ModelSnapshot
                 {
                     t.HasCheckConstraint("CK_DraftRevisions_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [DraftId] <> '00000000-0000-0000-0000-000000000000' AND [Revision] >= 0 AND LEN([SubmittedBy]) > 0 AND LEN([ApprovedBy]) > 0 AND LEN([ArchivedBy]) > 0 AND LEN([CorrelationId]) > 0");
 
-                    t.HasCheckConstraint("CK_DraftRevisions_CustomerAcceptance", "([CustomerAcceptedRevision] IS NULL AND [CustomerAcceptedBy] IS NULL AND [CustomerAcceptedAtUtc] IS NULL) OR ([CustomerAcceptedRevision] = [Revision] AND [CustomerAcceptedBy] IS NOT NULL AND LEN([CustomerAcceptedBy]) > 0 AND [CustomerAcceptedAtUtc] IS NOT NULL)");
+                    t.HasCheckConstraint("CK_DraftRevisions_CustomerAcceptance", "([CustomerAcceptedRevision] IS NULL AND [CustomerAcceptedBy] IS NULL AND [CustomerAcceptedAtUtc] IS NULL) OR ([CustomerAcceptedRevision] IS NOT NULL AND [CustomerAcceptedRevision] = [Revision] AND [CustomerAcceptedBy] IS NOT NULL AND LEN([CustomerAcceptedBy]) > 0 AND [CustomerAcceptedAtUtc] IS NOT NULL)");
 
                     t.HasCheckConstraint("CK_DraftRevisions_Money", "[MoneyProfileId] <> '00000000-0000-0000-0000-000000000000' AND LEN([MoneyProfileVersion]) > 0 AND [MoneyScale] >= 0");
 

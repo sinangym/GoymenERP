@@ -129,6 +129,8 @@ public sealed class SalesPersistenceModelTests
         Assert.True(revisions.FindProperty(nameof(DraftRevisionRow.CustomerAcceptedAtUtc))!.IsNullable);
         Assert.Equal(SalesDbContext.RevisionCustomerAcceptanceConstraint,
             revisions.GetCheckConstraints().Single(constraint => constraint.Name == "CK_DraftRevisions_CustomerAcceptance").Sql);
+        Assert.Contains("[CustomerAcceptedRevision] IS NOT NULL AND [CustomerAcceptedRevision] = [Revision]",
+            SalesDbContext.RevisionCustomerAcceptanceConstraint, StringComparison.Ordinal);
 
         var migration = new GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations.AddDraftRevisionCustomerAcceptance();
         Assert.Equal(4, migration.UpOperations.Count);
@@ -136,6 +138,8 @@ public sealed class SalesPersistenceModelTests
             column => Assert.True(column.IsNullable));
         var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(migration.DownOperations[0]);
         Assert.Contains("THROW 51065", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[CustomerAcceptedRevision] IS NOT NULL OR [CustomerAcceptedBy] IS NOT NULL OR [CustomerAcceptedAtUtc] IS NOT NULL",
+            guard.Sql, StringComparison.Ordinal);
     }
 
     /// <summary>DEC-SAL-002: the reason column's rollback refuses with Sales' own 51057 BEFORE anything is dropped (forward fix).</summary>
