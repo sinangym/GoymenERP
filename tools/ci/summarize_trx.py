@@ -30,6 +30,21 @@ FAILURE_CATEGORIES = {
 }
 
 
+class SummaryInputFailure(RuntimeError):
+    """A fixed, non-sensitive input failure that may be published as JSON."""
+
+    def __init__(
+        self,
+        category: str,
+        trx_file_count: int,
+        input_byte_count: int | None,
+    ) -> None:
+        super().__init__(category)
+        self.category = category
+        self.trx_file_count = trx_file_count
+        self.input_byte_count = input_byte_count
+
+
 def local_name(tag: str) -> str:
     return tag.rsplit("}", 1)[-1]
 
@@ -68,13 +83,19 @@ def result_category(outcome: str) -> tuple[str, str | None]:
 
 def parse_trx(path: Path) -> tuple[Counter[str], Counter[tuple[str | None, str]]]:
     if path.is_symlink():
-        raise RuntimeError("TRX symlinks are not accepted.")
-    if path.stat().st_size > MAX_TRX_BYTES:
-        raise RuntimeError("TRX input exceeds the bounded size limit.")
+        raise SummaryInputFailure("unparseable_input", 1, None)
+    try:
+        input_byte_count = path.stat().st_size
+    except OSError as exception:
+        raise SummaryInputFailure("unparseable_input", 1, None) from exception
+    if input_byte_count > MAX_TRX_BYTES:
+        raise SummaryInputFailure("oversized_input", 1, input_byte_count)
     try:
         root = ET.parse(path).getroot()
     except (ET.ParseError, OSError) as exception:
-        raise RuntimeError("TRX input could not be parsed.") from exception
+        raise SummaryInputFailure(
+            "unparseable_input", 1, input_byte_count
+        ) from exception
 
     methods = canonical_test_methods(root)
     totals: Counter[str] = Counter()
@@ -88,7 +109,7 @@ def parse_trx(path: Path) -> tuple[Counter[str], Counter[tuple[str | None, str]]
         if category is not None:
             failures[(methods.get(result.attrib.get("testId", "")), category)] += 1
     if totals["total"] == 0:
-        raise RuntimeError("TRX input contains no test results.")
+        raise SummaryInputFailure("no_results", 1, input_byte_count)
     return totals, failures
 
 
@@ -109,12 +130,19 @@ def build_summary(
     if not 1 <= failure_group_limit <= 100:
         raise RuntimeError("Failure group limit must be between 1 and 100.")
     if not trx_paths or len(trx_paths) > MAX_TRX_FILES:
-        raise RuntimeError("TRX file count is outside the accepted bounds.")
+        raise SummaryInputFailure("input_count", len(trx_paths), None)
 
     totals: Counter[str] = Counter()
     failures: Counter[tuple[str | None, str]] = Counter()
     for path in trx_paths:
-        file_totals, file_failures = parse_trx(path)
+        try:
+            file_totals, file_failures = parse_trx(path)
+        except SummaryInputFailure as failure:
+            raise SummaryInputFailure(
+                failure.category,
+                len(trx_paths),
+                failure.input_byte_count,
+            ) from failure
         totals.update(file_totals)
         failures.update(file_failures)
 
@@ -149,6 +177,39 @@ def build_summary(
     }
 
 
+def build_failure_summary(
+    source_head: str,
+    tested_commit: str,
+    job: str,
+    phase: str,
+    failure: SummaryInputFailure,
+) -> dict[str, object]:
+    return {
+        "schemaVersion": 1,
+        "sourceHead": source_head.lower(),
+        "testedCommit": tested_commit.lower(),
+        "job": job,
+        "phase": phase,
+        "totals": None,
+        "failureGroups": [],
+        "unresolvedFailureCount": None,
+        "truncatedFailureGroupCount": None,
+        "trxFileCount": failure.trx_file_count,
+        "diagnostic": {
+            "category": failure.category,
+            "trxFileCount": failure.trx_file_count,
+            "inputByteCount": failure.input_byte_count,
+        },
+    }
+
+
+def write_summary(output: Path, summary: dict[str, object]) -> None:
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(
+        json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--trx-directory", required=True, type=Path)
@@ -163,27 +224,45 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def main() -> int:
-    args = parse_args()
+def produce(args: argparse.Namespace) -> int:
     trx_paths = sorted(args.trx_directory.rglob("*.trx"))
-    summary = build_summary(
-        trx_paths,
-        args.source_head,
-        args.tested_commit,
-        args.job,
-        args.phase,
-        args.failure_group_limit,
-    )
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(
-        json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8"
-    )
+    try:
+        summary = build_summary(
+            trx_paths,
+            args.source_head,
+            args.tested_commit,
+            args.job,
+            args.phase,
+            args.failure_group_limit,
+        )
+    except SummaryInputFailure as failure:
+        write_summary(
+            args.output,
+            build_failure_summary(
+                args.source_head,
+                args.tested_commit,
+                args.job,
+                args.phase,
+                failure,
+            ),
+        )
+        print(
+            f"CI_SAFE_TEST_SUMMARY: FAIL category={failure.category}",
+            file=sys.stderr,
+        )
+        return 1
+
+    write_summary(args.output, summary)
     print(
         "CI_SAFE_TEST_SUMMARY: "
         f"job={args.job} phase={args.phase} total={summary['totals']['total']} "
         f"failed={summary['totals']['failed']} skipped={summary['totals']['skipped']}"
     )
     return 0
+
+
+def main() -> int:
+    return produce(parse_args())
 
 
 if __name__ == "__main__":

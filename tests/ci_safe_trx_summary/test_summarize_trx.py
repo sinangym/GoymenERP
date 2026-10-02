@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest import mock
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
@@ -100,8 +101,69 @@ class SafeTrxSummaryTests(unittest.TestCase):
             SUMMARIZER.build_summary(
                 [], "not-a-head", "b" * 40, "backend", "tests", 50
             )
-        with self.assertRaisesRegex(RuntimeError, "no test results"):
+        with self.assertRaises(SUMMARIZER.SummaryInputFailure) as failure:
             self._summary(trx("", ""))
+        self.assertEqual("no_results", failure.exception.category)
+
+    def test_producer_writes_the_existing_success_shape(self) -> None:
+        source = trx(
+            '<UnitTestResult testId="pass" outcome="Passed" />',
+            definition("pass", "GoymenERP.Tests.SafeSummary", "Passes"),
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "result.trx").write_text(source, encoding="utf-8")
+            output = root / "summary" / "result.json"
+
+            self.assertEqual(0, SUMMARIZER.produce(self._args(root, output)))
+            summary = json.loads(output.read_text(encoding="utf-8"))
+
+        self.assertEqual(
+            {"total": 1, "passed": 1, "failed": 0, "skipped": 0},
+            summary["totals"],
+        )
+        self.assertNotIn("diagnostic", summary)
+
+    def test_producer_writes_only_fixed_bounded_diagnostics_and_still_fails(self) -> None:
+        cases = (
+            ("input_count", None, None),
+            ("unparseable_input", "<secret>DO_NOT_EXPORT", None),
+            ("no_results", trx("", ""), None),
+            ("oversized_input", "xx", 1),
+        )
+        for expected_category, source, maximum_bytes in cases:
+            with self.subTest(category=expected_category), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                if source is not None:
+                    (root / "private-secret-name.trx").write_text(
+                        source, encoding="utf-8"
+                    )
+                output = root / "summary" / "result.json"
+                size_patch = (
+                    mock.patch.object(SUMMARIZER, "MAX_TRX_BYTES", maximum_bytes)
+                    if maximum_bytes is not None
+                    else mock.patch.object(
+                        SUMMARIZER, "MAX_TRX_BYTES", SUMMARIZER.MAX_TRX_BYTES
+                    )
+                )
+
+                with size_patch:
+                    self.assertEqual(1, SUMMARIZER.produce(self._args(root, output)))
+                encoded = output.read_text(encoding="utf-8")
+                summary = json.loads(encoded)
+
+                self.assertIsNone(summary["totals"])
+                self.assertEqual([], summary["failureGroups"])
+                self.assertEqual(expected_category, summary["diagnostic"]["category"])
+                self.assertEqual(summary["trxFileCount"], summary["diagnostic"]["trxFileCount"])
+                for forbidden in (
+                    "DO_NOT_EXPORT",
+                    "private-secret-name",
+                    str(root),
+                    "secret",
+                    "Traceback",
+                ):
+                    self.assertNotIn(forbidden, encoded)
 
     def test_ci_workflow_produces_and_uploads_only_safe_json_summaries(self) -> None:
         workflow = (REPOSITORY_ROOT / ".github" / "workflows" / "ci.yml").read_text(
@@ -132,6 +194,22 @@ class SafeTrxSummaryTests(unittest.TestCase):
             )
         encoded = json.dumps(summary, sort_keys=True)
         return summary, encoded
+
+    @staticmethod
+    def _args(trx_directory: Path, output: Path):
+        return type(
+            "Arguments",
+            (),
+            {
+                "trx_directory": trx_directory,
+                "output": output,
+                "source_head": "a" * 40,
+                "tested_commit": "b" * 40,
+                "job": "relational",
+                "phase": "sql-tests",
+                "failure_group_limit": 50,
+            },
+        )()
 
 
 class RcsiTrxOutputSelectionTests(unittest.TestCase):
