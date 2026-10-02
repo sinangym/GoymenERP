@@ -178,8 +178,10 @@ public sealed class ProductPriceListDbContext(DbContextOptions<ProductPriceListD
             table.HasCheckConstraint("CK_PriceListAttempts_Hashes", "LEN([IdempotencyKeyHash]) = 64 AND LEN([RequestHash]) = 64");
             // ADR-011 §7: a stored result or a recorded terminal refusal, never both.
             table.HasCheckConstraint("CK_PriceListAttempts_Outcome",
-                $"([Outcome] = 1 AND [PriceListId] IS NOT NULL AND [PriceListId] <> {EmptyGuid} AND [RefusalJson] IS NULL) "
-                + "OR ([Outcome] = 2 AND [PriceListId] IS NULL AND [RefusalJson] IS NOT NULL AND ISJSON([RefusalJson]) = 1)");
+                $"([Outcome] = 1 AND [PriceListId] IS NOT NULL AND [PriceListId] <> {EmptyGuid} AND [ResultJson] IS NOT NULL "
+                + "AND ISJSON([ResultJson]) = 1 AND [RefusalJson] IS NULL) "
+                + "OR ([Outcome] = 2 AND [PriceListId] IS NULL AND [ResultJson] IS NULL AND [RefusalJson] IS NOT NULL "
+                + "AND ISJSON([RefusalJson]) = 1)");
         });
         entity.HasKey(x => new { x.CompanyId, x.CommandName, x.IdempotencyKeyHash });
         entity.Property(x => x.CommandName).HasMaxLength(160).UseCollation(IdentityCollation).IsRequired();
@@ -187,6 +189,7 @@ public sealed class ProductPriceListDbContext(DbContextOptions<ProductPriceListD
         entity.Property(x => x.RequestHash).HasMaxLength(64).IsUnicode(false).IsRequired();
         entity.Property(x => x.ActorId).HasMaxLength(128).IsRequired();
         entity.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        entity.Property(x => x.ResultJson).HasColumnType("nvarchar(max)");
         entity.Property(x => x.RefusalJson).HasColumnType("nvarchar(max)");
         // One create attempt per stored list (the Sales #338 lesson); mutation attempts share the list id.
         entity.HasIndex(x => new { x.CompanyId, x.PriceListId }).IsUnique().HasDatabaseName("UX_PriceListAttempts_PriceListId")

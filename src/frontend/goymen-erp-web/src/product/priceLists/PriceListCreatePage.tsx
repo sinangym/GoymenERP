@@ -15,7 +15,7 @@ import { PRICE_LIST_CAPABILITY, PRICE_LIST_ROUTE, priceListDetailPath } from './
 import { isWireDate, todayText } from './contract'
 import { PriceListLinesEditor } from './PriceListLinesEditor'
 import { buildLines, type PriceListLineRow } from './priceListLines'
-import { newIdentity } from './priceListAttempt'
+import { isPriceListAttemptFrozen, livePriceListSnapshot, newIdentity } from './priceListAttempt'
 import { PRICE_LIST_TEXT as T } from './priceListText'
 import { attemptNotice, fieldErrorTexts, usePriceListCommand } from './usePriceListCommand'
 import styles from './PriceListPages.module.css'
@@ -37,7 +37,7 @@ export function PriceListCreatePage() {
   })
 
   const companyId = command.companyId
-  const frozen = command.attempt.phase === 'sending' || command.attempt.phase === 'unknown'
+  const frozen = isPriceListAttemptFrozen(command.attempt)
   const notice = attemptNotice(command.attempt, T.notice.saved)
 
   function save() {
@@ -96,7 +96,7 @@ export function PriceListCreatePage() {
       )}
       {fieldErrorTexts(command.attempt).map((text) => <p key={text} className={styles.fieldError}>{text}</p>)}
       <div className={styles.actions}>
-        {command.attempt.phase === 'unknown' ? (
+        {command.attempt.phase !== 'sending' && livePriceListSnapshot(command.attempt) !== null ? (
           <>
             <button type="button" className={styles.secondaryButton} onClick={command.retry}>{T.notice.retry}</button>
             <button type="button" className={styles.linkButton} onClick={command.abandon}>{T.notice.abandon}</button>

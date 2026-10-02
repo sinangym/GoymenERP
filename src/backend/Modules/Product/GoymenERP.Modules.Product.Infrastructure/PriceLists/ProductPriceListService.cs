@@ -146,9 +146,24 @@ public sealed class ProductPriceListService : IProductPriceListServiceV1
             throw new ProductPriceListException(409, ProductPriceListCodesV1.DuplicateName, [new("name", ProductPriceListCodesV1.DuplicateName)]);
         }
 
-        await RequireStillAsync(permission, scope, cancellationToken);
-        var stored = await StoreAsync(() => store.CreateAsync(envelope, requestHash, list, cancellationToken));
-        return new PriceListResultV1(await ViewAsync(stored.PriceList, cancellationToken), false, stored.OriginalCorrelationId);
+        var result = await ViewAsync(list, cancellationToken);
+        try
+        {
+            var stored = await StoreAsync(() => store.CreateAsync(envelope, requestHash, list, result,
+                token => RequireStillAsync(permission, scope, token), cancellationToken));
+            return new PriceListResultV1(stored.Result, stored.IsReplay, stored.OriginalCorrelationId);
+        }
+        catch (ProductPriceListException exception) when (exception.Code == ProductPriceListCodesV1.ConcurrentChange)
+        {
+            // The attempt key/list/name unique race has a single winner. Its exact stored response is the only replay.
+            var winner = await ReplayAsync(envelope, requestHash, ProductPriceListCommandsV1.CreateV1, permission, scope, cancellationToken);
+            if (winner is not null)
+            {
+                return winner;
+            }
+
+            throw;
+        }
     }
 
     public async Task<PriceListResultV1> ReviseDraftAsync(Guid priceListId, RevisePriceListDraftRequestV1 request,
@@ -252,39 +267,67 @@ public sealed class ProductPriceListService : IProductPriceListServiceV1
         PriceListStoreResult? stored;
         try
         {
-            stored = await StoreAsync(() => store.MutateAsync(envelope, requestHash, commandName, priceListId, async (list, now) =>
+            try
             {
-                await RequireStillAsync(permission, scope, cancellationToken);
-                try
+                stored = await StoreAsync(() => store.MutateAsync(envelope, requestHash, commandName, priceListId, async (list, now) =>
                 {
-                    await transition(list, now);
-                }
-                catch (PriceListVersionConflictException exception)
+                    await RequireStillAsync(permission, scope, cancellationToken);
+                    try
+                    {
+                        await transition(list, now);
+                    }
+                    catch (PriceListVersionConflictException exception)
+                    {
+                        refusal = new PriceListTerminalRefusal(409, ProductPriceListCodesV1.VersionConflict, [new("expectedVersion", ProductPriceListCodesV1.VersionConflict)]);
+                        throw new ProductPriceListException(409, ProductPriceListCodesV1.VersionConflict, refusal.Errors, exception);
+                    }
+                    catch (PriceListRuleException exception) when (IsStateRule(exception.Code))
+                    {
+                        refusal = new PriceListTerminalRefusal(409, ProductPriceListCodesV1.StateConflict, [new(exception.Field, exception.Code)]);
+                        throw new ProductPriceListException(409, ProductPriceListCodesV1.StateConflict, refusal.Errors, exception);
+                    }
+                    catch (PriceListRuleException exception)
+                    {
+                        throw new ProductPriceListException(422, ProductPriceListCodesV1.ValidationFailed, [new(exception.Field, exception.Code)], exception);
+                    }
+
+                    await RequireStillAsync(permission, scope, cancellationToken);
+                }, ViewAsync, token => RequireStillAsync(permission, scope, token), audit, cancellationToken));
+            }
+            catch (ProductPriceListException exception) when (exception.Code == ProductPriceListCodesV1.ConcurrentChange)
+            {
+                var winner = await ReplayAsync(envelope, requestHash, commandName, permission, scope, cancellationToken);
+                if (winner is not null)
                 {
-                    refusal = new PriceListTerminalRefusal(409, ProductPriceListCodesV1.VersionConflict, [new("expectedVersion", ProductPriceListCodesV1.VersionConflict)]);
-                    throw new ProductPriceListException(409, ProductPriceListCodesV1.VersionConflict, refusal.Errors, exception);
-                }
-                catch (PriceListRuleException exception) when (IsStateRule(exception.Code))
-                {
-                    refusal = new PriceListTerminalRefusal(409, ProductPriceListCodesV1.StateConflict, [new(exception.Field, exception.Code)]);
-                    throw new ProductPriceListException(409, ProductPriceListCodesV1.StateConflict, refusal.Errors, exception);
-                }
-                catch (PriceListRuleException exception)
-                {
-                    throw new ProductPriceListException(422, ProductPriceListCodesV1.ValidationFailed, [new(exception.Field, exception.Code)], exception);
+                    return winner;
                 }
 
-                await RequireStillAsync(permission, scope, cancellationToken);
-            }, audit, cancellationToken));
+                throw;
+            }
         }
         catch (ProductPriceListException) when (refusal is not null)
         {
             // ADR-011 §7: a stale version or a wrong version state is the key's terminal answer.
-            await StoreAsync(async () =>
+            try
             {
-                await store.RecordRefusalAsync(envelope, requestHash, commandName, refusal, cancellationToken);
-                return (PriceListStoreResult?)null;
-            });
+                await StoreAsync(async () =>
+                {
+                    await store.RecordRefusalAsync(envelope, requestHash, commandName, refusal,
+                        token => RequireStillAsync(permission, scope, token), cancellationToken);
+                    return (PriceListStoreResult?)null;
+                });
+            }
+            catch (ProductPriceListException exception) when (exception.Code == ProductPriceListCodesV1.ConcurrentChange)
+            {
+                var winner = await ReplayAsync(envelope, requestHash, commandName, permission, scope, cancellationToken);
+                if (winner is not null)
+                {
+                    return winner;
+                }
+
+                throw;
+            }
+
             throw new ProductPriceListException(refusal.Status, refusal.Code, refusal.Errors);
         }
 
@@ -293,7 +336,7 @@ public sealed class ProductPriceListService : IProductPriceListServiceV1
             throw new ProductPriceListException(404, ProductPriceListCodesV1.NotFound);
         }
 
-        return new PriceListResultV1(await ViewAsync(stored.PriceList, cancellationToken), false, stored.OriginalCorrelationId);
+        return new PriceListResultV1(stored.Result, stored.IsReplay, stored.OriginalCorrelationId);
     }
 
     private async Task<PriceListResultV1?> ReplayAsync(PriceListWriteEnvelope envelope, string requestHash, string commandName, string permission,
@@ -311,7 +354,7 @@ public sealed class ProductPriceListService : IProductPriceListServiceV1
             throw new ProductPriceListException(refusal.Status, refusal.Code, refusal.Errors);
         }
 
-        return new PriceListResultV1(await ViewAsync(replay.PriceList!, cancellationToken), true, replay.OriginalCorrelationId);
+        return new PriceListResultV1(replay.Result!, true, replay.OriginalCorrelationId);
     }
 
     private static async Task<T> StoreAsync<T>(Func<Task<T>> call)

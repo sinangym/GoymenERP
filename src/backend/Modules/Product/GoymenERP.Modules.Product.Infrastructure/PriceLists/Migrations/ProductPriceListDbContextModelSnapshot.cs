@@ -217,6 +217,9 @@ namespace GoymenERP.Modules.Product.Infrastructure.PriceLists.Migrations
                     b.Property<DateTimeOffset>("RecordedAtUtc")
                         .HasColumnType("datetimeoffset");
 
+                    b.Property<string>("ResultJson")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<string>("RefusalJson")
                         .HasColumnType("nvarchar(max)");
 
@@ -239,7 +242,7 @@ namespace GoymenERP.Modules.Product.Infrastructure.PriceLists.Migrations
 
                             t.HasCheckConstraint("CK_PriceListAttempts_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND LEN([CommandName]) > 0 AND LEN([CorrelationId]) > 0 AND LEN([ActorId]) > 0");
 
-                            t.HasCheckConstraint("CK_PriceListAttempts_Outcome", "([Outcome] = 1 AND [PriceListId] IS NOT NULL AND [PriceListId] <> '00000000-0000-0000-0000-000000000000' AND [RefusalJson] IS NULL) OR ([Outcome] = 2 AND [PriceListId] IS NULL AND [RefusalJson] IS NOT NULL AND ISJSON([RefusalJson]) = 1)");
+                            t.HasCheckConstraint("CK_PriceListAttempts_Outcome", "([Outcome] = 1 AND [PriceListId] IS NOT NULL AND [PriceListId] <> '00000000-0000-0000-0000-000000000000' AND [ResultJson] IS NOT NULL AND ISJSON([ResultJson]) = 1 AND [RefusalJson] IS NULL) OR ([Outcome] = 2 AND [PriceListId] IS NULL AND [ResultJson] IS NULL AND [RefusalJson] IS NOT NULL AND ISJSON([RefusalJson]) = 1)");
                         });
                 });
 
