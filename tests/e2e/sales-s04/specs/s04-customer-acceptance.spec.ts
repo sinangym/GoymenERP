@@ -48,12 +48,14 @@ interface DraftReading {
     readonly acceptedAtUtc: string | null
     readonly isCurrentRevisionAccepted: boolean
   }
+  readonly isOwnDraft: boolean
   readonly lines: readonly {
     readonly lineId: string
     readonly orderUnitId: string
     readonly unitPrice: string | null
     readonly priceUnitId: string | null
     readonly discountPercent: string | null
+    readonly priceDisclosure: 'Visible' | 'Withheld'
   }[]
 }
 
@@ -255,7 +257,18 @@ test('S04-CA-01 customer acceptance reopens and replays once, then Rev.1 require
     },
     lines: [{ lineId }],
   })
-  expect(await readDraft(request, draftId, readerActor)).toEqual(reopened)
+  const readerProjection = await readDraft(request, draftId, readerActor)
+  expect(readerProjection.draft).toEqual(reopened.draft)
+  expect(readerProjection.customerAcceptance).toEqual(reopened.customerAcceptance)
+  expect(readerProjection.lines.map((line) => line.lineId)).toEqual(reopened.lines.map((line) => line.lineId))
+  expect(reopened.isOwnDraft).toBe(true)
+  expect(reopened.lines[0]).toMatchObject({
+    lineId, priceDisclosure: 'Visible', unitPrice: null, priceUnitId: null, discountPercent: null,
+  })
+  expect(readerProjection.isOwnDraft).toBe(false)
+  expect(readerProjection.lines[0]).toMatchObject({
+    lineId, priceDisclosure: 'Withheld', unitPrice: null, priceUnitId: null, discountPercent: null,
+  })
 
   await openDetail(page, draftId, preparerActor)
   const form = page.getByTestId('sales-price-revision-form')
