@@ -123,7 +123,7 @@ public sealed class SalesPersistenceModelTests
     public void Archived_revision_customer_acceptance_is_nullable_exact_revision_evidence_and_rollback_is_guarded()
     {
         using var context = Context();
-        var revisions = context.Model.FindEntityType(typeof(DraftRevisionRow))!;
+        var revisions = context.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(DraftRevisionRow))!;
         Assert.True(revisions.FindProperty(nameof(DraftRevisionRow.CustomerAcceptedRevision))!.IsNullable);
         Assert.True(revisions.FindProperty(nameof(DraftRevisionRow.CustomerAcceptedBy))!.IsNullable);
         Assert.True(revisions.FindProperty(nameof(DraftRevisionRow.CustomerAcceptedAtUtc))!.IsNullable);
