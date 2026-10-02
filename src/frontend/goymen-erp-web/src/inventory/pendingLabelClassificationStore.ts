@@ -2,9 +2,13 @@ import { isLabelClassificationRequest, type LabelClassificationRequest } from '.
 
 const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
-/** One unresolved write, isolated to the authenticated shell namespace and exact label identity. */
+/**
+ * One unresolved write. Its storage identity deliberately excludes the shell authority namespace:
+ * capability refresh and a new authenticated generation must still find the same uncertain write.
+ * Actor, company and label remain the stable security boundary.
+ */
 export interface PendingLabelClassification {
-  readonly namespace: string
+  readonly startedAuthorityNamespace: string
   readonly actorId: string
   readonly companyId: string
   readonly labelId: string
@@ -13,21 +17,19 @@ export interface PendingLabelClassification {
 }
 
 export function pendingLabelClassificationKey(
-  namespace: string | null,
   actorId: string | null,
   companyId: string | null,
   labelId: string | undefined,
 ): string | null {
-  return namespace === null || namespace.length === 0 || actorId === null || actorId.length === 0
-    || companyId === null || labelId === undefined
+  return actorId === null || actorId.length === 0 || companyId === null || labelId === undefined
     ? null
-    : `goymen.inventory.label-classification.v1:${encodeURIComponent(namespace)}:${encodeURIComponent(actorId)}:${companyId}:${labelId}`
+    : `goymen.inventory.label-classification.v1:${encodeURIComponent(actorId)}:${companyId}:${labelId}`
 }
 
 function pending(value: unknown): PendingLabelClassification | null {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return null
   const candidate = value as Partial<PendingLabelClassification>
-  return typeof candidate.namespace === 'string' && candidate.namespace.length > 0
+  return typeof candidate.startedAuthorityNamespace === 'string' && candidate.startedAuthorityNamespace.length > 0
     && typeof candidate.actorId === 'string' && candidate.actorId.length > 0
     && typeof candidate.companyId === 'string' && GUID.test(candidate.companyId)
     && typeof candidate.labelId === 'string' && GUID.test(candidate.labelId)

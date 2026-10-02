@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { LabelClassificationPanel } from './LabelClassificationPanel'
 
 const COMPANY = '11111111-1111-1111-1111-111111111111'
+const OTHER_COMPANY = '99999999-9999-9999-9999-999999999999'
 const LABEL = '22222222-2222-2222-2222-222222222222'
 const api = vi.hoisted(() => ({ classify: vi.fn() }))
 const auth = vi.hoisted(() => ({ report: vi.fn(), generation: 1 }))
@@ -23,14 +24,14 @@ function applied() {
   }
 }
 
-function mount(namespace = 'SENTETIK-a', labelVersion = '3') {
+function mount({ namespace = 'SENTETIK-a', labelVersion = '3', actorId = 'actor-a', companyId = COMPANY } = {}) {
   return render(<LabelClassificationPanel
     labelId={LABEL}
     labelVersion={labelVersion}
     current={null}
     namespace={namespace}
-    actorId="actor-a"
-    companyId={COMPANY}
+    actorId={actorId}
+    companyId={companyId}
     onChanged={vi.fn()}
   />)
 }
@@ -58,7 +59,7 @@ describe('LabelClassificationPanel frozen attempt', () => {
     const original = api.classify.mock.calls[0]
     first.unmount()
 
-    mount('SENTETIK-a', '9')
+    mount({ namespace: 'SENTETIK-capability-generation-2', labelVersion: '9' })
     await user.click(screen.getByRole('button', { name: 'Aynı anahtar ve içerikle yeniden gönder' }))
     await screen.findByText(/Önceki sınıflandırma sonucu doğrulandı/)
     expect(api.classify.mock.calls[1]).toEqual(original)
@@ -70,36 +71,36 @@ describe('LabelClassificationPanel frozen attempt', () => {
       .mockResolvedValueOnce({ type: 'failed', status: 403, code: 'inventory_label_classification_forbidden' })
       .mockResolvedValueOnce(applied())
     const user = userEvent.setup()
-    const first = mount()
+    const first = mount({ namespace: 'SENTETIK-capability-generation-1' })
     await user.selectOptions(screen.getByLabelText('Yeni sınıf'), 'SecondQuality')
     await user.click(screen.getByRole('button', { name: 'Sınıfı kaydet' }))
     await screen.findByText(/Sonuç bilinmiyor/)
     const original = api.classify.mock.calls[0]
     first.unmount()
 
-    const denied = mount()
+    const denied = mount({ namespace: 'SENTETIK-401-generation' })
     await user.click(screen.getByRole('button', { name: 'Aynı anahtar ve içerikle yeniden gönder' }))
     await screen.findByText(/yetkiniz yok/)
     expect(auth.report).toHaveBeenCalledWith(403, { generation: 1 })
     expect(api.classify.mock.calls[1]).toEqual(original)
     denied.unmount()
 
-    mount()
+    mount({ namespace: 'SENTETIK-regranted-generation' })
     await user.click(screen.getByRole('button', { name: 'Aynı anahtar ve içerikle yeniden gönder' }))
     await waitFor(() => expect(api.classify).toHaveBeenCalledTimes(3))
     expect(api.classify.mock.calls[2]).toEqual(original)
   })
 
-  it('does not expose another shell namespace unresolved attempt', async () => {
+  it('does not expose another actor or company unresolved attempt', async () => {
     api.classify.mockResolvedValueOnce({ type: 'unknown', reason: 'network-error' })
     const user = userEvent.setup()
-    const first = mount('SENTETIK-a')
+    const first = mount()
     await user.selectOptions(screen.getByLabelText('Yeni sınıf'), 'SecondQuality')
     await user.click(screen.getByRole('button', { name: 'Sınıfı kaydet' }))
     await screen.findByText(/Sonuç bilinmiyor/)
     first.unmount()
 
-    mount('SENTETIK-b')
+    mount({ namespace: 'SENTETIK-b', actorId: 'actor-b', companyId: OTHER_COMPANY })
     expect(screen.getByRole('button', { name: 'Sınıfı kaydet' })).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Aynı anahtar ve içerikle yeniden gönder' })).toBeNull()
     expect((screen.getByLabelText('Yeni sınıf') as HTMLSelectElement).disabled).toBe(false)

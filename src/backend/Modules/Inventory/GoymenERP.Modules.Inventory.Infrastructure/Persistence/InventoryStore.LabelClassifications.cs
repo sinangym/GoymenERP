@@ -94,13 +94,12 @@ public sealed partial class InventoryStore
             CorrelationId = metadata.CorrelationId.Trim(),
             RecordedAtUtc = classifiedAtUtc,
         });
+        await RequireClassificationFreshAuthorityAsync(freshAuthorityFence, cancellationToken);
         Audit(metadata, companyId, LabelEntityType, labelId, "inventory.label.classified.v1", "Classify",
             beforeVersion, row.Version,
             JsonSerializer.Serialize(new { classification = beforeClassification }, Json),
             JsonSerializer.Serialize(new { classification = classification.ToString() }, Json),
             "Etiket kalite sınıflandırması");
-
-        await RequireClassificationFreshAuthorityAsync(freshAuthorityFence, cancellationToken);
 
         try
         {

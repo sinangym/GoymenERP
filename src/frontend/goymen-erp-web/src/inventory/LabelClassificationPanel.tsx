@@ -24,12 +24,12 @@ export function LabelClassificationPanel({ labelId, labelVersion, current, names
   readonly onChanged: () => void
 }) {
   const boundary = useAuthBoundary()
-  const pendingKey = pendingLabelClassificationKey(namespace, actorId, companyId, labelId)
+  const pendingKey = pendingLabelClassificationKey(actorId, companyId, labelId)
   const [selected, setSelected] = useState<LabelClassification>(current ?? 'Standard')
   const [pending, setPending] = useState<PendingLabelClassification | null>(() => {
     const recalled = recallPendingLabelClassification(pendingKey)
-    return recalled !== null && recalled.namespace === namespace && recalled.actorId === actorId
-      && recalled.companyId === companyId && recalled.labelId === labelId
+    return recalled !== null && recalled.actorId === actorId && recalled.companyId === companyId
+      && recalled.labelId === labelId
       ? recalled
       : null
   })
@@ -41,8 +41,8 @@ export function LabelClassificationPanel({ labelId, labelVersion, current, names
   useEffect(() => () => { generation.current += 1 }, [])
 
   async function send(attempt: PendingLabelClassification) {
-    if (inFlight.current || attempt.namespace !== namespace || attempt.actorId !== actorId
-      || attempt.companyId !== companyId || attempt.labelId !== labelId) return
+    if (inFlight.current || attempt.actorId !== actorId || attempt.companyId !== companyId
+      || attempt.labelId !== labelId) return
     inFlight.current = true
     const commandGeneration = ++generation.current
     reservePendingLabelClassification(pendingKey, attempt)
@@ -76,7 +76,7 @@ export function LabelClassificationPanel({ labelId, labelVersion, current, names
   function submit(event: FormEvent) {
     event.preventDefault()
     const attempt: PendingLabelClassification = pending ?? {
-      namespace, actorId, companyId, labelId,
+      startedAuthorityNamespace: namespace, actorId, companyId, labelId,
       idempotencyKey: crypto.randomUUID(),
       request: { expectedLabelVersion: labelVersion, classification: selected },
     }

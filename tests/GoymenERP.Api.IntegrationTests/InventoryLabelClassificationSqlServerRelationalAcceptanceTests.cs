@@ -42,17 +42,32 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
                             403, InventoryLabelClassificationCodesV1.Forbidden))
                         : Task.CompletedTask));
             Assert.Equal((403, InventoryLabelClassificationCodesV1.Forbidden), (denied.Status, denied.Code));
+            Assert.Equal(3, fenceCalls);
+            Assert.Equal(revoked.LabelVersion, await run.ScalarAsync<long>(
+                "SELECT Version FROM inventory.Labels WHERE Id = @id", ("@id", revoked.LabelId)));
+            Assert.Equal(0, await run.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM inventory.Labels WHERE Id = @id AND Classification IS NOT NULL",
+                ("@id", revoked.LabelId)));
+            Assert.Equal(0, await run.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM inventory.Commands WHERE CommandName = N'inventory.label-classification.classify.v1' AND TargetId = @id",
+                ("@id", revoked.LabelId)));
+            Assert.Equal(0, await run.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType = N'inventory.label.classified.v1' AND EntityId = @id",
+                ("@id", revoked.LabelId.ToString("D"))));
+
+            var recovered = await scope.Store.ClassifyAsync(revoked.LabelId,
+                new(revoked.LabelVersion.ToString(), InventoryLabelClassificationV1.Scrap),
+                revokedMetadata, Fresh);
+            Assert.False(recovered.IsReplay);
         }
-        Assert.Equal(3, fenceCalls);
-        Assert.Equal(revoked.LabelVersion, await run.ScalarAsync<long>(
+        Assert.Equal(revoked.LabelVersion + 1, await run.ScalarAsync<long>(
             "SELECT Version FROM inventory.Labels WHERE Id = @id", ("@id", revoked.LabelId)));
-        Assert.Equal(0, await run.ScalarAsync<int>(
-            "SELECT COUNT(*) FROM inventory.Labels WHERE Id = @id AND Classification IS NOT NULL",
-            ("@id", revoked.LabelId)));
-        Assert.Equal(0, await run.ScalarAsync<int>(
+        Assert.Equal((int)LabelClassification.Scrap, await run.ScalarAsync<int>(
+            "SELECT Classification FROM inventory.Labels WHERE Id = @id", ("@id", revoked.LabelId)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM inventory.Commands WHERE CommandName = N'inventory.label-classification.classify.v1' AND TargetId = @id",
             ("@id", revoked.LabelId)));
-        Assert.Equal(0, await run.ScalarAsync<int>(
+        Assert.Equal(1, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType = N'inventory.label.classified.v1' AND EntityId = @id",
             ("@id", revoked.LabelId.ToString("D"))));
 
