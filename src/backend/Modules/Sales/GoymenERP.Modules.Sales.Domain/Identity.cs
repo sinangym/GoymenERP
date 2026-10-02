@@ -110,6 +110,16 @@ public static class SalesRuleCodes
     public const string DiscountExceedsPrice = "sales_discount_exceeds_price";
     /// <summary>The reference is in another price unit than the line's price.</summary>
     public const string PriceReferenceMismatch = "sales_price_reference_mismatch";
+    /// <summary>The line quantity no longer belongs to the immutable referenced price tier.</summary>
+    public const string PriceReferenceQuantityMismatch = "sales_price_reference_quantity_mismatch";
+    /// <summary>The unit price cannot be represented exactly by the deterministic decimal calculator.</summary>
+    public const string PriceValueUnrepresentable = "sales_price_value_unrepresentable";
+    public const string DiscountPercentUnrepresentable = "sales_discount_percent_unrepresentable";
+    public const string DiscountAmountUnrepresentable = "sales_discount_amount_unrepresentable";
+    public const string SurchargePercentUnrepresentable = "sales_surcharge_percent_unrepresentable";
+    public const string SurchargeAmountUnrepresentable = "sales_surcharge_amount_unrepresentable";
+    /// <summary>All inputs are representable, but their exact intermediate arithmetic exceeds decimal.</summary>
+    public const string PriceCalculationOverflow = "sales_price_calculation_overflow";
     /// <summary>
     /// AT-021: the net price is below the reference's floor. No approver for an exception is decided, so it is refused
     /// (fail-closed), never passed silently (ASSUMPTION-PRL-5).

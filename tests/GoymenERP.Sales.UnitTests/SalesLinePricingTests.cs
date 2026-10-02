@@ -40,6 +40,16 @@ public sealed class SalesLinePricingTests
     }
 
     [Fact]
+    public void Decimal_text_must_be_exactly_representable_and_intermediate_arithmetic_never_rounds_or_wraps()
+    {
+        Assert.False(SalesLinePriceCalculator.TryParseExact("0.00000000000000000000000000001", out _));
+        Assert.True(SalesLinePriceCalculator.TryParseExact("79228162514264337593543950335", out var maximum));
+        Assert.Equal(decimal.MaxValue, maximum);
+        Assert.Throws<OverflowException>(() => SalesLinePriceCalculator.NetUnitPrice(
+            new CommercialDraftFields("79228162514264337593543950335", Unit, null, SurchargePercent: "100")));
+    }
+
+    [Fact]
     public void The_pricing_detail_is_stored_only_when_present_and_restores_exactly()
     {
         Assert.Null(SalesLinePricingJson.Serialize(new CommercialDraftFields("1", Unit, "5")));

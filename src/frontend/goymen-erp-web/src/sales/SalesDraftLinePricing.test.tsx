@@ -13,7 +13,7 @@ import { SALES_PRICE_FLOOR_EXCEPTION_APPROVE_CAPABILITY, SALES_PRICE_WRITE_CAPAB
 import { LINE_PRICING_TEXT as P, ORDER_DETAIL_TEXT } from './salesText'
 import { decodeDraftLinePricing, decodeReference } from './linePricing'
 import { resetPendingPriceFloorApprovals } from './pendingPriceFloorApprovals'
-import { ALL_SALES, COMPANY_A, KG, installFetch, json, renderSalesApp, type RecordedCall } from './testHarness'
+import { ALL_SALES, COMPANY_A, KG, deferred, installFetch, json, renderSalesApp, type RecordedCall } from './testHarness'
 
 type Body = Record<string, unknown> & { draft: Record<string, unknown>; lines: Record<string, unknown>[] }
 
@@ -239,5 +239,37 @@ describe('AT-018 list price on the order line', () => {
     await userEvent.click(within(form).getByRole('button', { name: ORDER_DETAIL_TEXT.priceRevision.submit }))
     expect((await screen.findByTestId('sales-price-line-error')).textContent)
       .toBe(P.lineError(1, P.fieldError.sales_price_below_floor))
+  })
+
+  it.each([
+    ['malformed', () => json({ version: '2', lines: [{ lineId: LINE }] })],
+    ['wrong-version', () => json(pricing('1'))],
+    ['wrong-line', () => json({ ...pricing('2'), lines: [{ ...pricing('2').lines[0], lineId: '77777777-7777-4777-8777-777777777777' }] })],
+  ])('locks a new commercial save when pricing is %s', async (_caseName, answer) => {
+    installFetch({
+      capabilities: [...ALL_SALES, SALES_PRICE_WRITE_CAPABILITY],
+      onDetail: () => json(detail('2', { unitPrice: '41000', priceUnitId: KG })),
+      onLinePricing: answer,
+    })
+    renderSalesApp(path)
+    const form = await screen.findByTestId('sales-price-revision-form')
+    expect(await within(form).findByTestId('sales-price-pricing-unavailable')).toBeTruthy()
+    expect(within(form).getByRole('button', { name: ORDER_DETAIL_TEXT.priceRevision.submit })).toBeDisabled()
+  })
+
+  it('keeps a new save locked while pricing is delayed and after its 503', async () => {
+    const pending = deferred<Response>()
+    installFetch({
+      capabilities: [...ALL_SALES, SALES_PRICE_WRITE_CAPABILITY],
+      onDetail: () => json(detail('2', { unitPrice: '41000', priceUnitId: KG })),
+      onLinePricing: () => pending.promise,
+    })
+    renderSalesApp(path)
+    const form = await screen.findByTestId('sales-price-revision-form')
+    const submit = within(form).getByRole('button', { name: ORDER_DETAIL_TEXT.priceRevision.submit })
+    expect(submit).toBeDisabled()
+    pending.resolve(json({ status: 503 }, 503))
+    expect(await within(form).findByTestId('sales-price-pricing-unavailable')).toBeTruthy()
+    expect(submit).toBeDisabled()
   })
 })
