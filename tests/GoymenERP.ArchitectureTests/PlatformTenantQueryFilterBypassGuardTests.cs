@@ -221,7 +221,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // DEC-PRD-010: +5 ProductDuplicateCandidatesSqlServerRelationalAcceptanceTests facts (ddeead62… -> d434c2b8…).
             // Q16 / AT-020: +3 Product import API SQL facts (d434c2b8… -> 9958c91f…).
             ["tools/relational_inventory/product.txt"] =
-                "d7861da457c0e85579e4daa620c68e217e5b56e873b021cd442f751b148de46e",
+                "9c57b8a9ff797fc1ab04896bf0a03a6784aef4a797b708c2cf6aa418d57da1ea",
 
             // purchasing
             ["tools/relational_inventory/purchasing.txt"] =

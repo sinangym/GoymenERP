@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace GoymenERP.Api.IntegrationTests;
 
@@ -52,5 +53,47 @@ public sealed class ProductPriceListHostCompositionTests
         Assert.Contains(services, descriptor => descriptor.ServiceType == typeof(IProductPriceListServiceV1));
         Assert.Contains(services, descriptor => descriptor.ServiceType == typeof(IProductPriceReferenceReaderV1));
         Assert.Contains(services, descriptor => descriptor.ServiceType == typeof(IProductQuantityPriceReferenceReaderV1));
+    }
+
+    [Fact]
+    public void Final_test_runtime_override_recomposes_price_lists_once_without_weakening_disabled_hosts()
+    {
+        const string connection =
+            "Server=localhost;Database=GoymenERP_CompositionOnly;Integrated Security=true;TrustServerCertificate=true";
+        var services = new ServiceCollection();
+        services.AddSingleton(new ProductRuntimeOptions("unused", null, null));
+        services.AddProductPriceListHost(new ConfigurationBuilder().Build());
+        var failClosedDescriptor = Assert.Single(
+            services,
+            descriptor => descriptor.ServiceType == typeof(IProductPriceListServiceV1));
+
+        Assert.DoesNotContain(services, descriptor => descriptor.ServiceType == typeof(ProductPriceListDbContext));
+        Assert.DoesNotContain(services, descriptor => descriptor.ServiceType == typeof(IProductPriceReferenceReaderV1));
+        Assert.DoesNotContain(services, descriptor => descriptor.ServiceType == typeof(IProductQuantityPriceReferenceReaderV1));
+
+        services.RemoveAll<ProductRuntimeOptions>();
+        services.AddSingleton(new ProductRuntimeOptions(
+            connection,
+            new ProductPilotIssuerBinding(Guid.NewGuid(), Guid.NewGuid()),
+            new byte[32]));
+
+        Assert.DoesNotContain(services, descriptor => descriptor.ServiceType == typeof(ProductPriceListDbContext));
+
+        SqlServerRelationalApiFactory.EnsureFinalProductPriceListHostComposition(services, connection);
+        AssertFinalComposition(services, failClosedDescriptor);
+
+        SqlServerRelationalApiFactory.EnsureFinalProductPriceListHostComposition(services, connection);
+        AssertFinalComposition(services, failClosedDescriptor);
+
+        static void AssertFinalComposition(
+            IServiceCollection descriptors,
+            ServiceDescriptor failClosedDescriptor)
+        {
+            Assert.DoesNotContain(failClosedDescriptor, descriptors);
+            Assert.Single(descriptors, descriptor => descriptor.ServiceType == typeof(ProductPriceListDbContext));
+            Assert.Single(descriptors, descriptor => descriptor.ServiceType == typeof(IProductPriceListServiceV1));
+            Assert.Single(descriptors, descriptor => descriptor.ServiceType == typeof(IProductPriceReferenceReaderV1));
+            Assert.Single(descriptors, descriptor => descriptor.ServiceType == typeof(IProductQuantityPriceReferenceReaderV1));
+        }
     }
 }

@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using GoymenERP.Api.ProductRuntime;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Audit.Application.Contracts;
 using GoymenERP.Modules.Audit.Domain.Events;
@@ -9,6 +10,8 @@ using GoymenERP.Modules.Idempotency.Domain.Executions;
 using GoymenERP.Modules.Organization.Application.Contracts;
 using GoymenERP.Modules.Organization.Domain.Sites;
 using GoymenERP.Modules.Organization.Infrastructure.Persistence;
+using GoymenERP.Modules.Product.Application.Contracts;
+using GoymenERP.Modules.Product.Infrastructure.PriceLists;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Data.SqlClient;
@@ -1201,8 +1204,61 @@ internal sealed class SqlServerRelationalApiFactory : WebApplicationFactory<Prog
         });
         if (_configureServices is not null)
         {
-            builder.ConfigureServices(_configureServices);
+            builder.ConfigureServices(services =>
+            {
+                _configureServices(services);
+                EnsureFinalProductPriceListHostComposition(services, _databaseConnectionString);
+            });
         }
+    }
+
+    internal static void EnsureFinalProductPriceListHostComposition(
+        IServiceCollection services,
+        string connectionString)
+    {
+        const string unavailableImplementation =
+            "GoymenERP.Api.ProductRuntime.UnavailableProductPriceListService";
+
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
+
+        var runtime = services
+            .Where(descriptor => descriptor.ServiceType == typeof(ProductRuntimeOptions))
+            .Select(descriptor => descriptor.ImplementationInstance)
+            .OfType<ProductRuntimeOptions>()
+            .LastOrDefault();
+
+        if (runtime?.IsEnabled != true
+            || services.Any(descriptor => descriptor.ServiceType == typeof(ProductPriceListDbContext)))
+        {
+            return;
+        }
+
+        var unavailableDescriptors = services
+            .Where(descriptor =>
+                descriptor.ServiceType == typeof(IProductPriceListServiceV1)
+                && string.Equals(
+                    descriptor.ImplementationType?.FullName,
+                    unavailableImplementation,
+                    StringComparison.Ordinal))
+            .ToArray();
+
+        foreach (var descriptor in unavailableDescriptors)
+        {
+            services.Remove(descriptor);
+        }
+
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["DB_CONNECTION_STRING"] = connectionString,
+            })
+            .Build();
+
+        services.AddProductPriceListHost(
+            configuration,
+            (provider, options) => options.AddInterceptors(
+                provider.GetRequiredService<AuditSaveChangesInterceptor>()));
     }
 
     public HttpClient CreateClientFor(string userId, Guid selectedCompanyId)
