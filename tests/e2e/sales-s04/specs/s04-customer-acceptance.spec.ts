@@ -65,6 +65,15 @@ interface DraftCommandResponse {
   readonly originalCorrelationId: string
 }
 
+interface AcceptanceObservation {
+  readonly companyId: string | undefined
+  readonly idempotencyKey: string | undefined
+  readonly body: { readonly expectedVersion: string }
+  readonly status: number
+  readonly responseHeaders: Record<string, string>
+  readonly responseBody: DraftCommandResponse
+}
+
 function readHeaders(actor: string): Record<string, string> {
   return { 'X-Development-User': actor, 'X-Company-Id': companyId }
 }
@@ -160,19 +169,67 @@ test('S04-CA-01 customer acceptance reopens and replays once, then Rev.1 require
 
   await openDetail(page, draftId, acceptanceActor)
   await expect(page.getByTestId('sales-customer-acceptance-state')).toContainText('Güncel revizyon için bekleniyor')
-  const acceptanceSent = page.waitForRequest((candidate) => candidate.method() === 'POST'
+
+  let routedAttempts = 0
+  let resolveFirst!: (observation: AcceptanceObservation) => void
+  let resolveRetry!: (observation: AcceptanceObservation) => void
+  const firstAttempt = new Promise<AcceptanceObservation>((resolve) => { resolveFirst = resolve })
+  const retryAttempt = new Promise<AcceptanceObservation>((resolve) => { resolveRetry = resolve })
+  await page.route(`**${DRAFTS_PATH}/${draftId}/customer-acceptance`, async (route) => {
+    const intercepted = route.request()
+    if (intercepted.method() !== 'POST') {
+      await route.continue()
+      return
+    }
+    const serverResponse = await route.fetch()
+    const observation: AcceptanceObservation = {
+      companyId: intercepted.headers()['x-company-id'],
+      idempotencyKey: intercepted.headers()['idempotency-key'],
+      body: intercepted.postDataJSON() as { readonly expectedVersion: string },
+      status: serverResponse.status(),
+      responseHeaders: serverResponse.headers(),
+      responseBody: (await serverResponse.json()) as DraftCommandResponse,
+    }
+    routedAttempts += 1
+    if (routedAttempts === 1) {
+      resolveFirst(observation)
+      await route.abort('failed')
+      return
+    }
+    resolveRetry(observation)
+    await route.fulfill({ response: serverResponse })
+  })
+
+  const commands = page.getByTestId('sales-approval-commands')
+  const acceptanceButton = commands.getByRole('button', { name: 'Müşteri kabulünü kaydet' })
+  await acceptanceButton.click()
+  const first = await firstAttempt
+  expect(first.status).toBe(200)
+  expect(first.responseHeaders['idempotency-replayed']).not.toBe('true')
+  expect(first.companyId).toBe(companyId)
+  expect(first.idempotencyKey).toBeTruthy()
+  expect(first.body).toEqual({ expectedVersion: approved.detail.draft.version })
+  await expect(commands.getByTestId('sales-approval-notice'))
+    .toContainText('İşlemin sonucu alınamadı; kaydedilmiş olabilir')
+  await expect(acceptanceButton).toBeDisabled()
+  const retryButton = commands.getByRole('button', { name: 'Aynı işlemi tekrar dene' })
+  await expect(retryButton).toBeVisible()
+
+  const replayAnswered = page.waitForResponse((candidate) => candidate.request().method() === 'POST'
     && new URL(candidate.url()).pathname === `${DRAFTS_PATH}/${draftId}/customer-acceptance`)
-  const acceptanceAnswered = page.waitForResponse((candidate) => candidate.request().method() === 'POST'
-    && new URL(candidate.url()).pathname === `${DRAFTS_PATH}/${draftId}/customer-acceptance`)
-  await page.getByTestId('sales-approval-commands').getByRole('button', { name: 'Müşteri kabulünü kaydet' }).click()
-  const [browserRequest, browserResponse] = await Promise.all([acceptanceSent, acceptanceAnswered])
-  expect(browserResponse.status()).toBe(200)
-  expect(browserResponse.headers()['idempotency-replayed']).not.toBe('true')
-  const acceptanceKey = browserRequest.headers()['idempotency-key']
-  if (!acceptanceKey) throw new Error('The browser customer-acceptance command did not carry its frozen Idempotency-Key.')
-  const acceptanceBody = browserRequest.postDataJSON() as { readonly expectedVersion: string }
-  expect(acceptanceBody).toEqual({ expectedVersion: approved.detail.draft.version })
-  const accepted = (await browserResponse.json()) as DraftCommandResponse
+  await retryButton.click()
+  const [retry, replayBrowserResponse] = await Promise.all([retryAttempt, replayAnswered])
+  expect(routedAttempts).toBe(2)
+  expect(retry.status).toBe(200)
+  expect(replayBrowserResponse.status()).toBe(200)
+  expect(retry.companyId).toBe(first.companyId)
+  expect(retry.idempotencyKey).toBe(first.idempotencyKey)
+  expect(retry.body).toEqual(first.body)
+  expect(retry.responseHeaders['idempotency-replayed']).toBe('true')
+  expect(retry.responseHeaders['idempotency-original-correlation-id']).toBe(first.responseBody.originalCorrelationId)
+  expect(await replayBrowserResponse.json()).toEqual(retry.responseBody)
+
+  const accepted = first.responseBody
   expect(accepted).toMatchObject({
     isReplay: false,
     detail: {
@@ -185,6 +242,17 @@ test('S04-CA-01 customer acceptance reopens and replays once, then Rev.1 require
   const acceptedVersion = accepted.detail.draft.version
   const acceptedAtUtc = accepted.detail.customerAcceptance.acceptedAtUtc
   expect(acceptedAtUtc).toBeTruthy()
+  expect(retry.responseBody).toMatchObject({
+    isReplay: true,
+    originalCorrelationId: accepted.originalCorrelationId,
+    detail: {
+      draft: { id: draftId, revision: 'Rev.0', version: acceptedVersion },
+      customerAcceptance: {
+        acceptedRevision: 'Rev.0', acceptedBy: acceptanceActor, acceptedAtUtc, isCurrentRevisionAccepted: true,
+      },
+    },
+  })
+  await expect(commands.getByTestId('sales-approval-notice')).toContainText('Bu işlem daha önce kaydedilmişti')
 
   await page.goto('/satis/siparisler')
   await expect(page).toHaveURL(/\/satis\/siparisler$/)
@@ -197,26 +265,6 @@ test('S04-CA-01 customer acceptance reopens and replays once, then Rev.1 require
       acceptedRevision: 'Rev.0', acceptedBy: acceptanceActor, acceptedAtUtc, isCurrentRevisionAccepted: true,
     },
     lines: [{ lineId }],
-  })
-
-  // Simulate a lost reply with the browser's frozen key/body: the server returns the first result and creates no second effect.
-  const replayResponse = await request.post(`${apiBaseUrl}${DRAFTS_PATH}/${draftId}/customer-acceptance`, {
-    headers: commandHeaders(acceptanceActor, acceptanceKey, `SENTETIK-s04-ca-accept-replay-${RUN}`),
-    data: acceptanceBody,
-  })
-  expect(replayResponse.status()).toBe(200)
-  expect(replayResponse.headers()['idempotency-replayed']).toBe('true')
-  expect(replayResponse.headers()['idempotency-original-correlation-id']).toBe(accepted.originalCorrelationId)
-  const replayed = (await replayResponse.json()) as DraftCommandResponse
-  expect(replayed).toMatchObject({
-    isReplay: true,
-    originalCorrelationId: accepted.originalCorrelationId,
-    detail: {
-      draft: { id: draftId, revision: 'Rev.0', version: acceptedVersion },
-      customerAcceptance: {
-        acceptedRevision: 'Rev.0', acceptedBy: acceptanceActor, acceptedAtUtc, isCurrentRevisionAccepted: true,
-      },
-    },
   })
   expect(await readDraft(request, draftId, readerActor)).toEqual(reopened)
 
