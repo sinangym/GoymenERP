@@ -24,6 +24,7 @@ jobs:
         run: |
           python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py
           python3 -I -S -B -m unittest discover -s tests/dotnet_bootstrap_integrity -p "test_*.py" -v
+          python3 -I -S -B -m unittest discover -s tests/ci_safe_trx_summary -p "test_*.py" -v
 
       - name: Setup .NET 10
         uses: actions/setup-dotnet@v6
@@ -52,7 +53,14 @@ jobs:
       - name: Test
         run: |
           python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py
-          dotnet test GoymenERP.slnx -noAutoResponse --configuration Release --no-build --logger "console;verbosity=normal"
+          mkdir -p artifacts/ci-test-results/backend
+          dotnet test GoymenERP.slnx \
+          -noAutoResponse \
+          --configuration Release \
+          --no-build \
+          --results-directory artifacts/ci-test-results/backend \
+          --logger "console;verbosity=normal" \
+          --logger "trx;LogFilePrefix=backend"
 
       - name: Architecture dependency guard
         run: |
@@ -61,7 +69,28 @@ jobs:
           -noAutoResponse \
           --configuration Release \
           --no-build \
-          --logger "console;verbosity=normal"
+          --results-directory artifacts/ci-test-results/backend \
+          --logger "console;verbosity=normal" \
+          --logger "trx;LogFilePrefix=architecture"
+
+      - name: Produce secret-free backend test summary
+        if: always() && hashFiles('artifacts/ci-test-results/backend/**/*.trx') != ''
+        run: |
+          python3 -I -S -B tools/ci/summarize_trx.py \
+          --trx-directory artifacts/ci-test-results/backend \
+          --output artifacts/ci-safe-test-summary/backend.json \
+          --head "${{ github.event.pull_request.head.sha || github.sha }}" \
+          --job backend \
+          --phase test-suite
+
+      - name: Upload secret-free backend test summary
+        if: always() && hashFiles('artifacts/ci-safe-test-summary/backend.json') != ''
+        uses: actions/upload-artifact@v7
+        with:
+          name: ci-test-summary-backend-${{ github.event.pull_request.head.sha || github.sha }}
+          path: artifacts/ci-safe-test-summary/backend.json
+          if-no-files-found: error
+          retention-days: 7
 
       - name: Check vulnerable dependencies
         run: |
@@ -165,6 +194,7 @@ jobs:
         run: |
           python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py
           python3 -I -S -B -m unittest discover -s tests/dotnet_bootstrap_integrity -p "test_*.py" -v
+          python3 -I -S -B -m unittest discover -s tests/ci_safe_trx_summary -p "test_*.py" -v
 
       - name: Setup .NET 10
         uses: actions/setup-dotnet@v6
@@ -182,12 +212,35 @@ jobs:
         run: |
           python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py
           python3 -I -S -B -m unittest discover -s tests/rcsi_relational_acceptance_verifier -p "test_*.py" -v
-          python3 -I -S -B tools/verify_rcsi_relational_acceptance.py --broad
+          python3 -I -S -B tools/verify_rcsi_relational_acceptance.py \
+          --broad \
+          --trx-output artifacts/ci-test-results/relational/broad.trx
 
       - name: Run exact RCSI relational acceptance verifier
         run: |
           python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py
-          python3 -I -S -B tools/verify_rcsi_relational_acceptance.py --rcsi
+          python3 -I -S -B tools/verify_rcsi_relational_acceptance.py \
+          --rcsi \
+          --trx-output artifacts/ci-test-results/relational/rcsi.trx
+
+      - name: Produce secret-free relational test summary
+        if: always() && hashFiles('artifacts/ci-test-results/relational/*.trx') != ''
+        run: |
+          python3 -I -S -B tools/ci/summarize_trx.py \
+          --trx-directory artifacts/ci-test-results/relational \
+          --output artifacts/ci-safe-test-summary/relational.json \
+          --head "${{ github.event.pull_request.head.sha || github.sha }}" \
+          --job relational \
+          --phase sql-acceptance
+
+      - name: Upload secret-free relational test summary
+        if: always() && hashFiles('artifacts/ci-safe-test-summary/relational.json') != ''
+        uses: actions/upload-artifact@v7
+        with:
+          name: ci-test-summary-relational-${{ github.event.pull_request.head.sha || github.sha }}
+          path: artifacts/ci-safe-test-summary/relational.json
+          if-no-files-found: error
+          retention-days: 7
 
   contract-drift:
     name: OpenAPI contract drift

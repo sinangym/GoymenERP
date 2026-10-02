@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+import argparse
+import contextlib
 import os
 from pathlib import Path
 import re
@@ -358,21 +360,25 @@ def main() -> int:
             "GOYMEN_ERP_TEST_SQLSERVER_CONNECTION must be injected by the relational runner."
         )
 
-    if sys.argv[1:] == ["--broad"]:
+    parser = argparse.ArgumentParser()
+    mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--broad", action="store_true")
+    mode.add_argument("--rcsi", action="store_true")
+    parser.add_argument("--trx-output", type=Path)
+    args = parser.parse_args()
+
+    if args.broad:
         if BROAD_INVENTORY_ERROR is not None:
             raise BROAD_INVENTORY_ERROR
         filter_value = BROAD_FILTER
         expected_total = BROAD_EXECUTION_COUNT
         verify_discovered = verify_broad_discovery
         gate_name = "SQLSERVER_RELATIONAL_ACCEPTANCE"
-    elif sys.argv[1:] == ["--rcsi"]:
+    elif args.rcsi:
         filter_value = RCSI_FILTER
         expected_total = len(EXPECTED_TESTS)
         verify_discovered = verify_discovery
         gate_name = "RCSI_RELATIONAL_ACCEPTANCE"
-    else:
-        raise RuntimeError("Exactly one mode is required: --broad or --rcsi.")
-
     run_bootstrap_preflight(repository_root)
     list_result = run_checked(
         [
@@ -394,8 +400,21 @@ def main() -> int:
     discovered = verify_discovered(list_result.stdout)
     report: list[str] = []
 
-    with tempfile.TemporaryDirectory(prefix="goymen-rcsi-trx-") as temporary_directory:
-        trx_path = Path(temporary_directory) / "rcsi.trx"
+    with contextlib.ExitStack() as stack:
+        if args.trx_output is None:
+            results_directory = Path(
+                stack.enter_context(
+                    tempfile.TemporaryDirectory(prefix="goymen-rcsi-trx-")
+                )
+            )
+            trx_path = results_directory / "rcsi.trx"
+        else:
+            trx_path = (repository_root / args.trx_output).resolve()
+            if not trx_path.is_relative_to(repository_root) or trx_path.suffix.lower() != ".trx":
+                raise RuntimeError("TRX output must be a .trx file inside the repository.")
+            results_directory = trx_path.parent
+            results_directory.mkdir(parents=True, exist_ok=True)
+            trx_path.unlink(missing_ok=True)
         run_bootstrap_preflight(repository_root)
         run_result = run_checked(
             [
@@ -410,7 +429,7 @@ def main() -> int:
                 "--filter",
                 filter_value,
                 "--results-directory",
-                temporary_directory,
+                str(results_directory),
                 "--logger",
                 "trx;LogFileName=rcsi.trx",
             ],
