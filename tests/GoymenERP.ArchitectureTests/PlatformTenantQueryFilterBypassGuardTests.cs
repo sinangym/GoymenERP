@@ -140,7 +140,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // Re-fingerprinted for the broad suite's wall-clock limit 1200 s -> 2400 s (user decision 2026-09-29): only
     // the subprocess timeout changes; the exact inventory, every listed test and the 0-skip rule are unchanged.
     private const string ReviewedSqlServerRcsiVerifierFingerprint =
-        "e7ca6266eedb2981da43168138bb7ad21cbfc157696fd100bb6b1f545fa52bf5";
+        "0b7eda81fec0b50167e7da627671f6bffb978042bd243f954f4a59340a66bbf8";
     private const string SqlServerRcsiVerifierTestsPath =
         "tests/rcsi_relational_acceptance_verifier/"
         + "test_verify_rcsi_relational_acceptance.py";
@@ -238,7 +238,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         };
     private const string ContinuousIntegrationWorkflowPath = ".github/workflows/ci.yml";
     private const string ReviewedContinuousIntegrationWorkflowFingerprint =
-        "91a665e6e8982e5a9b66f5d16a14d9fc4d7f98d63775de959a8cc6b2dea2b018";
+        "2bdfd317750a07a7867344fab8f6bcbc91a0ba209a17f45065d1c501d2639493";
     // Re-fingerprinted for the ORG master edit: the seeder's three existing IgnoreQueryFilters projections also read
     // the row id, so a seeded record a user renamed is recognised by its deterministic id and never re-added under
     // its old code. No new bypass, query or write path; the IgnoreQueryFilters reads are the same three.
@@ -5956,8 +5956,14 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             "- name: Test",
             "run: |",
             "python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py",
-            "dotnet test GoymenERP.slnx -noAutoResponse --configuration Release "
-            + "--no-build --logger \"console;verbosity=normal\"",
+            "mkdir -p artifacts/ci-test-results/backend",
+            "dotnet test GoymenERP.slnx \\",
+            "-noAutoResponse \\",
+            "--configuration Release \\",
+            "--no-build \\",
+            "--results-directory artifacts/ci-test-results/backend \\",
+            "--logger \"console;verbosity=normal\" \\",
+            "--logger \"trx;LogFilePrefix=backend\"",
         };
         if (backendTestStepStart < 0
             || !activeBackendTestLines.SequenceEqual(
@@ -5993,7 +5999,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             "python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py",
             "python3 -I -S -B -m unittest discover -s "
             + "tests/rcsi_relational_acceptance_verifier -p \"test_*.py\" -v",
-            "python3 -I -S -B tools/verify_rcsi_relational_acceptance.py --broad",
+            "python3 -I -S -B tools/verify_rcsi_relational_acceptance.py \\",
+            "--broad \\",
+            "--trx-output artifacts/ci-test-results/relational/broad.trx",
         };
         var rcsiStepStart = relationalJob.IndexOf(
             "\n      - name: Run exact RCSI relational acceptance verifier\n",
@@ -6005,7 +6013,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             "- name: Run exact RCSI relational acceptance verifier",
             "run: |",
             "python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py",
-            "python3 -I -S -B tools/verify_rcsi_relational_acceptance.py --rcsi",
+            "python3 -I -S -B tools/verify_rcsi_relational_acceptance.py \\",
+            "--rcsi \\",
+            "--trx-output artifacts/ci-test-results/relational/rcsi.trx",
         };
         if (broadStepStart < 0
             || rcsiStepStart < 0
