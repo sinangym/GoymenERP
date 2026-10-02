@@ -206,6 +206,7 @@ public sealed record StoredApprovedDispatchInvoiceSource(
 public sealed record StoredApprovedDispatchInvoiceSourceLine(
     int LineNo,
     Guid SourceOrderId,
+    int SourceOrderRevision,
     Guid SourceOrderLineId,
     Guid ShipmentId,
     Guid ProductId,

@@ -25,9 +25,9 @@ public sealed partial class LogisticsInstructionServiceTests
         Assert.Equal((Company, draft.DispatchNoteId, instructionId, 8L, Party, Account, "IRS-000001", (string?)null),
             (source.CompanyId, source.DispatchNoteId, source.InstructionId, source.InstructionVersion,
                 source.CustomerPartyId, source.CompanyAccountId, source.SystemNumber, source.EDispatchNumber));
-        Assert.Equal([(Order, OrderLine, firstShipment, Product, KgUnit, "3"),
-                      (Order, OrderLine, secondShipment, Product, KgUnit, "2.5")],
-            source.Lines.Select(line => (line.SourceOrderId, line.SourceOrderLineId, line.ShipmentId,
+        Assert.Equal([(Order, 0, OrderLine, firstShipment, Product, KgUnit, "3"),
+                      (Order, 0, OrderLine, secondShipment, Product, KgUnit, "2.5")],
+            source.Lines.Select(line => (line.SourceOrderId, line.SourceOrderRevision, line.SourceOrderLineId, line.ShipmentId,
                 line.ProductId, line.UnitId, line.ShippedQuantity)).ToArray());
         Assert.NotEqual(default, source.ApprovedAtUtc);
         Assert.Equal(authorityCalls + 2, world.Authority.Calls);
@@ -72,6 +72,24 @@ public sealed partial class LogisticsInstructionServiceTests
 
         Assert.Equal((403, "forbidden"), (denied.Status, denied.Code));
         Assert.Equal(1, world.Store.InvoiceSourceReads);
+    }
+
+    [Fact]
+    public async Task A_negative_immutable_order_revision_is_provider_invalid_and_writes_nothing()
+    {
+        var (world, instructionId, _, firstShipment, _) = await ShippedWorld();
+        var draft = DispatchNote("6", firstShipment);
+        await world.Service().CreateDispatchNoteAsync(instructionId, draft, Metadata("invoice-source-create"));
+        await world.Service().ApproveDispatchNoteAsync(instructionId, draft.DispatchNoteId,
+            new ApproveDispatchNoteRequest("7"), Metadata("invoice-source-approve"));
+        var transitions = world.Store.Transitions.Count;
+        world.Store.InvoiceSourceRevisionOverride = -1;
+
+        var invalid = await Assert.ThrowsAsync<LogisticsInstructionServiceException>(() =>
+            world.Service().GetApprovedDispatchInvoiceSourceAsync(draft.DispatchNoteId));
+
+        Assert.Equal((503, LogisticsProblemCodesV1.ReferenceProviderInvalid), (invalid.Status, invalid.Code));
+        Assert.Equal(transitions, world.Store.Transitions.Count);
     }
 
     private static bool IsMoneyOrConsumptionMember(string name) =>
