@@ -96,6 +96,51 @@ class SafeTrxSummaryTests(unittest.TestCase):
         self.assertEqual(2, len(summary["failureGroups"]))
         self.assertEqual(1, summary["truncatedFailureGroupCount"])
 
+    def test_large_ignored_output_is_streamed_without_disclosure(self) -> None:
+        ignored = "credential=DO_NOT_EXPORT\n" * 250_000
+        source = trx(
+            '<UnitTestResult testId="pass" outcome="Passed"><Output><StdOut>'
+            + ignored
+            + "</StdOut></Output></UnitTestResult>",
+            definition("pass", "GoymenERP.Tests.Streaming", "Passes"),
+        )
+
+        summary, encoded = self._summary(source)
+
+        self.assertEqual(
+            {"total": 1, "passed": 1, "failed": 0, "skipped": 0},
+            summary["totals"],
+        )
+        self.assertNotIn("DO_NOT_EXPORT", encoded)
+        self.assertNotIn("credential", encoded)
+
+    def test_streaming_bounds_reject_result_and_metadata_overflow(self) -> None:
+        cases = (
+            (
+                "results",
+                trx(
+                    '<UnitTestResult testId="one" outcome="Passed" />'
+                    '<UnitTestResult testId="two" outcome="Passed" />',
+                    definition("one", "GoymenERP.Tests.Bounds", "One")
+                    + definition("two", "GoymenERP.Tests.Bounds", "Two"),
+                ),
+                mock.patch.object(SUMMARIZER, "MAX_TEST_RESULTS", 1),
+            ),
+            (
+                "metadata",
+                trx(
+                    '<UnitTestResult testId="too-long" outcome="Passed" />',
+                    definition("too-long", "X" * 32, "Passes"),
+                ),
+                mock.patch.object(SUMMARIZER, "MAX_METADATA_CHARS", 16),
+            ),
+        )
+        for name, source, limit_patch in cases:
+            with self.subTest(name=name), limit_patch:
+                with self.assertRaises(SUMMARIZER.SummaryInputFailure) as failure:
+                    self._summary(source)
+                self.assertEqual("unparseable_input", failure.exception.category)
+
     def test_invalid_metadata_and_empty_results_are_rejected(self) -> None:
         with self.assertRaisesRegex(RuntimeError, "40-character"):
             SUMMARIZER.build_summary(
@@ -128,6 +173,15 @@ class SafeTrxSummaryTests(unittest.TestCase):
         cases = (
             ("input_count", None, None),
             ("unparseable_input", "<secret>DO_NOT_EXPORT", None),
+            (
+                "unparseable_input",
+                '<!DOCTYPE TestRun [<!ENTITY secret "DO_NOT_EXPORT">]>'
+                + trx(
+                    '<UnitTestResult testId="pass" outcome="Passed" />',
+                    definition("pass", "GoymenERP.Tests.SafeSummary", "Passes"),
+                ),
+                None,
+            ),
             ("no_results", trx("", ""), None),
             ("oversized_input", "xx", 1),
         )
