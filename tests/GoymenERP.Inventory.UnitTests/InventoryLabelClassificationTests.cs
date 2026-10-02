@@ -11,7 +11,7 @@ public sealed class InventoryLabelClassificationTests
     private const string Permission = "inventory.label-classification.write";
 
     [Fact]
-    public async Task Command_measures_the_configured_company_wide_permission_twice_and_derives_metadata()
+    public async Task Command_derives_metadata_and_keeps_a_fresh_fence_inside_the_writer()
     {
         var world = new World();
         world.Authority.Roles = ["quality.b", "quality.a"];
@@ -24,7 +24,7 @@ public sealed class InventoryLabelClassificationTests
         Assert.Equal((Label1, Permission, world.User.UserId!),
             (call.LabelId, call.Metadata.PermissionCode, call.Metadata.ActorId));
         Assert.Equal(new[] { "quality.a", "quality.b" }, call.Metadata.RoleCodes);
-        Assert.Equal(new[] { Permission, Permission }, world.Authority.Measured);
+        Assert.Equal(new[] { Permission, Permission, Permission }, world.Authority.Measured);
     }
 
     [Theory]
@@ -67,6 +67,22 @@ public sealed class InventoryLabelClassificationTests
             503, InventoryLabelClassificationCodesV1.PermissionUnregistered);
         Assert.Empty(world.Authority.Measured);
         Assert.Empty(world.Writer.Calls);
+    }
+
+    [Fact]
+    public async Task Authority_revoked_after_the_writer_stages_the_command_never_commits_an_effect()
+    {
+        var world = new World();
+        world.Writer.OnStaged = () => world.Authority.Granted = false;
+
+        await Refused(world.Service().ClassifyAsync(Label1,
+            new("7", InventoryLabelClassificationV1.Scrap), Transport(world.User.UserId!)),
+            403, InventoryLabelClassificationCodesV1.Forbidden);
+
+        Assert.Single(world.Writer.Calls);
+        Assert.Equal(1, world.Writer.StagedEffects);
+        Assert.Equal(0, world.Writer.CommittedEffects);
+        Assert.Equal(new[] { Permission, Permission, Permission }, world.Authority.Measured);
     }
 
     private static InventoryCommandMetadata Transport(string actor) =>
@@ -134,17 +150,25 @@ public sealed class InventoryLabelClassificationTests
     private sealed class Writer : IInventoryLabelClassificationWriterV1
     {
         public List<(Guid LabelId, InventoryCommandMetadata Metadata)> Calls { get; } = [];
+        public Action? OnStaged { get; set; }
+        public int StagedEffects { get; private set; }
+        public int CommittedEffects { get; private set; }
         public InventoryLabelClassificationResultV1 Result { get; } = new(
             new(Label1, "8", "SecondQuality", At), false, "corr-1");
 
-        public Task<InventoryLabelClassificationResultV1> ClassifyAsync(
+        public async Task<InventoryLabelClassificationResultV1> ClassifyAsync(
             Guid labelId,
             ClassifyInventoryLabelV1 request,
             InventoryCommandMetadata metadata,
+            Func<CancellationToken, Task> freshAuthorityFence,
             CancellationToken cancellationToken = default)
         {
             Calls.Add((labelId, metadata));
-            return Task.FromResult(Result);
+            StagedEffects++;
+            OnStaged?.Invoke();
+            await freshAuthorityFence(cancellationToken);
+            CommittedEffects++;
+            return Result;
         }
     }
 }

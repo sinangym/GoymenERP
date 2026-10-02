@@ -254,12 +254,14 @@ function InventoryLabelDetailView({ namespace, labelId, target, stockSearch }: {
       /></ActionTarget>
       : null}
 
-    {canClassify
+    {canClassify && actorId !== null && namespace !== null
       ? <LabelClassificationPanel
         key={`${identity.labelId}:classification:${labelVersion}`}
         labelId={identity.labelId}
         labelVersion={labelVersion}
         current={identity.classification}
+        namespace={namespace}
+        actorId={actorId}
         companyId={companyId}
         onChanged={() => void query.refetch()}
       />

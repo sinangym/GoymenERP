@@ -1,34 +1,61 @@
-import { useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
 import { classifyInventoryLabel } from './labelClassificationApi'
 import {
   labelClassificationRefusal,
   type LabelClassification,
-  type LabelClassificationRequest,
 } from './labelClassificationContract'
+import {
+  pendingLabelClassificationKey,
+  recallPendingLabelClassification,
+  releasePendingLabelClassification,
+  reservePendingLabelClassification,
+  type PendingLabelClassification,
+} from './pendingLabelClassificationStore'
 import styles from './inventory.module.css'
 
-type Pending = { readonly key: string; readonly request: LabelClassificationRequest }
-
-export function LabelClassificationPanel({ labelId, labelVersion, current, companyId, onChanged }: {
+export function LabelClassificationPanel({ labelId, labelVersion, current, namespace, actorId, companyId, onChanged }: {
   readonly labelId: string
   readonly labelVersion: string
   readonly current: LabelClassification | null
+  readonly namespace: string
+  readonly actorId: string
   readonly companyId: string
   readonly onChanged: () => void
 }) {
   const boundary = useAuthBoundary()
+  const pendingKey = pendingLabelClassificationKey(namespace, actorId, companyId, labelId)
   const [selected, setSelected] = useState<LabelClassification>(current ?? 'Standard')
-  const [pending, setPending] = useState<Pending | null>(null)
+  const [pending, setPending] = useState<PendingLabelClassification | null>(() => {
+    const recalled = recallPendingLabelClassification(pendingKey)
+    return recalled !== null && recalled.namespace === namespace && recalled.actorId === actorId
+      && recalled.companyId === companyId && recalled.labelId === labelId
+      ? recalled
+      : null
+  })
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
+  const generation = useRef(0)
+  const inFlight = useRef(false)
 
-  async function send(attempt: Pending) {
+  useEffect(() => () => { generation.current += 1 }, [])
+
+  async function send(attempt: PendingLabelClassification) {
+    if (inFlight.current || attempt.namespace !== namespace || attempt.actorId !== actorId
+      || attempt.companyId !== companyId || attempt.labelId !== labelId) return
+    inFlight.current = true
+    const commandGeneration = ++generation.current
+    reservePendingLabelClassification(pendingKey, attempt)
     setBusy(true); setMessage(null)
     const snapshot = boundary.capture()
     const outcome = await classifyInventoryLabel(labelId, attempt.request, {
-      companyId, idempotencyKey: attempt.key,
+      companyId, idempotencyKey: attempt.idempotencyKey,
     })
+    if (outcome.type === 'applied' || (outcome.type === 'failed' && outcome.status !== 401 && outcome.status !== 403)) {
+      releasePendingLabelClassification(pendingKey, attempt.idempotencyKey)
+    }
+    if (commandGeneration !== generation.current) return
+    inFlight.current = false
     setBusy(false)
     if (outcome.type === 'applied') {
       setPending(null)
@@ -37,8 +64,8 @@ export function LabelClassificationPanel({ labelId, labelVersion, current, compa
       return
     }
     if (outcome.type === 'failed') {
-      setPending(null)
       if (outcome.status === 401 || outcome.status === 403) boundary.report(outcome.status, snapshot)
+      setPending(outcome.status === 401 || outcome.status === 403 ? attempt : null)
       setMessage(labelClassificationRefusal(outcome.status, outcome.code))
       return
     }
@@ -48,8 +75,9 @@ export function LabelClassificationPanel({ labelId, labelVersion, current, compa
 
   function submit(event: FormEvent) {
     event.preventDefault()
-    const attempt: Pending = pending ?? {
-      key: crypto.randomUUID(),
+    const attempt: PendingLabelClassification = pending ?? {
+      namespace, actorId, companyId, labelId,
+      idempotencyKey: crypto.randomUUID(),
       request: { expectedLabelVersion: labelVersion, classification: selected },
     }
     void send(attempt)
@@ -68,7 +96,7 @@ export function LabelClassificationPanel({ labelId, labelVersion, current, compa
         <option value="Scrap">Hurda sınıfı</option>
       </select>
       <button type="submit" disabled={busy || (pending === null && selected === current)}>
-        {pending === null ? 'Sınıfı kaydet' : 'Aynı isteği yeniden gönder'}
+        {pending === null ? 'Sınıfı kaydet' : 'Aynı anahtar ve içerikle yeniden gönder'}
       </button>
     </form>
     {message === null ? null : <p role="status">{message}</p>}

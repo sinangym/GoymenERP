@@ -15,9 +15,11 @@ public sealed partial class InventoryStore
         Guid labelId,
         ClassifyInventoryLabelV1 request,
         InventoryCommandMetadata metadata,
+        Func<CancellationToken, Task> freshAuthorityFence,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(freshAuthorityFence);
         RequireMetadata(metadata);
         RequireResolvedCompany();
         cancellationToken.ThrowIfCancellationRequested();
@@ -42,12 +44,14 @@ public sealed partial class InventoryStore
             expectedLabelVersion = expectedVersion,
             classification = (int)request.Classification,
         });
-        if (await FindClassificationReplayAsync(keyHash, payloadHash, metadata.ActorId, cancellationToken) is { } replay)
+        if (await FindClassificationReplayAsync(keyHash, payloadHash, metadata.ActorId,
+                freshAuthorityFence, cancellationToken) is { } replay)
         {
             return replay;
         }
 
         var row = await dbContext.Labels.SingleOrDefaultAsync(candidate => candidate.Id == labelId, cancellationToken);
+        await RequireClassificationFreshAuthorityAsync(freshAuthorityFence, cancellationToken);
         if (row is null)
         {
             throw Error(404, InventoryLabelClassificationCodesV1.LabelNotFound);
@@ -96,6 +100,8 @@ public sealed partial class InventoryStore
             JsonSerializer.Serialize(new { classification = classification.ToString() }, Json),
             "Etiket kalite sınıflandırması");
 
+        await RequireClassificationFreshAuthorityAsync(freshAuthorityFence, cancellationToken);
+
         try
         {
             await dbContext.SaveChangesAsync(cancellationToken);
@@ -104,7 +110,8 @@ public sealed partial class InventoryStore
             || IsUniqueConstraintViolation(exception))
         {
             dbContext.ChangeTracker.Clear();
-            if (await FindClassificationReplayAsync(keyHash, payloadHash, metadata.ActorId, cancellationToken) is { } winner)
+            if (await FindClassificationReplayAsync(keyHash, payloadHash, metadata.ActorId,
+                    freshAuthorityFence, cancellationToken) is { } winner)
             {
                 return winner;
             }
@@ -119,10 +126,12 @@ public sealed partial class InventoryStore
         string keyHash,
         string payloadHash,
         string actorId,
+        Func<CancellationToken, Task> freshAuthorityFence,
         CancellationToken cancellationToken)
     {
         var prior = await dbContext.Commands.AsNoTracking().SingleOrDefaultAsync(row =>
             row.CommandName == ClassifyLabelCommand && row.IdempotencyKeyHash == keyHash, cancellationToken);
+        await RequireClassificationFreshAuthorityAsync(freshAuthorityFence, cancellationToken);
         if (prior is null)
         {
             return null;
@@ -137,6 +146,21 @@ public sealed partial class InventoryStore
         var stored = JsonSerializer.Deserialize<ClassificationCommandResult>(prior.ResultJson, Json)
             ?? throw new InvalidOperationException("Kayıtlı etiket sınıflandırma sonucu okunamadı.");
         return new(stored.Classification, true, prior.CorrelationId);
+    }
+
+    private async Task RequireClassificationFreshAuthorityAsync(
+        Func<CancellationToken, Task> freshAuthorityFence,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await freshAuthorityFence(cancellationToken);
+        }
+        catch
+        {
+            dbContext.ChangeTracker.Clear();
+            throw;
+        }
     }
 
     private static string Hash(string value) =>

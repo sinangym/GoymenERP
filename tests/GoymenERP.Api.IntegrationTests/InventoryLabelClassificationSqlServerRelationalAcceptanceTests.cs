@@ -22,11 +22,44 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         };
         var request = new ClassifyInventoryLabelV1(
             source.LabelVersion.ToString(), InventoryLabelClassificationV1.SecondQuality);
+        static Task Fresh(CancellationToken _) => Task.CompletedTask;
+
+        var revoked = await SeedFreePhysicalSourceAsync(run, CompanyA, "SYN-LABEL-CLASSIFICATION-REVOKED", 25m);
+        var revokedMetadata = metadata with
+        {
+            IdempotencyKey = $"label-classification-revoked-{Guid.NewGuid():N}",
+            CorrelationId = $"label-classification-revoked-{Guid.NewGuid():N}",
+        };
+        var fenceCalls = 0;
+        await using (var scope = run.Store(CompanyA))
+        {
+            var denied = await Assert.ThrowsAsync<InventoryLabelClassificationException>(() =>
+                scope.Store.ClassifyAsync(revoked.LabelId,
+                    new(revoked.LabelVersion.ToString(), InventoryLabelClassificationV1.Scrap),
+                    revokedMetadata,
+                    _ => ++fenceCalls == 3
+                        ? Task.FromException(new InventoryLabelClassificationException(
+                            403, InventoryLabelClassificationCodesV1.Forbidden))
+                        : Task.CompletedTask));
+            Assert.Equal((403, InventoryLabelClassificationCodesV1.Forbidden), (denied.Status, denied.Code));
+        }
+        Assert.Equal(3, fenceCalls);
+        Assert.Equal(revoked.LabelVersion, await run.ScalarAsync<long>(
+            "SELECT Version FROM inventory.Labels WHERE Id = @id", ("@id", revoked.LabelId)));
+        Assert.Equal(0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM inventory.Labels WHERE Id = @id AND Classification IS NOT NULL",
+            ("@id", revoked.LabelId)));
+        Assert.Equal(0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM inventory.Commands WHERE CommandName = N'inventory.label-classification.classify.v1' AND TargetId = @id",
+            ("@id", revoked.LabelId)));
+        Assert.Equal(0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType = N'inventory.label.classified.v1' AND EntityId = @id",
+            ("@id", revoked.LabelId.ToString("D"))));
 
         InventoryLabelClassificationResultV1 first;
         await using (var scope = run.Store(CompanyA))
         {
-            first = await scope.Store.ClassifyAsync(source.LabelId, request, metadata);
+            first = await scope.Store.ClassifyAsync(source.LabelId, request, metadata, Fresh);
             Assert.False(first.IsReplay);
             Assert.Equal((source.LabelId, "SecondQuality", source.LabelVersion + 1),
                 (first.Classification.LabelId, first.Classification.Classification,
@@ -38,7 +71,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             var replay = await scope.Store.ClassifyAsync(source.LabelId, request, metadata with
             {
                 CorrelationId = $"label-classification-replay-{Guid.NewGuid():N}",
-            });
+            }, Fresh);
             Assert.True(replay.IsReplay);
             Assert.Equal(first.Classification, replay.Classification);
             Assert.Equal(metadata.CorrelationId, replay.OriginalCorrelationId);
@@ -46,7 +79,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             var stale = await Assert.ThrowsAsync<InventoryLabelClassificationException>(() =>
                 scope.Store.ClassifyAsync(source.LabelId,
                     new(source.LabelVersion.ToString(), InventoryLabelClassificationV1.Scrap),
-                    metadata with { IdempotencyKey = $"label-classification-stale-{Guid.NewGuid():N}" }));
+                    metadata with { IdempotencyKey = $"label-classification-stale-{Guid.NewGuid():N}" }, Fresh));
             Assert.Equal((409, InventoryLabelClassificationCodesV1.LabelVersionConflict), (stale.Status, stale.Code));
         }
 
@@ -55,7 +88,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             var hidden = await Assert.ThrowsAsync<InventoryLabelClassificationException>(() =>
                 foreign.Store.ClassifyAsync(source.LabelId,
                     new(first.Classification.LabelVersion, InventoryLabelClassificationV1.Standard),
-                    metadata with { IdempotencyKey = $"label-classification-foreign-{Guid.NewGuid():N}" }));
+                    metadata with { IdempotencyKey = $"label-classification-foreign-{Guid.NewGuid():N}" }, Fresh));
             Assert.Equal((404, InventoryLabelClassificationCodesV1.LabelNotFound), (hidden.Status, hidden.Code));
         }
 

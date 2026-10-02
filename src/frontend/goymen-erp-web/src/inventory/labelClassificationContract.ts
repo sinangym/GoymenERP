@@ -35,6 +35,12 @@ function version(value: unknown): value is string {
     && BigInt(value) <= 9223372036854775807n
 }
 
+export function isLabelClassificationRequest(value: unknown): value is LabelClassificationRequest {
+  const source = record(value)
+  return source !== null && exact(source, ['expectedLabelVersion', 'classification'])
+    && version(source.expectedLabelVersion) && classification(source.classification)
+}
+
 export function decodeLabelClassificationView(value: unknown): LabelClassificationView | null {
   const source = record(value)
   if (source === null || !exact(source, ['labelId', 'labelVersion', 'classification', 'classifiedAtUtc']) ||

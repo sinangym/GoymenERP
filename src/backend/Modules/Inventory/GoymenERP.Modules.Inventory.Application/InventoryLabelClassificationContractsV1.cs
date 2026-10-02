@@ -58,6 +58,7 @@ public interface IInventoryLabelClassificationWriterV1
         Guid labelId,
         ClassifyInventoryLabelV1 request,
         InventoryCommandMetadata metadata,
+        Func<CancellationToken, Task> freshAuthorityFence,
         CancellationToken cancellationToken = default);
 }
 

@@ -72,7 +72,7 @@ public sealed class InventoryLabelClassificationCommandService : IInventoryLabel
             ActorId = finalScope.ActorId,
             PermissionCode = permission,
             RoleCodes = finalScope.RoleCodes,
-        }, cancellationToken);
+        }, token => FreshAuthorityFenceAsync(permission, scope, token), cancellationToken);
     }
 
     private async Task<Scope> RequireAsync(string permission, CancellationToken cancellationToken)
@@ -113,6 +113,9 @@ public sealed class InventoryLabelClassificationCommandService : IInventoryLabel
 
         return scope with { RoleCodes = [.. measured.RoleCodes.Order(StringComparer.Ordinal)] };
     }
+
+    private async Task FreshAuthorityFenceAsync(string permission, Scope scope, CancellationToken cancellationToken) =>
+        _ = await RequireStillAsync(permission, scope, cancellationToken);
 
     private bool Matches(Scope scope) => currentUser.IsAuthenticated
         && string.Equals(currentUser.UserId, scope.ActorId, StringComparison.Ordinal)
