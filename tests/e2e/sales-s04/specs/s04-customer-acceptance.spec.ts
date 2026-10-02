@@ -18,9 +18,6 @@ const {
   preparerActor,
   approverActor,
   readerActor,
-  supportCreatorActor,
-  ordinaryCreatorActor,
-  plannerActor,
   companyId,
   realPartyId,
   realCompanyAccountId,
@@ -35,6 +32,7 @@ const DRAFTS_PATH = '/api/v1/sales/drafts'
 const CURRENCIES_PATH = '/api/v1/sales/references/currencies'
 const CAPABILITIES_PATH = '/api/v1/shell/capabilities'
 const CUSTOMER_ACCEPTANCE_RECORD = 'sales.orders.customer-acceptance.record'
+const ACCEPTANCE_ACTOR_IDENTITY_ID = 'b2000000-0000-4000-8000-000000000401'
 
 interface DraftReading {
   readonly draft: {
@@ -88,16 +86,6 @@ async function capabilitiesOf(request: APIRequestContext, actor: string): Promis
   return ((await response.json()) as { readonly capabilities: readonly string[] }).capabilities
 }
 
-async function findAcceptanceActor(request: APIRequestContext): Promise<string> {
-  for (const actor of [preparerActor, approverActor, readerActor, supportCreatorActor, ordinaryCreatorActor, plannerActor]) {
-    if ((await capabilitiesOf(request, actor)).includes(CUSTOMER_ACCEPTANCE_RECORD)) return actor
-  }
-  throw new Error(
-    `BLOCKED: the s04 disposable fixture publishes no existing actor with ${CUSTOMER_ACCEPTANCE_RECORD}; `
-    + 'the accepted predecessor grant is required without adding an actor or permission here.',
-  )
-}
-
 async function readDraft(request: APIRequestContext, draftId: string, actor: string): Promise<DraftReading> {
   const response = await request.get(`${apiBaseUrl}${DRAFTS_PATH}/${draftId}`, { headers: readHeaders(actor) })
   expect(response.status(), `the same draft reopens for ${actor}`).toBe(200)
@@ -124,7 +112,8 @@ async function openDetail(page: Page, draftId: string, actor: string): Promise<v
 
 test('S04-CA-01 customer acceptance reopens and replays once, then Rev.1 requires its own acceptance', async ({ page, request }) => {
   test.setTimeout(180_000)
-  const acceptanceActor = await findAcceptanceActor(request)
+  const acceptanceActor = preparerActor
+  expect(await capabilitiesOf(request, acceptanceActor)).toContain(CUSTOMER_ACCEPTANCE_RECORD)
 
   const currencies = await request.get(`${apiBaseUrl}${CURRENCIES_PATH}?effectiveOn=${BUSINESS_DATE}`, {
     headers: readHeaders(preparerActor),
@@ -235,7 +224,7 @@ test('S04-CA-01 customer acceptance reopens and replays once, then Rev.1 require
     detail: {
       draft: { id: draftId, revision: 'Rev.0', approvalState: 'Approved' },
       customerAcceptance: {
-        acceptedRevision: 'Rev.0', acceptedBy: acceptanceActor, isCurrentRevisionAccepted: true,
+        acceptedRevision: 'Rev.0', acceptedBy: ACCEPTANCE_ACTOR_IDENTITY_ID, isCurrentRevisionAccepted: true,
       },
     },
   })
@@ -248,7 +237,7 @@ test('S04-CA-01 customer acceptance reopens and replays once, then Rev.1 require
     detail: {
       draft: { id: draftId, revision: 'Rev.0', version: acceptedVersion },
       customerAcceptance: {
-        acceptedRevision: 'Rev.0', acceptedBy: acceptanceActor, acceptedAtUtc, isCurrentRevisionAccepted: true,
+        acceptedRevision: 'Rev.0', acceptedBy: ACCEPTANCE_ACTOR_IDENTITY_ID, acceptedAtUtc, isCurrentRevisionAccepted: true,
       },
     },
   })
@@ -262,7 +251,7 @@ test('S04-CA-01 customer acceptance reopens and replays once, then Rev.1 require
   expect(reopened).toMatchObject({
     draft: { id: draftId, revision: 'Rev.0', version: acceptedVersion, approvalState: 'Approved' },
     customerAcceptance: {
-      acceptedRevision: 'Rev.0', acceptedBy: acceptanceActor, acceptedAtUtc, isCurrentRevisionAccepted: true,
+      acceptedRevision: 'Rev.0', acceptedBy: ACCEPTANCE_ACTOR_IDENTITY_ID, acceptedAtUtc, isCurrentRevisionAccepted: true,
     },
     lines: [{ lineId }],
   })
@@ -283,7 +272,7 @@ test('S04-CA-01 customer acceptance reopens and replays once, then Rev.1 require
   expect(revised.detail).toMatchObject({
     draft: { id: draftId, revision: 'Rev.1', approvalState: 'Preparing' },
     customerAcceptance: {
-      acceptedRevision: 'Rev.0', acceptedBy: acceptanceActor, acceptedAtUtc, isCurrentRevisionAccepted: false,
+      acceptedRevision: 'Rev.0', acceptedBy: ACCEPTANCE_ACTOR_IDENTITY_ID, acceptedAtUtc, isCurrentRevisionAccepted: false,
     },
     lines: [{ lineId, unitPrice: '13.00', priceUnitId: productUnitId, discountPercent: '5' }],
   })
@@ -295,7 +284,7 @@ test('S04-CA-01 customer acceptance reopens and replays once, then Rev.1 require
   expect(revisionOne).toMatchObject({
     draft: { id: draftId, revision: 'Rev.1', approvalState: 'Approved' },
     customerAcceptance: {
-      acceptedRevision: 'Rev.0', acceptedBy: acceptanceActor, acceptedAtUtc, isCurrentRevisionAccepted: false,
+      acceptedRevision: 'Rev.0', acceptedBy: ACCEPTANCE_ACTOR_IDENTITY_ID, acceptedAtUtc, isCurrentRevisionAccepted: false,
     },
     lines: [{ lineId, unitPrice: '13.00', priceUnitId: productUnitId, discountPercent: '5' }],
   })
