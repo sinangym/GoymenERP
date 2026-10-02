@@ -1,25 +1,28 @@
 /**
  * Sales s04 — AT-018 / AT-021 against the REAL stack (user decision 2026-09-30): a Product price list is created on the U-05
- * screen, saved, closed and reopened, published; then an order line picks the list price as its REFERENCE (and default),
+ * screen, saved, closed and reopened, published by a different authorised actor; then an order line picks the list price as its REFERENCE (and default),
  * gets a discount and a maturity surcharge (vade farkı), is saved, and reopening shows the reference, the adjustments and the
- * server's net. A net below the list floor is refused.
+ * server's net. A net below the list floor is saved as pending maker-checker approval and blocks submission until another
+ * narrowly authorised actor approves the immutable snapshot with a reason.
  *
  * Real Chromium, the exact-head web build, the real API and SQL Server. NOTHING IS MOCKED OR INTERCEPTED.
  *
- * WRITTEN, NOT RUN in the authoring slice. It needs the central delta (AT-018-central-delta.patch): the three price-list
- * names registered, `AddProductPriceLists` + its initializer + `MapProductPriceListEndpoints` in the host, the price-list shell
- * provider published, and the s04 override granting the disposable PREPARER role `product.price-lists.read`, `…write` and
- * `…publish` beside its existing `sales.orders.price.write` / `sales.orders.price.read` (a human grant decision for real users).
- * Until then this file fails at its first capability assertion — it never tests something else.
+ * SOURCE-ONLY, NOT RUN in this authoring slice. The central s04 binding must keep the existing actors distinct: PREPARER gets
+ * Product price-list read/write but not publish plus the narrow Sales floor-exception name only for the authorised-self refusal;
+ * READER has no floor-exception name; APPROVER gets Product price-list read/publish plus Sales price read and the same narrow
+ * floor-exception name. No actor, role or production grant is created here. Until that closed binding exists,
+ * this file fails at its first capability assertion — it never tests something else.
  *
  * The cases are one serial journey, in file order:
  *   S04-PL-01 the preparer creates two touching tiers for the seed's REAL product in the browser ([0,10) at 42000.50 and
- *             [10,20) at 43000, both floor 40000, from today), saves, closes and reopens them as a Draft, publishes it;
+ *             [10,20) at 43000, both floor 40000, from today), saves, closes and reopens them as a Draft; the different
+ *             existing approver publishes it;
  *             it reads "Geçerli"
  *   S04-PL-02 the preparer creates an order of exactly 10 for today through the real API, opens it, fetches the second tier and uses it
  *             (reference + default), gives 3 % discount and 1.5 % surcharge, saves; close/reopen shows the reference, "Liste
  *             fiyatı", [10,20), %3, %1.5 and the server's net 42335.65
- *   S04-PL-03 a 10 % discount (net 38700 < floor 40000) is refused 422 sales_price_below_floor and nothing changes
+ *   S04-PL-03 a 10 % discount (net 38700 < floor 40000) is saved pending; submit and self-approval are refused, the existing
+ *             different approver records a reason, fresh reopen shows it, and same-key/same-body replay has one effect
  */
 
 import { randomUUID } from 'node:crypto'
@@ -28,7 +31,7 @@ import { readEnvironment } from '../src/env.js'
 
 const env = readEnvironment()
 const { apiBaseUrl, testedCommit, seed } = env
-const { preparerActor, companyId, realPartyId, realCompanyAccountId, productId, productVersion, productUnitId, productCode } = seed
+const { preparerActor, approverActor, readerActor, companyId, realPartyId, realCompanyAccountId, productId, productVersion, productUnitId, productCode } = seed
 
 const RUN = testedCommit.slice(0, 12)
 const TODAY = new Date().toISOString().slice(0, 10)
@@ -56,9 +59,13 @@ async function capabilitiesOf(request: APIRequestContext, actor: string): Promis
 }
 
 test('S04-PL-01 a price list is created, saved, closed, reopened and published on U-05', async ({ page, request }) => {
-  expect(await capabilitiesOf(request, preparerActor)).toEqual(expect.arrayContaining([
+  const preparerCapabilities = await capabilitiesOf(request, preparerActor)
+  expect(preparerCapabilities).toEqual(expect.arrayContaining([
     'price-lists.list', 'price-lists.create', 'price-lists.detail', 'price-lists.edit',
-    'price-lists.publish',
+  ]))
+  expect(preparerCapabilities).not.toContain('price-lists.publish')
+  expect(await capabilitiesOf(request, approverActor)).toEqual(expect.arrayContaining([
+    'price-lists.list', 'price-lists.detail', 'price-lists.publish',
   ]))
 
   await page.setExtraHTTPHeaders({ 'X-Development-User': preparerActor })
@@ -93,7 +100,12 @@ test('S04-PL-01 a price list is created, saved, closed, reopened and published o
   await expect(page.getByTestId('price-list-version-1-status')).toHaveText('Taslak')
   await expect(page.getByTestId('price-list-line-price').first()).toHaveText('42.000,5')
   await expect(page.getByTestId('price-list-line-quantity-tier')).toHaveText(['0 ≤ miktar < 10', '10 ≤ miktar < 20'])
+  await expect(page.getByTestId('price-list-publish')).toHaveCount(0)
 
+  const detailUrl = page.url()
+  await page.setExtraHTTPHeaders({ 'X-Development-User': approverActor })
+  await page.goto(detailUrl)
+  await expect(page.getByTestId('price-list-version-1-status')).toHaveText('Taslak')
   await page.getByTestId('price-list-publish').click()
   await expect(page.getByTestId('price-list-version-1-status')).toHaveText('Geçerli')
   await page.reload()
@@ -161,24 +173,114 @@ test('S04-PL-02 the order line takes the list price as reference and default, ad
   })
 })
 
-test('S04-PL-03 a net below the list floor is refused and nothing changes', async ({ request }) => {
+test('S04-PL-03 below-floor pricing is saved pending and a different actor approves it once with a reason', async ({ page, request }) => {
   expect(journey.draftId, 'S04-PL-02 priced the order').toBeTruthy()
-  const detail = await request.get(`${apiBaseUrl}${DRAFTS_PATH}/${journey.draftId}`, { headers: readHeaders(preparerActor) })
-  const before = (await detail.json()) as { readonly draft: { readonly version: string } }
-  const refused = await request.post(`${apiBaseUrl}${DRAFTS_PATH}/${journey.draftId}/commercial-revision`, {
-    headers: commandHeaders(preparerActor, `SENTETIK-s04-pl-floor-${RUN}`),
-    data: {
-      expectedVersion: before.draft.version,
-      lines: [{
-        lineId: journey.lineId, unitPrice: '43000', priceUnitId: productUnitId, discountPercent: '10',
-        priceReference: { priceListId: journey.priceListId, versionNo: 1 }, discountAmount: null, surchargePercent: null, surchargeAmount: null,
-      }],
-    },
+  expect(journey.lineId, 'S04-PL-02 retained the line identity').toBeTruthy()
+  expect(await capabilitiesOf(request, preparerActor)).toContain('sales.orders.price-floor-exception.approve')
+  expect(await capabilitiesOf(request, readerActor)).not.toContain('sales.orders.price-floor-exception.approve')
+  expect(await capabilitiesOf(request, approverActor)).toEqual(expect.arrayContaining([
+    'sales.drafts.detail', 'sales.orders.price.read', 'sales.orders.price-floor-exception.approve',
+  ]))
+
+  await page.setExtraHTTPHeaders({ 'X-Development-User': preparerActor })
+  await page.goto(`/satis/siparisler/${journey.draftId}`)
+  const form = page.getByTestId('sales-price-revision-form')
+  await form.getByLabel('İskonto %').fill('10')
+  await form.getByLabel('Vade farkı', { exact: true }).fill('')
+  const savedAnswer = page.waitForResponse((response) => response.request().method() === 'POST'
+    && new URL(response.url()).pathname === `${DRAFTS_PATH}/${journey.draftId}/commercial-revision`)
+  await form.getByRole('button', { name: 'Fiyat ve iskontoyu kaydet' }).click()
+  expect((await savedAnswer).status()).toBe(200)
+  await expect(page.getByText('Fiyat revizyonu kaydedildi.')).toBeVisible()
+  await expect(page.getByText('Farklı yetkilinin gerekçeli onayı bekleniyor')).toBeVisible()
+
+  // Close and reopen: the server-owned pending snapshot, not local form state, is shown.
+  await page.goto('/satis/siparisler')
+  await page.goto(`/satis/siparisler/${journey.draftId}`)
+  await expect(page.getByText('Farklı yetkilinin gerekçeli onayı bekleniyor')).toBeVisible()
+  const pendingDetail = await request.get(`${apiBaseUrl}${DRAFTS_PATH}/${journey.draftId}`, { headers: readHeaders(preparerActor) })
+  expect(pendingDetail.status()).toBe(200)
+  const pendingDraft = (await pendingDetail.json()) as { readonly draft: { readonly version: string } }
+  const pendingPricingResponse = await request.get(`${apiBaseUrl}${DRAFTS_PATH}/${journey.draftId}/line-pricing`, {
+    headers: readHeaders(preparerActor),
   })
-  expect(refused.status()).toBe(422)
-  const problem = (await refused.json()) as { readonly errors: readonly { readonly field: string; readonly code: string }[] }
-  expect(problem.errors).toEqual([{ field: 'lines[0].unitPrice', code: 'sales_price_below_floor' }])
-  const after = (await (await request.get(`${apiBaseUrl}${DRAFTS_PATH}/${journey.draftId}`, { headers: readHeaders(preparerActor) })).json()) as
-    { readonly draft: { readonly version: string } }
-  expect(after.draft.version).toBe(before.draft.version)
+  expect(pendingPricingResponse.status()).toBe(200)
+  const pendingPricing = (await pendingPricingResponse.json()) as {
+    readonly lines: readonly { readonly lineId: string; readonly netUnitPrice: string; readonly floorException: {
+      readonly requestedBy: string; readonly approvedBy: string | null; readonly reason: string | null
+    } | null }[]
+  }
+  expect(pendingPricing.lines[0]).toMatchObject({
+    lineId: journey.lineId, netUnitPrice: '38700',
+    floorException: { requestedBy: preparerActor, approvedBy: null, reason: null },
+  })
+
+  // Pending floor approval blocks the ordinary submission.
+  const submissionAnswer = page.waitForResponse((response) => response.request().method() === 'POST'
+    && new URL(response.url()).pathname === `${DRAFTS_PATH}/${journey.draftId}/submission`)
+  await page.getByRole('button', { name: 'Onaya gönder' }).click()
+  const blockedSubmission = await submissionAnswer
+  expect(blockedSubmission.status()).toBe(422)
+  expect(((await blockedSubmission.json()) as { readonly errors: readonly { readonly code: string }[] }).errors)
+    .toEqual(expect.arrayContaining([expect.objectContaining({ code: 'sales_price_floor_exception_pending' })]))
+
+  const reason = `SENTETIK s04 taban fiyat onayı ${RUN}`
+  const approvalBody = {
+    expectedVersion: pendingDraft.draft.version,
+    lines: [{ lineId: journey.lineId, reason }],
+  }
+  const unauthorizedApproval = await request.post(`${apiBaseUrl}${DRAFTS_PATH}/${journey.draftId}/below-floor-exception-approval`, {
+    headers: commandHeaders(readerActor, `SENTETIK-s04-pl-floor-denied-${RUN}`), data: approvalBody,
+  })
+  expect(unauthorizedApproval.status()).toBe(403)
+  const afterUnauthorizedVersion = ((await (await request.get(`${apiBaseUrl}${DRAFTS_PATH}/${journey.draftId}`, {
+    headers: readHeaders(preparerActor),
+  })).json()) as { readonly draft: { readonly version: string } }).draft.version
+  expect(afterUnauthorizedVersion).toBe(pendingDraft.draft.version)
+
+  // Authorised at the transport fence, but still the immutable snapshot's requester: the domain refuses maker = checker.
+  const selfApproval = await request.post(`${apiBaseUrl}${DRAFTS_PATH}/${journey.draftId}/below-floor-exception-approval`, {
+    headers: commandHeaders(preparerActor, `SENTETIK-s04-pl-floor-self-${RUN}`), data: approvalBody,
+  })
+  expect(selfApproval.status()).toBe(422)
+  expect(((await selfApproval.json()) as { readonly errors: readonly { readonly code: string }[] }).errors)
+    .toEqual(expect.arrayContaining([expect.objectContaining({ code: 'sales_price_floor_exception_same_actor' })]))
+  const afterSelfVersion = ((await (await request.get(`${apiBaseUrl}${DRAFTS_PATH}/${journey.draftId}`, {
+    headers: readHeaders(preparerActor),
+  })).json()) as { readonly draft: { readonly version: string } }).draft.version
+  expect(afterSelfVersion).toBe(pendingDraft.draft.version)
+
+  // The existing different actor sees the real pending snapshot and supplies the required reason in the UI.
+  await page.setExtraHTTPHeaders({ 'X-Development-User': approverActor })
+  await page.goto(`/satis/siparisler/${journey.draftId}`)
+  await expect(page.getByRole('heading', { name: 'Taban fiyat istisna onayı' })).toBeVisible()
+  await page.getByLabel('1. satır onay gerekçesi').fill(reason)
+  const approvalAnswer = page.waitForResponse((response) => response.request().method() === 'POST'
+    && new URL(response.url()).pathname === `${DRAFTS_PATH}/${journey.draftId}/below-floor-exception-approval`)
+  await page.getByRole('button', { name: 'İstisnaları onayla' }).click()
+  const approved = await approvalAnswer
+  expect(approved.status()).toBe(200)
+  expect(approved.headers()['idempotency-replayed']).not.toBe('true')
+  await expect(page.getByText(`Onaylandı: ${reason}`)).toBeVisible()
+
+  const firstVersion = ((await (await request.get(`${apiBaseUrl}${DRAFTS_PATH}/${journey.draftId}`, {
+    headers: readHeaders(approverActor),
+  })).json()) as { readonly draft: { readonly version: string } }).draft.version
+  const browserRequest = approved.request()
+  const replayKey = browserRequest.headers()['idempotency-key']
+  expect(replayKey, 'the browser approval carries its stable idempotency key').toBeTruthy()
+  const replay = await request.post(`${apiBaseUrl}${DRAFTS_PATH}/${journey.draftId}/below-floor-exception-approval`, {
+    headers: commandHeaders(approverActor, replayKey), data: browserRequest.postDataJSON(),
+  })
+  expect(replay.status()).toBe(200)
+  expect(replay.headers()['idempotency-replayed']).toBe('true')
+  const replayVersion = ((await (await request.get(`${apiBaseUrl}${DRAFTS_PATH}/${journey.draftId}`, {
+    headers: readHeaders(approverActor),
+  })).json()) as { readonly draft: { readonly version: string } }).draft.version
+  expect(replayVersion).toBe(firstVersion)
+
+  await page.setExtraHTTPHeaders({ 'X-Development-User': preparerActor })
+  await page.goto('/satis/siparisler')
+  await page.goto(`/satis/siparisler/${journey.draftId}`)
+  await expect(page.getByText(`Onaylandı: ${reason}`)).toBeVisible()
 })
