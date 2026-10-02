@@ -11,6 +11,7 @@ namespace GoymenERP.Accounting.UnitTests;
 public sealed class ApprovedAccountingSourceCatalogLifecycleV1Tests
 {
     private static readonly Guid Company = Guid.Parse("10000000-0000-4000-8000-000000000001");
+    private static readonly Guid OtherCompany = Guid.Parse("10000000-0000-4000-8000-000000000099");
     private static readonly Guid Actor = Guid.Parse("10000000-0000-4000-8000-000000000002");
     private static readonly Guid Package = Guid.Parse("10000000-0000-4000-8000-000000000003");
     private static readonly DateTimeOffset Now = DateTimeOffset.Parse("2026-10-02T09:00:00Z");
@@ -40,7 +41,8 @@ public sealed class ApprovedAccountingSourceCatalogLifecycleV1Tests
     public async Task Permission_revoked_at_the_final_fence_refuses_activation_before_the_store_effect()
     {
         var store = new MemoryStore(await Preview());
-        var service = Service(store, new SequencedAuthority(Granted(), Granted(), PermissionScope.Denied));
+        var service = Service(store, new SequencedAuthority(
+            Granted(), Granted(), Granted(), Granted(), PermissionScope.Denied));
 
         var result = await service.ActivateAsync(Package,
             new ActivateApprovedAccountingSourceCatalogRequestV1(1, 0), "revoked-key");
@@ -66,20 +68,114 @@ public sealed class ApprovedAccountingSourceCatalogLifecycleV1Tests
         Assert.Null(store.Record);
     }
 
+    [Fact]
+    public async Task A_128_character_source_version_is_accepted_and_129_is_field_refused_before_write()
+    {
+        var acceptedStore = new MemoryStore();
+        var accepted = await Service(acceptedStore, new FixedAuthority(Granted()))
+            .PrepareAsync(Request(new string('A', 128)), "source-version-128");
+        var refusedStore = new MemoryStore();
+        var refused = await Service(refusedStore, new FixedAuthority(Granted()))
+            .PrepareAsync(Request(new string('A', 129)), "source-version-129");
+
+        Assert.Equal(AccountingApiStatus.Created, accepted.Status);
+        Assert.Equal(1, acceptedStore.Prepares);
+        Assert.Equal(AccountingApiStatus.Invalid, refused.Status);
+        Assert.Equal("accountPlanSourceVersion", refused.Field);
+        Assert.Equal(0, refusedStore.Prepares);
+    }
+
+    [Fact]
+    public async Task A_company_switch_during_command_log_read_refuses_without_writing_or_disclosing_a_result()
+    {
+        var context = new MutableCompanyContext(Company);
+        var store = new MemoryStore { AfterFind = () => context.Set(OtherCompany) };
+        var result = await Service(store, new FixedAuthority(Granted()), context, new MultiCompanyUser())
+            .PrepareAsync(Request(), "switched-company");
+
+        Assert.Equal(AccountingApiStatus.Denied, result.Status);
+        Assert.Null(result.Resource);
+        Assert.Equal(0, store.Prepares);
+    }
+
+    [Fact]
+    public async Task A_company_switch_during_catalog_read_refuses_the_reopened_resource()
+    {
+        var context = new MutableCompanyContext(Company);
+        var store = new MemoryStore(await Preview()) { AfterRead = () => context.Set(OtherCompany) };
+        var result = await Service(store, new FixedAuthority(Granted()), context, new MultiCompanyUser())
+            .ReadAsync(Package);
+
+        Assert.Equal(AccountingApiStatus.Denied, result.Status);
+        Assert.Null(result.Resource);
+    }
+
+    [Fact]
+    public async Task Permission_revoked_after_replay_lookup_does_not_disclose_the_stored_result()
+    {
+        var store = new MemoryStore();
+        var first = await Service(store, new FixedAuthority(Granted()))
+            .PrepareAsync(Request(), "replay-fence");
+        var replay = await Service(store,
+                new SequencedAuthority(Granted(), PermissionScope.Denied))
+            .PrepareAsync(Request(), "replay-fence");
+
+        Assert.Equal(AccountingApiStatus.Created, first.Status);
+        Assert.Equal(AccountingApiStatus.Denied, replay.Status);
+        Assert.Null(replay.Resource);
+        Assert.False(replay.IsReplay);
+        Assert.Equal(1, store.Prepares);
+    }
+
+    [Fact]
+    public async Task A_context_switch_after_refusal_log_write_does_not_disclose_the_refusal()
+    {
+        var context = new MutableCompanyContext(Company);
+        var store = new MemoryStore { AfterRecord = () => context.Set(OtherCompany) };
+        var request = Request() with { ExpectedAccountsSourceSha256 = new string('A', 64) };
+
+        var result = await Service(store, new FixedAuthority(Granted()), context, new MultiCompanyUser())
+            .PrepareAsync(request, "refusal-log-fence");
+
+        Assert.Equal(AccountingApiStatus.Denied, result.Status);
+        Assert.Null(result.Resource);
+        Assert.Equal(0, store.Prepares);
+    }
+
+    [Fact]
+    public async Task A_context_switch_during_concurrent_winner_read_does_not_disclose_the_winner()
+    {
+        var context = new MutableCompanyContext(Company);
+        var store = new MemoryStore { ThrowConcurrentWinner = true };
+        store.AfterFindCall = call =>
+        {
+            if (call == 2) context.Set(OtherCompany);
+        };
+
+        var result = await Service(store, new FixedAuthority(Granted()), context, new MultiCompanyUser())
+            .PrepareAsync(Request(), "winner-fence");
+
+        Assert.Equal(AccountingApiStatus.Denied, result.Status);
+        Assert.Null(result.Resource);
+    }
+
     private static ApprovedAccountingSourceCatalogServiceV1 Service(
         MemoryStore store,
-        IErpAuthorityRevalidationService authority) =>
+        IErpAuthorityRevalidationService authority,
+        ICompanyContext? companyContext = null,
+        ICurrentUser? currentUser = null) =>
         new(
             new ApprovedAccountingSourcePackageParserV1(),
             store,
             store,
             authority,
-            new FixedCompanyContext(),
-            new FixedUser(),
+            companyContext ?? new FixedCompanyContext(),
+            currentUser ?? new FixedUser(),
             new FixedCorrelation(),
             new FixedTimeProvider(Now));
 
-    private static PrepareApprovedAccountingSourceCatalogRequestV1 Request()
+    private static PrepareApprovedAccountingSourceCatalogRequestV1 Request(
+        string accountPlanSourceVersion = "mikro-synthetic-v1")
     {
         var accounts = Encoding.UTF8.GetBytes(
             ApprovedAccountingSourcePackageTemplateV1.AccountsHeader + "\n"
@@ -93,7 +189,7 @@ public sealed class ApprovedAccountingSourceCatalogLifecycleV1Tests
             + "40000000-0000-4000-8000-000000000001,receipt,rule-v1,credit,Credit,20000000-0000-4000-8000-000000000002\n");
         return new PrepareApprovedAccountingSourceCatalogRequestV1(
             Package,
-            "mikro-synthetic-v1",
+            accountPlanSourceVersion,
             accounts,
             mappings,
             Convert.ToHexString(SHA256.HashData(accounts)),
@@ -155,10 +251,20 @@ public sealed class ApprovedAccountingSourceCatalogLifecycleV1Tests
         public ApprovedAccountingSourceCatalogRecordV1? Record { get; private set; }
         public int Prepares { get; private set; }
         public int Activations { get; private set; }
+        public Action? AfterFind { get; init; }
+        public Action<int>? AfterFindCall { get; set; }
+        public Action? AfterRead { get; init; }
+        public Action? AfterRecord { get; init; }
+        public bool ThrowConcurrentWinner { get; init; }
+        private int findCalls;
 
         public Task<ApprovedAccountingSourceCatalogRecordV1?> ReadAsync(
             Guid packageId,
-            CancellationToken cancellationToken = default) => Task.FromResult(Record);
+            CancellationToken cancellationToken = default)
+        {
+            AfterRead?.Invoke();
+            return Task.FromResult(Record);
+        }
 
         public async Task<(ApprovedAccountingSourceCatalogRecordV1 Record, AccountingWriteOutcome Outcome)> PrepareAsync(
             Guid packageId,
@@ -173,6 +279,10 @@ public sealed class ApprovedAccountingSourceCatalogLifecycleV1Tests
             Prepares++;
             Record = CatalogRecord(preview, ApprovedAccountingSourceCatalogStatusV1.Prepared, 1, null, null, null);
             Complete(metadata, Record);
+            if (ThrowConcurrentWinner)
+            {
+                throw new AccountingStoreException(AccountingStoreCodes.ConcurrentChange, "Synthetic winner.");
+            }
             return (Record, AccountingWriteOutcome.Recorded);
         }
 
@@ -186,6 +296,8 @@ public sealed class ApprovedAccountingSourceCatalogLifecycleV1Tests
             AccountingCommandMetadata metadata,
             CancellationToken cancellationToken = default)
         {
+            await freshAuthorityFence(cancellationToken);
+            await Task.Yield();
             await freshAuthorityFence(cancellationToken);
             Activations++;
             Record = (Record ?? throw new InvalidOperationException()) with
@@ -214,15 +326,21 @@ public sealed class ApprovedAccountingSourceCatalogLifecycleV1Tests
         public Task<AccountingCommandRecord?> FindCommandAsync(
             string commandName,
             string idempotencyKeyHash,
-            CancellationToken cancellationToken = default) =>
-            Task.FromResult(commands.SingleOrDefault(command => command.CommandName == commandName
+            CancellationToken cancellationToken = default)
+        {
+            findCalls++;
+            AfterFind?.Invoke();
+            AfterFindCall?.Invoke(findCalls);
+            return Task.FromResult(commands.SingleOrDefault(command => command.CommandName == commandName
                 && command.IdempotencyKeyHash == idempotencyKeyHash));
+        }
 
         public Task RecordCommandAsync(
             AccountingCommandRecord record,
             CancellationToken cancellationToken = default)
         {
             commands.Add(record);
+            AfterRecord?.Invoke();
             return Task.CompletedTask;
         }
 
@@ -265,12 +383,27 @@ public sealed class ApprovedAccountingSourceCatalogLifecycleV1Tests
         public void Set(Guid companyId) => throw new NotSupportedException();
     }
 
+    private sealed class MutableCompanyContext(Guid companyId) : ICompanyContext
+    {
+        public bool IsResolved => CompanyId != Guid.Empty;
+        public Guid CompanyId { get; private set; } = companyId;
+        public void Set(Guid nextCompanyId) => CompanyId = nextCompanyId;
+    }
+
     private sealed class FixedUser : ICurrentUser
     {
         public bool IsAuthenticated => true;
         public string UserId => Actor.ToString("D");
         public IReadOnlySet<Guid> AllowedCompanyIds { get; } = new HashSet<Guid>([Company]);
         public bool CanAccessCompany(Guid companyId) => companyId == Company;
+    }
+
+    private sealed class MultiCompanyUser : ICurrentUser
+    {
+        public bool IsAuthenticated => true;
+        public string UserId => Actor.ToString("D");
+        public IReadOnlySet<Guid> AllowedCompanyIds { get; } = new HashSet<Guid>([Company, OtherCompany]);
+        public bool CanAccessCompany(Guid companyId) => AllowedCompanyIds.Contains(companyId);
     }
 
     private sealed class FixedCorrelation : ICorrelationContext

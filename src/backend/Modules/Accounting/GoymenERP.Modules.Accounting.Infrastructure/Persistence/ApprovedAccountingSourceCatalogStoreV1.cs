@@ -185,6 +185,7 @@ public sealed class ApprovedAccountingSourceCatalogStoreV1(
                 }, Json));
             Complete(metadata, record);
             await SaveAsync(cancellationToken);
+            await freshAuthorityFence(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
             return record;
         }

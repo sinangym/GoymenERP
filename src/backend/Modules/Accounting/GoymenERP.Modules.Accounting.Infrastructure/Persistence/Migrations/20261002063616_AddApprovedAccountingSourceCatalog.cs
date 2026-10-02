@@ -40,7 +40,7 @@ namespace GoymenERP.Modules.Accounting.Infrastructure.Persistence.Migrations
                     table.UniqueConstraint("AK_ApprovedSourceCatalogs_CompanyId_Id", x => new { x.CompanyId, x.Id });
                     table.CheckConstraint("CK_ApprovedSourceCatalogs_Hashes", "LEN([AccountsSourceSha256]) = 64 AND LEN([PostingMappingsSourceSha256]) = 64");
                     table.CheckConstraint("CK_ApprovedSourceCatalogs_Identity", "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [PreparedByUserId] <> '00000000-0000-0000-0000-000000000000'");
-                    table.CheckConstraint("CK_ApprovedSourceCatalogs_Status", "([Status] = 1 AND [CatalogVersion] IS NULL AND [ActivatedByUserId] IS NULL AND [ActivatedAtUtc] IS NULL) OR ([Status] IN (2, 3) AND [CatalogVersion] >= 1 AND [ActivatedByUserId] IS NOT NULL AND [ActivatedByUserId] <> '00000000-0000-0000-0000-000000000000' AND [ActivatedAtUtc] IS NOT NULL)");
+                    table.CheckConstraint("CK_ApprovedSourceCatalogs_Status", "([Status] = 1 AND [CatalogVersion] IS NULL AND [ActivatedByUserId] IS NULL AND [ActivatedAtUtc] IS NULL) OR ([Status] IN (2, 3) AND [CatalogVersion] IS NOT NULL AND [CatalogVersion] >= 1 AND [ActivatedByUserId] IS NOT NULL AND [ActivatedByUserId] <> '00000000-0000-0000-0000-000000000000' AND [ActivatedAtUtc] IS NOT NULL)");
                     table.CheckConstraint("CK_ApprovedSourceCatalogs_Text", "LEN([TemplateVersion]) > 0 AND LEN([AccountPlanSourceVersion]) > 0 AND ISJSON([PackageJson]) = 1");
                     table.CheckConstraint("CK_ApprovedSourceCatalogs_Version", "[Version] >= 1");
                     table.ForeignKey(

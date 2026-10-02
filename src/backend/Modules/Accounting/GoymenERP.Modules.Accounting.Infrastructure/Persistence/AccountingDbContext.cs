@@ -439,7 +439,7 @@ public sealed class AccountingDbContext(DbContextOptions<AccountingDbContext> op
                 + "AND [PreparedByUserId] <> '00000000-0000-0000-0000-000000000000'");
             table.HasCheckConstraint("CK_ApprovedSourceCatalogs_Status",
                 "([Status] = 1 AND [CatalogVersion] IS NULL AND [ActivatedByUserId] IS NULL AND [ActivatedAtUtc] IS NULL) OR "
-                + "([Status] IN (2, 3) AND [CatalogVersion] >= 1 AND [ActivatedByUserId] IS NOT NULL "
+                + "([Status] IN (2, 3) AND [CatalogVersion] IS NOT NULL AND [CatalogVersion] >= 1 AND [ActivatedByUserId] IS NOT NULL "
                 + "AND [ActivatedByUserId] <> '00000000-0000-0000-0000-000000000000' AND [ActivatedAtUtc] IS NOT NULL)");
             table.HasCheckConstraint("CK_ApprovedSourceCatalogs_Version", "[Version] >= 1");
             table.HasCheckConstraint("CK_ApprovedSourceCatalogs_Hashes",
