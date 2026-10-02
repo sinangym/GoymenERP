@@ -212,9 +212,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
             // platform
             // AT-002: +2 GlobalSearchSqlServerRelationalAcceptanceTests facts (5bc60202… -> a5df5046…).
-            // ERP-000G / AT-065: +7 DocumentVaultSqlServerRelationalAcceptanceTests facts (4ed7462b… -> f26c3895…).
+            // ERP-000G / AT-065: +8 DocumentVaultSqlServerRelationalAcceptanceTests facts (4ed7462b… -> e57500e0…).
             ["tools/relational_inventory/platform.txt"] =
-                "f26c3895929ee61f425d9f08d1cc78ef18edd774f49971935e5ec3d4ffeb9304",
+                "e57500e0de619eb42b1694318c08e907a8bc363d04d23038ef55841e01506b10",
 
             // product
             // DEC-CAR-003: +4 ProductDeactivationSqlServerRelationalAcceptanceTests facts (d7dbec7f… -> ddeead62…).

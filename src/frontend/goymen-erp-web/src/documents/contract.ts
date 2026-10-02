@@ -19,6 +19,7 @@ export const CREATED_STATUS = 201
 /** The owner-declared link kinds the client knows. Only the Cari party today. */
 export const OWNER_KIND = {
   counterpartyParty: 'counterparty.party',
+  inventoryMaterialLabel: 'inventory.material-label',
 } as const
 export type OwnerKind = (typeof OWNER_KIND)[keyof typeof OWNER_KIND]
 

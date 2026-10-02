@@ -8,6 +8,9 @@ public static class DocumentOwnerLinkKindsV1
 {
     /// <summary>A Cari party with an account in the context company (Counterparty owner).</summary>
     public const string CounterpartyParty = "counterparty.party";
+
+    /// <summary>An Inventory material label in the context company (Inventory owner).</summary>
+    public const string InventoryMaterialLabel = "inventory.material-label";
 }
 
 /// <summary>
@@ -29,4 +32,6 @@ public enum DocumentOwnerAccessV1
     Readable = 1,
     NotFound = 2,
     Denied = 3,
+    Conflict = 4,
+    Unavailable = 5,
 }

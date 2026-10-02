@@ -40,17 +40,32 @@ internal sealed class GrantedAuthority : IErpAuthorityRevalidationService
 }
 
 /// <summary>The Cari owner as a set of (company, party) pairs the actor may read.</summary>
-internal sealed class FixedOwnerPort(ICompanyContext companyContext, HashSet<(Guid Company, Guid Party)> readable) : IDocumentOwnerLinkPortV1
+internal sealed class FixedOwnerPort(
+    ICompanyContext companyContext,
+    HashSet<(Guid Company, Guid Party)> readable,
+    Dictionary<(Guid Company, Guid Party), DocumentOwnerAccessV1> outcomes) : IDocumentOwnerLinkPortV1
 {
     public HashSet<(Guid Company, Guid Party)> Readable => readable;
 
     public int Calls { get; private set; }
+
+    public Exception? Error { get; set; }
 
     public string Kind => DocumentOwnerLinkKindsV1.CounterpartyParty;
 
     public Task<DocumentOwnerAccessV1> CheckReadableAsync(Guid ownerId, CancellationToken cancellationToken = default)
     {
         Calls++;
+        if (Error is not null)
+        {
+            throw Error;
+        }
+
+        if (companyContext.IsResolved && outcomes.TryGetValue((companyContext.CompanyId, ownerId), out var outcome))
+        {
+            return Task.FromResult(outcome);
+        }
+
         return Task.FromResult(companyContext.IsResolved && Readable.Contains((companyContext.CompanyId, ownerId))
             ? DocumentOwnerAccessV1.Readable
             : DocumentOwnerAccessV1.NotFound);
@@ -64,6 +79,8 @@ internal sealed class MemoryObjectStore : IDocumentObjectStoreV1
     public int Puts { get; private set; }
 
     public bool Fail { get; set; }
+
+    public Action? BeforeRead { get; set; }
 
     public Task PutAsync(string key, ReadOnlyMemory<byte> content, string sha256, CancellationToken cancellationToken = default)
     {
@@ -87,6 +104,7 @@ internal sealed class MemoryObjectStore : IDocumentObjectStoreV1
 
     public Task<byte[]?> ReadAsync(string key, CancellationToken cancellationToken = default)
     {
+        BeforeRead?.Invoke();
         if (Fail)
         {
             throw new DocumentObjectStoreUnavailableException("SENTETIK");
@@ -127,6 +145,8 @@ internal sealed class MemoryDocumentStore(ICompanyContext companyContext, Harnes
 
     public Action? BeforeFindByContent { get; set; }
 
+    public Action? BeforeList { get; set; }
+
     public Task<DocumentStoreResult?> FindReplayAsync(DocumentWriteEnvelope envelope, string requestHash, string commandName,
         CancellationToken cancellationToken = default)
     {
@@ -166,9 +186,13 @@ internal sealed class MemoryDocumentStore(ICompanyContext companyContext, Harnes
     public Task<StoredDocument?> FindDocumentAsync(Guid documentId, CancellationToken cancellationToken = default) =>
         Task.FromResult(Visible().SingleOrDefault(document => document.Id == documentId));
 
-    public Task<IReadOnlyList<StoredDocument>> ListByOwnerAsync(string ownerKind, Guid ownerId, int limit, CancellationToken cancellationToken = default) =>
-        Task.FromResult<IReadOnlyList<StoredDocument>>([.. Visible().Where(document => document.OwnerKind == ownerKind && document.OwnerId == ownerId)
-            .OrderByDescending(document => document.UploadedAtUtc).Take(limit)]);
+    public Task<IReadOnlyList<StoredDocument>> ListByOwnerAsync(string ownerKind, Guid ownerId, int limit, CancellationToken cancellationToken = default)
+    {
+        BeforeList?.Invoke();
+        return Task.FromResult<IReadOnlyList<StoredDocument>>(
+            [.. Visible().Where(document => document.OwnerKind == ownerKind && document.OwnerId == ownerId)
+                .OrderByDescending(document => document.UploadedAtUtc).Take(limit)]);
+    }
 
     public Task<IReadOnlyList<StoredDocument>> FindByContentAsync(string sha256, Guid excludingDocumentId, int limit,
         CancellationToken cancellationToken = default)
@@ -198,7 +222,7 @@ internal sealed class Harness
         Correlation = new CorrelationContext();
         Correlation.Set($"SENTETIK-{Guid.NewGuid():N}", null, SourceChannels.Web, "127.0.0.1", "SENTETIK-agent");
         User = new FixedUser(actor, CompanyA, CompanyB);
-        Owner = new FixedOwnerPort(Company, World.Readable);
+        Owner = new FixedOwnerPort(Company, World.Readable, World.OwnerOutcomes);
 
         Store = new MemoryDocumentStore(Company, World);
         Objects = World.Objects;
@@ -248,6 +272,8 @@ internal sealed class Harness
         public MemoryObjectStore Objects { get; } = new();
 
         public HashSet<(Guid Company, Guid Party)> Readable { get; } = [];
+
+        public Dictionary<(Guid Company, Guid Party), DocumentOwnerAccessV1> OwnerOutcomes { get; } = [];
 
         public List<StoredDocument> Documents { get; } = [];
 

@@ -438,6 +438,9 @@ class WorkflowTests(unittest.TestCase):
                 "product.operational-selection.read",
                 "inventory.labels.read",
                 "inventory.balances.read",
+                # AT-065: disposable recorder only; denied actor remains without either Documents permission.
+                "documents.files.read",
+                "documents.files.upload",
                 "organization.locations.read",
                 # R19: held only by the disposable r14-transformer.
                 "inventory.label-transformation.record",

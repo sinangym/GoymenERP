@@ -19,6 +19,7 @@ public static class DocumentsRuntimeExtensions
     {
         ArgumentNullException.ThrowIfNull(environment);
         services.AddScoped<IDocumentOwnerLinkPortV1, CounterpartyDocumentOwnerLinkPort>();
+        services.AddScoped<IDocumentOwnerLinkPortV1, InventoryDocumentOwnerLinkPort>();
         return services.AddDocumentsModule(
             configuration,
             (provider, options) => options.AddInterceptors(provider.GetRequiredService<AuditSaveChangesInterceptor>()),
