@@ -240,17 +240,29 @@ public sealed class ProductPriceListSqlServerRelationalAcceptanceTests
 
         await using (var changedPayload = run.Request())
         {
-            var conflict = await Assert.ThrowsAsync<ProductPriceListException>(() => changedPayload.Service.CreateAsync(
+            var payloadConflict = await Assert.ThrowsAsync<ProductPriceListException>(() => changedPayload.Service.CreateAsync(
                 earlySame with { Name = "SENTETIK early changed" }, Metadata("early-race")));
-            Assert.Equal((409, ProductPriceListCodesV1.IdempotencyConflict), (conflict.Status, conflict.Code));
+            Assert.Equal((409, ProductPriceListCodesV1.IdempotencyConflict), (payloadConflict.Status, payloadConflict.Code));
         }
 
         await using (var changedActor = run.Request(actor: Guid.NewGuid()))
         {
-            var conflict = await Assert.ThrowsAsync<ProductPriceListException>(() =>
+            var actorConflict = await Assert.ThrowsAsync<ProductPriceListException>(() =>
                 changedActor.Service.CreateAsync(earlySame, Metadata("early-race")));
-            Assert.Equal((409, ProductPriceListCodesV1.IdempotencyConflict), (conflict.Status, conflict.Code));
+            Assert.Equal((409, ProductPriceListCodesV1.IdempotencyConflict), (actorConflict.Status, actorConflict.Code));
         }
+
+        var revokedDuplicateId = Guid.NewGuid();
+        await using (var revokedDuplicate = run.Request(authority: new SequenceAuthority(grantedCalls: 2)))
+        {
+            var forbidden = await Assert.ThrowsAsync<ProductPriceListException>(() => revokedDuplicate.Service.CreateAsync(
+                earlySame with { PriceListId = revokedDuplicateId, VersionId = Guid.NewGuid() }, Metadata("early-revoked-duplicate")));
+            Assert.Equal(403, forbidden.Status);
+        }
+
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM product.PriceLists WHERE Id = @id", revokedDuplicateId));
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM product.PriceListAttempts WHERE PriceListId = @id", revokedDuplicateId));
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityId = @id", revokedDuplicateId.ToString("D")));
 
         await using (var otherNameHolder = run.Request())
         {
