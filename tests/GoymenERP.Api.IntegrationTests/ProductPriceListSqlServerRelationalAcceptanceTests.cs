@@ -6,6 +6,7 @@ using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Audit.Infrastructure.Persistence;
 using GoymenERP.Modules.Identity.Infrastructure.Services;
 using GoymenERP.Modules.Product.Application.Contracts;
+using GoymenERP.Modules.Product.Domain.PriceLists;
 using GoymenERP.Modules.Product.Infrastructure.Fixtures;
 using GoymenERP.Modules.Product.Infrastructure.PriceLists;
 using GoymenERP.Modules.Settings.Application;

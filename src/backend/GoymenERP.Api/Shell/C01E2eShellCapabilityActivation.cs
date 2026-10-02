@@ -84,6 +84,7 @@ internal static class C01E2eShellCapabilityActivation
         typeof(AccountingShellCapabilityProvider),
         typeof(InventoryShellCapabilityProvider),
         typeof(IdentityShellCapabilityProvider),
+        typeof(ProductPriceListShellCapabilityProvider),
     ];
 
     // The accepted normal-host authority for each set of optional module providers present (in the
@@ -160,6 +161,17 @@ internal static class C01E2eShellCapabilityActivation
                 typeof(InventoryShellCapabilityProvider), typeof(IdentityShellCapabilityProvider),
             },
                 ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV15PublishedFinanceV15PublishedManufacturingV15PublishedLogisticsV12PublishedPurchasingV14PublishedAccountingV13PublishedInventoryV15AndPublishedIdentityV10),
+        // AT-018 / AT-021: company-scoped Product price lists and Sales floor-approval join only the full normal host.
+        (new[]
+            {
+                typeof(OrganizationShellCapabilityProvider), typeof(ProductShellCapabilityProvider),
+                typeof(SalesShellCapabilityProvider), typeof(FinanceShellCapabilityProvider),
+                typeof(ManufacturingShellCapabilityProvider), typeof(LogisticsShellCapabilityProvider),
+                typeof(PurchasingShellCapabilityProvider), typeof(AccountingShellCapabilityProvider),
+                typeof(InventoryShellCapabilityProvider), typeof(IdentityShellCapabilityProvider),
+                typeof(ProductPriceListShellCapabilityProvider),
+            },
+                ShellCapabilityRegistryAuthorities.FullNormalHostWithProductPriceListsAndSalesFloorApproval),
     ];
 
     private static string NormalAuthority(IServiceCollection services)

@@ -125,12 +125,19 @@ services:
       # Q9 acceptance only: the existing disposable preparer records customer acceptance after internal approval.
       # Registration/grant is limited to this run database; no production role or user is widened.
       IdentitySeed__Roles__5__Permissions__11: sales.orders.customer-acceptance.record
+      IdentitySeed__Roles__5__Permissions__12: product.price-lists.read
+      IdentitySeed__Roles__5__Permissions__13: product.price-lists.write
+      IdentitySeed__Roles__5__Permissions__14: sales.orders.price-floor-exception.approve
       IdentitySeed__Roles__6__Id: b3000000-0000-4000-8000-000000000402
       IdentitySeed__Roles__6__Code: BROWSER_S04_APPROVER
       IdentitySeed__Roles__6__Name: SENTETIK browser-suite:s04 sipariş onaylayan rolü
       IdentitySeed__Roles__6__IsSystem: "false"
       IdentitySeed__Roles__6__Permissions__0: sales.orders.approve
       IdentitySeed__Roles__6__Permissions__1: sales.drafts.read
+      IdentitySeed__Roles__6__Permissions__2: product.price-lists.read
+      IdentitySeed__Roles__6__Permissions__3: product.price-lists.publish
+      IdentitySeed__Roles__6__Permissions__4: sales.orders.price.read
+      IdentitySeed__Roles__6__Permissions__5: sales.orders.price-floor-exception.approve
       IdentitySeed__Roles__7__Id: b3000000-0000-4000-8000-000000000403
       IdentitySeed__Roles__7__Code: BROWSER_S04_READER
       IdentitySeed__Roles__7__Name: SENTETIK browser-suite:s04 sipariş okuyan rolü

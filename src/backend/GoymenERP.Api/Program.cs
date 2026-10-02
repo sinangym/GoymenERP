@@ -44,7 +44,9 @@ using GoymenERP.Modules.Manufacturing.Infrastructure.Shell;
 using GoymenERP.Modules.Organization.Infrastructure;
 using GoymenERP.Modules.Identity.Infrastructure;
 using GoymenERP.Modules.Product.Application.Contracts;
+using GoymenERP.Modules.Product.Infrastructure.PriceLists;
 using GoymenERP.Modules.Product.Infrastructure.Persistence;
+using GoymenERP.Modules.Product.Infrastructure.Shell;
 using GoymenERP.Modules.Sales.Application;
 using GoymenERP.Modules.Sales.Application.Contracts;
 using GoymenERP.Modules.Sales.Infrastructure;
@@ -197,6 +199,11 @@ builder.Services.AddIdentityModule(
     enableAuthorizationSnapshotDatabaseReadiness:
         databaseStartupMode == DatabaseStartupMode.Initialize);
 builder.Services.AddProductRuntime(builder.Configuration, builder.Environment);
+// AT-018: company-scoped price-list persistence, its two Sales reference readers and owner service.
+builder.Services.AddProductPriceLists(
+    builder.Configuration,
+    (services, options) => options.AddInterceptors(
+        services.GetRequiredService<AuditSaveChangesInterceptor>()));
 builder.Services.AddProductPurchaseSelection(p => p.GetRequiredService<ProductRuntimeOptions>().IsEnabled);
 builder.Services.AddCounterpartyModule(
     builder.Configuration,
@@ -287,6 +294,8 @@ builder.Services.AddSingleton<IShellCapabilityProvider, AccountingShellCapabilit
 // SY-01/SY-02: Identity's read-only users-and-permissions view (identity.assignments.read), before the authority
 // is chosen. No control: assigning and revoking stay blocked (NEEDS-SINAN #66 5738113623, OPEN-013).
 builder.Services.AddSingleton<IShellCapabilityProvider, IdentityShellCapabilityProvider>();
+// AT-018: Product's company-scoped U-05 price-list screens and edit/publish controls.
+builder.Services.AddSingleton<IShellCapabilityProvider, ProductPriceListShellCapabilityProvider>();
 var shellCapabilityAuthority = C01E2eShellCapabilityActivation.Configure(
     builder.Services,
     builder.Environment,
@@ -339,6 +348,7 @@ app.MapIdentityEndpoints();
 app.MapAuditEndpoints();
 app.MapCounterpartyEndpoints();
 app.MapProductEndpoints();
+app.MapProductPriceListEndpoints();
 app.MapFinanceEndpoints();
 app.MapSalesEndpoints();
 app.MapSalesProductCandidateEndpoints();
@@ -364,6 +374,8 @@ if (!isOpenApiDocumentGeneration
     // After Organization: Inventory's composite foreign keys reference its tables.
     await app.Services.InitializeInventoryModuleAsync();
     await app.Services.InitializeProductRuntimeAsync();
+    // After Organization and Product: price-list rows reference both owner tables.
+    await app.Services.InitializeProductPriceListsAsync();
     // After Organization: Finance's foreign keys reference its tables.
     await app.Services.InitializeFinancePersistenceAsync();
     // After Organization: Sales's foreign keys reference its tables.

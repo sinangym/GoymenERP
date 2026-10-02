@@ -1183,10 +1183,11 @@ public sealed class SalesDraftApprovalSqlServerRelationalAcceptanceTests
         await using (var b = run.Store(CompanyA))
         {
             var reopened = (await b.Store.FindDraftAsync(draft.Id))!;
-            Assert.Equal(fields, reopened.Lines[0].Commercial);
-            Assert.Equal(("10", "20"), (reopened.Lines[0].Commercial.Reference!.LowerQuantity,
-                reopened.Lines[0].Commercial.Reference.UpperQuantity));
-            Assert.Equal(("Reference", "12.18"), (reopened.Lines[0].Commercial.PriceSource, SalesLinePriceCalculator.NetUnitPriceText(reopened.Lines[0].Commercial)));
+            var commercial = Assert.IsType<CommercialDraftFields>(reopened.Lines[0].Commercial);
+            Assert.Equal(fields, commercial);
+            Assert.Equal(("10", "20"), (commercial.Reference!.LowerQuantity,
+                commercial.Reference.UpperQuantity));
+            Assert.Equal(("Reference", "12.18"), (commercial.PriceSource, SalesLinePriceCalculator.NetUnitPriceText(commercial)));
         }
 
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[DraftLines] WHERE [DraftId] = @id AND ISJSON([PricingJson]) = 1",

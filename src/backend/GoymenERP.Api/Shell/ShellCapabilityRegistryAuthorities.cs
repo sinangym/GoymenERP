@@ -243,6 +243,11 @@ internal static class ShellCapabilityRegistryAuthorities
     internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV15PublishedFinanceV15PublishedManufacturingV15PublishedLogisticsV12PublishedPurchasingV14PublishedAccountingV13PublishedInventoryV15AndPublishedIdentityV10 =
         "sha256:iK6Rbn17JqSIB_k0DRnx_tpsUXGoiSy5IY-chy0UPYg";
 
+    // AT-018 / AT-021: final normal host adds PRODUCT-PRICE-LISTS 1.0 and Sales 1.6. Replaced with the
+    // independently derived exact value before the candidate is pushed or tested.
+    internal const string FullNormalHostWithProductPriceListsAndSalesFloorApproval =
+        "sha256:KOsxkROCgLgVtgWRZuHF9blfBSJweOpEwpp9kc4Of4s";
+
     internal const string CounterpartyV15PublishedListCreateAndDetail =
         "sha256:UBHnivzhe_dp5f7vU7dP5n7HG-P8XYBGhxvD_OjMSnw";
 

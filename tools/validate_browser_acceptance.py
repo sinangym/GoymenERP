@@ -292,6 +292,8 @@ SUITE_IDENTITY_PERMISSIONS = {
     "s04": ("sales.drafts.create", "sales.drafts.read", "sales.orders.approve",
             "counterparty.parties.read", "counterparty.parties.update.basic",
             "product.operational-selection.read", "sales.orders.price.read", "sales.orders.price.write",
+            "product.price-lists.read", "product.price-lists.write", "product.price-lists.publish",
+            "sales.orders.price-floor-exception.approve",
             "inventory.opening-stock.record", "inventory.labels.read", "inventory.balances.read",
             "inventory.physical-allocation.write", "sales.orders.delivery-schedule.write",
             "sales.orders.cancel", "sales.orders.quantity.write",

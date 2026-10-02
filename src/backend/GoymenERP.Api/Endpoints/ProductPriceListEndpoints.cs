@@ -52,7 +52,7 @@ public static class ProductPriceListEndpoints
             .RequireAuthorization(ProductPriceListPermissionsV1.Read)
             .Produces<PriceListPageV1>(StatusCodes.Status200OK)
             .ProducesErpBadRequest(ProductPriceListCodesV1.InvalidCursor, ProductPriceListCodesV1.ValidationFailed)
-            .ProducesErpServiceUnavailable(ProductPriceListCodesV1.PermissionUnregistered)
+            .ProducesErpServiceUnavailable(ProductPriceListCodesV1.PermissionUnregistered, ProductPriceListCodesV1.Unavailable)
             .ProducesErpAuthenticatedProblems();
 
         endpoints.MapGet(ProductPriceListApiV1.ProductOptionsPath, async (
@@ -79,7 +79,7 @@ public static class ProductPriceListEndpoints
             .RequireAuthorization(ProductPriceListPermissionsV1.Write)
             .Produces<PriceListProductOptionsV1>(StatusCodes.Status200OK)
             .ProducesErpBadRequest(ProductPriceListCodesV1.ValidationFailed)
-            .ProducesErpServiceUnavailable(ProductPriceListCodesV1.PermissionUnregistered)
+            .ProducesErpServiceUnavailable(ProductPriceListCodesV1.PermissionUnregistered, ProductPriceListCodesV1.Unavailable)
             .ProducesErpAuthenticatedProblems();
 
         endpoints.MapGet(ProductPriceListApiV1.DetailPath, async (
@@ -106,7 +106,7 @@ public static class ProductPriceListEndpoints
             .RequireAuthorization(ProductPriceListPermissionsV1.Read)
             .Produces<PriceListViewV1>(StatusCodes.Status200OK)
             .ProducesErpNotFound(ProductPriceListCodesV1.NotFound)
-            .ProducesErpServiceUnavailable(ProductPriceListCodesV1.PermissionUnregistered)
+            .ProducesErpServiceUnavailable(ProductPriceListCodesV1.PermissionUnregistered, ProductPriceListCodesV1.Unavailable)
             .ProducesErpAuthenticatedProblems();
 
         MapCommand<CreatePriceListRequestV1>(endpoints, ProductPriceListApiV1.ListPath, ProductPriceListApiV1.CreateOperationId,
@@ -128,71 +128,32 @@ public static class ProductPriceListEndpoints
         Func<IProductPriceListServiceV1, Guid, TRequest, ProductPriceListCommandMetadata, CancellationToken, Task<PriceListResultV1>> call)
         where TRequest : class
     {
-        endpoints.MapPost(path, async (
-                HttpContext httpContext,
-                IProductPriceListServiceV1 service,
-                ICurrentUser currentUser,
-                ICorrelationContext correlation,
-                CancellationToken cancellationToken) =>
-            {
-                SetPrivateNoStore(httpContext.Response);
-                if (!TryReadIdempotencyKey(httpContext.Request.Headers, out var key) || !correlation.IsResolved)
-                {
-                    return Problem(StatusCodes.Status400BadRequest, ProductPriceListCodesV1.ValidationFailed, [], correlation);
-                }
+        RouteHandlerBuilder builder;
+        if (path.Contains("{priceListId", StringComparison.Ordinal))
+        {
+            builder = endpoints.MapPost(path, async (
+                    Guid priceListId,
+                    HttpContext httpContext,
+                    IProductPriceListServiceV1 service,
+                    ICurrentUser currentUser,
+                    ICorrelationContext correlation,
+                    CancellationToken cancellationToken) =>
+                await HandleCommandAsync(priceListId, httpContext, service, currentUser, correlation, cancellationToken,
+                    permission, created, call));
+        }
+        else
+        {
+            builder = endpoints.MapPost(path, async (
+                    HttpContext httpContext,
+                    IProductPriceListServiceV1 service,
+                    ICurrentUser currentUser,
+                    ICorrelationContext correlation,
+                    CancellationToken cancellationToken) =>
+                await HandleCommandAsync(Guid.Empty, httpContext, service, currentUser, correlation, cancellationToken,
+                    permission, created, call));
+        }
 
-                if (!httpContext.Request.HasJsonContentType())
-                {
-                    return Results.StatusCode(StatusCodes.Status415UnsupportedMediaType);
-                }
-
-                var id = Guid.Empty;
-                if (httpContext.Request.RouteValues.TryGetValue("priceListId", out var routeValue)
-                    && (!Guid.TryParse(routeValue?.ToString(), out id) || id == Guid.Empty))
-                {
-                    return Problem(StatusCodes.Status404NotFound, ProductPriceListCodesV1.NotFound, [], correlation);
-                }
-
-                TRequest? request;
-                try
-                {
-                    request = await JsonSerializer.DeserializeAsync<TRequest>(httpContext.Request.Body, Json, cancellationToken);
-                }
-                catch (JsonException)
-                {
-                    request = null;
-                }
-
-                if (request is null)
-                {
-                    return Problem(StatusCodes.Status400BadRequest, ProductPriceListCodesV1.ValidationFailed, [], correlation);
-                }
-
-                try
-                {
-                    var metadata = new ProductPriceListCommandMetadata(currentUser.UserId ?? string.Empty, permission, [],
-                        correlation.CorrelationId, correlation.CausationId, key, correlation.SourceChannel, correlation.ClientIpAddress,
-                        correlation.UserAgent);
-                    var result = await call(service, id, request, metadata, cancellationToken);
-                    if (result.IsReplay)
-                    {
-                        httpContext.Response.Headers["Idempotency-Replayed"] = "true";
-                        httpContext.Response.Headers["Idempotency-Original-Correlation-Id"] = result.OriginalCorrelationId;
-                    }
-
-                    if (created && !result.IsReplay)
-                    {
-                        httpContext.Response.Headers.Location = $"/api/v1/price-lists/{result.PriceList.Id:D}";
-                    }
-
-                    return Results.Json(result, Json,
-                        statusCode: created && !result.IsReplay ? StatusCodes.Status201Created : StatusCodes.Status200OK);
-                }
-                catch (ProductPriceListException exception)
-                {
-                    return Problem(exception, correlation);
-                }
-            })
+        builder
             .WithName(operationId)
             .WithTags("Product")
             .WithMetadata(new PrivateNoStoreOnAuthorizationFailureMetadata())
@@ -207,8 +168,72 @@ public static class ProductPriceListEndpoints
             .ProducesErpNotFound(ProductPriceListCodesV1.NotFound)
             .ProducesErpConflict([.. ProductPriceListHttpCodesV1.Status409Codes.Order(StringComparer.Ordinal)])
             .ProducesErpUnprocessableEntity(ProductPriceListCodesV1.ValidationFailed)
-            .ProducesErpServiceUnavailable(ProductPriceListCodesV1.PermissionUnregistered)
+            .ProducesErpServiceUnavailable(ProductPriceListCodesV1.PermissionUnregistered, ProductPriceListCodesV1.Unavailable)
             .ProducesErpAuthenticatedProblems();
+    }
+
+    private static async Task<IResult> HandleCommandAsync<TRequest>(
+        Guid id,
+        HttpContext httpContext,
+        IProductPriceListServiceV1 service,
+        ICurrentUser currentUser,
+        ICorrelationContext correlation,
+        CancellationToken cancellationToken,
+        string permission,
+        bool created,
+        Func<IProductPriceListServiceV1, Guid, TRequest, ProductPriceListCommandMetadata, CancellationToken, Task<PriceListResultV1>> call)
+        where TRequest : class
+    {
+        SetPrivateNoStore(httpContext.Response);
+        if (!TryReadIdempotencyKey(httpContext.Request.Headers, out var key) || !correlation.IsResolved)
+        {
+            return Problem(StatusCodes.Status400BadRequest, ProductPriceListCodesV1.ValidationFailed, [], correlation);
+        }
+
+        if (!httpContext.Request.HasJsonContentType())
+        {
+            return Results.StatusCode(StatusCodes.Status415UnsupportedMediaType);
+        }
+
+        TRequest? request;
+        try
+        {
+            request = await JsonSerializer.DeserializeAsync<TRequest>(httpContext.Request.Body, Json, cancellationToken);
+        }
+        catch (JsonException)
+        {
+            request = null;
+        }
+
+        if (request is null)
+        {
+            return Problem(StatusCodes.Status400BadRequest, ProductPriceListCodesV1.ValidationFailed, [], correlation);
+        }
+
+        try
+        {
+            var metadata = new ProductPriceListCommandMetadata(currentUser.UserId ?? string.Empty, permission, [],
+                correlation.CorrelationId, correlation.CausationId, key, correlation.SourceChannel, correlation.ClientIpAddress,
+                correlation.UserAgent);
+            var result = await call(service, id, request, metadata, cancellationToken);
+            if (result.IsReplay)
+            {
+                httpContext.Response.Headers["Idempotency-Replayed"] = "true";
+                httpContext.Response.Headers["Idempotency-Original-Correlation-Id"] = result.OriginalCorrelationId;
+            }
+
+            if (created && !result.IsReplay)
+            {
+                httpContext.Response.Headers.Location = $"/api/v1/price-lists/{result.PriceList.Id:D}";
+            }
+
+            return Results.Json(result, Json,
+                statusCode: created && !result.IsReplay ? StatusCodes.Status201Created : StatusCodes.Status200OK);
+        }
+        catch (ProductPriceListException exception)
+        {
+            return Problem(exception, correlation);
+        }
     }
 
     /// <summary>The owner's refusal as a problem: 401/403 code-less, a closed-set code with its correlation otherwise.</summary>

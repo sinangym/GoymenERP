@@ -349,6 +349,7 @@ public static class SalesEndpoints
         MapDraftDetail(drafts);
         MapDraftRevisions(drafts);
         MapDraftLinePricing(drafts);
+        MapPriceFloorExceptionApproval(drafts);
         MapCommercialRevisionCommand(drafts);
         MapQuantityRevisionCommand(drafts);
         MapDeliveryScheduleCommand(drafts);
@@ -1032,6 +1033,85 @@ public static class SalesEndpoints
             .WithName("GetSalesOrderDraftLinePriceReferencesV1")
             .Produces<SalesOrderDraftPriceReferencesResponse>()
             .ProducesErpCodeLessNotFound()
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+    }
+
+    /// <summary>
+    /// AT-021: reasoned maker-checker approval of every current below-floor line. The owner service performs
+    /// company/authority fences, version/idempotency, actor separation and the atomic write; HTTP only binds the strict
+    /// request and preserves the existing unknown-result/replay contract.
+    /// </summary>
+    private static void MapPriceFloorExceptionApproval(RouteGroupBuilder drafts)
+    {
+        drafts.MapPost("/{id:guid}/below-floor-exception-approval", async (
+            Guid id,
+            HttpContext httpContext,
+            [FromServices] ISalesDraftService service,
+            ICorrelationContext correlation,
+            CancellationToken cancellationToken) =>
+        {
+            SetPrivateNoStore(httpContext.Response);
+            if (!TryReadIdempotencyKey(httpContext.Request.Headers, out var idempotencyKey) || !correlation.IsResolved)
+            {
+                return DraftProblem(StatusCodes.Status400BadRequest, SalesDraftProblemCodesV1.CommandMetadataInvalid, correlation);
+            }
+
+            if (!httpContext.Request.HasJsonContentType())
+            {
+                return Results.StatusCode(StatusCodes.Status415UnsupportedMediaType);
+            }
+
+            SalesDraftPriceFloorExceptionApprovalRequest? body;
+            try
+            {
+                body = await JsonSerializer.DeserializeAsync<SalesDraftPriceFloorExceptionApprovalRequest>(
+                    httpContext.Request.Body, SalesDraftJson.Options, cancellationToken);
+            }
+            catch (JsonException)
+            {
+                body = null;
+            }
+
+            if (body is null)
+            {
+                return DraftProblem(StatusCodes.Status400BadRequest, "validation_failed", correlation);
+            }
+
+            try
+            {
+                var response = await service.ApprovePriceFloorExceptionsAsync(id, body,
+                    new SalesCommandMetadata(idempotencyKey, correlation.CorrelationId, correlation.CausationId, DateTimeOffset.UtcNow),
+                    cancellationToken);
+                if (response.IsReplay)
+                {
+                    ApplyReplayHeaders(httpContext, response.OriginalCorrelationId);
+                }
+
+                return Results.Json(response, SalesDraftJson.Options, statusCode: SalesDraftApiV1.StateCommandStatus);
+            }
+            catch (SalesDraftServiceException exception)
+            {
+                if (exception.IsReplay)
+                {
+                    ApplyReplayHeaders(httpContext, exception.OriginalCorrelationId
+                        ?? throw new InvalidOperationException("Replayed refusal without its original correlation."));
+                }
+
+                return DraftProblem(exception, correlation);
+            }
+        })
+            .WithName("ApproveSalesOrderDraftPriceFloorExceptionsV1")
+            .WithIdempotencyContract(SalesDraftApiV1.StateCommandStatus, StatusCodes.Status409Conflict)
+            .Accepts<SalesDraftPriceFloorExceptionApprovalRequest>("application/json")
+            .Produces<SalesOrderDraftResponse>(SalesDraftApiV1.StateCommandStatus)
+            .ProducesErpBadRequest("validation_failed", SalesDraftProblemCodesV1.CommandMetadataInvalid)
+            .AllowsEmptyErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpConflict(SalesDraftProblemCodesV1.VersionConflict, SalesDraftProblemCodesV1.StateConflict,
+                SalesDraftProblemCodesV1.SameKeyPayloadMismatch, SalesDraftProblemCodesV1.ConcurrentChange)
+            .ProducesErpUnprocessableEntity("validation_failed")
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();
     }
