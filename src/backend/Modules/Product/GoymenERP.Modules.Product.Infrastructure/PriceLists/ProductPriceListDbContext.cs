@@ -114,7 +114,7 @@ public sealed class ProductPriceListDbContext(DbContextOptions<ProductPriceListD
             table.HasCheckConstraint("CK_PriceListVersions_State",
                 "([State] = 1 AND [PublishedAtUtc] IS NULL AND [PublishedBy] IS NULL) "
                 + "OR ([State] = 2 AND [PublishedAtUtc] IS NOT NULL AND [PublishedBy] IS NOT NULL AND LEN([PublishedBy]) > 0)");
-            table.HasCheckConstraint("CK_PriceListVersions_Text", "LEN([CreatedBy]) > 0");
+            table.HasCheckConstraint("CK_PriceListVersions_Text", "LEN([CreatedBy]) > 0 AND ISJSON([PreparerActorIdsJson]) = 1");
         });
         entity.HasKey(x => new { x.CompanyId, x.PriceListId, x.VersionNo });
         entity.HasIndex(x => new { x.CompanyId, x.VersionId }).IsUnique().HasFilter(null).HasDatabaseName("UX_PriceListVersions_VersionId");
@@ -127,6 +127,7 @@ public sealed class ProductPriceListDbContext(DbContextOptions<ProductPriceListD
         entity.Property(x => x.ValidFrom).HasColumnType("date");
         entity.Property(x => x.ValidThrough).HasColumnType("date");
         entity.Property(x => x.CreatedBy).HasMaxLength(128).IsRequired();
+        entity.Property(x => x.PreparerActorIdsJson).HasColumnType("nvarchar(max)").IsRequired();
         entity.Property(x => x.PublishedBy).HasMaxLength(128);
         entity.HasOne<PriceListRow>().WithMany()
             .HasForeignKey(x => new { x.CompanyId, x.PriceListId })
@@ -250,7 +251,8 @@ public sealed class ProductPriceListDbContext(DbContextOptions<ProductPriceListD
                     PriceListVersionRow when (int)entry.OriginalValues[nameof(PriceListVersionRow.State)]! == 1 =>
                     [
                         nameof(PriceListVersionRow.ValidFrom), nameof(PriceListVersionRow.ValidThrough), nameof(PriceListVersionRow.State),
-                        nameof(PriceListVersionRow.PublishedAtUtc), nameof(PriceListVersionRow.PublishedBy),
+                        nameof(PriceListVersionRow.PreparerActorIdsJson), nameof(PriceListVersionRow.PublishedAtUtc),
+                        nameof(PriceListVersionRow.PublishedBy),
                     ],
                     _ => [],
                 };

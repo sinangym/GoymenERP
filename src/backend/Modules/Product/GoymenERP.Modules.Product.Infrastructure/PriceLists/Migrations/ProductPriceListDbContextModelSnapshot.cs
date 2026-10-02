@@ -378,6 +378,10 @@ namespace GoymenERP.Modules.Product.Infrastructure.PriceLists.Migrations
                         .HasMaxLength(128)
                         .HasColumnType("nvarchar(128)");
 
+                    b.Property<string>("PreparerActorIdsJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<string>("CurrencyCode")
                         .IsRequired()
                         .HasMaxLength(3)
@@ -494,7 +498,7 @@ namespace GoymenERP.Modules.Product.Infrastructure.PriceLists.Migrations
 
                             t.HasCheckConstraint("CK_PriceListVersions_State", "([State] = 1 AND [PublishedAtUtc] IS NULL AND [PublishedBy] IS NULL) OR ([State] = 2 AND [PublishedAtUtc] IS NOT NULL AND [PublishedBy] IS NOT NULL AND LEN([PublishedBy]) > 0)");
 
-                            t.HasCheckConstraint("CK_PriceListVersions_Text", "LEN([CreatedBy]) > 0");
+                            t.HasCheckConstraint("CK_PriceListVersions_Text", "LEN([CreatedBy]) > 0 AND ISJSON([PreparerActorIdsJson]) = 1");
 
                             t.HasCheckConstraint("CK_PriceListVersions_Validity", "[ValidThrough] IS NULL OR [ValidThrough] >= [ValidFrom]");
                         });

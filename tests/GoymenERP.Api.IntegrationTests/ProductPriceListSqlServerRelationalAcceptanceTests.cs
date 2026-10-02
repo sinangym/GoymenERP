@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using System.Text.Json;
 using GoymenERP.Api.ProductRuntime;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
@@ -38,6 +39,8 @@ public sealed class ProductPriceListSqlServerRelationalAcceptanceTests
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
         var listId = Guid.NewGuid();
         var keptLine = Guid.NewGuid();
+        var editorActor = Guid.NewGuid();
+        var publisherActor = Guid.NewGuid();
         var create = new CreatePriceListRequestV1(listId, Guid.NewGuid(), "SENTETIK yurt içi", "TRY", "Sales", "ExcludingVat",
             ProductPriceListWire.FormatDate(today), null, [new PriceListLineRequestV1(keptLine, ProductId, Kg, "42000.50", "40000")]);
 
@@ -55,8 +58,8 @@ public sealed class ProductPriceListSqlServerRelationalAcceptanceTests
             Assert.Equal((409, ProductPriceListCodesV1.IdempotencyConflict), (other.Status, other.Code));
         }
 
-        // Reopen in a fresh scope: the stored list is rebuilt through the domain with the card's labels.
-        await using (var scope = run.Request())
+        // Reopen under another writer: the stored list is rebuilt and this actor joins the exact version's preparer history.
+        await using (var scope = run.Request(actor: editorActor))
         {
             var reopened = await scope.Service.GetAsync(listId);
             var line = Assert.Single(reopened.Versions[0].Lines);
@@ -83,7 +86,26 @@ public sealed class ProductPriceListSqlServerRelationalAcceptanceTests
             Assert.Equal(("2", "41000"), (revised.PriceList.Version, revised.PriceList.Versions[0].Lines[0].UnitPrice));
         }
 
-        await using (var scope = run.Request())
+        await using (var creatorScope = run.Request())
+        {
+            var refused = await Assert.ThrowsAsync<ProductPriceListException>(() => creatorScope.Service.PublishAsync(listId,
+                new PublishPriceListVersionRequestV1("2", 1), Metadata("publish-creator")));
+            Assert.Equal((409, ProductPriceListCodesV1.StateConflict, PriceListRuleCodes.PublisherPreparedVersion),
+                (refused.Status, refused.Code, Assert.Single(refused.Errors).Code));
+            var replay = await Assert.ThrowsAsync<ProductPriceListException>(() => creatorScope.Service.PublishAsync(listId,
+                new PublishPriceListVersionRequestV1("2", 1), Metadata("publish-creator") with { CorrelationId = "retry" }));
+            Assert.Equal(PriceListRuleCodes.PublisherPreparedVersion, Assert.Single(replay.Errors).Code);
+        }
+
+        await using (var editorScope = run.Request(actor: editorActor))
+        {
+            var refused = await Assert.ThrowsAsync<ProductPriceListException>(() => editorScope.Service.PublishAsync(listId,
+                new PublishPriceListVersionRequestV1("2", 1), Metadata("publish-editor")));
+            Assert.Equal((409, ProductPriceListCodesV1.StateConflict, PriceListRuleCodes.PublisherPreparedVersion),
+                (refused.Status, refused.Code, Assert.Single(refused.Errors).Code));
+        }
+
+        await using (var scope = run.Request(actor: publisherActor))
         {
             var published = await scope.Service.PublishAsync(listId, new PublishPriceListVersionRequestV1("2", 1), Metadata("publish-1"));
             Assert.Equal(("Published", "Active", (int?)1), (published.PriceList.Versions[0].State, published.PriceList.Versions[0].Status,
@@ -115,8 +137,11 @@ public sealed class ProductPriceListSqlServerRelationalAcceptanceTests
 
         Assert.Equal(3, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityType = N'Product.PriceList' AND EntityId = @id", listId.ToString("D")));
-        Assert.Equal(4, await run.ScalarAsync<int>("SELECT COUNT(*) FROM product.PriceListAttempts"));
-        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM product.PriceListAttempts WHERE Outcome = 2"));
+        var storedPreparers = JsonSerializer.Deserialize<string[]>(await run.ScalarAsync<string>(
+            "SELECT PreparerActorIdsJson FROM product.PriceListVersions WHERE PriceListId = @id AND VersionNo = 1", listId));
+        Assert.Equal(new[] { run.CreatorActorId.ToString("D"), editorActor.ToString("D") }, storedPreparers);
+        Assert.Equal(6, await run.ScalarAsync<int>("SELECT COUNT(*) FROM product.PriceListAttempts"));
+        Assert.Equal(3, await run.ScalarAsync<int>("SELECT COUNT(*) FROM product.PriceListAttempts WHERE Outcome = 2"));
     }
 
     [SqlServerFact]
@@ -125,12 +150,22 @@ public sealed class ProductPriceListSqlServerRelationalAcceptanceTests
         await using var run = await Run.StartAsync();
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
         var listId = Guid.NewGuid();
+        var firstPublisher = Guid.NewGuid();
+        var secondPublisher = Guid.NewGuid();
         await using (var scope = run.Request())
         {
             await scope.Service.CreateAsync(new CreatePriceListRequestV1(listId, Guid.NewGuid(), "SENTETIK SÜRÜMLÜ", "TRY", "Sales", "ExcludingVat",
                 ProductPriceListWire.FormatDate(today), null, [new PriceListLineRequestV1(Guid.NewGuid(), ProductId, Kg, "100", null)]),
                 Metadata("v-create"));
+        }
+
+        await using (var scope = run.Request(actor: firstPublisher))
+        {
             await scope.Service.PublishAsync(listId, new PublishPriceListVersionRequestV1("1", 1), Metadata("v-publish-1"));
+        }
+
+        await using (var scope = run.Request())
+        {
             var started = await scope.Service.StartVersionAsync(listId,
                 new StartPriceListVersionRequestV1("2", Guid.NewGuid(), ProductPriceListWire.FormatDate(today.AddDays(10)), null), Metadata("v-start"));
             Assert.Equal("100", started.PriceList.Versions[1].Lines[0].UnitPrice);
@@ -141,6 +176,10 @@ public sealed class ProductPriceListSqlServerRelationalAcceptanceTests
             var twice = await Assert.ThrowsAsync<ProductPriceListException>(() => scope.Service.StartVersionAsync(listId,
                 new StartPriceListVersionRequestV1("4", Guid.NewGuid(), ProductPriceListWire.FormatDate(today.AddDays(20)), null), Metadata("v-start-2")));
             Assert.Equal((409, ProductPriceListCodesV1.StateConflict), (twice.Status, twice.Code));
+        }
+
+        await using (var scope = run.Request(actor: secondPublisher))
+        {
             await scope.Service.PublishAsync(listId, new PublishPriceListVersionRequestV1("4", 2), Metadata("v-publish-2"));
 
             Assert.Equal(100m, Assert.Single(await scope.Reader.SearchAsync(ProductId, [Kg], "TRY", today.AddDays(9))).UnitPrice);
@@ -156,16 +195,18 @@ public sealed class ProductPriceListSqlServerRelationalAcceptanceTests
         // The database refuses a second draft and a repeated published start even if the aggregate were bypassed.
         await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync(
             "INSERT INTO product.PriceListVersions (CompanyId, PriceListId, VersionNo, VersionId, ValidFrom, State, CreatedAtUtc, CreatedBy, "
-            + "PublishedAtUtc, PublishedBy) SELECT CompanyId, PriceListId, 3, NEWID(), ValidFrom, 2, SYSDATETIMEOFFSET(), N'sql', "
-            + "SYSDATETIMEOFFSET(), N'sql' FROM product.PriceListVersions "
+            + "PreparerActorIdsJson, PublishedAtUtc, PublishedBy) SELECT CompanyId, PriceListId, 3, NEWID(), ValidFrom, 2, "
+            + "SYSDATETIMEOFFSET(), N'sql', N'[\"sql\"]', SYSDATETIMEOFFSET(), N'publisher' FROM product.PriceListVersions "
             + "WHERE PriceListId = @id AND VersionNo = 1", listId));
         await run.ExecuteAsync(
-            "INSERT INTO product.PriceListVersions (CompanyId, PriceListId, VersionNo, VersionId, ValidFrom, State, CreatedAtUtc, CreatedBy) "
-            + "SELECT CompanyId, PriceListId, 3, NEWID(), DATEADD(day, 30, ValidFrom), 1, SYSDATETIMEOFFSET(), N'sql' FROM product.PriceListVersions "
+            "INSERT INTO product.PriceListVersions (CompanyId, PriceListId, VersionNo, VersionId, ValidFrom, State, CreatedAtUtc, CreatedBy, "
+            + "PreparerActorIdsJson) SELECT CompanyId, PriceListId, 3, NEWID(), DATEADD(day, 30, ValidFrom), 1, "
+            + "SYSDATETIMEOFFSET(), N'sql', N'[\"sql\"]' FROM product.PriceListVersions "
             + "WHERE PriceListId = @id AND VersionNo = 1", listId);
         await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync(
-            "INSERT INTO product.PriceListVersions (CompanyId, PriceListId, VersionNo, VersionId, ValidFrom, State, CreatedAtUtc, CreatedBy) "
-            + "SELECT CompanyId, PriceListId, 4, NEWID(), DATEADD(day, 40, ValidFrom), 1, SYSDATETIMEOFFSET(), N'sql' FROM product.PriceListVersions "
+            "INSERT INTO product.PriceListVersions (CompanyId, PriceListId, VersionNo, VersionId, ValidFrom, State, CreatedAtUtc, CreatedBy, "
+            + "PreparerActorIdsJson) SELECT CompanyId, PriceListId, 4, NEWID(), DATEADD(day, 40, ValidFrom), 1, "
+            + "SYSDATETIMEOFFSET(), N'sql', N'[\"sql\"]' FROM product.PriceListVersions "
             + "WHERE PriceListId = @id AND VersionNo = 1", listId));
     }
 
@@ -202,9 +243,11 @@ public sealed class ProductPriceListSqlServerRelationalAcceptanceTests
 
     private sealed class User(Guid id) : ICurrentUser
     {
+        public Guid Id { get; } = id;
+
         public bool IsAuthenticated => true;
 
-        public string? UserId => id.ToString("D");
+        public string? UserId => Id.ToString("D");
 
         public IReadOnlySet<Guid> AllowedCompanyIds { get; } = new HashSet<Guid> { TestCompanyIds.CompanyA, TestCompanyIds.CompanyB };
 
@@ -235,6 +278,8 @@ public sealed class ProductPriceListSqlServerRelationalAcceptanceTests
 
     private sealed class Run(SqlServerRelationalApiFactory factory, User user) : IAsyncDisposable
     {
+        public Guid CreatorActorId => user.Id;
+
         public static async Task<Run> StartAsync()
         {
             var actor = Guid.NewGuid();
@@ -274,7 +319,7 @@ public sealed class ProductPriceListSqlServerRelationalAcceptanceTests
             }
         }
 
-        public RequestScope Request(Guid? company = null)
+        public RequestScope Request(Guid? company = null, Guid? actor = null)
         {
             var scope = factory.Services.CreateAsyncScope();
             var provider = scope.ServiceProvider;
@@ -282,8 +327,9 @@ public sealed class ProductPriceListSqlServerRelationalAcceptanceTests
             var context = provider.GetRequiredService<ProductPriceListDbContext>();
             var store = new ProductPriceListStore(context, provider.GetRequiredService<ICompanyContext>(),
                 provider.GetRequiredService<GoymenERP.Modules.Audit.Application.Contracts.IAuditEventCollector>(), TimeProvider.System);
-            var service = new ProductPriceListService(provider.GetRequiredService<ICompanyContext>(), user, new Granted(), store, TimeProvider.System,
-                null, _ => true);
+            var requestUser = actor is null ? user : new User(actor.Value);
+            var service = new ProductPriceListService(provider.GetRequiredService<ICompanyContext>(), requestUser, new Granted(), store,
+                TimeProvider.System, null, _ => true);
             var reader = new ProductPriceReferenceReader(store, provider.GetRequiredService<ICompanyContext>());
             return new RequestScope(scope, service, reader, reader, context);
         }

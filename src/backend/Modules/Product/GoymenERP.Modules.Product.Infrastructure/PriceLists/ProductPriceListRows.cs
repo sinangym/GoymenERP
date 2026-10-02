@@ -54,6 +54,7 @@ internal sealed class PriceListVersionRow : IProductPriceListTenantRow
     public int State { get; set; }
     public DateTimeOffset CreatedAtUtc { get; set; }
     public string CreatedBy { get; set; } = string.Empty;
+    public string PreparerActorIdsJson { get; set; } = string.Empty;
     public DateTimeOffset? PublishedAtUtc { get; set; }
     public string? PublishedBy { get; set; }
 }

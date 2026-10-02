@@ -178,7 +178,7 @@ public sealed class ProductPriceListService : IProductPriceListServiceV1
             new PriceListAudit("product.price-list.draft-revised.v1", "ReviseDraft", "Taslak fiyat sürümü düzenlendi"),
             async (list, now) =>
             {
-                list.ReviseDraft(expectedVersion, name, validFrom, validThrough, lines, now);
+                list.ReviseDraft(expectedVersion, name, validFrom, validThrough, lines, scope.ActorId, now);
                 await RequireProductsAsync(list.DraftVersion!.Lines, cancellationToken);
             }, cancellationToken);
     }
@@ -236,6 +236,7 @@ public sealed class ProductPriceListService : IProductPriceListServiceV1
                     && list.Version == expectedVersion)
                 {
                     await RequireProductsAsync(draft.Lines, cancellationToken);
+                    await RequireStillAsync(permission, scope, cancellationToken);
                 }
 
                 list.Publish(expectedVersion, request.VersionNo, DateOnly.FromDateTime(now.UtcDateTime), scope.ActorId, now);
@@ -333,7 +334,7 @@ public sealed class ProductPriceListService : IProductPriceListServiceV1
 
     private static bool IsStateRule(string code) => code is PriceListRuleCodes.NoDraftVersion or PriceListRuleCodes.DraftVersionOpen
         or PriceListRuleCodes.NoPublishedVersion or PriceListRuleCodes.VersionNotFound or PriceListRuleCodes.VersionNotDraft
-        or PriceListRuleCodes.TooManyVersions;
+        or PriceListRuleCodes.PublisherPreparedVersion or PriceListRuleCodes.TooManyVersions;
 
     private static T Rule<T>(Func<T> build)
     {

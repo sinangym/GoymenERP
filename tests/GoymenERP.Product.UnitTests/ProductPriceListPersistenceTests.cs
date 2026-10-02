@@ -56,6 +56,9 @@ public sealed class ProductPriceListPersistenceTests
         Assert.Equal("[State] = 1", oneDraft.GetFilter());
         var starts = versions.GetIndexes().Single(index => index.GetDatabaseName() == "UX_PriceListVersions_PublishedValidFrom");
         Assert.Equal("[State] = 2", starts.GetFilter());
+        Assert.Equal("nvarchar(max)", versions.FindProperty(nameof(PriceListVersionRow.PreparerActorIdsJson))!.GetColumnType());
+        Assert.Contains(versions.GetCheckConstraints(), check => check.Name == "CK_PriceListVersions_Text"
+            && check.Sql.Contains("ISJSON([PreparerActorIdsJson]) = 1", StringComparison.Ordinal));
         // Hand-written unique indexes over NOT NULL columns state "no filter" explicitly.
         Assert.Null(versions.GetIndexes().Single(index => index.GetDatabaseName() == "UX_PriceListVersions_VersionId").GetFilter());
         var lists = design.FindEntityType(typeof(PriceListRow))!;
@@ -109,7 +112,8 @@ public sealed class ProductPriceListPersistenceTests
         await using (var context = Context())
         {
             var version = new PriceListVersionRow { CompanyId = CompanyA, PriceListId = Guid.NewGuid(), VersionNo = 1, VersionId = Guid.NewGuid(),
-                ValidFrom = new DateOnly(2026, 10, 1), State = 2, CreatedBy = "u", PublishedBy = "p", PublishedAtUtc = DateTimeOffset.UtcNow };
+                ValidFrom = new DateOnly(2026, 10, 1), State = 2, CreatedBy = "u", PreparerActorIdsJson = "[\"u\"]",
+                PublishedBy = "p", PublishedAtUtc = DateTimeOffset.UtcNow };
             var line = new PriceListLineRow { CompanyId = CompanyA, PriceListId = version.PriceListId, VersionNo = 1, LineNo = 1, LineId = Guid.NewGuid(),
                 ProductId = Guid.NewGuid(), PriceUnitId = Guid.NewGuid(), UnitPrice = 1m };
             context.Attach(version);
@@ -122,7 +126,8 @@ public sealed class ProductPriceListPersistenceTests
         await using (var context = Context())
         {
             var version = new PriceListVersionRow { CompanyId = CompanyA, PriceListId = Guid.NewGuid(), VersionNo = 1, VersionId = Guid.NewGuid(),
-                ValidFrom = new DateOnly(2026, 10, 1), State = 2, CreatedBy = "u", PublishedBy = "p", PublishedAtUtc = DateTimeOffset.UtcNow };
+                ValidFrom = new DateOnly(2026, 10, 1), State = 2, CreatedBy = "u", PreparerActorIdsJson = "[\"u\"]",
+                PublishedBy = "p", PublishedAtUtc = DateTimeOffset.UtcNow };
             context.Attach(version);
             version.ValidFrom = new DateOnly(2026, 10, 2);
             await Assert.ThrowsAsync<InvalidOperationException>(() => context.SaveChangesAsync());
