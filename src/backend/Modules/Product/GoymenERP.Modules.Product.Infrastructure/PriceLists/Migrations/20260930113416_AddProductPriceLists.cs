@@ -71,6 +71,7 @@ namespace GoymenERP.Modules.Product.Infrastructure.PriceLists.Migrations
                     ActorId = table.Column<string>(type: "nvarchar(128)", maxLength: 128, nullable: false),
                     Outcome = table.Column<int>(type: "int", nullable: false),
                     PriceListId = table.Column<Guid>(type: "uniqueidentifier", nullable: true),
+                    ResultJson = table.Column<string>(type: "nvarchar(max)", nullable: true),
                     RefusalJson = table.Column<string>(type: "nvarchar(max)", nullable: true),
                     CorrelationId = table.Column<string>(type: "nvarchar(128)", maxLength: 128, nullable: false),
                     RecordedAtUtc = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false)
@@ -80,7 +81,7 @@ namespace GoymenERP.Modules.Product.Infrastructure.PriceLists.Migrations
                     table.PrimaryKey("PK_PriceListAttempts", x => new { x.CompanyId, x.CommandName, x.IdempotencyKeyHash });
                     table.CheckConstraint("CK_PriceListAttempts_Hashes", "LEN([IdempotencyKeyHash]) = 64 AND LEN([RequestHash]) = 64");
                     table.CheckConstraint("CK_PriceListAttempts_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND LEN([CommandName]) > 0 AND LEN([CorrelationId]) > 0 AND LEN([ActorId]) > 0");
-                    table.CheckConstraint("CK_PriceListAttempts_Outcome", "([Outcome] = 1 AND [PriceListId] IS NOT NULL AND [PriceListId] <> '00000000-0000-0000-0000-000000000000' AND [RefusalJson] IS NULL) OR ([Outcome] = 2 AND [PriceListId] IS NULL AND [RefusalJson] IS NOT NULL AND ISJSON([RefusalJson]) = 1)");
+                    table.CheckConstraint("CK_PriceListAttempts_Outcome", "([Outcome] = 1 AND [PriceListId] IS NOT NULL AND [PriceListId] <> '00000000-0000-0000-0000-000000000000' AND [ResultJson] IS NOT NULL AND ISJSON([ResultJson]) = 1 AND [RefusalJson] IS NULL) OR ([Outcome] = 2 AND [PriceListId] IS NULL AND [ResultJson] IS NULL AND [RefusalJson] IS NOT NULL AND ISJSON([RefusalJson]) = 1)");
                     table.ForeignKey(
                         name: "FK_PriceListAttempts_Companies_CompanyId",
                         column: x => x.CompanyId,

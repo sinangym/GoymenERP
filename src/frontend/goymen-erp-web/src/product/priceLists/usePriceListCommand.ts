@@ -5,7 +5,11 @@ import {
   applyPriceListOutcome,
   decidePriceListSubmit,
   generatePriceListKey,
+  isPriceListOutcomeUnknown,
+  livePriceListSnapshot,
   priceListBinding,
+  recallPriceListAttempt,
+  rememberPriceListAttempt,
   type PriceListAttempt,
   type PriceListSnapshot,
 } from './priceListAttempt'
@@ -17,26 +21,40 @@ export type SubmitResult = 'sent' | 'in-flight' | 'unresolved-other-payload' | '
 /** One command section's attempt: submit a command, retry the same snapshot, or leave an unknown one. */
 export function usePriceListCommand(shell: ShellState, scope: string, onCompleted: (result: PriceListResult) => void,
   onRefusedMovedRecord?: () => void) {
-  const [attempt, setAttempt] = useState<PriceListAttempt>({ phase: 'idle' })
+  const binding = priceListBinding(shell, scope)
+  const [attempt, setAttempt] = useState<PriceListAttempt>(() => recallPriceListAttempt(binding))
   // Every state change goes through `attemptRef` first (the functions below), so the ref is never behind the state.
   const attemptRef = useRef(attempt)
-  const binding = priceListBinding(shell, scope)
   const bindingRef = useRef(binding)
   useEffect(() => {
     bindingRef.current = binding
+    const current = attemptRef.current
+    if (binding === null || (current.phase !== 'idle' && current.snapshot.binding !== binding)) {
+      attemptRef.current = { phase: 'idle' }
+      setAttempt({ phase: 'idle' })
+      return
+    }
+    if (current.phase === 'idle') {
+      const recalled = recallPriceListAttempt(binding)
+      attemptRef.current = recalled
+      setAttempt(recalled)
+    }
   }, [binding])
   const companyId = shell.activeContext?.scopeMode === 'single' ? shell.activeContext.companyId : null
 
   async function send(snapshot: PriceListSnapshot) {
+    const previous = attemptRef.current
     const sending: PriceListAttempt = { phase: 'sending', snapshot }
     attemptRef.current = sending
+    rememberPriceListAttempt(snapshot.binding, sending)
     setAttempt(sending)
     const outcome = await sendPriceListCommand(snapshot.command, snapshot.companyId, snapshot.key)
-    const next = applyPriceListOutcome(attemptRef.current, snapshot, bindingRef.current, outcome)
+    const next = applyPriceListOutcome(attemptRef.current, snapshot, bindingRef.current, outcome, previous)
     attemptRef.current = next
+    if (next.phase !== 'idle') rememberPriceListAttempt(snapshot.binding, next)
     setAttempt(next)
     if (next.phase === 'completed') onCompleted(next.result)
-    else if (next.phase === 'failed' && next.status === 409) onRefusedMovedRecord?.()
+    else if (next.phase === 'failed' && next.status === 409 && next.unresolvedSince === undefined) onRefusedMovedRecord?.()
   }
 
   function submit(command: PriceListCommand): SubmitResult {
@@ -48,18 +66,28 @@ export function usePriceListCommand(shell: ShellState, scope: string, onComplete
 
   function retry() {
     const current = attemptRef.current
-    if (current.phase === 'unknown' || current.phase === 'abandoned') void send(current.snapshot)
+    const snapshot = livePriceListSnapshot(current)
+    if (snapshot !== null) void send(snapshot)
   }
 
   function abandon() {
     const current = attemptRef.current
-    if (current.phase !== 'unknown') return
-    const next: PriceListAttempt = { phase: 'abandoned', snapshot: current.snapshot }
+    const snapshot = livePriceListSnapshot(current)
+    if (snapshot === null || current.phase === 'sending') return
+    const reason = current.phase === 'unknown' || current.phase === 'abandoned'
+      ? current.reason
+      : current.phase === 'failed'
+        ? current.unresolvedSince
+        : undefined
+    if (reason === undefined) return
+    const next: PriceListAttempt = { phase: 'abandoned', snapshot, reason }
     attemptRef.current = next
+    rememberPriceListAttempt(snapshot.binding, next)
     setAttempt(next)
   }
 
   function reset() {
+    if (isPriceListOutcomeUnknown(attemptRef.current)) return
     const next: PriceListAttempt = { phase: 'idle' }
     attemptRef.current = next
     setAttempt(next)

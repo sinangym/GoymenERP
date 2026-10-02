@@ -38,15 +38,16 @@ describe('price-list quantity tier transport', () => {
     expect(decoded?.versions[0].lines[0]).toMatchObject({ lowerQuantity: '10.125', upperQuantity: '20.5' })
     expect(rowsFromLines(decoded?.versions[0].lines ?? [])).toMatchObject([{ lowerQuantity: '10,125', upperQuantity: '20,5' }])
 
-    const withoutBounds = structuredClone(body)
-    delete (withoutBounds.versions[0].lines[0] as Partial<PriceListLine>).lowerQuantity
+    type MutableWire = { versions: Array<{ lines: Array<Record<string, unknown>> }> }
+    const withoutBounds = structuredClone(body) as unknown as MutableWire
+    delete withoutBounds.versions[0].lines[0].lowerQuantity
     expect(decodePriceListView(withoutBounds)).toBeNull()
 
-    const equalBounds = structuredClone(body)
+    const equalBounds = structuredClone(body) as unknown as MutableWire
     equalBounds.versions[0].lines[0].upperQuantity = '10.125'
     expect(decodePriceListView(equalBounds)).toBeNull()
 
-    const reversedBounds = structuredClone(body)
+    const reversedBounds = structuredClone(body) as unknown as MutableWire
     reversedBounds.versions[0].lines[0].upperQuantity = '10.124'
     expect(decodePriceListView(reversedBounds)).toBeNull()
   })

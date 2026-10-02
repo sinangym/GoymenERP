@@ -125,6 +125,14 @@ public sealed class ProductPriceListSqlServerRelationalAcceptanceTests
             Assert.Null(await scope.QuantityReader.GetAsync(listId, 2, ProductId, Kg, 10m, today));
         }
 
+        // The create key returns the exact successful response captured in its transaction, not today's revised/published list.
+        await using (var scope = run.Request())
+        {
+            var replay = await scope.Service.CreateAsync(create, Metadata("create-1") with { CorrelationId = "much-later" });
+            Assert.True(replay.IsReplay);
+            Assert.Equal(JsonSerializer.Serialize(created.PriceList), JsonSerializer.Serialize(replay.PriceList));
+        }
+
         // Another company sees neither the list nor its prices.
         await using (var scope = run.Request(TestCompanyIds.CompanyB))
         {
@@ -143,6 +151,81 @@ public sealed class ProductPriceListSqlServerRelationalAcceptanceTests
         Assert.Equal(new[] { run.CreatorActorId.ToString("D"), editorActor.ToString("D") }, storedPreparers);
         Assert.Equal(6, await run.ScalarAsync<int>("SELECT COUNT(*) FROM product.PriceListAttempts"));
         Assert.Equal(3, await run.ScalarAsync<int>("SELECT COUNT(*) FROM product.PriceListAttempts WHERE Outcome = 2"));
+        Assert.Equal(3, await run.ScalarAsync<int>("SELECT COUNT(*) FROM product.PriceListAttempts WHERE Outcome = 1 AND ISJSON(ResultJson) = 1"));
+        Assert.Equal(3, await run.ScalarAsync<int>("SELECT COUNT(*) FROM product.PriceListAttempts WHERE Outcome = 2 AND ResultJson IS NULL"));
+    }
+
+    [SqlServerFact]
+    public async Task The_last_authority_fence_and_same_key_race_leave_one_exact_effect()
+    {
+        await using var run = await Run.StartAsync();
+        var today = ProductPriceListWire.FormatDate(DateOnly.FromDateTime(DateTime.UtcNow));
+
+        var revokedId = Guid.NewGuid();
+        var revoked = new CreatePriceListRequestV1(revokedId, Guid.NewGuid(), "SENTETIK revoked", "TRY", "Sales", "ExcludingVat", today,
+            null, [new PriceListLineRequestV1(Guid.NewGuid(), ProductId, Kg, "10", null)]);
+        await using (var scope = run.Request(authority: new SequenceAuthority(grantedCalls: 2)))
+        {
+            var forbidden = await Assert.ThrowsAsync<ProductPriceListException>(() => scope.Service.CreateAsync(revoked, Metadata("revoked")));
+            Assert.Equal(403, forbidden.Status);
+        }
+
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM product.PriceLists WHERE Id = @id", revokedId));
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM product.PriceListAttempts WHERE PriceListId = @id", revokedId));
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityId = @id", revokedId.ToString("D")));
+
+        var terminalId = Guid.NewGuid();
+        await using (var scope = run.Request())
+        {
+            await scope.Service.CreateAsync(revoked with { PriceListId = terminalId, VersionId = Guid.NewGuid(), Name = "SENTETIK terminal" },
+                Metadata("terminal-create"));
+        }
+        await using (var scope = run.Request(authority: new SequenceAuthority(grantedCalls: 2)))
+        {
+            var forbidden = await Assert.ThrowsAsync<ProductPriceListException>(() => scope.Service.ReviseDraftAsync(terminalId,
+                new RevisePriceListDraftRequestV1("99", "SENTETIK terminal", today, null, []), Metadata("terminal-refusal")));
+            Assert.Equal(403, forbidden.Status);
+        }
+        Assert.Equal(0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM product.PriceListAttempts WHERE PriceListId = @id AND CommandName = N'product.price-list.revise-draft.v1'",
+            terminalId));
+        Assert.Equal(1L, await run.ScalarAsync<long>("SELECT Version FROM product.PriceLists WHERE Id = @id", terminalId));
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityId = @id", terminalId.ToString("D")));
+
+        var raceId = Guid.NewGuid();
+        var same = new CreatePriceListRequestV1(raceId, Guid.NewGuid(), "SENTETIK race", "TRY", "Sales", "ExcludingVat", today,
+            null, [new PriceListLineRequestV1(Guid.NewGuid(), ProductId, Kg, "11", null)]);
+        var barrier = new CommitBarrier(2);
+        await using var first = run.Request(authority: new BarrierAuthority(barrier));
+        await using var second = run.Request(authority: new BarrierAuthority(barrier));
+        var answers = await Task.WhenAll(
+            first.Service.CreateAsync(same, Metadata("same-race")),
+            second.Service.CreateAsync(same, Metadata("same-race") with { CorrelationId = "corr-loser" }));
+        Assert.Equal(1, answers.Count(answer => answer.IsReplay));
+        Assert.Equal(1, answers.Count(answer => !answer.IsReplay));
+        Assert.Equal(JsonSerializer.Serialize(answers[0].PriceList), JsonSerializer.Serialize(answers[1].PriceList));
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM product.PriceLists WHERE Id = @id", raceId));
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM product.PriceListAttempts WHERE PriceListId = @id", raceId));
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityId = @id", raceId.ToString("D")));
+
+        var changedId = Guid.NewGuid();
+        var changedBarrier = new CommitBarrier(2);
+        var changedBase = same with { PriceListId = changedId, VersionId = Guid.NewGuid(), Name = "SENTETIK changed-a" };
+        await using var changedFirst = run.Request(authority: new BarrierAuthority(changedBarrier));
+        await using var changedSecond = run.Request(authority: new BarrierAuthority(changedBarrier));
+        var changedTasks = new[]
+        {
+            Capture(changedFirst.Service.CreateAsync(changedBase, Metadata("changed-race"))),
+            Capture(changedSecond.Service.CreateAsync(changedBase with { Name = "SENTETIK changed-b" },
+                Metadata("changed-race") with { CorrelationId = "corr-changed" })),
+        };
+        var changedAnswers = await Task.WhenAll(changedTasks);
+        Assert.Single(changedAnswers, answer => answer.Result is not null);
+        var conflict = Assert.Single(changedAnswers, answer => answer.Error is not null).Error!;
+        Assert.Equal((409, ProductPriceListCodesV1.IdempotencyConflict), (conflict.Status, conflict.Code));
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM product.PriceLists WHERE Id = @id", changedId));
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM product.PriceListAttempts WHERE PriceListId = @id", changedId));
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityId = @id", changedId.ToString("D")));
     }
 
     [SqlServerFact]
@@ -263,6 +346,55 @@ public sealed class ProductPriceListSqlServerRelationalAcceptanceTests
                 new HashSet<Guid>()));
     }
 
+    private sealed class SequenceAuthority(int grantedCalls) : IErpAuthorityRevalidationService
+    {
+        private int calls;
+
+        public Task<PermissionScope> RevalidatePermissionScopeAsync(string permission, Guid companyId,
+            CancellationToken cancellationToken = default) => Task.FromResult(Interlocked.Increment(ref calls) <= grantedCalls
+            ? GrantedScope()
+            : PermissionScope.Denied);
+    }
+
+    private sealed class CommitBarrier(int participants)
+    {
+        private int arrivals;
+        private readonly TaskCompletionSource<bool> ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public async Task ArriveAsync(CancellationToken cancellationToken)
+        {
+            if (Interlocked.Increment(ref arrivals) == participants) ready.TrySetResult(true);
+            await ready.Task.WaitAsync(cancellationToken);
+        }
+    }
+
+    private sealed class BarrierAuthority(CommitBarrier barrier) : IErpAuthorityRevalidationService
+    {
+        private int calls;
+
+        public async Task<PermissionScope> RevalidatePermissionScopeAsync(string permission, Guid companyId,
+            CancellationToken cancellationToken = default)
+        {
+            if (Interlocked.Increment(ref calls) == 3) await barrier.ArriveAsync(cancellationToken);
+            return GrantedScope();
+        }
+    }
+
+    private static PermissionScope GrantedScope() => new(true, true, new HashSet<string> { "SENTETIK-PRICE" }, new HashSet<Guid>(),
+        new HashSet<Guid>(), new HashSet<Guid>());
+
+    private static async Task<(PriceListResultV1? Result, ProductPriceListException? Error)> Capture(Task<PriceListResultV1> task)
+    {
+        try
+        {
+            return (await task, null);
+        }
+        catch (ProductPriceListException exception)
+        {
+            return (null, exception);
+        }
+    }
+
     private sealed class RequestScope(AsyncServiceScope scope, ProductPriceListService service, IProductPriceReferenceReaderV1 reader,
         IProductQuantityPriceReferenceReaderV1 quantityReader, ProductPriceListDbContext context) : IAsyncDisposable
     {
@@ -320,7 +452,7 @@ public sealed class ProductPriceListSqlServerRelationalAcceptanceTests
             }
         }
 
-        public RequestScope Request(Guid? company = null, Guid? actor = null)
+        public RequestScope Request(Guid? company = null, Guid? actor = null, IErpAuthorityRevalidationService? authority = null)
         {
             var scope = factory.Services.CreateAsyncScope();
             var provider = scope.ServiceProvider;
@@ -329,7 +461,7 @@ public sealed class ProductPriceListSqlServerRelationalAcceptanceTests
             var store = new ProductPriceListStore(context, provider.GetRequiredService<ICompanyContext>(),
                 provider.GetRequiredService<GoymenERP.Modules.Audit.Application.Contracts.IAuditEventCollector>(), TimeProvider.System);
             var requestUser = actor is null ? user : new User(actor.Value);
-            var service = new ProductPriceListService(provider.GetRequiredService<ICompanyContext>(), requestUser, new Granted(), store,
+            var service = new ProductPriceListService(provider.GetRequiredService<ICompanyContext>(), requestUser, authority ?? new Granted(), store,
                 TimeProvider.System, null, _ => true);
             var reader = new ProductPriceReferenceReader(store, provider.GetRequiredService<ICompanyContext>());
             return new RequestScope(scope, service, reader, reader, context);

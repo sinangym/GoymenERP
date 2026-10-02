@@ -25,9 +25,9 @@ internal sealed record PriceListWriteEnvelope(
 /// <summary>ADR-011 §7: a terminal refusal recorded under the key and answered again on the same key.</summary>
 internal sealed record PriceListTerminalRefusal(int Status, string Code, IReadOnlyList<ProductPriceListFieldErrorV1> Errors);
 
-internal sealed record PriceListReplay(PriceList? PriceList, PriceListTerminalRefusal? Refusal, string OriginalCorrelationId);
+internal sealed record PriceListReplay(PriceListViewV1? Result, PriceListTerminalRefusal? Refusal, string OriginalCorrelationId);
 
-internal sealed record PriceListStoreResult(PriceList PriceList, bool IsReplay, string OriginalCorrelationId);
+internal sealed record PriceListStoreResult(PriceListViewV1 Result, bool IsReplay, string OriginalCorrelationId);
 
 /// <summary>The audit facts of one command.</summary>
 internal sealed record PriceListAudit(string EventType, string Operation, string Reason);
@@ -80,11 +80,15 @@ internal sealed class ProductPriceListStore(
         }
 
         RequireSameContent(attempt, envelope.ActorId, requestHash);
-        if (attempt.Outcome == AttemptOutcomeRecorded && attempt.PriceListId is { } priceListId)
+        if (attempt.Outcome == AttemptOutcomeRecorded && attempt.PriceListId is not null)
         {
-            var stored = await LoadAsync(priceListId, cancellationToken)
-                ?? throw new InvalidOperationException("Kayıtlı denemenin fiyat listesi bulunamadı.");
-            return new PriceListReplay(stored, null, attempt.CorrelationId);
+            var result = attempt.ResultJson is null ? null : JsonSerializer.Deserialize<PriceListViewV1>(attempt.ResultJson, Json);
+            if (result is null || result.Id != attempt.PriceListId)
+            {
+                throw new InvalidOperationException("Kayıtlı denemenin özgün fiyat listesi cevabı okunamadı.");
+            }
+
+            return new PriceListReplay(result, null, attempt.CorrelationId);
         }
 
         var refusal = attempt.RefusalJson is null ? null : JsonSerializer.Deserialize<PriceListTerminalRefusal>(attempt.RefusalJson, Json);
@@ -97,7 +101,7 @@ internal sealed class ProductPriceListStore(
     }
 
     public async Task RecordRefusalAsync(PriceListWriteEnvelope envelope, string requestHash, string commandName,
-        PriceListTerminalRefusal refusal, CancellationToken cancellationToken)
+        PriceListTerminalRefusal refusal, Func<CancellationToken, Task> beforeCommit, CancellationToken cancellationToken)
     {
         var companyId = RequireResolvedCompany();
         var keyHash = IdempotencyKeyHash(envelope.IdempotencyKey);
@@ -107,10 +111,11 @@ internal sealed class ProductPriceListStore(
         }
 
         dbContext.ChangeTracker.Clear();
-        var row = Attempt(companyId, commandName, keyHash, requestHash, envelope, null);
+        var row = Attempt(companyId, commandName, keyHash, requestHash, envelope, null, null);
         row.Outcome = AttemptOutcomeRefused;
         row.RefusalJson = JsonSerializer.Serialize(refusal, Json);
         dbContext.Attempts.Add(row);
+        await BeforeCommitAsync(beforeCommit, cancellationToken);
         await SaveAsync(cancellationToken);
     }
 
@@ -118,7 +123,7 @@ internal sealed class ProductPriceListStore(
         dbContext.PriceLists.AsNoTracking().AnyAsync(row => row.Name == name && row.Id != exceptPriceListId, cancellationToken);
 
     public async Task<PriceListStoreResult> CreateAsync(PriceListWriteEnvelope envelope, string requestHash, PriceList priceList,
-        CancellationToken cancellationToken)
+        PriceListViewV1 result, Func<CancellationToken, Task> beforeCommit, CancellationToken cancellationToken)
     {
         var companyId = RequireResolvedCompany();
         if (priceList.CompanyId != companyId)
@@ -154,12 +159,13 @@ internal sealed class ProductPriceListStore(
             }
         }
 
+        await BeforeCommitAsync(beforeCommit, cancellationToken);
         dbContext.Attempts.Add(Attempt(companyId, ProductPriceListCommandsV1.CreateV1, IdempotencyKeyHash(envelope.IdempotencyKey),
-            requestHash, envelope, priceList.Id));
+            requestHash, envelope, priceList.Id, result));
         Audit(envelope, companyId, priceList.Id, new PriceListAudit("product.price-list.created.v1", "Create", "Fiyat listesi oluşturuldu"),
             null, priceList.Version, "{}", Snapshot(priceList));
         await SaveAsync(cancellationToken);
-        return new PriceListStoreResult(priceList, false, envelope.CorrelationId);
+        return new PriceListStoreResult(result, false, envelope.CorrelationId);
     }
 
     /// <summary>
@@ -168,7 +174,9 @@ internal sealed class ProductPriceListStore(
     /// audit event. Unknown list → null. A lost race is <see cref="PriceListStoreCodes.ConcurrentChange"/>, nothing stored.
     /// </summary>
     public async Task<PriceListStoreResult?> MutateAsync(PriceListWriteEnvelope envelope, string requestHash, string commandName,
-        Guid priceListId, Func<PriceList, DateTimeOffset, Task> mutate, PriceListAudit audit, CancellationToken cancellationToken)
+        Guid priceListId, Func<PriceList, DateTimeOffset, Task> mutate,
+        Func<PriceList, CancellationToken, Task<PriceListViewV1>> captureResult,
+        Func<CancellationToken, Task> beforeCommit, PriceListAudit audit, CancellationToken cancellationToken)
     {
         var companyId = RequireResolvedCompany();
         var row = await dbContext.PriceLists.SingleOrDefaultAsync(candidate => candidate.Id == priceListId, cancellationToken);
@@ -224,10 +232,13 @@ internal sealed class ProductPriceListStore(
             }
         }
 
-        dbContext.Attempts.Add(Attempt(companyId, commandName, IdempotencyKeyHash(envelope.IdempotencyKey), requestHash, envelope, priceList.Id));
+        var result = await captureResult(priceList, cancellationToken);
+        await BeforeCommitAsync(beforeCommit, cancellationToken);
+        dbContext.Attempts.Add(Attempt(companyId, commandName, IdempotencyKeyHash(envelope.IdempotencyKey), requestHash, envelope, priceList.Id,
+            result));
         Audit(envelope, companyId, priceList.Id, audit, versionBefore, priceList.Version, before, Snapshot(priceList));
         await SaveAsync(cancellationToken);
-        return new PriceListStoreResult(priceList, false, envelope.CorrelationId);
+        return new PriceListStoreResult(result, false, envelope.CorrelationId);
     }
 
     public async Task<PriceList?> LoadAsync(Guid priceListId, CancellationToken cancellationToken)
@@ -445,7 +456,7 @@ internal sealed class ProductPriceListStore(
     }
 
     private PriceListAttemptRow Attempt(Guid companyId, string commandName, string keyHash, string requestHash,
-        PriceListWriteEnvelope envelope, Guid? priceListId) => new()
+        PriceListWriteEnvelope envelope, Guid? priceListId, PriceListViewV1? result) => new()
     {
         CompanyId = companyId,
         CommandName = commandName,
@@ -454,6 +465,7 @@ internal sealed class ProductPriceListStore(
         ActorId = envelope.ActorId,
         Outcome = AttemptOutcomeRecorded,
         PriceListId = priceListId,
+        ResultJson = result is null ? null : JsonSerializer.Serialize(result, Json),
         CorrelationId = envelope.CorrelationId,
         RecordedAtUtc = timeProvider.GetUtcNow(),
     };
@@ -513,6 +525,19 @@ internal sealed class ProductPriceListStore(
         }
     }
 
+    private async Task BeforeCommitAsync(Func<CancellationToken, Task> beforeCommit, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await beforeCommit(cancellationToken);
+        }
+        catch
+        {
+            dbContext.ChangeTracker.Clear();
+            throw;
+        }
+    }
+
     private Guid RequireResolvedCompany() =>
         companyContext.IsResolved && companyContext.CompanyId != Guid.Empty
             ? companyContext.CompanyId
@@ -552,7 +577,14 @@ internal sealed class ProductPriceListStore(
                 throw new PriceListStoreException(PriceListStoreCodes.InvalidCursor, "Liste imleci bu şirketin değil ya da bozuk.");
             }
 
-            return (new DateTimeOffset(BitConverter.ToInt64(bytes, 16), TimeSpan.Zero), new Guid(bytes.AsSpan(24, 16)));
+            try
+            {
+                return (new DateTimeOffset(BitConverter.ToInt64(bytes, 16), TimeSpan.Zero), new Guid(bytes.AsSpan(24, 16)));
+            }
+            catch (ArgumentOutOfRangeException exception)
+            {
+                throw new PriceListStoreException(PriceListStoreCodes.InvalidCursor, "Liste imlecinin zamanı geçersiz.", exception);
+            }
         }
     }
 }

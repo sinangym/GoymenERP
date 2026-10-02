@@ -46,6 +46,10 @@ public sealed class ProductPriceListPersistenceTests
         var design = context.GetService<IDesignTimeModel>().Model;
         var attempts = design.FindEntityType(typeof(PriceListAttemptRow))!;
         Assert.Equal(["CompanyId", "CommandName", "IdempotencyKeyHash"], attempts.FindPrimaryKey()!.Properties.Select(property => property.Name));
+        Assert.Equal("nvarchar(max)", attempts.FindProperty(nameof(PriceListAttemptRow.ResultJson))!.GetColumnType());
+        Assert.Contains(attempts.GetCheckConstraints(), check => check.Name == "CK_PriceListAttempts_Outcome"
+            && check.Sql.Contains("ISJSON([ResultJson]) = 1", StringComparison.Ordinal)
+            && check.Sql.Contains("[ResultJson] IS NULL", StringComparison.Ordinal));
         var create = attempts.GetIndexes().Single(index => index.GetDatabaseName() == "UX_PriceListAttempts_PriceListId");
         Assert.True(create.IsUnique);
         Assert.Equal("[PriceListId] IS NOT NULL AND [CommandName] = N'product.price-list.create.v1'", create.GetFilter());
@@ -176,6 +180,19 @@ public sealed class ProductPriceListPersistenceTests
         Assert.Equal(400, (await Assert.ThrowsAsync<ProductPriceListException>(() => service.ListAsync(101, null))).Status);
         Assert.Equal(400, (await Assert.ThrowsAsync<ProductPriceListException>(() => service.ReviseDraftAsync(Guid.NewGuid(),
             new RevisePriceListDraftRequestV1("01", "L", "2026-10-01", null, []), Metadata()))).Status);
+    }
+
+    [Fact]
+    public void A_well_signed_40_byte_cursor_with_out_of_range_ticks_is_still_invalid_input()
+    {
+        var bytes = new byte[40];
+        CompanyA.TryWriteBytes(bytes.AsSpan(0, 16));
+        BitConverter.TryWriteBytes(bytes.AsSpan(16, 8), long.MaxValue);
+        Guid.NewGuid().TryWriteBytes(bytes.AsSpan(24, 16));
+        var cursor = Convert.ToBase64String(bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_');
+
+        var exception = Assert.Throws<PriceListStoreException>(() => ProductPriceListStore.ListCursor.Decode(cursor, CompanyA));
+        Assert.Equal(PriceListStoreCodes.InvalidCursor, exception.Code);
     }
 
     private static ProductPriceListCommandMetadata Metadata() =>

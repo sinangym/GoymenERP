@@ -16,6 +16,7 @@ import { SHELL_CAPABILITY_CONTRACT_VERSION } from '../../shell/api'
 import { PRICE_LIST_CAPABILITY } from './capabilities'
 import { formatMoneyText, parseMoneyInput } from './contract'
 import { priceListRoutes } from './priceListRoutes'
+import { resetRetainedPriceListAttempts } from './priceListAttempt'
 import { PRICE_LIST_TEXT as T, PRICE_LIST_CODE_TEXT } from './priceListText'
 
 const COMPANY_A = '99999999-9999-9999-9999-999999999999'
@@ -84,6 +85,7 @@ function renderApp(path: string) {
 
 afterEach(() => {
   cleanup()
+  resetRetainedPriceListAttempts()
   vi.unstubAllGlobals()
   vi.restoreAllMocks()
 })
@@ -148,6 +150,9 @@ describe('U-05 price lists', () => {
     await userEvent.type(screen.getByLabelText(`2. ${T.upperQuantity}`), '20')
     await userEvent.click(screen.getByTestId('price-list-save'))
 
+    await screen.findByText(T.notice.unknown)
+    cleanup()
+    renderApp('/fiyat-listeleri/yeni')
     await screen.findByText(T.notice.unknown)
     await userEvent.click(screen.getByRole('button', { name: T.notice.retry }))
     expect(await screen.findByTestId('price-list-name')).toBeTruthy()

@@ -85,6 +85,7 @@ internal sealed class PriceListAttemptRow : IProductPriceListTenantRow
     public string ActorId { get; set; } = string.Empty;
     public int Outcome { get; set; }
     public Guid? PriceListId { get; set; }
+    public string? ResultJson { get; set; }
     public string? RefusalJson { get; set; }
     public string CorrelationId { get; set; } = string.Empty;
     public DateTimeOffset RecordedAtUtc { get; set; }

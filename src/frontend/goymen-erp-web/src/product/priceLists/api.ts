@@ -65,7 +65,10 @@ export function fetchPriceLists(companyId: string, cursor: string | null, signal
 }
 
 export function fetchPriceList(priceListId: string, companyId: string, signal?: AbortSignal): Promise<ViewOutcome<PriceListView>> {
-  return read(`/price-lists/${encodeURIComponent(priceListId)}`, companyId, decodePriceListView, signal)
+  return read(`/price-lists/${encodeURIComponent(priceListId)}`, companyId, (body) => {
+    const decoded = decodePriceListView(body)
+    return decoded !== null && sameIdentity(decoded.id, priceListId) ? decoded : null
+  }, signal)
 }
 
 export function fetchProductOptions(query: string, companyId: string, signal?: AbortSignal): Promise<ViewOutcome<PriceListProductOptions>> {
@@ -116,7 +119,19 @@ export async function sendPriceListCommand(command: PriceListCommand, companyId:
   if (response.status === success || (command.kind === 'create' && response.status === 200)) {
     try {
       const data = decodePriceListResult(await response.json())
-      return data === null ? { type: 'unknown', reason: 'malformed-response' } : { type: 'succeeded', data }
+      const expectedId = command.kind === 'create' ? command.payload.priceListId : command.priceListId
+      const replayHeader = response.headers.get('Idempotency-Replayed')
+      const originalHeader = response.headers.get('Idempotency-Original-Correlation-Id')
+      const hasReplayHeader = replayHeader !== null
+      const headerSaysReplay = replayHeader === 'true'
+      const replayConsistent = data !== null
+        && hasReplayHeader === data.isReplay
+        && headerSaysReplay === data.isReplay
+        && (data.isReplay ? originalHeader === data.originalCorrelationId : originalHeader === null)
+        && (command.kind !== 'create' || (response.status === 200) === data.isReplay)
+      return data === null || !sameIdentity(data.priceList.id, expectedId) || !replayConsistent
+        ? { type: 'unknown', reason: 'malformed-response' }
+        : { type: 'succeeded', data }
     } catch {
       return { type: 'unknown', reason: 'malformed-response' }
     }
@@ -134,4 +149,8 @@ export async function sendPriceListCommand(command: PriceListCommand, companyId:
   }
 
   return { type: 'http', status: response.status, problem: decodeProblem(body) }
+}
+
+function sameIdentity(left: string, right: string): boolean {
+  return left.toLowerCase() === right.toLowerCase()
 }

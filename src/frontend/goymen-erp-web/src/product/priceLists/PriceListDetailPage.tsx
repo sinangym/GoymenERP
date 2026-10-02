@@ -19,7 +19,7 @@ import { PRICE_LIST_CAPABILITY, PRICE_LIST_ROUTE } from './capabilities'
 import { formatDate, formatMoneyText, isWireDate, todayText, type PriceListVersion, type PriceListView } from './contract'
 import { PriceListLinesEditor } from './PriceListLinesEditor'
 import { buildLines, rowsFromLines, type PriceListLineRow } from './priceListLines'
-import { newIdentity } from './priceListAttempt'
+import { isPriceListAttemptFrozen, livePriceListSnapshot, newIdentity } from './priceListAttempt'
 import { PRICE_LIST_TEXT as T, VERSION_STATUS_TEXT } from './priceListText'
 import { attemptNotice, fieldErrorTexts, usePriceListCommand } from './usePriceListCommand'
 import styles from './PriceListPages.module.css'
@@ -156,7 +156,7 @@ function CommandNotice({ attempt, success, retry, abandon }: {
         </p>
       )}
       {fieldErrorTexts(attempt).map((text) => <p key={text} className={styles.fieldError}>{text}</p>)}
-      {attempt.phase === 'unknown' ? (
+      {attempt.phase !== 'sending' && livePriceListSnapshot(attempt) !== null ? (
         <div className={styles.actions}>
           <button type="button" className={styles.secondaryButton} onClick={retry}>{T.notice.retry}</button>
           <button type="button" className={styles.linkButton} onClick={abandon}>{T.notice.abandon}</button>
@@ -183,7 +183,7 @@ function DraftEditor({ shell, view, draft, companyId, onChanged }: {
     setEditing(false)
     onChanged()
   }, onChanged)
-  const frozen = command.attempt.phase === 'sending' || command.attempt.phase === 'unknown'
+  const frozen = isPriceListAttemptFrozen(command.attempt)
 
   function start() {
     setName(view.name)
@@ -247,7 +247,7 @@ function PublishCommand({ shell, view, draft, onChanged }: {
   readonly onChanged: () => void
 }) {
   const command = usePriceListCommand(shell, `product.price-list.publish:${view.id}`, onChanged, onChanged)
-  const frozen = command.attempt.phase === 'sending' || command.attempt.phase === 'unknown'
+  const frozen = isPriceListAttemptFrozen(command.attempt)
   return (
     <section className={styles.section} aria-label={T.publish}>
       <p className={styles.muted}>{T.publishNote}</p>
@@ -272,7 +272,7 @@ function StartVersionCommand({ shell, view, onChanged }: {
   const [validThrough, setValidThrough] = useState('')
   const [localError, setLocalError] = useState<string | null>(null)
   const command = usePriceListCommand(shell, `product.price-list.start:${view.id}`, onChanged, onChanged)
-  const frozen = command.attempt.phase === 'sending' || command.attempt.phase === 'unknown'
+  const frozen = isPriceListAttemptFrozen(command.attempt)
 
   function start() {
     setLocalError(null)
