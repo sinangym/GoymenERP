@@ -158,6 +158,104 @@ namespace GoymenERP.Modules.Accounting.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("GoymenERP.Modules.Accounting.Infrastructure.Persistence.ApprovedAccountingSourceCatalogRow", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("AccountPlanSourceVersion")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("AccountsSourceSha256")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)");
+
+                    b.Property<DateTimeOffset?>("ActivatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid?>("ActivatedByUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long?>("CatalogVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("PackageJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("PostingMappingsSourceSha256")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)");
+
+                    b.Property<DateTimeOffset>("PreparedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("PreparedByUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("int");
+
+                    b.Property<string>("TemplateVersion")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<long>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint");
+
+                    b.HasKey("Id");
+
+                    b.HasAlternateKey("CompanyId", "Id");
+
+                    b.HasIndex("CompanyId", "CatalogVersion")
+                        .IsUnique()
+                        .HasDatabaseName("UX_ApprovedSourceCatalogs_Version")
+                        .HasFilter("[CatalogVersion] IS NOT NULL");
+
+                    b.HasIndex("CompanyId", "Status")
+                        .IsUnique()
+                        .HasDatabaseName("UX_ApprovedSourceCatalogs_Active")
+                        .HasFilter("[Status] = 2");
+
+                    b.ToTable("ApprovedSourceCatalogs", "accounting", t =>
+                        {
+                            t.HasCheckConstraint("CK_ApprovedSourceCatalogs_Hashes", "LEN([AccountsSourceSha256]) = 64 AND LEN([PostingMappingsSourceSha256]) = 64");
+
+                            t.HasCheckConstraint("CK_ApprovedSourceCatalogs_Identity", "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [PreparedByUserId] <> '00000000-0000-0000-0000-000000000000'");
+
+                            t.HasCheckConstraint("CK_ApprovedSourceCatalogs_Status", "([Status] = 1 AND [CatalogVersion] IS NULL AND [ActivatedByUserId] IS NULL AND [ActivatedAtUtc] IS NULL) OR ([Status] IN (2, 3) AND [CatalogVersion] >= 1 AND [ActivatedByUserId] IS NOT NULL AND [ActivatedByUserId] <> '00000000-0000-0000-0000-000000000000' AND [ActivatedAtUtc] IS NOT NULL)");
+
+                            t.HasCheckConstraint("CK_ApprovedSourceCatalogs_Text", "LEN([TemplateVersion]) > 0 AND LEN([AccountPlanSourceVersion]) > 0 AND ISJSON([PackageJson]) = 1");
+
+                            t.HasCheckConstraint("CK_ApprovedSourceCatalogs_Version", "[Version] >= 1");
+                        });
+                });
+
             modelBuilder.Entity("GoymenERP.Modules.Accounting.Infrastructure.Persistence.DeliveryRow", b =>
                 {
                     b.Property<Guid>("CompanyId")
@@ -902,6 +1000,15 @@ namespace GoymenERP.Modules.Accounting.Infrastructure.Persistence.Migrations
                         .WithMany()
                         .HasForeignKey("CompanyId", "SourceJournalId")
                         .HasPrincipalKey("CompanyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Accounting.Infrastructure.Persistence.ApprovedAccountingSourceCatalogRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Accounting.Infrastructure.Persistence.OrganizationCompanyReference", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });
