@@ -1,3 +1,4 @@
+using System.Text.Json;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Inventory.Application;
@@ -9,6 +10,39 @@ namespace GoymenERP.Inventory.UnitTests;
 public sealed class InventoryLabelClassificationTests
 {
     private const string Permission = "inventory.label-classification.write";
+
+    [Theory]
+    [InlineData("Standard", InventoryLabelClassificationV1.Standard)]
+    [InlineData("SecondQuality", InventoryLabelClassificationV1.SecondQuality)]
+    [InlineData("Scrap", InventoryLabelClassificationV1.Scrap)]
+    public void Published_classification_names_are_the_request_wire_contract(
+        string name,
+        InventoryLabelClassificationV1 expected)
+    {
+        var request = JsonSerializer.Deserialize<ClassifyInventoryLabelV1>(
+            $$"""{"expectedLabelVersion":"7","classification":"{{name}}"}""",
+            new JsonSerializerOptions(JsonSerializerDefaults.Web));
+
+        Assert.NotNull(request);
+        Assert.Equal(("7", expected), (request.ExpectedLabelVersion, request.Classification));
+        Assert.Equal(
+            $$"""{"expectedLabelVersion":"7","classification":"{{name}}"}""",
+            JsonSerializer.Serialize(request, new JsonSerializerOptions(JsonSerializerDefaults.Web)));
+    }
+
+    [Theory]
+    [InlineData("1")]
+    [InlineData("2")]
+    [InlineData("3")]
+    [InlineData("0")]
+    [InlineData("4")]
+    [InlineData("\"Undefined\"")]
+    public void Numeric_or_undefined_classification_tokens_are_refused(string token)
+    {
+        Assert.Throws<JsonException>(() => JsonSerializer.Deserialize<ClassifyInventoryLabelV1>(
+            $$"""{"expectedLabelVersion":"7","classification":{{token}}}""",
+            new JsonSerializerOptions(JsonSerializerDefaults.Web)));
+    }
 
     [Fact]
     public async Task Command_derives_metadata_and_keeps_a_fresh_fence_inside_the_writer()

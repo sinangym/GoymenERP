@@ -2,13 +2,20 @@ using System.Text.Json.Serialization;
 
 namespace GoymenERP.Modules.Inventory.Application;
 
-[JsonConverter(typeof(JsonStringEnumConverter<InventoryLabelClassificationV1>))]
+[JsonConverter(typeof(InventoryLabelClassificationJsonConverterV1))]
 public enum InventoryLabelClassificationV1
 {
     Standard = 1,
     SecondQuality = 2,
     Scrap = 3,
 }
+
+/// <summary>
+/// The published request schema carries the three enum names as strings. Numeric enum tokens are not an
+/// alternate wire contract, even when they happen to map to a defined CLR value.
+/// </summary>
+public sealed class InventoryLabelClassificationJsonConverterV1()
+    : JsonStringEnumConverter<InventoryLabelClassificationV1>(namingPolicy: null, allowIntegerValues: false);
 
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record ClassifyInventoryLabelV1(
