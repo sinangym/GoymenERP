@@ -9,6 +9,7 @@ namespace GoymenERP.Modules.Logistics.Application.Contracts;
 public sealed record ApprovedDispatchInvoiceSourceLineV1(
     int LineNo,
     Guid SourceOrderId,
+    int SourceOrderRevision,
     Guid SourceOrderLineId,
     Guid ShipmentId,
     Guid ProductId,

@@ -22,6 +22,10 @@ public sealed partial class LogisticsInstructionService
             stored = await GuardedAsync(scope, bindings.ReadPermission,
                 () => store.FindApprovedDispatchInvoiceSourceAsync(dispatchNoteId, cancellationToken), cancellationToken);
         }
+        catch (LogisticsStoreException exception) when (exception.Code == LogisticsStoreCodes.InvoiceSourceInvalid)
+        {
+            throw new LogisticsInstructionServiceException(503, LogisticsProblemCodesV1.ReferenceProviderInvalid);
+        }
         catch (LogisticsStoreException exception)
         {
             throw Store(exception);
@@ -33,7 +37,8 @@ public sealed partial class LogisticsInstructionService
         }
 
         if (stored.Number is null || stored.ApprovedAtUtc is null || stored.Lines.Count == 0
-            || stored.Lines.Any(line => line.LineNo < 1 || line.SourceOrderId == Guid.Empty || line.SourceOrderLineId == Guid.Empty
+            || stored.Lines.Any(line => line.LineNo < 1 || line.SourceOrderId == Guid.Empty || line.SourceOrderRevision < 0
+                || line.SourceOrderLineId == Guid.Empty
                 || line.ShipmentId == Guid.Empty || line.ProductId == Guid.Empty || line.UnitId == Guid.Empty || line.Quantity <= 0))
         {
             throw new LogisticsInstructionServiceException(503, LogisticsProblemCodesV1.ReferenceProviderInvalid);
@@ -52,6 +57,7 @@ public sealed partial class LogisticsInstructionService
             [.. stored.Lines.Select(line => new ApprovedDispatchInvoiceSourceLineV1(
                 line.LineNo,
                 line.SourceOrderId,
+                line.SourceOrderRevision,
                 line.SourceOrderLineId,
                 line.ShipmentId,
                 line.ProductId,
