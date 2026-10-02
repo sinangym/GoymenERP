@@ -880,7 +880,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         // the company series moved under its token, every step replayed in order; SqlClient count unchanged.
                         // Re-fingerprinted for the cross-instruction aggregate deadlock closure: SQL 1205 is mapped through
                         // the existing replay-safe wrapper chain; no new database API and SqlClient count unchanged.
-                        "4f1426d8104f07b281efe8235989d925911385aed989c4bd3e6f542880ea59eb",
+                        "2e19c8adc7f83d82a3685adb47572f00681c4e2434e00567c6aa379c46df64b9",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
