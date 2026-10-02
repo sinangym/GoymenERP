@@ -52,6 +52,9 @@ public sealed class AccountingDbContext(DbContextOptions<AccountingDbContext> op
     internal DbSet<AccountingJournalReversalProposalRow> JournalReversalProposals =>
         Set<AccountingJournalReversalProposalRow>();
 
+    internal DbSet<ApprovedAccountingSourceCatalogRow> ApprovedSourceCatalogs =>
+        Set<ApprovedAccountingSourceCatalogRow>();
+
     /// <summary>
     /// ACC-V0 (Ö4): the facts follow the status exactly. Proposed (3): the preparer only; Open (1): the
     /// preparer and an approval by SOMEONE ELSE; Closed (2): both plus the close.
@@ -83,6 +86,7 @@ public sealed class AccountingDbContext(DbContextOptions<AccountingDbContext> op
         ConfigureNormalJournalDrafts(modelBuilder);
         ConfigureNormalJournalDraftLines(modelBuilder);
         ConfigureJournalReversalProposals(modelBuilder);
+        ConfigureApprovedSourceCatalogs(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()
             .HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
@@ -425,6 +429,47 @@ public sealed class AccountingDbContext(DbContextOptions<AccountingDbContext> op
         entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
 
+    private void ConfigureApprovedSourceCatalogs(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<ApprovedAccountingSourceCatalogRow>();
+        entity.ToTable("ApprovedSourceCatalogs", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_ApprovedSourceCatalogs_Identity",
+                "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [PreparedByUserId] <> '00000000-0000-0000-0000-000000000000'");
+            table.HasCheckConstraint("CK_ApprovedSourceCatalogs_Status",
+                "([Status] = 1 AND [CatalogVersion] IS NULL AND [ActivatedByUserId] IS NULL AND [ActivatedAtUtc] IS NULL) OR "
+                + "([Status] IN (2, 3) AND [CatalogVersion] >= 1 AND [ActivatedByUserId] IS NOT NULL "
+                + "AND [ActivatedByUserId] <> '00000000-0000-0000-0000-000000000000' AND [ActivatedAtUtc] IS NOT NULL)");
+            table.HasCheckConstraint("CK_ApprovedSourceCatalogs_Version", "[Version] >= 1");
+            table.HasCheckConstraint("CK_ApprovedSourceCatalogs_Hashes",
+                "LEN([AccountsSourceSha256]) = 64 AND LEN([PostingMappingsSourceSha256]) = 64");
+            table.HasCheckConstraint("CK_ApprovedSourceCatalogs_Text",
+                "LEN([TemplateVersion]) > 0 AND LEN([AccountPlanSourceVersion]) > 0 AND ISJSON([PackageJson]) = 1");
+        });
+        entity.HasKey(x => x.Id);
+        entity.HasAlternateKey(x => new { x.CompanyId, x.Id });
+        entity.Property(x => x.Id).ValueGeneratedNever();
+        entity.Property(x => x.Version).IsConcurrencyToken();
+        entity.Property(x => x.RowVersion).IsRowVersion();
+        entity.Property(x => x.TemplateVersion).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
+        entity.Property(x => x.AccountPlanSourceVersion).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
+        entity.Property(x => x.AccountsSourceSha256).HasMaxLength(64).IsUnicode(false).IsRequired();
+        entity.Property(x => x.PostingMappingsSourceSha256).HasMaxLength(64).IsUnicode(false).IsRequired();
+        entity.Property(x => x.PackageJson).HasColumnType("nvarchar(max)").IsRequired();
+        entity.HasIndex(x => new { x.CompanyId, x.Status })
+            .IsUnique()
+            .HasFilter("[Status] = 2")
+            .HasDatabaseName("UX_ApprovedSourceCatalogs_Active");
+        entity.HasIndex(x => new { x.CompanyId, x.CatalogVersion })
+            .IsUnique()
+            .HasFilter("[CatalogVersion] IS NOT NULL")
+            .HasDatabaseName("UX_ApprovedSourceCatalogs_Version");
+        entity.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
     private void ApplyWriteGuards()
     {
         AccountingAuditEventTenantGuard.Validate(this, companyContext);
@@ -473,6 +518,11 @@ public sealed class AccountingDbContext(DbContextOptions<AccountingDbContext> op
                         nameof(AccountingJournalReversalProposalRow.DecidedByUserId),
                         nameof(AccountingJournalReversalProposalRow.DecidedAtUtc),
                         nameof(AccountingJournalReversalProposalRow.DecisionReason)],
+                    ApprovedAccountingSourceCatalogRow => [nameof(ApprovedAccountingSourceCatalogRow.Status),
+                        nameof(ApprovedAccountingSourceCatalogRow.CatalogVersion),
+                        nameof(ApprovedAccountingSourceCatalogRow.ActivatedByUserId),
+                        nameof(ApprovedAccountingSourceCatalogRow.ActivatedAtUtc),
+                        nameof(ApprovedAccountingSourceCatalogRow.UpdatedAtUtc)],
                     _ => [],
                 };
                 var changed = entry.Properties
