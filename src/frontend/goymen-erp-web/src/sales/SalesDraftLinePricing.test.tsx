@@ -181,7 +181,7 @@ describe('AT-018 list price on the order line', () => {
     renderSalesApp(path)
 
     const form = await screen.findByTestId('sales-price-revision-form')
-    expect(within(form).getByTestId('sales-price-reference-1').textContent).toBe(`${P.reference}: ${P.noReference}`)
+    expect((await within(form).findByTestId('sales-price-reference-1')).textContent).toBe(`${P.reference}: ${P.noReference}`)
     await userEvent.click(await within(form).findByTestId('sales-price-fetch-1'))
     await userEvent.click(await within(form).findByRole('button', { name: P.useReference }))
     // The chosen list price is the reference AND the default price (the person may still type another).
