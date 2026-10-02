@@ -117,14 +117,23 @@ describe('U-05 price lists', () => {
 
   it('creates a list, keeps one key across a lost reply, and opens the stored list as the server answers it', async () => {
     let reads = 0
-    const stored = view({ versions: [version({ lines: [
+    let stored = view({ versions: [version({ lines: [
       line({ upperQuantity: '10' }),
       line({ lineId: 'l2', lineNo: 2, lowerQuantity: '10', upperQuantity: '20' }),
     ] })] })
     const harness = install({
       onOptions: () => json({ items: [{ productId: PRODUCT, code: 'SYN-1', name: 'Sentetik bant', units: [{ unitId: KG, role: 'Sales', code: 'kg' }] }],
         hasMore: false }),
-      onCommand: (_call, count) => {
+      onCommand: (call, count) => {
+        const submitted = JSON.parse(call.body ?? '{}') as {
+          priceListId: string
+          versionId: string
+          lines: [{ lineId: string }, { lineId: string }]
+        }
+        stored = view({ id: submitted.priceListId, versions: [version({ versionId: submitted.versionId, lines: [
+          line({ lineId: submitted.lines[0].lineId, upperQuantity: '10' }),
+          line({ lineId: submitted.lines[1].lineId, lineNo: 2, lowerQuantity: '10', upperQuantity: '20' }),
+        ] })] })
         if (count === 1) throw new TypeError('Failed to fetch')
         return json({ priceList: stored, isReplay: true, originalCorrelationId: 'c1' }, 200, {
           'Idempotency-Replayed': 'true',
@@ -170,6 +179,8 @@ describe('U-05 price lists', () => {
     expect(posts[0].body).toBe(posts[1].body)
     expect(posts[0].company).toBe(COMPANY_A)
     const sent = JSON.parse(posts[0].body ?? '{}') as Record<string, unknown>
+    expect(stored.id).toBe(sent.priceListId)
+    expect(stored.versions[0].versionId).toBe(sent.versionId)
     expect(sent).toMatchObject({ name: 'Yurt içi satış', currencyCode: 'TRY', channel: 'Sales', vatBasis: 'ExcludingVat', validFrom: '2026-10-01',
       validThrough: null })
     expect((sent.lines as Record<string, unknown>[])[0]).toMatchObject({ productId: PRODUCT, priceUnitId: KG, unitPrice: '42000.5', floorUnitPrice: '40000',
