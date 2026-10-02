@@ -138,7 +138,8 @@ async function capabilitiesOf(request: APIRequestContext, actor: string): Promis
 }
 
 async function findActorWith(request: APIRequestContext, ...capabilities: readonly string[]): Promise<string | undefined> {
-  const actors = [preparerActor, approverActor, readerActor, supportCreatorActor, ordinaryCreatorActor, plannerActor]
+  const actors = [preparerActor, approverActor, readerActor, supportCreatorActor, ordinaryCreatorActor, plannerActor,
+    's04-logistics-preparer', 's04-logistics-loader']
   for (const actor of actors) {
     const published = await capabilitiesOf(request, actor)
     if (capabilities.every((capability) => published.includes(capability))) return actor
