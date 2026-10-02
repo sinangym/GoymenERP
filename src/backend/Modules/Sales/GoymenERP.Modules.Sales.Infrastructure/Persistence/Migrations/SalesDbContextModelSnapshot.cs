@@ -411,6 +411,9 @@ partial class SalesDbContextModelSnapshot : ModelSnapshot
             b.Property<Guid?>("PriceUnitId")
                 .HasColumnType("uniqueidentifier");
 
+            b.Property<string>("PricingJson")
+                .HasColumnType("nvarchar(max)");
+
             b.Property<Guid>("ProductId")
                 .HasColumnType("uniqueidentifier");
 
@@ -439,6 +442,8 @@ partial class SalesDbContextModelSnapshot : ModelSnapshot
                     t.HasCheckConstraint("CK_DraftRevisionLines_Identity", "[LineNo] >= 1 AND [LineId] <> '00000000-0000-0000-0000-000000000000' AND [ProductId] <> '00000000-0000-0000-0000-000000000000' AND [OrderUnitId] <> '00000000-0000-0000-0000-000000000000' AND LEN([QuantityText]) > 0");
 
                     t.HasCheckConstraint("CK_DraftRevisionLines_Price", "([UnitPrice] IS NULL AND [PriceUnitId] IS NULL) OR ([UnitPrice] IS NOT NULL AND [PriceUnitId] IS NOT NULL)");
+
+                    t.HasCheckConstraint("CK_DraftRevisionLines_Pricing", "[PricingJson] IS NULL OR ([UnitPrice] IS NOT NULL AND ISJSON([PricingJson]) = 1)");
                 });
         });
 
@@ -768,6 +773,9 @@ partial class SalesDbContextModelSnapshot : ModelSnapshot
             b.Property<Guid?>("PriceUnitId")
                 .HasColumnType("uniqueidentifier");
 
+            b.Property<string>("PricingJson")
+                .HasColumnType("nvarchar(max)");
+
             b.Property<string>("ProductCode")
                 .IsRequired()
                 .HasMaxLength(128)
@@ -852,6 +860,10 @@ partial class SalesDbContextModelSnapshot : ModelSnapshot
                 t.HasCheckConstraint(
                     "CK_DraftLines_Price",
                     "([UnitPrice] IS NULL AND [PriceUnitId] IS NULL) OR ([UnitPrice] IS NOT NULL AND [PriceUnitId] IS NOT NULL)");
+
+                t.HasCheckConstraint(
+                    "CK_DraftLines_Pricing",
+                    "[PricingJson] IS NULL OR ([UnitPrice] IS NOT NULL AND ISJSON([PricingJson]) = 1)");
 
                 t.HasCheckConstraint(
                     "CK_DraftLines_Quantity",

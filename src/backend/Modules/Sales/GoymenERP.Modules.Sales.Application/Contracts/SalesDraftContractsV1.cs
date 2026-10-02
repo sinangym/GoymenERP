@@ -58,8 +58,53 @@ public sealed record SalesDraftCustomerAcceptanceV1(
 /// </summary>
 public sealed record SalesDraftStateCommandRequest(string ExpectedVersion, string? Reason = null);
 
-/// <summary>K3 Head B: one line's commercial fields in a commercial revision — the client line id and the three fields (all nullable, as on the create).</summary>
-public sealed record SalesDraftLineCommercialV1(Guid LineId, string? UnitPrice = null, Guid? PriceUnitId = null, string? DiscountPercent = null);
+/// <summary>
+/// K3 Head B: one line's commercial fields in a commercial revision — the client line id and the three fields (all nullable, as on the create).
+/// AT-018 / AT-021 (user decision 2026-09-30, contract delta, all optional): <c>priceReference</c> names the Product price list
+/// version the line is priced from (the server re-reads its price; the client never sends it), <c>discountAmount</c> is the
+/// discount as an amount (instead of <c>discountPercent</c>), and <c>surchargePercent</c> / <c>surchargeAmount</c> the maturity
+/// surcharge (vade farkı). The unit price stays the line's own: the reference's price by default, or the person's overwrite.
+/// </summary>
+public sealed record SalesDraftLineCommercialV1(Guid LineId, string? UnitPrice = null, Guid? PriceUnitId = null, string? DiscountPercent = null,
+    SalesDraftPriceReferenceRequestV1? PriceReference = null, string? DiscountAmount = null, string? SurchargePercent = null,
+    string? SurchargeAmount = null);
+
+/// <summary>AT-018: the Product price list version a line is priced from (list id + version number); the price is the owner's.</summary>
+public sealed record SalesDraftPriceReferenceRequestV1(Guid PriceListId, int VersionNo);
+
+/// <summary>AT-018: a list price as the Product owner answers it, copied onto the line at the revision (exact text).</summary>
+public sealed record SalesDraftPriceReferenceV1(Guid PriceListId, string PriceListName, int VersionNo, DateOnly ValidFrom,
+    DateOnly? ValidThrough, string CurrencyCode, Guid PriceUnitId, string UnitPrice, string? FloorUnitPrice, string VatBasis,
+    string LowerQuantity, string? UpperQuantity);
+
+/// <summary>
+/// AT-018 / AT-021 / master §10.2: one line's price as the line carries it — the reference list price, the line's own unit
+/// price and whether it is the reference's ("Reference") or overwritten ("Manual"), the discount and the maturity surcharge
+/// as given, and the net from the one calculator (exact, never rounded; <c>null</c> without a price).
+/// </summary>
+public sealed record SalesDraftLinePricingV1(Guid LineId, int LineNo, string? UnitPrice, Guid? PriceUnitId, string? PriceSource,
+    SalesDraftPriceReferenceV1? PriceReference, string? DiscountPercent, string? DiscountAmount, string? SurchargePercent,
+    string? SurchargeAmount, string? NetUnitPrice, SalesDraftPriceFloorExceptionV1? FloorException);
+
+public sealed record SalesDraftPriceFloorExceptionV1(string RequestedBy, DateTimeOffset RequestedAtUtc,
+    string? ApprovedBy, DateTimeOffset? ApprovedAtUtc, string? Reason);
+
+public sealed record SalesDraftPriceFloorExceptionApprovalLineV1(Guid LineId, string Reason);
+
+/// <summary>Every current below-floor line exactly once; each approval carries its stored reason.</summary>
+public sealed record SalesDraftPriceFloorExceptionApprovalRequest(string ExpectedVersion,
+    IReadOnlyList<SalesDraftPriceFloorExceptionApprovalLineV1> Lines);
+
+/// <summary>GET …/{id}/line-pricing (price read): every line's pricing at the draft's current version.</summary>
+public sealed record SalesOrderDraftLinePricingResponse(string Version, IReadOnlyList<SalesDraftLinePricingV1> Lines);
+
+/// <summary>
+/// GET …/{id}/lines/{lineId}/price-references (price write): the Product owner's list prices for the line's product in its
+/// stock / sales / order unit, in the draft's currency, on the draft's business date. Several lists may answer (no scope
+/// priority is decided): the person chooses one.
+/// </summary>
+public sealed record SalesOrderDraftPriceReferencesResponse(Guid LineId, string CurrencyCode, DateOnly On,
+    IReadOnlyList<SalesDraftPriceReferenceV1> Items);
 
 /// <summary>
 /// K3 Head B (Sinan 5748258299): POST …/{id}/commercial-revision — the expected concurrency version and
@@ -216,6 +261,11 @@ public static class SalesDraftApiV1
     public const string CommercialRevisionPath = "/api/v1/sales/drafts/{id}/commercial-revision";
     public const string RevisionsPath = "/api/v1/sales/drafts/{id}/revisions";
 
+    // AT-018 / AT-021: the line pricing read (price read) and the line's list-price references (price write). The detail
+    // wire is unchanged: pricing lives on its own route so the S-04 decoder (exact members) keeps working.
+    public const string LinePricingPath = "/api/v1/sales/drafts/{id}/line-pricing";
+    public const string PriceReferencesPath = "/api/v1/sales/drafts/{id}/lines/{lineId}/price-references";
+
     // DEC-SAL-002 / AT-023: the quantity revision (200 with the detail after the change; same-key replay 200 +
     // `Idempotency-Replayed`). The detail wire is unchanged (the line's `quantity` carries the new text); the superseded
     // approved revision, with its reason, is read on the revisions route.
@@ -323,6 +373,12 @@ public static class SalesDraftJson
                 throw new JsonException("Invalid line fields.");
             if (line.UnitPrice is not null) RequireDecimalShape(line.UnitPrice, positive: false);
             if (line.DiscountPercent is not null) RequireDecimalShape(line.DiscountPercent, positive: false);
+            // AT-018: the reference names a list version (ids only), the amounts and the surcharge percent are plain decimal text.
+            if (line.PriceReference is { } reference && (reference.PriceListId == Guid.Empty || reference.VersionNo < 1))
+                throw new JsonException("Invalid price reference.");
+            if (line.DiscountAmount is not null) RequireDecimalShape(line.DiscountAmount, positive: false);
+            if (line.SurchargePercent is not null) RequireDecimalShape(line.SurchargePercent, positive: false);
+            if (line.SurchargeAmount is not null) RequireDecimalShape(line.SurchargeAmount, positive: false);
         }
 
         return request;

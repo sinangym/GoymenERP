@@ -134,6 +134,8 @@ internal sealed class DraftLineRow : ISalesTenantRow
     public string? UnitPrice { get; set; }
     public Guid? PriceUnitId { get; set; }
     public string? DiscountPercent { get; set; }
+    /// <summary>AT-018 / AT-021: the line's price-list reference and visible adjustments (JSON), null when it has none.</summary>
+    public string? PricingJson { get; set; }
 }
 
 /// <summary>One requested delivery slice of a line. Append-only.</summary>
@@ -212,6 +214,8 @@ internal sealed class DraftRevisionLineRow : ISalesTenantRow
     public string? UnitPrice { get; set; }
     public Guid? PriceUnitId { get; set; }
     public string? DiscountPercent { get; set; }
+    /// <summary>AT-018 / AT-021: the line's price-list reference and visible adjustments (JSON), null when it has none.</summary>
+    public string? PricingJson { get; set; }
 }
 
 /// <summary>

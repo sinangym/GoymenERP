@@ -31,6 +31,7 @@ export const SALES_CUSTOMER_ACCEPTANCE_RECORD_CAPABILITY = 'sales.orders.custome
 
 /** K3: the commercial-revision CONTROL on S-04; separate from every routed Sales screen. */
 export const SALES_PRICE_WRITE_CAPABILITY = 'sales.orders.price.write' as const
+export const SALES_PRICE_FLOOR_EXCEPTION_APPROVE_CAPABILITY = 'sales.orders.price-floor-exception.approve' as const
 
 /**
  * DEC-SAL-003: the planner's delivery-schedule update CONTROL on S-04 (dates only, no re-approval, audited). The shell
@@ -53,6 +54,7 @@ export const SALES_QUANTITY_WRITE_CAPABILITY = 'sales.orders.quantity.write' as 
 export type SalesCapabilityId =
   | (typeof SALES_CAPABILITY)[keyof typeof SALES_CAPABILITY]
   | typeof SALES_PRICE_WRITE_CAPABILITY
+  | typeof SALES_PRICE_FLOOR_EXCEPTION_APPROVE_CAPABILITY
   | typeof SALES_DELIVERY_SCHEDULE_WRITE_CAPABILITY
   | typeof SALES_CANCEL_CAPABILITY
   | typeof SALES_QUANTITY_WRITE_CAPABILITY

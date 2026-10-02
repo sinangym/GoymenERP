@@ -1368,6 +1368,8 @@ public sealed partial class SalesDraftServiceTests
         public ISalesOrderAllocationReadPortV1? Allocations { get; set; }
         /// <summary>DEC-SAL-005: the loading owner's read port (Logistics); null = not composed.</summary>
         public ISalesOrderLoadingReadPortV1? Loadings { get; set; }
+        /// <summary>AT-018: the Product price-list reference read; null = not composed.</summary>
+        public IProductQuantityPriceReferenceReaderV1? PriceReferences { get; set; }
         public FixedActiveRoleCodeReader ActiveRoleCodes { get; } = new();
         public SalesDraftServiceBindings Bindings { get; set; } = new(CreatePermission, ReadPermission, ApprovePermission, PricePermission, PriceReadPermission, SchedulePermission,
             CancelPermission, QuantityPermission);
@@ -1378,7 +1380,7 @@ public sealed partial class SalesDraftServiceTests
             company.Set(Company);
             return new SalesDraftService(company, User, Authority, ActiveRoleCodes, new FixedCorrelation(), Accounts, Settings,
                 NoProducts ? null : Products, Store, Bindings, TimeProvider.System, NoContactInformation ? null : ContactInformation, Deliveries,
-                Allocations, Loadings);
+                Allocations, Loadings, PriceReferences);
         }
 
         public void ResetOwnerCalls()
@@ -1619,7 +1621,8 @@ public sealed partial class SalesDraftServiceTests
             Guid draftId, Func<SalesOrderDraft, DateTimeOffset, ApprovedRevisionSnapshot?> mutate, SalesDraftStateAudit audit,
             Func<CancellationToken, Task> beforeWrite, CancellationToken cancellationToken = default)
         {
-            if (commandName != SalesDraftCommands.ReviseCommercialV1) throw new ArgumentException("wrong command", nameof(commandName));
+            if (commandName is not (SalesDraftCommands.ReviseCommercialV1 or SalesDraftCommands.ApprovePriceFloorExceptionsV1))
+                throw new ArgumentException("wrong command", nameof(commandName));
             ApprovedRevisionSnapshot? archived = null;
             var result = await UpdateDraftStateAsyncCore(envelope, requestHash, commandName, draftId,
                 (draft, now) => archived = mutate(draft, now), audit, beforeWrite, cancellationToken);

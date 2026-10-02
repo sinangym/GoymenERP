@@ -254,6 +254,8 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
             table.HasCheckConstraint("CK_DraftLines_Scale",
                 "[OrderUnitProfileScale] >= 0 AND [OrderUnitScale] >= 0 AND [OrderUnitScale] <= [OrderUnitProfileScale] AND [OrderUnitScale] <= 3");
             table.HasCheckConstraint("CK_DraftLines_Price", "([UnitPrice] IS NULL AND [PriceUnitId] IS NULL) OR ([UnitPrice] IS NOT NULL AND [PriceUnitId] IS NOT NULL)");
+            // AT-018 / AT-021: the pricing detail exists only beside a price.
+            table.HasCheckConstraint("CK_DraftLines_Pricing", "[PricingJson] IS NULL OR ([UnitPrice] IS NOT NULL AND ISJSON([PricingJson]) = 1)");
             table.HasCheckConstraint("CK_DraftLines_Window",
                 "[OrderUnitEffectiveThrough] IS NULL OR [OrderUnitEffectiveThrough] >= [OrderUnitEffectiveFrom]");
         });
@@ -277,6 +279,7 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
         entity.Property(x => x.Note).HasMaxLength(SalesOrderDraft.MaximumNoteLength);
         entity.Property(x => x.UnitPrice).HasMaxLength(128);
         entity.Property(x => x.DiscountPercent).HasMaxLength(128);
+        entity.Property(x => x.PricingJson).HasColumnType("nvarchar(max)");
         entity.HasOne<DraftRow>().WithMany()
             .HasForeignKey(x => new { x.CompanyId, x.DraftId })
             .HasPrincipalKey(x => new { x.CompanyId, x.Id })
@@ -498,6 +501,8 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
                 + "AND [OrderUnitId] <> '00000000-0000-0000-0000-000000000000' AND LEN([QuantityText]) > 0");
             table.HasCheckConstraint("CK_DraftRevisionLines_Price",
                 "([UnitPrice] IS NULL AND [PriceUnitId] IS NULL) OR ([UnitPrice] IS NOT NULL AND [PriceUnitId] IS NOT NULL)");
+            table.HasCheckConstraint("CK_DraftRevisionLines_Pricing",
+                "[PricingJson] IS NULL OR ([UnitPrice] IS NOT NULL AND ISJSON([PricingJson]) = 1)");
         });
         line.HasKey(x => new { x.CompanyId, x.DraftId, x.Revision, x.LineNo });
         line.HasIndex(x => new { x.CompanyId, x.DraftId, x.Revision, x.LineId }).IsUnique().HasDatabaseName("UX_DraftRevisionLines_LineId");
@@ -505,6 +510,7 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
         line.Property(x => x.QuantityText).HasMaxLength(128).IsRequired();
         line.Property(x => x.UnitPrice).HasMaxLength(128);
         line.Property(x => x.DiscountPercent).HasMaxLength(128);
+        line.Property(x => x.PricingJson).HasColumnType("nvarchar(max)");
         line.HasOne<DraftRevisionRow>().WithMany()
             .HasForeignKey(x => new { x.CompanyId, x.DraftId, x.Revision })
             .HasPrincipalKey(x => new { x.CompanyId, x.DraftId, x.Revision })
@@ -560,6 +566,8 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
                     DraftLineRow =>
                     [
                         nameof(DraftLineRow.UnitPrice), nameof(DraftLineRow.PriceUnitId), nameof(DraftLineRow.DiscountPercent),
+                        // AT-018 / AT-021: the pricing detail moves with the three commercial columns, under a commercial revision.
+                        nameof(DraftLineRow.PricingJson),
                         nameof(DraftLineRow.Quantity), nameof(DraftLineRow.QuantityText),
                     ],
                     // DEC-SAL-003: the delivery schedule is APPEND-ONLY — a change adds a schedule and its dates and moves

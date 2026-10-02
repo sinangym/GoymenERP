@@ -1155,6 +1155,53 @@ public sealed class SalesDraftApprovalSqlServerRelationalAcceptanceTests
     }
 
     /// <summary>The same draft with its one line PRICED (12.50 per kg, 5 %): the values an approved revision must keep verbatim.</summary>
+    /// <summary>
+    /// AT-018 / AT-021 on real SQL: a line priced from a list keeps its reference and its visible adjustments (discount amount,
+    /// surcharge percent) in <c>sales.DraftLines.PricingJson</c>, written in the commercial revision's ONE save and restored
+    /// exactly; the audit event carries them with the calculator's net; the rollback of <c>AddLinePricing</c> refuses with
+    /// 51064 while any pricing exists (forward fix). Written in the AT-018 slice; not run there (no SQL slot).
+    /// </summary>
+    [SqlServerFact]
+    public async Task A_line_priced_from_a_list_keeps_its_reference_and_adjustments_in_one_save_and_the_rollback_refuses_on_real_sql()
+    {
+        await using var run = await Run.StartAsync();
+        var owners = Owners.For(CompanyA);
+        var reference = new PriceReferenceSnapshot(Guid.NewGuid(), "SENTETIK liste", 2, Day, null, "TRY", KgUnit, "12.5", "10", "ExcludingVat",
+            "10", "20");
+        var fields = new CommercialDraftFields("12.50", KgUnit, null, reference, "0.50", "1.5", null);
+        SalesOrderDraft draft;
+        await using (var a = run.Store(CompanyA))
+        {
+            draft = (await a.Store.StoreDraftAsync(run.Envelope("k-pl-create"), Hash("payload-pl"), documentNo => PricedDraft(owners, documentNo, T0))).Draft;
+            var lineId = draft.Lines[0].Id;
+            var revised = await a.Store.ReviseDraftCommercialAsync(run.Envelope("k-pl-price"), Hash("price-pl"), SalesDraftCommands.ReviseCommercialV1,
+                draft.Id, (d, now) => d.ReviseCommercial(d.Version, [new LineCommercialInput(lineId, fields)], run.Actor, now), Revised,
+                _ => Task.CompletedTask);
+            Assert.NotNull(revised);
+        }
+
+        await using (var b = run.Store(CompanyA))
+        {
+            var reopened = (await b.Store.FindDraftAsync(draft.Id))!;
+            Assert.Equal(fields, reopened.Lines[0].Commercial);
+            Assert.Equal(("10", "20"), (reopened.Lines[0].Commercial.Reference!.LowerQuantity,
+                reopened.Lines[0].Commercial.Reference.UpperQuantity));
+            Assert.Equal(("Reference", "12.18"), (reopened.Lines[0].Commercial.PriceSource, SalesLinePriceCalculator.NetUnitPriceText(reopened.Lines[0].Commercial)));
+        }
+
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[DraftLines] WHERE [DraftId] = @id AND ISJSON([PricingJson]) = 1",
+            ("@id", draft.Id)));
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [EntityType] = N'Sales.OrderDraft' "
+            + "AND [EventType] = N'sales.order-draft.commercial-revised.v1' AND [EntityId] = @id AND [AfterJson] LIKE N'%netUnitPrice%12.18%'",
+            ("@id", draft.Id.ToString("D"))));
+
+        await using var context = run.Context(CompanyA);
+        var refusal = await Assert.ThrowsAsync<SqlException>(() => context.GetService<IMigrator>().MigrateAsync("20260928090000_AddRevisionReasons"));
+        Assert.Equal(51064, refusal.Number);
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[DraftLines] WHERE [DraftId] = @id AND [PricingJson] IS NOT NULL",
+            ("@id", draft.Id)));
+    }
+
     private static SalesOrderDraft PricedDraft(Owners owners, string documentNo, DateTimeOffset at)
     {
         var header = new SalesDraftHeader(owners.Party, owners.Account, Currency, Day);

@@ -43,6 +43,18 @@ public static class SalesDraftProblemCodesV1
     /// </summary>
     public const string PriceWriteForbidden = "price_write_forbidden";
 
+    /// <summary>
+    /// 422 (AT-018): the named price list version no longer prices this line's product in this unit on the draft's business
+    /// date (not found, another company's, ended, another version active) — field <c>lines[i].priceReference</c>. Not recorded.
+    /// </summary>
+    public const string PriceReferenceUnavailable = "price_reference_unavailable";
+
+    /// <summary>422 (AT-018): the list's currency is not the draft's; nothing is converted — field <c>lines[i].priceReference</c>.</summary>
+    public const string PriceReferenceCurrencyMismatch = "price_reference_currency_mismatch";
+
+    /// <summary>503 (AT-018): the Product price-list owner is not composed in this host; never an assumed "no price".</summary>
+    public const string PriceListProviderUnavailable = "price_list_provider_unavailable";
+
     /// <summary>422 (contract delta, card decision 3): an owner reference without an owner port is refused, never stored unvalidated.</summary>
     public const string OwnerReferenceUnavailable = "owner_reference_unavailable";
 
@@ -158,4 +170,5 @@ public sealed record SalesDraftServiceBindings(
     string? DeliverySchedulePermission = SalesPermissionManifestV1.OrdersDeliveryScheduleWrite,
     string? CancelPermission = SalesPermissionManifestV1.OrdersCancel,
     string? QuantityPermission = SalesPermissionManifestV1.OrdersQuantityWrite,
-    string? CustomerAcceptancePermission = SalesPermissionManifestV1.OrdersCustomerAcceptanceRecord);
+    string? CustomerAcceptancePermission = SalesPermissionManifestV1.OrdersCustomerAcceptanceRecord,
+    string? PriceFloorExceptionApprovePermission = SalesPermissionManifestV1.OrdersPriceFloorExceptionApprove);
