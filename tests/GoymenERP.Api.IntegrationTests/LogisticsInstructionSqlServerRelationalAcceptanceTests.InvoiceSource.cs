@@ -30,7 +30,7 @@ public sealed partial class LogisticsInstructionSqlServerRelationalAcceptanceTes
         instruction.AddLine(instruction.Version, firstInstructionLine,
             new SourceOrderLineRef(owners.Order, firstOrderLine, 0), firstProduct, KgUnit, null, Kg(6m), T0);
         instruction.AddLine(instruction.Version, secondInstructionLine,
-            new SourceOrderLineRef(secondOrder, secondOrderLine, 0), secondProduct, KgUnit, null, Kg(6m), T0);
+            new SourceOrderLineRef(secondOrder, secondOrderLine, 3), secondProduct, KgUnit, null, Kg(6m), T0);
 
         StoredLoadingInstruction stored;
         await using (var writer = run.Store(CompanyA))
@@ -96,10 +96,10 @@ public sealed partial class LogisticsInstructionSqlServerRelationalAcceptanceTes
                 source.CustomerPartyId, source.CompanyAccountId, source.Number!.Text, source.EDispatchNumber));
         Assert.NotNull(source.ApprovedAtUtc);
         Assert.Equal([
-                (owners.Order, firstOrderLine, firstShipment, firstProduct, KgUnit, 3m),
-                (secondOrder, secondOrderLine, secondShipment, secondProduct, KgUnit, 4.5m),
+                (owners.Order, 0, firstOrderLine, firstShipment, firstProduct, KgUnit, 3m),
+                (secondOrder, 3, secondOrderLine, secondShipment, secondProduct, KgUnit, 4.5m),
             ],
-            source.Lines.Select(line => (line.SourceOrderId, line.SourceOrderLineId, line.ShipmentId,
+            source.Lines.Select(line => (line.SourceOrderId, line.SourceOrderRevision, line.SourceOrderLineId, line.ShipmentId,
                 line.ProductId, line.UnitId, line.Quantity)).ToArray());
         Assert.Equal(logisticsBefore, await run.CountsAsync(instruction.Id));
         Assert.Equal(inventoryBefore, await InventorySnapshotAsync());

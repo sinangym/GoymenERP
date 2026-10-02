@@ -792,11 +792,17 @@ public sealed partial class LogisticsInstructionServiceTests
         public int SalesOrderReads { get; private set; }
 
         public int InvoiceSourceReads { get; private set; }
+        public int? InvoiceSourceRevisionOverride { get; set; }
+        public string? InvoiceSourceIntegrityFault { get; set; }
 
         public Task<StoredApprovedDispatchInvoiceSource?> FindApprovedDispatchInvoiceSourceAsync(Guid dispatchNoteId,
             CancellationToken cancellationToken = default)
         {
             InvoiceSourceReads++;
+            if (InvoiceSourceIntegrityFault is not null)
+            {
+                throw new LogisticsStoreException(LogisticsStoreCodes.InvoiceSourceInvalid, InvoiceSourceIntegrityFault);
+            }
             foreach (var stored in _instructions)
             {
                 var note = stored.Instruction.DispatchNotes.SingleOrDefault(candidate => candidate.DispatchNoteId == dispatchNoteId);
@@ -818,7 +824,8 @@ public sealed partial class LogisticsInstructionServiceTests
                     [.. note.Lines.Select(line =>
                     {
                         var source = stored.Instruction.Lines.Single(candidate => candidate.Id == line.InstructionLineId);
-                        return new StoredApprovedDispatchInvoiceSourceLine(line.LineNo, source.Source.OrderId, source.Source.LineId,
+                        return new StoredApprovedDispatchInvoiceSourceLine(line.LineNo, source.Source.OrderId,
+                            InvoiceSourceRevisionOverride ?? source.Source.Revision, source.Source.LineId,
                             line.ShipmentId, source.ProductId, source.UnitId, line.Quantity.Value);
                     })]));
             }
