@@ -88,7 +88,7 @@ public sealed class PriceListDomainTests
         var lineId = list.Versions[0].Lines[0].LineId;
 
         list.ReviseDraft(1, "  Yeni ad ", Today.AddDays(1), Today.AddDays(30), [new PriceListLineInput(lineId, ProductA, Kg, 41000m, 39000m),
-            Line(ProductB, 9.5m)], Now.AddMinutes(1));
+            Line(ProductB, 9.5m)], "editor-1", Now.AddMinutes(1));
 
         Assert.Equal(2, list.Version);
         Assert.Equal("Yeni ad", list.Name);
@@ -96,7 +96,8 @@ public sealed class PriceListDomainTests
         Assert.Equal((Today.AddDays(1), Today.AddDays(30)), (draft.ValidFrom, draft.ValidThrough));
         Assert.Equal([1, 2], draft.Lines.Select(line => line.LineNo));
         Assert.Equal((lineId, 41000m, 39000m), (draft.Lines[0].LineId, draft.Lines[0].UnitPrice, draft.Lines[0].FloorUnitPrice));
-        var conflict = Assert.Throws<PriceListVersionConflictException>(() => list.ReviseDraft(1, "x", Today, null, [], Now));
+        Assert.Equal(["user-1", "editor-1"], draft.PreparerActorIds);
+        var conflict = Assert.Throws<PriceListVersionConflictException>(() => list.ReviseDraft(1, "x", Today, null, [], "editor-2", Now));
         Assert.Equal((1, 2), (conflict.ExpectedVersion, conflict.CurrentVersion));
     }
 
@@ -121,7 +122,7 @@ public sealed class PriceListDomainTests
         Assert.Same(published, list.ResolveOn(Today));
         Assert.Equal(PriceListVersionStatus.Active, list.StatusOf(published, Today));
         Assert.Equal(PriceListRuleCodes.NoDraftVersion,
-            Assert.Throws<PriceListRuleException>(() => list.ReviseDraft(2, "x", Today, null, [], Now)).Code);
+            Assert.Throws<PriceListRuleException>(() => list.ReviseDraft(2, "x", Today, null, [], "u", Now)).Code);
         Assert.Equal(PriceListRuleCodes.VersionNotDraft, Assert.Throws<PriceListRuleException>(() => list.Publish(2, 1, Today, "p", Now)).Code);
     }
 
@@ -138,7 +139,7 @@ public sealed class PriceListDomainTests
             Assert.Throws<PriceListRuleException>(() => list.StartNextVersion(3, Guid.NewGuid(), Today.AddDays(20), null, "u", Now)).Code);
 
         // Version 2 prices only product B: from its start product A has no list price (no fallback to version 1).
-        list.ReviseDraft(3, list.Name, Today.AddDays(10), null, [Line(ProductB, 7m)], Now);
+        list.ReviseDraft(3, list.Name, Today.AddDays(10), null, [Line(ProductB, 7m)], "editor-2", Now);
         list.Publish(4, 2, Today, "p", Now);
 
         Assert.Equal(1, list.ResolveOn(Today.AddDays(9))!.VersionNo);
@@ -146,6 +147,26 @@ public sealed class PriceListDomainTests
         Assert.Null(list.ResolveOn(Today.AddDays(10))!.LineFor(ProductA, Kg));
         Assert.Equal(PriceListVersionStatus.Planned, list.StatusOf(list.Versions[1], Today));
         Assert.Equal(PriceListVersionStatus.Ended, list.StatusOf(list.Versions[0], Today.AddDays(10)));
+    }
+
+    [Fact]
+    public void Every_creator_or_editor_of_the_exact_version_is_barred_from_publishing_and_another_actor_may_publish()
+    {
+        var list = NewList();
+        var line = list.DraftVersion!.Lines[0];
+        list.ReviseDraft(1, list.Name, Today, null,
+            [new PriceListLineInput(line.LineId, line.ProductId, line.PriceUnitId, 41000m, null)], "editor-1", Now.AddMinutes(1));
+        list.ReviseDraft(2, list.Name, Today, null,
+            [new PriceListLineInput(line.LineId, line.ProductId, line.PriceUnitId, 40000m, null)], "editor-1", Now.AddMinutes(2));
+
+        Assert.Equal(["user-1", "editor-1"], list.DraftVersion!.PreparerActorIds);
+        Assert.Equal(PriceListRuleCodes.PublisherPreparedVersion,
+            Assert.Throws<PriceListRuleException>(() => list.Publish(3, 1, Today, "user-1", Now.AddMinutes(3))).Code);
+        Assert.Equal(PriceListRuleCodes.PublisherPreparedVersion,
+            Assert.Throws<PriceListRuleException>(() => list.Publish(3, 1, Today, "editor-1", Now.AddMinutes(3))).Code);
+
+        list.Publish(3, 1, Today, "publisher-1", Now.AddMinutes(3));
+        Assert.Equal("publisher-1", list.Versions[0].PublishedBy);
     }
 
     [Fact]

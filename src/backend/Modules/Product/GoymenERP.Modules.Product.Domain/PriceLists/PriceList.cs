@@ -101,14 +101,18 @@ public sealed class PriceList
     /// version is immutable (a change is a new version).
     /// </summary>
     public void ReviseDraft(long expectedVersion, string name, DateOnly validFrom, DateOnly? validThrough,
-        IReadOnlyList<PriceListLineInput> lines, DateTimeOffset now)
+        IReadOnlyList<PriceListLineInput> lines, string actorId, DateTimeOffset now)
     {
         RequireVersion(expectedVersion);
+        var actor = RequireActor(actorId);
         var draft = DraftVersion ?? throw new PriceListRuleException(PriceListRuleCodes.NoDraftVersion, "versionNo",
             "Düzenlenecek taslak sürüm yok; yayımlanmış sürüm değişmez, yeni sürüm açılır.");
         var normalizedName = NormalizeName(name);
+        IReadOnlyCollection<string> preparers = draft.PreparerActorIds.Contains(actor, StringComparer.Ordinal)
+            ? draft.PreparerActorIds
+            : [.. draft.PreparerActorIds, actor];
         var revised = PriceListVersion.CreateDraft(draft.Id, draft.VersionNo, validFrom, validThrough, lines, draft.CreatedBy,
-            draft.CreatedAtUtc);
+            draft.CreatedAtUtc, preparers);
         versions[versions.IndexOf(draft)] = revised;
         Name = normalizedName;
         Touch(now);
@@ -167,6 +171,12 @@ public sealed class PriceList
         if (target.State != PriceListVersionState.Draft)
         {
             throw new PriceListRuleException(PriceListRuleCodes.VersionNotDraft, "versionNo", "Yalnız taslak sürüm yayımlanır.");
+        }
+
+        if (target.PreparerActorIds.Contains(actor, StringComparer.Ordinal))
+        {
+            throw new PriceListRuleException(PriceListRuleCodes.PublisherPreparedVersion, "actor",
+                "Bu sürümü oluşturan veya düzenleyen kullanıcı aynı sürümü yayımlayamaz.");
         }
 
         if (target.Lines.Count == 0)
@@ -342,9 +352,11 @@ public sealed class PriceList
 public sealed class PriceListVersion
 {
     private readonly List<PriceListLine> lines;
+    private readonly List<string> preparerActorIds;
 
     private PriceListVersion(Guid id, int versionNo, DateOnly validFrom, DateOnly? validThrough, PriceListVersionState state,
-        List<PriceListLine> lines, string createdBy, DateTimeOffset createdAtUtc, string? publishedBy, DateTimeOffset? publishedAtUtc)
+        List<PriceListLine> lines, string createdBy, DateTimeOffset createdAtUtc, string? publishedBy, DateTimeOffset? publishedAtUtc,
+        List<string> preparerActorIds)
     {
         Id = id;
         VersionNo = versionNo;
@@ -356,6 +368,7 @@ public sealed class PriceListVersion
         CreatedAtUtc = createdAtUtc;
         PublishedBy = publishedBy;
         PublishedAtUtc = publishedAtUtc;
+        this.preparerActorIds = preparerActorIds;
     }
 
     public Guid Id { get; }
@@ -379,6 +392,9 @@ public sealed class PriceListVersion
 
     public DateTimeOffset? PublishedAtUtc { get; }
 
+    /// <summary>Every actor who created or revised this exact numbered version, in first-contribution order.</summary>
+    public IReadOnlyList<string> PreparerActorIds => preparerActorIds.AsReadOnly();
+
     /// <summary>Legacy untiered lookup: only an explicit [0, infinity) base tier may answer without quantity.</summary>
     public PriceListLine? LineFor(Guid productId, Guid priceUnitId) =>
         lines.SingleOrDefault(line => line.ProductId == productId && line.PriceUnitId == priceUnitId
@@ -393,20 +409,23 @@ public sealed class PriceListVersion
             : null;
 
     internal static PriceListVersion CreateDraft(Guid id, int versionNo, DateOnly validFrom, DateOnly? validThrough,
-        IReadOnlyList<PriceListLineInput> inputs, string createdBy, DateTimeOffset createdAtUtc)
+        IReadOnlyList<PriceListLineInput> inputs, string createdBy, DateTimeOffset createdAtUtc,
+        IReadOnlyCollection<string>? preparerActorIds = null)
     {
         RequireValidity(validFrom, validThrough);
+        var creator = PriceList.RequireActor(createdBy);
         return new PriceListVersion(id, versionNo, validFrom, validThrough, PriceListVersionState.Draft, BuildLines(inputs),
-            createdBy, createdAtUtc, null, null);
+            creator, createdAtUtc, null, null, BuildPreparers(creator, preparerActorIds, null));
     }
 
     internal PriceListVersion Published(string actorId, DateTimeOffset now) =>
-        new(Id, VersionNo, ValidFrom, ValidThrough, PriceListVersionState.Published, [.. lines], CreatedBy, CreatedAtUtc, actorId, now);
+        new(Id, VersionNo, ValidFrom, ValidThrough, PriceListVersionState.Published, [.. lines], CreatedBy, CreatedAtUtc, actorId, now,
+            [.. preparerActorIds]);
 
     /// <summary>Rebuilds a stored version; the lines are checked as on the write path and must be numbered 1..n.</summary>
     public static PriceListVersion Restore(Guid id, int versionNo, DateOnly validFrom, DateOnly? validThrough, PriceListVersionState state,
         IReadOnlyList<PriceListLine> storedLines, string createdBy, DateTimeOffset createdAtUtc, string? publishedBy,
-        DateTimeOffset? publishedAtUtc)
+        DateTimeOffset? publishedAtUtc, IReadOnlyCollection<string>? preparerActorIds = null)
     {
         PriceList.RequireIdentity(id, "versionId");
         ArgumentNullException.ThrowIfNull(storedLines);
@@ -425,8 +444,23 @@ public sealed class PriceListVersion
             throw new InvalidOperationException("Kayıtlı fiyat satırları 1'den başlayıp boşluksuz numaralanır.");
         }
 
-        return new PriceListVersion(id, versionNo, validFrom, validThrough, state, rebuilt, PriceList.RequireActor(createdBy),
-            createdAtUtc, publishedBy is null ? null : PriceList.RequireActor(publishedBy), publishedAtUtc);
+        var creator = PriceList.RequireActor(createdBy);
+        var publisher = publishedBy is null ? null : PriceList.RequireActor(publishedBy);
+        return new PriceListVersion(id, versionNo, validFrom, validThrough, state, rebuilt, creator,
+            createdAtUtc, publisher, publishedAtUtc, BuildPreparers(creator, preparerActorIds, publisher));
+    }
+
+    private static List<string> BuildPreparers(string creator, IReadOnlyCollection<string>? stored, string? publisher)
+    {
+        List<string> candidates = stored is null ? [creator] : stored.Select(PriceList.RequireActor).ToList();
+        if (candidates.Count == 0 || !candidates.Contains(creator, StringComparer.Ordinal)
+            || candidates.Distinct(StringComparer.Ordinal).Count() != candidates.Count
+            || (publisher is not null && candidates.Contains(publisher, StringComparer.Ordinal)))
+        {
+            throw new InvalidOperationException("Kayıtlı fiyat sürümünün hazırlayan/yayımlayan aktör geçmişi tutarsız.");
+        }
+
+        return candidates;
     }
 
     private static void RequireValidity(DateOnly validFrom, DateOnly? validThrough)
@@ -596,6 +630,7 @@ public static class PriceListRuleCodes
     public const string VersionNotFound = "price_list_version_not_found";
     public const string VersionNotDraft = "price_list_version_not_draft";
     public const string VersionWithoutLines = "price_list_version_without_lines";
+    public const string PublisherPreparedVersion = "price_list_publisher_prepared_version";
     public const string ValidFromInPast = "price_list_valid_from_in_past";
     public const string ValidFromNotAfterPublished = "price_list_valid_from_not_after_published";
 }

@@ -32,7 +32,7 @@ function json(body: unknown, status = 200, headers: Record<string, string> = {})
 
 function line(overrides: Record<string, unknown> = {}) {
   return { lineId: 'l1', lineNo: 1, productId: PRODUCT, productCode: 'SYN-1', productName: 'Sentetik bant', priceUnitId: KG,
-    unitPrice: '42000.5', floorUnitPrice: '40000', ...overrides }
+    unitPrice: '42000.5', floorUnitPrice: '40000', lowerQuantity: '0', upperQuantity: null, ...overrides }
 }
 
 function version(overrides: Record<string, unknown> = {}) {
@@ -115,16 +115,20 @@ describe('U-05 price lists', () => {
 
   it('creates a list, keeps one key across a lost reply, and opens the stored list as the server answers it', async () => {
     let reads = 0
+    const stored = view({ versions: [version({ lines: [
+      line({ upperQuantity: '10' }),
+      line({ lineId: 'l2', lineNo: 2, lowerQuantity: '10', upperQuantity: '20' }),
+    ] })] })
     const harness = install({
       onOptions: () => json({ items: [{ productId: PRODUCT, code: 'SYN-1', name: 'Sentetik bant', units: [{ unitId: KG, role: 'Sales', code: 'kg' }] }],
         hasMore: false }),
       onCommand: (_call, count) => {
         if (count === 1) throw new TypeError('Failed to fetch')
-        return json({ priceList: view(), isReplay: true, originalCorrelationId: 'c1' }, 200, { 'Idempotency-Replayed': 'true' })
+        return json({ priceList: stored, isReplay: true, originalCorrelationId: 'c1' }, 200, { 'Idempotency-Replayed': 'true' })
       },
       onDetail: () => {
         reads += 1
-        return json(view())
+        return json(stored)
       },
     })
     renderApp('/fiyat-listeleri/yeni')
@@ -134,8 +138,14 @@ describe('U-05 price lists', () => {
     await userEvent.type(screen.getByLabelText(T.productSearch), 'SYN')
     await userEvent.click(screen.getByRole('button', { name: T.search }))
     await userEvent.click(await screen.findByRole('button', { name: T.addLine }))
+    await userEvent.click(screen.getByRole('button', { name: T.addLine }))
     await userEvent.type(screen.getByLabelText(`1. ${T.unitPrice}`), '42000,5')
     await userEvent.type(screen.getByLabelText(`1. ${T.floorUnitPrice}`), '40000')
+    await userEvent.type(screen.getByLabelText(`1. ${T.upperQuantity}`), '10')
+    await userEvent.type(screen.getByLabelText(`2. ${T.unitPrice}`), '41000')
+    await userEvent.clear(screen.getByLabelText(`2. ${T.lowerQuantity}`))
+    await userEvent.type(screen.getByLabelText(`2. ${T.lowerQuantity}`), '10')
+    await userEvent.type(screen.getByLabelText(`2. ${T.upperQuantity}`), '20')
     await userEvent.click(screen.getByTestId('price-list-save'))
 
     await screen.findByText(T.notice.unknown)
@@ -143,6 +153,8 @@ describe('U-05 price lists', () => {
     expect(await screen.findByTestId('price-list-name')).toBeTruthy()
     expect(screen.getByTestId('price-list-name').textContent).toBe('Yurt içi satış')
     expect(screen.getAllByTestId('price-list-line-price')[0].textContent).toBe('42.000,5')
+    expect(screen.getAllByTestId('price-list-line-quantity-tier').map((node) => node.textContent))
+      .toEqual(['0 ≤ miktar < 10', '10 ≤ miktar < 20'])
     expect(reads).toBeGreaterThan(0)
 
     const posts = harness.posts()
@@ -153,7 +165,10 @@ describe('U-05 price lists', () => {
     const sent = JSON.parse(posts[0].body ?? '{}') as Record<string, unknown>
     expect(sent).toMatchObject({ name: 'Yurt içi satış', currencyCode: 'TRY', channel: 'Sales', vatBasis: 'ExcludingVat', validFrom: '2026-10-01',
       validThrough: null })
-    expect((sent.lines as Record<string, unknown>[])[0]).toMatchObject({ productId: PRODUCT, priceUnitId: KG, unitPrice: '42000.5', floorUnitPrice: '40000' })
+    expect((sent.lines as Record<string, unknown>[])[0]).toMatchObject({ productId: PRODUCT, priceUnitId: KG, unitPrice: '42000.5', floorUnitPrice: '40000',
+      lowerQuantity: '0', upperQuantity: '10' })
+    expect((sent.lines as Record<string, unknown>[])[1]).toMatchObject({ productId: PRODUCT, priceUnitId: KG, unitPrice: '41000', floorUnitPrice: null,
+      lowerQuantity: '10', upperQuantity: '20' })
   })
 
   it('does not send a price it cannot read', async () => {
@@ -172,7 +187,7 @@ describe('U-05 price lists', () => {
   })
 
   it('revises the draft with the expected version, publishes it and reopens it as the server stored it', async () => {
-    let state = view()
+    let state = view({ versions: [version({ lines: [line({ lowerQuantity: '10', upperQuantity: '20' })] })] })
     const harness = install({
       onDetail: () => json(state),
       onCommand: (call) => {
@@ -189,6 +204,8 @@ describe('U-05 price lists', () => {
     await userEvent.click(await screen.findByTestId('price-list-edit'))
     const price = screen.getByLabelText(`1. ${T.unitPrice}`)
     expect((price as HTMLInputElement).value).toBe('42000,5')
+    expect((screen.getByLabelText(`1. ${T.lowerQuantity}`) as HTMLInputElement).value).toBe('10')
+    expect((screen.getByLabelText(`1. ${T.upperQuantity}`) as HTMLInputElement).value).toBe('20')
     await userEvent.clear(price)
     await userEvent.type(price, '41000')
     await userEvent.clear(screen.getByLabelText(`1. ${T.floorUnitPrice}`))
@@ -196,7 +213,8 @@ describe('U-05 price lists', () => {
     await waitFor(() => expect(screen.getByTestId('price-list-version').textContent).toBe('2'))
     const revision = JSON.parse(harness.posts()[0].body ?? '{}') as Record<string, unknown>
     expect(revision).toMatchObject({ expectedVersion: '1', name: 'Yurt içi satış', validFrom: '2026-10-01' })
-    expect((revision.lines as Record<string, unknown>[])[0]).toMatchObject({ lineId: 'l1', unitPrice: '41000', floorUnitPrice: null })
+    expect((revision.lines as Record<string, unknown>[])[0]).toMatchObject({ lineId: 'l1', unitPrice: '41000', floorUnitPrice: null,
+      lowerQuantity: '10', upperQuantity: '20' })
 
     await userEvent.click(screen.getByTestId('price-list-publish'))
     await waitFor(() => expect(screen.getByTestId('price-list-version-1-status').textContent).toBe('Geçerli'))

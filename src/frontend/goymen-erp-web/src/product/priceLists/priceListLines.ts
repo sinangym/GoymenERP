@@ -1,4 +1,4 @@
-import { parseMoneyInput, type PriceListLine, type PriceListLineRequest, type PriceListProductUnit } from './contract'
+import { parseMoneyInput, parseQuantityInput, type PriceListLine, type PriceListLineRequest, type PriceListProductUnit } from './contract'
 import { PRICE_LIST_TEXT as T } from './priceListText'
 
 /** One editable line. `units` is null for a line read from the server (its unit is kept as stored). */
@@ -10,6 +10,8 @@ export interface PriceListLineRow {
   readonly priceUnitId: string
   readonly unitPrice: string
   readonly floorUnitPrice: string
+  readonly lowerQuantity: string
+  readonly upperQuantity: string
 }
 
 export function rowsFromLines(lines: readonly PriceListLine[]): PriceListLineRow[] {
@@ -21,6 +23,8 @@ export function rowsFromLines(lines: readonly PriceListLine[]): PriceListLineRow
     priceUnitId: line.priceUnitId,
     unitPrice: line.unitPrice.replace('.', ','),
     floorUnitPrice: line.floorUnitPrice === null ? '' : line.floorUnitPrice.replace('.', ','),
+    lowerQuantity: line.lowerQuantity.replace('.', ','),
+    upperQuantity: line.upperQuantity === null ? '' : line.upperQuantity.replace('.', ','),
   }))
 }
 
@@ -40,7 +44,15 @@ export function buildLines(rows: readonly PriceListLineRow[]): LinesBuild {
       if (floorUnitPrice === null) return { ok: false, message: T.localErrors.floor(index + 1) }
     }
     if (row.priceUnitId === '') return { ok: false, message: T.localErrors.unit(index + 1) }
-    lines.push({ lineId: row.lineId, productId: row.productId, priceUnitId: row.priceUnitId, unitPrice, floorUnitPrice })
+    const lowerQuantity = parseQuantityInput(row.lowerQuantity)
+    if (lowerQuantity === null) return { ok: false, message: T.localErrors.lowerQuantity(index + 1) }
+    let upperQuantity: string | null = null
+    if (row.upperQuantity.trim() !== '') {
+      upperQuantity = parseQuantityInput(row.upperQuantity)
+      if (upperQuantity === null) return { ok: false, message: T.localErrors.upperQuantity(index + 1) }
+    }
+    lines.push({ lineId: row.lineId, productId: row.productId, priceUnitId: row.priceUnitId, unitPrice, floorUnitPrice,
+      lowerQuantity, upperQuantity })
   }
   return { ok: true, lines }
 }

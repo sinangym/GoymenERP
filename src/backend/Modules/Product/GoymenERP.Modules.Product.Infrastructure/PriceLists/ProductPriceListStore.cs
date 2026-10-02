@@ -215,6 +215,7 @@ internal sealed class ProductPriceListStore(
             stored.ValidFrom = version.ValidFrom;
             stored.ValidThrough = version.ValidThrough;
             stored.State = (int)version.State;
+            stored.PreparerActorIdsJson = JsonSerializer.Serialize(version.PreparerActorIds);
             stored.PublishedAtUtc = version.PublishedAtUtc;
             stored.PublishedBy = version.PublishedBy;
             if (version.VersionNo == draftBefore)
@@ -381,6 +382,7 @@ internal sealed class ProductPriceListStore(
         State = (int)version.State,
         CreatedAtUtc = version.CreatedAtUtc,
         CreatedBy = version.CreatedBy,
+        PreparerActorIdsJson = JsonSerializer.Serialize(version.PreparerActorIds),
         PublishedAtUtc = version.PublishedAtUtc,
         PublishedBy = version.PublishedBy,
     };
@@ -408,9 +410,23 @@ internal sealed class ProductPriceListStore(
                 .Select(line => new PriceListLine(line.LineId, line.LineNo, line.ProductId, line.PriceUnitId, line.UnitPrice,
                     line.FloorUnitPrice, line.LowerQuantity, line.UpperQuantity))
                 .ToList(),
-            version.CreatedBy, version.CreatedAtUtc, version.PublishedBy, version.PublishedAtUtc)).ToList();
+            version.CreatedBy, version.CreatedAtUtc, version.PublishedBy, version.PublishedAtUtc,
+            PreparerActorIds(version.PreparerActorIdsJson))).ToList();
         return PriceList.Restore(row.Id, row.CompanyId, row.Name, row.CurrencyCode, (PriceListChannel)row.Channel,
             (PriceListVatBasis)row.VatBasis, row.Version, row.CreatedBy, row.CreatedAtUtc, row.UpdatedAtUtc, versions);
+    }
+
+    private static IReadOnlyCollection<string> PreparerActorIds(string json)
+    {
+        try
+        {
+            return JsonSerializer.Deserialize<string[]>(json)
+                ?? throw new InvalidOperationException("Kayıtlı fiyat sürümünün hazırlayan aktör geçmişi yok.");
+        }
+        catch (JsonException exception)
+        {
+            throw new InvalidOperationException("Kayıtlı fiyat sürümünün hazırlayan aktör geçmişi bozuk.", exception);
+        }
     }
 
     private Task<PriceListAttemptRow?> FindAttemptAsync(string commandName, string keyHash, CancellationToken cancellationToken) =>
@@ -462,6 +478,7 @@ internal sealed class ProductPriceListStore(
             state = version.State.ToString(),
             validFrom = ProductPriceListWire.FormatDate(version.ValidFrom),
             validThrough = version.ValidThrough is { } through ? ProductPriceListWire.FormatDate(through) : null,
+            preparerActorIds = version.PreparerActorIds,
             publishedBy = version.PublishedBy,
             lines = version.Lines.Select(line => new
             {

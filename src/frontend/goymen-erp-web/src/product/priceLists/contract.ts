@@ -25,6 +25,8 @@ export interface PriceListLine {
   readonly priceUnitId: string
   readonly unitPrice: string
   readonly floorUnitPrice: string | null
+  readonly lowerQuantity: string
+  readonly upperQuantity: string | null
 }
 
 export interface PriceListVersion {
@@ -104,6 +106,8 @@ export interface PriceListLineRequest {
   readonly priceUnitId: string
   readonly unitPrice: string
   readonly floorUnitPrice: string | null
+  readonly lowerQuantity: string
+  readonly upperQuantity: string | null
 }
 
 export interface CreatePriceListRequest {
@@ -158,17 +162,27 @@ const isNullableText = (value: unknown): value is string | null => value === nul
 const isCount = (value: unknown): value is number => typeof value === 'number' && Number.isInteger(value) && value >= 0
 const isNullableCount = (value: unknown): value is number | null => value === null || isCount(value)
 const MONEY = /^(0|[1-9][0-9]{0,14})(\.[0-9]{1,4})?$/
+const QUANTITY = /^(0|[1-9][0-9]{0,14})(\.[0-9]{1,3})?$/
 const DATE = /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/
 const VERSION = /^[1-9][0-9]{0,18}$/
 const isMoney = (value: unknown): value is string => isText(value) && MONEY.test(value)
+const isQuantity = (value: unknown): value is string => isText(value) && QUANTITY.test(value)
 const isDate = (value: unknown): value is string => isText(value) && DATE.test(value)
+
+/** Exact decimal(18,3) comparison after syntax validation; no floating-point conversion or rounding. */
+function quantityAtoms(value: string): bigint {
+  const [integer, fraction = ''] = value.split('.')
+  return (BigInt(integer) * 1000n) + BigInt(fraction.padEnd(3, '0'))
+}
 
 function decodeLine(value: unknown): PriceListLine | null {
   if (!isObject(value)) return null
-  const { lineId, lineNo, productId, productCode, productName, priceUnitId, unitPrice, floorUnitPrice } = value
+  const { lineId, lineNo, productId, productCode, productName, priceUnitId, unitPrice, floorUnitPrice, lowerQuantity, upperQuantity } = value
   if (!isText(lineId) || !isCount(lineNo) || !isText(productId) || !isNullableText(productCode) || !isNullableText(productName)
-    || !isText(priceUnitId) || !isMoney(unitPrice) || !(floorUnitPrice === null || isMoney(floorUnitPrice))) return null
-  return { lineId, lineNo, productId, productCode, productName, priceUnitId, unitPrice, floorUnitPrice }
+    || !isText(priceUnitId) || !isMoney(unitPrice) || !(floorUnitPrice === null || isMoney(floorUnitPrice))
+    || !isQuantity(lowerQuantity) || !(upperQuantity === null || isQuantity(upperQuantity))) return null
+  if (upperQuantity !== null && quantityAtoms(upperQuantity) <= quantityAtoms(lowerQuantity)) return null
+  return { lineId, lineNo, productId, productCode, productName, priceUnitId, unitPrice, floorUnitPrice, lowerQuantity, upperQuantity }
 }
 
 function decodeVersion(value: unknown): PriceListVersion | null {
@@ -260,6 +274,17 @@ export function parseMoneyInput(input: string): string | null {
   const canonicalInteger = integer.replace(/^0+(?=[0-9])/, '')
   const text = fraction === undefined ? canonicalInteger : `${canonicalInteger}.${fraction}`
   return MONEY.test(text) ? text : null
+}
+
+/** Quantity tier input uses the backend's decimal(18,3) wire scale. It is preserved as text; no conversion is inferred. */
+export function parseQuantityInput(input: string): string | null {
+  const trimmed = input.trim()
+  if (!/^[0-9]+([.,][0-9]+)?$/.test(trimmed)) return null
+  const normalized = trimmed.replace(',', '.')
+  const [integer, fraction] = normalized.split('.')
+  const canonicalInteger = integer.replace(/^0+(?=[0-9])/, '')
+  const text = fraction === undefined ? canonicalInteger : `${canonicalInteger}.${fraction}`
+  return QUANTITY.test(text) ? text : null
 }
 
 /** Exact decimal text shown the Turkish way: "42000.5" → "42.000,5". The digits are the server's, never recomputed. */

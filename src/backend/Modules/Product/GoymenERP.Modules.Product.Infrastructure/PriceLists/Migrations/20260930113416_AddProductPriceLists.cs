@@ -111,6 +111,7 @@ namespace GoymenERP.Modules.Product.Infrastructure.PriceLists.Migrations
                     State = table.Column<int>(type: "int", nullable: false),
                     CreatedAtUtc = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false),
                     CreatedBy = table.Column<string>(type: "nvarchar(128)", maxLength: 128, nullable: false),
+                    PreparerActorIdsJson = table.Column<string>(type: "nvarchar(max)", nullable: false),
                     PublishedAtUtc = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: true),
                     PublishedBy = table.Column<string>(type: "nvarchar(128)", maxLength: 128, nullable: true)
                 },
@@ -119,7 +120,7 @@ namespace GoymenERP.Modules.Product.Infrastructure.PriceLists.Migrations
                     table.PrimaryKey("PK_PriceListVersions", x => new { x.CompanyId, x.PriceListId, x.VersionNo });
                     table.CheckConstraint("CK_PriceListVersions_Identity", "[VersionId] <> '00000000-0000-0000-0000-000000000000' AND [VersionNo] >= 1");
                     table.CheckConstraint("CK_PriceListVersions_State", "([State] = 1 AND [PublishedAtUtc] IS NULL AND [PublishedBy] IS NULL) OR ([State] = 2 AND [PublishedAtUtc] IS NOT NULL AND [PublishedBy] IS NOT NULL AND LEN([PublishedBy]) > 0)");
-                    table.CheckConstraint("CK_PriceListVersions_Text", "LEN([CreatedBy]) > 0");
+                    table.CheckConstraint("CK_PriceListVersions_Text", "LEN([CreatedBy]) > 0 AND ISJSON([PreparerActorIdsJson]) = 1");
                     table.CheckConstraint("CK_PriceListVersions_Validity", "[ValidThrough] IS NULL OR [ValidThrough] >= [ValidFrom]");
                     table.ForeignKey(
                         name: "FK_PriceListVersions_PriceLists_CompanyId_PriceListId",
