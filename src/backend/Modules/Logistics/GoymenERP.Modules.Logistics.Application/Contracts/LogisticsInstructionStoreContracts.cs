@@ -61,6 +61,7 @@ public static class LogisticsStoreCodes
     public const string ValueDoesNotFit = "logistics_value_does_not_fit";
     public const string InvalidCursor = "logistics_invalid_cursor";
     public const string AggregateLimitExceeded = "logistics_order_line_aggregate_limit_exceeded";
+    public const string InvoiceSourceInvalid = "logistics_invoice_source_invalid";
 }
 
 public sealed class LogisticsStoreException(string code, string message, Exception? innerException = null)
@@ -206,6 +207,7 @@ public sealed record StoredApprovedDispatchInvoiceSource(
 public sealed record StoredApprovedDispatchInvoiceSourceLine(
     int LineNo,
     Guid SourceOrderId,
+    int SourceOrderRevision,
     Guid SourceOrderLineId,
     Guid ShipmentId,
     Guid ProductId,
