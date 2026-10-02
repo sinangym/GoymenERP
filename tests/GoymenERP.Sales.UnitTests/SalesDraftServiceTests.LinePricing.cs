@@ -271,6 +271,17 @@ public sealed partial class SalesDraftServiceTests
         Assert.Equal((422, "lines[0].unitPrice", SalesRuleCodes.PriceCalculationOverflow),
             (overflow.Status, Assert.Single(overflow.Errors).Field, Assert.Single(overflow.Errors).Code));
         Assert.DoesNotContain(world.Store.Transitions, item => item.Command == SalesDraftCommands.ReviseCommercialV1);
+
+        var referencedWorld = new World { PriceReferences = new FakePriceReferences { Price = decimal.MaxValue, Floor = 1m } };
+        var referenced = (await referencedWorld.Service().CreateDraftAsync(Request(), Metadata("k-reference-create"))).Detail;
+        var referencedLineId = referenced.Lines[0].LineId;
+        var referencedOverflow = await Assert.ThrowsAsync<SalesDraftServiceException>(() => referencedWorld.Service().ReviseCommercialAsync(
+            referenced.Draft.Id, Revision(referenced.Draft.Version,
+                new SalesDraftLineCommercialV1(referencedLineId, "79228162514264337593543950335", KgUnit, null,
+                    new SalesDraftPriceReferenceRequestV1(PriceList, 1), SurchargePercent: "100")), Metadata("k-reference-overflow")));
+        Assert.Equal((422, "lines[0].unitPrice", SalesRuleCodes.PriceCalculationOverflow),
+            (referencedOverflow.Status, Assert.Single(referencedOverflow.Errors).Field, Assert.Single(referencedOverflow.Errors).Code));
+        Assert.DoesNotContain(referencedWorld.Store.Transitions, item => item.Command == SalesDraftCommands.ReviseCommercialV1);
     }
 
     private sealed class FakePriceReferences : IProductQuantityPriceReferenceReaderV1

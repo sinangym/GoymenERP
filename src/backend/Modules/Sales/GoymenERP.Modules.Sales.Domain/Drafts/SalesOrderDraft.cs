@@ -452,6 +452,8 @@ public sealed partial class SalesOrderDraft
             throw new SalesRuleException(SalesRuleCodes.DiscountExceedsPrice, "İskonto tutarı birim fiyatı aşamaz.");
         }
 
+        RequireCalculable(commercial, lineId);
+
         if (commercial.Reference is { } reference)
         {
             if (reference.PriceUnitId != commercial.PriceUnitId)
@@ -463,7 +465,6 @@ public sealed partial class SalesOrderDraft
             ValidateFloorException(commercial, reference);
         }
 
-        RequireCalculable(commercial, lineId);
     }
 
     private static void RequireRepresentable(string? value, string code, string message, Guid lineId)
