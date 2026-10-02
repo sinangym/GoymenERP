@@ -177,6 +177,8 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
                 + "AND [ProductId] <> '00000000-0000-0000-0000-000000000000' AND [LotId] <> '00000000-0000-0000-0000-000000000000'");
             table.HasCheckConstraint("CK_Labels_ProductVersion",
                 "[ProductVersion] IS NULL OR LEN([ProductVersion]) > 0");
+            table.HasCheckConstraint("CK_Labels_Classification",
+                "[Classification] IS NULL OR [Classification] IN (1, 2, 3)");
             table.HasCheckConstraint("CK_Labels_Code", "LEN([Code]) > 0");
             table.HasCheckConstraint("CK_Labels_RequiredDocumentsJson", "ISJSON([RequiredDocumentsJson]) = 1");
             table.HasCheckConstraint("CK_Labels_Version", "[Version] >= 1");
