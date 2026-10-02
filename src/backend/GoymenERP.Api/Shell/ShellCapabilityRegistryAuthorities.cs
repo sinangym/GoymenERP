@@ -83,7 +83,7 @@ internal static class ShellCapabilityRegistryAuthorities
     // carrying PublishedSales were re-derived by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:")
     // over main 27591d0d's providers with this change's Sales 1.4 (SalesV13 -> SalesV14).
     internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12AndPublishedSalesV15 =
-        "sha256:MpZhaKF0upX3SzVG-I91yOldI3KGpsTkl2Wm3sWUsRg";
+        "sha256:VArNst5wJHe2QQsJlYDxHu_XwfmtxfhRjtILzJaUmT8";
 
     // ... + Finance 1.0 (#325, FIN-UI-1a) beside the STAGED Sales screens. Superseded when Sales was published
     // (#328, below); no host serves it now. Computed by the ComputeRevision reproduction and,
@@ -117,7 +117,7 @@ internal static class ShellCapabilityRegistryAuthorities
     // every later live normal-host row were re-derived from the integrated provider tuple; disposable envelopes do not move.
     // F-03 allocation reads: Finance 1.5 adds the allocation list route and write child control under separate read/write permissions; all live normal-host Finance rows move together.
     internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV15AndPublishedFinanceV15 =
-        "sha256:PjAMFKatpUziKDzWBUrMNxvlAZeiiUQp6INyvjHni7g";
+        "sha256:kja5w-G_8FGXYihdOqd3nxpMwlfVC0Zz-bneWwySotg";
 
     // FIN-UI-1c: ... + Manufacturing 1.0 staged: the normal host (C+O+P+S(published)+F(published)+M(staged)).
     // Computed by the ComputeRevision reproduction and, independently, by ORG (DATA ONLY); pinned by test.
@@ -140,7 +140,7 @@ internal static class ShellCapabilityRegistryAuthorities
     // This row and every later normal-host row that carries Manufacturing were re-derived by
     // ShellCapabilityRegistry.ComputeCandidateRevision over main 0b6a68cd's providers (ManufacturingV13 -> V14).
     internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV15PublishedFinanceV15AndPublishedManufacturingV15 =
-        "sha256:Weyx2flmZX9C6qZfjnOysWyuvSz8BWZPBWHSM7DzcnM";
+        "sha256:VRCZL_Cb8DG0AEavVAvAfLb_gtncqhvAd2wQ14pQesc";
 
     // LOG-PUBLISH: ... + Logistics 1.1 PUBLISHED (the loading-instruction routes plus shipment/delivery actions,
     // master v3 §27.8): the normal host (C+O+P+S(published)+F(published)+M(published)+L(published)). Computed by
@@ -149,7 +149,7 @@ internal static class ShellCapabilityRegistryAuthorities
     // DEC-SAL-003: re-derived the same way over main aaea20d0's providers with Sales 1.2 (SalesV11 -> SalesV12).
     // MFG-PLAN-EDIT: re-derived over main 0b6a68cd's providers with Manufacturing 1.4 (ManufacturingV13 -> V14).
     internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV15PublishedFinanceV15PublishedManufacturingV15AndPublishedLogisticsV12 =
-        "sha256:zjwV2eHS8ht7221-BHMt9Ue-oZTSt2egLeM8Sc26M1o";
+        "sha256:15160RxIBP7VxpGM5tdEC7fa-pS_dr8-sNH1acQRPYY";
 
     // PUR-HOST: ... + Purchasing 1.4, with the goods-receipt child control published beside the
     // request list/create/detail/submit and order list/create/detail/approve declarations. Every declaration remains
@@ -167,7 +167,7 @@ internal static class ShellCapabilityRegistryAuthorities
     // DEC-SAL-003: re-derived the same way over main aaea20d0's providers with Sales 1.2 (SalesV11 -> SalesV12).
     // MFG-PLAN-EDIT: re-derived over main 0b6a68cd's providers with Manufacturing 1.4 (ManufacturingV13 -> V14).
     internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV15PublishedFinanceV15PublishedManufacturingV15PublishedLogisticsV12AndPublishedPurchasingV14 =
-        "sha256:KMDcTUw_9WaqwIOSinyvbibUCUoBzegC8aJ6wUL9kV8";
+        "sha256:FH9nrN1OMJ-ni71NME3Txj98icm41IYT3NUbART40iU";
 
     // ACC-V0b: ... + Accounting 1.0 STAGED (the period list M-07 and its propose screen, the approve and
     // close controls of that list, the journal list M-04 and its detail, the posting queues M-01): the normal
@@ -214,7 +214,7 @@ internal static class ShellCapabilityRegistryAuthorities
     // DEC-SAL-003: re-derived the same way over main aaea20d0's providers with Sales 1.2 (SalesV11 -> SalesV12).
     // MFG-PLAN-EDIT: re-derived over main 0b6a68cd's providers with Manufacturing 1.4 (ManufacturingV13 -> V14).
     internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV15PublishedFinanceV15PublishedManufacturingV15PublishedLogisticsV12PublishedPurchasingV14AndPublishedAccountingV13 =
-        "sha256:CuQHAe-AgngEMpgJ8cB8qvFyYqiTDUXDhoC2DiugL_g";
+        "sha256:FXO3HWwrMUr6_FUEStu6vPlh8Jaid57r5SRDyBE6Poc";
 
     // R14: Inventory 1.0 publishes one opening-stock workspace after the existing normal tuple.
     // The capability reuses the accepted company-wide permission; publication grants nothing.
@@ -234,14 +234,14 @@ internal static class ShellCapabilityRegistryAuthorities
     // Stock scrap: re-derived over main 4ea83fa4's providers with Inventory 1.5 (two ST-01 scrap controls;
     // InventoryV14 -> V15).
     internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV15PublishedFinanceV15PublishedManufacturingV15PublishedLogisticsV12PublishedPurchasingV14PublishedAccountingV13AndPublishedInventoryV15 =
-        "sha256:-xxtYUZ7muE6Oui9d-6bJ2_6QszTksyj5JvQY4zzips";
+        "sha256:TSFyzaALJ9Wx1bXiYmPoYvr-XvRal4nWGLtFHpo80YU";
 
     // SY-01/SY-02 (read-only users-and-permissions view): Identity 1.0 joins the normal host with two screens on
     // identity.assignments.read. Only this new full-host row is added; every earlier row keeps its provider set and value.
     // Derived by ShellCapabilityRegistry.ComputeCandidateRevision over main fec92de9's providers plus Identity 1.0.
     // Stock scrap: re-derived over main 4ea83fa4's providers with Inventory 1.5 (InventoryV14 -> V15).
     internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV15PublishedFinanceV15PublishedManufacturingV15PublishedLogisticsV12PublishedPurchasingV14PublishedAccountingV13PublishedInventoryV15AndPublishedIdentityV10 =
-        "sha256:iK6Rbn17JqSIB_k0DRnx_tpsUXGoiSy5IY-chy0UPYg";
+        "sha256:nAL6-KtUSVK2rz4TGwM_43e3plQuphrwBoQFOxI-PUU";
 
     // AT-018 / AT-021: final normal host adds PRODUCT-PRICE-LISTS 1.0 and Sales 1.6. Replaced with the
     // independently derived exact value before the candidate is pushed or tested.

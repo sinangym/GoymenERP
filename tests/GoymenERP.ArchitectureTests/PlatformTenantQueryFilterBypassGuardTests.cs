@@ -1032,7 +1032,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // Re-fingerprinted for DEC-SAL-002: the price and quantity revisions share one archive-and-save
                     // core (still a single save through the filtered context); SqlClient count unchanged.
                     new(
-                        "4e810b0a1e9519734bed7e032943cb51e821178cd76992f95f133a553e5e1a4f",
+                        "ced2d592e0ca627c48fd8fadafe8f1fa5cc66223924477ba8efa9b26cedb21af",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1

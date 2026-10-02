@@ -62,7 +62,7 @@ public sealed class FinanceShellRegistrationTests
         // each route or control service measures its own Finance permission afresh.
         Assert.Equal(19, finance.Length);
         Assert.All(finance, item => Assert.True(item.Declaration.ImplementationAvailable));
-        // Sales 1.5: three routes plus six detail controls. Pin identities, parents and authorities here instead of
+        // Sales 1.5: three routes plus seven detail controls. Pin identities, parents and authorities here instead of
         // accepting a blind declaration count: another control, parent or permission must receive its own review.
         var sales = registry.Registrations
             .Where(item => item.Owner == SalesShellCapabilityProvider.OwnerId)
@@ -85,6 +85,9 @@ public sealed class FinanceShellRegistrationTests
                     $"{SalesPermissionManifestV1.DraftsRead}+{SalesPermissionManifestV1.OrdersCustomerAcceptanceRecord}"),
                 (SalesShellCapabilityProvider.DeliveryScheduleWriteCapabilityId, SalesShellCapabilityProvider.DetailCapabilityId,
                     $"{SalesPermissionManifestV1.DraftsRead}+{SalesPermissionManifestV1.OrdersDeliveryScheduleWrite}"),
+                (SalesShellCapabilityProvider.PriceFloorExceptionApproveCapabilityId,
+                    SalesShellCapabilityProvider.DetailCapabilityId,
+                    $"{SalesPermissionManifestV1.DraftsRead}+{SalesPermissionManifestV1.OrdersPriceFloorExceptionApprove}"),
                 (SalesShellCapabilityProvider.PriceWriteCapabilityId, SalesShellCapabilityProvider.DetailCapabilityId,
                     $"{SalesPermissionManifestV1.DraftsRead}+{SalesPermissionManifestV1.OrdersPriceWrite}"),
                 (SalesShellCapabilityProvider.QuantityWriteCapabilityId, SalesShellCapabilityProvider.DetailCapabilityId,
