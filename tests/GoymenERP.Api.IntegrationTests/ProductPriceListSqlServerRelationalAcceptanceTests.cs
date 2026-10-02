@@ -208,6 +208,61 @@ public sealed class ProductPriceListSqlServerRelationalAcceptanceTests
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM product.PriceListAttempts WHERE PriceListId = @id", raceId));
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityId = @id", raceId.ToString("D")));
 
+        // The loser can miss the initial attempt lookup, then observe the committed name before it reaches CreateAsync.
+        // That exact attempt must still replay; the name check must not turn it into a false duplicate-name refusal.
+        var earlyRaceId = Guid.NewGuid();
+        var earlySame = same with
+        {
+            PriceListId = earlyRaceId,
+            VersionId = Guid.NewGuid(),
+            Name = "SENTETIK early race",
+        };
+        var pausedAuthority = new PauseAuthority(pauseAtCall: 2);
+        await using var earlyLoser = run.Request(authority: pausedAuthority);
+        var earlyLoserTask = earlyLoser.Service.CreateAsync(earlySame, Metadata("early-race") with { CorrelationId = "corr-early-loser" });
+        await pausedAuthority.Entered;
+        PriceListResultV1 earlyWinner;
+        try
+        {
+            await using var earlyWinnerScope = run.Request();
+            earlyWinner = await earlyWinnerScope.Service.CreateAsync(earlySame, Metadata("early-race"));
+        }
+        finally
+        {
+            pausedAuthority.Release();
+        }
+
+        var earlyReplay = await earlyLoserTask;
+        Assert.False(earlyWinner.IsReplay);
+        Assert.True(earlyReplay.IsReplay);
+        Assert.Equal(earlyWinner.OriginalCorrelationId, earlyReplay.OriginalCorrelationId);
+        Assert.Equal(JsonSerializer.Serialize(earlyWinner.PriceList), JsonSerializer.Serialize(earlyReplay.PriceList));
+
+        await using (var changedPayload = run.Request())
+        {
+            var conflict = await Assert.ThrowsAsync<ProductPriceListException>(() => changedPayload.Service.CreateAsync(
+                earlySame with { Name = "SENTETIK early changed" }, Metadata("early-race")));
+            Assert.Equal((409, ProductPriceListCodesV1.IdempotencyConflict), (conflict.Status, conflict.Code));
+        }
+
+        await using (var changedActor = run.Request(actor: Guid.NewGuid()))
+        {
+            var conflict = await Assert.ThrowsAsync<ProductPriceListException>(() =>
+                changedActor.Service.CreateAsync(earlySame, Metadata("early-race")));
+            Assert.Equal((409, ProductPriceListCodesV1.IdempotencyConflict), (conflict.Status, conflict.Code));
+        }
+
+        await using (var otherNameHolder = run.Request())
+        {
+            var duplicate = await Assert.ThrowsAsync<ProductPriceListException>(() => otherNameHolder.Service.CreateAsync(
+                earlySame with { PriceListId = Guid.NewGuid(), VersionId = Guid.NewGuid() }, Metadata("early-duplicate")));
+            Assert.Equal((409, ProductPriceListCodesV1.DuplicateName), (duplicate.Status, duplicate.Code));
+        }
+
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM product.PriceLists WHERE Id = @id", earlyRaceId));
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM product.PriceListAttempts WHERE PriceListId = @id", earlyRaceId));
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityId = @id", earlyRaceId.ToString("D")));
+
         var changedId = Guid.NewGuid();
         var changedBarrier = new CommitBarrier(2);
         var changedBase = same with { PriceListId = changedId, VersionId = Guid.NewGuid(), Name = "SENTETIK changed-a" };
@@ -376,6 +431,29 @@ public sealed class ProductPriceListSqlServerRelationalAcceptanceTests
             CancellationToken cancellationToken = default)
         {
             if (Interlocked.Increment(ref calls) == 3) await barrier.ArriveAsync(cancellationToken);
+            return GrantedScope();
+        }
+    }
+
+    private sealed class PauseAuthority(int pauseAtCall) : IErpAuthorityRevalidationService
+    {
+        private int calls;
+        private readonly TaskCompletionSource<bool> entered = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource<bool> released = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Task Entered => entered.Task;
+
+        public void Release() => released.TrySetResult(true);
+
+        public async Task<PermissionScope> RevalidatePermissionScopeAsync(string permission, Guid companyId,
+            CancellationToken cancellationToken = default)
+        {
+            if (Interlocked.Increment(ref calls) == pauseAtCall)
+            {
+                entered.TrySetResult(true);
+                await released.Task.WaitAsync(cancellationToken);
+            }
+
             return GrantedScope();
         }
     }

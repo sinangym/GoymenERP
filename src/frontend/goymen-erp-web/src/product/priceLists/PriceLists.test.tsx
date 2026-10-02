@@ -126,7 +126,10 @@ describe('U-05 price lists', () => {
         hasMore: false }),
       onCommand: (_call, count) => {
         if (count === 1) throw new TypeError('Failed to fetch')
-        return json({ priceList: stored, isReplay: true, originalCorrelationId: 'c1' }, 200, { 'Idempotency-Replayed': 'true' })
+        return json({ priceList: stored, isReplay: true, originalCorrelationId: 'c1' }, 200, {
+          'Idempotency-Replayed': 'true',
+          'Idempotency-Original-Correlation-Id': 'c1',
+        })
       },
       onDetail: () => {
         reads += 1
@@ -155,8 +158,7 @@ describe('U-05 price lists', () => {
     renderApp('/fiyat-listeleri/yeni')
     await screen.findByText(T.notice.unknown)
     await userEvent.click(screen.getByRole('button', { name: T.notice.retry }))
-    expect(await screen.findByTestId('price-list-name')).toBeTruthy()
-    expect(screen.getByTestId('price-list-name').textContent).toBe('Yurt içi satış')
+    expect(await screen.findByRole('heading', { name: 'Yurt içi satış' })).toBeTruthy()
     expect(screen.getAllByTestId('price-list-line-price')[0].textContent).toBe('42.000,5')
     expect(screen.getAllByTestId('price-list-line-quantity-tier').map((node) => node.textContent))
       .toEqual(['0 ≤ miktar < 10', '10 ≤ miktar < 20'])
@@ -227,6 +229,76 @@ describe('U-05 price lists', () => {
     expect(harness.posts()[1].url).toBe(`/api/v1/price-lists/${LIST}/publication`)
     expect(screen.queryByTestId('price-list-publish')).toBeNull()
     expect(screen.getByTestId('price-list-start-version')).toBeTruthy()
+  })
+
+  it('keeps a lost publish reachable after reopen even when the fresh GET no longer has a draft', async () => {
+    let state = view()
+    const harness = install({
+      onDetail: () => json(state),
+      onCommand: (_call, count) => {
+        state = view({ version: '2', activeVersionNo: 1, draftVersionNo: null, versions: [version({
+          state: 'Published', status: 'Active', publishedBy: 'yayinci', publishedAtUtc: '2026-10-01T08:00:00Z',
+        })] })
+        if (count === 1) throw new TypeError('Failed to fetch')
+        return json({ priceList: state, isReplay: true, originalCorrelationId: 'publish-corr' }, 200, {
+          'Idempotency-Replayed': 'true',
+          'Idempotency-Original-Correlation-Id': 'publish-corr',
+        })
+      },
+    })
+    renderApp(`/fiyat-listeleri/${LIST}`)
+    await userEvent.click(await screen.findByTestId('price-list-publish'))
+    await screen.findByText(T.notice.unknown)
+
+    cleanup()
+    renderApp(`/fiyat-listeleri/${LIST}`)
+    await screen.findByText(T.notice.unknown)
+    expect(screen.queryByTestId('price-list-publish')).toBeNull()
+    await userEvent.click(screen.getByRole('button', { name: T.notice.retry }))
+
+    await waitFor(() => expect(screen.queryByText(T.notice.unknown)).toBeNull())
+    expect(screen.getByTestId('price-list-version-1-status').textContent).toBe('Geçerli')
+    const posts = harness.posts()
+    expect(posts).toHaveLength(2)
+    expect(posts[0].key).toBe(posts[1].key)
+    expect(posts[0].body).toBe(posts[1].body)
+    expect(posts[0].url).toBe(`/api/v1/price-lists/${LIST}/publication`)
+  })
+
+  it('keeps a lost start-version reachable after reopen even when the fresh GET already has the new draft', async () => {
+    const published = version({ state: 'Published', status: 'Active', publishedBy: 'yayinci', publishedAtUtc: '2026-10-01T08:00:00Z' })
+    let state = view({ version: '2', activeVersionNo: 1, draftVersionNo: null, versions: [published] })
+    const harness = install({
+      onDetail: () => json(state),
+      onCommand: (call, count) => {
+        const request = JSON.parse(call.body ?? '{}') as { versionId?: string; validFrom?: string; validThrough?: string | null }
+        state = view({ version: '3', activeVersionNo: 1, draftVersionNo: 2, versions: [published, version({
+          versionId: request.versionId, versionNo: 2, validFrom: request.validFrom, validThrough: request.validThrough, lines: [],
+        })] })
+        if (count === 1) throw new TypeError('Failed to fetch')
+        return json({ priceList: state, isReplay: true, originalCorrelationId: 'start-corr' }, 200, {
+          'Idempotency-Replayed': 'true',
+          'Idempotency-Original-Correlation-Id': 'start-corr',
+        })
+      },
+    })
+    renderApp(`/fiyat-listeleri/${LIST}`)
+    await userEvent.click(await screen.findByTestId('price-list-start-version'))
+    await screen.findByText(T.notice.unknown)
+
+    cleanup()
+    renderApp(`/fiyat-listeleri/${LIST}`)
+    await screen.findByText(T.notice.unknown)
+    expect(screen.queryByTestId('price-list-start-version')).toBeNull()
+    await userEvent.click(screen.getByRole('button', { name: T.notice.retry }))
+
+    await waitFor(() => expect(screen.queryByText(T.notice.unknown)).toBeNull())
+    expect(screen.getByTestId('price-list-version-2-status').textContent).toBe('Taslak')
+    const posts = harness.posts()
+    expect(posts).toHaveLength(2)
+    expect(posts[0].key).toBe(posts[1].key)
+    expect(posts[0].body).toBe(posts[1].body)
+    expect(posts[0].url).toBe(`/api/v1/price-lists/${LIST}/versions`)
   })
 
   it('a stale version is refused with its reason and the list is re-read', async () => {

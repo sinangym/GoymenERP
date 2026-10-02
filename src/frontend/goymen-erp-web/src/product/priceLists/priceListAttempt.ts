@@ -136,6 +136,12 @@ export function recallPriceListAttempt(binding: string | null): PriceListAttempt
     : held
 }
 
+export function hasRetainedPriceListAttempt(binding: string | null): boolean {
+  if (binding === null) return false
+  const held = retained.get(binding)
+  return held !== undefined && isPriceListOutcomeUnknown(held)
+}
+
 export function resetRetainedPriceListAttempts(): void {
   retained.clear()
   settled.clear()
