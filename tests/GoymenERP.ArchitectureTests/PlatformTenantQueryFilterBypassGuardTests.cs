@@ -81,7 +81,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // production uses the own-server store and Defender when both are configured and answers 503 otherwise
     // (abe26a09… -> c027dce9…); no code line changed.
     private const string ReviewedOpenApiStartupFingerprint =
-        "523ae4b10dc629736621cb288b6ccfaf038269deecd251a4789037b37ec498a5";
+        "5360ddb5008e2bb104a7e18664a8fd9e083f6b9811b1ffd28eb07450569d235d";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedProductManufacturingTechnicalRegistrationPath =
@@ -189,7 +189,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // R20 transfer lifecycle: +3 transfer SQL facts (bd676b05… -> c74360d3…).
             // Product-version provenance rollback: +1 isolated no-loss SQL fact (c444f707… -> d9cb549b…).
             ["tools/relational_inventory/inventory.txt"] =
-                "d9cb549b717482b66e26d03109fd2fc07bbcbb9037cea1e77b25ace66a3db5c9",
+                "71a8969579ba098c63b5f997870c957b9df2dae59294bd8316b749c0b8c5b467",
 
             // logistics
             // AT-053: +4 weighbridge SQL facts (81c1ff0b… -> 264898d7…).
@@ -338,7 +338,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // company-keyed, while movement kinds 8/9 remain inside Inventory's reviewed write guards.
             ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/"
              + "Persistence/InventoryDbContext.cs"] =
-                "0110da12e20416827ef1e477539a884e01b6bb36398a11ed1fcc563e02bfa0b6",
+                "0e6cd81bc874e4f8736d453d47e931535fdba8a512531ba34937e6e501bb9831",
             ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/"
              + "Persistence/ProductDbContext.cs"] =
                 "6979e3af6bf17bd2c7071431dc1dbc808c2c1c5609fe187d782dadb1412761d3",
@@ -630,7 +630,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Inventory/"
                  + "GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventoryStore.cs"] =
                     new(
-                        "82cf58243d6dfde8e47495da2729a9afbe855db237023edaa98c5d846e498907",
+                "1ebfddab00aa0fd2d19ebfc9b6affd869066c9d59fd1e4c6444816a59f2cd290",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -1348,6 +1348,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // schema mutation after any transformation has been recorded.
                 ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/Migrations/20260924095845_AddInventoryLabelGenealogy.cs"] =
                     new("7ab6813aed35a31711887f953a98f54e975553a5c7bb380f521482d1e6e6d2c2",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
+                // Label classification is durable label history; Down refuses before removing populated state.
+                ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/Migrations/20261002110000_AddInventoryLabelClassification.cs"] =
+                    new("5ae139301f3fbd8f0b730a83b47170289e5d643168a4113f9bb83bd4cdc01980",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 1 }),
                 // AT-037: stock counts, their decisions and CountAdjustment movements are durable facts; the Down's only
