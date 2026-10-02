@@ -422,7 +422,7 @@ public sealed class DocumentVaultSqlServerRelationalAcceptanceTests
 
         var effectsBeforeNegatives = await run.CountsAsync();
 
-        const string DocumentsDenied = "SENTETIK-at065-documents-denied";
+        const string DocumentsDenied = TestUsers.NoAssignment;
         var documentsDeniedActor = await run.GrantAsync(DocumentsDenied, CompanyA,
             ErpPermissions.InventoryLabelsRead, ErpPermissions.InventoryBalancesRead);
         inventoryOwner.ReadableActors.Add(documentsDeniedActor);
