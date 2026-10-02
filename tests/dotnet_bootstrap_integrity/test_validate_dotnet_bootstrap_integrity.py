@@ -729,6 +729,11 @@ class WorkflowOrderingTests(unittest.TestCase):
             "-s tests/dotnet_bootstrap_integrity "
             '-p "test_*.py" -v'
         )
+        safe_trx_summary_tests_command = (
+            "python3 -I -S -B -m unittest discover "
+            "-s tests/ci_safe_trx_summary "
+            '-p "test_*.py" -v'
+        )
 
         for job_name in ("backend", "relational"):
             with self.subTest(job=job_name):
@@ -748,11 +753,16 @@ class WorkflowOrderingTests(unittest.TestCase):
                 self.assertLess(preflight_index, setup_index)
                 self.assertEqual(before_setup.count(validator_command), 1)
                 self.assertEqual(before_setup.count(tests_command), 1)
+                self.assertEqual(before_setup.count(safe_trx_summary_tests_command), 1)
                 self.assertLess(
                     before_setup.index(validator_command),
                     before_setup.index(tests_command),
                 )
-                self.assertEqual(before_setup.count("python3 "), 2)
+                self.assertLess(
+                    before_setup.index(tests_command),
+                    before_setup.index(safe_trx_summary_tests_command),
+                )
+                self.assertEqual(before_setup.count("python3 "), 3)
 
     def test_supported_msbuild_commands_disable_auto_response_files(self) -> None:
         backend = self.job_body("backend")
@@ -905,7 +915,8 @@ class WorkflowOrderingTests(unittest.TestCase):
                 self.assertLess(
                     relational_step.index(validator_command),
                     relational_step.index(
-                        f"python3 -I -S -B tools/verify_rcsi_relational_acceptance.py {mode}"
+                        "python3 -I -S -B tools/verify_rcsi_relational_acceptance.py \\\n"
+                        f"          {mode}"
                     ),
                 )
 
@@ -979,13 +990,13 @@ class WorkflowOrderingTests(unittest.TestCase):
     def test_required_upstream_jobs_match_reviewed_exact_contracts(self) -> None:
         expected_job_fingerprints = {
             "backend": (
-                "65b8ee8fa2e5b2fc197b059a77414d0652673eac1d467e0a50cee8bcd3aa0c1c"
+                "9b3737a18a51387e18e29036cd9d201e44d7c1c044c70d8cc944fc6066b796a8"
             ),
             "frontend": (
                 "35f367ca26c395da8b82562519f4532ed750792a453d5840584ec082917f0895"
             ),
             "relational": (
-                "f080843a625a6a846529e76232d124851d864983e71701cec5fbdd20a623cd61"
+                "5df351489cb2d0cada266942d44ea0782db0e9b5113be166bb4bf184d56ed04e"
             ),
             "contract-drift": (
                 "067e1d19ce60a40f11e34e4dba7bae591e33c3ef06d271a8a557ca9226fffcea"
@@ -1010,6 +1021,10 @@ class WorkflowOrderingTests(unittest.TestCase):
             "python3 -I -S -B -m unittest discover "
             '-s tests/dotnet_bootstrap_integrity -p "test_*.py" -v'
         )
+        safe_trx_summary_suite_command = (
+            "python3 -I -S -B -m unittest discover "
+            '-s tests/ci_safe_trx_summary -p "test_*.py" -v'
+        )
 
         for job_name in ("backend", "relational"):
             with self.subTest(job=job_name):
@@ -1018,7 +1033,12 @@ class WorkflowOrderingTests(unittest.TestCase):
                 )
                 self.assertEqual(
                     self.read_step_lines(preflight),
-                    ["run: |", validator_command, bootstrap_suite_command],
+                    [
+                        "run: |",
+                        validator_command,
+                        bootstrap_suite_command,
+                        safe_trx_summary_suite_command,
+                    ],
                 )
 
         contract_preflight = self.step_body(
