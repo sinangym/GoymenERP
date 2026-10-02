@@ -79,7 +79,7 @@ interface RemainderLine {
   readonly loaded: string | null
   readonly shipped: string | null
   readonly delivered: string | null
-  readonly minimumQuantity: string | null
+  readonly minimum: string | null
 }
 
 interface RemainderChange {
@@ -467,7 +467,7 @@ test('S04-RM-01 one accepted order revises then cancels only its remainder while
   const nonZeroFloor = await readRemainders(request, draftId, readerActor)
   expect(nonZeroFloor.floorStatus).toBe('Readable')
   expect(nonZeroFloor.lines.find((line) => line.lineId === lineId)).toMatchObject({
-    quantity: ORDERED_QUANTITY, loaded: '2', shipped: '1', delivered: '0', minimumQuantity: '2',
+    quantity: ORDERED_QUANTITY, loaded: '2', shipped: '1', delivered: '0', minimum: '2',
   })
 
   await openDetail(page, draftId, preparerActor)
@@ -482,8 +482,9 @@ test('S04-RM-01 one accepted order revises then cancels only its remainder while
   await firstRequestPanel.getByRole('button', { name: 'Onaya gönder' }).click()
   const [firstBrowserRequest, firstBrowserResponse] = await Promise.all([firstRequestSent, firstRequestAnswered])
   expect(firstBrowserResponse.status()).toBe(200)
-  expect(firstBrowserRequest.postDataJSON()).toMatchObject({
+  expect(firstBrowserRequest.postDataJSON()).toEqual({
     expectedVersion: current.draft.version, lineId, kind: 'Revise', quantity: REVISED_QUANTITY,
+    reason: 'SENTETIK browser-suite:s04 müşteri kalan miktarı düşürmek istedi',
   })
 
   let fresh = await readDraft(request, draftId, readerActor)
@@ -502,7 +503,7 @@ test('S04-RM-01 one accepted order revises then cancels only its remainder while
   await rejectedCard.getByRole('button', { name: 'Reddet' }).click()
   const [rejectionBrowserRequest, rejectionBrowserResponse] = await Promise.all([rejectionSent, rejectionAnswered])
   expect(rejectionBrowserResponse.status()).toBe(200)
-  expect(rejectionBrowserRequest.postDataJSON()).toMatchObject({
+  expect(rejectionBrowserRequest.postDataJSON()).toEqual({
     expectedVersion: remainder.draftVersion, reason: 'SENTETIK browser-suite:s04 mevcut miktar korunsun',
   })
 
@@ -524,8 +525,9 @@ test('S04-RM-01 one accepted order revises then cancels only its remainder while
   await secondRequestPanel.getByRole('button', { name: 'Onaya gönder' }).click()
   const [secondBrowserRequest, secondBrowserResponse] = await Promise.all([secondRequestSent, secondRequestAnswered])
   expect(secondBrowserResponse.status()).toBe(200)
-  expect(secondBrowserRequest.postDataJSON()).toMatchObject({
+  expect(secondBrowserRequest.postDataJSON()).toEqual({
     expectedVersion: remainder.draftVersion, lineId, kind: 'Revise', quantity: REVISED_QUANTITY,
+    reason: 'SENTETIK browser-suite:s04 teslim edilmeyen kalan revize edilsin',
   })
 
   remainder = await readRemainders(request, draftId, approverActor)
@@ -570,7 +572,7 @@ test('S04-RM-01 one accepted order revises then cancels only its remainder while
   expect(fresh.lines.find((line) => line.lineId === lineId)?.quantity).toBe(REVISED_QUANTITY)
   expect(remainder.floorStatus).toBe('Readable')
   expect(exactLine).toMatchObject({
-    quantity: REVISED_QUANTITY, remainder: 'Revised', loaded: '2', shipped: '1', delivered: '0', minimumQuantity: '2',
+    quantity: REVISED_QUANTITY, remainder: 'Revised', loaded: '2', shipped: '1', delivered: '0', minimum: '2',
   })
   expect(remainder.items).toHaveLength(2)
   expect(remainder.items[1]).toMatchObject({
@@ -601,8 +603,9 @@ test('S04-RM-01 one accepted order revises then cancels only its remainder while
   await cancelRequestPanel.getByRole('button', { name: 'Onaya gönder' }).click()
   const [cancelBrowserRequest, cancelBrowserResponse] = await Promise.all([cancelRequestSent, cancelRequestAnswered])
   expect(cancelBrowserResponse.status()).toBe(200)
-  expect(cancelBrowserRequest.postDataJSON()).toMatchObject({
-    expectedVersion: remainder.draftVersion, lineId, kind: 'Cancel',
+  expect(cancelBrowserRequest.postDataJSON()).toEqual({
+    expectedVersion: remainder.draftVersion, lineId, kind: 'Cancel', quantity: null,
+    reason: 'SENTETIK browser-suite:s04 gerçekleşenler kalsın, yalnız kalan iptal edilsin',
   })
 
   fresh = await readDraft(request, draftId, readerActor)
@@ -651,7 +654,7 @@ test('S04-RM-01 one accepted order revises then cancels only its remainder while
   expect(fresh.lines.find((line) => line.lineId === lineId)?.quantity).toBe('2')
   expect(remainder.floorStatus).toBe('Readable')
   expect(remainder.lines.find((line) => line.lineId === lineId)).toMatchObject({
-    quantity: '2', remainder: 'Cancelled', loaded: '2', shipped: '1', delivered: '0', minimumQuantity: '2',
+    quantity: '2', remainder: 'Cancelled', loaded: '2', shipped: '1', delivered: '0', minimum: '2',
   })
   expect(remainder.items).toHaveLength(3)
   expect(remainder.items[2]).toMatchObject({
