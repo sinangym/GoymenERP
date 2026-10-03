@@ -32,7 +32,7 @@ public sealed class LogisticsCustomerReturnSqlServerRelationalAcceptanceTests
 
         await run.SerializableAsync(async store =>
         {
-            var first = await store.StoreRequestAsync(run.Envelope("request", "alice"), Hash("request"), requested);
+            var first = await store.StoreRequestAsync(run.Envelope("request", "alice", "request-original"), Hash("request"), requested);
             var replay = await store.StoreRequestAsync(run.Envelope("request", "alice", "retry"), Hash("request"), requested);
             Assert.Equal((LogisticsWriteOutcome.Recorded, LogisticsWriteOutcome.Replayed, first.OriginalCorrelationId),
                 (first.Outcome, replay.Outcome, replay.OriginalCorrelationId));
@@ -44,7 +44,7 @@ public sealed class LogisticsCustomerReturnSqlServerRelationalAcceptanceTests
             Assert.Equal((CustomerReturnStatus.Pending, 1L, 40m),
                 (reopened!.Status, reopened.Version, reopened.Quantity.Value));
             reopened.Approve(1, "bob", Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), T0.AddMinutes(2));
-            await store.StoreDecisionAsync(run.Envelope("approve", "bob"), Hash("approve"),
+            await store.StoreDecisionAsync(run.Envelope("approve", "bob", "approve-original"), Hash("approve"),
                 LogisticsCustomerReturnCommandsV1.Approve, reopened);
         });
 
@@ -53,9 +53,20 @@ public sealed class LogisticsCustomerReturnSqlServerRelationalAcceptanceTests
             var reopened = await store.FindAsync(requested.Id);
             Assert.Equal((CustomerReturnStatus.Approved, 2L, "bob"),
                 (reopened!.Status, reopened.Version, reopened.DecidedBy));
+            var requestReplay = await store.FindReplayAsync(run.Envelope("request", "alice", "request-after-decision"),
+                Hash("request"), LogisticsCustomerReturnCommandsV1.Request);
+            Assert.Equal((CustomerReturnStatus.Pending, 1L, "request-original"),
+                (requestReplay!.Return.Status, requestReplay.Return.Version, requestReplay.OriginalCorrelationId));
             var replay = await store.FindReplayAsync(run.Envelope("approve", "bob", "later"), Hash("approve"),
                 LogisticsCustomerReturnCommandsV1.Approve);
             Assert.Equal(reopened.InventoryMovementId, replay!.Return.InventoryMovementId);
+            Assert.Equal("approve-original", replay.OriginalCorrelationId);
+            var wrongActor = await Assert.ThrowsAsync<LogisticsStoreException>(() => store.FindReplayAsync(
+                run.Envelope("request", "mallory", "probe"), Hash("request"), LogisticsCustomerReturnCommandsV1.Request));
+            Assert.Equal(LogisticsStoreCodes.SameKeyPayloadMismatch, wrongActor.Code);
+            var wrongPayload = await Assert.ThrowsAsync<LogisticsStoreException>(() => store.FindReplayAsync(
+                run.Envelope("request", "alice", "probe"), Hash("changed"), LogisticsCustomerReturnCommandsV1.Request));
+            Assert.Equal(LogisticsStoreCodes.SameKeyPayloadMismatch, wrongPayload.Code);
         });
 
         Assert.Equal((1, 2), await run.CountsAsync());

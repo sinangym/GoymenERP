@@ -37,6 +37,7 @@ internal sealed class CustomerReturnAttemptRow : ILogisticsTenantRow
     public string RequestHash { get; set; } = string.Empty;
     public string ActorId { get; set; } = string.Empty;
     public Guid CustomerReturnId { get; set; }
+    public string ResultJson { get; set; } = string.Empty;
     public string CorrelationId { get; set; } = string.Empty;
     public DateTimeOffset RecordedAtUtc { get; set; }
 }
