@@ -286,8 +286,7 @@ public sealed class LogisticsCustomerReturnStore(
         {
             var snapshot = JsonSerializer.Deserialize<CustomerReturnResultSnapshot>(attempt.ResultJson, Json)
                 ?? throw new InvalidOperationException("Iade denemesinin degismez sonucu bos.");
-            if (snapshot.CustomerReturnId != attempt.CustomerReturnId)
-                throw new InvalidOperationException("Iade denemesinin sonucu hedef kimligiyle uyusmuyor.");
+            RequireSnapshotCoherence(attempt, snapshot);
             return new(Restore(snapshot), attempt.CorrelationId);
         }
         catch (Exception exception) when (exception is JsonException or ArgumentException
@@ -295,6 +294,33 @@ public sealed class LogisticsCustomerReturnStore(
         {
             throw new InvalidOperationException("Iade denemesinin degismez sonucu okunamadi; guncel kayda dusulmez.", exception);
         }
+    }
+
+    private static void RequireSnapshotCoherence(CustomerReturnAttemptRow attempt, CustomerReturnResultSnapshot snapshot)
+    {
+        if (snapshot.CustomerReturnId != attempt.CustomerReturnId || snapshot.CompanyId != attempt.CompanyId)
+            throw new InvalidOperationException("Iade denemesinin sonucu sirket veya hedef kimligiyle uyusmuyor.");
+        var request = attempt.CommandName == LogisticsCustomerReturnCommandsV1.Request;
+        var approve = attempt.CommandName == LogisticsCustomerReturnCommandsV1.Approve;
+        var reject = attempt.CommandName == LogisticsCustomerReturnCommandsV1.Reject;
+        if (!request && !approve && !reject)
+            throw new InvalidOperationException("Iade denemesi bilinmeyen komut sonucu tasiyor.");
+        if (request && (!string.Equals(snapshot.Status, nameof(CustomerReturnStatus.Pending), StringComparison.Ordinal)
+            || snapshot.Version != "1" || !string.Equals(snapshot.RequestedBy, attempt.ActorId, StringComparison.Ordinal)
+            || snapshot.DecidedBy is not null || snapshot.DecidedAtUtc is not null || snapshot.DecisionNote is not null
+            || snapshot.InventoryMovementId is not null || snapshot.OriginalLabelId is not null
+            || snapshot.OriginalShipmentMovementId is not null))
+            throw new InvalidOperationException("Iade istek denemesi ozgun Pending/v1 sonucunu tasimiyor.");
+        if (approve && (!string.Equals(snapshot.Status, nameof(CustomerReturnStatus.Approved), StringComparison.Ordinal)
+            || snapshot.Version != "2" || !string.Equals(snapshot.DecidedBy, attempt.ActorId, StringComparison.Ordinal)
+            || snapshot.DecidedAtUtc is null || snapshot.InventoryMovementId is null || snapshot.OriginalLabelId is null
+            || snapshot.OriginalShipmentMovementId is null))
+            throw new InvalidOperationException("Iade onay denemesi tam Approved/v2 sonucunu tasimiyor.");
+        if (reject && (!string.Equals(snapshot.Status, nameof(CustomerReturnStatus.Rejected), StringComparison.Ordinal)
+            || snapshot.Version != "2" || !string.Equals(snapshot.DecidedBy, attempt.ActorId, StringComparison.Ordinal)
+            || snapshot.DecidedAtUtc is null || snapshot.InventoryMovementId is not null || snapshot.OriginalLabelId is not null
+            || snapshot.OriginalShipmentMovementId is not null))
+            throw new InvalidOperationException("Iade ret denemesi tam Rejected/v2 sonucunu tasimiyor.");
     }
 
     private static CustomerReturnResultSnapshot Snapshot(CustomerReturn item) => new(item.Id, item.CompanyId,

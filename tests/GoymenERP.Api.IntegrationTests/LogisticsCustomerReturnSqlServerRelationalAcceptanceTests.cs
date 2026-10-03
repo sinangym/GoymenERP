@@ -57,6 +57,12 @@ public sealed class LogisticsCustomerReturnSqlServerRelationalAcceptanceTests
                 Hash("request"), LogisticsCustomerReturnCommandsV1.Request);
             Assert.Equal((CustomerReturnStatus.Pending, 1L, "request-original"),
                 (requestReplay!.Return.Status, requestReplay.Return.Version, requestReplay.OriginalCorrelationId));
+            Assert.Null(requestReplay.Return.DecidedBy);
+            Assert.Null(requestReplay.Return.DecidedAtUtc);
+            Assert.Null(requestReplay.Return.DecisionNote);
+            Assert.Null(requestReplay.Return.InventoryMovementId);
+            Assert.Null(requestReplay.Return.OriginalLabelId);
+            Assert.Null(requestReplay.Return.OriginalShipmentMovementId);
             var replay = await store.FindReplayAsync(run.Envelope("approve", "bob", "later"), Hash("approve"),
                 LogisticsCustomerReturnCommandsV1.Approve);
             Assert.Equal(reopened.InventoryMovementId, replay!.Return.InventoryMovementId);
