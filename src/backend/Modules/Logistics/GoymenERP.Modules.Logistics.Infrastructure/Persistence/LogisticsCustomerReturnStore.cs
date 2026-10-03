@@ -385,7 +385,7 @@ public sealed class LogisticsCustomerReturnStore(
         long? beforeVersion, long afterVersion, string reason) => auditEvents.Enqueue(new AuditEventDraft(
         item.CompanyId, eventType, EntityType, item.Id.ToString("D"), operation, beforeVersion, afterVersion,
         AuditActorTypes.User, envelope.ActorId, envelope.PermissionCode, envelope.RoleCodes,
-        beforeVersion is null ? null : JsonSerializer.Serialize(new { status = CustomerReturnStatus.Pending, version = beforeVersion }),
+        beforeVersion is null ? "{}" : JsonSerializer.Serialize(new { status = CustomerReturnStatus.Pending, version = beforeVersion }),
         JsonSerializer.Serialize(new { status = item.Status, version = afterVersion, item.SourceDeliveryId, item.Quantity.Value }),
         reason, ApprovalContextJson: null, AuditAiInvolvement.None, AiContextJson: null, envelope.SourceChannel,
         envelope.ClientIpAddress, envelope.UserAgent, envelope.CorrelationId, envelope.CausationId, envelope.IdempotencyKey));
