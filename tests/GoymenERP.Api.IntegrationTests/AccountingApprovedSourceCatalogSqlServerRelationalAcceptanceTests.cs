@@ -691,7 +691,7 @@ public sealed class AccountingApprovedSourceCatalogSqlServerRelationalAcceptance
                 "SELECT COUNT(*) FROM accounting.ApprovedSourceCatalogs WHERE Id = @p",
                 ("@p", packageId)),
             await ScalarAsync<int>(
-                "SELECT COUNT(*) FROM accounting.Commands WHERE CompanyId = @c AND ResponseJson LIKE @p",
+                "SELECT COUNT(*) FROM accounting.Commands WHERE CompanyId = @c AND ResultJson LIKE @p",
                 ("@c", CompanyA), ("@p", $"%{packageId:D}%")),
             await ScalarAsync<int>(
                 "SELECT COUNT(*) FROM audit.AuditEvents WHERE CompanyId = @c AND EntityId = @p",
