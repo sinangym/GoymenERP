@@ -84,7 +84,7 @@ import {
   SALES_QUANTITY_WRITE_CAPABILITY,
   SALES_ROUTE,
 } from './capabilities'
-import { APPROVAL_STATE_TEXT, ORDER_DETAIL_TEXT as T, ORDER_DRAFT_TEXT, problemCodeText } from './salesText'
+import { APPROVAL_STATE_TEXT, COMMERCIAL_STAGE_TEXT, ORDER_DETAIL_TEXT as T, ORDER_DRAFT_TEXT, problemCodeText } from './salesText'
 import { SALES_PROBLEM_CODE } from './contract'
 import { classifyOutcome } from '../shell/uiState'
 import { useShellState } from '../shell/shellContext'
@@ -351,6 +351,10 @@ export function DraftView({
       </header>
 
       <dl className={styles.facts}>
+        <div>
+          <dt>{T.commercialStage}</dt>
+          <dd data-testid="sales-draft-commercial-stage">{COMMERCIAL_STAGE_TEXT[draft.commercialStage]}</dd>
+        </div>
         <div>
           <dt>{T.state}</dt>
           <dd data-testid="sales-draft-lifecycle-state">{cancelled ? T.stateCancelled : T.stateDraft}</dd>

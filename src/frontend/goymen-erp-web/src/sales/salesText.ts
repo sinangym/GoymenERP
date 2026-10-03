@@ -2,7 +2,7 @@
  * User-facing Sales texts. Turkish, in one place, so they stay localizable.
  */
 
-import { APPROVAL_STATE, SALES_PROBLEM_CODE, type ApprovalState, type SalesProblemCode } from './contract'
+import { APPROVAL_STATE, COMMERCIAL_STAGE, SALES_PROBLEM_CODE, type ApprovalState, type CommercialStage, type SalesProblemCode } from './contract'
 
 export const ORDER_DRAFT_TEXT = {
   heading: 'Yeni satış siparişi taslağı',
@@ -192,12 +192,19 @@ export const APPROVAL_STATE_TEXT: Record<ApprovalState, string> = {
   [APPROVAL_STATE.withdrawn]: 'Geri çekildi',
 }
 
+export const COMMERCIAL_STAGE_TEXT: Record<CommercialStage, string> = {
+  [COMMERCIAL_STAGE.quote]: 'Teklif',
+  [COMMERCIAL_STAGE.order]: 'Sipariş',
+  [COMMERCIAL_STAGE.unavailable]: 'Aşama bilgisi kullanılamıyor',
+}
+
 export const ORDER_LIST_TEXT = {
   heading: 'Satış siparişi taslakları',
   newDraft: 'Yeni taslak',
   caption: 'Seçili şirketteki sipariş taslakları, en yeni önce',
   documentNo: 'Belge no',
   businessDate: 'Sipariş tarihi',
+  commercialStage: 'Ticari aşama',
   state: 'İç onay',
   filter: 'İç onay durumu',
   filterAll: 'Tümü',
@@ -212,6 +219,7 @@ export const ORDER_LIST_TEXT = {
 
 export const ORDER_DETAIL_TEXT = {
   backToList: 'Sipariş taslakları',
+  commercialStage: 'Ticari aşama',
   state: 'Durum',
   stateDraft: 'Taslak',
   /** DEC-SAL-005: the lifecycle of an approved order cancelled after its impact preview. */

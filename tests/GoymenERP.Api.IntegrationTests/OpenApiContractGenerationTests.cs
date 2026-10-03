@@ -3203,7 +3203,9 @@ public sealed partial class OpenApiContractGenerationTests
                     ("businessDate", "type:string;format:date"),
                     ("createdAtUtc", "type:string;format:date-time"),
                     ("lineCount", "type:integer|string;format:int32"),
-                    ("approvalState", "type:string")),
+                      ("approvalState", "type:string"),
+                      ("commercialStage", "oneOf:ref:SalesCommercialStageV1|type:null")),
+                  ["SalesCommercialStageV1"] = ScalarSchema("enum:Quote|Order|"),
                 // SALES-P2: the disclosure marker's own component. Two members only — there is deliberately no
                 // "Unavailable" third value as AmountDisclosure and CommandOutcome carry, because this answer is
                 // computed at the moment of answering and can never be "not asked": the module throws 503 if the

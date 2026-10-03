@@ -28,6 +28,14 @@ public sealed record SalesDraftOwnerReferenceV1(Guid Id, string ExpectedVersion)
 public sealed record SalesDraftDeliverySliceV1(
     Guid SliceId, Guid OrderUnitId, string Quantity, DateOnly RequestedDeliveryDate);
 
+/// <summary>
+/// Q9: the server-derived commercial stage of the SAME record. A current customer acceptance promotes
+/// a new record from Quote to Order; legacy records which do not require acceptance are already Order.
+/// This is not the lifecycle or internal-approval axis and is never persisted independently.
+/// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter<SalesCommercialStageV1>))]
+public enum SalesCommercialStageV1 { Quote, Order }
+
 // SALES-A1 (contract delta): `approvalState` is the internal approval axis — "Preparing",
 // "PendingApproval", "Approved", "Rejected" or (D2) "Withdrawn" — beside the lifecycle `state` ("Draft", or since
 // DEC-SAL-005 "Cancelled" for an approved order cancelled after its impact preview), the
@@ -36,7 +44,8 @@ public sealed record SalesOrderDraftSummaryView(
     Guid Id, Guid CompanyId, string DocumentNo, string Kind, string State,
     string Version, string Revision, Guid PartyId, Guid CompanyAccountId,
     Guid CurrencyId, DateOnly BusinessDate, DateTimeOffset CreatedAtUtc, int LineCount,
-    string ApprovalState);
+    string ApprovalState,
+    SalesCommercialStageV1? CommercialStage = null);
 
 /// <summary>SALES-A1: the approval facts of the detail; every member null until it happened (ADR-009 audit facts, shown, never derived).</summary>
 public sealed record SalesDraftApprovalV1(

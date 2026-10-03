@@ -72253,6 +72253,13 @@
           }
         }
       },
+      "SalesCommercialStageV1": {
+        "enum": [
+          "Quote",
+          "Order",
+          null
+        ]
+      },
       "SalesContactInformationOptionsV1": {
         "required": [
           "companyId",
@@ -74332,6 +74339,16 @@
           },
           "approvalState": {
             "type": "string"
+          },
+          "commercialStage": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SalesCommercialStageV1"
+              }
+            ]
           }
         }
       },

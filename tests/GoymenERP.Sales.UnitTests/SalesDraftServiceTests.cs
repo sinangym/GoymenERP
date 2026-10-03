@@ -1154,6 +1154,7 @@ public sealed partial class SalesDraftServiceTests
         var created = (await world.Service().CreateDraftAsync(Request(), Metadata("k-create"))).Detail;
         Assert.Equal((true, (string?)null, false), (created.CustomerAcceptance.Required,
             created.CustomerAcceptance.AcceptedRevision, created.CustomerAcceptance.IsCurrentRevisionAccepted));
+        Assert.Equal(SalesCommercialStageV1.Quote, created.Draft.CommercialStage);
 
         await world.Service().SubmitDraftAsync(created.Draft.Id, Command("2"), Metadata("k-submit"));
         await world.Service().ApproveDraftAsync(created.Draft.Id, Command("3"), Metadata("k-approve"));
@@ -1161,6 +1162,7 @@ public sealed partial class SalesDraftServiceTests
         Assert.Equal(("5", SalesDraftApiV1.Rev0, Actor, true), (accepted.Detail.Draft.Version,
             accepted.Detail.CustomerAcceptance.AcceptedRevision, accepted.Detail.CustomerAcceptance.AcceptedBy,
             accepted.Detail.CustomerAcceptance.IsCurrentRevisionAccepted));
+        Assert.Equal(SalesCommercialStageV1.Order, accepted.Detail.Draft.CommercialStage);
         Assert.Equal((SalesDraftCommands.RecordCustomerAcceptanceV1, ApprovePermission,
                 "sales.order-draft.customer-acceptance-recorded.v1"),
             (world.Store.Transitions[^1].Command, world.Store.Transitions[^1].Envelope.PermissionCode,
@@ -1177,6 +1179,7 @@ public sealed partial class SalesDraftServiceTests
             Revision("5", new SalesDraftLineCommercialV1(created.Lines[0].LineId, "13.00", KgUnit, "5")), Metadata("k-r1"));
         Assert.Equal(("6", "Rev.1", SalesDraftApiV1.Rev0, false), (revised.Detail.Draft.Version, revised.Detail.Draft.Revision,
             revised.Detail.CustomerAcceptance.AcceptedRevision, revised.Detail.CustomerAcceptance.IsCurrentRevisionAccepted));
+        Assert.Equal(SalesCommercialStageV1.Quote, revised.Detail.Draft.CommercialStage);
 
         await world.Service().SubmitDraftAsync(created.Draft.Id, Command("6"), Metadata("k-submit-r1"));
         await world.Service().ApproveDraftAsync(created.Draft.Id, Command("7"), Metadata("k-approve-r1"));
@@ -1184,6 +1187,7 @@ public sealed partial class SalesDraftServiceTests
         Assert.Equal(("9", "Rev.1", true), (acceptedRevision.Detail.Draft.Version,
             acceptedRevision.Detail.CustomerAcceptance.AcceptedRevision,
             acceptedRevision.Detail.CustomerAcceptance.IsCurrentRevisionAccepted));
+        Assert.Equal(SalesCommercialStageV1.Order, acceptedRevision.Detail.Draft.CommercialStage);
         Assert.Equal(2, world.Store.Transitions.Count(item => item.Command == SalesDraftCommands.RecordCustomerAcceptanceV1));
     }
 

@@ -1479,7 +1479,12 @@ public sealed partial class SalesDraftService(
         new(draft.Id, draft.CompanyId, draft.DocumentNo, draft.Kind.ToString(), draft.State.ToString(),
             draft.Version.ToString(CultureInfo.InvariantCulture), SalesDraftApiV1.RevisionText(draft.Revision), draft.Header.PartyId,
             draft.Header.CompanyAccountId, draft.Header.CurrencyId, draft.Header.BusinessDate, draft.CreatedAtUtc, draft.Lines.Count,
-            draft.ApprovalState.ToString());
+            draft.ApprovalState.ToString(), CommercialStage(draft));
+
+    private static SalesCommercialStageV1 CommercialStage(SalesOrderDraft draft) =>
+        draft.CustomerAcceptanceRequired && !draft.IsCustomerAccepted
+            ? SalesCommercialStageV1.Quote
+            : SalesCommercialStageV1.Order;
 
     /// <summary>Withheld ⇒ the three commercial fields are null BECAUSE of the marker; Visible ⇒ the texts as stored (null = unpriced).</summary>
     private static SalesOrderDraftDetailView Detail(

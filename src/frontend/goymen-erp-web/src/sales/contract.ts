@@ -59,6 +59,14 @@ export const DRAFT_STATE = 'Draft' as const
 export const CANCELLED_STATE = 'Cancelled' as const
 export type LifecycleState = typeof DRAFT_STATE | typeof CANCELLED_STATE
 
+/** Q9: server-derived stage of the same commercial record; legacy stored command results may omit it. */
+export const COMMERCIAL_STAGE = {
+  quote: 'Quote',
+  order: 'Order',
+  unavailable: 'Unavailable',
+} as const
+export type CommercialStage = (typeof COMMERCIAL_STAGE)[keyof typeof COMMERCIAL_STAGE]
+
 /**
  * SALES-A1: the INTERNAL APPROVAL axis (`InternalApprovalState`), a fourth fact beside the lifecycle
  * `state`, the commercial `revision` and the concurrency `version` — never merged into one status.
@@ -313,6 +321,8 @@ export interface DraftSummary {
   readonly lineCount: number
   /** SALES-A1: the internal approval axis. */
   readonly approvalState: ApprovalState
+  /** Q9: never inferred by the client; Unavailable means an older stored wire result omitted the additive member. */
+  readonly commercialStage: CommercialStage
 }
 
 export interface DraftLine {
@@ -482,6 +492,16 @@ function exact(value: unknown, keys: readonly string[]): Obj | null {
   return obj
 }
 
+/** Every required member plus only the named additive members; unknown members still fail closed. */
+function exactWithOptional(value: unknown, required: readonly string[], optional: readonly string[]): Obj | null {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return null
+  const obj = value as Obj
+  const allowed = new Set([...required, ...optional])
+  for (const key of Object.keys(obj)) if (!allowed.has(key)) return null
+  for (const key of required) if (!Object.hasOwn(obj, key)) return null
+  return obj
+}
+
 const DECIMAL_RE = /^[0-9]+(?:\.[0-9]+)?$/
 const INSTANT_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/
 const REVISION_RE = /^Rev\.(?:0|[1-9][0-9]*)$/
@@ -586,9 +606,16 @@ function decodeApproval(value: unknown, state: ApprovalState): ApprovalFacts | n
 }
 
 export function decodeDraftSummary(value: unknown): DraftSummary | null {
-  const o = exact(value, SUMMARY_KEYS)
+  const o = exactWithOptional(value, SUMMARY_KEYS, ['commercialStage'])
+  const hasCommercialStage = o !== null && Object.hasOwn(o, 'commercialStage')
+  const commercialStage = !hasCommercialStage || o?.commercialStage === null
+    ? COMMERCIAL_STAGE.unavailable
+    : o?.commercialStage === COMMERCIAL_STAGE.quote || o?.commercialStage === COMMERCIAL_STAGE.order
+      ? o.commercialStage
+      : null
   if (
     o === null ||
+    commercialStage === null ||
     !isReferenceId(o.id) ||
     !isReferenceId(o.companyId) ||
     !isText(o.documentNo, 200) ||
@@ -628,6 +655,7 @@ export function decodeDraftSummary(value: unknown): DraftSummary | null {
     createdAtUtc: o.createdAtUtc,
     lineCount: o.lineCount,
     approvalState: o.approvalState,
+    commercialStage,
   }
 }
 
