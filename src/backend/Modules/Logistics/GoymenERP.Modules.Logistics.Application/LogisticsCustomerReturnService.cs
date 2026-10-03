@@ -1,4 +1,5 @@
 using System.Globalization;
+using GoymenERP.BuildingBlocks.Observability;
 using GoymenERP.Modules.Logistics.Application.Contracts;
 using GoymenERP.Modules.Logistics.Domain.Quantities;
 using GoymenERP.Modules.Logistics.Domain.Returns;
@@ -15,6 +16,7 @@ public sealed class LogisticsCustomerReturnService(
     ILogisticsCustomerReturnStoreV1 store,
     ILogisticsCustomerReturnTransactionRunnerV1 transactions,
     LogisticsCustomerReturnBindingsV1 bindings,
+    ICorrelationContext correlation,
     TimeProvider timeProvider) : ILogisticsCustomerReturnServiceV1
 {
     public async Task<CustomerReturnResponseV1> RequestAsync(Guid instructionId, Guid lineId,
@@ -191,17 +193,29 @@ public sealed class LogisticsCustomerReturnService(
             throw new LogisticsCustomerReturnServiceException(409, LogisticsCustomerReturnCodesV1.VersionConflict);
     }
 
-    private static LogisticsWriteEnvelope Envelope(LogisticsCustomerReturnScopeV1 scope, string permission,
+    private LogisticsWriteEnvelope Envelope(LogisticsCustomerReturnScopeV1 scope, string permission,
         LogisticsCommandMetadata metadata) => new(scope.ActorId, permission, scope.RoleCodes, metadata.CorrelationId,
-        metadata.CausationId, metadata.IdempotencyKey, "customer-return");
+        metadata.CausationId, metadata.IdempotencyKey, correlation.SourceChannel,
+        correlation.ClientIpAddress, correlation.UserAgent);
 
     private static long ParseVersion(string text) => long.TryParse(text, NumberStyles.None, CultureInfo.InvariantCulture, out var version)
         && version > 0 ? version : throw new LogisticsCustomerReturnServiceException(422, "validation_failed");
 
-    private static Quantity ParseQuantity(string text, QuantityUnit unit) => decimal.TryParse(text,
-        NumberStyles.AllowLeadingSign | NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var value)
-        ? Quantity.Positive(value, unit)
-        : throw new LogisticsCustomerReturnServiceException(422, "validation_failed");
+    private static Quantity ParseQuantity(string text, QuantityUnit unit)
+    {
+        if (!decimal.TryParse(text, NumberStyles.AllowLeadingSign | NumberStyles.AllowDecimalPoint,
+                CultureInfo.InvariantCulture, out var value))
+            throw new LogisticsCustomerReturnServiceException(422, "validation_failed");
+
+        try
+        {
+            return Quantity.Positive(value, unit);
+        }
+        catch (ArgumentException)
+        {
+            throw new LogisticsCustomerReturnServiceException(422, "validation_failed");
+        }
+    }
 
     private static void RequireId(Guid id)
     {
