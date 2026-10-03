@@ -312,7 +312,7 @@ function noRemainderChanges(detail: unknown): Response {
       loaded: '0',
       shipped: '0',
       delivered: '0',
-      minimumQuantity: '0',
+      minimum: '0',
     })),
     items: [],
   })

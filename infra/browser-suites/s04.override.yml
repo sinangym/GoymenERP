@@ -3,7 +3,7 @@
 # (SUITE_API_EXTENSIONS["s04"]: Product issuer + actors + identity). The Product issuer is the existing
 # u02 synthetic identity, rebound to this disposable suite without a role, assignment or sign-in actor; it
 # enables Product's owned migrations/runtime before the gated host materializes one fixed candidate.
-#  - Seven suite actors appended to the canonical two BootstrapIdentity users (indices 2..8). The browser
+#  - Ten suite actors appended to the canonical two BootstrapIdentity users (indices 2..11). The browser
 #    suite signs in as each on the AUTHORIZED web (X-Development-User, the s03 way). The canonical users
 #    hold no Sales permission and are not used by the suite.
 #  - Each actor's Identity user, one role and one company-wide assignment in GDC through the real
@@ -24,6 +24,9 @@
 # DEC-SAL-005 (user decision 2026-09-27): an eighth actor, the disposable canceller s04-canceller, is the ONLY holder of
 # sales.orders.cancel in this run database, beside sales.drafts.read to open its order; single-person cancel (not
 # Critical). No real user and no seeded or other suite role receives the name; the real-user mapping stays a human gate.
+# S04-RM: two further disposable actors reproduce the accepted L04 preparer/loader split for this suite only. The
+# preparer creates/issues; the loader records load/shipment and dispatch-note draft/approval. Shipment keeps Logistics's
+# existing dual fence: shipments.record + inventory.physical-allocation.write. Existing Sales actors are not widened.
 services:
   api:
     environment:
@@ -51,6 +54,10 @@ services:
       BootstrapIdentity__Users__8__DisplayName: SENTETIK browser-suite:s04 Sales delivery planner
       BootstrapIdentity__Users__9__UserId: s04-canceller
       BootstrapIdentity__Users__9__DisplayName: SENTETIK browser-suite:s04 Sales order canceller
+      BootstrapIdentity__Users__10__UserId: s04-logistics-preparer
+      BootstrapIdentity__Users__10__DisplayName: SENTETIK browser-suite:s04 Logistics preparer
+      BootstrapIdentity__Users__11__UserId: s04-logistics-loader
+      BootstrapIdentity__Users__11__DisplayName: SENTETIK browser-suite:s04 Logistics loader
       IdentitySeed__Users__5__Id: b2000000-0000-4000-8000-000000000401
       IdentitySeed__Users__5__DisplayName: SENTETIK browser-suite:s04 Sales preparer
       IdentitySeed__Users__5__ExternalIdentities__0__Id: b2100000-0000-4000-8000-000000000401
@@ -97,6 +104,16 @@ services:
       IdentitySeed__Users__13__ExternalIdentities__0__Id: b2100000-0000-4000-8000-000000000408
       IdentitySeed__Users__13__ExternalIdentities__0__Issuer: urn:goymen:development-bootstrap
       IdentitySeed__Users__13__ExternalIdentities__0__Subject: s04-canceller
+      IdentitySeed__Users__14__Id: b2000000-0000-4000-8000-000000000409
+      IdentitySeed__Users__14__DisplayName: SENTETIK browser-suite:s04 Logistics preparer
+      IdentitySeed__Users__14__ExternalIdentities__0__Id: b2100000-0000-4000-8000-000000000409
+      IdentitySeed__Users__14__ExternalIdentities__0__Issuer: urn:goymen:development-bootstrap
+      IdentitySeed__Users__14__ExternalIdentities__0__Subject: s04-logistics-preparer
+      IdentitySeed__Users__15__Id: b2000000-0000-4000-8000-000000000410
+      IdentitySeed__Users__15__DisplayName: SENTETIK browser-suite:s04 Logistics loader
+      IdentitySeed__Users__15__ExternalIdentities__0__Id: b2100000-0000-4000-8000-000000000410
+      IdentitySeed__Users__15__ExternalIdentities__0__Issuer: urn:goymen:development-bootstrap
+      IdentitySeed__Users__15__ExternalIdentities__0__Subject: s04-logistics-loader
       IdentitySeed__Roles__5__Id: b3000000-0000-4000-8000-000000000401
       IdentitySeed__Roles__5__Code: BROWSER_S04_PREPARER
       IdentitySeed__Roles__5__Name: SENTETIK browser-suite:s04 sipariş hazırlayan rolü
@@ -185,6 +202,23 @@ services:
       IdentitySeed__Roles__13__IsSystem: "false"
       IdentitySeed__Roles__13__Permissions__0: sales.drafts.read
       IdentitySeed__Roles__13__Permissions__1: sales.orders.cancel
+      IdentitySeed__Roles__14__Id: b3000000-0000-4000-8000-000000000410
+      IdentitySeed__Roles__14__Code: BROWSER_S04_LOGISTICS_PREPARER
+      IdentitySeed__Roles__14__Name: SENTETIK browser-suite:s04 yükleme talimatı hazırlayan rolü
+      IdentitySeed__Roles__14__IsSystem: "false"
+      IdentitySeed__Roles__14__Permissions__0: logistics.loading-instructions.create
+      IdentitySeed__Roles__14__Permissions__1: logistics.loading-instructions.read
+      IdentitySeed__Roles__14__Permissions__2: counterparty.parties.read
+      IdentitySeed__Roles__15__Id: b3000000-0000-4000-8000-000000000411
+      IdentitySeed__Roles__15__Code: BROWSER_S04_LOGISTICS_LOADER
+      IdentitySeed__Roles__15__Name: SENTETIK browser-suite:s04 yükleme ve sevkiyat kaydeden rolü
+      IdentitySeed__Roles__15__IsSystem: "false"
+      IdentitySeed__Roles__15__Permissions__0: logistics.loads.record
+      IdentitySeed__Roles__15__Permissions__1: logistics.loading-instructions.read
+      IdentitySeed__Roles__15__Permissions__2: logistics.shipments.record
+      IdentitySeed__Roles__15__Permissions__3: inventory.physical-allocation.write
+      IdentitySeed__Roles__15__Permissions__4: logistics.dispatch-notes.create
+      IdentitySeed__Roles__15__Permissions__5: logistics.dispatch-notes.approve
       IdentitySeed__Assignments__7__Id: b4000000-0000-4000-8000-000000000401
       IdentitySeed__Assignments__7__UserId: b2000000-0000-4000-8000-000000000401
       IdentitySeed__Assignments__7__RoleId: b3000000-0000-4000-8000-000000000401
@@ -257,3 +291,19 @@ services:
       IdentitySeed__Assignments__15__ApprovedByUserId: 20000000-0000-0000-0000-000000000003
       IdentitySeed__Assignments__15__Scopes__0__Type: Company
       IdentitySeed__Assignments__15__Scopes__0__Id: 10000000-0000-0000-0000-000000000001
+      IdentitySeed__Assignments__16__Id: b4000000-0000-4000-8000-000000000410
+      IdentitySeed__Assignments__16__UserId: b2000000-0000-4000-8000-000000000409
+      IdentitySeed__Assignments__16__RoleId: b3000000-0000-4000-8000-000000000410
+      IdentitySeed__Assignments__16__CompanyId: 10000000-0000-0000-0000-000000000001
+      IdentitySeed__Assignments__16__ValidFromUtc: "2026-01-01T00:00:00+00:00"
+      IdentitySeed__Assignments__16__ApprovedByUserId: 20000000-0000-0000-0000-000000000003
+      IdentitySeed__Assignments__16__Scopes__0__Type: Company
+      IdentitySeed__Assignments__16__Scopes__0__Id: 10000000-0000-0000-0000-000000000001
+      IdentitySeed__Assignments__17__Id: b4000000-0000-4000-8000-000000000411
+      IdentitySeed__Assignments__17__UserId: b2000000-0000-4000-8000-000000000410
+      IdentitySeed__Assignments__17__RoleId: b3000000-0000-4000-8000-000000000411
+      IdentitySeed__Assignments__17__CompanyId: 10000000-0000-0000-0000-000000000001
+      IdentitySeed__Assignments__17__ValidFromUtc: "2026-01-01T00:00:00+00:00"
+      IdentitySeed__Assignments__17__ApprovedByUserId: 20000000-0000-0000-0000-000000000003
+      IdentitySeed__Assignments__17__Scopes__0__Type: Company
+      IdentitySeed__Assignments__17__Scopes__0__Id: 10000000-0000-0000-0000-000000000001
