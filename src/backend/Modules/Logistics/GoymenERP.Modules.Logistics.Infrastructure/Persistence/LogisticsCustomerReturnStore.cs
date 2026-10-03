@@ -25,6 +25,7 @@ public sealed class LogisticsCustomerReturnStore(
 {
     private const string EntityType = "Logistics.CustomerReturn";
     private const decimal ColumnBound = 1_000_000_000_000_000m;
+    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
     public async Task<CustomerReturnReplayV1?> FindReplayAsync(LogisticsWriteEnvelope envelope, string requestHash,
         string command, CancellationToken cancellationToken = default)
@@ -36,9 +37,7 @@ public sealed class LogisticsCustomerReturnStore(
         var attempt = await FindAttemptAsync(command, LogisticsStore.IdempotencyKeyHash(envelope.IdempotencyKey), cancellationToken);
         if (attempt is null) return null;
         RequireSameAttempt(attempt, envelope.ActorId.Trim(), requestHash);
-        var item = await FindAsync(attempt.CustomerReturnId, cancellationToken)
-            ?? throw new InvalidOperationException("Kayitli iade denemesinin sonucu bulunamadi.");
-        return new(item, attempt.CorrelationId);
+        return Replay(attempt);
     }
 
     public async Task<CustomerReturn?> FindAsync(Guid customerReturnId, CancellationToken cancellationToken = default)
@@ -94,6 +93,8 @@ public sealed class LogisticsCustomerReturnStore(
         if (customerReturn.CompanyId != companyId || customerReturn.Status != CustomerReturnStatus.Pending
             || customerReturn.Version != 1 || customerReturn.DecidedBy is not null || customerReturn.InventoryMovementId is not null)
             throw Refused(LogisticsStoreCodes.CompanyContextMismatch, "Iade istegi aktif sirketin yeni bekleyen kaydi degil.");
+        if (!string.Equals(customerReturn.RequestedBy, envelope.ActorId.Trim(), StringComparison.Ordinal))
+            throw Refused(LogisticsStoreCodes.SameKeyPayloadMismatch, "Iade istegi aktoru kaydin hazirlayaniyla uyusmuyor.");
 
         var command = LogisticsCustomerReturnCommandsV1.Request;
         var keyHash = LogisticsStore.IdempotencyKeyHash(envelope.IdempotencyKey);
@@ -101,16 +102,15 @@ public sealed class LogisticsCustomerReturnStore(
         if (replay is not null)
         {
             RequireSameAttempt(replay, envelope.ActorId.Trim(), requestHash);
-            var existing = await FindAsync(replay.CustomerReturnId, cancellationToken)
-                ?? throw new InvalidOperationException("Kayitli iade istegi bulunamadi.");
-            return new(existing, LogisticsWriteOutcome.Replayed, replay.CorrelationId);
+            var original = Replay(replay);
+            return new(original.Return, LogisticsWriteOutcome.Replayed, original.OriginalCorrelationId);
         }
 
         if (await dbContext.CustomerReturns.AsNoTracking().AnyAsync(item => item.CustomerReturnId == customerReturn.Id, cancellationToken))
             throw Refused(LogisticsStoreCodes.ConcurrentChange, "Bu iade kimligi daha once kullanildi.");
         await ValidateSourceAsync(customerReturn, cancellationToken);
         dbContext.CustomerReturns.Add(ToRow(customerReturn));
-        dbContext.CustomerReturnAttempts.Add(Attempt(companyId, command, keyHash, requestHash, envelope, customerReturn.Id));
+        dbContext.CustomerReturnAttempts.Add(Attempt(companyId, command, keyHash, requestHash, envelope, customerReturn));
         Audit(envelope, customerReturn, "logistics.customer-return.requested.v1", "Request", null, 1,
             "Musteri iadesi fiziksel etki olmadan hazirlandi");
         await SaveAsync(cancellationToken);
@@ -131,15 +131,19 @@ public sealed class LogisticsCustomerReturnStore(
         if (customerReturn.CompanyId != companyId || customerReturn.Version != 2
             || customerReturn.Status == CustomerReturnStatus.Pending || string.IsNullOrWhiteSpace(customerReturn.DecidedBy))
             throw Refused(LogisticsStoreCodes.ConcurrentChange, "Iade karari tamamlanmis bir ileri gecis degil.");
+        var expectedStatus = command == LogisticsCustomerReturnCommandsV1.Approve
+            ? CustomerReturnStatus.Approved : CustomerReturnStatus.Rejected;
+        if (customerReturn.Status != expectedStatus
+            || !string.Equals(customerReturn.DecidedBy, envelope.ActorId.Trim(), StringComparison.Ordinal))
+            throw Refused(LogisticsStoreCodes.SameKeyPayloadMismatch, "Iade komutu, karar durumu veya karar aktoru uyusmuyor.");
 
         var keyHash = LogisticsStore.IdempotencyKeyHash(envelope.IdempotencyKey);
         var replay = await FindAttemptAsync(command, keyHash, cancellationToken);
         if (replay is not null)
         {
             RequireSameAttempt(replay, envelope.ActorId.Trim(), requestHash);
-            var existing = await FindAsync(replay.CustomerReturnId, cancellationToken)
-                ?? throw new InvalidOperationException("Kayitli iade karari bulunamadi.");
-            return new(existing, LogisticsWriteOutcome.Replayed, replay.CorrelationId);
+            var original = Replay(replay);
+            return new(original.Return, LogisticsWriteOutcome.Replayed, original.OriginalCorrelationId);
         }
 
         var row = await dbContext.CustomerReturns.SingleOrDefaultAsync(item => item.CustomerReturnId == customerReturn.Id,
@@ -162,7 +166,7 @@ public sealed class LogisticsCustomerReturnStore(
         }
 
         ApplyDecision(row, customerReturn);
-        dbContext.CustomerReturnAttempts.Add(Attempt(companyId, command, keyHash, requestHash, envelope, customerReturn.Id));
+        dbContext.CustomerReturnAttempts.Add(Attempt(companyId, command, keyHash, requestHash, envelope, customerReturn));
         Audit(envelope, customerReturn,
             customerReturn.Status == CustomerReturnStatus.Approved
                 ? "logistics.customer-return.approved.v1" : "logistics.customer-return.rejected.v1",
@@ -262,18 +266,94 @@ public sealed class LogisticsCustomerReturnStore(
         && string.Equals(left.Reason, right.Reason, StringComparison.Ordinal)
         && left.OccurredAtUtc == right.OccurredAtUtc && left.RequestedAtUtc == right.RequestedAtUtc;
 
-    private static CustomerReturnAttemptRow Attempt(Guid companyId, string command, string keyHash, string requestHash,
-        LogisticsWriteEnvelope envelope, Guid returnId) => new()
+    private CustomerReturnAttemptRow Attempt(Guid companyId, string command, string keyHash, string requestHash,
+        LogisticsWriteEnvelope envelope, CustomerReturn result) => new()
     {
         CompanyId = companyId,
         CommandName = command,
         IdempotencyKeyHash = keyHash,
         RequestHash = requestHash,
         ActorId = envelope.ActorId.Trim(),
-        CustomerReturnId = returnId,
+        CustomerReturnId = result.Id,
+        ResultJson = JsonSerializer.Serialize(Snapshot(result), Json),
         CorrelationId = envelope.CorrelationId.Trim(),
-        RecordedAtUtc = DateTimeOffset.UtcNow,
+        RecordedAtUtc = timeProvider.GetUtcNow(),
     };
+
+    private static CustomerReturnReplayV1 Replay(CustomerReturnAttemptRow attempt)
+    {
+        try
+        {
+            var snapshot = JsonSerializer.Deserialize<CustomerReturnResultSnapshot>(attempt.ResultJson, Json)
+                ?? throw new InvalidOperationException("Iade denemesinin degismez sonucu bos.");
+            if (snapshot.CustomerReturnId != attempt.CustomerReturnId)
+                throw new InvalidOperationException("Iade denemesinin sonucu hedef kimligiyle uyusmuyor.");
+            return new(Restore(snapshot), attempt.CorrelationId);
+        }
+        catch (Exception exception) when (exception is JsonException or ArgumentException
+            or CustomerReturnRuleException or CustomerReturnVersionConflictException)
+        {
+            throw new InvalidOperationException("Iade denemesinin degismez sonucu okunamadi; guncel kayda dusulmez.", exception);
+        }
+    }
+
+    private static CustomerReturnResultSnapshot Snapshot(CustomerReturn item) => new(item.Id, item.CompanyId,
+        item.LoadingInstructionId, item.LoadingInstructionLineId, item.SourceDeliveryId, item.SourceShipmentId,
+        item.SourceOrderId, item.SourceOrderLineId, item.UnitId, (int)item.Quantity.Unit,
+        item.Quantity.Value.ToString(CultureInfo.InvariantCulture),
+        item.SourceDeliveredQuantity.Value.ToString(CultureInfo.InvariantCulture), item.Status.ToString(),
+        item.Version.ToString(CultureInfo.InvariantCulture), item.Reason, item.RequestedBy, item.OccurredAtUtc,
+        item.RequestedAtUtc, item.DecidedBy, item.DecidedAtUtc, item.DecisionNote, item.InventoryMovementId,
+        item.OriginalLabelId, item.OriginalShipmentMovementId);
+
+    private static CustomerReturn Restore(CustomerReturnResultSnapshot snapshot)
+    {
+        var quantity = decimal.Parse(snapshot.Quantity, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture);
+        var delivered = decimal.Parse(snapshot.SourceDeliveredQuantity, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture);
+        var status = Enum.Parse<CustomerReturnStatus>(snapshot.Status, ignoreCase: false);
+        var version = long.Parse(snapshot.Version, NumberStyles.None, CultureInfo.InvariantCulture);
+        var unit = (QuantityUnit)snapshot.QuantityUnit;
+        if (!Enum.IsDefined(unit)) throw new InvalidOperationException("Iade denemesi gecerli miktar birimini tasimiyor.");
+        var item = CustomerReturn.Request(snapshot.CustomerReturnId, snapshot.CompanyId, snapshot.LoadingInstructionId,
+            snapshot.LoadingInstructionLineId, snapshot.SourceDeliveryId, snapshot.SourceShipmentId,
+            snapshot.SourceOrderId, snapshot.SourceOrderLineId, snapshot.UnitId, Quantity.Positive(quantity, unit),
+            Quantity.Positive(delivered, unit), snapshot.Reason, snapshot.RequestedBy, snapshot.OccurredAtUtc,
+            snapshot.RequestedAtUtc);
+        if (status == CustomerReturnStatus.Approved)
+            item.Approve(1, snapshot.DecidedBy!, snapshot.InventoryMovementId!.Value, snapshot.OriginalLabelId!.Value,
+                snapshot.OriginalShipmentMovementId!.Value, snapshot.DecidedAtUtc!.Value, snapshot.DecisionNote);
+        else if (status == CustomerReturnStatus.Rejected)
+            item.Reject(1, snapshot.DecidedBy!, snapshot.DecidedAtUtc!.Value, snapshot.DecisionNote);
+        if (item.Status != status || item.Version != version)
+            throw new InvalidOperationException("Iade denemesinin durum veya surumu domain sonucu degil.");
+        return item;
+    }
+
+    private sealed record CustomerReturnResultSnapshot(
+        Guid CustomerReturnId,
+        Guid CompanyId,
+        Guid LoadingInstructionId,
+        Guid LoadingInstructionLineId,
+        Guid SourceDeliveryId,
+        Guid SourceShipmentId,
+        Guid SourceOrderId,
+        Guid SourceOrderLineId,
+        Guid UnitId,
+        int QuantityUnit,
+        string Quantity,
+        string SourceDeliveredQuantity,
+        string Status,
+        string Version,
+        string Reason,
+        string RequestedBy,
+        DateTimeOffset OccurredAtUtc,
+        DateTimeOffset RequestedAtUtc,
+        string? DecidedBy,
+        DateTimeOffset? DecidedAtUtc,
+        string? DecisionNote,
+        Guid? InventoryMovementId,
+        Guid? OriginalLabelId,
+        Guid? OriginalShipmentMovementId);
 
     private void Audit(LogisticsWriteEnvelope envelope, CustomerReturn item, string eventType, string operation,
         long? beforeVersion, long afterVersion, string reason) => auditEvents.Enqueue(new AuditEventDraft(

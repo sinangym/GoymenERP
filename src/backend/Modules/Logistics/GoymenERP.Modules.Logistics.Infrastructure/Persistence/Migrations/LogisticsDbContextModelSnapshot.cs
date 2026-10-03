@@ -390,6 +390,7 @@ partial class LogisticsDbContextModelSnapshot : ModelSnapshot
             b.Property<string>("CorrelationId").IsRequired().HasMaxLength(128).HasColumnType("nvarchar(128)");
             b.Property<Guid>("CustomerReturnId").HasColumnType("uniqueidentifier");
             b.Property<DateTimeOffset>("RecordedAtUtc").HasColumnType("datetimeoffset");
+            b.Property<string>("ResultJson").IsRequired().HasColumnType("nvarchar(max)");
             b.Property<string>("RequestHash").IsRequired().HasMaxLength(64).IsUnicode(false).HasColumnType("varchar(64)");
             b.HasKey("CompanyId", "CommandName", "IdempotencyKeyHash");
             b.HasIndex("CompanyId", "CustomerReturnId");
@@ -397,6 +398,7 @@ partial class LogisticsDbContextModelSnapshot : ModelSnapshot
             {
                 t.HasCheckConstraint("CK_CustomerReturnAttempts_Hashes", "LEN([IdempotencyKeyHash]) = 64 AND LEN([RequestHash]) = 64");
                 t.HasCheckConstraint("CK_CustomerReturnAttempts_Identity", "[CustomerReturnId] <> '00000000-0000-0000-0000-000000000000' AND LEN([CommandName]) > 0 AND LEN([ActorId]) > 0 AND LEN([CorrelationId]) > 0");
+                t.HasCheckConstraint("CK_CustomerReturnAttempts_Result", "ISJSON([ResultJson]) = 1");
             });
         });
 
