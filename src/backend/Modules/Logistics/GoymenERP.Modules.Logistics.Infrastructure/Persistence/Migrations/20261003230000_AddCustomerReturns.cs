@@ -47,13 +47,18 @@ public partial class AddCustomerReturns : Migration
                 table.CheckConstraint("CK_CustomerReturns_Identity", "[CustomerReturnId] <> '00000000-0000-0000-0000-000000000000' AND [LoadingInstructionId] <> '00000000-0000-0000-0000-000000000000' AND [LoadingInstructionLineId] <> '00000000-0000-0000-0000-000000000000' AND [SourceDeliveryId] <> '00000000-0000-0000-0000-000000000000' AND [SourceShipmentId] <> '00000000-0000-0000-0000-000000000000' AND [SourceOrderId] <> '00000000-0000-0000-0000-000000000000' AND [SourceOrderLineId] <> '00000000-0000-0000-0000-000000000000' AND [UnitId] <> '00000000-0000-0000-0000-000000000000'");
                 table.CheckConstraint("CK_CustomerReturns_Quantity", "[QuantityUnit] IN (1, 2) AND [Quantity] > 0 AND [SourceDeliveredQuantity] > 0 AND [Quantity] <= [SourceDeliveredQuantity]");
                 table.CheckConstraint("CK_CustomerReturns_State", "([Status] = 1 AND [Version] = 1 AND [DecidedBy] IS NULL AND [DecidedAtUtc] IS NULL AND [InventoryMovementId] IS NULL AND [OriginalLabelId] IS NULL AND [OriginalShipmentMovementId] IS NULL) OR ([Status] = 2 AND [Version] = 2 AND [DecidedBy] IS NOT NULL AND [DecidedAtUtc] IS NOT NULL AND [InventoryMovementId] IS NOT NULL AND [OriginalLabelId] IS NOT NULL AND [OriginalShipmentMovementId] IS NOT NULL) OR ([Status] = 3 AND [Version] = 2 AND [DecidedBy] IS NOT NULL AND [DecidedAtUtc] IS NOT NULL AND [InventoryMovementId] IS NULL AND [OriginalLabelId] IS NULL AND [OriginalShipmentMovementId] IS NULL)");
-                table.ForeignKey("FK_CustomerReturns_LoadingInstructions_CompanyId_LoadingInstructionId",
-                    x => new { x.CompanyId, x.LoadingInstructionId }, Schema, "LoadingInstructions", new[] { "CompanyId", "Id" }, onDelete: ReferentialAction.Restrict);
+                table.ForeignKey(
+                    name: "FK_CustomerReturns_LoadingInstructions_CompanyId_LoadingInstructionId",
+                    columns: x => new { x.CompanyId, x.LoadingInstructionId },
+                    principalSchema: Schema,
+                    principalTable: "LoadingInstructions",
+                    principalColumns: new[] { "CompanyId", "Id" },
+                    onDelete: ReferentialAction.Restrict);
             });
-        migrationBuilder.CreateIndex("IX_CustomerReturns_DeliveryStatus", Schema, "CustomerReturns",
-            new[] { "CompanyId", "SourceDeliveryId", "Status", "CustomerReturnId" });
-        migrationBuilder.CreateIndex("IX_CustomerReturns_SourceOrderLine", Schema, "CustomerReturns",
-            new[] { "CompanyId", "SourceOrderId", "SourceOrderLineId" });
+        migrationBuilder.CreateIndex(name: "IX_CustomerReturns_DeliveryStatus", schema: Schema, table: "CustomerReturns",
+            columns: new[] { "CompanyId", "SourceDeliveryId", "Status", "CustomerReturnId" });
+        migrationBuilder.CreateIndex(name: "IX_CustomerReturns_SourceOrderLine", schema: Schema, table: "CustomerReturns",
+            columns: new[] { "CompanyId", "SourceOrderId", "SourceOrderLineId" });
 
         migrationBuilder.CreateTable(
             name: "CustomerReturnAttempts", schema: Schema,
@@ -75,11 +80,16 @@ public partial class AddCustomerReturns : Migration
                 table.CheckConstraint("CK_CustomerReturnAttempts_Hashes", "LEN([IdempotencyKeyHash]) = 64 AND LEN([RequestHash]) = 64");
                 table.CheckConstraint("CK_CustomerReturnAttempts_Identity", "[CustomerReturnId] <> '00000000-0000-0000-0000-000000000000' AND LEN([CommandName]) > 0 AND LEN([ActorId]) > 0 AND LEN([CorrelationId]) > 0");
                 table.CheckConstraint("CK_CustomerReturnAttempts_Result", "ISJSON([ResultJson]) = 1");
-                table.ForeignKey("FK_CustomerReturnAttempts_CustomerReturns_CompanyId_CustomerReturnId",
-                    x => new { x.CompanyId, x.CustomerReturnId }, Schema, "CustomerReturns", new[] { "CompanyId", "CustomerReturnId" }, onDelete: ReferentialAction.Restrict);
+                table.ForeignKey(
+                    name: "FK_CustomerReturnAttempts_CustomerReturns_CompanyId_CustomerReturnId",
+                    columns: x => new { x.CompanyId, x.CustomerReturnId },
+                    principalSchema: Schema,
+                    principalTable: "CustomerReturns",
+                    principalColumns: new[] { "CompanyId", "CustomerReturnId" },
+                    onDelete: ReferentialAction.Restrict);
             });
-        migrationBuilder.CreateIndex("IX_CustomerReturnAttempts_CompanyId_CustomerReturnId", Schema,
-            "CustomerReturnAttempts", new[] { "CompanyId", "CustomerReturnId" });
+        migrationBuilder.CreateIndex(name: "IX_CustomerReturnAttempts_CompanyId_CustomerReturnId", schema: Schema,
+            table: "CustomerReturnAttempts", columns: new[] { "CompanyId", "CustomerReturnId" });
     }
 
     protected override void Down(MigrationBuilder migrationBuilder)
