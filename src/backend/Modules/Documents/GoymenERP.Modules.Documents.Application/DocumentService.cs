@@ -83,8 +83,8 @@ public sealed class DocumentService(
             return await AnswerAsync(replay, scope, Permission, requireReplayFence: true, cancellationToken);
         }
 
-        if (await GuardedAsync(scope, Permission, () => CheckOwnerAsync(owner.Kind, owner.OwnerId, cancellationToken), cancellationToken)
-            != DocumentOwnerAccessV1.Readable)
+        if (!IsReadableOwner(await GuardedAsync(scope, Permission,
+                () => CheckOwnerAsync(owner.Kind, owner.OwnerId, cancellationToken), cancellationToken)))
         {
             throw new DocumentServiceException(404, "not_found");
         }
@@ -132,8 +132,8 @@ public sealed class DocumentService(
         const string Permission = DocumentsPermissionManifestV1.FilesRead;
         var scope = await RequireAsync(Permission, cancellationToken);
         var owner = RequireOwnerLink(ownerKind, ownerId);
-        if (await GuardedAsync(scope, Permission, () => CheckOwnerAsync(owner.Kind, owner.OwnerId, cancellationToken), cancellationToken)
-            != DocumentOwnerAccessV1.Readable)
+        if (!IsReadableOwner(await GuardedAsync(scope, Permission,
+                () => CheckOwnerAsync(owner.Kind, owner.OwnerId, cancellationToken), cancellationToken)))
         {
             throw new DocumentServiceException(404, "not_found");
         }
@@ -153,6 +153,7 @@ public sealed class DocumentService(
         var upload = await authority.RevalidatePermissionScopeAsync(DocumentsPermissionManifestV1.FilesUpload, scope.CompanyId, cancellationToken);
         var canUpload = upload.IsGranted && upload.IsCompanyWide && Matches(scope.CompanyId, scope.ActorId);
         await RequireStillAsync(scope, Permission, cancellationToken);
+        await RequireOwnerStillReadableAsync(scope, Permission, owner, cancellationToken);
         return new DocumentListResponse([.. documents.Select(document => View(document, scope.CompanyId))], canUpload, Limits());
     }
 
@@ -179,8 +180,8 @@ public sealed class DocumentService(
         // Another company's document is not found (the tenant filter); a document of this company whose owner record the
         // actor may not read is not found either — the same answer, so neither is disclosed.
         if (document is null || document.CompanyId != scope.CompanyId
-            || await GuardedAsync(scope, Permission, () => CheckOwnerAsync(document.OwnerKind, document.OwnerId, cancellationToken), cancellationToken)
-            != DocumentOwnerAccessV1.Readable)
+            || !IsReadableOwner(await GuardedAsync(scope, Permission,
+                () => CheckOwnerAsync(document.OwnerKind, document.OwnerId, cancellationToken), cancellationToken)))
         {
             throw new DocumentServiceException(404, "not_found");
         }
@@ -209,6 +210,8 @@ public sealed class DocumentService(
         }
 
         await RequireStillAsync(scope, Permission, cancellationToken);
+        await RequireOwnerStillReadableAsync(scope, Permission,
+            DocumentOwnerLink.TryCreate(document.OwnerKind, document.OwnerId)!, cancellationToken);
         return new DocumentContentV1(document.Id, document.FileName, DocumentContentPolicy.Info(document.Kind).ContentType, content, document.Sha256);
     }
 
@@ -219,9 +222,8 @@ public sealed class DocumentService(
     {
         var document = result.Document;
         if (requireReplayFence && (document.CompanyId != scope.CompanyId
-            || await GuardedAsync(scope, permission,
-                () => CheckOwnerAsync(document.OwnerKind, document.OwnerId, cancellationToken), cancellationToken)
-                != DocumentOwnerAccessV1.Readable))
+            || !IsReadableOwner(await GuardedAsync(scope, permission,
+                () => CheckOwnerAsync(document.OwnerKind, document.OwnerId, cancellationToken), cancellationToken))))
         {
             throw new DocumentServiceException(404, "not_found");
         }
@@ -247,10 +249,13 @@ public sealed class DocumentService(
             var key = (candidate.OwnerKind, candidate.OwnerId);
             if (!readable.TryGetValue(key, out var isReadable))
             {
-                isReadable = (requireReplayFence
+                // Duplicate disclosure is optional and happens after the primary document was committed. A transient
+                // conflict or unavailable duplicate owner must never turn that committed 201 into a refusal that makes
+                // the client discard its retry key; every non-readable duplicate is simply withheld.
+                isReadable = IsReadableDuplicateOwner(requireReplayFence
                     ? await GuardedAsync(scope, permission,
                         () => CheckOwnerAsync(candidate.OwnerKind, candidate.OwnerId, cancellationToken), cancellationToken)
-                    : await CheckOwnerAsync(candidate.OwnerKind, candidate.OwnerId, cancellationToken)) == DocumentOwnerAccessV1.Readable;
+                    : await CheckOwnerAsync(candidate.OwnerKind, candidate.OwnerId, cancellationToken));
                 readable[key] = isReadable;
             }
 
@@ -263,9 +268,8 @@ public sealed class DocumentService(
 
         if (requireReplayFence)
         {
-            if (await GuardedAsync(scope, permission,
-                    () => CheckOwnerAsync(document.OwnerKind, document.OwnerId, cancellationToken), cancellationToken)
-                != DocumentOwnerAccessV1.Readable)
+            if (!IsReadableOwner(await GuardedAsync(scope, permission,
+                    () => CheckOwnerAsync(document.OwnerKind, document.OwnerId, cancellationToken), cancellationToken)))
             {
                 throw new DocumentServiceException(404, "not_found");
             }
@@ -315,11 +319,32 @@ public sealed class DocumentService(
         {
             return await port.CheckReadableAsync(ownerId, cancellationToken);
         }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
         catch (UnauthorizedAccessException)
         {
             return DocumentOwnerAccessV1.Denied;
         }
+        catch
+        {
+            return DocumentOwnerAccessV1.Unavailable;
+        }
     }
+
+    private static bool IsReadableOwner(DocumentOwnerAccessV1 access) => access switch
+    {
+        DocumentOwnerAccessV1.Readable => true,
+        DocumentOwnerAccessV1.NotFound or DocumentOwnerAccessV1.Denied => false,
+        DocumentOwnerAccessV1.Conflict => throw new DocumentServiceException(409, DocumentProblemCodesV1.ConcurrentChange,
+            [new("owner", DocumentProblemCodesV1.ConcurrentChange)]),
+        DocumentOwnerAccessV1.Unavailable => throw new DocumentServiceException(503, "service_unavailable"),
+        _ => throw new DocumentServiceException(503, "service_unavailable"),
+    };
+
+    private static bool IsReadableDuplicateOwner(DocumentOwnerAccessV1 access) =>
+        access == DocumentOwnerAccessV1.Readable;
 
     private async Task<DocumentScanVerdictV1> ScanAsync(byte[] content, DocumentFileKind kind, CancellationToken cancellationToken)
     {
@@ -410,11 +435,14 @@ public sealed class DocumentService(
     }
 
     private async Task RequireWritableOwnerStillAsync(Scope scope, string permission, DocumentOwnerLink owner,
+        CancellationToken cancellationToken) =>
+        await RequireOwnerStillReadableAsync(scope, permission, owner, cancellationToken);
+
+    private async Task RequireOwnerStillReadableAsync(Scope scope, string permission, DocumentOwnerLink owner,
         CancellationToken cancellationToken)
     {
-        if (await GuardedAsync(scope, permission,
-                () => CheckOwnerAsync(owner.Kind, owner.OwnerId, cancellationToken), cancellationToken)
-            != DocumentOwnerAccessV1.Readable)
+        if (!IsReadableOwner(await GuardedAsync(scope, permission,
+                () => CheckOwnerAsync(owner.Kind, owner.OwnerId, cancellationToken), cancellationToken)))
         {
             throw new DocumentServiceException(404, "not_found");
         }

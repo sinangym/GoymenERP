@@ -751,7 +751,8 @@ public sealed partial class OpenApiContractGenerationTests
                 "409:application/problem+json", "422:application/problem+json", "503:application/problem+json"),
             "#/components/schemas/DocumentUploadFormV1", RequestMediaType: "multipart/form-data"),
         new("get", "/api/v1/documents", "GetDocumentsV1",
-            AuthenticatedResponses("200:application/json", "400:application/problem+json", "404:application/problem+json", "503:application/problem+json"),
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "404:application/problem+json", "409:application/problem+json",
+                "503:application/problem+json"),
             ParameterValues: ["query:ownerKind:false:type:string", "query:ownerId:false:type:string;format:uuid"]),
         new("get", "/api/v1/documents/{id}/content", "GetDocumentContentV1",
             AuthenticatedResponses("200:application/pdf,image/jpeg,image/png", "400:application/problem+json", "404:application/problem+json",
@@ -2140,8 +2141,9 @@ public sealed partial class OpenApiContractGenerationTests
                 "document_type_not_allowed",
             ],
             ["GetDocumentsV1:400"] = ["validation_failed"],
+            ["GetDocumentsV1:409"] = ["concurrent_change"],
             ["GetDocumentContentV1:400"] = ["validation_failed"],
-            ["GetDocumentContentV1:409"] = ["document_not_scanned"],
+            ["GetDocumentContentV1:409"] = ["concurrent_change", "document_not_scanned"],
             ["GetSalesContactInformationReferencesV1:400"] = ["validation_failed"],
             ["GetSalesCurrencyReferencesV1:400"] = ["validation_failed"],
         };
@@ -3038,7 +3040,9 @@ public sealed partial class OpenApiContractGenerationTests
                     ("businessDate", "type:string;format:date"),
                     ("createdAtUtc", "type:string;format:date-time"),
                     ("lineCount", "type:integer|string;format:int32"),
-                    ("approvalState", "type:string")),
+                      ("approvalState", "type:string"),
+                      ("commercialStage", "oneOf:ref:SalesCommercialStageV1|type:null")),
+                  ["SalesCommercialStageV1"] = ScalarSchema("enum:Quote|Order|"),
                 // SALES-P2: the disclosure marker's own component. Two members only — there is deliberately no
                 // "Unavailable" third value as AmountDisclosure and CommandOutcome carry, because this answer is
                 // computed at the moment of answering and can never be "not asked": the module throws 503 if the

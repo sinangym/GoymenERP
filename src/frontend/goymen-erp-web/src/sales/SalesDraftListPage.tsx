@@ -15,7 +15,7 @@ import { Link } from 'react-router'
 import { fetchDraftPage } from './api'
 import { APPROVAL_STATE, CANCELLED_STATE, type ApprovalState, type DraftSummary } from './contract'
 import { SALES_CAPABILITY, SALES_ROUTE, salesDetailPath } from './capabilities'
-import { APPROVAL_STATE_TEXT, ORDER_DETAIL_TEXT, ORDER_LIST_TEXT } from './salesText'
+import { APPROVAL_STATE_TEXT, COMMERCIAL_STAGE_TEXT, ORDER_DETAIL_TEXT, ORDER_LIST_TEXT } from './salesText'
 import { classifyOutcome, type RemoteViewState } from '../shell/uiState'
 import { useShellState } from '../shell/shellContext'
 import { contextKey, contextKeyString, hasCapability } from '../shell/shellState'
@@ -146,6 +146,7 @@ function DraftList({ namespace }: { readonly namespace: string | null }) {
             <tr>
               <th scope="col">{ORDER_LIST_TEXT.documentNo}</th>
               <th scope="col">{ORDER_LIST_TEXT.businessDate}</th>
+              <th scope="col">{ORDER_LIST_TEXT.commercialStage}</th>
               <th scope="col">{ORDER_LIST_TEXT.state}</th>
               <th scope="col">{ORDER_LIST_TEXT.revision}</th>
               <th scope="col" className={styles.numeric}>{ORDER_LIST_TEXT.lineCount}</th>
@@ -159,6 +160,7 @@ function DraftList({ namespace }: { readonly namespace: string | null }) {
                   {canOpen ? <Link to={salesDetailPath(row.id)}>{row.documentNo}</Link> : row.documentNo}
                 </th>
                 <td>{formatBusinessDate(row.businessDate)}</td>
+                <td data-testid={`sales-row-commercial-stage-${row.id}`}>{COMMERCIAL_STAGE_TEXT[row.commercialStage]}</td>
                 <td>
                   <span className={styles.badge} data-testid={`sales-row-approval-${row.id}`}>
                     {row.state === CANCELLED_STATE ? ORDER_DETAIL_TEXT.stateCancelled : ORDER_DETAIL_TEXT.stateDraft} · {APPROVAL_STATE_TEXT[row.approvalState]}

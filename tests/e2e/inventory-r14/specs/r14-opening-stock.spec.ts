@@ -11,9 +11,16 @@ const HOME = '/stok/acilis'
 const OPENINGS = '/api/v1/inventory/opening-counts'
 const PRODUCT_REFERENCES = '/api/v1/inventory/references/products'
 const LOCATION_REFERENCES = '/api/v1/inventory/references/locations'
+const DOCUMENTS = '/api/v1/documents'
+const DOCUMENT_OWNER_KIND = 'inventory.material-label'
 const EFFECTIVE_ON = '2026-09-18'
 const SHEET = 'SENTETIK browser-suite:r14 opening count'
 const LABEL = 'SYNR14-LABEL-1'
+const DOCUMENT_FILE_NAME = `SENTETIK R14 etiket ${env.testedCommit.slice(0, 8)}.pdf`
+const DOCUMENT_PDF = Buffer.from(
+  `%PDF-1.4\n% SENTETIK browser-suite:r14 label document ${env.testedCommit}\n%%EOF\n`,
+  'utf8',
+)
 
 async function signInAs(page: Page, actor: string): Promise<void> {
   await page.setExtraHTTPHeaders({ [DEVELOPMENT_USER_HEADER]: actor })
@@ -125,6 +132,157 @@ test('R14 records one real opening count, closes and reopens it, and preserves p
     await expect(page.getByRole('heading', { level: 2, name: 'Soy ağacı', exact: true })).toBeVisible()
     await expect(page.getByText('Bu etiket için bölme veya birleştirme kaydı yok.', { exact: true })).toBeVisible()
     await expect(page.getByRole('heading', { level: 2, name: 'Stok hareketleri', exact: true })).toBeVisible()
+
+    // AT-065: attach one optional vault document to THIS browser-created material label. The existing label attachment
+    // summary above is an Inventory fact; this panel is the shared append-only Documents vault, bound by owner kind/id.
+    const documentsPanel = page.locator('section[data-section="documents"]')
+    await expect(documentsPanel.getByRole('heading', { name: 'Belgeler', exact: true })).toBeVisible()
+    await documentsPanel.getByLabel('Dosya seç', { exact: true }).setInputFiles({
+      name: DOCUMENT_FILE_NAME,
+      mimeType: 'application/pdf',
+      buffer: DOCUMENT_PDF,
+    })
+    const uploaded = page.waitForResponse((response) => response.request().method() === 'POST'
+      && new URL(response.url()).pathname === DOCUMENTS)
+    const refreshedDocuments = page.waitForResponse((response) => {
+      const url = new URL(response.url())
+      return response.request().method() === 'GET' && url.pathname === DOCUMENTS
+        && url.searchParams.get('ownerKind') === DOCUMENT_OWNER_KIND
+        && url.searchParams.get('ownerId') === actualLabelId
+    })
+    await documentsPanel.getByRole('button', { name: 'Yükle', exact: true }).click()
+    const uploadResponse = await uploaded
+    expect(uploadResponse.status()).toBe(201)
+    expect(uploadResponse.headers()['idempotency-replayed']).toBeUndefined()
+    const idempotencyKey = uploadResponse.request().headers()['idempotency-key']
+    expect(idempotencyKey).toBeTruthy()
+    const upload = await uploadResponse.json() as {
+      readonly document: {
+        readonly id: string; readonly companyId: string; readonly ownerKind: string; readonly ownerId: string
+        readonly fileName: string; readonly sizeBytes: number; readonly sha256: string
+        readonly scanState: string; readonly downloadable: boolean
+      }
+      readonly duplicates: readonly unknown[]
+      readonly isReplay: boolean
+      readonly originalCorrelationId: string
+    }
+    expect(upload).toMatchObject({
+      document: {
+        companyId,
+        ownerKind: DOCUMENT_OWNER_KIND,
+        ownerId: actualLabelId,
+        fileName: DOCUMENT_FILE_NAME,
+        sizeBytes: DOCUMENT_PDF.length,
+        scanState: 'Clean',
+        downloadable: true,
+      },
+      duplicates: [],
+      isReplay: false,
+    })
+    await expect(documentsPanel.locator('[data-documents-state="stored"]')).toContainText(DOCUMENT_FILE_NAME)
+
+    const refreshedDocumentsResponse = await refreshedDocuments
+    expect(refreshedDocumentsResponse.status()).toBe(200)
+    const refreshedDocumentList = await refreshedDocumentsResponse.json() as {
+      readonly items: readonly { readonly id: string; readonly companyId: string; readonly ownerKind: string; readonly ownerId: string }[]
+    }
+    expect(refreshedDocumentList.items).toHaveLength(1)
+    expect(refreshedDocumentList.items[0]).toMatchObject({
+      id: upload.document.id,
+      companyId,
+      ownerKind: DOCUMENT_OWNER_KIND,
+      ownerId: actualLabelId,
+    })
+
+    // Close the card and reopen the exact label. Both owner and vault are read afresh; no cached link proves this step.
+    await page.goto(HOME)
+    const reopenedLabel = page.waitForResponse((response) => response.request().method() === 'GET'
+      && new URL(response.url()).pathname === labelPath)
+    const reopenedDocuments = page.waitForResponse((response) => {
+      const url = new URL(response.url())
+      return response.request().method() === 'GET' && url.pathname === DOCUMENTS
+        && url.searchParams.get('ownerKind') === DOCUMENT_OWNER_KIND
+        && url.searchParams.get('ownerId') === actualLabelId
+    })
+    await page.goto(`/stok/etiket/${actualLabelId}`)
+    expect((await reopenedLabel).status()).toBe(200)
+    const reopenedDocumentsResponse = await reopenedDocuments
+    expect(reopenedDocumentsResponse.status()).toBe(200)
+    const reopenedDocumentList = await reopenedDocumentsResponse.json() as {
+      readonly items: readonly { readonly id: string; readonly companyId: string; readonly ownerKind: string; readonly ownerId: string }[]
+    }
+    expect(reopenedDocumentList.items).toHaveLength(1)
+    expect(reopenedDocumentList.items[0]).toMatchObject({
+      id: upload.document.id,
+      companyId,
+      ownerKind: DOCUMENT_OWNER_KIND,
+      ownerId: actualLabelId,
+    })
+    const reopenedPanel = page.locator('section[data-section="documents"]')
+    const documentRow = reopenedPanel.locator(`tr[data-document-id="${upload.document.id}"]`)
+    await expect(documentRow).toBeVisible()
+    await expect(documentRow.getByRole('rowheader')).toHaveText(DOCUMENT_FILE_NAME)
+
+    const downloadStarted = page.waitForEvent('download')
+    await documentRow.getByRole('button', { name: `${DOCUMENT_FILE_NAME} dosyasını indir` }).click()
+    const download = await downloadStarted
+    expect(download.suggestedFilename()).toBe(DOCUMENT_FILE_NAME)
+    const stream = await download.createReadStream()
+    const chunks: Buffer[] = []
+    for await (const chunk of stream) chunks.push(Buffer.from(chunk as Buffer))
+    expect(Buffer.concat(chunks).equals(DOCUMENT_PDF)).toBe(true)
+
+    // Repeat the exact upload attempt outside the UI with the SAME key. The server must replay the first 201 and
+    // preserve one document/version/link/attempt/audit effect.
+    const replayResponse = await page.request.post(`${env.apiBaseUrl}${DOCUMENTS}`, {
+      headers: { ...apiHeaders(recorderActor), 'Idempotency-Key': idempotencyKey },
+      multipart: {
+        ownerKind: DOCUMENT_OWNER_KIND,
+        ownerId: actualLabelId,
+        file: { name: DOCUMENT_FILE_NAME, mimeType: 'application/pdf', buffer: DOCUMENT_PDF },
+      },
+    })
+    expect(replayResponse.status()).toBe(201)
+    expect(replayResponse.headers()['idempotency-replayed']).toBe('true')
+    expect(replayResponse.headers()['idempotency-original-correlation-id']).toBe(upload.originalCorrelationId)
+    expect(await replayResponse.json()).toMatchObject({
+      document: { id: upload.document.id, ownerKind: DOCUMENT_OWNER_KIND, ownerId: actualLabelId },
+      isReplay: true,
+      originalCorrelationId: upload.originalCorrelationId,
+    })
+
+    const documentEffects = await pool.request()
+      .input('companyId', sql.UniqueIdentifier, companyId)
+      .input('documentId', sql.UniqueIdentifier, upload.document.id)
+      .input('entityId', sql.NVarChar, upload.document.id)
+      .input('ownerKind', sql.NVarChar, DOCUMENT_OWNER_KIND)
+      .input('ownerId', sql.UniqueIdentifier, actualLabelId)
+      .input('sha256', sql.VarChar, upload.document.sha256)
+      .query<{ blobs: number; documents: number; versions: number; links: number; attempts: number; audits: number }>(`
+        SELECT
+          (SELECT COUNT(*) FROM documents.ContentBlobs
+            WHERE CompanyId=@companyId AND Sha256=@sha256) AS blobs,
+          (SELECT COUNT(*) FROM documents.Documents
+            WHERE CompanyId=@companyId AND Id=@documentId) AS documents,
+          (SELECT COUNT(*) FROM documents.DocumentVersions
+            WHERE CompanyId=@companyId AND DocumentId=@documentId AND VersionNo=1) AS versions,
+          (SELECT COUNT(*) FROM documents.DocumentLinks
+            WHERE CompanyId=@companyId AND DocumentId=@documentId
+              AND OwnerKind=@ownerKind AND OwnerId=@ownerId) AS links,
+          (SELECT COUNT(*) FROM documents.DocumentAttempts
+            WHERE CompanyId=@companyId AND DocumentId=@documentId
+              AND CommandName=N'documents.upload.v1') AS attempts,
+          (SELECT COUNT(*) FROM audit.AuditEvents
+            WHERE CompanyId=@companyId AND EntityId=@entityId
+              AND EventType=N'documents.document.uploaded.v1' AND SourceChannel=N'Web') AS audits`)
+    expect(documentEffects.recordset[0]).toEqual({
+      blobs: 1,
+      documents: 1,
+      versions: 1,
+      links: 1,
+      attempts: 1,
+      audits: 1,
+    })
 
     const productLink = page.getByRole('link', { name: 'Ürün kartı', exact: true })
     await expect(productLink).toHaveAttribute('href', `/urun/${productId}`)

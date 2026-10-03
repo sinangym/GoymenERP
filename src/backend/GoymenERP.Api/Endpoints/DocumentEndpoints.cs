@@ -87,6 +87,7 @@ public static class DocumentEndpoints
             .ProducesErpBadRequest(DocumentProblemCodesV1.ValidationFailed)
             .AllowsEmptyErpBadRequestBody()
             .ProducesErpCodeLessNotFound()
+            .ProducesErpConflict(DocumentProblemCodesV1.ConcurrentChange)
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();
 
@@ -122,7 +123,7 @@ public static class DocumentEndpoints
             .ProducesErpBadRequest(DocumentProblemCodesV1.ValidationFailed)
             .AllowsEmptyErpBadRequestBody()
             .ProducesErpCodeLessNotFound()
-            .ProducesErpConflict(DocumentProblemCodesV1.NotScanned)
+            .ProducesErpConflict(DocumentProblemCodesV1.ConcurrentChange, DocumentProblemCodesV1.NotScanned)
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();
 

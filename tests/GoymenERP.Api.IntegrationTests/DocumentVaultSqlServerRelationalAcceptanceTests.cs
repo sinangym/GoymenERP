@@ -6,6 +6,7 @@ using System.Text;
 using System.Text.Json;
 using GoymenERP.Api.Security;
 using GoymenERP.BuildingBlocks.Multitenancy;
+using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Audit.Infrastructure.Persistence;
 using GoymenERP.Modules.Audit.Infrastructure.Services;
 using GoymenERP.Modules.Counterparty.Domain.Accounts;
@@ -16,11 +17,13 @@ using GoymenERP.Modules.Identity.Domain.Assignments;
 using GoymenERP.Modules.Identity.Domain.Roles;
 using GoymenERP.Modules.Identity.Domain.Users;
 using GoymenERP.Modules.Identity.Infrastructure.Persistence;
+using GoymenERP.Modules.Inventory.Application;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace GoymenERP.Api.IntegrationTests;
 
@@ -73,6 +76,38 @@ public sealed class DocumentVaultSqlServerRelationalAcceptanceTests
         Assert.Equal(auditBefore, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType = N'documents.document.uploaded.v1'"));
         Assert.Equal(outboxBefore, await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.OutboxMessages"));
+    }
+
+    [SqlServerFact]
+    public async Task An_inventory_material_label_link_is_stored_once_replayed_and_remains_company_scoped()
+    {
+        await using var run = await Run.StartAsync();
+        var labelId = Guid.Parse("d0c00000-0000-4000-8000-00000000a065");
+        DocumentStoreResult first;
+        await using (var a = run.Store(CompanyA))
+        {
+            first = await a.Store.StoreUploadAsync(run.Envelope("k-label"), Hash("label-upload"),
+                Upload(CompanyA, labelId, Pdf, "Etiket.pdf", DocumentOwnerLinkKindsV1.InventoryMaterialLabel), PermitWriteAsync);
+            var replay = await a.Store.StoreUploadAsync(run.Envelope("k-label", correlation: "SENTETIK-label-retry"), Hash("label-upload"),
+                Upload(CompanyA, labelId, Pdf, "Etiket.pdf", DocumentOwnerLinkKindsV1.InventoryMaterialLabel), PermitWriteAsync);
+
+            Assert.False(first.IsReplay);
+            Assert.True(replay.IsReplay);
+            Assert.Equal(first.Document.Id, replay.Document.Id);
+            Assert.Single(await a.Store.ListByOwnerAsync(DocumentOwnerLinkKindsV1.InventoryMaterialLabel, labelId, 10));
+        }
+
+        await using (var b = run.Store(CompanyB))
+        {
+            Assert.Empty(await b.Store.ListByOwnerAsync(DocumentOwnerLinkKindsV1.InventoryMaterialLabel, labelId, 10));
+        }
+
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM documents.DocumentLinks WHERE CompanyId = @company AND OwnerKind = @kind AND OwnerId = @owner",
+            ("@company", CompanyA), ("@kind", DocumentOwnerLinkKindsV1.InventoryMaterialLabel), ("@owner", labelId)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM documents.DocumentAttempts WHERE CompanyId = @company AND DocumentId = @document AND CommandName = @command",
+            ("@company", CompanyA), ("@document", first.Document.Id), ("@command", DocumentCommands.UploadV1)));
     }
 
     [SqlServerFact]
@@ -273,7 +308,8 @@ public sealed class DocumentVaultSqlServerRelationalAcceptanceTests
     [SqlServerFact]
     public async Task The_routes_upload_list_and_download_for_a_permitted_actor_and_answer_403_or_404_to_everyone_else()
     {
-        await using var run = await Run.StartAsync();
+        var inventoryOwner = new InventoryOwnerFixture(Guid.Parse("d0c00000-0000-4000-8000-00000000a065"));
+        await using var run = await Run.StartAsync(inventoryOwner);
         await run.SeedPartiesAsync();
 
         // The vault's names without the Cari read: the party is not found (never a hint that it exists), nothing is stored.
@@ -371,26 +407,115 @@ public sealed class DocumentVaultSqlServerRelationalAcceptanceTests
             Assert.Equal(HttpStatusCode.NotFound, (await vaultOnly.GetAsync(ContentPath(documentId))).StatusCode);
         }
 
-        Assert.Equal(2, await run.ScalarAsync<int>("SELECT COUNT(*) FROM documents.Documents"));
+        // AT-065 Inventory owner negatives use the real Documents routes and SQL store with the actual central adapter.
+        // The owner producer is controlled here; R14 separately proves the real browser-created Inventory label.
+        var allowedActor = await run.GrantAsync(TestUsers.CompanyA, CompanyA,
+            ErpPermissions.InventoryLabelsRead, ErpPermissions.InventoryBalancesRead);
+        inventoryOwner.ReadableActors.Add(allowedActor);
+        Guid labelDocumentId;
+        using (var uploaded = await run.UploadAsync(writer, inventoryOwner.LabelId, Pdf, "Etiket.pdf", "k-label-route",
+                   DocumentOwnerLinkKindsV1.InventoryMaterialLabel))
+        {
+            Assert.Equal(HttpStatusCode.Created, uploaded.StatusCode);
+            labelDocumentId = (await uploaded.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("document").GetProperty("id").GetGuid();
+        }
+
+        var effectsBeforeNegatives = await run.CountsAsync();
+
+        const string DocumentsDenied = TestUsers.NoAssignment;
+        var documentsDeniedActor = await run.GrantAsync(DocumentsDenied, CompanyA,
+            ErpPermissions.InventoryLabelsRead, ErpPermissions.InventoryBalancesRead);
+        inventoryOwner.ReadableActors.Add(documentsDeniedActor);
+        using (var documentsDenied = run.Client(DocumentsDenied, CompanyA))
+        {
+            Assert.Equal(HttpStatusCode.Forbidden,
+                (await documentsDenied.GetAsync(ListPath(inventoryOwner.LabelId, DocumentOwnerLinkKindsV1.InventoryMaterialLabel))).StatusCode);
+            Assert.Equal(HttpStatusCode.Forbidden, (await documentsDenied.GetAsync(ContentPath(labelDocumentId))).StatusCode);
+            using var refused = await run.UploadAsync(documentsDenied, inventoryOwner.LabelId, Pdf, "Reddedildi.pdf", "k-label-no-documents",
+                DocumentOwnerLinkKindsV1.InventoryMaterialLabel);
+            Assert.Equal(HttpStatusCode.Forbidden, refused.StatusCode);
+        }
+
+        // CompanyAViewer holds both Documents names from the earlier case but is not readable by the Inventory owner.
+        using (var ownerDenied = run.Client(TestUsers.CompanyAViewer, CompanyA))
+        {
+            Assert.Equal(HttpStatusCode.NotFound,
+                (await ownerDenied.GetAsync(ListPath(inventoryOwner.LabelId, DocumentOwnerLinkKindsV1.InventoryMaterialLabel))).StatusCode);
+            Assert.Equal(HttpStatusCode.NotFound, (await ownerDenied.GetAsync(ContentPath(labelDocumentId))).StatusCode);
+            using var refused = await run.UploadAsync(ownerDenied, inventoryOwner.LabelId, Pdf, "Reddedildi.pdf", "k-label-no-owner",
+                DocumentOwnerLinkKindsV1.InventoryMaterialLabel);
+            Assert.Equal(HttpStatusCode.NotFound, refused.StatusCode);
+        }
+
+        await run.GrantAsync(TestUsers.CompanyB, CompanyB, DocumentsPermissionManifestV1.FilesUpload,
+            ErpPermissions.InventoryLabelsRead, ErpPermissions.InventoryBalancesRead);
+        using (var foreign = run.Client(TestUsers.CompanyB, CompanyB))
+        {
+            Assert.Equal(HttpStatusCode.NotFound,
+                (await foreign.GetAsync(ListPath(inventoryOwner.LabelId, DocumentOwnerLinkKindsV1.InventoryMaterialLabel))).StatusCode);
+            Assert.Equal(HttpStatusCode.NotFound, (await foreign.GetAsync(ContentPath(labelDocumentId))).StatusCode);
+            using var refused = await run.UploadAsync(foreign, inventoryOwner.LabelId, Pdf, "Reddedildi.pdf", "k-label-foreign",
+                DocumentOwnerLinkKindsV1.InventoryMaterialLabel);
+            Assert.Equal(HttpStatusCode.NotFound, refused.StatusCode);
+        }
+
+        Assert.Equal(effectsBeforeNegatives, await run.CountsAsync());
+
+        Assert.Equal(3, await run.ScalarAsync<int>("SELECT COUNT(*) FROM documents.Documents"));
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM documents.ContentBlobs"));
-        Assert.Equal(2, await run.ScalarAsync<int>(
+        Assert.Equal(3, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType = N'documents.document.uploaded.v1' AND SourceChannel = N'Web' AND CompanyId = @c",
             ("@c", CompanyA)));
     }
 
-    private static string ListPath(Guid party) =>
-        $"{DocumentsApiV1.DocumentsPath}?ownerKind={DocumentOwnerLinkKindsV1.CounterpartyParty}&ownerId={party:D}";
+    private static string ListPath(Guid party, string ownerKind = DocumentOwnerLinkKindsV1.CounterpartyParty) =>
+        $"{DocumentsApiV1.DocumentsPath}?ownerKind={ownerKind}&ownerId={party:D}";
 
     private static string ContentPath(Guid id) => $"{DocumentsApiV1.DocumentsPath}/{id:D}/content";
 
     private static string Hash(string text) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(text)));
 
-    private static NewDocumentUpload Upload(Guid company, Guid party, byte[] content, string fileName)
+    private static NewDocumentUpload Upload(Guid company, Guid party, byte[] content, string fileName,
+        string ownerKind = DocumentOwnerLinkKindsV1.CounterpartyParty)
     {
         var sha = DocumentContentHash.Compute(content);
-        return new NewDocumentUpload(Guid.NewGuid(), DocumentOwnerLink.TryCreate(DocumentOwnerLinkKindsV1.CounterpartyParty, party)!,
+        return new NewDocumentUpload(Guid.NewGuid(), DocumentOwnerLink.TryCreate(ownerKind, party)!,
             DocumentFileName.TryCreate(fileName)!, DocumentContentPolicy.Info(DocumentFileKind.Pdf), content.LongLength, sha,
             DocumentObjectKeys.For(company, sha), DocumentScanState.Clean, "SENTETIK-scanner-v1", T0);
+    }
+
+    private sealed class InventoryOwnerFixture(Guid labelId)
+    {
+        public Guid LabelId { get; } = labelId;
+        public HashSet<Guid> ReadableActors { get; } = [];
+    }
+
+    private sealed class FixedInventoryLabelDetails(
+        ICompanyContext company,
+        ICurrentUser user,
+        InventoryOwnerFixture fixture) : IInventoryLabelDetailsV1
+    {
+        public Task<InventoryLabelDetailV1> GetAsync(Guid labelId, CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!company.IsResolved || company.CompanyId != CompanyA || labelId != fixture.LabelId)
+            {
+                throw new InventoryLabelDetailException(404, InventoryLabelDetailCodesV1.NotFound);
+            }
+
+            if (!user.IsAuthenticated || !Guid.TryParse(user.UserId, out var actorId) || !fixture.ReadableActors.Contains(actorId))
+            {
+                throw new InventoryLabelDetailException(403, InventoryLabelDetailCodesV1.Forbidden);
+            }
+
+            return Task.FromResult(new InventoryLabelDetailV1(
+                "1",
+                new InventoryLabelViewV1(labelId, CompanyA, "LBL-AT065", Guid.NewGuid(), Guid.NewGuid(), null, null,
+                    "Complete", [], [], [], null!),
+                null!,
+                null!,
+                null!));
+        }
     }
 
     private sealed class Run : IAsyncDisposable
@@ -409,11 +534,17 @@ public sealed class DocumentVaultSqlServerRelationalAcceptanceTests
 
         public string Correlation { get; } = $"at-065-{Guid.NewGuid():N}";
 
-        public static async Task<Run> StartAsync()
+        public static async Task<Run> StartAsync(InventoryOwnerFixture? inventoryOwner = null)
         {
             var baseConnectionString = Environment.GetEnvironmentVariable(SqlServerRelationalAcceptanceTests.ConnectionStringEnvironmentVariable)!;
             var objectRoot = Path.Combine(Path.GetTempPath(), $"goymen-docvault-sql-{Guid.NewGuid():N}");
             var factory = new SqlServerRelationalApiFactory(baseConnectionString,
+                configureServices: inventoryOwner is null ? null : services =>
+                {
+                    services.RemoveAll<IInventoryLabelDetailsV1>();
+                    services.AddScoped<IInventoryLabelDetailsV1>(provider => new FixedInventoryLabelDetails(
+                        provider.GetRequiredService<ICompanyContext>(), provider.GetRequiredService<ICurrentUser>(), inventoryOwner));
+                },
                 configurationOverrides: new Dictionary<string, string?> { ["Documents:ObjectStore:RootPath"] = objectRoot });
             var run = new Run(factory, objectRoot);
             using var client = factory.CreateClient();
@@ -465,10 +596,11 @@ public sealed class DocumentVaultSqlServerRelationalAcceptanceTests
             return client;
         }
 
-        public async Task<HttpResponseMessage> UploadAsync(HttpClient client, Guid party, byte[] content, string fileName, string key)
+        public async Task<HttpResponseMessage> UploadAsync(HttpClient client, Guid party, byte[] content, string fileName, string key,
+            string ownerKind = DocumentOwnerLinkKindsV1.CounterpartyParty)
         {
             using var form = new MultipartFormDataContent();
-            form.Add(new StringContent(DocumentOwnerLinkKindsV1.CounterpartyParty), DocumentsApiV1.OwnerKindField);
+            form.Add(new StringContent(ownerKind), DocumentsApiV1.OwnerKindField);
             form.Add(new StringContent(party.ToString("D")), DocumentsApiV1.OwnerIdField);
             var file = new ByteArrayContent(content);
             file.Headers.ContentType = new MediaTypeHeaderValue("application/pdf");
@@ -479,7 +611,7 @@ public sealed class DocumentVaultSqlServerRelationalAcceptanceTests
         }
 
         /// <summary>A fresh synthetic role of the given names for the bootstrap subject in one company (company-wide scope).</summary>
-        public async Task GrantAsync(string developmentUser, Guid company, params string[] permissions)
+        public async Task<Guid> GrantAsync(string developmentUser, Guid company, params string[] permissions)
         {
             await using var scope = Factory.Services.CreateAsyncScope();
             var dbContext = scope.ServiceProvider.GetRequiredService<IdentityDbContext>();
@@ -508,6 +640,7 @@ public sealed class DocumentVaultSqlServerRelationalAcceptanceTests
             dbContext.Roles.Add(role);
             dbContext.RoleAssignments.Add(assignment);
             await dbContext.SaveChangesAsync();
+            return actor;
         }
 
         /// <summary>(blobs, documents, versions, links, attempts) as the real SQL holds them.</summary>

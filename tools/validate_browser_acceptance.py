@@ -125,6 +125,9 @@ _GUID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}
 # zero-padded index would silently add an actor outside the contiguity check (#322 ORG P3).
 _ACTOR_KEY = re.compile(r"^BootstrapIdentity__Users__(0|[1-9][0-9]*)__(UserId|DisplayName)$")
 MAX_SUITE_ACTORS = 8
+# S04's accepted remainder journey adds exactly the L04-provenance preparer/loader pair to its existing
+# eight disposable actors. Every other suite keeps the global cap; this is not a general expansion knob.
+SUITE_ACTOR_LIMITS = {"s04": 10}
 SUITE_API_EXTENSIONS = {
     # U-02: the Product runtime's issuer binding, matching the suite seed's local user and
     # external identity (ÜRÜN, #319 P3). U-01-360 (#466, user decision 2026-09-27): one disposable
@@ -295,7 +298,12 @@ SUITE_IDENTITY_PERMISSIONS = {
             "inventory.opening-stock.record", "inventory.labels.read", "inventory.balances.read",
             "inventory.physical-allocation.write", "sales.orders.delivery-schedule.write",
             "sales.orders.cancel", "sales.orders.quantity.write",
-            "sales.orders.customer-acceptance.record"),
+            "sales.orders.customer-acceptance.record",
+            # S04-RM: the two suite-local actors reproduce the accepted L04 preparer/loader split. Shipment
+            # retains its existing dual permission fence with inventory.physical-allocation.write above.
+            "logistics.loading-instructions.create", "logistics.loading-instructions.read",
+            "logistics.loads.record", "logistics.shipments.record",
+            "logistics.dispatch-notes.create", "logistics.dispatch-notes.approve"),
     # Accounting's six screen names plus the exact existing Finance reads and normal-draft create/approve
     # used by ACC01-10. They are grants only in this disposable runner database.
     "acc01": ("accounting.periods.read", "accounting.periods.propose", "accounting.periods.approve",
@@ -335,6 +343,7 @@ SUITE_IDENTITY_PERMISSIONS = {
     # r14-scrap-approver only stock-scrap.approve, each beside the two label reads (maker != checker).
     "r14": ("inventory.opening-stock.record", "product.operational-selection.read",
             "inventory.labels.read", "inventory.balances.read",
+            "documents.files.read", "documents.files.upload",
             "organization.locations.read", "inventory.label-transformation.record",
             "inventory.stock-count.record", "inventory.stock-count.approve",
             "inventory.stock-scrap.record", "inventory.stock-scrap.approve"),
@@ -706,7 +715,8 @@ def validate_suite_extensions(suite: str, extra: dict) -> None:
         indices = sorted(actors)
         require(indices == list(range(2, 2 + len(indices))),
                 "suite actors must continue the canonical two contiguously from index 2")
-        require(len(indices) <= MAX_SUITE_ACTORS, f"at most {MAX_SUITE_ACTORS} suite actors")
+        actor_limit = SUITE_ACTOR_LIMITS.get(suite, MAX_SUITE_ACTORS)
+        require(len(indices) <= actor_limit, f"at most {actor_limit} suite actors")
         ids = set()
         for index in indices:
             actor = actors[index]
