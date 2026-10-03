@@ -33,7 +33,7 @@ public sealed class AccountingApprovedSourceCatalogSqlServerRelationalAcceptance
     private const string NormalDraftSourcesPath = "/api/v1/accounting/normal-journal-draft-sources";
     private const string PreparePermission = "accounting.approved-source-catalog.prepare";
     private const string ActivatePermission = "accounting.approved-source-catalog.activate";
-    private const string DraftCreatePermission = "accounting.normal-journal-drafts.create";
+    private static readonly string DraftCreatePermission = NormalJournalPermissionNamesV1.DraftCreate;
     private const string Preparer = TestUsers.CompanyA;
     private const string OtherActor = TestUsers.CompanyAViewer;
     private const string ForeignActor = TestUsers.GroupAdmin;
@@ -121,8 +121,8 @@ public sealed class AccountingApprovedSourceCatalogSqlServerRelationalAcceptance
         var stored = await run.CatalogAsync(package.Id);
         Assert.Equal((CompanyA, 2, 2L, 1L),
             (stored.CompanyId, stored.Status, stored.Version, stored.CatalogVersion));
-        Assert.Equal(package.AccountsSha256, stored.AccountsSha256);
-        Assert.Equal(package.MappingsSha256, stored.MappingsSha256);
+        Assert.Equal(package.AccountsSha256, stored.AccountsSha256.ToUpperInvariant());
+        Assert.Equal(package.MappingsSha256, stored.MappingsSha256.ToUpperInvariant());
         Assert.Equal(actor, stored.PreparedBy);
         Assert.Equal(actor, stored.ActivatedBy);
     }
@@ -292,7 +292,7 @@ public sealed class AccountingApprovedSourceCatalogSqlServerRelationalAcceptance
         }
 
         Assert.Equal(before, await run.CountsAsync(second.Id));
-        Assert.Equal((2, 1L), ((await run.CatalogAsync(first.Id)).Status,
+        Assert.Equal((2, (long?)1), ((await run.CatalogAsync(first.Id)).Status,
             (await run.CatalogAsync(first.Id)).CatalogVersion));
         Assert.Equal((1, (long?)null), ((await run.CatalogAsync(second.Id)).Status,
             (await run.CatalogAsync(second.Id)).CatalogVersion));
@@ -311,8 +311,8 @@ public sealed class AccountingApprovedSourceCatalogSqlServerRelationalAcceptance
 
         var old = await run.CatalogAsync(first.Id);
         var current = await run.CatalogAsync(second.Id);
-        Assert.Equal((3, 1L), (old.Status, old.CatalogVersion));
-        Assert.Equal((2, 2L), (current.Status, current.CatalogVersion));
+        Assert.Equal((3, (long?)1), (old.Status, old.CatalogVersion));
+        Assert.Equal((2, (long?)2), (current.Status, current.CatalogVersion));
         Assert.Equal(2, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM accounting.ApprovedSourceCatalogs WHERE CompanyId = @c",
             ("@c", CompanyA)));
