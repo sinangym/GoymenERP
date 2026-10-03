@@ -551,6 +551,16 @@ public static class ErpPermissions
     public const string AccountingJournalReverseApprove = "accounting.journal.reverse.approve";
 
     /// <summary>
+    /// Registers the Accounting owner's approved source-catalog preparation and activation names.
+    /// Registration grants neither permission to a role nor approval of any uploaded catalog. Both
+    /// are company-wide; the lifecycle performs its own fresh authority fences and immutable audit.
+    /// </summary>
+    public const string AccountingApprovedSourceCatalogPrepare = "accounting.approved-source-catalog.prepare";
+
+    /// <inheritdoc cref="AccountingApprovedSourceCatalogPrepare"/>
+    public const string AccountingApprovedSourceCatalogActivate = "accounting.approved-source-catalog.activate";
+
+    /// <summary>
     /// ERP-000G / AT-065 (document vault core): the vault owner's names (DocumentsPermissionManifestV1). Read lists an
     /// owner record's documents and downloads a clean version; upload stores a new document on an owner record. Both
     /// are measured ON TOP of the owner record's own read (the Cari party: counterparty.parties.read), so a document is
@@ -642,6 +652,8 @@ public static class ErpPermissions
             AccountingNormalJournalDraftApprove,
             AccountingJournalReversePropose,
             AccountingJournalReverseApprove,
+            AccountingApprovedSourceCatalogPrepare,
+            AccountingApprovedSourceCatalogActivate,
             FinanceBankAccountRead,
             FinanceBankAccountPropose,
             FinanceBankAccountApprove,
@@ -751,6 +763,8 @@ public static class ErpPermissions
             AccountingNormalJournalDraftApprove,
             AccountingJournalReversePropose,
             AccountingJournalReverseApprove,
+            AccountingApprovedSourceCatalogPrepare,
+            AccountingApprovedSourceCatalogActivate,
             FinanceBankAccountRead,
             FinanceBankAccountPropose,
             FinanceBankAccountApprove,

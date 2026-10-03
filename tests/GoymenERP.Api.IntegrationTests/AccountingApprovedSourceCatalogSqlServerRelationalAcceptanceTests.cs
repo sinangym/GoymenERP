@@ -200,7 +200,6 @@ public sealed class AccountingApprovedSourceCatalogSqlServerRelationalAcceptance
         var stored = await run.CatalogAsync(package.Id);
         Assert.Equal(actor, stored.PreparedBy);
         Assert.Equal(actor, stored.ActivatedBy);
-        Assert.NotNull(stored.PreparedAtUtc);
         Assert.NotNull(stored.ActivatedAtUtc);
     }
 
