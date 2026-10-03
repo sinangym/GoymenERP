@@ -76,9 +76,10 @@ function notice(page: Page) {
   return page.getByTestId('sales-approval-notice')
 }
 
-const submitButton = (page: Page) => page.getByRole('button', { name: 'Onaya gönder' })
-const approveButton = (page: Page) => page.getByRole('button', { name: 'Onayla' })
-const rejectButton = (page: Page) => page.getByRole('button', { name: 'Reddet' })
+const approvalCommands = (page: Page) => page.getByTestId('sales-approval-commands')
+const submitButton = (page: Page) => approvalCommands(page).getByRole('button', { name: 'Onaya gönder' })
+const approveButton = (page: Page) => approvalCommands(page).getByRole('button', { name: 'Onayla' })
+const rejectButton = (page: Page) => approvalCommands(page).getByRole('button', { name: 'Reddet' })
 
 async function expectNoCommand(page: Page): Promise<void> {
   await expect(submitButton(page)).toHaveCount(0)

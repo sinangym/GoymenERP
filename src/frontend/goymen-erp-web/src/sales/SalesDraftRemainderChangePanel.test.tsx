@@ -34,7 +34,7 @@ function detail(version = '4', quantity = '5'): DraftDetail {
 
 const remainderRead = (lineId: string, unitId: string) => ({
   draftVersion: '4', floorStatus: 'Readable',
-  lines: [{ lineId, lineNo: 1, orderUnitId: unitId, quantity: '5', remainder: 'Open', loaded: '2', shipped: '2', delivered: '1', minimumQuantity: '2' }],
+  lines: [{ lineId, lineNo: 1, orderUnitId: unitId, quantity: '5', remainder: 'Open', loaded: '2', shipped: '2', delivered: '1', minimum: '2' }],
   items: [],
 })
 
@@ -230,7 +230,7 @@ describe('S-04 partial-delivery remainder panel', () => {
     vi.stubGlobal('fetch', vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
       if ((init?.method ?? 'GET').toUpperCase() === 'GET') {
         const read = remainderRead(current.lines[0].lineId, current.lines[0].orderUnitId)
-        return new Response(JSON.stringify({ ...read, lines: [{ ...read.lines[0], loaded: '0.2', shipped: '0.2', delivered: '0.1', minimumQuantity: '0.2' }] }), { status: 200 })
+        return new Response(JSON.stringify({ ...read, lines: [{ ...read.lines[0], loaded: '0.2', shipped: '0.2', delivered: '0.1', minimum: '0.2' }] }), { status: 200 })
       }
       posts.push(JSON.parse(String(init?.body)))
       return new Response(JSON.stringify({ detail: approvedBody('5', '0.5'), isReplay: false, originalCorrelationId: 'c-fraction' }), {
