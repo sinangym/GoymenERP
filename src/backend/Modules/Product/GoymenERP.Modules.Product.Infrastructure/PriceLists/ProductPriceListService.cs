@@ -193,7 +193,11 @@ public sealed class ProductPriceListService : IProductPriceListServiceV1
             return replay;
         }
 
-        if (await store.NameExistsAsync(name, priceListId, cancellationToken))
+        var nameExists = await store.NameExistsAsync(name, priceListId, cancellationToken);
+        // Name existence is company business data. The lookup is awaited, so the captured actor/company/write grant
+        // must still be current before either the duplicate-name refusal or the mutation path can observe its answer.
+        await RequireStillAsync(permission, scope, cancellationToken);
+        if (nameExists)
         {
             throw new ProductPriceListException(409, ProductPriceListCodesV1.DuplicateName, [new("name", ProductPriceListCodesV1.DuplicateName)]);
         }

@@ -192,6 +192,60 @@ public sealed class ProductPriceListSqlServerRelationalAcceptanceTests
         Assert.Equal(1L, await run.ScalarAsync<long>("SELECT Version FROM product.PriceLists WHERE Id = @id", terminalId));
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityId = @id", terminalId.ToString("D")));
 
+        // A duplicate name is company business data. Lose the write grant only after the replay lookup and the awaited
+        // name lookup: ReviseDraft must answer 403 without disclosing duplicate_name or recording any effect.
+        var duplicateHolderId = Guid.NewGuid();
+        var duplicateTargetId = Guid.NewGuid();
+        await using (var scope = run.Request())
+        {
+            await scope.Service.CreateAsync(revoked with
+            {
+                PriceListId = duplicateHolderId,
+                VersionId = Guid.NewGuid(),
+                Name = "SENTETIK revise duplicate holder",
+            }, Metadata("revise-holder-create"));
+            await scope.Service.CreateAsync(revoked with
+            {
+                PriceListId = duplicateTargetId,
+                VersionId = Guid.NewGuid(),
+                Name = "SENTETIK revise duplicate target",
+            }, Metadata("revise-target-create"));
+        }
+
+        var duplicateRevision = new RevisePriceListDraftRequestV1(
+            "1", "SENTETIK revise duplicate holder", today, null, []);
+        await using (var revokedDuplicate = run.Request(authority: new SequenceAuthority(grantedCalls: 1)))
+        {
+            var forbidden = await Assert.ThrowsAsync<ProductPriceListException>(() => revokedDuplicate.Service.ReviseDraftAsync(
+                duplicateTargetId, duplicateRevision, Metadata("revise-duplicate-revoked")));
+            Assert.Equal((403, ProductPriceListCodesV1.Forbidden), (forbidden.Status, forbidden.Code));
+        }
+
+        Assert.Equal(1L, await run.ScalarAsync<long>("SELECT Version FROM product.PriceLists WHERE Id = @id", duplicateTargetId));
+        Assert.Equal("SENTETIK revise duplicate target", await run.ScalarAsync<string>(
+            "SELECT Name FROM product.PriceLists WHERE Id = @id", duplicateTargetId));
+        Assert.Equal(0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM product.PriceListAttempts WHERE PriceListId = @id AND CommandName = N'product.price-list.revise-draft.v1'",
+            duplicateTargetId));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityId = @id", duplicateTargetId.ToString("D")));
+
+        await using (var authorizedDuplicate = run.Request())
+        {
+            var duplicate = await Assert.ThrowsAsync<ProductPriceListException>(() => authorizedDuplicate.Service.ReviseDraftAsync(
+                duplicateTargetId, duplicateRevision, Metadata("revise-duplicate-authorized")));
+            Assert.Equal((409, ProductPriceListCodesV1.DuplicateName), (duplicate.Status, duplicate.Code));
+        }
+
+        Assert.Equal(1L, await run.ScalarAsync<long>("SELECT Version FROM product.PriceLists WHERE Id = @id", duplicateTargetId));
+        Assert.Equal("SENTETIK revise duplicate target", await run.ScalarAsync<string>(
+            "SELECT Name FROM product.PriceLists WHERE Id = @id", duplicateTargetId));
+        Assert.Equal(0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM product.PriceListAttempts WHERE PriceListId = @id AND CommandName = N'product.price-list.revise-draft.v1'",
+            duplicateTargetId));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityId = @id", duplicateTargetId.ToString("D")));
+
         var raceId = Guid.NewGuid();
         var same = new CreatePriceListRequestV1(raceId, Guid.NewGuid(), "SENTETIK race", "TRY", "Sales", "ExcludingVat", today,
             null, [new PriceListLineRequestV1(Guid.NewGuid(), ProductId, Kg, "11", null)]);
@@ -529,9 +583,15 @@ public sealed class ProductPriceListSqlServerRelationalAcceptanceTests
                 using var health = await client.GetAsync("/health/live");
                 health.EnsureSuccessStatusCode();
                 await using (var setup = factory.Services.CreateAsyncScope())
+                {
+                    setup.ServiceProvider.GetRequiredService<ICompanyContext>().Set(TestCompanyIds.CompanyA);
                     await setup.ServiceProvider.GetRequiredService<IProductTechnicalCardFixtureStore>().EnsureAsync(default);
+                }
                 await using (var setup = factory.Services.CreateAsyncScope())
+                {
+                    setup.ServiceProvider.GetRequiredService<ICompanyContext>().Set(TestCompanyIds.CompanyA);
                     await setup.ServiceProvider.GetRequiredService<IProductSalesCandidateFixtureStore>().EnsureAsync(default);
+                }
                 await factory.Services.InitializeProductPriceListsAsync();
                 return run;
             }
