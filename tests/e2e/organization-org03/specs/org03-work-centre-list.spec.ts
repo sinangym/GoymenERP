@@ -617,7 +617,7 @@ test('ORG-ME-04 a committed site create whose answer is lost stays frozen, repla
 
   const unknown = form.locator('[data-outcome="unknown"]')
   await expect(unknown).toBeVisible({ timeout: 30_000 })
-  await expect(unknown).toContainText('Sonuç bilinmiyor')
+  await expect(unknown).toContainText('Sunucuya ulaşılamadı — sonuç bilinmiyor')
   expect(firstStatus).toBe(201)
   expect(committed).toMatchObject({ id: expect.stringMatching(/^[0-9a-f-]{36}$/), version: expect.any(Number) })
   const first = firstRequest as Request | null
