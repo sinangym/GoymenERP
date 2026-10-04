@@ -64,6 +64,10 @@ DIAGNOSTIC_CODES = frozenset(
         "product_technical_release_rollback_footprint",
         "product_technical_release_rollback_card_reference",
         "product_technical_release_rollback_replay_reference",
+        "product_technical_release_rollback_replay_prerequisite",
+        "product_technical_release_rollback_replay_terminal_insert",
+        "product_technical_release_rollback_replay_refusal",
+        "product_technical_release_rollback_lifetime",
         "product_technical_release_rollback_unreferenced",
         "product_technical_release_rollback_reapply",
     }

@@ -272,6 +272,26 @@ class SafeTrxSummaryTests(unittest.TestCase):
                 "CI_SAFE_DIAGNOSTIC:product_technical_release_rollback_setup",
                 "product_technical_release_rollback_setup",
             ),
+            (
+                "CI_SAFE_DIAGNOSTIC:product_technical_release_rollback_replay_reference",
+                "product_technical_release_rollback_replay_reference",
+            ),
+            (
+                "CI_SAFE_DIAGNOSTIC:product_technical_release_rollback_replay_prerequisite",
+                "product_technical_release_rollback_replay_prerequisite",
+            ),
+            (
+                "CI_SAFE_DIAGNOSTIC:product_technical_release_rollback_replay_terminal_insert",
+                "product_technical_release_rollback_replay_terminal_insert",
+            ),
+            (
+                "CI_SAFE_DIAGNOSTIC:product_technical_release_rollback_replay_refusal",
+                "product_technical_release_rollback_replay_refusal",
+            ),
+            (
+                "CI_SAFE_DIAGNOSTIC:product_technical_release_rollback_lifetime",
+                "product_technical_release_rollback_lifetime",
+            ),
         )
         for marker, expected in cases:
             with self.subTest(marker=marker):
@@ -308,6 +328,32 @@ class SafeTrxSummaryTests(unittest.TestCase):
                     result,
                     definition(
                         "fail", "GoymenERP.Tests.SafeDiagnostic", "ClosedFinanceStdOut"
+                    ),
+                ))
+
+                self.assertNotIn("diagnosticCode", summary["failureGroups"][0])
+                self.assertNotIn("CI_SAFE_DIAGNOSTIC", encoded)
+
+    def test_new_product_stdout_markers_remain_closed_on_unsafe_paths(self) -> None:
+        cases = (
+            '<UnitTestResult testId="fail" outcome="Failed"><Output><Wrapper><StdOut>'
+            'CI_SAFE_DIAGNOSTIC:product_technical_release_rollback_replay_prerequisite'
+            '</StdOut></Wrapper></Output></UnitTestResult>',
+            '<UnitTestResult testId="fail" outcome="Failed"><Output><StdOut>'
+            'CI_SAFE_DIAGNOSTIC:product_technical_release_rollback_replay_refusal\n'
+            'CI_SAFE_DIAGNOSTIC:product_technical_release_rollback_replay_refusal'
+            '</StdOut></Output></UnitTestResult>',
+            '<UnitTestResult testId="fail" outcome="Failed"><Output><StdOut>'
+            'CI_SAFE_DIAGNOSTIC:product_technical_release_rollback_replay_'
+            '<Wrapper>terminal_</Wrapper>insert'
+            '</StdOut></Output></UnitTestResult>',
+        )
+        for index, result in enumerate(cases):
+            with self.subTest(index=index):
+                summary, encoded = self._summary(trx(
+                    result,
+                    definition(
+                        "fail", "GoymenERP.Tests.SafeDiagnostic", "ClosedProductStdOut"
                     ),
                 ))
 
