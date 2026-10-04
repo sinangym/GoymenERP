@@ -11,6 +11,23 @@ namespace GoymenERP.Api.IntegrationTests;
 public sealed class ProductTechnicalCardFixtureStoreTests
 {
     [Fact]
+    public void Genuine_release_and_unchanged_synthetic_fixture_are_disjoint_and_jointly_well_formed()
+    {
+        var genuine = ProductInitialTechnicalDefinitionV1.Definition();
+        var synthetic = ProductTechnicalCardFixture.Definition();
+        Assert.Empty(genuine.Families.Select(row => row.Id).Intersect(synthetic.Families.Select(row => row.Id)));
+        Assert.Empty(genuine.Templates.Select(row => (row.Id, row.Version))
+            .Intersect(synthetic.Templates.Select(row => (row.Id, row.Version))));
+        Assert.Empty(genuine.Entries.Select(row => (row.Dictionary, row.Code))
+            .Intersect(synthetic.Entries.Select(row => (row.Dictionary, row.Code))));
+
+        ProductFamilyDefinitionRulesV2.RequireWellFormed(new(
+            [.. genuine.Families, .. synthetic.Families],
+            [.. genuine.Templates, .. synthetic.Templates],
+            [.. genuine.Entries, .. synthetic.Entries]));
+    }
+
+    [Fact]
     public async Task Fixed_fixture_roundtrips_and_identical_rerun_does_not_add_business_effects()
     {
         await using var provider = Services();
