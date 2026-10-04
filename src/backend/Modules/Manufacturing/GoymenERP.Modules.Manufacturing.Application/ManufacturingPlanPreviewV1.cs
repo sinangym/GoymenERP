@@ -64,10 +64,12 @@ public sealed partial class ManufacturingCommandService
     public async Task<ManufacturingApiResult<PlanPreviewViewV1>> PreviewPlanAsync(PlanPreviewRequestV1? request,
         string permission, CancellationToken cancellationToken)
     {
-        if (!HasContext())
+        if (!HasContext() || ActorGuid() is not { } actorId)
         {
             return Denied<PlanPreviewViewV1>();
         }
+
+        var companyId = companyContext.CompanyId;
 
         if (request is null || request.WorkCenterId == Guid.Empty || request.Inputs is null || request.Inputs.Count == 0
             || request.Inputs.Any(input => input is null || input.ParentRollId == Guid.Empty))
@@ -82,7 +84,7 @@ public sealed partial class ManufacturingCommandService
         }
 
         // The save's grant, measured fresh before any owner is asked (#276).
-        if (await FenceAsync<PlanPreviewViewV1>(permission, cancellationToken) is { } denied)
+        if (await FenceCapturedAsync<PlanPreviewViewV1>(permission, companyId, actorId, cancellationToken) is { } denied)
         {
             return denied;
         }
@@ -93,13 +95,14 @@ public sealed partial class ManufacturingCommandService
             return Refusal<PlanPreviewViewV1>(process.Refusal);
         }
 
-        var verified = await VerifyPlanContentAsync(content.Inputs!, content.TargetKg, cancellationToken);
+        var verified = await VerifyPlanContentAsync(
+            content.Inputs!, content.TargetKg, permission, companyId, actorId, cancellationToken);
         if (verified.Refusal is not null)
         {
             return Refusal<PlanPreviewViewV1>(verified.Refusal);
         }
 
-        if (await FenceAsync<PlanPreviewViewV1>(permission, cancellationToken) is { } fenced)
+        if (await FenceCapturedAsync<PlanPreviewViewV1>(permission, companyId, actorId, cancellationToken) is { } fenced)
         {
             return fenced;
         }
@@ -109,7 +112,7 @@ public sealed partial class ManufacturingCommandService
         {
             // The would-be plan, built by the same constructor as the save, so its domain rules answer the same. Its
             // id is transient and never stored; the calculation does not read it.
-            plan = new ProductionPlan(Guid.NewGuid(), companyContext.CompanyId, request.WorkCenterId, process.Value,
+            plan = new ProductionPlan(Guid.NewGuid(), companyId, request.WorkCenterId, process.Value,
                 PlannedInputs(verified.Inputs), Target(request.Target, verified.TargetMass));
         }
         catch (ManufacturingRuleException exception)

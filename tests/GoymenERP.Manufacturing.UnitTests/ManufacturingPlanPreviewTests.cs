@@ -388,6 +388,21 @@ public sealed class ManufacturingPlanPreviewTests
         Assert.Empty(otherCompany.Calls);
     }
 
+    [Fact]
+    public async Task An_actor_change_during_the_first_authority_await_fails_closed_before_owner_reads()
+    {
+        var fixture = new Fixture();
+        fixture.Authority.AfterRevalidate = () => fixture.User.UserId = Guid.NewGuid().ToString("D");
+
+        var answer = await fixture.Service.PreviewPlanAsync(Request("10"), Permission, CancellationToken.None);
+
+        Assert.Equal((ManufacturingApiStatus.Denied, ManufacturingApiCodes.AuthorityDenied),
+            (answer.Status, answer.Code));
+        Assert.Equal(["authority"], fixture.Calls);
+        Assert.Empty(fixture.Store.Writes);
+        Assert.Empty(fixture.Store.Commands);
+    }
+
     // ---- Helpers ------------------------------------------------------------------------------------------------
 
     private static ProductionPlan Plan(ManufacturingProcess process, ProductionTarget? target = null) =>
@@ -463,7 +478,7 @@ public sealed class ManufacturingPlanPreviewTests
 
         public bool IsAuthenticated => true;
 
-        public string? UserId => Actor.ToString("D");
+        public string? UserId { get; set; } = Actor.ToString("D");
 
         public IReadOnlySet<Guid> AllowedCompanyIds => Companies;
 
@@ -474,10 +489,13 @@ public sealed class ManufacturingPlanPreviewTests
     {
         public bool CompanyWide { get; set; } = true;
 
+        public Action? AfterRevalidate { get; set; }
+
         public Task<PermissionScope> RevalidatePermissionScopeAsync(string permission, Guid companyId,
             CancellationToken cancellationToken = default)
         {
             calls.Add("authority");
+            AfterRevalidate?.Invoke();
             return Task.FromResult(new PermissionScope(true, CompanyWide,
                 new HashSet<string>(["PRODUCTION_PLANNER"], StringComparer.Ordinal), new HashSet<Guid>(), new HashSet<Guid>(),
                 new HashSet<Guid>()));
