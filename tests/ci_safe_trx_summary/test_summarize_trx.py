@@ -62,11 +62,67 @@ class SafeTrxSummaryTests(unittest.TestCase):
                 "testFqn": "GoymenERP.Tests.PriceTests.Fails",
                 "category": "assertion_or_test_failure",
                 "count": 1,
+                "phaseCodes": [],
             }],
             summary["failureGroups"],
         )
         for forbidden in ("LEAK", "DO_NOT_EXPORT", "/private/path", "secret=", "StackTrace"):
             self.assertNotIn(forbidden, encoded)
+
+    def test_failed_stdout_emits_only_exact_allowlisted_phase_codes(self) -> None:
+        source = trx(
+            '<UnitTestResult testId="fail" outcome="Failed"><Output><StdOut>'
+            "ACC_NJ_SQL_RECEIPT_RECORD_REPLAY\n"
+            "ACC_NJ_SQL_RECEIPT_RECORD_REPLAY\n"
+            "CI_SAFE_DIAGNOSTIC:product_technical_release_rollback_setup\n"
+            "credential=DO_NOT_EXPORT\n"
+            "</StdOut><ErrorInfo><Message>token=DO_NOT_EXPORT</Message>"
+            "<StackTrace>/private/path</StackTrace></ErrorInfo></Output></UnitTestResult>",
+            definition("fail", "GoymenERP.Tests.SafePhases", "Fails"),
+        )
+
+        summary, encoded = self._summary(source)
+
+        self.assertEqual(2, summary["schemaVersion"])
+        self.assertEqual(
+            [
+                "acc_nj_sql_receipt_record_replay",
+                "product_technical_release_rollback_setup",
+            ],
+            summary["failureGroups"][0]["phaseCodes"],
+        )
+        for forbidden in ("DO_NOT_EXPORT", "credential", "token", "/private/path"):
+            self.assertNotIn(forbidden, encoded)
+
+    def test_phase_codes_are_discarded_for_nonfailed_or_non_output_stdout(self) -> None:
+        source = trx(
+            '<UnitTestResult testId="pass" outcome="Passed"><Output><StdOut>'
+            "ACC_NJ_SQL_TRIAL_BALANCE"
+            "</StdOut></Output></UnitTestResult>"
+            '<UnitTestResult testId="fail" outcome="Failed"><StdOut>'
+            "ACC_NJ_SQL_CATALOG_PREPARE_ACTIVATE"
+            "</StdOut></UnitTestResult>",
+            definition("pass", "GoymenERP.Tests.SafePhases", "Passes")
+            + definition("fail", "GoymenERP.Tests.SafePhases", "Fails"),
+        )
+
+        summary, _ = self._summary(source)
+
+        self.assertEqual([], summary["failureGroups"][0]["phaseCodes"])
+
+    def test_phase_codes_are_discarded_when_failed_stdout_exceeds_its_bound(self) -> None:
+        source = trx(
+            '<UnitTestResult testId="fail" outcome="Failed"><Output><StdOut>'
+            "ACC_NJ_SQL_TRIAL_BALANCE\n" + ("x" * 128)
+            + "</StdOut></Output></UnitTestResult>",
+            definition("fail", "GoymenERP.Tests.SafePhases", "Fails"),
+        )
+
+        with mock.patch.object(SUMMARIZER, "MAX_FAILED_STDOUT_CHARS", 32):
+            summary, encoded = self._summary(source)
+
+        self.assertEqual([], summary["failureGroups"][0]["phaseCodes"])
+        self.assertNotIn("x" * 16, encoded)
 
     def test_unsafe_or_unmapped_test_identity_is_counted_without_disclosure(self) -> None:
         source = trx(

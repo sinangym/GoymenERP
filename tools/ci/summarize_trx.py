@@ -18,6 +18,8 @@ MAX_TOTAL_TRX_BYTES = 512 * 1024 * 1024
 MAX_TEST_DEFINITIONS = 2_000_000
 MAX_TEST_RESULTS = 2_000_000
 MAX_METADATA_CHARS = 4096
+MAX_FAILED_STDOUT_CHARS = 16 * 1024
+MAX_PHASE_CODES_PER_RESULT = 64
 MAX_XML_DEPTH = 256
 STREAM_CHUNK_BYTES = 1024 * 1024
 DEFAULT_FAILURE_GROUP_LIMIT = 50
@@ -33,6 +35,24 @@ FAILURE_CATEGORIES = {
     "error": "test_error",
     "timeout": "timeout",
     "aborted": "aborted",
+}
+SAFE_PHASE_LINES = {
+    "ACC_NJ_SQL_RECEIPT_RECORD_REPLAY": "acc_nj_sql_receipt_record_replay",
+    "ACC_NJ_SQL_CATALOG_PREPARE_ACTIVATE": "acc_nj_sql_catalog_prepare_activate",
+    "ACC_NJ_SQL_JOURNAL_CREATE_REPLAY_APPROVE": "acc_nj_sql_journal_create_replay_approve",
+    "ACC_NJ_SQL_TRIAL_BALANCE": "acc_nj_sql_trial_balance",
+    "CI_SAFE_DIAGNOSTIC:product_technical_release_rollback_setup":
+        "product_technical_release_rollback_setup",
+    "CI_SAFE_DIAGNOSTIC:product_technical_release_rollback_footprint":
+        "product_technical_release_rollback_footprint",
+    "CI_SAFE_DIAGNOSTIC:product_technical_release_rollback_card_reference":
+        "product_technical_release_rollback_card_reference",
+    "CI_SAFE_DIAGNOSTIC:product_technical_release_rollback_replay_reference":
+        "product_technical_release_rollback_replay_reference",
+    "CI_SAFE_DIAGNOSTIC:product_technical_release_rollback_unreferenced":
+        "product_technical_release_rollback_unreferenced",
+    "CI_SAFE_DIAGNOSTIC:product_technical_release_rollback_reapply":
+        "product_technical_release_rollback_reapply",
 }
 
 
@@ -82,6 +102,11 @@ def stream_xml(path: Path, handler: object) -> None:
         handler.end(local_name(name), depth)
         depth -= 1
 
+    def character_data(value: str) -> None:
+        text_handler = getattr(handler, "text", None)
+        if text_handler is not None:
+            text_handler(value, depth)
+
     def reject_declaration(*_arguments: object) -> None:
         raise RejectedXml("DTD and entity declarations are forbidden")
 
@@ -90,6 +115,7 @@ def stream_xml(path: Path, handler: object) -> None:
 
     parser.StartElementHandler = start_element
     parser.EndElementHandler = end_element
+    parser.CharacterDataHandler = character_data
     parser.StartDoctypeDeclHandler = reject_declaration
     parser.EntityDeclHandler = reject_declaration
     parser.UnparsedEntityDeclHandler = reject_declaration
@@ -140,30 +166,104 @@ class DefinitionCollector:
         self.test_id = ""
         self.candidates = []
 
+    def text(self, _value: str, _depth: int) -> None:
+        return
+
 
 class ResultCollector:
     def __init__(self, methods: dict[str, str]) -> None:
         self.methods = methods
         self.totals: Counter[str] = Counter()
         self.failures: Counter[tuple[str | None, str]] = Counter()
+        self.phase_codes: dict[tuple[str, str], set[str]] = {}
+        self.result_depth: int | None = None
+        self.output_depth: int | None = None
+        self.stdout_depth: int | None = None
+        self.current_failure: tuple[str, str] | None = None
+        self.current_phase_codes: set[str] = set()
+        self.stdout_chunks: list[str] = []
+        self.stdout_char_count = 0
+        self.stdout_overflow = False
 
     def start(
-        self, name: str, attributes: dict[str, str], _depth: int
+        self, name: str, attributes: dict[str, str], depth: int
     ) -> None:
-        if name != "UnitTestResult":
+        if name == "UnitTestResult":
+            if self.result_depth is not None:
+                raise RejectedXml("nested UnitTestResult metadata")
+            self.result_depth = depth
+            self.output_depth = None
+            self.stdout_depth = None
+            self.current_failure = None
+            self.current_phase_codes = set()
+            self.stdout_chunks = []
+            self.stdout_char_count = 0
+            self.stdout_overflow = False
+            self.totals["total"] += 1
+            if self.totals["total"] > MAX_TEST_RESULTS:
+                raise RejectedXml("test result limit exceeded")
+            test_id = bounded_attribute(attributes, "testId")
+            outcome = bounded_attribute(attributes, "outcome")
+            status, category = result_category(outcome)
+            self.totals[status] += 1
+            if category is not None:
+                test_fqn = self.methods.get(test_id)
+                self.failures[(test_fqn, category)] += 1
+                if test_fqn is not None:
+                    self.current_failure = (test_fqn, category)
             return
-        self.totals["total"] += 1
-        if self.totals["total"] > MAX_TEST_RESULTS:
-            raise RejectedXml("test result limit exceeded")
-        test_id = bounded_attribute(attributes, "testId")
-        outcome = bounded_attribute(attributes, "outcome")
-        status, category = result_category(outcome)
-        self.totals[status] += 1
-        if category is not None:
-            self.failures[(self.methods.get(test_id), category)] += 1
+        if self.result_depth is None or self.current_failure is None:
+            return
+        if name == "Output" and self.output_depth is None:
+            self.output_depth = depth
+        elif (name == "StdOut" and self.output_depth is not None
+              and depth == self.output_depth + 1 and self.stdout_depth is None):
+            self.stdout_depth = depth
+            self.stdout_chunks = []
 
-    def end(self, _name: str, _depth: int) -> None:
-        return
+    def text(self, value: str, _depth: int) -> None:
+        if self.stdout_depth is None or self.stdout_overflow:
+            return
+        self.stdout_char_count += len(value)
+        if self.stdout_char_count > MAX_FAILED_STDOUT_CHARS:
+            self.stdout_overflow = True
+            self.current_phase_codes.clear()
+            self.stdout_chunks = []
+            return
+        self.stdout_chunks.append(value)
+
+    def end(self, name: str, depth: int) -> None:
+        if name == "StdOut" and depth == self.stdout_depth:
+            if not self.stdout_overflow:
+                for line in "".join(self.stdout_chunks).splitlines():
+                    phase_code = SAFE_PHASE_LINES.get(line)
+                    if phase_code is None or phase_code in self.current_phase_codes:
+                        continue
+                    self.current_phase_codes.add(phase_code)
+                    if len(self.current_phase_codes) > MAX_PHASE_CODES_PER_RESULT:
+                        self.stdout_overflow = True
+                        self.current_phase_codes.clear()
+                        break
+            self.stdout_depth = None
+            self.stdout_chunks = []
+            return
+        if name == "Output" and depth == self.output_depth:
+            self.output_depth = None
+            return
+        if name != "UnitTestResult" or depth != self.result_depth:
+            return
+        if self.current_failure is not None and not self.stdout_overflow:
+            self.phase_codes.setdefault(self.current_failure, set()).update(
+                self.current_phase_codes
+            )
+        self.result_depth = None
+        self.output_depth = None
+        self.stdout_depth = None
+        self.current_failure = None
+        self.current_phase_codes = set()
+        self.stdout_chunks = []
+        self.stdout_char_count = 0
+        self.stdout_overflow = False
 
 
 def result_category(outcome: str) -> tuple[str, str | None]:
@@ -189,7 +289,11 @@ def trx_input_size(path: Path) -> int:
 
 def parse_trx(
     path: Path, input_byte_count: int | None = None
-) -> tuple[Counter[str], Counter[tuple[str | None, str]]]:
+) -> tuple[
+    Counter[str],
+    Counter[tuple[str | None, str]],
+    dict[tuple[str, str], set[str]],
+]:
     if input_byte_count is None:
         input_byte_count = trx_input_size(path)
     try:
@@ -204,7 +308,7 @@ def parse_trx(
 
     if results.totals["total"] == 0:
         raise SummaryInputFailure("no_results", 1, input_byte_count)
-    return results.totals, results.failures
+    return results.totals, results.failures, results.phase_codes
 
 
 def build_summary(
@@ -242,22 +346,32 @@ def build_summary(
 
     totals: Counter[str] = Counter()
     failures: Counter[tuple[str | None, str]] = Counter()
+    phase_codes: dict[tuple[str, str], set[str]] = {}
     for path, input_byte_count in zip(trx_paths, input_sizes, strict=True):
         try:
-            file_totals, file_failures = parse_trx(path, input_byte_count)
+            file_totals, file_failures, file_phase_codes = parse_trx(
+                path, input_byte_count
+            )
         except SummaryInputFailure as failure:
             raise SummaryInputFailure(
                 failure.category, len(trx_paths), failure.input_byte_count
             ) from failure
         totals.update(file_totals)
         failures.update(file_failures)
+        for failure_key, codes in file_phase_codes.items():
+            phase_codes.setdefault(failure_key, set()).update(codes)
 
     unresolved_failure_count = sum(
         count for (test_fqn, _), count in failures.items() if test_fqn is None
     )
     safe_groups = sorted(
         (
-            {"testFqn": test_fqn, "category": category, "count": count}
+            {
+                "testFqn": test_fqn,
+                "category": category,
+                "count": count,
+                "phaseCodes": sorted(phase_codes.get((test_fqn, category), set())),
+            }
             for (test_fqn, category), count in failures.items()
             if test_fqn is not None
         ),
@@ -265,7 +379,7 @@ def build_summary(
     )
     reported_groups = safe_groups[:failure_group_limit]
     return {
-        "schemaVersion": 1,
+        "schemaVersion": 2,
         "sourceHead": source_head.lower(),
         "testedCommit": tested_commit.lower(),
         "job": job,
@@ -291,7 +405,7 @@ def build_failure_summary(
     failure: SummaryInputFailure,
 ) -> dict[str, object]:
     return {
-        "schemaVersion": 1,
+        "schemaVersion": 2,
         "sourceHead": source_head.lower(),
         "testedCommit": tested_commit.lower(),
         "job": job,
