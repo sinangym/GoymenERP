@@ -420,7 +420,7 @@ partial class LogisticsDbContextModelSnapshot : ModelSnapshot
             b.Property<string>("Reason").IsRequired().HasColumnType("nvarchar(max)");
             b.Property<string>("RequestedBy").IsRequired().HasMaxLength(128).HasColumnType("nvarchar(128)");
             b.Property<DateTimeOffset>("RequestedAtUtc").HasColumnType("datetimeoffset");
-            b.Property<byte[]>("RowVersion").IsConcurrencyToken().ValueGeneratedOnAddOrUpdate().HasColumnType("rowversion");
+            b.Property<byte[]>("RowVersion").IsConcurrencyToken().IsRequired().ValueGeneratedOnAddOrUpdate().HasColumnType("rowversion");
             b.Property<Guid>("SourceDeliveryId").HasColumnType("uniqueidentifier");
             b.Property<decimal>("SourceDeliveredQuantity").HasPrecision(18, 3).HasColumnType("decimal(18,3)");
             b.Property<Guid>("SourceOrderId").HasColumnType("uniqueidentifier");
@@ -430,6 +430,7 @@ partial class LogisticsDbContextModelSnapshot : ModelSnapshot
             b.Property<Guid>("UnitId").HasColumnType("uniqueidentifier");
             b.Property<long>("Version").IsConcurrencyToken().HasColumnType("bigint");
             b.HasKey("CompanyId", "CustomerReturnId");
+            b.HasIndex("CompanyId", "LoadingInstructionId");
             b.HasIndex("CompanyId", "SourceDeliveryId", "Status", "CustomerReturnId").HasDatabaseName("IX_CustomerReturns_DeliveryStatus");
             b.HasIndex("CompanyId", "SourceOrderId", "SourceOrderLineId").HasDatabaseName("IX_CustomerReturns_SourceOrderLine");
             b.ToTable("CustomerReturns", "logistics", t =>

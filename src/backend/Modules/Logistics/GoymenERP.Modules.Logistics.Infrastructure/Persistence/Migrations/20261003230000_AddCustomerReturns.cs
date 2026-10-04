@@ -1,9 +1,12 @@
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
 
 namespace GoymenERP.Modules.Logistics.Infrastructure.Persistence.Migrations;
 
+[DbContext(typeof(LogisticsDbContext))]
+[Migration("20261003230000_AddCustomerReturns")]
 public partial class AddCustomerReturns : Migration
 {
     private const string Schema = LogisticsDbContext.Schema;
@@ -55,6 +58,8 @@ public partial class AddCustomerReturns : Migration
                     principalColumns: new[] { "CompanyId", "Id" },
                     onDelete: ReferentialAction.Restrict);
             });
+        migrationBuilder.CreateIndex(name: "IX_CustomerReturns_CompanyId_LoadingInstructionId", schema: Schema,
+            table: "CustomerReturns", columns: new[] { "CompanyId", "LoadingInstructionId" });
         migrationBuilder.CreateIndex(name: "IX_CustomerReturns_DeliveryStatus", schema: Schema, table: "CustomerReturns",
             columns: new[] { "CompanyId", "SourceDeliveryId", "Status", "CustomerReturnId" });
         migrationBuilder.CreateIndex(name: "IX_CustomerReturns_SourceOrderLine", schema: Schema, table: "CustomerReturns",

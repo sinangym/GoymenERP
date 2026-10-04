@@ -1316,7 +1316,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         { ["Sql"] = 2 }),
                 // Customer returns are immutable; Down refuses while a return or attempt exists before dropping either table.
                 ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/Migrations/20261003230000_AddCustomerReturns.cs"] =
-                    new("a0af4e29f8ccfeed66e422291ee1e084bac18eac82981d9d8a34fed3f99b4985",
+                    new("ff798b5ffaec30e02df105cb38f0d86c297eda02fb5304a13cb687d0870e2067",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 1 }),
                 // ERP-000G / AT-065: the Down's only raw SQL is the vault's module refusal (51058, used by no other migration

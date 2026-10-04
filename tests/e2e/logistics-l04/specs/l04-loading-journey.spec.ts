@@ -1080,3 +1080,154 @@ test('L04-09 AT-055: the loader drafts a dispatch note from the definite shipmen
     await pool.close()
   }
 })
+
+test('L04-10 a delivered share returns to its original label once, by a different decision actor; replay and reject add no stock effect', async ({ page }) => {
+  if (createdId === '') createdId = recallCreatedId()
+  const before = await readInstruction(page, preparerActor, createdId)
+  const delivered = before.shares.find((share) => share.kind === 'Delivered')
+  expect(delivered).toBeDefined()
+  if (delivered === undefined) throw new Error('L04-10 requires L04-05 delivered share')
+  const line = before.lines.find((candidate) => candidate.lineId === delivered.lineId)
+  expect(line).toBeDefined()
+  if (line === undefined) throw new Error('L04-10 requires the delivered instruction line')
+
+  const movementCount = async (pool: sql.ConnectionPool) => {
+    const result = await pool.request()
+      .input('companyId', sql.UniqueIdentifier, companyId)
+      .input('labelId', sql.UniqueIdentifier, shipmentLabelId)
+      .query(\`
+        SELECT COUNT(DISTINCT movement.Id) AS movements
+          FROM inventory.Movements movement
+          INNER JOIN inventory.MovementLines movementLine
+            ON movementLine.CompanyId=movement.CompanyId AND movementLine.MovementId=movement.Id
+         WHERE movement.CompanyId=@companyId AND movementLine.LabelId=@labelId\`)
+    return Number(result.recordset[0].movements)
+  }
+
+  const pool = await new sql.ConnectionPool(env.sqlConnection).connect()
+  try {
+    const movementBaseline = await movementCount(pool)
+    await signInAs(page, preparerActor)
+    await openDetail(page, createdId)
+    const panel = page.locator('section[aria-label="Müşteri iadesi"]')
+    await expect(panel).toContainText('Bu teslimat için müşteri iadesi bulunmuyor.')
+
+    const requestPath = \`/api/v1/logistics/instructions/\${createdId}/lines/\${line.lineId}/customer-returns\`
+    const requestAnswer = page.waitForResponse((response) => response.request().method() === 'POST'
+      && new URL(response.url()).pathname === requestPath)
+    await panel.getByLabel('İade miktarı').fill('0.5')
+    await panel.getByLabel('İade nedeni').fill('SENTETIK müşteri ambalaj iadesi')
+    await panel.getByLabel('İade zamanı').fill(new Date(Date.now() - 60_000).toISOString().slice(0, 16))
+    await panel.getByRole('button', { name: 'Talep oluştur' }).click()
+    const requestedAnswer = await requestAnswer
+    expect(requestedAnswer.status()).toBe(201)
+    const requested = await requestedAnswer.json() as {
+      return: { customerReturnId: string; status: string; sourceDeliveryId: string; inventoryMovementId: null }
+    }
+    expect(requested.return).toMatchObject({
+      status: 'Pending', sourceDeliveryId: delivered.shareId, inventoryMovementId: null,
+    })
+    expect(await movementCount(pool)).toBe(movementBaseline)
+
+    await page.goto('/logistics')
+    await openDetail(page, createdId)
+    await expect(page.locator('section[aria-label="Müşteri iadesi"]')).toContainText('Bekliyor')
+    const pendingListAnswer = await page.request.get(
+      \`\${env.apiBaseUrl}/api/v1/logistics/orders/\${line.sourceOrderId}/customer-returns\`,
+      { headers: { [DEVELOPMENT_USER_HEADER]: preparerActor, 'X-Company-Id': companyId } },
+    )
+    expect(pendingListAnswer.status()).toBe(200)
+    expect(await pendingListAnswer.json()).toEqual(expect.arrayContaining([
+      expect.objectContaining({ customerReturnId: requested.return.customerReturnId, status: 'Pending' }),
+    ]))
+
+    await signInAs(page, loaderActor)
+    await openDetail(page, createdId)
+    const decisionPanel = page.locator('section[aria-label="Müşteri iadesi"]')
+    await expect(decisionPanel).toContainText('Bekliyor')
+    const approvePath = \`/api/v1/logistics/customer-returns/\${requested.return.customerReturnId}/approve\`
+    const approveRequest = page.waitForRequest((request) => request.method() === 'POST'
+      && new URL(request.url()).pathname === approvePath)
+    const approveAnswer = page.waitForResponse((response) => response.request().method() === 'POST'
+      && new URL(response.url()).pathname === approvePath)
+    await decisionPanel.getByLabel('Karar notu').fill('SENTETIK farklı aktör kabulü')
+    await decisionPanel.getByRole('button', { name: 'Onayla' }).click()
+    const [approvedRequest, approvedAnswer] = await Promise.all([approveRequest, approveAnswer])
+    expect(approvedAnswer.status()).toBe(200)
+    const approved = await approvedAnswer.json() as {
+      return: { customerReturnId: string; status: string; inventoryMovementId: string; originalLabelId: string }
+    }
+    expect(approved.return).toMatchObject({
+      customerReturnId: requested.return.customerReturnId, status: 'Approved', originalLabelId: shipmentLabelId,
+    })
+    expect(await movementCount(pool)).toBe(movementBaseline + 1)
+
+    const replayKey = approvedRequest.headers()['idempotency-key']
+    const replayBody = approvedRequest.postData()
+    expect(replayKey).toBeTruthy()
+    expect(replayBody).toBeTruthy()
+    const replay = await page.request.post(\`\${env.apiBaseUrl}\${approvePath}\`, {
+      headers: {
+        [DEVELOPMENT_USER_HEADER]: loaderActor,
+        'X-Company-Id': companyId,
+        'Idempotency-Key': replayKey as string,
+        'Content-Type': 'application/json',
+      },
+      data: replayBody as string,
+    })
+    expect(replay.status()).toBe(200)
+    expect(replay.headers()['idempotency-replayed']).toBe('true')
+    expect(await replay.json()).toEqual(expect.objectContaining({ isReplay: true, return: approved.return }))
+    expect(await movementCount(pool)).toBe(movementBaseline + 1)
+
+    const freshApproved = await page.request.get(
+      \`\${env.apiBaseUrl}/api/v1/logistics/customer-returns/\${requested.return.customerReturnId}\`,
+      { headers: { [DEVELOPMENT_USER_HEADER]: loaderActor, 'X-Company-Id': companyId } },
+    )
+    expect(freshApproved.status()).toBe(200)
+    expect(await freshApproved.json()).toMatchObject({ status: 'Approved', originalLabelId: shipmentLabelId })
+    await page.reload()
+    await openDetail(page, createdId)
+    await expect(page.locator('section[aria-label="Müşteri iadesi"]')).toContainText('Onaylandı')
+
+    const rejectedReturnId = crypto.randomUUID()
+    const rejectRequest = await page.request.post(\`\${env.apiBaseUrl}\${requestPath}\`, {
+      headers: {
+        [DEVELOPMENT_USER_HEADER]: preparerActor,
+        'X-Company-Id': companyId,
+        'X-Correlation-Id': \`browser-suite-l04-return-reject-request-\${Date.now()}\`,
+        'Idempotency-Key': \`browser-suite:l04:return-reject-request:\${Date.now()}\`,
+        'Content-Type': 'application/json',
+      },
+      data: {
+        customerReturnId: rejectedReturnId,
+        sourceDeliveryId: delivered.shareId,
+        expectedInstructionVersion: (await readInstruction(page, preparerActor, createdId)).instruction.version,
+        quantity: '0.25',
+        reason: 'SENTETIK reddedilecek müşteri iadesi',
+        occurredAtUtc: new Date(Date.now() - 30_000).toISOString(),
+      },
+    })
+    expect(rejectRequest.status()).toBe(201)
+    const rejected = await page.request.post(
+      \`\${env.apiBaseUrl}/api/v1/logistics/customer-returns/\${rejectedReturnId}/reject\`,
+      {
+        headers: {
+          [DEVELOPMENT_USER_HEADER]: loaderActor,
+          'X-Company-Id': companyId,
+          'X-Correlation-Id': \`browser-suite-l04-return-reject-\${Date.now()}\`,
+          'Idempotency-Key': \`browser-suite:l04:return-reject:\${Date.now()}\`,
+          'Content-Type': 'application/json',
+        },
+        data: { expectedVersion: '1', note: 'SENTETIK farklı aktör reddi' },
+      },
+    )
+    expect(rejected.status()).toBe(200)
+    expect(await rejected.json()).toMatchObject({
+      return: { customerReturnId: rejectedReturnId, status: 'Rejected', inventoryMovementId: null, originalLabelId: null },
+    })
+    expect(await movementCount(pool)).toBe(movementBaseline + 1)
+  } finally {
+    await pool.close()
+  }
+})
