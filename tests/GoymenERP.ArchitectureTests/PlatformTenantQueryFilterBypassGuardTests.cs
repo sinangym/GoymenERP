@@ -189,7 +189,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // R20 transfer lifecycle: +3 transfer SQL facts (bd676b05… -> c74360d3…).
             // Product-version provenance rollback: +1 isolated no-loss SQL fact (c444f707… -> d9cb549b…).
             ["tools/relational_inventory/inventory.txt"] =
-                "71a8969579ba098c63b5f997870c957b9df2dae59294bd8316b749c0b8c5b467",
+                "a0509f28043dd70aa129577e52242d1d38f8489a90169afa88cc8331e9efb0da",
 
             // logistics
             // AT-053: +4 weighbridge SQL facts (81c1ff0b… -> 264898d7…).

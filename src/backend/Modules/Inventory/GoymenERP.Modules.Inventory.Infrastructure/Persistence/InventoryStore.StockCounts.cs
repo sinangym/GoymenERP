@@ -40,9 +40,11 @@ public sealed partial class InventoryStore : IInventoryStockCountWriterV1, IInve
     public async Task<InventoryStockCountResultV1> RecordStockCountAsync(
         RecordInventoryStockCountV1 request,
         InventoryCommandMetadata metadata,
+        Func<CancellationToken, Task> freshAuthorityFence,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(freshAuthorityFence);
         RequireMetadata(metadata);
         RequireStockCountMetadata(metadata);
         RequireResolvedCompany();
@@ -61,19 +63,24 @@ public sealed partial class InventoryStore : IInventoryStockCountWriterV1, IInve
             reason,
         });
         if (await FindStockCountKeyReplayAsync(RecordStockCountCommand, keyHash, payloadHash, metadata.ActorId,
-                cancellationToken) is { } replay)
+                freshAuthorityFence, cancellationToken) is { } replay)
         {
             return replay;
         }
 
-        if (await FindStockCountIdentityReplayAsync(request.CountId, payloadHash, cancellationToken) is { } identityReplay)
+        if (await FindStockCountIdentityReplayAsync(request.CountId, payloadHash, freshAuthorityFence,
+                cancellationToken) is { } identityReplay)
         {
             return identityReplay;
         }
 
         var label = await dbContext.Labels.AsNoTracking()
-            .SingleOrDefaultAsync(row => row.Id == request.LabelId, cancellationToken)
-            ?? throw StockCountError(404, InventoryStockCountCodesV1.LabelNotFound);
+            .SingleOrDefaultAsync(row => row.Id == request.LabelId, cancellationToken);
+        await RequireFreshAuthorityAsync(freshAuthorityFence, cancellationToken);
+        if (label is null)
+        {
+            throw StockCountError(404, InventoryStockCountCodesV1.LabelNotFound);
+        }
         if (label.Version != expectedVersion)
         {
             throw StockCountError(409, InventoryStockCountCodesV1.LabelVersionConflict);
@@ -82,6 +89,7 @@ public sealed partial class InventoryStore : IInventoryStockCountWriterV1, IInve
         var balances = await dbContext.Balances.AsNoTracking()
             .Where(row => row.LabelId == label.Id && row.QuantityKg > 0m)
             .ToListAsync(cancellationToken);
+        await RequireFreshAuthorityAsync(freshAuthorityFence, cancellationToken);
         if (balances.Count != 1)
         {
             throw StockCountError(409, InventoryStockCountCodesV1.PositionConflict);
@@ -112,73 +120,91 @@ public sealed partial class InventoryStore : IInventoryStockCountWriterV1, IInve
         {
             var scale = await kilogramScale.CheckAsync(companyId,
                 DateOnly.FromDateTime(request.CountedAtUtc.UtcDateTime), checkedQuantities, cancellationToken);
+            await RequireFreshAuthorityAsync(freshAuthorityFence, cancellationToken);
             if (!scale.IsAccepted)
             {
                 throw StockCountError(400, scale.Code ?? InventoryStockCountCodesV1.ValidationFailed);
             }
         }
 
-        var row = new StockCountRow
+        DbUpdateException? concurrentChange = null;
+        await using (var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken))
         {
-            Id = count.Id,
-            CompanyId = companyId,
-            LabelId = label.Id,
-            LabelVersion = label.Version,
-            OwnerKind = balance.OwnerKind,
-            OwnerId = balance.OwnerId,
-            CustodianKind = balance.CustodianKind,
-            CustodianId = balance.CustodianId,
-            LocationId = balance.LocationId,
-            ProductId = balance.ProductId,
-            Block = balance.Block,
-            BookKg = count.Book.Value,
-            CountedKg = count.Counted.Value,
-            CountedAtUtc = count.CountedAtUtc,
-            Reason = count.Reason,
-            PayloadHash = payloadHash,
-            RecordedAtUtc = timeProvider.GetUtcNow(),
-            RecordedBy = metadata.ActorId.Trim(),
-            CorrelationId = metadata.CorrelationId.Trim(),
-        };
-        dbContext.StockCounts.Add(row);
-        var view = StockCountView(row, decision: null);
-        dbContext.Commands.Add(StockCountCommandRow(RecordStockCountCommand, companyId, keyHash, payloadHash, metadata,
-            row.Id, view));
-        Audit(metadata, companyId, StockCountEntityType, row.Id, "inventory.stock-count.recorded.v1", "Record",
-            versionBefore: null, versionAfter: 1, before: "{}", after: JsonSerializer.Serialize(view, Json), row.Reason);
-
-        try
-        {
-            await dbContext.SaveChangesAsync(cancellationToken);
-        }
-        catch (DbUpdateException exception) when (exception is DbUpdateConcurrencyException
-            || IsUniqueConstraintViolation(exception))
-        {
-            dbContext.ChangeTracker.Clear();
-            if (await FindStockCountKeyReplayAsync(RecordStockCountCommand, keyHash, payloadHash, metadata.ActorId,
-                    cancellationToken) is { } winner)
+            try
             {
-                return winner;
-            }
+                var row = new StockCountRow
+                {
+                    Id = count.Id,
+                    CompanyId = companyId,
+                    LabelId = label.Id,
+                    LabelVersion = label.Version,
+                    OwnerKind = balance.OwnerKind,
+                    OwnerId = balance.OwnerId,
+                    CustodianKind = balance.CustodianKind,
+                    CustodianId = balance.CustodianId,
+                    LocationId = balance.LocationId,
+                    ProductId = balance.ProductId,
+                    Block = balance.Block,
+                    BookKg = count.Book.Value,
+                    CountedKg = count.Counted.Value,
+                    CountedAtUtc = count.CountedAtUtc,
+                    Reason = count.Reason,
+                    PayloadHash = payloadHash,
+                    RecordedAtUtc = timeProvider.GetUtcNow(),
+                    RecordedBy = metadata.ActorId.Trim(),
+                    CorrelationId = metadata.CorrelationId.Trim(),
+                };
+                dbContext.StockCounts.Add(row);
+                var view = StockCountView(row, decision: null);
+                dbContext.Commands.Add(StockCountCommandRow(RecordStockCountCommand, companyId, keyHash, payloadHash,
+                    metadata, row.Id, view));
+                Audit(metadata, companyId, StockCountEntityType, row.Id, "inventory.stock-count.recorded.v1", "Record",
+                    versionBefore: null, versionAfter: 1, before: "{}", after: JsonSerializer.Serialize(view, Json), row.Reason);
 
-            if (await FindStockCountIdentityReplayAsync(request.CountId, payloadHash, cancellationToken) is { } identityWinner)
+                await dbContext.SaveChangesAsync(cancellationToken);
+                await RequireFreshAuthorityAsync(freshAuthorityFence, cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
+                return new(view, false, row.CorrelationId);
+            }
+            catch (DbUpdateException exception) when (exception is DbUpdateConcurrencyException
+                || IsUniqueConstraintViolation(exception))
             {
-                return identityWinner;
+                await transaction.RollbackAsync(CancellationToken.None);
+                dbContext.ChangeTracker.Clear();
+                concurrentChange = exception;
             }
-
-            throw StockCountError(409, InventoryStockCountCodesV1.ConcurrentChange, exception);
+            catch
+            {
+                await transaction.RollbackAsync(CancellationToken.None);
+                dbContext.ChangeTracker.Clear();
+                throw;
+            }
         }
 
-        return new(view, false, row.CorrelationId);
+        if (await FindStockCountKeyReplayAsync(RecordStockCountCommand, keyHash, payloadHash, metadata.ActorId,
+                freshAuthorityFence, cancellationToken) is { } winner)
+        {
+            return winner;
+        }
+
+        if (await FindStockCountIdentityReplayAsync(request.CountId, payloadHash, freshAuthorityFence,
+                cancellationToken) is { } identityWinner)
+        {
+            return identityWinner;
+        }
+
+        throw StockCountError(409, InventoryStockCountCodesV1.ConcurrentChange, concurrentChange);
     }
 
     public async Task<InventoryStockCountResultV1> DecideStockCountAsync(
         Guid countId,
         DecideInventoryStockCountV1 request,
         InventoryCommandMetadata metadata,
+        Func<CancellationToken, Task> freshAuthorityFence,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(freshAuthorityFence);
         RequireMetadata(metadata);
         RequireStockCountMetadata(metadata);
         RequireResolvedCompany();
@@ -196,20 +222,24 @@ public sealed partial class InventoryStore : IInventoryStockCountWriterV1, IInve
         var keyHash = GenealogyHash(metadata.IdempotencyKey.Trim());
         var payloadHash = GenealogyPayloadHash(new { countId, decision = decisionCode, reason });
         if (await FindStockCountKeyReplayAsync(DecideStockCountCommand, keyHash, payloadHash, metadata.ActorId,
-                cancellationToken) is { } replay)
+                freshAuthorityFence, cancellationToken) is { } replay)
         {
             return replay;
         }
 
         if (await FindDecisionReplayAsync(countId, payloadHash, metadata.ActorId,
-                cancellationToken) is { } decisionReplay)
+                freshAuthorityFence, cancellationToken) is { } decisionReplay)
         {
             return decisionReplay;
         }
 
         var countRow = await dbContext.StockCounts.AsNoTracking()
-            .SingleOrDefaultAsync(row => row.Id == countId, cancellationToken)
-            ?? throw StockCountError(404, InventoryStockCountCodesV1.CountNotFound);
+            .SingleOrDefaultAsync(row => row.Id == countId, cancellationToken);
+        await RequireFreshAuthorityAsync(freshAuthorityFence, cancellationToken);
+        if (countRow is null)
+        {
+            throw StockCountError(404, InventoryStockCountCodesV1.CountNotFound);
+        }
         if (countRow.CountedKg == countRow.BookKg)
         {
             throw StockCountError(409, InventoryStockCountCodesV1.NotPending);
@@ -222,108 +252,141 @@ public sealed partial class InventoryStore : IInventoryStockCountWriterV1, IInve
             throw StockCountError(409, InventoryStockCountCodesV1.SelfApproval);
         }
 
-        var now = timeProvider.GetUtcNow();
-        Guid? movementId = null;
-        if (decisionCode == DecisionApproved)
+        DbUpdateException? concurrentChange = null;
+        await using (var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken))
         {
-            var label = await dbContext.Labels.SingleOrDefaultAsync(row => row.Id == countRow.LabelId, cancellationToken)
-                ?? throw StockCountError(503, InventoryStockCountCodesV1.Unavailable);
-            if (label.Version != countRow.LabelVersion)
-            {
-                throw StockCountError(409, InventoryStockCountCodesV1.Stale);
-            }
-
-            var count = RestoreStockCount(countRow, label);
-            if (count.Difference < 0m)
-            {
-                var reserved = await dbContext.Allocations.AsNoTracking()
-                    .Where(row => row.LabelId == countRow.LabelId && row.Status == (int)StockAllocationStatus.Active)
-                    .SumAsync(row => (decimal?)row.RemainingKg, cancellationToken) ?? 0m;
-                if (reserved > count.Counted.Value)
-                {
-                    throw StockCountError(409, InventoryStockCountCodesV1.AllocationConflict);
-                }
-            }
-
-            var movement = count.Adjustment(Guid.NewGuid(), now);
             try
             {
-                if (await StageMovementAsync(movement, metadata, recordAudit: true, cancellationToken)
-                    != InventoryWriteOutcome.Recorded)
+                var now = timeProvider.GetUtcNow();
+                Guid? movementId = null;
+                if (decisionCode == DecisionApproved)
                 {
-                    throw StockCountError(503, InventoryStockCountCodesV1.Unavailable);
+                    var label = await dbContext.Labels
+                        .SingleOrDefaultAsync(row => row.Id == countRow.LabelId, cancellationToken);
+                    await RequireFreshAuthorityAsync(freshAuthorityFence, cancellationToken);
+                    if (label is null)
+                    {
+                        throw StockCountError(503, InventoryStockCountCodesV1.Unavailable);
+                    }
+
+                    if (label.Version != countRow.LabelVersion)
+                    {
+                        throw StockCountError(409, InventoryStockCountCodesV1.Stale);
+                    }
+
+                    var count = RestoreStockCount(countRow, label);
+                    if (count.Difference < 0m)
+                    {
+                        var reserved = await dbContext.Allocations.AsNoTracking()
+                            .Where(row => row.LabelId == countRow.LabelId
+                                && row.Status == (int)StockAllocationStatus.Active)
+                            .SumAsync(row => (decimal?)row.RemainingKg, cancellationToken) ?? 0m;
+                        await RequireFreshAuthorityAsync(freshAuthorityFence, cancellationToken);
+                        if (reserved > count.Counted.Value)
+                        {
+                            throw StockCountError(409, InventoryStockCountCodesV1.AllocationConflict);
+                        }
+                    }
+
+                    var movement = count.Adjustment(Guid.NewGuid(), now);
+                    try
+                    {
+                        if (await StageMovementAsync(movement, metadata, recordAudit: false, cancellationToken)
+                            != InventoryWriteOutcome.Recorded)
+                        {
+                            throw StockCountError(503, InventoryStockCountCodesV1.Unavailable);
+                        }
+
+                        await RequireFreshAuthorityAsync(freshAuthorityFence, cancellationToken);
+                        Audit(metadata, movement.CompanyId, MovementEntityType, movement.Id,
+                            "inventory.movement.recorded.v1", "Record",
+                            versionBefore: null, versionAfter: 1, before: "{}",
+                            after: MovementAudit(movement, PayloadHash(movement)),
+                            $"Stok hareketi ({movement.Kind})");
+                    }
+                    catch (InventoryStoreException exception)
+                    {
+                        await RequireFreshAuthorityAsync(freshAuthorityFence, cancellationToken);
+                        throw exception.Code switch
+                        {
+                            InventoryScaleCodes.ScaleExceeded => StockCountError(400, exception.Code, exception),
+                            InventoryStoreCodes.DuplicateSource or InventoryStoreCodes.SourceGrainMismatch
+                                or InventoryStoreCodes.ConcurrentChange =>
+                                StockCountError(409, InventoryStockCountCodesV1.ConcurrentChange, exception),
+                            _ when InventoryStockCountHttpCodesV1.Status503Codes.Contains(exception.Code) =>
+                                StockCountError(503, exception.Code, exception),
+                            _ => StockCountError(503, InventoryStockCountCodesV1.Unavailable, exception),
+                        };
+                    }
+                    catch (InventoryRuleException exception)
+                    {
+                        await RequireFreshAuthorityAsync(freshAuthorityFence, cancellationToken);
+                        // The label is still at the counted version, so the ledger agrees with the stored book; a
+                        // refusal here means the stored state itself is not trustworthy.
+                        throw StockCountError(503, InventoryStockCountCodesV1.Unavailable, exception);
+                    }
+
+                    movementId = movement.Id;
                 }
-            }
-            catch (InventoryStoreException exception)
-            {
-                throw exception.Code switch
+
+                var decision = new StockCountDecisionRow
                 {
-                    InventoryScaleCodes.ScaleExceeded => StockCountError(400, exception.Code, exception),
-                    InventoryStoreCodes.DuplicateSource or InventoryStoreCodes.SourceGrainMismatch
-                        or InventoryStoreCodes.ConcurrentChange =>
-                        StockCountError(409, InventoryStockCountCodesV1.ConcurrentChange, exception),
-                    _ when InventoryStockCountHttpCodesV1.Status503Codes.Contains(exception.Code) =>
-                        StockCountError(503, exception.Code, exception),
-                    _ => StockCountError(503, InventoryStockCountCodesV1.Unavailable, exception),
+                    CompanyId = companyId,
+                    CountId = countRow.Id,
+                    Decision = decisionCode,
+                    Reason = reason,
+                    MovementId = movementId,
+                    PayloadHash = payloadHash,
+                    DecidedAtUtc = now,
+                    DecidedBy = metadata.ActorId.Trim(),
+                    CorrelationId = metadata.CorrelationId.Trim(),
                 };
-            }
-            catch (InventoryRuleException exception)
-            {
-                // The label is still at the counted version, so the ledger agrees with the stored book; a
-                // refusal here means the stored state itself is not trustworthy.
-                throw StockCountError(503, InventoryStockCountCodesV1.Unavailable, exception);
-            }
+                dbContext.StockCountDecisions.Add(decision);
+                var before = StockCountView(countRow, decision: null);
+                var view = StockCountView(countRow, decision);
+                dbContext.Commands.Add(StockCountCommandRow(DecideStockCountCommand, companyId, keyHash, payloadHash,
+                    metadata, countRow.Id, view));
+                Audit(metadata, companyId, StockCountEntityType, countRow.Id,
+                    decisionCode == DecisionApproved
+                        ? "inventory.stock-count.approved.v1"
+                        : "inventory.stock-count.rejected.v1",
+                    decisionCode == DecisionApproved ? "Approve" : "Reject",
+                    versionBefore: 1, versionAfter: 2, before: JsonSerializer.Serialize(before, Json),
+                    after: JsonSerializer.Serialize(view, Json), reason);
 
-            movementId = movement.Id;
+                await dbContext.SaveChangesAsync(cancellationToken);
+                await RequireFreshAuthorityAsync(freshAuthorityFence, cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
+                return new(view, false, decision.CorrelationId);
+            }
+            catch (DbUpdateException exception) when (exception is DbUpdateConcurrencyException
+                || IsUniqueConstraintViolation(exception))
+            {
+                await transaction.RollbackAsync(CancellationToken.None);
+                dbContext.ChangeTracker.Clear();
+                concurrentChange = exception;
+            }
+            catch
+            {
+                await transaction.RollbackAsync(CancellationToken.None);
+                dbContext.ChangeTracker.Clear();
+                throw;
+            }
         }
 
-        var decision = new StockCountDecisionRow
+        if (await FindStockCountKeyReplayAsync(DecideStockCountCommand, keyHash, payloadHash, metadata.ActorId,
+                freshAuthorityFence, cancellationToken) is { } winner)
         {
-            CompanyId = companyId,
-            CountId = countRow.Id,
-            Decision = decisionCode,
-            Reason = reason,
-            MovementId = movementId,
-            PayloadHash = payloadHash,
-            DecidedAtUtc = now,
-            DecidedBy = metadata.ActorId.Trim(),
-            CorrelationId = metadata.CorrelationId.Trim(),
-        };
-        dbContext.StockCountDecisions.Add(decision);
-        var before = StockCountView(countRow, decision: null);
-        var view = StockCountView(countRow, decision);
-        dbContext.Commands.Add(StockCountCommandRow(DecideStockCountCommand, companyId, keyHash, payloadHash, metadata,
-            countRow.Id, view));
-        Audit(metadata, companyId, StockCountEntityType, countRow.Id,
-            decisionCode == DecisionApproved ? "inventory.stock-count.approved.v1" : "inventory.stock-count.rejected.v1",
-            decisionCode == DecisionApproved ? "Approve" : "Reject",
-            versionBefore: 1, versionAfter: 2, before: JsonSerializer.Serialize(before, Json),
-            after: JsonSerializer.Serialize(view, Json), reason);
-
-        try
-        {
-            await dbContext.SaveChangesAsync(cancellationToken);
-        }
-        catch (DbUpdateException exception) when (exception is DbUpdateConcurrencyException
-            || IsUniqueConstraintViolation(exception))
-        {
-            dbContext.ChangeTracker.Clear();
-            if (await FindStockCountKeyReplayAsync(DecideStockCountCommand, keyHash, payloadHash, metadata.ActorId,
-                    cancellationToken) is { } winner)
-            {
-                return winner;
-            }
-
-            if (await FindDecisionReplayAsync(countId, payloadHash, metadata.ActorId,
-                    cancellationToken) is { } decisionWinner)
-            {
-                return decisionWinner;
-            }
-
-            throw StockCountError(409, InventoryStockCountCodesV1.ConcurrentChange, exception);
+            return winner;
         }
 
-        return new(view, false, decision.CorrelationId);
+        if (await FindDecisionReplayAsync(countId, payloadHash, metadata.ActorId, freshAuthorityFence,
+                cancellationToken) is { } decisionWinner)
+        {
+            return decisionWinner;
+        }
+
+        throw StockCountError(409, InventoryStockCountCodesV1.ConcurrentChange, concurrentChange);
     }
 
     public async Task<InventoryLabelStockCountsV1?> ReadStockCountsAsync(
@@ -397,10 +460,12 @@ public sealed partial class InventoryStore : IInventoryStockCountWriterV1, IInve
         string keyHash,
         string payloadHash,
         string actorId,
+        Func<CancellationToken, Task> freshAuthorityFence,
         CancellationToken cancellationToken)
     {
         var prior = await dbContext.Commands.AsNoTracking()
             .SingleOrDefaultAsync(row => row.CommandName == command && row.IdempotencyKeyHash == keyHash, cancellationToken);
+        await RequireFreshAuthorityAsync(freshAuthorityFence, cancellationToken);
         if (prior is null)
         {
             return null;
@@ -421,10 +486,12 @@ public sealed partial class InventoryStore : IInventoryStockCountWriterV1, IInve
     private async Task<InventoryStockCountResultV1?> FindStockCountIdentityReplayAsync(
         Guid countId,
         string payloadHash,
+        Func<CancellationToken, Task> freshAuthorityFence,
         CancellationToken cancellationToken)
     {
         var stored = await dbContext.StockCounts.AsNoTracking()
             .SingleOrDefaultAsync(row => row.Id == countId, cancellationToken);
+        await RequireFreshAuthorityAsync(freshAuthorityFence, cancellationToken);
         if (stored is null)
         {
             return null;
@@ -444,10 +511,12 @@ public sealed partial class InventoryStore : IInventoryStockCountWriterV1, IInve
         Guid countId,
         string payloadHash,
         string actorId,
+        Func<CancellationToken, Task> freshAuthorityFence,
         CancellationToken cancellationToken)
     {
         var decision = await dbContext.StockCountDecisions.AsNoTracking()
             .SingleOrDefaultAsync(row => row.CountId == countId, cancellationToken);
+        await RequireFreshAuthorityAsync(freshAuthorityFence, cancellationToken);
         if (decision is null)
         {
             return null;
@@ -459,8 +528,12 @@ public sealed partial class InventoryStore : IInventoryStockCountWriterV1, IInve
         }
 
         var count = await dbContext.StockCounts.AsNoTracking()
-            .SingleOrDefaultAsync(row => row.Id == countId, cancellationToken)
-            ?? throw StockCountError(503, InventoryStockCountCodesV1.Unavailable);
+            .SingleOrDefaultAsync(row => row.Id == countId, cancellationToken);
+        await RequireFreshAuthorityAsync(freshAuthorityFence, cancellationToken);
+        if (count is null)
+        {
+            throw StockCountError(503, InventoryStockCountCodesV1.Unavailable);
+        }
         if (DecisionReplayRefusal(decision.DecidedBy, count.RecordedBy, actorId, InventoryStockCountCodesV1.SelfApproval,
                 InventoryStockCountCodesV1.AlreadyDecided) is { } refusal)
         {
