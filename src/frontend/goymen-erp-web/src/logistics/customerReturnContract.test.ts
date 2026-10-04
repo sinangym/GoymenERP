@@ -71,4 +71,25 @@ describe("customer-return contract", () => {
     expect(result.ok && result.value.isReplay).toBe(true);
     expect(result.ok && result.value.return.status).toBe("Pending");
   });
+
+  it.each([
+    "1234567890abcdef1234567890abcdef",
+    "opaque-original-correlation/attempt:2026-10-04",
+  ])("accepts and preserves a bounded non-UUID correlation identity: %s", (originalCorrelationId) => {
+    const result = decodeCustomerReturnResponseV1({
+      return: pendingReturn(),
+      isReplay: true,
+      originalCorrelationId,
+    });
+
+    expect(result.ok && result.value.originalCorrelationId).toBe(originalCorrelationId);
+  });
+
+  it.each(["", "   ", "x".repeat(129), 42])("rejects a malformed correlation identity: %s", (originalCorrelationId) => {
+    expect(decodeCustomerReturnResponseV1({
+      return: pendingReturn(),
+      isReplay: true,
+      originalCorrelationId,
+    }).ok).toBe(false);
+  });
 });

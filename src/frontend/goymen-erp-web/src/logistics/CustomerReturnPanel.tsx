@@ -12,7 +12,8 @@ import { customerReturnText as text } from "./customerReturnText";
 export interface CustomerReturnVisibility {
   canRead: boolean;
   canRequest: boolean;
-  canDecide: boolean;
+  canApprove: boolean;
+  canReject: boolean;
 }
 
 export interface CustomerReturnDeliveryOption {
@@ -74,6 +75,12 @@ export function CustomerReturnPanel({
   const [reason, setReason] = useState("");
   const [occurredAtUtc, setOccurredAtUtc] = useState("");
   const [decisionNotes, setDecisionNotes] = useState<Record<string, string>>({});
+  const requestLocked = requestController !== undefined
+    && requestController.state.type !== "idle"
+    && requestController.state.type !== "failed";
+  const decisionLocked = decisionController !== undefined
+    && decisionController.state.type !== "idle"
+    && decisionController.state.type !== "failed";
 
   if (!available) {
     return <section aria-label={text.title}><p>{text.unavailable}</p></section>;
@@ -123,7 +130,7 @@ export function CustomerReturnPanel({
             <li key={customerReturn.customerReturnId}>
               <p>{customerReturn.quantity} - {statusLabel(customerReturn.status)}</p>
               <p>{customerReturn.reason}</p>
-              {customerReturn.status === "Pending" && visibility.canDecide && decisionController ? (
+              {customerReturn.status === "Pending" && (visibility.canApprove || visibility.canReject) && decisionController ? (
                 <div>
                   <label>
                     {text.note}
@@ -135,28 +142,34 @@ export function CustomerReturnPanel({
                       }))}
                     />
                   </label>
-                  <button
-                    type="button"
-                    onClick={() => decisionController.submit({
-                      customerReturnId: customerReturn.customerReturnId,
-                      expectedVersion: customerReturn.version,
-                      action: "approve",
-                      note: decisionNotes[customerReturn.customerReturnId]?.trim() || null,
-                    })}
-                  >
-                    {text.approve}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => decisionController.submit({
-                      customerReturnId: customerReturn.customerReturnId,
-                      expectedVersion: customerReturn.version,
-                      action: "reject",
-                      note: decisionNotes[customerReturn.customerReturnId]?.trim() || null,
-                    })}
-                  >
-                    {text.reject}
-                  </button>
+                  {visibility.canApprove ? (
+                    <button
+                      type="button"
+                      disabled={decisionLocked}
+                      onClick={() => decisionController.submit({
+                        customerReturnId: customerReturn.customerReturnId,
+                        expectedVersion: customerReturn.version,
+                        action: "approve",
+                        note: decisionNotes[customerReturn.customerReturnId]?.trim() || null,
+                      })}
+                    >
+                      {text.approve}
+                    </button>
+                  ) : null}
+                  {visibility.canReject ? (
+                    <button
+                      type="button"
+                      disabled={decisionLocked}
+                      onClick={() => decisionController.submit({
+                        customerReturnId: customerReturn.customerReturnId,
+                        expectedVersion: customerReturn.version,
+                        action: "reject",
+                        note: decisionNotes[customerReturn.customerReturnId]?.trim() || null,
+                      })}
+                    >
+                      {text.reject}
+                    </button>
+                  ) : null}
                 </div>
               ) : null}
             </li>
@@ -198,7 +211,7 @@ export function CustomerReturnPanel({
               required
             />
           </label>
-          <button type="submit">{text.request}</button>
+          <button type="submit" disabled={requestLocked}>{text.request}</button>
           {isCustomerReturnContextCurrent(contextBinding, requestController.state.type === "idle" ? contextBinding : requestController.state.binding)
             ? <CommandStateNotice controller={requestController} />
             : null}

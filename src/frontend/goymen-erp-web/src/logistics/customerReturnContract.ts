@@ -89,6 +89,7 @@ const returnKeys = [
 ] as const;
 
 const responseKeys = ["return", "isReplay", "originalCorrelationId"] as const;
+const correlationIdMaximumLength = 128;
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const positiveDecimalPattern = /^(?:0*[1-9]\d*)(?:\.\d+)?$|^0*\.\d*[1-9]\d*$/;
 const versionPattern = /^(?:0|[1-9]\d*)$/;
@@ -105,6 +106,13 @@ function hasExactKeys(value: Record<string, unknown>, keys: readonly string[]): 
 
 function isUuid(value: unknown): value is string {
   return typeof value === "string" && uuidPattern.test(value);
+}
+
+function isBoundedText(value: unknown, maximumLength: number): value is string {
+  return typeof value === "string"
+    && value.length > 0
+    && value.length <= maximumLength
+    && value.trim().length > 0;
 }
 
 function isVersion(value: unknown): value is string {
@@ -226,7 +234,11 @@ export function decodeCustomerReturnResponseV1(
   }
 
   const decodedReturn = decodeCustomerReturnViewV1(input.return, expected);
-  if (!decodedReturn.ok || typeof input.isReplay !== "boolean" || !isUuid(input.originalCorrelationId)) {
+  if (
+    !decodedReturn.ok
+    || typeof input.isReplay !== "boolean"
+    || !isBoundedText(input.originalCorrelationId, correlationIdMaximumLength)
+  ) {
     return { ok: false, error: decodedReturn.ok ? "customer-return-response-member" : decodedReturn.error };
   }
 

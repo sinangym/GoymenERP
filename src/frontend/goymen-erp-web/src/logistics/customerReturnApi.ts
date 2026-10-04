@@ -105,6 +105,9 @@ export function settleCustomerReturnAttempt<TPayload extends object>(
     return { type: "succeeded", attempt: current.attempt, response: outcome.response };
   }
   if (outcome.type === "http") {
+    if (outcome.status >= 500 || (outcome.status >= 200 && outcome.status < 300)) {
+      return { type: "unknown", attempt: current.attempt };
+    }
     return { type: "failed", binding: current.attempt.binding };
   }
 
@@ -239,10 +242,26 @@ export function canRetryCustomerReturnAttempt(state: CustomerReturnCommandState)
   return state.type === "unknown";
 }
 
+export function resetSettledCustomerReturnAttempt<TPayload extends object>(
+  current: CustomerReturnAttemptLifecycle<TPayload>,
+  currentBinding: string,
+  freshReturns: readonly CustomerReturnViewV1[],
+): CustomerReturnAttemptLifecycle<TPayload> {
+  if (current.type !== "succeeded" || current.attempt.binding !== currentBinding) return current;
+  const recorded = current.response.return;
+  return freshReturns.some((item) =>
+    item.customerReturnId === recorded.customerReturnId
+    && item.status === recorded.status
+    && item.version === recorded.version)
+    ? { type: "idle" }
+    : current;
+}
+
 export const CUSTOMER_RETURN_CAPABILITY = Object.freeze({
   read: "logistics.customer-returns.read",
   request: "logistics.customer-returns.request",
-  decision: "logistics.customer-returns.decision",
+  approve: "logistics.customer-returns.approve",
+  reject: "logistics.customer-returns.reject",
 });
 
 export const CUSTOMER_RETURN_OPERATION = Object.freeze({

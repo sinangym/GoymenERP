@@ -8,6 +8,7 @@ import {
   isCustomerReturnAdapterReady,
   isCustomerReturnContextCurrent,
   retryCustomerReturnAttempt,
+  resetSettledCustomerReturnAttempt,
   settleCustomerReturnAttempt,
   customerReturnEndpointAdapter,
   type CustomerReturnEndpointAdapter,
@@ -152,6 +153,120 @@ describe("customer-return adapter boundary", () => {
     expect(next.type).toBe("sending");
     if (next.type !== "sending") throw new Error("expected next attempt");
     expect(next.attempt.idempotencyKey).toBe("deliberate-new-key");
+  });
+
+  it("keeps a 5xx attempt frozen and retries the same key and body into one successful replay", async () => {
+    const context = {
+      companyId: "00000000-0000-4000-8000-000000000003",
+      salesOrderId: "00000000-0000-4000-8000-000000000007",
+      loadingInstructionId: "00000000-0000-4000-8000-000000000004",
+      loadingInstructionLineId: "00000000-0000-4000-8000-000000000005",
+      binding: "company-a:authority-2",
+    };
+    const response = {
+      return: {
+        customerReturnId: requestPayload.customerReturnId,
+        companyId: context.companyId,
+        loadingInstructionId: context.loadingInstructionId,
+        loadingInstructionLineId: context.loadingInstructionLineId,
+        sourceDeliveryId: requestPayload.sourceDeliveryId,
+        sourceShipmentId: "00000000-0000-4000-8000-000000000006",
+        sourceOrderId: context.salesOrderId,
+        sourceOrderLineId: "00000000-0000-4000-8000-000000000008",
+        unitId: "00000000-0000-4000-8000-000000000009",
+        quantity: requestPayload.quantity,
+        sourceDeliveredQuantity: "2.000",
+        status: "Pending",
+        version: "1",
+        reason: requestPayload.reason,
+        requestedBy: "actor-a",
+        occurredAtUtc: requestPayload.occurredAtUtc,
+        requestedAtUtc: "2026-10-04T08:01:00Z",
+        decidedBy: null,
+        decidedAtUtc: null,
+        decisionNote: null,
+        inventoryMovementId: null,
+        originalLabelId: null,
+        originalShipmentMovementId: null,
+      },
+      isReplay: true,
+      originalCorrelationId: "1234567890abcdef1234567890abcdef",
+    };
+    let effects = 0;
+    let calls = 0;
+    vi.stubGlobal("fetch", vi.fn(async () => {
+      calls += 1;
+      if (calls === 1) {
+        effects += 1;
+        return new Response(JSON.stringify({ status: 500 }), { status: 500 });
+      }
+      return new Response(JSON.stringify(response), {
+        status: 201,
+        headers: { "Content-Type": "application/json", "Idempotency-Replayed": "true" },
+      });
+    }));
+
+    const sending = beginCustomerReturnAttempt({ type: "idle" }, requestAttempt());
+    if (sending.type !== "sending") throw new Error("expected sending state");
+    const first = await customerReturnEndpointAdapter.request(context, sending.attempt, new AbortController().signal);
+    const unknown = settleCustomerReturnAttempt(sending, sending.attempt, first, context.binding);
+    expect(unknown).toEqual({ type: "unknown", attempt: sending.attempt });
+    const retry = retryCustomerReturnAttempt(unknown, context.binding);
+    if (retry.type !== "sending") throw new Error("expected retry state");
+    const replay = await customerReturnEndpointAdapter.request(context, retry.attempt, new AbortController().signal);
+    expect(replay).toEqual({ type: "succeeded", response });
+
+    const posts = vi.mocked(fetch).mock.calls;
+    expect(posts).toHaveLength(2);
+    expect((posts[0][1]?.headers as Record<string, string>)["Idempotency-Key"])
+      .toBe((posts[1][1]?.headers as Record<string, string>)["Idempotency-Key"]);
+    expect(posts[0][1]?.body).toBe(posts[1][1]?.body);
+    expect(effects).toBe(1);
+  });
+
+  it("opens a new partial-return attempt only after a fresh read observes the completed return", () => {
+    const sending = beginCustomerReturnAttempt({ type: "idle" }, requestAttempt());
+    if (sending.type !== "sending") throw new Error("expected sending state");
+    const response = {
+      return: {
+        customerReturnId: requestPayload.customerReturnId,
+        companyId: "00000000-0000-4000-8000-000000000003",
+        loadingInstructionId: "00000000-0000-4000-8000-000000000004",
+        loadingInstructionLineId: "00000000-0000-4000-8000-000000000005",
+        sourceDeliveryId: requestPayload.sourceDeliveryId,
+        sourceShipmentId: "00000000-0000-4000-8000-000000000006",
+        sourceOrderId: "00000000-0000-4000-8000-000000000007",
+        sourceOrderLineId: "00000000-0000-4000-8000-000000000008",
+        unitId: "00000000-0000-4000-8000-000000000009",
+        quantity: requestPayload.quantity,
+        sourceDeliveredQuantity: "2.000",
+        status: "Pending" as const,
+        version: "1",
+        reason: requestPayload.reason,
+        requestedBy: "actor-a",
+        occurredAtUtc: requestPayload.occurredAtUtc,
+        requestedAtUtc: "2026-10-04T08:01:00Z",
+        decidedBy: null,
+        decidedAtUtc: null,
+        decisionNote: null,
+        inventoryMovementId: null,
+        originalLabelId: null,
+        originalShipmentMovementId: null,
+      },
+      isReplay: false,
+      originalCorrelationId: "opaque-first-attempt",
+    };
+    const succeeded = settleCustomerReturnAttempt(
+      sending,
+      sending.attempt,
+      { type: "succeeded", response },
+      sending.attempt.binding,
+    );
+    expect(resetSettledCustomerReturnAttempt(succeeded, sending.attempt.binding, [])).toBe(succeeded);
+    const idle = resetSettledCustomerReturnAttempt(succeeded, sending.attempt.binding, [response.return]);
+    expect(idle).toEqual({ type: "idle" });
+    const next = beginCustomerReturnAttempt(idle, { ...requestAttempt(), idempotencyKey: "second-partial-key" });
+    expect(next.type === "sending" && next.attempt.idempotencyKey).toBe("second-partial-key");
   });
 
   it("keeps the immutable replay response when the exact live attempt succeeds", () => {
