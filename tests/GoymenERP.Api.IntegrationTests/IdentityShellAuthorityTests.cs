@@ -37,7 +37,7 @@ public sealed class IdentityShellAuthorityTests
         var actual = ShellCapabilityRegistry.ComputeCandidateRevision(providers);
 
         Assert.True(string.Equals(
-                ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV15PublishedFinanceV15PublishedManufacturingV15PublishedLogisticsV12PublishedPurchasingV14PublishedAccountingV13PublishedInventoryV15AndPublishedIdentityV10,
+                ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV15PublishedFinanceV15PublishedManufacturingV15PublishedLogisticsV12PublishedPurchasingV14PublishedAccountingV13PublishedInventoryV16AndPublishedIdentityV10,
                 actual,
                 StringComparison.Ordinal),
             $"Identity normal-host authority drifted. Actual: {actual}");

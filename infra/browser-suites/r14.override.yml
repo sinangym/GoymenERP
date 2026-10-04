@@ -92,6 +92,7 @@ services:
       # Documents name, and no production role or grant is changed.
       IdentitySeed__Roles__5__Permissions__4: documents.files.read
       IdentitySeed__Roles__5__Permissions__5: documents.files.upload
+      IdentitySeed__Roles__5__Permissions__6: inventory.label-classification.write
       IdentitySeed__Roles__6__Id: b3000000-0000-4000-8000-000000000702
       IdentitySeed__Roles__6__Code: BROWSER_R14_DENIED
       IdentitySeed__Roles__6__Name: SENTETIK browser-suite:r14 Inventory denied actor

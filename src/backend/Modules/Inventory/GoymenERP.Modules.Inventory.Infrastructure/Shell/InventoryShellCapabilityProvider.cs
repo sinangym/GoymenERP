@@ -12,7 +12,7 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.Shell;
 public sealed class InventoryShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "INVENTORY";
-    public const string OwnerContractVersion = "1.5";
+    public const string OwnerContractVersion = "1.6";
     public const string StockPositionsCapabilityId = "inventory.stock-positions.list";
     public const string StockPositionsRouteId = "inventory.stock-positions";
     public const string StockPositionsRoutePath = "/stok/pozisyonlar";
@@ -25,6 +25,7 @@ public sealed class InventoryShellCapabilityProvider : IShellCapabilityProvider
     /// command. Publishing grants nothing.
     /// </summary>
     public const string LabelTransformationCapabilityId = ErpPermissions.InventoryLabelTransformationRecord;
+    public const string LabelClassificationCapabilityId = ErpPermissions.InventoryLabelClassificationWrite;
 
     /// <summary>
     /// AT-037 stock count: two CONTROLS of the label detail reached from ST-01 (no route of their own), one to
@@ -86,6 +87,17 @@ public sealed class InventoryShellCapabilityProvider : IShellCapabilityProvider
                 ErpPermissions.InventoryLabelsRead,
                 ErpPermissions.InventoryBalancesRead,
                 ErpPermissions.InventoryLabelTransformationRecord,
+            ],
+        },
+        stockPositions with
+        {
+            CapabilityId = LabelClassificationCapabilityId,
+            ParentCapabilityId = StockPositionsCapabilityId,
+            RequiredPermissions =
+            [
+                ErpPermissions.InventoryLabelsRead,
+                ErpPermissions.InventoryBalancesRead,
+                ErpPermissions.InventoryLabelClassificationWrite,
             ],
         },
         stockPositions with

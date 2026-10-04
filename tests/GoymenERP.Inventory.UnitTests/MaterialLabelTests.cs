@@ -9,6 +9,43 @@ namespace GoymenERP.Inventory.UnitTests;
 public sealed class MaterialLabelTests
 {
     [Fact]
+    public void Classification_is_explicit_and_legacy_labels_remain_unknown()
+    {
+        var label = new MaterialLabel(Label1, CompanyA, CodeOf(Label1), BandProduct, Lot1);
+        Assert.Null(label.Classification);
+
+        foreach (var classification in new[]
+                 {
+                     LabelClassification.Standard,
+                     LabelClassification.SecondQuality,
+                     LabelClassification.Scrap,
+                 })
+        {
+            label.Classify(classification);
+            Assert.Equal(classification, label.Classification);
+            Assert.Equal((Label1, CompanyA, BandProduct, Lot1),
+                (label.Id, label.CompanyId, label.ProductId, label.LotId));
+        }
+
+        var restored = MaterialLabel.Restore(label.Id, label.CompanyId, label.Code, label.ProductId, label.LotId,
+            label.ProductVersion, label.RequiredDocuments, label.HeatNumber, label.CoilNumber,
+            label.Prints, label.DocumentAttachments, LabelClassification.SecondQuality);
+        Assert.Equal(LabelClassification.SecondQuality, restored.Classification);
+        Assert.Null(MaterialLabel.Restore(Label2, CompanyA, CodeOf(Label2), BandProduct, Lot1,
+            [], null, null, [], []).Classification);
+    }
+
+    [Fact]
+    public void Undefined_classification_is_refused()
+    {
+        var label = new MaterialLabel(Label1, CompanyA, CodeOf(Label1), BandProduct, Lot1);
+
+        Assert.Equal(InventoryRuleCodes.InvalidLabelOperation,
+            Assert.Throws<InventoryRuleException>(() => label.Classify((LabelClassification)99)).Code);
+        Assert.Null(label.Classification);
+    }
+
+    [Fact]
     public void A_new_label_keeps_the_exact_opaque_product_version()
     {
         var label = new MaterialLabel(Label1, CompanyA, CodeOf(Label1), BandProduct, Lot1, "product-v7");

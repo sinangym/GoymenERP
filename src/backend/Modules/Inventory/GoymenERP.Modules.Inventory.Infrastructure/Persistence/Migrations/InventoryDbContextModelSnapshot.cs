@@ -963,6 +963,9 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.Persistence.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("nvarchar(64)");
 
+                    b.Property<int?>("Classification")
+                        .HasColumnType("int");
+
                     b.Property<Guid>("CompanyId")
                         .HasColumnType("uniqueidentifier");
 
@@ -1012,6 +1015,8 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.Persistence.Migrations
                     b.ToTable("Labels", "inventory", t =>
                         {
                             t.HasCheckConstraint("CK_Labels_Code", "LEN([Code]) > 0");
+
+                            t.HasCheckConstraint("CK_Labels_Classification", "[Classification] IS NULL OR [Classification] IN (1, 2, 3)");
 
                             t.HasCheckConstraint("CK_Labels_Identity", "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [ProductId] <> '00000000-0000-0000-0000-000000000000' AND [LotId] <> '00000000-0000-0000-0000-000000000000'");
 

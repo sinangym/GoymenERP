@@ -56,7 +56,8 @@ public sealed partial class InventoryStore(
     IAuditEventCollector auditEvents,
     InventoryKilogramScale kilogramScale,
     TimeProvider timeProvider) : IInventoryLotStore, IInventoryLabelStore, IInventoryMovementStore, IInventoryOpeningStore,
-    IInventoryPhysicalAllocationWriterV1, IInventoryLabelGenealogyWriterV1, IInventoryLabelGenealogyReaderV1
+    IInventoryPhysicalAllocationWriterV1, IInventoryLabelGenealogyWriterV1, IInventoryLabelGenealogyReaderV1,
+    IInventoryLabelClassificationWriterV1
 {
     private const string LotEntityType = "Inventory.MaterialLot";
     private const string LabelEntityType = "Inventory.MaterialLabel";
@@ -828,7 +829,8 @@ public sealed partial class InventoryStore(
                 ?? throw new InvalidOperationException("Kayıtlı etiketin belge gereksinimi okunamadı."),
             row.HeatNumber, row.CoilNumber,
             prints.Where(print => print.LabelId == row.Id).OrderBy(print => print.Sequence).Select(ToPrint),
-            documents.Where(document => document.LabelId == row.Id).OrderBy(document => document.Sequence).Select(ToAttachment)));
+            documents.Where(document => document.LabelId == row.Id).OrderBy(document => document.Sequence).Select(ToAttachment),
+            row.Classification is null ? null : (LabelClassification)row.Classification.Value));
     }
 
     private void AddPrints(MaterialLabel label, int fromSequence)
@@ -1017,8 +1019,16 @@ public sealed partial class InventoryStore(
         new MaterialLot(row.Id, row.CompanyId, row.ProductId, row.HeatNumber, row.CoilNumber);
 
     /// <summary>The label facts a position needs (company, product, id); prints and documents do not matter there.</summary>
-    private static MaterialLabel IdentityOnly(LabelRow row) =>
-        new MaterialLabel(row.Id, row.CompanyId, row.Code, row.ProductId, row.LotId, row.ProductVersion);
+    private static MaterialLabel IdentityOnly(LabelRow row)
+    {
+        var label = new MaterialLabel(row.Id, row.CompanyId, row.Code, row.ProductId, row.LotId, row.ProductVersion);
+        if (row.Classification is { } classification)
+        {
+            label.Classify((LabelClassification)classification);
+        }
+
+        return label;
+    }
 
     private static StockPosition Position(Guid companyId, int ownerKind, Guid ownerId, int custodianKind, Guid custodianId,
         Guid locationId, MaterialLabel label, int block) =>
@@ -1167,6 +1177,7 @@ public sealed partial class InventoryStore(
         label.ProductId,
         label.ProductVersion,
         label.LotId,
+        classification = label.Classification?.ToString(),
         requiredDocuments = label.RequiredDocuments.Order(StringComparer.Ordinal),
         documentStatus = label.DocumentStatus.ToString(),
         prints = label.Prints.Count,

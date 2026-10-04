@@ -32,6 +32,8 @@ public sealed class InventoryReadPermissionRegistrationTests
         ErpPermissions.InventoryPhysicalAllocationWrite,
         // R19: label split/merge is its own command permission; its only grant is a disposable browser test actor.
         ErpPermissions.InventoryLabelTransformationRecord,
+        // Label classification is a separate command permission; registration does not grant it to a shipped actor.
+        ErpPermissions.InventoryLabelClassificationWrite,
         // AT-037: the stock count's record and approve names, two separate grants (maker ≠ checker); their only
         // grants are two different disposable browser test actors.
         ErpPermissions.InventoryStockCountRecord,
@@ -46,6 +48,7 @@ public sealed class InventoryReadPermissionRegistrationTests
         Assert.Equal("inventory.opening-stock.record", ErpPermissions.InventoryOpeningStockRecord);
         Assert.Equal("inventory.physical-allocation.write", ErpPermissions.InventoryPhysicalAllocationWrite);
         Assert.Equal("inventory.label-transformation.record", ErpPermissions.InventoryLabelTransformationRecord);
+        Assert.Equal("inventory.label-classification.write", ErpPermissions.InventoryLabelClassificationWrite);
         Assert.Equal("inventory.stock-count.record", ErpPermissions.InventoryStockCountRecord);
         Assert.Equal("inventory.stock-count.approve", ErpPermissions.InventoryStockCountApprove);
     }

@@ -83,7 +83,7 @@ public sealed class InventoryDocumentOwnerLinkPortTests
 
     private static InventoryLabelDetailV1 Detail(Guid labelId, Guid companyId) => new(
         "1",
-        new InventoryLabelViewV1(labelId, companyId, "LBL-SENTETIK", Guid.NewGuid(), Guid.NewGuid(), null, null,
+        new InventoryLabelViewV1(labelId, companyId, "LBL-SENTETIK", Guid.NewGuid(), Guid.NewGuid(), null, null, null,
             "Complete", [], [], [], null!),
         null!,
         null!,
