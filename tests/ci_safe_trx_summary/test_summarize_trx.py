@@ -114,6 +114,231 @@ class SafeTrxSummaryTests(unittest.TestCase):
         self.assertNotIn("DO_NOT_EXPORT", encoded)
         self.assertNotIn("credential", encoded)
 
+    def test_closed_diagnostic_marker_is_emitted_without_adjacent_message_text(self) -> None:
+        source = trx(
+            '<UnitTestResult testId="fail" outcome="Failed"><Output><ErrorInfo><Message>'
+            'credential=DO_NOT_EXPORT CI_SAFE_DIAGNOSTIC:product_price_list_startup_sql_2714 private/path'
+            '</Message></ErrorInfo></Output></UnitTestResult>',
+            definition("fail", "GoymenERP.Tests.SafeDiagnostic", "Fails"),
+        )
+
+        summary, encoded = self._summary(source)
+
+        self.assertEqual(2, summary["schemaVersion"])
+        self.assertEqual(
+            [{
+                "testFqn": "GoymenERP.Tests.SafeDiagnostic.Fails",
+                "category": "assertion_or_test_failure",
+                "diagnosticCode": "product_price_list_startup_sql_2714",
+                "count": 1,
+            }],
+            summary["failureGroups"],
+        )
+        for forbidden in ("DO_NOT_EXPORT", "credential", "private/path", "CI_SAFE_DIAGNOSTIC"):
+            self.assertNotIn(forbidden, encoded)
+
+    def test_closed_marker_survives_stream_chunks_without_retaining_text(self) -> None:
+        source = trx(
+            '<UnitTestResult testId="fail" outcome="Failed"><Output><ErrorInfo><Message>'
+            'CI_SAFE_DIAGNOSTIC:product_price_list_startup_ef_db_update'
+            '</Message></ErrorInfo></Output></UnitTestResult>',
+            definition("fail", "GoymenERP.Tests.SafeDiagnostic", "Chunked"),
+        )
+
+        with mock.patch.object(SUMMARIZER, "STREAM_CHUNK_BYTES", 7):
+            summary, _ = self._summary(source)
+
+        self.assertEqual(
+            "product_price_list_startup_ef_db_update",
+            summary["failureGroups"][0]["diagnosticCode"],
+        )
+
+    def test_unknown_duplicate_and_late_markers_emit_no_diagnostic(self) -> None:
+        cases = (
+            "CI_SAFE_DIAGNOSTIC:not_allowlisted",
+            "CI_SAFE_DIAGNOSTIC:product_price_list_startup_unknown "
+            "CI_SAFE_DIAGNOSTIC:product_price_list_startup_unknown",
+            ("x" * (SUMMARIZER.MAX_DIAGNOSTIC_SCAN_CHARS + 1))
+            + "CI_SAFE_DIAGNOSTIC:product_price_list_startup_unknown",
+        )
+        for message in cases:
+            with self.subTest(message_length=len(message)):
+                summary, encoded = self._summary(trx(
+                    '<UnitTestResult testId="fail" outcome="Failed"><Output><ErrorInfo><Message>'
+                    + message
+                    + '</Message></ErrorInfo></Output></UnitTestResult>',
+                    definition("fail", "GoymenERP.Tests.SafeDiagnostic", "Ignored"),
+                ))
+                self.assertNotIn("diagnosticCode", summary["failureGroups"][0])
+                self.assertNotIn("CI_SAFE_DIAGNOSTIC", encoded)
+
+    def test_exact_scan_cap_keeps_a_complete_closed_marker(self) -> None:
+        marker = "CI_SAFE_DIAGNOSTIC:product_price_list_startup_sql_208\n"
+        message = marker + ("x" * (SUMMARIZER.MAX_DIAGNOSTIC_SCAN_CHARS - len(marker)))
+
+        summary, encoded = self._summary(trx(
+            '<UnitTestResult testId="fail" outcome="Failed"><Output><ErrorInfo><Message>'
+            + message
+            + '</Message></ErrorInfo></Output></UnitTestResult>',
+            definition("fail", "GoymenERP.Tests.SafeDiagnostic", "ExactCap"),
+        ))
+
+        self.assertEqual(
+            "product_price_list_startup_sql_208",
+            summary["failureGroups"][0]["diagnosticCode"],
+        )
+        self.assertNotIn("CI_SAFE_DIAGNOSTIC", encoded)
+
+    def test_scan_cap_overflow_discards_an_early_marker_and_late_duplicate(self) -> None:
+        first = "CI_SAFE_DIAGNOSTIC:product_price_list_startup_sql_208\n"
+        second = "CI_SAFE_DIAGNOSTIC:product_price_list_startup_sql_547\n"
+        message = (
+            first
+            + ("x" * (SUMMARIZER.MAX_DIAGNOSTIC_SCAN_CHARS - len(first)))
+            + second
+        )
+
+        summary, encoded = self._summary(trx(
+            '<UnitTestResult testId="fail" outcome="Failed"><Output><ErrorInfo><Message>'
+            + message
+            + '</Message></ErrorInfo></Output></UnitTestResult>',
+            definition("fail", "GoymenERP.Tests.SafeDiagnostic", "Overflow"),
+        ))
+
+        self.assertNotIn("diagnosticCode", summary["failureGroups"][0])
+        for forbidden in ("product_price_list_startup_sql_208", "product_price_list_startup_sql_547"):
+            self.assertNotIn(forbidden, encoded)
+
+    def test_marker_outside_the_exact_result_output_error_message_path_is_ignored(self) -> None:
+        source = trx(
+            '<UnitTestResult testId="fail" outcome="Failed"><Output><Wrapper><ErrorInfo><Message>'
+            'CI_SAFE_DIAGNOSTIC:product_price_list_startup_unknown'
+            '</Message></ErrorInfo></Wrapper></Output></UnitTestResult>',
+            definition("fail", "GoymenERP.Tests.SafeDiagnostic", "WrongPath"),
+        )
+
+        summary, encoded = self._summary(source)
+
+        self.assertNotIn("diagnosticCode", summary["failureGroups"][0])
+        self.assertNotIn("product_price_list_startup_unknown", encoded)
+
+    def test_failed_stdout_emits_exact_finance_and_product_phase_markers(self) -> None:
+        cases = (
+            (
+                "CI_SAFE_DIAGNOSTIC:acc_nj_sql_receipt_record_replay",
+                "acc_nj_sql_receipt_record_replay",
+            ),
+            (
+                "CI_SAFE_DIAGNOSTIC:product_technical_release_rollback_setup",
+                "product_technical_release_rollback_setup",
+            ),
+        )
+        for marker, expected in cases:
+            with self.subTest(marker=marker):
+                source = trx(
+                    '<UnitTestResult testId="fail" outcome="Failed"><Output><StdOut>'
+                    + marker
+                    + "\ncredential=DO_NOT_EXPORT"
+                    + '</StdOut></Output></UnitTestResult>',
+                    definition("fail", "GoymenERP.Tests.SafeDiagnostic", "StdOut"),
+                )
+
+                summary, encoded = self._summary(source)
+
+                self.assertEqual(expected, summary["failureGroups"][0]["diagnosticCode"])
+                for forbidden in ("DO_NOT_EXPORT", "credential", "CI_SAFE_DIAGNOSTIC"):
+                    self.assertNotIn(forbidden, encoded)
+
+    def test_nonfailed_wrong_path_duplicate_and_overflow_stdout_emit_no_diagnostic(self) -> None:
+        marker = "CI_SAFE_DIAGNOSTIC:acc_nj_sql_trial_balance"
+        cases = (
+            '<UnitTestResult testId="pass" outcome="Passed"><Output><StdOut>'
+            + marker + '</StdOut></Output></UnitTestResult>',
+            '<UnitTestResult testId="fail" outcome="Failed"><StdOut>'
+            + marker + '</StdOut></UnitTestResult>',
+            '<UnitTestResult testId="fail" outcome="Failed"><Output><StdOut>'
+            + marker + "\n" + marker + '</StdOut></Output></UnitTestResult>',
+            '<UnitTestResult testId="fail" outcome="Failed"><Output><StdOut>'
+            + marker + "\n" + ("x" * SUMMARIZER.MAX_DIAGNOSTIC_SCAN_CHARS)
+            + '</StdOut></Output></UnitTestResult>',
+        )
+        for index, result in enumerate(cases):
+            with self.subTest(index=index):
+                summary, encoded = self._summary(trx(
+                    result,
+                    definition(
+                        "pass" if index == 0 else "fail",
+                        "GoymenERP.Tests.SafeDiagnostic",
+                        "IgnoredStdOut",
+                    ),
+                ))
+                if index == 0:
+                    self.assertEqual([], summary["failureGroups"])
+                else:
+                    self.assertNotIn("diagnosticCode", summary["failureGroups"][0])
+                self.assertNotIn("CI_SAFE_DIAGNOSTIC", encoded)
+
+    def test_stdout_with_an_unexpected_child_emits_no_diagnostic(self) -> None:
+        source = trx(
+            '<UnitTestResult testId="fail" outcome="Failed"><Output><StdOut>'
+            'CI_SAFE_DIAGNOSTIC:acc_nj_sql_<Wrapper>trial_</Wrapper>balance'
+            '</StdOut></Output></UnitTestResult>',
+            definition("fail", "GoymenERP.Tests.SafeDiagnostic", "ChildXml"),
+        )
+
+        summary, encoded = self._summary(source)
+
+        self.assertNotIn("diagnosticCode", summary["failureGroups"][0])
+        self.assertNotIn("CI_SAFE_DIAGNOSTIC", encoded)
+
+    def test_stdout_overflow_invalidates_an_earlier_message_diagnostic(self) -> None:
+        message_marker = "CI_SAFE_DIAGNOSTIC:product_price_list_startup_sql_208"
+        stdout_marker = "CI_SAFE_DIAGNOSTIC:acc_nj_sql_trial_balance\n"
+        source = trx(
+            '<UnitTestResult testId="fail" outcome="Failed"><Output>'
+            '<ErrorInfo><Message>' + message_marker + '</Message></ErrorInfo>'
+            '<StdOut>' + stdout_marker
+            + ("x" * SUMMARIZER.MAX_DIAGNOSTIC_SCAN_CHARS)
+            + '</StdOut></Output></UnitTestResult>',
+            definition("fail", "GoymenERP.Tests.SafeDiagnostic", "OverflowAcrossChannels"),
+        )
+
+        summary, encoded = self._summary(source)
+
+        self.assertNotIn("diagnosticCode", summary["failureGroups"][0])
+        self.assertNotIn("CI_SAFE_DIAGNOSTIC", encoded)
+
+    def test_ambiguous_stdout_invalidates_a_later_message_diagnostic(self) -> None:
+        stdout_marker = "CI_SAFE_DIAGNOSTIC:acc_nj_sql_trial_balance"
+        message_marker = "CI_SAFE_DIAGNOSTIC:product_price_list_startup_sql_208"
+        source = trx(
+            '<UnitTestResult testId="fail" outcome="Failed"><Output><StdOut>'
+            + stdout_marker + "\n" + stdout_marker
+            + '</StdOut><ErrorInfo><Message>' + message_marker
+            + '</Message></ErrorInfo></Output></UnitTestResult>',
+            definition("fail", "GoymenERP.Tests.SafeDiagnostic", "AmbiguousAcrossChannels"),
+        )
+
+        summary, encoded = self._summary(source)
+
+        self.assertNotIn("diagnosticCode", summary["failureGroups"][0])
+        self.assertNotIn("CI_SAFE_DIAGNOSTIC", encoded)
+
+    def test_conflicting_message_and_stdout_markers_emit_no_diagnostic(self) -> None:
+        source = trx(
+            '<UnitTestResult testId="fail" outcome="Failed"><Output><StdOut>'
+            'CI_SAFE_DIAGNOSTIC:acc_nj_sql_trial_balance'
+            '</StdOut><ErrorInfo><Message>'
+            'CI_SAFE_DIAGNOSTIC:product_price_list_startup_sql_208'
+            '</Message></ErrorInfo></Output></UnitTestResult>',
+            definition("fail", "GoymenERP.Tests.SafeDiagnostic", "ConflictingChannels"),
+        )
+
+        summary, encoded = self._summary(source)
+
+        self.assertNotIn("diagnosticCode", summary["failureGroups"][0])
+        self.assertNotIn("CI_SAFE_DIAGNOSTIC", encoded)
+
     def test_streaming_bounds_reject_result_and_metadata_overflow(self) -> None:
         cases = (
             (
