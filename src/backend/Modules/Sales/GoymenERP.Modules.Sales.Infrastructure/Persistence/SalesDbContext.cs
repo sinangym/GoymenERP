@@ -71,6 +71,10 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
         "([Outcome] = 1 AND [DraftId] IS NOT NULL AND [DraftId] <> '00000000-0000-0000-0000-000000000000' AND [RefusalJson] IS NULL) "
         + "OR ([Outcome] = 2 AND ([DraftId] IS NULL OR [DraftId] <> '00000000-0000-0000-0000-000000000000') "
         + "AND [RefusalJson] IS NOT NULL AND ISJSON([RefusalJson]) = 1)";
+    internal const string AttemptResultConstraint =
+        "([CommandName] = N'sales.order-draft.approve-price-floor-exceptions.v1' AND [Outcome] = 1 "
+        + "AND [ResultJson] IS NOT NULL AND ISJSON([ResultJson]) = 1) OR "
+        + "(([CommandName] <> N'sales.order-draft.approve-price-floor-exceptions.v1' OR [Outcome] <> 1) AND [ResultJson] IS NULL)";
 
     internal DbSet<DraftNumberRow> DraftNumbers => Set<DraftNumberRow>();
 
@@ -319,6 +323,7 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
             table.HasCheckConstraint("CK_DraftAttempts_Hashes", "LEN([IdempotencyKeyHash]) = 64 AND LEN([RequestHash]) = 64");
             // ADR-011 §7: new mutation refusals bind to their draft; legacy null refusals remain replayable.
             table.HasCheckConstraint("CK_DraftAttempts_Outcome", AttemptOutcomeConstraint);
+            table.HasCheckConstraint("CK_DraftAttempts_Result", AttemptResultConstraint);
         });
         entity.HasKey(x => new { x.CompanyId, x.CommandName, x.IdempotencyKeyHash });
         entity.Property(x => x.CommandName).HasMaxLength(160).UseCollation(IdentityCollation).IsRequired();
@@ -327,6 +332,7 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
         entity.Property(x => x.ActorId).HasMaxLength(128).IsRequired();
         entity.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
         entity.Property(x => x.RefusalJson).HasColumnType("nvarchar(max)");
+        entity.Property(x => x.ResultJson).HasColumnType("nvarchar(max)");
         entity.HasIndex(x => new { x.CompanyId, x.DraftId }).IsUnique().HasDatabaseName("UX_DraftAttempts_DraftId")
             .HasFilter(CreateAttemptFilter);
         entity.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)

@@ -1433,6 +1433,7 @@ public sealed partial class SalesDraftServiceTests
         public HashSet<string> Denied { get; } = new(StringComparer.Ordinal);
         /// <summary>A name granted at first and lost from the given measurement on (the late-loss fence).</summary>
         public (string Permission, int AfterCall)? LostLater { get; set; }
+        public Action<string, int>? OnRead { get; set; }
         public List<string> Measured { get; } = [];
 
         public Task<PermissionScope> RevalidatePermissionScopeAsync(string permission, Guid companyId, CancellationToken cancellationToken = default)
@@ -1442,6 +1443,7 @@ public sealed partial class SalesDraftServiceTests
             Measured.Add(permission);
             var granted = Granted && !Denied.Contains(permission)
                 && !(LostLater is { } lost && lost.Permission == permission && Calls > lost.AfterCall);
+            OnRead?.Invoke(permission, Calls);
             return Task.FromResult(new PermissionScope(granted, CompanyWide, new HashSet<string>(["ROLE-B", "ROLE-A"], StringComparer.Ordinal),
                 new HashSet<Guid>(), new HashSet<Guid>(), new HashSet<Guid>()));
         }
@@ -1570,7 +1572,7 @@ public sealed partial class SalesDraftServiceTests
     /// <summary>An in-memory store with the contract's replay semantics; no database, no owner rule.</summary>
     private sealed class FakeStore : ISalesOrderDraftStore
     {
-        private readonly Dictionary<(string Command, string Key), (string Actor, string Hash, SalesOrderDraft? Draft, SalesDraftTerminalRefusal? Refusal, string Correlation)> _attempts = [];
+        private readonly Dictionary<(string Command, string Key), (string Actor, string Hash, SalesOrderDraft? Draft, SalesDraftTerminalRefusal? Refusal, string Correlation, SalesDraftReplayResult? Result)> _attempts = [];
         private readonly List<SalesOrderDraft> _drafts = [];
         public List<SalesDraftWriteEnvelope> Envelopes { get; } = [];
         public int Attempts => _attempts.Count;
@@ -1581,7 +1583,7 @@ public sealed partial class SalesDraftServiceTests
         public string? Fault { get; set; }
         /// <summary>Runs when the store is about to commit: what changes in the world between the last fence and the commit.</summary>
         public Action? OnStore { get; set; }
-        /// <summary>A same-key race lost once: "draft-at-store" (the winner stored a draft), "empty-at-store" (nothing under the key), "refusal-at-record" (the winner recorded the refusal).</summary>
+        /// <summary>A same-key race lost once: "draft-at-store" (the winner stored a draft), "empty-at-store" (nothing under the key), "refusal-at-record" (the winner recorded the refusal), or "floor-result-at-refusal" (the winner's immutable floor result exists while the live draft has advanced).</summary>
         public string? Race { get; set; }
         public SalesOrderDraft? Winner { get; private set; }
 
@@ -1591,7 +1593,8 @@ public sealed partial class SalesDraftServiceTests
 
         private async Task<SalesDraftStateResult?> UpdateDraftStateAsyncCore(SalesDraftWriteEnvelope envelope, string requestHash, string commandName,
             Guid draftId, Action<SalesOrderDraft, DateTimeOffset> mutate, SalesDraftStateAudit audit,
-            Func<CancellationToken, Task>? beforeWrite, CancellationToken cancellationToken)
+            Func<CancellationToken, Task>? beforeWrite, CancellationToken cancellationToken,
+            Func<SalesOrderDraft, SalesDraftReplayResult?>? replayResult = null)
         {
             if (Fault is not null) throw new SalesDraftStoreException(Fault, "synthetic");
             if (_attempts.TryGetValue((commandName, envelope.IdempotencyKey), out var attempt))
@@ -1599,7 +1602,7 @@ public sealed partial class SalesDraftServiceTests
                 if (attempt.Actor != envelope.ActorId || attempt.Hash != requestHash)
                     throw new SalesDraftStoreException(SalesDraftStoreCodes.SameKeyPayloadMismatch, "synthetic");
                 if (attempt.Draft is null) throw new SalesDraftStoreException(SalesDraftStoreCodes.ConcurrentChange, "synthetic refusal under the key");
-                return new SalesDraftStateResult(attempt.Draft, SalesDraftWriteOutcome.Replayed, attempt.Correlation);
+                return new SalesDraftStateResult(attempt.Draft, SalesDraftWriteOutcome.Replayed, attempt.Correlation, attempt.Result);
             }
 
             var draft = _drafts.SingleOrDefault(candidate => candidate.Id == draftId);
@@ -1614,22 +1617,24 @@ public sealed partial class SalesDraftServiceTests
 
             var before = draft.Version;
             mutate(draft, TimeProvider.System.GetUtcNow());
-            _attempts[(commandName, envelope.IdempotencyKey)] = (envelope.ActorId, requestHash, draft, null, envelope.CorrelationId);
+            var storedResult = replayResult?.Invoke(draft);
+            _attempts[(commandName, envelope.IdempotencyKey)] = (envelope.ActorId, requestHash, draft, null, envelope.CorrelationId, storedResult);
             Transitions.Add((commandName, draftId, envelope, audit, before, draft.Version));
-            return new SalesDraftStateResult(draft, SalesDraftWriteOutcome.Recorded, envelope.CorrelationId);
+            return new SalesDraftStateResult(draft, SalesDraftWriteOutcome.Recorded, envelope.CorrelationId, storedResult);
         }
 
         public List<ApprovedRevisionSnapshot> Archived { get; } = [];
 
         public async Task<SalesDraftStateResult?> ReviseDraftCommercialAsync(SalesDraftWriteEnvelope envelope, string requestHash, string commandName,
             Guid draftId, Func<SalesOrderDraft, DateTimeOffset, ApprovedRevisionSnapshot?> mutate, SalesDraftStateAudit audit,
-            Func<CancellationToken, Task> beforeWrite, CancellationToken cancellationToken = default)
+            Func<CancellationToken, Task> beforeWrite, CancellationToken cancellationToken = default,
+            Func<SalesOrderDraft, SalesDraftReplayResult?>? replayResult = null)
         {
             if (commandName is not (SalesDraftCommands.ReviseCommercialV1 or SalesDraftCommands.ApprovePriceFloorExceptionsV1))
                 throw new ArgumentException("wrong command", nameof(commandName));
             ApprovedRevisionSnapshot? archived = null;
             var result = await UpdateDraftStateAsyncCore(envelope, requestHash, commandName, draftId,
-                (draft, now) => archived = mutate(draft, now), audit, beforeWrite, cancellationToken);
+                (draft, now) => archived = mutate(draft, now), audit, beforeWrite, cancellationToken, replayResult);
             if (archived is not null) Archived.Add(archived);
             return result;
         }
@@ -1710,7 +1715,7 @@ public sealed partial class SalesDraftServiceTests
                     Winner.RequireStorable();
                     Winner.RestoreCreator(envelope.ActorId);
                     _drafts.Add(Winner);
-                    _attempts[(SalesDraftCommands.CreateV1, envelope.IdempotencyKey)] = (envelope.ActorId, requestHash, Winner, null, "winner-correlation");
+                    _attempts[(SalesDraftCommands.CreateV1, envelope.IdempotencyKey)] = (envelope.ActorId, requestHash, Winner, null, "winner-correlation", null);
                 }
 
                 throw new SalesDraftStoreException(SalesDraftStoreCodes.ConcurrentChange, "synthetic race");
@@ -1722,7 +1727,7 @@ public sealed partial class SalesDraftServiceTests
             // live aggregate, so the creator is fixed here, once, at the create.
             draft.RestoreCreator(envelope.ActorId);
             _drafts.Add(draft);
-            _attempts[(SalesDraftCommands.CreateV1, envelope.IdempotencyKey)] = (envelope.ActorId, requestHash, draft, null, envelope.CorrelationId);
+            _attempts[(SalesDraftCommands.CreateV1, envelope.IdempotencyKey)] = (envelope.ActorId, requestHash, draft, null, envelope.CorrelationId, null);
             Envelopes.Add(envelope);
             return Task.FromResult(new SalesDraftStoreResult(draft, SalesDraftWriteOutcome.Recorded, envelope.CorrelationId));
         }
@@ -1735,7 +1740,7 @@ public sealed partial class SalesDraftServiceTests
             if (!_attempts.TryGetValue((commandName, envelope.IdempotencyKey), out var attempt)) return Task.FromResult<SalesDraftReplay?>(null);
             if (attempt.Actor != envelope.ActorId || attempt.Hash != requestHash)
                 throw new SalesDraftStoreException(SalesDraftStoreCodes.SameKeyPayloadMismatch, "synthetic");
-            return Task.FromResult<SalesDraftReplay?>(new SalesDraftReplay(attempt.Draft, attempt.Refusal, attempt.Correlation));
+            return Task.FromResult<SalesDraftReplay?>(new SalesDraftReplay(attempt.Draft, attempt.Refusal, attempt.Correlation, attempt.Result));
         }
 
         public Task RecordRefusalAsync(SalesDraftWriteEnvelope envelope, string requestHash, SalesDraftTerminalRefusal refusal,
@@ -1744,13 +1749,22 @@ public sealed partial class SalesDraftServiceTests
             if (Race == "refusal-at-record")
             {
                 Race = null;
-                _attempts[(commandName, envelope.IdempotencyKey)] = (envelope.ActorId, requestHash, null, refusal, "winner-correlation");
+                _attempts[(commandName, envelope.IdempotencyKey)] = (envelope.ActorId, requestHash, null, refusal, "winner-correlation", null);
                 throw new SalesDraftStoreException(SalesDraftStoreCodes.ConcurrentChange, "synthetic race");
+            }
+
+            if (Race == "floor-result-at-refusal")
+            {
+                Race = null;
+                var winner = _attempts.Values.Single(attempt => attempt.Result is not null);
+                _attempts[(commandName, envelope.IdempotencyKey)] =
+                    (envelope.ActorId, requestHash, winner.Draft, null, "winner-floor-correlation", winner.Result);
+                throw new SalesDraftStoreException(SalesDraftStoreCodes.ConcurrentChange, "synthetic floor-result race");
             }
 
             if (_attempts.ContainsKey((commandName, envelope.IdempotencyKey)))
                 throw new SalesDraftStoreException(SalesDraftStoreCodes.ConcurrentChange, "synthetic: the key already holds an attempt");
-            _attempts[(commandName, envelope.IdempotencyKey)] = (envelope.ActorId, requestHash, null, refusal, envelope.CorrelationId);
+            _attempts[(commandName, envelope.IdempotencyKey)] = (envelope.ActorId, requestHash, null, refusal, envelope.CorrelationId, null);
             Refusals.Add((envelope, refusal, draftId));
             return Task.CompletedTask;
         }

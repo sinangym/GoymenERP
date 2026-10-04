@@ -6,7 +6,7 @@
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import detailResponseRaw from './examples/detail-response.json?raw'
 import { SALES_PRICE_FLOOR_EXCEPTION_APPROVE_CAPABILITY, SALES_PRICE_WRITE_CAPABILITY } from './capabilities'
@@ -147,6 +147,57 @@ describe('AT-018 list price on the order line', () => {
     await waitFor(() => expect(posts).toHaveLength(3))
     expect(new Set(posts.map((call) => call.idempotencyKey)).size).toBe(1)
     expect(new Set(posts.map((call) => call.body)).size).toBe(1)
+  })
+
+  it.each([401, 403])('reports a current floor-approval %s through AuthBoundary and closes protected detail', async (status) => {
+    installFetch({
+      capabilities: [...ALL_SALES, SALES_PRICE_FLOOR_EXCEPTION_APPROVE_CAPABILITY],
+      onDetail: () => json(detail('3', { unitPrice: '39000', priceUnitId: KG })),
+      onLinePricing: () => json(pricing('3', {
+        unitPrice: '39000', priceUnitId: KG, priceSource: 'Manual', priceReference: reference, netUnitPrice: '39000',
+        floorException: { requestedBy: 'maker', requestedAtUtc: '2026-10-01T08:00:00Z', approvedBy: null,
+          approvedAtUtc: null, reason: null },
+      })),
+      onPriceFloorExceptionApproval: () => json({ status, title: 'SENTETIK refusal' }, status),
+    })
+    renderSalesApp(path)
+
+    const control = await screen.findByTestId('sales-price-floor-approval')
+    await userEvent.type(within(control).getByLabelText(P.floorApproval.reason(1)), 'SENTETIK sözleşme')
+    await userEvent.click(within(control).getByRole('button', { name: P.floorApproval.approve }))
+
+    expect(await screen.findByText(status === 401 ? 'Oturum sonlandı — oturum' : 'Bulunamadı — sayfa')).toBeTruthy()
+    expect(screen.queryByTestId('sales-price-floor-approval')).toBeNull()
+  })
+
+  it('discards a late result from the departed route and keeps the same uncertain key for retry', async () => {
+    const late = deferred<Response>()
+    installFetch({
+      capabilities: [...ALL_SALES, SALES_PRICE_FLOOR_EXCEPTION_APPROVE_CAPABILITY],
+      onDetail: () => json(detail('3', { unitPrice: '39000', priceUnitId: KG })),
+      onLinePricing: () => json(pricing('3', {
+        unitPrice: '39000', priceUnitId: KG, priceSource: 'Manual', priceReference: reference, netUnitPrice: '39000',
+        floorException: { requestedBy: 'maker', requestedAtUtc: '2026-10-01T08:00:00Z', approvedBy: null,
+          approvedAtUtc: null, reason: null },
+      })),
+      onPriceFloorExceptionApproval: () => late.promise,
+    })
+    const app = renderSalesApp(path)
+    const control = await screen.findByTestId('sales-price-floor-approval')
+    await userEvent.type(within(control).getByLabelText(P.floorApproval.reason(1)), 'SENTETIK sözleşme')
+    await userEvent.click(within(control).getByRole('button', { name: P.floorApproval.approve }))
+
+    await act(async () => { await app.router.navigate('/satis/siparisler') })
+    await act(async () => {
+      late.resolve(json({ detail: detail('4', { unitPrice: '39000', priceUnitId: KG }), isReplay: false,
+        originalCorrelationId: 'late-old-route' }, 200))
+      await Promise.resolve()
+    })
+    await act(async () => { await app.router.navigate(path) })
+
+    const reopened = await screen.findByTestId('sales-price-floor-approval')
+    expect(await within(reopened).findByText(P.floorApproval.unknown)).toBeTruthy()
+    expect(within(reopened).getByRole('button', { name: P.floorApproval.retry })).toBeTruthy()
   })
 
   it('accepts the existing 4000-character approval reason bound and rejects a larger response', () => {

@@ -210,7 +210,54 @@ public sealed partial class SalesDraftService(
                 originalCorrelationId: replay.OriginalCorrelationId);
         }
 
+        if (replay.Result is { } result)
+        {
+            return await ReplayedResultAsync(scope, result, replay.OriginalCorrelationId, cancellationToken);
+        }
+
         return Response(scope, replay.Draft!, true, replay.OriginalCorrelationId, await DiscloseAsync(scope, cancellationToken));
+    }
+
+    private async Task<SalesOrderDraftResponse> ReplayedResultAsync(Scope scope, SalesDraftReplayResult result,
+        string originalCorrelationId, CancellationToken cancellationToken)
+    {
+        var refreshed = await ReplayDisclosureAsync(scope, cancellationToken);
+        var disclosure = refreshed.Disclosure;
+        var detail = disclosure == SalesPriceDisclosure.Visible ? result.Visible : result.Withheld;
+        return new SalesOrderDraftResponse(
+            detail with { IsOwnDecisionRestricted = detail.IsOwnDraft && refreshed.Scope.IsSalesSupport },
+            true,
+            originalCorrelationId);
+    }
+
+    /// <summary>
+    /// A persisted floor result keeps its original business response, but neither the non-price order data nor the current
+    /// own-decision restriction crosses an identity/company drift. Persona is refreshed first; the price read is the final
+    /// authority await. A stable caller without that separate read still receives the deliberate Withheld representation.
+    /// </summary>
+    private async Task<(SalesPriceDisclosure Disclosure, Scope Scope)> ReplayDisclosureAsync(Scope scope,
+        CancellationToken cancellationToken)
+    {
+        var permission = bindings.PriceReadPermission;
+        if (string.IsNullOrWhiteSpace(permission) || !ErpPermissions.IsKnown(permission))
+        {
+            throw new SalesDraftServiceException(503, SalesDraftProblemCodesV1.PermissionUnregistered);
+        }
+
+        var currentRoleCodes = await activeRoleCodes.GetActiveRoleCodesAsync(scope.CompanyId, cancellationToken);
+        if (!Matches(scope.CompanyId, scope.ActorId))
+        {
+            throw new SalesDraftServiceException(403, "forbidden");
+        }
+
+        var read = await authority.RevalidatePermissionScopeAsync(permission, scope.CompanyId, cancellationToken);
+        if (!Matches(scope.CompanyId, scope.ActorId))
+        {
+            throw new SalesDraftServiceException(403, "forbidden");
+        }
+
+        return (read.IsGranted && read.IsCompanyWide ? SalesPriceDisclosure.Visible : SalesPriceDisclosure.Withheld,
+            scope with { IsSalesSupport = currentRoleCodes.Contains(ErpPersonaRoleCodes.SalesSupport) });
     }
 
     /// <summary>Raised inside the owner reads when another caller of the same key stored a draft first; carries that draft's replay.</summary>
@@ -527,19 +574,36 @@ public sealed partial class SalesDraftService(
                 }, audit, async writeCancellationToken =>
                 {
                     scope = await RequireStillAsync(scope, permission, writeCancellationToken);
-                }, cancellationToken);
+                }, cancellationToken,
+                draft => new SalesDraftReplayResult(
+                    Detail(draft, SalesPriceDisclosure.Visible, IsOwn(scope, draft), IsOwn(scope, draft) && scope.IsSalesSupport),
+                    Detail(draft, SalesPriceDisclosure.Withheld, IsOwn(scope, draft), IsOwn(scope, draft) && scope.IsSalesSupport)));
         }
         catch (SalesVersionConflictException exception)
         {
-            throw await TerminalAsync(scope, envelope, requestHash, new SalesDraftTerminalRefusal(409,
-                SalesDraftProblemCodesV1.VersionConflict, [new("expectedVersion", exception.Code)]), cancellationToken,
-                commandName, draftId);
+            try
+            {
+                throw await TerminalAsync(scope, envelope, requestHash, new SalesDraftTerminalRefusal(409,
+                    SalesDraftProblemCodesV1.VersionConflict, [new("expectedVersion", exception.Code)]), cancellationToken,
+                    commandName, draftId);
+            }
+            catch (RaceWon won)
+            {
+                return won.Response;
+            }
         }
         catch (SalesRuleException exception) when (exception.Code == SalesRuleCodes.StateConflict)
         {
-            throw await TerminalAsync(scope, envelope, requestHash, new SalesDraftTerminalRefusal(409,
-                SalesDraftProblemCodesV1.StateConflict, [new("approvalState", exception.Code)]), cancellationToken,
-                commandName, draftId);
+            try
+            {
+                throw await TerminalAsync(scope, envelope, requestHash, new SalesDraftTerminalRefusal(409,
+                    SalesDraftProblemCodesV1.StateConflict, [new("approvalState", exception.Code)]), cancellationToken,
+                    commandName, draftId);
+            }
+            catch (RaceWon won)
+            {
+                return won.Response;
+            }
         }
         catch (SalesRuleException exception)
         {
@@ -565,8 +629,9 @@ public sealed partial class SalesDraftService(
         }
 
         if (result is null) throw new SalesDraftServiceException(404, "not_found");
-        return Response(scope, result.Draft, result.Outcome == SalesDraftWriteOutcome.Replayed,
-            result.OriginalCorrelationId, await DiscloseAsync(scope, cancellationToken));
+        return result.Outcome == SalesDraftWriteOutcome.Replayed && result.Result is { } replayed
+            ? await ReplayedResultAsync(scope, replayed, result.OriginalCorrelationId, cancellationToken)
+            : Response(scope, result.Draft, false, result.OriginalCorrelationId, await DiscloseAsync(scope, cancellationToken));
     }
 
     /// <summary>The field a revision refusal is answered on: the line's index in the request and the field its code is about, else the whole `lines` member.</summary>
@@ -1418,6 +1483,11 @@ public sealed partial class SalesDraftService(
                 {
                     return new SalesDraftServiceException(recorded.Status, recorded.Code, recorded.Errors, isReplay: true,
                         originalCorrelationId: won.OriginalCorrelationId);
+                }
+
+                if (commandName == SalesDraftCommands.ApprovePriceFloorExceptionsV1 && won.Result is { } result)
+                {
+                    throw new RaceWon(await ReplayedResultAsync(scope, result, won.OriginalCorrelationId, cancellationToken));
                 }
 
                 throw new RaceWon(Response(scope, won.Draft!, true, won.OriginalCorrelationId, await DiscloseAsync(scope, cancellationToken)));

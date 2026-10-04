@@ -170,6 +170,7 @@ internal sealed class DraftAttemptRow : ISalesTenantRow
     public int Outcome { get; set; }
     public Guid? DraftId { get; set; }
     public string? RefusalJson { get; set; }
+    public string? ResultJson { get; set; }
     public string CorrelationId { get; set; } = string.Empty;
     public DateTimeOffset RecordedAtUtc { get; set; }
 }

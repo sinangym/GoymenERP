@@ -125,7 +125,10 @@ public sealed record SalesDraftStoreResult(SalesOrderDraft Draft, SalesDraftWrit
 public sealed record SalesDraftTerminalRefusal(int Status, string Code, IReadOnlyList<SalesDraftFieldError> Errors);
 
 /// <summary>What the attempt key already holds: the stored draft, or the recorded terminal refusal — never both.</summary>
-public sealed record SalesDraftReplay(SalesOrderDraft? Draft, SalesDraftTerminalRefusal? Refusal, string OriginalCorrelationId);
+public sealed record SalesDraftReplayResult(SalesOrderDraftDetailView Visible, SalesOrderDraftDetailView Withheld);
+
+public sealed record SalesDraftReplay(SalesOrderDraft? Draft, SalesDraftTerminalRefusal? Refusal, string OriginalCorrelationId,
+    SalesDraftReplayResult? Result = null);
 
 /// <summary>One page of the company's drafts, newest first (createdAtUtc desc, id desc); <see cref="NextCursor"/> null is the end (#257).</summary>
 public sealed record SalesDraftPage(IReadOnlyList<SalesOrderDraft> Items, string? NextCursor);
@@ -144,7 +147,8 @@ public sealed record SalesDraftStateAudit(string EventType, string Operation, st
 /// that first recorded it. A replay answers the draft as it is NOW (the persisted record), marked
 /// as a replay with its first correlation — the Counterparty / Manufacturing pattern.
 /// </summary>
-public sealed record SalesDraftStateResult(SalesOrderDraft Draft, SalesDraftWriteOutcome Outcome, string OriginalCorrelationId);
+public sealed record SalesDraftStateResult(SalesOrderDraft Draft, SalesDraftWriteOutcome Outcome, string OriginalCorrelationId,
+    SalesDraftReplayResult? Result = null);
 
 /// <summary>
 /// The persistent draft store of the server-resolved company (SALES-P2 implements it; SALES-P1
@@ -227,7 +231,8 @@ public interface ISalesOrderDraftStore
     /// </summary>
     Task<SalesDraftStateResult?> ReviseDraftCommercialAsync(SalesDraftWriteEnvelope envelope, string requestHash, string commandName,
         Guid draftId, Func<SalesOrderDraft, DateTimeOffset, ApprovedRevisionSnapshot?> mutate, SalesDraftStateAudit audit,
-        Func<CancellationToken, Task> beforeWrite, CancellationToken cancellationToken = default);
+        Func<CancellationToken, Task> beforeWrite, CancellationToken cancellationToken = default,
+        Func<SalesOrderDraft, SalesDraftReplayResult?>? replayResult = null);
 
     /// <summary>
     /// DEC-SAL-003: the delivery-schedule update, one save. The same key rules as a state command; the domain decides
@@ -322,7 +327,10 @@ public static class SalesDraftRequestHash
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentException.ThrowIfNullOrWhiteSpace(commandName);
-        return Hash(JsonSerializer.Serialize(new { command = commandName, draftId, request.ExpectedVersion, request.Lines }, SalesDraftJson.Options));
+        var lines = request.Lines?.Select(line => new CommercialRevisionLineHashV1(
+            line.LineId, line.UnitPrice, line.PriceUnitId, line.DiscountPercent, line.PriceReference,
+            line.DiscountAmount, line.SurchargePercent, line.SurchargeAmount)).ToArray();
+        return Hash(JsonSerializer.Serialize(new { command = commandName, draftId, request.ExpectedVersion, lines }, SalesDraftJson.Options));
     }
 
     /// <summary>Price-floor approval replay identity: command, draft, expected version and every line/reason in request order.</summary>
@@ -382,4 +390,21 @@ public static class SalesDraftRequestHash
 
     private static string Hash(string canonical) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical))).ToLowerInvariant();
+
+    // The first four members are the predecessor ReviseCommercial wire in its exact order. The four extension members
+    // participate when populated, but null extensions are omitted so an attempt recorded before the extension keeps the
+    // same canonical bytes and hash. This is deliberately local to this command; global JSON defaults do not change.
+    private sealed record CommercialRevisionLineHashV1(
+        Guid LineId,
+        string? UnitPrice,
+        Guid? PriceUnitId,
+        string? DiscountPercent,
+        [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+        SalesDraftPriceReferenceRequestV1? PriceReference,
+        [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+        string? DiscountAmount,
+        [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+        string? SurchargePercent,
+        [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+        string? SurchargeAmount);
 }

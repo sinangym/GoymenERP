@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { DraftDetail, DraftMutation, DraftPriceFloorExceptionApprovalRequest } from './contract'
 import { sendDraftPriceFloorExceptionApproval } from './api'
 import { SALES_PRICE_FLOOR_EXCEPTION_APPROVE_CAPABILITY } from './capabilities'
@@ -10,6 +10,7 @@ import {
 } from './orderAttempt'
 import { recallPriceFloorApproval, rememberPriceFloorApproval, type PriceFloorApprovalAttempt } from './pendingPriceFloorApprovals'
 import { hasCapability, type ShellState } from '../shell/shellState'
+import { useAuthBoundary } from '../shell/useAuthBoundary'
 import styles from './SalesPages.module.css'
 
 const scopeOf = (draftId: string) => `sales.draft.price-floor-exception-approval:${draftId}`
@@ -21,13 +22,19 @@ export function SalesDraftPriceFloorApproval({ shell, detail, companyId, onRecor
   readonly companyId: string
   readonly onRecorded: () => void
 }) {
+  const boundary = useAuthBoundary()
   const query = useDraftLinePricing(shell, detail, companyId)
-  const [initial] = useState(() => recallPriceFloorApproval(orderAttemptBinding(shell, scopeOf(detail.draft.id))))
+  const binding = orderAttemptBinding(shell, scopeOf(detail.draft.id))
+  const [initial] = useState(() => recallPriceFloorApproval(binding))
   const [attempt, setAttempt] = useState<PriceFloorApprovalAttempt>(() => initial ?? { phase: 'idle' })
   const [reasons, setReasons] = useState<Record<string, string>>(() => Object.fromEntries(
     initial === null || initial.phase === 'idle' ? [] : initial.snapshot.payload.lines.map((line) => [line.lineId, line.reason]),
   ))
   const attemptRef = useRef(attempt)
+  const bindingRef = useRef(binding)
+  const responseGeneration = useRef(0)
+  bindingRef.current = binding
+  useEffect(() => () => { responseGeneration.current += 1 }, [binding])
   const pricing = query.data?.type === 'ok-single' ? query.data.data : null
   const pending = pricing?.lines.filter((line) => line.floorException !== null && line.floorException.approvedBy === null) ?? []
   const unresolvedSnapshot = liveSnapshot(attempt)
@@ -44,6 +51,8 @@ export function SalesDraftPriceFloorApproval({ shell, detail, companyId, onRecor
   }
 
   async function send(snapshot: OrderAttemptSnapshot<DraftPriceFloorExceptionApprovalRequest>) {
+    const generation = ++responseGeneration.current
+    const security = boundary.capture()
     const previous = attemptRef.current
     const inFlight = beginSend<DraftPriceFloorExceptionApprovalRequest, DraftMutation>(snapshot)
     setAttemptState(inFlight)
@@ -51,7 +60,9 @@ export function SalesDraftPriceFloorApproval({ shell, detail, companyId, onRecor
     const outcome = await sendDraftPriceFloorExceptionApproval(snapshot.payload, {
       idempotencyKey: snapshot.key, companyId: snapshot.companyId, draftId: detail.draft.id,
     })
-    const next = applyOutcome(inFlight, snapshot, orderAttemptBinding(shell, scopeOf(detail.draft.id)), outcome, previous)
+    if (outcome.type === 'http' && (outcome.status === 401 || outcome.status === 403)) boundary.report(outcome.status, security)
+    if (generation !== responseGeneration.current || bindingRef.current !== snapshot.binding) return
+    const next = applyOutcome(inFlight, snapshot, bindingRef.current, outcome, previous)
     setAttemptState(next)
     rememberPriceFloorApproval(snapshot.binding, next)
     if (next.phase === 'completed' || (next.phase === 'failed' && next.failure === 'conflict')) onRecorded()
@@ -65,7 +76,6 @@ export function SalesDraftPriceFloorApproval({ shell, detail, companyId, onRecor
   function start() {
     const lines = pending.map((line) => ({ lineId: line.lineId, reason: (reasons[line.lineId] ?? '').trim() }))
     if (lines.some((line) => line.reason === '')) return
-    const binding = orderAttemptBinding(shell, scopeOf(detail.draft.id))
     if (binding === null) return
     const decision = decideSubmit(attemptRef.current, {
       path: `${detail.draft.id}/below-floor-exception-approval`, binding, companyId,
