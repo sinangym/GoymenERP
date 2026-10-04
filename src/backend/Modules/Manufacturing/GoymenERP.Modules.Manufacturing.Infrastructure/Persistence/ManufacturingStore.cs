@@ -113,6 +113,7 @@ public sealed class ManufacturingStore(
                 ExpectedLabelVersion = input.ExpectedLabelVersion,
             };
             CaptureTechnicalSnapshot(row, input.TechnicalSnapshot);
+            CaptureCommercialContext(row, input.CommercialContext);
             dbContext.PlanInputs.Add(row);
         }
 
@@ -367,6 +368,7 @@ public sealed class ManufacturingStore(
                 ExpectedLabelVersion = input.ExpectedLabelVersion!.Value,
             };
             CaptureTechnicalSnapshot(inputRow, input.TechnicalSnapshot);
+            CaptureCommercialContext(inputRow, input.CommercialContext);
             dbContext.PlanRevisionInputs.Add(inputRow);
         }
 
@@ -402,14 +404,14 @@ public sealed class ManufacturingStore(
         {
             new ManufacturingPlanRevision(0, 1, row.WorkCenterId,
                 [.. created.Select(input => new PlannedInput(input.ParentRollId, new Kilograms(input.PlannedKg),
-                    input.ExpectedLabelVersion, RestoreTechnicalSnapshot(input)))],
+                    input.ExpectedLabelVersion, RestoreTechnicalSnapshot(input), RestoreCommercialContext(input)))],
                 Target(row.TargetBasis, row.TargetKg), Reason: null, RevisedBy: null, row.CreatedAtUtc),
         };
         history.AddRange(headers.Select(header => new ManufacturingPlanRevision(header.RevisionNo, header.PlanVersion,
             header.WorkCenterId,
             [.. revisionInputs.Where(input => input.RevisionNo == header.RevisionNo)
                 .Select(input => new PlannedInput(input.ParentRollId, new Kilograms(input.PlannedKg),
-                    input.ExpectedLabelVersion, RestoreTechnicalSnapshot(input)))],
+                    input.ExpectedLabelVersion, RestoreTechnicalSnapshot(input), RestoreCommercialContext(input)))],
             Target(header.TargetBasis, header.TargetKg), header.Reason, header.RevisedBy, header.RevisedAtUtc)));
         return history;
     }
@@ -452,7 +454,7 @@ public sealed class ManufacturingStore(
         var sequence = 0;
         foreach (var input in order.PlannedInputs)
         {
-            dbContext.OrderInputs.Add(new OrderInputRow
+            var inputRow = new OrderInputRow
             {
                 CompanyId = order.CompanyId,
                 OrderId = order.Id,
@@ -460,7 +462,9 @@ public sealed class ManufacturingStore(
                 Sequence = ++sequence,
                 PlannedKg = input.PlannedMass.Value,
                 ExpectedLabelVersion = input.ExpectedLabelVersion,
-            });
+            };
+            CaptureCommercialContext(inputRow, input.CommercialContext);
+            dbContext.OrderInputs.Add(inputRow);
         }
 
         Audit(metadata, companyId, OrderEntityType, order.Id, "manufacturing.order.created.v1", "Create",
@@ -476,6 +480,7 @@ public sealed class ManufacturingStore(
                     input.ParentRollId,
                     kg = input.PlannedMass.Value,
                     input.ExpectedLabelVersion,
+                    commercial = input.CommercialContext,
                 }),
             }, Json),
             "Üretim emri kaydı");
@@ -888,13 +893,13 @@ public sealed class ManufacturingStore(
         // MFG-PLAN-EDIT: the revisions are replayed through the domain's own rule, in their order, before the approval.
         return ProductionPlan.Restore(row.Id, row.CompanyId, row.WorkCenterId, (ManufacturingProcess)row.Process,
             inputs.Select(input => new PlannedInput(input.ParentRollId, new Kilograms(input.PlannedKg),
-                input.ExpectedLabelVersion, RestoreTechnicalSnapshot(input))),
+                input.ExpectedLabelVersion, RestoreTechnicalSnapshot(input), RestoreCommercialContext(input))),
             Target(row.TargetBasis, row.TargetKg), row.ApprovedByUserId, row.ApprovedAtUtc, row.Version,
             Spec(lines, row.WindingTargetKg),
             headers.Select(header => new PlanRevisionContent(header.WorkCenterId,
                 [.. revisionInputs.Where(input => input.RevisionNo == header.RevisionNo)
                     .Select(input => new PlannedInput(input.ParentRollId, new Kilograms(input.PlannedKg),
-                        input.ExpectedLabelVersion, RestoreTechnicalSnapshot(input)))],
+                        input.ExpectedLabelVersion, RestoreTechnicalSnapshot(input), RestoreCommercialContext(input)))],
                 Target(header.TargetBasis, header.TargetKg))));
     }
 
@@ -982,7 +987,8 @@ public sealed class ManufacturingStore(
             row.Id, row.PlanId, row.CompanyId, row.WorkCenterId, (ManufacturingProcess)row.Process,
             Target(row.TargetBasis, row.TargetKg),
             inputs.Select(input => new PlannedInput(input.ParentRollId, new Kilograms(input.PlannedKg),
-                input.ExpectedLabelVersion)),
+                input.ExpectedLabelVersion, technicalSnapshot: null,
+                commercialContext: RestoreCommercialContext(input))),
             Of(FactKind.InputIssue).Select(fact => new InputIssue(fact.Id, fact.ParentRollId, new Kilograms(fact.MassKg),
                 fact.OccurredAtUtc)),
             Of(FactKind.InputReturn).Select(fact => new InputReturn(fact.Id, fact.ParentRollId, new Kilograms(fact.MassKg),
@@ -1102,6 +1108,16 @@ public sealed class ManufacturingStore(
                 AppendToken(builder, Canonical(technical.WidthMm));
             }
 
+            if (input.CommercialContext is { } commercial)
+            {
+                // A versioned extension: legacy/company-owned inputs append nothing, preserving their exact hashes.
+                builder.Append("#commercial.v1|");
+                AppendToken(builder, commercial.PartyId.ToString("D"));
+                AppendToken(builder, commercial.CompanyPartyAccountId.ToString("D"));
+                AppendToken(builder, commercial.PartyVersion);
+                AppendToken(builder, commercial.AccountVersion);
+            }
+
             builder.Append(';');
         }
 
@@ -1219,6 +1235,55 @@ public sealed class ManufacturingStore(
         }
     }
 
+    private static void CaptureCommercialContext(IPlanCommercialContextRow row,
+        PlanCommercialContextSnapshotV1? snapshot)
+    {
+        if (snapshot is null)
+        {
+            return;
+        }
+
+        row.CommercialPartyId = snapshot.PartyId;
+        row.CommercialCompanyPartyAccountId = snapshot.CompanyPartyAccountId;
+        row.CommercialPartyVersion = snapshot.PartyVersion;
+        row.CommercialAccountVersion = snapshot.AccountVersion;
+    }
+
+    private static PlanCommercialContextSnapshotV1? RestoreCommercialContext(IPlanCommercialContextRow row)
+    {
+        var values = new object?[]
+        {
+            row.CommercialPartyId,
+            row.CommercialCompanyPartyAccountId,
+            row.CommercialPartyVersion,
+            row.CommercialAccountVersion,
+        };
+        if (values.All(value => value is null))
+        {
+            return null;
+        }
+
+        if (values.Any(value => value is null))
+        {
+            throw new ManufacturingRuleException(ManufacturingRuleCodes.StoredRecordInvalid,
+                "Kayıtlı üretim girdisinin ticari bağlamı eksik.");
+        }
+
+        try
+        {
+            return new PlanCommercialContextSnapshotV1(
+                row.CommercialPartyId!.Value,
+                row.CommercialCompanyPartyAccountId!.Value,
+                row.CommercialPartyVersion!,
+                row.CommercialAccountVersion!);
+        }
+        catch (ArgumentException exception)
+        {
+            throw new ManufacturingRuleException(ManufacturingRuleCodes.StoredRecordInvalid,
+                $"Kayıtlı üretim girdisinin ticari bağlamı geçersiz ({exception.ParamName}).");
+        }
+    }
+
     private static string Hash(string canonical) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical))).ToLowerInvariant();
 
@@ -1237,6 +1302,7 @@ public sealed class ManufacturingStore(
                 kg = input.PlannedMass.Value,
                 input.ExpectedLabelVersion,
                 technical = input.TechnicalSnapshot,
+                commercial = input.CommercialContext,
             }),
             slitting = new
             {
@@ -1259,6 +1325,7 @@ public sealed class ManufacturingStore(
             kg = input.PlannedMass.Value,
             input.ExpectedLabelVersion,
             technical = input.TechnicalSnapshot,
+            commercial = input.CommercialContext,
         }),
         plan.ApprovedByUserId,
         plan.ApprovedAtUtc,

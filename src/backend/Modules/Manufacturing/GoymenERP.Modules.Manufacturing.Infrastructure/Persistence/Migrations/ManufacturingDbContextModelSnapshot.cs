@@ -373,6 +373,18 @@ partial class ManufacturingDbContextModelSnapshot : ModelSnapshot
 
         modelBuilder.Entity("GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.OrderInputRow", b =>
         {
+            b.Property<string>("CommercialAccountVersion")
+                .HasColumnType("nvarchar(max)");
+
+            b.Property<Guid?>("CommercialCompanyPartyAccountId")
+                .HasColumnType("uniqueidentifier");
+
+            b.Property<Guid?>("CommercialPartyId")
+                .HasColumnType("uniqueidentifier");
+
+            b.Property<string>("CommercialPartyVersion")
+                .HasColumnType("nvarchar(max)");
+
             b.Property<Guid>("CompanyId")
                 .HasColumnType("uniqueidentifier");
 
@@ -399,6 +411,10 @@ partial class ManufacturingDbContextModelSnapshot : ModelSnapshot
 
             b.ToTable("OrderInputs", "manufacturing", t =>
             {
+                t.HasCheckConstraint(
+                    "CK_OrderInputs_CommercialContext",
+                    "([CommercialPartyId] IS NULL AND [CommercialCompanyPartyAccountId] IS NULL AND [CommercialPartyVersion] IS NULL AND [CommercialAccountVersion] IS NULL) OR ([CommercialPartyId] IS NOT NULL AND [CommercialPartyId] <> '00000000-0000-0000-0000-000000000000' AND [CommercialCompanyPartyAccountId] IS NOT NULL AND [CommercialCompanyPartyAccountId] <> '00000000-0000-0000-0000-000000000000' AND [CommercialPartyVersion] IS NOT NULL AND DATALENGTH([CommercialPartyVersion]) > 0 AND [CommercialAccountVersion] IS NOT NULL AND DATALENGTH([CommercialAccountVersion]) > 0)");
+
                 t.HasCheckConstraint(
                     "CK_OrderInputs_LabelVersion",
                     "[ExpectedLabelVersion] IS NULL OR [ExpectedLabelVersion] >= 1");
@@ -530,6 +546,18 @@ partial class ManufacturingDbContextModelSnapshot : ModelSnapshot
 
         modelBuilder.Entity("GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.PlanInputRow", b =>
         {
+            b.Property<string>("CommercialAccountVersion")
+                .HasColumnType("nvarchar(max)");
+
+            b.Property<Guid?>("CommercialCompanyPartyAccountId")
+                .HasColumnType("uniqueidentifier");
+
+            b.Property<Guid?>("CommercialPartyId")
+                .HasColumnType("uniqueidentifier");
+
+            b.Property<string>("CommercialPartyVersion")
+                .HasColumnType("nvarchar(max)");
+
             b.Property<Guid>("CompanyId")
                 .HasColumnType("uniqueidentifier");
 
@@ -626,6 +654,10 @@ partial class ManufacturingDbContextModelSnapshot : ModelSnapshot
             b.ToTable("PlanInputs", "manufacturing", t =>
             {
                 t.HasCheckConstraint(
+                    "CK_PlanInputs_CommercialContext",
+                    "([CommercialPartyId] IS NULL AND [CommercialCompanyPartyAccountId] IS NULL AND [CommercialPartyVersion] IS NULL AND [CommercialAccountVersion] IS NULL) OR ([CommercialPartyId] IS NOT NULL AND [CommercialPartyId] <> '00000000-0000-0000-0000-000000000000' AND [CommercialCompanyPartyAccountId] IS NOT NULL AND [CommercialCompanyPartyAccountId] <> '00000000-0000-0000-0000-000000000000' AND [CommercialPartyVersion] IS NOT NULL AND DATALENGTH([CommercialPartyVersion]) > 0 AND [CommercialAccountVersion] IS NOT NULL AND DATALENGTH([CommercialAccountVersion]) > 0)");
+
+                t.HasCheckConstraint(
                     "CK_PlanInputs_LabelVersion",
                     "[ExpectedLabelVersion] IS NULL OR [ExpectedLabelVersion] >= 1");
 
@@ -649,6 +681,18 @@ partial class ManufacturingDbContextModelSnapshot : ModelSnapshot
 
         modelBuilder.Entity("GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.PlanRevisionInputRow", b =>
         {
+            b.Property<string>("CommercialAccountVersion")
+                .HasColumnType("nvarchar(max)");
+
+            b.Property<Guid?>("CommercialCompanyPartyAccountId")
+                .HasColumnType("uniqueidentifier");
+
+            b.Property<Guid?>("CommercialPartyId")
+                .HasColumnType("uniqueidentifier");
+
+            b.Property<string>("CommercialPartyVersion")
+                .HasColumnType("nvarchar(max)");
+
             b.Property<Guid>("CompanyId")
                 .HasColumnType("uniqueidentifier");
 
@@ -747,6 +791,10 @@ partial class ManufacturingDbContextModelSnapshot : ModelSnapshot
 
             b.ToTable("PlanRevisionInputs", "manufacturing", t =>
             {
+                t.HasCheckConstraint(
+                    "CK_PlanRevisionInputs_CommercialContext",
+                    "([CommercialPartyId] IS NULL AND [CommercialCompanyPartyAccountId] IS NULL AND [CommercialPartyVersion] IS NULL AND [CommercialAccountVersion] IS NULL) OR ([CommercialPartyId] IS NOT NULL AND [CommercialPartyId] <> '00000000-0000-0000-0000-000000000000' AND [CommercialCompanyPartyAccountId] IS NOT NULL AND [CommercialCompanyPartyAccountId] <> '00000000-0000-0000-0000-000000000000' AND [CommercialPartyVersion] IS NOT NULL AND DATALENGTH([CommercialPartyVersion]) > 0 AND [CommercialAccountVersion] IS NOT NULL AND DATALENGTH([CommercialAccountVersion]) > 0)");
+
                 t.HasCheckConstraint("CK_PlanRevisionInputs_LabelVersion", "[ExpectedLabelVersion] >= 1");
 
                 t.HasCheckConstraint("CK_PlanRevisionInputs_Mass", "[PlannedKg] > 0");

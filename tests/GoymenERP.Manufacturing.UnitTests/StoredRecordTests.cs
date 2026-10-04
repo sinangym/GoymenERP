@@ -277,6 +277,42 @@ public sealed class StoredRecordTests
         Assert.NotEqual(ManufacturingStore.PlanHash(captured), ManufacturingStore.PlanHash(changedWidth));
     }
 
+    [Fact]
+    public void A_commercial_context_is_length_prefixed_plan_content_while_null_keeps_legacy_and_technical_hash_bytes()
+    {
+        var planId = Guid.NewGuid();
+        var technical = Snapshot(2m, 1500m);
+        var context = Commercial(" party:v01 ", "account:v02/α");
+        ProductionPlan Plan(PlanCommercialContextSnapshotV1? commercial) => new(
+            planId, Company, WorkCenter, ManufacturingProcess.Slitting,
+            [new PlannedInput(RollA, Kg(10_000m), 7, technical, commercial)]);
+
+        var withoutCommercial = Plan(null);
+        var captured = Plan(context);
+
+        Assert.Equal(ManufacturingStore.PlanHash(new ProductionPlan(
+            planId, Company, WorkCenter, ManufacturingProcess.Slitting,
+            [new PlannedInput(RollA, Kg(10_000m), 7, technical)])),
+            ManufacturingStore.PlanHash(withoutCommercial));
+        Assert.NotEqual(ManufacturingStore.PlanHash(withoutCommercial), ManufacturingStore.PlanHash(captured));
+        Assert.NotEqual(ManufacturingStore.PlanHash(captured),
+            ManufacturingStore.PlanHash(Plan(Commercial("party:v01", "account:v02/α"))));
+        Assert.NotEqual(ManufacturingStore.PlanHash(captured),
+            ManufacturingStore.PlanHash(Plan(new(context.PartyId, Guid.NewGuid(), context.PartyVersion,
+                context.AccountVersion))));
+        Assert.NotEqual(ManufacturingStore.PlanHash(captured),
+            ManufacturingStore.PlanHash(Plan(new(Guid.NewGuid(), context.CompanyPartyAccountId,
+                context.PartyVersion, context.AccountVersion))));
+        Assert.NotEqual(ManufacturingStore.PlanHash(captured),
+            ManufacturingStore.PlanHash(Plan(Commercial(context.PartyVersion, "account:v03/α"))));
+    }
+
+    private static PlanCommercialContextSnapshotV1 Commercial(string partyVersion, string accountVersion) => new(
+        Guid.Parse("60000000-0000-0000-0000-000000000001"),
+        Guid.Parse("60000000-0000-0000-0000-000000000002"),
+        partyVersion,
+        accountVersion);
+
     private static PlanTechnicalParameterSnapshotV1 Snapshot(decimal thicknessMm, decimal widthMm) => new(
         Guid.Parse("50000000-0000-0000-0000-000000000001"),
         "2",

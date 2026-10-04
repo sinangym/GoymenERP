@@ -108,7 +108,45 @@ public sealed class ManufacturingPersistenceModelTests
             migration => migration.EndsWith("_AddManufacturingOrderClosureDecision", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(),
             migration => migration.EndsWith("_AddManufacturingPlanTechnicalSnapshots", StringComparison.Ordinal));
+        Assert.Contains(context.Database.GetMigrations(),
+            migration => migration.EndsWith("_AddManufacturingCommercialContexts", StringComparison.Ordinal));
         Assert.False(context.Database.HasPendingModelChanges());
+    }
+
+    [Fact]
+    public void Plan_revision_and_order_inputs_store_one_nullable_all_or_none_commercial_context_without_truncation()
+    {
+        using var context = Context();
+        var model = context.GetService<IDesignTimeModel>().Model;
+
+        foreach (var (type, constraintName) in new[]
+        {
+            (typeof(PlanInputRow), "CK_PlanInputs_CommercialContext"),
+            (typeof(PlanRevisionInputRow), "CK_PlanRevisionInputs_CommercialContext"),
+            (typeof(OrderInputRow), "CK_OrderInputs_CommercialContext"),
+        })
+        {
+            var entity = model.FindEntityType(type)!;
+            foreach (var property in new[]
+            {
+                nameof(PlanInputRow.CommercialPartyId),
+                nameof(PlanInputRow.CommercialCompanyPartyAccountId),
+                nameof(PlanInputRow.CommercialPartyVersion),
+                nameof(PlanInputRow.CommercialAccountVersion),
+            })
+            {
+                Assert.True(entity.FindProperty(property)!.IsNullable);
+            }
+
+            Assert.Null(entity.FindProperty(nameof(PlanInputRow.CommercialPartyVersion))!.GetMaxLength());
+            Assert.Null(entity.FindProperty(nameof(PlanInputRow.CommercialAccountVersion))!.GetMaxLength());
+            var sql = entity.GetCheckConstraints().Single(check => check.Name == constraintName).Sql;
+            Assert.Contains("[CommercialPartyId] IS NULL", sql, StringComparison.Ordinal);
+            Assert.Contains("[CommercialCompanyPartyAccountId] <> '00000000-0000-0000-0000-000000000000'", sql,
+                StringComparison.Ordinal);
+            Assert.Contains("DATALENGTH([CommercialPartyVersion]) > 0", sql, StringComparison.Ordinal);
+            Assert.Contains("DATALENGTH([CommercialAccountVersion]) > 0", sql, StringComparison.Ordinal);
+        }
     }
 
     [Fact]

@@ -59,6 +59,16 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
         + "AND [TechnicalThicknessMm] IS NOT NULL AND [TechnicalThicknessMm] > 0 "
         + "AND [TechnicalWidthMm] IS NOT NULL AND [TechnicalWidthMm] > 0)";
 
+    private const string CommercialContextCheck =
+        "([CommercialPartyId] IS NULL AND [CommercialCompanyPartyAccountId] IS NULL "
+        + "AND [CommercialPartyVersion] IS NULL AND [CommercialAccountVersion] IS NULL) OR "
+        + "([CommercialPartyId] IS NOT NULL "
+        + "AND [CommercialPartyId] <> '00000000-0000-0000-0000-000000000000' "
+        + "AND [CommercialCompanyPartyAccountId] IS NOT NULL "
+        + "AND [CommercialCompanyPartyAccountId] <> '00000000-0000-0000-0000-000000000000' "
+        + "AND [CommercialPartyVersion] IS NOT NULL AND DATALENGTH([CommercialPartyVersion]) > 0 "
+        + "AND [CommercialAccountVersion] IS NOT NULL AND DATALENGTH([CommercialAccountVersion]) > 0)";
+
     internal DbSet<PlanRow> Plans => Set<PlanRow>();
 
     internal DbSet<PlanInputRow> PlanInputs => Set<PlanInputRow>();
@@ -169,6 +179,7 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
             table.HasCheckConstraint("CK_PlanInputs_LabelVersion",
                 "[ExpectedLabelVersion] IS NULL OR [ExpectedLabelVersion] >= 1");
             table.HasCheckConstraint("CK_PlanInputs_TechnicalSnapshot", TechnicalSnapshotCheck);
+            table.HasCheckConstraint("CK_PlanInputs_CommercialContext", CommercialContextCheck);
         });
         entity.HasKey(x => new { x.CompanyId, x.PlanId, x.ParentRollId });
         entity.HasIndex(x => new { x.CompanyId, x.PlanId, x.Sequence }).IsUnique();
@@ -238,6 +249,7 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
             table.HasCheckConstraint("CK_PlanRevisionInputs_Sequence", "[Sequence] >= 1");
             table.HasCheckConstraint("CK_PlanRevisionInputs_LabelVersion", "[ExpectedLabelVersion] >= 1");
             table.HasCheckConstraint("CK_PlanRevisionInputs_TechnicalSnapshot", TechnicalSnapshotCheck);
+            table.HasCheckConstraint("CK_PlanRevisionInputs_CommercialContext", CommercialContextCheck);
         });
         input.HasKey(x => new { x.CompanyId, x.PlanId, x.RevisionNo, x.ParentRollId });
         input.HasIndex(x => new { x.CompanyId, x.PlanId, x.RevisionNo, x.Sequence }).IsUnique();
@@ -318,6 +330,7 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
             table.HasCheckConstraint("CK_OrderInputs_Sequence", "[Sequence] >= 1");
             table.HasCheckConstraint("CK_OrderInputs_LabelVersion",
                 "[ExpectedLabelVersion] IS NULL OR [ExpectedLabelVersion] >= 1");
+            table.HasCheckConstraint("CK_OrderInputs_CommercialContext", CommercialContextCheck);
         });
         entity.HasKey(x => new { x.CompanyId, x.OrderId, x.ParentRollId });
         entity.HasIndex(x => new { x.CompanyId, x.OrderId, x.Sequence }).IsUnique();

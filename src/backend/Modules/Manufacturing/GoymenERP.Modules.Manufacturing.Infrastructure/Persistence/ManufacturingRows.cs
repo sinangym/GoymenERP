@@ -28,6 +28,15 @@ internal interface IPlanTechnicalSnapshotRow
     decimal? TechnicalWidthMm { get; set; }
 }
 
+/// <summary>The nullable-on-legacy, all-or-none commercial context shared by plan and order input rows.</summary>
+internal interface IPlanCommercialContextRow
+{
+    Guid? CommercialPartyId { get; set; }
+    Guid? CommercialCompanyPartyAccountId { get; set; }
+    string? CommercialPartyVersion { get; set; }
+    string? CommercialAccountVersion { get; set; }
+}
+
 /// <summary>
 /// A production plan. Its content (company, work center, process, target and inputs) never changes;
 /// only the approval and the version do. <see cref="PayloadHash"/> is the canonical content hash
@@ -58,7 +67,7 @@ internal sealed class PlanRow : IManufacturingTenantRow
 }
 
 /// <summary>One planned parent roll of a plan, in the plan's own order. Never changes.</summary>
-internal sealed class PlanInputRow : IManufacturingTenantRow, IPlanTechnicalSnapshotRow
+internal sealed class PlanInputRow : IManufacturingTenantRow, IPlanTechnicalSnapshotRow, IPlanCommercialContextRow
 {
     public Guid CompanyId { get; set; }
     public Guid PlanId { get; set; }
@@ -83,6 +92,10 @@ internal sealed class PlanInputRow : IManufacturingTenantRow, IPlanTechnicalSnap
     public DateOnly? TechnicalEffectiveOn { get; set; }
     public decimal? TechnicalThicknessMm { get; set; }
     public decimal? TechnicalWidthMm { get; set; }
+    public Guid? CommercialPartyId { get; set; }
+    public Guid? CommercialCompanyPartyAccountId { get; set; }
+    public string? CommercialPartyVersion { get; set; }
+    public string? CommercialAccountVersion { get; set; }
 }
 
 /// <summary>
@@ -122,7 +135,7 @@ internal sealed class PlanRevisionRow : IManufacturingTenantRow
 /// MFG-PLAN-EDIT: one planned parent roll of a recorded revision, in the revision's own order, with the Inventory
 /// label version accepted for it. The complete input set of the revision; append-only.
 /// </summary>
-internal sealed class PlanRevisionInputRow : IManufacturingTenantRow, IPlanTechnicalSnapshotRow
+internal sealed class PlanRevisionInputRow : IManufacturingTenantRow, IPlanTechnicalSnapshotRow, IPlanCommercialContextRow
 {
     public Guid CompanyId { get; set; }
     public Guid PlanId { get; set; }
@@ -148,6 +161,10 @@ internal sealed class PlanRevisionInputRow : IManufacturingTenantRow, IPlanTechn
     public DateOnly? TechnicalEffectiveOn { get; set; }
     public decimal? TechnicalThicknessMm { get; set; }
     public decimal? TechnicalWidthMm { get; set; }
+    public Guid? CommercialPartyId { get; set; }
+    public Guid? CommercialCompanyPartyAccountId { get; set; }
+    public string? CommercialPartyVersion { get; set; }
+    public string? CommercialAccountVersion { get; set; }
 }
 
 /// <summary>
@@ -173,7 +190,7 @@ internal sealed class OrderRow : IManufacturingTenantRow
 }
 
 /// <summary>One planned parent roll of an order's snapshot. Never changes.</summary>
-internal sealed class OrderInputRow : IManufacturingTenantRow
+internal sealed class OrderInputRow : IManufacturingTenantRow, IPlanCommercialContextRow
 {
     public Guid CompanyId { get; set; }
     public Guid OrderId { get; set; }
@@ -181,6 +198,10 @@ internal sealed class OrderInputRow : IManufacturingTenantRow
     public int Sequence { get; set; }
     public decimal PlannedKg { get; set; }
     public long? ExpectedLabelVersion { get; set; }
+    public Guid? CommercialPartyId { get; set; }
+    public Guid? CommercialCompanyPartyAccountId { get; set; }
+    public string? CommercialPartyVersion { get; set; }
+    public string? CommercialAccountVersion { get; set; }
 }
 
 /// <summary>
