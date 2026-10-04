@@ -239,10 +239,10 @@ test('S04-PL-03 below-floor pricing is saved pending and a different actor appro
   })
   expect(approverDetailResponse.status()).toBe(200)
   const approverDetail = (await approverDetailResponse.json()) as {
-    readonly draft: { readonly lines: readonly { readonly lineId: string; readonly priceDisclosure: string;
-      readonly unitPrice: string | null; readonly priceUnitId: string | null; readonly discountPercent: string | null }[] }
+    readonly lines: readonly { readonly lineId: string; readonly priceDisclosure: string;
+      readonly unitPrice: string | null; readonly priceUnitId: string | null; readonly discountPercent: string | null }[]
   }
-  expect(approverDetail.draft.lines[0]).toMatchObject({
+  expect(approverDetail.lines[0]).toMatchObject({
     lineId: journey.lineId, priceDisclosure: 'Visible', unitPrice: '43000', priceUnitId: productUnitId, discountPercent: '10',
   })
 
@@ -251,10 +251,10 @@ test('S04-PL-03 below-floor pricing is saved pending and a different actor appro
   })
   expect(readerDetailResponse.status()).toBe(200)
   const readerDetail = (await readerDetailResponse.json()) as {
-    readonly draft: { readonly lines: readonly { readonly lineId: string; readonly priceDisclosure: string;
-      readonly unitPrice: string | null; readonly priceUnitId: string | null; readonly discountPercent: string | null }[] }
+    readonly lines: readonly { readonly lineId: string; readonly priceDisclosure: string;
+      readonly unitPrice: string | null; readonly priceUnitId: string | null; readonly discountPercent: string | null }[]
   }
-  expect(readerDetail.draft.lines[0]).toMatchObject({
+  expect(readerDetail.lines[0]).toMatchObject({
     lineId: journey.lineId, priceDisclosure: 'Withheld', unitPrice: null, priceUnitId: null, discountPercent: null,
   })
 
