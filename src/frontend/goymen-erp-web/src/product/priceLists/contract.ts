@@ -158,9 +158,12 @@ type Json = Record<string, unknown>
 
 const isObject = (value: unknown): value is Json => typeof value === 'object' && value !== null && !Array.isArray(value)
 const isText = (value: unknown): value is string => typeof value === 'string'
+const isNonEmptyText = (value: unknown): value is string => isText(value) && value.length > 0
 const isNullableText = (value: unknown): value is string | null => value === null || typeof value === 'string'
 const isCount = (value: unknown): value is number => typeof value === 'number' && Number.isInteger(value) && value >= 0
-const isNullableCount = (value: unknown): value is number | null => value === null || isCount(value)
+const isPositiveCount = (value: unknown): value is number => isCount(value) && value > 0
+const isNullablePositiveCount = (value: unknown): value is number | null => value === null || isPositiveCount(value)
+const isCursor = (value: unknown): value is string | null => value === null || (isNonEmptyText(value) && value.length <= 200)
 const MONEY = /^(0|[1-9][0-9]{0,14})(\.[0-9]{1,4})?$/
 const QUANTITY = /^(0|[1-9][0-9]{0,14})(\.[0-9]{1,3})?$/
 const DATE = /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/
@@ -178,7 +181,7 @@ function quantityAtoms(value: string): bigint {
 function decodeLine(value: unknown): PriceListLine | null {
   if (!isObject(value)) return null
   const { lineId, lineNo, productId, productCode, productName, priceUnitId, unitPrice, floorUnitPrice, lowerQuantity, upperQuantity } = value
-  if (!isText(lineId) || !isCount(lineNo) || !isText(productId) || !isNullableText(productCode) || !isNullableText(productName)
+  if (!isText(lineId) || !isPositiveCount(lineNo) || !isText(productId) || !isNullableText(productCode) || !isNullableText(productName)
     || !isText(priceUnitId) || !isMoney(unitPrice) || !(floorUnitPrice === null || isMoney(floorUnitPrice))
     || !isQuantity(lowerQuantity) || !(upperQuantity === null || isQuantity(upperQuantity))) return null
   if (upperQuantity !== null && quantityAtoms(upperQuantity) <= quantityAtoms(lowerQuantity)) return null
@@ -188,15 +191,22 @@ function decodeLine(value: unknown): PriceListLine | null {
 function decodeVersion(value: unknown): PriceListVersion | null {
   if (!isObject(value)) return null
   const { versionId, versionNo, state, status, validFrom, validThrough, createdAtUtc, createdBy, publishedAtUtc, publishedBy, lines } = value
-  if (!isText(versionId) || !isCount(versionNo) || (state !== 'Draft' && state !== 'Published')
+  if (!isText(versionId) || !isPositiveCount(versionNo) || (state !== 'Draft' && state !== 'Published')
     || (status !== 'Draft' && status !== 'Planned' && status !== 'Active' && status !== 'Ended')
     || !isDate(validFrom) || !(validThrough === null || isDate(validThrough)) || !isText(createdAtUtc) || !isText(createdBy)
     || !isNullableText(publishedAtUtc) || !isNullableText(publishedBy) || !Array.isArray(lines)) return null
   const decoded = lines.map(decodeLine)
   if (decoded.some((line) => line === null)) return null
+  const typedLines = decoded as PriceListLine[]
+  if (new Set(typedLines.map((line) => line.lineId)).size !== typedLines.length
+    || new Set(typedLines.map((line) => line.lineNo)).size !== typedLines.length) return null
+  const draftIsCoherent = state === 'Draft' && status === 'Draft' && publishedAtUtc === null && publishedBy === null
+  const publishedIsCoherent = state === 'Published' && status !== 'Draft'
+    && isNonEmptyText(publishedAtUtc) && isNonEmptyText(publishedBy)
+  if (!draftIsCoherent && !publishedIsCoherent) return null
   return {
     versionId, versionNo, state, status, validFrom, validThrough, createdAtUtc, createdBy, publishedAtUtc, publishedBy,
-    lines: decoded as PriceListLine[],
+    lines: typedLines,
   }
 }
 
@@ -205,12 +215,23 @@ export function decodePriceListView(value: unknown): PriceListView | null {
   const { id, name, currencyCode, channel, vatBasis, version, createdAtUtc, updatedAtUtc, activeVersionNo, draftVersionNo, versions } = value
   if (!isText(id) || !isText(name) || !isText(currencyCode) || !isText(channel) || !isText(vatBasis)
     || !isText(version) || !VERSION.test(version) || !isText(createdAtUtc) || !isText(updatedAtUtc)
-    || !isNullableCount(activeVersionNo) || !isNullableCount(draftVersionNo) || !Array.isArray(versions) || versions.length === 0) return null
+    || !isNullablePositiveCount(activeVersionNo) || !isNullablePositiveCount(draftVersionNo)
+    || !Array.isArray(versions) || versions.length === 0) return null
   const decoded = versions.map(decodeVersion)
   if (decoded.some((item) => item === null)) return null
+  const typedVersions = decoded as PriceListVersion[]
+  const versionNos = typedVersions.map((item) => item.versionNo)
+  if (new Set(versionNos).size !== versionNos.length
+    || new Set(typedVersions.map((item) => item.versionId)).size !== typedVersions.length
+    || [...versionNos].sort((left, right) => left - right).some((value, index) => value !== index + 1)) return null
+  const drafts = typedVersions.filter((item) => item.state === 'Draft')
+  const active = typedVersions.filter((item) => item.status === 'Active')
+  if (drafts.length > 1 || active.length > 1
+    || (draftVersionNo === null ? drafts.length !== 0 : drafts.length !== 1 || drafts[0].versionNo !== draftVersionNo)
+    || (activeVersionNo === null ? active.length !== 0 : active.length !== 1 || active[0].versionNo !== activeVersionNo)) return null
   return {
     id, name, currencyCode, channel, vatBasis, version, createdAtUtc, updatedAtUtc, activeVersionNo, draftVersionNo,
-    versions: decoded as PriceListVersion[],
+    versions: typedVersions,
   }
 }
 
@@ -218,16 +239,19 @@ function decodeSummary(value: unknown): PriceListSummary | null {
   if (!isObject(value)) return null
   const { id, name, currencyCode, channel, vatBasis, version, activeVersionNo, activeValidFrom, draftVersionNo, versionCount, updatedAtUtc } = value
   if (!isText(id) || !isText(name) || !isText(currencyCode) || !isText(channel) || !isText(vatBasis) || !isText(version)
-    || !isNullableCount(activeVersionNo) || !(activeValidFrom === null || isDate(activeValidFrom)) || !isNullableCount(draftVersionNo)
-    || !isCount(versionCount) || !isText(updatedAtUtc)) return null
+    || !isNullablePositiveCount(activeVersionNo) || !(activeValidFrom === null || isDate(activeValidFrom))
+    || !isNullablePositiveCount(draftVersionNo) || !isPositiveCount(versionCount) || !isText(updatedAtUtc)) return null
+  if ((activeVersionNo === null) !== (activeValidFrom === null)) return null
   return { id, name, currencyCode, channel, vatBasis, version, activeVersionNo, activeValidFrom, draftVersionNo, versionCount, updatedAtUtc }
 }
 
 export function decodePriceListPage(value: unknown): PriceListPage | null {
-  if (!isObject(value) || !Array.isArray(value.items) || !isNullableText(value.nextCursor)) return null
+  if (!isObject(value) || !Array.isArray(value.items) || !isCursor(value.nextCursor)) return null
   const items = value.items.map(decodeSummary)
   if (items.some((item) => item === null)) return null
-  return { items: items as PriceListSummary[], nextCursor: value.nextCursor }
+  const typedItems = items as PriceListSummary[]
+  if (new Set(typedItems.map((item) => item.id.toLowerCase())).size !== typedItems.length) return null
+  return { items: typedItems, nextCursor: value.nextCursor }
 }
 
 export function decodePriceListResult(value: unknown): PriceListResult | null {

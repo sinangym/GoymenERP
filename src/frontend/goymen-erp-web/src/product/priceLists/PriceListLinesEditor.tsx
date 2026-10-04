@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { useAuthBoundary } from '../../shell/useAuthBoundary'
 import { fetchProductOptions } from './api'
 import type { PriceListProductOption, PriceListProductUnit } from './contract'
 import type { PriceListLineRow } from './priceListLines'
@@ -22,20 +23,54 @@ export function PriceListLinesEditor({
   readonly companyId: string
   readonly disabled: boolean
 }) {
+  const boundary = useAuthBoundary()
+  const currentSecurity = boundary.capture()
+  // This mirrors the central isSnapshotCurrent identity. Request-fence and capability-generation changes alone do
+  // not abandon a current actor/company request; a committed context change does.
+  const securityBinding = JSON.stringify([
+    currentSecurity.actorId,
+    currentSecurity.sessionEpoch,
+    currentSecurity.companyId,
+    currentSecurity.committedContextRevision,
+  ])
   const [query, setQuery] = useState('')
   const [searching, setSearching] = useState(false)
   const [options, setOptions] = useState<{ items: readonly PriceListProductOption[]; hasMore: boolean } | null>(null)
   const [searchError, setSearchError] = useState<string | null>(null)
+  const companyRef = useRef(companyId)
+  const securityBindingRef = useRef(securityBinding)
+  const searchGeneration = useRef(0)
+
+  useEffect(() => {
+    companyRef.current = companyId
+    securityBindingRef.current = securityBinding
+    searchGeneration.current += 1
+    setSearching(false)
+    setOptions(null)
+    setSearchError(null)
+  }, [companyId, securityBinding])
 
   async function search() {
+    const generation = ++searchGeneration.current
+    const requestCompany = companyId
+    const requestSecurityBinding = securityBinding
+    const security = boundary.capture()
     setSearching(true)
     setSearchError(null)
-    const outcome = await fetchProductOptions(query, companyId)
+    const outcome = await fetchProductOptions(query, requestCompany)
+    if (outcome.type === 'http' && (outcome.status === 401 || outcome.status === 403)) {
+      boundary.report(outcome.status, security)
+    }
+    // A response for a departed actor/company/capability namespace never changes the current editor.
+    if (generation !== searchGeneration.current || companyRef.current !== requestCompany
+      || securityBindingRef.current !== requestSecurityBinding) return
     setSearching(false)
     if (outcome.type === 'ok-single') setOptions(outcome.data)
     else {
       setOptions(null)
-      setSearchError(outcome.type === 'http' && outcome.status === 403 ? T.notice.forbidden : T.notice.unexpected)
+      setSearchError(outcome.type === 'http' && outcome.status === 401
+        ? T.notice.unauthenticated
+        : outcome.type === 'http' && outcome.status === 403 ? T.notice.forbidden : T.notice.unexpected)
     }
   }
 

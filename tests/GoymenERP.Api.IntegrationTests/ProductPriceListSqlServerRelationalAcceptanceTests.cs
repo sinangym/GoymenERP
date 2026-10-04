@@ -164,15 +164,104 @@ public sealed class ProductPriceListSqlServerRelationalAcceptanceTests
         var revokedId = Guid.NewGuid();
         var revoked = new CreatePriceListRequestV1(revokedId, Guid.NewGuid(), "SENTETIK revoked", "TRY", "Sales", "ExcludingVat", today,
             null, [new PriceListLineRequestV1(Guid.NewGuid(), ProductId, Kg, "10", null)]);
-        await using (var scope = run.Request(authority: new SequenceAuthority(grantedCalls: 2)))
+        var finalBeforeCommit = new DenyAtBoundaryAuthority(denyAtCall: 5);
+        await using (var scope = run.Request(authority: finalBeforeCommit))
         {
             var forbidden = await Assert.ThrowsAsync<ProductPriceListException>(() => scope.Service.CreateAsync(revoked, Metadata("revoked")));
             Assert.Equal(403, forbidden.Status);
         }
 
+        Assert.True(finalBeforeCommit.ReachedDeniedBoundary);
+        Assert.Equal(5, finalBeforeCommit.Calls);
+
         Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM product.PriceLists WHERE Id = @id", revokedId));
         Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM product.PriceListAttempts WHERE PriceListId = @id", revokedId));
         Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityId = @id", revokedId.ToString("D")));
+
+        // A tenant-filtered miss and detailed Product-card failures are business answers. Late authority loss wins
+        // over 404/product_invalid, and neither path leaves a list, attempt or audit effect.
+        var missingReadBoundary = new DenyAtBoundaryAuthority(denyAtCall: 2);
+        await using (var revokedMissing = run.Request(authority: missingReadBoundary))
+        {
+            var forbidden = await Assert.ThrowsAsync<ProductPriceListException>(() => revokedMissing.Service.GetAsync(Guid.NewGuid()));
+            Assert.Equal((403, ProductPriceListCodesV1.Forbidden), (forbidden.Status, forbidden.Code));
+        }
+        Assert.True(missingReadBoundary.ReachedDeniedBoundary);
+        Assert.Equal(2, missingReadBoundary.Calls);
+
+        var missingMutationBoundary = new DenyAtBoundaryAuthority(denyAtCall: 4);
+        await using (var revokedMutationMissing = run.Request(authority: missingMutationBoundary))
+        {
+            var forbidden = await Assert.ThrowsAsync<ProductPriceListException>(() => revokedMutationMissing.Service.ReviseDraftAsync(
+                Guid.NewGuid(), new RevisePriceListDraftRequestV1("1", "SENTETIK missing revoked", today, null, []),
+                Metadata("missing-mutation-revoked")));
+            Assert.Equal((403, ProductPriceListCodesV1.Forbidden), (forbidden.Status, forbidden.Code));
+        }
+        Assert.True(missingMutationBoundary.ReachedDeniedBoundary);
+        Assert.Equal(4, missingMutationBoundary.Calls);
+
+        var invalidProductId = Guid.NewGuid();
+        var invalidProduct = revoked with
+        {
+            PriceListId = invalidProductId,
+            VersionId = Guid.NewGuid(),
+            Name = "SENTETIK invalid product revoked",
+            Lines = [new PriceListLineRequestV1(Guid.NewGuid(), Guid.NewGuid(), Kg, "10", null)],
+        };
+        var productFactsBoundary = new DenyAtBoundaryAuthority(denyAtCall: 3);
+        await using (var revokedProductFacts = run.Request(authority: productFactsBoundary))
+        {
+            var forbidden = await Assert.ThrowsAsync<ProductPriceListException>(() => revokedProductFacts.Service.CreateAsync(
+                invalidProduct, Metadata("invalid-product-revoked")));
+            Assert.Equal((403, ProductPriceListCodesV1.Forbidden), (forbidden.Status, forbidden.Code));
+        }
+        Assert.True(productFactsBoundary.ReachedDeniedBoundary);
+        Assert.Equal(3, productFactsBoundary.Calls);
+
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM product.PriceLists WHERE Id = @id", invalidProductId));
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM product.PriceListAttempts WHERE PriceListId = @id", invalidProductId));
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityId = @id", invalidProductId.ToString("D")));
+
+        var revokedNameAnswerId = Guid.NewGuid();
+        var freshNameBoundary = new DenyAtBoundaryAuthority(denyAtCall: 4);
+        await using (var revokedNameAnswer = run.Request(authority: freshNameBoundary))
+        {
+            var forbidden = await Assert.ThrowsAsync<ProductPriceListException>(() => revokedNameAnswer.Service.CreateAsync(
+                revoked with
+                {
+                    PriceListId = revokedNameAnswerId,
+                    VersionId = Guid.NewGuid(),
+                    Name = "SENTETIK fresh name revoked",
+                }, Metadata("fresh-name-revoked")));
+            Assert.Equal((403, ProductPriceListCodesV1.Forbidden), (forbidden.Status, forbidden.Code));
+        }
+        Assert.True(freshNameBoundary.ReachedDeniedBoundary);
+        Assert.Equal(4, freshNameBoundary.Calls);
+
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM product.PriceLists WHERE Id = @id", revokedNameAnswerId));
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM product.PriceListAttempts WHERE PriceListId = @id", revokedNameAnswerId));
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityId = @id", revokedNameAnswerId.ToString("D")));
+
+        var driftedProductId = Guid.NewGuid();
+        var driftAuthority = new PauseAuthority(pauseAtCall: 3);
+        await using (var drifted = run.Request(authority: driftAuthority, driftableCompanyContext: true))
+        {
+            var pending = drifted.Service.CreateAsync(revoked with
+            {
+                PriceListId = driftedProductId,
+                VersionId = Guid.NewGuid(),
+                Name = "SENTETIK product context drift",
+            }, Metadata("product-context-drift"));
+            await driftAuthority.Entered;
+            drifted.CompanyContext.Set(TestCompanyIds.CompanyB);
+            driftAuthority.Release();
+            var forbidden = await Assert.ThrowsAsync<ProductPriceListException>(() => pending);
+            Assert.Equal((403, ProductPriceListCodesV1.Forbidden), (forbidden.Status, forbidden.Code));
+        }
+
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM product.PriceLists WHERE Id = @id", driftedProductId));
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM product.PriceListAttempts WHERE PriceListId = @id", driftedProductId));
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityId = @id", driftedProductId.ToString("D")));
 
         var terminalId = Guid.NewGuid();
         await using (var scope = run.Request())
@@ -180,12 +269,15 @@ public sealed class ProductPriceListSqlServerRelationalAcceptanceTests
             await scope.Service.CreateAsync(revoked with { PriceListId = terminalId, VersionId = Guid.NewGuid(), Name = "SENTETIK terminal" },
                 Metadata("terminal-create"));
         }
-        await using (var scope = run.Request(authority: new SequenceAuthority(grantedCalls: 2)))
+        var recordRefusalBoundary = new DenyAtBoundaryAuthority(denyAtCall: 5);
+        await using (var scope = run.Request(authority: recordRefusalBoundary))
         {
             var forbidden = await Assert.ThrowsAsync<ProductPriceListException>(() => scope.Service.ReviseDraftAsync(terminalId,
                 new RevisePriceListDraftRequestV1("99", "SENTETIK terminal", today, null, []), Metadata("terminal-refusal")));
             Assert.Equal(403, forbidden.Status);
         }
+        Assert.True(recordRefusalBoundary.ReachedDeniedBoundary);
+        Assert.Equal(5, recordRefusalBoundary.Calls);
         Assert.Equal(0, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM product.PriceListAttempts WHERE PriceListId = @id AND CommandName = N'product.price-list.revise-draft.v1'",
             terminalId));
@@ -214,12 +306,15 @@ public sealed class ProductPriceListSqlServerRelationalAcceptanceTests
 
         var duplicateRevision = new RevisePriceListDraftRequestV1(
             "1", "SENTETIK revise duplicate holder", today, null, []);
-        await using (var revokedDuplicate = run.Request(authority: new SequenceAuthority(grantedCalls: 1)))
+        var duplicateRevisionNameBoundary = new DenyAtBoundaryAuthority(denyAtCall: 3);
+        await using (var revokedDuplicate = run.Request(authority: duplicateRevisionNameBoundary))
         {
             var forbidden = await Assert.ThrowsAsync<ProductPriceListException>(() => revokedDuplicate.Service.ReviseDraftAsync(
                 duplicateTargetId, duplicateRevision, Metadata("revise-duplicate-revoked")));
             Assert.Equal((403, ProductPriceListCodesV1.Forbidden), (forbidden.Status, forbidden.Code));
         }
+        Assert.True(duplicateRevisionNameBoundary.ReachedDeniedBoundary);
+        Assert.Equal(3, duplicateRevisionNameBoundary.Calls);
 
         Assert.Equal(1L, await run.ScalarAsync<long>("SELECT Version FROM product.PriceLists WHERE Id = @id", duplicateTargetId));
         Assert.Equal("SENTETIK revise duplicate target", await run.ScalarAsync<string>(
@@ -292,6 +387,16 @@ public sealed class ProductPriceListSqlServerRelationalAcceptanceTests
         Assert.Equal(earlyWinner.OriginalCorrelationId, earlyReplay.OriginalCorrelationId);
         Assert.Equal(JsonSerializer.Serialize(earlyWinner.PriceList), JsonSerializer.Serialize(earlyReplay.PriceList));
 
+        var replayConflictBoundary = new DenyAtBoundaryAuthority(denyAtCall: 2);
+        await using (var revokedConflict = run.Request(authority: replayConflictBoundary))
+        {
+            var forbidden = await Assert.ThrowsAsync<ProductPriceListException>(() => revokedConflict.Service.CreateAsync(
+                earlySame with { Name = "SENTETIK hidden changed payload" }, Metadata("early-race")));
+            Assert.Equal((403, ProductPriceListCodesV1.Forbidden), (forbidden.Status, forbidden.Code));
+        }
+        Assert.True(replayConflictBoundary.ReachedDeniedBoundary);
+        Assert.Equal(2, replayConflictBoundary.Calls);
+
         await using (var changedPayload = run.Request())
         {
             var payloadConflict = await Assert.ThrowsAsync<ProductPriceListException>(() => changedPayload.Service.CreateAsync(
@@ -307,12 +412,15 @@ public sealed class ProductPriceListSqlServerRelationalAcceptanceTests
         }
 
         var revokedDuplicateId = Guid.NewGuid();
-        await using (var revokedDuplicate = run.Request(authority: new SequenceAuthority(grantedCalls: 2)))
+        var createDuplicateNameBoundary = new DenyAtBoundaryAuthority(denyAtCall: 4);
+        await using (var revokedDuplicate = run.Request(authority: createDuplicateNameBoundary))
         {
             var forbidden = await Assert.ThrowsAsync<ProductPriceListException>(() => revokedDuplicate.Service.CreateAsync(
                 earlySame with { PriceListId = revokedDuplicateId, VersionId = Guid.NewGuid() }, Metadata("early-revoked-duplicate")));
             Assert.Equal(403, forbidden.Status);
         }
+        Assert.True(createDuplicateNameBoundary.ReachedDeniedBoundary);
+        Assert.Equal(4, createDuplicateNameBoundary.Calls);
 
         Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM product.PriceLists WHERE Id = @id", revokedDuplicateId));
         Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM product.PriceListAttempts WHERE PriceListId = @id", revokedDuplicateId));
@@ -467,14 +575,27 @@ public sealed class ProductPriceListSqlServerRelationalAcceptanceTests
                 new HashSet<Guid>()));
     }
 
-    private sealed class SequenceAuthority(int grantedCalls) : IErpAuthorityRevalidationService
+    private sealed class DenyAtBoundaryAuthority(int denyAtCall) : IErpAuthorityRevalidationService
     {
         private int calls;
+        private int reachedDeniedBoundary;
+
+        public int Calls => Volatile.Read(ref calls);
+
+        public bool ReachedDeniedBoundary => Volatile.Read(ref reachedDeniedBoundary) == 1;
 
         public Task<PermissionScope> RevalidatePermissionScopeAsync(string permission, Guid companyId,
-            CancellationToken cancellationToken = default) => Task.FromResult(Interlocked.Increment(ref calls) <= grantedCalls
-            ? GrantedScope()
-            : PermissionScope.Denied);
+            CancellationToken cancellationToken = default)
+        {
+            var call = Interlocked.Increment(ref calls);
+            if (call == denyAtCall)
+            {
+                Volatile.Write(ref reachedDeniedBoundary, 1);
+                return Task.FromResult(PermissionScope.Denied);
+            }
+
+            return Task.FromResult(GrantedScope());
+        }
     }
 
     private sealed class CommitBarrier(int participants)
@@ -540,7 +661,7 @@ public sealed class ProductPriceListSqlServerRelationalAcceptanceTests
     }
 
     private sealed class RequestScope(AsyncServiceScope scope, ProductPriceListService service, IProductPriceReferenceReaderV1 reader,
-        IProductQuantityPriceReferenceReaderV1 quantityReader, ProductPriceListDbContext context) : IAsyncDisposable
+        IProductQuantityPriceReferenceReaderV1 quantityReader, ProductPriceListDbContext context, ICompanyContext companyContext) : IAsyncDisposable
     {
         public ProductPriceListService Service => service;
 
@@ -550,7 +671,23 @@ public sealed class ProductPriceListSqlServerRelationalAcceptanceTests
 
         public ProductPriceListDbContext Context => context;
 
+        public ICompanyContext CompanyContext => companyContext;
+
         public ValueTask DisposeAsync() => scope.DisposeAsync();
+    }
+
+    /// <summary>
+    /// Test-only live request identity. Production <see cref="CompanyContext"/> deliberately refuses a second Set;
+    /// this probe models a context provider whose value changes while an owner read is awaited, so the service's
+    /// captured-scope fence is exercised without weakening the production context implementation.
+    /// </summary>
+    private sealed class DriftableCompanyContext(Guid companyId) : ICompanyContext
+    {
+        public bool IsResolved => true;
+
+        public Guid CompanyId { get; private set; } = companyId;
+
+        public void Set(Guid value) => CompanyId = value;
     }
 
     private sealed class Run(SqlServerRelationalApiFactory factory, User user) : IAsyncDisposable
@@ -602,19 +739,24 @@ public sealed class ProductPriceListSqlServerRelationalAcceptanceTests
             }
         }
 
-        public RequestScope Request(Guid? company = null, Guid? actor = null, IErpAuthorityRevalidationService? authority = null)
+        public RequestScope Request(Guid? company = null, Guid? actor = null, IErpAuthorityRevalidationService? authority = null,
+            bool driftableCompanyContext = false)
         {
             var scope = factory.Services.CreateAsyncScope();
             var provider = scope.ServiceProvider;
-            provider.GetRequiredService<ICompanyContext>().Set(company ?? TestCompanyIds.CompanyA);
+            var companyContext = provider.GetRequiredService<ICompanyContext>();
+            companyContext.Set(company ?? TestCompanyIds.CompanyA);
             var context = provider.GetRequiredService<ProductPriceListDbContext>();
-            var store = new ProductPriceListStore(context, provider.GetRequiredService<ICompanyContext>(),
+            var store = new ProductPriceListStore(context, companyContext,
                 provider.GetRequiredService<GoymenERP.Modules.Audit.Application.Contracts.IAuditEventCollector>(), TimeProvider.System);
             var requestUser = actor is null ? user : new User(actor.Value);
-            var service = new ProductPriceListService(provider.GetRequiredService<ICompanyContext>(), requestUser, authority ?? new Granted(), store,
+            ICompanyContext serviceCompanyContext = driftableCompanyContext
+                ? new DriftableCompanyContext(companyContext.CompanyId)
+                : companyContext;
+            var service = new ProductPriceListService(serviceCompanyContext, requestUser, authority ?? new Granted(), store,
                 TimeProvider.System, null, _ => true);
             var reader = new ProductPriceReferenceReader(store, provider.GetRequiredService<ICompanyContext>());
-            return new RequestScope(scope, service, reader, reader, context);
+            return new RequestScope(scope, service, reader, reader, context, serviceCompanyContext);
         }
 
         public async Task<T> ScalarAsync<T>(string sql, object? id = null)

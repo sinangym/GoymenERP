@@ -16,10 +16,12 @@ const COMPANY = '11111111-1111-4111-8111-111111111111'
 const LIST = '22222222-2222-4222-8222-222222222222'
 const command: PriceListCommand = { kind: 'publish', priceListId: LIST, payload: { expectedVersion: '1', versionNo: 1 } }
 
-const binding = priceListBinding({
-  activeContext: { userId: 'actor-1', companyId: COMPANY, scopeMode: 'single' },
+const shell = {
+  activeContext: { userId: 'actor-1', companyId: COMPANY, scopeMode: 'single', capabilityGeneration: 'gen-1' },
   sessionEpoch: 7,
-} as unknown as ShellState, `product.price-list.publish:${LIST}`) as string
+  committedContextRevision: 3,
+} as unknown as ShellState
+const binding = priceListBinding(shell, `product.price-list.publish:${LIST}`) as string
 
 function first(): Extract<ReturnType<typeof decidePriceListSubmit>, { type: 'send' }> {
   const decision = decidePriceListSubmit({ phase: 'idle' }, { binding, companyId: COMPANY, command }, () => 'key-1')
@@ -62,5 +64,18 @@ describe('price-list retained command attempt', () => {
       type: 'succeeded',
       data: { priceList: { id: LIST } as never, isReplay: false, originalCorrelationId: 'c1' },
     })).toBe(sending)
+  })
+
+  it('keeps the same unresolved key when the same actor and company return under a newer committed revision', () => {
+    const changedBinding = priceListBinding({
+      ...shell,
+      committedContextRevision: 4,
+    } as unknown as ShellState, `product.price-list.publish:${LIST}`)
+
+    const sent = first().snapshot
+    const unknown: PriceListAttempt = { phase: 'unknown', snapshot: sent, reason: 'network-error' }
+    expect(changedBinding).toBe(binding)
+    expect(decidePriceListSubmit(unknown, { binding: changedBinding, companyId: COMPANY, command }, () => 'key-2'))
+      .toMatchObject({ type: 'send', snapshot: { key: 'key-1', fingerprint: sent.fingerprint } })
   })
 })

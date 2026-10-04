@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { ShellState } from '../../shell/shellState'
+import { useAuthBoundary } from '../../shell/useAuthBoundary'
 import { sendPriceListCommand, type PriceListCommand } from './api'
 import {
   applyPriceListOutcome,
@@ -21,13 +22,26 @@ export type SubmitResult = 'sent' | 'in-flight' | 'unresolved-other-payload' | '
 /** One command section's attempt: submit a command, retry the same snapshot, or leave an unknown one. */
 export function usePriceListCommand(shell: ShellState, scope: string, onCompleted: (result: PriceListResult) => void,
   onRefusedMovedRecord?: () => void) {
+  const boundary = useAuthBoundary()
   const binding = priceListBinding(shell, scope)
   const [attempt, setAttempt] = useState<PriceListAttempt>(() => recallPriceListAttempt(binding))
   // Every state change goes through `attemptRef` first (the functions below), so the ref is never behind the state.
   const attemptRef = useRef(attempt)
   const bindingRef = useRef(binding)
-  useEffect(() => {
+  const freshness = binding === null ? null : JSON.stringify([binding, shell.committedContextRevision])
+  const freshnessRef = useRef(freshness)
+  const liveRef = useRef(false)
+  // Layout effects close the commit-to-passive-effect window without mutating refs during render. Retained
+  // idempotency identity stays durable; this freshness is only for this mounted caller.
+  useLayoutEffect(() => {
     bindingRef.current = binding
+    freshnessRef.current = freshness
+  }, [binding, freshness])
+  useLayoutEffect(() => {
+    liveRef.current = true
+    return () => { liveRef.current = false }
+  }, [])
+  useEffect(() => {
     const current = attemptRef.current
     if (binding === null || (current.phase !== 'idle' && current.snapshot.binding !== binding)) {
       attemptRef.current = { phase: 'idle' }
@@ -48,7 +62,14 @@ export function usePriceListCommand(shell: ShellState, scope: string, onComplete
     attemptRef.current = sending
     rememberPriceListAttempt(snapshot.binding, sending)
     setAttempt(sending)
+    const security = boundary.capture()
+    const sentFreshness = freshness
     const outcome = await sendPriceListCommand(snapshot.command, snapshot.companyId, snapshot.key)
+    if (outcome.type === 'http' && (outcome.status === 401 || outcome.status === 403)) {
+      boundary.report(outcome.status, security)
+    }
+    // Keep the unresolved snapshot in module memory, but a departed or superseded component owns no UI callback.
+    if (!liveRef.current || freshnessRef.current !== sentFreshness) return
     const next = applyPriceListOutcome(attemptRef.current, snapshot, bindingRef.current, outcome, previous)
     attemptRef.current = next
     if (next.phase !== 'idle') rememberPriceListAttempt(snapshot.binding, next)

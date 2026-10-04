@@ -6,7 +6,7 @@
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient } from '@tanstack/react-query'
 import { RouterProvider, createMemoryRouter } from 'react-router'
@@ -23,6 +23,7 @@ const COMPANY_A = '99999999-9999-9999-9999-999999999999'
 const PRODUCT = '22222222-2222-2222-2222-222222222222'
 const KG = '44444444-4444-4444-4444-444444444444'
 const LIST = 'cccccccc-cccc-cccc-cccc-cccccccccccc'
+const LIST_51 = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd'
 const ALL = Object.values(PRICE_LIST_CAPABILITY)
 
 interface Call { readonly url: string; readonly method: string; readonly key: string | null; readonly body: string | null; readonly company: string | null }
@@ -47,11 +48,17 @@ function view(overrides: Record<string, unknown> = {}) {
     versions: [version()], ...overrides }
 }
 
+function summary(overrides: Record<string, unknown> = {}) {
+  return { id: LIST, name: 'Yurt içi satış', currencyCode: 'TRY', channel: 'Sales', vatBasis: 'ExcludingVat',
+    version: '3', activeVersionNo: 1, activeValidFrom: '2026-10-01', draftVersionNo: 2, versionCount: 2,
+    updatedAtUtc: '2026-09-30T09:00:00Z', ...overrides }
+}
+
 function install(handlers: {
   capabilities?: readonly string[]
   onDetail?: () => Response | Promise<Response>
-  onList?: () => Response
-  onOptions?: (url: string) => Response
+  onList?: (url: string) => Response | Promise<Response>
+  onOptions?: (url: string) => Response | Promise<Response>
   onCommand?: (call: Call, count: number) => Response | Promise<Response>
 }) {
   const calls: Call[] = []
@@ -70,7 +77,7 @@ function install(handlers: {
     if (url.includes('/price-lists/product-options')) return handlers.onOptions!(url)
     if (url.includes('/price-lists') && call.method === 'POST') return handlers.onCommand!(call, ++commands)
     if (/\/price-lists\/[^/?]+$/.test(url)) return handlers.onDetail!()
-    if (url.includes('/price-lists')) return handlers.onList!()
+    if (url.includes('/price-lists')) return handlers.onList!(url)
     throw new Error(`unexpected fetch ${url}`)
   }))
   return { calls, posts: () => calls.filter((call) => call.method === 'POST') }
@@ -104,15 +111,95 @@ describe('money text', () => {
 
 describe('U-05 price lists', () => {
   it('lists the company lists with the version that prices today', async () => {
-    install({ onList: () => json({ items: [{ id: LIST, name: 'Yurt içi satış', currencyCode: 'TRY', channel: 'Sales', vatBasis: 'ExcludingVat',
-      version: '3', activeVersionNo: 1, activeValidFrom: '2026-10-01', draftVersionNo: 2, versionCount: 2, updatedAtUtc: '2026-09-30T09:00:00Z' }],
-    nextCursor: null }) })
+    install({ onList: () => json({ items: [summary()], nextCursor: null }) })
     renderApp('/fiyat-listeleri')
     const table = await screen.findByTestId('price-list-table')
     expect(within(table).getByRole('link', { name: 'Yurt içi satış' }).getAttribute('href')).toBe(`/fiyat-listeleri/${LIST}`)
     expect(table.textContent).toContain(T.activeFrom(1, '01.10.2026'))
     expect(table.textContent).toContain(T.draftVersion(2))
     expect(screen.getByTestId('price-list-new')).toBeTruthy()
+  })
+
+  it('uses the opaque continuation and exposes the next record without losing page one', async () => {
+    const harness = install({
+      onList: (url) => url.includes('cursor=opaque%2Frecord-51%3D%3D')
+        ? json({ items: [summary({ id: LIST_51, name: '51. fiyat listesi' })], nextCursor: null })
+        : json({ items: [summary()], nextCursor: 'opaque/record-51==' }),
+    })
+    renderApp('/fiyat-listeleri')
+    expect(await screen.findByRole('link', { name: 'Yurt içi satış' })).toBeTruthy()
+
+    await userEvent.click(screen.getByRole('button', { name: T.more }))
+
+    expect(await screen.findByRole('link', { name: '51. fiyat listesi' })).toBeTruthy()
+    expect(screen.getByRole('link', { name: 'Yurt içi satış' })).toBeTruthy()
+    expect(harness.calls.filter((call) => call.url.includes('/price-lists'))
+      .map((call) => call.url)).toEqual(['/api/v1/price-lists', '/api/v1/price-lists?cursor=opaque%2Frecord-51%3D%3D'])
+  })
+
+  it('reports a product-option 403 to the central auth boundary', async () => {
+    install({ onOptions: () => json({ code: 'forbidden' }, 403) })
+    renderApp('/fiyat-listeleri/yeni')
+    await screen.findByLabelText(T.productSearch)
+
+    await userEvent.click(screen.getByRole('button', { name: T.search }))
+
+    await waitFor(() => expect(document.querySelector('[data-state="not-found"]')).not.toBeNull())
+    expect(screen.queryByLabelText(T.productSearch)).toBeNull()
+  })
+
+  it('reports a command 401 to the central auth boundary and ends the current session', async () => {
+    install({ onDetail: () => json(view()), onCommand: () => json({ code: 'authentication_required' }, 401) })
+    renderApp(`/fiyat-listeleri/${LIST}`)
+
+    await userEvent.click(await screen.findByTestId('price-list-publish'))
+
+    expect(await screen.findByText(/Oturum sonlandı/i)).toBeTruthy()
+  })
+
+  it('retains one unknown create across departure while the departed callback cannot navigate', async () => {
+    let stored = view()
+    let releaseFirst!: () => void
+    const firstResponse = new Promise<Response>((resolve) => {
+      releaseFirst = () => resolve(json({ priceList: stored, isReplay: false, originalCorrelationId: 'first-create' }, 201))
+    })
+    const harness = install({
+      onList: () => json({ items: [summary()], nextCursor: null }),
+      onDetail: () => json(stored),
+      onCommand: (call, count) => {
+        const sent = JSON.parse(call.body ?? '{}') as { priceListId: string; versionId: string }
+        stored = view({ id: sent.priceListId, versions: [version({ versionId: sent.versionId })] })
+        if (count === 1) return firstResponse
+
+        return json({ priceList: stored, isReplay: true, originalCorrelationId: 'first-create' }, 200, {
+          'Idempotency-Replayed': 'true',
+          'Idempotency-Original-Correlation-Id': 'first-create',
+        })
+      },
+    })
+    const router = renderApp('/fiyat-listeleri/yeni')
+    await userEvent.type(await screen.findByLabelText(T.name), 'Terk edilen kayıt')
+    await userEvent.click(screen.getByTestId('price-list-save'))
+    await waitFor(() => expect(harness.posts()).toHaveLength(1))
+
+    await act(async () => { await router.navigate('/fiyat-listeleri') })
+    await screen.findByTestId('price-list-table')
+    await act(async () => { await router.navigate('/fiyat-listeleri/yeni') })
+    await screen.findByText(T.notice.unknown)
+
+    await act(async () => {
+      releaseFirst()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+    expect(router.state.location.pathname).toBe('/fiyat-listeleri/yeni')
+    expect(screen.getByText(T.notice.unknown)).toBeTruthy()
+
+    await userEvent.click(screen.getByRole('button', { name: T.notice.retry }))
+    expect(await screen.findByRole('heading', { name: 'Yurt içi satış' })).toBeTruthy()
+    const posts = harness.posts()
+    expect(posts).toHaveLength(2)
+    expect(posts[1].key).toBe(posts[0].key)
+    expect(posts[1].body).toBe(posts[0].body)
   })
 
   it('creates a list, keeps one key across a lost reply, and opens the stored list as the server answers it', async () => {
