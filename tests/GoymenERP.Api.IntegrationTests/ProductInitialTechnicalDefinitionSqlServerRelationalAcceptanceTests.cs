@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 using System.Text.Json;
+using GoymenERP.Modules.Idempotency.Infrastructure.Persistence;
 using GoymenERP.Modules.Product.Application;
 using GoymenERP.Modules.Product.Application.Contracts;
 using GoymenERP.Modules.Product.Infrastructure.Fixtures;
@@ -24,9 +25,12 @@ public sealed class ProductInitialTechnicalDefinitionSqlServerRelationalAcceptan
     private const string RollbackSetupPhase = "CI_SAFE_DIAGNOSTIC:product_technical_release_rollback_setup";
     private const string RollbackFootprintPhase = "CI_SAFE_DIAGNOSTIC:product_technical_release_rollback_footprint";
     private const string RollbackCardReferencePhase = "CI_SAFE_DIAGNOSTIC:product_technical_release_rollback_card_reference";
-    private const string RollbackReplayReferencePhase = "CI_SAFE_DIAGNOSTIC:product_technical_release_rollback_replay_reference";
+    private const string RollbackReplayPrerequisitePhase = "CI_SAFE_DIAGNOSTIC:product_technical_release_rollback_replay_prerequisite";
+    private const string RollbackReplayTerminalInsertPhase = "CI_SAFE_DIAGNOSTIC:product_technical_release_rollback_replay_terminal_insert";
+    private const string RollbackReplayRefusalPhase = "CI_SAFE_DIAGNOSTIC:product_technical_release_rollback_replay_refusal";
     private const string RollbackUnreferencedPhase = "CI_SAFE_DIAGNOSTIC:product_technical_release_rollback_unreferenced";
     private const string RollbackReapplyPhase = "CI_SAFE_DIAGNOSTIC:product_technical_release_rollback_reapply";
+    private const string RollbackLifetimePhase = "CI_SAFE_DIAGNOSTIC:product_technical_release_rollback_lifetime";
     private const string PreviousMigration = "20260919100000_AddProductFamilyRegistry";
     private static readonly Guid ProductId = Guid.Parse("b7100000-0000-4000-8000-000000000401");
     private static readonly Guid GroupId = Guid.Parse("b7100000-0000-4000-8000-000000000101");
@@ -107,7 +111,7 @@ public sealed class ProductInitialTechnicalDefinitionSqlServerRelationalAcceptan
                 AssertExactGenuine(await new SqlProductFamilyDefinitionSource(
                     preserved.ServiceProvider.GetRequiredService<ProductDbContext>()).GetAsync(default));
 
-            failurePhase = RollbackReplayReferencePhase;
+            failurePhase = RollbackReplayPrerequisitePhase;
             await ExecuteAsync(run.Factory.DatabaseConnectionString, $"""
             DELETE FROM [product].[Products] WHERE [Id] = '{ProductId:D}';
             """);
@@ -126,7 +130,9 @@ public sealed class ProductInitialTechnicalDefinitionSqlServerRelationalAcceptan
                  NULL, 0, NULL, 0, NULL, 0, NULL, 0, 0, 2,
                  '2026-10-04T00:00:00+00:00', '2026-10-04T00:01:00+00:00', N'{}');
             """);
+            failurePhase = RollbackReplayTerminalInsertPhase;
             await InsertHistoricalReplayAsync(run.Factory.DatabaseConnectionString);
+            failurePhase = RollbackReplayRefusalPhase;
             var historyRefusal = await Assert.ThrowsAsync<SqlException>(() => MigrateAsync(run.Factory, PreviousMigration));
             Assert.Equal(51044, historyRefusal.Number);
             Assert.Contains("replay history references", historyRefusal.Message, StringComparison.Ordinal);
@@ -153,6 +159,7 @@ public sealed class ProductInitialTechnicalDefinitionSqlServerRelationalAcceptan
             await using var replayed = run.Factory.Services.CreateAsyncScope();
             AssertExactGenuine(await new SqlProductFamilyDefinitionSource(
                 replayed.ServiceProvider.GetRequiredService<ProductDbContext>()).GetAsync(default));
+            failurePhase = RollbackLifetimePhase;
         }
         catch
         {
@@ -292,11 +299,13 @@ public sealed class ProductInitialTechnicalDefinitionSqlServerRelationalAcceptan
                 services => services.AddProductTechnicalCardFixtureStore(), databaseName: databaseName);
             using var startup = factory.CreateClient();
             // Product runtime is deliberately disabled by default, so host startup does not own this
-            // migration acceptance test's Product schema. Apply the current Product migration chain
-            // explicitly before reading or mutating its release tables.
-            await using (var product = factory.Services.CreateAsyncScope())
+            // migration acceptance test's Product or shared replay schema. Apply both registered owned
+            // migration chains explicitly before reading or mutating their release and terminal tables.
+            await using (var migration = factory.Services.CreateAsyncScope())
             {
-                await product.ServiceProvider.GetRequiredService<ProductDbContext>()
+                await migration.ServiceProvider.GetRequiredService<ProductDbContext>()
+                    .Database.MigrateAsync();
+                await migration.ServiceProvider.GetRequiredService<GroupSharedCommandDbContext>()
                     .Database.MigrateAsync();
             }
 
