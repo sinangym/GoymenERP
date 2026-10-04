@@ -233,8 +233,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // DEC-SAL-005: +4 SalesOrderCancellationSqlServerRelationalAcceptanceTests facts (719d0d03… -> 5508f4ed…).
             // DEC-SAL-002: +4 SalesOrderQuantityRevisionSqlServerRelationalAcceptanceTests facts (5508f4ed… -> 3ef99851…).
             // #527 Q9: +1 customer-acceptance persistence/replay/cutover fact (3ef99851… -> dd3c72d9…).
+            // PL04: +1 exact price-floor approval replay/down-refusal fact.
             ["tools/relational_inventory/sales.txt"] =
-                "b54bb89aaef1a0633b1b40fb66a5cd70967af08d4dcd82c98a416622a0063f57",
+                "8f04fb503dda544c48637cd2ca42a9d4fc05479c4b3ed05cdc798902fb9a7aad",
         };
     private const string ContinuousIntegrationWorkflowPath = ".github/workflows/ci.yml";
     private const string ReviewedContinuousIntegrationWorkflowFingerprint =
@@ -275,9 +276,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // admitting Quantity/QuantityText under a quantity revision; no new table, query filter or key.
             // Re-fingerprinted for Q9: the customer-acceptance facts and their approval-state constraint remain on the
             // same company-filtered Draft row; no query-filter bypass, direct database surface or tenant key changed.
+            // Re-fingerprinted for PL04: the immutable price-floor replay-result constraint stays on the same
+            // company-filtered attempt row; no query-filter bypass, direct database surface or tenant key changed.
             ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/"
              + "Persistence/SalesDbContext.cs"] =
-                "0373b4726a727e6e3e14f5f6bf21c5dfd1eb0e2c1dc67526e10e18d83b5a3f54",
+                "f5b5fd5efec336d1614374b95864460310829e06499f090340dde77d19e879df",
             // LOG-4a: company-scoped like Organization; every tenant row (instructions, lines, shares, attempts) and
             // AuditEvent carries the CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/"
@@ -1033,8 +1036,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // once through the filtered context; no connection, command or raw SQL; SqlClient count unchanged.
                     // Re-fingerprinted for DEC-SAL-002: the price and quantity revisions share one archive-and-save
                     // core (still a single save through the filtered context); SqlClient count unchanged.
+                    // Re-fingerprinted for PL04: the first complete price-floor approval response is persisted and
+                    // replayed from the existing company-filtered attempt; SqlClient count remains unchanged.
                     new(
-                        "ced2d592e0ca627c48fd8fadafe8f1fa5cc66223924477ba8efa9b26cedb21af",
+                        "890a1bea27e988b824d25ee71860f58aaea64a93be88ab8a891106b6a4d2ef8c",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -1279,6 +1284,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // Q9 customer acceptance is immutable; Down refuses before removing the acceptance columns.
                 ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20260930223000_AddDraftCustomerAcceptance.cs"] =
                     new("faf491c8f59d0fe55a0f929d91c20468134d07b816fd468389e3ae632f9f64a6",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
+                // PL04: the Down's only raw SQL refuses rollback (51064) while an immutable price-floor approval
+                // replay result exists; the refusal precedes removal of the constraint and result column.
+                ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20261004160000_AddSalesPriceFloorApprovalReplayResults.cs"] =
+                    new("b1f3e21b2f6b13a6340edac1b29b5d5d25d5599212ab4d0596d905ed54679d3e",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 1 }),
                 // AT-053: the Down's only raw SQL is Logistics' module refusal (51056, used by no other migration) while
