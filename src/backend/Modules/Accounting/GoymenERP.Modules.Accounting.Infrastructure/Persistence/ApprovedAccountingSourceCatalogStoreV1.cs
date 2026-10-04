@@ -58,54 +58,67 @@ public sealed class ApprovedAccountingSourceCatalogStoreV1(
                 nameof(preview));
         }
 
-        if (await dbContext.ApprovedSourceCatalogs
-                .SingleOrDefaultAsync(candidate => candidate.Id == packageId, cancellationToken) is { } existing)
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        try
         {
-            if (existing.PreparedByUserId != preparedByUserId
-                || !string.Equals(existing.AccountPlanSourceVersion,
-                    preview.Package.Mirror.SourceVersion, StringComparison.Ordinal)
-                || !string.Equals(existing.AccountsSourceSha256, preview.AccountsSourceSha256,
-                    StringComparison.OrdinalIgnoreCase)
-                || !string.Equals(existing.PostingMappingsSourceSha256,
-                    preview.PostingMappingsSourceSha256, StringComparison.OrdinalIgnoreCase))
+            if (await dbContext.ApprovedSourceCatalogs
+                    .SingleOrDefaultAsync(candidate => candidate.Id == packageId, cancellationToken) is { } existing)
             {
-                throw Refused(ApprovedAccountingSourceCatalogCodesV1.ContentConflict,
-                    "The package identity is already bound to other immutable content.");
+                if (existing.PreparedByUserId != preparedByUserId
+                    || !string.Equals(existing.AccountPlanSourceVersion,
+                        preview.Package.Mirror.SourceVersion, StringComparison.Ordinal)
+                    || !string.Equals(existing.AccountsSourceSha256, preview.AccountsSourceSha256,
+                        StringComparison.OrdinalIgnoreCase)
+                    || !string.Equals(existing.PostingMappingsSourceSha256,
+                        preview.PostingMappingsSourceSha256, StringComparison.OrdinalIgnoreCase))
+                {
+                    throw Refused(ApprovedAccountingSourceCatalogCodesV1.ContentConflict,
+                        "The package identity is already bound to other immutable content.");
+                }
+
+                await freshAuthorityFence(cancellationToken);
+                var replay = Restore(existing);
+                Complete(metadata, replay);
+                await SaveAsync(cancellationToken);
+                await freshAuthorityFence(cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
+                return (replay, AccountingWriteOutcome.Replayed);
             }
 
+            var snapshot = PackageSnapshot.From(preview.Package);
+            var row = new ApprovedAccountingSourceCatalogRow
+            {
+                Id = packageId,
+                CompanyId = companyContext.CompanyId,
+                Status = Prepared,
+                Version = 1,
+                CatalogVersion = null,
+                TemplateVersion = preview.TemplateVersion,
+                AccountPlanSourceVersion = preview.Package.Mirror.SourceVersion,
+                AccountsSourceSha256 = preview.AccountsSourceSha256.ToUpperInvariant(),
+                PostingMappingsSourceSha256 = preview.PostingMappingsSourceSha256.ToUpperInvariant(),
+                PackageJson = JsonSerializer.Serialize(snapshot, Json),
+                PreparedByUserId = preparedByUserId,
+                PreparedAtUtc = preparedAtUtc,
+                CreatedAtUtc = preparedAtUtc,
+                UpdatedAtUtc = preparedAtUtc,
+            };
+            dbContext.ApprovedSourceCatalogs.Add(row);
             await freshAuthorityFence(cancellationToken);
-            var replay = Restore(existing);
-            Complete(metadata, replay);
+            var record = Restore(row);
+            Audit(metadata, row, "accounting.approved-source-catalog.prepared.v1", "Prepare", null, 1,
+                "{}", AuditJson(record), "Onayli hesap plani ve esleme paketi degistirilemez surum olarak hazirlandi");
+            Complete(metadata, record);
             await SaveAsync(cancellationToken);
-            return (replay, AccountingWriteOutcome.Replayed);
+            await freshAuthorityFence(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+            return (record, AccountingWriteOutcome.Recorded);
         }
-
-        var snapshot = PackageSnapshot.From(preview.Package);
-        var row = new ApprovedAccountingSourceCatalogRow
+        catch
         {
-            Id = packageId,
-            CompanyId = companyContext.CompanyId,
-            Status = Prepared,
-            Version = 1,
-            CatalogVersion = null,
-            TemplateVersion = preview.TemplateVersion,
-            AccountPlanSourceVersion = preview.Package.Mirror.SourceVersion,
-            AccountsSourceSha256 = preview.AccountsSourceSha256.ToUpperInvariant(),
-            PostingMappingsSourceSha256 = preview.PostingMappingsSourceSha256.ToUpperInvariant(),
-            PackageJson = JsonSerializer.Serialize(snapshot, Json),
-            PreparedByUserId = preparedByUserId,
-            PreparedAtUtc = preparedAtUtc,
-            CreatedAtUtc = preparedAtUtc,
-            UpdatedAtUtc = preparedAtUtc,
-        };
-        dbContext.ApprovedSourceCatalogs.Add(row);
-        await freshAuthorityFence(cancellationToken);
-        var record = Restore(row);
-        Audit(metadata, row, "accounting.approved-source-catalog.prepared.v1", "Prepare", null, 1,
-            "{}", AuditJson(record), "Onayli hesap plani ve esleme paketi degistirilemez surum olarak hazirlandi");
-        Complete(metadata, record);
-        await SaveAsync(cancellationToken);
-        return (record, AccountingWriteOutcome.Recorded);
+            await transaction.RollbackAsync(cancellationToken);
+            throw;
+        }
     }
 
     public async Task<ApprovedAccountingSourceCatalogRecordV1> ActivateAsync(

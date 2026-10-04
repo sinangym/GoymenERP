@@ -267,6 +267,45 @@ public sealed class AccountingApprovedSourceCatalogSqlServerRelationalAcceptance
     }
 
     [SqlServerFact]
+    public async Task Permission_revoked_after_prepare_save_rolls_back_new_and_identical_package_effects()
+    {
+        var newPackage = Package(Guid.NewGuid(), "mikro-synthetic-late-revoked-new-v1");
+        var authority = new SwitchableCatalogAuthority();
+        await using (var run = await Run.StartAsync(authority))
+        {
+            await run.GrantAsync(Preparer, CompanyA, PreparePermission);
+            using var client = run.Client(Preparer, CompanyA);
+            authority.DenyOnCatalogRead(5);
+            var before = await run.CountsAsync(newPackage.Id);
+
+            using var refused = await PrepareAsync(client, newPackage, Key("late-revoked-new"));
+
+            Assert.Equal(HttpStatusCode.Forbidden, refused.StatusCode);
+            Assert.Equal(before, await run.CountsAsync(newPackage.Id));
+        }
+
+        var identicalPackage = Package(Guid.NewGuid(), "mikro-synthetic-late-revoked-identical-v1");
+        authority = new SwitchableCatalogAuthority();
+        await using (var run = await Run.StartAsync(authority))
+        {
+            await run.GrantAsync(Preparer, CompanyA, PreparePermission);
+            using var client = run.Client(Preparer, CompanyA);
+            using (var prepared = await PrepareAsync(client, identicalPackage, Key("late-revoked-first")))
+            {
+                Assert.Equal(HttpStatusCode.Created, prepared.StatusCode);
+            }
+            var before = await run.CountsAsync(identicalPackage.Id);
+            authority.DenyOnCatalogRead(5);
+
+            using var refused = await PrepareAsync(client, identicalPackage, Key("late-revoked-new-key"));
+
+            Assert.Equal(HttpStatusCode.Forbidden, refused.StatusCode);
+            Assert.Equal(before, await run.CountsAsync(identicalPackage.Id));
+            Assert.Equal(1, (await run.CatalogAsync(identicalPackage.Id)).Status);
+        }
+    }
+
+    [SqlServerFact]
     public async Task Stale_package_or_active_catalog_version_is_refused_and_preserves_the_current_active_catalog()
     {
         var first = Package(Guid.NewGuid(), "mikro-synthetic-stale-v1");
@@ -566,8 +605,14 @@ public sealed class AccountingApprovedSourceCatalogSqlServerRelationalAcceptance
 
         public void DenyAfterFirstCatalogRead()
         {
+            DenyOnCatalogRead(2);
+        }
+
+        public void DenyOnCatalogRead(int deniedRead)
+        {
+            ArgumentOutOfRangeException.ThrowIfLessThan(deniedRead, 1);
             Volatile.Write(ref catalogReads, 0);
-            Volatile.Write(ref allowedCatalogReads, 1);
+            Volatile.Write(ref allowedCatalogReads, deniedRead - 1);
         }
 
         public Task<PermissionScope> RevalidatePermissionScopeAsync(
