@@ -327,20 +327,21 @@ public sealed partial class LogisticsInstructionSqlServerRelationalAcceptanceTes
         var options = new DbContextOptionsBuilder<LogisticsDbContext>()
             .UseSqlServer(run.Factory.DatabaseConnectionString, sql => sql.MigrationsHistoryTable("__EFMigrationsHistory", LogisticsDbContext.Schema))
             .Options;
+        const string DraftsMigration = "20260930120000_AddDispatchNoteDrafts";
+        const string LifecycleMigration = "20260930150000_AddDispatchNoteLifecycle";
         const string LifecycleExists = "SELECT COUNT(*) FROM sys.columns WHERE [name] = N'Released' AND OBJECT_NAME([object_id]) = N'DispatchNoteLines'";
         var owners = Owners.For(CompanyA);
         var (id, note, _) = await DraftedInstructionAsync(run, owners);
-        string before;
 
         // Plain drafts are the previous schema's shape: the rollback keeps them, the old unfiltered key returns, and re-applying
         // the migration backfills each draft's creation step from its NoteNo.
         await using (var context = new LogisticsDbContext(options, companyContext))
         {
             var applied = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
-            Assert.EndsWith("_AddDispatchNoteLifecycle", applied[^1], StringComparison.Ordinal);
-            before = applied[^2];
-            Assert.EndsWith("_AddDispatchNoteDrafts", before, StringComparison.Ordinal);
-            await context.GetService<IMigrator>().MigrateAsync(before);
+            Assert.Contains(DraftsMigration, applied);
+            Assert.Contains(LifecycleMigration, applied);
+            await context.GetService<IMigrator>().MigrateAsync(DraftsMigration);
+            Assert.Equal(DraftsMigration, (await context.Database.GetAppliedMigrationsAsync()).Last());
             Assert.Equal(0, await run.ScalarAsync<int>(LifecycleExists));
             Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM logistics.DispatchNotes WHERE DispatchNoteId = @n", ("@n", note)));
             // The drafts' single-link key is back: unique and not filtered on Released (EF's hand-written unique index carries its
@@ -365,8 +366,14 @@ public sealed partial class LogisticsInstructionSqlServerRelationalAcceptanceTes
         await using (var context = new LogisticsDbContext(options, companyContext))
         {
             var applied = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
-            var error = await Assert.ThrowsAsync<SqlException>(() => context.GetService<IMigrator>().MigrateAsync(before));
+            await context.GetService<IMigrator>().MigrateAsync(LifecycleMigration);
+            var checkpoint = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
+            Assert.Equal(LifecycleMigration, checkpoint[^1]);
+            var error = await Assert.ThrowsAsync<SqlException>(() =>
+                context.GetService<IMigrator>().MigrateAsync(DraftsMigration));
             Assert.Equal(51056, error.Number);
+            Assert.Equal(checkpoint, await context.Database.GetAppliedMigrationsAsync());
+            await context.Database.MigrateAsync();
             Assert.Equal(applied, await context.Database.GetAppliedMigrationsAsync());
         }
 
