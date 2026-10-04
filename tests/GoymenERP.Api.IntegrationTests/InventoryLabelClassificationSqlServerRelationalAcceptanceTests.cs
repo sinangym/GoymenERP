@@ -122,6 +122,18 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType = N'inventory.label.classified.v1' AND EntityId = @id",
             ("@id", source.LabelId.ToString("D"))));
 
+        // Classification is the only newly mutable label fact. The same guard must still reject
+        // an unrelated identity change after the approved classification has persisted.
+        await using (var context = run.Context(CompanyA))
+        {
+            var persisted = await context.Labels.SingleAsync(row => row.Id == source.LabelId);
+            persisted.Code = "SYN-LABEL-CLASSIFICATION-CHANGED";
+
+            await Assert.ThrowsAsync<InvalidOperationException>(() => context.SaveChangesAsync());
+        }
+        Assert.Equal("SYN-LABEL-CLASSIFICATION", await run.ScalarAsync<string>(
+            "SELECT Code FROM inventory.Labels WHERE Id = @id", ("@id", source.LabelId)));
+
         await using (var context = run.Context(CompanyA))
         {
             var refused = await Assert.ThrowsAsync<SqlException>(

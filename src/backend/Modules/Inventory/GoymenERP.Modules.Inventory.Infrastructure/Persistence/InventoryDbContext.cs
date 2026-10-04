@@ -972,7 +972,10 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
             {
                 string[] allowed = entry.Entity switch
                 {
-                    LabelRow => [nameof(LabelRow.Version), nameof(LabelRow.UpdatedAtUtc)],
+                    LabelRow =>
+                    [
+                        nameof(LabelRow.Classification), nameof(LabelRow.Version), nameof(LabelRow.UpdatedAtUtc),
+                    ],
                     BalanceRow => [nameof(BalanceRow.QuantityKg)],
                     AllocationRow =>
                     [
