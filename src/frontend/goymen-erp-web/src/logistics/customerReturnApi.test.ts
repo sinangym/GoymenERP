@@ -1,11 +1,36 @@
 import { describe, expect, it } from "vitest";
 import {
+  abandonCustomerReturnAttempt,
+  beginCustomerReturnAttempt,
   canRetryCustomerReturnAttempt,
+  customerReturnCommandState,
   freezeCustomerReturnAttempt,
   isCustomerReturnAdapterReady,
   isCustomerReturnContextCurrent,
+  retryCustomerReturnAttempt,
+  settleCustomerReturnAttempt,
   type CustomerReturnEndpointAdapter,
+  type CustomerReturnAttemptLifecycle,
 } from "./customerReturnApi";
+import type { RequestCustomerReturnV1 } from "./customerReturnContract";
+
+const requestPayload: RequestCustomerReturnV1 = {
+  customerReturnId: "00000000-0000-4000-8000-000000000001",
+  sourceDeliveryId: "00000000-0000-4000-8000-000000000002",
+  expectedInstructionVersion: "8",
+  quantity: "1.250",
+  reason: "Ambalaj hasarı",
+  occurredAtUtc: "2026-10-04T08:00:00Z",
+};
+
+function requestAttempt() {
+  return {
+    operationId: "central-operation-id",
+    binding: "company-a:authority-2",
+    idempotencyKey: "stable-key",
+    payload: requestPayload,
+  };
+}
 
 describe("customer-return adapter boundary", () => {
   it("fails closed when the central endpoint adapter is absent", () => {
@@ -33,19 +58,7 @@ describe("customer-return adapter boundary", () => {
   });
 
   it("freezes the idempotency key and exact body used by an unknown retry", () => {
-    const attempt = freezeCustomerReturnAttempt({
-      operationId: "central-operation-id",
-      binding: "company-a:authority-2",
-      idempotencyKey: "stable-key",
-      payload: {
-        customerReturnId: "00000000-0000-4000-8000-000000000001",
-        sourceDeliveryId: "00000000-0000-4000-8000-000000000002",
-        expectedInstructionVersion: "8",
-        quantity: "1.250",
-        reason: "Ambalaj hasarı",
-        occurredAtUtc: "2026-10-04T08:00:00Z",
-      },
-    });
+    const attempt = freezeCustomerReturnAttempt(requestAttempt());
 
     expect(Object.isFrozen(attempt)).toBe(true);
     expect(Object.isFrozen(attempt.payload)).toBe(true);
@@ -57,6 +70,130 @@ describe("customer-return adapter boundary", () => {
       quantity: "1.250",
       reason: "Ambalaj hasarı",
       occurredAtUtc: "2026-10-04T08:00:00Z",
+    });
+  });
+
+  it("retries an unknown transport result with the same frozen key and body", () => {
+    const sending = beginCustomerReturnAttempt({ type: "idle" }, requestAttempt());
+    expect(sending.type).toBe("sending");
+    if (sending.type !== "sending") throw new Error("expected sending state");
+
+    const unknown = settleCustomerReturnAttempt(
+      sending,
+      sending.attempt,
+      { type: "network-error" },
+      sending.attempt.binding,
+    );
+    expect(customerReturnCommandState(unknown)).toEqual({
+      type: "unknown",
+      binding: "company-a:authority-2",
+      idempotencyKey: "stable-key",
+    });
+
+    const retry = retryCustomerReturnAttempt(unknown, "company-a:authority-2");
+    expect(retry.type).toBe("sending");
+    if (retry.type !== "sending") throw new Error("expected retry state");
+    expect(retry.attempt).toBe(sending.attempt);
+    expect(retry.attempt.payload).toEqual(requestPayload);
+  });
+
+  it("does not start a quiet new key while an unknown attempt is live", () => {
+    const frozen = freezeCustomerReturnAttempt(requestAttempt());
+    const unknown: CustomerReturnAttemptLifecycle<RequestCustomerReturnV1> = { type: "unknown", attempt: frozen };
+
+    expect(() => beginCustomerReturnAttempt(unknown, {
+      ...requestAttempt(),
+      idempotencyKey: "different-key",
+    })).toThrow(/retried or explicitly abandoned/i);
+  });
+
+  it("ignores a late result and refuses retry or abandon after the company-authority binding changes", () => {
+    const sending = beginCustomerReturnAttempt({ type: "idle" }, requestAttempt());
+    if (sending.type !== "sending") throw new Error("expected sending state");
+
+    const late = settleCustomerReturnAttempt(
+      sending,
+      sending.attempt,
+      { type: "http", status: 409 },
+      "company-b:authority-2",
+    );
+    expect(late).toBe(sending);
+
+    const unknown: CustomerReturnAttemptLifecycle<RequestCustomerReturnV1> = {
+      type: "unknown",
+      attempt: sending.attempt,
+    };
+    expect(retryCustomerReturnAttempt(unknown, "company-b:authority-2")).toBe(unknown);
+    expect(abandonCustomerReturnAttempt(unknown, "company-b:authority-2")).toBe(unknown);
+  });
+
+  it("treats a definitive HTTP response as failed before allowing a deliberate new attempt", () => {
+    const sending = beginCustomerReturnAttempt({ type: "idle" }, requestAttempt());
+    if (sending.type !== "sending") throw new Error("expected sending state");
+
+    const failed = settleCustomerReturnAttempt(
+      sending,
+      sending.attempt,
+      { type: "http", status: 409 },
+      sending.attempt.binding,
+    );
+    expect(customerReturnCommandState(failed)).toEqual({
+      type: "failed",
+      binding: "company-a:authority-2",
+    });
+
+    const next = beginCustomerReturnAttempt(failed, {
+      ...requestAttempt(),
+      idempotencyKey: "deliberate-new-key",
+    });
+    expect(next.type).toBe("sending");
+    if (next.type !== "sending") throw new Error("expected next attempt");
+    expect(next.attempt.idempotencyKey).toBe("deliberate-new-key");
+  });
+
+  it("keeps the immutable replay response when the exact live attempt succeeds", () => {
+    const sending = beginCustomerReturnAttempt({ type: "idle" }, requestAttempt());
+    if (sending.type !== "sending") throw new Error("expected sending state");
+    const response = {
+      return: {
+        customerReturnId: requestPayload.customerReturnId,
+        companyId: "00000000-0000-4000-8000-000000000003",
+        loadingInstructionId: "00000000-0000-4000-8000-000000000004",
+        loadingInstructionLineId: "00000000-0000-4000-8000-000000000005",
+        sourceDeliveryId: requestPayload.sourceDeliveryId,
+        sourceShipmentId: "00000000-0000-4000-8000-000000000006",
+        sourceOrderId: "00000000-0000-4000-8000-000000000007",
+        sourceOrderLineId: "00000000-0000-4000-8000-000000000008",
+        unitId: "00000000-0000-4000-8000-000000000009",
+        quantity: requestPayload.quantity,
+        sourceDeliveredQuantity: "2.000",
+        status: "Pending" as const,
+        version: "1",
+        reason: requestPayload.reason,
+        requestedBy: "actor-a",
+        occurredAtUtc: requestPayload.occurredAtUtc,
+        requestedAtUtc: "2026-10-04T08:01:00Z",
+        decidedBy: null,
+        decidedAtUtc: null,
+        decisionNote: null,
+        inventoryMovementId: null,
+        originalLabelId: null,
+        originalShipmentMovementId: null,
+      },
+      isReplay: true,
+      originalCorrelationId: "00000000-0000-4000-8000-000000000010",
+    };
+
+    const succeeded = settleCustomerReturnAttempt(
+      sending,
+      sending.attempt,
+      { type: "succeeded", response },
+      sending.attempt.binding,
+    );
+    expect(customerReturnCommandState(succeeded)).toEqual({
+      type: "succeeded",
+      binding: "company-a:authority-2",
+      response,
     });
   });
 });
