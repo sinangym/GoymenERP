@@ -36,6 +36,9 @@ namespace GoymenERP.Api.IntegrationTests;
 // existing synthetic development actor, never Sinan or a normal deployment.
 public sealed class ProductGlobalRuntimeSqlServerRelationalAcceptanceTests
 {
+    private const string ProductPreFamilyRegistryMigration = "20260912175128_InitialProductDrafts";
+    private const string ProductFamilyRegistryMigration = "20260919100000_AddProductFamilyRegistry";
+    private const string ProductTechnicalDefinitionMigration = "20261004130000_ReleaseInitialProductTechnicalDefinition";
     private static readonly Guid ActorId = Guid.Parse("20000000-0000-0000-0000-000000000003");
     private static readonly Guid ActorExternalId = Guid.Parse("21000000-0000-0000-0000-000000000003");
     private static readonly Guid SystemRoleId = Guid.Parse("30000000-0000-0000-0000-000000000003");
@@ -417,7 +420,18 @@ public sealed class ProductGlobalRuntimeSqlServerRelationalAcceptanceTests
             await AssertRollbackRefusedAsync(migrationScope.ServiceProvider.GetRequiredService<AuditDbContext>(), 51041);
             await AssertRollbackRefusedAsync(migrationScope.ServiceProvider.GetRequiredService<IdentityDbContext>(), 51042);
             await AssertRollbackRefusedAsync(migrationScope.ServiceProvider.GetRequiredService<GroupSharedCommandDbContext>(), 51043);
-            await AssertRollbackRefusedAsync(migrationScope.ServiceProvider.GetRequiredService<ProductDbContext>(), 51044);
+            var product = migrationScope.ServiceProvider.GetRequiredService<ProductDbContext>();
+            var productMigrations = (await product.Database.GetAppliedMigrationsAsync()).ToArray();
+            Assert.Equal(ProductTechnicalDefinitionMigration, productMigrations[^1]);
+
+            // EF Core 10 commits each migration in its own transaction. First remove the unreferenced
+            // data-only release, then exercise the schema guard as a single rollback step. Reapply the
+            // release afterwards so this acceptance case leaves the Product runtime at its entry schema.
+            await product.GetService<IMigrator>().MigrateAsync(ProductFamilyRegistryMigration);
+            Assert.Equal(productMigrations[..^1], await product.Database.GetAppliedMigrationsAsync());
+            await AssertRollbackRefusedAsync(product, 51044, ProductPreFamilyRegistryMigration);
+            await product.GetService<IMigrator>().MigrateAsync(ProductTechnicalDefinitionMigration);
+            Assert.Equal(productMigrations, await product.Database.GetAppliedMigrationsAsync());
             Assert.Equal(afterEdit, await SnapshotAsync(factory.DatabaseConnectionString));
         });
 
@@ -765,11 +779,12 @@ public sealed class ProductGlobalRuntimeSqlServerRelationalAcceptanceTests
         }
     }
 
-    private static async Task AssertRollbackRefusedAsync(DbContext database, int errorNumber)
+    private static async Task AssertRollbackRefusedAsync(DbContext database, int errorNumber,
+        string? targetMigration = null)
     {
         var applied = (await database.Database.GetAppliedMigrationsAsync()).ToArray();
         Assert.NotEmpty(applied);
-        var target = applied.Length == 1 ? Migration.InitialDatabase : applied[^2];
+        var target = targetMigration ?? (applied.Length == 1 ? Migration.InitialDatabase : applied[^2]);
         var error = await Assert.ThrowsAsync<SqlException>(() => database.GetService<IMigrator>().MigrateAsync(target));
         Assert.Equal(errorNumber, error.Number);
         Assert.Equal(applied, await database.Database.GetAppliedMigrationsAsync());
