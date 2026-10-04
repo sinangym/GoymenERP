@@ -392,8 +392,8 @@ public sealed class LogisticsPersistenceModelTests
     {
         var provider = new LogisticsShellCapabilityProvider();
         var declarations = provider.GetDeclarations();
-        Assert.Equal("1.2", provider.ContractVersion);
-        Assert.Equal(7, declarations.Count);
+        Assert.Equal("1.3", provider.ContractVersion);
+        Assert.Equal(11, declarations.Count);
         Assert.All(declarations, declaration => Assert.True(declaration.ImplementationAvailable));
         Assert.Equal(
             [
@@ -428,6 +428,10 @@ public sealed class LogisticsPersistenceModelTests
         // Master v3 §27.8: L-02 is the instruction list, L-03 the new/edit workspace; the detail is a view of one L-02 row.
         Assert.Equal(
             [
+                ("logistics.customer-returns.approve", "L-02-DETAIL"),
+                ("logistics.customer-returns.read", "L-02-DETAIL"),
+                ("logistics.customer-returns.reject", "L-02-DETAIL"),
+                ("logistics.customer-returns.request", "L-02-DETAIL"),
                 ("logistics.deliveries.record", "L-02-DETAIL"),
                 ("logistics.instructions.create", "L-03"),
                 ("logistics.instructions.detail", "L-02-DETAIL"),
@@ -446,6 +450,27 @@ public sealed class LogisticsPersistenceModelTests
         Assert.Equal(LogisticsShellCapabilityProvider.DetailCapabilityId, delivery.ParentCapabilityId);
         Assert.Equal([LogisticsPermissionManifestV1.InstructionsRead, LogisticsPermissionManifestV1.DeliveriesRecord],
             delivery.RequiredPermissions);
+        var customerReturnRead = declarations.Single(item =>
+            item.CapabilityId == LogisticsShellCapabilityProvider.CustomerReturnsReadCapabilityId);
+        Assert.Equal(LogisticsShellCapabilityProvider.DetailCapabilityId, customerReturnRead.ParentCapabilityId);
+        Assert.Equal([LogisticsPermissionManifestV1.InstructionsRead, LogisticsPermissionManifestV1.CustomerReturnsRead],
+            customerReturnRead.RequiredPermissions);
+        var customerReturnRequest = declarations.Single(item =>
+            item.CapabilityId == LogisticsShellCapabilityProvider.CustomerReturnsRequestCapabilityId);
+        Assert.Equal(LogisticsShellCapabilityProvider.DetailCapabilityId, customerReturnRequest.ParentCapabilityId);
+        Assert.Equal([LogisticsPermissionManifestV1.InstructionsRead, LogisticsPermissionManifestV1.CustomerReturnsRead,
+            LogisticsPermissionManifestV1.CustomerReturnsRequest], customerReturnRequest.RequiredPermissions);
+        var customerReturnApprove = declarations.Single(item =>
+            item.CapabilityId == LogisticsShellCapabilityProvider.CustomerReturnsApproveCapabilityId);
+        Assert.Equal(LogisticsShellCapabilityProvider.DetailCapabilityId, customerReturnApprove.ParentCapabilityId);
+        Assert.Equal([LogisticsPermissionManifestV1.InstructionsRead, LogisticsPermissionManifestV1.CustomerReturnsRead,
+            LogisticsPermissionManifestV1.CustomerReturnsDecision, ErpPermissions.InventoryPhysicalAllocationWrite],
+            customerReturnApprove.RequiredPermissions);
+        var customerReturnReject = declarations.Single(item =>
+            item.CapabilityId == LogisticsShellCapabilityProvider.CustomerReturnsRejectCapabilityId);
+        Assert.Equal(LogisticsShellCapabilityProvider.DetailCapabilityId, customerReturnReject.ParentCapabilityId);
+        Assert.Equal([LogisticsPermissionManifestV1.InstructionsRead, LogisticsPermissionManifestV1.CustomerReturnsRead,
+            LogisticsPermissionManifestV1.CustomerReturnsDecision], customerReturnReject.RequiredPermissions);
     }
 
     private static LoadingInstructionRow Instruction(Guid company) => new()
