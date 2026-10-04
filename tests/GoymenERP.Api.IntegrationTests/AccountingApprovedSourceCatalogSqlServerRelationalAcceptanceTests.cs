@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -13,6 +14,7 @@ using GoymenERP.Modules.Identity.Domain.Assignments;
 using GoymenERP.Modules.Identity.Domain.Roles;
 using GoymenERP.Modules.Identity.Domain.Users;
 using GoymenERP.Modules.Identity.Infrastructure.Persistence;
+using GoymenERP.Modules.Settings.Contracts;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -31,9 +33,14 @@ public sealed class AccountingApprovedSourceCatalogSqlServerRelationalAcceptance
 {
     private const string PackagesPath = "/api/v1/accounting/approved-source-catalog/packages";
     private const string NormalDraftSourcesPath = "/api/v1/accounting/normal-journal-draft-sources";
+    private const string NormalDraftsPath = "/api/v1/accounting/normal-journal-drafts";
+    private const string PeriodsPath = "/api/v1/accounting/periods";
+    private const string JournalsPath = "/api/v1/accounting/journals";
+    private const string TrialBalancePath = "/api/v1/accounting/trial-balance";
     private const string PreparePermission = "accounting.approved-source-catalog.prepare";
     private const string ActivatePermission = "accounting.approved-source-catalog.activate";
     private static readonly string DraftCreatePermission = NormalJournalPermissionNamesV1.DraftCreate;
+    private static readonly string DraftApprovePermission = NormalJournalPermissionNamesV1.DraftApprove;
     private const string Preparer = TestUsers.CompanyA;
     private const string OtherActor = TestUsers.CompanyAViewer;
     private const string ForeignActor = TestUsers.GroupAdmin;
@@ -43,7 +50,7 @@ public sealed class AccountingApprovedSourceCatalogSqlServerRelationalAcceptance
     private static readonly Guid CompanyA = TestCompanyIds.CompanyA;
     private static readonly Guid CompanyB = TestCompanyIds.CompanyB;
     private static readonly Guid SourceId = Guid.Parse("30000000-0000-4000-8000-000000000001");
-    private static readonly Guid CurrencyId = Guid.Parse("40000000-0000-4000-8000-000000000001");
+    private static readonly Guid CurrencyId = SettingsCurrencyIdentitiesV1.TurkishLira;
     private static readonly Guid OtherCurrencyId = Guid.Parse("40000000-0000-4000-8000-000000000099");
     private static readonly Guid DebitAccountId = Guid.Parse("20000000-0000-4000-8000-000000000001");
     private static readonly Guid CreditAccountId = Guid.Parse("20000000-0000-4000-8000-000000000002");
@@ -125,6 +132,175 @@ public sealed class AccountingApprovedSourceCatalogSqlServerRelationalAcceptance
         Assert.Equal(package.MappingsSha256, stored.MappingsSha256.ToUpperInvariant());
         Assert.Equal(actor, stored.PreparedBy);
         Assert.Equal(actor, stored.ActivatedBy);
+    }
+
+    [SqlServerFact]
+    public async Task Durable_catalog_and_recorded_finance_source_create_reopen_approve_and_report_one_normal_journal()
+    {
+        var package = Package(Guid.NewGuid(), "mikro-synthetic-normal-journal-v1");
+        var draftId = Guid.NewGuid();
+        var periodId = Guid.NewGuid();
+        var occurredOn = new DateOnly(2026, 10, 2);
+        const string amount = "10.00";
+        await using var run = await Run.StartAsync();
+        await run.GrantAsync(Preparer, CompanyA,
+            PreparePermission, ActivatePermission, DraftCreatePermission, DraftApprovePermission,
+            AccountingPermissionManifestV1.PeriodsPropose, AccountingPermissionManifestV1.JournalsRead);
+        await run.GrantAsync(OtherActor, CompanyA, AccountingPermissionManifestV1.PeriodsApprove);
+
+        using (var catalogClient = run.Client(Preparer, CompanyA))
+        {
+            await PrepareAndActivateAsync(catalogClient, package, 0, "normal-journal");
+        }
+
+        string preparationVersion;
+        using (var sourceClient = run.Client(Preparer, CompanyA))
+        using (var sourceResponse = await sourceClient.GetAsync($"{NormalDraftSourcesPath}/{SourceId:D}"))
+        {
+            Assert.Equal(HttpStatusCode.OK, sourceResponse.StatusCode);
+            var source = await Json(sourceResponse);
+            preparationVersion = source.GetProperty("preparationVersion").GetString()!;
+            Assert.True(NormalJournalDraftSourcePreparationV1.IsPreparationVersion(preparationVersion));
+            Assert.Equal((SourceId, ReceiptVersion, ProfileId, ProfileVersion, CurrencyId),
+                (source.GetProperty("sourceId").GetGuid(), source.GetProperty("sourceVersion").GetString(),
+                    source.GetProperty("ownerProfileId").GetString(),
+                    source.GetProperty("ownerProfileVersion").GetString(),
+                    source.GetProperty("currencyId").GetGuid()));
+        }
+
+        using (var proposer = run.Client(Preparer, CompanyA))
+        using (var proposed = await SendJsonAsync(proposer, PeriodsPath, Key("period-propose"),
+                   new ProposePeriodRequestV1(periodId, new DateOnly(2026, 10, 1), new DateOnly(2026, 10, 31))))
+        {
+            Assert.Equal(HttpStatusCode.Created, proposed.StatusCode);
+        }
+        using (var checker = run.Client(OtherActor, CompanyA))
+        using (var approved = await SendJsonAsync(checker, $"{PeriodsPath}/{periodId:D}/approval",
+                   Key("period-approve"), new PeriodCommandRequestV1(1)))
+        {
+            Assert.Equal(HttpStatusCode.OK, approved.StatusCode);
+        }
+
+        var createRequest = new CreateNormalJournalDraftRequestV1(
+            draftId, SourceId, occurredOn, occurredOn, null, preparationVersion,
+            [
+                new CreateNormalJournalDraftLineRequestV1(DebitAccountId, "Debit", amount),
+                new CreateNormalJournalDraftLineRequestV1(CreditAccountId, "Credit", amount),
+            ]);
+        var createKey = Key("draft-create");
+        JsonElement createdBody;
+        using (var createClient = run.Client(Preparer, CompanyA))
+        using (var created = await SendJsonAsync(createClient, NormalDraftsPath, createKey, createRequest))
+        {
+            Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+            Assert.False(IsReplay(created));
+            createdBody = await Json(created);
+            Assert.Equal((draftId, SourceId, "Draft", 1L),
+                (createdBody.GetProperty("draftId").GetGuid(), createdBody.GetProperty("sourceId").GetGuid(),
+                    createdBody.GetProperty("status").GetString(), createdBody.GetProperty("version").GetInt64()));
+            Assert.Equal(package.AccountPlanSourceVersion,
+                createdBody.GetProperty("accountPlanSourceVersion").GetString());
+            Assert.Equal(package.AccountsSha256,
+                createdBody.GetProperty("accountPlanSourceSha256").GetString());
+        }
+        using (var replayClient = run.Client(Preparer, CompanyA))
+        using (var replay = await SendJsonAsync(replayClient, NormalDraftsPath, createKey, createRequest))
+        {
+            Assert.Equal(HttpStatusCode.Created, replay.StatusCode);
+            Assert.True(IsReplay(replay));
+            Assert.Equal(createdBody.GetRawText(), (await Json(replay)).GetRawText());
+        }
+
+        using (var reopenClient = run.Client(Preparer, CompanyA))
+        using (var reopened = await reopenClient.GetAsync($"{NormalDraftsPath}/{draftId:D}"))
+        {
+            Assert.Equal(HttpStatusCode.OK, reopened.StatusCode);
+            var body = await Json(reopened);
+            Assert.Equal((draftId, SourceId, "Draft", 1L),
+                (body.GetProperty("draftId").GetGuid(), body.GetProperty("sourceId").GetGuid(),
+                    body.GetProperty("status").GetString(), body.GetProperty("version").GetInt64()));
+        }
+
+        var approveRequest = new ApproveNormalJournalDraftRequestV1(1, periodId);
+        var approveKey = Key("draft-approve");
+        JsonElement approvedBody;
+        using (var approveClient = run.Client(Preparer, CompanyA))
+        using (var approved = await SendJsonAsync(approveClient, $"{NormalDraftsPath}/{draftId:D}/approval",
+                   approveKey, approveRequest))
+        {
+            Assert.Equal(HttpStatusCode.OK, approved.StatusCode);
+            Assert.False(IsReplay(approved));
+            approvedBody = await Json(approved);
+            Assert.Equal((draftId, SourceId, periodId, draftId, "Approved", 2L),
+                (approvedBody.GetProperty("draftId").GetGuid(), approvedBody.GetProperty("sourceId").GetGuid(),
+                    approvedBody.GetProperty("periodId").GetGuid(),
+                    approvedBody.GetProperty("postedJournalId").GetGuid(),
+                    approvedBody.GetProperty("status").GetString(), approvedBody.GetProperty("version").GetInt64()));
+        }
+        using (var replayClient = run.Client(Preparer, CompanyA))
+        using (var replay = await SendJsonAsync(replayClient, $"{NormalDraftsPath}/{draftId:D}/approval",
+                   approveKey, approveRequest))
+        {
+            Assert.Equal(HttpStatusCode.OK, replay.StatusCode);
+            Assert.True(IsReplay(replay));
+            Assert.Equal(approvedBody.GetRawText(), (await Json(replay)).GetRawText());
+        }
+
+        using (var reopenClient = run.Client(Preparer, CompanyA))
+        using (var reopened = await reopenClient.GetAsync($"{NormalDraftsPath}/{draftId:D}"))
+        {
+            Assert.Equal(HttpStatusCode.OK, reopened.StatusCode);
+            var body = await Json(reopened);
+            Assert.Equal(("Approved", 2L, draftId),
+                (body.GetProperty("status").GetString(), body.GetProperty("version").GetInt64(),
+                    body.GetProperty("postedJournalId").GetGuid()));
+        }
+
+        string totalDebit;
+        string totalCredit;
+        using (var journalClient = run.Client(Preparer, CompanyA))
+        using (var journalResponse = await journalClient.GetAsync($"{JournalsPath}/{draftId:D}"))
+        {
+            Assert.Equal(HttpStatusCode.OK, journalResponse.StatusCode);
+            var detail = await Json(journalResponse);
+            var journal = detail.GetProperty("journal");
+            totalDebit = journal.GetProperty("totalDebit").GetString()!;
+            totalCredit = journal.GetProperty("totalCredit").GetString()!;
+            Assert.Equal((draftId, SourceId, periodId, CurrencyId, "receipt", "rule-v1", 2),
+                (journal.GetProperty("journalId").GetGuid(), journal.GetProperty("sourceId").GetGuid(),
+                    journal.GetProperty("periodId").GetGuid(), journal.GetProperty("currencyId").GetGuid(),
+                    journal.GetProperty("postingPurpose").GetString(),
+                    journal.GetProperty("postingRuleVersion").GetString(),
+                    journal.GetProperty("lineCount").GetInt32()));
+            Assert.Equal(totalDebit, totalCredit);
+            Assert.Equal(10m, decimal.Parse(totalDebit, CultureInfo.InvariantCulture));
+            Assert.Equal(2, detail.GetProperty("lines").GetArrayLength());
+        }
+
+        using (var reportClient = run.Client(Preparer, CompanyA))
+        using (var reportResponse = await reportClient.GetAsync(
+                   $"{TrialBalancePath}?fromAccountingDate={occurredOn:yyyy-MM-dd}"
+                   + $"&throughAccountingDate={occurredOn:yyyy-MM-dd}&currencyId={CurrencyId:D}"))
+        {
+            Assert.Equal(HttpStatusCode.OK, reportResponse.StatusCode);
+            var report = await Json(reportResponse);
+            Assert.Equal(2, report.GetProperty("lines").GetArrayLength());
+            var total = Assert.Single(report.GetProperty("currencyTotals").EnumerateArray());
+            Assert.Equal((CurrencyId, totalDebit, totalCredit, true),
+                (total.GetProperty("currencyId").GetGuid(), total.GetProperty("debit").GetString(),
+                    total.GetProperty("credit").GetString(), total.GetProperty("isBalanced").GetBoolean()));
+        }
+
+        var beforeRefusal = await run.OutcomeCountsAsync();
+        run.Receipts.Mode = SyntheticReceiptMode.ProfileMismatch;
+        var refusedRequest = createRequest with { DraftId = Guid.NewGuid() };
+        using (var refusedClient = run.Client(Preparer, CompanyA))
+        using (var refused = await SendJsonAsync(refusedClient, NormalDraftsPath,
+                   Key("draft-mismatched-source"), refusedRequest))
+        {
+            Assert.Equal(HttpStatusCode.ServiceUnavailable, refused.StatusCode);
+        }
+        Assert.Equal(beforeRefusal, await run.OutcomeCountsAsync());
     }
 
     [SqlServerFact]
@@ -454,6 +630,14 @@ public sealed class AccountingApprovedSourceCatalogSqlServerRelationalAcceptance
         return client.SendAsync(request);
     }
 
+    private static async Task<HttpResponseMessage> SendJsonAsync<T>(
+        HttpClient client, string path, string key, T body)
+    {
+        using var request = Command(HttpMethod.Post, path, key);
+        request.Content = JsonContent.Create(body);
+        return await client.SendAsync(request);
+    }
+
     private static HttpRequestMessage Command(HttpMethod method, string path, string key)
     {
         var request = new HttpRequestMessage(method, path);
@@ -740,6 +924,20 @@ public sealed class AccountingApprovedSourceCatalogSqlServerRelationalAcceptance
             await ScalarAsync<int>(
                 "SELECT COUNT(*) FROM audit.AuditEvents WHERE CompanyId = @c AND EntityId = @p",
                 ("@c", CompanyA), ("@p", packageId.ToString("D"))));
+
+        public async Task<(int Catalogs, int Drafts, int Journals, int Commands, int Audits)> OutcomeCountsAsync() =>
+            (
+                await ScalarAsync<int>(
+                    "SELECT COUNT(*) FROM accounting.ApprovedSourceCatalogs WHERE CompanyId = @c", ("@c", CompanyA)),
+                await ScalarAsync<int>(
+                    "SELECT COUNT(*) FROM accounting.NormalJournalDrafts WHERE CompanyId = @c", ("@c", CompanyA)),
+                await ScalarAsync<int>(
+                    "SELECT COUNT(*) FROM accounting.Journals WHERE CompanyId = @c", ("@c", CompanyA)),
+                await ScalarAsync<int>(
+                    "SELECT COUNT(*) FROM accounting.Commands WHERE CompanyId = @c", ("@c", CompanyA)),
+                await ScalarAsync<int>(
+                    "SELECT COUNT(*) FROM audit.AuditEvents WHERE CompanyId = @c", ("@c", CompanyA))
+            );
 
         public async Task<CatalogRow> CatalogAsync(Guid packageId)
         {
