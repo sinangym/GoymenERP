@@ -81,7 +81,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // production uses the own-server store and Defender when both are configured and answers 503 otherwise
     // (abe26a09… -> c027dce9…); no code line changed.
     private const string ReviewedOpenApiStartupFingerprint =
-        "5360ddb5008e2bb104a7e18664a8fd9e083f6b9811b1ffd28eb07450569d235d";
+        "d725a0c7474724d58238cc62c3d3e70e38bf613ccf8f5d210ce3557730be2244";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedProductManufacturingTechnicalRegistrationPath =
@@ -189,7 +189,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // R20 transfer lifecycle: +3 transfer SQL facts (bd676b05… -> c74360d3…).
             // Product-version provenance rollback: +1 isolated no-loss SQL fact (c444f707… -> d9cb549b…).
             ["tools/relational_inventory/inventory.txt"] =
-                "71a8969579ba098c63b5f997870c957b9df2dae59294bd8316b749c0b8c5b467",
+                "24f180e6af9780d0c725ed51ada58fc6d26bc933a68d436b595c11a4e6bc534e",
 
             // logistics
             // AT-053: +4 weighbridge SQL facts (81c1ff0b… -> 264898d7…).
@@ -198,7 +198,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // AT-055 lifecycle (#518, user decision 2026-09-30): +6 approve/cancel/e-İrsaliye/numbering SQL facts (010fcbd6… -> c5969829…).
             // #527: +3 cross-instruction Sales line-limit atomicity facts (c5969829… -> fc08c53d…).
             ["tools/relational_inventory/logistics.txt"] =
-                "070eff4266fc48494692df627022d189e2dfa22711a8e17cc8644ef83a920787",
+                "4819a53d3a0c3e54cf3900e11c1519b601f1c7b021ad95583df097adbbf71538",
 
             // manufacturing
             // MFG close: owner-added closure/tolerance SQL facts extend the exact Manufacturing discovery inventory.
@@ -288,7 +288,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // company-leading keys; UX_DispatchNoteLines_ShipmentId over non-nullable columns (a shipment on one dispatch note).
             // Re-measured for the AT-055 lifecycle (#518): DispatchNoteSeries, company-scoped with the same CompanyId query filter
             // and a company-leading key; the single-link key filtered to unreleased lines; forward-only write guard.
-                "41b01561661834789fad289c89418e0b20b413a182544d8c8285aa1f4b12238c",
+                "d13b3e5999745b5dd9c011ded342b095620816a13505fd385c4806cc0bcafe0e",
             // PUR-4a: company-scoped like Organization; every tenant row (requests and their lines, orders and their
             // lines, attempts) and AuditEvent carries the CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/"
@@ -358,6 +358,17 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     private const string ReviewedInventoryDefiniteShipmentParticipantPath =
         "src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/"
         + "Persistence/InventoryDefiniteShipmentParticipant.cs";
+    private const string ReviewedInventoryCustomerReturnParticipantPath =
+        "src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/"
+        + "Persistence/InventoryCustomerReturnParticipant.cs";
+    private const string ReviewedLogisticsCustomerReturnRuntimePath =
+        "src/backend/GoymenERP.Api/LogisticsRuntime/LogisticsCustomerReturnRuntime.cs";
+    private const string ReviewedLogisticsCustomerReturnStorePath =
+        "src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/"
+        + "Persistence/LogisticsCustomerReturnStore.cs";
+    private const string ReviewedLogisticsCustomerReturnReadPortsPath =
+        "src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/"
+        + "Persistence/LogisticsCustomerReturnReadPorts.cs";
     private const string ReviewedInventoryGoodsReceiptParticipantPath =
         "src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/"
         + "Persistence/InventoryGoodsReceiptParticipant.cs";
@@ -394,6 +405,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             new Dictionary<string, (string ContextTypeName, int ExpectedCount)>(StringComparer.Ordinal)
             {
                 [ReviewedInventoryDefiniteShipmentParticipantPath] = ("InventoryDbContext", 1),
+                [ReviewedInventoryCustomerReturnParticipantPath] = ("InventoryDbContext", 1),
+                [ReviewedLogisticsCustomerReturnRuntimePath] = ("LogisticsDbContext", 2),
+                [ReviewedLogisticsCustomerReturnStorePath] = ("LogisticsDbContext", 10),
+                [ReviewedLogisticsCustomerReturnReadPortsPath] = ("LogisticsDbContext", 2),
                 [ReviewedInventoryGoodsReceiptParticipantPath] = ("InventoryDbContext", 1),
                 [ReviewedInventoryManufacturingRealizationParticipantPath] = ("InventoryDbContext", 1),
                 [ReviewedPurchaseAcceptanceParticipantPath] = ("PurchasingDbContext", 3),
@@ -579,6 +594,17 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 [ReviewedInventoryDefiniteShipmentParticipantPath] =
                     new(
                         "9aec0b823987c573ffd9d94e55192d5c80d49e29ef6ac713c02e07583ee00df7",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["System.Data.Common"] = 1,
+                            ["Microsoft.Data.SqlClient"] = 1,
+                            ["DbConnection"] = 3
+                        }),
+                // Customer-return approval borrows the host's exact connection and transaction and constructs
+                // one Inventory context; its source and token counts are pinned independently from shipment.
+                [ReviewedInventoryCustomerReturnParticipantPath] =
+                    new(
+                        "241e1e850db26e13c0b480d3c1ebb42f7b7ac031041c342ee00968065c1b085d",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["System.Data.Common"] = 1,
@@ -851,7 +877,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // the provider branch and its token counts are unchanged. Re-fingerprinted for AT-025: the operations
                     // work list's progress reader, bindings and service registrations; token counts unchanged.
                     new(
-                        "436d04b0e002a5f02d1f38385ec695e2b2759d1d4c0df45872889187ed9d263e",
+                        "631f49e1ba1d086b899f02a65c806595d4fe7fe9a940d4f5d2e4a94e52960210",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -868,6 +894,39 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                             ["System.Data.Common"] = 1,
                             ["GetDbConnection"] = 1,
                             ["DbConnection"] = 1
+                        }),
+                // Customer-return approval owns the Serializable Logistics transaction and lends its
+                // exact connection/transaction to the reviewed Inventory participant.
+                [ReviewedLogisticsCustomerReturnRuntimePath] =
+                    new(
+                        "98d6d98e1610f8b0f4e6caa50d998cd5bf7364415836b706483bbd4bc1a70b15",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["System.Data.Common"] = 1,
+                            ["GetDbConnection"] = 1,
+                            ["DbConnection"] = 1
+                        }),
+                // The module source and Sales read ports use only tenant-filtered Logistics contexts.
+                [ReviewedLogisticsCustomerReturnReadPortsPath] =
+                    new(
+                        "9971b43185b0797b097b1895b45d2c3d1cefbda4a5c23b2c75a5594cf57c667c",
+                        new Dictionary<string, int>(StringComparer.Ordinal)),
+                // The customer-return store recognises SQL uniqueness and its tracked aggregate; both
+                // capabilities remain exact-source and exact-count reviewed.
+                [ReviewedLogisticsCustomerReturnStorePath] =
+                    new(
+                        "a70d8cad8647d78131494b624dbb578879089f3f92e7251e2a85202eac1376ab",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Microsoft.Data.SqlClient"] = 1,
+                            [".Local"] = 1
+                        }),
+                ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Application/LogisticsCustomerReturnService.cs"] =
+                    new(
+                        "1b5134a22c2f684ec9b17fa804270a0d9f9acbc2dcc1b76f86c2054d8c4c2261",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            [".FindAsync"] = 2
                         }),
                 // LOG-4a: the SqlClient namespace only to recognise a unique-key violation (SqlException
                 // 2601/2627) after SaveChanges, as the Sales store does. No connection, command or raw SQL.
@@ -1255,6 +1314,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     new("72191dd5733ec6f8a5497ce436c45df2a271610449e60c6f816837b627990450",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 2 }),
+                // Customer returns are immutable; Down refuses while a return or attempt exists before dropping either table.
+                ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/Migrations/20261003230000_AddCustomerReturns.cs"] =
+                    new("a0af4e29f8ccfeed66e422291ee1e084bac18eac82981d9d8a34fed3f99b4985",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
                 // ERP-000G / AT-065: the Down's only raw SQL is the vault's module refusal (51058, used by no other migration
                 // on main or any branch) while any document exists; the THROW precedes every DropTable, an empty schema
                 // rolls back freely.

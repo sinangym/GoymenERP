@@ -407,10 +407,10 @@ public sealed class LogisticsPersistenceModelTests
             declarations.Where(declaration => declaration.ParentCapabilityId is null)
                 .Select(declaration => (declaration.CapabilityId, declaration.RoutePath, declaration.RequiredPermissions.Single()))
                 .OrderBy(item => item.CapabilityId, StringComparer.Ordinal).ToArray());
-        Assert.Equal(11, LogisticsPermissionManifestV1.Names.Count);
+        Assert.Equal(14, LogisticsPermissionManifestV1.Names.Count);
         Assert.Equal("logistics.shipments.record", LogisticsPermissionManifestV1.ShipmentsRecord);
         Assert.Equal("logistics.deliveries.record", LogisticsPermissionManifestV1.DeliveriesRecord);
-        Assert.Equal(11, LogisticsPermissionManifestV1.Names.Distinct(StringComparer.Ordinal).Count());
+        Assert.Equal(14, LogisticsPermissionManifestV1.Names.Distinct(StringComparer.Ordinal).Count());
         // AT-055: the dispatch note's three names (prepare, approve, cancel), each its own and, like the weighbridge record, with no
         // shell declaration (server-measured commands on the detail).
         Assert.Equal("logistics.dispatch-notes.create", LogisticsPermissionManifestV1.DispatchNotesCreate);
