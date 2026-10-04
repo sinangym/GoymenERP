@@ -215,30 +215,48 @@ test('S04-PL-03 below-floor pricing is saved pending and a different actor appro
     floorException: { requestedBy: preparerActor, approvedBy: null, reason: null },
   })
 
-  // Price visibility is proven at the data endpoint, not inferred from a non-existent shell capability.
+  // Price authority is proven at the endpoint, not inferred from a non-existent shell capability.
   const approverPricingResponse = await request.get(`${apiBaseUrl}${DRAFTS_PATH}/${journey.draftId}/line-pricing`, {
     headers: readHeaders(approverActor),
   })
   expect(approverPricingResponse.status()).toBe(200)
   const approverPricing = (await approverPricingResponse.json()) as {
-    readonly lines: readonly { readonly lineId: string; readonly priceDisclosure: string; readonly netUnitPrice: string;
+    readonly lines: readonly { readonly lineId: string; readonly netUnitPrice: string;
       readonly floorException: { readonly requestedBy: string; readonly approvedBy: string | null; readonly reason: string | null } | null }[]
   }
   expect(approverPricing.lines[0]).toMatchObject({
-    lineId: journey.lineId, priceDisclosure: 'Visible', netUnitPrice: '38700',
+    lineId: journey.lineId, netUnitPrice: '38700',
     floorException: { requestedBy: preparerActor, approvedBy: null, reason: null },
   })
 
   const readerPricingResponse = await request.get(`${apiBaseUrl}${DRAFTS_PATH}/${journey.draftId}/line-pricing`, {
     headers: readHeaders(readerActor),
   })
-  expect([200, 403]).toContain(readerPricingResponse.status())
-  if (readerPricingResponse.status() === 200) {
-    const readerPricing = (await readerPricingResponse.json()) as {
-      readonly lines: readonly { readonly lineId: string; readonly priceDisclosure: string }[]
-    }
-    expect(readerPricing.lines[0]).toMatchObject({ lineId: journey.lineId, priceDisclosure: 'Withheld' })
+  expect(readerPricingResponse.status()).toBe(403)
+
+  const approverDetailResponse = await request.get(`${apiBaseUrl}${DRAFTS_PATH}/${journey.draftId}`, {
+    headers: readHeaders(approverActor),
+  })
+  expect(approverDetailResponse.status()).toBe(200)
+  const approverDetail = (await approverDetailResponse.json()) as {
+    readonly draft: { readonly lines: readonly { readonly lineId: string; readonly priceDisclosure: string;
+      readonly unitPrice: string | null; readonly priceUnitId: string | null; readonly discountPercent: string | null }[] }
   }
+  expect(approverDetail.draft.lines[0]).toMatchObject({
+    lineId: journey.lineId, priceDisclosure: 'Visible', unitPrice: '43000', priceUnitId: productUnitId, discountPercent: '10',
+  })
+
+  const readerDetailResponse = await request.get(`${apiBaseUrl}${DRAFTS_PATH}/${journey.draftId}`, {
+    headers: readHeaders(readerActor),
+  })
+  expect(readerDetailResponse.status()).toBe(200)
+  const readerDetail = (await readerDetailResponse.json()) as {
+    readonly draft: { readonly lines: readonly { readonly lineId: string; readonly priceDisclosure: string;
+      readonly unitPrice: string | null; readonly priceUnitId: string | null; readonly discountPercent: string | null }[] }
+  }
+  expect(readerDetail.draft.lines[0]).toMatchObject({
+    lineId: journey.lineId, priceDisclosure: 'Withheld', unitPrice: null, priceUnitId: null, discountPercent: null,
+  })
 
   // Pending floor approval blocks the ordinary submission.
   const submissionAnswer = page.waitForResponse((response) => response.request().method() === 'POST'
