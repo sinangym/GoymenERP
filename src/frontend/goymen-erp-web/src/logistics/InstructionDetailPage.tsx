@@ -232,8 +232,9 @@ function CustomerReturnLine({
       setRequestLifecycle((current) => settleCustomerReturnAttempt(current, attempt, outcome, binding))
       if (outcome.type === 'succeeded') {
         const fresh = await query.refetch()
-        if (fresh.data?.type === 'succeeded') {
-          setRequestLifecycle((current) => resetSettledCustomerReturnAttempt(current, binding, fresh.data.returns))
+        const freshOutcome = fresh.data
+        if (freshOutcome?.type === 'succeeded') {
+          setRequestLifecycle((current) => resetSettledCustomerReturnAttempt(current, binding, freshOutcome.returns))
         }
         onRecorded()
       }
@@ -250,8 +251,9 @@ function CustomerReturnLine({
       setDecisionLifecycle((current) => settleCustomerReturnAttempt(current, attempt, answer, binding))
       if (answer.type === 'succeeded') {
         const fresh = await query.refetch()
-        if (fresh.data?.type === 'succeeded') {
-          setDecisionLifecycle((current) => resetSettledCustomerReturnAttempt(current, binding, fresh.data.returns))
+        const freshOutcome = fresh.data
+        if (freshOutcome?.type === 'succeeded') {
+          setDecisionLifecycle((current) => resetSettledCustomerReturnAttempt(current, binding, freshOutcome.returns))
         }
         onRecorded()
       }

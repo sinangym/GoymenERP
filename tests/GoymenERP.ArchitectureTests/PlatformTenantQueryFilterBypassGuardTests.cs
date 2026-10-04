@@ -923,7 +923,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         }),
                 ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Application/LogisticsCustomerReturnService.cs"] =
                     new(
-                        "a47c8ba48935ef7a3736ad9900ce1ea595af342f730423a1885cbc1730f39eb1",
+                        "74b611a663403134a4ada1669d6a9a1531886587fee489ae61490b941e14ed95",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             [".FindAsync"] = 2
