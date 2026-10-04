@@ -83,10 +83,16 @@ class PrivacyTests(unittest.TestCase):
             )
 
     @staticmethod
-    def _s04_report(case_body: str, case_name: str = "S04-PL-03") -> bytes:
+    def _s04_report(
+        case_body: str,
+        case_name: str = (
+            "S04-PL-03 below-floor pricing is saved pending and a different actor approves it once with a reason"
+        ),
+    ) -> bytes:
         return (
-            "<testsuites><testsuite>"
-            f"<testcase name='{case_name}'>{case_body}</testcase>"
+            "<testsuites name=''><testsuite name='chromium'>"
+            f"<testcase name='{case_name}' classname='tests/e2e/sales/s04-price-list.spec.ts'>"
+            f"{case_body}</testcase>"
             "</testsuite></testsuites>"
         ).encode("utf-8")
 
@@ -109,7 +115,10 @@ class PrivacyTests(unittest.TestCase):
         )
         result, stdout, stderr = self._privacy_cli(report)
         self.assertEqual(0, result)
-        self.assertEqual("BROWSER_SAFE_PHASE=s04_pl03_p4\n", stdout)
+        self.assertEqual(
+            "BROWSER_SAFE_PHASE=s04_pl03_p4\nBrowser acceptance contract validation passed.\n",
+            stdout,
+        )
         self.assertEqual("", stderr)
         for forbidden in ("opaque-secret-path", "opaque-secret-message", "opaque-secret-stdout"):
             self.assertNotIn(forbidden, stdout)
@@ -133,17 +142,22 @@ class PrivacyTests(unittest.TestCase):
             with self.subTest(report=report):
                 result, stdout, _ = self._privacy_cli(report)
                 self.assertEqual(0, result)
-                self.assertEqual("", stdout)
+                self.assertEqual("Browser acceptance contract validation passed.\n", stdout)
 
     def test_s04_xml_declarations_and_wrong_depth_are_refused(self):
         cases = (
             b"<!DOCTYPE testsuites><testsuites/>",
             b"<!ENTITY leak 'x'><testsuites/>",
             (
-                b"<testsuites><testsuite><testsuite><testcase name='S04-PL-03'>"
-                b"<properties><property name='safe_failure_phase' value='s04_pl03_p1'/></properties>"
-                b"<failure/></testcase></testsuite></testsuite></testsuites>"
-            ),
+                "<?xml version='1.0' encoding='utf-16'?>"
+                "<!DOCTYPE testsuites><testsuites/>"
+            ).encode("utf-16"),
+            (
+                "<testsuites><testsuite><testsuite>"
+                f"<testcase name='{validator._S04_SAFE_FAILURE_CASE}'>"
+                "<properties><property name='safe_failure_phase' value='s04_pl03_p1'/></properties>"
+                "<failure/></testcase></testsuite></testsuite></testsuites>"
+            ).encode("utf-8"),
             self._s04_report(
                 "<metadata><properties><property name='safe_failure_phase' value='s04_pl03_p1'/>"
                 "</properties></metadata><failure/>"
@@ -155,13 +169,26 @@ class PrivacyTests(unittest.TestCase):
                 self.assertEqual(1, result)
                 self.assertEqual("", stdout)
 
+    def test_s04_oversized_and_deep_xml_are_refused(self):
+        oversized = b"<testsuites>" + (b" " * validator._MAX_JUNIT_BYTES) + b"</testsuites>"
+        nested = (
+            ("<testsuites>" + "<node>" * validator._MAX_JUNIT_DEPTH)
+            + "</node>" * validator._MAX_JUNIT_DEPTH
+            + "</testsuites>"
+        ).encode("ascii")
+        for report in (oversized, nested):
+            with self.subTest(size=len(report)):
+                result, stdout, _ = self._privacy_cli(report)
+                self.assertEqual(1, result)
+                self.assertEqual("", stdout)
+
     def test_s04_duplicate_case_marker_and_mixed_outcome_are_refused(self):
         marker = "<properties><property name='safe_failure_phase' value='s04_pl03_p1'/></properties>"
         cases = (
             (
                 "<testsuites><testsuite>"
-                f"<testcase name='S04-PL-03'>{marker}<failure/></testcase>"
-                f"<testcase name='S04-PL-03'>{marker}<failure/></testcase>"
+                f"<testcase name='{validator._S04_SAFE_FAILURE_CASE}'>{marker}<failure/></testcase>"
+                f"<testcase name='{validator._S04_SAFE_FAILURE_CASE}'>{marker}<failure/></testcase>"
                 "</testsuite></testsuites>"
             ).encode("utf-8"),
             self._s04_report(

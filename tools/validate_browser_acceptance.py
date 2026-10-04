@@ -35,11 +35,16 @@ _spec.loader.exec_module(c01)
 ContractError = c01.ContractError
 require = c01.require
 
-_S04_SAFE_FAILURE_CASE = "S04-PL-03"
+_S04_SAFE_FAILURE_CASE = (
+    "S04-PL-03 below-floor pricing is saved pending and a different actor approves it once with a reason"
+)
 _SAFE_FAILURE_PROPERTY = "safe_failure_phase"
 _S04_SAFE_FAILURE_PHASES = frozenset(f"s04_pl03_p{index}" for index in range(1, 8))
 _UNSAFE_XML_DECLARATION = re.compile(br"<!\s*(?:DOCTYPE|ENTITY)\b", re.IGNORECASE)
 _BOUNDED_ASCII = re.compile(r"^[\x20-\x7e]{1,64}$")
+_MAX_JUNIT_BYTES = 2_000_000
+_MAX_JUNIT_ELEMENTS = 20_000
+_MAX_JUNIT_DEPTH = 16
 
 SUITES = ("smoke", "c03", "org03", "u02", "s03", "mfg", "fin01", "s04", "acc01", "l04", "pur01", "r14", "c02")
 # s03 writes since S03 (#327): V2A-02 attempts a POST (nothing is stored, but it is no read-only run).
@@ -840,12 +845,23 @@ def upload_paths(root: str | pathlib.Path, suite: str) -> list[pathlib.Path]:
 
 def _s04_safe_failure_phase(content: bytes) -> str | None:
     """Extract only the bounded annotation; failure payloads remain opaque."""
-    require(_UNSAFE_XML_DECLARATION.search(content) is None,
+    require(len(content) <= _MAX_JUNIT_BYTES, "S04 JUnit XML exceeds the bounded input size")
+    declaration_view = content.replace(b"\x00", b"")
+    require(_UNSAFE_XML_DECLARATION.search(declaration_view) is None,
             "S04 JUnit XML declarations are not allowed")
     try:
         root = ET.fromstring(content)
     except ET.ParseError as error:
         raise ContractError("S04 JUnit XML is malformed") from error
+
+    elements = 0
+    pending = [(root, 1)]
+    while pending:
+        element, depth = pending.pop()
+        elements += 1
+        require(elements <= _MAX_JUNIT_ELEMENTS, "S04 JUnit XML has too many elements")
+        require(depth <= _MAX_JUNIT_DEPTH, "S04 JUnit XML exceeds the bounded depth")
+        pending.extend((child, depth + 1) for child in element)
 
     if root.tag == "testsuite":
         suites = (root,)
