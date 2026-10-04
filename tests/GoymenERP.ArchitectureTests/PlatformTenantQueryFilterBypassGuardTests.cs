@@ -160,7 +160,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         {
             // accounting
             ["tools/relational_inventory/accounting.txt"] =
-                "318fd504967b483b37015373d9d74e96c152975515d7518625caf58f90a6b579",
+                "453b48ad068d3d1f8328111479e92c3776af1188b31f002e4aceb84b4624461a",
 
             // counterparty
             // AT-009: +2 real-SQL fresh-authority interleavings (duplicate read and same-key winner replay).
