@@ -53,7 +53,7 @@ public sealed class FinanceAllocationLifecycleSqlServerRelationalAcceptanceTests
     public async Task Create_and_release_over_HTTP_close_and_reopen_the_same_open_item_without_a_second_money_event()
     {
         await using var run = await Run.StartAsync();
-        await run.GrantAsync(Actor, CompanyA, Grants);
+        var roleId = await run.GrantAsync(Actor, CompanyA, Grants);
         var bankAccountId = await run.ApprovedBankAccountAsync();
         using var client = run.Client(Actor, CompanyA);
 
@@ -210,6 +210,49 @@ public sealed class FinanceAllocationLifecycleSqlServerRelationalAcceptanceTests
             AssertAllocation(reopened.GetProperty("allocation"), allocationId, sourceId, openItem.Id, "Released", "2");
             Assert.Equal("3", reopened.GetProperty("openItemVersion").GetString());
         }
+
+        // The create command's terminal answer is immutable across the later release. A replay returns
+        // the stored Active/v1 resource, while the independently fresh read remains Released/v2.
+        using (var response = await client.SendAsync(Post(
+                   FinanceEndpoints.AllocationsPath,
+                   "SENTETIK-allocation-create",
+                   Guid.NewGuid().ToString("N"),
+                   createRequest)))
+        {
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            AssertReplayOf(response, createCorrelation);
+            var replay = await Json(response);
+            Assert.Equal("Succeeded", replay.GetProperty("outcome").GetString());
+            Assert.True(replay.GetProperty("isReplay").GetBoolean());
+            Assert.Equal(createCorrelation, replay.GetProperty("originalCorrelationId").GetString());
+            Assert.Equal(createdResourceJson, replay.GetProperty("resource").GetRawText());
+            Assert.Equal(createdIssuesJson, replay.GetProperty("issues").GetRawText());
+        }
+
+        using (var response = await client.GetAsync($"{FinanceEndpoints.AllocationsPath}/{allocationId:D}"))
+        {
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            var current = await Json(response);
+            AssertAllocation(current.GetProperty("allocation"), allocationId, sourceId, openItem.Id, "Released", "2");
+            Assert.Equal("3", current.GetProperty("openItemVersion").GetString());
+        }
+
+        // A stored success is not an authority bypass. Remove only this disposable role's existing
+        // allocation-write permission and retry the same release key/body through the real HTTP policy.
+        var beforeDeniedReplay = await run.CardinalitiesAsync(allocationId, sourceId);
+        await run.RevokePermissionAsync(roleId, FinancePermissionNames.AllocationWrite);
+        using (var response = await client.SendAsync(Post(
+                   $"{FinanceEndpoints.AllocationsPath}/{allocationId:D}/release",
+                   "SENTETIK-allocation-release",
+                   Guid.NewGuid().ToString("N"),
+                   releaseRequest)))
+        {
+            Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+            var problem = await Json(response);
+            Assert.Equal("forbidden", problem.GetProperty("code").GetString());
+            Assert.False(problem.TryGetProperty("resource", out _));
+        }
+        Assert.Equal(beforeDeniedReplay, await run.CardinalitiesAsync(allocationId, sourceId));
 
         Assert.Equal(("125.50", FinanceOpenItemStatuses.Open), await run.OpenItemStateAsync(openItem.Id));
         Assert.Equal(("1000.00", "1000.00", 2L), await run.SourceStateAsync(sourceId));
@@ -448,7 +491,7 @@ public sealed class FinanceAllocationLifecycleSqlServerRelationalAcceptanceTests
                     + "WHERE CompanyId = @company AND SourceId = @source",
                     ("@company", CompanyA), ("@source", sourceId)));
 
-        public async Task GrantAsync(string developmentUser, Guid company, params string[] permissions)
+        public async Task<Guid> GrantAsync(string developmentUser, Guid company, params string[] permissions)
         {
             await using var scope = Factory.Services.CreateAsyncScope();
             var db = scope.ServiceProvider.GetRequiredService<IdentityDbContext>();
@@ -484,6 +527,35 @@ public sealed class FinanceAllocationLifecycleSqlServerRelationalAcceptanceTests
             db.Roles.Add(role);
             db.RoleAssignments.Add(assignment);
             await db.SaveChangesAsync();
+            return roleId;
+        }
+
+        public async Task RevokePermissionAsync(Guid roleId, string permission)
+        {
+            await using var scope = Factory.Services.CreateAsyncScope();
+            var db = scope.ServiceProvider.GetRequiredService<IdentityDbContext>();
+            var existing = await db.RolePermissions.SingleAsync(
+                row => row.RoleId == roleId && row.PermissionCode == permission);
+            db.RolePermissions.Remove(existing);
+            await db.SaveChangesAsync();
+        }
+
+        public async Task<(int Allocations, int Commands, int Audits, int MoneyEvents)> CardinalitiesAsync(
+            Guid allocationId,
+            Guid sourceId) =>
+            (await ScalarAsync<int>(
+                    "SELECT COUNT(*) FROM finance.Allocations WHERE CompanyId = @company AND Id = @id",
+                    ("@company", CompanyA), ("@id", allocationId)),
+                await ScalarAsync<int>(
+                    "SELECT COUNT(*) FROM finance.Commands WHERE CompanyId = @company AND FinanceAllocationId = @id",
+                    ("@company", CompanyA), ("@id", allocationId)),
+                await ScalarAsync<int>(
+                    "SELECT COUNT(*) FROM audit.AuditEvents WHERE CompanyId = @company "
+                    + "AND EntityType = N'Finance.Allocation' AND EntityId = @id",
+                    ("@company", CompanyA), ("@id", allocationId)),
+                await ScalarAsync<int>(
+                    "SELECT COUNT(*) FROM finance.MoneyEvents WHERE CompanyId = @company AND SourceId = @source",
+                    ("@company", CompanyA), ("@source", sourceId)));
         }
 
         public async Task<T> ScalarAsync<T>(string sql, params (string Name, object Value)[] parameters)
