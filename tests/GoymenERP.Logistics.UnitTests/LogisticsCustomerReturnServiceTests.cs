@@ -110,6 +110,51 @@ public sealed class LogisticsCustomerReturnServiceTests
         Assert.Equal(0, scope.FaultChecks);
     }
 
+    [Theory]
+    [InlineData(QuantityUnit.Kilogram)]
+    [InlineData(QuantityUnit.Piece)]
+    public async Task Raw_quantity_overprecision_is_refused_before_decimal_conversion_and_writes_nothing(
+        QuantityUnit unit)
+    {
+        var state = new FaultState();
+        var source = Source(unit);
+        var store = new FakeStore(state);
+        var service = CreateService(new FakeScope(state), store,
+            new FakeRunner(state, new FakeStock(state)), new FakeSource(response: source));
+
+        var exception = await Assert.ThrowsAsync<LogisticsCustomerReturnServiceException>(() => service.RequestAsync(
+            source.LoadingInstructionId,
+            source.LoadingInstructionLineId,
+            new RequestCustomerReturnV1(Guid.NewGuid(), source.SourceDeliveryId, "1",
+                "1.00000000000000000000000000001", "return", DateTimeOffset.UtcNow),
+            Metadata()));
+
+        Assert.Equal((422, "validation_failed"), (exception.Status, exception.Code));
+        Assert.Equal(0, store.StoreRequestCalls);
+    }
+
+    [Theory]
+    [InlineData(QuantityUnit.Kilogram)]
+    [InlineData(QuantityUnit.Piece)]
+    public async Task Raw_quantity_trailing_zeros_are_normalized_without_becoming_precision(QuantityUnit unit)
+    {
+        var state = new FaultState();
+        var source = Source(unit);
+        var store = new FakeStore(state);
+        var service = CreateService(new FakeScope(state), store,
+            new FakeRunner(state, new FakeStock(state)), new FakeSource(response: source));
+
+        var response = await service.RequestAsync(
+            source.LoadingInstructionId,
+            source.LoadingInstructionLineId,
+            new RequestCustomerReturnV1(Guid.NewGuid(), source.SourceDeliveryId, "1",
+                "1.00000000000000000000000000000", "return", DateTimeOffset.UtcNow),
+            Metadata());
+
+        Assert.Equal("1", response.Return.Quantity);
+        Assert.Equal(1, store.StoreRequestCalls);
+    }
+
     private static LogisticsCustomerReturnService CreateService(
         ILogisticsCustomerReturnScopeV1 scope,
         ILogisticsCustomerReturnStoreV1 store,
@@ -128,6 +173,10 @@ public sealed class LogisticsCustomerReturnServiceTests
         Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Quantity.Positive(10m, QuantityUnit.Kilogram),
         Quantity.Positive(20m, QuantityUnit.Kilogram), "return", "requester",
         DateTimeOffset.UtcNow.AddMinutes(-1), DateTimeOffset.UtcNow);
+
+    private static LogisticsCustomerReturnSourceV1 Source(QuantityUnit unit) => new(
+        Company, Guid.NewGuid(), 1, Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(),
+        Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Quantity.Positive(20m, unit));
 
     private static readonly Guid Company = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
 
@@ -221,7 +270,9 @@ public sealed class LogisticsCustomerReturnServiceTests
         public Task RequireStillAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
     }
 
-    private sealed class FakeSource(CustomerReturn? pending = null) : ILogisticsCustomerReturnSourceReadV1
+    private sealed class FakeSource(
+        CustomerReturn? pending = null,
+        LogisticsCustomerReturnSourceV1? response = null) : ILogisticsCustomerReturnSourceReadV1
     {
         public Task<LogisticsCustomerReturnSourceV1?> FindDeliveryAsync(
             Guid instructionId,
@@ -229,6 +280,11 @@ public sealed class LogisticsCustomerReturnServiceTests
             Guid deliveryId,
             CancellationToken cancellationToken = default)
         {
+            if (response is not null)
+            {
+                return Task.FromResult<LogisticsCustomerReturnSourceV1?>(response);
+            }
+
             if (pending is null)
             {
                 return Task.FromResult<LogisticsCustomerReturnSourceV1?>(null);
@@ -246,6 +302,7 @@ public sealed class LogisticsCustomerReturnServiceTests
         public Exception? ReplayFault { get; init; }
         public CustomerReturn? Pending { get; init; }
         public int StoreDecisionCalls { get; private set; }
+        public int StoreRequestCalls { get; private set; }
 
         public Task<CustomerReturnReplayV1?> FindReplayAsync(LogisticsWriteEnvelope envelope, string requestHash,
             string command, CancellationToken cancellationToken = default)
@@ -284,7 +341,14 @@ public sealed class LogisticsCustomerReturnServiceTests
 
         public Task<CustomerReturnStoreResultV1> StoreRequestAsync(LogisticsWriteEnvelope envelope,
             string requestHash, CustomerReturn customerReturn,
-            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+            CancellationToken cancellationToken = default)
+        {
+            StoreRequestCalls++;
+            return Task.FromResult(new CustomerReturnStoreResultV1(
+                customerReturn,
+                LogisticsWriteOutcome.Recorded,
+                envelope.CorrelationId));
+        }
     }
 
     private sealed class FixedCorrelation : ICorrelationContext

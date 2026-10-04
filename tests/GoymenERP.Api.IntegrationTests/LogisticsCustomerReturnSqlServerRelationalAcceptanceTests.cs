@@ -10,6 +10,8 @@ using GoymenERP.Modules.Logistics.Domain.Quantities;
 using GoymenERP.Modules.Logistics.Domain.Returns;
 using GoymenERP.Modules.Logistics.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 
 namespace GoymenERP.Api.IntegrationTests;
 
@@ -93,7 +95,11 @@ public sealed class LogisticsCustomerReturnSqlServerRelationalAcceptanceTests
                 LogisticsCustomerReturnCommandsV1.Reject, refusal);
             Assert.Equal(LogisticsWriteOutcome.Recorded, first.Outcome);
             Assert.Null(first.Replay.Return);
-            Assert.Equal(refusal, first.Replay.Refusal);
+            var storedRefusal = Assert.IsType<CustomerReturnTerminalRefusalV1>(first.Replay.Refusal);
+            Assert.Equal((refusal.Status, refusal.Code, refusal.ExpectedVersion, refusal.CurrentVersion),
+                (storedRefusal.Status, storedRefusal.Code, storedRefusal.ExpectedVersion, storedRefusal.CurrentVersion));
+            Assert.Equal(refusal.Errors, storedRefusal.Errors);
+            Assert.Equal("terminal-original", first.Replay.OriginalCorrelationId);
         });
 
         await run.SerializableAsync(async store =>
@@ -105,6 +111,7 @@ public sealed class LogisticsCustomerReturnSqlServerRelationalAcceptanceTests
             Assert.Equal((409, LogisticsCustomerReturnCodesV1.VersionConflict, 1L, 2L, "terminal-original"),
                 (replay.Refusal!.Status, replay.Refusal.Code, replay.Refusal.ExpectedVersion,
                     replay.Refusal.CurrentVersion, replay.OriginalCorrelationId));
+            Assert.Equal(refusal.Errors, replay.Refusal.Errors);
 
             var wrongActor = await Assert.ThrowsAsync<LogisticsStoreException>(() => store.FindReplayAsync(
                 envelope with { ActorId = "mallory" }, Hash("terminal-version"), LogisticsCustomerReturnCommandsV1.Reject));
@@ -147,6 +154,35 @@ public sealed class LogisticsCustomerReturnSqlServerRelationalAcceptanceTests
             run.InsertIncompleteAttemptAsync(2, null, "constraint-missing-refusal"));
         Assert.Equal(547, missingRefusalPayload.Number);
         Assert.Equal((1, 2), await run.CountsAsync());
+    }
+
+    [SqlServerFact]
+    public async Task Customer_return_migration_refuses_down_before_losing_history_and_empty_down_up_succeeds()
+    {
+        await using var run = await Run.StartAsync();
+        var applied = await run.AppliedMigrationsAsync();
+        var customerReturns = Array.FindIndex(applied,
+            migration => migration.EndsWith("_AddCustomerReturns", StringComparison.Ordinal));
+        Assert.True(customerReturns > 0);
+        var previous = applied[customerReturns - 1];
+        var current = applied[customerReturns];
+
+        await run.MigrateAsync(current);
+        await run.MigrateAsync(previous);
+        Assert.DoesNotContain(current, await run.AppliedMigrationsAsync());
+        await run.MigrateAsync(current);
+
+        var source = await run.CreateDeliveredSourceAsync(20m);
+        var requested = Request(source, 10m, "alice");
+        await run.SerializableAsync(store => store.StoreRequestAsync(
+            run.Envelope("down-refusal", "alice", "down-refusal-original"),
+            Hash("down-refusal"), requested));
+
+        var refusal = await Assert.ThrowsAsync<Microsoft.Data.SqlClient.SqlException>(() => run.MigrateAsync(previous));
+        Assert.Equal(51057, refusal.Number);
+        Assert.Contains(current, await run.AppliedMigrationsAsync());
+        Assert.Equal((1, 1), await run.CountsAsync());
+        await run.MigrateAsync();
     }
 
     [SqlServerFact]
@@ -270,10 +306,10 @@ public sealed class LogisticsCustomerReturnSqlServerRelationalAcceptanceTests
             command.CommandText = """
                 INSERT INTO logistics.CustomerReturnAttempts
                     (CompanyId, CommandName, IdempotencyKeyHash, RequestHash, ActorId, Outcome,
-                     CustomerReturnId, ResultJson, RefusalJson, OriginalCorrelationId, CorrelationId, RecordedAtUtc)
+                     CustomerReturnId, ResultJson, RefusalJson, CorrelationId, RecordedAtUtc)
                 VALUES
                     (@companyId, @commandName, @idempotencyKeyHash, @requestHash, @actorId, @outcome,
-                     @customerReturnId, NULL, NULL, @originalCorrelationId, @correlationId, @recordedAtUtc);
+                     @customerReturnId, NULL, NULL, @correlationId, @recordedAtUtc);
                 """;
             command.Parameters.AddWithValue("@companyId", Company);
             command.Parameters.AddWithValue("@commandName", LogisticsCustomerReturnCommandsV1.Reject);
@@ -282,7 +318,6 @@ public sealed class LogisticsCustomerReturnSqlServerRelationalAcceptanceTests
             command.Parameters.AddWithValue("@actorId", "constraint-actor");
             command.Parameters.AddWithValue("@outcome", outcome);
             command.Parameters.AddWithValue("@customerReturnId", customerReturnId is null ? DBNull.Value : customerReturnId.Value);
-            command.Parameters.AddWithValue("@originalCorrelationId", key + "-original");
             command.Parameters.AddWithValue("@correlationId", key + "-correlation");
             command.Parameters.AddWithValue("@recordedAtUtc", T0);
             await command.ExecuteNonQueryAsync();
@@ -294,6 +329,28 @@ public sealed class LogisticsCustomerReturnSqlServerRelationalAcceptanceTests
             await connection.OpenAsync(); await using var command = connection.CreateCommand(); command.CommandText = sql;
             if (parameter is not null) command.Parameters.AddWithValue("@p0", parameter);
             return (T)(await command.ExecuteScalarAsync())!;
+        }
+
+        public async Task<string[]> AppliedMigrationsAsync()
+        {
+            var company = new CompanyContext();
+            company.Set(Company);
+            await using var context = new LogisticsDbContext(Options(company), company);
+            return [.. await context.Database.GetAppliedMigrationsAsync()];
+        }
+
+        public async Task MigrateAsync(string? target = null)
+        {
+            var company = new CompanyContext();
+            company.Set(Company);
+            await using var context = new LogisticsDbContext(Options(company), company);
+            if (target is null)
+            {
+                await context.Database.MigrateAsync();
+                return;
+            }
+
+            await context.GetService<IMigrator>().MigrateAsync(target);
         }
 
         private DbContextOptions<LogisticsDbContext> Options(CompanyContext company) =>

@@ -356,7 +356,8 @@ public sealed class LogisticsCustomerReturnService(
 
     private static Quantity ParseQuantity(string text, QuantityUnit unit)
     {
-        if (!decimal.TryParse(text, NumberStyles.AllowLeadingSign | NumberStyles.AllowDecimalPoint,
+        if (!HasExactRawPrecision(text, unit)
+            || !decimal.TryParse(text, NumberStyles.AllowLeadingSign | NumberStyles.AllowDecimalPoint,
                 CultureInfo.InvariantCulture, out var value))
             throw new LogisticsCustomerReturnServiceException(422, "validation_failed");
 
@@ -368,6 +369,18 @@ public sealed class LogisticsCustomerReturnService(
         {
             throw new LogisticsCustomerReturnServiceException(422, "validation_failed");
         }
+    }
+
+    private static bool HasExactRawPrecision(string text, QuantityUnit unit)
+    {
+        const int exactDecimalDigits = 28;
+        var unsigned = text.Length > 0 && text[0] is '+' or '-' ? text[1..] : text;
+        var point = unsigned.IndexOf('.', StringComparison.Ordinal);
+        var integer = point < 0 ? unsigned : unsigned[..point];
+        var fraction = point < 0 ? string.Empty : unsigned[(point + 1)..];
+        var significantFraction = fraction.TrimEnd('0');
+        return significantFraction.Length <= Quantity.AllowedScale(unit)
+            && integer.TrimStart('0').Length + significantFraction.Length <= exactDecimalDigits;
     }
 
     private static void RequireId(Guid id)

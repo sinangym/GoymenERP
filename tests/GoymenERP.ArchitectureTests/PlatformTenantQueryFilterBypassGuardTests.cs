@@ -198,7 +198,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // AT-055 lifecycle (#518, user decision 2026-09-30): +6 approve/cancel/e-İrsaliye/numbering SQL facts (010fcbd6… -> c5969829…).
             // #527: +3 cross-instruction Sales line-limit atomicity facts (c5969829… -> fc08c53d…).
             ["tools/relational_inventory/logistics.txt"] =
-                "48c46192947f7285ed9e93149a49ce35739fc7cd6a40e4d6b1296b58c2c30c25",
+                "459c5cf8cc1189a3c0e3997a36a5cdcfd37a82ef9f04623767e81a62684cf253",
 
             // manufacturing
             // MFG close: owner-added closure/tolerance SQL facts extend the exact Manufacturing discovery inventory.
@@ -923,7 +923,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         }),
                 ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Application/LogisticsCustomerReturnService.cs"] =
                     new(
-                        "74b611a663403134a4ada1669d6a9a1531886587fee489ae61490b941e14ed95",
+                        "7a5111e3a85b068ea6b8d8f27f8f5a2df23b290b9aa8cfb8a12ca2f471089c6d",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             [".FindAsync"] = 2

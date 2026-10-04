@@ -494,7 +494,7 @@ public sealed partial class LogisticsInstructionSqlServerRelationalAcceptanceTes
     {
         await using var run = await Run.StartAsync();
         var fixture = await SeedHostedShipmentAsync(run, "SYN-CUSTOMER-RETURN-AUTH-SWAP");
-        var user = new SwappableCustomerReturnUser("SYN-CUSTOMER-RETURN-ACTOR", CompanyA);
+        var user = new SwappableCustomerReturnUser("SYN-CUSTOMER-RETURN-REQUESTER", CompanyA);
         var authority = new SwappingCustomerReturnAuthority(user);
         await using var host = HostedShipmentHost(run, fixture, new HostedAllocationReads(fixture), user.UserId!,
             configure: services =>
@@ -504,16 +504,16 @@ public sealed partial class LogisticsInstructionSqlServerRelationalAcceptanceTes
                 services.RemoveAll<IErpAuthorityRevalidationService>();
                 services.AddSingleton<IErpAuthorityRevalidationService>(authority);
             });
-        using var client = HostedClientFor(host, user.UserId!, CompanyA);
+        using var requesterClient = HostedClientFor(host, user.UserId!, CompanyA);
 
         var shipment = CreateHostedShipmentRequest(fixture, "1", "return-auth-shipment");
-        using var shippedResponse = await client.SendAsync(shipment.Message);
+        using var shippedResponse = await requesterClient.SendAsync(shipment.Message);
         Assert.Equal(HttpStatusCode.OK, shippedResponse.StatusCode);
         var shipped = Assert.IsType<LoadingInstructionResponse>(
             await shippedResponse.Content.ReadFromJsonAsync<LoadingInstructionResponse>(LogisticsJson.Options));
 
         var deliveryId = Guid.NewGuid();
-        using var deliveredResponse = await SendCommandAsync(client,
+        using var deliveredResponse = await SendCommandAsync(requesterClient,
             $"{LogisticsEndpoints.InstructionsPath}/{fixture.InstructionId:D}/lines/{fixture.LineId:D}/deliveries",
             "SYN-CUSTOMER-RETURN-DELIVERY",
             new RecordDeliveryRequest(shipped.Detail.Instruction.Version.ToString(), deliveryId, shipment.ShipmentId, "2",
@@ -523,18 +523,21 @@ public sealed partial class LogisticsInstructionSqlServerRelationalAcceptanceTes
             await deliveredResponse.Content.ReadFromJsonAsync<LoadingInstructionResponse>(LogisticsJson.Options));
 
         var customerReturnId = Guid.NewGuid();
-        using var requestedResponse = await SendCommandAsync(client,
+        using var requestedResponse = await SendCommandAsync(requesterClient,
             $"/api/v1/logistics/instructions/{fixture.InstructionId:D}/lines/{fixture.LineId:D}/customer-returns",
             "SYN-CUSTOMER-RETURN-REQUEST",
             new RequestCustomerReturnV1(customerReturnId, deliveryId, delivered.Detail.Instruction.Version.ToString(), "1",
                 "Controlled final authority identity swap.", T0.AddMinutes(12)));
         Assert.Equal(HttpStatusCode.Created, requestedResponse.StatusCode);
 
+        user.UseActor("SYN-CUSTOMER-RETURN-DECIDER");
+        using var decisionClient = HostedClientFor(host, user.UserId!, CompanyA);
+
         var inventoryMovementId = Guid.NewGuid();
         var correlation = $"SYN-CUSTOMER-RETURN-APPROVE-{Guid.NewGuid():N}";
         var before = await CustomerReturnEffectsAsync(run, customerReturnId, inventoryMovementId, correlation);
         authority.ArmFinalInventoryAwaitSwap();
-        using var approvedResponse = await SendCommandAsync(client,
+        using var approvedResponse = await SendCommandAsync(decisionClient,
             $"/api/v1/logistics/customer-returns/{customerReturnId:D}/approve",
             "SYN-CUSTOMER-RETURN-APPROVE",
             new ApproveCustomerReturnV1("1", inventoryMovementId), correlation);
@@ -853,6 +856,7 @@ public sealed partial class LogisticsInstructionSqlServerRelationalAcceptanceTes
         public string? UserId => Volatile.Read(ref userId);
         public IReadOnlySet<Guid> AllowedCompanyIds { get; } = new HashSet<Guid> { companyId };
         public bool CanAccessCompany(Guid candidate) => candidate == companyId;
+        public void UseActor(string actorId) => Volatile.Write(ref userId, actorId);
         public void Swap()
         {
             var current = Volatile.Read(ref userId);
