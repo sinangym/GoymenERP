@@ -218,8 +218,8 @@ public sealed class ManufacturingPlanRevisionTests
         Assert.Equal((StockPartyKind.Counterparty, Party, StockPartyKind.Company, Company),
             (selection.PositionContext.OwnerKind, selection.PositionContext.OwnerId,
                 selection.PositionContext.CustodianKind, selection.PositionContext.CustodianId));
-        Assert.Equal(["authority", "find-plan", "work-center", "settings", "party-account", "parent-roll-context",
-                "product", "authority", "revise"],
+        Assert.Equal(["authority", "find-plan", "work-center", "settings", "party-account", "authority",
+                "parent-roll-context", "product", "authority", "revise"],
             fixture.Calls.Where(call => call != "find-command"));
     }
 
