@@ -169,14 +169,19 @@ class PrivacyTests(unittest.TestCase):
                 self.assertEqual(1, result)
                 self.assertEqual("", stdout)
 
-    def test_s04_oversized_and_deep_xml_are_refused(self):
+    def test_s04_oversized_excess_element_and_deep_xml_are_refused(self):
         oversized = b"<testsuites>" + (b" " * validator._MAX_JUNIT_BYTES) + b"</testsuites>"
+        excess_elements = (
+            "<testsuites>"
+            + "<node/>" * validator._MAX_JUNIT_ELEMENTS
+            + "</testsuites>"
+        ).encode("ascii")
         nested = (
             ("<testsuites>" + "<node>" * validator._MAX_JUNIT_DEPTH)
             + "</node>" * validator._MAX_JUNIT_DEPTH
             + "</testsuites>"
         ).encode("ascii")
-        for report in (oversized, nested):
+        for report in (oversized, excess_elements, nested):
             with self.subTest(size=len(report)):
                 result, stdout, _ = self._privacy_cli(report)
                 self.assertEqual(1, result)
