@@ -25,6 +25,7 @@ using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Xunit.Abstractions;
 
 namespace GoymenERP.Api.IntegrationTests;
 
@@ -35,8 +36,12 @@ namespace GoymenERP.Api.IntegrationTests;
 /// endpoints. Until the central API/DI/permission packet is carried, this file is integration-pending
 /// source and must not be described as executed acceptance or real Mikro/UAT evidence.
 /// </summary>
-public sealed class AccountingApprovedSourceCatalogSqlServerRelationalAcceptanceTests
+public sealed class AccountingApprovedSourceCatalogSqlServerRelationalAcceptanceTests(ITestOutputHelper output)
 {
+    private const string ReceiptRecordReplayPhase = "ACC_NJ_SQL_RECEIPT_RECORD_REPLAY";
+    private const string CatalogPrepareActivatePhase = "ACC_NJ_SQL_CATALOG_PREPARE_ACTIVATE";
+    private const string JournalCreateReplayApprovePhase = "ACC_NJ_SQL_JOURNAL_CREATE_REPLAY_APPROVE";
+    private const string TrialBalancePhase = "ACC_NJ_SQL_TRIAL_BALANCE";
     private const string PackagesPath = "/api/v1/accounting/approved-source-catalog/packages";
     private const string NormalDraftSourcesPath = "/api/v1/accounting/normal-journal-draft-sources";
     private const string NormalDraftsPath = "/api/v1/accounting/normal-journal-drafts";
@@ -209,6 +214,9 @@ public sealed class AccountingApprovedSourceCatalogSqlServerRelationalAcceptance
     [SqlServerFact]
     public async Task Durable_catalog_and_recorded_finance_source_create_reopen_approve_and_report_one_normal_journal()
     {
+        var failurePhase = ReceiptRecordReplayPhase;
+        try
+        {
         var draftId = Guid.NewGuid();
         var periodId = Guid.NewGuid();
         var occurredOn = new DateOnly(2026, 10, 2);
@@ -317,6 +325,7 @@ public sealed class AccountingApprovedSourceCatalogSqlServerRelationalAcceptance
             "SELECT COUNT(*) FROM finance.Commands WHERE CommandName = @n AND DraftId = @s",
             ("@n", ReceiptDraftService.RecordCommand), ("@s", financeSourceId)));
 
+        failurePhase = CatalogPrepareActivatePhase;
         var binding = new FinanceSourceBinding(
             financeSourceId, financeSourceVersion, financeProfileId, financeProfileVersion, financeCurrencyId);
         var package = Package(Guid.NewGuid(), "mikro-synthetic-normal-journal-v1", binding: binding);
@@ -342,6 +351,7 @@ public sealed class AccountingApprovedSourceCatalogSqlServerRelationalAcceptance
                     source.GetProperty("currencyId").GetGuid()));
         }
 
+        failurePhase = JournalCreateReplayApprovePhase;
         using (var proposer = run.Client(Preparer, CompanyA))
         using (var proposed = await SendJsonAsync(proposer, PeriodsPath, Key("period-propose"),
                    new ProposePeriodRequestV1(periodId, new DateOnly(2026, 10, 1), new DateOnly(2026, 10, 31))))
@@ -451,6 +461,7 @@ public sealed class AccountingApprovedSourceCatalogSqlServerRelationalAcceptance
             Assert.Equal(2, detail.GetProperty("lines").GetArrayLength());
         }
 
+        failurePhase = TrialBalancePhase;
         using (var reportClient = run.Client(Preparer, CompanyA))
         using (var reportResponse = await reportClient.GetAsync(
                    $"{TrialBalancePath}?fromAccountingDate={occurredOn:yyyy-MM-dd}"
@@ -464,7 +475,12 @@ public sealed class AccountingApprovedSourceCatalogSqlServerRelationalAcceptance
                 (total.GetProperty("currencyId").GetGuid(), total.GetProperty("debit").GetString(),
                     total.GetProperty("credit").GetString(), total.GetProperty("isBalanced").GetBoolean()));
         }
-
+        }
+        catch
+        {
+            output.WriteLine(failurePhase);
+            throw;
+        }
     }
 
     [SqlServerFact]
