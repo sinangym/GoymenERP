@@ -2256,7 +2256,8 @@ public sealed partial class OpenApiContractGenerationTests
                     ["parentRollId", "plannedKg", "expectedLabelVersion"],
                     ("parentRollId", "type:string;format:uuid"),
                     ("plannedKg", "type:string"),
-                    ("expectedLabelVersion", "type:null|string")),
+                    ("expectedLabelVersion", "type:null|string"),
+                    ("commercialContext", "oneOf:ref:CapturedPlanCommercialContextViewV1|type:null")),
                 // AT-061 / AT-062: the plan calculator's answer for an unsaved plan content; every value is lossless text.
                 ["PlanPreviewViewV1"] = ObjectSchema(
                     ["calculatorVersion", "workCenterId", "process", "plannedRollCount", "plannedInputKg", "target", "answers", "rolls", "missingParameters", "hasRefusal"],
@@ -3520,6 +3521,12 @@ public sealed partial class OpenApiContractGenerationTests
                     ("unitCode", "type:string"),
                     ("profileId", "type:string;format:uuid"),
                     ("profileVersion", "type:string")),
+                ["CapturedPlanCommercialContextViewV1"] = ObjectSchema(
+                    ["partyId", "companyPartyAccountId", "partyVersion", "accountVersion"],
+                    ("partyId", "type:string;format:uuid"),
+                    ("companyPartyAccountId", "type:string;format:uuid"),
+                    ("partyVersion", "type:string"),
+                    ("accountVersion", "type:string")),
                 ["CapturedPlanTechnicalSnapshotViewV1"] = ObjectSchema(
                     ["productId", "productVersion", "family", "template", "thicknessMm", "widthMm", "unitKg", "effectiveOn"],
                     ("productId", "type:string;format:uuid"),
@@ -3549,7 +3556,8 @@ public sealed partial class OpenApiContractGenerationTests
                     ["parentRollId", "plannedKg"],
                     ("parentRollId", "type:string;format:uuid"),
                     ("plannedKg", "type:string"),
-                    ("technicalSnapshot", "oneOf:ref:CapturedPlanTechnicalSnapshotViewV1|type:null")),
+                    ("technicalSnapshot", "oneOf:ref:CapturedPlanTechnicalSnapshotViewV1|type:null"),
+                    ("commercialContext", "oneOf:ref:CapturedPlanCommercialContextViewV1|type:null")),
                 ["PlanViewV1"] = ObjectSchema(
                     ["planId", "companyId", "workCenterId", "process", "status", "version", "inputs", "target", "approvedByUserId", "approvedAtUtc"],
                     ("planId", "type:string;format:uuid"),
@@ -3579,7 +3587,8 @@ public sealed partial class OpenApiContractGenerationTests
                     ("outputsKg", "type:object"),
                     ("workInProgressKg", "type:string"),
                     ("unexplainedKg", "type:string"),
-                    ("isFullyAccounted", "type:boolean")),
+                    ("isFullyAccounted", "type:boolean"),
+                    ("commercialContext", "oneOf:ref:CapturedPlanCommercialContextViewV1|type:null")),
                 ["TargetViewV1"] = ObjectSchema(
                     ["basis", "kg"],
                     ("basis", "type:string"),
@@ -4833,11 +4842,18 @@ public sealed partial class OpenApiContractGenerationTests
                     ("movementId", "type:string;format:uuid"),
                     ("kg", "type:null|string"),
                     ("occurredAtUtc", "type:null|string;format:date-time")),
+                ["PlanCommercialContextRequestV1"] = ObjectSchema(
+                    ["partyId", "companyPartyAccountId", "partyVersion", "accountVersion"],
+                    ("partyId", "type:string;format:uuid"),
+                    ("companyPartyAccountId", "type:string;format:uuid"),
+                    ("partyVersion", "type:null|string"),
+                    ("accountVersion", "type:null|string")),
                 ["PlannedInputRequestV1"] = ObjectSchema(
                     ["parentRollId", "plannedKg", "expectedLabelVersion"],
                     ("parentRollId", "type:string;format:uuid"),
                     ("plannedKg", "type:null|string"),
-                    ("expectedLabelVersion", "type:string")),
+                    ("expectedLabelVersion", "type:string"),
+                    ("commercialContext", "oneOf:ref:PlanCommercialContextRequestV1|type:null")),
                 ["RecordFactRequestV1"] = ObjectSchema(
                     ["factId", "expectedVersion", "parentRollId", "kg", "occurredAtUtc"],
                     ("factId", "type:string;format:uuid"),

@@ -16,6 +16,12 @@
       "target": "src/backend/Modules/Counterparty/GoymenERP.Modules.Counterparty.Infrastructure/GoymenERP.Modules.Counterparty.Infrastructure.csproj",
       "layer": "Infrastructure",
       "reason": "The API composition root registers Counterparty persistence and command services; this exact reference does not authorize platform-owned scanning or mutation of Counterparty source."
+    },
+    {
+      "source": "src/backend/Modules/Manufacturing/GoymenERP.Modules.Manufacturing.Application/GoymenERP.Modules.Manufacturing.Application.csproj",
+      "target": "src/backend/Modules/Counterparty/GoymenERP.Modules.Counterparty.Application/GoymenERP.Modules.Counterparty.Application.csproj",
+      "layer": "Application",
+      "reason": "Manufacturing consumes the exact authorized Counterparty application read boundary for immutable commercial context capture."
     }
   ]
 }

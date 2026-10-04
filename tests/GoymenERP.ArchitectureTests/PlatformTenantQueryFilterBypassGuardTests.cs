@@ -23,6 +23,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         "docs/features/CARI_MODULE_ENTRYPOINT_CONTRACT_v1.md";
     private const string ApiProjectPath =
         "src/backend/GoymenERP.Api/GoymenERP.Api.csproj";
+    private const string ManufacturingApplicationProjectPath =
+        "src/backend/Modules/Manufacturing/"
+        + "GoymenERP.Modules.Manufacturing.Application/"
+        + "GoymenERP.Modules.Manufacturing.Application.csproj";
     private const string PdfProjectPath =
         "src/backend/DocumentGeneration/GoymenERP.DocumentGeneration.Pdf/"
         + "GoymenERP.DocumentGeneration.Pdf.csproj";
@@ -205,7 +209,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // MFG technical snapshot: +4 migration/constraint SQL facts (38590e95... -> b1f5f069...).
             // Customer-owned input context: replace one obsolete refusal with three exact persistence/replay facts.
             ["tools/relational_inventory/manufacturing.txt"] =
-                "bf16d4c55e28639fa3134f4e54e86682ba5e5a8d5b88160e14e74b862b64da89",
+                "e6aa3795605379f774c8256126305e931aec3e9fb7bce62ca31a449d6b764cba",
 
             // organization
             // ORG master edit: +2 OrganizationMasterDataSqlServerRelationalAcceptanceTests facts (6b504dac… -> 3bad6ad8…).
@@ -311,7 +315,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // Re-measured for immutable Product/Settings technical snapshots on creation and revision inputs.
             ["src/backend/Modules/Manufacturing/GoymenERP.Modules.Manufacturing.Infrastructure/"
              + "Persistence/ManufacturingDbContext.cs"] =
-                "159728a7fab1f1e61acd038f484a0d067bdbafc7057d0093f1346ccc2206470a",
+                "d7e51922f4774d738bfc5b0f1b7a4c4220fa1dfc2711879b38efecece34a56b4",
             // FIN-T04a (#305): company-scoped like Organization; every tenant row and AuditEvent
             // carries the CompanyId filter. A standard entry, not an exception.
             // Re-measured for DEC-FIN-014: nullable POS fact columns on ReceiptDrafts and MoneyEvents; no new table,
@@ -841,7 +845,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Manufacturing/"
                  + "GoymenERP.Modules.Manufacturing.Infrastructure/Persistence/ManufacturingStore.cs"] =
                     new(
-                        "40a512710047750ce373e264d7cb3a26f30986e362d9930c61680f66ba17e152",
+                        "641e3e50b5f9a6e6bbbe83fb1b1a973dbccdc8ec4379e5f535ef77f8a67068d8",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -1118,6 +1122,17 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "20261001200000_AddManufacturingPlanTechnicalSnapshots.cs"] =
                     new(
                         "253f3953a27b7f1b6938e1bd16ef83bb9a55b6c093b51fa504271cdae2d56b7e",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 1
+                        }),
+                // Manufacturing commercial context is immutable history; Down refuses before any captured plan,
+                // revision or order context can be dropped.
+                ["src/backend/Modules/Manufacturing/"
+                 + "GoymenERP.Modules.Manufacturing.Infrastructure/Persistence/Migrations/"
+                 + "20261004100000_AddManufacturingCommercialContexts.cs"] =
+                    new(
+                        "58c604c5d1397ccfe980714e517cbd2ac82afe09fbe42305d32d69ad13d993f9",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Sql"] = 1
@@ -3525,12 +3540,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     }
 
     [Theory]
-    [InlineData("missing", "exactly two canonical edges")]
-    [InlineData("extra", "exactly two canonical edges")]
+    [InlineData("missing", "exactly three canonical edges")]
+    [InlineData("extra", "exactly three canonical edges")]
     [InlineData("unknown", "unknown property 'unexpected'")]
     [InlineData("duplicate-property", "duplicate property 'schema_version'")]
     [InlineData("wildcard", "not a canonical repository path")]
-    [InlineData("alternate-caller", "caller must be the exact API composition root")]
+    [InlineData("alternate-caller", "caller must be an exact reviewed composition root")]
     [InlineData("domain-target", "layer must be Application or Infrastructure")]
     public void Counterparty_contract_rejects_non_exact_declarations(
         string scenario,
@@ -3750,6 +3765,16 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["target"] = applicationTarget,
                 ["layer"] = applicationLayer,
                 ["reason"] = "Exact application composition edge."
+            },
+            new(StringComparer.Ordinal)
+            {
+                ["source"] = ManufacturingApplicationProjectPath,
+                ["target"] =
+                    ExcludedCounterpartyPrefix
+                    + "GoymenERP.Modules.Counterparty.Application/"
+                    + "GoymenERP.Modules.Counterparty.Application.csproj",
+                ["layer"] = "Application",
+                ["reason"] = "Manufacturing consumes the exact authorized Counterparty application read boundary."
             }
         };
         if (includeInfrastructure)
@@ -4047,10 +4072,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         }
 
         var edgeElements = edgeArray.EnumerateArray().ToArray();
-        if (edgeElements.Length != 2)
+        if (edgeElements.Length != 3)
         {
             errors.Add(
-                "Counterparty composition-root contract must declare exactly two canonical "
+                "Counterparty composition-root contract must declare exactly three canonical "
                 + $"edges, but found {edgeElements.Length}.");
         }
 
@@ -4089,10 +4114,17 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 errors.Add($"{context} target is not a canonical repository path: {target}");
             }
 
-            if (!string.Equals(source, ApiProjectPath, StringComparison.Ordinal))
+            if (!string.Equals(source, ApiProjectPath, StringComparison.Ordinal)
+                && !string.Equals(source, ManufacturingApplicationProjectPath, StringComparison.Ordinal))
             {
                 errors.Add(
-                    $"{context} caller must be the exact API composition root: {source}");
+                    $"{context} caller must be an exact reviewed composition root: {source}");
+            }
+
+            if (string.Equals(source, ManufacturingApplicationProjectPath, StringComparison.Ordinal)
+                && !string.Equals(layer, "Application", StringComparison.Ordinal))
+            {
+                errors.Add($"{context} Manufacturing caller may reference only the Application layer.");
             }
 
             var expectedTarget = layer switch
@@ -4136,14 +4168,14 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         if (layers.Count(layer => string.Equals(
                 layer,
                 "Application",
-                StringComparison.Ordinal)) != 1
+                StringComparison.Ordinal)) != 2
             || layers.Count(layer => string.Equals(
                 layer,
                 "Infrastructure",
                 StringComparison.Ordinal)) != 1)
         {
             errors.Add(
-                "Counterparty composition-root contract must contain exactly one Application "
+                "Counterparty composition-root contract must contain exactly two Application "
                 + "and one Infrastructure edge.");
         }
 

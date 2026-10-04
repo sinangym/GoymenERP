@@ -57357,6 +57357,31 @@
           }
         }
       },
+      "CapturedPlanCommercialContextViewV1": {
+        "required": [
+          "partyId",
+          "companyPartyAccountId",
+          "partyVersion",
+          "accountVersion"
+        ],
+        "type": "object",
+        "properties": {
+          "partyId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "companyPartyAccountId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "partyVersion": {
+            "type": "string"
+          },
+          "accountVersion": {
+            "type": "string"
+          }
+        }
+      },
       "CapturedPlanFamilyRevisionViewV1": {
         "required": [
           "familyId",
@@ -65718,6 +65743,37 @@
           }
         }
       },
+      "PlanCommercialContextRequestV1": {
+        "required": [
+          "partyId",
+          "companyPartyAccountId",
+          "partyVersion",
+          "accountVersion"
+        ],
+        "type": "object",
+        "properties": {
+          "partyId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "companyPartyAccountId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "partyVersion": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "accountVersion": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
       "PlanFormulaAnswerViewV1": {
         "required": [
           "formula",
@@ -65806,6 +65862,16 @@
           },
           "expectedLabelVersion": {
             "type": "string"
+          },
+          "commercialContext": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PlanCommercialContextRequestV1"
+              }
+            ]
           }
         }
       },
@@ -65830,6 +65896,16 @@
               },
               {
                 "$ref": "#/components/schemas/CapturedPlanTechnicalSnapshotViewV1"
+              }
+            ]
+          },
+          "commercialContext": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/CapturedPlanCommercialContextViewV1"
               }
             ]
           }
@@ -65956,6 +66032,16 @@
             "type": [
               "null",
               "string"
+            ]
+          },
+          "commercialContext": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/CapturedPlanCommercialContextViewV1"
+              }
             ]
           }
         }
@@ -69385,6 +69471,16 @@
           },
           "isFullyAccounted": {
             "type": "boolean"
+          },
+          "commercialContext": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/CapturedPlanCommercialContextViewV1"
+              }
+            ]
           }
         }
       },
