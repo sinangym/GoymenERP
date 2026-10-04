@@ -1292,24 +1292,67 @@ public sealed class AccountingApprovedSourceCatalogSqlServerRelationalAcceptance
                 }
             });
             var run = new Run(baseConnectionString, factory, receipts);
-            using var client = factory.CreateClient();
-            using var health = await client.GetAsync("/health/live");
-            health.EnsureSuccessStatusCode();
-            var company = new CompanyContext();
-            company.Set(CompanyA);
-            await using var context = run.Context(company);
-            await context.Database.MigrateAsync();
-            if (useRealFinanceSource)
+            var cleanupActions = new Stack<Func<ValueTask>>();
+            var cleanupStarted = false;
+
+            T Track<T>(T resource) where T : IDisposable
             {
-                await using var financeContext = new FinanceDbContext(
+                cleanupActions.Push(() =>
+                {
+                    resource.Dispose();
+                    return ValueTask.CompletedTask;
+                });
+                return resource;
+            }
+
+            T TrackAsync<T>(T resource) where T : IAsyncDisposable
+            {
+                cleanupActions.Push(resource.DisposeAsync);
+                return resource;
+            }
+
+            async Task DisposeCreatedAsync(bool suppressFailures)
+            {
+                if (cleanupStarted) return;
+                cleanupStarted = true;
+                ExceptionDispatchInfo? cleanupFailure = null;
+                while (cleanupActions.TryPop(out var dispose))
+                {
+                    try { await dispose(); }
+                    catch (Exception exception) { cleanupFailure ??= ExceptionDispatchInfo.Capture(exception); }
+                }
+                if (!suppressFailures) cleanupFailure?.Throw();
+            }
+
+            try
+            {
+                var client = Track(factory.CreateClient());
+                var health = Track(await client.GetAsync("/health/live"));
+                health.EnsureSuccessStatusCode();
+                var company = new CompanyContext();
+                company.Set(CompanyA);
+                var context = TrackAsync(run.Context(company));
+                await context.Database.MigrateAsync();
+                if (useRealFinanceSource)
+                {
+                    var financeContext = TrackAsync(new FinanceDbContext(
                     new DbContextOptionsBuilder<FinanceDbContext>()
                         .UseSqlServer(factory.DatabaseConnectionString,
                             sql => sql.MigrationsHistoryTable("__EFMigrationsHistory", FinanceDbContext.Schema))
                         .Options,
-                    company);
-                await financeContext.Database.MigrateAsync();
+                        company));
+                    await financeContext.Database.MigrateAsync();
+                }
+                await DisposeCreatedAsync(suppressFailures: false);
+                return run;
             }
-            return run;
+            catch
+            {
+                await DisposeCreatedAsync(suppressFailures: true);
+                try { await run.DisposeAsync(); }
+                catch { }
+                throw;
+            }
         }
 
         public HttpClient Client(string developmentUser, Guid company)
