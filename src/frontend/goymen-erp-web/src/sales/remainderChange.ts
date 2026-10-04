@@ -93,14 +93,24 @@ const validFloor = (loaded: string, shipped: string, delivered: string) =>
   compareDecimal(delivered, shipped) <= 0 && compareDecimal(shipped, loaded) <= 0
 
 function decodeLine(value: unknown): RemainderLine | null {
-  const o = exact(value, ['lineId', 'lineNo', 'orderUnitId', 'quantity', 'remainder', 'loaded', 'shipped', 'delivered', 'minimumQuantity'])
+  const o = exact(value, ['lineId', 'lineNo', 'orderUnitId', 'quantity', 'remainder', 'loaded', 'shipped', 'delivered', 'minimum'])
   if (o === null || !isReferenceId(o.lineId) || typeof o.lineNo !== 'number' || !Number.isInteger(o.lineNo) || o.lineNo < 1
     || !isReferenceId(o.orderUnitId) || !decimal(o.quantity)
     || !oneOf(o.remainder, Object.values(LINE_REMAINDER)) || !nullableDecimal(o.loaded) || !nullableDecimal(o.shipped)
-    || !nullableDecimal(o.delivered) || !nullableDecimal(o.minimumQuantity)) return null
-  if (o.loaded !== null && o.shipped !== null && o.delivered !== null && o.minimumQuantity !== null
-    && (!validFloor(o.loaded, o.shipped, o.delivered) || compareDecimal(o.loaded, o.minimumQuantity) !== 0)) return null
-  return o as unknown as RemainderLine
+    || !nullableDecimal(o.delivered) || !nullableDecimal(o.minimum)) return null
+  if (o.loaded !== null && o.shipped !== null && o.delivered !== null && o.minimum !== null
+    && (!validFloor(o.loaded, o.shipped, o.delivered) || compareDecimal(o.loaded, o.minimum) !== 0)) return null
+  return {
+    lineId: o.lineId,
+    lineNo: o.lineNo,
+    orderUnitId: o.orderUnitId,
+    quantity: o.quantity,
+    remainder: o.remainder,
+    loaded: o.loaded,
+    shipped: o.shipped,
+    delivered: o.delivered,
+    minimumQuantity: o.minimum,
+  }
 }
 
 function decodeChange(value: unknown): RemainderChange | null {

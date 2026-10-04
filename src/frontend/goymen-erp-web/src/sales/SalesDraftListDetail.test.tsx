@@ -61,6 +61,7 @@ describe('S-02 list', () => {
     const row = within(table).getAllByRole('row')[1]
     expect(within(row).getByRole('link', { name: 'SO-2026-0001' }).getAttribute('href')).toBe(`/satis/siparisler/${DRAFT}`)
     expect(within(row).getByText('13.09.2026')).toBeTruthy()
+    expect(within(row).getByTestId(`sales-row-commercial-stage-${DRAFT}`).textContent).toBe('Sipariş')
     expect(within(row).getByText('Rev.0')).toBeTruthy()
     expect(screen.getByText(ORDER_LIST_TEXT.end)).toBeTruthy()
     expect(fetch.salesCalls()[0].companyId).toBe(COMPANY_A)
@@ -122,6 +123,7 @@ describe('S-04 detail', () => {
     expect(await screen.findByRole('heading', { name: 'SO-2026-0001' })).toBeTruthy()
     expect(screen.getByTestId('sales-draft-revision').textContent).toBe('Rev.0')
     expect(screen.getByTestId('sales-draft-version').textContent).toBe('9007199254740993')
+    expect(screen.getByTestId('sales-draft-commercial-stage').textContent).toBe('Sipariş')
 
     const line = screen.getByTestId('sales-line-1')
     const slices = within(line).getByRole('table')

@@ -81,7 +81,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // production uses the own-server store and Defender when both are configured and answers 503 otherwise
     // (abe26a09… -> c027dce9…); no code line changed.
     private const string ReviewedOpenApiStartupFingerprint =
-        "523ae4b10dc629736621cb288b6ccfaf038269deecd251a4789037b37ec498a5";
+        "5360ddb5008e2bb104a7e18664a8fd9e083f6b9811b1ffd28eb07450569d235d";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedProductManufacturingTechnicalRegistrationPath =
@@ -140,7 +140,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // Re-fingerprinted for the broad suite's wall-clock limit 1200 s -> 2400 s (user decision 2026-09-29): only
     // the subprocess timeout changes; the exact inventory, every listed test and the 0-skip rule are unchanged.
     private const string ReviewedSqlServerRcsiVerifierFingerprint =
-        "e7ca6266eedb2981da43168138bb7ad21cbfc157696fd100bb6b1f545fa52bf5";
+        "0b7eda81fec0b50167e7da627671f6bffb978042bd243f954f4a59340a66bbf8";
     private const string SqlServerRcsiVerifierTestsPath =
         "tests/rcsi_relational_acceptance_verifier/"
         + "test_verify_rcsi_relational_acceptance.py";
@@ -189,7 +189,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // R20 transfer lifecycle: +3 transfer SQL facts (bd676b05… -> c74360d3…).
             // Product-version provenance rollback: +1 isolated no-loss SQL fact (c444f707… -> d9cb549b…).
             ["tools/relational_inventory/inventory.txt"] =
-                "d9cb549b717482b66e26d03109fd2fc07bbcbb9037cea1e77b25ace66a3db5c9",
+                "71a8969579ba098c63b5f997870c957b9df2dae59294bd8316b749c0b8c5b467",
 
             // logistics
             // AT-053: +4 weighbridge SQL facts (81c1ff0b… -> 264898d7…).
@@ -214,9 +214,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
             // platform
             // AT-002: +2 GlobalSearchSqlServerRelationalAcceptanceTests facts (5bc60202… -> a5df5046…).
-            // ERP-000G / AT-065: +7 DocumentVaultSqlServerRelationalAcceptanceTests facts (4ed7462b… -> f26c3895…).
+            // ERP-000G / AT-065: +8 DocumentVaultSqlServerRelationalAcceptanceTests facts (4ed7462b… -> e57500e0…).
             ["tools/relational_inventory/platform.txt"] =
-                "f26c3895929ee61f425d9f08d1cc78ef18edd774f49971935e5ec3d4ffeb9304",
+                "e57500e0de619eb42b1694318c08e907a8bc363d04d23038ef55841e01506b10",
 
             // product
             // DEC-CAR-003: +4 ProductDeactivationSqlServerRelationalAcceptanceTests facts (d7dbec7f… -> ddeead62…).
@@ -240,7 +240,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         };
     private const string ContinuousIntegrationWorkflowPath = ".github/workflows/ci.yml";
     private const string ReviewedContinuousIntegrationWorkflowFingerprint =
-        "91a665e6e8982e5a9b66f5d16a14d9fc4d7f98d63775de959a8cc6b2dea2b018";
+        "2bdfd317750a07a7867344fab8f6bcbc91a0ba209a17f45065d1c501d2639493";
     // Re-fingerprinted for the ORG master edit: the seeder's three existing IgnoreQueryFilters projections also read
     // the row id, so a seeded record a user renamed is recognised by its deterministic id and never re-added under
     // its old code. No new bypass, query or write path; the IgnoreQueryFilters reads are the same three.
@@ -339,9 +339,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // query filter and a company-leading key, and the Scrap movement kind (CK_Movements_Kind 1..7).
             // Re-measured for R20 same-company transfers: every transfer aggregate row stays company-filtered and
             // company-keyed, while movement kinds 8/9 remain inside Inventory's reviewed write guards.
+            // Re-measured for INV label classification: LabelRow.Classification is persisted beside the existing
+            // Version/UpdatedAtUtc fields; no query filter, company-leading key or table boundary changes.
             ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/"
              + "Persistence/InventoryDbContext.cs"] =
-                "0110da12e20416827ef1e477539a884e01b6bb36398a11ed1fcc563e02bfa0b6",
+                "87d1403fdacdb821f93b7a470921264467afb667066e1cdff7963e08f6121835",
             ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/"
              + "Persistence/ProductDbContext.cs"] =
                 "6979e3af6bf17bd2c7071431dc1dbc808c2c1c5609fe187d782dadb1412761d3",
@@ -633,7 +635,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Inventory/"
                  + "GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventoryStore.cs"] =
                     new(
-                        "82cf58243d6dfde8e47495da2729a9afbe855db237023edaa98c5d846e498907",
+                "1ebfddab00aa0fd2d19ebfc9b6affd869066c9d59fd1e4c6444816a59f2cd290",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -885,7 +887,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         // the company series moved under its token, every step replayed in order; SqlClient count unchanged.
                         // Re-fingerprinted for the cross-instruction aggregate deadlock closure: SQL 1205 is mapped through
                         // the existing replay-safe wrapper chain; no new database API and SqlClient count unchanged.
-                        "4f1426d8104f07b281efe8235989d925911385aed989c4bd3e6f542880ea59eb",
+                        "2e19c8adc7f83d82a3685adb47572f00681c4e2434e00567c6aa379c46df64b9",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -1364,6 +1366,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // schema mutation after any transformation has been recorded.
                 ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/Migrations/20260924095845_AddInventoryLabelGenealogy.cs"] =
                     new("7ab6813aed35a31711887f953a98f54e975553a5c7bb380f521482d1e6e6d2c2",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
+                // Label classification is durable label history; Down refuses before removing populated state.
+                ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/Migrations/20261002110000_AddInventoryLabelClassification.cs"] =
+                    new("5ae139301f3fbd8f0b730a83b47170289e5d643168a4113f9bb83bd4cdc01980",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 1 }),
                 // AT-037: stock counts, their decisions and CountAdjustment movements are durable facts; the Down's only
@@ -5927,8 +5934,14 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             "- name: Test",
             "run: |",
             "python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py",
-            "dotnet test GoymenERP.slnx -noAutoResponse --configuration Release "
-            + "--no-build --logger \"console;verbosity=normal\"",
+            "mkdir -p artifacts/ci-test-results/backend",
+            "dotnet test GoymenERP.slnx \\",
+            "-noAutoResponse \\",
+            "--configuration Release \\",
+            "--no-build \\",
+            "--results-directory artifacts/ci-test-results/backend \\",
+            "--logger \"console;verbosity=normal\" \\",
+            "--logger \"trx;LogFilePrefix=backend\"",
         };
         if (backendTestStepStart < 0
             || !activeBackendTestLines.SequenceEqual(
@@ -5964,7 +5977,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             "python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py",
             "python3 -I -S -B -m unittest discover -s "
             + "tests/rcsi_relational_acceptance_verifier -p \"test_*.py\" -v",
-            "python3 -I -S -B tools/verify_rcsi_relational_acceptance.py --broad",
+            "python3 -I -S -B tools/verify_rcsi_relational_acceptance.py \\",
+            "--broad \\",
+            "--trx-output artifacts/ci-test-results/relational/broad.trx",
         };
         var rcsiStepStart = relationalJob.IndexOf(
             "\n      - name: Run exact RCSI relational acceptance verifier\n",
@@ -5976,7 +5991,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             "- name: Run exact RCSI relational acceptance verifier",
             "run: |",
             "python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py",
-            "python3 -I -S -B tools/verify_rcsi_relational_acceptance.py --rcsi",
+            "python3 -I -S -B tools/verify_rcsi_relational_acceptance.py \\",
+            "--rcsi \\",
+            "--trx-output artifacts/ci-test-results/relational/rcsi.trx",
         };
         if (broadStepStart < 0
             || rcsiStepStart < 0

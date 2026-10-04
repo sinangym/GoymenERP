@@ -380,11 +380,128 @@ class WorkflowTests(unittest.TestCase):
                 "sales.orders.quantity.write",
                 # Q9: held only by that same disposable preparer; no production grant is widened.
                 "sales.orders.customer-acceptance.record",
+                # S04-RM: two new disposable actors reproduce L04's preparer/loader split.
+                "logistics.loading-instructions.create",
+                "logistics.loading-instructions.read",
+                "logistics.loads.record",
+                "logistics.shipments.record",
+                "logistics.dispatch-notes.create",
+                "logistics.dispatch-notes.approve",
             ),
             permissions,
         )
         self.assertIn("sales.orders.customer-acceptance.record", permissions)
         self.assertNotIn("counterparty.parties.create", permissions)
+
+        source = (ROOT / "infra" / "browser-suites" / "s04.override.yml").read_text(encoding="utf-8")
+        preparer = {
+            int(index): permission
+            for index, permission in re.findall(
+                r"IdentitySeed__Roles__14__Permissions__(\d+): ([^\r\n]+)", source)
+        }
+        loader = {
+            int(index): permission
+            for index, permission in re.findall(
+                r"IdentitySeed__Roles__15__Permissions__(\d+): ([^\r\n]+)", source)
+        }
+        self.assertEqual(
+            {
+                0: "logistics.loading-instructions.create",
+                1: "logistics.loading-instructions.read",
+                2: "counterparty.parties.read",
+            },
+            preparer,
+        )
+        self.assertEqual(
+            {
+                0: "logistics.loads.record",
+                1: "logistics.loading-instructions.read",
+                2: "logistics.shipments.record",
+                3: "inventory.physical-allocation.write",
+                4: "logistics.dispatch-notes.create",
+                5: "logistics.dispatch-notes.approve",
+            },
+            loader,
+        )
+        for forbidden in (
+            "sales.orders.cancel",
+            "logistics.deliveries.record",
+            "logistics.weighings.record",
+            "logistics.dispatch-notes.cancel",
+        ):
+            self.assertNotIn(forbidden, preparer.values())
+            self.assertNotIn(forbidden, loader.values())
+
+        def assignment(index: int) -> dict[str, str]:
+            return {
+                field: value
+                for field, value in re.findall(
+                    rf"IdentitySeed__Assignments__{index}__(Id|UserId|RoleId|CompanyId|ApprovedByUserId|Scopes__0__Type|Scopes__0__Id): ([^\r\n]+)",
+                    source,
+                )
+            }
+
+        company_id = "10000000-0000-0000-0000-000000000001"
+        canonical_approver_id = "20000000-0000-0000-0000-000000000003"
+        self.assertEqual(
+            {
+                "Id": "b4000000-0000-4000-8000-000000000410",
+                "UserId": "b2000000-0000-4000-8000-000000000409",
+                "RoleId": "b3000000-0000-4000-8000-000000000410",
+                "CompanyId": company_id,
+                "ApprovedByUserId": canonical_approver_id,
+                "Scopes__0__Type": "Company",
+                "Scopes__0__Id": company_id,
+            },
+            assignment(16),
+        )
+        self.assertEqual(
+            {
+                "Id": "b4000000-0000-4000-8000-000000000411",
+                "UserId": "b2000000-0000-4000-8000-000000000410",
+                "RoleId": "b3000000-0000-4000-8000-000000000411",
+                "CompanyId": company_id,
+                "ApprovedByUserId": canonical_approver_id,
+                "Scopes__0__Type": "Company",
+                "Scopes__0__Id": company_id,
+            },
+            assignment(17),
+        )
+
+        environment = {}
+        for line in source.splitlines():
+            match = re.fullmatch(r"\s{6}([A-Za-z0-9_]+):\s*(.+)", line)
+            if match is not None:
+                raw = match.group(2)
+                environment[match.group(1)] = json.loads(raw) if raw.startswith('"') else raw
+
+        self.assertEqual(8, validator.MAX_SUITE_ACTORS)
+        self.assertEqual({"s04": 10}, validator.SUITE_ACTOR_LIMITS)
+        validator.validate_suite_extensions("s04", environment)
+
+        too_many = dict(environment)
+        too_many["BootstrapIdentity__Users__12__UserId"] = "s04-eleventh-actor"
+        too_many["BootstrapIdentity__Users__12__DisplayName"] = "SENTETIK browser-suite:s04 eleventh actor"
+        with self.assertRaisesRegex(validator.ContractError, "at most 10 suite actors"):
+            validator.validate_suite_extensions("s04", too_many)
+
+        duplicate = dict(environment)
+        duplicate["BootstrapIdentity__Users__11__UserId"] = environment["BootstrapIdentity__Users__10__UserId"]
+        with self.assertRaisesRegex(validator.ContractError, "suite actor id repeated"):
+            validator.validate_suite_extensions("s04", duplicate)
+
+        noncontiguous = dict(environment)
+        for field in ("UserId", "DisplayName"):
+            noncontiguous[f"BootstrapIdentity__Users__12__{field}"] = noncontiguous.pop(
+                f"BootstrapIdentity__Users__11__{field}"
+            )
+        with self.assertRaisesRegex(validator.ContractError, "contiguously from index 2"):
+            validator.validate_suite_extensions("s04", noncontiguous)
+
+        foreign_scope = dict(environment)
+        foreign_scope["IdentitySeed__Assignments__17__Scopes__0__Id"] = "10000000-0000-0000-0000-000000000002"
+        with self.assertRaisesRegex(validator.ContractError, "company-wide on its own company"):
+            validator.validate_suite_extensions("s04", foreign_scope)
 
     def test_l04_identity_permissions_include_the_shipment_delivery_and_inventory_axis(self):
         self.assertEqual(
@@ -438,6 +555,11 @@ class WorkflowTests(unittest.TestCase):
                 "product.operational-selection.read",
                 "inventory.labels.read",
                 "inventory.balances.read",
+                # AT-065: disposable recorder only; denied actor remains without either Documents permission.
+                "documents.files.read",
+                "documents.files.upload",
+                # Classification write remains on the same disposable recorder only.
+                "inventory.label-classification.write",
                 "organization.locations.read",
                 # R19: held only by the disposable r14-transformer.
                 "inventory.label-transformation.record",
@@ -450,6 +572,20 @@ class WorkflowTests(unittest.TestCase):
             ),
             validator.SUITE_IDENTITY_PERMISSIONS["r14"],
         )
+
+        source = (ROOT / "infra" / "browser-suites" / "r14.override.yml").read_text(encoding="utf-8")
+        recorder = {
+            int(index): permission
+            for index, permission in re.findall(
+                r"IdentitySeed__Roles__5__Permissions__(\d+): ([^\r\n]+)", source)
+        }
+        denied = {
+            int(index): permission
+            for index, permission in re.findall(
+                r"IdentitySeed__Roles__6__Permissions__(\d+): ([^\r\n]+)", source)
+        }
+        self.assertEqual("inventory.label-classification.write", recorder[6])
+        self.assertNotIn("inventory.label-classification.write", denied.values())
 
     def _trigger_block(self) -> str:
         return self.workflow.split("\non:\n", 1)[1].split("\npermissions:\n", 1)[0]

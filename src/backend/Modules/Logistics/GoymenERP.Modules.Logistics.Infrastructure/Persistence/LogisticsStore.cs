@@ -667,6 +667,11 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
             join line in dbContext.DispatchNoteLines.AsNoTracking()
                 on new { note.CompanyId, note.InstructionId, note.DispatchNoteId }
                 equals new { line.CompanyId, line.InstructionId, line.DispatchNoteId }
+            join sourceCandidate in dbContext.Lines.AsNoTracking()
+                on new { note.CompanyId, note.InstructionId, LineId = line.InstructionLineId }
+                equals new { sourceCandidate.CompanyId, sourceCandidate.InstructionId, sourceCandidate.LineId }
+                into sourceCandidates
+            from sourceLine in sourceCandidates.DefaultIfEmpty()
             where note.DispatchNoteId == dispatchNoteId
                 && note.Status == (int)DispatchNoteStatus.Approved
                 && !line.Released
@@ -685,6 +690,9 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
                 note.ApprovedAtUtc,
                 line.LineNo,
                 line.SourceOrderId,
+                SourceOrderRevision = sourceLine == null ? (int?)null : sourceLine.SourceOrderRevision,
+                SourceOrderMatches = sourceLine != null && sourceLine.SourceOrderId == line.SourceOrderId
+                    && sourceLine.SourceOrderLineId == line.SourceOrderLineId,
                 line.SourceOrderLineId,
                 line.ShipmentId,
                 line.ProductId,
@@ -695,6 +703,12 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
         if (rows.Count == 0)
         {
             return null;
+        }
+
+        if (rows.Any(line => line.SourceOrderRevision is null || !line.SourceOrderMatches))
+        {
+            throw new LogisticsStoreException(LogisticsStoreCodes.InvoiceSourceInvalid,
+                "İrsaliye satırının değişmez yükleme kaynağı eksik veya uyuşmuyor.");
         }
 
         var header = rows[0];
@@ -713,6 +727,7 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
             [.. rows.Select(line => new StoredApprovedDispatchInvoiceSourceLine(
                 line.LineNo,
                 line.SourceOrderId,
+                line.SourceOrderRevision!.Value,
                 line.SourceOrderLineId,
                 line.ShipmentId,
                 line.ProductId,

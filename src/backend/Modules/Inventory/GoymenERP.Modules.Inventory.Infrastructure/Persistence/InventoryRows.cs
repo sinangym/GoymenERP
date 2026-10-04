@@ -39,6 +39,7 @@ internal sealed class LabelRow : IInventoryTenantRow
     public Guid LotId { get; set; }
     public string? HeatNumber { get; set; }
     public string? CoilNumber { get; set; }
+    public int? Classification { get; set; }
     public string RequiredDocumentsJson { get; set; } = "[]";
     public long Version { get; set; }
     public byte[] RowVersion { get; set; } = [];

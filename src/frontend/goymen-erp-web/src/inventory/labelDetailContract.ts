@@ -23,6 +23,7 @@ export interface InventoryLabelIdentity {
   readonly lotId: string
   readonly heatNumber: string | null
   readonly coilNumber: string | null
+  readonly classification: 'Standard' | 'SecondQuality' | 'Scrap' | null
   readonly documentStatus: string
   readonly requiredDocuments: readonly string[]
   readonly documents: readonly InventoryLabelDocument[]
@@ -329,10 +330,12 @@ function validGenealogyTransformations(edges: readonly InventoryLabelGenealogyEd
 export function decodeInventoryLabelIdentity(value: unknown): InventoryLabelIdentity | null {
   const source = record(value)
   if (source === null || !exact(source, [
-    'labelId', 'companyId', 'code', 'productId', 'lotId', 'heatNumber', 'coilNumber', 'documentStatus',
+    'labelId', 'companyId', 'code', 'productId', 'lotId', 'heatNumber', 'coilNumber', 'classification', 'documentStatus',
     'requiredDocuments', 'documents', 'prints', 'lot',
   ]) || !guid(source.labelId) || !guid(source.companyId) || !text(source.code) || !guid(source.productId) ||
     !guid(source.lotId) || !nullableText(source.heatNumber) || !nullableText(source.coilNumber) ||
+    (source.classification !== null && source.classification !== 'Standard' &&
+      source.classification !== 'SecondQuality' && source.classification !== 'Scrap') ||
     !text(source.documentStatus) || !Array.isArray(source.requiredDocuments) ||
     source.requiredDocuments.some((item) => !text(item)) || !Array.isArray(source.documents) ||
     !Array.isArray(source.prints)) return null

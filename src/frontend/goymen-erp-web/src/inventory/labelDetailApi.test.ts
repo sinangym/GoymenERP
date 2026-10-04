@@ -10,7 +10,7 @@ const LOCATION = '66666666-6666-6666-6666-666666666666'
 
 const identity = {
   labelId: LABEL, companyId: COMPANY, code: 'LBL-100', productId: PRODUCT, lotId: LOT,
-  heatNumber: null, coilNumber: null, documentStatus: 'Complete', requiredDocuments: [], documents: [], prints: [],
+  heatNumber: null, coilNumber: null, classification: null, documentStatus: 'Complete', requiredDocuments: [], documents: [], prints: [],
   lot: { id: LOT, heatNumber: null, coilNumber: null },
 }
 const balances = {

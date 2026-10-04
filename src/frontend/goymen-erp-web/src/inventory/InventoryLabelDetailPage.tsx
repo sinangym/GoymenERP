@@ -1,6 +1,8 @@
 import { useEffect, useRef, type ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link, useLocation, useParams } from 'react-router'
+import { DocumentsPanel } from '../documents/DocumentsPanel'
+import { OWNER_KIND } from '../documents/contract'
 import { productDetailPath } from '../product/capabilities'
 import { CAPABILITY } from '../shell/capabilities'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
@@ -10,6 +12,7 @@ import { StateBlock } from '../shell/StateBlock'
 import { classifyOutcome, type RemoteViewState } from '../shell/uiState'
 import {
   INVENTORY_LABEL_TRANSFORMATION_CAPABILITY,
+  INVENTORY_LABEL_CLASSIFICATION_WRITE_CAPABILITY,
   INVENTORY_PHYSICAL_ALLOCATION_WRITE_CAPABILITY,
   INVENTORY_STOCK_COUNT_APPROVE_CAPABILITY,
   INVENTORY_STOCK_COUNT_RECORD_CAPABILITY,
@@ -19,6 +22,7 @@ import {
 import { fetchInventoryLabelDetail } from './labelDetailApi'
 import { LabelAllocationPanel } from './LabelAllocationPanel'
 import { LabelTransformationPanel } from './LabelTransformationPanel'
+import { LabelClassificationPanel } from './LabelClassificationPanel'
 import { StockCountPanel } from './StockCountPanel'
 import { StockScrapPanel } from './StockScrapPanel'
 import type { InventoryLabelDetailWithMovementTimeline } from './labelDetailContract'
@@ -93,6 +97,7 @@ function InventoryLabelDetailView({ namespace, labelId, target, stockSearch }: {
   const canReadProduct = hasCapability(shell, CAPABILITY.productItemsDetail)
   const canReadLabel = hasCapability(shell, CAPABILITY.inventoryStockPositionsList)
   const canTransform = hasCapability(shell, INVENTORY_LABEL_TRANSFORMATION_CAPABILITY)
+  const canClassify = hasCapability(shell, INVENTORY_LABEL_CLASSIFICATION_WRITE_CAPABILITY)
   const canRecordCount = hasCapability(shell, INVENTORY_STOCK_COUNT_RECORD_CAPABILITY)
   const canApproveCount = hasCapability(shell, INVENTORY_STOCK_COUNT_APPROVE_CAPABILITY)
   const canRecordScrap = hasCapability(shell, INVENTORY_STOCK_SCRAP_RECORD_CAPABILITY)
@@ -158,6 +163,7 @@ function InventoryLabelDetailView({ namespace, labelId, target, stockSearch }: {
         <div><dt>Lot</dt><dd className={styles.mono}>{identity.lotId}</dd></div>
         <div><dt>Döküm</dt><dd>{identity.heatNumber ?? identity.lot.heatNumber ?? '—'}</dd></div>
         <div><dt>Rulo</dt><dd>{identity.coilNumber ?? identity.lot.coilNumber ?? '—'}</dd></div>
+        <div><dt>Kalite sınıfı</dt><dd>{identity.classification ?? 'Sınıflandırılmamış'}</dd></div>
         <div><dt>Fiziksel miktar</dt><dd>{balances.physicalKg} kg</dd></div>
         <div><dt>Serbest</dt><dd>{balances.freeKg} kg</dd></div>
         <div><dt>Bloklu</dt><dd>{balances.blockedKg} kg</dd></div>
@@ -248,6 +254,19 @@ function InventoryLabelDetailView({ namespace, labelId, target, stockSearch }: {
       /></ActionTarget>
       : null}
 
+    {canClassify && actorId !== null && namespace !== null
+      ? <LabelClassificationPanel
+        key={`${identity.labelId}:classification:${labelVersion}`}
+        labelId={identity.labelId}
+        labelVersion={labelVersion}
+        current={identity.classification}
+        namespace={namespace}
+        actorId={actorId}
+        companyId={companyId}
+        onChanged={() => void query.refetch()}
+      />
+      : null}
+
     {canRecordCount || canApproveCount
       ? <ActionTarget id={ROW_ACTION_TARGET.count} target={target}><StockCountPanel
         key={`${identity.labelId}:stock-count`}
@@ -282,5 +301,13 @@ function InventoryLabelDetailView({ namespace, labelId, target, stockSearch }: {
       <p>Ekli belge: {identity.documents.length}</p>
       <p>Basım: {identity.prints.length}</p>
     </section>
+
+    <DocumentsPanel
+      ownerKind={OWNER_KIND.inventoryMaterialLabel}
+      ownerId={identity.labelId}
+      companyId={companyId}
+      namespace={namespace}
+      entryGeneration={shell.routeEntryGeneration}
+    />
   </main>
 }

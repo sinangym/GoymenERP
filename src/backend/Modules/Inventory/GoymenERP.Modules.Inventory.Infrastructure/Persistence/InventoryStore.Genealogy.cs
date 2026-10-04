@@ -477,9 +477,14 @@ public sealed partial class InventoryStore
     {
         var required = JsonSerializer.Deserialize<string[]>(row.RequiredDocumentsJson, Json)
             ?? throw new InvalidOperationException("Kayıtlı etiketin belge gereksinimi okunamadı.");
-        return new MaterialLabel(row.Id, row.CompanyId, row.Code, row.ProductId, row.LotId,
-            row.ProductVersion,
-            required, row.HeatNumber, row.CoilNumber);
+        var label = new MaterialLabel(row.Id, row.CompanyId, row.Code, row.ProductId, row.LotId,
+            row.ProductVersion, required, row.HeatNumber, row.CoilNumber);
+        if (row.Classification is { } classification)
+        {
+            label.Classify((LabelClassification)classification);
+        }
+
+        return label;
     }
 
     private static void RequireGenealogyMetadata(InventoryCommandMetadata metadata)
