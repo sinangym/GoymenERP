@@ -14,6 +14,17 @@ public enum LabelDocumentStatus
     PendingDocuments = 2,
 }
 
+/// <summary>
+/// The operator's explicit classification of one physical label. It is descriptive: changing it
+/// creates no stock movement, block/release, disposal, sellability or quantity effect.
+/// </summary>
+public enum LabelClassification
+{
+    Standard = 1,
+    SecondQuality = 2,
+    Scrap = 3,
+}
+
 /// <summary>One attached document: which kind, when and by whom it was attached.</summary>
 public sealed record LabelDocumentAttachment(string Kind, DateTimeOffset AttachedAtUtc, string AttachedBy);
 
@@ -129,6 +140,20 @@ public sealed class MaterialLabel
     /// </summary>
     public bool IsReleasableForProductionOrShipment => DocumentStatus == LabelDocumentStatus.Complete;
 
+    /// <summary>Null is a real legacy/unknown state and is never reconstructed as <see cref="LabelClassification.Standard"/>.</summary>
+    public LabelClassification? Classification { get; private set; }
+
+    /// <summary>Classifies this same physical identity without changing any stock or document fact.</summary>
+    public void Classify(LabelClassification classification)
+    {
+        if (!Enum.IsDefined(classification))
+        {
+            throw Invalid("Etiket kalite sınıfı geçersizdir.");
+        }
+
+        Classification = classification;
+    }
+
     /// <summary>Record that a required (or extra) document is now attached, by whom and when.</summary>
     public LabelDocumentAttachment AttachDocument(string documentKind, DateTimeOffset attachedAtUtc, string attachedBy)
     {
@@ -213,7 +238,8 @@ public sealed class MaterialLabel
     public static MaterialLabel Restore(Guid id, Guid companyId, string code, Guid productId, Guid lotId,
         string? productVersion,
         IEnumerable<string> requiredDocuments, string? heatNumber, string? coilNumber,
-        IEnumerable<LabelPrint> prints, IEnumerable<LabelDocumentAttachment> attachments)
+        IEnumerable<LabelPrint> prints, IEnumerable<LabelDocumentAttachment> attachments,
+        LabelClassification? classification = null)
     {
         ArgumentNullException.ThrowIfNull(prints);
         ArgumentNullException.ThrowIfNull(attachments);
@@ -235,6 +261,11 @@ public sealed class MaterialLabel
         {
             ArgumentNullException.ThrowIfNull(attachment);
             label.AttachDocument(attachment.Kind, attachment.AttachedAtUtc, attachment.AttachedBy);
+        }
+
+        if (classification is { } storedClassification)
+        {
+            label.Classify(storedClassification);
         }
 
         return label;

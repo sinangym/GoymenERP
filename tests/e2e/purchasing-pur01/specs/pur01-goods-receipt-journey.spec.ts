@@ -417,7 +417,7 @@ test('PUR01-GR records one partial receipt in the browser, reopens it, finds the
     expect(label.labelVersion).toBe(recorded.receipt.labelVersion)
     expect(label.identity).toMatchObject({
       labelId: sent.labelId, companyId, code: LABEL_CODE, productId, lotId: sent.lotId, heatNumber: HEAT_NUMBER,
-      coilNumber: null, documentStatus: 'Complete', requiredDocuments: [], documents: [],
+      coilNumber: null, classification: null, documentStatus: 'Complete', requiredDocuments: [], documents: [],
     })
     expect(label.balances).toMatchObject({ labelId: sent.labelId, physicalKg: MEASURED_KG, freeKg: MEASURED_KG, blockedKg: '0' })
     expect(label.balances.positions).toHaveLength(1)

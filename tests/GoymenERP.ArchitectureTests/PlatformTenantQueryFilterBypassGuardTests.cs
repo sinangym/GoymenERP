@@ -81,7 +81,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // production uses the own-server store and Defender when both are configured and answers 503 otherwise
     // (abe26a09… -> c027dce9…); no code line changed.
     private const string ReviewedOpenApiStartupFingerprint =
-        "8dcb616014df8cdf45ab0c1406633d9b42c9e35282c2e1f30c7d17b2824d802e";
+        "ef9fb22bc928ebb9888a83e01edab7a5641c14037df483a801cd7261d6f169dd";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedProductManufacturingTechnicalRegistrationPath =
@@ -189,7 +189,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // R20 transfer lifecycle: +3 transfer SQL facts (bd676b05… -> c74360d3…).
             // Product-version provenance rollback: +1 isolated no-loss SQL fact (c444f707… -> d9cb549b…).
             ["tools/relational_inventory/inventory.txt"] =
-                "d9cb549b717482b66e26d03109fd2fc07bbcbb9037cea1e77b25ace66a3db5c9",
+                "71a8969579ba098c63b5f997870c957b9df2dae59294bd8316b749c0b8c5b467",
 
             // logistics
             // AT-053: +4 weighbridge SQL facts (81c1ff0b… -> 264898d7…).
@@ -336,9 +336,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // query filter and a company-leading key, and the Scrap movement kind (CK_Movements_Kind 1..7).
             // Re-measured for R20 same-company transfers: every transfer aggregate row stays company-filtered and
             // company-keyed, while movement kinds 8/9 remain inside Inventory's reviewed write guards.
+            // Re-measured for INV label classification: LabelRow.Classification is persisted beside the existing
+            // Version/UpdatedAtUtc fields; no query filter, company-leading key or table boundary changes.
             ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/"
              + "Persistence/InventoryDbContext.cs"] =
-                "0110da12e20416827ef1e477539a884e01b6bb36398a11ed1fcc563e02bfa0b6",
+                "87d1403fdacdb821f93b7a470921264467afb667066e1cdff7963e08f6121835",
             ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/"
              + "Persistence/ProductDbContext.cs"] =
                 "6979e3af6bf17bd2c7071431dc1dbc808c2c1c5609fe187d782dadb1412761d3",
@@ -655,7 +657,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Inventory/"
                  + "GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventoryStore.cs"] =
                     new(
-                        "82cf58243d6dfde8e47495da2729a9afbe855db237023edaa98c5d846e498907",
+                "1ebfddab00aa0fd2d19ebfc9b6affd869066c9d59fd1e4c6444816a59f2cd290",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -1393,6 +1395,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // schema mutation after any transformation has been recorded.
                 ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/Migrations/20260924095845_AddInventoryLabelGenealogy.cs"] =
                     new("7ab6813aed35a31711887f953a98f54e975553a5c7bb380f521482d1e6e6d2c2",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
+                // Label classification is durable label history; Down refuses before removing populated state.
+                ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/Migrations/20261002110000_AddInventoryLabelClassification.cs"] =
+                    new("5ae139301f3fbd8f0b730a83b47170289e5d643168a4113f9bb83bd4cdc01980",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 1 }),
                 // AT-037: stock counts, their decisions and CountAdjustment movements are durable facts; the Down's only

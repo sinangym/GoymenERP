@@ -108,6 +108,13 @@ public static class ErpPermissions
     public const string InventoryLabelTransformationRecord = "inventory.label-transformation.record";
 
     /// <summary>
+    /// Classifies one same-company Inventory label as Standard, SecondQuality or Scrap. Registration grants
+    /// nothing: no seeded role or real user receives this command. Company-wide only because the label command
+    /// has no narrower approved scope dimension. Not Critical: no approved source adds grant-time dual control.
+    /// </summary>
+    public const string InventoryLabelClassificationWrite = "inventory.label-classification.write";
+
+    /// <summary>
     /// AT-037 / DEC-STK-007 stock count (user decision 2026-09-27): <c>record</c> enters a counted quantity with a
     /// mandatory reason on a label's single position; <c>approve</c> decides a pending difference. Until the
     /// critical-difference threshold is decided (INV-R20-R21-01 Q2, #66/5840984992) every non-zero difference needs
@@ -632,6 +639,7 @@ public static class ErpPermissions
             InventoryOpeningStockRecord,
             InventoryPhysicalAllocationWrite,
             InventoryLabelTransformationRecord,
+            InventoryLabelClassificationWrite,
             InventoryStockCountRecord,
             InventoryStockCountApprove,
             InventoryStockScrapRecord,
@@ -745,6 +753,7 @@ public static class ErpPermissions
             InventoryOpeningStockRecord,
             InventoryPhysicalAllocationWrite,
             InventoryLabelTransformationRecord,
+            InventoryLabelClassificationWrite,
             InventoryStockCountRecord,
             InventoryStockCountApprove,
             InventoryStockScrapRecord,

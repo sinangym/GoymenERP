@@ -562,6 +562,8 @@ class WorkflowTests(unittest.TestCase):
                 # AT-065: disposable recorder only; denied actor remains without either Documents permission.
                 "documents.files.read",
                 "documents.files.upload",
+                # Classification write remains on the same disposable recorder only.
+                "inventory.label-classification.write",
                 "organization.locations.read",
                 # R19: held only by the disposable r14-transformer.
                 "inventory.label-transformation.record",
@@ -574,6 +576,20 @@ class WorkflowTests(unittest.TestCase):
             ),
             validator.SUITE_IDENTITY_PERMISSIONS["r14"],
         )
+
+        source = (ROOT / "infra" / "browser-suites" / "r14.override.yml").read_text(encoding="utf-8")
+        recorder = {
+            int(index): permission
+            for index, permission in re.findall(
+                r"IdentitySeed__Roles__5__Permissions__(\d+): ([^\r\n]+)", source)
+        }
+        denied = {
+            int(index): permission
+            for index, permission in re.findall(
+                r"IdentitySeed__Roles__6__Permissions__(\d+): ([^\r\n]+)", source)
+        }
+        self.assertEqual("inventory.label-classification.write", recorder[6])
+        self.assertNotIn("inventory.label-classification.write", denied.values())
 
     def _trigger_block(self) -> str:
         return self.workflow.split("\non:\n", 1)[1].split("\npermissions:\n", 1)[0]

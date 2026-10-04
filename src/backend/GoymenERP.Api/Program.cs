@@ -221,6 +221,13 @@ builder.Services.AddInventoryParentRollReferences();
 builder.Services.AddInventoryPhysicalAllocationReads();
 // R19: the label genealogy writer/reader and the fenced split/merge command behind the published route.
 builder.Services.AddInventoryLabelGenealogy();
+// Label classification is an Inventory-owned, versioned command. Central registers only the reviewed
+// permission identity and binds the existing scoped store/command; this grants no actor access.
+builder.Services.AddScoped(_ => new InventoryLabelClassificationAuthorityV1(
+    ErpPermissions.InventoryLabelClassificationWrite));
+builder.Services.AddScoped<IInventoryLabelClassificationWriterV1>(services =>
+    services.GetRequiredService<global::GoymenERP.Modules.Inventory.Infrastructure.Persistence.InventoryStore>());
+builder.Services.AddScoped<IInventoryLabelClassificationCommandV1, InventoryLabelClassificationCommandService>();
 // AT-037: the stock count's fenced record/decide commands and the label count read behind the published routes.
 builder.Services.AddInventoryStockCounts();
 // ST-02 scrap write-off: the fenced record/decide commands and the label scrap read behind the published routes.

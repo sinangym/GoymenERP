@@ -68,6 +68,7 @@ public sealed class R14BrowserSeed : IBrowserSuiteFixture
     private const string OpeningCapability = "inventory.opening-stock.record";
     private const string LabelDetailCapability = "inventory.stock-positions.list";
     private const string ProductDetailCapability = "product.items.detail";
+    private const string LabelClassificationCapability = "inventory.label-classification.write";
     private const string LabelTransformationCapability = "inventory.label-transformation.record";
     private const string StockCountRecordCapability = "inventory.stock-count.record";
     private const string StockCountApproveCapability = "inventory.stock-count.approve";
@@ -200,6 +201,19 @@ public sealed class R14BrowserSeed : IBrowserSuiteFixture
 
         string[] scrapperCapabilities = await CapabilitiesAsync(context, ScrapperActor, cancellationToken);
         string[] scrapApproverCapabilities = await CapabilitiesAsync(context, ScrapApproverActor, cancellationToken);
+        string[][] nonClassificationCapabilities =
+        [
+            deniedCapabilities, arrangerCapabilities, transformerCapabilities, counterCapabilities,
+            approverCapabilities, scrapperCapabilities, scrapApproverCapabilities,
+        ];
+        if (!recorderCapabilities.Contains(LabelClassificationCapability, StringComparer.Ordinal)
+            || nonClassificationCapabilities.Any(capabilities =>
+                capabilities.Contains(LabelClassificationCapability, StringComparer.Ordinal)))
+        {
+            throw new InvalidOperationException(
+                "Only the disposable R14 recorder may hold the label classification control.");
+        }
+
         string[][] nonScrapCapabilities =
         [
             recorderCapabilities, deniedCapabilities, arrangerCapabilities, transformerCapabilities,
