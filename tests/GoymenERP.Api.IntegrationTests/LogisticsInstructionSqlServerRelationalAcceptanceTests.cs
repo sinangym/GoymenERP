@@ -511,6 +511,10 @@ public sealed partial class LogisticsInstructionSqlServerRelationalAcceptanceTes
                 services.AddSingleton<ICurrentUser>(user);
                 services.RemoveAll<IErpAuthorityRevalidationService>();
                 services.AddSingleton<IErpAuthorityRevalidationService>(authority);
+            }).WithWebHostBuilder(builder =>
+            {
+                builder.UseSetting("BootstrapIdentity:Users:8:UserId", decider);
+                builder.UseSetting("BootstrapIdentity:Users:8:DisplayName", "Synthetic customer return decider");
             });
         using var requesterClient = HostedClientFor(host, user.UserId!, CompanyA);
 
