@@ -256,6 +256,8 @@ builder.Services.AddScoped<InventoryPhysicalAllocationHostService>();
 // order lines are Sales's approved-line port (registered by the Sales module); nothing of either is copied.
 builder.Services.AddScoped<ILogisticsPartyAccountPortV1, CounterpartyLogisticsPartyAccountPortV1>();
 builder.Services.AddScoped<ILogisticsRealizationTransactionRunnerV1, LogisticsRealizationTransactionRunner>();
+builder.Services.AddScoped<ILogisticsCustomerReturnScopeV1, LogisticsCustomerReturnScope>();
+builder.Services.AddScoped<ILogisticsCustomerReturnTransactionRunnerV1, LogisticsCustomerReturnTransactionRunner>();
 builder.Services.AddLogisticsModule(
     builder.Configuration,
     (services, options) => options.AddInterceptors(
@@ -362,6 +364,7 @@ app.MapSalesProductCandidateEndpoints();
 app.MapInventoryEndpoints();
 app.MapManufacturingEndpoints();
 app.MapLogisticsEndpoints();
+app.MapLogisticsCustomerReturnEndpoints();
 app.MapPurchasingEndpoints();
 app.MapPurchasingProductCandidateEndpoints();
 app.MapAccountingEndpoints();

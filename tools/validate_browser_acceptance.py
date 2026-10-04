@@ -321,6 +321,8 @@ SUITE_IDENTITY_PERMISSIONS = {
             "logistics.shipments.record", "logistics.deliveries.record", "logistics.weighings.record",
             # AT-055: the disposable loader prepares the dispatch-note draft, approves it and cancels it (user decision 2026-09-30).
             "logistics.dispatch-notes.create", "logistics.dispatch-notes.approve", "logistics.dispatch-notes.cancel",
+            "logistics.customer-returns.read", "logistics.customer-returns.request",
+            "logistics.customer-returns.decision",
             "sales.drafts.create", "sales.drafts.read", "sales.orders.approve", "counterparty.parties.read",
             "inventory.opening-stock.record", "inventory.labels.read", "inventory.balances.read",
             "inventory.physical-allocation.write", "product.operational-selection.read",

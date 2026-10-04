@@ -492,6 +492,15 @@ public static class ErpPermissions
     /// </summary>
     public const string LogisticsDispatchNotesCancel = "logistics.dispatch-notes.cancel";
 
+    /// <summary>Customer-return reads. Registered, not granted; company-wide only.</summary>
+    public const string LogisticsCustomerReturnsRead = "logistics.customer-returns.read";
+
+    /// <summary>Requests a physical customer return against an exact delivered share. Registered, not granted; company-wide only.</summary>
+    public const string LogisticsCustomerReturnsRequest = "logistics.customer-returns.request";
+
+    /// <summary>Decides a pending customer return. Registered, not granted; company-wide only.</summary>
+    public const string LogisticsCustomerReturnsDecision = "logistics.customer-returns.decision";
+
     /// <summary>
     /// AT-025: the operations work list's two SEPARATE section reads (LogisticsPermissionManifestV1) — the sales section (L-01) and
     /// the purchase section (L-09), each its own name so that neither implies the other (Sinan #66 5738113623 §4: each read its own
@@ -653,6 +662,9 @@ public static class ErpPermissions
             LogisticsDispatchNotesCreate,
             LogisticsDispatchNotesApprove,
             LogisticsDispatchNotesCancel,
+            LogisticsCustomerReturnsRead,
+            LogisticsCustomerReturnsRequest,
+            LogisticsCustomerReturnsDecision,
             LogisticsOperationsSalesWorkRead,
             LogisticsOperationsPurchaseWorkRead,
             PurchasingOrdersCreate,
@@ -767,6 +779,9 @@ public static class ErpPermissions
             LogisticsDispatchNotesCreate,
             LogisticsDispatchNotesApprove,
             LogisticsDispatchNotesCancel,
+            LogisticsCustomerReturnsRead,
+            LogisticsCustomerReturnsRequest,
+            LogisticsCustomerReturnsDecision,
             LogisticsOperationsSalesWorkRead,
             LogisticsOperationsPurchaseWorkRead,
             PurchasingOrdersCreate,

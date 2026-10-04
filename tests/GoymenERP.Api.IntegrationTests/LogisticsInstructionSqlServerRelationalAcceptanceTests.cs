@@ -490,6 +490,76 @@ public sealed partial class LogisticsInstructionSqlServerRelationalAcceptanceTes
     }
 
     [SqlServerFact]
+    public async Task Customer_return_inventory_identity_swap_during_final_authority_await_rolls_back_Logistics_and_Inventory()
+    {
+        await using var run = await Run.StartAsync();
+        var fixture = await SeedHostedShipmentAsync(run, "SYN-CUSTOMER-RETURN-AUTH-SWAP");
+        var requester = await run.GrantAsync("SYN-CUSTOMER-RETURN-REQUESTER", CompanyA,
+            LogisticsPermissionManifestV1.ShipmentsRecord,
+            LogisticsPermissionManifestV1.DeliveriesRecord,
+            LogisticsPermissionManifestV1.CustomerReturnsRequest,
+            ErpPermissions.InventoryPhysicalAllocationWrite);
+        var decider = await run.GrantAsync("SYN-CUSTOMER-RETURN-DECIDER", CompanyA,
+            LogisticsPermissionManifestV1.CustomerReturnsDecision,
+            ErpPermissions.InventoryPhysicalAllocationWrite);
+        var user = new SwappableCustomerReturnUser(requester, CompanyA);
+        var authority = new SwappingCustomerReturnAuthority(user);
+        await using var host = HostedShipmentHost(run, fixture, new HostedAllocationReads(fixture), user.UserId!,
+            configure: services =>
+            {
+                services.RemoveAll<ICurrentUser>();
+                services.AddSingleton<ICurrentUser>(user);
+                services.RemoveAll<IErpAuthorityRevalidationService>();
+                services.AddSingleton<IErpAuthorityRevalidationService>(authority);
+            }).WithWebHostBuilder(builder =>
+            {
+                builder.UseSetting("BootstrapIdentity:Users:8:UserId", decider);
+                builder.UseSetting("BootstrapIdentity:Users:8:DisplayName", "Synthetic customer return decider");
+            });
+        using var requesterClient = HostedClientFor(host, user.UserId!, CompanyA);
+
+        var shipment = CreateHostedShipmentRequest(fixture, "1", "return-auth-shipment");
+        using var shippedResponse = await requesterClient.SendAsync(shipment.Message);
+        Assert.Equal(HttpStatusCode.OK, shippedResponse.StatusCode);
+        var shipped = Assert.IsType<LoadingInstructionResponse>(
+            await shippedResponse.Content.ReadFromJsonAsync<LoadingInstructionResponse>(LogisticsJson.Options));
+
+        var deliveryId = Guid.NewGuid();
+        using var deliveredResponse = await SendCommandAsync(requesterClient,
+            $"{LogisticsEndpoints.InstructionsPath}/{fixture.InstructionId:D}/lines/{fixture.LineId:D}/deliveries",
+            "SYN-CUSTOMER-RETURN-DELIVERY",
+            new RecordDeliveryRequest(shipped.Detail.Instruction.Version.ToString(), deliveryId, shipment.ShipmentId, "2",
+                T0.AddMinutes(11)));
+        Assert.Equal(HttpStatusCode.OK, deliveredResponse.StatusCode);
+        var delivered = Assert.IsType<LoadingInstructionResponse>(
+            await deliveredResponse.Content.ReadFromJsonAsync<LoadingInstructionResponse>(LogisticsJson.Options));
+
+        var customerReturnId = Guid.NewGuid();
+        using var requestedResponse = await SendCommandAsync(requesterClient,
+            $"/api/v1/logistics/instructions/{fixture.InstructionId:D}/lines/{fixture.LineId:D}/customer-returns",
+            "SYN-CUSTOMER-RETURN-REQUEST",
+            new RequestCustomerReturnV1(customerReturnId, deliveryId, delivered.Detail.Instruction.Version.ToString(), "1",
+                "Controlled final authority identity swap.", T0.AddMinutes(12)));
+        Assert.Equal(HttpStatusCode.Created, requestedResponse.StatusCode);
+
+        user.UseActor(decider);
+        using var decisionClient = HostedClientFor(host, user.UserId!, CompanyA);
+
+        var inventoryMovementId = Guid.NewGuid();
+        var correlation = $"SYN-CUSTOMER-RETURN-APPROVE-{Guid.NewGuid():N}";
+        var before = await CustomerReturnEffectsAsync(run, customerReturnId, inventoryMovementId, correlation);
+        authority.ArmFinalInventoryAwaitSwap();
+        using var approvedResponse = await SendCommandAsync(decisionClient,
+            $"/api/v1/logistics/customer-returns/{customerReturnId:D}/approve",
+            "SYN-CUSTOMER-RETURN-APPROVE",
+            new ApproveCustomerReturnV1("1", inventoryMovementId), correlation);
+
+        Assert.Equal(HttpStatusCode.Forbidden, approvedResponse.StatusCode);
+        Assert.True(authority.SwappedDuringFinalInventoryAwait);
+        Assert.Equal(before, await CustomerReturnEffectsAsync(run, customerReturnId, inventoryMovementId, correlation));
+    }
+
+    [SqlServerFact]
     public async Task Terminal_inventory_conflict_records_one_refusal_replays_and_leaves_no_physical_effect()
     {
         await using var run = await Run.StartAsync();
@@ -625,7 +695,8 @@ public sealed partial class LogisticsInstructionSqlServerRelationalAcceptanceTes
         HostedShipmentFixture fixture,
         HostedAllocationReads reads,
         string bootstrapSubject,
-        ILogisticsRealizationStageObserver? observer = null) =>
+        ILogisticsRealizationStageObserver? observer = null,
+        Action<IServiceCollection>? configure = null) =>
         run.Factory.WithWebHostBuilder(builder =>
         {
             builder.UseSetting("BootstrapIdentity:Users:7:UserId", bootstrapSubject);
@@ -640,8 +711,18 @@ public sealed partial class LogisticsInstructionSqlServerRelationalAcceptanceTes
                 {
                     services.AddSingleton(observer);
                 }
+                configure?.Invoke(services);
             });
         });
+
+    private static async Task<HttpResponseMessage> SendCommandAsync<T>(HttpClient client, string path, string key,
+        T body, string? correlation = null)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Post, path) { Content = JsonContent.Create(body, options: LogisticsJson.Options) };
+        request.Headers.Add("Idempotency-Key", key);
+        request.Headers.Add("X-Correlation-Id", correlation ?? $"{key}-correlation");
+        return await client.SendAsync(request);
+    }
 
     private static HttpClient HostedClientFor(
         Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory<Program> host,
@@ -763,6 +844,70 @@ public sealed partial class LogisticsInstructionSqlServerRelationalAcceptanceTes
         }
     }
 
+    private static async Task<CustomerReturnEffects> CustomerReturnEffectsAsync(Run run, Guid customerReturnId,
+        Guid inventoryMovementId, string correlationId) => new(
+        await run.ScalarAsync<long>("SELECT Version FROM logistics.CustomerReturns WHERE CustomerReturnId = @id",
+            ("@id", customerReturnId)),
+        await run.ScalarAsync<int>("SELECT Status FROM logistics.CustomerReturns WHERE CustomerReturnId = @id",
+            ("@id", customerReturnId)),
+        await run.ScalarAsync<int>("SELECT COUNT(*) FROM logistics.CustomerReturnAttempts WHERE CommandName = @command",
+            ("@command", LogisticsCustomerReturnCommandsV1.Approve)),
+        await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.Movements WHERE Id = @id",
+            ("@id", inventoryMovementId)),
+        await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.Commands WHERE TargetId = @id",
+            ("@id", customerReturnId)),
+        await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.OutboxMessages WHERE CorrelationId = @correlation",
+            ("@correlation", correlationId)),
+        await run.ScalarAsync<int>("SELECT COUNT(*) FROM audit.AuditEvents WHERE CorrelationId = @correlation",
+            ("@correlation", correlationId)));
+
+    private sealed class SwappableCustomerReturnUser(string actorId, Guid companyId) : ICurrentUser
+    {
+        private string userId = actorId;
+        public bool IsAuthenticated => true;
+        public string? UserId => Volatile.Read(ref userId);
+        public IReadOnlySet<Guid> AllowedCompanyIds { get; } = new HashSet<Guid> { companyId };
+        public bool CanAccessCompany(Guid candidate) => candidate == companyId;
+        public void UseActor(string actorId) => Volatile.Write(ref userId, actorId);
+        public void Swap()
+        {
+            var current = Volatile.Read(ref userId);
+            Volatile.Write(ref userId, $"{current}-SWAPPED");
+        }
+    }
+
+    private sealed class SwappingCustomerReturnAuthority(SwappableCustomerReturnUser user)
+        : IErpAuthorityRevalidationService
+    {
+        private int armed;
+        private int inventoryMeasurements;
+        public bool SwappedDuringFinalInventoryAwait { get; private set; }
+
+        public void ArmFinalInventoryAwaitSwap()
+        {
+            Volatile.Write(ref inventoryMeasurements, 0);
+            Volatile.Write(ref armed, 1);
+        }
+
+        public async Task<PermissionScope> RevalidatePermissionScopeAsync(string permission, Guid companyId,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (Volatile.Read(ref armed) != 0
+                && string.Equals(permission, ErpPermissions.InventoryPhysicalAllocationWrite, StringComparison.Ordinal)
+                && Interlocked.Increment(ref inventoryMeasurements) == 2)
+            {
+                await Task.Yield();
+                user.Swap();
+                SwappedDuringFinalInventoryAwait = true;
+            }
+            return companyId == CompanyA && ErpPermissions.IsKnown(permission)
+                ? new PermissionScope(true, true, new HashSet<string>(["SENTETIK-CUSTOMER-RETURN"], StringComparer.Ordinal),
+                    new HashSet<Guid>(), new HashSet<Guid>(), new HashSet<Guid>())
+                : PermissionScope.Denied;
+        }
+    }
+
     private sealed class HostedSalesLine(HostedShipmentFixture fixture) : ISalesOrderLineReferencePortV1
     {
         public Task<SalesOrderLineReferenceAnswerV1> GetApprovedLineAsync(
@@ -803,6 +948,14 @@ public sealed partial class LogisticsInstructionSqlServerRelationalAcceptanceTes
         long AllocationVersion,
         decimal BalanceQuantityKg,
         long LabelVersion,
+        int MovementCount,
+        int CommandCount,
+        int OutboxCount,
+        int AuditCount);
+    private sealed record CustomerReturnEffects(
+        long Version,
+        int Status,
+        int ApprovalAttemptCount,
         int MovementCount,
         int CommandCount,
         int OutboxCount,

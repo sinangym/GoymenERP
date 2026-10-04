@@ -381,6 +381,69 @@ partial class LogisticsDbContextModelSnapshot : ModelSnapshot
             });
         });
 
+        modelBuilder.Entity("GoymenERP.Modules.Logistics.Infrastructure.Persistence.CustomerReturnAttemptRow", b =>
+        {
+            b.Property<Guid>("CompanyId").HasColumnType("uniqueidentifier");
+            b.Property<string>("CommandName").IsRequired().HasMaxLength(160).HasColumnType("nvarchar(160)").UseCollation("Latin1_General_100_BIN2");
+            b.Property<string>("IdempotencyKeyHash").IsRequired().HasMaxLength(64).IsUnicode(false).HasColumnType("varchar(64)").UseCollation("Latin1_General_100_BIN2");
+            b.Property<string>("ActorId").IsRequired().HasMaxLength(128).HasColumnType("nvarchar(128)");
+            b.Property<string>("CorrelationId").IsRequired().HasMaxLength(128).HasColumnType("nvarchar(128)");
+            b.Property<Guid?>("CustomerReturnId").HasColumnType("uniqueidentifier");
+            b.Property<int>("Outcome").HasColumnType("int");
+            b.Property<DateTimeOffset>("RecordedAtUtc").HasColumnType("datetimeoffset");
+            b.Property<string>("RefusalJson").HasColumnType("nvarchar(max)");
+            b.Property<string>("ResultJson").HasColumnType("nvarchar(max)");
+            b.Property<string>("RequestHash").IsRequired().HasMaxLength(64).IsUnicode(false).HasColumnType("varchar(64)");
+            b.HasKey("CompanyId", "CommandName", "IdempotencyKeyHash");
+            b.HasIndex("CompanyId", "CustomerReturnId");
+            b.ToTable("CustomerReturnAttempts", "logistics", t =>
+            {
+                t.HasCheckConstraint("CK_CustomerReturnAttempts_Hashes", "LEN([IdempotencyKeyHash]) = 64 AND LEN([RequestHash]) = 64");
+                t.HasCheckConstraint("CK_CustomerReturnAttempts_Identity", "LEN([CommandName]) > 0 AND LEN([ActorId]) > 0 AND LEN([CorrelationId]) > 0");
+                t.HasCheckConstraint("CK_CustomerReturnAttempts_Outcome", "([Outcome] = 1 AND [CustomerReturnId] IS NOT NULL AND [CustomerReturnId] <> '00000000-0000-0000-0000-000000000000' AND [ResultJson] IS NOT NULL AND ISJSON([ResultJson]) = 1 AND [RefusalJson] IS NULL) OR ([Outcome] = 2 AND [CustomerReturnId] IS NULL AND [ResultJson] IS NULL AND [RefusalJson] IS NOT NULL AND ISJSON([RefusalJson]) = 1)");
+            });
+        });
+
+        modelBuilder.Entity("GoymenERP.Modules.Logistics.Infrastructure.Persistence.CustomerReturnRow", b =>
+        {
+            b.Property<Guid>("CompanyId").HasColumnType("uniqueidentifier");
+            b.Property<Guid>("CustomerReturnId").HasColumnType("uniqueidentifier");
+            b.Property<string>("DecidedBy").HasMaxLength(128).HasColumnType("nvarchar(128)");
+            b.Property<DateTimeOffset?>("DecidedAtUtc").HasColumnType("datetimeoffset");
+            b.Property<string>("DecisionNote").HasColumnType("nvarchar(max)");
+            b.Property<Guid?>("InventoryMovementId").HasColumnType("uniqueidentifier");
+            b.Property<Guid>("LoadingInstructionId").HasColumnType("uniqueidentifier");
+            b.Property<Guid>("LoadingInstructionLineId").HasColumnType("uniqueidentifier");
+            b.Property<DateTimeOffset>("OccurredAtUtc").HasColumnType("datetimeoffset");
+            b.Property<Guid?>("OriginalLabelId").HasColumnType("uniqueidentifier");
+            b.Property<Guid?>("OriginalShipmentMovementId").HasColumnType("uniqueidentifier");
+            b.Property<decimal>("Quantity").HasPrecision(18, 3).HasColumnType("decimal(18,3)");
+            b.Property<int>("QuantityUnit").HasColumnType("int");
+            b.Property<string>("Reason").IsRequired().HasColumnType("nvarchar(max)");
+            b.Property<string>("RequestedBy").IsRequired().HasMaxLength(128).HasColumnType("nvarchar(128)");
+            b.Property<DateTimeOffset>("RequestedAtUtc").HasColumnType("datetimeoffset");
+            b.Property<byte[]>("RowVersion").IsConcurrencyToken().IsRequired().ValueGeneratedOnAddOrUpdate().HasColumnType("rowversion");
+            b.Property<Guid>("SourceDeliveryId").HasColumnType("uniqueidentifier");
+            b.Property<decimal>("SourceDeliveredQuantity").HasPrecision(18, 3).HasColumnType("decimal(18,3)");
+            b.Property<Guid>("SourceOrderId").HasColumnType("uniqueidentifier");
+            b.Property<Guid>("SourceOrderLineId").HasColumnType("uniqueidentifier");
+            b.Property<Guid>("SourceShipmentId").HasColumnType("uniqueidentifier");
+            b.Property<int>("Status").HasColumnType("int");
+            b.Property<Guid>("UnitId").HasColumnType("uniqueidentifier");
+            b.Property<long>("Version").IsConcurrencyToken().HasColumnType("bigint");
+            b.HasKey("CompanyId", "CustomerReturnId");
+            b.HasIndex("CompanyId", "LoadingInstructionId");
+            b.HasIndex("CompanyId", "SourceDeliveryId", "Status", "CustomerReturnId").HasDatabaseName("IX_CustomerReturns_DeliveryStatus");
+            b.HasIndex("CompanyId", "SourceOrderId", "SourceOrderLineId").HasDatabaseName("IX_CustomerReturns_SourceOrderLine");
+            b.ToTable("CustomerReturns", "logistics", t =>
+            {
+                t.HasCheckConstraint("CK_CustomerReturns_Actors", "LEN([Reason]) > 0 AND LEN([RequestedBy]) > 0");
+                t.HasCheckConstraint("CK_CustomerReturns_Identity", "[CustomerReturnId] <> '00000000-0000-0000-0000-000000000000' AND [LoadingInstructionId] <> '00000000-0000-0000-0000-000000000000' AND [LoadingInstructionLineId] <> '00000000-0000-0000-0000-000000000000' AND [SourceDeliveryId] <> '00000000-0000-0000-0000-000000000000' AND [SourceShipmentId] <> '00000000-0000-0000-0000-000000000000' AND [SourceOrderId] <> '00000000-0000-0000-0000-000000000000' AND [SourceOrderLineId] <> '00000000-0000-0000-0000-000000000000' AND [UnitId] <> '00000000-0000-0000-0000-000000000000'");
+                t.HasCheckConstraint("CK_CustomerReturns_Quantity", "[QuantityUnit] IN (1, 2) AND [Quantity] > 0 AND [SourceDeliveredQuantity] > 0 AND [Quantity] <= [SourceDeliveredQuantity]");
+                t.HasCheckConstraint("CK_CustomerReturns_State", "([Status] = 1 AND [Version] = 1 AND [DecidedBy] IS NULL AND [DecidedAtUtc] IS NULL AND [InventoryMovementId] IS NULL AND [OriginalLabelId] IS NULL AND [OriginalShipmentMovementId] IS NULL) OR ([Status] = 2 AND [Version] = 2 AND [DecidedBy] IS NOT NULL AND [DecidedAtUtc] IS NOT NULL AND [InventoryMovementId] IS NOT NULL AND [OriginalLabelId] IS NOT NULL AND [OriginalShipmentMovementId] IS NOT NULL) OR ([Status] = 3 AND [Version] = 2 AND [DecidedBy] IS NOT NULL AND [DecidedAtUtc] IS NOT NULL AND [InventoryMovementId] IS NULL AND [OriginalLabelId] IS NULL AND [OriginalShipmentMovementId] IS NULL)");
+            });
+        });
+
         modelBuilder.Entity("GoymenERP.Modules.Logistics.Infrastructure.Persistence.LoadingAttemptRow", b =>
         {
             b.Property<Guid>("CompanyId")
@@ -753,6 +816,19 @@ partial class LogisticsDbContextModelSnapshot : ModelSnapshot
                     "CK_VehicleWeighings_Weights",
                     "[FirstWeighingKg] > 0 AND [SecondWeighingKg] > 0 AND [NetKg] > 0 AND [LoadedKgAtWeighing] >= 0 AND [SharesBefore] >= 0");
             });
+        });
+
+        modelBuilder.Entity("GoymenERP.Modules.Logistics.Infrastructure.Persistence.CustomerReturnAttemptRow", b =>
+        {
+            b.HasOne("GoymenERP.Modules.Logistics.Infrastructure.Persistence.CustomerReturnRow", null)
+                .WithMany().HasForeignKey("CompanyId", "CustomerReturnId").OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity("GoymenERP.Modules.Logistics.Infrastructure.Persistence.CustomerReturnRow", b =>
+        {
+            b.HasOne("GoymenERP.Modules.Logistics.Infrastructure.Persistence.LoadingInstructionRow", null)
+                .WithMany().HasForeignKey("CompanyId", "LoadingInstructionId").HasPrincipalKey("CompanyId", "Id")
+                .OnDelete(DeleteBehavior.Restrict).IsRequired();
         });
 
         modelBuilder.Entity("GoymenERP.Modules.Logistics.Infrastructure.Persistence.DispatchNoteLineRow", b =>
