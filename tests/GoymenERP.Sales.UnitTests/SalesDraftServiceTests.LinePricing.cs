@@ -136,11 +136,92 @@ public sealed partial class SalesDraftServiceTests
             new SalesDraftPriceFloorExceptionApprovalRequest(revised.Detail.Draft.Version,
                 [new SalesDraftPriceFloorExceptionApprovalLineV1(lineId, "SENTETIK müşteri sözleşmesi")]), Metadata("k-floor-approve"));
         Assert.True(replay.IsReplay);
+        Assert.Equal(
+            System.Text.Json.JsonSerializer.Serialize(approved.Detail, SalesDraftJson.Options),
+            System.Text.Json.JsonSerializer.Serialize(replay.Detail, SalesDraftJson.Options));
         Assert.Single(world.Store.Transitions, item => item.Command == SalesDraftCommands.ApprovePriceFloorExceptionsV1);
+
+        world.Store.Race = "floor-result-at-refusal";
+        var raced = await world.Service().ApprovePriceFloorExceptionsAsync(created.Draft.Id,
+            new SalesDraftPriceFloorExceptionApprovalRequest(revised.Detail.Draft.Version,
+                [new SalesDraftPriceFloorExceptionApprovalLineV1(lineId, "SENTETIK müşteri sözleşmesi")]), Metadata("k-floor-race"));
+        Assert.Equal((true, "winner-floor-correlation",
+                System.Text.Json.JsonSerializer.Serialize(approved.Detail, SalesDraftJson.Options)),
+            (raced.IsReplay, raced.OriginalCorrelationId,
+                System.Text.Json.JsonSerializer.Serialize(raced.Detail, SalesDraftJson.Options)));
+        Assert.Single(world.Store.Transitions, item => item.Command == SalesDraftCommands.ApprovePriceFloorExceptionsV1);
+
         var changedBody = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().ApprovePriceFloorExceptionsAsync(created.Draft.Id,
             new SalesDraftPriceFloorExceptionApprovalRequest(revised.Detail.Draft.Version,
                 [new SalesDraftPriceFloorExceptionApprovalLineV1(lineId, "SENTETIK başka gerekçe")]), Metadata("k-floor-approve")));
         Assert.Equal(409, changedBody.Status);
+    }
+
+    [Theory]
+    [InlineData("actor")]
+    [InlineData("company")]
+    public async Task A_floor_result_replay_denies_identity_or_company_drift_during_the_final_price_read(string drift)
+    {
+        var world = new World { PriceReferences = new FakePriceReferences { Price = 12.50m, Floor = 12m } };
+        world.Bindings = world.Bindings with { PriceFloorExceptionApprovePermission = SchedulePermission };
+        var created = (await world.Service().CreateDraftAsync(Request(), Metadata("k-drift-create"))).Detail;
+        var lineId = created.Lines[0].LineId;
+        var revised = await world.Service().ReviseCommercialAsync(created.Draft.Id,
+            Revision(created.Draft.Version, new SalesDraftLineCommercialV1(lineId, "12.50", KgUnit, "10",
+                new SalesDraftPriceReferenceRequestV1(PriceList, 1))), Metadata("k-drift-revise"));
+        world.User.Id = "synthetic-drift-approver";
+        await world.Service().ApprovePriceFloorExceptionsAsync(created.Draft.Id,
+            new SalesDraftPriceFloorExceptionApprovalRequest(revised.Detail.Draft.Version,
+                [new SalesDraftPriceFloorExceptionApprovalLineV1(lineId, "SENTETIK drift sözleşmesi")]), Metadata("k-drift-floor"));
+
+        world.Authority.OnRead = (permission, _) =>
+        {
+            if (permission != PriceReadPermission) return;
+            if (drift == "actor") world.User.Id = "synthetic-swapped-during-price-read";
+            else world.User.Company = Guid.NewGuid();
+        };
+
+        var refused = await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
+            world.Service().ApprovePriceFloorExceptionsAsync(created.Draft.Id,
+                new SalesDraftPriceFloorExceptionApprovalRequest(revised.Detail.Draft.Version,
+                    [new SalesDraftPriceFloorExceptionApprovalLineV1(lineId, "SENTETIK drift sözleşmesi")]), Metadata("k-drift-floor")));
+        Assert.Equal((403, "forbidden"), (refused.Status, refused.Code));
+        Assert.Single(world.Store.Transitions, item => item.Command == SalesDraftCommands.ApprovePriceFloorExceptionsV1);
+    }
+
+    [Fact]
+    public async Task A_floor_result_replay_refreshes_own_support_restriction_while_price_denial_stays_withheld()
+    {
+        var world = new World { PriceReferences = new FakePriceReferences { Price = 12.50m, Floor = 12m } };
+        world.Bindings = world.Bindings with { PriceFloorExceptionApprovePermission = SchedulePermission };
+        var created = (await world.Service().CreateDraftAsync(Request(), Metadata("k-own-create"))).Detail;
+        var lineId = created.Lines[0].LineId;
+        world.User.Id = "synthetic-pricer";
+        var revised = await world.Service().ReviseCommercialAsync(created.Draft.Id,
+            Revision(created.Draft.Version, new SalesDraftLineCommercialV1(lineId, "12.50", KgUnit, "10",
+                new SalesDraftPriceReferenceRequestV1(PriceList, 1))), Metadata("k-own-revise"));
+        world.User.Id = Actor;
+        var approved = await world.Service().ApprovePriceFloorExceptionsAsync(created.Draft.Id,
+            new SalesDraftPriceFloorExceptionApprovalRequest(revised.Detail.Draft.Version,
+                [new SalesDraftPriceFloorExceptionApprovalLineV1(lineId, "SENTETIK own sözleşmesi")]), Metadata("k-own-floor"));
+        Assert.Equal((true, false), (approved.Detail.IsOwnDraft, approved.Detail.IsOwnDecisionRestricted));
+
+        world.ActiveRoleCodes.Codes.Add(GoymenERP.BuildingBlocks.Security.ErpPersonaRoleCodes.SalesSupport);
+        world.Authority.Denied.Add(PriceReadPermission);
+        var replay = await world.Service().ApprovePriceFloorExceptionsAsync(created.Draft.Id,
+            new SalesDraftPriceFloorExceptionApprovalRequest(revised.Detail.Draft.Version,
+                [new SalesDraftPriceFloorExceptionApprovalLineV1(lineId, "SENTETIK own sözleşmesi")]), Metadata("k-own-floor"));
+
+        Assert.Equal((true, true, true),
+            (replay.IsReplay, replay.Detail.IsOwnDraft, replay.Detail.IsOwnDecisionRestricted));
+        Assert.All(replay.Detail.Lines, line =>
+        {
+            Assert.Equal(SalesPriceDisclosure.Withheld, line.PriceDisclosure);
+            Assert.Null(line.UnitPrice);
+            Assert.Null(line.PriceUnitId);
+            Assert.Null(line.DiscountPercent);
+        });
+        Assert.Single(world.Store.Transitions, item => item.Command == SalesDraftCommands.ApprovePriceFloorExceptionsV1);
     }
 
     [Fact]
@@ -207,6 +288,40 @@ public sealed partial class SalesDraftServiceTests
         var both = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().ReviseCommercialAsync(created.Draft.Id,
             Revision(created.Draft.Version, named with { DiscountPercent = "5", DiscountAmount = "1" }), Metadata("k-r3")));
         Assert.Equal(("lines", SalesRuleCodes.AdjustmentKindConflict), (Assert.Single(both.Errors).Field, Assert.Single(both.Errors).Code));
+        Assert.DoesNotContain(world.Store.Transitions, item => item.Command == SalesDraftCommands.ReviseCommercialV1);
+    }
+
+    [Theory]
+    [InlineData("list")]
+    [InlineData("version")]
+    [InlineData("channel")]
+    [InlineData("valid-from")]
+    [InlineData("valid-through")]
+    [InlineData("lower-tier")]
+    [InlineData("upper-tier")]
+    public async Task A_wrong_owner_reference_identity_or_selection_binding_is_refused_before_mutation(string fault)
+    {
+        var references = new FakePriceReferences { Price = 12.50m };
+        switch (fault)
+        {
+            case "list": references.ReturnedPriceListId = Guid.NewGuid(); break;
+            case "version": references.ReturnedVersionNo = 2; break;
+            case "channel": references.ReturnedChannel = "Purchase"; break;
+            case "valid-from": references.ReturnedValidFrom = Day.AddDays(1); break;
+            case "valid-through": references.ReturnedValidThrough = Day.AddDays(-1); break;
+            case "lower-tier": references.ReturnedLowerQuantity = 6m; break;
+            case "upper-tier": references.ReturnedUpperQuantity = 5m; break;
+        }
+        var world = new World { PriceReferences = references };
+        var created = (await world.Service().CreateDraftAsync(RequestWithQuantity("5", null), Metadata($"k-{fault}-create"))).Detail;
+        var lineId = created.Lines[0].LineId;
+
+        var refused = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().ReviseCommercialAsync(created.Draft.Id,
+            Revision(created.Draft.Version, new SalesDraftLineCommercialV1(lineId, "12.50", KgUnit, null,
+                new SalesDraftPriceReferenceRequestV1(PriceList, 1))), Metadata($"k-{fault}-revise")));
+
+        Assert.Equal((422, "lines[0].priceReference", SalesDraftProblemCodesV1.PriceReferenceUnavailable),
+            (refused.Status, Assert.Single(refused.Errors).Field, Assert.Single(refused.Errors).Code));
         Assert.DoesNotContain(world.Store.Transitions, item => item.Command == SalesDraftCommands.ReviseCommercialV1);
     }
 
@@ -296,6 +411,13 @@ public sealed partial class SalesDraftServiceTests
         public decimal SecondLowerQuantity { get; set; } = 10m;
         public decimal? SecondUpperQuantity { get; set; } = 20m;
         public string VatBasis { get; set; } = "ExcludingVat";
+        public Guid ReturnedPriceListId { get; set; } = PriceList;
+        public int ReturnedVersionNo { get; set; } = 1;
+        public string ReturnedChannel { get; set; } = "Sales";
+        public DateOnly ReturnedValidFrom { get; set; } = Day;
+        public DateOnly? ReturnedValidThrough { get; set; }
+        public decimal? ReturnedLowerQuantity { get; set; }
+        public decimal? ReturnedUpperQuantity { get; set; }
         public (Guid List, int Version, Guid Product, Guid Unit, decimal Quantity, DateOnly On)? LastGet { get; private set; }
 
         public Task<IReadOnlyList<ProductPriceReferenceV1>> SearchAsync(Guid productId, Guid priceUnitId, decimal quantity,
@@ -330,7 +452,8 @@ public sealed partial class SalesDraftServiceTests
         }
 
         private ProductPriceReferenceV1 Reference(Guid productId, Guid unitId, decimal price, decimal lower, decimal? upper) =>
-            new(PriceList, "SENTETIK liste", Guid.NewGuid(), 1, Day, null, productId, unitId, Currency, "Sales", VatBasis, price, Floor,
-                lower, upper);
+            new(ReturnedPriceListId, "SENTETIK liste", Guid.NewGuid(), ReturnedVersionNo, ReturnedValidFrom, ReturnedValidThrough,
+                productId, unitId, Currency, ReturnedChannel, VatBasis, price, Floor,
+                ReturnedLowerQuantity ?? lower, ReturnedUpperQuantity ?? upper);
     }
 }

@@ -200,6 +200,9 @@ partial class SalesDbContextModelSnapshot : ModelSnapshot
             b.Property<string>("RefusalJson")
                 .HasColumnType("nvarchar(max)");
 
+            b.Property<string>("ResultJson")
+                .HasColumnType("nvarchar(max)");
+
             b.Property<string>("RequestHash")
                 .IsRequired()
                 .HasMaxLength(64)
@@ -226,6 +229,10 @@ partial class SalesDbContextModelSnapshot : ModelSnapshot
                 t.HasCheckConstraint(
                     "CK_DraftAttempts_Outcome",
                     "([Outcome] = 1 AND [DraftId] IS NOT NULL AND [DraftId] <> '00000000-0000-0000-0000-000000000000' AND [RefusalJson] IS NULL) OR ([Outcome] = 2 AND ([DraftId] IS NULL OR [DraftId] <> '00000000-0000-0000-0000-000000000000') AND [RefusalJson] IS NOT NULL AND ISJSON([RefusalJson]) = 1)");
+
+                t.HasCheckConstraint(
+                    "CK_DraftAttempts_Result",
+                    "([CommandName] = N'sales.order-draft.approve-price-floor-exceptions.v1' AND [Outcome] = 1 AND [ResultJson] IS NOT NULL AND ISJSON([ResultJson]) = 1) OR (([CommandName] <> N'sales.order-draft.approve-price-floor-exceptions.v1' OR [Outcome] <> 1) AND [ResultJson] IS NULL)");
             });
         });
 

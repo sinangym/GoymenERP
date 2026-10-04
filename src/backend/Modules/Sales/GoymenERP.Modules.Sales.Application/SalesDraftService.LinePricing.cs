@@ -106,8 +106,17 @@ public sealed partial class SalesDraftService
             var answer = await GuardedAsync(scope, permission,
                 () => reader.GetAsync(reference.PriceListId, reference.VersionNo, draftLine.Product.ProductId, priceUnit,
                     draftLine.Quantity.Value, draft.Money.EffectiveOn, cancellationToken), cancellationToken);
-            if (answer is null || answer.ProductId != draftLine.Product.ProductId || answer.PriceUnitId != priceUnit
-                || !string.Equals(answer.VatBasis, "ExcludingVat", StringComparison.Ordinal))
+            if (answer is null
+                || answer.PriceListId != reference.PriceListId
+                || answer.VersionNo != reference.VersionNo
+                || answer.ProductId != draftLine.Product.ProductId
+                || answer.PriceUnitId != priceUnit
+                || !string.Equals(answer.Channel, "Sales", StringComparison.Ordinal)
+                || !string.Equals(answer.VatBasis, "ExcludingVat", StringComparison.Ordinal)
+                || answer.ValidFrom > draft.Money.EffectiveOn
+                || (answer.ValidThrough is { } validThrough && validThrough < draft.Money.EffectiveOn)
+                || answer.LowerQuantity > draftLine.Quantity.Value
+                || (answer.UpperQuantity is { } upperQuantity && draftLine.Quantity.Value >= upperQuantity))
             {
                 errors.Add(new($"lines[{index}].priceReference", SalesDraftProblemCodesV1.PriceReferenceUnavailable));
                 continue;
