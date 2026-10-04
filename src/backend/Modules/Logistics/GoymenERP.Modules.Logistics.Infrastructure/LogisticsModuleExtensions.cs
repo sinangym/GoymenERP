@@ -66,6 +66,17 @@ public static class LogisticsModuleExtensions
         services.AddScoped<ILogisticsOrderLineProgressReader, LogisticsOrderLineProgressReader>();
         services.TryAddSingleton(new LogisticsOperationsWorkBindings());
         services.AddScoped<ILogisticsOperationsWorkService, LogisticsOperationsWorkService>();
+        services.AddScoped<LogisticsCustomerReturnStore>();
+        services.AddScoped<ILogisticsCustomerReturnStoreV1>(provider =>
+            provider.GetRequiredService<LogisticsCustomerReturnStore>());
+        services.AddScoped<ILogisticsCustomerReturnSourceReadV1, LogisticsCustomerReturnSourceReader>();
+        services.AddScoped<ISalesOrderCustomerReturnReadPortV1, LogisticsSalesOrderCustomerReturnReadPort>();
+        services.TryAddSingleton(new LogisticsCustomerReturnBindingsV1(
+            LogisticsPermissionManifestV1.CustomerReturnsRequest,
+            LogisticsPermissionManifestV1.CustomerReturnsDecision,
+            LogisticsPermissionManifestV1.CustomerReturnsRead,
+            ErpPermissions.InventoryPhysicalAllocationWrite));
+        services.AddScoped<ILogisticsCustomerReturnServiceV1, LogisticsCustomerReturnService>();
         return services;
     }
 

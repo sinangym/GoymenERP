@@ -150,21 +150,22 @@ public sealed partial class LogisticsInstructionSqlServerRelationalAcceptanceTes
         var options = new DbContextOptionsBuilder<LogisticsDbContext>()
             .UseSqlServer(run.Factory.DatabaseConnectionString, sql => sql.MigrationsHistoryTable("__EFMigrationsHistory", LogisticsDbContext.Schema))
             .Options;
+        const string PreviousMigration = "20260919150000_InitialLogistics";
+        const string VehicleWeighingsMigration = "20260928120000_AddVehicleWeighings";
         const string TableExists = "SELECT COUNT(*) FROM sys.tables WHERE [name] = N'VehicleWeighings' AND SCHEMA_NAME([schema_id]) = N'logistics'";
 
-        // Empty: the rollback runs, the table is dropped, and the forward migration re-creates it. AT-055's later migration
-        // (AddDispatchNoteDrafts, empty here) is rolled back on the way and re-applied with it.
-        int weighings;
+        // Empty: the named rollback runs through every later migration, drops the table, and the forward migration re-creates it.
         await using (var context = new LogisticsDbContext(options, companyContext))
         {
             var applied = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
-            weighings = Array.FindIndex(applied, migration => migration.EndsWith("_AddVehicleWeighings", StringComparison.Ordinal));
-            Assert.True(weighings > 0);
-            await context.GetService<IMigrator>().MigrateAsync(applied[weighings - 1]);
+            Assert.Contains(PreviousMigration, applied);
+            Assert.Contains(VehicleWeighingsMigration, applied);
+            await context.GetService<IMigrator>().MigrateAsync(PreviousMigration);
             Assert.Equal(0, await run.ScalarAsync<int>(TableExists));
-            Assert.Equal(applied[..weighings], await context.Database.GetAppliedMigrationsAsync());
+            Assert.Equal(PreviousMigration, (await context.Database.GetAppliedMigrationsAsync()).Last());
             await context.Database.MigrateAsync();
             Assert.Equal(1, await run.ScalarAsync<int>(TableExists));
+            Assert.Equal(applied, await context.Database.GetAppliedMigrationsAsync());
         }
 
         // One recorded weighing: the rollback is refused BEFORE the drop, with Logistics's module error; nothing changes.
@@ -181,12 +182,14 @@ public sealed partial class LogisticsInstructionSqlServerRelationalAcceptanceTes
 
         await using (var context = new LogisticsDbContext(options, companyContext))
         {
-            // The later, empty AddDispatchNoteDrafts rolls back first; the weighing migration then refuses.
             var applied = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
-            await context.GetService<IMigrator>().MigrateAsync(applied[weighings]);
-            var error = await Assert.ThrowsAsync<SqlException>(() => context.GetService<IMigrator>().MigrateAsync(applied[weighings - 1]));
+            await context.GetService<IMigrator>().MigrateAsync(VehicleWeighingsMigration);
+            var checkpoint = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
+            Assert.Equal(VehicleWeighingsMigration, checkpoint[^1]);
+            var error = await Assert.ThrowsAsync<SqlException>(() =>
+                context.GetService<IMigrator>().MigrateAsync(PreviousMigration));
             Assert.Equal(51056, error.Number);
-            Assert.Equal(applied[..(weighings + 1)], await context.Database.GetAppliedMigrationsAsync());
+            Assert.Equal(checkpoint, await context.Database.GetAppliedMigrationsAsync());
             await context.Database.MigrateAsync();
             Assert.Equal(applied, await context.Database.GetAppliedMigrationsAsync());
         }
