@@ -236,9 +236,9 @@ public sealed class LogisticsCustomerReturnSqlServerRelationalAcceptanceTests
             var factory = new SqlServerRelationalApiFactory(
                 Environment.GetEnvironmentVariable(SqlServerRelationalAcceptanceTests.ConnectionStringEnvironmentVariable)!);
             var run = new Run(factory);
-            var company = new CompanyContext(); company.Set(Company);
-            await using var context = new LogisticsDbContext(run.Options(company), company);
-            await context.Database.MigrateAsync();
+            using var client = factory.CreateClient();
+            using var health = await client.GetAsync("/health/live");
+            health.EnsureSuccessStatusCode();
             return run;
         }
 
