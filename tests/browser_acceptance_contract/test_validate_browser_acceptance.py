@@ -1,3 +1,5 @@
+import contextlib
+import io
 import json
 import pathlib
 import re
@@ -79,6 +81,159 @@ class PrivacyTests(unittest.TestCase):
                 validator.main(["privacy", "--root", root, "--suite", "smoke", "--forbidden-value", "long-enough-secret"]),
                 1,
             )
+
+    @staticmethod
+    def _s04_report(
+        case_body: str,
+        case_name: str = (
+            "S04-PL-03 below-floor pricing is saved pending and a different actor approves it once with a reason"
+        ),
+    ) -> bytes:
+        return (
+            "<testsuites name=''><testsuite name='chromium'>"
+            f"<testcase name='{case_name}' classname='tests/e2e/sales/s04-price-list.spec.ts'>"
+            f"{case_body}</testcase>"
+            "</testsuite></testsuites>"
+        ).encode("utf-8")
+
+    def _privacy_cli(self, report: bytes, *forbidden: str) -> tuple[int, str, str]:
+        with self._root({"browser-s04-junit.xml": report}) as root:
+            stdout = io.StringIO()
+            stderr = io.StringIO()
+            arguments = ["privacy", "--root", root, "--suite", "s04"]
+            for value in forbidden:
+                arguments.extend(("--forbidden-value", value))
+            with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                result = validator.main(arguments)
+            return result, stdout.getvalue(), stderr.getvalue()
+
+    def test_s04_failed_case_emits_only_the_closed_direct_phase(self):
+        report = self._s04_report(
+            "<properties><property name='safe_failure_phase' value='s04_pl03_p4'/></properties>"
+            "<failure message='opaque-secret-path'>opaque-secret-message</failure>"
+            "<system-out>opaque-secret-stdout</system-out>"
+        )
+        result, stdout, stderr = self._privacy_cli(report)
+        self.assertEqual(0, result)
+        self.assertEqual(
+            "BROWSER_SAFE_PHASE=s04_pl03_p4\nBrowser acceptance contract validation passed.\n",
+            stdout,
+        )
+        self.assertEqual("", stderr)
+        for forbidden in ("opaque-secret-path", "opaque-secret-message", "opaque-secret-stdout"):
+            self.assertNotIn(forbidden, stdout)
+
+    def test_s04_error_case_accepts_the_last_closed_phase(self):
+        report = self._s04_report(
+            "<properties><property name='safe_failure_phase' value='s04_pl03_p7'/></properties>"
+            "<error/>"
+        )
+        self.assertEqual("s04_pl03_p7", validator._s04_safe_failure_phase(report))
+
+    def test_s04_passed_skipped_and_other_cases_emit_no_phase(self):
+        reports = (
+            self._s04_report("<properties><property name='safe_failure_phase' value='s04_pl03_p1'/></properties>"),
+            self._s04_report(
+                "<properties><property name='safe_failure_phase' value='s04_pl03_p2'/></properties><skipped/>"
+            ),
+            self._s04_report("<failure/>", case_name="S04-PL-02"),
+        )
+        for report in reports:
+            with self.subTest(report=report):
+                result, stdout, _ = self._privacy_cli(report)
+                self.assertEqual(0, result)
+                self.assertEqual("Browser acceptance contract validation passed.\n", stdout)
+
+    def test_s04_xml_declarations_and_wrong_depth_are_refused(self):
+        cases = (
+            b"<!DOCTYPE testsuites><testsuites/>",
+            b"<!ENTITY leak 'x'><testsuites/>",
+            (
+                "<?xml version='1.0' encoding='utf-16'?>"
+                "<!DOCTYPE testsuites><testsuites/>"
+            ).encode("utf-16"),
+            (
+                "<testsuites><testsuite><testsuite>"
+                f"<testcase name='{validator._S04_SAFE_FAILURE_CASE}'>"
+                "<properties><property name='safe_failure_phase' value='s04_pl03_p1'/></properties>"
+                "<failure/></testcase></testsuite></testsuite></testsuites>"
+            ).encode("utf-8"),
+            self._s04_report(
+                "<metadata><properties><property name='safe_failure_phase' value='s04_pl03_p1'/>"
+                "</properties></metadata><failure/>"
+            ),
+        )
+        for report in cases:
+            with self.subTest(report=report):
+                result, stdout, _ = self._privacy_cli(report)
+                self.assertEqual(1, result)
+                self.assertEqual("", stdout)
+
+    def test_s04_oversized_excess_element_and_deep_xml_are_refused(self):
+        oversized = b"<testsuites>" + (b" " * validator._MAX_JUNIT_BYTES) + b"</testsuites>"
+        excess_elements = (
+            "<testsuites>"
+            + "<node/>" * validator._MAX_JUNIT_ELEMENTS
+            + "</testsuites>"
+        ).encode("ascii")
+        nested = (
+            ("<testsuites>" + "<node>" * validator._MAX_JUNIT_DEPTH)
+            + "</node>" * validator._MAX_JUNIT_DEPTH
+            + "</testsuites>"
+        ).encode("ascii")
+        for report in (oversized, excess_elements, nested):
+            with self.subTest(size=len(report)):
+                result, stdout, _ = self._privacy_cli(report)
+                self.assertEqual(1, result)
+                self.assertEqual("", stdout)
+
+    def test_s04_duplicate_case_marker_and_mixed_outcome_are_refused(self):
+        marker = "<properties><property name='safe_failure_phase' value='s04_pl03_p1'/></properties>"
+        cases = (
+            (
+                "<testsuites><testsuite>"
+                f"<testcase name='{validator._S04_SAFE_FAILURE_CASE}'>{marker}<failure/></testcase>"
+                f"<testcase name='{validator._S04_SAFE_FAILURE_CASE}'>{marker}<failure/></testcase>"
+                "</testsuite></testsuites>"
+            ).encode("utf-8"),
+            self._s04_report(
+                "<properties>"
+                "<property name='safe_failure_phase' value='s04_pl03_p1'/>"
+                "<property name='safe_failure_phase' value='s04_pl03_p2'/>"
+                "</properties><failure/>"
+            ),
+            self._s04_report(f"{marker}<failure/><error/>"),
+            self._s04_report(f"{marker}<failure/><skipped/>"),
+        )
+        for report in cases:
+            with self.subTest(report=report):
+                result, stdout, _ = self._privacy_cli(report)
+                self.assertEqual(1, result)
+                self.assertEqual("", stdout)
+
+    def test_s04_unknown_non_ascii_and_oversize_phase_are_refused(self):
+        values = ("s04_pl03_p8", "s04_pl03_p1-ş", "x" * 65)
+        for value in values:
+            report = self._s04_report(
+                "<properties>"
+                f"<property name='safe_failure_phase' value='{value}'/>"
+                "</properties><failure/>"
+            )
+            with self.subTest(value=value):
+                result, stdout, _ = self._privacy_cli(report)
+                self.assertEqual(1, result)
+                self.assertEqual("", stdout)
+
+    def test_s04_secret_refusal_never_emits_phase_or_secret(self):
+        sentinel = "do-not-export-secret-path-or-message"
+        report = self._s04_report(
+            "<properties><property name='safe_failure_phase' value='s04_pl03_p3'/></properties>"
+            f"<failure message='{sentinel}'>{sentinel}</failure>"
+        )
+        result, stdout, stderr = self._privacy_cli(report, sentinel)
+        self.assertEqual(1, result)
+        self.assertEqual("", stdout)
+        self.assertNotIn(sentinel, stderr)
 
 
 class WorkflowTests(unittest.TestCase):
