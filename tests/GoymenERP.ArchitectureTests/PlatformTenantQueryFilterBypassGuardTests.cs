@@ -414,7 +414,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
                  + "FinanceAllocationReadService.cs"] = ("FinanceDbContext", 1),
                 [ReviewedAccountingStorePath] = ("AccountingDbContext", 2),
-                [ReviewedApprovedAccountingSourceCatalogStorePath] = ("AccountingDbContext", 1),
+                [ReviewedApprovedAccountingSourceCatalogStorePath] = ("AccountingDbContext", 3),
                 [ReviewedManufacturingInventoryInputIssueHostPath] = ("ManufacturingDbContext", 2),
                 [ReviewedManufacturingInventoryReturnOutputHostPath] = ("ManufacturingDbContext", 1),
                 [ReviewedProductRuntimeExtensionsPath] = ("IdentityDbContext", 1),
@@ -688,8 +688,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                             ["Microsoft.Data.SqlClient"] = 1
                         }),
                 // ACC source-catalog store uses the tenant-filtered AccountingDbContext directly.
-                // It has no raw SQL, connection or filter-bypass API; the exact source and its single
-                // explicit context reference are pinned together.
+                // It has no raw SQL, connection or filter-bypass API; the exact source and its three
+                // reviewed context construction sites are pinned together.
                 [ReviewedApprovedAccountingSourceCatalogStorePath] =
                     new(
                         "d7c106d12a8c1bc928ad0bbb65c4a1b3e39405695c970ed4ea4aa24495cb84d8",
