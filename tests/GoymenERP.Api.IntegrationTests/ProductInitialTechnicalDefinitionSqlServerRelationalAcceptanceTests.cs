@@ -262,7 +262,7 @@ public sealed class ProductInitialTechnicalDefinitionSqlServerRelationalAcceptan
 
         public SqlServerRelationalApiFactory Factory { get; }
 
-        public static Task<Run> StartAsync()
+        public static async Task<Run> StartAsync()
         {
             var baseConnection = Environment.GetEnvironmentVariable(
                 SqlServerRelationalAcceptanceTests.ConnectionStringEnvironmentVariable)!;
@@ -270,7 +270,16 @@ public sealed class ProductInitialTechnicalDefinitionSqlServerRelationalAcceptan
             var factory = new SqlServerRelationalApiFactory(baseConnection,
                 services => services.AddProductTechnicalCardFixtureStore(), databaseName: databaseName);
             using var startup = factory.CreateClient();
-            return Task.FromResult(new Run(baseConnection, factory));
+            // Product runtime is deliberately disabled by default, so host startup does not own this
+            // migration acceptance test's Product schema. Apply the current Product migration chain
+            // explicitly before reading or mutating its release tables.
+            await using (var product = factory.Services.CreateAsyncScope())
+            {
+                await product.ServiceProvider.GetRequiredService<ProductDbContext>()
+                    .Database.MigrateAsync();
+            }
+
+            return new Run(baseConnection, factory);
         }
 
         public async ValueTask DisposeAsync()

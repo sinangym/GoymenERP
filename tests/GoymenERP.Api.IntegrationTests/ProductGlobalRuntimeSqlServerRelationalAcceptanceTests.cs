@@ -36,6 +36,7 @@ namespace GoymenERP.Api.IntegrationTests;
 // existing synthetic development actor, never Sinan or a normal deployment.
 public sealed class ProductGlobalRuntimeSqlServerRelationalAcceptanceTests
 {
+    private const string ProductPreFamilyRegistryMigration = "20260912175128_InitialProductDrafts";
     private static readonly Guid ActorId = Guid.Parse("20000000-0000-0000-0000-000000000003");
     private static readonly Guid ActorExternalId = Guid.Parse("21000000-0000-0000-0000-000000000003");
     private static readonly Guid SystemRoleId = Guid.Parse("30000000-0000-0000-0000-000000000003");
@@ -417,7 +418,11 @@ public sealed class ProductGlobalRuntimeSqlServerRelationalAcceptanceTests
             await AssertRollbackRefusedAsync(migrationScope.ServiceProvider.GetRequiredService<AuditDbContext>(), 51041);
             await AssertRollbackRefusedAsync(migrationScope.ServiceProvider.GetRequiredService<IdentityDbContext>(), 51042);
             await AssertRollbackRefusedAsync(migrationScope.ServiceProvider.GetRequiredService<GroupSharedCommandDbContext>(), 51043);
-            await AssertRollbackRefusedAsync(migrationScope.ServiceProvider.GetRequiredService<ProductDbContext>(), 51044);
+            // The latest Product migration is a data release whose Down is intentionally allowed when
+            // no card references that release. Cross the named pre-registry checkpoint so this guard
+            // still proves the immutable Product identity/schema cannot be rolled back.
+            await AssertRollbackRefusedAsync(migrationScope.ServiceProvider.GetRequiredService<ProductDbContext>(),
+                51044, ProductPreFamilyRegistryMigration);
             Assert.Equal(afterEdit, await SnapshotAsync(factory.DatabaseConnectionString));
         });
 
@@ -765,11 +770,12 @@ public sealed class ProductGlobalRuntimeSqlServerRelationalAcceptanceTests
         }
     }
 
-    private static async Task AssertRollbackRefusedAsync(DbContext database, int errorNumber)
+    private static async Task AssertRollbackRefusedAsync(DbContext database, int errorNumber,
+        string? targetMigration = null)
     {
         var applied = (await database.Database.GetAppliedMigrationsAsync()).ToArray();
         Assert.NotEmpty(applied);
-        var target = applied.Length == 1 ? Migration.InitialDatabase : applied[^2];
+        var target = targetMigration ?? (applied.Length == 1 ? Migration.InitialDatabase : applied[^2]);
         var error = await Assert.ThrowsAsync<SqlException>(() => database.GetService<IMigrator>().MigrateAsync(target));
         Assert.Equal(errorNumber, error.Number);
         Assert.Equal(applied, await database.Database.GetAppliedMigrationsAsync());
