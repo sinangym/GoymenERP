@@ -17,11 +17,24 @@ public sealed class CounterpartyModuleEntrypointContractTests
     private const string ExpectedManufacturingApplication =
         "src/backend/Modules/Manufacturing/GoymenERP.Modules.Manufacturing.Application/"
         + "GoymenERP.Modules.Manufacturing.Application.csproj";
+    private const string ExpectedCounterpartyApplication =
+        "src/backend/Modules/Counterparty/GoymenERP.Modules.Counterparty.Application/"
+        + "GoymenERP.Modules.Counterparty.Application.csproj";
+    private const string ExpectedCounterpartyInfrastructure =
+        "src/backend/Modules/Counterparty/GoymenERP.Modules.Counterparty.Infrastructure/"
+        + "GoymenERP.Modules.Counterparty.Infrastructure.csproj";
     private static readonly IReadOnlySet<string> ExpectedCompositionSources =
         new HashSet<string>(StringComparer.Ordinal)
         {
             ExpectedCompositionRoot,
             ExpectedManufacturingApplication,
+        };
+    private static readonly IReadOnlySet<EntrypointEdge> ExpectedCompositionEdges =
+        new HashSet<EntrypointEdge>
+        {
+            new(ExpectedCompositionRoot, ExpectedCounterpartyApplication),
+            new(ExpectedCompositionRoot, ExpectedCounterpartyInfrastructure),
+            new(ExpectedManufacturingApplication, ExpectedCounterpartyApplication),
         };
 
     [Fact]
@@ -54,20 +67,12 @@ public sealed class CounterpartyModuleEntrypointContractTests
     {
         var expected = new HashSet<EntrypointEdge>
         {
-            new(ExpectedCompositionRoot,
-                "src/backend/Modules/Counterparty/GoymenERP.Modules.Counterparty.Application/"
-                + "GoymenERP.Modules.Counterparty.Application.csproj"),
-            new(ExpectedCompositionRoot,
-                "src/backend/Modules/Counterparty/GoymenERP.Modules.Counterparty.Infrastructure/"
-                + "GoymenERP.Modules.Counterparty.Infrastructure.csproj"),
-            new(ExpectedManufacturingApplication,
-                "src/backend/Modules/Counterparty/GoymenERP.Modules.Counterparty.Application/"
-                + "GoymenERP.Modules.Counterparty.Application.csproj"),
+            .. ExpectedCompositionEdges,
         };
         var actual = new HashSet<EntrypointEdge>
         {
-            expected.First(),
-            expected.Skip(1).First(),
+            new(ExpectedCompositionRoot, ExpectedCounterpartyApplication),
+            new(ExpectedCompositionRoot, ExpectedCounterpartyInfrastructure),
             new(ExpectedManufacturingApplication,
                 "src/backend/Modules/Counterparty/GoymenERP.Modules.Counterparty.Domain/"
                 + "GoymenERP.Modules.Counterparty.Domain.csproj"),
@@ -81,6 +86,42 @@ public sealed class CounterpartyModuleEntrypointContractTests
         Assert.Contains(errors, error => error.StartsWith(
             "Unapproved Counterparty composition-root edges",
             StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Contract_definition_rejects_a_forbidden_Manufacturing_infrastructure_edge_and_a_duplicate_pair()
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var contract = ReadContract(repositoryRoot);
+        var manufacturing = Assert.Single(contract.CompositionRootEdges, entry =>
+            string.Equals(NormalizeRepositoryPath(entry.Source), ExpectedManufacturingApplication,
+                StringComparison.Ordinal));
+        var forbidden = contract with
+        {
+            CompositionRootEdges =
+            [
+                .. contract.CompositionRootEdges.Where(entry => !ReferenceEquals(entry, manufacturing)),
+                manufacturing with
+                {
+                    Target = ExpectedCounterpartyInfrastructure,
+                    Layer = "Infrastructure",
+                },
+            ],
+        };
+        var duplicate = contract with
+        {
+            CompositionRootEdges =
+            [
+                contract.CompositionRootEdges[0],
+                contract.CompositionRootEdges[1],
+                contract.CompositionRootEdges[0],
+            ],
+        };
+
+        Assert.Contains(ValidateContractDefinition(repositoryRoot, forbidden), error =>
+            error.StartsWith("Counterparty composition-root edges must match the exact approved set", StringComparison.Ordinal));
+        Assert.Contains(ValidateContractDefinition(repositoryRoot, duplicate), error =>
+            error.StartsWith("Duplicate composition-root edge", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -244,6 +285,16 @@ public sealed class CounterpartyModuleEntrypointContractTests
             errors.Add(
                 "Composition-root sources must be exactly the API and Manufacturing application projects; "
                 + $"found: {string.Join(", ", seenSources.OrderBy(value => value, StringComparer.Ordinal))}.");
+        }
+
+        if (!seenEdges.SetEquals(ExpectedCompositionEdges))
+        {
+            errors.Add(
+                "Counterparty composition-root edges must match the exact approved set:\n"
+                + string.Join("\n", ExpectedCompositionEdges
+                    .OrderBy(edge => edge.Source, StringComparer.Ordinal)
+                    .ThenBy(edge => edge.Target, StringComparer.Ordinal)
+                    .Select(edge => $"- {edge}")));
         }
 
         var expectedLayers = new HashSet<string>(StringComparer.Ordinal)
