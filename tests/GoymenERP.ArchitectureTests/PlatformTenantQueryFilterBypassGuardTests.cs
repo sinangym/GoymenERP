@@ -160,7 +160,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         {
             // accounting
             ["tools/relational_inventory/accounting.txt"] =
-                "39b72d259fa3493cae259f60d01f2b9cb67ee9deb3bd742d0af708b2d0865db2",
+                "318fd504967b483b37015373d9d74e96c152975515d7518625caf58f90a6b579",
 
             // counterparty
             // AT-009: +2 real-SQL fresh-authority interleavings (duplicate read and same-key winner replay).
@@ -414,7 +414,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
                  + "FinanceAllocationReadService.cs"] = ("FinanceDbContext", 1),
                 [ReviewedAccountingStorePath] = ("AccountingDbContext", 2),
-                [ReviewedApprovedAccountingSourceCatalogStorePath] = ("AccountingDbContext", 3),
+                [ReviewedApprovedAccountingSourceCatalogStorePath] = ("AccountingDbContext", 1),
                 [ReviewedManufacturingInventoryInputIssueHostPath] = ("ManufacturingDbContext", 2),
                 [ReviewedManufacturingInventoryReturnOutputHostPath] = ("ManufacturingDbContext", 1),
                 [ReviewedProductRuntimeExtensionsPath] = ("IdentityDbContext", 1),
@@ -688,11 +688,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                             ["Microsoft.Data.SqlClient"] = 1
                         }),
                 // ACC source-catalog store uses the tenant-filtered AccountingDbContext directly.
-                // It has no raw SQL, connection or filter-bypass API; the exact source and its three
-                // explicit context references are pinned together.
+                // It has no raw SQL, connection or filter-bypass API; the exact source and its single
+                // explicit context reference are pinned together.
                 [ReviewedApprovedAccountingSourceCatalogStorePath] =
                     new(
-                        "52fc108ffbd4d8ea69ee8ad7dfb0edab7dbb84a8cf0554220d61fd43c8284054",
+                        "d7c106d12a8c1bc928ad0bbb65c4a1b3e39405695c970ed4ea4aa24495cb84d8",
                         new Dictionary<string, int>(StringComparer.Ordinal)),
                 // FIN-T04a (#305): the Finance initializer's one provider branch, as Organization.
                 // Re-fingerprinted for DEC-FIN-016: the customer-instrument service registration; the provider
