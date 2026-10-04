@@ -222,7 +222,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // Q16 / AT-020: +3 Product import API SQL facts (d434c2b8… -> 9958c91f…).
             // Product 4A: +3 initial technical-definition release/rollback SQL facts.
             ["tools/relational_inventory/product.txt"] =
-                "cd907d6fb282974a814e0ad8d94263d895f9905ac4ae19129ea20a7cf5c2a9cd",
+                "20453610c07555e082e24282033086f6f990071666598987bdc961817a21b20a",
 
             // purchasing
             ["tools/relational_inventory/purchasing.txt"] =
