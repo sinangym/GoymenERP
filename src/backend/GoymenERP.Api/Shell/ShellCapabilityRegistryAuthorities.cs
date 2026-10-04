@@ -152,6 +152,9 @@ internal static class ShellCapabilityRegistryAuthorities
         "sha256:15160RxIBP7VxpGM5tdEC7fa-pS_dr8-sNH1acQRPYY";
     internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV15PublishedFinanceV15PublishedManufacturingV15AndPublishedLogisticsV13 =
         "sha256:81Fyf0AWZg0ZgaXbMoaw77U_GTLsBrtoQOfUDH-jd8g";
+    // AT-021 + LOG-HOST: Sales 1.6's floor-approval child is present before Logistics 1.3 joins.
+    internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV16PublishedFinanceV15PublishedManufacturingV15AndPublishedLogisticsV13 =
+        "sha256:KqkE4-slYIAa4wPQoXpm9IHf_pD6Pw8DB99en5Mo4Jw";
 
     // PUR-HOST: ... + Purchasing 1.4, with the goods-receipt child control published beside the
     // request list/create/detail/submit and order list/create/detail/approve declarations. Every declaration remains
@@ -172,6 +175,9 @@ internal static class ShellCapabilityRegistryAuthorities
         "sha256:FH9nrN1OMJ-ni71NME3Txj98icm41IYT3NUbART40iU";
     internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV15PublishedFinanceV15PublishedManufacturingV15PublishedLogisticsV13AndPublishedPurchasingV14 =
         "sha256:Z_-hXm4Ro9t8EZ5elBZP78KnlWU2SU8NmlJkOfg0cBQ";
+    // AT-021 + PUR-HOST: the same Sales 1.6 tuple continues through Purchasing 1.4.
+    internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV16PublishedFinanceV15PublishedManufacturingV15PublishedLogisticsV13AndPublishedPurchasingV14 =
+        "sha256:NiXC57E2jpBjxHptffDfBKLSIH7oQi6nOJY7HskPe2A";
 
     // ACC-V0b: ... + Accounting 1.0 STAGED (the period list M-07 and its propose screen, the approve and
     // close controls of that list, the journal list M-04 and its detail, the posting queues M-01): the normal
@@ -221,6 +227,9 @@ internal static class ShellCapabilityRegistryAuthorities
         "sha256:FXO3HWwrMUr6_FUEStu6vPlh8Jaid57r5SRDyBE6Poc";
     internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV15PublishedFinanceV15PublishedManufacturingV15PublishedLogisticsV13PublishedPurchasingV14AndPublishedAccountingV13 =
         "sha256:ogZHB2SN1LdJDjhsVrFBRZtrtVwNlhn9hXvHgWBwD4Y";
+    // AT-021 + ACC-V0b: the same Sales 1.6 tuple continues through Accounting 1.3.
+    internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV16PublishedFinanceV15PublishedManufacturingV15PublishedLogisticsV13PublishedPurchasingV14AndPublishedAccountingV13 =
+        "sha256:liRJER5kPU40Jc8pqyMNxL-DqVC-XWrmQOI47aghe0g";
 
     // R14: Inventory 1.0 publishes one opening-stock workspace after the existing normal tuple.
     // The capability reuses the accepted company-wide permission; publication grants nothing.
