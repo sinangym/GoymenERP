@@ -62,20 +62,49 @@ internal sealed class ProductTechnicalCardFixtureStore(ProductDbContext context)
             return;
         }
 
-        // Never merge, repair or replace any existing release, including a partial fixture.
-        if (families != 1 || templates != 1 || links != 1 || fields != 4 || entries != 3)
+        // The decided genuine release may coexist with this unchanged test fixture. No other registry
+        // shape is merged, repaired or replaced, including either release in partial/altered form.
+        if (families == 0)
             throw Conflict();
         var actual = await new SqlProductFamilyDefinitionSource(context).GetAsync(cancellationToken);
-        var template = actual.Templates.Single();
-        var wanted = expected.Templates.Single();
-        if (!actual.Families.SequenceEqual(expected.Families)
-            || template.Id != wanted.Id || template.Version != wanted.Version || template.Code != wanted.Code
-            || template.Name != wanted.Name || template.SourceRef != wanted.SourceRef
-            || !template.FamilyIds.SetEquals(wanted.FamilyIds) || !template.Fields.SequenceEqual(wanted.Fields)
-            || !actual.Entries.OrderBy(row => row.Dictionary, StringComparer.Ordinal).ThenBy(row => row.Code, StringComparer.Ordinal)
-                .SequenceEqual(expected.Entries.OrderBy(row => row.Dictionary, StringComparer.Ordinal).ThenBy(row => row.Code, StringComparer.Ordinal)))
-            throw Conflict();
+        if (Matches(actual, expected)) return;
+
+        var genuine = ProductInitialTechnicalDefinitionV1.Definition();
+        if (Matches(actual, genuine))
+        {
+            await context.AddTechnicalCardFixtureAsync(cancellationToken);
+            return;
+        }
+
+        if (!Matches(actual, Combine(genuine, expected))) throw Conflict();
     }
 
-    private static InvalidOperationException Conflict() => new("The Product registry is not the identical synthetic u02 fixture.");
+    private static ProductFamilyDefinitionV2 Combine(ProductFamilyDefinitionV2 genuine,
+        ProductFamilyDefinitionV2 synthetic) => new(
+        [.. genuine.Families, .. synthetic.Families],
+        [.. genuine.Templates, .. synthetic.Templates],
+        [.. genuine.Entries, .. synthetic.Entries]);
+
+    private static bool Matches(ProductFamilyDefinitionV2 actual, ProductFamilyDefinitionV2 expected)
+    {
+        if (!actual.Families.OrderBy(row => row.Id).SequenceEqual(expected.Families.OrderBy(row => row.Id))
+            || !actual.Entries.OrderBy(row => row.Dictionary, StringComparer.Ordinal).ThenBy(row => row.Code, StringComparer.Ordinal)
+                .SequenceEqual(expected.Entries.OrderBy(row => row.Dictionary, StringComparer.Ordinal).ThenBy(row => row.Code, StringComparer.Ordinal)))
+            return false;
+
+        var actualTemplates = actual.Templates.OrderBy(row => row.Id).ThenBy(row => row.Version, StringComparer.Ordinal).ToArray();
+        var expectedTemplates = expected.Templates.OrderBy(row => row.Id).ThenBy(row => row.Version, StringComparer.Ordinal).ToArray();
+        if (actualTemplates.Length != expectedTemplates.Length) return false;
+        return actualTemplates.Zip(expectedTemplates).All(pair =>
+            pair.First.Id == pair.Second.Id
+            && pair.First.Version == pair.Second.Version
+            && pair.First.Code == pair.Second.Code
+            && pair.First.Name == pair.Second.Name
+            && pair.First.SourceRef == pair.Second.SourceRef
+            && pair.First.FamilyIds.SetEquals(pair.Second.FamilyIds)
+            && pair.First.Fields.SequenceEqual(pair.Second.Fields));
+    }
+
+    private static InvalidOperationException Conflict() => new(
+        "The Product registry is not an exact supported genuine/synthetic technical definition state.");
 }
