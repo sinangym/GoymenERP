@@ -192,14 +192,17 @@ public sealed partial class LogisticsInstructionSqlServerRelationalAcceptanceTes
             .UseSqlServer(run.Factory.DatabaseConnectionString, sql => sql.MigrationsHistoryTable("__EFMigrationsHistory", LogisticsDbContext.Schema))
             .Options;
         const string TablesExist = "SELECT COUNT(*) FROM sys.tables WHERE [name] IN (N'DispatchNotes', N'DispatchNoteLines') AND SCHEMA_NAME([schema_id]) = N'logistics'";
+        const string DraftsMigration = "20260930120000_AddDispatchNoteDrafts";
+        const string LifecycleMigration = "20260930150000_AddDispatchNoteLifecycle";
 
         await using (var context = new LogisticsDbContext(options, companyContext))
         {
             var applied = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
             // The lifecycle migration (AT-055, 2026-09-30) follows the drafts' one; on empty tables both roll back.
-            Assert.EndsWith("_AddDispatchNoteLifecycle", applied[^1], StringComparison.Ordinal);
-            Assert.EndsWith("_AddDispatchNoteDrafts", applied[^2], StringComparison.Ordinal);
-            await context.GetService<IMigrator>().MigrateAsync(applied[^3]);
+            Assert.Contains(LifecycleMigration, applied);
+            var draftsIndex = Array.IndexOf(applied, DraftsMigration);
+            Assert.True(draftsIndex > 0, "Dispatch-note drafts migration must have a named predecessor.");
+            await context.GetService<IMigrator>().MigrateAsync(applied[draftsIndex - 1]);
             Assert.Equal(0, await run.ScalarAsync<int>(TablesExist));
             await context.Database.MigrateAsync();
             Assert.Equal(2, await run.ScalarAsync<int>(TablesExist));
@@ -216,7 +219,10 @@ public sealed partial class LogisticsInstructionSqlServerRelationalAcceptanceTes
         await using (var context = new LogisticsDbContext(options, companyContext))
         {
             var applied = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
-            var error = await Assert.ThrowsAsync<SqlException>(() => context.GetService<IMigrator>().MigrateAsync(applied[^3]));
+            var draftsIndex = Array.IndexOf(applied, DraftsMigration);
+            Assert.True(draftsIndex > 0, "Dispatch-note drafts migration must have a named predecessor.");
+            var error = await Assert.ThrowsAsync<SqlException>(() =>
+                context.GetService<IMigrator>().MigrateAsync(applied[draftsIndex - 1]));
             Assert.Equal(51056, error.Number);
             // A plain draft is the previous schema's shape, so the lifecycle migration may roll back before the drafts' Down refuses;
             // the drafts' tables and the draft stay either way, and re-applying restores the lifecycle schema.

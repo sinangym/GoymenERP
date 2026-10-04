@@ -633,6 +633,20 @@ class IssuerUserRuleTests(unittest.TestCase):
                              and "ISSUER" in value.upper() for key, value in environment.items()))
         self.assertFalse(any(value == self.LOCAL for key, value in environment.items()
                              if key.startswith("IdentitySeed__Assignments__")))
+        def permissions(role):
+            prefix = f"IdentitySeed__Roles__{role}__Permissions__"
+            return {value for key, value in environment.items() if key.startswith(prefix)}
+
+        preparer = permissions(5)
+        loader = permissions(6)
+        reader = permissions(7)
+        self.assertTrue({"logistics.customer-returns.read", "logistics.customer-returns.request"} <= preparer)
+        self.assertNotIn("logistics.customer-returns.decision", preparer)
+        self.assertTrue({"logistics.customer-returns.read", "logistics.customer-returns.decision"} <= loader)
+        self.assertNotIn("logistics.customer-returns.request", loader)
+        self.assertIn("logistics.customer-returns.read", reader)
+        self.assertNotIn("logistics.customer-returns.request", reader)
+        self.assertNotIn("logistics.customer-returns.decision", reader)
         self._validate(environment, suite="l04")
 
     def test_every_rule_refuses_its_violation(self):
