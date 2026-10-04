@@ -1,3 +1,4 @@
+using System.Runtime.ExceptionServices;
 using System.Text.RegularExpressions;
 using GoymenERP.Modules.Idempotency.Infrastructure.Persistence;
 using GoymenERP.Modules.Product.Infrastructure.Persistence;
@@ -177,13 +178,55 @@ public sealed class ProductInitialCodeGroupSqlServerRelationalAcceptanceTests
                 SqlServerRelationalAcceptanceTests.ConnectionStringEnvironmentVariable)!;
             var databaseName = "goymen_erp_ci_" + Guid.NewGuid().ToString("N");
             var factory = new SqlServerRelationalApiFactory(baseConnection, databaseName: databaseName);
-            using var startup = factory.CreateClient();
-            await using (var migration = factory.Services.CreateAsyncScope())
+            var run = new Run(baseConnection, factory);
+            var cleanupActions = new Stack<Func<ValueTask>>();
+            var cleanupStarted = false;
+
+            T Track<T>(T resource) where T : IDisposable
             {
+                cleanupActions.Push(() =>
+                {
+                    resource.Dispose();
+                    return ValueTask.CompletedTask;
+                });
+                return resource;
+            }
+
+            T TrackAsync<T>(T resource) where T : IAsyncDisposable
+            {
+                cleanupActions.Push(resource.DisposeAsync);
+                return resource;
+            }
+
+            async Task DisposeCreatedAsync(bool suppressFailures)
+            {
+                if (cleanupStarted) return;
+                cleanupStarted = true;
+                ExceptionDispatchInfo? cleanupFailure = null;
+                while (cleanupActions.TryPop(out var dispose))
+                {
+                    try { await dispose(); }
+                    catch (Exception exception) { cleanupFailure ??= ExceptionDispatchInfo.Capture(exception); }
+                }
+                if (!suppressFailures) cleanupFailure?.Throw();
+            }
+
+            try
+            {
+                _ = Track(factory.CreateClient());
+                var migration = TrackAsync(factory.Services.CreateAsyncScope());
                 await migration.ServiceProvider.GetRequiredService<ProductDbContext>().Database.MigrateAsync();
                 await migration.ServiceProvider.GetRequiredService<GroupSharedCommandDbContext>().Database.MigrateAsync();
+                await DisposeCreatedAsync(suppressFailures: false);
+                return run;
             }
-            return new Run(baseConnection, factory);
+            catch
+            {
+                await DisposeCreatedAsync(suppressFailures: true);
+                try { await run.DisposeAsync(); }
+                catch { }
+                throw;
+            }
         }
 
         public async ValueTask DisposeAsync()
