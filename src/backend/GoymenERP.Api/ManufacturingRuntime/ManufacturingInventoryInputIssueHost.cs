@@ -168,10 +168,11 @@ internal sealed class ManufacturingInventoryInputIssueHost(
                 parentPosition.CustodianId,
                 parentPosition.LocationId);
 
-            // Fail-closed until NEEDS-SINAN #66/5830378162 is decided (TODO there, in the guard): only the
-            // company's own, company-custodied position is issued. Refused inside the owner transaction, so the
-            // staged Inventory movement and the Manufacturing fact roll back together.
-            if (!ManufacturingCustomerOwnedInputGuardV1.Admits(companyId, manufacturingPosition))
+            // The order input carries the plan's immutable commercial snapshot. Inventory remains the owner of the
+            // physical position: the existing guard only checks that exact owner/custodian pair against the stored
+            // snapshot. Refusal is inside the owner transaction, so both module effects roll back together.
+            if (!ManufacturingCustomerOwnedInputGuardV1.Admits(
+                    companyId, manufacturingPosition, input.CommercialContext))
             {
                 throw new ManufacturingInventoryInputIssueHostException(
                     ManufacturingCustomerOwnedInputGuardV1.RefusalCode);
