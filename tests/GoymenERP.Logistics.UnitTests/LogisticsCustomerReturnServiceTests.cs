@@ -1,4 +1,5 @@
 using GoymenERP.BuildingBlocks.Observability;
+using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Logistics.Application;
 using GoymenERP.Modules.Logistics.Application.Contracts;
 using GoymenERP.Modules.Logistics.Domain.Quantities;
@@ -97,8 +98,8 @@ public sealed class LogisticsCustomerReturnServiceTests
     [Fact]
     public async Task Inventory_stage_fault_is_hidden_when_only_the_fresh_inventory_permission_is_denied_after_rollback()
     {
-        const string decisionPermission = "logistics.customer-returns.decide";
-        const string inventoryPermission = "inventory.physical-allocation.write";
+        const string decisionPermission = LogisticsPermissionManifestV1.CustomerReturnsDecision;
+        const string inventoryPermission = ErpPermissions.InventoryPhysicalAllocationWrite;
         var state = new FaultState();
         var pending = PendingReturn();
         var store = new FakeStore(state) { Pending = pending };
@@ -193,8 +194,10 @@ public sealed class LogisticsCustomerReturnServiceTests
         ILogisticsCustomerReturnTransactionRunnerV1 runner,
         ILogisticsCustomerReturnSourceReadV1 source) =>
         new(scope, source, store, runner,
-            new("logistics.customer-returns.request", "logistics.customer-returns.decide",
-                "logistics.customer-returns.read", "inventory.physical-allocation.write"),
+            new(LogisticsPermissionManifestV1.CustomerReturnsRequest,
+                LogisticsPermissionManifestV1.CustomerReturnsDecision,
+                LogisticsPermissionManifestV1.CustomerReturnsRead,
+                ErpPermissions.InventoryPhysicalAllocationWrite),
             new FixedCorrelation(), TimeProvider.System);
 
     private static LogisticsCommandMetadata Metadata() =>
