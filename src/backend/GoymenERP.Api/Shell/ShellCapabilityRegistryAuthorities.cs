@@ -235,8 +235,9 @@ internal static class ShellCapabilityRegistryAuthorities
     // InventoryV14 -> V15).
     // Label classification: independently re-derived over 5caae87f's providers with Inventory 1.6 (one ST-01
     // child control; InventoryV15 -> V16). Both derivations first reproduced the reviewed V15 value exactly.
-    internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV15PublishedFinanceV15PublishedManufacturingV15PublishedLogisticsV12PublishedPurchasingV14PublishedAccountingV13AndPublishedInventoryV16 =
-        "sha256:jAre0SqaBx6glD08y3CcN_PCVvmT5YyV0E4EgOeFGyc";
+    // AT-021: re-derived with the price-floor control in Sales 1.6 while retaining Inventory 1.6.
+    internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV16PublishedFinanceV15PublishedManufacturingV15PublishedLogisticsV12PublishedPurchasingV14PublishedAccountingV13AndPublishedInventoryV16 =
+        "sha256:NiwMBdtHa3SyUDQJAzI_ZDg8h3WIj7KeF_1piiD2ON8";
 
     // SY-01/SY-02 (read-only users-and-permissions view): Identity 1.0 joins the normal host with two screens on
     // identity.assignments.read. Only this new full-host row is added; every earlier row keeps its provider set and value.
@@ -244,8 +245,9 @@ internal static class ShellCapabilityRegistryAuthorities
     // Stock scrap: re-derived over main 4ea83fa4's providers with Inventory 1.5 (InventoryV14 -> V15).
     // Label classification: independently re-derived over 5caae87f's providers with Inventory 1.6, preserving
     // Identity 1.0 and every disposable authority unchanged.
-    internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV15PublishedFinanceV15PublishedManufacturingV15PublishedLogisticsV12PublishedPurchasingV14PublishedAccountingV13PublishedInventoryV16AndPublishedIdentityV10 =
-        "sha256:pJD3Ga0jP_dku8KTfdAULCytFEH-6E2RzVCSeOisP-A";
+    // AT-021: re-derived with the price-floor control in Sales 1.6 while retaining Inventory 1.6 and Identity 1.0.
+    internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV16PublishedFinanceV15PublishedManufacturingV15PublishedLogisticsV12PublishedPurchasingV14PublishedAccountingV13PublishedInventoryV16AndPublishedIdentityV10 =
+        "sha256:PoQhy7tk9sQ6GernEV-AdBlBwNx1nIrBG0CDHJMYOYQ";
 
     // AT-018 / AT-021: final normal host adds PRODUCT-PRICE-LISTS 1.0 and Sales 1.6 beside Inventory 1.6.
     internal const string FullNormalHostWithProductPriceListsAndSalesFloorApproval =
