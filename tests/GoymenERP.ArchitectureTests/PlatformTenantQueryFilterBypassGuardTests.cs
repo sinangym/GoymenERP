@@ -203,8 +203,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // manufacturing
             // MFG close: owner-added closure/tolerance SQL facts extend the exact Manufacturing discovery inventory.
             // MFG technical snapshot: +4 migration/constraint SQL facts (38590e95... -> b1f5f069...).
+            // Customer-owned input context: replace one obsolete refusal with three exact persistence/replay facts.
             ["tools/relational_inventory/manufacturing.txt"] =
-                "b1f5f0699d4f191553794ddab1f9473be1a83d907d1b048d8d10463df194501e",
+                "bf16d4c55e28639fa3134f4e54e86682ba5e5a8d5b88160e14e74b862b64da89",
 
             // organization
             // ORG master edit: +2 OrganizationMasterDataSqlServerRelationalAcceptanceTests facts (6b504dac… -> 3bad6ad8…).
@@ -590,7 +591,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // API counts keep this reviewed bridge narrower than a general direct-database exemption.
                 [ReviewedManufacturingInventoryInputIssueHostPath] =
                     new(
-                        "7b8a0752f1800054ccfbac7bea62b93e6861e969e088092bdd3bdc2bc66b1be6",
+                        "a475668fb5a8e99dfe771a2b453c454b3c919cc9263720669af3cb9a92b14201",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1,
