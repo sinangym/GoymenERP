@@ -199,6 +199,8 @@ public sealed class AccountingApprovedSourceCatalogSqlServerRelationalAcceptance
                 Assert.Equal(HttpStatusCode.OK, recorded.StatusCode);
                 Assert.False(IsReplay(recorded));
                 recordedBody = await Json(recorded);
+                Assert.Equal("Succeeded", recordedBody.GetProperty("outcome").GetString());
+                Assert.False(recordedBody.GetProperty("isReplay").GetBoolean());
                 var resource = recordedBody.GetProperty("resource");
                 var source = resource.GetProperty("source");
                 financeSourceVersion = source.GetProperty("version").GetString()!;
@@ -215,7 +217,15 @@ public sealed class AccountingApprovedSourceCatalogSqlServerRelationalAcceptance
             {
                 Assert.Equal(HttpStatusCode.OK, replay.StatusCode);
                 Assert.True(IsReplay(replay));
-                Assert.Equal(recordedBody.GetRawText(), (await Json(replay)).GetRawText());
+                var replayBody = await Json(replay);
+                Assert.Equal("Succeeded", replayBody.GetProperty("outcome").GetString());
+                Assert.True(replayBody.GetProperty("isReplay").GetBoolean());
+                Assert.Equal(recordedBody.GetProperty("issues").GetRawText(),
+                    replayBody.GetProperty("issues").GetRawText());
+                Assert.Equal(recordedBody.GetProperty("originalCorrelationId").GetString(),
+                    replayBody.GetProperty("originalCorrelationId").GetString());
+                Assert.Equal(recordedBody.GetProperty("resource").GetRawText(),
+                    replayBody.GetProperty("resource").GetRawText());
             }
             using (var detailResponse = await financeClient.GetAsync(
                        $"{FinanceEndpoints.ManualReceiptsPath}/{financeSourceId:D}"))
