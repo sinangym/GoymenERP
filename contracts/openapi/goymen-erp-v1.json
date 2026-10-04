@@ -58982,6 +58982,28 @@
           }
         }
       },
+      "ApproveCustomerReturnV1": {
+        "required": [
+          "expectedVersion",
+          "inventoryMovementId"
+        ],
+        "type": "object",
+        "properties": {
+          "expectedVersion": {
+            "type": "string"
+          },
+          "inventoryMovementId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "note": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
       "ApprovedAccountingSourceCatalogViewV1": {
         "required": [
           "packageId",
@@ -59079,28 +59101,6 @@
               "string"
             ],
             "format": "int32"
-          }
-        }
-      },
-      "ApproveCustomerReturnV1": {
-        "required": [
-          "expectedVersion",
-          "inventoryMovementId"
-        ],
-        "type": "object",
-        "properties": {
-          "expectedVersion": {
-            "type": "string"
-          },
-          "inventoryMovementId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "note": {
-            "type": [
-              "null",
-              "string"
-            ]
           }
         }
       },
