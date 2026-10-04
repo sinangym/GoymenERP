@@ -336,9 +336,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // query filter and a company-leading key, and the Scrap movement kind (CK_Movements_Kind 1..7).
             // Re-measured for R20 same-company transfers: every transfer aggregate row stays company-filtered and
             // company-keyed, while movement kinds 8/9 remain inside Inventory's reviewed write guards.
+            // Re-measured for INV label classification: LabelRow.Classification is persisted beside the existing
+            // Version/UpdatedAtUtc fields; no query filter, company-leading key or table boundary changes.
             ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/"
              + "Persistence/InventoryDbContext.cs"] =
-                "0e6cd81bc874e4f8736d453d47e931535fdba8a512531ba34937e6e501bb9831",
+                "87d1403fdacdb821f93b7a470921264467afb667066e1cdff7963e08f6121835",
             ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/"
              + "Persistence/ProductDbContext.cs"] =
                 "6979e3af6bf17bd2c7071431dc1dbc808c2c1c5609fe187d782dadb1412761d3",
