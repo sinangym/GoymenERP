@@ -49,7 +49,7 @@ function detail(): InventoryLabelDetailWithMovementTimeline {
     labelVersion: '4',
     identity: {
       labelId: LABEL, companyId: COMPANY, code: 'LBL-100', productId: PRODUCT, lotId: LOT,
-      heatNumber: null, coilNumber: null, documentStatus: 'Complete', requiredDocuments: [],
+      heatNumber: null, coilNumber: null, classification: null, documentStatus: 'Complete', requiredDocuments: [],
       documents: [], prints: [], lot: { id: LOT, heatNumber: null, coilNumber: null },
     },
     balances: {

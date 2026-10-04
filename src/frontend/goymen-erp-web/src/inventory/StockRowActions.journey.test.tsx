@@ -75,7 +75,7 @@ function detail() {
     labelVersion: '3',
     identity: {
       labelId: LABEL, companyId: COMPANY, code: 'LBL-1', productId: PRODUCT, lotId: LOT, heatNumber: null,
-      coilNumber: 'COIL-1', documentStatus: 'Complete', requiredDocuments: [], documents: [], prints: [],
+      coilNumber: 'COIL-1', classification: null, documentStatus: 'Complete', requiredDocuments: [], documents: [], prints: [],
       lot: { id: LOT, heatNumber: 'HEAT-1', coilNumber: null },
     },
     balances: { labelId: LABEL, physicalKg: '100', freeKg: '90', blockedKg: '10', positions: [] },
