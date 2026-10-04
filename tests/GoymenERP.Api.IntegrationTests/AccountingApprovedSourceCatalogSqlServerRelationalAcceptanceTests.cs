@@ -38,10 +38,10 @@ namespace GoymenERP.Api.IntegrationTests;
 /// </summary>
 public sealed class AccountingApprovedSourceCatalogSqlServerRelationalAcceptanceTests(ITestOutputHelper output)
 {
-    private const string ReceiptRecordReplayPhase = "ACC_NJ_SQL_RECEIPT_RECORD_REPLAY";
-    private const string CatalogPrepareActivatePhase = "ACC_NJ_SQL_CATALOG_PREPARE_ACTIVATE";
-    private const string JournalCreateReplayApprovePhase = "ACC_NJ_SQL_JOURNAL_CREATE_REPLAY_APPROVE";
-    private const string TrialBalancePhase = "ACC_NJ_SQL_TRIAL_BALANCE";
+    private const string ReceiptRecordReplayPhase = "CI_SAFE_DIAGNOSTIC:acc_nj_sql_receipt_record_replay";
+    private const string CatalogPrepareActivatePhase = "CI_SAFE_DIAGNOSTIC:acc_nj_sql_catalog_prepare_activate";
+    private const string JournalCreateReplayApprovePhase = "CI_SAFE_DIAGNOSTIC:acc_nj_sql_journal_create_replay_approve";
+    private const string TrialBalancePhase = "CI_SAFE_DIAGNOSTIC:acc_nj_sql_trial_balance";
     private const string PackagesPath = "/api/v1/accounting/approved-source-catalog/packages";
     private const string NormalDraftSourcesPath = "/api/v1/accounting/normal-journal-draft-sources";
     private const string NormalDraftsPath = "/api/v1/accounting/normal-journal-drafts";
