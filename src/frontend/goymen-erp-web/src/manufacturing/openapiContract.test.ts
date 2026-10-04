@@ -98,28 +98,35 @@ function requestSchemaName(pathName: string): string {
 
 describe('Manufacturing port ↔ canonical OpenAPI', () => {
   it('reads exactly the properties OrderViewV1 and its parts declare, all required', () => {
+    const rollView = { ...roll(ROLL_1), commercialContext: null }
     expect(Object.keys(order()).sort()).toEqual(names('OrderViewV1'))
-    expect(Object.keys(roll(ROLL_1)).sort()).toEqual(names('RollBalanceViewV1'))
+    expect(Object.keys(rollView).sort()).toEqual(names('RollBalanceViewV1'))
     expect(Object.keys(order().remainingTarget).sort()).toEqual(names('RemainingTargetViewV1'))
     expect(['basis', 'kg']).toEqual(names('TargetViewV1'))
-    for (const name of ['OrderViewV1', 'RollBalanceViewV1', 'RemainingTargetViewV1', 'TargetViewV1']) {
+    for (const name of ['OrderViewV1', 'RemainingTargetViewV1', 'TargetViewV1']) {
       expect([...(schema(name).required ?? [])].sort()).toEqual(names(name))
     }
+    expect([...(schema('RollBalanceViewV1').required ?? [])].sort()).toEqual(
+      names('RollBalanceViewV1').filter((name) => name !== 'commercialContext'),
+    )
     // The fixture the component tests use decodes, so the decoder reads these very names.
     expect(decodeOrder(order({ target: { basis: 'GoodOutputMass', kg: '900' } }))).not.toBeNull()
   })
 
   it('reads exactly the current PlanViewV1 properties and keeps additive legacy projections optional', () => {
+    const inputView = { ...plannedInput(ROLL_1), commercialContext: null }
     expect(Object.keys(plan()).sort()).toEqual(names('PlanViewV1'))
-    expect(Object.keys(plannedInput(ROLL_1)).sort()).toEqual(names('PlannedInputViewV1'))
+    expect(Object.keys(inputView).sort()).toEqual(names('PlannedInputViewV1'))
     expect([...(schema('PlanViewV1').required ?? [])].sort()).toEqual(
       names('PlanViewV1').filter((name) => name !== 'calculation'),
     )
     expect([...(schema('PlannedInputViewV1').required ?? [])].sort()).toEqual(
-      names('PlannedInputViewV1').filter((name) => name !== 'technicalSnapshot'),
+      names('PlannedInputViewV1').filter(
+        (name) => name !== 'technicalSnapshot' && name !== 'commercialContext',
+      ),
     )
     expect(plan()).toMatchObject({ calculation: null })
-    expect(plannedInput(ROLL_1)).toMatchObject({ technicalSnapshot: null })
+    expect(inputView).toMatchObject({ technicalSnapshot: null, commercialContext: null })
     // The fixture the screen tests use decodes, so the decoder reads these very names — and the
     // approved shape decodes too, which the Draft fixture alone would not show.
     expect(decodePlan(plan({ target: { basis: 'GoodOutputMass', kg: '900' } }))).not.toBeNull()
@@ -272,7 +279,12 @@ describe('Manufacturing port ↔ canonical OpenAPI', () => {
     const request: RevisePlanRequest = {
       expectedVersion: 1,
       workCenterId: 'd0000000-0000-4000-8000-000000000003',
-      inputs: [{ parentRollId: ROLL_1, plannedKg: '800', expectedLabelVersion: '7' }],
+      inputs: [{
+        parentRollId: ROLL_1,
+        plannedKg: '800',
+        expectedLabelVersion: '7',
+        commercialContext: null,
+      }],
       target: { basis: 'GoodOutputMass', kg: '700' },
       reason: 'Gerekçe',
     }
@@ -291,9 +303,12 @@ describe('Manufacturing port ↔ canonical OpenAPI', () => {
     expect(Object.keys(history).sort()).toEqual(names('PlanRevisionListViewV1'))
     expect(Object.keys(history.revisions[0] as object).sort()).toEqual(names('PlanRevisionViewV1'))
     expect(Object.keys(revisionInput(ROLL_1)).sort()).toEqual(names('PlanRevisionInputViewV1'))
-    for (const name of ['PlanRevisionListViewV1', 'PlanRevisionViewV1', 'PlanRevisionInputViewV1']) {
+    for (const name of ['PlanRevisionListViewV1', 'PlanRevisionViewV1']) {
       expect([...(schema(name).required ?? [])].sort()).toEqual(names(name))
     }
+    expect([...(schema('PlanRevisionInputViewV1').required ?? [])].sort()).toEqual(
+      ['parentRollId', 'plannedKg', 'expectedLabelVersion'].sort(),
+    )
     expect(decodePlanRevisions(history)).not.toBeNull()
     const plans = `${MANUFACTURING_BASE.replace(/^.*\/api\/v1/, '/api/v1')}/plans`
     const operation = document.paths[`${plans}/{planId}/revisions`]?.get as { readonly operationId?: string } | undefined
