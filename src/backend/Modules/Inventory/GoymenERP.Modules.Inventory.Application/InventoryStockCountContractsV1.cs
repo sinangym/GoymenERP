@@ -112,20 +112,23 @@ public static class InventoryStockCountStatusesV1
 }
 
 /// <summary>
-/// Inventory-owned write boundary. The caller supplies a freshly authorized command envelope; this contract
-/// introduces no permission name, grant, route or cross-company visibility of its own.
+/// Inventory-owned write boundary. The caller supplies a freshly authorized command envelope and a mandatory
+/// callback that revalidates the same captured scope after owner reads and after the transaction flush. This
+/// contract introduces no permission name, grant, route or cross-company visibility of its own.
 /// </summary>
 public interface IInventoryStockCountWriterV1
 {
     Task<InventoryStockCountResultV1> RecordStockCountAsync(
         RecordInventoryStockCountV1 request,
         InventoryCommandMetadata metadata,
+        Func<CancellationToken, Task> freshAuthorityFence,
         CancellationToken cancellationToken = default);
 
     Task<InventoryStockCountResultV1> DecideStockCountAsync(
         Guid countId,
         DecideInventoryStockCountV1 request,
         InventoryCommandMetadata metadata,
+        Func<CancellationToken, Task> freshAuthorityFence,
         CancellationToken cancellationToken = default);
 }
 

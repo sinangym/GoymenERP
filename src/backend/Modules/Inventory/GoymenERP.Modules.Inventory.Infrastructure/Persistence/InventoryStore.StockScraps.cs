@@ -37,9 +37,11 @@ public sealed partial class InventoryStore : IInventoryStockScrapWriterV1, IInve
     public async Task<InventoryStockScrapResultV1> RecordStockScrapAsync(
         RecordInventoryStockScrapV1 request,
         InventoryCommandMetadata metadata,
+        Func<CancellationToken, Task> freshAuthorityFence,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(freshAuthorityFence);
         RequireMetadata(metadata);
         RequireStockScrapMetadata(metadata);
         RequireResolvedCompany();
@@ -58,19 +60,24 @@ public sealed partial class InventoryStore : IInventoryStockScrapWriterV1, IInve
             reason,
         });
         if (await FindStockScrapKeyReplayAsync(RecordStockScrapCommand, keyHash, payloadHash, metadata.ActorId,
-                cancellationToken) is { } replay)
+                freshAuthorityFence, cancellationToken) is { } replay)
         {
             return replay;
         }
 
-        if (await FindStockScrapIdentityReplayAsync(request.ScrapId, payloadHash, cancellationToken) is { } identityReplay)
+        if (await FindStockScrapIdentityReplayAsync(request.ScrapId, payloadHash, freshAuthorityFence,
+                cancellationToken) is { } identityReplay)
         {
             return identityReplay;
         }
 
         var label = await dbContext.Labels.AsNoTracking()
-            .SingleOrDefaultAsync(row => row.Id == request.LabelId, cancellationToken)
-            ?? throw StockScrapError(404, InventoryStockScrapCodesV1.LabelNotFound);
+            .SingleOrDefaultAsync(row => row.Id == request.LabelId, cancellationToken);
+        await RequireFreshAuthorityAsync(freshAuthorityFence, cancellationToken);
+        if (label is null)
+        {
+            throw StockScrapError(404, InventoryStockScrapCodesV1.LabelNotFound);
+        }
         if (label.Version != expectedVersion)
         {
             throw StockScrapError(409, InventoryStockScrapCodesV1.LabelVersionConflict);
@@ -79,6 +86,7 @@ public sealed partial class InventoryStore : IInventoryStockScrapWriterV1, IInve
         var balances = await dbContext.Balances.AsNoTracking()
             .Where(row => row.LabelId == label.Id && row.QuantityKg > 0m)
             .ToListAsync(cancellationToken);
+        await RequireFreshAuthorityAsync(freshAuthorityFence, cancellationToken);
         if (balances.Count != 1)
         {
             throw StockScrapError(409, InventoryStockScrapCodesV1.PositionConflict);
@@ -116,76 +124,95 @@ public sealed partial class InventoryStore : IInventoryStockScrapWriterV1, IInve
             throw StockScrapError(400, InventoryStockScrapCodesV1.ValidationFailed, exception);
         }
 
-        await RequireScrapLeavesAllocationsAsync(label.Id, scrap.Remaining.Value, cancellationToken);
+        await RequireScrapLeavesAllocationsAsync(label.Id, scrap.Remaining.Value, freshAuthorityFence,
+            cancellationToken);
 
         var scale = await kilogramScale.CheckAsync(companyId,
             DateOnly.FromDateTime(request.ScrappedAtUtc.UtcDateTime), [scrap.Scrap], cancellationToken);
+        await RequireFreshAuthorityAsync(freshAuthorityFence, cancellationToken);
         if (!scale.IsAccepted)
         {
             throw StockScrapError(400, scale.Code ?? InventoryStockScrapCodesV1.ValidationFailed);
         }
 
-        var row = new StockScrapRow
+        DbUpdateException? concurrentChange = null;
+        await using (var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken))
         {
-            Id = scrap.Id,
-            CompanyId = companyId,
-            LabelId = label.Id,
-            LabelVersion = label.Version,
-            OwnerKind = balance.OwnerKind,
-            OwnerId = balance.OwnerId,
-            CustodianKind = balance.CustodianKind,
-            CustodianId = balance.CustodianId,
-            LocationId = balance.LocationId,
-            ProductId = balance.ProductId,
-            Block = balance.Block,
-            BookKg = scrap.Book.Value,
-            ScrapKg = scrap.Scrap.Value,
-            ScrappedAtUtc = scrap.ScrappedAtUtc,
-            Reason = scrap.Reason,
-            PayloadHash = payloadHash,
-            RecordedAtUtc = timeProvider.GetUtcNow(),
-            RecordedBy = metadata.ActorId.Trim(),
-            CorrelationId = metadata.CorrelationId.Trim(),
-        };
-        dbContext.StockScraps.Add(row);
-        var view = StockScrapView(row, decision: null);
-        dbContext.Commands.Add(StockScrapCommandRow(RecordStockScrapCommand, companyId, keyHash, payloadHash, metadata,
-            row.Id, view));
-        Audit(metadata, companyId, StockScrapEntityType, row.Id, "inventory.stock-scrap.recorded.v1", "Record",
-            versionBefore: null, versionAfter: 1, before: "{}", after: JsonSerializer.Serialize(view, Json), row.Reason);
-
-        try
-        {
-            await dbContext.SaveChangesAsync(cancellationToken);
-        }
-        catch (DbUpdateException exception) when (exception is DbUpdateConcurrencyException
-            || IsUniqueConstraintViolation(exception))
-        {
-            dbContext.ChangeTracker.Clear();
-            if (await FindStockScrapKeyReplayAsync(RecordStockScrapCommand, keyHash, payloadHash, metadata.ActorId,
-                    cancellationToken) is { } winner)
+            try
             {
-                return winner;
-            }
+                var row = new StockScrapRow
+                {
+                    Id = scrap.Id,
+                    CompanyId = companyId,
+                    LabelId = label.Id,
+                    LabelVersion = label.Version,
+                    OwnerKind = balance.OwnerKind,
+                    OwnerId = balance.OwnerId,
+                    CustodianKind = balance.CustodianKind,
+                    CustodianId = balance.CustodianId,
+                    LocationId = balance.LocationId,
+                    ProductId = balance.ProductId,
+                    Block = balance.Block,
+                    BookKg = scrap.Book.Value,
+                    ScrapKg = scrap.Scrap.Value,
+                    ScrappedAtUtc = scrap.ScrappedAtUtc,
+                    Reason = scrap.Reason,
+                    PayloadHash = payloadHash,
+                    RecordedAtUtc = timeProvider.GetUtcNow(),
+                    RecordedBy = metadata.ActorId.Trim(),
+                    CorrelationId = metadata.CorrelationId.Trim(),
+                };
+                dbContext.StockScraps.Add(row);
+                var view = StockScrapView(row, decision: null);
+                dbContext.Commands.Add(StockScrapCommandRow(RecordStockScrapCommand, companyId, keyHash, payloadHash,
+                    metadata, row.Id, view));
+                Audit(metadata, companyId, StockScrapEntityType, row.Id, "inventory.stock-scrap.recorded.v1", "Record",
+                    versionBefore: null, versionAfter: 1, before: "{}", after: JsonSerializer.Serialize(view, Json), row.Reason);
 
-            if (await FindStockScrapIdentityReplayAsync(request.ScrapId, payloadHash, cancellationToken) is { } identityWinner)
+                await dbContext.SaveChangesAsync(cancellationToken);
+                await RequireFreshAuthorityAsync(freshAuthorityFence, cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
+                return new(view, false, row.CorrelationId);
+            }
+            catch (DbUpdateException exception) when (exception is DbUpdateConcurrencyException
+                || IsUniqueConstraintViolation(exception))
             {
-                return identityWinner;
+                await transaction.RollbackAsync(CancellationToken.None);
+                dbContext.ChangeTracker.Clear();
+                concurrentChange = exception;
             }
-
-            throw StockScrapError(409, InventoryStockScrapCodesV1.ConcurrentChange, exception);
+            catch
+            {
+                await transaction.RollbackAsync(CancellationToken.None);
+                dbContext.ChangeTracker.Clear();
+                throw;
+            }
         }
 
-        return new(view, false, row.CorrelationId);
+        if (await FindStockScrapKeyReplayAsync(RecordStockScrapCommand, keyHash, payloadHash, metadata.ActorId,
+                freshAuthorityFence, cancellationToken) is { } winner)
+        {
+            return winner;
+        }
+
+        if (await FindStockScrapIdentityReplayAsync(request.ScrapId, payloadHash, freshAuthorityFence,
+                cancellationToken) is { } identityWinner)
+        {
+            return identityWinner;
+        }
+
+        throw StockScrapError(409, InventoryStockScrapCodesV1.ConcurrentChange, concurrentChange);
     }
 
     public async Task<InventoryStockScrapResultV1> DecideStockScrapAsync(
         Guid scrapId,
         DecideInventoryStockScrapV1 request,
         InventoryCommandMetadata metadata,
+        Func<CancellationToken, Task> freshAuthorityFence,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(freshAuthorityFence);
         RequireMetadata(metadata);
         RequireStockScrapMetadata(metadata);
         RequireResolvedCompany();
@@ -203,20 +230,24 @@ public sealed partial class InventoryStore : IInventoryStockScrapWriterV1, IInve
         var keyHash = GenealogyHash(metadata.IdempotencyKey.Trim());
         var payloadHash = GenealogyPayloadHash(new { scrapId, decision = decisionCode, reason });
         if (await FindStockScrapKeyReplayAsync(DecideStockScrapCommand, keyHash, payloadHash, metadata.ActorId,
-                cancellationToken) is { } replay)
+                freshAuthorityFence, cancellationToken) is { } replay)
         {
             return replay;
         }
 
         if (await FindScrapDecisionReplayAsync(scrapId, payloadHash, metadata.ActorId,
-                cancellationToken) is { } decisionReplay)
+                freshAuthorityFence, cancellationToken) is { } decisionReplay)
         {
             return decisionReplay;
         }
 
         var scrapRow = await dbContext.StockScraps.AsNoTracking()
-            .SingleOrDefaultAsync(row => row.Id == scrapId, cancellationToken)
-            ?? throw StockScrapError(404, InventoryStockScrapCodesV1.ScrapNotFound);
+            .SingleOrDefaultAsync(row => row.Id == scrapId, cancellationToken);
+        await RequireFreshAuthorityAsync(freshAuthorityFence, cancellationToken);
+        if (scrapRow is null)
+        {
+            throw StockScrapError(404, InventoryStockScrapCodesV1.ScrapNotFound);
+        }
 
         // Fail-closed maker≠checker: the scrap approval authority is undecided, so every scrap is decided by someone
         // other than its recorder (the AT-037 stock-count rule, applied to every write-off).
@@ -225,99 +256,131 @@ public sealed partial class InventoryStore : IInventoryStockScrapWriterV1, IInve
             throw StockScrapError(409, InventoryStockScrapCodesV1.SelfApproval);
         }
 
-        var now = timeProvider.GetUtcNow();
-        Guid? movementId = null;
-        if (decisionCode == DecisionApproved)
+        DbUpdateException? concurrentChange = null;
+        await using (var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken))
         {
-            var label = await dbContext.Labels.SingleOrDefaultAsync(row => row.Id == scrapRow.LabelId, cancellationToken)
-                ?? throw StockScrapError(503, InventoryStockScrapCodesV1.Unavailable);
-            if (label.Version != scrapRow.LabelVersion)
-            {
-                throw StockScrapError(409, InventoryStockScrapCodesV1.Stale);
-            }
-
-            var scrap = RestoreStockScrap(scrapRow, label);
-            await RequireScrapLeavesAllocationsAsync(scrapRow.LabelId, scrap.Remaining.Value, cancellationToken);
-
-            var movement = scrap.WriteOff(Guid.NewGuid(), now);
             try
             {
-                if (await StageMovementAsync(movement, metadata, recordAudit: true, cancellationToken)
-                    != InventoryWriteOutcome.Recorded)
+                var now = timeProvider.GetUtcNow();
+                Guid? movementId = null;
+                if (decisionCode == DecisionApproved)
                 {
-                    throw StockScrapError(503, InventoryStockScrapCodesV1.Unavailable);
+                    var label = await dbContext.Labels
+                        .SingleOrDefaultAsync(row => row.Id == scrapRow.LabelId, cancellationToken);
+                    await RequireFreshAuthorityAsync(freshAuthorityFence, cancellationToken);
+                    if (label is null)
+                    {
+                        throw StockScrapError(503, InventoryStockScrapCodesV1.Unavailable);
+                    }
+
+                    if (label.Version != scrapRow.LabelVersion)
+                    {
+                        throw StockScrapError(409, InventoryStockScrapCodesV1.Stale);
+                    }
+
+                    var scrap = RestoreStockScrap(scrapRow, label);
+                    await RequireScrapLeavesAllocationsAsync(scrapRow.LabelId, scrap.Remaining.Value,
+                        freshAuthorityFence, cancellationToken);
+
+                    var movement = scrap.WriteOff(Guid.NewGuid(), now);
+                    try
+                    {
+                        if (await StageMovementAsync(movement, metadata, recordAudit: false, cancellationToken)
+                            != InventoryWriteOutcome.Recorded)
+                        {
+                            throw StockScrapError(503, InventoryStockScrapCodesV1.Unavailable);
+                        }
+
+                        await RequireFreshAuthorityAsync(freshAuthorityFence, cancellationToken);
+                        Audit(metadata, movement.CompanyId, MovementEntityType, movement.Id,
+                            "inventory.movement.recorded.v1", "Record",
+                            versionBefore: null, versionAfter: 1, before: "{}",
+                            after: MovementAudit(movement, PayloadHash(movement)),
+                            $"Stok hareketi ({movement.Kind})");
+                    }
+                    catch (InventoryStoreException exception)
+                    {
+                        await RequireFreshAuthorityAsync(freshAuthorityFence, cancellationToken);
+                        throw exception.Code switch
+                        {
+                            InventoryScaleCodes.ScaleExceeded => StockScrapError(400, exception.Code, exception),
+                            InventoryStoreCodes.DuplicateSource or InventoryStoreCodes.SourceGrainMismatch
+                                or InventoryStoreCodes.ConcurrentChange =>
+                                StockScrapError(409, InventoryStockScrapCodesV1.ConcurrentChange, exception),
+                            _ when InventoryStockScrapHttpCodesV1.Status503Codes.Contains(exception.Code) =>
+                                StockScrapError(503, exception.Code, exception),
+                            _ => StockScrapError(503, InventoryStockScrapCodesV1.Unavailable, exception),
+                        };
+                    }
+                    catch (InventoryRuleException exception)
+                    {
+                        await RequireFreshAuthorityAsync(freshAuthorityFence, cancellationToken);
+                        // The label is still at the recorded version, so the ledger agrees with the stored book; a
+                        // refusal here means the stored state itself is not trustworthy.
+                        throw StockScrapError(503, InventoryStockScrapCodesV1.Unavailable, exception);
+                    }
+
+                    movementId = movement.Id;
                 }
-            }
-            catch (InventoryStoreException exception)
-            {
-                throw exception.Code switch
+
+                var decision = new StockScrapDecisionRow
                 {
-                    InventoryScaleCodes.ScaleExceeded => StockScrapError(400, exception.Code, exception),
-                    InventoryStoreCodes.DuplicateSource or InventoryStoreCodes.SourceGrainMismatch
-                        or InventoryStoreCodes.ConcurrentChange =>
-                        StockScrapError(409, InventoryStockScrapCodesV1.ConcurrentChange, exception),
-                    _ when InventoryStockScrapHttpCodesV1.Status503Codes.Contains(exception.Code) =>
-                        StockScrapError(503, exception.Code, exception),
-                    _ => StockScrapError(503, InventoryStockScrapCodesV1.Unavailable, exception),
+                    CompanyId = companyId,
+                    ScrapId = scrapRow.Id,
+                    Decision = decisionCode,
+                    Reason = reason,
+                    MovementId = movementId,
+                    PayloadHash = payloadHash,
+                    DecidedAtUtc = now,
+                    DecidedBy = metadata.ActorId.Trim(),
+                    CorrelationId = metadata.CorrelationId.Trim(),
                 };
-            }
-            catch (InventoryRuleException exception)
-            {
-                // The label is still at the recorded version, so the ledger agrees with the stored book; a refusal
-                // here means the stored state itself is not trustworthy.
-                throw StockScrapError(503, InventoryStockScrapCodesV1.Unavailable, exception);
-            }
+                dbContext.StockScrapDecisions.Add(decision);
+                var before = StockScrapView(scrapRow, decision: null);
+                var view = StockScrapView(scrapRow, decision);
+                dbContext.Commands.Add(StockScrapCommandRow(DecideStockScrapCommand, companyId, keyHash, payloadHash,
+                    metadata, scrapRow.Id, view));
+                Audit(metadata, companyId, StockScrapEntityType, scrapRow.Id,
+                    decisionCode == DecisionApproved
+                        ? "inventory.stock-scrap.approved.v1"
+                        : "inventory.stock-scrap.rejected.v1",
+                    decisionCode == DecisionApproved ? "Approve" : "Reject",
+                    versionBefore: 1, versionAfter: 2, before: JsonSerializer.Serialize(before, Json),
+                    after: JsonSerializer.Serialize(view, Json), reason);
 
-            movementId = movement.Id;
+                await dbContext.SaveChangesAsync(cancellationToken);
+                await RequireFreshAuthorityAsync(freshAuthorityFence, cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
+                return new(view, false, decision.CorrelationId);
+            }
+            catch (DbUpdateException exception) when (exception is DbUpdateConcurrencyException
+                || IsUniqueConstraintViolation(exception))
+            {
+                await transaction.RollbackAsync(CancellationToken.None);
+                dbContext.ChangeTracker.Clear();
+                concurrentChange = exception;
+            }
+            catch
+            {
+                await transaction.RollbackAsync(CancellationToken.None);
+                dbContext.ChangeTracker.Clear();
+                throw;
+            }
         }
 
-        var decision = new StockScrapDecisionRow
+        if (await FindStockScrapKeyReplayAsync(DecideStockScrapCommand, keyHash, payloadHash, metadata.ActorId,
+                freshAuthorityFence, cancellationToken) is { } winner)
         {
-            CompanyId = companyId,
-            ScrapId = scrapRow.Id,
-            Decision = decisionCode,
-            Reason = reason,
-            MovementId = movementId,
-            PayloadHash = payloadHash,
-            DecidedAtUtc = now,
-            DecidedBy = metadata.ActorId.Trim(),
-            CorrelationId = metadata.CorrelationId.Trim(),
-        };
-        dbContext.StockScrapDecisions.Add(decision);
-        var before = StockScrapView(scrapRow, decision: null);
-        var view = StockScrapView(scrapRow, decision);
-        dbContext.Commands.Add(StockScrapCommandRow(DecideStockScrapCommand, companyId, keyHash, payloadHash, metadata,
-            scrapRow.Id, view));
-        Audit(metadata, companyId, StockScrapEntityType, scrapRow.Id,
-            decisionCode == DecisionApproved ? "inventory.stock-scrap.approved.v1" : "inventory.stock-scrap.rejected.v1",
-            decisionCode == DecisionApproved ? "Approve" : "Reject",
-            versionBefore: 1, versionAfter: 2, before: JsonSerializer.Serialize(before, Json),
-            after: JsonSerializer.Serialize(view, Json), reason);
-
-        try
-        {
-            await dbContext.SaveChangesAsync(cancellationToken);
-        }
-        catch (DbUpdateException exception) when (exception is DbUpdateConcurrencyException
-            || IsUniqueConstraintViolation(exception))
-        {
-            dbContext.ChangeTracker.Clear();
-            if (await FindStockScrapKeyReplayAsync(DecideStockScrapCommand, keyHash, payloadHash, metadata.ActorId,
-                    cancellationToken) is { } winner)
-            {
-                return winner;
-            }
-
-            if (await FindScrapDecisionReplayAsync(scrapId, payloadHash, metadata.ActorId,
-                    cancellationToken) is { } decisionWinner)
-            {
-                return decisionWinner;
-            }
-
-            throw StockScrapError(409, InventoryStockScrapCodesV1.ConcurrentChange, exception);
+            return winner;
         }
 
-        return new(view, false, decision.CorrelationId);
+        if (await FindScrapDecisionReplayAsync(scrapId, payloadHash, metadata.ActorId, freshAuthorityFence,
+                cancellationToken) is { } decisionWinner)
+        {
+            return decisionWinner;
+        }
+
+        throw StockScrapError(409, InventoryStockScrapCodesV1.ConcurrentChange, concurrentChange);
     }
 
     public async Task<InventoryLabelStockScrapsV1?> ReadStockScrapsAsync(
@@ -370,11 +433,16 @@ public sealed partial class InventoryStore : IInventoryStockScrapWriterV1, IInve
     }
 
     /// <summary>A reservation is never silently broken: what stays on the label must cover its active allocations.</summary>
-    private async Task RequireScrapLeavesAllocationsAsync(Guid labelId, decimal remainingKg, CancellationToken cancellationToken)
+    private async Task RequireScrapLeavesAllocationsAsync(
+        Guid labelId,
+        decimal remainingKg,
+        Func<CancellationToken, Task> freshAuthorityFence,
+        CancellationToken cancellationToken)
     {
         var reserved = await dbContext.Allocations.AsNoTracking()
             .Where(row => row.LabelId == labelId && row.Status == (int)StockAllocationStatus.Active)
             .SumAsync(row => (decimal?)row.RemainingKg, cancellationToken) ?? 0m;
+        await RequireFreshAuthorityAsync(freshAuthorityFence, cancellationToken);
         if (reserved > remainingKg)
         {
             throw StockScrapError(409, InventoryStockScrapCodesV1.AllocationConflict);
@@ -386,10 +454,12 @@ public sealed partial class InventoryStore : IInventoryStockScrapWriterV1, IInve
         string keyHash,
         string payloadHash,
         string actorId,
+        Func<CancellationToken, Task> freshAuthorityFence,
         CancellationToken cancellationToken)
     {
         var prior = await dbContext.Commands.AsNoTracking()
             .SingleOrDefaultAsync(row => row.CommandName == command && row.IdempotencyKeyHash == keyHash, cancellationToken);
+        await RequireFreshAuthorityAsync(freshAuthorityFence, cancellationToken);
         if (prior is null)
         {
             return null;
@@ -410,10 +480,12 @@ public sealed partial class InventoryStore : IInventoryStockScrapWriterV1, IInve
     private async Task<InventoryStockScrapResultV1?> FindStockScrapIdentityReplayAsync(
         Guid scrapId,
         string payloadHash,
+        Func<CancellationToken, Task> freshAuthorityFence,
         CancellationToken cancellationToken)
     {
         var stored = await dbContext.StockScraps.AsNoTracking()
             .SingleOrDefaultAsync(row => row.Id == scrapId, cancellationToken);
+        await RequireFreshAuthorityAsync(freshAuthorityFence, cancellationToken);
         if (stored is null)
         {
             return null;
@@ -433,10 +505,12 @@ public sealed partial class InventoryStore : IInventoryStockScrapWriterV1, IInve
         Guid scrapId,
         string payloadHash,
         string actorId,
+        Func<CancellationToken, Task> freshAuthorityFence,
         CancellationToken cancellationToken)
     {
         var decision = await dbContext.StockScrapDecisions.AsNoTracking()
             .SingleOrDefaultAsync(row => row.ScrapId == scrapId, cancellationToken);
+        await RequireFreshAuthorityAsync(freshAuthorityFence, cancellationToken);
         if (decision is null)
         {
             return null;
@@ -448,8 +522,12 @@ public sealed partial class InventoryStore : IInventoryStockScrapWriterV1, IInve
         }
 
         var scrap = await dbContext.StockScraps.AsNoTracking()
-            .SingleOrDefaultAsync(row => row.Id == scrapId, cancellationToken)
-            ?? throw StockScrapError(503, InventoryStockScrapCodesV1.Unavailable);
+            .SingleOrDefaultAsync(row => row.Id == scrapId, cancellationToken);
+        await RequireFreshAuthorityAsync(freshAuthorityFence, cancellationToken);
+        if (scrap is null)
+        {
+            throw StockScrapError(503, InventoryStockScrapCodesV1.Unavailable);
+        }
         if (DecisionReplayRefusal(decision.DecidedBy, scrap.RecordedBy, actorId, InventoryStockScrapCodesV1.SelfApproval,
                 InventoryStockScrapCodesV1.AlreadyDecided) is { } refusal)
         {
