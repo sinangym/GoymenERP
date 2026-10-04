@@ -148,7 +148,9 @@ public sealed class AccountingApprovedSourceCatalogSqlServerRelationalAcceptance
         var occurredOn = new DateOnly(2026, 10, 2);
         const string amount = "10.00";
         await using var run = await Run.StartAsync(useRealFinanceSource: true);
-        var bankAccountId = await run.ApprovedBankAccountAsync(CompanyA);
+        var profile = ApprovedMoneyProfileCatalog.GdcTurkishLiraV1;
+        var financeCurrencyId = profile.CurrencyId;
+        var bankAccountId = await run.ApprovedBankAccountAsync(CompanyA, financeCurrencyId);
         await run.GrantAsync(Preparer, CompanyA,
             PreparePermission, ActivatePermission, DraftCreatePermission, DraftApprovePermission,
             AccountingPermissionManifestV1.PeriodsPropose, AccountingPermissionManifestV1.JournalsRead,
@@ -156,13 +158,12 @@ public sealed class AccountingApprovedSourceCatalogSqlServerRelationalAcceptance
             FinancePermissionNames.AmountRead, FinancePermissionNames.Record, "finance.bank-account.read");
         await run.GrantAsync(OtherActor, CompanyA, AccountingPermissionManifestV1.PeriodsApprove);
 
-        var profile = ApprovedMoneyProfileCatalog.GdcTurkishLiraV1;
         var financeDraftRequest = new DraftSaveRequest(null, null,
             new ReceiptPreparation(
                 FinancePartyId,
                 FinancePartyAccountId,
                 bankAccountId,
-                new MoneyText(amount, CurrencyId),
+                new MoneyText(amount, financeCurrencyId),
                 new ProfileReference(
                     profile.ProfileId.ToString("D"),
                     profile.Version.ToString(CultureInfo.InvariantCulture)),
@@ -203,7 +204,7 @@ public sealed class AccountingApprovedSourceCatalogSqlServerRelationalAcceptance
                 financeSourceVersion = source.GetProperty("version").GetString()!;
                 financeProfileId = resource.GetProperty("profile").GetProperty("profileId").GetString()!;
                 financeProfileVersion = resource.GetProperty("profile").GetProperty("version").GetString()!;
-                Assert.Equal((financeSourceId, "Recorded", CurrencyId, amount),
+                Assert.Equal((financeSourceId, "Recorded", financeCurrencyId, amount),
                     (source.GetProperty("id").GetGuid(), source.GetProperty("stage").GetString(),
                         source.GetProperty("currencyId").GetGuid(),
                         source.GetProperty("amount").GetProperty("money").GetProperty("amount").GetString()));
@@ -222,7 +223,7 @@ public sealed class AccountingApprovedSourceCatalogSqlServerRelationalAcceptance
                 Assert.Equal(HttpStatusCode.OK, detailResponse.StatusCode);
                 var detail = await Json(detailResponse);
                 Assert.Equal((financeSourceId, financeSourceVersion, "Recorded", financeProfileId,
-                        financeProfileVersion, CurrencyId),
+                        financeProfileVersion, financeCurrencyId),
                     (detail.GetProperty("source").GetProperty("id").GetGuid(),
                         detail.GetProperty("source").GetProperty("version").GetString(),
                         detail.GetProperty("source").GetProperty("stage").GetString(),
@@ -241,7 +242,7 @@ public sealed class AccountingApprovedSourceCatalogSqlServerRelationalAcceptance
             ("@n", ReceiptDraftService.RecordCommand), ("@s", financeSourceId)));
 
         var binding = new FinanceSourceBinding(
-            financeSourceId, financeSourceVersion, financeProfileId, financeProfileVersion, CurrencyId);
+            financeSourceId, financeSourceVersion, financeProfileId, financeProfileVersion, financeCurrencyId);
         var package = Package(Guid.NewGuid(), "mikro-synthetic-normal-journal-v1", binding: binding);
 
         using (var catalogClient = run.Client(Preparer, CompanyA))
@@ -257,7 +258,8 @@ public sealed class AccountingApprovedSourceCatalogSqlServerRelationalAcceptance
             var source = await Json(sourceResponse);
             preparationVersion = source.GetProperty("preparationVersion").GetString()!;
             Assert.True(NormalJournalDraftSourcePreparationV1.IsPreparationVersion(preparationVersion));
-            Assert.Equal((financeSourceId, financeSourceVersion, financeProfileId, financeProfileVersion, CurrencyId),
+            Assert.Equal((financeSourceId, financeSourceVersion, financeProfileId, financeProfileVersion,
+                    financeCurrencyId),
                 (source.GetProperty("sourceId").GetGuid(), source.GetProperty("sourceVersion").GetString(),
                     source.GetProperty("ownerProfileId").GetString(),
                     source.GetProperty("ownerProfileVersion").GetString(),
@@ -362,7 +364,7 @@ public sealed class AccountingApprovedSourceCatalogSqlServerRelationalAcceptance
             var journal = detail.GetProperty("journal");
             totalDebit = journal.GetProperty("totalDebit").GetString()!;
             totalCredit = journal.GetProperty("totalCredit").GetString()!;
-            Assert.Equal((draftId, financeSourceId, periodId, CurrencyId, "receipt", "rule-v1", 2),
+            Assert.Equal((draftId, financeSourceId, periodId, financeCurrencyId, "receipt", "rule-v1", 2),
                 (journal.GetProperty("journalId").GetGuid(), journal.GetProperty("sourceId").GetGuid(),
                     journal.GetProperty("periodId").GetGuid(), journal.GetProperty("currencyId").GetGuid(),
                     journal.GetProperty("postingPurpose").GetString(),
@@ -376,13 +378,13 @@ public sealed class AccountingApprovedSourceCatalogSqlServerRelationalAcceptance
         using (var reportClient = run.Client(Preparer, CompanyA))
         using (var reportResponse = await reportClient.GetAsync(
                    $"{TrialBalancePath}?fromAccountingDate={occurredOn:yyyy-MM-dd}"
-                   + $"&throughAccountingDate={occurredOn:yyyy-MM-dd}&currencyId={CurrencyId:D}"))
+                   + $"&throughAccountingDate={occurredOn:yyyy-MM-dd}&currencyId={financeCurrencyId:D}"))
         {
             Assert.Equal(HttpStatusCode.OK, reportResponse.StatusCode);
             var report = await Json(reportResponse);
             Assert.Equal(2, report.GetProperty("lines").GetArrayLength());
             var total = Assert.Single(report.GetProperty("currencyTotals").EnumerateArray());
-            Assert.Equal((CurrencyId, totalDebit, totalCredit, true),
+            Assert.Equal((financeCurrencyId, totalDebit, totalCredit, true),
                 (total.GetProperty("currencyId").GetGuid(), total.GetProperty("debit").GetString(),
                     total.GetProperty("credit").GetString(), total.GetProperty("isBalanced").GetBoolean()));
         }
@@ -1069,7 +1071,7 @@ public sealed class AccountingApprovedSourceCatalogSqlServerRelationalAcceptance
                 "SELECT COUNT(*) FROM audit.AuditEvents WHERE CompanyId = @c AND EntityId = @p",
                 ("@c", CompanyA), ("@p", packageId.ToString("D"))));
 
-        public async Task<Guid> ApprovedBankAccountAsync(Guid company)
+        public async Task<Guid> ApprovedBankAccountAsync(Guid company, Guid currencyId)
         {
             var id = Guid.NewGuid();
             await using var connection = new SqlConnection(Factory.DatabaseConnectionString);
@@ -1083,7 +1085,7 @@ public sealed class AccountingApprovedSourceCatalogSqlServerRelationalAcceptance
                 connection);
             command.Parameters.AddWithValue("@id", id);
             command.Parameters.AddWithValue("@c", company);
-            command.Parameters.AddWithValue("@cur", CurrencyId);
+            command.Parameters.AddWithValue("@cur", currencyId);
             await command.ExecuteNonQueryAsync();
             return id;
         }
