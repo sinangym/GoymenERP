@@ -38,10 +38,16 @@ namespace GoymenERP.Api.IntegrationTests;
 /// </summary>
 public sealed class AccountingApprovedSourceCatalogSqlServerRelationalAcceptanceTests(ITestOutputHelper output)
 {
-    private const string ReceiptRecordReplayPhase = "CI_SAFE_DIAGNOSTIC:acc_nj_sql_receipt_record_replay";
+    private const string StartupBankSeedPhase = "CI_SAFE_DIAGNOSTIC:acc_nj_sql_startup_bankseed";
+    private const string ReceiptPreparePhase = "CI_SAFE_DIAGNOSTIC:acc_nj_sql_receipt_prepare";
+    private const string ReceiptRecordPhase = "CI_SAFE_DIAGNOSTIC:acc_nj_sql_receipt_record";
+    private const string ReceiptReplayFreshReadCountsPhase = "CI_SAFE_DIAGNOSTIC:acc_nj_sql_receipt_replay_freshread_counts";
     private const string CatalogPrepareActivatePhase = "CI_SAFE_DIAGNOSTIC:acc_nj_sql_catalog_prepare_activate";
     private const string JournalCreateReplayApprovePhase = "CI_SAFE_DIAGNOSTIC:acc_nj_sql_journal_create_replay_approve";
     private const string TrialBalancePhase = "CI_SAFE_DIAGNOSTIC:acc_nj_sql_trial_balance";
+    private const string OccupiedSetupPhase = "CI_SAFE_DIAGNOSTIC:acc_catalog_down_setup";
+    private const string OccupiedDownRefusalPhase = "CI_SAFE_DIAGNOSTIC:acc_catalog_down_refusal";
+    private const string OccupiedEmptyDownUpPhase = "CI_SAFE_DIAGNOSTIC:acc_catalog_down_empty_down_up";
     private const string PackagesPath = "/api/v1/accounting/approved-source-catalog/packages";
     private const string NormalDraftSourcesPath = "/api/v1/accounting/normal-journal-draft-sources";
     private const string NormalDraftsPath = "/api/v1/accounting/normal-journal-drafts";
@@ -153,84 +159,136 @@ public sealed class AccountingApprovedSourceCatalogSqlServerRelationalAcceptance
     public async Task Occupied_catalog_history_refuses_named_migration_down_with_51049_and_empty_down_up_succeeds()
     {
         var package = Package(Guid.NewGuid(), "mikro-synthetic-occupied-down-v1");
-        await using var run = await Run.StartAsync();
-        await run.GrantAsync(Preparer, CompanyA, PreparePermission);
-
-        using (var client = run.Client(Preparer, CompanyA))
-        using (var response = await PrepareAsync(client, package, Key("occupied-down")))
+        Run run;
+        try
         {
-            Assert.Equal(HttpStatusCode.Created, response.StatusCode);
-            AssertResource(await Json(response), package.Id, "Prepared", 1, null);
+            run = await Run.StartAsync();
+        }
+        catch
+        {
+            output.WriteLine(OccupiedSetupPhase);
+            throw;
+        }
+        await using var runLifetime = run;
+
+        Counts before = null!;
+        try
+        {
+            await run.GrantAsync(Preparer, CompanyA, PreparePermission);
+            using (var client = run.Client(Preparer, CompanyA))
+            using (var response = await PrepareAsync(client, package, Key("occupied-down")))
+            {
+                Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+                AssertResource(await Json(response), package.Id, "Prepared", 1, null);
+            }
+
+            before = await run.CountsAsync(package.Id);
+            Assert.Equal(new Counts(1, 1, 1), before);
+        }
+        catch
+        {
+            output.WriteLine(OccupiedSetupPhase);
+            throw;
         }
 
-        var before = await run.CountsAsync(package.Id);
-        Assert.Equal(new Counts(1, 1, 1), before);
         var company = new CompanyContext();
         company.Set(CompanyA);
         await using var context = run.Context(company);
         var migrator = context.GetService<IMigrator>();
 
-        var occupied = await Assert.ThrowsAsync<SqlException>(() =>
-            migrator.MigrateAsync(BeforeCatalogMigration));
-        Assert.Equal(51049, occupied.Number);
-        Assert.Equal(before, await run.CountsAsync(package.Id));
-        Assert.Equal(1, await run.ScalarAsync<int>(
-            "SELECT COUNT(*) FROM sys.tables WHERE schema_id = SCHEMA_ID(N'accounting') "
-            + "AND name = N'ApprovedSourceCatalogs'"));
-        Assert.Equal(1, await run.ScalarAsync<int>(
-            "SELECT COUNT(*) FROM accounting.__EFMigrationsHistory WHERE MigrationId = @migration",
-            ("@migration", CatalogMigration)));
+        try
+        {
+            var occupied = await Assert.ThrowsAsync<SqlException>(() =>
+                migrator.MigrateAsync(BeforeCatalogMigration));
+            Assert.Equal(51049, occupied.Number);
+            Assert.Equal(before, await run.CountsAsync(package.Id));
+            Assert.Equal(1, await run.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM sys.tables WHERE schema_id = SCHEMA_ID(N'accounting') "
+                + "AND name = N'ApprovedSourceCatalogs'"));
+            Assert.Equal(1, await run.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM accounting.__EFMigrationsHistory WHERE MigrationId = @migration",
+                ("@migration", CatalogMigration)));
+        }
+        catch
+        {
+            output.WriteLine(OccupiedDownRefusalPhase);
+            throw;
+        }
 
-        var packagePattern = $"%{package.Id:D}%";
-        var packageEntityId = package.Id.ToString("D");
-        await context.Database.ExecuteSqlInterpolatedAsync($"""
-            DELETE FROM audit.AuditEvents
-            WHERE CompanyId = {CompanyA} AND EntityId = {packageEntityId};
-            DELETE FROM accounting.Commands
-            WHERE CompanyId = {CompanyA} AND ResultJson LIKE {packagePattern};
-            DELETE FROM accounting.ApprovedSourceCatalogs
-            WHERE CompanyId = {CompanyA} AND Id = {package.Id};
-            """);
-        Assert.Equal(new Counts(0, 0, 0), await run.CountsAsync(package.Id));
+        try
+        {
+            var packagePattern = $"%{package.Id:D}%";
+            var packageEntityId = package.Id.ToString("D");
+            await context.Database.ExecuteSqlInterpolatedAsync($"""
+                DELETE FROM audit.AuditEvents
+                WHERE CompanyId = {CompanyA} AND EntityId = {packageEntityId};
+                DELETE FROM accounting.Commands
+                WHERE CompanyId = {CompanyA} AND ResultJson LIKE {packagePattern};
+                DELETE FROM accounting.ApprovedSourceCatalogs
+                WHERE CompanyId = {CompanyA} AND Id = {package.Id};
+                """);
+            Assert.Equal(new Counts(0, 0, 0), await run.CountsAsync(package.Id));
 
-        await migrator.MigrateAsync(BeforeCatalogMigration);
-        Assert.Equal(0, await run.ScalarAsync<int>(
-            "SELECT COUNT(*) FROM sys.tables WHERE schema_id = SCHEMA_ID(N'accounting') "
-            + "AND name = N'ApprovedSourceCatalogs'"));
-        Assert.Equal(0, await run.ScalarAsync<int>(
-            "SELECT COUNT(*) FROM accounting.__EFMigrationsHistory WHERE MigrationId = @migration",
-            ("@migration", CatalogMigration)));
+            await migrator.MigrateAsync(BeforeCatalogMigration);
+            Assert.Equal(0, await run.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM sys.tables WHERE schema_id = SCHEMA_ID(N'accounting') "
+                + "AND name = N'ApprovedSourceCatalogs'"));
+            Assert.Equal(0, await run.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM accounting.__EFMigrationsHistory WHERE MigrationId = @migration",
+                ("@migration", CatalogMigration)));
 
-        await migrator.MigrateAsync(CatalogMigration);
-        Assert.Equal(1, await run.ScalarAsync<int>(
-            "SELECT COUNT(*) FROM sys.tables WHERE schema_id = SCHEMA_ID(N'accounting') "
-            + "AND name = N'ApprovedSourceCatalogs'"));
-        Assert.Equal(1, await run.ScalarAsync<int>(
-            "SELECT COUNT(*) FROM accounting.__EFMigrationsHistory WHERE MigrationId = @migration",
-            ("@migration", CatalogMigration)));
-        Assert.Equal(new Counts(0, 0, 0), await run.CountsAsync(package.Id));
+            await migrator.MigrateAsync(CatalogMigration);
+            Assert.Equal(1, await run.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM sys.tables WHERE schema_id = SCHEMA_ID(N'accounting') "
+                + "AND name = N'ApprovedSourceCatalogs'"));
+            Assert.Equal(1, await run.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM accounting.__EFMigrationsHistory WHERE MigrationId = @migration",
+                ("@migration", CatalogMigration)));
+            Assert.Equal(new Counts(0, 0, 0), await run.CountsAsync(package.Id));
+        }
+        catch
+        {
+            output.WriteLine(OccupiedEmptyDownUpPhase);
+            throw;
+        }
     }
 
     [SqlServerFact]
     public async Task Durable_catalog_and_recorded_finance_source_create_reopen_approve_and_report_one_normal_journal()
     {
-        var failurePhase = ReceiptRecordReplayPhase;
-        try
-        {
         var draftId = Guid.NewGuid();
         var periodId = Guid.NewGuid();
         var occurredOn = new DateOnly(2026, 10, 2);
         const string amount = "10.00";
-        await using var run = await Run.StartAsync(useRealFinanceSource: true);
+        Run run;
+        try
+        {
+            run = await Run.StartAsync(useRealFinanceSource: true);
+        }
+        catch
+        {
+            output.WriteLine(StartupBankSeedPhase);
+            throw;
+        }
+        await using var runLifetime = run;
         var profile = ApprovedMoneyProfileCatalog.GdcTurkishLiraV1;
         var financeCurrencyId = profile.CurrencyId;
-        var bankAccountId = await run.ApprovedBankAccountAsync(CompanyA, financeCurrencyId);
-        await run.GrantAsync(Preparer, CompanyA,
-            PreparePermission, ActivatePermission, DraftCreatePermission, DraftApprovePermission,
-            AccountingPermissionManifestV1.PeriodsPropose, AccountingPermissionManifestV1.JournalsRead,
-            FinancePermissionNames.DraftSave, FinancePermissionNames.DraftRead,
-            FinancePermissionNames.AmountRead, FinancePermissionNames.Record, "finance.bank-account.read");
-        await run.GrantAsync(OtherActor, CompanyA, AccountingPermissionManifestV1.PeriodsApprove);
+        Guid bankAccountId;
+        try
+        {
+            bankAccountId = await run.ApprovedBankAccountAsync(CompanyA, financeCurrencyId);
+            await run.GrantAsync(Preparer, CompanyA,
+                PreparePermission, ActivatePermission, DraftCreatePermission, DraftApprovePermission,
+                AccountingPermissionManifestV1.PeriodsPropose, AccountingPermissionManifestV1.JournalsRead,
+                FinancePermissionNames.DraftSave, FinancePermissionNames.DraftRead,
+                FinancePermissionNames.AmountRead, FinancePermissionNames.Record, "finance.bank-account.read");
+            await run.GrantAsync(OtherActor, CompanyA, AccountingPermissionManifestV1.PeriodsApprove);
+        }
+        catch
+        {
+            output.WriteLine(StartupBankSeedPhase);
+            throw;
+        }
 
         var financeDraftRequest = new DraftSaveRequest(null, null,
             new ReceiptPreparation(
@@ -245,14 +303,16 @@ public sealed class AccountingApprovedSourceCatalogSqlServerRelationalAcceptance
                 null,
                 null,
                 "SENTETIK durable Accounting source"));
-        Guid financeSourceId;
-        string financeSourceVersion;
-        string financeProfileId;
-        string financeProfileVersion;
+        Guid financeSourceId = default;
+        string financeSourceVersion = null!;
+        string financeProfileId = null!;
+        string financeProfileVersion = null!;
         var financeRecordKey = Key("finance-record");
-        using (var financeClient = run.Client(Preparer, CompanyA))
+        string draftVersion = null!;
+        JsonElement recordedBody = default;
+        using var financeClient = run.Client(Preparer, CompanyA);
+        try
         {
-            string draftVersion;
             using (var saved = await SendJsonAsync(financeClient, FinanceEndpoints.DraftsPath,
                        Key("finance-draft"), financeDraftRequest))
             {
@@ -263,9 +323,16 @@ public sealed class AccountingApprovedSourceCatalogSqlServerRelationalAcceptance
                 draftVersion = source.GetProperty("version").GetString()!;
                 Assert.Equal("Draft", source.GetProperty("stage").GetString());
             }
+        }
+        catch
+        {
+            output.WriteLine(ReceiptPreparePhase);
+            throw;
+        }
 
-            var recordRequest = new RecordRequest(financeSourceId, draftVersion);
-            JsonElement recordedBody;
+        var recordRequest = new RecordRequest(financeSourceId, draftVersion);
+        try
+        {
             using (var recorded = await SendJsonAsync(financeClient,
                        $"{FinanceEndpoints.ManualReceiptsPath}/{financeSourceId:D}/record",
                        financeRecordKey, recordRequest))
@@ -285,6 +352,15 @@ public sealed class AccountingApprovedSourceCatalogSqlServerRelationalAcceptance
                         source.GetProperty("currencyId").GetGuid(),
                         source.GetProperty("amount").GetProperty("money").GetProperty("amount").GetString()));
             }
+        }
+        catch
+        {
+            output.WriteLine(ReceiptRecordPhase);
+            throw;
+        }
+
+        try
+        {
             using (var replay = await SendJsonAsync(financeClient,
                        $"{FinanceEndpoints.ManualReceiptsPath}/{financeSourceId:D}/record",
                        financeRecordKey, recordRequest))
@@ -315,27 +391,34 @@ public sealed class AccountingApprovedSourceCatalogSqlServerRelationalAcceptance
                         detail.GetProperty("profile").GetProperty("version").GetString(),
                         detail.GetProperty("source").GetProperty("currencyId").GetGuid()));
             }
+
+            Assert.Equal(1, await run.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM finance.ReceiptDrafts WHERE Id = @s AND Stage = 2", ("@s", financeSourceId)));
+            Assert.Equal(1, await run.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM finance.MoneyEvents WHERE SourceId = @s", ("@s", financeSourceId)));
+            Assert.Equal(1, await run.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM finance.Commands WHERE CommandName = @n AND DraftId = @s",
+                ("@n", ReceiptDraftService.RecordCommand), ("@s", financeSourceId)));
+        }
+        catch
+        {
+            output.WriteLine(ReceiptReplayFreshReadCountsPhase);
+            throw;
         }
 
-        Assert.Equal(1, await run.ScalarAsync<int>(
-            "SELECT COUNT(*) FROM finance.ReceiptDrafts WHERE Id = @s AND Stage = 2", ("@s", financeSourceId)));
-        Assert.Equal(1, await run.ScalarAsync<int>(
-            "SELECT COUNT(*) FROM finance.MoneyEvents WHERE SourceId = @s", ("@s", financeSourceId)));
-        Assert.Equal(1, await run.ScalarAsync<int>(
-            "SELECT COUNT(*) FROM finance.Commands WHERE CommandName = @n AND DraftId = @s",
-            ("@n", ReceiptDraftService.RecordCommand), ("@s", financeSourceId)));
-
-        failurePhase = CatalogPrepareActivatePhase;
+        PackageData package = null!;
+        string preparationVersion = null!;
+        try
+        {
         var binding = new FinanceSourceBinding(
             financeSourceId, financeSourceVersion, financeProfileId, financeProfileVersion, financeCurrencyId);
-        var package = Package(Guid.NewGuid(), "mikro-synthetic-normal-journal-v1", binding: binding);
+        package = Package(Guid.NewGuid(), "mikro-synthetic-normal-journal-v1", binding: binding);
 
         using (var catalogClient = run.Client(Preparer, CompanyA))
         {
             await PrepareAndActivateAsync(catalogClient, package, 0, "normal-journal");
         }
 
-        string preparationVersion;
         using (var sourceClient = run.Client(Preparer, CompanyA))
         using (var sourceResponse = await sourceClient.GetAsync($"{NormalDraftSourcesPath}/{financeSourceId:D}"))
         {
@@ -350,8 +433,17 @@ public sealed class AccountingApprovedSourceCatalogSqlServerRelationalAcceptance
                     source.GetProperty("ownerProfileVersion").GetString(),
                     source.GetProperty("currencyId").GetGuid()));
         }
+        }
+        catch
+        {
+            output.WriteLine(CatalogPrepareActivatePhase);
+            throw;
+        }
 
-        failurePhase = JournalCreateReplayApprovePhase;
+        string totalDebit = null!;
+        string totalCredit = null!;
+        try
+        {
         using (var proposer = run.Client(Preparer, CompanyA))
         using (var proposed = await SendJsonAsync(proposer, PeriodsPath, Key("period-propose"),
                    new ProposePeriodRequestV1(periodId, new DateOnly(2026, 10, 1), new DateOnly(2026, 10, 31))))
@@ -440,8 +532,6 @@ public sealed class AccountingApprovedSourceCatalogSqlServerRelationalAcceptance
                     body.GetProperty("postedJournalId").GetGuid()));
         }
 
-        string totalDebit;
-        string totalCredit;
         using (var journalClient = run.Client(Preparer, CompanyA))
         using (var journalResponse = await journalClient.GetAsync($"{JournalsPath}/{draftId:D}"))
         {
@@ -460,8 +550,15 @@ public sealed class AccountingApprovedSourceCatalogSqlServerRelationalAcceptance
             Assert.Equal(10m, decimal.Parse(totalDebit, CultureInfo.InvariantCulture));
             Assert.Equal(2, detail.GetProperty("lines").GetArrayLength());
         }
+        }
+        catch
+        {
+            output.WriteLine(JournalCreateReplayApprovePhase);
+            throw;
+        }
 
-        failurePhase = TrialBalancePhase;
+        try
+        {
         using (var reportClient = run.Client(Preparer, CompanyA))
         using (var reportResponse = await reportClient.GetAsync(
                    $"{TrialBalancePath}?fromAccountingDate={occurredOn:yyyy-MM-dd}"
@@ -478,7 +575,7 @@ public sealed class AccountingApprovedSourceCatalogSqlServerRelationalAcceptance
         }
         catch
         {
-            output.WriteLine(failurePhase);
+            output.WriteLine(TrialBalancePhase);
             throw;
         }
     }
