@@ -86,7 +86,7 @@ public partial class AddCustomerReturns : Migration
                 table.PrimaryKey("PK_CustomerReturnAttempts", x => new { x.CompanyId, x.CommandName, x.IdempotencyKeyHash });
                 table.CheckConstraint("CK_CustomerReturnAttempts_Hashes", "LEN([IdempotencyKeyHash]) = 64 AND LEN([RequestHash]) = 64");
                 table.CheckConstraint("CK_CustomerReturnAttempts_Identity", "LEN([CommandName]) > 0 AND LEN([ActorId]) > 0 AND LEN([CorrelationId]) > 0");
-                table.CheckConstraint("CK_CustomerReturnAttempts_Outcome", "([Outcome] = 1 AND [CustomerReturnId] IS NOT NULL AND [CustomerReturnId] <> '00000000-0000-0000-0000-000000000000' AND ISJSON([ResultJson]) = 1 AND [RefusalJson] IS NULL) OR ([Outcome] = 2 AND [CustomerReturnId] IS NULL AND [ResultJson] IS NULL AND ISJSON([RefusalJson]) = 1)");
+                table.CheckConstraint("CK_CustomerReturnAttempts_Outcome", "([Outcome] = 1 AND [CustomerReturnId] IS NOT NULL AND [CustomerReturnId] <> '00000000-0000-0000-0000-000000000000' AND [ResultJson] IS NOT NULL AND ISJSON([ResultJson]) = 1 AND [RefusalJson] IS NULL) OR ([Outcome] = 2 AND [CustomerReturnId] IS NULL AND [ResultJson] IS NULL AND [RefusalJson] IS NOT NULL AND ISJSON([RefusalJson]) = 1)");
                 table.ForeignKey(
                     name: "FK_CustomerReturnAttempts_CustomerReturns_CompanyId_CustomerReturnId",
                     columns: x => new { x.CompanyId, x.CustomerReturnId },

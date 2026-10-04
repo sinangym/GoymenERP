@@ -198,7 +198,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // AT-055 lifecycle (#518, user decision 2026-09-30): +6 approve/cancel/e-İrsaliye/numbering SQL facts (010fcbd6… -> c5969829…).
             // #527: +3 cross-instruction Sales line-limit atomicity facts (c5969829… -> fc08c53d…).
             ["tools/relational_inventory/logistics.txt"] =
-                "77f3874fde3e1a9e3e6318e45d63fee72256a921a5ca218d73fc105a0a6e99f9",
+                "48c46192947f7285ed9e93149a49ce35739fc7cd6a40e4d6b1296b58c2c30c25",
 
             // manufacturing
             // MFG close: owner-added closure/tolerance SQL facts extend the exact Manufacturing discovery inventory.
@@ -288,7 +288,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // company-leading keys; UX_DispatchNoteLines_ShipmentId over non-nullable columns (a shipment on one dispatch note).
             // Re-measured for the AT-055 lifecycle (#518): DispatchNoteSeries, company-scoped with the same CompanyId query filter
             // and a company-leading key; the single-link key filtered to unreleased lines; forward-only write guard.
-                "5ee82bd54467d33ebcda979dbd187d1154438a39c6caf7d7add90639637bebb0",
+                "a9c35dbf3185a27b1aa4794b403daf12396d9ce111870ab0e7cdfbcae2913bff",
             // PUR-4a: company-scoped like Organization; every tenant row (requests and their lines, orders and their
             // lines, attempts) and AuditEvent carries the CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/"
@@ -1316,7 +1316,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         { ["Sql"] = 2 }),
                 // Customer returns are immutable; Down refuses while a return or attempt exists before dropping either table.
                 ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/Migrations/20261003230000_AddCustomerReturns.cs"] =
-                    new("413671c75f2cc04beb196108a5f6284824726702efa1c3bfde5aeb44b82ff566",
+                    new("ef3a120dcc60ae748c64139c194eda91d9aadfb3878abc6c4ef826be738df281",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 1 }),
                 // ERP-000G / AT-065: the Down's only raw SQL is the vault's module refusal (51058, used by no other migration

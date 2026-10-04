@@ -118,6 +118,38 @@ public sealed class LogisticsCustomerReturnSqlServerRelationalAcceptanceTests
     }
 
     [SqlServerFact]
+    public async Task Customer_return_attempt_outcome_constraint_refuses_null_payloads_and_accepts_complete_success_and_refusal()
+    {
+        await using var run = await Run.StartAsync();
+        var source = await run.CreateDeliveredSourceAsync(20m);
+        var requested = Request(source, 10m, "alice");
+
+        await run.SerializableAsync(store => store.StoreRequestAsync(
+            run.Envelope("constraint-success", "alice", "constraint-success-original"),
+            Hash("constraint-success"), requested));
+        await run.SerializableAsync(store => store.RecordRefusalAsync(
+            run.Envelope("constraint-refusal", "bob", "constraint-refusal-original"),
+            Hash("constraint-refusal"), LogisticsCustomerReturnCommandsV1.Reject,
+            new CustomerReturnTerminalRefusalV1(
+                409,
+                LogisticsCustomerReturnCodesV1.VersionConflict,
+                [new("expectedVersion", "version_conflict")],
+                ExpectedVersion: 1,
+                CurrentVersion: 2)));
+        Assert.Equal((1, 2), await run.CountsAsync());
+
+        var missingSuccessPayload = await Assert.ThrowsAsync<Microsoft.Data.SqlClient.SqlException>(() =>
+            run.InsertIncompleteAttemptAsync(1, requested.Id, "constraint-missing-success"));
+        Assert.Equal(547, missingSuccessPayload.Number);
+        Assert.Equal((1, 2), await run.CountsAsync());
+
+        var missingRefusalPayload = await Assert.ThrowsAsync<Microsoft.Data.SqlClient.SqlException>(() =>
+            run.InsertIncompleteAttemptAsync(2, null, "constraint-missing-refusal"));
+        Assert.Equal(547, missingRefusalPayload.Number);
+        Assert.Equal((1, 2), await run.CountsAsync());
+    }
+
+    [SqlServerFact]
     public async Task Serializable_delivery_range_allows_only_one_of_two_returns_that_together_exceed_delivery()
     {
         await using var run = await Run.StartAsync();
@@ -229,6 +261,32 @@ public sealed class LogisticsCustomerReturnSqlServerRelationalAcceptanceTests
 
         public Task<decimal> ApprovedAsync(Guid deliveryId) => ScalarAsync<decimal>(
             "SELECT COALESCE(SUM(Quantity), 0) FROM logistics.CustomerReturns WHERE SourceDeliveryId = @p0 AND Status = 2", deliveryId);
+
+        public async Task InsertIncompleteAttemptAsync(int outcome, Guid? customerReturnId, string key)
+        {
+            await using var connection = new Microsoft.Data.SqlClient.SqlConnection(factory.DatabaseConnectionString);
+            await connection.OpenAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
+                INSERT INTO logistics.CustomerReturnAttempts
+                    (CompanyId, CommandName, IdempotencyKeyHash, RequestHash, ActorId, Outcome,
+                     CustomerReturnId, ResultJson, RefusalJson, OriginalCorrelationId, CorrelationId, RecordedAtUtc)
+                VALUES
+                    (@companyId, @commandName, @idempotencyKeyHash, @requestHash, @actorId, @outcome,
+                     @customerReturnId, NULL, NULL, @originalCorrelationId, @correlationId, @recordedAtUtc);
+                """;
+            command.Parameters.AddWithValue("@companyId", Company);
+            command.Parameters.AddWithValue("@commandName", LogisticsCustomerReturnCommandsV1.Reject);
+            command.Parameters.AddWithValue("@idempotencyKeyHash", Hash(key));
+            command.Parameters.AddWithValue("@requestHash", Hash(key + "-request"));
+            command.Parameters.AddWithValue("@actorId", "constraint-actor");
+            command.Parameters.AddWithValue("@outcome", outcome);
+            command.Parameters.AddWithValue("@customerReturnId", customerReturnId is null ? DBNull.Value : customerReturnId.Value);
+            command.Parameters.AddWithValue("@originalCorrelationId", key + "-original");
+            command.Parameters.AddWithValue("@correlationId", key + "-correlation");
+            command.Parameters.AddWithValue("@recordedAtUtc", T0);
+            await command.ExecuteNonQueryAsync();
+        }
 
         private async Task<T> ScalarAsync<T>(string sql, object? parameter = null)
         {

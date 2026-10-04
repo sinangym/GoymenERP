@@ -342,8 +342,9 @@ public sealed class LogisticsDbContext(DbContextOptions<LogisticsDbContext> opti
             table.HasCheckConstraint("CK_CustomerReturnAttempts_Hashes", "LEN([IdempotencyKeyHash]) = 64 AND LEN([RequestHash]) = 64");
             table.HasCheckConstraint("CK_CustomerReturnAttempts_Outcome",
                 $"([Outcome] = 1 AND [CustomerReturnId] IS NOT NULL AND [CustomerReturnId] <> {EmptyGuid} "
-                + "AND ISJSON([ResultJson]) = 1 AND [RefusalJson] IS NULL) OR "
-                + "([Outcome] = 2 AND [CustomerReturnId] IS NULL AND [ResultJson] IS NULL AND ISJSON([RefusalJson]) = 1)");
+                + "AND [ResultJson] IS NOT NULL AND ISJSON([ResultJson]) = 1 AND [RefusalJson] IS NULL) OR "
+                + "([Outcome] = 2 AND [CustomerReturnId] IS NULL AND [ResultJson] IS NULL "
+                + "AND [RefusalJson] IS NOT NULL AND ISJSON([RefusalJson]) = 1)");
         });
         attempt.HasKey(x => new { x.CompanyId, x.CommandName, x.IdempotencyKeyHash });
         attempt.Property(x => x.CommandName).HasMaxLength(160).UseCollation(IdentityCollation).IsRequired();
