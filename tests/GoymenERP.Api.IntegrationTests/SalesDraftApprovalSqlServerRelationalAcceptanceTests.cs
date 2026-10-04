@@ -1030,11 +1030,20 @@ public sealed class SalesDraftApprovalSqlServerRelationalAcceptanceTests
 
         var refusal = new SalesDraftTerminalRefusal(409, SalesDraftProblemCodesV1.StateConflict,
             [new("approvalState", SalesRuleCodes.StateConflict)]);
-        await using (var a = run.Store(CompanyA))
-        {
-            await a.Store.RecordRefusalAsync(run.Envelope("k-legacy-refusal"), Hash("legacy-refusal"), refusal,
-                default, SalesDraftCommands.WithdrawV1);
-        }
+        await run.ExecuteAsync("""
+            INSERT INTO [sales].[DraftAttempts]
+                ([CompanyId], [CommandName], [IdempotencyKeyHash], [RequestHash], [ActorId], [Outcome], [DraftId], [RefusalJson], [CorrelationId], [RecordedAtUtc])
+            VALUES
+                (@company, @command, @keyHash, @requestHash, @actor, 2, NULL, @refusalJson, @correlation, @recordedAtUtc)
+            """,
+            ("@company", CompanyA),
+            ("@command", SalesDraftCommands.WithdrawV1),
+            ("@keyHash", SalesStore.IdempotencyKeyHash("k-legacy-refusal")),
+            ("@requestHash", Hash("legacy-refusal")),
+            ("@actor", run.Actor),
+            ("@refusalJson", JsonSerializer.Serialize(refusal, new JsonSerializerOptions(JsonSerializerDefaults.Web))),
+            ("@correlation", run.Correlation),
+            ("@recordedAtUtc", T0));
 
         Assert.Equal(1, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM [sales].[DraftAttempts] WHERE [CommandName] = @c AND [DraftId] IS NULL AND [Outcome] = 2",
