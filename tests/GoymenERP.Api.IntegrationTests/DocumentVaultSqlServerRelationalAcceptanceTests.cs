@@ -510,7 +510,7 @@ public sealed class DocumentVaultSqlServerRelationalAcceptanceTests
 
             return Task.FromResult(new InventoryLabelDetailV1(
                 "1",
-                new InventoryLabelViewV1(labelId, CompanyA, "LBL-AT065", Guid.NewGuid(), Guid.NewGuid(), null, null,
+                new InventoryLabelViewV1(labelId, CompanyA, "LBL-AT065", Guid.NewGuid(), Guid.NewGuid(), null, null, null,
                     "Complete", [], [], [], null!),
                 null!,
                 null!,

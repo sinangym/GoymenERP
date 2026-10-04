@@ -344,6 +344,7 @@ SUITE_IDENTITY_PERMISSIONS = {
     "r14": ("inventory.opening-stock.record", "product.operational-selection.read",
             "inventory.labels.read", "inventory.balances.read",
             "documents.files.read", "documents.files.upload",
+            "inventory.label-classification.write",
             "organization.locations.read", "inventory.label-transformation.record",
             "inventory.stock-count.record", "inventory.stock-count.approve",
             "inventory.stock-scrap.record", "inventory.stock-scrap.approve"),

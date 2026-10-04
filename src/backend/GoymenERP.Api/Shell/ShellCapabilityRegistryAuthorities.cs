@@ -233,15 +233,19 @@ internal static class ShellCapabilityRegistryAuthorities
     // MFG-PLAN-EDIT: re-derived over main 0b6a68cd's providers with Manufacturing 1.4 (ManufacturingV13 -> V14).
     // Stock scrap: re-derived over main 4ea83fa4's providers with Inventory 1.5 (two ST-01 scrap controls;
     // InventoryV14 -> V15).
-    internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV15PublishedFinanceV15PublishedManufacturingV15PublishedLogisticsV12PublishedPurchasingV14PublishedAccountingV13AndPublishedInventoryV15 =
-        "sha256:-xxtYUZ7muE6Oui9d-6bJ2_6QszTksyj5JvQY4zzips";
+    // Label classification: independently re-derived over 5caae87f's providers with Inventory 1.6 (one ST-01
+    // child control; InventoryV15 -> V16). Both derivations first reproduced the reviewed V15 value exactly.
+    internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV15PublishedFinanceV15PublishedManufacturingV15PublishedLogisticsV12PublishedPurchasingV14PublishedAccountingV13AndPublishedInventoryV16 =
+        "sha256:jAre0SqaBx6glD08y3CcN_PCVvmT5YyV0E4EgOeFGyc";
 
     // SY-01/SY-02 (read-only users-and-permissions view): Identity 1.0 joins the normal host with two screens on
     // identity.assignments.read. Only this new full-host row is added; every earlier row keeps its provider set and value.
     // Derived by ShellCapabilityRegistry.ComputeCandidateRevision over main fec92de9's providers plus Identity 1.0.
     // Stock scrap: re-derived over main 4ea83fa4's providers with Inventory 1.5 (InventoryV14 -> V15).
-    internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV15PublishedFinanceV15PublishedManufacturingV15PublishedLogisticsV12PublishedPurchasingV14PublishedAccountingV13PublishedInventoryV15AndPublishedIdentityV10 =
-        "sha256:iK6Rbn17JqSIB_k0DRnx_tpsUXGoiSy5IY-chy0UPYg";
+    // Label classification: independently re-derived over 5caae87f's providers with Inventory 1.6, preserving
+    // Identity 1.0 and every disposable authority unchanged.
+    internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV15PublishedFinanceV15PublishedManufacturingV15PublishedLogisticsV12PublishedPurchasingV14PublishedAccountingV13PublishedInventoryV16AndPublishedIdentityV10 =
+        "sha256:pJD3Ga0jP_dku8KTfdAULCytFEH-6E2RzVCSeOisP-A";
 
     internal const string CounterpartyV15PublishedListCreateAndDetail =
         "sha256:UBHnivzhe_dp5f7vU7dP5n7HG-P8XYBGhxvD_OjMSnw";

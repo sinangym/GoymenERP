@@ -52,7 +52,7 @@ function fixture(): InventoryLabelDetailWithMovementTimeline {
     labelVersion: '3',
     identity: {
       labelId: LABEL, companyId: COMPANY, code: 'LBL-100', productId: PRODUCT, lotId: LOT,
-      heatNumber: null, coilNumber: 'COIL-9', documentStatus: 'Complete', requiredDocuments: ['MTC'],
+      heatNumber: null, coilNumber: 'COIL-9', classification: null, documentStatus: 'Complete', requiredDocuments: ['MTC'],
       documents: [{ kind: 'MTC', attachedAtUtc: '2026-09-24T08:00:00Z' }],
       prints: [{ sequence: 1, printedAtUtc: '2026-09-24T08:01:00Z', reason: null }],
       lot: { id: LOT, heatNumber: 'HEAT-1', coilNumber: null },

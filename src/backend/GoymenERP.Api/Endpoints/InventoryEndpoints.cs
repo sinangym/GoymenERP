@@ -84,6 +84,7 @@ public static partial class InventoryEndpoints
         MapPhysicalAllocationEndpoints(group);
         MapOpeningCountEndpoints(group);
         MapLabelTransformationEndpoint(endpoints);
+        MapLabelClassificationEndpoint(endpoints);
         endpoints.MapInventoryStockCountEndpoints();
         endpoints.MapInventoryStockScrapEndpoints();
         return endpoints;
@@ -180,6 +181,126 @@ public static partial class InventoryEndpoints
             .ProducesErpConflict([.. InventoryLabelTransformationHttpCodesV1.Status409Codes.Order(StringComparer.Ordinal)])
             .ProducesErpServiceUnavailable([.. InventoryLabelTransformationHttpCodesV1.Status503Codes.Order(StringComparer.Ordinal)])
             .ProducesErpAuthenticatedProblems();
+    }
+
+    /// <summary>
+    /// Classifies one label through Inventory's versioned, company-scoped and replayable owner command.
+    /// Publishing and registering the permission grants nothing; the command performs fresh authority fences.
+    /// </summary>
+    private static void MapLabelClassificationEndpoint(IEndpointRouteBuilder endpoints)
+    {
+        endpoints.MapPost("/api/v1/inventory/labels/{labelId:guid}/classification", async (
+                Guid labelId,
+                HttpContext httpContext,
+                IInventoryLabelClassificationCommandV1 command,
+                ICurrentUser currentUser,
+                ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext.Response);
+                if (!TryReadIdempotencyKey(httpContext.Request.Headers, out var key) || !correlation.IsResolved)
+                {
+                    return LabelTransformationProblem(StatusCodes.Status400BadRequest,
+                        InventoryLabelClassificationCodesV1.ValidationFailed, correlation);
+                }
+
+                if (!httpContext.Request.HasJsonContentType())
+                {
+                    return Results.StatusCode(StatusCodes.Status415UnsupportedMediaType);
+                }
+
+                ClassifyInventoryLabelV1? request;
+                try
+                {
+                    request = await JsonSerializer.DeserializeAsync<ClassifyInventoryLabelV1>(
+                        httpContext.Request.Body, LabelClassificationJson, cancellationToken);
+                }
+                catch (JsonException)
+                {
+                    return LabelTransformationProblem(StatusCodes.Status400BadRequest,
+                        InventoryLabelClassificationCodesV1.ValidationFailed, correlation);
+                }
+
+                if (request is null)
+                {
+                    return LabelTransformationProblem(StatusCodes.Status400BadRequest,
+                        InventoryLabelClassificationCodesV1.ValidationFailed, correlation);
+                }
+
+                try
+                {
+                    var result = await command.ClassifyAsync(
+                        labelId,
+                        request,
+                        TransportMetadata(currentUser, correlation, key),
+                        cancellationToken);
+                    if (result.IsReplay)
+                    {
+                        ApplyReplayHeaders(httpContext, result.OriginalCorrelationId);
+                    }
+
+                    return Results.Json(result.Classification, LabelClassificationJson,
+                        statusCode: result.IsReplay ? StatusCodes.Status200OK : StatusCodes.Status201Created);
+                }
+                catch (InventoryLabelClassificationException exception)
+                {
+                    return LabelClassificationProblem(exception, correlation);
+                }
+            })
+            .WithName("ClassifyInventoryLabelV1")
+            .WithTags("Inventory")
+            .WithMetadata(new PrivateNoStoreOnAuthorizationFailureMetadata())
+            .RequireCompanyContext()
+            .RequireAuthorization(ErpPermissions.InventoryLabelClassificationWrite)
+            .WithIdempotencyContract(StatusCodes.Status200OK)
+            .Accepts<ClassifyInventoryLabelV1>("application/json")
+            .Produces<InventoryLabelClassificationViewV1>(StatusCodes.Status201Created)
+            .Produces<InventoryLabelClassificationViewV1>(StatusCodes.Status200OK)
+            .ProducesErpBadRequest([InventoryLabelClassificationCodesV1.ValidationFailed])
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpNotFound([InventoryLabelClassificationCodesV1.LabelNotFound])
+            .ProducesErpConflict(
+            [
+                InventoryLabelClassificationCodesV1.IdempotencyConflict,
+                InventoryLabelClassificationCodesV1.LabelVersionConflict,
+                InventoryLabelClassificationCodesV1.ClassificationUnchanged,
+                InventoryLabelClassificationCodesV1.ConcurrentChange,
+            ])
+            .ProducesErpServiceUnavailable([InventoryLabelClassificationCodesV1.PermissionUnregistered])
+            .ProducesErpAuthenticatedProblems();
+    }
+
+    private static IResult LabelClassificationProblem(
+        InventoryLabelClassificationException exception,
+        ICorrelationContext correlation)
+    {
+        var accepted = exception.Status switch
+        {
+            StatusCodes.Status400BadRequest =>
+                exception.Code == InventoryLabelClassificationCodesV1.ValidationFailed,
+            StatusCodes.Status401Unauthorized =>
+                exception.Code == InventoryLabelClassificationCodesV1.Unauthenticated,
+            StatusCodes.Status403Forbidden =>
+                exception.Code == InventoryLabelClassificationCodesV1.Forbidden,
+            StatusCodes.Status404NotFound =>
+                exception.Code == InventoryLabelClassificationCodesV1.LabelNotFound,
+            StatusCodes.Status409Conflict => exception.Code is
+                InventoryLabelClassificationCodesV1.IdempotencyConflict
+                or InventoryLabelClassificationCodesV1.LabelVersionConflict
+                or InventoryLabelClassificationCodesV1.ClassificationUnchanged
+                or InventoryLabelClassificationCodesV1.ConcurrentChange,
+            StatusCodes.Status503ServiceUnavailable =>
+                exception.Code == InventoryLabelClassificationCodesV1.PermissionUnregistered,
+            _ => false,
+        };
+        if (!accepted)
+        {
+            return Results.Problem(statusCode: StatusCodes.Status503ServiceUnavailable);
+        }
+
+        return exception.Status is StatusCodes.Status401Unauthorized or StatusCodes.Status403Forbidden
+            ? Results.Problem(statusCode: exception.Status)
+            : LabelTransformationProblem(exception.Status, exception.Code, correlation);
     }
 
     /// <summary>The owner's refusal as a problem: 401/403 code-less, a closed-set code with its correlation otherwise.</summary>
@@ -1322,6 +1443,7 @@ public static partial class InventoryEndpoints
     private static readonly JsonSerializerOptions OpeningJson = new(JsonSerializerDefaults.Web);
     private static readonly JsonSerializerOptions AllocationJson = new(JsonSerializerDefaults.Web);
     private static readonly JsonSerializerOptions LabelTransformationJson = new(JsonSerializerDefaults.Web);
+    private static readonly JsonSerializerOptions LabelClassificationJson = new(JsonSerializerDefaults.Web);
     private static readonly JsonSerializerOptions StockCountJson = new(JsonSerializerDefaults.Web);
 
     // The owner's templates with the route constraint the host always applies to identities.

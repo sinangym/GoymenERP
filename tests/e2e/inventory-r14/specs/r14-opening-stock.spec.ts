@@ -13,6 +13,8 @@ const PRODUCT_REFERENCES = '/api/v1/inventory/references/products'
 const LOCATION_REFERENCES = '/api/v1/inventory/references/locations'
 const DOCUMENTS = '/api/v1/documents'
 const DOCUMENT_OWNER_KIND = 'inventory.material-label'
+const CLASSIFY_COMMAND = 'inventory.label-classification.classify.v1'
+const CLASSIFIED_EVENT = 'inventory.label.classified.v1'
 const EFFECTIVE_ON = '2026-09-18'
 const SHEET = 'SENTETIK browser-suite:r14 opening count'
 const LABEL = 'SYNR14-LABEL-1'
@@ -30,7 +32,7 @@ function apiHeaders(actor: string, company = companyId): Record<string, string> 
   return { [DEVELOPMENT_USER_HEADER]: actor, 'X-Company-Id': company }
 }
 
-test('R14 records one real opening count, closes and reopens it, and preserves permission/company fences', async ({ page }) => {
+test('R14 records one real opening count, classifies its label, reopens and replays it, and preserves every fence', async ({ page }) => {
   const pool = await new sql.ConnectionPool(env.sqlConnection).connect()
   try {
     const baseline = await pool.request()
@@ -113,14 +115,19 @@ test('R14 records one real opening count, closes and reopens it, and preserves p
     expect(labelResponse.status()).toBe(200)
     const labelDetail = await labelResponse.json() as {
       readonly labelVersion: string
-      readonly identity: { readonly labelId: string; readonly companyId: string; readonly productId: string; readonly code: string }
+      readonly identity: {
+        readonly labelId: string; readonly companyId: string; readonly productId: string; readonly code: string
+        readonly classification: 'Standard' | 'SecondQuality' | 'Scrap' | null
+      }
       readonly balances: { readonly labelId: string; readonly physicalKg: string }
       readonly genealogy: { readonly labelId: string; readonly labelCode: string; readonly edges: readonly unknown[]; readonly windowFull: boolean }
       readonly movementTimeline: { readonly labelId: string; readonly windowFull: boolean; readonly entries: readonly [{
         readonly kind: string; readonly sourceKind: string; readonly lines: readonly [{ readonly direction: string; readonly quantityKg: string }]
       }] }
     }
-    expect(labelDetail.identity).toMatchObject({ labelId: actualLabelId, companyId, productId, code: LABEL })
+    expect(labelDetail.identity).toMatchObject({
+      labelId: actualLabelId, companyId, productId, code: LABEL, classification: null,
+    })
     expect(labelDetail.balances).toMatchObject({ labelId: actualLabelId, physicalKg: '12.5' })
     expect(labelDetail.genealogy).toEqual({ labelId: actualLabelId, labelCode: LABEL, edges: [], windowFull: false })
     expect(labelDetail.movementTimeline).toMatchObject({
@@ -132,6 +139,50 @@ test('R14 records one real opening count, closes and reopens it, and preserves p
     await expect(page.getByRole('heading', { level: 2, name: 'Soy ağacı', exact: true })).toBeVisible()
     await expect(page.getByText('Bu etiket için bölme veya birleştirme kaydı yok.', { exact: true })).toBeVisible()
     await expect(page.getByRole('heading', { level: 2, name: 'Stok hareketleri', exact: true })).toBeVisible()
+
+    // Classify the exact browser-created label through the real UI. Capture the browser's frozen key/body so the
+    // replay below proves the same transport attempt rather than reconstructing a second command.
+    const classificationPath = `/api/v1/inventory/labels/${actualLabelId}/classification`
+    const classificationAnswer = page.waitForResponse((response) => response.request().method() === 'POST'
+      && new URL(response.url()).pathname === classificationPath)
+    const classificationRefresh = page.waitForResponse((response) => response.request().method() === 'GET'
+      && new URL(response.url()).pathname === labelPath)
+    await page.getByLabel('Yeni sınıf', { exact: true }).selectOption('SecondQuality')
+    await page.getByRole('button', { name: 'Sınıfı kaydet', exact: true }).click()
+    const classificationResponse = await classificationAnswer
+    expect(classificationResponse.status()).toBe(201)
+    expect(classificationResponse.headers()['idempotency-replayed']).toBeUndefined()
+    expect(classificationResponse.headers()['idempotency-original-correlation-id']).toBeUndefined()
+    const classificationKey = classificationResponse.request().headers()['idempotency-key']
+    expect(classificationKey).toBeTruthy()
+    const classificationRequest = classificationResponse.request().postDataJSON() as {
+      readonly expectedLabelVersion: string; readonly classification: string
+    }
+    expect(classificationRequest).toEqual({
+      expectedLabelVersion: labelDetail.labelVersion, classification: 'SecondQuality',
+    })
+    const classification = await classificationResponse.json() as {
+      readonly labelId: string; readonly labelVersion: string; readonly classification: string
+      readonly classifiedAtUtc: string
+    }
+    expect(classification).toMatchObject({
+      labelId: actualLabelId,
+      labelVersion: (BigInt(labelDetail.labelVersion) + 1n).toString(),
+      classification: 'SecondQuality',
+    })
+    expect(Number.isFinite(Date.parse(classification.classifiedAtUtc))).toBe(true)
+    const refreshedClassificationResponse = await classificationRefresh
+    expect(refreshedClassificationResponse.status()).toBe(200)
+    expect(await refreshedClassificationResponse.json()).toMatchObject({
+      labelVersion: classification.labelVersion,
+      identity: { labelId: actualLabelId, classification: 'SecondQuality' },
+      balances: { labelId: actualLabelId, physicalKg: '12.5' },
+      movementTimeline: {
+        labelId: actualLabelId,
+        entries: [{ kind: 'Receipt', sourceKind: 'inventory.opening-count', lines: [{ quantityKg: '12.5' }] }],
+      },
+    })
+    await expect(page.getByText('Mevcut sınıf: SecondQuality.', { exact: false })).toBeVisible()
 
     // AT-065: attach one optional vault document to THIS browser-created material label. The existing label attachment
     // summary above is an Inventory fact; this panel is the shared append-only Documents vault, bound by owner kind/id.
@@ -205,7 +256,17 @@ test('R14 records one real opening count, closes and reopens it, and preserves p
         && url.searchParams.get('ownerId') === actualLabelId
     })
     await page.goto(`/stok/etiket/${actualLabelId}`)
-    expect((await reopenedLabel).status()).toBe(200)
+    const reopenedLabelResponse = await reopenedLabel
+    expect(reopenedLabelResponse.status()).toBe(200)
+    expect(await reopenedLabelResponse.json()).toMatchObject({
+      labelVersion: classification.labelVersion,
+      identity: { labelId: actualLabelId, companyId, productId, code: LABEL, classification: 'SecondQuality' },
+      balances: { labelId: actualLabelId, physicalKg: '12.5' },
+      movementTimeline: {
+        labelId: actualLabelId,
+        entries: [{ kind: 'Receipt', sourceKind: 'inventory.opening-count', lines: [{ quantityKg: '12.5' }] }],
+      },
+    })
     const reopenedDocumentsResponse = await reopenedDocuments
     expect(reopenedDocumentsResponse.status()).toBe(200)
     const reopenedDocumentList = await reopenedDocumentsResponse.json() as {
@@ -250,6 +311,15 @@ test('R14 records one real opening count, closes and reopens it, and preserves p
       isReplay: true,
       originalCorrelationId: upload.originalCorrelationId,
     })
+
+    const classificationReplay = await page.request.post(`${env.apiBaseUrl}${classificationPath}`, {
+      headers: { ...apiHeaders(recorderActor), 'Idempotency-Key': classificationKey },
+      data: classificationRequest,
+    })
+    expect(classificationReplay.status()).toBe(200)
+    expect(classificationReplay.headers()['idempotency-replayed']).toBe('true')
+    expect(classificationReplay.headers()['idempotency-original-correlation-id']).toBeTruthy()
+    expect(await classificationReplay.json()).toEqual(classification)
 
     const documentEffects = await pool.request()
       .input('companyId', sql.UniqueIdentifier, companyId)
@@ -300,8 +370,8 @@ test('R14 records one real opening count, closes and reopens it, and preserves p
     const returnedLabelResponse = await returnedLabelAnswer
     expect(returnedLabelResponse.status()).toBe(200)
     expect(await returnedLabelResponse.json()).toMatchObject({
-      labelVersion: labelDetail.labelVersion,
-      identity: { labelId: actualLabelId, companyId, productId, code: LABEL },
+      labelVersion: classification.labelVersion,
+      identity: { labelId: actualLabelId, companyId, productId, code: LABEL, classification: 'SecondQuality' },
       balances: { labelId: actualLabelId, physicalKg: '12.5' },
       genealogy: { labelId: actualLabelId, labelCode: LABEL, edges: [], windowFull: false },
       movementTimeline: {
@@ -312,15 +382,6 @@ test('R14 records one real opening count, closes and reopens it, and preserves p
     await expect(page.getByRole('heading', { level: 1, name: LABEL, exact: true })).toBeVisible()
     await expect(page.getByText(actualLabelId, { exact: true })).toBeVisible()
     await expect(page.getByRole('heading', { level: 2, name: 'Soy ağacı', exact: true })).toBeVisible()
-
-    const stored = await pool.request()
-      .input('companyId', sql.UniqueIdentifier, companyId)
-      .input('countId', sql.UniqueIdentifier, created.countId)
-      .query<{ counts: number; lines: number }>(`
-        SELECT
-          (SELECT COUNT(*) FROM inventory.OpeningCounts WHERE CompanyId=@companyId AND Id=@countId) AS counts,
-          (SELECT COUNT(*) FROM inventory.OpeningCountLines WHERE CompanyId=@companyId AND CountId=@countId) AS lines`)
-    expect(stored.recordset[0]).toEqual({ counts: 1, lines: 1 })
 
     const denied = await page.request.get(`${env.apiBaseUrl}${PRODUCT_REFERENCES}?effectiveOn=${EFFECTIVE_ON}&limit=25`, {
       headers: apiHeaders(deniedActor),
@@ -350,14 +411,59 @@ test('R14 records one real opening count, closes and reopens it, and preserves p
     expect(foreignBody).not.toContain(LABEL)
     expect(foreignBody).not.toContain(actualLabelId)
 
+    const deniedClassification = await page.request.post(`${env.apiBaseUrl}${classificationPath}`, {
+      headers: { ...apiHeaders(deniedActor), 'Idempotency-Key': `r14-denied-${actualLabelId}` },
+      data: { expectedLabelVersion: classification.labelVersion, classification: 'Scrap' },
+    })
+    expect(deniedClassification.status()).toBe(403)
+    const deniedClassificationBody = await deniedClassification.text()
+    expect(deniedClassificationBody).not.toContain(LABEL)
+    expect(deniedClassificationBody).not.toContain(actualLabelId)
+
+    const foreignClassification = await page.request.post(`${env.apiBaseUrl}${classificationPath}`, {
+      headers: { ...apiHeaders(recorderActor, otherCompanyId), 'Idempotency-Key': `r14-foreign-${actualLabelId}` },
+      data: { expectedLabelVersion: classification.labelVersion, classification: 'Scrap' },
+    })
+    expect([403, 404]).toContain(foreignClassification.status())
+    const foreignClassificationBody = await foreignClassification.text()
+    expect(foreignClassificationBody).not.toContain(LABEL)
+    expect(foreignClassificationBody).not.toContain(actualLabelId)
+
     const afterNegatives = await pool.request()
       .input('companyId', sql.UniqueIdentifier, companyId)
       .input('countId', sql.UniqueIdentifier, created.countId)
-      .query<{ counts: number; lines: number }>(`
+      .input('labelId', sql.UniqueIdentifier, actualLabelId)
+      .input('labelEntityId', sql.NVarChar, actualLabelId)
+      .input('classificationCommand', sql.NVarChar, CLASSIFY_COMMAND)
+      .input('classifiedEvent', sql.NVarChar, CLASSIFIED_EVENT)
+      .query<{
+        counts: number; lines: number; classification: number; labelVersion: string; physicalKg: string
+        movements: number; classificationCommands: number; classificationAudits: number
+      }>(`
         SELECT
           (SELECT COUNT(*) FROM inventory.OpeningCounts WHERE CompanyId=@companyId AND Id=@countId) AS counts,
-          (SELECT COUNT(*) FROM inventory.OpeningCountLines WHERE CompanyId=@companyId AND CountId=@countId) AS lines`)
-    expect(afterNegatives.recordset[0]).toEqual({ counts: 1, lines: 1 })
+          (SELECT COUNT(*) FROM inventory.OpeningCountLines WHERE CompanyId=@companyId AND CountId=@countId) AS lines,
+          (SELECT Classification FROM inventory.Labels WHERE CompanyId=@companyId AND Id=@labelId) AS classification,
+          (SELECT CONVERT(nvarchar(40), Version) FROM inventory.Labels
+            WHERE CompanyId=@companyId AND Id=@labelId) AS labelVersion,
+          (SELECT CONVERT(nvarchar(40), SUM(QuantityKg)) FROM inventory.Balances
+            WHERE CompanyId=@companyId AND LabelId=@labelId) AS physicalKg,
+          (SELECT COUNT(*) FROM inventory.MovementLines
+            WHERE CompanyId=@companyId AND LabelId=@labelId) AS movements,
+          (SELECT COUNT(*) FROM inventory.Commands
+            WHERE CompanyId=@companyId AND CommandName=@classificationCommand AND TargetId=@labelId) AS classificationCommands,
+          (SELECT COUNT(*) FROM audit.AuditEvents
+            WHERE CompanyId=@companyId AND EntityId=@labelEntityId AND EventType=@classifiedEvent) AS classificationAudits`)
+    expect(afterNegatives.recordset[0]).toMatchObject({
+      counts: 1,
+      lines: 1,
+      classification: 2,
+      labelVersion: classification.labelVersion,
+      movements: 1,
+      classificationCommands: 1,
+      classificationAudits: 1,
+    })
+    expect(Number(afterNegatives.recordset[0].physicalKg)).toBe(12.5)
   } finally {
     await pool.close()
   }

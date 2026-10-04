@@ -22,7 +22,7 @@ const MOVEMENT = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'
 function identity() {
   return {
     labelId: LABEL, companyId: COMPANY, code: 'LBL-100', productId: PRODUCT, lotId: LOT,
-    heatNumber: null, coilNumber: 'COIL-9', documentStatus: 'Complete',
+    heatNumber: null, coilNumber: 'COIL-9', classification: null, documentStatus: 'Complete',
     requiredDocuments: ['MTC'],
     documents: [{ kind: 'MTC', attachedAtUtc: '2026-09-24T08:00:00Z' }],
     prints: [{ sequence: 1, printedAtUtc: '2026-09-24T08:01:00Z', reason: null }],
@@ -81,6 +81,7 @@ describe('Inventory label detail contract', () => {
     const decodedGenealogy = decodeInventoryLabelGenealogy(genealogy(), LABEL, 'LBL-100')
     const decodedTimeline = decodeInventoryLabelMovementTimeline(movementTimeline(), LABEL)
     expect(decodedIdentity).not.toBeNull()
+    expect(decodedIdentity?.classification).toBeNull()
     expect(decodedBalances).not.toBeNull()
     expect(decodedGenealogy).not.toBeNull()
     expect(decodedTimeline).not.toBeNull()
@@ -92,6 +93,7 @@ describe('Inventory label detail contract', () => {
 
   it('fails closed for extra fields, mismatched lot, company, label or position product', () => {
     expect(decodeInventoryLabelIdentity({ ...identity(), leakedActor: 'x' })).toBeNull()
+    expect(decodeInventoryLabelIdentity({ ...identity(), classification: 'FirstQuality' })).toBeNull()
     expect(decodeInventoryLabelIdentity({ ...identity(), lot: { ...identity().lot, id: OWNER } })).toBeNull()
     const decodedIdentity = decodeInventoryLabelIdentity(identity())!
     const decodedBalances = decodeInventoryLabelBalances(balances())!
