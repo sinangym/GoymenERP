@@ -10,6 +10,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.DependencyInjection;
+using Xunit.Abstractions;
 
 namespace GoymenERP.Api.IntegrationTests;
 
@@ -18,8 +19,14 @@ namespace GoymenERP.Api.IntegrationTests;
 /// registry, replays through migration history, rolls back only when unreferenced and refuses any
 /// pre-existing registry. The synthetic u02 fixture remains test-only and byte-for-byte semantic data.
 /// </summary>
-public sealed class ProductInitialTechnicalDefinitionSqlServerRelationalAcceptanceTests
+public sealed class ProductInitialTechnicalDefinitionSqlServerRelationalAcceptanceTests(ITestOutputHelper output)
 {
+    private const string RollbackSetupPhase = "CI_SAFE_DIAGNOSTIC:product_technical_release_rollback_setup";
+    private const string RollbackFootprintPhase = "CI_SAFE_DIAGNOSTIC:product_technical_release_rollback_footprint";
+    private const string RollbackCardReferencePhase = "CI_SAFE_DIAGNOSTIC:product_technical_release_rollback_card_reference";
+    private const string RollbackReplayReferencePhase = "CI_SAFE_DIAGNOSTIC:product_technical_release_rollback_replay_reference";
+    private const string RollbackUnreferencedPhase = "CI_SAFE_DIAGNOSTIC:product_technical_release_rollback_unreferenced";
+    private const string RollbackReapplyPhase = "CI_SAFE_DIAGNOSTIC:product_technical_release_rollback_reapply";
     private const string PreviousMigration = "20260919100000_AddProductFamilyRegistry";
     private static readonly Guid ProductId = Guid.Parse("b7100000-0000-4000-8000-000000000401");
     private static readonly Guid GroupId = Guid.Parse("b7100000-0000-4000-8000-000000000101");
@@ -60,19 +67,24 @@ public sealed class ProductInitialTechnicalDefinitionSqlServerRelationalAcceptan
     [SqlServerFact]
     public async Task Rollback_refuses_a_referenced_card_then_removes_only_the_unreferenced_release()
     {
-        await using var run = await Run.StartAsync();
+        var failurePhase = RollbackSetupPhase;
+        try
+        {
+            await using var run = await Run.StartAsync();
 
-        await AssertChangedFootprintRefusesRollbackAsync(run.Factory,
+            failurePhase = RollbackFootprintPhase;
+            await AssertChangedFootprintRefusesRollbackAsync(run.Factory,
             "UPDATE [product].[TemplateFields] SET [Role] = 'width' WHERE [TemplateId] = 'ca5be23e-1f56-40c7-9e4a-6cdfc5e884b2' AND [TemplateVersion] = 1 AND [Key] = 'thickness-mm';",
             "UPDATE [product].[TemplateFields] SET [Role] = 'thickness' WHERE [TemplateId] = 'ca5be23e-1f56-40c7-9e4a-6cdfc5e884b2' AND [TemplateVersion] = 1 AND [Key] = 'thickness-mm';");
-        await AssertChangedFootprintRefusesRollbackAsync(run.Factory,
+            await AssertChangedFootprintRefusesRollbackAsync(run.Factory,
             "UPDATE [product].[TemplateFields] SET [ParentField] = 'coating' WHERE [TemplateId] = 'ca5be23e-1f56-40c7-9e4a-6cdfc5e884b2' AND [TemplateVersion] = 1 AND [Key] = 'producer-grade';",
             "UPDATE [product].[TemplateFields] SET [ParentField] = 'steel-grade' WHERE [TemplateId] = 'ca5be23e-1f56-40c7-9e4a-6cdfc5e884b2' AND [TemplateVersion] = 1 AND [Key] = 'producer-grade';");
-        await AssertChangedFootprintRefusesRollbackAsync(run.Factory,
+            await AssertChangedFootprintRefusesRollbackAsync(run.Factory,
             "UPDATE [product].[DictionaryEntries] SET [SourceRef] = 'changed-source' WHERE [Dictionary] = 'gdc-producer-grades' AND [Code] = N'erdemir:3237';",
             "UPDATE [product].[DictionaryEntries] SET [SourceRef] = 'erdemir-flat-2021-p16' WHERE [Dictionary] = 'gdc-producer-grades' AND [Code] = N'erdemir:3237';");
 
-        await ExecuteAsync(run.Factory.DatabaseConnectionString, """
+            failurePhase = RollbackCardReferencePhase;
+            await ExecuteAsync(run.Factory.DatabaseConnectionString, """
             INSERT INTO [product].[CodeGroups] ([Id], [Name], [Prefix])
                 VALUES ('b7100000-0000-4000-8000-000000000101', N'SENTETIK rollback guard group', 'RBG');
             INSERT INTO [product].[Products]
@@ -88,20 +100,21 @@ public sealed class ProductInitialTechnicalDefinitionSqlServerRelationalAcceptan
                  N'{"templateId":"ca5be23e-1f56-40c7-9e4a-6cdfc5e884b2","templateVersion":"1"}');
             """);
 
-        var refusal = await Assert.ThrowsAsync<SqlException>(() => MigrateAsync(run.Factory, PreviousMigration));
-        Assert.Equal(51044, refusal.Number);
-        Assert.Contains("Product cards reference", refusal.Message, StringComparison.Ordinal);
-        await using (var preserved = run.Factory.Services.CreateAsyncScope())
-            AssertExactGenuine(await new SqlProductFamilyDefinitionSource(
-                preserved.ServiceProvider.GetRequiredService<ProductDbContext>()).GetAsync(default));
+            var refusal = await Assert.ThrowsAsync<SqlException>(() => MigrateAsync(run.Factory, PreviousMigration));
+            Assert.Equal(51044, refusal.Number);
+            Assert.Contains("Product cards reference", refusal.Message, StringComparison.Ordinal);
+            await using (var preserved = run.Factory.Services.CreateAsyncScope())
+                AssertExactGenuine(await new SqlProductFamilyDefinitionSource(
+                    preserved.ServiceProvider.GetRequiredService<ProductDbContext>()).GetAsync(default));
 
-        await ExecuteAsync(run.Factory.DatabaseConnectionString, $"""
+            failurePhase = RollbackReplayReferencePhase;
+            await ExecuteAsync(run.Factory.DatabaseConnectionString, $"""
             DELETE FROM [product].[Products] WHERE [Id] = '{ProductId:D}';
             """);
 
         // The current draft no longer references 4A, but its immutable successful create response still
         // does. ProductCommandGateway replays that exact card/references payload, so Down must retain its source.
-        await ExecuteAsync(run.Factory.DatabaseConnectionString, """
+            await ExecuteAsync(run.Factory.DatabaseConnectionString, """
             INSERT INTO [product].[Products]
                 ([Id], [Code], [Name], [GroupId], [ClassId], [FamilyId],
                  [PurchasableValue], [PurchasableProvenance], [SellableValue], [SellableProvenance],
@@ -113,31 +126,39 @@ public sealed class ProductInitialTechnicalDefinitionSqlServerRelationalAcceptan
                  NULL, 0, NULL, 0, NULL, 0, NULL, 0, 0, 2,
                  '2026-10-04T00:00:00+00:00', '2026-10-04T00:01:00+00:00', N'{}');
             """);
-        await InsertHistoricalReplayAsync(run.Factory.DatabaseConnectionString);
-        var historyRefusal = await Assert.ThrowsAsync<SqlException>(() => MigrateAsync(run.Factory, PreviousMigration));
-        Assert.Equal(51044, historyRefusal.Number);
-        Assert.Contains("replay history references", historyRefusal.Message, StringComparison.Ordinal);
+            await InsertHistoricalReplayAsync(run.Factory.DatabaseConnectionString);
+            var historyRefusal = await Assert.ThrowsAsync<SqlException>(() => MigrateAsync(run.Factory, PreviousMigration));
+            Assert.Equal(51044, historyRefusal.Number);
+            Assert.Contains("replay history references", historyRefusal.Message, StringComparison.Ordinal);
 
-        await ExecuteAsync(run.Factory.DatabaseConnectionString, $"""
+            failurePhase = RollbackUnreferencedPhase;
+            await ExecuteAsync(run.Factory.DatabaseConnectionString, $"""
             DELETE FROM [idempotency].[GroupSharedCommandTerminals]
                 WHERE [Subject] = 'Product' AND [CommandName] = 'product.draft.create.v1'
                   AND [IdempotencyKeyHash] = '{new string('A', 64)}';
             DELETE FROM [product].[Products] WHERE [Id] = '{ProductId:D}';
             DELETE FROM [product].[CodeGroups] WHERE [Id] = '{GroupId:D}';
             """);
-        await MigrateAsync(run.Factory, PreviousMigration);
+            await MigrateAsync(run.Factory, PreviousMigration);
 
-        Assert.Equal(0, await ScalarAsync<int>(run.Factory.DatabaseConnectionString,
-            "SELECT COUNT(*) FROM [product].[Families]"));
-        Assert.Equal(0, await ScalarAsync<int>(run.Factory.DatabaseConnectionString,
-            "SELECT COUNT(*) FROM [product].[Templates]"));
-        Assert.Equal(0, await ScalarAsync<int>(run.Factory.DatabaseConnectionString,
-            "SELECT COUNT(*) FROM [product].[DictionaryEntries]"));
+            Assert.Equal(0, await ScalarAsync<int>(run.Factory.DatabaseConnectionString,
+                "SELECT COUNT(*) FROM [product].[Families]"));
+            Assert.Equal(0, await ScalarAsync<int>(run.Factory.DatabaseConnectionString,
+                "SELECT COUNT(*) FROM [product].[Templates]"));
+            Assert.Equal(0, await ScalarAsync<int>(run.Factory.DatabaseConnectionString,
+                "SELECT COUNT(*) FROM [product].[DictionaryEntries]"));
 
-        await MigrateAsync(run.Factory, ReleaseInitialProductTechnicalDefinition.MigrationId);
-        await using var replayed = run.Factory.Services.CreateAsyncScope();
-        AssertExactGenuine(await new SqlProductFamilyDefinitionSource(
-            replayed.ServiceProvider.GetRequiredService<ProductDbContext>()).GetAsync(default));
+            failurePhase = RollbackReapplyPhase;
+            await MigrateAsync(run.Factory, ReleaseInitialProductTechnicalDefinition.MigrationId);
+            await using var replayed = run.Factory.Services.CreateAsyncScope();
+            AssertExactGenuine(await new SqlProductFamilyDefinitionSource(
+                replayed.ServiceProvider.GetRequiredService<ProductDbContext>()).GetAsync(default));
+        }
+        catch
+        {
+            output.WriteLine(failurePhase);
+            throw;
+        }
     }
 
     [SqlServerFact]
@@ -262,7 +283,7 @@ public sealed class ProductInitialTechnicalDefinitionSqlServerRelationalAcceptan
 
         public SqlServerRelationalApiFactory Factory { get; }
 
-        public static Task<Run> StartAsync()
+        public static async Task<Run> StartAsync()
         {
             var baseConnection = Environment.GetEnvironmentVariable(
                 SqlServerRelationalAcceptanceTests.ConnectionStringEnvironmentVariable)!;
@@ -270,7 +291,16 @@ public sealed class ProductInitialTechnicalDefinitionSqlServerRelationalAcceptan
             var factory = new SqlServerRelationalApiFactory(baseConnection,
                 services => services.AddProductTechnicalCardFixtureStore(), databaseName: databaseName);
             using var startup = factory.CreateClient();
-            return Task.FromResult(new Run(baseConnection, factory));
+            // Product runtime is deliberately disabled by default, so host startup does not own this
+            // migration acceptance test's Product schema. Apply the current Product migration chain
+            // explicitly before reading or mutating its release tables.
+            await using (var product = factory.Services.CreateAsyncScope())
+            {
+                await product.ServiceProvider.GetRequiredService<ProductDbContext>()
+                    .Database.MigrateAsync();
+            }
+
+            return new Run(baseConnection, factory);
         }
 
         public async ValueTask DisposeAsync()
