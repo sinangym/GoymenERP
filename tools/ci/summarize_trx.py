@@ -249,6 +249,7 @@ class ResultCollector:
         self.stdout_scanner: ClosedDiagnosticMarkerScanner | None = None
         self.stdout_chars = 0
         self.stdout_overflow = False
+        self.stdout_has_unexpected_child = False
         self.diagnostic_code: str | None = None
         self.diagnostic_ambiguous = False
 
@@ -273,8 +274,11 @@ class ResultCollector:
             self.stdout_scanner = None
             self.stdout_chars = 0
             self.stdout_overflow = False
+            self.stdout_has_unexpected_child = False
             self.diagnostic_code = None
             self.diagnostic_ambiguous = False
+        elif self.stdout_depth is not None and _depth > self.stdout_depth:
+            self.stdout_has_unexpected_child = True
         elif (
             self.result_depth is not None
             and name == "Output"
@@ -311,18 +315,42 @@ class ResultCollector:
     def end(self, name: str, depth: int) -> None:
         if name == "StdOut" and depth == self.stdout_depth:
             code = None
-            if not self.stdout_overflow and self.stdout_scanner is not None:
+            if (
+                not self.stdout_overflow
+                and not self.stdout_has_unexpected_child
+                and self.stdout_scanner is not None
+            ):
                 code = self.stdout_scanner.finish()
-            self._accept_diagnostic(code)
+            if (
+                self.stdout_overflow
+                or self.stdout_has_unexpected_child
+                or (
+                    self.stdout_scanner is not None
+                    and self.stdout_scanner.ambiguous
+                )
+            ):
+                self._reject_diagnostic()
+            else:
+                self._accept_diagnostic(code)
             self.stdout_depth = None
             self.stdout_scanner = None
             self.stdout_chars = 0
             self.stdout_overflow = False
+            self.stdout_has_unexpected_child = False
         elif name == "Message" and depth == self.message_depth:
             code = None
             if not self.message_overflow and self.message_scanner is not None:
                 code = self.message_scanner.finish()
-            self._accept_diagnostic(code)
+            if (
+                self.message_overflow
+                or (
+                    self.message_scanner is not None
+                    and self.message_scanner.ambiguous
+                )
+            ):
+                self._reject_diagnostic()
+            else:
+                self._accept_diagnostic(code)
             self.message_depth = None
             self.message_scanner = None
             self.message_chars = 0
@@ -348,6 +376,7 @@ class ResultCollector:
             self.stdout_scanner = None
             self.stdout_chars = 0
             self.stdout_overflow = False
+            self.stdout_has_unexpected_child = False
             self.diagnostic_code = None
             self.diagnostic_ambiguous = False
 
@@ -382,6 +411,10 @@ class ResultCollector:
         else:
             self.diagnostic_code = None
             self.diagnostic_ambiguous = True
+
+    def _reject_diagnostic(self) -> None:
+        self.diagnostic_code = None
+        self.diagnostic_ambiguous = True
 
 
 def result_category(outcome: str) -> tuple[str, str | None]:

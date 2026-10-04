@@ -278,6 +278,67 @@ class SafeTrxSummaryTests(unittest.TestCase):
                     self.assertNotIn("diagnosticCode", summary["failureGroups"][0])
                 self.assertNotIn("CI_SAFE_DIAGNOSTIC", encoded)
 
+    def test_stdout_with_an_unexpected_child_emits_no_diagnostic(self) -> None:
+        source = trx(
+            '<UnitTestResult testId="fail" outcome="Failed"><Output><StdOut>'
+            'CI_SAFE_DIAGNOSTIC:acc_nj_sql_<Wrapper>trial_</Wrapper>balance'
+            '</StdOut></Output></UnitTestResult>',
+            definition("fail", "GoymenERP.Tests.SafeDiagnostic", "ChildXml"),
+        )
+
+        summary, encoded = self._summary(source)
+
+        self.assertNotIn("diagnosticCode", summary["failureGroups"][0])
+        self.assertNotIn("CI_SAFE_DIAGNOSTIC", encoded)
+
+    def test_stdout_overflow_invalidates_an_earlier_message_diagnostic(self) -> None:
+        message_marker = "CI_SAFE_DIAGNOSTIC:product_price_list_startup_sql_208"
+        stdout_marker = "CI_SAFE_DIAGNOSTIC:acc_nj_sql_trial_balance\n"
+        source = trx(
+            '<UnitTestResult testId="fail" outcome="Failed"><Output>'
+            '<ErrorInfo><Message>' + message_marker + '</Message></ErrorInfo>'
+            '<StdOut>' + stdout_marker
+            + ("x" * SUMMARIZER.MAX_DIAGNOSTIC_SCAN_CHARS)
+            + '</StdOut></Output></UnitTestResult>',
+            definition("fail", "GoymenERP.Tests.SafeDiagnostic", "OverflowAcrossChannels"),
+        )
+
+        summary, encoded = self._summary(source)
+
+        self.assertNotIn("diagnosticCode", summary["failureGroups"][0])
+        self.assertNotIn("CI_SAFE_DIAGNOSTIC", encoded)
+
+    def test_ambiguous_stdout_invalidates_a_later_message_diagnostic(self) -> None:
+        stdout_marker = "CI_SAFE_DIAGNOSTIC:acc_nj_sql_trial_balance"
+        message_marker = "CI_SAFE_DIAGNOSTIC:product_price_list_startup_sql_208"
+        source = trx(
+            '<UnitTestResult testId="fail" outcome="Failed"><Output><StdOut>'
+            + stdout_marker + "\n" + stdout_marker
+            + '</StdOut><ErrorInfo><Message>' + message_marker
+            + '</Message></ErrorInfo></Output></UnitTestResult>',
+            definition("fail", "GoymenERP.Tests.SafeDiagnostic", "AmbiguousAcrossChannels"),
+        )
+
+        summary, encoded = self._summary(source)
+
+        self.assertNotIn("diagnosticCode", summary["failureGroups"][0])
+        self.assertNotIn("CI_SAFE_DIAGNOSTIC", encoded)
+
+    def test_conflicting_message_and_stdout_markers_emit_no_diagnostic(self) -> None:
+        source = trx(
+            '<UnitTestResult testId="fail" outcome="Failed"><Output><StdOut>'
+            'CI_SAFE_DIAGNOSTIC:acc_nj_sql_trial_balance'
+            '</StdOut><ErrorInfo><Message>'
+            'CI_SAFE_DIAGNOSTIC:product_price_list_startup_sql_208'
+            '</Message></ErrorInfo></Output></UnitTestResult>',
+            definition("fail", "GoymenERP.Tests.SafeDiagnostic", "ConflictingChannels"),
+        )
+
+        summary, encoded = self._summary(source)
+
+        self.assertNotIn("diagnosticCode", summary["failureGroups"][0])
+        self.assertNotIn("CI_SAFE_DIAGNOSTIC", encoded)
+
     def test_streaming_bounds_reject_result_and_metadata_overflow(self) -> None:
         cases = (
             (
