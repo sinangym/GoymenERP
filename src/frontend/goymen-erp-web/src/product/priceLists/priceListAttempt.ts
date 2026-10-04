@@ -41,7 +41,7 @@ export type PriceListUnknownReason = Extract<PriceListCommandOutcome, { readonly
 const retained = new Map<string, Exclude<PriceListAttempt, { readonly phase: 'idle' }>>()
 const settled = new Set<string>()
 
-/** Actor, session, company and screen scope; null without a committed single-company context. */
+/** Durable unresolved-attempt identity: actor, session, company and screen scope. */
 export function priceListBinding(shell: ShellState, scope: string): string | null {
   const context = shell.activeContext
   if (context === null || context.scopeMode !== 'single' || context.companyId === null) return null

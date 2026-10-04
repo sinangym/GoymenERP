@@ -89,8 +89,15 @@ public sealed class ProductPriceListService : IProductPriceListServiceV1
     public async Task<PriceListViewV1> GetAsync(Guid priceListId, CancellationToken cancellationToken = default)
     {
         var scope = await RequireAsync(ProductPriceListPermissionsV1.Read, cancellationToken);
-        var list = await store.LoadAsync(priceListId, cancellationToken)
-            ?? throw new ProductPriceListException(404, ProductPriceListCodesV1.NotFound);
+        var list = await store.LoadAsync(priceListId, cancellationToken);
+        // A missing row is company business data too. Do not disclose 404 after the actor, company or grant changed
+        // while the tenant-filtered load was in flight.
+        await RequireStillAsync(ProductPriceListPermissionsV1.Read, scope, cancellationToken);
+        if (list is null)
+        {
+            throw new ProductPriceListException(404, ProductPriceListCodesV1.NotFound);
+        }
+
         var view = await ViewAsync(list, cancellationToken);
         await RequireStillAsync(ProductPriceListPermissionsV1.Read, scope, cancellationToken);
         return view;
@@ -139,9 +146,12 @@ public sealed class ProductPriceListService : IProductPriceListServiceV1
 
         var list = Rule(() => PriceList.Create(request.PriceListId, scope.CompanyId, request.Name, request.CurrencyCode, channel, vatBasis,
             request.VersionId, validFrom, validThrough, lines, scope.ActorId, timeProvider.GetUtcNow()));
-        await RequireProductsAsync(list.Versions[0].Lines, cancellationToken);
+        await RequireProductsAsync(list.Versions[0].Lines, permission, scope, cancellationToken);
+        var nameExists = await store.NameExistsAsync(list.Name, null, cancellationToken);
+        // Both answers are company business data. Fence before the false answer can enter the mutation path as well
+        // as before a duplicate-name refusal is disclosed.
         await RequireStillAsync(permission, scope, cancellationToken);
-        if (await store.NameExistsAsync(list.Name, null, cancellationToken))
+        if (nameExists)
         {
             // The first lookup may have missed an identical request that committed while Product/name facts were awaited.
             // Only that exact company/actor/payload attempt replays; another name holder stays a duplicate-name conflict.
@@ -150,8 +160,6 @@ public sealed class ProductPriceListService : IProductPriceListServiceV1
                 return winner;
             }
 
-            // Name existence is company business data. Do not disclose it after authority changed while the lookup/replay awaits ran.
-            await RequireStillAsync(permission, scope, cancellationToken);
             throw new ProductPriceListException(409, ProductPriceListCodesV1.DuplicateName, [new("name", ProductPriceListCodesV1.DuplicateName)]);
         }
 
@@ -207,7 +215,7 @@ public sealed class ProductPriceListService : IProductPriceListServiceV1
             async (list, now) =>
             {
                 list.ReviseDraft(expectedVersion, name, validFrom, validThrough, lines, scope.ActorId, now);
-                await RequireProductsAsync(list.DraftVersion!.Lines, cancellationToken);
+                await RequireProductsAsync(list.DraftVersion!.Lines, permission, scope, cancellationToken);
             }, cancellationToken);
     }
 
@@ -263,8 +271,7 @@ public sealed class ProductPriceListService : IProductPriceListServiceV1
                 if (list.Versions.SingleOrDefault(version => version.VersionNo == request.VersionNo) is { State: PriceListVersionState.Draft } draft
                     && list.Version == expectedVersion)
                 {
-                    await RequireProductsAsync(draft.Lines, cancellationToken);
-                    await RequireStillAsync(permission, scope, cancellationToken);
+                    await RequireProductsAsync(draft.Lines, permission, scope, cancellationToken);
                 }
 
                 list.Publish(expectedVersion, request.VersionNo, DateOnly.FromDateTime(now.UtcDateTime), scope.ActorId, now);
@@ -346,6 +353,9 @@ public sealed class ProductPriceListService : IProductPriceListServiceV1
 
         if (stored is null)
         {
+            // An unknown tenant-filtered id never reaches the store's before-commit callback. Fence that negative
+            // read before exposing it as 404.
+            await RequireStillAsync(permission, scope, cancellationToken);
             throw new ProductPriceListException(404, ProductPriceListCodesV1.NotFound);
         }
 
@@ -355,13 +365,25 @@ public sealed class ProductPriceListService : IProductPriceListServiceV1
     private async Task<PriceListResultV1?> ReplayAsync(PriceListWriteEnvelope envelope, string requestHash, string commandName, string permission,
         Scope scope, CancellationToken cancellationToken)
     {
-        var replay = await StoreAsync(() => store.FindReplayAsync(envelope, requestHash, commandName, cancellationToken));
+        PriceListReplay? replay;
+        try
+        {
+            replay = await StoreAsync(() => store.FindReplayAsync(envelope, requestHash, commandName, cancellationToken));
+        }
+        catch (ProductPriceListException)
+        {
+            // Same-key content/actor mismatch is stored company data. A changed scope must win over its 409 detail.
+            await RequireStillAsync(permission, scope, cancellationToken);
+            throw;
+        }
+
+        // Fence every replay lookup answer: no-attempt, recorded success and terminal refusal.
+        await RequireStillAsync(permission, scope, cancellationToken);
         if (replay is null)
         {
             return null;
         }
 
-        await RequireStillAsync(permission, scope, cancellationToken);
         if (replay.Refusal is { } refusal)
         {
             throw new ProductPriceListException(refusal.Status, refusal.Code, refusal.Errors);
@@ -405,9 +427,13 @@ public sealed class ProductPriceListService : IProductPriceListServiceV1
     }
 
     /// <summary>Every line's product: an Active, sellable card, priced in its own stock or sales unit. All refusals together.</summary>
-    private async Task RequireProductsAsync(IReadOnlyList<PriceListLine> lines, CancellationToken cancellationToken)
+    private async Task RequireProductsAsync(IReadOnlyList<PriceListLine> lines, string permission, Scope scope,
+        CancellationToken cancellationToken)
     {
         var products = await store.ReadProductsAsync(lines.Select(line => line.ProductId).ToList(), cancellationToken);
+        // Product lifecycle/role/unit facts are owner data. Revalidate the captured scope before any detailed 422
+        // can reveal which product fact failed.
+        await RequireStillAsync(permission, scope, cancellationToken);
         var errors = new List<ProductPriceListFieldErrorV1>();
         for (var index = 0; index < lines.Count; index++)
         {
