@@ -1,3 +1,4 @@
+using GoymenERP.Modules.Manufacturing.Domain.Common;
 using GoymenERP.Modules.Manufacturing.Domain.Plans;
 
 namespace GoymenERP.Manufacturing.UnitTests;
