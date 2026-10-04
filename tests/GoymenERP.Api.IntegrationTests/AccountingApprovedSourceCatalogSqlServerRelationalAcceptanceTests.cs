@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Globalization;
+using System.Runtime.ExceptionServices;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -158,25 +159,69 @@ public sealed class AccountingApprovedSourceCatalogSqlServerRelationalAcceptance
     [SqlServerFact]
     public async Task Occupied_catalog_history_refuses_named_migration_down_with_51049_and_empty_down_up_succeeds()
     {
+        var currentPhase = OccupiedSetupPhase;
+        var markerWritten = false;
+        var cleanupStarted = false;
+        var disposables = new List<IDisposable>();
+        Run? run = null;
+        AccountingDbContext? context = null;
+
+        T Track<T>(T resource) where T : IDisposable
+        {
+            disposables.Add(resource);
+            return resource;
+        }
+
+        void WriteMarkerOnce()
+        {
+            if (markerWritten) return;
+            output.WriteLine(currentPhase);
+            markerWritten = true;
+        }
+
+        async Task CleanupAsync(bool suppressFailures)
+        {
+            if (cleanupStarted) return;
+            cleanupStarted = true;
+            ExceptionDispatchInfo? cleanupFailure = null;
+            for (var index = disposables.Count - 1; index >= 0; index--)
+            {
+                try { disposables[index].Dispose(); }
+                catch (Exception exception) { cleanupFailure ??= ExceptionDispatchInfo.Capture(exception); }
+            }
+            if (context is not null)
+            {
+                try { await context.DisposeAsync(); }
+                catch (Exception exception) { cleanupFailure ??= ExceptionDispatchInfo.Capture(exception); }
+            }
+            if (run is not null)
+            {
+                try { await run.DisposeAsync(); }
+                catch (Exception exception) { cleanupFailure ??= ExceptionDispatchInfo.Capture(exception); }
+            }
+            if (!suppressFailures) cleanupFailure?.Throw();
+        }
+
+        try
+        {
+        try
+        {
         var package = Package(Guid.NewGuid(), "mikro-synthetic-occupied-down-v1");
-        Run run;
         try
         {
             run = await Run.StartAsync();
         }
         catch
         {
-            output.WriteLine(OccupiedSetupPhase);
             throw;
         }
-        await using var runLifetime = run;
 
         Counts before = null!;
         try
         {
             await run.GrantAsync(Preparer, CompanyA, PreparePermission);
-            using (var client = run.Client(Preparer, CompanyA))
-            using (var response = await PrepareAsync(client, package, Key("occupied-down")))
+            var client = Track(run.Client(Preparer, CompanyA));
+            var response = Track(await PrepareAsync(client, package, Key("occupied-down")));
             {
                 Assert.Equal(HttpStatusCode.Created, response.StatusCode);
                 AssertResource(await Json(response), package.Id, "Prepared", 1, null);
@@ -187,15 +232,15 @@ public sealed class AccountingApprovedSourceCatalogSqlServerRelationalAcceptance
         }
         catch
         {
-            output.WriteLine(OccupiedSetupPhase);
             throw;
         }
 
         var company = new CompanyContext();
         company.Set(CompanyA);
-        await using var context = run.Context(company);
+        context = run.Context(company);
         var migrator = context.GetService<IMigrator>();
 
+        currentPhase = OccupiedDownRefusalPhase;
         try
         {
             var occupied = await Assert.ThrowsAsync<SqlException>(() =>
@@ -211,10 +256,10 @@ public sealed class AccountingApprovedSourceCatalogSqlServerRelationalAcceptance
         }
         catch
         {
-            output.WriteLine(OccupiedDownRefusalPhase);
             throw;
         }
 
+        currentPhase = OccupiedEmptyDownUpPhase;
         try
         {
             var packagePattern = $"%{package.Id:D}%";
@@ -248,7 +293,23 @@ public sealed class AccountingApprovedSourceCatalogSqlServerRelationalAcceptance
         }
         catch
         {
-            output.WriteLine(OccupiedEmptyDownUpPhase);
+            throw;
+        }
+        }
+        catch
+        {
+            WriteMarkerOnce();
+            await CleanupAsync(suppressFailures: true);
+            throw;
+        }
+        finally
+        {
+            if (!cleanupStarted) await CleanupAsync(suppressFailures: false);
+        }
+        }
+        catch
+        {
+            WriteMarkerOnce();
             throw;
         }
     }
@@ -256,21 +317,59 @@ public sealed class AccountingApprovedSourceCatalogSqlServerRelationalAcceptance
     [SqlServerFact]
     public async Task Durable_catalog_and_recorded_finance_source_create_reopen_approve_and_report_one_normal_journal()
     {
+        var currentPhase = StartupBankSeedPhase;
+        var markerWritten = false;
+        var cleanupStarted = false;
+        var disposables = new List<IDisposable>();
+        Run? run = null;
+
+        T Track<T>(T resource) where T : IDisposable
+        {
+            disposables.Add(resource);
+            return resource;
+        }
+
+        void WriteMarkerOnce()
+        {
+            if (markerWritten) return;
+            output.WriteLine(currentPhase);
+            markerWritten = true;
+        }
+
+        async Task CleanupAsync(bool suppressFailures)
+        {
+            if (cleanupStarted) return;
+            cleanupStarted = true;
+            ExceptionDispatchInfo? cleanupFailure = null;
+            for (var index = disposables.Count - 1; index >= 0; index--)
+            {
+                try { disposables[index].Dispose(); }
+                catch (Exception exception) { cleanupFailure ??= ExceptionDispatchInfo.Capture(exception); }
+            }
+            if (run is not null)
+            {
+                try { await run.DisposeAsync(); }
+                catch (Exception exception) { cleanupFailure ??= ExceptionDispatchInfo.Capture(exception); }
+            }
+            if (!suppressFailures) cleanupFailure?.Throw();
+        }
+
+        try
+        {
+        try
+        {
         var draftId = Guid.NewGuid();
         var periodId = Guid.NewGuid();
         var occurredOn = new DateOnly(2026, 10, 2);
         const string amount = "10.00";
-        Run run;
         try
         {
             run = await Run.StartAsync(useRealFinanceSource: true);
         }
         catch
         {
-            output.WriteLine(StartupBankSeedPhase);
             throw;
         }
-        await using var runLifetime = run;
         var profile = ApprovedMoneyProfileCatalog.GdcTurkishLiraV1;
         var financeCurrencyId = profile.CurrencyId;
         Guid bankAccountId;
@@ -286,7 +385,6 @@ public sealed class AccountingApprovedSourceCatalogSqlServerRelationalAcceptance
         }
         catch
         {
-            output.WriteLine(StartupBankSeedPhase);
             throw;
         }
 
@@ -310,12 +408,13 @@ public sealed class AccountingApprovedSourceCatalogSqlServerRelationalAcceptance
         var financeRecordKey = Key("finance-record");
         string draftVersion = null!;
         JsonElement recordedBody = default;
-        using var financeClient = run.Client(Preparer, CompanyA);
+        currentPhase = ReceiptPreparePhase;
+        var financeClient = Track(run.Client(Preparer, CompanyA));
         try
         {
-            using (var saved = await SendJsonAsync(financeClient, FinanceEndpoints.DraftsPath,
-                       Key("finance-draft"), financeDraftRequest))
             {
+                var saved = Track(await SendJsonAsync(financeClient, FinanceEndpoints.DraftsPath,
+                    Key("finance-draft"), financeDraftRequest));
                 Assert.Equal(HttpStatusCode.OK, saved.StatusCode);
                 var resource = (await Json(saved)).GetProperty("resource");
                 var source = resource.GetProperty("source");
@@ -326,17 +425,17 @@ public sealed class AccountingApprovedSourceCatalogSqlServerRelationalAcceptance
         }
         catch
         {
-            output.WriteLine(ReceiptPreparePhase);
             throw;
         }
 
         var recordRequest = new RecordRequest(financeSourceId, draftVersion);
+        currentPhase = ReceiptRecordPhase;
         try
         {
-            using (var recorded = await SendJsonAsync(financeClient,
-                       $"{FinanceEndpoints.ManualReceiptsPath}/{financeSourceId:D}/record",
-                       financeRecordKey, recordRequest))
             {
+                var recorded = Track(await SendJsonAsync(financeClient,
+                    $"{FinanceEndpoints.ManualReceiptsPath}/{financeSourceId:D}/record",
+                    financeRecordKey, recordRequest));
                 Assert.Equal(HttpStatusCode.OK, recorded.StatusCode);
                 Assert.False(IsReplay(recorded));
                 recordedBody = await Json(recorded);
@@ -355,16 +454,16 @@ public sealed class AccountingApprovedSourceCatalogSqlServerRelationalAcceptance
         }
         catch
         {
-            output.WriteLine(ReceiptRecordPhase);
             throw;
         }
 
+        currentPhase = ReceiptReplayFreshReadCountsPhase;
         try
         {
-            using (var replay = await SendJsonAsync(financeClient,
-                       $"{FinanceEndpoints.ManualReceiptsPath}/{financeSourceId:D}/record",
-                       financeRecordKey, recordRequest))
             {
+                var replay = Track(await SendJsonAsync(financeClient,
+                    $"{FinanceEndpoints.ManualReceiptsPath}/{financeSourceId:D}/record",
+                    financeRecordKey, recordRequest));
                 Assert.Equal(HttpStatusCode.OK, replay.StatusCode);
                 Assert.True(IsReplay(replay));
                 var replayBody = await Json(replay);
@@ -377,9 +476,9 @@ public sealed class AccountingApprovedSourceCatalogSqlServerRelationalAcceptance
                 Assert.Equal(recordedBody.GetProperty("resource").GetRawText(),
                     replayBody.GetProperty("resource").GetRawText());
             }
-            using (var detailResponse = await financeClient.GetAsync(
-                       $"{FinanceEndpoints.ManualReceiptsPath}/{financeSourceId:D}"))
             {
+                var detailResponse = Track(await financeClient.GetAsync(
+                    $"{FinanceEndpoints.ManualReceiptsPath}/{financeSourceId:D}"));
                 Assert.Equal(HttpStatusCode.OK, detailResponse.StatusCode);
                 var detail = await Json(detailResponse);
                 Assert.Equal((financeSourceId, financeSourceVersion, "Recorded", financeProfileId,
@@ -402,26 +501,26 @@ public sealed class AccountingApprovedSourceCatalogSqlServerRelationalAcceptance
         }
         catch
         {
-            output.WriteLine(ReceiptReplayFreshReadCountsPhase);
             throw;
         }
 
         PackageData package = null!;
         string preparationVersion = null!;
+        currentPhase = CatalogPrepareActivatePhase;
         try
         {
         var binding = new FinanceSourceBinding(
             financeSourceId, financeSourceVersion, financeProfileId, financeProfileVersion, financeCurrencyId);
         package = Package(Guid.NewGuid(), "mikro-synthetic-normal-journal-v1", binding: binding);
 
-        using (var catalogClient = run.Client(Preparer, CompanyA))
         {
+            var catalogClient = Track(run.Client(Preparer, CompanyA));
             await PrepareAndActivateAsync(catalogClient, package, 0, "normal-journal");
         }
 
-        using (var sourceClient = run.Client(Preparer, CompanyA))
-        using (var sourceResponse = await sourceClient.GetAsync($"{NormalDraftSourcesPath}/{financeSourceId:D}"))
         {
+            var sourceClient = Track(run.Client(Preparer, CompanyA));
+            var sourceResponse = Track(await sourceClient.GetAsync($"{NormalDraftSourcesPath}/{financeSourceId:D}"));
             Assert.Equal(HttpStatusCode.OK, sourceResponse.StatusCode);
             var source = await Json(sourceResponse);
             preparationVersion = source.GetProperty("preparationVersion").GetString()!;
@@ -436,24 +535,24 @@ public sealed class AccountingApprovedSourceCatalogSqlServerRelationalAcceptance
         }
         catch
         {
-            output.WriteLine(CatalogPrepareActivatePhase);
             throw;
         }
 
         string totalDebit = null!;
         string totalCredit = null!;
+        currentPhase = JournalCreateReplayApprovePhase;
         try
         {
-        using (var proposer = run.Client(Preparer, CompanyA))
-        using (var proposed = await SendJsonAsync(proposer, PeriodsPath, Key("period-propose"),
-                   new ProposePeriodRequestV1(periodId, new DateOnly(2026, 10, 1), new DateOnly(2026, 10, 31))))
         {
+            var proposer = Track(run.Client(Preparer, CompanyA));
+            var proposed = Track(await SendJsonAsync(proposer, PeriodsPath, Key("period-propose"),
+                new ProposePeriodRequestV1(periodId, new DateOnly(2026, 10, 1), new DateOnly(2026, 10, 31))));
             Assert.Equal(HttpStatusCode.Created, proposed.StatusCode);
         }
-        using (var checker = run.Client(OtherActor, CompanyA))
-        using (var approved = await SendJsonAsync(checker, $"{PeriodsPath}/{periodId:D}/approval",
-                   Key("period-approve"), new PeriodCommandRequestV1(1)))
         {
+            var checker = Track(run.Client(OtherActor, CompanyA));
+            var approved = Track(await SendJsonAsync(checker, $"{PeriodsPath}/{periodId:D}/approval",
+                Key("period-approve"), new PeriodCommandRequestV1(1)));
             Assert.Equal(HttpStatusCode.OK, approved.StatusCode);
         }
 
@@ -465,9 +564,9 @@ public sealed class AccountingApprovedSourceCatalogSqlServerRelationalAcceptance
             ]);
         var createKey = Key("draft-create");
         JsonElement createdBody;
-        using (var createClient = run.Client(Preparer, CompanyA))
-        using (var created = await SendJsonAsync(createClient, NormalDraftsPath, createKey, createRequest))
         {
+            var createClient = Track(run.Client(Preparer, CompanyA));
+            var created = Track(await SendJsonAsync(createClient, NormalDraftsPath, createKey, createRequest));
             Assert.Equal(HttpStatusCode.Created, created.StatusCode);
             Assert.False(IsReplay(created));
             createdBody = await Json(created);
@@ -479,17 +578,17 @@ public sealed class AccountingApprovedSourceCatalogSqlServerRelationalAcceptance
             Assert.Equal(package.AccountsSha256,
                 createdBody.GetProperty("accountPlanSourceSha256").GetString());
         }
-        using (var replayClient = run.Client(Preparer, CompanyA))
-        using (var replay = await SendJsonAsync(replayClient, NormalDraftsPath, createKey, createRequest))
         {
+            var replayClient = Track(run.Client(Preparer, CompanyA));
+            var replay = Track(await SendJsonAsync(replayClient, NormalDraftsPath, createKey, createRequest));
             Assert.Equal(HttpStatusCode.Created, replay.StatusCode);
             Assert.True(IsReplay(replay));
             Assert.Equal(createdBody.GetRawText(), (await Json(replay)).GetRawText());
         }
 
-        using (var reopenClient = run.Client(Preparer, CompanyA))
-        using (var reopened = await reopenClient.GetAsync($"{NormalDraftsPath}/{draftId:D}"))
         {
+            var reopenClient = Track(run.Client(Preparer, CompanyA));
+            var reopened = Track(await reopenClient.GetAsync($"{NormalDraftsPath}/{draftId:D}"));
             Assert.Equal(HttpStatusCode.OK, reopened.StatusCode);
             var body = await Json(reopened);
             Assert.Equal((draftId, financeSourceId, "Draft", 1L),
@@ -500,10 +599,10 @@ public sealed class AccountingApprovedSourceCatalogSqlServerRelationalAcceptance
         var approveRequest = new ApproveNormalJournalDraftRequestV1(1, periodId);
         var approveKey = Key("draft-approve");
         JsonElement approvedBody;
-        using (var approveClient = run.Client(Preparer, CompanyA))
-        using (var approved = await SendJsonAsync(approveClient, $"{NormalDraftsPath}/{draftId:D}/approval",
-                   approveKey, approveRequest))
         {
+            var approveClient = Track(run.Client(Preparer, CompanyA));
+            var approved = Track(await SendJsonAsync(approveClient, $"{NormalDraftsPath}/{draftId:D}/approval",
+                approveKey, approveRequest));
             Assert.Equal(HttpStatusCode.OK, approved.StatusCode);
             Assert.False(IsReplay(approved));
             approvedBody = await Json(approved);
@@ -513,18 +612,18 @@ public sealed class AccountingApprovedSourceCatalogSqlServerRelationalAcceptance
                     approvedBody.GetProperty("postedJournalId").GetGuid(),
                     approvedBody.GetProperty("status").GetString(), approvedBody.GetProperty("version").GetInt64()));
         }
-        using (var replayClient = run.Client(Preparer, CompanyA))
-        using (var replay = await SendJsonAsync(replayClient, $"{NormalDraftsPath}/{draftId:D}/approval",
-                   approveKey, approveRequest))
         {
+            var replayClient = Track(run.Client(Preparer, CompanyA));
+            var replay = Track(await SendJsonAsync(replayClient, $"{NormalDraftsPath}/{draftId:D}/approval",
+                approveKey, approveRequest));
             Assert.Equal(HttpStatusCode.OK, replay.StatusCode);
             Assert.True(IsReplay(replay));
             Assert.Equal(approvedBody.GetRawText(), (await Json(replay)).GetRawText());
         }
 
-        using (var reopenClient = run.Client(Preparer, CompanyA))
-        using (var reopened = await reopenClient.GetAsync($"{NormalDraftsPath}/{draftId:D}"))
         {
+            var reopenClient = Track(run.Client(Preparer, CompanyA));
+            var reopened = Track(await reopenClient.GetAsync($"{NormalDraftsPath}/{draftId:D}"));
             Assert.Equal(HttpStatusCode.OK, reopened.StatusCode);
             var body = await Json(reopened);
             Assert.Equal(("Approved", 2L, draftId),
@@ -532,9 +631,9 @@ public sealed class AccountingApprovedSourceCatalogSqlServerRelationalAcceptance
                     body.GetProperty("postedJournalId").GetGuid()));
         }
 
-        using (var journalClient = run.Client(Preparer, CompanyA))
-        using (var journalResponse = await journalClient.GetAsync($"{JournalsPath}/{draftId:D}"))
         {
+            var journalClient = Track(run.Client(Preparer, CompanyA));
+            var journalResponse = Track(await journalClient.GetAsync($"{JournalsPath}/{draftId:D}"));
             Assert.Equal(HttpStatusCode.OK, journalResponse.StatusCode);
             var detail = await Json(journalResponse);
             var journal = detail.GetProperty("journal");
@@ -553,17 +652,17 @@ public sealed class AccountingApprovedSourceCatalogSqlServerRelationalAcceptance
         }
         catch
         {
-            output.WriteLine(JournalCreateReplayApprovePhase);
             throw;
         }
 
+        currentPhase = TrialBalancePhase;
         try
         {
-        using (var reportClient = run.Client(Preparer, CompanyA))
-        using (var reportResponse = await reportClient.GetAsync(
-                   $"{TrialBalancePath}?fromAccountingDate={occurredOn:yyyy-MM-dd}"
-                   + $"&throughAccountingDate={occurredOn:yyyy-MM-dd}&currencyId={financeCurrencyId:D}"))
         {
+            var reportClient = Track(run.Client(Preparer, CompanyA));
+            var reportResponse = Track(await reportClient.GetAsync(
+                $"{TrialBalancePath}?fromAccountingDate={occurredOn:yyyy-MM-dd}"
+                + $"&throughAccountingDate={occurredOn:yyyy-MM-dd}&currencyId={financeCurrencyId:D}"));
             Assert.Equal(HttpStatusCode.OK, reportResponse.StatusCode);
             var report = await Json(reportResponse);
             Assert.Equal(2, report.GetProperty("lines").GetArrayLength());
@@ -575,7 +674,23 @@ public sealed class AccountingApprovedSourceCatalogSqlServerRelationalAcceptance
         }
         catch
         {
-            output.WriteLine(TrialBalancePhase);
+            throw;
+        }
+        }
+        catch
+        {
+            WriteMarkerOnce();
+            await CleanupAsync(suppressFailures: true);
+            throw;
+        }
+        finally
+        {
+            if (!cleanupStarted) await CleanupAsync(suppressFailures: false);
+        }
+        }
+        catch
+        {
+            WriteMarkerOnce();
             throw;
         }
     }
