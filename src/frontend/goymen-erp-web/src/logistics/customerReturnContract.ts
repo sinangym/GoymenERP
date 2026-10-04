@@ -90,7 +90,8 @@ const returnKeys = [
 
 const responseKeys = ["return", "isReplay", "originalCorrelationId"] as const;
 const correlationIdMaximumLength = 128;
-const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const guidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const emptyGuid = "00000000-0000-0000-0000-000000000000";
 const positiveDecimalPattern = /^(?:0*[1-9]\d*)(?:\.\d+)?$|^0*\.\d*[1-9]\d*$/;
 const versionPattern = /^(?:0|[1-9]\d*)$/;
 
@@ -105,7 +106,7 @@ function hasExactKeys(value: Record<string, unknown>, keys: readonly string[]): 
 }
 
 function isUuid(value: unknown): value is string {
-  return typeof value === "string" && uuidPattern.test(value);
+  return typeof value === "string" && guidPattern.test(value) && value.toLowerCase() !== emptyGuid;
 }
 
 function isBoundedText(value: unknown, maximumLength: number): value is string {
