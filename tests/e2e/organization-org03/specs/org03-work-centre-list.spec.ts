@@ -1,4 +1,4 @@
-import { expect, test, type Locator, type Page, type Response as PageResponse } from '@playwright/test'
+import { expect, test, type Locator, type Page, type Request, type Response as PageResponse } from '@playwright/test'
 import { EDITOR_ACTOR, GDC_COMPANY_ID, READER_ACTOR, WORK_CENTERS_ONLY_ACTOR, readEnvironment } from '../src/env'
 
 /**
@@ -417,6 +417,11 @@ const NEW_LOCATION = {
   editedName: 'SENTETIK org03 lokasyon (düzenlendi)',
 }
 const NEW_WORK_CENTRE = { code: 'ORG03-ME-WC', name: 'SENTETIK org03 iş merkezi', editedName: 'SENTETIK org03 iş merkezi (düzenlendi)' }
+const UNKNOWN_SITE = {
+  code: 'ORG03-ME-LOSS',
+  name: 'SENTETIK org03 yanıt kaybı tesisi',
+  reason: 'SENTETIK org03: kaydedilen yanıt ulaşmadı',
+}
 
 function apiHeaders(actor: string): Record<string, string> {
   return { [DEVELOPMENT_USER_HEADER]: actor, 'X-Company-Id': GDC_COMPANY_ID }
@@ -579,6 +584,94 @@ test('ORG-ME-01 the editor creates a site, a location under it and a work centre
       id: workCentre.id, locationId: location.id, code: NEW_WORK_CENTRE.code, name: NEW_WORK_CENTRE.editedName,
     }),
   ])
+})
+
+test('ORG-ME-04 a committed site create whose answer is lost stays frozen, replays the same command, and reopens once', async ({ page }) => {
+  await signInAs(page, EDITOR_ACTOR)
+
+  let firstRequest: Request | null = null
+  let firstStatus: number | null = null
+  let committed: { readonly id: string; readonly version: number } | null = null
+  await page.route(`**${SITES_API}`, async (route) => {
+    if (route.request().method() !== 'POST' || firstRequest !== null) return route.fallback()
+    firstRequest = route.request()
+    const response = await route.fetch({
+      headers: { ...route.request().headers(), [DEVELOPMENT_USER_HEADER]: EDITOR_ACTOR },
+    })
+    firstStatus = response.status()
+    committed = await response.json() as { readonly id: string; readonly version: number }
+    await route.abort('failed')
+  })
+
+  await page.goto(LOCATION_LIST_ROUTE)
+  await expect(page.getByRole('heading', { level: 1, name: 'Organizasyon' })).toBeVisible({ timeout: 30_000 })
+  await page.getByRole('button', { name: 'Yeni tesis', exact: true }).click()
+  const form = page.getByRole('region', { name: 'Yeni tesis' })
+  await fillMasterForm(form, {
+    code: UNKNOWN_SITE.code,
+    name: UNKNOWN_SITE.name,
+    choice: { label: 'Tesis türü', option: 'Depo' },
+    reason: UNKNOWN_SITE.reason,
+  })
+  await form.getByRole('button', { name: 'Kaydet', exact: true }).click()
+
+  const unknown = form.locator('[data-outcome="unknown"]')
+  await expect(unknown).toBeVisible({ timeout: 30_000 })
+  await expect(unknown).toContainText('Sunucuya ulaşılamadı — sonuç bilinmiyor')
+  expect(firstStatus).toBe(201)
+  expect(committed).toMatchObject({ id: expect.stringMatching(/^[0-9a-f-]{36}$/), version: expect.any(Number) })
+  const first = firstRequest as Request | null
+  expect(first).not.toBeNull()
+  const firstHeaders = first!.headers()
+  const firstKey = firstHeaders['idempotency-key']
+  const firstBody = first!.postDataJSON()
+  expect(firstHeaders['x-company-id']).toBe(GDC_COMPANY_ID)
+  expect(firstKey).toMatch(/.+/)
+  expect(firstBody).toEqual({
+    code: UNKNOWN_SITE.code,
+    name: UNKNOWN_SITE.name,
+    type: 'Warehouse',
+    reason: UNKNOWN_SITE.reason,
+  })
+
+  // The browser cannot know whether the 201 was committed, so the exact submitted snapshot stays immutable.
+  await expect(form.getByLabel('Kod', { exact: true })).toHaveValue(UNKNOWN_SITE.code)
+  await expect(form.getByLabel('Kod', { exact: true })).toHaveAttribute('readonly', '')
+  await expect(form.getByLabel('Ad', { exact: true })).toHaveValue(UNKNOWN_SITE.name)
+  await expect(form.getByLabel('Ad', { exact: true })).toHaveAttribute('readonly', '')
+  await expect(form.getByLabel('Tesis türü', { exact: true })).toBeDisabled()
+  await expect(form.getByLabel('Gerekçe', { exact: true })).toHaveValue(UNKNOWN_SITE.reason)
+  await expect(form.getByLabel('Gerekçe', { exact: true })).toHaveAttribute('readonly', '')
+  await expect(form.getByRole('button', { name: 'Kaydet', exact: true })).toHaveCount(0)
+
+  const replayAnswer = page.waitForResponse((response) => isCall(response, 'POST', SITES_API))
+  await form.getByRole('button', { name: 'Aynı işlem anahtarıyla tekrar gönder', exact: true }).click()
+  const replay = await replayAnswer
+  expect(replay.status()).toBe(201)
+  expect(replay.headers()['idempotency-replayed']).toBe('true')
+  expect(replay.request().headers()['x-company-id']).toBe(firstHeaders['x-company-id'])
+  expect(replay.request().headers()['idempotency-key']).toBe(firstKey)
+  expect(replay.request().postDataJSON()).toEqual(firstBody)
+  expect(await replay.json()).toEqual(committed)
+  await expect(page.getByRole('status').filter({ hasText: 'Aynı işlem zaten kaydedilmişti' })).toBeVisible({ timeout: 30_000 })
+
+  const fresh = await page.request.get(`${apiBaseUrl}${SITES_API}`, { headers: apiHeaders(EDITOR_ACTOR) })
+  expect(fresh.status()).toBe(200)
+  const matching = (await fresh.json() as readonly {
+    readonly id: string; readonly code: string; readonly name: string; readonly version: number
+  }[]).filter((site) => site.code === UNKNOWN_SITE.code)
+  expect(matching).toEqual([
+    expect.objectContaining({ id: committed!.id, name: UNKNOWN_SITE.name, version: committed!.version }),
+  ])
+
+  // Close and reopen through a fresh list read; the edit form must be populated from the single stored record.
+  await page.goto('/')
+  await page.goto(LOCATION_LIST_ROUTE)
+  await expect(page.getByText(UNKNOWN_SITE.name, { exact: true })).toBeVisible({ timeout: 30_000 })
+  await page.getByRole('button', { name: `Tesisi düzenle: ${UNKNOWN_SITE.code}`, exact: true }).click()
+  const reopened = page.getByRole('region', { name: `Tesisi düzenle: ${UNKNOWN_SITE.code}` })
+  await expect(reopened.getByLabel('Kod', { exact: true })).toHaveValue(UNKNOWN_SITE.code)
+  await expect(reopened.getByLabel('Ad', { exact: true })).toHaveValue(UNKNOWN_SITE.name)
 })
 
 test('ORG-ME-02 a replayed create applies once, another body under the same key is refused, and a stale edit is a 409 that changes nothing', async ({ page }) => {
