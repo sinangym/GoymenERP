@@ -27,7 +27,7 @@ public static class LogisticsCustomerReturnEndpoints
                 var result = await service.GetAsync(customerReturnId, token);
                 return result is null ? Results.Problem(statusCode: 404) : Results.Json(result, LogisticsJson.Options);
             }
-            catch (LogisticsCustomerReturnServiceException exception) { return Problem(exception, correlation); }
+            catch (LogisticsCustomerReturnServiceException exception) { return Problem(exception, correlation, context.Response); }
         }).WithName("GetLogisticsCustomerReturnV1")
             .Produces<CustomerReturnViewV1>().ProducesErpCodeLessNotFound().ProducesErpServiceUnavailable().ProducesErpAuthenticatedProblems();
 
@@ -36,7 +36,7 @@ public static class LogisticsCustomerReturnEndpoints
         {
             NoStore(context.Response);
             try { return Results.Json(await service.ListOrderReturnsAsync(salesOrderId, token), LogisticsJson.Options); }
-            catch (LogisticsCustomerReturnServiceException exception) { return Problem(exception, correlation); }
+            catch (LogisticsCustomerReturnServiceException exception) { return Problem(exception, correlation, context.Response); }
         }).WithName("GetLogisticsOrderCustomerReturnsV1")
             .Produces<CustomerReturnViewV1[]>().ProducesErpServiceUnavailable().ProducesErpAuthenticatedProblems();
 
@@ -48,7 +48,8 @@ public static class LogisticsCustomerReturnEndpoints
             .Accepts<RequestCustomerReturnV1>("application/json").Produces<CustomerReturnResponseV1>(201)
             .ProducesErpBadRequest("validation_failed", "command_metadata_invalid").AllowsEmptyErpBadRequestBody()
             .ProducesErpUnsupportedMediaType().ProducesErpCodeLessNotFound()
-            .ProducesErpConflict(LogisticsCustomerReturnCodesV1.VersionConflict, "same_key_payload_mismatch", "concurrent_change")
+            .ProducesErpConflict(LogisticsCustomerReturnCodesV1.VersionConflict,
+                LogisticsCustomerReturnCodesV1.QuantityExceeded, "same_key_payload_mismatch", "concurrent_change")
             .ProducesErpUnprocessableEntity("validation_failed").ProducesErpServiceUnavailable().ProducesErpAuthenticatedProblems();
 
         group.MapPost("/customer-returns/{customerReturnId:guid}/approve",
@@ -61,6 +62,7 @@ public static class LogisticsCustomerReturnEndpoints
                 InventoryCustomerReturnCodesV1.InvalidQuantity).AllowsEmptyErpBadRequestBody().ProducesErpUnsupportedMediaType()
             .ProducesErpCodeLessNotFound().ProducesErpConflict(LogisticsCustomerReturnCodesV1.VersionConflict,
                 LogisticsCustomerReturnCodesV1.QuantityExceeded, LogisticsCustomerReturnCodesV1.SourceInvalid,
+                LogisticsCustomerReturnCodesV1.NotPending, LogisticsCustomerReturnCodesV1.OwnDecision,
                 InventoryCustomerReturnCodesV1.ShipmentNotRecorded, InventoryCustomerReturnCodesV1.ReturnExceedsShipment,
                 InventoryCustomerReturnCodesV1.IdempotencyConflict, InventoryCustomerReturnCodesV1.ConcurrentChange,
                 "same_key_payload_mismatch", "concurrent_change")
@@ -74,7 +76,9 @@ public static class LogisticsCustomerReturnEndpoints
             .Accepts<RejectCustomerReturnV1>("application/json").Produces<CustomerReturnResponseV1>(200)
             .ProducesErpBadRequest("validation_failed", "command_metadata_invalid").AllowsEmptyErpBadRequestBody()
             .ProducesErpUnsupportedMediaType().ProducesErpCodeLessNotFound()
-            .ProducesErpConflict(LogisticsCustomerReturnCodesV1.VersionConflict, "same_key_payload_mismatch", "concurrent_change")
+            .ProducesErpConflict(LogisticsCustomerReturnCodesV1.VersionConflict,
+                LogisticsCustomerReturnCodesV1.NotPending, LogisticsCustomerReturnCodesV1.OwnDecision,
+                "same_key_payload_mismatch", "concurrent_change")
             .ProducesErpUnprocessableEntity("validation_failed").ProducesErpServiceUnavailable().ProducesErpAuthenticatedProblems();
         return endpoints;
     }
@@ -105,8 +109,8 @@ public static class LogisticsCustomerReturnEndpoints
             }
             return Results.Json(response, LogisticsJson.Options, statusCode: status);
         }
-        catch (LogisticsCustomerReturnServiceException exception) { return Problem(exception, correlation); }
-        catch (LogisticsStoreException exception) { return Problem(Store(exception), correlation); }
+        catch (LogisticsCustomerReturnServiceException exception) { return Problem(exception, correlation, context.Response); }
+        catch (LogisticsStoreException exception) { return Problem(Store(exception), correlation, context.Response); }
     }
 
     private static bool TryKey(IHeaderDictionary headers, out string key)
@@ -118,9 +122,28 @@ public static class LogisticsCustomerReturnEndpoints
         return true;
     }
 
-    private static IResult Problem(LogisticsCustomerReturnServiceException exception, ICorrelationContext correlation) =>
-        exception.Status is 401 or 403 or 404 or 503 ? Results.Problem(statusCode: exception.Status)
-            : Coded(exception.Status, exception.Code, correlation);
+    private static IResult Problem(LogisticsCustomerReturnServiceException exception, ICorrelationContext correlation,
+        HttpResponse response)
+    {
+        if (exception.IsReplay && !string.IsNullOrWhiteSpace(exception.OriginalCorrelationId))
+        {
+            response.Headers["Idempotency-Replayed"] = "true";
+            response.Headers["Idempotency-Original-Correlation-Id"] = exception.OriginalCorrelationId;
+        }
+        if (exception.Status is 401 or 403 or 404 or 503) return Results.Problem(statusCode: exception.Status);
+
+        var extensions = new Dictionary<string, object?>
+        {
+            ["code"] = exception.Code,
+            ["correlationId"] = correlation.IsResolved ? correlation.CorrelationId : null,
+        };
+        if (exception.Errors.Count > 0) extensions["errors"] = exception.Errors;
+        if (exception.ExpectedVersion is not null)
+            extensions["expectedVersion"] = exception.ExpectedVersion.Value.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        if (exception.CurrentVersion is not null)
+            extensions["currentVersion"] = exception.CurrentVersion.Value.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        return Results.Problem(statusCode: exception.Status, extensions: extensions);
+    }
 
     private static LogisticsCustomerReturnServiceException Store(LogisticsStoreException exception) => exception.Code switch
     {

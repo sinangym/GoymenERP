@@ -123,7 +123,9 @@ internal sealed class LogisticsCustomerReturnTransactionRunner(LogisticsDbContex
                 throw new LogisticsCustomerReturnServiceException(403, "forbidden");
             var measured = await authority.RevalidatePermissionScopeAsync(
                 ErpPermissions.InventoryPhysicalAllocationWrite, companyId, cancellationToken);
-            if (!measured.IsGranted || !measured.IsCompanyWide)
+            if (!measured.IsGranted || !measured.IsCompanyWide
+                || !user.IsAuthenticated || !string.Equals(user.UserId, actorId, StringComparison.Ordinal)
+                || !company.IsResolved || company.CompanyId != companyId || !user.CanAccessCompany(companyId))
                 throw new LogisticsCustomerReturnServiceException(403, "forbidden");
             roleCodes = [.. measured.RoleCodes.Order(StringComparer.Ordinal)];
         }

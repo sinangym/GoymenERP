@@ -388,17 +388,19 @@ partial class LogisticsDbContextModelSnapshot : ModelSnapshot
             b.Property<string>("IdempotencyKeyHash").IsRequired().HasMaxLength(64).IsUnicode(false).HasColumnType("varchar(64)").UseCollation("Latin1_General_100_BIN2");
             b.Property<string>("ActorId").IsRequired().HasMaxLength(128).HasColumnType("nvarchar(128)");
             b.Property<string>("CorrelationId").IsRequired().HasMaxLength(128).HasColumnType("nvarchar(128)");
-            b.Property<Guid>("CustomerReturnId").HasColumnType("uniqueidentifier");
+            b.Property<Guid?>("CustomerReturnId").HasColumnType("uniqueidentifier");
+            b.Property<int>("Outcome").HasColumnType("int");
             b.Property<DateTimeOffset>("RecordedAtUtc").HasColumnType("datetimeoffset");
-            b.Property<string>("ResultJson").IsRequired().HasColumnType("nvarchar(max)");
+            b.Property<string>("RefusalJson").HasColumnType("nvarchar(max)");
+            b.Property<string>("ResultJson").HasColumnType("nvarchar(max)");
             b.Property<string>("RequestHash").IsRequired().HasMaxLength(64).IsUnicode(false).HasColumnType("varchar(64)");
             b.HasKey("CompanyId", "CommandName", "IdempotencyKeyHash");
             b.HasIndex("CompanyId", "CustomerReturnId");
             b.ToTable("CustomerReturnAttempts", "logistics", t =>
             {
                 t.HasCheckConstraint("CK_CustomerReturnAttempts_Hashes", "LEN([IdempotencyKeyHash]) = 64 AND LEN([RequestHash]) = 64");
-                t.HasCheckConstraint("CK_CustomerReturnAttempts_Identity", "[CustomerReturnId] <> '00000000-0000-0000-0000-000000000000' AND LEN([CommandName]) > 0 AND LEN([ActorId]) > 0 AND LEN([CorrelationId]) > 0");
-                t.HasCheckConstraint("CK_CustomerReturnAttempts_Result", "ISJSON([ResultJson]) = 1");
+                t.HasCheckConstraint("CK_CustomerReturnAttempts_Identity", "LEN([CommandName]) > 0 AND LEN([ActorId]) > 0 AND LEN([CorrelationId]) > 0");
+                t.HasCheckConstraint("CK_CustomerReturnAttempts_Outcome", "([Outcome] = 1 AND [CustomerReturnId] IS NOT NULL AND [CustomerReturnId] <> '00000000-0000-0000-0000-000000000000' AND ISJSON([ResultJson]) = 1 AND [RefusalJson] IS NULL) OR ([Outcome] = 2 AND [CustomerReturnId] IS NULL AND [ResultJson] IS NULL AND ISJSON([RefusalJson]) = 1)");
             });
         });
 
@@ -819,7 +821,7 @@ partial class LogisticsDbContextModelSnapshot : ModelSnapshot
         modelBuilder.Entity("GoymenERP.Modules.Logistics.Infrastructure.Persistence.CustomerReturnAttemptRow", b =>
         {
             b.HasOne("GoymenERP.Modules.Logistics.Infrastructure.Persistence.CustomerReturnRow", null)
-                .WithMany().HasForeignKey("CompanyId", "CustomerReturnId").OnDelete(DeleteBehavior.Restrict).IsRequired();
+                .WithMany().HasForeignKey("CompanyId", "CustomerReturnId").OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity("GoymenERP.Modules.Logistics.Infrastructure.Persistence.CustomerReturnRow", b =>

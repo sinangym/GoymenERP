@@ -33,23 +33,42 @@ public sealed class LogisticsCustomerReturnService(
         var envelope = Envelope(scope, bindings.RequestPermission, metadata);
         var hash = LogisticsRequestHash.Compute(LogisticsCustomerReturnCommandsV1.Request, instructionId, new { lineId, request });
 
-        return await transactions.ExecuteLogisticsAsync(scope.CompanyId, async token =>
+        try
         {
-            var replay = await GuardedAsync(scope, bindings.RequestPermission,
-                () => store.FindReplayAsync(envelope, hash, LogisticsCustomerReturnCommandsV1.Request, token), token);
-            if (replay is not null) return Response(replay.Return, true, replay.OriginalCorrelationId);
+            return await transactions.ExecuteLogisticsAsync(scope.CompanyId, async token =>
+            {
+                var replay = await GuardedAsync(scope, bindings.RequestPermission,
+                    () => store.FindReplayAsync(envelope, hash, LogisticsCustomerReturnCommandsV1.Request, token), token);
+                if (replay is not null) return Replayed(replay);
 
-            var source = await GuardedAsync(scope, bindings.RequestPermission,
-                () => sources.FindDeliveryAsync(instructionId, lineId, request.SourceDeliveryId, token), token);
-            RequireSource(scope.CompanyId, instructionId, lineId, expectedInstructionVersion, source);
-            var quantity = ParseQuantity(request.Quantity, source!.DeliveredQuantity.Unit);
-            var customerReturn = CustomerReturn.Request(request.CustomerReturnId, scope.CompanyId, instructionId, lineId,
-                source.SourceDeliveryId, source.SourceShipmentId, source.SourceOrderId, source.SourceOrderLineId,
-                source.UnitId, quantity, source.DeliveredQuantity, request.Reason, scope.ActorId, request.OccurredAtUtc,
-                timeProvider.GetUtcNow());
-            var stored = await store.StoreRequestAsync(envelope, hash, customerReturn, token);
-            return Response(stored.Return, stored.Outcome == LogisticsWriteOutcome.Replayed, stored.OriginalCorrelationId);
-        }, token => scopes.RequireStillAsync(scope, bindings.RequestPermission, token), cancellationToken);
+                var source = await GuardedAsync(scope, bindings.RequestPermission,
+                    () => sources.FindDeliveryAsync(instructionId, lineId, request.SourceDeliveryId, token), token);
+                RequireSource(scope.CompanyId, instructionId, lineId, expectedInstructionVersion, source);
+                var quantity = ParseQuantity(request.Quantity, source!.DeliveredQuantity.Unit);
+                var customerReturn = CustomerReturn.Request(request.CustomerReturnId, scope.CompanyId, instructionId, lineId,
+                    source.SourceDeliveryId, source.SourceShipmentId, source.SourceOrderId, source.SourceOrderLineId,
+                    source.UnitId, quantity, source.DeliveredQuantity, request.Reason, scope.ActorId, request.OccurredAtUtc,
+                    timeProvider.GetUtcNow());
+                var stored = await store.StoreRequestAsync(envelope, hash, customerReturn, token);
+                return Response(stored.Return, stored.Outcome == LogisticsWriteOutcome.Replayed, stored.OriginalCorrelationId);
+            }, token => scopes.RequireStillAsync(scope, bindings.RequestPermission, token), cancellationToken);
+        }
+        catch (CustomerReturnRuleException exception) { throw Rule(exception); }
+        catch (ArgumentException exception) when (string.Equals(exception.ParamName, "reason", StringComparison.Ordinal))
+        {
+            throw new LogisticsCustomerReturnServiceException(422, "validation_failed",
+                [new("reason", "validation_failed")]);
+        }
+        catch (LogisticsCustomerReturnServiceException exception) when (IsRecordableTerminal(exception))
+        {
+            return await TerminalAsync(scope, bindings.RequestPermission, envelope, hash,
+                LogisticsCustomerReturnCommandsV1.Request, exception, cancellationToken);
+        }
+        catch (LogisticsStoreException exception) when (exception.Code == LogisticsStoreCodes.ConcurrentChange)
+        {
+            return await RecoverWinnerAsync(scope, bindings.RequestPermission, envelope, hash,
+                LogisticsCustomerReturnCommandsV1.Request, exception, cancellationToken);
+        }
     }
 
     public Task<CustomerReturnResponseV1> ApproveAsync(Guid customerReturnId, ApproveCustomerReturnV1 request,
@@ -101,66 +120,86 @@ public sealed class LogisticsCustomerReturnService(
         var envelope = Envelope(scope, bindings.DecisionPermission, metadata);
         var hash = LogisticsRequestHash.Compute(command, customerReturnId, new { expectedVersionText, inventoryMovementId, note });
 
-        if (!approving)
+        try
         {
-            return await transactions.ExecuteLogisticsAsync(scope.CompanyId, async token =>
+            if (!approving)
             {
+                return await transactions.ExecuteLogisticsAsync(scope.CompanyId, async token =>
+                {
+                    var replay = await GuardedAsync(scope, bindings.DecisionPermission,
+                        () => store.FindReplayAsync(envelope, hash, command, token), token);
+                    if (replay is not null) return Replayed(replay);
+                    var pending = await RequirePendingAsync(scope, bindings.DecisionPermission, customerReturnId, token);
+                    pending.Reject(expectedVersion, scope.ActorId, timeProvider.GetUtcNow(), note);
+                    var saved = await store.StoreDecisionAsync(envelope, hash, command, pending, token);
+                    return Response(saved.Return, saved.Outcome == LogisticsWriteOutcome.Replayed, saved.OriginalCorrelationId);
+                }, token => scopes.RequireStillAsync(scope, bindings.DecisionPermission, token), cancellationToken);
+            }
+
+            return await transactions.ExecuteApprovalAsync(scope.CompanyId, async (stock, token) =>
+            {
+                // Inventory authority is checked before any replay oracle is released.
+                await stock.RequireStillAsync(token);
                 var replay = await GuardedAsync(scope, bindings.DecisionPermission,
                     () => store.FindReplayAsync(envelope, hash, command, token), token);
-                if (replay is not null) return Response(replay.Return, true, replay.OriginalCorrelationId);
+                if (replay is not null) return Replayed(replay);
                 var pending = await RequirePendingAsync(scope, bindings.DecisionPermission, customerReturnId, token);
-                pending.Reject(expectedVersion, scope.ActorId, timeProvider.GetUtcNow(), note);
+                pending.RequireDecision(expectedVersion, scope.ActorId);
+
+                var source = await GuardedAsync(scope, bindings.DecisionPermission,
+                    () => sources.FindDeliveryAsync(pending.LoadingInstructionId, pending.LoadingInstructionLineId,
+                        pending.SourceDeliveryId, token), token);
+                RequireSource(scope.CompanyId, pending.LoadingInstructionId, pending.LoadingInstructionLineId, null, source);
+                if (source!.SourceShipmentId != pending.SourceShipmentId || source.SourceOrderId != pending.SourceOrderId
+                    || source.SourceOrderLineId != pending.SourceOrderLineId || source.UnitId != pending.UnitId)
+                    throw new LogisticsCustomerReturnServiceException(409, LogisticsCustomerReturnCodesV1.SourceInvalid);
+
+                var approved = await GuardedAsync(scope, bindings.DecisionPermission,
+                    () => store.SumApprovedForDeliveryAsync(pending.SourceDeliveryId, pending.Quantity.Unit, token), token);
+                if (approved.Add(pending.Quantity).IsGreaterThan(source.DeliveredQuantity))
+                    throw new LogisticsCustomerReturnServiceException(409, LogisticsCustomerReturnCodesV1.QuantityExceeded,
+                        [new("quantity", LogisticsCustomerReturnCodesV1.QuantityExceeded)]);
+
+                var stockRequest = new LogisticsCustomerReturnStockRequestV1(scope.CompanyId, pending.Id,
+                    pending.LoadingInstructionId, pending.LoadingInstructionLineId, pending.SourceDeliveryId,
+                    pending.SourceShipmentId, pending.SourceOrderId, pending.SourceOrderLineId, pending.UnitId,
+                    pending.Quantity.Value, inventoryMovementId!.Value, pending.OccurredAtUtc);
+                var staged = await stock.StageAsync(stockRequest, envelope, token);
+                if (staged.CompanyId != scope.CompanyId || staged.CustomerReturnId != pending.Id
+                    || staged.SourceShipmentId != pending.SourceShipmentId || staged.InventoryMovementId != inventoryMovementId
+                    || staged.OriginalShipmentMovementId == Guid.Empty || staged.OriginalLabelId == Guid.Empty
+                    || staged.Quantity != pending.Quantity.Value)
+                    throw new LogisticsCustomerReturnServiceException(503, LogisticsCustomerReturnCodesV1.InventoryInvalid);
+
+                pending.Approve(expectedVersion, scope.ActorId, staged.InventoryMovementId, staged.OriginalLabelId,
+                    staged.OriginalShipmentMovementId, timeProvider.GetUtcNow(), note);
                 var saved = await store.StoreDecisionAsync(envelope, hash, command, pending, token);
-                return Response(saved.Return, saved.Outcome == LogisticsWriteOutcome.Replayed, saved.OriginalCorrelationId);
-            }, token => scopes.RequireStillAsync(scope, bindings.DecisionPermission, token), cancellationToken);
+                if (staged.IsReplay != (saved.Outcome == LogisticsWriteOutcome.Replayed)
+                    || !string.Equals(staged.OriginalCorrelationId, saved.OriginalCorrelationId, StringComparison.Ordinal))
+                    throw new LogisticsCustomerReturnServiceException(503, LogisticsCustomerReturnCodesV1.InventoryInvalid);
+                return Response(saved.Return, staged.IsReplay, saved.OriginalCorrelationId);
+            }, async (stock, token) =>
+            {
+                await scopes.RequireStillAsync(scope, bindings.DecisionPermission, token);
+                await stock.RequireStillAsync(token);
+            }, cancellationToken);
         }
-
-        return await transactions.ExecuteApprovalAsync(scope.CompanyId, async (stock, token) =>
+        catch (CustomerReturnVersionConflictException exception)
         {
-            // Inventory authority is checked before any replay oracle is released.
-            await stock.RequireStillAsync(token);
-            var replay = await GuardedAsync(scope, bindings.DecisionPermission,
-                () => store.FindReplayAsync(envelope, hash, command, token), token);
-            if (replay is not null) return Response(replay.Return, true, replay.OriginalCorrelationId);
-            var pending = await RequirePendingAsync(scope, bindings.DecisionPermission, customerReturnId, token);
-            pending.RequireDecision(expectedVersion, scope.ActorId);
-
-            var source = await GuardedAsync(scope, bindings.DecisionPermission,
-                () => sources.FindDeliveryAsync(pending.LoadingInstructionId, pending.LoadingInstructionLineId,
-                    pending.SourceDeliveryId, token), token);
-            RequireSource(scope.CompanyId, pending.LoadingInstructionId, pending.LoadingInstructionLineId, null, source);
-            if (source!.SourceShipmentId != pending.SourceShipmentId || source.SourceOrderId != pending.SourceOrderId
-                || source.SourceOrderLineId != pending.SourceOrderLineId || source.UnitId != pending.UnitId)
-                throw new LogisticsCustomerReturnServiceException(409, LogisticsCustomerReturnCodesV1.SourceInvalid);
-
-            var approved = await GuardedAsync(scope, bindings.DecisionPermission,
-                () => store.SumApprovedForDeliveryAsync(pending.SourceDeliveryId, pending.Quantity.Unit, token), token);
-            if (approved.Add(pending.Quantity).IsGreaterThan(source.DeliveredQuantity))
-                throw new LogisticsCustomerReturnServiceException(409, LogisticsCustomerReturnCodesV1.QuantityExceeded);
-
-            var stockRequest = new LogisticsCustomerReturnStockRequestV1(scope.CompanyId, pending.Id,
-                pending.LoadingInstructionId, pending.LoadingInstructionLineId, pending.SourceDeliveryId,
-                pending.SourceShipmentId, pending.SourceOrderId, pending.SourceOrderLineId, pending.UnitId,
-                pending.Quantity.Value, inventoryMovementId!.Value, pending.OccurredAtUtc);
-            var staged = await stock.StageAsync(stockRequest, envelope, token);
-            if (staged.CompanyId != scope.CompanyId || staged.CustomerReturnId != pending.Id
-                || staged.SourceShipmentId != pending.SourceShipmentId || staged.InventoryMovementId != inventoryMovementId
-                || staged.OriginalShipmentMovementId == Guid.Empty || staged.OriginalLabelId == Guid.Empty
-                || staged.Quantity != pending.Quantity.Value)
-                throw new LogisticsCustomerReturnServiceException(503, LogisticsCustomerReturnCodesV1.InventoryInvalid);
-
-            pending.Approve(expectedVersion, scope.ActorId, staged.InventoryMovementId, staged.OriginalLabelId,
-                staged.OriginalShipmentMovementId, timeProvider.GetUtcNow(), note);
-            var saved = await store.StoreDecisionAsync(envelope, hash, command, pending, token);
-            if (staged.IsReplay != (saved.Outcome == LogisticsWriteOutcome.Replayed)
-                || !string.Equals(staged.OriginalCorrelationId, saved.OriginalCorrelationId, StringComparison.Ordinal))
-                throw new LogisticsCustomerReturnServiceException(503, LogisticsCustomerReturnCodesV1.InventoryInvalid);
-            return Response(saved.Return, staged.IsReplay, saved.OriginalCorrelationId);
-        }, async (stock, token) =>
+            return await TerminalAsync(scope, bindings.DecisionPermission, envelope, hash, command,
+                VersionConflict(exception), cancellationToken);
+        }
+        catch (CustomerReturnRuleException exception) { throw Rule(exception); }
+        catch (LogisticsCustomerReturnServiceException exception) when (IsRecordableTerminal(exception))
         {
-            await scopes.RequireStillAsync(scope, bindings.DecisionPermission, token);
-            await stock.RequireStillAsync(token);
-        }, cancellationToken);
+            return await TerminalAsync(scope, bindings.DecisionPermission, envelope, hash, command,
+                exception, cancellationToken);
+        }
+        catch (LogisticsStoreException exception) when (exception.Code == LogisticsStoreCodes.ConcurrentChange)
+        {
+            return await RecoverWinnerAsync(scope, bindings.DecisionPermission, envelope, hash, command,
+                exception, cancellationToken);
+        }
     }
 
     private async Task<CustomerReturn> RequirePendingAsync(LogisticsCustomerReturnScopeV1 scope, string permission,
@@ -190,8 +229,90 @@ public sealed class LogisticsCustomerReturnService(
             || source.SourceOrderLineId == Guid.Empty || source.UnitId == Guid.Empty)
             throw new LogisticsCustomerReturnServiceException(503, LogisticsCustomerReturnCodesV1.SourceInvalid);
         if (expectedVersion is not null && source.LoadingInstructionVersion != expectedVersion)
-            throw new LogisticsCustomerReturnServiceException(409, LogisticsCustomerReturnCodesV1.VersionConflict);
+            throw new LogisticsCustomerReturnServiceException(409, LogisticsCustomerReturnCodesV1.VersionConflict,
+                [new("expectedVersion", "version_conflict")], expectedVersion: expectedVersion,
+                currentVersion: source.LoadingInstructionVersion);
     }
+
+    private async Task<CustomerReturnResponseV1> TerminalAsync(LogisticsCustomerReturnScopeV1 scope, string permission,
+        LogisticsWriteEnvelope envelope, string requestHash, string command,
+        LogisticsCustomerReturnServiceException exception, CancellationToken cancellationToken)
+    {
+        var refusal = new CustomerReturnTerminalRefusalV1(exception.Status, exception.Code, exception.Errors,
+            exception.ExpectedVersion, exception.CurrentVersion);
+        try
+        {
+            var recorded = await transactions.ExecuteLogisticsAsync(scope.CompanyId, async token =>
+            {
+                // A terminal result is disclosed or recorded only under a fresh measurement in this new transaction.
+                await RequireCommandStillAsync(scope, permission, command, token);
+                var winner = await GuardedAsync(scope, permission,
+                    () => store.FindReplayAsync(envelope, requestHash, command, token), token);
+                if (winner is not null)
+                    return new CustomerReturnReplayStoreResultV1(winner, LogisticsWriteOutcome.Replayed);
+                return await store.RecordRefusalAsync(envelope, requestHash, command, refusal, token);
+            }, token => RequireCommandStillAsync(scope, permission, command, token), cancellationToken);
+            return Resolve(recorded.Replay, recorded.Outcome == LogisticsWriteOutcome.Replayed);
+        }
+        catch (LogisticsStoreException raced) when (raced.Code == LogisticsStoreCodes.ConcurrentChange)
+        {
+            return await RecoverWinnerAsync(scope, permission, envelope, requestHash, command, raced, cancellationToken);
+        }
+    }
+
+    private async Task<CustomerReturnResponseV1> RecoverWinnerAsync(LogisticsCustomerReturnScopeV1 scope,
+        string permission, LogisticsWriteEnvelope envelope, string requestHash, string command,
+        LogisticsStoreException original, CancellationToken cancellationToken)
+    {
+        var winner = await transactions.ExecuteLogisticsAsync(scope.CompanyId, async token =>
+        {
+            await RequireCommandStillAsync(scope, permission, command, token);
+            return await GuardedAsync(scope, permission,
+                () => store.FindReplayAsync(envelope, requestHash, command, token), token);
+        }, token => RequireCommandStillAsync(scope, permission, command, token), cancellationToken);
+        if (winner is null) throw original;
+        return Replayed(winner);
+    }
+
+    private static CustomerReturnResponseV1 Resolve(CustomerReturnReplayV1 replay, bool isReplay)
+    {
+        if (replay.Refusal is { } refusal)
+            throw new LogisticsCustomerReturnServiceException(refusal.Status, refusal.Code, refusal.Errors, isReplay,
+                replay.OriginalCorrelationId, refusal.ExpectedVersion, refusal.CurrentVersion);
+        return Response(replay.Return ?? throw new InvalidOperationException("Iade tekrar sonucu bos."), true,
+            replay.OriginalCorrelationId);
+    }
+
+    private static CustomerReturnResponseV1 Replayed(CustomerReturnReplayV1 replay) => Resolve(replay, isReplay: true);
+
+    private async Task RequireCommandStillAsync(LogisticsCustomerReturnScopeV1 scope, string permission, string command,
+        CancellationToken cancellationToken)
+    {
+        await scopes.RequireStillAsync(scope, permission, cancellationToken);
+        if (string.Equals(command, LogisticsCustomerReturnCommandsV1.Approve, StringComparison.Ordinal))
+            await scopes.RequireStillAsync(scope, bindings.ApprovalInventoryPermission, cancellationToken);
+    }
+
+    private static bool IsRecordableTerminal(LogisticsCustomerReturnServiceException exception) => !exception.IsReplay
+        && ((exception.Status == 404 && string.Equals(exception.Code, "not_found", StringComparison.Ordinal))
+            || (exception.Status == 409
+                && string.Equals(exception.Code, LogisticsCustomerReturnCodesV1.VersionConflict, StringComparison.Ordinal)
+                && exception.ExpectedVersion is > 0 && exception.CurrentVersion is > 0));
+
+    private static LogisticsCustomerReturnServiceException VersionConflict(CustomerReturnVersionConflictException exception) =>
+        new(409, LogisticsCustomerReturnCodesV1.VersionConflict, [new("expectedVersion", "version_conflict")],
+            expectedVersion: exception.ExpectedVersion, currentVersion: exception.CurrentVersion);
+
+    private static LogisticsCustomerReturnServiceException Rule(CustomerReturnRuleException exception) => exception.Code switch
+    {
+        CustomerReturnRuleCodesV1.QuantityExceedsDelivery => new(409, LogisticsCustomerReturnCodesV1.QuantityExceeded,
+            [new("quantity", exception.Code)]),
+        CustomerReturnRuleCodesV1.NotPending => new(409, LogisticsCustomerReturnCodesV1.NotPending,
+            [new("status", exception.Code)]),
+        CustomerReturnRuleCodesV1.OwnDecision => new(409, LogisticsCustomerReturnCodesV1.OwnDecision,
+            [new("actor", exception.Code)]),
+        _ => new(422, "validation_failed", [new("customerReturn", exception.Code)]),
+    };
 
     private LogisticsWriteEnvelope Envelope(LogisticsCustomerReturnScopeV1 scope, string permission,
         LogisticsCommandMetadata metadata) => new(scope.ActorId, permission, scope.RoleCodes, metadata.CorrelationId,

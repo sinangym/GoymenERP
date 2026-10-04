@@ -74,7 +74,8 @@ public static class LogisticsModuleExtensions
         services.TryAddSingleton(new LogisticsCustomerReturnBindingsV1(
             LogisticsPermissionManifestV1.CustomerReturnsRequest,
             LogisticsPermissionManifestV1.CustomerReturnsDecision,
-            LogisticsPermissionManifestV1.CustomerReturnsRead));
+            LogisticsPermissionManifestV1.CustomerReturnsRead,
+            ErpPermissions.InventoryPhysicalAllocationWrite));
         services.AddScoped<ILogisticsCustomerReturnServiceV1, LogisticsCustomerReturnService>();
         return services;
     }

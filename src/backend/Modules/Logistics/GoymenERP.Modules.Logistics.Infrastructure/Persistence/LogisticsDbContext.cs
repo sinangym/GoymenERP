@@ -338,9 +338,12 @@ public sealed class LogisticsDbContext(DbContextOptions<LogisticsDbContext> opti
         attempt.ToTable("CustomerReturnAttempts", Schema, table =>
         {
             table.HasCheckConstraint("CK_CustomerReturnAttempts_Identity",
-                $"[CustomerReturnId] <> {EmptyGuid} AND LEN([CommandName]) > 0 AND LEN([ActorId]) > 0 AND LEN([CorrelationId]) > 0");
+                "LEN([CommandName]) > 0 AND LEN([ActorId]) > 0 AND LEN([CorrelationId]) > 0");
             table.HasCheckConstraint("CK_CustomerReturnAttempts_Hashes", "LEN([IdempotencyKeyHash]) = 64 AND LEN([RequestHash]) = 64");
-            table.HasCheckConstraint("CK_CustomerReturnAttempts_Result", "ISJSON([ResultJson]) = 1");
+            table.HasCheckConstraint("CK_CustomerReturnAttempts_Outcome",
+                $"([Outcome] = 1 AND [CustomerReturnId] IS NOT NULL AND [CustomerReturnId] <> {EmptyGuid} "
+                + "AND ISJSON([ResultJson]) = 1 AND [RefusalJson] IS NULL) OR "
+                + "([Outcome] = 2 AND [CustomerReturnId] IS NULL AND [ResultJson] IS NULL AND ISJSON([RefusalJson]) = 1)");
         });
         attempt.HasKey(x => new { x.CompanyId, x.CommandName, x.IdempotencyKeyHash });
         attempt.Property(x => x.CommandName).HasMaxLength(160).UseCollation(IdentityCollation).IsRequired();
@@ -348,7 +351,8 @@ public sealed class LogisticsDbContext(DbContextOptions<LogisticsDbContext> opti
         attempt.Property(x => x.RequestHash).HasMaxLength(64).IsUnicode(false).IsRequired();
         attempt.Property(x => x.ActorId).HasMaxLength(128).IsRequired();
         attempt.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
-        attempt.Property(x => x.ResultJson).HasColumnType("nvarchar(max)").IsRequired();
+        attempt.Property(x => x.ResultJson).HasColumnType("nvarchar(max)");
+        attempt.Property(x => x.RefusalJson).HasColumnType("nvarchar(max)");
         attempt.HasOne<CustomerReturnRow>().WithMany()
             .HasForeignKey(x => new { x.CompanyId, x.CustomerReturnId }).OnDelete(DeleteBehavior.Restrict);
         attempt.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);

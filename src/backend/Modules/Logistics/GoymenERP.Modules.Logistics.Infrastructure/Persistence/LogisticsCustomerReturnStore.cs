@@ -24,6 +24,8 @@ public sealed class LogisticsCustomerReturnStore(
     TimeProvider timeProvider) : ILogisticsCustomerReturnStoreV1
 {
     private const string EntityType = "Logistics.CustomerReturn";
+    private const int SuccessOutcome = 1;
+    private const int RefusalOutcome = 2;
     private const decimal ColumnBound = 1_000_000_000_000_000m;
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
@@ -38,6 +40,43 @@ public sealed class LogisticsCustomerReturnStore(
         if (attempt is null) return null;
         RequireSameAttempt(attempt, envelope.ActorId.Trim(), requestHash);
         return Replay(attempt);
+    }
+
+    public async Task<CustomerReturnReplayStoreResultV1> RecordRefusalAsync(LogisticsWriteEnvelope envelope,
+        string requestHash, string command, CustomerReturnTerminalRefusalV1 refusal,
+        CancellationToken cancellationToken = default)
+    {
+        RequireEnvelope(envelope);
+        RequireHash(requestHash);
+        RequireCommand(command);
+        RequireRefusal(refusal);
+        var companyId = RequireCompany();
+        RequireSerializable();
+        var keyHash = LogisticsStore.IdempotencyKeyHash(envelope.IdempotencyKey);
+        var existing = await FindAttemptAsync(command, keyHash, cancellationToken);
+        if (existing is not null)
+        {
+            RequireSameAttempt(existing, envelope.ActorId.Trim(), requestHash);
+            return new(Replay(existing), LogisticsWriteOutcome.Replayed);
+        }
+
+        var attempt = new CustomerReturnAttemptRow
+        {
+            CompanyId = companyId,
+            CommandName = command,
+            IdempotencyKeyHash = keyHash,
+            RequestHash = requestHash,
+            ActorId = envelope.ActorId.Trim(),
+            Outcome = RefusalOutcome,
+            CustomerReturnId = null,
+            ResultJson = null,
+            RefusalJson = JsonSerializer.Serialize(refusal, Json),
+            CorrelationId = envelope.CorrelationId.Trim(),
+            RecordedAtUtc = timeProvider.GetUtcNow(),
+        };
+        dbContext.CustomerReturnAttempts.Add(attempt);
+        await SaveAsync(cancellationToken);
+        return new(Replay(attempt), LogisticsWriteOutcome.Recorded);
     }
 
     public async Task<CustomerReturn?> FindAsync(Guid customerReturnId, CancellationToken cancellationToken = default)
@@ -103,7 +142,7 @@ public sealed class LogisticsCustomerReturnStore(
         {
             RequireSameAttempt(replay, envelope.ActorId.Trim(), requestHash);
             var original = Replay(replay);
-            return new(original.Return, LogisticsWriteOutcome.Replayed, original.OriginalCorrelationId);
+            return new(RequireSuccessful(original), LogisticsWriteOutcome.Replayed, original.OriginalCorrelationId);
         }
 
         if (await dbContext.CustomerReturns.AsNoTracking().AnyAsync(item => item.CustomerReturnId == customerReturn.Id, cancellationToken))
@@ -143,7 +182,7 @@ public sealed class LogisticsCustomerReturnStore(
         {
             RequireSameAttempt(replay, envelope.ActorId.Trim(), requestHash);
             var original = Replay(replay);
-            return new(original.Return, LogisticsWriteOutcome.Replayed, original.OriginalCorrelationId);
+            return new(RequireSuccessful(original), LogisticsWriteOutcome.Replayed, original.OriginalCorrelationId);
         }
 
         var row = await dbContext.CustomerReturns.SingleOrDefaultAsync(item => item.CustomerReturnId == customerReturn.Id,
@@ -274,8 +313,10 @@ public sealed class LogisticsCustomerReturnStore(
         IdempotencyKeyHash = keyHash,
         RequestHash = requestHash,
         ActorId = envelope.ActorId.Trim(),
+        Outcome = SuccessOutcome,
         CustomerReturnId = result.Id,
         ResultJson = JsonSerializer.Serialize(Snapshot(result), Json),
+        RefusalJson = null,
         CorrelationId = envelope.CorrelationId.Trim(),
         RecordedAtUtc = timeProvider.GetUtcNow(),
     };
@@ -284,10 +325,25 @@ public sealed class LogisticsCustomerReturnStore(
     {
         try
         {
-            var snapshot = JsonSerializer.Deserialize<CustomerReturnResultSnapshot>(attempt.ResultJson, Json)
-                ?? throw new InvalidOperationException("Iade denemesinin degismez sonucu bos.");
-            RequireSnapshotCoherence(attempt, snapshot);
-            return new(Restore(snapshot), attempt.CorrelationId);
+            if (attempt.Outcome == SuccessOutcome && attempt.CustomerReturnId is not null
+                && attempt.ResultJson is not null && attempt.RefusalJson is null)
+            {
+                var snapshot = JsonSerializer.Deserialize<CustomerReturnResultSnapshot>(attempt.ResultJson, Json)
+                    ?? throw new InvalidOperationException("Iade denemesinin degismez sonucu bos.");
+                RequireSnapshotCoherence(attempt, snapshot);
+                return new(Restore(snapshot), null, attempt.CorrelationId);
+            }
+
+            if (attempt.Outcome == RefusalOutcome && attempt.CustomerReturnId is null
+                && attempt.ResultJson is null && attempt.RefusalJson is not null)
+            {
+                var refusal = JsonSerializer.Deserialize<CustomerReturnTerminalRefusalV1>(attempt.RefusalJson, Json)
+                    ?? throw new InvalidOperationException("Iade denemesinin degismez ret sonucu bos.");
+                RequireRefusal(refusal);
+                return new(null, refusal, attempt.CorrelationId);
+            }
+
+            throw new InvalidOperationException("Iade denemesi tek bir gecerli sonuc veya terminal ret tasimiyor.");
         }
         catch (Exception exception) when (exception is JsonException or ArgumentException
             or CustomerReturnRuleException or CustomerReturnVersionConflictException)
@@ -298,7 +354,8 @@ public sealed class LogisticsCustomerReturnStore(
 
     private static void RequireSnapshotCoherence(CustomerReturnAttemptRow attempt, CustomerReturnResultSnapshot snapshot)
     {
-        if (snapshot.CustomerReturnId != attempt.CustomerReturnId || snapshot.CompanyId != attempt.CompanyId)
+        if (attempt.CustomerReturnId is not Guid customerReturnId
+            || snapshot.CustomerReturnId != customerReturnId || snapshot.CompanyId != attempt.CompanyId)
             throw new InvalidOperationException("Iade denemesinin sonucu sirket veya hedef kimligiyle uyusmuyor.");
         var request = attempt.CommandName == LogisticsCustomerReturnCommandsV1.Request;
         var approve = attempt.CommandName == LogisticsCustomerReturnCommandsV1.Approve;
@@ -428,6 +485,22 @@ public sealed class LogisticsCustomerReturnStore(
             || !string.Equals(attempt.RequestHash, requestHash, StringComparison.Ordinal))
             throw Refused(LogisticsStoreCodes.SameKeyPayloadMismatch,
                 "Ayni Idempotency-Key baska aktor veya icerikle geldi; ilk sonuc aciklanmaz.");
+    }
+
+    private static CustomerReturn RequireSuccessful(CustomerReturnReplayV1 replay) => replay.Return
+        ?? throw Refused(LogisticsStoreCodes.ConcurrentChange,
+            "Ayni iade anahtarinin terminal ret sonucu vardir; kalici kazanan yeniden okunmalidir.");
+
+    private static void RequireRefusal(CustomerReturnTerminalRefusalV1 refusal)
+    {
+        ArgumentNullException.ThrowIfNull(refusal);
+        var validNotFound = refusal.Status == 404 && string.Equals(refusal.Code, "not_found", StringComparison.Ordinal)
+            && refusal.ExpectedVersion is null && refusal.CurrentVersion is null;
+        var validVersion = refusal.Status == 409
+            && string.Equals(refusal.Code, LogisticsCustomerReturnCodesV1.VersionConflict, StringComparison.Ordinal)
+            && refusal.ExpectedVersion is > 0 && refusal.CurrentVersion is > 0;
+        if ((!validNotFound && !validVersion) || refusal.Errors is null)
+            throw new ArgumentException("Yalniz yetkili not-found veya surum catismasi terminal iade sonucu olabilir.", nameof(refusal));
     }
 
     private async Task SaveAsync(CancellationToken cancellationToken)

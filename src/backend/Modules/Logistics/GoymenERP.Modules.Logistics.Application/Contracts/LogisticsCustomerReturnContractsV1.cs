@@ -17,12 +17,15 @@ public static class LogisticsCustomerReturnCodesV1
     public const string InventoryUnavailable = "logistics_customer_return_inventory_unavailable";
     public const string InventoryInvalid = "logistics_customer_return_inventory_invalid";
     public const string VersionConflict = "logistics_customer_return_version_conflict";
+    public const string NotPending = "logistics_customer_return_not_pending";
+    public const string OwnDecision = "logistics_customer_return_own_decision";
 }
 
 public sealed record LogisticsCustomerReturnBindingsV1(
     string RequestPermission,
     string DecisionPermission,
-    string ReadPermission);
+    string ReadPermission,
+    string ApprovalInventoryPermission);
 
 public sealed record RequestCustomerReturnV1(
     Guid CustomerReturnId,
@@ -112,12 +115,28 @@ public interface ILogisticsCustomerReturnSourceReadV1
 }
 
 public sealed record CustomerReturnStoreResultV1(CustomerReturn Return, LogisticsWriteOutcome Outcome, string OriginalCorrelationId);
-public sealed record CustomerReturnReplayV1(CustomerReturn Return, string OriginalCorrelationId);
+public sealed record CustomerReturnTerminalRefusalV1(
+    int Status,
+    string Code,
+    IReadOnlyList<LogisticsFieldError> Errors,
+    long? ExpectedVersion = null,
+    long? CurrentVersion = null);
+
+public sealed record CustomerReturnReplayV1(
+    CustomerReturn? Return,
+    CustomerReturnTerminalRefusalV1? Refusal,
+    string OriginalCorrelationId);
+
+public sealed record CustomerReturnReplayStoreResultV1(
+    CustomerReturnReplayV1 Replay,
+    LogisticsWriteOutcome Outcome);
 
 public interface ILogisticsCustomerReturnStoreV1
 {
     Task<CustomerReturnReplayV1?> FindReplayAsync(LogisticsWriteEnvelope envelope, string requestHash, string command,
         CancellationToken cancellationToken = default);
+    Task<CustomerReturnReplayStoreResultV1> RecordRefusalAsync(LogisticsWriteEnvelope envelope, string requestHash,
+        string command, CustomerReturnTerminalRefusalV1 refusal, CancellationToken cancellationToken = default);
     Task<CustomerReturn?> FindAsync(Guid customerReturnId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<CustomerReturn>> ListOrderReturnsAsync(Guid salesOrderId, CancellationToken cancellationToken = default);
     Task<Quantity> SumApprovedForDeliveryAsync(Guid sourceDeliveryId, QuantityUnit unit,
@@ -175,8 +194,20 @@ public interface ILogisticsCustomerReturnTransactionRunnerV1
         CancellationToken cancellationToken = default);
 }
 
-public sealed class LogisticsCustomerReturnServiceException(int status, string code) : Exception(code)
+public sealed class LogisticsCustomerReturnServiceException(
+    int status,
+    string code,
+    IReadOnlyList<LogisticsFieldError>? errors = null,
+    bool isReplay = false,
+    string? originalCorrelationId = null,
+    long? expectedVersion = null,
+    long? currentVersion = null) : Exception(code)
 {
     public int Status { get; } = status;
     public string Code { get; } = code;
+    public IReadOnlyList<LogisticsFieldError> Errors { get; } = errors ?? [];
+    public bool IsReplay { get; } = isReplay;
+    public string? OriginalCorrelationId { get; } = originalCorrelationId;
+    public long? ExpectedVersion { get; } = expectedVersion;
+    public long? CurrentVersion { get; } = currentVersion;
 }

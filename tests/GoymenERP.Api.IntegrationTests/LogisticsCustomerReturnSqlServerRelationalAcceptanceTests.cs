@@ -55,17 +55,18 @@ public sealed class LogisticsCustomerReturnSqlServerRelationalAcceptanceTests
                 (reopened!.Status, reopened.Version, reopened.DecidedBy));
             var requestReplay = await store.FindReplayAsync(run.Envelope("request", "alice", "request-after-decision"),
                 Hash("request"), LogisticsCustomerReturnCommandsV1.Request);
+            var requestSnapshot = Assert.IsType<CustomerReturn>(requestReplay!.Return);
             Assert.Equal((CustomerReturnStatus.Pending, 1L, "request-original"),
-                (requestReplay!.Return.Status, requestReplay.Return.Version, requestReplay.OriginalCorrelationId));
-            Assert.Null(requestReplay.Return.DecidedBy);
-            Assert.Null(requestReplay.Return.DecidedAtUtc);
-            Assert.Null(requestReplay.Return.DecisionNote);
-            Assert.Null(requestReplay.Return.InventoryMovementId);
-            Assert.Null(requestReplay.Return.OriginalLabelId);
-            Assert.Null(requestReplay.Return.OriginalShipmentMovementId);
+                (requestSnapshot.Status, requestSnapshot.Version, requestReplay.OriginalCorrelationId));
+            Assert.Null(requestSnapshot.DecidedBy);
+            Assert.Null(requestSnapshot.DecidedAtUtc);
+            Assert.Null(requestSnapshot.DecisionNote);
+            Assert.Null(requestSnapshot.InventoryMovementId);
+            Assert.Null(requestSnapshot.OriginalLabelId);
+            Assert.Null(requestSnapshot.OriginalShipmentMovementId);
             var replay = await store.FindReplayAsync(run.Envelope("approve", "bob", "later"), Hash("approve"),
                 LogisticsCustomerReturnCommandsV1.Approve);
-            Assert.Equal(reopened.InventoryMovementId, replay!.Return.InventoryMovementId);
+            Assert.Equal(reopened.InventoryMovementId, replay!.Return!.InventoryMovementId);
             Assert.Equal("approve-original", replay.OriginalCorrelationId);
             var wrongActor = await Assert.ThrowsAsync<LogisticsStoreException>(() => store.FindReplayAsync(
                 run.Envelope("request", "mallory", "probe"), Hash("request"), LogisticsCustomerReturnCommandsV1.Request));
@@ -76,6 +77,44 @@ public sealed class LogisticsCustomerReturnSqlServerRelationalAcceptanceTests
         });
 
         Assert.Equal((1, 2), await run.CountsAsync());
+    }
+
+    [SqlServerFact]
+    public async Task Authorized_terminal_version_refusal_is_immutable_and_never_exposes_itself_to_another_actor_or_payload()
+    {
+        await using var run = await Run.StartAsync();
+        var envelope = run.Envelope("terminal-version", "alice", "terminal-original");
+        var refusal = new CustomerReturnTerminalRefusalV1(409, LogisticsCustomerReturnCodesV1.VersionConflict,
+            [new("expectedVersion", "version_conflict")], ExpectedVersion: 1, CurrentVersion: 2);
+
+        await run.SerializableAsync(async store =>
+        {
+            var first = await store.RecordRefusalAsync(envelope, Hash("terminal-version"),
+                LogisticsCustomerReturnCommandsV1.Reject, refusal);
+            Assert.Equal(LogisticsWriteOutcome.Recorded, first.Outcome);
+            Assert.Null(first.Replay.Return);
+            Assert.Equal(refusal, first.Replay.Refusal);
+        });
+
+        await run.SerializableAsync(async store =>
+        {
+            var replay = await store.FindReplayAsync(envelope with { CorrelationId = "terminal-retry" },
+                Hash("terminal-version"), LogisticsCustomerReturnCommandsV1.Reject);
+            Assert.NotNull(replay);
+            Assert.Null(replay!.Return);
+            Assert.Equal((409, LogisticsCustomerReturnCodesV1.VersionConflict, 1L, 2L, "terminal-original"),
+                (replay.Refusal!.Status, replay.Refusal.Code, replay.Refusal.ExpectedVersion,
+                    replay.Refusal.CurrentVersion, replay.OriginalCorrelationId));
+
+            var wrongActor = await Assert.ThrowsAsync<LogisticsStoreException>(() => store.FindReplayAsync(
+                envelope with { ActorId = "mallory" }, Hash("terminal-version"), LogisticsCustomerReturnCommandsV1.Reject));
+            Assert.Equal(LogisticsStoreCodes.SameKeyPayloadMismatch, wrongActor.Code);
+            var wrongPayload = await Assert.ThrowsAsync<LogisticsStoreException>(() => store.FindReplayAsync(
+                envelope, Hash("changed-terminal"), LogisticsCustomerReturnCommandsV1.Reject));
+            Assert.Equal(LogisticsStoreCodes.SameKeyPayloadMismatch, wrongPayload.Code);
+        });
+
+        Assert.Equal((0, 1), await run.CountsAsync());
     }
 
     [SqlServerFact]
