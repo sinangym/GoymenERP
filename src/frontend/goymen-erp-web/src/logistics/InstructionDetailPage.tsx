@@ -75,6 +75,7 @@ import {
   customerReturnEndpointAdapter,
   freezeCustomerReturnAttempt,
   retryCustomerReturnAttempt,
+  resetSettledCustomerReturnAttempt,
   settleCustomerReturnAttempt,
   type CustomerReturnAttemptLifecycle,
   type CustomerReturnContext,
@@ -202,7 +203,8 @@ function CustomerReturnLine({
   const boundary = useAuthBoundary()
   const canRead = hasCapability(shell, CUSTOMER_RETURN_CAPABILITY.read)
   const canRequest = hasCapability(shell, CUSTOMER_RETURN_CAPABILITY.request)
-  const canDecide = hasCapability(shell, CUSTOMER_RETURN_CAPABILITY.decision)
+  const canApprove = hasCapability(shell, CUSTOMER_RETURN_CAPABILITY.approve)
+  const canReject = hasCapability(shell, CUSTOMER_RETURN_CAPABILITY.reject)
   const context: CustomerReturnContext = {
     companyId,
     salesOrderId: line.sourceOrderId,
@@ -223,18 +225,18 @@ function CustomerReturnLine({
   const [requestLifecycle, setRequestLifecycle] = useState<CustomerReturnAttemptLifecycle<RequestCustomerReturnV1>>({ type: 'idle' })
   const [decisionLifecycle, setDecisionLifecycle] = useState<CustomerReturnAttemptLifecycle<CustomerReturnDecisionAttemptPayload>>({ type: 'idle' })
 
-  const finish = (outcome: { type: string }) => {
-    if (outcome.type === 'succeeded') {
-      void query.refetch()
-      onRecorded()
-    }
-  }
   const sendRequest = (attempt: FrozenCustomerReturnAttempt<RequestCustomerReturnV1>) => {
     const snapshot = boundary.capture()
-    void customerReturnEndpointAdapter.request(context, attempt, new AbortController().signal).then((outcome) => {
+    void customerReturnEndpointAdapter.request(context, attempt, new AbortController().signal).then(async (outcome) => {
       if (outcome.type === 'http') boundary.report(outcome.status, snapshot)
       setRequestLifecycle((current) => settleCustomerReturnAttempt(current, attempt, outcome, binding))
-      finish(outcome)
+      if (outcome.type === 'succeeded') {
+        const fresh = await query.refetch()
+        if (fresh.data?.type === 'succeeded') {
+          setRequestLifecycle((current) => resetSettledCustomerReturnAttempt(current, binding, fresh.data.returns))
+        }
+        onRecorded()
+      }
     })
   }
   const sendDecision = (attempt: FrozenCustomerReturnAttempt<CustomerReturnDecisionAttemptPayload>) => {
@@ -243,10 +245,16 @@ function CustomerReturnLine({
     const outcome = action === 'approve'
       ? customerReturnEndpointAdapter.approve(context, customerReturnId, { ...attempt, payload: request as ApproveCustomerReturnV1 }, new AbortController().signal)
       : customerReturnEndpointAdapter.reject(context, customerReturnId, { ...attempt, payload: request as RejectCustomerReturnV1 }, new AbortController().signal)
-    void outcome.then((answer) => {
+    void outcome.then(async (answer) => {
       if (answer.type === 'http') boundary.report(answer.status, snapshot)
       setDecisionLifecycle((current) => settleCustomerReturnAttempt(current, attempt, answer, binding))
-      finish(answer)
+      if (answer.type === 'succeeded') {
+        const fresh = await query.refetch()
+        if (fresh.data?.type === 'succeeded') {
+          setDecisionLifecycle((current) => resetSettledCustomerReturnAttempt(current, binding, fresh.data.returns))
+        }
+        onRecorded()
+      }
     })
   }
 
@@ -271,7 +279,7 @@ function CustomerReturnLine({
       available
       contextBinding={binding}
       instructionVersion={detail.instruction.version}
-      visibility={{ canRead, canRequest, canDecide }}
+      visibility={{ canRead, canRequest, canApprove, canReject }}
       readState={readState}
       deliveryOptions={deliveries}
       requestController={{

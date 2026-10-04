@@ -36,7 +36,7 @@ function baseProps() {
     available: true,
     contextBinding: binding,
     instructionVersion: "8",
-    visibility: { canRead: true, canRequest: false, canDecide: false },
+    visibility: { canRead: true, canRequest: false, canApprove: false, canReject: false },
     readState: { type: "ready" as const, binding, returns: [pendingReturn] },
     deliveryOptions: [{
       sourceDeliveryId: pendingReturn.sourceDeliveryId,
@@ -57,7 +57,7 @@ describe("CustomerReturnPanel", () => {
   it("uses a neutral state and exposes no protected data without read visibility", () => {
     render(<CustomerReturnPanel
       {...baseProps()}
-      visibility={{ canRead: false, canRequest: true, canDecide: true }}
+      visibility={{ canRead: false, canRequest: true, canApprove: true, canReject: true }}
     />);
 
     expect(screen.getByText(/kullanılabilir iade bilgisi bulunamadı/i)).not.toBeNull();
@@ -82,7 +82,7 @@ describe("CustomerReturnPanel", () => {
 
     render(<CustomerReturnPanel
       {...baseProps()}
-      visibility={{ canRead: true, canRequest: false, canDecide: true }}
+      visibility={{ canRead: true, canRequest: false, canApprove: true, canReject: false }}
       decisionController={controller}
     />);
     fireEvent.click(screen.getByRole("button", { name: "Onayla" }));
@@ -107,7 +107,7 @@ describe("CustomerReturnPanel", () => {
 
     render(<CustomerReturnPanel
       {...baseProps()}
-      visibility={{ canRead: true, canRequest: true, canDecide: false }}
+      visibility={{ canRead: true, canRequest: true, canApprove: false, canReject: false }}
       requestController={controller}
     />);
     fireEvent.click(screen.getByRole("button", { name: /aynı işlemi yeniden dene/i }));
@@ -116,11 +116,82 @@ describe("CustomerReturnPanel", () => {
     expect(submit).not.toHaveBeenCalled();
   });
 
+  it.each(["sending", "unknown", "succeeded"] as const)(
+    "disables new decision attempts while the current decision is %s",
+    (type) => {
+      const submit = vi.fn();
+      const state = type === "sending"
+        ? { type, binding }
+        : type === "unknown"
+          ? { type, binding, idempotencyKey: "stable-key" }
+          : { type, binding, response: { return: pendingReturn, isReplay: false, originalCorrelationId: "opaque" } };
+      const controller: CustomerReturnDecisionController = {
+        state,
+        submit,
+        retrySameAttempt: vi.fn(),
+        abandonUnknownAttempt: vi.fn(),
+      };
+
+      render(<CustomerReturnPanel
+        {...baseProps()}
+        visibility={{ canRead: true, canRequest: false, canApprove: true, canReject: true }}
+        decisionController={controller}
+      />);
+
+      expect((screen.getByRole("button", { name: "Onayla" }) as HTMLButtonElement).disabled).toBe(true);
+      expect((screen.getByRole("button", { name: "Reddet" }) as HTMLButtonElement).disabled).toBe(true);
+      fireEvent.click(screen.getByRole("button", { name: "Onayla" }));
+      expect(submit).not.toHaveBeenCalled();
+    },
+  );
+
+  it("allows a second partial request only after the settled controller returns to idle", () => {
+    const submit = vi.fn();
+    const controller = (state: CustomerReturnRequestController["state"]): CustomerReturnRequestController => ({
+      state,
+      submit,
+      retrySameAttempt: vi.fn(),
+      abandonUnknownAttempt: vi.fn(),
+    });
+    const view = render(<CustomerReturnPanel
+      {...baseProps()}
+      visibility={{ canRead: true, canRequest: true, canApprove: false, canReject: false }}
+      requestController={controller({ type: "idle" })}
+    />);
+    fireEvent.change(screen.getByLabelText("İade miktarı"), { target: { value: "0.5" } });
+    fireEvent.change(screen.getByLabelText("İade nedeni"), { target: { value: "İlk kısmi iade" } });
+    fireEvent.change(screen.getByLabelText("İade zamanı"), { target: { value: "2026-10-04T09:00" } });
+    fireEvent.click(screen.getByRole("button", { name: "Talep oluştur" }));
+    expect(submit).toHaveBeenCalledTimes(1);
+
+    view.rerender(<CustomerReturnPanel
+      {...baseProps()}
+      visibility={{ canRead: true, canRequest: true, canApprove: false, canReject: false }}
+      requestController={controller({
+        type: "succeeded",
+        binding,
+        response: { return: pendingReturn, isReplay: false, originalCorrelationId: "first" },
+      })}
+    />);
+    expect((screen.getByRole("button", { name: "Talep oluştur" }) as HTMLButtonElement).disabled).toBe(true);
+
+    view.rerender(<CustomerReturnPanel
+      {...baseProps()}
+      visibility={{ canRead: true, canRequest: true, canApprove: false, canReject: false }}
+      requestController={controller({ type: "idle" })}
+    />);
+    fireEvent.change(screen.getByLabelText("İade miktarı"), { target: { value: "0.25" } });
+    fireEvent.change(screen.getByLabelText("İade nedeni"), { target: { value: "İkinci kısmi iade" } });
+    fireEvent.click(screen.getByRole("button", { name: "Talep oluştur" }));
+    expect(submit).toHaveBeenCalledTimes(2);
+    expect(submit.mock.calls.map(([draft]) => draft.quantity)).toEqual(["0.5", "0.25"]);
+  });
+
   it("suppresses data and actions after a company or authority binding change", () => {
     render(<CustomerReturnPanel
       {...baseProps()}
       contextBinding="company-b:authority-1:instruction-1"
-      visibility={{ canRead: true, canRequest: true, canDecide: true }}
+      visibility={{ canRead: true, canRequest: true, canApprove: true, canReject: true }}
     />);
 
     expect(screen.queryByText("Ambalaj hasarı")).toBeNull();
