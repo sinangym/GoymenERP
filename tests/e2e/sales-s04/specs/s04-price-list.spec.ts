@@ -173,7 +173,9 @@ test('S04-PL-02 the order line takes the list price as reference and default, ad
   })
 })
 
-test('S04-PL-03 below-floor pricing is saved pending and a different actor approves it once with a reason', async ({ page, request }) => {
+test('S04-PL-03 below-floor pricing is saved pending and a different actor approves it once with a reason', async ({ page, request }, testInfo) => {
+  let safeFailurePhase = 's04_pl03_p1'
+  try {
   expect(journey.draftId, 'S04-PL-02 priced the order').toBeTruthy()
   expect(journey.lineId, 'S04-PL-02 retained the line identity').toBeTruthy()
   expect(await capabilitiesOf(request, preparerActor)).toContain('sales.orders.price-floor-exception.approve')
@@ -182,6 +184,7 @@ test('S04-PL-03 below-floor pricing is saved pending and a different actor appro
     'sales.drafts.detail', 'sales.orders.price-floor-exception.approve',
   ]))
 
+  safeFailurePhase = 's04_pl03_p2'
   await page.setExtraHTTPHeaders({ 'X-Development-User': preparerActor })
   await page.goto(`/satis/siparisler/${journey.draftId}`)
   const form = page.getByTestId('sales-price-revision-form')
@@ -215,6 +218,7 @@ test('S04-PL-03 below-floor pricing is saved pending and a different actor appro
     floorException: { requestedBy: preparerActor, approvedBy: null, reason: null },
   })
 
+  safeFailurePhase = 's04_pl03_p3'
   // Price authority is proven at the endpoint, not inferred from a non-existent shell capability.
   const approverPricingResponse = await request.get(`${apiBaseUrl}${DRAFTS_PATH}/${journey.draftId}/line-pricing`, {
     headers: readHeaders(approverActor),
@@ -258,6 +262,7 @@ test('S04-PL-03 below-floor pricing is saved pending and a different actor appro
     lineId: journey.lineId, priceDisclosure: 'Withheld', unitPrice: null, priceUnitId: null, discountPercent: null,
   })
 
+  safeFailurePhase = 's04_pl03_p4'
   // Pending floor approval blocks the ordinary submission.
   const submissionAnswer = page.waitForResponse((response) => response.request().method() === 'POST'
     && new URL(response.url()).pathname === `${DRAFTS_PATH}/${journey.draftId}/submission`)
@@ -293,6 +298,7 @@ test('S04-PL-03 below-floor pricing is saved pending and a different actor appro
   })).json()) as { readonly draft: { readonly version: string } }).draft.version
   expect(afterSelfVersion).toBe(pendingDraft.draft.version)
 
+  safeFailurePhase = 's04_pl03_p5'
   // The existing different actor sees the real pending snapshot and supplies the required reason in the UI.
   await page.setExtraHTTPHeaders({ 'X-Development-User': approverActor })
   await page.goto(`/satis/siparisler/${journey.draftId}`)
@@ -306,6 +312,7 @@ test('S04-PL-03 below-floor pricing is saved pending and a different actor appro
   expect(approved.headers()['idempotency-replayed']).not.toBe('true')
   await expect(page.getByText(`Onaylandı: ${reason}`)).toBeVisible()
 
+  safeFailurePhase = 's04_pl03_p6'
   const firstVersion = ((await (await request.get(`${apiBaseUrl}${DRAFTS_PATH}/${journey.draftId}`, {
     headers: readHeaders(approverActor),
   })).json()) as { readonly draft: { readonly version: string } }).draft.version
@@ -322,8 +329,13 @@ test('S04-PL-03 below-floor pricing is saved pending and a different actor appro
   })).json()) as { readonly draft: { readonly version: string } }).draft.version
   expect(replayVersion).toBe(firstVersion)
 
+  safeFailurePhase = 's04_pl03_p7'
   await page.setExtraHTTPHeaders({ 'X-Development-User': preparerActor })
   await page.goto('/satis/siparisler')
   await page.goto(`/satis/siparisler/${journey.draftId}`)
   await expect(page.getByText(`Onaylandı: ${reason}`)).toBeVisible()
+  } catch (error) {
+    testInfo.annotations.push({ type: 'safe_failure_phase', description: safeFailurePhase })
+    throw error
+  }
 })
