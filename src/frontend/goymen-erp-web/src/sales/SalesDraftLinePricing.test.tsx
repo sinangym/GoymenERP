@@ -12,8 +12,8 @@ import detailResponseRaw from './examples/detail-response.json?raw'
 import { SALES_PRICE_FLOOR_EXCEPTION_APPROVE_CAPABILITY, SALES_PRICE_WRITE_CAPABILITY } from './capabilities'
 import { LINE_PRICING_TEXT as P, ORDER_DETAIL_TEXT } from './salesText'
 import { decodeDraftLinePricing, decodeReference } from './linePricing'
-import { resetPendingPriceFloorApprovals } from './pendingPriceFloorApprovals'
-import { ALL_SALES, COMPANY_A, KG, deferred, installFetch, json, renderSalesApp, type RecordedCall } from './testHarness'
+import { recallPriceFloorApproval, resetPendingPriceFloorApprovals } from './pendingPriceFloorApprovals'
+import { ALL_SALES, COMPANY_A, HARNESS_USER_ID, KG, deferred, installFetch, json, renderSalesApp, type RecordedCall } from './testHarness'
 
 type Body = Record<string, unknown> & { draft: Record<string, unknown>; lines: Record<string, unknown>[] }
 
@@ -114,7 +114,7 @@ describe('AT-018 list price on the order line', () => {
     expect(posts[1].body).toBe(posts[0].body)
   })
 
-  it.each([401, 403, 409])('keeps the unresolved snapshot after a retry refusal %s and never offers a new-key correction', async (status) => {
+  it.each([403, 409])('keeps the unresolved snapshot after a retry refusal %s and never offers a new-key correction', async (status) => {
     let sends = 0
     const posts: RecordedCall[] = []
     installFetch({
@@ -142,8 +142,8 @@ describe('AT-018 list price on the order line', () => {
     await userEvent.click(await within(control).findByRole('button', { name: P.floorApproval.retry }))
 
     let retryControl = control
-    if (status === 401 || status === 403) {
-      expect(await screen.findByText(status === 401 ? 'Oturum sonlandı — oturum' : 'Bulunamadı — sayfa')).toBeTruthy()
+    if (status === 403) {
+      expect(await screen.findByText('Bulunamadı — sayfa')).toBeTruthy()
       expect(screen.queryByTestId('sales-price-floor-approval')).toBeNull()
       app.unmount()
       renderSalesApp(path)
@@ -156,6 +156,39 @@ describe('AT-018 list price on the order line', () => {
     await waitFor(() => expect(posts).toHaveLength(3))
     expect(new Set(posts.map((call) => call.idempotencyKey)).size).toBe(1)
     expect(new Set(posts.map((call) => call.body)).size).toBe(1)
+  })
+
+  it('ends the session after a retry 401 and does not adopt the unresolved attempt in the new session epoch', async () => {
+    const posts: RecordedCall[] = []
+    installFetch({
+      capabilities: [...ALL_SALES, SALES_PRICE_FLOOR_EXCEPTION_APPROVE_CAPABILITY],
+      onDetail: () => json(detail('3', { unitPrice: '39000', priceUnitId: KG })),
+      onLinePricing: () => json(pricing('3', {
+        unitPrice: '39000', priceUnitId: KG, priceSource: 'Manual', priceReference: reference, netUnitPrice: '39000',
+        floorException: { requestedBy: 'maker', requestedAtUtc: '2026-10-01T08:00:00Z', approvedBy: null,
+          approvedAtUtc: null, reason: null },
+      })),
+      onPriceFloorExceptionApproval: (call) => {
+        posts.push(call)
+        if (posts.length === 1) throw new TypeError('SENTETIK belirsiz sonuç')
+        return json({ status: 401, title: 'SENTETIK refusal' }, 401)
+      },
+    })
+    renderSalesApp(path)
+
+    const control = await screen.findByTestId('sales-price-floor-approval')
+    await userEvent.type(within(control).getByLabelText(P.floorApproval.reason(1)), 'SENTETIK sözleşme')
+    await userEvent.click(within(control).getByRole('button', { name: P.floorApproval.approve }))
+    await userEvent.click(await within(control).findByRole('button', { name: P.floorApproval.retry }))
+
+    expect(await screen.findByText('Oturum sonlandı — oturum')).toBeTruthy()
+    expect(screen.queryByTestId('sales-price-floor-approval')).toBeNull()
+    expect(posts).toHaveLength(2)
+    expect(posts[1].idempotencyKey).toBe(posts[0].idempotencyKey)
+    expect(posts[1].body).toBe(posts[0].body)
+    const scope = `sales.draft.price-floor-exception-approval:${path.slice(path.lastIndexOf('/') + 1)}`
+    expect(recallPriceFloorApproval(JSON.stringify([HARNESS_USER_ID, '0', COMPANY_A, scope]))).not.toBeNull()
+    expect(recallPriceFloorApproval(JSON.stringify([HARNESS_USER_ID, '1', COMPANY_A, scope]))).toBeNull()
   })
 
   it.each([401, 403])('reports a current floor-approval %s through AuthBoundary and closes protected detail', async (status) => {
