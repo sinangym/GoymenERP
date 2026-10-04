@@ -281,7 +281,7 @@ public sealed class AccountingApprovedSourceCatalogSqlServerRelationalAcceptance
         }
         var before = await run.CountsAsync(second.Id);
 
-        using (var stalePackage = await ActivateAsync(client, second.Id, 0, 1, Key("stale-package")))
+        using (var stalePackage = await ActivateAsync(client, second.Id, 2, 1, Key("stale-package")))
         {
             Assert.Equal(HttpStatusCode.Conflict, stalePackage.StatusCode);
         }
