@@ -220,8 +220,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // DEC-CAR-003: +4 ProductDeactivationSqlServerRelationalAcceptanceTests facts (d7dbec7f… -> ddeead62…).
             // DEC-PRD-010: +5 ProductDuplicateCandidatesSqlServerRelationalAcceptanceTests facts (ddeead62… -> d434c2b8…).
             // Q16 / AT-020: +3 Product import API SQL facts (d434c2b8… -> 9958c91f…).
+            // Product 4A: +3 initial technical-definition release/rollback SQL facts.
             ["tools/relational_inventory/product.txt"] =
-                "9c57b8a9ff797fc1ab04896bf0a03a6784aef4a797b708c2cf6aa418d57da1ea",
+                "1243190221c5bdcbae84540afe02f7b9f44ad74100fa78b6fef7da5092dd6707",
 
             // purchasing
             ["tools/relational_inventory/purchasing.txt"] =
@@ -1513,6 +1514,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     new("8a7f1a3e29cf5c1855797ccf2008bf09789e141ef76ab9169201789e415fe649",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 1 }),
+                // Product's initial technical registry release is durable. Down first refuses when the
+                // accepted family/template/link/field/entry footprint or a terminal card reference exists;
+                // only the unchanged, unreferenced release can be removed.
+                ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/Persistence/Migrations/20261004130000_ReleaseInitialProductTechnicalDefinition.cs"] =
+                    new("b57c95cb4f4c65b6a254c7f83b76473cead3d979b58535ec85955d1c03449467",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 2 }),
                 ["src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/Persistence/Migrations/20260912175120_AddExplicitProductAssignments.cs"] =
                     new("b366831c39d682f7f1d45664300082806248a8b54910799c83adfcca3f64d14b",
                         new Dictionary<string, int>(StringComparer.Ordinal)

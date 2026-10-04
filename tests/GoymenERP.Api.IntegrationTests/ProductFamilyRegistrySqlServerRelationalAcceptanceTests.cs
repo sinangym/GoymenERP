@@ -11,6 +11,8 @@ using GoymenERP.Modules.Product.Application.Contracts;
 using GoymenERP.Modules.Product.Infrastructure.Persistence;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -352,6 +354,14 @@ public sealed class ProductFamilyRegistrySqlServerRelationalAcceptanceTests
         try
         {
             using var startup = factory.CreateClient();
+            // These PRD-FAM-1 cases deliberately exercise the pre-4A empty registry and their own
+            // isolated synthetic release. The 4A migration has separate exact real-SQL acceptance.
+            await using (var product = factory.Services.CreateAsyncScope())
+            {
+                await product.ServiceProvider.GetRequiredService<ProductDbContext>()
+                    .GetService<IMigrator>()
+                    .MigrateAsync("20260919100000_AddProductFamilyRegistry");
+            }
             await using (var scope = factory.Services.CreateAsyncScope())
             {
                 var identity = scope.ServiceProvider.GetRequiredService<IdentityDbContext>();
