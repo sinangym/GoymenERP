@@ -23,6 +23,9 @@ export function SalesDraftPriceFloorApproval({ shell, detail, companyId, onRecor
   readonly onRecorded: () => void
 }) {
   const boundary = useAuthBoundary()
+  const currentSecurity = boundary.capture()
+  const securityRef = useRef(currentSecurity)
+  securityRef.current = currentSecurity
   const query = useDraftLinePricing(shell, detail, companyId)
   const binding = orderAttemptBinding(shell, scopeOf(detail.draft.id))
   const [initial] = useState(() => recallPriceFloorApproval(binding))
@@ -60,11 +63,19 @@ export function SalesDraftPriceFloorApproval({ shell, detail, companyId, onRecor
     const outcome = await sendDraftPriceFloorExceptionApproval(snapshot.payload, {
       idempotencyKey: snapshot.key, companyId: snapshot.companyId, draftId: detail.draft.id,
     })
-    if (outcome.type === 'http' && (outcome.status === 401 || outcome.status === 403)) boundary.report(outcome.status, security)
-    if (generation !== responseGeneration.current || bindingRef.current !== snapshot.binding) return
+    const latestSecurity = securityRef.current
+    if (
+      generation !== responseGeneration.current
+      || bindingRef.current !== snapshot.binding
+      || latestSecurity.actorId !== security.actorId
+      || latestSecurity.sessionEpoch !== security.sessionEpoch
+      || latestSecurity.companyId !== security.companyId
+      || latestSecurity.committedContextRevision !== security.committedContextRevision
+    ) return
     const next = applyOutcome(inFlight, snapshot, bindingRef.current, outcome, previous)
     setAttemptState(next)
     rememberPriceFloorApproval(snapshot.binding, next)
+    if (outcome.type === 'http' && (outcome.status === 401 || outcome.status === 403)) boundary.report(outcome.status, security)
     if (next.phase === 'completed' || (next.phase === 'failed' && next.failure === 'conflict')) onRecorded()
   }
 

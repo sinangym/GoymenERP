@@ -134,15 +134,24 @@ describe('AT-018 list price on the order line', () => {
           originalCorrelationId: 'floor-c2' }, 200, { 'Idempotency-Replayed': 'true' })
       },
     })
-    renderSalesApp(path)
+    const app = renderSalesApp(path)
 
     const control = await screen.findByTestId('sales-price-floor-approval')
     await userEvent.type(within(control).getByLabelText(P.floorApproval.reason(1)), 'SENTETIK sözleşme')
     await userEvent.click(within(control).getByRole('button', { name: P.floorApproval.approve }))
     await userEvent.click(await within(control).findByRole('button', { name: P.floorApproval.retry }))
-    expect(await within(control).findByText(P.floorApproval.unknown)).toBeTruthy()
-    expect(within(control).queryByRole('button', { name: P.floorApproval.correct })).toBeNull()
-    await userEvent.click(within(control).getByRole('button', { name: P.floorApproval.retry }))
+
+    let retryControl = control
+    if (status === 401 || status === 403) {
+      expect(await screen.findByText(status === 401 ? 'Oturum sonlandı — oturum' : 'Bulunamadı — sayfa')).toBeTruthy()
+      expect(screen.queryByTestId('sales-price-floor-approval')).toBeNull()
+      app.unmount()
+      renderSalesApp(path)
+      retryControl = await screen.findByTestId('sales-price-floor-approval')
+    }
+    expect(await within(retryControl).findByText(P.floorApproval.unknown)).toBeTruthy()
+    expect(within(retryControl).queryByRole('button', { name: P.floorApproval.correct })).toBeNull()
+    await userEvent.click(within(retryControl).getByRole('button', { name: P.floorApproval.retry }))
 
     await waitFor(() => expect(posts).toHaveLength(3))
     expect(new Set(posts.map((call) => call.idempotencyKey)).size).toBe(1)
