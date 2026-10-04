@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { decodeCustomerReturnResponseV1, decodeCustomerReturnViewV1 } from "./customerReturnContract";
+import { decodeCustomerReturnListV1, decodeCustomerReturnResponseV1, decodeCustomerReturnViewV1 } from "./customerReturnContract";
 
 const ids = {
   customerReturnId: "00000000-0000-4000-8000-000000000001",
-  companyId: "00000000-0000-4000-8000-000000000002",
+  companyId: "10000000-0000-0000-0000-000000000001",
   loadingInstructionId: "00000000-0000-4000-8000-000000000003",
   loadingInstructionLineId: "00000000-0000-4000-8000-000000000004",
   sourceDeliveryId: "00000000-0000-4000-8000-000000000005",
@@ -47,6 +47,29 @@ describe("customer-return contract", () => {
     });
 
     expect(result.ok).toBe(true);
+  });
+
+  it("accepts the canonical backend company GUID in list and replay envelopes", () => {
+    const listed = decodeCustomerReturnListV1([pendingReturn()], { companyId: ids.companyId });
+    const replay = decodeCustomerReturnResponseV1({
+      return: pendingReturn(),
+      isReplay: true,
+      originalCorrelationId: correlationId,
+    }, { companyId: ids.companyId });
+
+    expect(listed.ok && listed.value[0]?.companyId).toBe(ids.companyId);
+    expect(replay.ok && replay.value.return.companyId).toBe(ids.companyId);
+  });
+
+  it.each([
+    "00000000-0000-0000-0000-000000000000",
+    "10000000-0000-0000-0000-00000000000g",
+    "10000000-0000-0000-0000-00000000001",
+  ])("rejects an empty or malformed company GUID: %s", (companyId) => {
+    expect(decodeCustomerReturnViewV1({ ...pendingReturn(), companyId })).toEqual({
+      ok: false,
+      error: "customer-return-member",
+    });
   });
 
   it("rejects unknown members and cross-company data", () => {
