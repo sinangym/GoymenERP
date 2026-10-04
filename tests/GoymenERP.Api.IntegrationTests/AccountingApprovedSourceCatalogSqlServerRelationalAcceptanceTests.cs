@@ -165,6 +165,8 @@ public sealed class AccountingApprovedSourceCatalogSqlServerRelationalAcceptance
         var disposables = new List<IDisposable>();
         Run? run = null;
         AccountingDbContext? context = null;
+        Run? emptyRun = null;
+        AccountingDbContext? emptyContext = null;
 
         T Track<T>(T resource) where T : IDisposable
         {
@@ -187,6 +189,16 @@ public sealed class AccountingApprovedSourceCatalogSqlServerRelationalAcceptance
             for (var index = disposables.Count - 1; index >= 0; index--)
             {
                 try { disposables[index].Dispose(); }
+                catch (Exception exception) { cleanupFailure ??= ExceptionDispatchInfo.Capture(exception); }
+            }
+            if (emptyContext is not null)
+            {
+                try { await emptyContext.DisposeAsync(); }
+                catch (Exception exception) { cleanupFailure ??= ExceptionDispatchInfo.Capture(exception); }
+            }
+            if (emptyRun is not null)
+            {
+                try { await emptyRun.DisposeAsync(); }
                 catch (Exception exception) { cleanupFailure ??= ExceptionDispatchInfo.Capture(exception); }
             }
             if (context is not null)
@@ -262,34 +274,39 @@ public sealed class AccountingApprovedSourceCatalogSqlServerRelationalAcceptance
         currentPhase = OccupiedEmptyDownUpPhase;
         try
         {
-            var packagePattern = $"%{package.Id:D}%";
-            var packageEntityId = package.Id.ToString("D");
-            await context.Database.ExecuteSqlInterpolatedAsync($"""
-                DELETE FROM audit.AuditEvents
-                WHERE CompanyId = {CompanyA} AND EntityId = {packageEntityId};
-                DELETE FROM accounting.Commands
-                WHERE CompanyId = {CompanyA} AND ResultJson LIKE {packagePattern};
-                DELETE FROM accounting.ApprovedSourceCatalogs
-                WHERE CompanyId = {CompanyA} AND Id = {package.Id};
-                """);
-            Assert.Equal(new Counts(0, 0, 0), await run.CountsAsync(package.Id));
+            emptyRun = await Run.StartAsync();
+            var emptyCompany = new CompanyContext();
+            emptyCompany.Set(CompanyA);
+            emptyContext = emptyRun.Context(emptyCompany);
+            var emptyMigrator = emptyContext.GetService<IMigrator>();
 
-            await migrator.MigrateAsync(BeforeCatalogMigration);
-            Assert.Equal(0, await run.ScalarAsync<int>(
+            Assert.Equal(0, await emptyRun.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM accounting.ApprovedSourceCatalogs"));
+            Assert.Equal(1, await emptyRun.ScalarAsync<int>(
                 "SELECT COUNT(*) FROM sys.tables WHERE schema_id = SCHEMA_ID(N'accounting') "
                 + "AND name = N'ApprovedSourceCatalogs'"));
-            Assert.Equal(0, await run.ScalarAsync<int>(
+            Assert.Equal(1, await emptyRun.ScalarAsync<int>(
                 "SELECT COUNT(*) FROM accounting.__EFMigrationsHistory WHERE MigrationId = @migration",
                 ("@migration", CatalogMigration)));
 
-            await migrator.MigrateAsync(CatalogMigration);
-            Assert.Equal(1, await run.ScalarAsync<int>(
+            await emptyMigrator.MigrateAsync(BeforeCatalogMigration);
+            Assert.Equal(0, await emptyRun.ScalarAsync<int>(
                 "SELECT COUNT(*) FROM sys.tables WHERE schema_id = SCHEMA_ID(N'accounting') "
                 + "AND name = N'ApprovedSourceCatalogs'"));
-            Assert.Equal(1, await run.ScalarAsync<int>(
+            Assert.Equal(0, await emptyRun.ScalarAsync<int>(
                 "SELECT COUNT(*) FROM accounting.__EFMigrationsHistory WHERE MigrationId = @migration",
                 ("@migration", CatalogMigration)));
-            Assert.Equal(new Counts(0, 0, 0), await run.CountsAsync(package.Id));
+
+            await emptyMigrator.MigrateAsync(CatalogMigration);
+            Assert.Equal(1, await emptyRun.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM sys.tables WHERE schema_id = SCHEMA_ID(N'accounting') "
+                + "AND name = N'ApprovedSourceCatalogs'"));
+            Assert.Equal(1, await emptyRun.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM accounting.__EFMigrationsHistory WHERE MigrationId = @migration",
+                ("@migration", CatalogMigration)));
+            Assert.Equal(0, await emptyRun.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM accounting.ApprovedSourceCatalogs"));
+            Assert.Equal(new Counts(0, 0, 0), await emptyRun.CountsAsync(package.Id));
         }
         catch
         {
@@ -492,7 +509,8 @@ public sealed class AccountingApprovedSourceCatalogSqlServerRelationalAcceptance
             }
 
             Assert.Equal(1, await run.ScalarAsync<int>(
-                "SELECT COUNT(*) FROM finance.ReceiptDrafts WHERE Id = @s AND Stage = 2", ("@s", financeSourceId)));
+                "SELECT COUNT(*) FROM finance.ReceiptDrafts WHERE Id = @s AND Stage = @stage",
+                ("@s", financeSourceId), ("@stage", ReceiptStages.Recorded)));
             Assert.Equal(1, await run.ScalarAsync<int>(
                 "SELECT COUNT(*) FROM finance.MoneyEvents WHERE SourceId = @s", ("@s", financeSourceId)));
             Assert.Equal(1, await run.ScalarAsync<int>(
