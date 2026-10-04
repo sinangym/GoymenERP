@@ -95,6 +95,38 @@ public sealed class LogisticsCustomerReturnServiceTests
     }
 
     [Fact]
+    public async Task Inventory_stage_fault_is_hidden_when_only_the_fresh_inventory_permission_is_denied_after_rollback()
+    {
+        const string decisionPermission = "logistics.customer-returns.decide";
+        const string inventoryPermission = "inventory.physical-allocation.write";
+        var state = new FaultState();
+        var pending = PendingReturn();
+        var store = new FakeStore(state) { Pending = pending };
+        var scope = new FakeScope(state, inventoryPermission);
+        var stock = new FakeStock(state)
+        {
+            StageFault = new LogisticsCustomerReturnServiceException(
+                409,
+                "inventory_owner_conflict",
+                [new("inventory", "must_not_leak")])
+        };
+        var service = CreateService(scope, store, new FakeRunner(state, stock), new FakeSource(pending));
+
+        var exception = await Assert.ThrowsAsync<LogisticsCustomerReturnServiceException>(() => service.ApproveAsync(
+            pending.Id, new ApproveCustomerReturnV1("1", Guid.NewGuid(), null), Metadata()));
+
+        Assert.Equal((403, "access_denied"), (exception.Status, exception.Code));
+        Assert.Empty(exception.Errors);
+        Assert.True(state.RollbackObserved);
+        Assert.Equal(1, stock.StageCalls);
+        Assert.Equal(0, store.StoreDecisionCalls);
+        Assert.Equal(0, store.RecordRefusalCalls);
+        Assert.Equal(
+            [(Company, "approver", decisionPermission), (Company, "approver", inventoryPermission)],
+            scope.AfterRollbackChecks);
+    }
+
+    [Fact]
     public async Task Cancellation_remains_cancellation_without_fault_disclosure_fencing()
     {
         var state = new FaultState();
@@ -186,9 +218,11 @@ public sealed class LogisticsCustomerReturnServiceTests
         public bool RollbackObserved { get; set; }
     }
 
-    private sealed class FakeScope(FaultState state) : ILogisticsCustomerReturnScopeV1
+    private sealed class FakeScope(FaultState state, string? deniedPermissionAfterRollback = null)
+        : ILogisticsCustomerReturnScopeV1
     {
         public int FaultChecks { get; private set; }
+        public List<(Guid CompanyId, string ActorId, string Permission)> AfterRollbackChecks { get; } = [];
 
         public Task<LogisticsCustomerReturnScopeV1> RequireAsync(
             string permission,
@@ -207,7 +241,14 @@ public sealed class LogisticsCustomerReturnServiceTests
 
             FaultChecks++;
             Assert.True(state.RollbackObserved);
-            throw new LogisticsCustomerReturnServiceException(403, "access_denied");
+            AfterRollbackChecks.Add((scope.CompanyId, scope.ActorId, permission));
+            if (deniedPermissionAfterRollback is null
+                || string.Equals(permission, deniedPermissionAfterRollback, StringComparison.Ordinal))
+            {
+                throw new LogisticsCustomerReturnServiceException(403, "access_denied");
+            }
+
+            return Task.CompletedTask;
         }
     }
 
@@ -252,12 +293,14 @@ public sealed class LogisticsCustomerReturnServiceTests
     private sealed class FakeStock(FaultState state) : ILogisticsCustomerReturnStockV1
     {
         public Exception? StageFault { get; init; }
+        public int StageCalls { get; private set; }
 
         public Task<LogisticsCustomerReturnStockResultV1> StageAsync(
             LogisticsCustomerReturnStockRequestV1 request,
             LogisticsWriteEnvelope envelope,
             CancellationToken cancellationToken = default)
         {
+            StageCalls++;
             if (StageFault is not null)
             {
                 state.Faulted = true;
@@ -303,6 +346,7 @@ public sealed class LogisticsCustomerReturnServiceTests
         public CustomerReturn? Pending { get; init; }
         public int StoreDecisionCalls { get; private set; }
         public int StoreRequestCalls { get; private set; }
+        public int RecordRefusalCalls { get; private set; }
 
         public Task<CustomerReturnReplayV1?> FindReplayAsync(LogisticsWriteEnvelope envelope, string requestHash,
             string command, CancellationToken cancellationToken = default)
@@ -337,7 +381,11 @@ public sealed class LogisticsCustomerReturnServiceTests
 
         public Task<CustomerReturnReplayStoreResultV1> RecordRefusalAsync(LogisticsWriteEnvelope envelope,
             string requestHash, string command, CustomerReturnTerminalRefusalV1 refusal,
-            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+            CancellationToken cancellationToken = default)
+        {
+            RecordRefusalCalls++;
+            throw new NotSupportedException();
+        }
 
         public Task<CustomerReturnStoreResultV1> StoreRequestAsync(LogisticsWriteEnvelope envelope,
             string requestHash, CustomerReturn customerReturn,
