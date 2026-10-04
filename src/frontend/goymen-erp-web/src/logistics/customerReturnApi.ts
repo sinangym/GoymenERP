@@ -301,7 +301,9 @@ async function readJson(response: Response): Promise<unknown> {
 function responseMatchesHeaders(response: Response, decoded: CustomerReturnResponseV1): boolean {
   const replay = response.headers.get("Idempotency-Replayed");
   if (replay !== null && replay !== "true") return false;
-  return (replay === "true") === decoded.isReplay;
+  if ((replay === "true") !== decoded.isReplay) return false;
+  return !decoded.isReplay
+    || response.headers.get("Idempotency-Original-Correlation-Id") === decoded.originalCorrelationId;
 }
 
 async function command(

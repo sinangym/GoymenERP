@@ -202,7 +202,11 @@ describe("customer-return adapter boundary", () => {
       }
       return new Response(JSON.stringify(response), {
         status: 201,
-        headers: { "Content-Type": "application/json", "Idempotency-Replayed": "true" },
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Replayed": "true",
+          "Idempotency-Original-Correlation-Id": response.originalCorrelationId,
+        },
       });
     }));
 
@@ -222,6 +226,103 @@ describe("customer-return adapter boundary", () => {
       .toBe((posts[1][1]?.headers as Record<string, string>)["Idempotency-Key"]);
     expect(posts[0][1]?.body).toBe(posts[1][1]?.body);
     expect(effects).toBe(1);
+  });
+
+  it.each([
+    ["missing", undefined],
+    ["wrong", "wrong-original-correlation"],
+  ])("keeps a replay with a %s original-correlation header frozen", async (_caseName, originalHeader) => {
+    const context = {
+      companyId: "00000000-0000-4000-8000-000000000003",
+      salesOrderId: "00000000-0000-4000-8000-000000000007",
+      loadingInstructionId: "00000000-0000-4000-8000-000000000004",
+      loadingInstructionLineId: "00000000-0000-4000-8000-000000000005",
+      binding: "company-a:authority-2",
+    };
+    const response = {
+      return: {
+        customerReturnId: requestPayload.customerReturnId,
+        companyId: context.companyId,
+        loadingInstructionId: context.loadingInstructionId,
+        loadingInstructionLineId: context.loadingInstructionLineId,
+        sourceDeliveryId: requestPayload.sourceDeliveryId,
+        sourceShipmentId: "00000000-0000-4000-8000-000000000006",
+        sourceOrderId: context.salesOrderId,
+        sourceOrderLineId: "00000000-0000-4000-8000-000000000008",
+        unitId: "00000000-0000-4000-8000-000000000009",
+        quantity: requestPayload.quantity,
+        sourceDeliveredQuantity: "2.000",
+        status: "Pending",
+        version: "1",
+        reason: requestPayload.reason,
+        requestedBy: "actor-a",
+        occurredAtUtc: requestPayload.occurredAtUtc,
+        requestedAtUtc: "2026-10-04T08:01:00Z",
+        decidedBy: null,
+        decidedAtUtc: null,
+        decisionNote: null,
+        inventoryMovementId: null,
+        originalLabelId: null,
+        originalShipmentMovementId: null,
+      },
+      isReplay: true,
+      originalCorrelationId: "1234567890abcdef1234567890abcdef",
+    };
+    const headers = new Headers({
+      "Content-Type": "application/json",
+      "Idempotency-Replayed": "true",
+    });
+    if (originalHeader !== undefined) headers.set("Idempotency-Original-Correlation-Id", originalHeader);
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify(response), { status: 201, headers })));
+
+    const sending = beginCustomerReturnAttempt({ type: "idle" }, requestAttempt());
+    if (sending.type !== "sending") throw new Error("expected sending state");
+    const outcome = await customerReturnEndpointAdapter.request(context, sending.attempt, new AbortController().signal);
+    expect(outcome).toEqual({ type: "malformed" });
+    expect(settleCustomerReturnAttempt(sending, sending.attempt, outcome, context.binding))
+      .toEqual({ type: "unknown", attempt: sending.attempt });
+  });
+
+  it("keeps an unexpected successful HTTP status frozen instead of minting a new attempt", async () => {
+    const context = {
+      companyId: "00000000-0000-4000-8000-000000000003",
+      salesOrderId: "00000000-0000-4000-8000-000000000007",
+      loadingInstructionId: "00000000-0000-4000-8000-000000000004",
+      loadingInstructionLineId: "00000000-0000-4000-8000-000000000005",
+      binding: "company-a:authority-2",
+    };
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("{}", {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    })));
+
+    const sending = beginCustomerReturnAttempt({ type: "idle" }, requestAttempt());
+    if (sending.type !== "sending") throw new Error("expected sending state");
+    const outcome = await customerReturnEndpointAdapter.request(context, sending.attempt, new AbortController().signal);
+    expect(outcome).toEqual({ type: "http", status: 200 });
+    expect(settleCustomerReturnAttempt(sending, sending.attempt, outcome, context.binding))
+      .toEqual({ type: "unknown", attempt: sending.attempt });
+  });
+
+  it("fails closed when a non-aborted successful response body cannot be read", async () => {
+    const context = {
+      companyId: "00000000-0000-4000-8000-000000000003",
+      salesOrderId: "00000000-0000-4000-8000-000000000007",
+      loadingInstructionId: "00000000-0000-4000-8000-000000000004",
+      loadingInstructionLineId: "00000000-0000-4000-8000-000000000005",
+      binding: "company-a:authority-2",
+    };
+    vi.stubGlobal("fetch", vi.fn(async () => ({
+      status: 201,
+      headers: new Headers(),
+      json: vi.fn().mockRejectedValue(new Error("body stream failed")),
+    }) as unknown as Response));
+    const signal = new AbortController().signal;
+    const sending = beginCustomerReturnAttempt({ type: "idle" }, requestAttempt());
+    if (sending.type !== "sending") throw new Error("expected sending state");
+
+    expect(await customerReturnEndpointAdapter.request(context, sending.attempt, signal)).toEqual({ type: "malformed" });
+    expect(signal.aborted).toBe(false);
   });
 
   it("opens a new partial-return attempt only after a fresh read observes the completed return", () => {
@@ -263,6 +364,18 @@ describe("customer-return adapter boundary", () => {
       sending.attempt.binding,
     );
     expect(resetSettledCustomerReturnAttempt(succeeded, sending.attempt.binding, [])).toBe(succeeded);
+    expect(resetSettledCustomerReturnAttempt(succeeded, sending.attempt.binding, [{
+      ...response.return,
+      customerReturnId: "00000000-0000-4000-8000-000000000099",
+    }])).toBe(succeeded);
+    expect(resetSettledCustomerReturnAttempt(succeeded, sending.attempt.binding, [{
+      ...response.return,
+      status: "Rejected",
+    }])).toBe(succeeded);
+    expect(resetSettledCustomerReturnAttempt(succeeded, sending.attempt.binding, [{
+      ...response.return,
+      version: "2",
+    }])).toBe(succeeded);
     const idle = resetSettledCustomerReturnAttempt(succeeded, sending.attempt.binding, [response.return]);
     expect(idle).toEqual({ type: "idle" });
     const next = beginCustomerReturnAttempt(idle, { ...requestAttempt(), idempotencyKey: "second-partial-key" });

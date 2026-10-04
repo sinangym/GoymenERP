@@ -32,6 +32,8 @@ export interface CustomerReturnPanelProps {
   deliveryOptions: readonly CustomerReturnDeliveryOption[];
   requestController?: CustomerReturnRequestController;
   decisionController?: CustomerReturnDecisionController;
+  requestCompletionVisible?: boolean;
+  decisionCompletionVisible?: boolean;
 }
 
 function statusLabel(status: CustomerReturnStatus): string {
@@ -42,11 +44,13 @@ function statusLabel(status: CustomerReturnStatus): string {
 
 function CommandStateNotice({
   controller,
+  completionVisible = false,
 }: {
   controller: CustomerReturnRequestController | CustomerReturnDecisionController;
+  completionVisible?: boolean;
 }) {
   const state = controller.state;
-  if (state.type === "idle") return null;
+  if (state.type === "idle") return completionVisible ? <p role="status">{text.commandSucceeded}</p> : null;
   if (state.type === "sending") return <p role="status">{text.sending}</p>;
   if (state.type === "failed") return <p role="alert">{text.commandFailed}</p>;
   if (state.type === "succeeded") return <p role="status">{text.commandSucceeded}</p>;
@@ -69,6 +73,8 @@ export function CustomerReturnPanel({
   deliveryOptions,
   requestController,
   decisionController,
+  requestCompletionVisible = false,
+  decisionCompletionVisible = false,
 }: CustomerReturnPanelProps) {
   const [deliveryId, setDeliveryId] = useState(deliveryOptions[0]?.sourceDeliveryId ?? "");
   const [quantity, setQuantity] = useState("");
@@ -103,7 +109,13 @@ export function CustomerReturnPanel({
   }
 
   if (readState.type === "failed") {
-    return <section aria-label={text.title}><p role="alert">{text.failed}</p></section>;
+    return (
+      <section aria-label={text.title}>
+        <p role="alert">{text.failed}</p>
+        {decisionController ? <CommandStateNotice controller={decisionController} completionVisible={decisionCompletionVisible} /> : null}
+        {requestController ? <CommandStateNotice controller={requestController} completionVisible={requestCompletionVisible} /> : null}
+      </section>
+    );
   }
 
   const submitRequest = (event: FormEvent<HTMLFormElement>) => {
@@ -178,7 +190,7 @@ export function CustomerReturnPanel({
       )}
 
       {decisionController && isCustomerReturnContextCurrent(contextBinding, decisionController.state.type === "idle" ? contextBinding : decisionController.state.binding)
-        ? <CommandStateNotice controller={decisionController} />
+        ? <CommandStateNotice controller={decisionController} completionVisible={decisionCompletionVisible} />
         : null}
 
       {visibility.canRequest && requestController && deliveryOptions.length > 0 ? (
@@ -213,7 +225,7 @@ export function CustomerReturnPanel({
           </label>
           <button type="submit" disabled={requestLocked}>{text.request}</button>
           {isCustomerReturnContextCurrent(contextBinding, requestController.state.type === "idle" ? contextBinding : requestController.state.binding)
-            ? <CommandStateNotice controller={requestController} />
+            ? <CommandStateNotice controller={requestController} completionVisible={requestCompletionVisible} />
             : null}
         </form>
       ) : null}

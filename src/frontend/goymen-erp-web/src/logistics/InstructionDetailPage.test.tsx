@@ -7,10 +7,11 @@
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { INSTRUCTION_DETAIL_TEXT as T, PROBLEM_CODE_TEXT } from './logisticsText'
 import { CUSTOMER_RETURN_CAPABILITY } from './customerReturnApi'
+import type { CustomerReturnResponseV1, CustomerReturnViewV1, RequestCustomerReturnV1 } from './customerReturnContract'
 import {
   FORBIDDEN_MONEY_WORDS,
   ALL_LOGISTICS,
@@ -44,7 +45,10 @@ function loadAnswer(call: RecordedCall, isReplay = false): Response {
   return json(mutation(issued([line], [share], '4'), isReplay), 200, isReplay ? { 'Idempotency-Replayed': 'true' } : {})
 }
 
-function installCustomerReturnScreen(capabilities: readonly string[]) {
+function installCustomerReturnScreen(capabilities: readonly string[], handlers: {
+  readonly onRead?: (fallback: CustomerReturnViewV1) => Response | Promise<Response>
+  readonly onRequest?: (fallback: CustomerReturnViewV1, request: RequestCustomerReturnV1) => Response | Promise<Response>
+} = {}) {
   const companyId = '00000000-0000-4000-8000-000000000041'
   const instructionId = '00000000-0000-4000-8000-000000000042'
   const lineId = '00000000-0000-4000-8000-000000000043'
@@ -72,7 +76,7 @@ function installCustomerReturnScreen(capabilities: readonly string[]) {
   const detail = instructionDetail({ id: instructionId, companyId, status: 'Issued', version: '3' }, [line], [delivery])
   installFetch({ capabilities, onDetail: () => json(detail) })
   const shellFetch = globalThis.fetch
-  const customerReturn = {
+  const customerReturn: CustomerReturnViewV1 = {
     customerReturnId: '00000000-0000-4000-8000-000000000053',
     companyId,
     loadingInstructionId: instructionId,
@@ -110,7 +114,16 @@ function installCustomerReturnScreen(capabilities: readonly string[]) {
     if (url.pathname.endsWith('/organization/companies')) {
       return json([{ id: companyId, code: 'GDC', legalName: 'Göymen A', isPlaceholder: true }])
     }
-    if (url.pathname === `/api/v1/logistics/orders/${sourceOrderId}/customer-returns`) return json([customerReturn])
+    if (url.pathname === `/api/v1/logistics/orders/${sourceOrderId}/customer-returns`) {
+      return handlers.onRead?.(customerReturn) ?? json([customerReturn])
+    }
+    if (
+      init?.method === 'POST'
+      && url.pathname === `/api/v1/logistics/instructions/${instructionId}/lines/${lineId}/customer-returns`
+      && handlers.onRequest
+    ) {
+      return handlers.onRequest(customerReturn, JSON.parse(String(init.body)) as RequestCustomerReturnV1)
+    }
     return shellFetch(input, init)
   }))
   return { customerReturn, path: `/lojistik/yukleme-talimatlari/${instructionId}` }
@@ -139,6 +152,91 @@ describe('L-02-DETAIL', () => {
     await screen.findByText('SENTETIK müşteri iadesi')
     expect(screen.getByRole('button', { name: visible })).not.toBeNull()
     for (const label of hidden) expect(screen.queryByRole('button', { name: label })).toBeNull()
+  })
+
+  it('keeps request completion visible after the matching fresh read unlocks the next partial return', async () => {
+    let current: CustomerReturnViewV1 | null = null
+    let reads = 0
+    let posts = 0
+    const second = deferred<Response>()
+    const setup = installCustomerReturnScreen([
+      ...ALL_LOGISTICS,
+      CUSTOMER_RETURN_CAPABILITY.read,
+      CUSTOMER_RETURN_CAPABILITY.request,
+    ], {
+      onRead: (fallback) => {
+        reads += 1
+        return json([current ?? fallback])
+      },
+      onRequest: (fallback, request) => {
+        posts += 1
+        current = {
+          ...fallback,
+          customerReturnId: request.customerReturnId,
+          quantity: request.quantity,
+          reason: request.reason,
+          occurredAtUtc: request.occurredAtUtc,
+        }
+        const response: CustomerReturnResponseV1 = {
+          return: current,
+          isReplay: false,
+          originalCorrelationId: `customer-return-${posts}`,
+        }
+        return posts === 1 ? json(response, 201) : second.promise
+      },
+    })
+    renderLogisticsApp(setup.path)
+
+    fireEvent.change(await screen.findByLabelText('İade miktarı'), { target: { value: '0.25' } })
+    fireEvent.change(screen.getByLabelText('İade nedeni'), { target: { value: 'İlk kısmi iade' } })
+    fireEvent.change(screen.getByLabelText('İade zamanı'), { target: { value: '2026-10-04T09:00' } })
+    const submit = screen.getByRole('button', { name: 'Talep oluştur' }) as HTMLButtonElement
+    await userEvent.click(submit)
+
+    await screen.findByText('İşlem kaydedildi.')
+    await waitFor(() => expect(reads).toBeGreaterThanOrEqual(2))
+    expect(submit.disabled).toBe(false)
+
+    await userEvent.click(submit)
+    await waitFor(() => {
+      expect(posts).toBe(2)
+      expect(screen.queryByText('İşlem kaydedildi.')).toBeNull()
+    })
+  })
+
+  it('keeps the completed command visible and locked when its fresh read fails', async () => {
+    let reads = 0
+    const setup = installCustomerReturnScreen([
+      ...ALL_LOGISTICS,
+      CUSTOMER_RETURN_CAPABILITY.read,
+      CUSTOMER_RETURN_CAPABILITY.request,
+    ], {
+      onRead: (fallback) => {
+        reads += 1
+        return reads === 1 ? json([fallback]) : json({ title: 'read failed' }, 500)
+      },
+      onRequest: (fallback, request) => json({
+        return: {
+          ...fallback,
+          customerReturnId: request.customerReturnId,
+          quantity: request.quantity,
+          reason: request.reason,
+          occurredAtUtc: request.occurredAtUtc,
+        },
+        isReplay: false,
+        originalCorrelationId: 'customer-return-failed-fresh-read',
+      } satisfies CustomerReturnResponseV1, 201),
+    })
+    renderLogisticsApp(setup.path)
+
+    fireEvent.change(await screen.findByLabelText('İade miktarı'), { target: { value: '0.25' } })
+    fireEvent.change(screen.getByLabelText('İade nedeni'), { target: { value: 'Fresh read başarısız' } })
+    fireEvent.change(screen.getByLabelText('İade zamanı'), { target: { value: '2026-10-04T09:00' } })
+    await userEvent.click(screen.getByRole('button', { name: 'Talep oluştur' }))
+
+    await waitFor(() => expect(reads).toBeGreaterThanOrEqual(2))
+    expect(screen.getByText('İşlem kaydedildi.')).not.toBeNull()
+    expect(screen.queryByRole('button', { name: 'Talep oluştur' })).toBeNull()
   })
 
   it('shows the facts and the shares as text, no money word; a Draft offers "Yayımla" and no load form', async () => {

@@ -224,6 +224,8 @@ function CustomerReturnLine({
   })
   const [requestLifecycle, setRequestLifecycle] = useState<CustomerReturnAttemptLifecycle<RequestCustomerReturnV1>>({ type: 'idle' })
   const [decisionLifecycle, setDecisionLifecycle] = useState<CustomerReturnAttemptLifecycle<CustomerReturnDecisionAttemptPayload>>({ type: 'idle' })
+  const [requestCompletionBinding, setRequestCompletionBinding] = useState<string | null>(null)
+  const [decisionCompletionBinding, setDecisionCompletionBinding] = useState<string | null>(null)
 
   const sendRequest = (attempt: FrozenCustomerReturnAttempt<RequestCustomerReturnV1>) => {
     const snapshot = boundary.capture()
@@ -231,9 +233,11 @@ function CustomerReturnLine({
       if (outcome.type === 'http') boundary.report(outcome.status, snapshot)
       setRequestLifecycle((current) => settleCustomerReturnAttempt(current, attempt, outcome, binding))
       if (outcome.type === 'succeeded') {
+        setRequestCompletionBinding(attempt.binding)
         const fresh = await query.refetch()
-        if (fresh.data?.type === 'succeeded') {
-          setRequestLifecycle((current) => resetSettledCustomerReturnAttempt(current, binding, fresh.data.returns))
+        const freshReturns = fresh.data?.type === 'succeeded' ? fresh.data.returns : null
+        if (freshReturns !== null) {
+          setRequestLifecycle((current) => resetSettledCustomerReturnAttempt(current, binding, freshReturns))
         }
         onRecorded()
       }
@@ -249,9 +253,11 @@ function CustomerReturnLine({
       if (answer.type === 'http') boundary.report(answer.status, snapshot)
       setDecisionLifecycle((current) => settleCustomerReturnAttempt(current, attempt, answer, binding))
       if (answer.type === 'succeeded') {
+        setDecisionCompletionBinding(attempt.binding)
         const fresh = await query.refetch()
-        if (fresh.data?.type === 'succeeded') {
-          setDecisionLifecycle((current) => resetSettledCustomerReturnAttempt(current, binding, fresh.data.returns))
+        const freshReturns = fresh.data?.type === 'succeeded' ? fresh.data.returns : null
+        if (freshReturns !== null) {
+          setDecisionLifecycle((current) => resetSettledCustomerReturnAttempt(current, binding, freshReturns))
         }
         onRecorded()
       }
@@ -282,9 +288,12 @@ function CustomerReturnLine({
       visibility={{ canRead, canRequest, canApprove, canReject }}
       readState={readState}
       deliveryOptions={deliveries}
+      requestCompletionVisible={requestCompletionBinding === binding}
+      decisionCompletionVisible={decisionCompletionBinding === binding}
       requestController={{
         state: customerReturnCommandState(requestLifecycle),
         submit: (draft) => {
+          setRequestCompletionBinding(null)
           const attempt = freezeCustomerReturnAttempt({
             operationId: customerReturnEndpointAdapter.operations.request,
             binding,
@@ -296,15 +305,20 @@ function CustomerReturnLine({
           if (next.type === 'sending') sendRequest(next.attempt)
         },
         retrySameAttempt: () => {
+          setRequestCompletionBinding(null)
           const next = retryCustomerReturnAttempt(requestLifecycle, binding)
           setRequestLifecycle(next)
           if (next.type === 'sending') sendRequest(next.attempt)
         },
-        abandonUnknownAttempt: () => setRequestLifecycle(abandonCustomerReturnAttempt(requestLifecycle, binding)),
+        abandonUnknownAttempt: () => {
+          setRequestCompletionBinding(null)
+          setRequestLifecycle(abandonCustomerReturnAttempt(requestLifecycle, binding))
+        },
       }}
       decisionController={{
         state: customerReturnCommandState(decisionLifecycle),
         submit: (draft) => {
+          setDecisionCompletionBinding(null)
           const request = draft.action === 'approve'
             ? { expectedVersion: draft.expectedVersion, inventoryMovementId: generateClientId(), note: draft.note }
             : { expectedVersion: draft.expectedVersion, note: draft.note }
@@ -321,11 +335,15 @@ function CustomerReturnLine({
           if (next.type === 'sending') sendDecision(next.attempt)
         },
         retrySameAttempt: () => {
+          setDecisionCompletionBinding(null)
           const next = retryCustomerReturnAttempt(decisionLifecycle, binding)
           setDecisionLifecycle(next)
           if (next.type === 'sending') sendDecision(next.attempt)
         },
-        abandonUnknownAttempt: () => setDecisionLifecycle(abandonCustomerReturnAttempt(decisionLifecycle, binding)),
+        abandonUnknownAttempt: () => {
+          setDecisionCompletionBinding(null)
+          setDecisionLifecycle(abandonCustomerReturnAttempt(decisionLifecycle, binding))
+        },
       }}
     />
   )
