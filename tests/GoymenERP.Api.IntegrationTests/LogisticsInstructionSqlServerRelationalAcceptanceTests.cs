@@ -494,7 +494,15 @@ public sealed partial class LogisticsInstructionSqlServerRelationalAcceptanceTes
     {
         await using var run = await Run.StartAsync();
         var fixture = await SeedHostedShipmentAsync(run, "SYN-CUSTOMER-RETURN-AUTH-SWAP");
-        var user = new SwappableCustomerReturnUser("SYN-CUSTOMER-RETURN-REQUESTER", CompanyA);
+        var requester = await run.GrantAsync("SYN-CUSTOMER-RETURN-REQUESTER", CompanyA,
+            LogisticsPermissionManifestV1.ShipmentsRecord,
+            LogisticsPermissionManifestV1.DeliveriesRecord,
+            LogisticsPermissionManifestV1.CustomerReturnsRequest,
+            ErpPermissions.InventoryPhysicalAllocationWrite);
+        var decider = await run.GrantAsync("SYN-CUSTOMER-RETURN-DECIDER", CompanyA,
+            LogisticsPermissionManifestV1.CustomerReturnsDecision,
+            ErpPermissions.InventoryPhysicalAllocationWrite);
+        var user = new SwappableCustomerReturnUser(requester, CompanyA);
         var authority = new SwappingCustomerReturnAuthority(user);
         await using var host = HostedShipmentHost(run, fixture, new HostedAllocationReads(fixture), user.UserId!,
             configure: services =>
@@ -530,7 +538,7 @@ public sealed partial class LogisticsInstructionSqlServerRelationalAcceptanceTes
                 "Controlled final authority identity swap.", T0.AddMinutes(12)));
         Assert.Equal(HttpStatusCode.Created, requestedResponse.StatusCode);
 
-        user.UseActor("SYN-CUSTOMER-RETURN-DECIDER");
+        user.UseActor(decider);
         using var decisionClient = HostedClientFor(host, user.UserId!, CompanyA);
 
         var inventoryMovementId = Guid.NewGuid();
