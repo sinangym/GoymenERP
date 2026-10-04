@@ -198,7 +198,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // AT-055 lifecycle (#518, user decision 2026-09-30): +6 approve/cancel/e-İrsaliye/numbering SQL facts (010fcbd6… -> c5969829…).
             // #527: +3 cross-instruction Sales line-limit atomicity facts (c5969829… -> fc08c53d…).
             ["tools/relational_inventory/logistics.txt"] =
-                "4819a53d3a0c3e54cf3900e11c1519b601f1c7b021ad95583df097adbbf71538",
+                "77f3874fde3e1a9e3e6318e45d63fee72256a921a5ca218d73fc105a0a6e99f9",
 
             // manufacturing
             // MFG close: owner-added closure/tolerance SQL facts extend the exact Manufacturing discovery inventory.
@@ -288,7 +288,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // company-leading keys; UX_DispatchNoteLines_ShipmentId over non-nullable columns (a shipment on one dispatch note).
             // Re-measured for the AT-055 lifecycle (#518): DispatchNoteSeries, company-scoped with the same CompanyId query filter
             // and a company-leading key; the single-link key filtered to unreleased lines; forward-only write guard.
-                "d13b3e5999745b5dd9c011ded342b095620816a13505fd385c4806cc0bcafe0e",
+                "5ee82bd54467d33ebcda979dbd187d1154438a39c6caf7d7add90639637bebb0",
             // PUR-4a: company-scoped like Organization; every tenant row (requests and their lines, orders and their
             // lines, attempts) and AuditEvent carries the CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/"
@@ -407,7 +407,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 [ReviewedInventoryDefiniteShipmentParticipantPath] = ("InventoryDbContext", 1),
                 [ReviewedInventoryCustomerReturnParticipantPath] = ("InventoryDbContext", 1),
                 [ReviewedLogisticsCustomerReturnRuntimePath] = ("LogisticsDbContext", 2),
-                [ReviewedLogisticsCustomerReturnStorePath] = ("LogisticsDbContext", 10),
+                [ReviewedLogisticsCustomerReturnStorePath] = ("LogisticsDbContext", 13),
                 [ReviewedLogisticsCustomerReturnReadPortsPath] = ("LogisticsDbContext", 2),
                 [ReviewedInventoryGoodsReceiptParticipantPath] = ("InventoryDbContext", 1),
                 [ReviewedInventoryManufacturingRealizationParticipantPath] = ("InventoryDbContext", 1),
@@ -877,7 +877,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // the provider branch and its token counts are unchanged. Re-fingerprinted for AT-025: the operations
                     // work list's progress reader, bindings and service registrations; token counts unchanged.
                     new(
-                        "631f49e1ba1d086b899f02a65c806595d4fe7fe9a940d4f5d2e4a94e52960210",
+                        "b999fe40cd73be06a333e48058e62d3193c3bebfcdab8883250e6c710adc3e43",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -899,7 +899,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // exact connection/transaction to the reviewed Inventory participant.
                 [ReviewedLogisticsCustomerReturnRuntimePath] =
                     new(
-                        "98d6d98e1610f8b0f4e6caa50d998cd5bf7364415836b706483bbd4bc1a70b15",
+                        "15797a87960f3a99595356dcbfefa9e0a60740b09a4f3e9772e96879dbf5bf0e",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["System.Data.Common"] = 1,
@@ -915,7 +915,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // capabilities remain exact-source and exact-count reviewed.
                 [ReviewedLogisticsCustomerReturnStorePath] =
                     new(
-                        "a70d8cad8647d78131494b624dbb578879089f3f92e7251e2a85202eac1376ab",
+                        "06808d6fe56293d16cf04d41fdff20505dcc0ed1862471ceae600e48a30c91df",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1,
@@ -923,7 +923,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         }),
                 ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Application/LogisticsCustomerReturnService.cs"] =
                     new(
-                        "1b5134a22c2f684ec9b17fa804270a0d9f9acbc2dcc1b76f86c2054d8c4c2261",
+                        "a47c8ba48935ef7a3736ad9900ce1ea595af342f730423a1885cbc1730f39eb1",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             [".FindAsync"] = 2
@@ -1316,7 +1316,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         { ["Sql"] = 2 }),
                 // Customer returns are immutable; Down refuses while a return or attempt exists before dropping either table.
                 ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/Migrations/20261003230000_AddCustomerReturns.cs"] =
-                    new("ff798b5ffaec30e02df105cb38f0d86c297eda02fb5304a13cb687d0870e2067",
+                    new("413671c75f2cc04beb196108a5f6284824726702efa1c3bfde5aeb44b82ff566",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 1 }),
                 // ERP-000G / AT-065: the Down's only raw SQL is the vault's module refusal (51058, used by no other migration

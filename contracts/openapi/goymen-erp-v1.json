@@ -48900,6 +48900,7 @@
             },
             "x-erp-problem-codes": [
               "concurrent_change",
+              "logistics_customer_return_quantity_exceeded",
               "logistics_customer_return_version_conflict",
               "same_key_payload_mismatch"
             ]
@@ -49233,6 +49234,8 @@
               "inventory_customer_return_exceeds_shipment",
               "inventory_customer_return_idempotency_conflict",
               "inventory_customer_return_shipment_not_recorded",
+              "logistics_customer_return_not_pending",
+              "logistics_customer_return_own_decision",
               "logistics_customer_return_quantity_exceeded",
               "logistics_customer_return_source_invalid",
               "logistics_customer_return_version_conflict",
@@ -49562,6 +49565,8 @@
             },
             "x-erp-problem-codes": [
               "concurrent_change",
+              "logistics_customer_return_not_pending",
+              "logistics_customer_return_own_decision",
               "logistics_customer_return_version_conflict",
               "same_key_payload_mismatch"
             ]

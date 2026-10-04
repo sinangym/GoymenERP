@@ -2135,7 +2135,8 @@ public sealed partial class OpenApiContractGenerationTests
             ],
             ["SetLoadingInstructionDispatchNoteEDispatchNumberV1:422"] = ["validation_failed"],
             ["RequestLogisticsCustomerReturnV1:400"] = ["command_metadata_invalid", "validation_failed"],
-            ["RequestLogisticsCustomerReturnV1:409"] = ["concurrent_change", "logistics_customer_return_version_conflict", "same_key_payload_mismatch"],
+            ["RequestLogisticsCustomerReturnV1:409"] =
+                ["concurrent_change", "logistics_customer_return_quantity_exceeded", "logistics_customer_return_version_conflict", "same_key_payload_mismatch"],
             ["RequestLogisticsCustomerReturnV1:422"] = ["validation_failed"],
             ["ApproveLogisticsCustomerReturnV1:400"] =
                 ["command_metadata_invalid", "inventory_customer_return_invalid_request", "inventory_customer_return_quantity_invalid", "validation_failed"],
@@ -2143,12 +2144,15 @@ public sealed partial class OpenApiContractGenerationTests
             [
                 "concurrent_change", "inventory_customer_return_concurrent_change", "inventory_customer_return_exceeds_shipment",
                 "inventory_customer_return_idempotency_conflict", "inventory_customer_return_shipment_not_recorded",
+                "logistics_customer_return_not_pending", "logistics_customer_return_own_decision",
                 "logistics_customer_return_quantity_exceeded", "logistics_customer_return_source_invalid",
                 "logistics_customer_return_version_conflict", "same_key_payload_mismatch",
             ],
             ["ApproveLogisticsCustomerReturnV1:422"] = ["validation_failed"],
             ["RejectLogisticsCustomerReturnV1:400"] = ["command_metadata_invalid", "validation_failed"],
-            ["RejectLogisticsCustomerReturnV1:409"] = ["concurrent_change", "logistics_customer_return_version_conflict", "same_key_payload_mismatch"],
+            ["RejectLogisticsCustomerReturnV1:409"] =
+                ["concurrent_change", "logistics_customer_return_not_pending", "logistics_customer_return_own_decision",
+                    "logistics_customer_return_version_conflict", "same_key_payload_mismatch"],
             ["RejectLogisticsCustomerReturnV1:422"] = ["validation_failed"],
             ["GetSalesOrderDispatchNotesV1:400"] = ["validation_failed"],
             ["GetPurchaseRequestsV1:400"] = ["invalid_cursor", "validation_failed"],
