@@ -5,9 +5,15 @@ import type {
   RejectCustomerReturnV1,
   RequestCustomerReturnV1,
 } from "./customerReturnContract";
+import {
+  decodeCustomerReturnListV1,
+  decodeCustomerReturnResponseV1,
+} from "./customerReturnContract";
+import { API_BASE } from "./api";
 
 export interface CustomerReturnContext {
   companyId: string;
+  salesOrderId: string;
   loadingInstructionId: string;
   loadingInstructionLineId: string;
   binding: string;
@@ -232,3 +238,150 @@ export function isCustomerReturnContextCurrent(
 export function canRetryCustomerReturnAttempt(state: CustomerReturnCommandState): boolean {
   return state.type === "unknown";
 }
+
+export const CUSTOMER_RETURN_CAPABILITY = Object.freeze({
+  read: "logistics.customer-returns.read",
+  request: "logistics.customer-returns.request",
+  decision: "logistics.customer-returns.decision",
+});
+
+export const CUSTOMER_RETURN_OPERATION = Object.freeze({
+  read: "GetLogisticsOrderCustomerReturnsV1",
+  request: "RequestLogisticsCustomerReturnV1",
+  approve: "ApproveLogisticsCustomerReturnV1",
+  reject: "RejectLogisticsCustomerReturnV1",
+});
+
+const DEV_USER = (import.meta.env.VITE_DEV_USER as string | undefined) ?? "company-a-user";
+const DEV_IDENTITY_ENABLED = import.meta.env.DEV || import.meta.env.VITE_BOOTSTRAP_IDENTITY_ENABLED === "true";
+
+function transportHeaders(companyId: string, idempotencyKey?: string): Record<string, string> {
+  return {
+    ...(DEV_IDENTITY_ENABLED ? { "X-Development-User": DEV_USER } : {}),
+    "X-Company-Id": companyId,
+    ...(idempotencyKey === undefined
+      ? {}
+      : { "Content-Type": "application/json", "Idempotency-Key": idempotencyKey }),
+  };
+}
+
+function transportFailure(signal: AbortSignal): Exclude<CustomerReturnCommandOutcome, { type: "succeeded" } | { type: "http" }> {
+  if (signal.aborted) return { type: "aborted" };
+  if (globalThis.navigator?.onLine === false) return { type: "offline" };
+  return { type: "network-error" };
+}
+
+async function readJson(response: Response): Promise<unknown> {
+  try {
+    return await response.json();
+  } catch {
+    return null;
+  }
+}
+
+function responseMatchesHeaders(response: Response, decoded: CustomerReturnResponseV1): boolean {
+  const replay = response.headers.get("Idempotency-Replayed");
+  if (replay !== null && replay !== "true") return false;
+  return (replay === "true") === decoded.isReplay;
+}
+
+async function command(
+  context: CustomerReturnContext,
+  path: string,
+  expectedStatus: number,
+  expectedState: "Pending" | "Approved" | "Rejected",
+  customerReturnId: string,
+  attempt: FrozenCustomerReturnAttempt<object>,
+  signal: AbortSignal,
+): Promise<CustomerReturnCommandOutcome> {
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE}${path}`, {
+      method: "POST",
+      headers: transportHeaders(context.companyId, attempt.idempotencyKey),
+      body: JSON.stringify(attempt.payload),
+      signal,
+    });
+  } catch {
+    return transportFailure(signal);
+  }
+
+  const body = await readJson(response);
+  if (response.status !== expectedStatus) return { type: "http", status: response.status };
+  const decoded = decodeCustomerReturnResponseV1(body, {
+    companyId: context.companyId,
+    loadingInstructionId: context.loadingInstructionId,
+    loadingInstructionLineId: context.loadingInstructionLineId,
+  });
+  if (
+    !decoded.ok
+    || decoded.value.return.customerReturnId !== customerReturnId
+    || decoded.value.return.status !== expectedState
+    || !responseMatchesHeaders(response, decoded.value)
+  ) {
+    return { type: "malformed" };
+  }
+  return { type: "succeeded", response: decoded.value };
+}
+
+export const customerReturnEndpointAdapter: CustomerReturnEndpointAdapter = {
+  operations: CUSTOMER_RETURN_OPERATION,
+  async read(context, signal) {
+    let response: Response;
+    try {
+      response = await fetch(`${API_BASE}/logistics/orders/${context.salesOrderId}/customer-returns`, {
+        headers: transportHeaders(context.companyId),
+        signal,
+      });
+    } catch {
+      return transportFailure(signal);
+    }
+    const body = await readJson(response);
+    if (response.status !== 200) return { type: "http", status: response.status };
+    const decoded = decodeCustomerReturnListV1(body, {
+      companyId: context.companyId,
+    });
+    if (!decoded.ok || decoded.value.some((item) => item.sourceOrderId !== context.salesOrderId)) {
+      return { type: "malformed" };
+    }
+    return {
+      type: "succeeded",
+      returns: decoded.value.filter((item) =>
+        item.loadingInstructionId === context.loadingInstructionId
+        && item.loadingInstructionLineId === context.loadingInstructionLineId),
+    };
+  },
+  request(context, attempt, signal) {
+    return command(
+      context,
+      `/logistics/instructions/${context.loadingInstructionId}/lines/${context.loadingInstructionLineId}/customer-returns`,
+      201,
+      "Pending",
+      attempt.payload.customerReturnId,
+      attempt,
+      signal,
+    );
+  },
+  approve(context, customerReturnId, attempt, signal) {
+    return command(
+      context,
+      `/logistics/customer-returns/${customerReturnId}/approve`,
+      200,
+      "Approved",
+      customerReturnId,
+      attempt,
+      signal,
+    );
+  },
+  reject(context, customerReturnId, attempt, signal) {
+    return command(
+      context,
+      `/logistics/customer-returns/${customerReturnId}/reject`,
+      200,
+      "Rejected",
+      customerReturnId,
+      attempt,
+      signal,
+    );
+  },
+};

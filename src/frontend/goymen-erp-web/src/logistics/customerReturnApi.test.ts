@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   abandonCustomerReturnAttempt,
   beginCustomerReturnAttempt,
@@ -9,6 +9,7 @@ import {
   isCustomerReturnContextCurrent,
   retryCustomerReturnAttempt,
   settleCustomerReturnAttempt,
+  customerReturnEndpointAdapter,
   type CustomerReturnEndpointAdapter,
   type CustomerReturnAttemptLifecycle,
 } from "./customerReturnApi";
@@ -33,6 +34,8 @@ function requestAttempt() {
 }
 
 describe("customer-return adapter boundary", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
   it("fails closed when the central endpoint adapter is absent", () => {
     expect(isCustomerReturnAdapterReady(null)).toBe(false);
     expect(isCustomerReturnAdapterReady(undefined)).toBe(false);
@@ -195,5 +198,41 @@ describe("customer-return adapter boundary", () => {
       binding: "company-a:authority-2",
       response,
     });
+  });
+
+  it("reads the published order route and suppresses returns from another instruction line", async () => {
+    const accepted = {
+      customerReturnId: "00000000-0000-4000-8000-000000000011",
+      companyId: "00000000-0000-4000-8000-000000000003",
+      loadingInstructionId: "00000000-0000-4000-8000-000000000004",
+      loadingInstructionLineId: "00000000-0000-4000-8000-000000000005",
+      sourceDeliveryId: requestPayload.sourceDeliveryId,
+      sourceShipmentId: "00000000-0000-4000-8000-000000000006",
+      sourceOrderId: "00000000-0000-4000-8000-000000000007",
+      sourceOrderLineId: "00000000-0000-4000-8000-000000000008",
+      unitId: "00000000-0000-4000-8000-000000000009",
+      quantity: "1", sourceDeliveredQuantity: "2", status: "Pending", version: "1",
+      reason: "İade", requestedBy: "actor-a", occurredAtUtc: "2026-10-04T08:00:00Z",
+      requestedAtUtc: "2026-10-04T08:01:00Z", decidedBy: null, decidedAtUtc: null,
+      decisionNote: null, inventoryMovementId: null, originalLabelId: null, originalShipmentMovementId: null,
+    };
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify([
+      accepted,
+      { ...accepted, customerReturnId: "00000000-0000-4000-8000-000000000012", loadingInstructionLineId: "00000000-0000-4000-8000-000000000099" },
+    ]), { status: 200, headers: { "Content-Type": "application/json" } })));
+
+    const outcome = await customerReturnEndpointAdapter.read({
+      companyId: accepted.companyId,
+      salesOrderId: accepted.sourceOrderId,
+      loadingInstructionId: accepted.loadingInstructionId,
+      loadingInstructionLineId: accepted.loadingInstructionLineId,
+      binding: "binding",
+    }, new AbortController().signal);
+
+    expect(outcome).toEqual({ type: "succeeded", returns: [accepted] });
+    expect(fetch).toHaveBeenCalledWith(
+      expect.stringContaining(`/logistics/orders/${accepted.sourceOrderId}/customer-returns`),
+      expect.objectContaining({ headers: expect.objectContaining({ "X-Company-Id": accepted.companyId }) }),
+    );
   });
 });
