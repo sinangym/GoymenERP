@@ -40,6 +40,10 @@ public sealed class LogisticsDbContext(DbContextOptions<LogisticsDbContext> opti
 
     internal DbSet<DispatchNoteSeriesRow> DispatchNoteSeries => Set<DispatchNoteSeriesRow>();
 
+    internal DbSet<CustomerReturnRow> CustomerReturns => Set<CustomerReturnRow>();
+
+    internal DbSet<CustomerReturnAttemptRow> CustomerReturnAttempts => Set<CustomerReturnAttemptRow>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         ArgumentNullException.ThrowIfNull(modelBuilder);
@@ -54,6 +58,7 @@ public sealed class LogisticsDbContext(DbContextOptions<LogisticsDbContext> opti
         ConfigureAttempts(modelBuilder);
         ConfigureWeighings(modelBuilder);
         ConfigureDispatchNotes(modelBuilder);
+        ConfigureCustomerReturns(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()
             .HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
@@ -293,6 +298,67 @@ public sealed class LogisticsDbContext(DbContextOptions<LogisticsDbContext> opti
         series.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
 
+    private void ConfigureCustomerReturns(ModelBuilder modelBuilder)
+    {
+        var item = modelBuilder.Entity<CustomerReturnRow>();
+        item.ToTable("CustomerReturns", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_CustomerReturns_Identity",
+                $"[CustomerReturnId] <> {EmptyGuid} AND [LoadingInstructionId] <> {EmptyGuid} AND [LoadingInstructionLineId] <> {EmptyGuid} "
+                + $"AND [SourceDeliveryId] <> {EmptyGuid} AND [SourceShipmentId] <> {EmptyGuid} AND [SourceOrderId] <> {EmptyGuid} "
+                + $"AND [SourceOrderLineId] <> {EmptyGuid} AND [UnitId] <> {EmptyGuid}");
+            table.HasCheckConstraint("CK_CustomerReturns_Quantity",
+                "[QuantityUnit] IN (1, 2) AND [Quantity] > 0 AND [SourceDeliveredQuantity] > 0 AND [Quantity] <= [SourceDeliveredQuantity]");
+            table.HasCheckConstraint("CK_CustomerReturns_State", "([Status] = 1 AND [Version] = 1 AND [DecidedBy] IS NULL "
+                + "AND [DecidedAtUtc] IS NULL AND [InventoryMovementId] IS NULL AND [OriginalLabelId] IS NULL AND [OriginalShipmentMovementId] IS NULL) "
+                + "OR ([Status] = 2 AND [Version] = 2 AND [DecidedBy] IS NOT NULL AND [DecidedAtUtc] IS NOT NULL "
+                + "AND [InventoryMovementId] IS NOT NULL AND [OriginalLabelId] IS NOT NULL AND [OriginalShipmentMovementId] IS NOT NULL) "
+                + "OR ([Status] = 3 AND [Version] = 2 AND [DecidedBy] IS NOT NULL AND [DecidedAtUtc] IS NOT NULL "
+                + "AND [InventoryMovementId] IS NULL AND [OriginalLabelId] IS NULL AND [OriginalShipmentMovementId] IS NULL)");
+            table.HasCheckConstraint("CK_CustomerReturns_Actors", "LEN([Reason]) > 0 AND LEN([RequestedBy]) > 0");
+        });
+        item.HasKey(x => new { x.CompanyId, x.CustomerReturnId });
+        item.Property(x => x.Version).IsConcurrencyToken();
+        item.Property(x => x.RowVersion).IsRowVersion();
+        item.Property(x => x.Quantity).HasPrecision(18, 3);
+        item.Property(x => x.SourceDeliveredQuantity).HasPrecision(18, 3);
+        item.Property(x => x.Reason).IsRequired();
+        item.Property(x => x.RequestedBy).HasMaxLength(128).IsRequired();
+        item.Property(x => x.DecidedBy).HasMaxLength(128);
+        item.HasIndex(x => new { x.CompanyId, x.SourceDeliveryId, x.Status, x.CustomerReturnId })
+            .HasDatabaseName("IX_CustomerReturns_DeliveryStatus");
+        item.HasIndex(x => new { x.CompanyId, x.SourceOrderId, x.SourceOrderLineId })
+            .HasDatabaseName("IX_CustomerReturns_SourceOrderLine");
+        item.HasOne<LoadingInstructionRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.LoadingInstructionId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id }).OnDelete(DeleteBehavior.Restrict);
+        item.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        var attempt = modelBuilder.Entity<CustomerReturnAttemptRow>();
+        attempt.ToTable("CustomerReturnAttempts", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_CustomerReturnAttempts_Identity",
+                "LEN([CommandName]) > 0 AND LEN([ActorId]) > 0 AND LEN([CorrelationId]) > 0");
+            table.HasCheckConstraint("CK_CustomerReturnAttempts_Hashes", "LEN([IdempotencyKeyHash]) = 64 AND LEN([RequestHash]) = 64");
+            table.HasCheckConstraint("CK_CustomerReturnAttempts_Outcome",
+                $"([Outcome] = 1 AND [CustomerReturnId] IS NOT NULL AND [CustomerReturnId] <> {EmptyGuid} "
+                + "AND [ResultJson] IS NOT NULL AND ISJSON([ResultJson]) = 1 AND [RefusalJson] IS NULL) OR "
+                + "([Outcome] = 2 AND [CustomerReturnId] IS NULL AND [ResultJson] IS NULL "
+                + "AND [RefusalJson] IS NOT NULL AND ISJSON([RefusalJson]) = 1)");
+        });
+        attempt.HasKey(x => new { x.CompanyId, x.CommandName, x.IdempotencyKeyHash });
+        attempt.Property(x => x.CommandName).HasMaxLength(160).UseCollation(IdentityCollation).IsRequired();
+        attempt.Property(x => x.IdempotencyKeyHash).HasMaxLength(64).IsUnicode(false).UseCollation(IdentityCollation).IsRequired();
+        attempt.Property(x => x.RequestHash).HasMaxLength(64).IsUnicode(false).IsRequired();
+        attempt.Property(x => x.ActorId).HasMaxLength(128).IsRequired();
+        attempt.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        attempt.Property(x => x.ResultJson).HasColumnType("nvarchar(max)");
+        attempt.Property(x => x.RefusalJson).HasColumnType("nvarchar(max)");
+        attempt.HasOne<CustomerReturnRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.CustomerReturnId }).OnDelete(DeleteBehavior.Restrict);
+        attempt.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
     private void ApplyWriteGuards()
     {
         LogisticsAuditEventTenantGuard.Validate(this, companyContext);
@@ -332,6 +398,13 @@ public sealed class LogisticsDbContext(DbContextOptions<LogisticsDbContext> opti
                     DispatchNoteRow => [nameof(DispatchNoteRow.Status), .. DispatchNoteSchema.SetOnceColumns],
                     DispatchNoteLineRow => [nameof(DispatchNoteLineRow.Released)],
                     DispatchNoteSeriesRow => [nameof(DispatchNoteSeriesRow.LastSequenceNo), nameof(DispatchNoteSeriesRow.UpdatedAtUtc)],
+                    CustomerReturnRow =>
+                    [
+                        nameof(CustomerReturnRow.Status), nameof(CustomerReturnRow.Version), nameof(CustomerReturnRow.DecidedBy),
+                        nameof(CustomerReturnRow.DecidedAtUtc), nameof(CustomerReturnRow.DecisionNote),
+                        nameof(CustomerReturnRow.InventoryMovementId), nameof(CustomerReturnRow.OriginalLabelId),
+                        nameof(CustomerReturnRow.OriginalShipmentMovementId),
+                    ],
                     _ => [],
                 };
                 var changed = entry.Properties
@@ -390,6 +463,15 @@ public sealed class LogisticsDbContext(DbContextOptions<LogisticsDbContext> opti
                     throw new InvalidOperationException("İrsaliye serisi yalnız birer birer ilerler.");
                 }
 
+                break;
+            case CustomerReturnRow:
+                var returnStatus = entry.Property(nameof(CustomerReturnRow.Status));
+                var returnVersion = entry.Property(nameof(CustomerReturnRow.Version));
+                if (!returnStatus.IsModified || (int)returnStatus.OriginalValue! != 1
+                    || (int)returnStatus.CurrentValue! is not (2 or 3)
+                    || !returnVersion.IsModified || (long)returnVersion.OriginalValue! != 1L
+                    || (long)returnVersion.CurrentValue! != 2L)
+                    throw new InvalidOperationException("Musteri iadesi yalniz bekliyor durumundan onayli veya reddedildi durumuna bir kez gecer.");
                 break;
         }
     }
