@@ -89,7 +89,8 @@ public sealed partial class ManufacturingCommandService
             return denied;
         }
 
-        var process = await ResolveProcessAsync(request.WorkCenterId, cancellationToken);
+        var process = await ResolveProcessAsync(
+            request.WorkCenterId, permission, companyId, actorId, cancellationToken);
         if (process.Refusal is not null)
         {
             return Refusal<PlanPreviewViewV1>(process.Refusal);

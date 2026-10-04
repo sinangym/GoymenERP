@@ -14,6 +14,8 @@ namespace GoymenERP.Api.IntegrationTests;
 public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
 {
     private const string BeforeTechnicalSnapshots = "20260930220000_AddManufacturingOrderClosureDecision";
+    private const string TechnicalSnapshots = "20261001200000_AddManufacturingPlanTechnicalSnapshots";
+    private const string CommercialContexts = "20261004100000_AddManufacturingCommercialContexts";
 
     [SqlServerFact]
     public async Task The_technical_snapshot_migration_round_trips_while_only_legacy_inputs_exist()
@@ -39,8 +41,7 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
                 + "OBJECT_ID(N'[manufacturing].[PlanRevisionInputs]'))"));
 
             await context.Database.MigrateAsync();
-            Assert.EndsWith("_AddManufacturingPlanTechnicalSnapshots",
-                (await context.Database.GetAppliedMigrationsAsync()).Last(), StringComparison.Ordinal);
+            Assert.Equal(CommercialContexts, (await context.Database.GetAppliedMigrationsAsync()).Last());
         }
 
         Assert.Equal(2, await run.ScalarAsync<int>(
@@ -68,11 +69,13 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
 
         await using (var context = run.Context(CompanyA))
         {
+            var migrator = context.GetService<IMigrator>();
+            await migrator.MigrateAsync(TechnicalSnapshots);
+            Assert.Equal(TechnicalSnapshots, (await context.Database.GetAppliedMigrationsAsync()).Last());
             var error = await Assert.ThrowsAsync<SqlException>(
-                () => context.GetService<IMigrator>().MigrateAsync(BeforeTechnicalSnapshots));
+                () => migrator.MigrateAsync(BeforeTechnicalSnapshots));
             Assert.Equal(51047, error.Number);
-            Assert.EndsWith("_AddManufacturingPlanTechnicalSnapshots",
-                (await context.Database.GetAppliedMigrationsAsync()).Last(), StringComparison.Ordinal);
+            Assert.Equal(TechnicalSnapshots, (await context.Database.GetAppliedMigrationsAsync()).Last());
         }
 
         Assert.Equal("synthetic-product-version-v1", await run.ScalarAsync<string>(
@@ -101,11 +104,13 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
             ("@p", plan.Id)));
         await using (var context = run.Context(CompanyA))
         {
+            var migrator = context.GetService<IMigrator>();
+            await migrator.MigrateAsync(TechnicalSnapshots);
+            Assert.Equal(TechnicalSnapshots, (await context.Database.GetAppliedMigrationsAsync()).Last());
             var error = await Assert.ThrowsAsync<SqlException>(
-                () => context.GetService<IMigrator>().MigrateAsync(BeforeTechnicalSnapshots));
+                () => migrator.MigrateAsync(BeforeTechnicalSnapshots));
             Assert.Equal(51047, error.Number);
-            Assert.EndsWith("_AddManufacturingPlanTechnicalSnapshots",
-                (await context.Database.GetAppliedMigrationsAsync()).Last(), StringComparison.Ordinal);
+            Assert.Equal(TechnicalSnapshots, (await context.Database.GetAppliedMigrationsAsync()).Last());
         }
 
         Assert.Equal("synthetic-product-version-v1", await run.ScalarAsync<string>(

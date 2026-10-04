@@ -144,9 +144,14 @@ export function plan(overrides: Record<string, unknown> = {}) {
   }
 }
 
-/** A synthetic `PlanRevisionInputViewV1` (MFG-PLAN-EDIT), in the server's JSON shape. */
-export function revisionInput(parentRollId: string, plannedKg = '1000.125', expectedLabelVersion: string | null = '7') {
-  return { parentRollId, plannedKg, expectedLabelVersion }
+/** A synthetic `PlanRevisionInputViewV1` (MFG-PLAN-EDIT), in the server's current JSON shape. */
+export function revisionInput(
+  parentRollId: string,
+  plannedKg = '1000.125',
+  expectedLabelVersion: string | null = '7',
+  commercialContext: unknown = null,
+) {
+  return { parentRollId, plannedKg, expectedLabelVersion, commercialContext }
 }
 
 /** A synthetic `PlanRevisionViewV1`: revision 0 by default — the plan as created, matching {@link plan}. */
@@ -165,7 +170,7 @@ export function planRevision(overrides: Record<string, unknown> = {}) {
 }
 
 /** A synthetic `PlanRevisionListViewV1`, oldest first. */
-export function planRevisions(revisions: unknown[] = [planRevision()], planId = PLAN) {
+export function planRevisions(revisions: readonly unknown[] = [planRevision()], planId = PLAN) {
   return { planId, revisions }
 }
 

@@ -376,7 +376,8 @@ public sealed partial class ManufacturingCommandService(
         return RunAsync<PlanViewV1>(permission, idempotencyKey, ManufacturingCommandNames.SavePlan, canonical,
             ManufacturingApiStatus.Created, async (metadata, actorId, companyId) =>
             {
-                var process = await ResolveProcessAsync(request.WorkCenterId, cancellationToken);
+                var process = await ResolveProcessAsync(
+                    request.WorkCenterId, permission, companyId, actorId, cancellationToken);
                 if (process.Refusal is not null)
                 {
                     return Refusal<PlanViewV1>(process.Refusal);
@@ -389,14 +390,14 @@ public sealed partial class ManufacturingCommandService(
                     return Refusal<PlanViewV1>(verified.Refusal);
                 }
 
-                if (await FenceAsync<PlanViewV1>(permission, cancellationToken) is { } fenced)
+                if (await FenceCapturedAsync<PlanViewV1>(permission, companyId, actorId, cancellationToken) is { } fenced)
                 {
                     return fenced;
                 }
 
                 // Built behind the fence, so the domain's own refusals (a zero planned mass, a repeated
                 // roll) map like every other refusal.
-                var plan = new ProductionPlan(request.PlanId, companyContext.CompanyId, request.WorkCenterId,
+                var plan = new ProductionPlan(request.PlanId, companyId, request.WorkCenterId,
                     process.Value, PlannedInputs(verified.Inputs), Target(request.Target, verified.TargetMass));
                 var outcome = await plans.SavePlanAsync(plan, metadata, cancellationToken);
                 var stored = await plans.FindPlanAsync(plan.Id, cancellationToken);
@@ -480,7 +481,8 @@ public sealed partial class ManufacturingCommandService(
 
                 current.RequireRevisable(request.ExpectedVersion);
 
-                var process = await ResolveProcessAsync(request.WorkCenterId, cancellationToken);
+                var process = await ResolveProcessAsync(
+                    request.WorkCenterId, permission, companyId, actorId, cancellationToken);
                 if (process.Refusal is not null)
                 {
                     return Refusal<PlanViewV1>(process.Refusal);
@@ -493,7 +495,7 @@ public sealed partial class ManufacturingCommandService(
                     return Refusal<PlanViewV1>(verified.Refusal);
                 }
 
-                if (await FenceAsync<PlanViewV1>(permission, cancellationToken) is { } fenced)
+                if (await FenceCapturedAsync<PlanViewV1>(permission, companyId, actorId, cancellationToken) is { } fenced)
                 {
                     return fenced;
                 }
@@ -671,14 +673,15 @@ public sealed partial class ManufacturingCommandService(
             }
 
             var reference = await ValidateParentRollAsync(input.ParentRollId, input.ExpectedLabelVersion,
-                $"inputs[{index}].expectedLabelVersion", commercial.Snapshot, cancellationToken);
+                $"inputs[{index}].expectedLabelVersion", commercial.Snapshot,
+                permission, companyId, actorId, cancellationToken);
             if (reference.Refusal is not null)
             {
                 return (planned, null, reference.Refusal);
             }
 
             var technical = await ReadTechnicalSnapshotAsync(reference.Reference!, today,
-                $"inputs[{index}].parentRollId", cancellationToken);
+                $"inputs[{index}].parentRollId", permission, companyId, actorId, cancellationToken);
             if (technical.Refusal is not null)
             {
                 return (planned, null, technical.Refusal);
@@ -1812,7 +1815,7 @@ public sealed partial class ManufacturingCommandService(
             || answer.Account is not { } account
             || account.PartyId != requested.PartyId
             || account.CompanyAccountId != requested.CompanyPartyAccountId
-            || account.CompanyId != companyContext.CompanyId
+            || account.CompanyId != companyId
             || string.IsNullOrEmpty(account.PartyVersion)
             || string.IsNullOrEmpty(account.AccountVersion))
         {
@@ -1856,7 +1859,7 @@ public sealed partial class ManufacturingCommandService(
     private async Task<(InventoryParentRollReferenceV1? Reference, ManufacturingApiResult<object>? Refusal)>
         ValidateParentRollAsync(Guid labelId,
         string expectedLabelVersion, string expectedVersionField, PlanCommercialContextSnapshotV1? commercialContext,
-        CancellationToken cancellationToken)
+        string permission, Guid companyId, Guid actorId, CancellationToken cancellationToken)
     {
         if ((commercialContext is null && parentRolls is null)
             || (commercialContext is not null && contextualParentRolls is null))
@@ -1878,9 +1881,14 @@ public sealed partial class ManufacturingCommandService(
                             StockPartyKind.Counterparty,
                             commercialContext.PartyId,
                             StockPartyKind.Company,
-                            companyContext.CompanyId)),
+                            companyId)),
                     cancellationToken);
-            return reference.CompanyId == companyContext.CompanyId
+            if (await FenceCapturedAsync<object>(permission, companyId, actorId, cancellationToken) is { } fenced)
+            {
+                return (null, fenced);
+            }
+
+            return reference.CompanyId == companyId
                    && reference.LabelId == labelId
                    && string.Equals(reference.LabelVersion, expectedLabelVersion, StringComparison.Ordinal)
                    && reference.ProductId != Guid.Empty
@@ -1898,6 +1906,11 @@ public sealed partial class ManufacturingCommandService(
         }
         catch (InventoryParentRollException exception)
         {
+            if (await FenceCapturedAsync<object>(permission, companyId, actorId, cancellationToken) is { } fenced)
+            {
+                return (null, fenced);
+            }
+
             return (null, exception switch
             {
                 { StatusCode: 400, Code: InventoryParentRollCodesV1.InvalidVersion } =>
@@ -1918,6 +1931,11 @@ public sealed partial class ManufacturingCommandService(
         }
         catch (Exception)
         {
+            if (await FenceCapturedAsync<object>(permission, companyId, actorId, cancellationToken) is { } fenced)
+            {
+                return (null, fenced);
+            }
+
             return (null, new ManufacturingApiResult<object>(ManufacturingApiStatus.Unavailable, null, false,
                 InventoryParentRollCodesV1.Unavailable));
         }
@@ -1930,7 +1948,7 @@ public sealed partial class ManufacturingCommandService(
     /// </summary>
     private async Task<(PlanTechnicalParameterSnapshotV1? Snapshot, ManufacturingApiResult<object>? Refusal)>
         ReadTechnicalSnapshotAsync(InventoryParentRollReferenceV1 reference, DateOnly effectiveOn, string field,
-            CancellationToken cancellationToken)
+            string permission, Guid companyId, Guid actorId, CancellationToken cancellationToken)
     {
         if (productTechnicalSnapshots is null)
         {
@@ -1942,6 +1960,11 @@ public sealed partial class ManufacturingCommandService(
             var answer = await productTechnicalSnapshots.ReadAsync(
                 new ProductManufacturingTechnicalSnapshotSelectionV1(
                     reference.ProductId, reference.ProductVersion, effectiveOn), cancellationToken);
+            if (await FenceCapturedAsync<object>(permission, companyId, actorId, cancellationToken) is { } fenced)
+            {
+                return (null, fenced);
+            }
+
             if (answer.Errors.Count > 0)
             {
                 return (null, new ManufacturingApiResult<object>(ManufacturingApiStatus.Unprocessable, null, false,
@@ -1951,7 +1974,7 @@ public sealed partial class ManufacturingCommandService(
             if (answer.Snapshot is not { } snapshot
                 || snapshot.ProductId != reference.ProductId
                 || !string.Equals(snapshot.ProductVersion, reference.ProductVersion, StringComparison.Ordinal)
-                || snapshot.UnitKg.CompanyId != companyContext.CompanyId
+                || snapshot.UnitKg.CompanyId != companyId
                 || snapshot.EffectiveOn != effectiveOn)
             {
                 return (null, new ManufacturingApiResult<object>(ManufacturingApiStatus.Unavailable, null, false, null));
@@ -1982,15 +2005,30 @@ public sealed partial class ManufacturingCommandService(
         }
         catch (ProductOperationException exception) when (exception.StatusCode is 401 or 403)
         {
+            if (await FenceCapturedAsync<object>(permission, companyId, actorId, cancellationToken) is { } fenced)
+            {
+                return (null, fenced);
+            }
+
             return (null, Denied<object>());
         }
         catch (SettingsPrerequisiteException exception)
         {
+            if (await FenceCapturedAsync<object>(permission, companyId, actorId, cancellationToken) is { } fenced)
+            {
+                return (null, fenced);
+            }
+
             return (null, new ManufacturingApiResult<object>(ManufacturingApiStatus.Unavailable, null, false,
                 exception.Code));
         }
         catch (Exception)
         {
+            if (await FenceCapturedAsync<object>(permission, companyId, actorId, cancellationToken) is { } fenced)
+            {
+                return (null, fenced);
+            }
+
             return (null, new ManufacturingApiResult<object>(ManufacturingApiStatus.Unavailable, null, false, null));
         }
     }
@@ -2003,7 +2041,7 @@ public sealed partial class ManufacturingCommandService(
     /// </summary>
     private async Task<(ManufacturingProcess Value, ManufacturingApiResult<object>? Refusal)> ResolveProcessAsync(
         Guid workCenterId,
-        CancellationToken cancellationToken)
+        string permission, Guid companyId, Guid actorId, CancellationToken cancellationToken)
     {
         if (workCenters is null)
         {
@@ -2012,7 +2050,12 @@ public sealed partial class ManufacturingCommandService(
 
         try
         {
-            var reference = await workCenters.ReadAsync(companyContext.CompanyId, workCenterId, cancellationToken);
+            var reference = await workCenters.ReadAsync(companyId, workCenterId, cancellationToken);
+            if (await FenceCapturedAsync<object>(permission, companyId, actorId, cancellationToken) is { } fenced)
+            {
+                return (default, fenced);
+            }
+
             if (reference is null)
             {
                 return (default, new ManufacturingApiResult<object>(ManufacturingApiStatus.Unprocessable, null, false,
@@ -2040,6 +2083,11 @@ public sealed partial class ManufacturingCommandService(
         }
         catch (Exception)
         {
+            if (await FenceCapturedAsync<object>(permission, companyId, actorId, cancellationToken) is { } fenced)
+            {
+                return (default, fenced);
+            }
+
             return (default, new ManufacturingApiResult<object>(ManufacturingApiStatus.Unavailable, null, false, null));
         }
     }

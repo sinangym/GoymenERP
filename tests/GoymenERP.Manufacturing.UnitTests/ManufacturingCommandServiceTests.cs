@@ -433,7 +433,8 @@ public sealed class ManufacturingCommandServiceTests
             Assert.Single(fixture.Store.Plans[result.Resource.PlanId].Inputs).ExpectedLabelVersion);
         Assert.Equal(new[] { DateOnly.FromDateTime(At.UtcDateTime), DateOnly.FromDateTime(At.UtcDateTime) }, fixture.Settings.Days);
         Assert.Equal(new InventoryParentRollSelectionV1(Roll, LabelVersion), Assert.Single(fixture.ParentRolls.Selections));
-        Assert.Equal(["authority", "work-center", "settings", "parent-roll", "product", "authority"], fixture.Calls);
+        Assert.Equal(["authority", "work-center", "authority", "settings", "parent-roll", "authority",
+            "product", "authority", "authority"], fixture.Calls);
     }
 
     [Fact]
@@ -462,8 +463,8 @@ public sealed class ManufacturingCommandServiceTests
             (selection.LabelId, selection.ExpectedLabelVersion, selection.PositionContext.OwnerKind,
                 selection.PositionContext.OwnerId, selection.PositionContext.CustodianKind,
                 selection.PositionContext.CustodianId));
-        Assert.Equal(["authority", "work-center", "settings", "party-account", "authority", "parent-roll-context",
-                "product", "authority"],
+        Assert.Equal(["authority", "work-center", "authority", "settings", "party-account", "authority",
+                "parent-roll-context", "authority", "product", "authority", "authority"],
             fixture.Calls);
     }
 
@@ -595,6 +596,58 @@ public sealed class ManufacturingCommandServiceTests
             (result.Status, result.Code));
         Assert.Single(fixture.PartyAccounts.Selections);
         Assert.Empty(fixture.ParentRolls.ContextualSelections);
+        Assert.Empty(fixture.Store.Writes);
+        Assert.Empty(fixture.Store.Commands);
+    }
+
+    [Theory]
+    [InlineData("positive")]
+    [InlineData("refusal")]
+    [InlineData("exception")]
+    public async Task Product_positive_refusal_and_exception_paths_recheck_captured_context_before_plan_save(string shape)
+    {
+        var fixture = new Fixture();
+        fixture.ProductSnapshots.AfterRead = shape switch
+        {
+            "positive" => () => fixture.User.ActorId = OtherActor,
+            "refusal" => () => fixture.CompanyContext.SwitchForTest(OtherCompany),
+            _ => () => fixture.Authority.Scope = PermissionScope.Denied,
+        };
+        if (shape == "refusal")
+        {
+            fixture.ProductSnapshots.Errors = [new ProductFieldError("references.attributes.WIDTH", "required")];
+        }
+        else if (shape == "exception")
+        {
+            fixture.ProductSnapshots.Exception = new ProductOperationException(
+                "product_manufacturing_technical_snapshot_unavailable", 503);
+        }
+
+        var result = await fixture.Service.SavePlanAsync(
+            Plan(LabelVersion), $"product-context-switch-{shape}", "manufacturing.plans.write", CancellationToken.None);
+
+        Assert.Equal((ManufacturingApiStatus.Denied, ManufacturingApiCodes.AuthorityDenied),
+            (result.Status, result.Code));
+        Assert.Equal(1, fixture.ProductSnapshots.Asked);
+        Assert.Empty(fixture.Store.Writes);
+        Assert.Empty(fixture.Store.Commands);
+    }
+
+    [Fact]
+    public async Task A_grant_lost_during_a_contextual_inventory_exception_denies_before_the_owner_error()
+    {
+        var fixture = new Fixture();
+        fixture.ParentRolls.Exception = new InventoryParentRollException(
+            409, InventoryParentRollCodesV1.VersionConflict);
+        fixture.ParentRolls.AfterRead = () => fixture.Authority.Scope = PermissionScope.Denied;
+
+        var result = await fixture.Service.SavePlanAsync(
+            CommercialPlan(Guid.NewGuid()), "inventory-context-revoked", "manufacturing.plans.write",
+            CancellationToken.None);
+
+        Assert.Equal((ManufacturingApiStatus.Denied, ManufacturingApiCodes.AuthorityDenied),
+            (result.Status, result.Code));
+        Assert.Single(fixture.ParentRolls.ContextualSelections);
         Assert.Empty(fixture.Store.Writes);
         Assert.Empty(fixture.Store.Commands);
     }
@@ -1050,10 +1103,13 @@ public sealed class ManufacturingCommandServiceTests
     }
 
     [Fact]
-    public async Task The_final_manufacturing_fence_runs_after_parent_roll_validation_and_can_refuse_the_write()
+    public async Task The_final_manufacturing_fence_runs_after_all_owner_reads_and_can_refuse_the_write()
     {
         var fixture = new Fixture();
-        fixture.Authority.Scopes.Enqueue(Scope(companyWide: true, "PRODUCTION_OPERATOR"));
+        for (var granted = 0; granted < 4; granted++)
+        {
+            fixture.Authority.Scopes.Enqueue(Scope(companyWide: true, "PRODUCTION_OPERATOR"));
+        }
         fixture.Authority.Scopes.Enqueue(PermissionScope.Denied);
 
         var result = await fixture.Service.SavePlanAsync(Plan(LabelVersion), "key-1",
@@ -1061,7 +1117,8 @@ public sealed class ManufacturingCommandServiceTests
 
         Assert.Equal((ManufacturingApiStatus.Denied, ManufacturingApiCodes.AuthorityDenied),
             (result.Status, result.Code));
-        Assert.Equal(["authority", "work-center", "settings", "parent-roll", "product", "authority"], fixture.Calls);
+        Assert.Equal(["authority", "work-center", "authority", "settings", "parent-roll", "authority",
+            "product", "authority", "authority"], fixture.Calls);
         Assert.Single(fixture.ParentRolls.Selections);
         Assert.Empty(fixture.Store.Commands);
         Assert.Empty(fixture.Store.Writes);
@@ -2069,6 +2126,8 @@ public sealed class ManufacturingCommandServiceTests
 
         public Exception? Exception { get; set; }
 
+        public Action? AfterRead { get; set; }
+
         public List<InventoryParentRollSelectionV1> Selections { get; } = [];
 
         public List<InventoryContextualParentRollSelectionV1> ContextualSelections { get; } = [];
@@ -2079,6 +2138,7 @@ public sealed class ManufacturingCommandServiceTests
             Asked++;
             calls.Add("parent-roll");
             Selections.Add(selection);
+            AfterRead?.Invoke();
             if (Exception is { } exception)
             {
                 throw exception;
@@ -2099,6 +2159,7 @@ public sealed class ManufacturingCommandServiceTests
         {
             calls.Add("parent-roll-context");
             ContextualSelections.Add(selection);
+            AfterRead?.Invoke();
             if (Exception is { } exception)
             {
                 throw exception;
@@ -2146,6 +2207,7 @@ public sealed class ManufacturingCommandServiceTests
         public Guid ReturnedId { get; set; } = WorkCenter;
         public bool Missing { get; set; }
         public Exception? Exception { get; set; }
+        public Action? AfterRead { get; set; }
         public List<(Guid CompanyId, Guid WorkCenterId)> Requests { get; } = [];
 
         public Task<OrganizationWorkCenterPlanningReferenceV1?> ReadAsync(
@@ -2155,6 +2217,7 @@ public sealed class ManufacturingCommandServiceTests
         {
             calls.Add("work-center");
             Requests.Add((companyId, workCenterId));
+            AfterRead?.Invoke();
             if (Exception is { } exception)
             {
                 throw exception;
@@ -2172,13 +2235,25 @@ public sealed class ManufacturingCommandServiceTests
 
         public decimal ThicknessMm { get; set; } = 2m;
 
+        public Exception? Exception { get; set; }
+
+        public Action? AfterRead { get; set; }
+
+        public IReadOnlyList<ProductFieldError> Errors { get; set; } = [];
+
         public Task<ProductManufacturingTechnicalSnapshotResultV1> ReadAsync(
             ProductManufacturingTechnicalSnapshotSelectionV1 selection, CancellationToken cancellationToken)
         {
             Asked++;
             calls.Add("product");
-            return Task.FromResult(new ProductManufacturingTechnicalSnapshotResultV1(
-                new ProductManufacturingTechnicalSnapshotV1(
+            AfterRead?.Invoke();
+            if (Exception is { } exception)
+            {
+                throw exception;
+            }
+
+            var snapshot = Errors.Count == 0
+                ? new ProductManufacturingTechnicalSnapshotV1(
                     selection.ProductId,
                     selection.ExpectedProductVersion,
                     new ProductManufacturingFamilyRevisionV1(Guid.Parse("f1000000-0000-0000-0000-000000000001"),
@@ -2189,8 +2264,9 @@ public sealed class ManufacturingCommandServiceTests
                     1500m,
                     new ProductManufacturingKilogramUnitV1(Company, SettingsUnitIdentitiesV1.Kilogram, "kg",
                         Guid.Parse("4a790fdc-2a6b-5126-835f-d3a13d28b71c"), "1"),
-                    selection.EffectiveOn),
-                []));
+                    selection.EffectiveOn)
+                : null;
+            return Task.FromResult(new ProductManufacturingTechnicalSnapshotResultV1(snapshot, Errors));
         }
     }
 

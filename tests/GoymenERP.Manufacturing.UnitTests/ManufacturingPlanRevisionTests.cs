@@ -177,8 +177,9 @@ public sealed class ManufacturingPlanRevisionTests
         Assert.Equal((2L, "Draft", OtherLine, "Slitting"), (view.Version, view.Status, view.WorkCenterId, view.Process));
         Assert.Equal("800.5", Assert.Single(view.Inputs).PlannedKg);
         Assert.Equal(new TargetViewV1("GoodOutputMass", "700"), view.Target);
-        // The owners, in the save's order, after the stored plan: Organization, Settings, Inventory, then the fence.
-        Assert.Equal(["authority", "find-plan", "work-center", "settings", "parent-roll", "product", "authority", "revise"],
+        // Every awaited owner answer is followed by a fresh captured-company/actor fence, then the final write fence.
+        Assert.Equal(["authority", "find-plan", "work-center", "authority", "settings", "parent-roll", "authority",
+                "product", "authority", "authority", "revise"],
             fixture.Calls.Where(call => call != "find-command"));
         Assert.Equal((OtherLine, ManufacturingProcess.Slitting, "Tolerans dışı bobin için yeniden planlandı"),
             (fixture.Store.LastRevision!.Value.WorkCenterId, fixture.Store.LastRevision.Value.Process,
@@ -218,8 +219,8 @@ public sealed class ManufacturingPlanRevisionTests
         Assert.Equal((StockPartyKind.Counterparty, Party, StockPartyKind.Company, Company),
             (selection.PositionContext.OwnerKind, selection.PositionContext.OwnerId,
                 selection.PositionContext.CustodianKind, selection.PositionContext.CustodianId));
-        Assert.Equal(["authority", "find-plan", "work-center", "settings", "party-account", "authority",
-                "parent-roll-context", "product", "authority", "revise"],
+        Assert.Equal(["authority", "find-plan", "work-center", "authority", "settings", "party-account", "authority",
+                "parent-roll-context", "authority", "product", "authority", "authority", "revise"],
             fixture.Calls.Where(call => call != "find-command"));
     }
 
@@ -413,6 +414,27 @@ public sealed class ManufacturingPlanRevisionTests
     }
 
     [Fact]
+    public async Task A_grant_lost_at_the_revision_final_fence_writes_nothing()
+    {
+        var fixture = new Fixture();
+        var plan = fixture.StoreDraft();
+        for (var granted = 0; granted < 4; granted++)
+        {
+            fixture.Authority.Scopes.Enqueue(fixture.Authority.GrantedScope());
+        }
+        fixture.Authority.Scopes.Enqueue(PermissionScope.Denied);
+
+        var result = await fixture.Service.RevisePlanAsync(
+            plan.Id, Request(1, OtherLine, "900", "7"), "final-fence", Permission, CancellationToken.None);
+
+        Assert.Equal((ManufacturingApiStatus.Denied, ManufacturingApiCodes.AuthorityDenied),
+            (result.Status, result.Code));
+        Assert.Equal(1L, plan.Version);
+        Assert.Empty(fixture.Store.Writes);
+        Assert.Empty(fixture.Store.Commands);
+    }
+
+    [Fact]
     public async Task The_history_is_the_stores_entries_as_lossless_text_under_the_read_rules()
     {
         var fixture = new Fixture();
@@ -545,13 +567,21 @@ public sealed class ManufacturingPlanRevisionTests
     {
         public bool CompanyWide { get; set; } = true;
 
+        public Queue<PermissionScope> Scopes { get; } = new();
+
+        public PermissionScope GrantedScope() => new(true, true,
+            new HashSet<string>(["PRODUCTION_PLANNER"], StringComparer.Ordinal), new HashSet<Guid>(), new HashSet<Guid>(),
+            new HashSet<Guid>());
+
         public Task<PermissionScope> RevalidatePermissionScopeAsync(string permission, Guid companyId,
             CancellationToken cancellationToken = default)
         {
             calls.Add("authority");
-            return Task.FromResult(new PermissionScope(true, CompanyWide,
-                new HashSet<string>(["PRODUCTION_PLANNER"], StringComparer.Ordinal), new HashSet<Guid>(), new HashSet<Guid>(),
-                new HashSet<Guid>()));
+            return Task.FromResult(Scopes.TryDequeue(out var scope)
+                ? scope
+                : new PermissionScope(true, CompanyWide,
+                    new HashSet<string>(["PRODUCTION_PLANNER"], StringComparer.Ordinal), new HashSet<Guid>(),
+                    new HashSet<Guid>(), new HashSet<Guid>()));
         }
     }
 

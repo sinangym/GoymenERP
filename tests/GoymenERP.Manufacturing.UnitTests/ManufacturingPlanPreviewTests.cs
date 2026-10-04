@@ -272,7 +272,8 @@ public sealed class ManufacturingPlanPreviewTests
         var preview = await fixture.Service.PreviewPlanAsync(Request("10"), Permission, CancellationToken.None);
 
         Assert.Equal(ManufacturingApiStatus.Ok, preview.Status);
-        Assert.Equal(["authority", "work-center", "settings", "parent-roll", "product", "authority"], fixture.Calls);
+        Assert.Equal(["authority", "work-center", "authority", "settings", "parent-roll", "authority",
+            "product", "authority", "authority"], fixture.Calls);
         Assert.Equal(new InventoryParentRollSelectionV1(RollA, "7"), Assert.Single(fixture.ParentRolls.Selections));
     }
 
@@ -337,7 +338,7 @@ public sealed class ManufacturingPlanPreviewTests
         var preview = await fixture.Service.PreviewPlanAsync(Request("10"), Permission, CancellationToken.None);
 
         Assert.Equal((expectedStatus, expectedCode, (string?)null), (preview.Status, preview.Code, preview.Field));
-        Assert.Equal(["authority", "work-center", "settings", "parent-roll"], fixture.Calls);
+        Assert.Equal(["authority", "work-center", "authority", "settings", "parent-roll", "authority"], fixture.Calls);
         Assert.Empty(fixture.Store.Writes);
         Assert.Empty(fixture.Store.Commands);
         Assert.DoesNotContain("find-command", fixture.Calls);
@@ -366,7 +367,8 @@ public sealed class ManufacturingPlanPreviewTests
         Assert.Equal(ManufacturingApiStatus.Unavailable, unavailableAnswer.Status);
         Assert.All(new[] { field, denied, unavailable }, fixture =>
         {
-            Assert.Equal(["authority", "work-center", "settings", "parent-roll", "product"], fixture.Calls);
+            Assert.Equal(["authority", "work-center", "authority", "settings", "parent-roll", "authority",
+                "product", "authority"], fixture.Calls);
             Assert.Empty(fixture.Store.Writes);
         });
     }
@@ -399,6 +401,22 @@ public sealed class ManufacturingPlanPreviewTests
         Assert.Equal((ManufacturingApiStatus.Denied, ManufacturingApiCodes.AuthorityDenied),
             (answer.Status, answer.Code));
         Assert.Equal(["authority"], fixture.Calls);
+        Assert.Empty(fixture.Store.Writes);
+        Assert.Empty(fixture.Store.Commands);
+    }
+
+    [Fact]
+    public async Task An_actor_change_during_a_missing_work_center_read_hides_the_early_refusal()
+    {
+        var fixture = new Fixture();
+        fixture.WorkCenters.Missing = true;
+        fixture.WorkCenters.AfterRead = () => fixture.User.UserId = Guid.NewGuid().ToString("D");
+
+        var answer = await fixture.Service.PreviewPlanAsync(Request("10"), Permission, CancellationToken.None);
+
+        Assert.Equal((ManufacturingApiStatus.Denied, ManufacturingApiCodes.AuthorityDenied),
+            (answer.Status, answer.Code));
+        Assert.Equal(["authority", "work-center", "authority"], fixture.Calls);
         Assert.Empty(fixture.Store.Writes);
         Assert.Empty(fixture.Store.Commands);
     }
@@ -530,12 +548,17 @@ public sealed class ManufacturingPlanPreviewTests
     {
         public string Kind { get; set; } = "Slitting";
 
+        public bool Missing { get; set; }
+
+        public Action? AfterRead { get; set; }
+
         public Task<OrganizationWorkCenterPlanningReferenceV1?> ReadAsync(Guid companyId, Guid workCenterId,
             CancellationToken cancellationToken = default)
         {
             calls.Add("work-center");
-            return Task.FromResult<OrganizationWorkCenterPlanningReferenceV1?>(
-                new OrganizationWorkCenterPlanningReferenceV1(workCenterId, Kind));
+            var answer = Missing ? null : new OrganizationWorkCenterPlanningReferenceV1(workCenterId, Kind);
+            AfterRead?.Invoke();
+            return Task.FromResult<OrganizationWorkCenterPlanningReferenceV1?>(answer);
         }
     }
 
