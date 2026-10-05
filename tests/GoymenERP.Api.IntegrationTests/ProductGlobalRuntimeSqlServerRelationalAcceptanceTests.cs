@@ -39,6 +39,7 @@ public sealed class ProductGlobalRuntimeSqlServerRelationalAcceptanceTests
     private const string ProductPreFamilyRegistryMigration = "20260912175128_InitialProductDrafts";
     private const string ProductFamilyRegistryMigration = "20260919100000_AddProductFamilyRegistry";
     private const string ProductTechnicalDefinitionMigration = "20261004130000_ReleaseInitialProductTechnicalDefinition";
+    private const string ProductCodeGroupMigration = "20261004213000_ReleaseInitialProductCodeGroup";
     private static readonly Guid ActorId = Guid.Parse("20000000-0000-0000-0000-000000000003");
     private static readonly Guid ActorExternalId = Guid.Parse("21000000-0000-0000-0000-000000000003");
     private static readonly Guid SystemRoleId = Guid.Parse("30000000-0000-0000-0000-000000000003");
@@ -422,15 +423,18 @@ public sealed class ProductGlobalRuntimeSqlServerRelationalAcceptanceTests
             await AssertRollbackRefusedAsync(migrationScope.ServiceProvider.GetRequiredService<GroupSharedCommandDbContext>(), 51043);
             var product = migrationScope.ServiceProvider.GetRequiredService<ProductDbContext>();
             var productMigrations = (await product.Database.GetAppliedMigrationsAsync()).ToArray();
-            Assert.Equal(ProductTechnicalDefinitionMigration, productMigrations[^1]);
+            Assert.Equal(ProductCodeGroupMigration, productMigrations[^1]);
 
             // EF Core 10 commits each migration in its own transaction. First remove the unreferenced
-            // data-only release, then exercise the schema guard as a single rollback step. Reapply the
-            // release afterwards so this acceptance case leaves the Product runtime at its entry schema.
-            await product.GetService<IMigrator>().MigrateAsync(ProductFamilyRegistryMigration);
-            Assert.Equal(productMigrations[..^1], await product.Database.GetAppliedMigrationsAsync());
-            await AssertRollbackRefusedAsync(product, 51044, ProductPreFamilyRegistryMigration);
+            // code-group release, then the technical-definition release, before exercising the schema
+            // guard as a single rollback step. Reapply both releases afterwards so this acceptance case
+            // leaves the Product runtime at its entry schema.
             await product.GetService<IMigrator>().MigrateAsync(ProductTechnicalDefinitionMigration);
+            Assert.Equal(productMigrations[..^1], await product.Database.GetAppliedMigrationsAsync());
+            await product.GetService<IMigrator>().MigrateAsync(ProductFamilyRegistryMigration);
+            Assert.Equal(productMigrations[..^2], await product.Database.GetAppliedMigrationsAsync());
+            await AssertRollbackRefusedAsync(product, 51044, ProductPreFamilyRegistryMigration);
+            await product.GetService<IMigrator>().MigrateAsync(ProductCodeGroupMigration);
             Assert.Equal(productMigrations, await product.Database.GetAppliedMigrationsAsync());
             Assert.Equal(afterEdit, await SnapshotAsync(factory.DatabaseConnectionString));
         });
