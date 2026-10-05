@@ -6,7 +6,7 @@
  * rejection keeps the order unchanged; approval applies the owner-backed floor; replay is one effect. The final
  * browser close/reopen reads the same server record. Nothing is mocked or intercepted. The test creates, issues, loads and
  * definitely ships a real Logistics instruction bound to this exact draft/line, so the remainder floor contains a real
- * partial shipment. It does not record a delivery.
+ * partial delivery from the same shipment and preserves every realized owner record across the remainder decisions.
  *
  * The suite creates no actor or grant. The existing preparer owns `sales.orders.quantity.write`, the existing
  * approver owns `sales.orders.approve`, and one existing disposable actor must be published with the already
@@ -430,6 +430,43 @@ test('S04-RM-01 one accepted order revises then cancels only its remainder while
     lineId: logisticsLineId, kind: 'Shipped', quantity: '1', sourceShipmentId: null,
   })
 
+  const deliveryId = randomUUID()
+  const deliveredQuantity = '0.5'
+  const deliveryRecorded = await request.post(
+    `${apiBaseUrl}/api/v1/logistics/loading-instructions/${instructionId}/lines/${logisticsLineId}/deliveries`,
+    {
+      headers: commandHeaders(logisticsShipmentActor, `SENTETIK-s04-rm-log-delivery-${RUN}`),
+      data: {
+        expectedVersion: shippedInstruction.detail.instruction.version,
+        deliveryId,
+        sourceShipmentId: shipmentId,
+        quantity: deliveredQuantity,
+        occurredAtUtc: '2026-09-18T12:30:00Z',
+      },
+    },
+  )
+  expect(deliveryRecorded.status(), 'the public Logistics delivery continues the same shipment').toBe(200)
+  const deliveredInstruction = (await deliveryRecorded.json()) as LoadingInstructionResponse
+  expect(deliveredInstruction.detail.shares.find((share) => share.shareId === deliveryId)).toMatchObject({
+    lineId: logisticsLineId, kind: 'Delivered', quantity: deliveredQuantity, sourceShipmentId: shipmentId,
+  })
+
+  const allocationStatePath = `${apiBaseUrl}/api/v1/inventory/physical-allocations?salesOrderId=${draftId}&salesOrderLineId=${lineId}&limit=100`
+  const allocationAfterDeliveryResponse = await request.get(allocationStatePath, {
+    headers: readHeaders(logisticsShipmentActor),
+  })
+  expect(allocationAfterDeliveryResponse.status()).toBe(200)
+  const allocationAfterDelivery = await allocationAfterDeliveryResponse.json() as {
+    readonly items: readonly { readonly allocation: {
+      readonly allocationId: string; readonly status: string; readonly version: string; readonly remainingKg: string
+    } }[]
+    readonly searchWindowFull: boolean
+  }
+  expect(allocationAfterDelivery.items.find((item) => item.allocation.allocationId === allocationId)?.allocation).toMatchObject({
+    allocationId, status: 'Consumed', version: '2', remainingKg: '0',
+  })
+  const labelVersionAfterDelivery = await readLabelVersion(request, preparerActor)
+
   // The same definite shipment is documented by one real approved dispatch note. Sales remainder decisions must never
   // rewrite this owner record, its server number, shipment share or Logistics aggregate version.
   const dispatchNoteId = randomUUID()
@@ -437,7 +474,7 @@ test('S04-RM-01 one accepted order revises then cancels only its remainder while
   const noteDrafted = await request.post(dispatchPath, {
     headers: commandHeaders(logisticsDispatchActor, `SENTETIK-s04-rm-note-create-${RUN}`),
     data: {
-      expectedVersion: shippedInstruction.detail.instruction.version,
+      expectedVersion: deliveredInstruction.detail.instruction.version,
       dispatchNoteId,
       shipmentIds: [shipmentId],
     },
@@ -462,12 +499,12 @@ test('S04-RM-01 one accepted order revises then cancels only its remainder while
       sourceShipmentId: share.sourceShipmentId }))
     .sort((left, right) => left.shareId.localeCompare(right.shareId))
   const immutableLine = immutableLogistics.lines.find((line) => line.lineId === logisticsLineId)
-  expect(immutableLine).toMatchObject({ loaded: '2', shipped: '1', delivered: '0' })
+  expect(immutableLine).toMatchObject({ loaded: '2', shipped: '1', delivered: deliveredQuantity })
 
   const nonZeroFloor = await readRemainders(request, draftId, readerActor)
   expect(nonZeroFloor.floorStatus).toBe('Readable')
   expect(nonZeroFloor.lines.find((line) => line.lineId === lineId)).toMatchObject({
-    quantity: ORDERED_QUANTITY, loaded: '2', shipped: '1', delivered: '0', minimum: '2',
+    quantity: ORDERED_QUANTITY, loaded: '2', shipped: '1', delivered: deliveredQuantity, minimum: '2',
   })
 
   await openDetail(page, draftId, preparerActor)
@@ -566,18 +603,33 @@ test('S04-RM-01 one accepted order revises then cancels only its remainder while
     detail: { draft: { id: draftId }, lines: [{ lineId, quantity: REVISED_QUANTITY }] },
   })
 
+  const logisticsAfterRevision = await readInstruction(request, instructionId, logisticsDispatchActor)
+  expect(logisticsAfterRevision.instruction.version).toBe(immutableLogistics.instruction.version)
+  expect(logisticsAfterRevision.lines.find((line) => line.lineId === logisticsLineId)).toEqual(immutableLine)
+  expect(logisticsAfterRevision.shares
+    .map((share) => ({ shareId: share.shareId, lineId: share.lineId, kind: share.kind, quantity: share.quantity,
+      sourceShipmentId: share.sourceShipmentId }))
+    .sort((left, right) => left.shareId.localeCompare(right.shareId))).toEqual(immutableShares)
+  expect(logisticsAfterRevision.dispatchNotes.find((note) => note.dispatchNoteId === dispatchNoteId)).toEqual(immutableNote)
+  const allocationAfterRevisionResponse = await request.get(allocationStatePath, {
+    headers: readHeaders(logisticsShipmentActor),
+  })
+  expect(allocationAfterRevisionResponse.status()).toBe(200)
+  expect(await allocationAfterRevisionResponse.json()).toEqual(allocationAfterDelivery)
+  expect(await readLabelVersion(request, preparerActor)).toBe(labelVersionAfterDelivery)
+
   fresh = await readDraft(request, draftId, readerActor)
   remainder = await readRemainders(request, draftId, readerActor)
   const exactLine = remainder.lines.find((line) => line.lineId === lineId)
   expect(fresh.lines.find((line) => line.lineId === lineId)?.quantity).toBe(REVISED_QUANTITY)
   expect(remainder.floorStatus).toBe('Readable')
   expect(exactLine).toMatchObject({
-    quantity: REVISED_QUANTITY, remainder: 'Revised', loaded: '2', shipped: '1', delivered: '0', minimum: '2',
+    quantity: REVISED_QUANTITY, remainder: 'Revised', loaded: '2', shipped: '1', delivered: deliveredQuantity, minimum: '2',
   })
   expect(remainder.items).toHaveLength(2)
   expect(remainder.items[1]).toMatchObject({
     changeNo: 2, state: 'Approved', requestedQuantity: REVISED_QUANTITY,
-    resultQuantity: REVISED_QUANTITY, loadedAtRequest: '2', shippedAtRequest: '1', deliveredAtRequest: '0', loadedAtDecision: '2',
+    resultQuantity: REVISED_QUANTITY, loadedAtRequest: '2', shippedAtRequest: '1', deliveredAtRequest: deliveredQuantity, loadedAtDecision: '2',
   })
 
   await openDetail(page, draftId, readerActor)
@@ -614,7 +666,7 @@ test('S04-RM-01 one accepted order revises then cancels only its remainder while
   expect(remainder.items).toHaveLength(3)
   expect(remainder.items[2]).toMatchObject({
     changeNo: 3, lineId, kind: 'Cancel', state: 'Pending', orderedQuantity: REVISED_QUANTITY,
-    requestedQuantity: null, loadedAtRequest: '2', shippedAtRequest: '1', deliveredAtRequest: '0',
+    requestedQuantity: null, loadedAtRequest: '2', shippedAtRequest: '1', deliveredAtRequest: deliveredQuantity,
   })
 
   await openDetail(page, draftId, approverActor)
@@ -654,7 +706,7 @@ test('S04-RM-01 one accepted order revises then cancels only its remainder while
   expect(fresh.lines.find((line) => line.lineId === lineId)?.quantity).toBe('2')
   expect(remainder.floorStatus).toBe('Readable')
   expect(remainder.lines.find((line) => line.lineId === lineId)).toMatchObject({
-    quantity: '2', remainder: 'Cancelled', loaded: '2', shipped: '1', delivered: '0', minimum: '2',
+    quantity: '2', remainder: 'Cancelled', loaded: '2', shipped: '1', delivered: deliveredQuantity, minimum: '2',
   })
   expect(remainder.items).toHaveLength(3)
   expect(remainder.items[2]).toMatchObject({
@@ -680,4 +732,13 @@ test('S04-RM-01 one accepted order revises then cancels only its remainder while
     .sort((left, right) => left.shareId.localeCompare(right.shareId))).toEqual(immutableShares)
   expect(reopenedLogistics.dispatchNotes).toHaveLength(1)
   expect(reopenedLogistics.dispatchNotes.find((note) => note.dispatchNoteId === dispatchNoteId)).toEqual(immutableNote)
+  const allocationAfterCancelResponse = await request.get(allocationStatePath, {
+    headers: readHeaders(logisticsShipmentActor),
+  })
+  expect(allocationAfterCancelResponse.status()).toBe(200)
+  expect(await allocationAfterCancelResponse.json()).toEqual(allocationAfterDelivery)
+  expect(await readLabelVersion(request, preparerActor)).toBe(labelVersionAfterDelivery)
+
+  // Invoice-source consumption and post-invoice cancellation are intentionally deferred to T11A's explicit decisions.
+  // This journey proves the independent physical chain without fabricating an invoice or a financial correction.
 })
