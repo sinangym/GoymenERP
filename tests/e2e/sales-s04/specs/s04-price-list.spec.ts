@@ -39,6 +39,8 @@ const LIST_NAME = `SENTETIK s04 fiyat listesi ${RUN}`
 const DRAFTS_PATH = '/api/v1/sales/drafts'
 const CURRENCIES_PATH = '/api/v1/sales/references/currencies'
 const CAPABILITIES_PATH = '/api/v1/shell/capabilities'
+// S04BrowserSeed.PreparerIdentityId: the authenticated actor persisted by Sales, not the external development subject.
+const PREPARER_IDENTITY_ID = 'b2000000-0000-4000-8000-000000000401'
 
 const journey: { priceListId?: string; draftId?: string; lineId?: string } = {}
 
@@ -215,7 +217,7 @@ test('S04-PL-03 below-floor pricing is saved pending and a different actor appro
   }
   expect(pendingPricing.lines[0]).toMatchObject({
     lineId: journey.lineId, netUnitPrice: '38700',
-    floorException: { requestedBy: preparerActor, approvedBy: null, reason: null },
+    floorException: { requestedBy: PREPARER_IDENTITY_ID, approvedBy: null, reason: null },
   })
 
   safeFailurePhase = 's04_pl03_p3'
@@ -230,7 +232,7 @@ test('S04-PL-03 below-floor pricing is saved pending and a different actor appro
   }
   expect(approverPricing.lines[0]).toMatchObject({
     lineId: journey.lineId, netUnitPrice: '38700',
-    floorException: { requestedBy: preparerActor, approvedBy: null, reason: null },
+    floorException: { requestedBy: PREPARER_IDENTITY_ID, approvedBy: null, reason: null },
   })
 
   const readerPricingResponse = await request.get(`${apiBaseUrl}${DRAFTS_PATH}/${journey.draftId}/line-pricing`, {
