@@ -122,7 +122,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // and its closed seed-output validator, both for BrowserSuiteHostEnvelopeTests), after the module SQL
     // acceptance ProjectReferences. Publish target and discovery contract unchanged.
     private const string ReviewedSqlServerRcsiIntegrationProjectFingerprint =
-        "75e674d2a4e3508decae12b1ca492acc18ea44ddd56f53265c3c684fa670d634";
+        "56acd641feee6e6c89c192dba8949f2466ca3f67907dcb98f0ba48704d8dbc46";
     private const string SqlServerRcsiRelationalAcceptancePath =
         "tests/GoymenERP.Api.IntegrationTests/"
         + "SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests.cs";
@@ -140,7 +140,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // Re-fingerprinted for the broad suite's wall-clock limit 1200 s -> 2400 s (user decision 2026-09-29): only
     // the subprocess timeout changes; the exact inventory, every listed test and the 0-skip rule are unchanged.
     private const string ReviewedSqlServerRcsiVerifierFingerprint =
-        "0b7eda81fec0b50167e7da627671f6bffb978042bd243f954f4a59340a66bbf8";
+        "aa944f6f0298f2a9570f26fbfae8b633927461d91fa454d378af37b0ab30a360";
     private const string SqlServerRcsiVerifierTestsPath =
         "tests/rcsi_relational_acceptance_verifier/"
         + "test_verify_rcsi_relational_acceptance.py";
@@ -150,7 +150,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // Re-fingerprinted for LOG-4a: a Logistics class maps to its own module.
     // Re-fingerprinted for PUR-4a: a Purchasing class maps to its own module.
     private const string ReviewedSqlServerRcsiVerifierTestsFingerprint =
-        "49fdbe2e1fcaf14f3d61524cce652d0b70a92b93a0c3aa9a28a4456b676ca9bc";
+        "f7d17f6b5b5bbfd8ed82ad828fcdaa5b98a79beb9f97cb5b664a3f18bf1c309d";
     // The broad relational inventory, one file per module (see RelationalInventoryDirectory). Each
     // pin is its own paragraph so that two modules re-pinning their own files change lines that are
     // not adjacent and combine cleanly; a file's owner is its module, the pin line is central.
@@ -237,6 +237,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // PL04: +1 exact price-floor approval replay/down-refusal fact.
             ["tools/relational_inventory/sales.txt"] =
                 "8f04fb503dda544c48637cd2ca42a9d4fc05479c4b3ed05cdc798902fb9a7aad",
+
+            // work
+            // JV03: the five ordinal desired-state storage SQL facts are mandatory and skip-free.
+            ["tools/relational_inventory/work.txt"] =
+                "1b4e97363d97f585be14fb59c431ed6137237b9fdd45d907a58d57de50c5082a",
         };
     private const string ContinuousIntegrationWorkflowPath = ".github/workflows/ci.yml";
     private const string ReviewedContinuousIntegrationWorkflowFingerprint =
@@ -250,6 +255,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // This is a reviewed source inventory, not a claim that every entity mapped by every
     // context has a global query filter. Any context change must receive a fresh tenant-safety
     // review and a new fingerprint.
+    private const string ReviewedWorkDbContextPath =
+        "src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/"
+        + "Persistence/WorkDbContext.cs";
     private static readonly IReadOnlyDictionary<string, string> ReviewedPlatformDbContexts =
         new Dictionary<string, string>(StringComparer.Ordinal)
         {
@@ -353,6 +361,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/"
              + "PriceLists/ProductPriceListDbContext.cs"] =
                 "322378acff34afd47965275efc1cc677bee0859af1b63fcd048e46dbacf03662",
+            // JV03: every Work snapshot, inbox and outbox row is company-filtered and company-keyed;
+            // AuditEvent uses the same resolved company fence and the write guard refuses foreign rows.
+            [ReviewedWorkDbContextPath] =
+                "39248c80a4d772be8882db360b1e2fc2072431bb73af6ee4de6f54f04e48e420",
             ["src/backend/Modules/Idempotency/GoymenERP.Modules.Idempotency.Infrastructure/"
              // Re-measured for DEC-CAR-003: the terminal command-name check admits the Product deactivate/reactivate
              // commands beside activate; no query filter, key or table change.
@@ -1101,6 +1113,27 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     new(
                         "890a1bea27e988b824d25ee71860f58aaea64a93be88ab8a891106b6a4d2ef8c",
                         new Dictionary<string, int>(StringComparer.Ordinal)
+                         {
+                             ["Microsoft.Data.SqlClient"] = 1
+                         }),
+                // JV03: the Work initializer owns one provider branch. Its exact source and
+                // migration/empty-database API counts remain reviewed independently.
+                ["src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/"
+                 + "WorkModuleExtensions.cs"] =
+                    new(
+                        "eb7df024d5d42bf62a7a6d3c915a4c872da7bc63287570b414c5bb52a4c2da49",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["MigrateAsync"] = 1,
+                            ["EnsureCreatedAsync"] = 1
+                        }),
+                // JV03: SqlClient is used only to classify SQL unique-key races after
+                // the tenant-filtered EF save; no direct connection or raw SQL is opened.
+                ["src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/"
+                 + "Persistence/WorkDesiredStateStoreV2.cs"] =
+                    new(
+                        "fe4cb7eb9663d827927b9d1e15cff17f7987537061a5cfd38b4b128852c1300e",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
                         })
@@ -1181,6 +1214,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     new(
                         "PurchasingDbContext",
                         "1f18bc244888b237e6de9884f761bb54139c4da11e2446b4cdfac0e9d5d844d6"),
+                // JV03: migrations only; the factory constructs exactly one WorkDbContext.
+                ["src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/"
+                 + "Persistence/WorkDesignTimeDbContextFactory.cs"] =
+                    new(
+                        "WorkDbContext",
+                        "a41e35035988a73069c64ac96f13ed73078c2b40a0f88394e8548e8e583522b4"),
                 // ERP-000G / AT-065: the vault design-time factory (migrations only), as Logistics.
                 ["src/backend/Modules/Documents/"
                  + "GoymenERP.Modules.Documents.Infrastructure/Persistence/"
@@ -1212,6 +1251,16 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "Migrations/20260930120000_AddLinePricing.cs"] =
                     new(
                         "e78046ed155a3043d17777e0459382abab7712cedcd41664a72ebcd26b459121",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 1
+                        }),
+                // JV03 desired-state history is durable; Down refuses destructive rollback while any
+                // company-scoped snapshot, inbox or outbox row remains.
+                ["src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Persistence/"
+                 + "Migrations/20261005190000_InitialWorkDesiredStateStorage.cs"] =
+                    new(
+                        "f75391a21884cba32bd1a285336038e8c7a126e5dbb1b7678e23445ccd259b0b",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Sql"] = 1
@@ -2093,6 +2142,33 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             });
 
         Assert.NotEmpty(errors);
+    }
+
+    [Fact]
+    public void Work_original_values_getvalue_is_exact_source_and_receiver_bound()
+    {
+        var source = File.ReadAllText(Path.Combine(
+            FindRepositoryRoot(),
+            ReviewedWorkDbContextPath.Replace('/', Path.DirectorySeparatorChar)));
+        var sources = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            [ReviewedWorkDbContextPath] = source
+        };
+
+        Assert.Empty(ValidateNoForbiddenBypassCapabilities(sources));
+
+        sources[ReviewedWorkDbContextPath] = source + "\nproperty.GetValue(instance);";
+        Assert.Contains(ValidateNoForbiddenBypassCapabilities(sources),
+            error => error.Contains("GetValue", StringComparison.Ordinal));
+
+        sources[ReviewedWorkDbContextPath] = source + "\noriginal.GetValue<Guid>(nameof(snapshot.CompanyId));";
+        Assert.Contains(ValidateNoForbiddenBypassCapabilities(sources),
+            error => error.Contains("GetValue", StringComparison.Ordinal));
+
+        sources.Clear();
+        sources["src/backend/GoymenERP.Api/ForeignWorkDbContext.cs"] = source;
+        Assert.Contains(ValidateNoForbiddenBypassCapabilities(sources),
+            error => error.Contains("GetValue", StringComparison.Ordinal));
     }
 
     [Theory]
@@ -3098,6 +3174,55 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         Assert.Contains(errors, error => error.Contains(
             "factory does not match the reviewed fingerprint",
             StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Work_design_time_factory_requires_one_exact_reviewed_construction()
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var sources = ReviewedPlatformContextFactories.Keys.ToDictionary(
+            candidate => candidate,
+            candidate => File.ReadAllText(Path.Combine(
+                repositoryRoot, candidate.Replace('/', Path.DirectorySeparatorChar))),
+            StringComparer.Ordinal);
+        var path = ReviewedPlatformContextFactories.Keys.Single(candidate =>
+            candidate.EndsWith("/WorkDesignTimeDbContextFactory.cs", StringComparison.Ordinal));
+        var source = sources[path];
+
+        Assert.Empty(ValidateReviewedPlatformContextConstructions(sources));
+
+        sources[path] = source.Replace("new WorkDbContext(", "new UnreviewedContext(", StringComparison.Ordinal);
+        Assert.Contains(ValidateReviewedPlatformContextConstructions(sources),
+            error => error.Contains("Expected exactly one 'WorkDbContext' construction", StringComparison.Ordinal));
+        sources[path] = source + "\n// fingerprint drift";
+        Assert.Contains(ValidateReviewedPlatformContextConstructions(sources),
+            error => error.Contains("factory does not match the reviewed fingerprint", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData(
+        "new WorkDbContext(options, companyContext);",
+        "Unauthorized reviewed platform DbContext construction 'WorkDbContext'")]
+    [InlineData(
+        "using WorkAlias = WorkDbContext;",
+        "Reviewed platform DbContext type alias 'WorkAlias'")]
+    [InlineData(
+        "new WorkDesignTimeDbContextFactory().CreateDbContext([]);",
+        "Unauthorized design-time DbContext factory reference 'WorkDesignTimeDbContextFactory'")]
+    public void Unreviewed_work_context_construction_alias_or_factory_is_rejected(
+        string source,
+        string expectedFailure)
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var sources = ReviewedPlatformContextFactories.Keys.ToDictionary(
+            candidate => candidate,
+            candidate => File.ReadAllText(Path.Combine(
+                repositoryRoot, candidate.Replace('/', Path.DirectorySeparatorChar))),
+            StringComparer.Ordinal);
+        sources["src/backend/GoymenERP.Api/UnreviewedWorkContext.cs"] = source;
+        var errors = ValidateReviewedPlatformContextConstructions(sources);
+
+        Assert.Contains(errors, error => error.Contains(expectedFailure, StringComparison.Ordinal));
     }
 
     [Theory]
@@ -5599,8 +5724,41 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
             var searchableSource = NormalizeExecutableIdentifiers(
                 MaskCommentsAndNonInterpolatedLiterals(source));
-            foreach (Match match in ForbiddenBypassCapabilityRegex().Matches(searchableSource))
+            var forbiddenMatches = ForbiddenBypassCapabilityRegex().Matches(searchableSource)
+                .Cast<Match>()
+                .ToArray();
+            var reviewedOriginalValueOffsets = new HashSet<int>();
+            if (string.Equals(NormalizeRepositoryPath(path), ReviewedWorkDbContextPath, StringComparison.Ordinal)
+                && ReviewedPlatformDbContexts.TryGetValue(ReviewedWorkDbContextPath, out var reviewedWorkContextFingerprint)
+                && string.Equals(
+                    ComputeReviewedSourceFingerprint(source), reviewedWorkContextFingerprint, StringComparison.Ordinal))
             {
+                var originalValueOffsets = Regex.Matches(
+                        searchableSource,
+                        @"\boriginal\s*\.\s*(?<api>GetValue)\s*<",
+                        RegexOptions.CultureInvariant)
+                    .Cast<Match>()
+                    .Select(match => match.Groups["api"].Index)
+                    .ToHashSet();
+                var getValueOffsets = forbiddenMatches
+                    .Where(match => string.Equals(match.Value, "GetValue", StringComparison.Ordinal))
+                    .Select(match => match.Index)
+                    .ToArray();
+                if (originalValueOffsets.Count == 7
+                    && getValueOffsets.Length == 7
+                    && originalValueOffsets.SetEquals(getValueOffsets))
+                {
+                    reviewedOriginalValueOffsets = originalValueOffsets;
+                }
+            }
+
+            foreach (var match in forbiddenMatches)
+            {
+                if (reviewedOriginalValueOffsets.Contains(match.Index))
+                {
+                    continue;
+                }
+
                 errors.Add(
                     $"Forbidden reflection/dynamic bypass capability '{match.Value}' at "
                     + $"{NormalizeRepositoryPath(path)}:{GetLineNumber(searchableSource, match.Index)}");
@@ -7504,13 +7662,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         @"(?<![\p{L}\p{Nd}_])new\s+"
         + @"(?:global\s*::\s*)?(?:@?[\p{L}_][\p{L}\p{Nd}_]*\s*\.\s*)*@?"
         + @"(?<type>AuditDbContext|CommandExecutionDbContext|IdentityDbContext|"
-        + @"OrganizationDbContext|InventoryDbContext|AccountingDbContext|FinanceDbContext|ManufacturingDbContext|SalesDbContext|LogisticsDbContext|PurchasingDbContext|DocumentsDbContext)(?![\p{L}\p{Nd}_])\s*\(",
+        + @"OrganizationDbContext|InventoryDbContext|AccountingDbContext|FinanceDbContext|ManufacturingDbContext|SalesDbContext|LogisticsDbContext|PurchasingDbContext|DocumentsDbContext|WorkDbContext)(?![\p{L}\p{Nd}_])\s*\(",
         RegexOptions.CultureInvariant)]
     private static partial Regex ReviewedContextConstructionRegex();
 
     [GeneratedRegex(
         @"(?<![\p{L}\p{Nd}_])@?(?<type>AuditDbContext|CommandExecutionDbContext|"
-        + @"IdentityDbContext|OrganizationDbContext|InventoryDbContext|AccountingDbContext|FinanceDbContext|ManufacturingDbContext|SalesDbContext|LogisticsDbContext|PurchasingDbContext|DocumentsDbContext)"
+        + @"IdentityDbContext|OrganizationDbContext|InventoryDbContext|AccountingDbContext|FinanceDbContext|ManufacturingDbContext|SalesDbContext|LogisticsDbContext|PurchasingDbContext|DocumentsDbContext|WorkDbContext)"
         + @"(?![\p{L}\p{Nd}_])",
         RegexOptions.CultureInvariant)]
     private static partial Regex ReviewedContextTypeIdentifierRegex();
@@ -7525,7 +7683,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         + @"(?<alias>@?[\p{L}_][\p{L}\p{Nd}_]*)\s*=\s*"
         + @"(?:global\s*::\s*)?(?:@?[\p{L}_][\p{L}\p{Nd}_]*\s*\.\s*)*@?"
         + @"(?<type>AuditDbContext|CommandExecutionDbContext|IdentityDbContext|"
-        + @"OrganizationDbContext|InventoryDbContext|AccountingDbContext|FinanceDbContext|ManufacturingDbContext|SalesDbContext|LogisticsDbContext|PurchasingDbContext|DocumentsDbContext)(?![\p{L}\p{Nd}_])\s*;",
+        + @"OrganizationDbContext|InventoryDbContext|AccountingDbContext|FinanceDbContext|ManufacturingDbContext|SalesDbContext|LogisticsDbContext|PurchasingDbContext|DocumentsDbContext|WorkDbContext)(?![\p{L}\p{Nd}_])\s*;",
         RegexOptions.CultureInvariant)]
     private static partial Regex ReviewedContextTypeAliasRegex();
 
@@ -7542,7 +7700,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         + @"SalesDesignTimeDbContextFactory|"
         + @"LogisticsDesignTimeDbContextFactory|"
         + @"PurchasingDesignTimeDbContextFactory|"
-        + @"DocumentsDesignTimeDbContextFactory)(?![\p{L}\p{Nd}_])",
+        + @"DocumentsDesignTimeDbContextFactory|WorkDesignTimeDbContextFactory)(?![\p{L}\p{Nd}_])",
         RegexOptions.CultureInvariant)]
     private static partial Regex ReviewedDesignTimeFactoryIdentifierRegex();
 

@@ -636,6 +636,10 @@ class RelationalInventoryLoaderTests(unittest.TestCase):
             VERIFIER.module_of(prefix + "PurchasingOrderSqlServerRelationalAcceptanceTests.Case"),
         )
         self.assertEqual(
+            "work",
+            VERIFIER.module_of(prefix + "WorkDesiredStateSqlServerRelationalAcceptanceTests.Case"),
+        )
+        self.assertEqual(
             "platform",
             VERIFIER.module_of(prefix + "ShellCapabilitySqlServerRelationalAcceptanceTests.Case"),
         )
@@ -650,6 +654,34 @@ class RelationalInventoryLoaderTests(unittest.TestCase):
             VERIFIER.TEST_NAMESPACE + "SalesZzzSqlServerRelationalAcceptanceTests.Misplaced",
         )
         self._rejects("belongs in sales.txt")
+
+    def test_work_inventory_is_exact_mandatory_and_owned(self) -> None:
+        prefix = VERIFIER.TEST_NAMESPACE + "WorkDesiredStateSqlServerRelationalAcceptanceTests."
+        required = {
+            prefix + "Apply_replay_conflict_older_and_unavailable_watermark_are_atomic",
+            prefix + "Audit_failure_rolls_back_snapshot_inbox_outbox_and_write_guard_refuses_foreign_rows",
+            prefix + "Digest_collision_is_refused_before_SQL_and_preserves_the_first_identity",
+            prefix + "Same_and_newer_ordinal_races_have_one_CAS_winner_without_blind_overwrite",
+            prefix + "Versionless_and_foreign_observations_write_nothing_and_tenant_filter_hides_other_company",
+        }
+        self.assertEqual(required, set(VERIFIER.BROAD_INVENTORY["work"]))
+        for omitted in required:
+            with self.subTest(omitted=omitted):
+                with self.assertRaisesRegex(RuntimeError, "exact"):
+                    VERIFIER.verify_broad_discovery("\n".join(
+                        name for name in VERIFIER.BROAD_EXPECTED_TESTS if name != omitted
+                    ))
+
+        work_path = self.root / "work.txt"
+        work_source = work_path.read_text(encoding="utf-8")
+        work_path.unlink()
+        self._rejects("missing \\['work.txt'\\]")
+        work_path.write_text(work_source, encoding="utf-8")
+        self._append(
+            "platform",
+            VERIFIER.TEST_NAMESPACE + "WorkZzzSqlServerRelationalAcceptanceTests.Misplaced",
+        )
+        self._rejects("belongs in work.txt")
 
     def test_a_name_repeated_in_one_file_is_rejected(self) -> None:
         last = sorted(VERIFIER.BROAD_INVENTORY["sales"])[-1]
