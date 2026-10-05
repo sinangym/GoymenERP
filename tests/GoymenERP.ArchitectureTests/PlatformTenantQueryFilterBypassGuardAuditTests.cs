@@ -40,6 +40,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     private const string DocumentsDbContextAuditEventPath =
         "src/backend/Modules/Documents/"
         + "GoymenERP.Modules.Documents.Infrastructure/Persistence/DocumentsDbContext.cs";
+    private const string WorkDbContextAuditEventPath =
+        "src/backend/Modules/Work/"
+        + "GoymenERP.Modules.Work.Infrastructure/Persistence/WorkDbContext.cs";
     private const string CompanyContextRegistrationPath =
         "src/backend/GoymenERP.Api/Program.cs";
     private const string SafeAuditEventConfiguration =
@@ -72,6 +75,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             [LogisticsDbContextAuditEventPath] = "LogisticsDbContext",
             [PurchasingDbContextAuditEventPath] = "PurchasingDbContext",
             [DocumentsDbContextAuditEventPath] = "DocumentsDbContext",
+            [WorkDbContextAuditEventPath] = "WorkDbContext",
         };
 
     [Fact]
@@ -103,6 +107,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     [InlineData(LogisticsDbContextAuditEventPath)]
     [InlineData(PurchasingDbContextAuditEventPath)]
     [InlineData(DocumentsDbContextAuditEventPath)]
+    [InlineData(WorkDbContextAuditEventPath)]
     public void Audit_event_context_inventory_is_receiver_name_independent(string sourcePath)
     {
         var repositoryRoot = FindRepositoryRoot();
@@ -132,6 +137,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     [InlineData(LogisticsDbContextAuditEventPath)]
     [InlineData(PurchasingDbContextAuditEventPath)]
     [InlineData(DocumentsDbContextAuditEventPath)]
+    [InlineData(WorkDbContextAuditEventPath)]
     public void Audit_event_company_filter_is_semantically_locked(string sourcePath)
     {
         var source = ReadRepositorySource(sourcePath);
@@ -155,6 +161,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         "x => x.CompanyId == companyContext.CompanyId",
         "x => true")]
     [InlineData(
+        WorkDbContextAuditEventPath,
+        "x => x.CompanyId == companyContext.CompanyId",
+        "x => true")]
+    [InlineData(
         AuditDbContextPath,
         "x => x.CompanyId == companyContext.CompanyId",
         "x => x.CompanyId != companyContext.CompanyId")]
@@ -167,6 +177,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         "x => x.CompanyId == companyContext.CompanyId",
         "x => x.CompanyId != companyContext.CompanyId")]
     [InlineData(
+        WorkDbContextAuditEventPath,
+        "x => x.CompanyId == companyContext.CompanyId",
+        "x => x.CompanyId != companyContext.CompanyId")]
+    [InlineData(
         AuditDbContextPath,
         "x => x.CompanyId == companyContext.CompanyId",
         "x => x.CompanyId == Guid.Empty")]
@@ -176,6 +190,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         "x => x.CompanyId == Guid.Empty")]
     [InlineData(
         CounterpartyDbContextAuditEventPath,
+        "x => x.CompanyId == companyContext.CompanyId",
+        "x => x.CompanyId == Guid.Empty")]
+    [InlineData(
+        WorkDbContextAuditEventPath,
         "x => x.CompanyId == companyContext.CompanyId",
         "x => x.CompanyId == Guid.Empty")]
     [InlineData(
@@ -188,6 +206,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         "")]
     [InlineData(
         CounterpartyDbContextAuditEventPath,
+        ".HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);",
+        "")]
+    [InlineData(
+        WorkDbContextAuditEventPath,
         ".HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);",
         "")]
     public void Weakening_audit_event_company_filter_is_rejected(
@@ -220,6 +242,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     [InlineData(LogisticsDbContextAuditEventPath)]
     [InlineData(PurchasingDbContextAuditEventPath)]
     [InlineData(DocumentsDbContextAuditEventPath)]
+    [InlineData(WorkDbContextAuditEventPath)]
     public void Adding_a_later_audit_event_filter_override_is_rejected(string sourcePath)
     {
         var source = ReadRepositorySource(sourcePath);
@@ -255,6 +278,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     [InlineData(LogisticsDbContextAuditEventPath)]
     [InlineData(PurchasingDbContextAuditEventPath)]
     [InlineData(DocumentsDbContextAuditEventPath)]
+    [InlineData(WorkDbContextAuditEventPath)]
     public void Removing_request_scoped_company_context_from_audit_context_is_rejected(
         string sourcePath)
     {
@@ -285,6 +309,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     [InlineData(LogisticsDbContextAuditEventPath)]
     [InlineData(PurchasingDbContextAuditEventPath)]
     [InlineData(DocumentsDbContextAuditEventPath)]
+    [InlineData(WorkDbContextAuditEventPath)]
     public void Moving_company_context_interface_to_a_dummy_method_is_rejected(
         string sourcePath)
     {
@@ -321,6 +346,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     [InlineData(LogisticsDbContextAuditEventPath)]
     [InlineData(PurchasingDbContextAuditEventPath)]
     [InlineData(DocumentsDbContextAuditEventPath)]
+    [InlineData(WorkDbContextAuditEventPath)]
     public void Safe_filter_in_a_dummy_method_cannot_hide_unsafe_on_model_creating(
         string sourcePath)
     {
@@ -377,6 +403,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     [InlineData(LogisticsDbContextAuditEventPath)]
     [InlineData(PurchasingDbContextAuditEventPath)]
     [InlineData(DocumentsDbContextAuditEventPath)]
+    [InlineData(WorkDbContextAuditEventPath)]
     public void Safe_filter_in_a_nested_decoy_context_cannot_hide_target_context(
         string sourcePath)
     {

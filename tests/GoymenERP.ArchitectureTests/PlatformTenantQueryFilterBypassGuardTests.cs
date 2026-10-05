@@ -1111,6 +1111,27 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     new(
                         "890a1bea27e988b824d25ee71860f58aaea64a93be88ab8a891106b6a4d2ef8c",
                         new Dictionary<string, int>(StringComparer.Ordinal)
+                         {
+                             ["Microsoft.Data.SqlClient"] = 1
+                         }),
+                // JV03: the Work initializer owns one provider branch. Its exact source and
+                // migration/empty-database API counts remain reviewed independently.
+                ["src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/"
+                 + "WorkModuleExtensions.cs"] =
+                    new(
+                        "eb7df024d5d42bf62a7a6d3c915a4c872da7bc63287570b414c5bb52a4c2da49",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["MigrateAsync"] = 1,
+                            ["EnsureCreatedAsync"] = 1
+                        }),
+                // JV03: SqlClient is used only to classify SQL unique-key races after
+                // the tenant-filtered EF save; no direct connection or raw SQL is opened.
+                ["src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/"
+                 + "Persistence/WorkDesiredStateStoreV2.cs"] =
+                    new(
+                        "df5e44b462e5e7c163731054395b431b95df4eb0a8e1286fe8c0e65c4361e06e",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
                         })
