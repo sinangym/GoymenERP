@@ -12,11 +12,19 @@ using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
+using Xunit.Abstractions;
 
 namespace GoymenERP.Api.IntegrationTests;
 
-public sealed class FinanceOfficialInvoiceImportWorkDeliverySqlServerRelationalAcceptanceTests
+public sealed class FinanceOfficialInvoiceImportWorkDeliverySqlServerRelationalAcceptanceTests(
+    ITestOutputHelper output)
 {
+    private const string LegacyStartPhase = "finance_work_legacy_start";
+    private const string LegacySeedPhase = "finance_work_legacy_seed";
+    private const string LegacyUpPhase = "finance_work_legacy_up";
+    private const string LegacyReplayPhase = "finance_work_legacy_replay";
+    private const string LegacyCountsPhase = "finance_work_legacy_counts";
+    private const string LegacyDownUpPhase = "finance_work_legacy_down_up";
     private static readonly Guid Company = TestCompanyIds.CompanyA;
     private static readonly Guid Batch = Guid.Parse("91000000-0000-0000-0000-000000000001");
 
@@ -104,55 +112,69 @@ public sealed class FinanceOfficialInvoiceImportWorkDeliverySqlServerRelationalA
     [SqlServerFact]
     public async Task Legacy_previous_migration_receipt_replays_after_up_without_fabricating_work_history()
     {
-        await using var run = await Run.StartAsync("20260930185113_AddOfficialInvoiceImportApprovalV1");
-        var request = Request();
-        var preview = new FinanceOfficialInvoiceImportParserV1().Preview(
-            new FinanceContext(Company, "SENTETIK-maker", "legacy-correlation", null), request);
-        var batch = preview.Batch!;
-        var uploadedAt = DateTimeOffset.Parse("2026-10-05T18:00:00+00:00");
-        var resource = new FinanceOfficialInvoiceImportBatchViewV1(Batch, Company, batch.BatchVersion,
-            batch.BatchChecksum, preview.TemplateVersion, FinanceOfficialInvoiceImportApprovalStatusV1.Pending,
-            "1", batch.Rows.Count, "SENTETIK-maker", uploadedAt, null, null);
-        var result = new FinanceOfficialInvoiceImportApprovalResultV1(
-            CommandOutcome.Succeeded, resource, false, "legacy-correlation", []);
-        await run.ExecuteAsync(
-            """
-            INSERT INTO finance.OfficialInvoiceImportBatches
-                (Id, CompanyId, BatchVersion, BatchChecksum, TemplateVersion, FileBytes, SourceRowsJson, RowCount,
-                 UploadedBy, UploadedAtUtc, CorrelationId, CausationId)
-            VALUES (@batch, @company, @batchVersion, @checksum, @templateVersion, @bytes, @rows, @rowCount,
-                    @actor, @at, @correlation, NULL);
-            INSERT INTO finance.OfficialInvoiceImportCommands
-                (Id, CompanyId, CommandName, IdempotencyKeyHash, ActorId, PayloadHash, BatchId, ResultJson,
-                 CorrelationId, RecordedAtUtc)
-            VALUES (@command, @company, @commandName, @keyHash, @actor, @payloadHash, @batch, @result,
-                    @correlation, @at);
-            """,
-            ("@batch", Batch), ("@company", Company), ("@batchVersion", batch.BatchVersion),
-            ("@checksum", batch.BatchChecksum), ("@templateVersion", preview.TemplateVersion),
-            ("@bytes", request.Utf8Csv.ToArray()),
-            ("@rows", JsonSerializer.Serialize(batch.Rows, FinanceJson.CreateOptions())),
-            ("@rowCount", batch.Rows.Count), ("@actor", "SENTETIK-maker"), ("@at", uploadedAt),
-            ("@correlation", "legacy-correlation"), ("@command", Guid.NewGuid()),
-            ("@commandName", FinanceOfficialInvoiceImportApprovalServiceV1.UploadCommand),
-            ("@keyHash", FinanceCommandKeys.Hash("legacy-key")), ("@payloadHash", UploadHash(request)),
-            ("@result", JsonSerializer.Serialize(result, FinanceJson.CreateOptions())));
-
-        await using (var context = run.Context()) await context.Database.MigrateAsync();
-        await using (var maker = run.Service("SENTETIK-maker"))
+        var failurePhase = LegacyStartPhase;
+        try
         {
-            var replay = await maker.Service.UploadAsync(maker.Context,
-                new CommandMetadata("legacy-key"), request, default);
-            Assert.Equal(CommandOutcome.Succeeded, replay.Outcome);
-            Assert.True(replay.IsReplay);
-        }
-        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.OfficialInvoiceImportWorkDeliveries"));
-        Assert.Equal(1, await run.ScalarAsync<int>(
-            "SELECT COUNT(*) FROM finance.OfficialInvoiceImportCommands WHERE ProducerSchemaVersion IS NULL"));
+            await using var run = await Run.StartAsync("20260930185113_AddOfficialInvoiceImportApprovalV1");
+            failurePhase = LegacySeedPhase;
+            var request = Request();
+            var preview = new FinanceOfficialInvoiceImportParserV1().Preview(
+                new FinanceContext(Company, "SENTETIK-maker", "legacy-correlation", null), request);
+            var batch = preview.Batch!;
+            var uploadedAt = DateTimeOffset.Parse("2026-10-05T18:00:00+00:00");
+            var resource = new FinanceOfficialInvoiceImportBatchViewV1(Batch, Company, batch.BatchVersion,
+                batch.BatchChecksum, preview.TemplateVersion, FinanceOfficialInvoiceImportApprovalStatusV1.Pending,
+                "1", batch.Rows.Count, "SENTETIK-maker", uploadedAt, null, null);
+            var result = new FinanceOfficialInvoiceImportApprovalResultV1(
+                CommandOutcome.Succeeded, resource, false, "legacy-correlation", []);
+            await run.ExecuteAsync(
+                """
+                INSERT INTO finance.OfficialInvoiceImportBatches
+                    (Id, CompanyId, BatchVersion, BatchChecksum, TemplateVersion, FileBytes, SourceRowsJson, RowCount,
+                     UploadedBy, UploadedAtUtc, CorrelationId, CausationId)
+                VALUES (@batch, @company, @batchVersion, @checksum, @templateVersion, @bytes, @rows, @rowCount,
+                        @actor, @at, @correlation, NULL);
+                INSERT INTO finance.OfficialInvoiceImportCommands
+                    (Id, CompanyId, CommandName, IdempotencyKeyHash, ActorId, PayloadHash, BatchId, ResultJson,
+                     CorrelationId, RecordedAtUtc)
+                VALUES (@command, @company, @commandName, @keyHash, @actor, @payloadHash, @batch, @result,
+                        @correlation, @at);
+                """,
+                ("@batch", Batch), ("@company", Company), ("@batchVersion", batch.BatchVersion),
+                ("@checksum", batch.BatchChecksum), ("@templateVersion", preview.TemplateVersion),
+                ("@bytes", request.Utf8Csv.ToArray()),
+                ("@rows", JsonSerializer.Serialize(batch.Rows, FinanceJson.CreateOptions())),
+                ("@rowCount", batch.Rows.Count), ("@actor", "SENTETIK-maker"), ("@at", uploadedAt),
+                ("@correlation", "legacy-correlation"), ("@command", Guid.NewGuid()),
+                ("@commandName", FinanceOfficialInvoiceImportApprovalServiceV1.UploadCommand),
+                ("@keyHash", FinanceCommandKeys.Hash("legacy-key")), ("@payloadHash", UploadHash(request)),
+                ("@result", JsonSerializer.Serialize(result, FinanceJson.CreateOptions())));
 
-        await using var migrationContext = run.Context();
-        await migrationContext.GetService<IMigrator>().MigrateAsync("20260930185113_AddOfficialInvoiceImportApprovalV1");
-        await migrationContext.Database.MigrateAsync();
+            failurePhase = LegacyUpPhase;
+            await using (var context = run.Context()) await context.Database.MigrateAsync();
+            failurePhase = LegacyReplayPhase;
+            await using (var maker = run.Service("SENTETIK-maker"))
+            {
+                var replay = await maker.Service.UploadAsync(maker.Context,
+                    new CommandMetadata("legacy-key"), request, default);
+                Assert.Equal(CommandOutcome.Succeeded, replay.Outcome);
+                Assert.True(replay.IsReplay);
+            }
+            failurePhase = LegacyCountsPhase;
+            Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.OfficialInvoiceImportWorkDeliveries"));
+            Assert.Equal(1, await run.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM finance.OfficialInvoiceImportCommands WHERE ProducerSchemaVersion IS NULL"));
+
+            failurePhase = LegacyDownUpPhase;
+            await using var migrationContext = run.Context();
+            await migrationContext.GetService<IMigrator>().MigrateAsync("20260930185113_AddOfficialInvoiceImportApprovalV1");
+            await migrationContext.Database.MigrateAsync();
+        }
+        catch
+        {
+            output.WriteLine($"CI_SAFE_DIAGNOSTIC:{failurePhase}");
+            throw;
+        }
     }
 
     [SqlServerFact]
