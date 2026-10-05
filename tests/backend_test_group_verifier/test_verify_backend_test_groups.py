@@ -39,8 +39,10 @@ def make_repository(root: Path) -> None:
 def trx_source(project: str, *, outcome: str = "Passed", theory_rows: int = 1) -> str:
     test_name = Path(project).stem + ".ExampleTests.Runs"
     results = "".join(
-        f'<UnitTestResult testId="one" outcome="{outcome}" testName="{test_name}" />'
-        for _ in range(theory_rows)
+        f'<UnitTestResult testId="one" '
+        f'executionId="12345678-1234-4abc-8def-{index + 1:012x}" '
+        f'outcome="{outcome}" testName="{test_name}" />'
+        for index in range(theory_rows)
     )
     passed = theory_rows if outcome == "Passed" else 0
     skipped = theory_rows if outcome == "NotExecuted" else 0
@@ -140,6 +142,38 @@ class BackendGroupVerifierTests(unittest.TestCase):
         path.write_text(trx_source(project), encoding="utf-8")
         with self.assertRaisesRegex(RuntimeError, "identities differ"):
             VERIFIER.trx_result_map(path, VERIFIER.discovery_map(name + "\n" + name + ".Other\n", project))
+
+    def test_trx_rejects_missing_invalid_and_duplicate_execution_identities(self) -> None:
+        project = VERIFIER.GROUP_PROJECTS["architecture"][0]
+        name = Path(project).stem + ".ExampleTests.Runs"
+        discovered = VERIFIER.discovery_map(name + "\n", project)
+        path = self.root / "test.trx"
+        first_id = "12345678-1234-4abc-8def-000000000001"
+        second_id = "12345678-1234-4abc-8def-000000000002"
+        single = trx_source(project)
+        double = trx_source(project, theory_rows=2)
+        copied_row = single.split("<UnitTestResult ", 1)[1].split(" />", 1)[0]
+        copied = single.replace(
+            "</Results>", f'<UnitTestResult {copied_row} /></Results>'
+        ).replace('total="1"', 'total="2"').replace(
+            'executed="1"', 'executed="2"'
+        ).replace('passed="1"', 'passed="2"')
+        cases = (
+            ("missing", single.replace(f' executionId="{first_id}"', ""),
+             "execution identity"),
+            ("empty", single.replace(first_id, ""), "execution identity"),
+            ("malformed", single.replace(first_id, "not-a-guid"), "execution identity"),
+            ("nil", single.replace(first_id, "00000000-0000-0000-0000-000000000000"),
+             "execution identity"),
+            ("duplicate theory", double.replace(second_id, first_id),
+             "repeats an execution identity"),
+            ("copied row adjusted counters", copied, "repeats an execution identity"),
+        )
+        for label, source, error in cases:
+            with self.subTest(case=label):
+                path.write_text(source, encoding="utf-8")
+                with self.assertRaisesRegex(RuntimeError, error):
+                    VERIFIER.trx_result_map(path, discovered)
 
     def proof_directory(self) -> Path:
         directory = self.root / "artifacts" / "proofs"

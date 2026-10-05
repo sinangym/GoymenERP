@@ -50,6 +50,9 @@ MAX_PROOF_BYTES = 16384
 HEAD_PATTERN = re.compile(r"[0-9a-f]{40}\Z")
 HASH_PATTERN = re.compile(r"[0-9a-f]{64}\Z")
 FQN_PATTERN = re.compile(r"GoymenERP\.[A-Za-z0-9_.+`]+\Z")
+EXECUTION_ID_PATTERN = re.compile(
+    r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\Z"
+)
 
 
 def digest(value: object) -> str:
@@ -160,10 +163,19 @@ def trx_result_map(path: Path, discovered: Counter[str]) -> tuple[dict[str, dict
     total = 0
     passed = 0
     skipped = 0
+    execution_ids: set[str] = set()
     for element in elements("UnitTestResult"):
         test_id = element.attrib.get("testId")
         if test_id not in definitions:
             raise RuntimeError("Backend TRX result has no exact test definition.")
+        execution_id = element.attrib.get("executionId", "")
+        if (EXECUTION_ID_PATTERN.fullmatch(execution_id) is None
+                or execution_id.lower() == "00000000-0000-0000-0000-000000000000"):
+            raise RuntimeError("Backend TRX execution identity is missing or noncanonical.")
+        canonical_execution_id = execution_id.lower()
+        if canonical_execution_id in execution_ids:
+            raise RuntimeError("Backend TRX repeats an execution identity.")
+        execution_ids.add(canonical_execution_id)
         outcome = element.attrib.get("outcome")
         if outcome not in ("Passed", "NotExecuted"):
             raise RuntimeError("Backend TRX contains a failed or unknown test result.")
