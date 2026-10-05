@@ -14,8 +14,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  backend:
-    name: Backend build, test and migration
+  backend-build:
+    name: Backend full build, vulnerability and migrations
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -50,18 +50,6 @@ jobs:
           python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py
           dotnet build GoymenERP.slnx -noAutoResponse --configuration Release --no-restore
 
-      - name: Test
-        run: |
-          python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py
-          mkdir -p artifacts/ci-test-results/backend
-          dotnet test GoymenERP.slnx \
-          -noAutoResponse \
-          --configuration Release \
-          --no-build \
-          --results-directory artifacts/ci-test-results/backend \
-          --logger "console;verbosity=normal" \
-          --logger "trx;LogFilePrefix=backend"
-
       - name: Architecture dependency guard
         run: |
           python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py
@@ -81,7 +69,7 @@ jobs:
           --output artifacts/ci-safe-test-summary/backend.json \
           --source-head "${{ github.event.pull_request.head.sha || github.sha }}" \
           --tested-commit "$(git rev-parse HEAD)" \
-          --job backend \
+          --job backend-build \
           --phase test-suite
 
       - name: Upload secret-free backend test summary
@@ -144,6 +132,99 @@ jobs:
           --startup-project src/backend/GoymenERP.Api/GoymenERP.Api.csproj \
           --context CommandExecutionDbContext \
           --output artifacts/idempotency-migration.sql
+
+  backend-test-group:
+    name: Backend test group (${{ matrix.group }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        group: [architecture, api, modules]
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: .NET bootstrap integrity preflight
+        run: |
+          python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py
+          python3 -I -S -B -m unittest discover -s tests/dotnet_bootstrap_integrity -p "test_*.py" -v
+          python3 -I -S -B -m unittest discover -s tests/ci_safe_trx_summary -p "test_*.py" -v
+          python3 -I -S -B -m unittest discover -s tests/backend_test_group_verifier -p "test_*.py" -v
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore locked solution packages
+        run: |
+          python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py
+          dotnet restore GoymenERP.slnx -noAutoResponse --configfile NuGet.Config
+
+      - name: Run exact backend test group
+        run: |
+          python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py
+          python3 -I -S -B tools/verify_backend_test_groups.py \
+          --group "${{ matrix.group }}" \
+          --results-directory "artifacts/ci-test-results/backend-groups/${{ matrix.group }}" \
+          --proof-output "artifacts/ci-backend-group-proofs/proof-${{ matrix.group }}.json" \
+          --source-head "${{ github.event.pull_request.head.sha || github.sha }}" \
+          --tested-commit "$(git rev-parse HEAD)"
+
+      - name: Upload exact backend group proof
+        uses: actions/upload-artifact@v7
+        with:
+          name: ci-backend-test-group-proof-${{ matrix.group }}
+          path: artifacts/ci-backend-group-proofs/proof-${{ matrix.group }}.json
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Produce secret-free backend group summary
+        if: always() && hashFiles('artifacts/ci-test-results/backend-groups/*/*.trx') != ''
+        run: |
+          python3 -I -S -B tools/ci/summarize_trx.py \
+          --trx-directory "artifacts/ci-test-results/backend-groups/${{ matrix.group }}" \
+          --output "artifacts/ci-safe-test-summary/backend-${{ matrix.group }}.json" \
+          --source-head "${{ github.event.pull_request.head.sha || github.sha }}" \
+          --tested-commit "$(git rev-parse HEAD)" \
+          --job backend-test-group \
+          --phase test-suite
+
+      - name: Upload secret-free backend group summary
+        if: always() && hashFiles('artifacts/ci-safe-test-summary/backend-*.json') != ''
+        uses: actions/upload-artifact@v7
+        with:
+          name: ci-test-summary-backend-group-${{ matrix.group }}-${{ github.event.pull_request.head.sha || github.sha }}
+          path: artifacts/ci-safe-test-summary/backend-${{ matrix.group }}.json
+          if-no-files-found: error
+          retention-days: 7
+
+  backend:
+    name: Backend build, test and migration
+    needs: [backend-build, backend-test-group]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Verify backend group proof parser
+        run: |
+          python3 -I -S -B -m unittest discover -s tests/backend_test_group_verifier -p "test_*.py" -v
+
+      - name: Download exact backend group proofs
+        uses: actions/download-artifact@v8
+        with:
+          pattern: ci-backend-test-group-proof-*
+          path: artifacts/ci-backend-group-proofs
+
+      - name: Verify complete backend build and test groups
+        run: |
+          python3 -I -S -B tools/verify_backend_test_groups.py \
+          --aggregate \
+          --proof-directory artifacts/ci-backend-group-proofs \
+          --source-head "${{ github.event.pull_request.head.sha || github.sha }}" \
+          --tested-commit "$(git rev-parse HEAD)" \
+          --build-result "${{ needs.backend-build.result }}" \
+          --worker-result "${{ needs.backend-test-group.result }}"
 
   frontend:
     name: Frontend lint, test and build
