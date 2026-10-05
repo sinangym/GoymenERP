@@ -134,7 +134,8 @@ test('R14 records one real opening count, classifies its label, reopens and repl
       readonly balances: { readonly labelId: string; readonly physicalKg: string }
       readonly genealogy: { readonly labelId: string; readonly labelCode: string; readonly edges: readonly unknown[]; readonly windowFull: boolean }
       readonly movementTimeline: { readonly labelId: string; readonly windowFull: boolean; readonly entries: readonly [{
-        readonly kind: string; readonly sourceKind: string; readonly lines: readonly [{ readonly direction: string; readonly quantityKg: string }]
+        readonly kind: string; readonly sourceKind: string; readonly sourceId: string; readonly sourceLineId: string | null;
+        readonly lines: readonly [{ readonly direction: string; readonly quantityKg: string }]
       }] }
     }
     expect(labelDetail.identity).toMatchObject({
@@ -144,13 +145,34 @@ test('R14 records one real opening count, classifies its label, reopens and repl
     expect(labelDetail.genealogy).toEqual({ labelId: actualLabelId, labelCode: LABEL, edges: [], windowFull: false })
     expect(labelDetail.movementTimeline).toMatchObject({
       labelId: actualLabelId, windowFull: false,
-      entries: [{ kind: 'Receipt', sourceKind: 'inventory.opening-count', lines: [{ direction: 'In', quantityKg: '12.5' }] }],
+      entries: [{ kind: 'Receipt', sourceKind: 'inventory.opening-count', sourceId: created.countId,
+        sourceLineId: created.lines[0].lineId, lines: [{ direction: 'In', quantityKg: '12.5' }] }],
     })
     await expect(page.getByRole('heading', { level: 1, name: LABEL, exact: true })).toBeVisible()
     await expect(page.getByText(actualLabelId, { exact: true })).toBeVisible()
     await expect(page.getByRole('heading', { level: 2, name: 'Soy ağacı', exact: true })).toBeVisible()
     await expect(page.getByText('Bu etiket için bölme veya birleştirme kaydı yok.', { exact: true })).toBeVisible()
     await expect(page.getByRole('heading', { level: 2, name: 'Stok hareketleri', exact: true })).toBeVisible()
+
+    const sourceLink = page.getByRole('link', { name: 'Açılış sayımını aç', exact: true })
+    await expect(sourceLink).toHaveAttribute('href', `/stok/acilis/${created.countId}`)
+    const sourceAnswer = page.waitForResponse((response) => response.request().method() === 'GET'
+      && new URL(response.url()).pathname === `${OPENINGS}/${created.countId}`)
+    await sourceLink.click()
+    const sourceResponse = await sourceAnswer
+    expect(sourceResponse.status()).toBe(200)
+    expect(await sourceResponse.json()).toEqual(created)
+    await expect(page.getByRole('heading', { level: 1, name: 'Açılış sayımı', exact: true })).toBeVisible()
+    const freshLabelAnswer = page.waitForResponse((response) => response.request().method() === 'GET'
+      && new URL(response.url()).pathname === labelPath)
+    await page.goBack()
+    const freshLabelResponse = await freshLabelAnswer
+    expect(freshLabelResponse.status()).toBe(200)
+    expect(await freshLabelResponse.json()).toMatchObject({
+      identity: { labelId: actualLabelId, companyId, productId },
+      movementTimeline: { entries: [{ sourceKind: 'inventory.opening-count', sourceId: created.countId }] },
+    })
+    await expect(page.getByRole('heading', { level: 1, name: LABEL, exact: true })).toBeVisible()
 
     // Classify the exact browser-created label through the real UI. Capture the browser's frozen key/body so the
     // replay below proves the same transport attempt rather than reconstructing a second command.

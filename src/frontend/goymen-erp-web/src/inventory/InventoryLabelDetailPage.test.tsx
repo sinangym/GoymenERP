@@ -7,6 +7,7 @@ import { InventoryLabelDetailPage } from './InventoryLabelDetailPage'
 import type { InventoryLabelDetailWithMovementTimeline } from './labelDetailContract'
 import type { ViewOutcome } from '../shell/uiState'
 import { productDetailPath } from '../product/capabilities'
+import { inventoryOpeningDetailPath } from './capabilities'
 import { inventoryLabelDetailPath } from './labelDetailRoute'
 
 const COMPANY = '11111111-1111-1111-1111-111111111111'
@@ -24,7 +25,7 @@ const api = vi.hoisted(() => ({ detail: vi.fn() }))
 const documents = vi.hoisted(() => ({ panel: vi.fn() }))
 const scenario = vi.hoisted(() => ({
   companyId: '11111111-1111-1111-1111-111111111111', namespace: 'SENTETIK-a' as string | null,
-  generation: 1, canReadProduct: true, canReadLabel: true, report: vi.fn(),
+  generation: 1, canReadProduct: true, canReadLabel: true, canOpenOpening: true, report: vi.fn(),
 }))
 vi.mock('./labelDetailApi', () => ({ fetchInventoryLabelDetail: api.detail }))
 vi.mock('../documents/DocumentsPanel', () => ({
@@ -42,7 +43,8 @@ vi.mock('../shell/shellState', () => ({
   contextKeyString: (key: readonly string[]) => key[0],
   hasCapability: (_shell: unknown, capability: string) =>
     (capability === 'product.items.detail' && scenario.canReadProduct) ||
-    (capability === 'inventory.stock-positions.list' && scenario.canReadLabel),
+    (capability === 'inventory.stock-positions.list' && scenario.canReadLabel) ||
+    (capability === 'inventory.opening-stock.record' && scenario.canOpenOpening),
 }))
 vi.mock('../shell/useAuthBoundary', () => ({
   useAuthBoundary: () => ({ capture: () => ({ generation: scenario.generation }), report: scenario.report }),
@@ -93,6 +95,12 @@ function ProductRouteReceipt() {
     scenario.generation += 1; void navigate(-1)
   }}>Test back</button></>
 }
+function OpeningRouteReceipt() {
+  const { countId } = useParams(); const navigate = useNavigate()
+  return <><h1>Opening route: {countId}</h1><button type="button" onClick={() => {
+    scenario.generation += 1; void navigate(-1)
+  }}>Test opening back</button></>
+}
 function mount() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: 60_000 } } })
   clients.push(client)
@@ -100,6 +108,7 @@ function mount() {
     <Routes>
       <Route path="/stok/etiket/:labelId" element={<InventoryLabelDetailPage />} />
       <Route path="/urun/:productId" element={<ProductRouteReceipt />} />
+      <Route path="/stok/acilis/:countId" element={<OpeningRouteReceipt />} />
     </Routes>
   </MemoryRouter></QueryClientProvider>
   const view = render(element()); return { ...view, refresh: () => view.rerender(element()) }
@@ -108,7 +117,7 @@ const ready = () => screen.findByRole('heading', { name: 'LBL-100' })
 const productLink = () => screen.queryByRole('link', { name: 'Ürün kartı' })
 beforeEach(() => {
   scenario.companyId = COMPANY; scenario.namespace = 'SENTETIK-a'; scenario.generation = 1
-  scenario.canReadProduct = true; scenario.canReadLabel = true; scenario.report.mockReset()
+  scenario.canReadProduct = true; scenario.canReadLabel = true; scenario.canOpenOpening = true; scenario.report.mockReset()
   api.detail.mockReset().mockResolvedValue({ type: 'ok-single', data: fixture() })
   documents.panel.mockReset()
 })
@@ -171,6 +180,45 @@ describe('InventoryLabelDetailPage', () => {
     await user.click(screen.getByRole('button', { name: 'Test back' })); await ready()
     await waitFor(() => expect(api.detail).toHaveBeenCalledTimes(2))
     expect(screen.getByText(LABEL)).toBeTruthy(); expect(screen.getByText('4', { selector: 'dd' })).toBeTruthy()
+  })
+  it('opens the stored opening-count source and rereads the same label on return', async () => {
+    const user = userEvent.setup(); mount(); await ready()
+    const link = screen.getByRole('link', { name: 'Açılış sayımını aç' })
+    expect(link.getAttribute('href')).toBe(inventoryOpeningDetailPath(TRANSFORMATION))
+    await user.click(link)
+    await screen.findByRole('heading', { name: `Opening route: ${TRANSFORMATION}` })
+    api.detail.mockResolvedValueOnce({ type: 'ok-single', data: { ...fixture(), labelVersion: '4' } })
+    await user.click(screen.getByRole('button', { name: 'Test opening back' })); await ready()
+    await waitFor(() => expect(api.detail).toHaveBeenCalledTimes(2))
+    expect(screen.getByText('4', { selector: 'dd' })).toBeTruthy()
+  })
+  it('keeps the opening source inert without its existing capability', async () => {
+    scenario.canOpenOpening = false; mount(); await ready()
+    expect(screen.queryByRole('link', { name: 'Açılış sayımını aç' })).toBeNull()
+    expect(screen.getByText('inventory.opening-count')).toBeTruthy()
+  })
+  it('keeps other source kinds inert even with the opening capability', async () => {
+    const data = fixture()
+    api.detail.mockResolvedValue({ type: 'ok-single', data: {
+      ...data, movementTimeline: { ...data.movementTimeline, entries: [{
+        ...data.movementTimeline.entries[0], kind: 'CountAdjustment', sourceKind: 'inventory.stock-count',
+        sourceLineId: null, sourceGrain: 'Whole',
+      }] },
+    } })
+    mount(); await ready()
+    expect(screen.queryByRole('link', { name: 'Açılış sayımını aç' })).toBeNull()
+    expect(screen.getByText('inventory.stock-count')).toBeTruthy()
+  })
+  it('keeps a non-receipt movement inert even with the opening source identity and capability', async () => {
+    const data = fixture()
+    api.detail.mockResolvedValue({ type: 'ok-single', data: {
+      ...data, movementTimeline: { ...data.movementTimeline, entries: [{
+        ...data.movementTimeline.entries[0], kind: 'CountAdjustment',
+      }] },
+    } })
+    mount(); await ready()
+    expect(screen.getByText('inventory.opening-count')).toBeTruthy()
+    expect(screen.queryByRole('link', { name: 'Açılış sayımını aç' })).toBeNull()
   })
   it('keeps the Product identity and card label inert without the Product detail capability', async () => {
     scenario.canReadProduct = false; mount(); await ready()
