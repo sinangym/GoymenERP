@@ -81,6 +81,9 @@
   <Folder Name="/src/backend/Modules/Settings/">
     <Project Path="src/backend/Modules/Settings/GoymenERP.Modules.Settings.Application/GoymenERP.Modules.Settings.Application.csproj" />
   </Folder>
+  <Folder Name="/src/backend/Modules/Work/">
+    <Project Path="src/backend/Modules/Work/GoymenERP.Modules.Work.Domain/GoymenERP.Modules.Work.Domain.csproj" />
+  </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/GoymenERP.Accounting.UnitTests/GoymenERP.Accounting.UnitTests.csproj" />
     <Project Path="tests/GoymenERP.Settings.UnitTests/GoymenERP.Settings.UnitTests.csproj" />
@@ -103,6 +106,7 @@
     <Project Path="tests/GoymenERP.Logistics.UnitTests/GoymenERP.Logistics.UnitTests.csproj" />
     <Project Path="tests/GoymenERP.DocumentGeneration.Pdf.Tests/GoymenERP.DocumentGeneration.Pdf.Tests.csproj" />
     <Project Path="tests/GoymenERP.Documents.UnitTests/GoymenERP.Documents.UnitTests.csproj" />
+    <Project Path="tests/GoymenERP.Work.UnitTests/GoymenERP.Work.UnitTests.csproj" />
   </Folder>
   <Folder Name="/tools/">
     <Project Path="tools/GoymenERP.PdfPoc/GoymenERP.PdfPoc.csproj" />
