@@ -202,6 +202,7 @@ describe('InventoryLabelDetailPage', () => {
     api.detail.mockResolvedValue({ type: 'ok-single', data: {
       ...data, movementTimeline: { ...data.movementTimeline, entries: [{
         ...data.movementTimeline.entries[0], kind: 'CountAdjustment', sourceKind: 'inventory.stock-count',
+        sourceLineId: null, sourceGrain: 'Whole',
       }] },
     } })
     mount(); await ready()
