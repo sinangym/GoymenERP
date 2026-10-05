@@ -65,6 +65,7 @@ function orderDetail(): PurchaseOrderDetail {
       createdAtUtc: '2026-09-23T09:00:00Z', updatedAtUtc: '2026-09-23T10:00:00Z', lineCount: 0,
     },
     lines: [],
+    acceptances: [],
   }
 }
 function origin() { return { ns: 'SENTETIK-context-a', requestId: REQUEST, orderId: ORDER } }
