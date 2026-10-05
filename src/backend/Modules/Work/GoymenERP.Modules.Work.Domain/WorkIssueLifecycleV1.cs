@@ -84,17 +84,7 @@ public static class WorkIssueLifecycleV1
         WorkDeliveryIdV1 deliveryId)
     {
         ArgumentNullException.ThrowIfNull(reconciliation);
-        ArgumentNullException.ThrowIfNull(observation);
-        if (evaluationId.Value == Guid.Empty)
-            throw new ArgumentException("An evaluation id is required.", nameof(evaluationId));
-        if (deliveryId.Value == Guid.Empty)
-            throw new ArgumentException("A delivery id is required.", nameof(deliveryId));
-        if (observation.CompanyId == Guid.Empty
-            || string.IsNullOrWhiteSpace(observation.SourceKey)
-            || string.IsNullOrWhiteSpace(observation.ScopeKey)
-            || !string.Equals(observation.SourceKey, observation.SourceKey.Trim(), StringComparison.Ordinal)
-            || !string.Equals(observation.ScopeKey, observation.ScopeKey.Trim(), StringComparison.Ordinal))
-            throw new ArgumentException("An exact company, source and scope are required.", nameof(observation));
+        ValidateAdmissionInput(observation, evaluationId, deliveryId);
         if (reconciliation.Decision is WorkDesiredStateDecisionV2.Apply or WorkDesiredStateDecisionV2.Replay
             && reconciliation.State is null)
             throw new ArgumentException("An applied or replayed result requires its snapshot.", nameof(reconciliation));
@@ -111,5 +101,25 @@ public static class WorkIssueLifecycleV1
             : new WorkIssueKeyV1(identity.CompanyId, identity.SourceKey, identity.ScopeKey);
 
         return new WorkIssueEvaluationV1(issueKey, evaluationId, deliveryId, reconciliation);
+    }
+
+    public static void ValidateAdmissionInput(
+        WorkDesiredStateObservationV2 observation,
+        WorkEvaluationIdV1 evaluationId,
+        WorkDeliveryIdV1 deliveryId)
+    {
+        ArgumentNullException.ThrowIfNull(observation);
+        if (evaluationId.Value == Guid.Empty)
+            throw new ArgumentException("An evaluation id is required.", nameof(evaluationId));
+        if (deliveryId.Value == Guid.Empty)
+            throw new ArgumentException("A delivery id is required.", nameof(deliveryId));
+        if (observation.CompanyId == Guid.Empty
+            || string.IsNullOrWhiteSpace(observation.SourceKey)
+            || string.IsNullOrWhiteSpace(observation.ScopeKey)
+            || !string.Equals(observation.SourceKey, observation.SourceKey.Trim(), StringComparison.Ordinal)
+            || !string.Equals(observation.ScopeKey, observation.ScopeKey.Trim(), StringComparison.Ordinal)
+            || observation.SourceKey.Any(char.IsControl)
+            || observation.ScopeKey.Any(char.IsControl))
+            throw new ArgumentException("An exact company, source and scope are required.", nameof(observation));
     }
 }

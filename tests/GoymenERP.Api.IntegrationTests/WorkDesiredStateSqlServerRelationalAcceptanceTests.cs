@@ -35,6 +35,13 @@ public sealed class WorkDesiredStateSqlServerRelationalAcceptanceTests
             var evaluation = new WorkEvaluationIdV1(Guid.Parse("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee"));
             var delivery = new WorkDeliveryIdV1(Guid.Parse("dddddddd-dddd-dddd-dddd-dddddddddddd"));
 
+            await Assert.ThrowsAsync<ArgumentException>(() => admission.AdmitAsync(
+                observation, Metadata("bad-evaluation"), default, delivery));
+            await AssertWorkEffectCountsAsync(factory, 0);
+            await Assert.ThrowsAsync<ArgumentException>(() => admission.AdmitAsync(
+                observation, Metadata("bad-delivery"), evaluation, default));
+            await AssertWorkEffectCountsAsync(factory, 0);
+
             var first = await admission.AdmitAsync(observation, Metadata("admit-1"), evaluation, delivery);
             var replay = await admission.AdmitAsync(observation, Metadata("admit-replay"), evaluation, delivery);
             Assert.Equal(WorkDesiredStateDecisionV2.Apply, first.Reconciliation.Decision);
@@ -84,9 +91,10 @@ public sealed class WorkDesiredStateSqlServerRelationalAcceptanceTests
                 (await scope.Store.ReconcileAsync(
                     Available(1, WorkDesiredStateV2.NeedsAction), Metadata("read-tamper-seed"))).Decision);
 
-            var row = await scope.Db.DesiredStateSnapshots.SingleAsync();
-            row.HighestPayloadSha256 = HashB;
-            await scope.Db.SaveChangesAsync();
+            var changed = await scope.Db.Database.ExecuteSqlRawAsync(
+                "UPDATE [work].[DesiredStateSnapshots] SET [HighestPayloadSha256] = {0} WHERE [CompanyId] = {1}",
+                HashB, TestCompanyIds.CompanyA);
+            Assert.Equal(1, changed);
 
             await Assert.ThrowsAsync<WorkStorageCorruptionException>(() =>
                 WorkDesiredStateStoreV2.ReadSnapshotAsync(

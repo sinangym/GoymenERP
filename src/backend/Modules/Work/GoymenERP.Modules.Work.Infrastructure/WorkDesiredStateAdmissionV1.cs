@@ -18,6 +18,7 @@ public sealed class WorkDesiredStateAdmissionV1(
         WorkDeliveryIdV1 deliveryId,
         CancellationToken cancellationToken = default)
     {
+        WorkIssueLifecycleV1.ValidateAdmissionInput(observation, evaluationId, deliveryId);
         var persisted = await store.ReconcileAsync(observation, metadata, cancellationToken);
         return WorkIssueLifecycleV1.ProjectPersisted(
             persisted, observation, evaluationId, deliveryId);
