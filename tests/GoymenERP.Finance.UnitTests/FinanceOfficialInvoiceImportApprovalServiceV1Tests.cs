@@ -67,6 +67,9 @@ public sealed class FinanceOfficialInvoiceImportApprovalServiceV1Tests
         Assert.Equal(uploaded.Resource.BatchChecksum, stored.BatchChecksum);
         Assert.Equal(1, stored.RowCount);
         Assert.Empty(await db.OfficialInvoiceImportApprovals.AsNoTracking().ToListAsync());
+        var delivery = Assert.Single(await db.OfficialInvoiceImportWorkDeliveries.AsNoTracking().ToListAsync());
+        Assert.Equal(1, delivery.ObservationOrdinal);
+        Assert.Equal(Batch, delivery.EvidenceId);
     }
 
     [Fact]
@@ -83,6 +86,7 @@ public sealed class FinanceOfficialInvoiceImportApprovalServiceV1Tests
         Assert.Equal(CommandOutcome.ValidationFailed, result.Outcome);
         Assert.Contains(result.Issues, issue => issue.Code == "approver_must_differ_from_uploader");
         Assert.Empty(await db.OfficialInvoiceImportApprovals.AsNoTracking().ToListAsync());
+        Assert.Single(await db.OfficialInvoiceImportWorkDeliveries.AsNoTracking().ToListAsync());
     }
 
     [Fact]
@@ -111,6 +115,8 @@ public sealed class FinanceOfficialInvoiceImportApprovalServiceV1Tests
         Assert.Equal(Document, row.SourceDocumentId);
         Assert.Equal(Installment, row.SourceInstallmentId);
         Assert.Equal("1250.50", row.Amount);
+        Assert.Equal([1L, 2L], (await db.OfficialInvoiceImportWorkDeliveries.AsNoTracking()
+            .OrderBy(item => item.ObservationOrdinal).Select(item => item.ObservationOrdinal).ToListAsync()).ToArray());
     }
 
     [Fact]
@@ -129,6 +135,7 @@ public sealed class FinanceOfficialInvoiceImportApprovalServiceV1Tests
         Assert.True(replay.IsReplay);
         Assert.Equal(first.Resource, replay.Resource);
         Assert.Single(await db.OfficialInvoiceImportBatches.AsNoTracking().ToListAsync());
+        Assert.Single(await db.OfficialInvoiceImportWorkDeliveries.AsNoTracking().ToListAsync());
     }
 
     [Fact]
@@ -197,6 +204,7 @@ public sealed class FinanceOfficialInvoiceImportApprovalServiceV1Tests
         Assert.Equal(3, authority.Calls);
         Assert.Empty(await db.OfficialInvoiceImportBatches.AsNoTracking().ToListAsync());
         Assert.Empty(await db.OfficialInvoiceImportCommands.AsNoTracking().ToListAsync());
+        Assert.Empty(await db.OfficialInvoiceImportWorkDeliveries.AsNoTracking().ToListAsync());
     }
 
     private static FinanceOfficialInvoiceImportApprovalServiceV1 Service(

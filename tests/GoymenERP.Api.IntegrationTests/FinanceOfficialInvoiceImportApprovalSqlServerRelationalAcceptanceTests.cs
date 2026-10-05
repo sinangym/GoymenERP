@@ -43,6 +43,8 @@ public sealed class FinanceOfficialInvoiceImportApprovalSqlServerRelationalAccep
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.OfficialInvoiceImportCommands"));
         Assert.Equal(1, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityType = N'Finance.OfficialInvoiceImportBatch'"));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.OfficialInvoiceImportWorkDeliveries"));
 
         await using (var checker = run.Service(Company, "SENTETIK-checker", new AllowAuthority()))
         {
@@ -61,6 +63,8 @@ public sealed class FinanceOfficialInvoiceImportApprovalSqlServerRelationalAccep
         Assert.Equal(2, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.OfficialInvoiceImportCommands"));
         Assert.Equal(2, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityType = N'Finance.OfficialInvoiceImportBatch'"));
+        Assert.Equal(2, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.OfficialInvoiceImportWorkDeliveries"));
         Assert.Equal("SENTETIK-maker", await run.ScalarAsync<string>(
             "SELECT UploadedBy FROM finance.OfficialInvoiceImportBatches WHERE Id = @id", ("@id", Batch)));
         Assert.Equal("SENTETIK-checker", await run.ScalarAsync<string>(
@@ -139,7 +143,7 @@ public sealed class FinanceOfficialInvoiceImportApprovalSqlServerRelationalAccep
 
         Assert.Equal(51051, error.Number);
         Assert.Contains("forward-fix", error.Message, StringComparison.Ordinal);
-        Assert.EndsWith("_AddOfficialInvoiceImportApprovalV1",
+        Assert.EndsWith("_AddOfficialInvoiceImportWorkDeliveryV1",
             (await context.Database.GetAppliedMigrationsAsync()).Last(), StringComparison.Ordinal);
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.OfficialInvoiceImportBatches"));
     }
@@ -156,9 +160,9 @@ public sealed class FinanceOfficialInvoiceImportApprovalSqlServerRelationalAccep
             "SELECT COUNT(*) FROM sys.tables WHERE schema_id = SCHEMA_ID(N'finance') AND name LIKE N'OfficialInvoiceImport%'"));
 
         await context.Database.MigrateAsync();
-        Assert.Equal(3, await run.ScalarAsync<int>(
+        Assert.Equal(4, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM sys.tables WHERE schema_id = SCHEMA_ID(N'finance') AND name LIKE N'OfficialInvoiceImport%'"));
-        Assert.EndsWith("_AddOfficialInvoiceImportApprovalV1",
+        Assert.EndsWith("_AddOfficialInvoiceImportWorkDeliveryV1",
             (await context.Database.GetAppliedMigrationsAsync()).Last(), StringComparison.Ordinal);
     }
 

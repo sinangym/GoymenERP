@@ -48,6 +48,8 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
 
     internal DbSet<FinanceOfficialInvoiceImportCommandRow> OfficialInvoiceImportCommands => Set<FinanceOfficialInvoiceImportCommandRow>();
 
+    internal DbSet<FinanceOfficialInvoiceImportWorkDeliveryRow> OfficialInvoiceImportWorkDeliveries => Set<FinanceOfficialInvoiceImportWorkDeliveryRow>();
+
     internal DbSet<FinanceSourceAllocationStateRow> SourceAllocationStates => Set<FinanceSourceAllocationStateRow>();
 
     internal DbSet<FinanceAllocationRow> Allocations => Set<FinanceAllocationRow>();
@@ -400,6 +402,7 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
                 "LEN([CommandName]) > 0 AND LEN([IdempotencyKeyHash]) = 64 AND LEN([ActorId]) > 0 AND LEN([PayloadHash]) = 64 AND ISJSON([ResultJson]) = 1 AND LEN([CorrelationId]) > 0");
         });
         command.HasKey(x => x.Id);
+        command.HasAlternateKey(x => new { x.CompanyId, x.Id });
         command.Property(x => x.Id).ValueGeneratedNever();
         command.Property(x => x.CommandName).HasMaxLength(128).IsUnicode(false).IsRequired();
         command.Property(x => x.IdempotencyKeyHash).HasMaxLength(64).IsUnicode(false).IsFixedLength().IsRequired();
@@ -410,6 +413,35 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
         command.HasIndex(x => new { x.CompanyId, x.CommandName, x.IdempotencyKeyHash }).IsUnique();
         command.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId).OnDelete(DeleteBehavior.Restrict);
         command.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        var delivery = modelBuilder.Entity<FinanceOfficialInvoiceImportWorkDeliveryRow>();
+        delivery.ToTable("OfficialInvoiceImportWorkDeliveries", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_OfficialInvoiceImportWorkDeliveries_Identity",
+                "[DeliveryId] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [CommandReceiptId] = [DeliveryId] AND [BatchId] <> '00000000-0000-0000-0000-000000000000' AND [EvidenceId] <> '00000000-0000-0000-0000-000000000000'");
+            table.HasCheckConstraint("CK_OfficialInvoiceImportWorkDeliveries_State",
+                "[PayloadSchemaVersion] = 1 AND (([ObservationOrdinal] = 1 AND [DesiredState] = 1 AND [EvidenceId] = [BatchId]) OR ([ObservationOrdinal] = 2 AND [DesiredState] = 2))");
+            table.HasCheckConstraint("CK_OfficialInvoiceImportWorkDeliveries_Content",
+                "[SourceKey] = 'finance.official-invoice-import.v1' AND [ScopeKey] = 'batch:' + LOWER(CONVERT(char(36), [BatchId])) AND DATALENGTH([PayloadUtf8]) > 0 AND DATALENGTH([PayloadSha256]) = 64 AND [PayloadSha256] COLLATE Latin1_General_100_BIN2 NOT LIKE '%[^0-9a-f]%' AND LEN([CorrelationId]) > 0");
+        });
+        delivery.HasKey(x => x.DeliveryId);
+        delivery.Property(x => x.DeliveryId).ValueGeneratedNever();
+        delivery.Property(x => x.SourceKey).HasMaxLength(128).IsUnicode(false).IsRequired();
+        delivery.Property(x => x.ScopeKey).HasMaxLength(128).IsUnicode(false).IsRequired();
+        delivery.Property(x => x.PayloadUtf8).IsRequired();
+        delivery.Property(x => x.PayloadSha256).HasMaxLength(64).IsUnicode(false).IsFixedLength().IsRequired();
+        delivery.Property(x => x.CorrelationId).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
+        delivery.Property(x => x.CausationId).HasMaxLength(128).UseCollation(IdentityCollation);
+        delivery.HasIndex(x => new { x.CompanyId, x.BatchId, x.ObservationOrdinal }).IsUnique();
+        delivery.HasIndex(x => new { x.CompanyId, x.CommandReceiptId }).IsUnique();
+        delivery.HasOne<FinanceOfficialInvoiceImportBatchRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.BatchId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id }).OnDelete(DeleteBehavior.Restrict);
+        delivery.HasOne<FinanceOfficialInvoiceImportCommandRow>().WithOne()
+            .HasForeignKey<FinanceOfficialInvoiceImportWorkDeliveryRow>(x => new { x.CompanyId, x.CommandReceiptId })
+            .HasPrincipalKey<FinanceOfficialInvoiceImportCommandRow>(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        delivery.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
 
     private void ConfigureOpenItems(ModelBuilder modelBuilder)
@@ -806,6 +838,8 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
             || ChangeTracker.Entries<FinanceOfficialInvoiceImportApprovalRow>()
                 .Any(entry => entry.State is EntityState.Modified or EntityState.Deleted)
             || ChangeTracker.Entries<FinanceOfficialInvoiceImportCommandRow>()
+                .Any(entry => entry.State is EntityState.Modified or EntityState.Deleted)
+            || ChangeTracker.Entries<FinanceOfficialInvoiceImportWorkDeliveryRow>()
                 .Any(entry => entry.State is EntityState.Modified or EntityState.Deleted))
         {
             throw new InvalidOperationException("Resmî fatura import kaynak, onay ve komut kayıtları append-only'dir.");
