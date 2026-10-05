@@ -174,7 +174,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // Official invoice approval: +3 checker list/detail/approve/reopen and migration rollback SQL facts.
             // F-03 allocation read: +1 company/fresh-authority list/detail/reopen SQL fact.
             ["tools/relational_inventory/finance.txt"] =
-                "b167867e1cd75acec0a6283daa65bbffa6920acefdcea370783042bb790d19dd",
+                "fb0bb3417bd765345616735bb42b92f29156e1ce7e3e8d87226adf21e8c2f031",
 
             // identity
             // SY-01/SY-02: +2 IdentityAccessViewSqlServerRelationalAcceptanceTests facts (b159330c… -> a521143a…).
@@ -334,9 +334,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // query filter or key. Re-measured for DEC-FIN-016: the customer instrument, its movements and the
             // risk read are company-scoped with the same CompanyId filter; the command log and money events gain
             // the instrument link and the collection kind.
+            // Official-invoice Work deliveries have their own CompanyId filter, company-leading
+            // batch/receipt relationships and an immutable-write guard.
             ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
              + "Persistence/FinanceDbContext.cs"] =
-            "72587d3c0fd1b4abac0ffe3b274d5ee32f53cb831a3e9789651ce8f1bec32f53",
+            "9494932a29039ec089b47a09f4b5a16aa6290da9130dd5f3d2204cc037239009",
             // ACC-3 (#298): company-scoped like Organization; every tenant row and AuditEvent
             // carries the CompanyId filter. A standard entry, not an exception.
             // Re-measured for ACC-V0a: the ADR-011 command log (Commands) is mapped here, company-scoped with the
@@ -875,11 +877,16 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
                  + "FinanceOfficialInvoiceImportApprovalServiceV1.cs"] =
                     new(
-                        "04218da732efe63a03865c812d625ff1a8721fce7fcf1aada984d1f1b24ca1f7",
+                        "573d1b13dafb963b6521a099600130a759711d016f22c62529c3da0b2227a1af",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
                         }),
+                // Observation payload construction and hash restoration use no direct database API.
+                ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
+                 + "FinanceOfficialInvoiceImportWorkObservationFactoryV1.cs"] =
+                    new("e8da7c446f2d0764288b16910eed001aa6ef40dee5de11097967b6bc41c24daa",
+                        new Dictionary<string, int>(StringComparer.Ordinal)),
                 // The host and two read services resolve/use the tenant-filtered FinanceDbContext only through DI/EF.
                 // Empty API inventories plus exact fingerprints keep direct SQL, connection and filter-bypass surfaces closed.
                 ["src/backend/GoymenERP.Api/Shell/FinanceOfficialInvoiceImportHost.cs"] =
@@ -1342,6 +1349,15 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "Persistence/Migrations/20260930185113_AddOfficialInvoiceImportApprovalV1.cs"] =
                     new(
                         "30abbd33afddf9564faa7d4e65d2705e3e54603cd5f83299676ce0b328895ee2",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 1
+                        }),
+                // Work-delivery Down uses one reviewed Sql refusal (51051) before destructive drops
+                // whenever a delivery or versioned command receipt remains; populated history needs forward-fix.
+                ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
+                 + "Persistence/Migrations/20261005213000_AddOfficialInvoiceImportWorkDeliveryV1.cs"] =
+                    new("5e5ffef0ce93e35244685e766490e172f2c6417f36e5c071229fa5d7975d8ec1",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Sql"] = 1
