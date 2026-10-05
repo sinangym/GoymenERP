@@ -694,6 +694,8 @@ class BootstrapIntegrityTests(unittest.TestCase):
 
 
 class WorkflowOrderingTests(unittest.TestCase):
+    RELATIONAL_EXECUTION_JOBS = ("relational-shard", "relational-rcsi")
+
     @classmethod
     def setUpClass(cls) -> None:
         cls.workflow = (REPOSITORY_ROOT / ".github" / "workflows" / "ci.yml").read_text(
@@ -735,7 +737,7 @@ class WorkflowOrderingTests(unittest.TestCase):
             '-p "test_*.py" -v'
         )
 
-        for job_name in ("backend", "relational"):
+        for job_name in ("backend", *self.RELATIONAL_EXECUTION_JOBS):
             with self.subTest(job=job_name):
                 body = self.job_body(job_name)
                 self.assertEqual(body.count(checkout_step), 1)
@@ -766,7 +768,6 @@ class WorkflowOrderingTests(unittest.TestCase):
 
     def test_supported_msbuild_commands_disable_auto_response_files(self) -> None:
         backend = self.job_body("backend")
-        relational = self.job_body("relational")
         self.assertIn(
             "dotnet restore GoymenERP.slnx -noAutoResponse",
             self.step_body(backend, "Restore tools and packages"),
@@ -785,13 +786,15 @@ class WorkflowOrderingTests(unittest.TestCase):
             encoding="utf-8"
         )
         self.assertEqual(verifier_source.count('"-noAutoResponse"'), 2)
-        relational_restore = self.step_body(relational, "Restore relational test packages")
-        self.assertIn("dotnet restore ", relational_restore)
-        self.assertIn("-noAutoResponse", relational_restore)
+        for job_name in self.RELATIONAL_EXECUTION_JOBS:
+            relational_restore = self.step_body(
+                self.job_body(job_name), "Restore relational test packages"
+            )
+            self.assertIn("dotnet restore ", relational_restore)
+            self.assertIn("-noAutoResponse", relational_restore)
 
     def test_all_package_restores_use_locked_root_inputs(self) -> None:
         backend = self.job_body("backend")
-        relational = self.job_body("relational")
         restore_step = self.step_body(backend, "Restore tools and packages")
         self.assertIn(
             "dotnet tool restore --tool-manifest dotnet-tools.json "
@@ -804,8 +807,11 @@ class WorkflowOrderingTests(unittest.TestCase):
             restore_step,
         )
 
-        relational_restore = self.step_body(relational, "Restore relational test packages")
-        self.assertIn("--configfile NuGet.Config", relational_restore)
+        for job_name in self.RELATIONAL_EXECUTION_JOBS:
+            relational_restore = self.step_body(
+                self.job_body(job_name), "Restore relational test packages"
+            )
+            self.assertIn("--configfile NuGet.Config", relational_restore)
         verifier_source = (REPOSITORY_ROOT / "tools" / "verify_rcsi_relational_acceptance.py").read_text(
             encoding="utf-8"
         )
@@ -871,7 +877,6 @@ class WorkflowOrderingTests(unittest.TestCase):
 
     def test_host_msbuild_boundaries_revalidate_after_prior_repo_execution(self) -> None:
         backend = self.job_body("backend")
-        relational = self.job_body("relational")
         validator_command = (
             "python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py"
         )
@@ -897,19 +902,20 @@ class WorkflowOrderingTests(unittest.TestCase):
                 )
                 self.assertLess(step.index(validator_command), step.index(command))
 
-        relational_restore_step = self.step_body(
-            relational, "Restore relational test packages"
-        )
-        self.assertEqual(relational_restore_step.count(validator_command), 1)
-        self.assertLess(
-            relational_restore_step.index(validator_command),
-            relational_restore_step.index("dotnet restore "),
-        )
-        for step_name, mode in (
-            ("Run broad SQL Server relational acceptance verifier", "--broad"),
-            ("Run exact RCSI relational acceptance verifier", "--rcsi"),
+        for job_name, step_name, mode in (
+            ("relational-shard", "Run exact SQL Server relational shard", "--shard"),
+            ("relational-rcsi", "Run exact RCSI relational acceptance verifier", "--rcsi"),
         ):
-            with self.subTest(step=step_name):
+            with self.subTest(job=job_name, step=step_name):
+                relational = self.job_body(job_name)
+                relational_restore_step = self.step_body(
+                    relational, "Restore relational test packages"
+                )
+                self.assertEqual(relational_restore_step.count(validator_command), 1)
+                self.assertLess(
+                    relational_restore_step.index(validator_command),
+                    relational_restore_step.index("dotnet restore "),
+                )
                 relational_step = self.step_body(relational, step_name)
                 self.assertEqual(relational_step.count(validator_command), 1)
                 self.assertLess(
@@ -947,6 +953,21 @@ class WorkflowOrderingTests(unittest.TestCase):
             ],
             "relational": [
                 "    name:",
+                "    needs:",
+                "    if:",
+                "    runs-on:",
+                "    steps:",
+            ],
+            "relational-shard": [
+                "    name:",
+                "    runs-on:",
+                "    strategy:",
+                "    env:",
+                "    services:",
+                "    steps:",
+            ],
+            "relational-rcsi": [
+                "    name:",
                 "    runs-on:",
                 "    env:",
                 "    services:",
@@ -974,17 +995,32 @@ class WorkflowOrderingTests(unittest.TestCase):
             "        working-directory: src/frontend/goymen-erp-web\n",
         )
 
-        relational_env = re.search(
-            r"(?ms)^    env:\n(.*?)(?=^    \S)",
-            self.job_body("relational"),
-        )
-        self.assertIsNotNone(relational_env)
+        for job_name in self.RELATIONAL_EXECUTION_JOBS:
+            relational_env = re.search(
+                r"(?ms)^    env:\n(.*?)(?=^    \S)",
+                self.job_body(job_name),
+            )
+            self.assertIsNotNone(relational_env)
+            self.assertEqual(
+                relational_env.group(1),
+                "      GOYMEN_ERP_TEST_SQLSERVER_CONNECTION: >-\n"
+                "        Server=localhost,1433;Database=master;User Id=sa;"
+                "Password=Ci_Relational_Only_2026;Encrypt=True;"
+                "TrustServerCertificate=True\n",
+            )
+            self.assertIn(
+                "    services:\n      sqlserver:\n"
+                "        image: mcr.microsoft.com/mssql/server:2022-latest\n",
+                self.job_body(job_name),
+            )
         self.assertEqual(
-            relational_env.group(1),
-            "      GOYMEN_ERP_TEST_SQLSERVER_CONNECTION: >-\n"
-            "        Server=localhost,1433;Database=master;User Id=sa;"
-            "Password=Ci_Relational_Only_2026;Encrypt=True;"
-            "TrustServerCertificate=True\n",
+            re.search(
+                r"(?ms)^    strategy:\n(.*?)(?=^    \S)",
+                self.job_body("relational-shard"),
+            ).group(1),
+            "      fail-fast: false\n"
+            "      matrix:\n"
+            "        shard: [A, B, C]\n",
         )
 
     def test_required_upstream_jobs_match_reviewed_exact_contracts(self) -> None:
@@ -995,8 +1031,14 @@ class WorkflowOrderingTests(unittest.TestCase):
             "frontend": (
                 "35f367ca26c395da8b82562519f4532ed750792a453d5840584ec082917f0895"
             ),
+            "relational-shard": (
+                "83e78c46fff384d3d3f42f75d5fe42ac06a8c59387b84d7e5c1532228c7aacb6"
+            ),
+            "relational-rcsi": (
+                "54511265ef8c5306a868e698b9aacaffa784a8e8c8e7540366c532eb8425af77"
+            ),
             "relational": (
-                "5df351489cb2d0cada266942d44ea0782db0e9b5113be166bb4bf184d56ed04e"
+                "0e13b8a66d7f02d8e5ea545d028ea37daffe5a5d5d31bbc4be6b4ff67dd47412"
             ),
             "contract-drift": (
                 "067e1d19ce60a40f11e34e4dba7bae591e33c3ef06d271a8a557ca9226fffcea"
@@ -1026,7 +1068,7 @@ class WorkflowOrderingTests(unittest.TestCase):
             '-s tests/ci_safe_trx_summary -p "test_*.py" -v'
         )
 
-        for job_name in ("backend", "relational"):
+        for job_name in ("backend", *self.RELATIONAL_EXECUTION_JOBS):
             with self.subTest(job=job_name):
                 preflight = self.step_body(
                     self.job_body(job_name), ".NET bootstrap integrity preflight"
@@ -1069,6 +1111,245 @@ class WorkflowOrderingTests(unittest.TestCase):
                 "npm run build",
             ],
         )
+
+    def assert_relational_execution_and_aggregate_boundaries(self) -> None:
+        validator_command = (
+            "python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py"
+        )
+        bootstrap_suite = (
+            "python3 -I -S -B -m unittest discover "
+            '-s tests/dotnet_bootstrap_integrity -p "test_*.py" -v'
+        )
+        safe_summary_suite = (
+            "python3 -I -S -B -m unittest discover "
+            '-s tests/ci_safe_trx_summary -p "test_*.py" -v'
+        )
+        for job_name, verifier_step, verifier_lines in (
+            (
+                "relational-shard",
+                "Run exact SQL Server relational shard",
+                [
+                    "python3 -I -S -B tools/verify_rcsi_relational_acceptance.py \\",
+                    '--shard "${{ matrix.shard }}" \\',
+                    '--trx-output "artifacts/ci-test-results/relational/broad-${{ matrix.shard }}.trx" \\',
+                    '--proof-output "artifacts/ci-relational-proofs/proof-${{ matrix.shard }}.json" \\',
+                    '--source-head "${{ github.event.pull_request.head.sha || github.sha }}" \\',
+                    '--tested-commit "$(git rev-parse HEAD)"',
+                ],
+            ),
+            (
+                "relational-rcsi",
+                "Run exact RCSI relational acceptance verifier",
+                [
+                    "python3 -I -S -B tools/verify_rcsi_relational_acceptance.py \\",
+                    "--rcsi \\",
+                    "--trx-output artifacts/ci-test-results/relational/rcsi.trx",
+                ],
+            ),
+        ):
+            body = self.job_body(job_name)
+            header = body.split("    steps:\n", 1)[0]
+            self.assertNotIn("    if:", header)
+            self.assertNotIn("continue-on-error:", header)
+            self.assertIn(
+                "    env:\n      GOYMEN_ERP_TEST_SQLSERVER_CONNECTION: >-\n"
+                "        Server=localhost,1433;Database=master;User Id=sa;"
+                "Password=Ci_Relational_Only_2026;Encrypt=True;"
+                "TrustServerCertificate=True\n",
+                header,
+            )
+            self.assertIn(
+                "    services:\n      sqlserver:\n"
+                "        image: mcr.microsoft.com/mssql/server:2022-latest\n",
+                header,
+            )
+            self.assertEqual(
+                self.read_step_lines(
+                    self.step_body(body, ".NET bootstrap integrity preflight")
+                ),
+                [
+                    "run: |",
+                    validator_command,
+                    bootstrap_suite,
+                    safe_summary_suite,
+                ],
+            )
+            self.assertEqual(
+                self.read_step_lines(
+                    self.step_body(body, "Restore relational test packages")
+                ),
+                [
+                    "run: |",
+                    validator_command,
+                    "dotnet restore tests/GoymenERP.Api.IntegrationTests/"
+                    "GoymenERP.Api.IntegrationTests.csproj \\",
+                    "-noAutoResponse \\",
+                    "--configfile NuGet.Config",
+                ],
+            )
+            self.assertEqual(
+                self.read_step_lines(self.step_body(body, verifier_step)),
+                ["run: |", validator_command, *verifier_lines],
+            )
+
+        shard = self.job_body("relational-shard")
+        self.assertIn(
+            "    strategy:\n"
+            "      fail-fast: false\n"
+            "      matrix:\n"
+            "        shard: [A, B, C]\n",
+            shard,
+        )
+        self.assertEqual(shard.count("        shard: [A, B, C]\n"), 1)
+        self.assertNotIn("    strategy:", self.job_body("relational-rcsi"))
+
+        aggregate = self.job_body("relational")
+        self.assertEqual(
+            re.findall(r"^    \S.*$", aggregate, re.M),
+            [
+                "    name: SQL Server relational acceptance",
+                "    needs: [relational-shard, relational-rcsi]",
+                "    if: ${{ always() }}",
+                "    runs-on: ubuntu-latest",
+                "    steps:",
+            ],
+        )
+        self.assertNotIn("continue-on-error:", aggregate)
+        self.assertNotIn("dotnet ", aggregate)
+        self.assertEqual(aggregate.count("      - uses: actions/checkout@v7\n"), 1)
+        self.assertEqual(
+            re.findall(r"^      - name: (.+)$", aggregate, re.M),
+            [
+                "Verify relational shard proof parser",
+                "Download exact SQL shard proofs",
+                "Verify complete SQL Server relational acceptance",
+            ],
+        )
+        self.assertEqual(
+            self.read_step_lines(
+                self.step_body(aggregate, "Verify relational shard proof parser")
+            ),
+            [
+                "run: |",
+                "python3 -I -S -B -m unittest discover "
+                '-s tests/rcsi_relational_acceptance_verifier -p "test_*.py" -v',
+            ],
+        )
+        self.assertEqual(
+            self.read_step_lines(
+                self.step_body(aggregate, "Download exact SQL shard proofs")
+            ),
+            [
+                "uses: actions/download-artifact@v8",
+                "with:",
+                "pattern: ci-relational-shard-proof-*",
+                "path: artifacts/ci-relational-proofs",
+            ],
+        )
+        self.assertEqual(
+            self.read_step_lines(
+                self.step_body(
+                    aggregate, "Verify complete SQL Server relational acceptance"
+                )
+            ),
+            [
+                "run: |",
+                "python3 -I -S -B tools/verify_rcsi_relational_acceptance.py \\",
+                "--aggregate \\",
+                "--proof-directory artifacts/ci-relational-proofs \\",
+                '--source-head "${{ github.event.pull_request.head.sha || github.sha }}" \\',
+                '--tested-commit "$(git rev-parse HEAD)" \\',
+                '--worker-result "${{ needs.relational-shard.result }}" \\',
+                '--rcsi-result "${{ needs.relational-rcsi.result }}"',
+            ],
+        )
+
+    def test_relational_execution_and_aggregate_boundaries_reject_mutants(self) -> None:
+        self.assert_relational_execution_and_aggregate_boundaries()
+        mutations = (
+            (
+                "missing preflight",
+                "      - name: .NET bootstrap integrity preflight\n",
+                "      - name: Disabled bootstrap preflight\n",
+            ),
+            (
+                "worker conditional",
+                "  relational-shard:\n    name:",
+                "  relational-shard:\n    if: ${{ false }}\n    name:",
+            ),
+            (
+                "worker soft failure",
+                "  relational-rcsi:\n    name:",
+                "  relational-rcsi:\n    continue-on-error: true\n    name:",
+            ),
+            (
+                "restore shell",
+                "      - name: Restore relational test packages\n        run: |",
+                "      - name: Restore relational test packages\n"
+                "        shell: echo {0}\n        run: |",
+            ),
+            (
+                "restore environment",
+                "      - name: Restore relational test packages\n        run: |",
+                "      - name: Restore relational test packages\n"
+                "        env:\n          GOYMEN_ERP_TEST_SQLSERVER_CONNECTION: ''\n"
+                "        run: |",
+            ),
+            (
+                "restore input",
+                "          --configfile NuGet.Config\n",
+                "          --configfile unpinned.config\n",
+            ),
+            (
+                "missing shard",
+                "        shard: [A, B, C]\n",
+                "        shard: [A, B]\n",
+            ),
+            (
+                "duplicate shard",
+                "        shard: [A, B, C]\n",
+                "        shard: [A, B, C, C]\n",
+            ),
+            (
+                "missing aggregate dependency",
+                "    needs: [relational-shard, relational-rcsi]\n",
+                "    needs: [relational-shard]\n",
+            ),
+            (
+                "aggregate not always",
+                "    if: ${{ always() }}\n",
+                "    if: ${{ success() }}\n",
+            ),
+            (
+                "commented parser",
+                "          python3 -I -S -B -m unittest discover "
+                '-s tests/rcsi_relational_acceptance_verifier -p "test_*.py" -v',
+                "          # python3 -I -S -B -m unittest discover "
+                '-s tests/rcsi_relational_acceptance_verifier -p "test_*.py" -v',
+            ),
+            (
+                "aggregate no-op",
+                '          --rcsi-result "${{ needs.relational-rcsi.result }}"',
+                '          --rcsi-result "${{ needs.relational-rcsi.result }}" || true',
+            ),
+        )
+        for label, original, replacement in mutations:
+            with self.subTest(mutant=label):
+                changed = self.workflow.replace(original, replacement)
+                self.assertNotEqual(changed, self.workflow)
+                with mock.patch.object(self, "workflow", changed):
+                    with self.assertRaises(AssertionError):
+                        self.assert_relational_execution_and_aggregate_boundaries()
+
+        aggregate = self.job_body("relational")
+        download_marker = "      - name: Download exact SQL shard proofs\n"
+        verify_marker = "      - name: Verify complete SQL Server relational acceptance\n"
+        prefix, remainder = aggregate.split(download_marker, 1)
+        download, verify = remainder.split(verify_marker, 1)
+        reordered = prefix + verify_marker + verify + download_marker + download
+        with mock.patch.object(self, "workflow", self.workflow.replace(aggregate, reordered)):
+            with self.assertRaises(AssertionError):
+                self.assert_relational_execution_and_aggregate_boundaries()
 
     def test_container_runner_validates_its_own_checkout_before_compose(self) -> None:
         body = self.job_body("containers")
