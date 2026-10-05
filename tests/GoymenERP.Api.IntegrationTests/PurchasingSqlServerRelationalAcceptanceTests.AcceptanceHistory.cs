@@ -149,7 +149,7 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
     private static async Task<AcceptanceHistoryState> AcceptanceHistoryStateAsync(Run run, Guid orderId) => new(
         await run.ScalarAsync<int>("SELECT COUNT(*) FROM purchasing.PurchaseOrders WHERE Id = @id", ("@id", orderId)),
         await run.ScalarAsync<int>("SELECT COUNT(*) FROM purchasing.PurchaseOrderLines WHERE OrderId = @id", ("@id", orderId)),
-        await run.ScalarAsync<int>("SELECT COUNT(*) FROM purchasing.PurchaseAcceptances WHERE OrderId = @id", ("@id", orderId)),
+        await run.ScalarAsync<int>("SELECT COUNT(*) FROM purchasing.PurchaseAcceptanceShares WHERE OrderId = @id", ("@id", orderId)),
         await run.ScalarAsync<int>("SELECT COUNT(*) FROM purchasing.PurchaseAttempts"),
         await run.ScalarAsync<int>("SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityId = @id", ("@id", orderId.ToString("D"))),
         await SchemaRowsAsync(run, "purchasing"),
