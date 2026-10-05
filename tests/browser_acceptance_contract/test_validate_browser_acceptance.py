@@ -546,6 +546,7 @@ class WorkflowTests(unittest.TestCase):
                 "logistics.shipments.record",
                 "logistics.dispatch-notes.create",
                 "logistics.dispatch-notes.approve",
+                "logistics.deliveries.record",
             ),
             permissions,
         )
@@ -579,12 +580,12 @@ class WorkflowTests(unittest.TestCase):
                 3: "inventory.physical-allocation.write",
                 4: "logistics.dispatch-notes.create",
                 5: "logistics.dispatch-notes.approve",
+                6: "logistics.deliveries.record",
             },
             loader,
         )
         for forbidden in (
             "sales.orders.cancel",
-            "logistics.deliveries.record",
             "logistics.weighings.record",
             "logistics.dispatch-notes.cancel",
         ):
