@@ -60,6 +60,81 @@ public sealed class NativeApprovalReadQueryV1Tests
                 adapter.Context.CausationId, adapter.Cursor, adapter.ListCalls));
     }
 
+    [Fact]
+    public async Task Query_get_returns_the_exact_found_detail_after_one_owner_call()
+    {
+        var expected = NativeDetail();
+        var adapter = new Adapter
+        {
+            OnGet = (_, kind, approvalId, _) => Task.FromResult(
+                string.Equals(kind, NativeApprovalKindsV1.FinanceOfficialInvoiceImport, StringComparison.Ordinal)
+                && approvalId == Batch
+                    ? new ReadResult<NativeApprovalReadDetailV1>(ReadOutcome.Found, expected)
+                    : new ReadResult<NativeApprovalReadDetailV1>(ReadOutcome.NotFound, null)),
+        };
+        var fixture = Fixture(adapter);
+
+        var result = await fixture.Query.GetAsync(
+            NativeApprovalKindsV1.FinanceOfficialInvoiceImport, Batch, default);
+
+        Assert.Equal(ReadOutcome.Found, result.Outcome);
+        Assert.Same(expected, result.Resource);
+        Assert.Equal((Company, "checker", "corr-1", Batch, 1),
+            (adapter.Context!.CompanyId, adapter.Context.ActorId, adapter.Context.CorrelationId,
+                result.Resource!.Item.ApprovalId, adapter.GetCalls));
+    }
+
+    [Theory]
+    [InlineData("company")]
+    [InlineData("actor")]
+    [InlineData("authority")]
+    public async Task Query_get_refuses_late_context_or_owner_authority_change_after_one_await(string change)
+    {
+        FixtureState? fixture = null;
+        var adapter = new Adapter
+        {
+            OnGet = (_, _, _, _) =>
+            {
+                if (change == "company") fixture!.Company.Set(OtherCompany);
+                if (change == "actor") fixture!.User.ActorId = "other-checker";
+                return Task.FromResult(change == "authority"
+                    ? new ReadResult<NativeApprovalReadDetailV1>(ReadOutcome.Denied, null)
+                    : new ReadResult<NativeApprovalReadDetailV1>(ReadOutcome.Found, NativeDetail()));
+            },
+        };
+        fixture = Fixture(adapter);
+
+        var result = await fixture.Query.GetAsync(
+            NativeApprovalKindsV1.FinanceOfficialInvoiceImport, Batch, default);
+
+        Assert.Equal(ReadOutcome.Denied, result.Outcome);
+        Assert.Null(result.Resource);
+        Assert.Equal(1, adapter.GetCalls);
+    }
+
+    [Theory]
+    [InlineData("company-unresolved")]
+    [InlineData("actor-unauthenticated")]
+    [InlineData("actor-empty")]
+    public async Task Query_rejects_invalid_initial_company_or_actor_without_calling_the_adapter(string refusal)
+    {
+        var adapter = new Adapter();
+        var fixture = Fixture(adapter);
+        if (refusal == "company-unresolved") fixture.Company.Set(Guid.Empty);
+        if (refusal == "actor-unauthenticated") fixture.User.IsAuthenticated = false;
+        if (refusal == "actor-empty") fixture.User.ActorId = string.Empty;
+
+        var page = await fixture.Query.ListAsync(null, default);
+        var detail = await fixture.Query.GetAsync(
+            NativeApprovalKindsV1.FinanceOfficialInvoiceImport, Batch, default);
+
+        Assert.Equal(ReadOutcome.Denied, page.Outcome);
+        Assert.Null(page.Resource);
+        Assert.Equal(ReadOutcome.Denied, detail.Outcome);
+        Assert.Null(detail.Resource);
+        Assert.Equal((0, 0), (adapter.ListCalls, adapter.GetCalls));
+    }
+
     [Theory]
     [InlineData("company")]
     [InlineData("actor")]
@@ -210,6 +285,25 @@ public sealed class NativeApprovalReadQueryV1Tests
 
     private static ReadResult<NativeApprovalReadPageV1> EmptyPage(Guid company) =>
         new(ReadOutcome.Found, new NativeApprovalReadPageV1(company, [], null));
+
+    private static NativeApprovalReadDetailV1 NativeDetail()
+    {
+        var batch = PendingBatch();
+        return new(
+            new NativeApprovalReadItemV1(
+                NativeApprovalKindsV1.FinanceOfficialInvoiceImport,
+                batch.BatchId,
+                batch.CompanyId,
+                batch.Status,
+                batch.Version,
+                batch.BatchVersion,
+                batch.BatchChecksum,
+                batch.TemplateVersion,
+                batch.RowCount,
+                batch.UploadedBy,
+                batch.UploadedAtUtc),
+            Preview(batch));
+    }
 
     private static FinanceContext Context() => new(Company, "checker", "corr-1", "cause-1");
 
