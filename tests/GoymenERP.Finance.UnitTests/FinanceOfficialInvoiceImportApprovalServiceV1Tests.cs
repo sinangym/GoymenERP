@@ -21,6 +21,8 @@ public sealed class FinanceOfficialInvoiceImportApprovalServiceV1Tests
     private static readonly Guid Party = Guid.Parse("60000000-0000-0000-0000-000000000006");
     private static readonly Guid Account = Guid.Parse("70000000-0000-0000-0000-000000000007");
     private static readonly Guid Currency = Guid.Parse("80000000-0000-0000-0000-000000000008");
+    private static readonly Guid ForeignCompany = Guid.Parse("90000000-0000-0000-0000-000000000009");
+    private static readonly Guid ForeignBatch = Guid.Parse("a0000000-0000-0000-0000-00000000000a");
 
     public static TheoryData<string?> InvalidBatchVersions => new()
     {
@@ -311,14 +313,46 @@ public sealed class FinanceOfficialInvoiceImportApprovalServiceV1Tests
     [Fact]
     public async Task Foreign_work_delivery_is_not_found_after_fresh_fences()
     {
-        var company = CompanyContext();
+        var company = new MutableCompanyContext(ForeignCompany);
         await using var db = Database(company);
-        var service = Service(db, company, "maker",
+        var foreignWriter = Service(db, company, "foreign-maker",
+            RepeatingCommandAuthority(PermissionDecision.Allowed), ReadAuthority(),
+            new User("foreign-maker", ForeignCompany));
+        var foreignRequest = Request() with { BatchId = ForeignBatch };
+        var uploaded = await foreignWriter.UploadAsync(
+            new FinanceContext(ForeignCompany, "foreign-maker", "foreign-correlation", null),
+            new CommandMetadata("foreign-upload-key"), foreignRequest, default);
+        Assert.Equal(CommandOutcome.Succeeded, uploaded.Outcome);
+        var foreignDelivery = Assert.Single(await db.OfficialInvoiceImportWorkDeliveries
+            .IgnoreQueryFilters().AsNoTracking().ToListAsync());
+        Assert.Equal(ForeignCompany, foreignDelivery.CompanyId);
+        Assert.Equal(ForeignBatch, foreignDelivery.BatchId);
+        Assert.Single(await db.OfficialInvoiceImportBatches.IgnoreQueryFilters().AsNoTracking().ToListAsync());
+        Assert.Single(await db.OfficialInvoiceImportCommands.IgnoreQueryFilters().AsNoTracking().ToListAsync());
+        var rowCountsBefore = new[]
+        {
+            await db.OfficialInvoiceImportBatches.IgnoreQueryFilters().CountAsync(),
+            await db.OfficialInvoiceImportCommands.IgnoreQueryFilters().CountAsync(),
+            await db.OfficialInvoiceImportWorkDeliveries.IgnoreQueryFilters().CountAsync(),
+        };
+
+        company.Set(Company);
+        var currentCompanyReader = Service(db, company, "maker",
             RepeatingCommandAuthority(PermissionDecision.Allowed), ReadAuthority());
 
-        var result = await service.GetAsync(Context("maker"), Batch, 1, Guid.NewGuid(), default);
+        var result = await currentCompanyReader.GetAsync(
+            Context("maker"), ForeignBatch, 1, foreignDelivery.Id, default);
 
         Assert.Equal(ReadOutcome.NotFound, result.Outcome);
+        var publicResult = JsonSerializer.Serialize(result, FinanceJson.CreateOptions());
+        Assert.DoesNotContain(ForeignCompany.ToString("D"), publicResult, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(ForeignBatch.ToString("D"), publicResult, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(rowCountsBefore, new[]
+        {
+            await db.OfficialInvoiceImportBatches.IgnoreQueryFilters().CountAsync(),
+            await db.OfficialInvoiceImportCommands.IgnoreQueryFilters().CountAsync(),
+            await db.OfficialInvoiceImportWorkDeliveries.IgnoreQueryFilters().CountAsync(),
+        });
     }
 
     [Fact]

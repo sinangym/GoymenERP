@@ -72,7 +72,8 @@ public sealed class FinanceOfficialInvoiceImportWorkObservationV1Tests
 
     private static FinanceOfficialInvoiceImportCommandRow Command(Guid id, string name) => new()
     {
-        Id = id, CompanyId = Company, BatchId = Batch, CommandName = name, CorrelationId = "correlation",
+        Id = id, CompanyId = Company, BatchId = Batch, CommandName = name, ProducerSchemaVersion = 1,
+        CorrelationId = "correlation",
     };
 
     private static FinanceOfficialInvoiceImportBatchRow BatchRow() => new()
