@@ -122,7 +122,7 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
             "SELECT Version FROM purchasing.PurchaseOrders WHERE CompanyId = @company AND Id = @order",
             ("@company", CompanyA), ("@order", orderId)),
         await run.ScalarAsync<decimal>(
-            "SELECT Accepted FROM purchasing.PurchaseOrderLines WHERE CompanyId = @company AND OrderId = @order AND Id = @line",
+            "SELECT Accepted FROM purchasing.PurchaseOrderLines WHERE CompanyId = @company AND OrderId = @order AND LineId = @line",
             ("@company", CompanyA), ("@order", orderId), ("@line", await ExpectedSupplyLineIdAsync(run, orderId))),
         await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM purchasing.PurchaseAcceptanceShares WHERE CompanyId = @company AND OrderId = @order",
@@ -133,7 +133,7 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
         await SchemaRowCountAsync(run, "finance"));
 
     private static Task<Guid> ExpectedSupplyLineIdAsync(Run run, Guid orderId) => run.ScalarAsync<Guid>(
-        "SELECT Id FROM purchasing.PurchaseOrderLines WHERE CompanyId = @company AND OrderId = @order",
+        "SELECT LineId FROM purchasing.PurchaseOrderLines WHERE CompanyId = @company AND OrderId = @order",
         ("@company", CompanyA), ("@order", orderId));
 
     private static Task<long> SchemaRowCountAsync(Run run, string schema) => run.ScalarAsync<long>(
