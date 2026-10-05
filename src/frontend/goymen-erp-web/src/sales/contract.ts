@@ -27,6 +27,8 @@ export const SALES_CONTRACT_STATUS = 'PINNED_SOURCE' as const
 export const SALES_DRAFT_PATH = '/sales/drafts'
 export const salesDraftDetailPath = (id: string) => `${SALES_DRAFT_PATH}/${encodeURIComponent(id)}`
 export const salesDraftCommercialRevisionPath = (id: string) => `${salesDraftDetailPath(id)}/commercial-revision`
+export const salesDraftPriceFloorExceptionApprovalPath = (id: string) =>
+  `${salesDraftDetailPath(id)}/below-floor-exception-approval`
 export const salesDraftRevisionsPath = (id: string) => `${salesDraftDetailPath(id)}/revisions`
 /** DEC-SAL-002 / AT-023: the quantity revision (POST, the quantity control's name). */
 export const salesDraftQuantityRevisionPath = (id: string) => `${salesDraftDetailPath(id)}/quantity-revision`
@@ -96,17 +98,30 @@ export interface DraftStateCommandRequest {
   readonly reason?: string
 }
 
-/** K3: every line exactly once, with nullable commercial values retained as text. */
+/**
+ * K3: every line exactly once, with nullable commercial values retained as text. AT-018 / AT-021 (contract delta): the
+ * Product price-list version the line is priced from (ids only — the server re-reads the price), the discount as an
+ * amount, and the maturity surcharge (vade farkı) as a percent or an amount.
+ */
 export interface DraftLineCommercialRequest {
   readonly lineId: string
   readonly unitPrice: string | null
   readonly priceUnitId: string | null
   readonly discountPercent: string | null
+  readonly priceReference: { readonly priceListId: string; readonly versionNo: number } | null
+  readonly discountAmount: string | null
+  readonly surchargePercent: string | null
+  readonly surchargeAmount: string | null
 }
 
 export interface DraftCommercialRevisionRequest {
   readonly expectedVersion: string
   readonly lines: readonly DraftLineCommercialRequest[]
+}
+
+export interface DraftPriceFloorExceptionApprovalRequest {
+  readonly expectedVersion: string
+  readonly lines: readonly { readonly lineId: string; readonly reason: string }[]
 }
 
 /** DEC-SAL-002: one line's new ordered quantity, exact decimal text in the line's own order unit. */

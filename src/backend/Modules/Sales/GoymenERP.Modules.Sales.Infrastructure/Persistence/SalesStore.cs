@@ -164,7 +164,7 @@ public sealed class SalesStore(
         {
             var stored = await FindDraftAsync(draftId, cancellationToken)
                 ?? throw new InvalidOperationException("Kayıtlı deneme kaydının taslağı bulunamadı.");
-            return new SalesDraftReplay(stored, null, attempt.CorrelationId);
+            return new SalesDraftReplay(stored, null, attempt.CorrelationId, ReplayResult(attempt));
         }
 
         var refusal = attempt.RefusalJson is null ? null : JsonSerializer.Deserialize<SalesDraftTerminalRefusal>(attempt.RefusalJson, Json);
@@ -340,17 +340,19 @@ public sealed class SalesStore(
     /// </summary>
     public Task<SalesDraftStateResult?> ReviseDraftCommercialAsync(SalesDraftWriteEnvelope envelope, string requestHash, string commandName,
         Guid draftId, Func<SalesOrderDraft, DateTimeOffset, ApprovedRevisionSnapshot?> mutate, SalesDraftStateAudit audit,
-        Func<CancellationToken, Task> beforeWrite, CancellationToken cancellationToken = default)
+        Func<CancellationToken, Task> beforeWrite, CancellationToken cancellationToken = default,
+        Func<SalesOrderDraft, SalesDraftReplayResult?>? replayResult = null)
     {
         ArgumentNullException.ThrowIfNull(beforeWrite);
         RequireCommand(commandName);
-        if (commandName != SalesDraftCommands.ReviseCommercialV1)
+        if (commandName is not (SalesDraftCommands.ReviseCommercialV1 or SalesDraftCommands.ApprovePriceFloorExceptionsV1))
         {
             throw new ArgumentException("Yalnız fiyat revizyonu komutu satırların ticari alanlarını değiştirir.", nameof(commandName));
         }
 
         return ReviseLinesAsync(envelope, requestHash, commandName, draftId, mutate, audit,
-            (_, writeCancellationToken) => beforeWrite(writeCancellationToken), Commercial, cancellationToken);
+            (_, writeCancellationToken) => beforeWrite(writeCancellationToken), Commercial,
+            replayResult ?? (static _ => null), cancellationToken);
     }
 
     /// <summary>
@@ -371,7 +373,8 @@ public sealed class SalesStore(
             throw new ArgumentException("Yalnız miktar revizyonu komutu satırların miktarını değiştirir.", nameof(commandName));
         }
 
-        return ReviseLinesAsync(envelope, requestHash, commandName, draftId, mutate, audit, beforeWrite, Quantities, cancellationToken);
+        return ReviseLinesAsync(envelope, requestHash, commandName, draftId, mutate, audit, beforeWrite, Quantities,
+            static _ => null, cancellationToken);
     }
 
     /// <summary>
@@ -382,7 +385,7 @@ public sealed class SalesStore(
     private async Task<SalesDraftStateResult?> ReviseLinesAsync(SalesDraftWriteEnvelope envelope, string requestHash, string commandName,
         Guid draftId, Func<SalesOrderDraft, DateTimeOffset, ApprovedRevisionSnapshot?> mutate, SalesDraftStateAudit audit,
         Func<SalesOrderDraft, CancellationToken, Task> beforeWrite, Func<SalesOrderDraft, object> picture,
-        CancellationToken cancellationToken)
+        Func<SalesOrderDraft, SalesDraftReplayResult?> replayResult, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(mutate);
         ArgumentNullException.ThrowIfNull(audit);
@@ -415,7 +418,7 @@ public sealed class SalesStore(
 
             var stored = await FindDraftAsync(recordedId, cancellationToken)
                 ?? throw new InvalidOperationException("Kayıtlı deneme kaydının taslağı bulunamadı.");
-            return new SalesDraftStateResult(stored, SalesDraftWriteOutcome.Replayed, attempt.CorrelationId);
+            return new SalesDraftStateResult(stored, SalesDraftWriteOutcome.Replayed, attempt.CorrelationId, ReplayResult(attempt));
         }
 
         if (draftId == Guid.Empty)
@@ -439,6 +442,12 @@ public sealed class SalesStore(
         var quantitiesBefore = draft.Lines.Select(line => line.QuantityText).ToArray();
         var now = timeProvider.GetUtcNow();
         var archived = mutate(draft, now);
+        var result = replayResult(draft);
+        var resultRequired = commandName == SalesDraftCommands.ApprovePriceFloorExceptionsV1;
+        if (resultRequired != (result is not null))
+        {
+            throw new InvalidOperationException("Yalnız taban fiyat onayı eksiksiz bir tekrar sonucu kaydeder.");
+        }
         if (draft.Version != versionBefore + 1 || draft.Id != row.Id || draft.CompanyId != companyId)
         {
             throw new InvalidOperationException("Satır revizyonu tam olarak bir sürüm ilerletir ve taslağı değiştirmez.");
@@ -488,6 +497,7 @@ public sealed class SalesStore(
                     UnitPrice = line.Commercial.UnitPrice,
                     PriceUnitId = line.Commercial.PriceUnitId,
                     DiscountPercent = line.Commercial.DiscountPercent,
+                    PricingJson = SalesLinePricingJson.Serialize(line.Commercial),
                 });
             }
         }
@@ -518,6 +528,7 @@ public sealed class SalesStore(
                 lineRow.UnitPrice = line.Commercial.UnitPrice;
                 lineRow.PriceUnitId = line.Commercial.PriceUnitId;
                 lineRow.DiscountPercent = line.Commercial.DiscountPercent;
+                lineRow.PricingJson = SalesLinePricingJson.Serialize(line.Commercial);
             }
         }
 
@@ -530,6 +541,7 @@ public sealed class SalesStore(
             ActorId = actorId,
             Outcome = AttemptOutcomeRecorded,
             DraftId = draft.Id,
+            ResultJson = result is null ? null : JsonSerializer.Serialize(result, Json),
             CorrelationId = envelope.CorrelationId.Trim(),
             RecordedAtUtc = now,
         });
@@ -558,7 +570,38 @@ public sealed class SalesStore(
             envelope.CausationId,
             envelope.IdempotencyKey));
         await SaveAsync(cancellationToken);
-        return new SalesDraftStateResult(draft, SalesDraftWriteOutcome.Recorded, envelope.CorrelationId.Trim());
+        return new SalesDraftStateResult(draft, SalesDraftWriteOutcome.Recorded, envelope.CorrelationId.Trim(), result);
+    }
+
+    private static SalesDraftReplayResult? ReplayResult(DraftAttemptRow attempt)
+    {
+        if (attempt.ResultJson is null)
+        {
+            return null;
+        }
+
+        if (attempt.Outcome != AttemptOutcomeRecorded
+            || attempt.CommandName != SalesDraftCommands.ApprovePriceFloorExceptionsV1
+            || attempt.DraftId is not { } draftId)
+        {
+            throw new InvalidOperationException("Kayıtlı tekrar sonucu bu komut ve sonuç türüyle uyumlu değil.");
+        }
+
+        var result = JsonSerializer.Deserialize<SalesDraftReplayResult>(attempt.ResultJson, Json)
+            ?? throw new InvalidOperationException("Kayıtlı tekrar sonucu okunamadı.");
+        if (result.Visible.Draft.Id != draftId || result.Withheld.Draft.Id != draftId
+            || result.Visible.Draft.CompanyId != attempt.CompanyId || result.Withheld.Draft.CompanyId != attempt.CompanyId
+            || result.Visible.Draft != result.Withheld.Draft
+            || result.Visible.Lines.Count != result.Withheld.Lines.Count
+            || result.Visible.Lines.Any(line => line.PriceDisclosure != SalesPriceDisclosure.Visible)
+            || result.Withheld.Lines.Any(line => line.PriceDisclosure != SalesPriceDisclosure.Withheld
+                || line.UnitPrice is not null || line.PriceUnitId is not null || line.DiscountPercent is not null)
+            || !result.Visible.Lines.Select(line => line.LineId).SequenceEqual(result.Withheld.Lines.Select(line => line.LineId)))
+        {
+            throw new InvalidOperationException("Kayıtlı tekrar sonucu eksik veya taslak kimliğiyle uyumsuz.");
+        }
+
+        return result;
     }
 
     /// <summary>
@@ -1109,7 +1152,14 @@ public sealed class SalesStore(
         revision = draft.Revision,
         state = draft.ApprovalState.ToString(),
         approval = draft.Approval,
-        lines = draft.Lines.Select(line => new { line.LineNo, line.Commercial.UnitPrice, line.Commercial.PriceUnitId, line.Commercial.DiscountPercent }).ToArray(),
+        lines = draft.Lines.Select(line => new
+        {
+            line.LineNo, line.Commercial.UnitPrice, line.Commercial.PriceUnitId, line.Commercial.DiscountPercent,
+            // AT-018 / AT-021: the reference, the visible adjustments and the net in the audit trail.
+            line.Commercial.Reference, line.Commercial.DiscountAmount, line.Commercial.SurchargePercent, line.Commercial.SurchargeAmount,
+            line.Commercial.FloorException,
+            netUnitPrice = SalesLinePriceCalculator.NetUnitPriceText(line.Commercial),
+        }).ToArray(),
     };
 
     public async Task<SalesOrderDraft?> FindDraftAsync(Guid draftId, CancellationToken cancellationToken = default)
@@ -1216,7 +1266,7 @@ public sealed class SalesStore(
                     line.Quantity,
                     line.RequestedDeliveryDate,
                     line.Note,
-                    new CommercialDraftFields(line.UnitPrice, line.PriceUnitId, line.DiscountPercent),
+                    SalesLinePricingJson.Restore(line.UnitPrice, line.PriceUnitId, line.DiscountPercent, line.PricingJson),
                     lineSlices), row.UpdatedAtUtc);
                 if (restored.LineNo != line.LineNo)
                 {
@@ -1235,7 +1285,7 @@ public sealed class SalesStore(
                     archived.MoneyProfileId, archived.MoneyProfileVersion, archived.MoneyScale, archived.ArchivedAtUtc, archived.ArchivedBy,
                     [.. revisionLines.Where(line => line.DraftId == row.Id && line.Revision == archived.Revision).OrderBy(line => line.LineNo)
                         .Select(line => new RevisionLineSnapshot(line.LineId, line.LineNo, line.ProductId, line.ProductVersion, line.OrderUnitId,
-                            line.QuantityText, new CommercialDraftFields(line.UnitPrice, line.PriceUnitId, line.DiscountPercent)))],
+                            line.QuantityText, SalesLinePricingJson.Restore(line.UnitPrice, line.PriceUnitId, line.DiscountPercent, line.PricingJson)))],
                     archived.Reason));
             }
 
@@ -1450,7 +1500,8 @@ public sealed class SalesStore(
             or SalesDraftCommands.RejectV1 or SalesDraftCommands.ReviseCommercialV1 or SalesDraftCommands.WithdrawV1
             or SalesDraftCommands.RescheduleDeliveryV1 or SalesDraftCommands.CancelV1 or SalesDraftCommands.ReviseQuantityV1
             or SalesDraftCommands.RequestRemainderChangeV1 or SalesDraftCommands.ApproveRemainderChangeV1
-            or SalesDraftCommands.RejectRemainderChangeV1 or SalesDraftCommands.RecordCustomerAcceptanceV1))
+            or SalesDraftCommands.RejectRemainderChangeV1 or SalesDraftCommands.RecordCustomerAcceptanceV1
+            or SalesDraftCommands.ApprovePriceFloorExceptionsV1))
         {
             throw new ArgumentException("Bilinmeyen Sales komut adı.", nameof(commandName));
         }

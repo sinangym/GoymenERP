@@ -329,7 +329,7 @@ public sealed partial class SalesOrderDraft
         var quantity = RequireQuantity(input.Quantity, input.OrderUnit);
         RequireQuantityText(input.QuantityText, input.Quantity);
         var commercial = input.Commercial ?? CommercialDraftFields.None;
-        RequireCommercial(commercial, input.Product);
+        RequireCommercial(commercial, input.Product, input.LineId);
 
         var slices = RequireSlices(input.RequestedDeliverySlices, input.OrderUnit, quantity);
         var line = new SalesOrderDraftLine(input.LineId, lines.Count + 1, input.Product, input.OrderUnit, quantity,
@@ -351,7 +351,7 @@ public sealed partial class SalesOrderDraft
     /// an un-priced line is not free and not zero. Nothing is computed from these values in this slice.
     /// Who may WRITE them is the caller's fence (the separate price-write permission), never this class.
     /// </summary>
-    private void RequireCommercial(CommercialDraftFields commercial, ProductSnapshot product)
+    private void RequireCommercial(CommercialDraftFields commercial, ProductSnapshot product, Guid lineId)
     {
         if ((commercial.UnitPrice is null) != (commercial.PriceUnitId is null))
         {
@@ -388,6 +388,133 @@ public sealed partial class SalesOrderDraft
                 throw new SalesRuleException(SalesRuleCodes.DiscountOutOfRange,
                     "İskonto yüzdesi 0 ile 100 arasında olmalıdır.");
             }
+        }
+
+        RequirePricingDetail(commercial, lineId);
+    }
+
+    /// <summary>
+    /// AT-018 / AT-021: the reference and the visible adjustments - each kind is a percent OR an amount; an amount is exact
+    /// text within the money profile's scale (never rounded); a surcharge percent is 0..100; a discount amount never takes
+    /// the net below zero; the reference is in the line's price unit; and, when the reference carries a floor, the net
+    /// (<see cref="SalesLinePriceCalculator"/>) is not below it (AT-021, fail-closed: no exception approver is decided).
+    /// Whether the reference is the Product owner's current answer is the caller's check (it reads the owner).
+    /// </summary>
+    private void RequirePricingDetail(CommercialDraftFields commercial, Guid lineId)
+    {
+        RequireRepresentable(commercial.UnitPrice, SalesRuleCodes.PriceValueUnrepresentable,
+            "Birim fiyat decimal türünde kayıpsız temsil edilemiyor.", lineId);
+        RequireRepresentable(commercial.DiscountPercent, SalesRuleCodes.DiscountPercentUnrepresentable,
+            "İskonto yüzdesi decimal türünde kayıpsız temsil edilemiyor.", lineId);
+        RequireRepresentable(commercial.DiscountAmount, SalesRuleCodes.DiscountAmountUnrepresentable,
+            "İskonto tutarı decimal türünde kayıpsız temsil edilemiyor.", lineId);
+        RequireRepresentable(commercial.SurchargePercent, SalesRuleCodes.SurchargePercentUnrepresentable,
+            "Vade farkı yüzdesi decimal türünde kayıpsız temsil edilemiyor.", lineId);
+        RequireRepresentable(commercial.SurchargeAmount, SalesRuleCodes.SurchargeAmountUnrepresentable,
+            "Vade farkı tutarı decimal türünde kayıpsız temsil edilemiyor.", lineId);
+
+        if (!commercial.HasPricingDetail)
+        {
+            RequireCalculable(commercial, lineId);
+            return;
+        }
+
+        if (commercial.UnitPrice is not { } price)
+        {
+            throw new SalesRuleException(SalesRuleCodes.AdjustmentWithoutPrice,
+                "Referans fiyat, iskonto tutarı ve vade farkı bir birim fiyat olmadan verilemez.");
+        }
+
+        if ((commercial.DiscountPercent is not null && commercial.DiscountAmount is not null)
+            || (commercial.SurchargePercent is not null && commercial.SurchargeAmount is not null))
+        {
+            throw new SalesRuleException(SalesRuleCodes.AdjustmentKindConflict,
+                "İskonto ve vade farkı ya yüzde ya tutar olarak verilir; ikisi birden verilmez.");
+        }
+
+        foreach (var amount in new[] { commercial.DiscountAmount, commercial.SurchargeAmount })
+        {
+            if (amount is not null && DecimalPlaces(amount) > Money.Scale)
+            {
+                throw new SalesRuleException(SalesRuleCodes.AdjustmentScaleExceeded,
+                    $"Tutar en fazla {Money.Scale} ondalık taşıyabilir; fazlası yuvarlanmaz, reddedilir.");
+            }
+        }
+
+        if (commercial.SurchargePercent is { } surcharge && !IsPercent(surcharge))
+        {
+            throw new SalesRuleException(SalesRuleCodes.SurchargeOutOfRange, "Vade farkı yüzdesi 0 ile 100 arasında olmalıdır.");
+        }
+
+        if (commercial.DiscountAmount is { } discountAmount
+            && SalesLinePriceCalculator.Parse(discountAmount) > SalesLinePriceCalculator.Parse(price))
+        {
+            throw new SalesRuleException(SalesRuleCodes.DiscountExceedsPrice, "İskonto tutarı birim fiyatı aşamaz.");
+        }
+
+        RequireCalculable(commercial, lineId);
+
+        if (commercial.Reference is { } reference)
+        {
+            if (reference.PriceUnitId != commercial.PriceUnitId)
+            {
+                throw new SalesRuleException(SalesRuleCodes.PriceReferenceMismatch,
+                    "Referans liste fiyatı satırın fiyat biriminde olmalıdır.");
+            }
+
+            ValidateFloorException(commercial, reference);
+        }
+
+    }
+
+    private static void RequireRepresentable(string? value, string code, string message, Guid lineId)
+    {
+        if (value is not null && !SalesLinePriceCalculator.TryParseExact(value, out _))
+        {
+            throw new SalesRuleException(code, message, lineId);
+        }
+    }
+
+    private static void RequireCalculable(CommercialDraftFields commercial, Guid lineId)
+    {
+        try
+        {
+            _ = SalesLinePriceCalculator.NetUnitPrice(commercial);
+        }
+        catch (OverflowException)
+        {
+            throw new SalesRuleException(SalesRuleCodes.PriceCalculationOverflow,
+                "Fiyat, iskonto ve vade farkı hesabı decimal sınırını aşıyor.", lineId);
+        }
+    }
+
+    private static void ValidateFloorException(CommercialDraftFields commercial, PriceReferenceSnapshot reference)
+    {
+        var net = SalesLinePriceCalculator.NetUnitPrice(commercial);
+        var belowFloor = reference.FloorUnitPrice is { } floor && net is { } value
+            && value < SalesLinePriceCalculator.Parse(floor);
+        if (!belowFloor)
+        {
+            if (commercial.FloorException is not null)
+            {
+                throw new SalesRuleException(SalesRuleCodes.InternalInvariant, "Taban altı olmayan fiyat istisna kaydı taşıyamaz.");
+            }
+            return;
+        }
+
+        if (commercial.FloorException is not { } exception)
+        {
+            return;
+        }
+
+        if (exception.PriceListId != reference.PriceListId || exception.PriceListVersionNo != reference.VersionNo
+            || exception.PriceUnitId != commercial.PriceUnitId || exception.UnitPrice != commercial.UnitPrice
+            || exception.NetUnitPrice != SalesLinePriceCalculator.Format(net!.Value)
+            || exception.FloorUnitPrice != reference.FloorUnitPrice
+            || string.IsNullOrWhiteSpace(exception.RequestedBy)
+            || (exception.IsApproved && string.Equals(exception.RequestedBy, exception.ApprovedBy, StringComparison.Ordinal)))
+        {
+            throw new SalesRuleException(SalesRuleCodes.InternalInvariant, "Taban fiyat istisnası bağlı olduğu ticari değerlerle uyuşmuyor.");
         }
     }
 
@@ -439,6 +566,7 @@ public sealed partial class SalesOrderDraft
         RequireVersion(expectedVersion);
         var actor = RequireActor(actorId);
         RequireStorable();
+        RequirePriceFloorExceptionsApproved();
         if (ApprovalState is not (InternalApprovalState.Preparing or InternalApprovalState.Rejected))
         {
             throw StateConflict("Yalnız hazırlanan ya da reddedilmiş taslak onaya gönderilir.");
@@ -462,6 +590,7 @@ public sealed partial class SalesOrderDraft
     {
         RequireVersion(expectedVersion);
         var actor = RequireActor(actorId);
+        RequirePriceFloorExceptionsApproved();
         if (ApprovalState != InternalApprovalState.PendingApproval)
         {
             throw StateConflict("Yalnız onay bekleyen taslak onaylanır.");
@@ -726,7 +855,7 @@ public sealed partial class SalesOrderDraft
             var fields = input.Commercial ?? CommercialDraftFields.None;
             try
             {
-                RequireCommercial(fields, line.Product);
+                RequireCommercial(fields, line.Product, line.Id);
             }
             catch (SalesRuleException exception)
             {
@@ -734,7 +863,7 @@ public sealed partial class SalesOrderDraft
                 throw new SalesRuleException(exception.Code, exception.Message, line.Id);
             }
 
-            replacements.Add((line, fields));
+            replacements.Add((line, PrepareFloorException(fields, actor, now)));
         }
 
         if (replacements.All(pair => pair.Line.Commercial == pair.Fields))
@@ -764,6 +893,102 @@ public sealed partial class SalesOrderDraft
 
         Touch(now);
         return archived;
+    }
+
+    /// <summary>
+    /// Approves all current below-floor line snapshots as one keyed mutation. The approver must differ from every requester;
+    /// reasons are required and bounded by the existing Sales approval-reason limit. No price is changed or recomputed here.
+    /// </summary>
+    public void ApprovePriceFloorExceptions(long expectedVersion, IReadOnlyList<LinePriceFloorExceptionApprovalInput> inputs,
+        string actorId, DateTimeOffset now)
+    {
+        RequireVersion(expectedVersion);
+        var actor = RequireActor(actorId);
+        ArgumentNullException.ThrowIfNull(inputs);
+        RequireNotCancelled("İptal edilmiş siparişin fiyat istisnası onaylanmaz.");
+        if (!LinesAreOpen)
+        {
+            throw StateConflict("Fiyat istisnası yalnız hazırlanan veya reddedilmiş taslakta onaylanır.");
+        }
+
+        var belowFloor = lines.Where(line => IsBelowFloor(line.Commercial)).ToArray();
+        if (belowFloor.Length == 0 || inputs.Count != belowFloor.Length
+            || inputs.Select(input => input.LineId).Distinct().Count() != inputs.Count
+            || inputs.Any(input => belowFloor.All(line => line.Id != input.LineId)))
+        {
+            throw new SalesRuleException(SalesRuleCodes.PriceFloorExceptionLinesMismatch,
+                "İstisna onayı mevcut taban altı satırların her birini tam bir kez adlandırır.");
+        }
+
+        var approvals = new List<(SalesOrderDraftLine Line, PriceFloorExceptionSnapshot Exception, string Reason)>(belowFloor.Length);
+        foreach (var input in inputs)
+        {
+            var line = belowFloor.Single(candidate => candidate.Id == input.LineId);
+            var exception = line.Commercial.FloorException
+                ?? throw new SalesRuleException(SalesRuleCodes.PriceFloorExceptionPending, "Satırın onaylanabilir güncel istisna talebi yok.", line.Id);
+            if (exception.IsApproved)
+            {
+                throw new SalesRuleException(SalesRuleCodes.RevisionNoChange, "Taban fiyat istisnası zaten onaylı.", line.Id);
+            }
+            if (string.Equals(exception.RequestedBy, actor, StringComparison.Ordinal))
+            {
+                throw new SalesRuleException(SalesRuleCodes.PriceFloorExceptionSameActor,
+                    "Taban fiyat istisnasını isteyen aktör aynı istisnayı onaylayamaz.", line.Id);
+            }
+            var reason = string.IsNullOrWhiteSpace(input.Reason) ? null : input.Reason.Trim();
+            if (reason is null)
+            {
+                throw new SalesRuleException(SalesRuleCodes.PriceFloorExceptionReasonRequired, "İstisna onay gerekçesi zorunludur.", line.Id);
+            }
+            if (reason.Length > MaximumRejectionReasonLength)
+            {
+                throw new SalesRuleException(SalesRuleCodes.ApprovalReasonTooLong,
+                    $"İstisna onay gerekçesi en fazla {MaximumRejectionReasonLength} karakterdir.", line.Id);
+            }
+            approvals.Add((line, exception, reason));
+        }
+
+        foreach (var (line, exception, reason) in approvals)
+        {
+            line.ReplaceCommercial(line.Commercial with
+            {
+                FloorException = exception with { ApprovedBy = actor, ApprovedAtUtc = now.ToUniversalTime(), Reason = reason }
+            });
+        }
+        Touch(now);
+    }
+
+    private static CommercialDraftFields PrepareFloorException(CommercialDraftFields commercial, string actor, DateTimeOffset now)
+    {
+        if (!IsBelowFloor(commercial))
+        {
+            return commercial with { FloorException = null };
+        }
+        var reference = commercial.Reference!;
+        return commercial with
+        {
+            FloorException = new PriceFloorExceptionSnapshot(actor, now.ToUniversalTime(), reference.PriceListId, reference.VersionNo,
+                commercial.PriceUnitId!.Value, commercial.UnitPrice!, SalesLinePriceCalculator.NetUnitPriceText(commercial)!,
+                reference.FloorUnitPrice!)
+        };
+    }
+
+    private static bool IsBelowFloor(CommercialDraftFields commercial) =>
+        commercial.Reference?.FloorUnitPrice is { } floor && SalesLinePriceCalculator.NetUnitPrice(commercial) is { } net
+        && net < SalesLinePriceCalculator.Parse(floor);
+
+    private void RequirePriceFloorExceptionsApproved()
+    {
+        foreach (var line in lines)
+        {
+            RequirePriceReferenceQuantity(line, line.Quantity.Value);
+        }
+
+        if (lines.Any(line => IsBelowFloor(line.Commercial) && line.Commercial.FloorException?.IsApproved != true))
+        {
+            throw new SalesRuleException(SalesRuleCodes.PriceFloorExceptionPending,
+                "Taban fiyatın altındaki her satır farklı yetkili tarafından gerekçeli onaylanmalıdır.");
+        }
     }
 
     // ---- quantity revision (DEC-SAL-002, AT-023) -------------------------------------------------
@@ -834,6 +1059,11 @@ public sealed partial class SalesOrderDraft
             replacements.Add((line, quantity, input.QuantityText));
         }
 
+        foreach (var (line, quantity, _) in replacements)
+        {
+            RequirePriceReferenceQuantity(line, quantity.Value);
+        }
+
         if (replacements.All(entry => entry.Line.Quantity.Value == entry.Quantity.Value))
         {
             throw new SalesRuleException(SalesRuleCodes.RevisionNoChange,
@@ -866,6 +1096,19 @@ public sealed partial class SalesOrderDraft
 
         Touch(now);
         return archived;
+    }
+
+    private static void RequirePriceReferenceQuantity(SalesOrderDraftLine line, decimal quantity)
+    {
+        if (line.Commercial.Reference is not { } reference) return;
+
+        var lower = SalesLinePriceCalculator.Parse(reference.LowerQuantity);
+        var upper = reference.UpperQuantity is null ? (decimal?)null : SalesLinePriceCalculator.Parse(reference.UpperQuantity);
+        if (quantity < lower || upper is { } boundary && quantity >= boundary)
+        {
+            throw new SalesRuleException(SalesRuleCodes.PriceReferenceQuantityMismatch,
+                "Yeni miktar seçili liste fiyatı kademesinin dışında; önce fiyat referansını açıkça revize edin.", line.Id);
+        }
     }
 
     /// <summary>

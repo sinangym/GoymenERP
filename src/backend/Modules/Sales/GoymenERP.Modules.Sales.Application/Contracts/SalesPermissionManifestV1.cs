@@ -52,6 +52,9 @@ public static class SalesPermissionManifestV1
     /// </summary>
     public const string OrdersPriceRead = "sales.orders.price.read";
 
+    /// <summary>Approves a reasoned below-floor exception; never conferred by price write or order approval.</summary>
+    public const string OrdersPriceFloorExceptionApprove = "sales.orders.price-floor-exception.approve";
+
     /// <summary>
     /// DEC-SAL-003 (KILITLI): "termin güncellemesi planlama/sevkiyat rolündedir ve yeniden onay gerektirmez, ancak
     /// auditlidir" — POST …/{id}/delivery-schedule, moving the requested delivery dates of the header, the lines and
@@ -83,6 +86,7 @@ public static class SalesPermissionManifestV1
     public const string OrdersQuantityWrite = "sales.orders.quantity.write";
 
     public static IReadOnlySet<string> Names { get; } =
-        new[] { DraftsCreate, DraftsRead, OrdersApprove, OrdersCustomerAcceptanceRecord, OrdersPriceWrite, OrdersPriceRead, OrdersDeliveryScheduleWrite, OrdersCancel, OrdersQuantityWrite }
+        new[] { DraftsCreate, DraftsRead, OrdersApprove, OrdersCustomerAcceptanceRecord, OrdersPriceWrite, OrdersPriceRead,
+            OrdersPriceFloorExceptionApprove, OrdersDeliveryScheduleWrite, OrdersCancel, OrdersQuantityWrite }
             .ToFrozenSet(StringComparer.Ordinal);
 }

@@ -81,7 +81,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // production uses the own-server store and Defender when both are configured and answers 503 otherwise
     // (abe26a09… -> c027dce9…); no code line changed.
     private const string ReviewedOpenApiStartupFingerprint =
-        "d725a0c7474724d58238cc62c3d3e70e38bf613ccf8f5d210ce3557730be2244";
+        "0900c975ca62cb0901d3e7c0d5a12efe25a09df794551f6ceb32f73da8465192";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedProductManufacturingTechnicalRegistrationPath =
@@ -222,7 +222,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // Q16 / AT-020: +3 Product import API SQL facts (d434c2b8… -> 9958c91f…).
             // Product 4A: +3 initial technical-definition release/rollback SQL facts.
             ["tools/relational_inventory/product.txt"] =
-                "20453610c07555e082e24282033086f6f990071666598987bdc961817a21b20a",
+                "cea66f31c2873969ac7c87b72869ce43ad8d028ad37c32c7c21ef29f0b8bbe45",
 
             // purchasing
             ["tools/relational_inventory/purchasing.txt"] =
@@ -234,8 +234,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // DEC-SAL-005: +4 SalesOrderCancellationSqlServerRelationalAcceptanceTests facts (719d0d03… -> 5508f4ed…).
             // DEC-SAL-002: +4 SalesOrderQuantityRevisionSqlServerRelationalAcceptanceTests facts (5508f4ed… -> 3ef99851…).
             // #527 Q9: +1 customer-acceptance persistence/replay/cutover fact (3ef99851… -> dd3c72d9…).
+            // PL04: +1 exact price-floor approval replay/down-refusal fact.
             ["tools/relational_inventory/sales.txt"] =
-                "dd3c72d9ee80f398024d5a2e0c6470d99a91260686b6c35b6ad31c8bf2427eae",
+                "8f04fb503dda544c48637cd2ca42a9d4fc05479c4b3ed05cdc798902fb9a7aad",
         };
     private const string ContinuousIntegrationWorkflowPath = ".github/workflows/ci.yml";
     private const string ReviewedContinuousIntegrationWorkflowFingerprint =
@@ -276,9 +277,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // admitting Quantity/QuantityText under a quantity revision; no new table, query filter or key.
             // Re-fingerprinted for Q9: the customer-acceptance facts and their approval-state constraint remain on the
             // same company-filtered Draft row; no query-filter bypass, direct database surface or tenant key changed.
+            // Re-fingerprinted for PL04: the immutable price-floor replay-result constraint stays on the same
+            // company-filtered attempt row; no query-filter bypass, direct database surface or tenant key changed.
             ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/"
              + "Persistence/SalesDbContext.cs"] =
-                "ffc908cec035161607d6eadefd46a83d9ee0d83352e199928722c2896708fb3a",
+                "f5b5fd5efec336d1614374b95864460310829e06499f090340dde77d19e879df",
             // LOG-4a: company-scoped like Organization; every tenant row (instructions, lines, shares, attempts) and
             // AuditEvent carries the CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/"
@@ -345,6 +348,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/"
              + "Persistence/ProductDbContext.cs"] =
                 "6979e3af6bf17bd2c7071431dc1dbc808c2c1c5609fe187d782dadb1412761d3",
+            // AT-018: the Product-owned price-list aggregate is company-filtered independently from the
+            // existing Product card context; every durable row and audit event carries CompanyId.
+            ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/"
+             + "PriceLists/ProductPriceListDbContext.cs"] =
+                "322378acff34afd47965275efc1cc677bee0859af1b63fcd048e46dbacf03662",
             ["src/backend/Modules/Idempotency/GoymenERP.Modules.Idempotency.Infrastructure/"
              // Re-measured for DEC-CAR-003: the terminal command-name check admits the Product deactivate/reactivate
              // commands beside activate; no query filter, key or table change.
@@ -476,6 +484,26 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     new("270d184afcea8a3070ce270eebdaf26da18d73852550731e40cb3985fd48af1c",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["System.Data.Common"] = 1, ["DbConnection"] = 3 }),
+                // AT-018: the price-list initializer owns one provider branch; normal runtime never creates
+                // or drops databases and the reviewed source carries no general SQL surface.
+                ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/"
+                 + "PriceLists/ProductPriceListRegistration.cs"] =
+                    new(
+                        "5c87fcd71936f158613be04b0ba6b86f09ecc3d454045435376a6f338b2d1105",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["EnsureCreatedAsync"] = 1,
+                            ["MigrateAsync"] = 1
+                        }),
+                // AT-018: SqlClient is referenced only to classify unique-key conflicts after EF SaveChanges.
+                ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/"
+                 + "PriceLists/ProductPriceListStore.cs"] =
+                    new(
+                        "ea3481d674648b893796c93b15dab32e0a7a49b7c9ba0a1ef686f2d8a6afac2d",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Microsoft.Data.SqlClient"] = 1
+                        }),
                 ["src/backend/Modules/Audit/GoymenERP.Modules.Audit.Infrastructure/Services/GroupSharedAuditSession.cs"] =
                     new("efbf67c36b5848e6f2d05e989f3aac1636c7e202da94aee750757a43b33fccfe",
                         new Dictionary<string, int>(StringComparer.Ordinal)
@@ -1050,7 +1078,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // Re-fingerprinted for DEC-SAL-005: the draft service also receives the optional allocation and
                     // loading read ports; the provider branch and its token counts are unchanged.
                     new(
-                        "088bcdbf9410ffab45fcdd603d0ecaa7fbb02abf46c042f4663f29cccc62fcde",
+                        "58edd9e0bc2229d1675561b904b64575a84edd9979925531b9add20148630447",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -1068,8 +1096,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // once through the filtered context; no connection, command or raw SQL; SqlClient count unchanged.
                     // Re-fingerprinted for DEC-SAL-002: the price and quantity revisions share one archive-and-save
                     // core (still a single save through the filtered context); SqlClient count unchanged.
+                    // Re-fingerprinted for PL04: the first complete price-floor approval response is persisted and
+                    // replayed from the existing company-filtered attempt; SqlClient count remains unchanged.
                     new(
-                        "c53c13c5384b22755c54dc4b2f86615e430636d65f34a5fd7916b77d02acf757",
+                        "890a1bea27e988b824d25ee71860f58aaea64a93be88ab8a891106b6a4d2ef8c",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -1166,6 +1196,26 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         ReviewedMigrationMutationSources =
             new Dictionary<string, ReviewedMigrationMutationSource>(StringComparer.Ordinal)
             {
+                // AT-018 price-list history is durable; Down refuses destructive rollback while any
+                // company-scoped price-list row remains.
+                ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/PriceLists/"
+                 + "Migrations/20260930113416_AddProductPriceLists.cs"] =
+                    new(
+                        "f4223440444ebc7327b176f085ae98ed6f67d126e830fbe2d9887bd573cb7dba",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 1
+                        }),
+                // Sales pricing snapshots are durable; Down refuses destructive rollback while any
+                // draft line keeps accepted pricing JSON.
+                ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/"
+                 + "Migrations/20260930120000_AddLinePricing.cs"] =
+                    new(
+                        "e78046ed155a3043d17777e0459382abab7712cedcd41664a72ebcd26b459121",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 1
+                        }),
                 // Manufacturing input label versions are durable; Down uses one reviewed statement
                 // to refuse downgrade while any trusted accepted version remains.
                 ["src/backend/Modules/Manufacturing/"
@@ -1294,6 +1344,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // Q9 customer acceptance is immutable; Down refuses before removing the acceptance columns.
                 ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20260930223000_AddDraftCustomerAcceptance.cs"] =
                     new("faf491c8f59d0fe55a0f929d91c20468134d07b816fd468389e3ae632f9f64a6",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
+                // PL04: the Down's only raw SQL refuses rollback (51064) while an immutable price-floor approval
+                // replay result exists; the refusal precedes removal of the constraint and result column.
+                ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20261004160000_AddSalesPriceFloorApprovalReplayResults.cs"] =
+                    new("b1f3e21b2f6b13a6340edac1b29b5d5d25d5599212ab4d0596d905ed54679d3e",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 1 }),
                 // AT-053: the Down's only raw SQL is Logistics' module refusal (51056, used by no other migration) while

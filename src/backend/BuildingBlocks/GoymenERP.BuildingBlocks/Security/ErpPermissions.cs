@@ -52,6 +52,15 @@ public static class ErpPermissions
     /// </summary>
     public const string ProductOperationalSelectionRead = "product.operational-selection.read";
 
+    /// <summary>AT-018 Product-owned, company-scoped price-list read. Registration grants nothing.</summary>
+    public const string ProductPriceListsRead = "product.price-lists.read";
+
+    /// <summary>AT-018 Product-owned price-list draft create/revise/version write. Registration grants nothing.</summary>
+    public const string ProductPriceListsWrite = "product.price-lists.write";
+
+    /// <summary>AT-018 separate publication authority; write never implies publish. Registration grants nothing.</summary>
+    public const string ProductPriceListsPublish = "product.price-lists.publish";
+
     /// <summary>
     /// T07(a) Inventory reads (#310): a label's view and its stock position by position. Registering
     /// the names makes them KNOWN, not granted: no role and no user receives them here; the grant is
@@ -389,6 +398,12 @@ public static class ErpPermissions
     public const string SalesOrdersPriceRead = "sales.orders.price.read";
 
     /// <summary>
+    /// AT-021: a separate maker-checker permission for the reasoned approval of current below-floor lines.
+    /// It grants neither price write nor order approval and is never seeded to a real actor here.
+    /// </summary>
+    public const string SalesOrdersPriceFloorExceptionApprove = "sales.orders.price-floor-exception.approve";
+
+    /// <summary>
     /// DEC-SAL-003 (KILITLI): moving the requested delivery dates of an order (POST …/{id}/delivery-schedule) without
     /// re-approval, audited — the Sales owner's name (<c>SalesPermissionManifestV1.OrdersDeliveryScheduleWrite</c>, same
     /// string). The literal is the owner's technical mapping, confirmed by the coordinator (technical names are not
@@ -607,11 +622,15 @@ public static class ErpPermissions
             CounterpartyPartiesTaxIdentityUpdate,
             CounterpartyPartiesTaxIdentityApprove,
             ProductOperationalSelectionRead,
+            ProductPriceListsRead,
+            ProductPriceListsWrite,
+            ProductPriceListsPublish,
             SalesDraftsCreate,
             SalesDraftsRead,
             SalesOrdersApprove,
             SalesOrdersPriceWrite,
             SalesOrdersPriceRead,
+            SalesOrdersPriceFloorExceptionApprove,
             SalesOrdersDeliveryScheduleWrite,
             SalesOrdersCancel,
             SalesOrdersQuantityWrite,
@@ -720,11 +739,15 @@ public static class ErpPermissions
             CounterpartyPartiesTaxIdentityUpdate,
             CounterpartyPartiesTaxIdentityApprove,
             ProductOperationalSelectionRead,
+            ProductPriceListsRead,
+            ProductPriceListsWrite,
+            ProductPriceListsPublish,
             SalesDraftsCreate,
             SalesDraftsRead,
             SalesOrdersApprove,
             SalesOrdersPriceWrite,
             SalesOrdersPriceRead,
+            SalesOrdersPriceFloorExceptionApprove,
             SalesOrdersDeliveryScheduleWrite,
             SalesOrdersCancel,
             SalesOrdersQuantityWrite,

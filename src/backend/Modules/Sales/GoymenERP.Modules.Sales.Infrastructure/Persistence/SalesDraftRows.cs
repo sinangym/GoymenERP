@@ -112,6 +112,7 @@ internal static class SalesDraftRows
                 UnitPrice = line.Commercial.UnitPrice,
                 PriceUnitId = line.Commercial.PriceUnitId,
                 DiscountPercent = line.Commercial.DiscountPercent,
+                PricingJson = SalesLinePricingJson.Serialize(line.Commercial),
             });
             var sliceNo = 0;
             foreach (var slice in line.RequestedDeliverySlices)

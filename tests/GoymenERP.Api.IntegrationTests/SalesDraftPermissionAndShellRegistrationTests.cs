@@ -101,9 +101,9 @@ public sealed class SalesDraftPermissionAndShellRegistrationTests
         var registry = new ShellCapabilityRegistry(container.GetServices<IShellCapabilityProvider>(),
             new ShellCapabilityAuthorityCatalog([authority]));
         var sales = registry.Registrations.Where(item => item.Owner == SalesShellCapabilityProvider.OwnerId).ToArray();
-        // Three screens plus the SALES-A1 approve, SALES-P commercial-revision, DEC-SAL-003 delivery-schedule, DEC-SAL-005
-        // cancel and DEC-SAL-002 quantity-revision controls.
-        Assert.Equal(9, sales.Length);
+        // Three screens plus the SALES-A1 approve, SALES-P commercial-revision, AT-021 floor-exception approval,
+        // DEC-SAL-003 delivery-schedule, DEC-SAL-005 cancel and DEC-SAL-002 quantity-revision controls.
+        Assert.Equal(10, sales.Length);
         Assert.Equal(SalesShellCapabilityProvider.DetailCapabilityId,
             Assert.Single(sales, item => item.Declaration.CapabilityId == SalesShellCapabilityProvider.QuantityWriteCapabilityId)
                 .Declaration.ParentCapabilityId);
@@ -115,6 +115,9 @@ public sealed class SalesDraftPermissionAndShellRegistrationTests
                 .Declaration.ParentCapabilityId);
         Assert.Equal(SalesShellCapabilityProvider.DetailCapabilityId,
             Assert.Single(sales, item => item.Declaration.CapabilityId == SalesShellCapabilityProvider.PriceWriteCapabilityId)
+                .Declaration.ParentCapabilityId);
+        Assert.Equal(SalesShellCapabilityProvider.DetailCapabilityId,
+            Assert.Single(sales, item => item.Declaration.CapabilityId == SalesShellCapabilityProvider.PriceFloorExceptionApproveCapabilityId)
                 .Declaration.ParentCapabilityId);
         Assert.Equal(SalesShellCapabilityProvider.DetailCapabilityId,
             Assert.Single(sales, item => item.Declaration.CapabilityId == SalesShellCapabilityProvider.CustomerAcceptanceRecordCapabilityId)
