@@ -236,7 +236,7 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests(ITes
         }
         catch
         {
-            output.WriteLine(diagnosticPhase);
+            output.WriteLine("CI_SAFE_DIAGNOSTIC:" + diagnosticPhase);
             throw;
         }
     }
