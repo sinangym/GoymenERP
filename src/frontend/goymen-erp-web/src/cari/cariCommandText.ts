@@ -118,6 +118,7 @@ export const CARI_CARD_TEXT = {
   accountHeading: 'Bu şirketteki hesap',
   accountNote: 'Yalnız seçili şirketin hesabına ait bilgiler.',
   editContact: 'İletişim ve adres bilgilerini düzenle',
+  openLedger: 'Cari hesap ekstresini aç',
 } as const
 
 /**
