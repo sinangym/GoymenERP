@@ -2747,6 +2747,47 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     "\n        env:\n          GOYMEN_ERP_TEST_SQLSERVER_CONNECTION: >-\n            Server=",
                     StringComparison.Ordinal)),
             error => error.Contains("SQL Server fixture binding", StringComparison.Ordinal));
+
+        foreach (var (original, replacement) in new[]
+                 {
+                     (
+                         "      - name: Run exact SQL Server relational shard\n        run: |",
+                         "      - name: Run exact SQL Server relational shard\n"
+                         + "        shell: echo {0}\n        run: |"),
+                     (
+                         "          --rcsi \\",
+                         "          --rcsi --list-tests \\"),
+                     (
+                         "          --rcsi-result \"${{ needs.relational-rcsi.result }}\"",
+                         "          --rcsi-result \"${{ needs.relational-rcsi.result }}\" || true"),
+                     (
+                         "          --aggregate \\",
+                         "          # --aggregate \\"),
+                     (
+                         "      - name: Upload exact SQL shard proof\n"
+                         + "        uses: actions/upload-artifact@v7",
+                         "      - name: Upload exact SQL shard proof\n"
+                         + "        if: ${{ false }}\n"
+                         + "        uses: actions/upload-artifact@v7"),
+                     (
+                         "      - name: Download exact SQL shard proofs\n"
+                         + "        uses: actions/download-artifact@v8",
+                         "      - name: Download exact SQL shard proofs\n"
+                         + "        shell: echo {0}\n"
+                         + "        uses: actions/download-artifact@v8"),
+                 })
+        {
+            Assert.Contains(
+                ValidateSqlServerRcsiPublishAndDiscoveryContracts(
+                    solutionSource,
+                    integrationProjectSource,
+                    relationalAcceptanceSource,
+                    normalizedWorkflowSource.Replace(
+                        original,
+                        replacement,
+                        StringComparison.Ordinal)),
+                error => error.Contains("relational CI verifier", StringComparison.Ordinal));
+        }
     }
 
     [Fact]
@@ -6254,45 +6295,84 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             "\n      - name: Upload exact SQL shard proof\n", StringComparison.Ordinal));
         var proofDownloadStep = ExtractYamlStep(relationalJob, relationalJob.IndexOf(
             "\n      - name: Download exact SQL shard proofs\n", StringComparison.Ordinal));
-        var requiredShardLines = new[]
+        var expectedShardStepLines = new[]
         {
-            "name: SQL Server relational shard (${{ matrix.shard }})",
-            "fail-fast: false",
-            "shard: [A, B, C]",
+            "- name: Run exact SQL Server relational shard",
+            "run: |",
+            "python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py",
+            "python3 -I -S -B tools/verify_rcsi_relational_acceptance.py \\",
             "--shard \"${{ matrix.shard }}\" \\",
+            "--trx-output \"artifacts/ci-test-results/relational/broad-${{ matrix.shard }}.trx\" \\",
             "--proof-output \"artifacts/ci-relational-proofs/proof-${{ matrix.shard }}.json\" \\",
             "--source-head \"${{ github.event.pull_request.head.sha || github.sha }}\" \\",
             "--tested-commit \"$(git rev-parse HEAD)\"",
         };
-        var requiredAggregateLines = new[]
+        var expectedRcsiStepLines = new[]
         {
-            "name: SQL Server relational acceptance",
-            "needs: [relational-shard, relational-rcsi]",
-            "if: ${{ always() }}",
+            "- name: Run exact RCSI relational acceptance verifier",
+            "run: |",
+            "python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py",
+            "python3 -I -S -B tools/verify_rcsi_relational_acceptance.py \\",
+            "--rcsi \\",
+            "--trx-output artifacts/ci-test-results/relational/rcsi.trx",
+        };
+        var expectedAggregateStepLines = new[]
+        {
+            "- name: Verify complete SQL Server relational acceptance",
+            "run: |",
+            "python3 -I -S -B tools/verify_rcsi_relational_acceptance.py \\",
             "--aggregate \\",
             "--proof-directory artifacts/ci-relational-proofs \\",
+            "--source-head \"${{ github.event.pull_request.head.sha || github.sha }}\" \\",
+            "--tested-commit \"$(git rev-parse HEAD)\" \\",
             "--worker-result \"${{ needs.relational-shard.result }}\" \\",
             "--rcsi-result \"${{ needs.relational-rcsi.result }}\"",
         };
+        var expectedProofUploadStepLines = new[]
+        {
+            "- name: Upload exact SQL shard proof",
+            "uses: actions/upload-artifact@v7",
+            "with:",
+            "name: ci-relational-shard-proof-${{ matrix.shard }}",
+            "path: artifacts/ci-relational-proofs/proof-${{ matrix.shard }}.json",
+            "if-no-files-found: error",
+            "retention-days: 7",
+        };
+        var expectedProofDownloadStepLines = new[]
+        {
+            "- name: Download exact SQL shard proofs",
+            "uses: actions/download-artifact@v8",
+            "with:",
+            "pattern: ci-relational-shard-proof-*",
+            "path: artifacts/ci-relational-proofs",
+        };
         if (shardJob.Length == 0 || rcsiJob.Length == 0 || relationalJob.Length == 0
-            || requiredShardLines.Any(line => !shardLines.Contains(line, StringComparer.Ordinal))
-            || requiredAggregateLines.Any(line => !aggregateLines.Contains(line, StringComparer.Ordinal))
-            || !shardStep.Contains("tools/validate_dotnet_bootstrap_integrity.py", StringComparison.Ordinal)
-            || !shardStep.Contains("tools/verify_rcsi_relational_acceptance.py", StringComparison.Ordinal)
-            || !rcsiStep.Contains("--rcsi", StringComparison.Ordinal)
-            || !aggregateStep.Contains("tools/verify_rcsi_relational_acceptance.py", StringComparison.Ordinal)
-            || !proofUploadStep.Contains("if-no-files-found: error", StringComparison.Ordinal)
-            || !proofUploadStep.Contains("ci-relational-shard-proof-${{ matrix.shard }}", StringComparison.Ordinal)
-            || !proofDownloadStep.Contains("actions/download-artifact@v8", StringComparison.Ordinal)
-            || !proofDownloadStep.Contains("pattern: ci-relational-shard-proof-*", StringComparison.Ordinal)
-            || proofDownloadStep.Contains("merge-multiple:", StringComparison.Ordinal)
+            || !shardLines.Contains("name: SQL Server relational shard (${{ matrix.shard }})",
+                StringComparer.Ordinal)
+            || !shardLines.Contains("fail-fast: false", StringComparer.Ordinal)
+            || !shardLines.Contains("shard: [A, B, C]", StringComparer.Ordinal)
+            || !rcsiLines.Contains("name: Exact RCSI relational acceptance", StringComparer.Ordinal)
+            || !aggregateLines.Contains("name: SQL Server relational acceptance", StringComparer.Ordinal)
+            || !aggregateLines.Contains("needs: [relational-shard, relational-rcsi]",
+                StringComparer.Ordinal)
+            || !aggregateLines.Contains("if: ${{ always() }}", StringComparer.Ordinal)
+            || !ReadActiveYamlLines(shardStep).SequenceEqual(
+                expectedShardStepLines, StringComparer.Ordinal)
+            || !ReadActiveYamlLines(rcsiStep).SequenceEqual(
+                expectedRcsiStepLines, StringComparer.Ordinal)
+            || !ReadActiveYamlLines(aggregateStep).SequenceEqual(
+                expectedAggregateStepLines, StringComparer.Ordinal)
+            || !ReadActiveYamlLines(proofUploadStep).SequenceEqual(
+                expectedProofUploadStepLines, StringComparer.Ordinal)
+            || !ReadActiveYamlLines(proofDownloadStep).SequenceEqual(
+                expectedProofDownloadStepLines, StringComparer.Ordinal)
             || ContainsConditionalOrSoftFailure(ReadActiveYamlLines(shardStep))
             || ContainsConditionalOrSoftFailure(ReadActiveYamlLines(rcsiStep))
             || ContainsConditionalOrSoftFailure(ReadActiveYamlLines(aggregateStep))
             || aggregateLines.Count(line => line.StartsWith("if:", StringComparison.Ordinal)) != 1
             || aggregateLines.Any(line => line.StartsWith("continue-on-error:", StringComparison.Ordinal)))
         {
-            errors.Add("RCSI relational CI shard and required aggregate gates must remain exact and non-vacuous.");
+            errors.Add("RCSI relational CI verifier shard and aggregate gates must remain exact and non-vacuous.");
         }
 
         var expectedSqlEnvironmentPrefix =
@@ -6315,7 +6395,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     + "GoymenERP.Api.IntegrationTests.csproj \\", StringComparer.Ordinal)
                 || ContainsConditionalOrSoftFailure(ReadActiveYamlLines(job.Split("\n    steps:\n")[0])))
             {
-                errors.Add("RCSI relational SQL workers must retain isolated, unconditional SQL fixtures.");
+                errors.Add("RCSI relational SQL Server fixture binding must retain isolated, unconditional SQL workers.");
             }
         }
 
