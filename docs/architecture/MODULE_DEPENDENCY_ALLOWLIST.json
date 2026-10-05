@@ -84,6 +84,12 @@
       "target": "src/backend/Modules/Audit/GoymenERP.Modules.Audit.Infrastructure/GoymenERP.Modules.Audit.Infrastructure.csproj",
       "adr": "docs/adr/ADR-009-audit-and-correlation.md",
       "reason": "Audit insert and Purchasing request/order writes share one EF SaveChanges and SQL transaction (PUR-4a; same pattern as Organization)."
+    },
+    {
+      "source": "src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/GoymenERP.Modules.Work.Infrastructure.csproj",
+      "target": "src/backend/Modules/Audit/GoymenERP.Modules.Audit.Infrastructure/GoymenERP.Modules.Audit.Infrastructure.csproj",
+      "adr": "docs/adr/ADR-WORK-001-work-atomic-desired-state-storage.md",
+      "reason": "JV03 desired-state snapshot, inbox, outbox, and canonical audit insert share one EF SaveChanges and SQL transaction; Audit owns its mapped table."
     }
   ]
 }
