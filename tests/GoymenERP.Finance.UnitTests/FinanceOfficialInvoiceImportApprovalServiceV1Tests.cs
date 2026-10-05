@@ -119,8 +119,9 @@ public sealed class FinanceOfficialInvoiceImportApprovalServiceV1Tests
         Assert.Equal(Document, row.SourceDocumentId);
         Assert.Equal(Installment, row.SourceInstallmentId);
         Assert.Equal("1250.50", row.Amount);
-        Assert.Equal([1L, 2L], (await db.OfficialInvoiceImportWorkDeliveries.AsNoTracking()
-            .OrderBy(item => item.ObservationOrdinal).Select(item => item.ObservationOrdinal).ToListAsync()).ToArray());
+        var ordinals = await db.OfficialInvoiceImportWorkDeliveries.AsNoTracking()
+            .OrderBy(item => item.ObservationOrdinal).Select(item => item.ObservationOrdinal).ToListAsync();
+        Assert.Equal(new long[] { 1L, 2L }, ordinals);
     }
 
     [Fact]
