@@ -1,10 +1,16 @@
 using System.Net;
 using System.Data.Common;
 using System.Text.Json;
+using GoymenERP.Api.Security;
 using GoymenERP.Modules.Purchasing.Application.Contracts;
+using GoymenERP.Modules.Identity.Domain.Assignments;
+using GoymenERP.Modules.Identity.Domain.Roles;
+using GoymenERP.Modules.Identity.Infrastructure.Persistence;
 using GoymenERP.Modules.Purchasing.Domain.Orders;
 using GoymenERP.Modules.Purchasing.Infrastructure.Persistence;
 using Microsoft.Data.SqlClient;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace GoymenERP.Api.IntegrationTests;
 
@@ -16,6 +22,8 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
     public async Task Order_detail_reopens_the_same_order_with_ordered_immutable_acceptance_history_and_no_read_effect()
     {
         await using var run = await Run.StartAsync();
+        await GrantOrdersReadAsync(run, TestUsers.CompanyA, CompanyA);
+        await GrantOrdersReadAsync(run, TestUsers.CompanyB, CompanyB);
         var owners = Owners.For(CompanyA);
         StoredPurchaseOrder approved;
         await using (var scope = run.Store(CompanyA))
@@ -85,6 +93,23 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
             Assert.False(result.IsReplay);
         }
         await transaction.CommitAsync();
+    }
+
+    private static async Task GrantOrdersReadAsync(Run run, string developmentUser, Guid company)
+    {
+        await using var scope = run.Factory.Services.CreateAsyncScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<IdentityDbContext>();
+        var link = await dbContext.ExternalIdentities.SingleAsync(value =>
+            value.Issuer == BootstrapIdentityOptions.Issuer && value.Subject == developmentUser);
+        var roleId = Guid.NewGuid();
+        var role = new RoleDefinition(roleId, $"PUR-HISTORY-{roleId:N}", "Synthetic purchasing history reader", true);
+        role.AddPermission(PurchasingPermissionManifestV1.OrdersRead);
+        var assignment = new RoleAssignment(
+            Guid.NewGuid(), link.UserId, roleId, company, DateTimeOffset.UtcNow.AddMinutes(-1), null, approvedByUserId: null);
+        assignment.AddScope(AccessScopeType.Company, company);
+        dbContext.Roles.Add(role);
+        dbContext.RoleAssignments.Add(assignment);
+        await dbContext.SaveChangesAsync();
     }
 
     private static async Task<PurchaseOrderDetailView> NativeDetailAsync(Run run, Guid orderId)

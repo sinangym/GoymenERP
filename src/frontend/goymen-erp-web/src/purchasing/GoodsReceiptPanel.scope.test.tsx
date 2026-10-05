@@ -35,6 +35,7 @@ const detail: PurchaseOrderDetail = {
     updatedAtUtc: '2026-09-25T09:00:00Z', lineCount: 1 },
   lines: [{ lineId: LINE, lineNo: 1, kind: 'General', parentLineId: null, sourceRequestLineId: null,
     productId: PRODUCT, productVersion: '7', unitId: UNIT, ordered: '10', technical: '0', committed: '10', accepted: '0', remaining: '10' }],
+  acceptances: [],
 }
 
 const json = (body: unknown, status = 200, replay = false) => new Response(JSON.stringify(body), {

@@ -54,6 +54,7 @@ function requestDetail(companyId = COMPANY, id = REQUEST): PurchaseRequestDetail
       createdAtUtc: '2026-09-23T09:00:00Z', updatedAtUtc: '2026-09-23T10:00:00Z', lineCount: 0,
     },
     lines: [],
+    acceptances: [],
   }
 }
 function orderDetail(): PurchaseOrderDetail {
