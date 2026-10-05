@@ -554,7 +554,6 @@ public sealed class ProductGlobalRuntimeSqlServerRelationalAcceptanceTests
                 await identity.SaveChangesAsync();
             }
 
-            var afterActivation = await SnapshotAsync(factory.DatabaseConnectionString);
             using var locationsResponse = await freshClient.GetAsync(InventoryReferenceEndpoints.LocationPath);
             Assert.Equal(HttpStatusCode.OK, locationsResponse.StatusCode);
             var locations = (await locationsResponse.Content.ReadFromJsonAsync<OrganizationLocationCandidatesV1>())!;
@@ -629,6 +628,7 @@ public sealed class ProductGlobalRuntimeSqlServerRelationalAcceptanceTests
             var stocked = await StoredInventoryAsync();
             Assert.Equal((first.Card.Product.Id, active.Card.Product.Version, 1, 1),
                 (stocked.ProductId, stocked.ProductVersion, stocked.MovementLines, stocked.OpeningCounts));
+            var afterFirstOpening = await StoredEffectCountsAsync();
             using var openingReplay = await RecordOpeningAsync(freshClient, opening, openingKey);
             Assert.Equal(HttpStatusCode.OK, openingReplay.StatusCode);
             Assert.Equal("true", Assert.Single(openingReplay.Headers.GetValues("Idempotency-Replayed")));
@@ -637,6 +637,33 @@ public sealed class ProductGlobalRuntimeSqlServerRelationalAcceptanceTests
                 (replayedCount.CountId, replayedCount.CompanyId, replayedCount.LocationId));
             Assert.Equal(Assert.Single(recorded.Lines), Assert.Single(replayedCount.Lines));
             Assert.Equal(stocked, await StoredInventoryAsync());
+            Assert.Equal(afterFirstOpening, await StoredEffectCountsAsync());
+
+            async Task<(int Lots, int Labels, int Counts, int Movements, int MovementLines,
+                int Balances, int Commands, int Audit)> StoredEffectCountsAsync()
+            {
+                await using var sql = new SqlConnection(factory.DatabaseConnectionString);
+                await sql.OpenAsync();
+                await using var command = sql.CreateCommand();
+                command.CommandText = """
+                    SELECT (SELECT COUNT(*) FROM [inventory].[Lots]),
+                        (SELECT COUNT(*) FROM [inventory].[Labels]),
+                        (SELECT COUNT(*) FROM [inventory].[OpeningCounts]),
+                        (SELECT COUNT(*) FROM [inventory].[Movements]),
+                        (SELECT COUNT(*) FROM [inventory].[MovementLines]),
+                        (SELECT COUNT(*) FROM [inventory].[Balances]),
+                        (SELECT COUNT(*) FROM [inventory].[Commands]),
+                        (SELECT COUNT(*) FROM [audit].[AuditEvents]);
+                    """;
+                await using var row = await command.ExecuteReaderAsync();
+                Assert.True(await row.ReadAsync());
+                var counts = (row.GetInt32(0), row.GetInt32(1), row.GetInt32(2), row.GetInt32(3),
+                    row.GetInt32(4), row.GetInt32(5), row.GetInt32(6), row.GetInt32(7));
+                Assert.False(await row.ReadAsync());
+                return counts;
+            }
+
+            var afterOpeningAudit = await SnapshotAsync(factory.DatabaseConnectionString);
 
             var staleLabelId = Guid.NewGuid();
             var stale = opening with
@@ -660,6 +687,8 @@ public sealed class ProductGlobalRuntimeSqlServerRelationalAcceptanceTests
                 "product-genuine-sac-foreign-opening");
             Assert.Equal(HttpStatusCode.Forbidden, foreignResponse.StatusCode);
             Assert.Equal(stocked, await StoredInventoryAsync());
+            Assert.Equal(afterFirstOpening, await StoredEffectCountsAsync());
+            Assert.Equal(afterOpeningAudit, await SnapshotAsync(factory.DatabaseConnectionString));
             using var missingLabel = await freshClient.GetAsync($"/api/v1/inventory/labels/{staleLabelId:D}");
             Assert.Equal(HttpStatusCode.NotFound, missingLabel.StatusCode);
 
@@ -696,7 +725,7 @@ public sealed class ProductGlobalRuntimeSqlServerRelationalAcceptanceTests
                         snapshot.UnitKg.ProfileId, snapshot.UnitKg.ProfileVersion));
             }
             finally { accessor.HttpContext = previous; }
-            Assert.Equal(afterActivation, await SnapshotAsync(factory.DatabaseConnectionString));
+            Assert.Equal(afterOpeningAudit, await SnapshotAsync(factory.DatabaseConnectionString));
         });
 
     [SqlServerFact]
