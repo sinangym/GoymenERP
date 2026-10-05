@@ -167,8 +167,92 @@ jobs:
       - run: npm test
       - run: npm run build
 
-  relational:
-    name: SQL Server relational acceptance
+  relational-shard:
+    name: SQL Server relational shard (${{ matrix.shard }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [A, B, C]
+    env:
+      GOYMEN_ERP_TEST_SQLSERVER_CONNECTION: >-
+        Server=localhost,1433;Database=master;User Id=sa;Password=Ci_Relational_Only_2026;Encrypt=True;TrustServerCertificate=True
+    services:
+      sqlserver:
+        image: mcr.microsoft.com/mssql/server:2022-latest
+        env:
+          ACCEPT_EULA: Y
+          MSSQL_PID: Developer
+          MSSQL_SA_PASSWORD: Ci_Relational_Only_2026
+        ports:
+          - 1433:1433
+        options: >-
+          --health-cmd "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P 'Ci_Relational_Only_2026' -C -Q 'SELECT 1'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 12
+          --health-start-period 20s
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: .NET bootstrap integrity preflight
+        run: |
+          python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py
+          python3 -I -S -B -m unittest discover -s tests/dotnet_bootstrap_integrity -p "test_*.py" -v
+          python3 -I -S -B -m unittest discover -s tests/ci_safe_trx_summary -p "test_*.py" -v
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore relational test packages
+        run: |
+          python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py
+          dotnet restore tests/GoymenERP.Api.IntegrationTests/GoymenERP.Api.IntegrationTests.csproj \
+          -noAutoResponse \
+          --configfile NuGet.Config
+
+      - name: Run exact SQL Server relational shard
+        run: |
+          python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py
+          python3 -I -S -B tools/verify_rcsi_relational_acceptance.py \
+          --shard "${{ matrix.shard }}" \
+          --trx-output "artifacts/ci-test-results/relational/broad-${{ matrix.shard }}.trx" \
+          --proof-output "artifacts/ci-relational-proofs/proof-${{ matrix.shard }}.json" \
+          --source-head "${{ github.event.pull_request.head.sha || github.sha }}" \
+          --tested-commit "$(git rev-parse HEAD)"
+
+      - name: Upload exact SQL shard proof
+        uses: actions/upload-artifact@v7
+        with:
+          name: ci-relational-shard-proof-${{ matrix.shard }}
+          path: artifacts/ci-relational-proofs/proof-${{ matrix.shard }}.json
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Produce secret-free relational shard summary
+        if: always() && hashFiles('artifacts/ci-test-results/relational/*.trx') != ''
+        run: |
+          python3 -I -S -B tools/ci/summarize_trx.py \
+          --trx-directory artifacts/ci-test-results/relational \
+          --output "artifacts/ci-safe-test-summary/shard-${{ matrix.shard }}.json" \
+          --source-head "${{ github.event.pull_request.head.sha || github.sha }}" \
+          --tested-commit "$(git rev-parse HEAD)" \
+          --job relational-shard \
+          --phase sql-acceptance
+
+      - name: Upload secret-free relational shard summary
+        if: always() && hashFiles('artifacts/ci-safe-test-summary/shard-*.json') != ''
+        uses: actions/upload-artifact@v7
+        with:
+          name: ci-test-summary-relational-shard-${{ matrix.shard }}-${{ github.event.pull_request.head.sha || github.sha }}
+          path: artifacts/ci-safe-test-summary/shard-${{ matrix.shard }}.json
+          if-no-files-found: error
+          retention-days: 7
+
+  relational-rcsi:
+    name: Exact RCSI relational acceptance
     runs-on: ubuntu-latest
     env:
       GOYMEN_ERP_TEST_SQLSERVER_CONNECTION: >-
@@ -209,14 +293,6 @@ jobs:
           -noAutoResponse \
           --configfile NuGet.Config
 
-      - name: Run broad SQL Server relational acceptance verifier
-        run: |
-          python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py
-          python3 -I -S -B -m unittest discover -s tests/rcsi_relational_acceptance_verifier -p "test_*.py" -v
-          python3 -I -S -B tools/verify_rcsi_relational_acceptance.py \
-          --broad \
-          --trx-output artifacts/ci-test-results/relational/broad.trx
-
       - name: Run exact RCSI relational acceptance verifier
         run: |
           python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py
@@ -224,7 +300,7 @@ jobs:
           --rcsi \
           --trx-output artifacts/ci-test-results/relational/rcsi.trx
 
-      - name: Produce secret-free relational test summary
+      - name: Produce secret-free RCSI test summary
         if: always() && hashFiles('artifacts/ci-test-results/relational/*.trx') != ''
         run: |
           python3 -I -S -B tools/ci/summarize_trx.py \
@@ -232,17 +308,45 @@ jobs:
           --output artifacts/ci-safe-test-summary/relational.json \
           --source-head "${{ github.event.pull_request.head.sha || github.sha }}" \
           --tested-commit "$(git rev-parse HEAD)" \
-          --job relational \
+          --job relational-rcsi \
           --phase sql-acceptance
 
-      - name: Upload secret-free relational test summary
+      - name: Upload secret-free RCSI test summary
         if: always() && hashFiles('artifacts/ci-safe-test-summary/relational.json') != ''
         uses: actions/upload-artifact@v7
         with:
-          name: ci-test-summary-relational-${{ github.event.pull_request.head.sha || github.sha }}
+          name: ci-test-summary-relational-rcsi-${{ github.event.pull_request.head.sha || github.sha }}
           path: artifacts/ci-safe-test-summary/relational.json
           if-no-files-found: error
           retention-days: 7
+
+  relational:
+    name: SQL Server relational acceptance
+    needs: [relational-shard, relational-rcsi]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Verify relational shard proof parser
+        run: |
+          python3 -I -S -B -m unittest discover -s tests/rcsi_relational_acceptance_verifier -p "test_*.py" -v
+
+      - name: Download exact SQL shard proofs
+        uses: actions/download-artifact@v8
+        with:
+          pattern: ci-relational-shard-proof-*
+          path: artifacts/ci-relational-proofs
+
+      - name: Verify complete SQL Server relational acceptance
+        run: |
+          python3 -I -S -B tools/verify_rcsi_relational_acceptance.py \
+          --aggregate \
+          --proof-directory artifacts/ci-relational-proofs \
+          --source-head "${{ github.event.pull_request.head.sha || github.sha }}" \
+          --tested-commit "$(git rev-parse HEAD)" \
+          --worker-result "${{ needs.relational-shard.result }}" \
+          --rcsi-result "${{ needs.relational-rcsi.result }}"
 
   contract-drift:
     name: OpenAPI contract drift
