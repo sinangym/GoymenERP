@@ -67,7 +67,14 @@ public sealed record PurchaseOrderLineView(
     Guid ProductId, string ProductVersion, Guid UnitId,
     string Ordered, string Technical, string Committed, string Accepted, string Remaining);
 
-public sealed record PurchaseOrderDetailView(PurchaseOrderSummaryView Order, IReadOnlyList<PurchaseOrderLineView> Lines);
+/// <summary>One immutable goods-acceptance share in the persisted order sequence; quantity is exact text in the order line's unit.</summary>
+public sealed record PurchaseOrderAcceptanceHistoryView(
+    Guid AcceptanceId, Guid LineId, string Quantity, DateTimeOffset RecordedAtUtc);
+
+public sealed record PurchaseOrderDetailView(PurchaseOrderSummaryView Order, IReadOnlyList<PurchaseOrderLineView> Lines)
+{
+    public IReadOnlyList<PurchaseOrderAcceptanceHistoryView> Acceptances { get; init; } = [];
+}
 
 public sealed record PurchaseOrderResponse(PurchaseOrderDetailView Detail, bool IsReplay, string OriginalCorrelationId);
 
