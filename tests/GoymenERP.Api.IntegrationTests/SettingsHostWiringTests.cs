@@ -51,6 +51,50 @@ public sealed class SettingsHostWiringTests
     }
 
     [Fact]
+    public void The_host_registers_the_approved_provider_as_the_one_manufacturing_tolerance_port()
+    {
+        using var factory = Host(Gdc);
+        using var scope = factory.Services.CreateScope();
+
+        var provider = scope.ServiceProvider.GetRequiredService<ISettingsManufacturingToleranceProviderV1>();
+
+        Assert.IsType<ApprovedSettingsPrerequisiteProvider>(provider);
+        Assert.Single(scope.ServiceProvider.GetServices<ISettingsManufacturingToleranceProviderV1>());
+    }
+
+    [Theory]
+    [InlineData(SettingsManufacturingProcessesV1.Slitting)]
+    [InlineData(SettingsManufacturingProcessesV1.ColdRolling)]
+    [InlineData(SettingsManufacturingProcessesV1.TubeProfile)]
+    [InlineData(SettingsManufacturingProcessesV1.Paint)]
+    [InlineData(SettingsManufacturingProcessesV1.CutToLength)]
+    public async Task The_host_keeps_every_manufacturing_tolerance_process_unavailable_without_an_approved_source(
+        string process)
+    {
+        using var factory = Host(Gdc);
+        using var scope = factory.Services.CreateScope();
+        var provider = scope.ServiceProvider.GetRequiredService<ISettingsManufacturingToleranceProviderV1>();
+
+        var failure = await Assert.ThrowsAsync<SettingsPrerequisiteException>(() =>
+            provider.GetManufacturingToleranceAsync(process, Approval));
+
+        Assert.Equal("settings_provider_unavailable", failure.Code);
+    }
+
+    [Fact]
+    public async Task The_manufacturing_tolerance_host_port_denies_an_actor_outside_the_company()
+    {
+        using var factory = Host(Gdc, actorAllowedIn: Gsp);
+        using var scope = factory.Services.CreateScope();
+        var provider = scope.ServiceProvider.GetRequiredService<ISettingsManufacturingToleranceProviderV1>();
+
+        var failure = await Assert.ThrowsAsync<SettingsPrerequisiteException>(() =>
+            provider.GetManufacturingToleranceAsync(SettingsManufacturingProcessesV1.Slitting, Approval));
+
+        Assert.Equal("settings_access_denied", failure.Code);
+    }
+
+    [Fact]
     public async Task GDC_kilogram_resolves_to_the_approved_profile_through_the_host()
     {
         using var factory = Host(Gdc);

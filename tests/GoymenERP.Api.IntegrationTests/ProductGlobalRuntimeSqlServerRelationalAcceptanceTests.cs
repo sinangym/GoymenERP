@@ -18,10 +18,14 @@ using GoymenERP.Modules.Audit.Infrastructure.Services;
 using GoymenERP.Modules.Idempotency.Domain.Executions;
 using GoymenERP.Modules.Idempotency.Infrastructure.Persistence;
 using GoymenERP.Modules.Identity.Domain.Assignments;
+using GoymenERP.Modules.Identity.Domain.Roles;
+using GoymenERP.Modules.Identity.Domain.Users;
 using GoymenERP.Modules.Identity.Infrastructure.Persistence;
 using GoymenERP.Modules.Identity.Infrastructure.Services;
 using GoymenERP.Modules.Product.Application.Contracts;
 using GoymenERP.Modules.Product.Infrastructure.Persistence;
+using GoymenERP.Modules.Settings.Application;
+using GoymenERP.Modules.Settings.Application.Contracts.V1;
 using Microsoft.Data.SqlClient;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
@@ -437,6 +441,148 @@ public sealed class ProductGlobalRuntimeSqlServerRelationalAcceptanceTests
             await product.GetService<IMigrator>().MigrateAsync(ProductCodeGroupMigration);
             Assert.Equal(productMigrations, await product.Database.GetAppliedMigrationsAsync());
             Assert.Equal(afterEdit, await SnapshotAsync(factory.DatabaseConnectionString));
+        });
+
+    [SqlServerFact]
+    public Task Genuine_sac_card_is_created_replayed_reopened_activated_and_read_as_one_technical_snapshot() =>
+        WithDatabaseAsync(async (factory, _) =>
+        {
+            const string createKey = "product-genuine-sac-card-once";
+            const string activateKey = "product-genuine-sac-activate-once";
+            var effectiveOn = new DateOnly(2026, 10, 5);
+            var references = new ProductReferences(
+                ProductInitialTechnicalDefinitionV1.TemplateId, "1",
+                new Dictionary<string, JsonElement>(StringComparer.Ordinal)
+                {
+                    ["thickness-mm"] = JsonSerializer.SerializeToElement(3m),
+                    ["width-mm"] = JsonSerializer.SerializeToElement(248m),
+                    ["steel-grade"] = JsonSerializer.SerializeToElement("S235JR"),
+                    ["coating"] = JsonSerializer.SerializeToElement("uncoated"),
+                },
+                new ProductUnitReferences(Stock: SettingsUnitIdentitiesV1.Kilogram));
+            var draft = new CreateProductDraftRequest("S235JR 3 mm × 248 mm kaplamasız sac",
+                ProductInitialCodeGroupV1.SacGroupId,
+                FamilyId: ProductInitialTechnicalDefinitionV1.HotRolledSlitCoilFamilyId,
+                References: references);
+
+            using var client = factory.CreateClientFor("group-bootstrap-admin", CompanyA);
+            async Task<HttpResponseMessage> CreateAsync()
+            {
+                using var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/products")
+                { Content = JsonContent.Create(draft) };
+                request.Headers.Add(ProductApiV1.IdempotencyHeader, createKey);
+                return await client.SendAsync(request);
+            }
+
+            using var created = await CreateAsync();
+            Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+            var first = (await created.Content.ReadFromJsonAsync<ProductMutationResponse>())!;
+            Assert.False(first.IsReplay);
+            Assert.Equal(("SAC-1", "Draft", "1", ProductInitialCodeGroupV1.SacGroupId,
+                ProductInitialTechnicalDefinitionV1.HotRolledSlitCoilFamilyId),
+                (first.Card.Product.Code, first.Card.Product.Lifecycle, first.Card.Product.Version,
+                    first.Card.Product.GroupId, first.Card.Product.FamilyId));
+            var afterCreate = await SnapshotAsync(factory.DatabaseConnectionString);
+
+            using var replay = await CreateAsync();
+            Assert.Equal(HttpStatusCode.Created, replay.StatusCode);
+            Assert.Equal("true", Assert.Single(replay.Headers.GetValues("Idempotency-Replayed")));
+            var repeated = (await replay.Content.ReadFromJsonAsync<ProductMutationResponse>())!;
+            Assert.True(repeated.IsReplay);
+            Assert.Equal((first.Card.Product.Id, first.Card.Product.Lifecycle, first.Card.Product.Version),
+                (repeated.Card.Product.Id, repeated.Card.Product.Lifecycle, repeated.Card.Product.Version));
+            Assert.Equal(afterCreate, await SnapshotAsync(factory.DatabaseConnectionString));
+
+            using (var reopenedDraft = await client.GetAsync($"/api/v1/products/{first.Card.Product.Id:D}"))
+            {
+                Assert.Equal(HttpStatusCode.OK, reopenedDraft.StatusCode);
+                var card = (await reopenedDraft.Content.ReadFromJsonAsync<ProductCardView>())!;
+                Assert.Equal((first.Card.Product.Id, "1", ProductInitialTechnicalDefinitionV1.TemplateId, "1"),
+                    (card.Product.Id, card.Product.Version, card.References.TemplateId, card.References.TemplateVersion));
+                Assert.Equal(SettingsUnitIdentitiesV1.Kilogram, card.References.Units!.Stock);
+                Assert.Equal(3m, card.References.Attributes!["thickness-mm"].GetDecimal());
+                Assert.Equal(248m, card.References.Attributes["width-mm"].GetDecimal());
+                Assert.Equal("S235JR", card.References.Attributes["steel-grade"].GetString());
+                Assert.Equal("uncoated", card.References.Attributes["coating"].GetString());
+                Assert.False(card.References.Attributes.ContainsKey("producer-grade"));
+            }
+
+            using var activationRequest = new HttpRequestMessage(HttpMethod.Post,
+                $"/api/v1/products/{first.Card.Product.Id:D}/activation")
+            { Content = JsonContent.Create(new ActivateProductRequest("1")) };
+            activationRequest.Headers.Add(ProductApiV1.IdempotencyHeader, activateKey);
+            using var activated = await client.SendAsync(activationRequest);
+            Assert.Equal(HttpStatusCode.OK, activated.StatusCode);
+            var active = (await activated.Content.ReadFromJsonAsync<ProductMutationResponse>())!;
+            Assert.Equal((first.Card.Product.Id, "Active", "2"),
+                (active.Card.Product.Id, active.Card.Product.Lifecycle, active.Card.Product.Version));
+
+            using var freshClient = factory.CreateClientFor("group-bootstrap-admin", CompanyA);
+            using (var reopenedActive = await freshClient.GetAsync($"/api/v1/products/{first.Card.Product.Id:D}"))
+            {
+                Assert.Equal(HttpStatusCode.OK, reopenedActive.StatusCode);
+                var card = (await reopenedActive.Content.ReadFromJsonAsync<ProductCardView>())!;
+                Assert.Equal((first.Card.Product.Id, "SAC-1", "Active", "2"),
+                    (card.Product.Id, card.Product.Code, card.Product.Lifecycle, card.Product.Version));
+                Assert.Equal(references.TemplateId, card.References.TemplateId);
+                Assert.Equal(references.Units!.Stock, card.References.Units!.Stock);
+                Assert.False(card.References.Attributes!.ContainsKey("producer-grade"));
+            }
+
+            // The operational read is a separate, existing permission. Grant it only to this
+            // disposable SQL actor; global Product-master approval alone does not imply it.
+            await using (var setup = factory.Services.CreateAsyncScope())
+            {
+                var identity = setup.ServiceProvider.GetRequiredService<IdentityDbContext>();
+                if (!await identity.Users.AnyAsync(user => user.Id == ActorId))
+                    identity.Users.Add(new UserAccount(ActorId, "Disposable Product snapshot actor", null));
+                var roleId = Guid.NewGuid();
+                var role = new RoleDefinition(roleId, $"PRODUCT-SNAPSHOT-{roleId:N}",
+                    "Disposable Product technical snapshot reader", true);
+                role.AddPermission(ProductPermissionManifestV1.OperationalSelectionRead);
+                var assignment = new RoleAssignment(Guid.NewGuid(), ActorId, roleId, CompanyA,
+                    DateTimeOffset.UtcNow.AddMinutes(-1), null, approvedByUserId: null);
+                assignment.AddScope(AccessScopeType.Company, CompanyA);
+                identity.Roles.Add(role);
+                identity.RoleAssignments.Add(assignment);
+                await identity.SaveChangesAsync();
+            }
+
+            var afterActivation = await SnapshotAsync(factory.DatabaseConnectionString);
+            await using var scope = factory.Services.CreateAsyncScope();
+            var accessor = scope.ServiceProvider.GetRequiredService<IHttpContextAccessor>();
+            var previous = accessor.HttpContext;
+            try
+            {
+                accessor.HttpContext = new DefaultHttpContext
+                {
+                    User = new ClaimsPrincipal(new ClaimsIdentity([
+                        new Claim(GoymenClaimTypes.UserId, ActorId.ToString("D")),
+                        new Claim(GoymenClaimTypes.CompanyAccess, CompanyA.ToString("D")),
+                    ], "IsolatedSqlFixture")),
+                };
+                scope.ServiceProvider.GetRequiredService<ICompanyContext>().Set(CompanyA);
+                var result = await scope.ServiceProvider.GetRequiredService<IProductManufacturingTechnicalSnapshotV1>()
+                    .ReadAsync(new(first.Card.Product.Id, "2", effectiveOn), default);
+                Assert.Empty(result.Errors);
+                var snapshot = Assert.IsType<ProductManufacturingTechnicalSnapshotV1>(result.Snapshot);
+                Assert.Equal((first.Card.Product.Id, "2", 3m, 248m, effectiveOn),
+                    (snapshot.ProductId, snapshot.ProductVersion, snapshot.ThicknessMm,
+                        snapshot.WidthMm, snapshot.EffectiveOn));
+                Assert.Equal((ProductInitialTechnicalDefinitionV1.HotRolledSlitCoilFamilyId,
+                    ProductInitialTechnicalDefinitionV1.SourceRef),
+                    (snapshot.Family.FamilyId, snapshot.Family.SourceRevision));
+                Assert.Equal((ProductInitialTechnicalDefinitionV1.TemplateId, "1",
+                    ProductInitialTechnicalDefinitionV1.SourceRef),
+                    (snapshot.Template.TemplateId, snapshot.Template.TemplateVersion,
+                        snapshot.Template.SourceRevision));
+                Assert.Equal((CompanyA, SettingsUnitIdentitiesV1.Kilogram, "kg",
+                    ApprovedUnitProfileCatalog.GdcKilogramV1.ProfileId, "1"),
+                    (snapshot.UnitKg.CompanyId, snapshot.UnitKg.UnitId, snapshot.UnitKg.UnitCode,
+                        snapshot.UnitKg.ProfileId, snapshot.UnitKg.ProfileVersion));
+            }
+            finally { accessor.HttpContext = previous; }
+            Assert.Equal(afterActivation, await SnapshotAsync(factory.DatabaseConnectionString));
         });
 
     [SqlServerFact]
