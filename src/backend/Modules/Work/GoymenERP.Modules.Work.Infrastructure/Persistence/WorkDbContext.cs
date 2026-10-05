@@ -62,16 +62,16 @@ public sealed class WorkDbContext(
                 "[EffectivePayloadSha256] IS NULL OR (" + string.Format(PayloadHashCheck, "EffectivePayloadSha256") + ")");
             table.HasCheckConstraint("CK_WorkSnapshots_State",
                 "[HighestObservationOrdinal] >= 1 AND [HighestEvidenceId] <> '00000000-0000-0000-0000-000000000000' AND "
-                + "(([HighestAvailability] = 1 AND [HighestDesiredState] IN (1,2) "
-                + "AND [EffectiveObservationOrdinal] = [HighestObservationOrdinal] "
-                + "AND [EffectiveDesiredState] = [HighestDesiredState] "
-                + "AND [EffectiveEvidenceId] = [HighestEvidenceId] "
-                + "AND [EffectivePayloadSha256] = [HighestPayloadSha256]) OR "
+                + "(([HighestAvailability] = 1 AND [HighestDesiredState] IS NOT NULL AND [HighestDesiredState] IN (1,2) "
+                + "AND [EffectiveObservationOrdinal] IS NOT NULL AND [EffectiveObservationOrdinal] = [HighestObservationOrdinal] "
+                + "AND [EffectiveDesiredState] IS NOT NULL AND [EffectiveDesiredState] = [HighestDesiredState] "
+                + "AND [EffectiveEvidenceId] IS NOT NULL AND [EffectiveEvidenceId] = [HighestEvidenceId] "
+                + "AND [EffectivePayloadSha256] IS NOT NULL AND [EffectivePayloadSha256] = [HighestPayloadSha256]) OR "
                 + "([HighestAvailability] = 2 AND [HighestDesiredState] IS NULL AND "
                 + "(([EffectiveObservationOrdinal] IS NULL AND [EffectiveDesiredState] IS NULL "
                 + "AND [EffectiveEvidenceId] IS NULL AND [EffectivePayloadSha256] IS NULL) OR "
-                + "([EffectiveObservationOrdinal] >= 1 AND [EffectiveObservationOrdinal] < [HighestObservationOrdinal] "
-                + "AND [EffectiveDesiredState] IN (1,2) "
+                + "([EffectiveObservationOrdinal] IS NOT NULL AND [EffectiveObservationOrdinal] >= 1 AND [EffectiveObservationOrdinal] < [HighestObservationOrdinal] "
+                + "AND [EffectiveDesiredState] IS NOT NULL AND [EffectiveDesiredState] IN (1,2) "
                 + "AND [EffectiveEvidenceId] IS NOT NULL AND [EffectiveEvidenceId] <> '00000000-0000-0000-0000-000000000000' "
                 + "AND [EffectivePayloadSha256] IS NOT NULL))))");
             table.HasCheckConstraint("CK_WorkSnapshots_Version", "[Version] >= 1");
@@ -100,7 +100,7 @@ public sealed class WorkDbContext(
             table.HasCheckConstraint("CK_WorkInbox_Hash", string.Format(PayloadHashCheck, "PayloadSha256"));
             table.HasCheckConstraint("CK_WorkInbox_State",
                 "[ObservationOrdinal] >= 1 AND [EvidenceId] <> '00000000-0000-0000-0000-000000000000' AND "
-                + "(([Availability] = 1 AND [DesiredState] IN (1,2)) OR ([Availability] = 2 AND [DesiredState] IS NULL))");
+                + "(([Availability] = 1 AND [DesiredState] IS NOT NULL AND [DesiredState] IN (1,2)) OR ([Availability] = 2 AND [DesiredState] IS NULL))");
         });
         entity.HasKey(x => new { x.CompanyId, x.SourceKeyDigest, x.ScopeKeyDigest, x.ObservationOrdinal });
         ConfigureKey(entity.Property(x => x.SourceKeyDigest), "binary(32)");

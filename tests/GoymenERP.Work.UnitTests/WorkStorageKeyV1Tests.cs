@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using System.Text.Json.Nodes;
 using GoymenERP.Modules.Work.Domain;
 using GoymenERP.Modules.Work.Infrastructure.Persistence;
 
@@ -89,6 +90,27 @@ public sealed class WorkStorageKeyV1Tests
         Assert.True(sourceText.AsSpan().SequenceEqual(restored.SourceKey.AsSpan()));
         Assert.True(scopeText.AsSpan().SequenceEqual(restored.ScopeKey.AsSpan()));
         Assert.Contains(Convert.ToBase64String(source.Utf16Be), row.PayloadJson, StringComparison.Ordinal);
+
+        row.EventType = "work.desired-state.wrong.v2";
+        Assert.Throws<WorkStorageCorruptionException>(() => WorkDesiredStateStoreV2.DecodeOutboxPayload(row));
+        row.EventType = WorkDesiredStateStoreV2.AppliedEventType;
+
+        row.SchemaVersion = 1;
+        Assert.Throws<WorkStorageCorruptionException>(() => WorkDesiredStateStoreV2.DecodeOutboxPayload(row));
+        row.SchemaVersion = 2;
+
+        row.AggregateVersion = 2;
+        Assert.Throws<WorkStorageCorruptionException>(() => WorkDesiredStateStoreV2.DecodeOutboxPayload(row));
+        row.AggregateVersion = 1;
+
+        var payload = JsonNode.Parse(row.PayloadJson)!.AsObject();
+        var effective = payload.Single(x => string.Equals(
+            x.Key, "effectiveState", StringComparison.OrdinalIgnoreCase)).Value!.AsObject();
+        var ordinal = effective.Single(x => string.Equals(
+            x.Key, "observationOrdinal", StringComparison.OrdinalIgnoreCase)).Key;
+        effective[ordinal] = null;
+        row.PayloadJson = payload.ToJsonString();
+        Assert.Throws<WorkStorageCorruptionException>(() => WorkDesiredStateStoreV2.DecodeOutboxPayload(row));
     }
 
     public static TheoryData<string, string> LosslessValues() => new()

@@ -31,6 +31,8 @@ public sealed class WorkDesiredStateStoreV2
     private readonly TimeProvider timeProvider;
     private readonly IWorkStorageKeyDigestV1 keyDigest;
     private readonly Func<CancellationToken, Task> beforeSave;
+    private readonly Func<CancellationToken, Task> afterRead;
+    private readonly Func<CancellationToken, Task> afterCommit;
 
     public WorkDesiredStateStoreV2(
         WorkDbContext dbContext,
@@ -43,6 +45,8 @@ public sealed class WorkDesiredStateStoreV2
             auditEvents,
             timeProvider,
             WorkSha256StorageKeyDigestV1.Instance,
+            static _ => Task.CompletedTask,
+            static _ => Task.CompletedTask,
             static _ => Task.CompletedTask)
     {
     }
@@ -53,7 +57,9 @@ public sealed class WorkDesiredStateStoreV2
         IAuditEventCollector auditEvents,
         TimeProvider timeProvider,
         IWorkStorageKeyDigestV1 keyDigest,
-        Func<CancellationToken, Task>? beforeSave = null)
+        Func<CancellationToken, Task>? beforeSave = null,
+        Func<CancellationToken, Task>? afterRead = null,
+        Func<CancellationToken, Task>? afterCommit = null)
     {
         this.dbContext = dbContext;
         this.companyContext = companyContext;
@@ -61,6 +67,8 @@ public sealed class WorkDesiredStateStoreV2
         this.timeProvider = timeProvider;
         this.keyDigest = keyDigest;
         this.beforeSave = beforeSave ?? (static _ => Task.CompletedTask);
+        this.afterRead = afterRead ?? (static _ => Task.CompletedTask);
+        this.afterCommit = afterCommit ?? (static _ => Task.CompletedTask);
     }
 
     public async Task<WorkDesiredStateResultV2> ReconcileAsync(
@@ -71,9 +79,10 @@ public sealed class WorkDesiredStateStoreV2
         ArgumentNullException.ThrowIfNull(observation);
         ArgumentNullException.ThrowIfNull(metadata);
 
-        if (!companyContext.IsResolved || observation.CompanyId != companyContext.CompanyId)
+        var capturedCompanyId = observation.CompanyId;
+        if (!MatchesCapturedCompany(capturedCompanyId))
         {
-            return new WorkDesiredStateResultV2(WorkDesiredStateDecisionV2.Refused, null);
+            return Refused();
         }
 
         RequireMetadata(metadata);
@@ -81,11 +90,17 @@ public sealed class WorkDesiredStateStoreV2
         var sourceKey = WorkStorageKeyV1.Create(observation.SourceKey, keyDigest);
         var scopeKey = WorkStorageKeyV1.Create(observation.ScopeKey, keyDigest);
         var row = await LoadAsync(observation.CompanyId, sourceKey, scopeKey, cancellationToken);
+        await afterRead(cancellationToken);
+        if (!MatchesCapturedCompany(capturedCompanyId))
+        {
+            return Refused();
+        }
+
         var prior = row is null ? null : Restore(row, sourceKey, scopeKey);
         var result = WorkDesiredStateProtocolV2.Reconcile(prior, observation);
         if (result.Decision != WorkDesiredStateDecisionV2.Apply)
         {
-            return result;
+            return MatchesCapturedCompany(capturedCompanyId) ? result : Refused();
         }
 
         var now = timeProvider.GetUtcNow();
@@ -97,6 +112,7 @@ public sealed class WorkDesiredStateStoreV2
         }
         else
         {
+            dbContext.DesiredStateSnapshots.Attach(row);
             ApplySnapshot(row, result.State!, now);
         }
 
@@ -104,18 +120,32 @@ public sealed class WorkDesiredStateStoreV2
         dbContext.ObservationInbox.Add(inbox);
         var outbox = NewOutbox(result.State!, row.Version, sourceKey, scopeKey, metadata, now);
         dbContext.OutboxMessages.Add(outbox);
-        auditEvents.Enqueue(NewAudit(prior, result.State!, row.Version, sourceKey, scopeKey, metadata));
 
         try
         {
             await beforeSave(cancellationToken);
+            if (!MatchesCapturedCompany(capturedCompanyId))
+            {
+                CleanupAttempt(row, inbox, outbox);
+                return Refused();
+            }
+
+            auditEvents.Enqueue(NewAudit(prior, result.State!, row.Version, sourceKey, scopeKey, metadata));
             await dbContext.SaveChangesAsync(cancellationToken);
-            return result;
+            CleanupAttempt(row, inbox, outbox);
+            await afterCommit(cancellationToken);
+            return MatchesCapturedCompany(capturedCompanyId) ? result : Refused();
         }
         catch (Exception exception) when (IsCasRace(exception))
         {
-            dbContext.ChangeTracker.Clear();
+            CleanupAttempt(row, inbox, outbox);
             var winnerRow = await LoadAsync(observation.CompanyId, sourceKey, scopeKey, cancellationToken);
+            await afterRead(cancellationToken);
+            if (!MatchesCapturedCompany(capturedCompanyId))
+            {
+                return Refused();
+            }
+
             if (winnerRow is null)
             {
                 throw;
@@ -130,6 +160,11 @@ public sealed class WorkDesiredStateStoreV2
 
             return winnerResult;
         }
+        catch
+        {
+            CleanupAttempt(row, inbox, outbox);
+            throw;
+        }
     }
 
     private async Task<WorkDesiredStateSnapshotRow?> LoadAsync(
@@ -137,7 +172,7 @@ public sealed class WorkDesiredStateStoreV2
         WorkStorageKeyV1 sourceKey,
         WorkStorageKeyV1 scopeKey,
         CancellationToken cancellationToken) =>
-        await dbContext.DesiredStateSnapshots.SingleOrDefaultAsync(
+        await dbContext.DesiredStateSnapshots.AsNoTracking().SingleOrDefaultAsync(
             row => row.CompanyId == companyId
                 && row.SourceKeyDigest == sourceKey.Digest
                 && row.ScopeKeyDigest == scopeKey.Digest,
@@ -163,6 +198,19 @@ public sealed class WorkDesiredStateStoreV2
             row.HighestDesiredState is null ? null : (WorkDesiredStateV2)row.HighestDesiredState,
             row.HighestEvidenceId,
             row.HighestPayloadSha256);
+        var anyEffective = row.EffectiveObservationOrdinal is not null
+            || row.EffectiveDesiredState is not null
+            || row.EffectiveEvidenceId is not null
+            || row.EffectivePayloadSha256 is not null;
+        var completeEffective = row.EffectiveObservationOrdinal is not null
+            && row.EffectiveDesiredState is not null
+            && row.EffectiveEvidenceId is not null
+            && row.EffectivePayloadSha256 is not null;
+        if (anyEffective != completeEffective)
+        {
+            throw new WorkStorageCorruptionException("Work effective snapshot tuple is incomplete.");
+        }
+
         var effective = row.EffectiveObservationOrdinal is null
             ? null
             : new WorkEffectiveDesiredStateV2(
@@ -291,8 +339,22 @@ public sealed class WorkDesiredStateStoreV2
 
     internal static WorkDesiredStateSnapshotV2 DecodeOutboxPayload(WorkOutboxRow row)
     {
-        var payload = JsonSerializer.Deserialize<WorkDesiredStateOutboxPayloadV2>(row.PayloadJson, Json)
-            ?? throw new WorkStorageCorruptionException("Work outbox payload is empty.");
+        if (row.SchemaVersion != OutboxSchemaVersion
+            || !string.Equals(row.EventType, AppliedEventType, StringComparison.Ordinal))
+        {
+            throw new WorkStorageCorruptionException("Work outbox row type or schema is invalid.");
+        }
+
+        WorkDesiredStateOutboxPayloadV2 payload;
+        try
+        {
+            payload = JsonSerializer.Deserialize<WorkDesiredStateOutboxPayloadV2>(row.PayloadJson, Json)
+                ?? throw new WorkStorageCorruptionException("Work outbox payload is empty.");
+        }
+        catch (JsonException)
+        {
+            throw new WorkStorageCorruptionException("Work outbox payload is malformed.");
+        }
         if (payload.SchemaVersion != OutboxSchemaVersion
             || payload.CompanyId != row.CompanyId
             || payload.ObservationOrdinal != row.ObservationOrdinal
@@ -383,6 +445,26 @@ public sealed class WorkDesiredStateStoreV2
     private static bool IsCasRace(Exception exception) =>
         exception is DbUpdateConcurrencyException
         || exception is DbUpdateException { InnerException: SqlException { Number: 2601 or 2627 } };
+
+    private bool MatchesCapturedCompany(Guid companyId) =>
+        companyId != Guid.Empty
+        && companyContext.IsResolved
+        && companyContext.CompanyId == companyId;
+
+    private static WorkDesiredStateResultV2 Refused() =>
+        new(WorkDesiredStateDecisionV2.Refused, null);
+
+    private void CleanupAttempt(params object[] entities)
+    {
+        foreach (var entity in entities)
+        {
+            var entry = dbContext.Entry(entity);
+            if (entry.State != EntityState.Detached)
+            {
+                entry.State = EntityState.Detached;
+            }
+        }
+    }
 
     private static void RequireMetadata(WorkDesiredStateWriteMetadataV2 metadata)
     {

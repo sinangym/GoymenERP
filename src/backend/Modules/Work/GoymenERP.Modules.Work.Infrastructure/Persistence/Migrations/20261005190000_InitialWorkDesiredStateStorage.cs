@@ -48,11 +48,11 @@ public partial class InitialWorkDesiredStateStorage : Migration
                 table.CheckConstraint("CK_WorkSnapshots_EffectiveHash", "[EffectivePayloadSha256] IS NULL OR (DATALENGTH([EffectivePayloadSha256]) = 64 AND [EffectivePayloadSha256] COLLATE Latin1_General_100_BIN2 NOT LIKE '%[^0-9a-f]%')");
                 table.CheckConstraint("CK_WorkSnapshots_State",
                     "[HighestObservationOrdinal] >= 1 AND [HighestEvidenceId] <> '00000000-0000-0000-0000-000000000000' AND "
-                    + "(([HighestAvailability] = 1 AND [HighestDesiredState] IN (1,2) AND [EffectiveObservationOrdinal] = [HighestObservationOrdinal] "
-                    + "AND [EffectiveDesiredState] = [HighestDesiredState] AND [EffectiveEvidenceId] = [HighestEvidenceId] "
-                    + "AND [EffectivePayloadSha256] = [HighestPayloadSha256]) OR ([HighestAvailability] = 2 AND [HighestDesiredState] IS NULL AND "
+                    + "(([HighestAvailability] = 1 AND [HighestDesiredState] IS NOT NULL AND [HighestDesiredState] IN (1,2) AND [EffectiveObservationOrdinal] IS NOT NULL AND [EffectiveObservationOrdinal] = [HighestObservationOrdinal] "
+                    + "AND [EffectiveDesiredState] IS NOT NULL AND [EffectiveDesiredState] = [HighestDesiredState] AND [EffectiveEvidenceId] IS NOT NULL AND [EffectiveEvidenceId] = [HighestEvidenceId] "
+                    + "AND [EffectivePayloadSha256] IS NOT NULL AND [EffectivePayloadSha256] = [HighestPayloadSha256]) OR ([HighestAvailability] = 2 AND [HighestDesiredState] IS NULL AND "
                     + "(([EffectiveObservationOrdinal] IS NULL AND [EffectiveDesiredState] IS NULL AND [EffectiveEvidenceId] IS NULL AND [EffectivePayloadSha256] IS NULL) OR "
-                    + "([EffectiveObservationOrdinal] >= 1 AND [EffectiveObservationOrdinal] < [HighestObservationOrdinal] AND [EffectiveDesiredState] IN (1,2) "
+                    + "([EffectiveObservationOrdinal] IS NOT NULL AND [EffectiveObservationOrdinal] >= 1 AND [EffectiveObservationOrdinal] < [HighestObservationOrdinal] AND [EffectiveDesiredState] IS NOT NULL AND [EffectiveDesiredState] IN (1,2) "
                     + "AND [EffectiveEvidenceId] IS NOT NULL AND [EffectiveEvidenceId] <> '00000000-0000-0000-0000-000000000000' AND [EffectivePayloadSha256] IS NOT NULL))))");
                 table.CheckConstraint("CK_WorkSnapshots_Version", "[Version] >= 1");
                 table.ForeignKey(
@@ -87,7 +87,7 @@ public partial class InitialWorkDesiredStateStorage : Migration
                 table.CheckConstraint("CK_WorkInbox_Company", "[CompanyId] <> '00000000-0000-0000-0000-000000000000'");
                 table.CheckConstraint("CK_WorkInbox_KeyBytes", KeyBytesCheck);
                 table.CheckConstraint("CK_WorkInbox_Hash", "DATALENGTH([PayloadSha256]) = 64 AND [PayloadSha256] COLLATE Latin1_General_100_BIN2 NOT LIKE '%[^0-9a-f]%'");
-                table.CheckConstraint("CK_WorkInbox_State", "[ObservationOrdinal] >= 1 AND [EvidenceId] <> '00000000-0000-0000-0000-000000000000' AND (([Availability] = 1 AND [DesiredState] IN (1,2)) OR ([Availability] = 2 AND [DesiredState] IS NULL))");
+                table.CheckConstraint("CK_WorkInbox_State", "[ObservationOrdinal] >= 1 AND [EvidenceId] <> '00000000-0000-0000-0000-000000000000' AND (([Availability] = 1 AND [DesiredState] IS NOT NULL AND [DesiredState] IN (1,2)) OR ([Availability] = 2 AND [DesiredState] IS NULL))");
                 table.ForeignKey(
                     name: "FK_ObservationInbox_Companies_CompanyId",
                     column: x => x.CompanyId,
@@ -168,6 +168,14 @@ public partial class InitialWorkDesiredStateStorage : Migration
 
     protected override void Down(MigrationBuilder migrationBuilder)
     {
+        migrationBuilder.Sql(
+            """
+            IF EXISTS (SELECT 1 FROM [work].[DesiredStateSnapshots])
+                OR EXISTS (SELECT 1 FROM [work].[ObservationInbox])
+                OR EXISTS (SELECT 1 FROM [work].[OutboxMessages])
+                THROW 51081, 'work_storage_not_empty', 1;
+            """);
+
         migrationBuilder.DropTable(name: "ObservationInbox", schema: "work");
         migrationBuilder.DropTable(name: "OutboxMessages", schema: "work");
         migrationBuilder.DropTable(name: "DesiredStateSnapshots", schema: "work");
