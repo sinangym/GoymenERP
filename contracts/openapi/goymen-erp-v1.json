@@ -72954,6 +72954,32 @@
           }
         }
       },
+      "PurchaseOrderAcceptanceHistoryView": {
+        "required": [
+          "acceptanceId",
+          "lineId",
+          "quantity",
+          "recordedAtUtc"
+        ],
+        "type": "object",
+        "properties": {
+          "acceptanceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "lineId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "quantity": {
+            "type": "string"
+          },
+          "recordedAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
       "PurchaseOrderDetailView": {
         "required": [
           "order",
@@ -72968,6 +72994,12 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/PurchaseOrderLineView"
+            }
+          },
+          "acceptances": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PurchaseOrderAcceptanceHistoryView"
             }
           }
         }

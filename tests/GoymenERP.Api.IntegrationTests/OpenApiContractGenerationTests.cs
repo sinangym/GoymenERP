@@ -2707,10 +2707,17 @@ public sealed partial class OpenApiContractGenerationTests
                     ["exceptions", "pending"],
                     ("exceptions", "type:array;items:ref:PostingExceptionViewV1"),
                     ("pending", "type:array;items:ref:PendingValuationViewV1")),
+                ["PurchaseOrderAcceptanceHistoryView"] = ObjectSchema(
+                    ["acceptanceId", "lineId", "quantity", "recordedAtUtc"],
+                    ("acceptanceId", "type:string;format:uuid"),
+                    ("lineId", "type:string;format:uuid"),
+                    ("quantity", "type:string"),
+                    ("recordedAtUtc", "type:string;format:date-time")),
                 ["PurchaseOrderDetailView"] = ObjectSchema(
                     ["order", "lines"],
                     ("order", "ref:PurchaseOrderSummaryView"),
-                    ("lines", "type:array;items:ref:PurchaseOrderLineView")),
+                    ("lines", "type:array;items:ref:PurchaseOrderLineView"),
+                    ("acceptances", "type:array;items:ref:PurchaseOrderAcceptanceHistoryView")),
                 ["PurchaseGoodsReceiptOptionsV1"] = ObjectSchema(
                     ["source", "locations", "searchWindowFull"],
                     ("source", "ref:PurchaseReceiptSourceV1"),
