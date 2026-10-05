@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test, type APIResponse } from '@playwright/test'
 import sql from 'mssql'
 
 /**
@@ -11,6 +11,10 @@ const GROUP_ID = '829e576d-c635-502a-97b8-9d5074c9d6a0'
 const FAMILY_ID = '2ffdf417-c7b0-4cc5-8c58-40b5cd906c55'
 const TEMPLATE_ID = 'ca5be23e-1f56-40c7-9e4a-6cdfc5e884b2'
 const KILOGRAM_ID = 'c5ef643e-a6e8-51f3-89f2-8e68b00cb983'
+// ApprovedSettingsUnitProfileCatalog.GdcKilogramV1, not an inferred unit conversion.
+const KILOGRAM_PROFILE_ID = '4a790fdc-2a6b-5126-835f-d3a13d28b71c'
+const KILOGRAM_PROFILE_VERSION = '1'
+const OTHER_COMPANY_ID = '10000000-0000-0000-0000-000000000002'
 const PRODUCTS_PATH = '/api/v1/products'
 const INVENTORY_OPENINGS_PATH = '/api/v1/inventory/opening-counts'
 const INVENTORY_PRODUCT_REFERENCES_PATH = '/api/v1/inventory/references/products'
@@ -356,9 +360,8 @@ test('the same genuine SAC card is activated by the existing activator and reope
   expect(exactCandidates[0]).toMatchObject({
     productVersion: reopened.product.version, code: created.product.code, name,
     stockUnitId: KILOGRAM_ID, stockUnitCode: 'kg',
+    profileId: KILOGRAM_PROFILE_ID, profileVersion: KILOGRAM_PROFILE_VERSION,
   })
-  expect(exactCandidates[0].profileId).toMatch(/^[0-9a-f-]{36}$/i)
-  expect(exactCandidates[0].profileVersion).toMatch(/^[1-9]\d*$/)
   await page.getByLabel('Ürün', { exact: true }).selectOption(created.product.id)
   await page.getByLabel('Etiket kodu').fill(labelCode)
   await page.getByLabel('Sayım kg').fill('12.5')
@@ -369,6 +372,10 @@ test('the same genuine SAC card is activated by the existing activator and reope
   await page.getByRole('button', { name: 'Açılış sayımını kaydet', exact: true }).click()
   const openingResponse = await openingRead
   expect(openingResponse.status()).toBe(201)
+  const originalOpeningCorrelation = openingResponse.headers()['x-correlation-id']
+  expect(originalOpeningCorrelation).toBeTruthy()
+  expect(openingResponse.headers()['idempotency-replayed']).toBeUndefined()
+  expect(openingResponse.headers()['idempotency-original-correlation-id']).toBeUndefined()
   const openingRequest = openingResponse.request()
   const openingKey = await openingRequest.headerValue('Idempotency-Key')
   expect(openingKey).toBeTruthy()
@@ -467,12 +474,43 @@ test('the same genuine SAC card is activated by the existing activator and reope
       counts: 1, lines: 1, labels: 1, productId: created.product.id.toLowerCase(),
       productVersion: reopened.product.version, movementLines: 1, commands: 1, audits: 1,
     })
+
+    async function expectPrivateRefusal(response: APIResponse) {
+      expect([403, 404]).toContain(response.status())
+      const body = (await response.text()).toLowerCase()
+      for (const identity of [created.product.id, created.product.code, name, recorded.countId,
+        recorded.lines[0].labelId, recorded.lines[0].lotId, labelCode, sheetReference]) {
+        expect(body).not.toContain(identity.toLowerCase())
+      }
+    }
+
+    const candidatePath = `${apiBaseUrl}${INVENTORY_PRODUCT_REFERENCES_PATH}`
+      + `?effectiveOn=${OPENING_DATE}&limit=25&q=${encodeURIComponent(created.product.code)}`
+    const countPath = `${apiBaseUrl}${INVENTORY_OPENINGS_PATH}/${recorded.countId}`
+    const labelPath = `${apiBaseUrl}${labelDetailPath}`
+    const forbiddenHeaders = headersFor(requester)
+    const foreignHeaders = { ...headersFor(inventoryRecorder), 'X-Company-Id': OTHER_COMPANY_ID }
+    for (const [scope, headers] of [
+      ['product-only', forbiddenHeaders],
+      ['other-company', foreignHeaders],
+    ] as const) {
+      await expectPrivateRefusal(await page.request.get(candidatePath, { headers }))
+      await expectPrivateRefusal(await page.request.get(countPath, { headers }))
+      await expectPrivateRefusal(await page.request.get(labelPath, { headers }))
+      await expectPrivateRefusal(await page.request.post(`${apiBaseUrl}${INVENTORY_OPENINGS_PATH}`, {
+        headers: { ...headers, 'Idempotency-Key': `u02-genuine-opening-${scope}-${recorded.countId}` },
+        data: openingPayload,
+      }))
+      expect(await effects()).toEqual(beforeOpeningReplay)
+    }
+
     const openingReplay = await page.request.post(`${apiBaseUrl}${INVENTORY_OPENINGS_PATH}`, {
       headers: { ...headersFor(inventoryRecorder), 'Idempotency-Key': openingKey! },
       data: openingPayload,
     })
     expect(openingReplay.status()).toBe(200)
     expect(openingReplay.headers()['idempotency-replayed']).toBe('true')
+    expect(openingReplay.headers()['idempotency-original-correlation-id']).toBe(originalOpeningCorrelation)
     expect(await openingReplay.json()).toEqual(recorded)
     expect(await effects()).toEqual(beforeOpeningReplay)
   } finally {
