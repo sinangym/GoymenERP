@@ -1148,7 +1148,7 @@ test('L04-10 a delivered share returns to its original label once, by a differen
     const decisionPanel = page.locator('section[aria-label="Müşteri iadesi"]')
     await expect(decisionPanel).toContainText('Bekliyor')
     const approvePath = `/api/v1/logistics/customer-returns/${requested.return.customerReturnId}/approve`
-    let committedApproval: {
+    type CommittedApproval = {
       readonly status: number
       readonly headers: Record<string, string>
       readonly body: {
@@ -1162,31 +1162,38 @@ test('L04-10 a delivered share returns to its original label once, by a differen
         readonly isReplay: boolean
         readonly originalCorrelationId: string
       }
-    } | null = null
+    }
+    let resolveCommittedApproval: (approval: CommittedApproval) => void = () => {
+      throw new Error('L04-10 approval capture resolver was not initialized')
+    }
+    const committedApproval = new Promise<CommittedApproval>((resolve) => {
+      resolveCommittedApproval = resolve
+    })
+    let approvalCaptured = false
     await page.route(`**${approvePath}`, async (route) => {
-      if (route.request().method() !== 'POST' || committedApproval !== null) return route.fallback()
+      if (route.request().method() !== 'POST' || approvalCaptured) return route.fallback()
+      approvalCaptured = true
       const response = await route.fetch()
-      committedApproval = {
+      resolveCommittedApproval({
         status: response.status(),
         headers: response.headers(),
         body: await response.json(),
-      }
+      })
       await route.abort('failed')
     })
     const approveRequest = page.waitForRequest((request) => request.method() === 'POST'
       && new URL(request.url()).pathname === approvePath)
     await decisionPanel.getByLabel('Karar notu').fill('SENTETIK farklı aktör kabulü')
     await decisionPanel.getByRole('button', { name: 'Onayla' }).click()
-    const approvedRequest = await approveRequest
+    const [approvedRequest, capturedApproval] = await Promise.all([approveRequest, committedApproval])
     await expect(decisionPanel).toContainText('Sonuç belirsiz. Yeni işlem oluşturmayın; aynı işlem anahtarıyla yeniden deneyin.')
     await expect(decisionPanel).toContainText('Bekliyor')
     await expect(decisionPanel).not.toContainText('Onaylandı')
     await expect(decisionPanel.getByRole('button', { name: 'Onayla' })).toBeDisabled()
     await expect(decisionPanel.getByRole('button', { name: 'Reddet' })).toBeDisabled()
-    if (committedApproval === null) throw new Error('L04-10 requires the withheld real approve response')
-    expect(committedApproval.status).toBe(200)
-    expect(committedApproval.headers['idempotency-replayed']).toBeUndefined()
-    const approved = committedApproval.body
+    expect(capturedApproval.status).toBe(200)
+    expect(capturedApproval.headers['idempotency-replayed']).toBeUndefined()
+    const approved = capturedApproval.body
     expect(approved.isReplay).toBe(false)
     expect(approved.originalCorrelationId).toBeTruthy()
     expect(approved.return).toMatchObject({
