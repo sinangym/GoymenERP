@@ -336,7 +336,8 @@ SUITE_IDENTITY_PERMISSIONS = {
             # retains its existing dual permission fence with inventory.physical-allocation.write above.
             "logistics.loading-instructions.create", "logistics.loading-instructions.read",
             "logistics.loads.record", "logistics.shipments.record",
-            "logistics.dispatch-notes.create", "logistics.dispatch-notes.approve"),
+            "logistics.dispatch-notes.create", "logistics.dispatch-notes.approve",
+            "logistics.deliveries.record"),
     # Accounting's six screen names plus the exact existing Finance reads and normal-draft create/approve
     # used by ACC01-10. They are grants only in this disposable runner database.
     "acc01": ("accounting.periods.read", "accounting.periods.propose", "accounting.periods.approve",
