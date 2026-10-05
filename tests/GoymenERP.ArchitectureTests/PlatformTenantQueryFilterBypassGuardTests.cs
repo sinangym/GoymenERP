@@ -248,9 +248,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     private const string BackendTestGroupVerifierTestsPath =
         "tests/backend_test_group_verifier/test_verify_backend_test_groups.py";
     private const string ReviewedBackendTestGroupVerifierFingerprint =
-        "bf9e9e280721596221ef38cc44981872f6a43f270d58422f8498a08f09d5f962";
+        "506e74354da8ce9033a15fbd511f2038854af62a4edd0b9bda3fa14f82854d82";
     private const string ReviewedBackendTestGroupVerifierTestsFingerprint =
-        "368376be22ed9889b6680dcf6ee1db67477256724fc8fb7a5e5f66144b789548";
+        "6ef52639c5bbd74aaf8e499ef0df203cd530831ebbfcce998170e334e8be29ab";
     private const string ReviewedContinuousIntegrationWorkflowFingerprint =
         "d997575b12f25c7145c65226df7c03b9a25faadf7d6532b4ee0b32d48cbb6fee";
     // Re-fingerprinted for the ORG master edit: the seeder's three existing IgnoreQueryFilters projections also read
