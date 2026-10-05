@@ -1,3 +1,6 @@
+using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
 
@@ -42,12 +45,37 @@ public sealed record TrialBalanceCurrencyTotalV1(
     string Credit,
     bool IsBalanced);
 
+/// <summary>
+/// Owner-issued evidence for exactly the aggregate returned in this response. SourceVersion is a
+/// canonical content hash, not an accounting date, maximum row value, client clock or ordinal.
+/// ServerAsOfUtc records when the Accounting server completed the read; it is not the version.
+/// </summary>
+public sealed record TrialBalanceReadReceiptV1(
+    string SourceId,
+    string SourceVersion,
+    Guid CompanyId,
+    string ActorId,
+    DateTimeOffset ServerAsOfUtc,
+    string Unit,
+    string FactPlan,
+    string Completeness,
+    IReadOnlyList<Guid> CurrencyIds);
+
+public static class TrialBalanceReadReceiptValuesV1
+{
+    public const string SourceId = "accounting.trial-balance.v1";
+    public const string CurrencyAmount = "CurrencyAmount";
+    public const string Fact = "Fact";
+    public const string Complete = "Complete";
+}
+
 public sealed record TrialBalanceReportV1(
     DateOnly FromAccountingDate,
     DateOnly ThroughAccountingDate,
     Guid? CurrencyId,
     IReadOnlyList<TrialBalanceLineV1> Lines,
-    IReadOnlyList<TrialBalanceCurrencyTotalV1> CurrencyTotals);
+    IReadOnlyList<TrialBalanceCurrencyTotalV1> CurrencyTotals,
+    TrialBalanceReadReceiptV1 Receipt);
 
 /// <summary>
 /// Mizan read service. It reuses the existing journal-read authority because the report discloses
@@ -127,9 +155,46 @@ public sealed class AccountingTrialBalanceServiceV1(
         return new AccountingApiResult<TrialBalanceReportV1>(
             AccountingApiStatus.Ok,
             new TrialBalanceReportV1(request.FromAccountingDate, request.ThroughAccountingDate,
-                request.CurrencyId, lines, totals),
+                request.CurrencyId, lines, totals, Receipt(companyId, actorId, request, ordered)),
             false,
             null);
+    }
+
+    private static TrialBalanceReadReceiptV1 Receipt(
+        Guid companyId,
+        string actorId,
+        TrialBalanceRequestV1 request,
+        IReadOnlyList<TrialBalanceReadRowV1> orderedRows)
+    {
+        var canonical = new StringBuilder()
+            .Append(TrialBalanceReadReceiptValuesV1.SourceId).Append('\n')
+            .Append(companyId.ToString("D")).Append('\n')
+            .Append(request.FromAccountingDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)).Append('\n')
+            .Append(request.ThroughAccountingDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)).Append('\n')
+            .Append(request.CurrencyId?.ToString("D") ?? "*").Append('\n')
+            .Append(orderedRows.Count.ToString(CultureInfo.InvariantCulture)).Append('\n');
+
+        foreach (var row in orderedRows)
+        {
+            canonical.Append(row.AccountId.ToString("D")).Append('|')
+                .Append(row.CurrencyId.ToString("D")).Append('|')
+                .Append(Text(row.Debit)).Append('|')
+                .Append(Text(row.Credit)).Append('\n');
+        }
+
+        var sourceVersion = "sha256:"
+                            + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical.ToString())));
+        var currencyIds = orderedRows.Select(row => row.CurrencyId).Distinct().Order().ToArray();
+        return new TrialBalanceReadReceiptV1(
+            TrialBalanceReadReceiptValuesV1.SourceId,
+            sourceVersion,
+            companyId,
+            actorId,
+            DateTimeOffset.UtcNow,
+            TrialBalanceReadReceiptValuesV1.CurrencyAmount,
+            TrialBalanceReadReceiptValuesV1.Fact,
+            TrialBalanceReadReceiptValuesV1.Complete,
+            currencyIds);
     }
 
     private async Task<bool> FenceAsync(Guid companyId, string actorId, CancellationToken cancellationToken)

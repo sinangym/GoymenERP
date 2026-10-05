@@ -37,6 +37,40 @@ public sealed class TrialBalanceV1Tests
         Assert.All(report.CurrencyTotals, total => Assert.True(total.IsBalanced));
         Assert.Equal([(CurrencyA, "225", "225"), (CurrencyB, "50", "50")],
             report.CurrencyTotals.Select(total => (total.CurrencyId, total.Debit, total.Credit)));
+        Assert.Equal(TrialBalanceReadReceiptValuesV1.SourceId, report.Receipt.SourceId);
+        Assert.Matches("^sha256:[0-9A-F]{64}$", report.Receipt.SourceVersion);
+        Assert.Equal(Company, report.Receipt.CompanyId);
+        Assert.Equal(Actor, report.Receipt.ActorId);
+        Assert.NotEqual(default, report.Receipt.ServerAsOfUtc);
+        Assert.Equal(TrialBalanceReadReceiptValuesV1.CurrencyAmount, report.Receipt.Unit);
+        Assert.Equal(TrialBalanceReadReceiptValuesV1.Fact, report.Receipt.FactPlan);
+        Assert.Equal(TrialBalanceReadReceiptValuesV1.Complete, report.Receipt.Completeness);
+        Assert.Equal(new[] { CurrencyA, CurrencyB }, report.Receipt.CurrencyIds);
+    }
+
+    [Fact]
+    public async Task Receipt_version_is_stable_for_the_same_scope_and_content_and_changes_with_either()
+    {
+        var rows = new TrialBalanceReadRowV1[]
+        {
+            new(AccountA, CurrencyA, 125m, 100m),
+            new(AccountB, CurrencyA, 100m, 125m),
+        };
+
+        var first = Assert.IsType<TrialBalanceReportV1>((await Service(
+            new FakeStore(rows), new SequencedAuthority(Granted(), Granted())).ReadAsync(Request())).Resource);
+        var replay = Assert.IsType<TrialBalanceReportV1>((await Service(
+            new FakeStore(rows), new SequencedAuthority(Granted(), Granted())).ReadAsync(Request())).Resource);
+        var changedContent = Assert.IsType<TrialBalanceReportV1>((await Service(
+            new FakeStore([new(AccountA, CurrencyA, 126m, 100m), rows[1]]),
+            new SequencedAuthority(Granted(), Granted())).ReadAsync(Request())).Resource);
+        var changedScope = Assert.IsType<TrialBalanceReportV1>((await Service(
+            new FakeStore(rows), new SequencedAuthority(Granted(), Granted())).ReadAsync(
+            new TrialBalanceRequestV1(new DateOnly(2026, 9, 1), new DateOnly(2026, 9, 30), CurrencyA))).Resource);
+
+        Assert.Equal(first.Receipt.SourceVersion, replay.Receipt.SourceVersion);
+        Assert.NotEqual(first.Receipt.SourceVersion, changedContent.Receipt.SourceVersion);
+        Assert.NotEqual(first.Receipt.SourceVersion, changedScope.Receipt.SourceVersion);
     }
 
     [Fact]
