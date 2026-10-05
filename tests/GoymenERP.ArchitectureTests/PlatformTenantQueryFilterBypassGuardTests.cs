@@ -226,7 +226,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
             // purchasing
             ["tools/relational_inventory/purchasing.txt"] =
-                "cc672732f572babb9161403ca6eea3181b7996bc8346df1b1813edcaadd1d161",
+                "bf0fda4722c3cfdce8b119602e7096df05b3e29c19fc1cdcaffc447fce079e13",
 
             // sales
             // DEC-SAL-003: +3 SalesDeliveryScheduleSqlServerRelationalAcceptanceTests facts (16fa5110… -> 00189b7b…).
@@ -244,8 +244,15 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 "1b4e97363d97f585be14fb59c431ed6137237b9fdd45d907a58d57de50c5082a",
         };
     private const string ContinuousIntegrationWorkflowPath = ".github/workflows/ci.yml";
+    private const string BackendTestGroupVerifierPath = "tools/verify_backend_test_groups.py";
+    private const string BackendTestGroupVerifierTestsPath =
+        "tests/backend_test_group_verifier/test_verify_backend_test_groups.py";
+    private const string ReviewedBackendTestGroupVerifierFingerprint =
+        "bf9e9e280721596221ef38cc44981872f6a43f270d58422f8498a08f09d5f962";
+    private const string ReviewedBackendTestGroupVerifierTestsFingerprint =
+        "368376be22ed9889b6680dcf6ee1db67477256724fc8fb7a5e5f66144b789548";
     private const string ReviewedContinuousIntegrationWorkflowFingerprint =
-        "319de7496c0f332685304d4646f53503dec37856a6c4da0ef689ccceeb69d4ba";
+        "d997575b12f25c7145c65226df7c03b9a25faadf7d6532b4ee0b32d48cbb6fee";
     // Re-fingerprinted for the ORG master edit: the seeder's three existing IgnoreQueryFilters projections also read
     // the row id, so a seeded record a user renamed is recognised by its deterministic id and never re-added under
     // its old code. No new bypass, query or write path; the IgnoreQueryFilters reads are the same three.
@@ -2546,6 +2553,16 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             "\r\n",
             "\n",
             StringComparison.Ordinal);
+        Assert.Equal(
+            ReviewedBackendTestGroupVerifierFingerprint,
+            ComputeReviewedSourceFingerprint(File.ReadAllText(Path.Combine(
+                repositoryRoot,
+                BackendTestGroupVerifierPath.Replace('/', Path.DirectorySeparatorChar)))));
+        Assert.Equal(
+            ReviewedBackendTestGroupVerifierTestsFingerprint,
+            ComputeReviewedSourceFingerprint(File.ReadAllText(Path.Combine(
+                repositoryRoot,
+                BackendTestGroupVerifierTestsPath.Replace('/', Path.DirectorySeparatorChar)))));
         var verifierSource = File.ReadAllText(Path.Combine(
             repositoryRoot,
             SqlServerRcsiVerifierPath.Replace('/', Path.DirectorySeparatorChar)));
@@ -2753,10 +2770,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 integrationProjectSource,
                 relationalAcceptanceSource,
                 normalizedWorkflowSource.Replace(
-                    "      - name: Test",
-                    "      - name: Test\n        if: ${{ false }}",
+                    "      - name: Run exact backend test group",
+                    "      - name: Run exact backend test group\n        if: ${{ false }}",
                     StringComparison.Ordinal)),
-            error => error.Contains("backend solution test step", StringComparison.Ordinal));
+            error => error.Contains("backend test group step", StringComparison.Ordinal));
 
         Assert.Contains(
             ValidateSqlServerRcsiPublishAndDiscoveryContracts(
@@ -6255,31 +6272,35 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         }
 
         var normalizedWorkflow = workflowSource.Replace("\r\n", "\n", StringComparison.Ordinal);
-        var backendJobStart = normalizedWorkflow.IndexOf("\n  backend:\n", StringComparison.Ordinal);
-        var backendJobEnd = backendJobStart < 0
-            ? -1
-            : normalizedWorkflow.IndexOf("\n  frontend:\n", backendJobStart, StringComparison.Ordinal);
-        var backendJob = backendJobStart >= 0 && backendJobEnd > backendJobStart
-            ? normalizedWorkflow[backendJobStart..backendJobEnd]
+        var backendBuildStart = normalizedWorkflow.IndexOf("\n  backend-build:\n", StringComparison.Ordinal);
+        var backendWorkerStart = normalizedWorkflow.IndexOf("\n  backend-test-group:\n", StringComparison.Ordinal);
+        var backendAggregateStart = normalizedWorkflow.IndexOf("\n  backend:\n", StringComparison.Ordinal);
+        var frontendStart = normalizedWorkflow.IndexOf("\n  frontend:\n", StringComparison.Ordinal);
+        var backendBuildJob = backendBuildStart >= 0 && backendWorkerStart > backendBuildStart
+            ? normalizedWorkflow[backendBuildStart..backendWorkerStart]
             : string.Empty;
-        var backendTestStepStart = backendJob.IndexOf(
-            "\n      - name: Test\n",
+        var backendWorkerJob = backendWorkerStart >= 0 && backendAggregateStart > backendWorkerStart
+            ? normalizedWorkflow[backendWorkerStart..backendAggregateStart]
+            : string.Empty;
+        var backendAggregateJob = backendAggregateStart >= 0 && frontendStart > backendAggregateStart
+            ? normalizedWorkflow[backendAggregateStart..frontendStart]
+            : string.Empty;
+        var backendTestStepStart = backendWorkerJob.IndexOf(
+            "\n      - name: Run exact backend test group\n",
             StringComparison.Ordinal);
-        var backendTestStep = ExtractYamlStep(backendJob, backendTestStepStart);
+        var backendTestStep = ExtractYamlStep(backendWorkerJob, backendTestStepStart);
         var activeBackendTestLines = ReadActiveYamlLines(backendTestStep);
         var expectedBackendTestLines = new[]
         {
-            "- name: Test",
+            "- name: Run exact backend test group",
             "run: |",
             "python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py",
-            "mkdir -p artifacts/ci-test-results/backend",
-            "dotnet test GoymenERP.slnx \\",
-            "-noAutoResponse \\",
-            "--configuration Release \\",
-            "--no-build \\",
-            "--results-directory artifacts/ci-test-results/backend \\",
-            "--logger \"console;verbosity=normal\" \\",
-            "--logger \"trx;LogFilePrefix=backend\"",
+            "python3 -I -S -B tools/verify_backend_test_groups.py \\",
+            "--group \"${{ matrix.group }}\" \\",
+            "--results-directory \"artifacts/ci-test-results/backend-groups/${{ matrix.group }}\" \\",
+            "--proof-output \"artifacts/ci-backend-group-proofs/proof-${{ matrix.group }}.json\" \\",
+            "--source-head \"${{ github.event.pull_request.head.sha || github.sha }}\" \\",
+            "--tested-commit \"$(git rev-parse HEAD)\"",
         };
         if (backendTestStepStart < 0
             || !activeBackendTestLines.SequenceEqual(
@@ -6287,7 +6308,16 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 StringComparer.Ordinal))
         {
             errors.Add(
-                "RCSI CLI/policy tests require the exact unconditional backend solution test step.");
+                "RCSI CLI/policy tests require the exact unconditional backend test group step.");
+        }
+        if (!backendBuildJob.Contains("dotnet build GoymenERP.slnx -noAutoResponse", StringComparison.Ordinal)
+            || !backendBuildJob.Contains("Architecture dependency guard", StringComparison.Ordinal)
+            || !backendBuildJob.Contains("Check vulnerable dependencies", StringComparison.Ordinal)
+            || !backendAggregateJob.Contains("needs: [backend-build, backend-test-group]", StringComparison.Ordinal)
+            || !backendAggregateJob.Contains("if: ${{ always() }}", StringComparison.Ordinal)
+            || !backendAggregateJob.Contains("Verify complete backend build and test groups", StringComparison.Ordinal))
+        {
+            errors.Add("RCSI CLI/policy tests require the reviewed fail-closed backend build and aggregate jobs.");
         }
 
         var shardJobStart = normalizedWorkflow.IndexOf("\n  relational-shard:\n", StringComparison.Ordinal);
