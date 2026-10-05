@@ -309,6 +309,57 @@ class SafeTrxSummaryTests(unittest.TestCase):
                 for forbidden in ("DO_NOT_EXPORT", "credential", "CI_SAFE_DIAGNOSTIC"):
                     self.assertNotIn(forbidden, encoded)
 
+    def test_failed_stdout_emits_only_closed_manufacturing_phases(self) -> None:
+        codes = (
+            "mfg_customer_arrange",
+            "mfg_customer_issue",
+            "mfg_customer_return",
+            "mfg_customer_output",
+            "mfg_customer_replay",
+            "mfg_customer_assert",
+        )
+        for code in codes:
+            with self.subTest(code=code):
+                source = trx(
+                    '<UnitTestResult testId="fail" outcome="Failed"><Output><StdOut>'
+                    + "CI_SAFE_DIAGNOSTIC:" + code
+                    + "\ncredential=DO_NOT_EXPORT"
+                    + '</StdOut></Output></UnitTestResult>',
+                    definition("fail", "GoymenERP.Tests.SafeDiagnostic", "MfgStdOut"),
+                )
+
+                summary, encoded = self._summary(source)
+
+                self.assertEqual(code, summary["failureGroups"][0]["diagnosticCode"])
+                for forbidden in ("DO_NOT_EXPORT", "credential", "CI_SAFE_DIAGNOSTIC"):
+                    self.assertNotIn(forbidden, encoded)
+
+    def test_manufacturing_stdout_markers_remain_closed_on_unsafe_paths(self) -> None:
+        cases = (
+            '<UnitTestResult testId="fail" outcome="Failed"><Output><Wrapper><StdOut>'
+            'CI_SAFE_DIAGNOSTIC:mfg_customer_arrange'
+            '</StdOut></Wrapper></Output></UnitTestResult>',
+            '<UnitTestResult testId="fail" outcome="Failed"><Output><StdOut>'
+            'CI_SAFE_DIAGNOSTIC:mfg_customer_issue\n'
+            'CI_SAFE_DIAGNOSTIC:mfg_customer_issue'
+            '</StdOut></Output></UnitTestResult>',
+            '<UnitTestResult testId="fail" outcome="Failed"><Output><StdOut>'
+            'CI_SAFE_DIAGNOSTIC:mfg_customer_<Wrapper>return</Wrapper>'
+            '</StdOut></Output></UnitTestResult>',
+            '<UnitTestResult testId="fail" outcome="Failed"><Output><StdOut>'
+            'CI_SAFE_DIAGNOSTIC:mfg_customer_unknown'
+            '</StdOut></Output></UnitTestResult>',
+        )
+        for index, result in enumerate(cases):
+            with self.subTest(index=index):
+                summary, encoded = self._summary(trx(
+                    result,
+                    definition("fail", "GoymenERP.Tests.SafeDiagnostic", "ClosedMfgStdOut"),
+                ))
+
+                self.assertNotIn("diagnosticCode", summary["failureGroups"][0])
+                self.assertNotIn("CI_SAFE_DIAGNOSTIC", encoded)
+
     def test_new_finance_stdout_markers_remain_closed_on_unsafe_paths(self) -> None:
         cases = (
             '<UnitTestResult testId="fail" outcome="Failed"><Output><Wrapper><StdOut>'
