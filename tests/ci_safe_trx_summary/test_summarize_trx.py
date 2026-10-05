@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 import json
 from pathlib import Path
+import re
 import tempfile
 import unittest
 from unittest import mock
@@ -559,21 +560,257 @@ class SafeTrxSummaryTests(unittest.TestCase):
         workflow = (REPOSITORY_ROOT / ".github" / "workflows" / "ci.yml").read_text(
             encoding="utf-8"
         )
-        self.assertEqual(2, workflow.count("tools/ci/summarize_trx.py"))
-        self.assertEqual(2, workflow.count("actions/upload-artifact@v7"))
-        self.assertIn("artifacts/ci-safe-test-summary/backend.json", workflow)
-        self.assertIn("artifacts/ci-safe-test-summary/relational.json", workflow)
-        self.assertEqual(2, workflow.count("--source-head"))
-        self.assertEqual(2, workflow.count("--tested-commit \"$(git rev-parse HEAD)\""))
-        self.assertIn(
-            "--trx-output artifacts/ci-test-results/relational/broad.trx", workflow
+        self.assert_ci_workflow_summary_contract(workflow)
+
+    def assert_ci_workflow_summary_contract(self, workflow: str) -> None:
+        head_ref = "${{ github.event.pull_request.head.sha || github.sha }}"
+        shard_ref = "${{ matrix.shard }}"
+        needs_shard = "${{ needs.relational-shard.result }}"
+        needs_rcsi = "${{ needs.relational-rcsi.result }}"
+        job_markers = list(re.finditer(r"(?m)^jobs:\n", workflow))
+        self.assertEqual(len(job_markers), 1)
+        jobs_source = workflow[job_markers[0].end():]
+        jobs = {
+            match.group(1): match.group(2)
+            for match in re.finditer(
+                r"(?ms)^  ([A-Za-z0-9_-]+):\n(.*?)(?=^  [A-Za-z0-9_-]+:\n|\Z)",
+                jobs_source,
+            )
+        }
+        self.assertEqual(
+            set(jobs),
+            {
+                "backend",
+                "frontend",
+                "relational-shard",
+                "relational-rcsi",
+                "relational",
+                "contract-drift",
+                "containers",
+            },
+        )
+
+        summaries = {
+            "backend": (
+                "Produce secret-free backend test summary",
+                "Upload secret-free backend test summary",
+                "artifacts/ci-test-results/backend",
+                "artifacts/ci-safe-test-summary/backend.json",
+                "artifacts/ci-safe-test-summary/backend.json",
+                "ci-test-summary-backend-" + head_ref,
+                "artifacts/ci-test-results/backend/**/*.trx",
+                "test-suite",
+            ),
+            "relational-shard": (
+                "Produce secret-free relational shard summary",
+                "Upload secret-free relational shard summary",
+                "artifacts/ci-test-results/relational",
+                f'"artifacts/ci-safe-test-summary/shard-{shard_ref}.json"',
+                f"artifacts/ci-safe-test-summary/shard-{shard_ref}.json",
+                f"ci-test-summary-relational-shard-{shard_ref}-{head_ref}",
+                "artifacts/ci-test-results/relational/*.trx",
+                "sql-acceptance",
+            ),
+            "relational-rcsi": (
+                "Produce secret-free RCSI test summary",
+                "Upload secret-free RCSI test summary",
+                "artifacts/ci-test-results/relational",
+                "artifacts/ci-safe-test-summary/relational.json",
+                "artifacts/ci-safe-test-summary/relational.json",
+                "ci-test-summary-relational-rcsi-" + head_ref,
+                "artifacts/ci-test-results/relational/*.trx",
+                "sql-acceptance",
+            ),
+        }
+        for job_name, (
+            producer_name,
+            upload_name,
+            trx_directory,
+            output_argument,
+            upload_path,
+            artifact_name,
+            trx_pattern,
+            phase,
+        ) in summaries.items():
+            try:
+                body = jobs[job_name]
+                self.assertEqual(body.count("tools/ci/summarize_trx.py"), 1)
+                self.assertEqual(
+                    self._workflow_step_lines(body, producer_name),
+                    [
+                        f"if: always() && hashFiles('{trx_pattern}') != ''",
+                        "run: |",
+                        "python3 -I -S -B tools/ci/summarize_trx.py \\",
+                        f"--trx-directory {trx_directory} \\",
+                        f"--output {output_argument} \\",
+                        f'--source-head "{head_ref}" \\',
+                        '--tested-commit "$(git rev-parse HEAD)" \\',
+                        f"--job {job_name} \\",
+                        f"--phase {phase}",
+                    ],
+                )
+                upload_glob = (
+                    "artifacts/ci-safe-test-summary/shard-*.json"
+                    if job_name == "relational-shard"
+                    else upload_path
+                )
+                self.assertEqual(
+                    self._workflow_step_lines(body, upload_name),
+                    [
+                        f"if: always() && hashFiles('{upload_glob}') != ''",
+                        "uses: actions/upload-artifact@v7",
+                        "with:",
+                        f"name: {artifact_name}",
+                        f"path: {upload_path}",
+                        "if-no-files-found: error",
+                        "retention-days: 7",
+                    ],
+                )
+                self.assertEqual(
+                    body.count("actions/upload-artifact@v7"),
+                    2 if job_name == "relational-shard" else 1,
+                )
+            except AssertionError as error:
+                raise AssertionError(f"{job_name}: {error}") from error
+
+        shard = jobs["relational-shard"]
+        self.assertEqual(
+            self._workflow_step_lines(shard, "Upload exact SQL shard proof"),
+            [
+                "uses: actions/upload-artifact@v7",
+                "with:",
+                f"name: ci-relational-shard-proof-{shard_ref}",
+                f"path: artifacts/ci-relational-proofs/proof-{shard_ref}.json",
+                "if-no-files-found: error",
+                "retention-days: 7",
+            ],
         )
         self.assertIn(
-            "--trx-output artifacts/ci-test-results/relational/rcsi.trx", workflow
+            f'--trx-output "artifacts/ci-test-results/relational/broad-{shard_ref}.trx" \\',
+            self._workflow_step_lines(shard, "Run exact SQL Server relational shard"),
         )
-        self.assertNotIn("path: artifacts/ci-test-results", workflow)
+        self.assertIn(
+            "--trx-output artifacts/ci-test-results/relational/rcsi.trx",
+            self._workflow_step_lines(
+                jobs["relational-rcsi"],
+                "Run exact RCSI relational acceptance verifier",
+            ),
+        )
+        self.assertNotIn(
+            "--trx-output artifacts/ci-test-results/relational/broad.trx",
+            workflow,
+        )
+
+        aggregate = jobs["relational"]
+        self.assertEqual(
+            re.findall(r"^      - name: (.+)$", aggregate, re.M),
+            [
+                "Verify relational shard proof parser",
+                "Download exact SQL shard proofs",
+                "Verify complete SQL Server relational acceptance",
+            ],
+        )
+        self.assertEqual(
+            self._workflow_step_lines(aggregate, "Download exact SQL shard proofs"),
+            [
+                "uses: actions/download-artifact@v8",
+                "with:",
+                "pattern: ci-relational-shard-proof-*",
+                "path: artifacts/ci-relational-proofs",
+            ],
+        )
+        self.assertEqual(
+            self._workflow_step_lines(
+                aggregate, "Verify complete SQL Server relational acceptance"
+            ),
+            [
+                "run: |",
+                "python3 -I -S -B tools/verify_rcsi_relational_acceptance.py \\",
+                "--aggregate \\",
+                "--proof-directory artifacts/ci-relational-proofs \\",
+                f'--source-head "{head_ref}" \\',
+                '--tested-commit "$(git rev-parse HEAD)" \\',
+                f'--worker-result "{needs_shard}" \\',
+                f'--rcsi-result "{needs_rcsi}"',
+            ],
+        )
+        for job_name, body in jobs.items():
+            if job_name not in summaries:
+                self.assertNotIn("tools/ci/summarize_trx.py", body)
+                self.assertNotIn("actions/upload-artifact@v7", body)
+        self.assertEqual(workflow.count("tools/ci/summarize_trx.py"), 3)
+        self.assertEqual(workflow.count("actions/upload-artifact@v7"), 4)
+        self.assertNotRegex(workflow, r"(?m)^\s*path:\s*[^\n]*ci-test-results")
+        self.assertNotRegex(workflow, r"(?m)^\s*path:\s*[^\n]*\.trx\b")
         self.assertIn("permissions:\n  contents: read", workflow)
         self.assertNotIn("continue-on-error", workflow)
+
+    def test_ci_workflow_rejects_unsafe_or_mismatched_uploads(self) -> None:
+        workflow = (REPOSITORY_ROOT / ".github" / "workflows" / "ci.yml").read_text(
+            encoding="utf-8"
+        )
+        mutations = (
+            ("missing head", '--source-head "', '--missing-source-head "'),
+            (
+                "mismatched summary upload",
+                "path: artifacts/ci-safe-test-summary/backend.json",
+                "path: artifacts/ci-safe-test-summary/relational.json",
+            ),
+            (
+                "raw TRX upload",
+                "path: artifacts/ci-safe-test-summary/backend.json",
+                "path: artifacts/ci-test-results/backend/**/*.trx",
+            ),
+            (
+                "directory upload",
+                "path: artifacts/ci-safe-test-summary/backend.json",
+                "path: artifacts/ci-safe-test-summary/",
+            ),
+            (
+                "proof passed as summary",
+                "path: artifacts/ci-safe-test-summary/shard-${{ matrix.shard }}.json",
+                "path: artifacts/ci-relational-proofs/proof-${{ matrix.shard }}.json",
+            ),
+            (
+                "wrong producer identity",
+                "--job relational-shard \\",
+                "--job relational \\",
+            ),
+        )
+        for label, original, replacement in mutations:
+            with self.subTest(mutant=label):
+                changed = workflow.replace(original, replacement, 1)
+                self.assertNotEqual(changed, workflow)
+                with self.assertRaises(AssertionError):
+                    self.assert_ci_workflow_summary_contract(changed)
+
+        extra_upload = (
+            "      - name: Unknown upload\n"
+            "        uses: actions/upload-artifact@v7\n"
+            "        with:\n"
+            "          path: artifacts/ci-safe-test-summary/\n\n"
+        )
+        changed = workflow.replace(
+            "  contract-drift:\n", extra_upload + "  contract-drift:\n", 1
+        )
+        self.assertNotEqual(changed, workflow)
+        with self.assertRaises(AssertionError):
+            self.assert_ci_workflow_summary_contract(changed)
+
+    def _workflow_step_lines(self, job: str, step_name: str) -> list[str]:
+        matches = list(
+            re.finditer(
+                rf"(?ms)^      - name: {re.escape(step_name)}\n"
+                r"(.*?)(?=^      - (?:name:|uses:|run:)|\Z)",
+                job,
+            )
+        )
+        self.assertEqual(len(matches), 1, f"Expected one workflow step: {step_name}")
+        return [
+            line.strip()
+            for line in matches[0].group(1).splitlines()
+            if line.strip() and not line.lstrip().startswith("#")
+        ]
 
     def _summary(self, source: str, limit: int = 50) -> tuple[dict[str, object], str]:
         with tempfile.TemporaryDirectory() as directory:
