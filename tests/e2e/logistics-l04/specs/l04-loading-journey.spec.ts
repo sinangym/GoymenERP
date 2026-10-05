@@ -1148,40 +1148,79 @@ test('L04-10 a delivered share returns to its original label once, by a differen
     const decisionPanel = page.locator('section[aria-label="Müşteri iadesi"]')
     await expect(decisionPanel).toContainText('Bekliyor')
     const approvePath = `/api/v1/logistics/customer-returns/${requested.return.customerReturnId}/approve`
+    let committedApproval: {
+      readonly status: number
+      readonly headers: Record<string, string>
+      readonly body: {
+        readonly return: {
+          readonly customerReturnId: string
+          readonly status: string
+          readonly version: string
+          readonly inventoryMovementId: string
+          readonly originalLabelId: string
+        }
+        readonly isReplay: boolean
+        readonly originalCorrelationId: string
+      }
+    } | null = null
+    await page.route(`**${approvePath}`, async (route) => {
+      if (route.request().method() !== 'POST' || committedApproval !== null) return route.fallback()
+      const response = await route.fetch()
+      committedApproval = {
+        status: response.status(),
+        headers: response.headers(),
+        body: await response.json(),
+      }
+      await route.abort('failed')
+    })
     const approveRequest = page.waitForRequest((request) => request.method() === 'POST'
       && new URL(request.url()).pathname === approvePath)
-    const approveAnswer = page.waitForResponse((response) => response.request().method() === 'POST'
-      && new URL(response.url()).pathname === approvePath)
     await decisionPanel.getByLabel('Karar notu').fill('SENTETIK farklı aktör kabulü')
     await decisionPanel.getByRole('button', { name: 'Onayla' }).click()
-    const [approvedRequest, approvedAnswer] = await Promise.all([approveRequest, approveAnswer])
-    expect(approvedAnswer.status()).toBe(200)
-    const approved = await approvedAnswer.json() as {
-      return: { customerReturnId: string; status: string; inventoryMovementId: string; originalLabelId: string }
-    }
+    const approvedRequest = await approveRequest
+    await expect(decisionPanel).toContainText('Sonuç belirsiz. Yeni işlem oluşturmayın; aynı işlem anahtarıyla yeniden deneyin.')
+    await expect(decisionPanel).toContainText('Bekliyor')
+    await expect(decisionPanel).not.toContainText('Onaylandı')
+    await expect(decisionPanel.getByRole('button', { name: 'Onayla' })).toBeDisabled()
+    await expect(decisionPanel.getByRole('button', { name: 'Reddet' })).toBeDisabled()
+    if (committedApproval === null) throw new Error('L04-10 requires the withheld real approve response')
+    expect(committedApproval.status).toBe(200)
+    expect(committedApproval.headers['idempotency-replayed']).toBeUndefined()
+    const approved = committedApproval.body
+    expect(approved.isReplay).toBe(false)
+    expect(approved.originalCorrelationId).toBeTruthy()
     expect(approved.return).toMatchObject({
-      customerReturnId: requested.return.customerReturnId, status: 'Approved', originalLabelId: shipmentLabelId,
+      customerReturnId: requested.return.customerReturnId,
+      status: 'Approved',
+      version: '2',
+      originalLabelId: shipmentLabelId,
     })
-    await expect(decisionPanel).toContainText('İşlem kaydedildi.')
-    await expect(decisionPanel).toContainText('Onaylandı')
+    expect(approved.return.inventoryMovementId).toBeTruthy()
     expect(await movementCount(pool)).toBe(movementBaseline + 1)
 
     const replayKey = approvedRequest.headers()['idempotency-key']
     const replayBody = approvedRequest.postData()
     expect(replayKey).toBeTruthy()
     expect(replayBody).toBeTruthy()
-    const replay = await page.request.post(`${env.apiBaseUrl}${approvePath}`, {
-      headers: {
-        [DEVELOPMENT_USER_HEADER]: loaderActor,
-        'X-Company-Id': companyId,
-        'Idempotency-Key': replayKey as string,
-        'Content-Type': 'application/json',
-      },
-      data: replayBody as string,
-    })
+    const replayAnswer = page.waitForResponse((response) => response.request().method() === 'POST'
+      && new URL(response.url()).pathname === approvePath)
+    await decisionPanel.getByRole('button', { name: 'Aynı işlemi yeniden dene' }).click()
+    const replay = await replayAnswer
     expect(replay.status()).toBe(200)
     expect(replay.headers()['idempotency-replayed']).toBe('true')
-    expect(await replay.json()).toEqual(expect.objectContaining({ isReplay: true, return: approved.return }))
+    expect(replay.headers()['idempotency-original-correlation-id']).toBe(approved.originalCorrelationId)
+    expect(replay.request().headers()['x-development-user']).toBe(loaderActor)
+    expect(replay.request().headers()['x-company-id']).toBe(companyId)
+    expect(replay.request().headers()['idempotency-key']).toBe(replayKey)
+    expect(replay.request().postData()).toBe(replayBody)
+    const replayed = await replay.json() as typeof approved
+    expect(replayed).toEqual({
+      isReplay: true,
+      originalCorrelationId: approved.originalCorrelationId,
+      return: approved.return,
+    })
+    await expect(decisionPanel).toContainText('İşlem kaydedildi.')
+    await expect(decisionPanel).toContainText('Onaylandı')
     expect(await movementCount(pool)).toBe(movementBaseline + 1)
 
     const freshApproved = await page.request.get(
@@ -1189,10 +1228,17 @@ test('L04-10 a delivered share returns to its original label once, by a differen
       { headers: { [DEVELOPMENT_USER_HEADER]: loaderActor, 'X-Company-Id': companyId } },
     )
     expect(freshApproved.status()).toBe(200)
-    expect(await freshApproved.json()).toMatchObject({ status: 'Approved', originalLabelId: shipmentLabelId })
-    await page.reload()
+    expect(await freshApproved.json()).toMatchObject({
+      customerReturnId: approved.return.customerReturnId,
+      status: 'Approved',
+      version: approved.return.version,
+      inventoryMovementId: approved.return.inventoryMovementId,
+      originalLabelId: shipmentLabelId,
+    })
+    await page.goto('/logistics')
     await openDetail(page, createdId)
     await expect(page.locator('section[aria-label="Müşteri iadesi"]')).toContainText('Onaylandı')
+    expect(await movementCount(pool)).toBe(movementBaseline + 1)
 
     const rejectedReturnId = crypto.randomUUID()
     const rejectRequest = await page.request.post(`${env.apiBaseUrl}${requestPath}`, {
