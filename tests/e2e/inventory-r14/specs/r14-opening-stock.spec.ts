@@ -110,9 +110,21 @@ test('R14 records one real opening count, classifies its label, reopens and repl
     await expect(labelLink).toHaveAttribute('href', `/stok/etiket/${actualLabelId}`)
     const labelAnswer = page.waitForResponse((response) => response.request().method() === 'GET'
       && new URL(response.url()).pathname === labelPath)
+    const documentsAnswer = page.waitForResponse((response) => {
+      const url = new URL(response.url())
+      return response.request().method() === 'GET' && url.pathname === DOCUMENTS
+        && url.searchParams.get('ownerKind') === DOCUMENT_OWNER_KIND
+        && url.searchParams.get('ownerId') === actualLabelId
+    })
     await labelLink.click()
-    const labelResponse = await labelAnswer
+    const [labelResponse, documentsResponse] = await Promise.all([labelAnswer, documentsAnswer])
     expect(labelResponse.status()).toBe(200)
+    expect(documentsResponse.status()).toBe(200)
+    const initialDocuments = await documentsResponse.json() as {
+      readonly items: readonly unknown[]; readonly canUpload: boolean
+    }
+    expect(initialDocuments.items).toEqual([])
+    expect(initialDocuments.canUpload).toBe(true)
     const labelDetail = await labelResponse.json() as {
       readonly labelVersion: string
       readonly identity: {
@@ -188,7 +200,9 @@ test('R14 records one real opening count, classifies its label, reopens and repl
     // summary above is an Inventory fact; this panel is the shared append-only Documents vault, bound by owner kind/id.
     const documentsPanel = page.locator('section[data-section="documents"]')
     await expect(documentsPanel.getByRole('heading', { name: 'Belgeler', exact: true })).toBeVisible()
-    await documentsPanel.getByLabel('Dosya seç', { exact: true }).setInputFiles({
+    const documentInput = documentsPanel.getByLabel('Dosya seç', { exact: true })
+    await expect(documentInput).toBeVisible()
+    await documentInput.setInputFiles({
       name: DOCUMENT_FILE_NAME,
       mimeType: 'application/pdf',
       buffer: DOCUMENT_PDF,
