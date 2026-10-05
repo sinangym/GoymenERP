@@ -53,7 +53,8 @@ public sealed partial class SalesDraftService(
     ISalesPartyContactInformationPortV1? contactInformation = null,
     ISalesOrderDeliveryReadPortV1? deliveries = null,
     ISalesOrderAllocationReadPortV1? allocations = null,
-    ISalesOrderLoadingReadPortV1? loadings = null) : ISalesDraftService
+    ISalesOrderLoadingReadPortV1? loadings = null,
+    IProductQuantityPriceReferenceReaderV1? priceReferences = null) : ISalesDraftService
 {
     private const int DefaultPageSize = 50;
     private const int MaximumPageSize = 100;
@@ -209,7 +210,54 @@ public sealed partial class SalesDraftService(
                 originalCorrelationId: replay.OriginalCorrelationId);
         }
 
+        if (replay.Result is { } result)
+        {
+            return await ReplayedResultAsync(scope, result, replay.OriginalCorrelationId, cancellationToken);
+        }
+
         return Response(scope, replay.Draft!, true, replay.OriginalCorrelationId, await DiscloseAsync(scope, cancellationToken));
+    }
+
+    private async Task<SalesOrderDraftResponse> ReplayedResultAsync(Scope scope, SalesDraftReplayResult result,
+        string originalCorrelationId, CancellationToken cancellationToken)
+    {
+        var refreshed = await ReplayDisclosureAsync(scope, cancellationToken);
+        var disclosure = refreshed.Disclosure;
+        var detail = disclosure == SalesPriceDisclosure.Visible ? result.Visible : result.Withheld;
+        return new SalesOrderDraftResponse(
+            detail with { IsOwnDecisionRestricted = detail.IsOwnDraft && refreshed.Scope.IsSalesSupport },
+            true,
+            originalCorrelationId);
+    }
+
+    /// <summary>
+    /// A persisted floor result keeps its original business response, but neither the non-price order data nor the current
+    /// own-decision restriction crosses an identity/company drift. Persona is refreshed first; the price read is the final
+    /// authority await. A stable caller without that separate read still receives the deliberate Withheld representation.
+    /// </summary>
+    private async Task<(SalesPriceDisclosure Disclosure, Scope Scope)> ReplayDisclosureAsync(Scope scope,
+        CancellationToken cancellationToken)
+    {
+        var permission = bindings.PriceReadPermission;
+        if (string.IsNullOrWhiteSpace(permission) || !ErpPermissions.IsKnown(permission))
+        {
+            throw new SalesDraftServiceException(503, SalesDraftProblemCodesV1.PermissionUnregistered);
+        }
+
+        var currentRoleCodes = await activeRoleCodes.GetActiveRoleCodesAsync(scope.CompanyId, cancellationToken);
+        if (!Matches(scope.CompanyId, scope.ActorId))
+        {
+            throw new SalesDraftServiceException(403, "forbidden");
+        }
+
+        var read = await authority.RevalidatePermissionScopeAsync(permission, scope.CompanyId, cancellationToken);
+        if (!Matches(scope.CompanyId, scope.ActorId))
+        {
+            throw new SalesDraftServiceException(403, "forbidden");
+        }
+
+        return (read.IsGranted && read.IsCompanyWide ? SalesPriceDisclosure.Visible : SalesPriceDisclosure.Withheld,
+            scope with { IsSalesSupport = currentRoleCodes.Contains(ErpPersonaRoleCodes.SalesSupport) });
     }
 
     /// <summary>Raised inside the owner reads when another caller of the same key stored a draft first; carries that draft's replay.</summary>
@@ -405,8 +453,14 @@ public sealed partial class SalesDraftService(
             throw new SalesDraftServiceException(404, "not_found");
         }
 
+        // AT-018: a line naming a price list version gets the owner's price copied as its reference (read under the fence,
+        // before the store's single save); a line without one keeps K3's three fields only.
+        var resolved = await ResolvePriceReferencesAsync(scope, permission!, draftId, request, cancellationToken);
+        scope = resolved.Scope;
         var inputs = request.Lines
-            .Select(line => new LineCommercialInput(line.LineId, new CommercialDraftFields(line.UnitPrice, line.PriceUnitId, line.DiscountPercent)))
+            .Select(line => new LineCommercialInput(line.LineId, new CommercialDraftFields(line.UnitPrice, line.PriceUnitId, line.DiscountPercent,
+                resolved.References.TryGetValue(line.LineId, out var reference) ? reference : null, line.DiscountAmount, line.SurchargePercent,
+                line.SurchargeAmount)))
             .ToArray();
         var audit = new SalesDraftStateAudit("sales.order-draft.commercial-revised.v1", "ReviseCommercial",
             "Satış sipariş taslağının fiyat ve iskontosu revize edildi");
@@ -462,14 +516,141 @@ public sealed partial class SalesDraftService(
         return Response(scope, result.Draft, result.Outcome == SalesDraftWriteOutcome.Replayed, result.OriginalCorrelationId, await DiscloseAsync(scope, cancellationToken));
     }
 
+    /// <summary>
+    /// Reasoned maker-checker approval of every current below-floor line. This command changes no price; it binds the
+    /// approving actor and reason to the current immutable list/version/unit/net/floor snapshot and is invalidated by the
+    /// next commercial revision. Its dedicated permission confers neither price write nor order approval.
+    /// </summary>
+    public async Task<SalesOrderDraftResponse> ApprovePriceFloorExceptionsAsync(Guid draftId,
+        SalesDraftPriceFloorExceptionApprovalRequest request, SalesCommandMetadata metadata,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(metadata);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var permission = bindings.PriceFloorExceptionApprovePermission;
+        var scope = await RequireAsync(permission, cancellationToken);
+        var validationErrors = new List<SalesDraftFieldError>();
+        if (!long.TryParse(request.ExpectedVersion, NumberStyles.None, CultureInfo.InvariantCulture, out var expectedVersion)
+            || expectedVersion < 1)
+        {
+            validationErrors.Add(new("expectedVersion", "validation_failed"));
+        }
+        if (request.Lines is null || request.Lines.Any(static line => line is null))
+        {
+            validationErrors.Add(new("lines", "validation_failed"));
+        }
+        if (validationErrors.Count > 0)
+        {
+            throw new SalesDraftServiceException(400, "validation_failed", validationErrors);
+        }
+        var lines = request.Lines!;
+
+        const string commandName = SalesDraftCommands.ApprovePriceFloorExceptionsV1;
+        var requestHash = SalesDraftRequestHash.Compute(commandName, draftId, request);
+        var envelope = Envelope(scope, metadata, permission!);
+        var replay = await FindReplayAsync(scope, permission, envelope, requestHash, commandName, cancellationToken);
+        if (replay is not null)
+        {
+            return await ReplayedAsync(scope, replay, cancellationToken);
+        }
+        if (draftId == Guid.Empty)
+        {
+            throw new SalesDraftServiceException(404, "not_found");
+        }
+
+        var inputs = lines.Select(line => new LinePriceFloorExceptionApprovalInput(line!.LineId, line.Reason)).ToArray();
+        var audit = new SalesDraftStateAudit("sales.order-draft.price-floor-exceptions-approved.v1", "ApprovePriceFloorExceptions",
+            "Satış siparişi taban fiyat istisnaları farklı yetkili tarafından gerekçeli onaylandı");
+        SalesDraftStateResult? result;
+        try
+        {
+            result = await store.ReviseDraftCommercialAsync(envelope, requestHash, commandName, draftId,
+                (draft, now) =>
+                {
+                    draft.ApprovePriceFloorExceptions(expectedVersion, inputs, scope.ActorId, now);
+                    return null;
+                }, audit, async writeCancellationToken =>
+                {
+                    scope = await RequireStillAsync(scope, permission, writeCancellationToken);
+                }, cancellationToken,
+                draft => new SalesDraftReplayResult(
+                    Detail(draft, SalesPriceDisclosure.Visible, IsOwn(scope, draft), IsOwn(scope, draft) && scope.IsSalesSupport),
+                    Detail(draft, SalesPriceDisclosure.Withheld, IsOwn(scope, draft), IsOwn(scope, draft) && scope.IsSalesSupport)));
+        }
+        catch (SalesVersionConflictException exception)
+        {
+            try
+            {
+                throw await TerminalAsync(scope, envelope, requestHash, new SalesDraftTerminalRefusal(409,
+                    SalesDraftProblemCodesV1.VersionConflict, [new("expectedVersion", exception.Code)]), cancellationToken,
+                    commandName, draftId);
+            }
+            catch (RaceWon won)
+            {
+                return won.Response;
+            }
+        }
+        catch (SalesRuleException exception) when (exception.Code == SalesRuleCodes.StateConflict)
+        {
+            try
+            {
+                throw await TerminalAsync(scope, envelope, requestHash, new SalesDraftTerminalRefusal(409,
+                    SalesDraftProblemCodesV1.StateConflict, [new("approvalState", exception.Code)]), cancellationToken,
+                    commandName, draftId);
+            }
+            catch (RaceWon won)
+            {
+                return won.Response;
+            }
+        }
+        catch (SalesRuleException exception)
+        {
+            var index = exception.LineId is { } lineId
+                ? lines.ToList().FindIndex(line => line.LineId == lineId)
+                : -1;
+            var field = index < 0 ? "lines" : $"lines[{index}].reason";
+            throw new SalesDraftServiceException(422, "validation_failed", [new(field, exception.Code)]);
+        }
+        catch (ArgumentException)
+        {
+            throw new SalesDraftServiceException(400, "validation_failed");
+        }
+        catch (SalesDraftStoreException exception) when (exception.Code == SalesDraftStoreCodes.ConcurrentChange)
+        {
+            var won = await FindReplayAsync(scope, permission, envelope, requestHash, commandName, cancellationToken);
+            if (won is null) throw Store(exception);
+            return await ReplayedAsync(scope, won, cancellationToken);
+        }
+        catch (SalesDraftStoreException exception)
+        {
+            throw Store(exception);
+        }
+
+        if (result is null) throw new SalesDraftServiceException(404, "not_found");
+        return result.Outcome == SalesDraftWriteOutcome.Replayed && result.Result is { } replayed
+            ? await ReplayedResultAsync(scope, replayed, result.OriginalCorrelationId, cancellationToken)
+            : Response(scope, result.Draft, false, result.OriginalCorrelationId, await DiscloseAsync(scope, cancellationToken));
+    }
+
     /// <summary>The field a revision refusal is answered on: the line's index in the request and the field its code is about, else the whole `lines` member.</summary>
     private static string RevisionField(SalesDraftCommercialRevisionRequest request, SalesRuleException exception)
     {
         var member = exception.Code switch
         {
-            SalesRuleCodes.PriceScaleExceeded or SalesRuleCodes.PriceUnitPairing => "unitPrice",
+            SalesRuleCodes.PriceScaleExceeded or SalesRuleCodes.PriceUnitPairing or SalesRuleCodes.PriceValueUnrepresentable
+                or SalesRuleCodes.PriceCalculationOverflow => "unitPrice",
             SalesRuleCodes.PriceUnitUnsupported => "priceUnitId",
-            SalesRuleCodes.DiscountOutOfRange or SalesRuleCodes.DiscountWithoutPrice => "discountPercent",
+            SalesRuleCodes.DiscountOutOfRange or SalesRuleCodes.DiscountWithoutPrice
+                or SalesRuleCodes.DiscountPercentUnrepresentable => "discountPercent",
+            // AT-018 / AT-021: the reference and the visible adjustments.
+            SalesRuleCodes.PriceBelowFloor or SalesRuleCodes.AdjustmentWithoutPrice => "unitPrice",
+            SalesRuleCodes.PriceReferenceMismatch => "priceReference",
+            SalesRuleCodes.DiscountExceedsPrice or SalesRuleCodes.DiscountAmountUnrepresentable => "discountAmount",
+            SalesRuleCodes.SurchargeOutOfRange or SalesRuleCodes.SurchargePercentUnrepresentable => "surchargePercent",
+            SalesRuleCodes.SurchargeAmountUnrepresentable => "surchargeAmount",
+            SalesRuleCodes.AdjustmentKindConflict or SalesRuleCodes.AdjustmentScaleExceeded => null,
             _ => null,
         };
         if (member is null || exception.LineId is not { } lineId)
@@ -1302,6 +1483,11 @@ public sealed partial class SalesDraftService(
                 {
                     return new SalesDraftServiceException(recorded.Status, recorded.Code, recorded.Errors, isReplay: true,
                         originalCorrelationId: won.OriginalCorrelationId);
+                }
+
+                if (commandName == SalesDraftCommands.ApprovePriceFloorExceptionsV1 && won.Result is { } result)
+                {
+                    throw new RaceWon(await ReplayedResultAsync(scope, result, won.OriginalCorrelationId, cancellationToken));
                 }
 
                 throw new RaceWon(Response(scope, won.Draft!, true, won.OriginalCorrelationId, await DiscloseAsync(scope, cancellationToken)));

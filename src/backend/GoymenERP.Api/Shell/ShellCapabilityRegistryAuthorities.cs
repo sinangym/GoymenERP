@@ -83,7 +83,7 @@ internal static class ShellCapabilityRegistryAuthorities
     // carrying PublishedSales were re-derived by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:")
     // over main 27591d0d's providers with this change's Sales 1.4 (SalesV13 -> SalesV14).
     internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12AndPublishedSalesV15 =
-        "sha256:MpZhaKF0upX3SzVG-I91yOldI3KGpsTkl2Wm3sWUsRg";
+        "sha256:VArNst5wJHe2QQsJlYDxHu_XwfmtxfhRjtILzJaUmT8";
 
     // ... + Finance 1.0 (#325, FIN-UI-1a) beside the STAGED Sales screens. Superseded when Sales was published
     // (#328, below); no host serves it now. Computed by the ComputeRevision reproduction and,
@@ -117,7 +117,7 @@ internal static class ShellCapabilityRegistryAuthorities
     // every later live normal-host row were re-derived from the integrated provider tuple; disposable envelopes do not move.
     // F-03 allocation reads: Finance 1.5 adds the allocation list route and write child control under separate read/write permissions; all live normal-host Finance rows move together.
     internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV15AndPublishedFinanceV15 =
-        "sha256:PjAMFKatpUziKDzWBUrMNxvlAZeiiUQp6INyvjHni7g";
+        "sha256:kja5w-G_8FGXYihdOqd3nxpMwlfVC0Zz-bneWwySotg";
 
     // FIN-UI-1c: ... + Manufacturing 1.0 staged: the normal host (C+O+P+S(published)+F(published)+M(staged)).
     // Computed by the ComputeRevision reproduction and, independently, by ORG (DATA ONLY); pinned by test.
@@ -140,7 +140,7 @@ internal static class ShellCapabilityRegistryAuthorities
     // This row and every later normal-host row that carries Manufacturing were re-derived by
     // ShellCapabilityRegistry.ComputeCandidateRevision over main 0b6a68cd's providers (ManufacturingV13 -> V14).
     internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV15PublishedFinanceV15AndPublishedManufacturingV15 =
-        "sha256:Weyx2flmZX9C6qZfjnOysWyuvSz8BWZPBWHSM7DzcnM";
+        "sha256:VRCZL_Cb8DG0AEavVAvAfLb_gtncqhvAd2wQ14pQesc";
 
     // LOG-PUBLISH: ... + Logistics 1.1 PUBLISHED (the loading-instruction routes plus shipment/delivery actions,
     // master v3 §27.8): the normal host (C+O+P+S(published)+F(published)+M(published)+L(published)). Computed by
@@ -148,8 +148,13 @@ internal static class ShellCapabilityRegistryAuthorities
     // Re-measured for Manufacturing 1.2's two plan-detail controls; pinned by the integrated provider test.
     // DEC-SAL-003: re-derived the same way over main aaea20d0's providers with Sales 1.2 (SalesV11 -> SalesV12).
     // MFG-PLAN-EDIT: re-derived over main 0b6a68cd's providers with Manufacturing 1.4 (ManufacturingV13 -> V14).
+    internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV15PublishedFinanceV15PublishedManufacturingV15AndPublishedLogisticsV12 =
+        "sha256:15160RxIBP7VxpGM5tdEC7fa-pS_dr8-sNH1acQRPYY";
     internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV15PublishedFinanceV15PublishedManufacturingV15AndPublishedLogisticsV13 =
         "sha256:81Fyf0AWZg0ZgaXbMoaw77U_GTLsBrtoQOfUDH-jd8g";
+    // AT-021 + LOG-HOST: Sales 1.6's floor-approval child is present before Logistics 1.3 joins.
+    internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV16PublishedFinanceV15PublishedManufacturingV15AndPublishedLogisticsV13 =
+        "sha256:KqkE4-slYIAa4wPQoXpm9IHf_pD6Pw8DB99en5Mo4Jw";
 
     // PUR-HOST: ... + Purchasing 1.4, with the goods-receipt child control published beside the
     // request list/create/detail/submit and order list/create/detail/approve declarations. Every declaration remains
@@ -166,8 +171,13 @@ internal static class ShellCapabilityRegistryAuthorities
     // same rule from the merge tree's real providers; the Product 1.1 rows before Logistics are #466's unchanged.
     // DEC-SAL-003: re-derived the same way over main aaea20d0's providers with Sales 1.2 (SalesV11 -> SalesV12).
     // MFG-PLAN-EDIT: re-derived over main 0b6a68cd's providers with Manufacturing 1.4 (ManufacturingV13 -> V14).
+    internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV15PublishedFinanceV15PublishedManufacturingV15PublishedLogisticsV12AndPublishedPurchasingV14 =
+        "sha256:FH9nrN1OMJ-ni71NME3Txj98icm41IYT3NUbART40iU";
     internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV15PublishedFinanceV15PublishedManufacturingV15PublishedLogisticsV13AndPublishedPurchasingV14 =
         "sha256:Z_-hXm4Ro9t8EZ5elBZP78KnlWU2SU8NmlJkOfg0cBQ";
+    // AT-021 + PUR-HOST: the same Sales 1.6 tuple continues through Purchasing 1.4.
+    internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV16PublishedFinanceV15PublishedManufacturingV15PublishedLogisticsV13AndPublishedPurchasingV14 =
+        "sha256:NiXC57E2jpBjxHptffDfBKLSIH7oQi6nOJY7HskPe2A";
 
     // ACC-V0b: ... + Accounting 1.0 STAGED (the period list M-07 and its propose screen, the approve and
     // close controls of that list, the journal list M-04 and its detail, the posting queues M-01): the normal
@@ -213,8 +223,13 @@ internal static class ShellCapabilityRegistryAuthorities
     // ShellCapabilityRegistry.ComputeCandidateRevision over main c1837a44's providers with this change's Accounting 1.3.
     // DEC-SAL-003: re-derived the same way over main aaea20d0's providers with Sales 1.2 (SalesV11 -> SalesV12).
     // MFG-PLAN-EDIT: re-derived over main 0b6a68cd's providers with Manufacturing 1.4 (ManufacturingV13 -> V14).
+    internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV15PublishedFinanceV15PublishedManufacturingV15PublishedLogisticsV12PublishedPurchasingV14AndPublishedAccountingV13 =
+        "sha256:FXO3HWwrMUr6_FUEStu6vPlh8Jaid57r5SRDyBE6Poc";
     internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV15PublishedFinanceV15PublishedManufacturingV15PublishedLogisticsV13PublishedPurchasingV14AndPublishedAccountingV13 =
         "sha256:ogZHB2SN1LdJDjhsVrFBRZtrtVwNlhn9hXvHgWBwD4Y";
+    // AT-021 + ACC-V0b: the same Sales 1.6 tuple continues through Accounting 1.3.
+    internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV16PublishedFinanceV15PublishedManufacturingV15PublishedLogisticsV13PublishedPurchasingV14AndPublishedAccountingV13 =
+        "sha256:liRJER5kPU40Jc8pqyMNxL-DqVC-XWrmQOI47aghe0g";
 
     // R14: Inventory 1.0 publishes one opening-stock workspace after the existing normal tuple.
     // The capability reuses the accepted company-wide permission; publication grants nothing.
@@ -235,8 +250,13 @@ internal static class ShellCapabilityRegistryAuthorities
     // InventoryV14 -> V15).
     // Label classification: independently re-derived over 5caae87f's providers with Inventory 1.6 (one ST-01
     // child control; InventoryV15 -> V16). Both derivations first reproduced the reviewed V15 value exactly.
+    // AT-021: re-derived with the price-floor control in Sales 1.6 while retaining Inventory 1.6.
+    internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV16PublishedFinanceV15PublishedManufacturingV15PublishedLogisticsV12PublishedPurchasingV14PublishedAccountingV13AndPublishedInventoryV16 =
+        "sha256:NiwMBdtHa3SyUDQJAzI_ZDg8h3WIj7KeF_1piiD2ON8";
     internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV15PublishedFinanceV15PublishedManufacturingV15PublishedLogisticsV13PublishedPurchasingV14PublishedAccountingV13AndPublishedInventoryV16 =
         "sha256:k_hMHg7I4fVXYCl3RnpA1AG6iYVCmEp29nFswYuN9vw";
+    internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV16PublishedFinanceV15PublishedManufacturingV15PublishedLogisticsV13PublishedPurchasingV14PublishedAccountingV13AndPublishedInventoryV16 =
+        "sha256:odPyp9bzgEhmKfm1TE5y2A9YdrWrpabftJv85dQn7OY";
 
     // SY-01/SY-02 (read-only users-and-permissions view): Identity 1.0 joins the normal host with two screens on
     // identity.assignments.read. Only this new full-host row is added; every earlier row keeps its provider set and value.
@@ -244,8 +264,17 @@ internal static class ShellCapabilityRegistryAuthorities
     // Stock scrap: re-derived over main 4ea83fa4's providers with Inventory 1.5 (InventoryV14 -> V15).
     // Label classification: independently re-derived over 5caae87f's providers with Inventory 1.6, preserving
     // Identity 1.0 and every disposable authority unchanged.
+    // AT-021: re-derived with the price-floor control in Sales 1.6 while retaining Inventory 1.6 and Identity 1.0.
+    internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV16PublishedFinanceV15PublishedManufacturingV15PublishedLogisticsV12PublishedPurchasingV14PublishedAccountingV13PublishedInventoryV16AndPublishedIdentityV10 =
+        "sha256:PoQhy7tk9sQ6GernEV-AdBlBwNx1nIrBG0CDHJMYOYQ";
     internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV15PublishedFinanceV15PublishedManufacturingV15PublishedLogisticsV13PublishedPurchasingV14PublishedAccountingV13PublishedInventoryV16AndPublishedIdentityV10 =
         "sha256:pBfEusbEirf3XEsRBzPKYpcv35kt3TAFRZyMv9v2mY8";
+    internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV16PublishedFinanceV15PublishedManufacturingV15PublishedLogisticsV13PublishedPurchasingV14PublishedAccountingV13PublishedInventoryV16AndPublishedIdentityV10 =
+        "sha256:vDQf2otcUHTdIPiUgtAVmPDZo7LJUXMvIsrJeIZCGec";
+
+    // AT-018 / AT-021: final normal host adds PRODUCT-PRICE-LISTS 1.0 and Sales 1.6 beside Inventory 1.6.
+    internal const string FullNormalHostWithProductPriceListsAndSalesFloorApproval =
+        "sha256:imM8mxcQpGyHBoWxsAPbO1JSwIMEMJfxRMdx4qNoGb8";
 
     internal const string CounterpartyV15PublishedListCreateAndDetail =
         "sha256:UBHnivzhe_dp5f7vU7dP5n7HG-P8XYBGhxvD_OjMSnw";

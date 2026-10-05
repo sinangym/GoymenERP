@@ -5,7 +5,7 @@ using GoymenERP.Modules.Sales.Infrastructure.Shell;
 namespace GoymenERP.Sales.UnitTests;
 
 /// <summary>
-/// The published Sales shell provider: three screens plus the approve, commercial-revision, delivery-schedule and cancel controls, the frontend
+/// The published Sales shell provider: three screens plus the approve, commercial-revision, floor-exception, delivery-schedule and cancel controls, the frontend
 /// lane's ids and routes (<c>src/sales/capabilities.ts</c> read from the repository, so a drift is red
 /// here), the Sales permission names, and <c>ImplementationAvailable: true</c> (S03-c; the registry
 /// never publishes a staged declaration, so the browser suite s03 accepts the flip rather than
@@ -23,9 +23,10 @@ public sealed class SalesShellCapabilityProviderContractTests
         var declarations = provider.GetDeclarations();
 
         // DEC-SAL-003 (1.2): the delivery-schedule control joins the approve and commercial-revision controls;
-        // DEC-SAL-005 (1.3): cancel; DEC-SAL-002 (1.4): quantity revision; Q9 (1.5): customer acceptance.
-        Assert.Equal(("SALES", "1.5"), (provider.Owner, provider.ContractVersion));
-        Assert.Equal(9, declarations.Count);
+        // DEC-SAL-005 (1.3): cancel; DEC-SAL-002 (1.4): quantity revision; Q9 (1.5): customer acceptance;
+        // AT-021 (1.6): reasoned floor-exception approval remains a separate child control.
+        Assert.Equal(("SALES", "1.6"), (provider.Owner, provider.ContractVersion));
+        Assert.Equal(10, declarations.Count);
         foreach (var declaration in declarations)
         {
             Assert.Contains($"'{declaration.CapabilityId}'", source);
@@ -69,6 +70,16 @@ public sealed class SalesShellCapabilityProviderContractTests
             (price.RouteId, price.RoutePath, price.ScreenId, price.RoutePrecedence, price.ContextRequirement, price.ScopeRequirement));
         Assert.Equal(SalesShellCapabilityProvider.DetailCapabilityId, price.ParentCapabilityId);
         Assert.Equal([SalesPermissionManifestV1.DraftsRead, SalesPermissionManifestV1.OrdersPriceWrite], price.RequiredPermissions);
+
+        var floorApproval = Assert.Single(declarations,
+            item => item.CapabilityId == SalesShellCapabilityProvider.PriceFloorExceptionApproveCapabilityId);
+        Assert.Equal("sales.orders.price-floor-exception.approve", floorApproval.CapabilityId);
+        Assert.Equal((detail.RouteId, detail.RoutePath, detail.ScreenId, detail.RoutePrecedence, detail.ContextRequirement, detail.ScopeRequirement),
+            (floorApproval.RouteId, floorApproval.RoutePath, floorApproval.ScreenId, floorApproval.RoutePrecedence,
+                floorApproval.ContextRequirement, floorApproval.ScopeRequirement));
+        Assert.Equal(SalesShellCapabilityProvider.DetailCapabilityId, floorApproval.ParentCapabilityId);
+        Assert.Equal([SalesPermissionManifestV1.DraftsRead, SalesPermissionManifestV1.OrdersPriceFloorExceptionApprove],
+            floorApproval.RequiredPermissions);
 
         // DEC-SAL-003: the planner's delivery-date update is a control of the detail too — the read plus its own name.
         var schedule = Assert.Single(declarations, item => item.CapabilityId == SalesShellCapabilityProvider.DeliveryScheduleWriteCapabilityId);
@@ -117,6 +128,7 @@ public sealed class SalesShellCapabilityProviderContractTests
         // K3 P2 (Sinan 5748258299; D5 5749046401): the SEPARATE, NARROW price-read name — the draft read does not confer it,
         // and it confers nothing adjacent (no cost, margin, bank or Finance read).
         Assert.Equal("sales.orders.price.read", SalesPermissionManifestV1.OrdersPriceRead);
+        Assert.Equal("sales.orders.price-floor-exception.approve", SalesPermissionManifestV1.OrdersPriceFloorExceptionApprove);
         // DEC-SAL-003: the SEPARATE planning/shipping name; the create, approve and price names do not confer it.
         Assert.Equal("sales.orders.delivery-schedule.write", SalesPermissionManifestV1.OrdersDeliveryScheduleWrite);
         // DEC-SAL-005: the SEPARATE cancel name; no other Sales name confers it and it confers none of them.
@@ -124,12 +136,27 @@ public sealed class SalesShellCapabilityProviderContractTests
         // DEC-SAL-002: the SEPARATE quantity-revision name; no other Sales name confers it and it confers no approval.
         Assert.Equal("sales.orders.quantity.write", SalesPermissionManifestV1.OrdersQuantityWrite);
         Assert.Equal("sales.orders.customer-acceptance.record", SalesPermissionManifestV1.OrdersCustomerAcceptanceRecord);
-        Assert.Equal((10, 9), (SalesPermissionManifestV1.Version, SalesPermissionManifestV1.Names.Count));
+        Assert.Equal((10, 10), (SalesPermissionManifestV1.Version, SalesPermissionManifestV1.Names.Count));
+        var exactNames = new HashSet<string>(
+            [
+                SalesPermissionManifestV1.DraftsCreate,
+                SalesPermissionManifestV1.DraftsRead,
+                SalesPermissionManifestV1.OrdersApprove,
+                SalesPermissionManifestV1.OrdersCustomerAcceptanceRecord,
+                SalesPermissionManifestV1.OrdersPriceWrite,
+                SalesPermissionManifestV1.OrdersPriceRead,
+                SalesPermissionManifestV1.OrdersPriceFloorExceptionApprove,
+                SalesPermissionManifestV1.OrdersDeliveryScheduleWrite,
+                SalesPermissionManifestV1.OrdersCancel,
+                SalesPermissionManifestV1.OrdersQuantityWrite,
+            ],
+            StringComparer.Ordinal);
+        Assert.True(exactNames.SetEquals(SalesPermissionManifestV1.Names));
         Assert.Equal(new SalesDraftServiceBindings(),
             new SalesDraftServiceBindings(SalesPermissionManifestV1.DraftsCreate, SalesPermissionManifestV1.DraftsRead, SalesPermissionManifestV1.OrdersApprove,
                 SalesPermissionManifestV1.OrdersPriceWrite, SalesPermissionManifestV1.OrdersPriceRead, SalesPermissionManifestV1.OrdersDeliveryScheduleWrite,
                 SalesPermissionManifestV1.OrdersCancel, SalesPermissionManifestV1.OrdersQuantityWrite,
-                SalesPermissionManifestV1.OrdersCustomerAcceptanceRecord));
+                SalesPermissionManifestV1.OrdersCustomerAcceptanceRecord, SalesPermissionManifestV1.OrdersPriceFloorExceptionApprove));
     }
 
     private static string FindRepositoryRoot()

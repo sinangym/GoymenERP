@@ -22,6 +22,14 @@
  */
 
 import {
+  decodeDraftLinePricing,
+  decodeLinePriceReferences,
+  salesDraftLinePriceReferencesPath,
+  salesDraftLinePricingPath,
+  type DraftLinePricing,
+  type LinePriceReferences,
+} from './linePricing'
+import {
   CREATED_STATUS,
   REPLAY_HEADER,
   OWNER_REFERENCE_FIELDS,
@@ -40,6 +48,7 @@ import {
   decodeCancellationImpact,
   decodeProblem,
   salesDraftCommercialRevisionPath,
+  salesDraftPriceFloorExceptionApprovalPath,
   salesDraftDeliverySchedulePath,
   salesDraftDeliverySchedulesPath,
   salesDraftDeliveryProgressPath,
@@ -55,6 +64,7 @@ import {
   type DeliverySlice,
   type DraftCreateRequest,
   type DraftCommercialRevisionRequest,
+  type DraftPriceFloorExceptionApprovalRequest,
   type DraftQuantityRevisionRequest,
   type DraftDeliveryScheduleRequest,
   type DeliverySchedules,
@@ -183,6 +193,33 @@ export async function fetchDraftRevisions(
   // tied to its request and context namespace; never fabricate a response binding.
   const history = decodeDraftRevisions(raw.body)
   return history === null ? { type: 'malformed' } : { type: 'ok-single', data: history }
+}
+
+/** AT-018 / AT-021: every line's list-price reference, adjustments and the server's net (price read). */
+export async function fetchDraftLinePricing(
+  draftId: string,
+  companyId: string,
+  signal?: AbortSignal,
+): Promise<ViewOutcome<DraftLinePricing>> {
+  const raw = await request(salesDraftLinePricingPath(draftId), { headers: headers(companyId) }, signal)
+  if ('failure' in raw) return readFailure(raw.failure)
+  if (raw.status !== 200) return { type: 'http', status: raw.status, body: raw.body }
+  const pricing = decodeDraftLinePricing(raw.body)
+  return pricing === null ? { type: 'malformed' } : { type: 'ok-single', data: pricing }
+}
+
+/** AT-018: the Product owner's list prices for one line, in the draft's currency on its business date (price write). */
+export async function fetchLinePriceReferences(
+  draftId: string,
+  lineId: string,
+  companyId: string,
+  signal?: AbortSignal,
+): Promise<ViewOutcome<LinePriceReferences>> {
+  const raw = await request(salesDraftLinePriceReferencesPath(draftId, lineId), { headers: headers(companyId) }, signal)
+  if ('failure' in raw) return readFailure(raw.failure)
+  if (raw.status !== 200) return { type: 'http', status: raw.status, body: raw.body }
+  const references = decodeLinePriceReferences(raw.body, lineId)
+  return references === null ? { type: 'malformed' } : { type: 'ok-single', data: references }
 }
 
 /** DEC-SAL-003: the schedule history, read-only under the draft read; company filtering stays on the server. */
@@ -713,6 +750,36 @@ export async function sendDraftCommercialRevision(
   ) {
     return { type: 'malformed' }
   }
+  return { type: 'succeeded', data: mutation }
+}
+
+/** Reasoned maker-checker approval of the current below-floor snapshots; same keyed mutation envelope. */
+export async function sendDraftPriceFloorExceptionApproval(
+  payload: DraftPriceFloorExceptionApprovalRequest,
+  context: CommandContext,
+  signal?: AbortSignal,
+): Promise<OrderCommandOutcome<DraftMutation>> {
+  const raw = await request(
+    salesDraftPriceFloorExceptionApprovalPath(context.draftId),
+    {
+      method: 'POST',
+      headers: { ...headers(context.companyId), 'Content-Type': 'application/json', 'Idempotency-Key': context.idempotencyKey },
+      body: JSON.stringify(payload),
+    },
+    signal,
+  )
+  if ('failure' in raw) {
+    if (raw.failure === 'aborted') return { type: 'aborted' }
+    if (raw.failure === 'offline') return { type: 'offline' }
+    return { type: 'network-error' }
+  }
+  if (raw.status !== STATE_COMMAND_STATUS) {
+    if (raw.status >= 200 && raw.status < 300) return { type: 'malformed' }
+    return { type: 'http', status: raw.status, problem: decodeProblem(raw.body, raw.status) }
+  }
+  const mutation = decodeDraftMutation(raw.body)
+  if (mutation === null || mutation.isReplay !== raw.replayed || mutation.detail.draft.id !== context.draftId
+    || mutation.detail.draft.companyId !== context.companyId) return { type: 'malformed' }
   return { type: 'succeeded', data: mutation }
 }
 

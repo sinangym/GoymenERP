@@ -28,6 +28,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     private const string SalesDbContextAuditEventPath =
         "src/backend/Modules/Sales/"
         + "GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesDbContext.cs";
+    private const string ProductPriceListDbContextAuditEventPath =
+        "src/backend/Modules/Product/"
+        + "GoymenERP.Modules.Product.Infrastructure/PriceLists/ProductPriceListDbContext.cs";
     private const string LogisticsDbContextAuditEventPath =
         "src/backend/Modules/Logistics/"
         + "GoymenERP.Modules.Logistics.Infrastructure/Persistence/LogisticsDbContext.cs";
@@ -65,6 +68,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             [FinanceDbContextAuditEventPath] = "FinanceDbContext",
             [ManufacturingDbContextAuditEventPath] = "ManufacturingDbContext",
             [SalesDbContextAuditEventPath] = "SalesDbContext",
+            [ProductPriceListDbContextAuditEventPath] = "ProductPriceListDbContext",
             [LogisticsDbContextAuditEventPath] = "LogisticsDbContext",
             [PurchasingDbContextAuditEventPath] = "PurchasingDbContext",
             [DocumentsDbContextAuditEventPath] = "DocumentsDbContext",

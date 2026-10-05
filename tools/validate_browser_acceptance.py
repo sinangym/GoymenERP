@@ -23,6 +23,7 @@ import json
 import pathlib
 import re
 import sys
+import xml.etree.ElementTree as ET
 
 _C01_PATH = pathlib.Path(__file__).resolve().with_name("validate_c01_e2e_contract.py")
 _spec = importlib.util.spec_from_file_location("validate_c01_e2e_contract", _C01_PATH)
@@ -33,6 +34,36 @@ _spec.loader.exec_module(c01)
 
 ContractError = c01.ContractError
 require = c01.require
+
+_S04_SAFE_FAILURE_CASE = (
+    "S04-PL-03 below-floor pricing is saved pending and a different actor approves it once with a reason"
+)
+_SAFE_FAILURE_PROPERTY = "safe_failure_phase"
+_S04_SAFE_FAILURE_PHASES = frozenset(f"s04_pl03_p{index}" for index in range(1, 8))
+_UNSAFE_XML_DECLARATION = re.compile(br"<!\s*(?:DOCTYPE|ENTITY)\b", re.IGNORECASE)
+_BOUNDED_ASCII = re.compile(r"^[\x20-\x7e]{1,64}$")
+_MAX_JUNIT_BYTES = 2_000_000
+_MAX_JUNIT_ELEMENTS = 20_000
+_MAX_JUNIT_DEPTH = 16
+
+
+class _BoundedJUnitTreeBuilder(ET.TreeBuilder):
+    def __init__(self) -> None:
+        super().__init__()
+        self._elements = 0
+        self._depth = 0
+
+    def start(self, tag: str, attrs: dict[str, str]) -> ET.Element:
+        self._elements += 1
+        self._depth += 1
+        require(self._elements <= _MAX_JUNIT_ELEMENTS, "S04 JUnit XML has too many elements")
+        require(self._depth <= _MAX_JUNIT_DEPTH, "S04 JUnit XML exceeds the bounded depth")
+        return super().start(tag, attrs)
+
+    def end(self, tag: str) -> ET.Element:
+        element = super().end(tag)
+        self._depth -= 1
+        return element
 
 SUITES = ("smoke", "c03", "org03", "u02", "s03", "mfg", "fin01", "s04", "acc01", "l04", "pur01", "r14", "c02")
 # s03 writes since S03 (#327): V2A-02 attempts a POST (nothing is stored, but it is no read-only run).
@@ -295,6 +326,8 @@ SUITE_IDENTITY_PERMISSIONS = {
     "s04": ("sales.drafts.create", "sales.drafts.read", "sales.orders.approve",
             "counterparty.parties.read", "counterparty.parties.update.basic",
             "product.operational-selection.read", "sales.orders.price.read", "sales.orders.price.write",
+            "product.price-lists.read", "product.price-lists.write", "product.price-lists.publish",
+            "sales.orders.price-floor-exception.approve",
             "inventory.opening-stock.record", "inventory.labels.read", "inventory.balances.read",
             "inventory.physical-allocation.write", "sales.orders.delivery-schedule.write",
             "sales.orders.cancel", "sales.orders.quantity.write",
@@ -843,7 +876,96 @@ def upload_paths(root: str | pathlib.Path, suite: str) -> list[pathlib.Path]:
     return selected
 
 
-def validate_privacy(root: str | pathlib.Path, suite: str, forbidden_values: list[str] | tuple[str, ...] = ()) -> None:
+def _s04_safe_failure_phase(content: bytes) -> str | None:
+    """Extract only the bounded annotation; failure payloads remain opaque."""
+    require(len(content) <= _MAX_JUNIT_BYTES, "S04 JUnit XML exceeds the bounded input size")
+    declaration_view = content.replace(b"\x00", b"")
+    require(_UNSAFE_XML_DECLARATION.search(declaration_view) is None,
+            "S04 JUnit XML declarations are not allowed")
+    try:
+        parser = ET.XMLParser(target=_BoundedJUnitTreeBuilder())
+        root = ET.fromstring(content, parser=parser)
+    except ET.ParseError as error:
+        raise ContractError("S04 JUnit XML is malformed") from error
+
+    if root.tag == "testsuite":
+        suites = (root,)
+    elif root.tag == "testsuites":
+        suites = tuple(child for child in root if child.tag == "testsuite")
+    else:
+        require(_SAFE_FAILURE_PROPERTY.encode("ascii") not in content,
+                "safe failure phase marker is outside the JUnit suite structure")
+        return None
+
+    direct_cases = tuple(
+        child
+        for suite in suites
+        for child in suite
+        if child.tag == "testcase"
+    )
+    targets = tuple(
+        element
+        for element in root.iter("testcase")
+        if element.attrib.get("name") == _S04_SAFE_FAILURE_CASE
+    )
+    markers = tuple(
+        element
+        for element in root.iter("property")
+        if element.attrib.get("name") == _SAFE_FAILURE_PROPERTY
+    )
+
+    require(len(targets) <= 1, "S04 safe failure testcase is duplicated")
+    if not targets:
+        require(not markers, "safe failure phase marker is outside S04-PL-03")
+        return None
+
+    target = targets[0]
+    require(any(target is candidate for candidate in direct_cases),
+            "S04 safe failure testcase has the wrong XML depth")
+    require(len(markers) <= 1, "S04 safe failure phase marker is duplicated")
+    if not markers:
+        return None
+
+    properties = tuple(child for child in target if child.tag == "properties")
+    require(len(properties) == 1, "S04 safe failure properties has the wrong XML depth")
+    direct_markers = tuple(
+        child
+        for child in properties[0]
+        if child.tag == "property" and child.attrib.get("name") == _SAFE_FAILURE_PROPERTY
+    )
+    require(len(direct_markers) == 1 and direct_markers[0] is markers[0],
+            "S04 safe failure phase marker has the wrong XML depth")
+    marker = direct_markers[0]
+    require(set(marker.attrib) == {"name", "value"} and not list(marker)
+            and (marker.text is None or marker.text.strip() == ""),
+            "S04 safe failure phase marker must be a direct leaf value")
+    require(content.count(_SAFE_FAILURE_PROPERTY.encode("ascii")) == 1,
+            "S04 safe failure phase marker uses multiple channels")
+
+    value = marker.attrib["value"]
+    require(_BOUNDED_ASCII.fullmatch(value) is not None,
+            "S04 safe failure phase must be bounded ASCII")
+    require(value in _S04_SAFE_FAILURE_PHASES, "S04 safe failure phase is unknown")
+
+    direct_outcomes = tuple(child for child in target if child.tag in {"failure", "error"})
+    nested_outcomes = tuple(
+        child
+        for child in target.iter()
+        if child is not target and child.tag in {"failure", "error"}
+    )
+    require(len(nested_outcomes) == len(direct_outcomes),
+            "S04 failure outcome has the wrong XML depth")
+    require(len(direct_outcomes) <= 1, "S04 failure outcome uses multiple channels")
+    require(not direct_outcomes or not any(child.tag == "skipped" for child in target),
+            "S04 failure outcome uses multiple channels")
+    return value if direct_outcomes else None
+
+
+def validate_privacy(
+    root: str | pathlib.Path,
+    suite: str,
+    forbidden_values: list[str] | tuple[str, ...] = (),
+) -> str | None:
     """Every file that would be uploaded is free of C-01's forbidden patterns and of the run's secrets."""
     artifact_root = pathlib.Path(root).resolve()
     selected = upload_paths(artifact_root, suite)
@@ -859,6 +981,11 @@ def validate_privacy(root: str | pathlib.Path, suite: str, forbidden_values: lis
             require(pattern.search(content) is None, f"artifact privacy violation ({label}): {relative}")
         for index, needle in enumerate(needles):
             require(needle not in content, f"artifact privacy violation (runtime secret {index}): {relative}")
+    if suite == "s04":
+        junit = artifact_root / "browser-s04-junit.xml"
+        if junit in selected:
+            return _s04_safe_failure_phase(junit.read_bytes())
+    return None
 
 
 def parser() -> argparse.ArgumentParser:
@@ -889,7 +1016,9 @@ def main(argv: list[str] | None = None) -> int:
     arguments = parser().parse_args(argv)
     try:
         if arguments.command == "privacy":
-            validate_privacy(arguments.root, arguments.suite, arguments.forbidden_value)
+            safe_phase = validate_privacy(arguments.root, arguments.suite, arguments.forbidden_value)
+            if safe_phase is not None:
+                print(f"BROWSER_SAFE_PHASE={safe_phase}")
         elif arguments.command == "profile":
             selected = profile_of(arguments.suite)
             # GITHUB_OUTPUT lines for the workflow.
