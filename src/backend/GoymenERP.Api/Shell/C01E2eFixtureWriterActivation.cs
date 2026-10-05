@@ -1,3 +1,6 @@
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
 using GoymenERP.Api.ProductRuntime;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
@@ -94,12 +97,9 @@ internal static class C01E2eFixtureWriterActivation
         // posting path. The seed's host scope has no request user, so its amount check reads Settings as the fixture identity.
         services.AddAccountingPostedJournalFixtureStore(CreateAccountingFixtureSettings);
         // ACC01-10: one recorded Finance source plus one exact approved Accounting mirror/rule. Both
-        // exist only behind this complete gate; the normal host retains the empty production catalog.
+        // exist only behind this complete gate. The writer prepares and activates the binding through
+        // Accounting's durable catalog; neither this host nor the read host replaces its resolver.
         services.AddFinanceRecordedReceiptFixtureStore();
-        services.RemoveAll<IApprovedNormalJournalSourceBindingCatalogV1>();
-        services.AddSingleton<C01E2eApprovedNormalJournalSourceBindingCatalog>();
-        services.AddSingleton<IApprovedNormalJournalSourceBindingCatalogV1>(provider =>
-            provider.GetRequiredService<C01E2eApprovedNormalJournalSourceBindingCatalog>());
         services.AddScoped<C01E2eFinanceNormalJournalSourceFixtureWriter>();
         // pur01: one synthetic Draft Purchasing order. Approval and replay remain real API commands.
         services.AddPurchaseOrderFixtureStore();
@@ -195,151 +195,171 @@ internal static class C01E2eFixtureWriterActivation
     }
 }
 
-public sealed class C01E2eApprovedNormalJournalSourceBindingCatalog :
-    IApprovedNormalJournalSourceBindingCatalogV1
+public static class C01E2eApprovedNormalJournalSourceBindingCatalog
 {
-    private static readonly Guid ApprovedBy = Guid.Parse("b2100000-0000-4000-8000-00000000ac02");
+    internal static readonly Guid PackageId = Guid.Parse("b2100000-0000-4000-8000-00000000ac10");
+    internal static readonly Guid ApprovedBy = Guid.Parse("b2100000-0000-4000-8000-00000000ac02");
     private static readonly Guid DebitAccountId = Guid.Parse("b7000000-0000-4000-8000-000000000711");
     private static readonly Guid CreditAccountId = Guid.Parse("b7000000-0000-4000-8000-000000000712");
-    private static readonly DateTimeOffset ApprovedAt = new(2026, 9, 24, 12, 0, 0, TimeSpan.Zero);
-    private readonly object _gate = new();
-    private ApprovedNormalJournalSourceBindingV1? _binding;
+    internal static readonly DateTimeOffset ApprovedAt =
+        new(2026, 9, 24, 12, 0, 0, TimeSpan.Zero);
+    internal const string AccountPlanSourceVersion = "SENTETIK-ACC01-MIRROR-V1";
 
-    public C01E2eApprovedNormalJournalSourceBindingCatalog()
-    {
-    }
-
-    public C01E2eApprovedNormalJournalSourceBindingCatalog(FinanceRecordedReceiptFixtureOutput source) =>
-        Bind(source);
-
-    public void Bind(FinanceRecordedReceiptFixtureOutput source)
+    internal static ApprovedAccountingSourcePackagePreviewV1 CreatePreview(
+        FinanceRecordedReceiptFixtureOutput source,
+        IApprovedAccountingSourcePackageParserV1 parser)
     {
         ArgumentNullException.ThrowIfNull(source);
-        lock (_gate)
+        ArgumentNullException.ThrowIfNull(parser);
+        var accounts = Encoding.UTF8.GetBytes(string.Join("\n",
+        [
+            ApprovedAccountingSourcePackageTemplateV1.AccountsHeader,
+            $"{DebitAccountId:D},SENTETIK-100,Sentetik borc hesabi",
+            $"{CreditAccountId:D},SENTETIK-120,Sentetik alacak hesabi",
+            string.Empty,
+        ]));
+        var mappings = Encoding.UTF8.GetBytes(string.Join("\n",
+        [
+            ApprovedAccountingSourcePackageTemplateV1.MappingsHeader,
+            $"{source.SourceId:D},{NormalJournalSourceKindsV1.RecordedManualReceipt},{source.SourceVersion}," +
+            $"{source.OwnerProfileId},{source.OwnerProfileVersion},{source.CurrencyId:D},approved-normal-journal," +
+            $"SENTETIK-ACC01-RULE-V1,approved-debit,Debit,{DebitAccountId:D}",
+            $"{source.SourceId:D},{NormalJournalSourceKindsV1.RecordedManualReceipt},{source.SourceVersion}," +
+            $"{source.OwnerProfileId},{source.OwnerProfileVersion},{source.CurrencyId:D},approved-normal-journal," +
+            $"SENTETIK-ACC01-RULE-V1,approved-credit,Credit,{CreditAccountId:D}",
+            string.Empty,
+        ]));
+        var preview = parser.Preview(
+            new TrustedAccountingSourceApprovalContextV1(source.CompanyId, ApprovedBy, ApprovedAt),
+            new ApprovedAccountingSourcePackagePreviewRequestV1(AccountPlanSourceVersion, accounts, mappings));
+        if (!preview.IsValid)
         {
-            if (_binding is not null)
-            {
-                if (_binding.CompanyId == source.CompanyId && _binding.SourceId == source.SourceId
-                    && string.Equals(_binding.SourceVersion, source.SourceVersion, StringComparison.Ordinal))
-                {
-                    return;
-                }
-
-                throw new InvalidOperationException("The ACC01 fixture catalog cannot bind another source.");
-            }
-
-            _binding = CreateBinding(source);
+            throw new InvalidOperationException("The ACC01 durable source package is invalid.");
         }
+        return preview;
     }
 
-    internal static ApprovedNormalJournalSourceBindingV1 CreateBinding(
-        FinanceRecordedReceiptFixtureOutput source)
+    internal static void RequireExact(
+        ApprovedAccountingSourceCatalogRecordV1 record,
+        FinanceRecordedReceiptFixtureOutput source,
+        ApprovedAccountingSourcePackagePreviewV1 preview)
     {
-        var debit = new AccountRef(source.CompanyId, DebitAccountId);
-        var credit = new AccountRef(source.CompanyId, CreditAccountId);
-        var mirror = new AccountPlanMirrorV1(
-            source.CompanyId,
-            "SENTETIK-ACC01-MIRROR-V1",
-            new string('a', 64),
-            ApprovedBy,
-            ApprovedAt,
-            [
-                new AccountPlanMirrorRowV1(debit, "SENTETIK-100", "Sentetik borc hesabi"),
-                new AccountPlanMirrorRowV1(credit, "SENTETIK-120", "Sentetik alacak hesabi"),
-            ]);
-        var rule = new NormalJournalPostingRuleV1(
-            mirror,
-            "approved-normal-journal",
-            "SENTETIK-ACC01-RULE-V1",
-            ApprovedBy,
-            ApprovedAt,
-            [
-                new NormalJournalMappingV1("approved-debit", PostingSide.Debit, debit),
-                new NormalJournalMappingV1("approved-credit", PostingSide.Credit, credit),
-            ]);
-        return new ApprovedNormalJournalSourceBindingV1(
-            source.CompanyId,
-            source.SourceId,
-            NormalJournalSourceKindsV1.RecordedManualReceipt,
-            source.SourceVersion,
-            source.OwnerProfileId,
-            source.OwnerProfileVersion,
-            source.CurrencyId,
-            rule);
-    }
-
-    public Task<NormalJournalPostingRuleV1?> ResolveAsync(Guid companyId, Guid sourceId, string sourceKind,
-        string sourceVersion, string ownerProfileId, string ownerProfileVersion, Guid currencyId,
-        CancellationToken cancellationToken = default)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-        lock (_gate)
+        var binding = record.Package.Bindings.Count == 1 ? record.Package.Bindings[0] : null;
+        if (record.PackageId != PackageId || record.CompanyId != source.CompanyId
+            || !string.Equals(record.TemplateVersion, preview.TemplateVersion, StringComparison.Ordinal)
+            || !string.Equals(record.AccountPlanSourceVersion, AccountPlanSourceVersion, StringComparison.Ordinal)
+            || !string.Equals(record.AccountsSourceSha256, preview.AccountsSourceSha256,
+                StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(record.PostingMappingsSourceSha256, preview.PostingMappingsSourceSha256,
+                StringComparison.OrdinalIgnoreCase)
+            || binding is null || binding.CompanyId != source.CompanyId || binding.SourceId != source.SourceId
+            || binding.CurrencyId != source.CurrencyId
+            || !string.Equals(binding.SourceKind, NormalJournalSourceKindsV1.RecordedManualReceipt,
+                StringComparison.Ordinal)
+            || !string.Equals(binding.SourceVersion, source.SourceVersion, StringComparison.Ordinal)
+            || !string.Equals(binding.OwnerProfileId, source.OwnerProfileId, StringComparison.Ordinal)
+            || !string.Equals(binding.OwnerProfileVersion, source.OwnerProfileVersion, StringComparison.Ordinal))
         {
-            var binding = _binding;
-            var match = binding is not null
-                && binding.CompanyId == companyId
-                && binding.SourceId == sourceId
-                && string.Equals(binding.SourceKind, sourceKind, StringComparison.Ordinal)
-                && string.Equals(binding.SourceVersion, sourceVersion, StringComparison.Ordinal)
-                && string.Equals(binding.OwnerProfileId, ownerProfileId, StringComparison.Ordinal)
-                && string.Equals(binding.OwnerProfileVersion, ownerProfileVersion, StringComparison.Ordinal)
-                && binding.CurrencyId == currencyId;
-            return Task.FromResult<NormalJournalPostingRuleV1?>(match ? binding!.Rule : null);
+            throw new InvalidOperationException("The ACC01 durable catalog is bound to another source or package.");
         }
     }
 }
 
 public sealed class C01E2eFinanceNormalJournalSourceFixtureWriter
 {
+    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
     private readonly IFinanceRecordedReceiptFixtureStore _finance;
-    private readonly C01E2eApprovedNormalJournalSourceBindingCatalog _catalog;
+    private readonly IApprovedAccountingSourcePackageParserV1 _parser;
+    private readonly IApprovedAccountingSourceCatalogStoreV1 _catalog;
+    private readonly IHostEnvironment _environment;
+    private readonly IConfiguration _configuration;
 
     public C01E2eFinanceNormalJournalSourceFixtureWriter(
         IHostEnvironment environment,
         IConfiguration configuration,
         IFinanceRecordedReceiptFixtureStore finance,
-        C01E2eApprovedNormalJournalSourceBindingCatalog catalog)
+        IApprovedAccountingSourcePackageParserV1 parser,
+        IApprovedAccountingSourceCatalogStoreV1 catalog)
     {
         C01E2eFixtureWriterActivation.RequireGate(environment, configuration);
+        _environment = environment;
+        _configuration = configuration;
         _finance = finance;
+        _parser = parser;
         _catalog = catalog;
     }
 
-    public async Task EnsureAsync(CancellationToken cancellationToken) =>
-        _catalog.Bind(await _finance.EnsureAsync(cancellationToken));
-}
-
-internal sealed class C01E2eApprovedNormalJournalSourceReadCatalog(
-    IFinanceRecordedReceiptFixtureReadStore finance) : IApprovedNormalJournalSourceBindingCatalogV1
-{
-    public async Task<NormalJournalPostingRuleV1?> ResolveAsync(
-        Guid companyId,
-        Guid sourceId,
-        string sourceKind,
-        string sourceVersion,
-        string ownerProfileId,
-        string ownerProfileVersion,
-        Guid currencyId,
-        CancellationToken cancellationToken = default)
+    public async Task EnsureAsync(CancellationToken cancellationToken)
     {
-        if (!string.Equals(sourceKind, NormalJournalSourceKindsV1.RecordedManualReceipt,
-                StringComparison.Ordinal))
+        var source = await _finance.EnsureAsync(cancellationToken);
+        var preview = C01E2eApprovedNormalJournalSourceBindingCatalog.CreatePreview(source, _parser);
+        var record = await _catalog.ReadAsync(
+            C01E2eApprovedNormalJournalSourceBindingCatalog.PackageId, cancellationToken);
+        if (record is null)
         {
-            return null;
+            (record, _) = await _catalog.PrepareAsync(
+                C01E2eApprovedNormalJournalSourceBindingCatalog.PackageId,
+                preview,
+                C01E2eApprovedNormalJournalSourceBindingCatalog.ApprovedBy,
+                C01E2eApprovedNormalJournalSourceBindingCatalog.ApprovedAt,
+                FenceAsync,
+                Metadata(ApprovedAccountingSourceCatalogPermissionNamesV1.Prepare,
+                    ApprovedAccountingSourceCatalogCommandNamesV1.Prepare, "acc01-source-catalog-prepare"),
+                cancellationToken);
         }
 
-        var exact = await finance.FindExactAsync(
-            companyId,
-            sourceId,
-            sourceVersion,
-            ownerProfileId,
-            ownerProfileVersion,
-            currencyId,
-            cancellationToken);
-        return exact is null
-            ? null
-            : C01E2eApprovedNormalJournalSourceBindingCatalog.CreateBinding(exact).Rule;
+        C01E2eApprovedNormalJournalSourceBindingCatalog.RequireExact(record, source, preview);
+        if (record.Status == ApprovedAccountingSourceCatalogStatusV1.Prepared)
+        {
+            record = await _catalog.ActivateAsync(
+                record.PackageId,
+                record.Version,
+                0,
+                C01E2eApprovedNormalJournalSourceBindingCatalog.ApprovedBy,
+                C01E2eApprovedNormalJournalSourceBindingCatalog.ApprovedAt,
+                FenceAsync,
+                Metadata(ApprovedAccountingSourceCatalogPermissionNamesV1.Activate,
+                    ApprovedAccountingSourceCatalogCommandNamesV1.Activate, "acc01-source-catalog-activate"),
+                cancellationToken);
+        }
+
+        C01E2eApprovedNormalJournalSourceBindingCatalog.RequireExact(record, source, preview);
+        if (record.Status != ApprovedAccountingSourceCatalogStatusV1.Active || record.CatalogVersion != 1)
+        {
+            throw new InvalidOperationException("The ACC01 durable source package is not the first active catalog.");
+        }
     }
+
+    private Task FenceAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        C01E2eFixtureWriterActivation.RequireGate(_environment, _configuration);
+        return Task.CompletedTask;
+    }
+
+    private static AccountingCommandMetadata Metadata(string permission, string command, string key)
+    {
+        var actor = C01E2eApprovedNormalJournalSourceBindingCatalog.ApprovedBy.ToString("D");
+        var correlation = $"c01-{key}";
+        return new AccountingCommandMetadata(
+            actor,
+            permission,
+            Array.Empty<string>(),
+            correlation,
+            null,
+            key,
+            "browser-suite-fixture",
+            Completion: result => new AccountingCommandRecord(
+                command,
+                Sha(key),
+                actor,
+                Sha($"{command}|{C01E2eApprovedNormalJournalSourceBindingCatalog.PackageId:D}"),
+                JsonSerializer.Serialize(result, Json),
+                correlation));
+    }
+
+    private static string Sha(string value) =>
+        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value)));
 }
 
 /// <summary>
@@ -389,10 +409,8 @@ internal static class BrowserSuiteApiReadFixtureActivation
         }
         else if (string.Equals(profile, AccountingProfile, StringComparison.Ordinal))
         {
-            services.AddFinanceRecordedReceiptFixtureReadStore();
-            services.RemoveAll<IApprovedNormalJournalSourceBindingCatalogV1>();
-            services.AddScoped<IApprovedNormalJournalSourceBindingCatalogV1,
-                C01E2eApprovedNormalJournalSourceReadCatalog>();
+            // The disposable API consumes Finance and Accounting through their normal production
+            // readers. The fixture writer has already persisted and activated the exact package.
         }
 
         return true;
