@@ -1458,7 +1458,7 @@ public sealed partial class ManufacturingCommandService(
     /// </summary>
     public async Task<ManufacturingApiResult<MassBalanceViewV1>> GetMassBalanceAsync(Guid orderId, CancellationToken cancellationToken)
     {
-        if (!HasContext())
+        if (!HasContext() || ActorGuid() is not { } actorId)
         {
             return Denied<MassBalanceViewV1>();
         }
@@ -1468,15 +1468,30 @@ public sealed partial class ManufacturingCommandService(
             return NotFoundResult<MassBalanceViewV1>();
         }
 
+        var companyId = companyContext.CompanyId;
         try
         {
             var order = await orders.FindOrderAsync(orderId, cancellationToken);
+            var scope = await authority.RevalidatePermissionScopeAsync(
+                ErpPermissions.ManufacturingOrdersRead, companyId, cancellationToken);
+            if (!scope.IsGranted || !HasCapturedContext(companyId, actorId))
+            {
+                return Denied<MassBalanceViewV1>();
+            }
+
             return order is null
                 ? NotFoundResult<MassBalanceViewV1>()
                 : new ManufacturingApiResult<MassBalanceViewV1>(ManufacturingApiStatus.Ok, MassBalanceView(order), false, null);
         }
         catch (ManufacturingStoreException exception) when (exception.Code == ManufacturingStoreCodes.ConcurrentChange)
         {
+            var scope = await authority.RevalidatePermissionScopeAsync(
+                ErpPermissions.ManufacturingOrdersRead, companyId, cancellationToken);
+            if (!scope.IsGranted || !HasCapturedContext(companyId, actorId))
+            {
+                return Denied<MassBalanceViewV1>();
+            }
+
             return new ManufacturingApiResult<MassBalanceViewV1>(ManufacturingApiStatus.Unavailable, null, false, null);
         }
     }

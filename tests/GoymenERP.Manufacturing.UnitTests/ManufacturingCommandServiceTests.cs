@@ -215,8 +215,9 @@ public sealed class ManufacturingCommandServiceTests
         Assert.Equal(expected, result.Status);
         Assert.Equal(code, result.Code);
         Assert.Empty(fixture.Store.Writes);
-        // Asked once, before the stored-answer lookup; never again for a write that did not happen.
-        Assert.Equal(1, fixture.Authority.Asked);
+        // The original grant and the empty-command-read fence always run. A 422 refusal also rechecks before
+        // releasing its no-winner answer; denied/unavailable refusals stop immediately.
+        Assert.Equal(code == SettingsPrerequisiteCodesV1.UnitProfileNotFound ? 3 : 2, fixture.Authority.Asked);
         // A Settings refusal is not this key's answer: nothing is recorded, so a retry is re-evaluated.
         Assert.Empty(fixture.Store.Commands);
     }
@@ -336,7 +337,7 @@ public sealed class ManufacturingCommandServiceTests
             Permission, CancellationToken.None);
 
         Assert.Equal(ManufacturingApiStatus.Ok, result.Status);
-        Assert.Equal(new[] { "authority", "settings", "authority" }, fixture.Calls);
+        Assert.Equal(new[] { "authority", "authority", "settings", "authority" }, fixture.Calls);
         var metadata = Assert.Single(fixture.Store.Writes);
         Assert.Equal((Actor.ToString("D"), Permission, "corr-1", "key-1", "Web"),
             (metadata.ActorId, metadata.PermissionCode, metadata.CorrelationId, metadata.IdempotencyKey, metadata.SourceChannel));
@@ -433,7 +434,7 @@ public sealed class ManufacturingCommandServiceTests
             Assert.Single(fixture.Store.Plans[result.Resource.PlanId].Inputs).ExpectedLabelVersion);
         Assert.Equal(new[] { DateOnly.FromDateTime(At.UtcDateTime), DateOnly.FromDateTime(At.UtcDateTime) }, fixture.Settings.Days);
         Assert.Equal(new InventoryParentRollSelectionV1(Roll, LabelVersion), Assert.Single(fixture.ParentRolls.Selections));
-        Assert.Equal(["authority", "work-center", "authority", "settings", "parent-roll", "authority",
+        Assert.Equal(["authority", "authority", "work-center", "authority", "settings", "parent-roll", "authority",
             "product", "authority", "authority"], fixture.Calls);
     }
 
@@ -463,7 +464,7 @@ public sealed class ManufacturingCommandServiceTests
             (selection.LabelId, selection.ExpectedLabelVersion, selection.PositionContext.OwnerKind,
                 selection.PositionContext.OwnerId, selection.PositionContext.CustodianKind,
                 selection.PositionContext.CustodianId));
-        Assert.Equal(["authority", "work-center", "authority", "settings", "party-account", "authority",
+        Assert.Equal(["authority", "authority", "work-center", "authority", "settings", "party-account", "authority",
                 "parent-roll-context", "authority", "product", "authority", "authority"],
             fixture.Calls);
     }
@@ -1252,7 +1253,7 @@ public sealed class ManufacturingCommandServiceTests
     public async Task The_final_manufacturing_fence_runs_after_all_owner_reads_and_can_refuse_the_write()
     {
         var fixture = new Fixture();
-        for (var granted = 0; granted < 4; granted++)
+        for (var granted = 0; granted < 5; granted++)
         {
             fixture.Authority.Scopes.Enqueue(Scope(companyWide: true, "PRODUCTION_OPERATOR"));
         }
@@ -1263,7 +1264,7 @@ public sealed class ManufacturingCommandServiceTests
 
         Assert.Equal((ManufacturingApiStatus.Denied, ManufacturingApiCodes.AuthorityDenied),
             (result.Status, result.Code));
-        Assert.Equal(["authority", "work-center", "authority", "settings", "parent-roll", "authority",
+        Assert.Equal(["authority", "authority", "work-center", "authority", "settings", "parent-roll", "authority",
             "product", "authority", "authority"], fixture.Calls);
         Assert.Single(fixture.ParentRolls.Selections);
         Assert.Empty(fixture.Store.Commands);
@@ -1363,6 +1364,79 @@ public sealed class ManufacturingCommandServiceTests
 
         fixture.User.Companies.Clear();
         Assert.Equal(ManufacturingApiStatus.Denied, (await fixture.Service.GetMassBalanceAsync(order.Id, CancellationToken.None)).Status);
+    }
+
+    [Theory]
+    [InlineData("permission")]
+    [InlineData("actor")]
+    [InlineData("company")]
+    public async Task A_mass_balance_read_rechecks_the_captured_context_and_permission_before_projecting_facts(
+        string fault)
+    {
+        var fixture = new Fixture();
+        var order = await fixture.ApprovedOrderAsync();
+        var effects = (fixture.Store.Writes.Count, fixture.Store.Commands.Count, fixture.Store.AuditEvents.Count);
+        fixture.Authority.Permissions.Clear();
+        fixture.Store.AfterFindOrder = _ => ApplyFreshFenceFault(fixture, fault);
+
+        var result = await fixture.Service.GetMassBalanceAsync(order.Id, CancellationToken.None);
+
+        Assert.Equal((ManufacturingApiStatus.Denied, ManufacturingApiCodes.AuthorityDenied, false),
+            (result.Status, result.Code, result.IsReplay));
+        Assert.Null(result.Resource);
+        Assert.Null(result.OriginalCorrelationId);
+        Assert.Equal([ErpPermissions.ManufacturingOrdersRead], fixture.Authority.Permissions);
+        Assert.Equal(effects,
+            (fixture.Store.Writes.Count, fixture.Store.Commands.Count, fixture.Store.AuditEvents.Count));
+    }
+
+    [Theory]
+    [InlineData("permission")]
+    [InlineData("actor")]
+    [InlineData("company")]
+    public async Task A_failed_mass_balance_read_rechecks_the_captured_context_and_permission_before_503(string fault)
+    {
+        var fixture = new Fixture();
+        var order = await fixture.ApprovedOrderAsync();
+        var effects = (fixture.Store.Writes.Count, fixture.Store.Commands.Count, fixture.Store.AuditEvents.Count);
+        fixture.Authority.Permissions.Clear();
+        fixture.Store.ReadFault = ManufacturingStoreCodes.ConcurrentChange;
+        fixture.Store.AfterFindOrder = _ => ApplyFreshFenceFault(fixture, fault);
+
+        var result = await fixture.Service.GetMassBalanceAsync(order.Id, CancellationToken.None);
+
+        Assert.Equal((ManufacturingApiStatus.Denied, ManufacturingApiCodes.AuthorityDenied, false),
+            (result.Status, result.Code, result.IsReplay));
+        Assert.Null(result.Resource);
+        Assert.Null(result.OriginalCorrelationId);
+        Assert.Equal([ErpPermissions.ManufacturingOrdersRead], fixture.Authority.Permissions);
+        Assert.Equal(effects,
+            (fixture.Store.Writes.Count, fixture.Store.Commands.Count, fixture.Store.AuditEvents.Count));
+    }
+
+    [Fact]
+    public async Task A_mass_balance_read_keeps_its_valid_narrow_grant_for_success_and_503()
+    {
+        var fixture = new Fixture();
+        var order = await fixture.ApprovedOrderAsync();
+        fixture.Authority.Permissions.Clear();
+        fixture.Authority.Scope = Scope(companyWide: false, "ORDER_READER");
+
+        var result = await fixture.Service.GetMassBalanceAsync(order.Id, CancellationToken.None);
+
+        Assert.Equal(ManufacturingApiStatus.Ok, result.Status);
+        Assert.Equal(order.Id, result.Resource!.OrderId);
+        Assert.Equal([ErpPermissions.ManufacturingOrdersRead], fixture.Authority.Permissions);
+
+        fixture.Authority.Permissions.Clear();
+        fixture.Store.ReadFault = ManufacturingStoreCodes.ConcurrentChange;
+        var busy = await fixture.Service.GetMassBalanceAsync(order.Id, CancellationToken.None);
+
+        Assert.Equal((ManufacturingApiStatus.Unavailable, (string?)null, false),
+            (busy.Status, busy.Code, busy.IsReplay));
+        Assert.Null(busy.Resource);
+        Assert.Null(busy.OriginalCorrelationId);
+        Assert.Equal([ErpPermissions.ManufacturingOrdersRead], fixture.Authority.Permissions);
     }
 
     [Fact]
@@ -1676,8 +1750,8 @@ public sealed class ManufacturingCommandServiceTests
             (result.Status, result.Code, result.IsReplay));
         Assert.Null(result.Resource);
         Assert.Null(result.OriginalCorrelationId);
-        // Initial command grant, the pre-write fence, then the winner answer's post-read fence.
-        Assert.Equal([Permission, Permission, Permission], fixture.Authority.Permissions);
+        // Initial command grant, the empty-read fence, the write's final fence, then the winner answer fence.
+        Assert.Equal([Permission, Permission, Permission, Permission], fixture.Authority.Permissions);
         Assert.Empty(fixture.Store.Writes);
         Assert.Single(fixture.Store.Commands);
         Assert.Empty(fixture.Store.AuditEvents);
@@ -1722,7 +1796,7 @@ public sealed class ManufacturingCommandServiceTests
         Assert.Equal("Closed", closed.Resource!.Status);
         Assert.Equal(1, fixture.Settings.ToleranceAsked);
         Assert.NotNull(order.ClosurePolicy);
-        Assert.Equal([ClosePermission, ClosePermission, ClosePermission], fixture.Authority.Permissions);
+        Assert.Equal([ClosePermission, ClosePermission, ClosePermission, ClosePermission], fixture.Authority.Permissions);
         Assert.Equal(ClosePermission, Assert.Single(fixture.Store.Writes).PermissionCode);
         // §6: the record joined the business save, not a second one.
         Assert.Single(fixture.Store.Commands);
@@ -1823,7 +1897,8 @@ public sealed class ManufacturingCommandServiceTests
             (order.ClosureExceptionApproval.CompanyId, order.ClosureExceptionApproval.OrderId,
                 order.ClosureExceptionApproval.ApprovedByUserId, order.ClosureExceptionApproval.OrderVersion));
         Assert.Equal(
-            [ClosePermission, ClosePermission, CloseExceptionPermission, ClosePermission, CloseExceptionPermission,
+            [ClosePermission, ClosePermission, ClosePermission,
+                ClosePermission, ClosePermission, CloseExceptionPermission, ClosePermission, CloseExceptionPermission,
                 ClosePermission, CloseExceptionPermission],
             fixture.Authority.Permissions);
     }
@@ -1888,7 +1963,7 @@ public sealed class ManufacturingCommandServiceTests
         var fixture = new Fixture();
         fixture.Settings.Tolerance = fixture.Settings.Tolerance with { MaximumFirePercent = 5m };
         var order = await fixture.FireOrderAsync();
-        for (var granted = 0; granted < 5; granted++)
+        for (var granted = 0; granted < 6; granted++)
         {
             fixture.Authority.Scopes.Enqueue(Scope(companyWide: true, "PRODUCTION_OPERATOR"));
         }
@@ -1901,7 +1976,7 @@ public sealed class ManufacturingCommandServiceTests
         Assert.Equal((ManufacturingApiStatus.Denied, ManufacturingApiCodes.AuthorityDenied),
             (result.Status, result.Code));
         Assert.Equal(
-            [ClosePermission, CloseExceptionPermission, ClosePermission, CloseExceptionPermission,
+            [ClosePermission, ClosePermission, CloseExceptionPermission, ClosePermission, CloseExceptionPermission,
                 ClosePermission, CloseExceptionPermission],
             fixture.Authority.Permissions);
         Assert.Equal(OrderStatus.Open, order.Status);
@@ -1937,7 +2012,7 @@ public sealed class ManufacturingCommandServiceTests
 
         Assert.Equal((ManufacturingApiStatus.Denied, ManufacturingApiCodes.AuthorityDenied),
             (result.Status, result.Code));
-        Assert.Equal([ClosePermission, ClosePermission], fixture.Authority.Permissions);
+        Assert.Equal([ClosePermission, ClosePermission, ClosePermission], fixture.Authority.Permissions);
         Assert.Equal(OrderStatus.Open, order.Status);
         Assert.Null(order.ClosurePolicy);
         Assert.Empty(fixture.Store.PolicyDecisions);
@@ -1953,6 +2028,7 @@ public sealed class ManufacturingCommandServiceTests
         fixture.Settings.Tolerance = fixture.Settings.Tolerance with { MaximumFirePercent = 5m };
         var order = await fixture.FireOrderAsync();
         fixture.Authority.Scopes.Enqueue(Scope(companyWide: true, "PRODUCTION_OPERATOR"));
+        fixture.Authority.Scopes.Enqueue(Scope(companyWide: true, "PRODUCTION_OPERATOR"));
         fixture.Authority.Scopes.Enqueue(PermissionScope.Denied);
 
         var result = await fixture.Service.CloseOrderAsync(
@@ -1961,7 +2037,7 @@ public sealed class ManufacturingCommandServiceTests
 
         Assert.Equal((ManufacturingApiStatus.Denied, ManufacturingApiCodes.AuthorityDenied),
             (result.Status, result.Code));
-        Assert.Equal([ClosePermission, CloseExceptionPermission], fixture.Authority.Permissions);
+        Assert.Equal([ClosePermission, ClosePermission, CloseExceptionPermission], fixture.Authority.Permissions);
         Assert.Equal(OrderStatus.Open, order.Status);
         Assert.Empty(fixture.Store.Writes);
     }
@@ -1978,7 +2054,7 @@ public sealed class ManufacturingCommandServiceTests
 
         Assert.Equal((ManufacturingApiStatus.Unprocessable, ClosureAssessmentCodesV1.ApprovalUnexpected),
             (result.Status, result.Code));
-        Assert.Equal([ClosePermission], fixture.Authority.Permissions);
+        Assert.Equal([ClosePermission, ClosePermission, ClosePermission], fixture.Authority.Permissions);
         Assert.Equal(OrderStatus.Open, order.Status);
         Assert.Empty(fixture.Store.Writes);
     }
