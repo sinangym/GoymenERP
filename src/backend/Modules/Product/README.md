@@ -570,3 +570,55 @@ expectation, the `ProductRuntimeExtensions.cs` guard re-pin (the unconfigured se
 throws like its siblings; no new database capability, MigrateAsync stays 2) and the five new
 `ProductDuplicateCandidatesSqlServerRelationalAcceptanceTests` names in `tools/relational_inventory/product.txt`.
 No permission, shell capability, migration or grant changes.
+
+## Price lists (AT-018; the reference for AT-021)
+
+Sources: user decision 2026-09-30 ("the Product module owns price lists, versioned and validity-dated; on a sales
+order line the list price is shown as a REFERENCE and is the default until changed"), DEC-PRD-011 (KİLİTLİ: prices by
+company / product-cari group / cari; unit, currency, date, quantity tier, discount, floor and margin policy), master
+§7.4 "Fiyatlar" and §10.2 (list price, ordered adjustments and net shown apart), §27 U-05 "Fiyatlar — Liste, sürüm ve
+geçerlilik", AT-018 ("Fiyat sürümü para, birim, KDV, kanal ve geçerlilik bağlamını korur").
+
+| Concern | Rule |
+|---|---|
+| Owner and scope | Product module, **company-scoped** (unlike the global card): `ProductPriceListDbContext`, schema `product`, its own history table `__EFMigrationsHistory_PriceLists`, every row filtered by the server-resolved company and guarded on write. |
+| Model | A list (name unique per company under `Turkish_100_CI_AS`, currency, channel, VAT basis) with numbered **versions** (validFrom, optional validThrough, Draft → Published) and per-version **lines** (product, price unit, unit price, optional floor). `PriceList` (Product.Domain) is the single authority. |
+| Context (AT-018) | Currency (ISO 4217 text, matched exactly at use, never converted), channel, VAT basis, validity and the price unit are stored on the list/version/line and returned with every reference. |
+| Validity | A published version applies from its start until the next published version starts, or its own end, whichever first; published starts strictly increase (also `UX_PriceListVersions_PublishedValidFrom`); a gap answers no price — nothing falls back to an older version. Derived display status: Taslak / Planlı / Geçerli / Geçmiş. |
+| Draft / publish | One draft per list (`UX_PriceListVersions_OneDraft`); only a draft is revised (its lines replaced as a whole: kept line ids update in place, dropped ones are deleted — the only delete the write guard admits, and only for a draft version). The exact version persistently records every creator/editor actor; none of those actors may publish that version, so another currently-authorized actor must publish. Publishing also needs ≥ 1 line and a start not before the publishing (UTC) date; a published version and its lines never change; a change is a new version opened from the latest published prices. |
+| Product checks | Every line's product must be an **Active, sellable** card priced in its own **stock or sales** unit (the card's `ReferencesJson`), checked on every draft save and again at publication; the lines' foreign key to `product.Products`. |
+| Money | Exact decimal text on the wire (≤ 15 integer, ≤ 4 decimals, never rounded, never a JS number); `decimal(19,4)`; price > 0; floor ≤ price (also `CK_PriceListLines_Price`). |
+| Authority | `product.price-lists.read`, `product.price-lists.write` (create, draft revision, new version, product options) and `product.price-lists.publish` — each its own company-wide name, measured fresh before anything is read and again right before the single save (none after the commit); unregistered → 503, denied → 403. Registered and granted by the central/human steps. |
+| Idempotency / audit | ADR-011: `product.price-list.create.v1` / `revise-draft.v1` / `start-version.v1` / `publish.v1`, attempt key (company, command, SHA-256 of the key) under a binary collation; same key + content + actor → the stored list (`isReplay`, `Idempotency-Replayed`); another content or actor → 409 `idempotency_conflict`; a stale version (`version_conflict`) or wrong version state (`product_price_list_state_conflict`) is the key's recorded terminal answer. One canonical audit event per command (`product.price-list.created.v1`, `…draft-revised.v1`, `…version-started.v1`, `…version-published.v1`) with before/after in the same save. |
+| Routes | `GET/POST /api/v1/price-lists`, `GET /api/v1/price-lists/{id}`, `POST …/{id}/draft-revision`, `POST …/{id}/versions`, `POST …/{id}/publication`, `GET /api/v1/price-lists/product-options?q=` (`ProductPriceListEndpoints`). |
+| Sales reference | `IProductPriceReferenceReaderV1` (Product.Application): the context company's Sales-channel prices for a product in given units, currency and date — `SearchAsync` (every list that prices it; several may answer, the user chooses) and `GetAsync` (exactly the list/version a line names, still pricing that date). The port carries no authority; Sales fences its own price name. |
+| Rollback | Migration `20260930113416_AddProductPriceLists`; `Down` refuses with `THROW 51063` while any list or attempt exists (forward fix). |
+| Screens | U-05 `/fiyat-listeleri` (list), `/fiyat-listeleri/yeni` (create), `/fiyat-listeleri/:priceListId` (versions, draft edit, publish, new version) — `src/product/priceLists/**`, capability ids `price-lists.list/create/detail/edit/publish` (not `product.*`: the shell registry reserves that prefix for the global Product master). |
+| Evidence | Unit: `PriceListDomainTests`, `ProductPriceListPersistenceTests` (model, guard, snapshot = model, rollback refusal, fences before any read). Real SQL (written, not run in this slice): `ProductPriceListSqlServerRelationalAcceptanceTests`. Frontend: `PriceLists.test.tsx`. |
+
+**Assumptions (fail-closed minimal choices; reversible, listed for decision):**
+
+- ASSUMPTION-PRL-1 channel: only `Sales`; purchase/common channel lists are refused (`CK_PriceLists_Channel`).
+- ASSUMPTION-PRL-2 VAT: prices are stored **KDV hariç** only; no VAT rate is stored or applied.
+- ASSUMPTION-PRL-3 currency: one ISO code per list, format-checked only; used only for an order in the same currency; no conversion.
+- ASSUMPTION-PRL-4 scope: company-wide lists only (no cari / cari-group / product-group scope yet); when several lists price a product the order line shows all and the **user chooses** — no automatic priority.
+- ASSUMPTION-PRL-5 floor: an optional per-line floor price; Sales refuses a net price below it (no approver is decided, so it is not routed to an approval).
+- ASSUMPTION-PRL-6 dates: "today" for publication and status is the UTC date; publication cannot backdate a start.
+- ASSUMPTION-PRL-7 no margin policy, no bulk update/simulation (U-06), no Excel import (AT-019/020). Quantity tiers are
+  lower-inclusive / upper-exclusive; overlap is rejected and a gap has no automatic fallback.
+
+**Open decisions (NEEDS-SINAN):** purchase/common channels and VAT-inclusive lists; list scope by cari / group and its
+priority; who approves a price below the floor (and whether a floor is per role/date, master §7.4) — AT-021's "doğru
+onay"; margin policy; the company time zone
+for "today"; whether an Inactive card's published price stays visible as a reference.
+
+Sinan'ın 2 Ekim 2026 tarihli kesin kararı: aynı fiyat sürümünü oluşturan **veya değiştiren** aktörlerden hiçbiri o
+sürümü yayımlayamaz; başka bir `product.price-lists.publish` yetkili aktör yayımlar. Bu ayrım yeni rol ya da grant
+üretmez; sürümün `PreparerActorIdsJson` geçmişi, fresh authority/company/version ve ADR-011 replay sınırlarıyla uygulanır.
+
+**Central (coordinator), before this runs on the host:** see `AT-018-central-delta.patch` in the delivery notes — the
+three `ErpPermissions` names; `AddProductPriceLists` + `InitializeProductPriceListsAsync` (after the Product runtime) +
+`MapProductPriceListEndpoints` in `Program.cs`; the price-list shell provider and its authority re-pin; OpenAPI (+7
+operations); the tenant-bypass guard pins (the new DbContext and the AuditEvent context inventory, the store's SqlClient use, the
+registration's MigrateAsync branch, the migration's reviewed `Sql`); `MODULE_DEPENDENCY_ALLOWLIST.json`
+(Product.Infrastructure → Audit.Infrastructure, ADR-009); the three relational-inventory names.

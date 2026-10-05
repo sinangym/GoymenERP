@@ -18,6 +18,7 @@ public sealed class ProductSalesCandidateFixtureStoreTests
     {
         await using var provider = Services();
         await Registry(provider);
+        await ReleasedCodeGroup(provider);
         ProductSalesCandidateFixtureOutput? first = null;
         for (var attempt = 0; attempt < 2; attempt++)
         {
@@ -45,7 +46,11 @@ public sealed class ProductSalesCandidateFixtureStoreTests
         Assert.Equal(first.UnitId, card.References.Units.Sales);
         Assert.Empty(await new ProductFamilyRequirementPolicyV2(new SqlProductFamilyDefinitionSource(db))
             .ValidateAsync(card, default));
-        Assert.Single(await db.CodeGroups.ToListAsync());
+        var groups = await db.CodeGroups.ToListAsync();
+        Assert.Equal(2, groups.Count);
+        Assert.Contains(groups, group => group.ToContract() == ProductInitialCodeGroupV1.Sac().ToContract());
+        Assert.Contains(groups, group => group.Id == ProductSalesCandidateFixture.GroupId
+            && group.Name == ProductSalesCandidateFixture.Name && group.Prefix == ProductSalesCandidateFixture.Prefix);
         Assert.Equal(1, (await db.CodeCounters.SingleAsync()).LastSequence);
         var registration = await db.CodeRegistrations.SingleAsync();
         Assert.Equal(first.ProductId, registration.ProductId);
@@ -141,6 +146,14 @@ public sealed class ProductSalesCandidateFixtureStoreTests
     {
         await using var scope = provider.CreateAsyncScope();
         await scope.ServiceProvider.GetRequiredService<IProductTechnicalCardFixtureStore>().EnsureAsync(default);
+    }
+
+    private static async Task ReleasedCodeGroup(ServiceProvider provider)
+    {
+        await using var scope = provider.CreateAsyncScope();
+        var released = ProductInitialCodeGroupV1.Sac();
+        await scope.ServiceProvider.GetRequiredService<IProductCodeGroupFixtureStore>().EnsureAsync(
+            new(released.Id, released.Name, released.Prefix), default);
     }
 
     private static ServiceProvider Services(Settings? settings = null)

@@ -159,15 +159,17 @@ public sealed class SalesOrderDraftApprovalTests
             .ToArray();
         // DEC-SAL-005: the cancellation of an approved order is a mutation entry too (RequireCancellable only reads);
         // DEC-SAL-002: so is the quantity revision (RequireQuantityRevisable only reads).
-        Assert.Equal(["AddLine", "Approve", "ApproveRemainderChange", "Cancel", "RecordCustomerAcceptance", "Reject", "RejectRemainderChange",
+        Assert.Equal(["AddLine", "Approve", "ApprovePriceFloorExceptions", "ApproveRemainderChange", "Cancel", "RecordCustomerAcceptance", "Reject", "RejectRemainderChange",
             "RequestRemainderChange", "RescheduleDelivery", "ReviseCommercial", "ReviseQuantities", "Submit", "Withdraw"], entries);
 
         var draft = Draft();
         draft.Withdraw(2, Preparer, "SENTETIK", T0);
-        var before = (draft.ApprovalState, draft.Version, draft.Revision, draft.Approval, draft.Lines.Count);
+        var before = (draft.ApprovalState, draft.Version, draft.Revision, draft.Approval, draft.Lines.Count, draft.Lines[0].Commercial);
         Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => draft.AddLine(3, Line(), T0)));
         Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => draft.Submit(3, Preparer, T0)));
         Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => draft.Approve(3, Approver, T0)));
+        Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => draft.ApprovePriceFloorExceptions(3,
+            [new LinePriceFloorExceptionApprovalInput(draft.Lines[0].Id, "SENTETIK")], Approver, T0)));
         Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => draft.Reject(3, Approver, null, T0)));
         Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => draft.Withdraw(3, Preparer, null, T0)));
         Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => draft.RecordCustomerAcceptance(3, Approver, T0)));
@@ -186,7 +188,7 @@ public sealed class SalesOrderDraftApprovalTests
         Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => draft.ApproveRemainderChange(3, 1,
             new RemainderFloor(1m, 1m, 1m), Approver, T0)));
         Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => draft.RejectRemainderChange(3, 1, Approver, "SENTETIK", T0)));
-        Assert.Equal(before, (draft.ApprovalState, draft.Version, draft.Revision, draft.Approval, draft.Lines.Count));
+        Assert.Equal(before, (draft.ApprovalState, draft.Version, draft.Revision, draft.Approval, draft.Lines.Count, draft.Lines[0].Commercial));
         Assert.Equal(InternalApprovalState.Withdrawn, draft.ApprovalState);
     }
 

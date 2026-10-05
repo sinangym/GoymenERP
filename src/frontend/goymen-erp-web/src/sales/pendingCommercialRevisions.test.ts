@@ -11,7 +11,8 @@ import {
 
 const payload: DraftCommercialRevisionRequest = {
   expectedVersion: '7',
-  lines: [{ lineId: '11111111-1111-1111-1111-111111111111', unitPrice: '12.50', priceUnitId: '22222222-2222-2222-2222-222222222222', discountPercent: '5' }],
+  lines: [{ lineId: '11111111-1111-1111-1111-111111111111', unitPrice: '12.50', priceUnitId: '22222222-2222-2222-2222-222222222222', discountPercent: '5',
+    priceReference: null, discountAmount: null, surchargePercent: null, surchargeAmount: null }],
 }
 const snapshot: OrderAttemptSnapshot<DraftCommercialRevisionRequest> = {
   key: '0123456789abcdef0123456789abcdef',
@@ -28,6 +29,10 @@ const rows: readonly CommercialRevisionRow[] = [{
   unitPrice: '12.50',
   priceUnitId: payload.lines[0].priceUnitId!,
   discountPercent: '5',
+  reference: null,
+  discountKind: 'percent',
+  surchargeKind: 'percent',
+  surchargeValue: '',
 }]
 
 beforeEach(resetPendingCommercialRevisions)

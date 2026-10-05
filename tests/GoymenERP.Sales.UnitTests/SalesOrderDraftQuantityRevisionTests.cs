@@ -171,6 +171,30 @@ public sealed class SalesOrderDraftQuantityRevisionTests
         Assert.Equal((1, "2", "10"), (draft.Revision, line.QuantityText, line.Commercial.UnitPrice));
     }
 
+    [Fact]
+    public void Quantity_revision_keeps_a_reference_inside_its_tier_and_refuses_upper_boundary_or_gap_before_archive()
+    {
+        var within = PricedApprovedDraft(out var withinLine, out var withinSecond);
+        Assert.NotNull(within.ReviseQuantities(within.Version, [Input(withinLine.Id, "1"), Input(withinSecond.Id, "4")],
+            Reviser, "alt sınır", T0.AddHours(4)));
+        Assert.Equal("1", withinLine.Commercial.Reference!.LowerQuantity);
+
+        var boundary = PricedApprovedDraft(out var boundaryLine, out var boundarySecond);
+        var version = boundary.Version;
+        var archiveCount = boundary.ArchivedRevisions.Count;
+        var exception = boundaryLine.Commercial.FloorException;
+        var refused = Assert.Throws<SalesRuleException>(() => boundary.ReviseQuantities(boundary.Version,
+            [Input(boundaryLine.Id, "2"), Input(boundarySecond.Id, "4")], Reviser, "üst sınır", T0.AddHours(4)));
+        Assert.Equal((SalesRuleCodes.PriceReferenceQuantityMismatch, (Guid?)boundaryLine.Id), (refused.Code, refused.LineId));
+        Assert.Equal((version, archiveCount, InternalApprovalState.Approved, "1.25", exception),
+            (boundary.Version, boundary.ArchivedRevisions.Count, boundary.ApprovalState, boundaryLine.QuantityText,
+                boundaryLine.Commercial.FloorException));
+
+        var gap = PricedApprovedDraft(out var gapLine, out var gapSecond);
+        Assert.Equal(SalesRuleCodes.PriceReferenceQuantityMismatch, CodeOf(() => gap.ReviseQuantities(gap.Version,
+            [Input(gapLine.Id, "2.5"), Input(gapSecond.Id, "4")], Reviser, "kademe boşluğu", T0.AddHours(4))));
+    }
+
     private static string CodeOf(Action action) => Assert.Throws<SalesRuleException>(action).Code;
 
     private static LineQuantityInput Input(Guid lineId, string text) =>
@@ -214,6 +238,21 @@ public sealed class SalesOrderDraftQuantityRevisionTests
         var draft = Draft(out line, out second);
         draft.Submit(draft.Version, "synthetic-preparer", T0);
         draft.Approve(draft.Version, "synthetic-approver", T0);
+        return draft;
+    }
+
+    private static SalesOrderDraft PricedApprovedDraft(out SalesOrderDraftLine line, out SalesOrderDraftLine second)
+    {
+        var draft = ApprovedDraft(out line, out second);
+        var reference = new PriceReferenceSnapshot(Guid.NewGuid(), "SENTETIK", 1, Day, null, "TRY", KgUnit,
+            "100", "95", "ExcludingVat", "1", "2");
+        draft.ReviseCommercial(draft.Version,
+            [new LineCommercialInput(line.Id, new CommercialDraftFields("90", KgUnit, null, reference)),
+                new LineCommercialInput(second.Id, CommercialDraftFields.None)], Reviser, T0.AddHours(1));
+        draft.ApprovePriceFloorExceptions(draft.Version,
+            [new LinePriceFloorExceptionApprovalInput(line.Id, "SENTETIK gerekçe")], "synthetic-checker", T0.AddHours(2));
+        draft.Submit(draft.Version, Reviser, T0.AddHours(2));
+        draft.Approve(draft.Version, "synthetic-approver", T0.AddHours(3));
         return draft;
     }
 }

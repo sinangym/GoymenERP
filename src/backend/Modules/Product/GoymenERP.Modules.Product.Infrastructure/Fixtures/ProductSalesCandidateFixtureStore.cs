@@ -92,12 +92,14 @@ internal sealed class ProductSalesCandidateFixtureStore(ProductDbContext context
         var groups = await context.CodeGroups.AsNoTracking().ToListAsync(cancellationToken);
         var registrations = await context.CodeRegistrations.AsNoTracking().ToListAsync(cancellationToken);
         var counters = await context.CodeCounters.AsNoTracking().ToListAsync(cancellationToken);
-        if (products.Count + groups.Count + registrations.Count + counters.Count == 0)
+        if (products.Count + registrations.Count + counters.Count == 0
+            && ProductCandidateFixtureCodeGroupState.IsEmptyOrExactReleasedBaseline(groups))
         {
             await context.AddSalesCandidateFixtureAsync(cancellationToken);
         }
         else if (products.Count != 1 || products[0].ToRecord() != expected
-            || groups.Count != 1 || groups[0].ToContract() != ProductSalesCandidateFixture.Group().ToContract()
+            || !ProductCandidateFixtureCodeGroupState.MatchesFixtureWithOptionalReleasedBaseline(
+                groups, ProductSalesCandidateFixture.Group())
             || registrations.Count != 1 || registrations[0].ProductId != expected.Id
             || registrations[0].Code != expected.Code || !registrations[0].IsCurrent
             || counters.Count != 1 || counters[0].Prefix != ProductSalesCandidateFixture.Prefix

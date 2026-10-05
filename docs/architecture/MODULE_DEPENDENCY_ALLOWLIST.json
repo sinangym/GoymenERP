@@ -8,6 +8,12 @@
       "reason": "Product consumes the reviewed global replay resolver contract; it does not access the owner terminal reader or map/write Idempotency tables. Atomic writer enrollment remains closed."
     },
     {
+      "source": "src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/GoymenERP.Modules.Product.Infrastructure.csproj",
+      "target": "src/backend/Modules/Audit/GoymenERP.Modules.Audit.Infrastructure/GoymenERP.Modules.Audit.Infrastructure.csproj",
+      "adr": "docs/adr/ADR-009-audit-and-correlation.md",
+      "reason": "AT-018 price-list business writes and their canonical audit events share one EF SaveChanges and SQL transaction."
+    },
+    {
       "source": "src/backend/Modules/Organization/GoymenERP.Modules.Organization.Infrastructure/GoymenERP.Modules.Organization.Infrastructure.csproj",
       "target": "src/backend/Modules/Audit/GoymenERP.Modules.Audit.Infrastructure/GoymenERP.Modules.Audit.Infrastructure.csproj",
       "adr": "docs/adr/ADR-009-audit-and-correlation.md",
@@ -78,6 +84,12 @@
       "target": "src/backend/Modules/Audit/GoymenERP.Modules.Audit.Infrastructure/GoymenERP.Modules.Audit.Infrastructure.csproj",
       "adr": "docs/adr/ADR-009-audit-and-correlation.md",
       "reason": "Audit insert and Purchasing request/order writes share one EF SaveChanges and SQL transaction (PUR-4a; same pattern as Organization)."
+    },
+    {
+      "source": "src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/GoymenERP.Modules.Work.Infrastructure.csproj",
+      "target": "src/backend/Modules/Audit/GoymenERP.Modules.Audit.Infrastructure/GoymenERP.Modules.Audit.Infrastructure.csproj",
+      "adr": "docs/adr/ADR-WORK-001-work-atomic-desired-state-storage.md",
+      "reason": "JV03 desired-state snapshot, inbox, outbox, and canonical audit insert share one EF SaveChanges and SQL transaction; Audit owns its mapped table."
     }
   ]
 }

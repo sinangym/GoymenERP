@@ -22,7 +22,7 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Shell;
 public sealed class SalesShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "SALES";
-    public const string OwnerContractVersion = "1.5";
+    public const string OwnerContractVersion = "1.6";
 
     public const string ListCapabilityId = "sales.drafts.list";
     public const string ListRouteId = "sales.drafts.list";
@@ -47,6 +47,9 @@ public sealed class SalesShellCapabilityProvider : IShellCapabilityProvider
 
     /// <summary>K3: the separate commercial-revision control on S-04; create and approve never confer it.</summary>
     public const string PriceWriteCapabilityId = "sales.orders.price.write";
+
+    /// <summary>AT-021: reasoned below-floor approval control; price write and order approval never confer it.</summary>
+    public const string PriceFloorExceptionApproveCapabilityId = "sales.orders.price-floor-exception.approve";
 
     /// <summary>DEC-SAL-003: the delivery-schedule update CONTROL of the S-04 detail (read + the schedule-write name).</summary>
     public const string DeliveryScheduleWriteCapabilityId = "sales.orders.delivery-schedule.write";
@@ -119,6 +122,12 @@ public sealed class SalesShellCapabilityProvider : IShellCapabilityProvider
             CapabilityId = PriceWriteCapabilityId,
             ParentCapabilityId = DetailCapabilityId,
             RequiredPermissions = [SalesPermissionManifestV1.DraftsRead, SalesPermissionManifestV1.OrdersPriceWrite],
+        },
+        detail with
+        {
+            CapabilityId = PriceFloorExceptionApproveCapabilityId,
+            ParentCapabilityId = DetailCapabilityId,
+            RequiredPermissions = [SalesPermissionManifestV1.DraftsRead, SalesPermissionManifestV1.OrdersPriceFloorExceptionApprove],
         },
         // DEC-SAL-003: the planner's delivery-schedule update is a control of the detail, like the price revision.
         detail with
