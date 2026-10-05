@@ -87,6 +87,7 @@ public sealed class NativeApprovalReadQueryV1Tests
     [Theory]
     [InlineData("company")]
     [InlineData("actor")]
+    [InlineData("access")]
     [InlineData("authority")]
     public async Task Query_get_refuses_late_context_or_owner_authority_change_after_one_await(string change)
     {
@@ -97,6 +98,7 @@ public sealed class NativeApprovalReadQueryV1Tests
             {
                 if (change == "company") fixture!.Company.Set(OtherCompany);
                 if (change == "actor") fixture!.User.ActorId = "other-checker";
+                if (change == "access") fixture!.User.RemoveAccess(Company);
                 return Task.FromResult(change == "authority"
                     ? new ReadResult<NativeApprovalReadDetailV1>(ReadOutcome.Denied, null)
                     : new ReadResult<NativeApprovalReadDetailV1>(ReadOutcome.Found, NativeDetail()));
@@ -114,6 +116,7 @@ public sealed class NativeApprovalReadQueryV1Tests
 
     [Theory]
     [InlineData("company-unresolved")]
+    [InlineData("company-access-denied")]
     [InlineData("actor-unauthenticated")]
     [InlineData("actor-empty")]
     public async Task Query_rejects_invalid_initial_company_or_actor_without_calling_the_adapter(string refusal)
@@ -121,6 +124,7 @@ public sealed class NativeApprovalReadQueryV1Tests
         var adapter = new Adapter();
         var fixture = Fixture(adapter);
         if (refusal == "company-unresolved") fixture.Company.Set(Guid.Empty);
+        if (refusal == "company-access-denied") fixture.User.RemoveAccess(Company);
         if (refusal == "actor-unauthenticated") fixture.User.IsAuthenticated = false;
         if (refusal == "actor-empty") fixture.User.ActorId = string.Empty;
 
@@ -138,6 +142,7 @@ public sealed class NativeApprovalReadQueryV1Tests
     [Theory]
     [InlineData("company")]
     [InlineData("actor")]
+    [InlineData("access")]
     [InlineData("correlation")]
     public async Task Query_refuses_context_drift_after_the_single_owner_await(string drift)
     {
@@ -148,6 +153,7 @@ public sealed class NativeApprovalReadQueryV1Tests
             {
                 if (drift == "company") fixture!.Company.Set(OtherCompany);
                 if (drift == "actor") fixture!.User.ActorId = "other-checker";
+                if (drift == "access") fixture!.User.RemoveAccess(Company);
                 if (drift == "correlation") fixture!.Correlation.Set("corr-2", "cause-1", "test", null, null);
                 return Task.FromResult(EmptyPage(context.CompanyId));
             },
@@ -408,11 +414,14 @@ public sealed class NativeApprovalReadQueryV1Tests
 
     private sealed class MutableUser(string actorId, Guid companyId) : ICurrentUser
     {
+        private readonly HashSet<Guid> allowedCompanyIds = [companyId, OtherCompany];
+
         public bool IsAuthenticated { get; set; } = true;
         public string? UserId => ActorId;
         public string ActorId { get; set; } = actorId;
-        public IReadOnlySet<Guid> AllowedCompanyIds { get; } = new HashSet<Guid> { companyId, OtherCompany };
+        public IReadOnlySet<Guid> AllowedCompanyIds => allowedCompanyIds;
         public bool CanAccessCompany(Guid value) => AllowedCompanyIds.Contains(value);
+        public void RemoveAccess(Guid value) => allowedCompanyIds.Remove(value);
     }
 
     private sealed class MutableCorrelation : ICorrelationContext
