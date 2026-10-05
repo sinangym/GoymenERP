@@ -713,7 +713,7 @@ public sealed class ManufacturingCommandServiceTests
             (omittedReplay.Status, omittedReplay.IsReplay, omittedReplay.OriginalCorrelationId));
         Assert.Equal((ManufacturingApiStatus.Created, true, "corr-legacy"),
             (nullReplay.Status, nullReplay.IsReplay, nullReplay.OriginalCorrelationId));
-        Assert.Equal(["authority", "authority"], fixture.Calls);
+        Assert.Equal(["authority", "authority", "authority", "authority"], fixture.Calls);
         Assert.Empty(fixture.ParentRolls.Selections);
         Assert.Empty(fixture.PartyAccounts.Selections);
         Assert.Empty(fixture.Store.Writes);
@@ -755,7 +755,7 @@ public sealed class ManufacturingCommandServiceTests
         Assert.Equal((ManufacturingApiStatus.Ok, true, "corr-legacy", 2L),
             (nullReplay.Status, nullReplay.IsReplay, nullReplay.OriginalCorrelationId,
                 nullReplay.Resource!.Version));
-        Assert.Equal(["authority", "authority"], fixture.Calls);
+        Assert.Equal(["authority", "authority", "authority", "authority"], fixture.Calls);
         Assert.Empty(fixture.ParentRolls.Selections);
         Assert.Empty(fixture.PartyAccounts.Selections);
         Assert.Empty(fixture.Store.Writes);
@@ -927,6 +927,50 @@ public sealed class ManufacturingCommandServiceTests
 
         Assert.Equal(ManufacturingApiStatus.Denied,
             (await fixture.Service.GetPlanAsync(created.Resource!.PlanId, CancellationToken.None)).Status);
+    }
+
+    [Theory]
+    [InlineData("permission")]
+    [InlineData("actor")]
+    [InlineData("company")]
+    public async Task A_plan_read_rechecks_the_captured_actor_company_and_permission_after_the_store_read(string fault)
+    {
+        var fixture = new Fixture();
+        var request = new SavePlanRequestV1(Guid.NewGuid(), WorkCenter,
+            [new PlannedInputRequestV1(Roll, "10", LabelVersion)], null);
+        var created = await fixture.Service.SavePlanAsync(request, "plan-read-fence", "manufacturing.plans.write",
+            CancellationToken.None);
+        var effects = (fixture.Store.Writes.Count, fixture.Store.Commands.Count, fixture.Store.AuditEvents.Count);
+        fixture.Authority.Permissions.Clear();
+        fixture.Store.AfterFindPlan = _ => ApplyFreshFenceFault(fixture, fault);
+
+        var result = await fixture.Service.GetPlanAsync(created.Resource!.PlanId, CancellationToken.None);
+
+        Assert.Equal((ManufacturingApiStatus.Denied, ManufacturingApiCodes.AuthorityDenied, false),
+            (result.Status, result.Code, result.IsReplay));
+        Assert.Null(result.Resource);
+        Assert.Null(result.OriginalCorrelationId);
+        Assert.Equal([ErpPermissions.ManufacturingPlansRead], fixture.Authority.Permissions);
+        Assert.Equal(effects,
+            (fixture.Store.Writes.Count, fixture.Store.Commands.Count, fixture.Store.AuditEvents.Count));
+    }
+
+    [Fact]
+    public async Task A_plan_read_fresh_grant_does_not_invent_a_company_wide_requirement()
+    {
+        var fixture = new Fixture();
+        var request = new SavePlanRequestV1(Guid.NewGuid(), WorkCenter,
+            [new PlannedInputRequestV1(Roll, "10", LabelVersion)], null);
+        var created = await fixture.Service.SavePlanAsync(request, "plan-read-scope", "manufacturing.plans.write",
+            CancellationToken.None);
+        fixture.Authority.Permissions.Clear();
+        fixture.Authority.Scope = Scope(companyWide: false, "PLAN_READER");
+
+        var result = await fixture.Service.GetPlanAsync(created.Resource!.PlanId, CancellationToken.None);
+
+        Assert.Equal(ManufacturingApiStatus.Ok, result.Status);
+        Assert.Equal(created.Resource.PlanId, result.Resource!.PlanId);
+        Assert.Equal([ErpPermissions.ManufacturingPlansRead], fixture.Authority.Permissions);
     }
 
     [Theory]
@@ -1239,6 +1283,38 @@ public sealed class ManufacturingCommandServiceTests
     }
 
     [Theory]
+    [InlineData("permission")]
+    [InlineData("actor")]
+    [InlineData("company")]
+    public async Task A_stored_answer_rechecks_the_original_command_fence_after_the_command_read(string fault)
+    {
+        var fixture = new Fixture();
+        var order = await fixture.ApprovedOrderAsync();
+        var fact = Fact(order.Version, "10");
+        await fixture.Service.IssueInputAsync(order.Id, fact, "stored-fence", Permission, CancellationToken.None);
+        var effects = (fixture.Store.Writes.Count, fixture.Store.Commands.Count, fixture.Store.AuditEvents.Count);
+        fixture.Authority.Permissions.Clear();
+        fixture.Store.AfterFindCommand = stored =>
+        {
+            if (stored is not null)
+            {
+                ApplyFreshFenceFault(fixture, fault);
+            }
+        };
+
+        var result = await fixture.Service.IssueInputAsync(
+            order.Id, fact, "stored-fence", Permission, CancellationToken.None);
+
+        Assert.Equal((ManufacturingApiStatus.Denied, ManufacturingApiCodes.AuthorityDenied, false),
+            (result.Status, result.Code, result.IsReplay));
+        Assert.Null(result.Resource);
+        Assert.Null(result.OriginalCorrelationId);
+        Assert.Equal([Permission, Permission], fixture.Authority.Permissions);
+        Assert.Equal(effects,
+            (fixture.Store.Writes.Count, fixture.Store.Commands.Count, fixture.Store.AuditEvents.Count));
+    }
+
+    [Theory]
     [InlineData("other-request")]
     [InlineData("other-actor")]
     public async Task The_same_key_with_another_request_or_actor_is_a_conflict_that_discloses_nothing(string fault)
@@ -1311,6 +1387,39 @@ public sealed class ManufacturingCommandServiceTests
 
         Assert.Equal((ManufacturingApiStatus.Ok, true, "corr-winner"), (loser.Status, loser.IsReplay, loser.OriginalCorrelationId));
         Assert.Empty(fixture.Store.Writes);
+    }
+
+    [Theory]
+    [InlineData("permission")]
+    [InlineData("actor")]
+    [InlineData("company")]
+    public async Task A_concurrent_winner_answer_rechecks_the_original_command_fence_after_the_winner_read(string fault)
+    {
+        var fixture = new Fixture();
+        var order = await fixture.ApprovedOrderAsync();
+        var fact = Fact(order.Version, "10");
+        fixture.Store.RaceWinner = (metadata, result) =>
+            metadata.Completion!(result) with { OriginalCorrelationId = "corr-winner" };
+        fixture.Store.AfterFindCommand = stored =>
+        {
+            if (stored is not null)
+            {
+                ApplyFreshFenceFault(fixture, fault);
+            }
+        };
+        fixture.Authority.Permissions.Clear();
+
+        var result = await fixture.Service.IssueInputAsync(
+            order.Id, fact, "winner-fence", Permission, CancellationToken.None);
+
+        Assert.Equal((ManufacturingApiStatus.Denied, ManufacturingApiCodes.AuthorityDenied, false),
+            (result.Status, result.Code, result.IsReplay));
+        Assert.Null(result.Resource);
+        Assert.Null(result.OriginalCorrelationId);
+        Assert.Equal([Permission, Permission], fixture.Authority.Permissions);
+        Assert.Empty(fixture.Store.Writes);
+        Assert.Single(fixture.Store.Commands);
+        Assert.Empty(fixture.Store.AuditEvents);
     }
 
     [Fact]
@@ -1480,6 +1589,7 @@ public sealed class ManufacturingCommandServiceTests
 
         fixture.Authority.Permissions.Clear();
         fixture.Authority.Scopes.Enqueue(Scope(companyWide: true, "PRODUCTION_OPERATOR"));
+        fixture.Authority.Scopes.Enqueue(Scope(companyWide: true, "PRODUCTION_OPERATOR"));
         fixture.Authority.Scopes.Enqueue(PermissionScope.Denied);
         var revoked = await fixture.Service.CloseOrderAsync(
             order.Id, new CloseOrderRequestV1(read, reason), key,
@@ -1488,13 +1598,14 @@ public sealed class ManufacturingCommandServiceTests
         Assert.Equal((ManufacturingApiStatus.Denied, ManufacturingApiCodes.AuthorityDenied, false),
             (revoked.Status, revoked.Code, revoked.IsReplay));
         Assert.Null(revoked.Resource);
-        Assert.Equal([ClosePermission, CloseExceptionPermission], fixture.Authority.Permissions);
+        Assert.Equal([ClosePermission, ClosePermission, CloseExceptionPermission], fixture.Authority.Permissions);
         Assert.Equal(toleranceReads, fixture.Settings.ToleranceAsked);
         Assert.Equal(effects,
             (fixture.Store.Writes.Count, fixture.Store.PolicyDecisions.Count, fixture.Store.AuditEvents.Count));
         Assert.Same(stored, Assert.Single(fixture.Store.Commands).Value);
 
         fixture.Authority.Permissions.Clear();
+        fixture.Authority.Scopes.Enqueue(Scope(companyWide: true, "PRODUCTION_OPERATOR"));
         fixture.Authority.Scopes.Enqueue(Scope(companyWide: true, "PRODUCTION_OPERATOR"));
         fixture.Authority.Scopes.Enqueue(Scope(companyWide: true, "PRODUCTION_SUPERVISOR"));
         var replay = await fixture.Service.CloseOrderAsync(
@@ -1503,7 +1614,7 @@ public sealed class ManufacturingCommandServiceTests
 
         Assert.Equal((ManufacturingApiStatus.Ok, true, "corr-1", order.Id),
             (replay.Status, replay.IsReplay, replay.OriginalCorrelationId, replay.Resource!.OrderId));
-        Assert.Equal([ClosePermission, CloseExceptionPermission], fixture.Authority.Permissions);
+        Assert.Equal([ClosePermission, ClosePermission, CloseExceptionPermission], fixture.Authority.Permissions);
         Assert.Equal(toleranceReads, fixture.Settings.ToleranceAsked);
         Assert.Equal(effects,
             (fixture.Store.Writes.Count, fixture.Store.PolicyDecisions.Count, fixture.Store.AuditEvents.Count));
@@ -1852,6 +1963,17 @@ public sealed class ManufacturingCommandServiceTests
 
     private static PermissionScope Scope(bool companyWide, params string[] roles) => new(true, companyWide,
         new HashSet<string>(roles, StringComparer.Ordinal), new HashSet<Guid>(), new HashSet<Guid>(), new HashSet<Guid>());
+
+    private static void ApplyFreshFenceFault(Fixture fixture, string fault)
+    {
+        switch (fault)
+        {
+            case "permission": fixture.Authority.Scope = PermissionScope.Denied; break;
+            case "actor": fixture.User.ActorId = OtherActor; break;
+            case "company": fixture.CompanyContext.SwitchForTest(OtherCompany); break;
+            default: throw new ArgumentOutOfRangeException(nameof(fault), fault, null);
+        }
+    }
 
     private sealed class Fixture
     {
@@ -2342,9 +2464,17 @@ public sealed class ManufacturingCommandServiceTests
         /// <summary>Another attempt of the same key that commits first (ADR-011 §8).</summary>
         public Func<ManufacturingCommandMetadata, object, ManufacturingCommandRecord>? RaceWinner { get; set; }
 
+        public Action<ManufacturingCommandRecord?>? AfterFindCommand { get; set; }
+
+        public Action<ProductionPlan?>? AfterFindPlan { get; set; }
+
         public Task<ManufacturingCommandRecord?> FindCommandAsync(string commandName, string idempotencyKeyHash,
-            CancellationToken cancellationToken = default) =>
-            Task.FromResult(Commands.GetValueOrDefault((commandName, idempotencyKeyHash)));
+            CancellationToken cancellationToken = default)
+        {
+            var stored = Commands.GetValueOrDefault((commandName, idempotencyKeyHash));
+            AfterFindCommand?.Invoke(stored);
+            return Task.FromResult(stored);
+        }
 
         public Task RecordCommandAsync(ManufacturingCommandRecord record, CancellationToken cancellationToken = default)
         {
@@ -2399,8 +2529,12 @@ public sealed class ManufacturingCommandServiceTests
             DateTimeOffset approvedAt, ManufacturingCommandMetadata metadata, CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
 
-        public Task<ProductionPlan?> FindPlanAsync(Guid planId, CancellationToken cancellationToken = default) =>
-            Task.FromResult(Plans.GetValueOrDefault(planId));
+        public Task<ProductionPlan?> FindPlanAsync(Guid planId, CancellationToken cancellationToken = default)
+        {
+            var plan = Plans.GetValueOrDefault(planId);
+            AfterFindPlan?.Invoke(plan);
+            return Task.FromResult(plan);
+        }
 
         public Task<ManufacturingWriteOutcome> CreateOrderAsync(Guid orderId, Guid planId, ManufacturingCommandMetadata metadata,
             CancellationToken cancellationToken = default) => throw new NotSupportedException();

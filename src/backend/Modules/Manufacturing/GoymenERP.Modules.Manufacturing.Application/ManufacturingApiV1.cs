@@ -1380,7 +1380,7 @@ public sealed partial class ManufacturingCommandService(
     /// </summary>
     public async Task<ManufacturingApiResult<PlanViewV1>> GetPlanAsync(Guid planId, CancellationToken cancellationToken)
     {
-        if (!HasContext())
+        if (!HasContext() || ActorGuid() is not { } actorId)
         {
             return Denied<PlanViewV1>();
         }
@@ -1390,9 +1390,17 @@ public sealed partial class ManufacturingCommandService(
             return NotFoundResult<PlanViewV1>();
         }
 
+        var companyId = companyContext.CompanyId;
         try
         {
             var plan = await plans.FindPlanAsync(planId, cancellationToken);
+            var scope = await authority.RevalidatePermissionScopeAsync(
+                ErpPermissions.ManufacturingPlansRead, companyId, cancellationToken);
+            if (!scope.IsGranted || !HasCapturedContext(companyId, actorId))
+            {
+                return Denied<PlanViewV1>();
+            }
+
             return plan is null
                 ? NotFoundResult<PlanViewV1>()
                 : new ManufacturingApiResult<PlanViewV1>(ManufacturingApiStatus.Ok, PlanView(plan), false, null);
@@ -1515,9 +1523,16 @@ public sealed partial class ManufacturingCommandService(
 
         async Task<ManufacturingApiResult<T>> AnswerStoredAsync(ManufacturingCommandRecord stored)
         {
+            // The immutable answer may be released only while the original command grant and captured request
+            // identity still hold. Every ordinary and concurrent-winner replay passes through this helper.
+            if (await FenceCapturedAsync<T>(permission, companyId, actor, cancellationToken) is { } fenced)
+            {
+                return fenced;
+            }
+
             // A reasoned close is still a privileged exception when its immutable answer is replayed or won by a
             // concurrent attempt. Re-measure that dedicated grant after finding the record, against the company and
-            // actor captured above. Normal/legacy close replay deliberately has no additional permission here.
+            // actor captured above, in addition to the original command grant measured above.
             if (storedAnswerPermission is not null)
             {
                 if (string.IsNullOrWhiteSpace(storedAnswerPermission) || !HasCapturedContext(companyId, actor))

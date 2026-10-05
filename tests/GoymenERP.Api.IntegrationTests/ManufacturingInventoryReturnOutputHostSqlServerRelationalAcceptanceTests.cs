@@ -226,9 +226,42 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests(ITes
             "SELECT COUNT(*) FROM inventory.Commands WHERE TargetId = @id", ("@id", returned.ReturnId)));
         Assert.Equal(1, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM inventory.Commands WHERE TargetId = @id", ("@id", output.OutputId)));
+        Assert.Equal(2, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE CorrelationId = @correlation",
+            ("@correlation", returnMetadata.CorrelationId)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE CorrelationId = @correlation "
+            + "AND EventType = N'manufacturing.input.returned.v1' "
+            + "AND EntityType = N'Manufacturing.ProductionOrder'",
+            ("@correlation", returnMetadata.CorrelationId)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE CorrelationId = @correlation "
+            + "AND EventType = N'inventory.movement.recorded.v1' "
+            + "AND EntityType = N'Inventory.StockMovement'",
+            ("@correlation", returnMetadata.CorrelationId)));
         Assert.Equal(4, await run.ScalarAsync<int>(
-            "SELECT COUNT(*) FROM audit.AuditEvents WHERE CorrelationId IN (@return, @output)",
-            ("@return", returnMetadata.CorrelationId), ("@output", outputMetadata.CorrelationId)));
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE CorrelationId = @correlation",
+            ("@correlation", outputMetadata.CorrelationId)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE CorrelationId = @correlation "
+            + "AND EventType = N'manufacturing.output.declared.v1' "
+            + "AND EntityType = N'Manufacturing.ProductionOrder'",
+            ("@correlation", outputMetadata.CorrelationId)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE CorrelationId = @correlation "
+            + "AND EventType = N'inventory.lot.registered.v1' "
+            + "AND EntityType = N'Inventory.MaterialLot'",
+            ("@correlation", outputMetadata.CorrelationId)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE CorrelationId = @correlation "
+            + "AND EventType = N'inventory.label.registered.v1' "
+            + "AND EntityType = N'Inventory.MaterialLabel'",
+            ("@correlation", outputMetadata.CorrelationId)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE CorrelationId = @correlation "
+            + "AND EventType = N'inventory.movement.recorded.v1' "
+            + "AND EntityType = N'Inventory.StockMovement'",
+            ("@correlation", outputMetadata.CorrelationId)));
         Assert.Equal(0, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM audit.AuditEvents WHERE CorrelationId IN (@returnReplay, @outputReplay)",
             ("@returnReplay", returnReplayMetadata.CorrelationId),
