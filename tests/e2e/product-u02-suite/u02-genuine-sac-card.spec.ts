@@ -43,6 +43,7 @@ type StoredCard = {
     readonly code: string
     readonly name: string
     readonly version: string
+    readonly lifecycle: string
     readonly groupId: string
     readonly familyId: string
   }
@@ -52,6 +53,18 @@ type StoredCard = {
     readonly attributes: Record<string, unknown>
     readonly units: { readonly stock: string; readonly sales: string; readonly purchase: string | null }
   }
+}
+
+type ProductHistory = {
+  readonly productId: string
+  readonly truncated: boolean
+  readonly entries: {
+    readonly operation: string
+    readonly versionBefore: string | null
+    readonly versionAfter: string
+    readonly reason: string
+    readonly changedFields: string[]
+  }[]
 }
 
 test('approved GDC Sac card is created through the form and reopened from the real Product API', async ({ page }) => {
@@ -137,4 +150,157 @@ test('approved GDC Sac card is created through the form and reopened from the re
   await expect(page.getByText(coating!.displayName, { exact: true })).toBeVisible()
   await expect(page.getByTestId('product-unit-stock')).toHaveText(kilogram!.displayName)
   await expect(page.getByTestId('product-unit-sales')).toHaveText(kilogram!.displayName)
+})
+
+test('the same genuine SAC card is activated by the existing activator and reopened as Active', async ({ page }) => {
+  const rawSeed = process.env.BROWSER_E2E_U02_SEED?.trim()
+  if (!rawSeed) throw new Error('BROWSER_E2E_U02_SEED is required for the disposable u02 actor binding.')
+  const actorSeed = JSON.parse(rawSeed) as Record<string, unknown>
+  const companyId = actorSeed.companyId
+  const requester = actorSeed.authorizedActor
+  const activator = actorSeed.activatorActor
+  if (typeof companyId !== 'string' || typeof requester !== 'string' || typeof activator !== 'string'
+    || !companyId || !requester || !/^u02-[a-z0-9-]+$/.test(activator) || requester === activator) {
+    throw new Error('The u02 fixture must bind distinct requester and disposable activator actors.')
+  }
+  const apiBaseUrl = process.env.BROWSER_E2E_API_BASE_URL?.trim().replace(/\/$/, '')
+  if (!apiBaseUrl || new URL(apiBaseUrl).hostname !== '127.0.0.1') {
+    throw new Error('BROWSER_E2E_API_BASE_URL must name the disposable loopback API.')
+  }
+  const headersFor = (actor: string) => ({ 'X-Development-User': actor, 'X-Company-Id': companyId })
+
+  await page.setExtraHTTPHeaders({ 'X-Development-User': requester })
+  await page.goto('/urun')
+  await page.getByRole('main').getByRole('link', { name: 'Yeni ürün', exact: true }).click()
+  const optionsRead = page.waitForResponse(response =>
+    new URL(response.url()).pathname === `${PRODUCTS_PATH}/reference-options`
+      && response.request().method() === 'GET')
+  await page.getByLabel('Kod grubu').selectOption(GROUP_ID)
+  const optionsResponse = await optionsRead
+  expect(optionsResponse.status()).toBe(200)
+  const options = await optionsResponse.json() as ReferenceOptions
+  const family = options.familyFacts.find(item => item.id === FAMILY_ID)
+  expect(family).toMatchObject({ code: 'hr-slit-coil', templateId: TEMPLATE_ID, templateVersion: '1' })
+  const kilogram = options.units.find(unit => unit.id === KILOGRAM_ID)
+  expect(kilogram).toMatchObject({ isKilogram: true })
+
+  const name = `S235JR 3 mm × 248 mm kaplamasız aktivasyon ${Date.now()}`
+  await page.getByLabel('Ürün adı').fill(name)
+  await page.getByLabel('Ürün ailesi').selectOption(FAMILY_ID)
+  await page.getByLabel('thickness-mm (mm)', { exact: false }).fill('3')
+  await page.getByLabel('width-mm (mm)', { exact: false }).fill('248')
+  await page.getByLabel('steel-grade', { exact: false }).selectOption('S235JR')
+  await page.getByLabel('coating', { exact: false }).selectOption('uncoated')
+  await page.getByLabel('Stok birimi (kg)').selectOption(KILOGRAM_ID)
+  await page.getByLabel('Satış birimi').selectOption(KILOGRAM_ID)
+  const createRead = page.waitForResponse(response =>
+    new URL(response.url()).pathname === PRODUCTS_PATH && response.request().method() === 'POST')
+  await page.getByRole('button', { name: 'Taslak olarak kaydet' }).click()
+  const createResponse = await createRead
+  expect(createResponse.status()).toBe(201)
+  const created = (await createResponse.json() as { card: StoredCard }).card
+  expect(created.product).toMatchObject({ name, lifecycle: 'Draft', version: '1', groupId: GROUP_ID, familyId: FAMILY_ID })
+  expect(created.references).toMatchObject({
+    templateId: TEMPLATE_ID, templateVersion: '1',
+    attributes: { 'thickness-mm': 3, 'width-mm': 248, 'steel-grade': 'S235JR', coating: 'uncoated' },
+    units: { stock: KILOGRAM_ID, sales: KILOGRAM_ID, purchase: null },
+  })
+  expect(created.references.attributes).not.toHaveProperty('producer-grade')
+  const cardPath = `${PRODUCTS_PATH}/${created.product.id}`
+  const activationPath = `${cardPath}/activation`
+
+  await page.goto(`/urun/${created.product.id}`)
+  await expect(page.getByRole('button', { name: 'Ürünü aktifleştir' })).toHaveCount(0)
+  const beforeCardResponse = await page.request.get(`${apiBaseUrl}${cardPath}`, { headers: headersFor(requester) })
+  const beforeHistoryResponse = await page.request.get(`${apiBaseUrl}${cardPath}/history`, { headers: headersFor(requester) })
+  expect(beforeCardResponse.status()).toBe(200)
+  expect(beforeHistoryResponse.status()).toBe(200)
+  const beforeCard = await beforeCardResponse.json() as StoredCard
+  const beforeHistory = await beforeHistoryResponse.json() as ProductHistory
+  expect(beforeHistory.entries.map(entry => entry.operation)).toEqual(['DraftCreate'])
+  const denied = await page.request.post(`${apiBaseUrl}${activationPath}`, {
+    headers: { ...headersFor(requester), 'Idempotency-Key': `u02-genuine-denied-${created.product.id}` },
+    data: { expectedVersion: created.product.version },
+  })
+  expect(denied.status()).toBe(403)
+  expect(await denied.text()).not.toContain(name)
+  const deniedCardResponse = await page.request.get(`${apiBaseUrl}${cardPath}`, { headers: headersFor(requester) })
+  const deniedHistoryResponse = await page.request.get(`${apiBaseUrl}${cardPath}/history`, { headers: headersFor(requester) })
+  expect(deniedCardResponse.status()).toBe(200)
+  expect(deniedHistoryResponse.status()).toBe(200)
+  expect(await deniedCardResponse.json()).toEqual(beforeCard)
+  expect(await deniedHistoryResponse.json()).toEqual(beforeHistory)
+
+  await page.setExtraHTTPHeaders({ 'X-Development-User': activator })
+  await page.goto('about:blank')
+  const activatorRead = page.waitForResponse(response =>
+    new URL(response.url()).pathname === cardPath && response.request().method() === 'GET')
+  await page.goto(`/urun/${created.product.id}`)
+  expect((await activatorRead).status()).toBe(200)
+  const activate = page.getByRole('button', { name: 'Ürünü aktifleştir', exact: true })
+  await expect(activate).toBeVisible()
+  const activationRead = page.waitForResponse(response =>
+    new URL(response.url()).pathname === activationPath && response.request().method() === 'POST')
+  await activate.click()
+  const activationResponse = await activationRead
+  expect(activationResponse.status()).toBe(200)
+  const activationBody = await activationResponse.json() as { card: StoredCard; isReplay: boolean }
+  expect(activationBody.isReplay).toBe(false)
+  expect(activationBody.card.product).toMatchObject({
+    id: created.product.id, lifecycle: 'Active', version: (BigInt(created.product.version) + 1n).toString(),
+  })
+  const activationRequest = activationResponse.request()
+  const activationKey = await activationRequest.headerValue('Idempotency-Key')
+  expect(activationKey).toBeTruthy()
+  expect(activationRequest.postDataJSON()).toEqual({ expectedVersion: created.product.version })
+  await expect(page.locator('span[data-lifecycle]')).toHaveText('Aktif')
+
+  await page.goto('about:blank')
+  const cardRead = page.waitForResponse(response =>
+    new URL(response.url()).pathname === cardPath && response.request().method() === 'GET')
+  const historyRead = page.waitForResponse(response =>
+    new URL(response.url()).pathname === `${cardPath}/history` && response.request().method() === 'GET')
+  await page.goto(`/urun/${created.product.id}`)
+  const reopenedResponse = await cardRead
+  const historyResponse = await historyRead
+  expect(reopenedResponse.status()).toBe(200)
+  expect(historyResponse.status()).toBe(200)
+  const reopened = await reopenedResponse.json() as StoredCard
+  const history = await historyResponse.json() as ProductHistory
+  expect(reopened.product).toMatchObject({
+    id: created.product.id, code: created.product.code, name,
+    lifecycle: 'Active', version: activationBody.card.product.version,
+    groupId: GROUP_ID, familyId: FAMILY_ID,
+  })
+  expect(reopened.references).toEqual(created.references)
+  expect(history.productId).toBe(created.product.id)
+  expect(history.truncated).toBe(false)
+  expect(history.entries.map(entry => entry.operation)).toEqual(['Activate', 'DraftCreate'])
+  expect(history.entries[0]).toMatchObject({
+    versionBefore: created.product.version, versionAfter: reopened.product.version,
+    reason: 'Ürün kartı onayı', changedFields: ['lifecycle'],
+  })
+  await expect(page.getByTestId('product-family')).toHaveText(family!.displayName)
+  await expect(page.locator('dt').filter({ hasText: 'thickness-mm' }).locator('..').locator('dd')).toHaveText('3')
+  await expect(page.locator('dt').filter({ hasText: 'width-mm' }).locator('..').locator('dd')).toHaveText('248')
+  await expect(page.getByText('S235JR', { exact: true })).toBeVisible()
+  await expect(page.getByText('Kaplamasız', { exact: true })).toBeVisible()
+  await expect(page.getByTestId('product-unit-stock')).toHaveText(kilogram!.displayName)
+  await expect(page.getByTestId('product-unit-sales')).toHaveText(kilogram!.displayName)
+
+  const replay = await page.request.post(`${apiBaseUrl}${activationPath}`, {
+    headers: { ...headersFor(activator), 'Idempotency-Key': activationKey! },
+    data: activationRequest.postDataJSON(),
+  })
+  expect(replay.status()).toBe(200)
+  expect(replay.headers()['idempotency-replayed']).toBe('true')
+  const replayed = await replay.json() as { card: StoredCard; isReplay: boolean }
+  expect(replayed.isReplay).toBe(true)
+  expect(replayed.card.product.version).toBe(reopened.product.version)
+  const afterReplayCard = await page.request.get(`${apiBaseUrl}${cardPath}`, { headers: headersFor(activator) })
+  const afterReplayHistory = await page.request.get(`${apiBaseUrl}${cardPath}/history`, { headers: headersFor(activator) })
+  expect(afterReplayCard.status()).toBe(200)
+  expect(afterReplayHistory.status()).toBe(200)
+  expect(await afterReplayCard.json()).toEqual(reopened)
+  expect(await afterReplayHistory.json()).toEqual(history)
 })
