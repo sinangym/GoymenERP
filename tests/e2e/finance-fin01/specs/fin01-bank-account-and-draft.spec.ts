@@ -650,7 +650,7 @@ test.describe.serial('FIN-01 bank account and draft (real API, real SQL)', () =>
     await expect(unknown).toContainText('Sonuç netleşene kadar alanlar kilitli.')
     await expect(page.getByRole('button', { name: 'Kesin kayda al', exact: true })).toBeDisabled()
     const committed = await committedRecord
-    expect(committed.status, JSON.stringify(committed.body)).toBe(200)
+    expect(committed.status, 'committed record response must be HTTP 200').toBe(200)
     expect(committed.body).toMatchObject({
       isReplay: false,
       resource: {
@@ -676,7 +676,7 @@ test.describe.serial('FIN-01 bank account and draft (real API, real SQL)', () =>
     expect(replaySent.postDataJSON()).toEqual(recordBody)
     const replayResponse = await replayAnswer
     const replayBody = await replayResponse.json() as RecordResult
-    expect(replayResponse.status(), JSON.stringify(replayBody)).toBe(200)
+    expect(replayResponse.status(), 'same-attempt replay must be HTTP 200').toBe(200)
     expect(replayResponse.headers()['idempotency-replayed']).toBe('true')
     expect(replayResponse.headers()['idempotency-original-correlation-id'])
       .toBe(committed.body.originalCorrelationId)
