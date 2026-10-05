@@ -462,7 +462,8 @@ public sealed class ProductGlobalRuntimeSqlServerRelationalAcceptanceTests
                     ["steel-grade"] = JsonSerializer.SerializeToElement("S235JR"),
                     ["coating"] = JsonSerializer.SerializeToElement("uncoated"),
                 },
-                new ProductUnitReferences(Stock: SettingsUnitIdentitiesV1.Kilogram));
+                new ProductUnitReferences(Stock: SettingsUnitIdentitiesV1.Kilogram,
+                    Sales: SettingsUnitIdentitiesV1.Kilogram));
             var draft = new CreateProductDraftRequest("S235JR 3 mm × 248 mm kaplamasız sac",
                 ProductInitialCodeGroupV1.SacGroupId,
                 FamilyId: ProductInitialTechnicalDefinitionV1.HotRolledSlitCoilFamilyId,
@@ -503,6 +504,7 @@ public sealed class ProductGlobalRuntimeSqlServerRelationalAcceptanceTests
                 Assert.Equal((first.Card.Product.Id, "1", ProductInitialTechnicalDefinitionV1.TemplateId, "1"),
                     (card.Product.Id, card.Product.Version, card.References.TemplateId, card.References.TemplateVersion));
                 Assert.Equal(SettingsUnitIdentitiesV1.Kilogram, card.References.Units!.Stock);
+                Assert.Equal(SettingsUnitIdentitiesV1.Kilogram, card.References.Units.Sales);
                 Assert.Equal(3m, card.References.Attributes!["thickness-mm"].GetDecimal());
                 Assert.Equal(248m, card.References.Attributes["width-mm"].GetDecimal());
                 Assert.Equal("S235JR", card.References.Attributes["steel-grade"].GetString());
@@ -529,6 +531,7 @@ public sealed class ProductGlobalRuntimeSqlServerRelationalAcceptanceTests
                     (card.Product.Id, card.Product.Code, card.Product.Lifecycle, card.Product.Version));
                 Assert.Equal(references.TemplateId, card.References.TemplateId);
                 Assert.Equal(references.Units!.Stock, card.References.Units!.Stock);
+                Assert.Equal(references.Units.Sales, card.References.Units.Sales);
                 Assert.False(card.References.Attributes!.ContainsKey("producer-grade"));
             }
 
