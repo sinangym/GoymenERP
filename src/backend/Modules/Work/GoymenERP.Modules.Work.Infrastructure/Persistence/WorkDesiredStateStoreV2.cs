@@ -23,7 +23,7 @@ public sealed class WorkDesiredStateStoreV2
 {
     internal const string AppliedEventType = "work.desired-state.applied.v2";
     private const int OutboxSchemaVersion = 2;
-    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
+    private static readonly JsonSerializerOptions Json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
 
     private readonly WorkDbContext dbContext;
     private readonly ICompanyContext companyContext;
@@ -273,7 +273,7 @@ public sealed class WorkDesiredStateStoreV2
         WorkDesiredStateObservationV2 observation,
         WorkStorageKeyV1 sourceKey,
         WorkStorageKeyV1 scopeKey,
-        DateTimeOffset now) => new()
+        DateTimeOffset now) => new WorkObservationInboxRow()
     {
         CompanyId = observation.CompanyId,
         SourceKeyDigest = sourceKey.Digest.ToArray(),
@@ -452,7 +452,7 @@ public sealed class WorkDesiredStateStoreV2
         && companyContext.CompanyId == companyId;
 
     private static WorkDesiredStateResultV2 Refused() =>
-        new(WorkDesiredStateDecisionV2.Refused, null);
+        new WorkDesiredStateResultV2(WorkDesiredStateDecisionV2.Refused, null);
 
     private void CleanupAttempt(params object[] entities)
     {
