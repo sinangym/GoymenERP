@@ -18,6 +18,7 @@ import {
   INVENTORY_STOCK_COUNT_RECORD_CAPABILITY,
   INVENTORY_STOCK_SCRAP_APPROVE_CAPABILITY,
   INVENTORY_STOCK_SCRAP_RECORD_CAPABILITY,
+  inventoryOpeningDetailPath,
 } from './capabilities'
 import { fetchInventoryLabelDetail } from './labelDetailApi'
 import { LabelAllocationPanel } from './LabelAllocationPanel'
@@ -96,6 +97,7 @@ function InventoryLabelDetailView({ namespace, labelId, target, stockSearch }: {
   const boundary = useAuthBoundary()
   const canReadProduct = hasCapability(shell, CAPABILITY.productItemsDetail)
   const canReadLabel = hasCapability(shell, CAPABILITY.inventoryStockPositionsList)
+  const canOpenOpening = hasCapability(shell, CAPABILITY.inventoryOpeningStockRecord)
   const canTransform = hasCapability(shell, INVENTORY_LABEL_TRANSFORMATION_CAPABILITY)
   const canClassify = hasCapability(shell, INVENTORY_LABEL_CLASSIFICATION_WRITE_CAPABILITY)
   const canRecordCount = hasCapability(shell, INVENTORY_STOCK_COUNT_RECORD_CAPABILITY)
@@ -195,7 +197,10 @@ function InventoryLabelDetailView({ namespace, labelId, target, stockSearch }: {
           <tbody>{movementTimeline.entries.flatMap((movement) => movement.lines.map((line) => <tr key={`${movement.movementId}:${line.sequence}`}>
             <td>{movement.occurredAtUtc}</td>
             <td>{MOVEMENT_KIND_TEXT[movement.kind]}<br /><span className={styles.mono}>…{movement.movementId.slice(-8)}</span></td>
-            <td>{movement.sourceKind}<br /><span className={styles.mono}>…{movement.sourceId.slice(-8)}</span></td>
+            <td>{movement.sourceKind}<br /><span className={styles.mono}>{canOpenOpening &&
+              movement.sourceKind === 'inventory.opening-count'
+                ? <Link to={inventoryOpeningDetailPath(movement.sourceId)} aria-label="Açılış sayımını aç">…{movement.sourceId.slice(-8)}</Link>
+                : <>…{movement.sourceId.slice(-8)}</>}</span></td>
             <td>{DIRECTION_TEXT[line.direction]}</td>
             <td className={styles.mono}>{line.locationId}</td>
             <td>{line.block}</td>
