@@ -1467,7 +1467,8 @@ public sealed class ManufacturingCommandServiceTests
             (result.Status, result.Code, result.IsReplay));
         Assert.Null(result.Resource);
         Assert.Null(result.OriginalCorrelationId);
-        Assert.Equal([Permission, Permission], fixture.Authority.Permissions);
+        // Initial command grant, the pre-write fence, then the winner answer's post-read fence.
+        Assert.Equal([Permission, Permission, Permission], fixture.Authority.Permissions);
         Assert.Empty(fixture.Store.Writes);
         Assert.Single(fixture.Store.Commands);
         Assert.Empty(fixture.Store.AuditEvents);
