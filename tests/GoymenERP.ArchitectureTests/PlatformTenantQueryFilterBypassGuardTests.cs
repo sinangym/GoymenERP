@@ -222,7 +222,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // Q16 / AT-020: +3 Product import API SQL facts (d434c2b8… -> 9958c91f…).
             // Product 4A: +3 initial technical-definition release/rollback SQL facts.
             ["tools/relational_inventory/product.txt"] =
-                "cd907d6fb282974a814e0ad8d94263d895f9905ac4ae19129ea20a7cf5c2a9cd",
+                "20453610c07555e082e24282033086f6f990071666598987bdc961817a21b20a",
 
             // purchasing
             ["tools/relational_inventory/purchasing.txt"] =
@@ -1463,6 +1463,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // only the unchanged, unreferenced release can be removed.
                 ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/Persistence/Migrations/20261004130000_ReleaseInitialProductTechnicalDefinition.cs"] =
                     new("b57c95cb4f4c65b6a254c7f83b76473cead3d979b58535ec85955d1c03449467",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 2 }),
+                // The accepted initial Product code group is durable. Down refuses when its identity,
+                // byte-exact name or prefix has drifted or any Product/card/import replay reference uses it.
+                ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/Persistence/Migrations/20261004213000_ReleaseInitialProductCodeGroup.cs"] =
+                    new("f5f455d90e4758107648997743788dab5f511bb3a01a87676a1d832a0563290b",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 2 }),
                 ["src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/Persistence/Migrations/20260912175120_AddExplicitProductAssignments.cs"] =
