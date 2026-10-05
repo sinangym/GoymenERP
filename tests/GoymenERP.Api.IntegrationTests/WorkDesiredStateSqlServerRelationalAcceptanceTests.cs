@@ -7,6 +7,7 @@ using GoymenERP.Modules.Audit.Infrastructure.Persistence;
 using GoymenERP.Modules.Audit.Infrastructure.Services;
 using GoymenERP.Modules.Organization.Infrastructure.Persistence;
 using GoymenERP.Modules.Work.Domain;
+using GoymenERP.Modules.Work.Infrastructure;
 using GoymenERP.Modules.Work.Infrastructure.Persistence;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
@@ -22,6 +23,77 @@ public sealed class WorkDesiredStateSqlServerRelationalAcceptanceTests
     private static readonly Guid EvidenceB = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
     private const string HashA = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
     private const string HashB = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+
+    [SqlServerFact]
+    public async Task Internal_admission_projects_the_single_store_write_and_snapshot_read_has_no_effect()
+    {
+        await WithDatabaseAsync(async factory =>
+        {
+            await using var scope = await WorkSqlScope.OpenAsync(factory, TestCompanyIds.CompanyA);
+            var admission = new WorkDesiredStateAdmissionV1(scope.Store, scope.Db, scope.Company);
+            var observation = Available(1, WorkDesiredStateV2.NeedsAction);
+            var evaluation = new WorkEvaluationIdV1(Guid.Parse("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee"));
+            var delivery = new WorkDeliveryIdV1(Guid.Parse("dddddddd-dddd-dddd-dddd-dddddddddddd"));
+
+            var first = await admission.AdmitAsync(observation, Metadata("admit-1"), evaluation, delivery);
+            var replay = await admission.AdmitAsync(observation, Metadata("admit-replay"), evaluation, delivery);
+            Assert.Equal(WorkDesiredStateDecisionV2.Apply, first.Reconciliation.Decision);
+            Assert.Equal(WorkDesiredStateDecisionV2.Replay, replay.Reconciliation.Decision);
+            Assert.Equal(first.IssueKey, replay.IssueKey);
+            await AssertWorkEffectCountsAsync(factory, 1);
+
+            var read = await admission.ReadSnapshotAsync(observation.SourceKey, observation.ScopeKey);
+            Assert.NotNull(read);
+            Assert.Equal(first.Reconciliation.State, read);
+            await AssertWorkEffectCountsAsync(factory, 1);
+        });
+    }
+
+    [SqlServerFact]
+    public async Task Snapshot_read_refuses_company_drift_and_foreign_scope_without_writing()
+    {
+        await WithDatabaseAsync(async factory =>
+        {
+            await using (var seed = await WorkSqlScope.OpenAsync(factory, TestCompanyIds.CompanyA))
+                Assert.Equal(WorkDesiredStateDecisionV2.Apply,
+                    (await seed.Store.ReconcileAsync(
+                        Available(1, WorkDesiredStateV2.NeedsAction), Metadata("read-seed"))).Decision);
+
+            await using var scope = await WorkSqlScope.OpenAsync(factory, TestCompanyIds.CompanyA);
+            Assert.Null(await WorkDesiredStateStoreV2.ReadSnapshotAsync(
+                scope.Db, scope.Company, "source-a", "foreign-scope"));
+            await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                WorkDesiredStateStoreV2.ReadSnapshotAsync(
+                    scope.Db, scope.Company, "source-a", "scope-a",
+                    afterRead: _ =>
+                    {
+                        scope.Company.Set(TestCompanyIds.CompanyB);
+                        return Task.CompletedTask;
+                    }));
+            await AssertWorkEffectCountsAsync(factory, 1);
+        });
+    }
+
+    [SqlServerFact]
+    public async Task Snapshot_read_rejects_row_outbox_disagreement_without_recording_an_effect()
+    {
+        await WithDatabaseAsync(async factory =>
+        {
+            await using var scope = await WorkSqlScope.OpenAsync(factory, TestCompanyIds.CompanyA);
+            Assert.Equal(WorkDesiredStateDecisionV2.Apply,
+                (await scope.Store.ReconcileAsync(
+                    Available(1, WorkDesiredStateV2.NeedsAction), Metadata("read-tamper-seed"))).Decision);
+
+            var row = await scope.Db.DesiredStateSnapshots.SingleAsync();
+            row.HighestPayloadSha256 = HashB;
+            await scope.Db.SaveChangesAsync();
+
+            await Assert.ThrowsAsync<WorkStorageCorruptionException>(() =>
+                WorkDesiredStateStoreV2.ReadSnapshotAsync(
+                    scope.Db, scope.Company, "source-a", "scope-a"));
+            await AssertWorkEffectCountsAsync(factory, 1);
+        });
+    }
 
     [SqlServerFact]
     public async Task Apply_replay_conflict_older_and_unavailable_watermark_are_atomic()
