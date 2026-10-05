@@ -9,6 +9,7 @@ using System.Text.RegularExpressions;
 using System.Security.Claims;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Api.ProductRuntime;
+using GoymenERP.Api.Endpoints;
 using GoymenERP.Api.Shell;
 using GoymenERP.BuildingBlocks.Shell;
 using GoymenERP.BuildingBlocks.Security;
@@ -22,6 +23,8 @@ using GoymenERP.Modules.Identity.Domain.Roles;
 using GoymenERP.Modules.Identity.Domain.Users;
 using GoymenERP.Modules.Identity.Infrastructure.Persistence;
 using GoymenERP.Modules.Identity.Infrastructure.Services;
+using GoymenERP.Modules.Inventory.Application;
+using GoymenERP.Modules.Organization.Application.Contracts;
 using GoymenERP.Modules.Product.Application.Contracts;
 using GoymenERP.Modules.Product.Infrastructure.Persistence;
 using GoymenERP.Modules.Settings.Application;
@@ -538,8 +541,11 @@ public sealed class ProductGlobalRuntimeSqlServerRelationalAcceptanceTests
                     identity.Users.Add(new UserAccount(ActorId, "Disposable Product snapshot actor", null));
                 var roleId = Guid.NewGuid();
                 var role = new RoleDefinition(roleId, $"PRODUCT-SNAPSHOT-{roleId:N}",
-                    "Disposable Product technical snapshot reader", true);
+                    "Disposable Product and Inventory SQL journey actor", true);
                 role.AddPermission(ProductPermissionManifestV1.OperationalSelectionRead);
+                role.AddPermission(InventoryPermissionManifestV1.OpeningStockRecord);
+                role.AddPermission(ErpPermissions.InventoryLabelsRead);
+                role.AddPermission(ErpPermissions.InventoryBalancesRead);
                 var assignment = new RoleAssignment(Guid.NewGuid(), ActorId, roleId, CompanyA,
                     DateTimeOffset.UtcNow.AddMinutes(-1), null, approvedByUserId: null);
                 assignment.AddScope(AccessScopeType.Company, CompanyA);
@@ -549,6 +555,114 @@ public sealed class ProductGlobalRuntimeSqlServerRelationalAcceptanceTests
             }
 
             var afterActivation = await SnapshotAsync(factory.DatabaseConnectionString);
+            using var locationsResponse = await freshClient.GetAsync(InventoryReferenceEndpoints.LocationPath);
+            Assert.Equal(HttpStatusCode.OK, locationsResponse.StatusCode);
+            var locations = (await locationsResponse.Content.ReadFromJsonAsync<OrganizationLocationCandidatesV1>())!;
+            Assert.NotEmpty(locations.Items);
+            var location = locations.Items[0];
+            Assert.NotEqual(Guid.Empty, location.LocationId);
+            var labelId = Guid.NewGuid();
+            var opening = new OpeningCountRequestV1(Guid.NewGuid(), location.LocationId, effectiveOn,
+                "Disposable genuine SAC opening count",
+                [new OpeningCountLineRequestV1(Guid.NewGuid(), labelId, "SAC-T02B-LABEL-1", Guid.NewGuid(),
+                    null, null, first.Card.Product.Id, active.Card.Product.Version, "1000")]);
+            const string openingKey = "product-genuine-sac-opening-once";
+            async Task<HttpResponseMessage> RecordOpeningAsync(HttpClient actor, OpeningCountRequestV1 request,
+                string key)
+            {
+                using var message = new HttpRequestMessage(HttpMethod.Post, "/api/v1/inventory/opening-counts")
+                { Content = JsonContent.Create(request) };
+                message.Headers.Add("Idempotency-Key", key);
+                return await actor.SendAsync(message);
+            }
+
+            using var opened = await RecordOpeningAsync(freshClient, opening, openingKey);
+            Assert.Equal(HttpStatusCode.Created, opened.StatusCode);
+            var recorded = (await opened.Content.ReadFromJsonAsync<OpeningCountViewV1>())!;
+            Assert.Equal((opening.CountId, CompanyA, location.LocationId),
+                (recorded.CountId, recorded.CompanyId, recorded.LocationId));
+            Assert.Equal((labelId, first.Card.Product.Id, "1000"),
+                (Assert.Single(recorded.Lines).LabelId, recorded.Lines[0].ProductId,
+                    recorded.Lines[0].QuantityKg));
+
+            using var reopenedCount = await freshClient.GetAsync($"/api/v1/inventory/opening-counts/{opening.CountId:D}");
+            Assert.Equal(HttpStatusCode.OK, reopenedCount.StatusCode);
+            var reopened = (await reopenedCount.Content.ReadFromJsonAsync<OpeningCountViewV1>())!;
+            Assert.Equal((recorded.CountId, recorded.CompanyId, recorded.LocationId, recorded.CountedOn,
+                recorded.SheetReference), (reopened.CountId, reopened.CompanyId, reopened.LocationId,
+                    reopened.CountedOn, reopened.SheetReference));
+            Assert.Equal(Assert.Single(recorded.Lines), Assert.Single(reopened.Lines));
+            using var reopenedLabel = await freshClient.GetAsync($"/api/v1/inventory/labels/{labelId:D}");
+            Assert.Equal(HttpStatusCode.OK, reopenedLabel.StatusCode);
+            var label = (await reopenedLabel.Content.ReadFromJsonAsync<InventoryLabelViewV1>())!;
+            Assert.Equal((labelId, CompanyA, first.Card.Product.Id),
+                (label.LabelId, label.CompanyId, label.ProductId));
+            using var balanceResponse = await freshClient.GetAsync($"/api/v1/inventory/labels/{labelId:D}/balances");
+            Assert.Equal(HttpStatusCode.OK, balanceResponse.StatusCode);
+            var balance = (await balanceResponse.Content.ReadFromJsonAsync<InventoryLabelBalancesV1>())!;
+            Assert.Equal(("1000", "1000", "0"), (balance.PhysicalKg, balance.FreeKg, balance.BlockedKg));
+            Assert.Equal((location.LocationId, first.Card.Product.Id),
+                (Assert.Single(balance.Positions).LocationId, balance.Positions[0].ProductId));
+
+            async Task<(Guid ProductId, string ProductVersion, long LabelVersion, int MovementLines,
+                int OpeningCounts)> StoredInventoryAsync()
+            {
+                await using var sql = new SqlConnection(factory.DatabaseConnectionString);
+                await sql.OpenAsync();
+                await using var command = sql.CreateCommand();
+                command.CommandText = """
+                    SELECT [ProductId], [ProductVersion], [Version],
+                        (SELECT COUNT(*) FROM [inventory].[MovementLines] WHERE [CompanyId] = @company AND [LabelId] = @label),
+                        (SELECT COUNT(*) FROM [inventory].[OpeningCounts] WHERE [CompanyId] = @company AND [Id] = @count)
+                    FROM [inventory].[Labels] WHERE [CompanyId] = @company AND [Id] = @label;
+                    """;
+                command.Parameters.AddWithValue("@company", CompanyA);
+                command.Parameters.AddWithValue("@label", labelId);
+                command.Parameters.AddWithValue("@count", opening.CountId);
+                await using var row = await command.ExecuteReaderAsync();
+                Assert.True(await row.ReadAsync());
+                var stored = (row.GetGuid(0), row.GetString(1), row.GetInt64(2), row.GetInt32(3), row.GetInt32(4));
+                Assert.False(await row.ReadAsync());
+                return stored;
+            }
+
+            var stocked = await StoredInventoryAsync();
+            Assert.Equal((first.Card.Product.Id, active.Card.Product.Version, 1, 1),
+                (stocked.ProductId, stocked.ProductVersion, stocked.MovementLines, stocked.OpeningCounts));
+            using var openingReplay = await RecordOpeningAsync(freshClient, opening, openingKey);
+            Assert.Equal(HttpStatusCode.OK, openingReplay.StatusCode);
+            Assert.Equal("true", Assert.Single(openingReplay.Headers.GetValues("Idempotency-Replayed")));
+            var replayedCount = (await openingReplay.Content.ReadFromJsonAsync<OpeningCountViewV1>())!;
+            Assert.Equal((recorded.CountId, recorded.CompanyId, recorded.LocationId),
+                (replayedCount.CountId, replayedCount.CompanyId, replayedCount.LocationId));
+            Assert.Equal(Assert.Single(recorded.Lines), Assert.Single(replayedCount.Lines));
+            Assert.Equal(stocked, await StoredInventoryAsync());
+
+            var staleLabelId = Guid.NewGuid();
+            var stale = opening with
+            {
+                CountId = Guid.NewGuid(),
+                Lines = [opening.Lines[0] with
+                {
+                    LineId = Guid.NewGuid(), LabelId = staleLabelId, LotId = Guid.NewGuid(), ProductVersion = "1",
+                }],
+            };
+            using var staleResponse = await RecordOpeningAsync(freshClient, stale, "product-genuine-sac-stale-opening");
+            Assert.Equal(HttpStatusCode.UnprocessableEntity, staleResponse.StatusCode);
+            Assert.Contains(ProductApiV1.VersionConflict, await staleResponse.Content.ReadAsStringAsync(),
+                StringComparison.Ordinal);
+            using var deniedClient = factory.CreateClientFor(TestUsers.NoAssignment, CompanyA);
+            using var deniedResponse = await RecordOpeningAsync(deniedClient, stale,
+                "product-genuine-sac-denied-opening");
+            Assert.Equal(HttpStatusCode.Forbidden, deniedResponse.StatusCode);
+            using var foreignClient = factory.CreateClientFor(TestUsers.CompanyB, CompanyB);
+            using var foreignResponse = await RecordOpeningAsync(foreignClient, stale,
+                "product-genuine-sac-foreign-opening");
+            Assert.Equal(HttpStatusCode.Forbidden, foreignResponse.StatusCode);
+            Assert.Equal(stocked, await StoredInventoryAsync());
+            using var missingLabel = await freshClient.GetAsync($"/api/v1/inventory/labels/{staleLabelId:D}");
+            Assert.Equal(HttpStatusCode.NotFound, missingLabel.StatusCode);
+
             await using var scope = factory.Services.CreateAsyncScope();
             var accessor = scope.ServiceProvider.GetRequiredService<IHttpContextAccessor>();
             var previous = accessor.HttpContext;
@@ -563,7 +677,7 @@ public sealed class ProductGlobalRuntimeSqlServerRelationalAcceptanceTests
                 };
                 scope.ServiceProvider.GetRequiredService<ICompanyContext>().Set(CompanyA);
                 var result = await scope.ServiceProvider.GetRequiredService<IProductManufacturingTechnicalSnapshotV1>()
-                    .ReadAsync(new(first.Card.Product.Id, "2", effectiveOn), default);
+                    .ReadAsync(new(stocked.ProductId, stocked.ProductVersion, effectiveOn), default);
                 Assert.Empty(result.Errors);
                 var snapshot = Assert.IsType<ProductManufacturingTechnicalSnapshotV1>(result.Snapshot);
                 Assert.Equal((first.Card.Product.Id, "2", 3m, 248m, effectiveOn),
