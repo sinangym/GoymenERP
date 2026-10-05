@@ -1,8 +1,9 @@
 import { useLayoutEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { fetchGoodsReceiptOptions, fetchGoodsReceipts, recordGoodsReceipt } from './goodsReceiptApi'
-import { receiptQuantityInput, type GoodsReceiptRequest, type GoodsReceiptResponse } from './goodsReceiptContract'
+import { fetchGoodsReceiptOptions, fetchGoodsReceiptQuantityComparison, fetchGoodsReceipts, recordGoodsReceipt } from './goodsReceiptApi'
+import { receiptQuantityInput, type GoodsReceipt, type GoodsReceiptRequest, type GoodsReceiptResponse } from './goodsReceiptContract'
 import { recallReceiptAttempt, receiptIdentity, reserveReceiptAttempt, settleReceiptAttempt, type ReceiptAttempt } from './goodsReceiptAttempt'
+import { GoodsReceiptQuantityComparison } from './GoodsReceiptQuantityComparison'
 import { GOODS_RECEIPT_TEXT as T } from './goodsReceiptText'
 import type { PurchaseOrderDetail, PurchaseOrderLine } from './contract'
 import { StateBlock } from '../shell/StateBlock'
@@ -35,13 +36,37 @@ function ReceiptWorkspace(props: Props) {
     <h3>{T.history}</h3>
     {history.data?.type === 'ok-single' ? <>
       {history.data.data.searchWindowFull ? <p>{T.limited}</p> : null}
-      {history.data.data.items.length === 0 ? <p>{T.empty}</p> : <ul>{history.data.data.items.map((receipt) => <li key={receipt.acceptanceId}
-        data-testid={`goods-receipt-${receipt.acceptanceId}`}>
-        <strong>{receipt.labelCode}</strong>: {T.accepted} {receipt.acceptedQuantity}; {T.measured} {receipt.measuredQuantityKg}. {receipt.initialBlock === 'Free' ? T.initialFree : T.initialBlocked}
-      </li>)}</ul>}
+      {history.data.data.items.length === 0 ? <p>{T.empty}</p> : <ul>{history.data.data.items.map((receipt) =>
+        <ReceiptHistoryItem key={receipt.acceptanceId} binding={props.binding} detail={props.detail} receipt={receipt} />)}</ul>}
     </> : <StateBlock subject={T.history} state={history.data === undefined ? { kind: 'initial-loading' } : classifyOutcome(history.data)}
       onRetry={() => void history.refetch()} />}
   </section>
+}
+
+function ReceiptHistoryItem({ binding, detail, receipt }: {
+  readonly binding: string
+  readonly detail: PurchaseOrderDetail
+  readonly receipt: GoodsReceipt
+}) {
+  const boundary = useAuthBoundary()
+  const comparison = useQuery({
+    queryKey: [binding, 'purchase-goods-receipt-comparison', detail.order.companyId, detail.order.id,
+      receipt.acceptanceId, receipt.purchaseOrderVersion],
+    queryFn: async ({ signal }) => {
+      const snapshot = boundary.capture()
+      const outcome = await fetchGoodsReceiptQuantityComparison(detail, receipt, signal)
+      if (outcome.type === 'http') boundary.report(outcome.status, snapshot)
+      return outcome
+    },
+  })
+  return <li data-testid={`goods-receipt-${receipt.acceptanceId}`}>
+    <strong>{receipt.labelCode}</strong>: {T.accepted} {receipt.acceptedQuantity}; {T.measured} {receipt.measuredQuantityKg}. {receipt.initialBlock === 'Free' ? T.initialFree : T.initialBlocked}
+    {comparison.data?.type === 'ok-single'
+      ? <GoodsReceiptQuantityComparison comparison={comparison.data.data} />
+      : <StateBlock subject={T.comparisonHeading}
+          state={comparison.data === undefined ? { kind: 'initial-loading' } : classifyOutcome(comparison.data)}
+          onRetry={() => void comparison.refetch()} />}
+  </li>
 }
 
 function ReceiptLine({ binding, detail, line, onRecorded }: Props & { readonly line: PurchaseOrderLine }) {

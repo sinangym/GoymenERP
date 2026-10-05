@@ -30,9 +30,16 @@ function recorded(payload: GoodsReceiptRequest): GoodsReceipt {
     movementId: payload.movementId, locationId: payload.locationId, measuredQuantityKg: payload.measuredQuantityKg,
     initialBlock: 'Free', occurredAtUtc: payload.occurredAtUtc }
 }
+function comparison(source: GoodsReceipt) {
+  return { companyId: COMPANY, acceptanceId: source.acceptanceId, purchaseOrderId: ORDER, purchaseOrderLineId: LINE,
+    purchaseOrderVersion: source.purchaseOrderVersion, productId: PRODUCT, productVersion: '7', unitId: UNIT,
+    acceptedQuantity: source.acceptedQuantity, measuredQuantityKg: source.measuredQuantityKg,
+    comparisonStatus: 'SameKilogramUnit', acceptedQuantityKg: source.acceptedQuantity, measuredMinusAcceptedKg: '-0.1' }
+}
 function fixture(unknownFirst = false) {
   const posts: { key: string; body: string }[] = []
   const receipts: GoodsReceipt[] = []
+  const comparisonReads: string[] = []
   vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
     if (init?.method === 'POST') {
       posts.push({ key: (init.headers as Record<string, string>)['Idempotency-Key'], body: init.body as string })
@@ -44,9 +51,11 @@ function fixture(unknownFirst = false) {
     if (url.endsWith('goods-receipt-options')) return json({ source: { companyId: COMPANY, purchaseOrderId: ORDER,
       purchaseOrderLineId: LINE, purchaseOrderVersion: '3', productId: PRODUCT, productVersion: '7', unitId: UNIT, effectiveOn: '2026-09-25' },
     locations: [{ locationId: LOCATION, locationCode: 'D-01', locationName: 'Mal Kabul', siteName: 'Fabrika' }], searchWindowFull: false })
+    const compared = receipts.find((receipt) => url.endsWith(`/goods-receipts/${receipt.acceptanceId}/quantity-comparison`))
+    if (compared !== undefined) { comparisonReads.push(compared.acceptanceId); return json(comparison(compared)) }
     return json({ items: receipts, searchWindowFull: false })
   }))
-  return { posts, receipts }
+  return { posts, receipts, comparisonReads }
 }
 function mount(enabled = true) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -84,6 +93,9 @@ describe('Purchasing goods receipt consumer, synthetic NOT_ENV', () => {
     page.unmount()
     mount()
     expect((await screen.findByTestId(`goods-receipt-${server.receipts[0].acceptanceId}`)).textContent).toContain(T.initialFree)
+    const comparisonCard = await screen.findByTestId(`goods-receipt-comparison-${server.receipts[0].acceptanceId}`)
+    expect(comparisonCard.textContent).toContain('-0.1')
+    expect(server.comparisonReads).toEqual([server.receipts[0].acceptanceId, server.receipts[0].acceptanceId])
     expect(screen.getByText(/SYNTHETIC-RECEIPT-001/).textContent).toContain('SYNTHETIC-RECEIPT-001')
     expect(screen.queryByRole('button', { name: /serbest bırak/i })).toBeNull()
   })

@@ -1,6 +1,11 @@
 export const GOODS_RECEIPT_TEXT = {
   heading: 'Mal kabulü',
   history: 'Kaydedilmiş mal kabulleri',
+  comparisonHeading: 'Kabul ve kantar karşılaştırması',
+  comparisonAccepted: 'Ticari kabul miktarı',
+  comparisonMeasured: 'Kantar ölçümü',
+  comparisonDifference: 'Kantar eksi ticari kabul',
+  comparisonUnavailable: 'Birim/dönüşüm doğrulanmadığı için kıyaslanmadı.',
   note: 'Kabul miktarı ve tartılan kilogram ayrı kaydedilir. Fiilen kabul edilen miktar bir kez stoğa alınır; ek kalite onayı beklenmez. İrsaliye veya kantar fişi (görsel/PDF) şimdilik zorunlu değildir. Tahsis ve diğer kullanım kısıtları korunur.',
   line: 'Sipariş satırı',
   location: 'Kabul lokasyonu',
