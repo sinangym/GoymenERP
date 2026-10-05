@@ -274,7 +274,8 @@ public sealed class WorkDesiredStateSqlServerRelationalAcceptanceTests
                 fencedB.Store.ReconcileAsync(fencedObservation, Metadata("cas-fence-b")));
             Assert.Equal(1, fencedResults.Count(x => x.Decision == WorkDesiredStateDecisionV2.Apply));
             var fencedRefusal = Assert.Single(
-                fencedResults.Where(x => x.Decision == WorkDesiredStateDecisionV2.Refused));
+                fencedResults,
+                x => x.Decision == WorkDesiredStateDecisionV2.Refused);
             Assert.Null(fencedRefusal.State);
 
             var fencedCountsAfter = await ReadWorkEffectCountsAsync(factory);
@@ -541,15 +542,15 @@ public sealed class WorkDesiredStateSqlServerRelationalAcceptanceTests
         var snapshots = await read.Db.DesiredStateSnapshots.AsNoTracking().ToListAsync();
         var inbox = await read.Db.ObservationInbox.AsNoTracking().ToListAsync();
         var outbox = await read.Db.OutboxMessages.AsNoTracking().ToListAsync();
-        Assert.Single(snapshots.Where(row =>
+        Assert.Single(snapshots, row =>
             row.SourceKeyDigest.SequenceEqual(source.Digest)
-            && row.ScopeKeyDigest.SequenceEqual(scope.Digest)));
-        Assert.Single(inbox.Where(row =>
+            && row.ScopeKeyDigest.SequenceEqual(scope.Digest));
+        Assert.Single(inbox, row =>
             row.SourceKeyDigest.SequenceEqual(source.Digest)
-            && row.ScopeKeyDigest.SequenceEqual(scope.Digest)));
-        Assert.Single(outbox.Where(row =>
+            && row.ScopeKeyDigest.SequenceEqual(scope.Digest));
+        Assert.Single(outbox, row =>
             row.SourceKeyDigest.SequenceEqual(source.Digest)
-            && row.ScopeKeyDigest.SequenceEqual(scope.Digest)));
+            && row.ScopeKeyDigest.SequenceEqual(scope.Digest));
     }
 
     private static async Task<(int Snapshots, int Inbox, int Outbox, int Audit)> ReadWorkEffectCountsAsync(
