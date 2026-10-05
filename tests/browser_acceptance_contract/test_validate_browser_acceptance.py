@@ -98,6 +98,10 @@ class U02InventoryRecorderContractTests(unittest.TestCase):
                 candidate.update(changed)
                 with self.assertRaises(validator.ContractError):
                     validator.validate_suite_extensions("u02", candidate)
+        missing_last = dict(environment)
+        missing_last.pop("IdentitySeed__Roles__6__Permissions__3")
+        with self.assertRaises(validator.ContractError):
+            validator.validate_suite_extensions("u02", missing_last)
 
     def test_issuer_only_remains_valid_but_inventory_permission_requires_complete_recorder(self):
         environment = self.environment()

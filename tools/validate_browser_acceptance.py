@@ -576,9 +576,11 @@ def validate_suite_identity(suite: str, extra: dict, actor_ids: list[str]) -> No
                     and user_rows[user_id]["ExternalIdentities__0__Id"] == external_id,
                     f"u02 {actor} must keep its exact synthetic Identity binding")
             role = roles[role_id]
+            permission_keys = [key for key in role if key.startswith("Permissions__")]
+            require(len(permission_keys) == len(permissions),
+                    f"u02 {actor} must keep its exact isolated permissions")
             actual_permissions = tuple(role[f"Permissions__{index}"] for index in range(len(permissions)))
-            require(role["Code"] == role_code and actual_permissions == permissions
-                    and len([key for key in role if key.startswith("Permissions__")]) == len(permissions),
+            require(role["Code"] == role_code and actual_permissions == permissions,
                     f"u02 {actor} must keep its exact isolated permissions")
             matching = [row for row in grouped["Assignments"].values() if row["UserId"] == user_id]
             require(len(matching) == 1 and matching[0]["Id"] == assignment_id
