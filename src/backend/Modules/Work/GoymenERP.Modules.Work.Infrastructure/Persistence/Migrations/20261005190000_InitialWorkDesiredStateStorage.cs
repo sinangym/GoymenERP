@@ -1,12 +1,9 @@
-using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
 
 namespace GoymenERP.Modules.Work.Infrastructure.Persistence.Migrations;
 
-[DbContext(typeof(WorkDbContext))]
-[Migration("20261005190000_InitialWorkDesiredStateStorage")]
 public partial class InitialWorkDesiredStateStorage : Migration
 {
     private const string KeyBytesCheck =

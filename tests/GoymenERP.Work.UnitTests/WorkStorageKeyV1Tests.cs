@@ -12,8 +12,9 @@ public sealed class WorkStorageKeyV1Tests
 
     [Theory]
     [MemberData(nameof(LosslessValues))]
-    public void Explicit_utf16be_codec_round_trips_every_code_unit(string value)
+    public void Explicit_utf16be_codec_round_trips_every_code_unit(string caseName, string value)
     {
+        Assert.False(string.IsNullOrWhiteSpace(caseName));
         var key = WorkStorageKeyV1.Create(value);
 
         var decoded = key.DecodeAndVerify();
@@ -90,13 +91,13 @@ public sealed class WorkStorageKeyV1Tests
         Assert.Contains(Convert.ToBase64String(source.Utf16Be), row.PayloadJson, StringComparison.Ordinal);
     }
 
-    public static TheoryData<string> LosslessValues() => new()
+    public static TheoryData<string, string> LosslessValues() => new()
     {
-        "source-a",
-        "source internal space",
-        "x\ud83d\ude80y",
-        new string(['x', '\ud800', 'y']),
-        new string(['x', '\udc00', 'y'])
+        { "ascii", "source-a" },
+        { "internal-space", "source internal space" },
+        { "paired-surrogate", "x\ud83d\ude80y" },
+        { "isolated-high-surrogate", new string(['x', '\ud800', 'y']) },
+        { "isolated-low-surrogate", new string(['x', '\udc00', 'y']) }
     };
 
     private static WorkDesiredStateObservationV2 Observation(string source) => new(
