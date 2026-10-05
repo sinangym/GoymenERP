@@ -268,7 +268,7 @@ test('S04-PL-03 below-floor pricing is saved pending and a different actor appro
   // Pending floor approval blocks the ordinary submission.
   const submissionAnswer = page.waitForResponse((response) => response.request().method() === 'POST'
     && new URL(response.url()).pathname === `${DRAFTS_PATH}/${journey.draftId}/submission`)
-  await page.getByRole('button', { name: 'Onaya gönder' }).click()
+  await page.getByTestId('sales-approval-commands').getByRole('button', { name: 'Onaya gönder' }).click()
   const blockedSubmission = await submissionAnswer
   expect(blockedSubmission.status()).toBe(422)
   expect(((await blockedSubmission.json()) as { readonly errors: readonly { readonly code: string }[] }).errors)
