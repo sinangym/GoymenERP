@@ -22,6 +22,35 @@ public sealed record PlanCalculationParameters(
     /// <summary>Nothing is known: the state until the Product, Inventory and registry sources are wired.</summary>
     public static PlanCalculationParameters Unknown { get; } = new();
 
+    /// <summary>
+    /// Projects each roll's own immutable Product snapshot into the engines' existing parameter
+    /// names. Every roll keeps its own dimensions: values are never taken from the first roll,
+    /// averaged or promoted to plan-wide defaults. Legacy inputs without a snapshot stay unknown.
+    /// </summary>
+    public static PlanCalculationParameters FromCapturedSnapshots(IEnumerable<PlannedInput> inputs)
+    {
+        ArgumentNullException.ThrowIfNull(inputs);
+        var rolls = new Dictionary<Guid, IReadOnlyDictionary<string, decimal>>();
+        foreach (var input in inputs)
+        {
+            ArgumentNullException.ThrowIfNull(input);
+            if (input.TechnicalSnapshot is not { } snapshot)
+            {
+                continue;
+            }
+
+            rolls.Add(input.ParentRollId, new Dictionary<string, decimal>(StringComparer.Ordinal)
+            {
+                ["thicknessMm"] = snapshot.ThicknessMm,
+                ["parentWidthMm"] = snapshot.WidthMm,
+                ["widthMm"] = snapshot.WidthMm,
+                ["inputThicknessMm"] = snapshot.ThicknessMm,
+            });
+        }
+
+        return rolls.Count == 0 ? Unknown : new PlanCalculationParameters(rolls);
+    }
+
     internal decimal? Value(Guid? roll, string name)
     {
         if (roll is { } id && Rolls is { } rolls && rolls.TryGetValue(id, out var own) && own.TryGetValue(name, out var value))

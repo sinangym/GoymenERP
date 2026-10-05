@@ -62,7 +62,6 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
     private const string Base = "/api/v1/manufacturing";
     private static readonly Guid CompanyA = TestCompanyIds.CompanyA;
     private static readonly Guid CompanyB = TestCompanyIds.CompanyB;
-    private static readonly Guid Product = Guid.Parse("7e1d2c3b-4a59-4687-9a0b-1c2d3e4f5a91");
     private static readonly Guid Lot = Guid.Parse("7e1d2c3b-4a59-4687-9a0b-1c2d3e4f5a92");
     private static readonly Guid ToleranceProfile = Guid.Parse("7f100000-0000-4000-8000-000000000001");
     private static readonly DateTimeOffset At = new(2026, 9, 18, 9, 0, 0, TimeSpan.Zero);
@@ -309,7 +308,7 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
         var readerOnly = await run.GrantAsync(TestUsers.NoAssignment, CompanyA, ErpPermissions.ManufacturingOrdersRead);
         var plannerOnly = await run.GrantAsync(TestUsers.Unprovisioned, CompanyA,
             ErpPermissions.ManufacturingPlansWrite, ErpPermissions.InventoryLabelsRead,
-            ErpPermissions.InventoryBalancesRead);
+            ErpPermissions.InventoryBalancesRead, ErpPermissions.ProductOperationalSelectionRead);
         var request = new SavePlanRequestV1(Guid.NewGuid(), workCenter,
             [new PlannedInputRequestV1(roll.Id, "10", roll.Version)], null);
 
@@ -556,7 +555,7 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
         var user = await run.GrantAsync(TestUsers.CompanyA, CompanyA, ErpPermissions.ManufacturingPlansWrite,
             ErpPermissions.ManufacturingPlansApprove, ErpPermissions.ManufacturingOrdersCreate,
             ErpPermissions.ManufacturingOrdersRead, ErpPermissions.InventoryLabelsRead,
-            ErpPermissions.InventoryBalancesRead);
+            ErpPermissions.InventoryBalancesRead, ErpPermissions.ProductOperationalSelectionRead);
         var (orderId, _) = await run.OpenOrderAsync(user);
         await using var host = run.Factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
         {
@@ -1112,11 +1111,18 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
                 InitialCatalog = databaseName,
             }.ConnectionString;
             // Output admission exercises Product's real stock eligibility against this same isolated database.
+            var technicalSnapshotFixture = new SyntheticManufacturingTechnicalSnapshotFixture();
             var factory = new SqlServerRelationalApiFactory(baseConnectionString, services =>
             {
                 services.RemoveAll<ProductRuntimeOptions>();
                 services.AddSingleton(new ProductRuntimeOptions(databaseConnectionString,
                     new ProductPilotIssuerBinding(Guid.NewGuid(), Guid.NewGuid()), new byte[32]));
+                // Product deliberately refuses this suite's SYNTHETIC registry provenance. Keep that runtime gate
+                // intact and replace only the owner contract inside this disposable SQL acceptance host.
+                services.RemoveAll<IProductManufacturingTechnicalSnapshotV1>();
+                services.AddSingleton(technicalSnapshotFixture);
+                services.AddScoped<IProductManufacturingTechnicalSnapshotV1,
+                    SyntheticManufacturingTechnicalSnapshotProvider>();
                 // Explicit test-only source. Production's approved catalog remains empty; this fixture proves the
                 // consumer contract without installing a default or a real company policy.
                 services.RemoveAll<ISettingsManufacturingToleranceProviderV1>();
@@ -1132,7 +1138,92 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
             await using var inventory = run.InventoryContext(CompanyA);
             await inventory.Database.MigrateAsync();
             await run.EnsureProductFixtureAsync();
+            technicalSnapshotFixture.Bind(run.ProductFixture);
             return run;
+        }
+
+        private sealed class SyntheticManufacturingTechnicalSnapshotFixture
+        {
+            private ProductStockCandidateFixtureOutput? product;
+
+            public void Bind(ProductStockCandidateFixtureOutput value)
+            {
+                ArgumentNullException.ThrowIfNull(value);
+                if (Interlocked.CompareExchange(ref product, value, null) is not null)
+                {
+                    throw new InvalidOperationException("The Manufacturing technical contract fixture was already bound.");
+                }
+            }
+
+            public ProductStockCandidateFixtureOutput Read() => Volatile.Read(ref product)
+                ?? throw new ProductOperationException(
+                    ProductManufacturingTechnicalSnapshotService.UnavailableCode, 503);
+        }
+
+        /// <summary>
+        /// Test-only positive answer for the exact synthetic Product card that this SQL suite creates. It preserves
+        /// Product's live company and operational-selection permission fence, and copies the fixture's stated
+        /// technical values without relabelling its source as a real release.
+        /// </summary>
+        private sealed class SyntheticManufacturingTechnicalSnapshotProvider(
+            SyntheticManufacturingTechnicalSnapshotFixture fixture,
+            ICompanyContext companyContext,
+            ICurrentUser currentUser,
+            IErpAuthorityRevalidationService authority)
+            : IProductManufacturingTechnicalSnapshotV1
+        {
+            public async Task<ProductManufacturingTechnicalSnapshotResultV1> ReadAsync(
+                ProductManufacturingTechnicalSnapshotSelectionV1 selection,
+                CancellationToken cancellationToken)
+            {
+                ArgumentNullException.ThrowIfNull(selection);
+                await RequireAuthorityAsync(cancellationToken);
+                var product = fixture.Read();
+
+                if (selection.ProductId != product.ProductId)
+                {
+                    return new(null, [new ProductFieldError("productId", "invalid_reference")]);
+                }
+
+                if (!string.Equals(selection.ExpectedProductVersion, product.ProductVersion,
+                        StringComparison.Ordinal))
+                {
+                    return new(null, [new ProductFieldError("expectedProductVersion", "version_conflict")]);
+                }
+
+                await RequireAuthorityAsync(cancellationToken);
+                var definition = ProductTechnicalCardFixture.Definition();
+                var family = Assert.Single(definition.Families);
+                var template = Assert.Single(definition.Templates);
+                return new(new ProductManufacturingTechnicalSnapshotV1(
+                    product.ProductId,
+                    product.ProductVersion,
+                    new(family.Id, family.Code, family.SourceRef),
+                    new(template.Id, template.Version, template.Code, template.SourceRef),
+                    1.000m,
+                    1000.000m,
+                    new(CompanyA, product.UnitId, "kg", product.ProfileId, product.ProfileVersion),
+                    selection.EffectiveOn), []);
+            }
+
+            private async Task RequireAuthorityAsync(CancellationToken cancellationToken)
+            {
+                if (!currentUser.IsAuthenticated || string.IsNullOrWhiteSpace(currentUser.UserId)
+                    || !companyContext.IsResolved || companyContext.CompanyId != CompanyA
+                    || !currentUser.CanAccessCompany(CompanyA))
+                {
+                    throw Denied();
+                }
+
+                var scope = await authority.RevalidatePermissionScopeAsync(
+                    ErpPermissions.ProductOperationalSelectionRead, CompanyA, cancellationToken);
+                if (scope is not { IsGranted: true })
+                {
+                    throw Denied();
+                }
+            }
+
+            private static ProductOperationException Denied() => new("product_access_denied", 403);
         }
 
         private sealed class SyntheticManufacturingToleranceProvider : ISettingsManufacturingToleranceProviderV1
@@ -1221,13 +1312,14 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
         {
             var location = await ScalarAsync<Guid>(
                 "SELECT TOP (1) Id FROM organization.Locations WHERE CompanyId = @c ORDER BY Id", ("@c", CompanyA));
-            var label = new MaterialLabel(Guid.NewGuid(), CompanyA, code, Product, Lot, ProductFixture.ProductVersion);
+            var productId = ProductFixture.ProductId;
+            var label = new MaterialLabel(Guid.NewGuid(), CompanyA, code, productId, Lot, ProductFixture.ProductVersion);
             var owner = new StockOwner(StockPartyKind.Company, CompanyA);
             var custodian = new StockCustodian(StockPartyKind.Company, CompanyA);
             var position = new StockPosition(CompanyA, owner, custodian, location, label, BlockState.Free);
             var writer = Guid.NewGuid();
             await using var scope = InventoryStore(writer);
-            await scope.Store.SaveLotAsync(new MaterialLot(Lot, CompanyA, Product), [label], InventoryMetadata(writer));
+            await scope.Store.SaveLotAsync(new MaterialLot(Lot, CompanyA, productId), [label], InventoryMetadata(writer));
             await scope.Store.RecordMovementAsync(
                 InventoryMovement(new StockMovementLine(position, StockDirection.In,
                     GoymenERP.Modules.Inventory.Domain.Quantities.Kilograms.Positive(1000.125m))),

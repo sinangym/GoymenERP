@@ -1,13 +1,12 @@
 using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Manufacturing.Application;
+using GoymenERP.Modules.Manufacturing.Domain.Plans;
 
 namespace GoymenERP.Manufacturing.UnitTests;
 
 /// <summary>
-/// The fail-closed input-issue guard (NEEDS-SINAN #66/5830378162 undecided): only a position owned AND custodied
-/// by the context company is issued; customer-owned (fason), third-party-custodied, foreign-company and malformed
-/// snapshots are refused with the route's existing 409 code. The host applies it inside the owner transaction;
-/// the hosted SQL case pins the rollback (`ManufacturingInventoryInputIssueHostSqlServerRelationalAcceptanceTests`).
+/// The fail-closed input-issue guard: legacy/company input stays company-owned and company-custodied; a commercial
+/// input is owned by its exact captured Counterparty party and remains custodied by the context company.
 /// </summary>
 public sealed class ManufacturingCustomerOwnedInputGuardTests
 {
@@ -22,8 +21,18 @@ public sealed class ManufacturingCustomerOwnedInputGuardTests
         Assert.True(ManufacturingCustomerOwnedInputGuardV1.Admits(Company, Position()));
     }
 
+    [Fact]
+    public void A_customer_owned_company_custodied_position_is_admitted_only_with_its_exact_snapshot()
+    {
+        var position = Position(ownerKind: "Counterparty", ownerId: Customer);
+
+        Assert.True(ManufacturingCustomerOwnedInputGuardV1.Admits(Company, position, Commercial()));
+        Assert.False(ManufacturingCustomerOwnedInputGuardV1.Admits(Company, position));
+        Assert.False(ManufacturingCustomerOwnedInputGuardV1.Admits(Company, position,
+            Commercial(partyId: Guid.Parse("30000000-0000-0000-0000-000000000099"))));
+    }
+
     [Theory]
-    [InlineData("customer-owned")]
     [InlineData("customer-owned-and-custodied")]
     [InlineData("third-party-custodied")]
     [InlineData("another-companys-stock")]
@@ -31,11 +40,10 @@ public sealed class ManufacturingCustomerOwnedInputGuardTests
     [InlineData("unknown-owner-kind")]
     [InlineData("unknown-custodian-kind")]
     [InlineData("kind-in-another-case")]
-    public void Any_other_owner_or_custodian_is_refused(string shape)
+    public void Any_other_owner_or_custodian_is_refused_for_a_company_input(string shape)
     {
         var position = shape switch
         {
-            "customer-owned" => Position(ownerKind: "Counterparty", ownerId: Customer),
             "customer-owned-and-custodied" => Position(ownerKind: "Counterparty", ownerId: Customer,
                 custodianKind: "Counterparty", custodianId: Customer),
             "third-party-custodied" => Position(custodianKind: "Counterparty", custodianId: Customer),
@@ -47,6 +55,28 @@ public sealed class ManufacturingCustomerOwnedInputGuardTests
         };
 
         Assert.False(ManufacturingCustomerOwnedInputGuardV1.Admits(Company, position));
+    }
+
+    [Theory]
+    [InlineData("another-customer")]
+    [InlineData("counterparty-custodian")]
+    [InlineData("foreign-company-custodian")]
+    [InlineData("company-owner")]
+    [InlineData("unknown-owner")]
+    public void A_commercial_input_refuses_any_position_outside_its_captured_party_and_company_custody(string shape)
+    {
+        var position = shape switch
+        {
+            "another-customer" => Position(ownerKind: "Counterparty", ownerId: Guid.NewGuid()),
+            "counterparty-custodian" => Position(ownerKind: "Counterparty", ownerId: Customer,
+                custodianKind: "Counterparty", custodianId: Customer),
+            "foreign-company-custodian" => Position(ownerKind: "Counterparty", ownerId: Customer,
+                custodianId: OtherCompany),
+            "company-owner" => Position(),
+            _ => Position(ownerKind: "Supplier", ownerId: Customer),
+        };
+
+        Assert.False(ManufacturingCustomerOwnedInputGuardV1.Admits(Company, position, Commercial()));
     }
 
     [Fact]
@@ -65,7 +95,14 @@ public sealed class ManufacturingCustomerOwnedInputGuardTests
         Assert.Equal(InventoryManufacturingRealizationCodesV1.ParentLabelContextConflict,
             ManufacturingCustomerOwnedInputGuardV1.RefusalCode);
         Assert.Equal("Company", ManufacturingCustomerOwnedInputGuardV1.CompanyPartyKind);
+        Assert.Equal("Counterparty", ManufacturingCustomerOwnedInputGuardV1.CounterpartyPartyKind);
     }
+
+    private static PlanCommercialContextSnapshotV1 Commercial(Guid? partyId = null) => new(
+        partyId ?? Customer,
+        Guid.Parse("50000000-0000-0000-0000-000000000005"),
+        "party-v1",
+        "account-v1");
 
     private static ManufacturingInventoryPositionSnapshotV1 Position(
         string ownerKind = "Company",

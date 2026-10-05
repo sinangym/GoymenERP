@@ -12,6 +12,7 @@ import { revisePlan, type RevisePlanRequest } from './planCommandApi'
 import {
   APPROVER,
   COMPANY_A,
+  COMPANY_B,
   PLAN,
   ROLL_1,
   ROLL_2,
@@ -41,9 +42,12 @@ afterEach(() => {
 })
 
 /** A stateful synthetic server: the plan, its history and one revision endpoint answering `answer`. */
-function server(answer?: (body: RevisePlanRequest, count: number) => Response | 'throw' | undefined) {
+function server(
+  answer?: (body: RevisePlanRequest, count: number) => Response | 'throw' | undefined,
+  initialHistory: readonly unknown[] = [planRevision()],
+) {
   let storedPlan = plan()
-  let history: unknown[] = [planRevision()]
+  let history: readonly unknown[] = initialHistory
   let revisions = 0
   const respond = (url: string, init: RequestInit | undefined) => {
     if (url.endsWith(`/manufacturing/plans/${PLAN}`) && init?.method !== 'POST') return json(storedPlan)
@@ -70,7 +74,12 @@ function server(answer?: (body: RevisePlanRequest, count: number) => Response | 
         revision: history.length,
         planVersion: body.expectedVersion + 1,
         workCenterId: body.workCenterId,
-        inputs: body.inputs.map((input) => revisionInput(input.parentRollId, input.plannedKg, input.expectedLabelVersion)),
+        inputs: body.inputs.map((input) => revisionInput(
+          input.parentRollId,
+          input.plannedKg,
+          input.expectedLabelVersion,
+          input.commercialContext ?? null,
+        )),
         target: body.target,
         reason: body.reason,
         revisedBy: ACTOR,
@@ -121,7 +130,7 @@ describe('plan edit on the detail screen', () => {
     expect(sent.body).toEqual({
       expectedVersion: 1,
       workCenterId: OTHER_LINE,
-      inputs: [{ parentRollId: ROLL_1, plannedKg: '800', expectedLabelVersion: '7' }],
+      inputs: [{ parentRollId: ROLL_1, plannedKg: '800', expectedLabelVersion: '7', commercialContext: null }],
       target: { basis: 'GoodOutputMass', kg: '700' },
       reason: 'Bobin kalitesi nedeniyle azaltıldı',
     })
@@ -140,6 +149,38 @@ describe('plan edit on the detail screen', () => {
     expect(within(history).getByRole('listitem', { name: 'Revizyon 0' })).toBeTruthy()
     // The next step reads the edited plan: the approval names the revised version.
     expect(screen.getByRole('button', { name: 'Planı onayla' })).toBeTruthy()
+  })
+
+  it('preserves each current input commercial context byte-for-byte in the revision body', async () => {
+    const commercialContext = {
+      partyId: 'A1000000-0000-4000-8000-000000000001',
+      companyPartyAccountId: 'A1000000-0000-4000-8000-000000000002',
+      partyVersion: ' party sürümü \u00a0',
+      accountVersion: '\taccount-version\n',
+    }
+    const user = userEvent.setup()
+    const fake = server(undefined, [planRevision({
+      inputs: [
+        revisionInput(ROLL_1, '1000.125', '7', commercialContext),
+        revisionInput(ROLL_2, '500.5', '8', null),
+      ],
+    })])
+    const recorded = installFetch({ capabilities: EDITOR_CAPABILITIES, respond: fake.respond })
+    renderAt(`/uretim/plan/${PLAN}`)
+
+    await openEditForm(user)
+    const kg = screen.getByRole('textbox', { name: `${ROLL_1} planlanan kg` })
+    await user.clear(kg)
+    await user.type(kg, '900')
+    await user.type(screen.getByRole('textbox', { name: 'Düzenleme gerekçesi' }), 'Kg değişti')
+    await user.click(screen.getByRole('button', { name: 'Değişikliği kaydet' }))
+
+    expect(await screen.findByText('Plan güncellendi (sürüm 2); güncel kayıt ve geçmiş yeniden okundu.')).toBeTruthy()
+    const [sent] = requestsFor(recorded, `/manufacturing/plans/${PLAN}/revision`, 'POST')
+    expect((sent.body as RevisePlanRequest).inputs).toEqual([
+      { parentRollId: ROLL_1, plannedKg: '900', expectedLabelVersion: '7', commercialContext },
+      { parentRollId: ROLL_2, plannedKg: '500.5', expectedLabelVersion: '8', commercialContext: null },
+    ])
   })
 
   it('re-sends an unknown edit with the same key and body and shows the replayed answer', async () => {
@@ -281,14 +322,27 @@ describe('plan edit on the detail screen', () => {
 
 describe('plan revision contract and transport', () => {
   it('decodes one ordered history and refuses anything that is not this contract', () => {
+    const commercialContext = {
+      partyId: 'a0000000-0000-4000-8000-000000000001',
+      companyPartyAccountId: 'a0000000-0000-4000-8000-000000000002',
+      partyVersion: ' party:v01 ',
+      accountVersion: 'account:v02/α',
+    }
     const edit = planRevision({
       revision: 1,
       planVersion: 2,
       reason: 'Gerekçe',
       revisedBy: ACTOR,
-      inputs: [revisionInput(ROLL_1, '800', '7')],
+      inputs: [revisionInput(ROLL_1, '800', '7', commercialContext)],
     })
-    expect(decodePlanRevisions(planRevisions([planRevision(), edit]))?.revisions).toHaveLength(2)
+    const decoded = decodePlanRevisions(planRevisions([planRevision(), edit]))
+    expect(decoded?.revisions).toHaveLength(2)
+    expect(decoded?.revisions[0].inputs[0].commercialContext).toBeNull()
+    expect(decoded?.revisions[1].inputs[0].commercialContext).toEqual(commercialContext)
+
+    const { commercialContext: _omitted, ...legacyInput } = revisionInput(ROLL_1)
+    expect(decodePlanRevisions(planRevisions([planRevision({ inputs: [legacyInput] })]))
+      ?.revisions[0].inputs[0].commercialContext).toBeNull()
 
     const refused: unknown[] = [
       planRevisions([]),
@@ -300,6 +354,23 @@ describe('plan revision contract and transport', () => {
       planRevisions([planRevision({ inputs: [revisionInput(ROLL_1, '1000.10')] })]),
       planRevisions([planRevision({ inputs: [revisionInput(ROLL_1, '10', '07')] })]),
       planRevisions([planRevision({ inputs: [revisionInput(ROLL_1), revisionInput(ROLL_1)] })]),
+      planRevisions([planRevision({ inputs: [revisionInput(ROLL_1, '10', '7', {
+        ...commercialContext,
+        partyId: '00000000-0000-0000-0000-000000000000',
+      })] })]),
+      planRevisions([planRevision({ inputs: [revisionInput(ROLL_1, '10', '7', {
+        ...commercialContext,
+        partyVersion: '',
+      })] })]),
+      planRevisions([planRevision({ inputs: [revisionInput(ROLL_1, '10', '7', {
+        ...commercialContext,
+        accountVersion: 2,
+      })] })]),
+      planRevisions([planRevision({ inputs: [revisionInput(ROLL_1, '10', '7', {
+        ...commercialContext,
+        companyId: COMPANY_B,
+      })] })]),
+      planRevisions([planRevision({ inputs: [{ ...revisionInput(ROLL_1), commercialContext: undefined }] })]),
       planRevisions([planRevision({ extra: true })]),
       { ...planRevisions(), extra: 1 },
     ]
@@ -310,7 +381,12 @@ describe('plan revision contract and transport', () => {
     const request: RevisePlanRequest = {
       expectedVersion: 1,
       workCenterId: WORK_CENTER,
-      inputs: [{ parentRollId: ROLL_1, plannedKg: '800.500', expectedLabelVersion: '7' }],
+      inputs: [{
+        parentRollId: ROLL_1,
+        plannedKg: '800.500',
+        expectedLabelVersion: '7',
+        commercialContext: null,
+      }],
       target: null,
       reason: 'Gerekçe',
     }
