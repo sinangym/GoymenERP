@@ -241,7 +241,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // work
             // JV03: the five ordinal desired-state storage SQL facts are mandatory and skip-free.
             ["tools/relational_inventory/work.txt"] =
-                "1b4e97363d97f585be14fb59c431ed6137237b9fdd45d907a58d57de50c5082a",
+                "8eeffadbd31f1caf0ecf5c48a55cece883b292df8e3f3acd56ab2a1d53a29eb2",
         };
     private const string ContinuousIntegrationWorkflowPath = ".github/workflows/ci.yml";
     private const string BackendTestGroupVerifierPath = "tools/verify_backend_test_groups.py";
@@ -1150,7 +1150,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/"
                  + "Persistence/WorkDesiredStateStoreV2.cs"] =
                     new(
-                        "fe4cb7eb9663d827927b9d1e15cff17f7987537061a5cfd38b4b128852c1300e",
+                        "c8b78e13e5a6b5d2075730346a718dbf48672ca47356de212271240a7f76b472",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
