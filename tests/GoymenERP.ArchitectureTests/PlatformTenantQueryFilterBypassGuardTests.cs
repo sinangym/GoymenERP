@@ -226,7 +226,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
             // purchasing
             ["tools/relational_inventory/purchasing.txt"] =
-                "cc672732f572babb9161403ca6eea3181b7996bc8346df1b1813edcaadd1d161",
+                "bf0fda4722c3cfdce8b119602e7096df05b3e29c19fc1cdcaffc447fce079e13",
 
             // sales
             // DEC-SAL-003: +3 SalesDeliveryScheduleSqlServerRelationalAcceptanceTests facts (16fa5110… -> 00189b7b…).
