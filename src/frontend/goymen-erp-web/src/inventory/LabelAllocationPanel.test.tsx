@@ -1,7 +1,8 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter, Route, Routes } from 'react-router'
+import { MemoryRouter, Route, Routes, useNavigate, useParams } from 'react-router'
+import { salesDetailPath } from '../sales/capabilities'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { InventoryLabelDetailPage } from './InventoryLabelDetailPage'
 import type {
@@ -24,21 +25,25 @@ const LINE = '99999999-9999-9999-9999-999999999999'
 const OTHER_LABEL = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
 const clients: QueryClient[] = []
 const api = vi.hoisted(() => ({ detail: vi.fn(), allocations: vi.fn(), change: vi.fn(), release: vi.fn() }))
-const scenario = vi.hoisted(() => ({ canChange: true, report: vi.fn() }))
+const scenario = vi.hoisted(() => ({
+  canChange: true, canReadSalesOrder: false, generation: 1,
+  actorId: 'actor-a', companyId: '11111111-1111-1111-1111-111111111111', report: vi.fn(),
+}))
 vi.mock('./labelDetailApi', () => ({ fetchInventoryLabelDetail: api.detail }))
 vi.mock('./allocationChangeApi', () => ({
   fetchLabelAllocations: api.allocations, changeAllocation: api.change, releaseAllocation: api.release,
 }))
 vi.mock('../shell/shellContext', () => ({
-  useShellState: () => ({ sessionEpoch: 1, routeEntryGeneration: 1,
-    activeContext: { userId: 'actor-a', companyId: COMPANY, scopeMode: 'single', capabilities: [] } }),
+  useShellState: () => ({ sessionEpoch: 1, routeEntryGeneration: scenario.generation,
+    activeContext: { userId: scenario.actorId, companyId: scenario.companyId, scopeMode: 'single', capabilities: [] } }),
 }))
 vi.mock('../shell/shellState', () => ({
-  contextKey: () => ['SENTETIK-a'],
+  contextKey: () => [scenario.actorId, scenario.companyId],
   contextKeyString: (key: readonly string[]) => key[0],
   hasCapability: (_shell: unknown, capability: string) =>
     capability === 'inventory.stock-positions.list' ||
-    (capability === 'inventory.physical-allocation.write' && scenario.canChange),
+    (capability === 'inventory.physical-allocation.write' && scenario.canChange) ||
+    (capability === 'sales.drafts.detail' && scenario.canReadSalesOrder),
 }))
 vi.mock('../shell/useAuthBoundary', () => ({
   useAuthBoundary: () => ({ capture: () => ({ generation: 1 }), report: scenario.report }),
@@ -78,18 +83,28 @@ function labelRead(overrides: Partial<LabelAllocations> = {}): LabelAllocations 
   }
 }
 
+function SalesRouteReceipt() {
+  const { draftId } = useParams(); const navigate = useNavigate()
+  return <><h1>Sales route: {draftId}</h1><button type="button" onClick={() => {
+    scenario.generation += 1; void navigate(-1)
+  }}>Test sales back</button></>
+}
+
 function mount(path = `/stok/etiket/${LABEL}`) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   clients.push(client)
-  return render(<QueryClientProvider client={client}><MemoryRouter initialEntries={[path]}>
-    <Routes><Route path="/stok/etiket/:labelId" element={<InventoryLabelDetailPage />} /></Routes>
-  </MemoryRouter></QueryClientProvider>)
+  const element = () => <QueryClientProvider client={client}><MemoryRouter initialEntries={[path]}>
+    <Routes><Route path="/stok/etiket/:labelId" element={<InventoryLabelDetailPage />} />
+      <Route path="/satis/siparisler/:draftId" element={<SalesRouteReceipt />} /></Routes>
+  </MemoryRouter></QueryClientProvider>
+  const view = render(element()); return { ...view, refresh: () => view.rerender(element()) }
 }
 
 const row = () => screen.findByTestId(`inventory-allocation-${ALLOCATION}`)
 
 beforeEach(() => {
-  scenario.canChange = true; scenario.report.mockReset()
+  scenario.canChange = true; scenario.canReadSalesOrder = false; scenario.generation = 1
+  scenario.actorId = 'actor-a'; scenario.companyId = COMPANY; scenario.report.mockReset()
   api.detail.mockReset().mockResolvedValue({ type: 'ok-single', data: detail() })
   api.allocations.mockReset().mockResolvedValue({ type: 'ok-single', data: labelRead() })
   api.change.mockReset().mockImplementation(async (_id: string, request: AllocationChangeRequest) => ({
@@ -106,6 +121,62 @@ const RELEASED_ITEM = {
 }
 
 describe('LabelAllocationPanel on the label detail', () => {
+  it('opens only the stored Sales order id under the current detail capability, then rereads the label and allocation on return', async () => {
+    scenario.canReadSalesOrder = true
+    const user = userEvent.setup(); mount()
+    const line = await row()
+    const link = within(line).getByRole('link', { name: 'Satış siparişini aç' })
+    expect(link.getAttribute('href')).toBe(salesDetailPath(ORDER))
+    await user.click(link)
+    await screen.findByRole('heading', { name: `Sales route: ${ORDER}` })
+    expect(api.change).not.toHaveBeenCalled()
+    await user.click(screen.getByRole('button', { name: 'Test sales back' }))
+    await row()
+    await waitFor(() => expect(api.detail).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(api.allocations).toHaveBeenCalledTimes(2))
+  })
+
+  it('keeps the stored order id inert after capability revocation and for a foreign-company or other demand', async () => {
+    scenario.canReadSalesOrder = true
+    const view = mount(); await row()
+    expect(screen.getByRole('link', { name: 'Satış siparişini aç' })).toBeTruthy()
+    scenario.canReadSalesOrder = false; view.refresh()
+    expect(screen.queryByRole('link', { name: 'Satış siparişini aç' })).toBeNull()
+    scenario.canReadSalesOrder = true
+    api.allocations.mockResolvedValue({ type: 'ok-single', data: labelRead({ items: [
+      { allocation: allocation({ companyId: OTHER_LABEL }), releasedAtUtc: null, releaseReason: null, changes: [] },
+    ] }) })
+    scenario.generation += 1; view.refresh()
+    await waitFor(() => expect(api.allocations).toHaveBeenCalledTimes(2))
+    await row()
+    expect(screen.queryByRole('link', { name: 'Satış siparişini aç' })).toBeNull()
+    api.allocations.mockResolvedValue({ type: 'ok-single', data: labelRead({ items: [
+      { allocation: allocation({ demandKind: 'other.kind' as 'sales.order-line' }), releasedAtUtc: null, releaseReason: null, changes: [] },
+    ] }) })
+    scenario.generation += 1; view.refresh()
+    await waitFor(() => expect(api.allocations).toHaveBeenCalledTimes(3))
+    await row()
+    expect(screen.queryByRole('link', { name: 'Satış siparişini aç' })).toBeNull()
+    expect(api.change).not.toHaveBeenCalled()
+  })
+
+  it('drops an old order link while the actor changes and when the new company cannot read that label', async () => {
+    scenario.canReadSalesOrder = true
+    const view = mount(); await row()
+    expect(screen.getByRole('link', { name: 'Satış siparişini aç' })).toBeTruthy()
+    let completeRead!: (value: { type: 'ok-single'; data: InventoryLabelDetailWithMovementTimeline }) => void
+    api.detail.mockImplementationOnce(() => new Promise((resolve) => { completeRead = resolve }))
+    scenario.actorId = 'actor-b'; view.refresh()
+    expect(screen.queryByRole('link', { name: 'Satış siparişini aç' })).toBeNull()
+    await waitFor(() => expect(api.detail).toHaveBeenCalledTimes(2))
+    completeRead({ type: 'ok-single', data: detail() })
+    await row()
+    expect(screen.getByRole('link', { name: 'Satış siparişini aç' })).toBeTruthy()
+    scenario.companyId = OTHER_LABEL; view.refresh()
+    await screen.findByText('Beklenmeyen yanıt')
+    expect(screen.queryByRole('link', { name: 'Satış siparişini aç' })).toBeNull()
+  })
+
   it('is absent without the server-advertised allocation capability', async () => {
     scenario.canChange = false; mount()
     await screen.findByRole('heading', { name: 'LBL-100' })
