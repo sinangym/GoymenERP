@@ -189,7 +189,9 @@ def trx_result_map(path: Path, discovered: Counter[str]) -> tuple[dict[str, dict
     if any(sum(results[name].values()) < discovered[name] for name in discovered):
         raise RuntimeError("Backend TRX execution multiplicity is below discovery.")
     expected = {
-        "total": total, "executed": passed, "passed": passed, "notExecuted": skipped,
+        # VSTest 17.14.1 writes zero here even for NotExecuted result rows.
+        # Skipped executions remain independently counted from the result rows.
+        "total": total, "executed": passed, "passed": passed, "notExecuted": 0,
         "failed": 0, "error": 0, "timeout": 0, "aborted": 0, "inconclusive": 0,
     }
     try:

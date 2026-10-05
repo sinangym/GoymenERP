@@ -45,11 +45,10 @@ def trx_source(project: str, *, outcome: str = "Passed", theory_rows: int = 1) -
         for index in range(theory_rows)
     )
     passed = theory_rows if outcome == "Passed" else 0
-    skipped = theory_rows if outcome == "NotExecuted" else 0
     return (
         '<TestRun xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">'
         f'<Counters total="{theory_rows}" executed="{passed}" passed="{passed}" '
-        f'notExecuted="{skipped}" failed="0" error="0" timeout="0" '
+        'notExecuted="0" failed="0" error="0" timeout="0" '
         'aborted="0" inconclusive="0" />'
         f"<Results>{results}</Results><TestDefinitions>"
         f'<UnitTest id="one"><TestMethod className="{Path(project).stem}.ExampleTests" '
@@ -133,6 +132,9 @@ class BackendGroupVerifierTests(unittest.TestCase):
         for source in (
             trx_source(project, outcome="Failed"),
             trx_source(project).replace('passed="1"', 'passed="0"'),
+            trx_source(project).replace('total="1"', 'total="2"'),
+            trx_source(project).replace('executed="1"', 'executed="0"'),
+            trx_source(project, outcome="NotExecuted").replace('notExecuted="0"', 'notExecuted="1"'),
             trx_source(project).replace('testId="one"', 'testId="missing"'),
         ):
             with self.subTest(source=source[:80]):
