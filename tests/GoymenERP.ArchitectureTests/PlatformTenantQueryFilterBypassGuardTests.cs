@@ -3179,11 +3179,15 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     [Fact]
     public void Work_design_time_factory_requires_one_exact_reviewed_construction()
     {
+        var repositoryRoot = FindRepositoryRoot();
+        var sources = ReviewedPlatformContextFactories.Keys.ToDictionary(
+            candidate => candidate,
+            candidate => File.ReadAllText(Path.Combine(
+                repositoryRoot, candidate.Replace('/', Path.DirectorySeparatorChar))),
+            StringComparer.Ordinal);
         var path = ReviewedPlatformContextFactories.Keys.Single(candidate =>
             candidate.EndsWith("/WorkDesignTimeDbContextFactory.cs", StringComparison.Ordinal));
-        var source = File.ReadAllText(Path.Combine(
-            FindRepositoryRoot(), path.Replace('/', Path.DirectorySeparatorChar)));
-        var sources = new Dictionary<string, string>(StringComparer.Ordinal) { [path] = source };
+        var source = sources[path];
 
         Assert.Empty(ValidateReviewedPlatformContextConstructions(sources));
 
@@ -3196,18 +3200,29 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     }
 
     [Theory]
-    [InlineData("new WorkDbContext(options, companyContext);")]
-    [InlineData("using WorkAlias = WorkDbContext;")]
-    [InlineData("new WorkDesignTimeDbContextFactory().CreateDbContext([]);")]
-    public void Unreviewed_work_context_construction_alias_or_factory_is_rejected(string source)
+    [InlineData(
+        "new WorkDbContext(options, companyContext);",
+        "Unauthorized reviewed platform DbContext construction 'WorkDbContext'")]
+    [InlineData(
+        "using WorkAlias = WorkDbContext;",
+        "Reviewed platform DbContext type alias 'WorkAlias'")]
+    [InlineData(
+        "new WorkDesignTimeDbContextFactory().CreateDbContext([]);",
+        "Unauthorized design-time DbContext factory reference 'WorkDesignTimeDbContextFactory'")]
+    public void Unreviewed_work_context_construction_alias_or_factory_is_rejected(
+        string source,
+        string expectedFailure)
     {
-        var errors = ValidateReviewedPlatformContextConstructions(
-            new Dictionary<string, string>(StringComparer.Ordinal)
-            {
-                ["src/backend/GoymenERP.Api/UnreviewedWorkContext.cs"] = source
-            });
+        var repositoryRoot = FindRepositoryRoot();
+        var sources = ReviewedPlatformContextFactories.Keys.ToDictionary(
+            candidate => candidate,
+            candidate => File.ReadAllText(Path.Combine(
+                repositoryRoot, candidate.Replace('/', Path.DirectorySeparatorChar))),
+            StringComparer.Ordinal);
+        sources["src/backend/GoymenERP.Api/UnreviewedWorkContext.cs"] = source;
+        var errors = ValidateReviewedPlatformContextConstructions(sources);
 
-        Assert.NotEmpty(errors);
+        Assert.Contains(errors, error => error.Contains(expectedFailure, StringComparison.Ordinal));
     }
 
     [Theory]
@@ -5714,9 +5729,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 .ToArray();
             var reviewedOriginalValueOffsets = new HashSet<int>();
             if (string.Equals(NormalizeRepositoryPath(path), ReviewedWorkDbContextPath, StringComparison.Ordinal)
-                && ReviewedPlatformDbContexts.TryGetValue(ReviewedWorkDbContextPath, out var reviewedFingerprint)
+                && ReviewedPlatformDbContexts.TryGetValue(ReviewedWorkDbContextPath, out var reviewedWorkContextFingerprint)
                 && string.Equals(
-                    ComputeReviewedSourceFingerprint(source), reviewedFingerprint, StringComparison.Ordinal))
+                    ComputeReviewedSourceFingerprint(source), reviewedWorkContextFingerprint, StringComparison.Ordinal))
             {
                 var originalValueOffsets = Regex.Matches(
                         searchableSource,
