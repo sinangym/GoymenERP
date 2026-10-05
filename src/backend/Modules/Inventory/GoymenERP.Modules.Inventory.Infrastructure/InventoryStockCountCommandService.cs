@@ -12,7 +12,8 @@ namespace GoymenERP.Modules.Inventory.Infrastructure;
 /// <see cref="InventoryPermissionManifestV1.StockCountApprove"/>; each company-wide, measured fresh before the writer
 /// is called and again immediately before handing over the derived command. An unregistered name is 503
 /// <c>inventory_permission_unregistered</c>; a denied, site-scoped or lost grant, another actor or another company
-/// is 403; no identity is 401. The writer is never reached in those cases. Nothing is measured after the commit.</item>
+/// is 403; no identity is 401. The writer is never reached in those cases. The same captured scope is measured
+/// after every owner read and after the transaction flush, before commit.</item>
 /// <item><b>Metadata:</b> actor, permission and role codes come from the measured scope, never from the caller.</item>
 /// <item><b>Writer answers:</b> passed through, except the kilogram-profile provider states the writer reports as
 /// 400: those are not the caller's input and are answered 503 with the same code.</item>
@@ -57,8 +58,10 @@ public sealed class InventoryStockCountCommandService : IInventoryStockCountComm
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
-        var command = await AuthorizeAsync(InventoryPermissionManifestV1.StockCountRecord, transport, cancellationToken);
-        return await PassThroughAsync(() => writer.RecordStockCountAsync(request, command, cancellationToken));
+        const string permission = InventoryPermissionManifestV1.StockCountRecord;
+        var authorized = await AuthorizeAsync(permission, transport, cancellationToken);
+        return await PassThroughAsync(() => writer.RecordStockCountAsync(request, authorized.Metadata,
+            token => FreshAuthorityFenceAsync(permission, authorized.Scope, token), cancellationToken));
     }
 
     public async Task<InventoryStockCountResultV1> DecideAsync(
@@ -68,11 +71,13 @@ public sealed class InventoryStockCountCommandService : IInventoryStockCountComm
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
-        var command = await AuthorizeAsync(InventoryPermissionManifestV1.StockCountApprove, transport, cancellationToken);
-        return await PassThroughAsync(() => writer.DecideStockCountAsync(countId, request, command, cancellationToken));
+        const string permission = InventoryPermissionManifestV1.StockCountApprove;
+        var authorized = await AuthorizeAsync(permission, transport, cancellationToken);
+        return await PassThroughAsync(() => writer.DecideStockCountAsync(countId, request, authorized.Metadata,
+            token => FreshAuthorityFenceAsync(permission, authorized.Scope, token), cancellationToken));
     }
 
-    private async Task<InventoryCommandMetadata> AuthorizeAsync(
+    private async Task<AuthorizedCommand> AuthorizeAsync(
         string permission,
         InventoryCommandMetadata transport,
         CancellationToken cancellationToken)
@@ -87,12 +92,12 @@ public sealed class InventoryStockCountCommandService : IInventoryStockCountComm
         }
 
         var finalScope = await RequireStillAsync(permission, scope, cancellationToken);
-        return transport with
+        return new(transport with
         {
             ActorId = finalScope.ActorId,
             PermissionCode = permission,
             RoleCodes = finalScope.RoleCodes,
-        };
+        }, scope);
     }
 
     private static async Task<InventoryStockCountResultV1> PassThroughAsync(Func<Task<InventoryStockCountResultV1>> call)
@@ -154,6 +159,9 @@ public sealed class InventoryStockCountCommandService : IInventoryStockCountComm
         return scope with { RoleCodes = [.. measured.RoleCodes.Order(StringComparer.Ordinal)] };
     }
 
+    private async Task FreshAuthorityFenceAsync(string permission, Scope scope, CancellationToken cancellationToken) =>
+        _ = await RequireStillAsync(permission, scope, cancellationToken);
+
     private bool Matches(Scope scope) => currentUser.IsAuthenticated
         && string.Equals(currentUser.UserId, scope.ActorId, StringComparison.Ordinal)
         && companyContext.IsResolved && companyContext.CompanyId == scope.CompanyId
@@ -161,5 +169,6 @@ public sealed class InventoryStockCountCommandService : IInventoryStockCountComm
 
     private static InventoryStockCountException Forbidden() => new(403, InventoryStockCountCodesV1.Forbidden);
 
+    private sealed record AuthorizedCommand(InventoryCommandMetadata Metadata, Scope Scope);
     private sealed record Scope(Guid CompanyId, string ActorId, IReadOnlyCollection<string> RoleCodes);
 }

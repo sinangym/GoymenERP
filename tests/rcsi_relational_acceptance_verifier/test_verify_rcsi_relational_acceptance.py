@@ -3,6 +3,7 @@ from __future__ import annotations
 import contextlib
 import importlib.util
 import io
+import json
 from pathlib import Path
 import subprocess
 import sys
@@ -779,6 +780,148 @@ class BroadTrxResultTests(unittest.TestCase):
     def test_a_result_that_did_not_pass_is_rejected(self) -> None:
         with self.assertRaisesRegex(RuntimeError, "not Passed"):
             self._report(broad_trx(VERIFIER.BROAD_EXECUTIONS, outcome="NotExecuted"))
+
+
+class ShardedRelationalProofTests(unittest.TestCase):
+    SOURCE = "a" * 40
+    TESTED = "b" * 40
+
+    def test_rcsi_trx_requires_the_exact_fourteen_names(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "rcsi.trx"
+            expected = {name: 1 for name in VERIFIER.EXPECTED_TESTS}
+            path.write_text(broad_trx(expected), encoding="utf-8")
+            VERIFIER.verify_rcsi_trx_results(path)
+            wrong = dict(expected)
+            wrong.pop(next(iter(wrong)))
+            wrong[VERIFIER.TEST_NAMESPACE + "ExtraSqlServerRelationalAcceptanceTests.Case"] = 1
+            path.write_text(broad_trx(wrong), encoding="utf-8")
+            with self.assertRaisesRegex(RuntimeError, "fourteen reviewed"):
+                VERIFIER.verify_rcsi_trx_results(path)
+
+    def test_shard_runner_discovers_the_full_catalog_before_its_exact_subset(self) -> None:
+        calls: list[tuple[str, ...]] = []
+        selected = VERIFIER.shard_executions("A")
+        with tempfile.TemporaryDirectory() as directory:
+            proof_path = Path(directory) / "proof-A.json"
+
+            def fake_run(arguments: list[str], repository_root: Path) -> subprocess.CompletedProcess[str]:
+                del repository_root
+                calls.append(tuple(arguments))
+                if "--list-tests" in arguments:
+                    return subprocess.CompletedProcess(
+                        arguments, 0, stdout="\n".join(VERIFIER.BROAD_EXPECTED_TESTS), stderr=""
+                    )
+                if "--results-directory" in arguments:
+                    results = Path(arguments[arguments.index("--results-directory") + 1])
+                    (results / "rcsi.trx").write_text(broad_trx(selected), encoding="utf-8")
+                return subprocess.CompletedProcess(arguments, 0, stdout="", stderr="")
+
+            with (
+                mock.patch.object(VERIFIER, "run_checked", side_effect=fake_run),
+                mock.patch.object(VERIFIER, "resolve_proof_path", return_value=proof_path),
+                mock.patch.object(sys, "argv", [
+                    str(MODULE_PATH), "--shard", "A", "--proof-output", "proof-A.json",
+                    "--source-head", self.SOURCE, "--tested-commit", self.TESTED,
+                ]),
+                mock.patch.dict("os.environ", {"GOYMEN_ERP_TEST_SQLSERVER_CONNECTION": "test-only"}),
+                contextlib.redirect_stdout(io.StringIO()),
+            ):
+                self.assertEqual(0, VERIFIER.main())
+            self.assertEqual(4, len(calls))
+            self.assertEqual(VERIFIER.BROAD_FILTER, calls[1][calls[1].index("--filter") + 1])
+            self.assertEqual(
+                "|".join(f"FullyQualifiedName={name}" for name in sorted(selected)),
+                calls[3][calls[3].index("--filter") + 1],
+            )
+            self.assertEqual(
+                VERIFIER.expected_shard_proof("A", self.SOURCE, self.TESTED),
+                json.loads(proof_path.read_text(encoding="utf-8")),
+            )
+
+    def test_partition_is_disjoint_complete_and_preserves_every_execution(self) -> None:
+        covered: dict[str, int] = {}
+        for shard in VERIFIER.SHARD_MODULES:
+            selected = VERIFIER.shard_executions(shard)
+            self.assertTrue(selected)
+            self.assertFalse(set(covered) & set(selected))
+            covered.update(selected)
+        self.assertEqual(VERIFIER.BROAD_EXECUTIONS, covered)
+        self.assertEqual(VERIFIER.BROAD_DISCOVERY_COUNT, len(covered))
+        self.assertEqual(VERIFIER.BROAD_EXECUTION_COUNT, sum(covered.values()))
+        invalid = dict(VERIFIER.SHARD_MODULES)
+        invalid["C"] = invalid["C"] + ("inventory",)
+        with mock.patch.object(VERIFIER, "SHARD_MODULES", invalid):
+            with self.assertRaisesRegex(RuntimeError, "partition"):
+                VERIFIER.shard_executions("A")
+
+    def test_shard_trx_refuses_missing_extra_theory_and_nonpassed_results(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "shard.trx"
+            expected = VERIFIER.shard_executions("C")
+            path.write_text(broad_trx(expected), encoding="utf-8")
+            VERIFIER.verify_shard_trx_results(path, "C")
+            multi = next(name for name, count in expected.items() if count > 1)
+            for delta in (-1, 1):
+                broken = dict(expected)
+                broken[multi] += delta
+                path.write_text(broad_trx(broken), encoding="utf-8")
+                with self.subTest(delta=delta), self.assertRaisesRegex(RuntimeError, "exact"):
+                    VERIFIER.verify_shard_trx_results(path, "C")
+            missing = dict(expected)
+            missing.pop(next(iter(missing)))
+            path.write_text(broad_trx(missing), encoding="utf-8")
+            with self.assertRaisesRegex(RuntimeError, "exact"):
+                VERIFIER.verify_shard_trx_results(path, "C")
+            path.write_text(broad_trx(expected, outcome="NotExecuted"), encoding="utf-8")
+            with self.assertRaisesRegex(RuntimeError, "not Passed"):
+                VERIFIER.verify_shard_trx_results(path, "C")
+
+    def test_aggregate_requires_exact_proofs_and_successful_workers(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for shard in VERIFIER.SHARD_MODULES:
+                artifact = root / f"ci-relational-shard-proof-{shard}"
+                artifact.mkdir()
+                (artifact / f"proof-{shard}.json").write_text(
+                    json.dumps(VERIFIER.expected_shard_proof(shard, self.SOURCE, self.TESTED)),
+                    encoding="utf-8",
+                )
+            def verify() -> None:
+                VERIFIER.verify_aggregate_proofs(root, self.SOURCE, self.TESTED, "success", "success")
+            verify()
+            for result in ("failure", "cancelled", "skipped", ""):
+                with self.subTest(result=result), self.assertRaisesRegex(RuntimeError, "succeed"):
+                    VERIFIER.verify_aggregate_proofs(root, self.SOURCE, self.TESTED, result, "success")
+            with self.assertRaisesRegex(RuntimeError, "succeed"):
+                VERIFIER.verify_aggregate_proofs(root, self.SOURCE, self.TESTED, "success", "failure")
+            with self.assertRaisesRegex(RuntimeError, "source"):
+                VERIFIER.verify_aggregate_proofs(root, "c" * 40, self.TESTED, "success", "success")
+            with self.assertRaisesRegex(RuntimeError, "source"):
+                VERIFIER.verify_aggregate_proofs(root, self.SOURCE, "c" * 40, "success", "success")
+            path = root / "ci-relational-shard-proof-A" / "proof-A.json"
+            valid = path.read_text(encoding="utf-8")
+            proof = json.loads(valid)
+            for field in ("catalogHash", "executionMapHash", "executionCount", "testCount"):
+                broken = dict(proof)
+                broken[field] = "0" * 64 if field.endswith("Hash") else 0
+                path.write_text(json.dumps(broken), encoding="utf-8")
+                with self.subTest(field=field), self.assertRaisesRegex(RuntimeError, "inventory"):
+                    verify()
+            path.write_text(valid, encoding="utf-8")
+            (root / "ci-relational-shard-proof-B" / "proof-B.json").unlink()
+            with self.assertRaisesRegex(RuntimeError, "missing"):
+                verify()
+            (root / "ci-relational-shard-proof-B" / "proof-B.json").write_text(
+                json.dumps(VERIFIER.expected_shard_proof("B", self.SOURCE, self.TESTED)), encoding="utf-8"
+            )
+            (root / "ci-relational-shard-proof-extra").mkdir()
+            with self.assertRaisesRegex(RuntimeError, "unknown"):
+                verify()
+            (root / "ci-relational-shard-proof-extra").rmdir()
+            path.write_text(valid[:-1] + ',"shard":"A"}', encoding="utf-8")
+            with self.assertRaisesRegex(RuntimeError, "repeats"):
+                verify()
 
 if __name__ == "__main__":
     unittest.main()

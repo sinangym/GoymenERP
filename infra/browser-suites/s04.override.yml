@@ -219,6 +219,7 @@ services:
       IdentitySeed__Roles__15__Permissions__3: inventory.physical-allocation.write
       IdentitySeed__Roles__15__Permissions__4: logistics.dispatch-notes.create
       IdentitySeed__Roles__15__Permissions__5: logistics.dispatch-notes.approve
+      IdentitySeed__Roles__15__Permissions__6: logistics.deliveries.record
       IdentitySeed__Assignments__7__Id: b4000000-0000-4000-8000-000000000401
       IdentitySeed__Assignments__7__UserId: b2000000-0000-4000-8000-000000000401
       IdentitySeed__Assignments__7__RoleId: b3000000-0000-4000-8000-000000000401

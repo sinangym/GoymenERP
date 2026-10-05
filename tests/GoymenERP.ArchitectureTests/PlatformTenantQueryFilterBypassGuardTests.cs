@@ -144,7 +144,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // Re-fingerprinted for the broad suite's wall-clock limit 1200 s -> 2400 s (user decision 2026-09-29): only
     // the subprocess timeout changes; the exact inventory, every listed test and the 0-skip rule are unchanged.
     private const string ReviewedSqlServerRcsiVerifierFingerprint =
-        "aa944f6f0298f2a9570f26fbfae8b633927461d91fa454d378af37b0ab30a360";
+        "58933f6f8e7a509633ee43433fc4c0cdc57d9b2ed455841c1c8bbbc3dd120323";
     private const string SqlServerRcsiVerifierTestsPath =
         "tests/rcsi_relational_acceptance_verifier/"
         + "test_verify_rcsi_relational_acceptance.py";
@@ -154,7 +154,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // Re-fingerprinted for LOG-4a: a Logistics class maps to its own module.
     // Re-fingerprinted for PUR-4a: a Purchasing class maps to its own module.
     private const string ReviewedSqlServerRcsiVerifierTestsFingerprint =
-        "f7d17f6b5b5bbfd8ed82ad828fcdaa5b98a79beb9f97cb5b664a3f18bf1c309d";
+        "38ce36cc9465a28a829c0452f29c08bc2fe275f0f47bbba8226bcba55d2acc87";
     // The broad relational inventory, one file per module (see RelationalInventoryDirectory). Each
     // pin is its own paragraph so that two modules re-pinning their own files change lines that are
     // not adjacent and combine cleanly; a file's owner is its module, the pin line is central.
@@ -193,7 +193,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // R20 transfer lifecycle: +3 transfer SQL facts (bd676b05… -> c74360d3…).
             // Product-version provenance rollback: +1 isolated no-loss SQL fact (c444f707… -> d9cb549b…).
             ["tools/relational_inventory/inventory.txt"] =
-                "24f180e6af9780d0c725ed51ada58fc6d26bc933a68d436b595c11a4e6bc534e",
+                "c6c7065d58753d5cf6c69dbc1890abfb87c711cdbaa9f9bb3a4457b95a0a6a40",
 
             // logistics
             // AT-053: +4 weighbridge SQL facts (81c1ff0b… -> 264898d7…).
@@ -228,7 +228,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // Q16 / AT-020: +3 Product import API SQL facts (d434c2b8… -> 9958c91f…).
             // Product 4A: +3 initial technical-definition release/rollback SQL facts.
             ["tools/relational_inventory/product.txt"] =
-                "cea66f31c2873969ac7c87b72869ce43ad8d028ad37c32c7c21ef29f0b8bbe45",
+                "c90763b6c2d8b804179f6805bb956920d93071a86a01f3fa664881045853e46e",
 
             // purchasing
             ["tools/relational_inventory/purchasing.txt"] =
@@ -251,7 +251,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         };
     private const string ContinuousIntegrationWorkflowPath = ".github/workflows/ci.yml";
     private const string ReviewedContinuousIntegrationWorkflowFingerprint =
-        "2bdfd317750a07a7867344fab8f6bcbc91a0ba209a17f45065d1c501d2639493";
+        "319de7496c0f332685304d4646f53503dec37856a6c4da0ef689ccceeb69d4ba";
     // Re-fingerprinted for the ORG master edit: the seeder's three existing IgnoreQueryFilters projections also read
     // the row id, so a seeded record a user renamed is recognised by its deterministic id and never re-added under
     // its old code. No new bypass, query or write path; the IgnoreQueryFilters reads are the same three.
@@ -1002,7 +1002,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "GoymenERP.Modules.Purchasing.Infrastructure/"
                  + "PurchasingModuleExtensions.cs"] =
                     new(
-                        "096f4a1dcaf64a77222ab43692402f0928f7b8def45a2f8b8c41f332652b923f",
+                        "30a3f0bf81e311a6e92b8d888dce33bc038f9da67f73a4bd0e895bba0fbd28c9",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -2778,6 +2778,47 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     "\n        env:\n          GOYMEN_ERP_TEST_SQLSERVER_CONNECTION: >-\n            Server=",
                     StringComparison.Ordinal)),
             error => error.Contains("SQL Server fixture binding", StringComparison.Ordinal));
+
+        foreach (var (original, replacement) in new[]
+                 {
+                     (
+                         "      - name: Run exact SQL Server relational shard\n        run: |",
+                         "      - name: Run exact SQL Server relational shard\n"
+                         + "        shell: echo {0}\n        run: |"),
+                     (
+                         "          --rcsi \\",
+                         "          --rcsi --list-tests \\"),
+                     (
+                         "          --rcsi-result \"${{ needs.relational-rcsi.result }}\"",
+                         "          --rcsi-result \"${{ needs.relational-rcsi.result }}\" || true"),
+                     (
+                         "          --aggregate \\",
+                         "          # --aggregate \\"),
+                     (
+                         "      - name: Upload exact SQL shard proof\n"
+                         + "        uses: actions/upload-artifact@v7",
+                         "      - name: Upload exact SQL shard proof\n"
+                         + "        if: ${{ false }}\n"
+                         + "        uses: actions/upload-artifact@v7"),
+                     (
+                         "      - name: Download exact SQL shard proofs\n"
+                         + "        uses: actions/download-artifact@v8",
+                         "      - name: Download exact SQL shard proofs\n"
+                         + "        shell: echo {0}\n"
+                         + "        uses: actions/download-artifact@v8"),
+                 })
+        {
+            Assert.Contains(
+                ValidateSqlServerRcsiPublishAndDiscoveryContracts(
+                    solutionSource,
+                    integrationProjectSource,
+                    relationalAcceptanceSource,
+                    normalizedWorkflowSource.Replace(
+                        original,
+                        replacement,
+                        StringComparison.Ordinal)),
+                error => error.Contains("relational CI verifier", StringComparison.Ordinal));
+        }
     }
 
     [Fact]
@@ -6276,40 +6317,44 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 "RCSI CLI/policy tests require the exact unconditional backend solution test step.");
         }
 
-        var relationalJobStart = normalizedWorkflow.IndexOf(
-            "\n  relational:\n",
-            StringComparison.Ordinal);
-        var relationalJobEnd = relationalJobStart < 0
-            ? -1
-            : normalizedWorkflow.IndexOf(
-                "\n  contract-drift:\n",
-                relationalJobStart,
-                StringComparison.Ordinal);
-        var relationalJob = relationalJobStart >= 0 && relationalJobEnd > relationalJobStart
-            ? normalizedWorkflow[relationalJobStart..relationalJobEnd]
+        var shardJobStart = normalizedWorkflow.IndexOf("\n  relational-shard:\n", StringComparison.Ordinal);
+        var rcsiJobStart = normalizedWorkflow.IndexOf("\n  relational-rcsi:\n", StringComparison.Ordinal);
+        var relationalJobStart = normalizedWorkflow.IndexOf("\n  relational:\n", StringComparison.Ordinal);
+        var contractJobStart = normalizedWorkflow.IndexOf("\n  contract-drift:\n", StringComparison.Ordinal);
+        var shardJob = shardJobStart >= 0 && rcsiJobStart > shardJobStart
+            ? normalizedWorkflow[shardJobStart..rcsiJobStart]
             : string.Empty;
-        var activeRelationalJobLines = ReadActiveYamlLines(relationalJob);
-        var broadStepStart = relationalJob.IndexOf(
-            "\n      - name: Run broad SQL Server relational acceptance verifier\n",
-            StringComparison.Ordinal);
-        var broadStep = ExtractYamlStep(relationalJob, broadStepStart);
-        var activeBroadStepLines = ReadActiveYamlLines(broadStep);
-        var expectedBroadStepLines = new[]
+        var rcsiJob = rcsiJobStart >= 0 && relationalJobStart > rcsiJobStart
+            ? normalizedWorkflow[rcsiJobStart..relationalJobStart]
+            : string.Empty;
+        var relationalJob = relationalJobStart >= 0 && contractJobStart > relationalJobStart
+            ? normalizedWorkflow[relationalJobStart..contractJobStart]
+            : string.Empty;
+        var shardLines = ReadActiveYamlLines(shardJob);
+        var rcsiLines = ReadActiveYamlLines(rcsiJob);
+        var aggregateLines = ReadActiveYamlLines(relationalJob);
+        var shardStep = ExtractYamlStep(shardJob, shardJob.IndexOf(
+            "\n      - name: Run exact SQL Server relational shard\n", StringComparison.Ordinal));
+        var rcsiStep = ExtractYamlStep(rcsiJob, rcsiJob.IndexOf(
+            "\n      - name: Run exact RCSI relational acceptance verifier\n", StringComparison.Ordinal));
+        var aggregateStep = ExtractYamlStep(relationalJob, relationalJob.IndexOf(
+            "\n      - name: Verify complete SQL Server relational acceptance\n", StringComparison.Ordinal));
+        var proofUploadStep = ExtractYamlStep(shardJob, shardJob.IndexOf(
+            "\n      - name: Upload exact SQL shard proof\n", StringComparison.Ordinal));
+        var proofDownloadStep = ExtractYamlStep(relationalJob, relationalJob.IndexOf(
+            "\n      - name: Download exact SQL shard proofs\n", StringComparison.Ordinal));
+        var expectedShardStepLines = new[]
         {
-            "- name: Run broad SQL Server relational acceptance verifier",
+            "- name: Run exact SQL Server relational shard",
             "run: |",
             "python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py",
-            "python3 -I -S -B -m unittest discover -s "
-            + "tests/rcsi_relational_acceptance_verifier -p \"test_*.py\" -v",
             "python3 -I -S -B tools/verify_rcsi_relational_acceptance.py \\",
-            "--broad \\",
-            "--trx-output artifacts/ci-test-results/relational/broad.trx",
+            "--shard \"${{ matrix.shard }}\" \\",
+            "--trx-output \"artifacts/ci-test-results/relational/broad-${{ matrix.shard }}.trx\" \\",
+            "--proof-output \"artifacts/ci-relational-proofs/proof-${{ matrix.shard }}.json\" \\",
+            "--source-head \"${{ github.event.pull_request.head.sha || github.sha }}\" \\",
+            "--tested-commit \"$(git rev-parse HEAD)\"",
         };
-        var rcsiStepStart = relationalJob.IndexOf(
-            "\n      - name: Run exact RCSI relational acceptance verifier\n",
-            StringComparison.Ordinal);
-        var rcsiStep = ExtractYamlStep(relationalJob, rcsiStepStart);
-        var activeRcsiStepLines = ReadActiveYamlLines(rcsiStep);
         var expectedRcsiStepLines = new[]
         {
             "- name: Run exact RCSI relational acceptance verifier",
@@ -6319,38 +6364,87 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             "--rcsi \\",
             "--trx-output artifacts/ci-test-results/relational/rcsi.trx",
         };
-        if (broadStepStart < 0
-            || rcsiStepStart < 0
-            || !activeBroadStepLines.SequenceEqual(
-                expectedBroadStepLines,
-                StringComparer.Ordinal)
-            || !activeRcsiStepLines.SequenceEqual(
-                expectedRcsiStepLines,
-                StringComparer.Ordinal))
+        var expectedAggregateStepLines = new[]
         {
-            errors.Add("RCSI relational CI verifier step must remain exact and non-vacuous.");
+            "- name: Verify complete SQL Server relational acceptance",
+            "run: |",
+            "python3 -I -S -B tools/verify_rcsi_relational_acceptance.py \\",
+            "--aggregate \\",
+            "--proof-directory artifacts/ci-relational-proofs \\",
+            "--source-head \"${{ github.event.pull_request.head.sha || github.sha }}\" \\",
+            "--tested-commit \"$(git rev-parse HEAD)\" \\",
+            "--worker-result \"${{ needs.relational-shard.result }}\" \\",
+            "--rcsi-result \"${{ needs.relational-rcsi.result }}\"",
+        };
+        var expectedProofUploadStepLines = new[]
+        {
+            "- name: Upload exact SQL shard proof",
+            "uses: actions/upload-artifact@v7",
+            "with:",
+            "name: ci-relational-shard-proof-${{ matrix.shard }}",
+            "path: artifacts/ci-relational-proofs/proof-${{ matrix.shard }}.json",
+            "if-no-files-found: error",
+            "retention-days: 7",
+        };
+        var expectedProofDownloadStepLines = new[]
+        {
+            "- name: Download exact SQL shard proofs",
+            "uses: actions/download-artifact@v8",
+            "with:",
+            "pattern: ci-relational-shard-proof-*",
+            "path: artifacts/ci-relational-proofs",
+        };
+        if (shardJob.Length == 0 || rcsiJob.Length == 0 || relationalJob.Length == 0
+            || !shardLines.Contains("name: SQL Server relational shard (${{ matrix.shard }})",
+                StringComparer.Ordinal)
+            || !shardLines.Contains("fail-fast: false", StringComparer.Ordinal)
+            || !shardLines.Contains("shard: [A, B, C]", StringComparer.Ordinal)
+            || !rcsiLines.Contains("name: Exact RCSI relational acceptance", StringComparer.Ordinal)
+            || !aggregateLines.Contains("name: SQL Server relational acceptance", StringComparer.Ordinal)
+            || !aggregateLines.Contains("needs: [relational-shard, relational-rcsi]",
+                StringComparer.Ordinal)
+            || !aggregateLines.Contains("if: ${{ always() }}", StringComparer.Ordinal)
+            || !ReadActiveYamlLines(shardStep).SequenceEqual(
+                expectedShardStepLines, StringComparer.Ordinal)
+            || !ReadActiveYamlLines(rcsiStep).SequenceEqual(
+                expectedRcsiStepLines, StringComparer.Ordinal)
+            || !ReadActiveYamlLines(aggregateStep).SequenceEqual(
+                expectedAggregateStepLines, StringComparer.Ordinal)
+            || !ReadActiveYamlLines(proofUploadStep).SequenceEqual(
+                expectedProofUploadStepLines, StringComparer.Ordinal)
+            || !ReadActiveYamlLines(proofDownloadStep).SequenceEqual(
+                expectedProofDownloadStepLines, StringComparer.Ordinal)
+            || ContainsConditionalOrSoftFailure(ReadActiveYamlLines(shardStep))
+            || ContainsConditionalOrSoftFailure(ReadActiveYamlLines(rcsiStep))
+            || ContainsConditionalOrSoftFailure(ReadActiveYamlLines(aggregateStep))
+            || aggregateLines.Count(line => line.StartsWith("if:", StringComparison.Ordinal)) != 1
+            || aggregateLines.Any(line => line.StartsWith("continue-on-error:", StringComparison.Ordinal)))
+        {
+            errors.Add("RCSI relational CI verifier shard and aggregate gates must remain exact and non-vacuous.");
         }
 
         var expectedSqlEnvironmentPrefix =
             "\n    env:\n      GOYMEN_ERP_TEST_SQLSERVER_CONNECTION: >-\n        Server=";
-        var sqlEnvironmentStart = relationalJob.IndexOf(
-            expectedSqlEnvironmentPrefix,
-            StringComparison.Ordinal);
-        var sqlEnvironmentLine = sqlEnvironmentStart < 0
-            ? string.Empty
-            : relationalJob[(sqlEnvironmentStart + expectedSqlEnvironmentPrefix.Length -
-                "Server=".Length)..].Split('\n')[0].Trim();
-        if (sqlEnvironmentStart < 0
-            || !sqlEnvironmentLine.StartsWith("Server=", StringComparison.Ordinal)
-            || !sqlEnvironmentLine.Contains("Database=master", StringComparison.Ordinal)
-            || !sqlEnvironmentLine.Contains("Password=", StringComparison.Ordinal)
-            || !activeRelationalJobLines.Contains("services:", StringComparer.Ordinal)
-            || !activeRelationalJobLines.Contains("sqlserver:", StringComparer.Ordinal)
-            || ContainsConditionalOrSoftFailure(
-                ReadActiveYamlLines(relationalJob.Split("\n    steps:\n")[0])))
+        foreach (var job in new[] { shardJob, rcsiJob })
         {
-            errors.Add(
-                "RCSI relational CI job must retain a non-empty SQL Server fixture binding.");
+            var activeLines = ReadActiveYamlLines(job);
+            var sqlEnvironmentStart = job.IndexOf(expectedSqlEnvironmentPrefix, StringComparison.Ordinal);
+            var sqlEnvironmentLine = sqlEnvironmentStart < 0
+                ? string.Empty
+                : job[(sqlEnvironmentStart + expectedSqlEnvironmentPrefix.Length -
+                    "Server=".Length)..].Split('\n')[0].Trim();
+            if (sqlEnvironmentStart < 0
+                || !sqlEnvironmentLine.StartsWith("Server=", StringComparison.Ordinal)
+                || !sqlEnvironmentLine.Contains("Database=master", StringComparison.Ordinal)
+                || !sqlEnvironmentLine.Contains("Password=", StringComparison.Ordinal)
+                || !activeLines.Contains("services:", StringComparer.Ordinal)
+                || !activeLines.Contains("sqlserver:", StringComparer.Ordinal)
+                || !activeLines.Contains("dotnet restore tests/GoymenERP.Api.IntegrationTests/"
+                    + "GoymenERP.Api.IntegrationTests.csproj \\", StringComparer.Ordinal)
+                || ContainsConditionalOrSoftFailure(ReadActiveYamlLines(job.Split("\n    steps:\n")[0])))
+            {
+                errors.Add("RCSI relational SQL Server fixture binding must retain isolated, unconditional SQL workers.");
+            }
         }
 
         return errors;
