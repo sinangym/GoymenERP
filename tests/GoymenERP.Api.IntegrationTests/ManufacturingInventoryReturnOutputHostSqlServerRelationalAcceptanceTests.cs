@@ -17,10 +17,11 @@ using GoymenERP.Modules.Organization.Application.Contracts;
 using GoymenERP.Modules.Product.Application.Contracts;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
+using Xunit.Abstractions;
 
 namespace GoymenERP.Api.IntegrationTests;
 
-public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
+public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests(ITestOutputHelper output)
 {
     [SqlServerFact]
     public async Task Manufacturing_return_and_output_commit_once_and_replay_after_the_order_advances()
@@ -125,11 +126,15 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
     [SqlServerFact]
     public async Task Manufacturing_customer_input_returns_and_outputs_to_the_same_context_with_single_effect_replays()
     {
+        var diagnosticPhase = "mfg_customer_arrange";
+        try
+        {
         await using var run = await StartManufacturingInventoryRunAsync();
         var customer = Guid.NewGuid();
         var account = Guid.NewGuid();
         var commercial = new PlanCommercialContextSnapshotV1(
             customer, account, "party-v1", "account-v1");
+        diagnosticPhase = "mfg_customer_issue";
         var seed = await PrepareIssuedOrderAsync(run, "SYN-MFG-CUSTOMER-RETURN-OUTPUT", 100m,
             StockPartyKind.Counterparty, customer, StockPartyKind.Company, CompanyA, commercial);
         Assert.Equal((StockPartyKind.Counterparty, customer, StockPartyKind.Company, CompanyA),
@@ -141,6 +146,7 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
         var returned = ReturnCommand(seed, 10m);
         var returnMetadata = ManufacturingHostMetadata(run, "customer-return");
 
+        diagnosticPhase = "mfg_customer_return";
         var returnResult = await scope.Host.ReturnAsync(returned, returnMetadata);
         var outputSeed = seed with
         {
@@ -149,6 +155,7 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
         };
         var output = OutputCommand(outputSeed, returnResult.OrderVersion, returnResult.ParentLabelVersion, 80m);
 
+        diagnosticPhase = "mfg_customer_output";
         var wrongOwner = output with { OwnerId = Guid.NewGuid() };
         var wrongOwnerMetadata = ManufacturingHostMetadata(run, "customer-output-wrong-owner");
         var wrongOwnerError = await Assert.ThrowsAsync<InventoryManufacturingRealizationException>(() =>
@@ -177,9 +184,11 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
             ManufacturingHostMetadata(run, "advance-customer-order")));
         var returnReplayMetadata = ManufacturingHostMetadata(run, "customer-return-replay");
         var outputReplayMetadata = ManufacturingHostMetadata(run, "customer-output-replay");
+        diagnosticPhase = "mfg_customer_replay";
         var returnReplay = await scope.Host.ReturnAsync(returned, returnReplayMetadata);
         var outputReplay = await scope.Host.DeclareOutputAsync(output, outputReplayMetadata);
 
+        diagnosticPhase = "mfg_customer_assert";
         Assert.False(returnResult.IsReplay);
         Assert.False(outputResult.IsReplay);
         Assert.True(returnReplay.IsReplay);
@@ -224,6 +233,12 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
             "SELECT COUNT(*) FROM audit.AuditEvents WHERE CorrelationId IN (@returnReplay, @outputReplay)",
             ("@returnReplay", returnReplayMetadata.CorrelationId),
             ("@outputReplay", outputReplayMetadata.CorrelationId)));
+        }
+        catch
+        {
+            output.WriteLine(diagnosticPhase);
+            throw;
+        }
     }
 
     [SqlServerFact]
