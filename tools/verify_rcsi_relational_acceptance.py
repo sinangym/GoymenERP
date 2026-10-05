@@ -63,6 +63,7 @@ INVENTORY_MODULES = (
     "product",
     "purchasing",
     "sales",
+    "work",
 )
 TEST_NAMESPACE = "GoymenERP.Api.IntegrationTests."
 # A test class belongs to the module its name starts with; the Cari journey class, whose name has no
@@ -79,6 +80,7 @@ MODULE_CLASS_PREFIXES = (
     ("Product", "product"),
     ("Purchasing", "purchasing"),
     ("Sales", "sales"),
+    ("Work", "work"),
 )
 CARI_JOURNEY_CLASS = "SqlServerRelationalAcceptanceTests"
 INVENTORY_TEST_NAME = re.compile(
