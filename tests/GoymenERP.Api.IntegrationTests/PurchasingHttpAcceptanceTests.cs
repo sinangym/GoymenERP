@@ -120,9 +120,10 @@ public sealed class PurchasingHttpAcceptanceTests(GoymenErpApiFactory factory) :
     {
         var first = Guid.Parse("61000000-0000-0000-0000-000000000001");
         var second = Guid.Parse("61000000-0000-0000-0000-000000000002");
-        var line = Guid.Parse("62000000-0000-0000-0000-000000000001");
         var firstAt = new DateTimeOffset(2026, 10, 5, 9, 0, 0, TimeSpan.Zero);
-        var detail = OrderDetail(PurchaseOrderId, "Approved", "5") with
+        var baseDetail = OrderDetail(PurchaseOrderId, "Approved", "5");
+        var line = Assert.Single(baseDetail.Lines).LineId;
+        var detail = baseDetail with
         {
             Acceptances =
             [

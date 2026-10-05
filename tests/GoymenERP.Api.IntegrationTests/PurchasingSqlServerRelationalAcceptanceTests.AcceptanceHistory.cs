@@ -1,6 +1,6 @@
+using System.Net;
 using System.Data.Common;
-using System.Reflection;
-using GoymenERP.Modules.Purchasing.Application;
+using System.Text.Json;
 using GoymenERP.Modules.Purchasing.Application.Contracts;
 using GoymenERP.Modules.Purchasing.Domain.Orders;
 using GoymenERP.Modules.Purchasing.Infrastructure.Persistence;
@@ -39,44 +39,34 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
             CompanyA, firstId, orderId, lineId, "3", Product, "7", KgUnit, "40", AcceptanceHistoryTime),
             "history-accept-40");
 
-        await using (var firstScope = run.Store(CompanyA))
-        {
-            StoredPurchaseOrder first = Assert.IsType<StoredPurchaseOrder>(await firstScope.Store.FindOrderAsync(orderId));
-            PurchaseOrderDetailView detail = Detail(first);
-            Assert.Equal(("4", "40", "60"),
-                (detail.Order.Version, Assert.Single(detail.Lines).Accepted, Assert.Single(detail.Lines).Remaining));
-            var acceptance = Assert.Single(detail.Acceptances);
-            Assert.Equal((firstId, lineId, "40", AcceptanceHistoryTime),
-                (acceptance.AcceptanceId, acceptance.LineId, acceptance.Quantity, acceptance.RecordedAtUtc));
-        }
+        var beforeFirstRead = await AcceptanceHistoryStateAsync(run, orderId);
+        PurchaseOrderDetailView firstDetail = await NativeDetailAsync(run, orderId);
+        Assert.Equal(("4", "40", "60"),
+            (firstDetail.Order.Version, Assert.Single(firstDetail.Lines).Accepted, Assert.Single(firstDetail.Lines).Remaining));
+        var acceptance = Assert.Single(firstDetail.Acceptances);
+        Assert.Equal((firstId, lineId, "40", AcceptanceHistoryTime),
+            (acceptance.AcceptanceId, acceptance.LineId, acceptance.Quantity, acceptance.RecordedAtUtc));
+        Assert.Equal(beforeFirstRead, await AcceptanceHistoryStateAsync(run, orderId));
 
         await CommitAcceptanceAsync(run, new PurchaseAcceptanceStageRequestV1(
             CompanyA, secondId, orderId, lineId, "4", Product, "7", KgUnit, "25", AcceptanceHistoryTime.AddMinutes(1)),
             "history-accept-25");
 
         var beforeReads = await AcceptanceHistoryStateAsync(run, orderId);
-        await using (var reopenedScope = run.Store(CompanyA))
-        {
-            StoredPurchaseOrder reopened = Assert.IsType<StoredPurchaseOrder>(await reopenedScope.Store.FindOrderAsync(orderId));
-            PurchaseOrderDetailView detail = Detail(reopened);
-            Assert.Equal(("5", "65", "35"),
-                (detail.Order.Version, Assert.Single(detail.Lines).Accepted, Assert.Single(detail.Lines).Remaining));
-            Assert.Equal([firstId, secondId], detail.Acceptances.Select(item => item.AcceptanceId).ToArray());
-            Assert.Equal(["40", "25"], detail.Acceptances.Select(item => item.Quantity).ToArray());
-            Assert.Equal([AcceptanceHistoryTime, AcceptanceHistoryTime.AddMinutes(1)],
-                detail.Acceptances.Select(item => item.RecordedAtUtc).ToArray());
-        }
+        PurchaseOrderDetailView detail = await NativeDetailAsync(run, orderId);
+        Assert.Equal(("5", "65", "35"),
+            (detail.Order.Version, Assert.Single(detail.Lines).Accepted, Assert.Single(detail.Lines).Remaining));
+        Assert.Equal([firstId, secondId], detail.Acceptances.Select(item => item.AcceptanceId).ToArray());
+        Assert.Equal([lineId, lineId], detail.Acceptances.Select(item => item.LineId).ToArray());
+        Assert.Equal(["40", "25"], detail.Acceptances.Select(item => item.Quantity).ToArray());
+        Assert.Equal([AcceptanceHistoryTime, AcceptanceHistoryTime.AddMinutes(1)],
+            detail.Acceptances.Select(item => item.RecordedAtUtc).ToArray());
 
-        await using (var repeatedScope = run.Store(CompanyA))
-        {
-            Assert.NotNull(await repeatedScope.Store.FindOrderAsync(orderId));
-            Assert.NotNull(await repeatedScope.Store.FindOrderAsync(orderId));
-            Assert.Null(await repeatedScope.Store.FindOrderAsync(Guid.NewGuid()));
-        }
-        await using (var foreignScope = run.Store(CompanyB))
-        {
-            Assert.Null(await foreignScope.Store.FindOrderAsync(orderId));
-        }
+        _ = await NativeDetailAsync(run, orderId);
+        await AssertNativeFailureAsync(run, TestUsers.CompanyA, CompanyA, $"{PurchasingApiV1.OrdersPath}/{Guid.NewGuid():D}", HttpStatusCode.NotFound, orderId, firstId);
+        await AssertNativeFailureAsync(run, TestUsers.CompanyB, CompanyB, $"{PurchasingApiV1.OrdersPath}/{orderId:D}", HttpStatusCode.NotFound, orderId, firstId);
+        await AssertNativeFailureAsync(run, TestUsers.NoAssignment, CompanyA, $"{PurchasingApiV1.OrdersPath}/{orderId:D}", HttpStatusCode.Forbidden, orderId, firstId);
+        await AssertNativeFailureAsync(run, TestUsers.CompanyA, CompanyA, $"{PurchasingApiV1.OrdersPath}/not-a-guid", HttpStatusCode.NotFound, orderId, firstId);
 
         Assert.Equal(beforeReads, await AcceptanceHistoryStateAsync(run, orderId));
         Assert.Equal(
@@ -97,12 +87,38 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
         await transaction.CommitAsync();
     }
 
-    private static PurchaseOrderDetailView Detail(StoredPurchaseOrder stored)
+    private static async Task<PurchaseOrderDetailView> NativeDetailAsync(Run run, Guid orderId)
     {
-        MethodInfo method = typeof(PurchasingService).GetMethod("OrderDetail", BindingFlags.NonPublic | BindingFlags.Static)
-            ?? throw new InvalidOperationException("Purchase order detail mapper bulunamadı.");
-        return (PurchaseOrderDetailView)(method.Invoke(null, [stored])
-            ?? throw new InvalidOperationException("Purchase order detail mapper sonuç döndürmedi."));
+        using var client = run.Factory.CreateClientFor(TestUsers.CompanyA, CompanyA);
+        using var response = await client.GetAsync($"{PurchasingApiV1.OrdersPath}/{orderId:D}");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.True(response.Headers.CacheControl?.Private);
+        Assert.True(response.Headers.CacheControl?.NoStore);
+        string payload = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(payload);
+        Assert.Equal(["order", "lines", "acceptances"],
+            document.RootElement.EnumerateObject().Select(property => property.Name).ToArray());
+        return JsonSerializer.Deserialize<PurchaseOrderDetailView>(payload, new JsonSerializerOptions(JsonSerializerDefaults.Web))
+            ?? throw new InvalidOperationException("Native purchase order detail payload could not be decoded.");
+    }
+
+    private static async Task AssertNativeFailureAsync(
+        Run run,
+        string actor,
+        Guid company,
+        string path,
+        HttpStatusCode expectedStatus,
+        params Guid[] protectedIds)
+    {
+        using var client = run.Factory.CreateClientFor(actor, company);
+        using var response = await client.GetAsync(path);
+        Assert.Equal(expectedStatus, response.StatusCode);
+        string payload = await response.Content.ReadAsStringAsync();
+        Assert.DoesNotContain("acceptances", payload, StringComparison.OrdinalIgnoreCase);
+        foreach (Guid protectedId in protectedIds)
+        {
+            Assert.DoesNotContain(protectedId.ToString("D"), payload, StringComparison.OrdinalIgnoreCase);
+        }
     }
 
     private static async Task<AcceptanceHistoryState> AcceptanceHistoryStateAsync(Run run, Guid orderId) => new(
