@@ -369,6 +369,7 @@ class ResultCollector:
                 code = self.message_scanner.finish()
             if (
                 self.message_overflow
+                or code in FINANCE_WORK_LEGACY_DIAGNOSTIC_CODES
                 or (
                     self.message_scanner is not None
                     and self.message_scanner.ambiguous

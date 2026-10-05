@@ -397,6 +397,62 @@ class SafeTrxSummaryTests(unittest.TestCase):
                 self.assertNotIn("CI_SAFE_DIAGNOSTIC", encoded)
                 self.assertNotIn("finance_work_legacy_", encoded)
 
+    def test_finance_work_legacy_message_markers_are_never_published(self) -> None:
+        class_name = (
+            "GoymenERP.Api.IntegrationTests."
+            "FinanceOfficialInvoiceImportWorkDeliverySqlServerRelationalAcceptanceTests"
+        )
+        method_name = (
+            "Legacy_previous_migration_receipt_replays_after_up_without_fabricating_work_history"
+        )
+        for code in (
+            "finance_work_legacy_start",
+            "finance_work_legacy_seed",
+            "finance_work_legacy_up",
+            "finance_work_legacy_replay",
+            "finance_work_legacy_counts",
+            "finance_work_legacy_down_up",
+        ):
+            with self.subTest(code=code):
+                source = trx(
+                    '<UnitTestResult testId="fail" outcome="Failed"><Output>'
+                    '<ErrorInfo><Message>CI_SAFE_DIAGNOSTIC:'
+                    + code
+                    + ' credential=DO_NOT_EXPORT</Message></ErrorInfo>'
+                    '</Output></UnitTestResult>',
+                    definition("fail", class_name, method_name),
+                )
+                summary, encoded = self._summary(source)
+                self.assertNotIn("diagnosticCode", summary["failureGroups"][0])
+                for forbidden in (code, "DO_NOT_EXPORT", "credential", "CI_SAFE_DIAGNOSTIC"):
+                    self.assertNotIn(forbidden, encoded)
+
+    def test_finance_work_legacy_message_invalidates_mixed_channel_markers(self) -> None:
+        class_name = (
+            "GoymenERP.Api.IntegrationTests."
+            "FinanceOfficialInvoiceImportWorkDeliverySqlServerRelationalAcceptanceTests"
+        )
+        method_name = (
+            "Legacy_previous_migration_receipt_replays_after_up_without_fabricating_work_history"
+        )
+        for stdout_code in (
+            "finance_work_legacy_start",
+            "acc_nj_sql_trial_balance",
+        ):
+            with self.subTest(stdout_code=stdout_code):
+                source = trx(
+                    '<UnitTestResult testId="fail" outcome="Failed"><Output>'
+                    '<ErrorInfo><Message>CI_SAFE_DIAGNOSTIC:finance_work_legacy_seed'
+                    '</Message></ErrorInfo><StdOut>CI_SAFE_DIAGNOSTIC:'
+                    + stdout_code
+                    + '</StdOut></Output></UnitTestResult>',
+                    definition("fail", class_name, method_name),
+                )
+                summary, encoded = self._summary(source)
+                self.assertNotIn("diagnosticCode", summary["failureGroups"][0])
+                self.assertNotIn("CI_SAFE_DIAGNOSTIC", encoded)
+                self.assertNotIn("finance_work_legacy_", encoded)
+
     def test_new_finance_stdout_markers_remain_closed_on_unsafe_paths(self) -> None:
         cases = (
             '<UnitTestResult testId="fail" outcome="Failed"><Output><Wrapper><StdOut>'
