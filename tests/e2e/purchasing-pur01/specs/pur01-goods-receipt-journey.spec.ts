@@ -580,8 +580,9 @@ test('PUR01-GR records one partial receipt in the browser, reopens it, finds the
       headers: apiHeaders(stockReaderActor),
     })
     expect(deniedComparison.status()).toBe(403)
-    expect(await deniedComparison.text()).not.toContain(LABEL_CODE)
-    expect(await deniedComparison.text()).not.toContain(MEASURED_KG)
+    const deniedComparisonBody = await deniedComparison.text()
+    expect(deniedComparisonBody).not.toContain(LABEL_CODE)
+    expect(deniedComparisonBody).not.toContain(MEASURED_KG)
 
     // Nothing the denied or foreign attempts sent left any row: still exactly one receipt and one label code.
     expect(await readReceiptEffects(pool, identity)).toEqual(ONCE)
