@@ -303,6 +303,8 @@ export const DISPATCH_NOTE_TEXT = {
   approve: 'Onayla (numara ver)',
   cancel: 'İptal et',
   cancelConfirm: 'İptali kaydet',
+  cancelExternalNotice:
+    'Bu işlem yalnız ERP kaydını iptal eder; GİB’e e-İrsaliye iptal isteği gönderilmez.',
   cancelReasonLabel: 'İptal gerekçesi (zorunlu)',
   cancelReasonRequired: 'İptal gerekçesi girin (en fazla 500 karakter).',
   eDispatchNumberLabel: 'e-İrsaliye numarası (16 karakter, ör. GYM2026000000001)',
