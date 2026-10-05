@@ -74,7 +74,14 @@ public sealed record TrialBalanceReportV1(
     DateOnly ThroughAccountingDate,
     Guid? CurrencyId,
     IReadOnlyList<TrialBalanceLineV1> Lines,
-    IReadOnlyList<TrialBalanceCurrencyTotalV1> CurrencyTotals,
+    IReadOnlyList<TrialBalanceCurrencyTotalV1> CurrencyTotals);
+
+/// <summary>
+/// Companion owner projection for evidence consumers. The native V1 endpoint keeps returning the
+/// original five-field <see cref="TrialBalanceReportV1"/> until central binds this shape explicitly.
+/// </summary>
+public sealed record TrialBalanceEvidenceReportV1(
+    TrialBalanceReportV1 Report,
     TrialBalanceReadReceiptV1 Receipt);
 
 /// <summary>
@@ -92,26 +99,48 @@ public sealed class AccountingTrialBalanceServiceV1(
         TrialBalanceRequestV1? request,
         CancellationToken cancellationToken = default)
     {
+        var result = await ReadCoreAsync(request, cancellationToken);
+        return new AccountingApiResult<TrialBalanceReportV1>(
+            result.Status, result.Resource?.Report, false, result.Code, result.Field);
+    }
+
+    /// <summary>
+    /// The same one-query owner read with immutable evidence. This is deliberately not wired to the
+    /// existing public V1 endpoint; central owns the explicit evidence adapter and public schema.
+    /// </summary>
+    public async Task<AccountingApiResult<TrialBalanceEvidenceReportV1>> ReadWithReceiptAsync(
+        TrialBalanceRequestV1? request,
+        CancellationToken cancellationToken = default)
+    {
+        var result = await ReadCoreAsync(request, cancellationToken);
+        return new AccountingApiResult<TrialBalanceEvidenceReportV1>(
+            result.Status, result.Resource, false, result.Code, result.Field);
+    }
+
+    private async Task<TrialBalanceReadCoreResult> ReadCoreAsync(
+        TrialBalanceRequestV1? request,
+        CancellationToken cancellationToken)
+    {
         if (request is null)
         {
-            return Invalid("request");
+            return InvalidCore("request");
         }
 
         if (request.FromAccountingDate == default || request.ThroughAccountingDate == default
             || request.ThroughAccountingDate < request.FromAccountingDate)
         {
-            return Invalid("accountingDate");
+            return InvalidCore("accountingDate");
         }
 
         if (request.CurrencyId == Guid.Empty)
         {
-            return Invalid("currencyId");
+            return InvalidCore("currencyId");
         }
 
         if (!TryContext(out var companyId, out var actorId)
             || !await FenceAsync(companyId, actorId, cancellationToken))
         {
-            return Denied();
+            return DeniedCore();
         }
 
         IReadOnlyList<TrialBalanceReadRowV1> rows;
@@ -122,12 +151,12 @@ public sealed class AccountingTrialBalanceServiceV1(
         }
         catch (AccountingStoreException exception) when (exception.Code == AccountingStoreCodes.CompanyContextMismatch)
         {
-            return Denied();
+            return DeniedCore();
         }
 
         if (!await FenceAsync(companyId, actorId, cancellationToken))
         {
-            return Denied();
+            return DeniedCore();
         }
 
         if (rows.Any(row => row.AccountId == Guid.Empty || row.CurrencyId == Guid.Empty
@@ -152,12 +181,15 @@ public sealed class AccountingTrialBalanceServiceV1(
             })
             .ToArray();
 
-        return new AccountingApiResult<TrialBalanceReportV1>(
+        var report = new TrialBalanceReportV1(
+            request.FromAccountingDate,
+            request.ThroughAccountingDate,
+            request.CurrencyId,
+            lines,
+            totals);
+        return new TrialBalanceReadCoreResult(
             AccountingApiStatus.Ok,
-            new TrialBalanceReportV1(request.FromAccountingDate, request.ThroughAccountingDate,
-                request.CurrencyId, lines, totals, Receipt(companyId, actorId, request, ordered)),
-            false,
-            null);
+            new TrialBalanceEvidenceReportV1(report, Receipt(companyId, actorId, request, ordered)));
     }
 
     private static TrialBalanceReadReceiptV1 Receipt(
@@ -237,9 +269,15 @@ public sealed class AccountingTrialBalanceServiceV1(
 
     private static string Text(decimal value) => AccountingApiService.Text(value);
 
-    private static AccountingApiResult<TrialBalanceReportV1> Invalid(string field) =>
-        new(AccountingApiStatus.Invalid, null, false, AccountingApiCodes.RequestInvalid, field);
+    private static TrialBalanceReadCoreResult InvalidCore(string field) =>
+        new(AccountingApiStatus.Invalid, null, AccountingApiCodes.RequestInvalid, field);
 
-    private static AccountingApiResult<TrialBalanceReportV1> Denied() =>
-        new(AccountingApiStatus.Denied, null, false, null);
+    private static TrialBalanceReadCoreResult DeniedCore() =>
+        new(AccountingApiStatus.Denied, null);
+
+    private sealed record TrialBalanceReadCoreResult(
+        AccountingApiStatus Status,
+        TrialBalanceEvidenceReportV1? Resource,
+        string? Code = null,
+        string? Field = null);
 }

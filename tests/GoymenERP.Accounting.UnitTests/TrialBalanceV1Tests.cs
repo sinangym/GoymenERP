@@ -1,3 +1,4 @@
+using System.Text.Json;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Accounting.Application;
@@ -37,15 +38,46 @@ public sealed class TrialBalanceV1Tests
         Assert.All(report.CurrencyTotals, total => Assert.True(total.IsBalanced));
         Assert.Equal([(CurrencyA, "225", "225"), (CurrencyB, "50", "50")],
             report.CurrencyTotals.Select(total => (total.CurrencyId, total.Debit, total.Credit)));
-        Assert.Equal(TrialBalanceReadReceiptValuesV1.SourceId, report.Receipt.SourceId);
-        Assert.Matches("^sha256:[0-9A-F]{64}$", report.Receipt.SourceVersion);
-        Assert.Equal(Company, report.Receipt.CompanyId);
-        Assert.Equal(Actor, report.Receipt.ActorId);
-        Assert.NotEqual(default, report.Receipt.ServerAsOfUtc);
-        Assert.Equal(TrialBalanceReadReceiptValuesV1.CurrencyAmount, report.Receipt.Unit);
-        Assert.Equal(TrialBalanceReadReceiptValuesV1.Fact, report.Receipt.FactPlan);
-        Assert.Equal(TrialBalanceReadReceiptValuesV1.Complete, report.Receipt.Completeness);
-        Assert.Equal(new[] { CurrencyA, CurrencyB }, report.Receipt.CurrencyIds);
+        var propertyNames = JsonSerializer.SerializeToElement(
+                report, new JsonSerializerOptions(JsonSerializerDefaults.Web))
+            .EnumerateObject()
+            .Select(property => property.Name)
+            .ToArray();
+        Assert.Equal(
+            new[] { "fromAccountingDate", "throughAccountingDate", "currencyId", "lines", "currencyTotals" },
+            propertyNames);
+    }
+
+    [Fact]
+    public async Task Companion_evidence_uses_the_same_report_core_without_changing_the_native_v1_shape()
+    {
+        var rows = new TrialBalanceReadRowV1[]
+        {
+            new(AccountA, CurrencyA, 125m, 100m),
+            new(AccountB, CurrencyA, 100m, 125m),
+            new(AccountA, CurrencyB, 50m, 0m),
+            new(AccountB, CurrencyB, 0m, 50m),
+        };
+        var nativeStore = new FakeStore(rows);
+        var evidenceStore = new FakeStore(rows);
+
+        var native = Assert.IsType<TrialBalanceReportV1>((await Service(
+            nativeStore, new SequencedAuthority(Granted(), Granted())).ReadAsync(Request())).Resource);
+        var evidence = Assert.IsType<TrialBalanceEvidenceReportV1>((await Service(
+            evidenceStore, new SequencedAuthority(Granted(), Granted())).ReadWithReceiptAsync(Request())).Resource);
+
+        Assert.Equal(JsonSerializer.Serialize(native), JsonSerializer.Serialize(evidence.Report));
+        Assert.Equal(1, nativeStore.Calls);
+        Assert.Equal(1, evidenceStore.Calls);
+        Assert.Equal(TrialBalanceReadReceiptValuesV1.SourceId, evidence.Receipt.SourceId);
+        Assert.Matches("^sha256:[0-9A-F]{64}$", evidence.Receipt.SourceVersion);
+        Assert.Equal(Company, evidence.Receipt.CompanyId);
+        Assert.Equal(Actor, evidence.Receipt.ActorId);
+        Assert.NotEqual(default, evidence.Receipt.ServerAsOfUtc);
+        Assert.Equal(TrialBalanceReadReceiptValuesV1.CurrencyAmount, evidence.Receipt.Unit);
+        Assert.Equal(TrialBalanceReadReceiptValuesV1.Fact, evidence.Receipt.FactPlan);
+        Assert.Equal(TrialBalanceReadReceiptValuesV1.Complete, evidence.Receipt.Completeness);
+        Assert.Equal(new[] { CurrencyA, CurrencyB }, evidence.Receipt.CurrencyIds);
     }
 
     [Fact]
@@ -57,20 +89,34 @@ public sealed class TrialBalanceV1Tests
             new(AccountB, CurrencyA, 100m, 125m),
         };
 
-        var first = Assert.IsType<TrialBalanceReportV1>((await Service(
-            new FakeStore(rows), new SequencedAuthority(Granted(), Granted())).ReadAsync(Request())).Resource);
-        var replay = Assert.IsType<TrialBalanceReportV1>((await Service(
-            new FakeStore(rows), new SequencedAuthority(Granted(), Granted())).ReadAsync(Request())).Resource);
-        var changedContent = Assert.IsType<TrialBalanceReportV1>((await Service(
+        var first = Assert.IsType<TrialBalanceEvidenceReportV1>((await Service(
+            new FakeStore(rows), new SequencedAuthority(Granted(), Granted())).ReadWithReceiptAsync(Request())).Resource);
+        var replay = Assert.IsType<TrialBalanceEvidenceReportV1>((await Service(
+            new FakeStore(rows), new SequencedAuthority(Granted(), Granted())).ReadWithReceiptAsync(Request())).Resource);
+        var changedContent = Assert.IsType<TrialBalanceEvidenceReportV1>((await Service(
             new FakeStore([new(AccountA, CurrencyA, 126m, 100m), rows[1]]),
-            new SequencedAuthority(Granted(), Granted())).ReadAsync(Request())).Resource);
-        var changedScope = Assert.IsType<TrialBalanceReportV1>((await Service(
-            new FakeStore(rows), new SequencedAuthority(Granted(), Granted())).ReadAsync(
+            new SequencedAuthority(Granted(), Granted())).ReadWithReceiptAsync(Request())).Resource);
+        var changedScope = Assert.IsType<TrialBalanceEvidenceReportV1>((await Service(
+            new FakeStore(rows), new SequencedAuthority(Granted(), Granted())).ReadWithReceiptAsync(
             new TrialBalanceRequestV1(new DateOnly(2026, 9, 1), new DateOnly(2026, 9, 30), CurrencyA))).Resource);
 
         Assert.Equal(first.Receipt.SourceVersion, replay.Receipt.SourceVersion);
         Assert.NotEqual(first.Receipt.SourceVersion, changedContent.Receipt.SourceVersion);
         Assert.NotEqual(first.Receipt.SourceVersion, changedScope.Receipt.SourceVersion);
+    }
+
+    [Fact]
+    public async Task Companion_evidence_is_not_released_when_authority_is_revoked_during_the_read()
+    {
+        var store = new FakeStore([new(AccountA, CurrencyA, 10m, 0m)]);
+        var authority = new SequencedAuthority(Granted(), PermissionScope.Denied);
+
+        var result = await Service(store, authority).ReadWithReceiptAsync(Request());
+
+        Assert.Equal(AccountingApiStatus.Denied, result.Status);
+        Assert.Null(result.Resource);
+        Assert.Equal(1, store.Calls);
+        Assert.Equal(2, authority.Calls);
     }
 
     [Fact]
