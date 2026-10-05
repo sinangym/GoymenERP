@@ -1466,9 +1466,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 2 }),
                 // The accepted initial Product code group is durable. Down refuses when its identity,
-                // name or prefix has drifted or any Product/replay reference still uses the exact row.
+                // byte-exact name or prefix has drifted or any Product/card/import replay reference uses it.
                 ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/Persistence/Migrations/20261004213000_ReleaseInitialProductCodeGroup.cs"] =
-                    new("d629ab7ab7937087e8f420b8559ef39533b2baa7bca941ebcf8eaafc81fb0b4c",
+                    new("f5f455d90e4758107648997743788dab5f511bb3a01a87676a1d832a0563290b",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 2 }),
                 ["src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/Persistence/Migrations/20260912175120_AddExplicitProductAssignments.cs"] =

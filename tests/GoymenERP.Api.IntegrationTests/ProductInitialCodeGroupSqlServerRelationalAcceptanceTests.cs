@@ -57,17 +57,29 @@ public sealed class ProductInitialCodeGroupSqlServerRelationalAcceptanceTests
     {
         await using var run = await Run.StartAsync();
 
-        await ExecuteAsync(run.Factory.DatabaseConnectionString, """
-            UPDATE [product].[CodeGroups] SET [Name] = N'Changed'
-            WHERE [Id] = '829e576d-c635-502a-97b8-9d5074c9d6a0';
-            """);
-        var changed = await Assert.ThrowsAsync<SqlException>(() => MigrateAsync(run.Factory, PreviousMigration));
-        Assert.Equal(51045, changed.Number);
-        Assert.Contains("missing or changed", changed.Message, StringComparison.Ordinal);
-        await ExecuteAsync(run.Factory.DatabaseConnectionString, """
-            UPDATE [product].[CodeGroups] SET [Name] = N'Sac'
-            WHERE [Id] = '829e576d-c635-502a-97b8-9d5074c9d6a0';
-            """);
+        foreach (var mutation in new[]
+                 {
+                     "SET [Name] = N'Changed'",
+                     "SET [Name] = N'sac'",
+                     "SET [Name] = N'Sac '",
+                     "SET [Prefix] = 'sac'",
+                     "SET [Prefix] = 'SAC '",
+                 })
+        {
+            await ExecuteAsync(run.Factory.DatabaseConnectionString, $"""
+                UPDATE [product].[CodeGroups] {mutation}
+                WHERE [Id] = '829e576d-c635-502a-97b8-9d5074c9d6a0';
+                """);
+            var changed = await Assert.ThrowsAsync<SqlException>(() => MigrateAsync(run.Factory, PreviousMigration));
+            Assert.Equal(51045, changed.Number);
+            Assert.Contains("missing or changed", changed.Message, StringComparison.Ordinal);
+            Assert.Equal(1, await CountAsync(run.Factory.DatabaseConnectionString,
+                $"SELECT COUNT(*) FROM [product].[CodeGroups] WHERE [Id] = '{ProductInitialCodeGroupV1.SacGroupId:D}'"));
+            await ExecuteAsync(run.Factory.DatabaseConnectionString, """
+                UPDATE [product].[CodeGroups] SET [Name] = N'Sac', [Prefix] = 'SAC'
+                WHERE [Id] = '829e576d-c635-502a-97b8-9d5074c9d6a0';
+                """);
+        }
 
         await InsertProductAsync(run.Factory.DatabaseConnectionString);
         var referenced = await Assert.ThrowsAsync<SqlException>(() => MigrateAsync(run.Factory, PreviousMigration));
@@ -83,6 +95,17 @@ public sealed class ProductInitialCodeGroupSqlServerRelationalAcceptanceTests
         await ExecuteAsync(run.Factory.DatabaseConnectionString, """
             DELETE FROM [idempotency].[GroupSharedCommandTerminals]
             WHERE [Subject] = 'Product' AND [IdempotencyKeyHash] = REPLICATE('C', 64);
+            """);
+
+        await InsertImportReplayAsync(run.Factory.DatabaseConnectionString);
+        var importHistory = await Assert.ThrowsAsync<SqlException>(() => MigrateAsync(run.Factory, PreviousMigration));
+        Assert.Equal(51045, importHistory.Number);
+        Assert.Contains("replay history references", importHistory.Message, StringComparison.Ordinal);
+        Assert.Equal(1, await CountAsync(run.Factory.DatabaseConnectionString,
+            $"SELECT COUNT(*) FROM [product].[CodeGroups] WHERE [Id] = '{ProductInitialCodeGroupV1.SacGroupId:D}'"));
+        await ExecuteAsync(run.Factory.DatabaseConnectionString, """
+            DELETE FROM [idempotency].[GroupSharedCommandTerminals]
+            WHERE [Subject] = 'Product' AND [IdempotencyKeyHash] = REPLICATE('E', 64);
             """);
 
         await MigrateAsync(run.Factory, PreviousMigration);
@@ -113,6 +136,16 @@ public sealed class ProductInitialCodeGroupSqlServerRelationalAcceptanceTests
             '20000000-0000-0000-0000-000000000003', '10000000-0000-0000-0000-000000000001', REPLICATE('D', 64),
             201, N'{"card":{"product":{"groupId":"{{ProductInitialCodeGroupV1.SacGroupId:D}}"} } }',
             'product-sac-rollback-history', 1, '2026-10-04T00:00:00+00:00');
+        """);
+
+    private static async Task InsertImportReplayAsync(string connectionString) => await ExecuteAsync(connectionString, $$"""
+        INSERT INTO [idempotency].[GroupSharedCommandTerminals]
+            ([Subject], [CommandName], [IdempotencyKeyHash], [LocalActorId], [OriginCompanyId], [RequestHash],
+             [StatusCode], [ResponseJson], [OriginalCorrelationId], [SchemaVersion], [CompletedAtUtc])
+        VALUES ('Product', 'product.draft.create.v1', REPLICATE('E', 64),
+            '20000000-0000-0000-0000-000000000003', '10000000-0000-0000-0000-000000000001', REPLICATE('F', 64),
+            201, N'{"products":[{"productId":"{{ProductId:D}}","code":"SAC-1","legacyCode":"LEGACY-SAC-1","name":"Import history","groupId":"{{ProductInitialCodeGroupV1.SacGroupId:D}}"}],"isReplay":false,"originalCorrelationId":"product-sac-import-history"}',
+            'product-sac-import-history', 1, '2026-10-04T00:00:00+00:00');
         """);
 
     private static async Task AssertExactAsync(string connectionString)

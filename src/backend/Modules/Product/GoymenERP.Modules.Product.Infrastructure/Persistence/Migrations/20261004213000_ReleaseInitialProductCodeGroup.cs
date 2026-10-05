@@ -36,7 +36,10 @@ public sealed class ReleaseInitialProductCodeGroup : Migration
         migrationBuilder.Sql("""
             IF NOT EXISTS (SELECT 1 FROM [product].[CodeGroups]
                 WHERE [Id] = '829e576d-c635-502a-97b8-9d5074c9d6a0'
-                  AND [Name] = N'Sac' AND [Prefix] = 'SAC')
+                  AND [Name] COLLATE Latin1_General_100_BIN2 = N'Sac' COLLATE Latin1_General_100_BIN2
+                  AND DATALENGTH([Name]) = DATALENGTH(N'Sac')
+                  AND [Prefix] COLLATE Latin1_General_100_BIN2 = 'SAC' COLLATE Latin1_General_100_BIN2
+                  AND DATALENGTH([Prefix]) = DATALENGTH('SAC'))
                 OR (SELECT COUNT(*) FROM [product].[CodeGroups]
                     WHERE [Id] = '829e576d-c635-502a-97b8-9d5074c9d6a0'
                        OR [Name] = N'Sac' OR [Prefix] = 'SAC') <> 1
@@ -54,8 +57,13 @@ public sealed class ReleaseInitialProductCodeGroup : Migration
                       AND [CommandName] IN ('product.draft.create.v1', 'product.draft.basic-edit.v1',
                                             'product.card.activate.v1', 'product.card.deactivate.v1',
                                             'product.card.reactivate.v1')
-                      AND JSON_VALUE([ResponseJson], '$.card.product.groupId') =
-                          '829e576d-c635-502a-97b8-9d5074c9d6a0')
+                      AND (JSON_VALUE([ResponseJson], '$.card.product.groupId') =
+                               '829e576d-c635-502a-97b8-9d5074c9d6a0'
+                           OR EXISTS (SELECT 1
+                               FROM OPENJSON([ResponseJson], '$.products')
+                                   WITH ([GroupId] uniqueidentifier '$.groupId') AS [product]
+                               WHERE [product].[GroupId] =
+                                   '829e576d-c635-502a-97b8-9d5074c9d6a0')))
                 THROW 51045, 'Product replay history references the Sac code-group release; rollback requires a reviewed forward fix.', 1;
 
             DELETE FROM [product].[CodeGroups]
