@@ -174,7 +174,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // Official invoice approval: +3 checker list/detail/approve/reopen and migration rollback SQL facts.
             // F-03 allocation read: +1 company/fresh-authority list/detail/reopen SQL fact.
             ["tools/relational_inventory/finance.txt"] =
-                "fb0bb3417bd765345616735bb42b92f29156e1ce7e3e8d87226adf21e8c2f031",
+                "5a32a228cf19c943a44232bc0c86588151c812bdb5b9fe1e317e1b640c5b1c83",
 
             // identity
             // SY-01/SY-02: +2 IdentityAccessViewSqlServerRelationalAcceptanceTests facts (b159330c… -> a521143a…).
