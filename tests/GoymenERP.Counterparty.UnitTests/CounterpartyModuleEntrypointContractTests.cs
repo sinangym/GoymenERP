@@ -65,10 +65,7 @@ public sealed class CounterpartyModuleEntrypointContractTests
     [Fact]
     public void Drift_detection_rejects_missing_and_unapproved_edges()
     {
-        var expected = new HashSet<EntrypointEdge>
-        {
-            .. ExpectedCompositionEdges,
-        };
+        var expected = new HashSet<EntrypointEdge>(ExpectedCompositionEdges);
         var actual = new HashSet<EntrypointEdge>
         {
             new(ExpectedCompositionRoot, ExpectedCounterpartyApplication),
