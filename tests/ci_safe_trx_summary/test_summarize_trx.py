@@ -580,6 +580,8 @@ class SafeTrxSummaryTests(unittest.TestCase):
         self.assertEqual(
             set(jobs),
             {
+                "backend-build",
+                "backend-test-group",
                 "backend",
                 "frontend",
                 "relational-shard",
@@ -591,7 +593,7 @@ class SafeTrxSummaryTests(unittest.TestCase):
         )
 
         summaries = {
-            "backend": (
+            "backend-build": (
                 "Produce secret-free backend test summary",
                 "Upload secret-free backend test summary",
                 "artifacts/ci-test-results/backend",
@@ -599,6 +601,16 @@ class SafeTrxSummaryTests(unittest.TestCase):
                 "artifacts/ci-safe-test-summary/backend.json",
                 "ci-test-summary-backend-" + head_ref,
                 "artifacts/ci-test-results/backend/**/*.trx",
+                "test-suite",
+            ),
+            "backend-test-group": (
+                "Produce secret-free backend group summary",
+                "Upload secret-free backend group summary",
+                '"artifacts/ci-test-results/backend-groups/${{ matrix.group }}"',
+                '"artifacts/ci-safe-test-summary/backend-${{ matrix.group }}.json"',
+                "artifacts/ci-safe-test-summary/backend-${{ matrix.group }}.json",
+                "ci-test-summary-backend-group-${{ matrix.group }}-" + head_ref,
+                "artifacts/ci-test-results/backend-groups/*/*.trx",
                 "test-suite",
             ),
             "relational-shard": (
@@ -652,6 +664,8 @@ class SafeTrxSummaryTests(unittest.TestCase):
                 upload_glob = (
                     "artifacts/ci-safe-test-summary/shard-*.json"
                     if job_name == "relational-shard"
+                    else "artifacts/ci-safe-test-summary/backend-*.json"
+                    if job_name == "backend-test-group"
                     else upload_path
                 )
                 self.assertEqual(
@@ -668,11 +682,29 @@ class SafeTrxSummaryTests(unittest.TestCase):
                 )
                 self.assertEqual(
                     body.count("actions/upload-artifact@v7"),
-                    2 if job_name == "relational-shard" else 1,
+                    2 if job_name in ("relational-shard", "backend-test-group") else 1,
                 )
             except AssertionError as error:
                 raise AssertionError(f"{job_name}: {error}") from error
 
+        backend_worker = jobs["backend-test-group"]
+        self.assertEqual(
+            self._workflow_step_lines(
+                backend_worker, "Upload exact backend group proof"
+            ),
+            [
+                "uses: actions/upload-artifact@v7",
+                "with:",
+                "name: ci-backend-test-group-proof-${{ matrix.group }}",
+                "path: artifacts/ci-backend-group-proofs/proof-${{ matrix.group }}.json",
+                "if-no-files-found: error",
+                "retention-days: 7",
+            ],
+        )
+        self.assertIn(
+            '--results-directory "artifacts/ci-test-results/backend-groups/${{ matrix.group }}" \\',
+            self._workflow_step_lines(backend_worker, "Run exact backend test group"),
+        )
         shard = jobs["relational-shard"]
         self.assertEqual(
             self._workflow_step_lines(shard, "Upload exact SQL shard proof"),
@@ -738,8 +770,8 @@ class SafeTrxSummaryTests(unittest.TestCase):
             if job_name not in summaries:
                 self.assertNotIn("tools/ci/summarize_trx.py", body)
                 self.assertNotIn("actions/upload-artifact@v7", body)
-        self.assertEqual(workflow.count("tools/ci/summarize_trx.py"), 3)
-        self.assertEqual(workflow.count("actions/upload-artifact@v7"), 4)
+        self.assertEqual(workflow.count("tools/ci/summarize_trx.py"), 4)
+        self.assertEqual(workflow.count("actions/upload-artifact@v7"), 6)
         self.assertNotRegex(workflow, r"(?m)^\s*path:\s*[^\n]*ci-test-results")
         self.assertNotRegex(workflow, r"(?m)^\s*path:\s*[^\n]*\.trx\b")
         self.assertIn("permissions:\n  contents: read", workflow)
@@ -770,6 +802,11 @@ class SafeTrxSummaryTests(unittest.TestCase):
                 "proof passed as summary",
                 "path: artifacts/ci-safe-test-summary/shard-${{ matrix.shard }}.json",
                 "path: artifacts/ci-relational-proofs/proof-${{ matrix.shard }}.json",
+            ),
+            (
+                "backend proof passed as summary",
+                "path: artifacts/ci-safe-test-summary/backend-${{ matrix.group }}.json",
+                "path: artifacts/ci-backend-group-proofs/proof-${{ matrix.group }}.json",
             ),
             (
                 "wrong producer identity",
