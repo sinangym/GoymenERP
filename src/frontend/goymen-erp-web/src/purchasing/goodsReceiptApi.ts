@@ -2,7 +2,8 @@ import { purchasingHeaders, PURCHASING_ORDERS_BASE } from './api'
 import type { PurchaseOrderDetail, PurchaseOrderLine } from './contract'
 import type { ViewOutcome } from '../shell/uiState'
 import { decodeGoodsReceiptOptions, decodeGoodsReceiptPage, decodeGoodsReceiptResponse,
-  type GoodsReceiptOptions, type GoodsReceiptPage, type GoodsReceiptRequest, type GoodsReceiptResponse } from './goodsReceiptContract'
+  type GoodsReceipt, type GoodsReceiptOptions, type GoodsReceiptPage, type GoodsReceiptRequest, type GoodsReceiptResponse } from './goodsReceiptContract'
+import { decodeGoodsReceiptQuantityComparison, type GoodsReceiptQuantityComparison } from './goodsReceiptComparisonContract'
 
 export type ReceiptOutcome = { readonly type: 'applied'; readonly response: GoodsReceiptResponse }
   | { readonly type: 'failed'; readonly status: number; readonly code: string | null }
@@ -26,6 +27,12 @@ async function read<T>(path: string, companyId: string, decode: (body: unknown) 
 
 export function fetchGoodsReceipts(detail: PurchaseOrderDetail, signal?: AbortSignal): Promise<ViewOutcome<GoodsReceiptPage>> {
   return read(`${base(detail.order.id)}/goods-receipts`, detail.order.companyId, (body) => decodeGoodsReceiptPage(body, detail), signal)
+}
+
+export function fetchGoodsReceiptQuantityComparison(detail: PurchaseOrderDetail, receipt: GoodsReceipt,
+  signal?: AbortSignal): Promise<ViewOutcome<GoodsReceiptQuantityComparison>> {
+  return read(`${base(detail.order.id)}/goods-receipts/${encodeURIComponent(receipt.acceptanceId)}/quantity-comparison`,
+    detail.order.companyId, (body) => decodeGoodsReceiptQuantityComparison(body, receipt), signal)
 }
 
 export function fetchGoodsReceiptOptions(detail: PurchaseOrderDetail, line: PurchaseOrderLine, signal?: AbortSignal): Promise<ViewOutcome<GoodsReceiptOptions>> {
