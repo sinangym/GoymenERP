@@ -20,6 +20,8 @@ public sealed class AccountingPermissionRegistrationTests
     [InlineData(NormalJournalPermissionNamesV1.DraftApprove, ErpPermissions.AccountingNormalJournalDraftApprove)]
     [InlineData(AccountingJournalReversalPermissionNamesV1.Propose, ErpPermissions.AccountingJournalReversePropose)]
     [InlineData(AccountingJournalReversalPermissionNamesV1.Approve, ErpPermissions.AccountingJournalReverseApprove)]
+    [InlineData(ApprovedAccountingSourceCatalogPermissionNamesV1.Prepare, ErpPermissions.AccountingApprovedSourceCatalogPrepare)]
+    [InlineData(ApprovedAccountingSourceCatalogPermissionNamesV1.Activate, ErpPermissions.AccountingApprovedSourceCatalogActivate)]
     public void The_owner_name_is_the_registered_central_name(string ownerName, string centralName)
     {
         Assert.Equal(ownerName, centralName);
@@ -37,6 +39,8 @@ public sealed class AccountingPermissionRegistrationTests
                 .Concat([
                     AccountingJournalReversalPermissionNamesV1.Propose,
                     AccountingJournalReversalPermissionNamesV1.Approve,
+                    ApprovedAccountingSourceCatalogPermissionNamesV1.Prepare,
+                    ApprovedAccountingSourceCatalogPermissionNamesV1.Activate,
                 ])
                 .Order(StringComparer.Ordinal),
             ErpPermissions.All.Where(name => name.StartsWith("accounting.", StringComparison.Ordinal)).Order(StringComparer.Ordinal));

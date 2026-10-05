@@ -160,7 +160,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         {
             // accounting
             ["tools/relational_inventory/accounting.txt"] =
-                "40ffe6a52ddfbb445fdf2e168fdddd196b3db324259fa68b9429c5c35990da09",
+                "e7f5b933a7a4d534caaf68eb7a2c5531d874c86adb865441fe06f9a325f7aa98",
 
             // counterparty
             // AT-009: +2 real-SQL fresh-authority interleavings (duplicate read and same-key winner replay).
@@ -344,7 +344,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // company-scoped normal journal draft headers/lines and immutable lifecycle evidence.
             ["src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Infrastructure/"
              + "Persistence/AccountingDbContext.cs"] =
-                "07b3ba990f40c00499d0ace1cd77e1a6643c865a589733fb3839242f9ed1151a",
+                "87c5304e7de42d9c02b8fc74b75743ec8251d2625aab3760f37c5d14a4a0e8d8",
             // INV-2 (#293, ADR-INV-001 option A): company-scoped like Organization; every tenant
             // row and AuditEvent carries the CompanyId filter. A standard entry, not an exception.
             // Re-measured for AT-037: StockCounts and StockCountDecisions, each with the CompanyId query filter and a
@@ -417,6 +417,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     private const string ReviewedAccountingStorePath =
         "src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Infrastructure/"
         + "Persistence/AccountingStore.cs";
+    private const string ReviewedApprovedAccountingSourceCatalogStorePath =
+        "src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Infrastructure/"
+        + "Persistence/ApprovedAccountingSourceCatalogStoreV1.cs";
     private const string ReviewedManufacturingInventoryInputIssueHostPath =
         "src/backend/GoymenERP.Api/ManufacturingRuntime/ManufacturingInventoryInputIssueHost.cs";
     private const string ReviewedManufacturingInventoryReturnOutputHostPath =
@@ -454,6 +457,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
                  + "FinanceAllocationReadService.cs"] = ("FinanceDbContext", 1),
                 [ReviewedAccountingStorePath] = ("AccountingDbContext", 2),
+                [ReviewedApprovedAccountingSourceCatalogStorePath] = ("AccountingDbContext", 3),
                 [ReviewedManufacturingInventoryInputIssueHostPath] = ("ManufacturingDbContext", 2),
                 [ReviewedManufacturingInventoryReturnOutputHostPath] = ("ManufacturingDbContext", 1),
                 [ReviewedProductRuntimeExtensionsPath] = ("IdentityDbContext", 1),
@@ -738,7 +742,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "GoymenERP.Modules.Accounting.Infrastructure/"
                  + "AccountingModuleExtensions.cs"] =
                     new(
-                        "e0f369a72edfb66b1e45b59d18cb0580ab70ae38e47dadfb264751396041c2d3",
+                        "a09a1e081b572c23527ec66de4700040b040129b849f1314b25003e970dec097",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -757,6 +761,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         {
                             ["Microsoft.Data.SqlClient"] = 1
                         }),
+                // ACC source-catalog store uses the tenant-filtered AccountingDbContext directly.
+                // It has no raw SQL, connection or filter-bypass API; the exact source and its three
+                // reviewed context construction sites are pinned together.
+                [ReviewedApprovedAccountingSourceCatalogStorePath] =
+                    new(
+                        "d7c106d12a8c1bc928ad0bbb65c4a1b3e39405695c970ed4ea4aa24495cb84d8",
+                        new Dictionary<string, int>(StringComparer.Ordinal)),
                 // FIN-T04a (#305): the Finance initializer's one provider branch, as Organization.
                 // Re-fingerprinted for DEC-FIN-016: the customer-instrument service registration; the provider
                 // branch and its token counts are unchanged. Re-fingerprinted for the party ledger: one read-service
@@ -1311,6 +1322,16 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "20260925061753_AddAccountingJournalReversalProposals.cs"] =
                     new(
                         "af5aad11127802f67c94eb261d644400844940b7be991d38b3a52df5a76d79bb",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 1
+                        }),
+                // Approved source-catalog history is durable; Down refuses rollback while any package remains.
+                ["src/backend/Modules/Accounting/"
+                 + "GoymenERP.Modules.Accounting.Infrastructure/Persistence/Migrations/"
+                 + "20261002063616_AddApprovedAccountingSourceCatalog.cs"] =
+                    new(
+                        "89ee19354a152fb3da1ebe91a852a7ada8a34acae181ff15b547d8f66a042ba0",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Sql"] = 1
