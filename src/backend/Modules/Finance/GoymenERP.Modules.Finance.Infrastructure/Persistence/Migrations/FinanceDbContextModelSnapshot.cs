@@ -1553,6 +1553,9 @@ partial class FinanceDbContextModelSnapshot : ModelSnapshot
                         .HasColumnType("char(64)")
                         .IsFixedLength();
 
+                    b.Property<int?>("ProducerSchemaVersion")
+                        .HasColumnType("int");
+
                     b.Property<DateTimeOffset>("RecordedAtUtc")
                         .HasColumnType("datetimeoffset");
 
@@ -1572,6 +1575,8 @@ partial class FinanceDbContextModelSnapshot : ModelSnapshot
                             t.HasCheckConstraint("CK_OfficialInvoiceImportCommands_Content", "LEN([CommandName]) > 0 AND LEN([IdempotencyKeyHash]) = 64 AND LEN([ActorId]) > 0 AND LEN([PayloadHash]) = 64 AND ISJSON([ResultJson]) = 1 AND LEN([CorrelationId]) > 0");
 
                             t.HasCheckConstraint("CK_OfficialInvoiceImportCommands_Identity", "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [BatchId] <> '00000000-0000-0000-0000-000000000000'");
+
+                            t.HasCheckConstraint("CK_OfficialInvoiceImportCommands_ProducerSchema", "[ProducerSchemaVersion] IS NULL OR [ProducerSchemaVersion] = 1");
                         });
                 });
 

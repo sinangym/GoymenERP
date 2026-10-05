@@ -1,4 +1,6 @@
 using System.Text;
+using System.Security.Cryptography;
+using System.Text.Json;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Audit.Infrastructure.Persistence;
@@ -57,6 +59,8 @@ public sealed class FinanceOfficialInvoiceImportWorkDeliverySqlServerRelationalA
         Assert.Equal(2, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.OfficialInvoiceImportCommands"));
         Assert.Equal(2, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.OfficialInvoiceImportWorkDeliveries"));
         Assert.Equal(2, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.OfficialInvoiceImportCommands WHERE ProducerSchemaVersion = 1"));
+        Assert.Equal(2, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityType = N'Finance.OfficialInvoiceImportBatch'"));
         Assert.Equal(0, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM finance.OfficialInvoiceImportWorkDeliveries WHERE DATALENGTH(PayloadSha256) <> 64 OR PayloadSha256 COLLATE Latin1_General_100_BIN2 LIKE '%[^0-9a-f]%'"));
@@ -97,6 +101,113 @@ public sealed class FinanceOfficialInvoiceImportWorkDeliverySqlServerRelationalA
             "SELECT COUNT(*) FROM sys.tables WHERE schema_id = SCHEMA_ID(N'finance') AND name = N'OfficialInvoiceImportWorkDeliveries'"));
     }
 
+    [SqlServerFact]
+    public async Task Legacy_previous_migration_receipt_replays_after_up_without_fabricating_work_history()
+    {
+        await using var run = await Run.StartAsync("20260930185113_AddOfficialInvoiceImportApprovalV1");
+        var request = Request();
+        var preview = new FinanceOfficialInvoiceImportParserV1().Preview(
+            new FinanceContext(Company, "SENTETIK-maker", "legacy-correlation", null), request);
+        var batch = preview.Batch!;
+        var uploadedAt = DateTimeOffset.Parse("2026-10-05T18:00:00+00:00");
+        var resource = new FinanceOfficialInvoiceImportBatchViewV1(Batch, Company, batch.BatchVersion,
+            batch.BatchChecksum, preview.TemplateVersion, FinanceOfficialInvoiceImportApprovalStatusV1.Pending,
+            "1", batch.Rows.Count, "SENTETIK-maker", uploadedAt, null, null);
+        var result = new FinanceOfficialInvoiceImportApprovalResultV1(
+            CommandOutcome.Succeeded, resource, false, "legacy-correlation", []);
+        await run.ExecuteAsync(
+            """
+            INSERT INTO finance.OfficialInvoiceImportBatches
+                (Id, CompanyId, BatchVersion, BatchChecksum, TemplateVersion, FileBytes, SourceRowsJson, RowCount,
+                 UploadedBy, UploadedAtUtc, CorrelationId, CausationId)
+            VALUES (@batch, @company, @batchVersion, @checksum, @templateVersion, @bytes, @rows, @rowCount,
+                    @actor, @at, @correlation, NULL);
+            INSERT INTO finance.OfficialInvoiceImportCommands
+                (Id, CompanyId, CommandName, IdempotencyKeyHash, ActorId, PayloadHash, BatchId, ResultJson,
+                 CorrelationId, RecordedAtUtc)
+            VALUES (@command, @company, @commandName, @keyHash, @actor, @payloadHash, @batch, @result,
+                    @correlation, @at);
+            """,
+            ("@batch", Batch), ("@company", Company), ("@batchVersion", batch.BatchVersion),
+            ("@checksum", batch.BatchChecksum), ("@templateVersion", preview.TemplateVersion),
+            ("@bytes", request.Utf8Csv.ToArray()),
+            ("@rows", JsonSerializer.Serialize(batch.Rows, FinanceJson.CreateOptions())),
+            ("@rowCount", batch.Rows.Count), ("@actor", "SENTETIK-maker"), ("@at", uploadedAt),
+            ("@correlation", "legacy-correlation"), ("@command", Guid.NewGuid()),
+            ("@commandName", FinanceOfficialInvoiceImportApprovalServiceV1.UploadCommand),
+            ("@keyHash", FinanceCommandKeys.Hash("legacy-key")), ("@payloadHash", UploadHash(request)),
+            ("@result", JsonSerializer.Serialize(result, FinanceJson.CreateOptions())));
+
+        await using (var context = run.Context()) await context.Database.MigrateAsync();
+        await using (var maker = run.Service("SENTETIK-maker"))
+        {
+            var replay = await maker.Service.UploadAsync(maker.Context,
+                new CommandMetadata("legacy-key"), request, default);
+            Assert.Equal(CommandOutcome.Succeeded, replay.Outcome);
+            Assert.True(replay.IsReplay);
+        }
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.OfficialInvoiceImportWorkDeliveries"));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.OfficialInvoiceImportCommands WHERE ProducerSchemaVersion IS NULL"));
+
+        await using var migrationContext = run.Context();
+        await migrationContext.GetService<IMigrator>().MigrateAsync("20260930185113_AddOfficialInvoiceImportApprovalV1");
+        await migrationContext.Database.MigrateAsync();
+    }
+
+    [SqlServerFact]
+    public async Task New_marker_without_delivery_refuses_replay_and_blocks_destructive_down()
+    {
+        await using var run = await Run.StartAsync();
+        await using (var maker = run.Service("SENTETIK-maker"))
+        {
+            Assert.Equal(CommandOutcome.Succeeded,
+                (await maker.Service.UploadAsync(maker.Context, new CommandMetadata("missing-key"), Request(), default)).Outcome);
+        }
+        await run.ExecuteAsync("DELETE FROM finance.OfficialInvoiceImportWorkDeliveries WHERE BatchId = @batch",
+            ("@batch", Batch));
+
+        await using (var maker = run.Service("SENTETIK-maker"))
+        {
+            var replay = await maker.Service.UploadAsync(maker.Context,
+                new CommandMetadata("missing-key"), Request(), default);
+            Assert.Equal(CommandOutcome.Unavailable, replay.Outcome);
+        }
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.OfficialInvoiceImportCommands"));
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.OfficialInvoiceImportWorkDeliveries"));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityType = N'Finance.OfficialInvoiceImportBatch'"));
+        await using var context = run.Context();
+        var error = await Assert.ThrowsAsync<SqlException>(() => context.GetService<IMigrator>()
+            .MigrateAsync("20260930185113_AddOfficialInvoiceImportApprovalV1"));
+        Assert.Equal(51051, error.Number);
+    }
+
+    [SqlServerFact]
+    public async Task Corrupt_new_delivery_hash_refuses_replay_without_another_effect()
+    {
+        await using var run = await Run.StartAsync();
+        await using (var maker = run.Service("SENTETIK-maker"))
+        {
+            Assert.Equal(CommandOutcome.Succeeded,
+                (await maker.Service.UploadAsync(maker.Context, new CommandMetadata("corrupt-key"), Request(), default)).Outcome);
+        }
+        await run.ExecuteAsync(
+            "UPDATE finance.OfficialInvoiceImportWorkDeliveries SET PayloadSha256 = @hash WHERE BatchId = @batch",
+            ("@hash", new string('0', 64)), ("@batch", Batch));
+
+        await using (var maker = run.Service("SENTETIK-maker"))
+        {
+            var replay = await maker.Service.UploadAsync(maker.Context,
+                new CommandMetadata("corrupt-key"), Request(), default);
+            Assert.Equal(CommandOutcome.Unavailable, replay.Outcome);
+        }
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.OfficialInvoiceImportCommands"));
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.OfficialInvoiceImportWorkDeliveries"));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityType = N'Finance.OfficialInvoiceImportBatch'"));
+    }
+
     private static FinanceOfficialInvoiceImportPreviewRequestV1 Request()
     {
         var csv = string.Join('\n', FinanceOfficialInvoiceImportTemplateV1.Header,
@@ -115,18 +226,27 @@ public sealed class FinanceOfficialInvoiceImportWorkDeliverySqlServerRelationalA
 
         private SqlServerRelationalApiFactory Factory { get; }
 
-        public static async Task<Run> StartAsync()
+        public static async Task<Run> StartAsync(string? targetMigration = null)
         {
             var baseConnectionString = Environment.GetEnvironmentVariable(
                 SqlServerRelationalAcceptanceTests.ConnectionStringEnvironmentVariable)!;
             var factory = new SqlServerRelationalApiFactory(baseConnectionString);
             var run = new Run(baseConnectionString, factory);
-            using var client = factory.CreateClient();
-            using var health = await client.GetAsync("/health/live");
-            health.EnsureSuccessStatusCode();
-            await using var context = run.Context();
-            await context.Database.MigrateAsync();
-            return run;
+            try
+            {
+                using var client = factory.CreateClient();
+                using var health = await client.GetAsync("/health/live");
+                health.EnsureSuccessStatusCode();
+                await using var context = run.Context();
+                if (targetMigration is null) await context.Database.MigrateAsync();
+                else await context.GetService<IMigrator>().MigrateAsync(targetMigration);
+                return run;
+            }
+            catch
+            {
+                try { await run.DisposeAsync(); } catch { }
+                throw;
+            }
         }
 
         public FinanceDbContext Context()
@@ -160,6 +280,15 @@ public sealed class FinanceOfficialInvoiceImportWorkDeliverySqlServerRelationalA
             await using var command = new SqlCommand(sql, connection);
             foreach (var (name, value) in parameters) command.Parameters.AddWithValue(name, value);
             return (T)(await command.ExecuteScalarAsync())!;
+        }
+
+        public async Task ExecuteAsync(string sql, params (string Name, object Value)[] parameters)
+        {
+            await using var connection = new SqlConnection(Factory.DatabaseConnectionString);
+            await connection.OpenAsync();
+            await using var command = new SqlCommand(sql, connection);
+            foreach (var (name, value) in parameters) command.Parameters.AddWithValue(name, value);
+            await command.ExecuteNonQueryAsync();
         }
 
         public async ValueTask DisposeAsync()
@@ -205,5 +334,14 @@ public sealed class FinanceOfficialInvoiceImportWorkDeliverySqlServerRelationalA
     {
         public Task<PermissionDecision> CheckAsync(FinanceContext context, Guid batchId,
             CancellationToken cancellationToken) => Task.FromResult(PermissionDecision.Allowed);
+    }
+
+    private static string UploadHash(FinanceOfficialInvoiceImportPreviewRequestV1 request)
+    {
+        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        hash.AppendData(request.BatchId.ToByteArray());
+        hash.AppendData(Encoding.UTF8.GetBytes(request.BatchVersion));
+        hash.AppendData(request.Utf8Csv.Span);
+        return Convert.ToHexString(hash.GetHashAndReset()).ToLowerInvariant();
     }
 }

@@ -100,6 +100,7 @@ internal static class FinanceOfficialInvoiceImportWorkObservationFactoryV1
         Guid evidenceId)
     {
         if (command.Id == Guid.Empty || command.CompanyId == Guid.Empty || command.BatchId == Guid.Empty
+            || command.ProducerSchemaVersion != PayloadSchemaVersion
             || batch.Id == Guid.Empty || batch.CompanyId != command.CompanyId || batch.Id != command.BatchId
             || evidenceId == Guid.Empty
             || (ordinal == 1 && !string.Equals(command.CommandName,

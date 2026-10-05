@@ -400,6 +400,8 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
                 "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [BatchId] <> '00000000-0000-0000-0000-000000000000'");
             table.HasCheckConstraint("CK_OfficialInvoiceImportCommands_Content",
                 "LEN([CommandName]) > 0 AND LEN([IdempotencyKeyHash]) = 64 AND LEN([ActorId]) > 0 AND LEN([PayloadHash]) = 64 AND ISJSON([ResultJson]) = 1 AND LEN([CorrelationId]) > 0");
+            table.HasCheckConstraint("CK_OfficialInvoiceImportCommands_ProducerSchema",
+                "[ProducerSchemaVersion] IS NULL OR [ProducerSchemaVersion] = 1");
         });
         command.HasKey(x => x.Id);
         command.HasAlternateKey(x => new { x.CompanyId, x.Id });

@@ -39,6 +39,7 @@ internal sealed class FinanceOfficialInvoiceImportCommandRow : IFinanceTenantRow
     public string IdempotencyKeyHash { get; set; } = string.Empty;
     public string ActorId { get; set; } = string.Empty;
     public string PayloadHash { get; set; } = string.Empty;
+    public int? ProducerSchemaVersion { get; set; }
     public Guid BatchId { get; set; }
     public string ResultJson { get; set; } = string.Empty;
     public string CorrelationId { get; set; } = string.Empty;

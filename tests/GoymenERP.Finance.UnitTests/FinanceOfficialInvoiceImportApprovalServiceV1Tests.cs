@@ -1,4 +1,6 @@
 using System.Text;
+using System.Security.Cryptography;
+using System.Text.Json;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Audit.Application.Contracts;
@@ -207,15 +209,142 @@ public sealed class FinanceOfficialInvoiceImportApprovalServiceV1Tests
         Assert.Empty(await db.OfficialInvoiceImportWorkDeliveries.AsNoTracking().ToListAsync());
     }
 
+    [Fact]
+    public async Task Legacy_receipt_without_producer_marker_replays_and_emits_no_work_observation()
+    {
+        var company = CompanyContext();
+        await using var db = Database(company);
+        var request = Request();
+        var preview = new FinanceOfficialInvoiceImportParserV1().Preview(Context("maker"), request);
+        var batch = new FinanceOfficialInvoiceImportBatchRow
+        {
+            Id = Batch, CompanyId = Company, BatchVersion = preview.Batch!.BatchVersion,
+            BatchChecksum = preview.Batch.BatchChecksum, TemplateVersion = preview.TemplateVersion,
+            FileBytes = request.Utf8Csv.ToArray(), SourceRowsJson = JsonSerializer.Serialize(preview.Batch.Rows,
+                FinanceJson.CreateOptions()), RowCount = preview.Batch.Rows.Count, UploadedBy = "maker",
+            UploadedAtUtc = DateTimeOffset.Parse("2026-10-05T18:00:00+00:00"), CorrelationId = "legacy-correlation",
+        };
+        var resource = new FinanceOfficialInvoiceImportBatchViewV1(batch.Id, batch.CompanyId, batch.BatchVersion,
+            batch.BatchChecksum, batch.TemplateVersion, FinanceOfficialInvoiceImportApprovalStatusV1.Pending,
+            "1", batch.RowCount, batch.UploadedBy, batch.UploadedAtUtc, null, null);
+        var result = new FinanceOfficialInvoiceImportApprovalResultV1(
+            CommandOutcome.Succeeded, resource, false, "legacy-correlation", []);
+        db.OfficialInvoiceImportBatches.Add(batch);
+        db.OfficialInvoiceImportCommands.Add(new FinanceOfficialInvoiceImportCommandRow
+        {
+            Id = Guid.NewGuid(), CompanyId = Company,
+            CommandName = FinanceOfficialInvoiceImportApprovalServiceV1.UploadCommand,
+            IdempotencyKeyHash = FinanceCommandKeys.Hash("legacy-key"), ActorId = "maker",
+            PayloadHash = UploadHash(request), ProducerSchemaVersion = null, BatchId = Batch,
+            ResultJson = JsonSerializer.Serialize(result, FinanceJson.CreateOptions()),
+            CorrelationId = "legacy-correlation", RecordedAtUtc = batch.UploadedAtUtc,
+        });
+        await db.SaveChangesAsync();
+        var service = Service(db, company, "maker", RepeatingCommandAuthority(PermissionDecision.Allowed), ReadAuthority());
+
+        var replay = await service.UploadAsync(Context("maker"), new CommandMetadata("legacy-key"), request, default);
+
+        Assert.Equal(CommandOutcome.Succeeded, replay.Outcome);
+        Assert.True(replay.IsReplay);
+        Assert.Empty(await db.OfficialInvoiceImportWorkDeliveries.AsNoTracking().ToListAsync());
+    }
+
+    [Fact]
+    public async Task Work_read_fault_with_current_authority_returns_unavailable()
+    {
+        var company = CompanyContext();
+        var db = Database(company);
+        var service = Service(db, company, "maker",
+            RepeatingCommandAuthority(PermissionDecision.Allowed), ReadAuthority());
+        await db.DisposeAsync();
+
+        var result = await service.GetAsync(Context("maker"), Batch, 1, Guid.NewGuid(), default);
+
+        Assert.Equal(ReadOutcome.Unavailable, result.Outcome);
+    }
+
+    [Fact]
+    public async Task Work_read_fault_with_late_grant_loss_returns_denied()
+    {
+        var company = CompanyContext();
+        var db = Database(company);
+        var service = Service(db, company, "maker",
+            new CommandAuthority([PermissionDecision.Allowed, PermissionDecision.Denied]), ReadAuthority());
+        await db.DisposeAsync();
+
+        var result = await service.GetAsync(Context("maker"), Batch, 1, Guid.NewGuid(), default);
+
+        Assert.Equal(ReadOutcome.Denied, result.Outcome);
+    }
+
+    [Fact]
+    public async Task Work_read_fault_with_late_company_change_returns_denied()
+    {
+        var company = new MutableCompanyContext(Company);
+        var db = Database(company);
+        var authority = new CommandAuthority([PermissionDecision.Allowed, PermissionDecision.Allowed],
+            call => { if (call == 2) company.Set(Guid.NewGuid()); });
+        var service = Service(db, company, "maker", authority, ReadAuthority());
+        await db.DisposeAsync();
+
+        var result = await service.GetAsync(Context("maker"), Batch, 1, Guid.NewGuid(), default);
+
+        Assert.Equal(ReadOutcome.Denied, result.Outcome);
+    }
+
+    [Fact]
+    public async Task Work_read_fault_with_late_actor_change_returns_denied()
+    {
+        var company = CompanyContext();
+        var user = new MutableUser("maker", Company);
+        var db = Database(company);
+        var authority = new CommandAuthority([PermissionDecision.Allowed, PermissionDecision.Allowed],
+            call => { if (call == 2) user.Set("other"); });
+        var service = Service(db, company, "maker", authority, ReadAuthority(), user);
+        await db.DisposeAsync();
+
+        var result = await service.GetAsync(Context("maker"), Batch, 1, Guid.NewGuid(), default);
+
+        Assert.Equal(ReadOutcome.Denied, result.Outcome);
+    }
+
+    [Fact]
+    public async Task Foreign_work_delivery_is_not_found_after_fresh_fences()
+    {
+        var company = CompanyContext();
+        await using var db = Database(company);
+        var service = Service(db, company, "maker",
+            RepeatingCommandAuthority(PermissionDecision.Allowed), ReadAuthority());
+
+        var result = await service.GetAsync(Context("maker"), Batch, 1, Guid.NewGuid(), default);
+
+        Assert.Equal(ReadOutcome.NotFound, result.Outcome);
+    }
+
+    [Fact]
+    public async Task Work_read_preserves_cancellation()
+    {
+        var company = CompanyContext();
+        await using var db = Database(company);
+        var service = Service(db, company, "maker",
+            RepeatingCommandAuthority(PermissionDecision.Allowed), ReadAuthority());
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+
+        await Assert.ThrowsAsync<OperationCanceledException>(() =>
+            service.GetAsync(Context("maker"), Batch, 1, Guid.NewGuid(), cancellation.Token));
+    }
+
     private static FinanceOfficialInvoiceImportApprovalServiceV1 Service(
         FinanceDbContext db,
         ICompanyContext company,
         string actor,
         IFinanceOfficialInvoiceImportApprovalAuthorityV1 commandAuthority,
-        IFinanceOpenItemSourceAuthority readAuthority) => new(
+        IFinanceOpenItemSourceAuthority readAuthority,
+        ICurrentUser? user = null) => new(
             db,
             company,
-            new User(actor, Company),
+            user ?? new User(actor, Company),
             new FinanceOfficialInvoiceImportParserV1(),
             commandAuthority,
             readAuthority,
@@ -264,6 +393,15 @@ public sealed class FinanceOfficialInvoiceImportApprovalServiceV1Tests
         public bool CanAccessCompany(Guid companyId) => AllowedCompanyIds.Contains(companyId);
     }
 
+    private sealed class MutableUser(string actor, Guid company) : ICurrentUser
+    {
+        public bool IsAuthenticated => true;
+        public string? UserId { get; private set; } = actor;
+        public IReadOnlySet<Guid> AllowedCompanyIds { get; } = new HashSet<Guid> { company };
+        public bool CanAccessCompany(Guid companyId) => AllowedCompanyIds.Contains(companyId);
+        public void Set(string value) => UserId = value;
+    }
+
     private sealed class CommandAuthority : IFinanceOfficialInvoiceImportApprovalAuthorityV1
     {
         private readonly Queue<PermissionDecision> decisions;
@@ -304,5 +442,14 @@ public sealed class FinanceOfficialInvoiceImportApprovalServiceV1Tests
     private sealed class NullAuditCollector : IAuditEventCollector
     {
         public void Enqueue(AuditEventDraft auditEvent) { }
+    }
+
+    private static string UploadHash(FinanceOfficialInvoiceImportPreviewRequestV1 request)
+    {
+        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        hash.AppendData(request.BatchId.ToByteArray());
+        hash.AppendData(Encoding.UTF8.GetBytes(request.BatchVersion));
+        hash.AppendData(request.Utf8Csv.Span);
+        return Convert.ToHexString(hash.GetHashAndReset()).ToLowerInvariant();
     }
 }

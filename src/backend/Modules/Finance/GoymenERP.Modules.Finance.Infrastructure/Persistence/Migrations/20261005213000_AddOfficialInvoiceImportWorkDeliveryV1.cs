@@ -11,6 +11,19 @@ namespace GoymenERP.Modules.Finance.Infrastructure.Persistence.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
+            migrationBuilder.AddColumn<int>(
+                name: "ProducerSchemaVersion",
+                schema: "finance",
+                table: "OfficialInvoiceImportCommands",
+                type: "int",
+                nullable: true);
+
+            migrationBuilder.AddCheckConstraint(
+                name: "CK_OfficialInvoiceImportCommands_ProducerSchema",
+                schema: "finance",
+                table: "OfficialInvoiceImportCommands",
+                sql: "[ProducerSchemaVersion] IS NULL OR [ProducerSchemaVersion] = 1");
+
             migrationBuilder.AddUniqueConstraint(
                 name: "AK_OfficialInvoiceImportCommands_CompanyId_Id",
                 schema: "finance",
@@ -81,6 +94,7 @@ namespace GoymenERP.Modules.Finance.Infrastructure.Persistence.Migrations
             migrationBuilder.Sql(
                 """
                 IF EXISTS (SELECT 1 FROM [finance].[OfficialInvoiceImportWorkDeliveries])
+                   OR EXISTS (SELECT 1 FROM [finance].[OfficialInvoiceImportCommands] WHERE [ProducerSchemaVersion] IS NOT NULL)
                 BEGIN
                     THROW 51051, N'Finance Work teslim geçmişi varken migration geri alınamaz; forward-fix uygulayın.', 1;
                 END;
@@ -89,6 +103,16 @@ namespace GoymenERP.Modules.Finance.Infrastructure.Persistence.Migrations
             migrationBuilder.DropTable(
                 name: "OfficialInvoiceImportWorkDeliveries",
                 schema: "finance");
+
+            migrationBuilder.DropCheckConstraint(
+                name: "CK_OfficialInvoiceImportCommands_ProducerSchema",
+                schema: "finance",
+                table: "OfficialInvoiceImportCommands");
+
+            migrationBuilder.DropColumn(
+                name: "ProducerSchemaVersion",
+                schema: "finance",
+                table: "OfficialInvoiceImportCommands");
 
             migrationBuilder.DropUniqueConstraint(
                 name: "AK_OfficialInvoiceImportCommands_CompanyId_Id",

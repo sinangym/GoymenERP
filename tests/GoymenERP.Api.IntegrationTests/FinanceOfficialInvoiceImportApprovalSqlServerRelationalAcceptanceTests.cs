@@ -65,6 +65,10 @@ public sealed class FinanceOfficialInvoiceImportApprovalSqlServerRelationalAccep
             "SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityType = N'Finance.OfficialInvoiceImportBatch'"));
         Assert.Equal(2, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM finance.OfficialInvoiceImportWorkDeliveries"));
+        Assert.Equal(2, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.OfficialInvoiceImportCommands WHERE ProducerSchemaVersion = 1"));
+        Assert.Equal(0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.OfficialInvoiceImportCommands WHERE ProducerSchemaVersion IS NULL"));
         Assert.Equal("SENTETIK-maker", await run.ScalarAsync<string>(
             "SELECT UploadedBy FROM finance.OfficialInvoiceImportBatches WHERE Id = @id", ("@id", Batch)));
         Assert.Equal("SENTETIK-checker", await run.ScalarAsync<string>(
