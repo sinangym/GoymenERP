@@ -515,7 +515,7 @@ public sealed partial class ManufacturingCommandService(
     public async Task<ManufacturingApiResult<PlanRevisionListViewV1>> ListPlanRevisionsAsync(Guid planId,
         CancellationToken cancellationToken)
     {
-        if (!HasContext())
+        if (!HasContext() || ActorGuid() is not { } actorId)
         {
             return Denied<PlanRevisionListViewV1>();
         }
@@ -530,9 +530,17 @@ public sealed partial class ManufacturingCommandService(
             return new ManufacturingApiResult<PlanRevisionListViewV1>(ManufacturingApiStatus.Unavailable, null, false, null);
         }
 
+        var companyId = companyContext.CompanyId;
         try
         {
             var revisions = await planRevisions.ListPlanRevisionsAsync(planId, cancellationToken);
+            var scope = await authority.RevalidatePermissionScopeAsync(
+                ErpPermissions.ManufacturingPlansRead, companyId, cancellationToken);
+            if (!scope.IsGranted || !HasCapturedContext(companyId, actorId))
+            {
+                return Denied<PlanRevisionListViewV1>();
+            }
+
             return revisions is null
                 ? NotFoundResult<PlanRevisionListViewV1>()
                 : new ManufacturingApiResult<PlanRevisionListViewV1>(ManufacturingApiStatus.Ok,
@@ -540,6 +548,13 @@ public sealed partial class ManufacturingCommandService(
         }
         catch (ManufacturingStoreException exception) when (exception.Code == ManufacturingStoreCodes.ConcurrentChange)
         {
+            var scope = await authority.RevalidatePermissionScopeAsync(
+                ErpPermissions.ManufacturingPlansRead, companyId, cancellationToken);
+            if (!scope.IsGranted || !HasCapturedContext(companyId, actorId))
+            {
+                return Denied<PlanRevisionListViewV1>();
+            }
+
             return new ManufacturingApiResult<PlanRevisionListViewV1>(ManufacturingApiStatus.Unavailable, null, false, null);
         }
     }
@@ -1340,7 +1355,7 @@ public sealed partial class ManufacturingCommandService(
     /// </summary>
     public async Task<ManufacturingApiResult<OrderViewV1>> GetOrderAsync(Guid orderId, CancellationToken cancellationToken)
     {
-        if (!HasContext())
+        if (!HasContext() || ActorGuid() is not { } actorId)
         {
             return Denied<OrderViewV1>();
         }
@@ -1350,12 +1365,30 @@ public sealed partial class ManufacturingCommandService(
             return NotFoundResult<OrderViewV1>();
         }
 
+        var companyId = companyContext.CompanyId;
         try
         {
-            return await OrderResultAsync(orderId, ManufacturingApiStatus.Ok, isReplay: false, cancellationToken);
+            var order = await orders.FindOrderAsync(orderId, cancellationToken);
+            var scope = await authority.RevalidatePermissionScopeAsync(
+                ErpPermissions.ManufacturingOrdersRead, companyId, cancellationToken);
+            if (!scope.IsGranted || !HasCapturedContext(companyId, actorId))
+            {
+                return Denied<OrderViewV1>();
+            }
+
+            return order is null
+                ? NotFoundResult<OrderViewV1>()
+                : new ManufacturingApiResult<OrderViewV1>(ManufacturingApiStatus.Ok, OrderView(order), false, null);
         }
         catch (ManufacturingStoreException exception) when (exception.Code == ManufacturingStoreCodes.ConcurrentChange)
         {
+            var scope = await authority.RevalidatePermissionScopeAsync(
+                ErpPermissions.ManufacturingOrdersRead, companyId, cancellationToken);
+            if (!scope.IsGranted || !HasCapturedContext(companyId, actorId))
+            {
+                return Denied<OrderViewV1>();
+            }
+
             return new ManufacturingApiResult<OrderViewV1>(ManufacturingApiStatus.Unavailable, null, false, null);
         }
     }
@@ -1565,6 +1598,11 @@ public sealed partial class ManufacturingCommandService(
             return await AnswerStoredAsync(prior);
         }
 
+        if (await FenceCapturedAsync<T>(permission, companyId, actor, cancellationToken) is { } preWriteFenced)
+        {
+            return preWriteFenced;
+        }
+
         ManufacturingApiResult<T>? completed = null;
         ManufacturingCommandRecord Complete(object stored)
         {
@@ -1599,9 +1637,17 @@ public sealed partial class ManufacturingCommandService(
         catch (ManufacturingStoreException exception) when (exception.Code == ManufacturingStoreCodes.ConcurrentChange)
         {
             // §8: the same key's other attempt may have won; then its record is the answer.
-            return await commands.FindCommandAsync(commandName, keyHash, cancellationToken) is { } winner
-                ? await AnswerStoredAsync(winner)
-                : new ManufacturingApiResult<T>(ManufacturingApiStatus.Conflict, null, false, exception.Code);
+            if (await commands.FindCommandAsync(commandName, keyHash, cancellationToken) is { } winner)
+            {
+                return await AnswerStoredAsync(winner);
+            }
+
+            if (await FenceCapturedAsync<T>(permission, companyId, actor, cancellationToken) is { } noWinnerFenced)
+            {
+                return noWinnerFenced;
+            }
+
+            return new ManufacturingApiResult<T>(ManufacturingApiStatus.Conflict, null, false, exception.Code);
         }
         catch (ManufacturingStoreException exception) when (exception.Code == ManufacturingStoreCodes.AuthorityDenied)
         {
@@ -1651,12 +1697,23 @@ public sealed partial class ManufacturingCommandService(
             // §8, one exit whatever the refusal: another attempt of this key may have committed while
             // this one ran (its rule, version or read then saw the winner's state). Its record is the
             // answer; only without one does this refusal stand.
-            return result.Status is ManufacturingApiStatus.Invalid or ManufacturingApiStatus.Denied
-                    or ManufacturingApiStatus.Unavailable
-                ? result
-                : await commands.FindCommandAsync(commandName, keyHash, cancellationToken) is { } winner
-                    ? await AnswerStoredAsync(winner)
-                    : result;
+            if (result.Status is ManufacturingApiStatus.Invalid or ManufacturingApiStatus.Denied
+                or ManufacturingApiStatus.Unavailable)
+            {
+                return result;
+            }
+
+            if (await commands.FindCommandAsync(commandName, keyHash, cancellationToken) is { } winner)
+            {
+                return await AnswerStoredAsync(winner);
+            }
+
+            if (await FenceCapturedAsync<T>(permission, companyId, actor, cancellationToken) is { } refusalFenced)
+            {
+                return refusalFenced;
+            }
+
+            return result;
         }
 
         try
@@ -1666,9 +1723,17 @@ public sealed partial class ManufacturingCommandService(
         }
         catch (ManufacturingStoreException exception) when (exception.Code == ManufacturingStoreCodes.ConcurrentChange)
         {
-            return await commands.FindCommandAsync(commandName, keyHash, cancellationToken) is { } winner
-                ? await AnswerStoredAsync(winner)
-                : result;
+            if (await commands.FindCommandAsync(commandName, keyHash, cancellationToken) is { } winner)
+            {
+                return await AnswerStoredAsync(winner);
+            }
+
+            if (await FenceCapturedAsync<T>(permission, companyId, actor, cancellationToken) is { } terminalFenced)
+            {
+                return terminalFenced;
+            }
+
+            return result;
         }
     }
 

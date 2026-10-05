@@ -172,6 +172,7 @@ export function PlanEditForm({ companyId, plan, current, busy, onSubmit, onCance
       parentRollId: row.parentRollId,
       label: row.labelCode ?? row.parentRollId,
       labelVersion: row.labelVersion,
+      commercialContext: row.commercialContext,
       plannedKg: row.plannedKg,
     })),
     targetBasis,

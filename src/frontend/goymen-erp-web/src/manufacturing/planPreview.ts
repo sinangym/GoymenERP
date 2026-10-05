@@ -12,6 +12,7 @@
 
 import { MANUFACTURING_BASE, devHeaders } from './api'
 import type { PlanTargetBasis } from './planCommandApi'
+import type { CapturedPlanCommercialContext } from './planRevisionContract'
 
 import { decodePlanPreview, type PlanPreview } from './planPreviewContract'
 export { decodePlanPreview } from './planPreviewContract'
@@ -30,6 +31,8 @@ export interface PlanPreviewRequest {
     readonly parentRollId: string
     readonly plannedKg: string
     readonly expectedLabelVersion: string
+    /** Legacy/create previews omit it; edit previews send the plan's captured snapshot byte-for-byte. */
+    readonly commercialContext?: CapturedPlanCommercialContext | null
   }[]
   readonly target: { readonly basis: PlanTargetBasis; readonly kg: string } | null
 }

@@ -4,7 +4,7 @@
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { screen, within } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MANUFACTURING_CAPABILITY } from './capabilities'
 import { decodePlanRevisions } from './planRevisionContract'
@@ -172,6 +172,16 @@ describe('plan edit on the detail screen', () => {
     const kg = screen.getByRole('textbox', { name: `${ROLL_1} planlanan kg` })
     await user.clear(kg)
     await user.type(kg, '900')
+    await waitFor(() => {
+      expect(requestsFor(recorded, '/manufacturing/plans/preview', 'POST')
+        .some((request) => (request.body as { inputs: RevisePlanRequest['inputs'] }).inputs[0]?.plannedKg === '900'))
+        .toBe(true)
+    })
+    const previewRequest = requestsFor(recorded, '/manufacturing/plans/preview', 'POST').at(-1)!
+    expect((previewRequest.body as { inputs: RevisePlanRequest['inputs'] }).inputs).toEqual([
+      { parentRollId: ROLL_1, plannedKg: '900', expectedLabelVersion: '7', commercialContext },
+      { parentRollId: ROLL_2, plannedKg: '500.5', expectedLabelVersion: '8', commercialContext: null },
+    ])
     await user.type(screen.getByRole('textbox', { name: 'Düzenleme gerekçesi' }), 'Kg değişti')
     await user.click(screen.getByRole('button', { name: 'Değişikliği kaydet' }))
 

@@ -22,6 +22,12 @@ import {
 const COMPANY = 'aaaaaaaa-0000-0000-0000-000000000001'
 const WORK_CENTER = 'd0000000-0000-4000-8000-000000000003'
 const ROLL = 'e0000000-0000-4000-8000-000000000001'
+const COMMERCIAL_CONTEXT = {
+  partyId: 'a1000000-0000-4000-8000-000000000001',
+  companyPartyAccountId: 'a1000000-0000-4000-8000-000000000002',
+  partyVersion: ' party:v01 ',
+  accountVersion: 'account:v02/α',
+}
 
 function answer(request: PlanPreviewRequest) {
   const kg = request.inputs[0].plannedKg.replace(/\.?0+$/, '')
@@ -163,6 +169,29 @@ describe('usePlanPreview', () => {
     expect(pending).toHaveLength(1)
   })
 
+  it('keeps the opaque commercial context in both the request body and the cache identity', async () => {
+    const first = planPreviewInput(WORK_CENTER, [{ ...row('5'), commercialContext: COMMERCIAL_CONTEXT }], '', '')
+    const changed = planPreviewInput(WORK_CENTER, [{
+      ...row('5'),
+      commercialContext: { ...COMMERCIAL_CONTEXT, accountVersion: 'account:v03/β' },
+    }], '', '')
+    const { rerender } = renderHook(({ value }) => usePlanPreview(COMPANY, value, authBoundary), {
+      initialProps: { value: first },
+    })
+
+    await elapse(PLAN_PREVIEW_DEBOUNCE_MS)
+    expect(pending[0].request.inputs[0].commercialContext).toEqual(COMMERCIAL_CONTEXT)
+
+    rerender({ value: changed })
+    expect(pending[0].signal.aborted).toBe(true)
+    await elapse(PLAN_PREVIEW_DEBOUNCE_MS)
+    expect(pending).toHaveLength(2)
+    expect(pending[1].request.inputs[0].commercialContext).toEqual({
+      ...COMMERCIAL_CONTEXT,
+      accountVersion: 'account:v03/β',
+    })
+  })
+
   it('aborts the in-flight request for an older content and never lets its late answer land', async () => {
     const { result, rerender } = renderHook(({ value }) => usePlanPreview(COMPANY, value, authBoundary), {
       initialProps: { value: input('10') },
@@ -297,6 +326,19 @@ describe('planPreviewInput', () => {
         workCenterId: WORK_CENTER,
         inputs: [{ parentRollId: ROLL, plannedKg: '12.5', expectedLabelVersion: '7' }],
         target: { basis: 'GoodOutputMass', kg: '10' },
+      },
+    })
+    expect(planPreviewInput(WORK_CENTER, [{ ...row('12.5'), commercialContext: COMMERCIAL_CONTEXT }], '', '')).toEqual({
+      type: 'ready',
+      request: {
+        workCenterId: WORK_CENTER,
+        inputs: [{
+          parentRollId: ROLL,
+          plannedKg: '12.5',
+          expectedLabelVersion: '7',
+          commercialContext: COMMERCIAL_CONTEXT,
+        }],
+        target: null,
       },
     })
   })
