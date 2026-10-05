@@ -198,7 +198,7 @@ function InventoryLabelDetailView({ namespace, labelId, target, stockSearch }: {
             <td>{movement.occurredAtUtc}</td>
             <td>{MOVEMENT_KIND_TEXT[movement.kind]}<br /><span className={styles.mono}>…{movement.movementId.slice(-8)}</span></td>
             <td>{movement.sourceKind}<br /><span className={styles.mono}>{canOpenOpening &&
-              movement.sourceKind === 'inventory.opening-count'
+              movement.kind === 'Receipt' && movement.sourceKind === 'inventory.opening-count'
                 ? <Link to={inventoryOpeningDetailPath(movement.sourceId)} aria-label="Açılış sayımını aç">…{movement.sourceId.slice(-8)}</Link>
                 : <>…{movement.sourceId.slice(-8)}</>}</span></td>
             <td>{DIRECTION_TEXT[line.direction]}</td>

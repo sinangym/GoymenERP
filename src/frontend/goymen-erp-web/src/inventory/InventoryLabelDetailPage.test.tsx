@@ -209,6 +209,17 @@ describe('InventoryLabelDetailPage', () => {
     expect(screen.queryByRole('link', { name: 'Açılış sayımını aç' })).toBeNull()
     expect(screen.getByText('inventory.stock-count')).toBeTruthy()
   })
+  it('keeps a non-receipt movement inert even with the opening source identity and capability', async () => {
+    const data = fixture()
+    api.detail.mockResolvedValue({ type: 'ok-single', data: {
+      ...data, movementTimeline: { ...data.movementTimeline, entries: [{
+        ...data.movementTimeline.entries[0], kind: 'CountAdjustment',
+      }] },
+    } })
+    mount(); await ready()
+    expect(screen.getByText('inventory.opening-count')).toBeTruthy()
+    expect(screen.queryByRole('link', { name: 'Açılış sayımını aç' })).toBeNull()
+  })
   it('keeps the Product identity and card label inert without the Product detail capability', async () => {
     scenario.canReadProduct = false; mount(); await ready()
     expect(productLink()).toBeNull(); expect(screen.getByText(PRODUCT)).toBeTruthy()
