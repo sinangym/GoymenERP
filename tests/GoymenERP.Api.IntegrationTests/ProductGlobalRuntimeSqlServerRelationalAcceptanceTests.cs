@@ -489,7 +489,8 @@ public sealed class ProductGlobalRuntimeSqlServerRelationalAcceptanceTests
             Assert.Equal("true", Assert.Single(replay.Headers.GetValues("Idempotency-Replayed")));
             var repeated = (await replay.Content.ReadFromJsonAsync<ProductMutationResponse>())!;
             Assert.True(repeated.IsReplay);
-            Assert.Equal(first.Card.Product.Id, repeated.Card.Product.Id);
+            Assert.Equal((first.Card.Product.Id, first.Card.Product.Lifecycle, first.Card.Product.Version),
+                (repeated.Card.Product.Id, repeated.Card.Product.Lifecycle, repeated.Card.Product.Version));
             Assert.Equal(afterCreate, await SnapshotAsync(factory.DatabaseConnectionString));
 
             using (var reopenedDraft = await client.GetAsync($"/api/v1/products/{first.Card.Product.Id:D}"))
