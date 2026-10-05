@@ -1407,6 +1407,13 @@ public sealed partial class ManufacturingCommandService(
         }
         catch (ManufacturingStoreException exception) when (exception.Code == ManufacturingStoreCodes.ConcurrentChange)
         {
+            var scope = await authority.RevalidatePermissionScopeAsync(
+                ErpPermissions.ManufacturingPlansRead, companyId, cancellationToken);
+            if (!scope.IsGranted || !HasCapturedContext(companyId, actorId))
+            {
+                return Denied<PlanViewV1>();
+            }
+
             return new ManufacturingApiResult<PlanViewV1>(ManufacturingApiStatus.Unavailable, null, false, null);
         }
     }

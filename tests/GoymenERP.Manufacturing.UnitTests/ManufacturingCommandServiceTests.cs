@@ -974,6 +974,57 @@ public sealed class ManufacturingCommandServiceTests
     }
 
     [Theory]
+    [InlineData("permission")]
+    [InlineData("actor")]
+    [InlineData("company")]
+    public async Task A_failed_plan_read_rechecks_the_captured_context_and_permission_before_503(string fault)
+    {
+        var fixture = new Fixture();
+        var request = new SavePlanRequestV1(Guid.NewGuid(), WorkCenter,
+            [new PlannedInputRequestV1(Roll, "10", LabelVersion)], null);
+        var created = await fixture.Service.SavePlanAsync(request, "failed-plan-read-fence",
+            "manufacturing.plans.write", CancellationToken.None);
+        var effects = (fixture.Store.Writes.Count, fixture.Store.Commands.Count, fixture.Store.AuditEvents.Count);
+        fixture.Authority.Permissions.Clear();
+        fixture.Store.ReadFault = ManufacturingStoreCodes.ConcurrentChange;
+        fixture.Store.AfterFindPlan = _ => ApplyFreshFenceFault(fixture, fault);
+
+        var result = await fixture.Service.GetPlanAsync(created.Resource!.PlanId, CancellationToken.None);
+
+        Assert.Equal((ManufacturingApiStatus.Denied, ManufacturingApiCodes.AuthorityDenied, false),
+            (result.Status, result.Code, result.IsReplay));
+        Assert.Null(result.Resource);
+        Assert.Null(result.OriginalCorrelationId);
+        Assert.Equal([ErpPermissions.ManufacturingPlansRead], fixture.Authority.Permissions);
+        Assert.Equal(effects,
+            (fixture.Store.Writes.Count, fixture.Store.Commands.Count, fixture.Store.AuditEvents.Count));
+    }
+
+    [Fact]
+    public async Task A_failed_plan_read_keeps_503_when_the_captured_context_and_narrow_grant_are_unchanged()
+    {
+        var fixture = new Fixture();
+        var request = new SavePlanRequestV1(Guid.NewGuid(), WorkCenter,
+            [new PlannedInputRequestV1(Roll, "10", LabelVersion)], null);
+        var created = await fixture.Service.SavePlanAsync(request, "failed-plan-read-stable",
+            "manufacturing.plans.write", CancellationToken.None);
+        var effects = (fixture.Store.Writes.Count, fixture.Store.Commands.Count, fixture.Store.AuditEvents.Count);
+        fixture.Authority.Permissions.Clear();
+        fixture.Authority.Scope = Scope(companyWide: false, "PLAN_READER");
+        fixture.Store.ReadFault = ManufacturingStoreCodes.ConcurrentChange;
+
+        var result = await fixture.Service.GetPlanAsync(created.Resource!.PlanId, CancellationToken.None);
+
+        Assert.Equal((ManufacturingApiStatus.Unavailable, (string?)null, false),
+            (result.Status, result.Code, result.IsReplay));
+        Assert.Null(result.Resource);
+        Assert.Null(result.OriginalCorrelationId);
+        Assert.Equal([ErpPermissions.ManufacturingPlansRead], fixture.Authority.Permissions);
+        Assert.Equal(effects,
+            (fixture.Store.Writes.Count, fixture.Store.Commands.Count, fixture.Store.AuditEvents.Count));
+    }
+
+    [Theory]
     [InlineData("inputMass")]
     [InlineData("1")]
     [InlineData("Unknown")]
@@ -2533,6 +2584,11 @@ public sealed class ManufacturingCommandServiceTests
         {
             var plan = Plans.GetValueOrDefault(planId);
             AfterFindPlan?.Invoke(plan);
+            if (ReadFault is { } code)
+            {
+                throw new ManufacturingStoreException(code, "sentetik okuma reddi");
+            }
+
             return Task.FromResult(plan);
         }
 
