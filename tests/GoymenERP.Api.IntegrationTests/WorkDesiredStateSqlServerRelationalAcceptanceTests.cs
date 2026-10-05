@@ -92,7 +92,7 @@ public sealed class WorkDesiredStateSqlServerRelationalAcceptanceTests
                     Available(1, WorkDesiredStateV2.NeedsAction), Metadata("read-tamper-seed"))).Decision);
 
             var changed = await scope.Db.Database.ExecuteSqlRawAsync(
-                "UPDATE [work].[DesiredStateSnapshots] SET [HighestPayloadSha256] = {0} WHERE [CompanyId] = {1}",
+                "UPDATE [work].[DesiredStateSnapshots] SET [HighestPayloadSha256] = {0}, [EffectivePayloadSha256] = {0} WHERE [CompanyId] = {1}",
                 HashB, TestCompanyIds.CompanyA);
             Assert.Equal(1, changed);
 
