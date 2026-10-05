@@ -244,6 +244,23 @@ public sealed class C01E2eActivationBoundaryTests
     }
 
     [Fact]
+    public void AccountingFixture_PersistsThroughTheProductionCatalogWithoutReplacingItsResolver()
+    {
+        var source = ReadRepositoryFile(
+            "src/backend/GoymenERP.Api/Shell/C01E2eFixtureWriterActivation.cs");
+
+        Assert.Contains("IApprovedAccountingSourceCatalogStoreV1", source, StringComparison.Ordinal);
+        Assert.Equal(1, Count(source, "_catalog.PrepareAsync("));
+        Assert.Equal(1, Count(source, "_catalog.ActivateAsync("));
+        Assert.DoesNotContain("RemoveAll<IApprovedNormalJournalSourceBindingCatalogV1>", source,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("AddFinanceRecordedReceiptFixtureReadStore", source,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("C01E2eApprovedNormalJournalSourceReadCatalog", source,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void ProductionRuntimeConfiguration_DoesNotCarryTheFixtureWriterGate()
     {
         foreach (var path in new[]

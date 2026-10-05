@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { decodePurchaseOrderDetail, decodePurchaseOrderList } from './contract'
+import { decodePurchaseOrderCommandResponse, decodePurchaseOrderDetail, decodePurchaseOrderList } from './contract'
 
 const COMPANY_GDC = '10000000-0000-0000-0000-000000000001'
 const summary = {
@@ -20,6 +20,39 @@ describe('purchasing read contract', () => {
     const detail = decodePurchaseOrderDetail({ order: summary, lines: [line] })
     expect(detail?.order.companyId).toBe(COMPANY_GDC)
     expect(detail?.lines[0].remaining).toBe('10')
+    expect(detail?.acceptances).toEqual([])
+    expect(decodePurchaseOrderCommandResponse({
+      detail: { order: summary, lines: [line] },
+      isReplay: true,
+      originalCorrelationId: 'legacy-corr',
+    })?.detail.acceptances).toEqual([])
+  })
+
+  it('decodes exact immutable acceptance history in details and command responses', () => {
+    const acceptances = [{
+      acceptanceId: '88888888-8888-4888-8888-888888888888', lineId: line.lineId,
+      quantity: '4.25', recordedAtUtc: '2026-10-05T09:00:00Z',
+    }]
+    const detail = decodePurchaseOrderDetail({ order: summary, lines: [line], acceptances })
+    expect(detail?.acceptances).toEqual(acceptances)
+    expect(decodePurchaseOrderCommandResponse({
+      detail: { order: summary, lines: [line], acceptances },
+      isReplay: false,
+      originalCorrelationId: 'corr-1',
+    })?.detail.acceptances).toEqual(acceptances)
+  })
+
+  it('fails closed on loose, malformed, duplicate or unlinked acceptance history', () => {
+    const acceptance = {
+      acceptanceId: '88888888-8888-4888-8888-888888888888', lineId: line.lineId,
+      quantity: '4.25', recordedAtUtc: '2026-10-05T09:00:00Z',
+    }
+    expect(decodePurchaseOrderDetail({ order: summary, lines: [line], acceptances: [acceptance], extra: true })).toBeNull()
+    expect(decodePurchaseOrderDetail({ order: summary, lines: [line], acceptances: [{ ...acceptance, extra: true }] })).toBeNull()
+    expect(decodePurchaseOrderDetail({ order: summary, lines: [line], acceptances: [{ ...acceptance, quantity: '0' }] })).toBeNull()
+    expect(decodePurchaseOrderDetail({ order: summary, lines: [line], acceptances: [{ ...acceptance, recordedAtUtc: 'not-an-instant' }] })).toBeNull()
+    expect(decodePurchaseOrderDetail({ order: summary, lines: [line], acceptances: [{ ...acceptance, lineId: COMPANY_GDC }] })).toBeNull()
+    expect(decodePurchaseOrderDetail({ order: summary, lines: [line], acceptances: [acceptance, acceptance] })).toBeNull()
   })
 
   it('fails closed on loose fields, bad quantities and a line-count mismatch', () => {
