@@ -341,7 +341,7 @@ public sealed class FinanceOfficialInvoiceImportApprovalServiceV1Tests
             RepeatingCommandAuthority(PermissionDecision.Allowed), ReadAuthority());
 
         var result = await currentCompanyReader.GetAsync(
-            Context("maker"), ForeignBatch, 1, foreignDelivery.Id, default);
+            Context("maker"), ForeignBatch, 1, foreignDelivery.DeliveryId, default);
 
         Assert.Equal(ReadOutcome.NotFound, result.Outcome);
         var publicResult = JsonSerializer.Serialize(result, FinanceJson.CreateOptions());
