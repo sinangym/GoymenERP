@@ -75,6 +75,20 @@ public sealed class WorkDesiredStateSqlServerRelationalAcceptanceTests
     {
         await WithDatabaseAsync(async factory =>
         {
+            var protectedObservation = Available(1, WorkDesiredStateV2.NeedsAction) with
+            {
+                SourceKey = "after-read-source",
+                ScopeKey = "after-read-scope"
+            };
+            await using (var seed = await WorkSqlScope.OpenAsync(factory, TestCompanyIds.CompanyA))
+            {
+                Assert.Equal(WorkDesiredStateDecisionV2.Apply,
+                    (await seed.Store.ReconcileAsync(
+                        protectedObservation,
+                        Metadata("after-read-seed"))).Decision);
+            }
+
+            var protectedCounts = await ReadWorkEffectCountsAsync(factory);
             await using (var changedAfterRead = await WorkSqlScope.OpenAsync(
                 factory,
                 TestCompanyIds.CompanyA,
@@ -85,14 +99,12 @@ public sealed class WorkDesiredStateSqlServerRelationalAcceptanceTests
                 }))
             {
                 var result = await changedAfterRead.Store.ReconcileAsync(
-                    Available(1, WorkDesiredStateV2.NeedsAction) with
-                    {
-                        SourceKey = "after-read-source",
-                        ScopeKey = "after-read-scope"
-                    }, Metadata("after-read-company-change"));
+                    protectedObservation,
+                    Metadata("after-read-company-change"));
                 Assert.Equal(WorkDesiredStateDecisionV2.Refused, result.Decision);
                 Assert.Null(result.State);
             }
+            Assert.Equal(protectedCounts, await ReadWorkEffectCountsAsync(factory));
 
             await using (var changedBeforeSave = await WorkSqlScope.OpenAsync(
                 factory,
@@ -134,10 +146,10 @@ public sealed class WorkDesiredStateSqlServerRelationalAcceptanceTests
 
             await using (var committed = await WorkSqlScope.OpenAsync(factory, TestCompanyIds.CompanyA))
             {
-                Assert.Equal(1, await committed.Db.DesiredStateSnapshots.CountAsync());
-                Assert.Equal(1, await committed.Db.ObservationInbox.CountAsync());
-                Assert.Equal(1, await committed.Db.OutboxMessages.CountAsync());
-                Assert.Equal(1, await committed.Db.Set<AuditEvent>().CountAsync());
+                Assert.Equal(2, await committed.Db.DesiredStateSnapshots.CountAsync());
+                Assert.Equal(2, await committed.Db.ObservationInbox.CountAsync());
+                Assert.Equal(2, await committed.Db.OutboxMessages.CountAsync());
+                Assert.Equal(2, await committed.Db.Set<AuditEvent>().CountAsync());
             }
 
             await using (var companyA = await WorkSqlScope.OpenAsync(factory, TestCompanyIds.CompanyA))
@@ -225,6 +237,55 @@ public sealed class WorkDesiredStateSqlServerRelationalAcceptanceTests
             Assert.Equal(2, await read.Db.ObservationInbox.CountAsync());
             Assert.Equal(2, await read.Db.Set<AuditEvent>().CountAsync());
             Assert.Single(await read.Db.DesiredStateSnapshots.ToListAsync());
+
+            var fencedCountsBefore = await ReadWorkEffectCountsAsync(factory);
+            var fencedGate = new AsyncPairGate();
+            var fencedAReads = 0;
+            var fencedBReads = 0;
+            static Task ChangeCompanyOnSecondRead(
+                MutableCompanyContext company,
+                ref int reads)
+            {
+                if (Interlocked.Increment(ref reads) == 2)
+                {
+                    company.Set(TestCompanyIds.CompanyB);
+                }
+
+                return Task.CompletedTask;
+            }
+
+            await using var fencedA = await WorkSqlScope.OpenAsync(
+                factory,
+                TestCompanyIds.CompanyA,
+                beforeSave: fencedGate.WaitAsync,
+                afterReadContext: (company, _) => ChangeCompanyOnSecondRead(company, ref fencedAReads));
+            await using var fencedB = await WorkSqlScope.OpenAsync(
+                factory,
+                TestCompanyIds.CompanyA,
+                beforeSave: fencedGate.WaitAsync,
+                afterReadContext: (company, _) => ChangeCompanyOnSecondRead(company, ref fencedBReads));
+            var fencedObservation = Available(1, WorkDesiredStateV2.NeedsAction) with
+            {
+                SourceKey = "cas-company-fence-source",
+                ScopeKey = "cas-company-fence-scope"
+            };
+            var fencedResults = await Task.WhenAll(
+                fencedA.Store.ReconcileAsync(fencedObservation, Metadata("cas-fence-a")),
+                fencedB.Store.ReconcileAsync(fencedObservation, Metadata("cas-fence-b")));
+            Assert.Equal(1, fencedResults.Count(x => x.Decision == WorkDesiredStateDecisionV2.Apply));
+            var fencedRefusal = Assert.Single(
+                fencedResults.Where(x => x.Decision == WorkDesiredStateDecisionV2.Refused));
+            Assert.Null(fencedRefusal.State);
+
+            var fencedCountsAfter = await ReadWorkEffectCountsAsync(factory);
+            Assert.Equal(fencedCountsBefore.Snapshots + 1, fencedCountsAfter.Snapshots);
+            Assert.Equal(fencedCountsBefore.Inbox + 1, fencedCountsAfter.Inbox);
+            Assert.Equal(fencedCountsBefore.Outbox + 1, fencedCountsAfter.Outbox);
+            Assert.Equal(fencedCountsBefore.Audit + 1, fencedCountsAfter.Audit);
+            await AssertSingleWorkKeyEffectAsync(
+                factory,
+                fencedObservation.SourceKey,
+                fencedObservation.ScopeKey);
         });
     }
 
@@ -357,7 +418,7 @@ public sealed class WorkDesiredStateSqlServerRelationalAcceptanceTests
             snapshotMutations[index](row);
             invalid.Db.DesiredStateSnapshots.Add(row);
             var failure = await Assert.ThrowsAsync<DbUpdateException>(() => invalid.Db.SaveChangesAsync());
-            AssertSqlNumber(failure, 547);
+            AssertSqlConstraint(failure, 547, "CK_WorkSnapshots_State");
             Assert.Equal(baseline, await ReadWorkEffectCountsAsync(factory));
         }
 
@@ -375,7 +436,7 @@ public sealed class WorkDesiredStateSqlServerRelationalAcceptanceTests
             retainedMutations[index](row);
             invalid.Db.DesiredStateSnapshots.Add(row);
             var failure = await Assert.ThrowsAsync<DbUpdateException>(() => invalid.Db.SaveChangesAsync());
-            AssertSqlNumber(failure, 547);
+            AssertSqlConstraint(failure, 547, "CK_WorkSnapshots_State");
             Assert.Equal(baseline, await ReadWorkEffectCountsAsync(factory));
         }
 
@@ -383,6 +444,15 @@ public sealed class WorkDesiredStateSqlServerRelationalAcceptanceTests
         {
             var source = WorkStorageKeyV1.Create("invalid-inbox");
             var scope = WorkStorageKeyV1.Create("invalid-inbox-scope");
+            invalidInbox.Db.DesiredStateSnapshots.Add(
+                SnapshotRow("invalid-inbox", WorkSourceAvailabilityV2.Available, retainEffective: true));
+            await invalidInbox.Db.SaveChangesAsync();
+            var parentCounts = await ReadWorkEffectCountsAsync(factory);
+            Assert.Equal(baseline.Snapshots + 1, parentCounts.Snapshots);
+            Assert.Equal(baseline.Inbox, parentCounts.Inbox);
+            Assert.Equal(baseline.Outbox, parentCounts.Outbox);
+            Assert.Equal(baseline.Audit, parentCounts.Audit);
+
             invalidInbox.Db.ObservationInbox.Add(new WorkObservationInboxRow
             {
                 CompanyId = TestCompanyIds.CompanyA,
@@ -398,8 +468,9 @@ public sealed class WorkDesiredStateSqlServerRelationalAcceptanceTests
                 RecordedAtUtc = DateTimeOffset.UtcNow
             });
             var failure = await Assert.ThrowsAsync<DbUpdateException>(() => invalidInbox.Db.SaveChangesAsync());
-            AssertSqlNumber(failure, 547);
-            Assert.Equal(baseline, await ReadWorkEffectCountsAsync(factory));
+            AssertSqlConstraint(failure, 547, "CK_WorkInbox_State");
+            Assert.Equal(parentCounts, await ReadWorkEffectCountsAsync(factory));
+            baseline = parentCounts;
         }
 
         await using (var allNullUnavailable = await WorkSqlScope.OpenAsync(factory, TestCompanyIds.CompanyA))
@@ -437,7 +508,9 @@ public sealed class WorkDesiredStateSqlServerRelationalAcceptanceTests
                 : null,
             HighestEvidenceId = EvidenceA,
             HighestPayloadSha256 = HashA,
-            EffectiveObservationOrdinal = retainEffective ? 5 : null,
+            EffectiveObservationOrdinal = retainEffective
+                ? availability == WorkSourceAvailabilityV2.Available ? 7 : 5
+                : null,
             EffectiveDesiredState = retainEffective ? (int)WorkDesiredStateV2.NeedsAction : null,
             EffectiveEvidenceId = retainEffective ? EvidenceA : null,
             EffectivePayloadSha256 = retainEffective ? HashA : null,
@@ -457,6 +530,28 @@ public sealed class WorkDesiredStateSqlServerRelationalAcceptanceTests
         Assert.Equal(expected, counts.Audit);
     }
 
+    private static async Task AssertSingleWorkKeyEffectAsync(
+        SqlServerRelationalApiFactory factory,
+        string sourceText,
+        string scopeText)
+    {
+        var source = WorkStorageKeyV1.Create(sourceText);
+        var scope = WorkStorageKeyV1.Create(scopeText);
+        await using var read = await WorkSqlScope.OpenAsync(factory, TestCompanyIds.CompanyA);
+        var snapshots = await read.Db.DesiredStateSnapshots.AsNoTracking().ToListAsync();
+        var inbox = await read.Db.ObservationInbox.AsNoTracking().ToListAsync();
+        var outbox = await read.Db.OutboxMessages.AsNoTracking().ToListAsync();
+        Assert.Single(snapshots.Where(row =>
+            row.SourceKeyDigest.SequenceEqual(source.Digest)
+            && row.ScopeKeyDigest.SequenceEqual(scope.Digest)));
+        Assert.Single(inbox.Where(row =>
+            row.SourceKeyDigest.SequenceEqual(source.Digest)
+            && row.ScopeKeyDigest.SequenceEqual(scope.Digest)));
+        Assert.Single(outbox.Where(row =>
+            row.SourceKeyDigest.SequenceEqual(source.Digest)
+            && row.ScopeKeyDigest.SequenceEqual(scope.Digest)));
+    }
+
     private static async Task<(int Snapshots, int Inbox, int Outbox, int Audit)> ReadWorkEffectCountsAsync(
         SqlServerRelationalApiFactory factory)
     {
@@ -473,6 +568,19 @@ public sealed class WorkDesiredStateSqlServerRelationalAcceptanceTests
         var sql = FindSqlException(exception);
         Assert.NotNull(sql);
         Assert.Equal(expected, sql.Number);
+    }
+
+    private static void AssertSqlConstraint(
+        Exception exception,
+        int expectedNumber,
+        string expectedConstraint)
+    {
+        var sql = FindSqlException(exception);
+        Assert.NotNull(sql);
+        Assert.Equal(expectedNumber, sql.Number);
+        Assert.True(
+            sql.Message.Contains(expectedConstraint, StringComparison.Ordinal),
+            $"Expected SQL constraint '{expectedConstraint}'.");
     }
 
     private static SqlException? FindSqlException(Exception? exception) => exception switch
