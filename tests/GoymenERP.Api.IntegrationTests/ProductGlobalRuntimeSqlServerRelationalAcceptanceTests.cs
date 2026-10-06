@@ -1,4 +1,5 @@
 using System.Net;
+using System.Globalization;
 using System.IO.Compression;
 using System.Net.Http.Headers;
 using GoymenERP.CariAcceptance006;
@@ -24,6 +25,7 @@ using GoymenERP.Modules.Identity.Domain.Users;
 using GoymenERP.Modules.Identity.Infrastructure.Persistence;
 using GoymenERP.Modules.Identity.Infrastructure.Services;
 using GoymenERP.Modules.Inventory.Application;
+using GoymenERP.Modules.Manufacturing.Application;
 using GoymenERP.Modules.Organization.Application.Contracts;
 using GoymenERP.Modules.Product.Application.Contracts;
 using GoymenERP.Modules.Product.Infrastructure.Persistence;
@@ -549,6 +551,8 @@ public sealed class ProductGlobalRuntimeSqlServerRelationalAcceptanceTests
                 role.AddPermission(InventoryPermissionManifestV1.OpeningStockRecord);
                 role.AddPermission(ErpPermissions.InventoryLabelsRead);
                 role.AddPermission(ErpPermissions.InventoryBalancesRead);
+                role.AddPermission(ErpPermissions.ManufacturingPlansWrite);
+                role.AddPermission(ErpPermissions.ManufacturingPlansRead);
                 var assignment = new RoleAssignment(Guid.NewGuid(), ActorId, roleId, CompanyA,
                     DateTimeOffset.UtcNow.AddMinutes(-1), null, approvedByUserId: null);
                 assignment.AddScope(AccessScopeType.Company, CompanyA);
@@ -729,6 +733,98 @@ public sealed class ProductGlobalRuntimeSqlServerRelationalAcceptanceTests
             }
             finally { accessor.HttpContext = previous; }
             Assert.Equal(afterOpeningAudit, await SnapshotAsync(factory.DatabaseConnectionString));
+
+            Guid workCenterId;
+            await using (var sql = new SqlConnection(factory.DatabaseConnectionString))
+            {
+                await sql.OpenAsync();
+                await using var workCenter = sql.CreateCommand();
+                workCenter.CommandText = """
+                    SELECT TOP (1) [Id]
+                    FROM [organization].[WorkCenters]
+                    WHERE [CompanyId] = @company AND [Kind] = N'Slitting'
+                    ORDER BY [Id];
+                    """;
+                workCenter.Parameters.AddWithValue("@company", CompanyA);
+                workCenterId = Assert.IsType<Guid>(await workCenter.ExecuteScalarAsync());
+            }
+
+            var planId = Guid.NewGuid();
+            var planRequest = new SavePlanRequestV1(planId, workCenterId,
+                [new PlannedInputRequestV1(labelId, "1000",
+                    stocked.LabelVersion.ToString(CultureInfo.InvariantCulture))], null);
+            const string planKey = "product-genuine-sac-manufacturing-plan-once";
+            async Task<HttpResponseMessage> SavePlanAsync()
+            {
+                using var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/manufacturing/plans")
+                { Content = JsonContent.Create(planRequest) };
+                request.Headers.Add("Idempotency-Key", planKey);
+                return await freshClient.SendAsync(request);
+            }
+
+            using var createdPlanResponse = await SavePlanAsync();
+            Assert.Equal(HttpStatusCode.Created, createdPlanResponse.StatusCode);
+            var createdPlan = (await createdPlanResponse.Content.ReadFromJsonAsync<PlanViewV1>())!;
+            var plannedInput = Assert.Single(createdPlan.Inputs);
+            var captured = Assert.IsType<CapturedPlanTechnicalSnapshotViewV1>(plannedInput.TechnicalSnapshot);
+            Assert.Equal((planId, CompanyA, workCenterId, labelId, "1000"),
+                (createdPlan.PlanId, createdPlan.CompanyId, createdPlan.WorkCenterId,
+                    plannedInput.ParentRollId, plannedInput.PlannedKg));
+            Assert.Equal((stocked.ProductId, stocked.ProductVersion, "3", "248"),
+                (captured.ProductId, captured.ProductVersion, captured.ThicknessMm, captured.WidthMm));
+            Assert.Equal((ProductInitialTechnicalDefinitionV1.HotRolledSlitCoilFamilyId,
+                ProductInitialTechnicalDefinitionV1.SourceRef),
+                (captured.Family.FamilyId, captured.Family.SourceRevision));
+            Assert.Equal((ProductInitialTechnicalDefinitionV1.TemplateId, "1",
+                ProductInitialTechnicalDefinitionV1.SourceRef),
+                (captured.Template.TemplateId, captured.Template.TemplateVersion,
+                    captured.Template.SourceRevision));
+            Assert.Equal((CompanyA, SettingsUnitIdentitiesV1.Kilogram, "kg",
+                ApprovedUnitProfileCatalog.GdcKilogramV1.ProfileId, "1"),
+                (captured.UnitKg.CompanyId, captured.UnitKg.UnitId, captured.UnitKg.UnitCode,
+                    captured.UnitKg.ProfileId, captured.UnitKg.ProfileVersion));
+
+            using var replayedPlanResponse = await SavePlanAsync();
+            Assert.Equal(HttpStatusCode.Created, replayedPlanResponse.StatusCode);
+            Assert.Equal("true", Assert.Single(replayedPlanResponse.Headers.GetValues("Idempotency-Replayed")));
+            var replayedPlan = (await replayedPlanResponse.Content.ReadFromJsonAsync<PlanViewV1>())!;
+            Assert.Equal(JsonSerializer.Serialize(createdPlan), JsonSerializer.Serialize(replayedPlan));
+
+            using var reopenedPlanResponse = await freshClient.GetAsync($"/api/v1/manufacturing/plans/{planId:D}");
+            Assert.Equal(HttpStatusCode.OK, reopenedPlanResponse.StatusCode);
+            var reopenedPlan = (await reopenedPlanResponse.Content.ReadFromJsonAsync<PlanViewV1>())!;
+            Assert.Equal(JsonSerializer.Serialize(createdPlan), JsonSerializer.Serialize(reopenedPlan));
+
+            await using (var sql = new SqlConnection(factory.DatabaseConnectionString))
+            {
+                await sql.OpenAsync();
+                await using var storedPlan = sql.CreateCommand();
+                storedPlan.CommandText = """
+                    SELECT [ParentRollId], [ExpectedLabelVersion], [TechnicalProductId], [TechnicalProductVersion],
+                        [TechnicalFamilyId], [TechnicalFamilySourceRevision],
+                        [TechnicalTemplateId], [TechnicalTemplateVersion], [TechnicalTemplateSourceRevision],
+                        [TechnicalKilogramUnitCompanyId], [TechnicalKilogramUnitId],
+                        [TechnicalKilogramProfileId], [TechnicalKilogramProfileVersion],
+                        [TechnicalThicknessMm], [TechnicalWidthMm]
+                    FROM [manufacturing].[PlanInputs]
+                    WHERE [CompanyId] = @company AND [PlanId] = @plan;
+                    """;
+                storedPlan.Parameters.AddWithValue("@company", CompanyA);
+                storedPlan.Parameters.AddWithValue("@plan", planId);
+                await using var row = await storedPlan.ExecuteReaderAsync();
+                Assert.True(await row.ReadAsync());
+                Assert.Equal((labelId, stocked.LabelVersion, stocked.ProductId, stocked.ProductVersion),
+                    (row.GetGuid(0), row.GetInt64(1), row.GetGuid(2), row.GetString(3)));
+                Assert.Equal((captured.Family.FamilyId, captured.Family.SourceRevision,
+                    captured.Template.TemplateId, captured.Template.TemplateVersion,
+                    captured.Template.SourceRevision),
+                    (row.GetGuid(4), row.GetString(5), row.GetGuid(6), row.GetString(7), row.GetString(8)));
+                Assert.Equal((captured.UnitKg.CompanyId, captured.UnitKg.UnitId, captured.UnitKg.ProfileId,
+                    captured.UnitKg.ProfileVersion),
+                    (row.GetGuid(9), row.GetGuid(10), row.GetGuid(11), row.GetString(12)));
+                Assert.Equal((3m, 248m), (row.GetDecimal(13), row.GetDecimal(14)));
+                Assert.False(await row.ReadAsync());
+            }
         });
 
     [SqlServerFact]
