@@ -438,11 +438,32 @@ public sealed partial class InventoryStore(
     /// audited actor. Book = count at opening: every balance written here is exactly its counted kilograms.
     /// </summary>
     public async Task<InventoryWriteOutcome> RecordAsync(OpeningCount count, InventoryCommandMetadata metadata,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default, InventoryOpeningOwnerProofV1? ownerProof = null)
     {
         ArgumentNullException.ThrowIfNull(count);
         RequireMetadata(metadata);
         RequireCompany(count.CompanyId);
+        if (count.Owner.Kind == StockPartyKind.Counterparty && ownerProof is null)
+        {
+            throw Refused(InventoryOpeningCodesV1.OwnerAccountUnavailable,
+                "Müşteri mülkiyetli açılış, doğrulanmış şirket hesabı kanıtı olmadan kaydedilemez.");
+        }
+
+        if (count.Owner.Kind == StockPartyKind.Counterparty && ownerProof is not null
+            && (ownerProof.CompanyPartyAccountId == Guid.Empty
+                || string.IsNullOrWhiteSpace(ownerProof.PartyVersion)
+                || string.IsNullOrWhiteSpace(ownerProof.AccountVersion)))
+        {
+            throw Refused(InventoryStoreCodes.ValueDoesNotFit,
+                "Müşteri mülkiyetli açılışın doğrulama kanıtı eksik veya geçersizdir.");
+        }
+
+        if (count.Owner.Kind == StockPartyKind.Company && ownerProof is not null)
+        {
+            throw Refused(InventoryStoreCodes.ValueDoesNotFit,
+                "Şirket mülkiyetli açılış, müşteri hesabı kanıtı taşıyamaz.");
+        }
+
         foreach (var line in count.Lines)
         {
             RequireLotFits(line.Lot);
@@ -460,7 +481,14 @@ public sealed partial class InventoryStore(
                 return InventoryWriteOutcome.Replayed;
             }
 
-            if (string.Equals(stored.ContentHash, LegacyOpeningHash(count), StringComparison.Ordinal)
+            var isCompanyOwned = count.Owner.Kind == StockPartyKind.Company && count.Owner.Id == count.CompanyId
+                && count.Custodian.Kind == StockPartyKind.Company && count.Custodian.Id == count.CompanyId;
+            if (isCompanyOwned && string.Equals(stored.ContentHash, CompanyOwnedOpeningHash(count), StringComparison.Ordinal))
+            {
+                return InventoryWriteOutcome.Replayed;
+            }
+
+            if (isCompanyOwned && string.Equals(stored.ContentHash, LegacyOpeningHash(count), StringComparison.Ordinal)
                 && await IsLegacyOpeningWithoutProductVersionAsync(count.Id, count.Lines.Count, cancellationToken))
             {
                 return InventoryWriteOutcome.Replayed;
@@ -644,7 +672,7 @@ public sealed partial class InventoryStore(
             CorrelationId = metadata.CorrelationId.Trim(),
         });
         Audit(metadata, count.CompanyId, OpeningCountEntityType, count.Id, "inventory.opening-count.recorded.v1", "Record",
-            versionBefore: null, versionAfter: 1, before: "{}", after: OpeningAudit(count, hash), "Açılış sayımı");
+            versionBefore: null, versionAfter: 1, before: "{}", after: OpeningAudit(count, hash, ownerProof), "Açılış sayımı");
         await SaveAsync(cancellationToken);
         return InventoryWriteOutcome.Recorded;
     }
@@ -667,7 +695,37 @@ public sealed partial class InventoryStore(
         var lotIds = lines.Select(line => line.LotId).Distinct().ToArray();
         var lots = (await dbContext.Lots.AsNoTracking().Where(lot => lotIds.Contains(lot.Id)).ToListAsync(cancellationToken))
             .ToDictionary(lot => lot.Id, ToLot);
+        var lineIds = lines.Select(line => line.LineId).ToArray();
+        var positions = await dbContext.MovementLines.AsNoTracking()
+            .Join(dbContext.Movements.AsNoTracking()
+                    .Where(movement => movement.SourceKind == OpeningCount.SourceKind && movement.SourceId == countId),
+                line => line.MovementId,
+                movement => movement.Id,
+                (line, movement) => new { Line = line, Movement = movement })
+            .Where(pair => lineIds.Contains(pair.Line.MovementId)
+                && pair.Movement.SourceLineId == pair.Line.MovementId
+                && pair.Line.Direction == (int)StockDirection.In)
+            .Select(pair => pair.Line)
+            .ToListAsync(cancellationToken);
+        if (positions.Count != lines.Count || positions.Any(position => position.LineNumber != 1
+                || position.CompanyId != row.CompanyId || position.LocationId != row.LocationId)
+            || lines.Any(line => !positions.Any(position => position.MovementId == line.LineId
+                && position.LabelId == line.LabelId)))
+        {
+            throw new InvalidOperationException("Kayıtlı açılış sayımının stok pozisyonu eksik veya tutarsızdır.");
+        }
+
+        var ownership = positions.Select(position => (position.OwnerKind, position.OwnerId,
+                position.CustodianKind, position.CustodianId)).Distinct().ToArray();
+        if (ownership.Length != 1)
+        {
+            throw new InvalidOperationException("Kayıtlı açılış sayımının mal sahibi/gözeten bağlamı karışıktır.");
+        }
+
+        var physical = ownership[0];
         return new OpeningCount(row.Id, row.CompanyId, row.LocationId, row.CountedOn, row.SheetReference,
+            new StockOwner((StockPartyKind)physical.OwnerKind, physical.OwnerId),
+            new StockCustodian((StockPartyKind)physical.CustodianKind, physical.CustodianId),
             lines.Select(line => new OpeningCountLine(line.LineId, lots[line.LotId], labels[line.LabelId],
                 Kilograms.Positive(line.QuantityKg))));
     }
@@ -1097,6 +1155,37 @@ public sealed partial class InventoryStore(
     {
         var canonical = JsonSerializer.Serialize(new
         {
+            owner = new { kind = count.Owner.Kind.ToString(), count.Owner.Id },
+            custodian = new { kind = count.Custodian.Kind.ToString(), count.Custodian.Id },
+            locationId = count.LocationId,
+            countedOn = count.CountedOn.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+            sheetReference = count.SheetReference,
+            lines = count.Lines.Select(line => new
+            {
+                id = line.Id,
+                quantityKg = line.Quantity.ToString(),
+                lot = new { id = line.Lot.Id, productId = line.Lot.ProductId, heat = line.Lot.HeatNumber, coil = line.Lot.CoilNumber },
+                label = new
+                {
+                    id = line.Label.Id,
+                    code = line.Label.Code,
+                    productVersion = line.Label.ProductVersion,
+                    heat = line.Label.HeatNumber,
+                    coil = line.Label.CoilNumber,
+                    requiredDocuments = line.Label.RequiredDocuments.Order(StringComparer.Ordinal),
+                    prints = line.Label.Prints.Count,
+                    documents = line.Label.DocumentAttachments.Count,
+                },
+            }),
+        }, Json);
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical))).ToLowerInvariant();
+    }
+
+    /// <summary>The immediately previous Company/Company hash, before ownership became explicit.</summary>
+    internal static string CompanyOwnedOpeningHash(OpeningCount count)
+    {
+        var canonical = JsonSerializer.Serialize(new
+        {
             locationId = count.LocationId,
             countedOn = count.CountedOn.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
             sheetReference = count.SheetReference,
@@ -1152,10 +1241,18 @@ public sealed partial class InventoryStore(
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical))).ToLowerInvariant();
     }
 
-    private static string OpeningAudit(OpeningCount count, string hash) => JsonSerializer.Serialize(new
+    private static string OpeningAudit(OpeningCount count, string hash, InventoryOpeningOwnerProofV1? ownerProof) => JsonSerializer.Serialize(new
     {
         count.Id,
         count.LocationId,
+        owner = new { kind = count.Owner.Kind.ToString(), count.Owner.Id },
+        custodian = new { kind = count.Custodian.Kind.ToString(), count.Custodian.Id },
+        ownerAccount = ownerProof is null ? null : new
+        {
+            ownerProof.CompanyPartyAccountId,
+            ownerProof.PartyVersion,
+            ownerProof.AccountVersion,
+        },
         countedOn = count.CountedOn.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
         count.SheetReference,
         lines = count.Lines.Count,

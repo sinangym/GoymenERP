@@ -80,8 +80,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // Re-fingerprinted once more for AT-065: only the comment above AddDocumentsRuntime changed, to say that
     // production uses the own-server store and Defender when both are configured and answers 503 otherwise
     // (abe26a09… -> c027dce9…); no code line changed.
+    // Re-fingerprinted for customer-owned Inventory opening: one scoped registration binds Inventory's
+    // owner-account seam to Cari's existing authorized source; no network or hosted-service surface changed.
     private const string ReviewedOpenApiStartupFingerprint =
-        "0900c975ca62cb0901d3e7c0d5a12efe25a09df794551f6ceb32f73da8465192";
+        "73395d6ba41df239ae73407cd06c9480bbe8fb36e675a9d160722557f68939f0";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedProductManufacturingTechnicalRegistrationPath =
@@ -188,8 +190,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // ST-02 scrap write-off: +5 stock-scrap SQL facts (1ca5b9e1… -> bd676b05…).
             // R20 transfer lifecycle: +3 transfer SQL facts (bd676b05… -> c74360d3…).
             // Product-version provenance rollback: +1 isolated no-loss SQL fact (c444f707… -> d9cb549b…).
+            // Customer-owned opening: +2 exact account-context and fail-closed authority SQL facts.
             ["tools/relational_inventory/inventory.txt"] =
-                "c6c7065d58753d5cf6c69dbc1890abfb87c711cdbaa9f9bb3a4457b95a0a6a40",
+                "eed522152458f731f588b7f0d60188028f75b7143e33bcf54e6eeca338c9a3c1",
 
             // logistics
             // AT-053: +4 weighbridge SQL facts (81c1ff0b… -> 264898d7…).
@@ -698,9 +701,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // INV-OPEN-1 part 2: the opening-count command reads through the tenant-filtered context and uses
                 // the SqlClient namespace only to recognise a unique-key violation (SqlException 2601/2627) in a
                 // catch filter, as the other module stores do. No connection, command or raw SQL.
+                // Customer-owned opening adds only the reviewed owner-account validation branch; SqlClient count stays 1.
                 ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/InventoryOpeningCommandService.cs"] =
                     new(
-                        "82bd0cb0160a13dd34a97319da4336762fdbc8f24dee650e5389fbce980e70a2",
+                        "fd384d4cdc34ec642db71049b1dbd0180f2d317f38acfd3a6758d943d571bebb",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -711,10 +715,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // uses the same key-error read ('PK_OpeningCounts'); SqlClient count unchanged (1).
                 // Re-fingerprinted for Product-version provenance rollback isolation: the target-typed MaterialLabel
                 // construction is explicit so it cannot be mistaken for InventoryDbContext; SqlClient count stays 1.
+                // Customer-owned opening persists its immutable position context through the same store; count stays 1.
                 ["src/backend/Modules/Inventory/"
                  + "GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventoryStore.cs"] =
                     new(
-                "1ebfddab00aa0fd2d19ebfc9b6affd869066c9d59fd1e4c6444816a59f2cd290",
+                "b2cb0ed28a010e12ff1b46d38dbeede73f0b6ed39d9ebb9cf86120e477ef3589",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1

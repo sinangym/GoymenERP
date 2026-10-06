@@ -238,12 +238,14 @@ describe('AT-055 dispatch-note approval, cancellation and e-İrsaliye number on 
     const lifecycle: string[] = []
     const harness = installFetch({
       onDetail: () => json(cancelled
-        ? issued([cancelledFrom(note(NOTE, [SHIP_1], APPROVED), 'Yanlış araç')], '9')
-        : issued([note(NOTE, [SHIP_1], APPROVED)], '8')),
+        ? issued([cancelledFrom(note(NOTE, [SHIP_1], { ...APPROVED, eDispatchNumber: 'GYM2026000000001' }), 'Yanlış araç')], '9')
+        : issued([note(NOTE, [SHIP_1], { ...APPROVED, eDispatchNumber: 'GYM2026000000001' })], '8')),
       onDispatchNoteLifecycle: (kind) => {
         lifecycle.push(kind)
         cancelled = true
-        return json(mutation(issued([cancelledFrom(note(NOTE, [SHIP_1], APPROVED), 'Yanlış araç')], '9')))
+        return json(mutation(issued([
+          cancelledFrom(note(NOTE, [SHIP_1], { ...APPROVED, eDispatchNumber: 'GYM2026000000001' }), 'Yanlış araç'),
+        ], '9')))
       },
     })
     renderLogisticsApp(path)
@@ -251,6 +253,7 @@ describe('AT-055 dispatch-note approval, cancellation and e-İrsaliye number on 
     expect((within(await screen.findByTestId(`logistics-dispatch-note-shipment-${SHIP_1}`)).getByRole('checkbox') as HTMLInputElement).disabled).toBe(true)
     const panel = screen.getByTestId(`logistics-dispatch-note-lifecycle-${NOTE}`)
     await userEvent.click(within(panel).getByTestId('logistics-dispatch-note-cancel'))
+    expect(within(panel).getByText(T.cancelExternalNotice)).toBeTruthy()
     await userEvent.click(within(panel).getByTestId('logistics-dispatch-note-cancel-confirm'))
     await within(panel).findByText(T.cancelReasonRequired)
     expect(harness.logisticsCalls().filter((call) => call.method === 'POST')).toHaveLength(0)
