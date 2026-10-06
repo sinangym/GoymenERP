@@ -598,9 +598,10 @@ export function decodeOrder(body: unknown): ProductionOrderView | null {
  * The realization commands this screen can complete from explicit server-backed selections. An output's
  * owner and custodian are never chosen here: they are DERIVED from this order's own immutable
  * `manufacturing.input-issue` trace on the parent label (one complete, untruncated position), shown read-only,
- * and frozen into the command; the server re-checks them against the same trace. The issue itself admits only
- * the company's own, company-custodied roll until the customer/fason decision (#66/5830378162) is made: the
- * server refuses any other position at issue. InitialBlock is an explicit user selection, never a client default.
+ * and frozen into the command; the server re-checks them against the same trace. The issue admits either the
+ * legacy company-owned, company-custodied path or a captured Counterparty owner with the current company as
+ * custodian; every other owner, custodian, or context combination is refused. InitialBlock is an explicit user
+ * selection, never a client default.
  */
 export const FACT_KINDS = [
   'input-issues',
