@@ -172,6 +172,83 @@ public sealed class InventoryStockPositionTests
             .SearchAsync(new(Cursor: "opaque")), 503, InventoryStockPositionCodesV1.Unavailable);
     }
 
+    [Fact]
+    public void Cursor_codec_binds_company_actor_limit_and_every_filter()
+    {
+        var clock = new MutableTimeProvider(new DateTimeOffset(2026, 10, 7, 8, 0, 0, TimeSpan.Zero));
+        using var codec = CursorCodec(clock);
+        var query = CursorQuery();
+        var position = new InventoryStockPositionPosition("ROLL-0001", Guid.NewGuid());
+        var actor = Guid.NewGuid().ToString("D");
+        var cursor = codec.Protect(Company, actor, query, position);
+
+        Assert.Equal(position, codec.Unprotect(Company, actor, query, cursor));
+        foreach (var changed in new[]
+        {
+            query with { Q = "OTHER" },
+            query with { Limit = query.Limit + 1 },
+            query with { ProductId = Guid.NewGuid() },
+            query with { LocationId = Guid.NewGuid() },
+            query with { Classification = InventoryLabelClassificationV1.Scrap },
+            query with { OwnerKind = StockPartyKind.Counterparty },
+            query with { OwnerId = Guid.NewGuid() },
+        })
+        {
+            AssertInvalid(() => codec.Unprotect(Company, actor, changed, cursor));
+        }
+
+        AssertInvalid(() => codec.Unprotect(Guid.NewGuid(), actor, query, cursor));
+        AssertInvalid(() => codec.Unprotect(Company, Guid.NewGuid().ToString("D"), query, cursor));
+    }
+
+    [Fact]
+    public void Cursor_codec_refuses_tamper_noncanonical_transport_malformed_payload_and_invalid_keys()
+    {
+        var clock = new MutableTimeProvider(new DateTimeOffset(2026, 10, 7, 8, 0, 0, TimeSpan.Zero));
+        using var codec = CursorCodec(clock);
+        var query = CursorQuery();
+        var actor = Guid.NewGuid().ToString("D");
+        var cursor = codec.Protect(Company, actor, query,
+            new InventoryStockPositionPosition("ROLL-0001", Guid.NewGuid()));
+        var tampered = cursor[..^1] + (cursor[^1] == 'A' ? 'B' : 'A');
+
+        foreach (var invalid in new[]
+        {
+            tampered,
+            " " + cursor,
+            cursor + " ",
+            "not-a-cursor",
+            "AA==.AA",
+            "e30.AA",
+            cursor + ".extra",
+        })
+        {
+            AssertInvalid(() => codec.Unprotect(Company, actor, query, invalid));
+        }
+
+        Assert.Throws<InvalidOperationException>(() => new InventoryStockPositionCursorCodec(
+            new InventoryStockPositionCursorRuntimeOptions("not-base64"), clock));
+        Assert.Throws<InvalidOperationException>(() => new InventoryStockPositionCursorCodec(
+            new InventoryStockPositionCursorRuntimeOptions(Convert.ToBase64String(new byte[31])), clock));
+    }
+
+    [Fact]
+    public void Cursor_codec_refuses_expired_and_future_issued_state()
+    {
+        var issuedAt = new DateTimeOffset(2026, 10, 7, 8, 0, 0, TimeSpan.Zero);
+        var clock = new MutableTimeProvider(issuedAt);
+        using var codec = CursorCodec(clock);
+        var query = CursorQuery();
+        var actor = Guid.NewGuid().ToString("D");
+        var cursor = codec.Protect(Company, actor, query,
+            new InventoryStockPositionPosition("ROLL-0001", Guid.NewGuid()));
+
+        clock.UtcNow = issuedAt.AddMinutes(30);
+        AssertInvalid(() => codec.Unprotect(Company, actor, query, cursor));
+        clock.UtcNow = issuedAt.AddTicks(-1);
+        AssertInvalid(() => codec.Unprotect(Company, actor, query, cursor));
+    }
+
     [Theory]
     [InlineData("labels")]
     [InlineData("balances")]
@@ -244,6 +321,21 @@ public sealed class InventoryStockPositionTests
     {
         var error = await Assert.ThrowsAsync<InventoryStockPositionException>(() => task);
         Assert.Equal((status, code), (error.StatusCode, error.Code));
+    }
+
+    private static InventoryStockPositionCursorCodec CursorCodec(TimeProvider clock) => new(
+        new InventoryStockPositionCursorRuntimeOptions(
+            Convert.ToBase64String(Enumerable.Range(1, 32).Select(value => (byte)value).ToArray())),
+        clock);
+
+    private static InventoryStockPositionReadQuery CursorQuery() => new(
+        "ROLL", 25, Guid.NewGuid(), Guid.NewGuid(), InventoryLabelClassificationV1.SecondQuality,
+        StockPartyKind.Company, Company, null);
+
+    private static void AssertInvalid(Action action)
+    {
+        var error = Assert.Throws<InventoryStockPositionException>(action);
+        Assert.Equal((400, InventoryStockPositionCodesV1.InvalidQuery), (error.StatusCode, error.Code));
     }
 
     private static InventoryStockPositionRecord Record(
@@ -362,5 +454,11 @@ public sealed class InventoryStockPositionTests
             return new InventoryStockPositionWindow(records, HasMore,
                 records.Length == 0 ? null : new(records[^1].Label.Code, records[^1].Label.Id));
         }
+    }
+
+    private sealed class MutableTimeProvider(DateTimeOffset utcNow) : TimeProvider
+    {
+        public DateTimeOffset UtcNow { get; set; } = utcNow;
+        public override DateTimeOffset GetUtcNow() => UtcNow;
     }
 }
