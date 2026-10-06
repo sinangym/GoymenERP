@@ -662,7 +662,10 @@ class RelationalInventoryLoaderTests(unittest.TestCase):
             prefix + "Apply_replay_conflict_older_and_unavailable_watermark_are_atomic",
             prefix + "Audit_failure_rolls_back_snapshot_inbox_outbox_and_write_guard_refuses_foreign_rows",
             prefix + "Digest_collision_is_refused_before_SQL_and_preserves_the_first_identity",
+            prefix + "Internal_admission_projects_the_single_store_write_and_snapshot_read_has_no_effect",
             prefix + "Same_and_newer_ordinal_races_have_one_CAS_winner_without_blind_overwrite",
+            prefix + "Snapshot_read_refuses_company_drift_and_foreign_scope_without_writing",
+            prefix + "Snapshot_read_rejects_row_outbox_disagreement_without_recording_an_effect",
             prefix + "Versionless_and_foreign_observations_write_nothing_and_tenant_filter_hides_other_company",
         }
         self.assertEqual(required, set(VERIFIER.BROAD_INVENTORY["work"]))
