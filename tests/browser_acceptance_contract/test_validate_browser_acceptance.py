@@ -520,6 +520,7 @@ class WorkflowTests(unittest.TestCase):
                 "inventory.balances.read",
                 "inventory.opening-stock.record",
                 "product.operational-selection.read",
+                "counterparty.parties.read",
             ),
             validator.SUITE_IDENTITY_PERMISSIONS["mfg"],
         )

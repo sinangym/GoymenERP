@@ -277,6 +277,7 @@ SUITE_IDENTITY_PERMISSIONS = {
         "inventory.balances.read",
         "inventory.opening-stock.record",
         "product.operational-selection.read",
+        "counterparty.parties.read",
     ),
     # The Finance names and the Cari owner's authorized party read. The list is the complete
     # union of the disposable proposer, approver and read-only allocation reader grants in fin01.override.yml.
