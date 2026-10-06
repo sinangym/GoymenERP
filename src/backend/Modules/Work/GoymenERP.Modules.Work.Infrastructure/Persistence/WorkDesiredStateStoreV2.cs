@@ -71,6 +71,84 @@ public sealed class WorkDesiredStateStoreV2
         this.afterCommit = afterCommit ?? (static _ => Task.CompletedTask);
     }
 
+    internal static async Task<WorkDesiredStateSnapshotV2?> ReadSnapshotAsync(
+        WorkDbContext dbContext,
+        GoymenERP.BuildingBlocks.Multitenancy.ICompanyContext companyContext,
+        string sourceKey,
+        string scopeKey,
+        CancellationToken cancellationToken = default,
+        Func<CancellationToken, Task>? afterRead = null)
+    {
+        ArgumentNullException.ThrowIfNull(dbContext);
+        ArgumentNullException.ThrowIfNull(companyContext);
+        if (string.IsNullOrWhiteSpace(sourceKey)
+            || string.IsNullOrWhiteSpace(scopeKey)
+            || !string.Equals(sourceKey, sourceKey.Trim(), StringComparison.Ordinal)
+            || !string.Equals(scopeKey, scopeKey.Trim(), StringComparison.Ordinal))
+            throw new ArgumentException("Exact source and scope keys are required.");
+        if (!companyContext.IsResolved || companyContext.CompanyId == Guid.Empty)
+            throw new InvalidOperationException("A server-resolved company is required.");
+
+        var companyId = companyContext.CompanyId;
+        var source = WorkStorageKeyV1.Create(sourceKey);
+        var scope = WorkStorageKeyV1.Create(scopeKey);
+        bool SameCompany() => companyContext.IsResolved && companyContext.CompanyId == companyId;
+
+        var snapshots = await dbContext.DesiredStateSnapshots.AsNoTracking()
+            .Where(row => row.CompanyId == companyId
+                && row.SourceKeyDigest.SequenceEqual(source.Digest)
+                && row.ScopeKeyDigest.SequenceEqual(scope.Digest))
+            .Take(2)
+            .ToArrayAsync(cancellationToken);
+        if (afterRead is not null)
+            await afterRead(cancellationToken);
+        if (!SameCompany())
+            throw new InvalidOperationException("The server company changed during Work snapshot read.");
+        if (snapshots.Length > 1)
+            throw new WorkStorageCorruptionException("Work snapshot identity is ambiguous.");
+        if (snapshots.Length == 0)
+            return null;
+
+        var row = snapshots[0];
+        if (!row.SourceKeyUtf16Be.AsSpan().SequenceEqual(source.Utf16Be)
+            || !row.ScopeKeyUtf16Be.AsSpan().SequenceEqual(scope.Utf16Be))
+            throw new WorkStorageCorruptionException("Work snapshot key digest collides with another identity.");
+
+        var outbox = await dbContext.OutboxMessages.AsNoTracking()
+            .Where(item => item.CompanyId == companyId
+                && item.SourceKeyDigest.SequenceEqual(source.Digest)
+                && item.ScopeKeyDigest.SequenceEqual(scope.Digest))
+            .OrderByDescending(item => item.AggregateVersion)
+            .FirstOrDefaultAsync(cancellationToken);
+        if (!SameCompany())
+            throw new InvalidOperationException("The server company changed during Work snapshot read.");
+        if (outbox is null || outbox.AggregateVersion != row.Version
+            || !outbox.SourceKeyUtf16Be.AsSpan().SequenceEqual(source.Utf16Be)
+            || !outbox.ScopeKeyUtf16Be.AsSpan().SequenceEqual(scope.Utf16Be))
+            throw new WorkStorageCorruptionException("Work snapshot and latest outbox do not match.");
+
+        var snapshot = DecodeOutboxPayload(outbox);
+        if (snapshot.CompanyId != companyId
+            || !string.Equals(snapshot.SourceKey, sourceKey, StringComparison.Ordinal)
+            || !string.Equals(snapshot.ScopeKey, scopeKey, StringComparison.Ordinal))
+            throw new WorkStorageCorruptionException("Work outbox payload does not match the requested identity.");
+
+        var highest = snapshot.HighestReliableObservation;
+        var effective = snapshot.EffectiveState;
+        if (row.HighestObservationOrdinal != highest.ObservationOrdinal
+            || row.HighestAvailability != (int)highest.Availability
+            || row.HighestDesiredState != (highest.DesiredState is { } desired ? (int)desired : null)
+            || row.HighestEvidenceId != highest.EvidenceId
+            || !string.Equals(row.HighestPayloadSha256, highest.PayloadSha256, StringComparison.Ordinal)
+            || row.EffectiveObservationOrdinal != effective?.ObservationOrdinal
+            || row.EffectiveDesiredState != (effective is null ? null : (int)effective.DesiredState)
+            || row.EffectiveEvidenceId != effective?.EvidenceId
+            || !string.Equals(row.EffectivePayloadSha256, effective?.PayloadSha256, StringComparison.Ordinal)
+            || outbox.ObservationOrdinal != highest.ObservationOrdinal)
+            throw new WorkStorageCorruptionException("Work snapshot and outbox state disagree.");
+        return snapshot;
+    }
+
     public async Task<WorkDesiredStateResultV2> ReconcileAsync(
         WorkDesiredStateObservationV2 observation,
         WorkDesiredStateWriteMetadataV2 metadata,

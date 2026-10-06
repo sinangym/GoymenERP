@@ -74,11 +74,52 @@ public static class WorkIssueLifecycleV1
             throw new ArgumentException("A delivery id is required.", nameof(deliveryId));
 
         var reconciliation = WorkDesiredStateProtocolV2.Reconcile(prior, observation);
-        var identity = reconciliation.State ?? prior;
+        return ProjectPersisted(reconciliation, observation, evaluationId, deliveryId);
+    }
+
+    public static WorkIssueEvaluationV1 ProjectPersisted(
+        WorkDesiredStateResultV2 reconciliation,
+        WorkDesiredStateObservationV2 observation,
+        WorkEvaluationIdV1 evaluationId,
+        WorkDeliveryIdV1 deliveryId)
+    {
+        ArgumentNullException.ThrowIfNull(reconciliation);
+        ValidateAdmissionInput(observation, evaluationId, deliveryId);
+        if (reconciliation.Decision is WorkDesiredStateDecisionV2.Apply or WorkDesiredStateDecisionV2.Replay
+            && reconciliation.State is null)
+            throw new ArgumentException("An applied or replayed result requires its snapshot.", nameof(reconciliation));
+
+        var identity = reconciliation.State;
+        if (identity is not null
+            && reconciliation.Decision != WorkDesiredStateDecisionV2.Refused
+            && (identity.CompanyId != observation.CompanyId
+                || !string.Equals(identity.SourceKey, observation.SourceKey, StringComparison.Ordinal)
+                || !string.Equals(identity.ScopeKey, observation.ScopeKey, StringComparison.Ordinal)))
+            throw new ArgumentException("The persisted result does not match its observation.", nameof(reconciliation));
         var issueKey = identity is null
             ? new WorkIssueKeyV1(observation.CompanyId, observation.SourceKey, observation.ScopeKey)
             : new WorkIssueKeyV1(identity.CompanyId, identity.SourceKey, identity.ScopeKey);
 
         return new WorkIssueEvaluationV1(issueKey, evaluationId, deliveryId, reconciliation);
+    }
+
+    public static void ValidateAdmissionInput(
+        WorkDesiredStateObservationV2 observation,
+        WorkEvaluationIdV1 evaluationId,
+        WorkDeliveryIdV1 deliveryId)
+    {
+        ArgumentNullException.ThrowIfNull(observation);
+        if (evaluationId.Value == Guid.Empty)
+            throw new ArgumentException("An evaluation id is required.", nameof(evaluationId));
+        if (deliveryId.Value == Guid.Empty)
+            throw new ArgumentException("A delivery id is required.", nameof(deliveryId));
+        if (observation.CompanyId == Guid.Empty
+            || string.IsNullOrWhiteSpace(observation.SourceKey)
+            || string.IsNullOrWhiteSpace(observation.ScopeKey)
+            || !string.Equals(observation.SourceKey, observation.SourceKey.Trim(), StringComparison.Ordinal)
+            || !string.Equals(observation.ScopeKey, observation.ScopeKey.Trim(), StringComparison.Ordinal)
+            || observation.SourceKey.Any(char.IsControl)
+            || observation.ScopeKey.Any(char.IsControl))
+            throw new ArgumentException("An exact company, source and scope are required.", nameof(observation));
     }
 }

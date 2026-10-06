@@ -132,6 +132,37 @@ public sealed class WorkIssueLifecycleV1Tests
             EvaluationA, DeliveryA));
     }
 
+    [Fact]
+    public void Persisted_projection_reuses_the_exact_store_result_without_reconciling_again()
+    {
+        var observation = Available(1, WorkDesiredStateV2.NeedsAction);
+        var persisted = WorkDesiredStateProtocolV2.Reconcile(null, observation);
+
+        var projected = WorkIssueLifecycleV1.ProjectPersisted(
+            persisted, observation, EvaluationA, DeliveryA);
+
+        Assert.Same(persisted, projected.Reconciliation);
+        Assert.Same(persisted.State, projected.Reconciliation.State);
+        Assert.Equal(CompanyA, projected.IssueKey.CompanyId);
+    }
+
+    [Fact]
+    public void Persisted_projection_refuses_missing_state_mismatched_identity_and_empty_ids()
+    {
+        var observation = Available(1, WorkDesiredStateV2.NeedsAction);
+        var appliedWithoutState = new WorkDesiredStateResultV2(WorkDesiredStateDecisionV2.Apply, null);
+        var foreign = WorkDesiredStateProtocolV2.Reconcile(
+            null, observation with { CompanyId = CompanyB });
+
+        Assert.Throws<ArgumentException>(() => WorkIssueLifecycleV1.ProjectPersisted(
+            appliedWithoutState, observation, EvaluationA, DeliveryA));
+        Assert.Throws<ArgumentException>(() => WorkIssueLifecycleV1.ProjectPersisted(
+            foreign, observation, EvaluationA, DeliveryA));
+        Assert.Throws<ArgumentException>(() => WorkIssueLifecycleV1.ProjectPersisted(
+            WorkDesiredStateProtocolV2.Reconcile(null, observation), observation,
+            default, DeliveryA));
+    }
+
     private static WorkDesiredStateObservationV2 Available(
         long ordinal, WorkDesiredStateV2 state) => new(
         CompanyA, "source-a", "instruction-a", ordinal,
