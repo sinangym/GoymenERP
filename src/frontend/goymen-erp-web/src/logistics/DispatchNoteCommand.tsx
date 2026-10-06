@@ -537,6 +537,7 @@ function DispatchNoteLifecycle({
         <form onSubmit={cancel} noValidate data-testid="logistics-dispatch-note-cancel-form">
           <fieldset disabled={frozen} className={styles.fieldset}>
             <legend>{T.cancel}</legend>
+            {note.eDispatchNumber === null ? null : <p className={styles.muted}>{T.cancelExternalNotice}</p>}
             <label htmlFor={reasonId}>{T.cancelReasonLabel}</label>
             <br />
             <textarea id={reasonId} value={reason} maxLength={CANCEL_REASON_MAX} rows={2} cols={48}

@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { Link } from 'react-router'
+import { salesDetailPath } from '../sales/capabilities'
 import { parseQuantityInput } from '../sales/wirePrimitives'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
 import {
@@ -99,7 +101,7 @@ function releaseCompletionText(outcome: Extract<AllocationReleaseOutcome, { type
  * Every rule (free stock, ownership, versions, the approved Sales line) is the server's; nothing here is final until
  * the server answers.
  */
-export function LabelAllocationPanel({ labelId, companyId, namespace, routeEntry, onChanged, startRelease = false }: {
+export function LabelAllocationPanel({ labelId, companyId, namespace, routeEntry, onChanged, canReadSalesOrder, startRelease = false }: {
   readonly labelId: string
   readonly companyId: string
   /** The shell context namespace and route entry the label detail read is keyed by: a reopen (e.g. an arrival from the
@@ -107,6 +109,8 @@ export function LabelAllocationPanel({ labelId, companyId, namespace, routeEntry
   readonly namespace: string
   readonly routeEntry: number
   readonly onChanged: () => void
+  /** Advertised by the current shell context; the Sales route performs its own authorization. */
+  readonly canReadSalesOrder: boolean
   /** Opened from the ST-01 "Tahsisi serbest bırak" row action: the release form of the ONE active allocation opens. */
   readonly startRelease?: boolean
 }) {
@@ -299,7 +303,10 @@ export function LabelAllocationPanel({ labelId, companyId, namespace, routeEntry
         <thead><tr><th>Tahsis</th><th>Sipariş satırı</th><th>Durum</th><th>Tahsisli / kalan</th><th>Gerekçe</th><th>Geçmiş</th></tr></thead>
         <tbody>{data.items.map((item) => <tr key={item.allocation.allocationId} data-testid={`inventory-allocation-${item.allocation.allocationId}`}>
           <td className={styles.mono}>{short(item.allocation.allocationId)}<br />sürüm {item.allocation.version}</td>
-          <td className={styles.mono}>{short(item.allocation.demandId)} / {short(item.allocation.demandLineId)}</td>
+          <td className={styles.mono}>{canReadSalesOrder && item.allocation.demandKind === 'sales.order-line' &&
+            item.allocation.companyId === companyId && item.allocation.labelId === labelId && isGuid(item.allocation.demandId)
+              ? <Link to={salesDetailPath(item.allocation.demandId)} aria-label="Satış siparişini aç">{short(item.allocation.demandId)}</Link>
+              : short(item.allocation.demandId)} / {short(item.allocation.demandLineId)}</td>
           <td>{ALLOCATION_STATUS_TEXT[item.allocation.status]}</td>
           <td>{item.allocation.allocatedKg} kg / {item.allocation.remainingKg} kg</td>
           <td>{item.allocation.reason}{item.releaseReason === null ? null : <><br />Serbest bırakma: {item.releaseReason}</>}</td>
