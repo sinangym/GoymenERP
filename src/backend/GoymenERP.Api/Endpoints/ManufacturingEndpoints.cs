@@ -2,10 +2,12 @@ using System.Globalization;
 using GoymenERP.Api.Errors;
 using GoymenERP.Api.Multitenancy;
 using GoymenERP.Api.OpenApi;
+using GoymenERP.Api.Shell;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Manufacturing.Application;
 using GoymenERP.Modules.Manufacturing.Domain.Common;
+using GoymenERP.Modules.Settings.Application.Contracts.V1;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Net.Http.Headers;
 
@@ -594,8 +596,9 @@ public static class ManufacturingEndpoints
         var environment = httpContext.RequestServices.GetService<IHostEnvironment>();
         var configuration = httpContext.RequestServices.GetService<IConfiguration>();
         if (environment?.IsEnvironment("Testing") != true
-            || !string.Equals(configuration?["BrowserSuiteFixture:Host"], "CONFIRMED", StringComparison.Ordinal)
-            || !string.Equals(configuration?["BrowserSuiteApi:Profile"], "mfg", StringComparison.Ordinal))
+            || !string.Equals(configuration?["BrowserSuiteApi:Profile"], "mfg", StringComparison.Ordinal)
+            || httpContext.RequestServices.GetService<ISettingsManufacturingToleranceProviderV1>()
+                is not C01E2eManufacturingToleranceFixtureProvider)
         {
             return;
         }

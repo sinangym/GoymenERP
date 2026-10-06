@@ -1,7 +1,12 @@
 using System.Text.Json;
 using GoymenERP.Api.Shell;
 using GoymenERP.BrowserSuiteFixtureTool.Shared;
+using GoymenERP.Modules.Identity.Domain.Assignments;
+using GoymenERP.Modules.Identity.Infrastructure.Fixtures;
+using GoymenERP.Modules.Product.Application.Contracts;
 using GoymenERP.Modules.Product.Infrastructure.Fixtures;
+using GoymenERP.Modules.Product.Infrastructure.Persistence;
+using GoymenERP.Modules.Settings.Application;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace GoymenERP.BrowserSuiteFixtureTool.Suites.Mfg;
@@ -17,9 +22,10 @@ namespace GoymenERP.BrowserSuiteFixtureTool.Suites.Mfg;
 /// its seeded code; no id is invented.</item>
 /// <item>The plan, order and parent roll ids are fixed synthetic ids and every step's idempotency key is
 /// deterministic, so a re-run of the fixture is a replay, never a second plan or order.</item>
-/// <item>The parent roll is recorded through Inventory's real opening-count command from Product's gated
-/// browser candidate and the work centre's real Organization location. The plan carries the resulting
-/// label version; no SQL or invented Inventory reference is used.</item>
+/// <item>The Product card is created, replayed, reopened and activated through Product's public API.
+/// The parent roll is then recorded through Inventory's real opening-count command at the work centre's
+/// real Organization location. The plan carries the resulting label version; no SQL or invented Inventory
+/// reference is used.</item>
 /// </list>
 /// The browser suite (tests/e2e/manufacturing-mfg) arranges its own orders for the write cases; this
 /// seeded order serves the reader case and proves the seed path end to end.
@@ -44,6 +50,12 @@ public sealed class MfgBrowserSeed : IBrowserSuiteFixture
     public static readonly Guid CustomerOpeningCountId = Guid.Parse("c3100000-0000-4000-8000-000000000003");
     public static readonly Guid CustomerPlanId = Guid.Parse("c1000000-0000-4000-8000-000000000002");
     public static readonly Guid CustomerOrderId = Guid.Parse("c2000000-0000-4000-8000-000000000002");
+    private static readonly Guid ProductIssuerUserId = Guid.Parse("b2000000-0000-4000-8000-000000000201");
+    private static readonly Guid ProductIssuerExternalIdentityId = Guid.Parse("b2100000-0000-4000-8000-000000000201");
+    private static readonly Guid ProductActorUserId = Guid.Parse("20000000-0000-0000-0000-000000000003");
+    private static readonly Guid SystemAdministratorRoleId = Guid.Parse("30000000-0000-0000-0000-000000000003");
+    private static readonly DateTimeOffset ProductAuthorityValidFrom =
+        new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
     public static readonly Guid OpeningLineId = Guid.Parse("c3200000-0000-4000-8000-000000000001");
     public static readonly Guid ParentRollLotId = Guid.Parse("c3300000-0000-4000-8000-000000000001");
     public const string ParentRollCode = "SYN-MFG-ROLL-1";
@@ -85,19 +97,8 @@ public sealed class MfgBrowserSeed : IBrowserSuiteFixture
         BrowserSuiteFixtureContext context,
         CancellationToken cancellationToken)
     {
-        await using (var registryScope = context.Services.CreateAsyncScope())
-        {
-            await registryScope.ServiceProvider.GetRequiredService<C01E2eProductTechnicalCardFixtureWriter>()
-                .EnsureAsync(cancellationToken);
-        }
-
-        ProductSalesCandidateFixtureOutput product;
-        await using (var productScope = context.Services.CreateAsyncScope())
-        {
-            product = await productScope.ServiceProvider
-                .GetRequiredService<C01E2eProductSalesCandidateFixtureWriter>()
-                .EnsureAsync(cancellationToken);
-        }
+        await EnsureProductAuthorityAsync(context, cancellationToken);
+        var product = await EnsureGenuineProductAsync(context, cancellationToken);
 
         var workCenters = await context.GetJsonAsync(
             OrganizationActor, CompanyGdc, "/api/v1/organization/work-centers", cancellationToken);
@@ -318,6 +319,30 @@ public sealed class MfgBrowserSeed : IBrowserSuiteFixture
             "customer-owned-plan",
             cancellationToken);
         RequireString(customerPlan, "status", "Draft", "Approved");
+        var customerTechnical = customerPlan.GetProperty("inputs")[0].GetProperty("technicalSnapshot");
+        var customerFamily = customerTechnical.GetProperty("family");
+        var customerTemplate = customerTechnical.GetProperty("template");
+        var customerUnit = customerTechnical.GetProperty("unitKg");
+        if (customerTechnical.GetProperty("productId").GetGuid() != product.ProductId
+            || customerTechnical.GetProperty("productVersion").GetString() != product.ProductVersion
+            || customerFamily.GetProperty("familyId").GetGuid()
+                != ProductInitialTechnicalDefinitionV1.HotRolledSlitCoilFamilyId
+            || customerFamily.GetProperty("sourceRevision").GetString()
+                != ProductInitialTechnicalDefinitionV1.SourceRef
+            || customerTemplate.GetProperty("templateId").GetGuid()
+                != ProductInitialTechnicalDefinitionV1.TemplateId
+            || customerTemplate.GetProperty("templateVersion").GetString() != "1"
+            || customerTemplate.GetProperty("sourceRevision").GetString()
+                != ProductInitialTechnicalDefinitionV1.SourceRef
+            || customerUnit.GetProperty("unitId").GetGuid()
+                != ApprovedUnitProfileCatalog.GdcKilogramV1.UnitId
+            || customerUnit.GetProperty("profileId").GetGuid()
+                != ApprovedUnitProfileCatalog.GdcKilogramV1.ProfileId
+            || customerUnit.GetProperty("profileVersion").GetString() != "1")
+        {
+            throw new InvalidOperationException(
+                "The customer-owned plan did not capture the exact genuine Product and Settings snapshot.");
+        }
         var approvedCustomerPlan = await context.PostJsonAsync(
             RecorderActor,
             CompanyGdc,
@@ -481,6 +506,124 @@ public sealed class MfgBrowserSeed : IBrowserSuiteFixture
             ["outputInitialBlock"] = outputPosition.GetProperty("block").GetString()!,
         };
     }
+
+    private static async Task EnsureProductAuthorityAsync(
+        BrowserSuiteFixtureContext context,
+        CancellationToken cancellationToken)
+    {
+        var grants = new[]
+        {
+            (ProductMasterOperation.Read,
+                Guid.Parse("b5000000-0000-4000-8000-00000000f001"),
+                Guid.Parse("b5100000-0000-4000-8000-00000000f001")),
+            (ProductMasterOperation.DraftCreate,
+                Guid.Parse("b5000000-0000-4000-8000-00000000f002"),
+                Guid.Parse("b5100000-0000-4000-8000-00000000f002")),
+            (ProductMasterOperation.Activate,
+                Guid.Parse("b5000000-0000-4000-8000-00000000f003"),
+                Guid.Parse("b5100000-0000-4000-8000-00000000f003")),
+        };
+        await using var scope = context.Services.CreateAsyncScope();
+        var assignments = scope.ServiceProvider.GetRequiredService<C01E2eProductMasterAssignmentFixtureWriter>();
+        foreach (var (operation, assignmentId, decisionId) in grants)
+        {
+            await assignments.EnsureAsync(new ProductMasterAssignmentFixtureRow(
+                assignmentId,
+                ProductActorUserId,
+                SystemAdministratorRoleId,
+                operation,
+                ProductIssuerUserId,
+                ProductIssuerExternalIdentityId,
+                decisionId,
+                context.Label($"MFG genuine Product {operation}"),
+                ProductAuthorityValidFrom), cancellationToken);
+        }
+    }
+
+    private static async Task<GenuineProduct> EnsureGenuineProductAsync(
+        BrowserSuiteFixtureContext context,
+        CancellationToken cancellationToken)
+    {
+        var draft = new CreateProductDraftRequest(
+            "SENTETIK browser-suite:mfg S235JR 1 mm x 1000 mm kaplamasiz sac",
+            ProductInitialCodeGroupV1.SacGroupId,
+            FamilyId: ProductInitialTechnicalDefinitionV1.HotRolledSlitCoilFamilyId,
+            References: new ProductReferences(
+                ProductInitialTechnicalDefinitionV1.TemplateId,
+                "1",
+                new Dictionary<string, JsonElement>(StringComparer.Ordinal)
+                {
+                    ["thickness-mm"] = JsonSerializer.SerializeToElement(1m),
+                    ["width-mm"] = JsonSerializer.SerializeToElement(1000m),
+                    ["steel-grade"] = JsonSerializer.SerializeToElement("S235JR"),
+                    ["coating"] = JsonSerializer.SerializeToElement("uncoated"),
+                },
+                new ProductUnitReferences(
+                    Stock: ApprovedUnitProfileCatalog.GdcKilogramV1.UnitId,
+                    Sales: ApprovedUnitProfileCatalog.GdcKilogramV1.UnitId)));
+
+        var created = await context.PostJsonAsync(
+            CariActor, CompanyGdc, ProductApiV1.BasePath, draft, "genuine-product-create", cancellationToken);
+        if (created.GetProperty("isReplay").GetBoolean())
+        {
+            throw new InvalidOperationException("The first genuine Product create unexpectedly replayed.");
+        }
+
+        var createdCard = created.GetProperty("card");
+        var createdProduct = createdCard.GetProperty("product");
+        var productId = createdProduct.GetProperty("id").GetGuid();
+        if (productId == Guid.Empty
+            || createdProduct.GetProperty("code").GetString() != "SAC-1"
+            || createdProduct.GetProperty("lifecycle").GetString() != "Draft"
+            || createdProduct.GetProperty("version").GetString() != "1")
+        {
+            throw new InvalidOperationException("The genuine Product draft answer is not the exact SAC-1 card.");
+        }
+
+        var replay = await context.PostJsonAsync(
+            CariActor, CompanyGdc, ProductApiV1.BasePath, draft, "genuine-product-create", cancellationToken);
+        if (!replay.GetProperty("isReplay").GetBoolean()
+            || replay.GetProperty("card").GetProperty("product").GetProperty("id").GetGuid() != productId)
+        {
+            throw new InvalidOperationException("The genuine Product create did not replay its exact card.");
+        }
+
+        var reopenedDraft = await context.GetJsonAsync(
+            CariActor, CompanyGdc, $"{ProductApiV1.BasePath}/{productId:D}", cancellationToken);
+        if (reopenedDraft.GetProperty("product").GetProperty("version").GetString() != "1")
+        {
+            throw new InvalidOperationException("The genuine Product draft did not reopen at version 1.");
+        }
+
+        var activated = await context.PostJsonAsync(
+            CariActor,
+            CompanyGdc,
+            $"{ProductApiV1.BasePath}/{productId:D}/activation",
+            new ActivateProductRequest("1"),
+            "genuine-product-activate",
+            cancellationToken);
+        var activeProduct = activated.GetProperty("card").GetProperty("product");
+        if (activeProduct.GetProperty("id").GetGuid() != productId
+            || activeProduct.GetProperty("lifecycle").GetString() != "Active"
+            || activeProduct.GetProperty("version").GetString() != "2")
+        {
+            throw new InvalidOperationException("The genuine Product did not activate at version 2.");
+        }
+
+        var reopenedActive = await context.GetJsonAsync(
+            CariActor, CompanyGdc, $"{ProductApiV1.BasePath}/{productId:D}", cancellationToken);
+        if (reopenedActive.GetProperty("product").GetProperty("lifecycle").GetString() != "Active"
+            || reopenedActive.GetProperty("product").GetProperty("version").GetString() != "2"
+            || reopenedActive.GetProperty("references").GetProperty("templateId").GetGuid()
+                != ProductInitialTechnicalDefinitionV1.TemplateId)
+        {
+            throw new InvalidOperationException("The genuine active Product did not reopen with its template.");
+        }
+
+        return new GenuineProduct(productId, "2");
+    }
+
+    private sealed record GenuineProduct(Guid ProductId, string ProductVersion);
 
     private static ParentRollFixture Roll(int suffix) => new(
         Guid.Parse($"c3000000-0000-4000-8000-{suffix:D12}"),

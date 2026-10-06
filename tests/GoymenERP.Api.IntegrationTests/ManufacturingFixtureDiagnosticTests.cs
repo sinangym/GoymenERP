@@ -1,5 +1,9 @@
 using GoymenERP.Api.Endpoints;
+using GoymenERP.Api.Shell;
+using GoymenERP.BuildingBlocks.Multitenancy;
+using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Manufacturing.Application;
+using GoymenERP.Modules.Settings.Application.Contracts.V1;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -27,7 +31,7 @@ public sealed class ManufacturingFixtureDiagnosticTests
     [Fact]
     public void Emits_phase_only_inside_exact_testing_mfg_fixture_gate()
     {
-        var gated = Context("Testing", "CONFIRMED", "mfg");
+        var gated = Context("Testing", "mfg", fixtureGate: true);
         ManufacturingEndpoints.SetFixtureDiagnostic(
             gated, ManufacturingApiStatus.Unavailable, "counterparty_provider_unavailable");
         Assert.Equal("mfg_plan_party_account",
@@ -35,9 +39,9 @@ public sealed class ManufacturingFixtureDiagnosticTests
 
         foreach (var context in new[]
                  {
-                     Context("Development", "CONFIRMED", "mfg"),
-                     Context("Testing", "UNCONFIRMED", "mfg"),
-                     Context("Testing", "CONFIRMED", "c01"),
+                     Context("Development", "mfg", fixtureGate: true),
+                     Context("Testing", "mfg", fixtureGate: false),
+                     Context("Testing", "c01", fixtureGate: true),
                  })
         {
             ManufacturingEndpoints.SetFixtureDiagnostic(
@@ -46,25 +50,30 @@ public sealed class ManufacturingFixtureDiagnosticTests
                 ManufacturingEndpoints.FixtureDiagnosticHeaderName));
         }
 
-        var success = Context("Testing", "CONFIRMED", "mfg");
+        var success = Context("Testing", "mfg", fixtureGate: true);
         ManufacturingEndpoints.SetFixtureDiagnostic(
             success, ManufacturingApiStatus.Ok, "counterparty_provider_unavailable");
         Assert.False(success.Response.Headers.ContainsKey(
             ManufacturingEndpoints.FixtureDiagnosticHeaderName));
     }
 
-    private static DefaultHttpContext Context(string environment, string host, string profile)
+    private static DefaultHttpContext Context(string environment, string profile, bool fixtureGate)
     {
-        var services = new ServiceCollection()
+        var registrations = new ServiceCollection()
             .AddSingleton<IHostEnvironment>(new TestEnvironment(environment))
             .AddSingleton<IConfiguration>(new ConfigurationBuilder().AddInMemoryCollection(
                 new Dictionary<string, string?>
                 {
-                    ["BrowserSuiteFixture:Host"] = host,
                     ["BrowserSuiteApi:Profile"] = profile,
-                }).Build())
-            .BuildServiceProvider();
-        return new DefaultHttpContext { RequestServices = services };
+                }).Build());
+        if (fixtureGate)
+        {
+            var identity = new TestIdentity();
+            registrations.AddSingleton<ISettingsManufacturingToleranceProviderV1>(
+                new C01E2eManufacturingToleranceFixtureProvider(identity, identity));
+        }
+
+        return new DefaultHttpContext { RequestServices = registrations.BuildServiceProvider() };
     }
 
     private sealed class TestEnvironment(string name) : IHostEnvironment
@@ -73,5 +82,16 @@ public sealed class ManufacturingFixtureDiagnosticTests
         public string ApplicationName { get; set; } = "fixture-diagnostic-tests";
         public string ContentRootPath { get; set; } = AppContext.BaseDirectory;
         public IFileProvider ContentRootFileProvider { get; set; } = new NullFileProvider();
+    }
+
+    private sealed class TestIdentity : ICompanyContext, ICurrentUser
+    {
+        public bool IsResolved => true;
+        public Guid CompanyId => Guid.Parse("10000000-0000-0000-0000-000000000001");
+        public bool IsAuthenticated => true;
+        public string UserId => "fixture-diagnostic-user";
+        public IReadOnlySet<Guid> AllowedCompanyIds => new HashSet<Guid> { CompanyId };
+        public bool CanAccessCompany(Guid companyId) => companyId == CompanyId;
+        public void Set(Guid companyId) => throw new NotSupportedException();
     }
 }
