@@ -41,6 +41,128 @@ class AllowlistTests(unittest.TestCase):
         self.assertTrue(set(validator.READ_ONLY_SUITES) <= set(validator.SUITES))
 
 
+class U02InventoryRecorderContractTests(unittest.TestCase):
+    @staticmethod
+    def environment() -> dict[str, str]:
+        source = (ROOT / "infra" / "browser-suites" / "u02.override.yml").read_text(encoding="utf-8")
+        environment = {}
+        for line in source.splitlines():
+            match = re.fullmatch(r"\s{6}([A-Za-z0-9_]+):\s*(.+)", line)
+            if match is not None:
+                raw = match.group(2)
+                environment[match.group(1)] = json.loads(raw) if raw.startswith('"') else raw
+        return environment
+
+    def test_exact_recorder_identity_permissions_and_existing_issuer(self):
+        environment = self.environment()
+        self.assertEqual(8, validator.MAX_SUITE_ACTORS)
+        self.assertNotIn("u02", validator.SUITE_ACTOR_LIMITS)
+        self.assertEqual(
+            ("identity.profile.read", "inventory.opening-stock.record",
+             "product.operational-selection.read", "inventory.labels.read", "inventory.balances.read"),
+            validator.SUITE_IDENTITY_PERMISSIONS["u02"],
+        )
+        self.assertEqual(
+            "b2000000-0000-4000-8000-000000000201",
+            environment["ProductRuntime__IssuerLocalUserId"],
+        )
+        self.assertEqual("u02-inventory-recorder", environment["BootstrapIdentity__Users__3__UserId"])
+        self.assertEqual("b2000000-0000-4000-8000-000000000220", environment["IdentitySeed__Users__7__Id"])
+        self.assertEqual("b2100000-0000-4000-8000-000000000220",
+                         environment["IdentitySeed__Users__7__ExternalIdentities__0__Id"])
+        self.assertEqual("b3000000-0000-4000-8000-000000000220", environment["IdentitySeed__Roles__6__Id"])
+        self.assertEqual("b4000000-0000-4000-8000-000000000220",
+                         environment["IdentitySeed__Assignments__8__Id"])
+        validator.validate_suite_extensions("u02", environment)
+
+    def test_recorder_and_activator_roles_refuse_union_foreign_company_and_issuer_drift(self):
+        environment = self.environment()
+        mutations = (
+            ("recorder privilege union", {"IdentitySeed__Roles__6__Permissions__4": "identity.profile.read"}),
+            ("activator privilege union", {"IdentitySeed__Roles__5__Permissions__1": "inventory.labels.read"}),
+            ("recorder role swap", {"IdentitySeed__Assignments__8__RoleId":
+                                     "b3000000-0000-4000-8000-000000000210"}),
+            ("foreign company", {"IdentitySeed__Assignments__8__CompanyId":
+                                  "10000000-0000-0000-0000-000000000002",
+                                  "IdentitySeed__Assignments__8__Scopes__0__Id":
+                                  "10000000-0000-0000-0000-000000000002"}),
+            ("issuer drift", {"ProductRuntime__IssuerLocalUserId":
+                              "b2000000-0000-4000-8000-000000000202",
+                              "IdentitySeed__Users__5__Id":
+                              "b2000000-0000-4000-8000-000000000202"}),
+            ("unlisted permission", {"IdentitySeed__Roles__6__Permissions__4": "documents.files.read"}),
+        )
+        for label, changed in mutations:
+            with self.subTest(case=label):
+                candidate = dict(environment)
+                candidate.update(changed)
+                with self.assertRaises(validator.ContractError):
+                    validator.validate_suite_extensions("u02", candidate)
+        missing_last = dict(environment)
+        missing_last.pop("IdentitySeed__Roles__6__Permissions__3")
+        with self.assertRaises(validator.ContractError):
+            validator.validate_suite_extensions("u02", missing_last)
+
+    def test_issuer_only_remains_valid_but_inventory_permission_requires_complete_recorder(self):
+        environment = self.environment()
+        issuer_only = {
+            key: value for key, value in environment.items()
+            if key.startswith("ProductRuntime__Issuer") or key.startswith("IdentitySeed__Users__5__")
+        }
+        validator.validate_suite_extensions("u02", issuer_only)
+        prior_activator = {
+            key: value for key, value in environment.items()
+            if not key.startswith(("BootstrapIdentity__Users__3__", "IdentitySeed__Users__7__",
+                                   "IdentitySeed__Roles__6__", "IdentitySeed__Assignments__8__"))
+        }
+        validator.validate_suite_extensions("u02", prior_activator)
+        forbidden = dict(prior_activator)
+        forbidden["IdentitySeed__Roles__5__Permissions__1"] = "inventory.labels.read"
+        with self.assertRaises(validator.ContractError):
+            validator.validate_suite_extensions("u02", forbidden)
+
+        unknown_role = dict(environment)
+        unknown_role.update({
+            "IdentitySeed__Roles__7__Id": "b3000000-0000-4000-8000-000000000230",
+            "IdentitySeed__Roles__7__Code": "BROWSER_U02_EXTRA",
+            "IdentitySeed__Roles__7__Name": "SENTETIK browser-suite:u02 extra role",
+            "IdentitySeed__Roles__7__IsSystem": "false",
+            "IdentitySeed__Roles__7__Permissions__0": "inventory.labels.read",
+        })
+        with self.assertRaises(validator.ContractError):
+            validator.validate_suite_extensions("u02", unknown_role)
+
+    def test_fixture_output_keeps_six_keys_and_adds_only_exact_recorder(self):
+        seed = {
+            "companyId": "10000000-0000-0000-0000-000000000001",
+            "codeGroupId": "b1000000-0000-4000-8000-000000000001",
+            "technicalFamilyId": "b1000000-0000-4000-8000-000000000002",
+            "authorizedActor": "u02-authorized",
+            "unauthorizedActor": "u02-unauthorized",
+            "activatorActor": "u02-activator",
+            "inventoryRecorderActor": "u02-inventory-recorder",
+        }
+        self.assertEqual(frozenset(seed), validator.SUITE_FIXTURE_OUTPUTS["u02"])
+        self.assertEqual(seed, json.loads(validator.seed_export("u02", seed).split("=", 1)[1]))
+        for label, changed in (
+            ("missing recorder", {"inventoryRecorderActor": None}),
+            ("duplicate actor", {"inventoryRecorderActor": "u02-activator"}),
+            ("foreign company", {"companyId": "10000000-0000-0000-0000-000000000002"}),
+            ("actor as family", {"technicalFamilyId": "u02-authorized"}),
+            ("unhashable actor", {"authorizedActor": []}),
+            ("extra location", {"eligibleLocationId": "10000000-0000-0000-0000-000000000001"}),
+        ):
+            with self.subTest(case=label):
+                candidate = dict(seed)
+                candidate.update(changed)
+                with self.assertRaises(validator.ContractError):
+                    validator.seed_export("u02", candidate)
+        missing = dict(seed)
+        missing.pop("inventoryRecorderActor")
+        with self.assertRaises(validator.ContractError):
+            validator.seed_export("u02", missing)
+
+
 class PrivacyTests(unittest.TestCase):
     def _root(self, files: dict[str, bytes]) -> tempfile.TemporaryDirectory:
         directory = tempfile.TemporaryDirectory()
@@ -398,6 +520,7 @@ class WorkflowTests(unittest.TestCase):
                 "inventory.balances.read",
                 "inventory.opening-stock.record",
                 "product.operational-selection.read",
+                "counterparty.parties.read",
             ),
             validator.SUITE_IDENTITY_PERMISSIONS["mfg"],
         )

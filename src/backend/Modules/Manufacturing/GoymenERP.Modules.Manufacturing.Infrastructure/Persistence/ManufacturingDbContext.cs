@@ -3,6 +3,7 @@ using GoymenERP.Modules.Audit.Domain.Events;
 using GoymenERP.Modules.Audit.Infrastructure.Persistence;
 using GoymenERP.Modules.Manufacturing.Application;
 using GoymenERP.Modules.Manufacturing.Domain.Orders;
+using GoymenERP.Modules.Manufacturing.Domain.Plans;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -30,6 +31,43 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
     : DbContext(options)
 {
     public const string Schema = "manufacturing";
+
+    private const string TechnicalSnapshotCheck =
+        "([TechnicalProductId] IS NULL AND [TechnicalProductVersion] IS NULL "
+        + "AND [TechnicalFamilyId] IS NULL AND [TechnicalFamilyCode] IS NULL AND [TechnicalFamilySourceRevision] IS NULL "
+        + "AND [TechnicalTemplateId] IS NULL AND [TechnicalTemplateVersion] IS NULL AND [TechnicalTemplateCode] IS NULL "
+        + "AND [TechnicalTemplateSourceRevision] IS NULL AND [TechnicalKilogramUnitCompanyId] IS NULL "
+        + "AND [TechnicalKilogramUnitId] IS NULL AND [TechnicalKilogramUnitCode] IS NULL "
+        + "AND [TechnicalKilogramProfileId] IS NULL AND [TechnicalKilogramProfileVersion] IS NULL "
+        + "AND [TechnicalEffectiveOn] IS NULL AND [TechnicalThicknessMm] IS NULL AND [TechnicalWidthMm] IS NULL) OR "
+        + "([TechnicalProductId] IS NOT NULL AND [TechnicalProductId] <> '00000000-0000-0000-0000-000000000000' "
+        + "AND [TechnicalProductVersion] IS NOT NULL AND LEN([TechnicalProductVersion]) > 0 "
+        + "AND [TechnicalFamilyId] IS NOT NULL AND [TechnicalFamilyId] <> '00000000-0000-0000-0000-000000000000' "
+        + "AND [TechnicalFamilyCode] IS NOT NULL AND LEN([TechnicalFamilyCode]) > 0 "
+        + "AND [TechnicalFamilySourceRevision] IS NOT NULL AND LEN([TechnicalFamilySourceRevision]) > 0 "
+        + "AND [TechnicalTemplateId] IS NOT NULL AND [TechnicalTemplateId] <> '00000000-0000-0000-0000-000000000000' "
+        + "AND [TechnicalTemplateVersion] IS NOT NULL AND LEN([TechnicalTemplateVersion]) > 0 "
+        + "AND [TechnicalTemplateCode] IS NOT NULL AND LEN([TechnicalTemplateCode]) > 0 "
+        + "AND [TechnicalTemplateSourceRevision] IS NOT NULL AND LEN([TechnicalTemplateSourceRevision]) > 0 "
+        + "AND [TechnicalKilogramUnitCompanyId] IS NOT NULL "
+        + "AND [TechnicalKilogramUnitCompanyId] = [CompanyId] "
+        + "AND [TechnicalKilogramUnitId] IS NOT NULL AND [TechnicalKilogramUnitId] <> '00000000-0000-0000-0000-000000000000' "
+        + "AND [TechnicalKilogramUnitCode] IS NOT NULL AND LEN([TechnicalKilogramUnitCode]) > 0 "
+        + "AND [TechnicalKilogramProfileId] IS NOT NULL AND [TechnicalKilogramProfileId] <> '00000000-0000-0000-0000-000000000000' "
+        + "AND [TechnicalKilogramProfileVersion] IS NOT NULL AND LEN([TechnicalKilogramProfileVersion]) > 0 "
+        + "AND [TechnicalEffectiveOn] IS NOT NULL "
+        + "AND [TechnicalThicknessMm] IS NOT NULL AND [TechnicalThicknessMm] > 0 "
+        + "AND [TechnicalWidthMm] IS NOT NULL AND [TechnicalWidthMm] > 0)";
+
+    private const string CommercialContextCheck =
+        "([CommercialPartyId] IS NULL AND [CommercialCompanyPartyAccountId] IS NULL "
+        + "AND [CommercialPartyVersion] IS NULL AND [CommercialAccountVersion] IS NULL) OR "
+        + "([CommercialPartyId] IS NOT NULL "
+        + "AND [CommercialPartyId] <> '00000000-0000-0000-0000-000000000000' "
+        + "AND [CommercialCompanyPartyAccountId] IS NOT NULL "
+        + "AND [CommercialCompanyPartyAccountId] <> '00000000-0000-0000-0000-000000000000' "
+        + "AND [CommercialPartyVersion] IS NOT NULL AND DATALENGTH([CommercialPartyVersion]) > 0 "
+        + "AND [CommercialAccountVersion] IS NOT NULL AND DATALENGTH([CommercialAccountVersion]) > 0)";
 
     internal DbSet<PlanRow> Plans => Set<PlanRow>();
 
@@ -140,10 +178,13 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
             table.HasCheckConstraint("CK_PlanInputs_Sequence", "[Sequence] >= 1");
             table.HasCheckConstraint("CK_PlanInputs_LabelVersion",
                 "[ExpectedLabelVersion] IS NULL OR [ExpectedLabelVersion] >= 1");
+            table.HasCheckConstraint("CK_PlanInputs_TechnicalSnapshot", TechnicalSnapshotCheck);
+            table.HasCheckConstraint("CK_PlanInputs_CommercialContext", CommercialContextCheck);
         });
         entity.HasKey(x => new { x.CompanyId, x.PlanId, x.ParentRollId });
         entity.HasIndex(x => new { x.CompanyId, x.PlanId, x.Sequence }).IsUnique();
         entity.Property(x => x.PlannedKg).HasPrecision(18, 3);
+        ConfigureTechnicalSnapshot(entity);
         entity.HasOne<PlanRow>().WithMany()
             .HasForeignKey(x => new { x.CompanyId, x.PlanId })
             .HasPrincipalKey(x => new { x.CompanyId, x.Id })
@@ -207,15 +248,42 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
             table.HasCheckConstraint("CK_PlanRevisionInputs_Mass", "[PlannedKg] > 0");
             table.HasCheckConstraint("CK_PlanRevisionInputs_Sequence", "[Sequence] >= 1");
             table.HasCheckConstraint("CK_PlanRevisionInputs_LabelVersion", "[ExpectedLabelVersion] >= 1");
+            table.HasCheckConstraint("CK_PlanRevisionInputs_TechnicalSnapshot", TechnicalSnapshotCheck);
+            table.HasCheckConstraint("CK_PlanRevisionInputs_CommercialContext", CommercialContextCheck);
         });
         input.HasKey(x => new { x.CompanyId, x.PlanId, x.RevisionNo, x.ParentRollId });
         input.HasIndex(x => new { x.CompanyId, x.PlanId, x.RevisionNo, x.Sequence }).IsUnique();
         input.Property(x => x.PlannedKg).HasPrecision(18, 3);
+        ConfigureTechnicalSnapshot(input);
         input.HasOne<PlanRevisionRow>().WithMany()
             .HasForeignKey(x => new { x.CompanyId, x.PlanId, x.RevisionNo })
             .HasPrincipalKey(x => new { x.CompanyId, x.PlanId, x.RevisionNo })
             .OnDelete(DeleteBehavior.Restrict);
         input.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
+    private static void ConfigureTechnicalSnapshot<TRow>(EntityTypeBuilder<TRow> entity)
+        where TRow : class, IPlanTechnicalSnapshotRow
+    {
+        entity.Property(x => x.TechnicalProductVersion)
+            .HasMaxLength(PlanTechnicalParameterSnapshotV1.MaximumProductVersionLength).IsUnicode(false);
+        entity.Property(x => x.TechnicalFamilyCode)
+            .HasMaxLength(PlanTechnicalParameterSnapshotV1.MaximumCodeLength).IsUnicode(false);
+        entity.Property(x => x.TechnicalFamilySourceRevision)
+            .HasMaxLength(PlanTechnicalParameterSnapshotV1.MaximumRevisionLength).IsUnicode(false);
+        entity.Property(x => x.TechnicalTemplateVersion)
+            .HasMaxLength(PlanTechnicalParameterSnapshotV1.MaximumRevisionLength).IsUnicode(false);
+        entity.Property(x => x.TechnicalTemplateCode)
+            .HasMaxLength(PlanTechnicalParameterSnapshotV1.MaximumCodeLength).IsUnicode(false);
+        entity.Property(x => x.TechnicalTemplateSourceRevision)
+            .HasMaxLength(PlanTechnicalParameterSnapshotV1.MaximumRevisionLength).IsUnicode(false);
+        entity.Property(x => x.TechnicalKilogramUnitCode)
+            .HasMaxLength(PlanTechnicalParameterSnapshotV1.MaximumCodeLength).IsUnicode(false);
+        entity.Property(x => x.TechnicalKilogramProfileVersion)
+            .HasMaxLength(PlanTechnicalParameterSnapshotV1.MaximumRevisionLength).IsUnicode(false);
+        entity.Property(x => x.TechnicalEffectiveOn).HasColumnType("date");
+        entity.Property(x => x.TechnicalThicknessMm).HasPrecision(18, 3);
+        entity.Property(x => x.TechnicalWidthMm).HasPrecision(18, 3);
     }
 
     private void ConfigureOrders(ModelBuilder modelBuilder)
@@ -262,6 +330,7 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
             table.HasCheckConstraint("CK_OrderInputs_Sequence", "[Sequence] >= 1");
             table.HasCheckConstraint("CK_OrderInputs_LabelVersion",
                 "[ExpectedLabelVersion] IS NULL OR [ExpectedLabelVersion] >= 1");
+            table.HasCheckConstraint("CK_OrderInputs_CommercialContext", CommercialContextCheck);
         });
         entity.HasKey(x => new { x.CompanyId, x.OrderId, x.ParentRollId });
         entity.HasIndex(x => new { x.CompanyId, x.OrderId, x.Sequence }).IsUnique();

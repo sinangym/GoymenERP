@@ -116,6 +116,68 @@ public sealed class PurchasingHttpAcceptanceTests(GoymenErpApiFactory factory) :
     }
 
     [Fact]
+    public async Task Order_detail_exposes_only_the_ordered_immutable_acceptance_history()
+    {
+        var first = Guid.Parse("61000000-0000-0000-0000-000000000001");
+        var second = Guid.Parse("61000000-0000-0000-0000-000000000002");
+        var firstAt = new DateTimeOffset(2026, 10, 5, 9, 0, 0, TimeSpan.Zero);
+        var baseDetail = OrderDetail(PurchaseOrderId, "Approved", "5");
+        var line = Assert.Single(baseDetail.Lines).LineId;
+        var detail = baseDetail with
+        {
+            Acceptances =
+            [
+                new PurchaseOrderAcceptanceHistoryView(first, line, "40", firstAt),
+                new PurchaseOrderAcceptanceHistoryView(second, line, "25", firstAt.AddMinutes(1)),
+            ],
+        };
+        var service = new StubService { GetOrder = _ => Task.FromResult(detail) };
+        using var host = CreateHost(service);
+        using var client = CreateClient(host);
+
+        using var response = await client.GetAsync($"{PurchasingApiV1.OrdersPath}/{PurchaseOrderId:D}");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        AssertPrivateNoStore(response);
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(new[] { "order", "lines", "acceptances" }, body.RootElement.EnumerateObject().Select(property => property.Name));
+        var acceptances = body.RootElement.GetProperty("acceptances");
+        Assert.Equal(2, acceptances.GetArrayLength());
+        Assert.Equal(new[] { "acceptanceId", "lineId", "quantity", "recordedAtUtc" },
+            acceptances[0].EnumerateObject().Select(property => property.Name));
+        Assert.Equal((first, line, "40", firstAt),
+            (acceptances[0].GetProperty("acceptanceId").GetGuid(), acceptances[0].GetProperty("lineId").GetGuid(),
+                acceptances[0].GetProperty("quantity").GetString(), acceptances[0].GetProperty("recordedAtUtc").GetDateTimeOffset()));
+        Assert.Equal(second, acceptances[1].GetProperty("acceptanceId").GetGuid());
+        string payload = body.RootElement.GetRawText();
+        foreach (string forbidden in new[] { "price", "currency", "tax", "payment", "schedule", "invoice", "openItem" })
+        {
+            Assert.DoesNotContain(forbidden, payload, StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
+    [Theory]
+    [InlineData(404, "not_found")]
+    [InlineData(403, "forbidden")]
+    [InlineData(503, "service_unavailable")]
+    public async Task Order_detail_failures_release_no_acceptance_history(int status, string code)
+    {
+        var protectedAcceptance = Guid.Parse("63000000-0000-0000-0000-000000000001");
+        var service = new StubService { GetOrder = _ => throw new PurchasingServiceException(status, code) };
+        using var host = CreateHost(service);
+        using var client = CreateClient(host);
+
+        using var response = await client.GetAsync($"{PurchasingApiV1.OrdersPath}/{PurchaseOrderId:D}");
+
+        Assert.Equal((HttpStatusCode)status, response.StatusCode);
+        AssertPrivateNoStore(response);
+        string payload = await response.Content.ReadAsStringAsync();
+        Assert.DoesNotContain(PurchaseOrderId.ToString(), payload, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(protectedAcceptance.ToString(), payload, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("acceptances", payload, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task A_missing_key_a_wrong_media_type_and_a_loose_body_are_refused_before_the_service()
     {
         var service = new StubService();
@@ -307,6 +369,7 @@ public sealed class PurchasingHttpAcceptanceTests(GoymenErpApiFactory factory) :
         public Func<Task<PurchaseRequestResponse>> Submit { get; set; } = () => throw new InvalidOperationException("not expected");
         public Func<Task<PurchaseOrderResponse>> CreateOrder { get; set; } = () => throw new InvalidOperationException("not expected");
         public Func<Task<PurchaseOrderResponse>> Approve { get; set; } = () => throw new InvalidOperationException("not expected");
+        public Func<Guid, Task<PurchaseOrderDetailView>> GetOrder { get; set; } = _ => throw new InvalidOperationException("not expected");
         public Func<Guid, Guid, Task<PurchaseGoodsReceiptQuantityComparisonV1>> Comparison { get; set; }
             = (_, _) => throw new InvalidOperationException("not expected");
 
@@ -347,8 +410,11 @@ public sealed class PurchasingHttpAcceptanceTests(GoymenErpApiFactory factory) :
             return Approve();
         }
 
-        public Task<PurchaseOrderDetailView> GetOrderDetailAsync(Guid orderId, CancellationToken cancellationToken = default) =>
-            throw new PurchasingServiceException(404, "not_found");
+        public Task<PurchaseOrderDetailView> GetOrderDetailAsync(Guid orderId, CancellationToken cancellationToken = default)
+        {
+            Calls++;
+            return GetOrder(orderId);
+        }
 
         public Task<PurchaseOrderListResponse> GetOrderListAsync(PurchaseOrderListQuery query, CancellationToken cancellationToken = default) =>
             Task.FromResult(new PurchaseOrderListResponse([], null));

@@ -15,7 +15,7 @@ import type { WorkCenterSummary } from '../organization/contract'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
 import { isKilogramText, type ProductionPlanView } from './contract'
 import { PLAN_EDIT_TEXT } from './planEditText'
-import type { PlanRevision } from './planRevisionContract'
+import type { CapturedPlanCommercialContext, PlanRevision } from './planRevisionContract'
 import type { PlanTargetBasis, RevisePlanRequest } from './planCommandApi'
 import { fetchParentRollCandidates, type ParentRollCandidate, type ParentRollCandidates } from './planReferences'
 import { PlanPreviewPanel } from './PlanPreviewPanel'
@@ -32,6 +32,8 @@ interface EditRow {
   /** Known only for a roll added from the candidate read in this form. */
   readonly labelCode: string | null
   readonly labelVersion: string | null
+  /** Immutable commercial ownership/account provenance captured when this planned input was accepted. */
+  readonly commercialContext: CapturedPlanCommercialContext | null
   readonly plannedKg: string
 }
 
@@ -52,6 +54,19 @@ function positiveKilograms(value: string): boolean {
 function canonicalKilograms(value: string): string {
   if (!value.includes('.')) return value
   return value.replace(/0+$/, '').replace(/\.$/, '')
+}
+
+function sameCommercialContext(
+  current: CapturedPlanCommercialContext | null,
+  sent: CapturedPlanCommercialContext | null,
+): boolean {
+  if (current === null || sent === null) return current === sent
+  return (
+    current.partyId.toLowerCase() === sent.partyId.toLowerCase() &&
+    current.companyPartyAccountId.toLowerCase() === sent.companyPartyAccountId.toLowerCase() &&
+    current.partyVersion === sent.partyVersion &&
+    current.accountVersion === sent.accountVersion
+  )
 }
 
 function readFailure(subject: string, outcome: { readonly type: string; readonly status?: number }): string {
@@ -80,7 +95,8 @@ function sameContent(current: PlanRevision, request: RevisePlanRequest): boolean
       return (
         input.parentRollId === sent.parentRollId &&
         input.plannedKg === canonicalKilograms(sent.plannedKg) &&
-        input.expectedLabelVersion === sent.expectedLabelVersion
+        input.expectedLabelVersion === sent.expectedLabelVersion &&
+        sameCommercialContext(input.commercialContext, sent.commercialContext ?? null)
       )
     })
   )
@@ -96,6 +112,7 @@ export function PlanEditForm({ companyId, plan, current, busy, onSubmit, onCance
       parentRollId: input.parentRollId,
       labelCode: null,
       labelVersion: input.expectedLabelVersion,
+      commercialContext: input.commercialContext,
       plannedKg: input.plannedKg,
     })),
   )
@@ -155,6 +172,7 @@ export function PlanEditForm({ companyId, plan, current, busy, onSubmit, onCance
       parentRollId: row.parentRollId,
       label: row.labelCode ?? row.parentRollId,
       labelVersion: row.labelVersion,
+      commercialContext: row.commercialContext,
       plannedKg: row.plannedKg,
     })),
     targetBasis,
@@ -179,6 +197,7 @@ export function PlanEditForm({ companyId, plan, current, busy, onSubmit, onCance
           parentRollId: candidate.labelId,
           labelCode: candidate.labelCode,
           labelVersion: candidate.labelVersion,
+          commercialContext: null,
           plannedKg: '',
         }]
       }
@@ -216,6 +235,7 @@ export function PlanEditForm({ companyId, plan, current, busy, onSubmit, onCance
         parentRollId: row.parentRollId,
         plannedKg: row.plannedKg,
         expectedLabelVersion: row.labelVersion as string,
+        commercialContext: row.commercialContext,
       })),
       target: targetBasis === '' ? null : { basis: targetBasis, kg: targetKg },
       reason: trimmed,

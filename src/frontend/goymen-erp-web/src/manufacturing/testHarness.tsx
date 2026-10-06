@@ -77,7 +77,53 @@ export function roll(parentRollId: string, overrides: Record<string, unknown> = 
 
 /** A synthetic `PlannedInputViewV1`, in the server's JSON shape. */
 export function plannedInput(parentRollId: string, plannedKg = '1000.125') {
-  return { parentRollId, plannedKg }
+  return { parentRollId, plannedKg, technicalSnapshot: null }
+}
+
+/** A synthetic captured Product/Settings snapshot. It is component data, never real fixture evidence. */
+export function technicalSnapshot(overrides: Record<string, unknown> = {}) {
+  return {
+    productId: 'f0000000-0000-4000-8000-000000000001',
+    productVersion: '2',
+    family: { familyId: 'f0000000-0000-4000-8000-000000000002', familyCode: 'COIL', sourceRevision: 'family-r1' },
+    template: {
+      templateId: 'f0000000-0000-4000-8000-000000000003',
+      templateVersion: '3',
+      templateCode: 'COIL-SHEET',
+      sourceRevision: 'template-r3',
+    },
+    thicknessMm: '2',
+    widthMm: '1500',
+    unitKg: {
+      companyId: COMPANY_A,
+      unitId: 'f0000000-0000-4000-8000-000000000004',
+      unitCode: 'kg',
+      profileId: 'f0000000-0000-4000-8000-000000000005',
+      profileVersion: '1',
+    },
+    effectiveOn: '2026-09-30',
+    ...overrides,
+  }
+}
+
+/** A synthetic stored calculation projection aligned with the default plan fixture. */
+export function planCalculation(overrides: Record<string, unknown> = {}) {
+  return {
+    calculatorVersion: 'GDC-PLAN-CALC/1',
+    workCenterId: WORK_CENTER,
+    process: 'Slitting',
+    plannedRollCount: 2,
+    plannedInputKg: '1500.625',
+    target: null,
+    answers: [],
+    rolls: [
+      { parentRollId: ROLL_1, plannedKg: '1000.125', answers: [] },
+      { parentRollId: ROLL_2, plannedKg: '500.5', answers: [] },
+    ],
+    missingParameters: ['densityKgPerCubicMetre'],
+    hasRefusal: false,
+    ...overrides,
+  }
 }
 
 /** A synthetic `PlanViewV1`, in the server's JSON shape. */
@@ -93,13 +139,19 @@ export function plan(overrides: Record<string, unknown> = {}) {
     target: null,
     approvedByUserId: null,
     approvedAtUtc: null,
+    calculation: null,
     ...overrides,
   }
 }
 
-/** A synthetic `PlanRevisionInputViewV1` (MFG-PLAN-EDIT), in the server's JSON shape. */
-export function revisionInput(parentRollId: string, plannedKg = '1000.125', expectedLabelVersion: string | null = '7') {
-  return { parentRollId, plannedKg, expectedLabelVersion }
+/** A synthetic `PlanRevisionInputViewV1` (MFG-PLAN-EDIT), in the server's current JSON shape. */
+export function revisionInput(
+  parentRollId: string,
+  plannedKg = '1000.125',
+  expectedLabelVersion: string | null = '7',
+  commercialContext: unknown = null,
+) {
+  return { parentRollId, plannedKg, expectedLabelVersion, commercialContext }
 }
 
 /** A synthetic `PlanRevisionViewV1`: revision 0 by default — the plan as created, matching {@link plan}. */
@@ -118,7 +170,7 @@ export function planRevision(overrides: Record<string, unknown> = {}) {
 }
 
 /** A synthetic `PlanRevisionListViewV1`, oldest first. */
-export function planRevisions(revisions: unknown[] = [planRevision()], planId = PLAN) {
+export function planRevisions(revisions: readonly unknown[] = [planRevision()], planId = PLAN) {
   return { planId, revisions }
 }
 

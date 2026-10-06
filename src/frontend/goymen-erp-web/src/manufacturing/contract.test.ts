@@ -26,8 +26,10 @@ import {
   orderList,
   orderSummary,
   plan,
+  planCalculation,
   roll,
   rollBalance,
+  technicalSnapshot,
   unavailable,
 } from './testHarness'
 
@@ -343,6 +345,122 @@ describe('decodePlan', () => {
     expect(decoded?.inputs.map((input) => input.plannedKg)).toEqual(['1000.125', '500.5'])
     expect(decoded?.target).toEqual({ basis: 'GoodOutputMass', kg: '900' })
     expect(decoded?.approvedByUserId).toBeNull()
+  })
+
+  it('normalizes a legacy response that omits both additive technical projections', () => {
+    const current = plan()
+    const { calculation: _calculation, ...legacyPlan } = current
+    const legacyInputs = current.inputs.map((input) => {
+      const { technicalSnapshot: _technicalSnapshot, ...legacyInput } = input
+      return legacyInput
+    })
+
+    const decoded = decodePlan({ ...legacyPlan, inputs: legacyInputs })
+
+    expect(decoded?.calculation).toBeNull()
+    expect(decoded?.inputs.every((input) => input.technicalSnapshot === null)).toBe(true)
+  })
+
+  it('keeps the captured source and the matching backend calculation on a reopened plan', () => {
+    const body = plan({
+      inputs: [
+        { parentRollId: ROLL_1, plannedKg: '1000.125', technicalSnapshot: technicalSnapshot() },
+        { parentRollId: 'e0000000-0000-4000-8000-000000000002', plannedKg: '500.5', technicalSnapshot: null },
+      ],
+      calculation: planCalculation(),
+    })
+
+    const decoded = decodePlan(body)
+
+    expect(decoded?.inputs[0].technicalSnapshot).toMatchObject({
+      productVersion: '2', thicknessMm: '2', widthMm: '1500', effectiveOn: '2026-09-30',
+    })
+    expect(decoded?.inputs[1].technicalSnapshot).toBeNull()
+    expect(decoded?.calculation?.calculatorVersion).toBe('GDC-PLAN-CALC/1')
+  })
+
+  it('accepts snapshot precision and provenance exactly at their domain boundaries', () => {
+    const source = technicalSnapshot()
+    const snapshot = technicalSnapshot({
+      productVersion: 'p'.repeat(128),
+      family: { ...source.family, familyCode: 'f'.repeat(64), sourceRevision: 'r'.repeat(64) },
+      thicknessMm: '2.001',
+      effectiveOn: '2024-02-29',
+    })
+
+    expect(decodePlan(plan({
+      inputs: [{ parentRollId: ROLL_1, plannedKg: '1000.125', technicalSnapshot: snapshot }],
+    }))?.inputs[0].technicalSnapshot).toMatchObject({ thicknessMm: '2.001', effectiveOn: '2024-02-29' })
+  })
+
+  it.each([
+    ['a real fourth decimal', technicalSnapshot({ thicknessMm: '2.0001' })],
+    ['a real fourth decimal in width', technicalSnapshot({ widthMm: '1500.0001' })],
+    ['an impossible calendar date', technicalSnapshot({ effectiveOn: '2026-99-99' })],
+    ['the domain default calendar date', technicalSnapshot({ effectiveOn: '0001-01-01' })],
+    ['an oversized product version', technicalSnapshot({ productVersion: 'p'.repeat(129) })],
+    ['an oversized domain code', technicalSnapshot({
+      family: { ...technicalSnapshot().family, familyCode: 'f'.repeat(65) },
+    })],
+    ['a control character in provenance', technicalSnapshot({
+      template: { ...technicalSnapshot().template, sourceRevision: 'template\u0001r3' },
+    })],
+  ])('fails closed on snapshot %s', (_, snapshot) => {
+    expect(decodePlan(plan({
+      inputs: [{ parentRollId: ROLL_1, plannedKg: '1000.125', technicalSnapshot: snapshot }],
+    }))).toBeNull()
+  })
+
+  it('binds a stored calculation to the enclosing target and exact decimal input sum', () => {
+    const target = { basis: 'GoodOutputMass', kg: '900' }
+    const calculationTarget = {
+      ...target,
+      outcome: 'Unavailable',
+      targetMinusPlannedInputKg: null,
+      missingParameters: ['actualGoodOutputKg'],
+    }
+    expect(decodePlan(plan({ target, calculation: planCalculation({ target: calculationTarget }) }))).not.toBeNull()
+
+    const exactInputs = [
+      { parentRollId: ROLL_1, plannedKg: '0.1', technicalSnapshot: null },
+      { parentRollId: 'e0000000-0000-4000-8000-000000000002', plannedKg: '0.2', technicalSnapshot: null },
+    ]
+    expect(decodePlan(plan({
+      inputs: exactInputs,
+      calculation: planCalculation({
+        plannedInputKg: '0.3',
+        rolls: exactInputs.map(({ parentRollId, plannedKg }) => ({ parentRollId, plannedKg, answers: [] })),
+      }),
+    }))).not.toBeNull()
+
+    expect(decodePlan(plan({ calculation: planCalculation({ target: calculationTarget }) }))).toBeNull()
+    expect(decodePlan(plan({ target, calculation: planCalculation({ target: null }) }))).toBeNull()
+    expect(decodePlan(plan({
+      target,
+      calculation: planCalculation({ target: { ...calculationTarget, basis: 'InputMass' } }),
+    }))).toBeNull()
+    expect(decodePlan(plan({
+      target,
+      calculation: planCalculation({ target: { ...calculationTarget, kg: '901' } }),
+    }))).toBeNull()
+    expect(decodePlan(plan({ calculation: planCalculation({ plannedInputKg: '1500.624' }) }))).toBeNull()
+  })
+
+  it('fails closed when snapshot company or calculation roll identity drifts from the plan', () => {
+    const foreignSnapshot = technicalSnapshot({
+      unitKg: { ...technicalSnapshot().unitKg, companyId: 'bbbbbbbb-0000-0000-0000-000000000002' },
+    })
+    expect(decodePlan(plan({
+      inputs: [{ parentRollId: ROLL_1, plannedKg: '1000.125', technicalSnapshot: foreignSnapshot }],
+    }))).toBeNull()
+    expect(decodePlan(plan({
+      calculation: planCalculation({
+        rolls: [
+          { parentRollId: 'e0000000-0000-4000-8000-000000000099', plannedKg: '1000.125', answers: [] },
+          { parentRollId: 'e0000000-0000-4000-8000-000000000002', plannedKg: '500.5', answers: [] },
+        ],
+      }),
+    }))).toBeNull()
   })
 
   it('reads an approved plan as approved, with both halves of the approval', () => {

@@ -8,14 +8,17 @@ import {
   COMPANY_A,
   COMPANY_B,
   PLAN,
+  ROLL_1,
   installFetch,
   json,
   massBalance,
   order,
   plan,
+  planCalculation,
   problem,
   renderAt,
   requestsFor,
+  technicalSnapshot,
   type RecordedRequest,
 } from './testHarness'
 
@@ -326,5 +329,28 @@ describe('plan detail navigation', () => {
     await screen.findByRole('heading', { name: 'Plan yeniden açıldı' })
     expect(screen.queryByRole('link', { name: '← Üretim planları' })).toBeNull()
     expect(screen.getByRole('link', { name: '← Üretim emirleri' })).toBeTruthy()
+  })
+})
+
+describe('stored plan technical projection', () => {
+  it('shows the captured source and the same backend calculation renderer after reopen', async () => {
+    installFetch({
+      capabilities: [MANUFACTURING_CAPABILITY.planDetail],
+      respond: (url) => url.endsWith(`/manufacturing/plans/${PLAN}`) ? json(plan({
+        inputs: [{ parentRollId: ROLL_1, plannedKg: '1000.125', technicalSnapshot: technicalSnapshot() }],
+        calculation: planCalculation({
+          plannedRollCount: 1,
+          plannedInputKg: '1000.125',
+          rolls: [{ parentRollId: ROLL_1, plannedKg: '1000.125', answers: [] }],
+        }),
+      })) : undefined,
+    })
+
+    renderAt(`/uretim/plan/${PLAN}`)
+
+    expect(await screen.findByRole('heading', { name: 'Kayıtlı plan hesaplaması' })).toBeTruthy()
+    expect(screen.getByText(/COIL · family-r1/)).toBeTruthy()
+    expect(screen.getByText('2 mm × 1500 mm')).toBeTruthy()
+    expect(screen.getByText('GDC-PLAN-CALC/1')).toBeTruthy()
   })
 })

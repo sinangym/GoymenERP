@@ -39923,6 +39923,7 @@
               "inventory_location_external",
               "inventory_location_inactive",
               "inventory_location_not_found",
+              "inventory_owner_account_ineligible",
               "inventory_product_ineligible"
             ]
           },
@@ -62757,6 +62758,146 @@
           }
         }
       },
+      "CapturedPlanCommercialContextViewV1": {
+        "required": [
+          "partyId",
+          "companyPartyAccountId",
+          "partyVersion",
+          "accountVersion"
+        ],
+        "type": "object",
+        "properties": {
+          "partyId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "companyPartyAccountId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "partyVersion": {
+            "type": "string"
+          },
+          "accountVersion": {
+            "type": "string"
+          }
+        }
+      },
+      "CapturedPlanFamilyRevisionViewV1": {
+        "required": [
+          "familyId",
+          "familyCode",
+          "sourceRevision"
+        ],
+        "type": "object",
+        "properties": {
+          "familyId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "familyCode": {
+            "type": "string"
+          },
+          "sourceRevision": {
+            "type": "string"
+          }
+        }
+      },
+      "CapturedPlanKilogramUnitViewV1": {
+        "required": [
+          "companyId",
+          "unitId",
+          "unitCode",
+          "profileId",
+          "profileVersion"
+        ],
+        "type": "object",
+        "properties": {
+          "companyId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "unitId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "unitCode": {
+            "type": "string"
+          },
+          "profileId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "profileVersion": {
+            "type": "string"
+          }
+        }
+      },
+      "CapturedPlanTechnicalSnapshotViewV1": {
+        "required": [
+          "productId",
+          "productVersion",
+          "family",
+          "template",
+          "thicknessMm",
+          "widthMm",
+          "unitKg",
+          "effectiveOn"
+        ],
+        "type": "object",
+        "properties": {
+          "productId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "productVersion": {
+            "type": "string"
+          },
+          "family": {
+            "$ref": "#/components/schemas/CapturedPlanFamilyRevisionViewV1"
+          },
+          "template": {
+            "$ref": "#/components/schemas/CapturedPlanTemplateRevisionViewV1"
+          },
+          "thicknessMm": {
+            "type": "string"
+          },
+          "widthMm": {
+            "type": "string"
+          },
+          "unitKg": {
+            "$ref": "#/components/schemas/CapturedPlanKilogramUnitViewV1"
+          },
+          "effectiveOn": {
+            "type": "string",
+            "format": "date"
+          }
+        }
+      },
+      "CapturedPlanTemplateRevisionViewV1": {
+        "required": [
+          "templateId",
+          "templateVersion",
+          "templateCode",
+          "sourceRevision"
+        ],
+        "type": "object",
+        "properties": {
+          "templateId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "templateVersion": {
+            "type": "string"
+          },
+          "templateCode": {
+            "type": "string"
+          },
+          "sourceRevision": {
+            "type": "string"
+          }
+        }
+      },
       "ChangeInventoryPhysicalAllocationRequestV1": {
         "required": [
           "expectedAllocationVersion",
@@ -67958,6 +68099,12 @@
           }
         }
       },
+      "InventoryOpeningPartyKindV1": {
+        "enum": [
+          "Company",
+          "Counterparty"
+        ]
+      },
       "InventoryParentRollCandidatesV1": {
         "required": [
           "items",
@@ -70416,6 +70563,40 @@
           }
         }
       },
+      "OpeningCountPositionContextV1": {
+        "required": [
+          "ownerKind",
+          "ownerId",
+          "ownerCompanyPartyAccountId",
+          "custodianKind",
+          "custodianId"
+        ],
+        "type": "object",
+        "properties": {
+          "ownerKind": {
+            "$ref": "#/components/schemas/InventoryOpeningPartyKindV1"
+          },
+          "ownerId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "ownerCompanyPartyAccountId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "custodianKind": {
+            "$ref": "#/components/schemas/InventoryOpeningPartyKindV1"
+          },
+          "custodianId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "additionalProperties": false
+      },
       "OpeningCountRequestV1": {
         "required": [
           "countId",
@@ -70446,6 +70627,16 @@
             "items": {
               "$ref": "#/components/schemas/OpeningCountLineRequestV1"
             }
+          },
+          "positionContext": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/OpeningCountPositionContextV1"
+              }
+            ]
           }
         },
         "additionalProperties": false
@@ -71206,6 +71397,37 @@
           }
         }
       },
+      "PlanCommercialContextRequestV1": {
+        "required": [
+          "partyId",
+          "companyPartyAccountId",
+          "partyVersion",
+          "accountVersion"
+        ],
+        "type": "object",
+        "properties": {
+          "partyId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "companyPartyAccountId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "partyVersion": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "accountVersion": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
       "PlanFormulaAnswerViewV1": {
         "required": [
           "formula",
@@ -71294,6 +71516,16 @@
           },
           "expectedLabelVersion": {
             "type": "string"
+          },
+          "commercialContext": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PlanCommercialContextRequestV1"
+              }
+            ]
           }
         }
       },
@@ -71310,6 +71542,26 @@
           },
           "plannedKg": {
             "type": "string"
+          },
+          "technicalSnapshot": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/CapturedPlanTechnicalSnapshotViewV1"
+              }
+            ]
+          },
+          "commercialContext": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/CapturedPlanCommercialContextViewV1"
+              }
+            ]
           }
         }
       },
@@ -71434,6 +71686,16 @@
             "type": [
               "null",
               "string"
+            ]
+          },
+          "commercialContext": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/CapturedPlanCommercialContextViewV1"
+              }
             ]
           }
         }
@@ -71721,6 +71983,16 @@
               "string"
             ],
             "format": "date-time"
+          },
+          "calculation": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PlanPreviewViewV1"
+              }
+            ]
           }
         }
       },
@@ -74072,6 +74344,32 @@
           }
         }
       },
+      "PurchaseOrderAcceptanceHistoryView": {
+        "required": [
+          "acceptanceId",
+          "lineId",
+          "quantity",
+          "recordedAtUtc"
+        ],
+        "type": "object",
+        "properties": {
+          "acceptanceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "lineId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "quantity": {
+            "type": "string"
+          },
+          "recordedAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
       "PurchaseOrderDetailView": {
         "required": [
           "order",
@@ -74086,6 +74384,12 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/PurchaseOrderLineView"
+            }
+          },
+          "acceptances": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PurchaseOrderAcceptanceHistoryView"
             }
           }
         }
@@ -75492,6 +75796,16 @@
           },
           "isFullyAccounted": {
             "type": "boolean"
+          },
+          "commercialContext": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/CapturedPlanCommercialContextViewV1"
+              }
+            ]
           }
         }
       },

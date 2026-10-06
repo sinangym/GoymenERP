@@ -102,32 +102,101 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
             "SELECT COUNT(*) FROM inventory.Commands WHERE TargetId = @id", ("@id", legacy.IssueId)));
     }
 
-    /// <summary>
-    /// Fail-closed until NEEDS-SINAN #66/5830378162 decides the customer-owned / fason commercial-link grain
-    /// (<see cref="ManufacturingCustomerOwnedInputGuardV1"/>): a customer-owned parent and a company-owned parent in
-    /// third-party custody are both refused at the public issue port with the route's existing 409, inside the
-    /// owner transaction. Nothing is written by either module, a retry is refused again (no replay record exists),
-    /// and the parent label, its balance and the order stay exactly as they were.
-    /// </summary>
     [SqlServerFact]
-    public async Task Manufacturing_input_issue_refuses_a_customer_owned_or_third_party_custodied_parent_without_any_effect()
+    public async Task Manufacturing_input_issue_uses_the_orders_exact_customer_context_and_replays_one_effect()
     {
         await using var run = await StartManufacturingInventoryRunAsync();
         var customer = Guid.NewGuid();
+        var account = Guid.NewGuid();
+        var commercial = new PlanCommercialContextSnapshotV1(
+            customer, account, " party-v1 ", "account-v1/α");
+        var parent = await SeedManufacturingParentAsync(run, "SYN-MFG-HOST-CUSTOMER", 100m,
+            StockPartyKind.Counterparty, customer, StockPartyKind.Company, CompanyA);
+        var authority = new ManufacturingHostAuthority(GrantedManufacturingScope());
+        await using var scope = ManufacturingHostScope.Create(run, CompanyA, authority);
+        var command = await SeedManufacturingOrderAsync(run, scope.Store, parent.Label.Id,
+            expectedLabelVersion: 2, quantity: 25m, commercialContext: commercial);
+        var metadata = ManufacturingHostMetadata(run, "customer-issue");
+
+        var recorded = await scope.Host.IssueAsync(command, metadata);
+        var replayMetadata = ManufacturingHostMetadata(run, "customer-issue-replay");
+        var replay = await scope.Host.IssueAsync(command, replayMetadata);
+
+        Assert.False(recorded.IsReplay);
+        Assert.True(replay.IsReplay);
+        Assert.Equal((StockPartyKind.Counterparty.ToString(), customer, StockPartyKind.Company.ToString(), CompanyA),
+            (recorded.ParentPosition.OwnerKind, recorded.ParentPosition.OwnerId,
+                recorded.ParentPosition.CustodianKind, recorded.ParentPosition.CustodianId));
+        Assert.Equal(recorded.ParentPosition, replay.ParentPosition);
+        Assert.Equal(customer, await run.ScalarAsync<Guid>(
+            "SELECT CommercialPartyId FROM manufacturing.OrderInputs "
+            + "WHERE OrderId = @order AND ParentRollId = @label",
+            ("@order", command.OrderId), ("@label", command.ParentLabelId)));
+        Assert.Equal(account, await run.ScalarAsync<Guid>(
+            "SELECT CommercialCompanyPartyAccountId FROM manufacturing.OrderInputs "
+            + "WHERE OrderId = @order AND ParentRollId = @label",
+            ("@order", command.OrderId), ("@label", command.ParentLabelId)));
+        Assert.Equal(" party-v1 ", await run.ScalarAsync<string>(
+            "SELECT CommercialPartyVersion FROM manufacturing.OrderInputs "
+            + "WHERE OrderId = @order AND ParentRollId = @label",
+            ("@order", command.OrderId), ("@label", command.ParentLabelId)));
+        Assert.Equal("account-v1/α", await run.ScalarAsync<string>(
+            "SELECT CommercialAccountVersion FROM manufacturing.OrderInputs "
+            + "WHERE OrderId = @order AND ParentRollId = @label",
+            ("@order", command.OrderId), ("@label", command.ParentLabelId)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM manufacturing.Facts WHERE Id = @id", ("@id", command.IssueId)));
+        Assert.Equal(2L, await run.ScalarAsync<long>(
+            "SELECT Version FROM manufacturing.Orders WHERE Id = @id", ("@id", command.OrderId)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM inventory.MovementLines WHERE MovementId = @movement "
+            + "AND OwnerKind = @ownerKind AND OwnerId = @ownerId "
+            + "AND CustodianKind = @custodianKind AND CustodianId = @custodianId",
+            ("@movement", command.MovementId), ("@ownerKind", (int)StockPartyKind.Counterparty),
+            ("@ownerId", customer), ("@custodianKind", (int)StockPartyKind.Company),
+            ("@custodianId", CompanyA)));
+        Assert.Equal(75m, await run.ScalarAsync<decimal>(
+            "SELECT QuantityKg FROM inventory.Balances WHERE LabelId = @label AND Block = 1",
+            ("@label", command.ParentLabelId)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM inventory.Commands WHERE TargetId = @id", ("@id", command.IssueId)));
+        Assert.Equal(2, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE CorrelationId = @correlation",
+            ("@correlation", metadata.CorrelationId)));
+        Assert.Equal(0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE CorrelationId = @correlation",
+            ("@correlation", replayMetadata.CorrelationId)));
+    }
+
+    [SqlServerFact]
+    public async Task Manufacturing_input_issue_refuses_missing_or_mismatched_customer_context_without_any_effect()
+    {
+        await using var run = await StartManufacturingInventoryRunAsync();
+        var customer = Guid.NewGuid();
+        var account = Guid.NewGuid();
+        var matching = new PlanCommercialContextSnapshotV1(customer, account, "party-v1", "account-v1");
+        var foreign = new PlanCommercialContextSnapshotV1(Guid.NewGuid(), account, "party-v1", "account-v1");
         var authority = new ManufacturingHostAuthority(GrantedManufacturingScope());
         await using var scope = ManufacturingHostScope.Create(run, CompanyA, authority);
         var port = (IManufacturingInventoryInputIssuePortV1)scope.Host;
 
-        foreach (var (code, ownerKind, ownerId, custodianKind, custodianId) in new[]
+        var cases = new (string Code, StockPartyKind OwnerKind, Guid OwnerId, StockPartyKind CustodianKind,
+            Guid CustodianId, PlanCommercialContextSnapshotV1? CommercialContext)[]
         {
-            ("SYN-MFG-HOST-CUSTOMER", StockPartyKind.Counterparty, customer, StockPartyKind.Company, CompanyA),
-            ("SYN-MFG-HOST-THIRD-PARTY-CUSTODY", StockPartyKind.Company, CompanyA, StockPartyKind.Counterparty, customer),
-        })
+            ("NO-SNAPSHOT", StockPartyKind.Counterparty, customer, StockPartyKind.Company, CompanyA, null),
+            ("FOREIGN-SNAPSHOT", StockPartyKind.Counterparty, customer, StockPartyKind.Company, CompanyA, foreign),
+            ("THIRD-PARTY-CUSTODY", StockPartyKind.Counterparty, customer,
+                StockPartyKind.Counterparty, customer, matching),
+            ("COMMERCIAL-CONTEXT-COMPANY-OWNER", StockPartyKind.Company, CompanyA,
+                StockPartyKind.Company, CompanyA, matching),
+        };
+
+        foreach (var (code, ownerKind, ownerId, custodianKind, custodianId, commercial) in cases)
         {
             var parent = await SeedManufacturingParentAsync(run, code, 100m,
                 ownerKind, ownerId, custodianKind, custodianId);
             var command = await SeedManufacturingOrderAsync(run, scope.Store, parent.Label.Id,
-                expectedLabelVersion: 2, quantity: 25m);
+                expectedLabelVersion: 2, quantity: 25m, commercialContext: commercial);
             var portCommand = new ManufacturingInventoryInputIssuePortCommandV1(
                 command.OrderId,
                 command.ExpectedOrderVersion,
@@ -290,13 +359,15 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
         ManufacturingStore store,
         Guid parentLabelId,
         long expectedLabelVersion,
-        decimal quantity)
+        decimal quantity,
+        PlanCommercialContextSnapshotV1? commercialContext = null)
     {
         var workCenterId = await run.ScalarAsync<Guid>(
             "SELECT TOP (1) Id FROM organization.WorkCenters WHERE CompanyId = @company ORDER BY Id",
             ("@company", CompanyA));
         var plan = new ProductionPlan(Guid.NewGuid(), CompanyA, workCenterId, ManufacturingProcess.Slitting,
-            [new PlannedInput(parentLabelId, new Kilograms(quantity), expectedLabelVersion)],
+            [new PlannedInput(parentLabelId, new Kilograms(quantity), expectedLabelVersion,
+                commercialContext: commercialContext)],
             new ProductionTarget(TargetBasis.InputMass, new Kilograms(quantity)));
         var orderId = Guid.NewGuid();
         await store.SavePlanAsync(plan, ManufacturingHostMetadata(run, "seed-plan"));

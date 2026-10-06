@@ -31,9 +31,17 @@ export interface PurchaseOrderLine {
   readonly remaining: string
 }
 
+export interface PurchaseOrderAcceptanceHistory {
+  readonly acceptanceId: string
+  readonly lineId: string
+  readonly quantity: string
+  readonly recordedAtUtc: string
+}
+
 export interface PurchaseOrderDetail {
   readonly order: PurchaseOrderSummary
   readonly lines: readonly PurchaseOrderLine[]
+  readonly acceptances: readonly PurchaseOrderAcceptanceHistory[]
 }
 
 export interface PurchaseOrderList {
@@ -251,6 +259,18 @@ function decodeLine(value: unknown): PurchaseOrderLine | null {
   return source as unknown as PurchaseOrderLine
 }
 
+function decodeAcceptanceHistory(value: unknown): PurchaseOrderAcceptanceHistory | null {
+  const source = record(value)
+  if (
+    source === null ||
+    !exact(source, ['acceptanceId', 'lineId', 'quantity', 'recordedAtUtc']) ||
+    !guid(source.acceptanceId) || !guid(source.lineId) ||
+    !text(source.quantity) || !DECIMAL.test(source.quantity as string) || !/[1-9]/.test(source.quantity as string) ||
+    !instant(source.recordedAtUtc)
+  ) return null
+  return source as unknown as PurchaseOrderAcceptanceHistory
+}
+
 function decodeRequestSummary(value: unknown): PurchaseRequestSummary | null {
   const source = record(value)
   if (
@@ -303,11 +323,23 @@ export function decodePurchaseOrderList(value: unknown): PurchaseOrderList | nul
 
 export function decodePurchaseOrderDetail(value: unknown): PurchaseOrderDetail | null {
   const source = record(value)
-  if (source === null || !exact(source, ['order', 'lines']) || !Array.isArray(source.lines)) return null
+  if (source === null || !Array.isArray(source.lines)) return null
+  const legacy = exact(source, ['order', 'lines'])
+  const current = exact(source, ['order', 'lines', 'acceptances']) && Array.isArray(source.acceptances)
+  if (!legacy && !current) return null
   const order = decodeSummary(source.order)
   const lines = source.lines.map(decodeLine)
   if (order === null || lines.some((line) => line === null) || order.lineCount !== lines.length) return null
-  return { order, lines: lines as PurchaseOrderLine[] }
+  const acceptedLines = lines as PurchaseOrderLine[]
+  const acceptances = current
+    ? (source.acceptances as unknown[]).map(decodeAcceptanceHistory)
+    : []
+  if (
+    acceptances.some((acceptance) => acceptance === null) ||
+    new Set(acceptances.map((acceptance) => acceptance?.acceptanceId)).size !== acceptances.length ||
+    acceptances.some((acceptance) => !acceptedLines.some((line) => line.lineId === acceptance?.lineId))
+  ) return null
+  return { order, lines: acceptedLines, acceptances: acceptances as PurchaseOrderAcceptanceHistory[] }
 }
 
 export function decodePurchaseOrderCommandResponse(value: unknown): PurchaseOrderCommandResponse | null {

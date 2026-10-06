@@ -12,7 +12,8 @@
 # provider answers). Company-wide because MFG-API requires a company-wide grant (K-1). Disposable test
 # database only: no production user, role or permission.
 #   mfg-recorder: the Manufacturing writes/reads plus the exact Organization, Inventory and Product reads/command
-#                 required by the real plan-create screen and its real opening-stock parent-roll fixture
+#                 required by the real plan-create screen and its real opening-stock parent-roll fixture;
+#                 Counterparty read is the existing owner gate for customer-owned/fason input context
 #   mfg-reader:   orders.read (sees the balances, no form: card D3)
 #   mfg-closer:   orders.read + orders.close + the disposable reasoned exception approval authority
 services:
@@ -54,6 +55,7 @@ services:
       IdentitySeed__Roles__5__Permissions__8: inventory.balances.read
       IdentitySeed__Roles__5__Permissions__9: inventory.opening-stock.record
       IdentitySeed__Roles__5__Permissions__10: product.operational-selection.read
+      IdentitySeed__Roles__5__Permissions__11: counterparty.parties.read
       IdentitySeed__Roles__6__Id: b3000000-0000-4000-8000-00000000f002
       IdentitySeed__Roles__6__Code: BROWSER_MFG_READER
       IdentitySeed__Roles__6__Name: SENTETIK MFG Reader

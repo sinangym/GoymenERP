@@ -11,27 +11,25 @@ using GoymenERP.Modules.Inventory.Infrastructure.Persistence;
 using GoymenERP.Modules.Manufacturing.Application;
 using GoymenERP.Modules.Manufacturing.Domain.Common;
 using GoymenERP.Modules.Manufacturing.Domain.Orders;
+using GoymenERP.Modules.Manufacturing.Domain.Plans;
 using GoymenERP.Modules.Manufacturing.Infrastructure.Persistence;
 using GoymenERP.Modules.Organization.Application.Contracts;
 using GoymenERP.Modules.Product.Application.Contracts;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
+using Xunit.Abstractions;
 
 namespace GoymenERP.Api.IntegrationTests;
 
-public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
+public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests(ITestOutputHelper output)
 {
     [SqlServerFact]
     public async Task Manufacturing_return_and_output_commit_once_and_replay_after_the_order_advances()
     {
         await using var run = await StartManufacturingInventoryRunAsync();
         var customer = Guid.NewGuid();
-        // The issued parent is the company's own, company-custodied roll: the input-issue entry refuses any other
-        // position until NEEDS-SINAN #66/5830378162 is decided (ManufacturingCustomerOwnedInputGuardV1), so a
-        // customer-owned issue trace cannot be produced through the public path. The output is still bound to the
-        // exact issued position: a customer owner or a customer custodian on the output is refused below.
-        // TODO(#66/5830378162): once the decision enables customer-owned input, add the customer-owned
-        // return/output journey back here on top of the decided commercial link.
+        // Company-owned remains the compatibility path. The output is bound to its exact issued position, so a
+        // Counterparty owner or custodian cannot repaint this trace.
         var seed = await PrepareIssuedOrderAsync(run, "SYN-MFG-RETURN-OUTPUT", 100m);
         Assert.Equal((StockPartyKind.Company, CompanyA, StockPartyKind.Company, CompanyA),
             (seed.OwnerKind, seed.OwnerId, seed.CustodianKind, seed.CustodianId));
@@ -123,6 +121,157 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
             "SELECT COUNT(*) FROM audit.AuditEvents WHERE CorrelationId IN (@returnReplay, @outputReplay)",
             ("@returnReplay", returnReplayMetadata.CorrelationId),
             ("@outputReplay", outputReplayMetadata.CorrelationId)));
+    }
+
+    [SqlServerFact]
+    public async Task Manufacturing_customer_input_returns_and_outputs_to_the_same_context_with_single_effect_replays()
+    {
+        var diagnosticPhase = "mfg_customer_arrange";
+        try
+        {
+        await using var run = await StartManufacturingInventoryRunAsync();
+        var customer = Guid.NewGuid();
+        var account = Guid.NewGuid();
+        var commercial = new PlanCommercialContextSnapshotV1(
+            customer, account, "party-v1", "account-v1");
+        diagnosticPhase = "mfg_customer_issue";
+        var seed = await PrepareIssuedOrderAsync(run, "SYN-MFG-CUSTOMER-RETURN-OUTPUT", 100m,
+            StockPartyKind.Counterparty, customer, StockPartyKind.Company, CompanyA, commercial);
+        Assert.Equal((StockPartyKind.Counterparty, customer, StockPartyKind.Company, CompanyA),
+            (seed.OwnerKind, seed.OwnerId, seed.CustodianKind, seed.CustodianId));
+        var authority = new ManufacturingHostAuthority(GrantedManufacturingScope());
+        var admission = new ManufacturingInventoryOutputAdmission(
+            new ManufacturingOutputProducts(), new ManufacturingOutputLocations(seed.LocationId));
+        await using var scope = ReturnOutputHostScope.Create(run, authority, admission);
+        var returned = ReturnCommand(seed, 10m);
+        var returnMetadata = ManufacturingHostMetadata(run, "customer-return");
+
+        diagnosticPhase = "mfg_customer_return";
+        var returnResult = await scope.Host.ReturnAsync(returned, returnMetadata);
+        var outputSeed = seed with
+        {
+            OrderVersion = returnResult.OrderVersion,
+            ParentLabelVersion = returnResult.ParentLabelVersion,
+        };
+        var output = OutputCommand(outputSeed, returnResult.OrderVersion, returnResult.ParentLabelVersion, 80m);
+
+        diagnosticPhase = "mfg_customer_output";
+        var wrongOwner = output with { OwnerId = Guid.NewGuid() };
+        var wrongOwnerMetadata = ManufacturingHostMetadata(run, "customer-output-wrong-owner");
+        var wrongOwnerError = await Assert.ThrowsAsync<InventoryManufacturingRealizationException>(() =>
+            scope.Host.DeclareOutputAsync(wrongOwner, wrongOwnerMetadata));
+        Assert.Equal((409, InventoryManufacturingRealizationCodesV1.ParentLabelContextConflict),
+            (wrongOwnerError.Status, wrongOwnerError.Code));
+        await AssertNoOutputEffectAsync(run, outputSeed, wrongOwner, wrongOwnerMetadata.CorrelationId);
+
+        var wrongCustodian = output with
+        {
+            CustodianKind = StockPartyKind.Counterparty,
+            CustodianId = customer,
+        };
+        var wrongCustodianMetadata = ManufacturingHostMetadata(run, "customer-output-wrong-custodian");
+        var wrongCustodianError = await Assert.ThrowsAsync<InventoryManufacturingRealizationException>(() =>
+            scope.Host.DeclareOutputAsync(wrongCustodian, wrongCustodianMetadata));
+        Assert.Equal((409, InventoryManufacturingRealizationCodesV1.ParentLabelContextConflict),
+            (wrongCustodianError.Status, wrongCustodianError.Code));
+        await AssertNoOutputEffectAsync(run, outputSeed, wrongCustodian, wrongCustodianMetadata.CorrelationId);
+
+        var outputMetadata = ManufacturingHostMetadata(run, "customer-output");
+        var outputResult = await scope.Host.DeclareOutputAsync(output, outputMetadata);
+        Assert.Equal(ManufacturingWriteOutcome.Recorded, await scope.Store.RecordWorkInProgressAsync(
+            seed.OrderId, outputResult.OrderVersion, Guid.NewGuid(), seed.ParentLabelId,
+            new Kilograms(10m), seed.OccurredAtUtc.AddMinutes(3),
+            ManufacturingHostMetadata(run, "advance-customer-order")));
+        var returnReplayMetadata = ManufacturingHostMetadata(run, "customer-return-replay");
+        var outputReplayMetadata = ManufacturingHostMetadata(run, "customer-output-replay");
+        diagnosticPhase = "mfg_customer_replay";
+        var returnReplay = await scope.Host.ReturnAsync(returned, returnReplayMetadata);
+        var outputReplay = await scope.Host.DeclareOutputAsync(output, outputReplayMetadata);
+
+        diagnosticPhase = "mfg_customer_assert";
+        Assert.False(returnResult.IsReplay);
+        Assert.False(outputResult.IsReplay);
+        Assert.True(returnReplay.IsReplay);
+        Assert.True(outputReplay.IsReplay);
+        Assert.Equal((3L, 4L, 5L), (returnResult.OrderVersion, outputResult.OrderVersion,
+            await run.ScalarAsync<long>("SELECT Version FROM manufacturing.Orders WHERE Id = @id",
+                ("@id", seed.OrderId))));
+        Assert.Equal((4L, 4L, 2L),
+            (returnResult.ParentLabelVersion, outputResult.ParentLabelVersion, outputResult.LabelVersion));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM manufacturing.Facts WHERE Id = @id", ("@id", returned.ReturnId)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM manufacturing.Facts WHERE Id = @id", ("@id", output.OutputId)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM inventory.MovementLines WHERE MovementId = @movement "
+            + "AND OwnerKind = @ownerKind AND OwnerId = @ownerId "
+            + "AND CustodianKind = @custodianKind AND CustodianId = @custodianId",
+            ("@movement", returned.MovementId), ("@ownerKind", (int)StockPartyKind.Counterparty),
+            ("@ownerId", customer), ("@custodianKind", (int)StockPartyKind.Company),
+            ("@custodianId", CompanyA)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM inventory.MovementLines WHERE MovementId = @movement "
+            + "AND OwnerKind = @ownerKind AND OwnerId = @ownerId "
+            + "AND CustodianKind = @custodianKind AND CustodianId = @custodianId",
+            ("@movement", output.MovementId), ("@ownerKind", (int)StockPartyKind.Counterparty),
+            ("@ownerId", customer), ("@custodianKind", (int)StockPartyKind.Company),
+            ("@custodianId", CompanyA)));
+        Assert.Equal(10m, await run.ScalarAsync<decimal>(
+            "SELECT QuantityKg FROM inventory.Balances WHERE LabelId = @id AND Block = 1",
+            ("@id", seed.ParentLabelId)));
+        Assert.Equal(80m, await run.ScalarAsync<decimal>(
+            "SELECT QuantityKg FROM inventory.Balances WHERE LabelId = @id AND Block = 1",
+            ("@id", output.LabelId)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM inventory.Commands WHERE TargetId = @id", ("@id", returned.ReturnId)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM inventory.Commands WHERE TargetId = @id", ("@id", output.OutputId)));
+        Assert.Equal(2, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE CorrelationId = @correlation",
+            ("@correlation", returnMetadata.CorrelationId)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE CorrelationId = @correlation "
+            + "AND EventType = N'manufacturing.input.returned.v1' "
+            + "AND EntityType = N'Manufacturing.ProductionOrder'",
+            ("@correlation", returnMetadata.CorrelationId)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE CorrelationId = @correlation "
+            + "AND EventType = N'inventory.movement.recorded.v1' "
+            + "AND EntityType = N'Inventory.StockMovement'",
+            ("@correlation", returnMetadata.CorrelationId)));
+        Assert.Equal(4, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE CorrelationId = @correlation",
+            ("@correlation", outputMetadata.CorrelationId)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE CorrelationId = @correlation "
+            + "AND EventType = N'manufacturing.output.declared.v1' "
+            + "AND EntityType = N'Manufacturing.ProductionOrder'",
+            ("@correlation", outputMetadata.CorrelationId)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE CorrelationId = @correlation "
+            + "AND EventType = N'inventory.lot.registered.v1' "
+            + "AND EntityType = N'Inventory.MaterialLot'",
+            ("@correlation", outputMetadata.CorrelationId)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE CorrelationId = @correlation "
+            + "AND EventType = N'inventory.label.registered.v1' "
+            + "AND EntityType = N'Inventory.MaterialLabel'",
+            ("@correlation", outputMetadata.CorrelationId)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE CorrelationId = @correlation "
+            + "AND EventType = N'inventory.movement.recorded.v1' "
+            + "AND EntityType = N'Inventory.StockMovement'",
+            ("@correlation", outputMetadata.CorrelationId)));
+        Assert.Equal(0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE CorrelationId IN (@returnReplay, @outputReplay)",
+            ("@returnReplay", returnReplayMetadata.CorrelationId),
+            ("@outputReplay", outputReplayMetadata.CorrelationId)));
+        }
+        catch
+        {
+            output.WriteLine("CI_SAFE_DIAGNOSTIC:" + diagnosticPhase);
+            throw;
+        }
     }
 
     [SqlServerFact]
@@ -230,7 +379,7 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
 
     private static async Task<ReturnOutputSeed> PrepareIssuedOrderAsync(Run run, string code, decimal quantity)
         => await PrepareIssuedOrderAsync(run, code, quantity,
-            StockPartyKind.Company, CompanyA, StockPartyKind.Company, CompanyA);
+            StockPartyKind.Company, CompanyA, StockPartyKind.Company, CompanyA, commercialContext: null);
 
     private static async Task<ReturnOutputSeed> PrepareIssuedOrderAsync(
         Run run,
@@ -239,14 +388,16 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
         StockPartyKind ownerKind,
         Guid ownerId,
         StockPartyKind custodianKind,
-        Guid custodianId)
+        Guid custodianId,
+        PlanCommercialContextSnapshotV1? commercialContext = null)
     {
         var parent = await SeedManufacturingParentAsync(run, code, quantity,
             ownerKind, ownerId, custodianKind, custodianId);
         var authority = new ManufacturingHostAuthority(GrantedManufacturingScope());
         await using var issueScope = ManufacturingHostScope.Create(run, CompanyA, authority);
         var issue = await SeedManufacturingOrderAsync(
-            run, issueScope.Store, parent.Label.Id, expectedLabelVersion: 2, quantity);
+            run, issueScope.Store, parent.Label.Id, expectedLabelVersion: 2, quantity: quantity,
+            commercialContext: commercialContext);
         var issued = await issueScope.Host.IssueAsync(issue, ManufacturingHostMetadata(run, "prepare-issued-order"));
         return new ReturnOutputSeed(
             issue.OrderId, issue.ParentLabelId, issued.OrderVersion, issued.ParentLabelVersion,
