@@ -443,6 +443,18 @@ public sealed partial class InventoryStore(
         ArgumentNullException.ThrowIfNull(count);
         RequireMetadata(metadata);
         RequireCompany(count.CompanyId);
+        if (count.Owner.Kind == StockPartyKind.Counterparty && ownerProof is null)
+        {
+            throw Refused(InventoryOpeningCodesV1.OwnerAccountUnavailable,
+                "Müşteri mülkiyetli açılış, doğrulanmış şirket hesabı kanıtı olmadan kaydedilemez.");
+        }
+
+        if (count.Owner.Kind == StockPartyKind.Company && ownerProof is not null)
+        {
+            throw Refused(InventoryStoreCodes.ValueDoesNotFit,
+                "Şirket mülkiyetli açılış, müşteri hesabı kanıtı taşıyamaz.");
+        }
+
         foreach (var line in count.Lines)
         {
             RequireLotFits(line.Lot);

@@ -478,6 +478,12 @@ public sealed class InventoryOpeningCommandService(
             throw new InventoryOpeningServiceException(503, InventoryOpeningCodesV1.OwnerAccountUnavailable);
         }
 
+        if (answer.Outcome is not (InventoryOpeningOwnerAccountOutcomeV1.Found
+            or InventoryOpeningOwnerAccountOutcomeV1.NotFound))
+        {
+            throw new InventoryOpeningServiceException(503, InventoryOpeningCodesV1.OwnerAccountUnavailable);
+        }
+
         var account = answer.Outcome == InventoryOpeningOwnerAccountOutcomeV1.Found ? answer.Account : null;
         if (account is null || account.PartyId != context.Owner.Id || account.CompanyPartyAccountId != accountId
             || account.CompanyId != scope.CompanyId || !account.PartyIsActive || !account.AccountIsActive

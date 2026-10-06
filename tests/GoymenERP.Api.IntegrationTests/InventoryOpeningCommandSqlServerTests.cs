@@ -178,6 +178,20 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         };
         var locations = new Locations((location, InventoryLocationStatus.Active));
 
+        var requestedLine = request.Lines[0];
+        var lot = new MaterialLot(requestedLine.LotId, CompanyA, requestedLine.ProductId);
+        var directCount = new OpeningCount(request.CountId, CompanyA, location, CountedOn, request.SheetReference,
+            new StockOwner(StockPartyKind.Counterparty, partyId), new StockCustodian(StockPartyKind.Company, CompanyA),
+            [new OpeningCountLine(requestedLine.LineId, lot,
+                new MaterialLabel(requestedLine.LabelId, CompanyA, requestedLine.LabelCode, requestedLine.ProductId,
+                    requestedLine.LotId, requestedLine.ProductVersion), Kilograms.Positive(42m))]);
+        await using (var direct = run.Store(CompanyA))
+        {
+            var missingProof = await Assert.ThrowsAsync<InventoryStoreException>(
+                () => direct.Opening.RecordAsync(directCount, Metadata(run)));
+            Assert.Equal(InventoryOpeningCodesV1.OwnerAccountUnavailable, missingProof.Code);
+        }
+
         await using (var command = Command(run, CompanyA, new Authority(), locations, new Products(),
                          ownerAccounts: new OwnerAccounts()))
         {
