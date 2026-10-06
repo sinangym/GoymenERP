@@ -177,8 +177,8 @@ public sealed class ManufacturingPlanRevisionTests(ITestOutputHelper output)
         var assertionStage = "before_service_call";
         string[] expectedCalls =
         [
-            "authority", "find-plan", "work-center", "authority", "settings", "parent-roll", "authority",
-            "product", "authority", "authority", "authority", "revise",
+            "authority", "authority", "find-plan", "work-center", "authority", "settings", "parent-roll",
+            "authority", "product", "authority", "authority", "revise",
         ];
 
         try
@@ -195,8 +195,8 @@ public sealed class ManufacturingPlanRevisionTests(ITestOutputHelper output)
             Assert.Equal("800.5", Assert.Single(view.Inputs).PlannedKg);
             assertionStage = "result_target";
             Assert.Equal(new TargetViewV1("GoodOutputMass", "700"), view.Target);
-            // Every awaited owner answer is followed by a fresh captured-company/actor fence. The final pair is the
-            // verified-content fence followed by the new pre-write fence immediately before the revision is stored.
+            // The command grant is followed by RunAsync's pre-write fence before the plan read. Every awaited owner
+            // answer is then followed by its fresh captured-company/actor fence before the revision is stored.
             assertionStage = "call_sequence";
             Assert.Equal(expectedCalls, fixture.Calls.Where(call => call != "find-command"));
             assertionStage = "stored_revision";
@@ -236,8 +236,8 @@ public sealed class ManufacturingPlanRevisionTests(ITestOutputHelper output)
         var assertionStage = "before_service_call";
         string[] expectedCalls =
         [
-            "authority", "find-plan", "work-center", "authority", "settings", "party-account", "authority",
-            "parent-roll-context", "authority", "product", "authority", "authority", "authority", "revise",
+            "authority", "authority", "find-plan", "work-center", "authority", "settings", "party-account",
+            "authority", "parent-roll-context", "authority", "product", "authority", "authority", "revise",
         ];
 
         try
@@ -263,7 +263,7 @@ public sealed class ManufacturingPlanRevisionTests(ITestOutputHelper output)
             Assert.Equal((StockPartyKind.Counterparty, Party, StockPartyKind.Company, Company),
                 (selection.PositionContext.OwnerKind, selection.PositionContext.OwnerId,
                     selection.PositionContext.CustodianKind, selection.PositionContext.CustodianId));
-            // The last authority call is the fresh pre-write fence after all owner snapshots have been verified.
+            // RunAsync's pre-write fence precedes the plan read; the final authority calls fence verified owner snapshots.
             assertionStage = "call_sequence";
             Assert.Equal(expectedCalls, fixture.Calls.Where(call => call != "find-command"));
         }
