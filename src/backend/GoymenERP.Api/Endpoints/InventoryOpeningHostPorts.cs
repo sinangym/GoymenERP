@@ -10,11 +10,13 @@ namespace GoymenERP.Api.Endpoints;
 /// <summary>
 /// Adapts Cari's existing authorized Manufacturing party-account source to Inventory's opening-owner seam.
 /// The source owns disclosure and account facts; Inventory owns whether those facts are eligible for an opening.
-/// This host preserves the source outcomes and fences the same actor/company before and after the awaited read.
+/// This host preserves the source outcomes and fences Cari's company-wide read authority and the same actor/company
+/// before and after the awaited read. A source fault is disclosed as unavailable only while that authority remains fresh.
 /// </summary>
 public sealed class CounterpartyInventoryOpeningOwnerAccountPortV1(
     ICompanyContext companyContext,
     ICurrentUser currentUser,
+    IErpAuthorityRevalidationService authority,
     ICounterpartyManufacturingPartyAccountSourceV1 source)
     : IInventoryOpeningOwnerAccountPortV1
 {
@@ -31,6 +33,11 @@ public sealed class CounterpartyInventoryOpeningOwnerAccountPortV1(
 
         var companyId = companyContext.CompanyId;
         var actorId = currentUser.UserId!;
+        if (!await HasFreshReadAsync(companyId, actorId, cancellationToken))
+        {
+            return Answer(InventoryOpeningOwnerAccountOutcomeV1.Denied);
+        }
+
         CounterpartyManufacturingPartyAccountAnswerV1 answer;
         try
         {
@@ -42,12 +49,12 @@ public sealed class CounterpartyInventoryOpeningOwnerAccountPortV1(
         }
         catch (Exception)
         {
-            return RemainsCurrent(companyId, actorId)
+            return await HasFreshReadAsync(companyId, actorId, cancellationToken)
                 ? Answer(InventoryOpeningOwnerAccountOutcomeV1.Unavailable)
                 : Answer(InventoryOpeningOwnerAccountOutcomeV1.Denied);
         }
 
-        if (!RemainsCurrent(companyId, actorId))
+        if (!await HasFreshReadAsync(companyId, actorId, cancellationToken))
         {
             return Answer(InventoryOpeningOwnerAccountOutcomeV1.Denied);
         }
@@ -87,6 +94,34 @@ public sealed class CounterpartyInventoryOpeningOwnerAccountPortV1(
         IsCurrent()
         && companyContext.CompanyId == companyId
         && string.Equals(currentUser.UserId, actorId, StringComparison.Ordinal);
+
+    private async Task<bool> HasFreshReadAsync(
+        Guid companyId,
+        string actorId,
+        CancellationToken cancellationToken)
+    {
+        if (!RemainsCurrent(companyId, actorId))
+        {
+            return false;
+        }
+
+        try
+        {
+            var measured = await authority.RevalidatePermissionScopeAsync(
+                ErpPermissions.CounterpartyPartiesRead,
+                companyId,
+                cancellationToken);
+            return measured.IsGranted && measured.IsCompanyWide && RemainsCurrent(companyId, actorId);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+    }
 
     private static InventoryOpeningOwnerAccountAnswerV1 Answer(InventoryOpeningOwnerAccountOutcomeV1 outcome) =>
         new(outcome, null);
