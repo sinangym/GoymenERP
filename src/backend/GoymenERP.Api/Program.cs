@@ -24,6 +24,7 @@ using GoymenERP.Modules.Accounting.Application.Contracts;
 using GoymenERP.Modules.Audit.Infrastructure;
 using GoymenERP.Modules.Audit.Infrastructure.Persistence;
 using GoymenERP.Modules.Counterparty.Infrastructure;
+using GoymenERP.Modules.Counterparty.Application.Contracts;
 using GoymenERP.Modules.Documents.Infrastructure;
 using GoymenERP.Modules.Finance.Contracts;
 using GoymenERP.Modules.Finance.Infrastructure;
@@ -236,6 +237,7 @@ builder.Services.AddInventoryStockScraps();
 // and Product's stock eligibility (the owners' contracts; no user read, no copy of either owner's rows).
 builder.Services.AddScoped<IInventoryLocationStatusPort, OrganizationInventoryLocationStatusPort>();
 builder.Services.AddScoped<IInventoryProductStockPort, ProductInventoryStockPort>();
+builder.Services.AddScoped<IInventoryOpeningOwnerAccountPortV1, CounterpartyInventoryOpeningOwnerAccountPortV1>();
 builder.Services.AddManufacturingModule(
     builder.Configuration,
     (services, options) => options.AddInterceptors(

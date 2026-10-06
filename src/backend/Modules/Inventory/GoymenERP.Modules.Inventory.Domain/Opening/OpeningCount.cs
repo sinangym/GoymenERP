@@ -19,10 +19,9 @@ public sealed record OpeningCountLine(Guid Id, MaterialLot Lot, MaterialLabel La
 /// the moment of opening. It is not an adjustment: a later difference between book and a new count is
 /// the count-difference process (ST-05) with its own second approval.
 /// <para>
-/// Kept: company, location, the counted-on date and the reference of the physical count sheet. No
-/// personal name is stored (the recording actor is in the audit, ADR-009). Owner and custodian are the
-/// company itself: a customer's or another party's goods are not opened here (DEC-STK-001, fail-closed).
-/// Opening stock is free stock; nothing is blocked or allocated by it.
+/// Kept: company, location, the counted-on date, the reference of the physical count sheet and one exact
+/// owner/custodian pair for every counted piece. The custodian is always the transaction company; the owner
+/// is that company or one validated Counterparty. Opening stock is free; nothing is blocked or allocated.
 /// </para>
 /// </summary>
 public sealed class OpeningCount
@@ -37,6 +36,14 @@ public sealed class OpeningCount
 
     public OpeningCount(Guid id, Guid companyId, Guid locationId, DateOnly countedOn, string sheetReference,
         IEnumerable<OpeningCountLine> lines)
+        : this(id, companyId, locationId, countedOn, sheetReference,
+            new StockOwner(StockPartyKind.Company, companyId),
+            new StockCustodian(StockPartyKind.Company, companyId), lines)
+    {
+    }
+
+    public OpeningCount(Guid id, Guid companyId, Guid locationId, DateOnly countedOn, string sheetReference,
+        StockOwner owner, StockCustodian custodian, IEnumerable<OpeningCountLine> lines)
     {
         Id = StockIds.Require(id, "Açılış sayımı");
         CompanyId = StockIds.Require(companyId, "Sayımın şirketi");
@@ -48,6 +55,13 @@ public sealed class OpeningCount
 
         CountedOn = countedOn;
         SheetReference = RequireSheetReference(sheetReference);
+        Owner = owner;
+        Custodian = custodian;
+        if (Custodian.Kind != StockPartyKind.Company || Custodian.Id != CompanyId
+            || (Owner.Kind == StockPartyKind.Company && Owner.Id != CompanyId))
+        {
+            throw Invalid("Açılış sayımının şirket/gözeten/mal sahibi bağlamı geçersizdir.");
+        }
         ArgumentNullException.ThrowIfNull(lines);
         this.lines = [.. lines];
         Validate();
@@ -66,12 +80,15 @@ public sealed class OpeningCount
 
     public IReadOnlyList<OpeningCountLine> Lines => lines;
 
+    public StockOwner Owner { get; }
+
+    public StockCustodian Custodian { get; }
+
     /// <summary>The stock position of a counted piece: this company owns and keeps it, at the counted location, free.</summary>
     public StockPosition PositionOf(OpeningCountLine line)
     {
         ArgumentNullException.ThrowIfNull(line);
-        var self = new StockOwner(StockPartyKind.Company, CompanyId);
-        return new StockPosition(CompanyId, self, new StockCustodian(StockPartyKind.Company, CompanyId), LocationId,
+        return new StockPosition(CompanyId, Owner, Custodian, LocationId,
             line.Label, BlockState.Free);
     }
 

@@ -24,6 +24,7 @@ public sealed class InventoryOpeningCodesTests
         { InventoryStoreCodes.ValueDoesNotFit, 400 },
         { InventoryScaleCodes.ScaleExceeded, 400 },
         { InventoryScaleCodes.ProfileUnusable, 503 },
+        { InventoryOpeningCodesV1.OwnerAccountUnavailable, 503 },
         { "settings_provider_unavailable", 503 },
         { "settings_unit_profile_not_found", 503 },
         { "settings_profile_invalid", 503 },
@@ -78,6 +79,9 @@ public sealed class InventoryOpeningCodesTests
         ];
         Assert.Equal(sets.Sum(set => set.Count), sets.SelectMany(set => set).Distinct(StringComparer.Ordinal).Count());
         Assert.Contains(InventoryOpeningCodesV1.LocationNotFound, InventoryOpeningCodesV1.Status422Codes);
+        Assert.Contains(InventoryOpeningCodesV1.OwnerAccountIneligible, InventoryOpeningCodesV1.Status422Codes);
+        Assert.Contains(InventoryOpeningCodesV1.OwnerAccountUnavailable, InventoryOpeningCodesV1.Status503Codes);
+        Assert.Contains(InventoryOpeningCodesV1.OwnerContextInvalid, InventoryOpeningCodesV1.IssueCodes);
         Assert.DoesNotContain(InventoryOpeningCodesV1.LocationNotFound, InventoryOpeningCodesV1.Status409Codes);
     }
 }
