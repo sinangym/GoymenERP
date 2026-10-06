@@ -61,7 +61,7 @@ async function expectExactShellNavigation(page: Page, viewport: { width: number;
 
   await page.goto('/satis/siparisler')
   await expect(page.getByRole('heading', { level: 1, name: 'Satış siparişi taslakları' })).toBeVisible()
-  await expect(page.getByRole('main').getByRole('link', { name: /yeni sipariş taslağı/i })).toHaveCount(1)
+  await expect(page.getByRole('main').getByRole('link', { name: 'Yeni taslak' })).toHaveCount(1)
   await expect(shellNavigation(page).getByRole('link', { name: 'Yeni Sipariş Taslağı' })).toHaveCount(0)
   await expect(shellNavigation(page).locator('[aria-current="page"]')).toHaveCount(1)
   await expect(shellNavigation(page).getByRole('link', { name: 'Sipariş Taslakları' })).toHaveAttribute('aria-current', 'page')
