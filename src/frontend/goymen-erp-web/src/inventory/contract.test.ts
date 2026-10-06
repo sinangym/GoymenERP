@@ -38,6 +38,26 @@ describe('Inventory opening wire contracts', () => {
     })).not.toBeNull()
   })
 
+  it('accepts the optional typed customer-owner context and refuses mixed or incomplete wire shapes', () => {
+    const customerOwned = {
+      ...request,
+      positionContext: {
+        ownerKind: 'Counterparty', ownerId: PRODUCT, ownerCompanyPartyAccountId: UNIT,
+        custodianKind: 'Company', custodianId: COMPANY,
+      },
+    }
+    expect(isOpeningCountRequest(customerOwned)).toBe(true)
+    expect(isOpeningCountRequest({
+      ...customerOwned,
+      positionContext: { ...customerOwned.positionContext, ownerCompanyPartyAccountId: null },
+    })).toBe(false)
+    expect(isOpeningCountRequest({
+      ...customerOwned,
+      positionContext: { ...customerOwned.positionContext, ownerKind: 'Supplier' },
+    })).toBe(false)
+    expect(isOpeningCountRequest({ ...customerOwned, unexpected: true })).toBe(false)
+  })
+
   it('decodes exact bounded Product and Organization candidates', () => {
     expect(decodeProductStockCandidates({
       items: [{

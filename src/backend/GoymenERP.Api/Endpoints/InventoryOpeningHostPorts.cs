@@ -1,8 +1,131 @@
+using GoymenERP.BuildingBlocks.Multitenancy;
+using GoymenERP.BuildingBlocks.Security;
+using GoymenERP.Modules.Counterparty.Application.Contracts;
 using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Organization.Application.Contracts;
 using GoymenERP.Modules.Product.Application.Contracts;
 
 namespace GoymenERP.Api.Endpoints;
+
+/// <summary>
+/// Adapts Cari's existing authorized Manufacturing party-account source to Inventory's opening-owner seam.
+/// The source owns disclosure and account facts; Inventory owns whether those facts are eligible for an opening.
+/// This host preserves the source outcomes and fences Cari's company-wide read authority and the same actor/company
+/// before and after the awaited read. A source fault is disclosed as unavailable only while that authority remains fresh.
+/// </summary>
+public sealed class CounterpartyInventoryOpeningOwnerAccountPortV1(
+    ICompanyContext companyContext,
+    ICurrentUser currentUser,
+    IErpAuthorityRevalidationService authority,
+    ICounterpartyManufacturingPartyAccountSourceV1 source)
+    : IInventoryOpeningOwnerAccountPortV1
+{
+    public async Task<InventoryOpeningOwnerAccountAnswerV1> GetAuthorizedAsync(
+        Guid partyId,
+        Guid companyPartyAccountId,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!IsCurrent() || partyId == Guid.Empty || companyPartyAccountId == Guid.Empty)
+        {
+            return Answer(InventoryOpeningOwnerAccountOutcomeV1.Denied);
+        }
+
+        var companyId = companyContext.CompanyId;
+        var actorId = currentUser.UserId!;
+        if (!await HasFreshReadAsync(companyId, actorId, cancellationToken))
+        {
+            return Answer(InventoryOpeningOwnerAccountOutcomeV1.Denied);
+        }
+
+        CounterpartyManufacturingPartyAccountAnswerV1 answer;
+        try
+        {
+            answer = await source.GetAuthorizedAsync(partyId, companyPartyAccountId, cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            return await HasFreshReadAsync(companyId, actorId, cancellationToken)
+                ? Answer(InventoryOpeningOwnerAccountOutcomeV1.Unavailable)
+                : Answer(InventoryOpeningOwnerAccountOutcomeV1.Denied);
+        }
+
+        if (!await HasFreshReadAsync(companyId, actorId, cancellationToken))
+        {
+            return Answer(InventoryOpeningOwnerAccountOutcomeV1.Denied);
+        }
+
+        return answer.Outcome switch
+        {
+            CounterpartyManufacturingPartyAccountOutcomeV1.Denied =>
+                Answer(InventoryOpeningOwnerAccountOutcomeV1.Denied),
+            CounterpartyManufacturingPartyAccountOutcomeV1.NotFound =>
+                Answer(InventoryOpeningOwnerAccountOutcomeV1.NotFound),
+            CounterpartyManufacturingPartyAccountOutcomeV1.Unavailable =>
+                Answer(InventoryOpeningOwnerAccountOutcomeV1.Unavailable),
+            CounterpartyManufacturingPartyAccountOutcomeV1.Found when answer.Account is { } account =>
+                new InventoryOpeningOwnerAccountAnswerV1(
+                    InventoryOpeningOwnerAccountOutcomeV1.Found,
+                    new InventoryOpeningOwnerAccountV1(
+                        account.PartyId,
+                        account.CompanyAccountId,
+                        account.CompanyId,
+                        account.PartyIsActive,
+                        account.AccountIsActive,
+                        account.HasCustomerRole,
+                        account.PartyVersion,
+                        account.AccountVersion)),
+            _ => Answer(InventoryOpeningOwnerAccountOutcomeV1.Unavailable),
+        };
+    }
+
+    private bool IsCurrent() =>
+        currentUser.IsAuthenticated
+        && !string.IsNullOrWhiteSpace(currentUser.UserId)
+        && companyContext.IsResolved
+        && companyContext.CompanyId != Guid.Empty
+        && currentUser.CanAccessCompany(companyContext.CompanyId);
+
+    private bool RemainsCurrent(Guid companyId, string actorId) =>
+        IsCurrent()
+        && companyContext.CompanyId == companyId
+        && string.Equals(currentUser.UserId, actorId, StringComparison.Ordinal);
+
+    private async Task<bool> HasFreshReadAsync(
+        Guid companyId,
+        string actorId,
+        CancellationToken cancellationToken)
+    {
+        if (!RemainsCurrent(companyId, actorId))
+        {
+            return false;
+        }
+
+        try
+        {
+            var measured = await authority.RevalidatePermissionScopeAsync(
+                ErpPermissions.CounterpartyPartiesRead,
+                companyId,
+                cancellationToken);
+            return measured.IsGranted && measured.IsCompanyWide && RemainsCurrent(companyId, actorId);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+    }
+
+    private static InventoryOpeningOwnerAccountAnswerV1 Answer(InventoryOpeningOwnerAccountOutcomeV1 outcome) =>
+        new(outcome, null);
+}
 
 /// <summary>
 /// INV-OPEN-1 part 2: the opening command's location port over Organization's module read
