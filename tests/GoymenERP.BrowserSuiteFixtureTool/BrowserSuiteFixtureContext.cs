@@ -15,6 +15,15 @@ public sealed partial class BrowserSuiteFixtureContext
     public const string CompanyHeader = "X-Company-Id";
     public const string CorrelationHeader = "X-Correlation-Id";
     public const string IdempotencyHeader = "Idempotency-Key";
+    private const string FixtureDiagnosticHeader = "X-Browser-Fixture-Diagnostic";
+
+    private static readonly HashSet<string> SafeFixtureDiagnosticPhases = new(StringComparer.Ordinal)
+    {
+        "mfg_plan_party_account",
+        "mfg_plan_parent_roll",
+        "mfg_plan_product_snapshot",
+        "mfg_plan_settings_profile",
+    };
 
     // HTTP header names are case-insensitive: a seed cannot replace these in any spelling.
     private static readonly HashSet<string> ContextHeaders = new(StringComparer.OrdinalIgnoreCase)
@@ -174,10 +183,16 @@ public sealed partial class BrowserSuiteFixtureContext
             {
                 var body = await response.Content.ReadAsStringAsync(cancellationToken);
                 var status = (int)response.StatusCode;
+                var diagnostic = response.Headers.TryGetValues(FixtureDiagnosticHeader, out var values)
+                    ? values.SingleOrDefault()
+                    : null;
+                var safeDiagnostic = diagnostic is not null && SafeFixtureDiagnosticPhases.Contains(diagnostic)
+                    ? $" [{diagnostic}]"
+                    : "";
                 response.Dispose();
                 throw new InvalidOperationException(
                     $"Seed request {sequence} {request.Method} {request.RequestUri?.AbsolutePath} "
-                    + $"answered {status}: {(body.Length > 512 ? body[..512] : body)}");
+                    + $"answered {status}{safeDiagnostic}: {(body.Length > 512 ? body[..512] : body)}");
             }
 
             return response;

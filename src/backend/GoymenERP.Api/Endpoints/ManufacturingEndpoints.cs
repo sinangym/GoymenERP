@@ -24,6 +24,7 @@ namespace GoymenERP.Api.Endpoints;
 public static class ManufacturingEndpoints
 {
     private const string IdempotencyHeaderName = "Idempotency-Key";
+    internal const string FixtureDiagnosticHeaderName = "X-Browser-Fixture-Diagnostic";
     private const int MaximumIdempotencyKeyLength = 128;
 
     private static readonly HashSet<string> OutputProductQueryNames =
@@ -545,6 +546,8 @@ public static class ManufacturingEndpoints
     private static IResult ToHttpResult<T>(HttpContext httpContext, ManufacturingApiResult<T> result, string? location)
         where T : class
     {
+        SetFixtureDiagnostic(httpContext, result.Status, result.Code);
+
         if (result.IsReplay)
         {
             httpContext.Response.Headers["Idempotency-Replayed"] = "true";
@@ -576,6 +579,44 @@ public static class ManufacturingEndpoints
             _ => throw new InvalidOperationException("Tanımsız üretim komutu sonucu."),
         };
     }
+
+    internal static void SetFixtureDiagnostic(
+        HttpContext httpContext,
+        ManufacturingApiStatus status,
+        string? code)
+    {
+        if (status != ManufacturingApiStatus.Unavailable
+            || FixtureDiagnosticPhase(code) is not { } phase)
+        {
+            return;
+        }
+
+        var environment = httpContext.RequestServices.GetService<IHostEnvironment>();
+        var configuration = httpContext.RequestServices.GetService<IConfiguration>();
+        if (environment?.IsEnvironment("Testing") != true
+            || !string.Equals(configuration?["BrowserSuiteFixture:Host"], "CONFIRMED", StringComparison.Ordinal)
+            || !string.Equals(configuration?["BrowserSuiteApi:Profile"], "mfg", StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        httpContext.Response.Headers[FixtureDiagnosticHeaderName] = phase;
+    }
+
+    internal static string? FixtureDiagnosticPhase(string? code) => code switch
+    {
+        "counterparty_provider_unavailable" => "mfg_plan_party_account",
+        InventoryParentRollCodesV1.Unavailable => "mfg_plan_parent_roll",
+        "product_manufacturing_technical_snapshot_unavailable"
+            or "product_runtime_unconfigured"
+            or "product_family_policy_unavailable"
+            or "product_family_policy_invalid"
+            or "product_manufacturing_measure_undefined" => "mfg_plan_product_snapshot",
+        "settings_provider_unavailable"
+            or "settings_profile_invalid"
+            or "settings_unit_profile_not_found" => "mfg_plan_settings_profile",
+        _ => null,
+    };
 
     private static IResult Problem(int statusCode, string code, string? field, long? expectedVersion = null,
         long? currentVersion = null)

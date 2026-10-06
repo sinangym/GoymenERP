@@ -334,6 +334,13 @@ public sealed partial class ManufacturingCommandService(
     ICounterpartyManufacturingPartyAccountSourceV1? partyAccounts = null,
     IInventoryContextualParentRollReferencesV1? contextualParentRolls = null)
 {
+    // These owner-provider codes stay inside the application result. The public endpoint continues to
+    // collapse every unavailable answer to service_unavailable; the disposable MFG fixture may map the
+    // closed values to one fixed phase marker while diagnosing its own seed.
+    private const string CounterpartyProviderUnavailable = "counterparty_provider_unavailable";
+    private const string ProductTechnicalSnapshotUnavailable =
+        "product_manufacturing_technical_snapshot_unavailable";
+
     /// <summary>Any integer mantissa of this many digits fits a decimal's 96 bits, so such a text converts exactly.</summary>
     private const int ExactDecimalDigits = 28;
 
@@ -1875,7 +1882,8 @@ public sealed partial class ManufacturingCommandService(
 
         if (partyAccounts is null)
         {
-            return (null, new ManufacturingApiResult<object>(ManufacturingApiStatus.Unavailable, null, false, null));
+            return (null, new ManufacturingApiResult<object>(ManufacturingApiStatus.Unavailable, null, false,
+                CounterpartyProviderUnavailable));
         }
 
         CounterpartyManufacturingPartyAccountAnswerV1 answer;
@@ -1895,7 +1903,8 @@ public sealed partial class ManufacturingCommandService(
                 return (null, fenced);
             }
 
-            return (null, new ManufacturingApiResult<object>(ManufacturingApiStatus.Unavailable, null, false, null));
+            return (null, new ManufacturingApiResult<object>(ManufacturingApiStatus.Unavailable, null, false,
+                CounterpartyProviderUnavailable));
         }
 
         if (await FenceCapturedAsync<object>(permission, companyId, actorId, cancellationToken) is { } ownerFenced)
@@ -1921,7 +1930,8 @@ public sealed partial class ManufacturingCommandService(
             || string.IsNullOrEmpty(account.PartyVersion)
             || string.IsNullOrEmpty(account.AccountVersion))
         {
-            return (null, new ManufacturingApiResult<object>(ManufacturingApiStatus.Unavailable, null, false, null));
+            return (null, new ManufacturingApiResult<object>(ManufacturingApiStatus.Unavailable, null, false,
+                CounterpartyProviderUnavailable));
         }
 
         if (!string.Equals(account.PartyVersion, requested.PartyVersion, StringComparison.Ordinal))
@@ -2054,7 +2064,8 @@ public sealed partial class ManufacturingCommandService(
     {
         if (productTechnicalSnapshots is null)
         {
-            return (null, new ManufacturingApiResult<object>(ManufacturingApiStatus.Unavailable, null, false, null));
+            return (null, new ManufacturingApiResult<object>(ManufacturingApiStatus.Unavailable, null, false,
+                ProductTechnicalSnapshotUnavailable));
         }
 
         try
@@ -2079,7 +2090,8 @@ public sealed partial class ManufacturingCommandService(
                 || snapshot.UnitKg.CompanyId != companyId
                 || snapshot.EffectiveOn != effectiveOn)
             {
-                return (null, new ManufacturingApiResult<object>(ManufacturingApiStatus.Unavailable, null, false, null));
+                return (null, new ManufacturingApiResult<object>(ManufacturingApiStatus.Unavailable, null, false,
+                    ProductTechnicalSnapshotUnavailable));
             }
 
             return (new PlanTechnicalParameterSnapshotV1(
@@ -2114,6 +2126,16 @@ public sealed partial class ManufacturingCommandService(
 
             return (null, Denied<object>());
         }
+        catch (ProductOperationException exception) when (exception.StatusCode == 503)
+        {
+            if (await FenceCapturedAsync<object>(permission, companyId, actorId, cancellationToken) is { } fenced)
+            {
+                return (null, fenced);
+            }
+
+            return (null, new ManufacturingApiResult<object>(ManufacturingApiStatus.Unavailable, null, false,
+                exception.Code));
+        }
         catch (SettingsPrerequisiteException exception)
         {
             if (await FenceCapturedAsync<object>(permission, companyId, actorId, cancellationToken) is { } fenced)
@@ -2131,7 +2153,8 @@ public sealed partial class ManufacturingCommandService(
                 return (null, fenced);
             }
 
-            return (null, new ManufacturingApiResult<object>(ManufacturingApiStatus.Unavailable, null, false, null));
+            return (null, new ManufacturingApiResult<object>(ManufacturingApiStatus.Unavailable, null, false,
+                ProductTechnicalSnapshotUnavailable));
         }
     }
 
