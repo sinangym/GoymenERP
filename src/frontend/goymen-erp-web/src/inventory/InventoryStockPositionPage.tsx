@@ -141,7 +141,7 @@ function InventoryStockPositionView({
     {state.type === 'ready' && state.data.items.length > 0 ? <>
       {state.data.searchWindowFull ? <p role="status">Arama penceresi doldu; etiket kodunu daraltın.</p> : null}
       <div className={styles.tableWrap}><table aria-busy="false"><thead><tr>
-        <th>Etiket / lot</th><th>Kaynak / durum</th><th>Ürün / lokasyon</th><th>Sahiplik / gözetim</th><th>Fiziksel kg</th><th>Bloklu kg</th><th>Aktif tahsis kg</th><th>Serbest kg</th><th>İşlemler</th>
+        <th>Etiket / lot</th><th>Kaynak / durum</th><th>Ürün / lokasyon</th><th>Sahiplik / gözetim</th><th>Fiziksel kg</th><th>Bloklu kg</th><th>Tahsisli kg</th><th>Kullanılabilir kg</th><th>İşlemler</th>
       </tr></thead><tbody>{state.data.items.map((item) => <tr key={item.labelId} data-label-id={item.labelId}>
         <td><strong><Link to={inventoryLabelDetailPath(item.labelId)} state={stockRowActionState(appliedQ)}>{item.labelCode}</Link></strong><br />{item.lot.heatNumber ?? item.heatNumber ?? 'Döküm bilinmiyor'} · {item.lot.coilNumber ?? item.coilNumber ?? 'Rulo bilinmiyor'}<br />{item.documentStatus}</td>
         <td>Fiziksel Stok</td>

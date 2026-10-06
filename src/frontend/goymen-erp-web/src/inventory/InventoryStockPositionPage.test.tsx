@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -73,6 +73,19 @@ describe('InventoryStockPositionPage', () => {
       .toBe(`/ayarlar/organizasyon/lokasyon/${LOCATION}`)
     expect(document.body.textContent).not.toContain(PRODUCT)
     expect(document.body.textContent).not.toContain(LOCATION)
+  })
+
+  it('labels and renders the four primary quantities from their exact server fields', async () => {
+    render(<MemoryRouter><InventoryStockPositionPage /></MemoryRouter>)
+
+    const row = (await screen.findByText('LBL-1')).closest('tr')
+    expect(row).not.toBeNull()
+    expect(screen.getAllByRole('columnheader').slice(4, 8).map((header) => header.textContent))
+      .toEqual(['Fiziksel kg', 'Bloklu kg', 'Tahsisli kg', 'Kullanılabilir kg'])
+    expect(within(row!).getAllByRole('cell').slice(4, 8).map((cell) => cell.textContent))
+      .toEqual([item.physicalKg, item.blockedPhysicalKg, item.activeAllocationKg, item.availableKg])
+    expect(row?.textContent).not.toContain(item.freePhysicalKg)
+    expect(screen.queryByRole('columnheader', { name: 'Serbest kg' })).toBeNull()
   })
 
   it.each([
