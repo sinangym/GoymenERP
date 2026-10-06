@@ -13,6 +13,7 @@ const A_ID = 'aaaaaaaa-0000-0000-0000-000000000001'
 const B_ID = 'bbbbbbbb-0000-0000-0000-000000000002'
 const PARTY = '11111111-1111-1111-1111-111111111111'
 const ACC = 'cccccccc-1111-1111-1111-111111111111'
+const B_ACC = 'dddddddd-2222-2222-2222-222222222222'
 
 const IDENTITY = {
   userId: '99999999-9999-9999-9999-999999999999',
@@ -227,6 +228,80 @@ describe('C-03 core summary (spec §5.1)', () => {
     renderAt(`/cari/${PARTY}`)
     await screen.findByRole('heading', { name: /Örnek Metal/ }, CHAIN)
     expect(screen.queryByRole('link', { name: 'İletişim ve adres bilgilerini düzenle' })).toBeNull()
+  })
+
+  it('opens only this company account ledger through the advertised Finance route', async () => {
+    installFetch({
+      capabilities: [
+        CAPABILITY.cariPartiesDetail,
+        CAPABILITY.financeReceiptsList,
+      ],
+    })
+    const { router } = renderAt(`/cari/${PARTY}`)
+    await screen.findByRole('heading', { name: /Örnek Metal/ }, CHAIN)
+
+    const link = screen.getByRole('link', { name: 'Cari hesap ekstresini aç' })
+    expect(document.querySelector('[data-section="account"]')?.contains(link)).toBe(true)
+    expect(link.getAttribute('href')).toBe(
+      `/finans/tahsilatlar?ekstreCari=${PARTY}&ekstreHesap=${ACC}`,
+    )
+    await userEvent.click(link)
+    await waitFor(() => {
+      expect(router.state.location.pathname).toBe('/finans/tahsilatlar')
+      expect(router.state.location.search).toBe(`?ekstreCari=${PARTY}&ekstreHesap=${ACC}`)
+    }, CHAIN)
+  })
+
+  it('does not advertise the ledger without its own Finance list capability', async () => {
+    installFetch({ capabilities: [CAPABILITY.cariPartiesDetail] })
+    renderAt(`/cari/${PARTY}`)
+    await screen.findByRole('heading', { name: /Örnek Metal/ }, CHAIN)
+    expect(screen.queryByRole('link', { name: 'Cari hesap ekstresini aç' })).toBeNull()
+  })
+
+  it('does not link a missing or foreign-company account', async () => {
+    for (const companyAccounts of [
+      [],
+      [{ id: ACC, companyId: B_ID, roles: PARTY_ROLE_FLAG.Customer, isActive: true, version: '2' }],
+    ]) {
+      cleanup()
+      installFetch({
+        capabilities: [CAPABILITY.cariPartiesDetail, CAPABILITY.financeReceiptsList],
+        detail: () => json(detail({ companyAccounts })),
+      })
+      renderAt(`/cari/${PARTY}`)
+      expect(await findStateBlock('malformed-response')).toBeTruthy()
+      expect(screen.queryByRole('link', { name: 'Cari hesap ekstresini aç' })).toBeNull()
+      expect(document.body.textContent).not.toContain('Örnek Metal')
+    }
+  })
+
+  it('rebinds the ledger link to the freshly read account after a company switch', async () => {
+    const { calls } = installFetch({
+      capabilities: [CAPABILITY.cariPartiesDetail, CAPABILITY.financeReceiptsList],
+      detail: (companyId) => json(detail({
+        companyAccounts: [{
+          id: companyId === B_ID ? B_ACC : ACC,
+          companyId: companyId === B_ID ? B_ID : A_ID,
+          roles: PARTY_ROLE_FLAG.Customer,
+          isActive: true,
+          version: '2',
+        }],
+      })),
+    })
+    renderAt(`/cari/${PARTY}`)
+    const oldLink = await screen.findByRole('link', { name: 'Cari hesap ekstresini aç' }, CHAIN)
+    expect(oldLink.getAttribute('href')).toContain(`ekstreHesap=${ACC}`)
+
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Şirket' }), B_ID)
+    await waitFor(() => {
+      const link = screen.getByRole('link', { name: 'Cari hesap ekstresini aç' })
+      expect(link.getAttribute('href')).toBe(
+        `/finans/tahsilatlar?ekstreCari=${PARTY}&ekstreHesap=${B_ACC}`,
+      )
+      expect(calls.some((call) => call.companyId === B_ID && call.url.includes(`/counterparties/${PARTY}`))).toBe(true)
+    }, CHAIN)
+    expect(document.querySelector(`a[href*="ekstreHesap=${ACC}"]`)).toBeNull()
   })
 
   it('shows no balance, risk, limit, stock or order field (mockTruthForbidden)', async () => {
