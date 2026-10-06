@@ -805,7 +805,12 @@ public sealed class ProductGlobalRuntimeSqlServerRelationalAcceptanceTests
                         [TechnicalTemplateId], [TechnicalTemplateVersion], [TechnicalTemplateSourceRevision],
                         [TechnicalKilogramUnitCompanyId], [TechnicalKilogramUnitId],
                         [TechnicalKilogramProfileId], [TechnicalKilogramProfileVersion],
-                        [TechnicalThicknessMm], [TechnicalWidthMm]
+                        [TechnicalThicknessMm], [TechnicalWidthMm],
+                        (SELECT COUNT(*) FROM [manufacturing].[Plans]
+                            WHERE [CompanyId] = @company AND [Id] = @plan),
+                        (SELECT COUNT(*) FROM [manufacturing].[Commands]
+                            WHERE [CompanyId] = @company
+                              AND [CommandName] = N'manufacturing.plan.save.v1')
                     FROM [manufacturing].[PlanInputs]
                     WHERE [CompanyId] = @company AND [PlanId] = @plan;
                     """;
@@ -823,6 +828,7 @@ public sealed class ProductGlobalRuntimeSqlServerRelationalAcceptanceTests
                     captured.UnitKg.ProfileVersion),
                     (row.GetGuid(9), row.GetGuid(10), row.GetGuid(11), row.GetString(12)));
                 Assert.Equal((3m, 248m), (row.GetDecimal(13), row.GetDecimal(14)));
+                Assert.Equal((1, 1), (row.GetInt32(15), row.GetInt32(16)));
                 Assert.False(await row.ReadAsync());
             }
         });
