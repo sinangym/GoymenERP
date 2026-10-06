@@ -80,8 +80,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // Re-fingerprinted once more for AT-065: only the comment above AddDocumentsRuntime changed, to say that
     // production uses the own-server store and Defender when both are configured and answers 503 otherwise
     // (abe26a09… -> c027dce9…); no code line changed.
+    // Re-fingerprinted for customer-owned Inventory opening: one scoped registration binds Inventory's
+    // owner-account seam to Cari's existing authorized source; no network or hosted-service surface changed.
     private const string ReviewedOpenApiStartupFingerprint =
-        "0900c975ca62cb0901d3e7c0d5a12efe25a09df794551f6ceb32f73da8465192";
+        "73395d6ba41df239ae73407cd06c9480bbe8fb36e675a9d160722557f68939f0";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedProductManufacturingTechnicalRegistrationPath =

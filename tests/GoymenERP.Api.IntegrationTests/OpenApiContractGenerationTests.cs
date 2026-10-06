@@ -4847,7 +4847,16 @@ public sealed partial class OpenApiContractGenerationTests
                     ["countId", "locationId", "countedOn", "sheetReference", "lines"],
                     ("countId", "type:string;format:uuid"), ("locationId", "type:string;format:uuid"),
                     ("countedOn", "type:string;format:date"), ("sheetReference", "type:string"),
-                    ("lines", "type:array;items:ref:OpeningCountLineRequestV1")),
+                    ("lines", "type:array;items:ref:OpeningCountLineRequestV1"),
+                    ("positionContext", "oneOf:ref:OpeningCountPositionContextV1|type:null")),
+                ["OpeningCountPositionContextV1"] = ObjectSchema(
+                    ["ownerKind", "ownerId", "custodianKind", "custodianId"],
+                    ("ownerKind", "ref:InventoryOpeningPartyKindV1"),
+                    ("ownerId", "type:string;format:uuid"),
+                    ("ownerCompanyPartyAccountId", "type:null|string;format:uuid"),
+                    ("custodianKind", "ref:InventoryOpeningPartyKindV1"),
+                    ("custodianId", "type:string;format:uuid")),
+                ["InventoryOpeningPartyKindV1"] = EnumSchema("Company", "Counterparty"),
                 ["CreateInventoryPhysicalAllocationRequestV1"] = ObjectSchema(
                     ["allocationId", "salesOrderId", "salesOrderLineId", "labelId", "expectedLabelVersion", "quantityKg", "reason", "reservedUntilUtc"],
                     ("allocationId", "type:string;format:uuid"), ("salesOrderId", "type:string;format:uuid"),

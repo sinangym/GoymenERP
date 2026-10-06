@@ -843,6 +843,7 @@
             "x-erp-problem-codes": [
               "company_context_invalid",
               "correlation_metadata_invalid",
+              "inventory_owner_context_invalid",
               "validation_failed"
             ],
             "x-erp-empty-body-possible": true
@@ -39923,6 +39924,7 @@
               "inventory_location_external",
               "inventory_location_inactive",
               "inventory_location_not_found",
+              "inventory_owner_account_ineligible",
               "inventory_product_ineligible"
             ]
           },
@@ -67958,6 +67960,13 @@
           }
         }
       },
+      "InventoryOpeningPartyKindV1": {
+        "type": "string",
+        "enum": [
+          "Company",
+          "Counterparty"
+        ]
+      },
       "InventoryParentRollCandidatesV1": {
         "required": [
           "items",
@@ -70416,6 +70425,39 @@
           }
         }
       },
+      "OpeningCountPositionContextV1": {
+        "required": [
+          "ownerKind",
+          "ownerId",
+          "custodianKind",
+          "custodianId"
+        ],
+        "type": "object",
+        "properties": {
+          "ownerKind": {
+            "$ref": "#/components/schemas/InventoryOpeningPartyKindV1"
+          },
+          "ownerId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "ownerCompanyPartyAccountId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "custodianKind": {
+            "$ref": "#/components/schemas/InventoryOpeningPartyKindV1"
+          },
+          "custodianId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "additionalProperties": false
+      },
       "OpeningCountRequestV1": {
         "required": [
           "countId",
@@ -70446,6 +70488,16 @@
             "items": {
               "$ref": "#/components/schemas/OpeningCountLineRequestV1"
             }
+          },
+          "positionContext": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/OpeningCountPositionContextV1"
+              }
+            ]
           }
         },
         "additionalProperties": false
