@@ -170,6 +170,7 @@ public sealed class ManufacturingPlanRevisionTests(ITestOutputHelper output)
         var fixture = new Fixture();
         var plan = fixture.StoreDraft();
         var observedStatus = "not_observed";
+        var assertionStage = "before_service_call";
 
         try
         {
@@ -177,29 +178,38 @@ public sealed class ManufacturingPlanRevisionTests(ITestOutputHelper output)
                 Permission, CancellationToken.None);
             observedStatus = result.Status.ToString().ToLowerInvariant();
 
+            assertionStage = "result_status";
             Assert.Equal(ManufacturingApiStatus.Ok, result.Status);
             var view = result.Resource!;
+            assertionStage = "result_identity";
             Assert.Equal((2L, "Draft", OtherLine, "Slitting"), (view.Version, view.Status, view.WorkCenterId, view.Process));
+            assertionStage = "planned_mass";
             Assert.Equal("800.5", Assert.Single(view.Inputs).PlannedKg);
+            assertionStage = "result_target";
             Assert.Equal(new TargetViewV1("GoodOutputMass", "700"), view.Target);
             // Every awaited owner answer is followed by a fresh captured-company/actor fence. The final pair is the
             // verified-content fence followed by the new pre-write fence immediately before the revision is stored.
+            assertionStage = "call_sequence";
             Assert.Equal(["authority", "find-plan", "work-center", "authority", "settings", "parent-roll", "authority",
                     "product", "authority", "authority", "authority", "revise"],
                 fixture.Calls.Where(call => call != "find-command"));
+            assertionStage = "stored_revision";
             Assert.Equal((OtherLine, ManufacturingProcess.Slitting, "Tolerans dışı bobin için yeniden planlandı"),
                 (fixture.Store.LastRevision!.Value.WorkCenterId, fixture.Store.LastRevision.Value.Process,
                     fixture.Store.LastRevision.Value.Reason));
+            assertionStage = "parent_roll_selection";
             Assert.Equal(new InventoryParentRollSelectionV1(RollA, "7"), Assert.Single(fixture.ParentRolls.Selections));
             // The envelope: the plan save's permission, the Web channel, the key; the record joins the business save.
+            assertionStage = "write_metadata";
             var metadata = Assert.Single(fixture.Store.Writes);
             Assert.Equal((Permission, "Web", "key-1"), (metadata.PermissionCode, metadata.SourceChannel, metadata.IdempotencyKey));
+            assertionStage = "command_record";
             Assert.Single(fixture.Store.Commands);
         }
         catch
         {
             output.WriteLine(
-                $"ci_safe_diagnostic:phase=mfg_plan_revision_owner_checks;status_expected=ok;status_actual={observedStatus};calls_expected=12;calls_actual={fixture.Calls.Count(call => call != "find-command")};writes_expected=1;writes_actual={fixture.Store.Writes.Count};commands_expected=1;commands_actual={fixture.Store.Commands.Count}");
+                $"ci_safe_diagnostic:phase=mfg_plan_revision_owner_checks;assertion_stage={assertionStage};status_expected=ok;status_actual={observedStatus};calls_expected=12;calls_actual={fixture.Calls.Count(call => call != "find-command")};writes_expected=1;writes_actual={fixture.Store.Writes.Count};commands_expected=1;commands_actual={fixture.Store.Commands.Count}");
             throw;
         }
     }
@@ -217,6 +227,7 @@ public sealed class ManufacturingPlanRevisionTests(ITestOutputHelper output)
                 new PlanCommercialContextRequestV1(Party, PartyAccount, " party-v1 ", "account-v1/α"))],
         };
         var observedStatus = "not_observed";
+        var assertionStage = "before_service_call";
 
         try
         {
@@ -224,19 +235,26 @@ public sealed class ManufacturingPlanRevisionTests(ITestOutputHelper output)
                 plan.Id, request, "commercial-revision", Permission, CancellationToken.None);
             observedStatus = result.Status.ToString().ToLowerInvariant();
 
+            assertionStage = "result_status";
             Assert.Equal(ManufacturingApiStatus.Ok, result.Status);
             var stored = Assert.Single(fixture.Store.Plans[plan.Id].Inputs).CommercialContext!;
+            assertionStage = "stored_context";
             Assert.Equal((Party, PartyAccount, " party-v1 ", "account-v1/α"),
                 (stored.PartyId, stored.CompanyPartyAccountId, stored.PartyVersion, stored.AccountVersion));
+            assertionStage = "result_context";
             Assert.Equal(new CapturedPlanCommercialContextViewV1(
                 Party, PartyAccount, " party-v1 ", "account-v1/α"),
                 Assert.Single(result.Resource!.Inputs).CommercialContext);
+            assertionStage = "plain_selection";
             Assert.Empty(fixture.ParentRolls.Selections);
+            assertionStage = "contextual_selection";
             var selection = Assert.Single(fixture.ParentRolls.ContextualSelections);
+            assertionStage = "position_context";
             Assert.Equal((StockPartyKind.Counterparty, Party, StockPartyKind.Company, Company),
                 (selection.PositionContext.OwnerKind, selection.PositionContext.OwnerId,
                     selection.PositionContext.CustodianKind, selection.PositionContext.CustodianId));
             // The last authority call is the fresh pre-write fence after all owner snapshots have been verified.
+            assertionStage = "call_sequence";
             Assert.Equal(["authority", "find-plan", "work-center", "authority", "settings", "party-account", "authority",
                     "parent-roll-context", "authority", "product", "authority", "authority", "authority", "revise"],
                 fixture.Calls.Where(call => call != "find-command"));
@@ -244,7 +262,7 @@ public sealed class ManufacturingPlanRevisionTests(ITestOutputHelper output)
         catch
         {
             output.WriteLine(
-                $"ci_safe_diagnostic:phase=mfg_plan_revision_commercial_context;status_expected=ok;status_actual={observedStatus};calls_expected=14;calls_actual={fixture.Calls.Count(call => call != "find-command")};contextual_selections_expected=1;contextual_selections_actual={fixture.ParentRolls.ContextualSelections.Count};plain_selections_expected=0;plain_selections_actual={fixture.ParentRolls.Selections.Count}");
+                $"ci_safe_diagnostic:phase=mfg_plan_revision_commercial_context;assertion_stage={assertionStage};status_expected=ok;status_actual={observedStatus};calls_expected=14;calls_actual={fixture.Calls.Count(call => call != "find-command")};contextual_selections_expected=1;contextual_selections_actual={fixture.ParentRolls.ContextualSelections.Count};plain_selections_expected=0;plain_selections_actual={fixture.ParentRolls.Selections.Count}");
             throw;
         }
     }
@@ -517,9 +535,9 @@ public sealed class ManufacturingPlanRevisionTests(ITestOutputHelper output)
             assertionStage = "read_outcomes";
             Assert.Equal((ManufacturingApiStatus.NotFound, ManufacturingApiStatus.Unavailable, ManufacturingApiStatus.Denied),
                 (missing.Status, withoutPort.Status, denied.Status));
-            // A read: no authority revalidation, no Settings or Inventory, no command record.
+            // Each store answer is followed by the read permission fence; no Settings, Inventory or command record.
             assertionStage = "read_authority_effect";
-            Assert.DoesNotContain("authority", fixture.Calls);
+            Assert.Equal(["history", "authority", "history", "authority"], fixture.Calls);
             assertionStage = "read_command_effect";
             Assert.Empty(fixture.Store.Commands);
         }
