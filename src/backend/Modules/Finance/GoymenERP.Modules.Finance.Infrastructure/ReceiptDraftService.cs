@@ -377,6 +377,25 @@ public sealed class ReceiptDraftService(
             .OrderByDescending(row => row.CreatedAtUtc).ThenByDescending(row => row.Id)
             .Take(ListPageSize + 1)
             .ToListAsync(cancellationToken);
+        var page = rows.Take(ListPageSize).ToList();
+        var pageIds = page.Select(row => row.Id).ToArray();
+        var approvedReversals = pageIds.Length == 0
+            ? []
+            : await dbContext.ReversalProposals.AsNoTracking()
+                .Where(proposal => proposal.CompanyId == context.CompanyId
+                    && proposal.Status == ReversalProposalStatuses.Approved
+                    && (pageIds.Contains(proposal.OriginalSourceId)
+                        || (proposal.ReversalSourceId != null
+                            && pageIds.Contains(proposal.ReversalSourceId.Value))))
+                .Select(proposal => new ApprovedListReversal(
+                    proposal.OriginalSourceId, proposal.ReversalSourceId))
+                .ToListAsync(cancellationToken);
+        var reversalByOriginal = approvedReversals
+            .Where(reversal => reversal.ReversalSourceId is not null && pageIds.Contains(reversal.OriginalSourceId))
+            .ToDictionary(reversal => reversal.OriginalSourceId, reversal => reversal.ReversalSourceId);
+        var originalByReversal = approvedReversals
+            .Where(reversal => reversal.ReversalSourceId is not null && pageIds.Contains(reversal.ReversalSourceId.Value))
+            .ToDictionary(reversal => reversal.ReversalSourceId!.Value, reversal => (Guid?)reversal.OriginalSourceId);
         var amount = await permissions.CheckAsync(context, FinanceAction.ReadAmount, null, cancellationToken);
         var again = await permissions.CheckAsync(context, FinanceAction.ReadSources, null, cancellationToken);
         if (again != PermissionDecision.Allowed || !SameContext(context))
@@ -384,13 +403,17 @@ public sealed class ReceiptDraftService(
             return new ReadResult<SourcePage>(again == PermissionDecision.Unavailable ? ReadOutcome.Unavailable : ReadOutcome.Denied, null);
         }
 
-        var page = rows.Take(ListPageSize).ToList();
         var next = rows.Count > ListPageSize
             ? DraftListCursor.Encode(context.CompanyId, page[^1].CreatedAtUtc, page[^1].Id)
             : null;
         return new ReadResult<SourcePage>(ReadOutcome.Found,
-            new SourcePage(context.CompanyId, [.. page.Select(row => Detail(row, Disclosure(amount)).Source)], next));
+            new SourcePage(context.CompanyId,
+                [.. page.Select(row => Detail(row, Disclosure(amount),
+                    reversalByOriginal.GetValueOrDefault(row.Id),
+                    originalByReversal.GetValueOrDefault(row.Id)).Source)], next));
     }
+
+    private sealed record ApprovedListReversal(Guid OriginalSourceId, Guid? ReversalSourceId);
 
     /// <summary>
     /// FIN-T05a (card #66 5743678389): the Record of a realized manual bank receipt — ONE money event, exactly once.

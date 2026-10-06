@@ -498,10 +498,17 @@ public sealed class FinanceRecordSqlServerRelationalAcceptanceTests
             new SourceDetailRequest(draft.Id), CancellationToken.None);
         var reversalDetail = await history.Service.DetailAuthorizedAsync(history.Context,
             new SourceDetailRequest(reversalSourceId), CancellationToken.None);
+        var historyList = await history.Service.ListAuthorizedAsync(history.Context,
+            new SourceListRequest(null), CancellationToken.None);
+        Assert.Equal(ReadOutcome.Found, historyList.Outcome);
+        var originalSummary = Assert.Single(historyList.Resource!.Items, item => item.Id == draft.Id);
+        var reversalSummary = Assert.Single(historyList.Resource.Items, item => item.Id == reversalSourceId);
         Assert.Equal((ReadOutcome.Found, reversalSourceId, (Guid?)null),
             (originalDetail.Outcome, originalDetail.Resource!.ReversalSourceId, originalDetail.Resource.ReversesSourceId));
         Assert.Equal((ReadOutcome.Found, (Guid?)null, draft.Id),
             (reversalDetail.Outcome, reversalDetail.Resource!.ReversalSourceId, reversalDetail.Resource.ReversesSourceId));
+        Assert.Equal(originalDetail.Resource.Source, originalSummary);
+        Assert.Equal(reversalDetail.Resource.Source, reversalSummary);
 
         // B1 corrects a normal receipt once; the generated reversal source is not a new reversal root.
         // Refusal is not terminal and produces no proposal, event, command or audit side effect.

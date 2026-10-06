@@ -50,6 +50,15 @@ interface AllocationView {
   readonly allocatedKg: string
 }
 
+interface StockPositionView {
+  readonly labelId: string
+  readonly physicalKg: string
+  readonly blockedPhysicalKg: string
+  readonly freePhysicalKg: string
+  readonly activeAllocationKg: string
+  readonly availableKg: string
+}
+
 let allocationId = ''
 let changeKey = ''
 let changeBody: Record<string, unknown> = {}
@@ -74,12 +83,12 @@ async function labelVersion(page: Page): Promise<string> {
   return ((await response.json()) as { readonly labelVersion: string }).labelVersion
 }
 
-async function positionOf(page: Page): Promise<{ readonly activeAllocationKg: string; readonly availableKg: string }> {
+async function positionOf(page: Page): Promise<StockPositionView> {
   const response = await page.request.get(`${env.apiBaseUrl}${POSITIONS}?q=${encodeURIComponent(LABEL_CODE)}`, {
     headers: headers(preparerActor),
   })
   expect(response.status()).toBe(200)
-  const body = (await response.json()) as { readonly items: readonly { readonly labelId: string; readonly activeAllocationKg: string; readonly availableKg: string }[] }
+  const body = (await response.json()) as { readonly items: readonly StockPositionView[] }
   const item = body.items.find((candidate) => candidate.labelId.toLowerCase() === allocationLabelId.toLowerCase())
   expect(item, 'ST-01 lists the allocation label').toBeDefined()
   return item!
@@ -140,7 +149,31 @@ test('INV-AL-1-01 an allocation opened from ST-01 changes 5 → 3 kg with a reas
     await page.goto('/stok/pozisyonlar')
     await expect(page.getByRole('heading', { level: 1, name: 'Stok / Malzeme Pozisyonu' })).toBeVisible({ timeout: 30_000 })
     await page.getByLabel('Etiket kodu', { exact: true }).fill(LABEL_CODE)
+    const positionsRead = page.waitForResponse((response) => response.request().method() === 'GET'
+      && new URL(response.url()).pathname === POSITIONS
+      && new URL(response.url()).searchParams.get('q') === LABEL_CODE)
     await page.getByRole('button', { name: 'Ara', exact: true }).click()
+    const positionsResponse = await positionsRead
+    expect(positionsResponse.status()).toBe(200)
+    const positionsBody = (await positionsResponse.json()) as { readonly items: readonly StockPositionView[] }
+    const position = positionsBody.items.find((item) => item.labelId.toLowerCase() === allocationLabelId.toLowerCase())
+    expect(position, 'ST-01 filtered response contains the allocation label').toBeDefined()
+    expect(Number(position!.freePhysicalKg)).not.toBe(Number(position!.availableKg))
+
+    const stockTable = page.getByRole('table')
+    await expect(stockTable.getByRole('columnheader', { name: 'Fiziksel kg', exact: true })).toBeVisible()
+    await expect(stockTable.getByRole('columnheader', { name: 'Bloklu kg', exact: true })).toBeVisible()
+    await expect(stockTable.getByRole('columnheader', { name: 'Tahsisli kg', exact: true })).toBeVisible()
+    await expect(stockTable.getByRole('columnheader', { name: 'Kullanılabilir kg', exact: true })).toBeVisible()
+    await expect(stockTable.getByRole('columnheader', { name: 'Serbest kg', exact: true })).toHaveCount(0)
+    const stockPositionRow = page.locator(`tr[data-label-id="${allocationLabelId}"]`)
+    await expect(stockPositionRow).toBeVisible()
+    const quantityCells = stockPositionRow.locator('td')
+    await expect(quantityCells.nth(4)).toHaveText(position!.physicalKg)
+    await expect(quantityCells.nth(5)).toHaveText(position!.blockedPhysicalKg)
+    await expect(quantityCells.nth(6)).toHaveText(position!.activeAllocationKg)
+    await expect(quantityCells.nth(7)).toHaveText(position!.availableKg)
+
     const allocationsRead = page.waitForResponse((response) => response.request().method() === 'GET'
       && new URL(response.url()).pathname === LABEL_ALLOCATIONS)
     await page.getByRole('link', { name: LABEL_CODE, exact: true }).click()
