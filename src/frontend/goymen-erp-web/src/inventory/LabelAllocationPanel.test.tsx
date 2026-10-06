@@ -173,7 +173,7 @@ describe('LabelAllocationPanel on the label detail', () => {
     await row()
     expect(screen.getByRole('link', { name: 'Satış siparişini aç' })).toBeTruthy()
     scenario.companyId = OTHER_LABEL; view.refresh()
-    await screen.findByText('Beklenmeyen yanıt')
+    await screen.findByText('Beklenmeyen yanıt — etiket')
     expect(screen.queryByRole('link', { name: 'Satış siparişini aç' })).toBeNull()
   })
 
