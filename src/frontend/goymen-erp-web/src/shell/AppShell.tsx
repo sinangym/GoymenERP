@@ -16,6 +16,8 @@ import { useShellOrchestrator } from './useShellOrchestrator'
 import { StateBlock } from './StateBlock'
 import { SwitchConfirmDialog } from './SwitchConfirmDialog'
 import { GlobalSearchBox } from '../search/GlobalSearchBox'
+import { PRICE_LIST_CAPABILITY, PRICE_LIST_ROUTE } from '../product/priceLists/capabilities'
+import { PRICE_LIST_TEXT } from '../product/priceLists/priceListText'
 import {
   CAPABILITY,
   CAPABILITY_NAV_LABEL,
@@ -65,12 +67,8 @@ export const NAV_CAPABILITIES: readonly CapabilityId[] = [
    * Nothing else renders only where the server granted it, as ever.
    */
   CAPABILITY.organizationWorkCentersList,
-  /**
-   * Listed together with the routes that serve them (S03). Each renders only where the server's
-   * snapshot carries the capability; the 360 is reached from a row, never from the sidebar.
-   */
+  /** S-02 is the single Sales work-list entry. Create lives inside that list; detail opens from a row. */
   CAPABILITY.salesDraftsList,
-  CAPABILITY.salesDraftsCreate,
   /**
    * MFG-02, listed with the route that serves it (MFG-ORD). It renders only where the server's
    * snapshot carries the capability; the order detail is reached from a list row, never the sidebar.
@@ -209,14 +207,20 @@ export function AppShell() {
   // the dialog. Unmounting here would destroy the very state "Kal" preserves.
   const confirming = state.phase === 'confirming-switch'
   const featuresClosed = capabilityFailClosed(state)
-  const navItems = NAV_CAPABILITIES.filter((capability) =>
-    hasCapability(state, capability),
-  ).map((capability) => ({
-    key: capability,
-    capability,
-    path: CAPABILITY_ROUTE[capability],
-    label: CAPABILITY_NAV_LABEL[capability],
-  }))
+  const navItems = [
+    ...NAV_CAPABILITIES.filter((capability) => hasCapability(state, capability)).map((capability) => ({
+      key: capability,
+      path: CAPABILITY_ROUTE[capability],
+      label: CAPABILITY_NAV_LABEL[capability],
+    })),
+    ...(hasCapability(state, PRICE_LIST_CAPABILITY.list)
+      ? [{
+          key: PRICE_LIST_CAPABILITY.list,
+          path: PRICE_LIST_ROUTE.list,
+          label: PRICE_LIST_TEXT.listHeading,
+        }]
+      : []),
+  ]
   return (
     <div className={styles.shell}>
       <a className={styles.skipLink} href="#main-content">
@@ -233,6 +237,7 @@ export function AppShell() {
               <li key={entry.key}>
                 <NavLink
                   to={entry.path}
+                  end
                   className={({ isActive }) => (isActive ? styles.navLinkActive : styles.navLink)}
                 >
                   {entry.label}

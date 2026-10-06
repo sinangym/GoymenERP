@@ -18,6 +18,7 @@ import type { AuthBoundary } from '../shell/useAuthBoundary'
 import { isKilogramText } from './contract'
 import { previewPlan, type PlanPreview, type PlanPreviewRequest } from './planPreview'
 import type { PlanTargetBasis } from './planCommandApi'
+import type { CapturedPlanCommercialContext } from './planRevisionContract'
 
 /** Inside DEC-PRDCT-005's locked 300–500 ms window. */
 export const PLAN_PREVIEW_DEBOUNCE_MS = 400
@@ -26,6 +27,8 @@ export interface PlanPreviewFormRow {
   readonly parentRollId: string
   readonly label: string
   readonly labelVersion: string | null
+  /** Omitted by legacy/create callers; edit callers preserve the captured owner snapshot, including explicit null. */
+  readonly commercialContext?: CapturedPlanCommercialContext | null
   readonly plannedKg: string
 }
 
@@ -86,6 +89,7 @@ export function planPreviewInput(
         parentRollId: row.parentRollId,
         plannedKg: row.plannedKg,
         expectedLabelVersion: row.labelVersion as string,
+        ...(row.commercialContext === undefined ? {} : { commercialContext: row.commercialContext }),
       })),
       target: targetBasis === '' ? null : { basis: targetBasis, kg: targetKg },
     },

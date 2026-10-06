@@ -1,18 +1,16 @@
 using GoymenERP.Modules.Inventory.Application;
+using GoymenERP.Modules.Manufacturing.Domain.Plans;
 
 namespace GoymenERP.Modules.Manufacturing.Application;
 
 /// <summary>
-/// The fail-closed guard at the Manufacturing input-issue entry: until the owner decides how a customer-owned /
-/// fason input carries its commercial link, a parent roll is issued into production only when the exact Inventory
-/// position the issue consumes is owned AND custodied by the context company.
+/// The fail-closed guard at the Manufacturing input-issue entry. A legacy/company input must be owned and custodied
+/// by the context company. A customer/tolling input must be owned by the exact captured Counterparty party and
+/// custodied by the context company.
 /// <para>
 /// Why here. Inventory now carries any owner/custodian through the issue (the physical context is Inventory's
-/// fact, never repainted), and plan-time roll selection is the only other place that refuses customer-owned rolls.
-/// A later change that let a plan reference a customer roll would otherwise have Manufacturing process customer
-/// material with no commercial link — which would silently answer NEEDS-SINAN #66/5830378162 (planned-input
-/// snapshot, plan-level snapshot or Inventory-position link; mixed contexts). This guard answers nothing about
-/// that grain: it only keeps the public issue path closed.
+/// fact, never repainted), and the planned input carries the exact immutable commercial context captured after
+/// Counterparty authorization. The guard does not query or refresh that captured provenance during realization.
 /// </para>
 /// <para>
 /// The refusal is the existing, already-declared public 409 of this route,
@@ -21,30 +19,36 @@ namespace GoymenERP.Modules.Manufacturing.Application;
 /// changes. It is applied inside the owner transaction, before the commit, so a refused issue leaves no
 /// Manufacturing fact, no Inventory movement and no command record.
 /// </para>
-/// <para>
-/// TODO(#66/5830378162): replace this unconditional refusal with an explicit, owner-approved decision flag and
-/// the decided commercial-link snapshot once NEEDS-SINAN is answered. No such flag exists yet, and none is added
-/// here: enabling customer-owned or third-party-custodied input is a Business decision, not a technical default.
-/// </para>
 /// </summary>
 public static class ManufacturingCustomerOwnedInputGuardV1
 {
     /// <summary>The Inventory party-kind name of the company's own stock, as the position snapshot carries it.</summary>
     public const string CompanyPartyKind = "Company";
 
+    /// <summary>The Inventory party-kind name used for a captured Counterparty owner.</summary>
+    public const string CounterpartyPartyKind = "Counterparty";
+
     /// <summary>The public refusal code of a refused issue (409), already declared on the input-issue route.</summary>
     public const string RefusalCode = InventoryManufacturingRealizationCodesV1.ParentLabelContextConflict;
 
     /// <summary>
-    /// True only when the issued position is owned and custodied by <paramref name="companyId"/> itself. Anything
-    /// else — a Counterparty owner (customer material, fason), a Counterparty custodian (third-party custody, e.g.
-    /// an external depot), another company, an unknown kind or a missing snapshot — is refused.
+    /// Matches the Inventory position to the planned input's immutable context. Third-party custody, another
+    /// company, another Counterparty, unknown kinds and missing snapshots are refused.
     /// </summary>
-    public static bool Admits(Guid companyId, ManufacturingInventoryPositionSnapshotV1? position) =>
-        companyId != Guid.Empty
-        && position is not null
-        && string.Equals(position.OwnerKind, CompanyPartyKind, StringComparison.Ordinal)
-        && position.OwnerId == companyId
-        && string.Equals(position.CustodianKind, CompanyPartyKind, StringComparison.Ordinal)
-        && position.CustodianId == companyId;
+    public static bool Admits(Guid companyId, ManufacturingInventoryPositionSnapshotV1? position,
+        PlanCommercialContextSnapshotV1? commercialContext = null)
+    {
+        if (companyId == Guid.Empty || position is null
+            || !string.Equals(position.CustodianKind, CompanyPartyKind, StringComparison.Ordinal)
+            || position.CustodianId != companyId)
+        {
+            return false;
+        }
+
+        return commercialContext is null
+            ? string.Equals(position.OwnerKind, CompanyPartyKind, StringComparison.Ordinal)
+              && position.OwnerId == companyId
+            : string.Equals(position.OwnerKind, CounterpartyPartyKind, StringComparison.Ordinal)
+              && position.OwnerId == commercialContext.PartyId;
+    }
 }

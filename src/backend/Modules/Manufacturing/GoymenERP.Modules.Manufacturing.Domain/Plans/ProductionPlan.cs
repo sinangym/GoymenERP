@@ -59,6 +59,8 @@ public sealed class ProductionPlan
                 ManufacturingRuleCodes.DuplicateRollInPlan, "Aynı ana rulo planda iki kez yer alamaz.");
         }
 
+        RequireConsistentCommercialContext(_inputs, nameof(inputs));
+
         Target = target;
         Spec = spec;
         Status = PlanStatus.Draft;
@@ -236,6 +238,8 @@ public sealed class ProductionPlan
                 ManufacturingRuleCodes.DuplicateRollInPlan, "Aynı ana rulo planda iki kez yer alamaz.");
         }
 
+        RequireConsistentCommercialContext(newInputs, nameof(inputs));
+
         if (newWorkCenter == WorkCenterId && Equals(target, Target) && newInputs.SequenceEqual(_inputs))
         {
             throw new ManufacturingRuleException(ManufacturingRuleCodes.PlanRevisionNoChange,
@@ -298,6 +302,29 @@ public sealed class ProductionPlan
 
     private static Guid RequireId(Guid value, string parameterName) =>
         value == Guid.Empty ? throw new ArgumentException("Kimlik boş olamaz.", parameterName) : value;
+
+    private static void RequireConsistentCommercialContext(
+        IReadOnlyList<PlannedInput> inputs,
+        string parameterName)
+    {
+        // Null is legacy/unknown provenance, never an inference that the material belongs to the
+        // company. Physical owner admission remains an application-layer responsibility. When
+        // commercial provenance is present, every such input in one plan names one exact context.
+        var expected = inputs
+            .Select(input => input.CommercialContext)
+            .FirstOrDefault(context => context is not null);
+        if (expected is null)
+        {
+            return;
+        }
+
+        if (inputs.Any(input => input.CommercialContext is { } context && context != expected))
+        {
+            throw new ArgumentException(
+                "Bir plandaki müşteri malı girdiler aynı taraf, hesap ve sürüm bağlamını taşımalıdır.",
+                parameterName);
+        }
+    }
 }
 
 /// <summary>

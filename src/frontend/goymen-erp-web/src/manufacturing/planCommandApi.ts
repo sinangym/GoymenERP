@@ -8,6 +8,7 @@
 
 import { decodeOrder, decodePlan, type ProductionOrderView, type ProductionPlanView } from './contract'
 import { MANUFACTURING_BASE, devHeaders } from './api'
+import type { CapturedPlanCommercialContext } from './planRevisionContract'
 
 export type PlanTargetBasis = 'InputMass' | 'GoodOutputMass'
 
@@ -200,6 +201,8 @@ export interface RevisePlanRequest {
     readonly parentRollId: string
     readonly plannedKg: string
     readonly expectedLabelVersion: string
+    /** Additive wire member: omitted legacy requests and explicit null both mean company-owned input. */
+    readonly commercialContext?: CapturedPlanCommercialContext | null
   }[]
   readonly target: { readonly basis: PlanTargetBasis; readonly kg: string } | null
   readonly reason: string

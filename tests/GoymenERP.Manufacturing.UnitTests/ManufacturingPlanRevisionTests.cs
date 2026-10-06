@@ -1,13 +1,17 @@
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Observability;
 using GoymenERP.BuildingBlocks.Security;
+using GoymenERP.Modules.Counterparty.Application.Contracts;
 using GoymenERP.Modules.Inventory.Application;
+using GoymenERP.Modules.Inventory.Domain.Stock;
 using GoymenERP.Modules.Manufacturing.Application;
 using GoymenERP.Modules.Manufacturing.Domain.Common;
 using GoymenERP.Modules.Manufacturing.Domain.Orders;
 using GoymenERP.Modules.Manufacturing.Domain.Plans;
 using GoymenERP.Modules.Organization.Application.Contracts;
+using GoymenERP.Modules.Product.Application.Contracts;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
+using Xunit.Abstractions;
 
 namespace GoymenERP.Manufacturing.UnitTests;
 
@@ -19,7 +23,7 @@ namespace GoymenERP.Manufacturing.UnitTests;
 /// other owner is asked, the owners' checks (Organization's process, Settings' kilogram, Inventory's exact label
 /// version), the fresh fence, ADR-011 replay and the history read. Its own fakes; the shared fixtures are not widened.
 /// </summary>
-public sealed class ManufacturingPlanRevisionTests
+public sealed class ManufacturingPlanRevisionTests(ITestOutputHelper output)
 {
     private const string Permission = "manufacturing.plans.write";
     // ProductStockCandidateFixture creates draft v1 and activates it; c161e0e7 publishes that exact accepted v2.
@@ -30,7 +34,14 @@ public sealed class ManufacturingPlanRevisionTests
     private static readonly Guid OtherLine = Guid.Parse("c2000000-0000-0000-0000-00000000000c");
     private static readonly Guid RollA = Guid.Parse("b1000000-0000-0000-0000-00000000000b");
     private static readonly Guid RollB = Guid.Parse("b2000000-0000-0000-0000-00000000000b");
+    private static readonly Guid Party = Guid.Parse("d1000000-0000-0000-0000-00000000000d");
+    private static readonly Guid PartyAccount = Guid.Parse("d2000000-0000-0000-0000-00000000000d");
     private static readonly DateTimeOffset At = new(2026, 9, 27, 9, 0, 0, TimeSpan.Zero);
+    private static readonly HashSet<string> SafeDiagnosticCallTokens = new(StringComparer.Ordinal)
+    {
+        "authority", "find-plan", "work-center", "settings", "parent-roll", "party-account",
+        "parent-roll-context", "product", "revise",
+    };
 
     // ---- Domain -------------------------------------------------------------------------------------------------
 
@@ -163,26 +174,132 @@ public sealed class ManufacturingPlanRevisionTests
     {
         var fixture = new Fixture();
         var plan = fixture.StoreDraft();
+        var assertionStage = "before_service_call";
+        string[] expectedCalls =
+        [
+            "authority", "authority", "find-plan", "work-center", "authority", "settings", "parent-roll",
+            "authority", "product", "authority", "authority", "revise",
+        ];
 
-        var result = await fixture.Service.RevisePlanAsync(plan.Id, Request(1, OtherLine, "800.500", "7"), "key-1",
-            Permission, CancellationToken.None);
+        try
+        {
+            var result = await fixture.Service.RevisePlanAsync(plan.Id, Request(1, OtherLine, "800.500", "7"), "key-1",
+                Permission, CancellationToken.None);
+
+            assertionStage = "result_status";
+            Assert.Equal(ManufacturingApiStatus.Ok, result.Status);
+            var view = result.Resource!;
+            assertionStage = "result_identity";
+            Assert.Equal((2L, "Draft", OtherLine, "Slitting"), (view.Version, view.Status, view.WorkCenterId, view.Process));
+            assertionStage = "planned_mass";
+            Assert.Equal("800.5", Assert.Single(view.Inputs).PlannedKg);
+            assertionStage = "result_target";
+            Assert.Equal(new TargetViewV1("GoodOutputMass", "700"), view.Target);
+            // The command grant is followed by RunAsync's pre-write fence before the plan read. Every awaited owner
+            // answer is then followed by its fresh captured-company/actor fence before the revision is stored.
+            assertionStage = "call_sequence";
+            Assert.Equal(expectedCalls, fixture.Calls.Where(call => call != "find-command"));
+            assertionStage = "stored_revision";
+            Assert.Equal((OtherLine, ManufacturingProcess.Slitting, "Tolerans dışı bobin için yeniden planlandı"),
+                (fixture.Store.LastRevision!.Value.WorkCenterId, fixture.Store.LastRevision.Value.Process,
+                    fixture.Store.LastRevision.Value.Reason));
+            assertionStage = "parent_roll_selection";
+            Assert.Equal(new InventoryParentRollSelectionV1(RollA, "7"), Assert.Single(fixture.ParentRolls.Selections));
+            // The envelope: the plan save's permission, the Web channel, the key; the record joins the business save.
+            assertionStage = "write_metadata";
+            var metadata = Assert.Single(fixture.Store.Writes);
+            Assert.Equal((Permission, "Web", "key-1"), (metadata.PermissionCode, metadata.SourceChannel, metadata.IdempotencyKey));
+            assertionStage = "command_record";
+            Assert.Single(fixture.Store.Commands);
+        }
+        catch
+        {
+            var actualCalls = fixture.Calls.Where(call => call != "find-command");
+            output.WriteLine(
+                $"ci_safe_diagnostic:phase=mfg_plan_revision_owner_checks;assertion_stage={assertionStage};calls_expected=12;calls_actual={actualCalls.Count()};writes_expected=1;writes_actual={fixture.Store.Writes.Count};commands_expected=1;commands_actual={fixture.Store.Commands.Count};sequence_expected={SafeCallSequence(expectedCalls)};sequence_actual={SafeCallSequence(actualCalls)}");
+            throw;
+        }
+    }
+
+    [Fact]
+    public async Task A_revision_captures_and_publishes_the_exact_authorized_commercial_context()
+    {
+        var fixture = new Fixture();
+        var plan = fixture.StoreDraft();
+        fixture.PartyAccounts.Account = new CounterpartyManufacturingPartyAccountV1(
+            Party, PartyAccount, Company, true, true, false, true, " party-v1 ", "account-v1/α");
+        var request = Request(1, OtherLine, "800.500", "7") with
+        {
+            Inputs = [new PlannedInputRequestV1(RollA, "800.500", "7",
+                new PlanCommercialContextRequestV1(Party, PartyAccount, " party-v1 ", "account-v1/α"))],
+        };
+        var assertionStage = "before_service_call";
+        string[] expectedCalls =
+        [
+            "authority", "authority", "find-plan", "work-center", "authority", "settings", "party-account",
+            "authority", "parent-roll-context", "authority", "product", "authority", "authority", "revise",
+        ];
+
+        try
+        {
+            var result = await fixture.Service.RevisePlanAsync(
+                plan.Id, request, "commercial-revision", Permission, CancellationToken.None);
+
+            assertionStage = "result_status";
+            Assert.Equal(ManufacturingApiStatus.Ok, result.Status);
+            var stored = Assert.Single(fixture.Store.Plans[plan.Id].Inputs).CommercialContext!;
+            assertionStage = "stored_context";
+            Assert.Equal((Party, PartyAccount, " party-v1 ", "account-v1/α"),
+                (stored.PartyId, stored.CompanyPartyAccountId, stored.PartyVersion, stored.AccountVersion));
+            assertionStage = "result_context";
+            Assert.Equal(new CapturedPlanCommercialContextViewV1(
+                Party, PartyAccount, " party-v1 ", "account-v1/α"),
+                Assert.Single(result.Resource!.Inputs).CommercialContext);
+            assertionStage = "plain_selection";
+            Assert.Empty(fixture.ParentRolls.Selections);
+            assertionStage = "contextual_selection";
+            var selection = Assert.Single(fixture.ParentRolls.ContextualSelections);
+            assertionStage = "position_context";
+            Assert.Equal((StockPartyKind.Counterparty, Party, StockPartyKind.Company, Company),
+                (selection.PositionContext.OwnerKind, selection.PositionContext.OwnerId,
+                    selection.PositionContext.CustodianKind, selection.PositionContext.CustodianId));
+            // RunAsync's pre-write fence precedes the plan read; the final authority calls fence verified owner snapshots.
+            assertionStage = "call_sequence";
+            Assert.Equal(expectedCalls, fixture.Calls.Where(call => call != "find-command"));
+        }
+        catch
+        {
+            var actualCalls = fixture.Calls.Where(call => call != "find-command");
+            output.WriteLine(
+                $"ci_safe_diagnostic:phase=mfg_plan_revision_commercial_context;assertion_stage={assertionStage};calls_expected=14;calls_actual={actualCalls.Count()};contextual_selections_expected=1;contextual_selections_actual={fixture.ParentRolls.ContextualSelections.Count};plain_selections_expected=0;plain_selections_actual={fixture.ParentRolls.Selections.Count};sequence_expected={SafeCallSequence(expectedCalls)};sequence_actual={SafeCallSequence(actualCalls)}");
+            throw;
+        }
+    }
+
+    [Fact]
+    public async Task A_revision_captures_a_numerically_exact_trailing_zero_measure_and_refuses_a_real_fourth_decimal()
+    {
+        var accepted = new Fixture();
+        accepted.ProductSnapshots.ThicknessMm = 2.0000m;
+        var plan = accepted.StoreDraft();
+
+        var result = await accepted.Service.RevisePlanAsync(plan.Id, Request(1, OtherLine, "800", "7"),
+            "key-exact", Permission, CancellationToken.None);
 
         Assert.Equal(ManufacturingApiStatus.Ok, result.Status);
-        var view = result.Resource!;
-        Assert.Equal((2L, "Draft", OtherLine, "Slitting"), (view.Version, view.Status, view.WorkCenterId, view.Process));
-        Assert.Equal("800.5", Assert.Single(view.Inputs).PlannedKg);
-        Assert.Equal(new TargetViewV1("GoodOutputMass", "700"), view.Target);
-        // The owners, in the save's order, after the stored plan: Organization, Settings, Inventory, then the fence.
-        Assert.Equal(["authority", "find-plan", "work-center", "settings", "parent-roll", "authority", "revise"],
-            fixture.Calls.Where(call => call != "find-command"));
-        Assert.Equal((OtherLine, ManufacturingProcess.Slitting, "Tolerans dışı bobin için yeniden planlandı"),
-            (fixture.Store.LastRevision!.Value.WorkCenterId, fixture.Store.LastRevision.Value.Process,
-                fixture.Store.LastRevision.Value.Reason));
-        Assert.Equal(new InventoryParentRollSelectionV1(RollA, "7"), Assert.Single(fixture.ParentRolls.Selections));
-        // The envelope: the plan save's permission, the Web channel, the key; the record joins the business save.
-        var metadata = Assert.Single(fixture.Store.Writes);
-        Assert.Equal((Permission, "Web", "key-1"), (metadata.PermissionCode, metadata.SourceChannel, metadata.IdempotencyKey));
-        Assert.Single(fixture.Store.Commands);
+        var captured = Assert.Single(accepted.Store.Plans[plan.Id].Inputs).TechnicalSnapshot!;
+        Assert.Equal(2m, captured.ThicknessMm);
+        Assert.Equal((byte)4, captured.ThicknessMm.Scale);
+
+        var refused = new Fixture();
+        refused.ProductSnapshots.ThicknessMm = 2.0001m;
+        var unchanged = refused.StoreDraft();
+        var invalid = await refused.Service.RevisePlanAsync(unchanged.Id, Request(1, OtherLine, "800", "7"),
+            "key-inexact", Permission, CancellationToken.None);
+
+        Assert.Equal(ManufacturingApiStatus.Unavailable, invalid.Status);
+        Assert.Equal(1L, unchanged.Version);
+        Assert.Empty(refused.Store.Writes);
     }
 
     [Fact]
@@ -349,6 +466,27 @@ public sealed class ManufacturingPlanRevisionTests
     }
 
     [Fact]
+    public async Task A_grant_lost_at_the_revision_final_fence_writes_nothing()
+    {
+        var fixture = new Fixture();
+        var plan = fixture.StoreDraft();
+        for (var granted = 0; granted < 4; granted++)
+        {
+            fixture.Authority.Scopes.Enqueue(fixture.Authority.GrantedScope());
+        }
+        fixture.Authority.Scopes.Enqueue(PermissionScope.Denied);
+
+        var result = await fixture.Service.RevisePlanAsync(
+            plan.Id, Request(1, OtherLine, "900", "7"), "final-fence", Permission, CancellationToken.None);
+
+        Assert.Equal((ManufacturingApiStatus.Denied, ManufacturingApiCodes.AuthorityDenied),
+            (result.Status, result.Code));
+        Assert.Equal(1L, plan.Version);
+        Assert.Empty(fixture.Store.Writes);
+        Assert.Empty(fixture.Store.Commands);
+    }
+
+    [Fact]
     public async Task The_history_is_the_stores_entries_as_lossless_text_under_the_read_rules()
     {
         var fixture = new Fixture();
@@ -357,33 +495,67 @@ public sealed class ManufacturingPlanRevisionTests
         [
             new ManufacturingPlanRevision(0, 1, WorkCenter, [new PlannedInput(RollA, new Kilograms(1000.000m), null)], null,
                 null, null, At),
-            new ManufacturingPlanRevision(1, 2, OtherLine, [new PlannedInput(RollA, new Kilograms(800.500m), 7)],
+            new ManufacturingPlanRevision(1, 2, OtherLine,
+                [new PlannedInput(RollA, new Kilograms(800.500m), 7, commercialContext:
+                    new PlanCommercialContextSnapshotV1(Party, PartyAccount, " party-v1 ", "account-v1/α"))],
                 new ProductionTarget(TargetBasis.InputMass, new Kilograms(810m)), "Hat değişti", Actor.ToString("D"),
                 At.AddHours(1)),
         ];
+        var primaryStatus = "not_observed";
+        var missingStatus = "not_observed";
+        var withoutPortStatus = "not_observed";
+        var deniedStatus = "not_observed";
+        var revisionCount = -1;
+        var assertionStage = "before_service_calls";
 
-        var result = await fixture.Service.ListPlanRevisionsAsync(plan.Id, CancellationToken.None);
-        var missing = await fixture.Service.ListPlanRevisionsAsync(Guid.NewGuid(), CancellationToken.None);
-        var withoutPort = await new Fixture(withRevisions: false).Service.ListPlanRevisionsAsync(plan.Id, CancellationToken.None);
-        var noContext = new Fixture();
-        noContext.User.Companies.Clear();
-        var denied = await noContext.Service.ListPlanRevisionsAsync(plan.Id, CancellationToken.None);
+        try
+        {
+            var result = await fixture.Service.ListPlanRevisionsAsync(plan.Id, CancellationToken.None);
+            primaryStatus = result.Status.ToString().ToLowerInvariant();
+            var missing = await fixture.Service.ListPlanRevisionsAsync(Guid.NewGuid(), CancellationToken.None);
+            missingStatus = missing.Status.ToString().ToLowerInvariant();
+            var withoutPort = await new Fixture(withRevisions: false).Service.ListPlanRevisionsAsync(plan.Id, CancellationToken.None);
+            withoutPortStatus = withoutPort.Status.ToString().ToLowerInvariant();
+            var noContext = new Fixture();
+            noContext.User.Companies.Clear();
+            var denied = await noContext.Service.ListPlanRevisionsAsync(plan.Id, CancellationToken.None);
+            deniedStatus = denied.Status.ToString().ToLowerInvariant();
 
-        Assert.Equal(ManufacturingApiStatus.Ok, result.Status);
-        var history = result.Resource!;
-        Assert.Equal(plan.Id, history.PlanId);
-        Assert.Equal([0, 1], history.Revisions.Select(revision => revision.Revision));
-        Assert.Equal(new PlanRevisionInputViewV1(RollA, "1000", null), Assert.Single(history.Revisions[0].Inputs));
-        Assert.Equal(new PlanRevisionInputViewV1(RollA, "800.5", "7"), Assert.Single(history.Revisions[1].Inputs));
-        Assert.Equal((2L, OtherLine, "Hat değişti", Actor.ToString("D")),
-            (history.Revisions[1].PlanVersion, history.Revisions[1].WorkCenterId, history.Revisions[1].Reason,
-                history.Revisions[1].RevisedBy));
-        Assert.Equal(new TargetViewV1("InputMass", "810"), history.Revisions[1].Target);
-        Assert.Equal((ManufacturingApiStatus.NotFound, ManufacturingApiStatus.Unavailable, ManufacturingApiStatus.Denied),
-            (missing.Status, withoutPort.Status, denied.Status));
-        // A read: no authority revalidation, no Settings or Inventory, no command record.
-        Assert.DoesNotContain("authority", fixture.Calls);
-        Assert.Empty(fixture.Store.Commands);
+            assertionStage = "primary_status";
+            Assert.Equal(ManufacturingApiStatus.Ok, result.Status);
+            var history = result.Resource!;
+            revisionCount = history.Revisions.Count;
+            assertionStage = "history_identity";
+            Assert.Equal(plan.Id, history.PlanId);
+            assertionStage = "revision_indices";
+            Assert.Equal([0, 1], history.Revisions.Select(revision => revision.Revision));
+            assertionStage = "created_input";
+            Assert.Equal(new PlanRevisionInputViewV1(RollA, "1000", null), Assert.Single(history.Revisions[0].Inputs));
+            assertionStage = "revised_input";
+            Assert.Equal(new PlanRevisionInputViewV1(RollA, "800.5", "7",
+                new CapturedPlanCommercialContextViewV1(Party, PartyAccount, " party-v1 ", "account-v1/α")),
+                Assert.Single(history.Revisions[1].Inputs));
+            assertionStage = "revision_metadata";
+            Assert.Equal((2L, OtherLine, "Hat değişti", Actor.ToString("D")),
+                (history.Revisions[1].PlanVersion, history.Revisions[1].WorkCenterId, history.Revisions[1].Reason,
+                    history.Revisions[1].RevisedBy));
+            assertionStage = "revision_target";
+            Assert.Equal(new TargetViewV1("InputMass", "810"), history.Revisions[1].Target);
+            assertionStage = "read_outcomes";
+            Assert.Equal((ManufacturingApiStatus.NotFound, ManufacturingApiStatus.Unavailable, ManufacturingApiStatus.Denied),
+                (missing.Status, withoutPort.Status, denied.Status));
+            // Each store answer is followed by the read permission fence; no Settings, Inventory or command record.
+            assertionStage = "read_authority_effect";
+            Assert.Equal(["history", "authority", "history", "authority"], fixture.Calls);
+            assertionStage = "read_command_effect";
+            Assert.Empty(fixture.Store.Commands);
+        }
+        catch
+        {
+            output.WriteLine(
+                $"ci_safe_diagnostic:phase=mfg_plan_revision_history_read;assertion_stage={assertionStage};primary_status_expected=ok;primary_status_actual={primaryStatus};missing_status_expected=notfound;missing_status_actual={missingStatus};without_port_status_expected=unavailable;without_port_status_actual={withoutPortStatus};denied_status_expected=denied;denied_status_actual={deniedStatus};revisions_expected=2;revisions_actual={revisionCount};commands_expected=0;commands_actual={fixture.Store.Commands.Count}");
+            throw;
+        }
     }
 
     // ---- Helpers -----------------------------------------------------------------------------------------------
@@ -393,6 +565,12 @@ public sealed class ManufacturingPlanRevisionTests
             [new PlannedInput(RollA, new Kilograms(1000m), 3)]);
 
     private static PlannedInput[] Inputs(Guid roll, decimal kg) => [new PlannedInput(roll, new Kilograms(kg), 3)];
+
+    private static string SafeCallSequence(IEnumerable<string> calls)
+    {
+        var sequence = calls.ToArray();
+        return sequence.All(SafeDiagnosticCallTokens.Contains) ? string.Join(',', sequence) : "not_emitted";
+    }
 
     private static void AssertUnchanged(ProductionPlan plan)
     {
@@ -421,9 +599,12 @@ public sealed class ManufacturingPlanRevisionTests
             Authority = new AuthorityPort(Calls);
             ParentRolls = new ParentRollPort(Calls);
             WorkCenters = new WorkCenterPort(Calls);
+            ProductSnapshots = new ProductSnapshotPort(Calls);
+            PartyAccounts = new PartyAccountPort(Calls);
             Service = new ManufacturingCommandService(Store, Store, Store, new ManufacturingMassVerifier(new SettingsPort(Calls)),
                 Authority, company, User, correlation, new FixedTime(), ParentRolls, WorkCenters,
-                planRevisions: withRevisions ? Store : null);
+                planRevisions: withRevisions ? Store : null, productTechnicalSnapshots: ProductSnapshots,
+                partyAccounts: PartyAccounts, contextualParentRolls: ParentRolls);
         }
 
         public List<string> Calls { get; } = [];
@@ -435,6 +616,10 @@ public sealed class ManufacturingPlanRevisionTests
         public ParentRollPort ParentRolls { get; }
 
         public WorkCenterPort WorkCenters { get; }
+
+        public ProductSnapshotPort ProductSnapshots { get; }
+
+        public PartyAccountPort PartyAccounts { get; }
 
         public User User { get; } = new();
 
@@ -470,21 +655,32 @@ public sealed class ManufacturingPlanRevisionTests
     {
         public bool CompanyWide { get; set; } = true;
 
+        public Queue<PermissionScope> Scopes { get; } = new();
+
+        public PermissionScope GrantedScope() => new(true, true,
+            new HashSet<string>(["PRODUCTION_PLANNER"], StringComparer.Ordinal), new HashSet<Guid>(), new HashSet<Guid>(),
+            new HashSet<Guid>());
+
         public Task<PermissionScope> RevalidatePermissionScopeAsync(string permission, Guid companyId,
             CancellationToken cancellationToken = default)
         {
             calls.Add("authority");
-            return Task.FromResult(new PermissionScope(true, CompanyWide,
-                new HashSet<string>(["PRODUCTION_PLANNER"], StringComparer.Ordinal), new HashSet<Guid>(), new HashSet<Guid>(),
-                new HashSet<Guid>()));
+            return Task.FromResult(Scopes.TryDequeue(out var scope)
+                ? scope
+                : new PermissionScope(true, CompanyWide,
+                    new HashSet<string>(["PRODUCTION_PLANNER"], StringComparer.Ordinal), new HashSet<Guid>(),
+                    new HashSet<Guid>(), new HashSet<Guid>()));
         }
     }
 
-    private sealed class ParentRollPort(List<string> calls) : IInventoryParentRollValidationV1
+    private sealed class ParentRollPort(List<string> calls)
+        : IInventoryParentRollValidationV1, IInventoryContextualParentRollReferencesV1
     {
         public Exception? Exception { get; set; }
 
         public List<InventoryParentRollSelectionV1> Selections { get; } = [];
+
+        public List<InventoryContextualParentRollSelectionV1> ContextualSelections { get; } = [];
 
         public Task<InventoryParentRollReferenceV1> ValidateAsync(InventoryParentRollSelectionV1 selection,
             CancellationToken cancellationToken = default)
@@ -502,6 +698,45 @@ public sealed class ManufacturingPlanRevisionTests
                 DraftSelectable: true, DraftRefusalCode: null, ProductionUseRequiresRevalidation: true)
             { ProductVersion = AcceptedProductFixtureVersion });
         }
+
+        public Task<InventoryParentRollCandidatesV1> SearchAsync(InventoryContextualParentRollQueryV1 query,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+        Task<InventoryParentRollReferenceV1> IInventoryContextualParentRollReferencesV1.ValidateAsync(
+            InventoryContextualParentRollSelectionV1 selection, CancellationToken cancellationToken)
+        {
+            calls.Add("parent-roll-context");
+            ContextualSelections.Add(selection);
+            if (Exception is { } exception)
+            {
+                throw exception;
+            }
+
+            return Task.FromResult(new InventoryParentRollReferenceV1(
+                Company, selection.LabelId, selection.ExpectedLabelVersion, "LBL-1", Guid.NewGuid(),
+                new InventoryLotV1(Guid.NewGuid(), null, null), null, null, "Complete", [], [], "10", "10", "0", [],
+                DraftSelectable: true, DraftRefusalCode: null, ProductionUseRequiresRevalidation: true)
+            { ProductVersion = AcceptedProductFixtureVersion });
+        }
+    }
+
+    private sealed class PartyAccountPort(List<string> calls) : ICounterpartyManufacturingPartyAccountSourceV1
+    {
+        public CounterpartyManufacturingPartyAccountV1? Account { get; set; }
+
+        public Task<CounterpartyManufacturingPartyAccountSearchAnswerV1> SearchAuthorizedAsync(
+            CounterpartyManufacturingPartyAccountSearchV1 query, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public Task<CounterpartyManufacturingPartyAccountAnswerV1> GetAuthorizedAsync(Guid partyId,
+            Guid companyAccountId, CancellationToken cancellationToken = default)
+        {
+            calls.Add("party-account");
+            return Task.FromResult(new CounterpartyManufacturingPartyAccountAnswerV1(
+                CounterpartyManufacturingPartyAccountOutcomeV1.Found,
+                Account ?? new CounterpartyManufacturingPartyAccountV1(
+                    partyId, companyAccountId, Company, true, true, true, false, "party-v1", "account-v1")));
+        }
     }
 
     private sealed class WorkCenterPort(List<string> calls) : IOrganizationWorkCenterPlanningReferenceV1
@@ -514,6 +749,31 @@ public sealed class ManufacturingPlanRevisionTests
             calls.Add("work-center");
             return Task.FromResult<OrganizationWorkCenterPlanningReferenceV1?>(
                 new OrganizationWorkCenterPlanningReferenceV1(workCenterId, Kind));
+        }
+    }
+
+    private sealed class ProductSnapshotPort(List<string> calls) : IProductManufacturingTechnicalSnapshotV1
+    {
+        public decimal ThicknessMm { get; set; } = 2m;
+
+        public Task<ProductManufacturingTechnicalSnapshotResultV1> ReadAsync(
+            ProductManufacturingTechnicalSnapshotSelectionV1 selection, CancellationToken cancellationToken)
+        {
+            calls.Add("product");
+            return Task.FromResult(new ProductManufacturingTechnicalSnapshotResultV1(
+                new ProductManufacturingTechnicalSnapshotV1(
+                    selection.ProductId,
+                    selection.ExpectedProductVersion,
+                    new ProductManufacturingFamilyRevisionV1(Guid.Parse("f1000000-0000-0000-0000-000000000001"),
+                        "COIL", "family-r1"),
+                    new ProductManufacturingTemplateRevisionV1(Guid.Parse("f2000000-0000-0000-0000-000000000002"),
+                        "3", "COIL-SHEET", "template-r3"),
+                    ThicknessMm,
+                    1500m,
+                    new ProductManufacturingKilogramUnitV1(Company, SettingsUnitIdentitiesV1.Kilogram, "kg",
+                        Guid.Parse("4a790fdc-2a6b-5126-835f-d3a13d28b71c"), "1"),
+                    selection.EffectiveOn),
+                []));
         }
     }
 

@@ -48,8 +48,9 @@
  * it is a citable licence to restore the violation.
  *
  * MEASURED, and NOT this file's to enforce: no list page in the repo links to its own create route
- * (`urun/yeni` and `siparisler/yeni` appear in zero list pages), so Product and Sales still use
- * sidebar-create. A rule here forbidding that would redden two other lanes' screens today and leave
+ * (`urun/yeni` appears in zero list pages), so Product still needs its lane-owned entry-point move.
+ * Sales now follows K5 through its list action. A rule here forbidding the remaining case would redden
+ * another lane's screen today and leave
  * only an exemption list — a guard cannot land while the instances it would catch still stand, and
  * those instances are not this lane's to repair. The mechanism belongs after those modules move.
  *
