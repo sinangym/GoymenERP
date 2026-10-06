@@ -43,6 +43,35 @@ public sealed class SalesPriceFloorApprovalSqlServerRelationalAcceptanceTests
     private static readonly SalesDraftStateAudit Submitted = new(
         "sales.order-draft.submitted.v1", "Submit", "SENTETIK onaya gönderildi");
 
+    [Fact]
+    public void Replay_summary_comparison_uses_ordered_snapshot_values_and_rejects_content_drift()
+    {
+        var first = new SalesOrderDraftProductSnapshotViewV1(
+            Product, "1", "SENTETIK-001", "Sentetik ürün", Kg, "kg");
+        var second = new SalesOrderDraftProductSnapshotViewV1(
+            Guid.Parse("ca3f37c1-757e-4411-a4c9-b686f1ebc263"), "2", "SENTETIK-002", "İkinci ürün",
+            Guid.Parse("8f5f37ab-94e5-4e32-9bbc-53f593bf2cbf"), "adet");
+        var visible = new SalesOrderDraftSummaryView(
+            Guid.Parse("615b6cff-c9aa-40aa-9d78-dac1c0433e99"), Company, "SO-2026-000001", "Order", "Draft",
+            "4", "Rev.0", Guid.Parse("9ae75729-89f5-462c-b839-9de6a9d24060"),
+            Guid.Parse("cfc48e8a-9c01-4be8-83f2-25b6532bd012"), Currency, Day, T0, 2, "Preparing",
+            SalesCommercialStageV1.Order, [first, second]);
+        var equalContent = visible with
+        {
+            ProductSnapshots = [first with { }, second with { }],
+        };
+
+        Assert.True(SalesStore.ReplaySummariesMatch(visible, equalContent));
+        Assert.False(SalesStore.ReplaySummariesMatch(visible, equalContent with
+        {
+            ProductSnapshots = [first with { ProductName = "SENTETIK-tampered" }, second],
+        }));
+        Assert.False(SalesStore.ReplaySummariesMatch(visible, equalContent with
+        {
+            ProductSnapshots = [second, first],
+        }));
+    }
+
     [SqlServerFact]
     public async Task The_first_floor_approval_result_replays_after_submission_without_a_second_effect_and_Down_refuses_51064()
     {
@@ -93,6 +122,10 @@ public sealed class SalesPriceFloorApprovalSqlServerRelationalAcceptanceTests
             Assert.NotNull(replay);
             Assert.Equal(JsonSerializer.Serialize(firstResult, SalesDraftJson.Options),
                 JsonSerializer.Serialize(replay.Result, SalesDraftJson.Options));
+            var storedSnapshot = Assert.Single(replay.Result!.Visible.Draft.ProductSnapshots!);
+            Assert.Equal((Product, "1", "SENTETIK-001", "Sentetik ürün", Kg, "kg"),
+                (storedSnapshot.ProductId, storedSnapshot.ProductVersion, storedSnapshot.ProductCode,
+                    storedSnapshot.ProductName, storedSnapshot.OrderUnitId, storedSnapshot.OrderUnitCode));
             Assert.Equal(firstResult.Visible.Draft.Version, replay.Result!.Visible.Draft.Version);
             Assert.NotEqual(versionAfterSubmission.ToString(CultureInfo.InvariantCulture), replay.Result.Visible.Draft.Version);
             Assert.Equal(versionAfterSubmission, replay.Draft!.Version);
@@ -107,6 +140,17 @@ public sealed class SalesPriceFloorApprovalSqlServerRelationalAcceptanceTests
             "SELECT COUNT(*) FROM [sales].[DraftAttempts] WHERE [DraftId] = @id AND [CommandName] = @command "
             + "AND [Outcome] = 1 AND [RefusalJson] IS NULL AND ISJSON([ResultJson]) = 1",
             ("@id", draft.Id), ("@command", SalesDraftCommands.ApprovePriceFloorExceptionsV1)));
+
+        await run.ExecuteAsync(
+            "UPDATE [sales].[DraftAttempts] SET [ResultJson] = JSON_MODIFY([ResultJson], "
+            + "N'$.withheld.draft.productSnapshots[0].productName', N'SENTETIK-tampered') "
+            + "WHERE [DraftId] = @id AND [CommandName] = @command",
+            ("@id", draft.Id), ("@command", SalesDraftCommands.ApprovePriceFloorExceptionsV1));
+        await using (var tampered = run.Store(Company))
+        {
+            await Assert.ThrowsAsync<InvalidOperationException>(() => tampered.Store.FindReplayAsync(
+                Envelope(FloorKey, Approver), FloorHash, default, SalesDraftCommands.ApprovePriceFloorExceptionsV1));
+        }
 
         var invalidNull = await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync(
             "INSERT INTO [sales].[DraftAttempts] ([CompanyId],[CommandName],[IdempotencyKeyHash],[RequestHash],[ActorId],[Outcome],[DraftId],[CorrelationId],[RecordedAtUtc]) "
@@ -137,10 +181,13 @@ public sealed class SalesPriceFloorApprovalSqlServerRelationalAcceptanceTests
 
     private static SalesOrderDraftDetailView Detail(SalesOrderDraft draft, SalesPriceDisclosure disclosure)
     {
+        var snapshots = draft.Lines.Select(line => new SalesOrderDraftProductSnapshotViewV1(
+            line.Product.ProductId, line.Product.ProductVersion, line.Product.Code, line.Product.Name,
+            line.OrderUnit.UnitId, line.OrderUnit.UnitCode)).Distinct().ToArray();
         var summary = new SalesOrderDraftSummaryView(draft.Id, draft.CompanyId, draft.DocumentNo, draft.Kind.ToString(),
             draft.State.ToString(), draft.Version.ToString(CultureInfo.InvariantCulture), draft.Revision.ToString(CultureInfo.InvariantCulture),
             draft.Header.PartyId, draft.Header.CompanyAccountId, draft.Header.CurrencyId, draft.Header.BusinessDate,
-            draft.CreatedAtUtc, draft.Lines.Count, draft.ApprovalState.ToString(), SalesCommercialStageV1.Order);
+            draft.CreatedAtUtc, draft.Lines.Count, draft.ApprovalState.ToString(), SalesCommercialStageV1.Order, snapshots);
         var lines = draft.Lines.Select(line => new SalesOrderDraftLineDetail(line.Id, line.LineNo, line.Product.ProductId,
             line.Product.ProductVersion, line.Product.Code, line.Product.Name, line.OrderUnit.UnitId, line.QuantityText,
             disclosure == SalesPriceDisclosure.Visible ? line.Commercial.UnitPrice : null,
