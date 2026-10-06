@@ -67960,7 +67960,6 @@
         }
       },
       "InventoryOpeningPartyKindV1": {
-        "type": "string",
         "enum": [
           "Company",
           "Counterparty"
@@ -70428,6 +70427,7 @@
         "required": [
           "ownerKind",
           "ownerId",
+          "ownerCompanyPartyAccountId",
           "custodianKind",
           "custodianId"
         ],

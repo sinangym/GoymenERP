@@ -4850,7 +4850,7 @@ public sealed partial class OpenApiContractGenerationTests
                     ("lines", "type:array;items:ref:OpeningCountLineRequestV1"),
                     ("positionContext", "oneOf:ref:OpeningCountPositionContextV1|type:null")),
                 ["OpeningCountPositionContextV1"] = ObjectSchema(
-                    ["ownerKind", "ownerId", "custodianKind", "custodianId"],
+                    ["ownerKind", "ownerId", "ownerCompanyPartyAccountId", "custodianKind", "custodianId"],
                     ("ownerKind", "ref:InventoryOpeningPartyKindV1"),
                     ("ownerId", "type:string;format:uuid"),
                     ("ownerCompanyPartyAccountId", "type:null|string;format:uuid"),
@@ -6950,12 +6950,13 @@ public sealed partial class OpenApiContractGenerationTests
             Assert.Equal(
                 expected.RequiredProperties.Order(StringComparer.Ordinal),
                 required);
-            var properties = schema.GetProperty("properties")
-                .EnumerateObject()
-                .ToDictionary(
-                    property => property.Name,
-                    property => DescribeSchema(property.Value),
-                    StringComparer.Ordinal);
+            var properties = schema.TryGetProperty("properties", out var propertyValues)
+                ? propertyValues.EnumerateObject()
+                    .ToDictionary(
+                        property => property.Name,
+                        property => DescribeSchema(property.Value),
+                        StringComparer.Ordinal)
+                : new Dictionary<string, string>(StringComparer.Ordinal);
             Assert.Equal(
                 expected.Properties.OrderBy(pair => pair.Key, StringComparer.Ordinal),
                 properties.OrderBy(pair => pair.Key, StringComparer.Ordinal));
