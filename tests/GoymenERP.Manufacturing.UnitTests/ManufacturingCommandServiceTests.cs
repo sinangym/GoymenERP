@@ -501,7 +501,7 @@ public sealed class ManufacturingCommandServiceTests
     [Theory]
     [InlineData("denied", ManufacturingApiStatus.Denied, ManufacturingApiCodes.AuthorityDenied, null)]
     [InlineData("missing", ManufacturingApiStatus.NotFound, null, null)]
-    [InlineData("unavailable", ManufacturingApiStatus.Unavailable, null, null)]
+    [InlineData("unavailable", ManufacturingApiStatus.Unavailable, "counterparty_provider_unavailable", null)]
     [InlineData("inactive", ManufacturingApiStatus.Unprocessable,
         ManufacturingApiCodes.CommercialContextIneligible, "inputs[0].commercialContext")]
     [InlineData("role", ManufacturingApiStatus.Unprocessable,
