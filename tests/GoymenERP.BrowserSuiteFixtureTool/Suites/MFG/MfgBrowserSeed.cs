@@ -1,6 +1,12 @@
 using System.Text.Json;
 using GoymenERP.Api.Shell;
+using GoymenERP.BrowserSuiteFixtureTool.Shared;
+using GoymenERP.Modules.Identity.Domain.Assignments;
+using GoymenERP.Modules.Identity.Infrastructure.Fixtures;
+using GoymenERP.Modules.Product.Application.Contracts;
 using GoymenERP.Modules.Product.Infrastructure.Fixtures;
+using GoymenERP.Modules.Product.Infrastructure.Persistence;
+using GoymenERP.Modules.Settings.Application;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace GoymenERP.BrowserSuiteFixtureTool.Suites.Mfg;
@@ -16,9 +22,10 @@ namespace GoymenERP.BrowserSuiteFixtureTool.Suites.Mfg;
 /// its seeded code; no id is invented.</item>
 /// <item>The plan, order and parent roll ids are fixed synthetic ids and every step's idempotency key is
 /// deterministic, so a re-run of the fixture is a replay, never a second plan or order.</item>
-/// <item>The parent roll is recorded through Inventory's real opening-count command from Product's gated
-/// browser candidate and the work centre's real Organization location. The plan carries the resulting
-/// label version; no SQL or invented Inventory reference is used.</item>
+/// <item>The Product card is created, replayed, reopened and activated through Product's public API.
+/// The parent roll is then recorded through Inventory's real opening-count command at the work centre's
+/// real Organization location. The plan carries the resulting label version; no SQL or invented Inventory
+/// reference is used.</item>
 /// </list>
 /// The browser suite (tests/e2e/manufacturing-mfg) arranges its own orders for the write cases; this
 /// seeded order serves the reader case and proves the seed path end to end.
@@ -30,6 +37,8 @@ public sealed class MfgBrowserSeed : IBrowserSuiteFixture
     /// <summary>MFG-ORD: the close is its own authority — read + close, and no fact permission.</summary>
     public const string CloserActor = "mfg-closer";
     public const string OrganizationActor = "company-a-user";
+    public const string CariActor = "group-bootstrap-admin";
+    private const int CustomerRole = 1;
     public const string WorkCenterCode = "WC-SLIT";
 
     public static readonly Guid CompanyGdc = Guid.Parse("10000000-0000-0000-0000-000000000001");
@@ -38,6 +47,15 @@ public sealed class MfgBrowserSeed : IBrowserSuiteFixture
     public static readonly Guid ParentRollId = Guid.Parse("c3000000-0000-4000-8000-000000000001");
     public static readonly Guid OpeningCountId = Guid.Parse("c3100000-0000-4000-8000-000000000001");
     public static readonly Guid CaseRollOpeningCountId = Guid.Parse("c3100000-0000-4000-8000-000000000002");
+    public static readonly Guid CustomerOpeningCountId = Guid.Parse("c3100000-0000-4000-8000-000000000003");
+    public static readonly Guid CustomerPlanId = Guid.Parse("c1000000-0000-4000-8000-000000000002");
+    public static readonly Guid CustomerOrderId = Guid.Parse("c2000000-0000-4000-8000-000000000002");
+    private static readonly Guid ProductIssuerUserId = Guid.Parse("b2000000-0000-4000-8000-000000000201");
+    private static readonly Guid ProductIssuerExternalIdentityId = Guid.Parse("b2100000-0000-4000-8000-000000000201");
+    private static readonly Guid ProductActorUserId = Guid.Parse("20000000-0000-0000-0000-000000000003");
+    private static readonly Guid SystemAdministratorRoleId = Guid.Parse("30000000-0000-0000-0000-000000000003");
+    private static readonly DateTimeOffset ProductAuthorityValidFrom =
+        new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
     public static readonly Guid OpeningLineId = Guid.Parse("c3200000-0000-4000-8000-000000000001");
     public static readonly Guid ParentRollLotId = Guid.Parse("c3300000-0000-4000-8000-000000000001");
     public const string ParentRollCode = "SYN-MFG-ROLL-1";
@@ -60,6 +78,7 @@ public sealed class MfgBrowserSeed : IBrowserSuiteFixture
     private static readonly ParentRollFixture ProcessTubeProfileRoll = Roll(13);
     private static readonly ParentRollFixture ProcessPaintRoll = Roll(14);
     private static readonly ParentRollFixture ProcessCutToLengthRoll = Roll(15);
+    private static readonly ParentRollFixture CustomerOwnedRoll = Roll(16);
     private static readonly ParentRollFixture[] CaseRolls =
     [
         IssueRoll, ReplayRoll, ConflictRoll, ListRoll, CloseRoll,
@@ -78,19 +97,8 @@ public sealed class MfgBrowserSeed : IBrowserSuiteFixture
         BrowserSuiteFixtureContext context,
         CancellationToken cancellationToken)
     {
-        await using (var registryScope = context.Services.CreateAsyncScope())
-        {
-            await registryScope.ServiceProvider.GetRequiredService<C01E2eProductTechnicalCardFixtureWriter>()
-                .EnsureAsync(cancellationToken);
-        }
-
-        ProductSalesCandidateFixtureOutput product;
-        await using (var productScope = context.Services.CreateAsyncScope())
-        {
-            product = await productScope.ServiceProvider
-                .GetRequiredService<C01E2eProductSalesCandidateFixtureWriter>()
-                .EnsureAsync(cancellationToken);
-        }
+        await EnsureProductAuthorityAsync(context, cancellationToken);
+        var product = await EnsureGenuineProductAsync(context, cancellationToken);
 
         var workCenters = await context.GetJsonAsync(
             OrganizationActor, CompanyGdc, "/api/v1/organization/work-centers", cancellationToken);
@@ -104,6 +112,39 @@ public sealed class MfgBrowserSeed : IBrowserSuiteFixture
 
         var workCenterId = slitting[0].GetProperty("id").GetGuid();
         var locationId = slitting[0].GetProperty("locationId").GetGuid();
+
+        var customer = await CariBrowserSeed.OpenPartyWithAccountAsync(
+            context, CariActor, CompanyGdc, "customer-owned-party", "Fason uretim musterisi",
+            CustomerRole, cancellationToken);
+        JsonElement customerDetail;
+        using (var client = context.Api(CariActor, CompanyGdc))
+        using (var request = new HttpRequestMessage(
+                   HttpMethod.Get, $"{CariBrowserSeed.CounterpartiesPath}/{customer.PartyId:D}"))
+        {
+            request.Headers.Add(CariBrowserSeed.ClientContractHeader, CariBrowserSeed.ClientContractVersion);
+            using var response = await client.SendAsync(request, cancellationToken);
+            response.EnsureSuccessStatusCode();
+            using var document = await JsonDocument.ParseAsync(
+                await response.Content.ReadAsStreamAsync(cancellationToken), cancellationToken: cancellationToken);
+            customerDetail = document.RootElement.Clone();
+        }
+        var customerAccount = customerDetail.GetProperty("companyAccounts").EnumerateArray()
+            .SingleOrDefault(account => account.GetProperty("id").GetGuid() == customer.AccountId);
+        var partyVersion = customerDetail.GetProperty("version").GetString();
+        var accountVersion = customerAccount.ValueKind == JsonValueKind.Object
+            ? customerAccount.GetProperty("version").GetString()
+            : null;
+        if (customerDetail.GetProperty("id").GetGuid() != customer.PartyId
+            || customerAccount.ValueKind != JsonValueKind.Object
+            || customerAccount.GetProperty("companyId").GetGuid() != CompanyGdc
+            || customerAccount.GetProperty("roles").GetInt32() != CustomerRole
+            || customerAccount.GetProperty("isActive").GetBoolean() is false
+            || string.IsNullOrWhiteSpace(partyVersion)
+            || string.IsNullOrWhiteSpace(accountVersion)
+            || !string.Equals(accountVersion, customer.AccountVersion, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("The fresh Cari customer/account read differs from the opened customer.");
+        }
 
         var opening = await context.PostJsonAsync(
             RecorderActor,
@@ -176,6 +217,158 @@ public sealed class MfgBrowserSeed : IBrowserSuiteFixture
                 || line.GetProperty("quantityKg").GetString() != "1000"))
         {
             throw new InvalidOperationException("Inventory opening count did not answer every isolated MFG case roll.");
+        }
+
+        var customerOpening = await context.PostJsonAsync(
+            RecorderActor,
+            CompanyGdc,
+            OpeningCountsPath,
+            new
+            {
+                countId = CustomerOpeningCountId,
+                locationId,
+                countedOn = ProductSalesCandidateFixture.EffectiveOn,
+                sheetReference = "SYN-MFG-CUSTOMER-OWNED-1",
+                positionContext = new
+                {
+                    ownerKind = "Counterparty",
+                    ownerId = customer.PartyId,
+                    ownerCompanyPartyAccountId = customer.AccountId,
+                    custodianKind = "Company",
+                    custodianId = CompanyGdc,
+                },
+                lines = new[]
+                {
+                    new
+                    {
+                        lineId = CustomerOwnedRoll.LineId,
+                        labelId = CustomerOwnedRoll.LabelId,
+                        labelCode = CustomerOwnedRoll.Code,
+                        lotId = CustomerOwnedRoll.LotId,
+                        heatNumber = (string?)null,
+                        coilNumber = CustomerOwnedRoll.CoilNumber,
+                        productId = product.ProductId,
+                        productVersion = product.ProductVersion,
+                        quantityKg = "1000",
+                    },
+                },
+            },
+            "customer-owned-opening-count",
+            cancellationToken);
+        var customerOpenedLine = customerOpening.GetProperty("lines")[0];
+        if (customerOpenedLine.GetProperty("labelId").GetGuid() != CustomerOwnedRoll.LabelId
+            || customerOpenedLine.GetProperty("quantityKg").GetString() != "1000")
+        {
+            throw new InvalidOperationException("Inventory did not reopen the exact customer-owned MFG roll.");
+        }
+
+        var customerCandidates = await context.GetJsonAsync(
+            RecorderActor,
+            CompanyGdc,
+            $"{ParentRollCandidatesPath}?q={CustomerOwnedRoll.Code}&limit=25",
+            cancellationToken);
+        var customerRoll = customerCandidates.GetProperty("items").EnumerateArray()
+            .SingleOrDefault(candidate => candidate.GetProperty("labelId").GetGuid() == CustomerOwnedRoll.LabelId);
+        var customerPositions = customerRoll.ValueKind == JsonValueKind.Object
+            ? customerRoll.GetProperty("positions").EnumerateArray().ToArray()
+            : [];
+        if (customerRoll.ValueKind != JsonValueKind.Object
+            || customerRoll.GetProperty("draftSelectable").GetBoolean()
+            || customerRoll.GetProperty("draftRefusalCode").GetString()
+                != "inventory_parent_roll_context_required"
+            || customerPositions.Length != 1
+            || customerPositions[0].GetProperty("ownerKind").GetString() != "Counterparty"
+            || customerPositions[0].GetProperty("ownerId").GetGuid() != customer.PartyId
+            || customerPositions[0].GetProperty("custodianKind").GetString() != "Company"
+            || customerPositions[0].GetProperty("custodianId").GetGuid() != CompanyGdc)
+        {
+            throw new InvalidOperationException("The customer-owned roll did not reopen with its exact Inventory position.");
+        }
+        var customerRollVersion = customerRoll.GetProperty("labelVersion").GetString();
+        if (string.IsNullOrWhiteSpace(customerRollVersion))
+        {
+            throw new InvalidOperationException("The customer-owned roll did not answer a label version.");
+        }
+
+        var customerPlan = await context.PostJsonAsync(
+            RecorderActor,
+            CompanyGdc,
+            $"{ManufacturingPath}/plans",
+            new
+            {
+                planId = CustomerPlanId,
+                workCenterId,
+                inputs = new[]
+                {
+                    new
+                    {
+                        parentRollId = CustomerOwnedRoll.LabelId,
+                        plannedKg = "1000",
+                        expectedLabelVersion = customerRollVersion,
+                        commercialContext = new
+                        {
+                            partyId = customer.PartyId,
+                            companyPartyAccountId = customer.AccountId,
+                            partyVersion,
+                            accountVersion,
+                        },
+                    },
+                },
+                target = (object?)null,
+            },
+            "customer-owned-plan",
+            cancellationToken);
+        RequireString(customerPlan, "status", "Draft", "Approved");
+        var customerTechnical = customerPlan.GetProperty("inputs")[0].GetProperty("technicalSnapshot");
+        var customerFamily = customerTechnical.GetProperty("family");
+        var customerTemplate = customerTechnical.GetProperty("template");
+        var customerUnit = customerTechnical.GetProperty("unitKg");
+        if (customerTechnical.GetProperty("productId").GetGuid() != product.ProductId
+            || customerTechnical.GetProperty("productVersion").GetString() != product.ProductVersion
+            || customerFamily.GetProperty("familyId").GetGuid()
+                != ProductInitialTechnicalDefinitionV1.HotRolledSlitCoilFamilyId
+            || customerFamily.GetProperty("sourceRevision").GetString()
+                != ProductInitialTechnicalDefinitionV1.SourceRef
+            || customerTemplate.GetProperty("templateId").GetGuid()
+                != ProductInitialTechnicalDefinitionV1.TemplateId
+            || customerTemplate.GetProperty("templateVersion").GetString() != "1"
+            || customerTemplate.GetProperty("sourceRevision").GetString()
+                != ProductInitialTechnicalDefinitionV1.SourceRef
+            || customerUnit.GetProperty("unitId").GetGuid()
+                != ApprovedUnitProfileCatalog.GdcKilogramV1.UnitId
+            || customerUnit.GetProperty("profileId").GetGuid()
+                != ApprovedUnitProfileCatalog.GdcKilogramV1.ProfileId
+            || customerUnit.GetProperty("profileVersion").GetString() != "1")
+        {
+            throw new InvalidOperationException(
+                "The customer-owned plan did not capture the exact genuine Product and Settings snapshot.");
+        }
+        var approvedCustomerPlan = await context.PostJsonAsync(
+            RecorderActor,
+            CompanyGdc,
+            $"{ManufacturingPath}/plans/{CustomerPlanId:D}/approval",
+            new { expectedVersion = 1 },
+            "customer-owned-plan-approval",
+            cancellationToken);
+        RequireString(approvedCustomerPlan, "status", "Approved");
+        var customerOrder = await context.PostJsonAsync(
+            RecorderActor,
+            CompanyGdc,
+            $"{ManufacturingPath}/orders",
+            new { orderId = CustomerOrderId, planId = CustomerPlanId },
+            "customer-owned-order",
+            cancellationToken);
+        RequireString(customerOrder, "status", "Open");
+        var customerOrderRoll = customerOrder.GetProperty("rolls")[0];
+        var capturedContext = customerOrderRoll.GetProperty("commercialContext");
+        if (customerOrder.GetProperty("orderId").GetGuid() != CustomerOrderId
+            || customerOrderRoll.GetProperty("parentRollId").GetGuid() != CustomerOwnedRoll.LabelId
+            || capturedContext.GetProperty("partyId").GetGuid() != customer.PartyId
+            || capturedContext.GetProperty("companyPartyAccountId").GetGuid() != customer.AccountId
+            || capturedContext.GetProperty("partyVersion").GetString() != partyVersion
+            || capturedContext.GetProperty("accountVersion").GetString() != accountVersion)
+        {
+            throw new InvalidOperationException("The order did not capture the exact customer-owned commercial context.");
         }
 
         // Publish output facts from the real close-case Inventory candidate. The browser must send
@@ -313,6 +506,124 @@ public sealed class MfgBrowserSeed : IBrowserSuiteFixture
             ["outputInitialBlock"] = outputPosition.GetProperty("block").GetString()!,
         };
     }
+
+    private static async Task EnsureProductAuthorityAsync(
+        BrowserSuiteFixtureContext context,
+        CancellationToken cancellationToken)
+    {
+        var grants = new[]
+        {
+            (ProductMasterOperation.Read,
+                Guid.Parse("b5000000-0000-4000-8000-00000000f001"),
+                Guid.Parse("b5100000-0000-4000-8000-00000000f001")),
+            (ProductMasterOperation.DraftCreate,
+                Guid.Parse("b5000000-0000-4000-8000-00000000f002"),
+                Guid.Parse("b5100000-0000-4000-8000-00000000f002")),
+            (ProductMasterOperation.Activate,
+                Guid.Parse("b5000000-0000-4000-8000-00000000f003"),
+                Guid.Parse("b5100000-0000-4000-8000-00000000f003")),
+        };
+        await using var scope = context.Services.CreateAsyncScope();
+        var assignments = scope.ServiceProvider.GetRequiredService<C01E2eProductMasterAssignmentFixtureWriter>();
+        foreach (var (operation, assignmentId, decisionId) in grants)
+        {
+            await assignments.EnsureAsync(new ProductMasterAssignmentFixtureRow(
+                assignmentId,
+                ProductActorUserId,
+                SystemAdministratorRoleId,
+                operation,
+                ProductIssuerUserId,
+                ProductIssuerExternalIdentityId,
+                decisionId,
+                context.Label($"MFG genuine Product {operation}"),
+                ProductAuthorityValidFrom), cancellationToken);
+        }
+    }
+
+    private static async Task<GenuineProduct> EnsureGenuineProductAsync(
+        BrowserSuiteFixtureContext context,
+        CancellationToken cancellationToken)
+    {
+        var draft = new CreateProductDraftRequest(
+            "SENTETIK browser-suite:mfg S235JR 1 mm x 1000 mm kaplamasiz sac",
+            ProductInitialCodeGroupV1.SacGroupId,
+            FamilyId: ProductInitialTechnicalDefinitionV1.HotRolledSlitCoilFamilyId,
+            References: new ProductReferences(
+                ProductInitialTechnicalDefinitionV1.TemplateId,
+                "1",
+                new Dictionary<string, JsonElement>(StringComparer.Ordinal)
+                {
+                    ["thickness-mm"] = JsonSerializer.SerializeToElement(1m),
+                    ["width-mm"] = JsonSerializer.SerializeToElement(1000m),
+                    ["steel-grade"] = JsonSerializer.SerializeToElement("S235JR"),
+                    ["coating"] = JsonSerializer.SerializeToElement("uncoated"),
+                },
+                new ProductUnitReferences(
+                    Stock: ApprovedUnitProfileCatalog.GdcKilogramV1.UnitId,
+                    Sales: ApprovedUnitProfileCatalog.GdcKilogramV1.UnitId)));
+
+        var created = await context.PostJsonAsync(
+            CariActor, CompanyGdc, ProductApiV1.BasePath, draft, "genuine-product-create", cancellationToken);
+        if (created.GetProperty("isReplay").GetBoolean())
+        {
+            throw new InvalidOperationException("The first genuine Product create unexpectedly replayed.");
+        }
+
+        var createdCard = created.GetProperty("card");
+        var createdProduct = createdCard.GetProperty("product");
+        var productId = createdProduct.GetProperty("id").GetGuid();
+        if (productId == Guid.Empty
+            || createdProduct.GetProperty("code").GetString() != "SAC-1"
+            || createdProduct.GetProperty("lifecycle").GetString() != "Draft"
+            || createdProduct.GetProperty("version").GetString() != "1")
+        {
+            throw new InvalidOperationException("The genuine Product draft answer is not the exact SAC-1 card.");
+        }
+
+        var replay = await context.PostJsonAsync(
+            CariActor, CompanyGdc, ProductApiV1.BasePath, draft, "genuine-product-create", cancellationToken);
+        if (!replay.GetProperty("isReplay").GetBoolean()
+            || replay.GetProperty("card").GetProperty("product").GetProperty("id").GetGuid() != productId)
+        {
+            throw new InvalidOperationException("The genuine Product create did not replay its exact card.");
+        }
+
+        var reopenedDraft = await context.GetJsonAsync(
+            CariActor, CompanyGdc, $"{ProductApiV1.BasePath}/{productId:D}", cancellationToken);
+        if (reopenedDraft.GetProperty("product").GetProperty("version").GetString() != "1")
+        {
+            throw new InvalidOperationException("The genuine Product draft did not reopen at version 1.");
+        }
+
+        var activated = await context.PostJsonAsync(
+            CariActor,
+            CompanyGdc,
+            $"{ProductApiV1.BasePath}/{productId:D}/activation",
+            new ActivateProductRequest("1"),
+            "genuine-product-activate",
+            cancellationToken);
+        var activeProduct = activated.GetProperty("card").GetProperty("product");
+        if (activeProduct.GetProperty("id").GetGuid() != productId
+            || activeProduct.GetProperty("lifecycle").GetString() != "Active"
+            || activeProduct.GetProperty("version").GetString() != "2")
+        {
+            throw new InvalidOperationException("The genuine Product did not activate at version 2.");
+        }
+
+        var reopenedActive = await context.GetJsonAsync(
+            CariActor, CompanyGdc, $"{ProductApiV1.BasePath}/{productId:D}", cancellationToken);
+        if (reopenedActive.GetProperty("product").GetProperty("lifecycle").GetString() != "Active"
+            || reopenedActive.GetProperty("product").GetProperty("version").GetString() != "2"
+            || reopenedActive.GetProperty("references").GetProperty("templateId").GetGuid()
+                != ProductInitialTechnicalDefinitionV1.TemplateId)
+        {
+            throw new InvalidOperationException("The genuine active Product did not reopen with its template.");
+        }
+
+        return new GenuineProduct(productId, "2");
+    }
+
+    private sealed record GenuineProduct(Guid ProductId, string ProductVersion);
 
     private static ParentRollFixture Roll(int suffix) => new(
         Guid.Parse($"c3000000-0000-4000-8000-{suffix:D12}"),

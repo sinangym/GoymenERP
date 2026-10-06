@@ -22,6 +22,7 @@ import { PLAN_EDIT_TEXT, revisionFailureText } from './planEditText'
 import { currentRevision } from './planRevisionContract'
 import { PlanEditForm } from './PlanEditForm'
 import { PlanHistory } from './PlanHistory'
+import { PlanCalculationDetails } from './PlanPreviewPanel'
 import { classifyOutcome, type RemoteViewState } from '../shell/uiState'
 import { StateBlock } from '../shell/StateBlock'
 import { useShellState } from '../shell/shellContext'
@@ -304,17 +305,39 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
         <h2 id="manufacturing-plan-inputs-heading">Planlanan ana rulolar</h2>
         <div className={styles.tableWrap}>
           <table className={styles.table}>
-            <thead><tr><th scope="col">Ana rulo etiketi</th><th scope="col">Planlanan kg</th></tr></thead>
+            <thead><tr><th scope="col">Ana rulo etiketi</th><th scope="col">Planlanan kg</th><th scope="col">Yakalanan teknik kaynak</th></tr></thead>
             <tbody>
               {plan.inputs.map((input) => (
                 <tr key={input.parentRollId}>
                   <th scope="row" className={styles.mono}>{input.parentRollId}</th>
                   <td>{input.plannedKg}</td>
+                  <td>
+                    {input.technicalSnapshot === null ? (
+                      <span className={styles.muted}>Yok — eski plan, güncel üründen tamamlanmaz</span>
+                    ) : (
+                      <ul>
+                        <li>Ürün <span className={styles.mono}>{input.technicalSnapshot.productId}</span> · sürüm {input.technicalSnapshot.productVersion}</li>
+                        <li>Aile {input.technicalSnapshot.family.familyCode} · {input.technicalSnapshot.family.sourceRevision}</li>
+                        <li>Şablon {input.technicalSnapshot.template.templateCode} · {input.technicalSnapshot.template.templateVersion}</li>
+                        <li>{input.technicalSnapshot.thicknessMm} mm × {input.technicalSnapshot.widthMm} mm</li>
+                        <li>kg profili {input.technicalSnapshot.unitKg.profileVersion} · {input.technicalSnapshot.effectiveOn}</li>
+                      </ul>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
+      </section>
+
+      <section className={styles.commandCard} aria-labelledby="manufacturing-stored-plan-calculation-heading">
+        <h2 id="manufacturing-stored-plan-calculation-heading">Kayıtlı plan hesaplaması</h2>
+        {plan.calculation === null ? (
+          <p className={styles.note}>Bu eski komut yanıtında kalıcı hesaplama projeksiyonu bulunmuyor.</p>
+        ) : (
+          <PlanCalculationDetails preview={plan.calculation} labelOf={(parentRollId) => parentRollId} />
+        )}
       </section>
 
       {editing && editable && current !== null && editReady && !unresolved ? (

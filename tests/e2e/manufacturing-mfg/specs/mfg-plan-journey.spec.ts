@@ -59,6 +59,10 @@ function expectEveryAnswerRewritten(answered: readonly Request[], rewritten: Rea
   expect(answered.filter((request) => !rewritten.has(request)).map((request) => request.url())).toEqual([])
 }
 
+function storedPlanInputRows(page: Page) {
+  return page.getByRole('region', { name: 'Planlanan ana rulolar' })
+}
+
 async function openPlanForm(
   page: Page,
   roll: MfgRollSeed,
@@ -151,7 +155,8 @@ test.describe('MFG plan create and reopen (real Inventory parent roll)', () => {
         await page.getByRole('link', { name: 'Formu kapat ve planı yeniden aç' }).click()
         expect((await freshRead).status()).toBe(200)
         await expect(page.getByRole('heading', { name: 'Plan yeniden açıldı' })).toBeVisible()
-        await expect(page.getByText(process, { exact: true })).toBeVisible()
+        await expect(page.locator('dt', { hasText: /^Proses$/ }).locator('..').getByText(process, { exact: true }))
+          .toBeVisible()
 
         const stored = await readPlan(api, body.planId)
         expect(stored.response.status()).toBe(200)
@@ -204,7 +209,8 @@ test.describe('MFG plan create and reopen (real Inventory parent roll)', () => {
     expect(new URL(page.url()).pathname).toBe(`/uretim/plan/${body.planId}`)
     await expect(page.getByRole('heading', { name: 'Plan yeniden açıldı' })).toBeVisible()
     await expect(page.getByText(body.planId, { exact: true })).toBeVisible()
-    await expect(page.getByRole('row', { name: new RegExp(`${candidate.labelId}.*1000`) })).toBeVisible()
+    await expect(storedPlanInputRows(page).getByRole('row', { name: new RegExp(`${candidate.labelId}.*1000`) }))
+      .toBeVisible()
 
     const api = await apiAs(env, env.seed.recorderActor)
     try {
@@ -321,7 +327,8 @@ test.describe('MFG plan create and reopen (real Inventory parent roll)', () => {
     expect((await reopened).status()).toBe(200)
     expect(new URL(page.url()).pathname).toBe(`/uretim/plan/${body.planId}`)
     await expect(page.getByRole('heading', { name: 'Plan yeniden açıldı' })).toBeVisible()
-    await expect(page.getByRole('row', { name: new RegExp(`${candidate.labelId}.*1000`) })).toBeVisible()
+    await expect(storedPlanInputRows(page).getByRole('row', { name: new RegExp(`${candidate.labelId}.*1000`) }))
+      .toBeVisible()
 
     // Downstream: approve, then create the order from the reopened plan.
     const approvalResponse = page.waitForResponse(
@@ -525,12 +532,21 @@ test.describe('MFG plan create and reopen (real Inventory parent roll)', () => {
       expect(body.inputs).toEqual([{ parentRollId: candidate.labelId, plannedKg: '1000', expectedLabelVersion: candidate.labelVersion }])
       const stored = await readPlan(api, body.planId)
       expect(stored.response.status()).toBe(200)
-      const storedBody = stored.body as { workCenterId: string; inputs: Array<{ parentRollId: string; plannedKg: string }>; target: null }
-      expect(storedBody.inputs).toEqual([{ parentRollId: candidate.labelId, plannedKg: '1000' }])
+      const storedBody = stored.body as {
+        workCenterId: string
+        inputs: Array<{ parentRollId: string; plannedKg: string; commercialContext: null }>
+        target: null
+      }
+      expect(storedBody.inputs).toMatchObject([{ parentRollId: candidate.labelId, plannedKg: '1000', commercialContext: null }])
       const ofSaved = await api.post('/api/v1/manufacturing/plans/preview', {
         data: {
           workCenterId: storedBody.workCenterId,
-          inputs: storedBody.inputs.map((input) => ({ ...input, expectedLabelVersion: candidate.labelVersion })),
+          inputs: storedBody.inputs.map((input) => ({
+            parentRollId: input.parentRollId,
+            plannedKg: input.plannedKg,
+            expectedLabelVersion: candidate.labelVersion,
+            commercialContext: input.commercialContext,
+          })),
           target: storedBody.target,
         },
       })
@@ -664,14 +680,20 @@ test.describe('MFG plan create and reopen (real Inventory parent roll)', () => {
     expect(edit).toEqual({
       expectedVersion: 1,
       workCenterId: env.seed.workCenterId,
-      inputs: [{ parentRollId: candidate.labelId, plannedKg: '800', expectedLabelVersion: candidate.labelVersion }],
+      inputs: [{
+        parentRollId: candidate.labelId,
+        plannedKg: '800',
+        expectedLabelVersion: candidate.labelVersion,
+        commercialContext: null,
+      }],
       target: { basis: 'GoodOutputMass', kg: '750' },
       reason: 'Tarayıcı kabulü: bobin kg düşürüldü',
     })
     expect((await revisedRead).status()).toBe(200)
     await expect(page.getByText('Plan güncellendi (sürüm 2); güncel kayıt ve geçmiş yeniden okundu.', { exact: true }))
       .toBeVisible()
-    await expect(page.getByRole('row', { name: new RegExp(`${candidate.labelId}.*800`) })).toBeVisible()
+    await expect(storedPlanInputRows(page).getByRole('row', { name: new RegExp(`${candidate.labelId}.*800`) }))
+      .toBeVisible()
 
     // Close the screen and reopen it from the plan list: the list, the plan and the history all read the edit.
     await page.goto('/uretim/emirler')

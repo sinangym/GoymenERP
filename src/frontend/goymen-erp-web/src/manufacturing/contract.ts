@@ -11,6 +11,8 @@
  * figures beside another's.
  */
 
+import { decodePlanPreview, type PlanPreview } from './planPreviewContract'
+
 /** The five output classes of DEC-PRDCT-006, by their server names. */
 export const OUTPUT_CLASSES = [
   'GoodProduct',
@@ -84,10 +86,34 @@ export interface RemainingTarget {
 
 export type PlanStatus = 'Draft' | 'Approved'
 
+export interface CapturedPlanTechnicalSnapshot {
+  readonly productId: string
+  readonly productVersion: string
+  readonly family: { readonly familyId: string; readonly familyCode: string; readonly sourceRevision: string }
+  readonly template: {
+    readonly templateId: string
+    readonly templateVersion: string
+    readonly templateCode: string
+    readonly sourceRevision: string
+  }
+  readonly thicknessMm: string
+  readonly widthMm: string
+  readonly unitKg: {
+    readonly companyId: string
+    readonly unitId: string
+    readonly unitCode: string
+    readonly profileId: string
+    readonly profileVersion: string
+  }
+  readonly effectiveOn: string
+}
+
 /** One planned parent roll of a plan: the kilogram is the plan's figure, not a measured one. */
 export interface PlannedInput {
   readonly parentRollId: string
   readonly plannedKg: string
+  /** Null for a legacy stored plan; never filled from the current Product card by the client. */
+  readonly technicalSnapshot: CapturedPlanTechnicalSnapshot | null
 }
 
 /**
@@ -108,6 +134,8 @@ export interface ProductionPlanView {
   readonly target: { readonly basis: string; readonly kg: string } | null
   readonly approvedByUserId: string | null
   readonly approvedAtUtc: string | null
+  /** Null only when replaying a historical command JSON that predates the additive projection. */
+  readonly calculation: PlanPreview | null
 }
 
 export interface ProductionOrderView {
@@ -159,6 +187,46 @@ function hasExactKeys(value: Json, keys: readonly string[]): boolean {
 
 function requiredText(value: unknown): value is string {
   return typeof value === 'string' && value.length > 0 && value === value.trim()
+}
+
+function boundedSnapshotText(value: unknown, maximumLength: number): value is string {
+  return requiredText(value) && value.length <= maximumLength && !/[\u0000-\u001f\u007f-\u009f]/.test(value)
+}
+
+function snapshotMeasure(value: unknown): string | null {
+  const decoded = kg(value)
+  if (decoded === null || decoded === '0') return null
+  const separator = decoded.indexOf('.')
+  return separator < 0 || decoded.length - separator - 1 <= 3 ? decoded : null
+}
+
+function calendarDate(value: unknown): value is string {
+  if (typeof value !== 'string') return false
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value)
+  if (match === null) return false
+  const year = Number(match[1])
+  const month = Number(match[2])
+  const day = Number(match[3])
+  if (year < 1 || month < 1 || month > 12 || day < 1 || (year === 1 && month === 1 && day === 1)) return false
+  const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0)
+  const days = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+  return day <= days[month - 1]
+}
+
+function exactDecimalSum(values: readonly string[]): string {
+  const parts = values.map((value) => {
+    const [integer, fraction = ''] = value.split('.')
+    return { integer, fraction }
+  })
+  const scale = parts.reduce((maximum, part) => Math.max(maximum, part.fraction.length), 0)
+  const factor = 10n ** BigInt(scale)
+  const total = parts.reduce((sum, part) =>
+    sum + BigInt(part.integer) * factor
+      + BigInt((part.fraction + '0'.repeat(scale)).slice(0, scale) || '0'), 0n)
+  if (scale === 0) return total.toString()
+  const raw = total.toString().padStart(scale + 1, '0')
+  const fraction = raw.slice(-scale).replace(/0+$/, '')
+  return fraction.length === 0 ? raw.slice(0, -scale) : `${raw.slice(0, -scale)}.${fraction}`
 }
 
 function guid(value: unknown): string | null {
@@ -332,7 +400,63 @@ function decodePlannedInput(value: unknown): PlannedInput | null {
   if (!isObject(value)) return null
   const parentRollId = guid(value.parentRollId)
   const plannedKg = kg(value.plannedKg)
-  return parentRollId === null || plannedKg === null ? null : { parentRollId, plannedKg }
+  const technicalSnapshot = value.technicalSnapshot === undefined || value.technicalSnapshot === null
+    ? null
+    : decodeTechnicalSnapshot(value.technicalSnapshot)
+  return parentRollId === null || plannedKg === null || technicalSnapshot === undefined
+    ? null
+    : { parentRollId, plannedKg, technicalSnapshot }
+}
+
+function decodeTechnicalSnapshot(value: unknown): CapturedPlanTechnicalSnapshot | undefined {
+  if (!isObject(value) || !hasExactKeys(value, [
+    'productId', 'productVersion', 'family', 'template', 'thicknessMm', 'widthMm', 'unitKg', 'effectiveOn',
+  ])) return undefined
+  if (!isObject(value.family) || !hasExactKeys(value.family, ['familyId', 'familyCode', 'sourceRevision'])) return undefined
+  if (!isObject(value.template) || !hasExactKeys(value.template,
+    ['templateId', 'templateVersion', 'templateCode', 'sourceRevision'])) return undefined
+  if (!isObject(value.unitKg) || !hasExactKeys(value.unitKg,
+    ['companyId', 'unitId', 'unitCode', 'profileId', 'profileVersion'])) return undefined
+  const productId = nonNilGuid(value.productId)
+  const familyId = nonNilGuid(value.family.familyId)
+  const templateId = nonNilGuid(value.template.templateId)
+  const companyId = nonNilGuid(value.unitKg.companyId)
+  const unitId = nonNilGuid(value.unitKg.unitId)
+  const profileId = nonNilGuid(value.unitKg.profileId)
+  const thicknessMm = snapshotMeasure(value.thicknessMm)
+  const widthMm = snapshotMeasure(value.widthMm)
+  if (productId === null || familyId === null || templateId === null || companyId === null
+    || unitId === null || profileId === null || thicknessMm === null || widthMm === null
+    || !boundedSnapshotText(value.productVersion, 128)
+    || !boundedSnapshotText(value.family.familyCode, 64)
+    || !boundedSnapshotText(value.family.sourceRevision, 64)
+    || !boundedSnapshotText(value.template.templateVersion, 64)
+    || !boundedSnapshotText(value.template.templateCode, 64)
+    || !boundedSnapshotText(value.template.sourceRevision, 64)
+    || !boundedSnapshotText(value.unitKg.unitCode, 64)
+    || !boundedSnapshotText(value.unitKg.profileVersion, 64)
+    || !calendarDate(value.effectiveOn)) return undefined
+  return {
+    productId,
+    productVersion: value.productVersion,
+    family: { familyId, familyCode: value.family.familyCode, sourceRevision: value.family.sourceRevision },
+    template: {
+      templateId,
+      templateVersion: value.template.templateVersion,
+      templateCode: value.template.templateCode,
+      sourceRevision: value.template.sourceRevision,
+    },
+    thicknessMm,
+    widthMm,
+    unitKg: {
+      companyId,
+      unitId,
+      unitCode: value.unitKg.unitCode,
+      profileId,
+      profileVersion: value.unitKg.profileVersion,
+    },
+    effectiveOn: value.effectiveOn,
+  }
 }
 
 /**
@@ -354,6 +478,9 @@ export function decodePlan(body: unknown): ProductionPlanView | null {
   const target = decodeTarget(body.target)
   const approvedByUserId = nullableGuid(body.approvedByUserId)
   const approvedAtUtc = nullableInstant(body.approvedAtUtc)
+  const calculation = body.calculation === undefined || body.calculation === null
+    ? null
+    : decodePlanPreview(body.calculation)
   if (
     planId === null ||
     companyId === null ||
@@ -362,6 +489,7 @@ export function decodePlan(body: unknown): ProductionPlanView | null {
     target === undefined ||
     approvedByUserId === undefined ||
     approvedAtUtc === undefined ||
+    (body.calculation !== undefined && body.calculation !== null && calculation === null) ||
     typeof body.process !== 'string' ||
     (body.status !== 'Draft' && body.status !== 'Approved') ||
     !Array.isArray(body.inputs)
@@ -380,6 +508,21 @@ export function decodePlan(body: unknown): ProductionPlanView | null {
     if (input === null) return null
     inputs.push(input)
   }
+  if (inputs.some((input) => input.technicalSnapshot !== null
+    && input.technicalSnapshot.unitKg.companyId.toLowerCase() !== companyId.toLowerCase())) return null
+  if (calculation !== null) {
+    if (calculation.workCenterId.toLowerCase() !== workCenterId.toLowerCase()
+      || calculation.process !== body.process || calculation.plannedRollCount !== inputs.length
+      || calculation.rolls.length !== inputs.length
+      || calculation.plannedInputKg !== exactDecimalSum(inputs.map((input) => input.plannedKg))) return null
+    if ((target === null) !== (calculation.target === null)) return null
+    if (target !== null && calculation.target !== null
+      && (calculation.target.basis !== target.basis || calculation.target.kg !== target.kg)) return null
+    for (let index = 0; index < inputs.length; index += 1) {
+      if (calculation.rolls[index].parentRollId.toLowerCase() !== inputs[index].parentRollId.toLowerCase()
+        || calculation.rolls[index].plannedKg !== inputs[index].plannedKg) return null
+    }
+  }
   return {
     planId,
     companyId,
@@ -391,6 +534,7 @@ export function decodePlan(body: unknown): ProductionPlanView | null {
     target,
     approvedByUserId,
     approvedAtUtc,
+    calculation,
   }
 }
 
@@ -454,9 +598,10 @@ export function decodeOrder(body: unknown): ProductionOrderView | null {
  * The realization commands this screen can complete from explicit server-backed selections. An output's
  * owner and custodian are never chosen here: they are DERIVED from this order's own immutable
  * `manufacturing.input-issue` trace on the parent label (one complete, untruncated position), shown read-only,
- * and frozen into the command; the server re-checks them against the same trace. The issue itself admits only
- * the company's own, company-custodied roll until the customer/fason decision (#66/5830378162) is made: the
- * server refuses any other position at issue. InitialBlock is an explicit user selection, never a client default.
+ * and frozen into the command; the server re-checks them against the same trace. The issue admits either the
+ * legacy company-owned, company-custodied path or a captured Counterparty owner with the current company as
+ * custodian; every other owner, custodian, or context combination is refused. InitialBlock is an explicit user
+ * selection, never a client default.
  */
 export const FACT_KINDS = [
   'input-issues',

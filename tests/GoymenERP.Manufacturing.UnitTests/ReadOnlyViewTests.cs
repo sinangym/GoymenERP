@@ -91,4 +91,29 @@ public sealed class ReadOnlyViewTests
         Assert.Equal(plan.Id, second.PlanId);
         Assert.NotEqual(first.Id, second.Id);
     }
+
+    [Fact]
+    public void An_order_keeps_the_plans_exact_immutable_commercial_context_while_legacy_null_stays_null()
+    {
+        var commercial = new PlanCommercialContextSnapshotV1(
+            Guid.Parse("50000000-0000-0000-0000-000000000005"),
+            Guid.Parse("60000000-0000-0000-0000-000000000006"),
+            " party:v01 ",
+            "account:v02/α");
+        var commercialPlan = new ProductionPlan(Guid.NewGuid(), Company, WorkCenter, ManufacturingProcess.Slitting,
+            [new PlannedInput(MasterRoll, Kg(9_000m), commercialContext: commercial)]);
+        commercialPlan.Approve(commercialPlan.Version, Planner, DateTimeOffset.UnixEpoch);
+        var legacyPlan = new ProductionPlan(Guid.NewGuid(), Company, WorkCenter, ManufacturingProcess.Slitting,
+            [new PlannedInput(Guid.NewGuid(), Kg(1_000m))]);
+        legacyPlan.Approve(legacyPlan.Version, Planner, DateTimeOffset.UnixEpoch);
+
+        var commercialOrder = ProductionOrder.FromApprovedPlan(Guid.NewGuid(), commercialPlan);
+        var legacyOrder = ProductionOrder.FromApprovedPlan(Guid.NewGuid(), legacyPlan);
+
+        Assert.Same(commercial, commercialOrder.PlannedInputs[0].CommercialContext);
+        Assert.Equal((" party:v01 ", "account:v02/α"),
+            (commercialOrder.PlannedInputs[0].CommercialContext!.PartyVersion,
+                commercialOrder.PlannedInputs[0].CommercialContext!.AccountVersion));
+        Assert.Null(legacyOrder.PlannedInputs[0].CommercialContext);
+    }
 }

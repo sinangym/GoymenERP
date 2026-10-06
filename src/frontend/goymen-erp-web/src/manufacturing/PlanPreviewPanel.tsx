@@ -8,7 +8,7 @@
  */
 
 import type { PlanPreviewState } from './usePlanPreview'
-import type { PlanFormulaAnswer } from './planPreview'
+import type { PlanFormulaAnswer, PlanPreview } from './planPreview'
 import {
   OUTCOME_LABELS,
   PLAN_PREVIEW_TEXT,
@@ -46,6 +46,63 @@ function AnswerRow({ scope, answer }: { readonly scope: string; readonly answer:
           : null}
       </td>
     </tr>
+  )
+}
+
+/** The server-owned calculation projection, reused by live preview and a reopened stored plan. */
+export function PlanCalculationDetails({
+  preview,
+  labelOf,
+}: {
+  readonly preview: PlanPreview
+  readonly labelOf: (parentRollId: string) => string
+}) {
+  return (
+    <>
+      <dl className={styles.facts}>
+        <div><dt>Süreç</dt><dd>{preview.process}</dd></div>
+        <div><dt>Planlanan rulo</dt><dd>{preview.plannedRollCount}</dd></div>
+        <div><dt>Toplam planlanan girdi</dt><dd>{preview.plannedInputKg} kg</dd></div>
+        <div>
+          <dt>Hedef karşılaştırması</dt>
+          <dd>
+            {preview.target === null
+              ? 'Hedef yok'
+              : preview.target.targetMinusPlannedInputKg !== null
+                ? `Hedef − planlanan girdi: ${preview.target.targetMinusPlannedInputKg} kg`
+                : `${BASIS_LABELS[preview.target.basis] ?? preview.target.basis}: ${OUTCOME_LABELS[preview.target.outcome]} (${preview.target.missingParameters.map(parameterLabel).join(', ')})`}
+          </dd>
+        </div>
+        <div><dt>Hesaplayıcı</dt><dd className={styles.mono}>{preview.calculatorVersion}</dd></div>
+      </dl>
+      {preview.missingParameters.length > 0 ? (
+        <>
+          <h3>{PLAN_PREVIEW_TEXT.missingHeading}</h3>
+          <p className={styles.muted}>{PLAN_PREVIEW_TEXT.missingNote}</p>
+          <ul aria-label="Eksik parametreler">
+            {preview.missingParameters.map((name) => (
+              <li key={name}>{parameterLabel(name)} <span className={styles.mono}>({name})</span></li>
+            ))}
+          </ul>
+        </>
+      ) : null}
+      {preview.hasRefusal ? <p className={styles.error}>Bir hesap girdiyi reddetti; ayrıntı aşağıdadır.</p> : null}
+      <div className={styles.tableWrap}>
+        <table className={styles.table}>
+          <thead><tr><th scope="col">Formül</th><th scope="col">Kapsam</th><th scope="col">Durum</th><th scope="col">Sonuç</th></tr></thead>
+          <tbody>
+            {preview.answers.map((answer) => <AnswerRow key={`plan:${answer.formula}`} scope="Plan" answer={answer} />)}
+            {preview.rolls.flatMap((roll) => roll.answers.map((answer) => (
+              <AnswerRow
+                key={`${roll.parentRollId}:${answer.formula}`}
+                scope={`${labelOf(roll.parentRollId)} · ${roll.plannedKg} kg`}
+                answer={answer}
+              />
+            )))}
+          </tbody>
+        </table>
+      </div>
+    </>
   )
 }
 
@@ -91,49 +148,7 @@ export function PlanPreviewPanel({
             ))}
             <li>Hedef: {last.request.target === null ? 'yok' : `${BASIS_LABELS[last.request.target.basis]} ${last.request.target.kg} kg`}</li>
           </ul>
-          <dl className={styles.facts}>
-            <div><dt>Süreç</dt><dd>{last.preview.process}</dd></div>
-            <div><dt>Planlanan rulo</dt><dd>{last.preview.plannedRollCount}</dd></div>
-            <div><dt>Toplam planlanan girdi</dt><dd>{last.preview.plannedInputKg} kg</dd></div>
-            <div>
-              <dt>Hedef karşılaştırması</dt>
-              <dd>
-                {last.preview.target === null
-                  ? 'Hedef yok'
-                  : last.preview.target.targetMinusPlannedInputKg !== null
-                    ? `Hedef − planlanan girdi: ${last.preview.target.targetMinusPlannedInputKg} kg`
-                    : `${BASIS_LABELS[last.preview.target.basis] ?? last.preview.target.basis}: ${OUTCOME_LABELS[last.preview.target.outcome]} (${last.preview.target.missingParameters.map(parameterLabel).join(', ')})`}
-              </dd>
-            </div>
-            <div><dt>Hesaplayıcı</dt><dd className={styles.mono}>{last.preview.calculatorVersion}</dd></div>
-          </dl>
-          {last.preview.missingParameters.length > 0 ? (
-            <>
-              <h3>{PLAN_PREVIEW_TEXT.missingHeading}</h3>
-              <p className={styles.muted}>{PLAN_PREVIEW_TEXT.missingNote}</p>
-              <ul aria-label="Eksik parametreler">
-                {last.preview.missingParameters.map((name) => (
-                  <li key={name}>{parameterLabel(name)} <span className={styles.mono}>({name})</span></li>
-                ))}
-              </ul>
-            </>
-          ) : null}
-          {last.preview.hasRefusal ? <p className={styles.error}>Bir hesap girdiyi reddetti; ayrıntı aşağıdadır.</p> : null}
-          <div className={styles.tableWrap}>
-            <table className={styles.table}>
-              <thead><tr><th scope="col">Formül</th><th scope="col">Kapsam</th><th scope="col">Durum</th><th scope="col">Sonuç</th></tr></thead>
-              <tbody>
-                {last.preview.answers.map((answer) => <AnswerRow key={`plan:${answer.formula}`} scope="Plan" answer={answer} />)}
-                {last.preview.rolls.flatMap((roll) => roll.answers.map((answer) => (
-                  <AnswerRow
-                    key={`${roll.parentRollId}:${answer.formula}`}
-                    scope={`${labelOf(roll.parentRollId)} · ${roll.plannedKg} kg`}
-                    answer={answer}
-                  />
-                )))}
-              </tbody>
-            </table>
-          </div>
+          <PlanCalculationDetails preview={last.preview} labelOf={labelOf} />
         </div>
       )}
       <p className={styles.muted}>{PLAN_PREVIEW_TEXT.saveNote}</p>

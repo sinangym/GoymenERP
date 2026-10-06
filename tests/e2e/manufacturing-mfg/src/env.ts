@@ -67,6 +67,11 @@ export interface MfgOutputSeed {
   readonly initialBlock: string
 }
 
+export interface MfgCustomerOwnedSeed {
+  readonly orderId: string
+  readonly roll: MfgRollSeed
+}
+
 export interface MfgSeed {
   readonly recorderActor: string
   readonly readerActor: string
@@ -77,6 +82,7 @@ export interface MfgSeed {
   readonly rollId: string
   readonly rolls: MfgRolls
   readonly output: MfgOutputSeed
+  readonly customerOwned: MfgCustomerOwnedSeed
 }
 
 export interface MfgEnvironment {
@@ -177,6 +183,15 @@ export function readEnvironment(): MfgEnvironment {
       custodianId: text(raw, 'outputCustodianId', true),
       locationId: text(raw, 'outputLocationId', true),
       initialBlock: text(raw, 'outputInitialBlock'),
+    },
+    // These are fixture-owned deterministic identities, like the five process rolls above. Keeping
+    // them derived here avoids widening the centrally validated BROWSER_E2E_MFG_SEED export.
+    customerOwned: {
+      orderId: 'c2000000-0000-4000-8000-000000000002',
+      roll: {
+        labelId: 'c3000000-0000-4000-8000-000000000016',
+        labelCode: 'SYN-MFG-ROLL-16',
+      },
     },
   }
   // Three distinct authorities: recording a fact, reading, and closing (MFG-ORD).
