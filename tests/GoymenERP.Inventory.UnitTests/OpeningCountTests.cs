@@ -52,6 +52,30 @@ public sealed class OpeningCountTests
         Assert.Empty(StockLedger.Reconcile(ledger.Balances, receipts));
     }
 
+    [Fact]
+    public void A_validated_counterparty_can_own_every_piece_while_the_context_company_keeps_it()
+    {
+        var partyId = Guid.Parse("71000000-0000-0000-0000-000000000001");
+        var count = new OpeningCount(CountId, CompanyA, Warehouse1, CountedOn, "SYN-CUSTOMER-SHEET",
+            new StockOwner(StockPartyKind.Counterparty, partyId), KeptByA, [Line(Line1, Label1, 10m)]);
+
+        var position = count.PositionOf(Assert.Single(count.Lines));
+
+        Assert.Equal((StockPartyKind.Counterparty, partyId), (position.Owner.Kind, position.Owner.Id));
+        Assert.Equal(KeptByA, position.Custodian);
+    }
+
+    [Fact]
+    public void Opening_never_accepts_a_foreign_company_owner_or_third_party_custodian()
+    {
+        Assert.Equal(InventoryRuleCodes.InvalidOpeningCount,
+            Assert.Throws<InventoryRuleException>(() => new OpeningCount(CountId, CompanyA, Warehouse1, CountedOn, "SYN",
+                new StockOwner(StockPartyKind.Company, CompanyB), KeptByA, [Line(Line1, Label1, 1m)])).Code);
+        Assert.Equal(InventoryRuleCodes.InvalidOpeningCount,
+            Assert.Throws<InventoryRuleException>(() => new OpeningCount(CountId, CompanyA, Warehouse1, CountedOn, "SYN",
+                OwnedByA, new StockCustodian(StockPartyKind.Counterparty, Guid.NewGuid()), [Line(Line1, Label1, 1m)])).Code);
+    }
+
     [Theory]
     [InlineData("no-lines")]
     [InlineData("line-twice")]

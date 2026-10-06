@@ -163,6 +163,83 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.Commands")));
     }
 
+    [SqlServerFact]
+    public async Task Customer_owned_opening_validates_the_real_account_context_and_persists_one_exact_position()
+    {
+        await using var run = await Run.StartAsync();
+        var location = await run.LocationOfAsync(CompanyA);
+        var partyId = Guid.Parse("7a000000-0000-4000-8000-000000000001");
+        var accountId = Guid.Parse("7a000000-0000-4000-8000-000000000002");
+        var request = OpeningRequest(location, ("SYN-CUSTOMER-OWNED", Product, "42")) with
+        {
+            PositionContext = new OpeningCountPositionContextV1(
+                InventoryOpeningPartyKindV1.Counterparty, partyId, accountId,
+                InventoryOpeningPartyKindV1.Company, CompanyA),
+        };
+        var locations = new Locations((location, InventoryLocationStatus.Active));
+
+        await using (var command = Command(run, CompanyA, new Authority(), locations, new Products(),
+                         ownerAccounts: new OwnerAccounts()))
+        {
+            var result = await command.Service.RecordAsync(request, Metadata(run, "customer-owned", "corr-customer"), default);
+            Assert.False(result.IsReplay);
+        }
+
+        Assert.Equal((2, partyId, 1, CompanyA), (
+            await run.ScalarAsync<int>("SELECT OwnerKind FROM inventory.MovementLines WHERE MovementId = @id",
+                ("@id", request.Lines[0].LineId)),
+            await run.ScalarAsync<Guid>("SELECT OwnerId FROM inventory.MovementLines WHERE MovementId = @id",
+                ("@id", request.Lines[0].LineId)),
+            await run.ScalarAsync<int>("SELECT CustodianKind FROM inventory.MovementLines WHERE MovementId = @id",
+                ("@id", request.Lines[0].LineId)),
+            await run.ScalarAsync<Guid>("SELECT CustodianId FROM inventory.MovementLines WHERE MovementId = @id",
+                ("@id", request.Lines[0].LineId))));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM inventory.Balances WHERE LabelId = @label AND OwnerKind = 2 AND OwnerId = @party AND CustodianKind = 1 AND CustodianId = @company",
+            ("@label", request.Lines[0].LabelId), ("@party", partyId), ("@company", CompanyA)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE CorrelationId = N'corr-customer' AND AfterJson LIKE @account",
+            ("@account", $"%{accountId:D}%")));
+
+        await using var read = run.Store(CompanyA);
+        var stored = Assert.IsType<OpeningCount>(await read.Opening.ReadCountAsync(request.CountId));
+        Assert.Equal((StockPartyKind.Counterparty, partyId), (stored.Owner.Kind, stored.Owner.Id));
+        Assert.Equal((StockPartyKind.Company, CompanyA), (stored.Custodian.Kind, stored.Custodian.Id));
+    }
+
+    [SqlServerFact]
+    public async Task Customer_owned_opening_fails_closed_for_ineligible_unavailable_and_revoked_account_reads()
+    {
+        await using var run = await Run.StartAsync();
+        var location = await run.LocationOfAsync(CompanyA);
+        var request = OpeningRequest(location, ("SYN-CUSTOMER-REFUSED", Product, "5")) with
+        {
+            PositionContext = new OpeningCountPositionContextV1(
+                InventoryOpeningPartyKindV1.Counterparty, Guid.NewGuid(), Guid.NewGuid(),
+                InventoryOpeningPartyKindV1.Company, CompanyA),
+        };
+        var locations = new Locations((location, InventoryLocationStatus.Active));
+
+        async Task<InventoryOpeningServiceException> RefusedAsync(Authority authority, OwnerAccounts accounts, string key)
+        {
+            await using var command = Command(run, CompanyA, authority, locations, new Products(), ownerAccounts: accounts);
+            return await Assert.ThrowsAsync<InventoryOpeningServiceException>(
+                () => command.Service.RecordAsync(request with { CountId = Guid.NewGuid() }, Metadata(run, key, $"corr-{key}"), default));
+        }
+
+        Assert.Equal((422, InventoryOpeningCodesV1.OwnerAccountIneligible),
+            Refusal(await RefusedAsync(new Authority(), new OwnerAccounts(active: false), "inactive-owner")));
+        Assert.Equal((422, InventoryOpeningCodesV1.OwnerAccountIneligible),
+            Refusal(await RefusedAsync(new Authority(), new OwnerAccounts(customer: false), "non-customer")));
+        Assert.Equal((503, InventoryOpeningCodesV1.OwnerAccountUnavailable),
+            Refusal(await RefusedAsync(new Authority(),
+                new OwnerAccounts(InventoryOpeningOwnerAccountOutcomeV1.Unavailable), "owner-down")));
+        Assert.Equal((403, InventoryOpeningCodesV1.Forbidden),
+            Refusal(await RefusedAsync(new Authority(grantedCalls: 2), new OwnerAccounts(), "owner-revoked")));
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.OpeningCounts"));
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.Labels WHERE Code = N'SYN-CUSTOMER-REFUSED'"));
+    }
+
     /// <summary>
     /// Opening is never an adjustment: a counted piece whose label already carries stock refuses the count; the
     /// refusal is the key's answer for good (§7) and replays with its first correlation; no stock moves.
@@ -353,13 +430,14 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
                 null, null, piece.Product, "1", piece.Kilograms))]);
 
     private static CommandScope Command(Run run, Guid company, Authority authority, Locations locations, Products products,
-        Guid? actor = null, params IInterceptor[] interceptors)
+        Guid? actor = null, OwnerAccounts? ownerAccounts = null, params IInterceptor[] interceptors)
     {
         var store = run.Store(company, interceptors);
         var companyContext = new CompanyContext();
         companyContext.Set(company);
         var service = new InventoryOpeningCommandService(store.DbContext, store.Store, locations, products, companyContext,
-            new FixedCurrentUser(actor ?? run.Actor, company), authority, TimeProvider.System);
+            new FixedCurrentUser(actor ?? run.Actor, company), authority, TimeProvider.System,
+            ownerAccounts ?? new OwnerAccounts());
         return new CommandScope(store, service);
     }
 
@@ -426,5 +504,17 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
                 ? new InventoryProductStockAnswer(false, [new InventoryFieldIssueV1("productId", "product_not_stockable")])
                 : new InventoryProductStockAnswer(true, []));
         }
+    }
+
+    private sealed class OwnerAccounts(
+        InventoryOpeningOwnerAccountOutcomeV1 outcome = InventoryOpeningOwnerAccountOutcomeV1.Found,
+        bool active = true,
+        bool customer = true) : IInventoryOpeningOwnerAccountPortV1
+    {
+        public Task<InventoryOpeningOwnerAccountAnswerV1> GetAuthorizedAsync(Guid partyId, Guid companyPartyAccountId,
+            CancellationToken cancellationToken) => Task.FromResult(new InventoryOpeningOwnerAccountAnswerV1(outcome,
+                outcome == InventoryOpeningOwnerAccountOutcomeV1.Found
+                    ? new InventoryOpeningOwnerAccountV1(partyId, companyPartyAccountId, CompanyA, active, active, customer, "3", "4")
+                    : null));
     }
 }
