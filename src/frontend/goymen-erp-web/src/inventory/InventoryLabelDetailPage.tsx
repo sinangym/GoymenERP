@@ -105,6 +105,7 @@ function InventoryLabelDetailView({ namespace, labelId, target, stockSearch }: {
   const canRecordScrap = hasCapability(shell, INVENTORY_STOCK_SCRAP_RECORD_CAPABILITY)
   const canApproveScrap = hasCapability(shell, INVENTORY_STOCK_SCRAP_APPROVE_CAPABILITY)
   const canChangeAllocations = hasCapability(shell, INVENTORY_PHYSICAL_ALLOCATION_WRITE_CAPABILITY)
+  const canReadSalesOrder = hasCapability(shell, CAPABILITY.salesDraftsDetail)
   const companyId = shell.activeContext?.scopeMode === 'single' ? shell.activeContext.companyId : null
   const actorId = shell.activeContext?.userId ?? null
   const query = useQuery({
@@ -239,6 +240,7 @@ function InventoryLabelDetailView({ namespace, labelId, target, stockSearch }: {
         namespace={namespace}
         routeEntry={shell.routeEntryGeneration}
         onChanged={() => void query.refetch()}
+        canReadSalesOrder={canReadSalesOrder}
         startRelease={target === ROW_ACTION_TARGET.release}
       /></ActionTarget>
       : null}
