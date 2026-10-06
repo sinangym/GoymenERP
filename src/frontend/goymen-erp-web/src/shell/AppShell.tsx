@@ -16,6 +16,8 @@ import { useShellOrchestrator } from './useShellOrchestrator'
 import { StateBlock } from './StateBlock'
 import { SwitchConfirmDialog } from './SwitchConfirmDialog'
 import { GlobalSearchBox } from '../search/GlobalSearchBox'
+import { PRICE_LIST_CAPABILITY, PRICE_LIST_ROUTE } from '../product/priceLists/capabilities'
+import { PRICE_LIST_TEXT } from '../product/priceLists/priceListText'
 import {
   CAPABILITY,
   CAPABILITY_NAV_LABEL,
@@ -209,14 +211,20 @@ export function AppShell() {
   // the dialog. Unmounting here would destroy the very state "Kal" preserves.
   const confirming = state.phase === 'confirming-switch'
   const featuresClosed = capabilityFailClosed(state)
-  const navItems = NAV_CAPABILITIES.filter((capability) =>
-    hasCapability(state, capability),
-  ).map((capability) => ({
-    key: capability,
-    capability,
-    path: CAPABILITY_ROUTE[capability],
-    label: CAPABILITY_NAV_LABEL[capability],
-  }))
+  const navItems = [
+    ...NAV_CAPABILITIES.filter((capability) => hasCapability(state, capability)).map((capability) => ({
+      key: capability,
+      path: CAPABILITY_ROUTE[capability],
+      label: CAPABILITY_NAV_LABEL[capability],
+    })),
+    ...(hasCapability(state, PRICE_LIST_CAPABILITY.list)
+      ? [{
+          key: PRICE_LIST_CAPABILITY.list,
+          path: PRICE_LIST_ROUTE.list,
+          label: PRICE_LIST_TEXT.listHeading,
+        }]
+      : []),
+  ]
   return (
     <div className={styles.shell}>
       <a className={styles.skipLink} href="#main-content">
@@ -233,6 +241,7 @@ export function AppShell() {
               <li key={entry.key}>
                 <NavLink
                   to={entry.path}
+                  end
                   className={({ isActive }) => (isActive ? styles.navLinkActive : styles.navLink)}
                 >
                   {entry.label}
