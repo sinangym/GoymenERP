@@ -1,4 +1,5 @@
-import { expect, test } from '@playwright/test'
+import { expect, test, type APIResponse } from '@playwright/test'
+import sql from 'mssql'
 
 /**
  * The approved Sac/SAC and GDC definition are installed by normal Product migrations.
@@ -10,7 +11,15 @@ const GROUP_ID = '829e576d-c635-502a-97b8-9d5074c9d6a0'
 const FAMILY_ID = '2ffdf417-c7b0-4cc5-8c58-40b5cd906c55'
 const TEMPLATE_ID = 'ca5be23e-1f56-40c7-9e4a-6cdfc5e884b2'
 const KILOGRAM_ID = 'c5ef643e-a6e8-51f3-89f2-8e68b00cb983'
+// ApprovedSettingsUnitProfileCatalog.GdcKilogramV1, not an inferred unit conversion.
+const KILOGRAM_PROFILE_ID = '4a790fdc-2a6b-5126-835f-d3a13d28b71c'
+const KILOGRAM_PROFILE_VERSION = '1'
+const OTHER_COMPANY_ID = '10000000-0000-0000-0000-000000000002'
 const PRODUCTS_PATH = '/api/v1/products'
+const INVENTORY_OPENINGS_PATH = '/api/v1/inventory/opening-counts'
+const INVENTORY_PRODUCT_REFERENCES_PATH = '/api/v1/inventory/references/products'
+const INVENTORY_LOCATION_REFERENCES_PATH = '/api/v1/inventory/references/locations'
+const OPENING_DATE = '2026-10-05'
 
 type ReferenceOptions = {
   readonly familyFacts: {
@@ -159,9 +168,12 @@ test('the same genuine SAC card is activated by the existing activator and reope
   const companyId = actorSeed.companyId
   const requester = actorSeed.authorizedActor
   const activator = actorSeed.activatorActor
+  const inventoryRecorder = actorSeed.inventoryRecorderActor
   if (typeof companyId !== 'string' || typeof requester !== 'string' || typeof activator !== 'string'
-    || !companyId || !requester || !/^u02-[a-z0-9-]+$/.test(activator) || requester === activator) {
-    throw new Error('The u02 fixture must bind distinct requester and disposable activator actors.')
+    || typeof inventoryRecorder !== 'string' || !companyId || !requester
+    || !/^u02-[a-z0-9-]+$/.test(activator) || inventoryRecorder !== 'u02-inventory-recorder'
+    || new Set([requester, activator, inventoryRecorder]).size !== 3) {
+    throw new Error('The u02 fixture must bind distinct Product requester, activator and disposable Inventory recorder actors.')
   }
   const apiBaseUrl = process.env.BROWSER_E2E_API_BASE_URL?.trim().replace(/\/$/, '')
   if (!apiBaseUrl || new URL(apiBaseUrl).hostname !== '127.0.0.1') {
@@ -303,4 +315,214 @@ test('the same genuine SAC card is activated by the existing activator and reope
   expect(afterReplayHistory.status()).toBe(200)
   expect(await afterReplayCard.json()).toEqual(reopened)
   expect(await afterReplayHistory.json()).toEqual(history)
+
+  // Keep this exact Active card in the same disposable run. Only the separate Inventory
+  // recorder can choose it for stock; neither Product master actor gains an opening grant.
+  await page.setExtraHTTPHeaders({ 'X-Development-User': inventoryRecorder })
+  await page.goto('about:blank')
+  await page.goto('/stok/acilis')
+  await expect(page.getByRole('heading', { level: 1, name: 'İlk stok / açılış sayımı' })).toBeVisible()
+  await page.getByRole('link', { name: 'Yeni açılış sayımı', exact: true }).click()
+  await expect(page.getByRole('heading', { level: 1, name: 'Yeni açılış sayımı' })).toBeVisible()
+  await page.getByLabel('Sayım tarihi').fill(OPENING_DATE)
+  const sheetReference = `SENTETIK U02 genuine SAC opening ${created.product.id}`
+  const labelCode = `SAC-U02-${created.product.id.slice(0, 8)}`
+  await page.getByLabel('Belge / sayım referansı').fill(sheetReference)
+
+  const locationRead = page.waitForResponse(response =>
+    new URL(response.url()).pathname === INVENTORY_LOCATION_REFERENCES_PATH
+      && response.request().method() === 'GET')
+  await page.getByRole('button', { name: 'Lokasyonları getir', exact: true }).click()
+  const locationResponse = await locationRead
+  expect(locationResponse.status()).toBe(200)
+  const locationCandidates = await locationResponse.json() as {
+    readonly items: readonly { readonly locationId: string; readonly locationCode: string }[]
+  }
+  expect(locationCandidates.items.length).toBeGreaterThan(0)
+  const locationId = locationCandidates.items[0].locationId
+  expect(locationId).toMatch(/^[0-9a-f-]{36}$/i)
+  await page.getByLabel('Lokasyon', { exact: true }).selectOption(locationId)
+
+  await page.getByLabel('Ürün ara').fill(created.product.code)
+  const productRead = page.waitForResponse(response =>
+    new URL(response.url()).pathname === INVENTORY_PRODUCT_REFERENCES_PATH
+      && response.request().method() === 'GET')
+  await page.getByRole('button', { name: 'Ürünleri getir', exact: true }).click()
+  const productResponse = await productRead
+  expect(productResponse.status()).toBe(200)
+  const candidates = await productResponse.json() as { readonly items: readonly {
+    readonly productId: string; readonly productVersion: string; readonly code: string; readonly name: string
+    readonly stockUnitId: string; readonly stockUnitCode: string
+    readonly profileId: string; readonly profileVersion: string
+  }[] }
+  const exactCandidates = candidates.items.filter(candidate => candidate.productId === created.product.id)
+  expect(exactCandidates).toHaveLength(1)
+  expect(exactCandidates[0]).toMatchObject({
+    productVersion: reopened.product.version, code: created.product.code, name,
+    stockUnitId: KILOGRAM_ID, stockUnitCode: 'kg',
+    profileId: KILOGRAM_PROFILE_ID, profileVersion: KILOGRAM_PROFILE_VERSION,
+  })
+  await page.getByLabel('Ürün', { exact: true }).selectOption(created.product.id)
+  await page.getByLabel('Etiket kodu').fill(labelCode)
+  await page.getByLabel('Sayım kg').fill('12.5')
+
+  const openingRead = page.waitForResponse(response =>
+    new URL(response.url()).pathname === INVENTORY_OPENINGS_PATH
+      && response.request().method() === 'POST')
+  await page.getByRole('button', { name: 'Açılış sayımını kaydet', exact: true }).click()
+  const openingResponse = await openingRead
+  expect(openingResponse.status()).toBe(201)
+  const originalOpeningCorrelation = openingResponse.headers()['x-correlation-id']
+  expect(originalOpeningCorrelation).toBeTruthy()
+  expect(openingResponse.headers()['idempotency-replayed']).toBeUndefined()
+  expect(openingResponse.headers()['idempotency-original-correlation-id']).toBeUndefined()
+  const openingRequest = openingResponse.request()
+  const openingKey = await openingRequest.headerValue('Idempotency-Key')
+  expect(openingKey).toBeTruthy()
+  const openingPayload = openingRequest.postDataJSON() as {
+    readonly countId: string; readonly locationId: string; readonly countedOn: string
+    readonly sheetReference: string; readonly lines: readonly {
+      readonly lineId: string; readonly labelId: string; readonly labelCode: string
+      readonly lotId: string; readonly productId: string; readonly productVersion: string
+      readonly quantityKg: string
+    }[]
+  }
+  expect(openingPayload).toMatchObject({
+    locationId, countedOn: OPENING_DATE, sheetReference,
+    lines: [{ labelCode, productId: created.product.id,
+      productVersion: reopened.product.version, quantityKg: '12.5' }],
+  })
+  expect(openingPayload.lines).toHaveLength(1)
+  const recorded = await openingResponse.json() as {
+    readonly countId: string; readonly companyId: string; readonly locationId: string
+    readonly countedOn: string; readonly sheetReference: string; readonly lines: readonly {
+      readonly lineId: string; readonly labelId: string; readonly labelCode: string
+      readonly lotId: string; readonly productId: string; readonly quantityKg: string
+    }[]
+  }
+  expect(recorded).toMatchObject({
+    countId: openingPayload.countId, companyId, locationId, countedOn: OPENING_DATE,
+    sheetReference, lines: [{ labelId: openingPayload.lines[0].labelId,
+      labelCode, productId: created.product.id, quantityKg: '12.5' }],
+  })
+  expect(recorded.lines).toHaveLength(1)
+  await expect(page.getByRole('heading', { level: 1, name: 'Açılış sayımı kaydedildi' })).toBeVisible()
+
+  await page.goto('about:blank')
+  const countRead = page.waitForResponse(response =>
+    new URL(response.url()).pathname === `${INVENTORY_OPENINGS_PATH}/${recorded.countId}`
+      && response.request().method() === 'GET')
+  await page.goto(`/stok/acilis/${recorded.countId}`)
+  const countResponse = await countRead
+  expect(countResponse.status()).toBe(200)
+  expect(await countResponse.json()).toEqual(recorded)
+  await expect(page.getByRole('heading', { level: 1, name: 'Açılış sayımı' })).toBeVisible()
+  const labelLink = page.getByRole('link', { name: labelCode, exact: true })
+  await expect(labelLink).toHaveAttribute('href', `/stok/etiket/${recorded.lines[0].labelId}`)
+  const labelDetailPath = `/api/v1/inventory/labels/${recorded.lines[0].labelId}/detail`
+  const labelRead = page.waitForResponse(response =>
+    new URL(response.url()).pathname === labelDetailPath && response.request().method() === 'GET')
+  await labelLink.click()
+  const labelResponse = await labelRead
+  expect(labelResponse.status()).toBe(200)
+  const label = await labelResponse.json() as {
+    readonly identity: { readonly labelId: string; readonly companyId: string
+      readonly productId: string; readonly code: string }
+    readonly balances: { readonly physicalKg: string }
+  }
+  expect(label.identity).toMatchObject({
+    labelId: recorded.lines[0].labelId, companyId, productId: created.product.id, code: labelCode,
+  })
+  expect(label.balances.physicalKg).toBe('12.5')
+  await expect(page.getByRole('heading', { level: 1, name: labelCode, exact: true })).toBeVisible()
+
+  const sqlConnection = process.env.BROWSER_E2E_SQL_CONNECTION?.trim()
+  if (!sqlConnection) throw new Error('BROWSER_E2E_SQL_CONNECTION is required for exact opening effects.')
+  const pool = await new sql.ConnectionPool(sqlConnection).connect()
+  try {
+    async function effects() {
+      const result = await pool.request()
+        .input('companyId', sql.UniqueIdentifier, companyId)
+        .input('countId', sql.UniqueIdentifier, recorded.countId)
+        .input('labelId', sql.UniqueIdentifier, recorded.lines[0].labelId)
+        .input('entityId', sql.NVarChar, recorded.countId)
+        .query(`SELECT
+          (SELECT COUNT(*) FROM inventory.OpeningCounts WHERE CompanyId=@companyId AND Id=@countId) AS counts,
+          (SELECT COUNT(*) FROM inventory.OpeningCountLines WHERE CompanyId=@companyId AND CountId=@countId) AS lines,
+          (SELECT COUNT(*) FROM inventory.Labels WHERE CompanyId=@companyId AND Id=@labelId) AS labels,
+          (SELECT LOWER(CONVERT(nvarchar(36), ProductId)) FROM inventory.Labels
+            WHERE CompanyId=@companyId AND Id=@labelId) AS productId,
+          (SELECT ProductVersion FROM inventory.Labels
+            WHERE CompanyId=@companyId AND Id=@labelId) AS productVersion,
+          (SELECT COUNT(*) FROM inventory.MovementLines
+            WHERE CompanyId=@companyId AND LabelId=@labelId) AS movementLines,
+          (SELECT COUNT(*) FROM inventory.Commands
+            WHERE CompanyId=@companyId AND CommandName=N'inventory.opening-count.record'
+              AND TargetId=@countId) AS commands,
+          (SELECT COUNT(*) FROM audit.AuditEvents
+            WHERE CompanyId=@companyId AND EntityId=@entityId
+              AND EventType=N'inventory.opening-count.recorded.v1') AS audits`)
+      expect(result.recordset).toHaveLength(1)
+      return result.recordset[0] as {
+        counts: number; lines: number; labels: number; productId: string; productVersion: string
+        movementLines: number; commands: number; audits: number
+      }
+    }
+
+    const beforeOpeningReplay = await effects()
+    expect(beforeOpeningReplay).toEqual({
+      counts: 1, lines: 1, labels: 1, productId: created.product.id.toLowerCase(),
+      productVersion: reopened.product.version, movementLines: 1, commands: 1, audits: 1,
+    })
+
+    async function expectPrivateRefusal(response: APIResponse) {
+      expect([403, 404]).toContain(response.status())
+      const body = (await response.text()).toLowerCase()
+      for (const identity of [created.product.id, created.product.code, name, recorded.countId,
+        recorded.lines[0].labelId, recorded.lines[0].lotId, labelCode, sheetReference]) {
+        expect(body).not.toContain(identity.toLowerCase())
+      }
+    }
+
+    const candidatePath = `${apiBaseUrl}${INVENTORY_PRODUCT_REFERENCES_PATH}`
+      + `?effectiveOn=${OPENING_DATE}&limit=25&q=${encodeURIComponent(created.product.code)}`
+    const countPath = `${apiBaseUrl}${INVENTORY_OPENINGS_PATH}/${recorded.countId}`
+    const labelPath = `${apiBaseUrl}${labelDetailPath}`
+    const forbiddenHeaders = headersFor(requester)
+    const foreignHeaders = { ...headersFor(inventoryRecorder), 'X-Company-Id': OTHER_COMPANY_ID }
+    for (const [scope, headers] of [
+      ['product-only', forbiddenHeaders],
+      ['other-company', foreignHeaders],
+    ] as const) {
+      await expectPrivateRefusal(await page.request.get(candidatePath, { headers }))
+      await expectPrivateRefusal(await page.request.get(countPath, { headers }))
+      await expectPrivateRefusal(await page.request.get(labelPath, { headers }))
+      await expectPrivateRefusal(await page.request.post(`${apiBaseUrl}${INVENTORY_OPENINGS_PATH}`, {
+        headers: { ...headers, 'Idempotency-Key': `u02-genuine-opening-${scope}-${recorded.countId}` },
+        data: openingPayload,
+      }))
+      expect(await effects()).toEqual(beforeOpeningReplay)
+    }
+
+    const openingReplay = await page.request.post(`${apiBaseUrl}${INVENTORY_OPENINGS_PATH}`, {
+      headers: { ...headersFor(inventoryRecorder), 'Idempotency-Key': openingKey! },
+      data: openingPayload,
+    })
+    expect(openingReplay.status()).toBe(200)
+    expect(openingReplay.headers()['idempotency-replayed']).toBe('true')
+    expect(openingReplay.headers()['idempotency-original-correlation-id']).toBe(originalOpeningCorrelation)
+    expect(await openingReplay.json()).toEqual(recorded)
+    expect(await effects()).toEqual(beforeOpeningReplay)
+  } finally {
+    await pool.close()
+  }
+
+  const freshCount = await page.request.get(`${apiBaseUrl}${INVENTORY_OPENINGS_PATH}/${recorded.countId}`,
+    { headers: headersFor(inventoryRecorder) })
+  const freshLabel = await page.request.get(`${apiBaseUrl}${labelDetailPath}`,
+    { headers: headersFor(inventoryRecorder) })
+  expect(freshCount.status()).toBe(200)
+  expect(freshLabel.status()).toBe(200)
+  expect(await freshCount.json()).toEqual(recorded)
+  expect(await freshLabel.json()).toEqual(label)
 })

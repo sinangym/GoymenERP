@@ -68,7 +68,7 @@ class FixtureListTests(unittest.TestCase):
     def test_u02_exports_the_fixed_technical_family_identity(self):
         self.assertEqual(
             frozenset({"companyId", "codeGroupId", "technicalFamilyId", "authorizedActor", "unauthorizedActor",
-                       "activatorActor"}),
+                       "activatorActor", "inventoryRecorderActor"}),
             browser.SUITE_FIXTURE_OUTPUTS["u02"])
 
     def test_s04_exports_the_sales_allocation_tuple(self):
