@@ -73,6 +73,15 @@ export interface OpeningCountRequest {
   readonly countedOn: string
   readonly sheetReference: string
   readonly lines: readonly OpeningCountLineRequest[]
+  readonly positionContext?: OpeningCountPositionContext
+}
+
+export interface OpeningCountPositionContext {
+  readonly ownerKind: 'Company' | 'Counterparty'
+  readonly ownerId: string
+  readonly ownerCompanyPartyAccountId: string | null
+  readonly custodianKind: 'Company' | 'Counterparty'
+  readonly custodianId: string
 }
 
 export interface OpeningCountLineView {
@@ -212,6 +221,20 @@ function openingRequestLine(value: unknown): OpeningCountLineRequest | null {
   return source as unknown as OpeningCountLineRequest
 }
 
+function openingPositionContext(value: unknown): OpeningCountPositionContext | null {
+  const source = record(value)
+  if (source === null || !exact(source, [
+    'ownerKind', 'ownerId', 'ownerCompanyPartyAccountId', 'custodianKind', 'custodianId',
+  ]) || (source.ownerKind !== 'Company' && source.ownerKind !== 'Counterparty') || !guid(source.ownerId) ||
+    !(source.ownerCompanyPartyAccountId === null || guid(source.ownerCompanyPartyAccountId)) ||
+    (source.custodianKind !== 'Company' && source.custodianKind !== 'Counterparty') || !guid(source.custodianId) ||
+    source.custodianKind !== 'Company' ||
+    (source.ownerKind === 'Company'
+      ? source.ownerCompanyPartyAccountId !== null || source.ownerId !== source.custodianId
+      : !guid(source.ownerCompanyPartyAccountId))) return null
+  return source as unknown as OpeningCountPositionContext
+}
+
 export function decodeProductStockCandidates(value: unknown): ProductStockCandidates | null {
   const source = record(value)
   if (source === null || !exact(source, ['items', 'searchWindowFull']) || !Array.isArray(source.items) ||
@@ -263,7 +286,12 @@ export function decodeOpeningCount(value: unknown): OpeningCountView | null {
 
 export function isOpeningCountRequest(value: unknown): value is OpeningCountRequest {
   const source = record(value)
-  if (source === null || !exact(source, ['countId', 'locationId', 'countedOn', 'sheetReference', 'lines']) ||
+  const keys = source === null ? [] : Object.keys(source)
+  const expected = ['countId', 'locationId', 'countedOn', 'sheetReference', 'lines']
+  const hasPositionContext = source !== null && Object.prototype.hasOwnProperty.call(source, 'positionContext')
+  if (source === null || keys.length !== expected.length + (hasPositionContext ? 1 : 0)
+    || expected.some((key) => !Object.prototype.hasOwnProperty.call(source, key))
+    || (hasPositionContext && openingPositionContext(source.positionContext) === null) ||
     !guid(source.countId) || !guid(source.locationId) || !dateOnly(source.countedOn) ||
     !text(source.sheetReference) || !Array.isArray(source.lines) || source.lines.length < 1) return false
   const lines = source.lines.map(openingRequestLine)

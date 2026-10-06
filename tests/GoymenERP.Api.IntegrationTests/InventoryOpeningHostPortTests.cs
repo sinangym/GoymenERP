@@ -1,4 +1,7 @@
 using GoymenERP.Api.Endpoints;
+using GoymenERP.BuildingBlocks.Multitenancy;
+using GoymenERP.BuildingBlocks.Security;
+using GoymenERP.Modules.Counterparty.Application.Contracts;
 using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Organization.Application.Contracts;
 using GoymenERP.Modules.Product.Application.Contracts;
@@ -17,6 +20,9 @@ public sealed class InventoryOpeningHostPortTests
     private static readonly Guid Company = Guid.Parse("10000000-0000-0000-0000-000000000001");
     private static readonly Guid Location = Guid.Parse("4f000000-0000-4000-8000-000000000001");
     private static readonly Guid Product = Guid.Parse("7e000000-0000-4000-8000-000000000001");
+    private static readonly Guid Party = Guid.Parse("71000000-0000-4000-8000-000000000001");
+    private static readonly Guid Account = Guid.Parse("72000000-0000-4000-8000-000000000001");
+    private static readonly Guid OtherCompany = Guid.Parse("20000000-0000-0000-0000-000000000002");
     private static readonly DateOnly CountedOn = new(2026, 9, 19);
 
     [Theory]
@@ -103,6 +109,87 @@ public sealed class InventoryOpeningHostPortTests
         Assert.Equal(503, failure.StatusCode);
     }
 
+    [Fact]
+    public async Task A_late_Cari_read_revocation_denies_without_releasing_owner_facts()
+    {
+        var authority = new Authority(Granted(), PermissionScope.Denied);
+        var port = CreateOwnerPort(authority, new Accounts(Found()));
+
+        var answer = await port.GetAuthorizedAsync(Party, Account, default);
+
+        Assert.Equal(InventoryOpeningOwnerAccountOutcomeV1.Denied, answer.Outcome);
+        Assert.Null(answer.Account);
+        Assert.Equal(2, authority.Calls);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Actor_or_company_drift_during_the_final_authority_measurement_denies(bool switchCompany)
+    {
+        var company = new MutableCompany(Company);
+        var user = new MutableUser("opening-actor", Company, OtherCompany);
+        var authority = new Authority(Granted(), Granted())
+        {
+            OnCall = call =>
+            {
+                if (call != 2) return;
+                if (switchCompany) company.Set(OtherCompany);
+                else user.UserId = "other-actor";
+            },
+        };
+        var port = CreateOwnerPort(authority, new Accounts(Found()), company, user);
+
+        var answer = await port.GetAuthorizedAsync(Party, Account, default);
+
+        Assert.Equal(InventoryOpeningOwnerAccountOutcomeV1.Denied, answer.Outcome);
+        Assert.Null(answer.Account);
+        Assert.Equal(2, authority.Calls);
+    }
+
+    [Theory]
+    [InlineData(false, InventoryOpeningOwnerAccountOutcomeV1.Unavailable)]
+    [InlineData(true, InventoryOpeningOwnerAccountOutcomeV1.Denied)]
+    public async Task A_source_fault_runs_a_fresh_fence_before_choosing_unavailable_or_denied(
+        bool revoke,
+        InventoryOpeningOwnerAccountOutcomeV1 expected)
+    {
+        var authority = new Authority(Granted(), revoke ? PermissionScope.Denied : Granted());
+        var port = CreateOwnerPort(authority, new Accounts(failure: new InvalidOperationException("owner unavailable")));
+
+        var answer = await port.GetAuthorizedAsync(Party, Account, default);
+
+        Assert.Equal(expected, answer.Outcome);
+        Assert.Null(answer.Account);
+        Assert.Equal(2, authority.Calls);
+    }
+
+    [Fact]
+    public async Task Owner_cancellation_is_propagated()
+    {
+        var port = CreateOwnerPort(new Authority(Granted()),
+            new Accounts(failure: new OperationCanceledException()));
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => port.GetAuthorizedAsync(Party, Account, default));
+    }
+
+    private static CounterpartyInventoryOpeningOwnerAccountPortV1 CreateOwnerPort(
+        Authority authority,
+        Accounts accounts,
+        MutableCompany? company = null,
+        MutableUser? user = null) =>
+        new(company ?? new MutableCompany(Company), user ?? new MutableUser("opening-actor", Company), authority, accounts);
+
+    private static CounterpartyManufacturingPartyAccountAnswerV1 Found() =>
+        new(CounterpartyManufacturingPartyAccountOutcomeV1.Found,
+            new CounterpartyManufacturingPartyAccountV1(
+                Party, Account, Company, true, true, true, false, "11", "7"));
+
+    private static PermissionScope Granted() =>
+        new(true, true, new HashSet<string>(StringComparer.Ordinal) { "SYNTHETIC-CARI-READER" },
+            new HashSet<Guid>(), new HashSet<Guid>(), new HashSet<Guid>());
+
     private sealed class Locations(OrganizationLocationStatusV1? answer = null, Exception? failure = null)
         : IOrganizationLocationStatusReaderV1
     {
@@ -125,6 +212,62 @@ public sealed class InventoryOpeningHostPortTests
         {
             Selections.Add(selection);
             return failure is null ? Task.FromResult(answer!) : Task.FromException<ProductStockEligibilityV1>(failure);
+        }
+    }
+
+    private sealed class MutableCompany(Guid companyId) : ICompanyContext
+    {
+        public bool IsResolved => CompanyId != Guid.Empty;
+        public Guid CompanyId { get; private set; } = companyId;
+        public void Set(Guid value) => CompanyId = value;
+    }
+
+    private sealed class MutableUser(string userId, params Guid[] companies) : ICurrentUser
+    {
+        public bool IsAuthenticated => true;
+        public string? UserId { get; set; } = userId;
+        public IReadOnlySet<Guid> AllowedCompanyIds { get; } = companies.ToHashSet();
+        public bool CanAccessCompany(Guid companyId) => AllowedCompanyIds.Contains(companyId);
+    }
+
+    private sealed class Authority(params PermissionScope[] answers) : IErpAuthorityRevalidationService
+    {
+        private readonly Queue<PermissionScope> _answers = new(answers);
+        public int Calls { get; private set; }
+        public Action<int>? OnCall { get; init; }
+
+        public Task<PermissionScope> RevalidatePermissionScopeAsync(
+            string permission,
+            Guid companyId,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Assert.Equal(ErpPermissions.CounterpartyPartiesRead, permission);
+            Assert.NotEqual(Guid.Empty, companyId);
+            Calls++;
+            OnCall?.Invoke(Calls);
+            return Task.FromResult(_answers.Dequeue());
+        }
+    }
+
+    private sealed class Accounts(
+        CounterpartyManufacturingPartyAccountAnswerV1? answer = null,
+        Exception? failure = null) : ICounterpartyManufacturingPartyAccountSourceV1
+    {
+        public Task<CounterpartyManufacturingPartyAccountSearchAnswerV1> SearchAuthorizedAsync(
+            CounterpartyManufacturingPartyAccountSearchV1 query,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public Task<CounterpartyManufacturingPartyAccountAnswerV1> GetAuthorizedAsync(
+            Guid partyId,
+            Guid companyAccountId,
+            CancellationToken cancellationToken = default)
+        {
+            Assert.Equal((Party, Account), (partyId, companyAccountId));
+            return failure is null
+                ? Task.FromResult(answer!)
+                : Task.FromException<CounterpartyManufacturingPartyAccountAnswerV1>(failure);
         }
     }
 }

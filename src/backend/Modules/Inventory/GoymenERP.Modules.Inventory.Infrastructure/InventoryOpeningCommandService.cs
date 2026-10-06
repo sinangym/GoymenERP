@@ -10,6 +10,7 @@ using GoymenERP.Modules.Inventory.Domain.Labels;
 using GoymenERP.Modules.Inventory.Domain.Lots;
 using GoymenERP.Modules.Inventory.Domain.Opening;
 using GoymenERP.Modules.Inventory.Domain.Quantities;
+using GoymenERP.Modules.Inventory.Domain.Stock;
 using GoymenERP.Modules.Inventory.Infrastructure.Persistence;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
@@ -45,7 +46,8 @@ public sealed class InventoryOpeningCommandService(
     ICompanyContext companyContext,
     ICurrentUser currentUser,
     IErpAuthorityRevalidationService authority,
-    TimeProvider timeProvider) : IInventoryOpeningCommandService
+    TimeProvider timeProvider,
+    IInventoryOpeningOwnerAccountPortV1? ownerAccounts = null) : IInventoryOpeningCommandService
 {
     public const string RecordCommand = "inventory.opening-count.record";
     private const int IdentityMaximumLength = 128;
@@ -98,13 +100,16 @@ public sealed class InventoryOpeningCommandService(
             return prior;
         }
 
-        var count = Parse(request, scope.CompanyId);
+        var positionContext = ParsePositionContext(request.PositionContext, scope.CompanyId);
+        var count = Parse(request, scope.CompanyId, positionContext.Owner, positionContext.Custodian);
         var command = metadata with
         {
             ActorId = scope.ActorId,
             PermissionCode = InventoryPermissionManifestV1.OpeningStockRecord,
             RoleCodes = scope.RoleCodes,
         };
+
+        var ownerProof = await ValidateOwnerAsync(scope, positionContext, cancellationToken);
 
         // Organization: the counted location, as it stands now.
         InventoryLocationStatus location;
@@ -180,7 +185,7 @@ public sealed class InventoryOpeningCommandService(
         InventoryWriteOutcome outcome;
         try
         {
-            outcome = await store.RecordAsync(count, command, cancellationToken);
+            outcome = await store.RecordAsync(count, command, cancellationToken, ownerProof);
         }
         catch (Exception exception) when (exception is InventoryStoreException or InventoryRuleException)
         {
@@ -243,9 +248,25 @@ public sealed class InventoryOpeningCommandService(
     internal static string KeyHash(string idempotencyKey) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(idempotencyKey.Trim())));
 
-    /// <summary>The canonical request as the client sent it, the product versions included.</summary>
-    internal static string PayloadHash(OpeningCountRequestV1 request) =>
-        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(request, Json)))).ToLowerInvariant();
+    /// <summary>
+    /// The canonical request as the client sent it. The historical Company/self shape omitted
+    /// <c>positionContext</c>; a null optional context keeps that byte-compatible hash so recorded ADR-011 keys
+    /// still replay. A typed context is serialized in full and therefore remains part of conflict detection.
+    /// </summary>
+    internal static string PayloadHash(OpeningCountRequestV1 request)
+    {
+        var canonical = request.PositionContext is null
+            ? JsonSerializer.Serialize(new
+            {
+                request.CountId,
+                request.LocationId,
+                request.CountedOn,
+                request.SheetReference,
+                request.Lines,
+            }, Json)
+            : JsonSerializer.Serialize(request, Json);
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical))).ToLowerInvariant();
+    }
 
     /// <summary>
     /// The key's stored answer — a success or a terminal refusal — replayed with its first correlation under
@@ -333,7 +354,8 @@ public sealed class InventoryOpeningCommandService(
     };
 
     /// <summary>The request as the domain's count; every malformed line is named, and nothing is read before.</summary>
-    private static OpeningCount Parse(OpeningCountRequestV1 request, Guid companyId)
+    private static OpeningCount Parse(OpeningCountRequestV1 request, Guid companyId, StockOwner owner,
+        StockCustodian custodian)
     {
         if (request.Lines is null || request.Lines.Count == 0)
         {
@@ -385,12 +407,119 @@ public sealed class InventoryOpeningCommandService(
         try
         {
             return new OpeningCount(request.CountId, companyId, request.LocationId, request.CountedOn,
-                request.SheetReference, lines);
+                request.SheetReference, owner, custodian, lines);
         }
         catch (InventoryRuleException exception)
         {
             throw Validation(Issue("count", IssueCode(exception.Code)));
         }
+    }
+
+    private static ParsedPositionContext ParsePositionContext(OpeningCountPositionContextV1? context, Guid companyId)
+    {
+        if (context is null)
+        {
+            return new ParsedPositionContext(
+                new StockOwner(StockPartyKind.Company, companyId),
+                new StockCustodian(StockPartyKind.Company, companyId),
+                null);
+        }
+
+        var custodianIsCompany = context.CustodianKind == InventoryOpeningPartyKindV1.Company
+            && context.CustodianId == companyId;
+        if (!custodianIsCompany || !Enum.IsDefined(context.OwnerKind) || !Enum.IsDefined(context.CustodianKind))
+        {
+            throw Validation(Issue("positionContext", InventoryOpeningCodesV1.OwnerContextInvalid));
+        }
+
+        if (context.OwnerKind == InventoryOpeningPartyKindV1.Company)
+        {
+            if (context.OwnerId != companyId || context.OwnerCompanyPartyAccountId is not null)
+            {
+                throw Validation(Issue("positionContext", InventoryOpeningCodesV1.OwnerContextInvalid));
+            }
+
+            return new ParsedPositionContext(
+                new StockOwner(StockPartyKind.Company, companyId),
+                new StockCustodian(StockPartyKind.Company, companyId),
+                null);
+        }
+
+        if (context.OwnerKind != InventoryOpeningPartyKindV1.Counterparty || context.OwnerId == Guid.Empty
+            || context.OwnerCompanyPartyAccountId is not { } accountId || accountId == Guid.Empty)
+        {
+            throw Validation(Issue("positionContext", InventoryOpeningCodesV1.OwnerContextInvalid));
+        }
+
+        return new ParsedPositionContext(
+            new StockOwner(StockPartyKind.Counterparty, context.OwnerId),
+            new StockCustodian(StockPartyKind.Company, companyId),
+            accountId);
+    }
+
+    private async Task<InventoryOpeningOwnerProofV1?> ValidateOwnerAsync(
+        Scope scope,
+        ParsedPositionContext context,
+        CancellationToken cancellationToken)
+    {
+        if (context.CompanyPartyAccountId is not { } accountId)
+        {
+            return null;
+        }
+
+        if (ownerAccounts is null)
+        {
+            throw new InventoryOpeningServiceException(503, InventoryOpeningCodesV1.OwnerAccountUnavailable);
+        }
+
+        InventoryOpeningOwnerAccountAnswerV1 answer;
+        try
+        {
+            answer = await ownerAccounts.GetAuthorizedAsync(context.Owner.Id, accountId, cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            await RequireStillAsync(scope, cancellationToken);
+            if (exception is InventoryOpeningServiceException)
+            {
+                throw;
+            }
+
+            throw new InventoryOpeningServiceException(503, InventoryOpeningCodesV1.OwnerAccountUnavailable);
+        }
+
+        await RequireStillAsync(scope, cancellationToken);
+        if (answer.Outcome == InventoryOpeningOwnerAccountOutcomeV1.Denied)
+        {
+            throw Forbidden();
+        }
+
+        if (answer.Outcome == InventoryOpeningOwnerAccountOutcomeV1.Unavailable)
+        {
+            throw new InventoryOpeningServiceException(503, InventoryOpeningCodesV1.OwnerAccountUnavailable);
+        }
+
+        if (answer.Outcome is not (InventoryOpeningOwnerAccountOutcomeV1.Found
+            or InventoryOpeningOwnerAccountOutcomeV1.NotFound))
+        {
+            throw new InventoryOpeningServiceException(503, InventoryOpeningCodesV1.OwnerAccountUnavailable);
+        }
+
+        var account = answer.Outcome == InventoryOpeningOwnerAccountOutcomeV1.Found ? answer.Account : null;
+        if (account is null || account.PartyId != context.Owner.Id || account.CompanyPartyAccountId != accountId
+            || account.CompanyId != scope.CompanyId || !account.PartyIsActive || !account.AccountIsActive
+            || !account.HasCustomerRole || string.IsNullOrWhiteSpace(account.PartyVersion)
+            || string.IsNullOrWhiteSpace(account.AccountVersion))
+        {
+            throw new InventoryOpeningServiceException(422, InventoryOpeningCodesV1.OwnerAccountIneligible,
+                [Issue("positionContext.ownerId", InventoryOpeningCodesV1.OwnerAccountIneligible)]);
+        }
+
+        return new InventoryOpeningOwnerProofV1(accountId, account.PartyVersion, account.AccountVersion);
     }
 
     /// <summary>A lossless kilogram text: digits with an optional point, no sign, exponent, grouping or spaces.</summary>
@@ -489,6 +618,11 @@ public sealed class InventoryOpeningCommandService(
     private static InventoryFieldIssueV1 Issue(string field, string code) => new InventoryFieldIssueV1(field, code);
 
     private sealed record Scope(Guid CompanyId, string ActorId, IReadOnlyCollection<string> RoleCodes);
+
+    private sealed record ParsedPositionContext(
+        StockOwner Owner,
+        StockCustodian Custodian,
+        Guid? CompanyPartyAccountId);
 
     /// <summary>What the key keeps: a success (the count and its first correlation) or a terminal refusal.</summary>
     private sealed record CommandResult(int Status, Guid? CountId, string? OriginalCorrelationId, string? Code,
