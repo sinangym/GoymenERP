@@ -4856,7 +4856,7 @@ public sealed partial class OpenApiContractGenerationTests
                     ("ownerCompanyPartyAccountId", "type:null|string;format:uuid"),
                     ("custodianKind", "ref:InventoryOpeningPartyKindV1"),
                     ("custodianId", "type:string;format:uuid")),
-                ["InventoryOpeningPartyKindV1"] = EnumSchema("Company", "Counterparty"),
+                ["InventoryOpeningPartyKindV1"] = ScalarSchema("enum:Company|Counterparty"),
                 ["CreateInventoryPhysicalAllocationRequestV1"] = ObjectSchema(
                     ["allocationId", "salesOrderId", "salesOrderLineId", "labelId", "expectedLabelVersion", "quantityKg", "reason", "reservedUntilUtc"],
                     ("allocationId", "type:string;format:uuid"), ("salesOrderId", "type:string;format:uuid"),
