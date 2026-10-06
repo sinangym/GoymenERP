@@ -1,3 +1,6 @@
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Inventory.Application;
@@ -42,6 +45,18 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         var request = OpeningRequest(location, ("SYN-CMD-1", Product, "1250.5"), ("SYN-CMD-2", Product, "980"));
         var authority = new Authority();
         var locations = new Locations((location, InventoryLocationStatus.Active));
+
+        var legacyJson = JsonSerializer.Serialize(new
+        {
+            request.CountId,
+            request.LocationId,
+            request.CountedOn,
+            request.SheetReference,
+            request.Lines,
+        }, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        var legacyHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(legacyJson))).ToLowerInvariant();
+        Assert.Equal(legacyHash, InventoryOpeningCommandService.PayloadHash(request));
+        Assert.Equal(legacyHash, InventoryOpeningCommandService.PayloadHash(request with { PositionContext = null }));
 
         OpeningCountResultV1 first;
         await using (var a = Command(run, CompanyA, authority, locations, new Products()))
@@ -197,6 +212,18 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         {
             var result = await command.Service.RecordAsync(request, Metadata(run, "customer-owned", "corr-customer"), default);
             Assert.False(result.IsReplay);
+
+            var changedContext = request with
+            {
+                PositionContext = request.PositionContext! with
+                {
+                    OwnerId = Guid.Parse("7a000000-0000-4000-8000-000000000003"),
+                    OwnerCompanyPartyAccountId = Guid.Parse("7a000000-0000-4000-8000-000000000004"),
+                },
+            };
+            var conflict = await Assert.ThrowsAsync<InventoryOpeningServiceException>(() => command.Service.RecordAsync(
+                changedContext, Metadata(run, "customer-owned", "corr-customer-changed"), default));
+            Assert.Equal((409, InventoryOpeningCodesV1.IdempotencyConflict), Refusal(conflict));
         }
 
         Assert.Equal((2, partyId, 1, CompanyA), (
@@ -214,6 +241,9 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         Assert.Equal(1, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM audit.AuditEvents WHERE CorrelationId = N'corr-customer' AND AfterJson LIKE @account",
             ("@account", $"%{accountId:D}%")));
+        Assert.Equal((1, 1), (
+            await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.Commands WHERE TargetId = @id", ("@id", request.CountId)),
+            await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.Movements WHERE SourceId = @id", ("@id", request.CountId))));
 
         await using var read = run.Store(CompanyA);
         var stored = Assert.IsType<OpeningCount>(await read.Opening.ReadCountAsync(request.CountId));

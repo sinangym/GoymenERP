@@ -248,9 +248,25 @@ public sealed class InventoryOpeningCommandService(
     internal static string KeyHash(string idempotencyKey) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(idempotencyKey.Trim())));
 
-    /// <summary>The canonical request as the client sent it, the product versions included.</summary>
-    internal static string PayloadHash(OpeningCountRequestV1 request) =>
-        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(request, Json)))).ToLowerInvariant();
+    /// <summary>
+    /// The canonical request as the client sent it. The historical Company/self shape omitted
+    /// <c>positionContext</c>; a null optional context keeps that byte-compatible hash so recorded ADR-011 keys
+    /// still replay. A typed context is serialized in full and therefore remains part of conflict detection.
+    /// </summary>
+    internal static string PayloadHash(OpeningCountRequestV1 request)
+    {
+        var canonical = request.PositionContext is null
+            ? JsonSerializer.Serialize(new
+            {
+                request.CountId,
+                request.LocationId,
+                request.CountedOn,
+                request.SheetReference,
+                request.Lines,
+            }, Json)
+            : JsonSerializer.Serialize(request, Json);
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical))).ToLowerInvariant();
+    }
 
     /// <summary>
     /// The key's stored answer — a success or a terminal refusal — replayed with its first correlation under
