@@ -82,7 +82,7 @@ afterEach(() => {
 })
 
 describe('AppShell navigation reachability and active leaf', () => {
-  it('marks only the exact Sales create leaf active on the create route', async () => {
+  it('keeps Sales create reachable but out of the sidebar, with the list leaf inactive', async () => {
     const navigation = await renderShell(CAPABILITY_ROUTE[CAPABILITY.salesDraftsCreate], [
       CAPABILITY.salesDraftsList,
       CAPABILITY.salesDraftsCreate,
@@ -91,15 +91,16 @@ describe('AppShell navigation reachability and active leaf', () => {
     const list = within(navigation).getByRole('link', {
       name: CAPABILITY_NAV_LABEL[CAPABILITY.salesDraftsList],
     })
-    const create = within(navigation).getByRole('link', {
-      name: CAPABILITY_NAV_LABEL[CAPABILITY.salesDraftsCreate],
-    })
     expect(list.getAttribute('aria-current')).toBeNull()
-    expect(create.getAttribute('aria-current')).toBe('page')
+    expect(screen.getByRole('heading', { level: 1, name: 'Yeni siparis' })).toBeTruthy()
+    expect(
+      within(navigation).queryAllByRole('link')
+        .some((link) => link.getAttribute('href') === CAPABILITY_ROUTE[CAPABILITY.salesDraftsCreate]),
+    ).toBe(false)
     expect(
       within(navigation).getAllByRole('link')
         .filter((link) => link.getAttribute('aria-current') === 'page'),
-    ).toEqual([create])
+    ).toEqual([])
   })
 
   it('publishes the existing price-list owner capability as one exact, authorized menu path', async () => {

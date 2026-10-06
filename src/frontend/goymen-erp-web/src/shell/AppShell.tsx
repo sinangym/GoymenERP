@@ -67,12 +67,8 @@ export const NAV_CAPABILITIES: readonly CapabilityId[] = [
    * Nothing else renders only where the server granted it, as ever.
    */
   CAPABILITY.organizationWorkCentersList,
-  /**
-   * Listed together with the routes that serve them (S03). Each renders only where the server's
-   * snapshot carries the capability; the 360 is reached from a row, never from the sidebar.
-   */
+  /** S-02 is the single Sales work-list entry. Create lives inside that list; detail opens from a row. */
   CAPABILITY.salesDraftsList,
-  CAPABILITY.salesDraftsCreate,
   /**
    * MFG-02, listed with the route that serves it (MFG-ORD). It renders only where the server's
    * snapshot carries the capability; the order detail is reached from a list row, never the sidebar.
