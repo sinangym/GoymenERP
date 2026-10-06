@@ -272,7 +272,9 @@ public sealed class MfgBrowserSeed : IBrowserSuiteFixture
             ? customerRoll.GetProperty("positions").EnumerateArray().ToArray()
             : [];
         if (customerRoll.ValueKind != JsonValueKind.Object
-            || !customerRoll.GetProperty("draftSelectable").GetBoolean()
+            || customerRoll.GetProperty("draftSelectable").GetBoolean()
+            || customerRoll.GetProperty("draftRefusalCode").GetString()
+                != "inventory_parent_roll_context_required"
             || customerPositions.Length != 1
             || customerPositions[0].GetProperty("ownerKind").GetString() != "Counterparty"
             || customerPositions[0].GetProperty("ownerId").GetGuid() != customer.PartyId
