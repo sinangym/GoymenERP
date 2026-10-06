@@ -37,6 +37,11 @@ public sealed class ManufacturingPlanRevisionTests(ITestOutputHelper output)
     private static readonly Guid Party = Guid.Parse("d1000000-0000-0000-0000-00000000000d");
     private static readonly Guid PartyAccount = Guid.Parse("d2000000-0000-0000-0000-00000000000d");
     private static readonly DateTimeOffset At = new(2026, 9, 27, 9, 0, 0, TimeSpan.Zero);
+    private static readonly HashSet<string> SafeDiagnosticCallTokens = new(StringComparer.Ordinal)
+    {
+        "authority", "find-plan", "work-center", "settings", "parent-roll", "party-account",
+        "parent-roll-context", "product", "revise",
+    };
 
     // ---- Domain -------------------------------------------------------------------------------------------------
 
@@ -169,14 +174,17 @@ public sealed class ManufacturingPlanRevisionTests(ITestOutputHelper output)
     {
         var fixture = new Fixture();
         var plan = fixture.StoreDraft();
-        var observedStatus = "not_observed";
         var assertionStage = "before_service_call";
+        string[] expectedCalls =
+        [
+            "authority", "find-plan", "work-center", "authority", "settings", "parent-roll", "authority",
+            "product", "authority", "authority", "authority", "revise",
+        ];
 
         try
         {
             var result = await fixture.Service.RevisePlanAsync(plan.Id, Request(1, OtherLine, "800.500", "7"), "key-1",
                 Permission, CancellationToken.None);
-            observedStatus = result.Status.ToString().ToLowerInvariant();
 
             assertionStage = "result_status";
             Assert.Equal(ManufacturingApiStatus.Ok, result.Status);
@@ -190,9 +198,7 @@ public sealed class ManufacturingPlanRevisionTests(ITestOutputHelper output)
             // Every awaited owner answer is followed by a fresh captured-company/actor fence. The final pair is the
             // verified-content fence followed by the new pre-write fence immediately before the revision is stored.
             assertionStage = "call_sequence";
-            Assert.Equal(["authority", "find-plan", "work-center", "authority", "settings", "parent-roll", "authority",
-                    "product", "authority", "authority", "authority", "revise"],
-                fixture.Calls.Where(call => call != "find-command"));
+            Assert.Equal(expectedCalls, fixture.Calls.Where(call => call != "find-command"));
             assertionStage = "stored_revision";
             Assert.Equal((OtherLine, ManufacturingProcess.Slitting, "Tolerans dışı bobin için yeniden planlandı"),
                 (fixture.Store.LastRevision!.Value.WorkCenterId, fixture.Store.LastRevision.Value.Process,
@@ -208,8 +214,9 @@ public sealed class ManufacturingPlanRevisionTests(ITestOutputHelper output)
         }
         catch
         {
+            var actualCalls = fixture.Calls.Where(call => call != "find-command");
             output.WriteLine(
-                $"ci_safe_diagnostic:phase=mfg_plan_revision_owner_checks;assertion_stage={assertionStage};status_expected=ok;status_actual={observedStatus};calls_expected=12;calls_actual={fixture.Calls.Count(call => call != "find-command")};writes_expected=1;writes_actual={fixture.Store.Writes.Count};commands_expected=1;commands_actual={fixture.Store.Commands.Count}");
+                $"ci_safe_diagnostic:phase=mfg_plan_revision_owner_checks;assertion_stage={assertionStage};calls_expected=12;calls_actual={actualCalls.Count()};writes_expected=1;writes_actual={fixture.Store.Writes.Count};commands_expected=1;commands_actual={fixture.Store.Commands.Count};sequence_expected={SafeCallSequence(expectedCalls)};sequence_actual={SafeCallSequence(actualCalls)}");
             throw;
         }
     }
@@ -226,14 +233,17 @@ public sealed class ManufacturingPlanRevisionTests(ITestOutputHelper output)
             Inputs = [new PlannedInputRequestV1(RollA, "800.500", "7",
                 new PlanCommercialContextRequestV1(Party, PartyAccount, " party-v1 ", "account-v1/α"))],
         };
-        var observedStatus = "not_observed";
         var assertionStage = "before_service_call";
+        string[] expectedCalls =
+        [
+            "authority", "find-plan", "work-center", "authority", "settings", "party-account", "authority",
+            "parent-roll-context", "authority", "product", "authority", "authority", "authority", "revise",
+        ];
 
         try
         {
             var result = await fixture.Service.RevisePlanAsync(
                 plan.Id, request, "commercial-revision", Permission, CancellationToken.None);
-            observedStatus = result.Status.ToString().ToLowerInvariant();
 
             assertionStage = "result_status";
             Assert.Equal(ManufacturingApiStatus.Ok, result.Status);
@@ -255,14 +265,13 @@ public sealed class ManufacturingPlanRevisionTests(ITestOutputHelper output)
                     selection.PositionContext.CustodianKind, selection.PositionContext.CustodianId));
             // The last authority call is the fresh pre-write fence after all owner snapshots have been verified.
             assertionStage = "call_sequence";
-            Assert.Equal(["authority", "find-plan", "work-center", "authority", "settings", "party-account", "authority",
-                    "parent-roll-context", "authority", "product", "authority", "authority", "authority", "revise"],
-                fixture.Calls.Where(call => call != "find-command"));
+            Assert.Equal(expectedCalls, fixture.Calls.Where(call => call != "find-command"));
         }
         catch
         {
+            var actualCalls = fixture.Calls.Where(call => call != "find-command");
             output.WriteLine(
-                $"ci_safe_diagnostic:phase=mfg_plan_revision_commercial_context;assertion_stage={assertionStage};status_expected=ok;status_actual={observedStatus};calls_expected=14;calls_actual={fixture.Calls.Count(call => call != "find-command")};contextual_selections_expected=1;contextual_selections_actual={fixture.ParentRolls.ContextualSelections.Count};plain_selections_expected=0;plain_selections_actual={fixture.ParentRolls.Selections.Count}");
+                $"ci_safe_diagnostic:phase=mfg_plan_revision_commercial_context;assertion_stage={assertionStage};calls_expected=14;calls_actual={actualCalls.Count()};contextual_selections_expected=1;contextual_selections_actual={fixture.ParentRolls.ContextualSelections.Count};plain_selections_expected=0;plain_selections_actual={fixture.ParentRolls.Selections.Count};sequence_expected={SafeCallSequence(expectedCalls)};sequence_actual={SafeCallSequence(actualCalls)}");
             throw;
         }
     }
@@ -556,6 +565,12 @@ public sealed class ManufacturingPlanRevisionTests(ITestOutputHelper output)
             [new PlannedInput(RollA, new Kilograms(1000m), 3)]);
 
     private static PlannedInput[] Inputs(Guid roll, decimal kg) => [new PlannedInput(roll, new Kilograms(kg), 3)];
+
+    private static string SafeCallSequence(IEnumerable<string> calls)
+    {
+        var sequence = calls.ToArray();
+        return sequence.All(SafeDiagnosticCallTokens.Contains) ? string.Join(',', sequence) : "not_emitted";
+    }
 
     private static void AssertUnchanged(ProductionPlan plan)
     {
