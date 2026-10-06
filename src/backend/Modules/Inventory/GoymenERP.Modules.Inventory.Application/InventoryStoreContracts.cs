@@ -174,8 +174,16 @@ public interface IInventoryOpeningStore
     /// it <see cref="InventoryStoreCodes.LabelConflict"/> (an opening registers new pieces only).
     /// </summary>
     Task<InventoryWriteOutcome> RecordAsync(OpeningCount count, InventoryCommandMetadata metadata,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default, InventoryOpeningOwnerProofV1? ownerProof = null);
 
     /// <summary>A stored count of this company, or null.</summary>
     Task<OpeningCount?> ReadCountAsync(Guid countId, CancellationToken cancellationToken = default);
 }
+
+/// <summary>
+/// Fresh Counterparty validation provenance retained in the opening audit. It is not a stock-position dimension.
+/// </summary>
+public sealed record InventoryOpeningOwnerProofV1(
+    Guid CompanyPartyAccountId,
+    string PartyVersion,
+    string AccountVersion);
