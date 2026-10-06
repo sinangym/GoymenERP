@@ -182,9 +182,10 @@ public sealed class ManufacturingPlanRevisionTests(ITestOutputHelper output)
             Assert.Equal((2L, "Draft", OtherLine, "Slitting"), (view.Version, view.Status, view.WorkCenterId, view.Process));
             Assert.Equal("800.5", Assert.Single(view.Inputs).PlannedKg);
             Assert.Equal(new TargetViewV1("GoodOutputMass", "700"), view.Target);
-            // Every awaited owner answer is followed by a fresh captured-company/actor fence, then the final write fence.
+            // Every awaited owner answer is followed by a fresh captured-company/actor fence. The final pair is the
+            // verified-content fence followed by the new pre-write fence immediately before the revision is stored.
             Assert.Equal(["authority", "find-plan", "work-center", "authority", "settings", "parent-roll", "authority",
-                    "product", "authority", "authority", "revise"],
+                    "product", "authority", "authority", "authority", "revise"],
                 fixture.Calls.Where(call => call != "find-command"));
             Assert.Equal((OtherLine, ManufacturingProcess.Slitting, "Tolerans dışı bobin için yeniden planlandı"),
                 (fixture.Store.LastRevision!.Value.WorkCenterId, fixture.Store.LastRevision.Value.Process,
@@ -198,7 +199,7 @@ public sealed class ManufacturingPlanRevisionTests(ITestOutputHelper output)
         catch
         {
             output.WriteLine(
-                $"ci_safe_diagnostic:phase=mfg_plan_revision_owner_checks;status_expected=ok;status_actual={observedStatus};calls_expected=11;calls_actual={fixture.Calls.Count(call => call != "find-command")};writes_expected=1;writes_actual={fixture.Store.Writes.Count};commands_expected=1;commands_actual={fixture.Store.Commands.Count}");
+                $"ci_safe_diagnostic:phase=mfg_plan_revision_owner_checks;status_expected=ok;status_actual={observedStatus};calls_expected=12;calls_actual={fixture.Calls.Count(call => call != "find-command")};writes_expected=1;writes_actual={fixture.Store.Writes.Count};commands_expected=1;commands_actual={fixture.Store.Commands.Count}");
             throw;
         }
     }
@@ -235,14 +236,15 @@ public sealed class ManufacturingPlanRevisionTests(ITestOutputHelper output)
             Assert.Equal((StockPartyKind.Counterparty, Party, StockPartyKind.Company, Company),
                 (selection.PositionContext.OwnerKind, selection.PositionContext.OwnerId,
                     selection.PositionContext.CustodianKind, selection.PositionContext.CustodianId));
+            // The last authority call is the fresh pre-write fence after all owner snapshots have been verified.
             Assert.Equal(["authority", "find-plan", "work-center", "authority", "settings", "party-account", "authority",
-                    "parent-roll-context", "authority", "product", "authority", "authority", "revise"],
+                    "parent-roll-context", "authority", "product", "authority", "authority", "authority", "revise"],
                 fixture.Calls.Where(call => call != "find-command"));
         }
         catch
         {
             output.WriteLine(
-                $"ci_safe_diagnostic:phase=mfg_plan_revision_commercial_context;status_expected=ok;status_actual={observedStatus};calls_expected=13;calls_actual={fixture.Calls.Count(call => call != "find-command")};contextual_selections_expected=1;contextual_selections_actual={fixture.ParentRolls.ContextualSelections.Count};plain_selections_expected=0;plain_selections_actual={fixture.ParentRolls.Selections.Count}");
+                $"ci_safe_diagnostic:phase=mfg_plan_revision_commercial_context;status_expected=ok;status_actual={observedStatus};calls_expected=14;calls_actual={fixture.Calls.Count(call => call != "find-command")};contextual_selections_expected=1;contextual_selections_actual={fixture.ParentRolls.ContextualSelections.Count};plain_selections_expected=0;plain_selections_actual={fixture.ParentRolls.Selections.Count}");
             throw;
         }
     }
@@ -477,6 +479,7 @@ public sealed class ManufacturingPlanRevisionTests(ITestOutputHelper output)
         var withoutPortStatus = "not_observed";
         var deniedStatus = "not_observed";
         var revisionCount = -1;
+        var assertionStage = "before_service_calls";
 
         try
         {
@@ -491,29 +494,39 @@ public sealed class ManufacturingPlanRevisionTests(ITestOutputHelper output)
             var denied = await noContext.Service.ListPlanRevisionsAsync(plan.Id, CancellationToken.None);
             deniedStatus = denied.Status.ToString().ToLowerInvariant();
 
+            assertionStage = "primary_status";
             Assert.Equal(ManufacturingApiStatus.Ok, result.Status);
             var history = result.Resource!;
             revisionCount = history.Revisions.Count;
+            assertionStage = "history_identity";
             Assert.Equal(plan.Id, history.PlanId);
+            assertionStage = "revision_indices";
             Assert.Equal([0, 1], history.Revisions.Select(revision => revision.Revision));
+            assertionStage = "created_input";
             Assert.Equal(new PlanRevisionInputViewV1(RollA, "1000", null), Assert.Single(history.Revisions[0].Inputs));
+            assertionStage = "revised_input";
             Assert.Equal(new PlanRevisionInputViewV1(RollA, "800.5", "7",
                 new CapturedPlanCommercialContextViewV1(Party, PartyAccount, " party-v1 ", "account-v1/α")),
                 Assert.Single(history.Revisions[1].Inputs));
+            assertionStage = "revision_metadata";
             Assert.Equal((2L, OtherLine, "Hat değişti", Actor.ToString("D")),
                 (history.Revisions[1].PlanVersion, history.Revisions[1].WorkCenterId, history.Revisions[1].Reason,
                     history.Revisions[1].RevisedBy));
+            assertionStage = "revision_target";
             Assert.Equal(new TargetViewV1("InputMass", "810"), history.Revisions[1].Target);
+            assertionStage = "read_outcomes";
             Assert.Equal((ManufacturingApiStatus.NotFound, ManufacturingApiStatus.Unavailable, ManufacturingApiStatus.Denied),
                 (missing.Status, withoutPort.Status, denied.Status));
             // A read: no authority revalidation, no Settings or Inventory, no command record.
+            assertionStage = "read_authority_effect";
             Assert.DoesNotContain("authority", fixture.Calls);
+            assertionStage = "read_command_effect";
             Assert.Empty(fixture.Store.Commands);
         }
         catch
         {
             output.WriteLine(
-                $"ci_safe_diagnostic:phase=mfg_plan_revision_history_read;primary_status_expected=ok;primary_status_actual={primaryStatus};missing_status_expected=notfound;missing_status_actual={missingStatus};without_port_status_expected=unavailable;without_port_status_actual={withoutPortStatus};denied_status_expected=denied;denied_status_actual={deniedStatus};revisions_expected=2;revisions_actual={revisionCount};commands_expected=0;commands_actual={fixture.Store.Commands.Count}");
+                $"ci_safe_diagnostic:phase=mfg_plan_revision_history_read;assertion_stage={assertionStage};primary_status_expected=ok;primary_status_actual={primaryStatus};missing_status_expected=notfound;missing_status_actual={missingStatus};without_port_status_expected=unavailable;without_port_status_actual={withoutPortStatus};denied_status_expected=denied;denied_status_actual={deniedStatus};revisions_expected=2;revisions_actual={revisionCount};commands_expected=0;commands_actual={fixture.Store.Commands.Count}");
             throw;
         }
     }
