@@ -39819,7 +39819,6 @@
             "x-erp-problem-codes": [
               "company_context_invalid",
               "correlation_metadata_invalid",
-              "inventory_owner_context_invalid",
               "validation_failed"
             ],
             "x-erp-empty-body-possible": true
