@@ -10,6 +10,8 @@
 #    establishes the fresh origin membership Product authorization requires; the actor's Product master
 #    Read + Activate grant is written by the gated u02 seed writer under the SYSTEM_ADMINISTRATOR grant role
 #    (PRD-PERM-001 A), never here. No real user, production role or seeded role gains anything.
+#  - Genuine opening acceptance: one separate disposable Inventory recorder with only the four existing
+#    opening/owner-read permissions. The Product requester and activator retain their exact prior roles.
 # Every value is synthetic and exists only in the run's disposable database. s03 shares the issuer values (D3).
 services:
   api:
@@ -41,3 +43,26 @@ services:
       IdentitySeed__Assignments__7__ApprovedByUserId: 20000000-0000-0000-0000-000000000003
       IdentitySeed__Assignments__7__Scopes__0__Type: Company
       IdentitySeed__Assignments__7__Scopes__0__Id: 10000000-0000-0000-0000-000000000001
+      BootstrapIdentity__Users__3__UserId: u02-inventory-recorder
+      BootstrapIdentity__Users__3__DisplayName: SENTETIK browser-suite:u02 Inventory recorder
+      IdentitySeed__Users__7__Id: b2000000-0000-4000-8000-000000000220
+      IdentitySeed__Users__7__DisplayName: SENTETIK browser-suite:u02 Inventory recorder
+      IdentitySeed__Users__7__ExternalIdentities__0__Id: b2100000-0000-4000-8000-000000000220
+      IdentitySeed__Users__7__ExternalIdentities__0__Issuer: urn:goymen:development-bootstrap
+      IdentitySeed__Users__7__ExternalIdentities__0__Subject: u02-inventory-recorder
+      IdentitySeed__Roles__6__Id: b3000000-0000-4000-8000-000000000220
+      IdentitySeed__Roles__6__Code: BROWSER_U02_INVENTORY_RECORDER
+      IdentitySeed__Roles__6__Name: SENTETIK browser-suite:u02 Inventory recorder
+      IdentitySeed__Roles__6__IsSystem: "false"
+      IdentitySeed__Roles__6__Permissions__0: inventory.opening-stock.record
+      IdentitySeed__Roles__6__Permissions__1: product.operational-selection.read
+      IdentitySeed__Roles__6__Permissions__2: inventory.labels.read
+      IdentitySeed__Roles__6__Permissions__3: inventory.balances.read
+      IdentitySeed__Assignments__8__Id: b4000000-0000-4000-8000-000000000220
+      IdentitySeed__Assignments__8__UserId: b2000000-0000-4000-8000-000000000220
+      IdentitySeed__Assignments__8__RoleId: b3000000-0000-4000-8000-000000000220
+      IdentitySeed__Assignments__8__CompanyId: 10000000-0000-0000-0000-000000000001
+      IdentitySeed__Assignments__8__ValidFromUtc: "2026-01-01T00:00:00+00:00"
+      IdentitySeed__Assignments__8__ApprovedByUserId: 20000000-0000-0000-0000-000000000003
+      IdentitySeed__Assignments__8__Scopes__0__Type: Company
+      IdentitySeed__Assignments__8__Scopes__0__Id: 10000000-0000-0000-0000-000000000001
