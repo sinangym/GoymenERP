@@ -57,7 +57,7 @@ vi.mock('@tanstack/react-query', () => ({
       isPending: false,
       isFetching: false,
       data: detail
-        ? { type: 'ok-single', data: { order: summary(ORDER_A), lines: [] } }
+        ? { type: 'ok-single', data: { order: summary(ORDER_A), lines: [], acceptances: [] } }
         : {
             type: 'ok-single',
             data: state.generation === 1

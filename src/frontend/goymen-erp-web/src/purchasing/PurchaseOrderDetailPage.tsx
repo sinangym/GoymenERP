@@ -13,6 +13,7 @@ import { pendingApprovalKey, recallPendingApproval, releasePendingApproval, rese
 import styles from './purchasing.module.css'
 import { GoodsReceiptPanel } from './GoodsReceiptPanel'
 import { PURCHASE_GOODS_RECEIPT_CAPABILITY } from './goodsReceiptContract'
+import { PURCHASE_ORDER_DETAIL_TEXT as T } from './purchaseOrderDetailText'
 
 function newId(): string {
   if (typeof globalThis.crypto?.randomUUID === 'function') return globalThis.crypto.randomUUID()
@@ -100,7 +101,9 @@ function PurchaseOrderDetail({ namespace }: { readonly namespace: string | null 
   const frame = (child: ReactNode) => <main className={styles.page}><header><p className={styles.eyebrow}>P-03-DETAIL</p><h1>Satın alma siparişi</h1></header>{child}</main>
   if (companyId === null) return frame(<StateBlock state={{ kind: 'no-authorized-company' }} subject="satın alma siparişi" />)
   if (state.kind !== 'ready') return frame(<StateBlock state={state} subject="satın alma siparişi" onRetry={() => void query.refetch()} />)
-  const { order, lines } = state.data
+  const { order, lines, acceptances } = state.data
+  const isCurrentDetail = order.id === orderId && order.companyId === companyId
+  const lineNoById = new Map(lines.map((line) => [line.lineId, line.lineNo] as const))
   const unresolved = attempt.phase === 'unknown' || attempt.phase === 'submitting'
   const outcomeNotice = attempt.phase === 'applied'
     ? <p role="status" className={styles.success}>{attempt.replayed ? 'Önceki onay yanıtı yeniden gösterildi.' : 'Sipariş onaylandı ve yeniden okundu.'}</p>
@@ -110,6 +113,12 @@ function PurchaseOrderDetail({ namespace }: { readonly namespace: string | null 
   return frame(<>
     <dl className={styles.facts}><div><dt>Sipariş</dt><dd className={styles.mono}>{order.id}</dd></div><div><dt>Durum</dt><dd><span className={order.status === 'Approved' ? styles.approved : styles.draft}>{order.status === 'Approved' ? 'Onaylandı' : 'Taslak'}</span></dd></div><div><dt>Sürüm</dt><dd>{order.version}</dd></div><div><dt>Tedarikçi hesabı</dt><dd className={styles.mono}>{order.companyAccountId}</dd></div><div><dt>Kaynak talep</dt><dd className={styles.mono}>{order.sourceRequestId === null ? 'Bağlı değil' : canReadSourceRequest && namespace !== null && order.id === orderId && order.companyId === companyId ? <Link to={purchaseRequestDetailPath(order.sourceRequestId)} state={{ ns: namespace, requestId: order.sourceRequestId, orderId: order.id }}>{order.sourceRequestId}</Link> : order.sourceRequestId}</dd></div><div><dt>İş tarihi</dt><dd>{order.effectiveOn}</dd></div></dl>
     <section><h2>Taahhüt satırları</h2><div className={styles.tableWrap}><table><thead><tr><th>No</th><th>Ürün</th><th>Birim</th><th>Sipariş</th><th>Teknik</th><th>Taahhüt</th><th>Kabul</th><th>Kalan</th></tr></thead><tbody>{lines.map((line) => <tr key={line.lineId}><td>{line.lineNo}</td><td className={styles.mono}>…{line.productId.slice(-8)}</td><td className={styles.mono}>…{line.unitId.slice(-8)}</td><td>{line.ordered}</td><td>{line.technical}</td><td>{line.committed}</td><td>{line.accepted}</td><td>{line.remaining}</td></tr>)}</tbody></table></div></section>
+    {isCurrentDetail ? <section aria-labelledby="purchase-order-acceptance-history-heading">
+      <h2 id="purchase-order-acceptance-history-heading">{T.acceptanceHistoryHeading}</h2>
+      {acceptances.length === 0
+        ? <p>{T.acceptanceHistoryEmpty}</p>
+        : <div className={styles.tableWrap}><table><thead><tr><th>{T.acceptanceId}</th><th>{T.lineNo}</th><th>{T.quantity}</th><th>{T.recordedAtUtc}</th></tr></thead><tbody>{acceptances.map((acceptance) => <tr key={acceptance.acceptanceId} data-testid={`purchase-order-acceptance-${acceptance.acceptanceId}`}><td className={styles.mono}>{acceptance.acceptanceId}</td><td>{lineNoById.get(acceptance.lineId) ?? T.lineUnavailable}</td><td>{acceptance.quantity}</td><td><time dateTime={acceptance.recordedAtUtc}>{acceptance.recordedAtUtc}</time></td></tr>)}</tbody></table></div>}
+    </section> : null}
     {canApprove ? outcomeNotice : null}
     {canApprove && (order.status === 'Draft' || unresolved) ? <section className={styles.actionCard}><h2>Siparişi onayla</h2><p>Onay, talep satırı paylarını sunucuda yeniden ölçer. Fiyat veya stok hareketi üretmez.</p>{attempt.phase === 'unknown' ? <p role="alert" className={styles.warning}>Sonuç bilinmiyor. Yeni işlem başlatmadan aynı anahtar ve sürümle yeniden gönderin.</p> : null}<button type="button" disabled={attempt.phase === 'submitting'} onClick={() => void sendApproval(attempt.phase === 'unknown' ? attempt.snapshot : undefined)}>{attempt.phase === 'submitting' ? 'Gönderiliyor…' : attempt.phase === 'unknown' ? 'Aynı onayı yeniden gönder' : 'Onayla'}</button></section> : null}
     {namespace === null ? null : <GoodsReceiptPanel enabled={hasCapability(shell, PURCHASE_GOODS_RECEIPT_CAPABILITY as never)}
