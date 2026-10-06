@@ -449,6 +449,15 @@ public sealed partial class InventoryStore(
                 "Müşteri mülkiyetli açılış, doğrulanmış şirket hesabı kanıtı olmadan kaydedilemez.");
         }
 
+        if (count.Owner.Kind == StockPartyKind.Counterparty && ownerProof is not null
+            && (ownerProof.CompanyPartyAccountId == Guid.Empty
+                || string.IsNullOrWhiteSpace(ownerProof.PartyVersion)
+                || string.IsNullOrWhiteSpace(ownerProof.AccountVersion)))
+        {
+            throw Refused(InventoryStoreCodes.ValueDoesNotFit,
+                "Müşteri mülkiyetli açılışın doğrulama kanıtı eksik veya geçersizdir.");
+        }
+
         if (count.Owner.Kind == StockPartyKind.Company && ownerProof is not null)
         {
             throw Refused(InventoryStoreCodes.ValueDoesNotFit,

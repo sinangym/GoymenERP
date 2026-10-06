@@ -477,9 +477,18 @@ public sealed class InventoryOpeningCommandService(
         {
             answer = await ownerAccounts.GetAuthorizedAsync(context.Owner.Id, accountId, cancellationToken);
         }
-        catch (Exception exception) when (exception is not (OperationCanceledException or InventoryOpeningServiceException))
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception exception)
         {
             await RequireStillAsync(scope, cancellationToken);
+            if (exception is InventoryOpeningServiceException)
+            {
+                throw;
+            }
+
             throw new InventoryOpeningServiceException(503, InventoryOpeningCodesV1.OwnerAccountUnavailable);
         }
 

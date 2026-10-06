@@ -205,6 +205,24 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             var missingProof = await Assert.ThrowsAsync<InventoryStoreException>(
                 () => direct.Opening.RecordAsync(directCount, Metadata(run)));
             Assert.Equal(InventoryOpeningCodesV1.OwnerAccountUnavailable, missingProof.Code);
+
+            foreach (var malformed in new[]
+                     {
+                         new InventoryOpeningOwnerProofV1(Guid.Empty, "3", "4"),
+                         new InventoryOpeningOwnerProofV1(accountId, " ", "4"),
+                         new InventoryOpeningOwnerProofV1(accountId, "3", "\t"),
+                     })
+            {
+                var invalid = await Assert.ThrowsAsync<InventoryStoreException>(
+                    () => direct.Opening.RecordAsync(directCount, Metadata(run), ownerProof: malformed));
+                Assert.Equal(InventoryStoreCodes.ValueDoesNotFit, invalid.Code);
+            }
+
+            var companyOwned = new OpeningCount(request.CountId, CompanyA, location, CountedOn, request.SheetReference,
+                directCount.Lines);
+            var misplaced = await Assert.ThrowsAsync<InventoryStoreException>(() => direct.Opening.RecordAsync(
+                companyOwned, Metadata(run), ownerProof: new InventoryOpeningOwnerProofV1(accountId, "3", "4")));
+            Assert.Equal(InventoryStoreCodes.ValueDoesNotFit, misplaced.Code);
         }
 
         await using (var command = Command(run, CompanyA, new Authority(), locations, new Products(),
@@ -280,8 +298,38 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
                 new OwnerAccounts(InventoryOpeningOwnerAccountOutcomeV1.Unavailable), "owner-down")));
         Assert.Equal((403, InventoryOpeningCodesV1.Forbidden),
             Refusal(await RefusedAsync(new Authority(grantedCalls: 2), new OwnerAccounts(), "owner-revoked")));
+
+        var typed = new InventoryOpeningServiceException(422, InventoryOpeningCodesV1.OwnerAccountIneligible);
+        Assert.Equal((422, InventoryOpeningCodesV1.OwnerAccountIneligible),
+            Refusal(await RefusedAsync(new Authority(), new OwnerAccounts(failure: typed), "typed-stable")));
+        Assert.Equal((403, InventoryOpeningCodesV1.Forbidden),
+            Refusal(await RefusedAsync(new Authority(grantedCalls: 2), new OwnerAccounts(failure: typed), "typed-revoked")));
+
+        var changedActor = new OpeningMutableCurrentUser(run.Actor.ToString("D"), CompanyA);
+        await using (var command = Command(run, CompanyA, new Authority(), locations, new Products(),
+                         ownerAccounts: new OwnerAccounts(failure: typed,
+                             afterRead: () => changedActor.UserId = Guid.NewGuid().ToString("D")),
+                         currentUserOverride: changedActor))
+        {
+            var denied = await Assert.ThrowsAsync<InventoryOpeningServiceException>(() => command.Service.RecordAsync(
+                request with { CountId = Guid.NewGuid() }, Metadata(run, "typed-actor", "corr-typed-actor"), default));
+            Assert.Equal((403, InventoryOpeningCodesV1.Forbidden), Refusal(denied));
+        }
+
+        var changedCompany = new OpeningMutableCompanyContext(CompanyA);
+        var multiCompanyUser = new OpeningMutableCurrentUser(run.Actor.ToString("D"), CompanyA, CompanyB);
+        await using (var command = Command(run, CompanyA, new Authority(), locations, new Products(),
+                         ownerAccounts: new OwnerAccounts(failure: typed, afterRead: () => changedCompany.SwitchTo(CompanyB)),
+                         companyContextOverride: changedCompany, currentUserOverride: multiCompanyUser))
+        {
+            var denied = await Assert.ThrowsAsync<InventoryOpeningServiceException>(() => command.Service.RecordAsync(
+                request with { CountId = Guid.NewGuid() }, Metadata(run, "typed-company", "corr-typed-company"), default));
+            Assert.Equal((403, InventoryOpeningCodesV1.Forbidden), Refusal(denied));
+        }
         Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.OpeningCounts"));
         Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.Labels WHERE Code = N'SYN-CUSTOMER-REFUSED'"));
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.Movements WHERE SourceKind = N'inventory.opening-count'"));
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.Commands"));
     }
 
     /// <summary>
@@ -474,13 +522,17 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
                 null, null, piece.Product, "1", piece.Kilograms))]);
 
     private static CommandScope Command(Run run, Guid company, Authority authority, Locations locations, Products products,
-        Guid? actor = null, OwnerAccounts? ownerAccounts = null, params IInterceptor[] interceptors)
+        Guid? actor = null, OwnerAccounts? ownerAccounts = null, ICompanyContext? companyContextOverride = null,
+        ICurrentUser? currentUserOverride = null, params IInterceptor[] interceptors)
     {
         var store = run.Store(company, interceptors);
-        var companyContext = new CompanyContext();
-        companyContext.Set(company);
+        var companyContext = companyContextOverride ?? new CompanyContext();
+        if (!companyContext.IsResolved)
+        {
+            companyContext.Set(company);
+        }
         var service = new InventoryOpeningCommandService(store.DbContext, store.Store, locations, products, companyContext,
-            new FixedCurrentUser(actor ?? run.Actor, company), authority, TimeProvider.System,
+            currentUserOverride ?? new FixedCurrentUser(actor ?? run.Actor, company), authority, TimeProvider.System,
             ownerAccounts ?? new OwnerAccounts());
         return new CommandScope(store, service);
     }
@@ -553,12 +605,42 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
     private sealed class OwnerAccounts(
         InventoryOpeningOwnerAccountOutcomeV1 outcome = InventoryOpeningOwnerAccountOutcomeV1.Found,
         bool active = true,
-        bool customer = true) : IInventoryOpeningOwnerAccountPortV1
+        bool customer = true,
+        InventoryOpeningServiceException? failure = null,
+        Action? afterRead = null) : IInventoryOpeningOwnerAccountPortV1
     {
-        public Task<InventoryOpeningOwnerAccountAnswerV1> GetAuthorizedAsync(Guid partyId, Guid companyPartyAccountId,
-            CancellationToken cancellationToken) => Task.FromResult(new InventoryOpeningOwnerAccountAnswerV1(outcome,
+        public async Task<InventoryOpeningOwnerAccountAnswerV1> GetAuthorizedAsync(Guid partyId, Guid companyPartyAccountId,
+            CancellationToken cancellationToken)
+        {
+            await Task.Yield();
+            cancellationToken.ThrowIfCancellationRequested();
+            afterRead?.Invoke();
+            if (failure is not null)
+            {
+                throw failure;
+            }
+
+            return new InventoryOpeningOwnerAccountAnswerV1(outcome,
                 outcome == InventoryOpeningOwnerAccountOutcomeV1.Found
                     ? new InventoryOpeningOwnerAccountV1(partyId, companyPartyAccountId, CompanyA, active, active, customer, "3", "4")
-                    : null));
+                    : null);
+        }
+    }
+
+    private sealed class OpeningMutableCurrentUser(string userId, params Guid[] companies) : ICurrentUser
+    {
+        public string UserId { get; set; } = userId;
+        string? ICurrentUser.UserId => UserId;
+        public bool IsAuthenticated => true;
+        public IReadOnlySet<Guid> AllowedCompanyIds { get; } = companies.ToHashSet();
+        public bool CanAccessCompany(Guid companyId) => AllowedCompanyIds.Contains(companyId);
+    }
+
+    private sealed class OpeningMutableCompanyContext(Guid companyId) : ICompanyContext
+    {
+        public bool IsResolved => true;
+        public Guid CompanyId { get; private set; } = companyId;
+        public void Set(Guid company) => CompanyId = company;
+        public void SwitchTo(Guid company) => CompanyId = company;
     }
 }
