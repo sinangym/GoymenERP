@@ -253,11 +253,10 @@ SUITE_IDENTITY_PERMISSIONS = {
     # keep their exact subsets, so the suite also shows a reader is offered no create/edit control.
     "org03": ("organization.work-centers.read", "organization.locations.read", "organization.sites.read",
               "organization.sites.write", "organization.locations.write", "organization.work-centers.write"),
-    # u02: the issuer's Identity user holds nothing (the issuer-user rule). The disposable activator's
-    # membership role carries only the baseline identity.profile.read, which no endpoint or shell
-    # capability uses: it establishes the fresh company membership Product authorization requires and
-    # opens nothing. Its Product authority is the seed's gated SYSTEM_ADMINISTRATOR-role grant (PRD-PERM-001 A).
-    "u02": ("identity.profile.read",),
+    # u02: issuer holds nothing; activator keeps only baseline membership. The separate disposable
+    # Inventory recorder gets exactly opening + Product owner-read + label/balance reads.
+    "u02": ("identity.profile.read", "inventory.opening-stock.record",
+            "product.operational-selection.read", "inventory.labels.read", "inventory.balances.read"),
     # SALES-A1 (coordinator): the approval and the draft's party read, for the v2b positive path.
     "s03": ("sales.drafts.create", "sales.drafts.read", "product.operational-selection.read",
             "counterparty.parties.read", "sales.orders.approve"),
@@ -523,6 +522,70 @@ def validate_suite_identity(suite: str, extra: dict, actor_ids: list[str]) -> No
                 f"{label} must be company-wide on its own company")
         assigned.add(assignment["UserId"])
     require(set(users) - {issuer_user} <= assigned, "every suite actor's Identity user needs at least one assignment")
+    if suite == "u02":
+        company_id = "10000000-0000-0000-0000-000000000001"
+        issuer_ids = ("b2000000-0000-4000-8000-000000000201",
+                      "b2100000-0000-4000-8000-000000000201")
+        inventory_permissions = frozenset((
+            "inventory.opening-stock.record", "product.operational-selection.read",
+            "inventory.labels.read", "inventory.balances.read",
+        ))
+        recorder_marker = (
+            "u02-inventory-recorder" in actor_ids
+            or any(subject == "u02-inventory-recorder" for subject in users.values())
+            or "b2000000-0000-4000-8000-000000000220" in users
+            or "b3000000-0000-4000-8000-000000000220" in roles
+            or any(role["Code"] == "BROWSER_U02_INVENTORY_RECORDER" for role in roles.values())
+            or any(row["Id"] == "b4000000-0000-4000-8000-000000000220"
+                   or row["UserId"] == "b2000000-0000-4000-8000-000000000220"
+                   or row["RoleId"] == "b3000000-0000-4000-8000-000000000220"
+                   for row in grouped["Assignments"].values())
+        )
+        has_inventory_permission = any(
+            role[key] in inventory_permissions
+            for role in roles.values() for key in role if key.startswith("Permissions__")
+        )
+        if not (recorder_marker or has_inventory_permission):
+            return
+        expected = {
+            "u02-activator": (
+                "b2000000-0000-4000-8000-000000000210",
+                "b2100000-0000-4000-8000-000000000210",
+                "b3000000-0000-4000-8000-000000000210",
+                "b4000000-0000-4000-8000-000000000210",
+                "BROWSER_U02_ACTIVATOR", ("identity.profile.read",)),
+            "u02-inventory-recorder": (
+                "b2000000-0000-4000-8000-000000000220",
+                "b2100000-0000-4000-8000-000000000220",
+                "b3000000-0000-4000-8000-000000000220",
+                "b4000000-0000-4000-8000-000000000220",
+                "BROWSER_U02_INVENTORY_RECORDER",
+                ("inventory.opening-stock.record", "product.operational-selection.read",
+                 "inventory.labels.read", "inventory.balances.read")),
+        }
+        require(set(actor_ids) == set(expected), "u02 actors must be the exact activator and Inventory recorder")
+        require(tuple(extra.get(key) for key in ISSUER_KEYS) == issuer_ids,
+                "u02 Product issuer must keep its exact synthetic binding")
+        require(set(users) == {issuer_ids[0]} | {entry[0] for entry in expected.values()},
+                "u02 Identity users must be only the issuer and exact two actors")
+        require(set(roles) == {entry[2] for entry in expected.values()}
+                and len(grouped["Assignments"]) == len(expected),
+                "u02 roles and assignments must be exactly one per actor")
+        for actor, (user_id, external_id, role_id, assignment_id, role_code, permissions) in expected.items():
+            require(users.get(user_id) == actor
+                    and user_rows[user_id]["ExternalIdentities__0__Id"] == external_id,
+                    f"u02 {actor} must keep its exact synthetic Identity binding")
+            role = roles[role_id]
+            permission_keys = [key for key in role if key.startswith("Permissions__")]
+            require(len(permission_keys) == len(permissions),
+                    f"u02 {actor} must keep its exact isolated permissions")
+            actual_permissions = tuple(role[f"Permissions__{index}"] for index in range(len(permissions)))
+            require(role["Code"] == role_code and actual_permissions == permissions,
+                    f"u02 {actor} must keep its exact isolated permissions")
+            matching = [row for row in grouped["Assignments"].values() if row["UserId"] == user_id]
+            require(len(matching) == 1 and matching[0]["Id"] == assignment_id
+                    and matching[0]["RoleId"] == role_id and matching[0]["CompanyId"] == company_id,
+                    f"u02 {actor} must keep its exact company and role assignment")
 
 
 # Stage 2 (a2 part 2): suites whose owner seeds data through the fixture runner
@@ -535,7 +598,7 @@ FIXTURE_TOOL_SUITES_DIRECTORY = "tests/GoymenERP.BrowserSuiteFixtureTool/Suites"
 SUITE_FIXTURE_OUTPUTS: dict[str, frozenset[str]] = {
     # ÜRÜN's Suites/U02 seed: the company, gated code group, fixed synthetic technical family and actors.
     "u02": frozenset({"companyId", "codeGroupId", "technicalFamilyId", "authorizedActor", "unauthorizedActor",
-                      "activatorActor"}),
+                      "activatorActor", "inventoryRecorderActor"}),
     # ORG's Suites/MFG seed (#323 5735635840): the actors, the company, the seeded work centre (read
     # through the real Organization API) and the plan -> approval -> order it writes through the real API.
     # MFG-ORD adds the closer actor; the list and the close need no further seeded row.
@@ -621,6 +684,21 @@ def seed_export(suite: str, seed: object) -> str:
     require(set(seed) == set(expected),
             f"seed output keys are not the closed list: missing {sorted(expected - set(seed))}, "
             f"extra {sorted(set(seed) - expected)}")
+    if suite == "u02":
+        require(seed["companyId"] == "10000000-0000-0000-0000-000000000001",
+                "u02 seed company must be the exact GDC company")
+        for key in ("codeGroupId", "technicalFamilyId"):
+            value = seed[key]
+            require(isinstance(value, str) and _ANY_GUID.fullmatch(value) is not None
+                    and value != "00000000-0000-0000-0000-000000000000",
+                    f"u02 seed output {key} must be a canonical nonzero lowercase GUID")
+        actor_keys = ("authorizedActor", "unauthorizedActor", "activatorActor", "inventoryRecorderActor")
+        actor_values = [seed[key] for key in actor_keys]
+        require(all(isinstance(value, str) for value in actor_values),
+                "u02 seed actor outputs must be strings")
+        require(seed["inventoryRecorderActor"] == "u02-inventory-recorder"
+                and len(set(actor_values)) == len(actor_keys),
+                "u02 seed actors must be distinct and use the exact Inventory recorder")
     if suite == "fin01":
         actors = [seed[key] for key in ("proposerActor", "approverActor", "readerActor")]
         require(len(set(actors)) == len(actors), "fin01 seed actors must be distinct")
@@ -652,6 +730,9 @@ def seed_export(suite: str, seed: object) -> str:
         require(isinstance(value, str), f"seed output {key} must be a string")
         is_guid = _ANY_GUID.fullmatch(value) is not None and value != "00000000-0000-0000-0000-000000000000"
         is_actor = value in CANONICAL_ACTORS or re.fullmatch(rf"{suite}-[a-z0-9-]{{1,48}}", value) is not None
+        if suite == "u02" and key in ("authorizedActor", "unauthorizedActor",
+                                      "activatorActor", "inventoryRecorderActor"):
+            require(is_actor, f"u02 seed output {key} must be a current-run actor id")
         if suite == "mfg":
             if key in mfg_actor_keys:
                 require(is_actor, f"mfg seed output {key} must be a current-run actor id")
