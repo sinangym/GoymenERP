@@ -801,10 +801,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // Re-fingerprinted for DEC-FIN-014: the POS facts (gross, commission, server-computed bank net,
                 // bearer) travel on the same draft save and record; SqlClient count unchanged. K3 5330956606: the
                 // unallocated amount is redacted like every other amount for an actor without amount read.
+                // UX-TECH-001: the receipt list resolves approved reversal relations in one tenant-filtered EF batch;
+                // it adds no direct database API and the reviewed SqlClient count remains unchanged.
                 ["src/backend/Modules/Finance/"
                  + "GoymenERP.Modules.Finance.Infrastructure/ReceiptDraftService.cs"] =
                     new(
-                        "ae3f59d79bb2701efd45434eb242f7177bba28d346c2ad95d6fd2f0db4a26585",
+                        "589f03fddc02ed44c23149eac8358f69805e00a7a28cd867c98eecc9e469c88e",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
