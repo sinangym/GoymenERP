@@ -60,6 +60,12 @@ interface OrderDetail {
     readonly effectiveOn: string
   }
   readonly lines: readonly OrderLine[]
+  readonly acceptances: readonly {
+    readonly acceptanceId: string
+    readonly lineId: string
+    readonly quantity: string
+    readonly recordedAtUtc: string
+  }[]
 }
 
 interface ReceiptRequest {
@@ -251,6 +257,7 @@ async function arrangeApprovedOrder(page: Page): Promise<OrderDetail> {
   expect(draft.order).toMatchObject({ companyId, status: 'Draft', supplierPartyId, companyAccountId, effectiveOn: EFFECTIVE_ON })
   expect(draft.lines).toHaveLength(1)
   expect(draft.lines[0]).toMatchObject({ lineId: ORDER_LINE_ID, productId, productVersion, unitId: productUnitId, ordered: ORDERED })
+  expect(draft.acceptances).toEqual([])
 
   const approval = await page.request.post(`${env.apiBaseUrl}${ORDERS_PATH}/${draft.order.id}/approval`, {
     headers: {
@@ -266,6 +273,7 @@ async function arrangeApprovedOrder(page: Page): Promise<OrderDetail> {
   })
   expect(approved.lines).toHaveLength(1)
   expect(approved.lines[0]).toMatchObject({ lineId: ORDER_LINE_ID, ordered: ORDERED, accepted: '0', remaining: ORDERED })
+  expect(approved.acceptances).toEqual([])
   return approved
 }
 
@@ -376,6 +384,10 @@ test('PUR01-GR records one partial receipt in the browser, reopens it, finds the
       .toContainText(`${LABEL_CODE}: İlk kayıt durumu: Serbest`)
     await expect(lineRow(page).getByRole('cell').nth(6)).toHaveText(ACCEPTED)
     await expect(lineRow(page).getByRole('cell').nth(7)).toHaveText(REMAINING)
+    const acceptanceRow = page.getByTestId(`purchase-order-acceptance-${sent.acceptanceId}`)
+    await expect(acceptanceRow).toBeVisible()
+    await expect(acceptanceRow.getByRole('cell').nth(1)).toHaveText('1')
+    await expect(acceptanceRow.getByRole('cell').nth(2)).toHaveText(ACCEPTED)
     const historyText = `${LABEL_CODE}: Kabul miktarı (sipariş birimi) ${ACCEPTED}; Tartılan miktar (kg) ${MEASURED_KG}. İlk kayıt durumu: Serbest`
     await expect(page.getByTestId(`goods-receipt-${sent.acceptanceId}`)).toContainText(historyText)
     const comparisonCard = page.getByTestId(`goods-receipt-comparison-${sent.acceptanceId}`)
@@ -388,6 +400,13 @@ test('PUR01-GR records one partial receipt in the browser, reopens it, finds the
       companyId, orderId, acceptanceId: sent.acceptanceId, lotId: sent.lotId, labelId: sent.labelId,
       movementId: sent.movementId, labelCode: LABEL_CODE,
     }
+    const postReceiptOrder = await readOrder(page, receiverActor, orderId)
+    expect(postReceiptOrder.acceptances).toHaveLength(1)
+    expect(postReceiptOrder.acceptances[0]).toMatchObject({
+      acceptanceId: sent.acceptanceId, lineId: ORDER_LINE_ID, quantity: ACCEPTED,
+    })
+    expect(Date.parse(postReceiptOrder.acceptances[0].recordedAtUtc)).toBe(Date.parse(sent.occurredAtUtc))
+    await expect(acceptanceRow.getByRole('cell').nth(3)).toHaveText(postReceiptOrder.acceptances[0].recordedAtUtc)
     expect(await readReceiptEffects(pool, identity)).toEqual(ONCE)
     const comparisonResponse = await page.request.get(`${env.apiBaseUrl}${comparisonPath(sent.acceptanceId)}`, {
       headers: apiHeaders(receiverActor),
@@ -429,6 +448,9 @@ test('PUR01-GR records one partial receipt in the browser, reopens it, finds the
     const reopenedOrder = await readOrder(page, receiverActor, orderId)
     expect(reopenedOrder.order).toMatchObject({ id: orderId, status: 'Approved', version: receiptVersion })
     expect(reopenedOrder.lines[0]).toMatchObject({ lineId: ORDER_LINE_ID, ordered: ORDERED, accepted: ACCEPTED, remaining: REMAINING })
+    expect(reopenedOrder.acceptances).toEqual(postReceiptOrder.acceptances)
+    await expect(page.getByTestId(`purchase-order-acceptance-${sent.acceptanceId}`))
+      .toContainText(reopenedOrder.acceptances[0].recordedAtUtc)
     expect(await readReceiptEffects(pool, identity)).toEqual(ONCE)
 
     // The receiver's grant is Purchasing-only: it cannot read the Inventory label itself.
@@ -507,6 +529,7 @@ test('PUR01-GR records one partial receipt in the browser, reopens it, finds the
     const afterReplayOrder = await readOrder(page, receiverActor, orderId)
     expect(afterReplayOrder.order.version).toBe(receiptVersion)
     expect(afterReplayOrder.lines[0]).toMatchObject({ accepted: ACCEPTED, remaining: REMAINING })
+    expect(afterReplayOrder.acceptances).toEqual(postReceiptOrder.acceptances)
     const afterReplayReceipts = await readReceipts(page, receiverActor, orderId)
     expect(afterReplayReceipts.items.map((item) => item.acceptanceId)).toEqual([sent.acceptanceId])
     const afterReplayLabel = await readLabel(page, stockReaderActor, sent.labelId)
@@ -531,6 +554,8 @@ test('PUR01-GR records one partial receipt in the browser, reopens it, finds the
       await expect(lineRow(page).getByRole('cell').nth(7)).toHaveText(REMAINING)
       await expect(page.getByRole('region', { name: 'Mal kabulü', exact: true })).toHaveCount(0)
       await expect(page.getByRole('button', { name: 'Mal kabulünü kaydet', exact: true })).toHaveCount(0)
+      await expect(page.getByRole('region', { name: 'Sipariş mal kabul geçmişi', exact: true })).toBeVisible()
+      await expect(page.getByTestId(`purchase-order-acceptance-${sent.acceptanceId}`)).toContainText(ACCEPTED)
       page.off('request', watch)
       expect(receiptCalls).toEqual([])
 
@@ -593,6 +618,7 @@ test('PUR01-GR records one partial receipt in the browser, reopens it, finds the
     const finalOrder = await readOrder(page, readerActor, orderId)
     expect(finalOrder.order.version).toBe(receiptVersion)
     expect(finalOrder.lines[0]).toMatchObject({ accepted: ACCEPTED, remaining: REMAINING })
+    expect(finalOrder.acceptances).toEqual(postReceiptOrder.acceptances)
   } finally {
     await pool.close()
   }
