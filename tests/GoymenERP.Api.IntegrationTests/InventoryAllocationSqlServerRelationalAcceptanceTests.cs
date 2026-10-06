@@ -283,7 +283,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             await context.GetService<IMigrator>().MigrateAsync(previousMigration);
         }
 
-        var source = await SeedFreePhysicalSourceAsync(run, CompanyA, "SYN-ALLOC-LEGACY-UP", 25m);
+        var source = await SeedLegacyFreePhysicalSourceAsync(run, "SYN-ALLOC-LEGACY-UP", 25m);
         var allocationId = Guid.NewGuid();
         await InsertLegacyAllocationAsync(run, allocationId, source.LabelId);
 
@@ -370,6 +370,9 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             ALTER TABLE inventory.Allocations NOCHECK CONSTRAINT
                 CK_Allocations_Demand, CK_Allocations_Quantity, CK_Allocations_Release;
             """);
+
+        await RemoveSyntheticProductVersionsForHistoricalMigrationAsync(
+            run, "SYN-ALLOC-DOWN-GUARD", expectedLabels: 1);
 
         var lifecycleFacts = new[]
         {
@@ -763,6 +766,51 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         await using var context = run.Context(company);
         var version = await context.Labels.Where(row => row.Id == label.Id).Select(row => row.Version).SingleAsync();
         return new(label.Id, label.ProductId, version);
+    }
+
+    /// <summary>
+    /// Builds the source for the pre-lifecycle migration test from columns present at that historical schema.
+    /// Current EF mappings deliberately never run against the older table shape.
+    /// </summary>
+    private static async Task<PhysicalSource> SeedLegacyFreePhysicalSourceAsync(Run run, string code, decimal quantity)
+    {
+        var location = await run.LocationOfAsync(CompanyA);
+        var labelId = Guid.NewGuid();
+        await run.ExecuteAsync(
+            """
+            IF NOT EXISTS (SELECT 1 FROM inventory.Lots WHERE CompanyId = @company AND Id = @lot)
+                INSERT INTO inventory.Lots
+                    (Id, CompanyId, ProductId, HeatNumber, CoilNumber, Version, CreatedAtUtc, CreatedBy)
+                VALUES (@lot, @company, @product, NULL, NULL, 1, @at, N'synthetic-actor');
+
+            INSERT INTO inventory.Labels
+                (Id, CompanyId, Code, ProductId, LotId, RequiredDocumentsJson, Version, CreatedAtUtc, UpdatedAtUtc)
+            VALUES (@label, @company, @code, @product, @lot, N'[]', 1, @at, @at);
+
+            INSERT INTO inventory.Balances
+                (Id, CompanyId, OwnerKind, OwnerId, CustodianKind, CustodianId, LocationId, LabelId, ProductId, Block, QuantityKg)
+            VALUES (NEWID(), @company, 1, @company, 1, @company, @location, @label, @product, 1, @quantity);
+            """,
+            ("@company", CompanyA), ("@lot", LotA), ("@product", Product), ("@label", labelId),
+            ("@code", code), ("@location", location), ("@quantity", quantity), ("@at", At));
+        return new(labelId, Product, 1);
+    }
+
+    /// <summary>
+    /// Historical Down tests target an older migration's own loss guard. The latest ProductVersion guard is
+    /// proven separately; only labels minted by the current test are made legacy before walking to that boundary.
+    /// </summary>
+    private static async Task RemoveSyntheticProductVersionsForHistoricalMigrationAsync(
+        Run run, string codePrefix, int expectedLabels)
+    {
+        var changed = await run.ScalarAsync<int>(
+            """
+            UPDATE inventory.Labels
+            SET ProductVersion = NULL
+            WHERE CompanyId = @company AND Code LIKE @codePrefix AND ProductVersion IS NOT NULL;
+            SELECT @@ROWCOUNT;
+            """, ("@company", CompanyA), ("@codePrefix", $"{codePrefix}%"));
+        Assert.Equal(expectedLabels, changed);
     }
 
     /// <summary>

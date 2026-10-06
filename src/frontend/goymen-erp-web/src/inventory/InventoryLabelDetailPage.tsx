@@ -1,6 +1,8 @@
 import { useEffect, useRef, type ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link, useLocation, useParams } from 'react-router'
+import { DocumentsPanel } from '../documents/DocumentsPanel'
+import { OWNER_KIND } from '../documents/contract'
 import { productDetailPath } from '../product/capabilities'
 import { CAPABILITY } from '../shell/capabilities'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
@@ -10,15 +12,18 @@ import { StateBlock } from '../shell/StateBlock'
 import { classifyOutcome, type RemoteViewState } from '../shell/uiState'
 import {
   INVENTORY_LABEL_TRANSFORMATION_CAPABILITY,
+  INVENTORY_LABEL_CLASSIFICATION_WRITE_CAPABILITY,
   INVENTORY_PHYSICAL_ALLOCATION_WRITE_CAPABILITY,
   INVENTORY_STOCK_COUNT_APPROVE_CAPABILITY,
   INVENTORY_STOCK_COUNT_RECORD_CAPABILITY,
   INVENTORY_STOCK_SCRAP_APPROVE_CAPABILITY,
   INVENTORY_STOCK_SCRAP_RECORD_CAPABILITY,
+  inventoryOpeningDetailPath,
 } from './capabilities'
 import { fetchInventoryLabelDetail } from './labelDetailApi'
 import { LabelAllocationPanel } from './LabelAllocationPanel'
 import { LabelTransformationPanel } from './LabelTransformationPanel'
+import { LabelClassificationPanel } from './LabelClassificationPanel'
 import { StockCountPanel } from './StockCountPanel'
 import { StockScrapPanel } from './StockScrapPanel'
 import type { InventoryLabelDetailWithMovementTimeline } from './labelDetailContract'
@@ -40,6 +45,8 @@ const MOVEMENT_KIND_TEXT = {
   Return: 'İade',
   CountAdjustment: 'Sayım farkı',
   Scrap: 'Hurda çıkışı',
+  TransferDispatch: 'Transfer çıkışı',
+  TransferAccept: 'Transfer kabulü',
 } as const
 
 const DIRECTION_TEXT = { In: 'Giriş', Out: 'Çıkış' } as const
@@ -90,12 +97,15 @@ function InventoryLabelDetailView({ namespace, labelId, target, stockSearch }: {
   const boundary = useAuthBoundary()
   const canReadProduct = hasCapability(shell, CAPABILITY.productItemsDetail)
   const canReadLabel = hasCapability(shell, CAPABILITY.inventoryStockPositionsList)
+  const canOpenOpening = hasCapability(shell, CAPABILITY.inventoryOpeningStockRecord)
   const canTransform = hasCapability(shell, INVENTORY_LABEL_TRANSFORMATION_CAPABILITY)
+  const canClassify = hasCapability(shell, INVENTORY_LABEL_CLASSIFICATION_WRITE_CAPABILITY)
   const canRecordCount = hasCapability(shell, INVENTORY_STOCK_COUNT_RECORD_CAPABILITY)
   const canApproveCount = hasCapability(shell, INVENTORY_STOCK_COUNT_APPROVE_CAPABILITY)
   const canRecordScrap = hasCapability(shell, INVENTORY_STOCK_SCRAP_RECORD_CAPABILITY)
   const canApproveScrap = hasCapability(shell, INVENTORY_STOCK_SCRAP_APPROVE_CAPABILITY)
   const canChangeAllocations = hasCapability(shell, INVENTORY_PHYSICAL_ALLOCATION_WRITE_CAPABILITY)
+  const canReadSalesOrder = hasCapability(shell, CAPABILITY.salesDraftsDetail)
   const companyId = shell.activeContext?.scopeMode === 'single' ? shell.activeContext.companyId : null
   const actorId = shell.activeContext?.userId ?? null
   const query = useQuery({
@@ -156,6 +166,7 @@ function InventoryLabelDetailView({ namespace, labelId, target, stockSearch }: {
         <div><dt>Lot</dt><dd className={styles.mono}>{identity.lotId}</dd></div>
         <div><dt>Döküm</dt><dd>{identity.heatNumber ?? identity.lot.heatNumber ?? '—'}</dd></div>
         <div><dt>Rulo</dt><dd>{identity.coilNumber ?? identity.lot.coilNumber ?? '—'}</dd></div>
+        <div><dt>Kalite sınıfı</dt><dd>{identity.classification ?? 'Sınıflandırılmamış'}</dd></div>
         <div><dt>Fiziksel miktar</dt><dd>{balances.physicalKg} kg</dd></div>
         <div><dt>Serbest</dt><dd>{balances.freeKg} kg</dd></div>
         <div><dt>Bloklu</dt><dd>{balances.blockedKg} kg</dd></div>
@@ -187,7 +198,10 @@ function InventoryLabelDetailView({ namespace, labelId, target, stockSearch }: {
           <tbody>{movementTimeline.entries.flatMap((movement) => movement.lines.map((line) => <tr key={`${movement.movementId}:${line.sequence}`}>
             <td>{movement.occurredAtUtc}</td>
             <td>{MOVEMENT_KIND_TEXT[movement.kind]}<br /><span className={styles.mono}>…{movement.movementId.slice(-8)}</span></td>
-            <td>{movement.sourceKind}<br /><span className={styles.mono}>…{movement.sourceId.slice(-8)}</span></td>
+            <td>{movement.sourceKind}<br /><span className={styles.mono}>{canOpenOpening &&
+              movement.kind === 'Receipt' && movement.sourceKind === 'inventory.opening-count'
+                ? <Link to={inventoryOpeningDetailPath(movement.sourceId)} aria-label="Açılış sayımını aç">…{movement.sourceId.slice(-8)}</Link>
+                : <>…{movement.sourceId.slice(-8)}</>}</span></td>
             <td>{DIRECTION_TEXT[line.direction]}</td>
             <td className={styles.mono}>{line.locationId}</td>
             <td>{line.block}</td>
@@ -226,6 +240,7 @@ function InventoryLabelDetailView({ namespace, labelId, target, stockSearch }: {
         namespace={namespace}
         routeEntry={shell.routeEntryGeneration}
         onChanged={() => void query.refetch()}
+        canReadSalesOrder={canReadSalesOrder}
         startRelease={target === ROW_ACTION_TARGET.release}
       /></ActionTarget>
       : null}
@@ -244,6 +259,19 @@ function InventoryLabelDetailView({ namespace, labelId, target, stockSearch }: {
         canOpenLabels={canReadLabel}
         onRecorded={() => void query.refetch()}
       /></ActionTarget>
+      : null}
+
+    {canClassify && actorId !== null && namespace !== null
+      ? <LabelClassificationPanel
+        key={`${identity.labelId}:classification:${labelVersion}`}
+        labelId={identity.labelId}
+        labelVersion={labelVersion}
+        current={identity.classification}
+        namespace={namespace}
+        actorId={actorId}
+        companyId={companyId}
+        onChanged={() => void query.refetch()}
+      />
       : null}
 
     {canRecordCount || canApproveCount
@@ -280,5 +308,13 @@ function InventoryLabelDetailView({ namespace, labelId, target, stockSearch }: {
       <p>Ekli belge: {identity.documents.length}</p>
       <p>Basım: {identity.prints.length}</p>
     </section>
+
+    <DocumentsPanel
+      ownerKind={OWNER_KIND.inventoryMaterialLabel}
+      ownerId={identity.labelId}
+      companyId={companyId}
+      namespace={namespace}
+      entryGeneration={shell.routeEntryGeneration}
+    />
   </main>
 }

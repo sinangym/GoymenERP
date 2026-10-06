@@ -102,6 +102,21 @@ interface Receipt {
 
 interface ReceiptResponse { readonly receipt: Receipt; readonly isReplay: boolean; readonly originalCorrelationId: string }
 interface ReceiptPage { readonly items: readonly Receipt[]; readonly searchWindowFull: boolean }
+interface ReceiptComparison {
+  readonly companyId: string
+  readonly acceptanceId: string
+  readonly purchaseOrderId: string
+  readonly purchaseOrderLineId: string
+  readonly purchaseOrderVersion: string
+  readonly productId: string
+  readonly productVersion: string
+  readonly unitId: string
+  readonly acceptedQuantity: string
+  readonly measuredQuantityKg: string
+  readonly comparisonStatus: 'SameKilogramUnit' | 'Unavailable'
+  readonly acceptedQuantityKg: string | null
+  readonly measuredMinusAcceptedKg: string | null
+}
 interface ReceiptOptions {
   readonly source: Record<string, string>
   readonly locations: readonly { readonly locationId: string; readonly locationCode: string; readonly locationName: string; readonly siteName: string }[]
@@ -284,6 +299,7 @@ test('PUR01-GR records one partial receipt in the browser, reopens it, finds the
     const receiptVersion = (BigInt(approvedVersion) + 1n).toString()
     const optionsPath = `${ORDERS_PATH}/${orderId}/lines/${ORDER_LINE_ID}/goods-receipt-options`
     const receiptsPath = `${ORDERS_PATH}/${orderId}/goods-receipts`
+    const comparisonPath = (acceptanceId: string) => `${receiptsPath}/${acceptanceId}/quantity-comparison`
     const recordPath = `${ORDERS_PATH}/${orderId}/lines/${ORDER_LINE_ID}/goods-receipts`
     expect(await readReceiptEffects(pool, {
       companyId, orderId, acceptanceId: ZERO_GUID, lotId: ZERO_GUID, labelId: ZERO_GUID, movementId: ZERO_GUID, labelCode: LABEL_CODE,
@@ -362,6 +378,9 @@ test('PUR01-GR records one partial receipt in the browser, reopens it, finds the
     await expect(lineRow(page).getByRole('cell').nth(7)).toHaveText(REMAINING)
     const historyText = `${LABEL_CODE}: Kabul miktarı (sipariş birimi) ${ACCEPTED}; Tartılan miktar (kg) ${MEASURED_KG}. İlk kayıt durumu: Serbest`
     await expect(page.getByTestId(`goods-receipt-${sent.acceptanceId}`)).toContainText(historyText)
+    const comparisonCard = page.getByTestId(`goods-receipt-comparison-${sent.acceptanceId}`)
+    await expect(comparisonCard).toBeVisible()
+    await expect(comparisonCard).toContainText('+0.5')
     // Partial: the line keeps its remaining commitment open for a later receipt.
     await expect(panel.getByRole('button', { name: 'Mal kabulünü kaydet', exact: true })).toBeVisible()
 
@@ -370,11 +389,24 @@ test('PUR01-GR records one partial receipt in the browser, reopens it, finds the
       movementId: sent.movementId, labelCode: LABEL_CODE,
     }
     expect(await readReceiptEffects(pool, identity)).toEqual(ONCE)
+    const comparisonResponse = await page.request.get(`${env.apiBaseUrl}${comparisonPath(sent.acceptanceId)}`, {
+      headers: apiHeaders(receiverActor),
+    })
+    expect(comparisonResponse.status()).toBe(200)
+    const comparison = (await comparisonResponse.json()) as ReceiptComparison
+    expect(comparison).toEqual({
+      companyId, acceptanceId: sent.acceptanceId, purchaseOrderId: orderId, purchaseOrderLineId: ORDER_LINE_ID,
+      purchaseOrderVersion: receiptVersion, productId, productVersion, unitId: productUnitId,
+      acceptedQuantity: ACCEPTED, measuredQuantityKg: MEASURED_KG, comparisonStatus: 'SameKilogramUnit',
+      acceptedQuantityKg: ACCEPTED, measuredMinusAcceptedKg: '0.5',
+    })
+    expect(await readReceiptEffects(pool, identity)).toEqual(ONCE)
 
     // 3. Close the order and reopen it from the list: the same receipt comes from a fresh read, once.
-    const reopen: { history?: Promise<Response> } = {}
+    const reopen: { history?: Promise<Response>; comparison?: Promise<Response> } = {}
     await openOrderFromList(page, orderId, () => {
       reopen.history = page.waitForResponse((response) => isCall(response, 'GET', receiptsPath))
+      reopen.comparison = page.waitForResponse((response) => isCall(response, 'GET', comparisonPath(sent.acceptanceId)))
     })
     const reopenedHistoryResponse = await reopen.history!
     expect(reopenedHistoryResponse.status()).toBe(200)
@@ -383,8 +415,12 @@ test('PUR01-GR records one partial receipt in the browser, reopens it, finds the
     expect(reopenedHistory.items).toHaveLength(1)
     expect(withoutInstant(reopenedHistory.items[0])).toEqual(withoutInstant(recorded.receipt))
     expect(Date.parse(reopenedHistory.items[0].occurredAtUtc)).toBe(Date.parse(sent.occurredAtUtc))
+    const reopenedComparisonResponse = await reopen.comparison!
+    expect(reopenedComparisonResponse.status()).toBe(200)
+    expect(await reopenedComparisonResponse.json()).toEqual(comparison)
     const reopenedPanel = page.getByRole('region', { name: 'Mal kabulü', exact: true })
     await expect(page.getByTestId(`goods-receipt-${sent.acceptanceId}`)).toContainText(historyText)
+    await expect(page.getByTestId(`goods-receipt-comparison-${sent.acceptanceId}`)).toContainText('+0.5')
     await expect(page.locator('li[data-testid^="goods-receipt-"]')).toHaveCount(1)
     await expect(lineRow(page).getByRole('cell').nth(6)).toHaveText(ACCEPTED)
     await expect(lineRow(page).getByRole('cell').nth(7)).toHaveText(REMAINING)
@@ -417,7 +453,7 @@ test('PUR01-GR records one partial receipt in the browser, reopens it, finds the
     expect(label.labelVersion).toBe(recorded.receipt.labelVersion)
     expect(label.identity).toMatchObject({
       labelId: sent.labelId, companyId, code: LABEL_CODE, productId, lotId: sent.lotId, heatNumber: HEAT_NUMBER,
-      coilNumber: null, documentStatus: 'Complete', requiredDocuments: [], documents: [],
+      coilNumber: null, classification: null, documentStatus: 'Complete', requiredDocuments: [], documents: [],
     })
     expect(label.balances).toMatchObject({ labelId: sent.labelId, physicalKg: MEASURED_KG, freeKg: MEASURED_KG, blockedKg: '0' })
     expect(label.balances.positions).toHaveLength(1)
@@ -460,6 +496,12 @@ test('PUR01-GR records one partial receipt in the browser, reopens it, finds the
     expect(replayed.originalCorrelationId).toBe(recorded.originalCorrelationId)
     expect(withoutInstant(replayed.receipt)).toEqual(withoutInstant(recorded.receipt))
     expect(Date.parse(replayed.receipt.occurredAtUtc)).toBe(Date.parse(sent.occurredAtUtc))
+
+    const afterReplayComparison = await page.request.get(`${env.apiBaseUrl}${comparisonPath(sent.acceptanceId)}`, {
+      headers: apiHeaders(receiverActor),
+    })
+    expect(afterReplayComparison.status()).toBe(200)
+    expect(await afterReplayComparison.json()).toEqual(comparison)
 
     expect(await readReceiptEffects(pool, identity)).toEqual(ONCE)
     const afterReplayOrder = await readOrder(page, receiverActor, orderId)
@@ -526,6 +568,21 @@ test('PUR01-GR records one partial receipt in the browser, reopens it, finds the
     })
     expect([403, 404]).toContain(elsewhereReceipts.status())
     expect(await elsewhereReceipts.text()).not.toContain(LABEL_CODE)
+    const elsewhereComparison = await page.request.get(`${env.apiBaseUrl}${comparisonPath(sent.acceptanceId)}`, {
+      headers: apiHeaders(receiverActor, otherCompanyId),
+    })
+    expect([403, 404]).toContain(elsewhereComparison.status())
+    const elsewhereComparisonBody = await elsewhereComparison.text()
+    expect(elsewhereComparisonBody).not.toContain(LABEL_CODE)
+    expect(elsewhereComparisonBody).not.toContain(MEASURED_KG)
+
+    const deniedComparison = await page.request.get(`${env.apiBaseUrl}${comparisonPath(sent.acceptanceId)}`, {
+      headers: apiHeaders(stockReaderActor),
+    })
+    expect(deniedComparison.status()).toBe(403)
+    const deniedComparisonBody = await deniedComparison.text()
+    expect(deniedComparisonBody).not.toContain(LABEL_CODE)
+    expect(deniedComparisonBody).not.toContain(MEASURED_KG)
 
     // Nothing the denied or foreign attempts sent left any row: still exactly one receipt and one label code.
     expect(await readReceiptEffects(pool, identity)).toEqual(ONCE)

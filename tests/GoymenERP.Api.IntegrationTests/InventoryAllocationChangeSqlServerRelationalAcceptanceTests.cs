@@ -323,7 +323,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             At.AddHours(1), "Sentetik sayım farkı.");
         await using (var scope = run.Store(CompanyA))
         {
-            await scope.Store.RecordStockCountAsync(count, Metadata(run));
+            await scope.Store.RecordStockCountAsync(count, Metadata(run), static _ => Task.CompletedTask);
         }
 
         await using (var scope = run.Store(CompanyA))
@@ -336,7 +336,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         {
             var stale = await Assert.ThrowsAsync<InventoryStockCountException>(() => scope.Store.DecideStockCountAsync(
                 count.CountId, new DecideInventoryStockCountV1(InventoryStockCountDecisionKindV1.Approve, "Sentetik onay."),
-                Metadata(run) with { ActorId = Guid.NewGuid().ToString("D") }));
+                Metadata(run) with { ActorId = Guid.NewGuid().ToString("D") }, static _ => Task.CompletedTask));
             Assert.Equal((409, InventoryStockCountCodesV1.Stale), (stale.Status, stale.Code));
         }
 
@@ -452,6 +452,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             Assert.Equal(0, await run.ScalarAsync<int>(
                 "SELECT COUNT(*) FROM sys.tables WHERE schema_id = SCHEMA_ID(N'inventory') AND name = N'AllocationChanges'"));
             await context.GetService<IMigrator>().MigrateAsync(currentMigration);
+            await context.Database.MigrateAsync();
         }
 
         var source = await SeedFreePhysicalSourceAsync(run, CompanyA, "SYN-ALLOC-CHG-DOWN", 10m);
@@ -467,6 +468,9 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             await scope.Store.ChangeAsync(create.AllocationId,
                 ChangeRequest(create, "1", source.LabelId, version, "4", null), Metadata(run));
         }
+
+        await RemoveSyntheticProductVersionsForHistoricalMigrationAsync(
+            run, "SYN-ALLOC-CHG-DOWN", expectedLabels: 1);
 
         await using (var context = run.Context(CompanyA))
         {

@@ -14,8 +14,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  backend:
-    name: Backend build, test and migration
+  backend-build:
+    name: Backend full build, vulnerability and migrations
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -24,6 +24,7 @@ jobs:
         run: |
           python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py
           python3 -I -S -B -m unittest discover -s tests/dotnet_bootstrap_integrity -p "test_*.py" -v
+          python3 -I -S -B -m unittest discover -s tests/ci_safe_trx_summary -p "test_*.py" -v
 
       - name: Setup .NET 10
         uses: actions/setup-dotnet@v6
@@ -49,11 +50,6 @@ jobs:
           python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py
           dotnet build GoymenERP.slnx -noAutoResponse --configuration Release --no-restore
 
-      - name: Test
-        run: |
-          python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py
-          dotnet test GoymenERP.slnx -noAutoResponse --configuration Release --no-build --logger "console;verbosity=normal"
-
       - name: Architecture dependency guard
         run: |
           python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py
@@ -61,7 +57,29 @@ jobs:
           -noAutoResponse \
           --configuration Release \
           --no-build \
-          --logger "console;verbosity=normal"
+          --results-directory artifacts/ci-test-results/backend \
+          --logger "console;verbosity=normal" \
+          --logger "trx;LogFilePrefix=architecture"
+
+      - name: Produce secret-free backend test summary
+        if: always() && hashFiles('artifacts/ci-test-results/backend/**/*.trx') != ''
+        run: |
+          python3 -I -S -B tools/ci/summarize_trx.py \
+          --trx-directory artifacts/ci-test-results/backend \
+          --output artifacts/ci-safe-test-summary/backend.json \
+          --source-head "${{ github.event.pull_request.head.sha || github.sha }}" \
+          --tested-commit "$(git rev-parse HEAD)" \
+          --job backend-build \
+          --phase test-suite
+
+      - name: Upload secret-free backend test summary
+        if: always() && hashFiles('artifacts/ci-safe-test-summary/backend.json') != ''
+        uses: actions/upload-artifact@v7
+        with:
+          name: ci-test-summary-backend-${{ github.event.pull_request.head.sha || github.sha }}
+          path: artifacts/ci-safe-test-summary/backend.json
+          if-no-files-found: error
+          retention-days: 7
 
       - name: Check vulnerable dependencies
         run: |
@@ -115,6 +133,99 @@ jobs:
           --context CommandExecutionDbContext \
           --output artifacts/idempotency-migration.sql
 
+  backend-test-group:
+    name: Backend test group (${{ matrix.group }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        group: [architecture, api, modules]
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: .NET bootstrap integrity preflight
+        run: |
+          python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py
+          python3 -I -S -B -m unittest discover -s tests/dotnet_bootstrap_integrity -p "test_*.py" -v
+          python3 -I -S -B -m unittest discover -s tests/ci_safe_trx_summary -p "test_*.py" -v
+          python3 -I -S -B -m unittest discover -s tests/backend_test_group_verifier -p "test_*.py" -v
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore locked solution packages
+        run: |
+          python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py
+          dotnet restore GoymenERP.slnx -noAutoResponse --configfile NuGet.Config
+
+      - name: Run exact backend test group
+        run: |
+          python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py
+          python3 -I -S -B tools/verify_backend_test_groups.py \
+          --group "${{ matrix.group }}" \
+          --results-directory "artifacts/ci-test-results/backend-groups/${{ matrix.group }}" \
+          --proof-output "artifacts/ci-backend-group-proofs/proof-${{ matrix.group }}.json" \
+          --source-head "${{ github.event.pull_request.head.sha || github.sha }}" \
+          --tested-commit "$(git rev-parse HEAD)"
+
+      - name: Upload exact backend group proof
+        uses: actions/upload-artifact@v7
+        with:
+          name: ci-backend-test-group-proof-${{ matrix.group }}
+          path: artifacts/ci-backend-group-proofs/proof-${{ matrix.group }}.json
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Produce secret-free backend group summary
+        if: always() && hashFiles('artifacts/ci-test-results/backend-groups/*/*.trx') != ''
+        run: |
+          python3 -I -S -B tools/ci/summarize_trx.py \
+          --trx-directory "artifacts/ci-test-results/backend-groups/${{ matrix.group }}" \
+          --output "artifacts/ci-safe-test-summary/backend-${{ matrix.group }}.json" \
+          --source-head "${{ github.event.pull_request.head.sha || github.sha }}" \
+          --tested-commit "$(git rev-parse HEAD)" \
+          --job backend-test-group \
+          --phase test-suite
+
+      - name: Upload secret-free backend group summary
+        if: always() && hashFiles('artifacts/ci-safe-test-summary/backend-*.json') != ''
+        uses: actions/upload-artifact@v7
+        with:
+          name: ci-test-summary-backend-group-${{ matrix.group }}-${{ github.event.pull_request.head.sha || github.sha }}
+          path: artifacts/ci-safe-test-summary/backend-${{ matrix.group }}.json
+          if-no-files-found: error
+          retention-days: 7
+
+  backend:
+    name: Backend build, test and migration
+    needs: [backend-build, backend-test-group]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Verify backend group proof parser
+        run: |
+          python3 -I -S -B -m unittest discover -s tests/backend_test_group_verifier -p "test_*.py" -v
+
+      - name: Download exact backend group proofs
+        uses: actions/download-artifact@v8
+        with:
+          pattern: ci-backend-test-group-proof-*
+          path: artifacts/ci-backend-group-proofs
+
+      - name: Verify complete backend build and test groups
+        run: |
+          python3 -I -S -B tools/verify_backend_test_groups.py \
+          --aggregate \
+          --proof-directory artifacts/ci-backend-group-proofs \
+          --source-head "${{ github.event.pull_request.head.sha || github.sha }}" \
+          --tested-commit "$(git rev-parse HEAD)" \
+          --build-result "${{ needs.backend-build.result }}" \
+          --worker-result "${{ needs.backend-test-group.result }}"
+
   frontend:
     name: Frontend lint, test and build
     runs-on: ubuntu-latest
@@ -137,8 +248,92 @@ jobs:
       - run: npm test
       - run: npm run build
 
-  relational:
-    name: SQL Server relational acceptance
+  relational-shard:
+    name: SQL Server relational shard (${{ matrix.shard }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [A, B, C]
+    env:
+      GOYMEN_ERP_TEST_SQLSERVER_CONNECTION: >-
+        Server=localhost,1433;Database=master;User Id=sa;Password=Ci_Relational_Only_2026;Encrypt=True;TrustServerCertificate=True
+    services:
+      sqlserver:
+        image: mcr.microsoft.com/mssql/server:2022-latest
+        env:
+          ACCEPT_EULA: Y
+          MSSQL_PID: Developer
+          MSSQL_SA_PASSWORD: Ci_Relational_Only_2026
+        ports:
+          - 1433:1433
+        options: >-
+          --health-cmd "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P 'Ci_Relational_Only_2026' -C -Q 'SELECT 1'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 12
+          --health-start-period 20s
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: .NET bootstrap integrity preflight
+        run: |
+          python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py
+          python3 -I -S -B -m unittest discover -s tests/dotnet_bootstrap_integrity -p "test_*.py" -v
+          python3 -I -S -B -m unittest discover -s tests/ci_safe_trx_summary -p "test_*.py" -v
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore relational test packages
+        run: |
+          python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py
+          dotnet restore tests/GoymenERP.Api.IntegrationTests/GoymenERP.Api.IntegrationTests.csproj \
+          -noAutoResponse \
+          --configfile NuGet.Config
+
+      - name: Run exact SQL Server relational shard
+        run: |
+          python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py
+          python3 -I -S -B tools/verify_rcsi_relational_acceptance.py \
+          --shard "${{ matrix.shard }}" \
+          --trx-output "artifacts/ci-test-results/relational/broad-${{ matrix.shard }}.trx" \
+          --proof-output "artifacts/ci-relational-proofs/proof-${{ matrix.shard }}.json" \
+          --source-head "${{ github.event.pull_request.head.sha || github.sha }}" \
+          --tested-commit "$(git rev-parse HEAD)"
+
+      - name: Upload exact SQL shard proof
+        uses: actions/upload-artifact@v7
+        with:
+          name: ci-relational-shard-proof-${{ matrix.shard }}
+          path: artifacts/ci-relational-proofs/proof-${{ matrix.shard }}.json
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Produce secret-free relational shard summary
+        if: always() && hashFiles('artifacts/ci-test-results/relational/*.trx') != ''
+        run: |
+          python3 -I -S -B tools/ci/summarize_trx.py \
+          --trx-directory artifacts/ci-test-results/relational \
+          --output "artifacts/ci-safe-test-summary/shard-${{ matrix.shard }}.json" \
+          --source-head "${{ github.event.pull_request.head.sha || github.sha }}" \
+          --tested-commit "$(git rev-parse HEAD)" \
+          --job relational-shard \
+          --phase sql-acceptance
+
+      - name: Upload secret-free relational shard summary
+        if: always() && hashFiles('artifacts/ci-safe-test-summary/shard-*.json') != ''
+        uses: actions/upload-artifact@v7
+        with:
+          name: ci-test-summary-relational-shard-${{ matrix.shard }}-${{ github.event.pull_request.head.sha || github.sha }}
+          path: artifacts/ci-safe-test-summary/shard-${{ matrix.shard }}.json
+          if-no-files-found: error
+          retention-days: 7
+
+  relational-rcsi:
+    name: Exact RCSI relational acceptance
     runs-on: ubuntu-latest
     env:
       GOYMEN_ERP_TEST_SQLSERVER_CONNECTION: >-
@@ -165,6 +360,7 @@ jobs:
         run: |
           python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py
           python3 -I -S -B -m unittest discover -s tests/dotnet_bootstrap_integrity -p "test_*.py" -v
+          python3 -I -S -B -m unittest discover -s tests/ci_safe_trx_summary -p "test_*.py" -v
 
       - name: Setup .NET 10
         uses: actions/setup-dotnet@v6
@@ -178,16 +374,60 @@ jobs:
           -noAutoResponse \
           --configfile NuGet.Config
 
-      - name: Run broad SQL Server relational acceptance verifier
-        run: |
-          python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py
-          python3 -I -S -B -m unittest discover -s tests/rcsi_relational_acceptance_verifier -p "test_*.py" -v
-          python3 -I -S -B tools/verify_rcsi_relational_acceptance.py --broad
-
       - name: Run exact RCSI relational acceptance verifier
         run: |
           python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py
-          python3 -I -S -B tools/verify_rcsi_relational_acceptance.py --rcsi
+          python3 -I -S -B tools/verify_rcsi_relational_acceptance.py \
+          --rcsi \
+          --trx-output artifacts/ci-test-results/relational/rcsi.trx
+
+      - name: Produce secret-free RCSI test summary
+        if: always() && hashFiles('artifacts/ci-test-results/relational/*.trx') != ''
+        run: |
+          python3 -I -S -B tools/ci/summarize_trx.py \
+          --trx-directory artifacts/ci-test-results/relational \
+          --output artifacts/ci-safe-test-summary/relational.json \
+          --source-head "${{ github.event.pull_request.head.sha || github.sha }}" \
+          --tested-commit "$(git rev-parse HEAD)" \
+          --job relational-rcsi \
+          --phase sql-acceptance
+
+      - name: Upload secret-free RCSI test summary
+        if: always() && hashFiles('artifacts/ci-safe-test-summary/relational.json') != ''
+        uses: actions/upload-artifact@v7
+        with:
+          name: ci-test-summary-relational-rcsi-${{ github.event.pull_request.head.sha || github.sha }}
+          path: artifacts/ci-safe-test-summary/relational.json
+          if-no-files-found: error
+          retention-days: 7
+
+  relational:
+    name: SQL Server relational acceptance
+    needs: [relational-shard, relational-rcsi]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Verify relational shard proof parser
+        run: |
+          python3 -I -S -B -m unittest discover -s tests/rcsi_relational_acceptance_verifier -p "test_*.py" -v
+
+      - name: Download exact SQL shard proofs
+        uses: actions/download-artifact@v8
+        with:
+          pattern: ci-relational-shard-proof-*
+          path: artifacts/ci-relational-proofs
+
+      - name: Verify complete SQL Server relational acceptance
+        run: |
+          python3 -I -S -B tools/verify_rcsi_relational_acceptance.py \
+          --aggregate \
+          --proof-directory artifacts/ci-relational-proofs \
+          --source-head "${{ github.event.pull_request.head.sha || github.sha }}" \
+          --tested-commit "$(git rev-parse HEAD)" \
+          --worker-result "${{ needs.relational-shard.result }}" \
+          --rcsi-result "${{ needs.relational-rcsi.result }}"
 
   contract-drift:
     name: OpenAPI contract drift

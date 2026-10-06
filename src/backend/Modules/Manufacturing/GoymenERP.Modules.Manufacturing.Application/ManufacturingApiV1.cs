@@ -6,13 +6,16 @@ using System.Text.RegularExpressions;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Observability;
 using GoymenERP.BuildingBlocks.Security;
+using GoymenERP.Modules.Counterparty.Application.Contracts;
 using GoymenERP.Modules.Inventory.Application;
+using GoymenERP.Modules.Inventory.Domain.Stock;
 using GoymenERP.Modules.Manufacturing.Domain.Common;
 using GoymenERP.Modules.Manufacturing.Domain.Engines;
 using GoymenERP.Modules.Manufacturing.Domain.Engines.Balance;
 using GoymenERP.Modules.Manufacturing.Domain.Orders;
 using GoymenERP.Modules.Manufacturing.Domain.Plans;
 using GoymenERP.Modules.Organization.Application.Contracts;
+using GoymenERP.Modules.Product.Application.Contracts;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
 
 namespace GoymenERP.Modules.Manufacturing.Application;
@@ -24,7 +27,17 @@ namespace GoymenERP.Modules.Manufacturing.Application;
 public sealed record SavePlanRequestV1(
     Guid PlanId, Guid WorkCenterId, IReadOnlyList<PlannedInputRequestV1>? Inputs, TargetRequestV1? Target);
 
-public sealed record PlannedInputRequestV1(Guid ParentRollId, string? PlannedKg, string ExpectedLabelVersion);
+public sealed record PlanCommercialContextRequestV1(
+    Guid PartyId,
+    Guid CompanyPartyAccountId,
+    string? PartyVersion,
+    string? AccountVersion);
+
+public sealed record PlannedInputRequestV1(
+    Guid ParentRollId,
+    string? PlannedKg,
+    string ExpectedLabelVersion,
+    PlanCommercialContextRequestV1? CommercialContext = null);
 
 /// <summary><see cref="Basis"/> is <c>InputMass</c> or <c>GoodOutputMass</c>, the plan's declared basis.</summary>
 public sealed record TargetRequestV1(string? Basis, string? Kg);
@@ -42,8 +55,11 @@ public sealed record RevisePlanRequestV1(
 
 public sealed record CreateOrderRequestV1(Guid OrderId, Guid PlanId);
 
-/// <summary>The close of the order at the version the caller read; the close chooses nothing else (MFG-4).</summary>
-public sealed record CloseOrderRequestV1(long ExpectedVersion);
+/// <summary>
+/// The close of the order at the version the caller read. <see cref="ExceptionReason"/> is absent on the normal
+/// attempt and may be supplied only after the server requires the separately authorized tolerance exception.
+/// </summary>
+public sealed record CloseOrderRequestV1(long ExpectedVersion, string? ExceptionReason = null);
 
 /// <summary>An input issue, an unused-input return or a WIP reading of one parent roll, at its own time (R6).</summary>
 public sealed record RecordFactRequestV1(
@@ -68,20 +84,61 @@ public sealed record DeclareInventoryOutputRequestV1(
 public sealed record DeclareOutputRequestV1(
     Guid FactId, long ExpectedVersion, Guid ParentRollId, string? OutputClass, string? Kg, DateTimeOffset? OccurredAtUtc);
 
-public sealed record PlannedInputViewV1(Guid ParentRollId, string PlannedKg);
+public sealed record CapturedPlanFamilyRevisionViewV1(Guid FamilyId, string FamilyCode, string SourceRevision);
+
+public sealed record CapturedPlanTemplateRevisionViewV1(
+    Guid TemplateId, string TemplateVersion, string TemplateCode, string SourceRevision);
+
+public sealed record CapturedPlanKilogramUnitViewV1(
+    Guid CompanyId, Guid UnitId, string UnitCode, Guid ProfileId, string ProfileVersion);
+
+/// <summary>
+/// Product/Settings facts captured for this exact planned Inventory label. Null on legacy plans;
+/// legacy is unavailable and is never filled by reading the current Product card.
+/// </summary>
+public sealed record CapturedPlanTechnicalSnapshotViewV1(
+    Guid ProductId,
+    string ProductVersion,
+    CapturedPlanFamilyRevisionViewV1 Family,
+    CapturedPlanTemplateRevisionViewV1 Template,
+    string ThicknessMm,
+    string WidthMm,
+    CapturedPlanKilogramUnitViewV1 UnitKg,
+    DateOnly EffectiveOn);
+
+/// <summary>
+/// Exact Counterparty party/account provenance captured for a customer or tolling input. Null is legacy or
+/// company-owned input; a read never replaces a captured version with the Counterparty record's current version.
+/// </summary>
+public sealed record CapturedPlanCommercialContextViewV1(
+    Guid PartyId,
+    Guid CompanyPartyAccountId,
+    string PartyVersion,
+    string AccountVersion);
+
+public sealed record PlannedInputViewV1(
+    Guid ParentRollId,
+    string PlannedKg,
+    CapturedPlanTechnicalSnapshotViewV1? TechnicalSnapshot = null,
+    CapturedPlanCommercialContextViewV1? CommercialContext = null);
 
 public sealed record TargetViewV1(string Basis, string Kg);
 
 public sealed record PlanViewV1(
     Guid PlanId, Guid CompanyId, Guid WorkCenterId, string Process, string Status, long Version,
-    IReadOnlyList<PlannedInputViewV1> Inputs, TargetViewV1? Target, Guid? ApprovedByUserId, DateTimeOffset? ApprovedAtUtc);
+    IReadOnlyList<PlannedInputViewV1> Inputs, TargetViewV1? Target, Guid? ApprovedByUserId, DateTimeOffset? ApprovedAtUtc,
+    PlanPreviewViewV1? Calculation = null);
 
 /// <summary>
 /// MFG-PLAN-EDIT: one planned parent roll of a history entry, with the Inventory label version accepted for it
 /// (null only for a plan stored before label versions were kept). The edit form sends it back for a kept roll, and
 /// Inventory revalidates it; a roll whose label moved on is refused and must be selected again.
 /// </summary>
-public sealed record PlanRevisionInputViewV1(Guid ParentRollId, string PlannedKg, string? ExpectedLabelVersion);
+public sealed record PlanRevisionInputViewV1(
+    Guid ParentRollId,
+    string PlannedKg,
+    string? ExpectedLabelVersion,
+    CapturedPlanCommercialContextViewV1? CommercialContext = null);
 
 /// <summary>
 /// MFG-PLAN-EDIT: one entry of a plan's history. Revision 0 is the plan as created (no reason, no reviser); each later
@@ -101,7 +158,8 @@ public sealed record PlanRevisionListViewV1(Guid PlanId, IReadOnlyList<PlanRevis
 /// </summary>
 public sealed record RollBalanceViewV1(
     Guid ParentRollId, string PlannedKg, string IssuedKg, string ReturnedKg, string NetIssuedKg,
-    IReadOnlyDictionary<string, string> OutputsKg, string WorkInProgressKg, string UnexplainedKg, bool IsFullyAccounted);
+    IReadOnlyDictionary<string, string> OutputsKg, string WorkInProgressKg, string UnexplainedKg, bool IsFullyAccounted,
+    CapturedPlanCommercialContextViewV1? CommercialContext = null);
 
 /// <summary>Only in the basis the plan declared; otherwise <c>Basis</c> is null (unavailable, never 0).</summary>
 public sealed record RemainingTargetViewV1(string? Basis, string? TargetKg, string? AchievedKg, string? RemainingKg);
@@ -198,6 +256,14 @@ public static class ManufacturingApiCodes
     /// <summary>The server's actor or authority for this company is not (or no longer) there.</summary>
     public const string AuthorityDenied = "manufacturing_authority_denied";
 
+    /// <summary>The selected party or company account changed after the user read its candidate version.</summary>
+    public const string CommercialContextVersionConflict =
+        "manufacturing_commercial_context_version_conflict";
+
+    /// <summary>The exact party/account is inactive or has neither the customer nor tolling role.</summary>
+    public const string CommercialContextIneligible =
+        "manufacturing_commercial_context_ineligible";
+
     /// <summary>
     /// ADR-011 §3: the same <c>Idempotency-Key</c> for this command was used with another request or by
     /// another actor. The first attempt's answer is not disclosed.
@@ -215,6 +281,7 @@ public static class ManufacturingCommandNames
     public const string IssueInput = "manufacturing.input.issue.v1";
     public const string ReturnInput = "manufacturing.input.return.v1";
     public const string DeclareOutput = "manufacturing.output.declare.v1";
+    public const string DeclareProcessLoss = "manufacturing.process-loss.declare.v1";
     public const string RecordWorkInProgress = "manufacturing.wip.record.v1";
     public const string CloseOrder = "manufacturing.order.close.v1";
 }
@@ -261,8 +328,19 @@ public sealed partial class ManufacturingCommandService(
     IManufacturingInventoryInputIssuePortV1? inventoryInputIssues = null,
     IManufacturingInventoryReturnOutputPortV1? inventoryReturnsAndOutputs = null,
     IManufacturingPlanListStore? planList = null,
-    IManufacturingPlanRevisionStore? planRevisions = null)
+    IManufacturingPlanRevisionStore? planRevisions = null,
+    ISettingsManufacturingToleranceProviderV1? manufacturingTolerances = null,
+    IProductManufacturingTechnicalSnapshotV1? productTechnicalSnapshots = null,
+    ICounterpartyManufacturingPartyAccountSourceV1? partyAccounts = null,
+    IInventoryContextualParentRollReferencesV1? contextualParentRolls = null)
 {
+    // These owner-provider codes stay inside the application result. The public endpoint continues to
+    // collapse every unavailable answer to service_unavailable; the disposable MFG fixture may map the
+    // closed values to one fixed phase marker while diagnosing its own seed.
+    private const string CounterpartyProviderUnavailable = "counterparty_provider_unavailable";
+    private const string ProductTechnicalSnapshotUnavailable =
+        "product_manufacturing_technical_snapshot_unavailable";
+
     /// <summary>Any integer mantissa of this many digits fits a decimal's 96 bits, so such a text converts exactly.</summary>
     private const int ExactDecimalDigits = 28;
 
@@ -298,38 +376,35 @@ public sealed partial class ManufacturingCommandService(
         {
             planId = request.PlanId,
             workCenterId = request.WorkCenterId,
-            inputs = inputs.Select(input => new
-            {
-                rollId = input.ParentRollId,
-                expectedLabelVersion = input.ExpectedLabelVersion,
-                kg = Text(input.Kg),
-            }),
+            inputs = CanonicalPlanInputs(inputs),
             target = request.Target is null ? null : new { basis = request.Target.Basis, kg = Text(targetKg!.Value) },
         };
 
         return RunAsync<PlanViewV1>(permission, idempotencyKey, ManufacturingCommandNames.SavePlan, canonical,
-            ManufacturingApiStatus.Created, async (metadata, _) =>
+            ManufacturingApiStatus.Created, async (metadata, actorId, companyId) =>
             {
-                var process = await ResolveProcessAsync(request.WorkCenterId, cancellationToken);
+                var process = await ResolveProcessAsync(
+                    request.WorkCenterId, permission, companyId, actorId, cancellationToken);
                 if (process.Refusal is not null)
                 {
                     return Refusal<PlanViewV1>(process.Refusal);
                 }
 
-                var verified = await VerifyPlanContentAsync(inputs, targetKg, cancellationToken);
+                var verified = await VerifyPlanContentAsync(
+                    inputs, targetKg, permission, companyId, actorId, cancellationToken);
                 if (verified.Refusal is not null)
                 {
                     return Refusal<PlanViewV1>(verified.Refusal);
                 }
 
-                if (await FenceAsync<PlanViewV1>(permission, cancellationToken) is { } fenced)
+                if (await FenceCapturedAsync<PlanViewV1>(permission, companyId, actorId, cancellationToken) is { } fenced)
                 {
                     return fenced;
                 }
 
                 // Built behind the fence, so the domain's own refusals (a zero planned mass, a repeated
                 // roll) map like every other refusal.
-                var plan = new ProductionPlan(request.PlanId, companyContext.CompanyId, request.WorkCenterId,
+                var plan = new ProductionPlan(request.PlanId, companyId, request.WorkCenterId,
                     process.Value, PlannedInputs(verified.Inputs), Target(request.Target, verified.TargetMass));
                 var outcome = await plans.SavePlanAsync(plan, metadata, cancellationToken);
                 var stored = await plans.FindPlanAsync(plan.Id, cancellationToken);
@@ -390,18 +465,13 @@ public sealed partial class ManufacturingCommandService(
             planId,
             expectedVersion = request.ExpectedVersion,
             workCenterId = request.WorkCenterId,
-            inputs = inputs.Select(input => new
-            {
-                rollId = input.ParentRollId,
-                expectedLabelVersion = input.ExpectedLabelVersion,
-                kg = Text(input.Kg),
-            }),
+            inputs = CanonicalPlanInputs(inputs),
             target = request.Target is null ? null : new { basis = request.Target.Basis, kg = Text(targetKg!.Value) },
             reason,
         };
 
         return RunAsync<PlanViewV1>(permission, idempotencyKey, ManufacturingCommandNames.RevisePlan, canonical,
-            ManufacturingApiStatus.Ok, async (metadata, _) =>
+            ManufacturingApiStatus.Ok, async (metadata, actorId, companyId) =>
             {
                 if (planRevisions is null)
                 {
@@ -418,19 +488,21 @@ public sealed partial class ManufacturingCommandService(
 
                 current.RequireRevisable(request.ExpectedVersion);
 
-                var process = await ResolveProcessAsync(request.WorkCenterId, cancellationToken);
+                var process = await ResolveProcessAsync(
+                    request.WorkCenterId, permission, companyId, actorId, cancellationToken);
                 if (process.Refusal is not null)
                 {
                     return Refusal<PlanViewV1>(process.Refusal);
                 }
 
-                var verified = await VerifyPlanContentAsync(inputs, targetKg, cancellationToken);
+                var verified = await VerifyPlanContentAsync(
+                    inputs, targetKg, permission, companyId, actorId, cancellationToken);
                 if (verified.Refusal is not null)
                 {
                     return Refusal<PlanViewV1>(verified.Refusal);
                 }
 
-                if (await FenceAsync<PlanViewV1>(permission, cancellationToken) is { } fenced)
+                if (await FenceCapturedAsync<PlanViewV1>(permission, companyId, actorId, cancellationToken) is { } fenced)
                 {
                     return fenced;
                 }
@@ -450,7 +522,7 @@ public sealed partial class ManufacturingCommandService(
     public async Task<ManufacturingApiResult<PlanRevisionListViewV1>> ListPlanRevisionsAsync(Guid planId,
         CancellationToken cancellationToken)
     {
-        if (!HasContext())
+        if (!HasContext() || ActorGuid() is not { } actorId)
         {
             return Denied<PlanRevisionListViewV1>();
         }
@@ -465,9 +537,17 @@ public sealed partial class ManufacturingCommandService(
             return new ManufacturingApiResult<PlanRevisionListViewV1>(ManufacturingApiStatus.Unavailable, null, false, null);
         }
 
+        var companyId = companyContext.CompanyId;
         try
         {
             var revisions = await planRevisions.ListPlanRevisionsAsync(planId, cancellationToken);
+            var scope = await authority.RevalidatePermissionScopeAsync(
+                ErpPermissions.ManufacturingPlansRead, companyId, cancellationToken);
+            if (!scope.IsGranted || !HasCapturedContext(companyId, actorId))
+            {
+                return Denied<PlanRevisionListViewV1>();
+            }
+
             return revisions is null
                 ? NotFoundResult<PlanRevisionListViewV1>()
                 : new ManufacturingApiResult<PlanRevisionListViewV1>(ManufacturingApiStatus.Ok,
@@ -475,6 +555,13 @@ public sealed partial class ManufacturingCommandService(
         }
         catch (ManufacturingStoreException exception) when (exception.Code == ManufacturingStoreCodes.ConcurrentChange)
         {
+            var scope = await authority.RevalidatePermissionScopeAsync(
+                ErpPermissions.ManufacturingPlansRead, companyId, cancellationToken);
+            if (!scope.IsGranted || !HasCapturedContext(companyId, actorId))
+            {
+                return Denied<PlanRevisionListViewV1>();
+            }
+
             return new ManufacturingApiResult<PlanRevisionListViewV1>(ManufacturingApiStatus.Unavailable, null, false, null);
         }
     }
@@ -483,7 +570,40 @@ public sealed partial class ManufacturingCommandService(
     /// The plan content's grammar, shared by the save and the revision in the save's order: the target basis, every
     /// planned kilogram, every roll's canonical label version, the target kilogram. The first invalid field is named.
     /// </summary>
-    private static (List<(Guid ParentRollId, string ExpectedLabelVersion, decimal Kg)>? Inputs, decimal? TargetKg,
+    private sealed record ParsedPlanInput(
+        Guid ParentRollId,
+        string ExpectedLabelVersion,
+        decimal Kg,
+        PlanCommercialContextRequestV1? CommercialContext);
+
+    private sealed record VerifiedPlanInput(
+        Guid ParentRollId,
+        Kilograms Mass,
+        long ExpectedLabelVersion,
+        PlanTechnicalParameterSnapshotV1 TechnicalSnapshot,
+        PlanCommercialContextSnapshotV1? CommercialContext);
+
+    /// <summary>
+    /// ADR-011 compatibility: the published plan command predates commercial context. A null context therefore keeps
+    /// the exact old per-input JSON object; only a supplied context adds the new member to the immutable request hash.
+    /// </summary>
+    private static IEnumerable<object> CanonicalPlanInputs(IEnumerable<ParsedPlanInput> inputs) =>
+        inputs.Select(input => input.CommercialContext is null
+            ? (object)new
+            {
+                rollId = input.ParentRollId,
+                expectedLabelVersion = input.ExpectedLabelVersion,
+                kg = Text(input.Kg),
+            }
+            : new
+            {
+                rollId = input.ParentRollId,
+                expectedLabelVersion = input.ExpectedLabelVersion,
+                kg = Text(input.Kg),
+                commercialContext = input.CommercialContext,
+            });
+
+    private static (List<ParsedPlanInput>? Inputs, decimal? TargetKg,
         string? InvalidField) ParsePlanContent(IReadOnlyList<PlannedInputRequestV1> requested, TargetRequestV1? target)
     {
         if (target is not null && ParseBasis(target.Basis) is null)
@@ -491,7 +611,7 @@ public sealed partial class ManufacturingCommandService(
             return (null, null, "target.basis");
         }
 
-        var inputs = new List<(Guid ParentRollId, string ExpectedLabelVersion, decimal Kg)>();
+        var inputs = new List<ParsedPlanInput>();
         for (var index = 0; index < requested.Count; index++)
         {
             var input = requested[index];
@@ -505,7 +625,31 @@ public sealed partial class ManufacturingCommandService(
                 return (null, null, $"inputs[{index}].expectedLabelVersion");
             }
 
-            inputs.Add((input.ParentRollId, input.ExpectedLabelVersion!, kg));
+            if (input.CommercialContext is { } commercial)
+            {
+                if (commercial.PartyId == Guid.Empty)
+                {
+                    return (null, null, $"inputs[{index}].commercialContext.partyId");
+                }
+
+                if (commercial.CompanyPartyAccountId == Guid.Empty)
+                {
+                    return (null, null, $"inputs[{index}].commercialContext.companyPartyAccountId");
+                }
+
+                if (string.IsNullOrEmpty(commercial.PartyVersion))
+                {
+                    return (null, null, $"inputs[{index}].commercialContext.partyVersion");
+                }
+
+                if (string.IsNullOrEmpty(commercial.AccountVersion))
+                {
+                    return (null, null, $"inputs[{index}].commercialContext.accountVersion");
+                }
+            }
+
+            inputs.Add(new ParsedPlanInput(input.ParentRollId, input.ExpectedLabelVersion!, kg,
+                input.CommercialContext));
         }
 
         decimal? targetKg = null;
@@ -527,13 +671,13 @@ public sealed partial class ManufacturingCommandService(
     /// against the company's kilogram profile (at the server's date) and its exact label version against Inventory,
     /// then the target mass. The first refusal is the answer; nothing is written.
     /// </summary>
-    private async Task<(List<(Guid ParentRollId, Kilograms Mass, long ExpectedLabelVersion)> Inputs, Kilograms? TargetMass,
+    private async Task<(List<VerifiedPlanInput> Inputs, Kilograms? TargetMass,
         ManufacturingApiResult<object>? Refusal)> VerifyPlanContentAsync(
-        List<(Guid ParentRollId, string ExpectedLabelVersion, decimal Kg)> inputs, decimal? targetKg,
+        List<ParsedPlanInput> inputs, decimal? targetKg, string permission, Guid companyId, Guid actorId,
         CancellationToken cancellationToken)
     {
         var today = DateOnly.FromDateTime(timeProvider.GetUtcNow().UtcDateTime);
-        var planned = new List<(Guid ParentRollId, Kilograms Mass, long ExpectedLabelVersion)>();
+        var planned = new List<VerifiedPlanInput>();
         for (var index = 0; index < inputs.Count; index++)
         {
             var input = inputs[index];
@@ -543,15 +687,30 @@ public sealed partial class ManufacturingCommandService(
                 return (planned, null, mass.Refusal);
             }
 
-            var reference = await ValidateParentRollAsync(input.ParentRollId, input.ExpectedLabelVersion,
-                $"inputs[{index}].expectedLabelVersion", cancellationToken);
-            if (reference is not null)
+            var commercial = await ReadCommercialContextAsync(
+                input.CommercialContext, index, permission, companyId, actorId, cancellationToken);
+            if (commercial.Refusal is not null)
             {
-                return (planned, null, reference);
+                return (planned, null, commercial.Refusal);
             }
 
-            planned.Add((input.ParentRollId, mass.Value, long.Parse(input.ExpectedLabelVersion,
-                NumberStyles.None, CultureInfo.InvariantCulture)));
+            var reference = await ValidateParentRollAsync(input.ParentRollId, input.ExpectedLabelVersion,
+                $"inputs[{index}].expectedLabelVersion", commercial.Snapshot,
+                permission, companyId, actorId, cancellationToken);
+            if (reference.Refusal is not null)
+            {
+                return (planned, null, reference.Refusal);
+            }
+
+            var technical = await ReadTechnicalSnapshotAsync(reference.Reference!, today,
+                $"inputs[{index}].parentRollId", permission, companyId, actorId, cancellationToken);
+            if (technical.Refusal is not null)
+            {
+                return (planned, null, technical.Refusal);
+            }
+
+            planned.Add(new VerifiedPlanInput(input.ParentRollId, mass.Value, long.Parse(input.ExpectedLabelVersion,
+                NumberStyles.None, CultureInfo.InvariantCulture), technical.Snapshot!, commercial.Snapshot));
         }
 
         Kilograms? targetMass = null;
@@ -570,8 +729,9 @@ public sealed partial class ManufacturingCommandService(
     }
 
     private static IEnumerable<PlannedInput> PlannedInputs(
-        IEnumerable<(Guid ParentRollId, Kilograms Mass, long ExpectedLabelVersion)> verified) =>
-        verified.Select(input => new PlannedInput(input.ParentRollId, input.Mass, input.ExpectedLabelVersion));
+        IEnumerable<VerifiedPlanInput> verified) =>
+        verified.Select(input => new PlannedInput(input.ParentRollId, input.Mass, input.ExpectedLabelVersion,
+            input.TechnicalSnapshot, input.CommercialContext));
 
     private static ProductionTarget? Target(TargetRequestV1? requested, Kilograms? mass) =>
         requested is not null && mass is { } value ? new ProductionTarget(ParseBasis(requested.Basis)!.Value, value) : null;
@@ -585,7 +745,8 @@ public sealed partial class ManufacturingCommandService(
         }
 
         return RunAsync<PlanViewV1>(permission, idempotencyKey, ManufacturingCommandNames.ApprovePlan,
-            new { planId, expectedVersion = request.ExpectedVersion }, ManufacturingApiStatus.Ok, async (metadata, actor) =>
+            new { planId, expectedVersion = request.ExpectedVersion }, ManufacturingApiStatus.Ok,
+            async (metadata, actor, _) =>
             {
                 var approved = await plans.ApprovePlanAsync(planId, request.ExpectedVersion, actor,
                     timeProvider.GetUtcNow(), metadata, cancellationToken);
@@ -602,7 +763,8 @@ public sealed partial class ManufacturingCommandService(
         }
 
         return RunAsync<OrderViewV1>(permission, idempotencyKey, ManufacturingCommandNames.CreateOrder,
-            new { orderId = request.OrderId, planId = request.PlanId }, ManufacturingApiStatus.Created, async (metadata, _) =>
+            new { orderId = request.OrderId, planId = request.PlanId }, ManufacturingApiStatus.Created,
+            async (metadata, _, _) =>
             {
                 var outcome = await orders.CreateOrderAsync(request.OrderId, request.PlanId, metadata, cancellationToken);
                 return await OrderResultAsync(request.OrderId, ManufacturingApiStatus.Created,
@@ -646,7 +808,7 @@ public sealed partial class ManufacturingCommandService(
         };
 
         return RunAsync<OrderViewV1>(permission, idempotencyKey, ManufacturingCommandNames.IssueInput,
-            canonical, ManufacturingApiStatus.Ok, async (metadata, _) =>
+            canonical, ManufacturingApiStatus.Ok, async (metadata, _, _) =>
             {
                 if (inventoryInputIssues is null)
                 {
@@ -718,7 +880,7 @@ public sealed partial class ManufacturingCommandService(
         };
 
         return RunAsync<OrderViewV1>(permission, idempotencyKey, ManufacturingCommandNames.ReturnInput,
-            canonical, ManufacturingApiStatus.Ok, async (metadata, _) =>
+            canonical, ManufacturingApiStatus.Ok, async (metadata, _, _) =>
             {
                 if (inventoryReturnsAndOutputs is null)
                 {
@@ -798,6 +960,13 @@ public sealed partial class ManufacturingCommandService(
             return Task.FromResult(Invalid<OrderViewV1>("outputClass"));
         }
 
+        // ProcessLoss is explicitly non-stock. It must never create an Inventory label or movement through this
+        // stock-output command; RecordProcessLossAsync is the public fixed-class fact path.
+        if (outputClass == OutputClass.ProcessLoss)
+        {
+            return Task.FromResult(Invalid<OrderViewV1>("outputClass"));
+        }
+
         if (string.IsNullOrWhiteSpace(request.LabelCode))
         {
             return Task.FromResult(Invalid<OrderViewV1>("labelCode"));
@@ -864,7 +1033,7 @@ public sealed partial class ManufacturingCommandService(
         };
 
         return RunAsync<OrderViewV1>(permission, idempotencyKey, ManufacturingCommandNames.DeclareOutput,
-            canonical, ManufacturingApiStatus.Ok, async (metadata, _) =>
+            canonical, ManufacturingApiStatus.Ok, async (metadata, _, _) =>
             {
                 if (inventoryReturnsAndOutputs is null)
                 {
@@ -913,36 +1082,165 @@ public sealed partial class ManufacturingCommandService(
     }
 
     /// <summary>
-    /// Closes the order at the version the caller read (MFG-4, Business 5728619644). The decision is the
-    /// domain's and nothing here softens it: every planned roll must account for its own issued mass, a
-    /// surplus on one roll never covers a gap on another, remaining WIP stays on the order as its own
-    /// position, and an unexplained difference refuses the close with
-    /// <see cref="ManufacturingRuleCodes.UnexplainedDifference"/> (422) — there is no tolerance and no
-    /// write-off. A closed order refuses a second close with <see cref="ManufacturingRuleCodes.OrderClosed"/>;
-    /// the same <c>Idempotency-Key</c> replays the first close's answer (ADR-011 §4), and a stale
-    /// <see cref="CloseOrderRequestV1.ExpectedVersion"/> is a recorded terminal conflict (§7).
+    /// Records declared non-stock process loss. The class is fixed by the server; the caller supplies only the same
+    /// fact identity/version/roll/mass/time envelope as WIP. No Product, Inventory label, location or movement is
+    /// accepted or created, and unexplained mass is never promoted into this fact.
+    /// </summary>
+    public Task<ManufacturingApiResult<OrderViewV1>> RecordProcessLossAsync(Guid orderId,
+        RecordFactRequestV1? request, string idempotencyKey, string permission,
+        CancellationToken cancellationToken) =>
+        RecordAsync(orderId, request, OutputClass.ProcessLoss, idempotencyKey, permission,
+            ManufacturingCommandNames.DeclareProcessLoss,
+            (fact, mass, at, metadata) => orders.DeclareOutputAsync(orderId, fact.ExpectedVersion, fact.FactId,
+                fact.ParentRollId, OutputClass.ProcessLoss, mass, at, metadata, cancellationToken), cancellationToken);
+
+    /// <summary>
+    /// Closes the order at the version the caller read. Settings supplies the exact company/process/date tolerance;
+    /// Manufacturing persists it and derives fire (Scrap + ProcessLoss) and net issued mass from its own facts. A
+    /// positive unexplained difference still requires an explicit fact. An out-of-tolerance result requires the
+    /// separate permission passed by the host and a reason bound to company/order/actor/order version/policy version.
+    /// A closed order refuses a second close; the same key replays the first answer (ADR-011 §4), and a stale version
+    /// is a recorded terminal conflict (§7).
     /// </summary>
     public Task<ManufacturingApiResult<OrderViewV1>> CloseOrderAsync(Guid orderId, CloseOrderRequestV1? request,
-        string idempotencyKey, string permission, CancellationToken cancellationToken)
+        string idempotencyKey, string permission, CancellationToken cancellationToken) =>
+        CloseOrderAsync(orderId, request, idempotencyKey, permission, exceptionApprovalPermission: null,
+            cancellationToken);
+
+    /// <summary>The host-bound overload that names the dedicated exception permission without importing host policy.</summary>
+    public Task<ManufacturingApiResult<OrderViewV1>> CloseOrderAsync(Guid orderId, CloseOrderRequestV1? request,
+        string idempotencyKey, string permission, string? exceptionApprovalPermission,
+        CancellationToken cancellationToken)
     {
         if (orderId == Guid.Empty || request is null || request.ExpectedVersion <= 0)
         {
             return Task.FromResult(Invalid<OrderViewV1>("expectedVersion"));
         }
 
+        var exceptionReason = request.ExceptionReason?.Trim();
+        if (request.ExceptionReason is not null
+            && (string.IsNullOrEmpty(exceptionReason)
+                || exceptionReason.Length > ClosureExceptionApprovalV1.ReasonMaximumLength
+                || exceptionReason.Any(char.IsControl)))
+        {
+            return Task.FromResult(Invalid<OrderViewV1>("exceptionReason"));
+        }
+
+        // The published normal-close command predates exception approval. Its canonical payload omitted the
+        // optional member, so an absent reason must keep that exact hash for immutable ADR-011 replay.
+        object canonicalRequest = exceptionReason is null
+            ? new { orderId, expectedVersion = request.ExpectedVersion }
+            : new { orderId, expectedVersion = request.ExpectedVersion, exceptionReason };
+
         return RunAsync<OrderViewV1>(permission, idempotencyKey, ManufacturingCommandNames.CloseOrder,
-            new { orderId, expectedVersion = request.ExpectedVersion }, ManufacturingApiStatus.Ok,
-            async (metadata, actor) =>
+            canonicalRequest, ManufacturingApiStatus.Ok,
+            async (metadata, actor, companyId) =>
             {
+                var current = await orders.FindOrderAsync(orderId, cancellationToken);
+                if (current is null)
+                {
+                    return NotFoundResult<OrderViewV1>();
+                }
+
+                // Stored state answers before another owner is asked: stale/closed never query Settings.
+                current.RequireClosable(request.ExpectedVersion);
+                if (manufacturingTolerances is null)
+                {
+                    return new ManufacturingApiResult<OrderViewV1>(ManufacturingApiStatus.Unavailable, null, false,
+                        "settings_provider_unavailable");
+                }
+
+                var closedAt = timeProvider.GetUtcNow().ToUniversalTime();
+                var selectedForDate = DateOnly.FromDateTime(closedAt.UtcDateTime);
+                var requestedProcess = current.Process.ToString();
+                ManufacturingToleranceProfileV1 profile;
+                try
+                {
+                    profile = await manufacturingTolerances.GetManufacturingToleranceAsync(
+                        requestedProcess, selectedForDate, cancellationToken);
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (SettingsPrerequisiteException exception)
+                {
+                    var status = exception.Code switch
+                    {
+                        "settings_access_denied" => ManufacturingApiStatus.Denied,
+                        "settings_provider_unavailable" or "settings_profile_invalid" =>
+                            ManufacturingApiStatus.Unavailable,
+                        _ => ManufacturingApiStatus.Unprocessable,
+                    };
+                    return new ManufacturingApiResult<OrderViewV1>(status, null, false, exception.Code);
+                }
+
+                if (profile.CompanyId != current.CompanyId
+                    || !string.Equals(profile.Process, requestedProcess, StringComparison.Ordinal))
+                {
+                    return new ManufacturingApiResult<OrderViewV1>(ManufacturingApiStatus.Unavailable, null, false,
+                        ClosureAssessmentCodesV1.PolicyScopeMismatch);
+                }
+
+                var policy = new ClosureTolerancePolicySnapshotV1(
+                    profile.CompanyId, profile.Profile.ProfileId, profile.Profile.Version, current.Process,
+                    profile.MaximumFirePercent, profile.IsActive, profile.EffectiveFrom, profile.EffectiveThrough,
+                    selectedForDate);
+                var assessment = current.AssessClosure(policy);
+                if (assessment.Disposition is not (ClosureDispositionV1.Balanced
+                    or ClosureDispositionV1.ApprovalRequired))
+                {
+                    var status = assessment.Disposition == ClosureDispositionV1.Unavailable
+                        ? ManufacturingApiStatus.Unavailable
+                        : ManufacturingApiStatus.Unprocessable;
+                    return new ManufacturingApiResult<OrderViewV1>(status, null, false,
+                        assessment.Code ?? ClosureAssessmentCodesV1.PolicyInvalid, assessment.RefusedParameter);
+                }
+
+                ClosureExceptionApprovalV1? approval = null;
+                if (assessment.Disposition == ClosureDispositionV1.ApprovalRequired)
+                {
+                    if (exceptionReason is null)
+                    {
+                        return new ManufacturingApiResult<OrderViewV1>(ManufacturingApiStatus.Unprocessable, null,
+                            false, ClosureAssessmentCodesV1.ApprovalRequired);
+                    }
+
+                    if (string.IsNullOrWhiteSpace(exceptionApprovalPermission)
+                        || await FenceAsync<OrderViewV1>(exceptionApprovalPermission, cancellationToken) is not null)
+                    {
+                        return Denied<OrderViewV1>();
+                    }
+
+                    approval = ClosureExceptionApprovalV1.Create(
+                        current.CompanyId, current.Id, actor, exceptionReason, current.Version,
+                        policy.PolicyId, policy.PolicyVersion, closedAt);
+                }
+                else if (exceptionReason is not null)
+                {
+                    return new ManufacturingApiResult<OrderViewV1>(ManufacturingApiStatus.Unprocessable, null, false,
+                        ClosureAssessmentCodesV1.ApprovalUnexpected);
+                }
+
                 if (await FenceAsync<OrderViewV1>(permission, cancellationToken) is { } fenced)
                 {
                     return fenced;
                 }
 
-                await orders.CloseOrderAsync(orderId, request.ExpectedVersion, actor, timeProvider.GetUtcNow(), metadata,
-                    cancellationToken);
+                if (approval is not null
+                    && await FenceAsync<OrderViewV1>(exceptionApprovalPermission!, cancellationToken) is { } approvalFenced)
+                {
+                    return approvalFenced;
+                }
+
+                var persistenceAuthority = new ManufacturingPersistenceAuthorityFenceV1(companyId, actor,
+                    token => RevalidateClosePersistenceAuthorityAsync(companyId, actor, permission,
+                        approval is null ? null : exceptionApprovalPermission, token));
+                await orders.CloseOrderWithPolicyAsync(orderId, request.ExpectedVersion, actor, closedAt, policy,
+                    approval, persistenceAuthority, metadata, cancellationToken);
                 return await OrderResultAsync(orderId, ManufacturingApiStatus.Ok, isReplay: false, cancellationToken);
-            }, stored => OrderView((ProductionOrder)stored), cancellationToken);
+            }, stored => OrderView((ProductionOrder)stored), cancellationToken,
+            storedAnswerPermission: exceptionReason is null ? null : exceptionApprovalPermission ?? string.Empty);
     }
 
     /// <summary>
@@ -1064,7 +1362,7 @@ public sealed partial class ManufacturingCommandService(
     /// </summary>
     public async Task<ManufacturingApiResult<OrderViewV1>> GetOrderAsync(Guid orderId, CancellationToken cancellationToken)
     {
-        if (!HasContext())
+        if (!HasContext() || ActorGuid() is not { } actorId)
         {
             return Denied<OrderViewV1>();
         }
@@ -1074,12 +1372,30 @@ public sealed partial class ManufacturingCommandService(
             return NotFoundResult<OrderViewV1>();
         }
 
+        var companyId = companyContext.CompanyId;
         try
         {
-            return await OrderResultAsync(orderId, ManufacturingApiStatus.Ok, isReplay: false, cancellationToken);
+            var order = await orders.FindOrderAsync(orderId, cancellationToken);
+            var scope = await authority.RevalidatePermissionScopeAsync(
+                ErpPermissions.ManufacturingOrdersRead, companyId, cancellationToken);
+            if (!scope.IsGranted || !HasCapturedContext(companyId, actorId))
+            {
+                return Denied<OrderViewV1>();
+            }
+
+            return order is null
+                ? NotFoundResult<OrderViewV1>()
+                : new ManufacturingApiResult<OrderViewV1>(ManufacturingApiStatus.Ok, OrderView(order), false, null);
         }
         catch (ManufacturingStoreException exception) when (exception.Code == ManufacturingStoreCodes.ConcurrentChange)
         {
+            var scope = await authority.RevalidatePermissionScopeAsync(
+                ErpPermissions.ManufacturingOrdersRead, companyId, cancellationToken);
+            if (!scope.IsGranted || !HasCapturedContext(companyId, actorId))
+            {
+                return Denied<OrderViewV1>();
+            }
+
             return new ManufacturingApiResult<OrderViewV1>(ManufacturingApiStatus.Unavailable, null, false, null);
         }
     }
@@ -1104,7 +1420,7 @@ public sealed partial class ManufacturingCommandService(
     /// </summary>
     public async Task<ManufacturingApiResult<PlanViewV1>> GetPlanAsync(Guid planId, CancellationToken cancellationToken)
     {
-        if (!HasContext())
+        if (!HasContext() || ActorGuid() is not { } actorId)
         {
             return Denied<PlanViewV1>();
         }
@@ -1114,15 +1430,30 @@ public sealed partial class ManufacturingCommandService(
             return NotFoundResult<PlanViewV1>();
         }
 
+        var companyId = companyContext.CompanyId;
         try
         {
             var plan = await plans.FindPlanAsync(planId, cancellationToken);
+            var scope = await authority.RevalidatePermissionScopeAsync(
+                ErpPermissions.ManufacturingPlansRead, companyId, cancellationToken);
+            if (!scope.IsGranted || !HasCapturedContext(companyId, actorId))
+            {
+                return Denied<PlanViewV1>();
+            }
+
             return plan is null
                 ? NotFoundResult<PlanViewV1>()
                 : new ManufacturingApiResult<PlanViewV1>(ManufacturingApiStatus.Ok, PlanView(plan), false, null);
         }
         catch (ManufacturingStoreException exception) when (exception.Code == ManufacturingStoreCodes.ConcurrentChange)
         {
+            var scope = await authority.RevalidatePermissionScopeAsync(
+                ErpPermissions.ManufacturingPlansRead, companyId, cancellationToken);
+            if (!scope.IsGranted || !HasCapturedContext(companyId, actorId))
+            {
+                return Denied<PlanViewV1>();
+            }
+
             return new ManufacturingApiResult<PlanViewV1>(ManufacturingApiStatus.Unavailable, null, false, null);
         }
     }
@@ -1134,7 +1465,7 @@ public sealed partial class ManufacturingCommandService(
     /// </summary>
     public async Task<ManufacturingApiResult<MassBalanceViewV1>> GetMassBalanceAsync(Guid orderId, CancellationToken cancellationToken)
     {
-        if (!HasContext())
+        if (!HasContext() || ActorGuid() is not { } actorId)
         {
             return Denied<MassBalanceViewV1>();
         }
@@ -1144,15 +1475,30 @@ public sealed partial class ManufacturingCommandService(
             return NotFoundResult<MassBalanceViewV1>();
         }
 
+        var companyId = companyContext.CompanyId;
         try
         {
             var order = await orders.FindOrderAsync(orderId, cancellationToken);
+            var scope = await authority.RevalidatePermissionScopeAsync(
+                ErpPermissions.ManufacturingOrdersRead, companyId, cancellationToken);
+            if (!scope.IsGranted || !HasCapturedContext(companyId, actorId))
+            {
+                return Denied<MassBalanceViewV1>();
+            }
+
             return order is null
                 ? NotFoundResult<MassBalanceViewV1>()
                 : new ManufacturingApiResult<MassBalanceViewV1>(ManufacturingApiStatus.Ok, MassBalanceView(order), false, null);
         }
         catch (ManufacturingStoreException exception) when (exception.Code == ManufacturingStoreCodes.ConcurrentChange)
         {
+            var scope = await authority.RevalidatePermissionScopeAsync(
+                ErpPermissions.ManufacturingOrdersRead, companyId, cancellationToken);
+            if (!scope.IsGranted || !HasCapturedContext(companyId, actorId))
+            {
+                return Denied<MassBalanceViewV1>();
+            }
+
             return new ManufacturingApiResult<MassBalanceViewV1>(ManufacturingApiStatus.Unavailable, null, false, null);
         }
     }
@@ -1190,7 +1536,7 @@ public sealed partial class ManufacturingCommandService(
         };
 
         return RunAsync<OrderViewV1>(permission, idempotencyKey, commandName, canonical, ManufacturingApiStatus.Ok,
-            async (metadata, _) =>
+            async (metadata, _, _) =>
             {
                 var mass = await VerifyAsync(kg, DateOnly.FromDateTime(occurredAt.UtcDateTime), "kg", cancellationToken);
                 if (mass.Refusal is not null)
@@ -1217,8 +1563,8 @@ public sealed partial class ManufacturingCommandService(
     /// </summary>
     private async Task<ManufacturingApiResult<T>> RunAsync<T>(string permission, string idempotencyKey, string commandName,
         object canonicalRequest, ManufacturingApiStatus successStatus,
-        Func<ManufacturingCommandMetadata, Guid, Task<ManufacturingApiResult<T>>> write, Func<object, T> view,
-        CancellationToken cancellationToken)
+        Func<ManufacturingCommandMetadata, Guid, Guid, Task<ManufacturingApiResult<T>>> write, Func<object, T> view,
+        CancellationToken cancellationToken, string? storedAnswerPermission = null)
         where T : class
     {
         if (!HasContext() || ActorGuid() is not { } actor)
@@ -1226,8 +1572,9 @@ public sealed partial class ManufacturingCommandService(
             return Denied<T>();
         }
 
-        var scope = await authority.RevalidatePermissionScopeAsync(permission, companyContext.CompanyId, cancellationToken);
-        if (!scope.IsGranted || !scope.IsCompanyWide || !HasContext())
+        var companyId = companyContext.CompanyId;
+        var scope = await authority.RevalidatePermissionScopeAsync(permission, companyId, cancellationToken);
+        if (!scope.IsGranted || !scope.IsCompanyWide || !HasCapturedContext(companyId, actor))
         {
             return Denied<T>();
         }
@@ -1236,10 +1583,46 @@ public sealed partial class ManufacturingCommandService(
         var keyHash = Sha256(idempotencyKey.Trim());
         var requestHash = Sha256(commandName + "|" + JsonSerializer.Serialize(canonicalRequest, Json));
 
+        async Task<ManufacturingApiResult<T>> AnswerStoredAsync(ManufacturingCommandRecord stored)
+        {
+            // The immutable answer may be released only while the original command grant and captured request
+            // identity still hold. Every ordinary and concurrent-winner replay passes through this helper.
+            if (await FenceCapturedAsync<T>(permission, companyId, actor, cancellationToken) is { } fenced)
+            {
+                return fenced;
+            }
+
+            // A reasoned close is still a privileged exception when its immutable answer is replayed or won by a
+            // concurrent attempt. Re-measure that dedicated grant after finding the record, against the company and
+            // actor captured above, in addition to the original command grant measured above.
+            if (storedAnswerPermission is not null)
+            {
+                if (string.IsNullOrWhiteSpace(storedAnswerPermission) || !HasCapturedContext(companyId, actor))
+                {
+                    return Denied<T>();
+                }
+
+                var storedAnswerScope = await authority.RevalidatePermissionScopeAsync(
+                    storedAnswerPermission, companyId, cancellationToken);
+                if (!storedAnswerScope.IsGranted || !storedAnswerScope.IsCompanyWide
+                    || !HasCapturedContext(companyId, actor))
+                {
+                    return Denied<T>();
+                }
+            }
+
+            return Answer<T>(stored, actorId, requestHash);
+        }
+
         // §4/§3: a stored answer for this command and key, after the fence and before any other read.
         if (await commands.FindCommandAsync(commandName, keyHash, cancellationToken) is { } prior)
         {
-            return Answer<T>(prior, actorId, requestHash);
+            return await AnswerStoredAsync(prior);
+        }
+
+        if (await FenceCapturedAsync<T>(permission, companyId, actor, cancellationToken) is { } preWriteFenced)
+        {
+            return preWriteFenced;
         }
 
         ManufacturingApiResult<T>? completed = null;
@@ -1255,7 +1638,7 @@ public sealed partial class ManufacturingCommandService(
         ManufacturingApiResult<T> result;
         try
         {
-            result = await write(metadata, actor);
+            result = await write(metadata, actor, companyId);
         }
         catch (ManufacturingInventoryRealizationPortException exception)
         {
@@ -1276,9 +1659,21 @@ public sealed partial class ManufacturingCommandService(
         catch (ManufacturingStoreException exception) when (exception.Code == ManufacturingStoreCodes.ConcurrentChange)
         {
             // §8: the same key's other attempt may have won; then its record is the answer.
-            return await commands.FindCommandAsync(commandName, keyHash, cancellationToken) is { } winner
-                ? Answer<T>(winner, actorId, requestHash)
-                : new ManufacturingApiResult<T>(ManufacturingApiStatus.Conflict, null, false, exception.Code);
+            if (await commands.FindCommandAsync(commandName, keyHash, cancellationToken) is { } winner)
+            {
+                return await AnswerStoredAsync(winner);
+            }
+
+            if (await FenceCapturedAsync<T>(permission, companyId, actor, cancellationToken) is { } noWinnerFenced)
+            {
+                return noWinnerFenced;
+            }
+
+            return new ManufacturingApiResult<T>(ManufacturingApiStatus.Conflict, null, false, exception.Code);
+        }
+        catch (ManufacturingStoreException exception) when (exception.Code == ManufacturingStoreCodes.AuthorityDenied)
+        {
+            result = Denied<T>();
         }
         catch (ManufacturingStoreException exception)
         {
@@ -1324,12 +1719,23 @@ public sealed partial class ManufacturingCommandService(
             // §8, one exit whatever the refusal: another attempt of this key may have committed while
             // this one ran (its rule, version or read then saw the winner's state). Its record is the
             // answer; only without one does this refusal stand.
-            return result.Status is ManufacturingApiStatus.Invalid or ManufacturingApiStatus.Denied
-                    or ManufacturingApiStatus.Unavailable
-                ? result
-                : await commands.FindCommandAsync(commandName, keyHash, cancellationToken) is { } winner
-                    ? Answer<T>(winner, actorId, requestHash)
-                    : result;
+            if (result.Status is ManufacturingApiStatus.Invalid or ManufacturingApiStatus.Denied
+                or ManufacturingApiStatus.Unavailable)
+            {
+                return result;
+            }
+
+            if (await commands.FindCommandAsync(commandName, keyHash, cancellationToken) is { } winner)
+            {
+                return await AnswerStoredAsync(winner);
+            }
+
+            if (await FenceCapturedAsync<T>(permission, companyId, actor, cancellationToken) is { } refusalFenced)
+            {
+                return refusalFenced;
+            }
+
+            return result;
         }
 
         try
@@ -1339,9 +1745,17 @@ public sealed partial class ManufacturingCommandService(
         }
         catch (ManufacturingStoreException exception) when (exception.Code == ManufacturingStoreCodes.ConcurrentChange)
         {
-            return await commands.FindCommandAsync(commandName, keyHash, cancellationToken) is { } winner
-                ? Answer<T>(winner, actorId, requestHash)
-                : result;
+            if (await commands.FindCommandAsync(commandName, keyHash, cancellationToken) is { } winner)
+            {
+                return await AnswerStoredAsync(winner);
+            }
+
+            if (await FenceCapturedAsync<T>(permission, companyId, actor, cancellationToken) is { } terminalFenced)
+            {
+                return terminalFenced;
+            }
+
+            return result;
         }
     }
 
@@ -1374,6 +1788,50 @@ public sealed partial class ManufacturingCommandService(
     {
         var scope = await authority.RevalidatePermissionScopeAsync(permission, companyContext.CompanyId, cancellationToken);
         return scope.IsGranted && scope.IsCompanyWide && HasContext() ? null : Denied<T>();
+    }
+
+    /// <summary>A fresh fence for the exact company and actor captured before an external owner await.</summary>
+    private async Task<ManufacturingApiResult<T>?> FenceCapturedAsync<T>(string permission, Guid companyId,
+        Guid actorId, CancellationToken cancellationToken)
+        where T : class
+    {
+        var scope = await authority.RevalidatePermissionScopeAsync(permission, companyId, cancellationToken);
+        return scope.IsGranted && scope.IsCompanyWide && HasCapturedContext(companyId, actorId)
+            ? null
+            : Denied<T>();
+    }
+
+    /// <summary>
+    /// Final policy-close authority measured for the company and actor captured by <see cref="RunAsync{T}"/>.
+    /// Each await is followed by the same-context check; an exception close must retain both grants.
+    /// </summary>
+    private async Task<bool> RevalidateClosePersistenceAuthorityAsync(Guid companyId, Guid actorId,
+        string closePermission, string? exceptionApprovalPermission, CancellationToken cancellationToken)
+    {
+        if (!HasCapturedContext(companyId, actorId))
+        {
+            return false;
+        }
+
+        var closeScope = await authority.RevalidatePermissionScopeAsync(
+            closePermission, companyId, cancellationToken);
+        if (!closeScope.IsGranted || !closeScope.IsCompanyWide || !HasCapturedContext(companyId, actorId))
+        {
+            return false;
+        }
+
+        if (exceptionApprovalPermission is not null)
+        {
+            var exceptionScope = await authority.RevalidatePermissionScopeAsync(
+                exceptionApprovalPermission, companyId, cancellationToken);
+            if (!exceptionScope.IsGranted || !exceptionScope.IsCompanyWide
+                || !HasCapturedContext(companyId, actorId))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private async Task<(Kilograms Value, ManufacturingApiResult<object>? Refusal)> VerifyAsync(decimal value, DateOnly effectiveOn,
@@ -1409,32 +1867,150 @@ public sealed partial class ManufacturingCommandService(
     }
 
     /// <summary>
-    /// Revalidates Inventory's exact label/version after this command's stored-answer lookup. The owner
-    /// decides draft selectability; Manufacturing only closes the cross-module result into its existing
-    /// status channel and verifies the successful answer still names this company and selection.
+    /// Resolves the exact authorized Counterparty party/account after the command's stored-answer lookup. The
+    /// caller's opaque versions are compared ordinally with the owner answer and then captured unchanged. A
+    /// malformed positive owner answer fails closed; Manufacturing neither repairs nor reinterprets it.
     /// </summary>
-    private async Task<ManufacturingApiResult<object>?> ValidateParentRollAsync(Guid labelId,
-        string expectedLabelVersion, string expectedVersionField, CancellationToken cancellationToken)
+    private async Task<(PlanCommercialContextSnapshotV1? Snapshot, ManufacturingApiResult<object>? Refusal)>
+        ReadCommercialContextAsync(PlanCommercialContextRequestV1? requested, int inputIndex, string permission,
+            Guid companyId, Guid actorId, CancellationToken cancellationToken)
     {
-        if (parentRolls is null)
+        if (requested is null)
         {
-            return new ManufacturingApiResult<object>(ManufacturingApiStatus.Unavailable, null, false,
-                InventoryParentRollCodesV1.Unavailable);
+            return (null, null);
+        }
+
+        if (partyAccounts is null)
+        {
+            return (null, new ManufacturingApiResult<object>(ManufacturingApiStatus.Unavailable, null, false,
+                CounterpartyProviderUnavailable));
+        }
+
+        CounterpartyManufacturingPartyAccountAnswerV1 answer;
+        try
+        {
+            answer = await partyAccounts.GetAuthorizedAsync(
+                requested.PartyId, requested.CompanyPartyAccountId, cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            if (await FenceCapturedAsync<object>(permission, companyId, actorId, cancellationToken) is { } fenced)
+            {
+                return (null, fenced);
+            }
+
+            return (null, new ManufacturingApiResult<object>(ManufacturingApiStatus.Unavailable, null, false,
+                CounterpartyProviderUnavailable));
+        }
+
+        if (await FenceCapturedAsync<object>(permission, companyId, actorId, cancellationToken) is { } ownerFenced)
+        {
+            return (null, ownerFenced);
+        }
+
+        if (answer.Outcome == CounterpartyManufacturingPartyAccountOutcomeV1.Denied)
+        {
+            return (null, Denied<object>());
+        }
+
+        if (answer.Outcome == CounterpartyManufacturingPartyAccountOutcomeV1.NotFound)
+        {
+            return (null, NotFoundResult<object>());
+        }
+
+        if (answer.Outcome != CounterpartyManufacturingPartyAccountOutcomeV1.Found
+            || answer.Account is not { } account
+            || account.PartyId != requested.PartyId
+            || account.CompanyAccountId != requested.CompanyPartyAccountId
+            || account.CompanyId != companyId
+            || string.IsNullOrEmpty(account.PartyVersion)
+            || string.IsNullOrEmpty(account.AccountVersion))
+        {
+            return (null, new ManufacturingApiResult<object>(ManufacturingApiStatus.Unavailable, null, false,
+                CounterpartyProviderUnavailable));
+        }
+
+        if (!string.Equals(account.PartyVersion, requested.PartyVersion, StringComparison.Ordinal))
+        {
+            return (null, new ManufacturingApiResult<object>(ManufacturingApiStatus.Conflict, null, false,
+                ManufacturingApiCodes.CommercialContextVersionConflict,
+                $"inputs[{inputIndex}].commercialContext.partyVersion"));
+        }
+
+        if (!string.Equals(account.AccountVersion, requested.AccountVersion, StringComparison.Ordinal))
+        {
+            return (null, new ManufacturingApiResult<object>(ManufacturingApiStatus.Conflict, null, false,
+                ManufacturingApiCodes.CommercialContextVersionConflict,
+                $"inputs[{inputIndex}].commercialContext.accountVersion"));
+        }
+
+        if (!account.PartyIsActive || !account.AccountIsActive
+            || (!account.HasCustomerRole && !account.HasTollingRole))
+        {
+            return (null, new ManufacturingApiResult<object>(ManufacturingApiStatus.Unprocessable, null, false,
+                ManufacturingApiCodes.CommercialContextIneligible,
+                $"inputs[{inputIndex}].commercialContext"));
+        }
+
+        return (new PlanCommercialContextSnapshotV1(
+            account.PartyId,
+            account.CompanyAccountId,
+            account.PartyVersion,
+            account.AccountVersion), null);
+    }
+
+    /// <summary>
+    /// Revalidates Inventory's exact label/version after this command's stored-answer lookup. Company-owned input
+    /// keeps the existing validator. A commercial input uses the already-authorized party as owner and this company
+    /// as custodian; Inventory still owns the exact stored position and draft-selectability decision.
+    /// </summary>
+    private async Task<(InventoryParentRollReferenceV1? Reference, ManufacturingApiResult<object>? Refusal)>
+        ValidateParentRollAsync(Guid labelId,
+        string expectedLabelVersion, string expectedVersionField, PlanCommercialContextSnapshotV1? commercialContext,
+        string permission, Guid companyId, Guid actorId, CancellationToken cancellationToken)
+    {
+        if ((commercialContext is null && parentRolls is null)
+            || (commercialContext is not null && contextualParentRolls is null))
+        {
+            return (null, new ManufacturingApiResult<object>(ManufacturingApiStatus.Unavailable, null, false,
+                InventoryParentRollCodesV1.Unavailable));
         }
 
         try
         {
-            var reference = await parentRolls.ValidateAsync(
-                new InventoryParentRollSelectionV1(labelId, expectedLabelVersion), cancellationToken);
-            return reference.CompanyId == companyContext.CompanyId
+            var reference = commercialContext is null
+                ? await parentRolls!.ValidateAsync(
+                    new InventoryParentRollSelectionV1(labelId, expectedLabelVersion), cancellationToken)
+                : await contextualParentRolls!.ValidateAsync(
+                    new InventoryContextualParentRollSelectionV1(
+                        labelId,
+                        expectedLabelVersion,
+                        new InventoryParentRollPositionContextV1(
+                            StockPartyKind.Counterparty,
+                            commercialContext.PartyId,
+                            StockPartyKind.Company,
+                            companyId)),
+                    cancellationToken);
+            if (await FenceCapturedAsync<object>(permission, companyId, actorId, cancellationToken) is { } fenced)
+            {
+                return (null, fenced);
+            }
+
+            return reference.CompanyId == companyId
                    && reference.LabelId == labelId
                    && string.Equals(reference.LabelVersion, expectedLabelVersion, StringComparison.Ordinal)
+                   && reference.ProductId != Guid.Empty
+                   && !string.IsNullOrWhiteSpace(reference.ProductVersion)
                    && reference.DraftSelectable
                    && reference.DraftRefusalCode is null
                    && reference.ProductionUseRequiresRevalidation
-                ? null
-                : new ManufacturingApiResult<object>(ManufacturingApiStatus.Unavailable, null, false,
-                    InventoryParentRollCodesV1.Unavailable);
+                ? (reference, null)
+                : (null, new ManufacturingApiResult<object>(ManufacturingApiStatus.Unavailable, null, false,
+                    InventoryParentRollCodesV1.Unavailable));
         }
         catch (OperationCanceledException)
         {
@@ -1442,7 +2018,12 @@ public sealed partial class ManufacturingCommandService(
         }
         catch (InventoryParentRollException exception)
         {
-            return exception switch
+            if (await FenceCapturedAsync<object>(permission, companyId, actorId, cancellationToken) is { } fenced)
+            {
+                return (null, fenced);
+            }
+
+            return (null, exception switch
             {
                 { StatusCode: 400, Code: InventoryParentRollCodesV1.InvalidVersion } =>
                     Invalid<object>(expectedVersionField),
@@ -1458,12 +2039,122 @@ public sealed partial class ManufacturingCommandService(
                     new ManufacturingApiResult<object>(ManufacturingApiStatus.Unavailable, null, false, exception.Code),
                 _ => new ManufacturingApiResult<object>(ManufacturingApiStatus.Unavailable, null, false,
                     InventoryParentRollCodesV1.Unavailable),
-            };
+            });
         }
         catch (Exception)
         {
-            return new ManufacturingApiResult<object>(ManufacturingApiStatus.Unavailable, null, false,
-                InventoryParentRollCodesV1.Unavailable);
+            if (await FenceCapturedAsync<object>(permission, companyId, actorId, cancellationToken) is { } fenced)
+            {
+                return (null, fenced);
+            }
+
+            return (null, new ManufacturingApiResult<object>(ManufacturingApiStatus.Unavailable, null, false,
+                InventoryParentRollCodesV1.Unavailable));
+        }
+    }
+
+    /// <summary>
+    /// Copies Product's positive answer for the exact Inventory-bound Product version. Product field
+    /// errors are the existing product-ineligible 422 on this parent-roll selection; denials disclose
+    /// no owner detail, and absent or malformed positive answers fail closed as unavailable.
+    /// </summary>
+    private async Task<(PlanTechnicalParameterSnapshotV1? Snapshot, ManufacturingApiResult<object>? Refusal)>
+        ReadTechnicalSnapshotAsync(InventoryParentRollReferenceV1 reference, DateOnly effectiveOn, string field,
+            string permission, Guid companyId, Guid actorId, CancellationToken cancellationToken)
+    {
+        if (productTechnicalSnapshots is null)
+        {
+            return (null, new ManufacturingApiResult<object>(ManufacturingApiStatus.Unavailable, null, false,
+                ProductTechnicalSnapshotUnavailable));
+        }
+
+        try
+        {
+            var answer = await productTechnicalSnapshots.ReadAsync(
+                new ProductManufacturingTechnicalSnapshotSelectionV1(
+                    reference.ProductId, reference.ProductVersion, effectiveOn), cancellationToken);
+            if (await FenceCapturedAsync<object>(permission, companyId, actorId, cancellationToken) is { } fenced)
+            {
+                return (null, fenced);
+            }
+
+            if (answer.Errors.Count > 0)
+            {
+                return (null, new ManufacturingApiResult<object>(ManufacturingApiStatus.Unprocessable, null, false,
+                    InventoryOpeningCodesV1.ProductIneligible, field));
+            }
+
+            if (answer.Snapshot is not { } snapshot
+                || snapshot.ProductId != reference.ProductId
+                || !string.Equals(snapshot.ProductVersion, reference.ProductVersion, StringComparison.Ordinal)
+                || snapshot.UnitKg.CompanyId != companyId
+                || snapshot.EffectiveOn != effectiveOn)
+            {
+                return (null, new ManufacturingApiResult<object>(ManufacturingApiStatus.Unavailable, null, false,
+                    ProductTechnicalSnapshotUnavailable));
+            }
+
+            return (new PlanTechnicalParameterSnapshotV1(
+                snapshot.ProductId,
+                snapshot.ProductVersion,
+                snapshot.Family.FamilyId,
+                snapshot.Family.FamilyCode,
+                snapshot.Family.SourceRevision,
+                snapshot.Template.TemplateId,
+                snapshot.Template.TemplateVersion,
+                snapshot.Template.TemplateCode,
+                snapshot.Template.SourceRevision,
+                snapshot.UnitKg.CompanyId,
+                snapshot.UnitKg.UnitId,
+                snapshot.UnitKg.UnitCode,
+                snapshot.UnitKg.ProfileId,
+                snapshot.UnitKg.ProfileVersion,
+                snapshot.EffectiveOn,
+                snapshot.ThicknessMm,
+                snapshot.WidthMm), null);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (ProductOperationException exception) when (exception.StatusCode is 401 or 403)
+        {
+            if (await FenceCapturedAsync<object>(permission, companyId, actorId, cancellationToken) is { } fenced)
+            {
+                return (null, fenced);
+            }
+
+            return (null, Denied<object>());
+        }
+        catch (ProductOperationException exception) when (exception.StatusCode == 503)
+        {
+            if (await FenceCapturedAsync<object>(permission, companyId, actorId, cancellationToken) is { } fenced)
+            {
+                return (null, fenced);
+            }
+
+            return (null, new ManufacturingApiResult<object>(ManufacturingApiStatus.Unavailable, null, false,
+                exception.Code));
+        }
+        catch (SettingsPrerequisiteException exception)
+        {
+            if (await FenceCapturedAsync<object>(permission, companyId, actorId, cancellationToken) is { } fenced)
+            {
+                return (null, fenced);
+            }
+
+            return (null, new ManufacturingApiResult<object>(ManufacturingApiStatus.Unavailable, null, false,
+                exception.Code));
+        }
+        catch (Exception)
+        {
+            if (await FenceCapturedAsync<object>(permission, companyId, actorId, cancellationToken) is { } fenced)
+            {
+                return (null, fenced);
+            }
+
+            return (null, new ManufacturingApiResult<object>(ManufacturingApiStatus.Unavailable, null, false,
+                ProductTechnicalSnapshotUnavailable));
         }
     }
 
@@ -1475,7 +2166,7 @@ public sealed partial class ManufacturingCommandService(
     /// </summary>
     private async Task<(ManufacturingProcess Value, ManufacturingApiResult<object>? Refusal)> ResolveProcessAsync(
         Guid workCenterId,
-        CancellationToken cancellationToken)
+        string permission, Guid companyId, Guid actorId, CancellationToken cancellationToken)
     {
         if (workCenters is null)
         {
@@ -1484,7 +2175,12 @@ public sealed partial class ManufacturingCommandService(
 
         try
         {
-            var reference = await workCenters.ReadAsync(companyContext.CompanyId, workCenterId, cancellationToken);
+            var reference = await workCenters.ReadAsync(companyId, workCenterId, cancellationToken);
+            if (await FenceCapturedAsync<object>(permission, companyId, actorId, cancellationToken) is { } fenced)
+            {
+                return (default, fenced);
+            }
+
             if (reference is null)
             {
                 return (default, new ManufacturingApiResult<object>(ManufacturingApiStatus.Unprocessable, null, false,
@@ -1512,6 +2208,11 @@ public sealed partial class ManufacturingCommandService(
         }
         catch (Exception)
         {
+            if (await FenceCapturedAsync<object>(permission, companyId, actorId, cancellationToken) is { } fenced)
+            {
+                return (default, fenced);
+            }
+
             return (default, new ManufacturingApiResult<object>(ManufacturingApiStatus.Unavailable, null, false, null));
         }
     }
@@ -1529,6 +2230,9 @@ public sealed partial class ManufacturingCommandService(
         companyContext.IsResolved && companyContext.CompanyId != Guid.Empty && currentUser.IsAuthenticated
         && !string.IsNullOrWhiteSpace(currentUser.UserId) && currentUser.CanAccessCompany(companyContext.CompanyId)
         && correlation.IsResolved;
+
+    private bool HasCapturedContext(Guid companyId, Guid actorId) =>
+        HasContext() && companyContext.CompanyId == companyId && ActorGuid() == actorId;
 
     private Guid? ActorGuid() => Guid.TryParse(currentUser.UserId, out var actor) && actor != Guid.Empty ? actor : null;
 
@@ -1586,15 +2290,38 @@ public sealed partial class ManufacturingCommandService(
 
     internal static PlanViewV1 PlanView(ProductionPlan plan) => new(
         plan.Id, plan.CompanyId, plan.WorkCenterId, plan.Process.ToString(), plan.Status.ToString(), plan.Version,
-        [.. plan.Inputs.Select(input => new PlannedInputViewV1(input.ParentRollId, Text(input.PlannedMass.Value)))],
+        [.. plan.Inputs.Select(input => new PlannedInputViewV1(input.ParentRollId, Text(input.PlannedMass.Value),
+            TechnicalSnapshotView(input.TechnicalSnapshot), CommercialContextView(input.CommercialContext)))],
         plan.Target is { } target ? new TargetViewV1(target.Basis.ToString(), Text(target.Mass.Value)) : null,
-        plan.ApprovedByUserId, plan.ApprovedAtUtc);
+        plan.ApprovedByUserId, plan.ApprovedAtUtc,
+        PlanPreviewView(plan.WorkCenterId, ProductionPlanCalculatorV1.Calculate(plan,
+            PlanCalculationParameters.FromCapturedSnapshots(plan.Inputs))));
+
+    private static CapturedPlanTechnicalSnapshotViewV1? TechnicalSnapshotView(
+        PlanTechnicalParameterSnapshotV1? snapshot) => snapshot is null ? null : new(
+        snapshot.ProductId,
+        snapshot.ProductVersion,
+        new(snapshot.FamilyId, snapshot.FamilyCode, snapshot.FamilySourceRevision),
+        new(snapshot.TemplateId, snapshot.TemplateVersion, snapshot.TemplateCode, snapshot.TemplateSourceRevision),
+        Text(snapshot.ThicknessMm),
+        Text(snapshot.WidthMm),
+        new(snapshot.KilogramUnitCompanyId, snapshot.KilogramUnitId, snapshot.KilogramUnitCode,
+            snapshot.KilogramProfileId, snapshot.KilogramProfileVersion),
+        snapshot.EffectiveOn);
+
+    private static CapturedPlanCommercialContextViewV1? CommercialContextView(
+        PlanCommercialContextSnapshotV1? snapshot) => snapshot is null ? null : new(
+        snapshot.PartyId,
+        snapshot.CompanyPartyAccountId,
+        snapshot.PartyVersion,
+        snapshot.AccountVersion);
 
     /// <summary>MFG-PLAN-EDIT: one history entry as text, with the same lossless kilogram text as the plan read.</summary>
     internal static PlanRevisionViewV1 PlanRevisionView(ManufacturingPlanRevision revision) => new(
         revision.Revision, revision.PlanVersion, revision.WorkCenterId,
         [.. revision.Inputs.Select(input => new PlanRevisionInputViewV1(input.ParentRollId, Text(input.PlannedMass.Value),
-            input.ExpectedLabelVersion?.ToString(CultureInfo.InvariantCulture)))],
+            input.ExpectedLabelVersion?.ToString(CultureInfo.InvariantCulture),
+            CommercialContextView(input.CommercialContext)))],
         revision.Target is { } target ? new TargetViewV1(target.Basis.ToString(), Text(target.Mass.Value)) : null,
         revision.Reason, revision.RevisedBy, revision.RecordedAtUtc);
 
@@ -1634,7 +2361,8 @@ public sealed partial class ManufacturingCommandService(
                     Text(balance.Returned.Value), Text(balance.NetIssued.Value),
                     Enum.GetValues<OutputClass>().ToDictionary(outputClass => outputClass.ToString(),
                         outputClass => Text(balance.OutputOf(outputClass).Value), StringComparer.Ordinal),
-                    Text(balance.WorkInProgress.Value), Text(balance.Unexplained), balance.IsFullyAccounted);
+                    Text(balance.WorkInProgress.Value), Text(balance.Unexplained), balance.IsFullyAccounted,
+                    CommercialContextView(input.CommercialContext));
             })],
             nameof(CostStatus.NotCalculated), order.ClosedByUserId, order.ClosedAtUtc);
     }

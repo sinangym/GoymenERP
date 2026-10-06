@@ -200,6 +200,9 @@ partial class SalesDbContextModelSnapshot : ModelSnapshot
             b.Property<string>("RefusalJson")
                 .HasColumnType("nvarchar(max)");
 
+            b.Property<string>("ResultJson")
+                .HasColumnType("nvarchar(max)");
+
             b.Property<string>("RequestHash")
                 .IsRequired()
                 .HasMaxLength(64)
@@ -226,8 +229,167 @@ partial class SalesDbContextModelSnapshot : ModelSnapshot
                 t.HasCheckConstraint(
                     "CK_DraftAttempts_Outcome",
                     "([Outcome] = 1 AND [DraftId] IS NOT NULL AND [DraftId] <> '00000000-0000-0000-0000-000000000000' AND [RefusalJson] IS NULL) OR ([Outcome] = 2 AND ([DraftId] IS NULL OR [DraftId] <> '00000000-0000-0000-0000-000000000000') AND [RefusalJson] IS NOT NULL AND ISJSON([RefusalJson]) = 1)");
+
+                t.HasCheckConstraint(
+                    "CK_DraftAttempts_Result",
+                    "([CommandName] = N'sales.order-draft.approve-price-floor-exceptions.v1' AND [Outcome] = 1 AND [ResultJson] IS NOT NULL AND ISJSON([ResultJson]) = 1) OR (([CommandName] <> N'sales.order-draft.approve-price-floor-exceptions.v1' OR [Outcome] <> 1) AND [ResultJson] IS NULL)");
             });
         });
+
+        modelBuilder.Entity("GoymenERP.Modules.Sales.Infrastructure.Persistence.DraftRemainderChangeRow", b =>
+            {
+                b.Property<Guid>("CompanyId")
+                    .HasColumnType("uniqueidentifier");
+
+                b.Property<Guid>("DraftId")
+                    .HasColumnType("uniqueidentifier");
+
+                b.Property<int>("ChangeNo")
+                    .HasColumnType("int");
+
+                b.Property<string>("CorrelationId")
+                    .IsRequired()
+                    .HasMaxLength(128)
+                    .HasColumnType("nvarchar(128)");
+
+                b.Property<decimal>("DeliveredQuantity")
+                    .HasPrecision(18, 3)
+                    .HasColumnType("decimal(18,3)");
+
+                b.Property<long>("DraftVersion")
+                    .HasColumnType("bigint");
+
+                b.Property<int>("Kind")
+                    .HasColumnType("int");
+
+                b.Property<Guid>("LineId")
+                    .HasColumnType("uniqueidentifier");
+
+                b.Property<int>("LineNo")
+                    .HasColumnType("int");
+
+                b.Property<decimal>("LoadedQuantity")
+                    .HasPrecision(18, 3)
+                    .HasColumnType("decimal(18,3)");
+
+                b.Property<string>("OrderedQuantityText")
+                    .IsRequired()
+                    .HasMaxLength(128)
+                    .HasColumnType("nvarchar(128)");
+
+                b.Property<string>("Reason")
+                    .IsRequired()
+                    .HasMaxLength(4000)
+                    .HasColumnType("nvarchar(4000)");
+
+                b.Property<DateTimeOffset>("RequestedAtUtc")
+                    .HasColumnType("datetimeoffset");
+
+                b.Property<string>("RequestedBy")
+                    .IsRequired()
+                    .HasMaxLength(128)
+                    .HasColumnType("nvarchar(128)");
+
+                b.Property<decimal?>("RequestedQuantity")
+                    .HasPrecision(18, 3)
+                    .HasColumnType("decimal(18,3)");
+
+                b.Property<string>("RequestedQuantityText")
+                    .HasMaxLength(128)
+                    .HasColumnType("nvarchar(128)");
+
+                b.Property<int>("Revision")
+                    .HasColumnType("int");
+
+                b.Property<decimal>("ShippedQuantity")
+                    .HasPrecision(18, 3)
+                    .HasColumnType("decimal(18,3)");
+
+                b.HasKey("CompanyId", "DraftId", "ChangeNo");
+
+                b.HasIndex("CompanyId", "DraftId", "DraftVersion")
+                    .IsUnique()
+                    .HasDatabaseName("UX_DraftRemainderChanges_DraftVersion");
+
+                b.HasIndex("CompanyId", "DraftId", "LineNo");
+
+                b.ToTable("DraftRemainderChanges", "sales", t =>
+                    {
+                        t.HasCheckConstraint("CK_DraftRemainderChanges_Floor", "[DeliveredQuantity] >= 0 AND [DeliveredQuantity] <= [ShippedQuantity] AND [ShippedQuantity] <= [LoadedQuantity] AND [ShippedQuantity] > 0");
+
+                        t.HasCheckConstraint("CK_DraftRemainderChanges_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [DraftId] <> '00000000-0000-0000-0000-000000000000' AND [LineId] <> '00000000-0000-0000-0000-000000000000' AND [ChangeNo] >= 1 AND [Revision] >= 0 AND [LineNo] >= 1 AND [DraftVersion] >= 5 AND LEN([OrderedQuantityText]) > 0 AND LEN([Reason]) > 0 AND LEN([RequestedBy]) > 0 AND LEN([CorrelationId]) > 0");
+
+                        t.HasCheckConstraint("CK_DraftRemainderChanges_Kind", "([Kind] = 1 AND [RequestedQuantity] IS NULL AND [RequestedQuantityText] IS NULL) OR ([Kind] = 2 AND [RequestedQuantity] > 0 AND [RequestedQuantityText] IS NOT NULL AND LEN([RequestedQuantityText]) > 0)");
+                    });
+            });
+
+        modelBuilder.Entity("GoymenERP.Modules.Sales.Infrastructure.Persistence.DraftRemainderDecisionRow", b =>
+            {
+                b.Property<Guid>("CompanyId")
+                    .HasColumnType("uniqueidentifier");
+
+                b.Property<Guid>("DraftId")
+                    .HasColumnType("uniqueidentifier");
+
+                b.Property<int>("ChangeNo")
+                    .HasColumnType("int");
+
+                b.Property<string>("CorrelationId")
+                    .IsRequired()
+                    .HasMaxLength(128)
+                    .HasColumnType("nvarchar(128)");
+
+                b.Property<DateTimeOffset>("DecidedAtUtc")
+                    .HasColumnType("datetimeoffset");
+
+                b.Property<string>("DecidedBy")
+                    .IsRequired()
+                    .HasMaxLength(128)
+                    .HasColumnType("nvarchar(128)");
+
+                b.Property<decimal?>("DeliveredQuantity")
+                    .HasPrecision(18, 3)
+                    .HasColumnType("decimal(18,3)");
+
+                b.Property<long>("DraftVersion")
+                    .HasColumnType("bigint");
+
+                b.Property<decimal?>("LoadedQuantity")
+                    .HasPrecision(18, 3)
+                    .HasColumnType("decimal(18,3)");
+
+                b.Property<int>("Outcome")
+                    .HasColumnType("int");
+
+                b.Property<string>("Reason")
+                    .HasMaxLength(4000)
+                    .HasColumnType("nvarchar(4000)");
+
+                b.Property<decimal?>("ResultQuantity")
+                    .HasPrecision(18, 3)
+                    .HasColumnType("decimal(18,3)");
+
+                b.Property<string>("ResultQuantityText")
+                    .HasMaxLength(128)
+                    .HasColumnType("nvarchar(128)");
+
+                b.Property<decimal?>("ShippedQuantity")
+                    .HasPrecision(18, 3)
+                    .HasColumnType("decimal(18,3)");
+
+                b.HasKey("CompanyId", "DraftId", "ChangeNo");
+
+                b.HasIndex("CompanyId", "DraftId", "DraftVersion")
+                    .IsUnique()
+                    .HasDatabaseName("UX_DraftRemainderDecisions_DraftVersion");
+
+                b.ToTable("DraftRemainderDecisions", "sales", t =>
+                    {
+                        t.HasCheckConstraint("CK_DraftRemainderDecisions_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [DraftId] <> '00000000-0000-0000-0000-000000000000' AND [ChangeNo] >= 1 AND [DraftVersion] >= 6 AND LEN([DecidedBy]) > 0 AND LEN([CorrelationId]) > 0");
+
+                        t.HasCheckConstraint("CK_DraftRemainderDecisions_Outcome", "([Outcome] = 2 AND [ResultQuantity] > 0 AND [ResultQuantityText] IS NOT NULL AND LEN([ResultQuantityText]) > 0 AND [Reason] IS NULL AND [LoadedQuantity] IS NOT NULL AND [ShippedQuantity] IS NOT NULL AND [DeliveredQuantity] IS NOT NULL AND [DeliveredQuantity] >= 0 AND [DeliveredQuantity] <= [ShippedQuantity] AND [ShippedQuantity] <= [LoadedQuantity] AND [ResultQuantity] >= [LoadedQuantity]) OR ([Outcome] = 3 AND [ResultQuantity] IS NULL AND [ResultQuantityText] IS NULL AND [LoadedQuantity] IS NULL AND [ShippedQuantity] IS NULL AND [DeliveredQuantity] IS NULL AND ([Reason] IS NULL OR LEN([Reason]) > 0))");
+                    });
+            });
 
         modelBuilder.Entity("GoymenERP.Modules.Sales.Infrastructure.Persistence.DraftRevisionLineRow", b =>
         {
@@ -255,6 +417,9 @@ partial class SalesDbContextModelSnapshot : ModelSnapshot
 
             b.Property<Guid?>("PriceUnitId")
                 .HasColumnType("uniqueidentifier");
+
+            b.Property<string>("PricingJson")
+                .HasColumnType("nvarchar(max)");
 
             b.Property<Guid>("ProductId")
                 .HasColumnType("uniqueidentifier");
@@ -284,6 +449,8 @@ partial class SalesDbContextModelSnapshot : ModelSnapshot
                     t.HasCheckConstraint("CK_DraftRevisionLines_Identity", "[LineNo] >= 1 AND [LineId] <> '00000000-0000-0000-0000-000000000000' AND [ProductId] <> '00000000-0000-0000-0000-000000000000' AND [OrderUnitId] <> '00000000-0000-0000-0000-000000000000' AND LEN([QuantityText]) > 0");
 
                     t.HasCheckConstraint("CK_DraftRevisionLines_Price", "([UnitPrice] IS NULL AND [PriceUnitId] IS NULL) OR ([UnitPrice] IS NOT NULL AND [PriceUnitId] IS NOT NULL)");
+
+                    t.HasCheckConstraint("CK_DraftRevisionLines_Pricing", "[PricingJson] IS NULL OR ([UnitPrice] IS NOT NULL AND ISJSON([PricingJson]) = 1)");
                 });
         });
 
@@ -613,6 +780,9 @@ partial class SalesDbContextModelSnapshot : ModelSnapshot
             b.Property<Guid?>("PriceUnitId")
                 .HasColumnType("uniqueidentifier");
 
+            b.Property<string>("PricingJson")
+                .HasColumnType("nvarchar(max)");
+
             b.Property<string>("ProductCode")
                 .IsRequired()
                 .HasMaxLength(128)
@@ -697,6 +867,10 @@ partial class SalesDbContextModelSnapshot : ModelSnapshot
                 t.HasCheckConstraint(
                     "CK_DraftLines_Price",
                     "([UnitPrice] IS NULL AND [PriceUnitId] IS NULL) OR ([UnitPrice] IS NOT NULL AND [PriceUnitId] IS NOT NULL)");
+
+                t.HasCheckConstraint(
+                    "CK_DraftLines_Pricing",
+                    "[PricingJson] IS NULL OR ([UnitPrice] IS NOT NULL AND ISJSON([PricingJson]) = 1)");
 
                 t.HasCheckConstraint(
                     "CK_DraftLines_Quantity",
@@ -784,6 +958,19 @@ partial class SalesDbContextModelSnapshot : ModelSnapshot
 
             b.Property<Guid>("CurrencyId")
                 .HasColumnType("uniqueidentifier");
+
+            b.Property<DateTimeOffset?>("CustomerAcceptedAtUtc")
+                .HasColumnType("datetimeoffset");
+
+            b.Property<string>("CustomerAcceptedBy")
+                .HasMaxLength(128)
+                .HasColumnType("nvarchar(128)");
+
+            b.Property<int?>("CustomerAcceptedRevision")
+                .HasColumnType("int");
+
+            b.Property<bool>("CustomerAcceptanceRequired")
+                .HasColumnType("bit");
 
             b.Property<DateTimeOffset?>("DecidedAtUtc")
                 .HasColumnType("datetimeoffset");
@@ -924,6 +1111,10 @@ partial class SalesDbContextModelSnapshot : ModelSnapshot
                     "([ApprovalState] = 1 AND [SubmittedBy] IS NULL AND [SubmittedAtUtc] IS NULL AND [DecidedBy] IS NULL AND [DecidedAtUtc] IS NULL AND [RejectionReason] IS NULL) OR ([ApprovalState] = 2 AND [SubmittedBy] IS NOT NULL AND LEN([SubmittedBy]) > 0 AND [SubmittedAtUtc] IS NOT NULL AND [DecidedBy] IS NULL AND [DecidedAtUtc] IS NULL AND [RejectionReason] IS NULL) OR ([ApprovalState] = 3 AND [SubmittedBy] IS NOT NULL AND LEN([SubmittedBy]) > 0 AND [SubmittedAtUtc] IS NOT NULL AND [DecidedBy] IS NOT NULL AND LEN([DecidedBy]) > 0 AND [DecidedAtUtc] IS NOT NULL AND [RejectionReason] IS NULL) OR ([ApprovalState] = 4 AND [SubmittedBy] IS NOT NULL AND LEN([SubmittedBy]) > 0 AND [SubmittedAtUtc] IS NOT NULL AND [DecidedBy] IS NOT NULL AND LEN([DecidedBy]) > 0 AND [DecidedAtUtc] IS NOT NULL AND ([RejectionReason] IS NULL OR LEN([RejectionReason]) > 0)) OR ([ApprovalState] = 5 AND [DecidedBy] IS NOT NULL AND LEN([DecidedBy]) > 0 AND [DecidedAtUtc] IS NOT NULL AND (([SubmittedBy] IS NULL AND [SubmittedAtUtc] IS NULL) OR ([SubmittedBy] IS NOT NULL AND LEN([SubmittedBy]) > 0 AND [SubmittedAtUtc] IS NOT NULL)) AND ([RejectionReason] IS NULL OR LEN([RejectionReason]) > 0))");
 
                 t.HasCheckConstraint(
+                    "CK_Drafts_CustomerAcceptance",
+                    "([CustomerAcceptanceRequired] = 0 AND [CustomerAcceptedRevision] IS NULL AND [CustomerAcceptedBy] IS NULL AND [CustomerAcceptedAtUtc] IS NULL) OR ([CustomerAcceptanceRequired] = 1 AND (([CustomerAcceptedRevision] IS NULL AND [CustomerAcceptedBy] IS NULL AND [CustomerAcceptedAtUtc] IS NULL) OR ([CustomerAcceptedRevision] IS NOT NULL AND [CustomerAcceptedRevision] >= 0 AND [CustomerAcceptedRevision] <= [Revision] AND ([CustomerAcceptedRevision] < [Revision] OR [ApprovalState] = 3) AND [CustomerAcceptedBy] IS NOT NULL AND LEN([CustomerAcceptedBy]) > 0 AND [CustomerAcceptedAtUtc] IS NOT NULL)))");
+
+                t.HasCheckConstraint(
                     "CK_Drafts_Identity",
                     "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [PartyId] <> '00000000-0000-0000-0000-000000000000' AND [CompanyAccountId] <> '00000000-0000-0000-0000-000000000000' AND [CurrencyId] <> '00000000-0000-0000-0000-000000000000' AND [MoneyProfileId] <> '00000000-0000-0000-0000-000000000000'");
 
@@ -977,6 +1168,31 @@ partial class SalesDbContextModelSnapshot : ModelSnapshot
                 .HasPrincipalKey("CompanyId", "Id")
                 .OnDelete(DeleteBehavior.Restrict);
         });
+
+        modelBuilder.Entity("GoymenERP.Modules.Sales.Infrastructure.Persistence.DraftRemainderChangeRow", b =>
+            {
+                b.HasOne("GoymenERP.Modules.Sales.Infrastructure.Persistence.DraftRow", null)
+                    .WithMany()
+                    .HasForeignKey("CompanyId", "DraftId")
+                    .HasPrincipalKey("CompanyId", "Id")
+                    .OnDelete(DeleteBehavior.Restrict)
+                    .IsRequired();
+
+                b.HasOne("GoymenERP.Modules.Sales.Infrastructure.Persistence.DraftLineRow", null)
+                    .WithMany()
+                    .HasForeignKey("CompanyId", "DraftId", "LineNo")
+                    .OnDelete(DeleteBehavior.Restrict)
+                    .IsRequired();
+            });
+
+        modelBuilder.Entity("GoymenERP.Modules.Sales.Infrastructure.Persistence.DraftRemainderDecisionRow", b =>
+            {
+                b.HasOne("GoymenERP.Modules.Sales.Infrastructure.Persistence.DraftRemainderChangeRow", null)
+                    .WithOne()
+                    .HasForeignKey("GoymenERP.Modules.Sales.Infrastructure.Persistence.DraftRemainderDecisionRow", "CompanyId", "DraftId", "ChangeNo")
+                    .OnDelete(DeleteBehavior.Restrict)
+                    .IsRequired();
+            });
 
         modelBuilder.Entity("GoymenERP.Modules.Sales.Infrastructure.Persistence.DraftRevisionLineRow", b =>
         {

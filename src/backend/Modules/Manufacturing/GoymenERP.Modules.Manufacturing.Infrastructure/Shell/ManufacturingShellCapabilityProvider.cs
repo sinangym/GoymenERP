@@ -40,12 +40,13 @@ public sealed class ManufacturingShellCapabilityProvider : IShellCapabilityProvi
     // 1.2 -> 1.3 (MFG-PLAN-LIST): the plan list route. 1.3 -> 1.4 (MFG-PLAN-EDIT): the plan edit control. The owner
     // contract version enters the canonical form of every declaration, so the accepted authority revisions move with it
     // in the central writer's round.
-    public const string OwnerContractVersion = "1.4";
+    public const string OwnerContractVersion = "1.5";
 
     public const string DetailCapabilityId = "manufacturing.orders.detail";
     public const string FactsCapabilityId = "manufacturing.orders.facts";
     public const string ListCapabilityId = "manufacturing.orders.list";
     public const string CloseCapabilityId = "manufacturing.orders.close";
+    public const string CloseExceptionApproveCapabilityId = "manufacturing.orders.close-exception-approve";
     public const string DetailRouteId = "manufacturing.order-detail";
     public const string DetailRoutePath = "/uretim/emir/:orderId";
     public const string DetailScreenId = "MFG-01";
@@ -145,6 +146,16 @@ public sealed class ManufacturingShellCapabilityProvider : IShellCapabilityProvi
                 CapabilityId = CloseCapabilityId,
                 ParentCapabilityId = DetailCapabilityId,
                 RequiredPermissions = [ErpPermissions.ManufacturingOrdersRead, ErpPermissions.ManufacturingOrdersClose],
+            },
+            detail with
+            {
+                CapabilityId = CloseExceptionApproveCapabilityId,
+                ParentCapabilityId = DetailCapabilityId,
+                RequiredPermissions =
+                [
+                    ErpPermissions.ManufacturingOrdersRead,
+                    ErpPermissions.ManufacturingOrdersCloseExceptionApprove,
+                ],
             },
             list,
             planCreate,

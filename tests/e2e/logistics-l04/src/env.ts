@@ -37,6 +37,8 @@ export interface L04Seed {
   readonly openLineId: string
   readonly shipmentAllocationId: string
   readonly shipmentLabelId: string
+  readonly shipmentReceiptAcceptanceId: string
+  readonly shipmentReceiptMovementId: string
 }
 
 export interface L04Environment {
@@ -89,12 +91,22 @@ export function readEnvironment(): L04Environment {
     openLineId: text(raw, 'openLineId', true),
     shipmentAllocationId: text(raw, 'shipmentAllocationId', true),
     shipmentLabelId: text(raw, 'shipmentLabelId', true),
+    shipmentReceiptAcceptanceId: text(raw, 'shipmentReceiptAcceptanceId', true),
+    shipmentReceiptMovementId: text(raw, 'shipmentReceiptMovementId', true),
   }
   if (new Set([seed.preparerActor, seed.loaderActor, seed.readerActor]).size !== 3) {
     throw new Error('BROWSER_E2E_L04_SEED binds the same actor to two roles')
   }
   if (seed.companyId === seed.otherCompanyId || seed.blockedLineId === seed.openLineId) {
     throw new Error('BROWSER_E2E_L04_SEED names the same company or line twice')
+  }
+  if (new Set([
+    seed.shipmentAllocationId,
+    seed.shipmentLabelId,
+    seed.shipmentReceiptAcceptanceId,
+    seed.shipmentReceiptMovementId,
+  ]).size !== 4) {
+    throw new Error('BROWSER_E2E_L04_SEED aliases receipt, label, or allocation identities')
   }
   return { apiBaseUrl, sqlConnection: required('BROWSER_E2E_SQL_CONNECTION'), testedCommit, seed }
 }

@@ -31,6 +31,10 @@ internal static class SalesDraftRows
             DecidedBy = draft.Approval.DecidedBy,
             DecidedAtUtc = draft.Approval.DecidedAtUtc,
             RejectionReason = draft.Approval.RejectionReason,
+            CustomerAcceptanceRequired = draft.CustomerAcceptanceRequired,
+            CustomerAcceptedRevision = draft.CustomerAcceptance?.Revision,
+            CustomerAcceptedBy = draft.CustomerAcceptance?.AcceptedBy,
+            CustomerAcceptedAtUtc = draft.CustomerAcceptance?.AcceptedAtUtc,
             PartyId = header.PartyId,
             CompanyAccountId = header.CompanyAccountId,
             CurrencyId = header.CurrencyId,
@@ -108,6 +112,7 @@ internal static class SalesDraftRows
                 UnitPrice = line.Commercial.UnitPrice,
                 PriceUnitId = line.Commercial.PriceUnitId,
                 DiscountPercent = line.Commercial.DiscountPercent,
+                PricingJson = SalesLinePricingJson.Serialize(line.Commercial),
             });
             var sliceNo = 0;
             foreach (var slice in line.RequestedDeliverySlices)

@@ -142,7 +142,8 @@ public sealed class InventoryGoodsReceiptParticipant : IInventoryGoodsReceiptPar
             lot = new MaterialLot(request.LotId, companyId, request.ProductId,
                 request.HeatNumber, request.CoilNumber);
             label = new MaterialLabel(request.LabelId, companyId, request.LabelCode, request.ProductId,
-                request.LotId, request.RequiredDocuments, request.HeatNumber, request.CoilNumber);
+                request.LotId, request.ExpectedProductVersion, request.RequiredDocuments,
+                request.HeatNumber, request.CoilNumber);
             position = new StockPosition(companyId, new StockOwner(request.OwnerKind, request.OwnerId),
                 new StockCustodian(request.CustodianKind, request.CustodianId), request.LocationId,
                 label, request.InitialBlock);

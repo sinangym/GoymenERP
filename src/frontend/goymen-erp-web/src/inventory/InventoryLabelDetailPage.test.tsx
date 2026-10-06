@@ -7,6 +7,7 @@ import { InventoryLabelDetailPage } from './InventoryLabelDetailPage'
 import type { InventoryLabelDetailWithMovementTimeline } from './labelDetailContract'
 import type { ViewOutcome } from '../shell/uiState'
 import { productDetailPath } from '../product/capabilities'
+import { inventoryOpeningDetailPath } from './capabilities'
 import { inventoryLabelDetailPath } from './labelDetailRoute'
 
 const COMPANY = '11111111-1111-1111-1111-111111111111'
@@ -21,11 +22,18 @@ const MOVEMENT = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
 const OTHER_COMPANY = '99999999-9999-9999-9999-999999999999'
 const clients: QueryClient[] = []
 const api = vi.hoisted(() => ({ detail: vi.fn() }))
+const documents = vi.hoisted(() => ({ panel: vi.fn() }))
 const scenario = vi.hoisted(() => ({
   companyId: '11111111-1111-1111-1111-111111111111', namespace: 'SENTETIK-a' as string | null,
-  generation: 1, canReadProduct: true, canReadLabel: true, report: vi.fn(),
+  generation: 1, canReadProduct: true, canReadLabel: true, canOpenOpening: true, report: vi.fn(),
 }))
 vi.mock('./labelDetailApi', () => ({ fetchInventoryLabelDetail: api.detail }))
+vi.mock('../documents/DocumentsPanel', () => ({
+  DocumentsPanel: (props: unknown) => {
+    documents.panel(props)
+    return <section data-testid="inventory-label-documents" />
+  },
+}))
 vi.mock('../shell/shellContext', () => ({
   useShellState: () => ({ sessionEpoch: 1, routeEntryGeneration: scenario.generation,
     activeContext: { userId: 'actor-a', companyId: scenario.companyId, scopeMode: 'single', capabilities: [] } }),
@@ -35,7 +43,8 @@ vi.mock('../shell/shellState', () => ({
   contextKeyString: (key: readonly string[]) => key[0],
   hasCapability: (_shell: unknown, capability: string) =>
     (capability === 'product.items.detail' && scenario.canReadProduct) ||
-    (capability === 'inventory.stock-positions.list' && scenario.canReadLabel),
+    (capability === 'inventory.stock-positions.list' && scenario.canReadLabel) ||
+    (capability === 'inventory.opening-stock.record' && scenario.canOpenOpening),
 }))
 vi.mock('../shell/useAuthBoundary', () => ({
   useAuthBoundary: () => ({ capture: () => ({ generation: scenario.generation }), report: scenario.report }),
@@ -45,7 +54,7 @@ function fixture(): InventoryLabelDetailWithMovementTimeline {
     labelVersion: '3',
     identity: {
       labelId: LABEL, companyId: COMPANY, code: 'LBL-100', productId: PRODUCT, lotId: LOT,
-      heatNumber: null, coilNumber: 'COIL-9', documentStatus: 'Complete', requiredDocuments: ['MTC'],
+      heatNumber: null, coilNumber: 'COIL-9', classification: null, documentStatus: 'Complete', requiredDocuments: ['MTC'],
       documents: [{ kind: 'MTC', attachedAtUtc: '2026-09-24T08:00:00Z' }],
       prints: [{ sequence: 1, printedAtUtc: '2026-09-24T08:01:00Z', reason: null }],
       lot: { id: LOT, heatNumber: 'HEAT-1', coilNumber: null },
@@ -86,6 +95,12 @@ function ProductRouteReceipt() {
     scenario.generation += 1; void navigate(-1)
   }}>Test back</button></>
 }
+function OpeningRouteReceipt() {
+  const { countId } = useParams(); const navigate = useNavigate()
+  return <><h1>Opening route: {countId}</h1><button type="button" onClick={() => {
+    scenario.generation += 1; void navigate(-1)
+  }}>Test opening back</button></>
+}
 function mount() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: 60_000 } } })
   clients.push(client)
@@ -93,6 +108,7 @@ function mount() {
     <Routes>
       <Route path="/stok/etiket/:labelId" element={<InventoryLabelDetailPage />} />
       <Route path="/urun/:productId" element={<ProductRouteReceipt />} />
+      <Route path="/stok/acilis/:countId" element={<OpeningRouteReceipt />} />
     </Routes>
   </MemoryRouter></QueryClientProvider>
   const view = render(element()); return { ...view, refresh: () => view.rerender(element()) }
@@ -101,8 +117,9 @@ const ready = () => screen.findByRole('heading', { name: 'LBL-100' })
 const productLink = () => screen.queryByRole('link', { name: 'Ürün kartı' })
 beforeEach(() => {
   scenario.companyId = COMPANY; scenario.namespace = 'SENTETIK-a'; scenario.generation = 1
-  scenario.canReadProduct = true; scenario.canReadLabel = true; scenario.report.mockReset()
+  scenario.canReadProduct = true; scenario.canReadLabel = true; scenario.canOpenOpening = true; scenario.report.mockReset()
   api.detail.mockReset().mockResolvedValue({ type: 'ok-single', data: fixture() })
+  documents.panel.mockReset()
 })
 afterEach(() => { cleanup(); clients.splice(0).forEach((client) => client.clear()) })
 
@@ -122,6 +139,31 @@ describe('InventoryLabelDetailPage', () => {
     expect(screen.getByRole('link', { name: 'LBL-100' }).getAttribute('href')).toBe(inventoryLabelDetailPath(LABEL))
     expect(screen.getByText('Gerekli belgeler: MTC')).not.toBeNull()
     expect(api.detail).toHaveBeenCalledWith(COMPANY, LABEL, expect.any(AbortSignal))
+    expect(documents.panel).toHaveBeenCalledWith({
+      ownerKind: 'inventory.material-label',
+      ownerId: LABEL,
+      companyId: COMPANY,
+      namespace: 'SENTETIK-a',
+      entryGeneration: 1,
+    })
+  })
+  it('renders transfer dispatch and acceptance movements in the existing timeline', async () => {
+    const base = fixture()
+    api.detail.mockResolvedValue({ type: 'ok-single', data: {
+      ...base,
+      movementTimeline: { ...base.movementTimeline, entries: [
+        { ...base.movementTimeline.entries[0], kind: 'TransferDispatch', lines: [
+          { ...base.movementTimeline.entries[0].lines[0], direction: 'Out' },
+        ] },
+        { ...base.movementTimeline.entries[0], movementId: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
+          kind: 'TransferAccept', lines: base.movementTimeline.entries[0].lines },
+      ] },
+    } })
+
+    mount(); await ready()
+
+    expect(screen.getByText('Transfer çıkışı')).not.toBeNull()
+    expect(screen.getByText('Transfer kabulü')).not.toBeNull()
   })
   it('keeps a forbidden read in the shared terminal error state', async () => {
     api.detail.mockResolvedValueOnce({ type: 'http', status: 403, body: { status: 403 } }); mount()
@@ -138,6 +180,45 @@ describe('InventoryLabelDetailPage', () => {
     await user.click(screen.getByRole('button', { name: 'Test back' })); await ready()
     await waitFor(() => expect(api.detail).toHaveBeenCalledTimes(2))
     expect(screen.getByText(LABEL)).toBeTruthy(); expect(screen.getByText('4', { selector: 'dd' })).toBeTruthy()
+  })
+  it('opens the stored opening-count source and rereads the same label on return', async () => {
+    const user = userEvent.setup(); mount(); await ready()
+    const link = screen.getByRole('link', { name: 'Açılış sayımını aç' })
+    expect(link.getAttribute('href')).toBe(inventoryOpeningDetailPath(TRANSFORMATION))
+    await user.click(link)
+    await screen.findByRole('heading', { name: `Opening route: ${TRANSFORMATION}` })
+    api.detail.mockResolvedValueOnce({ type: 'ok-single', data: { ...fixture(), labelVersion: '4' } })
+    await user.click(screen.getByRole('button', { name: 'Test opening back' })); await ready()
+    await waitFor(() => expect(api.detail).toHaveBeenCalledTimes(2))
+    expect(screen.getByText('4', { selector: 'dd' })).toBeTruthy()
+  })
+  it('keeps the opening source inert without its existing capability', async () => {
+    scenario.canOpenOpening = false; mount(); await ready()
+    expect(screen.queryByRole('link', { name: 'Açılış sayımını aç' })).toBeNull()
+    expect(screen.getByText('inventory.opening-count')).toBeTruthy()
+  })
+  it('keeps other source kinds inert even with the opening capability', async () => {
+    const data = fixture()
+    api.detail.mockResolvedValue({ type: 'ok-single', data: {
+      ...data, movementTimeline: { ...data.movementTimeline, entries: [{
+        ...data.movementTimeline.entries[0], kind: 'CountAdjustment', sourceKind: 'inventory.stock-count',
+        sourceLineId: null, sourceGrain: 'Whole',
+      }] },
+    } })
+    mount(); await ready()
+    expect(screen.queryByRole('link', { name: 'Açılış sayımını aç' })).toBeNull()
+    expect(screen.getByText('inventory.stock-count')).toBeTruthy()
+  })
+  it('keeps a non-receipt movement inert even with the opening source identity and capability', async () => {
+    const data = fixture()
+    api.detail.mockResolvedValue({ type: 'ok-single', data: {
+      ...data, movementTimeline: { ...data.movementTimeline, entries: [{
+        ...data.movementTimeline.entries[0], kind: 'CountAdjustment',
+      }] },
+    } })
+    mount(); await ready()
+    expect(screen.getByText('inventory.opening-count')).toBeTruthy()
+    expect(screen.queryByRole('link', { name: 'Açılış sayımını aç' })).toBeNull()
   })
   it('keeps the Product identity and card label inert without the Product detail capability', async () => {
     scenario.canReadProduct = false; mount(); await ready()
@@ -168,10 +249,12 @@ describe('InventoryLabelDetailPage', () => {
     api.detail.mockImplementationOnce(() => new Promise((done) => { resolve = done }))
     const view = mount(); await waitFor(() => expect(api.detail).toHaveBeenCalledTimes(1))
     scenario.companyId = OTHER_COMPANY; scenario.namespace = 'SENTETIK-b'
+    documents.panel.mockClear()
     api.detail.mockResolvedValue({ type: 'http', status: 404 }); view.refresh()
     await screen.findByText('Bulunamadı — etiket')
     await act(async () => resolve({ type: 'ok-single', data: fixture() }))
     expect(productLink()).toBeNull(); expect(screen.queryByText(PRODUCT)).toBeNull()
+    expect(documents.panel).not.toHaveBeenCalled()
   })
   it('reports 401 and hides all record navigation', async () => {
     api.detail.mockResolvedValueOnce({ type: 'http', status: 401 }); mount()

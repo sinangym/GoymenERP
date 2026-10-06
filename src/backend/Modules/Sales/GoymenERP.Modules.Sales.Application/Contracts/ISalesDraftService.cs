@@ -20,6 +20,8 @@ public interface ISalesDraftService
         SalesCommandMetadata metadata, CancellationToken cancellationToken = default);
     Task<SalesOrderDraftResponse> ApproveDraftAsync(Guid draftId, SalesDraftStateCommandRequest request,
         SalesCommandMetadata metadata, CancellationToken cancellationToken = default);
+    Task<SalesOrderDraftResponse> RecordCustomerAcceptanceAsync(Guid draftId, SalesDraftStateCommandRequest request,
+        SalesCommandMetadata metadata, CancellationToken cancellationToken = default);
     /// <summary>D2 (Sinan 5749046401): the preparer withdraws their OWN not-yet-approved draft — the create name plus identity (actor == creator); anyone else's is refused; approved is a 409.</summary>
     Task<SalesOrderDraftResponse> WithdrawDraftAsync(Guid draftId, SalesDraftStateCommandRequest request,
         SalesCommandMetadata metadata, CancellationToken cancellationToken = default);
@@ -32,6 +34,16 @@ public interface ISalesDraftService
     // advances to the next one, back in preparation; and the read of the archived revisions (`sales.drafts.read`).
     Task<SalesOrderDraftResponse> ReviseCommercialAsync(Guid draftId, SalesDraftCommercialRevisionRequest request,
         SalesCommandMetadata metadata, CancellationToken cancellationToken = default);
+    Task<SalesOrderDraftResponse> ApprovePriceFloorExceptionsAsync(Guid draftId,
+        SalesDraftPriceFloorExceptionApprovalRequest request, SalesCommandMetadata metadata,
+        CancellationToken cancellationToken = default);
+    /// <summary>AT-018 / AT-021: every line's reference, adjustments and net (price read).</summary>
+    Task<SalesOrderDraftLinePricingResponse> GetDraftLinePricingAsync(Guid draftId, CancellationToken cancellationToken = default);
+
+    /// <summary>AT-018: the Product owner's list prices for one line (price write).</summary>
+    Task<SalesOrderDraftPriceReferencesResponse> GetLinePriceReferencesAsync(Guid draftId, Guid lineId,
+        CancellationToken cancellationToken = default);
+
     Task<SalesOrderDraftRevisionsResponse> GetDraftRevisionsAsync(Guid draftId,
         CancellationToken cancellationToken = default);
 
@@ -61,6 +73,19 @@ public interface ISalesDraftService
     Task<SalesOrderDraftResponse> CancelDraftAsync(Guid draftId, SalesDraftCancelRequest request,
         SalesCommandMetadata metadata, CancellationToken cancellationToken = default);
     Task<SalesOrderDraftCancellationResponse> GetDraftCancellationAsync(Guid draftId,
+        CancellationToken cancellationToken = default);
+
+    // Partial delivery (user decision 2026-09-30) — the undelivered remainder of a partly delivered line is cancelled or
+    // its quantity revised: requested under `sales.orders.quantity.write`, approved or rejected under `sales.orders.approve`;
+    // the floor (loaded ≥ shipped ≥ delivered) is read from the delivery owner. The read of the lines' remainder facts and the
+    // recorded changes is under `sales.drafts.read`.
+    Task<SalesOrderDraftResponse> RequestRemainderChangeAsync(Guid draftId, SalesDraftRemainderChangeRequest request,
+        SalesCommandMetadata metadata, CancellationToken cancellationToken = default);
+    Task<SalesOrderDraftResponse> ApproveRemainderChangeAsync(Guid draftId, int changeNo, SalesDraftRemainderDecisionRequest request,
+        SalesCommandMetadata metadata, CancellationToken cancellationToken = default);
+    Task<SalesOrderDraftResponse> RejectRemainderChangeAsync(Guid draftId, int changeNo, SalesDraftRemainderDecisionRequest request,
+        SalesCommandMetadata metadata, CancellationToken cancellationToken = default);
+    Task<SalesOrderDraftRemainderChangesResponse> GetRemainderChangesAsync(Guid draftId,
         CancellationToken cancellationToken = default);
 }
 

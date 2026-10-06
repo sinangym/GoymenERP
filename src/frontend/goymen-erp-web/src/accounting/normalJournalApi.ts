@@ -30,6 +30,7 @@ export type NormalJournalFailure =
   | { readonly kind: 'content-conflict' }
   | { readonly kind: 'not-pending' }
   | { readonly kind: 'posting-conflict' }
+  | { readonly kind: 'preparation-version-conflict' }
   | { readonly kind: 'rule'; readonly code: string }
   | { readonly kind: 'unsupported-media' }
 
@@ -63,6 +64,9 @@ function failure(status: number, body: unknown): NormalJournalFailure | null {
   if (status === 409 && code === 'accounting_normal_journal_draft_content_conflict') return { kind: 'content-conflict' }
   if (status === 409 && code === 'accounting_normal_journal_draft_not_pending') return { kind: 'not-pending' }
   if (status === 409 && code === 'accounting_normal_journal_draft_posting_conflict') return { kind: 'posting-conflict' }
+  if (status === 409 && code === 'accounting_normal_journal_preparation_version_conflict') {
+    return { kind: 'preparation-version-conflict' }
+  }
   if (status === 409 && code === 'accounting_version_conflict') {
     return { kind: 'version-conflict', expectedVersion: version(body, 'expectedVersion'), currentVersion: version(body, 'currentVersion') }
   }

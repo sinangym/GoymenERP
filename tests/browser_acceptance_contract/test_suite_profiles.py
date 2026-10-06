@@ -249,6 +249,16 @@ ISSUER = {
     "ProductRuntime__IssuerExternalIdentityId": "5d0f7c2a-4b9e-4a53-8a2e-6c1d2f3a4b02",
 }
 
+MFG_API_READ_FIXTURE = {
+    "BrowserSuiteApi__Profile": "mfg",
+    "BrowserSuiteApi__Disposable": "CONFIRMED",
+    "BrowserSuiteApi__TestedCommit": COMMIT,
+    "BrowserSuiteApi__RunId": PROJECT.split("-")[-2],
+    "BrowserSuiteApi__ComposeProject": PROJECT,
+}
+
+ACC01_API_READ_FIXTURE = dict(MFG_API_READ_FIXTURE, BrowserSuiteApi__Profile="acc01")
+
 
 def actors(suite, count, start=2):
     result = {}
@@ -277,6 +287,32 @@ class SuiteExtensionTests(unittest.TestCase):
         without_identity = dict(browser.SUITE_API_EXTENSIONS["org03"], identity=False)
         with mock.patch.dict(browser.SUITE_API_EXTENSIONS, {"org03": without_identity}):
             browser.validate_suite_compose(extended("org03", actors("org03", 6)), "org03", COMMIT, PROJECT)
+
+    def test_mfg_api_read_fixture_requires_the_exact_disposable_run_binding(self):
+        no_identity = {"mfg": dict(browser.SUITE_API_EXTENSIONS["mfg"],
+                                   issuer=False, actors=False, identity=False)}
+        with mock.patch.dict(browser.SUITE_API_EXTENSIONS, no_identity):
+            browser.validate_suite_compose(
+                extended("mfg", MFG_API_READ_FIXTURE), "mfg", COMMIT, PROJECT)
+            for key in MFG_API_READ_FIXTURE:
+                with self.subTest(key=key):
+                    broken = dict(MFG_API_READ_FIXTURE)
+                    broken[key] = "wrong"
+                    with self.assertRaises(browser.ContractError):
+                        browser.validate_suite_compose(extended("mfg", broken), "mfg", COMMIT, PROJECT)
+
+    def test_acc01_api_read_fixture_requires_the_exact_disposable_run_binding(self):
+        no_identity = {"acc01": dict(browser.SUITE_API_EXTENSIONS["acc01"],
+                                     issuer=False, actors=False, identity=False)}
+        with mock.patch.dict(browser.SUITE_API_EXTENSIONS, no_identity):
+            browser.validate_suite_compose(
+                extended("acc01", ACC01_API_READ_FIXTURE), "acc01", COMMIT, PROJECT)
+            for key in ACC01_API_READ_FIXTURE:
+                with self.subTest(key=key):
+                    broken = dict(ACC01_API_READ_FIXTURE)
+                    broken[key] = "wrong"
+                    with self.assertRaises(browser.ContractError):
+                        browser.validate_suite_compose(extended("acc01", broken), "acc01", COMMIT, PROJECT)
 
     def test_an_extension_is_refused_for_a_suite_whose_list_does_not_allow_it(self):
         cases = (

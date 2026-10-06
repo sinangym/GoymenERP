@@ -56,7 +56,8 @@ public sealed partial class InventoryStore(
     IAuditEventCollector auditEvents,
     InventoryKilogramScale kilogramScale,
     TimeProvider timeProvider) : IInventoryLotStore, IInventoryLabelStore, IInventoryMovementStore, IInventoryOpeningStore,
-    IInventoryPhysicalAllocationWriterV1, IInventoryLabelGenealogyWriterV1, IInventoryLabelGenealogyReaderV1
+    IInventoryPhysicalAllocationWriterV1, IInventoryLabelGenealogyWriterV1, IInventoryLabelGenealogyReaderV1,
+    IInventoryLabelClassificationWriterV1
 {
     private const string LotEntityType = "Inventory.MaterialLot";
     private const string LabelEntityType = "Inventory.MaterialLabel";
@@ -170,6 +171,7 @@ public sealed partial class InventoryStore(
         var now = timeProvider.GetUtcNow();
         if (stored is null)
         {
+            RequireNewLabelFits(label);
             var lotProductId = lotOfThisCall is not null && lotOfThisCall.Id == label.LotId
                 ? lotOfThisCall.ProductId
                 : await dbContext.Lots.AsNoTracking().Where(row => row.Id == label.LotId)
@@ -186,6 +188,7 @@ public sealed partial class InventoryStore(
                 CompanyId = label.CompanyId,
                 Code = label.Code,
                 ProductId = label.ProductId,
+                ProductVersion = label.ProductVersion,
                 LotId = label.LotId,
                 HeatNumber = label.HeatNumber,
                 CoilNumber = label.CoilNumber,
@@ -435,11 +438,32 @@ public sealed partial class InventoryStore(
     /// audited actor. Book = count at opening: every balance written here is exactly its counted kilograms.
     /// </summary>
     public async Task<InventoryWriteOutcome> RecordAsync(OpeningCount count, InventoryCommandMetadata metadata,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default, InventoryOpeningOwnerProofV1? ownerProof = null)
     {
         ArgumentNullException.ThrowIfNull(count);
         RequireMetadata(metadata);
         RequireCompany(count.CompanyId);
+        if (count.Owner.Kind == StockPartyKind.Counterparty && ownerProof is null)
+        {
+            throw Refused(InventoryOpeningCodesV1.OwnerAccountUnavailable,
+                "Müşteri mülkiyetli açılış, doğrulanmış şirket hesabı kanıtı olmadan kaydedilemez.");
+        }
+
+        if (count.Owner.Kind == StockPartyKind.Counterparty && ownerProof is not null
+            && (ownerProof.CompanyPartyAccountId == Guid.Empty
+                || string.IsNullOrWhiteSpace(ownerProof.PartyVersion)
+                || string.IsNullOrWhiteSpace(ownerProof.AccountVersion)))
+        {
+            throw Refused(InventoryStoreCodes.ValueDoesNotFit,
+                "Müşteri mülkiyetli açılışın doğrulama kanıtı eksik veya geçersizdir.");
+        }
+
+        if (count.Owner.Kind == StockPartyKind.Company && ownerProof is not null)
+        {
+            throw Refused(InventoryStoreCodes.ValueDoesNotFit,
+                "Şirket mülkiyetli açılış, müşteri hesabı kanıtı taşıyamaz.");
+        }
+
         foreach (var line in count.Lines)
         {
             RequireLotFits(line.Lot);
@@ -452,9 +476,30 @@ public sealed partial class InventoryStore(
             .SingleOrDefaultAsync(row => row.Id == count.Id, cancellationToken);
         if (stored is not null)
         {
-            return string.Equals(stored.ContentHash, hash, StringComparison.Ordinal)
-                ? InventoryWriteOutcome.Replayed
-                : throw Refused(InventoryStoreCodes.OpeningConflict, "Aynı açılış sayımı kimliği farklı içerikle verildi.");
+            if (string.Equals(stored.ContentHash, hash, StringComparison.Ordinal))
+            {
+                return InventoryWriteOutcome.Replayed;
+            }
+
+            var isCompanyOwned = count.Owner.Kind == StockPartyKind.Company && count.Owner.Id == count.CompanyId
+                && count.Custodian.Kind == StockPartyKind.Company && count.Custodian.Id == count.CompanyId;
+            if (isCompanyOwned && string.Equals(stored.ContentHash, CompanyOwnedOpeningHash(count), StringComparison.Ordinal))
+            {
+                return InventoryWriteOutcome.Replayed;
+            }
+
+            if (isCompanyOwned && string.Equals(stored.ContentHash, LegacyOpeningHash(count), StringComparison.Ordinal)
+                && await IsLegacyOpeningWithoutProductVersionAsync(count.Id, count.Lines.Count, cancellationToken))
+            {
+                return InventoryWriteOutcome.Replayed;
+            }
+
+            throw Refused(InventoryStoreCodes.OpeningConflict, "Aynı açılış sayımı kimliği farklı içerikle verildi.");
+        }
+
+        foreach (var line in count.Lines)
+        {
+            RequireNewLabelFits(line.Label);
         }
 
         // Counted kilograms against the company's approved kg profile on the counted-on date (fail-closed).
@@ -518,6 +563,7 @@ public sealed partial class InventoryStore(
                 CompanyId = label.CompanyId,
                 Code = label.Code,
                 ProductId = label.ProductId,
+                ProductVersion = label.ProductVersion,
                 LotId = label.LotId,
                 HeatNumber = label.HeatNumber,
                 CoilNumber = label.CoilNumber,
@@ -626,7 +672,7 @@ public sealed partial class InventoryStore(
             CorrelationId = metadata.CorrelationId.Trim(),
         });
         Audit(metadata, count.CompanyId, OpeningCountEntityType, count.Id, "inventory.opening-count.recorded.v1", "Record",
-            versionBefore: null, versionAfter: 1, before: "{}", after: OpeningAudit(count, hash), "Açılış sayımı");
+            versionBefore: null, versionAfter: 1, before: "{}", after: OpeningAudit(count, hash, ownerProof), "Açılış sayımı");
         await SaveAsync(cancellationToken);
         return InventoryWriteOutcome.Recorded;
     }
@@ -649,7 +695,37 @@ public sealed partial class InventoryStore(
         var lotIds = lines.Select(line => line.LotId).Distinct().ToArray();
         var lots = (await dbContext.Lots.AsNoTracking().Where(lot => lotIds.Contains(lot.Id)).ToListAsync(cancellationToken))
             .ToDictionary(lot => lot.Id, ToLot);
+        var lineIds = lines.Select(line => line.LineId).ToArray();
+        var positions = await dbContext.MovementLines.AsNoTracking()
+            .Join(dbContext.Movements.AsNoTracking()
+                    .Where(movement => movement.SourceKind == OpeningCount.SourceKind && movement.SourceId == countId),
+                line => line.MovementId,
+                movement => movement.Id,
+                (line, movement) => new { Line = line, Movement = movement })
+            .Where(pair => lineIds.Contains(pair.Line.MovementId)
+                && pair.Movement.SourceLineId == pair.Line.MovementId
+                && pair.Line.Direction == (int)StockDirection.In)
+            .Select(pair => pair.Line)
+            .ToListAsync(cancellationToken);
+        if (positions.Count != lines.Count || positions.Any(position => position.LineNumber != 1
+                || position.CompanyId != row.CompanyId || position.LocationId != row.LocationId)
+            || lines.Any(line => !positions.Any(position => position.MovementId == line.LineId
+                && position.LabelId == line.LabelId)))
+        {
+            throw new InvalidOperationException("Kayıtlı açılış sayımının stok pozisyonu eksik veya tutarsızdır.");
+        }
+
+        var ownership = positions.Select(position => (position.OwnerKind, position.OwnerId,
+                position.CustodianKind, position.CustodianId)).Distinct().ToArray();
+        if (ownership.Length != 1)
+        {
+            throw new InvalidOperationException("Kayıtlı açılış sayımının mal sahibi/gözeten bağlamı karışıktır.");
+        }
+
+        var physical = ownership[0];
         return new OpeningCount(row.Id, row.CompanyId, row.LocationId, row.CountedOn, row.SheetReference,
+            new StockOwner((StockPartyKind)physical.OwnerKind, physical.OwnerId),
+            new StockCustodian((StockPartyKind)physical.CustodianKind, physical.CustodianId),
             lines.Select(line => new OpeningCountLine(line.LineId, lots[line.LotId], labels[line.LabelId],
                 Kilograms.Positive(line.QuantityKg))));
     }
@@ -807,11 +883,12 @@ public sealed partial class InventoryStore(
         var documents = await dbContext.LabelDocuments.AsNoTracking().Where(row => ids.Contains(row.LabelId))
             .ToListAsync(cancellationToken);
         return rows.ToDictionary(row => row.Id, row => MaterialLabel.Restore(row.Id, row.CompanyId, row.Code, row.ProductId,
-            row.LotId, JsonSerializer.Deserialize<string[]>(row.RequiredDocumentsJson, Json)
+            row.LotId, row.ProductVersion, JsonSerializer.Deserialize<string[]>(row.RequiredDocumentsJson, Json)
                 ?? throw new InvalidOperationException("Kayıtlı etiketin belge gereksinimi okunamadı."),
             row.HeatNumber, row.CoilNumber,
             prints.Where(print => print.LabelId == row.Id).OrderBy(print => print.Sequence).Select(ToPrint),
-            documents.Where(document => document.LabelId == row.Id).OrderBy(document => document.Sequence).Select(ToAttachment)));
+            documents.Where(document => document.LabelId == row.Id).OrderBy(document => document.Sequence).Select(ToAttachment),
+            row.Classification is null ? null : (LabelClassification)row.Classification.Value));
     }
 
     private void AddPrints(MaterialLabel label, int fromSequence)
@@ -926,6 +1003,37 @@ public sealed partial class InventoryStore(
         }
     }
 
+    private static void RequireNewLabelFits(MaterialLabel label)
+    {
+        RequireLabelFits(label);
+        if (label.ProductVersion is null)
+        {
+            throw Refused(InventoryStoreCodes.ValueDoesNotFit,
+                "Etiket yeni bir stok etkisine kaydedilirken ürün sürümü zorunludur.");
+        }
+    }
+
+    private async Task<bool> IsLegacyOpeningWithoutProductVersionAsync(Guid countId, int expectedLineCount,
+        CancellationToken cancellationToken)
+    {
+        var labelIds = await dbContext.OpeningCountLines.AsNoTracking()
+            .Where(row => row.CountId == countId)
+            .Select(row => row.LabelId)
+            .ToListAsync(cancellationToken);
+        if (labelIds.Count != expectedLineCount || labelIds.Count == 0
+            || labelIds.Distinct().Count() != labelIds.Count)
+        {
+            return false;
+        }
+
+        var productVersions = await dbContext.Labels.AsNoTracking()
+            .Where(row => labelIds.Contains(row.Id))
+            .Select(row => row.ProductVersion)
+            .ToListAsync(cancellationToken);
+        return productVersions.Count == labelIds.Count
+            && productVersions.All(productVersion => productVersion is null);
+    }
+
     private static void RequireLotFits(MaterialLot lot)
     {
         if ((lot.HeatNumber?.Length ?? 0) > MaterialLot.MaximumTraceLength
@@ -950,7 +1058,9 @@ public sealed partial class InventoryStore(
     /// <summary>A replay repeats the stored facts exactly; the code's spelling included.</summary>
     private static bool SameIdentity(LabelRow row, MaterialLabel label) =>
         row.CompanyId == label.CompanyId && string.Equals(row.Code, label.Code, StringComparison.Ordinal)
-        && row.ProductId == label.ProductId && row.LotId == label.LotId
+        && row.ProductId == label.ProductId
+        && string.Equals(row.ProductVersion, label.ProductVersion, StringComparison.Ordinal)
+        && row.LotId == label.LotId
         && string.Equals(row.HeatNumber, label.HeatNumber, StringComparison.Ordinal)
         && string.Equals(row.CoilNumber, label.CoilNumber, StringComparison.Ordinal)
         && string.Equals(row.RequiredDocumentsJson,
@@ -967,8 +1077,16 @@ public sealed partial class InventoryStore(
         new MaterialLot(row.Id, row.CompanyId, row.ProductId, row.HeatNumber, row.CoilNumber);
 
     /// <summary>The label facts a position needs (company, product, id); prints and documents do not matter there.</summary>
-    private static MaterialLabel IdentityOnly(LabelRow row) =>
-        new MaterialLabel(row.Id, row.CompanyId, row.Code, row.ProductId, row.LotId);
+    private static MaterialLabel IdentityOnly(LabelRow row)
+    {
+        var label = new MaterialLabel(row.Id, row.CompanyId, row.Code, row.ProductId, row.LotId, row.ProductVersion);
+        if (row.Classification is { } classification)
+        {
+            label.Classify((LabelClassification)classification);
+        }
+
+        return label;
+    }
 
     private static StockPosition Position(Guid companyId, int ownerKind, Guid ownerId, int custodianKind, Guid custodianId,
         Guid locationId, MaterialLabel label, int block) =>
@@ -1037,6 +1155,69 @@ public sealed partial class InventoryStore(
     {
         var canonical = JsonSerializer.Serialize(new
         {
+            owner = new { kind = count.Owner.Kind.ToString(), count.Owner.Id },
+            custodian = new { kind = count.Custodian.Kind.ToString(), count.Custodian.Id },
+            locationId = count.LocationId,
+            countedOn = count.CountedOn.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+            sheetReference = count.SheetReference,
+            lines = count.Lines.Select(line => new
+            {
+                id = line.Id,
+                quantityKg = line.Quantity.ToString(),
+                lot = new { id = line.Lot.Id, productId = line.Lot.ProductId, heat = line.Lot.HeatNumber, coil = line.Lot.CoilNumber },
+                label = new
+                {
+                    id = line.Label.Id,
+                    code = line.Label.Code,
+                    productVersion = line.Label.ProductVersion,
+                    heat = line.Label.HeatNumber,
+                    coil = line.Label.CoilNumber,
+                    requiredDocuments = line.Label.RequiredDocuments.Order(StringComparer.Ordinal),
+                    prints = line.Label.Prints.Count,
+                    documents = line.Label.DocumentAttachments.Count,
+                },
+            }),
+        }, Json);
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical))).ToLowerInvariant();
+    }
+
+    /// <summary>The immediately previous Company/Company hash, before ownership became explicit.</summary>
+    internal static string CompanyOwnedOpeningHash(OpeningCount count)
+    {
+        var canonical = JsonSerializer.Serialize(new
+        {
+            locationId = count.LocationId,
+            countedOn = count.CountedOn.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+            sheetReference = count.SheetReference,
+            lines = count.Lines.Select(line => new
+            {
+                id = line.Id,
+                quantityKg = line.Quantity.ToString(),
+                lot = new { id = line.Lot.Id, productId = line.Lot.ProductId, heat = line.Lot.HeatNumber, coil = line.Lot.CoilNumber },
+                label = new
+                {
+                    id = line.Label.Id,
+                    code = line.Label.Code,
+                    productVersion = line.Label.ProductVersion,
+                    heat = line.Label.HeatNumber,
+                    coil = line.Label.CoilNumber,
+                    requiredDocuments = line.Label.RequiredDocuments.Order(StringComparer.Ordinal),
+                    prints = line.Label.Prints.Count,
+                    documents = line.Label.DocumentAttachments.Count,
+                },
+            }),
+        }, Json);
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical))).ToLowerInvariant();
+    }
+
+    /// <summary>
+    /// Canonical opening identity used before label ProductVersion became durable. It is accepted only when the
+    /// stored opening's labels still have null provenance; it is never written for a new opening or used to backfill.
+    /// </summary>
+    internal static string LegacyOpeningHash(OpeningCount count)
+    {
+        var canonical = JsonSerializer.Serialize(new
+        {
             locationId = count.LocationId,
             countedOn = count.CountedOn.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
             sheetReference = count.SheetReference,
@@ -1060,10 +1241,18 @@ public sealed partial class InventoryStore(
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical))).ToLowerInvariant();
     }
 
-    private static string OpeningAudit(OpeningCount count, string hash) => JsonSerializer.Serialize(new
+    private static string OpeningAudit(OpeningCount count, string hash, InventoryOpeningOwnerProofV1? ownerProof) => JsonSerializer.Serialize(new
     {
         count.Id,
         count.LocationId,
+        owner = new { kind = count.Owner.Kind.ToString(), count.Owner.Id },
+        custodian = new { kind = count.Custodian.Kind.ToString(), count.Custodian.Id },
+        ownerAccount = ownerProof is null ? null : new
+        {
+            ownerProof.CompanyPartyAccountId,
+            ownerProof.PartyVersion,
+            ownerProof.AccountVersion,
+        },
         countedOn = count.CountedOn.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
         count.SheetReference,
         lines = count.Lines.Count,
@@ -1083,7 +1272,9 @@ public sealed partial class InventoryStore(
         label.Id,
         label.Code,
         label.ProductId,
+        label.ProductVersion,
         label.LotId,
+        classification = label.Classification?.ToString(),
         requiredDocuments = label.RequiredDocuments.Order(StringComparer.Ordinal),
         documentStatus = label.DocumentStatus.ToString(),
         prints = label.Prints.Count,

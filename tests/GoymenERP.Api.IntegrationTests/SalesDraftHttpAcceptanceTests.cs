@@ -152,7 +152,8 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
     private static SalesOrderDraftDetailView Detail(Guid draftId, string approvalState = "Preparing") => new(
         new SalesOrderDraftSummaryView(draftId, CompanyA, "SO-2026-000001", "Order", "Draft", "1", "Rev.0", Guid.NewGuid(), Guid.NewGuid(),
             Guid.NewGuid(), new DateOnly(2026, 9, 18), new DateTimeOffset(2026, 9, 18, 14, 0, 0, TimeSpan.Zero), 0, approvalState),
-        null, null, [], null, null, null, null, null, null, new SalesDraftApprovalV1(null, null, null, null, null), false, false);
+        null, null, [], null, null, null, null, null, null, new SalesDraftApprovalV1(null, null, null, null, null),
+        new SalesDraftCustomerAcceptanceV1(false, null, null, null, false), false, false);
 
     private WebApplicationFactory<Program> CreateHost(ISalesDraftService service) => factory.WithWebHostBuilder(builder =>
         builder.ConfigureTestServices(services =>
@@ -207,10 +208,23 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
             return Commercial(draftId, request);
         }
 
+        public Task<SalesOrderDraftResponse> ApprovePriceFloorExceptionsAsync(Guid draftId,
+            SalesDraftPriceFloorExceptionApprovalRequest request, SalesCommandMetadata metadata,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(new SalesOrderDraftResponse(Detail(draftId), false, "SENTETIK-corr"));
+
         public Func<Guid, Task<SalesOrderDraftRevisionsResponse>> Revisions { get; set; } =
             _ => Task.FromResult(new SalesOrderDraftRevisionsResponse([]));
 
         public List<Guid> RevisionReads { get; } = [];
+
+        /// <summary>AT-018: the HTTP surface of the line-pricing reads is proven with the real service; the stub answers 404.</summary>
+        public Task<SalesOrderDraftLinePricingResponse> GetDraftLinePricingAsync(Guid draftId, CancellationToken cancellationToken = default) =>
+            Task.FromException<SalesOrderDraftLinePricingResponse>(new SalesDraftServiceException(404, "not_found"));
+
+        public Task<SalesOrderDraftPriceReferencesResponse> GetLinePriceReferencesAsync(Guid draftId, Guid lineId,
+            CancellationToken cancellationToken = default) =>
+            Task.FromException<SalesOrderDraftPriceReferencesResponse>(new SalesDraftServiceException(404, "not_found"));
 
         public Task<SalesOrderDraftRevisionsResponse> GetDraftRevisionsAsync(Guid draftId, CancellationToken cancellationToken = default)
         {
@@ -265,6 +279,10 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
         public Task<SalesOrderDraftResponse> ApproveDraftAsync(Guid draftId, SalesDraftStateCommandRequest request, SalesCommandMetadata metadata,
             CancellationToken cancellationToken = default) => StateAsync("approve", draftId, request, metadata);
 
+        public Task<SalesOrderDraftResponse> RecordCustomerAcceptanceAsync(Guid draftId, SalesDraftStateCommandRequest request,
+            SalesCommandMetadata metadata, CancellationToken cancellationToken = default) =>
+            StateAsync("customer-acceptance", draftId, request, metadata);
+
         public Task<SalesOrderDraftResponse> WithdrawDraftAsync(Guid draftId, SalesDraftStateCommandRequest request, SalesCommandMetadata metadata,
             CancellationToken cancellationToken = default) => StateAsync("withdraw", draftId, request, metadata);
 
@@ -296,6 +314,48 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
         public Task<SalesOrderDraftCancellationResponse> GetDraftCancellationAsync(Guid draftId, CancellationToken cancellationToken = default) =>
             Cancellation(draftId);
 
+        public Func<Guid, SalesDraftRemainderChangeRequest, Task<SalesOrderDraftResponse>> RemainderRequest { get; set; } =
+            (_, _) => throw new SalesDraftServiceException(404, "not_found");
+
+        public Func<string, Guid, int, SalesDraftRemainderDecisionRequest, Task<SalesOrderDraftResponse>> RemainderDecision { get; set; } =
+            (_, _, _, _) => throw new SalesDraftServiceException(404, "not_found");
+
+        public Func<Guid, Task<SalesOrderDraftRemainderChangesResponse>> RemainderRead { get; set; } =
+            _ => throw new SalesDraftServiceException(404, "not_found");
+
+        public List<(Guid DraftId, SalesDraftRemainderChangeRequest Request, string Key)> RemainderRequests { get; } = [];
+        public List<(string Command, Guid DraftId, int ChangeNo, SalesDraftRemainderDecisionRequest Request, string Key)> RemainderDecisions { get; } = [];
+        public List<Guid> RemainderReads { get; } = [];
+
+        public Task<SalesOrderDraftResponse> RequestRemainderChangeAsync(Guid draftId, SalesDraftRemainderChangeRequest request,
+            SalesCommandMetadata metadata, CancellationToken cancellationToken = default)
+        {
+            RemainderRequests.Add((draftId, request, metadata.IdempotencyKey));
+            return RemainderRequest(draftId, request);
+        }
+
+        public Task<SalesOrderDraftResponse> ApproveRemainderChangeAsync(Guid draftId, int changeNo,
+            SalesDraftRemainderDecisionRequest request, SalesCommandMetadata metadata, CancellationToken cancellationToken = default) =>
+            RemainderDecisionAsync("approve", draftId, changeNo, request, metadata);
+
+        public Task<SalesOrderDraftResponse> RejectRemainderChangeAsync(Guid draftId, int changeNo,
+            SalesDraftRemainderDecisionRequest request, SalesCommandMetadata metadata, CancellationToken cancellationToken = default) =>
+            RemainderDecisionAsync("reject", draftId, changeNo, request, metadata);
+
+        public Task<SalesOrderDraftRemainderChangesResponse> GetRemainderChangesAsync(Guid draftId,
+            CancellationToken cancellationToken = default)
+        {
+            RemainderReads.Add(draftId);
+            return RemainderRead(draftId);
+        }
+
+        private Task<SalesOrderDraftResponse> RemainderDecisionAsync(string command, Guid draftId, int changeNo,
+            SalesDraftRemainderDecisionRequest request, SalesCommandMetadata metadata)
+        {
+            RemainderDecisions.Add((command, draftId, changeNo, request, metadata.IdempotencyKey));
+            return RemainderDecision(command, draftId, changeNo, request);
+        }
+
         private Task<SalesOrderDraftResponse> StateAsync(string command, Guid draftId, SalesDraftStateCommandRequest request, SalesCommandMetadata metadata)
         {
             StateCalls.Add((command, draftId, request.ExpectedVersion, request.Reason, metadata.IdempotencyKey));
@@ -308,6 +368,7 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
     [Theory]
     [InlineData("submission", "submit")]
     [InlineData("approval", "approve")]
+    [InlineData("customer-acceptance", "customer-acceptance")]
     [InlineData("rejection", "reject")]
     [InlineData("withdrawal", "withdraw")]
     public async Task A_state_command_answers_200_with_the_draft_and_the_replay_headers_only_on_a_replay(string segment, string command)
@@ -428,6 +489,71 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
         {
             Assert.Equal("SENTETIK-first-corr", Assert.Single(response.Headers.GetValues("Idempotency-Original-Correlation-Id")));
         }
+    }
+
+    [Fact]
+    public async Task Remainder_routes_preserve_the_strict_commands_replay_headers_and_private_read_shape()
+    {
+        var draftId = Guid.NewGuid();
+        var lineId = Guid.NewGuid();
+        var unitId = Guid.NewGuid();
+        var service = new StubDraftService
+        {
+            RemainderRequest = (id, _) => Task.FromResult(new SalesOrderDraftResponse(Detail(id, "Approved"), false, "SENTETIK-request")),
+            RemainderDecision = (_, id, _, _) => Task.FromResult(new SalesOrderDraftResponse(Detail(id, "Approved"), true, "SENTETIK-decision-first")),
+            RemainderRead = _ => Task.FromResult(new SalesOrderDraftRemainderChangesResponse("7", SalesRemainderChangeNamesV1.Readable,
+                [new(lineId, 1, unitId, "5", SalesRemainderChangeNamesV1.Open, "3", "2", "1", "3")], [])),
+        };
+        using var host = CreateHost(service);
+        using var client = CreateClient(host);
+        var path = $"{SalesEndpoints.DraftsPath}/{draftId:D}/remainder-changes";
+
+        using (var invalid = StateCommand(draftId, "remainder-changes", "SENTETIK-invalid",
+                   $"{{\"expectedVersion\":\"7\",\"lineId\":\"{lineId:D}\",\"kind\":\"Cancel\",\"quantity\":\"1\",\"reason\":\"x\"}}"))
+        using (var response = await client.SendAsync(invalid))
+        {
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        }
+        Assert.Empty(service.RemainderRequests);
+
+        var requestBody = JsonSerializer.Serialize(
+            new SalesDraftRemainderChangeRequest("7", lineId, SalesRemainderChangeNamesV1.Revise, "4", "SENTETIK kalan"),
+            SalesDraftJson.Options);
+        using (var response = await client.SendAsync(StateCommand(draftId, "remainder-changes", "SENTETIK-request", requestBody)))
+        {
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            Assert.False(response.Headers.Contains("Idempotency-Replayed"));
+        }
+        var requested = Assert.Single(service.RemainderRequests);
+        Assert.Equal((draftId, "7", lineId, "Revise", "4", "SENTETIK-request"),
+            (requested.DraftId, requested.Request.ExpectedVersion, requested.Request.LineId, requested.Request.Kind,
+                requested.Request.Quantity, requested.Key));
+
+        var decisionBody = JsonSerializer.Serialize(new SalesDraftRemainderDecisionRequest("8"), SalesDraftJson.Options);
+        using (var response = await client.SendAsync(StateCommand(draftId, "remainder-changes/1/approval", "SENTETIK-approve", decisionBody)))
+        {
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            Assert.Equal("true", Assert.Single(response.Headers.GetValues("Idempotency-Replayed")));
+            Assert.Equal("SENTETIK-decision-first", Assert.Single(response.Headers.GetValues("Idempotency-Original-Correlation-Id")));
+        }
+
+        var rejectionBody = JsonSerializer.Serialize(new SalesDraftRemainderDecisionRequest("9", "SENTETIK ret"), SalesDraftJson.Options);
+        using (var response = await client.SendAsync(StateCommand(draftId, "remainder-changes/2/rejection", "SENTETIK-reject", rejectionBody)))
+        {
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        }
+        Assert.Equal([("approve", draftId, 1, "8", (string?)null, "SENTETIK-approve"),
+            ("reject", draftId, 2, "9", "SENTETIK ret", "SENTETIK-reject")],
+            service.RemainderDecisions.Select(call =>
+                (call.Command, call.DraftId, call.ChangeNo, call.Request.ExpectedVersion, call.Request.Reason, call.Key)));
+
+        using var read = await client.GetAsync(path);
+        Assert.Equal(HttpStatusCode.OK, read.StatusCode);
+        Assert.True(read.Headers.CacheControl is { Private: true, NoStore: true });
+        var body = await read.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal(["draftVersion", "floorStatus", "lines", "items"], body.EnumerateObject().Select(member => member.Name));
+        Assert.Equal("Readable", body.GetProperty("floorStatus").GetString());
+        Assert.Equal([draftId], service.RemainderReads);
     }
 
     [Fact]

@@ -28,6 +28,7 @@ using GoymenERP.Modules.Product.Application.Contracts;
 using GoymenERP.Modules.Product.Infrastructure.Fixtures;
 using GoymenERP.Modules.Product.Infrastructure.Persistence;
 using GoymenERP.Modules.Settings.Application;
+using GoymenERP.Modules.Settings.Application.Contracts.V1;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
@@ -61,8 +62,8 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
     private const string Base = "/api/v1/manufacturing";
     private static readonly Guid CompanyA = TestCompanyIds.CompanyA;
     private static readonly Guid CompanyB = TestCompanyIds.CompanyB;
-    private static readonly Guid Product = Guid.Parse("7e1d2c3b-4a59-4687-9a0b-1c2d3e4f5a91");
     private static readonly Guid Lot = Guid.Parse("7e1d2c3b-4a59-4687-9a0b-1c2d3e4f5a92");
+    private static readonly Guid ToleranceProfile = Guid.Parse("7f100000-0000-4000-8000-000000000001");
     private static readonly DateTimeOffset At = new(2026, 9, 18, 9, 0, 0, TimeSpan.Zero);
 
     private static readonly string[] AllWrites =
@@ -239,6 +240,66 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
     }
 
     [SqlServerFact]
+    public async Task Process_loss_is_one_replayable_manufacturing_fact_and_creates_no_inventory_label_or_movement()
+    {
+        await using var run = await Run.StartAsync();
+        var user = await run.GrantAsync(TestUsers.CompanyA, CompanyA, AllWrites);
+        var (orderId, roll) = await run.OpenOrderAsync(user);
+        using var client = run.ClientFor(user, CompanyA);
+        var correlation = client.DefaultRequestHeaders.GetValues("X-Correlation-Id").Single();
+
+        var issued = await run.OkAsync(client, $"{Base}/orders/{orderId}/input-issues",
+            Run.Issue(1, roll, "100", At));
+        var labelsBefore = await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM inventory.Labels WHERE CompanyId = @c", ("@c", CompanyA));
+        var movementsBefore = await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM inventory.Movements WHERE CompanyId = @c", ("@c", CompanyA));
+        var factsBefore = await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM manufacturing.Facts WHERE CompanyId = @c", ("@c", CompanyA));
+        var auditsBefore = await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityType = N'Manufacturing.ProductionOrder' "
+            + "AND EntityId = @o AND PermissionCode = N'manufacturing.facts.record' AND CorrelationId = @r",
+            ("@o", orderId.ToString("D")), ("@r", correlation));
+
+        var request = new RecordFactRequestV1(
+            Guid.NewGuid(), issued.Version, roll, "10", At.AddMinutes(1));
+        using var response = await client.PostWithKeyAsync(
+            $"{Base}/orders/{orderId}/process-losses", request, "process-loss-1");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var recorded = (await response.Content.ReadFromJsonAsync<OrderViewV1>())!;
+        Assert.Equal(issued.Version + 1, recorded.Version);
+        Assert.Equal("10", Assert.Single(recorded.Rolls).OutputsKg[OutputClass.ProcessLoss.ToString()]);
+        var auditsAfterRecord = await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityType = N'Manufacturing.ProductionOrder' "
+            + "AND EntityId = @o AND PermissionCode = N'manufacturing.facts.record' AND CorrelationId = @r",
+            ("@o", orderId.ToString("D")), ("@r", correlation));
+        Assert.Equal(auditsBefore + 1, auditsAfterRecord);
+
+        using var replay = await client.PostWithKeyAsync(
+            $"{Base}/orders/{orderId}/process-losses", request, "process-loss-1");
+        Assert.Equal(HttpStatusCode.OK, replay.StatusCode);
+        Assert.Equal("true", replay.Headers.GetValues("Idempotency-Replayed").Single());
+
+        var fresh = (await client.GetFromJsonAsync<OrderViewV1>($"{Base}/orders/{orderId}"))!;
+        Assert.Equal((recorded.Version, "10"),
+            (fresh.Version, Assert.Single(fresh.Rolls).OutputsKg[OutputClass.ProcessLoss.ToString()]));
+        Assert.Equal(factsBefore + 1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM manufacturing.Facts WHERE CompanyId = @c", ("@c", CompanyA)));
+        Assert.Equal(labelsBefore, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM inventory.Labels WHERE CompanyId = @c", ("@c", CompanyA)));
+        Assert.Equal(movementsBefore, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM inventory.Movements WHERE CompanyId = @c", ("@c", CompanyA)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM manufacturing.Commands WHERE CompanyId = @c "
+            + "AND CommandName = N'manufacturing.process-loss.declare.v1'",
+            ("@c", CompanyA)));
+        Assert.Equal(auditsAfterRecord, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityType = N'Manufacturing.ProductionOrder' "
+            + "AND EntityId = @o AND PermissionCode = N'manufacturing.facts.record' AND CorrelationId = @r",
+            ("@o", orderId.ToString("D")), ("@r", correlation)));
+    }
+
+    [SqlServerFact]
     public async Task Each_endpoint_needs_its_own_grant_and_a_refused_write_stores_nothing()
     {
         await using var run = await Run.StartAsync();
@@ -247,7 +308,7 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
         var readerOnly = await run.GrantAsync(TestUsers.NoAssignment, CompanyA, ErpPermissions.ManufacturingOrdersRead);
         var plannerOnly = await run.GrantAsync(TestUsers.Unprovisioned, CompanyA,
             ErpPermissions.ManufacturingPlansWrite, ErpPermissions.InventoryLabelsRead,
-            ErpPermissions.InventoryBalancesRead);
+            ErpPermissions.InventoryBalancesRead, ErpPermissions.ProductOperationalSelectionRead);
         var request = new SavePlanRequestV1(Guid.NewGuid(), workCenter,
             [new PlannedInputRequestV1(roll.Id, "10", roll.Version)], null);
 
@@ -494,7 +555,7 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
         var user = await run.GrantAsync(TestUsers.CompanyA, CompanyA, ErpPermissions.ManufacturingPlansWrite,
             ErpPermissions.ManufacturingPlansApprove, ErpPermissions.ManufacturingOrdersCreate,
             ErpPermissions.ManufacturingOrdersRead, ErpPermissions.InventoryLabelsRead,
-            ErpPermissions.InventoryBalancesRead);
+            ErpPermissions.InventoryBalancesRead, ErpPermissions.ProductOperationalSelectionRead);
         var (orderId, _) = await run.OpenOrderAsync(user);
         await using var host = run.Factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
         {
@@ -669,8 +730,8 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
     [SqlServerFact]
     public async Task The_close_writes_once_replays_its_key_and_refuses_an_unexplained_difference()
     {
-        // MFG-4 (Business 5728619644) against real SQL: every roll accounts for its own issued mass, no
-        // tolerance, and the close is one ADR-011 attempt per key.
+        // Policy-backed close against real SQL: every roll accounts for its own issued mass, the synthetic test-only
+        // Settings profile is snapshotted, and the close is one ADR-011 attempt per key.
         await using var run = await Run.StartAsync();
         var closer = await run.GrantAsync(TestUsers.CompanyA, CompanyA, [.. AllWrites, ErpPermissions.ManufacturingOrdersClose]);
         var (orderId, roll) = await run.OpenOrderAsync(closer);
@@ -686,7 +747,7 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
             using var refused = await client.PostWithKeyAsync($"{Base}/orders/{orderId}/close",
                 new CloseOrderRequestV1(partial.Version), "close-refused");
             Assert.Equal(HttpStatusCode.UnprocessableEntity, refused.StatusCode);
-            Assert.Equal(ManufacturingRuleCodes.UnexplainedDifference, (await Problem(refused)).Code);
+            Assert.Equal(ClosureAssessmentCodesV1.FireDeclarationRequired, (await Problem(refused)).Code);
             Assert.Equal("Open", (await client.GetFromJsonAsync<OrderViewV1>($"{Base}/orders/{orderId}"))!.Status);
             // A rule refusal is not this key's answer: no command row, and the order was not touched.
             Assert.Equal(0, await run.ScalarAsync<int>(
@@ -727,7 +788,11 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
             Assert.Equal(1, await run.ScalarAsync<int>(
                 "SELECT COUNT(*) FROM manufacturing.Orders WHERE Id = @o AND ClosedAtUtc IS NOT NULL", ("@o", orderId)));
             Assert.Equal(1, await run.ScalarAsync<int>(
-                "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType = N'manufacturing.order.closed.v1'"));
+                "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType = N'manufacturing.order.closed.v2'"));
+            Assert.Equal(1, await run.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM manufacturing.OrderClosureDecisions WHERE CompanyId = @c AND OrderId = @o "
+                + "AND PolicyId = @p AND PolicyVersion = 1 AND MaximumFirePercent = '100'",
+                ("@c", CompanyA), ("@o", orderId), ("@p", ToleranceProfile)));
             // Two attempts recorded: the terminal stale conflict and the success. The refusals are not.
             Assert.Equal(2, await run.ScalarAsync<int>(
                 "SELECT COUNT(*) FROM manufacturing.Commands WHERE CommandName = N'manufacturing.order.close.v1'"));
@@ -752,7 +817,7 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
 
         // Nothing above closed a second order or wrote a second close.
         Assert.Equal(1, await run.ScalarAsync<int>(
-            "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType = N'manufacturing.order.closed.v1'"));
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType = N'manufacturing.order.closed.v2'"));
     }
 
     [SqlServerFact]
@@ -1046,11 +1111,23 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
                 InitialCatalog = databaseName,
             }.ConnectionString;
             // Output admission exercises Product's real stock eligibility against this same isolated database.
+            var technicalSnapshotFixture = new SyntheticManufacturingTechnicalSnapshotFixture();
             var factory = new SqlServerRelationalApiFactory(baseConnectionString, services =>
             {
                 services.RemoveAll<ProductRuntimeOptions>();
                 services.AddSingleton(new ProductRuntimeOptions(databaseConnectionString,
                     new ProductPilotIssuerBinding(Guid.NewGuid(), Guid.NewGuid()), new byte[32]));
+                // Product deliberately refuses this suite's SYNTHETIC registry provenance. Keep that runtime gate
+                // intact and replace only the owner contract inside this disposable SQL acceptance host.
+                services.RemoveAll<IProductManufacturingTechnicalSnapshotV1>();
+                services.AddSingleton(technicalSnapshotFixture);
+                services.AddScoped<IProductManufacturingTechnicalSnapshotV1,
+                    SyntheticManufacturingTechnicalSnapshotProvider>();
+                // Explicit test-only source. Production's approved catalog remains empty; this fixture proves the
+                // consumer contract without installing a default or a real company policy.
+                services.RemoveAll<ISettingsManufacturingToleranceProviderV1>();
+                services.AddSingleton<ISettingsManufacturingToleranceProviderV1,
+                    SyntheticManufacturingToleranceProvider>();
             }, databaseName: databaseName);
             var run = new Run(baseConnectionString, factory);
             // The host migrates Organization first and Manufacturing after it.
@@ -1061,7 +1138,110 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
             await using var inventory = run.InventoryContext(CompanyA);
             await inventory.Database.MigrateAsync();
             await run.EnsureProductFixtureAsync();
+            technicalSnapshotFixture.Bind(run.ProductFixture);
             return run;
+        }
+
+        private sealed class SyntheticManufacturingTechnicalSnapshotFixture
+        {
+            private ProductStockCandidateFixtureOutput? product;
+
+            public void Bind(ProductStockCandidateFixtureOutput value)
+            {
+                ArgumentNullException.ThrowIfNull(value);
+                if (Interlocked.CompareExchange(ref product, value, null) is not null)
+                {
+                    throw new InvalidOperationException("The Manufacturing technical contract fixture was already bound.");
+                }
+            }
+
+            public ProductStockCandidateFixtureOutput Read() => Volatile.Read(ref product)
+                ?? throw new ProductOperationException(
+                    ProductManufacturingTechnicalSnapshotService.UnavailableCode, 503);
+        }
+
+        /// <summary>
+        /// Test-only positive answer for the exact synthetic Product card that this SQL suite creates. It preserves
+        /// Product's live company and operational-selection permission fence, and copies the fixture's stated
+        /// technical values without relabelling its source as a real release.
+        /// </summary>
+        private sealed class SyntheticManufacturingTechnicalSnapshotProvider(
+            SyntheticManufacturingTechnicalSnapshotFixture fixture,
+            ICompanyContext companyContext,
+            ICurrentUser currentUser,
+            IErpAuthorityRevalidationService authority)
+            : IProductManufacturingTechnicalSnapshotV1
+        {
+            public async Task<ProductManufacturingTechnicalSnapshotResultV1> ReadAsync(
+                ProductManufacturingTechnicalSnapshotSelectionV1 selection,
+                CancellationToken cancellationToken)
+            {
+                ArgumentNullException.ThrowIfNull(selection);
+                await RequireAuthorityAsync(cancellationToken);
+                var product = fixture.Read();
+
+                if (selection.ProductId != product.ProductId)
+                {
+                    return new(null, [new ProductFieldError("productId", "invalid_reference")]);
+                }
+
+                if (!string.Equals(selection.ExpectedProductVersion, product.ProductVersion,
+                        StringComparison.Ordinal))
+                {
+                    return new(null, [new ProductFieldError("expectedProductVersion", "version_conflict")]);
+                }
+
+                await RequireAuthorityAsync(cancellationToken);
+                var definition = ProductTechnicalCardFixture.Definition();
+                var family = Assert.Single(definition.Families);
+                var template = Assert.Single(definition.Templates);
+                return new(new ProductManufacturingTechnicalSnapshotV1(
+                    product.ProductId,
+                    product.ProductVersion,
+                    new(family.Id, family.Code, family.SourceRef),
+                    new(template.Id, template.Version, template.Code, template.SourceRef),
+                    1.000m,
+                    1000.000m,
+                    new(CompanyA, product.UnitId, "kg", product.ProfileId, product.ProfileVersion),
+                    selection.EffectiveOn), []);
+            }
+
+            private async Task RequireAuthorityAsync(CancellationToken cancellationToken)
+            {
+                if (!currentUser.IsAuthenticated || string.IsNullOrWhiteSpace(currentUser.UserId)
+                    || !companyContext.IsResolved || companyContext.CompanyId != CompanyA
+                    || !currentUser.CanAccessCompany(CompanyA))
+                {
+                    throw Denied();
+                }
+
+                var scope = await authority.RevalidatePermissionScopeAsync(
+                    ErpPermissions.ProductOperationalSelectionRead, CompanyA, cancellationToken);
+                if (scope is not { IsGranted: true })
+                {
+                    throw Denied();
+                }
+            }
+
+            private static ProductOperationException Denied() => new("product_access_denied", 403);
+        }
+
+        private sealed class SyntheticManufacturingToleranceProvider : ISettingsManufacturingToleranceProviderV1
+        {
+            public Task<ManufacturingToleranceProfileV1> GetManufacturingToleranceAsync(
+                string process, DateOnly effectiveOn, CancellationToken cancellationToken = default)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (!SettingsManufacturingProcessesV1.IsCanonical(process))
+                {
+                    throw new SettingsPrerequisiteException(
+                        SettingsPrerequisiteCodesV1.ManufacturingToleranceProfileNotFound);
+                }
+
+                return Task.FromResult(new ManufacturingToleranceProfileV1(
+                    CompanyA, process, new ProfileVersionV1(ToleranceProfile, 1), 100m, true,
+                    new DateOnly(2026, 1, 1), new DateOnly(2026, 12, 31)));
+            }
         }
 
         /// <summary>A client of the configured development user; every write names its own Idempotency-Key.</summary>
@@ -1132,13 +1312,14 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
         {
             var location = await ScalarAsync<Guid>(
                 "SELECT TOP (1) Id FROM organization.Locations WHERE CompanyId = @c ORDER BY Id", ("@c", CompanyA));
-            var label = new MaterialLabel(Guid.NewGuid(), CompanyA, code, Product, Lot);
+            var productId = ProductFixture.ProductId;
+            var label = new MaterialLabel(Guid.NewGuid(), CompanyA, code, productId, Lot, ProductFixture.ProductVersion);
             var owner = new StockOwner(StockPartyKind.Company, CompanyA);
             var custodian = new StockCustodian(StockPartyKind.Company, CompanyA);
             var position = new StockPosition(CompanyA, owner, custodian, location, label, BlockState.Free);
             var writer = Guid.NewGuid();
             await using var scope = InventoryStore(writer);
-            await scope.Store.SaveLotAsync(new MaterialLot(Lot, CompanyA, Product), [label], InventoryMetadata(writer));
+            await scope.Store.SaveLotAsync(new MaterialLot(Lot, CompanyA, productId), [label], InventoryMetadata(writer));
             await scope.Store.RecordMovementAsync(
                 InventoryMovement(new StockMovementLine(position, StockDirection.In,
                     GoymenERP.Modules.Inventory.Domain.Quantities.Kilograms.Positive(1000.125m))),

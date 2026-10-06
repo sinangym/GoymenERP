@@ -318,8 +318,10 @@ internal sealed class InventoryLabelDetailService(
                     || line.LocationId == Guid.Empty || line.ProductId != label.ProductId
                     || !Enum.TryParse<BlockState>(line.Block, out var block) || !Enum.IsDefined(block)
                     || !CanonicalQuantity(line.QuantityKg)
-                    || kind is StockMovementKind.Receipt or StockMovementKind.Return && direction != StockDirection.In
+                    || ((kind is StockMovementKind.Receipt or StockMovementKind.Return or StockMovementKind.TransferAccept)
+                        && direction != StockDirection.In)
                     || kind == StockMovementKind.Issue && (direction != StockDirection.Out || block == BlockState.Blocked)
+                    || kind == StockMovementKind.TransferDispatch && direction != StockDirection.Out
                     || kind == StockMovementKind.Scrap && (direction != StockDirection.Out || movement.Lines.Count != 1))
                 {
                     return false;

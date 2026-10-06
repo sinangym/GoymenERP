@@ -296,8 +296,95 @@ partial class ManufacturingDbContextModelSnapshot : ModelSnapshot
             });
         });
 
+        modelBuilder.Entity("GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.OrderClosureDecisionRow", b =>
+        {
+            b.Property<Guid>("CompanyId")
+                .HasColumnType("uniqueidentifier");
+
+            b.Property<Guid>("OrderId")
+                .HasColumnType("uniqueidentifier");
+
+            b.Property<long>("OrderVersion")
+                .HasColumnType("bigint");
+
+            b.Property<Guid>("PolicyId")
+                .HasColumnType("uniqueidentifier");
+
+            b.Property<long>("PolicyVersion")
+                .HasColumnType("bigint");
+
+            b.Property<int>("Process")
+                .HasColumnType("int");
+
+            b.Property<string>("MaximumFirePercent")
+                .IsRequired()
+                .HasMaxLength(64)
+                .IsUnicode(false)
+                .HasColumnType("varchar(64)");
+
+            b.Property<bool>("IsActive")
+                .HasColumnType("bit");
+
+            b.Property<DateOnly>("EffectiveFrom")
+                .HasColumnType("date");
+
+            b.Property<DateOnly?>("EffectiveThrough")
+                .HasColumnType("date");
+
+            b.Property<DateOnly>("SelectedForDate")
+                .HasColumnType("date");
+
+            b.Property<Guid?>("ApprovedByUserId")
+                .HasColumnType("uniqueidentifier");
+
+            b.Property<string>("ApprovalReason")
+                .HasMaxLength(256)
+                .HasColumnType("nvarchar(256)");
+
+            b.Property<long?>("ApprovalOrderVersion")
+                .HasColumnType("bigint");
+
+            b.Property<Guid?>("ApprovalPolicyId")
+                .HasColumnType("uniqueidentifier");
+
+            b.Property<long?>("ApprovalPolicyVersion")
+                .HasColumnType("bigint");
+
+            b.Property<DateTimeOffset?>("ApprovedAtUtc")
+                .HasColumnType("datetimeoffset");
+
+            b.HasKey("CompanyId", "OrderId");
+
+            b.ToTable("OrderClosureDecisions", "manufacturing", t =>
+            {
+                t.HasCheckConstraint(
+                    "CK_OrderClosureDecisions_Approval",
+                    "([ApprovedByUserId] IS NULL AND [ApprovalReason] IS NULL AND [ApprovalOrderVersion] IS NULL AND [ApprovalPolicyId] IS NULL AND [ApprovalPolicyVersion] IS NULL AND [ApprovedAtUtc] IS NULL) OR ([ApprovedByUserId] IS NOT NULL AND [ApprovedByUserId] <> '00000000-0000-0000-0000-000000000000' AND [ApprovalReason] IS NOT NULL AND LEN([ApprovalReason]) > 0 AND [ApprovalOrderVersion] IS NOT NULL AND [ApprovalOrderVersion] = [OrderVersion] AND [ApprovalPolicyId] IS NOT NULL AND [ApprovalPolicyId] = [PolicyId] AND [ApprovalPolicyVersion] IS NOT NULL AND [ApprovalPolicyVersion] = [PolicyVersion] AND [ApprovedAtUtc] IS NOT NULL)");
+
+                t.HasCheckConstraint(
+                    "CK_OrderClosureDecisions_Identity",
+                    "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [OrderId] <> '00000000-0000-0000-0000-000000000000' AND [PolicyId] <> '00000000-0000-0000-0000-000000000000' AND [OrderVersion] >= 1 AND [PolicyVersion] >= 1 AND [Process] IN (1, 2, 3, 4, 5) AND LEN([MaximumFirePercent]) > 0 AND [IsActive] = 1");
+
+                t.HasCheckConstraint(
+                    "CK_OrderClosureDecisions_Window",
+                    "([EffectiveThrough] IS NULL OR [EffectiveThrough] >= [EffectiveFrom]) AND [SelectedForDate] >= [EffectiveFrom] AND ([EffectiveThrough] IS NULL OR [SelectedForDate] <= [EffectiveThrough])");
+            });
+        });
+
         modelBuilder.Entity("GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.OrderInputRow", b =>
         {
+            b.Property<string>("CommercialAccountVersion")
+                .HasColumnType("nvarchar(max)");
+
+            b.Property<Guid?>("CommercialCompanyPartyAccountId")
+                .HasColumnType("uniqueidentifier");
+
+            b.Property<Guid?>("CommercialPartyId")
+                .HasColumnType("uniqueidentifier");
+
+            b.Property<string>("CommercialPartyVersion")
+                .HasColumnType("nvarchar(max)");
+
             b.Property<Guid>("CompanyId")
                 .HasColumnType("uniqueidentifier");
 
@@ -324,6 +411,10 @@ partial class ManufacturingDbContextModelSnapshot : ModelSnapshot
 
             b.ToTable("OrderInputs", "manufacturing", t =>
             {
+                t.HasCheckConstraint(
+                    "CK_OrderInputs_CommercialContext",
+                    "([CommercialPartyId] IS NULL AND [CommercialCompanyPartyAccountId] IS NULL AND [CommercialPartyVersion] IS NULL AND [CommercialAccountVersion] IS NULL) OR ([CommercialPartyId] IS NOT NULL AND [CommercialPartyId] <> '00000000-0000-0000-0000-000000000000' AND [CommercialCompanyPartyAccountId] IS NOT NULL AND [CommercialCompanyPartyAccountId] <> '00000000-0000-0000-0000-000000000000' AND [CommercialPartyVersion] IS NOT NULL AND DATALENGTH([CommercialPartyVersion]) > 0 AND [CommercialAccountVersion] IS NOT NULL AND DATALENGTH([CommercialAccountVersion]) > 0)");
+
                 t.HasCheckConstraint(
                     "CK_OrderInputs_LabelVersion",
                     "[ExpectedLabelVersion] IS NULL OR [ExpectedLabelVersion] >= 1");
@@ -455,6 +546,18 @@ partial class ManufacturingDbContextModelSnapshot : ModelSnapshot
 
         modelBuilder.Entity("GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.PlanInputRow", b =>
         {
+            b.Property<string>("CommercialAccountVersion")
+                .HasColumnType("nvarchar(max)");
+
+            b.Property<Guid?>("CommercialCompanyPartyAccountId")
+                .HasColumnType("uniqueidentifier");
+
+            b.Property<Guid?>("CommercialPartyId")
+                .HasColumnType("uniqueidentifier");
+
+            b.Property<string>("CommercialPartyVersion")
+                .HasColumnType("nvarchar(max)");
+
             b.Property<Guid>("CompanyId")
                 .HasColumnType("uniqueidentifier");
 
@@ -474,6 +577,75 @@ partial class ManufacturingDbContextModelSnapshot : ModelSnapshot
             b.Property<int>("Sequence")
                 .HasColumnType("int");
 
+            b.Property<DateOnly?>("TechnicalEffectiveOn")
+                .HasColumnType("date");
+
+            b.Property<Guid?>("TechnicalFamilyId")
+                .HasColumnType("uniqueidentifier");
+
+            b.Property<string>("TechnicalFamilyCode")
+                .HasMaxLength(64)
+                .IsUnicode(false)
+                .HasColumnType("varchar(64)");
+
+            b.Property<string>("TechnicalFamilySourceRevision")
+                .HasMaxLength(64)
+                .IsUnicode(false)
+                .HasColumnType("varchar(64)");
+
+            b.Property<Guid?>("TechnicalKilogramProfileId")
+                .HasColumnType("uniqueidentifier");
+
+            b.Property<string>("TechnicalKilogramProfileVersion")
+                .HasMaxLength(64)
+                .IsUnicode(false)
+                .HasColumnType("varchar(64)");
+
+            b.Property<Guid?>("TechnicalKilogramUnitCompanyId")
+                .HasColumnType("uniqueidentifier");
+
+            b.Property<string>("TechnicalKilogramUnitCode")
+                .HasMaxLength(64)
+                .IsUnicode(false)
+                .HasColumnType("varchar(64)");
+
+            b.Property<Guid?>("TechnicalKilogramUnitId")
+                .HasColumnType("uniqueidentifier");
+
+            b.Property<Guid?>("TechnicalProductId")
+                .HasColumnType("uniqueidentifier");
+
+            b.Property<string>("TechnicalProductVersion")
+                .HasMaxLength(128)
+                .IsUnicode(false)
+                .HasColumnType("varchar(128)");
+
+            b.Property<Guid?>("TechnicalTemplateId")
+                .HasColumnType("uniqueidentifier");
+
+            b.Property<string>("TechnicalTemplateCode")
+                .HasMaxLength(64)
+                .IsUnicode(false)
+                .HasColumnType("varchar(64)");
+
+            b.Property<string>("TechnicalTemplateSourceRevision")
+                .HasMaxLength(64)
+                .IsUnicode(false)
+                .HasColumnType("varchar(64)");
+
+            b.Property<string>("TechnicalTemplateVersion")
+                .HasMaxLength(64)
+                .IsUnicode(false)
+                .HasColumnType("varchar(64)");
+
+            b.Property<decimal?>("TechnicalThicknessMm")
+                .HasPrecision(18, 3)
+                .HasColumnType("decimal(18,3)");
+
+            b.Property<decimal?>("TechnicalWidthMm")
+                .HasPrecision(18, 3)
+                .HasColumnType("decimal(18,3)");
+
             b.HasKey("CompanyId", "PlanId", "ParentRollId");
 
             b.HasIndex("CompanyId", "PlanId", "Sequence")
@@ -481,6 +653,10 @@ partial class ManufacturingDbContextModelSnapshot : ModelSnapshot
 
             b.ToTable("PlanInputs", "manufacturing", t =>
             {
+                t.HasCheckConstraint(
+                    "CK_PlanInputs_CommercialContext",
+                    "([CommercialPartyId] IS NULL AND [CommercialCompanyPartyAccountId] IS NULL AND [CommercialPartyVersion] IS NULL AND [CommercialAccountVersion] IS NULL) OR ([CommercialPartyId] IS NOT NULL AND [CommercialPartyId] <> '00000000-0000-0000-0000-000000000000' AND [CommercialCompanyPartyAccountId] IS NOT NULL AND [CommercialCompanyPartyAccountId] <> '00000000-0000-0000-0000-000000000000' AND [CommercialPartyVersion] IS NOT NULL AND DATALENGTH([CommercialPartyVersion]) > 0 AND [CommercialAccountVersion] IS NOT NULL AND DATALENGTH([CommercialAccountVersion]) > 0)");
+
                 t.HasCheckConstraint(
                     "CK_PlanInputs_LabelVersion",
                     "[ExpectedLabelVersion] IS NULL OR [ExpectedLabelVersion] >= 1");
@@ -496,11 +672,27 @@ partial class ManufacturingDbContextModelSnapshot : ModelSnapshot
                 t.HasCheckConstraint(
                     "CK_PlanInputs_Sequence",
                     "[Sequence] >= 1");
+
+                t.HasCheckConstraint(
+                    "CK_PlanInputs_TechnicalSnapshot",
+                    "([TechnicalProductId] IS NULL AND [TechnicalProductVersion] IS NULL AND [TechnicalFamilyId] IS NULL AND [TechnicalFamilyCode] IS NULL AND [TechnicalFamilySourceRevision] IS NULL AND [TechnicalTemplateId] IS NULL AND [TechnicalTemplateVersion] IS NULL AND [TechnicalTemplateCode] IS NULL AND [TechnicalTemplateSourceRevision] IS NULL AND [TechnicalKilogramUnitCompanyId] IS NULL AND [TechnicalKilogramUnitId] IS NULL AND [TechnicalKilogramUnitCode] IS NULL AND [TechnicalKilogramProfileId] IS NULL AND [TechnicalKilogramProfileVersion] IS NULL AND [TechnicalEffectiveOn] IS NULL AND [TechnicalThicknessMm] IS NULL AND [TechnicalWidthMm] IS NULL) OR ([TechnicalProductId] IS NOT NULL AND [TechnicalProductId] <> '00000000-0000-0000-0000-000000000000' AND [TechnicalProductVersion] IS NOT NULL AND LEN([TechnicalProductVersion]) > 0 AND [TechnicalFamilyId] IS NOT NULL AND [TechnicalFamilyId] <> '00000000-0000-0000-0000-000000000000' AND [TechnicalFamilyCode] IS NOT NULL AND LEN([TechnicalFamilyCode]) > 0 AND [TechnicalFamilySourceRevision] IS NOT NULL AND LEN([TechnicalFamilySourceRevision]) > 0 AND [TechnicalTemplateId] IS NOT NULL AND [TechnicalTemplateId] <> '00000000-0000-0000-0000-000000000000' AND [TechnicalTemplateVersion] IS NOT NULL AND LEN([TechnicalTemplateVersion]) > 0 AND [TechnicalTemplateCode] IS NOT NULL AND LEN([TechnicalTemplateCode]) > 0 AND [TechnicalTemplateSourceRevision] IS NOT NULL AND LEN([TechnicalTemplateSourceRevision]) > 0 AND [TechnicalKilogramUnitCompanyId] IS NOT NULL AND [TechnicalKilogramUnitCompanyId] = [CompanyId] AND [TechnicalKilogramUnitId] IS NOT NULL AND [TechnicalKilogramUnitId] <> '00000000-0000-0000-0000-000000000000' AND [TechnicalKilogramUnitCode] IS NOT NULL AND LEN([TechnicalKilogramUnitCode]) > 0 AND [TechnicalKilogramProfileId] IS NOT NULL AND [TechnicalKilogramProfileId] <> '00000000-0000-0000-0000-000000000000' AND [TechnicalKilogramProfileVersion] IS NOT NULL AND LEN([TechnicalKilogramProfileVersion]) > 0 AND [TechnicalEffectiveOn] IS NOT NULL AND [TechnicalThicknessMm] IS NOT NULL AND [TechnicalThicknessMm] > 0 AND [TechnicalWidthMm] IS NOT NULL AND [TechnicalWidthMm] > 0)");
             });
         });
 
         modelBuilder.Entity("GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.PlanRevisionInputRow", b =>
         {
+            b.Property<string>("CommercialAccountVersion")
+                .HasColumnType("nvarchar(max)");
+
+            b.Property<Guid?>("CommercialCompanyPartyAccountId")
+                .HasColumnType("uniqueidentifier");
+
+            b.Property<Guid?>("CommercialPartyId")
+                .HasColumnType("uniqueidentifier");
+
+            b.Property<string>("CommercialPartyVersion")
+                .HasColumnType("nvarchar(max)");
+
             b.Property<Guid>("CompanyId")
                 .HasColumnType("uniqueidentifier");
 
@@ -523,6 +715,75 @@ partial class ManufacturingDbContextModelSnapshot : ModelSnapshot
             b.Property<int>("Sequence")
                 .HasColumnType("int");
 
+            b.Property<DateOnly?>("TechnicalEffectiveOn")
+                .HasColumnType("date");
+
+            b.Property<Guid?>("TechnicalFamilyId")
+                .HasColumnType("uniqueidentifier");
+
+            b.Property<string>("TechnicalFamilyCode")
+                .HasMaxLength(64)
+                .IsUnicode(false)
+                .HasColumnType("varchar(64)");
+
+            b.Property<string>("TechnicalFamilySourceRevision")
+                .HasMaxLength(64)
+                .IsUnicode(false)
+                .HasColumnType("varchar(64)");
+
+            b.Property<Guid?>("TechnicalKilogramProfileId")
+                .HasColumnType("uniqueidentifier");
+
+            b.Property<string>("TechnicalKilogramProfileVersion")
+                .HasMaxLength(64)
+                .IsUnicode(false)
+                .HasColumnType("varchar(64)");
+
+            b.Property<Guid?>("TechnicalKilogramUnitCompanyId")
+                .HasColumnType("uniqueidentifier");
+
+            b.Property<string>("TechnicalKilogramUnitCode")
+                .HasMaxLength(64)
+                .IsUnicode(false)
+                .HasColumnType("varchar(64)");
+
+            b.Property<Guid?>("TechnicalKilogramUnitId")
+                .HasColumnType("uniqueidentifier");
+
+            b.Property<Guid?>("TechnicalProductId")
+                .HasColumnType("uniqueidentifier");
+
+            b.Property<string>("TechnicalProductVersion")
+                .HasMaxLength(128)
+                .IsUnicode(false)
+                .HasColumnType("varchar(128)");
+
+            b.Property<Guid?>("TechnicalTemplateId")
+                .HasColumnType("uniqueidentifier");
+
+            b.Property<string>("TechnicalTemplateCode")
+                .HasMaxLength(64)
+                .IsUnicode(false)
+                .HasColumnType("varchar(64)");
+
+            b.Property<string>("TechnicalTemplateSourceRevision")
+                .HasMaxLength(64)
+                .IsUnicode(false)
+                .HasColumnType("varchar(64)");
+
+            b.Property<string>("TechnicalTemplateVersion")
+                .HasMaxLength(64)
+                .IsUnicode(false)
+                .HasColumnType("varchar(64)");
+
+            b.Property<decimal?>("TechnicalThicknessMm")
+                .HasPrecision(18, 3)
+                .HasColumnType("decimal(18,3)");
+
+            b.Property<decimal?>("TechnicalWidthMm")
+                .HasPrecision(18, 3)
+                .HasColumnType("decimal(18,3)");
+
             b.HasKey("CompanyId", "PlanId", "RevisionNo", "ParentRollId");
 
             b.HasIndex("CompanyId", "PlanId", "RevisionNo", "Sequence")
@@ -530,6 +791,10 @@ partial class ManufacturingDbContextModelSnapshot : ModelSnapshot
 
             b.ToTable("PlanRevisionInputs", "manufacturing", t =>
             {
+                t.HasCheckConstraint(
+                    "CK_PlanRevisionInputs_CommercialContext",
+                    "([CommercialPartyId] IS NULL AND [CommercialCompanyPartyAccountId] IS NULL AND [CommercialPartyVersion] IS NULL AND [CommercialAccountVersion] IS NULL) OR ([CommercialPartyId] IS NOT NULL AND [CommercialPartyId] <> '00000000-0000-0000-0000-000000000000' AND [CommercialCompanyPartyAccountId] IS NOT NULL AND [CommercialCompanyPartyAccountId] <> '00000000-0000-0000-0000-000000000000' AND [CommercialPartyVersion] IS NOT NULL AND DATALENGTH([CommercialPartyVersion]) > 0 AND [CommercialAccountVersion] IS NOT NULL AND DATALENGTH([CommercialAccountVersion]) > 0)");
+
                 t.HasCheckConstraint("CK_PlanRevisionInputs_LabelVersion", "[ExpectedLabelVersion] >= 1");
 
                 t.HasCheckConstraint("CK_PlanRevisionInputs_Mass", "[PlannedKg] > 0");
@@ -537,6 +802,10 @@ partial class ManufacturingDbContextModelSnapshot : ModelSnapshot
                 t.HasCheckConstraint("CK_PlanRevisionInputs_Roll", "[ParentRollId] <> '00000000-0000-0000-0000-000000000000'");
 
                 t.HasCheckConstraint("CK_PlanRevisionInputs_Sequence", "[Sequence] >= 1");
+
+                t.HasCheckConstraint(
+                    "CK_PlanRevisionInputs_TechnicalSnapshot",
+                    "([TechnicalProductId] IS NULL AND [TechnicalProductVersion] IS NULL AND [TechnicalFamilyId] IS NULL AND [TechnicalFamilyCode] IS NULL AND [TechnicalFamilySourceRevision] IS NULL AND [TechnicalTemplateId] IS NULL AND [TechnicalTemplateVersion] IS NULL AND [TechnicalTemplateCode] IS NULL AND [TechnicalTemplateSourceRevision] IS NULL AND [TechnicalKilogramUnitCompanyId] IS NULL AND [TechnicalKilogramUnitId] IS NULL AND [TechnicalKilogramUnitCode] IS NULL AND [TechnicalKilogramProfileId] IS NULL AND [TechnicalKilogramProfileVersion] IS NULL AND [TechnicalEffectiveOn] IS NULL AND [TechnicalThicknessMm] IS NULL AND [TechnicalWidthMm] IS NULL) OR ([TechnicalProductId] IS NOT NULL AND [TechnicalProductId] <> '00000000-0000-0000-0000-000000000000' AND [TechnicalProductVersion] IS NOT NULL AND LEN([TechnicalProductVersion]) > 0 AND [TechnicalFamilyId] IS NOT NULL AND [TechnicalFamilyId] <> '00000000-0000-0000-0000-000000000000' AND [TechnicalFamilyCode] IS NOT NULL AND LEN([TechnicalFamilyCode]) > 0 AND [TechnicalFamilySourceRevision] IS NOT NULL AND LEN([TechnicalFamilySourceRevision]) > 0 AND [TechnicalTemplateId] IS NOT NULL AND [TechnicalTemplateId] <> '00000000-0000-0000-0000-000000000000' AND [TechnicalTemplateVersion] IS NOT NULL AND LEN([TechnicalTemplateVersion]) > 0 AND [TechnicalTemplateCode] IS NOT NULL AND LEN([TechnicalTemplateCode]) > 0 AND [TechnicalTemplateSourceRevision] IS NOT NULL AND LEN([TechnicalTemplateSourceRevision]) > 0 AND [TechnicalKilogramUnitCompanyId] IS NOT NULL AND [TechnicalKilogramUnitCompanyId] = [CompanyId] AND [TechnicalKilogramUnitId] IS NOT NULL AND [TechnicalKilogramUnitId] <> '00000000-0000-0000-0000-000000000000' AND [TechnicalKilogramUnitCode] IS NOT NULL AND LEN([TechnicalKilogramUnitCode]) > 0 AND [TechnicalKilogramProfileId] IS NOT NULL AND [TechnicalKilogramProfileId] <> '00000000-0000-0000-0000-000000000000' AND [TechnicalKilogramProfileVersion] IS NOT NULL AND LEN([TechnicalKilogramProfileVersion]) > 0 AND [TechnicalEffectiveOn] IS NOT NULL AND [TechnicalThicknessMm] IS NOT NULL AND [TechnicalThicknessMm] > 0 AND [TechnicalWidthMm] IS NOT NULL AND [TechnicalWidthMm] > 0)");
             });
         });
 
@@ -742,6 +1011,16 @@ partial class ManufacturingDbContextModelSnapshot : ModelSnapshot
         });
 
         modelBuilder.Entity("GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.OrderInputRow", b =>
+        {
+            b.HasOne("GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.OrderRow", null)
+                .WithMany()
+                .HasForeignKey("CompanyId", "OrderId")
+                .HasPrincipalKey("CompanyId", "Id")
+                .OnDelete(DeleteBehavior.Restrict)
+                .IsRequired();
+        });
+
+        modelBuilder.Entity("GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.OrderClosureDecisionRow", b =>
         {
             b.HasOne("GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.OrderRow", null)
                 .WithMany()

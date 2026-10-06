@@ -43,6 +43,13 @@ public sealed class U02BrowserSeed : IBrowserSuiteFixture
     /// </summary>
     public const string ActivatorActor = "u02-activator";
 
+    /// <summary>
+    /// Disposable Inventory opening actor. The central suite profile supplies only the existing opening,
+    /// Product operational-selection, label-read and balance-read permissions. This seed grants it no
+    /// Product master operation.
+    /// </summary>
+    public const string InventoryRecorderActor = "u02-inventory-recorder";
+
     /// <summary>The GDC company of the built-in organization seed (the context company of both web profiles).</summary>
     public static readonly Guid CompanyId = Guid.Parse("10000000-0000-0000-0000-000000000001");
 
@@ -75,6 +82,9 @@ public sealed class U02BrowserSeed : IBrowserSuiteFixture
     public const string CodeGroupPrefix = "SU02";
 
     private static readonly DateTimeOffset ValidFromUtc = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
+
+    private static readonly string[] InventoryRecorderCapabilities =
+        ["inventory.opening-stock.record", "inventory.stock-positions.list"];
 
     /// <summary>
     /// The authorized actor's operations U-02 needs: list/detail (Read), create, basic edit. Nothing more — in
@@ -182,6 +192,18 @@ public sealed class U02BrowserSeed : IBrowserSuiteFixture
                 $"The activator should see the Product card and its three lifecycle controls only; it sees [{string.Join(", ", activatorProduct)}].");
         }
 
+        var inventoryRecorder = await context.GetJsonAsync(
+            InventoryRecorderActor, CompanyId, "/api/v1/shell/capabilities", cancellationToken);
+        if (!OwnerCapabilities(inventoryRecorder, "inventory.").SequenceEqual(InventoryRecorderCapabilities)
+            || ProductCapabilities(inventoryRecorder).Length != 0
+            || OwnerCapabilities(authorized, "inventory.").Length != 0
+            || OwnerCapabilities(activator, "inventory.").Length != 0)
+        {
+            throw new InvalidOperationException(
+                "The disposable Inventory recorder must have only opening and label-detail controls; "
+                + "Product requester and activator must not gain Inventory controls or the recorder Product master controls.");
+        }
+
         return new Dictionary<string, string>(StringComparer.Ordinal)
         {
             ["companyId"] = CompanyId.ToString("D"),
@@ -190,12 +212,16 @@ public sealed class U02BrowserSeed : IBrowserSuiteFixture
             ["authorizedActor"] = AuthorizedActor,
             ["unauthorizedActor"] = UnauthorizedActor,
             ["activatorActor"] = ActivatorActor,
+            ["inventoryRecorderActor"] = InventoryRecorderActor,
         };
     }
 
     private static string[] ProductCapabilities(System.Text.Json.JsonElement snapshot) =>
+        OwnerCapabilities(snapshot, "product.");
+
+    private static string[] OwnerCapabilities(System.Text.Json.JsonElement snapshot, string prefix) =>
         [.. snapshot.GetProperty("capabilities").EnumerateArray()
             .Select(capability => capability.GetString()!)
-            .Where(capability => capability.StartsWith("product.", StringComparison.Ordinal))
+            .Where(capability => capability.StartsWith(prefix, StringComparison.Ordinal))
             .Order(StringComparer.Ordinal)];
 }

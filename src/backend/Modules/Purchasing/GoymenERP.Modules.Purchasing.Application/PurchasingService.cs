@@ -43,7 +43,7 @@ public sealed partial class PurchasingService(
     PurchasingServiceBindings bindings,
     TimeProvider timeProvider,
     IPurchaseGoodsReceiptTransactionV1? goodsReceipts = null,
-    IPurchaseGoodsReceiptReadsV1? receiptReads = null) : IPurchasingService, IPurchaseGoodsReceiptServiceV1
+    IPurchaseGoodsReceiptReadsV1? receiptReads = null) : IPurchasingService, IPurchaseGoodsReceiptServiceV1, IPurchaseGoodsReceiptQuantityComparisonServiceV1
 {
     private const int DefaultPageSize = 50;
     private const int MaximumPageSize = 100;
@@ -886,5 +886,9 @@ public sealed partial class PurchasingService(
         new(OrderSummary(stored),
             [.. stored.Order.Lines.Select((line, index) => new PurchaseOrderLineView(line.Id, index + 1, line.Kind.ToString(), line.ParentLineId,
                 line.SourceRequestLineId, line.ProductId, VersionOf(stored.ProductVersionsByLineId, line.Id), line.UnitId, Text(line.Quantity),
-                Text(line.TechnicalQuantity), Text(line.CommittedQuantity), Text(line.AcceptedQuantity), Text(line.RemainingQuantity)))]);
+                Text(line.TechnicalQuantity), Text(line.CommittedQuantity), Text(line.AcceptedQuantity), Text(line.RemainingQuantity)))])
+        {
+            Acceptances = [.. stored.Order.Acceptances.Select(acceptance => new PurchaseOrderAcceptanceHistoryView(
+                acceptance.AcceptanceId, acceptance.LineId, Text(acceptance.Quantity), acceptance.RecordedAtUtc))],
+        };
 }

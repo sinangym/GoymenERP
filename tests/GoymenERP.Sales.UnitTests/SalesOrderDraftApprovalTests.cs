@@ -159,16 +159,20 @@ public sealed class SalesOrderDraftApprovalTests
             .ToArray();
         // DEC-SAL-005: the cancellation of an approved order is a mutation entry too (RequireCancellable only reads);
         // DEC-SAL-002: so is the quantity revision (RequireQuantityRevisable only reads).
-        Assert.Equal(["AddLine", "Approve", "Cancel", "Reject", "RescheduleDelivery", "ReviseCommercial", "ReviseQuantities", "Submit", "Withdraw"], entries);
+        Assert.Equal(["AddLine", "Approve", "ApprovePriceFloorExceptions", "ApproveRemainderChange", "Cancel", "RecordCustomerAcceptance", "Reject", "RejectRemainderChange",
+            "RequestRemainderChange", "RescheduleDelivery", "ReviseCommercial", "ReviseQuantities", "Submit", "Withdraw"], entries);
 
         var draft = Draft();
         draft.Withdraw(2, Preparer, "SENTETIK", T0);
-        var before = (draft.ApprovalState, draft.Version, draft.Revision, draft.Approval, draft.Lines.Count);
+        var before = (draft.ApprovalState, draft.Version, draft.Revision, draft.Approval, draft.Lines.Count, draft.Lines[0].Commercial);
         Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => draft.AddLine(3, Line(), T0)));
         Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => draft.Submit(3, Preparer, T0)));
         Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => draft.Approve(3, Approver, T0)));
+        Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => draft.ApprovePriceFloorExceptions(3,
+            [new LinePriceFloorExceptionApprovalInput(draft.Lines[0].Id, "SENTETIK")], Approver, T0)));
         Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => draft.Reject(3, Approver, null, T0)));
         Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => draft.Withdraw(3, Preparer, null, T0)));
+        Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => draft.RecordCustomerAcceptance(3, Approver, T0)));
         Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => draft.ReviseCommercial(3, [Commercial(draft.Lines[0], "13.00", KgUnit, "5")], "synthetic-pricer", T0)));
         // DEC-SAL-003: the delivery-schedule update is a mutation entry too; a withdrawn draft's dates do not move.
         Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => draft.RescheduleDelivery(3, Day.AddDays(5),
@@ -179,7 +183,12 @@ public sealed class SalesOrderDraftApprovalTests
         // DEC-SAL-002: a withdrawn draft's quantities do not move.
         Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => draft.ReviseQuantities(3,
             [new LineQuantityInput(draft.Lines[0].Id, "9", 9m)], "synthetic-reviser", "SENTETIK", T0)));
-        Assert.Equal(before, (draft.ApprovalState, draft.Version, draft.Revision, draft.Approval, draft.Lines.Count));
+        Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => draft.RequestRemainderChange(3, draft.Lines[0].Id,
+            RemainderChangeKind.Cancel, null, null, "SENTETIK", new RemainderFloor(1m, 1m, 1m), Approver, T0)));
+        Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => draft.ApproveRemainderChange(3, 1,
+            new RemainderFloor(1m, 1m, 1m), Approver, T0)));
+        Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => draft.RejectRemainderChange(3, 1, Approver, "SENTETIK", T0)));
+        Assert.Equal(before, (draft.ApprovalState, draft.Version, draft.Revision, draft.Approval, draft.Lines.Count, draft.Lines[0].Commercial));
         Assert.Equal(InternalApprovalState.Withdrawn, draft.ApprovalState);
     }
 
@@ -307,7 +316,150 @@ public sealed class SalesOrderDraftApprovalTests
         Assert.Equal((InternalApprovalState.Preparing, ApprovalFacts.None, 2L), (draft.ApprovalState, draft.Approval, draft.Version));
     }
 
+    [Theory]
+    [InlineData(RemainderChangeKind.Revise)]
+    [InlineData(RemainderChangeKind.Cancel)]
+    public void Approved_remainder_change_keeps_delivered_facts_and_reopens_as_the_same_record(RemainderChangeKind kind)
+    {
+        var lineId = Guid.Parse("88888888-8888-4888-8888-888888888888");
+        var draft = Draft(Line(lineId));
+        draft.Submit(2, Preparer, T0);
+        draft.Approve(3, Approver, T0.AddMinutes(1));
+        var approval = draft.Approval;
+        var requestFloor = new RemainderFloor(0.7m, 0.6m, 0.5m);
+
+        var requested = draft.RequestRemainderChange(4, lineId, kind,
+            kind == RemainderChangeKind.Revise ? "1.1" : null,
+            kind == RemainderChangeKind.Revise ? 1.1m : null,
+            "SENTETIK müşteri kalanı değiştirdi", requestFloor, Preparer, T0.AddMinutes(2));
+
+        Assert.Equal(("1.25", LineRemainderState.Open, 5L),
+            (draft.Lines.Single().QuantityText, draft.Lines.Single().Remainder, draft.Version));
+        Assert.Equal(0.5m, requested.Request.Floor.Delivered);
+
+        var decisionFloor = new RemainderFloor(0.8m, 0.6m, 0.5m);
+        var decided = draft.ApproveRemainderChange(5, requested.Request.ChangeNo, decisionFloor, Approver, T0.AddMinutes(3));
+        var expectedQuantity = kind == RemainderChangeKind.Cancel ? 0.8m : 1.1m;
+        var expectedText = kind == RemainderChangeKind.Cancel ? "0.8" : "1.1";
+        var expectedRemainder = kind == RemainderChangeKind.Cancel ? LineRemainderState.Cancelled : LineRemainderState.Revised;
+
+        Assert.Equal((expectedQuantity, expectedText, expectedRemainder, 6L, 0, InternalApprovalState.Approved),
+            (draft.Lines.Single().Quantity.Value, draft.Lines.Single().QuantityText, draft.Lines.Single().Remainder,
+                draft.Version, draft.Revision, draft.ApprovalState));
+        Assert.Equal(approval, draft.Approval);
+        Assert.Equal((0.5m, RemainderChangeState.Approved), (decided.Decision!.Floor!.Delivered, decided.State));
+
+        var reopened = SalesOrderDraft.Create(draft.Id, Company, draft.DocumentNo, Header(), Money(), T0);
+        reopened.AddLine(1, Line(lineId, expectedText, expectedQuantity), T0);
+        reopened.RestoreRemainderChange(decided);
+        reopened.RestoreApproval(InternalApprovalState.Approved, approval, draft.Version, draft.UpdatedAtUtc);
+
+        Assert.Equal((draft.Id, expectedQuantity, expectedText, expectedRemainder, 6L, InternalApprovalState.Approved),
+            (reopened.Id, reopened.Lines.Single().Quantity.Value, reopened.Lines.Single().QuantityText,
+                reopened.Lines.Single().Remainder, reopened.Version, reopened.ApprovalState));
+        Assert.Equal((requestFloor, decisionFloor),
+            (reopened.RemainderChanges.Single().Request.Floor, reopened.RemainderChanges.Single().Decision!.Floor));
+    }
+
+    [Theory]
+    [InlineData("current-quantity")]
+    [InlineData("current-text")]
+    [InlineData("decision-floor")]
+    [InlineData("rejected-result")]
+    public void Corrupt_remainder_history_is_refused_instead_of_repaired(string fault)
+    {
+        var lineId = Guid.Parse("88888888-8888-4888-8888-888888888888");
+        var storedText = fault == "current-text" ? "1.10" : fault == "current-quantity" ? "1.2" : "1.1";
+        var storedValue = fault == "current-quantity" ? 1.2m : 1.1m;
+        var draft = Draft(Line(lineId, storedText, storedValue));
+        var request = new RemainderChangeRequest(1, 0, lineId, 1, RemainderChangeKind.Revise, "1.25", 1.1m, "1.1",
+            "SENTETIK kalan", Preparer, T0, new RemainderFloor(0.7m, 0.6m, 0.5m));
+        var decision = fault == "rejected-result"
+            ? new RemainderChangeDecision(RemainderChangeState.Rejected, Approver, T0.AddMinutes(1), null, 1.1m, "1.1", null)
+            : new RemainderChangeDecision(RemainderChangeState.Approved, Approver, T0.AddMinutes(1), null, 1.1m, "1.1",
+                fault == "decision-floor" ? new RemainderFloor(0.7m, 0.8m, 0.5m) : new RemainderFloor(0.8m, 0.6m, 0.5m));
+
+        if (fault is "decision-floor" or "rejected-result")
+        {
+            Assert.Throws<InvalidOperationException>(() => draft.RestoreRemainderChange(new RemainderChangeFacts(request, decision)));
+            return;
+        }
+
+        draft.RestoreRemainderChange(new RemainderChangeFacts(request, decision));
+        Assert.Throws<InvalidOperationException>(() => draft.RestoreApproval(InternalApprovalState.Approved,
+            new ApprovalFacts(Preparer, T0, Approver, T0.AddMinutes(1), null), 6, T0.AddMinutes(2)));
+    }
+
+    [Fact]
+    public void Restore_refuses_a_later_remainder_request_whose_ordered_quantity_breaks_the_same_line_history()
+    {
+        var lineId = Guid.Parse("88888888-8888-4888-8888-888888888888");
+        var draft = Draft(Line(lineId, "0.9", 0.9m));
+        var firstRequest = new RemainderChangeRequest(1, 0, lineId, 1, RemainderChangeKind.Revise, "1.25", 1.1m, "1.1",
+            "SENTETIK ilk kalan", Preparer, T0, new RemainderFloor(0.7m, 0.6m, 0.5m));
+        var firstDecision = new RemainderChangeDecision(RemainderChangeState.Approved, Approver, T0.AddMinutes(1), null,
+            1.1m, "1.1", new RemainderFloor(0.8m, 0.6m, 0.5m));
+        draft.RestoreRemainderChange(new RemainderChangeFacts(firstRequest, firstDecision));
+
+        var corruptSecondRequest = new RemainderChangeRequest(2, 0, lineId, 1, RemainderChangeKind.Revise, "99", 0.9m, "0.9",
+            "SENTETIK ikinci kalan", Preparer, T0.AddMinutes(2), new RemainderFloor(0.8m, 0.6m, 0.5m));
+        var secondDecision = new RemainderChangeDecision(RemainderChangeState.Approved, Approver, T0.AddMinutes(3), null,
+            0.9m, "0.9", new RemainderFloor(0.8m, 0.6m, 0.5m));
+
+        Assert.Throws<InvalidOperationException>(() =>
+            draft.RestoreRemainderChange(new RemainderChangeFacts(corruptSecondRequest, secondDecision)));
+    }
+
     private static string CodeOf(Action action) => Assert.Throws<SalesRuleException>(action).Code;
+
+    [Fact]
+    public void New_order_waits_for_customer_acceptance_and_a_revision_requires_a_fresh_acceptance()
+    {
+        var draft = Draft(customerAcceptanceRequired: true);
+        draft.Submit(2, Preparer, T0);
+        draft.Approve(3, Approver, T0.AddMinutes(1));
+        Assert.False(draft.IsCustomerAccepted);
+
+        draft.RecordCustomerAcceptance(4, "synthetic-customer-acceptor", T0.AddMinutes(2));
+        Assert.True(draft.IsCustomerAccepted);
+        Assert.Equal((0, "synthetic-customer-acceptor", 5L),
+            (draft.CustomerAcceptance!.Revision, draft.CustomerAcceptance.AcceptedBy, draft.Version));
+
+        draft.ReviseCommercial(5, [Commercial(draft.Lines[0], "13.00", KgUnit, "5")], "synthetic-pricer", T0.AddMinutes(3));
+        Assert.False(draft.IsCustomerAccepted);
+        Assert.Equal(0, draft.CustomerAcceptance.Revision);
+    }
+
+    [Fact]
+    public void Restore_refuses_a_current_revision_acceptance_beside_every_non_approved_state()
+    {
+        var cases = new (InternalApprovalState State, ApprovalFacts Facts, long Version)[]
+        {
+            (InternalApprovalState.Preparing, ApprovalFacts.None, 3),
+            (InternalApprovalState.PendingApproval, new ApprovalFacts(Preparer, T0, null, null, null), 4),
+            (InternalApprovalState.Rejected, new ApprovalFacts(Preparer, T0, Approver, T0.AddMinutes(1), "synthetic rejection"), 5),
+        };
+
+        foreach (var (state, facts, version) in cases)
+        {
+            var draft = Draft(customerAcceptanceRequired: true);
+            draft.RestoreCustomerAcceptance(new CustomerAcceptanceFacts(0, "synthetic-customer-acceptor", T0));
+
+            var failure = Assert.Throws<InvalidOperationException>(() =>
+                draft.RestoreApproval(state, facts, version, T0.AddMinutes(2)));
+            Assert.Contains("Güncel revizyon müşteri kabulü", failure.Message, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
+    public void Legacy_order_needs_no_synthetic_customer_acceptance()
+    {
+        var draft = Draft();
+        draft.Submit(2, Preparer, T0);
+        draft.Approve(3, Approver, T0);
+        Assert.True(draft.IsCustomerAccepted);
+        Assert.Null(draft.CustomerAcceptance);
+    }
 
     private static SalesDraftHeader Header() => new(Guid.Parse("33333333-3333-4333-8333-333333333333"),
         Guid.Parse("44444444-4444-4444-8444-444444444444"), Guid.Parse("55555555-5555-4555-8555-555555555555"), Day);
@@ -315,22 +467,23 @@ public sealed class SalesOrderDraftApprovalTests
     private static MoneyProfileSnapshot Money() => new(Company, Guid.Parse("55555555-5555-4555-8555-555555555555"),
         SalesOrderDraft.MoneyOperation, Guid.Parse("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"), "3", Day, true, new DateOnly(2026, 9, 1), null, 2);
 
-    private static SalesDraftLineInput Line()
+    private static SalesDraftLineInput Line(Guid? lineId = null, string quantityText = "1.25", decimal quantity = 1.25m)
     {
         var unit = new UnitProfileSnapshot(Company, KgUnit, "kg", "weight", KgProfile, "4", true, 3, 3, true, new DateOnly(2026, 9, 1), null);
         var binding = new UnitBindingSnapshot(Company, KgUnit, KgProfile, "4");
         var product = new ProductSnapshot(Guid.Parse("99999999-9999-4999-8999-999999999999"), "7", "GDC-001", "Sentetik bant", Day, binding, binding, binding);
-        return new SalesDraftLineInput(Guid.NewGuid(), product, unit, "1.25", 1.25m);
+        return new SalesDraftLineInput(lineId ?? Guid.NewGuid(), product, unit, quantityText, quantity);
     }
 
     /// <summary>A one-line draft at version 2 (1 at birth + 1 line).</summary>
     private static LineCommercialInput Commercial(SalesOrderDraftLine line, string? price, Guid? unit, string? discount) =>
         new(line.Id, new CommercialDraftFields(price, unit, discount));
 
-    private static SalesOrderDraft Draft()
+    private static SalesOrderDraft Draft(SalesDraftLineInput? line = null, bool customerAcceptanceRequired = false)
     {
-        var draft = SalesOrderDraft.Create(Guid.NewGuid(), Company, "SO-2026-000001", Header(), Money(), T0);
-        draft.AddLine(1, Line(), T0);
+        var draft = SalesOrderDraft.Create(Guid.NewGuid(), Company, "SO-2026-000001", Header(), Money(), T0,
+            customerAcceptanceRequired);
+        draft.AddLine(1, line ?? Line(), T0);
         return draft;
     }
 }

@@ -36,6 +36,18 @@ internal static class BrowserSuiteSeedOutputValidator
                 continue;
             }
 
+            if (string.Equals(suite, "acc01", StringComparison.Ordinal)
+                && IsAcc01ScalarKey(key))
+            {
+                if (!IsSuiteSpecificScalar(suite, key, value))
+                {
+                    throw new InvalidOperationException(
+                        $"Seed output '{key}' must match its exact ACC01 scalar contract.");
+                }
+
+                continue;
+            }
+
             if (!isGuid && !actors.Contains(value) && !IsSuiteSpecificScalar(suite, key, value))
             {
                 throw new InvalidOperationException(
@@ -119,6 +131,19 @@ internal static class BrowserSuiteSeedOutputValidator
             };
         }
 
+        if (string.Equals(suite, "acc01", StringComparison.Ordinal))
+        {
+            return key switch
+            {
+                "normalSourceLabel" => IsAcc01SourceLabel(value),
+                "normalOccurredOn" => value == "2026-09-24",
+                "normalAmount" => value == "10.25",
+                "normalDebitLabel" => value == "SENTETIK-100 - Sentetik borc hesabi (Borç)",
+                "normalCreditLabel" => value == "SENTETIK-120 - Sentetik alacak hesabi (Alacak)",
+                _ => false,
+            };
+        }
+
         if (!string.Equals(suite, "pur01", StringComparison.Ordinal))
         {
             return false;
@@ -143,6 +168,25 @@ internal static class BrowserSuiteSeedOutputValidator
         or "planRefusalRollCode" or "outputUiRollCode" or "outputProductVersion"
         or "outputRequiredDocuments" or "outputOwnerKind" or "outputCustodianKind"
         or "outputInitialBlock";
+
+    private static bool IsAcc01ScalarKey(string key) => key is
+        "normalSourceLabel" or "normalOccurredOn" or "normalAmount"
+        or "normalDebitLabel" or "normalCreditLabel";
+
+    private static bool IsAcc01SourceLabel(string value)
+    {
+        const string prefix = "Kaynak ref. ...";
+        const string suffix = " - 2026-09-24";
+        if (!value.StartsWith(prefix, StringComparison.Ordinal)
+            || !value.EndsWith(suffix, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        var tail = value[prefix.Length..^suffix.Length];
+        return tail.Length == 8
+            && tail.All(character => character is (>= '0' and <= '9') or (>= 'a' and <= 'f'));
+    }
 
     private static bool IsPositiveDecimal(string value)
     {

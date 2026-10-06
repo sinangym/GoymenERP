@@ -118,6 +118,8 @@ public sealed class ProductRow
 // command exists in this slice; a retired code remains reserved for its Product.
 public sealed class ProductCodeRegistration
 {
+    private const int MaximumCodeLength = Domain.Products.ProductCode.MaximumPrefixLength + 1 + 19;
+
     private ProductCodeRegistration() { }
     public string Code { get; private set; } = string.Empty;
     public Guid ProductId { get; private set; }
@@ -127,4 +129,34 @@ public sealed class ProductCodeRegistration
     {
         Code = product.Code, ProductId = product.Id, IsCurrent = true,
     };
+
+    public static ProductCodeRegistration Legacy(ProductRow product, string code)
+    {
+        ArgumentNullException.ThrowIfNull(product);
+        ArgumentException.ThrowIfNullOrWhiteSpace(code);
+        var normalized = code.Trim();
+        if (!IsStorageCompatibleLegacyCode(normalized) || code.Any(char.IsControl))
+            throw new ArgumentException("Eski ürün kodu geçersiz.", nameof(code));
+        return new() { Code = normalized, ProductId = product.Id, IsCurrent = false };
+    }
+
+    // CodeRegistrations.Code is varchar under Latin1_General_100_BIN2 (Windows-1252).
+    // Refuse aliases SQL Server cannot preserve byte-for-byte instead of allowing
+    // replacement-character collisions at the participant boundary.
+    internal static bool IsStorageCompatibleLegacyCode(string code)
+    {
+        ArgumentNullException.ThrowIfNull(code);
+        return code.Length is > 0 and <= MaximumCodeLength && code.All(IsWindows1252IdentityCharacter);
+    }
+
+    private static bool IsWindows1252IdentityCharacter(char character)
+    {
+        if (char.IsControl(character)) return false;
+        return character <= '\u007f'
+               || character is >= '\u00a0' and <= '\u00ff'
+               || character is '\u20ac' or '\u201a' or '\u0192' or '\u201e' or '\u2026' or '\u2020'
+                   or '\u2021' or '\u02c6' or '\u2030' or '\u0160' or '\u2039' or '\u0152' or '\u017d'
+                   or '\u2018' or '\u2019' or '\u201c' or '\u201d' or '\u2022' or '\u2013' or '\u2014'
+                   or '\u02dc' or '\u2122' or '\u0161' or '\u203a' or '\u0153' or '\u017e' or '\u0178';
+    }
 }

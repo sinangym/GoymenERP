@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace GoymenERP.Modules.Inventory.Application;
 
 /// <summary>
@@ -48,7 +50,12 @@ public sealed record InventoryParentRollReferenceV1(
     string DocumentStatus, IReadOnlyList<string> RequiredDocuments, IReadOnlyList<string> AttachedDocuments,
     string PhysicalKg, string UnblockedPhysicalKg, string BlockedPhysicalKg,
     IReadOnlyList<InventoryPositionV1> Positions,
-    bool DraftSelectable, string? DraftRefusalCode, bool ProductionUseRequiresRevalidation);
+    bool DraftSelectable, string? DraftRefusalCode, bool ProductionUseRequiresRevalidation)
+{
+    /// <summary>The immutable Product card version captured when this physical label was created.</summary>
+    [JsonRequired]
+    public string ProductVersion { get; init; } = string.Empty;
+}
 
 public static class InventoryParentRollCodesV1
 {

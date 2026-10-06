@@ -23,6 +23,7 @@ import json
 import pathlib
 import re
 import sys
+import xml.etree.ElementTree as ET
 
 _C01_PATH = pathlib.Path(__file__).resolve().with_name("validate_c01_e2e_contract.py")
 _spec = importlib.util.spec_from_file_location("validate_c01_e2e_contract", _C01_PATH)
@@ -33,6 +34,36 @@ _spec.loader.exec_module(c01)
 
 ContractError = c01.ContractError
 require = c01.require
+
+_S04_SAFE_FAILURE_CASE = (
+    "S04-PL-03 below-floor pricing is saved pending and a different actor approves it once with a reason"
+)
+_SAFE_FAILURE_PROPERTY = "safe_failure_phase"
+_S04_SAFE_FAILURE_PHASES = frozenset(f"s04_pl03_p{index}" for index in range(1, 8))
+_UNSAFE_XML_DECLARATION = re.compile(br"<!\s*(?:DOCTYPE|ENTITY)\b", re.IGNORECASE)
+_BOUNDED_ASCII = re.compile(r"^[\x20-\x7e]{1,64}$")
+_MAX_JUNIT_BYTES = 2_000_000
+_MAX_JUNIT_ELEMENTS = 20_000
+_MAX_JUNIT_DEPTH = 16
+
+
+class _BoundedJUnitTreeBuilder(ET.TreeBuilder):
+    def __init__(self) -> None:
+        super().__init__()
+        self._elements = 0
+        self._depth = 0
+
+    def start(self, tag: str, attrs: dict[str, str]) -> ET.Element:
+        self._elements += 1
+        self._depth += 1
+        require(self._elements <= _MAX_JUNIT_ELEMENTS, "S04 JUnit XML has too many elements")
+        require(self._depth <= _MAX_JUNIT_DEPTH, "S04 JUnit XML exceeds the bounded depth")
+        return super().start(tag, attrs)
+
+    def end(self, tag: str) -> ET.Element:
+        element = super().end(tag)
+        self._depth -= 1
+        return element
 
 SUITES = ("smoke", "c03", "org03", "u02", "s03", "mfg", "fin01", "s04", "acc01", "l04", "pur01", "r14", "c02")
 # s03 writes since S03 (#327): V2A-02 attempts a POST (nothing is stored, but it is no read-only run).
@@ -92,6 +123,13 @@ ENVELOPE_KEYS = (
     "GOYMEN_ERP_C01_E2E_RUN_ID",
     "GOYMEN_ERP_C01_E2E_COMPOSE_PROJECT",
 )
+API_READ_FIXTURE_KEYS = (
+    "BrowserSuiteApi__Profile",
+    "BrowserSuiteApi__Disposable",
+    "BrowserSuiteApi__TestedCommit",
+    "BrowserSuiteApi__RunId",
+    "BrowserSuiteApi__ComposeProject",
+)
 CANONICAL_API_ENVIRONMENT_KEYS = frozenset({
     "ASPNETCORE_ENVIRONMENT",
     "DB_PROVIDER",
@@ -118,6 +156,9 @@ _GUID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}
 # zero-padded index would silently add an actor outside the contiguity check (#322 ORG P3).
 _ACTOR_KEY = re.compile(r"^BootstrapIdentity__Users__(0|[1-9][0-9]*)__(UserId|DisplayName)$")
 MAX_SUITE_ACTORS = 8
+# S04's accepted remainder journey adds exactly the L04-provenance preparer/loader pair to its existing
+# eight disposable actors. Every other suite keeps the global cap; this is not a general expansion knob.
+SUITE_ACTOR_LIMITS = {"s04": 10}
 SUITE_API_EXTENSIONS = {
     # U-02: the Product runtime's issuer binding, matching the suite seed's local user and
     # external identity (ÜRÜN, #319 P3). U-01-360 (#466, user decision 2026-09-27): one disposable
@@ -202,18 +243,20 @@ SUITE_IDENTITY_PERMISSIONS = {
     # hold ONLY identity.assignments.read — the same company-fence design, now for the read-only access view.
     # ERP-000G / AT-065: c02-creator and c02-other-company also hold the document vault's two names (the same names in
     # different companies, the suite's design), for the Cari-card document journey (c02-documents.spec.ts).
+    # AT-009 (user decision 2026-09-30): c02-tax-maker (A) holds create + read + the two VKN/TCKN names, c02-tax-checker
+    # (A) holds read + approve only — the maker-checker pair of the Cari card's VKN/TCKN journey.
     "c02": ("counterparty.parties.create", "counterparty.parties.read", "identity.assignments.read",
-            "documents.files.read", "documents.files.upload"),
+            "documents.files.read", "documents.files.upload",
+            "counterparty.parties.tax-identity.update", "counterparty.parties.tax-identity.approve"),
     # ORG master edit (user decision 2026-09-27): a THIRD actor, org03-editor, holds the three reads its
     # screens need (work-centers, locations, sites) plus the three master-edit writes. The two readers above
     # keep their exact subsets, so the suite also shows a reader is offered no create/edit control.
     "org03": ("organization.work-centers.read", "organization.locations.read", "organization.sites.read",
               "organization.sites.write", "organization.locations.write", "organization.work-centers.write"),
-    # u02: the issuer's Identity user holds nothing (the issuer-user rule). The disposable activator's
-    # membership role carries only the baseline identity.profile.read, which no endpoint or shell
-    # capability uses: it establishes the fresh company membership Product authorization requires and
-    # opens nothing. Its Product authority is the seed's gated SYSTEM_ADMINISTRATOR-role grant (PRD-PERM-001 A).
-    "u02": ("identity.profile.read",),
+    # u02: issuer holds nothing; activator keeps only baseline membership. The separate disposable
+    # Inventory recorder gets exactly opening + Product owner-read + label/balance reads.
+    "u02": ("identity.profile.read", "inventory.opening-stock.record",
+            "product.operational-selection.read", "inventory.labels.read", "inventory.balances.read"),
     # SALES-A1 (coordinator): the approval and the draft's party read, for the v2b positive path.
     "s03": ("sales.drafts.create", "sales.drafts.read", "product.operational-selection.read",
             "counterparty.parties.read", "sales.orders.approve"),
@@ -228,14 +271,16 @@ SUITE_IDENTITY_PERMISSIONS = {
         "manufacturing.facts.record",
         "manufacturing.orders.read",
         "manufacturing.orders.close",
+        "manufacturing.orders.close-exception.approve",
         "organization.work-centers.read",
         "inventory.labels.read",
         "inventory.balances.read",
         "inventory.opening-stock.record",
         "product.operational-selection.read",
+        "counterparty.parties.read",
     ),
-    # The nineteen Finance names and the Cari owner's authorized party read. The list is the complete
-    # union of the disposable proposer and approver grants in fin01.override.yml.
+    # The Finance names and the Cari owner's authorized party read. The list is the complete
+    # union of the disposable proposer, approver and read-only allocation reader grants in fin01.override.yml.
     "fin01": (
         "finance.bank-account.read",
         "finance.bank-account.propose",
@@ -262,6 +307,14 @@ SUITE_IDENTITY_PERMISSIONS = {
         # Party ledger (user decision 2026-09-28): the disposable fin01-proposer alone holds the two ledger reads.
         "finance.party-ledger.read",
         "finance.party-ledger.amount.read",
+        # Official-invoice acceptance: proposer uploads; a different approver lists/details/approves and
+        # reaches the approved source through the existing manual-receipt draft read.
+        "finance.official-invoice-import.upload",
+        "finance.official-invoice-import.approve",
+        # F-03 same-record acceptance: the disposable approver reopens and releases the exact
+        # allocation created from the imported open item. These are existing Finance permissions.
+        "finance.allocation.read",
+        "finance.allocation.write",
     ),
     # SALES-A1's approval axis: the preparer creates and reads, the approver approves and reads, the reader reads.
     # SALES-A2a: the preparer reaches the Cari owner's contact information through its OWN party read.
@@ -273,14 +326,24 @@ SUITE_IDENTITY_PERMISSIONS = {
     "s04": ("sales.drafts.create", "sales.drafts.read", "sales.orders.approve",
             "counterparty.parties.read", "counterparty.parties.update.basic",
             "product.operational-selection.read", "sales.orders.price.read", "sales.orders.price.write",
+            "product.price-lists.read", "product.price-lists.write", "product.price-lists.publish",
+            "sales.orders.price-floor-exception.approve",
             "inventory.opening-stock.record", "inventory.labels.read", "inventory.balances.read",
             "inventory.physical-allocation.write", "sales.orders.delivery-schedule.write",
-            "sales.orders.cancel", "sales.orders.quantity.write"),
-    # The six Accounting names. The preparer holds .approve on purpose — Ö4 must refuse its OWN proposal
-    # although the grant is there — and holds periods.read alone in the second company; the approver holds
-    # no journal or queue name, so those routes stay closed to it.
+            "sales.orders.cancel", "sales.orders.quantity.write",
+            "sales.orders.customer-acceptance.record",
+            # S04-RM: the two suite-local actors reproduce the accepted L04 preparer/loader split. Shipment
+            # retains its existing dual permission fence with inventory.physical-allocation.write above.
+            "logistics.loading-instructions.create", "logistics.loading-instructions.read",
+            "logistics.loads.record", "logistics.shipments.record",
+            "logistics.dispatch-notes.create", "logistics.dispatch-notes.approve",
+            "logistics.deliveries.record"),
+    # Accounting's six screen names plus the exact existing Finance reads and normal-draft create/approve
+    # used by ACC01-10. They are grants only in this disposable runner database.
     "acc01": ("accounting.periods.read", "accounting.periods.propose", "accounting.periods.approve",
-              "accounting.periods.close", "accounting.journals.read", "accounting.posting-queues.read"),
+              "accounting.periods.close", "accounting.journals.read", "accounting.posting-queues.read",
+              "finance.manual-receipt.draft.read", "finance.manual-receipt.amount.read",
+              "accounting.normal-journal.draft.create", "accounting.normal-journal.draft.approve"),
     # LOG-4a's three Logistics names; the Sales names stay on the two Sales seed actors (the preparer holds none:
     # the picker reads the price-free Logistics approved-lines read under the create name, Sinan §4).
     # ... and the Cari party read the preparer needs to see the customer by name at all: the price-free
@@ -290,12 +353,14 @@ SUITE_IDENTITY_PERMISSIONS = {
             "logistics.shipments.record", "logistics.deliveries.record", "logistics.weighings.record",
             # AT-055: the disposable loader prepares the dispatch-note draft, approves it and cancels it (user decision 2026-09-30).
             "logistics.dispatch-notes.create", "logistics.dispatch-notes.approve", "logistics.dispatch-notes.cancel",
+            "logistics.customer-returns.read", "logistics.customer-returns.request",
+            "logistics.customer-returns.decision",
             "sales.drafts.create", "sales.drafts.read", "sales.orders.approve", "counterparty.parties.read",
             "inventory.opening-stock.record", "inventory.labels.read", "inventory.balances.read",
             "inventory.physical-allocation.write", "product.operational-selection.read",
             # AT-025: the disposable l04-operations reader and the seed-only l04-purchase-approver.
             "logistics.operations-work.sales.read", "logistics.operations-work.purchase.read",
-            "purchasing.orders.read", "purchasing.orders.approve"),
+            "purchasing.orders.read", "purchasing.goods-receipts.record", "purchasing.orders.approve"),
     # PUR-01: the complete union of the disposable creator, approver and reader grants. The creator's
     # two owner-read names are the same intersection the real Purchasing create command already uses;
     # this closed list grants nothing outside the disposable normal profile.
@@ -314,6 +379,8 @@ SUITE_IDENTITY_PERMISSIONS = {
     # r14-scrap-approver only stock-scrap.approve, each beside the two label reads (maker != checker).
     "r14": ("inventory.opening-stock.record", "product.operational-selection.read",
             "inventory.labels.read", "inventory.balances.read",
+            "documents.files.read", "documents.files.upload",
+            "inventory.label-classification.write",
             "organization.locations.read", "inventory.label-transformation.record",
             "inventory.stock-count.record", "inventory.stock-count.approve",
             "inventory.stock-scrap.record", "inventory.stock-scrap.approve"),
@@ -456,6 +523,70 @@ def validate_suite_identity(suite: str, extra: dict, actor_ids: list[str]) -> No
                 f"{label} must be company-wide on its own company")
         assigned.add(assignment["UserId"])
     require(set(users) - {issuer_user} <= assigned, "every suite actor's Identity user needs at least one assignment")
+    if suite == "u02":
+        company_id = "10000000-0000-0000-0000-000000000001"
+        issuer_ids = ("b2000000-0000-4000-8000-000000000201",
+                      "b2100000-0000-4000-8000-000000000201")
+        inventory_permissions = frozenset((
+            "inventory.opening-stock.record", "product.operational-selection.read",
+            "inventory.labels.read", "inventory.balances.read",
+        ))
+        recorder_marker = (
+            "u02-inventory-recorder" in actor_ids
+            or any(subject == "u02-inventory-recorder" for subject in users.values())
+            or "b2000000-0000-4000-8000-000000000220" in users
+            or "b3000000-0000-4000-8000-000000000220" in roles
+            or any(role["Code"] == "BROWSER_U02_INVENTORY_RECORDER" for role in roles.values())
+            or any(row["Id"] == "b4000000-0000-4000-8000-000000000220"
+                   or row["UserId"] == "b2000000-0000-4000-8000-000000000220"
+                   or row["RoleId"] == "b3000000-0000-4000-8000-000000000220"
+                   for row in grouped["Assignments"].values())
+        )
+        has_inventory_permission = any(
+            role[key] in inventory_permissions
+            for role in roles.values() for key in role if key.startswith("Permissions__")
+        )
+        if not (recorder_marker or has_inventory_permission):
+            return
+        expected = {
+            "u02-activator": (
+                "b2000000-0000-4000-8000-000000000210",
+                "b2100000-0000-4000-8000-000000000210",
+                "b3000000-0000-4000-8000-000000000210",
+                "b4000000-0000-4000-8000-000000000210",
+                "BROWSER_U02_ACTIVATOR", ("identity.profile.read",)),
+            "u02-inventory-recorder": (
+                "b2000000-0000-4000-8000-000000000220",
+                "b2100000-0000-4000-8000-000000000220",
+                "b3000000-0000-4000-8000-000000000220",
+                "b4000000-0000-4000-8000-000000000220",
+                "BROWSER_U02_INVENTORY_RECORDER",
+                ("inventory.opening-stock.record", "product.operational-selection.read",
+                 "inventory.labels.read", "inventory.balances.read")),
+        }
+        require(set(actor_ids) == set(expected), "u02 actors must be the exact activator and Inventory recorder")
+        require(tuple(extra.get(key) for key in ISSUER_KEYS) == issuer_ids,
+                "u02 Product issuer must keep its exact synthetic binding")
+        require(set(users) == {issuer_ids[0]} | {entry[0] for entry in expected.values()},
+                "u02 Identity users must be only the issuer and exact two actors")
+        require(set(roles) == {entry[2] for entry in expected.values()}
+                and len(grouped["Assignments"]) == len(expected),
+                "u02 roles and assignments must be exactly one per actor")
+        for actor, (user_id, external_id, role_id, assignment_id, role_code, permissions) in expected.items():
+            require(users.get(user_id) == actor
+                    and user_rows[user_id]["ExternalIdentities__0__Id"] == external_id,
+                    f"u02 {actor} must keep its exact synthetic Identity binding")
+            role = roles[role_id]
+            permission_keys = [key for key in role if key.startswith("Permissions__")]
+            require(len(permission_keys) == len(permissions),
+                    f"u02 {actor} must keep its exact isolated permissions")
+            actual_permissions = tuple(role[f"Permissions__{index}"] for index in range(len(permissions)))
+            require(role["Code"] == role_code and actual_permissions == permissions,
+                    f"u02 {actor} must keep its exact isolated permissions")
+            matching = [row for row in grouped["Assignments"].values() if row["UserId"] == user_id]
+            require(len(matching) == 1 and matching[0]["Id"] == assignment_id
+                    and matching[0]["RoleId"] == role_id and matching[0]["CompanyId"] == company_id,
+                    f"u02 {actor} must keep its exact company and role assignment")
 
 
 # Stage 2 (a2 part 2): suites whose owner seeds data through the fixture runner
@@ -468,7 +599,7 @@ FIXTURE_TOOL_SUITES_DIRECTORY = "tests/GoymenERP.BrowserSuiteFixtureTool/Suites"
 SUITE_FIXTURE_OUTPUTS: dict[str, frozenset[str]] = {
     # ÜRÜN's Suites/U02 seed: the company, gated code group, fixed synthetic technical family and actors.
     "u02": frozenset({"companyId", "codeGroupId", "technicalFamilyId", "authorizedActor", "unauthorizedActor",
-                      "activatorActor"}),
+                      "activatorActor", "inventoryRecorderActor"}),
     # ORG's Suites/MFG seed (#323 5735635840): the actors, the company, the seeded work centre (read
     # through the real Organization API) and the plan -> approval -> order it writes through the real API.
     # MFG-ORD adds the closer actor; the list and the close need no further seeded row.
@@ -483,8 +614,10 @@ SUITE_FIXTURE_OUTPUTS: dict[str, frozenset[str]] = {
         "outputCustodianId", "outputLocationId", "outputInitialBlock",
     }),
     # FİNANS's Suites/Fin01 seed (#332): the company, the customer opened through the real Cari API and
-    # its company account, and the two suite actors. No SQL, no gated writer, no Finance row.
-    "fin01": frozenset({"companyId", "partyId", "companyAccountId", "proposerActor", "approverActor"}),
+    # its company account, and the three suite actors. No SQL, no gated writer, no Finance row.
+    "fin01": frozenset({
+        "companyId", "partyId", "companyAccountId", "proposerActor", "approverActor", "readerActor",
+    }),
     # SİPARİŞ's Suites/S04 seed: the three actors, the company and the one Preparing draft written through
     # the gated Sales draft writer (C01E2eSalesDraftFixtureWriter).
     # SALES-A2a adds the second draft the delivery-reference path uses, the real party and its company
@@ -502,8 +635,10 @@ SUITE_FIXTURE_OUTPUTS: dict[str, frozenset[str]] = {
     # FİNANS's Suites/ACC01 seed: the two actors and both companies. Periods are proposed, approved and closed
     # through the real API; since ACC-REV-UI phase 1 the seed also installs one fixed SENTETIK posted journal
     # (gated fixture writer, owner posting path) so ACC01-09 can open M-04 detail and read M-06. Its id is read
-    # from the real API, so the output keys stay these four. The second company only shows GDC's rows never appear.
-    "acc01": frozenset({"companyId", "companyBId", "preparerActor", "approverActor"}),
+    # from real APIs. ACC01-10 additionally exports the exact source and approved mapping labels.
+    "acc01": frozenset({"companyId", "companyBId", "preparerActor", "approverActor",
+                         "normalSourceLabel", "normalOccurredOn", "normalAmount",
+                         "normalDebitLabel", "normalCreditLabel", "openPeriodId"}),
     # SİPARİŞ's Suites/L04 seed: the three actors, both companies, the customer (by id and name), the approved draft
     # line, the instruction created and issued through the real API, its open and gated-blocked lines,
     # and the shipment allocation/label created for the same disposable journey.
@@ -511,7 +646,8 @@ SUITE_FIXTURE_OUTPUTS: dict[str, frozenset[str]] = {
     # asserts the deterministic SENTETIK label as a constant instead.
     "l04": frozenset({"preparerActor", "loaderActor", "readerActor", "companyId", "otherCompanyId", "customerPartyId",
                       "companyAccountId", "draftId", "approvedLineId", "instructionId", "blockedLineId",
-                      "openLineId", "shipmentAllocationId", "shipmentLabelId"}),
+                      "openLineId", "shipmentAllocationId", "shipmentLabelId",
+                      "shipmentReceiptAcceptanceId", "shipmentReceiptMovementId"}),
     # SATINALMA's Suites/PUR01 seed: the existing synthetic Draft approval axis plus the separate creator,
     # the real Cari-owned active Supplier account and Product's exact gated purchase-candidate tuple.
     "pur01": frozenset({"creatorActor", "approverActor", "readerActor", "receiverActor", "stockReaderActor",
@@ -549,6 +685,24 @@ def seed_export(suite: str, seed: object) -> str:
     require(set(seed) == set(expected),
             f"seed output keys are not the closed list: missing {sorted(expected - set(seed))}, "
             f"extra {sorted(set(seed) - expected)}")
+    if suite == "u02":
+        require(seed["companyId"] == "10000000-0000-0000-0000-000000000001",
+                "u02 seed company must be the exact GDC company")
+        for key in ("codeGroupId", "technicalFamilyId"):
+            value = seed[key]
+            require(isinstance(value, str) and _ANY_GUID.fullmatch(value) is not None
+                    and value != "00000000-0000-0000-0000-000000000000",
+                    f"u02 seed output {key} must be a canonical nonzero lowercase GUID")
+        actor_keys = ("authorizedActor", "unauthorizedActor", "activatorActor", "inventoryRecorderActor")
+        actor_values = [seed[key] for key in actor_keys]
+        require(all(isinstance(value, str) for value in actor_values),
+                "u02 seed actor outputs must be strings")
+        require(seed["inventoryRecorderActor"] == "u02-inventory-recorder"
+                and len(set(actor_values)) == len(actor_keys),
+                "u02 seed actors must be distinct and use the exact Inventory recorder")
+    if suite == "fin01":
+        actors = [seed[key] for key in ("proposerActor", "approverActor", "readerActor")]
+        require(len(set(actors)) == len(actors), "fin01 seed actors must be distinct")
     mfg_actor_keys = frozenset({"recorderActor", "readerActor", "closerActor"})
     mfg_exact_text = {
         "issueRollCode": "SYN-MFG-ROLL-2",
@@ -565,11 +719,21 @@ def seed_export(suite: str, seed: object) -> str:
         "outputCustodianKind": "Company",
         "outputInitialBlock": "Free",
     }
+    acc01_exact_text = {
+        "normalOccurredOn": "2026-09-24",
+        "normalAmount": "10.25",
+        "normalDebitLabel": "SENTETIK-100 - Sentetik borc hesabi (Borç)",
+        "normalCreditLabel": "SENTETIK-120 - Sentetik alacak hesabi (Alacak)",
+    }
+    acc01_scalar_keys = frozenset(acc01_exact_text) | {"normalSourceLabel"}
     mfg_guid_keys = expected - mfg_actor_keys - frozenset(mfg_exact_text) - {"outputProductVersion"}
     for key, value in seed.items():
         require(isinstance(value, str), f"seed output {key} must be a string")
         is_guid = _ANY_GUID.fullmatch(value) is not None and value != "00000000-0000-0000-0000-000000000000"
         is_actor = value in CANONICAL_ACTORS or re.fullmatch(rf"{suite}-[a-z0-9-]{{1,48}}", value) is not None
+        if suite == "u02" and key in ("authorizedActor", "unauthorizedActor",
+                                      "activatorActor", "inventoryRecorderActor"):
+            require(is_actor, f"u02 seed output {key} must be a current-run actor id")
         if suite == "mfg":
             if key in mfg_actor_keys:
                 require(is_actor, f"mfg seed output {key} must be a current-run actor id")
@@ -581,6 +745,14 @@ def seed_export(suite: str, seed: object) -> str:
             else:
                 require(mfg_exact_text.get(key) == value,
                         f"mfg seed output {key} must match its exact closed-contract value")
+            continue
+        if suite == "acc01" and key in acc01_scalar_keys:
+            if key == "normalSourceLabel":
+                require(re.fullmatch(r"Kaynak ref\. \.\.\.[0-9a-f]{8} - 2026-09-24", value) is not None,
+                        "acc01 seed output normalSourceLabel must match its exact closed-contract pattern")
+            else:
+                require(acc01_exact_text[key] == value,
+                        f"acc01 seed output {key} must match its exact closed-contract value")
             continue
         is_s04_version = suite == "s04" and key in {"productVersion", "productUnitProfileVersion",
                                                      "allocationLabelVersion"} \
@@ -604,7 +776,7 @@ def seed_export(suite: str, seed: object) -> str:
         require(is_guid or is_actor or is_s04_version or is_s04_code or is_s04_name
                 or is_pur01_version or is_pur01_code or is_pur01_name
                 or is_r14_version or is_r14_code or is_r14_name,
-                f"seed output {key} must be a GUID or an actor id or an approved suite Product value")
+                f"seed output {key} must be a GUID or an actor id or an approved suite scalar value")
     if suite == "mfg":
         require(seed["outputOwnerId"] == seed["companyId"],
                 "mfg output owner must be the seeded company")
@@ -662,7 +834,8 @@ def validate_suite_extensions(suite: str, extra: dict) -> None:
         indices = sorted(actors)
         require(indices == list(range(2, 2 + len(indices))),
                 "suite actors must continue the canonical two contiguously from index 2")
-        require(len(indices) <= MAX_SUITE_ACTORS, f"at most {MAX_SUITE_ACTORS} suite actors")
+        actor_limit = SUITE_ACTOR_LIMITS.get(suite, MAX_SUITE_ACTORS)
+        require(len(indices) <= actor_limit, f"at most {actor_limit} suite actors")
         ids = set()
         for index in indices:
             actor = actors[index]
@@ -719,6 +892,20 @@ def validate_suite_compose(model: dict, suite: str, expected_commit: str, expect
             require(not key.startswith("C01E2e__") and not key.startswith("GOYMEN_ERP_C01_E2E_"),
                     f"normal profile API must not carry the disposable capability envelope ({key})")
         expected_keys = CANONICAL_API_ENVIRONMENT_KEYS - set(ENVELOPE_KEYS)
+        if suite in ("mfg", "acc01"):
+            expected_keys |= set(API_READ_FIXTURE_KEYS)
+            require(environment.get("BrowserSuiteApi__Profile") == suite,
+                    f"{suite} API read fixture profile must be {suite}")
+            require(environment.get("BrowserSuiteApi__Disposable") == "CONFIRMED",
+                    f"{suite} API read fixture must be explicitly disposable")
+            require(environment.get("BrowserSuiteApi__TestedCommit") == expected_commit,
+                    f"{suite} API read fixture source SHA drift")
+            require(environment.get("BrowserSuiteApi__RunId") == expected_project.split("-")[-2],
+                    f"{suite} API read fixture run id drift")
+            require(environment.get("BrowserSuiteApi__ComposeProject") == expected_project,
+                    f"{suite} API read fixture compose project drift")
+            for key in API_READ_FIXTURE_KEYS:
+                canonical_environment.pop(key, None)
         # Only to let the canonical rules run: the envelope values they expect, never sent to the API.
         canonical_environment.update({
             "C01E2e__EnableListCapability": "true",
@@ -772,7 +959,96 @@ def upload_paths(root: str | pathlib.Path, suite: str) -> list[pathlib.Path]:
     return selected
 
 
-def validate_privacy(root: str | pathlib.Path, suite: str, forbidden_values: list[str] | tuple[str, ...] = ()) -> None:
+def _s04_safe_failure_phase(content: bytes) -> str | None:
+    """Extract only the bounded annotation; failure payloads remain opaque."""
+    require(len(content) <= _MAX_JUNIT_BYTES, "S04 JUnit XML exceeds the bounded input size")
+    declaration_view = content.replace(b"\x00", b"")
+    require(_UNSAFE_XML_DECLARATION.search(declaration_view) is None,
+            "S04 JUnit XML declarations are not allowed")
+    try:
+        parser = ET.XMLParser(target=_BoundedJUnitTreeBuilder())
+        root = ET.fromstring(content, parser=parser)
+    except ET.ParseError as error:
+        raise ContractError("S04 JUnit XML is malformed") from error
+
+    if root.tag == "testsuite":
+        suites = (root,)
+    elif root.tag == "testsuites":
+        suites = tuple(child for child in root if child.tag == "testsuite")
+    else:
+        require(_SAFE_FAILURE_PROPERTY.encode("ascii") not in content,
+                "safe failure phase marker is outside the JUnit suite structure")
+        return None
+
+    direct_cases = tuple(
+        child
+        for suite in suites
+        for child in suite
+        if child.tag == "testcase"
+    )
+    targets = tuple(
+        element
+        for element in root.iter("testcase")
+        if element.attrib.get("name") == _S04_SAFE_FAILURE_CASE
+    )
+    markers = tuple(
+        element
+        for element in root.iter("property")
+        if element.attrib.get("name") == _SAFE_FAILURE_PROPERTY
+    )
+
+    require(len(targets) <= 1, "S04 safe failure testcase is duplicated")
+    if not targets:
+        require(not markers, "safe failure phase marker is outside S04-PL-03")
+        return None
+
+    target = targets[0]
+    require(any(target is candidate for candidate in direct_cases),
+            "S04 safe failure testcase has the wrong XML depth")
+    require(len(markers) <= 1, "S04 safe failure phase marker is duplicated")
+    if not markers:
+        return None
+
+    properties = tuple(child for child in target if child.tag == "properties")
+    require(len(properties) == 1, "S04 safe failure properties has the wrong XML depth")
+    direct_markers = tuple(
+        child
+        for child in properties[0]
+        if child.tag == "property" and child.attrib.get("name") == _SAFE_FAILURE_PROPERTY
+    )
+    require(len(direct_markers) == 1 and direct_markers[0] is markers[0],
+            "S04 safe failure phase marker has the wrong XML depth")
+    marker = direct_markers[0]
+    require(set(marker.attrib) == {"name", "value"} and not list(marker)
+            and (marker.text is None or marker.text.strip() == ""),
+            "S04 safe failure phase marker must be a direct leaf value")
+    require(content.count(_SAFE_FAILURE_PROPERTY.encode("ascii")) == 1,
+            "S04 safe failure phase marker uses multiple channels")
+
+    value = marker.attrib["value"]
+    require(_BOUNDED_ASCII.fullmatch(value) is not None,
+            "S04 safe failure phase must be bounded ASCII")
+    require(value in _S04_SAFE_FAILURE_PHASES, "S04 safe failure phase is unknown")
+
+    direct_outcomes = tuple(child for child in target if child.tag in {"failure", "error"})
+    nested_outcomes = tuple(
+        child
+        for child in target.iter()
+        if child is not target and child.tag in {"failure", "error"}
+    )
+    require(len(nested_outcomes) == len(direct_outcomes),
+            "S04 failure outcome has the wrong XML depth")
+    require(len(direct_outcomes) <= 1, "S04 failure outcome uses multiple channels")
+    require(not direct_outcomes or not any(child.tag == "skipped" for child in target),
+            "S04 failure outcome uses multiple channels")
+    return value if direct_outcomes else None
+
+
+def validate_privacy(
+    root: str | pathlib.Path,
+    suite: str,
+    forbidden_values: list[str] | tuple[str, ...] = (),
+) -> str | None:
     """Every file that would be uploaded is free of C-01's forbidden patterns and of the run's secrets."""
     artifact_root = pathlib.Path(root).resolve()
     selected = upload_paths(artifact_root, suite)
@@ -788,6 +1064,11 @@ def validate_privacy(root: str | pathlib.Path, suite: str, forbidden_values: lis
             require(pattern.search(content) is None, f"artifact privacy violation ({label}): {relative}")
         for index, needle in enumerate(needles):
             require(needle not in content, f"artifact privacy violation (runtime secret {index}): {relative}")
+    if suite == "s04":
+        junit = artifact_root / "browser-s04-junit.xml"
+        if junit in selected:
+            return _s04_safe_failure_phase(junit.read_bytes())
+    return None
 
 
 def parser() -> argparse.ArgumentParser:
@@ -818,7 +1099,9 @@ def main(argv: list[str] | None = None) -> int:
     arguments = parser().parse_args(argv)
     try:
         if arguments.command == "privacy":
-            validate_privacy(arguments.root, arguments.suite, arguments.forbidden_value)
+            safe_phase = validate_privacy(arguments.root, arguments.suite, arguments.forbidden_value)
+            if safe_phase is not None:
+                print(f"BROWSER_SAFE_PHASE={safe_phase}")
         elif arguments.command == "profile":
             selected = profile_of(arguments.suite)
             # GITHUB_OUTPUT lines for the workflow.

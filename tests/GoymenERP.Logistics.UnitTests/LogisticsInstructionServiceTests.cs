@@ -51,6 +51,73 @@ public sealed partial class LogisticsInstructionServiceTests
     }
 
     [Fact]
+    public async Task A_resolved_sales_aggregate_limit_is_rechecked_and_forwarded_without_logistics_recalculation()
+    {
+        var world = new World { OrderLines = { Fault = "limit" } };
+
+        var response = await world.Service().CreateInstructionAsync(Request(quantity: "1.25"), Metadata("k-limit"));
+
+        var line = Assert.Single(response.Detail.Lines);
+        var limit = Assert.Single(world.Store.AggregateLimits);
+        Assert.Equal(2, world.OrderLines.Calls);
+        Assert.Equal((line.LineId, Company, Order, OrderLine, KgUnit, 7L, 5m, "5", "Sales", OrderLine.ToString("D"), "3", Day),
+            (limit.InstructionLineId, limit.CompanyId, limit.OrderId, limit.OrderLineId, limit.UnitId, limit.SalesOrderVersion,
+                limit.MaximumAggregateQuantity, limit.MaximumAggregateQuantityText, limit.SourceOwner, limit.SourceId,
+                limit.SourceVersion, limit.EffectiveOn));
+    }
+
+    [Fact]
+    public async Task A_create_aggregate_limit_refusal_is_terminal_replayed_and_has_zero_instruction_effect()
+    {
+        var world = new World { OrderLines = { Fault = "limit" } };
+        world.Store.CreateFault = new LogisticsStoreException(LogisticsStoreCodes.AggregateLimitExceeded, "synthetic aggregate cap");
+        var request = Request(quantity: "1.25");
+
+        var refusal = await Assert.ThrowsAsync<LogisticsInstructionServiceException>(() =>
+            world.Service().CreateInstructionAsync(request, Metadata("k-create-cap")));
+        Assert.Equal((409, LogisticsProblemCodesV1.OrderLineAggregateLimitExceeded, false, "lines", LogisticsStoreCodes.AggregateLimitExceeded),
+            (refusal.Status, refusal.Code, refusal.IsReplay, refusal.Errors[0].Field, refusal.Errors[0].Code));
+        var ownerCalls = world.OrderLines.Calls;
+
+        var replay = await Assert.ThrowsAsync<LogisticsInstructionServiceException>(() =>
+            world.Service().CreateInstructionAsync(request, Metadata("k-create-cap", correlation: "retry-correlation")));
+        Assert.Equal((409, LogisticsProblemCodesV1.OrderLineAggregateLimitExceeded, true, "synthetic-correlation"),
+            (replay.Status, replay.Code, replay.IsReplay, replay.OriginalCorrelationId));
+        Assert.Equal(ownerCalls, world.OrderLines.Calls);
+        Assert.Empty(world.Store.Envelopes);
+        Assert.Empty(world.Store.AggregateLimits);
+        Assert.Single(world.Store.Refusals);
+    }
+
+    [Fact]
+    public async Task A_sales_limit_revision_change_between_prepare_and_store_is_refused_before_any_write()
+    {
+        var world = new World { OrderLines = { Fault = "limit-version-race" } };
+
+        var refusal = await Assert.ThrowsAsync<LogisticsInstructionServiceException>(() =>
+            world.Service().CreateInstructionAsync(Request(), Metadata("k-limit-race")));
+
+        Assert.Equal((409, LogisticsProblemCodesV1.OrderLineState, "lines[0].sourceOrderLineId", "source_changed"),
+            (refusal.Status, refusal.Code, refusal.Errors[0].Field, refusal.Errors[0].Code));
+        Assert.Equal(2, world.OrderLines.Calls);
+        Assert.Empty(world.Store.Envelopes);
+        Assert.Empty(world.Store.AggregateLimits);
+    }
+
+    [Fact]
+    public async Task A_cross_company_sales_limit_snapshot_is_provider_invalid_and_never_stored()
+    {
+        var world = new World { OrderLines = { Fault = "limit-invalid" } };
+
+        var refusal = await Assert.ThrowsAsync<LogisticsInstructionServiceException>(() =>
+            world.Service().CreateInstructionAsync(Request(), Metadata("k-limit-invalid")));
+
+        Assert.Equal((503, LogisticsProblemCodesV1.ReferenceProviderInvalid), (refusal.Status, refusal.Code));
+        Assert.Empty(world.Store.Envelopes);
+        Assert.Empty(world.Store.AggregateLimits);
+    }
+
+    [Fact]
     public async Task The_same_key_content_and_actor_replays_before_any_owner_is_asked()
     {
         var world = new World();
@@ -86,6 +153,19 @@ public sealed partial class LogisticsInstructionServiceTests
 
         Assert.Empty(world.Store.Envelopes);
         Assert.Equal(0, world.Settings.Calls);
+    }
+
+    [Fact]
+    public async Task A_new_instruction_never_reopens_a_cancelled_remainder()
+    {
+        var world = new World { OrderLines = { Fault = "remainder-cancelled" } };
+
+        var refusal = await Assert.ThrowsAsync<LogisticsInstructionServiceException>(() =>
+            world.Service().CreateInstructionAsync(Request("1"), Metadata("k-remainder")));
+
+        Assert.Equal((409, LogisticsProblemCodesV1.OrderLineState, "lines[0].sourceOrderLineId", "remainder_cancelled"),
+            (refusal.Status, refusal.Code, refusal.Errors[0].Field, refusal.Errors[0].Code));
+        Assert.Empty(world.Store.Envelopes);
     }
 
     [Theory]
@@ -180,6 +260,51 @@ public sealed partial class LogisticsInstructionServiceTests
         var unbound = await Assert.ThrowsAsync<LogisticsInstructionServiceException>(() =>
             world.Service().RecordLoadAsync(id, created.Detail.Lines[0].LineId, new RecordLoadRequest("2", Guid.NewGuid(), "1", "Measured"), Metadata("k-load-b")));
         Assert.Equal((503, LogisticsProblemCodesV1.PermissionUnregistered), (unbound.Status, unbound.Code));
+    }
+
+    [Fact]
+    public async Task Every_load_re_reads_the_current_sales_remainder_and_never_reopens_a_cancelled_remainder()
+    {
+        var world = new World();
+        var created = await world.Service().CreateInstructionAsync(Request(quantity: "4"), Metadata("k-create-remainder"));
+        var id = created.Detail.Instruction.Id;
+        var lineId = created.Detail.Lines[0].LineId;
+        await world.Service().IssueInstructionAsync(id, new IssueLoadingInstructionRequest("2"), Metadata("k-issue-remainder"));
+
+        world.OrderLines.Fault = "remainder-cancelled";
+        var cancelled = await Assert.ThrowsAsync<LogisticsInstructionServiceException>(() => world.Service().RecordLoadAsync(id, lineId,
+            new RecordLoadRequest("3", Guid.NewGuid(), "0.001", "Measured"), Metadata("k-load-remainder")));
+        Assert.Equal((409, LogisticsProblemCodesV1.OrderLineState, "sourceOrderLineId", "remainder_cancelled"),
+            (cancelled.Status, cancelled.Code, cancelled.Errors[0].Field, cancelled.Errors[0].Code));
+    }
+
+    [Fact]
+    public async Task A_revised_cap_atomically_limits_loaded_total_across_instructions_and_replays_the_refusal()
+    {
+        var world = new World { OrderLines = { Fault = "limit" } };
+        var first = await world.Service().CreateInstructionAsync(Request("2.5"), Metadata("k-cap-create-1"));
+        var second = await world.Service().CreateInstructionAsync(Request("2.5"), Metadata("k-cap-create-2"));
+        await world.Service().IssueInstructionAsync(first.Detail.Instruction.Id, new IssueLoadingInstructionRequest("2"), Metadata("k-cap-issue-1"));
+        await world.Service().IssueInstructionAsync(second.Detail.Instruction.Id, new IssueLoadingInstructionRequest("2"), Metadata("k-cap-issue-2"));
+        await world.Service().RecordLoadAsync(first.Detail.Instruction.Id, first.Detail.Lines[0].LineId,
+            new RecordLoadRequest("3", Guid.NewGuid(), "1.5", "Measured"), Metadata("k-cap-load-1"));
+        await world.Service().RecordLoadAsync(second.Detail.Instruction.Id, second.Detail.Lines[0].LineId,
+            new RecordLoadRequest("3", Guid.NewGuid(), "0.5", "Measured"), Metadata("k-cap-load-2"));
+
+        world.OrderLines.Fault = "load-limit-revised";
+        var callsBefore = world.OrderLines.Calls;
+        var request = new RecordLoadRequest("4", Guid.NewGuid(), "0.001", "Measured");
+        var refusal = await Assert.ThrowsAsync<LogisticsInstructionServiceException>(() => world.Service().RecordLoadAsync(
+            second.Detail.Instruction.Id, second.Detail.Lines[0].LineId, request, Metadata("k-cap-over")));
+        Assert.Equal((409, LogisticsProblemCodesV1.OrderLineAggregateLimitExceeded, false),
+            (refusal.Status, refusal.Code, refusal.IsReplay));
+
+        var replay = await Assert.ThrowsAsync<LogisticsInstructionServiceException>(() => world.Service().RecordLoadAsync(
+            second.Detail.Instruction.Id, second.Detail.Lines[0].LineId, request, Metadata("k-cap-over", "retry-correlation")));
+        Assert.Equal((409, LogisticsProblemCodesV1.OrderLineAggregateLimitExceeded, true, "synthetic-correlation"),
+            (replay.Status, replay.Code, replay.IsReplay, replay.OriginalCorrelationId));
+        Assert.Equal(callsBefore + 1, world.OrderLines.Calls);
+        Assert.Equal(3, world.Store.LoadLimits.Count);
     }
 
     [Fact]
@@ -387,6 +512,7 @@ public sealed partial class LogisticsInstructionServiceTests
     {
         public bool Granted { get; set; } = true;
         public string? DeniedPermission { get; set; }
+        public int? DenyOnCall { get; set; }
         public int Calls { get; private set; }
         public string? LastPermission { get; private set; }
 
@@ -394,7 +520,8 @@ public sealed partial class LogisticsInstructionServiceTests
         {
             Calls++;
             LastPermission = permission;
-            return Task.FromResult(new PermissionScope(Granted && permission != DeniedPermission, true, new HashSet<string>(["ROLE-A"], StringComparer.Ordinal),
+            return Task.FromResult(new PermissionScope(Granted && permission != DeniedPermission && (DenyOnCall is null || Calls < DenyOnCall),
+                true, new HashSet<string>(["ROLE-A"], StringComparer.Ordinal),
                 new HashSet<Guid>(), new HashSet<Guid>(), new HashSet<Guid>()));
         }
     }
@@ -467,6 +594,19 @@ public sealed partial class LogisticsInstructionServiceTests
         public Task<SalesOrderLineReferenceAnswerV1> GetApprovedLineAsync(Guid orderId, Guid lineId, CancellationToken cancellationToken = default)
         {
             Calls++;
+            var aggregateLimit = Fault is "limit" or "limit-version-race" or "limit-invalid" or "load-limit-revised"
+                ? new SalesOrderLineLoadingLimitV1(
+                    Fault == "limit-invalid" ? Guid.NewGuid() : Company,
+                    orderId,
+                    lineId,
+                    KgUnit,
+                    Fault == "limit-version-race" && Calls > 1 ? 8 : 7,
+                    Fault == "load-limit-revised" ? "2" : "5",
+                    "Sales",
+                    lineId.ToString("D"),
+                    Fault == "limit-version-race" && Calls > 1 ? "4" : "3",
+                    Day)
+                : null;
             return Fault switch
             {
                 "throws" => Task.FromException<SalesOrderLineReferenceAnswerV1>(new InvalidOperationException("synthetic outage")),
@@ -474,7 +614,14 @@ public sealed partial class LogisticsInstructionServiceTests
                 "not-found" => Task.FromResult(new SalesOrderLineReferenceAnswerV1(SalesOrderLineReferenceOutcomeV1.NotFound, null, null)),
                 _ => Task.FromResult(new SalesOrderLineReferenceAnswerV1(SalesOrderLineReferenceOutcomeV1.Approved,
                     new SalesOrderLineReferenceV1(Fault == "other-company" ? Guid.NewGuid() : Company, orderId, lineId, 1,
-                        Fault == "other-customer" ? Guid.NewGuid() : Party, Account, Product, "7", KgUnit, "10", 0, 7), null)),
+                        Fault == "other-customer" ? Guid.NewGuid() : Party, Account, Product, "7", KgUnit,
+                        // The generic approved line must cover the pre-existing weighbridge fixtures (up to 24,000 kg).
+                        // The dedicated revised case remains deliberately capped at 2 kg.
+                        Fault == "remainder-revised" ? "2" : "100000", 0,
+                        Fault == "limit-version-race" && Calls > 1 ? 8 : 7,
+                        Fault == "remainder-cancelled" ? SalesRemainderChangeNamesV1.Cancelled
+                            : Fault is "remainder-revised" or "load-limit-revised" ? SalesRemainderChangeNamesV1.Revised : SalesRemainderChangeNamesV1.Open,
+                        aggregateLimit), null)),
             };
         }
     }
@@ -505,15 +652,18 @@ public sealed partial class LogisticsInstructionServiceTests
             throw new NotSupportedException();
     }
 
-    private sealed class FakeStore : ILogisticsInstructionStore
+    private sealed class FakeStore : ILogisticsInstructionStore, ILogisticsAggregateLoadStoreV1
     {
         private readonly Dictionary<(string Command, string Key), (string Actor, string Hash, StoredLoadingInstruction? Stored, LogisticsTerminalRefusal? Refusal, string Correlation)> _attempts = [];
         private readonly List<StoredLoadingInstruction> _instructions = [];
         public List<LogisticsWriteEnvelope> Envelopes { get; } = [];
+        public List<LogisticsOrderLineAggregateLimit> AggregateLimits { get; } = [];
+        public List<LogisticsOrderLineAggregateLoadLimit> LoadLimits { get; } = [];
         public List<LogisticsTerminalRefusal> Refusals { get; } = [];
         public List<(string Command, Guid Id, long Before, long After)> Transitions { get; } = [];
         public int Replays { get; private set; }
         private long _lastSequenceNo;
+        public Exception? CreateFault { get; set; }
         public Func<string, Exception?>? MutateFault { get; set; }
         public Action<LogisticsWriteEnvelope, string, string>? BeforeRefusal { get; set; }
 
@@ -523,7 +673,8 @@ public sealed partial class LogisticsInstructionServiceTests
                 (envelope.ActorId, requestHash, _instructions.Single(candidate => candidate.Instruction.Id == instructionId), null, correlation);
 
         public Task<LogisticsStoreResult> StoreInstructionAsync(LogisticsWriteEnvelope envelope, string requestHash, DateOnly effectiveOn,
-            Func<LoadingInstruction> build, CancellationToken cancellationToken = default)
+            Func<LoadingInstruction> build, CancellationToken cancellationToken = default,
+            IReadOnlyList<LogisticsOrderLineAggregateLimit>? aggregateLimits = null)
         {
             if (_attempts.TryGetValue((LogisticsCommands.CreateV1, envelope.IdempotencyKey), out var attempt))
             {
@@ -531,10 +682,12 @@ public sealed partial class LogisticsInstructionServiceTests
                 return Task.FromResult(new LogisticsStoreResult(attempt.Stored!, LogisticsWriteOutcome.Replayed, attempt.Correlation));
             }
 
+            if (CreateFault is { } fault) throw fault;
             var stored = new StoredLoadingInstruction(build(), effectiveOn);
             _instructions.Add(stored);
             _attempts[(LogisticsCommands.CreateV1, envelope.IdempotencyKey)] = (envelope.ActorId, requestHash, stored, null, envelope.CorrelationId);
             Envelopes.Add(envelope);
+            AggregateLimits.AddRange(aggregateLimits ?? []);
             return Task.FromResult(new LogisticsStoreResult(stored, LogisticsWriteOutcome.Recorded, envelope.CorrelationId));
         }
 
@@ -590,7 +743,30 @@ public sealed partial class LogisticsInstructionServiceTests
             return Task.FromResult<LogisticsStoreResult?>(new LogisticsStoreResult(stored, LogisticsWriteOutcome.Recorded, envelope.CorrelationId));
         }
 
-        public LoadingInstruction Instruction(Guid instructionId) => _instructions.Single(candidate => candidate.Instruction.Id == instructionId).Instruction;
+        public Task<LogisticsStoreResult?> MutateInstructionWithAggregateLoadLimitAsync(LogisticsWriteEnvelope envelope, string requestHash,
+            string commandName, Guid instructionId, Action<LoadingInstruction, DateTimeOffset> mutate, LogisticsMutationAudit audit,
+            LogisticsOrderLineAggregateLoadLimit aggregateLoadLimit, CancellationToken cancellationToken = default)
+        {
+            if (_attempts.ContainsKey((commandName, envelope.IdempotencyKey)))
+            {
+                return MutateInstructionAsync(envelope, requestHash, commandName, instructionId, mutate, audit, cancellationToken);
+            }
+
+            var loaded = _instructions.SelectMany(stored => stored.Instruction.Lines)
+                .Where(line => line.Source.OrderId == aggregateLoadLimit.OrderId
+                    && line.Source.LineId == aggregateLoadLimit.OrderLineId && line.UnitId == aggregateLoadLimit.UnitId)
+                .Sum(line => line.LoadedQuantity.Value);
+            LoadLimits.Add(aggregateLoadLimit);
+            if (loaded + aggregateLoadLimit.RequestedLoadQuantity > aggregateLoadLimit.MaximumAggregateQuantity)
+            {
+                throw new LogisticsStoreException(LogisticsStoreCodes.AggregateLimitExceeded, "synthetic aggregate load limit");
+            }
+
+            return MutateInstructionAsync(envelope, requestHash, commandName, instructionId, mutate, audit, cancellationToken);
+        }
+
+        public LoadingInstruction Instruction(Guid instructionId) =>
+            _instructions.Single(candidate => candidate.Instruction.Id == instructionId).Instruction;
 
         public Task<StoredLoadingInstruction?> FindInstructionAsync(Guid instructionId, CancellationToken cancellationToken = default) =>
             Task.FromResult(_instructions.SingleOrDefault(candidate => candidate.Instruction.Id == instructionId));
@@ -614,6 +790,48 @@ public sealed partial class LogisticsInstructionServiceTests
         }
 
         public int SalesOrderReads { get; private set; }
+
+        public int InvoiceSourceReads { get; private set; }
+        public int? InvoiceSourceRevisionOverride { get; set; }
+        public string? InvoiceSourceIntegrityFault { get; set; }
+
+        public Task<StoredApprovedDispatchInvoiceSource?> FindApprovedDispatchInvoiceSourceAsync(Guid dispatchNoteId,
+            CancellationToken cancellationToken = default)
+        {
+            InvoiceSourceReads++;
+            if (InvoiceSourceIntegrityFault is not null)
+            {
+                throw new LogisticsStoreException(LogisticsStoreCodes.InvoiceSourceInvalid, InvoiceSourceIntegrityFault);
+            }
+            foreach (var stored in _instructions)
+            {
+                var note = stored.Instruction.DispatchNotes.SingleOrDefault(candidate => candidate.DispatchNoteId == dispatchNoteId);
+                if (note is not { Status: DispatchNoteStatus.Approved })
+                {
+                    continue;
+                }
+
+                return Task.FromResult<StoredApprovedDispatchInvoiceSource?>(new StoredApprovedDispatchInvoiceSource(
+                    stored.Instruction.CompanyId,
+                    note.DispatchNoteId,
+                    stored.Instruction.Id,
+                    stored.Instruction.Version,
+                    stored.Instruction.CustomerPartyId,
+                    stored.Instruction.CompanyAccountId,
+                    note.Number,
+                    note.EDispatchNumber,
+                    note.ApprovedAtUtc,
+                    [.. note.Lines.Select(line =>
+                    {
+                        var source = stored.Instruction.Lines.Single(candidate => candidate.Id == line.InstructionLineId);
+                        return new StoredApprovedDispatchInvoiceSourceLine(line.LineNo, source.Source.OrderId,
+                            InvoiceSourceRevisionOverride ?? source.Source.Revision, source.Source.LineId,
+                            line.ShipmentId, source.ProductId, source.UnitId, line.Quantity.Value);
+                    })]));
+            }
+
+            return Task.FromResult<StoredApprovedDispatchInvoiceSource?>(null);
+        }
 
         private static void Check((string Actor, string Hash, StoredLoadingInstruction? Stored, LogisticsTerminalRefusal? Refusal, string Correlation) attempt,
             LogisticsWriteEnvelope envelope, string requestHash)

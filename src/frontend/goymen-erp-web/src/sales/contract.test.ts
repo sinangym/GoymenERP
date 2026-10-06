@@ -24,6 +24,7 @@ import replayResponse from './examples/replay-response.json?raw'
 import contactInformationResponse from './examples/contact-information-response.json?raw'
 import currenciesResponse from './examples/currencies-response.json?raw'
 import {
+  COMMERCIAL_STAGE,
   SALES_PROBLEM_CODE,
   decodeContactInformationOptions,
   decodeCurrencyOptions,
@@ -39,8 +40,8 @@ import { decodeDraftRevisions } from './contract'
 
 const EXAMPLES: Record<string, { raw: string; blob: string }> = {
   'create-request.json': { raw: createRequest, blob: 'a78328681578e18627a25a0cd200177d309a534b' },
-  'create-response.json': { raw: createResponse, blob: '3a95d036b033bc5b77c8210d78829f4017b3a489' },
-  'detail-response.json': { raw: detailResponse, blob: 'd6a30611fd414edbfb8e8e20763e27dc0ee7c015' },
+  'create-response.json': { raw: createResponse, blob: 'fc2f730beecafb21a10667275dfe8fdf584850f9' },
+  'detail-response.json': { raw: detailResponse, blob: '6284a85d1519eef19e3e3f97febe642cfab27f30' },
   'error-account.json': { raw: errorAccount, blob: '6b3e1ea7f2a986d8f1f401e4217a7ff42436a24e' },
   'error-company.json': { raw: errorCompany, blob: 'aa227cc06a73326e4db1d579c27f32795a8a41a1' },
   'error-forbidden.json': { raw: errorForbidden, blob: 'bd328f735086931db968d2efb2345e2637efadfd' },
@@ -48,9 +49,9 @@ const EXAMPLES: Record<string, { raw: string; blob: string }> = {
   'error-provider.json': { raw: errorProvider, blob: '1a8d74000d85b0cb99f772b9359ae29e666d6c23' },
   'error-replay.json': { raw: errorReplay, blob: 'a7728cfecd86c90528151327bebe7abe59d79d74' },
   'error-settings-access.json': { raw: errorSettingsAccess, blob: 'e2aec636bd687380cfdb520339c28c45f496ad5a' },
-  'list-response.json': { raw: listResponse, blob: 'c6b9a267657a187f3b6404f41ff4431092fa35b4' },
+  'list-response.json': { raw: listResponse, blob: '34aa8532ca37af792bc50f0fbfa66f80a8e43eb5' },
   'product-owner-selection.json': { raw: productOwnerSelection, blob: 'a1e8a3aee04f385cccc9d3815e9cac6f78fbd620' },
-  'replay-response.json': { raw: replayResponse, blob: 'e3daaa238c2995857374b7dc0c8a8564cc269783' },
+  'replay-response.json': { raw: replayResponse, blob: '402d282b1e21fd6c23636f2f1cdd55454d8124e8' },
 }
 
 async function gitBlobId(text: string): Promise<string> {
@@ -90,13 +91,31 @@ describe('decodeDraftMutation', () => {
     const replayed = decodeDraftMutation(parse(replayResponse))
     expect(created?.isReplay).toBe(false)
     expect(replayed?.isReplay).toBe(true)
-    // Same stored detail either way.
-    expect(replayed?.detail).toEqual(created?.detail)
-    expect(created?.detail.draft).toMatchObject({ revision: 'Rev.0', version: '9007199254740993', state: 'Draft' })
+    // The stored legacy replay may omit only the additive stage; identity and all older facts remain unchanged.
+    expect(replayed?.detail.draft.id).toBe(created?.detail.draft.id)
+    expect(replayed?.detail.draft.version).toBe(created?.detail.draft.version)
+    expect(created?.detail.draft).toMatchObject({
+      revision: 'Rev.0', version: '9007199254740993', state: 'Draft', commercialStage: COMMERCIAL_STAGE.order,
+    })
+    expect(replayed?.detail.draft.commercialStage).toBe(COMMERCIAL_STAGE.unavailable)
   })
 
   it('keeps a version above 2^53 as exact text', () => {
     expect(decodeDraftMutation(parse(createResponse))?.detail.draft.version).toBe('9007199254740993')
+  })
+
+  it('accepts absent or nullable additive stage as unavailable and refuses an unknown stage', () => {
+    const absent = clone(parse(createResponse)) as any
+    delete absent.detail.draft.commercialStage
+    expect(decodeDraftMutation(absent)?.detail.draft.commercialStage).toBe(COMMERCIAL_STAGE.unavailable)
+
+    const nullable = clone(parse(createResponse)) as any
+    nullable.detail.draft.commercialStage = null
+    expect(decodeDraftMutation(nullable)?.detail.draft.commercialStage).toBe(COMMERCIAL_STAGE.unavailable)
+
+    const unknown = clone(parse(createResponse)) as any
+    unknown.detail.draft.commercialStage = 'Accepted'
+    expect(decodeDraftMutation(unknown)).toBeNull()
   })
 
   it.each([

@@ -57,6 +57,12 @@ public static class InventoryPermissionManifestV1
     /// maker≠checker while the scrap approval authority is undecided). Registration and grants are central.
     /// </summary>
     public const string StockScrapApprove = "inventory.stock-scrap.approve";
+
+    /// <summary>
+    /// INV-R20: plan, dispatch and accept a same-company two-leg stock transfer. One technical write name mirrors the
+    /// transfer aggregate; registration/classification and every grant remain central/user-owned.
+    /// </summary>
+    public const string StockTransferWrite = "inventory.stock-transfer.write";
 }
 
 /// <summary>The opening count as the client sends it: one physical count sheet of one location.</summary>
@@ -66,7 +72,32 @@ public sealed record OpeningCountRequestV1(
     [property: JsonRequired] Guid LocationId,
     [property: JsonRequired] DateOnly CountedOn,
     [property: JsonRequired] string SheetReference,
-    [property: JsonRequired] IReadOnlyList<OpeningCountLineRequestV1> Lines);
+    [property: JsonRequired] IReadOnlyList<OpeningCountLineRequestV1> Lines,
+    OpeningCountPositionContextV1? PositionContext = null);
+
+/// <summary>Strict string converter: integer enum aliases are not part of the public contract.</summary>
+public sealed class InventoryOpeningPartyKindJsonConverterV1()
+    : JsonStringEnumConverter<InventoryOpeningPartyKindV1>(namingPolicy: null, allowIntegerValues: false);
+
+/// <summary>The only party kinds the public opening contract accepts, as names rather than integer aliases.</summary>
+[JsonConverter(typeof(InventoryOpeningPartyKindJsonConverterV1))]
+public enum InventoryOpeningPartyKindV1
+{
+    Company = 1,
+    Counterparty = 2,
+}
+
+/// <summary>
+/// Optional physical ownership for the whole count. Absence keeps the historical Company/Company opening.
+/// A Counterparty owner is accepted only with its company account; the custodian remains the context company.
+/// </summary>
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+public sealed record OpeningCountPositionContextV1(
+    [property: JsonRequired] InventoryOpeningPartyKindV1 OwnerKind,
+    [property: JsonRequired] Guid OwnerId,
+    Guid? OwnerCompanyPartyAccountId,
+    [property: JsonRequired] InventoryOpeningPartyKindV1 CustodianKind,
+    [property: JsonRequired] Guid CustodianId);
 
 /// <summary>
 /// One counted piece: its new label (id + printed code), its lot (heat/coil null = unknown), the product
@@ -139,6 +170,9 @@ public static class InventoryOpeningCodesV1
     public const string LocationUnavailable = "inventory_location_unavailable";
     public const string ProductIneligible = "inventory_product_ineligible";
     public const string ProductEligibilityUnavailable = "inventory_product_eligibility_unavailable";
+    public const string OwnerContextInvalid = "inventory_owner_context_invalid";
+    public const string OwnerAccountIneligible = "inventory_owner_account_ineligible";
+    public const string OwnerAccountUnavailable = "inventory_owner_account_unavailable";
     public const string NotFound = "not_found";
     public const string ProductVersionInvalid = "product_version_invalid";
     public const string QuantityInvalid = "quantity_invalid";
@@ -158,10 +192,10 @@ public static class InventoryOpeningCodesV1
         InventoryStoreCodes.MovementIdConflict);
 
     public static IReadOnlySet<string> Status422Codes { get; } = Set(LocationNotFound, LocationInactive, LocationExternal,
-        ProductIneligible);
+        ProductIneligible, OwnerAccountIneligible);
 
     public static IReadOnlySet<string> Status503Codes { get; } = Set(PermissionUnregistered, LocationUnavailable,
-        ProductEligibilityUnavailable, InventoryScaleCodes.ProfileUnusable, "settings_provider_unavailable",
+        ProductEligibilityUnavailable, OwnerAccountUnavailable, InventoryScaleCodes.ProfileUnusable, "settings_provider_unavailable",
         "settings_unit_profile_not_found", "settings_profile_invalid", "settings_access_denied", "settings_decimal_invalid",
         "settings_decimal_scale_exceeded");
 
@@ -170,7 +204,8 @@ public static class InventoryOpeningCodesV1
     /// Product's own and not listed here.
     /// </summary>
     public static IReadOnlySet<string> IssueCodes { get; } = Set(IdempotencyKeyInvalid, InventoryStoreCodes.ValueDoesNotFit,
-        InventoryRuleCodes.InvalidOpeningCount, ProductVersionInvalid, QuantityInvalid, InventoryRuleCodes.QuantityNotPositive,
+        InventoryRuleCodes.InvalidOpeningCount, ProductVersionInvalid, QuantityInvalid, OwnerContextInvalid,
+        InventoryRuleCodes.QuantityNotPositive,
         InventoryRuleCodes.KilogramPrecisionExceeded, InventoryScaleCodes.ScaleExceeded, InventoryRuleCodes.LabelCompanyMismatch,
         InventoryRuleCodes.MissingReference, InventoryRuleCodes.InvalidLabelOperation);
 
@@ -220,6 +255,37 @@ public sealed record InventoryProductStockAnswer(bool IsEligible, IReadOnlyList<
 public interface IInventoryProductStockPort
 {
     Task<InventoryProductStockAnswer> EvaluateAsync(Guid productId, string productVersion, DateOnly effectiveOn,
+        CancellationToken cancellationToken);
+}
+
+public enum InventoryOpeningOwnerAccountOutcomeV1
+{
+    Unavailable = 0,
+    Denied = 1,
+    NotFound = 2,
+    Found = 3,
+}
+
+public sealed record InventoryOpeningOwnerAccountV1(
+    Guid PartyId,
+    Guid CompanyPartyAccountId,
+    Guid CompanyId,
+    bool PartyIsActive,
+    bool AccountIsActive,
+    bool HasCustomerRole,
+    string PartyVersion,
+    string AccountVersion);
+
+public sealed record InventoryOpeningOwnerAccountAnswerV1(
+    InventoryOpeningOwnerAccountOutcomeV1 Outcome,
+    InventoryOpeningOwnerAccountV1? Account);
+
+/// <summary>Inventory-owned validation seam; the API host adapts the existing authorized Counterparty source.</summary>
+public interface IInventoryOpeningOwnerAccountPortV1
+{
+    Task<InventoryOpeningOwnerAccountAnswerV1> GetAuthorizedAsync(
+        Guid partyId,
+        Guid companyPartyAccountId,
         CancellationToken cancellationToken);
 }
 

@@ -1,7 +1,10 @@
 using GoymenERP.Api.Shell;
 using GoymenERP.BrowserSuiteFixtureTool;
 using GoymenERP.BuildingBlocks.Shell;
+using GoymenERP.Modules.Accounting.Application;
+using GoymenERP.Modules.Accounting.Infrastructure.Persistence;
 using GoymenERP.Modules.Counterparty.Infrastructure.Shell;
+using GoymenERP.Modules.Finance.Infrastructure.Fixtures;
 using GoymenERP.Modules.Product.Infrastructure.Fixtures;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
@@ -139,6 +142,68 @@ public sealed class BrowserSuiteHostEnvelopeTests
     }
 
     [Fact]
+    public void Acc01_output_validation_accepts_only_its_closed_normal_journal_scalar_contract()
+    {
+        BrowserSuiteSeedOutputValidator.Validate(
+            "acc01",
+            new Dictionary<string, string>
+            {
+                ["normalSourceLabel"] = "Kaynak ref. ...0000ac01 - 2026-09-24",
+                ["normalOccurredOn"] = "2026-09-24",
+                ["normalAmount"] = "10.25",
+                ["normalDebitLabel"] = "SENTETIK-100 - Sentetik borc hesabi (Borç)",
+                ["normalCreditLabel"] = "SENTETIK-120 - Sentetik alacak hesabi (Alacak)",
+            },
+            new HashSet<string>(StringComparer.Ordinal));
+
+        BrowserSuiteSeedOutputValidator.Validate(
+            "acc01",
+            new Dictionary<string, string>
+            {
+                ["normalSourceLabel"] = "Kaynak ref. ...0000ac02 - 2026-09-24",
+            },
+            new HashSet<string>(StringComparer.Ordinal));
+    }
+
+    [Theory]
+    [InlineData("normalSourceLabel", "Kaynak ref. ...0000AC01 - 2026-09-24")]
+    [InlineData("normalOccurredOn", "2026-09-25")]
+    [InlineData("normalAmount", "10.250")]
+    [InlineData("normalDebitLabel", "SENTETIK-100 - Sentetik borc hesabi")]
+    [InlineData("normalCreditLabel", "SENTETIK-120 - Sentetik alacak hesabi ")]
+    [InlineData("unexpected", "10.25")]
+    public void Acc01_output_validation_rejects_values_outside_its_closed_normal_journal_scalar_contract(
+        string key,
+        string value)
+    {
+        Assert.Throws<InvalidOperationException>(() => BrowserSuiteSeedOutputValidator.Validate(
+            "acc01",
+            new Dictionary<string, string> { [key] = value },
+            new HashSet<string>(StringComparer.Ordinal)));
+    }
+
+    [Theory]
+    [InlineData("normalSourceLabel")]
+    [InlineData("normalOccurredOn")]
+    [InlineData("normalAmount")]
+    [InlineData("normalDebitLabel")]
+    [InlineData("normalCreditLabel")]
+    public void Acc01_output_validation_does_not_accept_guid_or_actor_fallback(string key)
+    {
+        foreach (var value in new[]
+                 {
+                     "10000000-0000-0000-0000-000000000001",
+                     "acc01-preparer",
+                 })
+        {
+            Assert.Throws<InvalidOperationException>(() => BrowserSuiteSeedOutputValidator.Validate(
+                "acc01",
+                new Dictionary<string, string> { [key] = value },
+                new HashSet<string>(["acc01-preparer"], StringComparer.Ordinal)));
+        }
+    }
+
+    [Fact]
     public void Mfg_output_validation_accepts_only_its_closed_fixture_scalar_contract()
     {
         BrowserSuiteSeedOutputValidator.Validate(
@@ -216,6 +281,9 @@ public sealed class BrowserSuiteHostEnvelopeTests
             Assert.False(registered.IsService(typeof(IProductPurchaseCandidateFixtureStore)));
             Assert.False(registered.IsService(typeof(C01E2eProductStockCandidateFixtureWriter)));
             Assert.False(registered.IsService(typeof(IProductStockCandidateFixtureStore)));
+            Assert.False(registered.IsService(typeof(C01E2eFinanceNormalJournalSourceFixtureWriter)));
+            Assert.False(registered.IsService(typeof(IFinanceRecordedReceiptFixtureStore)));
+            Assert.False(registered.IsService(typeof(C01E2eApprovedNormalJournalSourceBindingCatalog)));
         });
     }
 
@@ -261,6 +329,35 @@ public sealed class BrowserSuiteHostEnvelopeTests
         });
     }
 
+    [Fact]
+    public void An_acc01_disposable_api_opens_only_the_exact_read_binding()
+    {
+        WithoutProcessEnvelope(() =>
+        {
+            using var baseHost = new GoymenErpApiFactory();
+            using var host = baseHost.WithWebHostBuilder(builder =>
+            {
+                builder.UseSetting("BrowserSuiteApi:Profile", "acc01");
+                builder.UseSetting("BrowserSuiteApi:Disposable", "CONFIRMED");
+                builder.UseSetting("BrowserSuiteApi:TestedCommit", Commit);
+                builder.UseSetting("BrowserSuiteApi:RunId", RunId);
+                builder.UseSetting("BrowserSuiteApi:ComposeProject", ComposeProject);
+            });
+            using (host.CreateClient())
+            {
+                // Build Program as a normal API test host with only the exact acc01 read gate.
+            }
+
+            var registered = host.Services.GetRequiredService<IServiceProviderIsService>();
+            Assert.False(registered.IsService(typeof(C01E2eFinanceNormalJournalSourceFixtureWriter)));
+            Assert.False(registered.IsService(typeof(IFinanceRecordedReceiptFixtureStore)));
+            Assert.False(registered.IsService(typeof(IFinanceRecordedReceiptFixtureReadStore)));
+            Assert.True(registered.IsService(typeof(IApprovedAccountingSourceCatalogStoreV1)));
+            Assert.IsType<ApprovedAccountingSourceCatalogStoreV1>(
+                host.Services.GetRequiredService<IApprovedNormalJournalSourceBindingCatalogV1>());
+        });
+    }
+
     private static Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory<Program> StartedHost(
         Dictionary<string, string> apiEnvironment)
     {
@@ -294,6 +391,10 @@ public sealed class BrowserSuiteHostEnvelopeTests
         Assert.True(registered.IsService(typeof(IProductPurchaseCandidateFixtureStore)));
         Assert.True(registered.IsService(typeof(C01E2eProductStockCandidateFixtureWriter)));
         Assert.True(registered.IsService(typeof(IProductStockCandidateFixtureStore)));
+        Assert.True(registered.IsService(typeof(C01E2eFinanceNormalJournalSourceFixtureWriter)));
+        Assert.True(registered.IsService(typeof(IFinanceRecordedReceiptFixtureStore)));
+        Assert.False(registered.IsService(typeof(C01E2eApprovedNormalJournalSourceBindingCatalog)));
+        Assert.True(registered.IsService(typeof(IApprovedAccountingSourceCatalogStoreV1)));
     }
 
     // The normal-profile container's identity keys (infra/docker-compose.browser-normal.yml); Testing

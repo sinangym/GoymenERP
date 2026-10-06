@@ -1,6 +1,7 @@
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Audit.Domain.Events;
 using GoymenERP.Modules.Inventory.Domain.Costing;
+using GoymenERP.Modules.Inventory.Domain.Labels;
 using GoymenERP.Modules.Inventory.Domain.Movements;
 using GoymenERP.Modules.Inventory.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -25,6 +26,9 @@ public sealed class InventoryPersistenceModelTests
             typeof(BalanceRow), typeof(SourceGrainRow), typeof(OpeningCountRow), typeof(OpeningCountLineRow),
             typeof(InventoryCommandRow), typeof(AllocationRow), typeof(InventoryOutboxRow),
             typeof(StockCountRow), typeof(StockCountDecisionRow), typeof(AllocationChangeRow),
+            typeof(InventoryTransferRow), typeof(InventoryTransferLineRow),
+            typeof(InventoryTransferDispatchRow), typeof(InventoryTransferDispatchLineRow),
+            typeof(InventoryTransferBucketRow), typeof(InventoryTransferAcceptanceRow),
         ];
 
     [Fact]
@@ -107,6 +111,10 @@ public sealed class InventoryPersistenceModelTests
         var labels = context.Model.FindEntityType(typeof(LabelRow))!;
         Assert.True(labels.FindProperty(nameof(LabelRow.Version))!.IsConcurrencyToken);
         Assert.True(labels.FindProperty(nameof(LabelRow.RowVersion))!.IsConcurrencyToken);
+        var productVersion = labels.FindProperty(nameof(LabelRow.ProductVersion))!;
+        Assert.True(productVersion.IsNullable);
+        Assert.Equal(MaterialLabel.MaximumProductVersionLength, productVersion.GetMaxLength());
+        Assert.Equal("nvarchar(128)", productVersion.GetColumnType());
         var allocations = context.Model.FindEntityType(typeof(AllocationRow))!;
         Assert.True(allocations.FindProperty(nameof(AllocationRow.RowVersion))!.IsConcurrencyToken);
         Assert.Equal(["CompanyId", "Id"], allocations.GetKeys().Single(key => !key.IsPrimaryKey())
@@ -167,6 +175,10 @@ public sealed class InventoryPersistenceModelTests
             migration => migration.EndsWith("_AddInventoryAllocationChanges", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(),
             migration => migration.EndsWith("_AddInventoryStockScraps", StringComparison.Ordinal));
+        Assert.Contains(context.Database.GetMigrations(),
+            migration => migration.EndsWith("_AddInventoryTransfers", StringComparison.Ordinal));
+        Assert.Contains(context.Database.GetMigrations(),
+            migration => migration.EndsWith("_AddInventoryLabelProductVersion", StringComparison.Ordinal));
         Assert.False(context.Database.HasPendingModelChanges());
     }
 
@@ -190,7 +202,9 @@ public sealed class InventoryPersistenceModelTests
         // Constraint names are design-time facts: read from the design-time model.
         var design = context.GetService<IDesignTimeModel>().Model;
         Assert.Contains(design.FindEntityType(typeof(LotRow))!.GetCheckConstraints(), check => check.Name == "CK_Lots_Trace");
-        Assert.Equal("FK_Labels_Lots_CompanyId_LotId", Assert.Single(design.FindEntityType(typeof(LabelRow))!.GetForeignKeys(),
+        var designLabel = design.FindEntityType(typeof(LabelRow))!;
+        Assert.Contains(designLabel.GetCheckConstraints(), check => check.Name == "CK_Labels_ProductVersion");
+        Assert.Equal("FK_Labels_Lots_CompanyId_LotId", Assert.Single(designLabel.GetForeignKeys(),
             key => key.PrincipalEntityType.ClrType == typeof(LotRow)).GetConstraintName());
     }
 

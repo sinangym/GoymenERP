@@ -8,6 +8,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { INVENTORY_STOCK_POSITIONS_CAPABILITY } from '../inventory/capabilities'
+import type { InventoryLabelIdentity } from '../inventory/labelDetailContract'
+import { MANUFACTURING_CAPABILITY } from './capabilities'
 import {
   CLOSER_CAPABILITIES,
   COMPANY_A,
@@ -37,6 +39,10 @@ const LOCATION = 'e0000000-0000-4000-8000-000000000012'
 const ISSUE_LINE = 'e0000000-0000-4000-8000-000000000015'
 const ISSUE_MOVEMENT = 'e0000000-0000-4000-8000-000000000016'
 const INVENTORY_RECORDER_CAPABILITIES = [...RECORDER_CAPABILITIES, INVENTORY_STOCK_POSITIONS_CAPABILITY]
+const EXCEPTION_APPROVER_CAPABILITIES = [
+  ...CLOSER_CAPABILITIES,
+  MANUFACTURING_CAPABILITY.orderCloseExceptionApprove,
+]
 
 type PartyKind = 'Company' | 'Counterparty'
 
@@ -92,12 +98,13 @@ function labelDetail(
       lotId: LOT,
       heatNumber: null,
       coilNumber: null,
+      classification: null,
       documentStatus: 'Complete',
       requiredDocuments: [],
       documents: [],
       prints: [],
       lot: { id: LOT, heatNumber: null, coilNumber: null },
-    },
+    } satisfies InventoryLabelIdentity,
     balances: {
       labelId: ROLL_1,
       physicalKg,
@@ -454,6 +461,40 @@ describe('fact forms', () => {
     const row = await rollRow()
     await waitFor(() => expect(within(row).getAllByText('250.5').length).toBeGreaterThan(0))
     expect(labelReads(recorded)).toHaveLength(0)
+  })
+
+  it('records explicit process loss without asking for or sending any Inventory output identity', async () => {
+    const user = userEvent.setup()
+    const { recorded } = stub({
+      reads: [
+        () => json(order()),
+        () => json(order({
+          version: 2,
+          rolls: [roll(ROLL_1, {
+            issuedKg: '10',
+            netIssuedKg: '10',
+            outputsKg: { GoodProduct: '0', SecondQuality: '0', UsableRemnant: '0', Scrap: '0', ProcessLoss: '2.5' },
+            unexplainedKg: '7.5',
+            isFullyAccounted: false,
+          })],
+        })),
+      ],
+    })
+    renderAt(PATH)
+    await screen.findByRole('heading', { name: 'Gerçekleşme kaydı' })
+    await fillFact(user, { kind: 'Stok dışı proses kaybı', kg: '2.5' })
+    await user.click(screen.getByRole('button', { name: 'Kaydet' }))
+
+    expect(await screen.findByText('Kaydedildi')).toBeTruthy()
+    const loss = posts(recorded).find((request) => request.url.endsWith('/process-losses'))!
+    expect(loss.body).toMatchObject({ expectedVersion: 1, parentRollId: ROLL_1, kg: '2.5' })
+    expect(loss.body).toHaveProperty('factId')
+    expect(loss.body).not.toHaveProperty('movementId')
+    expect(loss.body).not.toHaveProperty('outputClass')
+    expect(loss.body).not.toHaveProperty('productId')
+    expect(labelReads(recorded)).toHaveLength(0)
+    expect(productReads(recorded)).toHaveLength(0)
+    expect(locationReads(recorded)).toHaveLength(0)
   })
 
   it('says a replayed answer was already recorded', async () => {
@@ -1018,7 +1059,7 @@ describe('the close (MFG-ORD)', () => {
 
     await screen.findByText('Emir kapatıldı')
     const post = posts(recorded).find((request) => request.url.endsWith('/close'))!
-    expect(post.body).toEqual({ expectedVersion: 4 })
+    expect(post.body).toEqual({ expectedVersion: 4, exceptionReason: null })
     expect(post.headers['Idempotency-Key']).toBeTruthy()
     // The screen re-reads instead of predicting the closed order.
     await waitFor(() => expect(reads(recorded).length).toBeGreaterThan(1))
@@ -1043,6 +1084,85 @@ describe('the close (MFG-ORD)', () => {
     expect(screen.getAllByText(/tolerans ile geçilmez/)).toHaveLength(2)
     expect(posts(recorded).filter((request) => request.url.endsWith('/close'))).toHaveLength(1)
     expect(screen.queryByTestId('order-already-closed')).toBeNull()
+  })
+
+  it('does not draw the exception reason control without its dedicated capability', async () => {
+    const user = userEvent.setup()
+    stub({
+      capabilities: CLOSER_CAPABILITIES,
+      commands: [() => problem(422, { code: 'manufacturing_closure_approval_required' })],
+    })
+    renderAt(PATH)
+
+    await screen.findByRole('heading', { name: 'Emri kapat' })
+    await user.click(screen.getByRole('button', { name: 'Emri kapat' }))
+    await user.click(screen.getByRole('button', { name: 'Evet, emri kapat' }))
+
+    expect(await screen.findByText(/ayrı yetki ve gerekçeli onay/)).toBeTruthy()
+    expect(screen.queryByLabelText('Onay gerekçesi')).toBeNull()
+  })
+
+  it('answers an approval-required result with a new frozen reasoned attempt only for its dedicated capability', async () => {
+    const user = userEvent.setup()
+    const { recorded } = stub({
+      capabilities: EXCEPTION_APPROVER_CAPABILITIES,
+      reads: [
+        () => json(order({ version: 4 })),
+        () => json(order({ version: 5, status: 'Closed', closedAtUtc: '2026-09-18T12:00:00.000Z', closedByUserId: '99999999-9999-9999-9999-999999999999' })),
+      ],
+      commands: [
+        () => problem(422, { code: 'manufacturing_closure_approval_required' }),
+        () => json(order({ version: 5, status: 'Closed' })),
+      ],
+    })
+    renderAt(PATH)
+
+    await screen.findByRole('heading', { name: 'Emri kapat' })
+    await user.click(screen.getByRole('button', { name: 'Emri kapat' }))
+    await user.click(screen.getByRole('button', { name: 'Evet, emri kapat' }))
+    expect(await screen.findByTestId('close-exception-approval')).toBeTruthy()
+
+    await user.click(screen.getByRole('button', { name: 'Gerekçeyle onayla ve kapat' }))
+    expect(await screen.findByText('Onay gerekçesi zorunludur.')).toBeTruthy()
+    await user.type(screen.getByLabelText('Onay gerekçesi'), '  Teknik inceleme tamamlandı.  ')
+    await user.click(screen.getByRole('button', { name: 'Gerekçeyle onayla ve kapat' }))
+
+    await screen.findByText('Emir kapatıldı')
+    const closes = posts(recorded).filter((request) => request.url.endsWith('/close'))
+    expect(closes).toHaveLength(2)
+    expect(closes[0].body).toEqual({ expectedVersion: 4, exceptionReason: null })
+    expect(closes[1].body).toEqual({
+      expectedVersion: 4,
+      exceptionReason: 'Teknik inceleme tamamlandı.',
+    })
+    expect(closes[1].headers['Idempotency-Key']).not.toBe(closes[0].headers['Idempotency-Key'])
+  })
+
+  it('re-sends the exact reason and key when the exception close outcome is unknown', async () => {
+    const user = userEvent.setup()
+    const { recorded } = stub({
+      capabilities: EXCEPTION_APPROVER_CAPABILITIES,
+      commands: [
+        () => problem(422, { code: 'manufacturing_closure_approval_required' }),
+        () => problem(503, { code: 'service_unavailable' }),
+        () => json(order({ version: 2, status: 'Closed' })),
+      ],
+    })
+    renderAt(PATH)
+
+    await screen.findByRole('heading', { name: 'Emri kapat' })
+    await user.click(screen.getByRole('button', { name: 'Emri kapat' }))
+    await user.click(screen.getByRole('button', { name: 'Evet, emri kapat' }))
+    await user.type(await screen.findByLabelText('Onay gerekçesi'), 'Ölçüm teyit edildi.')
+    await user.click(screen.getByRole('button', { name: 'Gerekçeyle onayla ve kapat' }))
+    await screen.findByText('Kapanışın sonucu bilinmiyor')
+    await user.click(screen.getByRole('button', { name: 'Aynı işlem anahtarıyla yeniden gönder' }))
+    await screen.findByText('Emir kapatıldı')
+
+    const closes = posts(recorded).filter((request) => request.url.endsWith('/close'))
+    expect(closes).toHaveLength(3)
+    expect(closes[2].headers['Idempotency-Key']).toBe(closes[1].headers['Idempotency-Key'])
+    expect(closes[2].body).toEqual(closes[1].body)
   })
 
   it('keeps one key for an unknown outcome and sends the same command again', async () => {

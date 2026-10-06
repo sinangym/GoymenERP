@@ -1,3 +1,4 @@
+using System.Data;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -9,6 +10,7 @@ using GoymenERP.Modules.Logistics.Domain.Loading;
 using GoymenERP.Modules.Logistics.Domain.Quantities;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 
 namespace GoymenERP.Modules.Logistics.Infrastructure.Persistence;
 
@@ -22,7 +24,7 @@ namespace GoymenERP.Modules.Logistics.Infrastructure.Persistence;
 /// blocked and unblocked cannot be represented — LOG-5 stores the block source's events.
 /// </summary>
 public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext companyContext, IAuditEventCollector auditEvents, TimeProvider timeProvider)
-    : ILogisticsInstructionStore
+    : ILogisticsInstructionStore, ILogisticsAggregateLoadStoreV1
 {
     private const string EntityType = "Logistics.LoadingInstruction";
     private const int ActorMaximumLength = 128;
@@ -35,7 +37,8 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
     private static readonly JsonSerializerOptions Json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
 
     public async Task<LogisticsStoreResult> StoreInstructionAsync(LogisticsWriteEnvelope envelope, string requestHash, DateOnly effectiveOn,
-        Func<LoadingInstruction> build, CancellationToken cancellationToken = default)
+        Func<LoadingInstruction> build, CancellationToken cancellationToken = default,
+        IReadOnlyList<LogisticsOrderLineAggregateLimit>? aggregateLimits = null)
     {
         ArgumentNullException.ThrowIfNull(build);
         RequireEnvelope(envelope);
@@ -71,6 +74,12 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
         {
             throw Refused(LogisticsStoreCodes.ConcurrentChange, "Bu talimat kimliği şirketin başka bir talimatında kullanılıyor.");
         }
+
+        var limits = aggregateLimits ?? [];
+        await using IDbContextTransaction? aggregateTransaction = limits.Count > 0 && dbContext.Database.CurrentTransaction is null
+            ? await dbContext.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken)
+            : null;
+        await RequireAggregateLimitsAsync(companyId, instruction, limits, cancellationToken);
 
         var now = timeProvider.GetUtcNow();
         dbContext.Instructions.Add(new LoadingInstructionRow
@@ -113,9 +122,70 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
 
         dbContext.Attempts.Add(Attempt(companyId, LogisticsCommands.CreateV1, keyHash, requestHash, actorId, envelope, instruction.Id, now));
         Audit(envelope, companyId, instruction.Id, "logistics.loading-instruction.created.v1", "Create", null, instruction.Version,
-            "{}", Snapshot(instruction), "Yükleme talimatı açıldı");
+            "{}", Snapshot(instruction, limits), "Yükleme talimatı açıldı");
         await SaveAsync(cancellationToken);
+        if (aggregateTransaction is not null)
+        {
+            await aggregateTransaction.CommitAsync(cancellationToken);
+        }
         return new LogisticsStoreResult(new StoredLoadingInstruction(instruction, effectiveOn), LogisticsWriteOutcome.Recorded, envelope.CorrelationId.Trim());
+    }
+
+    private async Task RequireAggregateLimitsAsync(Guid companyId, LoadingInstruction instruction,
+        IReadOnlyList<LogisticsOrderLineAggregateLimit> limits, CancellationToken cancellationToken)
+    {
+        if (limits.Count == 0)
+        {
+            return;
+        }
+
+        if (limits.Select(limit => limit.InstructionLineId).Distinct().Count() != limits.Count)
+        {
+            throw new ArgumentException("Aynı talimat satırı için iki aggregate limit verilemez.", nameof(limits));
+        }
+
+        foreach (var group in limits.GroupBy(limit => new { limit.CompanyId, limit.OrderId, limit.OrderLineId, limit.UnitId }))
+        {
+            var snapshots = group.Select(limit => new
+            {
+                limit.SalesOrderVersion, limit.MaximumAggregateQuantity, limit.MaximumAggregateQuantityText,
+                limit.SourceOwner, limit.SourceId, limit.SourceVersion, limit.EffectiveOn,
+            }).Distinct().ToArray();
+            if (group.Key.CompanyId != companyId || snapshots.Length != 1 || snapshots[0].MaximumAggregateQuantity <= 0m
+                || string.IsNullOrWhiteSpace(snapshots[0].MaximumAggregateQuantityText)
+                || string.IsNullOrWhiteSpace(snapshots[0].SourceOwner) || string.IsNullOrWhiteSpace(snapshots[0].SourceId)
+                || string.IsNullOrWhiteSpace(snapshots[0].SourceVersion))
+            {
+                throw new ArgumentException("Aggregate limit snapshot'ı eksik veya kendiyle çelişiyor.", nameof(limits));
+            }
+
+            var lineIds = group.Select(limit => limit.InstructionLineId).ToHashSet();
+            var newLines = instruction.Lines.Where(line => lineIds.Contains(line.Id)).ToArray();
+            if (newLines.Length != lineIds.Count || newLines.Any(line => line.Source.OrderId != group.Key.OrderId
+                || line.Source.LineId != group.Key.OrderLineId || line.UnitId != group.Key.UnitId))
+            {
+                throw new ArgumentException("Aggregate limit talimat satırının Sales bağıyla uyuşmuyor.", nameof(limits));
+            }
+
+            var foreignUnit = await dbContext.Lines.AsNoTracking().AnyAsync(row => row.SourceOrderId == group.Key.OrderId
+                && row.SourceOrderLineId == group.Key.OrderLineId && row.UnitId != group.Key.UnitId, cancellationToken);
+            if (foreignUnit)
+            {
+                throw new InvalidOperationException("Aynı Sales satırı iki farklı Logistics biriminde aggregate edilemez.");
+            }
+
+            // Serializable + IX_LoadingInstructionLines_SourceOrderLine holds the key range while this instruction is inserted.
+            var current = await dbContext.Lines.AsNoTracking()
+                .Where(row => row.SourceOrderId == group.Key.OrderId && row.SourceOrderLineId == group.Key.OrderLineId
+                    && row.UnitId == group.Key.UnitId)
+                .SumAsync(row => (decimal?)row.Instructed, cancellationToken) ?? 0m;
+            var requested = newLines.Sum(line => line.InstructedQuantity.Value);
+            if (current + requested > snapshots[0].MaximumAggregateQuantity)
+            {
+                throw Refused(LogisticsStoreCodes.AggregateLimitExceeded,
+                    "Sales satırının tüm yükleme talimatları toplamı owner-resolved maksimumu aşıyor.");
+            }
+        }
     }
 
     public async Task<LogisticsReplay?> FindReplayAsync(LogisticsWriteEnvelope envelope, string requestHash, string commandName,
@@ -175,7 +245,18 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
     }
 
     public async Task<LogisticsStoreResult?> MutateInstructionAsync(LogisticsWriteEnvelope envelope, string requestHash, string commandName,
-        Guid instructionId, Action<LoadingInstruction, DateTimeOffset> mutate, LogisticsMutationAudit audit, CancellationToken cancellationToken = default)
+        Guid instructionId, Action<LoadingInstruction, DateTimeOffset> mutate, LogisticsMutationAudit audit,
+        CancellationToken cancellationToken = default) =>
+        await MutateInstructionCoreAsync(envelope, requestHash, commandName, instructionId, mutate, audit, null, cancellationToken);
+
+    public async Task<LogisticsStoreResult?> MutateInstructionWithAggregateLoadLimitAsync(LogisticsWriteEnvelope envelope, string requestHash,
+        string commandName, Guid instructionId, Action<LoadingInstruction, DateTimeOffset> mutate, LogisticsMutationAudit audit,
+        LogisticsOrderLineAggregateLoadLimit aggregateLoadLimit, CancellationToken cancellationToken = default) =>
+        await MutateInstructionCoreAsync(envelope, requestHash, commandName, instructionId, mutate, audit, aggregateLoadLimit, cancellationToken);
+
+    private async Task<LogisticsStoreResult?> MutateInstructionCoreAsync(LogisticsWriteEnvelope envelope, string requestHash, string commandName,
+        Guid instructionId, Action<LoadingInstruction, DateTimeOffset> mutate, LogisticsMutationAudit audit,
+        LogisticsOrderLineAggregateLoadLimit? aggregateLoadLimit, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(mutate);
         ArgumentNullException.ThrowIfNull(audit);
@@ -213,6 +294,10 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
             return null;
         }
 
+        await using IDbContextTransaction? aggregateTransaction = aggregateLoadLimit is not null && dbContext.Database.CurrentTransaction is null
+            ? await dbContext.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken)
+            : null;
+
         // The header and the lines are tracked (the header's version is this write's concurrency token); the shares are read as before.
         var row = await dbContext.Instructions.SingleOrDefaultAsync(candidate => candidate.Id == instructionId, cancellationToken);
         if (row is null)
@@ -230,8 +315,12 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
         var noteLineRows = await dbContext.DispatchNoteLines.Where(line => line.InstructionId == instructionId)
             .ToListAsync(cancellationToken);
         var instruction = Restore(row, lineRows, shareRows, weighingRow, noteRows, noteLineRows);
+        if (aggregateLoadLimit is not null)
+        {
+            await RequireAggregateLoadLimitAsync(companyId, row.EffectiveOn, instruction, aggregateLoadLimit, cancellationToken);
+        }
         var versionBefore = instruction.Version;
-        var before = Snapshot(instruction);
+        var before = MutationSnapshot(instruction, aggregateLoadLimit);
         var sharesBefore = instruction.Shares.Count;
         var weighingBefore = instruction.Weighing;
         var notesBefore = instruction.DispatchNotes.ToArray();
@@ -345,8 +434,13 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
         }
 
         dbContext.Attempts.Add(Attempt(companyId, commandName, keyHash, requestHash, actorId, envelope, instruction.Id, now));
-        Audit(envelope, companyId, instruction.Id, audit.EventType, audit.Operation, versionBefore, instruction.Version, before, Snapshot(instruction), audit.Reason);
+        Audit(envelope, companyId, instruction.Id, audit.EventType, audit.Operation, versionBefore, instruction.Version, before,
+            MutationSnapshot(instruction, aggregateLoadLimit), audit.Reason);
         await SaveAsync(cancellationToken);
+        if (aggregateTransaction is not null)
+        {
+            await aggregateTransaction.CommitAsync(cancellationToken);
+        }
         return new LogisticsStoreResult(new StoredLoadingInstruction(instruction, row.EffectiveOn), LogisticsWriteOutcome.Recorded, envelope.CorrelationId.Trim());
     }
 
@@ -469,6 +563,51 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
         dbContext.DispatchNotes.AsNoTracking().AnyAsync(note => note.DispatchNoteId == dispatchNoteId && note.InstructionId != instructionId,
             cancellationToken);
 
+    private async Task RequireAggregateLoadLimitAsync(Guid companyId, DateOnly effectiveOn, LoadingInstruction instruction,
+        LogisticsOrderLineAggregateLoadLimit limit, CancellationToken cancellationToken)
+    {
+        var line = instruction.Lines.SingleOrDefault(candidate => candidate.Id == limit.InstructionLineId);
+        if (limit.CompanyId != companyId || limit.SalesOrderVersion < 1 || limit.MaximumAggregateQuantity <= 0m
+            || limit.RequestedLoadQuantity <= 0m || limit.EffectiveOn != effectiveOn
+            || string.IsNullOrWhiteSpace(limit.MaximumAggregateQuantityText) || string.IsNullOrWhiteSpace(limit.RequestedLoadQuantityText)
+            || string.IsNullOrWhiteSpace(limit.SourceOwner) || string.IsNullOrWhiteSpace(limit.SourceId)
+            || string.IsNullOrWhiteSpace(limit.SourceVersion) || line is null || line.Source.OrderId != limit.OrderId
+            || line.Source.LineId != limit.OrderLineId || line.UnitId != limit.UnitId)
+        {
+            throw new ArgumentException("Aggregate load limit snapshot'ı talimat satırıyla uyuşmuyor.", nameof(limit));
+        }
+
+        // Serializable + IX_LoadingInstructionLines_SourceOrderLine holds the range through this load's save.
+        var loaded = await dbContext.Lines.AsNoTracking()
+            .Where(row => row.SourceOrderId == limit.OrderId && row.SourceOrderLineId == limit.OrderLineId && row.UnitId == limit.UnitId)
+            .SumAsync(row => (decimal?)row.Loaded, cancellationToken) ?? 0m;
+        if (loaded + limit.RequestedLoadQuantity > limit.MaximumAggregateQuantity)
+        {
+            throw Refused(LogisticsStoreCodes.AggregateLimitExceeded,
+                "Sales satırının tüm yükleme talimatlarındaki yüklenen toplamı güncel owner-resolved maksimumu aşıyor.");
+        }
+    }
+
+    private static string MutationSnapshot(LoadingInstruction instruction, LogisticsOrderLineAggregateLoadLimit? limit)
+    {
+        if (limit is null)
+        {
+            return Snapshot(instruction);
+        }
+
+        using var document = JsonDocument.Parse(Snapshot(instruction));
+        return JsonSerializer.Serialize(new
+        {
+            instruction = document.RootElement.Clone(),
+            aggregateLoadLimit = new
+            {
+                limit.CompanyId, limit.OrderId, limit.OrderLineId, limit.UnitId, limit.SalesOrderVersion,
+                limit.MaximumAggregateQuantityText, limit.RequestedLoadQuantityText, limit.SourceOwner, limit.SourceId,
+                limit.SourceVersion, limit.EffectiveOn,
+            },
+        }, Json);
+    }
+
     public async Task<StoredLoadingInstruction?> FindInstructionAsync(Guid instructionId, CancellationToken cancellationToken = default)
     {
         RequireResolvedCompany();
@@ -508,6 +647,92 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
                 .Select(line => new StoredDispatchNoteOrderLine(line.LineNo, line.SourceOrderLineId, line.ShipmentId, line.UnitId, line.Quantity))],
             note.SeriesCode is { } series && note.SequenceNo is { } sequence ? DispatchNoteNumber.Of(series, sequence) : null,
             note.EDispatchNumber))];
+    }
+
+    public async Task<StoredApprovedDispatchInvoiceSource?> FindApprovedDispatchInvoiceSourceAsync(Guid dispatchNoteId,
+        CancellationToken cancellationToken = default)
+    {
+        RequireResolvedCompany();
+        if (dispatchNoteId == Guid.Empty)
+        {
+            return null;
+        }
+
+        // One statement keeps the approved header, current aggregate version and every active line on the same read snapshot.
+        // All three sets carry the Logistics company query filter, so a foreign-company id is indistinguishable from unknown.
+        var rows = await (
+            from note in dbContext.DispatchNotes.AsNoTracking()
+            join instruction in dbContext.Instructions.AsNoTracking()
+                on new { note.CompanyId, Id = note.InstructionId } equals new { instruction.CompanyId, Id = instruction.Id }
+            join line in dbContext.DispatchNoteLines.AsNoTracking()
+                on new { note.CompanyId, note.InstructionId, note.DispatchNoteId }
+                equals new { line.CompanyId, line.InstructionId, line.DispatchNoteId }
+            join sourceCandidate in dbContext.Lines.AsNoTracking()
+                on new { note.CompanyId, note.InstructionId, LineId = line.InstructionLineId }
+                equals new { sourceCandidate.CompanyId, sourceCandidate.InstructionId, sourceCandidate.LineId }
+                into sourceCandidates
+            from sourceLine in sourceCandidates.DefaultIfEmpty()
+            where note.DispatchNoteId == dispatchNoteId
+                && note.Status == (int)DispatchNoteStatus.Approved
+                && !line.Released
+            orderby line.LineNo
+            select new
+            {
+                note.CompanyId,
+                note.DispatchNoteId,
+                note.InstructionId,
+                InstructionVersion = instruction.Version,
+                instruction.CustomerPartyId,
+                instruction.CompanyAccountId,
+                note.SeriesCode,
+                note.SequenceNo,
+                note.EDispatchNumber,
+                note.ApprovedAtUtc,
+                line.LineNo,
+                line.SourceOrderId,
+                SourceOrderRevision = sourceLine == null ? (int?)null : sourceLine.SourceOrderRevision,
+                SourceOrderMatches = sourceLine != null && sourceLine.SourceOrderId == line.SourceOrderId
+                    && sourceLine.SourceOrderLineId == line.SourceOrderLineId,
+                line.SourceOrderLineId,
+                line.ShipmentId,
+                line.ProductId,
+                line.UnitId,
+                line.Quantity,
+            }).ToListAsync(cancellationToken);
+
+        if (rows.Count == 0)
+        {
+            return null;
+        }
+
+        if (rows.Any(line => line.SourceOrderRevision is null || !line.SourceOrderMatches))
+        {
+            throw new LogisticsStoreException(LogisticsStoreCodes.InvoiceSourceInvalid,
+                "İrsaliye satırının değişmez yükleme kaynağı eksik veya uyuşmuyor.");
+        }
+
+        var header = rows[0];
+        return new StoredApprovedDispatchInvoiceSource(
+            header.CompanyId,
+            header.DispatchNoteId,
+            header.InstructionId,
+            header.InstructionVersion,
+            header.CustomerPartyId,
+            header.CompanyAccountId,
+            header.SeriesCode is { } series && header.SequenceNo is { } sequence
+                ? DispatchNoteNumber.Of(series, sequence)
+                : null,
+            header.EDispatchNumber,
+            header.ApprovedAtUtc,
+            [.. rows.Select(line => new StoredApprovedDispatchInvoiceSourceLine(
+                line.LineNo,
+                line.SourceOrderId,
+                line.SourceOrderRevision!.Value,
+                line.SourceOrderLineId,
+                line.ShipmentId,
+                line.ProductId,
+                line.UnitId,
+                line.Quantity))]);
     }
 
     public async Task<LogisticsInstructionPage> ListInstructionsAsync(int pageSize, string? cursor, LoadingInstructionStatus? status = null,
@@ -832,35 +1057,84 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
             AuditAiInvolvement.None, AiContextJson: null, envelope.SourceChannel, envelope.ClientIpAddress, envelope.UserAgent, envelope.CorrelationId,
             envelope.CausationId, envelope.IdempotencyKey));
 
-    private static string Snapshot(LoadingInstruction instruction) => JsonSerializer.Serialize(new
-    {
-        status = instruction.Status.ToString(),
-        version = instruction.Version,
-        lines = instruction.Lines.Select(line => new
+    private static string Snapshot(LoadingInstruction instruction) =>
+        JsonSerializer.Serialize(new
         {
-            lineId = line.Id, instructed = line.InstructedQuantity.Value, loaded = line.LoadedQuantity.Value,
-            shipped = line.ShippedQuantity.Value, delivered = line.DeliveredQuantity.Value, blocked = line.IsBlocked,
-        }),
-        shares = instruction.Shares.Count,
-        // AT-053: the weighbridge facts in the audit trail; no tolerance verdict exists to record (OPEN-004).
-        weighing = instruction.Weighing is { } weighing
-            ? new
+            status = instruction.Status.ToString(),
+            version = instruction.Version,
+            lines = instruction.Lines.Select(line => new
             {
-                weighingId = weighing.WeighingId, direction = weighing.Direction.ToString(), first = weighing.FirstWeighing.Value,
-                second = weighing.SecondWeighing.Value, net = weighing.Net.Value, loaded = weighing.LoadedAtWeighing.Value,
-                difference = weighing.DifferenceKg, recordedBy = weighing.RecordedBy,
-            }
-            : null,
-        // AT-055: the dispatch notes in the audit trail — which shipment is on which note, with its shipped quantity, and the
-        // lifecycle: the system number and approver, the canceller and the reason, the e-İrsaliye number.
-        dispatchNotes = instruction.DispatchNotes.Select(note => new
+                lineId = line.Id, instructed = line.InstructedQuantity.Value, loaded = line.LoadedQuantity.Value,
+                shipped = line.ShippedQuantity.Value, delivered = line.DeliveredQuantity.Value, blocked = line.IsBlocked,
+            }),
+            shares = instruction.Shares.Count,
+            // AT-053: the weighbridge facts in the audit trail; no tolerance verdict exists to record (OPEN-004).
+            weighing = instruction.Weighing is { } weighing
+                ? new
+                {
+                    weighingId = weighing.WeighingId, direction = weighing.Direction.ToString(), first = weighing.FirstWeighing.Value,
+                    second = weighing.SecondWeighing.Value, net = weighing.Net.Value, loaded = weighing.LoadedAtWeighing.Value,
+                    difference = weighing.DifferenceKg, recordedBy = weighing.RecordedBy,
+                }
+                : null,
+            // AT-055: immutable dispatch-note lifecycle facts remain in every audit snapshot.
+            dispatchNotes = instruction.DispatchNotes.Select(note => new
+            {
+                dispatchNoteId = note.DispatchNoteId, status = note.Status.ToString(), createdBy = note.CreatedBy,
+                number = note.Number?.Text, approvedBy = note.ApprovedBy, cancelledBy = note.CancelledBy,
+                cancelReason = note.CancelReason, eDispatchNumber = note.EDispatchNumber,
+                lines = note.Lines.Select(line => new
+                {
+                    line.LineNo, line.ShipmentId, line.InstructionLineId, quantity = line.Quantity.Value,
+                }),
+            }),
+        }, Json);
+
+    private static string Snapshot(LoadingInstruction instruction, IReadOnlyList<LogisticsOrderLineAggregateLimit> aggregateLimits)
+    {
+        if (aggregateLimits.Count == 0)
         {
-            dispatchNoteId = note.DispatchNoteId, status = note.Status.ToString(), createdBy = note.CreatedBy,
-            number = note.Number?.Text, approvedBy = note.ApprovedBy, cancelledBy = note.CancelledBy, cancelReason = note.CancelReason,
-            eDispatchNumber = note.EDispatchNumber,
-            lines = note.Lines.Select(line => new { line.LineNo, line.ShipmentId, line.InstructionLineId, quantity = line.Quantity.Value }),
-        }),
-    }, Json);
+            return Snapshot(instruction);
+        }
+
+        return JsonSerializer.Serialize(new
+        {
+            status = instruction.Status.ToString(),
+            version = instruction.Version,
+            lines = instruction.Lines.Select(line => new
+            {
+                lineId = line.Id, instructed = line.InstructedQuantity.Value, loaded = line.LoadedQuantity.Value,
+                shipped = line.ShippedQuantity.Value, delivered = line.DeliveredQuantity.Value, blocked = line.IsBlocked,
+            }),
+            shares = instruction.Shares.Count,
+            aggregateLimits = aggregateLimits.Select(limit => new
+            {
+                instructionLineId = limit.InstructionLineId, companyId = limit.CompanyId, orderId = limit.OrderId,
+                orderLineId = limit.OrderLineId, unitId = limit.UnitId, salesOrderVersion = limit.SalesOrderVersion,
+                maximumAggregateQuantity = limit.MaximumAggregateQuantityText, sourceOwner = limit.SourceOwner,
+                sourceId = limit.SourceId, sourceVersion = limit.SourceVersion, effectiveOn = limit.EffectiveOn,
+            }),
+            // AT-053: the weighbridge facts in the audit trail; no tolerance verdict exists to record (OPEN-004).
+            weighing = instruction.Weighing is { } weighing
+                ? new
+                {
+                    weighingId = weighing.WeighingId, direction = weighing.Direction.ToString(), first = weighing.FirstWeighing.Value,
+                    second = weighing.SecondWeighing.Value, net = weighing.Net.Value, loaded = weighing.LoadedAtWeighing.Value,
+                    difference = weighing.DifferenceKg, recordedBy = weighing.RecordedBy,
+                }
+                : null,
+            dispatchNotes = instruction.DispatchNotes.Select(note => new
+            {
+                dispatchNoteId = note.DispatchNoteId, status = note.Status.ToString(), createdBy = note.CreatedBy,
+                number = note.Number?.Text, approvedBy = note.ApprovedBy, cancelledBy = note.CancelledBy,
+                cancelReason = note.CancelReason, eDispatchNumber = note.EDispatchNumber,
+                lines = note.Lines.Select(line => new
+                {
+                    line.LineNo, line.ShipmentId, line.InstructionLineId, quantity = line.Quantity.Value,
+                }),
+            }),
+        }, Json);
+    }
 
     private async Task SaveAsync(CancellationToken cancellationToken)
     {
@@ -873,6 +1147,11 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
             dbContext.ChangeTracker.Clear();
             throw Refused(LogisticsStoreCodes.ConcurrentChange, "Talimat başka bir yazmayla değişti; hiçbir şey kaydedilmedi.", exception);
         }
+        catch (Exception exception) when (ContainsSqlException(exception, 1205))
+        {
+            dbContext.ChangeTracker.Clear();
+            throw Refused(LogisticsStoreCodes.ConcurrentChange, "Aggregate yazma yarışı kaybedildi; hiçbir şey kaydedilmedi.", exception);
+        }
         catch (DbUpdateException exception) when (exception.InnerException is SqlException { Number: 2601 or 2627 })
         {
             // Only unique-key violations are recognised here (the Idempotency / Inventory / Sales pattern): the attempt key,
@@ -880,6 +1159,19 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
             dbContext.ChangeTracker.Clear();
             throw Refused(LogisticsStoreCodes.ConcurrentChange, "Kalıcı tekillik kuralı başka bir yazmanın lehine sonuçlandı; hiçbir şey kaydedilmedi.", exception);
         }
+    }
+
+    private static bool ContainsSqlException(Exception exception, int number)
+    {
+        for (Exception? current = exception; current is not null; current = current.InnerException)
+        {
+            if (current is SqlException sqlException && sqlException.Number == number)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private Guid RequireResolvedCompany() =>

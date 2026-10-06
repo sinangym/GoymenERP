@@ -456,8 +456,9 @@ pattern with its fail-closed rule applied to EVERY write-off, and records the re
 Sales/Logistics/Finance outcome whose source documents (return request, return delivery note, credit note) have no
 owner contract yet; no decision fixes whether a returned piece re-enters as its original label (the manufacturing
 `Return` kind only covers unused production input) or as a new label, under which owner, and whether it waits in a
-quality hold (DEC-STK-006 names the block kinds, not a return rule). Transfer (DEC-STK-008) stays blocked on
-INV-R20-R21-01 Q1. Inventory will add a return receipt only when the owning module publishes the source document.
+quality hold (DEC-STK-006 names the block kinds, not a return rule). The separately accepted INV-R20 transfer
+contract below does not decide return identity. Inventory will add a return receipt only when the owning module
+publishes the source document.
 
 **Central publication (coordinator):** register `inventory.stock-scrap.record` / `inventory.stock-scrap.approve`
 (company-wide, not Critical) in `ErpPermissions`; `builder.Services.AddInventoryStockScraps();` in the host (the
@@ -465,10 +466,32 @@ routes are mapped by `MapInventoryEndpoints`); Inventory shell 1.5 (two ST-01 co
 chain rows; OpenAPI regeneration (+3 operations); guard re-pins of `Program.cs`, `InventoryDbContext.cs`, the new
 migration and `inventory.txt` (+5 facts); r14 disposable actors `r14-scrapper` / `r14-scrap-approver`.
 
+## INV-R20 — same-company two-leg whole-label transfer
+
+DEC-STK-008 and the accepted INV-R20 Q1 contract define plan → dispatch → in-transit → target acceptance. The
+Inventory-owned writer stores planned and actual shipped kg, their signed difference, outgoing/incoming document
+references and line-level acceptance. Dispatch removes every non-zero Free/Blocked bucket of a label in one atomic
+movement; acceptance restores the same owner, product, label and block buckets at the validated target location and
+custodian. Ownership and company never change.
+
+A material label remains one physical piece. Partial acceptance means accepting a subset of dispatched whole-label
+lines. This v1 contract exposes no partial kg for one label; the existing label split must happen first. Active
+allocations block dispatch, every command uses exact transfer/label versions and idempotency/audit metadata, and
+tenant filters plus composite foreign keys keep company scope fail closed. The owner registration publishes no
+destination adapter, route or grant. The destination-owner port is checked at plan and again at acceptance, with a
+fresh authority fence after each awaited owner read. The transactional writer repeats that captured company/actor
+fence after persistence reads, before any replay disclosure and immediately before the single save; a refused final
+fence clears every staged movement/transfer/audit row. Dispatch keeps the initially validated label/balance
+concurrency tokens tracked through the save, so an intervening allocation or stock write fails closed instead of
+moving stale stock; acceptance likewise keeps its validated label token through the target movement save. Owner-read
+denials and provider errors are disclosed only after the captured company/actor/permission fence is measured again.
+Central publication must register
+`inventory.stock-transfer.write`, provide the destination-owner adapter, route/OpenAPI mapping and authority
+classification before runtime activation.
+
 ## Movement kinds and rollback signal (reference)
 
-`StockMovementKind` (stored as `inventory.Movements.Kind`, `CK_Movements_Kind` = `[Kind] BETWEEN 1 AND 7`; the ST-04
-timeline and the web decoder name the same seven):
+`StockMovementKind` (stored as `inventory.Movements.Kind`, `CK_Movements_Kind` = `[Kind] BETWEEN 1 AND 9`):
 
 | Kind | Value | Written by | Lines |
 |---|---|---|---|
@@ -479,13 +502,15 @@ timeline and the web decoder name the same seven):
 | `Return` | 5 | unused manufacturing input back to the same label and position (`AddInventoryManufacturingReturn`) | In |
 | `CountAdjustment` | 6 | an approved stock count difference (ST-05, `AddInventoryStockCounts`) | one In or Out |
 | `Scrap` | 7 | an approved scrap write-off (ST-02, `AddInventoryStockScraps`); free or blocked | one Out |
+| `TransferDispatch` | 8 | one INV-R20 transfer dispatch; every source bucket leaves stock atomically | Out |
+| `TransferAccept` | 9 | one accepted INV-R20 line; the captured buckets enter the validated target | In |
 
 A new kind widens `CK_Movements_Kind` in its own migration and its `Down` narrows it back only when no row of that kind
 exists. An allocation change, a split/merge and a label version bump write NO movement.
 
 **`THROW 51053` is a shared rollback signal, not an Inventory-owned number.** Every Inventory migration that must not
 be rolled back once its facts exist (`AddInventoryLabelGenealogy`, `AddInventoryManufacturingReturn`,
-`AddInventoryStockCounts`, `AddInventoryAllocationChanges`, `AddInventoryStockScraps`) raises 51053 in `Down`, and
+`AddInventoryStockCounts`, `AddInventoryAllocationChanges`, `AddInventoryStockScraps`, `AddInventoryTransfers`) raises 51053 in `Down`, and
 Finance's `AddManualBankPayments` uses the same number for the same meaning ("facts exist; forward fix"). It is kept
 as is — existing migrations are never renumbered — and the message text names the owner and the facts.
 

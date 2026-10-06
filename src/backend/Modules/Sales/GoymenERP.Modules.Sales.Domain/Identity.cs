@@ -97,6 +97,42 @@ public static class SalesRuleCodes
     public const string DiscountOutOfRange = "sales_discount_out_of_range";
     /// <summary>A discount without a unit price: a percentage of nothing (ASSUMPTION-SALESP-1).</summary>
     public const string DiscountWithoutPrice = "sales_discount_without_price";
+    // AT-018 / AT-021 (user decision 2026-09-30): the list-price reference and the visible adjustments.
+    /// <summary>A discount is a percent OR an amount, never both; a surcharge likewise.</summary>
+    public const string AdjustmentKindConflict = "sales_adjustment_kind_conflict";
+    /// <summary>An amount (discount or surcharge) carries more decimals than the money profile's scale; nothing is rounded.</summary>
+    public const string AdjustmentScaleExceeded = "sales_adjustment_scale_exceeded";
+    /// <summary>A surcharge percent outside 0..100.</summary>
+    public const string SurchargeOutOfRange = "sales_surcharge_out_of_range";
+    /// <summary>A surcharge, a discount amount or a reference without a unit price.</summary>
+    public const string AdjustmentWithoutPrice = "sales_adjustment_without_price";
+    /// <summary>A discount amount larger than the unit price: a net below zero.</summary>
+    public const string DiscountExceedsPrice = "sales_discount_exceeds_price";
+    /// <summary>The reference is in another price unit than the line's price.</summary>
+    public const string PriceReferenceMismatch = "sales_price_reference_mismatch";
+    /// <summary>The line quantity no longer belongs to the immutable referenced price tier.</summary>
+    public const string PriceReferenceQuantityMismatch = "sales_price_reference_quantity_mismatch";
+    /// <summary>The unit price cannot be represented exactly by the deterministic decimal calculator.</summary>
+    public const string PriceValueUnrepresentable = "sales_price_value_unrepresentable";
+    public const string DiscountPercentUnrepresentable = "sales_discount_percent_unrepresentable";
+    public const string DiscountAmountUnrepresentable = "sales_discount_amount_unrepresentable";
+    public const string SurchargePercentUnrepresentable = "sales_surcharge_percent_unrepresentable";
+    public const string SurchargeAmountUnrepresentable = "sales_surcharge_amount_unrepresentable";
+    /// <summary>All inputs are representable, but their exact intermediate arithmetic exceeds decimal.</summary>
+    public const string PriceCalculationOverflow = "sales_price_calculation_overflow";
+    /// <summary>
+    /// AT-021: the net price is below the reference's floor. No approver for an exception is decided, so it is refused
+    /// (fail-closed), never passed silently (ASSUMPTION-PRL-5).
+    /// </summary>
+    public const string PriceBelowFloor = "sales_price_below_floor";
+    /// <summary>A below-floor commercial snapshot exists but its separate exception is not approved.</summary>
+    public const string PriceFloorExceptionPending = "sales_price_floor_exception_pending";
+    /// <summary>The exception command must name every current below-floor line exactly once.</summary>
+    public const string PriceFloorExceptionLinesMismatch = "sales_price_floor_exception_lines_mismatch";
+    /// <summary>The actor who requested the current exception cannot approve it.</summary>
+    public const string PriceFloorExceptionSameActor = "sales_price_floor_exception_same_actor";
+    /// <summary>An exception approval reason is required.</summary>
+    public const string PriceFloorExceptionReasonRequired = "sales_price_floor_exception_reason_required";
     /// <summary>A commercial revision must name every current line exactly once and no other line.</summary>
     public const string RevisionLinesMismatch = "sales_revision_lines_mismatch";
     /// <summary>A commercial revision that changes no value is refused: an approval is never discarded for nothing (ASSUMPTION-SALESP-5).</summary>
@@ -127,6 +163,19 @@ public static class SalesRuleCodes
     public const string CancellationReasonRequired = "sales_cancellation_reason_required";
     /// <summary>A cancellation reason over the technical bound (the note's) is refused, never cut.</summary>
     public const string CancellationReasonTooLong = "sales_cancellation_reason_too_long";
+
+    // Partial delivery (user decision 2026-09-30): the undelivered remainder of a partly delivered line is cancelled or its
+    // quantity revised, with approval; the delivered and loaded part is kept.
+    /// <summary>The line has no recorded shipment yet: it is not partly delivered, so its remainder is not this command's (a revision is).</summary>
+    public const string RemainderNotStarted = "sales_remainder_not_started";
+    /// <summary>Nothing of the line is left beyond what the delivery owner has loaded: there is no remainder to cancel.</summary>
+    public const string RemainderNone = "sales_remainder_none";
+    /// <summary>The new quantity is below what the delivery owner has loaded (loaded ≥ shipped ≥ delivered): never reduced below it.</summary>
+    public const string RemainderBelowFloor = "sales_remainder_below_floor";
+    /// <summary>The revised quantity equals the current one: an approval is not asked for nothing.</summary>
+    public const string RemainderNoChange = "sales_remainder_no_change";
+    /// <summary>The command names a line the order does not have.</summary>
+    public const string RemainderLineUnknown = "sales_remainder_line_unknown";
 
     public const string TooManySlices = "sales_too_many_slices";
     public const string DuplicateSliceId = "sales_duplicate_slice_id";

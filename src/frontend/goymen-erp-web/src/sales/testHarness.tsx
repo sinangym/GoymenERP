@@ -170,6 +170,14 @@ export interface HarnessConfig {
   readonly onQuantityRevision?: (call: RecordedCall) => Response | Promise<Response>
   /** AT-055: GET `/logistics/dispatch-notes?salesOrderId=…` (read only when the shell holds the Logistics instruction detail). */
   readonly onDispatchNotes?: (url: string, companyId: string | null) => Response | Promise<Response>
+  /** K3 / AT-018: a POST on `/sales/drafts/{id}/commercial-revision`. */
+  readonly onCommercialRevision?: (call: RecordedCall) => Response | Promise<Response>
+  /** Reasoned maker-checker approval of the current below-floor price snapshots. */
+  readonly onPriceFloorExceptionApproval?: (call: RecordedCall) => Response | Promise<Response>
+  /** AT-018: GET `/sales/drafts/{id}/line-pricing`; default: 404 (the pricing is shown as unreadable). */
+  readonly onLinePricing?: (url: string, companyId: string | null) => Response | Promise<Response>
+  /** AT-018: GET `/sales/drafts/{id}/lines/{lineId}/price-references`. */
+  readonly onPriceReferences?: (url: string, companyId: string | null) => Response | Promise<Response>
 }
 
 export function installFetch(config: HarnessConfig = {}) {
@@ -200,10 +208,25 @@ export function installFetch(config: HarnessConfig = {}) {
         })
       }
       if (url.includes('/sales/drafts')) {
-        const command = /\/sales\/drafts\/[^/?]+\/(submission|approval|rejection|withdrawal)$/.exec(url)?.[1]
+        const command = /\/sales\/drafts\/[^/?]+\/(submission|approval|rejection|withdrawal|customer-acceptance)$/.exec(url)?.[1]
         if (call.method === 'POST' && /\/sales\/drafts\/[^/?]+\/delivery-schedule$/.test(url)) {
           if (config.onDeliverySchedule === undefined) throw new Error('unexpected delivery-schedule update')
           return config.onDeliverySchedule(call)
+        }
+        if (call.method === 'POST' && /\/sales\/drafts\/[^/?]+\/commercial-revision$/.test(url)) {
+          if (config.onCommercialRevision === undefined) throw new Error('unexpected commercial revision')
+          return config.onCommercialRevision(call)
+        }
+        if (call.method === 'POST' && /\/sales\/drafts\/[^/?]+\/below-floor-exception-approval$/.test(url)) {
+          if (config.onPriceFloorExceptionApproval === undefined) throw new Error('unexpected price-floor exception approval')
+          return config.onPriceFloorExceptionApproval(call)
+        }
+        if (call.method === 'GET' && /\/sales\/drafts\/[^/?]+\/line-pricing$/.test(url)) {
+          return config.onLinePricing?.(url, call.companyId) ?? json({ status: 404 }, 404)
+        }
+        if (call.method === 'GET' && /\/sales\/drafts\/[^/?]+\/lines\/[^/?]+\/price-references$/.test(url)) {
+          if (config.onPriceReferences === undefined) throw new Error('unexpected price-references read')
+          return config.onPriceReferences(url, call.companyId)
         }
         if (call.method === 'POST' && /\/sales\/drafts\/[^/?]+\/quantity-revision$/.test(url)) {
           if (config.onQuantityRevision === undefined) throw new Error('unexpected quantity revision')
@@ -225,6 +248,9 @@ export function installFetch(config: HarnessConfig = {}) {
         }
         if (call.method === 'GET' && /\/sales\/drafts\/[^/?]+\/delivery-schedules$/.test(url)) {
           return config.onDeliverySchedules?.(url, call.companyId) ?? json(ORIGINAL_SCHEDULE)
+        }
+        if (call.method === 'GET' && /\/sales\/drafts\/[^/?]+\/remainder-changes$/.test(url)) {
+          return noRemainderChanges(details.get(url.replace(/\/remainder-changes$/, '')))
         }
         if (call.method === 'POST' && command !== undefined) {
           if (config.onCommand === undefined) throw new Error(`unexpected ${command}`)
@@ -267,6 +293,28 @@ function nothingDelivered(detail: unknown): Response {
       lineId: line.lineId, lineNo: line.lineNo, orderUnitId: line.orderUnitId, ordered: line.quantity,
       shipped: '0', delivered: '0', remaining: line.quantity, excess: '0',
     })),
+  })
+}
+
+/** A valid owner-backed empty remainder read for detail tests that are not exercising remainder mutations. */
+function noRemainderChanges(detail: unknown): Response {
+  const body = detail as { draft?: { version?: unknown }; lines?: { lineId: string; lineNo: number; orderUnitId: string; quantity: string }[] } | undefined
+  if (typeof body?.draft?.version !== 'string' || !Array.isArray(body.lines)) return json({ status: 404 }, 404)
+  return json({
+    draftVersion: body.draft.version,
+    floorStatus: 'Readable',
+    lines: body.lines.map((line) => ({
+      lineId: line.lineId,
+      lineNo: line.lineNo,
+      orderUnitId: line.orderUnitId,
+      quantity: line.quantity,
+      remainder: 'Open',
+      loaded: '0',
+      shipped: '0',
+      delivered: '0',
+      minimum: '0',
+    })),
+    items: [],
   })
 }
 

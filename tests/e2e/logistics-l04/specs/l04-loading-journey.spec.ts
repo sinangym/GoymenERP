@@ -78,6 +78,8 @@ const {
   openLineId,
   shipmentAllocationId,
   shipmentLabelId,
+  shipmentReceiptAcceptanceId,
+  shipmentReceiptMovementId,
 } = env.seed
 const INSTRUCTIONS_PATH = '/api/v1/logistics/loading-instructions'
 const APPROVED_LINES_PATH = `${INSTRUCTIONS_PATH}/approved-order-lines`
@@ -94,7 +96,7 @@ const SALES_READER_ACTOR = 'l04-sales-approver'
 const SALES_DETAIL_ROUTE = `/satis/siparisler/${draftId}`
 // The seeded approved draft has ONE line of "6" kg (L04BrowserSeed); only L04-05 ships (2) and delivers (1.5) on it.
 const ORDERED = '6'
-const PRODUCT_NAME = 'SENTETIK browser-suite:l04 rulo 1,25 × 1240'
+const PRODUCT_NAME = 'SENTETIK browser-suite:purchase-to-delivery candidate'
 // Business 5743412166 (Sevkiyatçı rule): no price or finance word on these screens, in any language the app uses.
 const PRICE_WORDS = ['₺', 'TRY', 'fiyat', 'Fiyat', 'price', 'Price', 'unitPrice', 'tutar', 'Tutar', 'iskonto', 'İskonto', 'para birimi']
 
@@ -446,7 +448,7 @@ test('L04-04 on the seeded instruction the blocked line refuses a load and the o
   expect(after.lines.find((line) => line.lineId === openLineId)?.loaded).toBe('1')
 })
 
-test('L04-05 shipment consumes one allocation and one stock exit; reopen replay and delivery add no Inventory effect; the Sales order shows the delivery and its replay adds nothing (AT-024)', async ({ page }) => {
+test('L04-05 the purchase-receipt label crosses allocation, one stock exit, shipment and delivery without a second Inventory effect (AT-024)', async ({ page }) => {
   await signInAs(page, loaderActor)
   if (createdId === '') createdId = recallCreatedId()
   await openDetail(page, createdId)
@@ -470,9 +472,22 @@ test('L04-05 shipment consumes one allocation and one stock exit; reopen replay 
         .input('companyId', sql.UniqueIdentifier, companyId)
         .input('labelId', sql.UniqueIdentifier, shipmentLabelId)
         .input('allocationId', sql.UniqueIdentifier, shipmentAllocationId)
+        .input('acceptanceId', sql.UniqueIdentifier, shipmentReceiptAcceptanceId)
+        .input('receiptMovementId', sql.UniqueIdentifier, shipmentReceiptMovementId)
         .input('movementId', sql.UniqueIdentifier, movementId ?? '00000000-0000-0000-0000-000000000000')
         .query(`
           SELECT
+            (SELECT COUNT(*) FROM purchasing.PurchaseAcceptanceShares
+               WHERE CompanyId=@companyId AND AcceptanceId=@acceptanceId) AS receiptAcceptance,
+            (SELECT COUNT(*) FROM inventory.Movements
+               WHERE CompanyId=@companyId AND Id=@receiptMovementId
+                 AND SourceKind=N'purchasing.goods-acceptance' AND SourceId=@acceptanceId) AS receiptMovement,
+            (SELECT COUNT(DISTINCT movement.Id)
+               FROM inventory.Movements movement
+               INNER JOIN inventory.MovementLines movementLine
+                 ON movementLine.CompanyId=movement.CompanyId AND movementLine.MovementId=movement.Id
+              WHERE movement.CompanyId=@companyId AND movement.SourceKind=N'inventory.opening-count'
+                AND movementLine.LabelId=@labelId) AS openingMovements,
             (SELECT COUNT(*) FROM inventory.Allocations WHERE CompanyId=@companyId AND Id=@allocationId AND LabelId=@labelId) AS allocations,
             (SELECT COUNT(*) FROM inventory.Allocations WHERE CompanyId=@companyId AND Id=@allocationId
                AND Status=2 AND Version=2 AND RemainingKg=0) AS consumed,
@@ -482,10 +497,17 @@ test('L04-05 shipment consumes one allocation and one stock exit; reopen replay 
                  ON movementLine.CompanyId=movement.CompanyId AND movementLine.MovementId=movement.Id
               WHERE movement.CompanyId=@companyId AND movementLine.LabelId=@labelId) AS movements,
             (SELECT COUNT(*) FROM inventory.Movements WHERE CompanyId=@companyId AND Id=@movementId) AS shipmentMovement`)
-      return result.recordset[0] as { allocations: number; consumed: number; movements: number; shipmentMovement: number }
+      return result.recordset[0] as {
+        receiptAcceptance: number; receiptMovement: number; openingMovements: number
+        allocations: number; consumed: number; movements: number; shipmentMovement: number
+      }
     }
 
-    expect(await effects()).toEqual({ allocations: 1, consumed: 0, movements: 1, shipmentMovement: 0 })
+    const receiptOnly = {
+      receiptAcceptance: 1, receiptMovement: 1, openingMovements: 0,
+      allocations: 1, consumed: 0, movements: 1, shipmentMovement: 0,
+    }
+    expect(await effects()).toEqual(receiptOnly)
 
     const shipmentPath = `${INSTRUCTIONS_PATH}/${createdId}/lines/${line.lineId}/shipments`
     const attempts: { readonly key: string | null; readonly body: string | null }[] = []
@@ -515,7 +537,10 @@ test('L04-05 shipment consumes one allocation and one stock exit; reopen replay 
     const recorded = await readInstruction(page, loaderActor, createdId)
     const shipped = recorded.shares.find((share) => share.kind === 'Shipped' && share.shareId === shipmentBody.shipmentId)
     expect(shipped).toMatchObject({ lineId: line.lineId, quantity: '2', sourceShipmentId: null })
-    expect(await effects(shipmentBody.movementId)).toEqual({ allocations: 1, consumed: 1, movements: 2, shipmentMovement: 1 })
+    const shippedEffects = {
+      ...receiptOnly, consumed: 1, movements: 2, shipmentMovement: 1,
+    }
+    expect(await effects(shipmentBody.movementId)).toEqual(shippedEffects)
 
     await page.getByRole('link', { name: '← Yükleme talimatları', exact: true }).click()
     await expect(page.getByRole('heading', { level: 1, name: 'Yükleme talimatları', exact: true })).toBeVisible()
@@ -531,7 +556,7 @@ test('L04-05 shipment consumes one allocation and one stock exit; reopen replay 
     expect(replay.headers()['idempotency-replayed']).toBe('true')
     expect(attempts).toHaveLength(2)
     expect(attempts[1]).toEqual(attempts[0])
-    expect(await effects(shipmentBody.movementId)).toEqual({ allocations: 1, consumed: 1, movements: 2, shipmentMovement: 1 })
+    expect(await effects(shipmentBody.movementId)).toEqual(shippedEffects)
 
     // AT-024, before the delivery: the Sales reader's S-04 shows the definite shipment and nothing delivered yet.
     const sales = await page.context().newPage()
@@ -555,7 +580,7 @@ test('L04-05 shipment consumes one allocation and one stock exit; reopen replay 
     expect(delivered.status()).toBe(200)
     expect((await delivered.request().postDataJSON()) as { sourceShipmentId: string }).toMatchObject({ sourceShipmentId: shipmentBody.shipmentId })
     expect(inventoryCalls).toEqual([])
-    expect(await effects(shipmentBody.movementId)).toEqual({ allocations: 1, consumed: 1, movements: 2, shipmentMovement: 1 })
+    expect(await effects(shipmentBody.movementId)).toEqual(shippedEffects)
 
     await page.goto(LIST_ROUTE)
     await openDetail(page, createdId)
@@ -585,6 +610,7 @@ test('L04-05 shipment consumes one allocation and one stock exit; reopen replay 
     })
     expect(replayedDelivery.status()).toBe(200)
     expect(replayedDelivery.headers()['idempotency-replayed']).toBe('true')
+    expect(await effects(shipmentBody.movementId)).toEqual(shippedEffects)
     const afterReplay = await readInstruction(page, loaderActor, createdId)
     expect(afterReplay.shares.filter((share) => share.kind === 'Delivered')).toHaveLength(1)
     expect(afterReplay.instruction.version).toBe(final.instruction.version)
@@ -821,7 +847,8 @@ test('L04-08 AT-025: the operations work list keeps sales and purchase work in s
   const purchaseRow = page.getByTestId(`operations-purchase-row-${PURCHASE_LINE_ID}`)
   await expect(purchaseRow).toBeVisible({ timeout: 30_000 })
   await expect(purchaseRow).toContainText(SUPPLIER_NAME)
-  await expect(purchaseRow.locator('td').last()).toHaveText('7')
+  // The same seeded 7 kg PO line remains after its real 2 kg receipt, with exactly 5 kg open.
+  await expect(purchaseRow.locator('td').last()).toHaveText('5')
   await expect(page.getByTestId('operations-purchase-table')).not.toContainText(DOCUMENT_NO)
   await expect(page.getByTestId(`operations-sales-row-${approvedLineId}`)).toHaveCount(0)
   await expectNoPriceText(page)
@@ -1049,6 +1076,214 @@ test('L04-09 AT-055: the loader drafts a dispatch note from the definite shipmen
 
     const final = await counts()
     expect([final.notes, final.lines, final.movements, final.audits]).toEqual([2, 2, start.movements, 2])
+  } finally {
+    await pool.close()
+  }
+})
+
+test('L04-10 a delivered share returns to its original label once, by a different decision actor; replay and reject add no stock effect', async ({ page }) => {
+  if (createdId === '') createdId = recallCreatedId()
+  const before = await readInstruction(page, preparerActor, createdId)
+  const delivered = before.shares.find((share) => share.kind === 'Delivered')
+  expect(delivered).toBeDefined()
+  if (delivered === undefined) throw new Error('L04-10 requires L04-05 delivered share')
+  const line = before.lines.find((candidate) => candidate.lineId === delivered.lineId)
+  expect(line).toBeDefined()
+  if (line === undefined) throw new Error('L04-10 requires the delivered instruction line')
+
+  const movementCount = async (pool: InstanceType<typeof sql.ConnectionPool>) => {
+    const result = await pool.request()
+      .input('companyId', sql.UniqueIdentifier, companyId)
+      .input('labelId', sql.UniqueIdentifier, shipmentLabelId)
+      .query(`
+        SELECT COUNT(DISTINCT movement.Id) AS movements
+          FROM inventory.Movements movement
+          INNER JOIN inventory.MovementLines movementLine
+            ON movementLine.CompanyId=movement.CompanyId AND movementLine.MovementId=movement.Id
+         WHERE movement.CompanyId=@companyId AND movementLine.LabelId=@labelId`)
+    return Number(result.recordset[0].movements)
+  }
+
+  const pool = await new sql.ConnectionPool(env.sqlConnection).connect()
+  try {
+    const movementBaseline = await movementCount(pool)
+    await signInAs(page, preparerActor)
+    await openDetail(page, createdId)
+    const panel = page.locator('section[aria-label="Müşteri iadesi"]')
+    await expect(panel).toContainText('Bu teslimat için müşteri iadesi bulunmuyor.')
+
+    const requestPath = `/api/v1/logistics/instructions/${createdId}/lines/${line.lineId}/customer-returns`
+    const requestAnswer = page.waitForResponse((response) => response.request().method() === 'POST'
+      && new URL(response.url()).pathname === requestPath)
+    await panel.getByLabel('İade miktarı').fill('0.5')
+    await panel.getByLabel('İade nedeni').fill('SENTETIK müşteri ambalaj iadesi')
+    await panel.getByLabel('İade zamanı').fill(new Date(Date.now() - 60_000).toISOString().slice(0, 16))
+    await panel.getByRole('button', { name: 'Talep oluştur' }).click()
+    const requestedAnswer = await requestAnswer
+    expect(requestedAnswer.status()).toBe(201)
+    const requested = await requestedAnswer.json() as {
+      return: { customerReturnId: string; status: string; sourceDeliveryId: string; inventoryMovementId: null }
+    }
+    expect(requested.return).toMatchObject({
+      status: 'Pending', sourceDeliveryId: delivered.shareId, inventoryMovementId: null,
+    })
+    await expect(panel).toContainText('İşlem kaydedildi.')
+    await expect(panel).toContainText('Bekliyor')
+    expect(await movementCount(pool)).toBe(movementBaseline)
+
+    await page.goto('/logistics')
+    await openDetail(page, createdId)
+    await expect(page.locator('section[aria-label="Müşteri iadesi"]')).toContainText('Bekliyor')
+    const pendingListAnswer = await page.request.get(
+      `${env.apiBaseUrl}/api/v1/logistics/orders/${draftId}/customer-returns`,
+      { headers: { [DEVELOPMENT_USER_HEADER]: preparerActor, 'X-Company-Id': companyId } },
+    )
+    expect(pendingListAnswer.status()).toBe(200)
+    expect(await pendingListAnswer.json()).toEqual(expect.arrayContaining([
+      expect.objectContaining({ customerReturnId: requested.return.customerReturnId, status: 'Pending' }),
+    ]))
+
+    await signInAs(page, loaderActor)
+    await openDetail(page, createdId)
+    const decisionPanel = page.locator('section[aria-label="Müşteri iadesi"]')
+    await expect(decisionPanel).toContainText('Bekliyor')
+    const approvePath = `/api/v1/logistics/customer-returns/${requested.return.customerReturnId}/approve`
+    type CommittedApproval = {
+      readonly status: number
+      readonly headers: Record<string, string>
+      readonly body: {
+        readonly return: {
+          readonly customerReturnId: string
+          readonly status: string
+          readonly version: string
+          readonly inventoryMovementId: string
+          readonly originalLabelId: string
+        }
+        readonly isReplay: boolean
+        readonly originalCorrelationId: string
+      }
+    }
+    let resolveCommittedApproval: (approval: CommittedApproval) => void = () => {
+      throw new Error('L04-10 approval capture resolver was not initialized')
+    }
+    const committedApproval = new Promise<CommittedApproval>((resolve) => {
+      resolveCommittedApproval = resolve
+    })
+    let approvalCaptured = false
+    await page.route(`**${approvePath}`, async (route) => {
+      if (route.request().method() !== 'POST' || approvalCaptured) return route.fallback()
+      approvalCaptured = true
+      const response = await route.fetch()
+      resolveCommittedApproval({
+        status: response.status(),
+        headers: response.headers(),
+        body: await response.json(),
+      })
+      await route.abort('failed')
+    })
+    const approveRequest = page.waitForRequest((request) => request.method() === 'POST'
+      && new URL(request.url()).pathname === approvePath)
+    await decisionPanel.getByLabel('Karar notu').fill('SENTETIK farklı aktör kabulü')
+    await decisionPanel.getByRole('button', { name: 'Onayla' }).click()
+    const [approvedRequest, capturedApproval] = await Promise.all([approveRequest, committedApproval])
+    await expect(decisionPanel).toContainText('Sonuç belirsiz. Yeni işlem oluşturmayın; aynı işlem anahtarıyla yeniden deneyin.')
+    await expect(decisionPanel).toContainText('Bekliyor')
+    await expect(decisionPanel).not.toContainText('Onaylandı')
+    await expect(decisionPanel.getByRole('button', { name: 'Onayla' })).toBeDisabled()
+    await expect(decisionPanel.getByRole('button', { name: 'Reddet' })).toBeDisabled()
+    expect(capturedApproval.status).toBe(200)
+    expect(capturedApproval.headers['idempotency-replayed']).toBeUndefined()
+    const approved = capturedApproval.body
+    expect(approved.isReplay).toBe(false)
+    expect(approved.originalCorrelationId).toBeTruthy()
+    expect(approved.return).toMatchObject({
+      customerReturnId: requested.return.customerReturnId,
+      status: 'Approved',
+      version: '2',
+      originalLabelId: shipmentLabelId,
+    })
+    expect(approved.return.inventoryMovementId).toBeTruthy()
+    expect(await movementCount(pool)).toBe(movementBaseline + 1)
+
+    const replayKey = approvedRequest.headers()['idempotency-key']
+    const replayBody = approvedRequest.postData()
+    expect(replayKey).toBeTruthy()
+    expect(replayBody).toBeTruthy()
+    const replayAnswer = page.waitForResponse((response) => response.request().method() === 'POST'
+      && new URL(response.url()).pathname === approvePath)
+    await decisionPanel.getByRole('button', { name: 'Aynı işlemi yeniden dene' }).click()
+    const replay = await replayAnswer
+    expect(replay.status()).toBe(200)
+    expect(replay.headers()['idempotency-replayed']).toBe('true')
+    expect(replay.headers()['idempotency-original-correlation-id']).toBe(approved.originalCorrelationId)
+    expect(replay.request().headers()['x-development-user']).toBe(loaderActor)
+    expect(replay.request().headers()['x-company-id']).toBe(companyId)
+    expect(replay.request().headers()['idempotency-key']).toBe(replayKey)
+    expect(replay.request().postData()).toBe(replayBody)
+    const replayed = await replay.json() as typeof approved
+    expect(replayed).toEqual({
+      isReplay: true,
+      originalCorrelationId: approved.originalCorrelationId,
+      return: approved.return,
+    })
+    await expect(decisionPanel).toContainText('İşlem kaydedildi.')
+    await expect(decisionPanel).toContainText('Onaylandı')
+    expect(await movementCount(pool)).toBe(movementBaseline + 1)
+
+    const freshApproved = await page.request.get(
+      `${env.apiBaseUrl}/api/v1/logistics/customer-returns/${requested.return.customerReturnId}`,
+      { headers: { [DEVELOPMENT_USER_HEADER]: loaderActor, 'X-Company-Id': companyId } },
+    )
+    expect(freshApproved.status()).toBe(200)
+    expect(await freshApproved.json()).toMatchObject({
+      customerReturnId: approved.return.customerReturnId,
+      status: 'Approved',
+      version: approved.return.version,
+      inventoryMovementId: approved.return.inventoryMovementId,
+      originalLabelId: shipmentLabelId,
+    })
+    await page.goto('/logistics')
+    await openDetail(page, createdId)
+    await expect(page.locator('section[aria-label="Müşteri iadesi"]')).toContainText('Onaylandı')
+    expect(await movementCount(pool)).toBe(movementBaseline + 1)
+
+    const rejectedReturnId = crypto.randomUUID()
+    const rejectRequest = await page.request.post(`${env.apiBaseUrl}${requestPath}`, {
+      headers: {
+        [DEVELOPMENT_USER_HEADER]: preparerActor,
+        'X-Company-Id': companyId,
+        'X-Correlation-Id': `browser-suite-l04-return-reject-request-${Date.now()}`,
+        'Idempotency-Key': `browser-suite:l04:return-reject-request:${Date.now()}`,
+        'Content-Type': 'application/json',
+      },
+      data: {
+        customerReturnId: rejectedReturnId,
+        sourceDeliveryId: delivered.shareId,
+        expectedInstructionVersion: (await readInstruction(page, preparerActor, createdId)).instruction.version,
+        quantity: '0.25',
+        reason: 'SENTETIK reddedilecek müşteri iadesi',
+        occurredAtUtc: new Date(Date.now() - 30_000).toISOString(),
+      },
+    })
+    expect(rejectRequest.status()).toBe(201)
+    const rejected = await page.request.post(
+      `${env.apiBaseUrl}/api/v1/logistics/customer-returns/${rejectedReturnId}/reject`,
+      {
+        headers: {
+          [DEVELOPMENT_USER_HEADER]: loaderActor,
+          'X-Company-Id': companyId,
+          'X-Correlation-Id': `browser-suite-l04-return-reject-${Date.now()}`,
+          'Idempotency-Key': `browser-suite:l04:return-reject:${Date.now()}`,
+          'Content-Type': 'application/json',
+        },
+        data: { expectedVersion: '1', note: 'SENTETIK farklı aktör reddi' },
+      },
+    )
+    expect(rejected.status()).toBe(200)
+    expect(await rejected.json()).toMatchObject({
+      return: { customerReturnId: rejectedReturnId, status: 'Rejected', inventoryMovementId: null, originalLabelId: null },
+    })
+    expect(await movementCount(pool)).toBe(movementBaseline + 1)
   } finally {
     await pool.close()
   }

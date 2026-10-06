@@ -53,6 +53,8 @@ public static class LogisticsModuleExtensions
             serviceProvider.GetRequiredService<LogisticsInstructionService>());
         services.AddScoped<ILogisticsRealizationServiceV1>(serviceProvider =>
             serviceProvider.GetRequiredService<LogisticsInstructionService>());
+        services.AddScoped<IApprovedDispatchInvoiceSourceV1>(serviceProvider =>
+            serviceProvider.GetRequiredService<LogisticsInstructionService>());
         // AT-024: Logistics answers the Sales-declared delivery read over its own company-filtered lines. Registered here,
         // in the owner's module (no host file), so that Sales reads recorded deliveries only through this port.
         services.AddScoped<ISalesOrderDeliveryReadPortV1, LogisticsSalesOrderDeliveryReadPort>();
@@ -64,6 +66,17 @@ public static class LogisticsModuleExtensions
         services.AddScoped<ILogisticsOrderLineProgressReader, LogisticsOrderLineProgressReader>();
         services.TryAddSingleton(new LogisticsOperationsWorkBindings());
         services.AddScoped<ILogisticsOperationsWorkService, LogisticsOperationsWorkService>();
+        services.AddScoped<LogisticsCustomerReturnStore>();
+        services.AddScoped<ILogisticsCustomerReturnStoreV1>(provider =>
+            provider.GetRequiredService<LogisticsCustomerReturnStore>());
+        services.AddScoped<ILogisticsCustomerReturnSourceReadV1, LogisticsCustomerReturnSourceReader>();
+        services.AddScoped<ISalesOrderCustomerReturnReadPortV1, LogisticsSalesOrderCustomerReturnReadPort>();
+        services.TryAddSingleton(new LogisticsCustomerReturnBindingsV1(
+            LogisticsPermissionManifestV1.CustomerReturnsRequest,
+            LogisticsPermissionManifestV1.CustomerReturnsDecision,
+            LogisticsPermissionManifestV1.CustomerReturnsRead,
+            ErpPermissions.InventoryPhysicalAllocationWrite));
+        services.AddScoped<ILogisticsCustomerReturnServiceV1, LogisticsCustomerReturnService>();
         return services;
     }
 

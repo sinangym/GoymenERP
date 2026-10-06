@@ -93,11 +93,11 @@ public sealed class SalesDraftSqlServerRelationalAcceptanceTests
                 .ToArray();
         }
 
-        Assert.Equal(["DraftAttempts", "DraftCancellations", "DraftDeliveryScheduleDates", "DraftDeliverySchedules", "DraftDeliverySlices", "DraftLines", "DraftNumbers", "DraftRevisionLines", "DraftRevisions", "Drafts", "__EFMigrationsHistory"], mapped);
+        Assert.Equal(["DraftAttempts", "DraftCancellations", "DraftDeliveryScheduleDates", "DraftDeliverySchedules", "DraftDeliverySlices", "DraftLines", "DraftNumbers", "DraftRemainderChanges", "DraftRemainderDecisions", "DraftRevisionLines", "DraftRevisions", "Drafts", "__EFMigrationsHistory"], mapped);
         Assert.Equal(string.Join(',', mapped), await run.ScalarAsync<string>(
             "SELECT STRING_AGG(name, ',') WITHIN GROUP (ORDER BY name COLLATE Latin1_General_BIN2) FROM sys.tables WHERE schema_id = SCHEMA_ID(N'sales')"));
         // ADR-011 §2: the raw key is not a column; the attempt row holds the command name, the key hash and the actor.
-        Assert.Equal("ActorId,CommandName,CorrelationId,DraftId,IdempotencyKeyHash,Outcome,RecordedAtUtc,RefusalJson,RequestHash", await run.ScalarAsync<string>(
+        Assert.Equal("ActorId,CommandName,CorrelationId,DraftId,IdempotencyKeyHash,Outcome,RecordedAtUtc,RefusalJson,RequestHash,ResultJson", await run.ScalarAsync<string>(
             "SELECT STRING_AGG(name, ',') WITHIN GROUP (ORDER BY name COLLATE Latin1_General_BIN2) FROM sys.columns WHERE object_id = OBJECT_ID(N'sales.DraftAttempts') AND name <> N'CompanyId'"));
         Assert.Equal(SalesStore.IdempotencyKeyHash("k-1"), await run.ScalarAsync<string>(
             "SELECT IdempotencyKeyHash FROM sales.DraftAttempts WHERE DraftId = @id", ("@id", first.Draft.Id)));

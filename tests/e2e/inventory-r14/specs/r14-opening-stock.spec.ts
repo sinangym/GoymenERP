@@ -11,9 +11,18 @@ const HOME = '/stok/acilis'
 const OPENINGS = '/api/v1/inventory/opening-counts'
 const PRODUCT_REFERENCES = '/api/v1/inventory/references/products'
 const LOCATION_REFERENCES = '/api/v1/inventory/references/locations'
+const DOCUMENTS = '/api/v1/documents'
+const DOCUMENT_OWNER_KIND = 'inventory.material-label'
+const CLASSIFY_COMMAND = 'inventory.label-classification.classify.v1'
+const CLASSIFIED_EVENT = 'inventory.label.classified.v1'
 const EFFECTIVE_ON = '2026-09-18'
 const SHEET = 'SENTETIK browser-suite:r14 opening count'
 const LABEL = 'SYNR14-LABEL-1'
+const DOCUMENT_FILE_NAME = `SENTETIK R14 etiket ${env.testedCommit.slice(0, 8)}.pdf`
+const DOCUMENT_PDF = Buffer.from(
+  `%PDF-1.4\n% SENTETIK browser-suite:r14 label document ${env.testedCommit}\n%%EOF\n`,
+  'utf8',
+)
 
 async function signInAs(page: Page, actor: string): Promise<void> {
   await page.setExtraHTTPHeaders({ [DEVELOPMENT_USER_HEADER]: actor })
@@ -23,7 +32,7 @@ function apiHeaders(actor: string, company = companyId): Record<string, string> 
   return { [DEVELOPMENT_USER_HEADER]: actor, 'X-Company-Id': company }
 }
 
-test('R14 records one real opening count, closes and reopens it, and preserves permission/company fences', async ({ page }) => {
+test('R14 records one real opening count, classifies its label, reopens and replays it, and preserves every fence', async ({ page }) => {
   const pool = await new sql.ConnectionPool(env.sqlConnection).connect()
   try {
     const baseline = await pool.request()
@@ -101,30 +110,285 @@ test('R14 records one real opening count, closes and reopens it, and preserves p
     await expect(labelLink).toHaveAttribute('href', `/stok/etiket/${actualLabelId}`)
     const labelAnswer = page.waitForResponse((response) => response.request().method() === 'GET'
       && new URL(response.url()).pathname === labelPath)
+    const documentsAnswer = page.waitForResponse((response) => {
+      const url = new URL(response.url())
+      return response.request().method() === 'GET' && url.pathname === DOCUMENTS
+        && url.searchParams.get('ownerKind') === DOCUMENT_OWNER_KIND
+        && url.searchParams.get('ownerId') === actualLabelId
+    })
     await labelLink.click()
-    const labelResponse = await labelAnswer
+    const [labelResponse, documentsResponse] = await Promise.all([labelAnswer, documentsAnswer])
     expect(labelResponse.status()).toBe(200)
+    expect(documentsResponse.status()).toBe(200)
+    const initialDocuments = await documentsResponse.json() as {
+      readonly items: readonly unknown[]; readonly canUpload: boolean
+    }
+    expect(initialDocuments.items).toEqual([])
+    expect(initialDocuments.canUpload).toBe(true)
     const labelDetail = await labelResponse.json() as {
       readonly labelVersion: string
-      readonly identity: { readonly labelId: string; readonly companyId: string; readonly productId: string; readonly code: string }
+      readonly identity: {
+        readonly labelId: string; readonly companyId: string; readonly productId: string; readonly code: string
+        readonly classification: 'Standard' | 'SecondQuality' | 'Scrap' | null
+      }
       readonly balances: { readonly labelId: string; readonly physicalKg: string }
       readonly genealogy: { readonly labelId: string; readonly labelCode: string; readonly edges: readonly unknown[]; readonly windowFull: boolean }
       readonly movementTimeline: { readonly labelId: string; readonly windowFull: boolean; readonly entries: readonly [{
-        readonly kind: string; readonly sourceKind: string; readonly lines: readonly [{ readonly direction: string; readonly quantityKg: string }]
+        readonly kind: string; readonly sourceKind: string; readonly sourceId: string; readonly sourceLineId: string | null;
+        readonly lines: readonly [{ readonly direction: string; readonly quantityKg: string }]
       }] }
     }
-    expect(labelDetail.identity).toMatchObject({ labelId: actualLabelId, companyId, productId, code: LABEL })
+    expect(labelDetail.identity).toMatchObject({
+      labelId: actualLabelId, companyId, productId, code: LABEL, classification: null,
+    })
     expect(labelDetail.balances).toMatchObject({ labelId: actualLabelId, physicalKg: '12.5' })
     expect(labelDetail.genealogy).toEqual({ labelId: actualLabelId, labelCode: LABEL, edges: [], windowFull: false })
     expect(labelDetail.movementTimeline).toMatchObject({
       labelId: actualLabelId, windowFull: false,
-      entries: [{ kind: 'Receipt', sourceKind: 'inventory.opening-count', lines: [{ direction: 'In', quantityKg: '12.5' }] }],
+      entries: [{ kind: 'Receipt', sourceKind: 'inventory.opening-count', sourceId: created.countId,
+        sourceLineId: created.lines[0].lineId, lines: [{ direction: 'In', quantityKg: '12.5' }] }],
     })
     await expect(page.getByRole('heading', { level: 1, name: LABEL, exact: true })).toBeVisible()
     await expect(page.getByText(actualLabelId, { exact: true })).toBeVisible()
     await expect(page.getByRole('heading', { level: 2, name: 'Soy ağacı', exact: true })).toBeVisible()
     await expect(page.getByText('Bu etiket için bölme veya birleştirme kaydı yok.', { exact: true })).toBeVisible()
     await expect(page.getByRole('heading', { level: 2, name: 'Stok hareketleri', exact: true })).toBeVisible()
+
+    const sourceLink = page.getByRole('link', { name: 'Açılış sayımını aç', exact: true })
+    await expect(sourceLink).toHaveAttribute('href', `/stok/acilis/${created.countId}`)
+    const sourceAnswer = page.waitForResponse((response) => response.request().method() === 'GET'
+      && new URL(response.url()).pathname === `${OPENINGS}/${created.countId}`)
+    await sourceLink.click()
+    const sourceResponse = await sourceAnswer
+    expect(sourceResponse.status()).toBe(200)
+    expect(await sourceResponse.json()).toEqual(created)
+    await expect(page.getByRole('heading', { level: 1, name: 'Açılış sayımı', exact: true })).toBeVisible()
+    const freshLabelAnswer = page.waitForResponse((response) => response.request().method() === 'GET'
+      && new URL(response.url()).pathname === labelPath)
+    await page.goBack()
+    const freshLabelResponse = await freshLabelAnswer
+    expect(freshLabelResponse.status()).toBe(200)
+    expect(await freshLabelResponse.json()).toMatchObject({
+      identity: { labelId: actualLabelId, companyId, productId },
+      movementTimeline: { entries: [{ sourceKind: 'inventory.opening-count', sourceId: created.countId }] },
+    })
+    await expect(page.getByRole('heading', { level: 1, name: LABEL, exact: true })).toBeVisible()
+
+    // Classify the exact browser-created label through the real UI. Capture the browser's frozen key/body so the
+    // replay below proves the same transport attempt rather than reconstructing a second command.
+    const classificationPath = `/api/v1/inventory/labels/${actualLabelId}/classification`
+    const classificationAnswer = page.waitForResponse((response) => response.request().method() === 'POST'
+      && new URL(response.url()).pathname === classificationPath)
+    const classificationRefresh = page.waitForResponse((response) => response.request().method() === 'GET'
+      && new URL(response.url()).pathname === labelPath)
+    await page.getByLabel('Yeni sınıf', { exact: true }).selectOption('SecondQuality')
+    await page.getByRole('button', { name: 'Sınıfı kaydet', exact: true }).click()
+    const classificationResponse = await classificationAnswer
+    expect(classificationResponse.status()).toBe(201)
+    expect(classificationResponse.headers()['idempotency-replayed']).toBeUndefined()
+    expect(classificationResponse.headers()['idempotency-original-correlation-id']).toBeUndefined()
+    const classificationKey = classificationResponse.request().headers()['idempotency-key']
+    expect(classificationKey).toBeTruthy()
+    const classificationRequest = classificationResponse.request().postDataJSON() as {
+      readonly expectedLabelVersion: string; readonly classification: string
+    }
+    expect(classificationRequest).toEqual({
+      expectedLabelVersion: labelDetail.labelVersion, classification: 'SecondQuality',
+    })
+    const classification = await classificationResponse.json() as {
+      readonly labelId: string; readonly labelVersion: string; readonly classification: string
+      readonly classifiedAtUtc: string
+    }
+    expect(classification).toMatchObject({
+      labelId: actualLabelId,
+      labelVersion: (BigInt(labelDetail.labelVersion) + 1n).toString(),
+      classification: 'SecondQuality',
+    })
+    expect(Number.isFinite(Date.parse(classification.classifiedAtUtc))).toBe(true)
+    const refreshedClassificationResponse = await classificationRefresh
+    expect(refreshedClassificationResponse.status()).toBe(200)
+    expect(await refreshedClassificationResponse.json()).toMatchObject({
+      labelVersion: classification.labelVersion,
+      identity: { labelId: actualLabelId, classification: 'SecondQuality' },
+      balances: { labelId: actualLabelId, physicalKg: '12.5' },
+      movementTimeline: {
+        labelId: actualLabelId,
+        entries: [{ kind: 'Receipt', sourceKind: 'inventory.opening-count', lines: [{ quantityKg: '12.5' }] }],
+      },
+    })
+    await expect(page.getByText('Mevcut sınıf: SecondQuality.', { exact: false })).toBeVisible()
+
+    // AT-065: attach one optional vault document to THIS browser-created material label. The existing label attachment
+    // summary above is an Inventory fact; this panel is the shared append-only Documents vault, bound by owner kind/id.
+    const documentsPanel = page.locator('section[data-section="documents"]')
+    await expect(documentsPanel.getByRole('heading', { name: 'Belgeler', exact: true })).toBeVisible()
+    const documentInput = documentsPanel.getByLabel('Dosya seç', { exact: true })
+    await expect(documentInput).toBeVisible()
+    await documentInput.setInputFiles({
+      name: DOCUMENT_FILE_NAME,
+      mimeType: 'application/pdf',
+      buffer: DOCUMENT_PDF,
+    })
+    const uploaded = page.waitForResponse((response) => response.request().method() === 'POST'
+      && new URL(response.url()).pathname === DOCUMENTS)
+    const refreshedDocuments = page.waitForResponse((response) => {
+      const url = new URL(response.url())
+      return response.request().method() === 'GET' && url.pathname === DOCUMENTS
+        && url.searchParams.get('ownerKind') === DOCUMENT_OWNER_KIND
+        && url.searchParams.get('ownerId') === actualLabelId
+    })
+    await documentsPanel.getByRole('button', { name: 'Yükle', exact: true }).click()
+    const uploadResponse = await uploaded
+    expect(uploadResponse.status()).toBe(201)
+    expect(uploadResponse.headers()['idempotency-replayed']).toBeUndefined()
+    const idempotencyKey = uploadResponse.request().headers()['idempotency-key']
+    expect(idempotencyKey).toBeTruthy()
+    const upload = await uploadResponse.json() as {
+      readonly document: {
+        readonly id: string; readonly companyId: string; readonly ownerKind: string; readonly ownerId: string
+        readonly fileName: string; readonly sizeBytes: number; readonly sha256: string
+        readonly scanState: string; readonly downloadable: boolean
+      }
+      readonly duplicates: readonly unknown[]
+      readonly isReplay: boolean
+      readonly originalCorrelationId: string
+    }
+    expect(upload).toMatchObject({
+      document: {
+        companyId,
+        ownerKind: DOCUMENT_OWNER_KIND,
+        ownerId: actualLabelId,
+        fileName: DOCUMENT_FILE_NAME,
+        sizeBytes: DOCUMENT_PDF.length,
+        scanState: 'Clean',
+        downloadable: true,
+      },
+      duplicates: [],
+      isReplay: false,
+    })
+    await expect(documentsPanel.locator('[data-documents-state="stored"]')).toContainText(DOCUMENT_FILE_NAME)
+
+    const refreshedDocumentsResponse = await refreshedDocuments
+    expect(refreshedDocumentsResponse.status()).toBe(200)
+    const refreshedDocumentList = await refreshedDocumentsResponse.json() as {
+      readonly items: readonly { readonly id: string; readonly companyId: string; readonly ownerKind: string; readonly ownerId: string }[]
+    }
+    expect(refreshedDocumentList.items).toHaveLength(1)
+    expect(refreshedDocumentList.items[0]).toMatchObject({
+      id: upload.document.id,
+      companyId,
+      ownerKind: DOCUMENT_OWNER_KIND,
+      ownerId: actualLabelId,
+    })
+
+    // Close the card and reopen the exact label. Both owner and vault are read afresh; no cached link proves this step.
+    await page.goto(HOME)
+    const reopenedLabel = page.waitForResponse((response) => response.request().method() === 'GET'
+      && new URL(response.url()).pathname === labelPath)
+    const reopenedDocuments = page.waitForResponse((response) => {
+      const url = new URL(response.url())
+      return response.request().method() === 'GET' && url.pathname === DOCUMENTS
+        && url.searchParams.get('ownerKind') === DOCUMENT_OWNER_KIND
+        && url.searchParams.get('ownerId') === actualLabelId
+    })
+    await page.goto(`/stok/etiket/${actualLabelId}`)
+    const reopenedLabelResponse = await reopenedLabel
+    expect(reopenedLabelResponse.status()).toBe(200)
+    expect(await reopenedLabelResponse.json()).toMatchObject({
+      labelVersion: classification.labelVersion,
+      identity: { labelId: actualLabelId, companyId, productId, code: LABEL, classification: 'SecondQuality' },
+      balances: { labelId: actualLabelId, physicalKg: '12.5' },
+      movementTimeline: {
+        labelId: actualLabelId,
+        entries: [{ kind: 'Receipt', sourceKind: 'inventory.opening-count', lines: [{ quantityKg: '12.5' }] }],
+      },
+    })
+    const reopenedDocumentsResponse = await reopenedDocuments
+    expect(reopenedDocumentsResponse.status()).toBe(200)
+    const reopenedDocumentList = await reopenedDocumentsResponse.json() as {
+      readonly items: readonly { readonly id: string; readonly companyId: string; readonly ownerKind: string; readonly ownerId: string }[]
+    }
+    expect(reopenedDocumentList.items).toHaveLength(1)
+    expect(reopenedDocumentList.items[0]).toMatchObject({
+      id: upload.document.id,
+      companyId,
+      ownerKind: DOCUMENT_OWNER_KIND,
+      ownerId: actualLabelId,
+    })
+    const reopenedPanel = page.locator('section[data-section="documents"]')
+    const documentRow = reopenedPanel.locator(`tr[data-document-id="${upload.document.id}"]`)
+    await expect(documentRow).toBeVisible()
+    await expect(documentRow.getByRole('rowheader')).toHaveText(DOCUMENT_FILE_NAME)
+
+    const downloadStarted = page.waitForEvent('download')
+    await documentRow.getByRole('button', { name: `${DOCUMENT_FILE_NAME} dosyasını indir` }).click()
+    const download = await downloadStarted
+    expect(download.suggestedFilename()).toBe(DOCUMENT_FILE_NAME)
+    const stream = await download.createReadStream()
+    const chunks: Buffer[] = []
+    for await (const chunk of stream) chunks.push(Buffer.from(chunk as Buffer))
+    expect(Buffer.concat(chunks).equals(DOCUMENT_PDF)).toBe(true)
+
+    // Repeat the exact upload attempt outside the UI with the SAME key. The server must replay the first 201 and
+    // preserve one document/version/link/attempt/audit effect.
+    const replayResponse = await page.request.post(`${env.apiBaseUrl}${DOCUMENTS}`, {
+      headers: { ...apiHeaders(recorderActor), 'Idempotency-Key': idempotencyKey },
+      multipart: {
+        ownerKind: DOCUMENT_OWNER_KIND,
+        ownerId: actualLabelId,
+        file: { name: DOCUMENT_FILE_NAME, mimeType: 'application/pdf', buffer: DOCUMENT_PDF },
+      },
+    })
+    expect(replayResponse.status()).toBe(201)
+    expect(replayResponse.headers()['idempotency-replayed']).toBe('true')
+    expect(replayResponse.headers()['idempotency-original-correlation-id']).toBe(upload.originalCorrelationId)
+    expect(await replayResponse.json()).toMatchObject({
+      document: { id: upload.document.id, ownerKind: DOCUMENT_OWNER_KIND, ownerId: actualLabelId },
+      isReplay: true,
+      originalCorrelationId: upload.originalCorrelationId,
+    })
+
+    const classificationReplay = await page.request.post(`${env.apiBaseUrl}${classificationPath}`, {
+      headers: { ...apiHeaders(recorderActor), 'Idempotency-Key': classificationKey },
+      data: classificationRequest,
+    })
+    expect(classificationReplay.status()).toBe(200)
+    expect(classificationReplay.headers()['idempotency-replayed']).toBe('true')
+    expect(classificationReplay.headers()['idempotency-original-correlation-id']).toBeTruthy()
+    expect(await classificationReplay.json()).toEqual(classification)
+
+    const documentEffects = await pool.request()
+      .input('companyId', sql.UniqueIdentifier, companyId)
+      .input('documentId', sql.UniqueIdentifier, upload.document.id)
+      .input('entityId', sql.NVarChar, upload.document.id)
+      .input('ownerKind', sql.NVarChar, DOCUMENT_OWNER_KIND)
+      .input('ownerId', sql.UniqueIdentifier, actualLabelId)
+      .input('sha256', sql.VarChar, upload.document.sha256)
+      .query<{ blobs: number; documents: number; versions: number; links: number; attempts: number; audits: number }>(`
+        SELECT
+          (SELECT COUNT(*) FROM documents.ContentBlobs
+            WHERE CompanyId=@companyId AND Sha256=@sha256) AS blobs,
+          (SELECT COUNT(*) FROM documents.Documents
+            WHERE CompanyId=@companyId AND Id=@documentId) AS documents,
+          (SELECT COUNT(*) FROM documents.DocumentVersions
+            WHERE CompanyId=@companyId AND DocumentId=@documentId AND VersionNo=1) AS versions,
+          (SELECT COUNT(*) FROM documents.DocumentLinks
+            WHERE CompanyId=@companyId AND DocumentId=@documentId
+              AND OwnerKind=@ownerKind AND OwnerId=@ownerId) AS links,
+          (SELECT COUNT(*) FROM documents.DocumentAttempts
+            WHERE CompanyId=@companyId AND DocumentId=@documentId
+              AND CommandName=N'documents.upload.v1') AS attempts,
+          (SELECT COUNT(*) FROM audit.AuditEvents
+            WHERE CompanyId=@companyId AND EntityId=@entityId
+              AND EventType=N'documents.document.uploaded.v1' AND SourceChannel=N'Web') AS audits`)
+    expect(documentEffects.recordset[0]).toEqual({
+      blobs: 1,
+      documents: 1,
+      versions: 1,
+      links: 1,
+      attempts: 1,
+      audits: 1,
+    })
 
     const productLink = page.getByRole('link', { name: 'Ürün kartı', exact: true })
     await expect(productLink).toHaveAttribute('href', `/urun/${productId}`)
@@ -142,8 +406,8 @@ test('R14 records one real opening count, closes and reopens it, and preserves p
     const returnedLabelResponse = await returnedLabelAnswer
     expect(returnedLabelResponse.status()).toBe(200)
     expect(await returnedLabelResponse.json()).toMatchObject({
-      labelVersion: labelDetail.labelVersion,
-      identity: { labelId: actualLabelId, companyId, productId, code: LABEL },
+      labelVersion: classification.labelVersion,
+      identity: { labelId: actualLabelId, companyId, productId, code: LABEL, classification: 'SecondQuality' },
       balances: { labelId: actualLabelId, physicalKg: '12.5' },
       genealogy: { labelId: actualLabelId, labelCode: LABEL, edges: [], windowFull: false },
       movementTimeline: {
@@ -154,15 +418,6 @@ test('R14 records one real opening count, closes and reopens it, and preserves p
     await expect(page.getByRole('heading', { level: 1, name: LABEL, exact: true })).toBeVisible()
     await expect(page.getByText(actualLabelId, { exact: true })).toBeVisible()
     await expect(page.getByRole('heading', { level: 2, name: 'Soy ağacı', exact: true })).toBeVisible()
-
-    const stored = await pool.request()
-      .input('companyId', sql.UniqueIdentifier, companyId)
-      .input('countId', sql.UniqueIdentifier, created.countId)
-      .query<{ counts: number; lines: number }>(`
-        SELECT
-          (SELECT COUNT(*) FROM inventory.OpeningCounts WHERE CompanyId=@companyId AND Id=@countId) AS counts,
-          (SELECT COUNT(*) FROM inventory.OpeningCountLines WHERE CompanyId=@companyId AND CountId=@countId) AS lines`)
-    expect(stored.recordset[0]).toEqual({ counts: 1, lines: 1 })
 
     const denied = await page.request.get(`${env.apiBaseUrl}${PRODUCT_REFERENCES}?effectiveOn=${EFFECTIVE_ON}&limit=25`, {
       headers: apiHeaders(deniedActor),
@@ -192,14 +447,59 @@ test('R14 records one real opening count, closes and reopens it, and preserves p
     expect(foreignBody).not.toContain(LABEL)
     expect(foreignBody).not.toContain(actualLabelId)
 
+    const deniedClassification = await page.request.post(`${env.apiBaseUrl}${classificationPath}`, {
+      headers: { ...apiHeaders(deniedActor), 'Idempotency-Key': `r14-denied-${actualLabelId}` },
+      data: { expectedLabelVersion: classification.labelVersion, classification: 'Scrap' },
+    })
+    expect(deniedClassification.status()).toBe(403)
+    const deniedClassificationBody = await deniedClassification.text()
+    expect(deniedClassificationBody).not.toContain(LABEL)
+    expect(deniedClassificationBody).not.toContain(actualLabelId)
+
+    const foreignClassification = await page.request.post(`${env.apiBaseUrl}${classificationPath}`, {
+      headers: { ...apiHeaders(recorderActor, otherCompanyId), 'Idempotency-Key': `r14-foreign-${actualLabelId}` },
+      data: { expectedLabelVersion: classification.labelVersion, classification: 'Scrap' },
+    })
+    expect([403, 404]).toContain(foreignClassification.status())
+    const foreignClassificationBody = await foreignClassification.text()
+    expect(foreignClassificationBody).not.toContain(LABEL)
+    expect(foreignClassificationBody).not.toContain(actualLabelId)
+
     const afterNegatives = await pool.request()
       .input('companyId', sql.UniqueIdentifier, companyId)
       .input('countId', sql.UniqueIdentifier, created.countId)
-      .query<{ counts: number; lines: number }>(`
+      .input('labelId', sql.UniqueIdentifier, actualLabelId)
+      .input('labelEntityId', sql.NVarChar, actualLabelId)
+      .input('classificationCommand', sql.NVarChar, CLASSIFY_COMMAND)
+      .input('classifiedEvent', sql.NVarChar, CLASSIFIED_EVENT)
+      .query<{
+        counts: number; lines: number; classification: number; labelVersion: string; physicalKg: string
+        movements: number; classificationCommands: number; classificationAudits: number
+      }>(`
         SELECT
           (SELECT COUNT(*) FROM inventory.OpeningCounts WHERE CompanyId=@companyId AND Id=@countId) AS counts,
-          (SELECT COUNT(*) FROM inventory.OpeningCountLines WHERE CompanyId=@companyId AND CountId=@countId) AS lines`)
-    expect(afterNegatives.recordset[0]).toEqual({ counts: 1, lines: 1 })
+          (SELECT COUNT(*) FROM inventory.OpeningCountLines WHERE CompanyId=@companyId AND CountId=@countId) AS lines,
+          (SELECT Classification FROM inventory.Labels WHERE CompanyId=@companyId AND Id=@labelId) AS classification,
+          (SELECT CONVERT(nvarchar(40), Version) FROM inventory.Labels
+            WHERE CompanyId=@companyId AND Id=@labelId) AS labelVersion,
+          (SELECT CONVERT(nvarchar(40), SUM(QuantityKg)) FROM inventory.Balances
+            WHERE CompanyId=@companyId AND LabelId=@labelId) AS physicalKg,
+          (SELECT COUNT(*) FROM inventory.MovementLines
+            WHERE CompanyId=@companyId AND LabelId=@labelId) AS movements,
+          (SELECT COUNT(*) FROM inventory.Commands
+            WHERE CompanyId=@companyId AND CommandName=@classificationCommand AND TargetId=@labelId) AS classificationCommands,
+          (SELECT COUNT(*) FROM audit.AuditEvents
+            WHERE CompanyId=@companyId AND EntityId=@labelEntityId AND EventType=@classifiedEvent) AS classificationAudits`)
+    expect(afterNegatives.recordset[0]).toMatchObject({
+      counts: 1,
+      lines: 1,
+      classification: 2,
+      labelVersion: classification.labelVersion,
+      movements: 1,
+      classificationCommands: 1,
+      classificationAudits: 1,
+    })
+    expect(Number(afterNegatives.recordset[0].physicalKg)).toBe(12.5)
   } finally {
     await pool.close()
   }

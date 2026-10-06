@@ -17,6 +17,15 @@ export interface PlanRevisionInput {
   readonly plannedKg: string
   /** Canonical positive integer text, or null for a plan stored before label versions were kept. */
   readonly expectedLabelVersion: string | null
+  /** Exact immutable Counterparty provenance captured with the input; null also represents a legacy omission. */
+  readonly commercialContext: CapturedPlanCommercialContext | null
+}
+
+export interface CapturedPlanCommercialContext {
+  readonly partyId: string
+  readonly companyPartyAccountId: string
+  readonly partyVersion: string
+  readonly accountVersion: string
 }
 
 export interface PlanRevision {
@@ -46,7 +55,9 @@ const REVISION_KEYS = [
   'revisedBy',
   'recordedAtUtc',
 ] as const
-const INPUT_KEYS = ['parentRollId', 'plannedKg', 'expectedLabelVersion'] as const
+const LEGACY_INPUT_KEYS = ['parentRollId', 'plannedKg', 'expectedLabelVersion'] as const
+const INPUT_KEYS = [...LEGACY_INPUT_KEYS, 'commercialContext'] as const
+const COMMERCIAL_CONTEXT_KEYS = ['partyId', 'companyPartyAccountId', 'partyVersion', 'accountVersion'] as const
 const TARGET_KEYS = ['basis', 'kg'] as const
 
 const GUID = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/
@@ -80,15 +91,37 @@ function wholeNumber(value: unknown, minimum: number): number | null {
   return typeof value === 'number' && Number.isSafeInteger(value) && value >= minimum ? value : null
 }
 
+/** `undefined` is malformed; `null` is the current wire's explicit absence. Opaque versions stay byte-for-byte. */
+function decodeCommercialContext(value: unknown): CapturedPlanCommercialContext | null | undefined {
+  if (value === null) return null
+  if (!isObject(value) || !hasExactKeys(value, COMMERCIAL_CONTEXT_KEYS)) return undefined
+  const partyId = nonNilGuid(value.partyId)
+  const companyPartyAccountId = nonNilGuid(value.companyPartyAccountId)
+  if (
+    partyId === null ||
+    companyPartyAccountId === null ||
+    typeof value.partyVersion !== 'string' || value.partyVersion.length === 0 ||
+    typeof value.accountVersion !== 'string' || value.accountVersion.length === 0
+  ) return undefined
+  return { partyId, companyPartyAccountId, partyVersion: value.partyVersion, accountVersion: value.accountVersion }
+}
+
 function decodeInput(value: unknown): PlanRevisionInput | null {
-  if (!isObject(value) || !hasExactKeys(value, INPUT_KEYS)) return null
+  if (!isObject(value)) return null
+  const isCurrent = hasExactKeys(value, INPUT_KEYS)
+  if (!isCurrent && !hasExactKeys(value, LEGACY_INPUT_KEYS)) return null
   const parentRollId = nonNilGuid(value.parentRollId)
   const plannedKg = positiveKg(value.plannedKg)
   const label = value.expectedLabelVersion
   const expectedLabelVersion =
     label === null ? null : typeof label === 'string' && VERSION_TEXT.test(label) ? label : undefined
-  if (parentRollId === null || plannedKg === null || expectedLabelVersion === undefined) return null
-  return { parentRollId, plannedKg, expectedLabelVersion }
+  // Old stored history JSON omitted this additive member; current JSON always emits it, including explicit null.
+  const commercialContext = isCurrent ? decodeCommercialContext(value.commercialContext) : null
+  if (
+    parentRollId === null || plannedKg === null || expectedLabelVersion === undefined ||
+    commercialContext === undefined
+  ) return null
+  return { parentRollId, plannedKg, expectedLabelVersion, commercialContext }
 }
 
 function decodeTarget(value: unknown): PlanRevision['target'] | undefined {

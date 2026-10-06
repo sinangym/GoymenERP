@@ -86,6 +86,7 @@ internal sealed class SqlInventoryLabelDetailReader(InventoryDbContext db) : IIn
                 row.Code,
                 row.ProductId,
                 row.LotId,
+                row.ProductVersion,
                 JsonSerializer.Deserialize<string[]>(row.RequiredDocumentsJson)
                     ?? throw Error(503, InventoryLabelDetailCodesV1.Unavailable),
                 row.HeatNumber,
@@ -94,7 +95,8 @@ internal sealed class SqlInventoryLabelDetailReader(InventoryDbContext db) : IIn
                 documents.Select(document => new LabelDocumentAttachment(
                     document.Kind,
                     document.AttachedAtUtc,
-                    document.AttachedBy)));
+                    document.AttachedBy)),
+                row.Classification is null ? null : (LabelClassification)row.Classification.Value);
             var storedBalances = balances.Select(balance => new StockBalance(
                 new StockPosition(
                     companyId,

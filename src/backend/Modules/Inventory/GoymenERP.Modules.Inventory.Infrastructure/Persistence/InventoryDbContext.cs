@@ -1,6 +1,7 @@
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Audit.Domain.Events;
 using GoymenERP.Modules.Audit.Infrastructure.Persistence;
+using GoymenERP.Modules.Inventory.Domain.Labels;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -76,6 +77,18 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
 
     internal DbSet<StockScrapDecisionRow> StockScrapDecisions => Set<StockScrapDecisionRow>();
 
+    internal DbSet<InventoryTransferRow> Transfers => Set<InventoryTransferRow>();
+
+    internal DbSet<InventoryTransferLineRow> TransferLines => Set<InventoryTransferLineRow>();
+
+    internal DbSet<InventoryTransferDispatchRow> TransferDispatches => Set<InventoryTransferDispatchRow>();
+
+    internal DbSet<InventoryTransferDispatchLineRow> TransferDispatchLines => Set<InventoryTransferDispatchLineRow>();
+
+    internal DbSet<InventoryTransferBucketRow> TransferBuckets => Set<InventoryTransferBucketRow>();
+
+    internal DbSet<InventoryTransferAcceptanceRow> TransferAcceptances => Set<InventoryTransferAcceptanceRow>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         ArgumentNullException.ThrowIfNull(modelBuilder);
@@ -97,6 +110,7 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
         ConfigureCommands(modelBuilder);
         ConfigureStockCounts(modelBuilder);
         ConfigureStockScraps(modelBuilder);
+        ConfigureInventoryTransfers(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()
             .HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
@@ -161,6 +175,10 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
             table.HasCheckConstraint("CK_Labels_Identity",
                 "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' "
                 + "AND [ProductId] <> '00000000-0000-0000-0000-000000000000' AND [LotId] <> '00000000-0000-0000-0000-000000000000'");
+            table.HasCheckConstraint("CK_Labels_ProductVersion",
+                "[ProductVersion] IS NULL OR LEN([ProductVersion]) > 0");
+            table.HasCheckConstraint("CK_Labels_Classification",
+                "[Classification] IS NULL OR [Classification] IN (1, 2, 3)");
             table.HasCheckConstraint("CK_Labels_Code", "LEN([Code]) > 0");
             table.HasCheckConstraint("CK_Labels_RequiredDocumentsJson", "ISJSON([RequiredDocumentsJson]) = 1");
             table.HasCheckConstraint("CK_Labels_Version", "[Version] >= 1");
@@ -172,6 +190,7 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
         entity.Property(x => x.HeatNumber).HasMaxLength(64);
         entity.Property(x => x.CoilNumber).HasMaxLength(64);
         entity.Property(x => x.RequiredDocumentsJson).HasColumnType("nvarchar(max)").IsRequired();
+        entity.Property(x => x.ProductVersion).HasMaxLength(MaterialLabel.MaximumProductVersionLength);
         entity.Property(x => x.Version).IsConcurrencyToken();
         entity.Property(x => x.RowVersion).IsRowVersion();
         entity.HasIndex(x => new { x.CompanyId, x.Code }).IsUnique();
@@ -296,7 +315,7 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
                 "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' "
                 + "AND [SourceId] <> '00000000-0000-0000-0000-000000000000' "
                 + "AND ([SourceLineId] IS NULL OR [SourceLineId] <> '00000000-0000-0000-0000-000000000000')");
-            table.HasCheckConstraint("CK_Movements_Kind", "[Kind] BETWEEN 1 AND 7");
+            table.HasCheckConstraint("CK_Movements_Kind", "[Kind] BETWEEN 1 AND 9");
             table.HasCheckConstraint("CK_Movements_SourceKind", "LEN([SourceKind]) > 0");
             table.HasCheckConstraint("CK_Movements_Cost",
                 "([CostStatus] IN (1, 2) AND [CostAmount] IS NULL AND [CostCurrencyId] IS NULL) OR "
@@ -758,6 +777,151 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
         decision.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
 
+    private void ConfigureInventoryTransfers(ModelBuilder modelBuilder)
+    {
+        var transfer = modelBuilder.Entity<InventoryTransferRow>();
+        transfer.ToTable("Transfers", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_Transfers_Identity",
+                "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [SourceLocationId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [DestinationLocationId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [SourceCustodianId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [DestinationCustodianId] <> '00000000-0000-0000-0000-000000000000'");
+            table.HasCheckConstraint("CK_Transfers_State",
+                "[Version] >= 1 AND [Status] BETWEEN 1 AND 4 AND [SourceCustodianKind] IN (1, 2) "
+                + "AND [DestinationCustodianKind] IN (1, 2) AND NOT ([SourceLocationId] = [DestinationLocationId] "
+                + "AND [SourceCustodianKind] = [DestinationCustodianKind] AND [SourceCustodianId] = [DestinationCustodianId])");
+            table.HasCheckConstraint("CK_Transfers_Text",
+                "LEN([PayloadHash]) = 64 AND LEN([RecordedBy]) > 0 AND LEN([CorrelationId]) > 0");
+        });
+        transfer.HasKey(x => x.Id);
+        transfer.HasAlternateKey(x => new { x.CompanyId, x.Id });
+        transfer.Property(x => x.Id).ValueGeneratedNever();
+        transfer.Property(x => x.PayloadHash).HasMaxLength(64).IsUnicode(false).IsRequired();
+        transfer.Property(x => x.RecordedBy).HasMaxLength(128).IsRequired();
+        transfer.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        transfer.Property(x => x.RowVersion).IsRowVersion();
+        transfer.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        transfer.HasOne<OrganizationLocationReference>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.SourceLocationId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id }).OnDelete(DeleteBehavior.Restrict);
+        transfer.HasOne<OrganizationLocationReference>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.DestinationLocationId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id }).OnDelete(DeleteBehavior.Restrict);
+        transfer.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        var line = modelBuilder.Entity<InventoryTransferLineRow>();
+        line.ToTable("TransferLines", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_TransferLines_Identity",
+                "[LineId] <> '00000000-0000-0000-0000-000000000000' AND [LabelId] <> '00000000-0000-0000-0000-000000000000'");
+            table.HasCheckConstraint("CK_TransferLines_State",
+                "[Sequence] >= 1 AND [ExpectedLabelVersion] >= 1 AND [PlannedKg] > 0");
+        });
+        line.HasKey(x => new { x.CompanyId, x.TransferId, x.LineId });
+        line.Property(x => x.PlannedKg).HasPrecision(18, 3);
+        line.HasIndex(x => new { x.CompanyId, x.TransferId, x.Sequence }).IsUnique();
+        line.HasIndex(x => new { x.CompanyId, x.TransferId, x.LabelId }).IsUnique();
+        TransferOf(line);
+        LabelOf(line);
+        line.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        var dispatch = modelBuilder.Entity<InventoryTransferDispatchRow>();
+        dispatch.ToTable("TransferDispatches", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_TransferDispatches_Identity",
+                "[MovementId] <> '00000000-0000-0000-0000-000000000000' AND [DocumentId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND ([DocumentLineId] IS NULL OR [DocumentLineId] <> '00000000-0000-0000-0000-000000000000')");
+            table.HasCheckConstraint("CK_TransferDispatches_Text",
+                "LEN([DocumentKind]) > 0 AND LEN([PayloadHash]) = 64 AND LEN([RecordedBy]) > 0 AND LEN([CorrelationId]) > 0");
+        });
+        dispatch.HasKey(x => new { x.CompanyId, x.TransferId });
+        dispatch.Property(x => x.DocumentKind).HasMaxLength(64).IsRequired();
+        dispatch.Property(x => x.PayloadHash).HasMaxLength(64).IsUnicode(false).IsRequired();
+        dispatch.Property(x => x.RecordedBy).HasMaxLength(128).IsRequired();
+        dispatch.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        dispatch.HasIndex(x => new { x.CompanyId, x.MovementId }).IsUnique();
+        TransferOf(dispatch);
+        MovementOf(dispatch);
+        dispatch.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        var dispatchedLine = modelBuilder.Entity<InventoryTransferDispatchLineRow>();
+        dispatchedLine.ToTable("TransferDispatchLines", Schema, table =>
+            table.HasCheckConstraint("CK_TransferDispatchLines_State",
+                "[LabelVersionAfterDispatch] >= 2 AND [ActualKg] > 0"));
+        dispatchedLine.HasKey(x => new { x.CompanyId, x.TransferId, x.LineId });
+        dispatchedLine.Property(x => x.ActualKg).HasPrecision(18, 3);
+        dispatchedLine.Property(x => x.DifferenceKg).HasPrecision(18, 3);
+        TransferLineOf(dispatchedLine);
+        dispatchedLine.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        var bucket = modelBuilder.Entity<InventoryTransferBucketRow>();
+        bucket.ToTable("TransferBuckets", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_TransferBuckets_Identity",
+                "[OwnerId] <> '00000000-0000-0000-0000-000000000000' AND [CustodianId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [LabelId] <> '00000000-0000-0000-0000-000000000000' AND [ProductId] <> '00000000-0000-0000-0000-000000000000'");
+            table.HasCheckConstraint("CK_TransferBuckets_State",
+                "[Sequence] >= 1 AND [OwnerKind] IN (1, 2) AND [CustodianKind] IN (1, 2) AND [Block] IN (1, 2) AND [QuantityKg] > 0");
+        });
+        bucket.HasKey(x => new { x.CompanyId, x.TransferId, x.LineId, x.Sequence });
+        bucket.Property(x => x.QuantityKg).HasPrecision(18, 3);
+        bucket.HasIndex(x => new { x.CompanyId, x.TransferId, x.LineId, x.Block }).IsUnique();
+        TransferLineOf(bucket);
+        LabelOf(bucket);
+        LocationOf(bucket);
+        bucket.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        var acceptance = modelBuilder.Entity<InventoryTransferAcceptanceRow>();
+        acceptance.ToTable("TransferAcceptances", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_TransferAcceptances_Identity",
+                "[MovementId] <> '00000000-0000-0000-0000-000000000000' AND [DocumentId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND ([DocumentLineId] IS NULL OR [DocumentLineId] <> '00000000-0000-0000-0000-000000000000')");
+            table.HasCheckConstraint("CK_TransferAcceptances_Text",
+                "LEN([DocumentKind]) > 0 AND LEN([PayloadHash]) = 64 AND LEN([RecordedBy]) > 0 AND LEN([CorrelationId]) > 0");
+        });
+        acceptance.HasKey(x => new { x.CompanyId, x.TransferId, x.LineId });
+        acceptance.Property(x => x.DocumentKind).HasMaxLength(64).IsRequired();
+        acceptance.Property(x => x.PayloadHash).HasMaxLength(64).IsUnicode(false).IsRequired();
+        acceptance.Property(x => x.RecordedBy).HasMaxLength(128).IsRequired();
+        acceptance.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        acceptance.HasIndex(x => new { x.CompanyId, x.MovementId }).IsUnique();
+        TransferLineOf(acceptance);
+        MovementOf(acceptance);
+        acceptance.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
+    private static void TransferOf<TEntity>(EntityTypeBuilder<TEntity> entity)
+        where TEntity : class, IInventoryTenantRow
+    {
+        entity.HasOne<InventoryTransferRow>().WithMany()
+            .HasForeignKey("CompanyId", "TransferId")
+            .HasPrincipalKey(nameof(InventoryTransferRow.CompanyId), nameof(InventoryTransferRow.Id))
+            .OnDelete(DeleteBehavior.Restrict);
+    }
+
+    private static void TransferLineOf<TEntity>(EntityTypeBuilder<TEntity> entity)
+        where TEntity : class, IInventoryTenantRow
+    {
+        entity.HasOne<InventoryTransferLineRow>().WithMany()
+            .HasForeignKey("CompanyId", "TransferId", "LineId")
+            .HasPrincipalKey(nameof(InventoryTransferLineRow.CompanyId), nameof(InventoryTransferLineRow.TransferId),
+                nameof(InventoryTransferLineRow.LineId))
+            .OnDelete(DeleteBehavior.Restrict);
+    }
+
+    private static void MovementOf<TEntity>(EntityTypeBuilder<TEntity> entity)
+        where TEntity : class, IInventoryTenantRow
+    {
+        entity.HasOne<MovementRow>().WithMany()
+            .HasForeignKey("CompanyId", "MovementId")
+            .HasPrincipalKey(nameof(MovementRow.CompanyId), nameof(MovementRow.Id))
+            .OnDelete(DeleteBehavior.Restrict);
+    }
+
     /// <summary>A row of one label, bound by (company, label) so it can never name another company's label.</summary>
     private static void LabelOf<TRow>(EntityTypeBuilder<TRow> entity)
         where TRow : class, IInventoryTenantRow
@@ -808,7 +972,10 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
             {
                 string[] allowed = entry.Entity switch
                 {
-                    LabelRow => [nameof(LabelRow.Version), nameof(LabelRow.UpdatedAtUtc)],
+                    LabelRow =>
+                    [
+                        nameof(LabelRow.Classification), nameof(LabelRow.Version), nameof(LabelRow.UpdatedAtUtc),
+                    ],
                     BalanceRow => [nameof(BalanceRow.QuantityKg)],
                     AllocationRow =>
                     [
@@ -817,6 +984,11 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
                         nameof(AllocationRow.RemainingKg), nameof(AllocationRow.Status),
                         nameof(AllocationRow.Version), nameof(AllocationRow.UpdatedAtUtc),
                         nameof(AllocationRow.ReleasedAtUtc), nameof(AllocationRow.ReleaseReason),
+                    ],
+                    InventoryTransferRow =>
+                    [
+                        nameof(InventoryTransferRow.Version), nameof(InventoryTransferRow.Status),
+                        nameof(InventoryTransferRow.UpdatedAtUtc),
                     ],
                     _ => [],
                 };

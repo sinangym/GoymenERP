@@ -27,6 +27,8 @@ export const SALES_CONTRACT_STATUS = 'PINNED_SOURCE' as const
 export const SALES_DRAFT_PATH = '/sales/drafts'
 export const salesDraftDetailPath = (id: string) => `${SALES_DRAFT_PATH}/${encodeURIComponent(id)}`
 export const salesDraftCommercialRevisionPath = (id: string) => `${salesDraftDetailPath(id)}/commercial-revision`
+export const salesDraftPriceFloorExceptionApprovalPath = (id: string) =>
+  `${salesDraftDetailPath(id)}/below-floor-exception-approval`
 export const salesDraftRevisionsPath = (id: string) => `${salesDraftDetailPath(id)}/revisions`
 /** DEC-SAL-002 / AT-023: the quantity revision (POST, the quantity control's name). */
 export const salesDraftQuantityRevisionPath = (id: string) => `${salesDraftDetailPath(id)}/quantity-revision`
@@ -57,6 +59,14 @@ export const DRAFT_STATE = 'Draft' as const
 export const CANCELLED_STATE = 'Cancelled' as const
 export type LifecycleState = typeof DRAFT_STATE | typeof CANCELLED_STATE
 
+/** Q9: server-derived stage of the same commercial record; legacy stored command results may omit it. */
+export const COMMERCIAL_STAGE = {
+  quote: 'Quote',
+  order: 'Order',
+  unavailable: 'Unavailable',
+} as const
+export type CommercialStage = (typeof COMMERCIAL_STAGE)[keyof typeof COMMERCIAL_STAGE]
+
 /**
  * SALES-A1: the INTERNAL APPROVAL axis (`InternalApprovalState`), a fourth fact beside the lifecycle
  * `state`, the commercial `revision` and the concurrency `version` — never merged into one status.
@@ -79,7 +89,7 @@ const APPROVAL_STATES: readonly string[] = Object.values(APPROVAL_STATE)
  * D2: `withdrawal` is the creator's own command (POST …/{id}/withdrawal, optional `reason`).
  */
 export const STATE_COMMAND_STATUS = 200
-export type DraftStateCommand = 'submission' | 'approval' | 'rejection' | 'withdrawal'
+export type DraftStateCommand = 'submission' | 'approval' | 'rejection' | 'withdrawal' | 'customer-acceptance'
 export const salesDraftCommandPath = (id: string, command: DraftStateCommand) => `${salesDraftDetailPath(id)}/${command}`
 
 /** `SalesDraftStateCommandRequest`: the expected version as text; `reason` only on a rejection. */
@@ -88,17 +98,30 @@ export interface DraftStateCommandRequest {
   readonly reason?: string
 }
 
-/** K3: every line exactly once, with nullable commercial values retained as text. */
+/**
+ * K3: every line exactly once, with nullable commercial values retained as text. AT-018 / AT-021 (contract delta): the
+ * Product price-list version the line is priced from (ids only — the server re-reads the price), the discount as an
+ * amount, and the maturity surcharge (vade farkı) as a percent or an amount.
+ */
 export interface DraftLineCommercialRequest {
   readonly lineId: string
   readonly unitPrice: string | null
   readonly priceUnitId: string | null
   readonly discountPercent: string | null
+  readonly priceReference: { readonly priceListId: string; readonly versionNo: number } | null
+  readonly discountAmount: string | null
+  readonly surchargePercent: string | null
+  readonly surchargeAmount: string | null
 }
 
 export interface DraftCommercialRevisionRequest {
   readonly expectedVersion: string
   readonly lines: readonly DraftLineCommercialRequest[]
+}
+
+export interface DraftPriceFloorExceptionApprovalRequest {
+  readonly expectedVersion: string
+  readonly lines: readonly { readonly lineId: string; readonly reason: string }[]
 }
 
 /** DEC-SAL-002: one line's new ordered quantity, exact decimal text in the line's own order unit. */
@@ -196,6 +219,14 @@ export interface ApprovalFacts {
   readonly rejectionReason: string | null
 }
 
+export interface CustomerAcceptanceFacts {
+  readonly required: boolean
+  readonly acceptedRevision: string | null
+  readonly acceptedBy: string | null
+  readonly acceptedAtUtc: string | null
+  readonly isCurrentRevisionAccepted: boolean
+}
+
 /** Technical bounds from `SalesDraftJson.ReadCreate`. Not owner scale or precision. */
 export const LIMITS = {
   lines: 500,
@@ -290,6 +321,8 @@ export interface DraftSummary {
   readonly lineCount: number
   /** SALES-A1: the internal approval axis. */
   readonly approvalState: ApprovalState
+  /** Q9: never inferred by the client; Unavailable means an older stored wire result omitted the additive member. */
+  readonly commercialStage: CommercialStage
 }
 
 export interface DraftLine {
@@ -368,6 +401,7 @@ export interface DraftDetail {
   readonly package: OwnerReference | null
   /** SALES-A1: the approval facts; consistent with `draft.approvalState` or the detail is malformed. */
   readonly approval: ApprovalFacts
+  readonly customerAcceptance: CustomerAcceptanceFacts
   /**
    * D2: the RELATIONSHIP "the signed-in caller is this draft's stored creator", computed on the server — never the
    * creator's identity. The screen mirrors it (the withdrawal control); the server refuses regardless.
@@ -455,6 +489,16 @@ function exact(value: unknown, keys: readonly string[]): Obj | null {
   const own = Object.keys(obj)
   if (own.length !== keys.length) return null
   for (const key of keys) if (!Object.hasOwn(obj, key)) return null
+  return obj
+}
+
+/** Every required member plus only the named additive members; unknown members still fail closed. */
+function exactWithOptional(value: unknown, required: readonly string[], optional: readonly string[]): Obj | null {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return null
+  const obj = value as Obj
+  const allowed = new Set([...required, ...optional])
+  for (const key of Object.keys(obj)) if (!allowed.has(key)) return null
+  for (const key of required) if (!Object.hasOwn(obj, key)) return null
   return obj
 }
 
@@ -562,9 +606,16 @@ function decodeApproval(value: unknown, state: ApprovalState): ApprovalFacts | n
 }
 
 export function decodeDraftSummary(value: unknown): DraftSummary | null {
-  const o = exact(value, SUMMARY_KEYS)
+  const o = exactWithOptional(value, SUMMARY_KEYS, ['commercialStage'])
+  const hasCommercialStage = o !== null && Object.hasOwn(o, 'commercialStage')
+  const commercialStage = !hasCommercialStage || o?.commercialStage === null
+    ? COMMERCIAL_STAGE.unavailable
+    : o?.commercialStage === COMMERCIAL_STAGE.quote || o?.commercialStage === COMMERCIAL_STAGE.order
+      ? o.commercialStage
+      : null
   if (
     o === null ||
+    commercialStage === null ||
     !isReferenceId(o.id) ||
     !isReferenceId(o.companyId) ||
     !isText(o.documentNo, 200) ||
@@ -604,6 +655,7 @@ export function decodeDraftSummary(value: unknown): DraftSummary | null {
     createdAtUtc: o.createdAtUtc,
     lineCount: o.lineCount,
     approvalState: o.approvalState,
+    commercialStage,
   }
 }
 
@@ -668,6 +720,7 @@ const DETAIL_KEYS = [
   'lines',
   ...OWNER_REFERENCE_FIELDS,
   'approval',
+  'customerAcceptance',
   'isOwnDraft',
   'isOwnDecisionRestricted',
 ] as const
@@ -697,8 +750,10 @@ export function decodeDraftDetail(value: unknown, expectedId: string | null): Dr
     references[field] = reference
   }
   const approval = decodeApproval(o.approval, draft.approvalState)
+  const customerAcceptance = decodeCustomerAcceptance(o.customerAcceptance, draft.revision)
   if (
     approval === null ||
+    customerAcceptance === null ||
     typeof o.isOwnDraft !== 'boolean' ||
     typeof o.isOwnDecisionRestricted !== 'boolean'
   ) return null
@@ -714,9 +769,31 @@ export function decodeDraftDetail(value: unknown, expectedId: string | null): Dr
     sourceStrategy: references.sourceStrategy ?? null,
     package: references.package ?? null,
     approval,
+    customerAcceptance,
     isOwnDraft: o.isOwnDraft,
     isOwnDecisionRestricted: o.isOwnDecisionRestricted,
   }
+}
+
+function decodeCustomerAcceptance(value: unknown, currentRevision: string): CustomerAcceptanceFacts | null {
+  const o = exact(value, ['required', 'acceptedRevision', 'acceptedBy', 'acceptedAtUtc', 'isCurrentRevisionAccepted'])
+  if (o === null || typeof o.required !== 'boolean' || typeof o.isCurrentRevisionAccepted !== 'boolean') return null
+  if (!isNullable(o.acceptedRevision, (v): v is string => typeof v === 'string' && /^Rev\.(0|[1-9][0-9]*)$/.test(v))) return null
+  if (!isNullable(o.acceptedBy, (v): v is string => isText(v, 128)) || !isNullable(o.acceptedAtUtc, isInstant)) return null
+  const empty = o.acceptedRevision === null && o.acceptedBy === null && o.acceptedAtUtc === null
+  const complete = o.acceptedRevision !== null && o.acceptedBy !== null && o.acceptedAtUtc !== null
+  const consistent = !o.required
+    ? empty && o.isCurrentRevisionAccepted
+    : empty
+      ? !o.isCurrentRevisionAccepted
+      : complete && o.isCurrentRevisionAccepted === (o.acceptedRevision === currentRevision)
+  return consistent ? {
+    required: o.required,
+    acceptedRevision: o.acceptedRevision,
+    acceptedBy: o.acceptedBy,
+    acceptedAtUtc: o.acceptedAtUtc,
+    isCurrentRevisionAccepted: o.isCurrentRevisionAccepted,
+  } : null
 }
 
 export function decodeDraftMutation(value: unknown): DraftMutation | null {

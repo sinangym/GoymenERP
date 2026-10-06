@@ -101,6 +101,41 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         Assert.Equal(3, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM inventory.Balances WHERE LabelId IN (@source, @a, @b) AND QuantityKg = 0",
             ("@source", source.LabelId), ("@a", splitA), ("@b", splitB)));
+        Assert.Equal(4, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM inventory.Labels WHERE Id IN (@source, @a, @b, @merged) AND ProductVersion = N'product-v1'",
+            ("@source", source.LabelId), ("@a", splitA), ("@b", splitB), ("@merged", merged)));
+    }
+
+    [SqlServerFact]
+    public async Task Split_and_merge_refuse_missing_or_mixed_product_version_provenance()
+    {
+        await using var run = await Run.StartAsync();
+        var legacy = await SeedFreePhysicalSourceAsync(run, CompanyA, "SYN-GENEALOGY-LEGACY", 10m);
+        await run.ExecuteAsync("UPDATE inventory.Labels SET ProductVersion = NULL WHERE Id = @id",
+            ("@id", legacy.LabelId));
+        await using (var scope = run.Store(CompanyA))
+        {
+            var error = await Assert.ThrowsAsync<InventoryLabelGenealogyException>(() => scope.Store.TransformAsync(
+                SplitRequest(legacy.LabelId, legacy.LabelVersion, "SYN-GENEALOGY-LEGACY-OUT"), Metadata(run)));
+            Assert.Equal((503, InventoryLabelGenealogyCodesV1.CorruptState), (error.Status, error.Code));
+        }
+
+        var first = await SeedFreePhysicalSourceAsync(run, CompanyA, "SYN-GENEALOGY-MIX-A", 5m);
+        var second = await SeedFreePhysicalSourceAsync(run, CompanyA, "SYN-GENEALOGY-MIX-B", 5m);
+        await run.ExecuteAsync("UPDATE inventory.Labels SET ProductVersion = N'product-v2' WHERE Id = @id",
+            ("@id", second.LabelId));
+        var merge = new TransformInventoryLabelsV1(Guid.NewGuid(), InventoryLabelTransformationKindV1.Merge,
+            [new(first.LabelId, first.LabelVersion.ToString()), new(second.LabelId, second.LabelVersion.ToString())],
+            [new(Guid.NewGuid(), "SYN-GENEALOGY-MIX-OUT", "10")], At, "Sentetik farklı ürün sürümü reddi.");
+        await using (var scope = run.Store(CompanyA))
+        {
+            var error = await Assert.ThrowsAsync<InventoryLabelGenealogyException>(() =>
+                scope.Store.TransformAsync(merge, Metadata(run)));
+            Assert.Equal((503, InventoryLabelGenealogyCodesV1.CorruptState), (error.Status, error.Code));
+        }
+
+        Assert.Equal(0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM inventory.Labels WHERE Code LIKE N'SYN-GENEALOGY-%-OUT%'"));
     }
 
     [SqlServerFact]
@@ -165,6 +200,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             Assert.Equal(0, await run.ScalarAsync<int>(
                 "SELECT COUNT(*) FROM sys.tables WHERE schema_id = SCHEMA_ID(N'inventory') AND name LIKE N'LabelTransformation%'"));
             await context.GetService<IMigrator>().MigrateAsync(currentMigration);
+            await context.Database.MigrateAsync();
         }
 
         var source = await SeedFreePhysicalSourceAsync(run, CompanyA, "SYN-GENEALOGY-DOWN", 10m);
@@ -174,6 +210,9 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
                 SplitRequest(source.LabelId, source.LabelVersion, "SYN-GENEALOGY-DOWN-OUT", quantity: "5"),
                 Metadata(run));
         }
+
+        await RemoveSyntheticProductVersionsForHistoricalMigrationAsync(
+            run, "SYN-GENEALOGY-DOWN", expectedLabels: 3);
 
         await using (var context = run.Context(CompanyA))
         {

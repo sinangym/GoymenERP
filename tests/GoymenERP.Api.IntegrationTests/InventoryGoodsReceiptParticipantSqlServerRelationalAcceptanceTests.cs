@@ -98,6 +98,10 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
 
         Assert.Equal(committed, await ReceiptEffectsAsync(run, seed, receipt, correlation));
 
+        Assert.Equal(receipt.ExpectedProductVersion, await run.ScalarAsync<string>(
+            "SELECT ProductVersion FROM inventory.Labels WHERE CompanyId = @company AND Id = @label",
+            ("@company", CompanyA), ("@label", receipt.LabelId)));
+
         var requiredDocumentsJson = await run.ScalarAsync<string>(
             "SELECT RequiredDocumentsJson FROM inventory.Labels WHERE CompanyId = @company AND Id = @label",
             ("@company", CompanyA), ("@label", receipt.LabelId));

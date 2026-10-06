@@ -46,6 +46,8 @@ public sealed class SalesDraftPermissionAndShellRegistrationTests
     // DEC-SAL-002: the quantity revision of an approved order. Its own name, company-wide and not Critical (the reason is
     // on ErpPermissions.SalesOrdersQuantityWrite).
     [InlineData(SalesPermissionManifestV1.OrdersQuantityWrite, ErpPermissions.SalesOrdersQuantityWrite)]
+    // Q9 customer acceptance: registered company-wide, not Critical and not granted by this catalogue.
+    [InlineData(SalesPermissionManifestV1.OrdersCustomerAcceptanceRecord, ErpPermissions.SalesOrdersCustomerAcceptanceRecord)]
     public void The_owner_name_is_the_registered_central_name(string ownerName, string centralName)
     {
         Assert.Equal(ownerName, centralName);
@@ -76,7 +78,7 @@ public sealed class SalesDraftPermissionAndShellRegistrationTests
         var actual = ShellCapabilityRegistry.ComputeCandidateRevision(providers);
         Assert.True(
             string.Equals(
-                ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12AndPublishedSalesV14,
+                ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12AndPublishedSalesV15,
                 actual,
                 StringComparison.Ordinal),
             $"Sales normal-host authority drifted. Actual: {actual}");
@@ -94,14 +96,14 @@ public sealed class SalesDraftPermissionAndShellRegistrationTests
         var authority = C01E2eShellCapabilityActivation.Configure(services, new TestingEnvironment(),
             new ConfigurationBuilder().Build());
 
-        Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12AndPublishedSalesV14, authority);
+        Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12AndPublishedSalesV15, authority);
         using var container = services.BuildServiceProvider();
         var registry = new ShellCapabilityRegistry(container.GetServices<IShellCapabilityProvider>(),
             new ShellCapabilityAuthorityCatalog([authority]));
         var sales = registry.Registrations.Where(item => item.Owner == SalesShellCapabilityProvider.OwnerId).ToArray();
-        // Three screens plus the SALES-A1 approve, SALES-P commercial-revision, DEC-SAL-003 delivery-schedule, DEC-SAL-005
-        // cancel and DEC-SAL-002 quantity-revision controls.
-        Assert.Equal(8, sales.Length);
+        // Three screens plus the SALES-A1 approve, SALES-P commercial-revision, AT-021 floor-exception approval,
+        // DEC-SAL-003 delivery-schedule, DEC-SAL-005 cancel and DEC-SAL-002 quantity-revision controls.
+        Assert.Equal(10, sales.Length);
         Assert.Equal(SalesShellCapabilityProvider.DetailCapabilityId,
             Assert.Single(sales, item => item.Declaration.CapabilityId == SalesShellCapabilityProvider.QuantityWriteCapabilityId)
                 .Declaration.ParentCapabilityId);
@@ -113,6 +115,12 @@ public sealed class SalesDraftPermissionAndShellRegistrationTests
                 .Declaration.ParentCapabilityId);
         Assert.Equal(SalesShellCapabilityProvider.DetailCapabilityId,
             Assert.Single(sales, item => item.Declaration.CapabilityId == SalesShellCapabilityProvider.PriceWriteCapabilityId)
+                .Declaration.ParentCapabilityId);
+        Assert.Equal(SalesShellCapabilityProvider.DetailCapabilityId,
+            Assert.Single(sales, item => item.Declaration.CapabilityId == SalesShellCapabilityProvider.PriceFloorExceptionApproveCapabilityId)
+                .Declaration.ParentCapabilityId);
+        Assert.Equal(SalesShellCapabilityProvider.DetailCapabilityId,
+            Assert.Single(sales, item => item.Declaration.CapabilityId == SalesShellCapabilityProvider.CustomerAcceptanceRecordCapabilityId)
                 .Declaration.ParentCapabilityId);
         // Published (S03-c, #328): available; each still opens only for an actor holding its Sales permission
         // in the context company (SalesShellCapabilitySqlServerRelationalAcceptanceTests).

@@ -46,6 +46,9 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         var output = await CommitOutputAsync(run, outputRequest, outputMetadata);
         Assert.False(output.IsReplay);
         Assert.Equal(("4", "2"), (output.ParentLabelVersion, output.LabelVersion));
+        Assert.Equal(outputRequest.ExpectedProductVersion, await run.ScalarAsync<string>(
+            "SELECT ProductVersion FROM inventory.Labels WHERE CompanyId = @company AND Id = @label",
+            ("@company", CompanyA), ("@label", outputRequest.LabelId)));
 
         Assert.Equal(80m, await run.ScalarAsync<decimal>(
             "SELECT SUM(QuantityKg) FROM inventory.Balances WHERE LabelId = @label",
@@ -387,6 +390,9 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         var issued = await CommitIssueAsync(run, issue, ManufacturingMetadata(run, "down-issue"));
         await CommitReturnAsync(run, ReturnRequest(orderId, parent.Label.Id, issued.ParentLabelVersion, "4"),
             ManufacturingMetadata(run, "down-return"));
+
+        await RemoveSyntheticProductVersionsForHistoricalMigrationAsync(
+            run, "SYN-MFG-PARENT-DOWN", expectedLabels: 1);
 
         await using var context = run.Context(CompanyA);
         var error = await Assert.ThrowsAsync<SqlException>(() => context.GetService<IMigrator>()

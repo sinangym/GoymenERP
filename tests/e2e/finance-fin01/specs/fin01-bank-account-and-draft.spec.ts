@@ -592,47 +592,110 @@ test.describe.serial('FIN-01 bank account and draft (real API, real SQL)', () =>
     await expect(page.getByText('Taslak — para etkisi yok.', { exact: false })).toBeVisible()
     await expectPosFacts()
 
-    // Record once, from the screen.
+    // Record once, from the screen. The real server commits the first request and returns 200, but this
+    // one route drops only the delivery back to the browser. The canonical command attempt must freeze
+    // as unknown and resend the exact same company/actor/key/body instead of minting another command.
+    type RecordResult = {
+      readonly isReplay?: unknown
+      readonly originalCorrelationId?: unknown
+      readonly resource?: {
+        readonly source?: {
+          readonly id?: unknown
+          readonly stage?: unknown
+          readonly version?: unknown
+          readonly amount?: { readonly money?: { readonly amount?: unknown } }
+        }
+        readonly unallocated?: { readonly knowledge?: unknown; readonly amount?: { readonly money?: { readonly amount?: unknown } } }
+        readonly pos?: {
+          readonly commissionBearer?: unknown
+          readonly commission?: { readonly money?: { readonly amount?: unknown } }
+          readonly bankNet?: { readonly money?: { readonly amount?: unknown } }
+        }
+      }
+    }
+    let resolveCommitted!: (value: { readonly status: number; readonly body: RecordResult }) => void
+    const committedRecord = new Promise<{ readonly status: number; readonly body: RecordResult }>((resolve) => {
+      resolveCommitted = resolve
+    })
+    let dropCommittedRecordDelivery = true
+    const abortCommittedRecordResponse = async (route: Route) => {
+      const request = route.request()
+      if (!dropCommittedRecordDelivery || request.method() !== 'POST'
+        || !request.url().endsWith(`/api/v1/finance/manual-receipts/${sourceId}/record`)) {
+        await route.fallback()
+        return
+      }
+      dropCommittedRecordDelivery = false
+      rewritten.add(request)
+      const response = await route.fetch({
+        headers: { ...request.headers(), 'x-development-user': env.seed.proposerActor },
+      })
+      resolveCommitted({ status: response.status(), body: await response.json() as RecordResult })
+      await route.abort('failed')
+    }
+    await context.route(RECORD_RE, abortCommittedRecordResponse)
+
     await page.getByRole('button', { name: 'Kesin kayda al', exact: true }).click()
     const recordPost = page.waitForRequest((request) => RECORD_RE.test(request.url()) && request.method() === 'POST')
-    const recordAnswer = page.waitForResponse((response) => RECORD_RE.test(response.url()) && response.request().method() === 'POST')
     await page.getByRole('button', { name: 'Kesin kaydı onayla', exact: true }).click()
     const recordSent = await recordPost
     const recordBody = recordSent.postDataJSON()
+    const recordKey = recordSent.headers()['idempotency-key']
+    expect(recordKey).toMatch(/^[0-9a-f]{32}$/)
+    expect(recordSent.headers()['x-company-id']).toBe(env.seed.companyId)
     expect(recordBody).toEqual({ draftId: sourceId, expectedVersion: '1' })
-    const recordedResponse = await recordAnswer
-    const first = await recordedResponse.json() as {
-      readonly isReplay?: unknown
-      readonly originalCorrelationId?: unknown
-      readonly resource?: { readonly source?: { readonly stage?: unknown; readonly version?: unknown } }
-    }
-    expect(recordedResponse.status(), JSON.stringify(first)).toBe(200)
-    expect(first).toMatchObject({
+
+    const unknown = page.locator('[data-attempt="unknown"]')
+    await expect(unknown).toContainText('İşlemin sonucu bilinmiyor', { timeout: 30_000 })
+    await expect(unknown).toContainText('Sonuç netleşene kadar alanlar kilitli.')
+    await expect(page.getByRole('button', { name: 'Kesin kayda al', exact: true })).toBeDisabled()
+    const committed = await committedRecord
+    expect(committed.status, 'committed record response must be HTTP 200').toBe(200)
+    expect(committed.body).toMatchObject({
       isReplay: false,
       resource: {
         source: { id: sourceId, stage: 'Recorded', version: '2', amount: { money: { amount: '1000.00' } } },
         unallocated: { knowledge: 'Known', amount: { money: { amount: '1000.00' } } },
-        pos: { commissionBearer: 'Company', bankNet: { money: { amount: '974.50' } } },
+        pos: {
+          commissionBearer: 'Company',
+          commission: { money: { amount: '25.50' } },
+          bankNet: { money: { amount: '974.50' } },
+        },
       },
     })
+    expect(committed.body.originalCorrelationId).toEqual(expect.any(String))
+    expect((committed.body.originalCorrelationId as string).length).toBeGreaterThan(0)
+
+    const replayPost = page.waitForRequest((request) => RECORD_RE.test(request.url()) && request.method() === 'POST')
+    const replayAnswer = page.waitForResponse((response) => RECORD_RE.test(response.url())
+      && response.request().method() === 'POST')
+    await unknown.getByRole('button', { name: 'Aynı işlemi tekrar gönder', exact: true }).click()
+    const replaySent = await replayPost
+    expect(replaySent.headers()['idempotency-key']).toBe(recordKey)
+    expect(replaySent.headers()['x-company-id']).toBe(env.seed.companyId)
+    expect(replaySent.postDataJSON()).toEqual(recordBody)
+    const replayResponse = await replayAnswer
+    const replayBody = await replayResponse.json() as RecordResult
+    expect(replayResponse.status(), 'same-attempt replay must be HTTP 200').toBe(200)
+    expect(replayResponse.headers()['idempotency-replayed']).toBe('true')
+    expect(replayResponse.headers()['idempotency-original-correlation-id'])
+      .toBe(committed.body.originalCorrelationId)
+    expect(replayBody).toMatchObject({
+      isReplay: true,
+      originalCorrelationId: committed.body.originalCorrelationId,
+      resource: {
+        source: { id: sourceId, stage: 'Recorded', version: '2', amount: { money: { amount: '1000.00' } } },
+        unallocated: { knowledge: 'Known', amount: { money: { amount: '1000.00' } } },
+        pos: {
+          commissionBearer: 'Company',
+          commission: { money: { amount: '25.50' } },
+          bankNet: { money: { amount: '974.50' } },
+        },
+      },
+    })
+    await context.unroute(RECORD_RE, abortCommittedRecordResponse)
     await expect(page.getByText('Kesin kaynak kaydı.', { exact: false })).toBeVisible({ timeout: 30_000 })
 
-    // The same key and request again: the stored answer, marked as a replay with the first correlation — no second
-    // Record, so no second money event (the event is unique per source and kind in SQL).
-    const replay = await page.evaluate(async ({ id, key, body, companyId }) => {
-      const response = await fetch(`/api/v1/finance/manual-receipts/${id}/record`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Idempotency-Key': key, 'X-Company-Id': companyId },
-        body: JSON.stringify(body),
-      })
-      return { status: response.status, body: await response.json() as unknown }
-    }, { id: sourceId, key: recordSent.headers()['idempotency-key'], body: recordBody, companyId: env.seed.companyId })
-    expect(replay.status).toBe(200)
-    expect(replay.body).toMatchObject({
-      isReplay: true,
-      originalCorrelationId: first.originalCorrelationId,
-      resource: { source: { id: sourceId, stage: 'Recorded', version: '2' } },
-    })
     // A fresh key at the old version is refused as stale (409) — nothing is recorded a second time.
     const stale = await page.evaluate(async ({ id, body, companyId }) => {
       const response = await fetch(`/api/v1/finance/manual-receipts/${id}/record`, {
@@ -714,8 +777,10 @@ test.describe.serial('FIN-01 bank account and draft (real API, real SQL)', () =>
     await expect.poll(() => riskCells(page, 'openExposure')).toEqual(['1', '1.500,00'])
     await expect.poll(() => riskCells(page, 'collected')).toEqual(['0', '0,00'])
 
-    // Close and reopen: a fresh navigation lists it on F-02 and opens it from the row.
+    // Close and reopen: the canonical portfolio navigation lists it and opens the same record from the row.
     await page.goto('/finans/tahsilatlar')
+    await page.getByRole('link', { name: 'Müşteri Çekleri ve Senetleri', exact: true }).click()
+    await expect(page).toHaveURL('/finans/musteri-cek-senetleri')
     const row = page.getByRole('row').filter({ has: page.getByRole('rowheader', { name: CHEQUE_SERIAL, exact: true }) })
     await expect(row).toHaveCount(1, { timeout: 30_000 })
     await expect(row).toContainText('Portföyde')
@@ -781,7 +846,7 @@ test.describe.serial('FIN-01 bank account and draft (real API, real SQL)', () =>
 
     // Reopen: the instrument is Collected with two movements and the same one source; that source is a recorded
     // receipt of the face value, open for distribution (F-03) like any receipt.
-    await page.goto(`/finans/tahsilatlar?cekSenet=${instrumentId}`)
+    await page.goto(`/finans/musteri-cek-senetleri?cekSenet=${instrumentId}`)
     const reopened = page.getByRole('region', { name: `Müşteri çeki · ${CHEQUE_SERIAL}`, exact: true })
     await expect(reopened).toBeVisible({ timeout: 30_000 })
     await expect(reopened.getByText('Tahsil edildi', { exact: true })).toBeVisible()
@@ -812,7 +877,7 @@ test.describe.serial('FIN-01 bank account and draft (real API, real SQL)', () =>
     })
     expect(second.status).toBe(200)
     const secondId = second.body.resource!.id!
-    await page.goto(`/finans/tahsilatlar?cekSenet=${secondId}`)
+    await page.goto(`/finans/musteri-cek-senetleri?cekSenet=${secondId}`)
     const bouncedPanel = page.getByRole('region', { name: `Müşteri çeki · ${BOUNCED_SERIAL}`, exact: true })
     await expect(bouncedPanel).toBeVisible({ timeout: 30_000 })
     await bouncedPanel.getByRole('button', { name: 'Karşılıksız olarak işaretle', exact: true }).click()
@@ -861,7 +926,7 @@ test.describe.serial('FIN-01 bank account and draft (real API, real SQL)', () =>
       customers: [{ figures: { collected: { count: 1 }, dishonoured: { count: 1 }, openExposure: { count: 1 } } }],
     })
 
-    await page.goto(`/finans/tahsilatlar?cekSenet=${instrumentId}`)
+    await page.goto(`/finans/musteri-cek-senetleri?cekSenet=${instrumentId}`)
     await reopened.getByRole('link', { name: 'Tahsilat kaydını aç', exact: true }).click()
     await expect(page).toHaveURL(new RegExp(`/finans/tahsilatlar/${sourceId}$`))
     await expect(page.getByText('Kesin kaynak kaydı.', { exact: false })).toBeVisible({ timeout: 30_000 })
@@ -1176,13 +1241,13 @@ test.describe.serial('FIN-01 bank account and draft (real API, real SQL)', () =>
     expectEveryAnswerRewritten(answered, rewritten)
   })
 
-  test('FIN01-04 the approver has no draft screens and the ungranted profile no Finance screen', async ({ page, context }) => {
+  test('FIN01-04 the approver has no receipt create screen and the ungranted profile no Finance screen', async ({ page, context }) => {
     await asActor(context, env.seed.approverActor)
     let financeRequests = 0
     page.on('request', (request) => {
       if (FINANCE_API.test(request.url()) && new URL(request.url()).pathname.includes('/manual-receipts')) financeRequests += 1
     })
-    await page.goto('/finans/tahsilatlar')
+    await page.goto('/finans/tahsilatlar/yeni')
     await expect(page.locator('[data-state="not-found"]')).toBeVisible({ timeout: 30_000 })
     expect(financeRequests).toBe(0)
 

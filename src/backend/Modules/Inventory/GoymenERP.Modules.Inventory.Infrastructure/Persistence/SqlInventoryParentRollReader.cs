@@ -51,9 +51,10 @@ internal sealed class SqlInventoryParentRollReader(InventoryDbContext db) : IInv
 
         return labels.Select(row =>
         {
-            if (!lots.TryGetValue(row.LotId, out var lot))
+            if (row.ProductVersion is null || !lots.TryGetValue(row.LotId, out var lot))
                 throw new InventoryParentRollException(503, InventoryParentRollCodesV1.Unavailable);
             var label = new MaterialLabel(row.Id, row.CompanyId, row.Code, row.ProductId, row.LotId,
+                row.ProductVersion,
                 JsonSerializer.Deserialize<string[]>(row.RequiredDocumentsJson)
                     ?? throw new InventoryParentRollException(503, InventoryParentRollCodesV1.Unavailable),
                 row.HeatNumber, row.CoilNumber);

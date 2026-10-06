@@ -68,7 +68,7 @@ class FixtureListTests(unittest.TestCase):
     def test_u02_exports_the_fixed_technical_family_identity(self):
         self.assertEqual(
             frozenset({"companyId", "codeGroupId", "technicalFamilyId", "authorizedActor", "unauthorizedActor",
-                       "activatorActor"}),
+                       "activatorActor", "inventoryRecorderActor"}),
             browser.SUITE_FIXTURE_OUTPUTS["u02"])
 
     def test_s04_exports_the_sales_allocation_tuple(self):
@@ -91,7 +91,7 @@ class FixtureListTests(unittest.TestCase):
                 "preparerActor", "loaderActor", "readerActor", "companyId", "otherCompanyId",
                 "customerPartyId", "companyAccountId", "draftId", "approvedLineId",
                 "instructionId", "blockedLineId", "openLineId", "shipmentAllocationId",
-                "shipmentLabelId",
+                "shipmentLabelId", "shipmentReceiptAcceptanceId", "shipmentReceiptMovementId",
             }),
             browser.SUITE_FIXTURE_OUTPUTS["l04"])
 
@@ -569,13 +569,21 @@ class IssuerUserRuleTests(unittest.TestCase):
     def test_the_checked_in_override_files_pass_their_profiles(self):
         # Every owner override in infra/browser-suites is valid against its suite's profile model.
         directory = ROOT / browser.SUITE_OVERRIDE_DIRECTORY
+        compose_bindings = {
+            "${C01_E2E_TESTED_COMMIT:?C01_E2E_TESTED_COMMIT must be set}": profile_tests.COMMIT,
+            "${GOYMEN_ERP_C01_E2E_RUN_ID:?GOYMEN_ERP_C01_E2E_RUN_ID must be set}":
+                profile_tests.PROJECT.split("-")[-2],
+            "${GOYMEN_ERP_C01_E2E_COMPOSE_PROJECT:?GOYMEN_ERP_C01_E2E_COMPOSE_PROJECT must be set}":
+                profile_tests.PROJECT,
+        }
         for path in sorted(directory.glob("*.override.yml")) if directory.is_dir() else []:
             suite = path.name.split(".", 1)[0]
             environment = {}
             for line in path.read_text(encoding="utf-8").splitlines():
                 match = re.fullmatch(r"      ([A-Za-z0-9_]+): (.+)", line)
                 if match:
-                    environment[match.group(1)] = match.group(2).strip('"')
+                    raw = match.group(2).strip('"')
+                    environment[match.group(1)] = compose_bindings.get(raw, raw)
             with self.subTest(suite=suite):
                 self.assertTrue(environment)
                 self._validate(environment, suite)
@@ -625,6 +633,20 @@ class IssuerUserRuleTests(unittest.TestCase):
                              and "ISSUER" in value.upper() for key, value in environment.items()))
         self.assertFalse(any(value == self.LOCAL for key, value in environment.items()
                              if key.startswith("IdentitySeed__Assignments__")))
+        def permissions(role):
+            prefix = f"IdentitySeed__Roles__{role}__Permissions__"
+            return {value for key, value in environment.items() if key.startswith(prefix)}
+
+        preparer = permissions(5)
+        loader = permissions(6)
+        reader = permissions(7)
+        self.assertTrue({"logistics.customer-returns.read", "logistics.customer-returns.request"} <= preparer)
+        self.assertNotIn("logistics.customer-returns.decision", preparer)
+        self.assertTrue({"logistics.customer-returns.read", "logistics.customer-returns.decision"} <= loader)
+        self.assertNotIn("logistics.customer-returns.request", loader)
+        self.assertIn("logistics.customer-returns.read", reader)
+        self.assertNotIn("logistics.customer-returns.request", reader)
+        self.assertNotIn("logistics.customer-returns.decision", reader)
         self._validate(environment, suite="l04")
 
     def test_every_rule_refuses_its_violation(self):

@@ -78,8 +78,13 @@ import {
   type OrderAttemptSnapshot,
   type OrderAttemptState,
 } from './orderAttempt'
-import { SALES_CAPABILITY, SALES_ROUTE } from './capabilities'
-import { APPROVAL_STATE_TEXT, ORDER_DETAIL_TEXT as T, ORDER_DRAFT_TEXT, problemCodeText } from './salesText'
+import {
+  SALES_CAPABILITY,
+  SALES_CUSTOMER_ACCEPTANCE_RECORD_CAPABILITY,
+  SALES_QUANTITY_WRITE_CAPABILITY,
+  SALES_ROUTE,
+} from './capabilities'
+import { APPROVAL_STATE_TEXT, COMMERCIAL_STAGE_TEXT, ORDER_DETAIL_TEXT as T, ORDER_DRAFT_TEXT, problemCodeText } from './salesText'
 import { SALES_PROBLEM_CODE } from './contract'
 import { classifyOutcome } from '../shell/uiState'
 import { useShellState } from '../shell/shellContext'
@@ -87,12 +92,15 @@ import { contextKey, contextKeyString, hasCapability, type ShellState } from '..
 import { StateBlock } from '../shell/StateBlock'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
 import { SalesDraftCommercialRevisionForm } from './SalesDraftCommercialRevisionForm'
+import { SalesDraftLinePricing } from './SalesDraftLinePricing'
+import { SalesDraftPriceFloorApproval } from './SalesDraftPriceFloorApproval'
 import { SalesDraftRevisionHistory } from './SalesDraftRevisionHistory'
 import { SalesDraftQuantityRevisionForm } from './SalesDraftQuantityRevisionForm'
 import { SalesDraftAllocationPanel } from './SalesDraftAllocationPanel'
 import { SalesDraftDeliveryScheduleForm } from './SalesDraftDeliveryScheduleForm'
 import { SalesDraftDeliveryScheduleHistory } from './SalesDraftDeliveryScheduleHistory'
 import { SalesDraftDeliveryProgress } from './SalesDraftDeliveryProgress'
+import { SalesDraftRemainderChangePanel } from './SalesDraftRemainderChangePanel'
 import { SalesDraftCancellation } from './SalesDraftCancellation'
 import { SalesDraftLinkedEffects, SalesDraftLinkedEffectsUnbound } from './SalesDraftLinkedEffects'
 import { INVENTORY_PHYSICAL_ALLOCATION_WRITE_CAPABILITY } from '../inventory/capabilities'
@@ -195,6 +203,22 @@ export function SalesDraftDetailPage() {
           />
         ) : null
       }
+      remainderChanges={
+        namespace === null || companyId === null || shell.activeContext === null ? null : (
+          <SalesDraftRemainderChangePanel
+            key={`remainder:${namespace ?? ''}:${outcome.data.draft.id}`}
+            detail={outcome.data}
+            companyId={companyId}
+            namespace={namespace}
+            actorId={shell.activeContext.userId}
+            routeEntryGeneration={shell.routeEntryGeneration}
+            attemptBinding={orderAttemptBinding(shell, `sales-order-remainder:${outcome.data.draft.id}`)!}
+            canRequest={hasCapability(shell, SALES_QUANTITY_WRITE_CAPABILITY)}
+            canDecide={hasCapability(shell, SALES_CAPABILITY.ordersApprove)}
+            onRecorded={() => void queryClient.invalidateQueries({ queryKey })}
+          />
+        )
+      }
       linkedEffects={
         namespace !== null && companyId !== null && outcome.data.draft.companyId === companyId ? (
           <SalesDraftLinkedEffects
@@ -246,13 +270,24 @@ export function SalesDraftDetailPage() {
       }
       commercialActions={
         companyId === null ? null : (
-          <SalesDraftCommercialRevisionForm
-            key={`price:${namespace ?? ''}:${outcome.data.draft.id}`}
-            shell={shell}
-            detail={outcome.data}
-            companyId={companyId}
-            onRecorded={() => void queryClient.invalidateQueries({ queryKey })}
-          />
+          <>
+            {/* AT-018 / AT-021: the reference list price, the adjustments and the server's net, for a caller who may see prices. */}
+            <SalesDraftLinePricing shell={shell} detail={outcome.data} companyId={companyId} />
+            <SalesDraftPriceFloorApproval
+              key={`floor:${namespace ?? ''}:${outcome.data.draft.id}`}
+              shell={shell}
+              detail={outcome.data}
+              companyId={companyId}
+              onRecorded={() => void queryClient.invalidateQueries({ queryKey })}
+            />
+            <SalesDraftCommercialRevisionForm
+              key={`price:${namespace ?? ''}:${outcome.data.draft.id}`}
+              shell={shell}
+              detail={outcome.data}
+              companyId={companyId}
+              onRecorded={() => void queryClient.invalidateQueries({ queryKey })}
+            />
+          </>
         )
       }
     />
@@ -271,6 +306,7 @@ export function DraftView({
   deliverySchedule = null,
   deliveryScheduleHistory = null,
   deliveryProgress = null,
+  remainderChanges = null,
   linkedEffects = null,
   cancellation = null,
 }: {
@@ -289,12 +325,14 @@ export function DraftView({
   readonly deliveryScheduleHistory?: React.ReactNode
   /** AT-024: delivered / remaining per line from Logistics' recorded deliveries (null: not mounted). */
   readonly deliveryProgress?: React.ReactNode
+  /** AT-024: approved cancel/revise requests for a partly delivered line and their immutable decisions. */
+  readonly remainderChanges?: React.ReactNode
   /** The owners' linked effects; without a bound company nothing is read and no number is shown. */
   readonly linkedEffects?: React.ReactNode
   /** DEC-SAL-005 / AT-007: the impact preview and cancel control, or the recorded cancellation of a cancelled order. */
   readonly cancellation?: React.ReactNode
 }) {
-  const { draft, approval } = detail
+  const { draft, approval, customerAcceptance } = detail
   const withdrawn = draft.approvalState === APPROVAL_STATE.withdrawn
   const cancelled = draft.state === CANCELLED_STATE
   return (
@@ -313,6 +351,10 @@ export function DraftView({
       </header>
 
       <dl className={styles.facts}>
+        <div>
+          <dt>{T.commercialStage}</dt>
+          <dd data-testid="sales-draft-commercial-stage">{COMMERCIAL_STAGE_TEXT[draft.commercialStage]}</dd>
+        </div>
         <div>
           <dt>{T.state}</dt>
           <dd data-testid="sales-draft-lifecycle-state">{cancelled ? T.stateCancelled : T.stateDraft}</dd>
@@ -388,6 +430,28 @@ export function DraftView({
               <dd data-testid="sales-approval-reason">{approval.rejectionReason ?? T.approval.noReason}</dd>
             </div>
           ) : null}
+          <div>
+            <dt>{T.approval.customerAcceptance}</dt>
+            <dd data-testid="sales-customer-acceptance-state">
+              {!customerAcceptance.required
+                ? T.approval.customerAcceptanceLegacy
+                : customerAcceptance.isCurrentRevisionAccepted
+                  ? T.approval.customerAcceptanceRecorded
+                  : T.approval.customerAcceptancePending}
+            </dd>
+          </div>
+          {customerAcceptance.acceptedBy === null ? null : (
+            <div>
+              <dt>{T.approval.customerAcceptedBy}</dt>
+              <dd>{customerAcceptance.acceptedBy}</dd>
+            </div>
+          )}
+          {customerAcceptance.acceptedAtUtc === null ? null : (
+            <div>
+              <dt>{T.approval.customerAcceptedAt}</dt>
+              <dd>{formatInstant(customerAcceptance.acceptedAtUtc)} ({customerAcceptance.acceptedRevision})</dd>
+            </div>
+          )}
         </dl>
         {linkedEffects ?? <SalesDraftLinkedEffectsUnbound />}
         {draft.approvalState === APPROVAL_STATE.approved && !cancelled ? <p className={styles.muted}>{T.approval.approvedNote}</p> : null}
@@ -426,6 +490,7 @@ export function DraftView({
       </section>
       {deliveryScheduleHistory}
       {deliveryProgress}
+      {remainderChanges}
       {allocations}
       {revisionHistory}
     </article>
@@ -590,6 +655,7 @@ function ApprovalCommands({
   const { draft } = detail
   const canSubmit = hasCapability(shell, SALES_CAPABILITY.draftsCreate)
   const canDecide = hasCapability(shell, SALES_CAPABILITY.ordersApprove)
+  const canAcceptCustomer = hasCapability(shell, SALES_CUSTOMER_ACCEPTANCE_RECORD_CAPABILITY)
   const [attempt, setAttempt] = useState<CommandAttempt>({ phase: 'idle' })
   const [command, setCommand] = useState<DraftStateCommand | null>(null)
   const [reason, setReason] = useState('')
@@ -614,7 +680,10 @@ function ApprovalCommands({
   // A commercial revision can return an approved order to Preparing. D2's easy withdrawal
   // must not be offered once approved history exists; the server remains the authority.
   const offerWithdraw = canSubmit && ownDraft && unapproved && draft.revision === 'Rev.0'
-  if (!offerSubmit && !offerDecision && !offerWithdraw && !ownDecisionWithheld && attempt.phase === 'idle') return null
+  const offerCustomerAcceptance = canAcceptCustomer && draft.state !== CANCELLED_STATE
+    && draft.approvalState === APPROVAL_STATE.approved && detail.customerAcceptance.required
+    && !detail.customerAcceptance.isCurrentRevisionAccepted
+  if (!offerSubmit && !offerDecision && !offerWithdraw && !offerCustomerAcceptance && !ownDecisionWithheld && attempt.phase === 'idle') return null
 
   async function send(kind: DraftStateCommand, snapshot: OrderAttemptSnapshot<DraftStateCommandRequest>) {
     const previous = attemptRef.current
@@ -722,6 +791,11 @@ function ApprovalCommands({
             {T.approval.withdraw}
           </button>
         </>
+      ) : null}
+      {offerCustomerAcceptance ? (
+        <button type="button" className={styles.primaryButton} disabled={frozen} onClick={() => start('customer-acceptance')}>
+          {T.approval.recordCustomerAcceptance}
+        </button>
       ) : null}
     </div>
   )

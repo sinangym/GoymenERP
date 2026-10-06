@@ -24,6 +24,7 @@ using GoymenERP.Modules.Accounting.Application.Contracts;
 using GoymenERP.Modules.Audit.Infrastructure;
 using GoymenERP.Modules.Audit.Infrastructure.Persistence;
 using GoymenERP.Modules.Counterparty.Infrastructure;
+using GoymenERP.Modules.Counterparty.Application.Contracts;
 using GoymenERP.Modules.Documents.Infrastructure;
 using GoymenERP.Modules.Finance.Contracts;
 using GoymenERP.Modules.Finance.Infrastructure;
@@ -44,7 +45,9 @@ using GoymenERP.Modules.Manufacturing.Infrastructure.Shell;
 using GoymenERP.Modules.Organization.Infrastructure;
 using GoymenERP.Modules.Identity.Infrastructure;
 using GoymenERP.Modules.Product.Application.Contracts;
+using GoymenERP.Modules.Product.Infrastructure.PriceLists;
 using GoymenERP.Modules.Product.Infrastructure.Persistence;
+using GoymenERP.Modules.Product.Infrastructure.Shell;
 using GoymenERP.Modules.Sales.Application;
 using GoymenERP.Modules.Sales.Application.Contracts;
 using GoymenERP.Modules.Sales.Infrastructure;
@@ -149,12 +152,14 @@ builder.Services.AddFinancePersistence(
 builder.Services.AddScoped<IAccountingPeriodStatusPortV1, AccountingPeriodStatusPort>();
 builder.Services.AddScoped<IFinanceRecordPeriodRule, OccurredOnFinanceRecordPeriodRule>();
 builder.Services.AddFinanceServices();
+builder.Services.AddFinanceOfficialInvoiceImportHost();
 builder.Services.AddScoped<IFinancePartyAccountPort, CounterpartyFinancePartyAccountPort>();
 builder.Services.AddScoped<DraftReadContextReader>();
 builder.Services.AddScoped<IFinanceDraftContextEndpointService, FinanceDraftContextEndpointService>();
 builder.Services.AddSingleton<IFinanceDraftReadBinding, ManualReceiptDraftReadBinding>();
 builder.Services.AddScoped<ISettingsPrerequisiteProvider, ApprovedSettingsPrerequisiteProvider>();
 builder.Services.AddScoped<ISettingsMoneyCandidateReader, ApprovedSettingsPrerequisiteProvider>();
+builder.Services.AddScoped<ISettingsManufacturingToleranceProviderV1, ApprovedSettingsPrerequisiteProvider>();
 // PRD-UNIT-1: the company-independent unit identities of the approved catalog (immutable source data).
 builder.Services.AddSingleton<ISettingsUnitIdentityCatalogV1, ApprovedSettingsUnitIdentityCatalog>();
 builder.Services.AddScoped<ISalesAccountSelectionSourceV1, CounterpartySalesAccountSelectionSourceV1>();
@@ -195,6 +200,11 @@ builder.Services.AddIdentityModule(
     enableAuthorizationSnapshotDatabaseReadiness:
         databaseStartupMode == DatabaseStartupMode.Initialize);
 builder.Services.AddProductRuntime(builder.Configuration, builder.Environment);
+// AT-018: company-scoped price-list persistence, its two Sales reference readers and owner service.
+builder.Services.AddProductPriceListHost(
+    builder.Configuration,
+    (services, options) => options.AddInterceptors(
+        services.GetRequiredService<AuditSaveChangesInterceptor>()));
 builder.Services.AddProductPurchaseSelection(p => p.GetRequiredService<ProductRuntimeOptions>().IsEnabled);
 builder.Services.AddCounterpartyModule(
     builder.Configuration,
@@ -212,6 +222,13 @@ builder.Services.AddInventoryParentRollReferences();
 builder.Services.AddInventoryPhysicalAllocationReads();
 // R19: the label genealogy writer/reader and the fenced split/merge command behind the published route.
 builder.Services.AddInventoryLabelGenealogy();
+// Label classification is an Inventory-owned, versioned command. Central registers only the reviewed
+// permission identity and binds the existing scoped store/command; this grants no actor access.
+builder.Services.AddScoped(_ => new InventoryLabelClassificationAuthorityV1(
+    ErpPermissions.InventoryLabelClassificationWrite));
+builder.Services.AddScoped<IInventoryLabelClassificationWriterV1>(services =>
+    services.GetRequiredService<global::GoymenERP.Modules.Inventory.Infrastructure.Persistence.InventoryStore>());
+builder.Services.AddScoped<IInventoryLabelClassificationCommandV1, InventoryLabelClassificationCommandService>();
 // AT-037: the stock count's fenced record/decide commands and the label count read behind the published routes.
 builder.Services.AddInventoryStockCounts();
 // ST-02 scrap write-off: the fenced record/decide commands and the label scrap read behind the published routes.
@@ -220,6 +237,7 @@ builder.Services.AddInventoryStockScraps();
 // and Product's stock eligibility (the owners' contracts; no user read, no copy of either owner's rows).
 builder.Services.AddScoped<IInventoryLocationStatusPort, OrganizationInventoryLocationStatusPort>();
 builder.Services.AddScoped<IInventoryProductStockPort, ProductInventoryStockPort>();
+builder.Services.AddScoped<IInventoryOpeningOwnerAccountPortV1, CounterpartyInventoryOpeningOwnerAccountPortV1>();
 builder.Services.AddManufacturingModule(
     builder.Configuration,
     (services, options) => options.AddInterceptors(
@@ -240,6 +258,8 @@ builder.Services.AddScoped<InventoryPhysicalAllocationHostService>();
 // order lines are Sales's approved-line port (registered by the Sales module); nothing of either is copied.
 builder.Services.AddScoped<ILogisticsPartyAccountPortV1, CounterpartyLogisticsPartyAccountPortV1>();
 builder.Services.AddScoped<ILogisticsRealizationTransactionRunnerV1, LogisticsRealizationTransactionRunner>();
+builder.Services.AddScoped<ILogisticsCustomerReturnScopeV1, LogisticsCustomerReturnScope>();
+builder.Services.AddScoped<ILogisticsCustomerReturnTransactionRunnerV1, LogisticsCustomerReturnTransactionRunner>();
 builder.Services.AddLogisticsModule(
     builder.Configuration,
     (services, options) => options.AddInterceptors(
@@ -285,6 +305,8 @@ builder.Services.AddSingleton<IShellCapabilityProvider, AccountingShellCapabilit
 // SY-01/SY-02: Identity's read-only users-and-permissions view (identity.assignments.read), before the authority
 // is chosen. No control: assigning and revoking stay blocked (NEEDS-SINAN #66 5738113623, OPEN-013).
 builder.Services.AddSingleton<IShellCapabilityProvider, IdentityShellCapabilityProvider>();
+// AT-018: Product's company-scoped U-05 price-list screens and edit/publish controls.
+builder.Services.AddSingleton<IShellCapabilityProvider, ProductPriceListShellCapabilityProvider>();
 var shellCapabilityAuthority = C01E2eShellCapabilityActivation.Configure(
     builder.Services,
     builder.Environment,
@@ -292,6 +314,12 @@ var shellCapabilityAuthority = C01E2eShellCapabilityActivation.Configure(
 // BROWSER-CI a2 part 2: the gated fixture writers exist only inside the browser-suite fixture runner's
 // in-process host (Testing + its exact run binding); nowhere else are they registered.
 C01E2eFixtureWriterActivation.Configure(
+    builder.Services,
+    builder.Environment,
+    builder.Configuration);
+// MFG browser acceptance: the compose-bound disposable API may replace only the read-only Settings
+// tolerance provider. Fixture-writer keys and writer services remain confined to the in-process runner.
+BrowserSuiteApiReadFixtureActivation.Configure(
     builder.Services,
     builder.Environment,
     builder.Configuration);
@@ -331,12 +359,14 @@ app.MapIdentityEndpoints();
 app.MapAuditEndpoints();
 app.MapCounterpartyEndpoints();
 app.MapProductEndpoints();
+app.MapProductPriceListEndpoints();
 app.MapFinanceEndpoints();
 app.MapSalesEndpoints();
 app.MapSalesProductCandidateEndpoints();
 app.MapInventoryEndpoints();
 app.MapManufacturingEndpoints();
 app.MapLogisticsEndpoints();
+app.MapLogisticsCustomerReturnEndpoints();
 app.MapPurchasingEndpoints();
 app.MapPurchasingProductCandidateEndpoints();
 app.MapAccountingEndpoints();
@@ -356,6 +386,11 @@ if (!isOpenApiDocumentGeneration
     // After Organization: Inventory's composite foreign keys reference its tables.
     await app.Services.InitializeInventoryModuleAsync();
     await app.Services.InitializeProductRuntimeAsync();
+    // After Organization and Product: price-list rows reference both owner tables.
+    if (app.Services.GetRequiredService<ProductRuntimeOptions>().IsEnabled)
+    {
+        await app.Services.InitializeProductPriceListsAsync();
+    }
     // After Organization: Finance's foreign keys reference its tables.
     await app.Services.InitializeFinancePersistenceAsync();
     // After Organization: Sales's foreign keys reference its tables.

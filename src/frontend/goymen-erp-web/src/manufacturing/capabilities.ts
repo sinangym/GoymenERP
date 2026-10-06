@@ -9,13 +9,14 @@
  * block and `hasCapability` answers false. The frontend never mints a capability to open
  * its own screen, and the server re-authorizes every request regardless (ERP-000K §10.2).
  *
- * WHY TEN IDS. They map onto the permissions the server enforces separately
+ * WHY ELEVEN IDS. They map onto the permissions the server enforces separately
  * (`ManufacturingEndpoints`):
  *
  *   manufacturing.orders.detail <- manufacturing.orders.read
  *   manufacturing.orders.facts  <- manufacturing.orders.read + manufacturing.facts.record
  *   manufacturing.orders.list   <- manufacturing.orders.read
  *   manufacturing.orders.close  <- manufacturing.orders.read + manufacturing.orders.close
+ *   manufacturing.orders.close-exception-approve <- manufacturing.orders.close-exception.approve
  *   manufacturing.plans.create  <- manufacturing.plans.write
  *   manufacturing.plans.detail  <- manufacturing.plans.read
  *   manufacturing.plans.approve <- manufacturing.plans.read + manufacturing.plans.approve
@@ -44,6 +45,8 @@ export const MANUFACTURING_CAPABILITY = {
   orderList: 'manufacturing.orders.list',
   /** The close action INSIDE the order screen. Not a route — a control, like the fact forms. */
   orderClose: 'manufacturing.orders.close',
+  /** The reasoned out-of-tolerance close control. Never implied by ordinary close authority. */
+  orderCloseExceptionApprove: 'manufacturing.orders.close-exception-approve',
   /** Create a Draft plan from authorized work-center and Inventory candidate reads. */
   planCreate: 'manufacturing.plans.create',
   /** Reopen one stored plan through `manufacturing.plans.read`. */

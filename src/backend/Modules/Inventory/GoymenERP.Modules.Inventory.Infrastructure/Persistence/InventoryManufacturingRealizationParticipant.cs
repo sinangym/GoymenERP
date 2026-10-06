@@ -232,7 +232,8 @@ public sealed class InventoryManufacturingRealizationParticipant
             lot = new MaterialLot(request.LotId, companyId, request.ProductId,
                 request.HeatNumber, request.CoilNumber);
             label = new MaterialLabel(request.LabelId, companyId, request.LabelCode, request.ProductId,
-                request.LotId, request.RequiredDocuments, request.HeatNumber, request.CoilNumber);
+                request.LotId, request.ExpectedProductVersion, request.RequiredDocuments,
+                request.HeatNumber, request.CoilNumber);
             var position = new StockPosition(companyId,
                 new StockOwner(request.OwnerKind, request.OwnerId),
                 new StockCustodian(request.CustodianKind, request.CustodianId),
@@ -509,6 +510,7 @@ public sealed class InventoryManufacturingRealizationParticipant
             .Select(item => new LabelDocumentAttachment(item.Kind, item.AttachedAtUtc, item.AttachedBy))
             .ToListAsync(cancellationToken);
         return MaterialLabel.Restore(row.Id, row.CompanyId, row.Code, row.ProductId, row.LotId,
+            row.ProductVersion,
             required, row.HeatNumber, row.CoilNumber, [], documents);
     }
 

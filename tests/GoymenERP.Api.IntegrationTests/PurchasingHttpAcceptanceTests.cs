@@ -14,6 +14,11 @@ namespace GoymenERP.Api.IntegrationTests;
 public sealed class PurchasingHttpAcceptanceTests(GoymenErpApiFactory factory) : IClassFixture<GoymenErpApiFactory>
 {
     private static readonly Guid CompanyA = TestCompanyIds.CompanyA;
+    private static readonly Guid PurchaseOrderId = Guid.Parse("10000000-0000-0000-0000-000000000001");
+    private static readonly Guid AcceptanceId = Guid.Parse("20000000-0000-0000-0000-000000000002");
+    private static readonly Guid PurchaseOrderLineId = Guid.Parse("30000000-0000-0000-0000-000000000003");
+    private static readonly Guid ProductId = Guid.Parse("40000000-0000-0000-0000-000000000004");
+    private static readonly Guid UnitId = Guid.Parse("50000000-0000-0000-0000-000000000005");
 
     [Theory]
     [InlineData("permission_unregistered")]
@@ -111,6 +116,68 @@ public sealed class PurchasingHttpAcceptanceTests(GoymenErpApiFactory factory) :
     }
 
     [Fact]
+    public async Task Order_detail_exposes_only_the_ordered_immutable_acceptance_history()
+    {
+        var first = Guid.Parse("61000000-0000-0000-0000-000000000001");
+        var second = Guid.Parse("61000000-0000-0000-0000-000000000002");
+        var firstAt = new DateTimeOffset(2026, 10, 5, 9, 0, 0, TimeSpan.Zero);
+        var baseDetail = OrderDetail(PurchaseOrderId, "Approved", "5");
+        var line = Assert.Single(baseDetail.Lines).LineId;
+        var detail = baseDetail with
+        {
+            Acceptances =
+            [
+                new PurchaseOrderAcceptanceHistoryView(first, line, "40", firstAt),
+                new PurchaseOrderAcceptanceHistoryView(second, line, "25", firstAt.AddMinutes(1)),
+            ],
+        };
+        var service = new StubService { GetOrder = _ => Task.FromResult(detail) };
+        using var host = CreateHost(service);
+        using var client = CreateClient(host);
+
+        using var response = await client.GetAsync($"{PurchasingApiV1.OrdersPath}/{PurchaseOrderId:D}");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        AssertPrivateNoStore(response);
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(new[] { "order", "lines", "acceptances" }, body.RootElement.EnumerateObject().Select(property => property.Name));
+        var acceptances = body.RootElement.GetProperty("acceptances");
+        Assert.Equal(2, acceptances.GetArrayLength());
+        Assert.Equal(new[] { "acceptanceId", "lineId", "quantity", "recordedAtUtc" },
+            acceptances[0].EnumerateObject().Select(property => property.Name));
+        Assert.Equal((first, line, "40", firstAt),
+            (acceptances[0].GetProperty("acceptanceId").GetGuid(), acceptances[0].GetProperty("lineId").GetGuid(),
+                acceptances[0].GetProperty("quantity").GetString(), acceptances[0].GetProperty("recordedAtUtc").GetDateTimeOffset()));
+        Assert.Equal(second, acceptances[1].GetProperty("acceptanceId").GetGuid());
+        string payload = body.RootElement.GetRawText();
+        foreach (string forbidden in new[] { "price", "currency", "tax", "payment", "schedule", "invoice", "openItem" })
+        {
+            Assert.DoesNotContain(forbidden, payload, StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
+    [Theory]
+    [InlineData(404, "not_found")]
+    [InlineData(403, "forbidden")]
+    [InlineData(503, "service_unavailable")]
+    public async Task Order_detail_failures_release_no_acceptance_history(int status, string code)
+    {
+        var protectedAcceptance = Guid.Parse("63000000-0000-0000-0000-000000000001");
+        var service = new StubService { GetOrder = _ => throw new PurchasingServiceException(status, code) };
+        using var host = CreateHost(service);
+        using var client = CreateClient(host);
+
+        using var response = await client.GetAsync($"{PurchasingApiV1.OrdersPath}/{PurchaseOrderId:D}");
+
+        Assert.Equal((HttpStatusCode)status, response.StatusCode);
+        AssertPrivateNoStore(response);
+        string payload = await response.Content.ReadAsStringAsync();
+        Assert.DoesNotContain(PurchaseOrderId.ToString(), payload, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(protectedAcceptance.ToString(), payload, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("acceptances", payload, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task A_missing_key_a_wrong_media_type_and_a_loose_body_are_refused_before_the_service()
     {
         var service = new StubService();
@@ -147,6 +214,101 @@ public sealed class PurchasingHttpAcceptanceTests(GoymenErpApiFactory factory) :
         Assert.Equal(0, service.Calls);
     }
 
+    [Fact]
+    public async Task Goods_receipt_quantity_comparison_returns_exact_contract_and_private_cache_headers()
+    {
+        var service = new StubService
+        {
+            Comparison = (purchaseOrderId, acceptanceId) => Task.FromResult(new PurchaseGoodsReceiptQuantityComparisonV1(
+                CompanyA, acceptanceId, purchaseOrderId, PurchaseOrderLineId, "7", ProductId, "3", UnitId,
+                "100.25", "101.75", "SameKilogramUnit", "100.25", "1.5"))
+        };
+        using var host = CreateHost(service);
+        using var client = CreateClient(host);
+
+        using var response = await client.GetAsync(ComparisonPath(PurchaseOrderId, AcceptanceId));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        AssertPrivateNoStore(response);
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(
+            new[]
+            {
+                "companyId", "acceptanceId", "purchaseOrderId", "purchaseOrderLineId",
+                "purchaseOrderVersion", "productId", "productVersion", "unitId",
+                "acceptedQuantity", "measuredQuantityKg", "comparisonStatus",
+                "acceptedQuantityKg", "measuredMinusAcceptedKg"
+            },
+            body.RootElement.EnumerateObject().Select(property => property.Name));
+        Assert.Equal(CompanyA, body.RootElement.GetProperty("companyId").GetGuid());
+        Assert.Equal(AcceptanceId, body.RootElement.GetProperty("acceptanceId").GetGuid());
+        Assert.Equal("1.5", body.RootElement.GetProperty("measuredMinusAcceptedKg").GetString());
+        Assert.Equal(1, service.Calls);
+    }
+
+    [Fact]
+    public async Task Goods_receipt_quantity_comparison_unknown_or_foreign_record_is_code_less_not_found()
+    {
+        var service = new StubService
+        {
+            Comparison = (_, _) => throw new PurchasingServiceException(404, "not_found")
+        };
+        using var host = CreateHost(service);
+        using var unknownClient = CreateClient(host);
+        using var foreignClient = CreateClient(host, TestUsers.CompanyB, TestCompanyIds.CompanyB);
+
+        foreach (var client in new[] { unknownClient, foreignClient })
+        {
+            using var response = await client.GetAsync(ComparisonPath(PurchaseOrderId, AcceptanceId));
+            Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+            AssertPrivateNoStore(response);
+            using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            Assert.False(body.RootElement.TryGetProperty("code", out _));
+        }
+
+        Assert.Equal(2, service.Calls);
+    }
+
+    [Fact]
+    public async Task Goods_receipt_quantity_comparison_maps_invalid_source_to_public_service_unavailable()
+    {
+        var service = new StubService
+        {
+            Comparison = (_, _) => throw new PurchasingServiceException(503, PurchaseGoodsReceiptCodesV1.SourceInvalid)
+        };
+        using var host = CreateHost(service);
+        using var client = CreateClient(host);
+
+        using var response = await client.GetAsync(ComparisonPath(PurchaseOrderId, AcceptanceId));
+
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+        AssertPrivateNoStore(response);
+        var payload = await response.Content.ReadAsStringAsync();
+        using var body = JsonDocument.Parse(payload);
+        Assert.Equal("service_unavailable", body.RootElement.GetProperty("code").GetString());
+        Assert.DoesNotContain(PurchaseGoodsReceiptCodesV1.SourceInvalid, payload, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Goods_receipt_quantity_comparison_late_authority_failure_exposes_no_protected_data()
+    {
+        var service = new StubService
+        {
+            Comparison = (_, _) => throw new PurchasingServiceException(403, "forbidden")
+        };
+        using var host = CreateHost(service);
+        using var client = CreateClient(host);
+
+        using var response = await client.GetAsync(ComparisonPath(PurchaseOrderId, AcceptanceId));
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        AssertPrivateNoStore(response);
+        var payload = await response.Content.ReadAsStringAsync();
+        Assert.DoesNotContain(PurchaseOrderId.ToString(), payload, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(AcceptanceId.ToString(), payload, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(ProductId.ToString(), payload, StringComparison.OrdinalIgnoreCase);
+    }
+
     private static string OrderBody(bool sourceRequest = true, bool boundLine = true)
     {
         var source = sourceRequest ? $"\"{Guid.NewGuid():D}\"" : "null";
@@ -173,24 +335,50 @@ public sealed class PurchasingHttpAcceptanceTests(GoymenErpApiFactory factory) :
         [new PurchaseRequestLineView(Guid.NewGuid(), 1, Guid.NewGuid(), "7", Guid.NewGuid(), "6")]);
 
     private WebApplicationFactory<Program> CreateHost(StubService service) => factory.WithWebHostBuilder(builder =>
-        builder.ConfigureTestServices(services => services.Replace(ServiceDescriptor.Scoped<IPurchasingService>(_ => service))));
+        builder.ConfigureTestServices(services =>
+        {
+            services.Replace(ServiceDescriptor.Scoped<IPurchasingService>(_ => service));
+            services.Replace(ServiceDescriptor.Scoped<IPurchaseGoodsReceiptQuantityComparisonServiceV1>(_ => service));
+        }));
 
     private static HttpClient CreateClient(WebApplicationFactory<Program> host)
+        => CreateClient(host, TestUsers.CompanyA, CompanyA);
+
+    private static HttpClient CreateClient(WebApplicationFactory<Program> host, string userId, Guid companyId)
     {
         var client = host.CreateClient();
-        client.DefaultRequestHeaders.Add("X-Development-User", TestUsers.CompanyA);
-        client.DefaultRequestHeaders.Add("X-Company-Id", CompanyA.ToString("D"));
+        client.DefaultRequestHeaders.Add("X-Development-User", userId);
+        client.DefaultRequestHeaders.Add("X-Company-Id", companyId.ToString("D"));
         client.DefaultRequestHeaders.Add("X-Correlation-Id", Guid.NewGuid().ToString("N"));
         return client;
     }
 
-    private sealed class StubService : IPurchasingService
+    private static string ComparisonPath(Guid purchaseOrderId, Guid acceptanceId) =>
+        $"/api/v1/purchasing/orders/{purchaseOrderId:D}/goods-receipts/{acceptanceId:D}/quantity-comparison";
+
+    private static void AssertPrivateNoStore(HttpResponseMessage response)
+    {
+        Assert.True(response.Headers.CacheControl?.Private);
+        Assert.True(response.Headers.CacheControl?.NoStore);
+    }
+
+    private sealed class StubService : IPurchasingService, IPurchaseGoodsReceiptQuantityComparisonServiceV1
     {
         public int Calls { get; private set; }
         public Func<Task<PurchaseRequestResponse>> CreateRequest { get; set; } = () => throw new InvalidOperationException("not expected");
         public Func<Task<PurchaseRequestResponse>> Submit { get; set; } = () => throw new InvalidOperationException("not expected");
         public Func<Task<PurchaseOrderResponse>> CreateOrder { get; set; } = () => throw new InvalidOperationException("not expected");
         public Func<Task<PurchaseOrderResponse>> Approve { get; set; } = () => throw new InvalidOperationException("not expected");
+        public Func<Guid, Task<PurchaseOrderDetailView>> GetOrder { get; set; } = _ => throw new InvalidOperationException("not expected");
+        public Func<Guid, Guid, Task<PurchaseGoodsReceiptQuantityComparisonV1>> Comparison { get; set; }
+            = (_, _) => throw new InvalidOperationException("not expected");
+
+        public Task<PurchaseGoodsReceiptQuantityComparisonV1> GetGoodsReceiptQuantityComparisonAsync(
+            Guid purchaseOrderId, Guid acceptanceId, CancellationToken cancellationToken = default)
+        {
+            Calls++;
+            return Comparison(purchaseOrderId, acceptanceId);
+        }
 
         public Task<PurchaseRequestResponse> CreateRequestAsync(CreatePurchaseRequestRequest request, PurchasingCommandMetadata metadata, CancellationToken cancellationToken = default)
         {
@@ -222,8 +410,11 @@ public sealed class PurchasingHttpAcceptanceTests(GoymenErpApiFactory factory) :
             return Approve();
         }
 
-        public Task<PurchaseOrderDetailView> GetOrderDetailAsync(Guid orderId, CancellationToken cancellationToken = default) =>
-            throw new PurchasingServiceException(404, "not_found");
+        public Task<PurchaseOrderDetailView> GetOrderDetailAsync(Guid orderId, CancellationToken cancellationToken = default)
+        {
+            Calls++;
+            return GetOrder(orderId);
+        }
 
         public Task<PurchaseOrderListResponse> GetOrderListAsync(PurchaseOrderListQuery query, CancellationToken cancellationToken = default) =>
             Task.FromResult(new PurchaseOrderListResponse([], null));

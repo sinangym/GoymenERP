@@ -152,6 +152,7 @@ public sealed class InventoryReadApiSqlServerRelationalAcceptanceTests
             var item = Assert.Single(window.Items);
             Assert.Equal(own.Id, item.LabelId);
             Assert.Equal("3", item.LabelVersion);
+            Assert.Equal("7", item.ProductVersion);
             Assert.Equal(("1000.125", "899.625", "100.5"),
                 (item.PhysicalKg, item.UnblockedPhysicalKg, item.BlockedPhysicalKg));
             Assert.Equal("PendingDocuments", item.DocumentStatus);
@@ -165,6 +166,7 @@ public sealed class InventoryReadApiSqlServerRelationalAcceptanceTests
             Assert.All(item.Positions, p => Assert.Equal(("Company", CompanyA, "Company", CompanyA),
                 (p.OwnerKind, p.OwnerId, p.CustodianKind, p.CustodianId)));
             var validated = await service.ValidateAsync(new(own.Id, "3"));
+            Assert.Equal("7", validated.ProductVersion);
             Assert.Equal((CompanyA, own.Id, "3", true, (string?)null, true),
                 (validated.CompanyId, validated.LabelId, validated.LabelVersion, validated.DraftSelectable,
                     validated.DraftRefusalCode, validated.ProductionUseRequiresRevalidation));
@@ -206,6 +208,21 @@ public sealed class InventoryReadApiSqlServerRelationalAcceptanceTests
             await ParentRollRefused(service.ValidateAsync(new(own.Id, "2")), 409, InventoryParentRollCodesV1.VersionConflict);
         });
         Assert.Equal(before, await run.EffectsAsync());
+    }
+
+    [SqlServerFact]
+    public async Task Parent_roll_reference_refuses_legacy_missing_product_version_without_current_lookup_backfill()
+    {
+        await using var run = await Run.StartAsync();
+        var label = await run.StockedLabelAsync($"SYN-R13-LEGACY-{Guid.NewGuid():N}");
+        await run.ExecuteAsync("UPDATE inventory.Labels SET ProductVersion = NULL WHERE CompanyId = @c AND Id = @id",
+            ("@c", CompanyA), ("@id", label.Id));
+        var actor = await run.GrantAsync(TestUsers.CompanyA, CompanyA,
+            ErpPermissions.InventoryLabelsRead, ErpPermissions.InventoryBalancesRead);
+
+        await run.WithParentRollAsync(actor, CompanyA, async (service, _) =>
+            await ParentRollRefused(service.SearchAsync(new(label.Code, 10)), 503,
+                InventoryParentRollCodesV1.Unavailable));
     }
 
     [SqlServerFact]
@@ -326,7 +343,8 @@ public sealed class InventoryReadApiSqlServerRelationalAcceptanceTests
         {
             var location = await ScalarAsync<Guid>(
                 "SELECT TOP (1) Id FROM organization.Locations WHERE CompanyId = @c ORDER BY Id", ("@c", CompanyA));
-            var label = new MaterialLabel(Guid.NewGuid(), CompanyA, code, Product, Lot, requiredDocuments: pending ? ["MTC"] : []);
+            var label = new MaterialLabel(Guid.NewGuid(), CompanyA, code, Product, Lot, "7",
+                requiredDocuments: pending ? ["MTC"] : []);
             var owner = new StockOwner(customer ? StockPartyKind.Counterparty : StockPartyKind.Company, customer ? Guid.NewGuid() : CompanyA);
             var custodian = new StockCustodian(StockPartyKind.Company, CompanyA);
             var free = new StockPosition(CompanyA, owner, custodian, location, label, BlockState.Free);
@@ -481,6 +499,19 @@ public sealed class InventoryReadApiSqlServerRelationalAcceptanceTests
             }
 
             return (T)(await command.ExecuteScalarAsync())!;
+        }
+
+        public async Task ExecuteAsync(string sql, params (string Name, object Value)[] parameters)
+        {
+            await using var connection = new SqlConnection(Factory.DatabaseConnectionString);
+            await connection.OpenAsync();
+            await using var command = new SqlCommand(sql, connection);
+            foreach (var (name, value) in parameters)
+            {
+                command.Parameters.AddWithValue(name, value);
+            }
+
+            await command.ExecuteNonQueryAsync();
         }
     }
 

@@ -66,6 +66,22 @@ import styles from './LogisticsPages.module.css'
 import { RealizationCommands } from './RealizationCommands'
 import { WeighingFacts, WeighingForm } from './WeighingCommand'
 import { DispatchNoteFacts, DispatchNoteForm, DispatchNoteLifecycles } from './DispatchNoteCommand'
+import { CustomerReturnPanel } from './CustomerReturnPanel'
+import {
+  CUSTOMER_RETURN_CAPABILITY,
+  abandonCustomerReturnAttempt,
+  beginCustomerReturnAttempt,
+  customerReturnCommandState,
+  customerReturnEndpointAdapter,
+  freezeCustomerReturnAttempt,
+  retryCustomerReturnAttempt,
+  resetSettledCustomerReturnAttempt,
+  settleCustomerReturnAttempt,
+  type CustomerReturnAttemptLifecycle,
+  type CustomerReturnContext,
+  type FrozenCustomerReturnAttempt,
+} from './customerReturnApi'
+import type { ApproveCustomerReturnV1, RejectCustomerReturnV1, RequestCustomerReturnV1 } from './customerReturnContract'
 
 export function InstructionDetailPage() {
   const shell = useShellState()
@@ -123,6 +139,8 @@ export function InstructionDetailPage() {
             <WeighingForm key={`weighing:${namespace ?? ''}:${detail.instruction.id}`} shell={shell} detail={detail} companyId={companyId} onRecorded={reread} />
             <RealizationCommands key={`realization:${namespace ?? ''}:${shell.routeEntryGeneration}:${detail.instruction.id}`}
               shell={shell} detail={detail} companyId={companyId} onRecorded={reread} />
+            <CustomerReturns key={`customer-returns:${namespace ?? ''}:${shell.routeEntryGeneration}:${detail.instruction.id}`}
+              shell={shell} detail={detail} companyId={companyId} bindingBase={namespace ?? ''} onRecorded={reread} />
             <DispatchNoteLifecycles key={`dispatch-note-lifecycle:${namespace ?? ''}:${detail.instruction.id}`} shell={shell} detail={detail}
               companyId={companyId} onRecorded={reread} />
             <DispatchNoteForm key={`dispatch-note:${namespace ?? ''}:${detail.instruction.id}`} shell={shell} detail={detail} companyId={companyId}
@@ -130,6 +148,203 @@ export function InstructionDetailPage() {
           </>
         )
       }
+    />
+  )
+}
+
+type CustomerReturnDecisionAttemptPayload = Readonly<{
+  customerReturnId: string
+  action: 'approve' | 'reject'
+  request: ApproveCustomerReturnV1 | RejectCustomerReturnV1
+}>
+
+function CustomerReturns({
+  shell,
+  detail,
+  companyId,
+  bindingBase,
+  onRecorded,
+}: {
+  readonly shell: ShellState
+  readonly detail: InstructionDetail
+  readonly companyId: string
+  readonly bindingBase: string
+  readonly onRecorded: () => void
+}) {
+  const deliveredLineIds = new Set(detail.shares.filter((share) => share.kind === 'Delivered').map((share) => share.lineId))
+  return detail.lines.filter((line) => deliveredLineIds.has(line.lineId)).map((line) => (
+    <CustomerReturnLine
+      key={line.lineId}
+      shell={shell}
+      detail={detail}
+      line={line}
+      companyId={companyId}
+      binding={`${bindingBase}:${shell.routeEntryGeneration}:${detail.instruction.id}:${line.lineId}`}
+      onRecorded={onRecorded}
+    />
+  ))
+}
+
+function CustomerReturnLine({
+  shell,
+  detail,
+  line,
+  companyId,
+  binding,
+  onRecorded,
+}: {
+  readonly shell: ShellState
+  readonly detail: InstructionDetail
+  readonly line: InstructionLine
+  readonly companyId: string
+  readonly binding: string
+  readonly onRecorded: () => void
+}) {
+  const boundary = useAuthBoundary()
+  const canRead = hasCapability(shell, CUSTOMER_RETURN_CAPABILITY.read)
+  const canRequest = hasCapability(shell, CUSTOMER_RETURN_CAPABILITY.request)
+  const canApprove = hasCapability(shell, CUSTOMER_RETURN_CAPABILITY.approve)
+  const canReject = hasCapability(shell, CUSTOMER_RETURN_CAPABILITY.reject)
+  const context: CustomerReturnContext = {
+    companyId,
+    salesOrderId: line.sourceOrderId,
+    loadingInstructionId: detail.instruction.id,
+    loadingInstructionLineId: line.lineId,
+    binding,
+  }
+  const query = useQuery({
+    queryKey: [binding, 'customer-returns', line.sourceOrderId, line.lineId],
+    enabled: canRead,
+    queryFn: async ({ signal }) => {
+      const snapshot = boundary.capture()
+      const outcome = await customerReturnEndpointAdapter.read(context, signal)
+      if (outcome.type === 'http') boundary.report(outcome.status, snapshot)
+      return outcome
+    },
+  })
+  const [requestLifecycle, setRequestLifecycle] = useState<CustomerReturnAttemptLifecycle<RequestCustomerReturnV1>>({ type: 'idle' })
+  const [decisionLifecycle, setDecisionLifecycle] = useState<CustomerReturnAttemptLifecycle<CustomerReturnDecisionAttemptPayload>>({ type: 'idle' })
+  const [requestCompletionBinding, setRequestCompletionBinding] = useState<string | null>(null)
+  const [decisionCompletionBinding, setDecisionCompletionBinding] = useState<string | null>(null)
+
+  const sendRequest = (attempt: FrozenCustomerReturnAttempt<RequestCustomerReturnV1>) => {
+    const snapshot = boundary.capture()
+    void customerReturnEndpointAdapter.request(context, attempt, new AbortController().signal).then(async (outcome) => {
+      if (outcome.type === 'http') boundary.report(outcome.status, snapshot)
+      setRequestLifecycle((current) => settleCustomerReturnAttempt(current, attempt, outcome, binding))
+      if (outcome.type === 'succeeded') {
+        setRequestCompletionBinding(attempt.binding)
+        const fresh = await query.refetch()
+        const freshReturns = fresh.data?.type === 'succeeded' ? fresh.data.returns : null
+        if (freshReturns !== null) {
+          setRequestLifecycle((current) => resetSettledCustomerReturnAttempt(current, binding, freshReturns))
+        }
+        onRecorded()
+      }
+    })
+  }
+  const sendDecision = (attempt: FrozenCustomerReturnAttempt<CustomerReturnDecisionAttemptPayload>) => {
+    const snapshot = boundary.capture()
+    const { customerReturnId, action, request } = attempt.payload
+    const outcome = action === 'approve'
+      ? customerReturnEndpointAdapter.approve(context, customerReturnId, { ...attempt, payload: request as ApproveCustomerReturnV1 }, new AbortController().signal)
+      : customerReturnEndpointAdapter.reject(context, customerReturnId, { ...attempt, payload: request as RejectCustomerReturnV1 }, new AbortController().signal)
+    void outcome.then(async (answer) => {
+      if (answer.type === 'http') boundary.report(answer.status, snapshot)
+      setDecisionLifecycle((current) => settleCustomerReturnAttempt(current, attempt, answer, binding))
+      if (answer.type === 'succeeded') {
+        setDecisionCompletionBinding(attempt.binding)
+        const fresh = await query.refetch()
+        const freshReturns = fresh.data?.type === 'succeeded' ? fresh.data.returns : null
+        if (freshReturns !== null) {
+          setDecisionLifecycle((current) => resetSettledCustomerReturnAttempt(current, binding, freshReturns))
+        }
+        onRecorded()
+      }
+    })
+  }
+
+  const readState = !canRead
+    ? { type: 'unavailable' as const }
+    : query.data === undefined
+      ? { type: 'loading' as const, binding }
+      : query.data.type === 'succeeded'
+        ? { type: 'ready' as const, binding, returns: query.data.returns }
+        : { type: 'failed' as const, binding }
+  const deliveries = detail.shares
+    .filter((share) => share.lineId === line.lineId && share.kind === 'Delivered')
+    .map((share) => ({
+      sourceDeliveryId: share.shareId,
+      label: `Satır ${line.lineNo}`,
+      deliveredQuantity: share.quantity,
+      unitId: line.unitId,
+    }))
+
+  return (
+    <CustomerReturnPanel
+      available
+      contextBinding={binding}
+      instructionVersion={detail.instruction.version}
+      visibility={{ canRead, canRequest, canApprove, canReject }}
+      readState={readState}
+      deliveryOptions={deliveries}
+      requestCompletionVisible={requestCompletionBinding === binding}
+      decisionCompletionVisible={decisionCompletionBinding === binding}
+      requestController={{
+        state: customerReturnCommandState(requestLifecycle),
+        submit: (draft) => {
+          setRequestCompletionBinding(null)
+          const attempt = freezeCustomerReturnAttempt({
+            operationId: customerReturnEndpointAdapter.operations.request,
+            binding,
+            idempotencyKey: generateAttemptKey(),
+            payload: { customerReturnId: generateClientId(), ...draft },
+          })
+          const next = beginCustomerReturnAttempt(requestLifecycle, attempt)
+          setRequestLifecycle(next)
+          if (next.type === 'sending') sendRequest(next.attempt)
+        },
+        retrySameAttempt: () => {
+          setRequestCompletionBinding(null)
+          const next = retryCustomerReturnAttempt(requestLifecycle, binding)
+          setRequestLifecycle(next)
+          if (next.type === 'sending') sendRequest(next.attempt)
+        },
+        abandonUnknownAttempt: () => {
+          setRequestCompletionBinding(null)
+          setRequestLifecycle(abandonCustomerReturnAttempt(requestLifecycle, binding))
+        },
+      }}
+      decisionController={{
+        state: customerReturnCommandState(decisionLifecycle),
+        submit: (draft) => {
+          setDecisionCompletionBinding(null)
+          const request = draft.action === 'approve'
+            ? { expectedVersion: draft.expectedVersion, inventoryMovementId: generateClientId(), note: draft.note }
+            : { expectedVersion: draft.expectedVersion, note: draft.note }
+          const attempt = freezeCustomerReturnAttempt({
+            operationId: draft.action === 'approve'
+              ? customerReturnEndpointAdapter.operations.approve
+              : customerReturnEndpointAdapter.operations.reject,
+            binding,
+            idempotencyKey: generateAttemptKey(),
+            payload: { customerReturnId: draft.customerReturnId, action: draft.action, request },
+          })
+          const next = beginCustomerReturnAttempt(decisionLifecycle, attempt)
+          setDecisionLifecycle(next)
+          if (next.type === 'sending') sendDecision(next.attempt)
+        },
+        retrySameAttempt: () => {
+          setDecisionCompletionBinding(null)
+          const next = retryCustomerReturnAttempt(decisionLifecycle, binding)
+          setDecisionLifecycle(next)
+          if (next.type === 'sending') sendDecision(next.attempt)
+        },
+        abandonUnknownAttempt: () => {
+          setDecisionCompletionBinding(null)
+          setDecisionLifecycle(abandonCustomerReturnAttempt(decisionLifecycle, binding))
+        },
+      }}
     />
   )
 }

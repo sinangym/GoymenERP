@@ -28,6 +28,19 @@ public static class ErpPermissions
         "counterparty.accounts.status.update";
 
     /// <summary>
+    /// AT-009 (user decision 2026-09-30): enter a Cari's first VKN/TCKN and propose a change of an existing one (the
+    /// maker), and approve or reject someone else's proposal (the checker) — the Counterparty owner's names
+    /// (CounterpartyTaxIdentityPermissionsV1). Registered, not granted: no role, seed or user receives them here.
+    /// Company-wide only, as every Counterparty name. Approve is Critical (a VKN/TCKN change is a critical master
+    /// change under CARI-DEC-004, as the bank account is); update is not. Holding approve never lets the proposer
+    /// decide their own request: that is the module's maker-checker rule, not a grant.
+    /// </summary>
+    public const string CounterpartyPartiesTaxIdentityUpdate = "counterparty.parties.tax-identity.update";
+
+    /// <inheritdoc cref="CounterpartyPartiesTaxIdentityUpdate"/>
+    public const string CounterpartyPartiesTaxIdentityApprove = "counterparty.parties.tax-identity.approve";
+
+    /// <summary>
     /// The narrow operational product-selection read (K-1(a), Sinan's decision relayed in Business
     /// #66 5719251344; registration asked for in 5720016574 §3). Registering the name makes it
     /// KNOWN, not granted: no role and no user receives it here, and an actor without an explicit
@@ -38,6 +51,15 @@ public static class ErpPermissions
     /// (same reason the Counterparty reads are company-wide only).
     /// </summary>
     public const string ProductOperationalSelectionRead = "product.operational-selection.read";
+
+    /// <summary>AT-018 Product-owned, company-scoped price-list read. Registration grants nothing.</summary>
+    public const string ProductPriceListsRead = "product.price-lists.read";
+
+    /// <summary>AT-018 Product-owned price-list draft create/revise/version write. Registration grants nothing.</summary>
+    public const string ProductPriceListsWrite = "product.price-lists.write";
+
+    /// <summary>AT-018 separate publication authority; write never implies publish. Registration grants nothing.</summary>
+    public const string ProductPriceListsPublish = "product.price-lists.publish";
 
     /// <summary>
     /// T07(a) Inventory reads (#310): a label's view and its stock position by position. Registering
@@ -86,6 +108,13 @@ public static class ErpPermissions
     public const string InventoryLabelTransformationRecord = "inventory.label-transformation.record";
 
     /// <summary>
+    /// Classifies one same-company Inventory label as Standard, SecondQuality or Scrap. Registration grants
+    /// nothing: no seeded role or real user receives this command. Company-wide only because the label command
+    /// has no narrower approved scope dimension. Not Critical: no approved source adds grant-time dual control.
+    /// </summary>
+    public const string InventoryLabelClassificationWrite = "inventory.label-classification.write";
+
+    /// <summary>
     /// AT-037 / DEC-STK-007 stock count (user decision 2026-09-27): <c>record</c> enters a counted quantity with a
     /// mandatory reason on a label's single position; <c>approve</c> decides a pending difference. Until the
     /// critical-difference threshold is decided (INV-R20-R21-01 Q2, #66/5840984992) every non-zero difference needs
@@ -128,6 +157,17 @@ public static class ErpPermissions
     public const string FinanceBankAccountApprove = "finance.bank-account.approve";
 
     /// <summary>
+    /// Finance official-invoice import commands. Registration makes the Finance owner's exact names
+    /// measurable and grants nothing. Both are company-wide because the batch belongs to the
+    /// server-resolved company and has no narrower scope dimension. They are not Critical; the
+    /// owner service enforces uploader/approver separation at command time.
+    /// </summary>
+    public const string FinanceOfficialInvoiceImportUpload = "finance.official-invoice-import.upload";
+
+    /// <inheritdoc cref="FinanceOfficialInvoiceImportUpload"/>
+    public const string FinanceOfficialInvoiceImportApprove = "finance.official-invoice-import.approve";
+
+    /// <summary>
     /// Manufacturing API (MFG-API, #313): the owner's technical mapping of its routes (Business
     /// #254 5654539215), accepted by the coordinator (K-1). Registering the names makes them KNOWN,
     /// not granted: no role and no user receives them here; the grant is a human gate (K-3).
@@ -157,6 +197,14 @@ public static class ErpPermissions
     /// decision, not this file's.
     /// </summary>
     public const string ManufacturingOrdersClose = "manufacturing.orders.close";
+
+    /// <summary>
+    /// Approves a reasoned Manufacturing close whose persisted Settings snapshot proves the fire ratio is
+    /// outside tolerance. Registered company-wide but deliberately not granted by any production role.
+    /// It never replaces the normal close permission.
+    /// </summary>
+    public const string ManufacturingOrdersCloseExceptionApprove =
+        "manufacturing.orders.close-exception.approve";
 
     /// <summary>
     /// K4.4 (ORG): reading one production plan back. Its own name because approving a plan is not
@@ -272,6 +320,12 @@ public static class ErpPermissions
     public const string FinanceAllocationWrite = "finance.allocation.write";
 
     /// <summary>
+    /// F-03 allocation list/detail reads. Separate from create/release; registration grants no role
+    /// or user access. Company-wide only because allocations have no narrower approved scope.
+    /// </summary>
+    public const string FinanceAllocationRead = "finance.allocation.read";
+
+    /// <summary>
     /// Sales order drafts (SALES-API, #321): the Sales owner's names (SalesPermissionManifestV1, same
     /// strings). Registered, not granted: no seeded role and no user receives them; who holds them is a
     /// human gate. Company-wide only: a draft belongs to the server-resolved company and the routes filter
@@ -344,6 +398,12 @@ public static class ErpPermissions
     public const string SalesOrdersPriceRead = "sales.orders.price.read";
 
     /// <summary>
+    /// AT-021: a separate maker-checker permission for the reasoned approval of current below-floor lines.
+    /// It grants neither price write nor order approval and is never seeded to a real actor here.
+    /// </summary>
+    public const string SalesOrdersPriceFloorExceptionApprove = "sales.orders.price-floor-exception.approve";
+
+    /// <summary>
     /// DEC-SAL-003 (KILITLI): moving the requested delivery dates of an order (POST …/{id}/delivery-schedule) without
     /// re-approval, audited — the Sales owner's name (<c>SalesPermissionManifestV1.OrdersDeliveryScheduleWrite</c>, same
     /// string). The literal is the owner's technical mapping, confirmed by the coordinator (technical names are not
@@ -374,6 +434,14 @@ public static class ErpPermissions
     /// only, like the other Sales names. Not Critical: the revision itself returns to the approval flow.
     /// </summary>
     public const string SalesOrdersQuantityWrite = "sales.orders.quantity.write";
+
+    /// <summary>
+    /// Q9: records the customer's acceptance of the current internally approved Sales order revision. Its own
+    /// name: draft read, create, internal approval and quantity write do not confer it. Registration grants
+    /// nothing; only the disposable s04 acceptance actor receives it in that run database. Company-wide only,
+    /// like the other Sales commands. Not Critical: no approved source adds grant-time dual control.
+    /// </summary>
+    public const string SalesOrdersCustomerAcceptanceRecord = "sales.orders.customer-acceptance.record";
 
     /// <summary>
     /// LOG-4a (Business #66 5737790175: the loading instruction on approved order lines, one stock effect): the
@@ -423,6 +491,15 @@ public static class ErpPermissions
     /// Company-wide only. Not Critical.
     /// </summary>
     public const string LogisticsDispatchNotesCancel = "logistics.dispatch-notes.cancel";
+
+    /// <summary>Customer-return reads. Registered, not granted; company-wide only.</summary>
+    public const string LogisticsCustomerReturnsRead = "logistics.customer-returns.read";
+
+    /// <summary>Requests a physical customer return against an exact delivered share. Registered, not granted; company-wide only.</summary>
+    public const string LogisticsCustomerReturnsRequest = "logistics.customer-returns.request";
+
+    /// <summary>Decides a pending customer return. Registered, not granted; company-wide only.</summary>
+    public const string LogisticsCustomerReturnsDecision = "logistics.customer-returns.decision";
 
     /// <summary>
     /// AT-025: the operations work list's two SEPARATE section reads (LogisticsPermissionManifestV1) — the sales section (L-01) and
@@ -505,6 +582,16 @@ public static class ErpPermissions
     public const string AccountingJournalReverseApprove = "accounting.journal.reverse.approve";
 
     /// <summary>
+    /// Registers the Accounting owner's approved source-catalog preparation and activation names.
+    /// Registration grants neither permission to a role nor approval of any uploaded catalog. Both
+    /// are company-wide; the lifecycle performs its own fresh authority fences and immutable audit.
+    /// </summary>
+    public const string AccountingApprovedSourceCatalogPrepare = "accounting.approved-source-catalog.prepare";
+
+    /// <inheritdoc cref="AccountingApprovedSourceCatalogPrepare"/>
+    public const string AccountingApprovedSourceCatalogActivate = "accounting.approved-source-catalog.activate";
+
+    /// <summary>
     /// ERP-000G / AT-065 (document vault core): the vault owner's names (DocumentsPermissionManifestV1). Read lists an
     /// owner record's documents and downloads a clean version; upload stores a new document on an owner record. Both
     /// are measured ON TOP of the owner record's own read (the Cari party: counterparty.parties.read), so a document is
@@ -542,27 +629,36 @@ public static class ErpPermissions
             CounterpartyPartiesUpdateBasic,
             CounterpartyAccountsCreate,
             CounterpartyAccountsStatusUpdate,
+            CounterpartyPartiesTaxIdentityUpdate,
+            CounterpartyPartiesTaxIdentityApprove,
             ProductOperationalSelectionRead,
+            ProductPriceListsRead,
+            ProductPriceListsWrite,
+            ProductPriceListsPublish,
             SalesDraftsCreate,
             SalesDraftsRead,
             SalesOrdersApprove,
             SalesOrdersPriceWrite,
             SalesOrdersPriceRead,
+            SalesOrdersPriceFloorExceptionApprove,
             SalesOrdersDeliveryScheduleWrite,
             SalesOrdersCancel,
             SalesOrdersQuantityWrite,
+            SalesOrdersCustomerAcceptanceRecord,
             ManufacturingPlansWrite,
             ManufacturingPlansApprove,
             ManufacturingOrdersCreate,
             ManufacturingFactsRecord,
             ManufacturingOrdersRead,
             ManufacturingOrdersClose,
+            ManufacturingOrdersCloseExceptionApprove,
             ManufacturingPlansRead,
             InventoryLabelsRead,
             InventoryBalancesRead,
             InventoryOpeningStockRecord,
             InventoryPhysicalAllocationWrite,
             InventoryLabelTransformationRecord,
+            InventoryLabelClassificationWrite,
             InventoryStockCountRecord,
             InventoryStockCountApprove,
             InventoryStockScrapRecord,
@@ -576,6 +672,9 @@ public static class ErpPermissions
             LogisticsDispatchNotesCreate,
             LogisticsDispatchNotesApprove,
             LogisticsDispatchNotesCancel,
+            LogisticsCustomerReturnsRead,
+            LogisticsCustomerReturnsRequest,
+            LogisticsCustomerReturnsDecision,
             LogisticsOperationsSalesWorkRead,
             LogisticsOperationsPurchaseWorkRead,
             PurchasingOrdersCreate,
@@ -592,9 +691,13 @@ public static class ErpPermissions
             AccountingNormalJournalDraftApprove,
             AccountingJournalReversePropose,
             AccountingJournalReverseApprove,
+            AccountingApprovedSourceCatalogPrepare,
+            AccountingApprovedSourceCatalogActivate,
             FinanceBankAccountRead,
             FinanceBankAccountPropose,
             FinanceBankAccountApprove,
+            FinanceOfficialInvoiceImportUpload,
+            FinanceOfficialInvoiceImportApprove,
             FinanceManualReceiptDraftSave,
             FinanceManualReceiptDraftRead,
             FinanceManualReceiptAmountRead,
@@ -613,6 +716,7 @@ public static class ErpPermissions
         FinancePartyLedgerRead,
         FinancePartyLedgerAmountRead,
         FinanceAllocationWrite,
+        FinanceAllocationRead,
             DocumentsFilesRead,
             DocumentsFilesUpload,
             IdentityProfileRead,
@@ -632,6 +736,7 @@ public static class ErpPermissions
             IdentityAssignmentsRead,
             FinanceBankAccountPropose,
             FinanceBankAccountApprove,
+            CounterpartyPartiesTaxIdentityApprove,
         ],
         StringComparer.Ordinal);
 
@@ -643,27 +748,36 @@ public static class ErpPermissions
             CounterpartyPartiesUpdateBasic,
             CounterpartyAccountsCreate,
             CounterpartyAccountsStatusUpdate,
+            CounterpartyPartiesTaxIdentityUpdate,
+            CounterpartyPartiesTaxIdentityApprove,
             ProductOperationalSelectionRead,
+            ProductPriceListsRead,
+            ProductPriceListsWrite,
+            ProductPriceListsPublish,
             SalesDraftsCreate,
             SalesDraftsRead,
             SalesOrdersApprove,
             SalesOrdersPriceWrite,
             SalesOrdersPriceRead,
+            SalesOrdersPriceFloorExceptionApprove,
             SalesOrdersDeliveryScheduleWrite,
             SalesOrdersCancel,
             SalesOrdersQuantityWrite,
+            SalesOrdersCustomerAcceptanceRecord,
             ManufacturingPlansWrite,
             ManufacturingPlansApprove,
             ManufacturingOrdersCreate,
             ManufacturingFactsRecord,
             ManufacturingOrdersRead,
             ManufacturingOrdersClose,
+            ManufacturingOrdersCloseExceptionApprove,
             ManufacturingPlansRead,
             InventoryLabelsRead,
             InventoryBalancesRead,
             InventoryOpeningStockRecord,
             InventoryPhysicalAllocationWrite,
             InventoryLabelTransformationRecord,
+            InventoryLabelClassificationWrite,
             InventoryStockCountRecord,
             InventoryStockCountApprove,
             InventoryStockScrapRecord,
@@ -677,6 +791,9 @@ public static class ErpPermissions
             LogisticsDispatchNotesCreate,
             LogisticsDispatchNotesApprove,
             LogisticsDispatchNotesCancel,
+            LogisticsCustomerReturnsRead,
+            LogisticsCustomerReturnsRequest,
+            LogisticsCustomerReturnsDecision,
             LogisticsOperationsSalesWorkRead,
             LogisticsOperationsPurchaseWorkRead,
             PurchasingOrdersCreate,
@@ -693,9 +810,13 @@ public static class ErpPermissions
             AccountingNormalJournalDraftApprove,
             AccountingJournalReversePropose,
             AccountingJournalReverseApprove,
+            AccountingApprovedSourceCatalogPrepare,
+            AccountingApprovedSourceCatalogActivate,
             FinanceBankAccountRead,
             FinanceBankAccountPropose,
             FinanceBankAccountApprove,
+            FinanceOfficialInvoiceImportUpload,
+            FinanceOfficialInvoiceImportApprove,
             FinanceManualReceiptDraftSave,
             FinanceManualReceiptDraftRead,
             FinanceManualReceiptAmountRead,
@@ -714,6 +835,7 @@ public static class ErpPermissions
         FinancePartyLedgerRead,
         FinancePartyLedgerAmountRead,
         FinanceAllocationWrite,
+        FinanceAllocationRead,
             DocumentsFilesRead,
             DocumentsFilesUpload,
             IdentityAuditRead,

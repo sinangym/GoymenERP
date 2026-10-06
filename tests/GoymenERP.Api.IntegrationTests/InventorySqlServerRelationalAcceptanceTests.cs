@@ -334,8 +334,8 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         Assert.Contains("_CI_", collation, StringComparison.Ordinal);
 
         var label = NewLabel(CompanyA, "SYN-CASE-1");
-        var sameIdOtherSpelling = new MaterialLabel(label.Id, CompanyA, "syn-case-1", Product, LotA);
-        var sameIdOtherCode = new MaterialLabel(label.Id, CompanyA, "SYN-CASE-2", Product, LotA);
+        var sameIdOtherSpelling = new MaterialLabel(label.Id, CompanyA, "syn-case-1", Product, LotA, "product-v1");
+        var sameIdOtherCode = new MaterialLabel(label.Id, CompanyA, "SYN-CASE-2", Product, LotA, "product-v1");
         await using (var a = run.Store(CompanyA))
         {
             Assert.Equal(InventoryWriteOutcome.Recorded, await a.Labels.SaveLabelAsync(label, Metadata(run)));
@@ -360,6 +360,44 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
 
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.Labels"));
         Assert.Equal("SYN-CASE-1", await run.ScalarAsync<string>("SELECT Code FROM inventory.Labels"));
+    }
+
+    [SqlServerFact]
+    public async Task A_historical_label_without_product_version_replays_and_extends_but_a_new_label_requires_it()
+    {
+        await using var run = await Run.StartAsync();
+        var label = NewLabel(CompanyA, "SYN-LEGACY-PRODUCT-VERSION");
+        await using (var a = run.Store(CompanyA))
+        {
+            Assert.Equal(InventoryWriteOutcome.Recorded, await a.Labels.SaveLabelAsync(label, Metadata(run)));
+        }
+
+        await run.ExecuteAsync("UPDATE inventory.Labels SET ProductVersion = NULL WHERE Id = @id", ("@id", label.Id));
+        await using (var a = run.Store(CompanyA))
+        {
+            var historical = (await a.Labels.FindLabelAsync(label.Id))!;
+            Assert.Null(historical.ProductVersion);
+            Assert.Equal(InventoryWriteOutcome.Replayed,
+                await a.Labels.SaveLabelAsync(historical, Metadata(run)));
+
+            historical.Print(At, "synthetic-operator");
+            Assert.Equal(InventoryWriteOutcome.Recorded,
+                await a.Labels.SaveLabelAsync(historical, Metadata(run)));
+
+            var versionlessNew = new MaterialLabel(Guid.NewGuid(), CompanyA,
+                "SYN-NEW-WITHOUT-PRODUCT-VERSION", Product, LotA);
+            Assert.Equal(InventoryStoreCodes.ValueDoesNotFit,
+                (await Assert.ThrowsAsync<InventoryStoreException>(() =>
+                    a.Labels.SaveLabelAsync(versionlessNew, Metadata(run)))).Code);
+        }
+
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM inventory.Labels WHERE Id = @id AND ProductVersion IS NULL",
+            ("@id", label.Id)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM inventory.LabelPrints WHERE LabelId = @id", ("@id", label.Id)));
+        Assert.Equal(0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM inventory.Labels WHERE Code = N'SYN-NEW-WITHOUT-PRODUCT-VERSION'"));
     }
 
     [SqlServerFact]
@@ -478,8 +516,8 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         // DEC-PRD-003 / Business #66 5734060341: lot + labels + audit are one transaction.
         await using var run = await Run.StartAsync();
         var lot = new MaterialLot(Guid.NewGuid(), CompanyA, Product, heatNumber: "SYN-HEAT-1");
-        var first = new MaterialLabel(Guid.NewGuid(), CompanyA, "SYN-LOT-ONE-1", Product, lot.Id);
-        var second = new MaterialLabel(Guid.NewGuid(), CompanyA, "SYN-LOT-ONE-2", Product, lot.Id);
+        var first = new MaterialLabel(Guid.NewGuid(), CompanyA, "SYN-LOT-ONE-1", Product, lot.Id, "product-v1");
+        var second = new MaterialLabel(Guid.NewGuid(), CompanyA, "SYN-LOT-ONE-2", Product, lot.Id, "product-v1");
         await using (var a = run.Store(CompanyA))
         {
             Assert.Equal(InventoryWriteOutcome.Recorded, await a.Lots.SaveLotAsync(lot, [first, second], Metadata(run)));
@@ -504,8 +542,8 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             Assert.Equal(InventoryStoreCodes.LabelCodeTaken, (await Assert.ThrowsAsync<InventoryStoreException>(() => a.Lots.SaveLotAsync(
                 failing,
                 [
-                    new MaterialLabel(Guid.NewGuid(), CompanyA, "SYN-LOT-TWO-1", Product, failing.Id),
-                    new MaterialLabel(Guid.NewGuid(), CompanyA, "syn-lot-one-1", Product, failing.Id),
+                    new MaterialLabel(Guid.NewGuid(), CompanyA, "SYN-LOT-TWO-1", Product, failing.Id, "product-v1"),
+                    new MaterialLabel(Guid.NewGuid(), CompanyA, "syn-lot-one-1", Product, failing.Id, "product-v1"),
                 ],
                 Metadata(run)))).Code);
         }
@@ -524,10 +562,10 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         await using (var a = run.Store(CompanyA))
         {
             Assert.Equal(InventoryStoreCodes.LotNotFound, (await Assert.ThrowsAsync<InventoryStoreException>(() => a.Labels.SaveLabelAsync(
-                new MaterialLabel(Guid.NewGuid(), CompanyA, "SYN-NO-LOT", Product, missingLot), Metadata(run)))).Code);
+                new MaterialLabel(Guid.NewGuid(), CompanyA, "SYN-NO-LOT", Product, missingLot, "product-v1"), Metadata(run)))).Code);
             // A lot is of one product: a label of another product cannot name it.
             Assert.Equal(InventoryStoreCodes.LotProductMismatch, (await Assert.ThrowsAsync<InventoryStoreException>(() => a.Labels.SaveLabelAsync(
-                new MaterialLabel(Guid.NewGuid(), CompanyA, "SYN-OTHER-PRODUCT", Guid.NewGuid(), LotA), Metadata(run)))).Code);
+                new MaterialLabel(Guid.NewGuid(), CompanyA, "SYN-OTHER-PRODUCT", Guid.NewGuid(), LotA, "product-v1"), Metadata(run)))).Code);
         }
 
         // Without the store (a writer that skips its check): SQL refuses the orphan itself.
@@ -553,7 +591,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             Assert.NotNull(await b.Lots.FindLotAsync(LotB));
             // B's own label naming A's lot: the tenant filter hides A's lot, so it does not exist for B.
             Assert.Equal(InventoryStoreCodes.LotNotFound, (await Assert.ThrowsAsync<InventoryStoreException>(() => b.Labels.SaveLabelAsync(
-                new MaterialLabel(Guid.NewGuid(), CompanyB, "SYN-B-NAMES-A", Product, LotA), Metadata(run)))).Code);
+                new MaterialLabel(Guid.NewGuid(), CompanyB, "SYN-B-NAMES-A", Product, LotA, "product-v1"), Metadata(run)))).Code);
             // A's lot offered in B's context is refused before anything is read.
             Assert.Equal(InventoryStoreCodes.CompanyContextMismatch, (await Assert.ThrowsAsync<InventoryStoreException>(() => b.Lots.SaveLotAsync(
                 new MaterialLot(LotA, CompanyA, Product), [], Metadata(run)))).Code);
@@ -579,7 +617,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             await using (var b = run.Store(CompanyB))
             {
                 Assert.Equal(InventoryStoreCodes.LabelConflict, (await Assert.ThrowsAsync<InventoryStoreException>(() => b.Labels.SaveLabelAsync(
-                    new MaterialLabel(labelOfA.Id, CompanyB, "SYN-B-REUSES-A-ID", Product, LotB), Metadata(run)))).Code);
+                    new MaterialLabel(labelOfA.Id, CompanyB, "SYN-B-REUSES-A-ID", Product, LotB, "product-v1"), Metadata(run)))).Code);
             }
 
             // #333 SİPARİŞ P3-1: A's lot id AND A's label id in ONE save. Both keys can collide in the same batch,
@@ -588,7 +626,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             {
                 Assert.Equal(InventoryStoreCodes.LotConflict, (await Assert.ThrowsAsync<InventoryStoreException>(() => b.Lots.SaveLotAsync(
                     new MaterialLot(LotA, CompanyB, Product),
-                    [new MaterialLabel(labelOfA.Id, CompanyB, "SYN-B-REUSES-BOTH", Product, LotA)], Metadata(run)))).Code);
+                    [new MaterialLabel(labelOfA.Id, CompanyB, "SYN-B-REUSES-BOTH", Product, LotA, "product-v1")], Metadata(run)))).Code);
             }
         }
 
@@ -632,11 +670,17 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         }
 
         var orphan = RawLabel(CompanyA, Guid.NewGuid());
-        await using (var raw = run.Context(CompanyA))
-        {
-            raw.Labels.Add(orphan);
-            await raw.SaveChangesAsync();
-        }
+        // This row belongs to the historical schema. Current EF includes columns that did not exist yet.
+        await run.ExecuteAsync(
+            """
+            INSERT INTO inventory.Labels
+                (Id, CompanyId, Code, ProductId, LotId, RequiredDocumentsJson, Version, CreatedAtUtc, UpdatedAtUtc)
+            VALUES (@id, @company, @code, @product, @lot, @documents, @version, @created, @updated);
+            """,
+            ("@id", orphan.Id), ("@company", orphan.CompanyId), ("@code", orphan.Code),
+            ("@product", orphan.ProductId), ("@lot", orphan.LotId),
+            ("@documents", orphan.RequiredDocumentsJson), ("@version", orphan.Version),
+            ("@created", orphan.CreatedAtUtc), ("@updated", orphan.UpdatedAtUtc));
 
         await using (var context = run.Context(CompanyA))
         {
@@ -655,6 +699,36 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             ("@id", orphan.Id), ("@lot", orphan.LotId)));
     }
 
+    [SqlServerFact]
+    public async Task Product_version_provenance_blocks_rollback_without_losing_the_label()
+    {
+        const string previousMigration = "20260930182024_AddInventoryTransfers";
+        const string currentMigration = "20261001160000_AddInventoryLabelProductVersion";
+        await using var run = await Run.StartAsync();
+        var label = NewLabel(CompanyA, "SYN-PRODUCT-VERSION-DOWN");
+        await using (var scope = run.Store(CompanyA))
+        {
+            await scope.Labels.SaveLabelAsync(label, Metadata(run));
+        }
+
+        await using (var context = run.Context(CompanyA))
+        {
+            var refused = await Assert.ThrowsAsync<SqlException>(
+                () => context.GetService<IMigrator>().MigrateAsync(previousMigration));
+            Assert.Equal(51054, refused.Number);
+            Assert.Equal(currentMigration, (await context.Database.GetAppliedMigrationsAsync()).Last());
+        }
+
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            """
+            SELECT COUNT(*)
+            FROM inventory.Labels
+            WHERE Id = @id AND CompanyId = @company AND Code = @code AND ProductId = @product
+              AND LotId = @lot AND ProductVersion = @productVersion AND Version = 1;
+            """, ("@id", label.Id), ("@company", label.CompanyId), ("@code", label.Code),
+            ("@product", label.ProductId), ("@lot", label.LotId), ("@productVersion", label.ProductVersion!)));
+    }
+
     /// <summary>
     /// INV-OPEN-1 (T07 opening stock, decision A #66 5738113623 §2): a physical count of two pieces posts,
     /// in one save, the lot, two new labels, one receipt each (sourced by its count line) and their
@@ -669,8 +743,8 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         var lot = new MaterialLot(Guid.NewGuid(), CompanyA, Product, coilNumber: "SYN-OPEN-COIL");
         var count = new OpeningCount(Guid.NewGuid(), CompanyA, location, new DateOnly(2026, 9, 19), "SYN-SHEET-OPEN-1",
         [
-            new(Guid.NewGuid(), lot, new MaterialLabel(Guid.NewGuid(), CompanyA, "SYN-OPEN-1", Product, lot.Id), Kilograms.Positive(1250.5m)),
-            new(Guid.NewGuid(), lot, new MaterialLabel(Guid.NewGuid(), CompanyA, "SYN-OPEN-2", Product, lot.Id), Kilograms.Positive(980m)),
+            new(Guid.NewGuid(), lot, new MaterialLabel(Guid.NewGuid(), CompanyA, "SYN-OPEN-1", Product, lot.Id, "product-v1"), Kilograms.Positive(1250.5m)),
+            new(Guid.NewGuid(), lot, new MaterialLabel(Guid.NewGuid(), CompanyA, "SYN-OPEN-2", Product, lot.Id, "product-v1"), Kilograms.Positive(980m)),
         ]);
 
         await using (var a = run.Store(CompanyA))
@@ -710,6 +784,53 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         // One audit event each: the lot, two labels, two receipts and the count; none for the replay.
         Assert.Equal(6, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM audit.AuditEvents WHERE CorrelationId = @c", ("@c", run.Correlation)));
+    }
+
+    [SqlServerFact]
+    public async Task A_pre_product_version_opening_replays_without_backfill_or_hash_rewrite()
+    {
+        await using var run = await Run.StartAsync();
+        var location = await run.LocationOfAsync(CompanyA);
+        var lot = new MaterialLot(Guid.NewGuid(), CompanyA, Product);
+        var count = new OpeningCount(Guid.NewGuid(), CompanyA, location, new DateOnly(2026, 9, 19),
+            "SYN-SHEET-LEGACY-HASH",
+            [new(Guid.NewGuid(), lot, new MaterialLabel(Guid.NewGuid(), CompanyA,
+                "SYN-OPEN-LEGACY-HASH", Product, lot.Id, "product-v1"), Kilograms.Positive(5m))]);
+        await using (var a = run.Store(CompanyA))
+        {
+            Assert.Equal(InventoryWriteOutcome.Recorded, await a.Opening.RecordAsync(count, Metadata(run)));
+        }
+
+        var legacyHash = InventoryStore.LegacyOpeningHash(count);
+        await run.ExecuteAsync("UPDATE inventory.OpeningCounts SET ContentHash = @hash WHERE Id = @id",
+            ("@hash", legacyHash), ("@id", count.Id));
+        await run.ExecuteAsync("UPDATE inventory.Labels SET ProductVersion = NULL WHERE Id = @id",
+            ("@id", count.Lines[0].Label.Id));
+
+        var legacyLabel = new MaterialLabel(count.Lines[0].Label.Id, CompanyA,
+            count.Lines[0].Label.Code, Product, lot.Id);
+        var legacyCount = new OpeningCount(count.Id, count.CompanyId, count.LocationId, count.CountedOn,
+            count.SheetReference,
+            [new(count.Lines[0].Id, lot, legacyLabel, count.Lines[0].Quantity)]);
+
+        await using (var a = run.Store(CompanyA))
+        {
+            Assert.Equal(InventoryWriteOutcome.Replayed, await a.Opening.RecordAsync(legacyCount, Metadata(run)));
+            var changed = new OpeningCount(count.Id, count.CompanyId, count.LocationId, count.CountedOn,
+                "SYN-SHEET-LEGACY-HASH-CHANGED", legacyCount.Lines);
+            Assert.Equal(InventoryStoreCodes.OpeningConflict,
+                (await Assert.ThrowsAsync<InventoryStoreException>(() =>
+                    a.Opening.RecordAsync(changed, Metadata(run)))).Code);
+        }
+
+        Assert.Equal(legacyHash, await run.ScalarAsync<string>(
+            "SELECT ContentHash FROM inventory.OpeningCounts WHERE Id = @id", ("@id", count.Id)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM inventory.Labels WHERE Id = @id AND ProductVersion IS NULL",
+            ("@id", count.Lines[0].Label.Id)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM inventory.Movements WHERE SourceKind = N'inventory.opening-count' AND SourceId = @id",
+            ("@id", count.Id)));
     }
 
     /// <summary>
@@ -777,11 +898,11 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         }
 
         var lot = new MaterialLot(Guid.NewGuid(), CompanyA, Product);
-        var first = new MaterialLabel(Guid.NewGuid(), CompanyA, "SYN-OPEN-FIRST", Product, lot.Id);
+        var first = new MaterialLabel(Guid.NewGuid(), CompanyA, "SYN-OPEN-FIRST", Product, lot.Id, "product-v1");
         var count = new OpeningCount(Guid.NewGuid(), CompanyA, location, new DateOnly(2026, 9, 19), "SYN-SHEET-OPEN-3",
         [
             new(Guid.NewGuid(), lot, first, Kilograms.Positive(7m)),
-            new(Guid.NewGuid(), lot, new MaterialLabel(Guid.NewGuid(), CompanyA, "SYN-OPEN-TAKEN", Product, lot.Id), Kilograms.Positive(7m)),
+            new(Guid.NewGuid(), lot, new MaterialLabel(Guid.NewGuid(), CompanyA, "SYN-OPEN-TAKEN", Product, lot.Id, "product-v1"), Kilograms.Positive(7m)),
         ]);
         await using (var a = run.Store(CompanyA))
         {
@@ -871,7 +992,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             try
             {
                 return await writer.Lots.SaveLotAsync(racing,
-                    [new MaterialLabel(Guid.NewGuid(), CompanyA, code, Product, racing.Id)], Metadata(run));
+                    [new MaterialLabel(Guid.NewGuid(), CompanyA, code, Product, racing.Id, "product-v1")], Metadata(run));
             }
             catch (InventoryStoreException exception)
             {
@@ -930,7 +1051,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
     };
 
     private static MaterialLabel NewLabel(Guid company, string code) =>
-        new(Guid.NewGuid(), company, code, Product, company == CompanyB ? LotB : LotA);
+        new(Guid.NewGuid(), company, code, Product, company == CompanyB ? LotB : LotA, "product-v1");
 
     private static StockPosition Position(Guid company, Guid location, MaterialLabel label, BlockState block) =>
         new(company, new StockOwner(StockPartyKind.Company, company), new StockCustodian(StockPartyKind.Company, company),
@@ -1065,6 +1186,19 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             return (T)(await command.ExecuteScalarAsync())!;
         }
 
+        public async Task ExecuteAsync(string sql, params (string Name, object Value)[] parameters)
+        {
+            await using var connection = new SqlConnection(Factory.DatabaseConnectionString);
+            await connection.OpenAsync();
+            await using var command = new SqlCommand(sql, connection);
+            foreach (var (name, value) in parameters)
+            {
+                command.Parameters.AddWithValue(name, value);
+            }
+
+            await command.ExecuteNonQueryAsync();
+        }
+
         public async ValueTask DisposeAsync()
         {
             await Factory.DisposeAsync();
@@ -1089,6 +1223,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         public IInventoryLabelStore Labels => store;
         public IInventoryMovementStore Movements => store;
         public IInventoryOpeningStore Opening => store;
+        public IInventoryTransferReaderV1 Transfers => store;
         public InventoryDbContext DbContext => dbContext;
         public InventoryStore Store => store;
 

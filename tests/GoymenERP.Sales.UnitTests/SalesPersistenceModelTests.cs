@@ -113,7 +113,9 @@ public sealed class SalesPersistenceModelTests
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddAttemptOutcome", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddDeliverySchedules", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddDraftCancellations", StringComparison.Ordinal));
-        Assert.Equal("20260928090000_AddRevisionReasons", context.Database.GetMigrations().Last());
+        Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddRevisionReasons", StringComparison.Ordinal));
+        Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddLinePricing", StringComparison.Ordinal));
+        Assert.Equal("20261004160000_AddSalesPriceFloorApprovalReplayResults", context.Database.GetMigrations().Last());
         Assert.False(context.Database.HasPendingModelChanges());
     }
 
@@ -169,6 +171,9 @@ public sealed class SalesPersistenceModelTests
     [InlineData("delete-cancellation")]
     [InlineData("uncancel-draft")]
     [InlineData("draft-to-unknown-state")]
+    [InlineData("edit-customer-acceptance-required")]
+    [InlineData("acceptance-nonapproved")]
+    [InlineData("acceptance-wrong-revision")]
     public void Drafts_lines_slices_and_attempts_never_change_and_nothing_is_deleted(string fault)
     {
         using var context = Context();
@@ -237,6 +242,20 @@ public sealed class SalesPersistenceModelTests
             case "draft-to-unknown-state":
                 Attach(context, Draft()).State = 3;
                 break;
+            case "edit-customer-acceptance-required":
+                Attach(context, Draft()).CustomerAcceptanceRequired = true;
+                break;
+            case "acceptance-nonapproved":
+            case "acceptance-wrong-revision":
+                var acceptance = Draft();
+                acceptance.CustomerAcceptanceRequired = true;
+                acceptance.ApprovalState = fault == "acceptance-nonapproved" ? 2 : 3;
+                acceptance.Revision = fault == "acceptance-wrong-revision" ? 1 : 0;
+                var trackedAcceptance = Attach(context, acceptance);
+                trackedAcceptance.CustomerAcceptedRevision = 0;
+                trackedAcceptance.CustomerAcceptedBy = "synthetic-customer";
+                trackedAcceptance.CustomerAcceptedAtUtc = At;
+                break;
             default:
                 Attach(context, new DraftNumberRow { CompanyId = CompanyA, Next = 2, Version = 1, UpdatedAtUtc = At }).CompanyId = CompanyB;
                 break;
@@ -260,6 +279,7 @@ public sealed class SalesPersistenceModelTests
     [InlineData("line-discount")]
     [InlineData("line-quantity")]
     [InlineData("header-revision")]
+    [InlineData("customer-acceptance")]
     public void Only_a_lines_commercial_columns_and_the_headers_revision_pass_the_write_guard(string change)
     {
         using var context = Context();
@@ -279,8 +299,17 @@ public sealed class SalesPersistenceModelTests
                 revised.Quantity = 2m;
                 revised.QuantityText = "2";
                 break;
-            default:
+            case "header-revision":
                 Attach(context, Draft()).Revision = 1;
+                break;
+            default:
+                var acceptance = Draft();
+                acceptance.CustomerAcceptanceRequired = true;
+                acceptance.ApprovalState = 3;
+                var trackedAcceptance = Attach(context, acceptance);
+                trackedAcceptance.CustomerAcceptedRevision = 0;
+                trackedAcceptance.CustomerAcceptedBy = "synthetic-customer";
+                trackedAcceptance.CustomerAcceptedAtUtc = At;
                 break;
         }
 

@@ -56,10 +56,16 @@ public sealed class FinanceBankAccountTests
     public void The_bank_account_migration_is_discoverable()
     {
         using var context = Context();
-        Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddBankAccounts", StringComparison.Ordinal));
-        // The NEWEST migration is pinned by name on purpose: DEC-FIN-016's customer instruments are a deliberate
-        // append after DEC-FIN-014's POS facts, never an unreviewed migration that silently becomes authoritative.
-        Assert.Equal("20260927180000_AddCustomerInstruments", context.Database.GetMigrations().Last());
+        var migrations = context.Database.GetMigrations().ToArray();
+        Assert.Contains(migrations, migration => migration.EndsWith("_AddBankAccounts", StringComparison.Ordinal));
+        const string customerInstruments = "20260927180000_AddCustomerInstruments";
+        const string officialInvoiceImport = "20260930185113_AddOfficialInvoiceImportApprovalV1";
+        Assert.Contains(customerInstruments, migrations);
+        Assert.Contains(officialInvoiceImport, migrations);
+        Assert.True(Array.IndexOf(migrations, customerInstruments) < Array.IndexOf(migrations, officialInvoiceImport));
+        // The NEWEST migration is pinned by name on purpose: the approved invoice import is an explicit append
+        // after DEC-FIN-016 customer instruments, never an unreviewed migration that silently becomes authoritative.
+        Assert.Equal(officialInvoiceImport, migrations.Last());
         Assert.False(context.Database.HasPendingModelChanges());
     }
 

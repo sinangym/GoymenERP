@@ -89,6 +89,7 @@ public sealed class InventoryParentRollTests
         Assert.Equal(pending ? "PendingDocuments" : "Complete", result.DocumentStatus);
         Assert.Null(result.CoilNumber);
         Assert.Null(result.Lot.CoilNumber);
+        Assert.Equal("7", result.ProductVersion);
         Assert.Equal(new[] { ErpPermissions.InventoryLabelsRead, ErpPermissions.InventoryBalancesRead,
             ErpPermissions.InventoryLabelsRead, ErpPermissions.InventoryBalancesRead }, world.Authority.Calls);
     }
@@ -239,6 +240,18 @@ public sealed class InventoryParentRollTests
     }
 
     [Fact]
+    public async Task Legacy_label_without_product_version_is_unavailable_and_never_backfilled()
+    {
+        var world = new World();
+        var record = world.Reader.Record!;
+        var legacy = new MaterialLabel(record.Label.Id, record.Label.CompanyId, record.Label.Code,
+            record.Label.ProductId, record.Label.LotId);
+        world.Reader.Record = record with { Label = legacy };
+
+        await Refused(world.Service().SearchAsync(new()), 503, InventoryParentRollCodesV1.Unavailable);
+    }
+
+    [Fact]
     public async Task Unresolved_company_and_unauthenticated_actor_never_reach_the_reader()
     {
         var world = new World();
@@ -282,7 +295,7 @@ public sealed class InventoryParentRollTests
     {
         var companyId = company ?? Company;
         var lot = new MaterialLot(Guid.NewGuid(), companyId, Guid.NewGuid());
-        var label = new MaterialLabel(Guid.NewGuid(), companyId, "SYN-R13", lot.ProductId, lot.Id,
+        var label = new MaterialLabel(Guid.NewGuid(), companyId, "SYN-R13", lot.ProductId, lot.Id, "7",
             requiredDocuments: pending ? ["MTC"] : []);
         var position = new StockPosition(companyId, new(customer ? StockPartyKind.Counterparty : StockPartyKind.Company,
             customer ? Guid.NewGuid() : companyId), new(StockPartyKind.Company, companyId), Guid.NewGuid(), label,

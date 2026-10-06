@@ -6,6 +6,37 @@ internal interface IManufacturingTenantRow
     Guid CompanyId { get; }
 }
 
+/// <summary>The nullable-on-legacy, all-or-none technical provenance shared by plan input rows.</summary>
+internal interface IPlanTechnicalSnapshotRow
+{
+    Guid? TechnicalProductId { get; set; }
+    string? TechnicalProductVersion { get; set; }
+    Guid? TechnicalFamilyId { get; set; }
+    string? TechnicalFamilyCode { get; set; }
+    string? TechnicalFamilySourceRevision { get; set; }
+    Guid? TechnicalTemplateId { get; set; }
+    string? TechnicalTemplateVersion { get; set; }
+    string? TechnicalTemplateCode { get; set; }
+    string? TechnicalTemplateSourceRevision { get; set; }
+    Guid? TechnicalKilogramUnitCompanyId { get; set; }
+    Guid? TechnicalKilogramUnitId { get; set; }
+    string? TechnicalKilogramUnitCode { get; set; }
+    Guid? TechnicalKilogramProfileId { get; set; }
+    string? TechnicalKilogramProfileVersion { get; set; }
+    DateOnly? TechnicalEffectiveOn { get; set; }
+    decimal? TechnicalThicknessMm { get; set; }
+    decimal? TechnicalWidthMm { get; set; }
+}
+
+/// <summary>The nullable-on-legacy, all-or-none commercial context shared by plan and order input rows.</summary>
+internal interface IPlanCommercialContextRow
+{
+    Guid? CommercialPartyId { get; set; }
+    Guid? CommercialCompanyPartyAccountId { get; set; }
+    string? CommercialPartyVersion { get; set; }
+    string? CommercialAccountVersion { get; set; }
+}
+
 /// <summary>
 /// A production plan. Its content (company, work center, process, target and inputs) never changes;
 /// only the approval and the version do. <see cref="PayloadHash"/> is the canonical content hash
@@ -36,7 +67,7 @@ internal sealed class PlanRow : IManufacturingTenantRow
 }
 
 /// <summary>One planned parent roll of a plan, in the plan's own order. Never changes.</summary>
-internal sealed class PlanInputRow : IManufacturingTenantRow
+internal sealed class PlanInputRow : IManufacturingTenantRow, IPlanTechnicalSnapshotRow, IPlanCommercialContextRow
 {
     public Guid CompanyId { get; set; }
     public Guid PlanId { get; set; }
@@ -44,6 +75,27 @@ internal sealed class PlanInputRow : IManufacturingTenantRow
     public int Sequence { get; set; }
     public decimal PlannedKg { get; set; }
     public long? ExpectedLabelVersion { get; set; }
+    public Guid? TechnicalProductId { get; set; }
+    public string? TechnicalProductVersion { get; set; }
+    public Guid? TechnicalFamilyId { get; set; }
+    public string? TechnicalFamilyCode { get; set; }
+    public string? TechnicalFamilySourceRevision { get; set; }
+    public Guid? TechnicalTemplateId { get; set; }
+    public string? TechnicalTemplateVersion { get; set; }
+    public string? TechnicalTemplateCode { get; set; }
+    public string? TechnicalTemplateSourceRevision { get; set; }
+    public Guid? TechnicalKilogramUnitCompanyId { get; set; }
+    public Guid? TechnicalKilogramUnitId { get; set; }
+    public string? TechnicalKilogramUnitCode { get; set; }
+    public Guid? TechnicalKilogramProfileId { get; set; }
+    public string? TechnicalKilogramProfileVersion { get; set; }
+    public DateOnly? TechnicalEffectiveOn { get; set; }
+    public decimal? TechnicalThicknessMm { get; set; }
+    public decimal? TechnicalWidthMm { get; set; }
+    public Guid? CommercialPartyId { get; set; }
+    public Guid? CommercialCompanyPartyAccountId { get; set; }
+    public string? CommercialPartyVersion { get; set; }
+    public string? CommercialAccountVersion { get; set; }
 }
 
 /// <summary>
@@ -83,7 +135,7 @@ internal sealed class PlanRevisionRow : IManufacturingTenantRow
 /// MFG-PLAN-EDIT: one planned parent roll of a recorded revision, in the revision's own order, with the Inventory
 /// label version accepted for it. The complete input set of the revision; append-only.
 /// </summary>
-internal sealed class PlanRevisionInputRow : IManufacturingTenantRow
+internal sealed class PlanRevisionInputRow : IManufacturingTenantRow, IPlanTechnicalSnapshotRow, IPlanCommercialContextRow
 {
     public Guid CompanyId { get; set; }
     public Guid PlanId { get; set; }
@@ -92,6 +144,27 @@ internal sealed class PlanRevisionInputRow : IManufacturingTenantRow
     public int Sequence { get; set; }
     public decimal PlannedKg { get; set; }
     public long ExpectedLabelVersion { get; set; }
+    public Guid? TechnicalProductId { get; set; }
+    public string? TechnicalProductVersion { get; set; }
+    public Guid? TechnicalFamilyId { get; set; }
+    public string? TechnicalFamilyCode { get; set; }
+    public string? TechnicalFamilySourceRevision { get; set; }
+    public Guid? TechnicalTemplateId { get; set; }
+    public string? TechnicalTemplateVersion { get; set; }
+    public string? TechnicalTemplateCode { get; set; }
+    public string? TechnicalTemplateSourceRevision { get; set; }
+    public Guid? TechnicalKilogramUnitCompanyId { get; set; }
+    public Guid? TechnicalKilogramUnitId { get; set; }
+    public string? TechnicalKilogramUnitCode { get; set; }
+    public Guid? TechnicalKilogramProfileId { get; set; }
+    public string? TechnicalKilogramProfileVersion { get; set; }
+    public DateOnly? TechnicalEffectiveOn { get; set; }
+    public decimal? TechnicalThicknessMm { get; set; }
+    public decimal? TechnicalWidthMm { get; set; }
+    public Guid? CommercialPartyId { get; set; }
+    public Guid? CommercialCompanyPartyAccountId { get; set; }
+    public string? CommercialPartyVersion { get; set; }
+    public string? CommercialAccountVersion { get; set; }
 }
 
 /// <summary>
@@ -117,7 +190,7 @@ internal sealed class OrderRow : IManufacturingTenantRow
 }
 
 /// <summary>One planned parent roll of an order's snapshot. Never changes.</summary>
-internal sealed class OrderInputRow : IManufacturingTenantRow
+internal sealed class OrderInputRow : IManufacturingTenantRow, IPlanCommercialContextRow
 {
     public Guid CompanyId { get; set; }
     public Guid OrderId { get; set; }
@@ -125,6 +198,36 @@ internal sealed class OrderInputRow : IManufacturingTenantRow
     public int Sequence { get; set; }
     public decimal PlannedKg { get; set; }
     public long? ExpectedLabelVersion { get; set; }
+    public Guid? CommercialPartyId { get; set; }
+    public Guid? CommercialCompanyPartyAccountId { get; set; }
+    public string? CommercialPartyVersion { get; set; }
+    public string? CommercialAccountVersion { get; set; }
+}
+
+/// <summary>
+/// The append-only decision that justified one policy-backed order close. A missing row is valid only for a legacy
+/// order closed before this runtime existed. Company/order come from the composite key; the optional approval fields
+/// are all-or-none and repeat the exact order/policy versions they approved.
+/// </summary>
+internal sealed class OrderClosureDecisionRow : IManufacturingTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public Guid OrderId { get; set; }
+    public long OrderVersion { get; set; }
+    public Guid PolicyId { get; set; }
+    public long PolicyVersion { get; set; }
+    public int Process { get; set; }
+    public string MaximumFirePercent { get; set; } = string.Empty;
+    public bool IsActive { get; set; }
+    public DateOnly EffectiveFrom { get; set; }
+    public DateOnly? EffectiveThrough { get; set; }
+    public DateOnly SelectedForDate { get; set; }
+    public Guid? ApprovedByUserId { get; set; }
+    public string? ApprovalReason { get; set; }
+    public long? ApprovalOrderVersion { get; set; }
+    public Guid? ApprovalPolicyId { get; set; }
+    public long? ApprovalPolicyVersion { get; set; }
+    public DateTimeOffset? ApprovedAtUtc { get; set; }
 }
 
 /// <summary>The kind of a stored realization fact.</summary>

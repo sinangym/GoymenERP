@@ -131,10 +131,12 @@ public sealed class SalesOrderDraftContractTests
         var list = Read<SalesOrderDraftListResponse>("list-response");
         Assert.False(first.IsReplay);
         Assert.True(replay.IsReplay);
-        Assert.Equal(first.Detail.Draft, replay.Detail.Draft);
+        Assert.Equal(first.Detail.Draft with { CommercialStage = null }, replay.Detail.Draft);
         Assert.Equal(first.OriginalCorrelationId, replay.OriginalCorrelationId);
         Assert.Equal(first.Detail.Draft, detail.Draft);
         Assert.Equal(detail.Draft, Assert.Single(list.Items));
+        Assert.Equal(SalesCommercialStageV1.Order, first.Detail.Draft.CommercialStage);
+        Assert.Null(replay.Detail.Draft.CommercialStage);
         Assert.Equal("Rev.0", detail.Draft.Revision);
         Assert.Equal("9007199254740993", detail.Draft.Version);
         Assert.Null(list.NextCursor);

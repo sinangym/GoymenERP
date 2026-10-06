@@ -260,6 +260,26 @@ public static class PurchasingEndpoints
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();
 
+        group.MapGet("/{id:guid}/goods-receipts/{acceptanceId:guid}/quantity-comparison", async (Guid id,
+            Guid acceptanceId, HttpContext httpContext,
+            [FromServices] IPurchaseGoodsReceiptQuantityComparisonServiceV1 service,
+            ICorrelationContext correlation, CancellationToken cancellationToken) =>
+        {
+            SetPrivateNoStore(httpContext.Response);
+            try
+            {
+                return Results.Json(
+                    await service.GetGoodsReceiptQuantityComparisonAsync(id, acceptanceId, cancellationToken),
+                    PurchasingJson.Options);
+            }
+            catch (PurchasingServiceException exception) { return Problem(httpContext, exception, correlation); }
+        })
+            .WithName("GetPurchaseGoodsReceiptQuantityComparisonV1")
+            .Produces<PurchaseGoodsReceiptQuantityComparisonV1>()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+
         group.MapGet("/{id:guid}/goods-receipts", async (Guid id, [FromQuery] int? limit, HttpContext httpContext,
             [FromServices] IPurchaseGoodsReceiptServiceV1 service, ICorrelationContext correlation,
             CancellationToken cancellationToken) =>

@@ -69,10 +69,27 @@ public sealed record NormalJournalDraftViewV1(
     DateOnly? ValueDate,
     IReadOnlyList<NormalJournalDraftLineViewV1> Lines);
 
+public sealed record NormalJournalPreparedCreateLineV2(Guid AccountId, PostingSide Side, decimal Amount);
+
+public sealed record NormalJournalPreparedCreateCommandV2(
+    Guid DraftId,
+    Guid SourceId,
+    DateOnly TransactionDate,
+    DateOnly AccountingDate,
+    DateOnly? ValueDate,
+    string ExpectedPreparationVersion,
+    IReadOnlyList<NormalJournalPreparedCreateLineV2> Lines);
+
 public static class NormalJournalCommandNamesV1
 {
     public const string CreateDraft = "accounting.normal-journal-draft.create.v1";
+    public const string CreatePreparedDraft = "accounting.normal-journal-draft.create.v2";
     public const string ApproveDraft = "accounting.normal-journal-draft.approve.v1";
+}
+
+public static class NormalJournalDraftPreparationCodesV1
+{
+    public const string VersionConflict = "accounting_normal_journal_preparation_version_conflict";
 }
 
 public static class NormalJournalDraftStoreCodesV1
@@ -116,6 +133,17 @@ public interface INormalJournalDraftLifecycleV1
     Task<AccountingApiResult<NormalJournalDraftViewV1>> CreateAsync(
         NormalJournalDraftV1? draft, string idempotencyKey, CancellationToken cancellationToken = default);
 
+    Task<AccountingApiResult<NormalJournalDraftViewV1>?> TryReplayPreparedCreateAsync(
+        NormalJournalPreparedCreateCommandV2 command,
+        string idempotencyKey,
+        CancellationToken cancellationToken = default);
+
+    Task<AccountingApiResult<NormalJournalDraftViewV1>> CreatePreparedAsync(
+        NormalJournalDraftV1? draft,
+        NormalJournalPreparedCreateCommandV2 command,
+        string idempotencyKey,
+        CancellationToken cancellationToken = default);
+
     Task<AccountingApiResult<NormalJournalDraftViewV1>> ReadAsync(
         Guid draftId, CancellationToken cancellationToken = default);
 
@@ -156,6 +184,51 @@ public sealed class NormalJournalDraftServiceV1(
             idempotencyKey,
             NormalJournalCommandNamesV1.CreateDraft,
             Canonical(draft),
+            AccountingApiStatus.Created,
+            async (metadata, actor) =>
+            {
+                if (draft.PreparedByUserId != actor)
+                {
+                    return Denied();
+                }
+
+                var (record, outcome) = await drafts.CreateNormalDraftAsync(
+                    draft,
+                    token => FenceAsync(permissions.CreatePermission, actor, token),
+                    metadata,
+                    cancellationToken);
+                return new AccountingApiResult<NormalJournalDraftViewV1>(
+                    AccountingApiStatus.Created,
+                    View(record),
+                    outcome == AccountingWriteOutcome.Replayed,
+                    null);
+            },
+            stored => View((NormalJournalDraftRecordV1)stored),
+            cancellationToken);
+    }
+
+    public Task<AccountingApiResult<NormalJournalDraftViewV1>?> TryReplayPreparedCreateAsync(
+        NormalJournalPreparedCreateCommandV2 command,
+        string idempotencyKey,
+        CancellationToken cancellationToken = default) =>
+        TryReplayAsync(command, idempotencyKey, cancellationToken);
+
+    public Task<AccountingApiResult<NormalJournalDraftViewV1>> CreatePreparedAsync(
+        NormalJournalDraftV1? draft,
+        NormalJournalPreparedCreateCommandV2 command,
+        string idempotencyKey,
+        CancellationToken cancellationToken = default)
+    {
+        if (draft is null || !PreparedCommandMatchesDraft(command, draft))
+        {
+            return Task.FromResult(Invalid("draft"));
+        }
+
+        return RunAsync(
+            permissions.CreatePermission,
+            idempotencyKey,
+            NormalJournalCommandNamesV1.CreatePreparedDraft,
+            Canonical(command),
             AccountingApiStatus.Created,
             async (metadata, actor) =>
             {
@@ -409,6 +482,47 @@ public sealed class NormalJournalDraftServiceV1(
         }
     }
 
+    private async Task<AccountingApiResult<NormalJournalDraftViewV1>?> TryReplayAsync(
+        NormalJournalPreparedCreateCommandV2 command,
+        string idempotencyKey,
+        CancellationToken cancellationToken)
+    {
+        if (!Valid(command) || string.IsNullOrWhiteSpace(idempotencyKey))
+        {
+            return Invalid("request");
+        }
+
+        if (!HasContext() || ActorGuid() is not { })
+        {
+            return Denied();
+        }
+
+        var company = companyContext.CompanyId;
+        var first = await authority.RevalidatePermissionScopeAsync(
+            permissions.CreatePermission, company, cancellationToken);
+        if (!first.IsGranted || !first.IsCompanyWide || !HasContext())
+        {
+            return Denied();
+        }
+
+        var actorId = currentUser.UserId!;
+        var keyHash = AccountingApiService.Sha256(idempotencyKey.Trim());
+        var requestHash = AccountingApiService.Sha256(NormalJournalCommandNamesV1.CreatePreparedDraft
+            + "|" + JsonSerializer.Serialize(Canonical(command), Json));
+        var prior = await commands.FindCommandAsync(
+            NormalJournalCommandNamesV1.CreatePreparedDraft, keyHash, cancellationToken);
+
+        var second = await authority.RevalidatePermissionScopeAsync(
+            permissions.CreatePermission, company, cancellationToken);
+        if (!second.IsGranted || !second.IsCompanyWide || !HasContext()
+            || !string.Equals(currentUser.UserId, actorId, StringComparison.Ordinal))
+        {
+            return Denied();
+        }
+
+        return prior is null ? null : Answer<NormalJournalDraftViewV1>(prior, actorId, requestHash);
+    }
+
     private async Task FenceAsync(string permission, Guid actor, CancellationToken cancellationToken)
     {
         var company = companyContext.CompanyId;
@@ -471,6 +585,51 @@ public sealed class NormalJournalDraftServiceV1(
                 .ToArray(),
         },
     };
+
+    private static object Canonical(NormalJournalPreparedCreateCommandV2 command) => new
+    {
+        command.DraftId,
+        command.SourceId,
+        transactionDate = Date(command.TransactionDate),
+        accountingDate = Date(command.AccountingDate),
+        valueDate = command.ValueDate is { } valueDate ? Date(valueDate) : null,
+        expectedPreparationVersion = command.ExpectedPreparationVersion.ToUpperInvariant(),
+        lines = command.Lines.Select((line, index) => new
+        {
+            lineNumber = index + 1,
+            line.AccountId,
+            side = (int)line.Side,
+            amount = Text(line.Amount),
+        }).ToArray(),
+    };
+
+    private static bool Valid(NormalJournalPreparedCreateCommandV2? command) => command is not null
+        && command.DraftId != Guid.Empty && command.SourceId != Guid.Empty
+        && command.TransactionDate != default && command.AccountingDate != default
+        && NormalJournalDraftSourcePreparationV1.IsPreparationVersion(command.ExpectedPreparationVersion)
+        && command.Lines is { Count: >= 2 }
+        && command.Lines.All(line => line is not null && line.AccountId != Guid.Empty
+            && Enum.IsDefined(line.Side) && line.Amount > 0m);
+
+    private static bool PreparedCommandMatchesDraft(
+        NormalJournalPreparedCreateCommandV2 command,
+        NormalJournalDraftV1 draft)
+    {
+        if (!Valid(command) || draft.Id != command.DraftId
+            || draft.Request.Source.SourceId != command.SourceId
+            || draft.Request.Dates.TransactionDate != command.TransactionDate
+            || draft.Request.Dates.AccountingDate != command.AccountingDate
+            || draft.Request.Dates.ValueDate != command.ValueDate
+            || draft.Request.Lines.Count != command.Lines.Count)
+        {
+            return false;
+        }
+
+        return draft.Request.Lines.Zip(command.Lines).All(pair =>
+            pair.First.Account == new AccountRef(draft.CompanyId, pair.Second.AccountId)
+            && pair.First.Side == pair.Second.Side
+            && pair.First.Amount == pair.Second.Amount);
+    }
 
     private static NormalJournalDraftViewV1 View(NormalJournalDraftRecordV1 record) => new(
         record.Id,

@@ -144,7 +144,31 @@ export interface CreateNormalJournalDraftRequest {
   readonly transactionDate: string
   readonly accountingDate: string
   readonly valueDate: string | null
+  readonly expectedPreparationVersion: string
   readonly lines: readonly CreateNormalJournalDraftLine[]
+}
+
+export interface NormalJournalDraftSourceMapping {
+  readonly mappingKey: string
+  readonly side: NormalJournalSide
+  readonly accountId: string
+  readonly accountCode: string
+  readonly accountName: string
+}
+
+export interface NormalJournalDraftSourcePreparation {
+  readonly companyId: string
+  readonly sourceId: string
+  readonly preparationVersion: string
+  readonly sourceVersion: string
+  readonly ownerProfileId: string
+  readonly ownerProfileVersion: string
+  readonly currencyId: string
+  readonly postingPurpose: string
+  readonly postingRuleVersion: string
+  readonly accountPlanSourceVersion: string
+  readonly accountPlanSourceSha256: string
+  readonly mappings: readonly NormalJournalDraftSourceMapping[]
 }
 
 // ---------------------------------------------------------------------------------
@@ -187,6 +211,53 @@ function isNullableInstant(value: unknown): value is string | null {
 
 function isText(value: unknown): value is string {
   return typeof value === 'string' && value.length > 0
+}
+
+function isSha256(value: unknown): value is string {
+  return typeof value === 'string' && /^[0-9a-f]{64}$/i.test(value)
+}
+
+export function decodeNormalJournalDraftSourcePreparation(
+  value: unknown,
+  companyId: string,
+  sourceId: string,
+): NormalJournalDraftSourcePreparation | null {
+  const v = record(value)
+  const keys = [
+    'companyId', 'sourceId', 'preparationVersion', 'sourceVersion', 'ownerProfileId',
+    'ownerProfileVersion', 'currencyId', 'postingPurpose', 'postingRuleVersion',
+    'accountPlanSourceVersion', 'accountPlanSourceSha256', 'mappings',
+  ] as const
+  if (v === null || !hasExactKeys(v, keys) || !Array.isArray(v.mappings)
+      || v.companyId !== companyId || v.sourceId !== sourceId
+      || !isSha256(v.preparationVersion) || !isText(v.sourceVersion)
+      || !isText(v.ownerProfileId) || !isText(v.ownerProfileVersion)
+      || !isGuid(v.currencyId) || !isText(v.postingPurpose) || !isText(v.postingRuleVersion)
+      || !isText(v.accountPlanSourceVersion) || !isSha256(v.accountPlanSourceSha256)) return null
+  const mappings: NormalJournalDraftSourceMapping[] = []
+  for (const item of v.mappings) {
+    const mapping = record(item)
+    if (mapping === null || !hasExactKeys(mapping,
+      ['mappingKey', 'side', 'accountId', 'accountCode', 'accountName'])
+      || !isText(mapping.mappingKey) || (mapping.side !== 'Debit' && mapping.side !== 'Credit')
+      || !isGuid(mapping.accountId) || !isText(mapping.accountCode) || !isText(mapping.accountName)) return null
+    mappings.push({
+      mappingKey: mapping.mappingKey,
+      side: mapping.side,
+      accountId: mapping.accountId,
+      accountCode: mapping.accountCode,
+      accountName: mapping.accountName,
+    })
+  }
+  if (mappings.length < 2
+      || new Set(mappings.map(mapping => `${mapping.side}:${mapping.accountId}`)).size !== mappings.length) return null
+  return {
+    companyId, sourceId, preparationVersion: v.preparationVersion, sourceVersion: v.sourceVersion,
+    ownerProfileId: v.ownerProfileId, ownerProfileVersion: v.ownerProfileVersion,
+    currencyId: v.currencyId, postingPurpose: v.postingPurpose,
+    postingRuleVersion: v.postingRuleVersion, accountPlanSourceVersion: v.accountPlanSourceVersion,
+    accountPlanSourceSha256: v.accountPlanSourceSha256, mappings,
+  }
 }
 
 function isCount(value: unknown, minimum: number): value is number {

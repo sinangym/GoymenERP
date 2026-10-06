@@ -1,13 +1,19 @@
 using System.Reflection;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Observability;
 using GoymenERP.BuildingBlocks.Security;
+using GoymenERP.Modules.Counterparty.Application.Contracts;
 using GoymenERP.Modules.Inventory.Application;
+using GoymenERP.Modules.Inventory.Domain.Stock;
 using GoymenERP.Modules.Manufacturing.Application;
 using GoymenERP.Modules.Manufacturing.Domain.Common;
 using GoymenERP.Modules.Manufacturing.Domain.Orders;
 using GoymenERP.Modules.Manufacturing.Domain.Plans;
 using GoymenERP.Modules.Organization.Application.Contracts;
+using GoymenERP.Modules.Product.Application.Contracts;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
 
 namespace GoymenERP.Manufacturing.UnitTests;
@@ -20,14 +26,21 @@ namespace GoymenERP.Manufacturing.UnitTests;
 public sealed class ManufacturingCommandServiceTests
 {
     private const string Permission = "manufacturing.facts.record";
+    // ProductStockCandidateFixture creates draft v1 and activates it; c161e0e7 publishes that exact accepted v2.
+    private const string AcceptedProductFixtureVersion = "2";
     private const string ClosePermission = "manufacturing.orders.close";
+    private const string CloseExceptionPermission = "manufacturing.orders.close-exception.approve";
     private const string LabelVersion = "7";
     private static readonly Guid Company = Guid.Parse("10000000-0000-0000-0000-000000000001");
+    private static readonly Guid OtherCompany = Guid.Parse("20000000-0000-0000-0000-000000000002");
     private static readonly Guid Actor = Guid.Parse("a1000000-0000-0000-0000-00000000000a");
+    private static readonly Guid OtherActor = Guid.Parse("a2000000-0000-0000-0000-00000000000a");
     private static readonly Guid WorkCenter = Guid.Parse("c1000000-0000-0000-0000-00000000000c");
     private static readonly Guid Roll = Guid.Parse("b1000000-0000-0000-0000-00000000000b");
     private static readonly Guid Product = Guid.Parse("d1000000-0000-0000-0000-00000000000d");
     private static readonly Guid Location = Guid.Parse("e1000000-0000-0000-0000-00000000000e");
+    private static readonly Guid Party = Guid.Parse("f1000000-0000-0000-0000-00000000000f");
+    private static readonly Guid PartyAccount = Guid.Parse("f2000000-0000-0000-0000-00000000000f");
     private static readonly DateTimeOffset At = new(2026, 9, 18, 10, 0, 0, TimeSpan.Zero);
 
     [Fact]
@@ -100,6 +113,41 @@ public sealed class ManufacturingCommandServiceTests
     }
 
     [Fact]
+    public async Task Process_loss_is_a_server_fixed_non_stock_fact_and_never_calls_the_inventory_output_port()
+    {
+        var fixture = new Fixture();
+        var order = await fixture.ApprovedOrderAsync();
+        order.IssueInput(order.Version, Guid.NewGuid(), Roll, new Kilograms(20m), At);
+
+        var result = await fixture.Service.RecordProcessLossAsync(order.Id,
+            new RecordFactRequestV1(Guid.NewGuid(), order.Version, Roll, "2.5", At.AddMinutes(1)),
+            "process-loss-1", Permission, CancellationToken.None);
+
+        Assert.Equal((ManufacturingApiStatus.Ok, 3), (result.Status, result.Resource?.Version));
+        var loss = Assert.Single(order.Outputs);
+        Assert.Equal((OutputClass.ProcessLoss, 2.5m), (loss.Class, loss.Mass.Value));
+        Assert.Empty(fixture.ReturnOutputs.Outputs);
+        Assert.Equal(ManufacturingCommandNames.DeclareProcessLoss, Assert.Single(fixture.Store.Commands).Value.CommandName);
+    }
+
+    [Fact]
+    public async Task Process_loss_is_refused_on_the_inventory_output_path_before_any_owner_call()
+    {
+        var fixture = new Fixture();
+        var order = await fixture.ApprovedOrderAsync();
+
+        var result = await fixture.Service.DeclareInventoryOutputAsync(order.Id,
+            new DeclareInventoryOutputRequestV1(Guid.NewGuid(), order.Version, Roll, "8", "ProcessLoss",
+                Product, "12", Guid.NewGuid(), Guid.NewGuid(), "LOSS-AS-STOCK", null, null, [],
+                "Company", Company, "Company", Company, Location, "Free", Guid.NewGuid(), "2.5", At),
+            "wrong-process-loss-path", Permission, CancellationToken.None);
+
+        Assert.Equal((ManufacturingApiStatus.Invalid, "outputClass"), (result.Status, result.Field));
+        Assert.Empty(fixture.ReturnOutputs.Outputs);
+        Assert.Empty(fixture.Store.Writes);
+    }
+
+    [Fact]
     public async Task Owner_port_version_refusal_keeps_its_code_and_versions_as_the_terminal_replay_answer()
     {
         var fixture = new Fixture();
@@ -167,8 +215,9 @@ public sealed class ManufacturingCommandServiceTests
         Assert.Equal(expected, result.Status);
         Assert.Equal(code, result.Code);
         Assert.Empty(fixture.Store.Writes);
-        // Asked once, before the stored-answer lookup; never again for a write that did not happen.
-        Assert.Equal(1, fixture.Authority.Asked);
+        // The original grant and the empty-command-read fence always run. A 422 refusal also rechecks before
+        // releasing its no-winner answer; denied/unavailable refusals stop immediately.
+        Assert.Equal(code == SettingsPrerequisiteCodesV1.UnitProfileNotFound ? 3 : 2, fixture.Authority.Asked);
         // A Settings refusal is not this key's answer: nothing is recorded, so a retry is re-evaluated.
         Assert.Empty(fixture.Store.Commands);
     }
@@ -288,7 +337,7 @@ public sealed class ManufacturingCommandServiceTests
             Permission, CancellationToken.None);
 
         Assert.Equal(ManufacturingApiStatus.Ok, result.Status);
-        Assert.Equal(new[] { "authority", "settings", "authority" }, fixture.Calls);
+        Assert.Equal(new[] { "authority", "authority", "settings", "authority" }, fixture.Calls);
         var metadata = Assert.Single(fixture.Store.Writes);
         Assert.Equal((Actor.ToString("D"), Permission, "corr-1", "key-1", "Web"),
             (metadata.ActorId, metadata.PermissionCode, metadata.CorrelationId, metadata.IdempotencyKey, metadata.SourceChannel));
@@ -385,7 +434,360 @@ public sealed class ManufacturingCommandServiceTests
             Assert.Single(fixture.Store.Plans[result.Resource.PlanId].Inputs).ExpectedLabelVersion);
         Assert.Equal(new[] { DateOnly.FromDateTime(At.UtcDateTime), DateOnly.FromDateTime(At.UtcDateTime) }, fixture.Settings.Days);
         Assert.Equal(new InventoryParentRollSelectionV1(Roll, LabelVersion), Assert.Single(fixture.ParentRolls.Selections));
-        Assert.Equal(["authority", "work-center", "settings", "parent-roll", "authority"], fixture.Calls);
+        Assert.Equal(["authority", "authority", "work-center", "authority", "settings", "parent-roll", "authority",
+            "product", "authority", "authority"], fixture.Calls);
+    }
+
+    [Fact]
+    public async Task A_customer_input_captures_the_exact_authorized_context_and_uses_its_inventory_position()
+    {
+        var fixture = new Fixture();
+        var commercial = new PlanCommercialContextRequestV1(Party, PartyAccount, " party-v1 ", "account-v1/α");
+        fixture.PartyAccounts.Account = new CounterpartyManufacturingPartyAccountV1(
+            Party, PartyAccount, Company, true, true, true, true, " party-v1 ", "account-v1/α");
+        var request = new SavePlanRequestV1(Guid.NewGuid(), WorkCenter,
+            [new PlannedInputRequestV1(Roll, "1000.250", LabelVersion, commercial)], null);
+
+        var result = await fixture.Service.SavePlanAsync(
+            request, "commercial-key", "manufacturing.plans.write", CancellationToken.None);
+
+        Assert.Equal(ManufacturingApiStatus.Created, result.Status);
+        var captured = Assert.Single(fixture.Store.Plans[result.Resource!.PlanId].Inputs).CommercialContext!;
+        Assert.Equal((Party, PartyAccount, " party-v1 ", "account-v1/α"),
+            (captured.PartyId, captured.CompanyPartyAccountId, captured.PartyVersion, captured.AccountVersion));
+        Assert.Equal(new CapturedPlanCommercialContextViewV1(
+            Party, PartyAccount, " party-v1 ", "account-v1/α"),
+            Assert.Single(result.Resource.Inputs).CommercialContext);
+        Assert.Empty(fixture.ParentRolls.Selections);
+        var selection = Assert.Single(fixture.ParentRolls.ContextualSelections);
+        Assert.Equal((Roll, LabelVersion, StockPartyKind.Counterparty, Party, StockPartyKind.Company, Company),
+            (selection.LabelId, selection.ExpectedLabelVersion, selection.PositionContext.OwnerKind,
+                selection.PositionContext.OwnerId, selection.PositionContext.CustodianKind,
+                selection.PositionContext.CustodianId));
+        Assert.Equal(["authority", "authority", "work-center", "authority", "settings", "party-account", "authority",
+                "parent-roll-context", "authority", "product", "authority", "authority"],
+            fixture.Calls);
+    }
+
+    [Fact]
+    public async Task A_commercial_contexts_four_values_are_required_before_any_owner_read()
+    {
+        var valid = new PlanCommercialContextRequestV1(Party, PartyAccount, "party-v1", "account-v1");
+        var cases = new (PlanCommercialContextRequestV1 Context, string Field)[]
+        {
+            (valid with { PartyId = Guid.Empty }, "inputs[0].commercialContext.partyId"),
+            (valid with { CompanyPartyAccountId = Guid.Empty }, "inputs[0].commercialContext.companyPartyAccountId"),
+            (valid with { PartyVersion = "" }, "inputs[0].commercialContext.partyVersion"),
+            (valid with { PartyVersion = null }, "inputs[0].commercialContext.partyVersion"),
+            (valid with { AccountVersion = "" }, "inputs[0].commercialContext.accountVersion"),
+            (valid with { AccountVersion = null }, "inputs[0].commercialContext.accountVersion"),
+        };
+
+        foreach (var (commercial, field) in cases)
+        {
+            var fixture = new Fixture();
+            var result = await fixture.Service.SavePlanAsync(
+                new SavePlanRequestV1(Guid.NewGuid(), WorkCenter,
+                    [new PlannedInputRequestV1(Roll, "1000", LabelVersion, commercial)], null),
+                "invalid-commercial", "manufacturing.plans.write", CancellationToken.None);
+
+            Assert.Equal((ManufacturingApiStatus.Invalid, ManufacturingApiCodes.RequestInvalid, field),
+                (result.Status, result.Code, result.Field));
+            Assert.Empty(fixture.Calls);
+            Assert.Empty(fixture.Store.Writes);
+        }
+    }
+
+    [Theory]
+    [InlineData("denied", ManufacturingApiStatus.Denied, ManufacturingApiCodes.AuthorityDenied, null)]
+    [InlineData("missing", ManufacturingApiStatus.NotFound, null, null)]
+    [InlineData("unavailable", ManufacturingApiStatus.Unavailable, "counterparty_provider_unavailable", null)]
+    [InlineData("inactive", ManufacturingApiStatus.Unprocessable,
+        ManufacturingApiCodes.CommercialContextIneligible, "inputs[0].commercialContext")]
+    [InlineData("role", ManufacturingApiStatus.Unprocessable,
+        ManufacturingApiCodes.CommercialContextIneligible, "inputs[0].commercialContext")]
+    public async Task A_commercial_owner_refusal_is_closed_without_inventory_or_a_write(
+        string shape, ManufacturingApiStatus status, string? code, string? field)
+    {
+        var fixture = new Fixture();
+        fixture.PartyAccounts.Outcome = shape switch
+        {
+            "denied" => CounterpartyManufacturingPartyAccountOutcomeV1.Denied,
+            "missing" => CounterpartyManufacturingPartyAccountOutcomeV1.NotFound,
+            "unavailable" => CounterpartyManufacturingPartyAccountOutcomeV1.Unavailable,
+            _ => CounterpartyManufacturingPartyAccountOutcomeV1.Found,
+        };
+        if (shape is "inactive" or "role")
+        {
+            fixture.PartyAccounts.Account = new CounterpartyManufacturingPartyAccountV1(
+                Party, PartyAccount, Company, shape != "inactive", true,
+                shape != "role", false, "party-v1", "account-v1");
+        }
+
+        var result = await fixture.Service.SavePlanAsync(
+            CommercialPlan(Guid.NewGuid()), "commercial-refusal", "manufacturing.plans.write", CancellationToken.None);
+
+        Assert.Equal((status, code, field), (result.Status, result.Code, result.Field));
+        Assert.Empty(fixture.ParentRolls.ContextualSelections);
+        Assert.Empty(fixture.Store.Writes);
+    }
+
+    [Theory]
+    [InlineData("party-v2", "account-v1", "inputs[0].commercialContext.partyVersion")]
+    [InlineData("party-v1", "account-v2", "inputs[0].commercialContext.accountVersion")]
+    public async Task A_stale_commercial_version_is_a_precise_conflict_before_inventory(
+        string partyVersion, string accountVersion, string field)
+    {
+        var fixture = new Fixture();
+        fixture.PartyAccounts.Account = new CounterpartyManufacturingPartyAccountV1(
+            Party, PartyAccount, Company, true, true, true, false, partyVersion, accountVersion);
+
+        var result = await fixture.Service.SavePlanAsync(
+            CommercialPlan(Guid.NewGuid()), "commercial-version", "manufacturing.plans.write", CancellationToken.None);
+
+        Assert.Equal((ManufacturingApiStatus.Conflict, ManufacturingApiCodes.CommercialContextVersionConflict, field),
+            (result.Status, result.Code, result.Field));
+        Assert.Empty(fixture.ParentRolls.ContextualSelections);
+        Assert.Empty(fixture.Store.Writes);
+    }
+
+    [Theory]
+    [InlineData("found")]
+    [InlineData("missing")]
+    [InlineData("version")]
+    [InlineData("ineligible")]
+    public async Task A_grant_lost_during_the_commercial_owner_read_denies_before_answer_or_inventory(string shape)
+    {
+        var fixture = new Fixture();
+        fixture.PartyAccounts.Outcome = shape == "missing"
+            ? CounterpartyManufacturingPartyAccountOutcomeV1.NotFound
+            : CounterpartyManufacturingPartyAccountOutcomeV1.Found;
+        fixture.PartyAccounts.Account = new CounterpartyManufacturingPartyAccountV1(
+            Party, PartyAccount, Company, shape != "ineligible", true, true, false,
+            shape == "version" ? "party-v2" : "party-v1", "account-v1");
+        fixture.PartyAccounts.AfterRead = () => fixture.Authority.Scope = PermissionScope.Denied;
+
+        var result = await fixture.Service.SavePlanAsync(
+            CommercialPlan(Guid.NewGuid()), $"commercial-revoked-{shape}", "manufacturing.plans.write",
+            CancellationToken.None);
+
+        Assert.Equal((ManufacturingApiStatus.Denied, ManufacturingApiCodes.AuthorityDenied),
+            (result.Status, result.Code));
+        Assert.Single(fixture.PartyAccounts.Selections);
+        Assert.Empty(fixture.ParentRolls.ContextualSelections);
+        Assert.Empty(fixture.Store.Writes);
+        Assert.Empty(fixture.Store.Commands);
+    }
+
+    [Theory]
+    [InlineData("actor")]
+    [InlineData("company")]
+    public async Task A_context_switch_during_the_commercial_owner_read_denies_before_inventory(string shape)
+    {
+        var fixture = new Fixture();
+        fixture.PartyAccounts.AfterRead = shape == "actor"
+            ? () => fixture.User.ActorId = OtherActor
+            : () => fixture.CompanyContext.SwitchForTest(OtherCompany);
+
+        var result = await fixture.Service.SavePlanAsync(
+            CommercialPlan(Guid.NewGuid()), $"commercial-context-{shape}", "manufacturing.plans.write",
+            CancellationToken.None);
+
+        Assert.Equal((ManufacturingApiStatus.Denied, ManufacturingApiCodes.AuthorityDenied),
+            (result.Status, result.Code));
+        Assert.Single(fixture.PartyAccounts.Selections);
+        Assert.Empty(fixture.ParentRolls.ContextualSelections);
+        Assert.Empty(fixture.Store.Writes);
+        Assert.Empty(fixture.Store.Commands);
+    }
+
+    [Theory]
+    [InlineData("positive")]
+    [InlineData("refusal")]
+    [InlineData("exception")]
+    public async Task Product_positive_refusal_and_exception_paths_recheck_captured_context_before_plan_save(string shape)
+    {
+        var fixture = new Fixture();
+        fixture.ProductSnapshots.AfterRead = shape switch
+        {
+            "positive" => () => fixture.User.ActorId = OtherActor,
+            "refusal" => () => fixture.CompanyContext.SwitchForTest(OtherCompany),
+            _ => () => fixture.Authority.Scope = PermissionScope.Denied,
+        };
+        if (shape == "refusal")
+        {
+            fixture.ProductSnapshots.Errors = [new ProductFieldError("references.attributes.WIDTH", "required")];
+        }
+        else if (shape == "exception")
+        {
+            fixture.ProductSnapshots.Exception = new ProductOperationException(
+                "product_manufacturing_technical_snapshot_unavailable", 503);
+        }
+
+        var result = await fixture.Service.SavePlanAsync(
+            Plan(LabelVersion), $"product-context-switch-{shape}", "manufacturing.plans.write", CancellationToken.None);
+
+        Assert.Equal((ManufacturingApiStatus.Denied, ManufacturingApiCodes.AuthorityDenied),
+            (result.Status, result.Code));
+        Assert.Equal(1, fixture.ProductSnapshots.Asked);
+        Assert.Empty(fixture.Store.Writes);
+        Assert.Empty(fixture.Store.Commands);
+    }
+
+    [Fact]
+    public async Task A_grant_lost_during_a_contextual_inventory_exception_denies_before_the_owner_error()
+    {
+        var fixture = new Fixture();
+        fixture.ParentRolls.Exception = new InventoryParentRollException(
+            409, InventoryParentRollCodesV1.VersionConflict);
+        fixture.ParentRolls.AfterRead = () => fixture.Authority.Scope = PermissionScope.Denied;
+
+        var result = await fixture.Service.SavePlanAsync(
+            CommercialPlan(Guid.NewGuid()), "inventory-context-revoked", "manufacturing.plans.write",
+            CancellationToken.None);
+
+        Assert.Equal((ManufacturingApiStatus.Denied, ManufacturingApiCodes.AuthorityDenied),
+            (result.Status, result.Code));
+        Assert.Single(fixture.ParentRolls.ContextualSelections);
+        Assert.Empty(fixture.Store.Writes);
+        Assert.Empty(fixture.Store.Commands);
+    }
+
+    [Fact]
+    public async Task A_commercial_plan_replays_before_owner_reads_and_versions_are_in_the_request_hash()
+    {
+        var fixture = new Fixture();
+        var request = CommercialPlan(Guid.NewGuid());
+        var created = await fixture.Service.SavePlanAsync(
+            request, "commercial-replay", "manufacturing.plans.write", CancellationToken.None);
+        Assert.Equal(ManufacturingApiStatus.Created, created.Status);
+
+        fixture.PartyAccounts.Outcome = CounterpartyManufacturingPartyAccountOutcomeV1.Unavailable;
+        var replay = await fixture.Service.SavePlanAsync(
+            request, "commercial-replay", "manufacturing.plans.write", CancellationToken.None);
+        var mismatch = await fixture.Service.SavePlanAsync(
+            request with
+            {
+                Inputs = [request.Inputs![0] with
+                {
+                    CommercialContext = request.Inputs[0].CommercialContext! with { AccountVersion = "account-v2" },
+                }],
+            },
+            "commercial-replay", "manufacturing.plans.write", CancellationToken.None);
+
+        Assert.Equal((ManufacturingApiStatus.Created, true), (replay.Status, replay.IsReplay));
+        Assert.Equal((ManufacturingApiStatus.Conflict, ManufacturingApiCodes.IdempotencyConflict),
+            (mismatch.Status, mismatch.Code));
+        Assert.Single(fixture.PartyAccounts.Selections);
+        Assert.Single(fixture.ParentRolls.ContextualSelections);
+    }
+
+    [Fact]
+    public async Task A_legacy_plan_save_replays_for_both_omitted_and_explicit_null_commercial_context()
+    {
+        var fixture = new Fixture();
+        var planId = Guid.NewGuid();
+        var omitted = new SavePlanRequestV1(planId, WorkCenter,
+            [new PlannedInputRequestV1(Roll, "10", LabelVersion)], null);
+        var explicitNull = new SavePlanRequestV1(planId, WorkCenter,
+            [new PlannedInputRequestV1(Roll, "10", LabelVersion, null)], null);
+        var legacyCanonical = new
+        {
+            planId,
+            workCenterId = WorkCenter,
+            inputs = new[] { new { rollId = Roll, expectedLabelVersion = LabelVersion, kg = "10" } },
+            target = (object?)null,
+        };
+        SeedLegacyPlanReplay(fixture, ManufacturingCommandNames.SavePlan, "legacy-save-omitted",
+            legacyCanonical, ManufacturingApiStatus.Created, LegacyPlanView(planId, 1));
+        SeedLegacyPlanReplay(fixture, ManufacturingCommandNames.SavePlan, "legacy-save-null",
+            legacyCanonical, ManufacturingApiStatus.Created, LegacyPlanView(planId, 1));
+        fixture.ParentRolls.Exception = new InvalidOperationException("owner must not be read");
+        fixture.PartyAccounts.Outcome = CounterpartyManufacturingPartyAccountOutcomeV1.Unavailable;
+
+        var omittedReplay = await fixture.Service.SavePlanAsync(
+            omitted, "legacy-save-omitted", "manufacturing.plans.write", CancellationToken.None);
+        var nullReplay = await fixture.Service.SavePlanAsync(
+            explicitNull, "legacy-save-null", "manufacturing.plans.write", CancellationToken.None);
+
+        Assert.Equal((ManufacturingApiStatus.Created, true, "corr-legacy"),
+            (omittedReplay.Status, omittedReplay.IsReplay, omittedReplay.OriginalCorrelationId));
+        Assert.Equal((ManufacturingApiStatus.Created, true, "corr-legacy"),
+            (nullReplay.Status, nullReplay.IsReplay, nullReplay.OriginalCorrelationId));
+        Assert.Equal(["authority", "authority", "authority", "authority"], fixture.Calls);
+        Assert.Empty(fixture.ParentRolls.Selections);
+        Assert.Empty(fixture.PartyAccounts.Selections);
+        Assert.Empty(fixture.Store.Writes);
+    }
+
+    [Fact]
+    public async Task A_legacy_plan_revision_replays_for_both_omitted_and_explicit_null_commercial_context()
+    {
+        var fixture = new Fixture();
+        var planId = Guid.NewGuid();
+        var omitted = new RevisePlanRequestV1(1, WorkCenter,
+            [new PlannedInputRequestV1(Roll, "10", LabelVersion)], null, "legacy reason");
+        var explicitNull = new RevisePlanRequestV1(1, WorkCenter,
+            [new PlannedInputRequestV1(Roll, "10", LabelVersion, null)], null, "legacy reason");
+        var legacyCanonical = new
+        {
+            planId,
+            expectedVersion = 1L,
+            workCenterId = WorkCenter,
+            inputs = new[] { new { rollId = Roll, expectedLabelVersion = LabelVersion, kg = "10" } },
+            target = (object?)null,
+            reason = "legacy reason",
+        };
+        SeedLegacyPlanReplay(fixture, ManufacturingCommandNames.RevisePlan, "legacy-revise-omitted",
+            legacyCanonical, ManufacturingApiStatus.Ok, LegacyPlanView(planId, 2));
+        SeedLegacyPlanReplay(fixture, ManufacturingCommandNames.RevisePlan, "legacy-revise-null",
+            legacyCanonical, ManufacturingApiStatus.Ok, LegacyPlanView(planId, 2));
+        fixture.ParentRolls.Exception = new InvalidOperationException("owner must not be read");
+        fixture.PartyAccounts.Outcome = CounterpartyManufacturingPartyAccountOutcomeV1.Unavailable;
+
+        var omittedReplay = await fixture.Service.RevisePlanAsync(
+            planId, omitted, "legacy-revise-omitted", "manufacturing.plans.write", CancellationToken.None);
+        var nullReplay = await fixture.Service.RevisePlanAsync(
+            planId, explicitNull, "legacy-revise-null", "manufacturing.plans.write", CancellationToken.None);
+
+        Assert.Equal((ManufacturingApiStatus.Ok, true, "corr-legacy", 2L),
+            (omittedReplay.Status, omittedReplay.IsReplay, omittedReplay.OriginalCorrelationId,
+                omittedReplay.Resource!.Version));
+        Assert.Equal((ManufacturingApiStatus.Ok, true, "corr-legacy", 2L),
+            (nullReplay.Status, nullReplay.IsReplay, nullReplay.OriginalCorrelationId,
+                nullReplay.Resource!.Version));
+        Assert.Equal(["authority", "authority", "authority", "authority"], fixture.Calls);
+        Assert.Empty(fixture.ParentRolls.Selections);
+        Assert.Empty(fixture.PartyAccounts.Selections);
+        Assert.Empty(fixture.Store.Writes);
+    }
+
+    [Fact]
+    public async Task Product_measure_trailing_zeroes_are_captured_exactly_while_a_real_fourth_decimal_is_refused()
+    {
+        var accepted = new Fixture();
+        accepted.ProductSnapshots.ThicknessMm = 2.0000m;
+
+        var result = await accepted.Service.SavePlanAsync(
+            new SavePlanRequestV1(Guid.NewGuid(), WorkCenter,
+                [new PlannedInputRequestV1(Roll, "1000", LabelVersion)], null),
+            "key-exact", "manufacturing.plans.write", CancellationToken.None);
+
+        Assert.Equal(ManufacturingApiStatus.Created, result.Status);
+        var captured = Assert.Single(Assert.Single(accepted.Store.Plans.Values).Inputs).TechnicalSnapshot!;
+        Assert.Equal(2m, captured.ThicknessMm);
+        Assert.Equal((byte)4, captured.ThicknessMm.Scale);
+
+        var refused = new Fixture();
+        refused.ProductSnapshots.ThicknessMm = 2.0001m;
+        var invalid = await refused.Service.SavePlanAsync(
+            new SavePlanRequestV1(Guid.NewGuid(), WorkCenter,
+                [new PlannedInputRequestV1(Roll, "1000", LabelVersion)], null),
+            "key-inexact", "manufacturing.plans.write", CancellationToken.None);
+
+        Assert.Equal(ManufacturingApiStatus.Unavailable, invalid.Status);
+        Assert.Empty(refused.Store.Plans);
+        Assert.Empty(refused.Store.Writes);
     }
 
     [Theory]
@@ -529,6 +931,152 @@ public sealed class ManufacturingCommandServiceTests
     }
 
     [Theory]
+    [InlineData("permission")]
+    [InlineData("actor")]
+    [InlineData("company")]
+    public async Task A_plan_read_rechecks_the_captured_actor_company_and_permission_after_the_store_read(string fault)
+    {
+        var fixture = new Fixture();
+        var request = new SavePlanRequestV1(Guid.NewGuid(), WorkCenter,
+            [new PlannedInputRequestV1(Roll, "10", LabelVersion)], null);
+        var created = await fixture.Service.SavePlanAsync(request, "plan-read-fence", "manufacturing.plans.write",
+            CancellationToken.None);
+        var effects = (fixture.Store.Writes.Count, fixture.Store.Commands.Count, fixture.Store.AuditEvents.Count);
+        fixture.Authority.Permissions.Clear();
+        fixture.Store.AfterFindPlan = _ => ApplyFreshFenceFault(fixture, fault);
+
+        var result = await fixture.Service.GetPlanAsync(created.Resource!.PlanId, CancellationToken.None);
+
+        Assert.Equal((ManufacturingApiStatus.Denied, ManufacturingApiCodes.AuthorityDenied, false),
+            (result.Status, result.Code, result.IsReplay));
+        Assert.Null(result.Resource);
+        Assert.Null(result.OriginalCorrelationId);
+        Assert.Equal([ErpPermissions.ManufacturingPlansRead], fixture.Authority.Permissions);
+        Assert.Equal(effects,
+            (fixture.Store.Writes.Count, fixture.Store.Commands.Count, fixture.Store.AuditEvents.Count));
+    }
+
+    [Fact]
+    public async Task A_plan_read_fresh_grant_does_not_invent_a_company_wide_requirement()
+    {
+        var fixture = new Fixture();
+        var request = new SavePlanRequestV1(Guid.NewGuid(), WorkCenter,
+            [new PlannedInputRequestV1(Roll, "10", LabelVersion)], null);
+        var created = await fixture.Service.SavePlanAsync(request, "plan-read-scope", "manufacturing.plans.write",
+            CancellationToken.None);
+        fixture.Authority.Permissions.Clear();
+        fixture.Authority.Scope = Scope(companyWide: false, "PLAN_READER");
+
+        var result = await fixture.Service.GetPlanAsync(created.Resource!.PlanId, CancellationToken.None);
+
+        Assert.Equal(ManufacturingApiStatus.Ok, result.Status);
+        Assert.Equal(created.Resource.PlanId, result.Resource!.PlanId);
+        Assert.Equal([ErpPermissions.ManufacturingPlansRead], fixture.Authority.Permissions);
+    }
+
+    [Theory]
+    [InlineData("permission")]
+    [InlineData("actor")]
+    [InlineData("company")]
+    public async Task A_failed_plan_read_rechecks_the_captured_context_and_permission_before_503(string fault)
+    {
+        var fixture = new Fixture();
+        var request = new SavePlanRequestV1(Guid.NewGuid(), WorkCenter,
+            [new PlannedInputRequestV1(Roll, "10", LabelVersion)], null);
+        var created = await fixture.Service.SavePlanAsync(request, "failed-plan-read-fence",
+            "manufacturing.plans.write", CancellationToken.None);
+        var effects = (fixture.Store.Writes.Count, fixture.Store.Commands.Count, fixture.Store.AuditEvents.Count);
+        fixture.Authority.Permissions.Clear();
+        fixture.Store.ReadFault = ManufacturingStoreCodes.ConcurrentChange;
+        fixture.Store.AfterFindPlan = _ => ApplyFreshFenceFault(fixture, fault);
+
+        var result = await fixture.Service.GetPlanAsync(created.Resource!.PlanId, CancellationToken.None);
+
+        Assert.Equal((ManufacturingApiStatus.Denied, ManufacturingApiCodes.AuthorityDenied, false),
+            (result.Status, result.Code, result.IsReplay));
+        Assert.Null(result.Resource);
+        Assert.Null(result.OriginalCorrelationId);
+        Assert.Equal([ErpPermissions.ManufacturingPlansRead], fixture.Authority.Permissions);
+        Assert.Equal(effects,
+            (fixture.Store.Writes.Count, fixture.Store.Commands.Count, fixture.Store.AuditEvents.Count));
+    }
+
+    [Fact]
+    public async Task A_failed_plan_read_keeps_503_when_the_captured_context_and_narrow_grant_are_unchanged()
+    {
+        var fixture = new Fixture();
+        var request = new SavePlanRequestV1(Guid.NewGuid(), WorkCenter,
+            [new PlannedInputRequestV1(Roll, "10", LabelVersion)], null);
+        var created = await fixture.Service.SavePlanAsync(request, "failed-plan-read-stable",
+            "manufacturing.plans.write", CancellationToken.None);
+        var effects = (fixture.Store.Writes.Count, fixture.Store.Commands.Count, fixture.Store.AuditEvents.Count);
+        fixture.Authority.Permissions.Clear();
+        fixture.Authority.Scope = Scope(companyWide: false, "PLAN_READER");
+        fixture.Store.ReadFault = ManufacturingStoreCodes.ConcurrentChange;
+
+        var result = await fixture.Service.GetPlanAsync(created.Resource!.PlanId, CancellationToken.None);
+
+        Assert.Equal((ManufacturingApiStatus.Unavailable, (string?)null, false),
+            (result.Status, result.Code, result.IsReplay));
+        Assert.Null(result.Resource);
+        Assert.Null(result.OriginalCorrelationId);
+        Assert.Equal([ErpPermissions.ManufacturingPlansRead], fixture.Authority.Permissions);
+        Assert.Equal(effects,
+            (fixture.Store.Writes.Count, fixture.Store.Commands.Count, fixture.Store.AuditEvents.Count));
+    }
+
+    [Theory]
+    [InlineData("permission")]
+    [InlineData("actor")]
+    [InlineData("company")]
+    public async Task A_plan_revision_read_rechecks_the_captured_context_and_permission_before_projecting_history(
+        string fault)
+    {
+        var fixture = new Fixture();
+        var plan = new ProductionPlan(Guid.NewGuid(), Company, WorkCenter, ManufacturingProcess.Slitting,
+            [new PlannedInput(Roll, new Kilograms(10m), long.Parse(LabelVersion), commercialContext:
+                new PlanCommercialContextSnapshotV1(Party, PartyAccount, "party-v1", "account-v1"))]);
+        fixture.Store.PlanRevisions[plan.Id] =
+        [
+            new ManufacturingPlanRevision(0, 1, WorkCenter, plan.Inputs, null, null, null, At),
+        ];
+        fixture.Authority.Permissions.Clear();
+        fixture.Store.AfterListPlanRevisions = _ => ApplyFreshFenceFault(fixture, fault);
+
+        var result = await fixture.Service.ListPlanRevisionsAsync(plan.Id, CancellationToken.None);
+
+        Assert.Equal((ManufacturingApiStatus.Denied, ManufacturingApiCodes.AuthorityDenied),
+            (result.Status, result.Code));
+        Assert.Null(result.Resource);
+        Assert.Equal([ErpPermissions.ManufacturingPlansRead], fixture.Authority.Permissions);
+        Assert.Empty(fixture.Store.Writes);
+        Assert.Empty(fixture.Store.Commands);
+    }
+
+    [Fact]
+    public async Task A_plan_revision_read_keeps_its_valid_narrow_grant_and_commercial_snapshot()
+    {
+        var fixture = new Fixture();
+        var context = new PlanCommercialContextSnapshotV1(Party, PartyAccount, " party-v1 ", "account-v1/α");
+        var plan = new ProductionPlan(Guid.NewGuid(), Company, WorkCenter, ManufacturingProcess.Slitting,
+            [new PlannedInput(Roll, new Kilograms(10m), long.Parse(LabelVersion), commercialContext: context)]);
+        fixture.Store.PlanRevisions[plan.Id] =
+        [
+            new ManufacturingPlanRevision(0, 1, WorkCenter, plan.Inputs, null, null, null, At),
+        ];
+        fixture.Authority.Permissions.Clear();
+        fixture.Authority.Scope = Scope(companyWide: false, "PLAN_READER");
+
+        var result = await fixture.Service.ListPlanRevisionsAsync(plan.Id, CancellationToken.None);
+
+        Assert.Equal(ManufacturingApiStatus.Ok, result.Status);
+        Assert.Equal(new CapturedPlanCommercialContextViewV1(
+            Party, PartyAccount, " party-v1 ", "account-v1/α"),
+            Assert.Single(Assert.Single(result.Resource!.Revisions).Inputs).CommercialContext);
+        Assert.Equal([ErpPermissions.ManufacturingPlansRead], fixture.Authority.Permissions);
+    }
+
+    [Theory]
     [InlineData("inputMass")]
     [InlineData("1")]
     [InlineData("Unknown")]
@@ -608,6 +1156,7 @@ public sealed class ManufacturingCommandServiceTests
             CancellationToken.None);
         Assert.Equal(ManufacturingApiStatus.Created, created.Status);
         Assert.Equal(1, fixture.ParentRolls.Asked);
+        Assert.Equal(1, fixture.ProductSnapshots.Asked);
         Assert.Single(fixture.WorkCenters.Requests);
 
         fixture.ParentRolls.Exception = new InventoryParentRollException(503, InventoryParentRollCodesV1.Unavailable);
@@ -615,6 +1164,7 @@ public sealed class ManufacturingCommandServiceTests
             CancellationToken.None);
         Assert.Equal((ManufacturingApiStatus.Created, true), (replay.Status, replay.IsReplay));
         Assert.Equal(1, fixture.ParentRolls.Asked);
+        Assert.Equal(1, fixture.ProductSnapshots.Asked);
         Assert.Single(fixture.WorkCenters.Requests);
 
         var mismatch = await fixture.Service.SavePlanAsync(Plan("8", request.PlanId), "key-1",
@@ -622,6 +1172,7 @@ public sealed class ManufacturingCommandServiceTests
         Assert.Equal((ManufacturingApiStatus.Conflict, ManufacturingApiCodes.IdempotencyConflict, false),
             (mismatch.Status, mismatch.Code, mismatch.IsReplay));
         Assert.Equal(1, fixture.ParentRolls.Asked);
+        Assert.Equal(1, fixture.ProductSnapshots.Asked);
         Assert.Single(fixture.WorkCenters.Requests);
     }
 
@@ -699,10 +1250,13 @@ public sealed class ManufacturingCommandServiceTests
     }
 
     [Fact]
-    public async Task The_final_manufacturing_fence_runs_after_parent_roll_validation_and_can_refuse_the_write()
+    public async Task The_final_manufacturing_fence_runs_after_all_owner_reads_and_can_refuse_the_write()
     {
         var fixture = new Fixture();
-        fixture.Authority.Scopes.Enqueue(Scope(companyWide: true, "PRODUCTION_OPERATOR"));
+        for (var granted = 0; granted < 5; granted++)
+        {
+            fixture.Authority.Scopes.Enqueue(Scope(companyWide: true, "PRODUCTION_OPERATOR"));
+        }
         fixture.Authority.Scopes.Enqueue(PermissionScope.Denied);
 
         var result = await fixture.Service.SavePlanAsync(Plan(LabelVersion), "key-1",
@@ -710,7 +1264,8 @@ public sealed class ManufacturingCommandServiceTests
 
         Assert.Equal((ManufacturingApiStatus.Denied, ManufacturingApiCodes.AuthorityDenied),
             (result.Status, result.Code));
-        Assert.Equal(["authority", "work-center", "settings", "parent-roll", "authority"], fixture.Calls);
+        Assert.Equal(["authority", "authority", "work-center", "authority", "settings", "parent-roll", "authority",
+            "product", "authority", "authority"], fixture.Calls);
         Assert.Single(fixture.ParentRolls.Selections);
         Assert.Empty(fixture.Store.Commands);
         Assert.Empty(fixture.Store.Writes);
@@ -724,6 +1279,44 @@ public sealed class ManufacturingCommandServiceTests
         fixture.User.Companies.Clear();
 
         Assert.Equal(ManufacturingApiStatus.Denied, (await fixture.Service.GetOrderAsync(order.Id, CancellationToken.None)).Status);
+    }
+
+    [Theory]
+    [InlineData("permission")]
+    [InlineData("actor")]
+    [InlineData("company")]
+    public async Task An_order_read_rechecks_the_captured_context_and_permission_before_projecting_roll_context(
+        string fault)
+    {
+        var fixture = new Fixture();
+        var order = await fixture.ApprovedOrderAsync();
+        var effects = (fixture.Store.Writes.Count, fixture.Store.Commands.Count, fixture.Store.AuditEvents.Count);
+        fixture.Authority.Permissions.Clear();
+        fixture.Store.AfterFindOrder = _ => ApplyFreshFenceFault(fixture, fault);
+
+        var result = await fixture.Service.GetOrderAsync(order.Id, CancellationToken.None);
+
+        Assert.Equal((ManufacturingApiStatus.Denied, ManufacturingApiCodes.AuthorityDenied, false),
+            (result.Status, result.Code, result.IsReplay));
+        Assert.Null(result.Resource);
+        Assert.Equal([ErpPermissions.ManufacturingOrdersRead], fixture.Authority.Permissions);
+        Assert.Equal(effects,
+            (fixture.Store.Writes.Count, fixture.Store.Commands.Count, fixture.Store.AuditEvents.Count));
+    }
+
+    [Fact]
+    public async Task An_order_read_fresh_grant_does_not_invent_a_company_wide_requirement()
+    {
+        var fixture = new Fixture();
+        var order = await fixture.ApprovedOrderAsync();
+        fixture.Authority.Permissions.Clear();
+        fixture.Authority.Scope = Scope(companyWide: false, "ORDER_READER");
+
+        var result = await fixture.Service.GetOrderAsync(order.Id, CancellationToken.None);
+
+        Assert.Equal(ManufacturingApiStatus.Ok, result.Status);
+        Assert.Equal(order.Id, result.Resource!.OrderId);
+        Assert.Equal([ErpPermissions.ManufacturingOrdersRead], fixture.Authority.Permissions);
     }
 
     [Fact]
@@ -771,6 +1364,79 @@ public sealed class ManufacturingCommandServiceTests
 
         fixture.User.Companies.Clear();
         Assert.Equal(ManufacturingApiStatus.Denied, (await fixture.Service.GetMassBalanceAsync(order.Id, CancellationToken.None)).Status);
+    }
+
+    [Theory]
+    [InlineData("permission")]
+    [InlineData("actor")]
+    [InlineData("company")]
+    public async Task A_mass_balance_read_rechecks_the_captured_context_and_permission_before_projecting_facts(
+        string fault)
+    {
+        var fixture = new Fixture();
+        var order = await fixture.ApprovedOrderAsync();
+        var effects = (fixture.Store.Writes.Count, fixture.Store.Commands.Count, fixture.Store.AuditEvents.Count);
+        fixture.Authority.Permissions.Clear();
+        fixture.Store.AfterFindOrder = _ => ApplyFreshFenceFault(fixture, fault);
+
+        var result = await fixture.Service.GetMassBalanceAsync(order.Id, CancellationToken.None);
+
+        Assert.Equal((ManufacturingApiStatus.Denied, ManufacturingApiCodes.AuthorityDenied, false),
+            (result.Status, result.Code, result.IsReplay));
+        Assert.Null(result.Resource);
+        Assert.Null(result.OriginalCorrelationId);
+        Assert.Equal([ErpPermissions.ManufacturingOrdersRead], fixture.Authority.Permissions);
+        Assert.Equal(effects,
+            (fixture.Store.Writes.Count, fixture.Store.Commands.Count, fixture.Store.AuditEvents.Count));
+    }
+
+    [Theory]
+    [InlineData("permission")]
+    [InlineData("actor")]
+    [InlineData("company")]
+    public async Task A_failed_mass_balance_read_rechecks_the_captured_context_and_permission_before_503(string fault)
+    {
+        var fixture = new Fixture();
+        var order = await fixture.ApprovedOrderAsync();
+        var effects = (fixture.Store.Writes.Count, fixture.Store.Commands.Count, fixture.Store.AuditEvents.Count);
+        fixture.Authority.Permissions.Clear();
+        fixture.Store.ReadFault = ManufacturingStoreCodes.ConcurrentChange;
+        fixture.Store.AfterFindOrder = _ => ApplyFreshFenceFault(fixture, fault);
+
+        var result = await fixture.Service.GetMassBalanceAsync(order.Id, CancellationToken.None);
+
+        Assert.Equal((ManufacturingApiStatus.Denied, ManufacturingApiCodes.AuthorityDenied, false),
+            (result.Status, result.Code, result.IsReplay));
+        Assert.Null(result.Resource);
+        Assert.Null(result.OriginalCorrelationId);
+        Assert.Equal([ErpPermissions.ManufacturingOrdersRead], fixture.Authority.Permissions);
+        Assert.Equal(effects,
+            (fixture.Store.Writes.Count, fixture.Store.Commands.Count, fixture.Store.AuditEvents.Count));
+    }
+
+    [Fact]
+    public async Task A_mass_balance_read_keeps_its_valid_narrow_grant_for_success_and_503()
+    {
+        var fixture = new Fixture();
+        var order = await fixture.ApprovedOrderAsync();
+        fixture.Authority.Permissions.Clear();
+        fixture.Authority.Scope = Scope(companyWide: false, "ORDER_READER");
+
+        var result = await fixture.Service.GetMassBalanceAsync(order.Id, CancellationToken.None);
+
+        Assert.Equal(ManufacturingApiStatus.Ok, result.Status);
+        Assert.Equal(order.Id, result.Resource!.OrderId);
+        Assert.Equal([ErpPermissions.ManufacturingOrdersRead], fixture.Authority.Permissions);
+
+        fixture.Authority.Permissions.Clear();
+        fixture.Store.ReadFault = ManufacturingStoreCodes.ConcurrentChange;
+        var busy = await fixture.Service.GetMassBalanceAsync(order.Id, CancellationToken.None);
+
+        Assert.Equal((ManufacturingApiStatus.Unavailable, (string?)null, false),
+            (busy.Status, busy.Code, busy.IsReplay));
+        Assert.Null(busy.Resource);
+        Assert.Null(busy.OriginalCorrelationId);
+        Assert.Equal([ErpPermissions.ManufacturingOrdersRead], fixture.Authority.Permissions);
     }
 
     [Fact]
@@ -828,6 +1494,158 @@ public sealed class ManufacturingCommandServiceTests
             record.IdempotencyKeyHash);
         Assert.Matches("^[0-9A-F]{64}$", record.IdempotencyKeyHash);
         Assert.DoesNotContain("key-1", record.ResultJson, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("permission")]
+    [InlineData("actor")]
+    [InlineData("company")]
+    public async Task A_stored_answer_rechecks_the_original_command_fence_after_the_command_read(string fault)
+    {
+        var fixture = new Fixture();
+        var order = await fixture.ApprovedOrderAsync();
+        var fact = Fact(order.Version, "10");
+        await fixture.Service.IssueInputAsync(order.Id, fact, "stored-fence", Permission, CancellationToken.None);
+        var effects = (fixture.Store.Writes.Count, fixture.Store.Commands.Count, fixture.Store.AuditEvents.Count);
+        fixture.Authority.Permissions.Clear();
+        fixture.Store.AfterFindCommand = stored =>
+        {
+            if (stored is not null)
+            {
+                ApplyFreshFenceFault(fixture, fault);
+            }
+        };
+
+        var result = await fixture.Service.IssueInputAsync(
+            order.Id, fact, "stored-fence", Permission, CancellationToken.None);
+
+        Assert.Equal((ManufacturingApiStatus.Denied, ManufacturingApiCodes.AuthorityDenied, false),
+            (result.Status, result.Code, result.IsReplay));
+        Assert.Null(result.Resource);
+        Assert.Null(result.OriginalCorrelationId);
+        Assert.Equal([Permission, Permission], fixture.Authority.Permissions);
+        Assert.Equal(effects,
+            (fixture.Store.Writes.Count, fixture.Store.Commands.Count, fixture.Store.AuditEvents.Count));
+    }
+
+    [Theory]
+    [InlineData("permission")]
+    [InlineData("actor")]
+    [InlineData("company")]
+    public async Task An_empty_initial_command_read_rechecks_the_captured_fence_before_any_owner_or_write(string fault)
+    {
+        var fixture = new Fixture();
+        fixture.Authority.Permissions.Clear();
+        fixture.Store.AfterFindCommand = stored =>
+        {
+            Assert.Null(stored);
+            ApplyFreshFenceFault(fixture, fault);
+        };
+
+        var result = await fixture.Service.SavePlanAsync(
+            Plan(LabelVersion), "initial-null-fence", Permission, CancellationToken.None);
+
+        Assert.Equal((ManufacturingApiStatus.Denied, ManufacturingApiCodes.AuthorityDenied, false),
+            (result.Status, result.Code, result.IsReplay));
+        Assert.Null(result.Resource);
+        Assert.Equal([Permission, Permission], fixture.Authority.Permissions);
+        Assert.Empty(fixture.WorkCenters.Requests);
+        Assert.Equal(0, fixture.ParentRolls.Asked);
+        Assert.Empty(fixture.Store.Writes);
+        Assert.Empty(fixture.Store.Commands);
+    }
+
+    [Theory]
+    [InlineData("permission")]
+    [InlineData("actor")]
+    [InlineData("company")]
+    public async Task A_nonterminal_commercial_refusal_rechecks_the_captured_fence_after_a_null_winner_read(
+        string fault)
+    {
+        var fixture = new Fixture();
+        fixture.PartyAccounts.Account = new CounterpartyManufacturingPartyAccountV1(
+            Party, PartyAccount, Company, true, true, true, false, "party-v2", "account-v1");
+        var commandReads = 0;
+        fixture.Store.AfterFindCommand = stored =>
+        {
+            Assert.Null(stored);
+            commandReads++;
+            if (commandReads == 2)
+            {
+                ApplyFreshFenceFault(fixture, fault);
+            }
+        };
+
+        var result = await fixture.Service.SavePlanAsync(
+            CommercialPlan(Guid.NewGuid()), "commercial-null-winner-fence", Permission, CancellationToken.None);
+
+        Assert.Equal((ManufacturingApiStatus.Denied, ManufacturingApiCodes.AuthorityDenied, false),
+            (result.Status, result.Code, result.IsReplay));
+        Assert.Null(result.Resource);
+        Assert.Null(result.Field);
+        Assert.Equal(2, commandReads);
+        Assert.Empty(fixture.Store.Writes);
+        Assert.Empty(fixture.Store.Commands);
+    }
+
+    [Theory]
+    [InlineData("permission")]
+    [InlineData("actor")]
+    [InlineData("company")]
+    public async Task A_concurrent_store_refusal_rechecks_the_captured_fence_after_a_null_winner_read(string fault)
+    {
+        var fixture = new Fixture();
+        fixture.Store.Fail = ManufacturingStoreCodes.ConcurrentChange;
+        var commandReads = 0;
+        fixture.Store.AfterFindCommand = stored =>
+        {
+            Assert.Null(stored);
+            commandReads++;
+            if (commandReads == 2)
+            {
+                ApplyFreshFenceFault(fixture, fault);
+            }
+        };
+
+        var result = await fixture.Service.SavePlanAsync(
+            Plan(LabelVersion), "concurrent-null-winner-fence", Permission, CancellationToken.None);
+
+        Assert.Equal((ManufacturingApiStatus.Denied, ManufacturingApiCodes.AuthorityDenied, false),
+            (result.Status, result.Code, result.IsReplay));
+        Assert.Null(result.Resource);
+        Assert.Equal(2, commandReads);
+        Assert.Empty(fixture.Store.Writes);
+        Assert.Empty(fixture.Store.Commands);
+    }
+
+    [Theory]
+    [InlineData("permission")]
+    [InlineData("actor")]
+    [InlineData("company")]
+    public async Task A_terminal_record_race_rechecks_the_captured_fence_after_a_null_winner_read(string fault)
+    {
+        var fixture = new Fixture();
+        fixture.Store.RecordCommandFault = ManufacturingStoreCodes.ConcurrentChange;
+        var commandReads = 0;
+        fixture.Store.AfterFindCommand = stored =>
+        {
+            Assert.Null(stored);
+            commandReads++;
+            if (commandReads == 2)
+            {
+                ApplyFreshFenceFault(fixture, fault);
+            }
+        };
+
+        var result = await fixture.Service.IssueInputAsync(
+            Guid.NewGuid(), Fact(1, "10"), "terminal-null-winner-fence", Permission, CancellationToken.None);
+
+        Assert.Equal((ManufacturingApiStatus.Denied, ManufacturingApiCodes.AuthorityDenied, false),
+            (result.Status, result.Code, result.IsReplay));
+        Assert.Null(result.Resource);
+        Assert.Equal(2, commandReads);
+        Assert.Empty(fixture.Store.Writes);
+        Assert.Empty(fixture.Store.Commands);
     }
 
     [Theory]
@@ -905,6 +1723,40 @@ public sealed class ManufacturingCommandServiceTests
         Assert.Empty(fixture.Store.Writes);
     }
 
+    [Theory]
+    [InlineData("permission")]
+    [InlineData("actor")]
+    [InlineData("company")]
+    public async Task A_concurrent_winner_answer_rechecks_the_original_command_fence_after_the_winner_read(string fault)
+    {
+        var fixture = new Fixture();
+        var order = await fixture.ApprovedOrderAsync();
+        var fact = Fact(order.Version, "10");
+        fixture.Store.RaceWinner = (metadata, result) =>
+            metadata.Completion!(result) with { OriginalCorrelationId = "corr-winner" };
+        fixture.Store.AfterFindCommand = stored =>
+        {
+            if (stored is not null)
+            {
+                ApplyFreshFenceFault(fixture, fault);
+            }
+        };
+        fixture.Authority.Permissions.Clear();
+
+        var result = await fixture.Service.IssueInputAsync(
+            order.Id, fact, "winner-fence", Permission, CancellationToken.None);
+
+        Assert.Equal((ManufacturingApiStatus.Denied, ManufacturingApiCodes.AuthorityDenied, false),
+            (result.Status, result.Code, result.IsReplay));
+        Assert.Null(result.Resource);
+        Assert.Null(result.OriginalCorrelationId);
+        // Initial command grant, the empty-read fence, the write's final fence, then the winner answer fence.
+        Assert.Equal([Permission, Permission, Permission, Permission], fixture.Authority.Permissions);
+        Assert.Empty(fixture.Store.Writes);
+        Assert.Single(fixture.Store.Commands);
+        Assert.Empty(fixture.Store.AuditEvents);
+    }
+
     [Fact]
     public async Task A_rule_refusal_after_the_winner_committed_answers_from_the_winners_record()
     {
@@ -942,6 +1794,9 @@ public sealed class ManufacturingCommandServiceTests
 
         Assert.Equal((ManufacturingApiStatus.Ok, false, null), (closed.Status, closed.IsReplay, closed.Code));
         Assert.Equal("Closed", closed.Resource!.Status);
+        Assert.Equal(1, fixture.Settings.ToleranceAsked);
+        Assert.NotNull(order.ClosurePolicy);
+        Assert.Equal([ClosePermission, ClosePermission, ClosePermission, ClosePermission], fixture.Authority.Permissions);
         Assert.Equal(ClosePermission, Assert.Single(fixture.Store.Writes).PermissionCode);
         // §6: the record joined the business save, not a second one.
         Assert.Single(fixture.Store.Commands);
@@ -953,6 +1808,274 @@ public sealed class ManufacturingCommandServiceTests
 
         Assert.Equal((ManufacturingApiStatus.Ok, true, "corr-1"), (again.Status, again.IsReplay, again.OriginalCorrelationId));
         Assert.Single(fixture.Store.Writes);
+    }
+
+    [Fact]
+    public async Task A_legacy_normal_close_success_replays_without_rehashing_null_reason_or_any_new_effect()
+    {
+        const string key = "legacy-close-1";
+        var fixture = new Fixture();
+        var order = await fixture.BalancedOrderAsync();
+        var read = order.Version;
+        order.Close(read, Actor, At);
+
+        var storedView = new OrderViewV1(
+            order.Id, Company, order.PlanId, order.WorkCenterId, order.Process.ToString(), order.Status.ToString(),
+            order.Version, null, new RemainingTargetViewV1(null, null, null, null),
+            [new RollBalanceViewV1(Roll, "1000", "100", "0", "100",
+                Enum.GetValues<OutputClass>().ToDictionary(
+                    outputClass => outputClass.ToString(),
+                    outputClass => outputClass == OutputClass.GoodProduct ? "100" : "0",
+                    StringComparer.Ordinal),
+                "0", "0", true)],
+            nameof(CostStatus.NotCalculated), Actor, At);
+        var storedResult = new ManufacturingApiResult<OrderViewV1>(
+            ManufacturingApiStatus.Ok, storedView, false, null);
+        var json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+        var keyHash = TestSha256(key);
+        var legacyRequestHash = TestSha256(ManufacturingCommandNames.CloseOrder + "|"
+            + JsonSerializer.Serialize(new { orderId = order.Id, expectedVersion = read }, json));
+        var legacy = new ManufacturingCommandRecord(
+            ManufacturingCommandNames.CloseOrder,
+            keyHash,
+            Actor.ToString("D"),
+            legacyRequestHash,
+            JsonSerializer.Serialize(storedResult, json),
+            "corr-legacy");
+        fixture.Store.Commands.Add((ManufacturingCommandNames.CloseOrder, keyHash), legacy);
+
+        var replay = await fixture.Service.CloseOrderAsync(
+            order.Id, new CloseOrderRequestV1(read), key, ClosePermission, CancellationToken.None);
+
+        Assert.Equal((ManufacturingApiStatus.Ok, true, "corr-legacy", order.Id, order.Version),
+            (replay.Status, replay.IsReplay, replay.OriginalCorrelationId,
+                replay.Resource!.OrderId, replay.Resource.Version));
+
+        var changedPayload = await fixture.Service.CloseOrderAsync(
+            order.Id, new CloseOrderRequestV1(read, "Yeni istisna gerekçesi"), key,
+            ClosePermission, CloseExceptionPermission, CancellationToken.None);
+        Assert.Equal((ManufacturingApiStatus.Conflict, ManufacturingApiCodes.IdempotencyConflict, false),
+            (changedPayload.Status, changedPayload.Code, changedPayload.IsReplay));
+
+        fixture.User.ActorId = OtherActor;
+        var changedActor = await fixture.Service.CloseOrderAsync(
+            order.Id, new CloseOrderRequestV1(read), key, ClosePermission, CancellationToken.None);
+        Assert.Equal((ManufacturingApiStatus.Conflict, ManufacturingApiCodes.IdempotencyConflict, false),
+            (changedActor.Status, changedActor.Code, changedActor.IsReplay));
+
+        Assert.Equal(0, fixture.Settings.ToleranceAsked);
+        Assert.Empty(fixture.Store.PolicyDecisions);
+        Assert.Empty(fixture.Store.AuditEvents);
+        Assert.Empty(fixture.Store.Writes);
+        Assert.Same(legacy, Assert.Single(fixture.Store.Commands).Value);
+    }
+
+    [Fact]
+    public async Task An_out_of_tolerance_close_requires_a_reason_and_the_dedicated_fresh_permission()
+    {
+        var fixture = new Fixture();
+        fixture.Settings.Tolerance = fixture.Settings.Tolerance with { MaximumFirePercent = 5m };
+        var order = await fixture.FireOrderAsync();
+
+        var required = await fixture.Service.CloseOrderAsync(
+            order.Id, new CloseOrderRequestV1(order.Version), "close-plain", ClosePermission,
+            CloseExceptionPermission, CancellationToken.None);
+
+        Assert.Equal((ManufacturingApiStatus.Unprocessable, ClosureAssessmentCodesV1.ApprovalRequired),
+            (required.Status, required.Code));
+        Assert.Equal(OrderStatus.Open, order.Status);
+        Assert.Empty(fixture.Store.Writes);
+
+        var approved = await fixture.Service.CloseOrderAsync(
+            order.Id, new CloseOrderRequestV1(order.Version, "  Ölçüm ve proses sorumlusu teyidi  "),
+            "close-approved", ClosePermission, CloseExceptionPermission, CancellationToken.None);
+
+        Assert.Equal(ManufacturingApiStatus.Ok, approved.Status);
+        Assert.Equal(OrderStatus.Closed, order.Status);
+        Assert.Equal("Ölçüm ve proses sorumlusu teyidi", order.ClosureExceptionApproval!.Reason);
+        Assert.Equal((Company, order.Id, Actor, order.Version - 1),
+            (order.ClosureExceptionApproval.CompanyId, order.ClosureExceptionApproval.OrderId,
+                order.ClosureExceptionApproval.ApprovedByUserId, order.ClosureExceptionApproval.OrderVersion));
+        Assert.Equal(
+            [ClosePermission, ClosePermission, ClosePermission,
+                ClosePermission, ClosePermission, CloseExceptionPermission, ClosePermission, CloseExceptionPermission,
+                ClosePermission, CloseExceptionPermission],
+            fixture.Authority.Permissions);
+    }
+
+    [Fact]
+    public async Task A_reasoned_close_replay_remeasures_exception_authority_before_returning_its_immutable_answer()
+    {
+        const string key = "close-approved";
+        const string reason = "Ölçüm ve proses sorumlusu teyidi";
+        var fixture = new Fixture();
+        fixture.Settings.Tolerance = fixture.Settings.Tolerance with { MaximumFirePercent = 5m };
+        var order = await fixture.FireOrderAsync();
+        var read = order.Version;
+
+        var closed = await fixture.Service.CloseOrderAsync(
+            order.Id, new CloseOrderRequestV1(read, $"  {reason}  "), key,
+            ClosePermission, CloseExceptionPermission, CancellationToken.None);
+        Assert.Equal((ManufacturingApiStatus.Ok, false, OrderStatus.Closed),
+            (closed.Status, closed.IsReplay, order.Status));
+        var stored = Assert.Single(fixture.Store.Commands).Value;
+        var toleranceReads = fixture.Settings.ToleranceAsked;
+        var effects = (fixture.Store.Writes.Count, fixture.Store.PolicyDecisions.Count, fixture.Store.AuditEvents.Count);
+        Assert.Equal((1, 1, 1), effects);
+
+        fixture.Authority.Permissions.Clear();
+        fixture.Authority.Scopes.Enqueue(Scope(companyWide: true, "PRODUCTION_OPERATOR"));
+        fixture.Authority.Scopes.Enqueue(Scope(companyWide: true, "PRODUCTION_OPERATOR"));
+        fixture.Authority.Scopes.Enqueue(PermissionScope.Denied);
+        var revoked = await fixture.Service.CloseOrderAsync(
+            order.Id, new CloseOrderRequestV1(read, reason), key,
+            ClosePermission, CloseExceptionPermission, CancellationToken.None);
+
+        Assert.Equal((ManufacturingApiStatus.Denied, ManufacturingApiCodes.AuthorityDenied, false),
+            (revoked.Status, revoked.Code, revoked.IsReplay));
+        Assert.Null(revoked.Resource);
+        Assert.Equal([ClosePermission, ClosePermission, CloseExceptionPermission], fixture.Authority.Permissions);
+        Assert.Equal(toleranceReads, fixture.Settings.ToleranceAsked);
+        Assert.Equal(effects,
+            (fixture.Store.Writes.Count, fixture.Store.PolicyDecisions.Count, fixture.Store.AuditEvents.Count));
+        Assert.Same(stored, Assert.Single(fixture.Store.Commands).Value);
+
+        fixture.Authority.Permissions.Clear();
+        fixture.Authority.Scopes.Enqueue(Scope(companyWide: true, "PRODUCTION_OPERATOR"));
+        fixture.Authority.Scopes.Enqueue(Scope(companyWide: true, "PRODUCTION_OPERATOR"));
+        fixture.Authority.Scopes.Enqueue(Scope(companyWide: true, "PRODUCTION_SUPERVISOR"));
+        var replay = await fixture.Service.CloseOrderAsync(
+            order.Id, new CloseOrderRequestV1(read, reason), key,
+            ClosePermission, CloseExceptionPermission, CancellationToken.None);
+
+        Assert.Equal((ManufacturingApiStatus.Ok, true, "corr-1", order.Id),
+            (replay.Status, replay.IsReplay, replay.OriginalCorrelationId, replay.Resource!.OrderId));
+        Assert.Equal([ClosePermission, ClosePermission, CloseExceptionPermission], fixture.Authority.Permissions);
+        Assert.Equal(toleranceReads, fixture.Settings.ToleranceAsked);
+        Assert.Equal(effects,
+            (fixture.Store.Writes.Count, fixture.Store.PolicyDecisions.Count, fixture.Store.AuditEvents.Count));
+        Assert.Same(stored, Assert.Single(fixture.Store.Commands).Value);
+    }
+
+    [Fact]
+    public async Task Exception_authority_revoked_after_the_store_read_leaves_no_close_effect()
+    {
+        var fixture = new Fixture();
+        fixture.Settings.Tolerance = fixture.Settings.Tolerance with { MaximumFirePercent = 5m };
+        var order = await fixture.FireOrderAsync();
+        for (var granted = 0; granted < 6; granted++)
+        {
+            fixture.Authority.Scopes.Enqueue(Scope(companyWide: true, "PRODUCTION_OPERATOR"));
+        }
+        fixture.Authority.Scopes.Enqueue(PermissionScope.Denied);
+
+        var result = await fixture.Service.CloseOrderAsync(
+            order.Id, new CloseOrderRequestV1(order.Version, "Kalıcılık öncesi teknik teyit"),
+            "close-revoked-at-persistence", ClosePermission, CloseExceptionPermission, CancellationToken.None);
+
+        Assert.Equal((ManufacturingApiStatus.Denied, ManufacturingApiCodes.AuthorityDenied),
+            (result.Status, result.Code));
+        Assert.Equal(
+            [ClosePermission, ClosePermission, CloseExceptionPermission, ClosePermission, CloseExceptionPermission,
+                ClosePermission, CloseExceptionPermission],
+            fixture.Authority.Permissions);
+        Assert.Equal(OrderStatus.Open, order.Status);
+        Assert.Null(order.ClosurePolicy);
+        Assert.Empty(fixture.Store.PolicyDecisions);
+        Assert.Empty(fixture.Store.AuditEvents);
+        Assert.Empty(fixture.Store.Commands);
+        Assert.Empty(fixture.Store.Writes);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Company_or_actor_switch_after_the_store_read_leaves_no_close_effect(bool switchCompany)
+    {
+        var fixture = new Fixture();
+        var order = await fixture.BalancedOrderAsync();
+        fixture.Store.OnPolicyCloseRead = _ =>
+        {
+            if (switchCompany)
+            {
+                fixture.CompanyContext.SwitchForTest(OtherCompany);
+            }
+            else
+            {
+                fixture.User.ActorId = OtherActor;
+            }
+        };
+
+        var result = await fixture.Service.CloseOrderAsync(
+            order.Id, new CloseOrderRequestV1(order.Version), $"close-context-switch-{switchCompany}",
+            ClosePermission, CancellationToken.None);
+
+        Assert.Equal((ManufacturingApiStatus.Denied, ManufacturingApiCodes.AuthorityDenied),
+            (result.Status, result.Code));
+        Assert.Equal([ClosePermission, ClosePermission, ClosePermission], fixture.Authority.Permissions);
+        Assert.Equal(OrderStatus.Open, order.Status);
+        Assert.Null(order.ClosurePolicy);
+        Assert.Empty(fixture.Store.PolicyDecisions);
+        Assert.Empty(fixture.Store.AuditEvents);
+        Assert.Empty(fixture.Store.Commands);
+        Assert.Empty(fixture.Store.Writes);
+    }
+
+    [Fact]
+    public async Task Ordinary_close_authority_cannot_approve_an_out_of_tolerance_exception()
+    {
+        var fixture = new Fixture();
+        fixture.Settings.Tolerance = fixture.Settings.Tolerance with { MaximumFirePercent = 5m };
+        var order = await fixture.FireOrderAsync();
+        fixture.Authority.Scopes.Enqueue(Scope(companyWide: true, "PRODUCTION_OPERATOR"));
+        fixture.Authority.Scopes.Enqueue(Scope(companyWide: true, "PRODUCTION_OPERATOR"));
+        fixture.Authority.Scopes.Enqueue(PermissionScope.Denied);
+
+        var result = await fixture.Service.CloseOrderAsync(
+            order.Id, new CloseOrderRequestV1(order.Version, "Teknik teyit"), "close-denied",
+            ClosePermission, CloseExceptionPermission, CancellationToken.None);
+
+        Assert.Equal((ManufacturingApiStatus.Denied, ManufacturingApiCodes.AuthorityDenied),
+            (result.Status, result.Code));
+        Assert.Equal([ClosePermission, ClosePermission, CloseExceptionPermission], fixture.Authority.Permissions);
+        Assert.Equal(OrderStatus.Open, order.Status);
+        Assert.Empty(fixture.Store.Writes);
+    }
+
+    [Fact]
+    public async Task A_reason_is_refused_without_asking_exception_authority_when_the_close_is_within_tolerance()
+    {
+        var fixture = new Fixture();
+        var order = await fixture.BalancedOrderAsync();
+
+        var result = await fixture.Service.CloseOrderAsync(
+            order.Id, new CloseOrderRequestV1(order.Version, "Gereksiz onay"), "close-unexpected",
+            ClosePermission, CloseExceptionPermission, CancellationToken.None);
+
+        Assert.Equal((ManufacturingApiStatus.Unprocessable, ClosureAssessmentCodesV1.ApprovalUnexpected),
+            (result.Status, result.Code));
+        Assert.Equal([ClosePermission, ClosePermission, ClosePermission], fixture.Authority.Permissions);
+        Assert.Equal(OrderStatus.Open, order.Status);
+        Assert.Empty(fixture.Store.Writes);
+    }
+
+    [Fact]
+    public async Task A_missing_tolerance_profile_fails_closed_without_a_default_or_a_write()
+    {
+        var fixture = new Fixture();
+        var order = await fixture.BalancedOrderAsync();
+        fixture.Settings.ToleranceRefusal = SettingsPrerequisiteCodesV1.ManufacturingToleranceProfileNotFound;
+
+        var result = await fixture.Service.CloseOrderAsync(
+            order.Id, new CloseOrderRequestV1(order.Version), "close-no-profile",
+            ClosePermission, CloseExceptionPermission, CancellationToken.None);
+
+        Assert.Equal((ManufacturingApiStatus.Unprocessable,
+                SettingsPrerequisiteCodesV1.ManufacturingToleranceProfileNotFound),
+            (result.Status, result.Code));
+        Assert.Equal(1, fixture.Settings.ToleranceAsked);
+        Assert.Equal(OrderStatus.Open, order.Status);
+        Assert.Empty(fixture.Store.Writes);
     }
 
     [Fact]
@@ -990,7 +2113,7 @@ public sealed class ManufacturingCommandServiceTests
         var result = await fixture.Service.CloseOrderAsync(order.Id, new CloseOrderRequestV1(order.Version), "close-1",
             ClosePermission, CancellationToken.None);
 
-        Assert.Equal((ManufacturingApiStatus.Unprocessable, ManufacturingRuleCodes.UnexplainedDifference),
+        Assert.Equal((ManufacturingApiStatus.Unprocessable, ClosureAssessmentCodesV1.FireDeclarationRequired),
             (result.Status, result.Code));
         Assert.Equal(OrderStatus.Open, order.Status);
         Assert.Empty(fixture.Store.Writes);
@@ -1013,6 +2136,7 @@ public sealed class ManufacturingCommandServiceTests
         Assert.Equal(OrderStatus.Open, order.Status);
         Assert.Empty(fixture.Store.Writes);
         Assert.Single(fixture.Store.Commands);
+        Assert.Equal(0, fixture.Settings.ToleranceAsked);
 
         var again = await fixture.Service.CloseOrderAsync(order.Id, new CloseOrderRequestV1(stale), "close-1",
             ClosePermission, CancellationToken.None);
@@ -1036,6 +2160,27 @@ public sealed class ManufacturingCommandServiceTests
         Assert.Equal((ManufacturingApiStatus.Invalid, ManufacturingApiCodes.RequestInvalid, "expectedVersion"),
             (result.Status, result.Code, result.Field));
         Assert.Equal(0, fixture.Authority.Asked);
+        Assert.Empty(fixture.Store.Writes);
+    }
+
+    [Fact]
+    public async Task A_malformed_exception_reason_is_rejected_before_authority_or_settings_are_asked()
+    {
+        var fixture = new Fixture();
+        var order = await fixture.BalancedOrderAsync();
+
+        foreach (var reason in new[] { "   ", "satır\nkırılması", new string('x', 257) })
+        {
+            var result = await fixture.Service.CloseOrderAsync(
+                order.Id, new CloseOrderRequestV1(order.Version, reason), $"close-invalid-{reason.Length}",
+                ClosePermission, CloseExceptionPermission, CancellationToken.None);
+
+            Assert.Equal((ManufacturingApiStatus.Invalid, ManufacturingApiCodes.RequestInvalid, "exceptionReason"),
+                (result.Status, result.Code, result.Field));
+        }
+
+        Assert.Equal(0, fixture.Authority.Asked);
+        Assert.Equal(0, fixture.Settings.ToleranceAsked);
         Assert.Empty(fixture.Store.Writes);
     }
 
@@ -1146,32 +2291,56 @@ public sealed class ManufacturingCommandServiceTests
         // test above separately pins that conforming clients must provide the non-null constructor value.
         new(planId ?? Guid.NewGuid(), WorkCenter, [new PlannedInputRequestV1(Roll, "10", version!)], null);
 
+    private static SavePlanRequestV1 CommercialPlan(Guid planId) => new(
+        planId,
+        WorkCenter,
+        [new PlannedInputRequestV1(Roll, "10", LabelVersion,
+            new PlanCommercialContextRequestV1(Party, PartyAccount, "party-v1", "account-v1"))],
+        null);
+
     private static PermissionScope Scope(bool companyWide, params string[] roles) => new(true, companyWide,
         new HashSet<string>(roles, StringComparer.Ordinal), new HashSet<Guid>(), new HashSet<Guid>(), new HashSet<Guid>());
+
+    private static void ApplyFreshFenceFault(Fixture fixture, string fault)
+    {
+        switch (fault)
+        {
+            case "permission": fixture.Authority.Scope = PermissionScope.Denied; break;
+            case "actor": fixture.User.ActorId = OtherActor; break;
+            case "company": fixture.CompanyContext.SwitchForTest(OtherCompany); break;
+            default: throw new ArgumentOutOfRangeException(nameof(fault), fault, null);
+        }
+    }
 
     private sealed class Fixture
     {
         public Fixture(bool withWorkCenters = true)
         {
-            var company = new CompanyContext();
-            company.Set(Company);
+            CompanyContext = new MutableCompanyContext(Company);
             var correlation = new CorrelationContext();
             correlation.Set("corr-1", null, "Web", null, null);
             Settings = new SettingsPort(Calls);
             Authority = new AuthorityPort(Calls) { Scope = Scope(companyWide: true, "PRODUCTION_OPERATOR") };
             ParentRolls = new ParentRollPort(Calls);
             WorkCenters = new WorkCenterPort(Calls);
+            ProductSnapshots = new ProductSnapshotPort(Calls);
+            PartyAccounts = new PartyAccountPort(Calls);
             InputIssues = new InputIssuePort(Store);
             ReturnOutputs = new ReturnOutputPort(Store);
             Correlation = correlation;
             Service = new ManufacturingCommandService(Store, Store, Store, new ManufacturingMassVerifier(Settings), Authority,
-                company, User, correlation, new FixedTime(), ParentRolls, withWorkCenters ? WorkCenters : null,
-                InputIssues, ReturnOutputs);
+                CompanyContext, User, correlation, new FixedTime(), ParentRolls, withWorkCenters ? WorkCenters : null,
+                InputIssues, ReturnOutputs, manufacturingTolerances: Settings,
+                planRevisions: Store,
+                productTechnicalSnapshots: ProductSnapshots, partyAccounts: PartyAccounts,
+                contextualParentRolls: ParentRolls);
         }
 
         public List<string> Calls { get; } = [];
 
         public CorrelationContext Correlation { get; }
+
+        public MutableCompanyContext CompanyContext { get; }
 
         public FakeStore Store { get; } = new();
 
@@ -1182,6 +2351,10 @@ public sealed class ManufacturingCommandServiceTests
         public ParentRollPort ParentRolls { get; }
 
         public WorkCenterPort WorkCenters { get; }
+
+        public ProductSnapshotPort ProductSnapshots { get; }
+
+        public PartyAccountPort PartyAccounts { get; }
 
         public InputIssuePort InputIssues { get; }
 
@@ -1197,6 +2370,17 @@ public sealed class ManufacturingCommandServiceTests
             var order = await ApprovedOrderAsync();
             order.IssueInput(order.Version, Guid.NewGuid(), Roll, new Kilograms(100m), At);
             order.DeclareOutput(order.Version, Guid.NewGuid(), Roll, OutputClass.GoodProduct, new Kilograms(100m), At);
+            return order;
+        }
+
+        public async Task<ProductionOrder> FireOrderAsync()
+        {
+            var order = await ApprovedOrderAsync();
+            order.IssueInput(order.Version, Guid.NewGuid(), Roll, new Kilograms(100m), At);
+            order.DeclareOutput(order.Version, Guid.NewGuid(), Roll, OutputClass.GoodProduct,
+                new Kilograms(90m), At);
+            order.DeclareOutput(order.Version, Guid.NewGuid(), Roll, OutputClass.ProcessLoss,
+                new Kilograms(10m), At);
             return order;
         }
 
@@ -1298,13 +2482,74 @@ public sealed class ManufacturingCommandServiceTests
         public override DateTimeOffset GetUtcNow() => At;
     }
 
+    private static string TestSha256(string value) =>
+        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value)));
+
+    private static PlanViewV1 LegacyPlanView(Guid planId, long version) => new(
+        planId,
+        Company,
+        WorkCenter,
+        ManufacturingProcess.Slitting.ToString(),
+        "Draft",
+        version,
+        [new PlannedInputViewV1(Roll, "10")],
+        null,
+        null,
+        null);
+
+    private static void SeedLegacyPlanReplay(Fixture fixture, string commandName, string key, object canonical,
+        ManufacturingApiStatus status, PlanViewV1 view)
+    {
+        var json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+        var keyHash = TestSha256(key);
+        var requestHash = TestSha256(commandName + "|" + JsonSerializer.Serialize(canonical, json));
+        var result = new ManufacturingApiResult<PlanViewV1>(status, view, false, null);
+        var legacyResultJson = JsonSerializer.Serialize(result, json)
+            .Replace(",\"commercialContext\":null", string.Empty, StringComparison.Ordinal);
+        fixture.Store.Commands.Add((commandName, keyHash), new ManufacturingCommandRecord(
+            commandName,
+            keyHash,
+            Actor.ToString("D"),
+            requestHash,
+            legacyResultJson,
+            "corr-legacy"));
+    }
+
+    private sealed class MutableCompanyContext(Guid companyId) : ICompanyContext
+    {
+        private Guid _companyId = companyId;
+
+        public bool IsResolved => _companyId != Guid.Empty;
+
+        public Guid CompanyId => IsResolved
+            ? _companyId
+            : throw new InvalidOperationException("Şirket bağlamı henüz belirlenmedi.");
+
+        public void Set(Guid newCompanyId)
+        {
+            if (newCompanyId == Guid.Empty)
+            {
+                throw new ArgumentException("Şirket kimliği boş olamaz.", nameof(newCompanyId));
+            }
+
+            if (_companyId != newCompanyId)
+            {
+                throw new InvalidOperationException("Bir istek içinde şirket bağlamı değiştirilemez.");
+            }
+        }
+
+        public void SwitchForTest(Guid newCompanyId) => _companyId = newCompanyId;
+    }
+
     private sealed class User : ICurrentUser
     {
         public HashSet<Guid> Companies { get; } = [Company];
 
+        public Guid ActorId { get; set; } = Actor;
+
         public bool IsAuthenticated => true;
 
-        public string? UserId => Actor.ToString("D");
+        public string? UserId => ActorId.ToString("D");
 
         public IReadOnlySet<Guid> AllowedCompanyIds => Companies;
 
@@ -1319,6 +2564,8 @@ public sealed class ManufacturingCommandServiceTests
 
         public (string Permission, Guid Company) LastAsked { get; private set; }
 
+        public List<string> Permissions { get; } = [];
+
         public Queue<PermissionScope> Scopes { get; } = new();
 
         public Task<PermissionScope> RevalidatePermissionScopeAsync(string permission, Guid companyId,
@@ -1326,18 +2573,24 @@ public sealed class ManufacturingCommandServiceTests
         {
             Asked++;
             calls.Add("authority");
+            Permissions.Add(permission);
             LastAsked = (permission, companyId);
             return Task.FromResult(Scopes.TryDequeue(out var scope) ? scope : Scope);
         }
     }
 
-    private sealed class ParentRollPort(List<string> calls) : IInventoryParentRollValidationV1
+    private sealed class ParentRollPort(List<string> calls)
+        : IInventoryParentRollValidationV1, IInventoryContextualParentRollReferencesV1
     {
         public int Asked { get; private set; }
 
         public Exception? Exception { get; set; }
 
+        public Action? AfterRead { get; set; }
+
         public List<InventoryParentRollSelectionV1> Selections { get; } = [];
+
+        public List<InventoryContextualParentRollSelectionV1> ContextualSelections { get; } = [];
 
         public Task<InventoryParentRollReferenceV1> ValidateAsync(InventoryParentRollSelectionV1 selection,
             CancellationToken cancellationToken = default)
@@ -1345,6 +2598,7 @@ public sealed class ManufacturingCommandServiceTests
             Asked++;
             calls.Add("parent-roll");
             Selections.Add(selection);
+            AfterRead?.Invoke();
             if (Exception is { } exception)
             {
                 throw exception;
@@ -1353,7 +2607,57 @@ public sealed class ManufacturingCommandServiceTests
             return Task.FromResult(new InventoryParentRollReferenceV1(
                 Company, selection.LabelId, selection.ExpectedLabelVersion, "LBL-1", Guid.NewGuid(),
                 new InventoryLotV1(Guid.NewGuid(), null, null), null, null, "Complete", [], [], "10", "10", "0", [],
-                DraftSelectable: true, DraftRefusalCode: null, ProductionUseRequiresRevalidation: true));
+                DraftSelectable: true, DraftRefusalCode: null, ProductionUseRequiresRevalidation: true)
+            { ProductVersion = AcceptedProductFixtureVersion });
+        }
+
+        public Task<InventoryParentRollCandidatesV1> SearchAsync(InventoryContextualParentRollQueryV1 query,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+        Task<InventoryParentRollReferenceV1> IInventoryContextualParentRollReferencesV1.ValidateAsync(
+            InventoryContextualParentRollSelectionV1 selection, CancellationToken cancellationToken)
+        {
+            calls.Add("parent-roll-context");
+            ContextualSelections.Add(selection);
+            AfterRead?.Invoke();
+            if (Exception is { } exception)
+            {
+                throw exception;
+            }
+
+            return Task.FromResult(new InventoryParentRollReferenceV1(
+                Company, selection.LabelId, selection.ExpectedLabelVersion, "LBL-1", Guid.NewGuid(),
+                new InventoryLotV1(Guid.NewGuid(), null, null), null, null, "Complete", [], [], "10", "10", "0", [],
+                DraftSelectable: true, DraftRefusalCode: null, ProductionUseRequiresRevalidation: true)
+            { ProductVersion = AcceptedProductFixtureVersion });
+        }
+    }
+
+    private sealed class PartyAccountPort(List<string> calls) : ICounterpartyManufacturingPartyAccountSourceV1
+    {
+        public CounterpartyManufacturingPartyAccountOutcomeV1 Outcome { get; set; } =
+            CounterpartyManufacturingPartyAccountOutcomeV1.Found;
+
+        public CounterpartyManufacturingPartyAccountV1? Account { get; set; }
+
+        public Action? AfterRead { get; set; }
+
+        public List<(Guid PartyId, Guid AccountId)> Selections { get; } = [];
+
+        public Task<CounterpartyManufacturingPartyAccountSearchAnswerV1> SearchAuthorizedAsync(
+            CounterpartyManufacturingPartyAccountSearchV1 query, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public Task<CounterpartyManufacturingPartyAccountAnswerV1> GetAuthorizedAsync(Guid partyId,
+            Guid companyAccountId, CancellationToken cancellationToken = default)
+        {
+            calls.Add("party-account");
+            Selections.Add((partyId, companyAccountId));
+            var answer = new CounterpartyManufacturingPartyAccountAnswerV1(Outcome,
+                Account ?? new CounterpartyManufacturingPartyAccountV1(
+                    partyId, companyAccountId, Company, true, true, true, false, "party-v1", "account-v1"));
+            AfterRead?.Invoke();
+            return Task.FromResult(answer);
         }
     }
 
@@ -1363,6 +2667,7 @@ public sealed class ManufacturingCommandServiceTests
         public Guid ReturnedId { get; set; } = WorkCenter;
         public bool Missing { get; set; }
         public Exception? Exception { get; set; }
+        public Action? AfterRead { get; set; }
         public List<(Guid CompanyId, Guid WorkCenterId)> Requests { get; } = [];
 
         public Task<OrganizationWorkCenterPlanningReferenceV1?> ReadAsync(
@@ -1372,6 +2677,7 @@ public sealed class ManufacturingCommandServiceTests
         {
             calls.Add("work-center");
             Requests.Add((companyId, workCenterId));
+            AfterRead?.Invoke();
             if (Exception is { } exception)
             {
                 throw exception;
@@ -1383,13 +2689,64 @@ public sealed class ManufacturingCommandServiceTests
         }
     }
 
-    private sealed class SettingsPort(List<string> calls) : ISettingsPrerequisiteProvider
+    private sealed class ProductSnapshotPort(List<string> calls) : IProductManufacturingTechnicalSnapshotV1
+    {
+        public int Asked { get; private set; }
+
+        public decimal ThicknessMm { get; set; } = 2m;
+
+        public Exception? Exception { get; set; }
+
+        public Action? AfterRead { get; set; }
+
+        public IReadOnlyList<ProductFieldError> Errors { get; set; } = [];
+
+        public Task<ProductManufacturingTechnicalSnapshotResultV1> ReadAsync(
+            ProductManufacturingTechnicalSnapshotSelectionV1 selection, CancellationToken cancellationToken)
+        {
+            Asked++;
+            calls.Add("product");
+            AfterRead?.Invoke();
+            if (Exception is { } exception)
+            {
+                throw exception;
+            }
+
+            var snapshot = Errors.Count == 0
+                ? new ProductManufacturingTechnicalSnapshotV1(
+                    selection.ProductId,
+                    selection.ExpectedProductVersion,
+                    new ProductManufacturingFamilyRevisionV1(Guid.Parse("f1000000-0000-0000-0000-000000000001"),
+                        "COIL", "family-r1"),
+                    new ProductManufacturingTemplateRevisionV1(Guid.Parse("f2000000-0000-0000-0000-000000000002"),
+                        "3", "COIL-SHEET", "template-r3"),
+                    ThicknessMm,
+                    1500m,
+                    new ProductManufacturingKilogramUnitV1(Company, SettingsUnitIdentitiesV1.Kilogram, "kg",
+                        Guid.Parse("4a790fdc-2a6b-5126-835f-d3a13d28b71c"), "1"),
+                    selection.EffectiveOn)
+                : null;
+            return Task.FromResult(new ProductManufacturingTechnicalSnapshotResultV1(snapshot, Errors));
+        }
+    }
+
+    private sealed class SettingsPort(List<string> calls) : ISettingsPrerequisiteProvider,
+        ISettingsManufacturingToleranceProviderV1
     {
         public string? Refusal { get; set; }
 
         public int Asked { get; private set; }
 
         public List<DateOnly> Days { get; } = [];
+
+        public string? ToleranceRefusal { get; set; }
+
+        public int ToleranceAsked { get; private set; }
+
+        public ManufacturingToleranceProfileV1 Tolerance { get; set; } = new(
+            Company, SettingsManufacturingProcessesV1.Slitting,
+            new ProfileVersionV1(Guid.Parse("4a790fdc-2a6b-5126-835f-d3a13d28b71d"), 1),
+            0m, true, new DateOnly(2026, 9, 1), null);
 
         public Task<UnitProfileV1> GetUnitProfileAsync(Guid unitId, DateOnly effectiveOn,
             CancellationToken cancellationToken = default)
@@ -1416,25 +2773,61 @@ public sealed class ManufacturingCommandServiceTests
 
         public Task<PeriodEligibilityV1> GetPeriodEligibilityAsync(string operation, DateOnly occurredOn, DateOnly? valueOn,
             CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+        public Task<ManufacturingToleranceProfileV1> GetManufacturingToleranceAsync(
+            string process, DateOnly effectiveOn, CancellationToken cancellationToken = default)
+        {
+            ToleranceAsked++;
+            calls.Add("tolerance");
+            if (ToleranceRefusal is { } code)
+            {
+                throw new SettingsPrerequisiteException(code);
+            }
+
+            return Task.FromResult(Tolerance);
+        }
     }
 
     /// <summary>An in-memory store with the store's contract: the company's records, the domain's rules.</summary>
-    private sealed class FakeStore : IManufacturingPlanStore, IManufacturingOrderStore, IManufacturingCommandLog
+    private sealed class FakeStore : IManufacturingPlanStore, IManufacturingPlanRevisionStore,
+        IManufacturingOrderStore, IManufacturingCommandLog
     {
         public Dictionary<(string Command, string KeyHash), ManufacturingCommandRecord> Commands { get; } = [];
 
         /// <summary>Runs when a write starts: another attempt of the same key committing meanwhile.</summary>
         public Action<ManufacturingCommandMetadata>? OnWrite { get; set; }
 
+        /// <summary>Runs after the policy-close read and before its persistence authority fence.</summary>
+        public Action<ManufacturingCommandMetadata>? OnPolicyCloseRead { get; set; }
+
         /// <summary>Another attempt of the same key that commits first (ADR-011 §8).</summary>
         public Func<ManufacturingCommandMetadata, object, ManufacturingCommandRecord>? RaceWinner { get; set; }
 
+        public Action<ManufacturingCommandRecord?>? AfterFindCommand { get; set; }
+
+        public Action<ProductionPlan?>? AfterFindPlan { get; set; }
+
+        public Action<IReadOnlyList<ManufacturingPlanRevision>?>? AfterListPlanRevisions { get; set; }
+
+        public Action<ProductionOrder?>? AfterFindOrder { get; set; }
+
+        public string? RecordCommandFault { get; set; }
+
         public Task<ManufacturingCommandRecord?> FindCommandAsync(string commandName, string idempotencyKeyHash,
-            CancellationToken cancellationToken = default) =>
-            Task.FromResult(Commands.GetValueOrDefault((commandName, idempotencyKeyHash)));
+            CancellationToken cancellationToken = default)
+        {
+            var stored = Commands.GetValueOrDefault((commandName, idempotencyKeyHash));
+            AfterFindCommand?.Invoke(stored);
+            return Task.FromResult(stored);
+        }
 
         public Task RecordCommandAsync(ManufacturingCommandRecord record, CancellationToken cancellationToken = default)
         {
+            if (RecordCommandFault is { } fault)
+            {
+                throw new ManufacturingStoreException(fault, "sentetik komut kaydı reddi");
+            }
+
             if (!Commands.TryAdd((record.CommandName, record.IdempotencyKeyHash), record))
             {
                 throw new ManufacturingStoreException(ManufacturingStoreCodes.ConcurrentChange, "yarış");
@@ -1462,9 +2855,15 @@ public sealed class ManufacturingCommandServiceTests
 
         public Dictionary<Guid, ProductionPlan> Plans { get; } = [];
 
+        public Dictionary<Guid, IReadOnlyList<ManufacturingPlanRevision>> PlanRevisions { get; } = [];
+
         public Dictionary<Guid, ProductionOrder> Orders { get; } = [];
 
         public List<ManufacturingCommandMetadata> Writes { get; } = [];
+
+        public List<Guid> PolicyDecisions { get; } = [];
+
+        public List<Guid> AuditEvents { get; } = [];
 
         public string? Fail { get; set; }
 
@@ -1482,8 +2881,30 @@ public sealed class ManufacturingCommandServiceTests
             DateTimeOffset approvedAt, ManufacturingCommandMetadata metadata, CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
 
-        public Task<ProductionPlan?> FindPlanAsync(Guid planId, CancellationToken cancellationToken = default) =>
-            Task.FromResult(Plans.GetValueOrDefault(planId));
+        public Task<ProductionPlan?> FindPlanAsync(Guid planId, CancellationToken cancellationToken = default)
+        {
+            var plan = Plans.GetValueOrDefault(planId);
+            AfterFindPlan?.Invoke(plan);
+            if (ReadFault is { } code)
+            {
+                throw new ManufacturingStoreException(code, "sentetik okuma reddi");
+            }
+
+            return Task.FromResult(plan);
+        }
+
+        public Task<ProductionPlan> RevisePlanAsync(Guid planId, long expectedVersion, Guid workCenterId,
+            ManufacturingProcess workCenterProcess, IReadOnlyList<PlannedInput> inputs, ProductionTarget? target,
+            string reason, ManufacturingCommandMetadata metadata, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public Task<IReadOnlyList<ManufacturingPlanRevision>?> ListPlanRevisionsAsync(Guid planId,
+            CancellationToken cancellationToken = default)
+        {
+            var revisions = PlanRevisions.GetValueOrDefault(planId);
+            AfterListPlanRevisions?.Invoke(revisions);
+            return Task.FromResult(revisions);
+        }
 
         public Task<ManufacturingWriteOutcome> CreateOrderAsync(Guid orderId, Guid planId, ManufacturingCommandMetadata metadata,
             CancellationToken cancellationToken = default) => throw new NotSupportedException();
@@ -1508,8 +2929,17 @@ public sealed class ManufacturingCommandServiceTests
 
         public Task<ManufacturingWriteOutcome> DeclareOutputAsync(Guid orderId, long expectedVersion, Guid outputId,
             Guid parentRollId, OutputClass outputClass, Kilograms mass, DateTimeOffset declaredAt,
-            ManufacturingCommandMetadata metadata, CancellationToken cancellationToken = default) =>
-            throw new NotSupportedException();
+            ManufacturingCommandMetadata metadata, CancellationToken cancellationToken = default)
+        {
+            Guard();
+            OnWrite?.Invoke(metadata);
+            var order = Orders.GetValueOrDefault(orderId)
+                ?? throw new ManufacturingStoreException(ManufacturingStoreCodes.OrderNotFound, "yok");
+            order.DeclareOutput(expectedVersion, outputId, parentRollId, outputClass, mass, declaredAt);
+            Complete(metadata, order);
+            Writes.Add(metadata);
+            return Task.FromResult(ManufacturingWriteOutcome.Recorded);
+        }
 
         public Task<ManufacturingWriteOutcome> RecordWorkInProgressAsync(Guid orderId, long expectedVersion, Guid measurementId,
             Guid parentRollId, Kilograms mass, DateTimeOffset measuredAt, ManufacturingCommandMetadata metadata,
@@ -1527,6 +2957,29 @@ public sealed class ManufacturingCommandServiceTests
             Complete(metadata, order);
             Writes.Add(metadata);
             return Task.CompletedTask;
+        }
+
+        public async Task CloseOrderWithPolicyAsync(Guid orderId, long expectedVersion, Guid closedByUserId,
+            DateTimeOffset closedAt, ClosureTolerancePolicySnapshotV1 policy,
+            ClosureExceptionApprovalV1? exceptionApproval,
+            ManufacturingPersistenceAuthorityFenceV1 persistenceAuthority, ManufacturingCommandMetadata metadata,
+            CancellationToken cancellationToken = default)
+        {
+            Guard();
+            OnWrite?.Invoke(metadata);
+            var order = Orders.GetValueOrDefault(orderId)
+                ?? throw new ManufacturingStoreException(ManufacturingStoreCodes.OrderNotFound, "yok");
+            OnPolicyCloseRead?.Invoke(metadata);
+            if (!await persistenceAuthority.RevalidateAsync(order.CompanyId, closedByUserId, cancellationToken))
+            {
+                throw new ManufacturingStoreException(ManufacturingStoreCodes.AuthorityDenied, "yetki yok");
+            }
+
+            order.CloseWithPolicy(expectedVersion, closedByUserId, closedAt, policy, exceptionApproval);
+            PolicyDecisions.Add(orderId);
+            AuditEvents.Add(orderId);
+            Complete(metadata, order);
+            Writes.Add(metadata);
         }
 
         /// <summary>What the list answers, and what it was asked.</summary>
@@ -1554,10 +3007,14 @@ public sealed class ManufacturingCommandServiceTests
         /// <summary>A read the store itself refuses (for example re-reads that keep meeting commits).</summary>
         public string? ReadFault { get; set; }
 
-        public Task<ProductionOrder?> FindOrderAsync(Guid orderId, CancellationToken cancellationToken = default) =>
-            ReadFault is { } code
+        public Task<ProductionOrder?> FindOrderAsync(Guid orderId, CancellationToken cancellationToken = default)
+        {
+            var order = Orders.GetValueOrDefault(orderId);
+            AfterFindOrder?.Invoke(order);
+            return ReadFault is { } code
                 ? throw new ManufacturingStoreException(code, "sentetik okuma reddi")
-                : Task.FromResult(Orders.GetValueOrDefault(orderId));
+                : Task.FromResult(order);
+        }
 
         private void Guard()
         {

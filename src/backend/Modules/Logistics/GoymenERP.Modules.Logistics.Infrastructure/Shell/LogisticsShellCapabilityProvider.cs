@@ -29,7 +29,7 @@ namespace GoymenERP.Modules.Logistics.Infrastructure.Shell;
 public sealed class LogisticsShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "LOGISTICS";
-    public const string OwnerContractVersion = "1.2";
+    public const string OwnerContractVersion = "1.3";
 
     public const string ListCapabilityId = "logistics.instructions.list";
     public const string ListRoutePath = "/lojistik/yukleme-talimatlari";
@@ -42,6 +42,10 @@ public sealed class LogisticsShellCapabilityProvider : IShellCapabilityProvider
     public const string DetailScreenId = "L-02-DETAIL";
     public const string ShipmentCapabilityId = "logistics.shipments.record";
     public const string DeliveryCapabilityId = "logistics.deliveries.record";
+    public const string CustomerReturnsReadCapabilityId = "logistics.customer-returns.read";
+    public const string CustomerReturnsRequestCapabilityId = "logistics.customer-returns.request";
+    public const string CustomerReturnsApproveCapabilityId = "logistics.customer-returns.approve";
+    public const string CustomerReturnsRejectCapabilityId = "logistics.customer-returns.reject";
     public const string SalesWorkCapabilityId = "logistics.operations-work.sales";
     public const string SalesWorkRoutePath = "/lojistik/operasyon-isleri/satis";
     public const string SalesWorkScreenId = "L-01";
@@ -74,6 +78,29 @@ public sealed class LogisticsShellCapabilityProvider : IShellCapabilityProvider
             ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, ShellCapabilityContextRequirement.SingleOrAuthorizedMultiCompanyRead,
             ShellCapabilityScopeRequirement.CompanyWide,
             [LogisticsPermissionManifestV1.InstructionsRead, LogisticsPermissionManifestV1.DeliveriesRecord],
+            ImplementationAvailable: true, ParentCapabilityId: DetailCapabilityId),
+        new ShellCapabilityDeclaration(CustomerReturnsReadCapabilityId, DetailCapabilityId, DetailRoutePath, DetailScreenId,
+            ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, ShellCapabilityContextRequirement.SingleOrAuthorizedMultiCompanyRead,
+            ShellCapabilityScopeRequirement.CompanyWide,
+            [LogisticsPermissionManifestV1.InstructionsRead, LogisticsPermissionManifestV1.CustomerReturnsRead],
+            ImplementationAvailable: true, ParentCapabilityId: DetailCapabilityId),
+        new ShellCapabilityDeclaration(CustomerReturnsRequestCapabilityId, DetailCapabilityId, DetailRoutePath, DetailScreenId,
+            ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, ShellCapabilityContextRequirement.SingleOrAuthorizedMultiCompanyRead,
+            ShellCapabilityScopeRequirement.CompanyWide,
+            [LogisticsPermissionManifestV1.InstructionsRead, LogisticsPermissionManifestV1.CustomerReturnsRead,
+                LogisticsPermissionManifestV1.CustomerReturnsRequest],
+            ImplementationAvailable: true, ParentCapabilityId: DetailCapabilityId),
+        new ShellCapabilityDeclaration(CustomerReturnsApproveCapabilityId, DetailCapabilityId, DetailRoutePath, DetailScreenId,
+            ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, ShellCapabilityContextRequirement.SingleOrAuthorizedMultiCompanyRead,
+            ShellCapabilityScopeRequirement.CompanyWide,
+            [LogisticsPermissionManifestV1.InstructionsRead, LogisticsPermissionManifestV1.CustomerReturnsRead,
+                LogisticsPermissionManifestV1.CustomerReturnsDecision, ErpPermissions.InventoryPhysicalAllocationWrite],
+            ImplementationAvailable: true, ParentCapabilityId: DetailCapabilityId),
+        new ShellCapabilityDeclaration(CustomerReturnsRejectCapabilityId, DetailCapabilityId, DetailRoutePath, DetailScreenId,
+            ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, ShellCapabilityContextRequirement.SingleOrAuthorizedMultiCompanyRead,
+            ShellCapabilityScopeRequirement.CompanyWide,
+            [LogisticsPermissionManifestV1.InstructionsRead, LogisticsPermissionManifestV1.CustomerReturnsRead,
+                LogisticsPermissionManifestV1.CustomerReturnsDecision],
             ImplementationAvailable: true, ParentCapabilityId: DetailCapabilityId),
         new ShellCapabilityDeclaration(SalesWorkCapabilityId, SalesWorkCapabilityId, SalesWorkRoutePath, SalesWorkScreenId,
             ShellCapabilityRoutePrecedence.Static, ShellCapabilityContextRequirement.SingleCompany,

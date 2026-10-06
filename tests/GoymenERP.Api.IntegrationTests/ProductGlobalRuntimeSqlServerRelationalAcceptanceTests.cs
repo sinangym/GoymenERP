@@ -1,23 +1,36 @@
 using System.Net;
+using System.Globalization;
+using System.IO.Compression;
+using System.Net.Http.Headers;
 using GoymenERP.CariAcceptance006;
 using System.Net.Http.Json;
+using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Security.Claims;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Api.ProductRuntime;
+using GoymenERP.Api.Endpoints;
 using GoymenERP.Api.Shell;
 using GoymenERP.BuildingBlocks.Shell;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Audit.Domain.Events;
 using GoymenERP.Modules.Audit.Infrastructure.Persistence;
 using GoymenERP.Modules.Audit.Infrastructure.Services;
+using GoymenERP.Modules.Idempotency.Domain.Executions;
 using GoymenERP.Modules.Idempotency.Infrastructure.Persistence;
 using GoymenERP.Modules.Identity.Domain.Assignments;
+using GoymenERP.Modules.Identity.Domain.Roles;
+using GoymenERP.Modules.Identity.Domain.Users;
 using GoymenERP.Modules.Identity.Infrastructure.Persistence;
 using GoymenERP.Modules.Identity.Infrastructure.Services;
+using GoymenERP.Modules.Inventory.Application;
+using GoymenERP.Modules.Manufacturing.Application;
+using GoymenERP.Modules.Organization.Application.Contracts;
 using GoymenERP.Modules.Product.Application.Contracts;
 using GoymenERP.Modules.Product.Infrastructure.Persistence;
+using GoymenERP.Modules.Settings.Application;
+using GoymenERP.Modules.Settings.Application.Contracts.V1;
 using Microsoft.Data.SqlClient;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
@@ -32,12 +45,178 @@ namespace GoymenERP.Api.IntegrationTests;
 // existing synthetic development actor, never Sinan or a normal deployment.
 public sealed class ProductGlobalRuntimeSqlServerRelationalAcceptanceTests
 {
+    private const string ProductPreFamilyRegistryMigration = "20260912175128_InitialProductDrafts";
+    private const string ProductFamilyRegistryMigration = "20260919100000_AddProductFamilyRegistry";
+    private const string ProductTechnicalDefinitionMigration = "20261004130000_ReleaseInitialProductTechnicalDefinition";
+    private const string ProductCodeGroupMigration = "20261004213000_ReleaseInitialProductCodeGroup";
     private static readonly Guid ActorId = Guid.Parse("20000000-0000-0000-0000-000000000003");
     private static readonly Guid ActorExternalId = Guid.Parse("21000000-0000-0000-0000-000000000003");
     private static readonly Guid SystemRoleId = Guid.Parse("30000000-0000-0000-0000-000000000003");
     private static readonly Guid CompanyA = Guid.Parse("10000000-0000-0000-0000-000000000001");
     private static readonly Guid CompanyB = Guid.Parse("10000000-0000-0000-0000-000000000002");
     private static readonly Guid GroupId = Guid.Parse("82000000-0000-0000-0000-000000000001");
+
+    [SqlServerFact]
+    public Task ProductImport_PreviewApplyReplayAndDeniedActor_AreAtomic() =>
+        WithDatabaseAsync(async (factory, _) =>
+        {
+            var workbook = ImportWorkbook(("LEGACY-IMPORT-1", "Imported Alpha"),
+                ("LEGACY-IMPORT-2", "Imported Beta"));
+            using var client = factory.CreateClientFor("group-bootstrap-admin", CompanyA);
+            using var deniedClient = factory.CreateClientFor("company-a-user", CompanyA);
+            var before = await SnapshotAsync(factory.DatabaseConnectionString);
+
+            using var deniedPreview = await PreviewImportAsync(deniedClient, workbook);
+            Assert.Equal(HttpStatusCode.Forbidden, deniedPreview.StatusCode);
+            using var previewResponse = await PreviewImportAsync(client, workbook);
+            Assert.Equal(HttpStatusCode.OK, previewResponse.StatusCode);
+            var preview = (await previewResponse.Content.ReadFromJsonAsync<ProductImportPreviewV1>())!;
+            Assert.True(preview.Ready);
+            Assert.Equal(2, preview.Rows.Count);
+            Assert.Equal(before, await SnapshotAsync(factory.DatabaseConnectionString));
+
+            const string key = "product-import-sql-once";
+            using var applied = await ApplyImportAsync(client, workbook, preview, key);
+            Assert.Equal(HttpStatusCode.Created, applied.StatusCode);
+            var first = (await applied.Content.ReadFromJsonAsync<ProductImportResultV1>())!;
+            Assert.False(first.IsReplay);
+            Assert.Equal(2, first.Products.Count);
+            var afterApply = await SnapshotAsync(factory.DatabaseConnectionString);
+
+            using var replay = await ApplyImportAsync(client, workbook, preview, key);
+            Assert.Equal(HttpStatusCode.Created, replay.StatusCode);
+            Assert.Equal("true", Assert.Single(replay.Headers.GetValues("Idempotency-Replayed")));
+            var repeated = (await replay.Content.ReadFromJsonAsync<ProductImportResultV1>())!;
+            Assert.True(repeated.IsReplay);
+            Assert.Equal(first.Products.Select(value => value.ProductId), repeated.Products.Select(value => value.ProductId));
+            Assert.Equal(afterApply, await SnapshotAsync(factory.DatabaseConnectionString));
+
+            await using var sql = new SqlConnection(factory.DatabaseConnectionString);
+            await sql.OpenAsync();
+            await using var counts = sql.CreateCommand();
+            counts.CommandText = """
+                SELECT
+                  (SELECT COUNT(*) FROM [product].[Products] WHERE [Id] IN (@first, @second)),
+                  (SELECT COUNT(*) FROM [audit].[AuditEvents]
+                   WHERE [SubjectKind] = N'GroupSharedProduct' AND [EntityId] IN (@firstText, @secondText)),
+                  (SELECT COUNT(*) FROM [idempotency].[GroupSharedCommandTerminals]
+                   WHERE [Subject] = N'Product'
+                     AND [CommandName] = N'product.draft.create.v1'
+                     AND [IdempotencyKeyHash] = @keyHash);
+                """;
+            counts.Parameters.AddWithValue("@first", first.Products[0].ProductId);
+            counts.Parameters.AddWithValue("@second", first.Products[1].ProductId);
+            counts.Parameters.AddWithValue("@firstText", first.Products[0].ProductId.ToString("D"));
+            counts.Parameters.AddWithValue("@secondText", first.Products[1].ProductId.ToString("D"));
+            counts.Parameters.AddWithValue("@keyHash", IdempotencyHash.ComputeKey(key));
+            await using var reader = await counts.ExecuteReaderAsync();
+            Assert.True(await reader.ReadAsync());
+            Assert.Equal(2, reader.GetInt32(0));
+            Assert.Equal(2, reader.GetInt32(1));
+            Assert.Equal(1, reader.GetInt32(2));
+        });
+
+    [SqlServerFact]
+    public Task ProductImport_AuditFailureAndLateRevocation_RollBackProductAuditAndTerminalTogether() =>
+        WithDatabaseAsync(async (factory, observer) =>
+        {
+            var workbook = ImportWorkbook(("LEGACY-ROLLBACK-1", "Rollback Alpha"),
+                ("LEGACY-ROLLBACK-2", "Rollback Beta"));
+            using var client = factory.CreateClientFor("group-bootstrap-admin", CompanyA);
+            using var previewResponse = await PreviewImportAsync(client, workbook);
+            Assert.Equal(HttpStatusCode.OK, previewResponse.StatusCode);
+            var preview = (await previewResponse.Content.ReadFromJsonAsync<ProductImportPreviewV1>())!;
+            var before = await SnapshotAsync(factory.DatabaseConnectionString);
+
+            observer.Callback = (stage, _, _) => stage == ProductCommandAttemptStage.AuditFlushed
+                ? Task.FromException(new InjectedProductFailureException()) : Task.CompletedTask;
+            using var failed = await ApplyImportAsync(client, workbook, preview, "product-import-audit-failure");
+            Assert.Equal(HttpStatusCode.InternalServerError, failed.StatusCode);
+            Assert.Equal(before, await SnapshotAsync(factory.DatabaseConnectionString));
+
+            observer.Callback = async (stage, _, cancellationToken) =>
+            {
+                if (stage != ProductCommandAttemptStage.BeforeCommit) return;
+                await using var scope = factory.Services.CreateAsyncScope();
+                var identity = scope.ServiceProvider.GetRequiredService<IdentityDbContext>();
+                var grant = await identity.Set<ProductMasterAssignment>().SingleAsync(row => row.UserId == ActorId
+                    && row.Operation == ProductMasterOperation.DraftCreate, cancellationToken);
+                grant.Revoke(Guid.NewGuid(), "Synthetic isolated SQL import revocation", DateTimeOffset.UtcNow);
+                await identity.SaveChangesAsync(cancellationToken);
+            };
+            using var revoked = await ApplyImportAsync(client, workbook, preview, "product-import-late-revocation");
+            Assert.Equal(HttpStatusCode.Forbidden, revoked.StatusCode);
+            Assert.Equal(before, await SnapshotAsync(factory.DatabaseConnectionString));
+        });
+
+    [SqlServerFact]
+    public Task ProductImport_SameKeyWinnerBeforeLoserCatalog_ReplaysOrHidesAfterRevocation() =>
+        WithDatabaseAsync(async (factory, observer) =>
+        {
+            using var client = factory.CreateClientFor("group-bootstrap-admin", CompanyA);
+            var workbook = ImportWorkbook(("LEGACY-RACE-1", "Race Alpha"), ("LEGACY-RACE-2", "Race Beta"));
+            using var previewResponse = await PreviewImportAsync(client, workbook);
+            Assert.Equal(HttpStatusCode.OK, previewResponse.StatusCode);
+            var preview = (await previewResponse.Content.ReadFromJsonAsync<ProductImportPreviewV1>())!;
+
+            var loserAtCatalog = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var releaseLoser = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            observer.Callback = async (stage, _, cancellationToken) =>
+            {
+                if (stage != ProductCommandAttemptStage.ProductStaged) return;
+                loserAtCatalog.TrySetResult();
+                await releaseLoser.Task.WaitAsync(TimeSpan.FromSeconds(20), cancellationToken);
+            };
+            var loserTask = ApplyImportAsync(client, workbook, preview, "product-import-race-replay");
+            await loserAtCatalog.Task.WaitAsync(TimeSpan.FromSeconds(20));
+            observer.Callback = null;
+            using var winner = await ApplyImportAsync(client, workbook, preview, "product-import-race-replay");
+            Assert.Equal(HttpStatusCode.Created, winner.StatusCode);
+            var winnerBody = (await winner.Content.ReadFromJsonAsync<ProductImportResultV1>())!;
+            releaseLoser.TrySetResult();
+            using var loser = await loserTask;
+            Assert.Equal(HttpStatusCode.Created, loser.StatusCode);
+            Assert.Equal("true", Assert.Single(loser.Headers.GetValues("Idempotency-Replayed")));
+            var loserBody = (await loser.Content.ReadFromJsonAsync<ProductImportResultV1>())!;
+            Assert.True(loserBody.IsReplay);
+            Assert.Equal(winnerBody.Products.Select(value => value.ProductId),
+                loserBody.Products.Select(value => value.ProductId));
+
+            var revokedWorkbook = ImportWorkbook(("LEGACY-RACE-3", "Revoked Race Alpha"),
+                ("LEGACY-RACE-4", "Revoked Race Beta"));
+            using var revokedPreviewResponse = await PreviewImportAsync(client, revokedWorkbook);
+            Assert.Equal(HttpStatusCode.OK, revokedPreviewResponse.StatusCode);
+            var revokedPreview = (await revokedPreviewResponse.Content.ReadFromJsonAsync<ProductImportPreviewV1>())!;
+            var revokedLoserAtCatalog = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var releaseRevokedLoser = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            observer.Callback = async (stage, _, cancellationToken) =>
+            {
+                if (stage != ProductCommandAttemptStage.ProductStaged) return;
+                revokedLoserAtCatalog.TrySetResult();
+                await releaseRevokedLoser.Task.WaitAsync(TimeSpan.FromSeconds(20), cancellationToken);
+            };
+            var revokedLoserTask = ApplyImportAsync(client, revokedWorkbook, revokedPreview,
+                "product-import-race-revoked");
+            await revokedLoserAtCatalog.Task.WaitAsync(TimeSpan.FromSeconds(20));
+            observer.Callback = null;
+            using var revokedWinner = await ApplyImportAsync(client, revokedWorkbook, revokedPreview,
+                "product-import-race-revoked");
+            Assert.Equal(HttpStatusCode.Created, revokedWinner.StatusCode);
+            var afterWinner = await SnapshotAsync(factory.DatabaseConnectionString);
+            await using (var scope = factory.Services.CreateAsyncScope())
+            {
+                var identity = scope.ServiceProvider.GetRequiredService<IdentityDbContext>();
+                var grant = await identity.Set<ProductMasterAssignment>().SingleAsync(row => row.UserId == ActorId
+                    && row.Operation == ProductMasterOperation.DraftCreate);
+                grant.Revoke(Guid.NewGuid(), "Synthetic import recovery revocation", DateTimeOffset.UtcNow);
+                await identity.SaveChangesAsync();
+            }
+            releaseRevokedLoser.TrySetResult();
+            using var revokedLoser = await revokedLoserTask;
+            Assert.Equal(HttpStatusCode.Forbidden, revokedLoser.StatusCode);
+            Assert.False(revokedLoser.Headers.Contains("Idempotency-Replayed"));
+            Assert.Equal(afterWinner, await SnapshotAsync(factory.DatabaseConnectionString));
+        });
 
     [SqlServerFact]
     public Task ProductSalesCandidateWindow_FiltersAndBoundsRealSqlWithoutWrites() =>
@@ -251,8 +430,407 @@ public sealed class ProductGlobalRuntimeSqlServerRelationalAcceptanceTests
             await AssertRollbackRefusedAsync(migrationScope.ServiceProvider.GetRequiredService<AuditDbContext>(), 51041);
             await AssertRollbackRefusedAsync(migrationScope.ServiceProvider.GetRequiredService<IdentityDbContext>(), 51042);
             await AssertRollbackRefusedAsync(migrationScope.ServiceProvider.GetRequiredService<GroupSharedCommandDbContext>(), 51043);
-            await AssertRollbackRefusedAsync(migrationScope.ServiceProvider.GetRequiredService<ProductDbContext>(), 51044);
+            var product = migrationScope.ServiceProvider.GetRequiredService<ProductDbContext>();
+            var productMigrations = (await product.Database.GetAppliedMigrationsAsync()).ToArray();
+            Assert.Equal(ProductCodeGroupMigration, productMigrations[^1]);
+
+            // EF Core 10 commits each migration in its own transaction. First remove the unreferenced
+            // code-group release, then the technical-definition release, before exercising the schema
+            // guard as a single rollback step. Reapply both releases afterwards so this acceptance case
+            // leaves the Product runtime at its entry schema.
+            await product.GetService<IMigrator>().MigrateAsync(ProductTechnicalDefinitionMigration);
+            Assert.Equal(productMigrations[..^1], await product.Database.GetAppliedMigrationsAsync());
+            await product.GetService<IMigrator>().MigrateAsync(ProductFamilyRegistryMigration);
+            Assert.Equal(productMigrations[..^2], await product.Database.GetAppliedMigrationsAsync());
+            await AssertRollbackRefusedAsync(product, 51044, ProductPreFamilyRegistryMigration);
+            await product.GetService<IMigrator>().MigrateAsync(ProductCodeGroupMigration);
+            Assert.Equal(productMigrations, await product.Database.GetAppliedMigrationsAsync());
             Assert.Equal(afterEdit, await SnapshotAsync(factory.DatabaseConnectionString));
+        });
+
+    [SqlServerFact]
+    public Task Genuine_sac_card_is_created_replayed_reopened_activated_and_read_as_one_technical_snapshot() =>
+        WithDatabaseAsync(async (factory, _) =>
+        {
+            const string createKey = "product-genuine-sac-card-once";
+            const string activateKey = "product-genuine-sac-activate-once";
+            var effectiveOn = new DateOnly(2026, 10, 5);
+            var references = new ProductReferences(
+                ProductInitialTechnicalDefinitionV1.TemplateId, "1",
+                new Dictionary<string, JsonElement>(StringComparer.Ordinal)
+                {
+                    ["thickness-mm"] = JsonSerializer.SerializeToElement(3m),
+                    ["width-mm"] = JsonSerializer.SerializeToElement(248m),
+                    ["steel-grade"] = JsonSerializer.SerializeToElement("S235JR"),
+                    ["coating"] = JsonSerializer.SerializeToElement("uncoated"),
+                },
+                new ProductUnitReferences(Stock: SettingsUnitIdentitiesV1.Kilogram,
+                    Sales: SettingsUnitIdentitiesV1.Kilogram));
+            var draft = new CreateProductDraftRequest("S235JR 3 mm × 248 mm kaplamasız sac",
+                ProductInitialCodeGroupV1.SacGroupId,
+                FamilyId: ProductInitialTechnicalDefinitionV1.HotRolledSlitCoilFamilyId,
+                References: references);
+
+            using var client = factory.CreateClientFor("group-bootstrap-admin", CompanyA);
+            async Task<HttpResponseMessage> CreateAsync()
+            {
+                using var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/products")
+                { Content = JsonContent.Create(draft) };
+                request.Headers.Add(ProductApiV1.IdempotencyHeader, createKey);
+                return await client.SendAsync(request);
+            }
+
+            using var created = await CreateAsync();
+            Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+            var first = (await created.Content.ReadFromJsonAsync<ProductMutationResponse>())!;
+            Assert.False(first.IsReplay);
+            Assert.Equal(("SAC-1", "Draft", "1", ProductInitialCodeGroupV1.SacGroupId,
+                ProductInitialTechnicalDefinitionV1.HotRolledSlitCoilFamilyId),
+                (first.Card.Product.Code, first.Card.Product.Lifecycle, first.Card.Product.Version,
+                    first.Card.Product.GroupId, first.Card.Product.FamilyId));
+            var afterCreate = await SnapshotAsync(factory.DatabaseConnectionString);
+
+            using var replay = await CreateAsync();
+            Assert.Equal(HttpStatusCode.Created, replay.StatusCode);
+            Assert.Equal("true", Assert.Single(replay.Headers.GetValues("Idempotency-Replayed")));
+            var repeated = (await replay.Content.ReadFromJsonAsync<ProductMutationResponse>())!;
+            Assert.True(repeated.IsReplay);
+            Assert.Equal((first.Card.Product.Id, first.Card.Product.Lifecycle, first.Card.Product.Version),
+                (repeated.Card.Product.Id, repeated.Card.Product.Lifecycle, repeated.Card.Product.Version));
+            Assert.Equal(afterCreate, await SnapshotAsync(factory.DatabaseConnectionString));
+
+            using (var reopenedDraft = await client.GetAsync($"/api/v1/products/{first.Card.Product.Id:D}"))
+            {
+                Assert.Equal(HttpStatusCode.OK, reopenedDraft.StatusCode);
+                var card = (await reopenedDraft.Content.ReadFromJsonAsync<ProductCardView>())!;
+                Assert.Equal((first.Card.Product.Id, "1", ProductInitialTechnicalDefinitionV1.TemplateId, "1"),
+                    (card.Product.Id, card.Product.Version, card.References.TemplateId, card.References.TemplateVersion));
+                Assert.Equal(SettingsUnitIdentitiesV1.Kilogram, card.References.Units!.Stock);
+                Assert.Equal(SettingsUnitIdentitiesV1.Kilogram, card.References.Units.Sales);
+                Assert.Equal(3m, card.References.Attributes!["thickness-mm"].GetDecimal());
+                Assert.Equal(248m, card.References.Attributes["width-mm"].GetDecimal());
+                Assert.Equal("S235JR", card.References.Attributes["steel-grade"].GetString());
+                Assert.Equal("uncoated", card.References.Attributes["coating"].GetString());
+                Assert.False(card.References.Attributes.ContainsKey("producer-grade"));
+            }
+
+            using var activationRequest = new HttpRequestMessage(HttpMethod.Post,
+                $"/api/v1/products/{first.Card.Product.Id:D}/activation")
+            { Content = JsonContent.Create(new ActivateProductRequest("1")) };
+            activationRequest.Headers.Add(ProductApiV1.IdempotencyHeader, activateKey);
+            using var activated = await client.SendAsync(activationRequest);
+            Assert.Equal(HttpStatusCode.OK, activated.StatusCode);
+            var active = (await activated.Content.ReadFromJsonAsync<ProductMutationResponse>())!;
+            Assert.Equal((first.Card.Product.Id, "Active", "2"),
+                (active.Card.Product.Id, active.Card.Product.Lifecycle, active.Card.Product.Version));
+
+            using var freshClient = factory.CreateClientFor("group-bootstrap-admin", CompanyA);
+            using (var reopenedActive = await freshClient.GetAsync($"/api/v1/products/{first.Card.Product.Id:D}"))
+            {
+                Assert.Equal(HttpStatusCode.OK, reopenedActive.StatusCode);
+                var card = (await reopenedActive.Content.ReadFromJsonAsync<ProductCardView>())!;
+                Assert.Equal((first.Card.Product.Id, "SAC-1", "Active", "2"),
+                    (card.Product.Id, card.Product.Code, card.Product.Lifecycle, card.Product.Version));
+                Assert.Equal(references.TemplateId, card.References.TemplateId);
+                Assert.Equal(references.Units!.Stock, card.References.Units!.Stock);
+                Assert.Equal(references.Units.Sales, card.References.Units.Sales);
+                Assert.False(card.References.Attributes!.ContainsKey("producer-grade"));
+            }
+
+            // The operational read is a separate, existing permission. Grant it only to this
+            // disposable SQL actor; global Product-master approval alone does not imply it.
+            await using (var setup = factory.Services.CreateAsyncScope())
+            {
+                var identity = setup.ServiceProvider.GetRequiredService<IdentityDbContext>();
+                if (!await identity.Users.AnyAsync(user => user.Id == ActorId))
+                    identity.Users.Add(new UserAccount(ActorId, "Disposable Product snapshot actor", null));
+                var roleId = Guid.NewGuid();
+                var role = new RoleDefinition(roleId, $"PRODUCT-SNAPSHOT-{roleId:N}",
+                    "Disposable Product and Inventory SQL journey actor", true);
+                role.AddPermission(ProductPermissionManifestV1.OperationalSelectionRead);
+                role.AddPermission(InventoryPermissionManifestV1.OpeningStockRecord);
+                role.AddPermission(ErpPermissions.InventoryLabelsRead);
+                role.AddPermission(ErpPermissions.InventoryBalancesRead);
+                role.AddPermission(ErpPermissions.ManufacturingPlansWrite);
+                role.AddPermission(ErpPermissions.ManufacturingPlansRead);
+                var assignment = new RoleAssignment(Guid.NewGuid(), ActorId, roleId, CompanyA,
+                    DateTimeOffset.UtcNow.AddMinutes(-1), null, approvedByUserId: null);
+                assignment.AddScope(AccessScopeType.Company, CompanyA);
+                identity.Roles.Add(role);
+                identity.RoleAssignments.Add(assignment);
+                await identity.SaveChangesAsync();
+            }
+
+            using var locationsResponse = await freshClient.GetAsync(InventoryReferenceEndpoints.LocationPath);
+            Assert.Equal(HttpStatusCode.OK, locationsResponse.StatusCode);
+            var locations = (await locationsResponse.Content.ReadFromJsonAsync<OrganizationLocationCandidatesV1>())!;
+            Assert.NotEmpty(locations.Items);
+            var location = locations.Items[0];
+            Assert.NotEqual(Guid.Empty, location.LocationId);
+            var labelId = Guid.NewGuid();
+            var opening = new OpeningCountRequestV1(Guid.NewGuid(), location.LocationId, effectiveOn,
+                "Disposable genuine SAC opening count",
+                [new OpeningCountLineRequestV1(Guid.NewGuid(), labelId, "SAC-T02B-LABEL-1", Guid.NewGuid(),
+                    null, null, first.Card.Product.Id, active.Card.Product.Version, "1000")]);
+            const string openingKey = "product-genuine-sac-opening-once";
+            async Task<HttpResponseMessage> RecordOpeningAsync(HttpClient actor, OpeningCountRequestV1 request,
+                string key)
+            {
+                using var message = new HttpRequestMessage(HttpMethod.Post, "/api/v1/inventory/opening-counts")
+                { Content = JsonContent.Create(request) };
+                message.Headers.Add("Idempotency-Key", key);
+                return await actor.SendAsync(message);
+            }
+
+            using var opened = await RecordOpeningAsync(freshClient, opening, openingKey);
+            Assert.Equal(HttpStatusCode.Created, opened.StatusCode);
+            var recorded = (await opened.Content.ReadFromJsonAsync<OpeningCountViewV1>())!;
+            Assert.Equal((opening.CountId, CompanyA, location.LocationId),
+                (recorded.CountId, recorded.CompanyId, recorded.LocationId));
+            Assert.Equal((labelId, first.Card.Product.Id, "1000"),
+                (Assert.Single(recorded.Lines).LabelId, recorded.Lines[0].ProductId,
+                    recorded.Lines[0].QuantityKg));
+
+            using var reopenedCount = await freshClient.GetAsync($"/api/v1/inventory/opening-counts/{opening.CountId:D}");
+            Assert.Equal(HttpStatusCode.OK, reopenedCount.StatusCode);
+            var reopened = (await reopenedCount.Content.ReadFromJsonAsync<OpeningCountViewV1>())!;
+            Assert.Equal((recorded.CountId, recorded.CompanyId, recorded.LocationId, recorded.CountedOn,
+                recorded.SheetReference), (reopened.CountId, reopened.CompanyId, reopened.LocationId,
+                    reopened.CountedOn, reopened.SheetReference));
+            Assert.Equal(Assert.Single(recorded.Lines), Assert.Single(reopened.Lines));
+            using var reopenedLabel = await freshClient.GetAsync($"/api/v1/inventory/labels/{labelId:D}");
+            Assert.Equal(HttpStatusCode.OK, reopenedLabel.StatusCode);
+            var label = (await reopenedLabel.Content.ReadFromJsonAsync<InventoryLabelViewV1>())!;
+            Assert.Equal((labelId, CompanyA, first.Card.Product.Id),
+                (label.LabelId, label.CompanyId, label.ProductId));
+            using var balanceResponse = await freshClient.GetAsync($"/api/v1/inventory/labels/{labelId:D}/balances");
+            Assert.Equal(HttpStatusCode.OK, balanceResponse.StatusCode);
+            var balance = (await balanceResponse.Content.ReadFromJsonAsync<InventoryLabelBalancesV1>())!;
+            Assert.Equal(("1000", "1000", "0"), (balance.PhysicalKg, balance.FreeKg, balance.BlockedKg));
+            Assert.Equal((location.LocationId, first.Card.Product.Id),
+                (Assert.Single(balance.Positions).LocationId, balance.Positions[0].ProductId));
+
+            async Task<(Guid ProductId, string ProductVersion, long LabelVersion, int MovementLines,
+                int OpeningCounts)> StoredInventoryAsync()
+            {
+                await using var sql = new SqlConnection(factory.DatabaseConnectionString);
+                await sql.OpenAsync();
+                await using var command = sql.CreateCommand();
+                command.CommandText = """
+                    SELECT [ProductId], [ProductVersion], [Version],
+                        (SELECT COUNT(*) FROM [inventory].[MovementLines] WHERE [CompanyId] = @company AND [LabelId] = @label),
+                        (SELECT COUNT(*) FROM [inventory].[OpeningCounts] WHERE [CompanyId] = @company AND [Id] = @count)
+                    FROM [inventory].[Labels] WHERE [CompanyId] = @company AND [Id] = @label;
+                    """;
+                command.Parameters.AddWithValue("@company", CompanyA);
+                command.Parameters.AddWithValue("@label", labelId);
+                command.Parameters.AddWithValue("@count", opening.CountId);
+                await using var row = await command.ExecuteReaderAsync();
+                Assert.True(await row.ReadAsync());
+                var stored = (row.GetGuid(0), row.GetString(1), row.GetInt64(2), row.GetInt32(3), row.GetInt32(4));
+                Assert.False(await row.ReadAsync());
+                return stored;
+            }
+
+            var stocked = await StoredInventoryAsync();
+            Assert.Equal((first.Card.Product.Id, active.Card.Product.Version, 1, 1),
+                (stocked.ProductId, stocked.ProductVersion, stocked.MovementLines, stocked.OpeningCounts));
+            var afterFirstOpening = await StoredEffectCountsAsync();
+            using var openingReplay = await RecordOpeningAsync(freshClient, opening, openingKey);
+            Assert.Equal(HttpStatusCode.OK, openingReplay.StatusCode);
+            Assert.Equal("true", Assert.Single(openingReplay.Headers.GetValues("Idempotency-Replayed")));
+            var replayedCount = (await openingReplay.Content.ReadFromJsonAsync<OpeningCountViewV1>())!;
+            Assert.Equal((recorded.CountId, recorded.CompanyId, recorded.LocationId),
+                (replayedCount.CountId, replayedCount.CompanyId, replayedCount.LocationId));
+            Assert.Equal(Assert.Single(recorded.Lines), Assert.Single(replayedCount.Lines));
+            Assert.Equal(stocked, await StoredInventoryAsync());
+            Assert.Equal(afterFirstOpening, await StoredEffectCountsAsync());
+
+            async Task<(int Lots, int Labels, int Counts, int Movements, int MovementLines,
+                int Balances, int Commands, int Audit)> StoredEffectCountsAsync()
+            {
+                await using var sql = new SqlConnection(factory.DatabaseConnectionString);
+                await sql.OpenAsync();
+                await using var command = sql.CreateCommand();
+                command.CommandText = """
+                    SELECT (SELECT COUNT(*) FROM [inventory].[Lots]),
+                        (SELECT COUNT(*) FROM [inventory].[Labels]),
+                        (SELECT COUNT(*) FROM [inventory].[OpeningCounts]),
+                        (SELECT COUNT(*) FROM [inventory].[Movements]),
+                        (SELECT COUNT(*) FROM [inventory].[MovementLines]),
+                        (SELECT COUNT(*) FROM [inventory].[Balances]),
+                        (SELECT COUNT(*) FROM [inventory].[Commands]),
+                        (SELECT COUNT(*) FROM [audit].[AuditEvents]);
+                    """;
+                await using var row = await command.ExecuteReaderAsync();
+                Assert.True(await row.ReadAsync());
+                var counts = (row.GetInt32(0), row.GetInt32(1), row.GetInt32(2), row.GetInt32(3),
+                    row.GetInt32(4), row.GetInt32(5), row.GetInt32(6), row.GetInt32(7));
+                Assert.False(await row.ReadAsync());
+                return counts;
+            }
+
+            var afterOpeningAudit = await SnapshotAsync(factory.DatabaseConnectionString);
+
+            var staleLabelId = Guid.NewGuid();
+            var stale = opening with
+            {
+                CountId = Guid.NewGuid(),
+                Lines = [opening.Lines[0] with
+                {
+                    LineId = Guid.NewGuid(), LabelId = staleLabelId, LotId = Guid.NewGuid(), ProductVersion = "1",
+                }],
+            };
+            using var staleResponse = await RecordOpeningAsync(freshClient, stale, "product-genuine-sac-stale-opening");
+            Assert.Equal(HttpStatusCode.UnprocessableEntity, staleResponse.StatusCode);
+            Assert.Contains(ProductApiV1.VersionConflict, await staleResponse.Content.ReadAsStringAsync(),
+                StringComparison.Ordinal);
+            using var deniedClient = factory.CreateClientFor(TestUsers.NoAssignment, CompanyA);
+            using var deniedResponse = await RecordOpeningAsync(deniedClient, stale,
+                "product-genuine-sac-denied-opening");
+            Assert.Equal(HttpStatusCode.Forbidden, deniedResponse.StatusCode);
+            using var foreignClient = factory.CreateClientFor(TestUsers.CompanyB, CompanyB);
+            using var foreignResponse = await RecordOpeningAsync(foreignClient, stale,
+                "product-genuine-sac-foreign-opening");
+            Assert.Equal(HttpStatusCode.Forbidden, foreignResponse.StatusCode);
+            Assert.Equal(stocked, await StoredInventoryAsync());
+            Assert.Equal(afterFirstOpening, await StoredEffectCountsAsync());
+            Assert.Equal(afterOpeningAudit, await SnapshotAsync(factory.DatabaseConnectionString));
+            using var missingLabel = await freshClient.GetAsync($"/api/v1/inventory/labels/{staleLabelId:D}");
+            Assert.Equal(HttpStatusCode.NotFound, missingLabel.StatusCode);
+
+            await using var scope = factory.Services.CreateAsyncScope();
+            var accessor = scope.ServiceProvider.GetRequiredService<IHttpContextAccessor>();
+            var previous = accessor.HttpContext;
+            try
+            {
+                accessor.HttpContext = new DefaultHttpContext
+                {
+                    User = new ClaimsPrincipal(new ClaimsIdentity([
+                        new Claim(GoymenClaimTypes.UserId, ActorId.ToString("D")),
+                        new Claim(GoymenClaimTypes.CompanyAccess, CompanyA.ToString("D")),
+                    ], "IsolatedSqlFixture")),
+                };
+                scope.ServiceProvider.GetRequiredService<ICompanyContext>().Set(CompanyA);
+                var result = await scope.ServiceProvider.GetRequiredService<IProductManufacturingTechnicalSnapshotV1>()
+                    .ReadAsync(new(stocked.ProductId, stocked.ProductVersion, effectiveOn), default);
+                Assert.Empty(result.Errors);
+                var snapshot = Assert.IsType<ProductManufacturingTechnicalSnapshotV1>(result.Snapshot);
+                Assert.Equal((first.Card.Product.Id, "2", 3m, 248m, effectiveOn),
+                    (snapshot.ProductId, snapshot.ProductVersion, snapshot.ThicknessMm,
+                        snapshot.WidthMm, snapshot.EffectiveOn));
+                Assert.Equal((ProductInitialTechnicalDefinitionV1.HotRolledSlitCoilFamilyId,
+                    ProductInitialTechnicalDefinitionV1.SourceRef),
+                    (snapshot.Family.FamilyId, snapshot.Family.SourceRevision));
+                Assert.Equal((ProductInitialTechnicalDefinitionV1.TemplateId, "1",
+                    ProductInitialTechnicalDefinitionV1.SourceRef),
+                    (snapshot.Template.TemplateId, snapshot.Template.TemplateVersion,
+                        snapshot.Template.SourceRevision));
+                Assert.Equal((CompanyA, SettingsUnitIdentitiesV1.Kilogram, "kg",
+                    ApprovedUnitProfileCatalog.GdcKilogramV1.ProfileId, "1"),
+                    (snapshot.UnitKg.CompanyId, snapshot.UnitKg.UnitId, snapshot.UnitKg.UnitCode,
+                        snapshot.UnitKg.ProfileId, snapshot.UnitKg.ProfileVersion));
+            }
+            finally { accessor.HttpContext = previous; }
+            Assert.Equal(afterOpeningAudit, await SnapshotAsync(factory.DatabaseConnectionString));
+
+            Guid workCenterId;
+            await using (var sql = new SqlConnection(factory.DatabaseConnectionString))
+            {
+                await sql.OpenAsync();
+                await using var workCenter = sql.CreateCommand();
+                workCenter.CommandText = """
+                    SELECT TOP (1) [Id]
+                    FROM [organization].[WorkCenters]
+                    WHERE [CompanyId] = @company AND [Kind] = N'Slitting'
+                    ORDER BY [Id];
+                    """;
+                workCenter.Parameters.AddWithValue("@company", CompanyA);
+                workCenterId = Assert.IsType<Guid>(await workCenter.ExecuteScalarAsync());
+            }
+
+            var planId = Guid.NewGuid();
+            var planRequest = new SavePlanRequestV1(planId, workCenterId,
+                [new PlannedInputRequestV1(labelId, "1000",
+                    stocked.LabelVersion.ToString(CultureInfo.InvariantCulture))], null);
+            const string planKey = "product-genuine-sac-manufacturing-plan-once";
+            async Task<HttpResponseMessage> SavePlanAsync()
+            {
+                using var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/manufacturing/plans")
+                { Content = JsonContent.Create(planRequest) };
+                request.Headers.Add("Idempotency-Key", planKey);
+                return await freshClient.SendAsync(request);
+            }
+
+            using var createdPlanResponse = await SavePlanAsync();
+            Assert.Equal(HttpStatusCode.Created, createdPlanResponse.StatusCode);
+            var createdPlan = (await createdPlanResponse.Content.ReadFromJsonAsync<PlanViewV1>())!;
+            var plannedInput = Assert.Single(createdPlan.Inputs);
+            var captured = Assert.IsType<CapturedPlanTechnicalSnapshotViewV1>(plannedInput.TechnicalSnapshot);
+            Assert.Equal((planId, CompanyA, workCenterId, labelId, "1000"),
+                (createdPlan.PlanId, createdPlan.CompanyId, createdPlan.WorkCenterId,
+                    plannedInput.ParentRollId, plannedInput.PlannedKg));
+            Assert.Equal((stocked.ProductId, stocked.ProductVersion, "3", "248"),
+                (captured.ProductId, captured.ProductVersion, captured.ThicknessMm, captured.WidthMm));
+            Assert.Equal((ProductInitialTechnicalDefinitionV1.HotRolledSlitCoilFamilyId,
+                ProductInitialTechnicalDefinitionV1.SourceRef),
+                (captured.Family.FamilyId, captured.Family.SourceRevision));
+            Assert.Equal((ProductInitialTechnicalDefinitionV1.TemplateId, "1",
+                ProductInitialTechnicalDefinitionV1.SourceRef),
+                (captured.Template.TemplateId, captured.Template.TemplateVersion,
+                    captured.Template.SourceRevision));
+            Assert.Equal((CompanyA, SettingsUnitIdentitiesV1.Kilogram, "kg",
+                ApprovedUnitProfileCatalog.GdcKilogramV1.ProfileId, "1"),
+                (captured.UnitKg.CompanyId, captured.UnitKg.UnitId, captured.UnitKg.UnitCode,
+                    captured.UnitKg.ProfileId, captured.UnitKg.ProfileVersion));
+
+            using var replayedPlanResponse = await SavePlanAsync();
+            Assert.Equal(HttpStatusCode.Created, replayedPlanResponse.StatusCode);
+            Assert.Equal("true", Assert.Single(replayedPlanResponse.Headers.GetValues("Idempotency-Replayed")));
+            var replayedPlan = (await replayedPlanResponse.Content.ReadFromJsonAsync<PlanViewV1>())!;
+            Assert.Equal(JsonSerializer.Serialize(createdPlan), JsonSerializer.Serialize(replayedPlan));
+
+            using var reopenedPlanResponse = await freshClient.GetAsync($"/api/v1/manufacturing/plans/{planId:D}");
+            Assert.Equal(HttpStatusCode.OK, reopenedPlanResponse.StatusCode);
+            var reopenedPlan = (await reopenedPlanResponse.Content.ReadFromJsonAsync<PlanViewV1>())!;
+            Assert.Equal(JsonSerializer.Serialize(createdPlan), JsonSerializer.Serialize(reopenedPlan));
+
+            await using (var sql = new SqlConnection(factory.DatabaseConnectionString))
+            {
+                await sql.OpenAsync();
+                await using var storedPlan = sql.CreateCommand();
+                storedPlan.CommandText = """
+                    SELECT [ParentRollId], [ExpectedLabelVersion], [TechnicalProductId], [TechnicalProductVersion],
+                        [TechnicalFamilyId], [TechnicalFamilySourceRevision],
+                        [TechnicalTemplateId], [TechnicalTemplateVersion], [TechnicalTemplateSourceRevision],
+                        [TechnicalKilogramUnitCompanyId], [TechnicalKilogramUnitId],
+                        [TechnicalKilogramProfileId], [TechnicalKilogramProfileVersion],
+                        [TechnicalThicknessMm], [TechnicalWidthMm],
+                        (SELECT COUNT(*) FROM [manufacturing].[Plans]
+                            WHERE [CompanyId] = @company AND [Id] = @plan),
+                        (SELECT COUNT(*) FROM [manufacturing].[Commands]
+                            WHERE [CompanyId] = @company
+                              AND [CommandName] = N'manufacturing.plan.save.v1')
+                    FROM [manufacturing].[PlanInputs]
+                    WHERE [CompanyId] = @company AND [PlanId] = @plan;
+                    """;
+                storedPlan.Parameters.AddWithValue("@company", CompanyA);
+                storedPlan.Parameters.AddWithValue("@plan", planId);
+                await using var row = await storedPlan.ExecuteReaderAsync();
+                Assert.True(await row.ReadAsync());
+                Assert.Equal((labelId, stocked.LabelVersion, stocked.ProductId, stocked.ProductVersion),
+                    (row.GetGuid(0), row.GetInt64(1), row.GetGuid(2), row.GetString(3)));
+                Assert.Equal((captured.Family.FamilyId, captured.Family.SourceRevision,
+                    captured.Template.TemplateId, captured.Template.TemplateVersion,
+                    captured.Template.SourceRevision),
+                    (row.GetGuid(4), row.GetString(5), row.GetGuid(6), row.GetString(7), row.GetString(8)));
+                Assert.Equal((captured.UnitKg.CompanyId, captured.UnitKg.UnitId, captured.UnitKg.ProfileId,
+                    captured.UnitKg.ProfileVersion),
+                    (row.GetGuid(9), row.GetGuid(10), row.GetGuid(11), row.GetString(12)));
+                Assert.Equal((3m, 248m), (row.GetDecimal(13), row.GetDecimal(14)));
+                Assert.Equal((1, 1), (row.GetInt32(15), row.GetInt32(16)));
+                Assert.False(await row.ReadAsync());
+            }
         });
 
     [SqlServerFact]
@@ -599,11 +1177,12 @@ public sealed class ProductGlobalRuntimeSqlServerRelationalAcceptanceTests
         }
     }
 
-    private static async Task AssertRollbackRefusedAsync(DbContext database, int errorNumber)
+    private static async Task AssertRollbackRefusedAsync(DbContext database, int errorNumber,
+        string? targetMigration = null)
     {
         var applied = (await database.Database.GetAppliedMigrationsAsync()).ToArray();
         Assert.NotEmpty(applied);
-        var target = applied.Length == 1 ? Migration.InitialDatabase : applied[^2];
+        var target = targetMigration ?? (applied.Length == 1 ? Migration.InitialDatabase : applied[^2]);
         var error = await Assert.ThrowsAsync<SqlException>(() => database.GetService<IMigrator>().MigrateAsync(target));
         Assert.Equal(errorNumber, error.Number);
         Assert.Equal(applied, await database.Database.GetAppliedMigrationsAsync());
@@ -731,6 +1310,90 @@ public sealed class ProductGlobalRuntimeSqlServerRelationalAcceptanceTests
         { Content = JsonContent.Create(new CreateProductDraftRequest(name, groupId ?? GroupId)) };
         request.Headers.Add("Idempotency-Key", key);
         return client.SendAsync(request);
+    }
+
+    private static async Task<HttpResponseMessage> PreviewImportAsync(HttpClient client, byte[] workbook)
+    {
+        using var content = ImportForm(workbook);
+        return await client.PostAsync(ProductImportApiV1.PreviewPath, content);
+    }
+
+    private static async Task<HttpResponseMessage> ApplyImportAsync(HttpClient client, byte[] workbook,
+        ProductImportPreviewV1 preview, string key)
+    {
+        using var content = ImportForm(workbook);
+        content.Add(new StringContent(preview.FileSha256), ProductImportApiV1.FileSha256Field);
+        content.Add(new StringContent(preview.PreviewToken), ProductImportApiV1.PreviewTokenField);
+        using var request = new HttpRequestMessage(HttpMethod.Post, ProductImportApiV1.ApplyPath) { Content = content };
+        request.Headers.Add(ProductApiV1.IdempotencyHeader, key);
+        return await client.SendAsync(request);
+    }
+
+    private static MultipartFormDataContent ImportForm(byte[] workbook)
+    {
+        var content = new MultipartFormDataContent();
+        var file = new ByteArrayContent(workbook);
+        file.Headers.ContentType = new MediaTypeHeaderValue("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+        content.Add(file, ProductImportApiV1.FileField, "product-import.xlsx");
+        content.Add(new StringContent("Eski Kod"), ProductImportApiV1.LegacyCodeColumnField);
+        content.Add(new StringContent("Ürün Adı"), ProductImportApiV1.NameColumnField);
+        content.Add(new StringContent("Grup Kimliği"), ProductImportApiV1.GroupIdColumnField);
+        return content;
+    }
+
+    private static byte[] ImportWorkbook(params (string LegacyCode, string Name)[] rows)
+    {
+        var sheet = new StringBuilder("""
+            <?xml version="1.0" encoding="UTF-8"?>
+            <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>
+            <row r="1"><c r="A1" t="inlineStr"><is><t>Eski Kod</t></is></c><c r="B1" t="inlineStr"><is><t>Ürün Adı</t></is></c><c r="C1" t="inlineStr"><is><t>Grup Kimliği</t></is></c></row>
+            """);
+        for (var index = 0; index < rows.Length; index++)
+        {
+            var row = index + 2;
+            sheet.Append($"<row r=\"{row}\"><c r=\"A{row}\" t=\"inlineStr\"><is><t>{rows[index].LegacyCode}</t></is></c>")
+                .Append($"<c r=\"B{row}\" t=\"inlineStr\"><is><t>{rows[index].Name}</t></is></c>")
+                .Append($"<c r=\"C{row}\" t=\"inlineStr\"><is><t>{GroupId:D}</t></is></c></row>");
+        }
+        sheet.Append("</sheetData></worksheet>");
+
+        using var output = new MemoryStream();
+        using (var archive = new ZipArchive(output, ZipArchiveMode.Create, leaveOpen: true))
+        {
+            WriteWorkbookEntry(archive, "[Content_Types].xml", """
+                <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+                <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+                  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+                  <Default Extension="xml" ContentType="application/xml"/>
+                  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+                  <Override PartName="/xl/worksheets/import.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+                </Types>
+                """);
+            WriteWorkbookEntry(archive, "_rels/.rels", """
+                <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+                <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+                  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+                </Relationships>
+                """);
+            WriteWorkbookEntry(archive, "xl/workbook.xml", """
+                <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+                <workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Ürünler" sheetId="1" r:id="rIdImport"/></sheets></workbook>
+                """);
+            WriteWorkbookEntry(archive, "xl/_rels/workbook.xml.rels", """
+                <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+                <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+                  <Relationship Id="rIdImport" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/import.xml"/>
+                </Relationships>
+                """);
+            WriteWorkbookEntry(archive, "xl/worksheets/import.xml", sheet.ToString());
+        }
+        return output.ToArray();
+    }
+
+    private static void WriteWorkbookEntry(ZipArchive archive, string path, string content)
+    {
+        using var writer = new StreamWriter(archive.CreateEntry(path).Open(), new UTF8Encoding(false));
+        writer.Write(content);
     }
 
     private static Task<HttpResponseMessage> EditAsync(HttpClient client, Guid id, string key, string version, string name)

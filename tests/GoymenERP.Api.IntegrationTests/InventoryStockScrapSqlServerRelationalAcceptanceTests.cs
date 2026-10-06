@@ -1,6 +1,9 @@
 using GoymenERP.Modules.Inventory.Application;
+using GoymenERP.Modules.Inventory.Domain.Costing;
 using GoymenERP.Modules.Inventory.Domain.Movements;
+using GoymenERP.Modules.Inventory.Domain.Scraps;
 using GoymenERP.Modules.Inventory.Domain.Stock;
+using GoymenERP.Modules.Inventory.Infrastructure.Persistence;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -28,7 +31,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
 
         await using (var scope = run.Store(CompanyA))
         {
-            var recorded = await scope.Store.RecordStockScrapAsync(request, recorder);
+            var recorded = await scope.Store.RecordStockScrapAsync(request, recorder, static _ => Task.CompletedTask);
             Assert.False(recorded.IsReplay);
             Assert.Equal((InventoryStockScrapStatusesV1.PendingApproval, "100", "12.5", "87.5", source.LabelVersion.ToString()),
                 (recorded.Scrap.Status, recorded.Scrap.BookKg, recorded.Scrap.ScrapKg, recorded.Scrap.RemainingKg,
@@ -42,13 +45,13 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
 
         await using (var scope = run.Store(CompanyA))
         {
-            var sameKey = await scope.Store.RecordStockScrapAsync(request, recorder with { CorrelationId = $"retry-{Guid.NewGuid():N}" });
+            var sameKey = await scope.Store.RecordStockScrapAsync(request, recorder with { CorrelationId = $"retry-{Guid.NewGuid():N}" }, static _ => Task.CompletedTask);
             Assert.True(sameKey.IsReplay);
             Assert.Equal(recorder.CorrelationId, sameKey.OriginalCorrelationId);
-            var newKey = await scope.Store.RecordStockScrapAsync(request, recorder with { IdempotencyKey = $"other-{Guid.NewGuid():N}" });
+            var newKey = await scope.Store.RecordStockScrapAsync(request, recorder with { IdempotencyKey = $"other-{Guid.NewGuid():N}" }, static _ => Task.CompletedTask);
             Assert.True(newKey.IsReplay);
             await AssertScrapRefused(scope.Store.RecordStockScrapAsync(request with { ScrapKg = "12" },
-                    recorder with { IdempotencyKey = $"other-content-{Guid.NewGuid():N}" }),
+                    recorder with { IdempotencyKey = $"other-content-{Guid.NewGuid():N}" }, static _ => Task.CompletedTask),
                 409, InventoryStockScrapCodesV1.ScrapConflict);
             var reopened = (await scope.Store.ReadStockScrapsAsync(source.LabelId))!;
             var only = Assert.Single(reopened.Items);
@@ -59,7 +62,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         await using (var scope = run.Store(CompanyA))
         {
             await AssertScrapRefused(scope.Store.DecideStockScrapAsync(request.ScrapId,
-                    new(InventoryStockScrapDecisionKindV1.Approve, "Kendi hurdam"), recorder with { IdempotencyKey = $"self-{Guid.NewGuid():N}" }),
+                    new(InventoryStockScrapDecisionKindV1.Approve, "Kendi hurdam"), recorder with { IdempotencyKey = $"self-{Guid.NewGuid():N}" }, static _ => Task.CompletedTask),
                 409, InventoryStockScrapCodesV1.SelfApproval);
         }
 
@@ -74,7 +77,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         Guid movementId;
         await using (var scope = run.Store(CompanyA))
         {
-            var approved = await scope.Store.DecideStockScrapAsync(request.ScrapId, approval, approver);
+            var approved = await scope.Store.DecideStockScrapAsync(request.ScrapId, approval, approver, static _ => Task.CompletedTask);
             Assert.False(approved.IsReplay);
             Assert.Equal(InventoryStockScrapStatusesV1.Approved, approved.Scrap.Status);
             movementId = approved.Scrap.Decision!.ScrapMovementId!.Value;
@@ -92,24 +95,24 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         await using (var scope = run.Store(CompanyA))
         {
             var sameKey = await scope.Store.DecideStockScrapAsync(request.ScrapId, approval,
-                approver with { CorrelationId = $"retry-{Guid.NewGuid():N}" });
+                approver with { CorrelationId = $"retry-{Guid.NewGuid():N}" }, static _ => Task.CompletedTask);
             Assert.True(sameKey.IsReplay);
             Assert.Equal(approver.CorrelationId, sameKey.OriginalCorrelationId);
             var newKey = await scope.Store.DecideStockScrapAsync(request.ScrapId, approval,
-                approver with { IdempotencyKey = $"approve-again-{Guid.NewGuid():N}" });
+                approver with { IdempotencyKey = $"approve-again-{Guid.NewGuid():N}" }, static _ => Task.CompletedTask);
             Assert.True(newKey.IsReplay);
             Assert.Equal(movementId, newKey.Scrap.Decision!.ScrapMovementId);
             await AssertScrapRefused(scope.Store.DecideStockScrapAsync(request.ScrapId,
-                    new(InventoryStockScrapDecisionKindV1.Reject, "Vazgeçildi"), approver with { IdempotencyKey = $"reject-{Guid.NewGuid():N}" }),
+                    new(InventoryStockScrapDecisionKindV1.Reject, "Vazgeçildi"), approver with { IdempotencyKey = $"reject-{Guid.NewGuid():N}" }, static _ => Task.CompletedTask),
                 409, InventoryStockScrapCodesV1.AlreadyDecided);
 
             // The same approval content is replayed only to its decider (#512 review P3): the recorder meets the
             // maker≠checker refusal, a third actor the already-decided one — never a 200 of someone else's decision.
             await AssertScrapRefused(scope.Store.DecideStockScrapAsync(request.ScrapId, approval,
-                    recorder with { IdempotencyKey = $"recorder-replay-{Guid.NewGuid():N}" }),
+                    recorder with { IdempotencyKey = $"recorder-replay-{Guid.NewGuid():N}" }, static _ => Task.CompletedTask),
                 409, InventoryStockScrapCodesV1.SelfApproval);
             await AssertScrapRefused(scope.Store.DecideStockScrapAsync(request.ScrapId, approval,
-                    approver with { ActorId = Guid.NewGuid().ToString("D"), IdempotencyKey = $"third-replay-{Guid.NewGuid():N}" }),
+                    approver with { ActorId = Guid.NewGuid().ToString("D"), IdempotencyKey = $"third-replay-{Guid.NewGuid():N}" }, static _ => Task.CompletedTask),
                 409, InventoryStockScrapCodesV1.AlreadyDecided);
         }
 
@@ -181,7 +184,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             At.AddHours(2), "Sentetik hurda: kalite blokajındaki rulo kullanılamaz.");
         await using (var scope = run.Store(CompanyA))
         {
-            var recorded = await scope.Store.RecordStockScrapAsync(request, Metadata(run));
+            var recorded = await scope.Store.RecordStockScrapAsync(request, Metadata(run), static _ => Task.CompletedTask);
             Assert.Equal((nameof(BlockState.Blocked), "0"), (recorded.Scrap.Block, recorded.Scrap.RemainingKg));
         }
 
@@ -189,7 +192,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         {
             var approved = await scope.Store.DecideStockScrapAsync(request.ScrapId,
                 new(InventoryStockScrapDecisionKindV1.Approve, "Kalite onayı"),
-                Metadata(run) with { ActorId = Guid.NewGuid().ToString("D"), IdempotencyKey = Guid.NewGuid().ToString("N") });
+                Metadata(run) with { ActorId = Guid.NewGuid().ToString("D"), IdempotencyKey = Guid.NewGuid().ToString("N") }, static _ => Task.CompletedTask);
             Assert.Equal(InventoryStockScrapStatusesV1.Approved, approved.Scrap.Status);
         }
 
@@ -204,7 +207,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         await using (var scope = run.Store(CompanyA))
         {
             await AssertScrapRefused(scope.Store.RecordStockScrapAsync(new RecordInventoryStockScrapV1(Guid.NewGuid(),
-                    source.LabelId, (version + 1).ToString(), "1", At.AddHours(3), "Tekrar"), Metadata(run)),
+                    source.LabelId, (version + 1).ToString(), "1", At.AddHours(3), "Tekrar"), Metadata(run), static _ => Task.CompletedTask),
                 409, InventoryStockScrapCodesV1.PositionConflict);
         }
     }
@@ -224,28 +227,28 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
 
         await using (var scope = run.Store(CompanyA))
         {
-            await AssertScrapRefused(scope.Store.RecordStockScrapAsync(Scrap(own.LabelId, own.LabelVersion + 1, "10"), Metadata(run)),
+            await AssertScrapRefused(scope.Store.RecordStockScrapAsync(Scrap(own.LabelId, own.LabelVersion + 1, "10"), Metadata(run), static _ => Task.CompletedTask),
                 409, InventoryStockScrapCodesV1.LabelVersionConflict);
-            await AssertScrapRefused(scope.Store.RecordStockScrapAsync(Scrap(foreign.LabelId, foreign.LabelVersion, "10"), Metadata(run)),
+            await AssertScrapRefused(scope.Store.RecordStockScrapAsync(Scrap(foreign.LabelId, foreign.LabelVersion, "10"), Metadata(run), static _ => Task.CompletedTask),
                 404, InventoryStockScrapCodesV1.LabelNotFound);
-            await AssertScrapRefused(scope.Store.RecordStockScrapAsync(Scrap(own.LabelId, own.LabelVersion, "10.0001"), Metadata(run)),
+            await AssertScrapRefused(scope.Store.RecordStockScrapAsync(Scrap(own.LabelId, own.LabelVersion, "10.0001"), Metadata(run), static _ => Task.CompletedTask),
                 400, InventoryStockScrapCodesV1.ValidationFailed);
-            await AssertScrapRefused(scope.Store.RecordStockScrapAsync(Scrap(own.LabelId, own.LabelVersion, "0"), Metadata(run)),
+            await AssertScrapRefused(scope.Store.RecordStockScrapAsync(Scrap(own.LabelId, own.LabelVersion, "0"), Metadata(run), static _ => Task.CompletedTask),
                 400, InventoryStockScrapCodesV1.ValidationFailed);
             await AssertScrapRefused(scope.Store.RecordStockScrapAsync(
-                    Scrap(own.LabelId, own.LabelVersion, "10") with { Reason = "  " }, Metadata(run)),
+                    Scrap(own.LabelId, own.LabelVersion, "10") with { Reason = "  " }, Metadata(run), static _ => Task.CompletedTask),
                 400, InventoryStockScrapCodesV1.ValidationFailed);
-            await AssertScrapRefused(scope.Store.RecordStockScrapAsync(Scrap(own.LabelId, own.LabelVersion, "100.001"), Metadata(run)),
+            await AssertScrapRefused(scope.Store.RecordStockScrapAsync(Scrap(own.LabelId, own.LabelVersion, "100.001"), Metadata(run), static _ => Task.CompletedTask),
                 409, InventoryStockScrapCodesV1.ExceedsBook);
             Assert.Null(await scope.Store.ReadStockScrapsAsync(foreign.LabelId));
             await AssertScrapRefused(scope.Store.RecordStockScrapAsync(
-                    Scrap(customerOwned.LabelId, customerOwned.LabelVersion, "1"), Metadata(run)),
+                    Scrap(customerOwned.LabelId, customerOwned.LabelVersion, "1"), Metadata(run), static _ => Task.CompletedTask),
                 409, InventoryStockScrapCodesV1.NotOwnStock);
             await AssertScrapRefused(scope.Store.RecordStockScrapAsync(
-                    Scrap(fasonHeld.LabelId, fasonHeld.LabelVersion, "1"), Metadata(run)),
+                    Scrap(fasonHeld.LabelId, fasonHeld.LabelVersion, "1"), Metadata(run), static _ => Task.CompletedTask),
                 409, InventoryStockScrapCodesV1.NotOwnStock);
             await AssertScrapRefused(scope.Store.DecideStockScrapAsync(Guid.NewGuid(),
-                    new(InventoryStockScrapDecisionKindV1.Approve, "Yok"), approver),
+                    new(InventoryStockScrapDecisionKindV1.Approve, "Yok"), approver, static _ => Task.CompletedTask),
                 404, InventoryStockScrapCodesV1.ScrapNotFound);
         }
 
@@ -254,8 +257,8 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         var first = Scrap(own.LabelId, own.LabelVersion, "5");
         await using (var scope = run.Store(CompanyA))
         {
-            await scope.Store.RecordStockScrapAsync(first, key);
-            await AssertScrapRefused(scope.Store.RecordStockScrapAsync(Scrap(own.LabelId, own.LabelVersion, "6"), key),
+            await scope.Store.RecordStockScrapAsync(first, key, static _ => Task.CompletedTask);
+            await AssertScrapRefused(scope.Store.RecordStockScrapAsync(Scrap(own.LabelId, own.LabelVersion, "6"), key, static _ => Task.CompletedTask),
                 409, InventoryStockScrapCodesV1.IdempotencyConflict);
         }
 
@@ -263,7 +266,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         await using (var scope = run.Store(CompanyB))
         {
             await AssertScrapRefused(scope.Store.DecideStockScrapAsync(first.ScrapId,
-                    new(InventoryStockScrapDecisionKindV1.Approve, "Başka şirket"), approver with { IdempotencyKey = Guid.NewGuid().ToString("N") }),
+                    new(InventoryStockScrapDecisionKindV1.Approve, "Başka şirket"), approver with { IdempotencyKey = Guid.NewGuid().ToString("N") }, static _ => Task.CompletedTask),
                 404, InventoryStockScrapCodesV1.ScrapNotFound);
             Assert.Null(await scope.Store.ReadStockScrapsAsync(own.LabelId));
         }
@@ -273,11 +276,11 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         await using (var scope = run.Store(CompanyA))
         {
             await AssertScrapRefused(scope.Store.DecideStockScrapAsync(first.ScrapId,
-                    new(InventoryStockScrapDecisionKindV1.Approve, "Onay"), approver with { IdempotencyKey = Guid.NewGuid().ToString("N") }),
+                    new(InventoryStockScrapDecisionKindV1.Approve, "Onay"), approver with { IdempotencyKey = Guid.NewGuid().ToString("N") }, static _ => Task.CompletedTask),
                 409, InventoryStockScrapCodesV1.Stale);
             var rejected = await scope.Store.DecideStockScrapAsync(first.ScrapId,
                 new(InventoryStockScrapDecisionKindV1.Reject, "Kayıttan sonra hareket oldu; yeniden girilecek."),
-                approver with { IdempotencyKey = Guid.NewGuid().ToString("N") });
+                approver with { IdempotencyKey = Guid.NewGuid().ToString("N") }, static _ => Task.CompletedTask);
             Assert.Equal((InventoryStockScrapStatusesV1.Rejected, (Guid?)null),
                 (rejected.Scrap.Status, rejected.Scrap.Decision!.ScrapMovementId));
         }
@@ -288,18 +291,18 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         var pending = Scrap(own.LabelId, version, "60");
         await using (var scope = run.Store(CompanyA))
         {
-            await scope.Store.RecordStockScrapAsync(pending, Metadata(run));
+            await scope.Store.RecordStockScrapAsync(pending, Metadata(run), static _ => Task.CompletedTask);
             await scope.Store.CreateAsync(AllocationRequest(own with { LabelVersion = version }, "50"), Metadata(run));
         }
 
         version = await LabelVersionAsync(run, own.LabelId);
         await using (var scope = run.Store(CompanyA))
         {
-            await AssertScrapRefused(scope.Store.RecordStockScrapAsync(Scrap(own.LabelId, version, "50.001"), Metadata(run)),
+            await AssertScrapRefused(scope.Store.RecordStockScrapAsync(Scrap(own.LabelId, version, "50.001"), Metadata(run), static _ => Task.CompletedTask),
                 409, InventoryStockScrapCodesV1.AllocationConflict);
             // The allocation bumped the label, so the earlier scrap is stale before its allocation check.
             await AssertScrapRefused(scope.Store.DecideStockScrapAsync(pending.ScrapId,
-                    new(InventoryStockScrapDecisionKindV1.Approve, "Onay"), approver with { IdempotencyKey = Guid.NewGuid().ToString("N") }),
+                    new(InventoryStockScrapDecisionKindV1.Approve, "Onay"), approver with { IdempotencyKey = Guid.NewGuid().ToString("N") }, static _ => Task.CompletedTask),
                 409, InventoryStockScrapCodesV1.Stale);
         }
 
@@ -307,7 +310,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         var within = Scrap(own.LabelId, version, "50");
         await using (var scope = run.Store(CompanyA))
         {
-            await scope.Store.RecordStockScrapAsync(within, Metadata(run));
+            await scope.Store.RecordStockScrapAsync(within, Metadata(run), static _ => Task.CompletedTask);
         }
 
         await ExecuteAsync(run, "UPDATE inventory.Allocations SET RemainingKg = 60, AllocatedKg = 60 WHERE LabelId = @label",
@@ -315,7 +318,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         await using (var scope = run.Store(CompanyA))
         {
             await AssertScrapRefused(scope.Store.DecideStockScrapAsync(within.ScrapId,
-                    new(InventoryStockScrapDecisionKindV1.Approve, "Onay"), approver with { IdempotencyKey = Guid.NewGuid().ToString("N") }),
+                    new(InventoryStockScrapDecisionKindV1.Approve, "Onay"), approver with { IdempotencyKey = Guid.NewGuid().ToString("N") }, static _ => Task.CompletedTask),
                 409, InventoryStockScrapCodesV1.AllocationConflict);
         }
 
@@ -324,6 +327,124 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         Assert.Equal(3, await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.StockScraps"));
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.StockScrapDecisions WHERE Decision = 2"));
         Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.StockScrapDecisions WHERE Decision = 1"));
+    }
+
+    [SqlServerFact]
+    public async Task Stock_scrap_late_authority_denials_do_not_disclose_replays_or_commit_record_and_approval_effects()
+    {
+        await using var run = await Run.StartAsync();
+        var source = await SeedFreePhysicalSourceAsync(run, CompanyA, "SYN-SCRAP-LATE-AUTH", 100m);
+        var request = Scrap(source.LabelId, source.LabelVersion, "12.5");
+        var recorder = Metadata(run) with
+        {
+            IdempotencyKey = $"scrap-late-{Guid.NewGuid():N}",
+            CorrelationId = $"scrap-late-{Guid.NewGuid():N}",
+        };
+        var forbidden = static () => new InventoryStockScrapException(403, InventoryStockScrapCodesV1.Forbidden);
+
+        var beforeRecord = await ScrapEffectsAsync(run, source.LabelId);
+        await using (var scope = run.Store(CompanyA))
+        {
+            await AssertScrapRefused(scope.Store.RecordStockScrapAsync(request, recorder,
+                    FailStockScrapFenceOnCall(7, forbidden)),
+                403, InventoryStockScrapCodesV1.Forbidden);
+        }
+        Assert.Equal(beforeRecord, await ScrapEffectsAsync(run, source.LabelId));
+
+        await using (var scope = run.Store(CompanyA))
+        {
+            await scope.Store.RecordStockScrapAsync(request, recorder, static _ => Task.CompletedTask);
+        }
+        var recorded = await ScrapEffectsAsync(run, source.LabelId);
+
+        await using (var scope = run.Store(CompanyA))
+        {
+            await AssertScrapRefused(scope.Store.RecordStockScrapAsync(request,
+                    recorder with { CorrelationId = $"retry-{Guid.NewGuid():N}" },
+                    FailStockScrapFenceOnCall(1, forbidden)),
+                403, InventoryStockScrapCodesV1.Forbidden);
+        }
+        Assert.Equal(recorded, await ScrapEffectsAsync(run, source.LabelId));
+
+        await using (var scope = run.Store(CompanyA))
+        {
+            await AssertScrapRefused(scope.Store.RecordStockScrapAsync(request,
+                    recorder with { IdempotencyKey = $"identity-{Guid.NewGuid():N}" },
+                    FailStockScrapFenceOnCall(2, forbidden)),
+                403, InventoryStockScrapCodesV1.Forbidden);
+        }
+        Assert.Equal(recorded, await ScrapEffectsAsync(run, source.LabelId));
+
+        var approval = new DecideInventoryStockScrapV1(InventoryStockScrapDecisionKindV1.Approve, "Geç yetki testi.");
+        var ownerRefusalScrap = Scrap(source.LabelId, source.LabelVersion, "2");
+        await using (var scope = run.Store(CompanyA))
+        {
+            await scope.Store.RecordStockScrapAsync(ownerRefusalScrap,
+                recorder with
+                {
+                    IdempotencyKey = $"owner-refusal-record-{Guid.NewGuid():N}",
+                    CorrelationId = $"owner-refusal-record-{Guid.NewGuid():N}",
+                },
+                static _ => Task.CompletedTask);
+        }
+        await SeedStockScrapOwnerRefusalAsync(run, ownerRefusalScrap.ScrapId);
+        var ownerRefusalBaseline = await ScrapEffectsAsync(run, source.LabelId);
+        await using (var scope = run.Store(CompanyA))
+        {
+            await AssertScrapRefused(scope.Store.DecideStockScrapAsync(ownerRefusalScrap.ScrapId, approval,
+                    Metadata(run) with { ActorId = Guid.NewGuid().ToString("D") },
+                    FailStockScrapFenceOnCall(6, forbidden)),
+                403, InventoryStockScrapCodesV1.Forbidden);
+        }
+        Assert.Equal(ownerRefusalBaseline, await ScrapEffectsAsync(run, source.LabelId));
+
+        var approver = Metadata(run) with
+        {
+            ActorId = Guid.NewGuid().ToString("D"),
+            IdempotencyKey = $"approve-late-{Guid.NewGuid():N}",
+            CorrelationId = $"approve-late-{Guid.NewGuid():N}",
+        };
+        var sameScopeScrap = Scrap(source.LabelId, source.LabelVersion, "1");
+        var sameScopeRecorder = recorder with
+        {
+            IdempotencyKey = $"same-scope-{Guid.NewGuid():N}",
+            CorrelationId = $"same-scope-{Guid.NewGuid():N}",
+        };
+        await using (var scope = run.Store(CompanyA))
+        {
+            await AssertScrapRefused(scope.Store.DecideStockScrapAsync(request.ScrapId, approval, approver,
+                    FailStockScrapFenceOnCall(6, forbidden)),
+                403, InventoryStockScrapCodesV1.Forbidden);
+            await scope.Store.RecordStockScrapAsync(sameScopeScrap, sameScopeRecorder,
+                static _ => Task.CompletedTask);
+        }
+        var afterSameScopeWrite = await ScrapEffectsAsync(run, source.LabelId);
+        Assert.Equal(ownerRefusalBaseline with
+        {
+            Scraps = ownerRefusalBaseline.Scraps + 1,
+            Commands = ownerRefusalBaseline.Commands + 1,
+            AuditEvents = ownerRefusalBaseline.AuditEvents + 1,
+        }, afterSameScopeWrite);
+
+        await using (var scope = run.Store(CompanyA))
+        {
+            await AssertScrapRefused(scope.Store.DecideStockScrapAsync(request.ScrapId, approval, approver,
+                    FailStockScrapFenceOnCall(7, forbidden)),
+                403, InventoryStockScrapCodesV1.Forbidden);
+        }
+        Assert.Equal(afterSameScopeWrite, await ScrapEffectsAsync(run, source.LabelId));
+
+        var cancelledRequest = Scrap(source.LabelId, source.LabelVersion, "10");
+        using var cancellation = new CancellationTokenSource();
+        await using (var scope = run.Store(CompanyA))
+        {
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => scope.Store.RecordStockScrapAsync(
+                cancelledRequest,
+                recorder with { IdempotencyKey = $"cancel-{Guid.NewGuid():N}" },
+                CancelStockScrapFenceOnCall(7, cancellation),
+                cancellation.Token));
+        }
+        Assert.Equal(afterSameScopeWrite, await ScrapEffectsAsync(run, source.LabelId));
     }
 
     [SqlServerFact]
@@ -359,13 +480,17 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             Assert.Equal(0, await run.ScalarAsync<int>(
                 "SELECT COUNT(*) FROM sys.tables WHERE schema_id = SCHEMA_ID(N'inventory') AND name LIKE N'StockScrap%'"));
             await context.GetService<IMigrator>().MigrateAsync(currentMigration);
+            await context.Database.MigrateAsync();
         }
 
         var source = await SeedFreePhysicalSourceAsync(run, CompanyA, "SYN-SCRAP-DOWN", 10m);
         await using (var scope = run.Store(CompanyA))
         {
-            await scope.Store.RecordStockScrapAsync(Scrap(source.LabelId, source.LabelVersion, "1"), Metadata(run));
+            await scope.Store.RecordStockScrapAsync(Scrap(source.LabelId, source.LabelVersion, "1"), Metadata(run), static _ => Task.CompletedTask);
         }
+
+        await RemoveSyntheticProductVersionsForHistoricalMigrationAsync(
+            run, "SYN-SCRAP-DOWN", expectedLabels: 1);
 
         await using (var context = run.Context(CompanyA))
         {
@@ -389,4 +514,86 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
 
     private static async Task<int> ScrapMovementsAsync(Run run) =>
         await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.Movements WHERE Kind = 7");
+
+    private static async Task<StockScrapEffects> ScrapEffectsAsync(Run run, Guid labelId) => new(
+        await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.StockScraps"),
+        await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.StockScrapDecisions"),
+        await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.Movements WHERE Kind = 7"),
+        await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM inventory.Commands WHERE CommandName LIKE N'inventory.stock-scrap.%'"),
+        await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityType IN (N'Inventory.StockScrap', N'Inventory.StockMovement')"),
+        await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.OutboxMessages"),
+        await LabelVersionAsync(run, labelId),
+        await LabelKgAsync(run, labelId));
+
+    private static async Task SeedStockScrapOwnerRefusalAsync(Run run, Guid scrapId)
+    {
+        await using var context = run.Context(CompanyA);
+        context.SourceGrains.Add(new SourceGrainRow
+        {
+            CompanyId = CompanyA,
+            Kind = (int)StockMovementKind.Scrap,
+            SourceKind = StockScrap.SourceKind,
+            SourceId = scrapId,
+            Grain = (int)StockSourceGrain.Whole,
+        });
+        context.Movements.Add(new MovementRow
+        {
+            Id = Guid.NewGuid(),
+            CompanyId = CompanyA,
+            Kind = (int)StockMovementKind.Scrap,
+            OccurredAtUtc = At,
+            SourceKind = StockScrap.SourceKind,
+            SourceId = scrapId,
+            SourceGrain = (int)StockSourceGrain.Whole,
+            CostStatus = (int)CostStatus.NotCalculated,
+            PayloadHash = new string('d', 64),
+            RecordedAtUtc = At,
+            RecordedBy = "synthetic-owner-refusal",
+            CorrelationId = run.Correlation,
+        });
+        await context.SaveChangesAsync();
+    }
+
+    private static Func<CancellationToken, Task> FailStockScrapFenceOnCall(
+        int expectedCall,
+        Func<Exception> error)
+    {
+        var calls = 0;
+        return cancellationToken =>
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Interlocked.Increment(ref calls) == expectedCall
+                ? Task.FromException(error())
+                : Task.CompletedTask;
+        };
+    }
+
+    private static Func<CancellationToken, Task> CancelStockScrapFenceOnCall(
+        int expectedCall,
+        CancellationTokenSource cancellation)
+    {
+        var calls = 0;
+        return token =>
+        {
+            if (Interlocked.Increment(ref calls) == expectedCall)
+            {
+                cancellation.Cancel();
+            }
+
+            token.ThrowIfCancellationRequested();
+            return Task.CompletedTask;
+        };
+    }
+
+    private sealed record StockScrapEffects(
+        int Scraps,
+        int Decisions,
+        int ScrapMovements,
+        int Commands,
+        int AuditEvents,
+        int OutboxMessages,
+        long LabelVersion,
+        decimal LabelKg);
 }

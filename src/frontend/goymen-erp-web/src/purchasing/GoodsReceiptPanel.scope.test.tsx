@@ -35,6 +35,7 @@ const detail: PurchaseOrderDetail = {
     updatedAtUtc: '2026-09-25T09:00:00Z', lineCount: 1 },
   lines: [{ lineId: LINE, lineNo: 1, kind: 'General', parentLineId: null, sourceRequestLineId: null,
     productId: PRODUCT, productVersion: '7', unitId: UNIT, ordered: '10', technical: '0', committed: '10', accepted: '0', remaining: '10' }],
+  acceptances: [],
 }
 
 const json = (body: unknown, status = 200, replay = false) => new Response(JSON.stringify(body), {
@@ -63,6 +64,13 @@ function receipt(payload = request()): GoodsReceipt {
     acceptedQuantity: payload.acceptedQuantity, remainingQuantity: '8', lotId: payload.lotId, labelId: payload.labelId,
     labelCode: payload.labelCode, labelVersion: '1', movementId: payload.movementId, locationId: payload.locationId,
     measuredQuantityKg: payload.measuredQuantityKg, initialBlock: 'Free', occurredAtUtc: payload.occurredAtUtc }
+}
+function comparison(source = receipt()) {
+  return { companyId: source.companyId, acceptanceId: source.acceptanceId, purchaseOrderId: source.purchaseOrderId,
+    purchaseOrderLineId: source.purchaseOrderLineId, purchaseOrderVersion: source.purchaseOrderVersion,
+    productId: source.productId, productVersion: source.productVersion, unitId: source.unitId,
+    acceptedQuantity: source.acceptedQuantity, measuredQuantityKg: source.measuredQuantityKg,
+    comparisonStatus: 'SameKilogramUnit', acceptedQuantityKg: source.acceptedQuantity, measuredMinusAcceptedKg: '-0.1' }
 }
 function mount(overrides: Partial<ComponentProps<typeof GoodsReceiptPanel>> = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -130,6 +138,27 @@ describe('Goods receipt scope and late-result protection, synthetic NOT_ENV', ()
     expect(screen.queryByText('PRIVATE-LABEL')).toBeNull()
     expect(screen.queryByTestId(`goods-receipt-${LOCATION}`)).toBeNull()
     expect(page.onRecorded).not.toHaveBeenCalled()
+  })
+
+  it('does not publish a late comparison after the actor binding changes and the fresh read is denied', async () => {
+    const oldComparison = deferred<Response>()
+    let comparisonCalls = 0
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      if (url.endsWith('goods-receipt-options')) return json(options())
+      if (url.endsWith('/quantity-comparison')) {
+        comparisonCalls += 1
+        return comparisonCalls === 1 ? oldComparison.promise : json({ code: 'forbidden' }, 403)
+      }
+      return json({ items: [receipt()], searchWindowFull: false })
+    }))
+    const page = mount()
+    await screen.findByTestId(`goods-receipt-${LOCATION}`)
+    await waitFor(() => expect(comparisonCalls).toBe(1))
+    page.change({ binding: ACTOR_B })
+    await waitFor(() => expect(boundary.report).toHaveBeenCalledWith(403, { token: 1 }))
+    await act(async () => { oldComparison.resolve(json(comparison())) })
+    expect(screen.queryByTestId(`goods-receipt-comparison-${LOCATION}`)).toBeNull()
+    expect(screen.queryByText('-0.1', { exact: true })).toBeNull()
   })
 
   it('does not acknowledge a late write after the capability has been removed', async () => {

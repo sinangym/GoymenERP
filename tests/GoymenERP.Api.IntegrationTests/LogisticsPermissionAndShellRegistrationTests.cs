@@ -33,6 +33,9 @@ public sealed class LogisticsPermissionAndShellRegistrationTests
     [InlineData(LogisticsPermissionManifestV1.DispatchNotesCreate, ErpPermissions.LogisticsDispatchNotesCreate)]
     [InlineData(LogisticsPermissionManifestV1.DispatchNotesApprove, ErpPermissions.LogisticsDispatchNotesApprove)]
     [InlineData(LogisticsPermissionManifestV1.DispatchNotesCancel, ErpPermissions.LogisticsDispatchNotesCancel)]
+    [InlineData(LogisticsPermissionManifestV1.CustomerReturnsRead, ErpPermissions.LogisticsCustomerReturnsRead)]
+    [InlineData(LogisticsPermissionManifestV1.CustomerReturnsRequest, ErpPermissions.LogisticsCustomerReturnsRequest)]
+    [InlineData(LogisticsPermissionManifestV1.CustomerReturnsDecision, ErpPermissions.LogisticsCustomerReturnsDecision)]
     [InlineData(LogisticsPermissionManifestV1.OperationsSalesWorkRead, ErpPermissions.LogisticsOperationsSalesWorkRead)]
     [InlineData(LogisticsPermissionManifestV1.OperationsPurchaseWorkRead, ErpPermissions.LogisticsOperationsPurchaseWorkRead)]
     public void The_owner_name_is_the_registered_central_name(string ownerName, string centralName)
@@ -64,20 +67,20 @@ public sealed class LogisticsPermissionAndShellRegistrationTests
 
         var actual = ShellCapabilityRegistry.ComputeCandidateRevision(providers);
         Assert.True(
-            string.Equals(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV14PublishedFinanceV12PublishedManufacturingV14AndPublishedLogisticsV12, actual,
+            string.Equals(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV16PublishedFinanceV15PublishedManufacturingV15AndPublishedLogisticsV13, actual,
                 StringComparison.Ordinal),
             $"Logistics normal-host authority drifted. Actual: {actual}");
     }
 
     [Fact]
-    public void The_normal_host_with_Logistics_gets_its_authority_and_publishes_three_routes_and_two_permission_gated_actions()
+    public void The_normal_host_with_Logistics_gets_its_authority_and_publishes_customer_return_controls_with_distinct_stock_authority()
     {
         var services = NormalHost();
 
         var authority = C01E2eShellCapabilityActivation.Configure(services, new TestingEnvironment(),
             new ConfigurationBuilder().Build());
 
-        Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV14PublishedFinanceV12PublishedManufacturingV14AndPublishedLogisticsV12, authority);
+        Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV16PublishedFinanceV15PublishedManufacturingV15AndPublishedLogisticsV13, authority);
         using var container = services.BuildServiceProvider();
         var registry = new ShellCapabilityRegistry(container.GetServices<IShellCapabilityProvider>(),
             new ShellCapabilityAuthorityCatalog([authority]));
@@ -86,9 +89,27 @@ public sealed class LogisticsPermissionAndShellRegistrationTests
             .ToArray();
         // The list, the new-instruction workspace and the detail are published; each still requires its owner permission.
         // AT-025: plus the operations work list's two separate sections (L-01 sales, L-09 purchase), each behind its own name.
-        Assert.Equal(7, logistics.Length);
+        Assert.Equal(11, logistics.Length);
         Assert.All(logistics, item => Assert.True(item.Declaration.ImplementationAvailable));
-        Assert.Equal(2, logistics.Count(item => item.Declaration.ParentCapabilityId == LogisticsShellCapabilityProvider.DetailCapabilityId));
+        Assert.Equal(6, logistics.Count(item => item.Declaration.ParentCapabilityId == LogisticsShellCapabilityProvider.DetailCapabilityId));
+
+        var declarations = logistics.ToDictionary(item => item.Declaration.CapabilityId, item => item.Declaration,
+            StringComparer.Ordinal);
+        Assert.Equal(
+            [LogisticsPermissionManifestV1.InstructionsRead, LogisticsPermissionManifestV1.CustomerReturnsRead],
+            declarations[LogisticsShellCapabilityProvider.CustomerReturnsReadCapabilityId].RequiredPermissions);
+        Assert.Equal(
+            [LogisticsPermissionManifestV1.InstructionsRead, LogisticsPermissionManifestV1.CustomerReturnsRead,
+                LogisticsPermissionManifestV1.CustomerReturnsRequest],
+            declarations[LogisticsShellCapabilityProvider.CustomerReturnsRequestCapabilityId].RequiredPermissions);
+        Assert.Equal(
+            [LogisticsPermissionManifestV1.InstructionsRead, LogisticsPermissionManifestV1.CustomerReturnsRead,
+                LogisticsPermissionManifestV1.CustomerReturnsDecision, ErpPermissions.InventoryPhysicalAllocationWrite],
+            declarations[LogisticsShellCapabilityProvider.CustomerReturnsApproveCapabilityId].RequiredPermissions);
+        Assert.Equal(
+            [LogisticsPermissionManifestV1.InstructionsRead, LogisticsPermissionManifestV1.CustomerReturnsRead,
+                LogisticsPermissionManifestV1.CustomerReturnsDecision],
+            declarations[LogisticsShellCapabilityProvider.CustomerReturnsRejectCapabilityId].RequiredPermissions);
     }
 
     [Fact]

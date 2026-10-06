@@ -68,6 +68,7 @@ public sealed class ManufacturingStore(
 
         RequireFits(plan.Inputs.Select(input => input.PlannedMass).Concat(plan.Target is { } t ? [t.Mass] : [])
             .Concat(plan.Spec?.WindingTargetKg is { } winding ? [winding] : []));
+        RequireTechnicalSnapshotFits(plan.Inputs);
         // A band width is a decimal(18,3) millimetre: beyond the column it is refused, never cut.
         if (plan.Spec is { } widths && widths.Lines.Any(line => line.BandWidthMm >= Decimal18Scale3Limit))
         {
@@ -102,7 +103,7 @@ public sealed class ManufacturingStore(
         var sequence = 0;
         foreach (var input in plan.Inputs)
         {
-            dbContext.PlanInputs.Add(new PlanInputRow
+            var row = new PlanInputRow
             {
                 CompanyId = plan.CompanyId,
                 PlanId = plan.Id,
@@ -110,7 +111,10 @@ public sealed class ManufacturingStore(
                 Sequence = ++sequence,
                 PlannedKg = input.PlannedMass.Value,
                 ExpectedLabelVersion = input.ExpectedLabelVersion,
-            });
+            };
+            CaptureTechnicalSnapshot(row, input.TechnicalSnapshot);
+            CaptureCommercialContext(row, input.CommercialContext);
+            dbContext.PlanInputs.Add(row);
         }
 
         // MFG-6: the slitting spec is plan content, stored in the same save.
@@ -317,6 +321,7 @@ public sealed class ManufacturingStore(
         }
 
         RequireFits(inputs.Select(input => input.PlannedMass).Concat(target is { } declared ? [declared.Mass] : []));
+        RequireTechnicalSnapshotFits(inputs);
 
         var row = await dbContext.Plans.SingleOrDefaultAsync(candidate => candidate.Id == planId, cancellationToken)
             ?? throw Refused(ManufacturingStoreCodes.PlanNotFound, "Bu şirketin böyle bir planı yok.");
@@ -352,7 +357,7 @@ public sealed class ManufacturingStore(
         var sequence = 0;
         foreach (var input in plan.Inputs)
         {
-            dbContext.PlanRevisionInputs.Add(new PlanRevisionInputRow
+            var inputRow = new PlanRevisionInputRow
             {
                 CompanyId = companyId,
                 PlanId = plan.Id,
@@ -361,7 +366,10 @@ public sealed class ManufacturingStore(
                 Sequence = ++sequence,
                 PlannedKg = input.PlannedMass.Value,
                 ExpectedLabelVersion = input.ExpectedLabelVersion!.Value,
-            });
+            };
+            CaptureTechnicalSnapshot(inputRow, input.TechnicalSnapshot);
+            CaptureCommercialContext(inputRow, input.CommercialContext);
+            dbContext.PlanRevisionInputs.Add(inputRow);
         }
 
         row.Version = plan.Version;
@@ -396,14 +404,14 @@ public sealed class ManufacturingStore(
         {
             new ManufacturingPlanRevision(0, 1, row.WorkCenterId,
                 [.. created.Select(input => new PlannedInput(input.ParentRollId, new Kilograms(input.PlannedKg),
-                    input.ExpectedLabelVersion))],
+                    input.ExpectedLabelVersion, RestoreTechnicalSnapshot(input), RestoreCommercialContext(input)))],
                 Target(row.TargetBasis, row.TargetKg), Reason: null, RevisedBy: null, row.CreatedAtUtc),
         };
         history.AddRange(headers.Select(header => new ManufacturingPlanRevision(header.RevisionNo, header.PlanVersion,
             header.WorkCenterId,
             [.. revisionInputs.Where(input => input.RevisionNo == header.RevisionNo)
                 .Select(input => new PlannedInput(input.ParentRollId, new Kilograms(input.PlannedKg),
-                    input.ExpectedLabelVersion))],
+                    input.ExpectedLabelVersion, RestoreTechnicalSnapshot(input), RestoreCommercialContext(input)))],
             Target(header.TargetBasis, header.TargetKg), header.Reason, header.RevisedBy, header.RevisedAtUtc)));
         return history;
     }
@@ -446,7 +454,7 @@ public sealed class ManufacturingStore(
         var sequence = 0;
         foreach (var input in order.PlannedInputs)
         {
-            dbContext.OrderInputs.Add(new OrderInputRow
+            var inputRow = new OrderInputRow
             {
                 CompanyId = order.CompanyId,
                 OrderId = order.Id,
@@ -454,7 +462,9 @@ public sealed class ManufacturingStore(
                 Sequence = ++sequence,
                 PlannedKg = input.PlannedMass.Value,
                 ExpectedLabelVersion = input.ExpectedLabelVersion,
-            });
+            };
+            CaptureCommercialContext(inputRow, input.CommercialContext);
+            dbContext.OrderInputs.Add(inputRow);
         }
 
         Audit(metadata, companyId, OrderEntityType, order.Id, "manufacturing.order.created.v1", "Create",
@@ -470,6 +480,7 @@ public sealed class ManufacturingStore(
                     input.ParentRollId,
                     kg = input.PlannedMass.Value,
                     input.ExpectedLabelVersion,
+                    commercial = input.CommercialContext,
                 }),
             }, Json),
             "Üretim emri kaydı");
@@ -558,6 +569,100 @@ public sealed class ManufacturingStore(
             }, Json),
             "Üretim emri kapanışı");
         // ADR-011 §6: the close's command record commits with the close itself and its audit event.
+        Complete(metadata, companyId, order);
+        await SaveAsync(cancellationToken);
+    }
+
+    public async Task CloseOrderWithPolicyAsync(Guid orderId, long expectedVersion, Guid closedByUserId,
+        DateTimeOffset closedAt, ClosureTolerancePolicySnapshotV1 policy,
+        ClosureExceptionApprovalV1? exceptionApproval,
+        ManufacturingPersistenceAuthorityFenceV1 persistenceAuthority,
+        ManufacturingCommandMetadata metadata, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(policy);
+        ArgumentNullException.ThrowIfNull(persistenceAuthority);
+        RequireMetadata(metadata);
+        var companyId = RequireResolvedCompany();
+        var row = await dbContext.Orders.SingleOrDefaultAsync(candidate => candidate.Id == orderId, cancellationToken)
+            ?? throw Refused(ManufacturingStoreCodes.OrderNotFound, "Bu şirketin böyle bir emri yok.");
+        var order = await RestoreOrderAsync(row, cancellationToken);
+        var versionBefore = order.Version;
+
+        // The application-level checks protect the reads. This final fresh fence runs after all stored facts have
+        // been rebuilt and before the domain object or EF change tracker is changed, leaving no order, decision,
+        // audit or command effect when either the captured context or a required permission has gone away.
+        if (!await persistenceAuthority.RevalidateAsync(companyId, closedByUserId, cancellationToken))
+        {
+            throw Refused(ManufacturingStoreCodes.AuthorityDenied,
+                "Üretim emri kapanış yetkisi kalıcılık sınırında doğrulanamadı; hiçbir şey kaydedilmedi.");
+        }
+
+        order.CloseWithPolicy(expectedVersion, closedByUserId, closedAt, policy, exceptionApproval);
+
+        dbContext.OrderClosureDecisions.Add(new OrderClosureDecisionRow
+        {
+            CompanyId = companyId,
+            OrderId = order.Id,
+            OrderVersion = versionBefore,
+            PolicyId = policy.PolicyId,
+            PolicyVersion = policy.PolicyVersion,
+            Process = (int)policy.Process,
+            MaximumFirePercent = Canonical(policy.MaximumFirePercent),
+            IsActive = policy.IsActive,
+            EffectiveFrom = policy.EffectiveFrom,
+            EffectiveThrough = policy.EffectiveThrough,
+            SelectedForDate = policy.SelectedForDate,
+            ApprovedByUserId = exceptionApproval?.ApprovedByUserId,
+            ApprovalReason = exceptionApproval?.Reason,
+            ApprovalOrderVersion = exceptionApproval?.OrderVersion,
+            ApprovalPolicyId = exceptionApproval?.PolicyId,
+            ApprovalPolicyVersion = exceptionApproval?.PolicyVersion,
+            ApprovedAtUtc = exceptionApproval?.ApprovedAtUtc,
+        });
+
+        row.Status = (int)order.Status;
+        row.ClosedByUserId = order.ClosedByUserId;
+        row.ClosedAtUtc = order.ClosedAtUtc;
+        row.Version = order.Version;
+        row.UpdatedAtUtc = timeProvider.GetUtcNow();
+        Audit(metadata, companyId, OrderEntityType, order.Id, "manufacturing.order.closed.v2", "CloseWithPolicy",
+            versionBefore, order.Version, before: JsonSerializer.Serialize(new { status = "Open" }, Json),
+            after: JsonSerializer.Serialize(new
+            {
+                status = "Closed",
+                tolerance = new
+                {
+                    policy.PolicyId,
+                    policy.PolicyVersion,
+                    process = policy.Process.ToString(),
+                    maximumFirePercent = Canonical(policy.MaximumFirePercent),
+                    policy.IsActive,
+                    policy.EffectiveFrom,
+                    policy.EffectiveThrough,
+                    policy.SelectedForDate,
+                },
+                exceptionApproval = exceptionApproval is null ? null : new
+                {
+                    exceptionApproval.ApprovedByUserId,
+                    exceptionApproval.Reason,
+                    exceptionApproval.OrderVersion,
+                    exceptionApproval.PolicyId,
+                    exceptionApproval.PolicyVersion,
+                    exceptionApproval.ApprovedAtUtc,
+                },
+                balances = order.PlannedInputs.Select(input => order.BalanceOf(input.ParentRollId)).Select(balance => new
+                {
+                    balance.ParentRollId,
+                    issued = balance.Issued.Value,
+                    returned = balance.Returned.Value,
+                    fire = balance.OutputOf(OutputClass.Scrap).Value
+                        + balance.OutputOf(OutputClass.ProcessLoss).Value,
+                    netIssued = balance.NetIssued.Value,
+                    workInProgress = balance.WorkInProgress.Value,
+                    unexplained = balance.Unexplained,
+                }),
+            }, Json),
+            exceptionApproval?.Reason ?? "Üretim emri tolerans profiliyle kapanışı");
         Complete(metadata, companyId, order);
         await SaveAsync(cancellationToken);
     }
@@ -788,13 +893,13 @@ public sealed class ManufacturingStore(
         // MFG-PLAN-EDIT: the revisions are replayed through the domain's own rule, in their order, before the approval.
         return ProductionPlan.Restore(row.Id, row.CompanyId, row.WorkCenterId, (ManufacturingProcess)row.Process,
             inputs.Select(input => new PlannedInput(input.ParentRollId, new Kilograms(input.PlannedKg),
-                input.ExpectedLabelVersion)),
+                input.ExpectedLabelVersion, RestoreTechnicalSnapshot(input), RestoreCommercialContext(input))),
             Target(row.TargetBasis, row.TargetKg), row.ApprovedByUserId, row.ApprovedAtUtc, row.Version,
             Spec(lines, row.WindingTargetKg),
             headers.Select(header => new PlanRevisionContent(header.WorkCenterId,
                 [.. revisionInputs.Where(input => input.RevisionNo == header.RevisionNo)
                     .Select(input => new PlannedInput(input.ParentRollId, new Kilograms(input.PlannedKg),
-                        input.ExpectedLabelVersion))],
+                        input.ExpectedLabelVersion, RestoreTechnicalSnapshot(input), RestoreCommercialContext(input)))],
                 Target(header.TargetBasis, header.TargetKg))));
     }
 
@@ -845,11 +950,13 @@ public sealed class ManufacturingStore(
         var facts = await dbContext.Facts.AsNoTracking()
             .Where(fact => fact.OrderId == row.Id)
             .ToListAsync(cancellationToken);
+        var closureDecision = await dbContext.OrderClosureDecisions.AsNoTracking()
+            .SingleOrDefaultAsync(decision => decision.OrderId == row.Id, cancellationToken);
         IEnumerable<FactRow> Of(FactKind kind) => facts.Where(fact => fact.Kind == (int)kind);
 
         try
         {
-            return RestoreOrder(row, inputs, Of);
+            return RestoreOrder(row, inputs, Of, closureDecision);
         }
         catch (ManufacturingRuleException exception) when (exception.Code == ManufacturingRuleCodes.StoredRecordInvalid)
         {
@@ -872,12 +979,16 @@ public sealed class ManufacturingStore(
     }
 
     private static ProductionOrder RestoreOrder(OrderRow row, IReadOnlyList<OrderInputRow> inputs,
-        Func<FactKind, IEnumerable<FactRow>> Of) =>
+        Func<FactKind, IEnumerable<FactRow>> Of, OrderClosureDecisionRow? closureDecision)
+    {
+        var (policy, approval) = RestoreClosureDecision(closureDecision);
+        return
         ProductionOrder.Restore(
             row.Id, row.PlanId, row.CompanyId, row.WorkCenterId, (ManufacturingProcess)row.Process,
             Target(row.TargetBasis, row.TargetKg),
             inputs.Select(input => new PlannedInput(input.ParentRollId, new Kilograms(input.PlannedKg),
-                input.ExpectedLabelVersion)),
+                input.ExpectedLabelVersion, technicalSnapshot: null,
+                commercialContext: RestoreCommercialContext(input))),
             Of(FactKind.InputIssue).Select(fact => new InputIssue(fact.Id, fact.ParentRollId, new Kilograms(fact.MassKg),
                 fact.OccurredAtUtc)),
             Of(FactKind.InputReturn).Select(fact => new InputReturn(fact.Id, fact.ParentRollId, new Kilograms(fact.MassKg),
@@ -886,7 +997,42 @@ public sealed class ManufacturingStore(
                 (OutputClass)(fact.OutputClass ?? 0), new Kilograms(fact.MassKg), fact.OccurredAtUtc, Cost(fact.CostStatus))),
             Of(FactKind.WipMeasurement).Select(fact => new WipMeasurement(fact.Id, fact.ParentRollId, new Kilograms(fact.MassKg),
                 fact.OccurredAtUtc)),
-            row.ClosedByUserId, row.ClosedAtUtc, row.Version);
+            row.ClosedByUserId, row.ClosedAtUtc, row.Version, policy, approval);
+    }
+
+    private static (ClosureTolerancePolicySnapshotV1? Policy, ClosureExceptionApprovalV1? Approval)
+        RestoreClosureDecision(OrderClosureDecisionRow? row)
+    {
+        if (row is null)
+        {
+            return (null, null);
+        }
+
+        try
+        {
+            if (!decimal.TryParse(row.MaximumFirePercent, NumberStyles.AllowDecimalPoint,
+                    CultureInfo.InvariantCulture, out var maximumFirePercent))
+            {
+                throw new ArgumentException("Kayıtlı tolerans yüzdesi decimal değildir.");
+            }
+
+            var policy = new ClosureTolerancePolicySnapshotV1(
+                row.CompanyId, row.PolicyId, row.PolicyVersion, (ManufacturingProcess)row.Process,
+                maximumFirePercent, row.IsActive, row.EffectiveFrom, row.EffectiveThrough, row.SelectedForDate);
+            var approval = row.ApprovedByUserId is not Guid approvedBy
+                ? null
+                : ClosureExceptionApprovalV1.Create(
+                    row.CompanyId, row.OrderId, approvedBy, row.ApprovalReason!,
+                    row.ApprovalOrderVersion ?? 0, row.ApprovalPolicyId ?? Guid.Empty,
+                    row.ApprovalPolicyVersion ?? 0, row.ApprovedAtUtc ?? default);
+            return (policy, approval);
+        }
+        catch (ArgumentException)
+        {
+            throw new ManufacturingRuleException(
+                ManufacturingRuleCodes.StoredRecordInvalid, "Kayıtlı kapanış kararı geçersiz.");
+        }
+    }
 
     /// <summary>
     /// A plan has a slitting spec exactly when it has slit lines; a winding target without lines is a
@@ -939,6 +1085,39 @@ public sealed class ManufacturingStore(
                 builder.Append('@').Append(expectedLabelVersion.ToString(CultureInfo.InvariantCulture));
             }
 
+            if (input.TechnicalSnapshot is { } technical)
+            {
+                // A versioned extension: legacy inputs append nothing, preserving their exact historical hash bytes.
+                builder.Append("#technical.v1|");
+                AppendToken(builder, technical.ProductId.ToString("D"));
+                AppendToken(builder, technical.ProductVersion);
+                AppendToken(builder, technical.FamilyId.ToString("D"));
+                AppendToken(builder, technical.FamilyCode);
+                AppendToken(builder, technical.FamilySourceRevision);
+                AppendToken(builder, technical.TemplateId.ToString("D"));
+                AppendToken(builder, technical.TemplateVersion);
+                AppendToken(builder, technical.TemplateCode);
+                AppendToken(builder, technical.TemplateSourceRevision);
+                AppendToken(builder, technical.KilogramUnitCompanyId.ToString("D"));
+                AppendToken(builder, technical.KilogramUnitId.ToString("D"));
+                AppendToken(builder, technical.KilogramUnitCode);
+                AppendToken(builder, technical.KilogramProfileId.ToString("D"));
+                AppendToken(builder, technical.KilogramProfileVersion);
+                AppendToken(builder, technical.EffectiveOn.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
+                AppendToken(builder, Canonical(technical.ThicknessMm));
+                AppendToken(builder, Canonical(technical.WidthMm));
+            }
+
+            if (input.CommercialContext is { } commercial)
+            {
+                // A versioned extension: legacy/company-owned inputs append nothing, preserving their exact hashes.
+                builder.Append("#commercial.v1|");
+                AppendToken(builder, commercial.PartyId.ToString("D"));
+                AppendToken(builder, commercial.CompanyPartyAccountId.ToString("D"));
+                AppendToken(builder, commercial.PartyVersion);
+                AppendToken(builder, commercial.AccountVersion);
+            }
+
             builder.Append(';');
         }
 
@@ -976,6 +1155,135 @@ public sealed class ManufacturingStore(
     private static string Canonical(decimal value) =>
         (value / 1.0000000000000000000000000000m).ToString(CultureInfo.InvariantCulture);
 
+    private static void AppendToken(StringBuilder builder, string value) =>
+        builder.Append(value.Length.ToString(CultureInfo.InvariantCulture)).Append(':').Append(value).Append('|');
+
+    private static void CaptureTechnicalSnapshot(IPlanTechnicalSnapshotRow row,
+        PlanTechnicalParameterSnapshotV1? snapshot)
+    {
+        if (snapshot is null)
+        {
+            return;
+        }
+
+        row.TechnicalProductId = snapshot.ProductId;
+        row.TechnicalProductVersion = snapshot.ProductVersion;
+        row.TechnicalFamilyId = snapshot.FamilyId;
+        row.TechnicalFamilyCode = snapshot.FamilyCode;
+        row.TechnicalFamilySourceRevision = snapshot.FamilySourceRevision;
+        row.TechnicalTemplateId = snapshot.TemplateId;
+        row.TechnicalTemplateVersion = snapshot.TemplateVersion;
+        row.TechnicalTemplateCode = snapshot.TemplateCode;
+        row.TechnicalTemplateSourceRevision = snapshot.TemplateSourceRevision;
+        row.TechnicalKilogramUnitCompanyId = snapshot.KilogramUnitCompanyId;
+        row.TechnicalKilogramUnitId = snapshot.KilogramUnitId;
+        row.TechnicalKilogramUnitCode = snapshot.KilogramUnitCode;
+        row.TechnicalKilogramProfileId = snapshot.KilogramProfileId;
+        row.TechnicalKilogramProfileVersion = snapshot.KilogramProfileVersion;
+        row.TechnicalEffectiveOn = snapshot.EffectiveOn;
+        row.TechnicalThicknessMm = snapshot.ThicknessMm;
+        row.TechnicalWidthMm = snapshot.WidthMm;
+    }
+
+    private static PlanTechnicalParameterSnapshotV1? RestoreTechnicalSnapshot(IPlanTechnicalSnapshotRow row)
+    {
+        var values = new object?[]
+        {
+            row.TechnicalProductId, row.TechnicalProductVersion, row.TechnicalFamilyId, row.TechnicalFamilyCode,
+            row.TechnicalFamilySourceRevision, row.TechnicalTemplateId, row.TechnicalTemplateVersion,
+            row.TechnicalTemplateCode, row.TechnicalTemplateSourceRevision, row.TechnicalKilogramUnitCompanyId,
+            row.TechnicalKilogramUnitId, row.TechnicalKilogramUnitCode, row.TechnicalKilogramProfileId,
+            row.TechnicalKilogramProfileVersion, row.TechnicalEffectiveOn, row.TechnicalThicknessMm,
+            row.TechnicalWidthMm,
+        };
+        if (values.All(value => value is null))
+        {
+            return null;
+        }
+
+        if (values.Any(value => value is null))
+        {
+            throw new ManufacturingRuleException(ManufacturingRuleCodes.StoredRecordInvalid,
+                "Kayıtlı plan girdisinin teknik snapshot'ı eksik.");
+        }
+
+        try
+        {
+            return new PlanTechnicalParameterSnapshotV1(
+                row.TechnicalProductId!.Value,
+                row.TechnicalProductVersion!,
+                row.TechnicalFamilyId!.Value,
+                row.TechnicalFamilyCode!,
+                row.TechnicalFamilySourceRevision!,
+                row.TechnicalTemplateId!.Value,
+                row.TechnicalTemplateVersion!,
+                row.TechnicalTemplateCode!,
+                row.TechnicalTemplateSourceRevision!,
+                row.TechnicalKilogramUnitCompanyId!.Value,
+                row.TechnicalKilogramUnitId!.Value,
+                row.TechnicalKilogramUnitCode!,
+                row.TechnicalKilogramProfileId!.Value,
+                row.TechnicalKilogramProfileVersion!,
+                row.TechnicalEffectiveOn!.Value,
+                row.TechnicalThicknessMm!.Value,
+                row.TechnicalWidthMm!.Value);
+        }
+        catch (ArgumentException exception)
+        {
+            throw new ManufacturingRuleException(ManufacturingRuleCodes.StoredRecordInvalid,
+                $"Kayıtlı plan girdisinin teknik snapshot'ı geçersiz ({exception.ParamName}).");
+        }
+    }
+
+    private static void CaptureCommercialContext(IPlanCommercialContextRow row,
+        PlanCommercialContextSnapshotV1? snapshot)
+    {
+        if (snapshot is null)
+        {
+            return;
+        }
+
+        row.CommercialPartyId = snapshot.PartyId;
+        row.CommercialCompanyPartyAccountId = snapshot.CompanyPartyAccountId;
+        row.CommercialPartyVersion = snapshot.PartyVersion;
+        row.CommercialAccountVersion = snapshot.AccountVersion;
+    }
+
+    private static PlanCommercialContextSnapshotV1? RestoreCommercialContext(IPlanCommercialContextRow row)
+    {
+        var values = new object?[]
+        {
+            row.CommercialPartyId,
+            row.CommercialCompanyPartyAccountId,
+            row.CommercialPartyVersion,
+            row.CommercialAccountVersion,
+        };
+        if (values.All(value => value is null))
+        {
+            return null;
+        }
+
+        if (values.Any(value => value is null))
+        {
+            throw new ManufacturingRuleException(ManufacturingRuleCodes.StoredRecordInvalid,
+                "Kayıtlı üretim girdisinin ticari bağlamı eksik.");
+        }
+
+        try
+        {
+            return new PlanCommercialContextSnapshotV1(
+                row.CommercialPartyId!.Value,
+                row.CommercialCompanyPartyAccountId!.Value,
+                row.CommercialPartyVersion!,
+                row.CommercialAccountVersion!);
+        }
+        catch (ArgumentException exception)
+        {
+            throw new ManufacturingRuleException(ManufacturingRuleCodes.StoredRecordInvalid,
+                $"Kayıtlı üretim girdisinin ticari bağlamı geçersiz ({exception.ParamName}).");
+        }
+    }
+
     private static string Hash(string canonical) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical))).ToLowerInvariant();
 
@@ -993,6 +1301,8 @@ public sealed class ManufacturingStore(
                 input.ParentRollId,
                 kg = input.PlannedMass.Value,
                 input.ExpectedLabelVersion,
+                technical = input.TechnicalSnapshot,
+                commercial = input.CommercialContext,
             }),
             slitting = new
             {
@@ -1014,6 +1324,8 @@ public sealed class ManufacturingStore(
             input.ParentRollId,
             kg = input.PlannedMass.Value,
             input.ExpectedLabelVersion,
+            technical = input.TechnicalSnapshot,
+            commercial = input.CommercialContext,
         }),
         plan.ApprovedByUserId,
         plan.ApprovedAtUtc,
@@ -1125,6 +1437,20 @@ public sealed class ManufacturingStore(
         if (masses.Any(mass => mass.Value >= Decimal18Scale3Limit))
         {
             throw Refused(ManufacturingStoreCodes.ValueDoesNotFit, "Kütle kayıt alanına sığmıyor; kesilmez, reddedilir.");
+        }
+    }
+
+    private static void RequireTechnicalSnapshotFits(IEnumerable<PlannedInput> inputs)
+    {
+        // Persistence capacity, not a production tolerance: both immutable dimensions use
+        // decimal(18,3). Refuse before any read or tracked mutation, and never truncate.
+        if (inputs.Select(input => input.TechnicalSnapshot)
+            .Where(snapshot => snapshot is not null)
+            .Any(snapshot => snapshot!.ThicknessMm >= Decimal18Scale3Limit
+                || snapshot.WidthMm >= Decimal18Scale3Limit))
+        {
+            throw Refused(ManufacturingStoreCodes.ValueDoesNotFit,
+                "Teknik ölçü kayıt alanına sığmıyor; kesilmez, reddedilir.");
         }
     }
 

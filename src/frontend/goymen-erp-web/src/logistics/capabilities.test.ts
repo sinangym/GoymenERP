@@ -59,7 +59,7 @@ describe('Logistics lane ↔ backend shell provider', () => {
 
   it('the provider publishes all three declarations after the accepted staged-profile journey', () => {
     // The declaration form ends with `)`; the provider's doc comment mentions the same words inside `<c>…</c>`.
-    expect(constant('OwnerContractVersion')).toBe('1.2')
+    expect(constant('OwnerContractVersion')).toBe('1.3')
     // The three instruction screens and the two AT-025 operations sections (L-01, L-09).
     expect((providerText.match(/ImplementationAvailable: true\)/g) ?? []).length).toBe(5)
     expect(providerText).not.toMatch(/ImplementationAvailable: false\)/)
@@ -68,7 +68,7 @@ describe('Logistics lane ↔ backend shell provider', () => {
   it('pins the shipment and delivery child controls to detail with separate authorities', () => {
     expect(constant('ShipmentCapabilityId')).toBe('logistics.shipments.record')
     expect(constant('DeliveryCapabilityId')).toBe('logistics.deliveries.record')
-    expect((providerText.match(/ParentCapabilityId: DetailCapabilityId/g) ?? []).length).toBe(2)
+    expect((providerText.match(/ParentCapabilityId: DetailCapabilityId/g) ?? []).length).toBe(6)
 
     const shipment = declaration('ShipmentCapabilityId')
     expect(shipment).toContain('DetailCapabilityId, DetailRoutePath, DetailScreenId')
@@ -85,6 +85,49 @@ describe('Logistics lane ↔ backend shell provider', () => {
     expect(delivery).toContain('ParentCapabilityId: DetailCapabilityId')
     expect(delivery).not.toContain('LogisticsPermissionManifestV1.ShipmentsRecord')
     expect(delivery).not.toContain('ErpPermissions.InventoryPhysicalAllocationWrite')
+  })
+
+  it('pins the four customer-return controls to detail with their exact authorities', () => {
+    expect(constant('CustomerReturnsReadCapabilityId')).toBe('logistics.customer-returns.read')
+    expect(constant('CustomerReturnsRequestCapabilityId')).toBe('logistics.customer-returns.request')
+    expect(constant('CustomerReturnsApproveCapabilityId')).toBe('logistics.customer-returns.approve')
+    expect(constant('CustomerReturnsRejectCapabilityId')).toBe('logistics.customer-returns.reject')
+
+    const read = declaration('CustomerReturnsReadCapabilityId')
+    expect(read).toContain('DetailCapabilityId, DetailRoutePath, DetailScreenId')
+    expect(read).toContain('LogisticsPermissionManifestV1.InstructionsRead')
+    expect(read).toContain('LogisticsPermissionManifestV1.CustomerReturnsRead')
+    expect(read).not.toContain('LogisticsPermissionManifestV1.CustomerReturnsRequest')
+    expect(read).not.toContain('LogisticsPermissionManifestV1.CustomerReturnsDecision')
+    expect(read).not.toContain('ErpPermissions.InventoryPhysicalAllocationWrite')
+    expect(read).toContain('ParentCapabilityId: DetailCapabilityId')
+
+    const request = declaration('CustomerReturnsRequestCapabilityId')
+    expect(request).toContain('DetailCapabilityId, DetailRoutePath, DetailScreenId')
+    expect(request).toContain('LogisticsPermissionManifestV1.InstructionsRead')
+    expect(request).toContain('LogisticsPermissionManifestV1.CustomerReturnsRead')
+    expect(request).toContain('LogisticsPermissionManifestV1.CustomerReturnsRequest')
+    expect(request).not.toContain('LogisticsPermissionManifestV1.CustomerReturnsDecision')
+    expect(request).not.toContain('ErpPermissions.InventoryPhysicalAllocationWrite')
+    expect(request).toContain('ParentCapabilityId: DetailCapabilityId')
+
+    const approve = declaration('CustomerReturnsApproveCapabilityId')
+    expect(approve).toContain('DetailCapabilityId, DetailRoutePath, DetailScreenId')
+    expect(approve).toContain('LogisticsPermissionManifestV1.InstructionsRead')
+    expect(approve).toContain('LogisticsPermissionManifestV1.CustomerReturnsRead')
+    expect(approve).toContain('LogisticsPermissionManifestV1.CustomerReturnsDecision')
+    expect(approve).toContain('ErpPermissions.InventoryPhysicalAllocationWrite')
+    expect(approve).not.toContain('LogisticsPermissionManifestV1.CustomerReturnsRequest')
+    expect(approve).toContain('ParentCapabilityId: DetailCapabilityId')
+
+    const reject = declaration('CustomerReturnsRejectCapabilityId')
+    expect(reject).toContain('DetailCapabilityId, DetailRoutePath, DetailScreenId')
+    expect(reject).toContain('LogisticsPermissionManifestV1.InstructionsRead')
+    expect(reject).toContain('LogisticsPermissionManifestV1.CustomerReturnsRead')
+    expect(reject).toContain('LogisticsPermissionManifestV1.CustomerReturnsDecision')
+    expect(reject).not.toContain('LogisticsPermissionManifestV1.CustomerReturnsRequest')
+    expect(reject).not.toContain('ErpPermissions.InventoryPhysicalAllocationWrite')
+    expect(reject).toContain('ParentCapabilityId: DetailCapabilityId')
   })
 
   it('AT-025: declares the two operations sections as separate screens, each behind its own read name', () => {

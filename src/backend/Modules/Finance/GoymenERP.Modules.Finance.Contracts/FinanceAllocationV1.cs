@@ -51,6 +51,27 @@ public sealed record FinanceAllocationCommandResult(
     string OriginalCorrelationId,
     IReadOnlyList<ValidationIssue> Issues);
 
+public sealed record FinanceAllocationPage(
+    Guid CompanyId,
+    IReadOnlyList<FinanceAllocationView> Items,
+    bool WindowFull);
+
+public sealed record FinanceAllocationDetail(
+    FinanceAllocationView Allocation,
+    string OpenItemVersion);
+
+public interface IFinanceAllocationReadService
+{
+    Task<ReadResult<FinanceAllocationPage>> ListAuthorizedAsync(
+        FinanceContext context,
+        CancellationToken cancellationToken);
+
+    Task<ReadResult<FinanceAllocationDetail>> GetAuthorizedAsync(
+        FinanceContext context,
+        Guid allocationId,
+        CancellationToken cancellationToken);
+}
+
 /// <summary>
 /// Finance-owned allocation boundary. Runtime publication requires its own narrow permission and
 /// central host/OpenAPI work; declaring this interface grants nothing and exposes no route.

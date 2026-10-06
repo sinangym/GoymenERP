@@ -1,5 +1,6 @@
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Audit.Domain.Events;
+using GoymenERP.Modules.Manufacturing.Domain.Plans;
 using GoymenERP.Modules.Manufacturing.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -20,7 +21,7 @@ public sealed class ManufacturingPersistenceModelTests
 
     private static readonly Type[] TenantRows =
         [typeof(PlanRow), typeof(PlanInputRow), typeof(PlanSlitLineRow), typeof(PlanRevisionRow), typeof(PlanRevisionInputRow),
-            typeof(OrderRow), typeof(OrderInputRow), typeof(FactRow), typeof(CommandRow)];
+            typeof(OrderRow), typeof(OrderInputRow), typeof(OrderClosureDecisionRow), typeof(FactRow), typeof(CommandRow)];
 
     [Fact]
     public void Every_manufacturing_table_is_in_its_schema_and_filtered_by_the_active_company()
@@ -63,6 +64,7 @@ public sealed class ManufacturingPersistenceModelTests
             (typeof(PlanRevisionRow), "PlanId", typeof(PlanRow)),
             (typeof(OrderRow), "PlanId", typeof(PlanRow)),
             (typeof(OrderInputRow), "OrderId", typeof(OrderRow)),
+            (typeof(OrderClosureDecisionRow), "OrderId", typeof(OrderRow)),
             (typeof(FactRow), "OrderId", typeof(OrderRow)),
         })
         {
@@ -102,7 +104,101 @@ public sealed class ManufacturingPersistenceModelTests
             migration => migration.EndsWith("_AddManufacturingInputLabelVersions", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(),
             migration => migration.EndsWith("_AddManufacturingPlanRevisions", StringComparison.Ordinal));
+        Assert.Contains(context.Database.GetMigrations(),
+            migration => migration.EndsWith("_AddManufacturingOrderClosureDecision", StringComparison.Ordinal));
+        Assert.Contains(context.Database.GetMigrations(),
+            migration => migration.EndsWith("_AddManufacturingPlanTechnicalSnapshots", StringComparison.Ordinal));
+        Assert.Contains(context.Database.GetMigrations(),
+            migration => migration.EndsWith("_AddManufacturingCommercialContexts", StringComparison.Ordinal));
         Assert.False(context.Database.HasPendingModelChanges());
+    }
+
+    [Fact]
+    public void Plan_revision_and_order_inputs_store_one_nullable_all_or_none_commercial_context_without_truncation()
+    {
+        using var context = Context();
+        var model = context.GetService<IDesignTimeModel>().Model;
+
+        foreach (var (type, constraintName) in new[]
+        {
+            (typeof(PlanInputRow), "CK_PlanInputs_CommercialContext"),
+            (typeof(PlanRevisionInputRow), "CK_PlanRevisionInputs_CommercialContext"),
+            (typeof(OrderInputRow), "CK_OrderInputs_CommercialContext"),
+        })
+        {
+            var entity = model.FindEntityType(type)!;
+            foreach (var property in new[]
+            {
+                nameof(PlanInputRow.CommercialPartyId),
+                nameof(PlanInputRow.CommercialCompanyPartyAccountId),
+                nameof(PlanInputRow.CommercialPartyVersion),
+                nameof(PlanInputRow.CommercialAccountVersion),
+            })
+            {
+                Assert.True(entity.FindProperty(property)!.IsNullable);
+            }
+
+            Assert.Null(entity.FindProperty(nameof(PlanInputRow.CommercialPartyVersion))!.GetMaxLength());
+            Assert.Null(entity.FindProperty(nameof(PlanInputRow.CommercialAccountVersion))!.GetMaxLength());
+            var sql = entity.GetCheckConstraints().Single(check => check.Name == constraintName).Sql;
+            Assert.Contains("[CommercialPartyId] IS NULL", sql, StringComparison.Ordinal);
+            Assert.Contains("[CommercialCompanyPartyAccountId] <> '00000000-0000-0000-0000-000000000000'", sql,
+                StringComparison.Ordinal);
+            Assert.Contains("DATALENGTH([CommercialPartyVersion]) > 0", sql, StringComparison.Ordinal);
+            Assert.Contains("DATALENGTH([CommercialAccountVersion]) > 0", sql, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
+    public void Plan_creation_and_revision_inputs_store_the_same_nullable_all_or_none_technical_snapshot()
+    {
+        using var context = Context();
+        var model = context.GetService<IDesignTimeModel>().Model;
+
+        foreach (var (type, constraintName) in new[]
+        {
+            (typeof(PlanInputRow), "CK_PlanInputs_TechnicalSnapshot"),
+            (typeof(PlanRevisionInputRow), "CK_PlanRevisionInputs_TechnicalSnapshot"),
+        })
+        {
+            var entity = model.FindEntityType(type)!;
+            Assert.Equal(PlanTechnicalParameterSnapshotV1.MaximumProductVersionLength,
+                entity.FindProperty(nameof(PlanInputRow.TechnicalProductVersion))!.GetMaxLength());
+            Assert.Equal(PlanTechnicalParameterSnapshotV1.MaximumCodeLength,
+                entity.FindProperty(nameof(PlanInputRow.TechnicalFamilyCode))!.GetMaxLength());
+            Assert.Equal(18, entity.FindProperty(nameof(PlanInputRow.TechnicalThicknessMm))!.GetPrecision());
+            Assert.Equal(3, entity.FindProperty(nameof(PlanInputRow.TechnicalThicknessMm))!.GetScale());
+            Assert.True(entity.FindProperty(nameof(PlanInputRow.TechnicalProductId))!.IsNullable);
+            var sql = entity.GetCheckConstraints().Single(check => check.Name == constraintName).Sql;
+            Assert.Contains("[TechnicalKilogramUnitCompanyId] = [CompanyId]", sql, StringComparison.Ordinal);
+            Assert.Contains("[TechnicalThicknessMm] > 0", sql, StringComparison.Ordinal);
+            Assert.Contains("[TechnicalWidthMm] > 0", sql, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
+    public void An_order_closure_decision_is_one_append_only_policy_snapshot_with_an_optional_complete_approval()
+    {
+        using var context = Context();
+        var model = context.GetService<IDesignTimeModel>().Model;
+        var decision = model.FindEntityType(typeof(OrderClosureDecisionRow))!;
+
+        Assert.Equal(["CompanyId", "OrderId"],
+            decision.FindPrimaryKey()!.Properties.Select(property => property.Name));
+        Assert.Contains(decision.GetForeignKeys(), key => key.PrincipalEntityType.ClrType == typeof(OrderRow)
+            && key.Properties.Select(property => property.Name).SequenceEqual(["CompanyId", "OrderId"])
+            && key.PrincipalKey.Properties.Select(property => property.Name).SequenceEqual(["CompanyId", "Id"])
+            && key.DeleteBehavior == DeleteBehavior.Restrict);
+
+        var maximumFirePercent = decision.FindProperty(nameof(OrderClosureDecisionRow.MaximumFirePercent))!;
+        Assert.Equal(64, maximumFirePercent.GetMaxLength());
+        Assert.Equal("varchar(64)", maximumFirePercent.GetColumnType());
+        Assert.False(maximumFirePercent.IsNullable);
+
+        var constraintNames = decision.GetCheckConstraints().Select(check => check.Name).ToArray();
+        Assert.Contains("CK_OrderClosureDecisions_Identity", constraintNames);
+        Assert.Contains("CK_OrderClosureDecisions_Window", constraintNames);
+        Assert.Contains("CK_OrderClosureDecisions_Approval", constraintNames);
     }
 
     [Fact]
@@ -170,6 +266,8 @@ public sealed class ManufacturingPersistenceModelTests
     [InlineData("delete-plan-revision")]
     [InlineData("edit-plan-revision-input")]
     [InlineData("delete-plan-revision-input")]
+    [InlineData("edit-order-closure-decision")]
+    [InlineData("delete-order-closure-decision")]
     public void Stored_manufacturing_is_never_deleted_and_only_its_allowed_fields_change(string fault)
     {
         using var context = Context();
@@ -228,6 +326,12 @@ public sealed class ManufacturingPersistenceModelTests
             case "delete-plan-revision-input":
                 context.PlanRevisionInputs.Remove(Attach(context, RevisionInput()));
                 break;
+            case "edit-order-closure-decision":
+                Attach(context, ClosureDecision()).MaximumFirePercent = "9.99";
+                break;
+            case "delete-order-closure-decision":
+                context.OrderClosureDecisions.Remove(Attach(context, ClosureDecision()));
+                break;
             default:
                 Attach(context, Order()).CompanyId = CompanyB;
                 break;
@@ -276,12 +380,69 @@ public sealed class ManufacturingPersistenceModelTests
         Assert.Equal(refused, storeError?.Code == GoymenERP.Modules.Manufacturing.Application.ManufacturingStoreCodes.ValueDoesNotFit);
     }
 
+    [Theory]
+    [InlineData("create", "thickness", "999999999999999.999", false)]
+    [InlineData("create", "thickness", "1000000000000000", true)]
+    [InlineData("create", "thickness", "1000000000000000.001", true)]
+    [InlineData("create", "width", "999999999999999.999", false)]
+    [InlineData("create", "width", "1000000000000000", true)]
+    [InlineData("create", "width", "1000000000000000.001", true)]
+    [InlineData("revise", "thickness", "999999999999999.999", false)]
+    [InlineData("revise", "thickness", "1000000000000000", true)]
+    [InlineData("revise", "thickness", "1000000000000000.001", true)]
+    [InlineData("revise", "width", "999999999999999.999", false)]
+    [InlineData("revise", "width", "1000000000000000", true)]
+    [InlineData("revise", "width", "1000000000000000.001", true)]
+    public async Task Technical_dimensions_use_the_decimal_18_3_exclusive_bound_before_create_or_revision_mutates(
+        string operation, string dimension, string text, bool refused)
+    {
+        using var context = Context();
+        var store = new ManufacturingStore(context, CompanyContextOf(CompanyA),
+            new GoymenERP.Modules.Audit.Infrastructure.Services.AuditEventCollector(), TimeProvider.System);
+        var value = decimal.Parse(text, System.Globalization.CultureInfo.InvariantCulture);
+        var snapshot = TechnicalSnapshot(
+            dimension == "thickness" ? value : 1m,
+            dimension == "width" ? value : 1m);
+        var input = new PlannedInput(Guid.NewGuid(),
+            new GoymenERP.Modules.Manufacturing.Domain.Common.Kilograms(1m), 1, snapshot);
+        var metadata = new GoymenERP.Modules.Manufacturing.Application.ManufacturingCommandMetadata(
+            "synthetic-actor", "synthetic.manufacturing.test-write", ["SYNTHETIC"], "synthetic-correlation", null,
+            "synthetic-key", "Web");
+
+        var error = await Assert.ThrowsAnyAsync<Exception>(async () =>
+        {
+            if (operation == "create")
+            {
+                await store.SavePlanAsync(new ProductionPlan(Guid.NewGuid(), CompanyA, Guid.NewGuid(),
+                    ManufacturingProcess.Slitting, [input]), metadata);
+            }
+            else
+            {
+                await store.RevisePlanAsync(Guid.NewGuid(), 1, Guid.NewGuid(), ManufacturingProcess.Slitting,
+                    [input], null, "sentetik gerekçe", metadata);
+            }
+        });
+
+        var storeError = error as GoymenERP.Modules.Manufacturing.Application.ManufacturingStoreException;
+        Assert.Equal(refused,
+            storeError?.Code == GoymenERP.Modules.Manufacturing.Application.ManufacturingStoreCodes.ValueDoesNotFit);
+        Assert.Empty(context.ChangeTracker.Entries());
+    }
+
     private static CompanyContext CompanyContextOf(Guid company)
     {
         var context = new CompanyContext();
         context.Set(company);
         return context;
     }
+
+    private static PlanTechnicalParameterSnapshotV1 TechnicalSnapshot(decimal thicknessMm, decimal widthMm) => new(
+        Guid.Parse("50000000-0000-0000-0000-000000000001"), "2",
+        Guid.Parse("50000000-0000-0000-0000-000000000002"), "COIL", "family-r1",
+        Guid.Parse("50000000-0000-0000-0000-000000000003"), "3", "COIL-SHEET", "template-r3",
+        CompanyA, Guid.Parse("50000000-0000-0000-0000-000000000004"), "kg",
+        Guid.Parse("50000000-0000-0000-0000-000000000005"), "1", new DateOnly(2026, 9, 30),
+        thicknessMm, widthMm);
 
     private static T Attach<T>(ManufacturingDbContext context, T row) where T : class
     {
@@ -344,6 +505,20 @@ public sealed class ManufacturingPersistenceModelTests
         CompanyId = CompanyA, Kind = (int)FactKind.InputIssue, Id = Guid.NewGuid(), OrderId = Guid.NewGuid(),
         ParentRollId = Guid.NewGuid(), MassKg = 1m, OccurredAtUtc = At, PayloadHash = new string('0', 64),
         RecordedAtUtc = At, RecordedBy = "synthetic-actor", CorrelationId = "synthetic-correlation",
+    };
+
+    private static OrderClosureDecisionRow ClosureDecision() => new()
+    {
+        CompanyId = CompanyA,
+        OrderId = Guid.NewGuid(),
+        OrderVersion = 1,
+        PolicyId = Guid.NewGuid(),
+        PolicyVersion = 1,
+        Process = 1,
+        MaximumFirePercent = "1.25",
+        IsActive = true,
+        EffectiveFrom = DateOnly.FromDateTime(At.UtcDateTime),
+        SelectedForDate = DateOnly.FromDateTime(At.UtcDateTime),
     };
 
     /// <summary>A context of company A, or of no resolved company at all.</summary>

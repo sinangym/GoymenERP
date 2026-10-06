@@ -24,6 +24,16 @@ public static class AccountingEndpoints
     private const int MaximumIdempotencyKeyLength = 128;
     private const int MaximumCursorLength = 512;
 
+    private static readonly HashSet<string> ApprovedSourceCatalogFormFieldNames =
+        new(StringComparer.Ordinal)
+        {
+            "packageId", "accountPlanSourceVersion", "expectedAccountsSourceSha256",
+            "expectedPostingMappingsSourceSha256",
+        };
+
+    private static readonly HashSet<string> ApprovedSourceCatalogFormFileNames =
+        new(StringComparer.Ordinal) { "accountsCsv", "postingMappingsCsv" };
+
     private static readonly HashSet<string> TrialBalanceQueryNames =
         new(StringComparer.Ordinal) { "fromAccountingDate", "throughAccountingDate", "currencyId" };
 
@@ -43,6 +53,7 @@ public static class AccountingEndpoints
     [
         .. PeriodConflictCodes,
         NormalJournalDraftStoreCodesV1.ContentConflict,
+        NormalJournalDraftPreparationCodesV1.VersionConflict,
         NormalJournalDraftStoreCodesV1.NotPending,
         NormalJournalDraftStoreCodesV1.PostingConflict,
     ];
@@ -62,6 +73,39 @@ public static class AccountingEndpoints
 
     private static readonly string[] JournalReversalApproveUnprocessableCodes =
         [.. AccountingJournalReversalUnprocessableCodesV1.Approve];
+
+    private static readonly string[] ApprovedSourceCatalogConflictCodes =
+    [
+        AccountingApiCodes.IdempotencyConflict,
+        AccountingApiCodes.VersionConflict,
+        AccountingStoreCodes.ConcurrentChange,
+        ApprovedAccountingSourceCatalogCodesV1.ContentConflict,
+        ApprovedAccountingSourceCatalogCodesV1.DigestMismatch,
+        ApprovedAccountingSourceCatalogCodesV1.NotPrepared,
+        ApprovedAccountingSourceCatalogCodesV1.ActiveVersionConflict,
+    ];
+
+    private static readonly string[] ApprovedSourceCatalogUnprocessableCodes =
+    [
+        ApprovedAccountingSourcePackageCodesV1.TrustedContextInvalid,
+        ApprovedAccountingSourcePackageCodesV1.SourceVersionInvalid,
+        ApprovedAccountingSourcePackageCodesV1.FileEmpty,
+        ApprovedAccountingSourcePackageCodesV1.FileTooLarge,
+        ApprovedAccountingSourcePackageCodesV1.Utf8Invalid,
+        ApprovedAccountingSourcePackageCodesV1.HeaderInvalid,
+        ApprovedAccountingSourcePackageCodesV1.RowShapeInvalid,
+        ApprovedAccountingSourcePackageCodesV1.RowLimitExceeded,
+        ApprovedAccountingSourcePackageCodesV1.IdentityRequired,
+        ApprovedAccountingSourcePackageCodesV1.TextInvalid,
+        ApprovedAccountingSourcePackageCodesV1.DuplicateAccount,
+        ApprovedAccountingSourcePackageCodesV1.SourceKindUnknown,
+        ApprovedAccountingSourcePackageCodesV1.SideUnknown,
+        ApprovedAccountingSourcePackageCodesV1.MappedAccountUnknown,
+        ApprovedAccountingSourcePackageCodesV1.BindingAmbiguous,
+        ApprovedAccountingSourcePackageCodesV1.MappingDuplicate,
+        ApprovedAccountingSourcePackageCodesV1.MappingIncomplete,
+        ApprovedAccountingSourcePackageCodesV1.DomainInvalid,
+    ];
 
     private static readonly string[] PeriodUnprocessableCodes =
     [
@@ -221,6 +265,63 @@ public static class AccountingEndpoints
             .Produces<TrialBalanceReportV1>(StatusCodes.Status200OK)
             .WithReadProblems(notFound: false);
 
+        group.MapPost("/approved-source-catalog/packages", PrepareApprovedSourceCatalogAsync)
+            .RequireCompanyContext()
+            .RequireAuthorization(ApprovedAccountingSourceCatalogPermissionNamesV1.Prepare)
+            .WithIdempotencyContract(StatusCodes.Status201Created, StatusCodes.Status409Conflict,
+                StatusCodes.Status422UnprocessableEntity)
+            .WithName("PrepareAccountingApprovedSourceCatalogV1")
+            .Accepts<PrepareApprovedAccountingSourceCatalogFormV1>("multipart/form-data")
+            .Produces<ApprovedAccountingSourceCatalogViewV1>(StatusCodes.Status201Created)
+            .WithApprovedSourceCatalogProblems(notFound: false, unsupportedMediaType: true);
+
+        group.MapGet("/approved-source-catalog/packages/{packageId:guid}", async (
+                Guid packageId,
+                ApprovedAccountingSourceCatalogServiceV1 service,
+                HttpContext httpContext,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext.Response.Headers);
+                return ToHttpResult(httpContext, await service.ReadAsync(packageId, cancellationToken), null);
+            })
+            .RequireCompanyContext()
+            .RequireAuthorization(ApprovedAccountingSourceCatalogPermissionNamesV1.Prepare)
+            .WithName("GetAccountingApprovedSourceCatalogV1")
+            .Produces<ApprovedAccountingSourceCatalogViewV1>(StatusCodes.Status200OK)
+            .WithReadProblems(notFound: true);
+
+        group.MapPost("/approved-source-catalog/packages/{packageId:guid}/activation", async (
+                Guid packageId,
+                ActivateApprovedAccountingSourceCatalogRequestV1 request,
+                ApprovedAccountingSourceCatalogServiceV1 service,
+                HttpContext httpContext,
+                CancellationToken cancellationToken) =>
+            await WriteAsync(httpContext,
+                key => service.ActivateAsync(packageId, request, key, cancellationToken)))
+            .RequireCompanyContext()
+            .RequireAuthorization(ApprovedAccountingSourceCatalogPermissionNamesV1.Activate)
+            .WithIdempotencyContract(StatusCodes.Status200OK, StatusCodes.Status404NotFound,
+                StatusCodes.Status409Conflict)
+            .WithName("ActivateAccountingApprovedSourceCatalogV1")
+            .Accepts<ActivateApprovedAccountingSourceCatalogRequestV1>("application/json")
+            .Produces<ApprovedAccountingSourceCatalogViewV1>(StatusCodes.Status200OK)
+            .WithApprovedSourceCatalogProblems(notFound: true, unsupportedMediaType: true);
+
+        group.MapGet("/normal-journal-draft-sources/{sourceId:guid}", async (
+                Guid sourceId,
+                NormalJournalDraftSourceReadServiceV1 service,
+                HttpContext httpContext,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext.Response.Headers);
+                return ToHttpResult(httpContext, await service.ReadAsync(sourceId, cancellationToken), null);
+            })
+            .RequireCompanyContext()
+            .RequireAuthorization(NormalJournalPermissionNamesV1.DraftCreate)
+            .WithName("GetAccountingNormalJournalDraftSourceV1")
+            .Produces<NormalJournalDraftSourcePreparationV1>(StatusCodes.Status200OK)
+            .WithReadProblems(notFound: false);
+
         group.MapPost("/normal-journal-drafts", async (
                 CreateNormalJournalDraftRequestV1 request,
                 NormalJournalDraftPublicServiceV1 service,
@@ -348,6 +449,119 @@ public static class AccountingEndpoints
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();
         return notFound ? builder.ProducesErpCodeLessNotFound() : builder;
+    }
+
+    private static RouteHandlerBuilder WithApprovedSourceCatalogProblems(
+        this RouteHandlerBuilder builder, bool notFound, bool unsupportedMediaType)
+    {
+        builder
+            .ProducesErpBadRequest(BadRequestCodes)
+            .AllowsCodeLessErpBadRequestBody()
+            .ProducesErpConflict(ApprovedSourceCatalogConflictCodes)
+            .ProducesErpUnprocessableEntity(ApprovedSourceCatalogUnprocessableCodes)
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+        if (unsupportedMediaType)
+        {
+            builder.ProducesErpUnsupportedMediaType();
+        }
+
+        return notFound ? builder.ProducesErpCodeLessNotFound() : builder;
+    }
+
+    private static async Task<IResult> PrepareApprovedSourceCatalogAsync(
+        ApprovedAccountingSourceCatalogServiceV1 service,
+        HttpContext httpContext,
+        CancellationToken cancellationToken)
+    {
+        SetPrivateNoStore(httpContext.Response.Headers);
+        if (!TryReadIdempotencyKey(httpContext.Request.Headers, out var key))
+        {
+            return Problem(StatusCodes.Status400BadRequest, AccountingApiCodes.RequestInvalid, "idempotencyKey");
+        }
+
+        if (!httpContext.Request.HasFormContentType)
+        {
+            return Results.StatusCode(StatusCodes.Status415UnsupportedMediaType);
+        }
+
+        IFormCollection form;
+        try
+        {
+            form = await httpContext.Request.ReadFormAsync(cancellationToken);
+        }
+        catch (Exception exception) when (exception is BadHttpRequestException or InvalidDataException or IOException)
+        {
+            return Problem(StatusCodes.Status400BadRequest, AccountingApiCodes.RequestInvalid, "request");
+        }
+
+        if (form.Count != ApprovedSourceCatalogFormFieldNames.Count
+            || form.Keys.Any(name => !ApprovedSourceCatalogFormFieldNames.Contains(name))
+            || form.Files.Count != ApprovedSourceCatalogFormFileNames.Count
+            || form.Files.Any(file => !ApprovedSourceCatalogFormFileNames.Contains(file.Name))
+            || !TryReadSingleFormValue(form, "packageId", out var packageIdText)
+            || !Guid.TryParseExact(packageIdText, "D", out var packageId)
+            || packageId == Guid.Empty
+            || !TryReadSingleFormValue(form, "accountPlanSourceVersion", out var accountPlanSourceVersion)
+            || !TryReadSingleFormValue(form, "expectedAccountsSourceSha256", out var expectedAccountsSourceSha256)
+            || !TryReadSingleFormValue(form, "expectedPostingMappingsSourceSha256",
+                out var expectedPostingMappingsSourceSha256)
+            || form.Files.GetFiles("accountsCsv") is not [var accountsCsv]
+            || form.Files.GetFiles("postingMappingsCsv") is not [var postingMappingsCsv])
+        {
+            return Problem(StatusCodes.Status400BadRequest, AccountingApiCodes.RequestInvalid, "request");
+        }
+
+        var accounts = await ReadSourceFileAsync(accountsCsv, cancellationToken);
+        var mappings = await ReadSourceFileAsync(postingMappingsCsv, cancellationToken);
+        var result = await service.PrepareAsync(
+            new PrepareApprovedAccountingSourceCatalogRequestV1(
+                packageId,
+                accountPlanSourceVersion,
+                accounts,
+                mappings,
+                expectedAccountsSourceSha256,
+                expectedPostingMappingsSourceSha256),
+            key,
+            cancellationToken);
+        return ToHttpResult(httpContext, result,
+            result.Resource is null
+                ? null
+                : $"/api/v1/accounting/approved-source-catalog/packages/{result.Resource.PackageId:D}");
+    }
+
+    private static bool TryReadSingleFormValue(IFormCollection form, string name, out string value)
+    {
+        value = string.Empty;
+        if (!form.TryGetValue(name, out var values) || values.Count != 1 || values[0] is not { } raw)
+        {
+            return false;
+        }
+
+        value = raw;
+        return true;
+    }
+
+    private static async Task<ReadOnlyMemory<byte>> ReadSourceFileAsync(
+        IFormFile file, CancellationToken cancellationToken)
+    {
+        var maximum = ApprovedAccountingSourcePackageTemplateV1.MaximumBytesPerFile + 1;
+        await using var input = file.OpenReadStream();
+        using var output = new MemoryStream(Math.Min(maximum, (int)Math.Min(file.Length, maximum)));
+        var buffer = new byte[81920];
+        while (output.Length < maximum)
+        {
+            var remaining = maximum - (int)output.Length;
+            var read = await input.ReadAsync(buffer.AsMemory(0, Math.Min(buffer.Length, remaining)), cancellationToken);
+            if (read == 0)
+            {
+                break;
+            }
+
+            await output.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
+        }
+
+        return output.ToArray();
     }
 
     private static async Task<IResult> WriteAsync<T>(HttpContext httpContext,
@@ -492,3 +706,11 @@ public static class AccountingEndpoints
         headers[HeaderNames.Pragma] = "no-cache";
     }
 }
+
+public sealed record PrepareApprovedAccountingSourceCatalogFormV1(
+    Guid PackageId,
+    string AccountPlanSourceVersion,
+    string ExpectedAccountsSourceSha256,
+    string ExpectedPostingMappingsSourceSha256,
+    IFormFile AccountsCsv,
+    IFormFile PostingMappingsCsv);

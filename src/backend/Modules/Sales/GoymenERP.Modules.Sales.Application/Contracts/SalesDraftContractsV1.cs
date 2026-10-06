@@ -28,6 +28,14 @@ public sealed record SalesDraftOwnerReferenceV1(Guid Id, string ExpectedVersion)
 public sealed record SalesDraftDeliverySliceV1(
     Guid SliceId, Guid OrderUnitId, string Quantity, DateOnly RequestedDeliveryDate);
 
+/// <summary>
+/// Q9: the server-derived commercial stage of the SAME record. A current customer acceptance promotes
+/// a new record from Quote to Order; legacy records which do not require acceptance are already Order.
+/// This is not the lifecycle or internal-approval axis and is never persisted independently.
+/// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter<SalesCommercialStageV1>))]
+public enum SalesCommercialStageV1 { Quote, Order }
+
 // SALES-A1 (contract delta): `approvalState` is the internal approval axis — "Preparing",
 // "PendingApproval", "Approved", "Rejected" or (D2) "Withdrawn" — beside the lifecycle `state` ("Draft", or since
 // DEC-SAL-005 "Cancelled" for an approved order cancelled after its impact preview), the
@@ -36,13 +44,21 @@ public sealed record SalesOrderDraftSummaryView(
     Guid Id, Guid CompanyId, string DocumentNo, string Kind, string State,
     string Version, string Revision, Guid PartyId, Guid CompanyAccountId,
     Guid CurrencyId, DateOnly BusinessDate, DateTimeOffset CreatedAtUtc, int LineCount,
-    string ApprovalState);
+    string ApprovalState,
+    SalesCommercialStageV1? CommercialStage = null);
 
 /// <summary>SALES-A1: the approval facts of the detail; every member null until it happened (ADR-009 audit facts, shown, never derived).</summary>
 public sealed record SalesDraftApprovalV1(
     string? SubmittedBy, DateTimeOffset? SubmittedAtUtc,
     string? DecidedBy, DateTimeOffset? DecidedAtUtc,
     string? RejectionReason);
+
+public sealed record SalesDraftCustomerAcceptanceV1(
+    bool Required,
+    string? AcceptedRevision,
+    string? AcceptedBy,
+    DateTimeOffset? AcceptedAtUtc,
+    bool IsCurrentRevisionAccepted);
 
 /// <summary>
 /// SALES-A1: the body of a state command (submission / approval / rejection): the expected
@@ -51,8 +67,53 @@ public sealed record SalesDraftApprovalV1(
 /// </summary>
 public sealed record SalesDraftStateCommandRequest(string ExpectedVersion, string? Reason = null);
 
-/// <summary>K3 Head B: one line's commercial fields in a commercial revision — the client line id and the three fields (all nullable, as on the create).</summary>
-public sealed record SalesDraftLineCommercialV1(Guid LineId, string? UnitPrice = null, Guid? PriceUnitId = null, string? DiscountPercent = null);
+/// <summary>
+/// K3 Head B: one line's commercial fields in a commercial revision — the client line id and the three fields (all nullable, as on the create).
+/// AT-018 / AT-021 (user decision 2026-09-30, contract delta, all optional): <c>priceReference</c> names the Product price list
+/// version the line is priced from (the server re-reads its price; the client never sends it), <c>discountAmount</c> is the
+/// discount as an amount (instead of <c>discountPercent</c>), and <c>surchargePercent</c> / <c>surchargeAmount</c> the maturity
+/// surcharge (vade farkı). The unit price stays the line's own: the reference's price by default, or the person's overwrite.
+/// </summary>
+public sealed record SalesDraftLineCommercialV1(Guid LineId, string? UnitPrice = null, Guid? PriceUnitId = null, string? DiscountPercent = null,
+    SalesDraftPriceReferenceRequestV1? PriceReference = null, string? DiscountAmount = null, string? SurchargePercent = null,
+    string? SurchargeAmount = null);
+
+/// <summary>AT-018: the Product price list version a line is priced from (list id + version number); the price is the owner's.</summary>
+public sealed record SalesDraftPriceReferenceRequestV1(Guid PriceListId, int VersionNo);
+
+/// <summary>AT-018: a list price as the Product owner answers it, copied onto the line at the revision (exact text).</summary>
+public sealed record SalesDraftPriceReferenceV1(Guid PriceListId, string PriceListName, int VersionNo, DateOnly ValidFrom,
+    DateOnly? ValidThrough, string CurrencyCode, Guid PriceUnitId, string UnitPrice, string? FloorUnitPrice, string VatBasis,
+    string LowerQuantity, string? UpperQuantity);
+
+/// <summary>
+/// AT-018 / AT-021 / master §10.2: one line's price as the line carries it — the reference list price, the line's own unit
+/// price and whether it is the reference's ("Reference") or overwritten ("Manual"), the discount and the maturity surcharge
+/// as given, and the net from the one calculator (exact, never rounded; <c>null</c> without a price).
+/// </summary>
+public sealed record SalesDraftLinePricingV1(Guid LineId, int LineNo, string? UnitPrice, Guid? PriceUnitId, string? PriceSource,
+    SalesDraftPriceReferenceV1? PriceReference, string? DiscountPercent, string? DiscountAmount, string? SurchargePercent,
+    string? SurchargeAmount, string? NetUnitPrice, SalesDraftPriceFloorExceptionV1? FloorException);
+
+public sealed record SalesDraftPriceFloorExceptionV1(string RequestedBy, DateTimeOffset RequestedAtUtc,
+    string? ApprovedBy, DateTimeOffset? ApprovedAtUtc, string? Reason);
+
+public sealed record SalesDraftPriceFloorExceptionApprovalLineV1(Guid LineId, string Reason);
+
+/// <summary>Every current below-floor line exactly once; each approval carries its stored reason.</summary>
+public sealed record SalesDraftPriceFloorExceptionApprovalRequest(string ExpectedVersion,
+    IReadOnlyList<SalesDraftPriceFloorExceptionApprovalLineV1> Lines);
+
+/// <summary>GET …/{id}/line-pricing (price read): every line's pricing at the draft's current version.</summary>
+public sealed record SalesOrderDraftLinePricingResponse(string Version, IReadOnlyList<SalesDraftLinePricingV1> Lines);
+
+/// <summary>
+/// GET …/{id}/lines/{lineId}/price-references (price write): the Product owner's list prices for the line's product in its
+/// stock / sales / order unit, in the draft's currency, on the draft's business date. Several lists may answer (no scope
+/// priority is decided): the person chooses one.
+/// </summary>
+public sealed record SalesOrderDraftPriceReferencesResponse(Guid LineId, string CurrencyCode, DateOnly On,
+    IReadOnlyList<SalesDraftPriceReferenceV1> Items);
 
 /// <summary>
 /// K3 Head B (Sinan 5748258299): POST …/{id}/commercial-revision — the expected concurrency version and
@@ -161,6 +222,7 @@ public sealed record SalesOrderDraftDetailView(
     SalesDraftOwnerReferenceV1? SourceStrategy,
     SalesDraftOwnerReferenceV1? Package,
     SalesDraftApprovalV1 Approval,
+    SalesDraftCustomerAcceptanceV1 CustomerAcceptance,
     bool IsOwnDraft,
     bool IsOwnDecisionRestricted);
 
@@ -195,6 +257,7 @@ public static class SalesDraftApiV1
     public const string SubmissionPath = "/api/v1/sales/drafts/{id}/submission";
     public const string ApprovalPath = "/api/v1/sales/drafts/{id}/approval";
     public const string RejectionPath = "/api/v1/sales/drafts/{id}/rejection";
+    public const string CustomerAcceptancePath = "/api/v1/sales/drafts/{id}/customer-acceptance";
 
     /// <summary>D2: POST …/{id}/withdrawal — the preparer takes back their own not-yet-approved draft (own state, own trail, no deletion).</summary>
     public const string WithdrawalPath = "/api/v1/sales/drafts/{id}/withdrawal";
@@ -206,6 +269,11 @@ public static class SalesDraftApiV1
     // "Rev.N", and the history lives on its own route so the S-04 decoder (exact members) keeps working.
     public const string CommercialRevisionPath = "/api/v1/sales/drafts/{id}/commercial-revision";
     public const string RevisionsPath = "/api/v1/sales/drafts/{id}/revisions";
+
+    // AT-018 / AT-021: the line pricing read (price read) and the line's list-price references (price write). The detail
+    // wire is unchanged: pricing lives on its own route so the S-04 decoder (exact members) keeps working.
+    public const string LinePricingPath = "/api/v1/sales/drafts/{id}/line-pricing";
+    public const string PriceReferencesPath = "/api/v1/sales/drafts/{id}/lines/{lineId}/price-references";
 
     // DEC-SAL-002 / AT-023: the quantity revision (200 with the detail after the change; same-key replay 200 +
     // `Idempotency-Replayed`). The detail wire is unchanged (the line's `quantity` carries the new text); the superseded
@@ -224,6 +292,14 @@ public static class SalesDraftApiV1
     // S-04 decoder (exact members) keeps working.
     public const string CancellationImpactPath = "/api/v1/sales/drafts/{id}/cancellation-impact";
     public const string CancellationPath = "/api/v1/sales/drafts/{id}/cancellation";
+
+    // Partial delivery (user decision 2026-09-30): the remainder change of a partly delivered line — requested (POST, the
+    // quantity-write name), approved or rejected by an approver (POST, the approve name; 200 with the detail after the step,
+    // same-key replay 200 + `Idempotency-Replayed`), and the lines' remainder facts with every recorded change (GET, the draft
+    // read). The detail wire is unchanged: the line's `quantity` carries the approved quantity.
+    public const string RemainderChangesPath = "/api/v1/sales/drafts/{id}/remainder-changes";
+    public const string RemainderApprovalPath = "/api/v1/sales/drafts/{id}/remainder-changes/{changeNo}/approval";
+    public const string RemainderRejectionPath = "/api/v1/sales/drafts/{id}/remainder-changes/{changeNo}/rejection";
 
     /// <summary>The wire text of a revision number (<c>Rev.0</c>, <c>Rev.1</c>, …).</summary>
     public static string RevisionText(int revision) => $"Rev.{revision.ToString(System.Globalization.CultureInfo.InvariantCulture)}";
@@ -306,6 +382,12 @@ public static class SalesDraftJson
                 throw new JsonException("Invalid line fields.");
             if (line.UnitPrice is not null) RequireDecimalShape(line.UnitPrice, positive: false);
             if (line.DiscountPercent is not null) RequireDecimalShape(line.DiscountPercent, positive: false);
+            // AT-018: the reference names a list version (ids only), the amounts and the surcharge percent are plain decimal text.
+            if (line.PriceReference is { } reference && (reference.PriceListId == Guid.Empty || reference.VersionNo < 1))
+                throw new JsonException("Invalid price reference.");
+            if (line.DiscountAmount is not null) RequireDecimalShape(line.DiscountAmount, positive: false);
+            if (line.SurchargePercent is not null) RequireDecimalShape(line.SurchargePercent, positive: false);
+            if (line.SurchargeAmount is not null) RequireDecimalShape(line.SurchargeAmount, positive: false);
         }
 
         return request;

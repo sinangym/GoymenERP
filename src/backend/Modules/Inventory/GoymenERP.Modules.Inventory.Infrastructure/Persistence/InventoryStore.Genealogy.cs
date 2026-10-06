@@ -103,13 +103,19 @@ public sealed partial class InventoryStore
                 label, position, Kilograms.Positive(balance.QuantityKg), source.ExpectedVersion);
         }).ToArray();
         var baseline = sourceRows.Single(row => row.Id == parsed.Sources[0].LabelId);
+        if (baseline.ProductVersion is null || sourceRows.Any(row => row.ProductId != baseline.ProductId
+                || !string.Equals(row.ProductVersion, baseline.ProductVersion, StringComparison.Ordinal)))
+        {
+            throw GenealogyError(503, InventoryLabelGenealogyCodesV1.CorruptState);
+        }
+
         var baselineBalance = balances.Single(row => row.LabelId == baseline.Id);
         var requiredDocuments = JsonSerializer.Deserialize<string[]>(baseline.RequiredDocumentsJson, Json)
             ?? throw new InvalidOperationException("Kayıtlı etiketin belge gereksinimi okunamadı.");
         var outputModels = parsed.Outputs.Select(output =>
         {
             var label = new MaterialLabel(output.LabelId, companyId, output.Code, baseline.ProductId, baseline.LotId,
-                requiredDocuments, baseline.HeatNumber, baseline.CoilNumber);
+                baseline.ProductVersion, requiredDocuments, baseline.HeatNumber, baseline.CoilNumber);
             var position = Position(companyId, baselineBalance.OwnerKind, baselineBalance.OwnerId,
                 baselineBalance.CustodianKind, baselineBalance.CustodianId, baselineBalance.LocationId,
                 label, baselineBalance.Block);
@@ -179,6 +185,7 @@ public sealed partial class InventoryStore
                 CompanyId = companyId,
                 Code = output.Label.Code,
                 ProductId = output.Label.ProductId,
+                ProductVersion = output.Label.ProductVersion,
                 LotId = output.Label.LotId,
                 HeatNumber = output.Label.HeatNumber,
                 CoilNumber = output.Label.CoilNumber,
@@ -470,8 +477,14 @@ public sealed partial class InventoryStore
     {
         var required = JsonSerializer.Deserialize<string[]>(row.RequiredDocumentsJson, Json)
             ?? throw new InvalidOperationException("Kayıtlı etiketin belge gereksinimi okunamadı.");
-        return new MaterialLabel(row.Id, row.CompanyId, row.Code, row.ProductId, row.LotId,
-            required, row.HeatNumber, row.CoilNumber);
+        var label = new MaterialLabel(row.Id, row.CompanyId, row.Code, row.ProductId, row.LotId,
+            row.ProductVersion, required, row.HeatNumber, row.CoilNumber);
+        if (row.Classification is { } classification)
+        {
+            label.Classify((LabelClassification)classification);
+        }
+
+        return label;
     }
 
     private static void RequireGenealogyMetadata(InventoryCommandMetadata metadata)

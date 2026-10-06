@@ -12,7 +12,7 @@ public sealed class GroupSharedAuditSession : IGroupSharedAuditEventCollector, I
 {
     private readonly AuditDbContext database;
     private readonly GroupSharedMasterCommandContext authority;
-    private GroupSharedAuditEventData? staged;
+    private IReadOnlyList<GroupSharedAuditEventData>? staged;
     private bool attempted;
     private bool disposed;
 
@@ -20,8 +20,9 @@ public sealed class GroupSharedAuditSession : IGroupSharedAuditEventCollector, I
     { this.database = database; this.authority = authority; }
 
     public bool IsFlushed { get; private set; }
-    public Guid? ProductId => staged?.Envelope.Subject.ProductId;
-    public string? IdempotencyKeyHash => staged?.Envelope.IdempotencyKeyHash;
+    public Guid? ProductId => staged is { Count: 1 } ? staged[0].Envelope.Subject.ProductId : null;
+    public IReadOnlyList<Guid> ProductIds => staged?.Select(value => value.Envelope.Subject.ProductId).ToArray() ?? [];
+    public string? IdempotencyKeyHash => staged is { Count: > 0 } ? staged[0].Envelope.IdempotencyKeyHash : null;
 
     public static async Task<GroupSharedAuditSession> EnlistAsync(AuditDbContext database, DbConnection connection, DbTransaction transaction,
         GroupSharedMasterCommandContext authority, CancellationToken cancellationToken = default)
@@ -41,20 +42,37 @@ public sealed class GroupSharedAuditSession : IGroupSharedAuditEventCollector, I
 
     public void Enqueue(GroupSharedAuditEventDraft auditEvent)
     {
+        EnqueueBatch([auditEvent]);
+    }
+
+    public void EnqueueBatch(IReadOnlyList<GroupSharedAuditEventDraft> auditEvents)
+    {
         ObjectDisposedException.ThrowIf(disposed, this);
-        ArgumentNullException.ThrowIfNull(auditEvent);
-        if (attempted || staged is not null) throw new InvalidOperationException("One Product attempt requires exactly one canonical audit event.");
-        RequireSameAuthority(auditEvent.Context);
-        staged = GroupSharedAuditEventFactory.Create(auditEvent);
+        ArgumentNullException.ThrowIfNull(auditEvents);
+        if (attempted || staged is not null)
+            throw new InvalidOperationException("One Product attempt may stage its canonical audit envelope only once.");
+        if (auditEvents.Count == 0)
+            throw new InvalidOperationException("At least one canonical audit event is required.");
+        var batch = new List<GroupSharedAuditEventData>(auditEvents.Count);
+        foreach (var auditEvent in auditEvents)
+        {
+            ArgumentNullException.ThrowIfNull(auditEvent);
+            RequireSameAuthority(auditEvent.Context);
+            batch.Add(GroupSharedAuditEventFactory.Create(auditEvent));
+        }
+        if (batch.Select(value => value.Envelope.Subject.ProductId).Distinct().Count() != batch.Count
+            || batch.Select(value => value.Envelope.IdempotencyKeyHash).Distinct(StringComparer.Ordinal).Count() != 1)
+            throw new InvalidOperationException("A canonical Product audit batch requires unique products and one idempotency identity.");
+        staged = batch;
     }
 
     public async Task FlushAsync(GroupSharedMasterCommandContext currentAuthority, CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(disposed, this);
-        if (attempted || staged is null) throw new InvalidOperationException("A single staged canonical audit event is required.");
+        if (attempted || staged is null) throw new InvalidOperationException("A staged canonical audit envelope is required.");
         attempted = true;
         RequireSameAuthority(currentAuthority);
-        await database.AppendGroupSharedAsync(AuditEvent.CreateGroupShared(staged), cancellationToken);
+        await database.AppendGroupSharedBatchAsync(staged.Select(AuditEvent.CreateGroupShared).ToArray(), cancellationToken);
         IsFlushed = true;
     }
 

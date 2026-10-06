@@ -19,6 +19,8 @@ export const FINANCE_CAPABILITY = {
   receiptsDraft: 'finance.receipts.draft',
   /** F-02 — one draft. */
   receiptsDetail: 'finance.receipts.detail',
+  /** Customer cheque / note portfolio — read-only route, independent from receipt-list access. */
+  customerInstrumentsList: 'finance.customer-instruments.list',
   /** F-04 Banka Hesapları — the bank-account master. */
   bankAccountsList: 'finance.bank-accounts.list',
   /** F-04 — propose a bank account. */
@@ -40,6 +42,10 @@ export const FINANCE_CAPABILITY = {
   manualBankPaymentsDetail: 'finance.manual-bank-payments.detail',
   manualBankPaymentsApprove: 'finance.manual-bank-payments.approve',
   manualBankPaymentsRecord: 'finance.manual-bank-payments.record',
+  officialInvoiceImportUpload: 'finance.official-invoice-import.upload',
+  officialInvoiceImportApprove: 'finance.official-invoice-import.approve',
+  allocationsList: 'finance.allocations.list',
+  allocationsWrite: 'finance.allocations.write',
 } as const
 
 export type FinanceCapabilityId = (typeof FINANCE_CAPABILITY)[keyof typeof FINANCE_CAPABILITY]
@@ -49,12 +55,16 @@ export const FINANCE_ROUTE = {
   // Static before the parameter route: `yeni` must never be read as a source id.
   receiptsDraft: '/finans/tahsilatlar/yeni',
   receiptsDetail: '/finans/tahsilatlar/:sourceId',
+  customerInstrumentsList: '/finans/musteri-cek-senetleri',
   reversalApprovals: '/finans/ters-kayit-onaylari',
   bankAccountsList: '/finans/banka-hesaplari',
   bankAccountsPropose: '/finans/banka-hesaplari/yeni',
   manualBankPaymentsList: '/finans/odemeler',
   manualBankPaymentsCreate: '/finans/odemeler/yeni',
   manualBankPaymentsDetail: '/finans/odemeler/:paymentId',
+  officialInvoiceImportUpload: '/finans/onayli-fatura-taksit-kaynagi-yukle',
+  officialInvoiceImportApprove: '/finans/resmi-fatura-aktarim-onaylari',
+  allocationsList: '/finans/dagitimlar',
 } as const
 
 export const receiptDetailPath = (sourceId: string) => `/finans/tahsilatlar/${encodeURIComponent(sourceId)}`
@@ -70,13 +80,14 @@ export const receiptDraftPath = (partyId: string, companyAccountId: string) =>
   `/finans/tahsilatlar/yeni?${new URLSearchParams({ partyId, companyAccountId }).toString()}`
 
 /**
- * DEC-FIN-016: the customer cheque / note portfolio lives on the F-02 list (no route or capability of its own until the
- * central shell declares one); this query parameter names the instrument whose detail is open there.
+ * DEC-FIN-016: this query parameter names the instrument whose detail is open on the dedicated portfolio route.
+ * Keeping list and detail on one canonical address lets a user close and reopen the same instrument without requiring
+ * receipt-list access.
  */
 export const INSTRUMENT_QUERY = 'cekSenet'
 
 export const portfolioInstrumentPath = (instrumentId: string) =>
-  `/finans/tahsilatlar?${new URLSearchParams({ [INSTRUMENT_QUERY]: instrumentId }).toString()}`
+  `${FINANCE_ROUTE.customerInstrumentsList}?${new URLSearchParams({ [INSTRUMENT_QUERY]: instrumentId }).toString()}`
 
 /**
  * The first-release party ledger (cari hesap ekstresi) lives on the F-02 list too (no route or capability of its own

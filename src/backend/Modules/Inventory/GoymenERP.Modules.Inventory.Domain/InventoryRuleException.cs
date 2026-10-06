@@ -86,4 +86,9 @@ public static class InventoryRuleCodes
     /// quantity that is not positive or exceeds the book quantity of the piece.
     /// </summary>
     public const string InvalidStockScrap = "inventory_invalid_stock_scrap";
+
+    /// <summary>
+    /// A two-leg transfer contradicts its same-company, whole-label, source-context, version or lifecycle rules.
+    /// </summary>
+    public const string InvalidTransfer = "inventory_invalid_transfer";
 }

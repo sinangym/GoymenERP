@@ -87,7 +87,10 @@ public static class SalesModuleExtensions
         // Logistics: loading-instruction lines); until one is, its category of the cancellation preview is unreadable and a
         // cancellation is refused, never decided on an assumed zero.
         serviceProvider.GetService<ISalesOrderAllocationReadPortV1>(),
-        serviceProvider.GetService<ISalesOrderLoadingReadPortV1>());
+        serviceProvider.GetService<ISalesOrderLoadingReadPortV1>(),
+        // AT-018 / AT-021: the Product price-list reference read, registered by the Product owner's AddProductPriceLists;
+        // until it is, a list-price reference is 503, never an assumed "no price".
+        serviceProvider.GetService<IProductQuantityPriceReferenceReaderV1>());
 
     /// <summary>Applies Sales's migrations. Its foreign keys need Organization's tables first.</summary>
     public static async Task InitializeSalesModuleAsync(

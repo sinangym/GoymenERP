@@ -3,6 +3,10 @@
 
 from __future__ import annotations
 
+import argparse
+import contextlib
+import hashlib
+import json
 import os
 from pathlib import Path
 import re
@@ -61,7 +65,13 @@ INVENTORY_MODULES = (
     "product",
     "purchasing",
     "sales",
+    "work",
 )
+SHARD_MODULES = {
+    "A": ("inventory", "manufacturing", "purchasing", "work"),
+    "B": ("finance", "accounting", "product", "identity", "organization"),
+    "C": ("counterparty", "logistics", "sales", "platform"),
+}
 TEST_NAMESPACE = "GoymenERP.Api.IntegrationTests."
 # A test class belongs to the module its name starts with; the Cari journey class, whose name has no
 # module prefix, is Counterparty's; every other class is central (platform).
@@ -77,6 +87,7 @@ MODULE_CLASS_PREFIXES = (
     ("Product", "product"),
     ("Purchasing", "purchasing"),
     ("Sales", "sales"),
+    ("Work", "work"),
 )
 CARI_JOURNEY_CLASS = "SqlServerRelationalAcceptanceTests"
 INVENTORY_TEST_NAME = re.compile(
@@ -313,6 +324,141 @@ def verify_broad_trx_results(path: Path, discovered: tuple[str, ...]) -> list[st
     return report
 
 
+def shard_executions(shard: str) -> dict[str, int]:
+    if BROAD_INVENTORY_ERROR is not None:
+        raise BROAD_INVENTORY_ERROR
+    if shard not in SHARD_MODULES:
+        raise RuntimeError("Unknown relational shard.")
+    modules = [module for group in SHARD_MODULES.values() for module in group]
+    if len(modules) != len(set(modules)) or set(modules) != set(INVENTORY_MODULES):
+        raise RuntimeError("Relational shards must partition every inventory module exactly once.")
+    expected = {
+        name: count
+        for module in SHARD_MODULES[shard]
+        for name, count in BROAD_INVENTORY[module].items()
+    }
+    if not expected:
+        raise RuntimeError("Relational shard cannot be empty.")
+    return expected
+
+
+def verify_shard_trx_results(path: Path, shard: str) -> None:
+    expected = shard_executions(shard)
+    verify_trx(path, sum(expected.values()))
+    if trx_test_executions(path) != expected:
+        raise RuntimeError("Relational shard TRX must equal its exact FQN and execution inventory.")
+
+
+def verify_rcsi_trx_results(path: Path) -> None:
+    verify_trx(path, len(EXPECTED_TESTS))
+    if trx_test_executions(path) != {name: 1 for name in EXPECTED_TESTS}:
+        raise RuntimeError("RCSI TRX must contain each of the fourteen reviewed tests exactly once.")
+
+
+def _map_hash(executions: dict[str, int]) -> str:
+    encoded = json.dumps(sorted(executions.items()), separators=(",", ":"), ensure_ascii=True)
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
+def _canonical_head(value: str, name: str) -> str:
+    if re.fullmatch(r"[0-9a-f]{40}", value) is None:
+        raise RuntimeError(f"{name} must be a canonical 40-character commit id.")
+    return value
+
+
+def expected_shard_proof(shard: str, source_head: str, tested_commit: str) -> dict[str, object]:
+    expected = shard_executions(shard)
+    return {
+        "schemaVersion": 1,
+        "shard": shard,
+        "sourceHead": _canonical_head(source_head, "source head"),
+        "testedCommit": _canonical_head(tested_commit, "tested commit"),
+        "catalogHash": _map_hash(BROAD_EXECUTIONS),
+        "executionMapHash": _map_hash(expected),
+        "testCount": len(expected),
+        "executionCount": sum(expected.values()),
+    }
+
+
+def _unique_json_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    result: dict[str, object] = {}
+    for name, value in pairs:
+        if name in result:
+            raise RuntimeError("Relational shard proof repeats a JSON field.")
+        result[name] = value
+    return result
+
+
+def verify_aggregate_proofs(
+    directory: Path,
+    source_head: str,
+    tested_commit: str,
+    worker_result: str,
+    rcsi_result: str,
+) -> None:
+    _canonical_head(source_head, "source head")
+    _canonical_head(tested_commit, "tested commit")
+    if worker_result != "success" or rcsi_result != "success":
+        raise RuntimeError("Every SQL shard and the separate RCSI job must succeed.")
+    if BROAD_INVENTORY_ERROR is not None:
+        raise BROAD_INVENTORY_ERROR
+    expected_names = {f"ci-relational-shard-proof-{shard}" for shard in SHARD_MODULES}
+    try:
+        actual_names = {entry.name for entry in directory.iterdir()}
+    except OSError as exception:
+        raise RuntimeError("Relational shard proof directory is unavailable.") from exception
+    if actual_names != expected_names:
+        raise RuntimeError("Relational shard proofs are missing, duplicated or unknown.")
+    covered: dict[str, int] = {}
+    for shard in SHARD_MODULES:
+        artifact = directory / f"ci-relational-shard-proof-{shard}"
+        try:
+            contents = {entry.name for entry in artifact.iterdir()} if artifact.is_dir() else set()
+        except OSError as exception:
+            raise RuntimeError("Relational shard artifact is unavailable.") from exception
+        if contents != {f"proof-{shard}.json"}:
+            raise RuntimeError("Relational shard artifact is missing, duplicated or malformed.")
+        path = artifact / f"proof-{shard}.json"
+        try:
+            if not path.is_file() or path.stat().st_size > 4096:
+                raise RuntimeError("Relational shard proof is missing or oversized.")
+            proof = json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=_unique_json_object)
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exception:
+            raise RuntimeError("Relational shard proof is unreadable or malformed.") from exception
+        if proof != expected_shard_proof(shard, source_head, tested_commit):
+            raise RuntimeError("Relational shard proof does not match the exact source and inventory.")
+        for name, count in shard_executions(shard).items():
+            if name in covered:
+                raise RuntimeError("Relational shard proofs overlap.")
+            covered[name] = count
+    if covered != BROAD_EXECUTIONS:
+        raise RuntimeError("Relational shard proofs do not cover the complete broad SQL inventory.")
+
+
+def resolve_proof_path(repository_root: Path, requested: Path) -> Path:
+    path = (repository_root / requested).resolve()
+    if not path.is_relative_to(repository_root) or path.suffix.lower() != ".json":
+        raise RuntimeError("Relational proof must be a JSON file inside the repository.")
+    return path
+
+
+def resolve_trx_path(
+    repository_root: Path,
+    requested_output: Path | None,
+    temporary_directory: Path,
+) -> Path:
+    if requested_output is None:
+        return temporary_directory / "rcsi.trx"
+    trx_path = (repository_root / requested_output).resolve()
+    if not trx_path.is_relative_to(repository_root) or trx_path.suffix.lower() != ".trx":
+        raise RuntimeError("TRX output must be a .trx file inside the repository.")
+    return trx_path
+
+
+def trx_logger(trx_path: Path) -> str:
+    return f"trx;LogFileName={trx_path.name}"
+
+
 def run_checked(arguments: list[str], repository_root: Path) -> subprocess.CompletedProcess[str]:
     result = subprocess.run(
         arguments,
@@ -353,26 +499,75 @@ def main() -> int:
     repository_root = Path(__file__).resolve().parent.parent
     if not (repository_root / "GoymenERP.slnx").is_file():
         raise RuntimeError("Göymen ERP repository root could not be resolved.")
+
+    parser = argparse.ArgumentParser()
+    mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--broad", action="store_true")
+    mode.add_argument("--rcsi", action="store_true")
+    mode.add_argument("--shard", choices=tuple(SHARD_MODULES))
+    mode.add_argument("--aggregate", action="store_true")
+    parser.add_argument("--trx-output", type=Path)
+    parser.add_argument("--proof-output", type=Path)
+    parser.add_argument("--proof-directory", type=Path)
+    parser.add_argument("--source-head")
+    parser.add_argument("--tested-commit")
+    parser.add_argument("--worker-result")
+    parser.add_argument("--rcsi-result")
+    args = parser.parse_args()
+
+    if args.aggregate:
+        if (args.trx_output is not None or args.proof_output is not None
+                or args.proof_directory is None or args.source_head is None
+                or args.tested_commit is None or args.worker_result is None
+                or args.rcsi_result is None):
+            raise RuntimeError("Aggregate mode requires only the exact proof and worker inputs.")
+        proof_directory = (repository_root / args.proof_directory).resolve()
+        if not proof_directory.is_relative_to(repository_root):
+            raise RuntimeError("Relational proofs must stay inside the repository.")
+        verify_aggregate_proofs(
+            proof_directory, args.source_head, args.tested_commit,
+            args.worker_result, args.rcsi_result,
+        )
+        print(
+            f"SQLSERVER_RELATIONAL_ACCEPTANCE: PASS total={BROAD_EXECUTION_COUNT} "
+            f"passed={BROAD_EXECUTION_COUNT} failed=0 skipped=0"
+        )
+        return 0
+
     if not os.environ.get("GOYMEN_ERP_TEST_SQLSERVER_CONNECTION", "").strip():
         raise RuntimeError(
             "GOYMEN_ERP_TEST_SQLSERVER_CONNECTION must be injected by the relational runner."
         )
+    if args.shard:
+        if (args.proof_output is None or args.source_head is None or args.tested_commit is None
+                or args.proof_directory is not None or args.worker_result is not None
+                or args.rcsi_result is not None):
+            raise RuntimeError("Shard mode requires an exact source-bound proof output.")
+        expected_shard_proof(args.shard, args.source_head, args.tested_commit)
+    elif any(value is not None for value in (
+        args.proof_output, args.proof_directory, args.source_head, args.tested_commit,
+        args.worker_result, args.rcsi_result,
+    )):
+        raise RuntimeError("Broad and RCSI modes cannot accept shard proof inputs.")
 
-    if sys.argv[1:] == ["--broad"]:
+    if args.broad:
         if BROAD_INVENTORY_ERROR is not None:
             raise BROAD_INVENTORY_ERROR
         filter_value = BROAD_FILTER
         expected_total = BROAD_EXECUTION_COUNT
         verify_discovered = verify_broad_discovery
         gate_name = "SQLSERVER_RELATIONAL_ACCEPTANCE"
-    elif sys.argv[1:] == ["--rcsi"]:
+    elif args.rcsi:
         filter_value = RCSI_FILTER
         expected_total = len(EXPECTED_TESTS)
         verify_discovered = verify_discovery
         gate_name = "RCSI_RELATIONAL_ACCEPTANCE"
     else:
-        raise RuntimeError("Exactly one mode is required: --broad or --rcsi.")
-
+        expected = shard_executions(args.shard)
+        filter_value = "|".join(f"FullyQualifiedName={name}" for name in sorted(expected))
+        expected_total = sum(expected.values())
+        verify_discovered = verify_broad_discovery
+        gate_name = f"SQLSERVER_RELATIONAL_SHARD_{args.shard}"
     run_bootstrap_preflight(repository_root)
     list_result = run_checked(
         [
@@ -385,7 +580,7 @@ def main() -> int:
             "--no-restore",
             "--list-tests",
             "--filter",
-            filter_value,
+            BROAD_FILTER if args.shard else filter_value,
             "--logger",
             "console;verbosity=quiet",
         ],
@@ -394,8 +589,26 @@ def main() -> int:
     discovered = verify_discovered(list_result.stdout)
     report: list[str] = []
 
-    with tempfile.TemporaryDirectory(prefix="goymen-rcsi-trx-") as temporary_directory:
-        trx_path = Path(temporary_directory) / "rcsi.trx"
+    with contextlib.ExitStack() as stack:
+        if args.trx_output is None:
+            results_directory = Path(
+                stack.enter_context(
+                    tempfile.TemporaryDirectory(prefix="goymen-rcsi-trx-")
+                )
+            )
+        else:
+            results_directory = repository_root
+        trx_path = resolve_trx_path(
+            repository_root, args.trx_output, results_directory
+        )
+        proof_path = resolve_proof_path(repository_root, args.proof_output) if args.shard else None
+        if proof_path is not None:
+            proof_path.parent.mkdir(parents=True, exist_ok=True)
+            proof_path.unlink(missing_ok=True)
+        if args.trx_output is not None:
+            results_directory = trx_path.parent
+            results_directory.mkdir(parents=True, exist_ok=True)
+            trx_path.unlink(missing_ok=True)
         run_bootstrap_preflight(repository_root)
         run_result = run_checked(
             [
@@ -410,9 +623,9 @@ def main() -> int:
                 "--filter",
                 filter_value,
                 "--results-directory",
-                temporary_directory,
+                str(results_directory),
                 "--logger",
-                "trx;LogFileName=rcsi.trx",
+                trx_logger(trx_path),
             ],
             repository_root,
         )
@@ -421,6 +634,18 @@ def main() -> int:
         verify_trx(trx_path, expected_total)
         if filter_value == BROAD_FILTER:
             report = verify_broad_trx_results(trx_path, discovered)
+        elif args.shard:
+            verify_shard_trx_results(trx_path, args.shard)
+            assert proof_path is not None
+            proof = expected_shard_proof(args.shard, args.source_head, args.tested_commit)
+            temporary_proof = proof_path.with_suffix(".tmp")
+            temporary_proof.write_text(
+                json.dumps(proof, sort_keys=True, separators=(",", ":")) + "\n",
+                encoding="utf-8",
+            )
+            temporary_proof.replace(proof_path)
+        else:
+            verify_rcsi_trx_results(trx_path)
 
     for line in report:
         print(line)

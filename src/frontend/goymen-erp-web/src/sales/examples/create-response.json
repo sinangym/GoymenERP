@@ -14,7 +14,8 @@
       "businessDate": "2026-09-13",
       "createdAtUtc": "2026-09-13T09:00:00Z",
       "lineCount": 1,
-      "approvalState": "Preparing"
+      "approvalState": "Preparing",
+      "commercialStage": "Order"
     },
     "requestedDeliveryDate": null,
     "note": null,
@@ -62,6 +63,13 @@
       "decidedBy": null,
       "decidedAtUtc": null,
       "rejectionReason": null
+    },
+    "customerAcceptance": {
+      "required": false,
+      "acceptedRevision": null,
+      "acceptedBy": null,
+      "acceptedAtUtc": null,
+      "isCurrentRevisionAccepted": true
     },
   "isOwnDraft": false,
   "isOwnDecisionRestricted": false

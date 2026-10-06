@@ -83,6 +83,10 @@ services:
       # company-wide party read; without it the owner answers nothing and the customer's lines are left out.
       # A Cari party read carries no price. The real role composition stays the human grant gate.
       IdentitySeed__Roles__5__Permissions__2: counterparty.parties.read
+      # Customer return acceptance only: the preparer requests and reopens its return. A separate
+      # loader decides it below; neither permission is granted outside this disposable suite.
+      IdentitySeed__Roles__5__Permissions__3: logistics.customer-returns.read
+      IdentitySeed__Roles__5__Permissions__4: logistics.customer-returns.request
       IdentitySeed__Roles__6__Id: b3000000-0000-4000-8000-000000000502
       IdentitySeed__Roles__6__Code: BROWSER_L04_LOADER
       IdentitySeed__Roles__6__Name: SENTETIK browser-suite:l04 yükleme kaydeden rolü
@@ -105,11 +109,14 @@ services:
       # number) and cancels; the reader holds neither, so its cancel is a 403 in the journey.
       IdentitySeed__Roles__6__Permissions__11: logistics.dispatch-notes.approve
       IdentitySeed__Roles__6__Permissions__12: logistics.dispatch-notes.cancel
+      IdentitySeed__Roles__6__Permissions__13: logistics.customer-returns.read
+      IdentitySeed__Roles__6__Permissions__14: logistics.customer-returns.decision
       IdentitySeed__Roles__7__Id: b3000000-0000-4000-8000-000000000503
       IdentitySeed__Roles__7__Code: BROWSER_L04_READER
       IdentitySeed__Roles__7__Name: SENTETIK browser-suite:l04 yükleme talimatı okuyan rolü
       IdentitySeed__Roles__7__IsSystem: "false"
       IdentitySeed__Roles__7__Permissions__0: logistics.loading-instructions.read
+      IdentitySeed__Roles__7__Permissions__1: logistics.customer-returns.read
       IdentitySeed__Roles__8__Id: b3000000-0000-4000-8000-000000000504
       IdentitySeed__Roles__8__Code: BROWSER_L04_SALES_PREPARER
       IdentitySeed__Roles__8__Name: SENTETIK browser-suite:l04 sipariş hazırlayan rolü (seed)
@@ -184,6 +191,7 @@ services:
       IdentitySeed__Roles__10__Permissions__2: counterparty.parties.read
       IdentitySeed__Roles__10__Permissions__3: sales.drafts.read
       IdentitySeed__Roles__10__Permissions__4: purchasing.orders.read
+      IdentitySeed__Roles__10__Permissions__5: purchasing.goods-receipts.record
       IdentitySeed__Roles__11__Id: b3000000-0000-4000-8000-000000000507
       IdentitySeed__Roles__11__Code: BROWSER_L04_PURCHASE_APPROVER
       IdentitySeed__Roles__11__Name: SENTETIK browser-suite:l04 satın alma onaylayan rolü (seed)

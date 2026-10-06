@@ -12,12 +12,12 @@ public sealed class InventoryShellCapabilityProviderTests
     {
         var provider = new InventoryShellCapabilityProvider();
         var declarations = provider.GetDeclarations();
-        Assert.Equal(8, declarations.Count);
+        Assert.Equal(9, declarations.Count);
         var declaration = Assert.Single(declarations,
             item => item.CapabilityId == InventoryShellCapabilityProvider.OpeningStockCapabilityId);
 
         Assert.Equal("INVENTORY", provider.Owner);
-        Assert.Equal("1.5", provider.ContractVersion);
+        Assert.Equal("1.6", provider.ContractVersion);
         Assert.Equal(ErpPermissions.InventoryOpeningStockRecord, declaration.CapabilityId);
         Assert.Equal("inventory.opening-stock", declaration.RouteId);
         Assert.Equal("/stok/acilis", declaration.RoutePath);
@@ -91,6 +91,30 @@ public sealed class InventoryShellCapabilityProviderTests
                 ErpPermissions.InventoryLabelsRead,
                 ErpPermissions.InventoryBalancesRead,
                 ErpPermissions.InventoryLabelTransformationRecord,
+            ],
+            declaration.RequiredPermissions);
+        Assert.True(declaration.ImplementationAvailable);
+        Assert.Equal(InventoryShellCapabilityProvider.StockPositionsCapabilityId, declaration.ParentCapabilityId);
+    }
+
+    [Fact]
+    public void Label_classification_write_is_a_route_less_stock_position_control_over_its_own_command_name()
+    {
+        var declaration = Assert.Single(new InventoryShellCapabilityProvider().GetDeclarations(),
+            item => item.CapabilityId == InventoryShellCapabilityProvider.LabelClassificationCapabilityId);
+
+        Assert.Equal("inventory.label-classification.write", declaration.CapabilityId);
+        Assert.Equal("inventory.stock-positions", declaration.RouteId);
+        Assert.Equal("/stok/pozisyonlar", declaration.RoutePath);
+        Assert.Equal("ST-01", declaration.ScreenId);
+        Assert.Equal(ShellCapabilityRoutePrecedence.Static, declaration.RoutePrecedence);
+        Assert.Equal(ShellCapabilityContextRequirement.SingleCompany, declaration.ContextRequirement);
+        Assert.Equal(ShellCapabilityScopeRequirement.CompanyWide, declaration.ScopeRequirement);
+        Assert.Equal(
+            [
+                ErpPermissions.InventoryLabelsRead,
+                ErpPermissions.InventoryBalancesRead,
+                ErpPermissions.InventoryLabelClassificationWrite,
             ],
             declaration.RequiredPermissions);
         Assert.True(declaration.ImplementationAvailable);

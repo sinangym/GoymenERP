@@ -11,6 +11,7 @@
  *   companyAccountId — its company account in GDC
  *   proposerActor    — Development user proposing the account and preparing the draft
  *   approverActor    — another Development user, who approves (Ö4: never the proposer)
+ *   readerActor      — allocation.read-only Development user; never receives allocation.write
  *
  * The Finance capabilities come from the NORMAL host: the provider is published since FIN-UI-1c, and a
  * screen opens only for an actor holding its own Finance permission (the suite override's grants).
@@ -22,6 +23,7 @@ export interface Fin01Seed {
   readonly companyAccountId: string
   readonly proposerActor: string
   readonly approverActor: string
+  readonly readerActor: string
 }
 
 export interface Fin01Environment {
@@ -55,9 +57,10 @@ export function readEnvironment(): Fin01Environment {
     companyAccountId: text(raw, 'companyAccountId', true),
     proposerActor: text(raw, 'proposerActor'),
     approverActor: text(raw, 'approverActor'),
+      readerActor: text(raw, 'readerActor'),
   }
-  if (seed.proposerActor === seed.approverActor) {
-    throw new Error('BROWSER_E2E_FIN01_SEED binds the same actor as proposer and approver (Ö4)')
+  if (new Set([seed.proposerActor, seed.approverActor, seed.readerActor]).size !== 3) {
+    throw new Error('BROWSER_E2E_FIN01_SEED must bind distinct proposer, approver and reader actors')
   }
   return { unauthorizedBaseUrl: required('BROWSER_E2E_UNAUTHORIZED_BASE_URL'), seed }
 }

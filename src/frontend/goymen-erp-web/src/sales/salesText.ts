@@ -2,7 +2,7 @@
  * User-facing Sales texts. Turkish, in one place, so they stay localizable.
  */
 
-import { APPROVAL_STATE, SALES_PROBLEM_CODE, type ApprovalState, type SalesProblemCode } from './contract'
+import { APPROVAL_STATE, COMMERCIAL_STAGE, SALES_PROBLEM_CODE, type ApprovalState, type CommercialStage, type SalesProblemCode } from './contract'
 
 export const ORDER_DRAFT_TEXT = {
   heading: 'Yeni satış siparişi taslağı',
@@ -192,12 +192,19 @@ export const APPROVAL_STATE_TEXT: Record<ApprovalState, string> = {
   [APPROVAL_STATE.withdrawn]: 'Geri çekildi',
 }
 
+export const COMMERCIAL_STAGE_TEXT: Record<CommercialStage, string> = {
+  [COMMERCIAL_STAGE.quote]: 'Teklif',
+  [COMMERCIAL_STAGE.order]: 'Sipariş',
+  [COMMERCIAL_STAGE.unavailable]: 'Aşama bilgisi kullanılamıyor',
+}
+
 export const ORDER_LIST_TEXT = {
   heading: 'Satış siparişi taslakları',
   newDraft: 'Yeni taslak',
   caption: 'Seçili şirketteki sipariş taslakları, en yeni önce',
   documentNo: 'Belge no',
   businessDate: 'Sipariş tarihi',
+  commercialStage: 'Ticari aşama',
   state: 'İç onay',
   filter: 'İç onay durumu',
   filterAll: 'Tümü',
@@ -212,6 +219,7 @@ export const ORDER_LIST_TEXT = {
 
 export const ORDER_DETAIL_TEXT = {
   backToList: 'Sipariş taslakları',
+  commercialStage: 'Ticari aşama',
   state: 'Durum',
   stateDraft: 'Taslak',
   /** DEC-SAL-005: the lifecycle of an approved order cancelled after its impact preview. */
@@ -225,6 +233,13 @@ export const ORDER_DETAIL_TEXT = {
     decidedBy: 'Karar veren',
     decidedAt: 'Karar zamanı',
     rejectionReason: 'Ret nedeni',
+    customerAcceptance: 'Müşteri kabulü',
+    customerAcceptanceLegacy: 'Bu sipariş için ayrıca aranmıyor',
+    customerAcceptancePending: 'Güncel revizyon için bekleniyor',
+    customerAcceptanceRecorded: 'Güncel revizyon kabul edildi',
+    customerAcceptedBy: 'Müşteri kabulünü kaydeden',
+    customerAcceptedAt: 'Müşteri kabul zamanı',
+    recordCustomerAcceptance: 'Müşteri kabulünü kaydet',
     notYet: 'Henüz yok',
     noReason: 'Neden belirtilmedi',
     // DEC-SAL-001/005, Business 5737989917 item 4: the linked effects are read from their owners, never assumed.
@@ -284,6 +299,7 @@ export const ORDER_DETAIL_TEXT = {
     approvedWarning: 'Onaylı fiyat değişikliği önceki onayı silmez; eski revizyon arşivlenir ve sipariş yeniden onaya girer.',
     withheld: 'Fiyatları görme yetkisi olmadan mevcut ticari değerler güvenle değiştirilemez.',
     stateUnavailable: 'Onay bekleyen, geri çekilmiş veya iptal edilmiş siparişte fiyat revizyonu yapılamaz.',
+    pricingUnavailable: 'Güncel satır fiyatları eksiksiz okunmadan yeni fiyat revizyonu kaydedilemez.',
     unitPrice: 'Birim fiyat',
     priceUnit: 'Fiyat birimi',
     discount: 'İskonto %',
@@ -586,4 +602,79 @@ export const REVISION_HISTORY_TEXT = {
   withheld: 'Yetki nedeniyle gizli',
   notPriced: 'Fiyat girilmemiş',
   notSpecified: 'Belirtilmemiş',
+} as const
+
+/**
+ * AT-018 / AT-021 on the order line: the list-price reference and the visible adjustments. Texts only — the net and every
+ * rule are the server's (the screen never computes a price).
+ */
+export const LINE_PRICING_TEXT = {
+  heading: 'Satır fiyatları',
+  note: 'Liste fiyatı KDV hariç net referanstır ve değiştirilene kadar varsayılan fiyattır; iskonto ve vade farkı ayrı gösterilir. Net fiyatı sunucu hesaplar.',
+  withheld: 'Fiyat ayrıntılarını görme yetkiniz yok.',
+  unreadable: 'Satır fiyat ayrıntıları okunamadı.',
+  reference: 'Referans liste fiyatı',
+  noReference: 'Referans yok (elle fiyat)',
+  referenceText: (name: string, versionNo: number, price: string, currency: string) => `${name} · Sürüm ${versionNo}: ${price} ${currency}`,
+  floorText: (floor: string) => `alt fiyat ${floor}`,
+  vatExclusive: 'KDV hariç net',
+  floorException: 'Taban fiyat istisnası',
+  floorExceptionPending: 'Farklı yetkilinin gerekçeli onayı bekleniyor',
+  floorExceptionApproved: (reason: string) => `Onaylandı: ${reason}`,
+  floorApproval: {
+    heading: 'Taban fiyat istisna onayı',
+    note: 'Görünen satırlar mevcut fiyat listesi sürümüne ve sunucunun net fiyatına bağlıdır. Talep eden aktör bu onayı veremez.',
+    reason: (lineNo: number) => `${lineNo}. satır onay gerekçesi`,
+    approve: 'İstisnaları onayla',
+    submitting: 'İstisna onayı gönderiliyor…',
+    unknown: 'Sonuç alınamadı; aynı anahtar ve gövdeyle yeniden deneyin.',
+    failed: 'İstisna onaylanmadı. Güncel kaydı okuyup gerekçeleri düzeltin.',
+    retry: 'Aynı onayı yeniden dene',
+    abandon: 'Bu denemeyi bırak',
+    correct: 'Gerekçeleri düzelt',
+  },
+  tierText: (lower: string, upper: string | null) => upper === null
+    ? `miktar ${lower} ve üzeri`
+    : `miktar ${lower} dahil, ${upper} hariç`,
+  source: 'Fiyat kaynağı',
+  sourceReference: 'Liste fiyatı',
+  sourceManual: 'Elle girildi',
+  unitPrice: 'Birim fiyat',
+  discount: 'İskonto',
+  surcharge: 'Vade farkı',
+  net: 'Net birim fiyat',
+  none: '—',
+  percent: (value: string) => `%${value}`,
+  amount: (value: string) => `${value} tutar`,
+  fetchReferences: 'Liste fiyatını getir',
+  fetchingReferences: 'Liste fiyatları okunuyor…',
+  noReferences: 'Bu ürün için siparişin tarihinde ve para biriminde geçerli liste fiyatı yok.',
+  referencesUnavailable: 'Liste fiyatları okunamadı.',
+  useReference: 'Bu fiyatı kullan',
+  removeReference: 'Referansı kaldır',
+  overwriteHint: 'Liste fiyatını değiştirmek için birim fiyatı elle yazın; referans görünür kalır.',
+  discountKind: 'İskonto türü',
+  surchargeKind: 'Vade farkı türü',
+  kindPercent: 'Yüzde (%)',
+  kindAmount: 'Tutar',
+  surchargeValue: 'Vade farkı',
+  fieldError: {
+    sales_price_below_floor: 'Net fiyat liste alt fiyatının altında; istisna onayı tanımlı olmadığından kaydedilmedi.',
+    sales_adjustment_kind_conflict: 'İskonto ve vade farkı ya yüzde ya tutar olarak verilir.',
+    sales_adjustment_scale_exceeded: 'Tutar para biriminin ondalık basamağını aşıyor.',
+    sales_surcharge_out_of_range: 'Vade farkı yüzdesi 0 ile 100 arasında olmalıdır.',
+    sales_adjustment_without_price: 'Referans, iskonto ve vade farkı için birim fiyat gerekir.',
+    sales_discount_exceeds_price: 'İskonto tutarı birim fiyatı aşamaz.',
+    sales_price_reference_mismatch: 'Referans liste fiyatı satırın fiyat biriminde olmalıdır.',
+    sales_price_reference_quantity_mismatch: 'Miktar seçili liste fiyatı kademesinin dışında; fiyat referansını yeniden seçin.',
+    sales_price_value_unrepresentable: 'Birim fiyat kayıpsız hesaplanabilir bir sayı değil.',
+    sales_discount_percent_unrepresentable: 'İskonto yüzdesi kayıpsız hesaplanabilir bir sayı değil.',
+    sales_discount_amount_unrepresentable: 'İskonto tutarı kayıpsız hesaplanabilir bir sayı değil.',
+    sales_surcharge_percent_unrepresentable: 'Vade farkı yüzdesi kayıpsız hesaplanabilir bir sayı değil.',
+    sales_surcharge_amount_unrepresentable: 'Vade farkı tutarı kayıpsız hesaplanabilir bir sayı değil.',
+    sales_price_calculation_overflow: 'Fiyat hesabı desteklenen sayı sınırını aşıyor.',
+    price_reference_unavailable: 'Seçilen liste fiyatı artık bu satırı fiyatlamıyor; yeniden getirin.',
+    price_reference_currency_mismatch: 'Liste fiyatı siparişin para biriminde değil.',
+  } as Record<string, string>,
+  lineError: (lineNo: number, text: string) => `${lineNo}. satır: ${text}`,
 } as const

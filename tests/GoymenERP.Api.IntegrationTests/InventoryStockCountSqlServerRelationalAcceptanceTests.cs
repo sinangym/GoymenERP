@@ -1,5 +1,8 @@
 using GoymenERP.Modules.Inventory.Application;
+using GoymenERP.Modules.Inventory.Domain.Costing;
+using GoymenERP.Modules.Inventory.Domain.Counts;
 using GoymenERP.Modules.Inventory.Domain.Movements;
+using GoymenERP.Modules.Inventory.Infrastructure.Persistence;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -26,7 +29,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
 
         await using (var scope = run.Store(CompanyA))
         {
-            var recorded = await scope.Store.RecordStockCountAsync(request, counter);
+            var recorded = await scope.Store.RecordStockCountAsync(request, counter, static _ => Task.CompletedTask);
             Assert.False(recorded.IsReplay);
             Assert.Equal((InventoryStockCountStatusesV1.PendingApproval, "100", "97.5", "-2.5", source.LabelVersion.ToString()),
                 (recorded.Count.Status, recorded.Count.BookKg, recorded.Count.CountedKg, recorded.Count.DifferenceKg,
@@ -40,10 +43,10 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
 
         await using (var scope = run.Store(CompanyA))
         {
-            var sameKey = await scope.Store.RecordStockCountAsync(request, counter with { CorrelationId = $"retry-{Guid.NewGuid():N}" });
+            var sameKey = await scope.Store.RecordStockCountAsync(request, counter with { CorrelationId = $"retry-{Guid.NewGuid():N}" }, static _ => Task.CompletedTask);
             Assert.True(sameKey.IsReplay);
             Assert.Equal(counter.CorrelationId, sameKey.OriginalCorrelationId);
-            var newKey = await scope.Store.RecordStockCountAsync(request, counter with { IdempotencyKey = $"other-{Guid.NewGuid():N}" });
+            var newKey = await scope.Store.RecordStockCountAsync(request, counter with { IdempotencyKey = $"other-{Guid.NewGuid():N}" }, static _ => Task.CompletedTask);
             Assert.True(newKey.IsReplay);
             var reopened = (await scope.Store.ReadStockCountsAsync(source.LabelId))!;
             var only = Assert.Single(reopened.Items);
@@ -55,7 +58,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         {
             var self = await Assert.ThrowsAsync<InventoryStockCountException>(() => scope.Store.DecideStockCountAsync(
                 request.CountId, new(InventoryStockCountDecisionKindV1.Approve, "Kendi sayımım"),
-                counter with { IdempotencyKey = $"self-{Guid.NewGuid():N}" }));
+                counter with { IdempotencyKey = $"self-{Guid.NewGuid():N}" }, static _ => Task.CompletedTask));
             Assert.Equal((409, InventoryStockCountCodesV1.SelfApproval), (self.Status, self.Code));
         }
 
@@ -70,7 +73,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         Guid movementId;
         await using (var scope = run.Store(CompanyA))
         {
-            var approved = await scope.Store.DecideStockCountAsync(request.CountId, approval, approver);
+            var approved = await scope.Store.DecideStockCountAsync(request.CountId, approval, approver, static _ => Task.CompletedTask);
             Assert.False(approved.IsReplay);
             Assert.Equal(InventoryStockCountStatusesV1.Approved, approved.Count.Status);
             movementId = approved.Count.Decision!.AdjustmentMovementId!.Value;
@@ -88,26 +91,26 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         await using (var scope = run.Store(CompanyA))
         {
             var sameKey = await scope.Store.DecideStockCountAsync(request.CountId, approval,
-                approver with { CorrelationId = $"retry-{Guid.NewGuid():N}" });
+                approver with { CorrelationId = $"retry-{Guid.NewGuid():N}" }, static _ => Task.CompletedTask);
             Assert.True(sameKey.IsReplay);
             Assert.Equal(approver.CorrelationId, sameKey.OriginalCorrelationId);
             var newKey = await scope.Store.DecideStockCountAsync(request.CountId, approval,
-                approver with { IdempotencyKey = $"approve-again-{Guid.NewGuid():N}" });
+                approver with { IdempotencyKey = $"approve-again-{Guid.NewGuid():N}" }, static _ => Task.CompletedTask);
             Assert.True(newKey.IsReplay);
             Assert.Equal(movementId, newKey.Count.Decision!.AdjustmentMovementId);
             var other = await Assert.ThrowsAsync<InventoryStockCountException>(() => scope.Store.DecideStockCountAsync(
                 request.CountId, new(InventoryStockCountDecisionKindV1.Reject, "Vazgeçildi"),
-                approver with { IdempotencyKey = $"reject-{Guid.NewGuid():N}" }));
+                approver with { IdempotencyKey = $"reject-{Guid.NewGuid():N}" }, static _ => Task.CompletedTask));
             Assert.Equal((409, InventoryStockCountCodesV1.AlreadyDecided), (other.Status, other.Code));
 
             // The same approval content is replayed only to its decider (#499 review P3): the counter meets the
             // maker≠checker refusal, a third actor the already-decided one — never a 200 of someone else's decision.
             var counterReplay = await Assert.ThrowsAsync<InventoryStockCountException>(() => scope.Store.DecideStockCountAsync(
-                request.CountId, approval, counter with { IdempotencyKey = $"counter-replay-{Guid.NewGuid():N}" }));
+                request.CountId, approval, counter with { IdempotencyKey = $"counter-replay-{Guid.NewGuid():N}" }, static _ => Task.CompletedTask));
             Assert.Equal((409, InventoryStockCountCodesV1.SelfApproval), (counterReplay.Status, counterReplay.Code));
             var thirdReplay = await Assert.ThrowsAsync<InventoryStockCountException>(() => scope.Store.DecideStockCountAsync(
                 request.CountId, approval,
-                approver with { ActorId = Guid.NewGuid().ToString("D"), IdempotencyKey = $"third-replay-{Guid.NewGuid():N}" }));
+                approver with { ActorId = Guid.NewGuid().ToString("D"), IdempotencyKey = $"third-replay-{Guid.NewGuid():N}" }, static _ => Task.CompletedTask));
             Assert.Equal((409, InventoryStockCountCodesV1.AlreadyDecided), (thirdReplay.Status, thirdReplay.Code));
         }
 
@@ -166,14 +169,14 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
 
         await using (var scope = run.Store(CompanyA))
         {
-            await AssertCountRefused(scope.Store.RecordStockCountAsync(Count(own.LabelId, own.LabelVersion + 1, "90"), Metadata(run)),
+            await AssertCountRefused(scope.Store.RecordStockCountAsync(Count(own.LabelId, own.LabelVersion + 1, "90"), Metadata(run), static _ => Task.CompletedTask),
                 409, InventoryStockCountCodesV1.LabelVersionConflict);
-            await AssertCountRefused(scope.Store.RecordStockCountAsync(Count(foreign.LabelId, foreign.LabelVersion, "90"), Metadata(run)),
+            await AssertCountRefused(scope.Store.RecordStockCountAsync(Count(foreign.LabelId, foreign.LabelVersion, "90"), Metadata(run), static _ => Task.CompletedTask),
                 404, InventoryStockCountCodesV1.LabelNotFound);
-            await AssertCountRefused(scope.Store.RecordStockCountAsync(Count(own.LabelId, own.LabelVersion, "90.0001"), Metadata(run)),
+            await AssertCountRefused(scope.Store.RecordStockCountAsync(Count(own.LabelId, own.LabelVersion, "90.0001"), Metadata(run), static _ => Task.CompletedTask),
                 400, InventoryStockCountCodesV1.ValidationFailed);
             await AssertCountRefused(scope.Store.RecordStockCountAsync(
-                    Count(own.LabelId, own.LabelVersion, "90") with { Reason = "  " }, Metadata(run)),
+                    Count(own.LabelId, own.LabelVersion, "90") with { Reason = "  " }, Metadata(run), static _ => Task.CompletedTask),
                 400, InventoryStockCountCodesV1.ValidationFailed);
             Assert.Null(await scope.Store.ReadStockCountsAsync(foreign.LabelId));
         }
@@ -187,7 +190,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
 
         await using (var scope = run.Store(CompanyA))
         {
-            await AssertCountRefused(scope.Store.RecordStockCountAsync(Count(empty.Id, 1, "5"), Metadata(run)),
+            await AssertCountRefused(scope.Store.RecordStockCountAsync(Count(empty.Id, 1, "5"), Metadata(run), static _ => Task.CompletedTask),
                 409, InventoryStockCountCodesV1.PositionConflict);
         }
 
@@ -195,16 +198,16 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         var key = Metadata(run) with { IdempotencyKey = $"count-key-{Guid.NewGuid():N}" };
         await using (var scope = run.Store(CompanyA))
         {
-            await scope.Store.RecordStockCountAsync(Count(own.LabelId, own.LabelVersion, "100"), key);
-            await AssertCountRefused(scope.Store.RecordStockCountAsync(Count(own.LabelId, own.LabelVersion, "99"), key),
+            await scope.Store.RecordStockCountAsync(Count(own.LabelId, own.LabelVersion, "100"), key, static _ => Task.CompletedTask);
+            await AssertCountRefused(scope.Store.RecordStockCountAsync(Count(own.LabelId, own.LabelVersion, "99"), key, static _ => Task.CompletedTask),
                 409, InventoryStockCountCodesV1.IdempotencyConflict);
             var zero = Assert.Single((await scope.Store.ReadStockCountsAsync(own.LabelId))!.Items);
             Assert.Equal((InventoryStockCountStatusesV1.NoDifference, "0"), (zero.Status, zero.DifferenceKg));
             await AssertCountRefused(scope.Store.DecideStockCountAsync(zero.CountId,
-                    new(InventoryStockCountDecisionKindV1.Approve, "Fark yok"), approver),
+                    new(InventoryStockCountDecisionKindV1.Approve, "Fark yok"), approver, static _ => Task.CompletedTask),
                 409, InventoryStockCountCodesV1.NotPending);
             await AssertCountRefused(scope.Store.DecideStockCountAsync(Guid.NewGuid(),
-                    new(InventoryStockCountDecisionKindV1.Approve, "Yok"), approver),
+                    new(InventoryStockCountDecisionKindV1.Approve, "Yok"), approver, static _ => Task.CompletedTask),
                 404, InventoryStockCountCodesV1.CountNotFound);
         }
 
@@ -212,18 +215,18 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         var stale = Count(own.LabelId, own.LabelVersion, "95");
         await using (var scope = run.Store(CompanyA))
         {
-            await scope.Store.RecordStockCountAsync(stale, Metadata(run));
+            await scope.Store.RecordStockCountAsync(stale, Metadata(run), static _ => Task.CompletedTask);
         }
 
         await TouchLabelAsync(run, own.LabelId);
         await using (var scope = run.Store(CompanyA))
         {
             await AssertCountRefused(scope.Store.DecideStockCountAsync(stale.CountId,
-                    new(InventoryStockCountDecisionKindV1.Approve, "Onay"), approver with { IdempotencyKey = Guid.NewGuid().ToString("N") }),
+                    new(InventoryStockCountDecisionKindV1.Approve, "Onay"), approver with { IdempotencyKey = Guid.NewGuid().ToString("N") }, static _ => Task.CompletedTask),
                 409, InventoryStockCountCodesV1.Stale);
             var rejected = await scope.Store.DecideStockCountAsync(stale.CountId,
                 new(InventoryStockCountDecisionKindV1.Reject, "Sayım sonrası hareket oldu; yeniden sayılacak."),
-                approver with { IdempotencyKey = Guid.NewGuid().ToString("N") });
+                approver with { IdempotencyKey = Guid.NewGuid().ToString("N") }, static _ => Task.CompletedTask);
             Assert.Equal((InventoryStockCountStatusesV1.Rejected, (Guid?)null),
                 (rejected.Count.Status, rejected.Count.Decision!.AdjustmentMovementId));
         }
@@ -239,9 +242,9 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         var belowAllocation = Count(own.LabelId, version, "40");
         await using (var scope = run.Store(CompanyA))
         {
-            await scope.Store.RecordStockCountAsync(belowAllocation, Metadata(run));
+            await scope.Store.RecordStockCountAsync(belowAllocation, Metadata(run), static _ => Task.CompletedTask);
             await AssertCountRefused(scope.Store.DecideStockCountAsync(belowAllocation.CountId,
-                    new(InventoryStockCountDecisionKindV1.Approve, "Onay"), approver with { IdempotencyKey = Guid.NewGuid().ToString("N") }),
+                    new(InventoryStockCountDecisionKindV1.Approve, "Onay"), approver with { IdempotencyKey = Guid.NewGuid().ToString("N") }, static _ => Task.CompletedTask),
                 409, InventoryStockCountCodesV1.AllocationConflict);
         }
 
@@ -250,6 +253,124 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         Assert.Equal(3, await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.StockCounts"));
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.StockCountDecisions WHERE Decision = 2"));
         Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.StockCountDecisions WHERE Decision = 1"));
+    }
+
+    [SqlServerFact]
+    public async Task Stock_count_late_authority_denials_do_not_disclose_replays_or_commit_record_and_approval_effects()
+    {
+        await using var run = await Run.StartAsync();
+        var source = await SeedFreePhysicalSourceAsync(run, CompanyA, "SYN-COUNT-LATE-AUTH", 100m);
+        var request = Count(source.LabelId, source.LabelVersion, "97.5");
+        var recorder = Metadata(run) with
+        {
+            IdempotencyKey = $"count-late-{Guid.NewGuid():N}",
+            CorrelationId = $"count-late-{Guid.NewGuid():N}",
+        };
+        var forbidden = static () => new InventoryStockCountException(403, InventoryStockCountCodesV1.Forbidden);
+
+        var beforeRecord = await CountEffectsAsync(run, source.LabelId);
+        await using (var scope = run.Store(CompanyA))
+        {
+            await AssertCountRefused(scope.Store.RecordStockCountAsync(request, recorder,
+                    FailStockCountFenceOnCall(6, forbidden)),
+                403, InventoryStockCountCodesV1.Forbidden);
+        }
+        Assert.Equal(beforeRecord, await CountEffectsAsync(run, source.LabelId));
+
+        await using (var scope = run.Store(CompanyA))
+        {
+            await scope.Store.RecordStockCountAsync(request, recorder, static _ => Task.CompletedTask);
+        }
+        var recorded = await CountEffectsAsync(run, source.LabelId);
+
+        await using (var scope = run.Store(CompanyA))
+        {
+            await AssertCountRefused(scope.Store.RecordStockCountAsync(request,
+                    recorder with { CorrelationId = $"retry-{Guid.NewGuid():N}" },
+                    FailStockCountFenceOnCall(1, forbidden)),
+                403, InventoryStockCountCodesV1.Forbidden);
+        }
+        Assert.Equal(recorded, await CountEffectsAsync(run, source.LabelId));
+
+        await using (var scope = run.Store(CompanyA))
+        {
+            await AssertCountRefused(scope.Store.RecordStockCountAsync(request,
+                    recorder with { IdempotencyKey = $"identity-{Guid.NewGuid():N}" },
+                    FailStockCountFenceOnCall(2, forbidden)),
+                403, InventoryStockCountCodesV1.Forbidden);
+        }
+        Assert.Equal(recorded, await CountEffectsAsync(run, source.LabelId));
+
+        var approval = new DecideInventoryStockCountV1(InventoryStockCountDecisionKindV1.Approve, "Geç yetki testi.");
+        var ownerRefusalCount = Count(source.LabelId, source.LabelVersion, "98");
+        await using (var scope = run.Store(CompanyA))
+        {
+            await scope.Store.RecordStockCountAsync(ownerRefusalCount,
+                recorder with
+                {
+                    IdempotencyKey = $"owner-refusal-record-{Guid.NewGuid():N}",
+                    CorrelationId = $"owner-refusal-record-{Guid.NewGuid():N}",
+                },
+                static _ => Task.CompletedTask);
+        }
+        await SeedStockCountOwnerRefusalAsync(run, ownerRefusalCount.CountId);
+        var ownerRefusalBaseline = await CountEffectsAsync(run, source.LabelId);
+        await using (var scope = run.Store(CompanyA))
+        {
+            await AssertCountRefused(scope.Store.DecideStockCountAsync(ownerRefusalCount.CountId, approval,
+                    Metadata(run) with { ActorId = Guid.NewGuid().ToString("D") },
+                    FailStockCountFenceOnCall(6, forbidden)),
+                403, InventoryStockCountCodesV1.Forbidden);
+        }
+        Assert.Equal(ownerRefusalBaseline, await CountEffectsAsync(run, source.LabelId));
+
+        var approver = Metadata(run) with
+        {
+            ActorId = Guid.NewGuid().ToString("D"),
+            IdempotencyKey = $"approve-late-{Guid.NewGuid():N}",
+            CorrelationId = $"approve-late-{Guid.NewGuid():N}",
+        };
+        var sameScopeCount = Count(source.LabelId, source.LabelVersion, "100");
+        var sameScopeRecorder = recorder with
+        {
+            IdempotencyKey = $"same-scope-{Guid.NewGuid():N}",
+            CorrelationId = $"same-scope-{Guid.NewGuid():N}",
+        };
+        await using (var scope = run.Store(CompanyA))
+        {
+            await AssertCountRefused(scope.Store.DecideStockCountAsync(request.CountId, approval, approver,
+                    FailStockCountFenceOnCall(6, forbidden)),
+                403, InventoryStockCountCodesV1.Forbidden);
+            await scope.Store.RecordStockCountAsync(sameScopeCount, sameScopeRecorder,
+                static _ => Task.CompletedTask);
+        }
+        var afterSameScopeWrite = await CountEffectsAsync(run, source.LabelId);
+        Assert.Equal(ownerRefusalBaseline with
+        {
+            Counts = ownerRefusalBaseline.Counts + 1,
+            Commands = ownerRefusalBaseline.Commands + 1,
+            AuditEvents = ownerRefusalBaseline.AuditEvents + 1,
+        }, afterSameScopeWrite);
+
+        await using (var scope = run.Store(CompanyA))
+        {
+            await AssertCountRefused(scope.Store.DecideStockCountAsync(request.CountId, approval, approver,
+                    FailStockCountFenceOnCall(7, forbidden)),
+                403, InventoryStockCountCodesV1.Forbidden);
+        }
+        Assert.Equal(afterSameScopeWrite, await CountEffectsAsync(run, source.LabelId));
+
+        var cancelledRequest = Count(source.LabelId, source.LabelVersion, "96");
+        using var cancellation = new CancellationTokenSource();
+        await using (var scope = run.Store(CompanyA))
+        {
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => scope.Store.RecordStockCountAsync(
+                cancelledRequest,
+                recorder with { IdempotencyKey = $"cancel-{Guid.NewGuid():N}" },
+                CancelStockCountFenceOnCall(6, cancellation),
+                cancellation.Token));
+        }
+        Assert.Equal(afterSameScopeWrite, await CountEffectsAsync(run, source.LabelId));
     }
 
     [SqlServerFact]
@@ -264,13 +385,17 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             Assert.Equal(0, await run.ScalarAsync<int>(
                 "SELECT COUNT(*) FROM sys.tables WHERE schema_id = SCHEMA_ID(N'inventory') AND name LIKE N'StockCount%'"));
             await context.GetService<IMigrator>().MigrateAsync(currentMigration);
+            await context.Database.MigrateAsync();
         }
 
         var source = await SeedFreePhysicalSourceAsync(run, CompanyA, "SYN-COUNT-DOWN", 10m);
         await using (var scope = run.Store(CompanyA))
         {
-            await scope.Store.RecordStockCountAsync(Count(source.LabelId, source.LabelVersion, "9"), Metadata(run));
+            await scope.Store.RecordStockCountAsync(Count(source.LabelId, source.LabelVersion, "9"), Metadata(run), static _ => Task.CompletedTask);
         }
+
+        await RemoveSyntheticProductVersionsForHistoricalMigrationAsync(
+            run, "SYN-COUNT-DOWN", expectedLabels: 1);
 
         await using (var context = run.Context(CompanyA))
         {
@@ -300,4 +425,86 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
 
     private static async Task<int> CountAdjustmentsAsync(Run run) =>
         await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.Movements WHERE Kind = 6");
+
+    private static async Task<StockCountEffects> CountEffectsAsync(Run run, Guid labelId) => new(
+        await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.StockCounts"),
+        await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.StockCountDecisions"),
+        await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.Movements WHERE Kind = 6"),
+        await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM inventory.Commands WHERE CommandName LIKE N'inventory.stock-count.%'"),
+        await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityType IN (N'Inventory.StockCount', N'Inventory.StockMovement')"),
+        await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.OutboxMessages"),
+        await LabelVersionAsync(run, labelId),
+        await LabelKgAsync(run, labelId));
+
+    private static async Task SeedStockCountOwnerRefusalAsync(Run run, Guid countId)
+    {
+        await using var context = run.Context(CompanyA);
+        context.SourceGrains.Add(new SourceGrainRow
+        {
+            CompanyId = CompanyA,
+            Kind = (int)StockMovementKind.CountAdjustment,
+            SourceKind = StockCount.SourceKind,
+            SourceId = countId,
+            Grain = (int)StockSourceGrain.Whole,
+        });
+        context.Movements.Add(new MovementRow
+        {
+            Id = Guid.NewGuid(),
+            CompanyId = CompanyA,
+            Kind = (int)StockMovementKind.CountAdjustment,
+            OccurredAtUtc = At,
+            SourceKind = StockCount.SourceKind,
+            SourceId = countId,
+            SourceGrain = (int)StockSourceGrain.Whole,
+            CostStatus = (int)CostStatus.NotCalculated,
+            PayloadHash = new string('c', 64),
+            RecordedAtUtc = At,
+            RecordedBy = "synthetic-owner-refusal",
+            CorrelationId = run.Correlation,
+        });
+        await context.SaveChangesAsync();
+    }
+
+    private static Func<CancellationToken, Task> FailStockCountFenceOnCall(
+        int expectedCall,
+        Func<Exception> error)
+    {
+        var calls = 0;
+        return cancellationToken =>
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Interlocked.Increment(ref calls) == expectedCall
+                ? Task.FromException(error())
+                : Task.CompletedTask;
+        };
+    }
+
+    private static Func<CancellationToken, Task> CancelStockCountFenceOnCall(
+        int expectedCall,
+        CancellationTokenSource cancellation)
+    {
+        var calls = 0;
+        return token =>
+        {
+            if (Interlocked.Increment(ref calls) == expectedCall)
+            {
+                cancellation.Cancel();
+            }
+
+            token.ThrowIfCancellationRequested();
+            return Task.CompletedTask;
+        };
+    }
+
+    private sealed record StockCountEffects(
+        int Counts,
+        int Decisions,
+        int AdjustmentMovements,
+        int Commands,
+        int AuditEvents,
+        int OutboxMessages,
+        long LabelVersion,
+        decimal LabelKg);
 }

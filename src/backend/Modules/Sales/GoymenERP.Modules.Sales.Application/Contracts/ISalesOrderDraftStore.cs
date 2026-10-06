@@ -46,8 +46,14 @@ public static class SalesDraftCommands
     /// <summary>SALES-A1: POST /api/v1/sales/drafts/{id}/rejection — PendingApproval → Rejected.</summary>
     public const string RejectV1 = "sales.order-draft.reject.v1";
 
+    /// <summary>Q9: POST /api/v1/sales/drafts/{id}/customer-acceptance.</summary>
+    public const string RecordCustomerAcceptanceV1 = "sales.order-draft.customer-acceptance.record.v1";
+
     /// <summary>K3 Head B: POST /api/v1/sales/drafts/{id}/commercial-revision — the commercial fields of every line replaced; an approved draft is archived and advances a revision.</summary>
     public const string ReviseCommercialV1 = "sales.order-draft.revise-commercial.v1";
+
+    /// <summary>Reasoned maker-checker approval of every current below-floor commercial snapshot.</summary>
+    public const string ApprovePriceFloorExceptionsV1 = "sales.order-draft.approve-price-floor-exceptions.v1";
 
     /// <summary>D2 (Sinan 5749046401): POST /api/v1/sales/drafts/{id}/withdrawal — Preparing/PendingApproval/Rejected → Withdrawn (terminal; nothing deleted).</summary>
     public const string WithdrawV1 = "sales.order-draft.withdraw.v1";
@@ -61,8 +67,20 @@ public static class SalesDraftCommands
     /// <summary>DEC-SAL-005: POST /api/v1/sales/drafts/{id}/cancellation — an approved order's lifecycle Draft → Cancelled after its impact preview.</summary>
     public const string CancelV1 = "sales.order-draft.cancel.v1";
 
+    /// <summary>Partial delivery: POST /api/v1/sales/drafts/{id}/remainder-changes — a remainder cancel/revise is requested (nothing on the line moves).</summary>
+    public const string RequestRemainderChangeV1 = "sales.order-draft.request-remainder-change.v1";
+
+    /// <summary>Partial delivery: POST …/remainder-changes/{changeNo}/approval — the pending change is applied on the floor read afresh.</summary>
+    public const string ApproveRemainderChangeV1 = "sales.order-draft.approve-remainder-change.v1";
+
+    /// <summary>Partial delivery: POST …/remainder-changes/{changeNo}/rejection — the pending change is closed; nothing changes.</summary>
+    public const string RejectRemainderChangeV1 = "sales.order-draft.reject-remainder-change.v1";
+
+    public static bool IsRemainderCommand(string commandName) =>
+        commandName is RequestRemainderChangeV1 or ApproveRemainderChangeV1 or RejectRemainderChangeV1;
+
     public static bool IsStateCommand(string commandName) =>
-        commandName is SubmitV1 or ApproveV1 or RejectV1 or WithdrawV1;
+        commandName is SubmitV1 or ApproveV1 or RejectV1 or WithdrawV1 or RecordCustomerAcceptanceV1;
 }
 
 /// <summary>The stable refusal codes of the Sales draft store, beside the domain's own rule codes.</summary>
@@ -107,7 +125,10 @@ public sealed record SalesDraftStoreResult(SalesOrderDraft Draft, SalesDraftWrit
 public sealed record SalesDraftTerminalRefusal(int Status, string Code, IReadOnlyList<SalesDraftFieldError> Errors);
 
 /// <summary>What the attempt key already holds: the stored draft, or the recorded terminal refusal — never both.</summary>
-public sealed record SalesDraftReplay(SalesOrderDraft? Draft, SalesDraftTerminalRefusal? Refusal, string OriginalCorrelationId);
+public sealed record SalesDraftReplayResult(SalesOrderDraftDetailView Visible, SalesOrderDraftDetailView Withheld);
+
+public sealed record SalesDraftReplay(SalesOrderDraft? Draft, SalesDraftTerminalRefusal? Refusal, string OriginalCorrelationId,
+    SalesDraftReplayResult? Result = null);
 
 /// <summary>One page of the company's drafts, newest first (createdAtUtc desc, id desc); <see cref="NextCursor"/> null is the end (#257).</summary>
 public sealed record SalesDraftPage(IReadOnlyList<SalesOrderDraft> Items, string? NextCursor);
@@ -126,7 +147,8 @@ public sealed record SalesDraftStateAudit(string EventType, string Operation, st
 /// that first recorded it. A replay answers the draft as it is NOW (the persisted record), marked
 /// as a replay with its first correlation — the Counterparty / Manufacturing pattern.
 /// </summary>
-public sealed record SalesDraftStateResult(SalesOrderDraft Draft, SalesDraftWriteOutcome Outcome, string OriginalCorrelationId);
+public sealed record SalesDraftStateResult(SalesOrderDraft Draft, SalesDraftWriteOutcome Outcome, string OriginalCorrelationId,
+    SalesDraftReplayResult? Result = null);
 
 /// <summary>
 /// The persistent draft store of the server-resolved company (SALES-P2 implements it; SALES-P1
@@ -209,7 +231,8 @@ public interface ISalesOrderDraftStore
     /// </summary>
     Task<SalesDraftStateResult?> ReviseDraftCommercialAsync(SalesDraftWriteEnvelope envelope, string requestHash, string commandName,
         Guid draftId, Func<SalesOrderDraft, DateTimeOffset, ApprovedRevisionSnapshot?> mutate, SalesDraftStateAudit audit,
-        Func<CancellationToken, Task> beforeWrite, CancellationToken cancellationToken = default);
+        Func<CancellationToken, Task> beforeWrite, CancellationToken cancellationToken = default,
+        Func<SalesOrderDraft, SalesDraftReplayResult?>? replayResult = null);
 
     /// <summary>
     /// DEC-SAL-003: the delivery-schedule update, one save. The same key rules as a state command; the domain decides
@@ -247,6 +270,20 @@ public interface ISalesOrderDraftStore
     /// </summary>
     Task<SalesDraftStateResult?> ReviseDraftQuantityAsync(SalesDraftWriteEnvelope envelope, string requestHash, string commandName,
         Guid draftId, Func<SalesOrderDraft, DateTimeOffset, ApprovedRevisionSnapshot?> mutate, SalesDraftStateAudit audit,
+        Func<SalesOrderDraft, CancellationToken, Task> beforeWrite, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Partial delivery (user decision 2026-09-30): one remainder change step, one save — the state command's key rules
+    /// (§3/§4/§7/§8). <paramref name="beforeWrite"/> receives the draft as read (tracked header and lines) and is the caller's
+    /// last word before the mutation — its fences, the domain's own preconditions and the owners' floor read afresh; any refusal
+    /// it throws leaves nothing written. <paramref name="mutate"/> is the domain's request / approval / rejection and returns the
+    /// change as recorded. The store APPENDS the request row (request) or the decision row (approval, rejection), writes an
+    /// approved change's line quantity columns, the header's version, the attempt record and the audit event — or nothing at
+    /// all. The approval axis, the revision, the slices and the commercial columns never move (checked). The command must be one
+    /// of <see cref="SalesDraftCommands.IsRemainderCommand"/>.
+    /// </summary>
+    Task<SalesDraftStateResult?> ChangeRemainderAsync(SalesDraftWriteEnvelope envelope, string requestHash, string commandName,
+        Guid draftId, Func<SalesOrderDraft, DateTimeOffset, RemainderChangeFacts> mutate, SalesDraftStateAudit audit,
         Func<SalesOrderDraft, CancellationToken, Task> beforeWrite, CancellationToken cancellationToken = default);
 
     Task<SalesOrderDraft?> FindDraftAsync(Guid draftId, CancellationToken cancellationToken = default);
@@ -290,7 +327,19 @@ public static class SalesDraftRequestHash
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentException.ThrowIfNullOrWhiteSpace(commandName);
-        return Hash(JsonSerializer.Serialize(new { command = commandName, draftId, request.ExpectedVersion, request.Lines }, SalesDraftJson.Options));
+        var lines = request.Lines?.Select(line => new CommercialRevisionLineHashV1(
+            line.LineId, line.UnitPrice, line.PriceUnitId, line.DiscountPercent, line.PriceReference,
+            line.DiscountAmount, line.SurchargePercent, line.SurchargeAmount)).ToArray();
+        return Hash(JsonSerializer.Serialize(new { command = commandName, draftId, request.ExpectedVersion, lines }, SalesDraftJson.Options));
+    }
+
+    /// <summary>Price-floor approval replay identity: command, draft, expected version and every line/reason in request order.</summary>
+    public static string Compute(string commandName, Guid draftId, SalesDraftPriceFloorExceptionApprovalRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentException.ThrowIfNullOrWhiteSpace(commandName);
+        return Hash(JsonSerializer.Serialize(
+            new { command = commandName, draftId, request.ExpectedVersion, request.Lines }, SalesDraftJson.Options));
     }
 
     /// <summary>DEC-SAL-002: the canonical content of a quantity revision — the command, the draft, the expected version, the reason as sent and every line's quantity text in the order given.</summary>
@@ -320,6 +369,42 @@ public static class SalesDraftRequestHash
             new { command = commandName, draftId, request.ExpectedVersion, request.Reason, request.ImpactToken }, SalesDraftJson.Options));
     }
 
+    /// <summary>Partial delivery: the canonical content of a remainder change request (command, draft, version, line, kind, quantity text, reason as sent).</summary>
+    public static string Compute(string commandName, Guid draftId, SalesDraftRemainderChangeRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentException.ThrowIfNullOrWhiteSpace(commandName);
+        return Hash(JsonSerializer.Serialize(
+            new { command = commandName, draftId, request.ExpectedVersion, request.LineId, request.Kind, request.Quantity, request.Reason },
+            SalesDraftJson.Options));
+    }
+
+    /// <summary>Partial delivery: the canonical content of a remainder decision (command, draft, change number, version, reason as sent).</summary>
+    public static string Compute(string commandName, Guid draftId, int changeNo, SalesDraftRemainderDecisionRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentException.ThrowIfNullOrWhiteSpace(commandName);
+        return Hash(JsonSerializer.Serialize(
+            new { command = commandName, draftId, changeNo, request.ExpectedVersion, request.Reason }, SalesDraftJson.Options));
+    }
+
     private static string Hash(string canonical) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical))).ToLowerInvariant();
+
+    // The first four members are the predecessor ReviseCommercial wire in its exact order. The four extension members
+    // participate when populated, but null extensions are omitted so an attempt recorded before the extension keeps the
+    // same canonical bytes and hash. This is deliberately local to this command; global JSON defaults do not change.
+    private sealed record CommercialRevisionLineHashV1(
+        Guid LineId,
+        string? UnitPrice,
+        Guid? PriceUnitId,
+        string? DiscountPercent,
+        [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+        SalesDraftPriceReferenceRequestV1? PriceReference,
+        [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+        string? DiscountAmount,
+        [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+        string? SurchargePercent,
+        [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+        string? SurchargeAmount);
 }

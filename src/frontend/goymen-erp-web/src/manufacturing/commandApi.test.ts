@@ -89,6 +89,28 @@ describe('recordFact', () => {
     })
   })
 
+  it('posts process loss to its explicit non-stock route with only the RecordFact body', async () => {
+    const loss: FactSnapshot = {
+      ...SNAPSHOT,
+      kind: 'process-losses',
+      movementId: null,
+      expectedParentLabelVersion: null,
+    }
+    const fetchMock = answer(json({}, 200))
+
+    await recordFact(COMPANY_A, ORDER, loss)
+
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    expect(url).toBe(`/api/v1/manufacturing/orders/${ORDER}/process-losses`)
+    expect(JSON.parse(init.body as string)).toEqual({
+      factId: loss.factId,
+      expectedVersion: 4,
+      parentRollId: ROLL_1,
+      kg: '900.5',
+      occurredAtUtc: loss.occurredAtUtc,
+    })
+  })
+
   it('reads a 200 as applied and a replay as the recorded answer', async () => {
     answer(json({}, 200))
     expect(await recordFact(COMPANY_A, ORDER, SNAPSHOT)).toEqual({

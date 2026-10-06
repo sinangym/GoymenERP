@@ -22,8 +22,8 @@ public static partial class SourceBinding
     public const string FrontendHead = "0d20850562d271ea934c04ff8c002679030dfaf2";
     public const string FrontendBase = "3e7dd98a5f8b7cb9e6850e05148eb4e7b26f3e3f";
     public const string FrontendDiff = "311edcb5a7a45ffcda20fc04adbbf16e126347dfe185cfff879824ea4fbc6faa";
-    public const string BackendTree = "330b62e0d1f5f86a8aeff5d52308fccc6bcf7272";
-    public const string OpenApiHash = "baa0fdde0dcffe31b9fdf1e0e3960b2ecaf0f8ad38ae595622497c8796511fa3";
+    public const string BackendTree = "0f94677a59762dfda4028d518f275d4cdb823a8c";
+    public const string OpenApiHash = "ca437a1e7d64044b6629eedcb28fb9dbac3d99c3c6f9584b3bfe8c889f0caf41";
     public const string MigrationHash = "c4fc980e3d58c564f8818caee4f7523e28256be9e7e6aecea6f0a266c32e3183";
     public const string ClientContractHeader = "X-ERP-Counterparty-Contract";
     public const string ClientContractVersion = "optional-trade-roles-v1";

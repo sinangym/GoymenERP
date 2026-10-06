@@ -35,9 +35,11 @@ internal sealed class LabelRow : IInventoryTenantRow
     public Guid CompanyId { get; set; }
     public string Code { get; set; } = string.Empty;
     public Guid ProductId { get; set; }
+    public string? ProductVersion { get; set; }
     public Guid LotId { get; set; }
     public string? HeatNumber { get; set; }
     public string? CoilNumber { get; set; }
+    public int? Classification { get; set; }
     public string RequiredDocumentsJson { get; set; } = "[]";
     public long Version { get; set; }
     public byte[] RowVersion { get; set; } = [];
@@ -419,5 +421,101 @@ internal sealed class StockScrapDecisionRow : IInventoryTenantRow
     public string PayloadHash { get; set; } = string.Empty;
     public DateTimeOffset DecidedAtUtc { get; set; }
     public string DecidedBy { get; set; } = string.Empty;
+    public string CorrelationId { get; set; } = string.Empty;
+}
+
+/// <summary>INV-R20 same-company transfer header. Only lifecycle status/version/update time may advance.</summary>
+internal sealed class InventoryTransferRow : IInventoryTenantRow
+{
+    public Guid Id { get; set; }
+    public Guid CompanyId { get; set; }
+    public long Version { get; set; }
+    public int Status { get; set; }
+    public Guid SourceLocationId { get; set; }
+    public int SourceCustodianKind { get; set; }
+    public Guid SourceCustodianId { get; set; }
+    public Guid DestinationLocationId { get; set; }
+    public int DestinationCustodianKind { get; set; }
+    public Guid DestinationCustodianId { get; set; }
+    public DateTimeOffset PlannedAtUtc { get; set; }
+    public string PayloadHash { get; set; } = string.Empty;
+    public DateTimeOffset RecordedAtUtc { get; set; }
+    public DateTimeOffset UpdatedAtUtc { get; set; }
+    public string RecordedBy { get; set; } = string.Empty;
+    public string CorrelationId { get; set; } = string.Empty;
+    public byte[] RowVersion { get; set; } = [];
+}
+
+/// <summary>One immutable planned whole-label line.</summary>
+internal sealed class InventoryTransferLineRow : IInventoryTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public Guid TransferId { get; set; }
+    public Guid LineId { get; set; }
+    public int Sequence { get; set; }
+    public Guid LabelId { get; set; }
+    public long ExpectedLabelVersion { get; set; }
+    public decimal PlannedKg { get; set; }
+}
+
+/// <summary>The one immutable dispatch of all planned lines, linked to its one physical movement.</summary>
+internal sealed class InventoryTransferDispatchRow : IInventoryTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public Guid TransferId { get; set; }
+    public Guid MovementId { get; set; }
+    public string DocumentKind { get; set; } = string.Empty;
+    public Guid DocumentId { get; set; }
+    public Guid? DocumentLineId { get; set; }
+    public DateTimeOffset DispatchedAtUtc { get; set; }
+    public string PayloadHash { get; set; } = string.Empty;
+    public DateTimeOffset RecordedAtUtc { get; set; }
+    public string RecordedBy { get; set; } = string.Empty;
+    public string CorrelationId { get; set; } = string.Empty;
+}
+
+/// <summary>Actual whole-label kilograms at dispatch and their signed planned difference.</summary>
+internal sealed class InventoryTransferDispatchLineRow : IInventoryTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public Guid TransferId { get; set; }
+    public Guid LineId { get; set; }
+    public long LabelVersionAfterDispatch { get; set; }
+    public decimal ActualKg { get; set; }
+    public decimal DifferenceKg { get; set; }
+}
+
+/// <summary>One lossless Free/Blocked bucket captured by dispatch and reused by acceptance.</summary>
+internal sealed class InventoryTransferBucketRow : IInventoryTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public Guid TransferId { get; set; }
+    public Guid LineId { get; set; }
+    public int Sequence { get; set; }
+    public int OwnerKind { get; set; }
+    public Guid OwnerId { get; set; }
+    public int CustodianKind { get; set; }
+    public Guid CustodianId { get; set; }
+    public Guid LocationId { get; set; }
+    public Guid LabelId { get; set; }
+    public Guid ProductId { get; set; }
+    public int Block { get; set; }
+    public decimal QuantityKg { get; set; }
+}
+
+/// <summary>One immutable whole-line target acceptance and its physical movement.</summary>
+internal sealed class InventoryTransferAcceptanceRow : IInventoryTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public Guid TransferId { get; set; }
+    public Guid LineId { get; set; }
+    public Guid MovementId { get; set; }
+    public string DocumentKind { get; set; } = string.Empty;
+    public Guid DocumentId { get; set; }
+    public Guid? DocumentLineId { get; set; }
+    public DateTimeOffset AcceptedAtUtc { get; set; }
+    public string PayloadHash { get; set; } = string.Empty;
+    public DateTimeOffset RecordedAtUtc { get; set; }
+    public string RecordedBy { get; set; } = string.Empty;
     public string CorrelationId { get; set; } = string.Empty;
 }

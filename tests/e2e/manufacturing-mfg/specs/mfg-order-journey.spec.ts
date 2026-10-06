@@ -531,6 +531,158 @@ test.describe('MFG order screen (real API, real SQL)', () => {
     expectEveryAnswerRewritten(answered, rewritten)
   })
 
+  test('customer-owned input replays once, keeps its Cari owner through output, and returns unused stock', async ({ page, context }) => {
+    const arranged = {
+      orderId: env.seed.customerOwned.orderId,
+      rollId: env.seed.customerOwned.roll.labelId,
+      version: 1,
+    }
+    const rewritten = await asActor(context, env.seed.recorderActor)
+    const answered = watchAnswers(page)
+    const before = await readOrder(env, arranged.orderId)
+    const beforeRoll = (before.rolls as Array<{
+      parentRollId: string
+      commercialContext: {
+        partyId: string
+        companyPartyAccountId: string
+        partyVersion: string
+        accountVersion: string
+      }
+    }>)[0]
+    expect(beforeRoll.parentRollId).toBe(arranged.rollId)
+    expect(beforeRoll.commercialContext).toMatchObject({
+      partyId: expect.stringMatching(/^[0-9a-f-]{36}$/),
+      companyPartyAccountId: expect.stringMatching(/^[0-9a-f-]{36}$/),
+      partyVersion: expect.stringMatching(/^.+$/),
+      accountVersion: expect.stringMatching(/^.+$/),
+    })
+    expect(beforeRoll.commercialContext.partyId).not.toBe(env.seed.companyId)
+
+    // The first real issue answer is withheld from the page. Retrying sends the same command and Inventory moves
+    // the customer's roll only once; the replayed Manufacturing answer refreshes the order from server truth.
+    let withheld: number | null = null
+    await page.route(FACT_RE, async (route) => {
+      if (withheld !== null) return route.fallback()
+      const response = await route.fetch({
+        headers: { ...route.request().headers(), 'x-development-user': env.seed.recorderActor },
+      })
+      withheld = response.status()
+      await route.abort('failed')
+    })
+    await openOrder(page, arranged.orderId)
+    await fillIssue(page, arranged.rollId, '500')
+    await page.getByRole('button', { name: 'Kaydet', exact: true }).click()
+    await expect(page.getByText('Sonuç bilinmiyor')).toBeVisible()
+    expect(withheld).toBe(200)
+    await page.getByRole('button', { name: 'Aynı olguyu yeniden gönder', exact: true }).click()
+    await expect(page.getByText('Daha önce kaydedilmiş')).toBeVisible()
+    const issuedOrder = await readOrder(env, arranged.orderId)
+    expect((issuedOrder.rolls as Array<{ issuedKg: string }>)[0].issuedKg).toBe('500')
+
+    await openOrder(page, arranged.orderId)
+    const products = page.waitForResponse((response) =>
+      OUTPUT_PRODUCTS_RE.test(response.url()) && response.request().method() === 'GET')
+    const locations = page.waitForResponse((response) =>
+      OUTPUT_LOCATIONS_RE.test(response.url()) && response.request().method() === 'GET')
+    await page.getByRole('radio', { name: OUTPUT_FACT_KIND, exact: true }).check()
+    const labelRead = page.waitForResponse((response) => isLabelDetailRead(response, arranged.rollId))
+    await page.getByRole('combobox', { name: 'Ana rulo', exact: true }).selectOption(arranged.rollId)
+    const trace = await issueTraceOf(await labelRead, arranged.orderId)
+    expect(trace).toHaveLength(1)
+    expect(trace[0]).toMatchObject({
+      ownerKind: 'Counterparty',
+      ownerId: beforeRoll.commercialContext.partyId,
+      custodianKind: 'Company',
+      custodianId: env.seed.companyId,
+    })
+    const ownership = page.getByTestId('output-issued-ownership')
+    await expect(ownership.locator('[data-party="owner"]')).toHaveText(beforeRoll.commercialContext.partyId)
+    await expect(ownership.locator('[data-party="owner"]')).toHaveAttribute('data-kind', 'Counterparty')
+    await expect(ownership.locator('[data-party="custodian"]')).toHaveText(env.seed.companyId)
+    await expect(ownership.locator('[data-party="custodian"]')).toHaveAttribute('data-kind', 'Company')
+    await expect(ownership).toContainText('Cari')
+    await expect(ownership).toContainText(THIS_COMPANY)
+    await page.getByLabel('Zaman', { exact: true }).fill('2026-09-25T10:00')
+    expect((await products).status()).toBe(200)
+    expect((await locations).status()).toBe(200)
+    await page.getByRole('combobox', { name: 'Çıktı sınıfı', exact: true }).selectOption('GoodProduct')
+    await page.getByRole('combobox', { name: 'Ürün', exact: true }).selectOption(env.seed.output.productId)
+    await page.getByRole('combobox', { name: 'Lokasyon', exact: true }).selectOption(env.seed.output.locationId)
+    await page.getByLabel('Yeni etiket kodu', { exact: true })
+      .fill(`SYN-MFG-FASON-OUT-${arranged.orderId.replaceAll('-', '')}`)
+    await page.getByRole('combobox', { name: 'İlk stok durumu', exact: true })
+      .selectOption(env.seed.output.initialBlock)
+    await kgField(page).fill('300')
+    const outputPost = page.waitForRequest((request) =>
+      request.url().endsWith(`/orders/${arranged.orderId}/outputs`) && request.method() === 'POST')
+    const outputResponse = page.waitForResponse((response) =>
+      response.url().endsWith(`/orders/${arranged.orderId}/outputs`) && response.request().method() === 'POST')
+    await page.getByRole('button', { name: 'Kaydet', exact: true }).click()
+    expect((await outputResponse).status()).toBe(200)
+    const outputBody = (await outputPost).postDataJSON() as Record<string, unknown>
+    expect(outputBody).toMatchObject({
+      ownerKind: 'Counterparty',
+      ownerId: beforeRoll.commercialContext.partyId,
+      custodianKind: 'Company',
+      custodianId: env.seed.companyId,
+      kg: '300',
+    })
+
+    const afterOutput = await readOrder(env, arranged.orderId)
+    await openOrder(page, arranged.orderId)
+    await page.getByRole('radio', { name: 'Kullanılmayan girdi iadesi', exact: true }).check()
+    const labelBeforeReturn = page.waitForResponse((response) => isLabelDetailRead(response, arranged.rollId))
+    await page.getByRole('combobox', { name: 'Ana rulo', exact: true }).selectOption(arranged.rollId)
+    const label = await (await labelBeforeReturn).json() as { labelVersion: string }
+    await kgField(page).fill('200')
+    await page.getByLabel('Zaman', { exact: true }).fill('2026-09-25T10:30')
+    const returnPost = page.waitForRequest((request) =>
+      request.url().endsWith(`/orders/${arranged.orderId}/input-returns`) && request.method() === 'POST')
+    const returnResponse = page.waitForResponse((response) =>
+      response.url().endsWith(`/orders/${arranged.orderId}/input-returns`) && response.request().method() === 'POST')
+    await page.getByRole('button', { name: 'Kaydet', exact: true }).click()
+    expect((await returnResponse).status()).toBe(200)
+    expect((await returnPost).postDataJSON()).toMatchObject({
+      expectedVersion: afterOutput.version,
+      parentRollId: arranged.rollId,
+      expectedParentLabelVersion: label.labelVersion,
+      kg: '200',
+    })
+
+    await openOrder(page, arranged.orderId)
+    const stored = await readOrder(env, arranged.orderId)
+    expect((stored.rolls as Array<Record<string, unknown>>)[0]).toMatchObject({
+      parentRollId: arranged.rollId,
+      issuedKg: '500',
+      returnedKg: '200',
+      netIssuedKg: '300',
+      outputsKg: { GoodProduct: '300' },
+      unexplainedKg: '0',
+      isFullyAccounted: true,
+      commercialContext: beforeRoll.commercialContext,
+    })
+    await expect(issuedCell(page, arranged.rollId)).toHaveText('500')
+    await expect(returnedCell(page, arranged.rollId)).toHaveText('200')
+    const api = await apiAs(env, env.seed.recorderActor)
+    try {
+      const outputLabelResponse = await api.get(`/api/v1/inventory/labels/${outputBody.labelId as string}/detail`)
+      const outputLabelText = await outputLabelResponse.text()
+      expect(outputLabelResponse.status(), outputLabelText).toBe(200)
+      const outputLabel = JSON.parse(outputLabelText) as {
+        balances: { physicalKg: string; positions: Array<Record<string, unknown>> }
+      }
+      expect(outputLabel.balances.physicalKg).toBe('300')
+      expect(outputLabel.balances.positions).toContainEqual(expect.objectContaining({
+        ownerKind: 'Counterparty', ownerId: beforeRoll.commercialContext.partyId,
+        custodianKind: 'Company', custodianId: env.seed.companyId,
+        locationId: env.seed.output.locationId, quantityKg: '300',
+      }))
+    } finally {
+      await api.dispose()
+    }
+    expectEveryAnswerRewritten(answered, rewritten)
+  })
+
   test('an answer the browser never received is re-sent with the same key and recorded once', async ({ page, context }) => {
     const arranged = await arrangeOpenOrder(env, env.seed.rolls.replay)
     const rewritten = await asActor(context, env.seed.recorderActor)
@@ -642,9 +794,10 @@ test.describe('MFG order screen (real API, real SQL)', () => {
     expectEveryAnswerRewritten(answered, rewritten)
   })
 
-  test('a closer is refused while a roll is unexplained, and closes it once the mass is accounted', async ({ page, context }) => {
-    // MFG-4 (Business 5728619644) through the real stack: 1000 issued, 600 declared → refused with the
-    // rule's own code; the remaining 400 declared → accepted. No tolerance anywhere.
+  test('a closer declares fire, then closes an out-of-tolerance order with a reasoned exception', async ({ page, context }) => {
+    // Policy-backed close through the real stack: 1000 issued, 600 declared → explicit fire is still required;
+    // the remaining 400 is declared as Scrap → the disposable 5% profile requires the separately authorized,
+    // reasoned exception. The production Settings catalog stays empty.
     const arranged = await arrangeOpenOrder(env, env.seed.rolls.close)
     const issued = await issueThroughApi(env, arranged, arranged.version, '1000')
     const partial = await declareThroughApi(env, arranged, issued.version as number, 'GoodProduct', '600')
@@ -660,19 +813,31 @@ test.describe('MFG order screen (real API, real SQL)', () => {
     await page.getByRole('button', { name: 'Emri kapat', exact: true }).click()
     await page.getByRole('button', { name: 'Evet, emri kapat', exact: true }).click()
     const sent = await refusedPost
-    expect(sent.postDataJSON()).toMatchObject({ expectedVersion: partial.version })
+    expect(sent.postDataJSON()).toMatchObject({ expectedVersion: partial.version, exceptionReason: null })
     expect(sent.headers()['idempotency-key']).toMatch(/^[0-9a-f-]{36}$/)
-    await expect(page.getByTestId('close-refusal')).toContainText('açıklanamayan kütle farkı')
+    await expect(page.getByTestId('close-refusal')).toContainText('açıklanamayan pozitif fark')
     expect((await readOrder(env, arranged.orderId)).status).toBe('Open')
 
-    // The missing 400 kg is declared through the real API; the screen re-reads and the close is accepted.
+    // The missing 400 kg is declared through the real API. The normal close then receives the server's
+    // approval-required result; only the dedicated capability exposes the reasoned follow-up.
     const balanced = await declareThroughApi(env, arranged, partial.version as number, 'Scrap', '400')
     await page.reload()
     await expect(page.getByRole('heading', { name: 'Emri kapat' })).toBeVisible()
-    const acceptedPost = page.waitForRequest((request) => CLOSE_RE.test(request.url()) && request.method() === 'POST')
+    const approvalPost = page.waitForRequest((request) => CLOSE_RE.test(request.url()) && request.method() === 'POST')
     await page.getByRole('button', { name: 'Emri kapat', exact: true }).click()
     await page.getByRole('button', { name: 'Evet, emri kapat', exact: true }).click()
-    expect((await acceptedPost).postDataJSON()).toMatchObject({ expectedVersion: balanced.version })
+    const approvalRequest = await approvalPost
+    expect(approvalRequest.postDataJSON()).toMatchObject({ expectedVersion: balanced.version, exceptionReason: null })
+    await expect(page.getByTestId('close-exception-approval')).toBeVisible()
+
+    const reason = 'Gerçek fire kaydı teknik olarak doğrulandı.'
+    await page.getByLabel('Onay gerekçesi').fill(reason)
+    const acceptedPost = page.waitForRequest((request) => CLOSE_RE.test(request.url()) && request.method() === 'POST'
+      && request.postDataJSON()?.exceptionReason === reason)
+    await page.getByRole('button', { name: 'Gerekçeyle onayla ve kapat' }).click()
+    const acceptedRequest = await acceptedPost
+    expect(acceptedRequest.postDataJSON()).toMatchObject({ expectedVersion: balanced.version, exceptionReason: reason })
+    expect(acceptedRequest.headers()['idempotency-key']).not.toBe(approvalRequest.headers()['idempotency-key'])
     await expect(page.getByText('Emir kapatıldı', { exact: true })).toBeVisible()
     await expect(page.getByTestId('order-already-closed')).toBeVisible()
 

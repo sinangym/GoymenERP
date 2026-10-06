@@ -121,7 +121,7 @@ public sealed class InventoryStockScrapTests
     }
 
     [Fact]
-    public async Task Record_measures_the_record_permission_twice_and_derives_the_metadata()
+    public async Task Record_measures_the_record_permission_through_the_writer_fence_and_derives_the_metadata()
     {
         var world = new World();
         world.Authority.Roles = ["stok.b", "stok.a"];
@@ -138,7 +138,12 @@ public sealed class InventoryStockScrapTests
         Assert.Equal(("record", InventoryPermissionManifestV1.StockScrapRecord, world.User.UserId!, "Web"),
             (call.Operation, call.Metadata.PermissionCode, call.Metadata.ActorId, call.Metadata.SourceChannel));
         Assert.Equal(new[] { "stok.a", "stok.b" }, call.Metadata.RoleCodes);
-        Assert.Equal(new[] { InventoryPermissionManifestV1.StockScrapRecord, InventoryPermissionManifestV1.StockScrapRecord },
+        Assert.Equal(new[]
+        {
+            InventoryPermissionManifestV1.StockScrapRecord,
+            InventoryPermissionManifestV1.StockScrapRecord,
+            InventoryPermissionManifestV1.StockScrapRecord,
+        },
             world.Authority.Measured);
     }
 
@@ -152,7 +157,12 @@ public sealed class InventoryStockScrapTests
         var call = Assert.Single(world.Writer.Calls);
         Assert.Equal(("decide", ScrapId, InventoryPermissionManifestV1.StockScrapApprove),
             (call.Operation, call.ScrapId, call.Metadata.PermissionCode));
-        Assert.Equal(new[] { InventoryPermissionManifestV1.StockScrapApprove, InventoryPermissionManifestV1.StockScrapApprove },
+        Assert.Equal(new[]
+        {
+            InventoryPermissionManifestV1.StockScrapApprove,
+            InventoryPermissionManifestV1.StockScrapApprove,
+            InventoryPermissionManifestV1.StockScrapApprove,
+        },
             world.Authority.Measured);
     }
 
@@ -203,6 +213,47 @@ public sealed class InventoryStockScrapTests
                     : world.Service().RecordAsync(RecordRequest(), Transport(actor)),
                 403, InventoryStockScrapCodesV1.Forbidden);
             Assert.Empty(world.Writer.Calls);
+        }
+    }
+
+    [Theory]
+    [InlineData("permission-revoked")]
+    [InlineData("actor-changed")]
+    [InlineData("company-changed")]
+    public async Task Authority_lost_inside_the_writer_fence_is_403_and_no_result_is_returned(string fault)
+    {
+        foreach (var decide in new[] { false, true })
+        {
+            var world = new World();
+            world.Writer.BeforeFence = fault switch
+            {
+                "permission-revoked" => () => world.Authority.GrantedPermissions = [],
+                "actor-changed" => () => world.User.UserId = Guid.NewGuid().ToString("D"),
+                "company-changed" => () => world.Context.Set(CompanyB),
+                _ => throw new InvalidOperationException(fault),
+            };
+
+            await Refused(decide
+                    ? world.Service().DecideAsync(ScrapId, DecideRequest(), Transport(world.User.UserId!))
+                    : world.Service().RecordAsync(RecordRequest(), Transport(world.User.UserId!)),
+                403, InventoryStockScrapCodesV1.Forbidden);
+            Assert.Single(world.Writer.Calls);
+        }
+    }
+
+    [Fact]
+    public async Task Cancellation_inside_the_writer_fence_propagates_without_a_result()
+    {
+        foreach (var decide in new[] { false, true })
+        {
+            var world = new World();
+            using var cancellation = new CancellationTokenSource();
+            world.Writer.BeforeFence = cancellation.Cancel;
+
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => decide
+                ? world.Service().DecideAsync(ScrapId, DecideRequest(), Transport(world.User.UserId!), cancellation.Token)
+                : world.Service().RecordAsync(RecordRequest(), Transport(world.User.UserId!), cancellation.Token));
+            Assert.Single(world.Writer.Calls);
         }
     }
 
@@ -446,6 +497,7 @@ public sealed class InventoryStockScrapTests
             Guid companyId,
             CancellationToken cancellationToken = default)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             Measured.Add(permission);
             await Task.Yield();
             var answer = new PermissionScope(GrantedPermissions.Contains(permission), CompanyWide,
@@ -464,22 +516,34 @@ public sealed class InventoryStockScrapTests
         public List<(string Operation, Guid ScrapId, InventoryCommandMetadata Metadata)> Calls { get; } = [];
         public InventoryStockScrapException? Failure { get; set; }
         public InventoryStockScrapResultV1 Result { get; } = new(View(Label1, CompanyA), false, "corr-1");
+        public Action? BeforeFence { get; set; }
 
-        public Task<InventoryStockScrapResultV1> RecordStockScrapAsync(
+        public async Task<InventoryStockScrapResultV1> RecordStockScrapAsync(
             RecordInventoryStockScrapV1 request,
             InventoryCommandMetadata metadata,
-            CancellationToken cancellationToken = default) => Answer("record", request.ScrapId, metadata);
+            Func<CancellationToken, Task> freshAuthorityFence,
+            CancellationToken cancellationToken = default) =>
+            await Answer("record", request.ScrapId, metadata, freshAuthorityFence, cancellationToken);
 
-        public Task<InventoryStockScrapResultV1> DecideStockScrapAsync(
+        public async Task<InventoryStockScrapResultV1> DecideStockScrapAsync(
             Guid scrapId,
             DecideInventoryStockScrapV1 request,
             InventoryCommandMetadata metadata,
-            CancellationToken cancellationToken = default) => Answer("decide", scrapId, metadata);
+            Func<CancellationToken, Task> freshAuthorityFence,
+            CancellationToken cancellationToken = default) =>
+            await Answer("decide", scrapId, metadata, freshAuthorityFence, cancellationToken);
 
-        private Task<InventoryStockScrapResultV1> Answer(string operation, Guid scrapId, InventoryCommandMetadata metadata)
+        private async Task<InventoryStockScrapResultV1> Answer(
+            string operation,
+            Guid scrapId,
+            InventoryCommandMetadata metadata,
+            Func<CancellationToken, Task> freshAuthorityFence,
+            CancellationToken cancellationToken)
         {
             Calls.Add((operation, scrapId, metadata));
-            return Failure is null ? Task.FromResult(Result) : Task.FromException<InventoryStockScrapResultV1>(Failure);
+            BeforeFence?.Invoke();
+            await freshAuthorityFence(cancellationToken);
+            return Failure is null ? Result : throw Failure;
         }
     }
 

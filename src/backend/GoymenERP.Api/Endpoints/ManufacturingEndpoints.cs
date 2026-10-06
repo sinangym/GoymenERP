@@ -2,10 +2,12 @@ using System.Globalization;
 using GoymenERP.Api.Errors;
 using GoymenERP.Api.Multitenancy;
 using GoymenERP.Api.OpenApi;
+using GoymenERP.Api.Shell;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Manufacturing.Application;
 using GoymenERP.Modules.Manufacturing.Domain.Common;
+using GoymenERP.Modules.Settings.Application.Contracts.V1;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Net.Http.Headers;
 
@@ -24,6 +26,7 @@ namespace GoymenERP.Api.Endpoints;
 public static class ManufacturingEndpoints
 {
     private const string IdempotencyHeaderName = "Idempotency-Key";
+    internal const string FixtureDiagnosticHeaderName = "X-Browser-Fixture-Diagnostic";
     private const int MaximumIdempotencyKeyLength = 128;
 
     private static readonly HashSet<string> OutputProductQueryNames =
@@ -345,6 +348,10 @@ public static class ManufacturingEndpoints
             (service, orderId, request, key, cancellationToken) =>
                 service.RecordWorkInProgressAsync(orderId, request, key, ErpPermissions.ManufacturingFactsRecord,
                     cancellationToken));
+        MapFact(group, "/orders/{orderId:guid}/process-losses", "DeclareManufacturingProcessLossV1",
+            (service, orderId, request, key, cancellationToken) =>
+                service.RecordProcessLossAsync(orderId, request, key, ErpPermissions.ManufacturingFactsRecord,
+                    cancellationToken));
 
         group.MapPost("/orders/{orderId:guid}/outputs", async (
                 Guid orderId,
@@ -362,8 +369,9 @@ public static class ManufacturingEndpoints
             .Produces<OrderViewV1>(StatusCodes.Status200OK)
             .WithWriteProblems(notFound: true);
 
-        // MFG-ORD: the close of an order at the version the caller read. The rule is the domain's
-        // (MFG-4, Business 5728619644): no tolerance, no write-off, and an unexplained difference is a
+        // MFG-ORD: the close of an order at the version the caller read. The persisted Settings snapshot
+        // supplies the exact company/process/date tolerance; a reasoned out-of-tolerance close additionally
+        // requires the dedicated exception permission. Neither permission supplies a tolerance value.
         // 422 naming its code. One attempt per Idempotency-Key, like every other write here.
         group.MapPost("/orders/{orderId:guid}/close", async (
                 Guid orderId,
@@ -372,7 +380,9 @@ public static class ManufacturingEndpoints
                 HttpContext httpContext,
                 CancellationToken cancellationToken) =>
             await WriteAsync(httpContext, key => service.CloseOrderAsync(orderId, request, key,
-                ErpPermissions.ManufacturingOrdersClose, cancellationToken)))
+                ErpPermissions.ManufacturingOrdersClose,
+                ErpPermissions.ManufacturingOrdersCloseExceptionApprove,
+                cancellationToken)))
             .RequireCompanyContext()
             .RequireAuthorization(ErpPermissions.ManufacturingOrdersClose)
             .WithIdempotencyContract(StatusCodes.Status200OK, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict)
@@ -538,6 +548,8 @@ public static class ManufacturingEndpoints
     private static IResult ToHttpResult<T>(HttpContext httpContext, ManufacturingApiResult<T> result, string? location)
         where T : class
     {
+        SetFixtureDiagnostic(httpContext, result.Status, result.Code);
+
         if (result.IsReplay)
         {
             httpContext.Response.Headers["Idempotency-Replayed"] = "true";
@@ -569,6 +581,45 @@ public static class ManufacturingEndpoints
             _ => throw new InvalidOperationException("Tanımsız üretim komutu sonucu."),
         };
     }
+
+    internal static void SetFixtureDiagnostic(
+        HttpContext httpContext,
+        ManufacturingApiStatus status,
+        string? code)
+    {
+        if (status != ManufacturingApiStatus.Unavailable
+            || FixtureDiagnosticPhase(code) is not { } phase)
+        {
+            return;
+        }
+
+        var environment = httpContext.RequestServices.GetService<IHostEnvironment>();
+        var configuration = httpContext.RequestServices.GetService<IConfiguration>();
+        if (environment?.IsEnvironment("Testing") != true
+            || !string.Equals(configuration?["BrowserSuiteApi:Profile"], "mfg", StringComparison.Ordinal)
+            || httpContext.RequestServices.GetService<ISettingsManufacturingToleranceProviderV1>()
+                is not C01E2eManufacturingToleranceFixtureProvider)
+        {
+            return;
+        }
+
+        httpContext.Response.Headers[FixtureDiagnosticHeaderName] = phase;
+    }
+
+    internal static string? FixtureDiagnosticPhase(string? code) => code switch
+    {
+        "counterparty_provider_unavailable" => "mfg_plan_party_account",
+        InventoryParentRollCodesV1.Unavailable => "mfg_plan_parent_roll",
+        "product_manufacturing_technical_snapshot_unavailable"
+            or "product_runtime_unconfigured"
+            or "product_family_policy_unavailable"
+            or "product_family_policy_invalid"
+            or "product_manufacturing_measure_undefined" => "mfg_plan_product_snapshot",
+        "settings_provider_unavailable"
+            or "settings_profile_invalid"
+            or "settings_unit_profile_not_found" => "mfg_plan_settings_profile",
+        _ => null,
+    };
 
     private static IResult Problem(int statusCode, string code, string? field, long? expectedVersion = null,
         long? currentVersion = null)
@@ -682,6 +733,18 @@ internal static class ManufacturingProblemCodes
         ManufacturingRuleCodes.PlanNotApproved,
         ManufacturingRuleCodes.OrderClosed,
         ManufacturingRuleCodes.UnexplainedDifference,
+        GoymenERP.Modules.Manufacturing.Domain.Orders.ClosureAssessmentCodesV1.PolicyInvalid,
+        GoymenERP.Modules.Manufacturing.Domain.Orders.ClosureAssessmentCodesV1.PolicyNotEffective,
+        GoymenERP.Modules.Manufacturing.Domain.Orders.ClosureAssessmentCodesV1.PolicyScopeMismatch,
+        GoymenERP.Modules.Manufacturing.Domain.Orders.ClosureAssessmentCodesV1.FireDeclarationRequired,
+        GoymenERP.Modules.Manufacturing.Domain.Orders.ClosureAssessmentCodesV1.ApprovalRequired,
+        GoymenERP.Modules.Manufacturing.Domain.Orders.ClosureAssessmentCodesV1.ApprovalInvalid,
+        GoymenERP.Modules.Manufacturing.Domain.Orders.ClosureAssessmentCodesV1.ApprovalUnexpected,
+        GoymenERP.Modules.Manufacturing.Domain.Orders.ClosureAssessmentCodesV1.RollInputInvalid,
+        GoymenERP.Modules.Manufacturing.Domain.Orders.ClosureAssessmentCodesV1.FireMassMismatch,
+        GoymenERP.Modules.Manufacturing.Domain.Orders.ClosureAssessmentCodesV1.NetIssuedMassMismatch,
+        GoymenERP.Modules.Manufacturing.Domain.Orders.ClosureAssessmentCodesV1.NegativeDifferenceReview,
+        GoymenERP.Modules.Settings.Application.Contracts.V1.SettingsPrerequisiteCodesV1.ManufacturingToleranceProfileNotFound,
         ManufacturingRuleCodes.RollNotInOrder,
         ManufacturingRuleCodes.RollNotIssued,
         ManufacturingRuleCodes.InputAlreadyIssued,

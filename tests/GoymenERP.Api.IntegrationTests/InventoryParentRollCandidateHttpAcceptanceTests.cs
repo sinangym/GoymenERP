@@ -38,6 +38,7 @@ public sealed class InventoryParentRollCandidateHttpAcceptanceTests(GoymenErpApi
         var item = Assert.Single(document.RootElement.GetProperty("items").EnumerateArray());
         Assert.Equal(LabelId, item.GetProperty("labelId").GetGuid());
         Assert.Equal("3", item.GetProperty("labelVersion").GetString());
+        Assert.Equal("7", item.GetProperty("productVersion").GetString());
         Assert.Equal("8", item.GetProperty("unblockedPhysicalKg").GetString());
         Assert.True(item.GetProperty("productionUseRequiresRevalidation").GetBoolean());
     }
@@ -205,7 +206,10 @@ public sealed class InventoryParentRollCandidateHttpAcceptanceTests(GoymenErpApi
                 LocationId, ProductId, "Free", "8")],
             true,
             null,
-            true),
+            true)
+        {
+            ProductVersion = "7",
+        },
     ], false);
 
     private static void AssertPrivateNoStore(HttpResponseMessage response)

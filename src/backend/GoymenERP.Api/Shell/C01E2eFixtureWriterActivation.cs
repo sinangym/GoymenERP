@@ -1,7 +1,14 @@
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
 using GoymenERP.Api.ProductRuntime;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
+using GoymenERP.Modules.Accounting.Application;
+using GoymenERP.Modules.Accounting.Domain.Journals;
+using GoymenERP.Modules.Accounting.Domain.Posting;
 using GoymenERP.Modules.Accounting.Infrastructure.Fixtures;
+using GoymenERP.Modules.Finance.Infrastructure.Fixtures;
 using GoymenERP.Modules.Identity.Infrastructure.Fixtures;
 using GoymenERP.Modules.Logistics.Infrastructure.Fixtures;
 using GoymenERP.Modules.Product.Infrastructure.Fixtures;
@@ -10,6 +17,7 @@ using GoymenERP.Modules.Purchasing.Infrastructure.Fixtures;
 using GoymenERP.Modules.Sales.Infrastructure.Fixtures;
 using GoymenERP.Modules.Settings.Application;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace GoymenERP.Api.Shell;
 
@@ -72,6 +80,10 @@ internal static class C01E2eFixtureWriterActivation
         // r14: Product's fixed Active stock candidate. It is not made Sellable or Purchasable.
         services.AddProductStockCandidateFixtureStore(CreateProductFixtureUnitProfiles);
         services.AddScoped<C01E2eProductStockCandidateFixtureWriter>();
+        // l04: Product's separate fixed Active+Purchasable+Sellable card, shared by the purchase,
+        // stock and sales readers only inside this complete runner-bound fixture gate.
+        services.AddProductPurchaseSalesStockJourneyFixtureStore(CreateProductFixtureUnitProfiles);
+        services.AddScoped<C01E2eProductPurchaseSalesStockJourneyFixtureWriter>();
         // s04 (SALES-A1 browser acceptance): Sales's draft port (SİPARİŞ's), behind the same gate.
         services.AddSalesDraftFixtureStore();
         services.AddScoped<C01E2eSalesDraftFixtureWriter>();
@@ -84,9 +96,19 @@ internal static class C01E2eFixtureWriterActivation
         // acc01 ACC01-09: Accounting's fixed SENTETIK posted journal in the fin01 Open period above, through the owner's
         // posting path. The seed's host scope has no request user, so its amount check reads Settings as the fixture identity.
         services.AddAccountingPostedJournalFixtureStore(CreateAccountingFixtureSettings);
+        // ACC01-10: one recorded Finance source plus one exact approved Accounting mirror/rule. Both
+        // exist only behind this complete gate. The writer prepares and activates the binding through
+        // Accounting's durable catalog; neither this host nor the read host replaces its resolver.
+        services.AddFinanceRecordedReceiptFixtureStore();
+        services.AddScoped<C01E2eFinanceNormalJournalSourceFixtureWriter>();
         // pur01: one synthetic Draft Purchasing order. Approval and replay remain real API commands.
         services.AddPurchaseOrderFixtureStore();
         services.AddScoped<C01E2ePurchaseOrderFixtureWriter>();
+        // mfg01: an explicitly disposable 5% tolerance exists only inside the complete runner gate.
+        // Production keeps ApprovedSettingsPrerequisiteProvider and its intentionally empty catalog.
+        services.RemoveAll<ISettingsManufacturingToleranceProviderV1>();
+        services.AddScoped<ISettingsManufacturingToleranceProviderV1,
+            C01E2eManufacturingToleranceFixtureProvider>();
         return true;
     }
 
@@ -170,6 +192,308 @@ internal static class C01E2eFixtureWriterActivation
             }
             CompanyId = companyId;
         }
+    }
+}
+
+public static class C01E2eApprovedNormalJournalSourceBindingCatalog
+{
+    internal static readonly Guid PackageId = Guid.Parse("b2100000-0000-4000-8000-00000000ac10");
+    internal static readonly Guid ApprovedBy = Guid.Parse("b2100000-0000-4000-8000-00000000ac02");
+    private static readonly Guid DebitAccountId = Guid.Parse("b7000000-0000-4000-8000-000000000711");
+    private static readonly Guid CreditAccountId = Guid.Parse("b7000000-0000-4000-8000-000000000712");
+    internal static readonly DateTimeOffset ApprovedAt =
+        new(2026, 9, 24, 12, 0, 0, TimeSpan.Zero);
+    internal const string AccountPlanSourceVersion = "SENTETIK-ACC01-MIRROR-V1";
+
+    internal static ApprovedAccountingSourcePackagePreviewV1 CreatePreview(
+        FinanceRecordedReceiptFixtureOutput source,
+        IApprovedAccountingSourcePackageParserV1 parser)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        ArgumentNullException.ThrowIfNull(parser);
+        var accounts = Encoding.UTF8.GetBytes(string.Join("\n",
+        [
+            ApprovedAccountingSourcePackageTemplateV1.AccountsHeader,
+            $"{DebitAccountId:D},SENTETIK-100,Sentetik borc hesabi",
+            $"{CreditAccountId:D},SENTETIK-120,Sentetik alacak hesabi",
+            string.Empty,
+        ]));
+        var mappings = Encoding.UTF8.GetBytes(string.Join("\n",
+        [
+            ApprovedAccountingSourcePackageTemplateV1.MappingsHeader,
+            $"{source.SourceId:D},{NormalJournalSourceKindsV1.RecordedManualReceipt},{source.SourceVersion}," +
+            $"{source.OwnerProfileId},{source.OwnerProfileVersion},{source.CurrencyId:D},approved-normal-journal," +
+            $"SENTETIK-ACC01-RULE-V1,approved-debit,Debit,{DebitAccountId:D}",
+            $"{source.SourceId:D},{NormalJournalSourceKindsV1.RecordedManualReceipt},{source.SourceVersion}," +
+            $"{source.OwnerProfileId},{source.OwnerProfileVersion},{source.CurrencyId:D},approved-normal-journal," +
+            $"SENTETIK-ACC01-RULE-V1,approved-credit,Credit,{CreditAccountId:D}",
+            string.Empty,
+        ]));
+        var preview = parser.Preview(
+            new TrustedAccountingSourceApprovalContextV1(source.CompanyId, ApprovedBy, ApprovedAt),
+            new ApprovedAccountingSourcePackagePreviewRequestV1(AccountPlanSourceVersion, accounts, mappings));
+        if (!preview.IsValid)
+        {
+            throw new InvalidOperationException("The ACC01 durable source package is invalid.");
+        }
+        return preview;
+    }
+
+    internal static void RequireExact(
+        ApprovedAccountingSourceCatalogRecordV1 record,
+        FinanceRecordedReceiptFixtureOutput source,
+        ApprovedAccountingSourcePackagePreviewV1 preview)
+    {
+        var binding = record.Package.Bindings.Count == 1 ? record.Package.Bindings[0] : null;
+        if (record.PackageId != PackageId || record.CompanyId != source.CompanyId
+            || !string.Equals(record.TemplateVersion, preview.TemplateVersion, StringComparison.Ordinal)
+            || !string.Equals(record.AccountPlanSourceVersion, AccountPlanSourceVersion, StringComparison.Ordinal)
+            || !string.Equals(record.AccountsSourceSha256, preview.AccountsSourceSha256,
+                StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(record.PostingMappingsSourceSha256, preview.PostingMappingsSourceSha256,
+                StringComparison.OrdinalIgnoreCase)
+            || binding is null || binding.CompanyId != source.CompanyId || binding.SourceId != source.SourceId
+            || binding.CurrencyId != source.CurrencyId
+            || !string.Equals(binding.SourceKind, NormalJournalSourceKindsV1.RecordedManualReceipt,
+                StringComparison.Ordinal)
+            || !string.Equals(binding.SourceVersion, source.SourceVersion, StringComparison.Ordinal)
+            || !string.Equals(binding.OwnerProfileId, source.OwnerProfileId, StringComparison.Ordinal)
+            || !string.Equals(binding.OwnerProfileVersion, source.OwnerProfileVersion, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("The ACC01 durable catalog is bound to another source or package.");
+        }
+    }
+}
+
+public sealed class C01E2eFinanceNormalJournalSourceFixtureWriter
+{
+    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
+    private readonly IFinanceRecordedReceiptFixtureStore _finance;
+    private readonly IApprovedAccountingSourcePackageParserV1 _parser;
+    private readonly IApprovedAccountingSourceCatalogStoreV1 _catalog;
+    private readonly IHostEnvironment _environment;
+    private readonly IConfiguration _configuration;
+
+    public C01E2eFinanceNormalJournalSourceFixtureWriter(
+        IHostEnvironment environment,
+        IConfiguration configuration,
+        IFinanceRecordedReceiptFixtureStore finance,
+        IApprovedAccountingSourcePackageParserV1 parser,
+        IApprovedAccountingSourceCatalogStoreV1 catalog)
+    {
+        C01E2eFixtureWriterActivation.RequireGate(environment, configuration);
+        _environment = environment;
+        _configuration = configuration;
+        _finance = finance;
+        _parser = parser;
+        _catalog = catalog;
+    }
+
+    public async Task EnsureAsync(CancellationToken cancellationToken)
+    {
+        var source = await _finance.EnsureAsync(cancellationToken);
+        var preview = C01E2eApprovedNormalJournalSourceBindingCatalog.CreatePreview(source, _parser);
+        var record = await _catalog.ReadAsync(
+            C01E2eApprovedNormalJournalSourceBindingCatalog.PackageId, cancellationToken);
+        if (record is null)
+        {
+            (record, _) = await _catalog.PrepareAsync(
+                C01E2eApprovedNormalJournalSourceBindingCatalog.PackageId,
+                preview,
+                C01E2eApprovedNormalJournalSourceBindingCatalog.ApprovedBy,
+                C01E2eApprovedNormalJournalSourceBindingCatalog.ApprovedAt,
+                FenceAsync,
+                Metadata(ApprovedAccountingSourceCatalogPermissionNamesV1.Prepare,
+                    ApprovedAccountingSourceCatalogCommandNamesV1.Prepare, "acc01-source-catalog-prepare"),
+                cancellationToken);
+        }
+
+        C01E2eApprovedNormalJournalSourceBindingCatalog.RequireExact(record, source, preview);
+        if (record.Status == ApprovedAccountingSourceCatalogStatusV1.Prepared)
+        {
+            record = await _catalog.ActivateAsync(
+                record.PackageId,
+                record.Version,
+                0,
+                C01E2eApprovedNormalJournalSourceBindingCatalog.ApprovedBy,
+                C01E2eApprovedNormalJournalSourceBindingCatalog.ApprovedAt,
+                FenceAsync,
+                Metadata(ApprovedAccountingSourceCatalogPermissionNamesV1.Activate,
+                    ApprovedAccountingSourceCatalogCommandNamesV1.Activate, "acc01-source-catalog-activate"),
+                cancellationToken);
+        }
+
+        C01E2eApprovedNormalJournalSourceBindingCatalog.RequireExact(record, source, preview);
+        if (record.Status != ApprovedAccountingSourceCatalogStatusV1.Active || record.CatalogVersion != 1)
+        {
+            throw new InvalidOperationException("The ACC01 durable source package is not the first active catalog.");
+        }
+    }
+
+    private Task FenceAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        C01E2eFixtureWriterActivation.RequireGate(_environment, _configuration);
+        return Task.CompletedTask;
+    }
+
+    private static AccountingCommandMetadata Metadata(string permission, string command, string key)
+    {
+        var actor = C01E2eApprovedNormalJournalSourceBindingCatalog.ApprovedBy.ToString("D");
+        var correlation = $"c01-{key}";
+        return new AccountingCommandMetadata(
+            actor,
+            permission,
+            Array.Empty<string>(),
+            correlation,
+            null,
+            key,
+            "browser-suite-fixture",
+            Completion: result => new AccountingCommandRecord(
+                command,
+                Sha(key),
+                actor,
+                Sha($"{command}|{C01E2eApprovedNormalJournalSourceBindingCatalog.PackageId:D}"),
+                JsonSerializer.Serialize(result, Json),
+                correlation));
+    }
+
+    private static string Sha(string value) =>
+        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value)));
+}
+
+/// <summary>
+/// Opens fixed read-only reference data in the disposable browser API only. This is deliberately
+/// separate from the in-process fixture-writer gate: no writer key or writer service reaches the web API.
+/// </summary>
+internal static class BrowserSuiteApiReadFixtureActivation
+{
+    internal const string ProfileConfigurationKey = "BrowserSuiteApi:Profile";
+    internal const string DisposableConfigurationKey = "BrowserSuiteApi:Disposable";
+    internal const string TestedCommitConfigurationKey = "BrowserSuiteApi:TestedCommit";
+    internal const string RunIdConfigurationKey = "BrowserSuiteApi:RunId";
+    internal const string ComposeProjectConfigurationKey = "BrowserSuiteApi:ComposeProject";
+    internal const string ManufacturingProfile = "mfg";
+    internal const string AccountingProfile = "acc01";
+
+    private static readonly string[] ConfigurationKeys =
+    [
+        ProfileConfigurationKey,
+        DisposableConfigurationKey,
+        TestedCommitConfigurationKey,
+        RunIdConfigurationKey,
+        ComposeProjectConfigurationKey,
+    ];
+
+    internal static bool Configure(
+        IServiceCollection services,
+        IHostEnvironment environment,
+        IConfiguration configuration)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(environment);
+        ArgumentNullException.ThrowIfNull(configuration);
+
+        if (!ConfigurationKeys.Any(key => configuration[key] is not null))
+        {
+            return false;
+        }
+
+        RequireGate(environment, configuration);
+        var profile = configuration[ProfileConfigurationKey];
+        if (string.Equals(profile, ManufacturingProfile, StringComparison.Ordinal))
+        {
+            services.RemoveAll<ISettingsManufacturingToleranceProviderV1>();
+            services.AddScoped<ISettingsManufacturingToleranceProviderV1,
+                C01E2eManufacturingToleranceFixtureProvider>();
+        }
+        else if (string.Equals(profile, AccountingProfile, StringComparison.Ordinal))
+        {
+            // The disposable API consumes Finance and Accounting through their normal production
+            // readers. The fixture writer has already persisted and activated the exact package.
+        }
+
+        return true;
+    }
+
+    private static void RequireGate(IHostEnvironment environment, IConfiguration configuration)
+    {
+        var profile = configuration[ProfileConfigurationKey];
+        if (!environment.IsEnvironment("Testing")
+            || profile is not (ManufacturingProfile or AccountingProfile)
+            || !string.Equals(configuration[DisposableConfigurationKey], "CONFIRMED", StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                "Browser-suite API read fixtures require a confirmed supported Testing profile.");
+        }
+
+        var testedCommit = configuration[TestedCommitConfigurationKey] ?? string.Empty;
+        if (testedCommit.Length != 40
+            || testedCommit.Any(character => character is not (>= '0' and <= '9') and not (>= 'a' and <= 'f')))
+        {
+            throw new InvalidOperationException(
+                "Browser-suite API read fixtures require the exact lowercase tested commit.");
+        }
+
+        var runId = configuration[RunIdConfigurationKey] ?? string.Empty;
+        if (runId.Length == 0 || runId.Any(character => character is < '0' or > '9'))
+        {
+            throw new InvalidOperationException(
+                "Browser-suite API read fixtures require a numeric runner id.");
+        }
+
+        var composeProject = configuration[ComposeProjectConfigurationKey] ?? string.Empty;
+        var expectedPrefix = $"goymen-c01-{runId}-";
+        var attempt = composeProject.StartsWith(expectedPrefix, StringComparison.Ordinal)
+            ? composeProject[expectedPrefix.Length..]
+            : string.Empty;
+        if (attempt.Length == 0 || attempt.Any(character => character is < '0' or > '9'))
+        {
+            throw new InvalidOperationException(
+                "Browser-suite API read fixtures require the runner-bound compose project.");
+        }
+    }
+}
+
+/// <summary>
+/// Browser-suite-only Manufacturing tolerance reference. It is a fixed fixture snapshot, not a fallback,
+/// production catalog, permission or close authority.
+/// </summary>
+internal sealed class C01E2eManufacturingToleranceFixtureProvider(
+    ICompanyContext companyContext,
+    ICurrentUser currentUser) : ISettingsManufacturingToleranceProviderV1
+{
+    private static readonly Guid ProfileId = Guid.Parse("7f100000-0000-4000-8000-000000000005");
+
+    public Task<ManufacturingToleranceProfileV1> GetManufacturingToleranceAsync(
+        string process,
+        DateOnly effectiveOn,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!currentUser.IsAuthenticated
+            || string.IsNullOrWhiteSpace(currentUser.UserId)
+            || !companyContext.IsResolved
+            || companyContext.CompanyId != ApprovedUnitProfileCatalog.GdcCompanyId
+            || !currentUser.CanAccessCompany(companyContext.CompanyId))
+        {
+            throw new SettingsPrerequisiteException("settings_access_denied");
+        }
+
+        if (!SettingsManufacturingProcessesV1.IsCanonical(process))
+        {
+            throw new SettingsPrerequisiteException(
+                SettingsPrerequisiteCodesV1.ManufacturingToleranceProfileNotFound);
+        }
+
+        return Task.FromResult(new ManufacturingToleranceProfileV1(
+            companyContext.CompanyId,
+            process,
+            new ProfileVersionV1(ProfileId, 1),
+            5m,
+            true,
+            new DateOnly(2026, 1, 1),
+            new DateOnly(2026, 12, 31)));
     }
 }
 
@@ -329,6 +653,27 @@ public sealed class C01E2eProductStockCandidateFixtureWriter
 
     public Task<ProductStockCandidateFixtureOutput> EnsureAsync(CancellationToken cancellationToken) =>
         _store.EnsureAsync(cancellationToken);
+}
+
+/// <summary>
+/// Exposes Product's fixed l04 purchase-to-delivery card only inside the complete browser-runner gate.
+/// The Product-owned port accepts no caller-selected identity, product, role or business value.
+/// </summary>
+public sealed class C01E2eProductPurchaseSalesStockJourneyFixtureWriter
+{
+    private readonly IProductPurchaseSalesStockJourneyFixtureStore _store;
+
+    public C01E2eProductPurchaseSalesStockJourneyFixtureWriter(
+        IHostEnvironment environment,
+        IConfiguration configuration,
+        IProductPurchaseSalesStockJourneyFixtureStore store)
+    {
+        C01E2eFixtureWriterActivation.RequireGate(environment, configuration);
+        _store = store;
+    }
+
+    public Task<ProductPurchaseSalesStockJourneyFixtureOutput> EnsureAsync(
+        CancellationToken cancellationToken) => _store.EnsureAsync(cancellationToken);
 }
 
 /// <summary>
