@@ -28,6 +28,8 @@ public sealed class InventoryStockPositionTests
         Assert.Equal(("Company", Company, "Company", Company),
             (item.OwnerKind, item.OwnerId, item.CustodianKind, item.CustodianId));
         Assert.Equal("3", item.LabelVersion);
+        Assert.Null(item.ProductVersion);
+        Assert.Null(item.Classification);
         Assert.Equal(new InventoryLotV1(item.Lot.Id, "HEAT-1", null), item.Lot);
     }
 
@@ -87,11 +89,87 @@ public sealed class InventoryStockPositionTests
         world.Reader.HasMore = true;
         var page = await world.Service().SearchAsync(new(" SYN ", 1));
         Assert.True(page.SearchWindowFull);
-        Assert.Equal((Company, "SYN", 1), world.Reader.Query);
+        Assert.Equal(Company, world.Reader.CompanyId);
+        Assert.Equal(("SYN", 1), (world.Reader.Query.Q, world.Reader.Query.Limit));
+        Assert.False(string.IsNullOrWhiteSpace(page.NextCursor));
 
         world.Reader.Record = null;
+        world.Reader.HasMore = false;
         page = await world.Service().SearchAsync(new());
         Assert.Empty(page.Items);
+    }
+
+    [Fact]
+    public async Task Filters_and_cursor_are_normalized_bound_and_forwarded_without_changing_quantity_semantics()
+    {
+        var world = new World();
+        var record = Record(classification: LabelClassification.SecondQuality, productVersion: "17");
+        world.Reader.Record = record;
+        world.Reader.HasMore = true;
+        var place = Assert.Single(record.Balances).Position;
+        var first = await world.Service().SearchAsync(new(
+            " ROLL ", 25, null, record.Label.ProductId, place.LocationId,
+            InventoryLabelClassificationV1.SecondQuality, "Company", Company));
+
+        var item = Assert.Single(first.Items);
+        Assert.Equal(("17", "SecondQuality"), (item.ProductVersion, item.Classification));
+        Assert.NotNull(first.NextCursor);
+        Assert.Equal((record.Label.ProductId, place.LocationId, InventoryLabelClassificationV1.SecondQuality,
+                StockPartyKind.Company, Company),
+            (world.Reader.Query.ProductId, world.Reader.Query.LocationId, world.Reader.Query.Classification,
+                world.Reader.Query.OwnerKind, world.Reader.Query.OwnerId));
+
+        world.Reader.HasMore = false;
+        await world.Service().SearchAsync(new(
+            " ROLL ", 25, first.NextCursor, record.Label.ProductId, place.LocationId,
+            InventoryLabelClassificationV1.SecondQuality, "Company", Company));
+        Assert.NotNull(world.Reader.Query.After);
+    }
+
+    [Theory]
+    [InlineData("owner-without-id")]
+    [InlineData("id-without-owner")]
+    [InlineData("bad-owner")]
+    [InlineData("empty-product")]
+    public async Task Invalid_filters_are_rejected_before_SQL(string invalid)
+    {
+        var world = new World();
+        var query = invalid switch
+        {
+            "owner-without-id" => new InventoryStockPositionQueryV1(OwnerKind: "Company"),
+            "id-without-owner" => new InventoryStockPositionQueryV1(OwnerId: Company),
+            "bad-owner" => new InventoryStockPositionQueryV1(OwnerKind: "company", OwnerId: Company),
+            _ => new InventoryStockPositionQueryV1(ProductId: Guid.Empty),
+        };
+
+        await Refused(world.Service().SearchAsync(query), 400, InventoryStockPositionCodesV1.InvalidQuery);
+        Assert.Equal(0, world.Reader.Reads);
+    }
+
+    [Fact]
+    public async Task Cursor_is_bound_to_company_actor_and_every_filter()
+    {
+        var world = new World();
+        world.Reader.HasMore = true;
+        var first = await world.Service().SearchAsync(new("A", 25));
+        Assert.NotNull(first.NextCursor);
+
+        await Refused(world.Service().SearchAsync(new("B", 25, first.NextCursor)),
+            400, InventoryStockPositionCodesV1.InvalidQuery);
+        world.User.UserId = Guid.NewGuid().ToString();
+        await Refused(world.Service().SearchAsync(new("A", 25, first.NextCursor)),
+            400, InventoryStockPositionCodesV1.InvalidQuery);
+    }
+
+    [Fact]
+    public async Task Missing_cursor_provider_fails_closed_without_releasing_a_partial_window()
+    {
+        var world = new World();
+        world.Reader.HasMore = true;
+        await Refused(new InventoryStockPositionService(world.Context, world.User, world.Authority, world.Reader)
+            .SearchAsync(new()), 503, InventoryStockPositionCodesV1.Unavailable);
+        await Refused(new InventoryStockPositionService(world.Context, world.User, world.Authority, world.Reader)
+            .SearchAsync(new(Cursor: "opaque")), 503, InventoryStockPositionCodesV1.Unavailable);
     }
 
     [Theory]
@@ -172,11 +250,17 @@ public sealed class InventoryStockPositionTests
         decimal freeKg = 10m,
         decimal blockedKg = 0m,
         decimal allocatedKg = 0m,
-        bool customerOwned = false)
+        bool customerOwned = false,
+        LabelClassification? classification = null,
+        string? productVersion = null)
     {
         var productId = Guid.NewGuid();
         var lot = new MaterialLot(Guid.NewGuid(), Company, productId, "HEAT-1", null);
-        var label = new MaterialLabel(Guid.NewGuid(), Company, "SYN-ST-01", productId, lot.Id);
+        var label = new MaterialLabel(Guid.NewGuid(), Company, "SYN-ST-01", productId, lot.Id, productVersion);
+        if (classification.HasValue)
+        {
+            label.Classify(classification.Value);
+        }
         var owner = new StockOwner(
             customerOwned ? StockPartyKind.Counterparty : StockPartyKind.Company,
             customerOwned ? Guid.NewGuid() : Company);
@@ -210,7 +294,10 @@ public sealed class InventoryStockPositionTests
         public User User { get; } = new();
         public Authority Authority { get; } = new();
         public Reader Reader { get; } = new();
-        public InventoryStockPositionService Service() => new(Context, User, Authority, Reader);
+        private readonly InventoryStockPositionCursorCodec cursors = new(
+            new InventoryStockPositionCursorRuntimeOptions(Convert.ToBase64String(new byte[32])),
+            TimeProvider.System);
+        public InventoryStockPositionService Service() => new(Context, User, Authority, Reader, cursors);
     }
 
     private sealed class Context : ICompanyContext
@@ -253,16 +340,17 @@ public sealed class InventoryStockPositionTests
         public bool Fail { get; set; }
         public bool HasMore { get; set; }
         public int Reads { get; private set; }
-        public (Guid CompanyId, string Q, int Limit) Query { get; private set; }
+        public Guid CompanyId { get; private set; }
+        public InventoryStockPositionReadQuery Query { get; private set; } = null!;
 
         public async Task<InventoryStockPositionWindow> SearchAsync(
             Guid companyId,
-            string q,
-            int limit,
+            InventoryStockPositionReadQuery query,
             CancellationToken cancellationToken)
         {
             Reads++;
-            Query = (companyId, q, limit);
+            CompanyId = companyId;
+            Query = query;
             await Task.Yield();
             During?.Invoke();
             if (Fail)
@@ -270,7 +358,9 @@ public sealed class InventoryStockPositionTests
                 throw new InvalidOperationException("Provider failure");
             }
 
-            return new InventoryStockPositionWindow(Record is null ? [] : [Record], HasMore);
+            var records = Record is null ? Array.Empty<InventoryStockPositionRecord>() : [Record];
+            return new InventoryStockPositionWindow(records, HasMore,
+                records.Length == 0 ? null : new(records[^1].Label.Code, records[^1].Label.Id));
         }
     }
 }
