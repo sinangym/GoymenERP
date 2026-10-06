@@ -13,6 +13,7 @@ import { describe, expect, it } from 'vitest'
 import { matchPath } from 'react-router'
 import { CAPABILITY, CAPABILITY_ROUTE, CAPABILITY_NAV_LABEL } from './capabilities'
 import { SALES_CAPABILITY, SALES_ROUTE, salesDetailPath } from '../sales/capabilities'
+import { NAV_CAPABILITIES } from './AppShell'
 
 describe('shell ↔ Sales lane capability ids', () => {
   it('declares the same three ids the lane does', () => {
@@ -48,9 +49,11 @@ describe('shell ↔ Sales lane capability ids', () => {
     expect(matchPath(CAPABILITY_ROUTE[CAPABILITY.salesDraftsList], salesDetailPath(draftId))).toBeNull()
   })
 
-  it('gives the list and the create screen nav entries, and the 360 none', () => {
+  it('keeps one Sales work-list nav entry while create stays mounted behind the list action', () => {
     expect(CAPABILITY_NAV_LABEL[CAPABILITY.salesDraftsList]).toBe('Sipariş Taslakları')
-    expect(CAPABILITY_NAV_LABEL[CAPABILITY.salesDraftsCreate]).toBe('Yeni Sipariş Taslağı')
+    expect(CAPABILITY_NAV_LABEL[CAPABILITY.salesDraftsCreate]).toBe('')
     expect(CAPABILITY_NAV_LABEL[CAPABILITY.salesDraftsDetail]).toBe('')
+    expect(NAV_CAPABILITIES).toContain(CAPABILITY.salesDraftsList)
+    expect(NAV_CAPABILITIES).not.toContain(CAPABILITY.salesDraftsCreate)
   })
 })

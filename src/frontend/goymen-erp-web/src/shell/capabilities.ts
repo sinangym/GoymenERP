@@ -374,7 +374,8 @@ export const CAPABILITY_NAV_LABEL: Record<CapabilityId, string> = {
   // ORG-04: reached from a work-centre row, never from the sidebar; Organization keeps two entries.
   [CAPABILITY.organizationWorkCentersDetail]: '',
   [CAPABILITY.salesDraftsList]: 'Sipariş Taslakları',
-  [CAPABILITY.salesDraftsCreate]: 'Yeni Sipariş Taslağı',
+  // K5: creation is reached through the list's authorised action, never a parallel sidebar entry.
+  [CAPABILITY.salesDraftsCreate]: '',
   // Nor this one: the 360 is reached from a list row, never from the sidebar.
   [CAPABILITY.salesDraftsDetail]: '',
   [CAPABILITY.manufacturingOrdersList]: 'Üretim emirleri',

@@ -26,7 +26,7 @@
  */
 
 import { randomUUID } from 'node:crypto'
-import { expect, test, type APIRequestContext } from '@playwright/test'
+import { expect, test, type APIRequestContext, type Page } from '@playwright/test'
 import { readEnvironment } from '../src/env.js'
 
 const env = readEnvironment()
@@ -45,6 +45,50 @@ const PREPARER_IDENTITY_ID = 'b2000000-0000-4000-8000-000000000401'
 const journey: { priceListId?: string; draftId?: string; lineId?: string } = {}
 
 test.describe.configure({ mode: 'serial' })
+
+const shellNavigation = (page: Page) => page.getByRole('navigation', { name: 'Modül navigasyonu' })
+
+async function expectExactShellNavigation(page: Page, viewport: { width: number; height: number }): Promise<void> {
+  await page.setViewportSize(viewport)
+  await page.setExtraHTTPHeaders({ 'X-Development-User': preparerActor })
+
+  await page.goto('/satis/siparisler/yeni')
+  await expect(page.getByRole('heading', { level: 1, name: 'Yeni satış siparişi taslağı' })).toBeVisible()
+  await expect(shellNavigation(page).getByRole('link', { name: 'Sipariş Taslakları' })).toBeVisible()
+  await expect(shellNavigation(page).getByRole('link', { name: 'Yeni Sipariş Taslağı' })).toHaveCount(0)
+  await expect(shellNavigation(page).getByRole('link', { name: 'Fiyat listeleri' })).toBeVisible()
+  await expect(shellNavigation(page).locator('[aria-current="page"]')).toHaveCount(0)
+
+  await page.goto('/satis/siparisler')
+  await expect(page.getByRole('heading', { level: 1, name: 'Satış siparişi taslakları' })).toBeVisible()
+  await expect(page.getByRole('main').getByRole('link', { name: 'Yeni taslak' })).toHaveCount(1)
+  await expect(shellNavigation(page).getByRole('link', { name: 'Yeni Sipariş Taslağı' })).toHaveCount(0)
+  await expect(shellNavigation(page).locator('[aria-current="page"]')).toHaveCount(1)
+  await expect(shellNavigation(page).getByRole('link', { name: 'Sipariş Taslakları' })).toHaveAttribute('aria-current', 'page')
+
+  await page.goto('/fiyat-listeleri')
+  await expect(page.getByRole('heading', { level: 1, name: 'Fiyat listeleri' })).toBeVisible()
+  await expect(shellNavigation(page).locator('[aria-current="page"]')).toHaveCount(1)
+  await expect(shellNavigation(page).getByRole('link', { name: 'Fiyat listeleri' })).toHaveAttribute('aria-current', 'page')
+}
+
+test('S04-NAV-01 exact Sales and price-list entry points stay correct on desktop and mobile', async ({ page, request }) => {
+  const preparerCapabilities = await capabilitiesOf(request, preparerActor)
+  expect(preparerCapabilities).toEqual(expect.arrayContaining([
+    'sales.drafts.list', 'sales.drafts.create', 'price-lists.list',
+  ]))
+  const readerCapabilities = await capabilitiesOf(request, readerActor)
+  expect(readerCapabilities).toContain('sales.drafts.list')
+  expect(readerCapabilities).not.toContain('price-lists.list')
+
+  await expectExactShellNavigation(page, { width: 1400, height: 900 })
+  await expectExactShellNavigation(page, { width: 390, height: 844 })
+
+  await page.setExtraHTTPHeaders({ 'X-Development-User': readerActor })
+  await page.goto('/satis/siparisler')
+  await expect(shellNavigation(page).getByRole('link', { name: 'Sipariş Taslakları' })).toBeVisible()
+  await expect(shellNavigation(page).getByRole('link', { name: 'Fiyat listeleri' })).toHaveCount(0)
+})
 
 function readHeaders(actor: string): Record<string, string> {
   return { 'X-Development-User': actor, 'X-Company-Id': companyId }
