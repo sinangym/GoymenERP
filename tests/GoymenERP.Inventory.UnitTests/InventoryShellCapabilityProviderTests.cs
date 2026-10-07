@@ -17,7 +17,7 @@ public sealed class InventoryShellCapabilityProviderTests
             item => item.CapabilityId == InventoryShellCapabilityProvider.OpeningStockCapabilityId);
 
         Assert.Equal("INVENTORY", provider.Owner);
-        Assert.Equal("1.6", provider.ContractVersion);
+        Assert.Equal("1.7", provider.ContractVersion);
         Assert.Equal(ErpPermissions.InventoryOpeningStockRecord, declaration.CapabilityId);
         Assert.Equal("inventory.opening-stock", declaration.RouteId);
         Assert.Equal("/stok/acilis", declaration.RoutePath);
@@ -43,10 +43,30 @@ public sealed class InventoryShellCapabilityProviderTests
         Assert.Equal(ShellCapabilityContextRequirement.SingleCompany, declaration.ContextRequirement);
         Assert.Equal(ShellCapabilityScopeRequirement.CompanyWide, declaration.ScopeRequirement);
         Assert.Equal(
-            [ErpPermissions.InventoryLabelsRead, ErpPermissions.InventoryBalancesRead],
+            [
+                ErpPermissions.InventoryLabelsRead,
+                ErpPermissions.InventoryBalancesRead,
+                ErpPermissions.ProductOperationalSelectionRead,
+            ],
             declaration.RequiredPermissions);
         Assert.True(declaration.ImplementationAvailable);
         Assert.Null(declaration.ParentCapabilityId);
+    }
+
+    [Fact]
+    public void Stock_position_route_and_every_child_require_the_existing_Product_display_permission()
+    {
+        var declarations = new InventoryShellCapabilityProvider().GetDeclarations()
+            .Where(item => item.CapabilityId == InventoryShellCapabilityProvider.StockPositionsCapabilityId
+                || item.ParentCapabilityId == InventoryShellCapabilityProvider.StockPositionsCapabilityId)
+            .ToArray();
+
+        Assert.Equal(8, declarations.Length);
+        Assert.All(declarations, declaration =>
+            Assert.Contains(ErpPermissions.ProductOperationalSelectionRead, declaration.RequiredPermissions));
+        var openingStock = Assert.Single(new InventoryShellCapabilityProvider().GetDeclarations(),
+            item => item.CapabilityId == InventoryShellCapabilityProvider.OpeningStockCapabilityId);
+        Assert.Equal([ErpPermissions.InventoryOpeningStockRecord], openingStock.RequiredPermissions);
     }
 
     [Fact]
@@ -65,6 +85,7 @@ public sealed class InventoryShellCapabilityProviderTests
             [
                 ErpPermissions.InventoryLabelsRead,
                 ErpPermissions.InventoryBalancesRead,
+                ErpPermissions.ProductOperationalSelectionRead,
                 ErpPermissions.InventoryPhysicalAllocationWrite,
             ],
             declaration.RequiredPermissions);
@@ -90,6 +111,7 @@ public sealed class InventoryShellCapabilityProviderTests
             [
                 ErpPermissions.InventoryLabelsRead,
                 ErpPermissions.InventoryBalancesRead,
+                ErpPermissions.ProductOperationalSelectionRead,
                 ErpPermissions.InventoryLabelTransformationRecord,
             ],
             declaration.RequiredPermissions);
@@ -114,6 +136,7 @@ public sealed class InventoryShellCapabilityProviderTests
             [
                 ErpPermissions.InventoryLabelsRead,
                 ErpPermissions.InventoryBalancesRead,
+                ErpPermissions.ProductOperationalSelectionRead,
                 ErpPermissions.InventoryLabelClassificationWrite,
             ],
             declaration.RequiredPermissions);
@@ -141,7 +164,12 @@ public sealed class InventoryShellCapabilityProviderTests
         Assert.Equal(ShellCapabilityContextRequirement.SingleCompany, declaration.ContextRequirement);
         Assert.Equal(ShellCapabilityScopeRequirement.CompanyWide, declaration.ScopeRequirement);
         Assert.Equal(
-            [ErpPermissions.InventoryLabelsRead, ErpPermissions.InventoryBalancesRead, expectedName],
+            [
+                ErpPermissions.InventoryLabelsRead,
+                ErpPermissions.InventoryBalancesRead,
+                ErpPermissions.ProductOperationalSelectionRead,
+                expectedName,
+            ],
             declaration.RequiredPermissions);
         Assert.True(declaration.ImplementationAvailable);
         Assert.Equal(InventoryShellCapabilityProvider.StockPositionsCapabilityId, declaration.ParentCapabilityId);

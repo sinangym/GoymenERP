@@ -12,7 +12,7 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.Shell;
 public sealed class InventoryShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "INVENTORY";
-    public const string OwnerContractVersion = "1.6";
+    public const string OwnerContractVersion = "1.7";
     public const string StockPositionsCapabilityId = "inventory.stock-positions.list";
     public const string StockPositionsRouteId = "inventory.stock-positions";
     public const string StockPositionsRoutePath = "/stok/pozisyonlar";
@@ -61,7 +61,11 @@ public sealed class InventoryShellCapabilityProvider : IShellCapabilityProvider
             ShellCapabilityRoutePrecedence.Static,
             ShellCapabilityContextRequirement.SingleCompany,
             ShellCapabilityScopeRequirement.CompanyWide,
-            [ErpPermissions.InventoryLabelsRead, ErpPermissions.InventoryBalancesRead],
+            [
+                ErpPermissions.InventoryLabelsRead,
+                ErpPermissions.InventoryBalancesRead,
+                ErpPermissions.ProductOperationalSelectionRead,
+            ],
             ImplementationAvailable: true);
 
         return
@@ -75,6 +79,7 @@ public sealed class InventoryShellCapabilityProvider : IShellCapabilityProvider
             [
                 ErpPermissions.InventoryLabelsRead,
                 ErpPermissions.InventoryBalancesRead,
+                ErpPermissions.ProductOperationalSelectionRead,
                 ErpPermissions.InventoryPhysicalAllocationWrite,
             ],
         },
@@ -86,6 +91,7 @@ public sealed class InventoryShellCapabilityProvider : IShellCapabilityProvider
             [
                 ErpPermissions.InventoryLabelsRead,
                 ErpPermissions.InventoryBalancesRead,
+                ErpPermissions.ProductOperationalSelectionRead,
                 ErpPermissions.InventoryLabelTransformationRecord,
             ],
         },
@@ -97,6 +103,7 @@ public sealed class InventoryShellCapabilityProvider : IShellCapabilityProvider
             [
                 ErpPermissions.InventoryLabelsRead,
                 ErpPermissions.InventoryBalancesRead,
+                ErpPermissions.ProductOperationalSelectionRead,
                 ErpPermissions.InventoryLabelClassificationWrite,
             ],
         },
@@ -108,6 +115,7 @@ public sealed class InventoryShellCapabilityProvider : IShellCapabilityProvider
             [
                 ErpPermissions.InventoryLabelsRead,
                 ErpPermissions.InventoryBalancesRead,
+                ErpPermissions.ProductOperationalSelectionRead,
                 ErpPermissions.InventoryStockCountRecord,
             ],
         },
@@ -119,6 +127,7 @@ public sealed class InventoryShellCapabilityProvider : IShellCapabilityProvider
             [
                 ErpPermissions.InventoryLabelsRead,
                 ErpPermissions.InventoryBalancesRead,
+                ErpPermissions.ProductOperationalSelectionRead,
                 ErpPermissions.InventoryStockCountApprove,
             ],
         },
@@ -130,6 +139,7 @@ public sealed class InventoryShellCapabilityProvider : IShellCapabilityProvider
             [
                 ErpPermissions.InventoryLabelsRead,
                 ErpPermissions.InventoryBalancesRead,
+                ErpPermissions.ProductOperationalSelectionRead,
                 ErpPermissions.InventoryStockScrapRecord,
             ],
         },
@@ -141,6 +151,7 @@ public sealed class InventoryShellCapabilityProvider : IShellCapabilityProvider
             [
                 ErpPermissions.InventoryLabelsRead,
                 ErpPermissions.InventoryBalancesRead,
+                ErpPermissions.ProductOperationalSelectionRead,
                 ErpPermissions.InventoryStockScrapApprove,
             ],
         },

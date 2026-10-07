@@ -390,6 +390,29 @@ public sealed class InventoryStockPositionHttpAcceptanceTests(GoymenErpApiFactor
         Assert.Single(product.Queries);
     }
 
+    [Fact]
+    public async Task Product_operational_selection_refusal_is_code_less_403_and_discloses_no_position()
+    {
+        var product = new StubProductDisplays(ProductDisplays())
+        {
+            Failure = new ProductOperationException("product_access_denied", 403),
+        };
+        using var host = CreateHost(new ControlledAuthority(), new StubPositions(Positions()), product);
+        using var client = CreateClient(host);
+
+        using var request = ProductDisplayRequest(InventoryStockPositionApiV1.PositionsPath);
+        using var response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        AssertPrivateNoStore(response);
+        var body = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(body);
+        Assert.False(document.RootElement.TryGetProperty("code", out _));
+        Assert.DoesNotContain("product_access_denied", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("ROLL-1", body, StringComparison.Ordinal);
+        Assert.Single(product.Queries);
+    }
+
     [Theory]
     [InlineData("missing")]
     [InlineData("duplicate")]
