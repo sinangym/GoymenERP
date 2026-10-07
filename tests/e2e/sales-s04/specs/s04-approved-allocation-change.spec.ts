@@ -168,11 +168,16 @@ test('INV-AL-1-01 an allocation opened from ST-01 changes 5 → 3 kg with a reas
     await expect(stockTable.getByRole('columnheader', { name: 'Serbest kg', exact: true })).toHaveCount(0)
     const stockPositionRow = page.locator(`tr[data-label-id="${allocationLabelId}"]`)
     await expect(stockPositionRow).toBeVisible()
-    const quantityCells = stockPositionRow.locator('td')
-    await expect(quantityCells.nth(4)).toHaveText(position!.physicalKg)
-    await expect(quantityCells.nth(5)).toHaveText(position!.blockedPhysicalKg)
-    await expect(quantityCells.nth(6)).toHaveText(position!.activeAllocationKg)
-    await expect(quantityCells.nth(7)).toHaveText(position!.availableKg)
+    const quantityColumns = await stockTable.getByRole('columnheader').allTextContents()
+    const quantityCellFor = (heading: string) => {
+      const columnIndex = quantityColumns.findIndex((column) => column.trim() === heading)
+      expect(columnIndex, `${heading} sütunu stok pozisyonu tablosunda bulunmalı`).toBeGreaterThanOrEqual(0)
+      return stockPositionRow.getByRole('cell').nth(columnIndex)
+    }
+    await expect(quantityCellFor('Fiziksel kg')).toHaveText(position!.physicalKg)
+    await expect(quantityCellFor('Bloklu kg')).toHaveText(position!.blockedPhysicalKg)
+    await expect(quantityCellFor('Tahsisli kg')).toHaveText(position!.activeAllocationKg)
+    await expect(quantityCellFor('Kullanılabilir kg')).toHaveText(position!.availableKg)
 
     const allocationsRead = page.waitForResponse((response) => response.request().method() === 'GET'
       && new URL(response.url()).pathname === LABEL_ALLOCATIONS)
