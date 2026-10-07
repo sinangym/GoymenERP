@@ -150,8 +150,15 @@ export function revisionInput(
   plannedKg = '1000.125',
   expectedLabelVersion: string | null = '7',
   commercialContext: unknown = null,
+  capturedTechnicalSnapshot: unknown = null,
 ) {
-  return { parentRollId, plannedKg, expectedLabelVersion, commercialContext }
+  return {
+    parentRollId,
+    plannedKg,
+    expectedLabelVersion,
+    commercialContext,
+    technicalSnapshot: capturedTechnicalSnapshot,
+  }
 }
 
 /** A synthetic `PlanRevisionViewV1`: revision 0 by default — the plan as created, matching {@link plan}. */

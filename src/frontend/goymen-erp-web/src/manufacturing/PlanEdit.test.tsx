@@ -27,6 +27,7 @@ import {
   renderAt,
   requestsFor,
   revisionInput,
+  technicalSnapshot,
 } from './testHarness'
 
 const EDITOR_CAPABILITIES = [
@@ -338,21 +339,37 @@ describe('plan revision contract and transport', () => {
       partyVersion: ' party:v01 ',
       accountVersion: 'account:v02/α',
     }
+    const capturedTechnicalSnapshot = technicalSnapshot()
     const edit = planRevision({
       revision: 1,
       planVersion: 2,
       reason: 'Gerekçe',
       revisedBy: ACTOR,
-      inputs: [revisionInput(ROLL_1, '800', '7', commercialContext)],
+      inputs: [revisionInput(ROLL_1, '800', '7', commercialContext, capturedTechnicalSnapshot)],
     })
     const decoded = decodePlanRevisions(planRevisions([planRevision(), edit]))
     expect(decoded?.revisions).toHaveLength(2)
     expect(decoded?.revisions[0].inputs[0].commercialContext).toBeNull()
     expect(decoded?.revisions[1].inputs[0].commercialContext).toEqual(commercialContext)
+    expect(decoded?.revisions[1].inputs[0].technicalSnapshot).toEqual(capturedTechnicalSnapshot)
 
-    const { commercialContext: _omitted, ...legacyInput } = revisionInput(ROLL_1)
+    const { technicalSnapshot: _technicalOmitted, ...commercialOnlyInput } = revisionInput(
+      ROLL_1, '1000.125', '7', commercialContext,
+    )
+    expect(decodePlanRevisions(planRevisions([planRevision({ inputs: [commercialOnlyInput] })]))
+      ?.revisions[0].inputs[0]).toMatchObject({ commercialContext, technicalSnapshot: null })
+
+    const {
+      commercialContext: _commercialOmitted,
+      technicalSnapshot: _legacyTechnicalOmitted,
+      ...legacyInput
+    } = revisionInput(ROLL_1)
     expect(decodePlanRevisions(planRevisions([planRevision({ inputs: [legacyInput] })]))
-      ?.revisions[0].inputs[0].commercialContext).toBeNull()
+      ?.revisions[0].inputs[0]).toMatchObject({ commercialContext: null, technicalSnapshot: null })
+
+    const { commercialContext: _invalidOmitted, ...technicalOnlyInput } = revisionInput(
+      ROLL_1, '1000.125', '7', null, capturedTechnicalSnapshot,
+    )
 
     const refused: unknown[] = [
       planRevisions([]),
@@ -381,6 +398,11 @@ describe('plan revision contract and transport', () => {
         companyId: COMPANY_B,
       })] })]),
       planRevisions([planRevision({ inputs: [{ ...revisionInput(ROLL_1), commercialContext: undefined }] })]),
+      planRevisions([planRevision({ inputs: [{ ...revisionInput(ROLL_1), technicalSnapshot: undefined }] })]),
+      planRevisions([planRevision({ inputs: [revisionInput(
+        ROLL_1, '10', '7', null, technicalSnapshot({ thicknessMm: '2.0001' }),
+      )] })]),
+      planRevisions([planRevision({ inputs: [technicalOnlyInput] })]),
       planRevisions([planRevision({ extra: true })]),
       { ...planRevisions(), extra: 1 },
     ]

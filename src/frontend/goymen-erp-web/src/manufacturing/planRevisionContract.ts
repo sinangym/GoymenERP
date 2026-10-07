@@ -12,6 +12,8 @@
  * would show one edit's content under another's reason.
  */
 
+import { decodeTechnicalSnapshot, type CapturedPlanTechnicalSnapshot } from './contract'
+
 export interface PlanRevisionInput {
   readonly parentRollId: string
   readonly plannedKg: string
@@ -19,6 +21,8 @@ export interface PlanRevisionInput {
   readonly expectedLabelVersion: string | null
   /** Exact immutable Counterparty provenance captured with the input; null also represents a legacy omission. */
   readonly commercialContext: CapturedPlanCommercialContext | null
+  /** Product/Settings facts captured with this historical input; null represents a legacy omission. */
+  readonly technicalSnapshot: CapturedPlanTechnicalSnapshot | null
 }
 
 export interface CapturedPlanCommercialContext {
@@ -56,7 +60,8 @@ const REVISION_KEYS = [
   'recordedAtUtc',
 ] as const
 const LEGACY_INPUT_KEYS = ['parentRollId', 'plannedKg', 'expectedLabelVersion'] as const
-const INPUT_KEYS = [...LEGACY_INPUT_KEYS, 'commercialContext'] as const
+const COMMERCIAL_INPUT_KEYS = [...LEGACY_INPUT_KEYS, 'commercialContext'] as const
+const INPUT_KEYS = [...COMMERCIAL_INPUT_KEYS, 'technicalSnapshot'] as const
 const COMMERCIAL_CONTEXT_KEYS = ['partyId', 'companyPartyAccountId', 'partyVersion', 'accountVersion'] as const
 const TARGET_KEYS = ['basis', 'kg'] as const
 
@@ -109,19 +114,23 @@ function decodeCommercialContext(value: unknown): CapturedPlanCommercialContext 
 function decodeInput(value: unknown): PlanRevisionInput | null {
   if (!isObject(value)) return null
   const isCurrent = hasExactKeys(value, INPUT_KEYS)
-  if (!isCurrent && !hasExactKeys(value, LEGACY_INPUT_KEYS)) return null
+  const hasCommercialContext = isCurrent || hasExactKeys(value, COMMERCIAL_INPUT_KEYS)
+  if (!hasCommercialContext && !hasExactKeys(value, LEGACY_INPUT_KEYS)) return null
   const parentRollId = nonNilGuid(value.parentRollId)
   const plannedKg = positiveKg(value.plannedKg)
   const label = value.expectedLabelVersion
   const expectedLabelVersion =
     label === null ? null : typeof label === 'string' && VERSION_TEXT.test(label) ? label : undefined
   // Old stored history JSON omitted this additive member; current JSON always emits it, including explicit null.
-  const commercialContext = isCurrent ? decodeCommercialContext(value.commercialContext) : null
+  const commercialContext = hasCommercialContext ? decodeCommercialContext(value.commercialContext) : null
+  const technicalSnapshot = isCurrent
+    ? value.technicalSnapshot === null ? null : decodeTechnicalSnapshot(value.technicalSnapshot)
+    : null
   if (
     parentRollId === null || plannedKg === null || expectedLabelVersion === undefined ||
-    commercialContext === undefined
+    commercialContext === undefined || technicalSnapshot === undefined
   ) return null
-  return { parentRollId, plannedKg, expectedLabelVersion, commercialContext }
+  return { parentRollId, plannedKg, expectedLabelVersion, commercialContext, technicalSnapshot }
 }
 
 function decodeTarget(value: unknown): PlanRevision['target'] | undefined {
