@@ -42,6 +42,17 @@ public sealed class FinanceOfficialInvoiceImportWorkDeliverySqlServerRelationalA
     private const string LegacyBatchOperandTypePhase = "finance_work_legacy_batch_operand_type";
     private const string LegacyBatchCollationPhase = "finance_work_legacy_batch_collation";
     private const string LegacyBatchTriggerOutputPhase = "finance_work_legacy_batch_trigger_output";
+    private const string LegacyBatchForwardFixRefusalPhase = "finance_work_legacy_batch_forward_fix_refusal";
+    private const string LegacyBatchUserRefusalPhase = "finance_work_legacy_batch_user_refusal";
+    private const string LegacyBatchTypeIncompatiblePhase = "finance_work_legacy_batch_type_incompatible";
+    private const string LegacyBatchParameterBindingPhase = "finance_work_legacy_batch_parameter_binding";
+    private const string LegacyBatchColumnValuesPhase = "finance_work_legacy_batch_column_values";
+    private const string LegacyBatchTransactionStatePhase = "finance_work_legacy_batch_transaction_state";
+    private const string LegacyBatchLockTimeoutPhase = "finance_work_legacy_batch_lock_timeout";
+    private const string LegacyBatchConnectionResetPhase = "finance_work_legacy_batch_connection_reset";
+    private const string LegacyBatchLoginPhase = "finance_work_legacy_batch_login";
+    private const string LegacyBatchDatabaseOpenPhase = "finance_work_legacy_batch_database_open";
+    private const string LegacyBatchThrottlingPhase = "finance_work_legacy_batch_throttling";
     private const string LegacyBatchTablePhase = "finance_work_legacy_batch_table";
     private const string LegacyBatchColumnPhase = "finance_work_legacy_batch_column";
     private const string LegacyBatchOtherSqlPhase = "finance_work_legacy_batch_other_sql";
@@ -477,8 +488,19 @@ public sealed class FinanceOfficialInvoiceImportWorkDeliverySqlServerRelationalA
             206 => LegacyBatchOperandTypePhase,
             468 => LegacyBatchCollationPhase,
             334 => LegacyBatchTriggerOutputPhase,
+            51051 or 51052 or 51053 => LegacyBatchForwardFixRefusalPhase,
+            257 or 402 or 529 => LegacyBatchTypeIncompatiblePhase,
+            137 or 201 => LegacyBatchParameterBindingPhase,
+            213 => LegacyBatchColumnValuesPhase,
+            3902 or 3930 or 3988 => LegacyBatchTransactionStatePhase,
+            121 or 1222 => LegacyBatchLockTimeoutPhase,
+            10054 => LegacyBatchConnectionResetPhase,
+            18456 => LegacyBatchLoginPhase,
+            4060 => LegacyBatchDatabaseOpenPhase,
+            40501 => LegacyBatchThrottlingPhase,
             208 => LegacyBatchTablePhase,
             207 => LegacyBatchColumnPhase,
+            _ when exception.Number >= 50000 => LegacyBatchUserRefusalPhase,
             _ => LegacyBatchOtherSqlPhase,
         };
     }
