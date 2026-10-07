@@ -13,11 +13,14 @@ public sealed class InventoryMaterialLabelGlobalSearchSourceTests
     private static readonly Guid Label = Guid.Parse("20000000-0000-0000-0000-000000000001");
     private static readonly GlobalSearchRequestV1 Request = new("SYN-LABEL-001", 5);
 
-    [Fact]
-    public async Task Both_existing_reads_are_required_company_wide_before_any_owner_read()
+    [Theory]
+    [InlineData(ErpPermissions.InventoryLabelsRead)]
+    [InlineData(ErpPermissions.InventoryBalancesRead)]
+    [InlineData(ErpPermissions.ProductOperationalSelectionRead)]
+    public async Task All_three_existing_reads_are_required_company_wide_before_any_owner_read(string deniedPermission)
     {
         var world = new World();
-        world.Authority.Denied = ErpPermissions.InventoryBalancesRead;
+        world.Authority.Denied = deniedPermission;
 
         var answer = await world.Source().SearchAsync(Request);
 
@@ -25,7 +28,7 @@ public sealed class InventoryMaterialLabelGlobalSearchSourceTests
         Assert.Empty(answer.Hits);
         Assert.False(answer.HasMore);
         Assert.Equal(0, world.Reader.Reads);
-        Assert.Equal([ErpPermissions.InventoryLabelsRead, ErpPermissions.InventoryBalancesRead], world.Authority.Calls);
+        Assert.Equal(Permissions().TakeWhile(permission => permission != deniedPermission).Append(deniedPermission), world.Authority.Calls);
 
         world = new World { Authority = { CompanyWide = false } };
         Assert.Equal(GlobalSearchSourceOutcomeV1.NotAuthorized, (await world.Source().SearchAsync(Request)).Outcome);
@@ -51,8 +54,10 @@ public sealed class InventoryMaterialLabelGlobalSearchSourceTests
         Assert.Equal([
             ErpPermissions.InventoryLabelsRead,
             ErpPermissions.InventoryBalancesRead,
+            ErpPermissions.ProductOperationalSelectionRead,
             ErpPermissions.InventoryLabelsRead,
             ErpPermissions.InventoryBalancesRead,
+            ErpPermissions.ProductOperationalSelectionRead,
         ], world.Authority.Calls);
     }
 
@@ -69,12 +74,21 @@ public sealed class InventoryMaterialLabelGlobalSearchSourceTests
         Assert.Equal((CompanyA, "syn-label"), Assert.Single(world.Reader.Requests));
     }
 
-    [Fact]
-    public async Task Revoked_read_or_changed_actor_or_company_after_the_read_releases_nothing()
+    [Theory]
+    [InlineData(ErpPermissions.InventoryLabelsRead)]
+    [InlineData(ErpPermissions.InventoryBalancesRead)]
+    [InlineData(ErpPermissions.ProductOperationalSelectionRead)]
+    public async Task Any_revoked_read_after_the_read_releases_nothing(string revokedPermission)
     {
         var revoked = new World();
-        revoked.Reader.During = () => revoked.Authority.Denied = ErpPermissions.InventoryLabelsRead;
+        revoked.Reader.During = () => revoked.Authority.Denied = revokedPermission;
         Assert.Equal(GlobalSearchSourceOutcomeV1.NotAuthorized, (await revoked.Source().SearchAsync(Request)).Outcome);
+        Assert.Equal(1, revoked.Reader.Reads);
+    }
+
+    [Fact]
+    public async Task Changed_actor_or_company_after_the_read_releases_nothing()
+    {
 
         var actor = new World();
         actor.Reader.During = () => actor.User.Actor = "SENTETIK-other";
@@ -84,7 +98,7 @@ public sealed class InventoryMaterialLabelGlobalSearchSourceTests
         company.Reader.During = () => company.Company.Set(CompanyB);
         Assert.Equal(GlobalSearchSourceOutcomeV1.NotAuthorized, (await company.Source().SearchAsync(Request)).Outcome);
 
-        Assert.All(new[] { revoked, actor, company }, item => Assert.Equal(1, item.Reader.Reads));
+        Assert.All(new[] { actor, company }, item => Assert.Equal(1, item.Reader.Reads));
     }
 
     [Fact]
@@ -92,10 +106,10 @@ public sealed class InventoryMaterialLabelGlobalSearchSourceTests
     {
         var available = new World { Reader = { Fail = true } };
         await Assert.ThrowsAsync<InvalidOperationException>(() => available.Source().SearchAsync(Request));
-        Assert.Equal(4, available.Authority.Calls.Count);
+        Assert.Equal(6, available.Authority.Calls.Count);
 
         var revoked = new World { Reader = { Fail = true } };
-        revoked.Reader.During = () => revoked.Authority.Denied = ErpPermissions.InventoryBalancesRead;
+        revoked.Reader.During = () => revoked.Authority.Denied = ErpPermissions.ProductOperationalSelectionRead;
         var answer = await revoked.Source().SearchAsync(Request);
         Assert.Equal(GlobalSearchSourceOutcomeV1.NotAuthorized, answer.Outcome);
         Assert.Empty(answer.Hits);
@@ -160,6 +174,13 @@ public sealed class InventoryMaterialLabelGlobalSearchSourceTests
         public InventoryMaterialLabelGlobalSearchSource Source() => new(Reader, Company, User, Authority);
 
     }
+
+    private static string[] Permissions() =>
+    [
+        ErpPermissions.InventoryLabelsRead,
+        ErpPermissions.InventoryBalancesRead,
+        ErpPermissions.ProductOperationalSelectionRead,
+    ];
 
     private sealed class MutableCompanyContext(bool resolved) : ICompanyContext
     {

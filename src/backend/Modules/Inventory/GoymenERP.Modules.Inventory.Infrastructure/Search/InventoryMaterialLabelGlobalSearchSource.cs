@@ -10,7 +10,7 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.Search;
 
 /// <summary>
 /// Inventory's AT-002 global-search answer. A label is found only by <c>Label.Code == term</c> in the
-/// server-resolved company. Both existing Inventory reads are measured afresh before the read and again before
+/// server-resolved company. Both existing Inventory reads and the Product operational-selection read are measured afresh before the read and again before
 /// release; a refusal exposes no group, hit, count or existence signal.
 /// </summary>
 internal sealed class InventoryMaterialLabelGlobalSearchSource(
@@ -23,6 +23,7 @@ internal sealed class InventoryMaterialLabelGlobalSearchSource(
     [
         ErpPermissions.InventoryLabelsRead,
         ErpPermissions.InventoryBalancesRead,
+        ErpPermissions.ProductOperationalSelectionRead,
     ];
 
     public string Kind => GlobalSearchKindsV1.InventoryMaterialLabel;
@@ -39,7 +40,7 @@ internal sealed class InventoryMaterialLabelGlobalSearchSource(
         }
 
         var scope = CaptureScope();
-        if (scope is null || !await HoldsBothAsync(scope, cancellationToken))
+        if (scope is null || !await HoldsAllAsync(scope, cancellationToken))
         {
             return GlobalSearchSourceAnswerV1.NotAuthorized;
         }
@@ -55,9 +56,9 @@ internal sealed class InventoryMaterialLabelGlobalSearchSource(
         }
         catch
         {
-            // An owner outage may be released as 503 only while the same actor still holds both reads. If authority
+            // An owner outage may be released as 503 only while the same actor still holds all reads. If authority
             // disappeared during the failing read, the non-disclosing answer wins.
-            if (!SameIdentity(scope) || !await HoldsBothAsync(scope, cancellationToken))
+            if (!SameIdentity(scope) || !await HoldsAllAsync(scope, cancellationToken))
             {
                 return GlobalSearchSourceAnswerV1.NotAuthorized;
             }
@@ -66,7 +67,7 @@ internal sealed class InventoryMaterialLabelGlobalSearchSource(
         }
 
         cancellationToken.ThrowIfCancellationRequested();
-        if (!SameIdentity(scope) || !await HoldsBothAsync(scope, cancellationToken))
+        if (!SameIdentity(scope) || !await HoldsAllAsync(scope, cancellationToken))
         {
             return GlobalSearchSourceAnswerV1.NotAuthorized;
         }
@@ -100,7 +101,7 @@ internal sealed class InventoryMaterialLabelGlobalSearchSource(
         return new Scope(companyContext.CompanyId, currentUser.UserId);
     }
 
-    private async Task<bool> HoldsBothAsync(Scope scope, CancellationToken cancellationToken)
+    private async Task<bool> HoldsAllAsync(Scope scope, CancellationToken cancellationToken)
     {
         foreach (var permission in Permissions)
         {

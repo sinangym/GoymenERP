@@ -197,6 +197,10 @@ public sealed class GlobalSearchSqlServerRelationalAcceptanceTests
             Kinds(await run.SearchAsync(client, "SYN-EXACT-LABEL")));
 
         await run.GrantAsync(TestUsers.CompanyAViewer, CompanyA, ErpPermissions.InventoryBalancesRead);
+        Assert.DoesNotContain(GlobalSearchKindsV1.InventoryMaterialLabel,
+            Kinds(await run.SearchAsync(client, "SYN-EXACT-LABEL")));
+
+        await run.GrantAsync(TestUsers.CompanyAViewer, CompanyA, ErpPermissions.ProductOperationalSelectionRead);
         var answer = await run.SearchAsync(client, "SYN-EXACT-LABEL");
         var group = answer.GetProperty("groups").EnumerateArray().Single(
             candidate => candidate.GetProperty("kind").GetString() == GlobalSearchKindsV1.InventoryMaterialLabel);
@@ -219,6 +223,10 @@ public sealed class GlobalSearchSqlServerRelationalAcceptanceTests
             candidate => candidate.GetProperty("kind").GetString() == GlobalSearchKindsV1.InventoryMaterialLabel);
         Assert.Equal(0, empty.GetProperty("items").GetArrayLength());
         Assert.False(empty.GetProperty("hasMore").GetBoolean());
+
+        await run.RevokePermissionAsync(TestUsers.CompanyAViewer, CompanyA, ErpPermissions.ProductOperationalSelectionRead);
+        Assert.DoesNotContain(GlobalSearchKindsV1.InventoryMaterialLabel,
+            Kinds(await run.SearchAsync(client, "SYN-EXACT-LABEL")));
         Assert.Equal(before, await run.EffectsAsync());
     }
 
@@ -392,6 +400,22 @@ public sealed class GlobalSearchSqlServerRelationalAcceptanceTests
             assignment.AddScope(AccessScopeType.Company, company);
             dbContext.Roles.Add(role);
             dbContext.RoleAssignments.Add(assignment);
+            await dbContext.SaveChangesAsync();
+        }
+
+        public async Task RevokePermissionAsync(string developmentUser, Guid company, string permission)
+        {
+            await using var scope = Factory.Services.CreateAsyncScope();
+            var dbContext = scope.ServiceProvider.GetRequiredService<IdentityDbContext>();
+            var actor = await dbContext.ExternalIdentities
+                .Where(link => link.Issuer == BootstrapIdentityOptions.Issuer && link.Subject == developmentUser)
+                .Select(link => link.UserId)
+                .SingleAsync();
+            var grant = await dbContext.RolePermissions.SingleAsync(candidate =>
+                candidate.PermissionCode == permission
+                && dbContext.RoleAssignments.Any(assignment => assignment.RoleId == candidate.RoleId
+                    && assignment.UserId == actor && assignment.CompanyId == company));
+            dbContext.RolePermissions.Remove(grant);
             await dbContext.SaveChangesAsync();
         }
 
