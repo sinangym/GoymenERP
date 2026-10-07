@@ -230,8 +230,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // platform
             // AT-002: +2 GlobalSearchSqlServerRelationalAcceptanceTests facts (5bc60202… -> a5df5046…).
             // ERP-000G / AT-065: +8 DocumentVaultSqlServerRelationalAcceptanceTests facts (4ed7462b… -> e57500e0…).
+            // ST-01: +1 Inventory shell Product-authority grant/revoke capability fact.
             ["tools/relational_inventory/platform.txt"] =
-                "e57500e0de619eb42b1694318c08e907a8bc363d04d23038ef55841e01506b10",
+                "71203f7eb48daf85768b35263d96316615aa6599b3b3fbe8bfd00eca79f5c8c5",
 
             // product
             // DEC-CAR-003: +4 ProductDeactivationSqlServerRelationalAcceptanceTests facts (d7dbec7f… -> ddeead62…).
