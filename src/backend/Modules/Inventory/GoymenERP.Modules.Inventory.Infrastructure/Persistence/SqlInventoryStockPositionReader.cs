@@ -19,8 +19,7 @@ internal sealed class SqlInventoryStockPositionReader(InventoryDbContext db) : I
 {
     public async Task<InventoryStockPositionWindow> SearchAsync(
         Guid companyId,
-        string q,
-        int limit,
+        InventoryStockPositionReadQuery request,
         CancellationToken cancellationToken)
     {
         var stockedLabelIds = db.Balances.AsNoTracking()
@@ -28,16 +27,45 @@ internal sealed class SqlInventoryStockPositionReader(InventoryDbContext db) : I
             .Select(balance => balance.LabelId);
         var query = db.Labels.AsNoTracking()
             .Where(label => label.CompanyId == companyId && stockedLabelIds.Contains(label.Id));
-        if (q.Length > 0)
+        if (request.Q.Length > 0)
         {
-            query = query.Where(label => label.Code.Contains(q));
+            query = query.Where(label => label.Code.Contains(request.Q));
+        }
+
+        if (request.ProductId.HasValue)
+        {
+            query = query.Where(label => label.ProductId == request.ProductId.Value);
+        }
+        if (request.Classification.HasValue)
+        {
+            query = query.Where(label => label.Classification == (int)request.Classification.Value);
+        }
+        if (request.LocationId.HasValue)
+        {
+            query = query.Where(label => db.Balances.Any(balance => balance.CompanyId == companyId
+                && balance.LabelId == label.Id && balance.QuantityKg != 0m
+                && balance.LocationId == request.LocationId.Value));
+        }
+        if (request.OwnerKind.HasValue && request.OwnerId.HasValue)
+        {
+            query = query.Where(label => db.Balances.Any(balance => balance.CompanyId == companyId
+                && balance.LabelId == label.Id && balance.QuantityKg != 0m
+                && balance.OwnerKind == (int)request.OwnerKind.Value
+                && balance.OwnerId == request.OwnerId.Value));
+        }
+        if (request.After is { } after)
+        {
+            query = query.Where(label => string.Compare(label.Code, after.LabelCode) > 0
+                || label.Code == after.LabelCode && label.Id.CompareTo(after.LabelId) > 0);
         }
 
         var labels = await query.OrderBy(label => label.Code).ThenBy(label => label.Id)
-            .Take(limit + 1).ToListAsync(cancellationToken);
+            .Take(request.Limit + 1).ToListAsync(cancellationToken);
+        var page = labels.Take(request.Limit).ToArray();
         return new InventoryStockPositionWindow(
-            await CaptureAsync(companyId, labels.Take(limit).ToArray(), cancellationToken),
-            labels.Count > limit);
+            await CaptureAsync(companyId, page, cancellationToken),
+            labels.Count > request.Limit,
+            page.Length == 0 ? null : new InventoryStockPositionPosition(page[^1].Code, page[^1].Id));
     }
 
     private async Task<IReadOnlyList<InventoryStockPositionRecord>> CaptureAsync(
@@ -91,7 +119,7 @@ internal sealed class SqlInventoryStockPositionReader(InventoryDbContext db) : I
             throw new InventoryStockPositionException(503, InventoryStockPositionCodesV1.Unavailable);
         }
 
-        var label = new MaterialLabel(
+        var label = MaterialLabel.Restore(
             row.Id,
             row.CompanyId,
             row.Code,
@@ -101,11 +129,11 @@ internal sealed class SqlInventoryStockPositionReader(InventoryDbContext db) : I
             JsonSerializer.Deserialize<string[]>(row.RequiredDocumentsJson)
                 ?? throw new InventoryStockPositionException(503, InventoryStockPositionCodesV1.Unavailable),
             row.HeatNumber,
-            row.CoilNumber);
-        foreach (var document in documents.Where(document => document.LabelId == row.Id))
-        {
-            label.AttachDocument(document.Kind, document.AttachedAtUtc, document.AttachedBy);
-        }
+            row.CoilNumber,
+            [],
+            documents.Where(document => document.LabelId == row.Id)
+                .Select(document => new LabelDocumentAttachment(document.Kind, document.AttachedAtUtc, document.AttachedBy)),
+            row.Classification is null ? null : (LabelClassification)row.Classification.Value);
 
         var storedBalances = balances.Where(balance => balance.LabelId == row.Id).Select(balance =>
         {

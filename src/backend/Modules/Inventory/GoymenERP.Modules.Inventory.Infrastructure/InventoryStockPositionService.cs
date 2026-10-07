@@ -29,14 +29,35 @@ internal sealed record InventoryStockPositionRecord(
 
 internal sealed record InventoryStockPositionWindow(
     IReadOnlyList<InventoryStockPositionRecord> Records,
-    bool HasMore);
+    bool HasMore,
+    InventoryStockPositionPosition? LastPosition = null);
+
+internal sealed record InventoryStockPositionPosition(string LabelCode, Guid LabelId);
+
+internal sealed record InventoryStockPositionReadQuery(
+    string Q,
+    int Limit,
+    Guid? ProductId,
+    Guid? LocationId,
+    InventoryLabelClassificationV1? Classification,
+    StockPartyKind? OwnerKind,
+    Guid? OwnerId,
+    InventoryStockPositionPosition? After);
+
+internal interface IInventoryStockPositionCursorCodec
+{
+    bool IsAvailable { get; }
+    string Protect(Guid companyId, string actorId, InventoryStockPositionReadQuery query,
+        InventoryStockPositionPosition position);
+    InventoryStockPositionPosition Unprotect(Guid companyId, string actorId,
+        InventoryStockPositionReadQuery query, string cursor);
+}
 
 internal interface IInventoryStockPositionReader
 {
     Task<InventoryStockPositionWindow> SearchAsync(
         Guid companyId,
-        string q,
-        int limit,
+        InventoryStockPositionReadQuery query,
         CancellationToken cancellationToken);
 }
 
@@ -44,7 +65,8 @@ internal sealed class InventoryStockPositionService(
     ICompanyContext company,
     ICurrentUser user,
     IErpAuthorityRevalidationService authority,
-    IInventoryStockPositionReader? reader) : IInventoryStockPositionsV1
+    IInventoryStockPositionReader? reader,
+    IInventoryStockPositionCursorCodec? cursors = null) : IInventoryStockPositionsV1
 {
     public async Task<InventoryStockPositionsV1> SearchAsync(
         InventoryStockPositionQueryV1 query,
@@ -52,19 +74,62 @@ internal sealed class InventoryStockPositionService(
     {
         var scope = await RequireAsync(null, cancellationToken);
         var normalizedQ = query?.Q?.Trim();
-        if (query is null || query.Limit is < 1 or > 100 || normalizedQ?.Length > MaterialLabel.MaximumCodeLength)
+        var normalizedOwnerKind = query?.OwnerKind?.Trim();
+        if (query is null || query.Limit is < 1 or > 100 || normalizedQ?.Length > MaterialLabel.MaximumCodeLength
+            || query.ProductId == Guid.Empty || query.LocationId == Guid.Empty || query.OwnerId == Guid.Empty
+            || (query.OwnerId.HasValue != !string.IsNullOrEmpty(normalizedOwnerKind))
+            || query.Classification is { } classification && !Enum.IsDefined(classification)
+            || !TryOwnerKind(normalizedOwnerKind, out var ownerKind))
         {
             throw Error(400, InventoryStockPositionCodesV1.InvalidQuery);
         }
 
         var source = reader ?? throw Error(503, InventoryStockPositionCodesV1.Unavailable);
+        var readQuery = new InventoryStockPositionReadQuery(
+            normalizedQ ?? string.Empty,
+            query.Limit,
+            query.ProductId,
+            query.LocationId,
+            query.Classification,
+            ownerKind,
+            query.OwnerId,
+            null);
+        if (query.Cursor is not null)
+        {
+            if (string.IsNullOrWhiteSpace(query.Cursor))
+            {
+                throw Error(400, InventoryStockPositionCodesV1.InvalidQuery);
+            }
+            if (cursors is not { IsAvailable: true })
+            {
+                throw Error(503, InventoryStockPositionCodesV1.Unavailable);
+            }
+
+            readQuery = readQuery with
+            {
+                After = cursors.Unprotect(scope.CompanyId, scope.ActorId, readQuery, query.Cursor),
+            };
+        }
+
         var window = await FencedAsync(
-            () => source.SearchAsync(scope.CompanyId, normalizedQ ?? string.Empty, query.Limit, cancellationToken),
+            () => source.SearchAsync(scope.CompanyId, readQuery, cancellationToken),
             scope,
             cancellationToken);
+        string? nextCursor = null;
+        if (window.HasMore)
+        {
+            if (window.LastPosition is null || cursors is not { IsAvailable: true })
+            {
+                throw Error(503, InventoryStockPositionCodesV1.Unavailable);
+            }
+
+            nextCursor = cursors.Protect(scope.CompanyId, scope.ActorId, readQuery, window.LastPosition);
+        }
+
         return new InventoryStockPositionsV1(
             [.. window.Records.Select(record => View(record, scope.CompanyId))],
-            window.HasMore);
+            window.HasMore,
+            nextCursor);
     }
 
     private static InventoryStockPositionV1 View(InventoryStockPositionRecord record, Guid companyId)
@@ -126,6 +191,8 @@ internal sealed class InventoryStockPositionService(
             record.Version.ToString(CultureInfo.InvariantCulture),
             label.Code,
             label.ProductId,
+            label.ProductVersion,
+            label.Classification?.ToString(),
             new InventoryLotV1(record.Lot.Id, record.Lot.HeatNumber, record.Lot.CoilNumber),
             label.HeatNumber,
             label.CoilNumber,
@@ -229,6 +296,25 @@ internal sealed class InventoryStockPositionService(
 
     private static InventoryStockPositionException Error(int status, string code, Exception? exception = null) =>
         new(status, code, exception);
+
+    private static bool TryOwnerKind(string? value, out StockPartyKind? kind)
+    {
+        kind = null;
+        if (string.IsNullOrEmpty(value))
+        {
+            return true;
+        }
+
+        if (!Enum.TryParse<StockPartyKind>(value, ignoreCase: false, out var parsed)
+            || !Enum.IsDefined(parsed)
+            || !string.Equals(value, parsed.ToString(), StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        kind = parsed;
+        return true;
+    }
 
     private sealed record Scope(Guid CompanyId, string ActorId);
 }
