@@ -32,6 +32,13 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             (movement.Kind, movement.SourceKind, Assert.Single(movement.Lines).Direction,
                 movement.Lines[0].QuantityKg));
         Assert.False(detail.MovementTimeline.WindowFull);
+
+        var companyTimeline = await MovementTimeline(context, CompanyA).SearchAsync(new(25));
+        var timelineMovement = Assert.Single(companyTimeline.Items);
+        Assert.Equal((movement.MovementId, "Receipt", "synthetic.source", source.LabelId, "125.5"),
+            (timelineMovement.MovementId, timelineMovement.Kind, timelineMovement.SourceKind,
+                Assert.Single(timelineMovement.Lines).LabelId, timelineMovement.Lines[0].QuantityKg));
+        Assert.Null(companyTimeline.NextCursor);
         Assert.Equal(before, await run.ScalarAsync<string>(
             "SELECT CONCAT(COUNT(*), ':', SUM(Version)) FROM inventory.Labels"));
     }
@@ -48,6 +55,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
 
         Assert.Equal((404, InventoryLabelDetailCodesV1.NotFound),
             (exception.StatusCode, exception.Code));
+        Assert.Empty((await MovementTimeline(companyB, CompanyB).SearchAsync(new(25))).Items);
     }
 
     [SqlServerFact]
@@ -79,6 +87,19 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             new LabelDetailAuthority(),
             new SqlInventoryLabelDetailReader(context),
             genealogy ?? new LabelDetailGenealogyReader(context));
+    }
+
+    private static InventoryMovementTimelineService MovementTimeline(
+        InventoryDbContext context,
+        Guid companyId)
+    {
+        var company = new CompanyContext();
+        company.Set(companyId);
+        return new InventoryMovementTimelineService(
+            company,
+            new LabelDetailUser(companyId),
+            new LabelDetailAuthority(),
+            new SqlInventoryMovementTimelineReader(context));
     }
 
     private static async Task TouchLabelAsync(Run run, Guid labelId)
