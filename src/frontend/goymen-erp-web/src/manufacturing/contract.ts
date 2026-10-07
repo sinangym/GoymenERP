@@ -116,6 +116,17 @@ export interface PlannedInput {
   readonly technicalSnapshot: CapturedPlanTechnicalSnapshot | null
 }
 
+export interface SlitLineView {
+  readonly bandWidthMm: string
+  readonly count: number
+}
+
+/** Immutable ordered slitting content stored with a Slitting draft. Null also covers legacy omitted JSON. */
+export interface SlittingSpecView {
+  readonly lines: readonly SlitLineView[]
+  readonly windingTargetKg: string | null
+}
+
 /**
  * Wire contract of `GET /api/v1/manufacturing/plans/{planId}` (`PlanViewV1`).
  *
@@ -136,6 +147,8 @@ export interface ProductionPlanView {
   readonly approvedAtUtc: string | null
   /** Null only when replaying a historical command JSON that predates the additive projection. */
   readonly calculation: PlanPreview | null
+  /** Null for plans without a slitting spec and for legacy command JSON that omitted the additive field. */
+  readonly slittingSpec: SlittingSpecView | null
 }
 
 export interface ProductionOrderView {
@@ -160,6 +173,8 @@ const GUID = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a
 const NIL_GUID = '00000000-0000-0000-0000-000000000000'
 /** The server's own `Text(decimal)`: invariant, no grouping, no exponent. */
 const KG_OUT = /^(0|[1-9][0-9]*)(\.[0-9]*[1-9])?$/
+const MM_OUT = /^(0|[1-9][0-9]*)(\.[0-9]{0,2}[1-9])?$/
+const INT32_MAX = 2_147_483_647
 const SIGNED_KG_OUT = /^-?(0|[1-9][0-9]*)(\.[0-9]*[1-9])?$/
 /**
  * The command's input grammar, the same as the server's (`KilogramText`): plain,
@@ -385,6 +400,31 @@ function decodeTarget(value: unknown): ProductionOrderView['target'] | undefined
   return mass === null ? undefined : { basis: value.basis, kg: mass }
 }
 
+function decodeSlittingSpec(value: unknown): SlittingSpecView | null | undefined {
+  // The field is additive: an older stored command answer legitimately omits it.
+  if (value === undefined || value === null) return null
+  if (!isObject(value) || !Array.isArray(value.lines) || value.lines.length === 0) return undefined
+  const windingTargetKg = value.windingTargetKg === null
+    ? null
+    : typeof value.windingTargetKg === 'string' && KG_OUT.test(value.windingTargetKg) && value.windingTargetKg !== '0'
+      ? value.windingTargetKg
+      : undefined
+  if (windingTargetKg === undefined) return undefined
+  const lines: SlitLineView[] = []
+  for (const raw of value.lines) {
+    if (!isObject(raw)
+      || typeof raw.bandWidthMm !== 'string'
+      || !MM_OUT.test(raw.bandWidthMm)
+      || raw.bandWidthMm === '0'
+      || typeof raw.count !== 'number'
+      || !Number.isSafeInteger(raw.count)
+      || raw.count <= 0
+      || raw.count > INT32_MAX) return undefined
+    lines.push({ bandWidthMm: raw.bandWidthMm, count: raw.count })
+  }
+  return { lines, windingTargetKg }
+}
+
 /** A positive safe integer: the version is compared and sent back, never computed. */
 function version(value: unknown): number | null {
   return typeof value === 'number' && Number.isSafeInteger(value) && value > 0 ? value : null
@@ -481,6 +521,7 @@ export function decodePlan(body: unknown): ProductionPlanView | null {
   const calculation = body.calculation === undefined || body.calculation === null
     ? null
     : decodePlanPreview(body.calculation)
+  const slittingSpec = decodeSlittingSpec(body.slittingSpec)
   if (
     planId === null ||
     companyId === null ||
@@ -489,6 +530,7 @@ export function decodePlan(body: unknown): ProductionPlanView | null {
     target === undefined ||
     approvedByUserId === undefined ||
     approvedAtUtc === undefined ||
+    slittingSpec === undefined ||
     (body.calculation !== undefined && body.calculation !== null && calculation === null) ||
     typeof body.process !== 'string' ||
     (body.status !== 'Draft' && body.status !== 'Approved') ||
@@ -535,6 +577,7 @@ export function decodePlan(body: unknown): ProductionPlanView | null {
     approvedByUserId,
     approvedAtUtc,
     calculation,
+    slittingSpec,
   }
 }
 

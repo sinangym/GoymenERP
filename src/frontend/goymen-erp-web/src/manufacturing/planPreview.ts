@@ -11,7 +11,7 @@
  */
 
 import { MANUFACTURING_BASE, devHeaders } from './api'
-import type { PlanTargetBasis } from './planCommandApi'
+import type { PlanTargetBasis, SlittingSpecRequest } from './planCommandApi'
 import type { CapturedPlanCommercialContext } from './planRevisionContract'
 
 import { decodePlanPreview, type PlanPreview } from './planPreviewContract'
@@ -35,6 +35,7 @@ export interface PlanPreviewRequest {
     readonly commercialContext?: CapturedPlanCommercialContext | null
   }[]
   readonly target: { readonly basis: PlanTargetBasis; readonly kg: string } | null
+  readonly slittingSpec?: SlittingSpecRequest | null
 }
 
 export type PlanPreviewOutcome =
