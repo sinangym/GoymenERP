@@ -744,9 +744,19 @@ test.describe('MFG plan create and reopen (real Inventory parent roll)', () => {
     const candidate = await openPlanForm(page, env.seed.rolls.planCreate)
 
     const sentPlan = page.waitForRequest((request) => PLAN_POST_RE.test(request.url()) && request.method() === 'POST')
+    const createdAnswer = page.waitForResponse(
+      (response) => PLAN_POST_RE.test(response.url()) && response.request().method() === 'POST',
+    )
     await page.getByRole('button', { name: 'Taslak planı kaydet', exact: true }).click()
     const body = (await sentPlan).postDataJSON() as { planId: string }
     await expect(page.getByRole('heading', { name: 'Taslak plan kaydedildi' })).toBeVisible()
+
+    const createdResponse = await createdAnswer
+    expect(createdResponse.status()).toBe(201)
+    const createdPlan = (await createdResponse.json()) as { inputs: Array<{ parentRollId: string; technicalSnapshot: unknown }> }
+    expect(createdPlan.inputs).toHaveLength(1)
+    expect(createdPlan.inputs[0].parentRollId).toBe(candidate.labelId)
+    const createdTechnicalSnapshot = createdPlan.inputs[0].technicalSnapshot
 
     // Reopen: the plan and its history are both read from the server; the history has only the creation.
     const historyRead = page.waitForResponse(
@@ -759,7 +769,32 @@ test.describe('MFG plan create and reopen (real Inventory parent roll)', () => {
       revisions: Array<{ inputs: Array<{ technicalSnapshot: unknown }> }>
     }
     const capturedTechnicalSnapshot = initialHistory.revisions[0]?.inputs[0]?.technicalSnapshot
-    expect(capturedTechnicalSnapshot).toBeTruthy()
+    // The genuine Product fixture (MfgBrowserSeed.EnsureGenuineProductAsync) is 1 mm × 1000 mm.
+    // Check its accepted tuple and complete provenance, rather than accepting an arbitrary truthy snapshot.
+    const nonNilGuid = expect.stringMatching(/^(?!00000000-0000-0000-0000-000000000000$)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)
+    const nonBlank = expect.stringMatching(/\S/)
+    expect(capturedTechnicalSnapshot).toEqual({
+      productId: env.seed.output.productId,
+      productVersion: env.seed.output.productVersion,
+      family: { familyId: nonNilGuid, familyCode: nonBlank, sourceRevision: nonBlank },
+      template: {
+        templateId: nonNilGuid,
+        templateVersion: nonBlank,
+        templateCode: nonBlank,
+        sourceRevision: nonBlank,
+      },
+      thicknessMm: '1',
+      widthMm: '1000',
+      unitKg: {
+        companyId: env.seed.companyId,
+        unitId: nonNilGuid,
+        unitCode: 'kg',
+        profileId: nonNilGuid,
+        profileVersion: nonBlank,
+      },
+      effectiveOn: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+    })
+    expect(capturedTechnicalSnapshot).toEqual(createdTechnicalSnapshot)
     await expect(page.getByRole('heading', { name: 'Plan yeniden açıldı' })).toBeVisible()
     await expect(page.getByText('Plan oluşturulduğundan beri düzenlenmedi.', { exact: true })).toBeVisible()
 
@@ -782,6 +817,9 @@ test.describe('MFG plan create and reopen (real Inventory parent roll)', () => {
     await page.getByRole('button', { name: 'Değişikliği kaydet', exact: true }).click()
     const revised = await revision
     expect(revised.status()).toBe(200)
+    expect(await revised.json()).toMatchObject({
+      inputs: [{ parentRollId: candidate.labelId, technicalSnapshot: capturedTechnicalSnapshot }],
+    })
     const key = revised.request().headers()['idempotency-key']
     expect(key).toMatch(/^[0-9a-f-]{36}$/)
     expect(revised.request().headers()['x-company-id']).toBe(env.seed.companyId)
@@ -798,7 +836,11 @@ test.describe('MFG plan create and reopen (real Inventory parent roll)', () => {
       target: { basis: 'GoodOutputMass', kg: '750' },
       reason: 'Tarayıcı kabulü: bobin kg düşürüldü',
     })
-    expect((await revisedRead).status()).toBe(200)
+    const revisedPlanResponse = await revisedRead
+    expect(revisedPlanResponse.status()).toBe(200)
+    expect(await revisedPlanResponse.json()).toMatchObject({
+      inputs: [{ parentRollId: candidate.labelId, technicalSnapshot: capturedTechnicalSnapshot }],
+    })
     await expect(page.getByText('Plan güncellendi (sürüm 2); güncel kayıt ve geçmiş yeniden okundu.', { exact: true }))
       .toBeVisible()
     await expect(storedPlanInputRows(page).getByRole('row', { name: new RegExp(`${candidate.labelId}.*800`) }))
@@ -823,7 +865,14 @@ test.describe('MFG plan create and reopen (real Inventory parent roll)', () => {
       (response) => PLAN_REVISIONS_RE.test(response.url()) && response.request().method() === 'GET',
     )
     await page.getByRole('row', { name: new RegExp(reference) }).getByRole('link', { name: new RegExp(reference) }).click()
-    expect((await reopenedHistory).status()).toBe(200)
+    const reopenedHistoryResponse = await reopenedHistory
+    expect(reopenedHistoryResponse.status()).toBe(200)
+    expect(await reopenedHistoryResponse.json()).toMatchObject({
+      revisions: [
+        { revision: 0, inputs: [{ parentRollId: candidate.labelId, technicalSnapshot: capturedTechnicalSnapshot }] },
+        { revision: 1, inputs: [{ parentRollId: candidate.labelId, technicalSnapshot: capturedTechnicalSnapshot }] },
+      ],
+    })
     const history = page.getByRole('region', { name: 'Plan geçmişi' })
     const latest = history.getByRole('listitem', { name: 'Revizyon 1' })
     await expect(latest).toContainText('Gerekçe: Tarayıcı kabulü: bobin kg düşürüldü')
@@ -838,7 +887,7 @@ test.describe('MFG plan create and reopen (real Inventory parent roll)', () => {
         planId: body.planId,
         status: 'Draft',
         version: 2,
-        inputs: [{ parentRollId: candidate.labelId, plannedKg: '800' }],
+        inputs: [{ parentRollId: candidate.labelId, plannedKg: '800', technicalSnapshot: capturedTechnicalSnapshot }],
         target: { basis: 'GoodOutputMass', kg: '750' },
       })
       const revisions = await api.get(`/api/v1/manufacturing/plans/${body.planId}/revisions`)
