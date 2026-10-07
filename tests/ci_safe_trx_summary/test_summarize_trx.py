@@ -361,6 +361,163 @@ class SafeTrxSummaryTests(unittest.TestCase):
                 self.assertNotIn("diagnosticCode", summary["failureGroups"][0])
                 self.assertNotIn("CI_SAFE_DIAGNOSTIC", encoded)
 
+    def test_finance_work_legacy_markers_are_closed_and_bound_to_the_exact_test(self) -> None:
+        codes = (
+            "finance_work_legacy_start",
+            "finance_work_legacy_seed",
+            "finance_work_legacy_up",
+            "finance_work_legacy_replay",
+            "finance_work_legacy_counts",
+            "finance_work_legacy_down_up",
+            "finance_work_legacy_preview_validation",
+            "finance_work_legacy_serialization",
+            "finance_work_legacy_batch_insert",
+            "finance_work_legacy_command_insert",
+        )
+        class_name = (
+            "GoymenERP.Api.IntegrationTests."
+            "FinanceOfficialInvoiceImportWorkDeliverySqlServerRelationalAcceptanceTests"
+        )
+        method_name = (
+            "Legacy_previous_migration_receipt_replays_after_up_without_fabricating_work_history"
+        )
+        self.assertEqual(
+            frozenset(codes), SUMMARIZER.FINANCE_WORK_LEGACY_DIAGNOSTIC_CODES
+        )
+        self.assertEqual(
+            f"{class_name}.{method_name}", SUMMARIZER.FINANCE_WORK_LEGACY_TEST_FQN
+        )
+
+        for code in codes:
+            with self.subTest(code=code):
+                marker = f"CI_SAFE_DIAGNOSTIC:{code}"
+                source = trx(
+                    '<UnitTestResult testId="fail" outcome="Failed"><Output><StdOut>'
+                    + marker
+                    + "\ncredential=DO_NOT_EXPORT"
+                    + '</StdOut></Output></UnitTestResult>',
+                    definition("fail", class_name, method_name),
+                )
+                summary, encoded = self._summary(source)
+                self.assertEqual(code, summary["failureGroups"][0]["diagnosticCode"])
+                for forbidden in ("DO_NOT_EXPORT", "credential", "CI_SAFE_DIAGNOSTIC"):
+                    self.assertNotIn(forbidden, encoded)
+
+                wrong_test = trx(
+                    '<UnitTestResult testId="fail" outcome="Failed"><Output><StdOut>'
+                    + marker
+                    + '</StdOut></Output></UnitTestResult>',
+                    definition("fail", class_name, "Other_test"),
+                )
+                wrong_summary, wrong_encoded = self._summary(wrong_test)
+                self.assertNotIn("diagnosticCode", wrong_summary["failureGroups"][0])
+                self.assertNotIn(code, wrong_encoded)
+
+        rejected = (
+            (
+                "unknown",
+                "Failed",
+                "<Output><StdOut>CI_SAFE_DIAGNOSTIC:finance_work_legacy_unknown</StdOut></Output>",
+            ),
+            (
+                "duplicate",
+                "Failed",
+                "<Output><StdOut>CI_SAFE_DIAGNOSTIC:finance_work_legacy_batch_insert\n"
+                "CI_SAFE_DIAGNOSTIC:finance_work_legacy_batch_insert</StdOut></Output>",
+            ),
+            (
+                "wrong path",
+                "Failed",
+                "<Output><Wrapper><StdOut>CI_SAFE_DIAGNOSTIC:finance_work_legacy_command_insert"
+                "</StdOut></Wrapper></Output>",
+            ),
+            (
+                "nested stdout content",
+                "Failed",
+                "<Output><StdOut>CI_SAFE_DIAGNOSTIC:finance_work_legacy_"
+                "<Wrapper>serialization</Wrapper></StdOut></Output>",
+            ),
+            (
+                "success",
+                "Passed",
+                "<Output><StdOut>CI_SAFE_DIAGNOSTIC:finance_work_legacy_start"
+                "</StdOut></Output>",
+            ),
+        )
+        for label, outcome, output in rejected:
+            with self.subTest(rejection=label):
+                source = trx(
+                    f'<UnitTestResult testId="case" outcome="{outcome}">'
+                    + output
+                    + "</UnitTestResult>",
+                    definition("case", class_name, method_name),
+                )
+                summary, encoded = self._summary(source)
+                for group in summary["failureGroups"]:
+                    self.assertNotIn("diagnosticCode", group)
+                self.assertNotIn("CI_SAFE_DIAGNOSTIC", encoded)
+                self.assertNotIn("finance_work_legacy_", encoded)
+
+    def test_finance_work_legacy_message_markers_are_never_published(self) -> None:
+        class_name = (
+            "GoymenERP.Api.IntegrationTests."
+            "FinanceOfficialInvoiceImportWorkDeliverySqlServerRelationalAcceptanceTests"
+        )
+        method_name = (
+            "Legacy_previous_migration_receipt_replays_after_up_without_fabricating_work_history"
+        )
+        for code in (
+            "finance_work_legacy_start",
+            "finance_work_legacy_seed",
+            "finance_work_legacy_up",
+            "finance_work_legacy_replay",
+            "finance_work_legacy_counts",
+            "finance_work_legacy_down_up",
+            "finance_work_legacy_preview_validation",
+            "finance_work_legacy_serialization",
+            "finance_work_legacy_batch_insert",
+            "finance_work_legacy_command_insert",
+        ):
+            with self.subTest(code=code):
+                source = trx(
+                    '<UnitTestResult testId="fail" outcome="Failed"><Output>'
+                    '<ErrorInfo><Message>CI_SAFE_DIAGNOSTIC:'
+                    + code
+                    + ' credential=DO_NOT_EXPORT</Message></ErrorInfo>'
+                    '</Output></UnitTestResult>',
+                    definition("fail", class_name, method_name),
+                )
+                summary, encoded = self._summary(source)
+                self.assertNotIn("diagnosticCode", summary["failureGroups"][0])
+                for forbidden in (code, "DO_NOT_EXPORT", "credential", "CI_SAFE_DIAGNOSTIC"):
+                    self.assertNotIn(forbidden, encoded)
+
+    def test_finance_work_legacy_message_invalidates_mixed_channel_markers(self) -> None:
+        class_name = (
+            "GoymenERP.Api.IntegrationTests."
+            "FinanceOfficialInvoiceImportWorkDeliverySqlServerRelationalAcceptanceTests"
+        )
+        method_name = (
+            "Legacy_previous_migration_receipt_replays_after_up_without_fabricating_work_history"
+        )
+        for stdout_code in (
+            "finance_work_legacy_start",
+            "acc_nj_sql_trial_balance",
+        ):
+            with self.subTest(stdout_code=stdout_code):
+                source = trx(
+                    '<UnitTestResult testId="fail" outcome="Failed"><Output>'
+                    '<ErrorInfo><Message>CI_SAFE_DIAGNOSTIC:finance_work_legacy_seed'
+                    '</Message></ErrorInfo><StdOut>CI_SAFE_DIAGNOSTIC:'
+                    + stdout_code
+                    + '</StdOut></Output></UnitTestResult>',
+                    definition("fail", class_name, method_name),
+                )
+                summary, encoded = self._summary(source)
+                self.assertNotIn("diagnosticCode", summary["failureGroups"][0])
+                self.assertNotIn("CI_SAFE_DIAGNOSTIC", encoded)
+                self.assertNotIn("finance_work_legacy_", encoded)
+
     def test_new_finance_stdout_markers_remain_closed_on_unsafe_paths(self) -> None:
         cases = (
             '<UnitTestResult testId="fail" outcome="Failed"><Output><Wrapper><StdOut>'

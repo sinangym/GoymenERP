@@ -66,6 +66,7 @@ def project_row(path: str) -> dict[str, object]:
         "executionCount": 1,
         "passed": 1,
         "skipped": 0,
+        "stageElapsedMs": {stage: 0 for stage in VERIFIER.STAGES},
     }
 
 
@@ -207,6 +208,7 @@ class BackendGroupVerifierTests(unittest.TestCase):
         for mutation in (
             original.replace('"passed": 1', '"passed": 2', 1),
             original.replace('"projectCount": 1', '"projectCount": 2', 1),
+            original.replace('"schemaVersion": 2', '"schemaVersion": 1', 1),
             original.replace('"group": "api"', '"group": "modules"', 1),
             original.replace('"group": "api"', '"group": "api", "group": "api"', 1),
         ):
@@ -223,6 +225,28 @@ class BackendGroupVerifierTests(unittest.TestCase):
         path.unlink()
         with self.assertRaisesRegex(RuntimeError, "contents are missing"):
             VERIFIER.verify_aggregate(self.root, directory, HEAD, COMMIT, "success", "success")
+
+    def test_aggregate_rejects_missing_extra_or_invalid_stage_timings(self) -> None:
+        directory = self.proof_directory()
+        path = directory / "ci-backend-test-group-proof-api" / "proof-api.json"
+        original = path.read_text(encoding="utf-8")
+        cases = (
+            ("missing", lambda values: values.pop("build")),
+            ("extra", lambda values: values.update({"command": 1})),
+            ("negative", lambda values: values.update({"test": -1})),
+            ("boolean", lambda values: values.update({"test": True})),
+            ("fraction", lambda values: values.update({"test": 1.5})),
+            ("nonfinite", lambda values: values.update({"test": float("inf")})),
+        )
+        for label, mutate in cases:
+            with self.subTest(case=label):
+                proof = json.loads(original)
+                mutate(proof["projects"][0]["stageElapsedMs"])
+                path.write_text(json.dumps(proof), encoding="utf-8")
+                with self.assertRaisesRegex(RuntimeError, "invalid stage timing"):
+                    VERIFIER.verify_aggregate(
+                        self.root, directory, HEAD, COMMIT, "success", "success"
+                    )
 
     def test_group_runner_discovers_then_executes_exact_project_and_writes_safe_proof(self) -> None:
         project = VERIFIER.GROUP_PROJECTS["api"][0]
@@ -243,7 +267,13 @@ class BackendGroupVerifierTests(unittest.TestCase):
 
         proof = self.root / "artifacts" / "proof-api.json"
         results = self.root / "artifacts" / "results"
-        with mock.patch.object(VERIFIER, "run_checked", side_effect=command), mock.patch.dict(
+        with mock.patch.object(VERIFIER, "run_checked", side_effect=command), mock.patch.object(
+            VERIFIER.time, "monotonic_ns", side_effect=(
+                0, 1_000_000, 2_000_000, 4_000_000, 5_000_000, 6_000_000,
+                7_000_000, 10_000_000, 11_000_000, 12_000_000,
+                13_000_000, 17_000_000,
+            )
+        ), mock.patch.dict(
             os.environ, {"GOYMEN_ERP_TEST_SQLSERVER_CONNECTION": ""}, clear=False
         ):
             self.assertEqual(VERIFIER.run_group(self.root, "api", results, proof, HEAD, COMMIT), 1)
@@ -253,7 +283,11 @@ class BackendGroupVerifierTests(unittest.TestCase):
         self.assertIn("--list-tests", commands[3])
         self.assertIn("--no-build", commands[3])
         self.assertIn("--no-build", commands[5])
-        self.assertEqual(json.loads(proof.read_text(encoding="utf-8"))["projects"][0]["path"], project)
+        row = json.loads(proof.read_text(encoding="utf-8"))["projects"][0]
+        self.assertEqual(row["path"], project)
+        self.assertEqual(row["stageElapsedMs"], {
+            "bootstrapPreflight": 3, "build": 2, "discovery": 3, "test": 4,
+        })
         with self.assertRaisesRegex(RuntimeError, "fresh"):
             VERIFIER.run_group(self.root, "api", results, proof, HEAD, COMMIT)
 

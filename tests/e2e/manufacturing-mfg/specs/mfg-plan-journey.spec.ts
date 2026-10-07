@@ -753,7 +753,13 @@ test.describe('MFG plan create and reopen (real Inventory parent roll)', () => {
       (response) => PLAN_REVISIONS_RE.test(response.url()) && response.request().method() === 'GET',
     )
     await page.getByRole('link', { name: 'Formu kapat ve planı yeniden aç' }).click()
-    expect((await historyRead).status()).toBe(200)
+    const initialHistoryResponse = await historyRead
+    expect(initialHistoryResponse.status()).toBe(200)
+    const initialHistory = (await initialHistoryResponse.json()) as {
+      revisions: Array<{ inputs: Array<{ technicalSnapshot: unknown }> }>
+    }
+    const capturedTechnicalSnapshot = initialHistory.revisions[0]?.inputs[0]?.technicalSnapshot
+    expect(capturedTechnicalSnapshot).toBeTruthy()
     await expect(page.getByRole('heading', { name: 'Plan yeniden açıldı' })).toBeVisible()
     await expect(page.getByText('Plan oluşturulduğundan beri düzenlenmedi.', { exact: true })).toBeVisible()
 
@@ -842,8 +848,15 @@ test.describe('MFG plan create and reopen (real Inventory parent roll)', () => {
       expect(stored.revisions[1]).toMatchObject({
         planVersion: 2,
         reason: 'Tarayıcı kabulü: bobin kg düşürüldü',
-        inputs: [{ parentRollId: candidate.labelId, plannedKg: '800', expectedLabelVersion: candidate.labelVersion }],
+        inputs: [{
+          parentRollId: candidate.labelId,
+          plannedKg: '800',
+          expectedLabelVersion: candidate.labelVersion,
+          technicalSnapshot: capturedTechnicalSnapshot,
+        }],
       })
+      expect((stored.revisions[0] as { inputs: Array<{ technicalSnapshot: unknown }> }).inputs[0].technicalSnapshot)
+        .toEqual(capturedTechnicalSnapshot)
 
       // Idempotent replay: the browser's key and body again answer the stored result, no second revision.
       const replay = await api.post(`/api/v1/manufacturing/plans/${body.planId}/revision`, {

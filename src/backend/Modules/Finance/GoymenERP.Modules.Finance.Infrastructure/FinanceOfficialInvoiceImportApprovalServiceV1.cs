@@ -33,7 +33,8 @@ public sealed class FinanceOfficialInvoiceImportApprovalServiceV1(
     TimeProvider timeProvider)
     : IFinanceOfficialInvoiceImportApprovalServiceV1,
       IApprovedFinanceOpenItemSourcePort,
-      IApprovedFinanceOpenItemSourceCatalogPort
+      IApprovedFinanceOpenItemSourceCatalogPort,
+      IFinanceOfficialInvoiceImportWorkObservationSourceV1
 {
     public const string UploadCommand = "finance.official-invoice-import.upload";
     public const string ApproveCommand = "finance.official-invoice-import.approve";
@@ -119,7 +120,10 @@ public sealed class FinanceOfficialInvoiceImportApprovalServiceV1(
         };
         var result = Succeeded(context, View(row, approval: null));
         dbContext.OfficialInvoiceImportBatches.Add(row);
-        AddCommand(context, UploadCommand, metadata, keyHash, payloadHash, row.Id, result, now);
+        var command = AddCommand(context, UploadCommand, metadata, keyHash, payloadHash, row.Id, result, now);
+        dbContext.OfficialInvoiceImportWorkDeliveries.Add(
+            FinanceOfficialInvoiceImportWorkObservationFactoryV1.ToRow(
+                FinanceOfficialInvoiceImportWorkObservationFactoryV1.CreateUpload(command, row)));
 
         if (await FenceAsync(context, FinanceOfficialInvoiceImportAuthorityActionV1.Upload, row.Id, cancellationToken)
                 is { } beforeSave)
@@ -201,7 +205,10 @@ public sealed class FinanceOfficialInvoiceImportApprovalServiceV1(
         };
         var result = Succeeded(context, View(row, approval));
         dbContext.OfficialInvoiceImportApprovals.Add(approval);
-        AddCommand(context, ApproveCommand, metadata, keyHash, payloadHash, row.Id, result, now);
+        var command = AddCommand(context, ApproveCommand, metadata, keyHash, payloadHash, row.Id, result, now);
+        dbContext.OfficialInvoiceImportWorkDeliveries.Add(
+            FinanceOfficialInvoiceImportWorkObservationFactoryV1.ToRow(
+                FinanceOfficialInvoiceImportWorkObservationFactoryV1.CreateApproval(command, row, approval)));
 
         if (await FenceAsync(context, FinanceOfficialInvoiceImportAuthorityActionV1.Approve, row.Id, cancellationToken)
                 is { } beforeSave)
@@ -271,6 +278,70 @@ public sealed class FinanceOfficialInvoiceImportApprovalServiceV1(
             hasMore ? checked(offset + PageSize).ToString(CultureInfo.InvariantCulture) : null));
     }
 
+    public async Task<ReadResult<FinanceOfficialInvoiceImportWorkObservationV1>> GetAsync(
+        FinanceContext context,
+        Guid batchId,
+        long observationOrdinal,
+        Guid deliveryId,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        cancellationToken.ThrowIfCancellationRequested();
+        var action = observationOrdinal switch
+        {
+            1 => FinanceOfficialInvoiceImportAuthorityActionV1.Upload,
+            2 => FinanceOfficialInvoiceImportAuthorityActionV1.Approve,
+            _ => (FinanceOfficialInvoiceImportAuthorityActionV1?)null,
+        };
+        if (batchId == Guid.Empty || deliveryId == Guid.Empty || action is null)
+        {
+            return new(ReadOutcome.NotFound, null);
+        }
+        if (await ReadFenceAsync<FinanceOfficialInvoiceImportWorkObservationV1>(context, action.Value, batchId,
+                cancellationToken) is { } refused)
+        {
+            return refused;
+        }
+
+        FinanceOfficialInvoiceImportWorkDeliveryRow? delivery;
+        FinanceOfficialInvoiceImportCommandRow? command;
+        FinanceOfficialInvoiceImportBatchRow? batch;
+        FinanceOfficialInvoiceImportApprovalRow? approval;
+        try
+        {
+            delivery = await dbContext.OfficialInvoiceImportWorkDeliveries.AsNoTracking()
+                .SingleOrDefaultAsync(row => row.DeliveryId == deliveryId && row.BatchId == batchId
+                    && row.ObservationOrdinal == observationOrdinal, cancellationToken);
+            command = delivery is null ? null : await dbContext.OfficialInvoiceImportCommands.AsNoTracking()
+                .SingleOrDefaultAsync(row => row.Id == delivery.CommandReceiptId, cancellationToken);
+            batch = delivery is null ? null : await dbContext.OfficialInvoiceImportBatches.AsNoTracking()
+                .SingleOrDefaultAsync(row => row.Id == delivery.BatchId, cancellationToken);
+            approval = observationOrdinal == 2 && delivery is not null
+                ? await dbContext.OfficialInvoiceImportApprovals.AsNoTracking()
+                    .SingleOrDefaultAsync(row => row.BatchId == delivery.BatchId, cancellationToken)
+                : null;
+        }
+        catch (Exception) when (!cancellationToken.IsCancellationRequested)
+        {
+            return await FailureAfterWorkReadAsync<FinanceOfficialInvoiceImportWorkObservationV1>(
+                context, action.Value, batchId, cancellationToken);
+        }
+
+        if (await ReadFenceAsync<FinanceOfficialInvoiceImportWorkObservationV1>(context, action.Value, batchId,
+                cancellationToken) is { } afterRead)
+        {
+            return afterRead;
+        }
+        if (delivery is null || command is null || batch is null)
+        {
+            return new(ReadOutcome.NotFound, null);
+        }
+        return FinanceOfficialInvoiceImportWorkObservationFactoryV1.TryRestore(
+            delivery, command, batch, approval, out var observation)
+            ? new(ReadOutcome.Found, observation)
+            : new(ReadOutcome.Unavailable, null);
+    }
+
     private async Task<FinanceOfficialInvoiceImportApprovalResultV1?> PriorAsync(
         FinanceContext context, string command, FinanceOfficialInvoiceImportAuthorityActionV1 action, Guid batchId,
         string keyHash, string payloadHash, CancellationToken cancellationToken)
@@ -289,6 +360,40 @@ public sealed class FinanceOfficialInvoiceImportApprovalServiceV1(
         }
         var stored = JsonSerializer.Deserialize<FinanceOfficialInvoiceImportApprovalResultV1>(prior.ResultJson, Json)
             ?? throw new InvalidOperationException("Kayıtlı resmî fatura import sonucu okunamadı.");
+        if (prior.ProducerSchemaVersion is null)
+        {
+            return stored with { IsReplay = true };
+        }
+        if (prior.ProducerSchemaVersion != FinanceOfficialInvoiceImportWorkObservationFactoryV1.PayloadSchemaVersion)
+        {
+            return Refused(context, CommandOutcome.Unavailable,
+                Issue("delivery", "finance_work_delivery_unavailable"));
+        }
+        var delivery = await dbContext.OfficialInvoiceImportWorkDeliveries.AsNoTracking()
+            .SingleOrDefaultAsync(row => row.CommandReceiptId == prior.Id, cancellationToken);
+        var batch = await dbContext.OfficialInvoiceImportBatches.AsNoTracking()
+            .SingleOrDefaultAsync(row => row.Id == prior.BatchId, cancellationToken);
+        var approval = string.Equals(command, ApproveCommand, StringComparison.Ordinal)
+            ? await dbContext.OfficialInvoiceImportApprovals.AsNoTracking()
+                .SingleOrDefaultAsync(row => row.BatchId == prior.BatchId, cancellationToken)
+            : null;
+        if (await FenceAsync(context, action, batchId, cancellationToken) is { } afterDeliveryRead)
+        {
+            return afterDeliveryRead;
+        }
+        if (delivery is null || batch is null
+            || !FinanceOfficialInvoiceImportWorkObservationFactoryV1.TryRestore(
+                delivery, prior, batch, approval, out _))
+        {
+            return Refused(context, CommandOutcome.Unavailable,
+                Issue("delivery", "finance_work_delivery_unavailable"));
+        }
+        if (stored.Outcome != CommandOutcome.Succeeded || stored.Resource is null
+            || stored.Resource != View(batch, approval))
+        {
+            return Refused(context, CommandOutcome.Unavailable,
+                Issue("delivery", "finance_work_delivery_unavailable"));
+        }
         return stored with { IsReplay = true };
     }
 
@@ -323,14 +428,45 @@ public sealed class FinanceOfficialInvoiceImportApprovalServiceV1(
             : Refused(context, CommandOutcome.Unavailable, Issue("permission", "finance_permission_mapping_unavailable"));
     }
 
-    private void AddCommand(FinanceContext context, string command, CommandMetadata metadata, string keyHash,
+    private async Task<ReadResult<T>?> ReadFenceAsync<T>(
+        FinanceContext context,
+        FinanceOfficialInvoiceImportAuthorityActionV1 action,
+        Guid batchId,
+        CancellationToken cancellationToken) where T : class
+    {
+        if (!SameContext(context)) return new(ReadOutcome.Denied, null);
+        var decision = await commandAuthority.CheckAsync(context, action, batchId, cancellationToken);
+        if (!SameContext(context)) return new(ReadOutcome.Denied, null);
+        return decision switch
+        {
+            PermissionDecision.Allowed => null,
+            PermissionDecision.Unavailable => new(ReadOutcome.Unavailable, null),
+            _ => new(ReadOutcome.Denied, null),
+        };
+    }
+
+    private async Task<ReadResult<T>> FailureAfterWorkReadAsync<T>(
+        FinanceContext context,
+        FinanceOfficialInvoiceImportAuthorityActionV1 action,
+        Guid batchId,
+        CancellationToken cancellationToken) where T : class =>
+        await ReadFenceAsync<T>(context, action, batchId, cancellationToken)
+        ?? new(ReadOutcome.Unavailable, null);
+
+    private FinanceOfficialInvoiceImportCommandRow AddCommand(
+        FinanceContext context, string command, CommandMetadata metadata, string keyHash,
         string payloadHash, Guid batchId, FinanceOfficialInvoiceImportApprovalResultV1 result, DateTimeOffset now)
-        => dbContext.OfficialInvoiceImportCommands.Add(new FinanceOfficialInvoiceImportCommandRow
+    {
+        var row = new FinanceOfficialInvoiceImportCommandRow
         {
             Id = Guid.NewGuid(), CompanyId = context.CompanyId, CommandName = command,
             IdempotencyKeyHash = keyHash, ActorId = context.ActorId, PayloadHash = payloadHash, BatchId = batchId,
+            ProducerSchemaVersion = FinanceOfficialInvoiceImportWorkObservationFactoryV1.PayloadSchemaVersion,
             ResultJson = JsonSerializer.Serialize(result, Json), CorrelationId = context.CorrelationId, RecordedAtUtc = now,
-        });
+        };
+        dbContext.OfficialInvoiceImportCommands.Add(row);
+        return row;
+    }
 
     private void Audit(FinanceContext context, CommandMetadata metadata, Guid batchId, string eventType,
         string operation, long? beforeVersion, long afterVersion, string before, string after,

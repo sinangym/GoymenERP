@@ -105,7 +105,7 @@ public sealed class ProductManufacturingTechnicalSnapshotService(
         return new(snapshot, []);
     }
 
-    private static List<ProductFieldError> ValidateTechnicalReferences(ProductReferences references,
+    internal static List<ProductFieldError> ValidateTechnicalReferences(ProductReferences references,
         ProductFamilyDefinitionV2 definition, ProductTemplateV2 template)
     {
         if (references.TemplateId is null)
@@ -153,11 +153,11 @@ public sealed class ProductManufacturingTechnicalSnapshotService(
         return new(millimetres, null);
     }
 
-    private static bool IsSynthetic(string sourceRevision) =>
+    internal static bool IsSynthetic(string sourceRevision) =>
         sourceRevision.StartsWith("SYNTHETIC", StringComparison.OrdinalIgnoreCase)
         || sourceRevision.StartsWith("SENTETIK", StringComparison.OrdinalIgnoreCase);
 
-    private static bool UsesSyntheticDictionaryValue(ProductReferences references,
+    internal static bool UsesSyntheticDictionaryValue(ProductReferences references,
         ProductFamilyDefinitionV2 definition, ProductTemplateV2 template) =>
         template.Fields.Where(field => field.Kind == ProductTemplateFieldKindV2.DictionaryReference)
             .Any(field => references.Attributes!.TryGetValue(field.Key, out var value)
@@ -166,7 +166,7 @@ public sealed class ProductManufacturingTechnicalSnapshotService(
                     && entry.Code == value.GetString()) is { SourceRef: var sourceRevision }
                 && IsSynthetic(sourceRevision));
 
-    private static ProductCardView Restore(ProductStoredRecord record)
+    internal static ProductCardView Restore(ProductStoredRecord record)
     {
         try
         {

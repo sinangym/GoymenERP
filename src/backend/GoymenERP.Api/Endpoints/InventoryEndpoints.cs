@@ -5,7 +5,10 @@ using GoymenERP.Api.Multitenancy;
 using GoymenERP.Api.OpenApi;
 using GoymenERP.BuildingBlocks.Observability;
 using GoymenERP.BuildingBlocks.Security;
+using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Inventory.Application;
+using GoymenERP.Modules.Product.Application.Contracts;
+using GoymenERP.Modules.Organization.Application.Contracts;
 
 namespace GoymenERP.Api.Endpoints;
 
@@ -80,6 +83,7 @@ public static partial class InventoryEndpoints
         MapLabelDetailEndpoint(endpoints);
         MapParentRollCandidateEndpoint(endpoints);
         MapStockPositionEndpoint(endpoints);
+        MapMovementTimelineEndpoint(endpoints);
         endpoints.MapInventoryReferenceEndpoints();
         MapPhysicalAllocationEndpoints(group);
         MapOpeningCountEndpoints(group);
@@ -711,6 +715,11 @@ public static partial class InventoryEndpoints
         endpoints.MapGet(InventoryStockPositionApiV1.PositionsPath, async (
                 HttpContext httpContext,
                 IInventoryStockPositionsV1 positions,
+                IProductStockDisplayReferencesV1 productDisplays,
+                IOrganizationLocationDisplayReaderV1 locationDisplays,
+                ICompanyContext companyContext,
+                ICurrentUser currentUser,
+                IErpAuthorityRevalidationService authority,
                 CancellationToken cancellationToken) =>
             {
                 SetPrivateNoStore(httpContext.Response);
@@ -719,10 +728,32 @@ public static partial class InventoryEndpoints
                     return StockPositionProblem(StatusCodes.Status400BadRequest,
                         InventoryStockPositionCodesV1.InvalidQuery);
                 }
+                if (!TryReadStockPositionDisplayContract(httpContext.Request.Headers, out var displayContract))
+                {
+                    return StockPositionProblem(StatusCodes.Status400BadRequest,
+                        InventoryStockPositionCodesV1.InvalidQuery);
+                }
 
                 try
                 {
-                    return Results.Ok(await positions.SearchAsync(query, cancellationToken));
+                    var scope = displayContract != InventoryStockPositionDisplayContract.Legacy
+                        ? InventoryStockPositionDisplayHost.CaptureScope(companyContext, currentUser)
+                        : null;
+                    var page = await positions.SearchAsync(query, cancellationToken);
+                    if (displayContract == InventoryStockPositionDisplayContract.Legacy)
+                    {
+                        return Results.Ok(InventoryStockPositionDisplayHost.Legacy(page));
+                    }
+
+                    if (displayContract == InventoryStockPositionDisplayContract.ProductAndLocation)
+                    {
+                        return Results.Ok(await InventoryStockPositionDisplayHost.ComposeWithLocationAuthorizedAsync(
+                            scope!, page, productDisplays, locationDisplays, companyContext, currentUser, authority,
+                            cancellationToken));
+                    }
+
+                    return Results.Ok(await InventoryStockPositionDisplayHost.ComposeAuthorizedAsync(
+                        scope!, page, productDisplays, companyContext, currentUser, authority, cancellationToken));
                 }
                 catch (InventoryStockPositionException exception)
                 {
@@ -746,6 +777,12 @@ public static partial class InventoryEndpoints
                 {
                     throw;
                 }
+                catch (ProductOperationException exception)
+                {
+                    return exception.StatusCode == StatusCodes.Status403Forbidden
+                        ? StockPositionProblem(StatusCodes.Status403Forbidden)
+                        : StockPositionProblem(StatusCodes.Status503ServiceUnavailable);
+                }
                 catch (Exception)
                 {
                     return StockPositionProblem(StatusCodes.Status503ServiceUnavailable);
@@ -756,11 +793,45 @@ public static partial class InventoryEndpoints
             .WithMetadata(new PrivateNoStoreOnAuthorizationFailureMetadata())
             .RequireCompanyContext()
             .RequireAuthorization(ErpPermissions.InventoryLabelsRead, ErpPermissions.InventoryBalancesRead)
-            .Produces<InventoryStockPositionsV1>(StatusCodes.Status200OK)
+            .Produces<InventoryStockPositionPageV1>(StatusCodes.Status200OK)
             .ProducesErpBadRequest(InventoryStockPositionCodesV1.InvalidQuery)
             .ProducesErpConflict(InventoryStockPositionCodesV1.ReadConflict)
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();
+    }
+
+    private static bool TryReadStockPositionDisplayContract(
+        IHeaderDictionary headers,
+        out InventoryStockPositionDisplayContract contract)
+    {
+        contract = InventoryStockPositionDisplayContract.Legacy;
+        if (!headers.TryGetValue(InventoryStockPositionApiV1.ProductDisplayContractHeader, out var values))
+        {
+            return true;
+        }
+
+        if (values.Count != 1)
+        {
+            return false;
+        }
+
+        contract = values[0] switch
+        {
+            InventoryStockPositionApiV1.ProductDisplayContractVersion =>
+                InventoryStockPositionDisplayContract.Product,
+            InventoryStockPositionDisplayHost.LocationDisplayContractVersion =>
+                InventoryStockPositionDisplayContract.ProductAndLocation,
+            _ => InventoryStockPositionDisplayContract.Invalid,
+        };
+        return contract != InventoryStockPositionDisplayContract.Invalid;
+    }
+
+    private enum InventoryStockPositionDisplayContract
+    {
+        Invalid,
+        Legacy,
+        Product,
+        ProductAndLocation,
     }
 
     private static bool TryReadStockPositionQuery(
@@ -768,7 +839,9 @@ public static partial class InventoryEndpoints
         out InventoryStockPositionQueryV1 parsed)
     {
         parsed = new();
-        if (query.Keys.Any(name => name is not "q" and not "limit")
+        if (query.Keys.Any(name => name is not "q" and not "limit" and not "cursor"
+                and not "productId" and not "locationId" and not "classification"
+                and not "ownerKind" and not "ownerId")
             || query.Any(parameter => parameter.Value.Count != 1))
         {
             return false;
@@ -789,11 +862,143 @@ public static partial class InventoryEndpoints
             return false;
         }
 
-        parsed = new InventoryStockPositionQueryV1(q, limit);
+        string? cursor = null;
+        if (query.TryGetValue("cursor", out var cursorValues)) cursor = cursorValues[0];
+
+        if (!TryReadOptionalGuid(query, "productId", out var productId)
+            || !TryReadOptionalGuid(query, "locationId", out var locationId)
+            || !TryReadOptionalGuid(query, "ownerId", out var ownerId))
+        {
+            return false;
+        }
+
+        InventoryLabelClassificationV1? classification = null;
+        if (query.TryGetValue("classification", out var classificationValues))
+        {
+            var raw = classificationValues[0];
+            if (!Enum.TryParse<InventoryLabelClassificationV1>(raw, ignoreCase: false, out var value)
+                || !Enum.IsDefined(value)
+                || !string.Equals(value.ToString(), raw, StringComparison.Ordinal))
+            {
+                return false;
+            }
+            classification = value;
+        }
+
+        string? ownerKind = null;
+        if (query.TryGetValue("ownerKind", out var ownerKindValues))
+        {
+            ownerKind = ownerKindValues[0];
+            if (ownerKind is not "Company" and not "Counterparty") return false;
+        }
+
+        parsed = new InventoryStockPositionQueryV1(
+            q, limit, cursor, productId, locationId, classification, ownerKind, ownerId);
+        return true;
+    }
+
+    private static bool TryReadOptionalGuid(IQueryCollection query, string name, out Guid? value)
+    {
+        value = null;
+        if (!query.TryGetValue(name, out var values)) return true;
+        if (!Guid.TryParseExact(values[0], "D", out var parsed) || parsed == Guid.Empty) return false;
+        value = parsed;
         return true;
     }
 
     private static IResult StockPositionProblem(int statusCode, string? code = null) => code is null
+        ? Results.Problem(statusCode: statusCode)
+        : Results.Problem(statusCode: statusCode,
+            extensions: new Dictionary<string, object?> { ["code"] = code });
+
+    private static void MapMovementTimelineEndpoint(IEndpointRouteBuilder endpoints)
+    {
+        endpoints.MapGet(InventoryMovementTimelineApiV1.Path, async (
+                HttpContext httpContext,
+                IInventoryMovementTimelineV1 timeline,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext.Response);
+                if (!TryReadMovementTimelineQuery(httpContext.Request.Query, out var query))
+                {
+                    return MovementTimelineProblem(
+                        StatusCodes.Status400BadRequest,
+                        InventoryMovementTimelineCodesV1.InvalidQuery);
+                }
+
+                try
+                {
+                    return Results.Ok(await timeline.SearchAsync(query, cancellationToken));
+                }
+                catch (InventoryMovementTimelineException exception)
+                {
+                    return exception.StatusCode switch
+                    {
+                        StatusCodes.Status400BadRequest
+                            when exception.Code == InventoryMovementTimelineCodesV1.InvalidQuery =>
+                            MovementTimelineProblem(exception.StatusCode, exception.Code),
+                        StatusCodes.Status503ServiceUnavailable
+                            when exception.Code == InventoryMovementTimelineCodesV1.Unavailable =>
+                            MovementTimelineProblem(exception.StatusCode, exception.Code),
+                        StatusCodes.Status401Unauthorized or StatusCodes.Status403Forbidden =>
+                            MovementTimelineProblem(exception.StatusCode),
+                        _ => MovementTimelineProblem(StatusCodes.Status503ServiceUnavailable),
+                    };
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception)
+                {
+                    return MovementTimelineProblem(StatusCodes.Status503ServiceUnavailable);
+                }
+            })
+            .WithName(InventoryMovementTimelineApiV1.GetOperationId)
+            .WithTags("Inventory")
+            .WithMetadata(new PrivateNoStoreOnAuthorizationFailureMetadata())
+            .RequireCompanyContext()
+            .RequireAuthorization(ErpPermissions.InventoryLabelsRead, ErpPermissions.InventoryBalancesRead)
+            .Produces<InventoryMovementTimelinePageV1>(StatusCodes.Status200OK)
+            .ProducesErpBadRequest(InventoryMovementTimelineCodesV1.InvalidQuery)
+            .ProducesErpServiceUnavailable(InventoryMovementTimelineCodesV1.Unavailable)
+            .ProducesErpAuthenticatedProblems();
+    }
+
+    private static bool TryReadMovementTimelineQuery(
+        IQueryCollection query,
+        out InventoryMovementTimelineQueryV1 parsed)
+    {
+        parsed = new();
+        if (query.Keys.Any(name => name is not "limit" and not "cursor")
+            || query.Any(parameter => parameter.Value.Count != 1))
+        {
+            return false;
+        }
+
+        var limit = 50;
+        if (query.TryGetValue("limit", out var limitValues)
+            && (!int.TryParse(limitValues[0], NumberStyles.None, CultureInfo.InvariantCulture, out limit)
+                || limit is < 1 or > 100))
+        {
+            return false;
+        }
+
+        string? cursor = null;
+        if (query.TryGetValue("cursor", out var cursorValues))
+        {
+            cursor = cursorValues[0];
+            if (string.IsNullOrWhiteSpace(cursor))
+            {
+                return false;
+            }
+        }
+
+        parsed = new InventoryMovementTimelineQueryV1(limit, cursor);
+        return true;
+    }
+
+    private static IResult MovementTimelineProblem(int statusCode, string? code = null) => code is null
         ? Results.Problem(statusCode: statusCode)
         : Results.Problem(statusCode: statusCode,
             extensions: new Dictionary<string, object?> { ["code"] = code });

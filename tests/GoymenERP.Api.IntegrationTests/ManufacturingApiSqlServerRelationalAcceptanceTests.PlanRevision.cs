@@ -60,10 +60,28 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
         Assert.Equal([0, 1], history.Revisions.Select(revision => revision.Revision));
         Assert.Equal((1L, (string?)null, (string?)null), (history.Revisions[0].PlanVersion, history.Revisions[0].Reason,
             history.Revisions[0].RevisedBy));
-        Assert.Equal(new PlanRevisionInputViewV1(rollA.Id, "1000", rollA.Version), Assert.Single(history.Revisions[0].Inputs));
+        var createdRevisionInput = Assert.Single(history.Revisions[0].Inputs);
+        Assert.Equal((rollA.Id, "1000", rollA.Version),
+            (createdRevisionInput.ParentRollId, createdRevisionInput.PlannedKg, createdRevisionInput.ExpectedLabelVersion));
+        var createdSnapshot = Assert.IsType<CapturedPlanTechnicalSnapshotViewV1>(createdRevisionInput.TechnicalSnapshot);
+        Assert.Equal(Assert.IsType<CapturedPlanTechnicalSnapshotViewV1>(Assert.Single(created.Inputs).TechnicalSnapshot),
+            createdSnapshot);
+        Assert.Equal((run.ProductFixture.ProductId, run.ProductFixture.ProductVersion, CompanyA,
+                run.ProductFixture.UnitId, run.ProductFixture.ProfileId, run.ProductFixture.ProfileVersion, "1", "1000"),
+            (createdSnapshot.ProductId, createdSnapshot.ProductVersion, createdSnapshot.UnitKg.CompanyId,
+                createdSnapshot.UnitKg.UnitId, createdSnapshot.UnitKg.ProfileId,
+                createdSnapshot.UnitKg.ProfileVersion, createdSnapshot.ThicknessMm, createdSnapshot.WidthMm));
         Assert.Equal((2L, "Bobin kalitesi nedeniyle bölündü"), (history.Revisions[1].PlanVersion, history.Revisions[1].Reason));
-        Assert.Equal([new PlanRevisionInputViewV1(rollA.Id, "800.5", rollA.Version),
-                new PlanRevisionInputViewV1(rollB.Id, "199.5", rollB.Version)], history.Revisions[1].Inputs);
+        Assert.Equal([(rollA.Id, "800.5", rollA.Version), (rollB.Id, "199.5", rollB.Version)],
+            history.Revisions[1].Inputs.Select(input =>
+                (input.ParentRollId, input.PlannedKg, input.ExpectedLabelVersion)));
+        var revisedSnapshots = history.Revisions[1].Inputs.Select(input =>
+            Assert.IsType<CapturedPlanTechnicalSnapshotViewV1>(input.TechnicalSnapshot)).ToArray();
+        Assert.Equal(view.Inputs.Select(input => Assert.IsType<CapturedPlanTechnicalSnapshotViewV1>(input.TechnicalSnapshot)),
+            revisedSnapshots);
+        Assert.All(revisedSnapshots, snapshot =>
+            Assert.Equal((run.ProductFixture.ProductId, run.ProductFixture.ProductVersion, "1", "1000"),
+                (snapshot.ProductId, snapshot.ProductVersion, snapshot.ThicknessMm, snapshot.WidthMm)));
 
         // The plan list reads the edited content.
         var list = (await client.GetFromJsonAsync<PlanListViewV1>($"{Base}/plans?pageSize=100"))!;
@@ -205,8 +223,18 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
             "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType = N'manufacturing.plan.revised.v1'"));
         Assert.Equal(1L, await run.ScalarAsync<long>(
             "SELECT Version FROM manufacturing.Plans WHERE Id = @p", ("@p", plan.PlanId)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "UPDATE manufacturing.PlanInputs SET TechnicalProductId = NULL, TechnicalProductVersion = NULL, "
+            + "TechnicalFamilyId = NULL, TechnicalFamilyCode = NULL, TechnicalFamilySourceRevision = NULL, "
+            + "TechnicalTemplateId = NULL, TechnicalTemplateVersion = NULL, TechnicalTemplateCode = NULL, "
+            + "TechnicalTemplateSourceRevision = NULL, TechnicalKilogramUnitCompanyId = NULL, "
+            + "TechnicalKilogramUnitId = NULL, TechnicalKilogramUnitCode = NULL, TechnicalKilogramProfileId = NULL, "
+            + "TechnicalKilogramProfileVersion = NULL, TechnicalEffectiveOn = NULL, TechnicalThicknessMm = NULL, "
+            + "TechnicalWidthMm = NULL WHERE PlanId = @p; SELECT @@ROWCOUNT;", ("@p", plan.PlanId)));
         var history = (await client.GetFromJsonAsync<PlanRevisionListViewV1>($"{Base}/plans/{plan.PlanId}/revisions"))!;
+        var legacyInput = Assert.Single(Assert.Single(history.Revisions).Inputs);
         Assert.Equal(0, Assert.Single(history.Revisions).Revision);
+        Assert.Null(legacyInput.TechnicalSnapshot);
 
         // And the edit itself goes through for the planner afterwards.
         Assert.Equal(HttpStatusCode.OK, (await client.PostWithKeyAsync(path, edit)).StatusCode);

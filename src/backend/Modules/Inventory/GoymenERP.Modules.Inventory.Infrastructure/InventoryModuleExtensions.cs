@@ -63,6 +63,7 @@ public static class InventoryModuleExtensions
         services.AddScoped<IInventoryOpeningCommandService, InventoryOpeningCommandService>();
         services.AddInventoryStockPositions();
         services.AddInventoryLabelDetails();
+        services.AddInventoryMovementTimeline();
         services.AddSingleton<IShellCapabilityProvider, InventoryShellCapabilityProvider>();
         return services;
     }

@@ -504,7 +504,7 @@ public static partial class ErpOpenApiContract
         return builder;
     }
 
-    private static Task TransformOperationAsync(
+    private static async Task TransformOperationAsync(
         OpenApiOperation operation,
         OpenApiOperationTransformerContext context,
         CancellationToken cancellationToken)
@@ -724,7 +724,15 @@ public static partial class ErpOpenApiContract
                 GoymenERP.Modules.Inventory.Application.InventoryStockPositionApiV1.GetPositionsOperationId,
                 StringComparison.Ordinal))
         {
-            AddInventoryParentRollCandidateParameters(operation);
+            await AddInventoryStockPositionParametersAsync(operation, context, cancellationToken);
+        }
+
+        if (string.Equals(
+                operation.OperationId,
+                GoymenERP.Modules.Inventory.Application.InventoryMovementTimelineApiV1.GetOperationId,
+                StringComparison.Ordinal))
+        {
+            AddInventoryMovementTimelineParameters(operation);
         }
 
         if (string.Equals(operation.OperationId, "GetInventoryPhysicalAllocationsV1", StringComparison.Ordinal))
@@ -889,7 +897,6 @@ public static partial class ErpOpenApiContract
             }
         }
 
-        return Task.CompletedTask;
     }
 
     private static void AddHeaderParameter(
@@ -1098,6 +1105,187 @@ public static partial class ErpOpenApiContract
                 Maximum = "100",
             },
             "Maximum candidate rows; default 25, range 1..100.");
+    }
+
+    private static async Task AddInventoryStockPositionParametersAsync(
+        OpenApiOperation operation,
+        OpenApiOperationTransformerContext context,
+        CancellationToken cancellationToken)
+    {
+        AddInventoryParentRollCandidateParameters(operation);
+        AddQueryParameter(operation, "cursor",
+            new OpenApiSchema { Type = JsonSchemaType.String, MinLength = 1, MaxLength = 4096 },
+            "Opaque authenticated continuation bound to actor, company and normalized filters.");
+        AddQueryParameter(operation, "productId",
+            new OpenApiSchema { Type = JsonSchemaType.String, Format = "uuid" },
+            "Optional exact Product identifier.");
+        AddQueryParameter(operation, "locationId",
+            new OpenApiSchema { Type = JsonSchemaType.String, Format = "uuid" },
+            "Optional exact Organization location identifier.");
+        AddQueryParameter(operation, "classification",
+            new OpenApiSchema
+            {
+                Type = JsonSchemaType.String,
+                Enum = ["Standard", "SecondQuality", "Scrap"],
+            },
+            "Optional exact Inventory classification.");
+        AddQueryParameter(operation, "ownerKind",
+            new OpenApiSchema
+            {
+                Type = JsonSchemaType.String,
+                Enum = ["Company", "Counterparty"],
+            },
+            "Optional owner kind; ownerId is required with it.");
+        AddQueryParameter(operation, "ownerId",
+            new OpenApiSchema { Type = JsonSchemaType.String, Format = "uuid" },
+            "Optional exact owner identifier; ownerKind is required with it.");
+        AddHeaderParameter(operation,
+            GoymenERP.Modules.Inventory.Application.InventoryStockPositionApiV1.ProductDisplayContractHeader,
+            required: false,
+            "Optional exact compatibility selection. Omit for the previously published stock-position response; "
+            + "send 1.0 for Product identity and nominal technical display fields, or 2.0 to add the exact "
+            + "Organization-owned location display identity.",
+            minimumLength: 3,
+            maximumLength: 3,
+            pattern: "^(?:1\\.0|2\\.0)$");
+
+        if (operation.Responses is not null
+            && operation.Responses.TryGetValue("200", out var response)
+            && response.Content is not null
+            && response.Content.TryGetValue("application/json", out var content))
+        {
+            var document = context.Document ?? throw new InvalidOperationException(
+                "Inventory stock-position OpenAPI document was not available.");
+            document.Components ??= new OpenApiComponents();
+            document.Components.Schemas ??= new Dictionary<string, IOpenApiSchema>(StringComparer.Ordinal);
+            var stockDisplayTypes = new (string Name, Type Type)[]
+            {
+                (nameof(GoymenERP.Modules.Product.Application.Contracts.ProductManufacturingFamilyRevisionV1),
+                    typeof(GoymenERP.Modules.Product.Application.Contracts.ProductManufacturingFamilyRevisionV1)),
+                (nameof(GoymenERP.Modules.Product.Application.Contracts.ProductManufacturingTemplateRevisionV1),
+                    typeof(GoymenERP.Modules.Product.Application.Contracts.ProductManufacturingTemplateRevisionV1)),
+                (nameof(GoymenERP.Modules.Product.Application.Contracts.ProductFieldError),
+                    typeof(GoymenERP.Modules.Product.Application.Contracts.ProductFieldError)),
+                (nameof(GoymenERP.Modules.Product.Application.Contracts.ProductStockDisplayIdentityV1),
+                    typeof(GoymenERP.Modules.Product.Application.Contracts.ProductStockDisplayIdentityV1)),
+                (nameof(GoymenERP.Modules.Product.Application.Contracts.ProductStockNominalTechnicalV1),
+                    typeof(GoymenERP.Modules.Product.Application.Contracts.ProductStockNominalTechnicalV1)),
+                (nameof(GoymenERP.Modules.Product.Application.Contracts.ProductStockDisplayResultV1),
+                    typeof(GoymenERP.Modules.Product.Application.Contracts.ProductStockDisplayResultV1)),
+                (nameof(GoymenERP.Api.Endpoints.InventoryStockPositionDisplayV1),
+                    typeof(GoymenERP.Api.Endpoints.InventoryStockPositionDisplayV1)),
+                (nameof(GoymenERP.Api.Endpoints.InventoryStockPositionPageV1),
+                    typeof(GoymenERP.Api.Endpoints.InventoryStockPositionPageV1)),
+                (nameof(GoymenERP.Modules.Organization.Application.Contracts.OrganizationLocationDisplayV1),
+                    typeof(GoymenERP.Modules.Organization.Application.Contracts.OrganizationLocationDisplayV1)),
+                (nameof(GoymenERP.Api.Endpoints.InventoryStockPositionLocationDisplayV2),
+                    typeof(GoymenERP.Api.Endpoints.InventoryStockPositionLocationDisplayV2)),
+                (nameof(GoymenERP.Api.Endpoints.InventoryStockPositionLocationPageV2),
+                    typeof(GoymenERP.Api.Endpoints.InventoryStockPositionLocationPageV2)),
+            };
+            foreach (var (name, type) in stockDisplayTypes)
+            {
+                document.Components.Schemas[name] = await context.GetOrCreateSchemaAsync(
+                    type, cancellationToken: cancellationToken);
+            }
+
+            OpenApiSchemaReference Reference(string name) => new(name, document, externalResource: null);
+            var pageSchema = (OpenApiSchema)document.Components.Schemas[
+                nameof(GoymenERP.Api.Endpoints.InventoryStockPositionPageV1)];
+            pageSchema.Properties ??= new Dictionary<string, IOpenApiSchema>(StringComparer.Ordinal);
+            pageSchema.Properties["items"] = new OpenApiSchema
+            {
+                Type = JsonSchemaType.Array,
+                Items = Reference(nameof(GoymenERP.Api.Endpoints.InventoryStockPositionDisplayV1)),
+            };
+            var displaySchema = (OpenApiSchema)document.Components.Schemas[
+                nameof(GoymenERP.Api.Endpoints.InventoryStockPositionDisplayV1)];
+            displaySchema.Properties ??= new Dictionary<string, IOpenApiSchema>(StringComparer.Ordinal);
+            displaySchema.Properties["lot"] = Reference(nameof(GoymenERP.Modules.Inventory.Application.InventoryLotV1));
+            displaySchema.Properties["productDisplay"] = Reference(
+                nameof(GoymenERP.Modules.Product.Application.Contracts.ProductStockDisplayResultV1));
+            var productSchema = (OpenApiSchema)document.Components.Schemas[
+                nameof(GoymenERP.Modules.Product.Application.Contracts.ProductStockDisplayResultV1)];
+            productSchema.Properties ??= new Dictionary<string, IOpenApiSchema>(StringComparer.Ordinal);
+            productSchema.Properties["identity"] = new OpenApiSchema
+            {
+                OneOf =
+                [
+                    Reference(nameof(GoymenERP.Modules.Product.Application.Contracts.ProductStockDisplayIdentityV1)),
+                    new OpenApiSchema { Type = JsonSchemaType.Null },
+                ],
+            };
+            productSchema.Properties["technical"] = new OpenApiSchema
+            {
+                OneOf =
+                [
+                    Reference(nameof(GoymenERP.Modules.Product.Application.Contracts.ProductStockNominalTechnicalV1)),
+                    new OpenApiSchema { Type = JsonSchemaType.Null },
+                ],
+            };
+            productSchema.Properties["errors"] = new OpenApiSchema
+            {
+                Type = JsonSchemaType.Array,
+                Items = Reference(nameof(GoymenERP.Modules.Product.Application.Contracts.ProductFieldError)),
+            };
+            var technicalSchema = (OpenApiSchema)document.Components.Schemas[
+                nameof(GoymenERP.Modules.Product.Application.Contracts.ProductStockNominalTechnicalV1)];
+            technicalSchema.Properties ??= new Dictionary<string, IOpenApiSchema>(StringComparer.Ordinal);
+            technicalSchema.Properties["family"] = Reference(
+                nameof(GoymenERP.Modules.Product.Application.Contracts.ProductManufacturingFamilyRevisionV1));
+            technicalSchema.Properties["template"] = Reference(
+                nameof(GoymenERP.Modules.Product.Application.Contracts.ProductManufacturingTemplateRevisionV1));
+            var locationPageSchema = (OpenApiSchema)document.Components.Schemas[
+                nameof(GoymenERP.Api.Endpoints.InventoryStockPositionLocationPageV2)];
+            locationPageSchema.Properties ??= new Dictionary<string, IOpenApiSchema>(StringComparer.Ordinal);
+            locationPageSchema.Properties["items"] = new OpenApiSchema
+            {
+                Type = JsonSchemaType.Array,
+                Items = Reference(nameof(GoymenERP.Api.Endpoints.InventoryStockPositionLocationDisplayV2)),
+            };
+            var locationDisplaySchema = (OpenApiSchema)document.Components.Schemas[
+                nameof(GoymenERP.Api.Endpoints.InventoryStockPositionLocationDisplayV2)];
+            locationDisplaySchema.Properties ??= new Dictionary<string, IOpenApiSchema>(StringComparer.Ordinal);
+            locationDisplaySchema.Properties["lot"] = Reference(
+                nameof(GoymenERP.Modules.Inventory.Application.InventoryLotV1));
+            locationDisplaySchema.Properties["productDisplay"] = Reference(
+                nameof(GoymenERP.Modules.Product.Application.Contracts.ProductStockDisplayResultV1));
+            locationDisplaySchema.Properties["locationDisplay"] = Reference(
+                nameof(GoymenERP.Modules.Organization.Application.Contracts.OrganizationLocationDisplayV1));
+
+            var enriched = new OpenApiSchemaReference(
+                nameof(GoymenERP.Api.Endpoints.InventoryStockPositionPageV1), document, externalResource: null);
+            var locationEnriched = new OpenApiSchemaReference(
+                nameof(GoymenERP.Api.Endpoints.InventoryStockPositionLocationPageV2), document,
+                externalResource: null);
+            var legacy = await context.GetOrCreateSchemaAsync(
+                typeof(GoymenERP.Api.Endpoints.InventoryStockPositionLegacyPageV1),
+                cancellationToken: cancellationToken);
+            content.Schema = new OpenApiSchema
+            {
+                AnyOf = [legacy, enriched, locationEnriched],
+            };
+        }
+    }
+
+    private static void AddInventoryMovementTimelineParameters(OpenApiOperation operation)
+    {
+        AddQueryParameter(
+            operation,
+            "limit",
+            new OpenApiSchema
+            {
+                Type = JsonSchemaType.Integer,
+                Format = "int32",
+                Minimum = "1",
+                Maximum = "100",
+            },
+            "Maximum movement rows; default 50, range 1..100.");
+        AddQueryParameter(
+            operation,
+            "cursor",
+            new OpenApiSchema { Type = JsonSchemaType.String, MinLength = 1, MaxLength = 4096 },
+            "Opaque authenticated continuation bound to actor, company and limit.");
     }
 
     private static void AddInventoryPhysicalAllocationReadParameters(OpenApiOperation operation)

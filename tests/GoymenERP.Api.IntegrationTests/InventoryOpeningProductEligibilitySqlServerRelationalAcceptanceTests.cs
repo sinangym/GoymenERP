@@ -6,6 +6,7 @@ using GoymenERP.Api.Endpoints;
 using GoymenERP.Api.ProductRuntime;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
+using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Identity.Domain.Assignments;
 using GoymenERP.Modules.Identity.Infrastructure.Persistence;
 using GoymenERP.Modules.Identity.Infrastructure.Services;
@@ -15,6 +16,7 @@ using GoymenERP.Modules.Product.Infrastructure.Persistence;
 using GoymenERP.Modules.Settings.Application;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
 using Microsoft.Data.SqlClient;
+using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -54,11 +56,43 @@ public sealed class InventoryOpeningProductEligibilitySqlServerRelationalAccepta
         WithDatabaseAsync(async factory =>
         {
             using var client = factory.CreateClientFor("group-bootstrap-admin", CompanyA);
-            var (productId, version) = await ActiveKgCardAsync(client, "opening-eligibility");
+            var (productId, version) = await ActiveGenuineKgCardAsync(client, "opening-eligibility");
 
             var inA = await PortIn(factory, CompanyA).EvaluateAsync(productId, version, CountedOn, default);
             Assert.True(inA.IsEligible);
             Assert.Empty(inA.Issues);
+
+            await using (var scope = factory.Services.CreateAsyncScope())
+            {
+                var company = new CompanyContext();
+                company.Set(CompanyA);
+                var db = scope.ServiceProvider.GetRequiredService<ProductDbContext>();
+                var displayPort = new ProductStockDisplayReferenceService(company, new User(CompanyA),
+                    new GrantedIn(CompanyA), new ProductReadStore(db), new SqlProductFamilyDefinitionSource(db));
+                var stock = new InventoryStockPositionsV1([
+                    new(CompanyA, Guid.NewGuid(), "1", "SQL-DISPLAY-1", productId, version, "Standard",
+                        new(Guid.NewGuid(), "HEAT-SQL", "COIL-SQL"), "HEAT-SQL", "COIL-SQL", "Complete",
+                        "Company", CompanyA, "Company", CompanyA, Guid.NewGuid(), "10", "10", "0", "0", "10"),
+                ], false);
+
+                var composed = await InventoryStockPositionDisplayHost.ComposeAsync(stock, displayPort, default);
+                var display = Assert.Single(composed.Items).ProductDisplay;
+                Assert.Equal((productId, version), (display.Identity!.ProductId, display.Identity.ProductVersion));
+                Assert.Equal((1.5m, 1250m), (display.Technical!.ThicknessMm, display.Technical.WidthMm));
+                Assert.Empty(display.Errors);
+
+                var (syntheticProductId, syntheticVersion) = await ActiveSyntheticKgCardAsync(
+                    client, "opening-eligibility-synthetic");
+                var syntheticStock = new InventoryStockPositionsV1([
+                    new(CompanyA, Guid.NewGuid(), "1", "SQL-SYNTHETIC-1", syntheticProductId,
+                        syntheticVersion, "Standard", new(Guid.NewGuid(), "HEAT-SYN", "COIL-SYN"),
+                        "HEAT-SYN", "COIL-SYN", "Complete", "Company", CompanyA, "Company", CompanyA,
+                        Guid.NewGuid(), "10", "10", "0", "0", "10"),
+                ], false);
+                var unavailable = await Assert.ThrowsAsync<ProductOperationException>(
+                    () => InventoryStockPositionDisplayHost.ComposeAsync(syntheticStock, displayPort, default));
+                Assert.Equal(StatusCodes.Status503ServiceUnavailable, unavailable.StatusCode);
+            }
 
             // Company B has no approved kg source: the Settings code passes through; it is not a field error.
             var inB = await Assert.ThrowsAsync<SettingsPrerequisiteException>(
@@ -79,21 +113,38 @@ public sealed class InventoryOpeningProductEligibilitySqlServerRelationalAccepta
             new ProductUnitProfileAdapter(new ApprovedSettingsPrerequisiteProvider(context, user), context)));
     }
 
-    private static async Task<(Guid ProductId, string Version)> ActiveKgCardAsync(HttpClient client, string key)
+    private static Task<(Guid ProductId, string Version)> ActiveGenuineKgCardAsync(HttpClient client, string key) =>
+        ActiveKgCardAsync(client, key,
+            ProductInitialCodeGroupV1.SacGroupId,
+            ProductInitialTechnicalDefinitionV1.HotRolledSlitCoilFamilyId,
+            ProductInitialTechnicalDefinitionV1.TemplateId,
+            new Dictionary<string, object?>
+            {
+                ["thickness-mm"] = 1.5m,
+                ["width-mm"] = 1250m,
+                ["steel-grade"] = "S235JR",
+                ["coating"] = "uncoated",
+            });
+
+    private static Task<(Guid ProductId, string Version)> ActiveSyntheticKgCardAsync(HttpClient client, string key) =>
+        ActiveKgCardAsync(client, key, GroupId, HotCoil, TemplateId,
+            new Dictionary<string, object?>
+            {
+                ["syn-thickness-mm"] = 1.5m,
+                ["syn-width-mm"] = 1250m,
+                ["syn-grade"] = "SYN-A",
+                ["syn-coating"] = "syn-none",
+            });
+
+    private static async Task<(Guid ProductId, string Version)> ActiveKgCardAsync(HttpClient client, string key,
+        Guid groupId, Guid familyId, Guid templateId, IReadOnlyDictionary<string, object?> attributeValues)
     {
-        var attributes = new Dictionary<string, object?>
-        {
-            ["syn-thickness-mm"] = 1.5m,
-            ["syn-width-mm"] = 1250m,
-            ["syn-grade"] = "SYN-A",
-            ["syn-coating"] = "syn-none",
-        };
-        var references = new ProductReferences(TemplateId, "1",
-            attributes.ToDictionary(pair => pair.Key, pair => JsonSerializer.SerializeToElement(pair.Value), StringComparer.Ordinal),
+        var references = new ProductReferences(templateId, "1",
+            attributeValues.ToDictionary(pair => pair.Key, pair => JsonSerializer.SerializeToElement(pair.Value), StringComparer.Ordinal),
             new ProductUnitReferences(Stock: SettingsUnitIdentitiesV1.Kilogram, Sales: SettingsUnitIdentitiesV1.Kilogram));
         var create = new HttpRequestMessage(HttpMethod.Post, "/api/v1/products")
         {
-            Content = JsonContent.Create(new CreateProductDraftRequest($"SENTETIK {key}", GroupId, FamilyId: HotCoil,
+            Content = JsonContent.Create(new CreateProductDraftRequest($"SENTETIK {key}", groupId, FamilyId: familyId,
                 References: references)),
         };
         create.Headers.Add("Idempotency-Key", key);

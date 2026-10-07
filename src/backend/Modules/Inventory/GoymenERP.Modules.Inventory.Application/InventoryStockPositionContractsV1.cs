@@ -5,6 +5,8 @@ public static class InventoryStockPositionApiV1
 {
     public const string PositionsPath = "/api/v1/inventory/positions";
     public const string GetPositionsOperationId = "GetInventoryStockPositionsV1";
+    public const string ProductDisplayContractHeader = "X-ERP-Inventory-Stock-Display";
+    public const string ProductDisplayContractVersion = "1.0";
 }
 
 /// <summary>
@@ -18,11 +20,20 @@ public interface IInventoryStockPositionsV1
         CancellationToken cancellationToken = default);
 }
 
-public sealed record InventoryStockPositionQueryV1(string? Q = null, int Limit = 25);
+public sealed record InventoryStockPositionQueryV1(
+    string? Q = null,
+    int Limit = 25,
+    string? Cursor = null,
+    Guid? ProductId = null,
+    Guid? LocationId = null,
+    InventoryLabelClassificationV1? Classification = null,
+    string? OwnerKind = null,
+    Guid? OwnerId = null);
 
 public sealed record InventoryStockPositionsV1(
     IReadOnlyList<InventoryStockPositionV1> Items,
-    bool SearchWindowFull);
+    bool SearchWindowFull,
+    string? NextCursor = null);
 
 /// <summary>
 /// One physical label at its single stored place. Quantities are lossless kilogram text.
@@ -35,6 +46,8 @@ public sealed record InventoryStockPositionV1(
     string LabelVersion,
     string LabelCode,
     Guid ProductId,
+    string? ProductVersion,
+    string? Classification,
     InventoryLotV1 Lot,
     string? HeatNumber,
     string? CoilNumber,
