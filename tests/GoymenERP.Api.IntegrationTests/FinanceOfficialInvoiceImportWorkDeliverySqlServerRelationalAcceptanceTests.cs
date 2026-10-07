@@ -20,7 +20,10 @@ public sealed class FinanceOfficialInvoiceImportWorkDeliverySqlServerRelationalA
     ITestOutputHelper output)
 {
     private const string LegacyStartPhase = "finance_work_legacy_start";
-    private const string LegacySeedPhase = "finance_work_legacy_seed";
+    private const string LegacyPreviewPhase = "finance_work_legacy_preview_validation";
+    private const string LegacySerializationPhase = "finance_work_legacy_serialization";
+    private const string LegacyBatchInsertPhase = "finance_work_legacy_batch_insert";
+    private const string LegacyCommandInsertPhase = "finance_work_legacy_command_insert";
     private const string LegacyUpPhase = "finance_work_legacy_up";
     private const string LegacyReplayPhase = "finance_work_legacy_replay";
     private const string LegacyCountsPhase = "finance_work_legacy_counts";
@@ -113,42 +116,81 @@ public sealed class FinanceOfficialInvoiceImportWorkDeliverySqlServerRelationalA
     public async Task Legacy_previous_migration_receipt_replays_after_up_without_fabricating_work_history()
     {
         var failurePhase = LegacyStartPhase;
+        var previewIssueCount = -1;
+        var sourceRowCount = -1;
         try
         {
             await using var run = await Run.StartAsync("20260930185113_AddOfficialInvoiceImportApprovalV1");
-            failurePhase = LegacySeedPhase;
+            failurePhase = LegacyPreviewPhase;
             var request = Request();
             var preview = new FinanceOfficialInvoiceImportParserV1().Preview(
                 new FinanceContext(Company, "SENTETIK-maker", "legacy-correlation", null), request);
-            var batch = preview.Batch!;
+            previewIssueCount = preview.Issues.Count;
+            Assert.True(preview.IsValid);
+            var batch = Assert.IsType<ApprovedFinanceOpenItemSourceBatch>(preview.Batch);
+            sourceRowCount = batch.Rows.Count;
+
+            failurePhase = LegacySerializationPhase;
             var uploadedAt = DateTimeOffset.Parse("2026-10-05T18:00:00+00:00");
             var resource = new FinanceOfficialInvoiceImportBatchViewV1(Batch, Company, batch.BatchVersion,
                 batch.BatchChecksum, preview.TemplateVersion, FinanceOfficialInvoiceImportApprovalStatusV1.Pending,
                 "1", batch.Rows.Count, "SENTETIK-maker", uploadedAt, null, null);
             var result = new FinanceOfficialInvoiceImportApprovalResultV1(
                 CommandOutcome.Succeeded, resource, false, "legacy-correlation", []);
-            await run.ExecuteAsync(
+            var sourceRowsJson = JsonSerializer.Serialize(batch.Rows, FinanceJson.CreateOptions());
+            var resultJson = JsonSerializer.Serialize(result, FinanceJson.CreateOptions());
+
+            await using var connection = new SqlConnection(run.DatabaseConnectionString);
+            await connection.OpenAsync();
+            using var transaction = connection.BeginTransaction();
+
+            failurePhase = LegacyBatchInsertPhase;
+            await using (var batchCommand = new SqlCommand(
                 """
                 INSERT INTO finance.OfficialInvoiceImportBatches
                     (Id, CompanyId, BatchVersion, BatchChecksum, TemplateVersion, FileBytes, SourceRowsJson, RowCount,
                      UploadedBy, UploadedAtUtc, CorrelationId, CausationId)
                 VALUES (@batch, @company, @batchVersion, @checksum, @templateVersion, @bytes, @rows, @rowCount,
                         @actor, @at, @correlation, NULL);
+                """, connection, transaction))
+            {
+                batchCommand.Parameters.AddWithValue("@batch", Batch);
+                batchCommand.Parameters.AddWithValue("@company", Company);
+                batchCommand.Parameters.AddWithValue("@batchVersion", batch.BatchVersion);
+                batchCommand.Parameters.AddWithValue("@checksum", batch.BatchChecksum);
+                batchCommand.Parameters.AddWithValue("@templateVersion", preview.TemplateVersion);
+                batchCommand.Parameters.AddWithValue("@bytes", request.Utf8Csv.ToArray());
+                batchCommand.Parameters.AddWithValue("@rows", sourceRowsJson);
+                batchCommand.Parameters.AddWithValue("@rowCount", batch.Rows.Count);
+                batchCommand.Parameters.AddWithValue("@actor", "SENTETIK-maker");
+                batchCommand.Parameters.AddWithValue("@at", uploadedAt);
+                batchCommand.Parameters.AddWithValue("@correlation", "legacy-correlation");
+                await batchCommand.ExecuteNonQueryAsync();
+            }
+
+            failurePhase = LegacyCommandInsertPhase;
+            await using (var commandReceipt = new SqlCommand(
+                """
                 INSERT INTO finance.OfficialInvoiceImportCommands
                     (Id, CompanyId, CommandName, IdempotencyKeyHash, ActorId, PayloadHash, BatchId, ResultJson,
                      CorrelationId, RecordedAtUtc)
                 VALUES (@command, @company, @commandName, @keyHash, @actor, @payloadHash, @batch, @result,
                         @correlation, @at);
-                """,
-                ("@batch", Batch), ("@company", Company), ("@batchVersion", batch.BatchVersion),
-                ("@checksum", batch.BatchChecksum), ("@templateVersion", preview.TemplateVersion),
-                ("@bytes", request.Utf8Csv.ToArray()),
-                ("@rows", JsonSerializer.Serialize(batch.Rows, FinanceJson.CreateOptions())),
-                ("@rowCount", batch.Rows.Count), ("@actor", "SENTETIK-maker"), ("@at", uploadedAt),
-                ("@correlation", "legacy-correlation"), ("@command", Guid.NewGuid()),
-                ("@commandName", FinanceOfficialInvoiceImportApprovalServiceV1.UploadCommand),
-                ("@keyHash", FinanceCommandKeys.Hash("legacy-key")), ("@payloadHash", UploadHash(request)),
-                ("@result", JsonSerializer.Serialize(result, FinanceJson.CreateOptions())));
+                """, connection, transaction))
+            {
+                commandReceipt.Parameters.AddWithValue("@command", Guid.NewGuid());
+                commandReceipt.Parameters.AddWithValue("@company", Company);
+                commandReceipt.Parameters.AddWithValue("@commandName", FinanceOfficialInvoiceImportApprovalServiceV1.UploadCommand);
+                commandReceipt.Parameters.AddWithValue("@keyHash", FinanceCommandKeys.Hash("legacy-key"));
+                commandReceipt.Parameters.AddWithValue("@actor", "SENTETIK-maker");
+                commandReceipt.Parameters.AddWithValue("@payloadHash", UploadHash(request));
+                commandReceipt.Parameters.AddWithValue("@batch", Batch);
+                commandReceipt.Parameters.AddWithValue("@result", resultJson);
+                commandReceipt.Parameters.AddWithValue("@correlation", "legacy-correlation");
+                commandReceipt.Parameters.AddWithValue("@at", uploadedAt);
+                await commandReceipt.ExecuteNonQueryAsync();
+            }
+            await transaction.CommitAsync();
 
             failurePhase = LegacyUpPhase;
             await using (var context = run.Context()) await context.Database.MigrateAsync();
@@ -172,7 +214,8 @@ public sealed class FinanceOfficialInvoiceImportWorkDeliverySqlServerRelationalA
         }
         catch
         {
-            output.WriteLine($"CI_SAFE_DIAGNOSTIC:{failurePhase}");
+            output.WriteLine(
+                $"CI_SAFE_DIAGNOSTIC:{failurePhase};preview_issues={SafeCount(previewIssueCount)};source_rows={SafeCount(sourceRowCount)}");
             throw;
         }
     }
@@ -247,6 +290,7 @@ public sealed class FinanceOfficialInvoiceImportWorkDeliverySqlServerRelationalA
         }
 
         private SqlServerRelationalApiFactory Factory { get; }
+        public string DatabaseConnectionString => Factory.DatabaseConnectionString;
 
         public static async Task<Run> StartAsync(string? targetMigration = null)
         {
@@ -366,4 +410,6 @@ public sealed class FinanceOfficialInvoiceImportWorkDeliverySqlServerRelationalA
         hash.AppendData(request.Utf8Csv.Span);
         return Convert.ToHexString(hash.GetHashAndReset()).ToLowerInvariant();
     }
+
+    private static string SafeCount(int value) => value < 0 ? "not_available" : value.ToString();
 }
