@@ -1,6 +1,7 @@
 using System.Text;
 using System.Security.Cryptography;
 using System.Text.Json;
+using System.Globalization;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Audit.Infrastructure.Persistence;
@@ -205,6 +206,7 @@ public sealed class FinanceOfficialInvoiceImportWorkDeliverySqlServerRelationalA
                 catch (SqlException exception)
                 {
                     failurePhase = LegacyBatchInsertDiagnostic(exception);
+                    output.WriteLine($"CI_SAFE_SQL_NUMBER:{exception.Number.ToString(CultureInfo.InvariantCulture)}");
                     throw;
                 }
             }
