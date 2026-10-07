@@ -262,6 +262,18 @@ describe('AT-063 ST-01 row actions', () => {
     expect(api.positions).toHaveBeenLastCalledWith(COMPANY, search('LBL'), null, expect.any(AbortSignal))
   })
 
+  it('keeps the filter when the label code itself opens ST-02 and its back link is followed', async () => {
+    const user = userEvent.setup()
+    mount('/stok/pozisyonlar?etiket=LBL')
+    await user.click(await screen.findByRole('link', { name: 'LBL-1' }))
+    await screen.findByRole('heading', { level: 1, name: 'LBL-1' })
+    expect(address()).toBe(`/stok/etiket/${LABEL}`)
+    await user.click(screen.getByRole('link', { name: '← Stok pozisyonlarına dön' }))
+    await screen.findByRole('link', { name: 'LBL-1' })
+    expect(address()).toBe('/stok/pozisyonlar?etiket=LBL')
+    expect(api.positions).toHaveBeenLastCalledWith(COMPANY, search('LBL'), null, expect.any(AbortSignal))
+  })
+
   it('reads a filter already in the URL on arrival', async () => {
     mount('/stok/pozisyonlar?etiket=LBL')
     await screen.findByText('LBL-1')

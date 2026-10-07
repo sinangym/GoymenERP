@@ -189,3 +189,86 @@ describe('decodeStockDisplayPage — #597 opt-in page', () => {
     expect(decodeInventoryStockPositions(page())).toBeNull()
   })
 })
+
+describe('decodeStockDisplayPage — every guard can fail on its own', () => {
+  it('keeps the SECOND #588 identity on its own: free-physical = allocated + available', () => {
+    // physical = blocked + free holds (10 = 2 + 8); only free = allocated + available is broken (8 ≠ 1 + 8).
+    expect(decodeStockDisplayPage(page({ items: [row({ availableKg: '8' })] }))).toBeNull()
+    expect(decodeStockDisplayPage(page({ items: [row({ activeAllocationKg: '2' })] }))).toBeNull()
+  })
+
+  it.each([
+    ['physicalKg'], ['blockedPhysicalKg'], ['freePhysicalKg'], ['activeAllocationKg'], ['availableKg'],
+  ])('refuses a non-canonical %s even where the identities would still add up', (field) => {
+    // Each bad form keeps the field's own value, so only the canonical-text check can refuse it.
+    const value = String(row()[field as keyof ReturnType<typeof row>])
+    for (const bad of [`${value}.0`, `0${value}`, `+${value}`, `${value} `, `${value}e0`]) {
+      expect(decodeStockDisplayPage(page({ items: [row({ [field]: bad })] })), `${field}=${bad}`).toBeNull()
+    }
+  })
+
+  it('refuses a negative Kullanılabilir balanced by over-allocation, and a consistent four-decimal row', () => {
+    expect(decodeStockDisplayPage(page({ items: [row({ activeAllocationKg: '9', availableKg: '-1' })] }))).toBeNull()
+    expect(decodeStockDisplayPage(page({ items: [row({
+      physicalKg: '0.0002', blockedPhysicalKg: '0.0001', freePhysicalKg: '0.0001', activeAllocationKg: '0', availableKg: '0.0001',
+    })] }))).toBeNull()
+  })
+
+  it('adds quantities exactly beyond Number precision (no floating-point sums)', () => {
+    const big = { physicalKg: '9007199254740993', blockedPhysicalKg: '0', freePhysicalKg: '9007199254740993', activeAllocationKg: '0', availableKg: '9007199254740993' }
+    expect(decodeStockDisplayPage(page({ items: [row(big)] }))?.items[0].availableKg).toBe('9007199254740993')
+    // As Numbers these would be equal (9007199254740992); exactly they are not.
+    expect(decodeStockDisplayPage(page({ items: [row({ ...big, blockedPhysicalKg: '1' })] }))).toBeNull()
+  })
+
+  it('refuses an extra or missing key inside identity, technical, family and template', () => {
+    const display = productDisplay()
+    const variants = [
+      { ...display, identity: { ...display.identity, currentName: 'x' } },
+      { ...display, identity: { productId: PRODUCT, productVersion: '7', code: 'P-1' } },
+      { ...display, technical: { ...display.technical, lengthMm: 1 } },
+      { ...display, technical: { family: display.technical.family, template: display.technical.template, thicknessMm: 1.5 } },
+      { ...display, technical: { ...display.technical, family: { ...display.technical.family, name: 'Bobin' } } },
+      { ...display, technical: { ...display.technical, family: { familyId: FAMILY, familyCode: 'coil' } } },
+      { ...display, technical: { ...display.technical, template: { ...display.technical.template, extra: 1 } } },
+      { ...display, technical: { ...display.technical, template: { templateId: TEMPLATE, templateVersion: '1', templateCode: 'coil-v1' } } },
+    ]
+    for (const [index, productDisplay] of variants.entries()) {
+      expect(decodeStockDisplayPage(page({ items: [row({ productDisplay })] })), String(index)).toBeNull()
+    }
+  })
+
+  it.each([
+    ['a nil label id', { labelId: '00000000-0000-0000-0000-000000000000' }],
+    ['a label version 0', { labelVersion: '0' }],
+    ['a label version beyond int64', { labelVersion: '9223372036854775808' }],
+    ['an empty heat number', { heatNumber: '' }],
+    ['an empty document status', { documentStatus: '' }],
+    ['a blank Product version', { productVersion: ' ' }],
+    ['a non-GUID lot id', { lot: { id: 'lot-1', heatNumber: 'HEAT-1', coilNumber: 'COIL-1' } }],
+  ])('refuses a row with %s', (_name, overrides) => {
+    expect(decodeStockDisplayPage(page({ items: [row(overrides)] }))).toBeNull()
+  })
+
+  it.each([
+    ['an empty Product code', { identity: { productId: PRODUCT, productVersion: '7', code: '', name: 'Galvaniz bant' } }],
+    ['an empty Product name', { identity: { productId: PRODUCT, productVersion: '7', code: 'P-1', name: ' ' } }],
+    ['errors that are not a list', { errors: null }],
+    ['a non-GUID family id', { technical: { ...productDisplay().technical, family: { familyId: 'coil', familyCode: 'coil', sourceRevision: 'r1' } } }],
+  ])('refuses a Product display with %s', (_name, overrides) => {
+    expect(decodeStockDisplayPage(page({ items: [row({ productDisplay: { ...productDisplay(), ...overrides } })] }))).toBeNull()
+  })
+
+  it('keeps a row whose stored Product version the Product owner could not read (its own invalid_version result)', () => {
+    const unreadable = {
+      productId: PRODUCT, expectedProductVersion: 'v7', identity: null, technical: null,
+      errors: [{ field: 'expectedProductVersion', code: 'invalid_version' }],
+    }
+    const decoded = decodeStockDisplayPage(page({ items: [row({ productVersion: 'v7', productDisplay: unreadable })] }))
+    expect(decoded?.items[0].productDisplay.identity).toBeNull()
+    expect(decoded?.items[0].productVersion).toBe('v7')
+    // Still bound: the display must answer for that exact stored text.
+    expect(decodeStockDisplayPage(page({ items: [row({ productVersion: 'v7', productDisplay: { ...unreadable, expectedProductVersion: '7' } })] }))).toBeNull()
+  })
+})
+

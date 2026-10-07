@@ -19,15 +19,18 @@ export const STOCK_TEXT = {
   classificationAll: 'Tümü',
   columns: 'Sütunlar',
   visibleColumns: 'Görünen sütunlar',
+  columnToggle: (column: string) => `${column} sütunu`,
   activeFilters: 'Etkin filtreler',
   clearFilters: 'Filtreleri temizle',
+  results: 'Stok listesi',
   loading: 'Stok pozisyonları yükleniyor…',
   loadingMore: 'Sonraki stok satırları yükleniyor…',
   emptyNoFilter: 'Bu şirkette eşleşen fiziksel stok yok.',
   emptyFiltered: 'Filtrelere uyan fiziksel stok yok.',
-  windowFull: 'Liste penceresi doldu; filtreleri daraltın.',
   loadMore: 'Daha fazla göster',
   loadMoreFailed: 'Sonraki stok satırları okunamadı.',
+  /** A continuation the server no longer accepts (expired, or the list changed under it): only a fresh start helps. */
+  loadMoreExpired: 'Sonraki sayfa artık açılamıyor; listeyi baştan yükleyin.',
   restart: 'Listeyi baştan yükle',
   stateSubject: 'stok pozisyonları',
   noCompany: 'Yetkili tek şirket bağlamı seçilmeden stok pozisyonları görüntülenemez.',
@@ -68,7 +71,9 @@ export const STOCK_TEXT = {
   /** A filtered location or product whose readable name is not in the rows on screen. */
   selectedLocation: 'seçili lokasyon',
   selectedProduct: 'seçili ürün',
-  selectedOwner: 'seçili mal sahibi',
+  /** An exact owner filter names one owner, not a category: the contract publishes no owner name. */
+  selectedCounterparty: 'seçili cari',
+  selectedCompany: 'seçili şirket',
 } as const
 
 /** The Inventory classification axis in the accepted Turkish words; "Hurda" is a value, never the column. */

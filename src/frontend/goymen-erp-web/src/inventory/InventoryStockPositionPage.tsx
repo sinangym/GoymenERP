@@ -65,11 +65,11 @@ function tokenKey<T extends string>(tokens: Record<T, string>, token: string | n
 /** The filters in a URL. A value outside its grammar is no filter, so a hand-edited address never sends a 400. */
 function filtersFromSearch(search: string): StockPositionFilters {
   const params = new URLSearchParams(search)
-  const productId = params.get(PRODUCT_PARAM)
-  const locationId = params.get(LOCATION_PARAM)
+  const productId = params.get(PRODUCT_PARAM)?.toLowerCase() ?? null
+  const locationId = params.get(LOCATION_PARAM)?.toLowerCase() ?? null
   const classification = tokenKey(CLASSIFICATION_TOKEN, params.get(CLASSIFICATION_PARAM))
   const ownerKind = tokenKey(OWNER_KIND_TOKEN, params.get(OWNER_KIND_PARAM))
-  const ownerId = params.get(OWNER_PARAM)
+  const ownerId = params.get(OWNER_PARAM)?.toLowerCase() ?? null
   return {
     q: normalizeStockSearch(params.get(STOCK_SEARCH_PARAM)),
     productId: isStockId(productId) ? productId : null,
@@ -184,6 +184,16 @@ function InventoryStockPositionView({
   const cards = useSyncExternalStore(subscribeCards, readCards, () => false)
   const listFence = useRef(createRequestFence())
   const moreFence = useRef(createRequestFence())
+  // Focus needs a stable place when the control holding it goes away with the list it changed: the result region
+  // after a filter, the first appended label after "Daha fazla göster".
+  const resultsRef = useRef<HTMLElement>(null)
+  const focusLabelRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (state.type !== 'ready' || focusLabelRef.current === null) return
+    const labelId = focusLabelRef.current
+    focusLabelRef.current = null
+    resultsRef.current?.querySelector<HTMLElement>(`[data-label-id="${labelId}"] a`)?.focus()
+  }, [state])
 
   const load = useCallback(async (current: StockPositionFilters) => {
     if (companyId === null) return
@@ -205,12 +215,16 @@ function InventoryStockPositionView({
 
   useEffect(() => {
     const currentFence = listFence.current
+    const currentMore = moreFence.current
     if (companyId !== null && !searchTooLong) void load(filters)
-    return () => currentFence.invalidate()
+    return () => {
+      currentFence.invalidate()
+      currentMore.invalidate()
+    }
   }, [companyId, load, filters, searchTooLong])
 
   const loadMore = async () => {
-    if (companyId === null || state.type !== 'ready' || state.nextCursor === null) return
+    if (companyId === null || state.type !== 'ready' || state.nextCursor === null || state.more.type === 'loading') return
     const cursor = state.nextCursor
     const token = moreFence.current.capture()
     const security = boundaryRef.current.capture()
@@ -220,6 +234,7 @@ function InventoryStockPositionView({
     if (outcome.type === 'http' && (outcome.status === 401 || outcome.status === 403)) {
       boundaryRef.current.report(outcome.status, security)
     }
+    if (outcome.type === 'ok-single') focusLabelRef.current = outcome.data.items[0]?.labelId ?? null
     setState((previous) => {
       if (previous.type !== 'ready' || previous.nextCursor !== cursor) return previous
       if (outcome.type !== 'ok-single') {
@@ -241,9 +256,10 @@ function InventoryStockPositionView({
     return <main className={styles.page}><p role="alert">{STOCK_TEXT.noCompany}</p></main>
   }
 
-  const applyFilters = (next: StockPositionFilters) => {
+  const applyFilters = (next: StockPositionFilters, focusResults = false) => {
     const search = searchOfFilters(next)
     setOpenMenu(null)
+    if (focusResults) resultsRef.current?.focus()
     if (search === filterSearch) {
       // The same filters again: the URL does not change, so read once more here.
       setState({ type: 'loading' })
@@ -278,10 +294,12 @@ function InventoryStockPositionView({
     chips.push({ key: 'location', label: `${STOCK_TEXT.filterChip.location}: ${STOCK_TEXT.selectedLocation}`, remove: { ...filters, locationId: null } })
   }
   if (filters.owner !== null) {
-    const owner = ownerText(filters.owner.kind, filters.owner.id, companyId)
+    const owner = filters.owner.kind === 'Counterparty'
+      ? STOCK_TEXT.selectedCounterparty
+      : filters.owner.id === companyId ? ownerText('Company', filters.owner.id, companyId) : STOCK_TEXT.selectedCompany
     chips.push({
       key: 'owner',
-      label: `${STOCK_TEXT.filterChip.owner}: ${owner === STOCK_TEXT.unknown ? STOCK_TEXT.selectedOwner : owner}`,
+      label: `${STOCK_TEXT.filterChip.owner}: ${owner}`,
       remove: { ...filters, owner: null },
     })
   }
@@ -298,15 +316,22 @@ function InventoryStockPositionView({
     className={styles.filterButton}
     aria-label={label}
     title={label}
-    onClick={() => applyFilters(next)}
+    onClick={() => applyFilters(next, true)}
   ><FilterIcon /></button>
+
+  const lotToken = (name: string, value: string | null) => value === null
+    ? <span className={styles.nowrap}>{name} {STOCK_TEXT.unknown}</span>
+    : <span className={styles.nowrap}><span className={styles.visuallyHidden}>{name} </span>{value}</span>
+
+  /** v1.2: a non-standard class stays visible next to Kullanılabilir while its own column is hidden. */
+  const classMark = (row: StockDisplayRow) => !showClassification && (row.classification === 'SecondQuality' || row.classification === 'Scrap')
+    ? <span className={styles.classMark}>{CLASSIFICATION_TEXT[row.classification]}</span>
+    : null
 
   const labelCell = (row: StockDisplayRow) => <>
     <Link className={styles.labelLink} to={inventoryLabelDetailPath(row.labelId)} state={stockRowActionState(filters.q)}>{row.labelCode}</Link>
     <span className={styles.sub}>
-      <span className={styles.visuallyHidden}>{STOCK_TEXT.heat} </span>{row.lot.heatNumber ?? row.heatNumber ?? STOCK_TEXT.unknown}
-      {' · '}
-      <span className={styles.visuallyHidden}>{STOCK_TEXT.coil} </span>{row.lot.coilNumber ?? row.coilNumber ?? STOCK_TEXT.unknown}
+      {lotToken(STOCK_TEXT.heat, row.lot.heatNumber ?? row.heatNumber)}{' · '}{lotToken(STOCK_TEXT.coil, row.lot.coilNumber ?? row.coilNumber)}
     </span>
   </>
 
@@ -414,8 +439,8 @@ function InventoryStockPositionView({
     </div>
     <fieldset id="stock-columns" className={styles.panel} hidden={openPanel !== 'columns'}>
       <legend>{STOCK_TEXT.visibleColumns}</legend>
-      <label><input type="checkbox" checked={showClassification} onChange={(event) => setShowClassification(event.target.checked)} /> {STOCK_TEXT.column.classification}</label>
-      <label><input type="checkbox" checked={showFreePhysical} onChange={(event) => setShowFreePhysical(event.target.checked)} /> {STOCK_TEXT.column.freePhysical}</label>
+      <label><input type="checkbox" aria-label={STOCK_TEXT.columnToggle(STOCK_TEXT.column.classification)} checked={showClassification} onChange={(event) => setShowClassification(event.target.checked)} /> {STOCK_TEXT.column.classification}</label>
+      <label><input type="checkbox" aria-label={STOCK_TEXT.columnToggle(STOCK_TEXT.column.freePhysical)} checked={showFreePhysical} onChange={(event) => setShowFreePhysical(event.target.checked)} /> {STOCK_TEXT.column.freePhysical}</label>
     </fieldset>
 
     {chips.length > 0 || filters.q !== ''
@@ -423,21 +448,28 @@ function InventoryStockPositionView({
         {chips.length > 0
           ? <ul aria-label={STOCK_TEXT.activeFilters}>{chips.map((chip) => <li key={chip.key}>
             <span>{chip.label}</span>
-            <button type="button" aria-label={STOCK_TEXT.filterChip.remove(chip.label)} onClick={() => applyFilters(chip.remove)}>×</button>
+            <button type="button" aria-label={STOCK_TEXT.filterChip.remove(chip.label)} onClick={() => applyFilters(chip.remove, true)}>×</button>
           </li>)}</ul>
           : null}
-        <button type="button" className={styles.clear} onClick={() => { setQ(''); applyFilters({ q: '', productId: null, locationId: null, classification: null, owner: null }) }}>
+        <button type="button" className={styles.clear} onClick={() => { setQ(''); applyFilters({ q: '', productId: null, locationId: null, classification: null, owner: null }, true) }}>
           {STOCK_TEXT.clearFilters}
         </button>
       </div>
       : null}
 
+    <section ref={resultsRef} tabIndex={-1} aria-label={STOCK_TEXT.results} className={styles.results}>
     {state.type === 'loading' && !searchTooLong ? <p role="status">{STOCK_TEXT.loading}</p> : null}
     {state.type === 'failed'
-      ? <StateBlock state={state.view} subject={STOCK_TEXT.stateSubject} onRetry={() => { setState({ type: 'loading' }); void load(filters) }} />
+      ? <>
+        <StateBlock state={state.view} subject={STOCK_TEXT.stateSubject} onRetry={() => { setState({ type: 'loading' }); void load(filters) }} />
+        {/* A 409 here is a label that moved between the owner's two reads: transient, so the list can simply restart. */}
+        {state.view.kind === 'conflict'
+          ? <button type="button" className={styles.more} onClick={() => { setState({ type: 'loading' }); void load(filters) }}>{STOCK_TEXT.restart}</button>
+          : null}
+      </>
       : null}
     {state.type === 'ready' && state.rows.length === 0
-      ? <p>{filters.q !== '' || hasRowFilter(filters) ? STOCK_TEXT.emptyFiltered : STOCK_TEXT.emptyNoFilter}</p>
+      ? <p role="status">{filters.q !== '' || hasRowFilter(filters) ? STOCK_TEXT.emptyFiltered : STOCK_TEXT.emptyNoFilter}</p>
       : null}
     {state.type === 'ready' && state.rows.length > 0
       ? <>
@@ -454,14 +486,14 @@ function InventoryStockPositionView({
               </dl>
               <dl className={styles.cardQuantities}>
                 {quantities(row).map((entry) => <div key={entry.key} className={entry.key === 'available' ? styles.available : undefined}>
-                  <dt>{entry.label}</dt><dd>{formatKg(entry.value)}</dd>
+                  <dt>{entry.label}</dt><dd>{formatKg(entry.value)}{entry.key === 'available' ? classMark(row) : null}</dd>
                 </div>)}
               </dl>
             </li>)}
           </ul>
-          : <div className={styles.tableWrap}><table className={styles.table}><thead><tr>
+          : <div className={styles.tableWrap}><table className={styles.table} aria-label={STOCK_TEXT.heading}><thead><tr>
             <th scope="col">{STOCK_TEXT.column.label}</th>
-            <th scope="col">{STOCK_TEXT.column.product}</th>
+            <th scope="col" className={styles.productCol}>{STOCK_TEXT.column.product}</th>
             <th scope="col">{STOCK_TEXT.column.dimension}</th>
             {showClassification ? <th scope="col">{STOCK_TEXT.column.classification}</th> : null}
             <th scope="col">{STOCK_TEXT.column.location}</th>
@@ -470,29 +502,35 @@ function InventoryStockPositionView({
             <th scope="col">{STOCK_TEXT.column.actions}</th>
           </tr></thead><tbody>{state.rows.map((row) => <tr key={row.labelId} data-label-id={row.labelId}>
             <td>{labelCell(row)}</td>
-            <td>{productCell(row)}</td>
+            <td className={styles.productCol}>{productCell(row)}</td>
             <td className={styles.nowrap}>{dimensionText(row.productDisplay.technical)}</td>
             {showClassification ? <td>{classificationText(row.classification)}</td> : null}
             <td>{locationCell(row)}</td>
             <td>{ownerCell(row)}</td>
             {quantities(row).map((entry) => <td key={entry.key} className={entry.key === 'available' ? `${styles.number} ${styles.available}` : styles.number}>
               {formatKg(entry.value)}
+              {entry.key === 'available' ? classMark(row) : null}
             </td>)}
             <td>{menu(row)}</td>
           </tr>)}</tbody></table></div>}
         {state.more.type === 'loading' ? <p role="status">{STOCK_TEXT.loadingMore}</p> : null}
         {state.more.type === 'failed'
           ? <div role="alert" className={styles.error}>
-            <p>{STOCK_TEXT.loadMoreFailed}</p>
+            <p>{state.more.expired ? STOCK_TEXT.loadMoreExpired : STOCK_TEXT.loadMoreFailed}</p>
             <button type="button" onClick={() => { setState({ type: 'loading' }); void load(filters) }}>{STOCK_TEXT.restart}</button>
           </div>
           : null}
-        {state.nextCursor !== null && state.more.type !== 'loading'
-          ? <button type="button" className={styles.more} onClick={() => void loadMore()}>{STOCK_TEXT.loadMore}</button>
+        {state.nextCursor !== null && !(state.more.type === 'failed' && state.more.expired)
+          ? <button
+            type="button"
+            className={styles.more}
+            aria-disabled={state.more.type === 'loading' || undefined}
+            onClick={() => void loadMore()}
+          >{STOCK_TEXT.loadMore}</button>
           : null}
-        {state.nextCursor === null && state.searchWindowFull ? <p role="status">{STOCK_TEXT.windowFull}</p> : null}
       </>
       : null}
+    </section>
     {canReadPurchaseSupply
       ? <PurchaseSupplySection companyId={companyId} canOpenOrder={canOpenPurchaseOrder} canOpenProduct={canOpenProduct} />
       : null}

@@ -209,10 +209,12 @@ function rowOf(value: unknown): StockDisplayRow | null {
     documentStatus, ownerKind, ownerId, custodianKind, custodianId, locationId,
     physicalKg, freePhysicalKg, blockedPhysicalKg, activeAllocationKg, availableKg,
   } = source
-  // A non-empty opt-in row always carries its exact Product version (the host refuses the page otherwise), and
-  // the Product display is bound to it; a row without one cannot be shown as the owner published it.
+  // A non-empty opt-in row always carries the label's stored Product version: the host answers 503 for a null or
+  // blank one. Any other text is passed to the Product owner, which answers a version it cannot read with its own
+  // per-row result (identity and technical null, `invalid_version`) — so the row is kept and shown as "—" rather
+  // than refusing the page. The Product display is bound to that exact text either way.
   if (!guid(companyId) || !guid(labelId) || !version(labelVersion) || !text(labelCode) || !guid(productId) ||
-    !version(productVersion) || !(classification === null || oneOf(classification, STOCK_CLASSIFICATIONS)) ||
+    !text(productVersion) || !(classification === null || oneOf(classification, STOCK_CLASSIFICATIONS)) ||
     !nullableText(heatNumber) || !nullableText(coilNumber) || !text(documentStatus) ||
     !oneOf(ownerKind, STOCK_PARTY_KINDS) || !guid(ownerId) || !oneOf(custodianKind, STOCK_PARTY_KINDS) ||
     !guid(custodianId) || !guid(locationId) || !kg(physicalKg) || !kg(freePhysicalKg) ||

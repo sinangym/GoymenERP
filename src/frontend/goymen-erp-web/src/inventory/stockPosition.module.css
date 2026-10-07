@@ -166,11 +166,17 @@
   font-size: 0.8125rem;
 }
 
+/* The Product is the main new fact: its column keeps v1.2's width and a long name wraps to two lines. */
+.productCol {
+  min-width: 12.5rem;
+}
+
 .name {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
   max-width: 18rem;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .cardLink {
@@ -209,6 +215,32 @@
 
 .more {
   justify-self: start;
+}
+
+.more[aria-disabled="true"] {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+.results {
+  display: grid;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.results:focus {
+  outline: none;
+}
+
+.results:focus-visible {
+  outline: 2px solid var(--color-focus, #1f5fd0);
+  outline-offset: 2px;
+}
+
+.classMark {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 600;
 }
 
 .visuallyHidden {
