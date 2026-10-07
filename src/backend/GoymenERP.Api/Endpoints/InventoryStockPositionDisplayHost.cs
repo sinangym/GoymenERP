@@ -1,5 +1,6 @@
 using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Product.Application.Contracts;
+using GoymenERP.Modules.Organization.Application.Contracts;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
 
@@ -12,6 +13,8 @@ namespace GoymenERP.Api.Endpoints;
 /// </summary>
 public static class InventoryStockPositionDisplayHost
 {
+    public const string LocationDisplayContractVersion = "2.0";
+
     public static InventoryStockPositionRequestScope CaptureScope(
         ICompanyContext company,
         ICurrentUser user)
@@ -50,6 +53,75 @@ public static class InventoryStockPositionDisplayHost
         {
             // A Product refusal must not bypass the final Inventory fence. If Inventory authority
             // disappeared while Product was awaited, the public answer is the code-less 403.
+            await RequireFreshInventoryAuthorityAsync(scope, company, user, authority, cancellationToken);
+            throw;
+        }
+    }
+
+    public static async Task<InventoryStockPositionLocationPageV2> ComposeWithLocationAuthorizedAsync(
+        InventoryStockPositionRequestScope scope,
+        InventoryStockPositionsV1 source,
+        IProductStockDisplayReferencesV1 products,
+        IOrganizationLocationDisplayReaderV1 locations,
+        ICompanyContext company,
+        ICurrentUser user,
+        IErpAuthorityRevalidationService authority,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            ArgumentNullException.ThrowIfNull(source);
+            ArgumentNullException.ThrowIfNull(source.Items);
+            ArgumentNullException.ThrowIfNull(locations);
+            await RequireFreshInventoryAuthorityAsync(scope, company, user, authority, cancellationToken);
+            if (source.Items.Count == 0)
+            {
+                return new([], source.SearchWindowFull, source.NextCursor);
+            }
+
+            var productPage = await ComposeAsync(source, products, cancellationToken);
+            await RequireFreshInventoryAuthorityAsync(scope, company, user, authority, cancellationToken);
+
+            var locationIds = source.Items.Select(item => item.LocationId).Distinct().ToArray();
+            if (locationIds.Any(id => id == Guid.Empty))
+            {
+                throw InvalidDisplayComposition();
+            }
+
+            var locationPage = await locations.ReadAsync(scope.CompanyId, locationIds, cancellationToken);
+            await RequireFreshInventoryAuthorityAsync(scope, company, user, authority, cancellationToken);
+            if (locationPage.Count != locationIds.Length
+                || locationPage.Select(item => item.LocationId).Distinct().Count() != locationPage.Count
+                || locationPage.Any(item => item.LocationId == Guid.Empty
+                    || string.IsNullOrWhiteSpace(item.LocationCode)
+                    || string.IsNullOrWhiteSpace(item.LocationName)))
+            {
+                throw InvalidDisplayComposition();
+            }
+
+            var byLocation = locationPage.ToDictionary(item => item.LocationId);
+            if (locationIds.Any(id => !byLocation.ContainsKey(id)))
+            {
+                throw InvalidDisplayComposition();
+            }
+
+            return new(
+                [.. productPage.Items.Select(item => new InventoryStockPositionLocationDisplayV2(
+                    item.CompanyId, item.LabelId, item.LabelVersion, item.LabelCode, item.ProductId,
+                    item.ProductVersion, item.Classification, item.Lot, item.HeatNumber, item.CoilNumber,
+                    item.DocumentStatus, item.OwnerKind, item.OwnerId, item.CustodianKind, item.CustodianId,
+                    item.LocationId, item.PhysicalKg, item.FreePhysicalKg, item.BlockedPhysicalKg,
+                    item.ActiveAllocationKg, item.AvailableKg, item.ProductDisplay,
+                    byLocation[item.LocationId]))],
+                productPage.SearchWindowFull,
+                productPage.NextCursor);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch
+        {
             await RequireFreshInventoryAuthorityAsync(scope, company, user, authority, cancellationToken);
             throw;
         }
@@ -148,6 +220,9 @@ public static class InventoryStockPositionDisplayHost
 
     private static InventoryStockPositionException Unavailable() =>
         new(StatusCodes.Status503ServiceUnavailable, InventoryStockPositionCodesV1.Unavailable);
+
+    private static InvalidOperationException InvalidDisplayComposition() =>
+        new("The display owner returned an incomplete or inconsistent batch.");
 
     private static async Task RequireFreshInventoryAuthorityAsync(
         InventoryStockPositionRequestScope expected,
@@ -258,3 +333,33 @@ public sealed record InventoryStockPositionDisplayV1(
     string ActiveAllocationKg,
     string AvailableKg,
     ProductStockDisplayResultV1 ProductDisplay);
+
+public sealed record InventoryStockPositionLocationPageV2(
+    IReadOnlyList<InventoryStockPositionLocationDisplayV2> Items,
+    bool SearchWindowFull,
+    string? NextCursor = null);
+
+public sealed record InventoryStockPositionLocationDisplayV2(
+    Guid CompanyId,
+    Guid LabelId,
+    string LabelVersion,
+    string LabelCode,
+    Guid ProductId,
+    string? ProductVersion,
+    string? Classification,
+    InventoryLotV1 Lot,
+    string? HeatNumber,
+    string? CoilNumber,
+    string DocumentStatus,
+    string OwnerKind,
+    Guid OwnerId,
+    string CustodianKind,
+    Guid CustodianId,
+    Guid LocationId,
+    string PhysicalKg,
+    string FreePhysicalKg,
+    string BlockedPhysicalKg,
+    string ActiveAllocationKg,
+    string AvailableKg,
+    ProductStockDisplayResultV1 ProductDisplay,
+    OrganizationLocationDisplayV1 LocationDisplay);
