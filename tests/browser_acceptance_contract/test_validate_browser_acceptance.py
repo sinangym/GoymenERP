@@ -872,6 +872,20 @@ class WorkflowTests(unittest.TestCase):
         }
         self.assertEqual("inventory.label-classification.write", recorder[6])
         self.assertNotIn("inventory.label-classification.write", denied.values())
+        for role_index in range(8, 13):
+            role_permissions = {
+                permission
+                for _, permission in re.findall(
+                    rf"IdentitySeed__Roles__{role_index}__Permissions__(\d+): ([^\r\n]+)", source)
+            }
+            self.assertTrue(
+                {
+                    "inventory.labels.read",
+                    "inventory.balances.read",
+                    "product.operational-selection.read",
+                }.issubset(role_permissions),
+                f"R14 role {role_index} must retain the complete stock-position read authority",
+            )
 
     def _trigger_block(self) -> str:
         return self.workflow.split("\non:\n", 1)[1].split("\npermissions:\n", 1)[0]

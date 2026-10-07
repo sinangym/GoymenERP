@@ -110,6 +110,7 @@ services:
       IdentitySeed__Roles__8__Permissions__0: inventory.labels.read
       IdentitySeed__Roles__8__Permissions__1: inventory.balances.read
       IdentitySeed__Roles__8__Permissions__2: inventory.label-transformation.record
+      IdentitySeed__Roles__8__Permissions__3: product.operational-selection.read
       IdentitySeed__Roles__9__Id: b3000000-0000-4000-8000-000000000705
       IdentitySeed__Roles__9__Code: BROWSER_R14_COUNTER
       IdentitySeed__Roles__9__Name: SENTETIK browser-suite:r14 Inventory stock counter
@@ -117,6 +118,7 @@ services:
       IdentitySeed__Roles__9__Permissions__0: inventory.labels.read
       IdentitySeed__Roles__9__Permissions__1: inventory.balances.read
       IdentitySeed__Roles__9__Permissions__2: inventory.stock-count.record
+      IdentitySeed__Roles__9__Permissions__3: product.operational-selection.read
       IdentitySeed__Roles__10__Id: b3000000-0000-4000-8000-000000000706
       IdentitySeed__Roles__10__Code: BROWSER_R14_COUNT_APPROVER
       IdentitySeed__Roles__10__Name: SENTETIK browser-suite:r14 Inventory stock count approver
@@ -124,6 +126,7 @@ services:
       IdentitySeed__Roles__10__Permissions__0: inventory.labels.read
       IdentitySeed__Roles__10__Permissions__1: inventory.balances.read
       IdentitySeed__Roles__10__Permissions__2: inventory.stock-count.approve
+      IdentitySeed__Roles__10__Permissions__3: product.operational-selection.read
       IdentitySeed__Roles__11__Id: b3000000-0000-4000-8000-000000000707
       IdentitySeed__Roles__11__Code: BROWSER_R14_SCRAPPER
       IdentitySeed__Roles__11__Name: SENTETIK browser-suite:r14 Inventory scrap recorder
@@ -131,6 +134,7 @@ services:
       IdentitySeed__Roles__11__Permissions__0: inventory.labels.read
       IdentitySeed__Roles__11__Permissions__1: inventory.balances.read
       IdentitySeed__Roles__11__Permissions__2: inventory.stock-scrap.record
+      IdentitySeed__Roles__11__Permissions__3: product.operational-selection.read
       IdentitySeed__Roles__12__Id: b3000000-0000-4000-8000-000000000708
       IdentitySeed__Roles__12__Code: BROWSER_R14_SCRAP_APPROVER
       IdentitySeed__Roles__12__Name: SENTETIK browser-suite:r14 Inventory scrap approver
@@ -138,6 +142,7 @@ services:
       IdentitySeed__Roles__12__Permissions__0: inventory.labels.read
       IdentitySeed__Roles__12__Permissions__1: inventory.balances.read
       IdentitySeed__Roles__12__Permissions__2: inventory.stock-scrap.approve
+      IdentitySeed__Roles__12__Permissions__3: product.operational-selection.read
       IdentitySeed__Assignments__7__Id: b4000000-0000-4000-8000-000000000701
       IdentitySeed__Assignments__7__UserId: b2000000-0000-4000-8000-000000000701
       IdentitySeed__Assignments__7__RoleId: b3000000-0000-4000-8000-000000000701
