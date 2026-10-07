@@ -37,6 +37,21 @@ FAILURE_CATEGORIES = {
     "aborted": "aborted",
 }
 DIAGNOSTIC_MARKER_PREFIX = "CI_SAFE_DIAGNOSTIC:"
+FINANCE_WORK_LEGACY_TEST_FQN = (
+    "GoymenERP.Api.IntegrationTests."
+    "FinanceOfficialInvoiceImportWorkDeliverySqlServerRelationalAcceptanceTests."
+    "Legacy_previous_migration_receipt_replays_after_up_without_fabricating_work_history"
+)
+FINANCE_WORK_LEGACY_DIAGNOSTIC_CODES = frozenset(
+    {
+        "finance_work_legacy_start",
+        "finance_work_legacy_seed",
+        "finance_work_legacy_up",
+        "finance_work_legacy_replay",
+        "finance_work_legacy_counts",
+        "finance_work_legacy_down_up",
+    }
+)
 DIAGNOSTIC_CODES = frozenset(
     {
         "product_price_list_startup_ef_db_update",
@@ -77,7 +92,7 @@ DIAGNOSTIC_CODES = frozenset(
         "product_technical_release_rollback_unreferenced",
         "product_technical_release_rollback_reapply",
     }
-)
+).union(FINANCE_WORK_LEGACY_DIAGNOSTIC_CODES)
 FailureKey = tuple[str | None, str, str | None]
 
 
@@ -360,6 +375,7 @@ class ResultCollector:
                 code = self.message_scanner.finish()
             if (
                 self.message_overflow
+                or code in FINANCE_WORK_LEGACY_DIAGNOSTIC_CODES
                 or (
                     self.message_scanner is not None
                     and self.message_scanner.ambiguous
@@ -380,6 +396,11 @@ class ResultCollector:
             if self.failure_identity is not None:
                 test_fqn, category = self.failure_identity
                 diagnostic = None if self.diagnostic_ambiguous else self.diagnostic_code
+                if (
+                    diagnostic in FINANCE_WORK_LEGACY_DIAGNOSTIC_CODES
+                    and test_fqn != FINANCE_WORK_LEGACY_TEST_FQN
+                ):
+                    diagnostic = None
                 self.failures[(test_fqn, category, diagnostic)] += 1
             self.result_depth = None
             self.failure_identity = None
