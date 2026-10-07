@@ -43,7 +43,7 @@ public sealed class SalesPriceFloorApprovalSqlServerRelationalAcceptanceTests
     private static readonly SalesDraftStateAudit Submitted = new(
         "sales.order-draft.submitted.v1", "Submit", "SENTETIK onaya gönderildi");
 
-    [Fact]
+    [SqlServerFact]
     public void Replay_summary_comparison_uses_ordered_snapshot_values_and_rejects_content_drift()
     {
         var first = new SalesOrderDraftProductSnapshotViewV1(
