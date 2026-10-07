@@ -90,5 +90,5 @@ internal sealed class SqlInventoryMovementTimelineReader(InventoryDbContext db) 
             : throw Unavailable();
 
     private static InventoryMovementTimelineException Unavailable() =>
-        new(503, InventoryMovementTimelineCodesV1.Unavailable);
+        new InventoryMovementTimelineException(503, InventoryMovementTimelineCodesV1.Unavailable);
 }
