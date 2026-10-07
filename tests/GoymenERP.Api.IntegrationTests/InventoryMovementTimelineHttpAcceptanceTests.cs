@@ -80,9 +80,10 @@ public sealed class InventoryMovementTimelineHttpAcceptanceTests(GoymenErpApiFac
         using var response = await client.GetAsync(InventoryMovementTimelineApiV1.Path);
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-        AssertPrivateNoStore(response);
         Assert.Empty(owner.Queries);
-        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.DoesNotContain("ROLL-1", body, StringComparison.Ordinal);
+        using var document = JsonDocument.Parse(body);
         Assert.Equal("company_context_invalid", document.RootElement.GetProperty("code").GetString());
     }
 
@@ -99,6 +100,10 @@ public sealed class InventoryMovementTimelineHttpAcceptanceTests(GoymenErpApiFac
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
         AssertPrivateNoStore(response);
         Assert.Empty(owner.Queries);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.DoesNotContain(InventoryMovementTimelineCodesV1.Unauthenticated, body, StringComparison.Ordinal);
+        using var document = JsonDocument.Parse(body);
+        Assert.Equal("authentication_required", document.RootElement.GetProperty("code").GetString());
     }
 
     [Theory]
@@ -115,16 +120,24 @@ public sealed class InventoryMovementTimelineHttpAcceptanceTests(GoymenErpApiFac
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
         AssertPrivateNoStore(response);
         Assert.Empty(owner.Queries);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.DoesNotContain(InventoryMovementTimelineCodesV1.Forbidden, body, StringComparison.Ordinal);
+        using var document = JsonDocument.Parse(body);
+        Assert.Equal("forbidden", document.RootElement.GetProperty("code").GetString());
     }
 
     [Theory]
-    [InlineData(400, InventoryMovementTimelineCodesV1.InvalidQuery)]
-    [InlineData(503, InventoryMovementTimelineCodesV1.Unavailable)]
-    public async Task Owner_public_refusals_preserve_the_exact_coded_contract(int status, string code)
+    [InlineData(400, InventoryMovementTimelineCodesV1.InvalidQuery,
+        InventoryMovementTimelineCodesV1.InvalidQuery)]
+    [InlineData(503, InventoryMovementTimelineCodesV1.Unavailable, "service_unavailable")]
+    public async Task Owner_public_refusals_preserve_the_exact_coded_contract(
+        int status,
+        string privateCode,
+        string publicCode)
     {
         var owner = new StubTimeline(Page())
         {
-            Failure = new InventoryMovementTimelineException(status, code),
+            Failure = new InventoryMovementTimelineException(status, privateCode),
         };
         using var host = CreateHost(new ControlledAuthority(), owner);
         using var client = CreateClient(host);
@@ -133,14 +146,22 @@ public sealed class InventoryMovementTimelineHttpAcceptanceTests(GoymenErpApiFac
 
         Assert.Equal(status, (int)response.StatusCode);
         AssertPrivateNoStore(response);
-        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        Assert.Equal(code, document.RootElement.GetProperty("code").GetString());
+        var body = await response.Content.ReadAsStringAsync();
+        if (!string.Equals(privateCode, publicCode, StringComparison.Ordinal))
+        {
+            Assert.DoesNotContain(privateCode, body, StringComparison.Ordinal);
+        }
+        using var document = JsonDocument.Parse(body);
+        Assert.Equal(publicCode, document.RootElement.GetProperty("code").GetString());
     }
 
     [Theory]
-    [InlineData(401, InventoryMovementTimelineCodesV1.Unauthenticated)]
-    [InlineData(403, InventoryMovementTimelineCodesV1.Forbidden)]
-    public async Task Owner_authority_refusals_are_code_less(int status, string privateCode)
+    [InlineData(401, InventoryMovementTimelineCodesV1.Unauthenticated, "authentication_required")]
+    [InlineData(403, InventoryMovementTimelineCodesV1.Forbidden, "forbidden")]
+    public async Task Owner_authority_refusals_use_only_platform_codes(
+        int status,
+        string privateCode,
+        string publicCode)
     {
         var owner = new StubTimeline(Page())
         {
@@ -156,11 +177,11 @@ public sealed class InventoryMovementTimelineHttpAcceptanceTests(GoymenErpApiFac
         var body = await response.Content.ReadAsStringAsync();
         Assert.DoesNotContain(privateCode, body, StringComparison.Ordinal);
         using var document = JsonDocument.Parse(body);
-        Assert.False(document.RootElement.TryGetProperty("code", out _));
+        Assert.Equal(publicCode, document.RootElement.GetProperty("code").GetString());
     }
 
     [Fact]
-    public async Task Unexpected_owner_failure_is_code_less_503_without_timeline_disclosure()
+    public async Task Unexpected_owner_failure_uses_platform_503_without_timeline_disclosure()
     {
         var owner = new StubTimeline(Page()) { Failure = new InvalidOperationException("private_owner_detail") };
         using var host = CreateHost(new ControlledAuthority(), owner);
@@ -172,9 +193,10 @@ public sealed class InventoryMovementTimelineHttpAcceptanceTests(GoymenErpApiFac
         AssertPrivateNoStore(response);
         var body = await response.Content.ReadAsStringAsync();
         Assert.DoesNotContain("private_owner_detail", body, StringComparison.Ordinal);
+        Assert.DoesNotContain(InventoryMovementTimelineCodesV1.Unavailable, body, StringComparison.Ordinal);
         Assert.DoesNotContain("ROLL-1", body, StringComparison.Ordinal);
         using var document = JsonDocument.Parse(body);
-        Assert.False(document.RootElement.TryGetProperty("code", out _));
+        Assert.Equal("service_unavailable", document.RootElement.GetProperty("code").GetString());
     }
 
     private WebApplicationFactory<Program> CreateHost(ControlledAuthority authority, StubTimeline owner) =>
