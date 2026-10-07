@@ -129,7 +129,9 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
         using (var foreignResponse = await foreignClient.PostWithKeyAsync($"{Base}/plans",
                    new SavePlanRequestV1(foreignPlanId, workCenter, inputs, null, spec), "slitting-foreign"))
         {
-            Assert.Equal(HttpStatusCode.NotFound, foreignResponse.StatusCode);
+            Assert.Equal(
+                (HttpStatusCode.UnprocessableEntity, ManufacturingStoreCodes.WorkCenterNotFound),
+                (foreignResponse.StatusCode, (await Problem(foreignResponse)).Code));
         }
         Assert.Equal(0, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM manufacturing.Plans WHERE Id = @p", ("@p", foreignPlanId)));
