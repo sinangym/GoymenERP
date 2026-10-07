@@ -25,7 +25,19 @@ namespace GoymenERP.Modules.Manufacturing.Application;
 // a browser. Every id is the caller's (R3): the same id with the same content is a replay.
 
 public sealed record SavePlanRequestV1(
-    Guid PlanId, Guid WorkCenterId, IReadOnlyList<PlannedInputRequestV1>? Inputs, TargetRequestV1? Target);
+    Guid PlanId, Guid WorkCenterId, IReadOnlyList<PlannedInputRequestV1>? Inputs, TargetRequestV1? Target,
+    SlittingSpecRequestV1? SlittingSpec = null);
+
+public sealed record SlitLineRequestV1(string? BandWidthMm, int Count);
+
+/// <summary>
+/// The immutable Slitting content declared when a plan is created. Line order is significant and preserved.
+/// <see cref="WindingTargetKg"/> is optional; all other calculation inputs remain owner-provided and fail closed
+/// when unavailable.
+/// </summary>
+public sealed record SlittingSpecRequestV1(
+    IReadOnlyList<SlitLineRequestV1>? Lines,
+    string? WindingTargetKg = null);
 
 public sealed record PlanCommercialContextRequestV1(
     Guid PartyId,
@@ -124,10 +136,14 @@ public sealed record PlannedInputViewV1(
 
 public sealed record TargetViewV1(string Basis, string Kg);
 
+public sealed record SlitLineViewV1(string BandWidthMm, int Count);
+
+public sealed record SlittingSpecViewV1(IReadOnlyList<SlitLineViewV1> Lines, string? WindingTargetKg);
+
 public sealed record PlanViewV1(
     Guid PlanId, Guid CompanyId, Guid WorkCenterId, string Process, string Status, long Version,
     IReadOnlyList<PlannedInputViewV1> Inputs, TargetViewV1? Target, Guid? ApprovedByUserId, DateTimeOffset? ApprovedAtUtc,
-    PlanPreviewViewV1? Calculation = null);
+    PlanPreviewViewV1? Calculation = null, SlittingSpecViewV1? SlittingSpec = null);
 
 /// <summary>
 /// MFG-PLAN-EDIT: one planned parent roll of a history entry, with the Inventory label version accepted for it
@@ -365,7 +381,7 @@ public sealed partial class ManufacturingCommandService(
             return Task.FromResult(Invalid<PlanViewV1>("plan"));
         }
 
-        var content = ParsePlanContent(request.Inputs, request.Target);
+        var content = ParsePlanContent(request.Inputs, request.Target, request.SlittingSpec);
         if (content.InvalidField is { } invalidField)
         {
             return Task.FromResult(Invalid<PlanViewV1>(invalidField));
@@ -373,13 +389,8 @@ public sealed partial class ManufacturingCommandService(
 
         var inputs = content.Inputs!;
         var targetKg = content.TargetKg;
-        var canonical = new
-        {
-            planId = request.PlanId,
-            workCenterId = request.WorkCenterId,
-            inputs = CanonicalPlanInputs(inputs),
-            target = request.Target is null ? null : new { basis = request.Target.Basis, kg = Text(targetKg!.Value) },
-        };
+        var canonical = CanonicalSavePlan(request.PlanId, request.WorkCenterId, inputs, request.Target, targetKg,
+            content.SlittingSpec);
 
         return RunAsync<PlanViewV1>(permission, idempotencyKey, ManufacturingCommandNames.SavePlan, canonical,
             ManufacturingApiStatus.Created, async (metadata, actorId, companyId) =>
@@ -391,11 +402,23 @@ public sealed partial class ManufacturingCommandService(
                     return Refusal<PlanViewV1>(process.Refusal);
                 }
 
+                if (content.SlittingSpec is not null && process.Value != ManufacturingProcess.Slitting)
+                {
+                    return Invalid<PlanViewV1>("slittingSpec");
+                }
+
                 var verified = await VerifyPlanContentAsync(
                     inputs, targetKg, permission, companyId, actorId, cancellationToken);
                 if (verified.Refusal is not null)
                 {
                     return Refusal<PlanViewV1>(verified.Refusal);
+                }
+
+                var slittingSpec = await VerifySlittingSpecAsync(
+                    content.SlittingSpec, cancellationToken);
+                if (slittingSpec.Refusal is not null)
+                {
+                    return Refusal<PlanViewV1>(slittingSpec.Refusal);
                 }
 
                 if (await FenceCapturedAsync<PlanViewV1>(permission, companyId, actorId, cancellationToken) is { } fenced)
@@ -406,7 +429,8 @@ public sealed partial class ManufacturingCommandService(
                 // Built behind the fence, so the domain's own refusals (a zero planned mass, a repeated
                 // roll) map like every other refusal.
                 var plan = new ProductionPlan(request.PlanId, companyId, request.WorkCenterId,
-                    process.Value, PlannedInputs(verified.Inputs), Target(request.Target, verified.TargetMass));
+                    process.Value, PlannedInputs(verified.Inputs), Target(request.Target, verified.TargetMass),
+                    BuildSlittingSpec(content.SlittingSpec, slittingSpec.WindingTarget));
                 var outcome = await plans.SavePlanAsync(plan, metadata, cancellationToken);
                 var stored = await plans.FindPlanAsync(plan.Id, cancellationToken);
                 return stored is null
@@ -453,7 +477,7 @@ public sealed partial class ManufacturingCommandService(
             return Task.FromResult(Invalid<PlanViewV1>("reason"));
         }
 
-        var content = ParsePlanContent(request.Inputs, request.Target);
+        var content = ParsePlanContent(request.Inputs, request.Target, slittingSpec: null);
         if (content.InvalidField is { } invalidField)
         {
             return Task.FromResult(Invalid<PlanViewV1>(invalidField));
@@ -584,6 +608,10 @@ public sealed partial class ManufacturingCommandService(
         PlanTechnicalParameterSnapshotV1 TechnicalSnapshot,
         PlanCommercialContextSnapshotV1? CommercialContext);
 
+    private sealed record ParsedSlitLine(decimal BandWidthMm, int Count);
+
+    private sealed record ParsedSlittingSpec(IReadOnlyList<ParsedSlitLine> Lines, decimal? WindingTargetKg);
+
     /// <summary>
     /// ADR-011 compatibility: the published plan command predates commercial context. A null context therefore keeps
     /// the exact old per-input JSON object; only a supplied context adds the new member to the immutable request hash.
@@ -604,12 +632,42 @@ public sealed partial class ManufacturingCommandService(
                 commercialContext = input.CommercialContext,
             });
 
-    private static (List<ParsedPlanInput>? Inputs, decimal? TargetKg,
-        string? InvalidField) ParsePlanContent(IReadOnlyList<PlannedInputRequestV1> requested, TargetRequestV1? target)
+    /// <summary>
+    /// ADR-011 compatibility: a missing or explicit-null Slitting spec keeps the exact legacy request shape and hash.
+    /// A supplied spec adds only its ordered canonical lines and optional canonical winding target.
+    /// </summary>
+    private static object CanonicalSavePlan(Guid planId, Guid workCenterId, IEnumerable<ParsedPlanInput> inputs,
+        TargetRequestV1? target, decimal? targetKg, ParsedSlittingSpec? slittingSpec)
+    {
+        var canonicalInputs = CanonicalPlanInputs(inputs);
+        var canonicalTarget = target is null ? null : new { basis = target.Basis, kg = Text(targetKg!.Value) };
+        return slittingSpec is null
+            ? new { planId, workCenterId, inputs = canonicalInputs, target = canonicalTarget }
+            : new
+            {
+                planId,
+                workCenterId,
+                inputs = canonicalInputs,
+                target = canonicalTarget,
+                slittingSpec = new
+                {
+                    lines = slittingSpec.Lines.Select(line => new
+                    {
+                        bandWidthMm = Text(line.BandWidthMm),
+                        count = line.Count,
+                    }),
+                    windingTargetKg = slittingSpec.WindingTargetKg is { } winding ? Text(winding) : null,
+                },
+            };
+    }
+
+    private static (List<ParsedPlanInput>? Inputs, decimal? TargetKg, ParsedSlittingSpec? SlittingSpec,
+        string? InvalidField) ParsePlanContent(IReadOnlyList<PlannedInputRequestV1> requested, TargetRequestV1? target,
+        SlittingSpecRequestV1? slittingSpec)
     {
         if (target is not null && ParseBasis(target.Basis) is null)
         {
-            return (null, null, "target.basis");
+            return (null, null, null, "target.basis");
         }
 
         var inputs = new List<ParsedPlanInput>();
@@ -618,34 +676,34 @@ public sealed partial class ManufacturingCommandService(
             var input = requested[index];
             if (ParseKg(input.PlannedKg) is not { } kg)
             {
-                return (null, null, "inputs.plannedKg");
+                return (null, null, null, "inputs.plannedKg");
             }
 
             if (!IsPositiveCanonicalInt64(input.ExpectedLabelVersion))
             {
-                return (null, null, $"inputs[{index}].expectedLabelVersion");
+                return (null, null, null, $"inputs[{index}].expectedLabelVersion");
             }
 
             if (input.CommercialContext is { } commercial)
             {
                 if (commercial.PartyId == Guid.Empty)
                 {
-                    return (null, null, $"inputs[{index}].commercialContext.partyId");
+                    return (null, null, null, $"inputs[{index}].commercialContext.partyId");
                 }
 
                 if (commercial.CompanyPartyAccountId == Guid.Empty)
                 {
-                    return (null, null, $"inputs[{index}].commercialContext.companyPartyAccountId");
+                    return (null, null, null, $"inputs[{index}].commercialContext.companyPartyAccountId");
                 }
 
                 if (string.IsNullOrEmpty(commercial.PartyVersion))
                 {
-                    return (null, null, $"inputs[{index}].commercialContext.partyVersion");
+                    return (null, null, null, $"inputs[{index}].commercialContext.partyVersion");
                 }
 
                 if (string.IsNullOrEmpty(commercial.AccountVersion))
                 {
-                    return (null, null, $"inputs[{index}].commercialContext.accountVersion");
+                    return (null, null, null, $"inputs[{index}].commercialContext.accountVersion");
                 }
             }
 
@@ -658,14 +716,72 @@ public sealed partial class ManufacturingCommandService(
         {
             if (ParseKg(target.Kg) is not { } kg)
             {
-                return (null, null, "target.kg");
+                return (null, null, null, "target.kg");
             }
 
             targetKg = kg;
         }
 
-        return (inputs, targetKg, null);
+        ParsedSlittingSpec? parsedSpec = null;
+        if (slittingSpec is not null)
+        {
+            if (slittingSpec.Lines is null)
+            {
+                return (null, null, null, "slittingSpec.lines");
+            }
+
+            var lines = new List<ParsedSlitLine>();
+            for (var index = 0; index < slittingSpec.Lines.Count; index++)
+            {
+                var line = slittingSpec.Lines[index];
+                if (line is null || ParsePositiveMillimetres(line.BandWidthMm) is not { } width)
+                {
+                    return (null, null, null, $"slittingSpec.lines[{index}].bandWidthMm");
+                }
+
+                if (line.Count <= 0)
+                {
+                    return (null, null, null, $"slittingSpec.lines[{index}].count");
+                }
+
+                lines.Add(new ParsedSlitLine(width, line.Count));
+            }
+
+            decimal? windingTargetKg = null;
+            if (slittingSpec.WindingTargetKg is not null)
+            {
+                if (ParseKg(slittingSpec.WindingTargetKg) is not { } winding || winding <= 0m)
+                {
+                    return (null, null, null, "slittingSpec.windingTargetKg");
+                }
+
+                windingTargetKg = winding;
+            }
+
+            parsedSpec = new ParsedSlittingSpec(lines, windingTargetKg);
+        }
+
+        return (inputs, targetKg, parsedSpec, null);
     }
+
+    private async Task<(Kilograms? WindingTarget, ManufacturingApiResult<object>? Refusal)> VerifySlittingSpecAsync(
+        ParsedSlittingSpec? spec, CancellationToken cancellationToken)
+    {
+        if (spec?.WindingTargetKg is not { } winding)
+        {
+            return (null, null);
+        }
+
+        var verified = await VerifyAsync(winding, DateOnly.FromDateTime(timeProvider.GetUtcNow().UtcDateTime),
+            "slittingSpec.windingTargetKg", cancellationToken);
+        return verified.Refusal is null
+            ? (verified.Value, null)
+            : (null, verified.Refusal);
+    }
+
+    private static SlittingSpec? BuildSlittingSpec(ParsedSlittingSpec? spec, Kilograms? windingTarget) => spec is null
+        ? null
+        : new SlittingSpec(spec.Lines.Select(line => new SlitLine(line.BandWidthMm, line.Count)), windingTarget);
 
     /// <summary>
     /// The owners' checks of a plan content, shared by the save and the revision in the save's order: each roll's mass
@@ -2253,6 +2369,9 @@ public sealed partial class ManufacturingCommandService(
             ? value
             : null;
 
+    private static decimal? ParsePositiveMillimetres(string? text) =>
+        ParseKg(text) is { } value && value > 0m && value.Scale <= SlitLine.MillimetreScale ? value : null;
+
     private static bool IsPositiveCanonicalInt64(string? text) =>
         text is not null
         && long.TryParse(text, NumberStyles.None, CultureInfo.InvariantCulture, out var value)
@@ -2296,7 +2415,10 @@ public sealed partial class ManufacturingCommandService(
         plan.Target is { } target ? new TargetViewV1(target.Basis.ToString(), Text(target.Mass.Value)) : null,
         plan.ApprovedByUserId, plan.ApprovedAtUtc,
         PlanPreviewView(plan.WorkCenterId, ProductionPlanCalculatorV1.Calculate(plan,
-            PlanCalculationParameters.FromCapturedSnapshots(plan.Inputs))));
+            PlanCalculationParameters.FromCapturedSnapshots(plan.Inputs))),
+        plan.Spec is { } spec ? new SlittingSpecViewV1(
+            [.. spec.Lines.Select(line => new SlitLineViewV1(Text(line.BandWidthMm), line.Count))],
+            spec.WindingTargetKg is { } winding ? Text(winding.Value) : null) : null);
 
     private static CapturedPlanTechnicalSnapshotViewV1? TechnicalSnapshotView(
         PlanTechnicalParameterSnapshotV1? snapshot) => snapshot is null ? null : new(

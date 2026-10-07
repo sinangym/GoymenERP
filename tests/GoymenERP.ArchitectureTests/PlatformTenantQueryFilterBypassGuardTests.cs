@@ -218,8 +218,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // MFG close: owner-added closure/tolerance SQL facts extend the exact Manufacturing discovery inventory.
             // MFG technical snapshot: +4 migration/constraint SQL facts (38590e95... -> b1f5f069...).
             // Customer-owned input context: replace one obsolete refusal with three exact persistence/replay facts.
+            // Slitting draft spec: +1 public API SQL fact (e6aa3795... -> 286281c0...).
             ["tools/relational_inventory/manufacturing.txt"] =
-                "e6aa3795605379f774c8256126305e931aec3e9fb7bce62ca31a449d6b764cba",
+                "286281c0b2413bc4ff55d747ecf0b8b8e5c43e99bc78d353defdc4a668f66915",
 
             // organization
             // ORG master edit: +2 OrganizationMasterDataSqlServerRelationalAcceptanceTests facts (6b504dac… -> 3bad6ad8…).
