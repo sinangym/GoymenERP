@@ -265,6 +265,16 @@ Issue, Block, Release and Return records. A distinct transfer or reversal record
 after its separately accepted Inventory writer and semantics exist; this reader does not infer
 either event from unrelated rows.
 
+The owner-side continuation declares `GET /api/v1/inventory/movements` as a bounded company
+timeline. It pages the same immutable movement facts newest first with a protected cursor bound to
+the company, actor and requested limit. The limit is 1–100 (default 50); each line includes the
+stored label code and product id but no cost or source-module enrichment. SQL filters movement,
+line and label reads by the resolved company. The same two company-wide permissions are measured
+before and after the read. A missing owner reader has no positive fallback; an incoming or required
+continuation fails closed when the cursor codec/key is unavailable. The Inventory module registers
+the owner service; central host route, cursor-key binding and OpenAPI publication remain a separate
+single-writer contribution.
+
 ## T07 lot record: `MaterialLot`
 
 Card: #66 5733503803 (ÜRÜN). Business accepted it as an independent core slice and set its boundary in #66 5734060341; that text is the contract of this section. It closes none of Q1–Q3 and chooses no policy.

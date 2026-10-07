@@ -86,10 +86,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // (abe26a09… -> c027dce9…); no code line changed.
     // Re-fingerprinted for customer-owned Inventory opening: one scoped registration binds Inventory's
     // owner-account seam to Cari's existing authorized source; no network or hosted-service surface changed.
-    // Re-fingerprinted for stock-position publication: the reviewed Inventory cursor seam is registered from
-    // configuration; no key is generated and no network or hosted-service surface is added.
+    // Re-fingerprinted for ST-04 inventory movement publication: the reviewed Inventory cursor seam is registered
+    // from configuration; no key is generated and no network or hosted-service surface is added.
     private const string ReviewedOpenApiStartupFingerprint =
-        "09baa906eefa25ecaf326314767a968b10656943d6666117e641e7ba3252d026";
+        "761839eb456a1ce4485a8a46ac3df44871d655a3a345a1822fc35ec9572abbe1";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedProductManufacturingTechnicalRegistrationPath =
@@ -653,9 +653,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "GoymenERP.Modules.Inventory.Infrastructure/"
                  + "InventoryModuleExtensions.cs"] =
                     // Re-fingerprinted for DEC-SAL-005: one scoped registration of the Sales-declared allocation read
-                    // port; the provider branch and its token counts are unchanged.
+                    // port. Re-fingerprinted for ST-04: one scoped movement-timeline reader registration; the
+                    // provider branch and its token counts are unchanged.
                     new(
-                        "4e6f2a46b46a4c9e4899bda34639e3cda707b39dfab3bc970cba7f8c655d6304",
+                        "3764bba70411637eda17af34ee42d090426d855e04e03a0c7a109ecce6793154",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,

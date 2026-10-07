@@ -727,6 +727,14 @@ public static partial class ErpOpenApiContract
             await AddInventoryStockPositionParametersAsync(operation, context, cancellationToken);
         }
 
+        if (string.Equals(
+                operation.OperationId,
+                GoymenERP.Modules.Inventory.Application.InventoryMovementTimelineApiV1.GetOperationId,
+                StringComparison.Ordinal))
+        {
+            AddInventoryMovementTimelineParameters(operation);
+        }
+
         if (string.Equals(operation.OperationId, "GetInventoryPhysicalAllocationsV1", StringComparison.Ordinal))
         {
             AddInventoryPhysicalAllocationReadParameters(operation);
@@ -1231,6 +1239,26 @@ public static partial class ErpOpenApiContract
                 AnyOf = [legacy, enriched],
             };
         }
+    }
+
+    private static void AddInventoryMovementTimelineParameters(OpenApiOperation operation)
+    {
+        AddQueryParameter(
+            operation,
+            "limit",
+            new OpenApiSchema
+            {
+                Type = JsonSchemaType.Integer,
+                Format = "int32",
+                Minimum = "1",
+                Maximum = "100",
+            },
+            "Maximum movement rows; default 50, range 1..100.");
+        AddQueryParameter(
+            operation,
+            "cursor",
+            new OpenApiSchema { Type = JsonSchemaType.String, MinLength = 1, MaxLength = 4096 },
+            "Opaque authenticated continuation bound to actor, company and limit.");
     }
 
     private static void AddInventoryPhysicalAllocationReadParameters(OpenApiOperation operation)

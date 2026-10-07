@@ -220,6 +220,8 @@ builder.Services.AddInventoryModule(
         services.GetRequiredService<AuditSaveChangesInterceptor>()));
 builder.Services.AddInventoryStockPositionCursor(
     builder.Configuration["Inventory:StockPositionCursorSigningKeyBase64"]);
+builder.Services.AddInventoryMovementTimelineCursor(
+    builder.Configuration["Inventory:StockPositionCursorSigningKeyBase64"]);
 builder.Services.AddInventoryParentRollReferences();
 builder.Services.AddInventoryPhysicalAllocationReads();
 // R19: the label genealogy writer/reader and the fenced split/merge command behind the published route.
