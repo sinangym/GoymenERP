@@ -1,4 +1,5 @@
 import contextlib
+import base64
 import io
 import json
 import pathlib
@@ -872,6 +873,18 @@ class WorkflowTests(unittest.TestCase):
         }
         self.assertEqual("inventory.label-classification.write", recorder[6])
         self.assertNotIn("inventory.label-classification.write", denied.values())
+
+        key_match = re.search(
+            rf"{validator.INVENTORY_STOCK_POSITION_CURSOR_KEY}: ([^\r\n]+)",
+            source,
+        )
+        self.assertIsNotNone(key_match)
+        cursor_key = key_match.group(1)
+        self.assertEqual(32, len(base64.b64decode(cursor_key, validate=True)))
+        validator.validate_suite_extensions(
+            "r14",
+            {validator.INVENTORY_STOCK_POSITION_CURSOR_KEY: cursor_key},
+        )
 
     def _trigger_block(self) -> str:
         return self.workflow.split("\non:\n", 1)[1].split("\npermissions:\n", 1)[0]

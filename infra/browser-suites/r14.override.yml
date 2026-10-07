@@ -17,6 +17,9 @@
 services:
   api:
     environment:
+      # Disposable-only Inventory stock-position cursor key. The validator pins its decoded SHA-256 and
+      # refuses missing, malformed or substituted values without printing the candidate value.
+      Inventory__StockPositionCursorSigningKeyBase64: AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=
       ProductRuntime__IssuerLocalUserId: b2000000-0000-4000-8000-000000000204
       ProductRuntime__IssuerExternalIdentityId: b2100000-0000-4000-8000-000000000204
       BootstrapIdentity__Users__2__UserId: r14-recorder
