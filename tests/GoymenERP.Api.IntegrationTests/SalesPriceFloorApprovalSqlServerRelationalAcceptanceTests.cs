@@ -44,7 +44,7 @@ public sealed class SalesPriceFloorApprovalSqlServerRelationalAcceptanceTests
         "sales.order-draft.submitted.v1", "Submit", "SENTETIK onaya gönderildi");
 
     [SqlServerFact]
-    public void Replay_summary_comparison_uses_ordered_snapshot_values_and_rejects_content_drift()
+    public async Task The_first_floor_approval_result_replays_after_submission_without_a_second_effect_and_Down_refuses_51064()
     {
         var first = new SalesOrderDraftProductSnapshotViewV1(
             Product, "1", "SENTETIK-001", "Sentetik ürün", Kg, "kg");
@@ -70,11 +70,7 @@ public sealed class SalesPriceFloorApprovalSqlServerRelationalAcceptanceTests
         {
             ProductSnapshots = [second, first],
         }));
-    }
 
-    [SqlServerFact]
-    public async Task The_first_floor_approval_result_replays_after_submission_without_a_second_effect_and_Down_refuses_51064()
-    {
         await using var run = await Run.StartAsync();
         SalesOrderDraft draft;
         SalesDraftReplayResult firstResult;
