@@ -33,6 +33,42 @@ interface CandidateAnswer {
 const CANONICAL_PROCESSES = ['Slitting', 'ColdRolling', 'TubeProfile', 'Paint', 'CutToLength'] as const
 type CanonicalProcess = (typeof CANONICAL_PROCESSES)[number]
 
+const PROCESS_PREVIEW_CONTRACT: Readonly<Record<CanonicalProcess, {
+  readonly formulas: readonly string[]
+  readonly missingParameters: readonly string[]
+}>> = {
+  Slitting: {
+    formulas: ['SLT-001…007', 'SLT-010'],
+    missingParameters: [
+      'densityKgPerCubicMetre', 'lineSpeedMetresPerMinute', 'lines[0].bandWidthMm',
+      'lines[0].count', 'netUsableWidthMm',
+    ],
+  },
+  ColdRolling: {
+    formulas: ['CR-001…005'],
+    missingParameters: ['densityKgPerCubicMetre', 'scrapKg', 'targetThicknessMm'],
+  },
+  TubeProfile: {
+    formulas: ['TUB-001…003', 'TUB-004'],
+    missingParameters: [
+      'lineSpeedMetresPerMinute', 'packageCount', 'pieceLengthMm', 'piecesPerPackage',
+      'totalPieces', 'unitKg',
+    ],
+  },
+  Paint: {
+    formulas: ['PNT-001…004', 'PNT-005', 'PNT-006'],
+    missingParameters: [
+      'areaSquareMetres', 'filmMicrons', 'lineSpeedMetresPerMinute', 'packageCount',
+      'perimeterMm', 'pieces', 'piecesPerPackage', 'profileLengthMm', 'scrapFactor',
+      'simultaneousProfiles', 'solidsRatio',
+    ],
+  },
+  CutToLength: {
+    formulas: ['CUT-001…006'],
+    missingParameters: ['densityKgPerCubicMetre', 'lines[0].count', 'lines[0].targetLengthMm'],
+  },
+}
+
 interface WorkCenterAnswer {
   readonly id: string
   readonly kind: CanonicalProcess
@@ -565,6 +601,73 @@ test.describe('MFG plan create and reopen (real Inventory parent roll)', () => {
       expect(denied.status()).toBe(403)
     } finally {
       await reader.dispose()
+    }
+    expectEveryAnswerRewritten(answered, rewritten)
+  })
+
+  test('each canonical process previews through its server engine and names every still-unknown parameter', async ({ page, context }) => {
+    const rewritten = await asActor(context, env.seed.recorderActor)
+    const answered = watchAnswers(page)
+    const api = await apiAs(env, env.seed.recorderActor)
+
+    try {
+      const workCenters = await readCanonicalWorkCenters(api)
+      const newestPlan = async () => {
+        const response = await api.get('/api/v1/manufacturing/plans?pageSize=1')
+        expect(response.status()).toBe(200)
+        return ((await response.json()) as { plans: Array<{ planId: string }> }).plans[0]?.planId ?? null
+      }
+      const newestBefore = await newestPlan()
+
+      for (const process of CANONICAL_PROCESSES) {
+        const workCenter = workCenters.get(process)!
+        const previewAnswer = page.waitForResponse((response) => {
+          if (!PLAN_PREVIEW_RE.test(response.url()) || response.request().method() !== 'POST') return false
+          const request = response.request().postDataJSON() as {
+            workCenterId?: string
+            inputs?: Array<{ plannedKg?: string }>
+          }
+          return request.workCenterId === workCenter.id && request.inputs?.[0]?.plannedKg === '1000'
+        })
+
+        await openPlanForm(page, env.seed.rolls.planCreate, workCenter.id)
+        const response = await previewAnswer
+        expect(response.status()).toBe(200)
+        const preview = await response.json() as {
+          calculatorVersion: string
+          process: string
+          plannedRollCount: number
+          plannedInputKg: string
+          answers: Array<{ formula: string; outcome: string }>
+          rolls: Array<{ answers: Array<{ formula: string; outcome: string }> }>
+          missingParameters: string[]
+          hasRefusal: boolean
+        }
+        const expected = PROCESS_PREVIEW_CONTRACT[process]
+        const answers = [...preview.answers, ...preview.rolls.flatMap((roll) => roll.answers)]
+
+        expect(preview).toMatchObject({
+          calculatorVersion: 'GDC-PLAN-CALC/1',
+          process,
+          plannedRollCount: 1,
+          plannedInputKg: '1000',
+          missingParameters: expected.missingParameters,
+          hasRefusal: false,
+        })
+        expect(answers.map((answer) => answer.formula)).toEqual(expected.formulas)
+        expect(answers.every((answer) => answer.outcome === 'Unavailable')).toBe(true)
+
+        const panel = page.getByTestId('plan-preview')
+        await expect(panel.getByText(/Önizleme güncel/)).toBeVisible()
+        await expect(panel.getByRole('list', { name: 'Eksik parametreler' }))
+          .toContainText(expected.missingParameters[0])
+        await expect(panel).toContainText('varsayılan değer kullanmaz')
+      }
+
+      // A preview is a read-only calculation for every process; the loop must not create a plan.
+      expect(await newestPlan()).toBe(newestBefore)
+    } finally {
+      await api.dispose()
     }
     expectEveryAnswerRewritten(answered, rewritten)
   })
