@@ -11,9 +11,10 @@
  *
  * Why the keys are the ids themselves rather than `CAPABILITY.…`: `capabilities.ts` re-exports
  * `CAPABILITY_NAV_LABEL` from this file, so a VALUE import of `CAPABILITY` back would be a module
- * cycle, and whichever side loaded first would build this table before `CAPABILITY` existed. The
- * type import below is erased at build time, and `CapabilityId` keeps the compiler as the check: an
- * unknown or renamed id fails `tsc` in either table, and a missing one fails it in the label table.
+ * cycle, and whenever `capabilities.ts` is evaluated first (as it is in the app) this table would be
+ * built before `CAPABILITY` existed. The type import below is erased at build time, and
+ * `CapabilityId` keeps the compiler as the check: an unknown or renamed id fails `tsc` in either
+ * table, and a missing one fails it in the label table.
  */
 
 import type { CapabilityId } from './capabilities'
