@@ -86,8 +86,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // (abe26a09… -> c027dce9…); no code line changed.
     // Re-fingerprinted for customer-owned Inventory opening: one scoped registration binds Inventory's
     // owner-account seam to Cari's existing authorized source; no network or hosted-service surface changed.
+    // Re-fingerprinted for stock-position publication: the reviewed Inventory cursor seam is registered from
+    // configuration; no key is generated and no network or hosted-service surface is added.
     private const string ReviewedOpenApiStartupFingerprint =
-        "73395d6ba41df239ae73407cd06c9480bbe8fb36e675a9d160722557f68939f0";
+        "09baa906eefa25ecaf326314767a968b10656943d6666117e641e7ba3252d026";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedProductManufacturingTechnicalRegistrationPath =
@@ -197,8 +199,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // R20 transfer lifecycle: +3 transfer SQL facts (bd676b05… -> c74360d3…).
             // Product-version provenance rollback: +1 isolated no-loss SQL fact (c444f707… -> d9cb549b…).
             // Customer-owned opening: +2 exact account-context and fail-closed authority SQL facts.
+            // Inventory stock-position read: +1 actual bounded filter/classification SQL fact;
+            // every listed case remains mandatory and zero-skip.
             ["tools/relational_inventory/inventory.txt"] =
-                "eed522152458f731f588b7f0d60188028f75b7143e33bcf54e6eeca338c9a3c1",
+                "3a9b7bce5b3c874ba82ce7cb475db4314a5eacedd3ba6a2bc9cc6143b21c764a",
 
             // logistics
             // AT-053: +4 weighbridge SQL facts (81c1ff0b… -> 264898d7…).
@@ -497,8 +501,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // member, which throws like its siblings; no new database capability, MigrateAsync stays 2.
                 // Re-measured for Q16 import: DI adds the owner preview/service and the host transaction runner;
                 // initialization still owns exactly the same two migrations.
+                // Re-measured for Product stock-display publication: one DI-only batch projection registration
+                // is gated by the existing Product runtime flag; database capability counts stay unchanged.
                 [ReviewedProductRuntimeExtensionsPath] =
-                    new("2e6c3ae4c82822302907e58599083645900b0d38355d08aa9e0ca2b2e060acf3",
+                    new("5973ce054f811ecc821fbfb3fe605e2a3687eb0ffe3990b10537782fa2f512cd",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["MigrateAsync"] = 2 }),
                 // Re-measured for PRD-UNIT-1: the Product participant gets Settings' unit-identity catalog

@@ -5,7 +5,9 @@ using GoymenERP.Api.Multitenancy;
 using GoymenERP.Api.OpenApi;
 using GoymenERP.BuildingBlocks.Observability;
 using GoymenERP.BuildingBlocks.Security;
+using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Inventory.Application;
+using GoymenERP.Modules.Product.Application.Contracts;
 
 namespace GoymenERP.Api.Endpoints;
 
@@ -711,6 +713,10 @@ public static partial class InventoryEndpoints
         endpoints.MapGet(InventoryStockPositionApiV1.PositionsPath, async (
                 HttpContext httpContext,
                 IInventoryStockPositionsV1 positions,
+                IProductStockDisplayReferencesV1 productDisplays,
+                ICompanyContext companyContext,
+                ICurrentUser currentUser,
+                IErpAuthorityRevalidationService authority,
                 CancellationToken cancellationToken) =>
             {
                 SetPrivateNoStore(httpContext.Response);
@@ -719,10 +725,25 @@ public static partial class InventoryEndpoints
                     return StockPositionProblem(StatusCodes.Status400BadRequest,
                         InventoryStockPositionCodesV1.InvalidQuery);
                 }
+                if (!TryReadStockPositionDisplayContract(httpContext.Request.Headers, out var includeProductDisplay))
+                {
+                    return StockPositionProblem(StatusCodes.Status400BadRequest,
+                        InventoryStockPositionCodesV1.InvalidQuery);
+                }
 
                 try
                 {
-                    return Results.Ok(await positions.SearchAsync(query, cancellationToken));
+                    var scope = includeProductDisplay
+                        ? InventoryStockPositionDisplayHost.CaptureScope(companyContext, currentUser)
+                        : null;
+                    var page = await positions.SearchAsync(query, cancellationToken);
+                    if (!includeProductDisplay)
+                    {
+                        return Results.Ok(InventoryStockPositionDisplayHost.Legacy(page));
+                    }
+
+                    return Results.Ok(await InventoryStockPositionDisplayHost.ComposeAuthorizedAsync(
+                        scope!, page, productDisplays, companyContext, currentUser, authority, cancellationToken));
                 }
                 catch (InventoryStockPositionException exception)
                 {
@@ -746,6 +767,12 @@ public static partial class InventoryEndpoints
                 {
                     throw;
                 }
+                catch (ProductOperationException exception)
+                {
+                    return exception.StatusCode == StatusCodes.Status403Forbidden
+                        ? StockPositionProblem(StatusCodes.Status403Forbidden)
+                        : StockPositionProblem(StatusCodes.Status503ServiceUnavailable);
+                }
                 catch (Exception)
                 {
                     return StockPositionProblem(StatusCodes.Status503ServiceUnavailable);
@@ -756,11 +783,30 @@ public static partial class InventoryEndpoints
             .WithMetadata(new PrivateNoStoreOnAuthorizationFailureMetadata())
             .RequireCompanyContext()
             .RequireAuthorization(ErpPermissions.InventoryLabelsRead, ErpPermissions.InventoryBalancesRead)
-            .Produces<InventoryStockPositionsV1>(StatusCodes.Status200OK)
+            .Produces<InventoryStockPositionPageV1>(StatusCodes.Status200OK)
             .ProducesErpBadRequest(InventoryStockPositionCodesV1.InvalidQuery)
             .ProducesErpConflict(InventoryStockPositionCodesV1.ReadConflict)
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();
+    }
+
+    private static bool TryReadStockPositionDisplayContract(IHeaderDictionary headers, out bool enabled)
+    {
+        enabled = false;
+        if (!headers.TryGetValue(InventoryStockPositionApiV1.ProductDisplayContractHeader, out var values))
+        {
+            return true;
+        }
+
+        if (values.Count != 1
+            || !string.Equals(values[0], InventoryStockPositionApiV1.ProductDisplayContractVersion,
+                StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        enabled = true;
+        return true;
     }
 
     private static bool TryReadStockPositionQuery(
@@ -768,7 +814,9 @@ public static partial class InventoryEndpoints
         out InventoryStockPositionQueryV1 parsed)
     {
         parsed = new();
-        if (query.Keys.Any(name => name is not "q" and not "limit")
+        if (query.Keys.Any(name => name is not "q" and not "limit" and not "cursor"
+                and not "productId" and not "locationId" and not "classification"
+                and not "ownerKind" and not "ownerId")
             || query.Any(parameter => parameter.Value.Count != 1))
         {
             return false;
@@ -789,7 +837,47 @@ public static partial class InventoryEndpoints
             return false;
         }
 
-        parsed = new InventoryStockPositionQueryV1(q, limit);
+        string? cursor = null;
+        if (query.TryGetValue("cursor", out var cursorValues)) cursor = cursorValues[0];
+
+        if (!TryReadOptionalGuid(query, "productId", out var productId)
+            || !TryReadOptionalGuid(query, "locationId", out var locationId)
+            || !TryReadOptionalGuid(query, "ownerId", out var ownerId))
+        {
+            return false;
+        }
+
+        InventoryLabelClassificationV1? classification = null;
+        if (query.TryGetValue("classification", out var classificationValues))
+        {
+            var raw = classificationValues[0];
+            if (!Enum.TryParse<InventoryLabelClassificationV1>(raw, ignoreCase: false, out var value)
+                || !Enum.IsDefined(value)
+                || !string.Equals(value.ToString(), raw, StringComparison.Ordinal))
+            {
+                return false;
+            }
+            classification = value;
+        }
+
+        string? ownerKind = null;
+        if (query.TryGetValue("ownerKind", out var ownerKindValues))
+        {
+            ownerKind = ownerKindValues[0];
+            if (ownerKind is not "Company" and not "Counterparty") return false;
+        }
+
+        parsed = new InventoryStockPositionQueryV1(
+            q, limit, cursor, productId, locationId, classification, ownerKind, ownerId);
+        return true;
+    }
+
+    private static bool TryReadOptionalGuid(IQueryCollection query, string name, out Guid? value)
+    {
+        value = null;
+        if (!query.TryGetValue(name, out var values)) return true;
+        if (!Guid.TryParseExact(values[0], "D", out var parsed) || parsed == Guid.Empty) return false;
+        value = parsed;
         return true;
     }
 
