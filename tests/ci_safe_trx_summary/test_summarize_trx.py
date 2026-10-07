@@ -369,6 +369,10 @@ class SafeTrxSummaryTests(unittest.TestCase):
             "finance_work_legacy_replay",
             "finance_work_legacy_counts",
             "finance_work_legacy_down_up",
+            "finance_work_legacy_preview_validation",
+            "finance_work_legacy_serialization",
+            "finance_work_legacy_batch_insert",
+            "finance_work_legacy_command_insert",
         )
         class_name = (
             "GoymenERP.Api.IntegrationTests."
@@ -418,14 +422,20 @@ class SafeTrxSummaryTests(unittest.TestCase):
             (
                 "duplicate",
                 "Failed",
-                "<Output><StdOut>CI_SAFE_DIAGNOSTIC:finance_work_legacy_start\n"
-                "CI_SAFE_DIAGNOSTIC:finance_work_legacy_start</StdOut></Output>",
+                "<Output><StdOut>CI_SAFE_DIAGNOSTIC:finance_work_legacy_batch_insert\n"
+                "CI_SAFE_DIAGNOSTIC:finance_work_legacy_batch_insert</StdOut></Output>",
             ),
             (
                 "wrong path",
                 "Failed",
-                "<Output><Wrapper><StdOut>CI_SAFE_DIAGNOSTIC:finance_work_legacy_start"
+                "<Output><Wrapper><StdOut>CI_SAFE_DIAGNOSTIC:finance_work_legacy_command_insert"
                 "</StdOut></Wrapper></Output>",
+            ),
+            (
+                "nested stdout content",
+                "Failed",
+                "<Output><StdOut>CI_SAFE_DIAGNOSTIC:finance_work_legacy_"
+                "<Wrapper>serialization</Wrapper></StdOut></Output>",
             ),
             (
                 "success",
@@ -463,6 +473,10 @@ class SafeTrxSummaryTests(unittest.TestCase):
             "finance_work_legacy_replay",
             "finance_work_legacy_counts",
             "finance_work_legacy_down_up",
+            "finance_work_legacy_preview_validation",
+            "finance_work_legacy_serialization",
+            "finance_work_legacy_batch_insert",
+            "finance_work_legacy_command_insert",
         ):
             with self.subTest(code=code):
                 source = trx(

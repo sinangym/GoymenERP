@@ -50,6 +50,10 @@ FINANCE_WORK_LEGACY_DIAGNOSTIC_CODES = frozenset(
         "finance_work_legacy_replay",
         "finance_work_legacy_counts",
         "finance_work_legacy_down_up",
+        "finance_work_legacy_preview_validation",
+        "finance_work_legacy_serialization",
+        "finance_work_legacy_batch_insert",
+        "finance_work_legacy_command_insert",
     }
 )
 DIAGNOSTIC_CODES = frozenset(
