@@ -814,6 +814,23 @@ def suite_override_file(suite: str) -> str | None:
     return relative if exists else None
 
 
+def _reviewed_r14_runtime_values() -> dict[str, str]:
+    """Read the one reviewed disposable R14 runtime key from the checked-out suite override."""
+    relative = suite_override_file("r14")
+    require(relative is not None, "suite r14 artifact privacy requires exactly one reviewed runtime binding")
+    source = (c01.REPOSITORY_ROOT / relative).read_text(encoding="utf-8")
+    matches = re.findall(
+        rf"^[ \t]+{re.escape(INVENTORY_STOCK_POSITION_CURSOR_KEY)}:[ \t]+([^#\r\n]+?)[ \t]*$",
+        source,
+        flags=re.MULTILINE,
+    )
+    require(len(matches) == 1,
+            "suite r14 artifact privacy requires exactly one reviewed runtime binding")
+    runtime_values = {INVENTORY_STOCK_POSITION_CURSOR_KEY: matches[0].strip()}
+    validate_suite_extensions("r14", runtime_values)
+    return runtime_values
+
+
 def validate_suite_extensions(suite: str, extra: dict) -> None:
     """The keys a suite adds are exactly allowed by its closed list, with values of the right shape."""
     allowed = SUITE_API_EXTENSIONS.get(suite)
@@ -1092,25 +1109,12 @@ def validate_privacy(
                     f"suite {suite} artifact privacy runtime key set is not exact")
         else:
             # A workflow-dispatch run uses the workflow definition on the default branch while checking out the
-            # selected PR head. During that narrow version-skew window the old workflow supplies every secret as a
-            # forbidden value but has no compose-model argument. Recover only R14's already reviewed disposable key:
-            # strict base64, exact key length and the pinned decoded hash; zero or multiple matches fail closed.
+            # selected PR head. During that narrow version-skew window the old workflow has no compose-model
+            # argument and its forbidden values do not contain R14's key. Recover only the checked-out R14 override's
+            # single reviewed binding; validation below enforces strict base64, exact length and pinned decoded hash.
             require(suite == "r14" and len(runtime) == 1,
                     f"suite {suite} artifact privacy requires the merged compose model")
-            reviewed_matches: list[str] = []
-            expected_hash = next(iter(runtime.values()))
-            for candidate in forbidden_values:
-                if not isinstance(candidate, str):
-                    continue
-                try:
-                    decoded = base64.b64decode(candidate, validate=True)
-                except (binascii.Error, ValueError):
-                    continue
-                if len(decoded) == 32 and hashlib.sha256(decoded).hexdigest() == expected_hash:
-                    reviewed_matches.append(candidate)
-            require(len(reviewed_matches) == 1,
-                    "suite r14 artifact privacy requires exactly one reviewed runtime key")
-            runtime_values = {next(iter(runtime)): reviewed_matches[0]}
+            runtime_values = _reviewed_r14_runtime_values()
         validate_suite_extensions(suite, runtime_values)
         forbidden_values = (*forbidden_values, *runtime_values.values())
     needles: list[bytes] = []
