@@ -1,7 +1,6 @@
 using System.Text;
 using System.Security.Cryptography;
 using System.Text.Json;
-using System.Globalization;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Audit.Infrastructure.Persistence;
@@ -24,39 +23,6 @@ public sealed class FinanceOfficialInvoiceImportWorkDeliverySqlServerRelationalA
     private const string LegacyPreviewPhase = "finance_work_legacy_preview_validation";
     private const string LegacySerializationPhase = "finance_work_legacy_serialization";
     private const string LegacyBatchInsertPhase = "finance_work_legacy_batch_insert";
-    private const string LegacyBatchIdentityPhase = "finance_work_legacy_batch_identity";
-    private const string LegacyBatchContentPhase = "finance_work_legacy_batch_content";
-    private const string LegacyBatchCompanyForeignKeyPhase = "finance_work_legacy_batch_company_fk";
-    private const string LegacyBatchConstraintPhase = "finance_work_legacy_batch_constraint";
-    private const string LegacyBatchDuplicatePhase = "finance_work_legacy_batch_duplicate";
-    private const string LegacyBatchIdentityInsertPhase = "finance_work_legacy_batch_identity_insert";
-    private const string LegacyBatchConversionPhase = "finance_work_legacy_batch_conversion";
-    private const string LegacyBatchOverflowPhase = "finance_work_legacy_batch_overflow";
-    private const string LegacyBatchNullPhase = "finance_work_legacy_batch_null";
-    private const string LegacyBatchTruncatedPhase = "finance_work_legacy_batch_truncated";
-    private const string LegacyBatchTimeoutPhase = "finance_work_legacy_batch_timeout";
-    private const string LegacyBatchDeadlockPhase = "finance_work_legacy_batch_deadlock";
-    private const string LegacyBatchSnapshotConflictPhase = "finance_work_legacy_batch_snapshot_conflict";
-    private const string LegacyBatchPermissionPhase = "finance_work_legacy_batch_permission";
-    private const string LegacyBatchSchemaPhase = "finance_work_legacy_batch_schema";
-    private const string LegacyBatchSetOptionsPhase = "finance_work_legacy_batch_set_options";
-    private const string LegacyBatchOperandTypePhase = "finance_work_legacy_batch_operand_type";
-    private const string LegacyBatchCollationPhase = "finance_work_legacy_batch_collation";
-    private const string LegacyBatchTriggerOutputPhase = "finance_work_legacy_batch_trigger_output";
-    private const string LegacyBatchForwardFixRefusalPhase = "finance_work_legacy_batch_forward_fix_refusal";
-    private const string LegacyBatchUserRefusalPhase = "finance_work_legacy_batch_user_refusal";
-    private const string LegacyBatchTypeIncompatiblePhase = "finance_work_legacy_batch_type_incompatible";
-    private const string LegacyBatchParameterBindingPhase = "finance_work_legacy_batch_parameter_binding";
-    private const string LegacyBatchColumnValuesPhase = "finance_work_legacy_batch_column_values";
-    private const string LegacyBatchTransactionStatePhase = "finance_work_legacy_batch_transaction_state";
-    private const string LegacyBatchLockTimeoutPhase = "finance_work_legacy_batch_lock_timeout";
-    private const string LegacyBatchConnectionResetPhase = "finance_work_legacy_batch_connection_reset";
-    private const string LegacyBatchLoginPhase = "finance_work_legacy_batch_login";
-    private const string LegacyBatchDatabaseOpenPhase = "finance_work_legacy_batch_database_open";
-    private const string LegacyBatchThrottlingPhase = "finance_work_legacy_batch_throttling";
-    private const string LegacyBatchTablePhase = "finance_work_legacy_batch_table";
-    private const string LegacyBatchColumnPhase = "finance_work_legacy_batch_column";
-    private const string LegacyBatchOtherSqlPhase = "finance_work_legacy_batch_other_sql";
     private const string LegacyCommandInsertPhase = "finance_work_legacy_command_insert";
     private const string LegacyUpPhase = "finance_work_legacy_up";
     private const string LegacyReplayPhase = "finance_work_legacy_replay";
@@ -182,7 +148,7 @@ public sealed class FinanceOfficialInvoiceImportWorkDeliverySqlServerRelationalA
             await using (var batchCommand = new SqlCommand(
                 """
                 INSERT INTO finance.OfficialInvoiceImportBatches
-                    (Id, CompanyId, BatchVersion, BatchChecksum, TemplateVersion, FileBytes, SourceRowsJson, RowCount,
+                    (Id, CompanyId, BatchVersion, BatchChecksum, TemplateVersion, FileBytes, SourceRowsJson, [RowCount],
                      UploadedBy, UploadedAtUtc, CorrelationId, CausationId)
                 VALUES (@batch, @company, @batchVersion, @checksum, @templateVersion, @bytes, @rows, @rowCount,
                         @actor, @at, @correlation, NULL);
@@ -199,16 +165,7 @@ public sealed class FinanceOfficialInvoiceImportWorkDeliverySqlServerRelationalA
                 batchCommand.Parameters.AddWithValue("@actor", "SENTETIK-maker");
                 batchCommand.Parameters.AddWithValue("@at", uploadedAt);
                 batchCommand.Parameters.AddWithValue("@correlation", "legacy-correlation");
-                try
-                {
-                    await batchCommand.ExecuteNonQueryAsync();
-                }
-                catch (SqlException exception)
-                {
-                    failurePhase = LegacyBatchInsertDiagnostic(exception);
-                    output.WriteLine($"CI_SAFE_SQL_NUMBER:{exception.Number.ToString(CultureInfo.InvariantCulture)}");
-                    throw;
-                }
+                await batchCommand.ExecuteNonQueryAsync();
             }
 
             failurePhase = LegacyCommandInsertPhase;
@@ -453,62 +410,6 @@ public sealed class FinanceOfficialInvoiceImportWorkDeliverySqlServerRelationalA
         hash.AppendData(request.Utf8Csv.Span);
         return Convert.ToHexString(hash.GetHashAndReset()).ToLowerInvariant();
     }
-
-    private static string LegacyBatchInsertDiagnostic(SqlException exception)
-    {
-        if (exception.Number == 547)
-        {
-            if (ContainsExactSqlObject(exception, "CK_OfficialInvoiceImportBatches_Identity"))
-            {
-                return LegacyBatchIdentityPhase;
-            }
-            if (ContainsExactSqlObject(exception, "CK_OfficialInvoiceImportBatches_Content"))
-            {
-                return LegacyBatchContentPhase;
-            }
-            if (ContainsExactSqlObject(exception, "FK_OfficialInvoiceImportBatches_Companies_CompanyId"))
-            {
-                return LegacyBatchCompanyForeignKeyPhase;
-            }
-            return LegacyBatchConstraintPhase;
-        }
-
-        return exception.Number switch
-        {
-            2601 or 2627 => LegacyBatchDuplicatePhase,
-            544 => LegacyBatchIdentityInsertPhase,
-            245 or 8114 or 8169 => LegacyBatchConversionPhase,
-            8115 => LegacyBatchOverflowPhase,
-            515 => LegacyBatchNullPhase,
-            8152 or 2628 => LegacyBatchTruncatedPhase,
-            -2 => LegacyBatchTimeoutPhase,
-            1205 => LegacyBatchDeadlockPhase,
-            3960 => LegacyBatchSnapshotConflictPhase,
-            229 => LegacyBatchPermissionPhase,
-            2760 => LegacyBatchSchemaPhase,
-            1934 => LegacyBatchSetOptionsPhase,
-            206 => LegacyBatchOperandTypePhase,
-            468 => LegacyBatchCollationPhase,
-            334 => LegacyBatchTriggerOutputPhase,
-            51051 or 51052 or 51053 => LegacyBatchForwardFixRefusalPhase,
-            257 or 402 or 529 => LegacyBatchTypeIncompatiblePhase,
-            137 or 201 => LegacyBatchParameterBindingPhase,
-            213 => LegacyBatchColumnValuesPhase,
-            3902 or 3930 or 3988 => LegacyBatchTransactionStatePhase,
-            121 or 1222 => LegacyBatchLockTimeoutPhase,
-            10054 => LegacyBatchConnectionResetPhase,
-            18456 => LegacyBatchLoginPhase,
-            4060 => LegacyBatchDatabaseOpenPhase,
-            40501 => LegacyBatchThrottlingPhase,
-            208 => LegacyBatchTablePhase,
-            207 => LegacyBatchColumnPhase,
-            _ when exception.Number >= 50000 => LegacyBatchUserRefusalPhase,
-            _ => LegacyBatchOtherSqlPhase,
-        };
-    }
-
-    private static bool ContainsExactSqlObject(SqlException exception, string objectName) =>
-        exception.Errors.Cast<SqlError>().Any(error => error.Message.Contains(objectName, StringComparison.Ordinal));
 
     private static string SafeCount(int value) => value < 0 ? "not_available" : value.ToString();
 }
