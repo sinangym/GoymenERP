@@ -6,10 +6,12 @@ from __future__ import annotations
 import argparse
 import base64
 import datetime as dt
+import hashlib
 import json
 import pathlib
 import re
 import sys
+import unicodedata
 import xml.etree.ElementTree as et
 from typing import Any
 
@@ -145,6 +147,75 @@ def require_exact_keys(value: dict[str, Any], expected: set[str], name: str) -> 
     )
 
 
+def _catalog_sha256(value: str) -> str:
+    normalized = unicodedata.normalize("NFC", value.strip()).casefold()
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+
+
+def _split_connection_string_components(connection_string: str) -> list[str] | None:
+    components: list[str] = []
+    current: list[str] = []
+    quote: str | None = None
+    index = 0
+
+    while index < len(connection_string):
+        character = connection_string[index]
+        if quote is not None:
+            current.append(character)
+            if character == quote:
+                if index + 1 < len(connection_string) and connection_string[index + 1] == quote:
+                    current.append(connection_string[index + 1])
+                    index += 1
+                else:
+                    quote = None
+        elif character in {'"', "'"}:
+            quote = character
+            current.append(character)
+        elif character == ";":
+            components.append("".join(current))
+            current = []
+        else:
+            current.append(character)
+        index += 1
+
+    if quote is not None:
+        return None
+
+    components.append("".join(current))
+    return components
+
+
+def _actual_catalog_sha256(connection_string: object) -> str:
+    if not isinstance(connection_string, str):
+        return "missing"
+
+    components = _split_connection_string_components(connection_string)
+    if components is None:
+        return "ambiguous"
+
+    catalogs: set[str] = set()
+    for component in components:
+        key, separator, value = component.partition("=")
+        normalized_key = " ".join(key.strip().casefold().split())
+        if separator and normalized_key in {"database", "initial catalog"} and value.strip():
+            catalogs.add(unicodedata.normalize("NFC", value.strip()).casefold())
+
+    if not catalogs:
+        return "missing"
+    if len(catalogs) != 1:
+        return "ambiguous"
+    return hashlib.sha256(next(iter(catalogs)).encode("utf-8")).hexdigest()
+
+
+def _disposable_database_diagnostic(expected_database: str, connection_string: object) -> str:
+    return (
+        "API disposable DB drift "
+        "[rule=api_disposable_database;service=api;binding=DB_CONNECTION_STRING;"
+        f"expectedCatalogSha256={_catalog_sha256(expected_database)};"
+        f"actualCatalogSha256={_actual_catalog_sha256(connection_string)}]"
+    )
+
+
 def load_json(path: str) -> dict[str, Any]:
     if path == "-":
         value = json.load(sys.stdin)
@@ -203,7 +274,8 @@ def validate_compose(model: dict[str, Any], expected_commit: str, expected_proje
     expected_database = "GoymenErpC01_" + "_".join(expected_project.split("-")[-2:])
     require(
         f"Database={expected_database}" in api_environment.get("DB_CONNECTION_STRING", ""),
-        "API disposable DB drift",
+        _disposable_database_diagnostic(
+            expected_database, api_environment.get("DB_CONNECTION_STRING", "")),
     )
     require(
         api_environment.get("C01E2e__EnableListCapability") == "true",

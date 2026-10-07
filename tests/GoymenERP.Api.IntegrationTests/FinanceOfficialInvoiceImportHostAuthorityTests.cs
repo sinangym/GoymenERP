@@ -1,9 +1,14 @@
 using GoymenERP.Api.Shell;
 using GoymenERP.Api.Endpoints;
 using GoymenERP.BuildingBlocks.Multitenancy;
+using GoymenERP.BuildingBlocks.Observability;
 using GoymenERP.BuildingBlocks.Security;
+using GoymenERP.Modules.Audit.Application.Contracts;
 using GoymenERP.Modules.Finance.Contracts;
 using GoymenERP.Modules.Finance.Infrastructure;
+using GoymenERP.Modules.Finance.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace GoymenERP.Api.IntegrationTests;
 
@@ -11,6 +16,40 @@ public sealed class FinanceOfficialInvoiceImportHostAuthorityTests
 {
     private static readonly Guid Company = Guid.Parse("11111111-1111-4111-8111-111111111111");
     private const string Actor = "finance-import-actor";
+
+    [Fact]
+    public void Work_observation_source_resolves_once_to_the_existing_scoped_approval_instance()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<IErpAuthorityRevalidationService>(new Revalidation());
+        services.AddSingleton<ICompanyContext>(new MutableCompanyContext(Company));
+        services.AddSingleton<ICurrentUser>(new User(Actor, Company));
+        services.AddScoped<FinancePermissionPort>();
+        services.AddScoped<IAuditEventCollector>(_ => new NoOpAuditCollector());
+        services.AddScoped<ICorrelationContext>(_ =>
+        {
+            var correlation = new CorrelationContext();
+            correlation.Set("finance-work-host-test", null, "test", null, null);
+            return correlation;
+        });
+        services.AddSingleton(TimeProvider.System);
+        services.AddDbContext<FinanceDbContext>(options =>
+            options.UseInMemoryDatabase($"finance-work-host-{Guid.NewGuid():N}"));
+        services.AddFinanceOfficialInvoiceImportHost();
+
+        Assert.Single(services, item =>
+            item.ServiceType == typeof(IFinanceOfficialInvoiceImportWorkObservationSourceV1));
+        using var provider = services.BuildServiceProvider(validateScopes: true);
+        using var firstScope = provider.CreateScope();
+        var first = firstScope.ServiceProvider.GetRequiredService<FinanceOfficialInvoiceImportApprovalServiceV1>();
+        Assert.Same(first, firstScope.ServiceProvider
+            .GetRequiredService<IFinanceOfficialInvoiceImportWorkObservationSourceV1>());
+        Assert.Same(first, firstScope.ServiceProvider
+            .GetRequiredService<IFinanceOfficialInvoiceImportApprovalServiceV1>());
+        using var secondScope = provider.CreateScope();
+        Assert.NotSame(first, secondScope.ServiceProvider
+            .GetRequiredService<IFinanceOfficialInvoiceImportWorkObservationSourceV1>());
+    }
 
     [Fact]
     public async Task Upload_uses_the_exact_known_company_wide_permission_and_keeps_audit_roles_live()
@@ -127,6 +166,11 @@ public sealed class FinanceOfficialInvoiceImportHostAuthorityTests
 
     private static PermissionScope Allowed(string role) => new(true, true, new HashSet<string> { role },
         new HashSet<Guid>(), new HashSet<Guid>(), new HashSet<Guid>());
+
+    private sealed class NoOpAuditCollector : IAuditEventCollector
+    {
+        public void Enqueue(AuditEventDraft auditEvent) { }
+    }
 
     private sealed class Revalidation(params PermissionScope[] answers) : IErpAuthorityRevalidationService
     {

@@ -1553,6 +1553,9 @@ partial class FinanceDbContextModelSnapshot : ModelSnapshot
                         .HasColumnType("char(64)")
                         .IsFixedLength();
 
+                    b.Property<int?>("ProducerSchemaVersion")
+                        .HasColumnType("int");
+
                     b.Property<DateTimeOffset>("RecordedAtUtc")
                         .HasColumnType("datetimeoffset");
 
@@ -1562,6 +1565,8 @@ partial class FinanceDbContextModelSnapshot : ModelSnapshot
 
                     b.HasKey("Id");
 
+                    b.HasAlternateKey("CompanyId", "Id");
+
                     b.HasIndex("CompanyId", "CommandName", "IdempotencyKeyHash")
                         .IsUnique();
 
@@ -1570,6 +1575,89 @@ partial class FinanceDbContextModelSnapshot : ModelSnapshot
                             t.HasCheckConstraint("CK_OfficialInvoiceImportCommands_Content", "LEN([CommandName]) > 0 AND LEN([IdempotencyKeyHash]) = 64 AND LEN([ActorId]) > 0 AND LEN([PayloadHash]) = 64 AND ISJSON([ResultJson]) = 1 AND LEN([CorrelationId]) > 0");
 
                             t.HasCheckConstraint("CK_OfficialInvoiceImportCommands_Identity", "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [BatchId] <> '00000000-0000-0000-0000-000000000000'");
+
+                            t.HasCheckConstraint("CK_OfficialInvoiceImportCommands_ProducerSchema", "[ProducerSchemaVersion] IS NULL OR [ProducerSchemaVersion] = 1");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Finance.Infrastructure.Persistence.FinanceOfficialInvoiceImportWorkDeliveryRow", b =>
+                {
+                    b.Property<Guid>("DeliveryId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("BatchId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("CausationId")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<Guid>("CommandReceiptId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("CorrelationId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<int>("DesiredState")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("EvidenceId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("ObservationOrdinal")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTimeOffset>("OccurredAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("PayloadSha256")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("char(64)")
+                        .IsFixedLength();
+
+                    b.Property<int>("PayloadSchemaVersion")
+                        .HasColumnType("int");
+
+                    b.Property<byte[]>("PayloadUtf8")
+                        .IsRequired()
+                        .HasColumnType("varbinary(max)");
+
+                    b.Property<string>("ScopeKey")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(128)");
+
+                    b.Property<string>("SourceKey")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(128)");
+
+                    b.HasKey("DeliveryId");
+
+                    b.HasIndex("CompanyId", "BatchId", "ObservationOrdinal")
+                        .IsUnique();
+
+                    b.HasIndex("CompanyId", "CommandReceiptId")
+                        .IsUnique();
+
+                    b.ToTable("OfficialInvoiceImportWorkDeliveries", "finance", t =>
+                        {
+                            t.HasCheckConstraint("CK_OfficialInvoiceImportWorkDeliveries_Content", "[SourceKey] = 'finance.official-invoice-import.v1' AND [ScopeKey] = 'batch:' + LOWER(CONVERT(char(36), [BatchId])) AND DATALENGTH([PayloadUtf8]) > 0 AND DATALENGTH([PayloadSha256]) = 64 AND [PayloadSha256] COLLATE Latin1_General_100_BIN2 NOT LIKE '%[^0-9a-f]%' AND LEN([CorrelationId]) > 0");
+
+                            t.HasCheckConstraint("CK_OfficialInvoiceImportWorkDeliveries_Identity", "[DeliveryId] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [CommandReceiptId] = [DeliveryId] AND [BatchId] <> '00000000-0000-0000-0000-000000000000' AND [EvidenceId] <> '00000000-0000-0000-0000-000000000000'");
+
+                            t.HasCheckConstraint("CK_OfficialInvoiceImportWorkDeliveries_State", "[PayloadSchemaVersion] = 1 AND (([ObservationOrdinal] = 1 AND [DesiredState] = 1 AND [EvidenceId] = [BatchId]) OR ([ObservationOrdinal] = 2 AND [DesiredState] = 2))");
                         });
                 });
 
@@ -1597,6 +1685,23 @@ partial class FinanceDbContextModelSnapshot : ModelSnapshot
                     b.HasOne("GoymenERP.Modules.Finance.Infrastructure.Persistence.OrganizationCompanyReference", null)
                         .WithMany()
                         .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Finance.Infrastructure.Persistence.FinanceOfficialInvoiceImportWorkDeliveryRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Finance.Infrastructure.Persistence.FinanceOfficialInvoiceImportBatchRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "BatchId")
+                        .HasPrincipalKey("CompanyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("GoymenERP.Modules.Finance.Infrastructure.Persistence.FinanceOfficialInvoiceImportCommandRow", null)
+                        .WithOne()
+                        .HasForeignKey("GoymenERP.Modules.Finance.Infrastructure.Persistence.FinanceOfficialInvoiceImportWorkDeliveryRow", "CompanyId", "CommandReceiptId")
+                        .HasPrincipalKey("GoymenERP.Modules.Finance.Infrastructure.Persistence.FinanceOfficialInvoiceImportCommandRow", "CompanyId", "Id")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });
