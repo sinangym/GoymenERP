@@ -3,6 +3,8 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { PurchaseOrderDetailPage } from './PurchaseOrderDetailPage'
+import type { PurchaseOrderAcceptanceHistory, PurchaseOrderLine } from './contract'
+import { PURCHASE_ORDER_DETAIL_TEXT as T } from './purchaseOrderDetailText'
 
 const scenario = vi.hoisted(() => ({
   status: 'Draft' as 'Draft' | 'Approved',
@@ -10,15 +12,38 @@ const scenario = vi.hoisted(() => ({
   canReadSourceRequest: true,
   capabilities: [] as string[],
   sourceRequestId: null as string | null,
+  activeCompanyId: '22222222-2222-4222-8222-222222222222',
+  detailCompanyId: '22222222-2222-4222-8222-222222222222',
+  detailOrderId: '11111111-1111-4111-8111-111111111111',
+  routeEntryGeneration: 1,
+  lines: [] as PurchaseOrderLine[],
+  acceptances: [] as PurchaseOrderAcceptanceHistory[],
 }))
 const COMPANY = '22222222-2222-4222-8222-222222222222'
 const ORDER = '11111111-1111-4111-8111-111111111111'
 const ACTOR = '33333333-3333-4333-8333-333333333333'
+const LINE = '77777777-7777-4777-8777-777777777777'
+const ACCEPTANCE = '88888888-8888-4888-8888-888888888888'
+const OTHER_COMPANY = '99999999-9999-4999-8999-999999999999'
+const OTHER_ORDER = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+
+function serverLine(): PurchaseOrderLine {
+  return {
+    lineId: LINE, lineNo: 7, kind: 'General', parentLineId: null, sourceRequestLineId: null,
+    productId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', productVersion: '3',
+    unitId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', ordered: '10', technical: '0',
+    committed: '10', accepted: '4.2500', remaining: '5.7500',
+  }
+}
+
+function serverAcceptance(): PurchaseOrderAcceptanceHistory {
+  return { acceptanceId: ACCEPTANCE, lineId: LINE, quantity: '4.2500', recordedAtUtc: '2026-10-05T18:30:00Z' }
+}
 
 function summary() {
   return {
-    id: ORDER,
-    companyId: COMPANY,
+    id: scenario.detailOrderId,
+    companyId: scenario.detailCompanyId,
     status: scenario.status,
     version: scenario.status === 'Approved' ? '3' : '2',
     supplierPartyId: '44444444-4444-4444-8444-444444444444',
@@ -27,7 +52,7 @@ function summary() {
     effectiveOn: '2026-09-23',
     createdAtUtc: '2026-09-23T09:00:00Z',
     updatedAtUtc: '2026-09-23T09:00:00Z',
-    lineCount: 0,
+    lineCount: scenario.lines.length,
   }
 }
 
@@ -35,11 +60,11 @@ vi.mock('../shell/shellContext', () => ({
   useShellState: () => ({
     phase: 'idle',
     sessionEpoch: 1,
-    routeEntryGeneration: 1,
+    routeEntryGeneration: scenario.routeEntryGeneration,
     pendingTarget: null,
     activeContext: {
       userId: ACTOR,
-      companyId: COMPANY,
+      companyId: scenario.activeCompanyId,
       scopeMode: 'single',
       capabilityGeneration: 'published-v1',
       capabilities: [
@@ -64,7 +89,7 @@ vi.mock('@tanstack/react-query', () => ({
   useQuery: () => ({
     isPending: false,
     isFetching: false,
-    data: { type: 'ok-single', data: { order: summary(), lines: [] } },
+    data: { type: 'ok-single', data: { order: summary(), lines: scenario.lines, acceptances: scenario.acceptances } },
     refetch: vi.fn(async () => undefined),
   }),
 }))
@@ -74,7 +99,7 @@ vi.mock('./api', () => ({ fetchPurchaseOrder: vi.fn() }))
 vi.mock('./approvalApi', () => ({
   approvePurchaseOrder: vi.fn(async () => {
     scenario.status = 'Approved'
-    return { type: 'applied', replayed: true, detail: { order: summary(), lines: [] }, originalCorrelationId: 'pur01-original' }
+    return { type: 'applied', replayed: true, detail: { order: summary(), lines: scenario.lines, acceptances: scenario.acceptances }, originalCorrelationId: 'pur01-original' }
   }),
 }))
 
@@ -89,15 +114,19 @@ function LocationReceipt() {
   return <output aria-label="Navigation state">{JSON.stringify(location.state)}</output>
 }
 
-function renderDetail() {
-  return render(
+function DetailRoutes() {
+  return (
     <MemoryRouter initialEntries={[`/satinalma/siparisler/${ORDER}`]}>
       <Routes>
         <Route path="/satinalma/siparisler/:orderId" element={<PurchaseOrderDetailPage />} />
         <Route path="/satinalma/talepler/:requestId" element={<LocationReceipt />} />
       </Routes>
-    </MemoryRouter>,
+    </MemoryRouter>
   )
+}
+
+function renderDetail() {
+  return render(<DetailRoutes />)
 }
 
 beforeEach(() => {
@@ -106,7 +135,68 @@ beforeEach(() => {
   scenario.canReadSourceRequest = true
   scenario.capabilities = []
   scenario.sourceRequestId = null
+  scenario.activeCompanyId = COMPANY
+  scenario.detailCompanyId = COMPANY
+  scenario.detailOrderId = ORDER
+  scenario.routeEntryGeneration = 1
+  scenario.lines = []
+  scenario.acceptances = []
   sessionStorage.clear()
+})
+
+describe('PurchaseOrderDetailPage canonical acceptance history', () => {
+  it('explains an empty normalized history without requiring the receipt-record capability', () => {
+    scenario.status = 'Approved'
+    renderDetail()
+
+    const history = screen.getByRole('region', { name: T.acceptanceHistoryHeading })
+    expect(history.textContent).toContain(T.acceptanceHistoryEmpty)
+    expect(screen.queryByRole('region', { name: 'Mal kabul paneli' })).toBeNull()
+  })
+
+  it('shows exact server quantity and UTC text with the line number from the same detail only', () => {
+    scenario.status = 'Approved'
+    scenario.lines = [serverLine()]
+    scenario.acceptances = [serverAcceptance()]
+    renderDetail()
+
+    const row = screen.getByTestId(`purchase-order-acceptance-${ACCEPTANCE}`)
+    expect(row.textContent).toContain(ACCEPTANCE)
+    expect(row.textContent).toContain('7')
+    expect(row.textContent).toContain('4.2500')
+    expect(row.textContent).toContain('2026-10-05T18:30:00Z')
+    expect(screen.getByText(T.recordedAtUtc)).toBeTruthy()
+    expect(screen.queryByRole('region', { name: 'Mal kabul paneli' })).toBeNull()
+  })
+
+  it('publishes history only after a fresh server detail replaces the empty detail', () => {
+    scenario.status = 'Approved'
+    const view = renderDetail()
+    expect(screen.getByText(T.acceptanceHistoryEmpty)).toBeTruthy()
+
+    scenario.lines = [serverLine()]
+    scenario.acceptances = [serverAcceptance()]
+    view.rerender(<DetailRoutes />)
+
+    expect(screen.getByTestId(`purchase-order-acceptance-${ACCEPTANCE}`)).toBeTruthy()
+    expect(screen.queryByText(T.acceptanceHistoryEmpty)).toBeNull()
+  })
+
+  it('discards history when a fresh shell context no longer matches the server company and record', () => {
+    scenario.status = 'Approved'
+    scenario.lines = [serverLine()]
+    scenario.acceptances = [serverAcceptance()]
+    const view = renderDetail()
+    expect(screen.getByTestId(`purchase-order-acceptance-${ACCEPTANCE}`)).toBeTruthy()
+
+    scenario.activeCompanyId = OTHER_COMPANY
+    scenario.detailOrderId = OTHER_ORDER
+    scenario.routeEntryGeneration += 1
+    view.rerender(<DetailRoutes />)
+
+    expect(screen.queryByTestId(`purchase-order-acceptance-${ACCEPTANCE}`)).toBeNull()
+    expect(screen.queryByRole('region', { name: T.acceptanceHistoryHeading })).toBeNull()
+  })
 })
 
 describe('PurchaseOrderDetailPage approval outcome', () => {
