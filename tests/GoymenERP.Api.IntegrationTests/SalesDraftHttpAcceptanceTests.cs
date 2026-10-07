@@ -63,8 +63,64 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         Assert.Equal(new Uri(client.BaseAddress!, $"{SalesEndpoints.DraftsPath.TrimStart('/')}/{draftId:D}"), response.Headers.Location);
         Assert.False(response.Headers.Contains("Idempotency-Replayed"));
-        Assert.Equal(draftId, (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("detail").GetProperty("draft").GetProperty("id").GetGuid());
+        var body = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal(draftId, body.GetProperty("detail").GetProperty("draft").GetProperty("id").GetGuid());
+        Assert.False(body.GetProperty("detail").GetProperty("draft").TryGetProperty("productSnapshots", out _));
         Assert.Equal("SENTETIK-created", Assert.Single(service.Keys));
+    }
+
+    [Fact]
+    public async Task List_and_detail_publish_stored_product_snapshots_without_disclosing_withheld_prices()
+    {
+        var draftId = Guid.NewGuid();
+        var productId = Guid.NewGuid();
+        var unitId = Guid.NewGuid();
+        var snapshot = new SalesOrderDraftProductSnapshotViewV1(
+            productId, "7", "GDC-001", "Sentetik bant", unitId, "kg");
+        var summary = new SalesOrderDraftSummaryView(
+            draftId, CompanyA, "SO-2026-000001", "Order", "Draft", "3", "Rev.0",
+            Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), new DateOnly(2026, 9, 18),
+            new DateTimeOffset(2026, 9, 18, 14, 0, 0, TimeSpan.Zero), 1, "Preparing",
+            SalesCommercialStageV1.Order, [snapshot]);
+        var line = new SalesOrderDraftLineDetail(
+            Guid.NewGuid(), 1, productId, "7", "GDC-001", "Sentetik bant", unitId, "1.25",
+            null, null, null, null, null, null, SalesPriceDisclosure.Withheld, "kg");
+        var detail = new SalesOrderDraftDetailView(
+            summary, null, null, [line], null, null, null, null, null, null,
+            new SalesDraftApprovalV1(null, null, null, null, null),
+            new SalesDraftCustomerAcceptanceV1(false, null, null, null, false), false, false);
+        var service = new StubDraftService
+        {
+            List = _ => Task.FromResult(new SalesOrderDraftListResponse([summary], null)),
+            DetailRead = _ => Task.FromResult(detail),
+        };
+        using var host = CreateHost(service);
+        using var client = CreateClient(host);
+
+        using (var listResponse = await client.GetAsync(SalesEndpoints.DraftsPath))
+        {
+            Assert.Equal(HttpStatusCode.OK, listResponse.StatusCode);
+            var list = await listResponse.Content.ReadFromJsonAsync<JsonElement>();
+            var item = list.GetProperty("items")[0];
+            Assert.Equal(CompanyA, item.GetProperty("companyId").GetGuid());
+            var product = item.GetProperty("productSnapshots")[0];
+            Assert.Equal((productId, "7", "GDC-001", "Sentetik bant", unitId, "kg"),
+                (product.GetProperty("productId").GetGuid(), product.GetProperty("productVersion").GetString(),
+                    product.GetProperty("productCode").GetString(), product.GetProperty("productName").GetString(),
+                    product.GetProperty("orderUnitId").GetGuid(), product.GetProperty("orderUnitCode").GetString()));
+        }
+
+        using (var detailResponse = await client.GetAsync($"{SalesEndpoints.DraftsPath}/{draftId:D}"))
+        {
+            Assert.Equal(HttpStatusCode.OK, detailResponse.StatusCode);
+            var read = await detailResponse.Content.ReadFromJsonAsync<JsonElement>();
+            var publishedLine = read.GetProperty("lines")[0];
+            Assert.Equal("kg", publishedLine.GetProperty("orderUnitCode").GetString());
+            Assert.Equal("Withheld", publishedLine.GetProperty("priceDisclosure").GetString());
+            Assert.Equal(JsonValueKind.Null, publishedLine.GetProperty("unitPrice").ValueKind);
+            Assert.Equal(JsonValueKind.Null, publishedLine.GetProperty("priceUnitId").ValueKind);
+            Assert.Equal(JsonValueKind.Null, publishedLine.GetProperty("discountPercent").ValueKind);
+        }
     }
 
     [Fact]
@@ -184,11 +240,17 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
             return Create(request);
         }
 
+        public Func<Guid, Task<SalesOrderDraftDetailView>> DetailRead { get; set; } =
+            _ => Task.FromException<SalesOrderDraftDetailView>(new SalesDraftServiceException(404, "not_found"));
+
         public Task<SalesOrderDraftDetailView> GetDraftDetailAsync(Guid draftId, CancellationToken cancellationToken = default) =>
-            throw new SalesDraftServiceException(404, "not_found");
+            DetailRead(draftId);
+
+        public Func<SalesOrderDraftListQuery, Task<SalesOrderDraftListResponse>> List { get; set; } =
+            _ => Task.FromResult(new SalesOrderDraftListResponse([], null));
 
         public Task<SalesOrderDraftListResponse> GetDraftListAsync(SalesOrderDraftListQuery query, CancellationToken cancellationToken = default) =>
-            Task.FromResult(new SalesOrderDraftListResponse([], null));
+            List(query);
 
         /// <summary>SALES-A1: what the stub answers a state command with; the command name and body reach <see cref="StateCalls"/>.</summary>
         public Func<string, Guid, SalesDraftStateCommandRequest, Task<SalesOrderDraftResponse>> State { get; set; } =

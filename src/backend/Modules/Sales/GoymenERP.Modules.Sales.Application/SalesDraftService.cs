@@ -1549,7 +1549,14 @@ public sealed partial class SalesDraftService(
         new(draft.Id, draft.CompanyId, draft.DocumentNo, draft.Kind.ToString(), draft.State.ToString(),
             draft.Version.ToString(CultureInfo.InvariantCulture), SalesDraftApiV1.RevisionText(draft.Revision), draft.Header.PartyId,
             draft.Header.CompanyAccountId, draft.Header.CurrencyId, draft.Header.BusinessDate, draft.CreatedAtUtc, draft.Lines.Count,
-            draft.ApprovalState.ToString(), CommercialStage(draft));
+            draft.ApprovalState.ToString(), CommercialStage(draft), ProductSnapshots(draft));
+
+    private static IReadOnlyList<SalesOrderDraftProductSnapshotViewV1> ProductSnapshots(SalesOrderDraft draft) =>
+        [.. draft.Lines
+            .Select(line => new SalesOrderDraftProductSnapshotViewV1(
+                line.Product.ProductId, line.Product.ProductVersion, line.Product.Code, line.Product.Name,
+                line.OrderUnit.UnitId, line.OrderUnit.UnitCode))
+            .Distinct()];
 
     private static SalesCommercialStageV1 CommercialStage(SalesOrderDraft draft) =>
         draft.CustomerAcceptanceRequired && !draft.IsCustomerAccepted
@@ -1570,7 +1577,7 @@ public sealed partial class SalesDraftService(
                     ? null
                     : [.. line.RequestedDeliverySlices.Select(slice => new SalesDraftDeliverySliceV1(slice.SliceId, line.OrderUnit.UnitId,
                         slice.QuantityText, slice.RequestedDeliveryDate))],
-                Disclosed(disclosure, line.Commercial.DiscountPercent), disclosure))],
+                Disclosed(disclosure, line.Commercial.DiscountPercent), disclosure, line.OrderUnit.UnitCode))],
             Reference(draft.Header.DeliveryAddress), Reference(draft.Header.Contact), Reference(draft.Header.Responsible),
             Reference(draft.Header.PaymentTerms), Reference(draft.Header.SourceStrategy), Reference(draft.Header.Package),
             new SalesDraftApprovalV1(draft.Approval.SubmittedBy, draft.Approval.SubmittedAtUtc, draft.Approval.DecidedBy,
