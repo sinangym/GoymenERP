@@ -145,13 +145,18 @@ internal sealed record InventoryMaterialLabelSearchRecordV1(
 /// <summary>Tenant-filtered exact-code reader. It writes nothing and never performs fuzzy or normalized matching.</summary>
 internal sealed class SqlInventoryMaterialLabelSearchReaderV1(InventoryDbContext db) : IInventoryMaterialLabelSearchReaderV1
 {
+    private const string ExactCodeCollation = "Latin1_General_100_BIN2";
+
     public async Task<InventoryMaterialLabelSearchRecordV1?> ReadExactAsync(
         Guid companyId,
         string code,
         CancellationToken cancellationToken = default)
     {
         var row = await db.Labels.AsNoTracking()
-            .SingleOrDefaultAsync(label => label.CompanyId == companyId && label.Code == code, cancellationToken);
+            .SingleOrDefaultAsync(
+                label => label.CompanyId == companyId
+                    && EF.Functions.Collate(label.Code, ExactCodeCollation) == code,
+                cancellationToken);
         if (row is null)
         {
             return null;

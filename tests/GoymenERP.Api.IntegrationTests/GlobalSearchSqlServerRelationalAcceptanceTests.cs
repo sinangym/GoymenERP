@@ -208,6 +208,12 @@ public sealed class GlobalSearchSqlServerRelationalAcceptanceTests
         Assert.Equal(JsonValueKind.Null, item.GetProperty("name").ValueKind);
         Assert.DoesNotContain(Id(LabelB), answer.GetRawText(), StringComparison.OrdinalIgnoreCase);
 
+        var wrongCase = await run.SearchAsync(client, "syn-exact-label");
+        var caseSensitiveEmpty = wrongCase.GetProperty("groups").EnumerateArray().Single(
+            candidate => candidate.GetProperty("kind").GetString() == GlobalSearchKindsV1.InventoryMaterialLabel);
+        Assert.Equal(0, caseSensitiveEmpty.GetProperty("items").GetArrayLength());
+        Assert.False(caseSensitiveEmpty.GetProperty("hasMore").GetBoolean());
+
         var noFuzzy = await run.SearchAsync(client, "SYN-EXACT");
         var empty = noFuzzy.GetProperty("groups").EnumerateArray().Single(
             candidate => candidate.GetProperty("kind").GetString() == GlobalSearchKindsV1.InventoryMaterialLabel);
