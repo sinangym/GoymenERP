@@ -288,10 +288,12 @@
   margin: 0 0 12px;
 }
 
+/* The drawer is a shell dialog: it shares the layer of the shell's other dialog (SwitchConfirmDialog,
+   20) above feature modals (15), while the shell chrome — the phone toolbar included — stays at 10. */
 .backdrop {
   position: fixed;
   inset: 0;
-  z-index: 1000;
+  z-index: 20;
   background: rgba(8, 14, 28, 0.5);
   touch-action: none;
   overscroll-behavior: contain;
@@ -307,16 +309,17 @@
     top: 0;
     bottom: 0;
     left: 0;
-    z-index: 1001;
+    z-index: 21;
     width: min(320px, 86vw);
     height: auto;
     box-shadow: 0 8px 28px rgba(8, 14, 28, 0.35);
   }
-  /* "Menü" stays one tap away while the page scrolls. */
+  /* "Menü" stays one tap away while the page scrolls — at the shell-chrome layer, so a dialog's
+     backdrop (the company-switch question, a feature modal) still covers it. */
   .toolbar {
     position: sticky;
     top: 0;
-    z-index: 50;
+    z-index: 10;
     padding: 8px 16px;
   }
   /* UX v1.2 phone bar: the company picker shares the row with "Menü"; its label stays its

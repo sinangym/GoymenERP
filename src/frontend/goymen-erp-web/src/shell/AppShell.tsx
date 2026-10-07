@@ -13,7 +13,7 @@
  * hidden navigation for the keyboard or a screen reader to find.
  */
 
-import { useEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router'
 import { capabilityFailClosed, hasCapability, type ShellState } from './shellState'
 import { useShellDispatch, useShellState } from './shellContext'
@@ -109,6 +109,12 @@ function readCompact(): boolean {
 
 const FOCUSABLE = 'a[href], button:not([disabled])'
 
+/** The sidebar's link to the open page, when it is in an open group (a closed group's links are hidden). */
+function visibleCurrentEntry(sidebar: HTMLElement | null): HTMLElement | null {
+  const current = sidebar?.querySelector<HTMLElement>('[aria-current="page"]') ?? null
+  return current !== null && current.closest('[hidden]') === null ? current : null
+}
+
 /** UX v1.2 icons: decorative, so they are hidden from assistive technology. */
 const ICON_PATHS: Record<NavGroupId | 'home' | 'menu' | 'close' | 'chevron', string> = {
   home: 'M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z',
@@ -154,6 +160,54 @@ export function AppShell() {
     actorMismatch,
     retry,
   } = useShellOrchestrator()
+  // The states in which no shell is drawn, in order. Computed before the hooks below so the drawer
+  // can never stay "open" (focus, inert page, scroll lock) behind one of them.
+  const gate = (() => {
+    // 401 anywhere — session is dead. Terminal (no login flow yet).
+    if (sessionInvalid || identityState.kind === 'unauthenticated') {
+      return <StateBlock state={{ kind: 'unauthenticated' }} subject="oturum" />
+    }
+
+    // Codex #139 P1-1: the authenticated actor no longer matches the bound context.
+    // This is a SYNCHRONOUS gate on purpose — the reset runs in an effect, which is one
+    // paint too late, and that paint would have shown the new user the previous user's
+    // company, nav and capabilities. Nothing context-bound may render below this line.
+    if (actorMismatch) {
+      return <StateBlock state={{ kind: 'initial-loading' }} subject="oturum" />
+    }
+
+    // Directory / identity problems block the whole shell — fail closed.
+    if (identityState.kind === 'initial-loading' || directoryState.kind === 'initial-loading') {
+      return <StateBlock state={{ kind: 'initial-loading' }} subject="oturum" />
+    }
+    if (identityState.kind !== 'ready') {
+      return <StateBlock state={identityState} subject="kimlik" onRetry={retry} />
+    }
+    if (directoryState.kind === 'no-authorized-company' || directoryState.kind === 'empty-no-data') {
+      return <StateBlock state={{ kind: 'no-authorized-company' }} subject="şirket" />
+    }
+    if (directoryState.kind !== 'ready') {
+      return <StateBlock state={directoryState} subject="şirket dizini" onRetry={retry} />
+    }
+
+    // Bootstrap could not reach a verified company context — retryable, no shell yet.
+    if (bootstrapFailure) {
+      return (
+        <StateBlock
+          state={{ kind: 'service-unavailable' }}
+          subject="şirket bağlamı kurulamadı"
+          onRetry={retry}
+        />
+      )
+    }
+
+    // P2-1: identity + directory resolved, context still being established — this is
+    // loading, not "no authorized company".
+    if (bootstrapping && state.phase === 'no-active-company') {
+      return <StateBlock state={{ kind: 'initial-loading' }} subject="şirket bağlamı" />
+    }
+    return null
+  })()
   const { pathname } = useLocation()
   const compact = useSyncExternalStore(subscribeCompact, readCompact, () => false)
 
@@ -163,14 +217,16 @@ export function AppShell() {
   // page — every group the actor has is open, so the whole menu is one look away and the sidebar
   // keeps offering every entry it offered before grouping. ASSUMPTION (P1-b), reversible here alone.
   const defaultExpanded: readonly NavGroupId[] = activeGroup ? [activeGroup] : groups.map((group) => group.id)
-  // A user's open/close choice lasts until the page changes; every page starts from its own default.
+  // A user's open/close choice lasts until the page changes; every page starts from its own default,
+  // including the one Back returns to.
   const [toggled, setToggled] = useState<{ readonly path: string; readonly open: readonly NavGroupId[] } | null>(null)
+  if (toggled !== null && toggled.path !== pathname) setToggled(null)
   const expanded = toggled?.path === pathname ? toggled.open : defaultExpanded
 
-  // The drawer belongs to the page it was opened on and only exists on a compact screen, so a page
-  // change or a widening window closes it.
+  // The drawer belongs to the page it was opened on and only exists on a compact screen with a shell,
+  // so a page change, a widening window or a gate (401, actor change, bootstrap) closes it.
   const [drawerPath, setDrawerPath] = useState<string | null>(null)
-  if (drawerPath !== null && (drawerPath !== pathname || !compact)) setDrawerPath(null)
+  if (drawerPath !== null && (drawerPath !== pathname || !compact || gate !== null)) setDrawerPath(null)
   const drawerOpen = drawerPath !== null
 
   // Focus lands somewhere safe when the dirty-switch dialog closes (ERP-000K
@@ -189,7 +245,8 @@ export function AppShell() {
 
   // The drawer is modal (UX v1.2): opening it moves focus to the open page's entry, or to its close
   // button when the page has none; closing returns focus to "Menü" — or to the new page's content
-  // when the drawer closed because an entry was chosen.
+  // when the drawer closed because an entry was chosen, or to the sidebar's open entry (else the
+  // content) when a widening window turned the drawer back into the sidebar.
   const sidebarRef = useRef<HTMLDivElement>(null)
   const menuButtonRef = useRef<HTMLButtonElement>(null)
   const closeButtonRef = useRef<HTMLButtonElement>(null)
@@ -199,14 +256,51 @@ export function AppShell() {
     const wasOpen = drawerWasOpenRef.current
     drawerWasOpenRef.current = drawerOpen
     if (drawerOpen && !wasOpen) {
-      const current = sidebarRef.current?.querySelector<HTMLElement>('[aria-current="page"]')
-      ;(current ?? closeButtonRef.current)?.focus()
+      ;(visibleCurrentEntry(sidebarRef.current) ?? closeButtonRef.current)?.focus()
     } else if (!drawerOpen && wasOpen) {
       if (focusMainOnCloseRef.current) mainRef.current?.focus()
       else if (compact) menuButtonRef.current?.focus()
+      else if (!sidebarRef.current?.contains(document.activeElement)) {
+        ;(visibleCurrentEntry(sidebarRef.current) ?? mainRef.current)?.focus()
+      }
       focusMainOnCloseRef.current = false
     }
   }, [drawerOpen, compact])
+
+  // Escape and Tab belong to the drawer wherever focus is, so neither is ever lost to the page behind.
+  useEffect(() => {
+    if (!drawerOpen) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      const drawer = sidebarRef.current
+      if (!drawer) return
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        setDrawerPath(null)
+        return
+      }
+      if (event.key !== 'Tab') return
+      // The page behind the drawer is inert, so the next stop after its last control is the browser.
+      const focusable = Array.from(drawer.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(
+        (element) => element.closest('[hidden]') === null,
+      )
+      if (focusable.length === 0) return
+      const first = focusable[0]
+      const last = focusable[focusable.length - 1]
+      const active = document.activeElement
+      if (!drawer.contains(active)) {
+        event.preventDefault()
+        ;(event.shiftKey ? last : first).focus()
+      } else if (event.shiftKey && active === first) {
+        event.preventDefault()
+        last.focus()
+      } else if (!event.shiftKey && active === last) {
+        event.preventDefault()
+        first.focus()
+      }
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [drawerOpen])
 
   // Narrowing the window while focus is in the sidebar hides it; hand focus to "Menü" instead of losing it.
   useEffect(() => {
@@ -224,49 +318,7 @@ export function AppShell() {
     }
   }, [drawerOpen])
 
-  // 401 anywhere — session is dead. Terminal (no login flow yet).
-  if (sessionInvalid || identityState.kind === 'unauthenticated') {
-    return <StateBlock state={{ kind: 'unauthenticated' }} subject="oturum" />
-  }
-
-  // Codex #139 P1-1: the authenticated actor no longer matches the bound context.
-  // This is a SYNCHRONOUS gate on purpose — the reset runs in an effect, which is one
-  // paint too late, and that paint would have shown the new user the previous user's
-  // company, nav and capabilities. Nothing context-bound may render below this line.
-  if (actorMismatch) {
-    return <StateBlock state={{ kind: 'initial-loading' }} subject="oturum" />
-  }
-
-  // Directory / identity problems block the whole shell — fail closed.
-  if (identityState.kind === 'initial-loading' || directoryState.kind === 'initial-loading') {
-    return <StateBlock state={{ kind: 'initial-loading' }} subject="oturum" />
-  }
-  if (identityState.kind !== 'ready') {
-    return <StateBlock state={identityState} subject="kimlik" onRetry={retry} />
-  }
-  if (directoryState.kind === 'no-authorized-company' || directoryState.kind === 'empty-no-data') {
-    return <StateBlock state={{ kind: 'no-authorized-company' }} subject="şirket" />
-  }
-  if (directoryState.kind !== 'ready') {
-    return <StateBlock state={directoryState} subject="şirket dizini" onRetry={retry} />
-  }
-
-  // Bootstrap could not reach a verified company context — retryable, no shell yet.
-  if (bootstrapFailure) {
-    return (
-      <StateBlock
-        state={{ kind: 'service-unavailable' }}
-        subject="şirket bağlamı kurulamadı"
-        onRetry={retry}
-      />
-    )
-  }
-
-  // P2-1: identity + directory resolved, context still being established — this is
-  // loading, not "no authorized company".
-  if (bootstrapping && state.phase === 'no-active-company') {
-    return <StateBlock state={{ kind: 'initial-loading' }} subject="şirket bağlamı" />
-  }
+  if (gate) return gate
 
   const switching = state.phase === 'switching'
   // Asking is not switching: the verified context is unchanged while the user
@@ -280,33 +332,16 @@ export function AppShell() {
     const open = expanded.includes(id) ? expanded.filter((group) => group !== id) : [id]
     setToggled({ path: pathname, open })
   }
+  const openDrawer = () => {
+    // Every opening starts from the page's own default, so its entry is in an open group and focusable.
+    setToggled(null)
+    setDrawerPath(pathname)
+  }
   const closeDrawer = () => setDrawerPath(null)
   const chooseEntry = () => {
     if (!drawerOpen) return
     focusMainOnCloseRef.current = true
     closeDrawer()
-  }
-  const onDrawerKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    if (event.key === 'Escape') {
-      event.preventDefault()
-      closeDrawer()
-      return
-    }
-    if (event.key !== 'Tab') return
-    // Keep Tab inside the drawer: the page behind it is inert, so the next stop would be the browser.
-    const focusable = Array.from(event.currentTarget.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(
-      (element) => element.closest('[hidden]') === null,
-    )
-    if (focusable.length === 0) return
-    const first = focusable[0]
-    const last = focusable[focusable.length - 1]
-    if (event.shiftKey && document.activeElement === first) {
-      event.preventDefault()
-      last.focus()
-    } else if (!event.shiftKey && document.activeElement === last) {
-      event.preventDefault()
-      first.focus()
-    }
   }
   const linkClass = ({ isActive }: { isActive: boolean }) => (isActive ? styles.navLinkActive : styles.navLink)
 
@@ -324,7 +359,6 @@ export function AppShell() {
         role={drawerOpen ? 'dialog' : undefined}
         aria-modal={drawerOpen ? true : undefined}
         aria-label={drawerOpen ? NAV_TEXT.drawer : undefined}
-        onKeyDown={drawerOpen ? onDrawerKeyDown : undefined}
       >
         <div className={styles.brand}>
           <span>Göymen ERP</span>
@@ -409,7 +443,7 @@ export function AppShell() {
               className={styles.menuButton}
               aria-expanded={drawerOpen}
               aria-controls={SIDEBAR_ID}
-              onClick={() => setDrawerPath(pathname)}
+              onClick={openDrawer}
             >
               <Icon name="menu" />
               {NAV_TEXT.menuButton}

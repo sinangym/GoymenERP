@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient } from '@tanstack/react-query'
 import { RouterProvider, createMemoryRouter } from 'react-router'
@@ -58,16 +58,29 @@ function installFetch(granted: readonly string[]) {
 
 /** A phone (`true`) or a desktop (`false`) as far as the shell's media query is concerned. */
 function stubViewport(compact: boolean) {
+  const viewport = { compact }
+  const listeners = new Set<() => void>()
   vi.stubGlobal('matchMedia', vi.fn((query: string) => ({
-    matches: compact,
+    get matches() {
+      return viewport.compact
+    },
     media: query,
     onchange: null,
-    addEventListener: () => {},
-    removeEventListener: () => {},
+    addEventListener: (_type: string, listener: () => void) => listeners.add(listener),
+    removeEventListener: (_type: string, listener: () => void) => listeners.delete(listener),
     addListener: () => {},
     removeListener: () => {},
     dispatchEvent: () => false,
   })))
+  return {
+    /** Turns the window into a phone or a desktop, as a rotation or a resize would. */
+    resize(next: boolean) {
+      viewport.compact = next
+      act(() => {
+        for (const listener of [...listeners]) listener()
+      })
+    },
+  }
 }
 
 async function mountShell(path: string, granted: readonly string[]) {
@@ -297,6 +310,24 @@ describe('desktop groups open and close (UX v1.2)', () => {
     expect(within(navigation).queryByRole('link', { name: CAPABILITY_NAV_LABEL[CAPABILITY.cariPartiesList] })).toBeNull()
   })
 
+  it('forgets a header choice when the page changes, so Back finds its own group open again', async () => {
+    const user = userEvent.setup()
+    const router = await mountShell(CAPABILITY_ROUTE[CAPABILITY.salesDraftsList], GRANTS)
+    const navigation = screen.getByRole('navigation', { name: NAV_NAME })
+
+    await user.click(groupButton(navigation, 'Cari'))
+    await user.click(within(navigation).getByRole('link', { name: CAPABILITY_NAV_LABEL[CAPABILITY.cariPartiesList] }))
+    expect(router.state.location.pathname).toBe(CAPABILITY_ROUTE[CAPABILITY.cariPartiesList])
+    await act(() => router.navigate(-1))
+
+    expect(router.state.location.pathname).toBe(CAPABILITY_ROUTE[CAPABILITY.salesDraftsList])
+    expect(within(navigation).getByRole('button', { name: `Satış${ACTIVE_HINT}` }).getAttribute('aria-expanded'))
+      .toBe('true')
+    expect(groupButton(navigation, 'Cari').getAttribute('aria-expanded')).toBe('false')
+    expect(within(navigation).getByRole('link', { name: CAPABILITY_NAV_LABEL[CAPABILITY.salesDraftsList] })
+      .getAttribute('aria-current')).toBe('page')
+  })
+
   it('keeps every group open on the home page, where no work area is open', async () => {
     const navigation = await renderShell('/', GRANTS)
 
@@ -324,9 +355,9 @@ describe('phone menu drawer (UX v1.2)', () => {
   const GRANTS = [CAPABILITY.salesDraftsList, CAPABILITY.cariPartiesList, PRICE_LIST_CAPABILITY.list]
 
   async function renderPhone(path: string, granted: readonly string[] = GRANTS) {
-    stubViewport(true)
+    const viewport = stubViewport(true)
     const router = await mountShell(path, granted)
-    return { router, menu: screen.getByRole('button', { name: NAV_TEXT.menuButton }) }
+    return { router, viewport, menu: screen.getByRole('button', { name: NAV_TEXT.menuButton }) }
   }
 
   const drawer = () => screen.getByRole('dialog', { name: NAV_TEXT.drawer })
@@ -435,6 +466,74 @@ describe('phone menu drawer (UX v1.2)', () => {
     expect(screen.getByRole('heading', { level: 1, name: PRICE_LIST_TEXT.listHeading })).toBeTruthy()
     await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('main')))
     expect(shellBody().hasAttribute('inert')).toBe(false)
+  })
+
+  it('reopens on the open page’s entry even after another group was opened in it', async () => {
+    const user = userEvent.setup()
+    const { menu } = await renderPhone(CAPABILITY_ROUTE[CAPABILITY.salesDraftsList])
+
+    await user.click(menu)
+    await user.click(groupButton(drawer(), 'Cari'))
+    expect(within(drawer()).queryByRole('link', { name: CAPABILITY_NAV_LABEL[CAPABILITY.salesDraftsList] })).toBeNull()
+    await user.click(within(drawer()).getByRole('button', { name: NAV_TEXT.closeDrawer }))
+    await waitFor(() => expect(document.activeElement).toBe(menu))
+
+    await user.click(menu)
+    const current = within(drawer()).getByRole('link', { name: CAPABILITY_NAV_LABEL[CAPABILITY.salesDraftsList] })
+    await waitFor(() => expect(document.activeElement).toBe(current))
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('answers Escape and Tab even when focus has fallen out of the drawer', async () => {
+    const user = userEvent.setup()
+    const { menu } = await renderPhone(CAPABILITY_ROUTE[CAPABILITY.salesDraftsList])
+
+    await user.click(menu)
+    const close = within(drawer()).getByRole('button', { name: NAV_TEXT.closeDrawer })
+    ;(document.activeElement as HTMLElement).blur()
+    expect(document.activeElement).toBe(document.body)
+    await user.tab()
+    expect(document.activeElement).toBe(close)
+
+    ;(document.activeElement as HTMLElement).blur()
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('dialog')).toBeNull()
+    await waitFor(() => expect(document.activeElement).toBe(menu))
+  })
+
+  it('becomes the sidebar again when the window widens, without dropping focus', async () => {
+    const user = userEvent.setup()
+    const { viewport, menu } = await renderPhone(CAPABILITY_ROUTE[CAPABILITY.salesDraftsCreate], [
+      ...GRANTS,
+      CAPABILITY.salesDraftsCreate,
+    ])
+
+    await user.click(menu)
+    await waitFor(() =>
+      expect(document.activeElement).toBe(within(drawer()).getByRole('button', { name: NAV_TEXT.closeDrawer })))
+    viewport.resize(false)
+
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(screen.getByRole('navigation', { name: NAV_NAME })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: NAV_TEXT.menuButton })).toBeNull()
+    // The create page has no entry of its own, so focus goes to its content rather than to nowhere.
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('main')))
+    expect(shellBody().hasAttribute('inert')).toBe(false)
+    expect(document.documentElement.style.overflow).toBe('')
+  })
+
+  it('keeps focus on the open page’s entry when the window widens with focus there', async () => {
+    const user = userEvent.setup()
+    const { viewport, menu } = await renderPhone(CAPABILITY_ROUTE[CAPABILITY.salesDraftsList])
+
+    await user.click(menu)
+    const current = within(drawer()).getByRole('link', { name: CAPABILITY_NAV_LABEL[CAPABILITY.salesDraftsList] })
+    await waitFor(() => expect(document.activeElement).toBe(current))
+    viewport.resize(false)
+
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(document.activeElement).toBe(current)
   })
 
   it('shows only granted entries and groups in the drawer, as on a desktop', async () => {
