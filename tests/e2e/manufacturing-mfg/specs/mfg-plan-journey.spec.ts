@@ -766,33 +766,38 @@ test.describe('MFG plan create and reopen (real Inventory parent roll)', () => {
     const initialHistoryResponse = await historyRead
     expect(initialHistoryResponse.status()).toBe(200)
     const initialHistory = (await initialHistoryResponse.json()) as {
-      revisions: Array<{ inputs: Array<{ technicalSnapshot: unknown }> }>
+      revisions: Array<{ recordedAtUtc: string; inputs: Array<{ technicalSnapshot: unknown }> }>
     }
     const capturedTechnicalSnapshot = initialHistory.revisions[0]?.inputs[0]?.technicalSnapshot
-    // The genuine Product fixture (MfgBrowserSeed.EnsureGenuineProductAsync) is 1 mm × 1000 mm.
-    // Check its accepted tuple and complete provenance, rather than accepting an arbitrary truthy snapshot.
-    const nonNilGuid = expect.stringMatching(/^(?!00000000-0000-0000-0000-000000000000$)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)
-    const nonBlank = expect.stringMatching(/\S/)
+    // Exact released tuple used by MfgBrowserSeed.EnsureGenuineProductAsync:
+    // Product.Infrastructure/Persistence/ProductInitialTechnicalDefinitionV1.cs (4A source release),
+    // Settings.Application/ApprovedUnitProfileCatalog.cs + Contracts/V1/SettingsUnitIdentitiesV1.cs.
+    // ManufacturingApiV1.VerifyPlanContentAsync selects UTC today; revision 0 records the creation time.
+    const createdOnUtc = new Date(initialHistory.revisions[0].recordedAtUtc).toISOString().slice(0, 10)
     expect(capturedTechnicalSnapshot).toEqual({
       productId: env.seed.output.productId,
       productVersion: env.seed.output.productVersion,
-      family: { familyId: nonNilGuid, familyCode: nonBlank, sourceRevision: nonBlank },
+      family: {
+        familyId: '2ffdf417-c7b0-4cc5-8c58-40b5cd906c55',
+        familyCode: 'hr-slit-coil',
+        sourceRevision: 'issue66-5973142585-4A',
+      },
       template: {
-        templateId: nonNilGuid,
-        templateVersion: nonBlank,
-        templateCode: nonBlank,
-        sourceRevision: nonBlank,
+        templateId: 'ca5be23e-1f56-40c7-9e4a-6cdfc5e884b2',
+        templateVersion: '1',
+        templateCode: 'gdc-flat-coil-v1',
+        sourceRevision: 'issue66-5973142585-4A',
       },
       thicknessMm: '1',
       widthMm: '1000',
       unitKg: {
-        companyId: env.seed.companyId,
-        unitId: nonNilGuid,
+        companyId: '10000000-0000-0000-0000-000000000001',
+        unitId: 'c5ef643e-a6e8-51f3-89f2-8e68b00cb983',
         unitCode: 'kg',
-        profileId: nonNilGuid,
-        profileVersion: nonBlank,
+        profileId: '4a790fdc-2a6b-5126-835f-d3a13d28b71c',
+        profileVersion: '1',
       },
-      effectiveOn: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+      effectiveOn: createdOnUtc,
     })
     expect(capturedTechnicalSnapshot).toEqual(createdTechnicalSnapshot)
     await expect(page.getByRole('heading', { name: 'Plan yeniden açıldı' })).toBeVisible()
@@ -817,9 +822,10 @@ test.describe('MFG plan create and reopen (real Inventory parent roll)', () => {
     await page.getByRole('button', { name: 'Değişikliği kaydet', exact: true }).click()
     const revised = await revision
     expect(revised.status()).toBe(200)
-    expect(await revised.json()).toMatchObject({
-      inputs: [{ parentRollId: candidate.labelId, technicalSnapshot: capturedTechnicalSnapshot }],
-    })
+    const revisedPlan = (await revised.json()) as { inputs: Array<{ parentRollId: string; technicalSnapshot: unknown }> }
+    expect(revisedPlan.inputs).toHaveLength(1)
+    expect(revisedPlan.inputs[0].parentRollId).toBe(candidate.labelId)
+    expect(revisedPlan.inputs[0].technicalSnapshot).toEqual(capturedTechnicalSnapshot)
     const key = revised.request().headers()['idempotency-key']
     expect(key).toMatch(/^[0-9a-f-]{36}$/)
     expect(revised.request().headers()['x-company-id']).toBe(env.seed.companyId)
@@ -838,9 +844,10 @@ test.describe('MFG plan create and reopen (real Inventory parent roll)', () => {
     })
     const revisedPlanResponse = await revisedRead
     expect(revisedPlanResponse.status()).toBe(200)
-    expect(await revisedPlanResponse.json()).toMatchObject({
-      inputs: [{ parentRollId: candidate.labelId, technicalSnapshot: capturedTechnicalSnapshot }],
-    })
+    const freshPlan = (await revisedPlanResponse.json()) as { inputs: Array<{ parentRollId: string; technicalSnapshot: unknown }> }
+    expect(freshPlan.inputs).toHaveLength(1)
+    expect(freshPlan.inputs[0].parentRollId).toBe(candidate.labelId)
+    expect(freshPlan.inputs[0].technicalSnapshot).toEqual(capturedTechnicalSnapshot)
     await expect(page.getByText('Plan güncellendi (sürüm 2); güncel kayıt ve geçmiş yeniden okundu.', { exact: true }))
       .toBeVisible()
     await expect(storedPlanInputRows(page).getByRole('row', { name: new RegExp(`${candidate.labelId}.*800`) }))
@@ -867,12 +874,15 @@ test.describe('MFG plan create and reopen (real Inventory parent roll)', () => {
     await page.getByRole('row', { name: new RegExp(reference) }).getByRole('link', { name: new RegExp(reference) }).click()
     const reopenedHistoryResponse = await reopenedHistory
     expect(reopenedHistoryResponse.status()).toBe(200)
-    expect(await reopenedHistoryResponse.json()).toMatchObject({
-      revisions: [
-        { revision: 0, inputs: [{ parentRollId: candidate.labelId, technicalSnapshot: capturedTechnicalSnapshot }] },
-        { revision: 1, inputs: [{ parentRollId: candidate.labelId, technicalSnapshot: capturedTechnicalSnapshot }] },
-      ],
-    })
+    const reopenedRevisions = (await reopenedHistoryResponse.json()) as {
+      revisions: Array<{ revision: number; inputs: Array<{ parentRollId: string; technicalSnapshot: unknown }> }>
+    }
+    expect(reopenedRevisions.revisions.map((entry) => entry.revision)).toEqual([0, 1])
+    for (const entry of reopenedRevisions.revisions) {
+      expect(entry.inputs).toHaveLength(1)
+      expect(entry.inputs[0].parentRollId).toBe(candidate.labelId)
+      expect(entry.inputs[0].technicalSnapshot).toEqual(capturedTechnicalSnapshot)
+    }
     const history = page.getByRole('region', { name: 'Plan geçmişi' })
     const latest = history.getByRole('listitem', { name: 'Revizyon 1' })
     await expect(latest).toContainText('Gerekçe: Tarayıcı kabulü: bobin kg düşürüldü')
@@ -883,13 +893,18 @@ test.describe('MFG plan create and reopen (real Inventory parent roll)', () => {
     const api = await apiAs(env, env.seed.recorderActor)
     try {
       // The stored plan and its history are the edit.
-      expect((await readPlan(api, body.planId)).body).toMatchObject({
+      const storedPlan = (await readPlan(api, body.planId)).body
+      if (storedPlan === null) throw new Error('The edited plan must reopen from the stored plan read.')
+      expect(storedPlan).toMatchObject({
         planId: body.planId,
         status: 'Draft',
         version: 2,
-        inputs: [{ parentRollId: candidate.labelId, plannedKg: '800', technicalSnapshot: capturedTechnicalSnapshot }],
+        inputs: [{ parentRollId: candidate.labelId, plannedKg: '800' }],
         target: { basis: 'GoodOutputMass', kg: '750' },
       })
+      const storedInputs = storedPlan.inputs as Array<{ technicalSnapshot: unknown }>
+      expect(storedInputs).toHaveLength(1)
+      expect(storedInputs[0].technicalSnapshot).toEqual(capturedTechnicalSnapshot)
       const revisions = await api.get(`/api/v1/manufacturing/plans/${body.planId}/revisions`)
       expect(revisions.status()).toBe(200)
       const stored = (await revisions.json()) as { revisions: Array<Record<string, unknown>> }
@@ -901,11 +916,13 @@ test.describe('MFG plan create and reopen (real Inventory parent roll)', () => {
           parentRollId: candidate.labelId,
           plannedKg: '800',
           expectedLabelVersion: candidate.labelVersion,
-          technicalSnapshot: capturedTechnicalSnapshot,
         }],
       })
-      expect((stored.revisions[0] as { inputs: Array<{ technicalSnapshot: unknown }> }).inputs[0].technicalSnapshot)
-        .toEqual(capturedTechnicalSnapshot)
+      for (const entry of stored.revisions) {
+        const inputs = (entry as { inputs: Array<{ technicalSnapshot: unknown }> }).inputs
+        expect(inputs).toHaveLength(1)
+        expect(inputs[0].technicalSnapshot).toEqual(capturedTechnicalSnapshot)
+      }
 
       // Idempotent replay: the browser's key and body again answer the stored result, no second revision.
       const replay = await api.post(`/api/v1/manufacturing/plans/${body.planId}/revision`, {
