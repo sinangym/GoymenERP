@@ -276,7 +276,7 @@ test('S04-QR-02 the same key and body again is the stored answer; a stale versio
 test('S04-QR-03 Rev.1 is re-approved in the browser; reopen shows Rev.1 approved and the Rev.0 history with its reason', async ({ page, request }) => {
   test.setTimeout(240_000)
   await openDetail(page, preparerActor)
-  await page.getByRole('button', { name: 'Onaya gönder' }).click()
+  await page.getByTestId('sales-approval-commands').getByRole('button', { name: 'Onaya gönder' }).click()
   await expect(page.getByTestId('sales-draft-approval-state')).toHaveText('Onay bekliyor')
 
   await openDetail(page, approverActor)
