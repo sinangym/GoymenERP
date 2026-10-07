@@ -634,11 +634,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // AddScoped line; its Migrate/EnsureCreated branch is unchanged.
                 // Re-fingerprinted for the ORG master edit: one more AddScoped line (the master-data command service);
                 // the Migrate/EnsureCreated branch and its token counts are unchanged.
+                // Re-fingerprinted for the bounded location-display batch reader: one more scoped Organization-owned
+                // read registration; the Migrate/EnsureCreated branch and its token counts are unchanged.
                 ["src/backend/Modules/Organization/"
                  + "GoymenERP.Modules.Organization.Infrastructure/"
                  + "OrganizationModuleExtensions.cs"] =
                     new(
-                        "00f81ecdedc805aad5224b54b061ab6a5366f219a39cb2eda210680972dbbca9",
+                        "62780034e9ab9e02f13d50aa7960e9c0db39c3095655f6866d9b68131eefb55d",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
