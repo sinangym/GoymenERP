@@ -542,10 +542,18 @@ public sealed class ManufacturingPlanRevisionTests(ITestOutputHelper output)
                 TechnicalSnapshotView("product-v2", 2.5m, 180m)),
                 Assert.Single(history.Revisions[1].Inputs));
             assertionStage = "legacy_snapshot";
-            var legacy = ManufacturingCommandService.PlanRevisionView(new ManufacturingPlanRevision(
-                0, 1, WorkCenter, [new PlannedInput(RollA, new Kilograms(1000m), null)], null,
-                null, null, At));
-            Assert.Null(Assert.Single(legacy.Inputs).TechnicalSnapshot);
+            var legacyFixture = new Fixture();
+            var legacyPlan = legacyFixture.StoreDraft();
+            legacyFixture.Store.History[legacyPlan.Id] =
+            [
+                new ManufacturingPlanRevision(
+                    0, 1, WorkCenter, [new PlannedInput(RollA, new Kilograms(1000m), null)], null,
+                    null, null, At),
+            ];
+            var legacyRead = await legacyFixture.Service.ListPlanRevisionsAsync(
+                legacyPlan.Id, CancellationToken.None);
+            Assert.Equal(ManufacturingApiStatus.Ok, legacyRead.Status);
+            Assert.Null(Assert.Single(Assert.Single(legacyRead.Resource!.Revisions).Inputs).TechnicalSnapshot);
             assertionStage = "revision_metadata";
             Assert.Equal((2L, OtherLine, "Hat değişti", Actor.ToString("D")),
                 (history.Revisions[1].PlanVersion, history.Revisions[1].WorkCenterId, history.Revisions[1].Reason,
