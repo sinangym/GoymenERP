@@ -5,7 +5,8 @@ import { RouterProvider, createMemoryRouter } from 'react-router'
 import { ShellProvider } from './ShellProvider'
 import { AppShell } from './AppShell'
 import { SHELL_CAPABILITY_CONTRACT_VERSION } from './api'
-import { CAPABILITY, CAPABILITY_NAV_LABEL, CAPABILITY_ROUTE } from './capabilities'
+import { CAPABILITY, CAPABILITY_ROUTE } from './capabilities'
+import { CAPABILITY_NAV_LABEL, NAV_CAPABILITIES } from './navigation'
 import { PRICE_LIST_CAPABILITY, PRICE_LIST_ROUTE } from '../product/priceLists/capabilities'
 import { PRICE_LIST_TEXT } from '../product/priceLists/priceListText'
 
@@ -114,5 +115,17 @@ describe('AppShell navigation reachability and active leaf', () => {
   it('does not disclose the price-list menu path without its own capability', async () => {
     const navigation = await renderShell('/', [])
     expect(within(navigation).queryByRole('link', { name: PRICE_LIST_TEXT.listHeading })).toBeNull()
+  })
+
+  it('draws exactly the navigation definitions, in their order, then the price list', async () => {
+    // Every id the shell knows plus the price list's own: only the definitions may decide what shows.
+    const navigation = await renderShell('/', [...Object.values(CAPABILITY), PRICE_LIST_CAPABILITY.list])
+
+    const drawn = within(navigation).getAllByRole('link')
+      .map((link) => [link.textContent, link.getAttribute('href')])
+    expect(drawn).toEqual([
+      ...NAV_CAPABILITIES.map((capability) => [CAPABILITY_NAV_LABEL[capability], CAPABILITY_ROUTE[capability]]),
+      [PRICE_LIST_TEXT.listHeading, PRICE_LIST_ROUTE.list],
+    ])
   })
 })

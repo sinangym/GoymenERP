@@ -64,10 +64,23 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { NAV_CAPABILITIES } from './AppShell'
-import { CAPABILITY, CAPABILITY_NAV_LABEL, type CapabilityId } from './capabilities'
+import { NAV_CAPABILITIES as SHELL_NAV_CAPABILITIES } from './AppShell'
+import {
+  CAPABILITY,
+  CAPABILITY_NAV_LABEL as CAPABILITIES_NAV_LABEL,
+  type CapabilityId,
+} from './capabilities'
+import { CAPABILITY_NAV_LABEL, NAV_CAPABILITIES } from './navigation'
 
 describe('nav entry points', () => {
+  it('re-exports the navigation tables from their old homes as the same objects, never copies', () => {
+    // Both tables now live in ./navigation, while the per-module drift tests still read them through
+    // AppShell and capabilities. Identity, not equality: a copy could drift from what AppShell draws
+    // while every one of those tests stayed green.
+    expect(SHELL_NAV_CAPABILITIES).toBe(NAV_CAPABILITIES)
+    expect(CAPABILITIES_NAV_LABEL).toBe(CAPABILITY_NAV_LABEL)
+  })
+
   it('publishes the Finance allocation work list through exactly one named shell entry', () => {
     expect(
       NAV_CAPABILITIES.filter((capability) => capability === CAPABILITY.financeAllocationsList),
