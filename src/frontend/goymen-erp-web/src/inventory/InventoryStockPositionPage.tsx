@@ -446,7 +446,7 @@ function InventoryStockPositionView({
             {state.rows.map((row) => <li key={row.labelId} className={styles.card} data-label-id={row.labelId}>
               <div className={styles.cardHead}><div className={styles.cardLabel}>{labelCell(row)}</div>{menu(row)}</div>
               <dl className={styles.cardFacts}>
-                <div><dt>{STOCK_TEXT.column.product}</dt><dd>{productCell(row)}</dd></div>
+                <div className={styles.wide}><dt>{STOCK_TEXT.column.product}</dt><dd>{productCell(row)}</dd></div>
                 <div><dt>{STOCK_TEXT.column.dimension}</dt><dd>{dimensionText(row.productDisplay.technical)}</dd></div>
                 {showClassification ? <div><dt>{STOCK_TEXT.column.classification}</dt><dd>{classificationText(row.classification)}</dd></div> : null}
                 <div><dt>{STOCK_TEXT.column.location}</dt><dd>{locationCell(row)}</dd></div>
