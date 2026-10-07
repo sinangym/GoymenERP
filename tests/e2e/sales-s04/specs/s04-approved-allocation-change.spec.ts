@@ -327,6 +327,7 @@ test('AT-063-REL the ST-01 row action releases the allocation with a reason and 
     expect(Number(before.activeAllocationKg)).toBe(3)
     expect(Number(after.activeAllocationKg)).toBe(0)
     const releasedStockTable = page.getByRole('table')
+    await expect(releasedStockTable.getByRole('columnheader', { name: 'Kullanılabilir kg', exact: true })).toBeVisible()
     const releasedQuantityColumns = await releasedStockTable.getByRole('columnheader').allTextContents()
     const availableColumnIndex = releasedQuantityColumns.findIndex((column) => column.trim() === 'Kullanılabilir kg')
     expect(availableColumnIndex, 'Kullanılabilir kg sütunu stok pozisyonu tablosunda bulunmalı')
