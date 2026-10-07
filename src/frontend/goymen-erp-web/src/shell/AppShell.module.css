@@ -125,6 +125,8 @@
   display: flex;
   align-items: center;
   gap: 10px;
+  /* A link is content-box by default: its padding would push it past the sidebar's width. */
+  box-sizing: border-box;
   width: 100%;
   min-height: 40px;
   padding: 8px 12px;
