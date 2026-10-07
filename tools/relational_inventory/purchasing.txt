@@ -2,6 +2,7 @@
 # One fully qualified test name per line, sorted. A test that executes n > 1 times (theory rows)
 # Owner: the Purchasing module owner (single writer). The guard pin of this file is central (CARİ).
 # SQL Server relational acceptance inventory: Purchasing.
+GoymenERP.Api.IntegrationTests.PurchasingGenuineProductReceiptJourneySqlServerRelationalAcceptanceTests.Genuine_sac_product_flows_through_purchase_receipt_once_and_foreign_company_cannot_read_it
 GoymenERP.Api.IntegrationTests.PurchasingSqlServerRelationalAcceptanceTests.A_request_and_an_order_are_stored_in_one_save_each_and_the_same_key_replays_with_the_first_correlation
 GoymenERP.Api.IntegrationTests.PurchasingSqlServerRelationalAcceptanceTests.A_stale_version_is_terminal_and_a_same_key_race_leaves_one_record
 GoymenERP.Api.IntegrationTests.PurchasingSqlServerRelationalAcceptanceTests.Acceptance_participant_leaves_commit_and_rollback_to_host_and_restores_durable_share
