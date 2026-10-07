@@ -1,13 +1,26 @@
 using System.Net;
+using System.Net.Http.Json;
 using System.Text.Json;
+using System.Text.RegularExpressions;
+using GoymenERP.Api.ProductRuntime;
 using GoymenERP.Api.Endpoints;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
+using GoymenERP.Modules.Identity.Domain.Assignments;
+using GoymenERP.Modules.Identity.Domain.Roles;
+using GoymenERP.Modules.Identity.Domain.Users;
+using GoymenERP.Modules.Identity.Infrastructure.Persistence;
+using GoymenERP.Modules.Identity.Infrastructure.Services;
 using GoymenERP.Modules.Inventory.Application;
+using GoymenERP.Modules.Product.Application;
 using GoymenERP.Modules.Product.Application.Contracts;
+using GoymenERP.Modules.Product.Infrastructure.Persistence;
 using GoymenERP.Modules.Organization.Application.Contracts;
+using GoymenERP.Modules.Settings.Application.Contracts.V1;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
+using Microsoft.Data.SqlClient;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -20,6 +33,111 @@ public sealed class InventoryStockPositionHttpAcceptanceTests(GoymenErpApiFactor
     private static readonly Guid ProductId = Guid.Parse("22222222-2222-4222-8222-222222222222");
     private static readonly Guid LotId = Guid.Parse("33333333-3333-4333-8333-333333333333");
     private static readonly Guid LocationId = Guid.Parse("44444444-4444-4444-8444-444444444444");
+    private static readonly Guid SqlActorId = Guid.Parse("20000000-0000-0000-0000-000000000003");
+    private static readonly Guid SqlActorExternalId = Guid.Parse("21000000-0000-0000-0000-000000000003");
+    private static readonly Guid SqlSystemRoleId = Guid.Parse("30000000-0000-0000-0000-000000000003");
+
+    [SqlServerFact]
+    public async Task Genuine_SQL_stock_position_composes_the_same_Product_Inventory_and_Organization_location_record()
+    {
+        var baseConnection = Environment.GetEnvironmentVariable(
+            SqlServerRelationalAcceptanceTests.ConnectionStringEnvironmentVariable)!;
+        var databaseName = "goymen_erp_ci_" + Guid.NewGuid().ToString("N");
+        var databaseConnection = new SqlConnectionStringBuilder(baseConnection)
+        {
+            InitialCatalog = databaseName,
+        }.ConnectionString;
+        var sqlFactory = new SqlServerRelationalApiFactory(baseConnection, services =>
+        {
+            services.RemoveAll<ProductRuntimeOptions>();
+            services.AddSingleton(new ProductRuntimeOptions(databaseConnection,
+                new ProductPilotIssuerBinding(SqlActorId, SqlActorExternalId),
+                Enumerable.Range(1, 32).Select(value => (byte)value).ToArray()));
+        }, databaseName: databaseName);
+
+        try
+        {
+            using (var startup = sqlFactory.CreateClient())
+            using (var health = await startup.GetAsync("/health/live"))
+                Assert.Equal(HttpStatusCode.OK, health.StatusCode);
+
+            await GrantSqlJourneyAuthorityAsync(sqlFactory);
+            using var actor = sqlFactory.CreateClientFor(TestUsers.GroupAdmin, TestCompanyIds.CompanyA);
+
+            var references = new ProductReferences(
+                ProductInitialTechnicalDefinitionV1.TemplateId,
+                "1",
+                new Dictionary<string, JsonElement>(StringComparer.Ordinal)
+                {
+                    ["thickness-mm"] = JsonSerializer.SerializeToElement(3m),
+                    ["width-mm"] = JsonSerializer.SerializeToElement(248m),
+                    ["steel-grade"] = JsonSerializer.SerializeToElement("S235JR"),
+                    ["coating"] = JsonSerializer.SerializeToElement("uncoated"),
+                },
+                new ProductUnitReferences(Stock: SettingsUnitIdentitiesV1.Kilogram,
+                    Sales: SettingsUnitIdentitiesV1.Kilogram));
+            using var created = await SendSqlCommandAsync(actor, HttpMethod.Post, ProductApiV1.BasePath,
+                new CreateProductDraftRequest("S235JR 3 mm × 248 mm kaplamasız sac",
+                    ProductInitialCodeGroupV1.SacGroupId,
+                    FamilyId: ProductInitialTechnicalDefinitionV1.HotRolledSlitCoilFamilyId,
+                    References: references),
+                "inventory-location-display-product-create");
+            Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+            var draft = (await created.Content.ReadFromJsonAsync<ProductMutationResponse>())!;
+
+            using var activated = await SendSqlCommandAsync(actor, HttpMethod.Post,
+                $"/api/v1/products/{draft.Card.Product.Id:D}/activation",
+                new ActivateProductRequest(draft.Card.Product.Version),
+                "inventory-location-display-product-activate");
+            Assert.Equal(HttpStatusCode.OK, activated.StatusCode);
+            var active = (await activated.Content.ReadFromJsonAsync<ProductMutationResponse>())!;
+
+            using var locationsResponse = await actor.GetAsync(InventoryReferenceEndpoints.LocationPath);
+            Assert.Equal(HttpStatusCode.OK, locationsResponse.StatusCode);
+            var locations = (await locationsResponse.Content.ReadFromJsonAsync<OrganizationLocationCandidatesV1>())!;
+            Assert.NotEmpty(locations.Items);
+            var location = locations.Items[0];
+
+            var labelId = Guid.NewGuid();
+            var opening = new OpeningCountRequestV1(Guid.NewGuid(), location.LocationId,
+                new DateOnly(2026, 10, 7), "Disposable stock-position location composition",
+                [new OpeningCountLineRequestV1(Guid.NewGuid(), labelId, "SAC-LOCATION-DISPLAY-1",
+                    Guid.NewGuid(), null, null, active.Card.Product.Id, active.Card.Product.Version, "1000")]);
+            using var opened = await SendSqlCommandAsync(actor, HttpMethod.Post,
+                "/api/v1/inventory/opening-counts", opening,
+                "inventory-location-display-opening-create");
+            Assert.Equal(HttpStatusCode.Created, opened.StatusCode);
+
+            using var freshActor = sqlFactory.CreateClientFor(TestUsers.GroupAdmin, TestCompanyIds.CompanyA);
+            freshActor.DefaultRequestHeaders.Add(InventoryStockPositionApiV1.ProductDisplayContractHeader,
+                InventoryStockPositionDisplayHost.LocationDisplayContractVersion);
+            using var response = await freshActor.GetAsync(
+                $"{InventoryStockPositionApiV1.PositionsPath}?productId={active.Card.Product.Id:D}" +
+                $"&locationId={location.LocationId:D}&limit=25");
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            var page = (await response.Content.ReadFromJsonAsync<InventoryStockPositionLocationPageV2>())!;
+            var position = Assert.Single(page.Items);
+            Assert.Equal((labelId, location.LocationId, active.Card.Product.Id, active.Card.Product.Version),
+                (position.LabelId, position.LocationId, position.ProductId, position.ProductVersion));
+            var productIdentity = Assert.IsType<ProductStockDisplayIdentityV1>(position.ProductDisplay.Identity);
+            var productTechnical = Assert.IsType<ProductStockNominalTechnicalV1>(position.ProductDisplay.Technical);
+            Assert.Equal((active.Card.Product.Id, active.Card.Product.Version,
+                    active.Card.Product.Code, active.Card.Product.Name),
+                (productIdentity.ProductId, productIdentity.ProductVersion,
+                    productIdentity.Code, productIdentity.Name));
+            Assert.Equal((3m, 248m),
+                (productTechnical.ThicknessMm, productTechnical.WidthMm));
+            Assert.Equal(new OrganizationLocationDisplayV1(location.LocationId,
+                    location.LocationCode, location.LocationName),
+                position.LocationDisplay);
+            Assert.Equal(position.LocationId, position.LocationDisplay.LocationId);
+        }
+        finally
+        {
+            await sqlFactory.DisposeAsync();
+            await DropSqlDatabaseAsync(baseConnection, databaseName);
+        }
+    }
 
     [Fact]
     public async Task Authorized_actor_gets_exact_positions_with_private_no_store()
@@ -566,6 +684,58 @@ public sealed class InventoryStockPositionHttpAcceptanceTests(GoymenErpApiFactor
 
         public Task<PermissionScope> GetPermissionScopeAsync(string permission, Guid companyId,
             CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    }
+
+    private static async Task GrantSqlJourneyAuthorityAsync(SqlServerRelationalApiFactory sqlFactory)
+    {
+        await using var scope = sqlFactory.Services.CreateAsyncScope();
+        var identity = scope.ServiceProvider.GetRequiredService<IdentityDbContext>();
+        Assert.True(identity.Database.IsSqlServer());
+        foreach (var operation in Enum.GetValues<ProductMasterOperation>())
+            identity.Set<ProductMasterAssignment>().Add(new ProductMasterAssignment(Guid.NewGuid(), SqlActorId,
+                SqlSystemRoleId, operation, SqlActorId, SqlActorExternalId, Guid.NewGuid(),
+                "Disposable stock-position display SQL fixture; not a production grant",
+                DateTimeOffset.UtcNow.AddMinutes(-1), null));
+
+        if (!await identity.Users.AnyAsync(user => user.Id == SqlActorId))
+            identity.Users.Add(new UserAccount(SqlActorId, "Disposable stock-position display SQL actor", null));
+        var roleId = Guid.NewGuid();
+        var role = new RoleDefinition(roleId, $"INVENTORY-LOCATION-DISPLAY-{roleId:N}",
+            "Disposable Product, Inventory and Organization SQL journey actor", true);
+        role.AddPermission(ProductPermissionManifestV1.OperationalSelectionRead);
+        role.AddPermission(InventoryPermissionManifestV1.OpeningStockRecord);
+        role.AddPermission(ErpPermissions.InventoryLabelsRead);
+        role.AddPermission(ErpPermissions.InventoryBalancesRead);
+        var assignment = new RoleAssignment(Guid.NewGuid(), SqlActorId, roleId, TestCompanyIds.CompanyA,
+            DateTimeOffset.UtcNow.AddMinutes(-1), null, approvedByUserId: null);
+        assignment.AddScope(AccessScopeType.Company, TestCompanyIds.CompanyA);
+        identity.Roles.Add(role);
+        identity.RoleAssignments.Add(assignment);
+        await identity.SaveChangesAsync();
+    }
+
+    private static async Task<HttpResponseMessage> SendSqlCommandAsync<T>(HttpClient client, HttpMethod method,
+        string path, T body, string idempotencyKey)
+    {
+        using var request = new HttpRequestMessage(method, path) { Content = JsonContent.Create(body) };
+        request.Headers.Add("Idempotency-Key", idempotencyKey);
+        return await client.SendAsync(request);
+    }
+
+    private static async Task DropSqlDatabaseAsync(string baseConnection, string databaseName)
+    {
+        if (!Regex.IsMatch(databaseName, "\\Agoymen_erp_ci_[0-9a-f]{32}\\z", RegexOptions.CultureInvariant))
+            throw new InvalidOperationException("Refusing cleanup outside this test's generated database identity.");
+        await using var master = new SqlConnection(new SqlConnectionStringBuilder(baseConnection)
+        {
+            InitialCatalog = "master",
+        }.ConnectionString);
+        await master.OpenAsync();
+        await using var drop = master.CreateCommand();
+        drop.CommandText = $"IF DB_ID(N'{databaseName}') IS NOT NULL BEGIN " +
+                           $"ALTER DATABASE [{databaseName}] SET SINGLE_USER WITH ROLLBACK IMMEDIATE; " +
+                           $"DROP DATABASE [{databaseName}]; END;";
+        await drop.ExecuteNonQueryAsync();
     }
 
     private sealed class MutableCompanyContext : ICompanyContext

@@ -201,8 +201,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // Customer-owned opening: +2 exact account-context and fail-closed authority SQL facts.
             // Inventory stock-position read: +1 actual bounded filter/classification SQL fact;
             // every listed case remains mandatory and zero-skip.
+            // Inventory location display: +1 same-record Product/Inventory/Organization SQL fact.
             ["tools/relational_inventory/inventory.txt"] =
-                "3a9b7bce5b3c874ba82ce7cb475db4314a5eacedd3ba6a2bc9cc6143b21c764a",
+                "6b13a2c9d8aa590357e028adf01ea48037f7c2e9484297d23d4e731dc57102d2",
 
             // logistics
             // AT-053: +4 weighbridge SQL facts (81c1ff0b… -> 264898d7…).
