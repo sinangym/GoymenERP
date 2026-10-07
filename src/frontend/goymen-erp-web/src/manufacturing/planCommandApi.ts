@@ -12,6 +12,14 @@ import type { CapturedPlanCommercialContext } from './planRevisionContract'
 
 export type PlanTargetBasis = 'InputMass' | 'GoodOutputMass'
 
+export interface SlittingSpecRequest {
+  readonly lines: readonly {
+    readonly bandWidthMm: string
+    readonly count: number
+  }[]
+  readonly windingTargetKg: string | null
+}
+
 export interface SavePlanRequest {
   readonly planId: string
   readonly workCenterId: string
@@ -21,6 +29,8 @@ export interface SavePlanRequest {
     readonly expectedLabelVersion: string
   }[]
   readonly target: { readonly basis: PlanTargetBasis; readonly kg: string } | null
+  /** Omitted by legacy callers; explicit null means this plan has no slitting draft content. */
+  readonly slittingSpec?: SlittingSpecRequest | null
 }
 
 export interface SavePlanContext {
@@ -104,6 +114,19 @@ function sameTarget(
   )
 }
 
+function sameSlittingSpec(plan: ProductionPlanView, request: Pick<SavePlanRequest, 'slittingSpec'>): boolean {
+  const sent = request.slittingSpec ?? null
+  if (sent === null) return plan.slittingSpec === null
+  if (plan.slittingSpec === null || plan.slittingSpec.lines.length !== sent.lines.length) return false
+  if ((plan.slittingSpec.windingTargetKg ?? null) !== (sent.windingTargetKg === null
+    ? null
+    : canonicalKilograms(sent.windingTargetKg))) return false
+  return plan.slittingSpec.lines.every((line, index) => {
+    const requested = sent.lines[index]
+    return line.bandWidthMm === canonicalKilograms(requested.bandWidthMm) && line.count === requested.count
+  })
+}
+
 function describesAttempt(plan: ProductionPlanView, request: SavePlanRequest, companyId: string): boolean {
   return (
     plan.planId === request.planId &&
@@ -113,7 +136,8 @@ function describesAttempt(plan: ProductionPlanView, request: SavePlanRequest, co
     plan.approvedByUserId === null &&
     plan.approvedAtUtc === null &&
     sameInputs(plan, request) &&
-    sameTarget(plan, request)
+    sameTarget(plan, request) &&
+    sameSlittingSpec(plan, request)
   )
 }
 

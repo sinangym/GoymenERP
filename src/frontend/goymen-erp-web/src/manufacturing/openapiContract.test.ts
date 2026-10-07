@@ -119,14 +119,14 @@ describe('Manufacturing port ↔ canonical OpenAPI', () => {
     expect(Object.keys(plan()).sort()).toEqual(names('PlanViewV1'))
     expect(Object.keys(inputView).sort()).toEqual(names('PlannedInputViewV1'))
     expect([...(schema('PlanViewV1').required ?? [])].sort()).toEqual(
-      names('PlanViewV1').filter((name) => name !== 'calculation'),
+      names('PlanViewV1').filter((name) => name !== 'calculation' && name !== 'slittingSpec'),
     )
     expect([...(schema('PlannedInputViewV1').required ?? [])].sort()).toEqual(
       names('PlannedInputViewV1').filter(
         (name) => name !== 'technicalSnapshot' && name !== 'commercialContext',
       ),
     )
-    expect(plan()).toMatchObject({ calculation: null })
+    expect(plan()).toMatchObject({ calculation: null, slittingSpec: null })
     expect(inputView).toMatchObject({ technicalSnapshot: null, commercialContext: null })
     // The fixture the screen tests use decodes, so the decoder reads these very names — and the
     // approved shape decodes too, which the Draft fixture alone would not show.
@@ -139,6 +139,18 @@ describe('Manufacturing port ↔ canonical OpenAPI', () => {
         approvedAtUtc: '2026-09-18T09:00:00.000Z',
       })),
     ).not.toBeNull()
+  })
+
+  it('declares the additive ordered slitting request and stored view without adding it to revisions', () => {
+    expect(names('SlittingSpecRequestV1')).toEqual(['lines', 'windingTargetKg'])
+    expect(names('SlittingSpecViewV1')).toEqual(['lines', 'windingTargetKg'])
+    expect(names('SlitLineRequestV1')).toEqual(['bandWidthMm', 'count'])
+    expect(names('SlitLineViewV1')).toEqual(['bandWidthMm', 'count'])
+    expect(schema('SavePlanRequestV1').properties).toHaveProperty('slittingSpec')
+    expect(schema('PlanPreviewRequestV1').properties).toHaveProperty('slittingSpec')
+    expect(schema('PlanViewV1').properties).toHaveProperty('slittingSpec')
+    expect(schema('RevisePlanRequestV1').properties).not.toHaveProperty('slittingSpec')
+    expect(schema('PlanRevisionViewV1').properties).not.toHaveProperty('slittingSpec')
   })
 
   it('declares the exact strict inventory request schema for each realization route', () => {

@@ -349,7 +349,7 @@ describe('decodePlan', () => {
 
   it('normalizes a legacy response that omits both additive technical projections', () => {
     const current = plan()
-    const { calculation: _calculation, ...legacyPlan } = current
+    const { calculation: _calculation, slittingSpec: _slittingSpec, ...legacyPlan } = current
     const legacyInputs = current.inputs.map((input) => {
       const { technicalSnapshot: _technicalSnapshot, ...legacyInput } = input
       return legacyInput
@@ -358,7 +358,33 @@ describe('decodePlan', () => {
     const decoded = decodePlan({ ...legacyPlan, inputs: legacyInputs })
 
     expect(decoded?.calculation).toBeNull()
+    expect(decoded?.slittingSpec).toBeNull()
     expect(decoded?.inputs.every((input) => input.technicalSnapshot === null)).toBe(true)
+  })
+
+  it('keeps the stored slitting lines in their exact order and accepts an optional winding target', () => {
+    const decoded = decodePlan(plan({
+      slittingSpec: {
+        lines: [{ bandWidthMm: '150', count: 4 }, { bandWidthMm: '240.5', count: 3 }],
+        windingTargetKg: '2000',
+      },
+    }))
+
+    expect(decoded?.slittingSpec).toEqual({
+      lines: [{ bandWidthMm: '150', count: 4 }, { bandWidthMm: '240.5', count: 3 }],
+      windingTargetKg: '2000',
+    })
+  })
+
+  it.each([
+    ['an empty line list', { lines: [], windingTargetKg: null }],
+    ['a zero width', { lines: [{ bandWidthMm: '0', count: 1 }], windingTargetKg: null }],
+    ['a numeric width', { lines: [{ bandWidthMm: 150, count: 1 }], windingTargetKg: null }],
+    ['a zero count', { lines: [{ bandWidthMm: '150', count: 0 }], windingTargetKg: null }],
+    ['a fractional count', { lines: [{ bandWidthMm: '150', count: 1.5 }], windingTargetKg: null }],
+    ['a zero winding target', { lines: [{ bandWidthMm: '150', count: 1 }], windingTargetKg: '0' }],
+  ])('fails closed on slitting spec with %s', (_case, slittingSpec) => {
+    expect(decodePlan(plan({ slittingSpec }))).toBeNull()
   })
 
   it('keeps the captured source and the matching backend calculation on a reopened plan', () => {
