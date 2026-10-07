@@ -120,6 +120,7 @@ public sealed class InventoryMaterialLabelGlobalSearchSourceTests
     [InlineData("empty-id")]
     [InlineData("foreign-company")]
     [InlineData("empty-code")]
+    [InlineData("wrong-code")]
     [InlineData("unknown-state")]
     public async Task A_malformed_owner_record_fails_closed(string malformed)
     {
@@ -129,6 +130,7 @@ public sealed class InventoryMaterialLabelGlobalSearchSourceTests
             "empty-id" => world.Reader.Record! with { Id = Guid.Empty },
             "foreign-company" => world.Reader.Record! with { CompanyId = CompanyB },
             "empty-code" => world.Reader.Record! with { Code = " " },
+            "wrong-code" => world.Reader.Record! with { Code = "syn-label-001" },
             _ => world.Reader.Record! with { DocumentStatus = "Unknown" },
         };
 

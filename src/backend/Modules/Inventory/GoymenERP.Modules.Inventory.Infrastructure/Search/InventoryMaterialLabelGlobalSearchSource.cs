@@ -76,7 +76,8 @@ internal sealed class InventoryMaterialLabelGlobalSearchSource(
             return GlobalSearchSourceAnswerV1.Answered([], false);
         }
 
-        if (record.Id == Guid.Empty || record.CompanyId != scope.CompanyId || string.IsNullOrWhiteSpace(record.Code)
+        if (record.Id == Guid.Empty || record.CompanyId != scope.CompanyId
+            || !string.Equals(record.Code, request.Term, StringComparison.Ordinal)
             || !Enum.TryParse<LabelDocumentStatus>(record.DocumentStatus, out var status) || !Enum.IsDefined(status))
         {
             throw new InvalidOperationException("Kayıtlı stok etiketi okunamadı.");
