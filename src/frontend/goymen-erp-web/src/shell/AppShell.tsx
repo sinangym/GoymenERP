@@ -367,11 +367,13 @@ export function AppShell() {
                     className={styles.groupButton}
                     aria-expanded={open}
                     aria-controls={listId}
+                    // A name, not hidden text: a browser reads the flex label and an extra span as
+                    // separate blocks ("Satış , açık…"). It still begins with the visible label.
+                    aria-label={active ? `${group.label}${NAV_TEXT.activeGroupHint}` : undefined}
                     onClick={() => toggleGroup(group.id)}
                   >
                     <Icon name={group.id} />
                     <span className={styles.groupLabel}>{group.label}</span>
-                    {active ? <span className={styles.visuallyHidden}>{NAV_TEXT.activeGroupHint}</span> : null}
                     <Icon name="chevron" className={styles.chevron} />
                   </button>
                   <ul id={listId} className={styles.groupList} hidden={!open}>
