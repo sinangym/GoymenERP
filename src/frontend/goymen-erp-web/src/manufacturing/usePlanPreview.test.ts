@@ -369,9 +369,26 @@ describe('planPreviewInput', () => {
       type: 'incomplete',
       reasons: [
         'Bant 1: bant genişliği sıfırdan büyük ve en fazla üç ondalıklı mm olmalıdır.',
-        'Bant 1: bant adedi sıfırdan büyük tam sayı olmalıdır.',
+        'Bant 1: bant adedi 1 ile 2147483647 arasında tam sayı olmalıdır.',
         'Sarım hedefi kg sıfırdan büyük bir sayı olmalıdır.',
       ],
+    })
+
+    expect(planPreviewInput(WORK_CENTER, [row('12.5')], '', '', {
+      enabled: true,
+      lines: [{ label: 'Bant 1', bandWidthMm: '0.001', count: '2147483647' }],
+      windingTargetKg: '',
+    })).toMatchObject({
+      type: 'ready',
+      request: { slittingSpec: { lines: [{ bandWidthMm: '0.001', count: 2147483647 }] } },
+    })
+    expect(planPreviewInput(WORK_CENTER, [row('12.5')], '', '', {
+      enabled: true,
+      lines: [{ label: 'Bant 1', bandWidthMm: '150', count: '2147483648' }],
+      windingTargetKg: '',
+    })).toMatchObject({
+      type: 'incomplete',
+      reasons: ['Bant 1: bant adedi 1 ile 2147483647 arasında tam sayı olmalıdır.'],
     })
   })
 })

@@ -365,13 +365,13 @@ describe('decodePlan', () => {
   it('keeps the stored slitting lines in their exact order and accepts an optional winding target', () => {
     const decoded = decodePlan(plan({
       slittingSpec: {
-        lines: [{ bandWidthMm: '150', count: 4 }, { bandWidthMm: '240.5', count: 3 }],
+        lines: [{ bandWidthMm: '0.001', count: 2147483647 }, { bandWidthMm: '240.5', count: 3 }],
         windingTargetKg: '2000',
       },
     }))
 
     expect(decoded?.slittingSpec).toEqual({
-      lines: [{ bandWidthMm: '150', count: 4 }, { bandWidthMm: '240.5', count: 3 }],
+      lines: [{ bandWidthMm: '0.001', count: 2147483647 }, { bandWidthMm: '240.5', count: 3 }],
       windingTargetKg: '2000',
     })
   })
@@ -380,8 +380,10 @@ describe('decodePlan', () => {
     ['an empty line list', { lines: [], windingTargetKg: null }],
     ['a zero width', { lines: [{ bandWidthMm: '0', count: 1 }], windingTargetKg: null }],
     ['a numeric width', { lines: [{ bandWidthMm: 150, count: 1 }], windingTargetKg: null }],
+    ['a fourth width decimal', { lines: [{ bandWidthMm: '150.0001', count: 1 }], windingTargetKg: null }],
     ['a zero count', { lines: [{ bandWidthMm: '150', count: 0 }], windingTargetKg: null }],
     ['a fractional count', { lines: [{ bandWidthMm: '150', count: 1.5 }], windingTargetKg: null }],
+    ['an int32 overflow count', { lines: [{ bandWidthMm: '150', count: 2147483648 }], windingTargetKg: null }],
     ['a zero winding target', { lines: [{ bandWidthMm: '150', count: 1 }], windingTargetKg: '0' }],
   ])('fails closed on slitting spec with %s', (_case, slittingSpec) => {
     expect(decodePlan(plan({ slittingSpec }))).toBeNull()

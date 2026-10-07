@@ -173,6 +173,8 @@ const GUID = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a
 const NIL_GUID = '00000000-0000-0000-0000-000000000000'
 /** The server's own `Text(decimal)`: invariant, no grouping, no exponent. */
 const KG_OUT = /^(0|[1-9][0-9]*)(\.[0-9]*[1-9])?$/
+const MM_OUT = /^(0|[1-9][0-9]*)(\.[0-9]{0,2}[1-9])?$/
+const INT32_MAX = 2_147_483_647
 const SIGNED_KG_OUT = /^-?(0|[1-9][0-9]*)(\.[0-9]*[1-9])?$/
 /**
  * The command's input grammar, the same as the server's (`KilogramText`): plain,
@@ -412,11 +414,12 @@ function decodeSlittingSpec(value: unknown): SlittingSpecView | null | undefined
   for (const raw of value.lines) {
     if (!isObject(raw)
       || typeof raw.bandWidthMm !== 'string'
-      || !KG_OUT.test(raw.bandWidthMm)
+      || !MM_OUT.test(raw.bandWidthMm)
       || raw.bandWidthMm === '0'
       || typeof raw.count !== 'number'
       || !Number.isSafeInteger(raw.count)
-      || raw.count <= 0) return undefined
+      || raw.count <= 0
+      || raw.count > INT32_MAX) return undefined
     lines.push({ bandWidthMm: raw.bandWidthMm, count: raw.count })
   }
   return { lines, windingTargetKg }
