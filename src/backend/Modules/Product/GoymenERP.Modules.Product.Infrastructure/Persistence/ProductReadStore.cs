@@ -14,7 +14,7 @@ public sealed record ProductStoredPage(IReadOnlyList<ProductStoredRecord> Items,
 
 /// <summary>Product-only relational reads; the application caller rechecks current authority before releasing results.</summary>
 public sealed class ProductReadStore(ProductDbContext context, ILogger<ProductReadStore>? logger = null)
-    : IProductSalesRecordReader, IProductManufacturingTechnicalRecordReader
+    : IProductSalesRecordReader, IProductManufacturingTechnicalRecordReader, IProductStockDisplayRecordReader
 {
     public async Task<ProductStoredRecord?> ReadForSalesSelectionAsync(ProductSalesReadScope scope, Guid productId,
         CancellationToken cancellationToken)
@@ -31,6 +31,21 @@ public sealed class ProductReadStore(ProductDbContext context, ILogger<ProductRe
         var row = await context.Products.AsNoTracking()
             .SingleOrDefaultAsync(product => product.Id == productId, cancellationToken);
         return row?.ToRecord();
+    }
+
+    public async Task<IReadOnlyList<ProductStoredRecord>> ReadForStockDisplayAsync(
+        ProductStockDisplayReadScope scope,
+        IReadOnlySet<Guid> productIds,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(scope);
+        ArgumentNullException.ThrowIfNull(productIds);
+        if (productIds.Count == 0) return [];
+        var ids = productIds.ToArray();
+        var rows = await context.Products.AsNoTracking()
+            .Where(product => ids.Contains(product.Id))
+            .ToListAsync(cancellationToken);
+        return rows.Select(row => row.ToRecord()).ToArray();
     }
 
     /// <summary>
