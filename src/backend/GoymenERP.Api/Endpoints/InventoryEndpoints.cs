@@ -82,6 +82,7 @@ public static partial class InventoryEndpoints
         MapLabelDetailEndpoint(endpoints);
         MapParentRollCandidateEndpoint(endpoints);
         MapStockPositionEndpoint(endpoints);
+        MapMovementTimelineEndpoint(endpoints);
         endpoints.MapInventoryReferenceEndpoints();
         MapPhysicalAllocationEndpoints(group);
         MapOpeningCountEndpoints(group);
@@ -882,6 +883,98 @@ public static partial class InventoryEndpoints
     }
 
     private static IResult StockPositionProblem(int statusCode, string? code = null) => code is null
+        ? Results.Problem(statusCode: statusCode)
+        : Results.Problem(statusCode: statusCode,
+            extensions: new Dictionary<string, object?> { ["code"] = code });
+
+    private static void MapMovementTimelineEndpoint(IEndpointRouteBuilder endpoints)
+    {
+        endpoints.MapGet(InventoryMovementTimelineApiV1.Path, async (
+                HttpContext httpContext,
+                IInventoryMovementTimelineV1 timeline,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext.Response);
+                if (!TryReadMovementTimelineQuery(httpContext.Request.Query, out var query))
+                {
+                    return MovementTimelineProblem(
+                        StatusCodes.Status400BadRequest,
+                        InventoryMovementTimelineCodesV1.InvalidQuery);
+                }
+
+                try
+                {
+                    return Results.Ok(await timeline.SearchAsync(query, cancellationToken));
+                }
+                catch (InventoryMovementTimelineException exception)
+                {
+                    return exception.StatusCode switch
+                    {
+                        StatusCodes.Status400BadRequest
+                            when exception.Code == InventoryMovementTimelineCodesV1.InvalidQuery =>
+                            MovementTimelineProblem(exception.StatusCode, exception.Code),
+                        StatusCodes.Status503ServiceUnavailable
+                            when exception.Code == InventoryMovementTimelineCodesV1.Unavailable =>
+                            MovementTimelineProblem(exception.StatusCode, exception.Code),
+                        StatusCodes.Status401Unauthorized or StatusCodes.Status403Forbidden =>
+                            MovementTimelineProblem(exception.StatusCode),
+                        _ => MovementTimelineProblem(StatusCodes.Status503ServiceUnavailable),
+                    };
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception)
+                {
+                    return MovementTimelineProblem(StatusCodes.Status503ServiceUnavailable);
+                }
+            })
+            .WithName(InventoryMovementTimelineApiV1.GetOperationId)
+            .WithTags("Inventory")
+            .WithMetadata(new PrivateNoStoreOnAuthorizationFailureMetadata())
+            .RequireCompanyContext()
+            .RequireAuthorization(ErpPermissions.InventoryLabelsRead, ErpPermissions.InventoryBalancesRead)
+            .Produces<InventoryMovementTimelinePageV1>(StatusCodes.Status200OK)
+            .ProducesErpBadRequest(InventoryMovementTimelineCodesV1.InvalidQuery)
+            .ProducesErpServiceUnavailable(InventoryMovementTimelineCodesV1.Unavailable)
+            .ProducesErpAuthenticatedProblems();
+    }
+
+    private static bool TryReadMovementTimelineQuery(
+        IQueryCollection query,
+        out InventoryMovementTimelineQueryV1 parsed)
+    {
+        parsed = new();
+        if (query.Keys.Any(name => name is not "limit" and not "cursor")
+            || query.Any(parameter => parameter.Value.Count != 1))
+        {
+            return false;
+        }
+
+        var limit = 50;
+        if (query.TryGetValue("limit", out var limitValues)
+            && (!int.TryParse(limitValues[0], NumberStyles.None, CultureInfo.InvariantCulture, out limit)
+                || limit is < 1 or > 100))
+        {
+            return false;
+        }
+
+        string? cursor = null;
+        if (query.TryGetValue("cursor", out var cursorValues))
+        {
+            cursor = cursorValues[0];
+            if (string.IsNullOrWhiteSpace(cursor))
+            {
+                return false;
+            }
+        }
+
+        parsed = new InventoryMovementTimelineQueryV1(limit, cursor);
+        return true;
+    }
+
+    private static IResult MovementTimelineProblem(int statusCode, string? code = null) => code is null
         ? Results.Problem(statusCode: statusCode)
         : Results.Problem(statusCode: statusCode,
             extensions: new Dictionary<string, object?> { ["code"] = code });
