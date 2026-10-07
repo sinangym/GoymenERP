@@ -1072,10 +1072,25 @@ def validate_privacy(
     root: str | pathlib.Path,
     suite: str,
     forbidden_values: list[str] | tuple[str, ...] = (),
+    compose_model: dict | None = None,
 ) -> str | None:
     """Every file that would be uploaded is free of C-01's forbidden patterns and of the run's secrets."""
     artifact_root = pathlib.Path(root).resolve()
     selected = upload_paths(artifact_root, suite)
+    runtime = SUITE_API_EXTENSIONS.get(suite, {}).get("runtime", {})
+    if runtime:
+        require(isinstance(compose_model, dict),
+                f"suite {suite} artifact privacy requires the merged compose model")
+        services = compose_model.get("services")
+        require(isinstance(services, dict) and isinstance(services.get("api"), dict),
+                "artifact privacy compose model has no API service")
+        environment = services["api"].get("environment")
+        require(isinstance(environment, dict), "artifact privacy compose model has no API environment")
+        runtime_values = {key: environment.get(key) for key in runtime}
+        require(all(isinstance(value, str) for value in runtime_values.values()),
+                f"suite {suite} artifact privacy runtime key set is not exact")
+        validate_suite_extensions(suite, runtime_values)
+        forbidden_values = (*forbidden_values, *runtime_values.values())
     needles: list[bytes] = []
     for index, value in enumerate(forbidden_values):
         require(isinstance(value, str) and len(value.encode("utf-8")) >= 8,
@@ -1102,6 +1117,7 @@ def parser() -> argparse.ArgumentParser:
     privacy.add_argument("--root", required=True)
     privacy.add_argument("--suite", required=True)
     privacy.add_argument("--forbidden-value", action="append", default=[])
+    privacy.add_argument("--compose-model")
     profile = commands.add_parser("profile")
     profile.add_argument("--suite", required=True)
     compose = commands.add_parser("compose")
@@ -1123,7 +1139,18 @@ def main(argv: list[str] | None = None) -> int:
     arguments = parser().parse_args(argv)
     try:
         if arguments.command == "privacy":
-            safe_phase = validate_privacy(arguments.root, arguments.suite, arguments.forbidden_value)
+            compose_model = None
+            if arguments.compose_model is not None:
+                try:
+                    compose_model = json.loads(pathlib.Path(arguments.compose_model).read_text(encoding="utf-8"))
+                except (OSError, json.JSONDecodeError) as error:
+                    raise ContractError("artifact privacy compose model is unreadable") from error
+            safe_phase = validate_privacy(
+                arguments.root,
+                arguments.suite,
+                arguments.forbidden_value,
+                compose_model,
+            )
             if safe_phase is not None:
                 print(f"BROWSER_SAFE_PHASE={safe_phase}")
         elif arguments.command == "profile":

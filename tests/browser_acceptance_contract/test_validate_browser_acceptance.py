@@ -183,6 +183,38 @@ class PrivacyTests(unittest.TestCase):
             with self.assertRaisesRegex(validator.ContractError, "runtime secret 0"):
                 validator.validate_privacy(root, "c03", ["long-enough-secret"])
 
+    def test_r14_runtime_key_leak_is_refused_without_disclosing_the_value(self):
+        cursor_key = base64.b64encode(bytes(range(32))).decode("ascii")
+        compose_model = {
+            "services": {
+                "api": {
+                    "environment": {validator.INVENTORY_STOCK_POSITION_CURSOR_KEY: cursor_key},
+                },
+            },
+        }
+        with self._root({"browser-r14-junit.xml": f"<x>{cursor_key}</x>".encode("utf-8")}) as root:
+            compose_path = pathlib.Path(root) / "compose.json"
+            compose_path.write_text(json.dumps(compose_model), encoding="utf-8")
+            stdout = io.StringIO()
+            stderr = io.StringIO()
+            with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                result = validator.main([
+                    "privacy",
+                    "--root", root,
+                    "--suite", "r14",
+                    "--compose-model", str(compose_path),
+                ])
+
+            self.assertEqual(1, result)
+            self.assertIn("runtime secret 0", stderr.getvalue())
+            self.assertNotIn(cursor_key, stdout.getvalue())
+            self.assertNotIn(cursor_key, stderr.getvalue())
+
+    def test_r14_privacy_requires_the_compose_model_that_carries_its_runtime_key(self):
+        with self._root({"browser-r14-junit.xml": b"<ok/>"}) as root:
+            with self.assertRaisesRegex(validator.ContractError, "requires the merged compose model"):
+                validator.validate_privacy(root, "r14")
+
     def test_a_c01_forbidden_pattern_is_refused(self):
         with self._root({"browser-smoke-junit.xml": b"GET /api/v1/counterparties?cursor=abc"}) as root:
             with self.assertRaisesRegex(validator.ContractError, "cursor query"):
@@ -937,6 +969,7 @@ class WorkflowTests(unittest.TestCase):
             "down -v --remove-orphans",
             "id: artifact_privacy",
             "tools/validate_browser_acceptance.py privacy",
+            '--compose-model "$compose_model"',
             "steps.artifact_privacy.outcome == 'success'",
         ):
             with self.subTest(required=required):
