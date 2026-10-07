@@ -60,10 +60,16 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
         Assert.Equal([0, 1], history.Revisions.Select(revision => revision.Revision));
         Assert.Equal((1L, (string?)null, (string?)null), (history.Revisions[0].PlanVersion, history.Revisions[0].Reason,
             history.Revisions[0].RevisedBy));
-        Assert.Equal(new PlanRevisionInputViewV1(rollA.Id, "1000", rollA.Version), Assert.Single(history.Revisions[0].Inputs));
+        var createdRevisionInput = Assert.Single(history.Revisions[0].Inputs);
+        Assert.Equal((rollA.Id, "1000", rollA.Version),
+            (createdRevisionInput.ParentRollId, createdRevisionInput.PlannedKg, createdRevisionInput.ExpectedLabelVersion));
+        Assert.Equal(Assert.Single(created.Inputs).TechnicalSnapshot, createdRevisionInput.TechnicalSnapshot);
         Assert.Equal((2L, "Bobin kalitesi nedeniyle bölündü"), (history.Revisions[1].PlanVersion, history.Revisions[1].Reason));
-        Assert.Equal([new PlanRevisionInputViewV1(rollA.Id, "800.5", rollA.Version),
-                new PlanRevisionInputViewV1(rollB.Id, "199.5", rollB.Version)], history.Revisions[1].Inputs);
+        Assert.Equal([(rollA.Id, "800.5", rollA.Version), (rollB.Id, "199.5", rollB.Version)],
+            history.Revisions[1].Inputs.Select(input =>
+                (input.ParentRollId, input.PlannedKg, input.ExpectedLabelVersion)));
+        Assert.Equal(view.Inputs.Select(input => input.TechnicalSnapshot),
+            history.Revisions[1].Inputs.Select(input => input.TechnicalSnapshot));
 
         // The plan list reads the edited content.
         var list = (await client.GetFromJsonAsync<PlanListViewV1>($"{Base}/plans?pageSize=100"))!;
