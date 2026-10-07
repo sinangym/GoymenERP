@@ -30,7 +30,7 @@ function answer(response: Response | (() => never)) {
 }
 
 function created(headers: Record<string, string> = {}) {
-  return json(plan({ target: REQUEST.target }), 201, {
+  return json(plan({ target: REQUEST.target, slittingSpec: REQUEST.slittingSpec ?? null }), 201, {
     Location: `/api/v1/manufacturing/plans/${PLAN}`,
     ...headers,
   })
@@ -80,6 +80,34 @@ describe('savePlan', () => {
     answer(created())
 
     expect(await savePlan(request, CONTEXT)).toMatchObject({ type: 'applied', replayed: false })
+  })
+
+  it('binds a committed slitting response to the exact ordered request and accepts canonical decimal text', async () => {
+    const request: SavePlanRequest = {
+      ...REQUEST,
+      slittingSpec: {
+        lines: [{ bandWidthMm: '150.000', count: 4 }, { bandWidthMm: '240.50', count: 3 }],
+        windingTargetKg: '2000.00',
+      },
+    }
+    answer(json(plan({
+      target: REQUEST.target,
+      slittingSpec: {
+        lines: [{ bandWidthMm: '150', count: 4 }, { bandWidthMm: '240.5', count: 3 }],
+        windingTargetKg: '2000',
+      },
+    }), 201, { Location: `/api/v1/manufacturing/plans/${PLAN}` }))
+
+    expect(await savePlan(request, CONTEXT)).toMatchObject({ type: 'applied' })
+
+    answer(json(plan({
+      target: REQUEST.target,
+      slittingSpec: {
+        lines: [{ bandWidthMm: '240.5', count: 3 }, { bandWidthMm: '150', count: 4 }],
+        windingTargetKg: '2000',
+      },
+    }), 201, { Location: `/api/v1/manufacturing/plans/${PLAN}` }))
+    expect(await savePlan(request, CONTEXT)).toEqual({ type: 'unknown', reason: 'undecodable' })
   })
 
   it.each([

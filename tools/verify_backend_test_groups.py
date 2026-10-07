@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 from collections import Counter
+from enum import Enum
 import hashlib
 import json
 import os
@@ -12,6 +13,8 @@ from pathlib import Path
 import re
 import subprocess
 import sys
+import time
+from typing import Callable, TypeVar
 import xml.etree.ElementTree as ET
 
 
@@ -45,7 +48,7 @@ GROUP_PROJECTS = {
 }
 SOLUTION_PROJECT_COUNT = 70
 TEST_PROJECT_COUNT = 20
-PROOF_SCHEMA = 1
+PROOF_SCHEMA = 2
 MAX_PROOF_BYTES = 16384
 HEAD_PATTERN = re.compile(r"[0-9a-f]{40}\Z")
 HASH_PATTERN = re.compile(r"[0-9a-f]{64}\Z")
@@ -53,6 +56,17 @@ FQN_PATTERN = re.compile(r"GoymenERP\.[A-Za-z0-9_.+`]+\Z")
 EXECUTION_ID_PATTERN = re.compile(
     r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\Z"
 )
+
+
+class Stage(str, Enum):
+    BOOTSTRAP_PREFLIGHT = "bootstrapPreflight"
+    BUILD = "build"
+    DISCOVERY = "discovery"
+    TEST = "test"
+
+
+STAGES = tuple(stage.value for stage in Stage)
+T = TypeVar("T")
 
 
 def digest(value: object) -> str:
@@ -241,7 +255,7 @@ def _valid_proof(proof: object, expected: dict[str, object], group: str) -> None
     for path, row in zip(GROUP_PROJECTS[group], rows, strict=True):
         if not isinstance(row, dict) or set(row) != {
             "path", "discoveryHash", "resultHash", "discoveredMethods",
-            "discoveredCases", "executionCount", "passed", "skipped",
+            "discoveredCases", "executionCount", "passed", "skipped", "stageElapsedMs",
         } or row["path"] != path:
             raise RuntimeError("Backend group proof project identity is wrong.")
         if not isinstance(row["discoveryHash"], str) or not HASH_PATTERN.fullmatch(
@@ -253,6 +267,11 @@ def _valid_proof(proof: object, expected: dict[str, object], group: str) -> None
         for field in ("discoveredMethods", "discoveredCases", "executionCount", "passed", "skipped"):
             if type(row[field]) is not int or row[field] < 0:
                 raise RuntimeError("Backend group proof has an invalid test count.")
+        timings = row["stageElapsedMs"]
+        if (not isinstance(timings, dict) or set(timings) != set(STAGES)
+                or any(type(timings[stage]) is not int or timings[stage] < 0
+                       for stage in STAGES)):
+            raise RuntimeError("Backend group proof has invalid stage timing.")
         if (row["discoveredMethods"] < 1 or row["discoveredCases"] < row["discoveredMethods"]
                 or row["executionCount"] < row["discoveredCases"]
                 or row["executionCount"] != row["passed"] + row["skipped"]):
@@ -326,24 +345,35 @@ def run_group(
     for project in GROUP_PROJECTS[group]:
         name = Path(project).stem
         trx = results_directory / f"{name}.trx"
-        run_bootstrap_preflight(root)
-        run_checked([
+        elapsed_ns = {stage: 0 for stage in Stage}
+
+        def measure(stage: Stage, action: Callable[[], T]) -> T:
+            started = time.monotonic_ns()
+            result = action()
+            duration = time.monotonic_ns() - started
+            if duration < 0:
+                raise RuntimeError("Backend group stage timing is not monotonic.")
+            elapsed_ns[stage] += duration
+            return result
+
+        measure(Stage.BOOTSTRAP_PREFLIGHT, lambda: run_bootstrap_preflight(root))
+        measure(Stage.BUILD, lambda: run_checked([
             "dotnet", "build", project, "-noAutoResponse", "--configuration", "Release",
             "--no-restore",
-        ], root)
-        run_bootstrap_preflight(root)
-        discovered = discovery_map(run_checked([
+        ], root))
+        measure(Stage.BOOTSTRAP_PREFLIGHT, lambda: run_bootstrap_preflight(root))
+        discovered = discovery_map(measure(Stage.DISCOVERY, lambda: run_checked([
             "dotnet", "test", project, "-noAutoResponse", "--configuration", "Release",
             "--no-restore", "--no-build", "--list-tests",
             "--logger", "console;verbosity=quiet",
-        ], root), project)
-        run_bootstrap_preflight(root)
-        run_checked([
+        ], root)), project)
+        measure(Stage.BOOTSTRAP_PREFLIGHT, lambda: run_bootstrap_preflight(root))
+        measure(Stage.TEST, lambda: run_checked([
             "dotnet", "test", project, "-noAutoResponse", "--configuration", "Release",
             "--no-restore", "--no-build", "--results-directory", str(results_directory),
             "--logger", f"trx;LogFileName={trx.name}",
             "--logger", "console;verbosity=quiet",
-        ], root)
+        ], root))
         if not trx.is_file() or trx.is_symlink():
             raise RuntimeError("Backend project did not produce its exact TRX.")
         results, passed, skipped = trx_result_map(trx, discovered)
@@ -357,6 +387,9 @@ def run_group(
             "executionCount": passed + skipped,
             "passed": passed,
             "skipped": skipped,
+            "stageElapsedMs": {
+                stage.value: elapsed_ns[stage] // 1_000_000 for stage in Stage
+            },
         })
     _valid_proof(proof, expected_proof(group, source_head, tested_commit, root), group)
     proof_path.parent.mkdir(parents=True, exist_ok=True)

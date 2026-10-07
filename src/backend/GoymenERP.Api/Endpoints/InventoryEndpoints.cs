@@ -8,6 +8,7 @@ using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Product.Application.Contracts;
+using GoymenERP.Modules.Organization.Application.Contracts;
 
 namespace GoymenERP.Api.Endpoints;
 
@@ -715,6 +716,7 @@ public static partial class InventoryEndpoints
                 HttpContext httpContext,
                 IInventoryStockPositionsV1 positions,
                 IProductStockDisplayReferencesV1 productDisplays,
+                IOrganizationLocationDisplayReaderV1 locationDisplays,
                 ICompanyContext companyContext,
                 ICurrentUser currentUser,
                 IErpAuthorityRevalidationService authority,
@@ -726,7 +728,7 @@ public static partial class InventoryEndpoints
                     return StockPositionProblem(StatusCodes.Status400BadRequest,
                         InventoryStockPositionCodesV1.InvalidQuery);
                 }
-                if (!TryReadStockPositionDisplayContract(httpContext.Request.Headers, out var includeProductDisplay))
+                if (!TryReadStockPositionDisplayContract(httpContext.Request.Headers, out var displayContract))
                 {
                     return StockPositionProblem(StatusCodes.Status400BadRequest,
                         InventoryStockPositionCodesV1.InvalidQuery);
@@ -734,13 +736,20 @@ public static partial class InventoryEndpoints
 
                 try
                 {
-                    var scope = includeProductDisplay
+                    var scope = displayContract != InventoryStockPositionDisplayContract.Legacy
                         ? InventoryStockPositionDisplayHost.CaptureScope(companyContext, currentUser)
                         : null;
                     var page = await positions.SearchAsync(query, cancellationToken);
-                    if (!includeProductDisplay)
+                    if (displayContract == InventoryStockPositionDisplayContract.Legacy)
                     {
                         return Results.Ok(InventoryStockPositionDisplayHost.Legacy(page));
+                    }
+
+                    if (displayContract == InventoryStockPositionDisplayContract.ProductAndLocation)
+                    {
+                        return Results.Ok(await InventoryStockPositionDisplayHost.ComposeWithLocationAuthorizedAsync(
+                            scope!, page, productDisplays, locationDisplays, companyContext, currentUser, authority,
+                            cancellationToken));
                     }
 
                     return Results.Ok(await InventoryStockPositionDisplayHost.ComposeAuthorizedAsync(
@@ -791,23 +800,38 @@ public static partial class InventoryEndpoints
             .ProducesErpAuthenticatedProblems();
     }
 
-    private static bool TryReadStockPositionDisplayContract(IHeaderDictionary headers, out bool enabled)
+    private static bool TryReadStockPositionDisplayContract(
+        IHeaderDictionary headers,
+        out InventoryStockPositionDisplayContract contract)
     {
-        enabled = false;
+        contract = InventoryStockPositionDisplayContract.Legacy;
         if (!headers.TryGetValue(InventoryStockPositionApiV1.ProductDisplayContractHeader, out var values))
         {
             return true;
         }
 
-        if (values.Count != 1
-            || !string.Equals(values[0], InventoryStockPositionApiV1.ProductDisplayContractVersion,
-                StringComparison.Ordinal))
+        if (values.Count != 1)
         {
             return false;
         }
 
-        enabled = true;
-        return true;
+        contract = values[0] switch
+        {
+            InventoryStockPositionApiV1.ProductDisplayContractVersion =>
+                InventoryStockPositionDisplayContract.Product,
+            InventoryStockPositionDisplayHost.LocationDisplayContractVersion =>
+                InventoryStockPositionDisplayContract.ProductAndLocation,
+            _ => InventoryStockPositionDisplayContract.Invalid,
+        };
+        return contract != InventoryStockPositionDisplayContract.Invalid;
+    }
+
+    private enum InventoryStockPositionDisplayContract
+    {
+        Invalid,
+        Legacy,
+        Product,
+        ProductAndLocation,
     }
 
     private static bool TryReadStockPositionQuery(

@@ -52,6 +52,7 @@ export interface MfgRolls {
   readonly planReplay: MfgRollSeed
   readonly planRefusal: MfgRollSeed
   readonly outputUi: MfgRollSeed
+  readonly slittingSpec: MfgRollSeed
   readonly process: Readonly<Record<MfgProcess, MfgRollSeed>>
 }
 
@@ -165,6 +166,12 @@ export function readEnvironment(): MfgEnvironment {
       planReplay: roll('planReplay'),
       planRefusal: roll('planRefusal'),
       outputUi: roll('outputUi'),
+      // MfgBrowserSeed owns this isolated opening-count row. It is derived here like the
+      // process rolls so the centrally validated seed-output envelope remains unchanged.
+      slittingSpec: {
+        labelId: 'c3000000-0000-4000-8000-000000000017',
+        labelCode: 'SYN-MFG-ROLL-17',
+      },
       process: {
         Slitting: processRoll('Slitting'),
         ColdRolling: processRoll('ColdRolling'),
