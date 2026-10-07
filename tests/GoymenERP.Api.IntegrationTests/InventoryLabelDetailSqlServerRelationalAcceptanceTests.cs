@@ -16,6 +16,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
     {
         await using var run = await Run.StartAsync();
         var source = await SeedFreePhysicalSourceAsync(run, CompanyA, "SYN-ST02-DETAIL", 125.5m);
+        var other = await SeedFreePhysicalSourceAsync(run, CompanyA, "SYN-ST04-PAGE", 10m);
         var before = await run.ScalarAsync<string>(
             "SELECT CONCAT(COUNT(*), ':', SUM(Version)) FROM inventory.Labels");
 
@@ -33,12 +34,24 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
                 movement.Lines[0].QuantityKg));
         Assert.False(detail.MovementTimeline.WindowFull);
 
-        var companyTimeline = await MovementTimeline(context, CompanyA).SearchAsync(new(25));
-        var timelineMovement = Assert.Single(companyTimeline.Items);
-        Assert.Equal((movement.MovementId, "Receipt", "synthetic.source", source.LabelId, "125.5"),
-            (timelineMovement.MovementId, timelineMovement.Kind, timelineMovement.SourceKind,
-                Assert.Single(timelineMovement.Lines).LabelId, timelineMovement.Lines[0].QuantityKg));
-        Assert.Null(companyTimeline.NextCursor);
+        var expectedMovementIds = await context.Movements.AsNoTracking()
+            .Where(row => row.CompanyId == CompanyA)
+            .OrderByDescending(row => row.OccurredAtUtc)
+            .ThenByDescending(row => row.Id)
+            .Select(row => row.Id)
+            .ToArrayAsync();
+        Assert.Equal(2, expectedMovementIds.Length);
+        using var cursors = new InventoryMovementTimelineCursorCodec(
+            new InventoryMovementTimelineCursorRuntimeOptions(Convert.ToBase64String(new byte[32])),
+            TimeProvider.System);
+        var timeline = MovementTimeline(context, CompanyA, cursors);
+        var firstPage = await timeline.SearchAsync(new(1));
+        var secondPage = await timeline.SearchAsync(new(1, Assert.IsType<string>(firstPage.NextCursor)));
+        Assert.Equal(expectedMovementIds,
+            firstPage.Items.Concat(secondPage.Items).Select(item => item.MovementId));
+        Assert.Equal(new[] { source.LabelId, other.LabelId }.Order(),
+            firstPage.Items.Concat(secondPage.Items).Select(item => Assert.Single(item.Lines).LabelId).Order());
+        Assert.Null(secondPage.NextCursor);
         Assert.Equal(before, await run.ScalarAsync<string>(
             "SELECT CONCAT(COUNT(*), ':', SUM(Version)) FROM inventory.Labels"));
     }
@@ -91,7 +104,8 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
 
     private static InventoryMovementTimelineService MovementTimeline(
         InventoryDbContext context,
-        Guid companyId)
+        Guid companyId,
+        IInventoryMovementTimelineCursorCodec? cursors = null)
     {
         var company = new CompanyContext();
         company.Set(companyId);
@@ -99,7 +113,8 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             company,
             new LabelDetailUser(companyId),
             new LabelDetailAuthority(),
-            new SqlInventoryMovementTimelineReader(context));
+            new SqlInventoryMovementTimelineReader(context),
+            cursors);
     }
 
     private static async Task TouchLabelAsync(Run run, Guid labelId)

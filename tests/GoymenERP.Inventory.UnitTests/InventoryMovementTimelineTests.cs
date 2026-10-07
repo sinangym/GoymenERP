@@ -157,6 +157,27 @@ public sealed class InventoryMovementTimelineTests
     }
 
     [Fact]
+    public async Task Equal_timestamp_order_uses_sql_server_uniqueidentifier_semantics()
+    {
+        var at = DateTimeOffset.Parse("2026-10-07T12:00:00Z");
+        var sqlFirst = Guid.Parse("00000000-0000-0000-0000-000000000001");
+        var sqlSecond = Guid.Parse("01000000-0000-0000-0000-000000000000");
+        Assert.True(sqlFirst.CompareTo(sqlSecond) < 0);
+
+        var accepted = new World();
+        accepted.Reader.Window = new InventoryMovementTimelineWindow(
+            [Movement(at, sqlFirst), Movement(at, sqlSecond)], false, null);
+        Assert.Equal(new[] { sqlFirst, sqlSecond },
+            (await accepted.Service().SearchAsync(new(2))).Items.Select(item => item.MovementId).ToArray());
+
+        var reversed = new World();
+        reversed.Reader.Window = new InventoryMovementTimelineWindow(
+            [Movement(at, sqlSecond), Movement(at, sqlFirst)], false, null);
+        await Refused(reversed.Service().SearchAsync(new(2)), 503,
+            InventoryMovementTimelineCodesV1.Unavailable);
+    }
+
+    [Fact]
     public async Task Service_requests_only_the_resolved_company_without_inferring_owner_identity()
     {
         var world = new World();

@@ -1,3 +1,4 @@
+using System.Data.SqlTypes;
 using System.Globalization;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
@@ -110,7 +111,7 @@ internal sealed class InventoryMovementTimelineService(
             var current = new InventoryMovementTimelinePosition(movement.OccurredAtUtc, movement.MovementId);
             if (previous is not null && (current.OccurredAtUtc > previous.OccurredAtUtc
                 || current.OccurredAtUtc == previous.OccurredAtUtc
-                    && current.MovementId.CompareTo(previous.MovementId) >= 0))
+                    && CompareSqlServerUniqueIdentifiers(current.MovementId, previous.MovementId) >= 0))
             {
                 throw Error(503, InventoryMovementTimelineCodesV1.Unavailable);
             }
@@ -123,6 +124,9 @@ internal sealed class InventoryMovementTimelineService(
             throw Error(503, InventoryMovementTimelineCodesV1.Unavailable);
         }
     }
+
+    private static int CompareSqlServerUniqueIdentifiers(Guid left, Guid right) =>
+        new SqlGuid(left).CompareTo(new SqlGuid(right));
 
     private static bool ValidMovement(InventoryMovementV1? movement)
     {
