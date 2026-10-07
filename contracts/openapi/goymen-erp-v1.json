@@ -14086,6 +14086,74 @@
               "type": "integer",
               "format": "int32"
             }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "description": "Opaque authenticated continuation bound to actor, company and normalized filters.",
+            "explode": false,
+            "schema": {
+              "maxLength": 4096,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "name": "productId",
+            "in": "query",
+            "description": "Optional exact Product identifier.",
+            "explode": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "locationId",
+            "in": "query",
+            "description": "Optional exact Organization location identifier.",
+            "explode": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "classification",
+            "in": "query",
+            "description": "Optional exact Inventory classification.",
+            "explode": false,
+            "schema": {
+              "enum": [
+                "Standard",
+                "SecondQuality",
+                "Scrap"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "name": "ownerKind",
+            "in": "query",
+            "description": "Optional owner kind; ownerId is required with it.",
+            "explode": false,
+            "schema": {
+              "enum": [
+                "Company",
+                "Counterparty"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "name": "ownerId",
+            "in": "query",
+            "description": "Optional exact owner identifier; ownerKind is required with it.",
+            "explode": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
           }
         ],
         "responses": {
@@ -14105,7 +14173,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/InventoryStockPositionsV1"
+                  "$ref": "#/components/schemas/InventoryStockPositionPageV1"
                 }
               }
             }
@@ -68602,31 +68670,15 @@
           }
         }
       },
-      "InventoryStockPositionsV1": {
-        "required": [
-          "items",
-          "searchWindowFull"
-        ],
-        "type": "object",
-        "properties": {
-          "items": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/InventoryStockPositionV1"
-            }
-          },
-          "searchWindowFull": {
-            "type": "boolean"
-          }
-        }
-      },
-      "InventoryStockPositionV1": {
+      "InventoryStockPositionDisplayV1": {
         "required": [
           "companyId",
           "labelId",
           "labelVersion",
           "labelCode",
           "productId",
+          "productVersion",
+          "classification",
           "lot",
           "heatNumber",
           "coilNumber",
@@ -68640,7 +68692,8 @@
           "freePhysicalKg",
           "blockedPhysicalKg",
           "activeAllocationKg",
-          "availableKg"
+          "availableKg",
+          "productDisplay"
         ],
         "type": "object",
         "properties": {
@@ -68661,6 +68714,18 @@
           "productId": {
             "type": "string",
             "format": "uuid"
+          },
+          "productVersion": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "classification": {
+            "type": [
+              "null",
+              "string"
+            ]
           },
           "lot": {
             "$ref": "#/components/schemas/InventoryLotV1"
@@ -68712,6 +68777,33 @@
           },
           "availableKg": {
             "type": "string"
+          },
+          "productDisplay": {
+            "$ref": "#/components/schemas/ProductStockDisplayResultV1"
+          }
+        }
+      },
+      "InventoryStockPositionPageV1": {
+        "required": [
+          "items",
+          "searchWindowFull"
+        ],
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/InventoryStockPositionDisplayV1"
+            }
+          },
+          "searchWindowFull": {
+            "type": "boolean"
+          },
+          "nextCursor": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
@@ -72853,6 +72945,21 @@
           }
         }
       },
+      "ProductFieldError": {
+        "required": [
+          "field",
+          "code"
+        ],
+        "type": "object",
+        "properties": {
+          "field": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          }
+        }
+      },
       "ProductHistoryEntryView": {
         "required": [
           "eventId",
@@ -73127,6 +73234,50 @@
           "groupId": {
             "type": "string",
             "format": "uuid"
+          }
+        }
+      },
+      "ProductManufacturingFamilyRevisionV1": {
+        "required": [
+          "familyId",
+          "familyCode",
+          "sourceRevision"
+        ],
+        "type": "object",
+        "properties": {
+          "familyId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "familyCode": {
+            "type": "string"
+          },
+          "sourceRevision": {
+            "type": "string"
+          }
+        }
+      },
+      "ProductManufacturingTemplateRevisionV1": {
+        "required": [
+          "templateId",
+          "templateVersion",
+          "templateCode",
+          "sourceRevision"
+        ],
+        "type": "object",
+        "properties": {
+          "templateId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "templateVersion": {
+            "type": "string"
+          },
+          "templateCode": {
+            "type": "string"
+          },
+          "sourceRevision": {
+            "type": "string"
           }
         }
       },
@@ -73810,6 +73961,108 @@
           },
           "profileVersion": {
             "type": "string"
+          }
+        }
+      },
+      "ProductStockDisplayIdentityV1": {
+        "required": [
+          "productId",
+          "productVersion",
+          "code",
+          "name"
+        ],
+        "type": "object",
+        "properties": {
+          "productId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "productVersion": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        }
+      },
+      "ProductStockDisplayResultV1": {
+        "required": [
+          "productId",
+          "expectedProductVersion",
+          "identity",
+          "technical",
+          "errors"
+        ],
+        "type": "object",
+        "properties": {
+          "productId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "expectedProductVersion": {
+            "type": "string"
+          },
+          "identity": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ProductStockDisplayIdentityV1"
+              }
+            ]
+          },
+          "technical": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ProductStockNominalTechnicalV1"
+              }
+            ]
+          },
+          "errors": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProductFieldError"
+            }
+          }
+        }
+      },
+      "ProductStockNominalTechnicalV1": {
+        "required": [
+          "family",
+          "template",
+          "thicknessMm",
+          "widthMm"
+        ],
+        "type": "object",
+        "properties": {
+          "family": {
+            "$ref": "#/components/schemas/ProductManufacturingFamilyRevisionV1"
+          },
+          "template": {
+            "$ref": "#/components/schemas/ProductManufacturingTemplateRevisionV1"
+          },
+          "thicknessMm": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+            "type": [
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "widthMm": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+            "type": [
+              "number",
+              "string"
+            ],
+            "format": "double"
           }
         }
       },

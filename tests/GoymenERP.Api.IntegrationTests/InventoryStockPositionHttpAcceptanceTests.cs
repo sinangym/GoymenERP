@@ -2,6 +2,7 @@ using System.Net;
 using System.Text.Json;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Inventory.Application;
+using GoymenERP.Modules.Product.Application.Contracts;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
@@ -22,15 +23,22 @@ public sealed class InventoryStockPositionHttpAcceptanceTests(GoymenErpApiFactor
     {
         var authority = new ControlledAuthority();
         var owner = new StubPositions(Positions());
-        using var host = CreateHost(authority, owner);
+        var product = new StubProductDisplays(ProductDisplays());
+        using var host = CreateHost(authority, owner, product);
         using var client = CreateClient(host);
 
         using var response = await client.GetAsync(InventoryStockPositionApiV1.PositionsPath
-            + "?q=%20ROLL-1%20&limit=12");
+            + $"?q=%20ROLL-1%20&limit=12&cursor=opaque&productId={ProductId:D}"
+            + $"&locationId={LocationId:D}&classification=Standard&ownerKind=Company"
+            + $"&ownerId={TestCompanyIds.CompanyA:D}");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         AssertPrivateNoStore(response);
-        Assert.Equal(new InventoryStockPositionQueryV1(" ROLL-1 ", 12), Assert.Single(owner.Queries));
+        Assert.Equal(new InventoryStockPositionQueryV1(" ROLL-1 ", 12, "opaque", ProductId,
+            LocationId, InventoryLabelClassificationV1.Standard, "Company", TestCompanyIds.CompanyA),
+            Assert.Single(owner.Queries));
+        Assert.Equal(new ProductStockDisplaySelectionV1(ProductId, "7"),
+            Assert.Single(Assert.Single(product.Queries).Selections));
         Assert.Contains(ErpPermissions.InventoryLabelsRead, authority.CheckedPermissions);
         Assert.Contains(ErpPermissions.InventoryBalancesRead, authority.CheckedPermissions);
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
@@ -39,6 +47,9 @@ public sealed class InventoryStockPositionHttpAcceptanceTests(GoymenErpApiFactor
         Assert.Equal(LabelId, item.GetProperty("labelId").GetGuid());
         Assert.Equal("3", item.GetProperty("labelVersion").GetString());
         Assert.Equal("7", item.GetProperty("availableKg").GetString());
+        var display = item.GetProperty("productDisplay");
+        Assert.Equal("P-1", display.GetProperty("identity").GetProperty("code").GetString());
+        Assert.Equal(1.5m, display.GetProperty("technical").GetProperty("thicknessMm").GetDecimal());
     }
 
     [Fact]
@@ -83,7 +94,8 @@ public sealed class InventoryStockPositionHttpAcceptanceTests(GoymenErpApiFactor
         using var host = CreateHost(new ControlledAuthority(), owner);
         using var client = CreateClient(host);
 
-        foreach (var query in new[] { "?unknown=x", "?q=a&q=b", "?limit=abc", "?limit=101" })
+        foreach (var query in new[] { "?unknown=x", "?q=a&q=b", "?limit=abc", "?limit=101",
+                     "?productId=not-a-guid", "?classification=standard", "?ownerId=not-a-guid" })
         {
             using var response = await client.GetAsync(InventoryStockPositionApiV1.PositionsPath + query);
             Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
@@ -140,8 +152,30 @@ public sealed class InventoryStockPositionHttpAcceptanceTests(GoymenErpApiFactor
         Assert.DoesNotContain("ROLL-1", body, StringComparison.Ordinal);
     }
 
-    private WebApplicationFactory<Program> CreateHost(ControlledAuthority authority, StubPositions owner) =>
-        factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
+    [Fact]
+    public async Task Product_owner_failure_is_code_less_and_discloses_no_position()
+    {
+        var product = new StubProductDisplays(ProductDisplays())
+        {
+            Failure = new ProductOperationException("private_product_detail", 503),
+        };
+        using var host = CreateHost(new ControlledAuthority(), new StubPositions(Positions()), product);
+        using var client = CreateClient(host);
+
+        using var response = await client.GetAsync(InventoryStockPositionApiV1.PositionsPath);
+
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.DoesNotContain("private_product_detail", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("ROLL-1", body, StringComparison.Ordinal);
+        Assert.Single(product.Queries);
+    }
+
+    private WebApplicationFactory<Program> CreateHost(ControlledAuthority authority, StubPositions owner,
+        StubProductDisplays? product = null)
+    {
+        product ??= new StubProductDisplays(ProductDisplays());
+        return factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
         {
             services.RemoveAll<IErpAuthorizationService>();
             services.AddSingleton<IErpAuthorizationService>(authority);
@@ -149,7 +183,10 @@ public sealed class InventoryStockPositionHttpAcceptanceTests(GoymenErpApiFactor
             services.AddSingleton<IErpAuthorityRevalidationService>(authority);
             services.RemoveAll<IInventoryStockPositionsV1>();
             services.AddSingleton<IInventoryStockPositionsV1>(owner);
+            services.RemoveAll<IProductStockDisplayReferencesV1>();
+            services.AddSingleton<IProductStockDisplayReferencesV1>(product);
         }));
+    }
 
     private static HttpClient CreateClient(WebApplicationFactory<Program> host)
     {
@@ -162,11 +199,17 @@ public sealed class InventoryStockPositionHttpAcceptanceTests(GoymenErpApiFactor
     private static InventoryStockPositionsV1 Positions() => new([
         new InventoryStockPositionV1(
             TestCompanyIds.CompanyA, LabelId, "3", "ROLL-1", ProductId,
-            null, null,
+            "7", "Standard",
             new InventoryLotV1(LotId, "HEAT-1", "COIL-1"), "HEAT-1", "COIL-1", "Complete",
             "Company", TestCompanyIds.CompanyA, "Company", TestCompanyIds.CompanyA,
             LocationId, "10", "8", "2", "1", "7"),
     ], false);
+
+    private static ProductStockDisplayBatchV1 ProductDisplays() => new([
+        new(ProductId, "7", new(ProductId, "7", "P-1", "Galvaniz bant"),
+            new(new(Guid.NewGuid(), "coil", "#66/stock-display"),
+                new(Guid.NewGuid(), "1", "coil-v1", "#66/stock-display"), 1.5m, 1250m), []),
+    ]);
 
     private static void AssertPrivateNoStore(HttpResponseMessage response)
     {
@@ -190,6 +233,21 @@ public sealed class InventoryStockPositionHttpAcceptanceTests(GoymenErpApiFactor
                 throw Failure;
             }
 
+            return Task.FromResult(answer);
+        }
+    }
+
+    private sealed class StubProductDisplays(ProductStockDisplayBatchV1 answer)
+        : IProductStockDisplayReferencesV1
+    {
+        public List<ProductStockDisplayBatchQueryV1> Queries { get; } = [];
+        public Exception? Failure { get; init; }
+
+        public Task<ProductStockDisplayBatchV1> ReadAsync(ProductStockDisplayBatchQueryV1 query,
+            CancellationToken cancellationToken = default)
+        {
+            Queries.Add(query);
+            if (Failure is not null) throw Failure;
             return Task.FromResult(answer);
         }
     }

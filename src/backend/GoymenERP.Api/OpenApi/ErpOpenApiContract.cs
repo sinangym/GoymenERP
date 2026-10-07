@@ -724,7 +724,7 @@ public static partial class ErpOpenApiContract
                 GoymenERP.Modules.Inventory.Application.InventoryStockPositionApiV1.GetPositionsOperationId,
                 StringComparison.Ordinal))
         {
-            AddInventoryParentRollCandidateParameters(operation);
+            AddInventoryStockPositionParameters(operation);
         }
 
         if (string.Equals(operation.OperationId, "GetInventoryPhysicalAllocationsV1", StringComparison.Ordinal))
@@ -1098,6 +1098,37 @@ public static partial class ErpOpenApiContract
                 Maximum = "100",
             },
             "Maximum candidate rows; default 25, range 1..100.");
+    }
+
+    private static void AddInventoryStockPositionParameters(OpenApiOperation operation)
+    {
+        AddInventoryParentRollCandidateParameters(operation);
+        AddQueryParameter(operation, "cursor",
+            new OpenApiSchema { Type = JsonSchemaType.String, MinLength = 1, MaxLength = 4096 },
+            "Opaque authenticated continuation bound to actor, company and normalized filters.");
+        AddQueryParameter(operation, "productId",
+            new OpenApiSchema { Type = JsonSchemaType.String, Format = "uuid" },
+            "Optional exact Product identifier.");
+        AddQueryParameter(operation, "locationId",
+            new OpenApiSchema { Type = JsonSchemaType.String, Format = "uuid" },
+            "Optional exact Organization location identifier.");
+        AddQueryParameter(operation, "classification",
+            new OpenApiSchema
+            {
+                Type = JsonSchemaType.String,
+                Enum = ["Standard", "SecondQuality", "Scrap"],
+            },
+            "Optional exact Inventory classification.");
+        AddQueryParameter(operation, "ownerKind",
+            new OpenApiSchema
+            {
+                Type = JsonSchemaType.String,
+                Enum = ["Company", "Counterparty"],
+            },
+            "Optional owner kind; ownerId is required with it.");
+        AddQueryParameter(operation, "ownerId",
+            new OpenApiSchema { Type = JsonSchemaType.String, Format = "uuid" },
+            "Optional exact owner identifier; ownerKind is required with it.");
     }
 
     private static void AddInventoryPhysicalAllocationReadParameters(OpenApiOperation operation)

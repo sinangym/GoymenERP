@@ -79,6 +79,12 @@ public sealed partial class OpenApiContractGenerationTests
             [
                 "query:q:false:type:string;canonicalization:trim;canonical-max-length:64",
                 "query:limit:false:type:integer;format:int32",
+                "query:cursor:false:type:string",
+                "query:productId:false:type:string;format:uuid",
+                "query:locationId:false:type:string;format:uuid",
+                "query:classification:false:type:string",
+                "query:ownerKind:false:type:string",
+                "query:ownerId:false:type:string;format:uuid",
             ]),
         new("get", "/api/v1/inventory/physical-allocations", "GetInventoryPhysicalAllocationsV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "409:application/problem+json", "503:application/problem+json"),
@@ -856,7 +862,7 @@ public sealed partial class OpenApiContractGenerationTests
             ["GetInventoryLabelBalancesV1"] = "ref:InventoryLabelBalancesV1",
             ["GetInventoryLabelDetailV1"] = "ref:InventoryLabelDetailV1",
             ["GetInventoryParentRollCandidatesV1"] = "ref:InventoryParentRollCandidatesV1",
-            ["GetInventoryStockPositionsV1"] = "ref:InventoryStockPositionsV1",
+            ["GetInventoryStockPositionsV1"] = "ref:InventoryStockPositionPageV1",
             ["GetInventoryPhysicalAllocationsV1"] = "ref:InventoryPhysicalAllocationReadsV1",
             ["GetInventoryProductCandidatesV1"] = "ref:ProductStockCandidatesV1",
             ["GetInventoryLocationCandidatesV1"] = "ref:OrganizationLocationCandidatesV1",
@@ -4337,20 +4343,23 @@ public sealed partial class OpenApiContractGenerationTests
                     ["items", "searchWindowFull"],
                     ("items", "type:array;items:ref:InventoryParentRollReferenceV1"),
                     ("searchWindowFull", "type:boolean")),
-                ["InventoryStockPositionsV1"] = ObjectSchema(
+                ["InventoryStockPositionPageV1"] = ObjectSchema(
                     ["items", "searchWindowFull"],
-                    ("items", "type:array;items:ref:InventoryStockPositionV1"),
-                    ("searchWindowFull", "type:boolean")),
-                ["InventoryStockPositionV1"] = ObjectSchema(
-                    ["companyId", "labelId", "labelVersion", "labelCode", "productId", "lot",
-                        "heatNumber", "coilNumber", "documentStatus", "ownerKind", "ownerId",
+                    ("items", "type:array;items:ref:InventoryStockPositionDisplayV1"),
+                    ("searchWindowFull", "type:boolean"),
+                    ("nextCursor", "type:null|string")),
+                ["InventoryStockPositionDisplayV1"] = ObjectSchema(
+                    ["companyId", "labelId", "labelVersion", "labelCode", "productId", "productVersion",
+                        "classification", "lot", "heatNumber", "coilNumber", "documentStatus", "ownerKind", "ownerId",
                         "custodianKind", "custodianId", "locationId", "physicalKg", "freePhysicalKg",
-                        "blockedPhysicalKg", "activeAllocationKg", "availableKg"],
+                        "blockedPhysicalKg", "activeAllocationKg", "availableKg", "productDisplay"],
                     ("companyId", "type:string;format:uuid"),
                     ("labelId", "type:string;format:uuid"),
                     ("labelVersion", "type:string"),
                     ("labelCode", "type:string"),
                     ("productId", "type:string;format:uuid"),
+                    ("productVersion", "type:null|string"),
+                    ("classification", "type:null|string"),
                     ("lot", "ref:InventoryLotV1"),
                     ("heatNumber", "type:null|string"),
                     ("coilNumber", "type:null|string"),
@@ -4364,7 +4373,35 @@ public sealed partial class OpenApiContractGenerationTests
                     ("freePhysicalKg", "type:string"),
                     ("blockedPhysicalKg", "type:string"),
                     ("activeAllocationKg", "type:string"),
-                    ("availableKg", "type:string")),
+                    ("availableKg", "type:string"),
+                    ("productDisplay", "ref:ProductStockDisplayResultV1")),
+                ["ProductStockDisplayResultV1"] = ObjectSchema(
+                    ["productId", "expectedProductVersion", "identity", "technical", "errors"],
+                    ("productId", "type:string;format:uuid"),
+                    ("expectedProductVersion", "type:string"),
+                    ("identity", "oneOf:ref:ProductStockDisplayIdentityV1|type:null"),
+                    ("technical", "oneOf:ref:ProductStockNominalTechnicalV1|type:null"),
+                    ("errors", "type:array;items:ref:ProductFieldError")),
+                ["ProductStockDisplayIdentityV1"] = ObjectSchema(
+                    ["productId", "productVersion", "code", "name"],
+                    ("productId", "type:string;format:uuid"), ("productVersion", "type:string"),
+                    ("code", "type:string"), ("name", "type:string")),
+                ["ProductStockNominalTechnicalV1"] = ObjectSchema(
+                    ["family", "template", "thicknessMm", "widthMm"],
+                    ("family", "ref:ProductManufacturingFamilyRevisionV1"),
+                    ("template", "ref:ProductManufacturingTemplateRevisionV1"),
+                    ("thicknessMm", "type:number|string;format:double"),
+                    ("widthMm", "type:number|string;format:double")),
+                ["ProductManufacturingFamilyRevisionV1"] = ObjectSchema(
+                    ["familyId", "familyCode", "sourceRevision"],
+                    ("familyId", "type:string;format:uuid"), ("familyCode", "type:string"),
+                    ("sourceRevision", "type:string")),
+                ["ProductManufacturingTemplateRevisionV1"] = ObjectSchema(
+                    ["templateId", "templateVersion", "templateCode", "sourceRevision"],
+                    ("templateId", "type:string;format:uuid"), ("templateVersion", "type:string"),
+                    ("templateCode", "type:string"), ("sourceRevision", "type:string")),
+                ["ProductFieldError"] = ObjectSchema(
+                    ["field", "code"], ("field", "type:string"), ("code", "type:string")),
                 ["InventoryParentRollReferenceV1"] = ObjectSchema(
                     ["companyId", "labelId", "labelVersion", "labelCode", "productId", "productVersion", "lot",
                         "heatNumber", "coilNumber", "documentStatus", "requiredDocuments", "attachedDocuments",
@@ -6058,9 +6095,14 @@ public sealed partial class OpenApiContractGenerationTests
                 AssertSalesProductQueryContract(actual.Value);
             }
 
-            if (expected.OperationId is "GetInventoryParentRollCandidatesV1" or "GetInventoryStockPositionsV1")
+            if (expected.OperationId == "GetInventoryParentRollCandidatesV1")
             {
                 AssertInventoryParentRollQueryContract(actual.Value);
+            }
+
+            if (expected.OperationId == "GetInventoryStockPositionsV1")
+            {
+                AssertInventoryStockPositionQueryContract(actual.Value);
             }
 
             if (expected.OperationId == "GetInventoryPhysicalAllocationsV1")
@@ -6574,6 +6616,26 @@ public sealed partial class OpenApiContractGenerationTests
         var limit = parameters["limit"];
         Assert.Equal(1, limit.GetProperty("minimum").GetInt32());
         Assert.Equal(100, limit.GetProperty("maximum").GetInt32());
+    }
+
+    private static void AssertInventoryStockPositionQueryContract(JsonElement operation)
+    {
+        var parameters = ReadQuerySchemas(operation);
+        Assert.Equal(8, parameters.Count);
+        var q = parameters["q"];
+        Assert.Equal("trim", q.GetProperty(ErpOpenApiContract.CanonicalizationExtensionName).GetString());
+        Assert.Equal(64, q.GetProperty(ErpOpenApiContract.CanonicalMaximumLengthExtensionName).GetInt32());
+        Assert.Equal((1, 100), (parameters["limit"].GetProperty("minimum").GetInt32(),
+            parameters["limit"].GetProperty("maximum").GetInt32()));
+        Assert.Equal((1, 4096), (parameters["cursor"].GetProperty("minLength").GetInt32(),
+            parameters["cursor"].GetProperty("maxLength").GetInt32()));
+        Assert.All(new[] { "productId", "locationId", "ownerId" }, name =>
+            Assert.Equal("uuid", parameters[name].GetProperty("format").GetString()));
+        Assert.Equal(["Standard", "SecondQuality", "Scrap"],
+            parameters["classification"].GetProperty("enum").EnumerateArray().Select(value => value.GetString()));
+        Assert.Equal(["Company", "Counterparty"],
+            parameters["ownerKind"].GetProperty("enum").EnumerateArray().Select(value => value.GetString()));
+        Assert.DoesNotContain("companyId", parameters.Keys);
     }
 
     /// <summary>#518 P2: the Sales order's dispatch notes are read for exactly one required uuid.</summary>

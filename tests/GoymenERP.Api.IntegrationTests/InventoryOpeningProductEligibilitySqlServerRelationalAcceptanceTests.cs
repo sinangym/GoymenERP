@@ -6,6 +6,7 @@ using GoymenERP.Api.Endpoints;
 using GoymenERP.Api.ProductRuntime;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
+using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Identity.Domain.Assignments;
 using GoymenERP.Modules.Identity.Infrastructure.Persistence;
 using GoymenERP.Modules.Identity.Infrastructure.Services;
@@ -59,6 +60,26 @@ public sealed class InventoryOpeningProductEligibilitySqlServerRelationalAccepta
             var inA = await PortIn(factory, CompanyA).EvaluateAsync(productId, version, CountedOn, default);
             Assert.True(inA.IsEligible);
             Assert.Empty(inA.Issues);
+
+            await using (var scope = factory.Services.CreateAsyncScope())
+            {
+                var company = new CompanyContext();
+                company.Set(CompanyA);
+                var db = scope.ServiceProvider.GetRequiredService<ProductDbContext>();
+                var displayPort = new ProductStockDisplayReferenceService(company, new User(CompanyA),
+                    new GrantedIn(CompanyA), new ProductReadStore(db), new SqlProductFamilyDefinitionSource(db));
+                var stock = new InventoryStockPositionsV1([
+                    new(CompanyA, Guid.NewGuid(), "1", "SQL-DISPLAY-1", productId, version, "Standard",
+                        new(Guid.NewGuid(), "HEAT-SQL", "COIL-SQL"), "HEAT-SQL", "COIL-SQL", "Complete",
+                        "Company", CompanyA, "Company", CompanyA, Guid.NewGuid(), "10", "10", "0", "0", "10"),
+                ], false);
+
+                var composed = await InventoryStockPositionDisplayHost.ComposeAsync(stock, displayPort, default);
+                var display = Assert.Single(composed.Items).ProductDisplay;
+                Assert.Equal((productId, version), (display.Identity!.ProductId, display.Identity.ProductVersion));
+                Assert.Equal((1.5m, 1250m), (display.Technical!.ThicknessMm, display.Technical.WidthMm));
+                Assert.Empty(display.Errors);
+            }
 
             // Company B has no approved kg source: the Settings code passes through; it is not a field error.
             var inB = await Assert.ThrowsAsync<SettingsPrerequisiteException>(
@@ -121,13 +142,13 @@ public sealed class InventoryOpeningProductEligibilitySqlServerRelationalAccepta
         await using var command = sql.CreateCommand();
         command.CommandText = """
             INSERT INTO [product].[Families] ([Id], [Code], [Name], [Cins], [Tur], [Tip], [RuleSet], [SourceRef]) VALUES
-                (@hot, 'SYN-HR-COIL', N'Sentetik sıcak rulo', N'Sentetik cins', N'Sentetik tür sıcak', N'Sentetik tip rulo', 'gdc-band-coil', 'SYNTHETIC-TEST');
+                (@hot, 'SYN-HR-COIL', N'Sentetik sıcak rulo', N'Sentetik cins', N'Sentetik tür sıcak', N'Sentetik tip rulo', 'gdc-band-coil', '#66/stock-display');
             INSERT INTO [product].[Templates] ([Id], [Version], [Code], [Name], [SourceRef]) VALUES
-                (@template, 1, 'SYN-BAND-COIL', N'Sentetik bant/rulo', 'SYNTHETIC-TEST');
+                (@template, 1, 'SYN-BAND-COIL', N'Sentetik bant/rulo', '#66/stock-display');
             INSERT INTO [product].[TemplateFamilies] ([TemplateId], [TemplateVersion], [FamilyId]) VALUES (@template, 1, @hot);
             INSERT INTO [product].[DictionaryEntries] ([Dictionary], [Code], [DisplayName], [Status], [SourceRef], [ParentCode], [MassGm2], [IsExplicitNone]) VALUES
-                ('syn-grades', N'SYN-A', N'Sentetik A', 1, 'SYNTHETIC-TEST', NULL, NULL, 0),
-                ('syn-coatings', N'syn-none', N'Sentetik kaplamasız', 1, 'SYNTHETIC-TEST', NULL, NULL, 1);
+                ('syn-grades', N'SYN-A', N'Sentetik A', 1, '#66/stock-display', NULL, NULL, 0),
+                ('syn-coatings', N'syn-none', N'Sentetik kaplamasız', 1, '#66/stock-display', NULL, NULL, 1);
             INSERT INTO [product].[TemplateFields] ([TemplateId], [TemplateVersion], [Key], [Position], [Kind], [Role], [Required], [Dictionary], [AllowsCandidate], [AppliesWhenField], [AppliesWhenCode], [ParentField]) VALUES
                 (@template, 1, 'syn-thickness-mm', 1, 1, 'thickness', 1, NULL, 0, NULL, NULL, NULL),
                 (@template, 1, 'syn-width-mm', 2, 1, 'width', 1, NULL, 0, NULL, NULL, NULL),
