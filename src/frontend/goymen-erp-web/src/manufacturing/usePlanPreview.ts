@@ -17,7 +17,7 @@ import type { SecuritySnapshot } from '../shell/authBoundary'
 import type { AuthBoundary } from '../shell/useAuthBoundary'
 import { isKilogramText } from './contract'
 import { previewPlan, type PlanPreview, type PlanPreviewRequest } from './planPreview'
-import type { PlanTargetBasis } from './planCommandApi'
+import type { PlanTargetBasis, SlittingSpecRequest } from './planCommandApi'
 import type { CapturedPlanCommercialContext } from './planRevisionContract'
 
 /** Inside DEC-PRDCT-005's locked 300–500 ms window. */
@@ -30,6 +30,12 @@ export interface PlanPreviewFormRow {
   /** Omitted by legacy/create callers; edit callers preserve the captured owner snapshot, including explicit null. */
   readonly commercialContext?: CapturedPlanCommercialContext | null
   readonly plannedKg: string
+}
+
+export interface SlittingSpecFormInput {
+  readonly enabled: boolean
+  readonly lines: readonly { readonly label: string; readonly bandWidthMm: string; readonly count: string }[]
+  readonly windingTargetKg: string
 }
 
 export type PlanPreviewInput =
@@ -63,12 +69,45 @@ function positiveKilograms(value: string): boolean {
   return isKilogramText(value) && /[1-9]/.test(value)
 }
 
+const POSITIVE_MILLIMETRES = /^(?=.*[1-9])(?:0|[1-9][0-9]*)(?:\.[0-9]{1,3})?$/
+const POSITIVE_COUNT = /^[1-9][0-9]*$/
+const INT32_MAX = 2_147_483_647
+
+function positiveInt32(value: string): boolean {
+  if (!POSITIVE_COUNT.test(value)) return false
+  const parsed = Number(value)
+  return Number.isSafeInteger(parsed) && parsed <= INT32_MAX
+}
+
+function slittingSpecRequest(input: SlittingSpecFormInput | undefined, reasons: string[]): SlittingSpecRequest | null {
+  if (input === undefined || !input.enabled) return null
+  if (input.lines.length === 0) reasons.push('Dilme ayrıntısı için en az bir bant satırı eklenmelidir.')
+  for (const line of input.lines) {
+    if (!POSITIVE_MILLIMETRES.test(line.bandWidthMm)) {
+      reasons.push(`${line.label}: bant genişliği sıfırdan büyük ve en fazla üç ondalıklı mm olmalıdır.`)
+    }
+    if (!positiveInt32(line.count)) {
+      reasons.push(`${line.label}: bant adedi 1 ile ${INT32_MAX} arasında tam sayı olmalıdır.`)
+    }
+  }
+  if (input.windingTargetKg !== '' && !positiveKilograms(input.windingTargetKg)) {
+    reasons.push('Sarım hedefi kg sıfırdan büyük bir sayı olmalıdır.')
+  }
+  if (reasons.length > 0) return null
+  return {
+    // `positiveInt32` above proves this exact conversion is lossless and inside the backend's `int` contract.
+    lines: input.lines.map((line) => ({ bandWidthMm: line.bandWidthMm, count: Number(line.count) })),
+    windingTargetKg: input.windingTargetKg === '' ? null : input.windingTargetKg,
+  }
+}
+
 /** The form content as a preview request, or what the form can already see is missing. No formula runs here. */
 export function planPreviewInput(
   workCenterId: string,
   rows: readonly PlanPreviewFormRow[],
   targetBasis: '' | PlanTargetBasis,
   targetKg: string,
+  slitting?: SlittingSpecFormInput,
 ): PlanPreviewInput {
   const reasons: string[] = []
   if (workCenterId === '') reasons.push('İş merkezi seçilmedi.')
@@ -80,6 +119,7 @@ export function planPreviewInput(
   if ((targetBasis === '') !== (targetKg === '') || (targetKg !== '' && !positiveKilograms(targetKg))) {
     reasons.push('Hedef kullanılacaksa türü ve sıfırdan büyük kg değeri birlikte girilmelidir.')
   }
+  const slittingSpec = slittingSpecRequest(slitting, reasons)
   if (reasons.length > 0) return { type: 'incomplete', reasons }
   return {
     type: 'ready',
@@ -92,6 +132,7 @@ export function planPreviewInput(
         ...(row.commercialContext === undefined ? {} : { commercialContext: row.commercialContext }),
       })),
       target: targetBasis === '' ? null : { basis: targetBasis, kg: targetKg },
+      ...(slitting === undefined ? {} : { slittingSpec }),
     },
   }
 }

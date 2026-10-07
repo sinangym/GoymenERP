@@ -218,8 +218,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // MFG close: owner-added closure/tolerance SQL facts extend the exact Manufacturing discovery inventory.
             // MFG technical snapshot: +4 migration/constraint SQL facts (38590e95... -> b1f5f069...).
             // Customer-owned input context: replace one obsolete refusal with three exact persistence/replay facts.
+            // Slitting draft spec: +1 public API SQL fact (e6aa3795... -> 286281c0...).
             ["tools/relational_inventory/manufacturing.txt"] =
-                "e6aa3795605379f774c8256126305e931aec3e9fb7bce62ca31a449d6b764cba",
+                "286281c0b2413bc4ff55d747ecf0b8b8e5c43e99bc78d353defdc4a668f66915",
 
             // organization
             // ORG master edit: +2 OrganizationMasterDataSqlServerRelationalAcceptanceTests facts (6b504dac… -> 3bad6ad8…).
@@ -230,9 +231,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // platform
             // AT-002: +2 GlobalSearchSqlServerRelationalAcceptanceTests facts (5bc60202… -> a5df5046…).
             // ERP-000G / AT-065: +8 DocumentVaultSqlServerRelationalAcceptanceTests facts (4ed7462b… -> e57500e0…).
-            // ST-01: +1 Inventory shell Product-authority grant/revoke capability fact.
+            // Inventory material-label exact-code global search and ST-01 Product-authority capability: +2 reviewed SQL facts, kept ordinal-sorted.
             ["tools/relational_inventory/platform.txt"] =
-                "71203f7eb48daf85768b35263d96316615aa6599b3b3fbe8bfd00eca79f5c8c5",
+                "cdcb7907a48a815dfc49bee7dbc971760c83e40fb9d95e526476aa04b72f8706",
 
             // product
             // DEC-CAR-003: +4 ProductDeactivationSqlServerRelationalAcceptanceTests facts (d7dbec7f… -> ddeead62…).

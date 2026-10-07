@@ -1944,11 +1944,14 @@ public sealed partial class OpenApiContractGenerationTests
         "manufacturing_kilogram_precision_exceeded", "manufacturing_kilogram_profile_company_mismatch",
         "manufacturing_kilogram_profile_invalid", "manufacturing_kilogram_profile_not_in_effect",
         "manufacturing_mass_negative", "manufacturing_mass_scale_exceeded", "manufacturing_order_closed",
-        "manufacturing_output_already_declared", "manufacturing_plan_not_approved",
-        "manufacturing_plan_not_draft", "manufacturing_plan_without_inputs",
+        "manufacturing_output_already_declared", "manufacturing_plan_engine_refused",
+        "manufacturing_plan_label_not_usable", "manufacturing_plan_not_approved",
+        "manufacturing_plan_not_draft", "manufacturing_plan_parameters_unavailable",
+        "manufacturing_plan_winding_does_not_fit", "manufacturing_plan_without_inputs",
         "manufacturing_return_already_recorded", "manufacturing_return_exceeds_issued",
         "manufacturing_roll_not_in_order", "manufacturing_roll_not_issued",
-        "manufacturing_stored_record_invalid", "manufacturing_unexplained_difference",
+        "manufacturing_slitting_spec_without_lines", "manufacturing_stored_record_invalid",
+        "manufacturing_unexplained_difference",
         "manufacturing_closure_policy_invalid", "manufacturing_closure_policy_not_effective",
         "manufacturing_closure_policy_scope_mismatch", "manufacturing_closure_fire_declaration_required",
         "manufacturing_closure_approval_required", "manufacturing_closure_approval_invalid",
@@ -3934,7 +3937,16 @@ public sealed partial class OpenApiContractGenerationTests
                     ("target", "oneOf:ref:TargetViewV1|type:null"),
                     ("approvedByUserId", "type:null|string;format:uuid"),
                     ("approvedAtUtc", "type:null|string;format:date-time"),
-                    ("calculation", "oneOf:ref:PlanPreviewViewV1|type:null")),
+                    ("calculation", "oneOf:ref:PlanPreviewViewV1|type:null"),
+                    ("slittingSpec", "oneOf:ref:SlittingSpecViewV1|type:null")),
+                ["SlitLineViewV1"] = ObjectSchema(
+                    ["bandWidthMm", "count"],
+                    ("bandWidthMm", "type:string"),
+                    ("count", "type:integer|string;format:int32")),
+                ["SlittingSpecViewV1"] = ObjectSchema(
+                    ["lines", "windingTargetKg"],
+                    ("lines", "type:array;items:ref:SlitLineViewV1"),
+                    ("windingTargetKg", "type:null|string")),
                 ["RemainingTargetViewV1"] = ObjectSchema(
                     ["basis", "targetKg", "achievedKg", "remainingKg"],
                     ("basis", "type:null|string"),
@@ -5380,6 +5392,14 @@ public sealed partial class OpenApiContractGenerationTests
                     ("plannedKg", "type:null|string"),
                     ("expectedLabelVersion", "type:string"),
                     ("commercialContext", "oneOf:ref:PlanCommercialContextRequestV1|type:null")),
+                ["SlitLineRequestV1"] = ObjectSchema(
+                    ["bandWidthMm", "count"],
+                    ("bandWidthMm", "type:null|string"),
+                    ("count", "type:integer|string;format:int32")),
+                ["SlittingSpecRequestV1"] = ObjectSchema(
+                    ["lines"],
+                    ("lines", "type:array|null;items:ref:SlitLineRequestV1"),
+                    ("windingTargetKg", "type:null|string")),
                 ["RecordFactRequestV1"] = ObjectSchema(
                     ["factId", "expectedVersion", "parentRollId", "kg", "occurredAtUtc"],
                     ("factId", "type:string;format:uuid"),
@@ -5392,13 +5412,15 @@ public sealed partial class OpenApiContractGenerationTests
                     ("planId", "type:string;format:uuid"),
                     ("workCenterId", "type:string;format:uuid"),
                     ("inputs", "type:array|null;items:ref:PlannedInputRequestV1"),
-                    ("target", "oneOf:ref:TargetRequestV1|type:null")),
+                    ("target", "oneOf:ref:TargetRequestV1|type:null"),
+                    ("slittingSpec", "oneOf:ref:SlittingSpecRequestV1|type:null")),
                 // AT-061: the preview takes the save's grammar without the plan id (nothing is created).
                 ["PlanPreviewRequestV1"] = ObjectSchema(
                     ["workCenterId", "inputs", "target"],
                     ("workCenterId", "type:string;format:uuid"),
                     ("inputs", "type:array|null;items:ref:PlannedInputRequestV1"),
-                    ("target", "oneOf:ref:TargetRequestV1|type:null")),
+                    ("target", "oneOf:ref:TargetRequestV1|type:null"),
+                    ("slittingSpec", "oneOf:ref:SlittingSpecRequestV1|type:null")),
                 // MFG-PLAN-EDIT: a Draft plan's revision names the version read and a reason; the process stays fixed.
                 ["RevisePlanRequestV1"] = ObjectSchema(
                     ["expectedVersion", "workCenterId", "inputs", "target", "reason"],
