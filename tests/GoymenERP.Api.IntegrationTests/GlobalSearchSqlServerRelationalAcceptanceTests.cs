@@ -58,6 +58,10 @@ public sealed class GlobalSearchSqlServerRelationalAcceptanceTests
     private static readonly Guid PartyOnlyB = Guid.Parse("7a000000-0000-0000-0000-000000000002");
     private static readonly Guid PartyShared = Guid.Parse("7a000000-0000-0000-0000-000000000003");
     private static readonly Guid PartyOtherName = Guid.Parse("7a000000-0000-0000-0000-000000000004");
+    private static readonly Guid LabelA = Guid.Parse("7b000000-0000-0000-0000-000000000001");
+    private static readonly Guid LabelB = Guid.Parse("7b000000-0000-0000-0000-000000000002");
+    private static readonly Guid LotA = Guid.Parse("7c000000-0000-0000-0000-000000000001");
+    private static readonly Guid LotB = Guid.Parse("7c000000-0000-0000-0000-000000000002");
     private static readonly string[] PriceWords = ["price", "amount", "discount", "currency", "payment", "total", "cost"];
     private static readonly SalesDraftStateAudit Submitted = new("sales.order-draft.submitted.v1", "Submit", "SENTETIK onaya gönderildi");
     private static readonly SalesDraftStateAudit Approved = new("sales.order-draft.approved.v1", "Approve", "SENTETIK onaylandı");
@@ -180,6 +184,38 @@ public sealed class GlobalSearchSqlServerRelationalAcceptanceTests
         }
     }
 
+    [SqlServerFact]
+    public async Task Material_label_exact_code_requires_both_inventory_reads_and_returns_only_the_context_company_on_real_sql()
+    {
+        await using var run = await Run.StartAsync();
+        await run.SeedLabelsAsync();
+        var before = await run.EffectsAsync();
+
+        await run.GrantAsync(TestUsers.CompanyAViewer, CompanyA, ErpPermissions.InventoryLabelsRead);
+        using var client = run.Client(TestUsers.CompanyAViewer, CompanyA);
+        Assert.DoesNotContain(GlobalSearchKindsV1.InventoryMaterialLabel,
+            Kinds(await run.SearchAsync(client, "SYN-EXACT-LABEL")));
+
+        await run.GrantAsync(TestUsers.CompanyAViewer, CompanyA, ErpPermissions.InventoryBalancesRead);
+        var answer = await run.SearchAsync(client, "SYN-EXACT-LABEL");
+        var group = answer.GetProperty("groups").EnumerateArray().Single(
+            candidate => candidate.GetProperty("kind").GetString() == GlobalSearchKindsV1.InventoryMaterialLabel);
+        Assert.False(group.GetProperty("hasMore").GetBoolean());
+        var item = Assert.Single(group.GetProperty("items").EnumerateArray());
+        Assert.Equal(Id(LabelA), item.GetProperty("id").GetString());
+        Assert.Equal("SYN-EXACT-LABEL", item.GetProperty("code").GetString());
+        Assert.Equal("PendingDocuments", item.GetProperty("state").GetString());
+        Assert.Equal(JsonValueKind.Null, item.GetProperty("name").ValueKind);
+        Assert.DoesNotContain(Id(LabelB), answer.GetRawText(), StringComparison.OrdinalIgnoreCase);
+
+        var noFuzzy = await run.SearchAsync(client, "SYN-EXACT");
+        var empty = noFuzzy.GetProperty("groups").EnumerateArray().Single(
+            candidate => candidate.GetProperty("kind").GetString() == GlobalSearchKindsV1.InventoryMaterialLabel);
+        Assert.Equal(0, empty.GetProperty("items").GetArrayLength());
+        Assert.False(empty.GetProperty("hasMore").GetBoolean());
+        Assert.Equal(before, await run.EffectsAsync());
+    }
+
     // ---- helpers --------------------------------------------------------------------------------
 
     private static string Id(Guid id) => id.ToString("D");
@@ -206,7 +242,7 @@ public sealed class GlobalSearchSqlServerRelationalAcceptanceTests
         return draft;
     }
 
-    private sealed record Effects(int SalesAttempts, int AuditEvents, long PartyVersions, long AccountVersions);
+    private sealed record Effects(int SalesAttempts, int AuditEvents, long PartyVersions, long AccountVersions, long InventoryLabelVersions);
 
     private sealed class Run : IAsyncDisposable
     {
@@ -258,6 +294,24 @@ public sealed class GlobalSearchSqlServerRelationalAcceptanceTests
                 ("@A", CompanyA), ("@B", CompanyB), ("@Customer", (int)PartyRole.Customer), ("@Now", T0));
         }
 
+        public async Task SeedLabelsAsync()
+        {
+            await ExecuteAsync(
+                """
+                INSERT INTO [inventory].[Lots]
+                    ([Id], [CompanyId], [ProductId], [HeatNumber], [CoilNumber], [Version], [CreatedAtUtc], [CreatedBy])
+                VALUES (@LotA, @A, @Product, NULL, NULL, 1, @Now, N'SENTETIK-search'),
+                       (@LotB, @B, @Product, NULL, NULL, 1, @Now, N'SENTETIK-search');
+                INSERT INTO [inventory].[Labels]
+                    ([Id], [CompanyId], [Code], [ProductId], [ProductVersion], [LotId], [HeatNumber], [CoilNumber],
+                     [Classification], [RequiredDocumentsJson], [Version], [CreatedAtUtc], [UpdatedAtUtc])
+                VALUES (@LabelA, @A, N'SYN-EXACT-LABEL', @Product, N'1', @LotA, NULL, NULL, NULL, N'["mtc"]', 1, @Now, @Now),
+                       (@LabelB, @B, N'SYN-EXACT-LABEL', @Product, N'1', @LotB, NULL, NULL, NULL, N'[]', 1, @Now, @Now);
+                """,
+                ("@LotA", LotA), ("@LotB", LotB), ("@LabelA", LabelA), ("@LabelB", LabelB),
+                ("@A", CompanyA), ("@B", CompanyB), ("@Product", Product), ("@Now", T0));
+        }
+
         /// <summary>A stored draft of the company, submitted and approved, through the real Sales store.</summary>
         public async Task<SalesOrderDraft> ApprovedDraftAsync(Guid company, string keyPrefix, string quantity)
         {
@@ -292,7 +346,8 @@ public sealed class GlobalSearchSqlServerRelationalAcceptanceTests
             await ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[DraftAttempts]"),
             await ScalarAsync<int>("SELECT COUNT(*) FROM [audit].[AuditEvents]"),
             await ScalarAsync<long>("SELECT ISNULL(SUM([Version]), 0) FROM [counterparty].[Parties]"),
-            await ScalarAsync<long>("SELECT ISNULL(SUM([Version]), 0) FROM [counterparty].[CompanyPartyAccounts]"));
+            await ScalarAsync<long>("SELECT ISNULL(SUM([Version]), 0) FROM [counterparty].[CompanyPartyAccounts]"),
+            await ScalarAsync<long>("SELECT ISNULL(SUM([Version]), 0) FROM [inventory].[Labels]"));
 
         public HttpClient Client(string subject, Guid company)
         {

@@ -3,6 +3,7 @@ using GoymenERP.Api.Multitenancy;
 using GoymenERP.Api.OpenApi;
 using GoymenERP.BuildingBlocks.Observability;
 using GoymenERP.BuildingBlocks.Search;
+using GoymenERP.Modules.Inventory.Infrastructure.Search;
 using GoymenERP.Modules.Sales.Infrastructure.Search;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -22,7 +23,8 @@ public static class GlobalSearchEndpoints
 {
     /// <summary>
     /// Registers the composer and the first-release sources: Cari parties and product cards through their owners' own list
-    /// reads (host adapters), and Sales orders through the Sales-owned source. Call after the modules are added.
+    /// reads (host adapters), Sales orders through the Sales-owned source, and physical labels through Inventory's exact-code
+    /// source. Call after the modules are added.
     /// </summary>
     public static IServiceCollection AddGlobalSearch(this IServiceCollection services)
     {
@@ -30,6 +32,7 @@ public static class GlobalSearchEndpoints
         services.AddScoped<IGlobalSearchSourceV1, CounterpartyGlobalSearchSource>();
         services.AddScoped<IGlobalSearchSourceV1, ProductGlobalSearchSource>();
         services.AddSalesGlobalSearchSource();
+        services.AddInventoryGlobalSearchSource();
         services.AddScoped<GlobalSearchComposer>();
         return services;
     }
