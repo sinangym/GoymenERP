@@ -317,6 +317,22 @@
     z-index: 50;
     padding: 8px 16px;
   }
+  /* UX v1.2 phone bar: the company picker shares the row with "Menü"; its label stays its
+     accessible name without taking width, and the user's name gives the row back. */
+  .companyPicker {
+    flex: 1 1 0;
+  }
+  .companyPickerLabel {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+  .user {
+    display: none;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
