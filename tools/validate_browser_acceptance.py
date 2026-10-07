@@ -1079,16 +1079,38 @@ def validate_privacy(
     selected = upload_paths(artifact_root, suite)
     runtime = SUITE_API_EXTENSIONS.get(suite, {}).get("runtime", {})
     if runtime:
-        require(isinstance(compose_model, dict),
-                f"suite {suite} artifact privacy requires the merged compose model")
-        services = compose_model.get("services")
-        require(isinstance(services, dict) and isinstance(services.get("api"), dict),
-                "artifact privacy compose model has no API service")
-        environment = services["api"].get("environment")
-        require(isinstance(environment, dict), "artifact privacy compose model has no API environment")
-        runtime_values = {key: environment.get(key) for key in runtime}
-        require(all(isinstance(value, str) for value in runtime_values.values()),
-                f"suite {suite} artifact privacy runtime key set is not exact")
+        if compose_model is not None:
+            require(isinstance(compose_model, dict),
+                    "artifact privacy compose model is not an object")
+            services = compose_model.get("services")
+            require(isinstance(services, dict) and isinstance(services.get("api"), dict),
+                    "artifact privacy compose model has no API service")
+            environment = services["api"].get("environment")
+            require(isinstance(environment, dict), "artifact privacy compose model has no API environment")
+            runtime_values = {key: environment.get(key) for key in runtime}
+            require(all(isinstance(value, str) for value in runtime_values.values()),
+                    f"suite {suite} artifact privacy runtime key set is not exact")
+        else:
+            # A workflow-dispatch run uses the workflow definition on the default branch while checking out the
+            # selected PR head. During that narrow version-skew window the old workflow supplies every secret as a
+            # forbidden value but has no compose-model argument. Recover only R14's already reviewed disposable key:
+            # strict base64, exact key length and the pinned decoded hash; zero or multiple matches fail closed.
+            require(suite == "r14" and len(runtime) == 1,
+                    f"suite {suite} artifact privacy requires the merged compose model")
+            reviewed_matches: list[str] = []
+            expected_hash = next(iter(runtime.values()))
+            for candidate in forbidden_values:
+                if not isinstance(candidate, str):
+                    continue
+                try:
+                    decoded = base64.b64decode(candidate, validate=True)
+                except (binascii.Error, ValueError):
+                    continue
+                if len(decoded) == 32 and hashlib.sha256(decoded).hexdigest() == expected_hash:
+                    reviewed_matches.append(candidate)
+            require(len(reviewed_matches) == 1,
+                    "suite r14 artifact privacy requires exactly one reviewed runtime key")
+            runtime_values = {next(iter(runtime)): reviewed_matches[0]}
         validate_suite_extensions(suite, runtime_values)
         forbidden_values = (*forbidden_values, *runtime_values.values())
     needles: list[bytes] = []

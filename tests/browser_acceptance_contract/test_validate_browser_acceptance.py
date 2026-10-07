@@ -210,10 +210,37 @@ class PrivacyTests(unittest.TestCase):
             self.assertNotIn(cursor_key, stdout.getvalue())
             self.assertNotIn(cursor_key, stderr.getvalue())
 
-    def test_r14_privacy_requires_the_compose_model_that_carries_its_runtime_key(self):
+    def test_r14_legacy_privacy_accepts_one_reviewed_runtime_key_without_a_compose_model(self):
+        cursor_key = base64.b64encode(bytes(range(32))).decode("ascii")
         with self._root({"browser-r14-junit.xml": b"<ok/>"}) as root:
-            with self.assertRaisesRegex(validator.ContractError, "requires the merged compose model"):
-                validator.validate_privacy(root, "r14")
+            validator.validate_privacy(root, "r14", ["long-enough-password", cursor_key])
+
+    def test_r14_legacy_privacy_refuses_a_runtime_key_leak_without_disclosing_the_value(self):
+        cursor_key = base64.b64encode(bytes(range(32))).decode("ascii")
+        with self._root({"browser-r14-junit.xml": f"<x>{cursor_key}</x>".encode("utf-8")}) as root:
+            stdout = io.StringIO()
+            stderr = io.StringIO()
+            with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                result = validator.main([
+                    "privacy",
+                    "--root", root,
+                    "--suite", "r14",
+                    "--forbidden-value", "long-enough-password",
+                    "--forbidden-value", cursor_key,
+                ])
+
+            self.assertEqual(1, result)
+            self.assertIn("runtime secret", stderr.getvalue())
+            self.assertNotIn(cursor_key, stdout.getvalue())
+            self.assertNotIn(cursor_key, stderr.getvalue())
+
+    def test_r14_legacy_privacy_fails_closed_when_the_reviewed_runtime_key_is_missing_or_mismatched(self):
+        mismatched = base64.b64encode(bytes(reversed(range(32)))).decode("ascii")
+        with self._root({"browser-r14-junit.xml": b"<ok/>"}) as root:
+            for forbidden in ([], [mismatched]):
+                with self.subTest(forbidden=bool(forbidden)):
+                    with self.assertRaisesRegex(validator.ContractError, "exactly one reviewed runtime key"):
+                        validator.validate_privacy(root, "r14", forbidden)
 
     def test_a_c01_forbidden_pattern_is_refused(self):
         with self._root({"browser-smoke-junit.xml": b"GET /api/v1/counterparties?cursor=abc"}) as root:
