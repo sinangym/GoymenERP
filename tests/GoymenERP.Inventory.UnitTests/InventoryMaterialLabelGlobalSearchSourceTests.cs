@@ -106,7 +106,7 @@ public sealed class InventoryMaterialLabelGlobalSearchSourceTests
     {
         var anonymous = new World { User = { Authenticated = false } };
         var unresolved = new World(resolveCompany: false);
-        var foreign = new World { User = { Companies = [CompanyB] } };
+        var foreign = new World { User = { Companies = new HashSet<Guid> { CompanyB } } };
 
         foreach (var world in new[] { anonymous, unresolved, foreign })
         {
@@ -144,31 +144,33 @@ public sealed class InventoryMaterialLabelGlobalSearchSourceTests
 
         services.AddInventoryGlobalSearchSource();
 
-        Assert.Single(services.Where(descriptor => descriptor.ServiceType == typeof(IGlobalSearchSourceV1)
-            && descriptor.ImplementationType == typeof(InventoryMaterialLabelGlobalSearchSource)));
-        Assert.Single(services.Where(descriptor => descriptor.ServiceType == typeof(IInventoryMaterialLabelSearchReaderV1)
-            && descriptor.ImplementationType == typeof(SqlInventoryMaterialLabelSearchReaderV1)));
+        Assert.Single(services, descriptor => descriptor.ServiceType == typeof(IGlobalSearchSourceV1)
+            && descriptor.ImplementationType == typeof(InventoryMaterialLabelGlobalSearchSource));
+        Assert.Single(services, descriptor => descriptor.ServiceType == typeof(IInventoryMaterialLabelSearchReaderV1)
+            && descriptor.ImplementationType == typeof(SqlInventoryMaterialLabelSearchReaderV1));
     }
 
     private sealed class World(bool resolveCompany = true)
     {
-        public CompanyContext Company { get; } = CreateCompany(resolveCompany);
+        public MutableCompanyContext Company { get; } = new(resolveCompany);
         public User User { get; set; } = new();
         public Authority Authority { get; set; } = new();
         public Reader Reader { get; set; } = new();
 
         public InventoryMaterialLabelGlobalSearchSource Source() => new(Reader, Company, User, Authority);
 
-        private static CompanyContext CreateCompany(bool resolved)
-        {
-            var context = new CompanyContext();
-            if (resolved)
-            {
-                context.Set(CompanyA);
-            }
+    }
 
-            return context;
-        }
+    private sealed class MutableCompanyContext(bool resolved) : ICompanyContext
+    {
+        private Guid? _companyId = resolved ? CompanyA : null;
+
+        public bool IsResolved => _companyId.HasValue;
+
+        public Guid CompanyId => _companyId
+            ?? throw new InvalidOperationException("SENTETIK unresolved company");
+
+        public void Set(Guid companyId) => _companyId = companyId;
     }
 
     private sealed class Reader : IInventoryMaterialLabelSearchReaderV1
