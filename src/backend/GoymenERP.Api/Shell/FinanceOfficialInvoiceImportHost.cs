@@ -27,6 +27,8 @@ public static class FinanceOfficialInvoiceImportHostExtensions
             provider.GetRequiredService<FinanceOfficialInvoiceImportApprovalServiceV1>());
         services.AddScoped<IApprovedFinanceOpenItemSourceCatalogPort>(provider =>
             provider.GetRequiredService<FinanceOfficialInvoiceImportApprovalServiceV1>());
+        services.AddScoped<IFinanceOfficialInvoiceImportWorkObservationSourceV1>(provider =>
+            provider.GetRequiredService<FinanceOfficialInvoiceImportApprovalServiceV1>());
 
         services.AddScoped<IFinanceOfficialInvoiceImportReadPortV1, FinanceOfficialInvoiceImportReadPortV1>();
         services.AddScoped<IFinanceOfficialInvoiceImportPendingApprovalReadServiceV1>(CreatePendingApprovalReadService);

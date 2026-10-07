@@ -914,7 +914,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // The host and two read services resolve/use the tenant-filtered FinanceDbContext only through DI/EF.
                 // Empty API inventories plus exact fingerprints keep direct SQL, connection and filter-bypass surfaces closed.
                 ["src/backend/GoymenERP.Api/Shell/FinanceOfficialInvoiceImportHost.cs"] =
-                    new("2a724b249d17bdbf408d7b0e5cb0cb6ef8f9c0443a9997a8344211e0de321d65",
+                    new("d6eb42c3009778d83872e20dfdbb2112c50230eff5893f1568930ed6de8bdf10",
                         new Dictionary<string, int>(StringComparer.Ordinal)),
                 ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
                  + "FinanceOfficialInvoiceImportPendingApprovalReadServiceV1.cs"] =
