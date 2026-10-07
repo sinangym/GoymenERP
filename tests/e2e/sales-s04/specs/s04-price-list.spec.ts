@@ -54,6 +54,18 @@ async function expectExactShellNavigation(page: Page, viewport: { width: number;
 
   await page.goto('/satis/siparisler/yeni')
   await expect(page.getByRole('heading', { level: 1, name: 'Yeni satış siparişi taslağı' })).toBeVisible()
+  if (viewport.width === 390) {
+    await page.getByRole('button', { name: 'Menü', exact: true }).click()
+    const drawer = page.getByRole('dialog', { name: 'Menü' })
+    await expect(drawer).toBeVisible()
+    const priceLists = drawer.getByRole('navigation', { name: 'Modül navigasyonu' })
+      .getByRole('link', { name: 'Fiyat listeleri' })
+    await expect(priceLists).toBeVisible()
+    await priceLists.click()
+    await expect(page).toHaveURL(/\/fiyat-listeleri$/)
+    await expect(page.getByRole('heading', { level: 1, name: 'Fiyat listeleri' })).toBeVisible()
+    return
+  }
   await expect(shellNavigation(page).getByRole('link', { name: 'Sipariş Taslakları' })).toBeVisible()
   await expect(shellNavigation(page).getByRole('link', { name: 'Yeni Sipariş Taslağı' })).toHaveCount(0)
   await expect(shellNavigation(page).getByRole('link', { name: 'Fiyat listeleri' })).toBeVisible()
@@ -86,8 +98,11 @@ test('S04-NAV-01 exact Sales and price-list entry points stay correct on desktop
 
   await page.setExtraHTTPHeaders({ 'X-Development-User': readerActor })
   await page.goto('/satis/siparisler')
-  await expect(shellNavigation(page).getByRole('link', { name: 'Sipariş Taslakları' })).toBeVisible()
-  await expect(shellNavigation(page).getByRole('link', { name: 'Fiyat listeleri' })).toHaveCount(0)
+  await page.getByRole('button', { name: 'Menü', exact: true }).click()
+  const readerNavigation = page.getByRole('dialog', { name: 'Menü' })
+    .getByRole('navigation', { name: 'Modül navigasyonu' })
+  await expect(readerNavigation.getByRole('link', { name: 'Sipariş Taslakları' })).toBeVisible()
+  await expect(readerNavigation.getByRole('link', { name: 'Fiyat listeleri' })).toHaveCount(0)
 })
 
 function readHeaders(actor: string): Record<string, string> {
