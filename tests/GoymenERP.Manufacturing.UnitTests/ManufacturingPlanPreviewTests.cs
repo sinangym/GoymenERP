@@ -295,7 +295,8 @@ public sealed class ManufacturingPlanPreviewTests
         Assert.DoesNotContain(preview.Resource!.MissingParameters,
             parameter => parameter.StartsWith("lines[", StringComparison.Ordinal));
         Assert.Contains("netUsableWidthMm", preview.Resource.MissingParameters);
-        Assert.Empty(fixture.Store.Commands.Where(command => command.Value.CommandName != ManufacturingCommandNames.SavePlan));
+        Assert.DoesNotContain(fixture.Store.Commands,
+            command => command.Value.CommandName != ManufacturingCommandNames.SavePlan);
     }
 
     [Fact]
