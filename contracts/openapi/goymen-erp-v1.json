@@ -71937,6 +71937,16 @@
                 "$ref": "#/components/schemas/CapturedPlanCommercialContextViewV1"
               }
             ]
+          },
+          "technicalSnapshot": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/CapturedPlanTechnicalSnapshotViewV1"
+              }
+            ]
           }
         }
       },
