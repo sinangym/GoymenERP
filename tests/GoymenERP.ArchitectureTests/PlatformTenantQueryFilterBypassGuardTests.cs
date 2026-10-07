@@ -203,7 +203,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // every listed case remains mandatory and zero-skip.
             // Inventory location display: +1 same-record Product/Inventory/Organization SQL fact.
             ["tools/relational_inventory/inventory.txt"] =
-                "6b13a2c9d8aa590357e028adf01ea48037f7c2e9484297d23d4e731dc57102d2",
+                "df1e45f746d65ce3c5f9b361dd280cf5b1b920b0bafcaefcbcc2e9f29c7abb60",
 
             // logistics
             // AT-053: +4 weighbridge SQL facts (81c1ff0b… -> 264898d7…).

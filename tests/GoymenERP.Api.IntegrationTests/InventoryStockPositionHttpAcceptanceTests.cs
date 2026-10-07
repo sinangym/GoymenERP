@@ -37,8 +37,7 @@ public sealed class InventoryStockPositionHttpAcceptanceTests(GoymenErpApiFactor
     private static readonly Guid SqlActorExternalId = Guid.Parse("21000000-0000-0000-0000-000000000003");
     private static readonly Guid SqlSystemRoleId = Guid.Parse("30000000-0000-0000-0000-000000000003");
 
-    [SqlServerFact]
-    public async Task Genuine_SQL_stock_position_composes_the_same_Product_Inventory_and_Organization_location_record()
+    internal static async Task RunGenuineSqlLocationDisplayJourneyAsync()
     {
         var baseConnection = Environment.GetEnvironmentVariable(
             SqlServerRelationalAcceptanceTests.ConnectionStringEnvironmentVariable)!;
@@ -753,4 +752,11 @@ public sealed class InventoryStockPositionHttpAcceptanceTests(GoymenErpApiFactor
             { TestCompanyIds.CompanyA, TestCompanyIds.CompanyB };
         public bool CanAccessCompany(Guid companyId) => AllowedCompanyIds.Contains(companyId);
     }
+}
+
+public sealed class InventoryStockPositionSqlServerRelationalAcceptanceTests
+{
+    [SqlServerFact]
+    public Task Genuine_SQL_stock_position_composes_the_same_Product_Inventory_and_Organization_location_record() =>
+        InventoryStockPositionHttpAcceptanceTests.RunGenuineSqlLocationDisplayJourneyAsync();
 }
