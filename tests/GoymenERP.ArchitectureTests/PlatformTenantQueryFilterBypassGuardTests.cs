@@ -222,8 +222,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
             // organization
             // ORG master edit: +2 OrganizationMasterDataSqlServerRelationalAcceptanceTests facts (6b504dac… -> 3bad6ad8…).
+            // Location display reader: +1 real-SQL tenant/display identity fact.
             ["tools/relational_inventory/organization.txt"] =
-                "3bad6ad8a1f56508e4f05115b2aecbaf2a9a576d56282c4b51f9d321c3a0b0d5",
+                "f10ed555fa8ca86e164ed096eb4196307e5712f709e36878d4ad9f83594bb6b2",
 
             // platform
             // AT-002: +2 GlobalSearchSqlServerRelationalAcceptanceTests facts (5bc60202… -> a5df5046…).
@@ -638,11 +639,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // AddScoped line; its Migrate/EnsureCreated branch is unchanged.
                 // Re-fingerprinted for the ORG master edit: one more AddScoped line (the master-data command service);
                 // the Migrate/EnsureCreated branch and its token counts are unchanged.
+                // Re-fingerprinted for the bounded location-display batch reader: one more scoped Organization-owned
+                // read registration; the Migrate/EnsureCreated branch and its token counts are unchanged.
                 ["src/backend/Modules/Organization/"
                  + "GoymenERP.Modules.Organization.Infrastructure/"
                  + "OrganizationModuleExtensions.cs"] =
                     new(
-                        "00f81ecdedc805aad5224b54b061ab6a5366f219a39cb2eda210680972dbbca9",
+                        "62780034e9ab9e02f13d50aa7960e9c0db39c3095655f6866d9b68131eefb55d",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
