@@ -44,12 +44,46 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         var firstPage = await StockPositions(companyA, CompanyA).SearchAsync(new("SYN-ST01", 1));
         Assert.True(firstPage.SearchWindowFull);
         Assert.Equal(first.LabelId, Assert.Single(firstPage.Items).LabelId);
+        Assert.NotNull(firstPage.NextCursor);
+
+        var secondPage = await StockPositions(companyA, CompanyA).SearchAsync(
+            new("SYN-ST01", 1, firstPage.NextCursor));
+        Assert.False(secondPage.SearchWindowFull);
+        Assert.Null(secondPage.NextCursor);
+        Assert.Equal(second.LabelId, Assert.Single(secondPage.Items).LabelId);
 
         var all = await StockPositions(companyA, CompanyA).SearchAsync(new("SYN-ST01", 100));
         Assert.False(all.SearchWindowFull);
         Assert.Equal([first.LabelId, second.LabelId], all.Items.Select(item => item.LabelId));
         Assert.All(all.Items, item => Assert.Equal(CompanyA, item.CompanyId));
         Assert.DoesNotContain(all.Items, item => item.LabelCode.Contains("FOREIGN", StringComparison.Ordinal));
+    }
+
+    [SqlServerFact]
+    public async Task Stock_position_filters_and_classification_are_applied_by_real_SQL_without_losing_provenance()
+    {
+        await using var run = await Run.StartAsync();
+        var selected = await SeedFreePhysicalSourceAsync(run, CompanyA, "SYN-ST01-FILTER-A", 10m);
+        await SeedFreePhysicalSourceAsync(run, CompanyA, "SYN-ST01-FILTER-B", 20m);
+        await ExecuteAsync(run,
+            "UPDATE inventory.Labels SET Classification = 2, Version = Version + 1 WHERE CompanyId = @company AND Id = @label",
+            ("@company", CompanyA), ("@label", selected.LabelId));
+
+        await using var context = run.Context(CompanyA);
+        var baseline = Assert.Single((await StockPositions(context, CompanyA).SearchAsync(
+            new("SYN-ST01-FILTER-A", 25))).Items);
+        Assert.Equal("SecondQuality", baseline.Classification);
+        Assert.False(string.IsNullOrWhiteSpace(baseline.ProductVersion));
+
+        var filtered = await StockPositions(context, CompanyA).SearchAsync(new(
+            "SYN-ST01-FILTER", 25, null, baseline.ProductId, baseline.LocationId,
+            InventoryLabelClassificationV1.SecondQuality, baseline.OwnerKind, baseline.OwnerId));
+        Assert.Equal(selected.LabelId, Assert.Single(filtered.Items).LabelId);
+
+        var excluded = await StockPositions(context, CompanyA).SearchAsync(new(
+            "SYN-ST01-FILTER", 25, null, Guid.NewGuid(), baseline.LocationId,
+            InventoryLabelClassificationV1.SecondQuality, baseline.OwnerKind, baseline.OwnerId));
+        Assert.Empty(excluded.Items);
     }
 
     [SqlServerFact]
@@ -82,7 +116,11 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             company,
             new StockPositionUser(companyId),
             new StockPositionAuthority(),
-            new SqlInventoryStockPositionReader(context));
+            new SqlInventoryStockPositionReader(context),
+            new InventoryStockPositionCursorCodec(
+                new InventoryStockPositionCursorRuntimeOptions(
+                    Convert.ToBase64String(Enumerable.Range(1, 32).Select(value => (byte)value).ToArray())),
+                TimeProvider.System));
     }
 
     private sealed class StockPositionUser(Guid companyId) : ICurrentUser

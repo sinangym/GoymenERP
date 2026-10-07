@@ -162,6 +162,7 @@ public sealed class InventoryStockPositionHttpAcceptanceTests(GoymenErpApiFactor
     private static InventoryStockPositionsV1 Positions() => new([
         new InventoryStockPositionV1(
             TestCompanyIds.CompanyA, LabelId, "3", "ROLL-1", ProductId,
+            null, null,
             new InventoryLotV1(LotId, "HEAT-1", "COIL-1"), "HEAT-1", "COIL-1", "Complete",
             "Company", TestCompanyIds.CompanyA, "Company", TestCompanyIds.CompanyA,
             LocationId, "10", "8", "2", "1", "7"),
