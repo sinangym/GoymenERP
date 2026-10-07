@@ -39,6 +39,7 @@ import {
   revisionInput,
   roll,
   ROLL_1,
+  technicalSnapshot,
 } from './testHarness'
 
 interface Schema {
@@ -298,7 +299,13 @@ describe('Manufacturing port ↔ canonical OpenAPI', () => {
   it('reads exactly the properties PlanRevisionListViewV1 and its parts declare, all required, on the history route', () => {
     const history = planRevisions([
       planRevision(),
-      planRevision({ revision: 1, planVersion: 2, reason: 'Gerekçe', revisedBy: 'actor', inputs: [revisionInput(ROLL_1, '800')] }),
+      planRevision({
+        revision: 1,
+        planVersion: 2,
+        reason: 'Gerekçe',
+        revisedBy: 'actor',
+        inputs: [revisionInput(ROLL_1, '800', '7', null, technicalSnapshot())],
+      }),
     ])
     expect(Object.keys(history).sort()).toEqual(names('PlanRevisionListViewV1'))
     expect(Object.keys(history.revisions[0] as object).sort()).toEqual(names('PlanRevisionViewV1'))
@@ -309,6 +316,7 @@ describe('Manufacturing port ↔ canonical OpenAPI', () => {
     expect([...(schema('PlanRevisionInputViewV1').required ?? [])].sort()).toEqual(
       ['parentRollId', 'plannedKg', 'expectedLabelVersion'].sort(),
     )
+    expect(schema('PlanRevisionInputViewV1').properties).toHaveProperty('technicalSnapshot')
     expect(decodePlanRevisions(history)).not.toBeNull()
     const plans = `${MANUFACTURING_BASE.replace(/^.*\/api\/v1/, '/api/v1')}/plans`
     const operation = document.paths[`${plans}/{planId}/revisions`]?.get as { readonly operationId?: string } | undefined

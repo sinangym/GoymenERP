@@ -408,7 +408,7 @@ function decodePlannedInput(value: unknown): PlannedInput | null {
     : { parentRollId, plannedKg, technicalSnapshot }
 }
 
-function decodeTechnicalSnapshot(value: unknown): CapturedPlanTechnicalSnapshot | undefined {
+export function decodeTechnicalSnapshot(value: unknown): CapturedPlanTechnicalSnapshot | undefined {
   if (!isObject(value) || !hasExactKeys(value, [
     'productId', 'productVersion', 'family', 'template', 'thicknessMm', 'widthMm', 'unitKg', 'effectiveOn',
   ])) return undefined

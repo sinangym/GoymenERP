@@ -795,6 +795,56 @@ public sealed class ProductGlobalRuntimeSqlServerRelationalAcceptanceTests
             var reopenedPlan = (await reopenedPlanResponse.Content.ReadFromJsonAsync<PlanViewV1>())!;
             Assert.Equal(JsonSerializer.Serialize(createdPlan), JsonSerializer.Serialize(reopenedPlan));
 
+            using var initialHistoryResponse = await freshClient.GetAsync(
+                $"/api/v1/manufacturing/plans/{planId:D}/revisions");
+            Assert.Equal(HttpStatusCode.OK, initialHistoryResponse.StatusCode);
+            var initialHistory = (await initialHistoryResponse.Content.ReadFromJsonAsync<PlanRevisionListViewV1>())!;
+            Assert.Equal(planId, initialHistory.PlanId);
+            var originalRevision = Assert.Single(initialHistory.Revisions);
+            var originalRevisionInput = Assert.Single(originalRevision.Inputs);
+            var originalRevisionSnapshot = Assert.IsType<CapturedPlanTechnicalSnapshotViewV1>(
+                originalRevisionInput.TechnicalSnapshot);
+            Assert.Equal((0, 1L, workCenterId, labelId, "1000",
+                    stocked.LabelVersion.ToString(CultureInfo.InvariantCulture)),
+                (originalRevision.Revision, originalRevision.PlanVersion, originalRevision.WorkCenterId,
+                    originalRevisionInput.ParentRollId, originalRevisionInput.PlannedKg,
+                    originalRevisionInput.ExpectedLabelVersion));
+            Assert.Equal(captured, originalRevisionSnapshot);
+            var originalRevisionJson = JsonSerializer.Serialize(originalRevision);
+
+            var revisionRequest = new RevisePlanRequestV1(1, workCenterId,
+                [new PlannedInputRequestV1(labelId, "900",
+                    stocked.LabelVersion.ToString(CultureInfo.InvariantCulture))], null,
+                "Genuine teknik snapshot revizyonu");
+            using var revisionMessage = new HttpRequestMessage(HttpMethod.Post,
+                $"/api/v1/manufacturing/plans/{planId:D}/revision")
+            { Content = JsonContent.Create(revisionRequest) };
+            revisionMessage.Headers.Add("Idempotency-Key", "product-genuine-sac-manufacturing-plan-revision-once");
+            using var revisedPlanResponse = await freshClient.SendAsync(revisionMessage);
+            Assert.Equal(HttpStatusCode.OK, revisedPlanResponse.StatusCode);
+            var revisedPlan = (await revisedPlanResponse.Content.ReadFromJsonAsync<PlanViewV1>())!;
+            var revisedInput = Assert.Single(revisedPlan.Inputs);
+            var revisedSnapshot = Assert.IsType<CapturedPlanTechnicalSnapshotViewV1>(revisedInput.TechnicalSnapshot);
+            Assert.Equal((planId, "Draft", 2L, workCenterId, labelId, "900"),
+                (revisedPlan.PlanId, revisedPlan.Status, revisedPlan.Version, revisedPlan.WorkCenterId,
+                    revisedInput.ParentRollId, revisedInput.PlannedKg));
+            Assert.Equal(captured, revisedSnapshot);
+
+            using var revisedHistoryResponse = await freshClient.GetAsync(
+                $"/api/v1/manufacturing/plans/{planId:D}/revisions");
+            Assert.Equal(HttpStatusCode.OK, revisedHistoryResponse.StatusCode);
+            var revisedHistory = (await revisedHistoryResponse.Content.ReadFromJsonAsync<PlanRevisionListViewV1>())!;
+            Assert.Equal(planId, revisedHistory.PlanId);
+            Assert.Equal([0, 1], revisedHistory.Revisions.Select(revision => revision.Revision));
+            Assert.Equal([1L, 2L], revisedHistory.Revisions.Select(revision => revision.PlanVersion));
+            Assert.Equal(originalRevisionJson, JsonSerializer.Serialize(revisedHistory.Revisions[0]));
+            var recordedRevisionInput = Assert.Single(revisedHistory.Revisions[1].Inputs);
+            Assert.Equal((labelId, "900", stocked.LabelVersion.ToString(CultureInfo.InvariantCulture)),
+                (recordedRevisionInput.ParentRollId, recordedRevisionInput.PlannedKg,
+                    recordedRevisionInput.ExpectedLabelVersion));
+            Assert.Equal(revisedSnapshot, Assert.IsType<CapturedPlanTechnicalSnapshotViewV1>(
+                recordedRevisionInput.TechnicalSnapshot));
+
             await using (var sql = new SqlConnection(factory.DatabaseConnectionString))
             {
                 await sql.OpenAsync();
