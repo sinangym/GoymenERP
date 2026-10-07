@@ -1,0 +1,298 @@
+/* ST-01 stock list (Stok UX FAZ-1). UX v1.2 density: the data starts early, cells are compact two-line blocks,
+   numbers are right-aligned in tabular figures; on a phone each row is a readable card. No new colour, font or
+   radius round: the values are the shell's and the existing inventory screens'. */
+
+.page {
+  display: grid;
+  gap: 0.75rem;
+  margin: 0 auto;
+  padding: 1rem 0;
+  min-width: 0;
+}
+
+.header h1 {
+  margin: 0;
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+}
+
+.search {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.search input {
+  min-width: 0;
+  width: 16rem;
+  max-width: 100%;
+}
+
+.disclosures {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.disclosure[aria-expanded="true"] {
+  font-weight: 600;
+}
+
+.panel {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1rem;
+  margin: 0;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--color-border, #cbd5e1);
+  border-radius: 6px;
+}
+
+.panel[hidden] {
+  display: none;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.chips ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.chips li {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.125rem 0.25rem 0.125rem 0.625rem;
+  border: 1px solid var(--color-border, #cbd5e1);
+  border-radius: 999px;
+  font-size: 0.875rem;
+}
+
+.chips li button {
+  min-width: 24px;
+  min-height: 24px;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+
+.clear {
+  font-size: 0.875rem;
+}
+
+.error {
+  color: #9b1c1c;
+}
+
+.tableWrap {
+  overflow-x: auto;
+}
+
+.table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 0.875rem;
+}
+
+.table th,
+.table td {
+  padding: 0.5rem 0.625rem;
+  border-bottom: 1px solid var(--color-border, #cbd5e1);
+  text-align: left;
+  vertical-align: top;
+}
+
+.table th {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.number {
+  text-align: right !important;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.available {
+  font-weight: 600;
+}
+
+.nowrap {
+  white-space: nowrap;
+}
+
+.labelLink {
+  font-weight: 600;
+}
+
+.sub {
+  display: block;
+  color: #55607a;
+  font-size: 0.8125rem;
+}
+
+.cellLine {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.25rem;
+}
+
+.product {
+  display: grid;
+  min-width: 0;
+}
+
+.code {
+  color: #55607a;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 0.8125rem;
+}
+
+.name {
+  max-width: 18rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cardLink {
+  font-size: 0.8125rem;
+}
+
+.filterButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  min-width: 24px;
+  min-height: 24px;
+  padding: 2px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: none;
+  color: #55607a;
+  cursor: pointer;
+}
+
+.filterButton:hover,
+.filterButton:focus-visible {
+  border-color: var(--color-border, #cbd5e1);
+  color: #1a2233;
+}
+
+.icon {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linejoin: round;
+}
+
+.more {
+  justify-self: start;
+}
+
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Phone: one card per row; the four quantities stay on the card's face. */
+.cards {
+  display: grid;
+  gap: 0.75rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.card {
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  border: 1px solid var(--color-border, #cbd5e1);
+  border-radius: 6px;
+  background: #fff;
+}
+
+.cardHead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.cardLabel {
+  display: grid;
+  min-width: 0;
+}
+
+.cardFacts,
+.cardQuantities {
+  display: grid;
+  gap: 0.375rem;
+  margin: 0;
+}
+
+.cardFacts div {
+  display: grid;
+  grid-template-columns: 6.5rem minmax(0, 1fr);
+  gap: 0.5rem;
+}
+
+.cardFacts dt,
+.cardQuantities dt {
+  color: #55607a;
+  font-size: 0.8125rem;
+}
+
+.cardFacts dd,
+.cardQuantities dd {
+  margin: 0;
+  min-width: 0;
+}
+
+.cardQuantities {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--color-border, #cbd5e1);
+}
+
+.cardQuantities dd {
+  font-variant-numeric: tabular-nums;
+}
+
+.cardQuantities .available dd {
+  font-weight: 600;
+}
+
+.card .name {
+  max-width: none;
+  white-space: normal;
+}
