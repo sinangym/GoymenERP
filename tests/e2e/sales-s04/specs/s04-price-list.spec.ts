@@ -51,37 +51,37 @@ const shellNavigation = (page: Page) => page.getByRole('navigation', { name: 'Mo
 async function expectExactShellNavigation(page: Page, viewport: { width: number; height: number }): Promise<void> {
   await page.setViewportSize(viewport)
   await page.setExtraHTTPHeaders({ 'X-Development-User': preparerActor })
-
-  await page.goto('/satis/siparisler/yeni')
-  await expect(page.getByRole('heading', { level: 1, name: 'Yeni satış siparişi taslağı' })).toBeVisible()
-  if (viewport.width === 390) {
+  const compact = viewport.width === 390
+  const activeNavigation = async () => {
+    if (!compact) return shellNavigation(page)
     await page.getByRole('button', { name: 'Menü', exact: true }).click()
     const drawer = page.getByRole('dialog', { name: 'Menü' })
     await expect(drawer).toBeVisible()
-    const priceLists = drawer.getByRole('navigation', { name: 'Modül navigasyonu' })
-      .getByRole('link', { name: 'Fiyat listeleri' })
-    await expect(priceLists).toBeVisible()
-    await priceLists.click()
-    await expect(page).toHaveURL(/\/fiyat-listeleri$/)
-    await expect(page.getByRole('heading', { level: 1, name: 'Fiyat listeleri' })).toBeVisible()
-    return
+    return drawer.getByRole('navigation', { name: 'Modül navigasyonu' })
   }
-  await expect(shellNavigation(page).getByRole('link', { name: 'Sipariş Taslakları' })).toBeVisible()
-  await expect(shellNavigation(page).getByRole('link', { name: 'Yeni Sipariş Taslağı' })).toHaveCount(0)
-  await expect(shellNavigation(page).getByRole('link', { name: 'Fiyat listeleri' })).toBeVisible()
-  await expect(shellNavigation(page).locator('[aria-current="page"]')).toHaveCount(0)
+
+  await page.goto('/satis/siparisler/yeni')
+  await expect(page.getByRole('heading', { level: 1, name: 'Yeni satış siparişi taslağı' })).toBeVisible()
+  let navigation = await activeNavigation()
+  await expect(navigation.getByRole('link', { name: 'Sipariş Taslakları' })).toBeVisible()
+  await expect(navigation.getByRole('link', { name: 'Yeni Sipariş Taslağı' })).toHaveCount(0)
+  await expect(navigation.getByRole('link', { name: 'Fiyat listeleri' })).toBeVisible()
+  await expect(navigation.locator('[aria-current="page"]')).toHaveCount(0)
 
   await page.goto('/satis/siparisler')
   await expect(page.getByRole('heading', { level: 1, name: 'Satış siparişi taslakları' })).toBeVisible()
   await expect(page.getByRole('main').getByRole('link', { name: 'Yeni taslak' })).toHaveCount(1)
-  await expect(shellNavigation(page).getByRole('link', { name: 'Yeni Sipariş Taslağı' })).toHaveCount(0)
-  await expect(shellNavigation(page).locator('[aria-current="page"]')).toHaveCount(1)
-  await expect(shellNavigation(page).getByRole('link', { name: 'Sipariş Taslakları' })).toHaveAttribute('aria-current', 'page')
+  navigation = await activeNavigation()
+  await expect(navigation.getByRole('link', { name: 'Yeni Sipariş Taslağı' })).toHaveCount(0)
+  await expect(navigation.locator('[aria-current="page"]')).toHaveCount(1)
+  await expect(navigation.getByRole('link', { name: 'Sipariş Taslakları' })).toHaveAttribute('aria-current', 'page')
 
-  await page.goto('/fiyat-listeleri')
+  if (compact) await navigation.getByRole('link', { name: 'Fiyat listeleri' }).click()
+  else await page.goto('/fiyat-listeleri')
   await expect(page.getByRole('heading', { level: 1, name: 'Fiyat listeleri' })).toBeVisible()
-  await expect(shellNavigation(page).locator('[aria-current="page"]')).toHaveCount(1)
-  await expect(shellNavigation(page).getByRole('link', { name: 'Fiyat listeleri' })).toHaveAttribute('aria-current', 'page')
+  navigation = await activeNavigation()
+  await expect(navigation.locator('[aria-current="page"]')).toHaveCount(1)
+  await expect(navigation.getByRole('link', { name: 'Fiyat listeleri' })).toHaveAttribute('aria-current', 'page')
 }
 
 test('S04-NAV-01 exact Sales and price-list entry points stay correct on desktop and mobile', async ({ page, request }) => {
