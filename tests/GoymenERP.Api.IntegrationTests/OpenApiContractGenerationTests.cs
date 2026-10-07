@@ -2489,7 +2489,8 @@ public sealed partial class OpenApiContractGenerationTests
                     ("parentRollId", "type:string;format:uuid"),
                     ("plannedKg", "type:string"),
                     ("expectedLabelVersion", "type:null|string"),
-                    ("commercialContext", "oneOf:ref:CapturedPlanCommercialContextViewV1|type:null")),
+                    ("commercialContext", "oneOf:ref:CapturedPlanCommercialContextViewV1|type:null"),
+                    ("technicalSnapshot", "oneOf:ref:CapturedPlanTechnicalSnapshotViewV1|type:null")),
                 // AT-061 / AT-062: the plan calculator's answer for an unsaved plan content; every value is lossless text.
                 ["PlanPreviewViewV1"] = ObjectSchema(
                     ["calculatorVersion", "workCenterId", "process", "plannedRollCount", "plannedInputKg", "target", "answers", "rolls", "missingParameters", "hasRefusal"],
