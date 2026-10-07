@@ -4,7 +4,7 @@ import { MAXIMUM_TERM_LENGTH, MINIMUM_TERM_LENGTH, SEARCH_KIND, type SearchKind 
 
 export const SEARCH_TEXT = {
   boxLabel: 'Genel arama',
-  boxPlaceholder: 'Cari, ürün, sipariş no…',
+  boxPlaceholder: 'Cari, ürün, sipariş no, etiket kodu…',
   submit: 'Ara',
   /** The toolbar button's accessible name: it contains the visible "Ara" and never collides with a page's own "Ara". */
   boxSubmit: 'Genel aramada ara',
@@ -27,10 +27,13 @@ export const SEARCH_KIND_LABEL: Readonly<Record<SearchKind, string>> = {
   [SEARCH_KIND.party]: 'Cari kartlar',
   [SEARCH_KIND.product]: 'Ürünler',
   [SEARCH_KIND.salesOrder]: 'Satış siparişleri',
+  [SEARCH_KIND.materialLabel]: 'Stok etiketleri',
 }
 
 /** The owners' state names the screen knows; any other is shown as the owner sent it, never guessed. */
 export const SEARCH_STATE_LABEL: Readonly<Record<string, string>> = {
+  Complete: 'Belgeler tamam',
+  PendingDocuments: 'Belge/kalite bekliyor',
   Active: 'Aktif',
   Inactive: 'Pasif',
   Draft: 'Taslak',

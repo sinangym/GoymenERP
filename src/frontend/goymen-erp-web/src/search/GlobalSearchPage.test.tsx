@@ -25,6 +25,8 @@ import { SEARCH_TEXT } from './searchText'
 
 const COMPANY_A = '99999999-9999-9999-9999-999999999999'
 const PARTY = '11111111-1111-1111-1111-111111111111'
+const LABEL = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'
+const STOCK_LIST = 'inventory.stock-positions.list' as CapabilityId
 const ORDER = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
 const CARI_LIST = 'cari.parties.list' as CapabilityId
 const CARI_DETAIL = 'cari.parties.detail' as CapabilityId
@@ -100,6 +102,7 @@ function renderApp(initialPath: string) {
             children: [
               { index: true, element: <p>Ana sayfa</p> },
               ...searchRoutes,
+              { path: 'stok/etiket/:labelId', element: <CapabilityRoute capability={STOCK_LIST}><OwnerStub label="Stok etiketi" /></CapabilityRoute> },
               // Behind the real entry gate, as the owner routes are in the app: leaving and coming Back are route entries.
               { path: 'cari', element: <CapabilityRoute capability={CARI_LIST}><OwnerStub label="Cari listesi" /></CapabilityRoute> },
               { path: 'cari/:partyId', element: <CapabilityRoute capability={CARI_DETAIL}><OwnerStub label="Cari detay" /></CapabilityRoute> },
@@ -230,5 +233,60 @@ describe('AT-002 global search', () => {
     expect(document.body.textContent).not.toContain('CAR-000001')
     expect(screen.queryByTestId(`global-search-group-${SEARCH_KIND.party}`)).toBeNull()
     expect(screen.queryByTestId('global-search-no-results')).toBeNull()
+  })
+})
+
+
+const labelAnswer = (query: string, state = 'Complete') => ({
+  query,
+  groups: [{ kind: SEARCH_KIND.materialLabel, items: [{ id: LABEL, code: query, name: null, secondaryName: null, state, date: null }], hasMore: false }],
+})
+
+describe('Inventory-only global search capability and label navigation', () => {
+  it('offers search with only the stock capability, opens the label and freshly reads Back', async () => {
+    let resolveBack: ((response: Response) => void) | undefined
+    let reads = 0
+    const { searches } = installFetch([STOCK_LIST], (url) => {
+      const query = new URL(url, 'http://x').searchParams.get('q') ?? ''
+      reads += 1
+      return reads === 1 ? json(labelAnswer(query)) : new Promise<Response>((resolve) => { resolveBack = resolve })
+    })
+    const router = renderApp('/')
+    // The harness also mounts the box, as in the older journeys.
+    await userEvent.type((await screen.findAllByLabelText(SEARCH_TEXT.boxLabel, { selector: 'input' }))[0], 'LBL-000001')
+    await userEvent.click(screen.getAllByRole('button', { name: SEARCH_TEXT.boxSubmit })[0])
+    const group = await screen.findByTestId(`global-search-group-${SEARCH_KIND.materialLabel}`)
+    expect(within(group).getByRole('heading', { name: 'Stok etiketleri' })).toBeTruthy()
+    expect(within(group).getByText('Belgeler tamam')).toBeTruthy()
+    expect(within(group).queryByText(SEARCH_TEXT.more)).toBeNull()
+    const link = within(group).getByRole('link', { name: 'LBL-000001' })
+    expect(link.getAttribute('href')).toBe(`/stok/etiket/${LABEL}`)
+    expect(searches).toEqual([{ url: '/api/v1/search?q=LBL-000001', companyId: COMPANY_A }])
+    await userEvent.click(link)
+    expect((await screen.findByTestId('owner-screen')).textContent).toBe(`Stok etiketi ${LABEL}`)
+    await router.navigate(-1)
+    await waitFor(() => expect(searches).toHaveLength(2))
+    expect(router.state.location.search).toBe('?q=LBL-000001')
+    expect(screen.queryByTestId(`global-search-group-${SEARCH_KIND.materialLabel}`)).toBeNull()
+    expect(document.body.textContent).not.toContain('LBL-000001')
+    resolveBack!(json(labelAnswer('LBL-000001', 'PendingDocuments')))
+    expect(within(await screen.findByTestId(`global-search-group-${SEARCH_KIND.materialLabel}`)).getByText('Belge/kalite bekliyor')).toBeTruthy()
+  })
+
+  it('does not turn an Inventory hit into a link without the existing stock capability', async () => {
+    installFetch([CARI_LIST], (url) => json(labelAnswer(new URL(url, 'http://x').searchParams.get('q') ?? '')))
+    renderApp('/arama?q=LBL-000001')
+    const group = await screen.findByTestId(`global-search-group-${SEARCH_KIND.materialLabel}`)
+    expect(within(group).getByText('LBL-000001')).toBeTruthy()
+    expect(within(group).queryByRole('link')).toBeNull()
+  })
+
+  it('shows no Inventory group or existence hint when the server omits that kind', async () => {
+    installFetch([STOCK_LIST], (url) => json({ query: new URL(url, 'http://x').searchParams.get('q'), groups: [] }))
+    renderApp('/arama?q=LBL-000001')
+    await screen.findByTestId('global-search-no-results')
+    expect(screen.queryByTestId(`global-search-group-${SEARCH_KIND.materialLabel}`)).toBeNull()
+    expect(screen.queryByRole('link', { name: 'LBL-000001' })).toBeNull()
+    expect(document.body.textContent).not.toContain('Stok etiketleri')
   })
 })
