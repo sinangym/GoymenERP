@@ -306,7 +306,8 @@ internal sealed class InventoryStockPositionService(
         }
 
         if (!Enum.TryParse<StockPartyKind>(value, ignoreCase: false, out var parsed)
-            || !Enum.IsDefined(parsed))
+            || !Enum.IsDefined(parsed)
+            || !string.Equals(value, parsed.ToString(), StringComparison.Ordinal))
         {
             return false;
         }

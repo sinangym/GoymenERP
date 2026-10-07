@@ -504,7 +504,7 @@ public static partial class ErpOpenApiContract
         return builder;
     }
 
-    private static Task TransformOperationAsync(
+    private static async Task TransformOperationAsync(
         OpenApiOperation operation,
         OpenApiOperationTransformerContext context,
         CancellationToken cancellationToken)
@@ -724,7 +724,7 @@ public static partial class ErpOpenApiContract
                 GoymenERP.Modules.Inventory.Application.InventoryStockPositionApiV1.GetPositionsOperationId,
                 StringComparison.Ordinal))
         {
-            AddInventoryStockPositionParameters(operation);
+            await AddInventoryStockPositionParametersAsync(operation, context, cancellationToken);
         }
 
         if (string.Equals(operation.OperationId, "GetInventoryPhysicalAllocationsV1", StringComparison.Ordinal))
@@ -889,7 +889,6 @@ public static partial class ErpOpenApiContract
             }
         }
 
-        return Task.CompletedTask;
     }
 
     private static void AddHeaderParameter(
@@ -1100,7 +1099,10 @@ public static partial class ErpOpenApiContract
             "Maximum candidate rows; default 25, range 1..100.");
     }
 
-    private static void AddInventoryStockPositionParameters(OpenApiOperation operation)
+    private static async Task AddInventoryStockPositionParametersAsync(
+        OpenApiOperation operation,
+        OpenApiOperationTransformerContext context,
+        CancellationToken cancellationToken)
     {
         AddInventoryParentRollCandidateParameters(operation);
         AddQueryParameter(operation, "cursor",
@@ -1129,6 +1131,106 @@ public static partial class ErpOpenApiContract
         AddQueryParameter(operation, "ownerId",
             new OpenApiSchema { Type = JsonSchemaType.String, Format = "uuid" },
             "Optional exact owner identifier; ownerKind is required with it.");
+        AddHeaderParameter(operation,
+            GoymenERP.Modules.Inventory.Application.InventoryStockPositionApiV1.ProductDisplayContractHeader,
+            required: false,
+            "Optional exact compatibility selection. Omit for the previously published stock-position response; "
+            + "send 1.0 for Product identity and nominal technical display fields.",
+            minimumLength: 3,
+            maximumLength: 3,
+            pattern: "^1\\.0$");
+
+        if (operation.Responses is not null
+            && operation.Responses.TryGetValue("200", out var response)
+            && response.Content is not null
+            && response.Content.TryGetValue("application/json", out var content))
+        {
+            var document = context.Document ?? throw new InvalidOperationException(
+                "Inventory stock-position OpenAPI document was not available.");
+            document.Components ??= new OpenApiComponents();
+            document.Components.Schemas ??= new Dictionary<string, IOpenApiSchema>(StringComparer.Ordinal);
+            var stockDisplayTypes = new (string Name, Type Type)[]
+            {
+                (nameof(GoymenERP.Modules.Product.Application.Contracts.ProductManufacturingFamilyRevisionV1),
+                    typeof(GoymenERP.Modules.Product.Application.Contracts.ProductManufacturingFamilyRevisionV1)),
+                (nameof(GoymenERP.Modules.Product.Application.Contracts.ProductManufacturingTemplateRevisionV1),
+                    typeof(GoymenERP.Modules.Product.Application.Contracts.ProductManufacturingTemplateRevisionV1)),
+                (nameof(GoymenERP.Modules.Product.Application.Contracts.ProductFieldError),
+                    typeof(GoymenERP.Modules.Product.Application.Contracts.ProductFieldError)),
+                (nameof(GoymenERP.Modules.Product.Application.Contracts.ProductStockDisplayIdentityV1),
+                    typeof(GoymenERP.Modules.Product.Application.Contracts.ProductStockDisplayIdentityV1)),
+                (nameof(GoymenERP.Modules.Product.Application.Contracts.ProductStockNominalTechnicalV1),
+                    typeof(GoymenERP.Modules.Product.Application.Contracts.ProductStockNominalTechnicalV1)),
+                (nameof(GoymenERP.Modules.Product.Application.Contracts.ProductStockDisplayResultV1),
+                    typeof(GoymenERP.Modules.Product.Application.Contracts.ProductStockDisplayResultV1)),
+                (nameof(GoymenERP.Api.Endpoints.InventoryStockPositionDisplayV1),
+                    typeof(GoymenERP.Api.Endpoints.InventoryStockPositionDisplayV1)),
+                (nameof(GoymenERP.Api.Endpoints.InventoryStockPositionPageV1),
+                    typeof(GoymenERP.Api.Endpoints.InventoryStockPositionPageV1)),
+            };
+            foreach (var (name, type) in stockDisplayTypes)
+            {
+                document.Components.Schemas[name] = await context.GetOrCreateSchemaAsync(
+                    type, cancellationToken: cancellationToken);
+            }
+
+            OpenApiSchemaReference Reference(string name) => new(name, document, externalResource: null);
+            var pageSchema = (OpenApiSchema)document.Components.Schemas[
+                nameof(GoymenERP.Api.Endpoints.InventoryStockPositionPageV1)];
+            pageSchema.Properties ??= new Dictionary<string, IOpenApiSchema>(StringComparer.Ordinal);
+            pageSchema.Properties["items"] = new OpenApiSchema
+            {
+                Type = JsonSchemaType.Array,
+                Items = Reference(nameof(GoymenERP.Api.Endpoints.InventoryStockPositionDisplayV1)),
+            };
+            var displaySchema = (OpenApiSchema)document.Components.Schemas[
+                nameof(GoymenERP.Api.Endpoints.InventoryStockPositionDisplayV1)];
+            displaySchema.Properties ??= new Dictionary<string, IOpenApiSchema>(StringComparer.Ordinal);
+            displaySchema.Properties["lot"] = Reference(nameof(GoymenERP.Modules.Inventory.Application.InventoryLotV1));
+            displaySchema.Properties["productDisplay"] = Reference(
+                nameof(GoymenERP.Modules.Product.Application.Contracts.ProductStockDisplayResultV1));
+            var productSchema = (OpenApiSchema)document.Components.Schemas[
+                nameof(GoymenERP.Modules.Product.Application.Contracts.ProductStockDisplayResultV1)];
+            productSchema.Properties ??= new Dictionary<string, IOpenApiSchema>(StringComparer.Ordinal);
+            productSchema.Properties["identity"] = new OpenApiSchema
+            {
+                OneOf =
+                [
+                    Reference(nameof(GoymenERP.Modules.Product.Application.Contracts.ProductStockDisplayIdentityV1)),
+                    new OpenApiSchema { Type = JsonSchemaType.Null },
+                ],
+            };
+            productSchema.Properties["technical"] = new OpenApiSchema
+            {
+                OneOf =
+                [
+                    Reference(nameof(GoymenERP.Modules.Product.Application.Contracts.ProductStockNominalTechnicalV1)),
+                    new OpenApiSchema { Type = JsonSchemaType.Null },
+                ],
+            };
+            productSchema.Properties["errors"] = new OpenApiSchema
+            {
+                Type = JsonSchemaType.Array,
+                Items = Reference(nameof(GoymenERP.Modules.Product.Application.Contracts.ProductFieldError)),
+            };
+            var technicalSchema = (OpenApiSchema)document.Components.Schemas[
+                nameof(GoymenERP.Modules.Product.Application.Contracts.ProductStockNominalTechnicalV1)];
+            technicalSchema.Properties ??= new Dictionary<string, IOpenApiSchema>(StringComparer.Ordinal);
+            technicalSchema.Properties["family"] = Reference(
+                nameof(GoymenERP.Modules.Product.Application.Contracts.ProductManufacturingFamilyRevisionV1));
+            technicalSchema.Properties["template"] = Reference(
+                nameof(GoymenERP.Modules.Product.Application.Contracts.ProductManufacturingTemplateRevisionV1));
+
+            var enriched = new OpenApiSchemaReference(
+                nameof(GoymenERP.Api.Endpoints.InventoryStockPositionPageV1), document, externalResource: null);
+            var legacy = await context.GetOrCreateSchemaAsync(
+                typeof(GoymenERP.Api.Endpoints.InventoryStockPositionLegacyPageV1),
+                cancellationToken: cancellationToken);
+            content.Schema = new OpenApiSchema
+            {
+                OneOf = [legacy, enriched],
+            };
+        }
     }
 
     private static void AddInventoryPhysicalAllocationReadParameters(OpenApiOperation operation)

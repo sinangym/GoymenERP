@@ -5,6 +5,8 @@ public static class InventoryStockPositionApiV1
 {
     public const string PositionsPath = "/api/v1/inventory/positions";
     public const string GetPositionsOperationId = "GetInventoryStockPositionsV1";
+    public const string ProductDisplayContractHeader = "X-ERP-Inventory-Stock-Display";
+    public const string ProductDisplayContractVersion = "1.0";
 }
 
 /// <summary>

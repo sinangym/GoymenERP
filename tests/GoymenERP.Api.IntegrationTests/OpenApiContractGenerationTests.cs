@@ -862,7 +862,7 @@ public sealed partial class OpenApiContractGenerationTests
             ["GetInventoryLabelBalancesV1"] = "ref:InventoryLabelBalancesV1",
             ["GetInventoryLabelDetailV1"] = "ref:InventoryLabelDetailV1",
             ["GetInventoryParentRollCandidatesV1"] = "ref:InventoryParentRollCandidatesV1",
-            ["GetInventoryStockPositionsV1"] = "ref:InventoryStockPositionPageV1",
+            ["GetInventoryStockPositionsV1"] = "oneOf:inline:items,searchWindowFull|InventoryStockPositionPageV1",
             ["GetInventoryPhysicalAllocationsV1"] = "ref:InventoryPhysicalAllocationReadsV1",
             ["GetInventoryProductCandidatesV1"] = "ref:ProductStockCandidatesV1",
             ["GetInventoryLocationCandidatesV1"] = "ref:OrganizationLocationCandidatesV1",
@@ -6165,6 +6165,10 @@ public sealed partial class OpenApiContractGenerationTests
             {
                 expectedHeaderNames.Add("Idempotency-Key");
             }
+            if (operation.OperationId == InventoryStockPositionApiV1.GetPositionsOperationId)
+            {
+                expectedHeaderNames.Add(InventoryStockPositionApiV1.ProductDisplayContractHeader);
+            }
 
             Assert.Equal(
                 expectedHeaderNames.Order(StringComparer.Ordinal),
@@ -6471,6 +6475,23 @@ public sealed partial class OpenApiContractGenerationTests
             return $"array:{itemReference.GetString()?.Split('/').Last()}";
         }
 
+        if (schema.TryGetProperty("oneOf", out var oneOf))
+        {
+            var alternatives = oneOf.EnumerateArray().Select(candidate =>
+            {
+                if (candidate.TryGetProperty("$ref", out var candidateReference))
+                {
+                    return candidateReference.GetString()!.Split('/').Last();
+                }
+
+                var required = candidate.GetProperty("required").EnumerateArray()
+                    .Select(value => value.GetString()).ToArray();
+                return $"inline:{string.Join(',', required)}";
+            }).ToArray();
+            Assert.Equal(alternatives.Length, alternatives.Distinct(StringComparer.Ordinal).Count());
+            return $"oneOf:{string.Join('|', alternatives)}";
+        }
+
         return $"type:{schema.GetProperty("type").GetString()}";
     }
 
@@ -6636,6 +6657,25 @@ public sealed partial class OpenApiContractGenerationTests
         Assert.Equal(["Company", "Counterparty"],
             parameters["ownerKind"].GetProperty("enum").EnumerateArray().Select(value => value.GetString()));
         Assert.DoesNotContain("companyId", parameters.Keys);
+        var contract = Assert.Single(operation.GetProperty("parameters").EnumerateArray(), parameter =>
+            parameter.GetProperty("in").GetString() == "header"
+            && parameter.GetProperty("name").GetString() == InventoryStockPositionApiV1.ProductDisplayContractHeader);
+        Assert.Equal("^1\\.0$", contract.GetProperty("schema").GetProperty("pattern").GetString());
+        var success = operation.GetProperty("responses").GetProperty("200").GetProperty("content")
+            .GetProperty("application/json").GetProperty("schema").GetProperty("oneOf");
+        var alternatives = success.EnumerateArray().ToArray();
+        Assert.Equal(["items", "searchWindowFull"], alternatives[0].GetProperty("required")
+            .EnumerateArray().Select(value => value.GetString()));
+        var legacyItem = alternatives[0].GetProperty("properties").GetProperty("items")
+            .GetProperty("items");
+        Assert.Equal([
+                "companyId", "labelId", "labelVersion", "labelCode", "productId", "lot",
+                "heatNumber", "coilNumber", "documentStatus", "ownerKind", "ownerId",
+                "custodianKind", "custodianId", "locationId", "physicalKg", "freePhysicalKg",
+                "blockedPhysicalKg", "activeAllocationKg", "availableKg",
+            ], legacyItem.GetProperty("required").EnumerateArray().Select(value => value.GetString()));
+        Assert.Equal("#/components/schemas/InventoryStockPositionPageV1",
+            alternatives[1].GetProperty("$ref").GetString());
     }
 
     /// <summary>#518 P2: the Sales order's dispatch notes are read for exactly one required uuid.</summary>
@@ -7117,10 +7157,7 @@ public sealed partial class OpenApiContractGenerationTests
 
     private static HashSet<string> CollectReachableSuccessComponents(JsonElement schemas)
     {
-        var queue = new Queue<string>(ExpectedSuccessSchemas.Values
-            .Where(value => value.StartsWith("ref:", StringComparison.Ordinal)
-                || value.StartsWith("array:", StringComparison.Ordinal))
-            .Select(value => value[(value.IndexOf(':') + 1)..]));
+        var queue = new Queue<string>(ExpectedSuccessSchemas.Values.SelectMany(SuccessSchemaReferences));
         var reachable = new HashSet<string>(StringComparer.Ordinal);
         while (queue.TryDequeue(out var schemaName))
         {
@@ -7136,6 +7173,22 @@ public sealed partial class OpenApiContractGenerationTests
         }
 
         return reachable;
+    }
+
+    private static IEnumerable<string> SuccessSchemaReferences(string value)
+    {
+        if (value.StartsWith("ref:", StringComparison.Ordinal)
+            || value.StartsWith("array:", StringComparison.Ordinal))
+        {
+            yield return value[(value.IndexOf(':') + 1)..];
+            yield break;
+        }
+
+        if (!value.StartsWith("oneOf:", StringComparison.Ordinal)) yield break;
+        foreach (var alternative in value["oneOf:".Length..].Split('|', StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (!alternative.StartsWith("inline:", StringComparison.Ordinal)) yield return alternative;
+        }
     }
 
     private static IEnumerable<string> ReadSchemaReferences(JsonElement element)

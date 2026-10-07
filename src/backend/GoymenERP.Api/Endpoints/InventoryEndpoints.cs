@@ -5,6 +5,7 @@ using GoymenERP.Api.Multitenancy;
 using GoymenERP.Api.OpenApi;
 using GoymenERP.BuildingBlocks.Observability;
 using GoymenERP.BuildingBlocks.Security;
+using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Product.Application.Contracts;
 
@@ -713,6 +714,9 @@ public static partial class InventoryEndpoints
                 HttpContext httpContext,
                 IInventoryStockPositionsV1 positions,
                 IProductStockDisplayReferencesV1 productDisplays,
+                ICompanyContext companyContext,
+                ICurrentUser currentUser,
+                IErpAuthorityRevalidationService authority,
                 CancellationToken cancellationToken) =>
             {
                 SetPrivateNoStore(httpContext.Response);
@@ -721,12 +725,25 @@ public static partial class InventoryEndpoints
                     return StockPositionProblem(StatusCodes.Status400BadRequest,
                         InventoryStockPositionCodesV1.InvalidQuery);
                 }
+                if (!TryReadStockPositionDisplayContract(httpContext.Request.Headers, out var includeProductDisplay))
+                {
+                    return StockPositionProblem(StatusCodes.Status400BadRequest,
+                        InventoryStockPositionCodesV1.InvalidQuery);
+                }
 
                 try
                 {
+                    var scope = includeProductDisplay
+                        ? InventoryStockPositionDisplayHost.CaptureScope(companyContext, currentUser)
+                        : null;
                     var page = await positions.SearchAsync(query, cancellationToken);
-                    return Results.Ok(await InventoryStockPositionDisplayHost.ComposeAsync(
-                        page, productDisplays, cancellationToken));
+                    if (!includeProductDisplay)
+                    {
+                        return Results.Ok(InventoryStockPositionDisplayHost.Legacy(page));
+                    }
+
+                    return Results.Ok(await InventoryStockPositionDisplayHost.ComposeAuthorizedAsync(
+                        scope!, page, productDisplays, companyContext, currentUser, authority, cancellationToken));
                 }
                 catch (InventoryStockPositionException exception)
                 {
@@ -771,6 +788,25 @@ public static partial class InventoryEndpoints
             .ProducesErpConflict(InventoryStockPositionCodesV1.ReadConflict)
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();
+    }
+
+    private static bool TryReadStockPositionDisplayContract(IHeaderDictionary headers, out bool enabled)
+    {
+        enabled = false;
+        if (!headers.TryGetValue(InventoryStockPositionApiV1.ProductDisplayContractHeader, out var values))
+        {
+            return true;
+        }
+
+        if (values.Count != 1
+            || !string.Equals(values[0], InventoryStockPositionApiV1.ProductDisplayContractVersion,
+                StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        enabled = true;
+        return true;
     }
 
     private static bool TryReadStockPositionQuery(
@@ -825,7 +861,11 @@ public static partial class InventoryEndpoints
         }
 
         string? ownerKind = null;
-        if (query.TryGetValue("ownerKind", out var ownerKindValues)) ownerKind = ownerKindValues[0];
+        if (query.TryGetValue("ownerKind", out var ownerKindValues))
+        {
+            ownerKind = ownerKindValues[0];
+            if (ownerKind is not "Company" and not "Counterparty") return false;
+        }
 
         parsed = new InventoryStockPositionQueryV1(
             q, limit, cursor, productId, locationId, classification, ownerKind, ownerId);
