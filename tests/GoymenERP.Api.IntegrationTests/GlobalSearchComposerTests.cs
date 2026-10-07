@@ -116,7 +116,8 @@ public sealed class GlobalSearchComposerTests
     {
         var party = Source.Answering(GlobalSearchKindsV1.CounterpartyParty, false);
         var composer = new GlobalSearchComposer([party, Source.Answering(GlobalSearchKindsV1.ProductItem, false),
-            Source.Answering(GlobalSearchKindsV1.SalesOrder, false)], new CompanyContext());
+            Source.Answering(GlobalSearchKindsV1.SalesOrder, false),
+            Source.Answering(GlobalSearchKindsV1.InventoryMaterialLabel, false)], new CompanyContext());
 
         await Assert.ThrowsAsync<GlobalSearchUnavailableException>(() => composer.SearchAsync("ab"));
         Assert.Empty(party.Requests);
@@ -216,7 +217,11 @@ public sealed class GlobalSearchComposerTests
             new GlobalSearchHitV1(id, "SO-2", null, null, "Approved", null, CompanyA));
     }
 
-    private static GlobalSearchComposer Composer(params IGlobalSearchSourceV1[] sources) => new GlobalSearchComposer(sources, Company(CompanyA));
+    private static GlobalSearchComposer Composer(params IGlobalSearchSourceV1[] sources) => new GlobalSearchComposer(
+        sources.Any(source => source.Kind == GlobalSearchKindsV1.InventoryMaterialLabel)
+            ? sources
+            : [.. sources, Source.Denied(GlobalSearchKindsV1.InventoryMaterialLabel)],
+        Company(CompanyA));
 
     private static CompanyContext Company(Guid companyId)
     {
