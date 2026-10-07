@@ -220,6 +220,22 @@ class SuiteComposeContractTests(unittest.TestCase):
         self.assertNotIn("SENTETIK-L04-Secret", message)
         self.assertTrue(message.isascii())
 
+    def test_l04_delegated_database_diagnostic_ignores_quoted_password_catalog_text(self):
+        broken = model("normal")
+        broken["services"]["api"]["environment"]["DB_CONNECTION_STRING"] = (
+            'Server=sqlserver;Password="SENTETIK-prefix;Database=SENTETIK-private-fragment";User Id=sa'
+        )
+        no_extension = dict(
+            browser.SUITE_API_EXTENSIONS["l04"], issuer=False, actors=False, identity=False)
+        with mock.patch.dict(browser.SUITE_API_EXTENSIONS, {"l04": no_extension}):
+            with self.assertRaises(browser.ContractError) as caught:
+                browser.validate_suite_compose(broken, "l04", COMMIT, PROJECT)
+
+        message = str(caught.exception)
+        self.assertIn("actualCatalogSha256=missing]", message)
+        self.assertNotIn("SENTETIK-private-fragment", message)
+        self.assertNotIn("Password", message)
+
     def test_normal_refuses_any_part_of_the_envelope(self):
         for key in (*ENVELOPE, "C01E2e__Profile", "C01E2e__Anything"):
             with self.subTest(key=key):

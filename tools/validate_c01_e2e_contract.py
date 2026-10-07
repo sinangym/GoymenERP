@@ -152,12 +152,49 @@ def _catalog_sha256(value: str) -> str:
     return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
 
+def _split_connection_string_components(connection_string: str) -> list[str] | None:
+    components: list[str] = []
+    current: list[str] = []
+    quote: str | None = None
+    index = 0
+
+    while index < len(connection_string):
+        character = connection_string[index]
+        if quote is not None:
+            current.append(character)
+            if character == quote:
+                if index + 1 < len(connection_string) and connection_string[index + 1] == quote:
+                    current.append(connection_string[index + 1])
+                    index += 1
+                else:
+                    quote = None
+        elif character in {'"', "'"}:
+            quote = character
+            current.append(character)
+        elif character == ";":
+            components.append("".join(current))
+            current = []
+        else:
+            current.append(character)
+        index += 1
+
+    if quote is not None:
+        return None
+
+    components.append("".join(current))
+    return components
+
+
 def _actual_catalog_sha256(connection_string: object) -> str:
     if not isinstance(connection_string, str):
         return "missing"
 
+    components = _split_connection_string_components(connection_string)
+    if components is None:
+        return "ambiguous"
+
     catalogs: set[str] = set()
-    for component in connection_string.split(";"):
+    for component in components:
         key, separator, value = component.partition("=")
         normalized_key = " ".join(key.strip().casefold().split())
         if separator and normalized_key in {"database", "initial catalog"} and value.strip():

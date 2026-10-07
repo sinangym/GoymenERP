@@ -210,6 +210,33 @@ class ComposeContractTests(unittest.TestCase):
                 self.assertNotIn(connection_string, message)
                 self.assertNotIn("SENTETIK-", message)
 
+    def test_disposable_database_diagnostic_ignores_catalog_text_inside_quoted_password(self):
+        password = 'SENTETIK-prefix;Database=SENTETIK-private-fragment'
+        cases = (
+            (
+                f'Server=sqlserver;Password="{password}";User Id=sa',
+                "missing",
+            ),
+            (
+                f'Database=GoymenErpC01_wrong;Password="{password}";User Id=sa',
+                hashlib.sha256(b"goymenerpc01_wrong").hexdigest(),
+            ),
+        )
+        password_fragment_hash = hashlib.sha256(
+            'SENTETIK-private-fragment"'.casefold().encode("utf-8")
+        ).hexdigest()
+
+        for connection_string, actual in cases:
+            with self.subTest(actual=actual):
+                model = valid_compose()
+                model["services"]["api"]["environment"]["DB_CONNECTION_STRING"] = connection_string
+                with self.assertRaises(validator.ContractError) as caught:
+                    validator.validate_compose(model, COMMIT, PROJECT)
+                message = str(caught.exception)
+                self.assertIn(f"actualCatalogSha256={actual}]", message)
+                self.assertNotIn(password_fragment_hash, message)
+                self.assertNotIn(password, message)
+
     def test_missing_or_reordered_bootstrap_identity_fails(self):
         for key, value, message in (
             ("BootstrapIdentity__HeaderName", "X-Other", "bootstrap header"),
