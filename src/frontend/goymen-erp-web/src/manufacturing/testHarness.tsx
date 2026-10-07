@@ -140,6 +140,7 @@ export function plan(overrides: Record<string, unknown> = {}) {
     approvedByUserId: null,
     approvedAtUtc: null,
     calculation: null,
+    slittingSpec: null,
     ...overrides,
   }
 }

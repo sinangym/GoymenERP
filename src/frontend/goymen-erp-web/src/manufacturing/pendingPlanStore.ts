@@ -10,6 +10,28 @@ export interface PendingPlanCreate {
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const VERSION = /^[1-9][0-9]*$/
 const KG = /^(0|[1-9][0-9]{0,17})(\.[0-9]{1,20})?$/
+const MM = /^(?=.*[1-9])(?:0|[1-9][0-9]*)(?:\.[0-9]{1,3})?$/
+const INT32_MAX = 2_147_483_647
+
+function validSlittingSpec(value: SavePlanRequest['slittingSpec']): boolean {
+  // This is an additive request field: legacy snapshots may omit it or store explicit null.
+  if (value === undefined || value === null) return true
+  if (typeof value !== 'object' || Array.isArray(value) || !Array.isArray(value.lines) || value.lines.length === 0) {
+    return false
+  }
+  if (value.windingTargetKg !== null
+    && (!KG.test(value.windingTargetKg) || !/[1-9]/.test(value.windingTargetKg))) return false
+  return value.lines.every((line) =>
+    typeof line === 'object'
+    && line !== null
+    && !Array.isArray(line)
+    && typeof line.bandWidthMm === 'string'
+    && MM.test(line.bandWidthMm)
+    && typeof line.count === 'number'
+    && Number.isSafeInteger(line.count)
+    && line.count > 0
+    && line.count <= INT32_MAX)
+}
 
 export function pendingPlanCreateKey(
   sessionEpoch: number,
@@ -62,6 +84,7 @@ function decode(value: unknown): PendingPlanCreate | null {
   ) {
     return null
   }
+  if (!validSlittingSpec(request.slittingSpec)) return null
   return candidate as PendingPlanCreate
 }
 

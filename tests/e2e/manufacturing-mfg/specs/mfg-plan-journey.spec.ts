@@ -457,6 +457,129 @@ test.describe('MFG plan create and reopen (real Inventory parent roll)', () => {
     expectEveryAnswerRewritten(answered, rewritten)
   })
 
+  test('ordered slitting lines survive committed response loss and reopen as a fixed specification', async ({ page, context }) => {
+    const rewritten = await asActor(context, env.seed.recorderActor)
+    const answered = watchAnswers(page)
+    const candidate = await openPlanForm(page, env.seed.rolls.slittingSpec)
+    const expectedSpec = {
+      lines: [
+        { bandWidthMm: '150.000', count: 4 },
+        { bandWidthMm: '240.50', count: 3 },
+      ],
+      windingTargetKg: '2000.00',
+    }
+
+    await page.getByRole('checkbox', { name: 'Sıralı bant planı ekle' }).check()
+    await page.getByLabel('Bant 1 genişliği mm').fill(expectedSpec.lines[0].bandWidthMm)
+    await page.getByLabel('Bant 1 adedi').fill(String(expectedSpec.lines[0].count))
+    await page.getByRole('button', { name: 'Bant satırı ekle', exact: true }).click()
+    await page.getByLabel('Bant 2 genişliği mm').fill(expectedSpec.lines[1].bandWidthMm)
+    await page.getByLabel('Bant 2 adedi').fill(String(expectedSpec.lines[1].count))
+    const finalPreview = page.waitForResponse((response) => {
+      if (!PLAN_PREVIEW_RE.test(response.url()) || response.request().method() !== 'POST') return false
+      const body = response.request().postDataJSON() as { slittingSpec?: unknown }
+      return JSON.stringify(body.slittingSpec) === JSON.stringify(expectedSpec)
+    })
+    await page.getByLabel('İsteğe bağlı sarım hedefi (kg)').fill(expectedSpec.windingTargetKg)
+    const preview = await finalPreview
+    expect(preview.status()).toBe(200)
+    expect((preview.request().postDataJSON() as { slittingSpec: unknown }).slittingSpec).toEqual(expectedSpec)
+
+    let committedRequest: Request | null = null
+    let committedStatus: number | null = null
+    await page.route(PLAN_POST_RE, async (route) => {
+      if (committedRequest !== null) return route.fallback()
+      committedRequest = route.request()
+      const response = await route.fetch({
+        headers: { ...route.request().headers(), 'x-development-user': env.seed.recorderActor },
+      })
+      committedStatus = response.status()
+      await route.abort('failed')
+    })
+
+    await page.getByRole('button', { name: 'Taslak planı kaydet', exact: true }).click()
+    await expect(page.getByText('Sonuç bilinmiyor.', { exact: false })).toBeVisible()
+    expect(committedStatus).toBe(201)
+    const first = committedRequest as Request | null
+    expect(first).not.toBeNull()
+    const firstBody = first!.postDataJSON() as {
+      planId: string
+      workCenterId: string
+      inputs: Array<{ parentRollId: string; plannedKg: string; expectedLabelVersion: string }>
+      slittingSpec: typeof expectedSpec
+    }
+    const firstKey = first!.headers()['idempotency-key']
+    expect(firstBody).toMatchObject({
+      workCenterId: env.seed.workCenterId,
+      inputs: [{
+        parentRollId: candidate.labelId,
+        plannedKg: '1000',
+        expectedLabelVersion: candidate.labelVersion,
+      }],
+      slittingSpec: expectedSpec,
+    })
+    expect(firstBody.slittingSpec).toEqual(
+      (preview.request().postDataJSON() as { slittingSpec: typeof expectedSpec }).slittingSpec,
+    )
+
+    const replayed = page.waitForResponse(
+      (response) => PLAN_POST_RE.test(response.url()) && response.request().method() === 'POST',
+    )
+    await page.getByRole('button', { name: 'Aynı anahtarla yeniden gönder', exact: true }).click()
+    const replay = await replayed
+    expect(replay.status()).toBe(201)
+    expect(replay.headers()['idempotency-replayed']).toBe('true')
+    expect(replay.request().headers()['idempotency-key']).toBe(firstKey)
+    expect(replay.request().postDataJSON()).toEqual(first!.postDataJSON())
+    await expect(page.getByText('Önceki kayıtlı sonuç yeniden gösterildi.', { exact: true })).toBeVisible()
+
+    const api = await apiAs(env, env.seed.recorderActor)
+    try {
+      const stored = await readPlan(api, firstBody.planId)
+      expect(stored.response.status()).toBe(200)
+      expect(stored.body).toMatchObject({
+        planId: firstBody.planId,
+        status: 'Draft',
+        version: 1,
+        inputs: [{ parentRollId: candidate.labelId, plannedKg: '1000' }],
+        slittingSpec: {
+          lines: [{ bandWidthMm: '150', count: 4 }, { bandWidthMm: '240.5', count: 3 }],
+          windingTargetKg: '2000',
+        },
+      })
+    } finally {
+      await api.dispose()
+    }
+
+    await page.goto('/uretim/emirler')
+    const listAnswer = page.waitForResponse(
+      (response) => PLAN_LIST_RE.test(response.url()) && response.request().method() === 'GET',
+    )
+    await page.getByRole('link', { name: 'Üretim planları', exact: true }).click()
+    const listed = (await (await listAnswer).json()) as { plans: Array<{ planId: string }> }
+    expect(listed.plans.filter((plan) => plan.planId === firstBody.planId)).toHaveLength(1)
+    const reference = firstBody.planId.slice(-8)
+    const freshRead = page.waitForResponse(
+      (response) => PLAN_GET_RE.test(response.url()) && response.url().endsWith(firstBody.planId)
+        && response.request().method() === 'GET',
+    )
+    await page.getByRole('row', { name: new RegExp(reference) }).getByRole('link', { name: new RegExp(reference) }).click()
+    expect((await freshRead).status()).toBe(200)
+    await expect(page.getByRole('heading', { name: 'Plan yeniden açıldı' })).toBeVisible()
+    const specHeading = page.getByRole('heading', { name: 'Dilme ayrıntısı' })
+    const spec = specHeading.locator('..')
+    const rows = spec.getByRole('row')
+    await expect(rows.nth(1)).toContainText('150 mm')
+    await expect(rows.nth(1)).toContainText('4')
+    await expect(rows.nth(2)).toContainText('240.5 mm')
+    await expect(rows.nth(2)).toContainText('3')
+    await expect(spec.getByText('Sarım hedefi: 2000 kg', { exact: true })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Planı düzenle', exact: true })).toHaveCount(0)
+    await expect(page.getByText('Dilme ayrıntısı taşıyan plan düzenlenmez; ana ruloyla dengesi iş kararı bekliyor (AT-044).', { exact: true }))
+      .toBeVisible()
+    expectEveryAnswerRewritten(answered, rewritten)
+  })
+
   test('AT-061 / AT-062: the form previews the typed content live through the server calculator and writes nothing', async ({ page, context }) => {
     const rewritten = await asActor(context, env.seed.recorderActor)
     const answered = watchAnswers(page)

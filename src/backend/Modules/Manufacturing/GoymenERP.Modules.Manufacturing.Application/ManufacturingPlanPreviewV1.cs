@@ -13,7 +13,8 @@ namespace GoymenERP.Modules.Manufacturing.Application;
 /// the planned inputs with the Inventory label version the screen read, and the optional target.
 /// </summary>
 public sealed record PlanPreviewRequestV1(
-    Guid WorkCenterId, IReadOnlyList<PlannedInputRequestV1>? Inputs, TargetRequestV1? Target);
+    Guid WorkCenterId, IReadOnlyList<PlannedInputRequestV1>? Inputs, TargetRequestV1? Target,
+    SlittingSpecRequestV1? SlittingSpec = null);
 
 /// <summary>One named, unrounded value as lossless invariant text.</summary>
 public sealed record PlanCalculatedValueViewV1(string Name, string Value);
@@ -77,7 +78,7 @@ public sealed partial class ManufacturingCommandService
             return Invalid<PlanPreviewViewV1>("plan");
         }
 
-        var content = ParsePlanContent(request.Inputs, request.Target);
+        var content = ParsePlanContent(request.Inputs, request.Target, request.SlittingSpec);
         if (content.InvalidField is { } invalidField)
         {
             return Invalid<PlanPreviewViewV1>(invalidField);
@@ -96,11 +97,22 @@ public sealed partial class ManufacturingCommandService
             return Refusal<PlanPreviewViewV1>(process.Refusal);
         }
 
+        if (content.SlittingSpec is not null && process.Value != ManufacturingProcess.Slitting)
+        {
+            return Invalid<PlanPreviewViewV1>("slittingSpec");
+        }
+
         var verified = await VerifyPlanContentAsync(
             content.Inputs!, content.TargetKg, permission, companyId, actorId, cancellationToken);
         if (verified.Refusal is not null)
         {
             return Refusal<PlanPreviewViewV1>(verified.Refusal);
+        }
+
+        var slittingSpec = await VerifySlittingSpecAsync(content.SlittingSpec, cancellationToken);
+        if (slittingSpec.Refusal is not null)
+        {
+            return Refusal<PlanPreviewViewV1>(slittingSpec.Refusal);
         }
 
         if (await FenceCapturedAsync<PlanPreviewViewV1>(permission, companyId, actorId, cancellationToken) is { } fenced)
@@ -114,7 +126,8 @@ public sealed partial class ManufacturingCommandService
             // The would-be plan, built by the same constructor as the save, so its domain rules answer the same. Its
             // id is transient and never stored; the calculation does not read it.
             plan = new ProductionPlan(Guid.NewGuid(), companyId, request.WorkCenterId, process.Value,
-                PlannedInputs(verified.Inputs), Target(request.Target, verified.TargetMass));
+                PlannedInputs(verified.Inputs), Target(request.Target, verified.TargetMass),
+                BuildSlittingSpec(content.SlittingSpec, slittingSpec.WindingTarget));
         }
         catch (ManufacturingRuleException exception)
         {
