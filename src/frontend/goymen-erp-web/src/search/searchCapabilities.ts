@@ -7,6 +7,7 @@
  */
 
 import { CAPABILITY, CAPABILITY_ROUTE, type CapabilityId } from '../shell/capabilities'
+import { inventoryLabelDetailPath } from '../inventory/labelDetailRoute'
 import { SEARCH_KIND, SEARCH_QUERY_PARAM, type SearchKind } from './searchContract'
 
 export const SEARCH_ROUTE = '/arama'
@@ -40,6 +41,13 @@ export const SEARCH_KIND_SCREENS: Readonly<Record<SearchKind, SearchKindScreens>
     list: CAPABILITY.salesDraftsList,
     detail: CAPABILITY.salesDraftsDetail,
     detailPath: (id) => withId(CAPABILITY_ROUTE[CAPABILITY.salesDraftsDetail], id),
+    morePath: null,
+  },
+  [SEARCH_KIND.materialLabel]: {
+    // This existing capability requires both Inventory reads, exactly as the label search source does.
+    list: CAPABILITY.inventoryStockPositionsList,
+    detail: CAPABILITY.inventoryStockPositionsList,
+    detailPath: inventoryLabelDetailPath,
     morePath: null,
   },
 }
