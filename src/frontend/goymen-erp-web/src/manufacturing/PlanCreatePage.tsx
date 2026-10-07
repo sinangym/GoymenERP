@@ -65,6 +65,12 @@ interface SelectedInput {
   readonly plannedKg: string
 }
 
+interface SlitLineForm {
+  readonly id: string
+  readonly bandWidthMm: string
+  readonly count: string
+}
+
 function newId(): string {
   const bytes = new Uint8Array(16)
   globalThis.crypto.getRandomValues(bytes)
@@ -137,6 +143,9 @@ function PlanCreate({ namespace, preselect }: {
   const [inputs, setInputs] = useState<readonly SelectedInput[]>([])
   const [targetBasis, setTargetBasis] = useState<'' | PlanTargetBasis>('')
   const [targetKg, setTargetKg] = useState('')
+  const [slittingEnabled, setSlittingEnabled] = useState(false)
+  const [slitLines, setSlitLines] = useState<readonly SlitLineForm[]>([])
+  const [windingTargetKg, setWindingTargetKg] = useState('')
   const [formError, setFormError] = useState<string | null>(null)
   const candidateGeneration = useRef(0)
   const commandGeneration = useRef(0)
@@ -279,7 +288,11 @@ function PlanCreate({ namespace, preselect }: {
 
   // AT-061 / AT-062: the button-less backend preview of what is typed (DEC-PRDCT-005). It writes nothing and never
   // gates the save below.
-  const preview = usePlanPreview(companyId, planPreviewInput(
+  const selectedWorkCenter = workCenters.type === 'ready'
+    ? workCenters.data.find((workCenter) => workCenter.id === workCenterId)
+    : undefined
+  const slittingActive = selectedWorkCenter?.kind === 'Slitting' && slittingEnabled
+  const previewInput = planPreviewInput(
     workCenterId,
     inputs.map(({ candidate, plannedKg }) => ({
       parentRollId: candidate.labelId,
@@ -289,7 +302,13 @@ function PlanCreate({ namespace, preselect }: {
     })),
     targetBasis,
     targetKg,
-  ), authBoundary)
+    {
+      enabled: slittingActive,
+      lines: slitLines.map((line, index) => ({ ...line, label: `Bant ${index + 1}` })),
+      windingTargetKg,
+    },
+  )
+  const preview = usePlanPreview(companyId, previewInput, authBoundary)
 
   function labelOf(parentRollId: string): string {
     return inputs.find((input) => input.candidate.labelId === parentRollId)?.candidate.labelCode ?? parentRollId
@@ -324,6 +343,10 @@ function PlanCreate({ namespace, preselect }: {
       setFormError('Hedef kullanılacaksa türü ve sıfırdan büyük kg değeri birlikte girilmelidir.')
       return
     }
+    if (previewInput.type !== 'ready') {
+      setFormError(previewInput.reasons.join(' '))
+      return
+    }
     setFormError(null)
     const request: SavePlanRequest = {
       planId: newId(),
@@ -334,6 +357,7 @@ function PlanCreate({ namespace, preselect }: {
         expectedLabelVersion: candidate.labelVersion,
       })),
       target: targetBasis === '' ? null : { basis: targetBasis, kg: targetKg },
+      slittingSpec: previewInput.request.slittingSpec ?? null,
     }
     void send({ actorId, companyId, idempotencyKey: newId(), request })
   }
@@ -509,6 +533,52 @@ function PlanCreate({ namespace, preselect }: {
             <input id="plan-target-kg" inputMode="decimal" value={targetKg} onChange={(event) => setTargetKg(event.target.value)} />
           </div>
         </fieldset>
+        {selectedWorkCenter?.kind === 'Slitting' ? (
+          <fieldset disabled={frozen}>
+            <legend>Dilme ayrıntısı</legend>
+            <label>
+              <input
+                type="checkbox"
+                checked={slittingEnabled}
+                onChange={(event) => {
+                  const checked = event.target.checked
+                  setSlittingEnabled(checked)
+                  if (checked && slitLines.length === 0) {
+                    setSlitLines([{ id: newId(), bandWidthMm: '', count: '' }])
+                  }
+                }}
+              />{' '}
+              Sıralı bant planı ekle
+            </label>
+            {slittingEnabled ? (
+              <>
+                <p className={styles.note}>Satırlar kaydedildikleri sırayla korunur. Genişlik mm, adet tam sayıdır.</p>
+                <div className={styles.tableWrap}>
+                  <table className={styles.table}>
+                    <thead><tr><th scope="col">Sıra</th><th scope="col">Bant genişliği (mm)</th><th scope="col">Adet</th><th scope="col">İşlem</th></tr></thead>
+                    <tbody>
+                      {slitLines.map((line, index) => (
+                        <tr key={line.id}>
+                          <th scope="row">{index + 1}</th>
+                          <td><input aria-label={`Bant ${index + 1} genişliği mm`} inputMode="decimal" value={line.bandWidthMm} onChange={(event) => setSlitLines((current) => current.map((item) => item.id === line.id ? { ...item, bandWidthMm: event.target.value } : item))} /></td>
+                          <td><input aria-label={`Bant ${index + 1} adedi`} inputMode="numeric" value={line.count} onChange={(event) => setSlitLines((current) => current.map((item) => item.id === line.id ? { ...item, count: event.target.value } : item))} /></td>
+                          <td><button type="button" onClick={() => setSlitLines((current) => current.filter((item) => item.id !== line.id))}>Kaldır</button></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div className={styles.actions}>
+                  <button type="button" onClick={() => setSlitLines((current) => [...current, { id: newId(), bandWidthMm: '', count: '' }])}>Bant satırı ekle</button>
+                </div>
+                <div className={styles.formGrid}>
+                  <label htmlFor="plan-winding-target-kg">İsteğe bağlı sarım hedefi (kg)</label>
+                  <input id="plan-winding-target-kg" inputMode="decimal" value={windingTargetKg} onChange={(event) => setWindingTargetKg(event.target.value)} />
+                </div>
+              </>
+            ) : null}
+          </fieldset>
+        ) : null}
         <PlanPreviewPanel state={preview} labelOf={labelOf} workCenterLabel={workCenterLabel} />
         <div className={styles.actions}>
           <button type="submit" disabled={frozen}>{attempt.phase === 'submitting' ? 'Kaydediliyor…' : 'Taslak planı kaydet'}</button>

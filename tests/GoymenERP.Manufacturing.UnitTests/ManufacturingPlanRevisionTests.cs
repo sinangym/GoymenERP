@@ -491,12 +491,15 @@ public sealed class ManufacturingPlanRevisionTests(ITestOutputHelper output)
     {
         var fixture = new Fixture();
         var plan = fixture.StoreDraft();
+        var createdTechnical = TechnicalSnapshot("product-v1", 3m, 248m);
+        var revisedTechnical = TechnicalSnapshot("product-v2", 2.5m, 180m);
         fixture.Store.History[plan.Id] =
         [
-            new ManufacturingPlanRevision(0, 1, WorkCenter, [new PlannedInput(RollA, new Kilograms(1000.000m), null)], null,
+            new ManufacturingPlanRevision(0, 1, WorkCenter,
+                [new PlannedInput(RollA, new Kilograms(1000.000m), null, createdTechnical)], null,
                 null, null, At),
             new ManufacturingPlanRevision(1, 2, OtherLine,
-                [new PlannedInput(RollA, new Kilograms(800.500m), 7, commercialContext:
+                [new PlannedInput(RollA, new Kilograms(800.500m), 7, revisedTechnical, commercialContext:
                     new PlanCommercialContextSnapshotV1(Party, PartyAccount, " party-v1 ", "account-v1/α"))],
                 new ProductionTarget(TargetBasis.InputMass, new Kilograms(810m)), "Hat değişti", Actor.ToString("D"),
                 At.AddHours(1)),
@@ -530,11 +533,27 @@ public sealed class ManufacturingPlanRevisionTests(ITestOutputHelper output)
             assertionStage = "revision_indices";
             Assert.Equal([0, 1], history.Revisions.Select(revision => revision.Revision));
             assertionStage = "created_input";
-            Assert.Equal(new PlanRevisionInputViewV1(RollA, "1000", null), Assert.Single(history.Revisions[0].Inputs));
+            Assert.Equal(new PlanRevisionInputViewV1(RollA, "1000", null,
+                TechnicalSnapshot: TechnicalSnapshotView("product-v1", 3m, 248m)),
+                Assert.Single(history.Revisions[0].Inputs));
             assertionStage = "revised_input";
             Assert.Equal(new PlanRevisionInputViewV1(RollA, "800.5", "7",
-                new CapturedPlanCommercialContextViewV1(Party, PartyAccount, " party-v1 ", "account-v1/α")),
+                new CapturedPlanCommercialContextViewV1(Party, PartyAccount, " party-v1 ", "account-v1/α"),
+                TechnicalSnapshotView("product-v2", 2.5m, 180m)),
                 Assert.Single(history.Revisions[1].Inputs));
+            assertionStage = "legacy_snapshot";
+            var legacyFixture = new Fixture();
+            var legacyPlan = legacyFixture.StoreDraft();
+            legacyFixture.Store.History[legacyPlan.Id] =
+            [
+                new ManufacturingPlanRevision(
+                    0, 1, WorkCenter, [new PlannedInput(RollA, new Kilograms(1000m), null)], null,
+                    null, null, At),
+            ];
+            var legacyRead = await legacyFixture.Service.ListPlanRevisionsAsync(
+                legacyPlan.Id, CancellationToken.None);
+            Assert.Equal(ManufacturingApiStatus.Ok, legacyRead.Status);
+            Assert.Null(Assert.Single(Assert.Single(legacyRead.Resource!.Revisions).Inputs).TechnicalSnapshot);
             assertionStage = "revision_metadata";
             Assert.Equal((2L, OtherLine, "Hat değişti", Actor.ToString("D")),
                 (history.Revisions[1].PlanVersion, history.Revisions[1].WorkCenterId, history.Revisions[1].Reason,
@@ -563,6 +582,42 @@ public sealed class ManufacturingPlanRevisionTests(ITestOutputHelper output)
     private static ProductionPlan Draft() =>
         new(Guid.NewGuid(), Company, WorkCenter, ManufacturingProcess.Slitting,
             [new PlannedInput(RollA, new Kilograms(1000m), 3)]);
+
+    private static PlanTechnicalParameterSnapshotV1 TechnicalSnapshot(
+        string productVersion,
+        decimal thicknessMm,
+        decimal widthMm) => new(
+        Guid.Parse("f0000000-0000-0000-0000-000000000001"),
+        productVersion,
+        Guid.Parse("f1000000-0000-0000-0000-000000000001"),
+        "COIL",
+        "family-r1",
+        Guid.Parse("f2000000-0000-0000-0000-000000000002"),
+        "3",
+        "COIL-SHEET",
+        "template-r3",
+        Company,
+        SettingsUnitIdentitiesV1.Kilogram,
+        "kg",
+        Guid.Parse("4a790fdc-2a6b-5126-835f-d3a13d28b71c"),
+        "1",
+        DateOnly.FromDateTime(At.UtcDateTime),
+        thicknessMm,
+        widthMm);
+
+    private static CapturedPlanTechnicalSnapshotViewV1 TechnicalSnapshotView(
+        string productVersion,
+        decimal thicknessMm,
+        decimal widthMm) => new(
+        Guid.Parse("f0000000-0000-0000-0000-000000000001"),
+        productVersion,
+        new(Guid.Parse("f1000000-0000-0000-0000-000000000001"), "COIL", "family-r1"),
+        new(Guid.Parse("f2000000-0000-0000-0000-000000000002"), "3", "COIL-SHEET", "template-r3"),
+        thicknessMm.ToString(System.Globalization.CultureInfo.InvariantCulture),
+        widthMm.ToString(System.Globalization.CultureInfo.InvariantCulture),
+        new(Company, SettingsUnitIdentitiesV1.Kilogram, "kg",
+            Guid.Parse("4a790fdc-2a6b-5126-835f-d3a13d28b71c"), "1"),
+        DateOnly.FromDateTime(At.UtcDateTime));
 
     private static PlannedInput[] Inputs(Guid roll, decimal kg) => [new PlannedInput(roll, new Kilograms(kg), 3)];
 

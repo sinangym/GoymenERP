@@ -201,8 +201,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // Customer-owned opening: +2 exact account-context and fail-closed authority SQL facts.
             // Inventory stock-position read: +1 actual bounded filter/classification SQL fact;
             // every listed case remains mandatory and zero-skip.
+            // Inventory location display: +1 same-record Product/Inventory/Organization SQL fact.
             ["tools/relational_inventory/inventory.txt"] =
-                "3a9b7bce5b3c874ba82ce7cb475db4314a5eacedd3ba6a2bc9cc6143b21c764a",
+                "df1e45f746d65ce3c5f9b361dd280cf5b1b920b0bafcaefcbcc2e9f29c7abb60",
 
             // logistics
             // AT-053: +4 weighbridge SQL facts (81c1ff0b… -> 264898d7…).
@@ -217,8 +218,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // MFG close: owner-added closure/tolerance SQL facts extend the exact Manufacturing discovery inventory.
             // MFG technical snapshot: +4 migration/constraint SQL facts (38590e95... -> b1f5f069...).
             // Customer-owned input context: replace one obsolete refusal with three exact persistence/replay facts.
+            // Slitting draft spec: +1 public API SQL fact (e6aa3795... -> 286281c0...).
             ["tools/relational_inventory/manufacturing.txt"] =
-                "e6aa3795605379f774c8256126305e931aec3e9fb7bce62ca31a449d6b764cba",
+                "286281c0b2413bc4ff55d747ecf0b8b8e5c43e99bc78d353defdc4a668f66915",
 
             // organization
             // ORG master edit: +2 OrganizationMasterDataSqlServerRelationalAcceptanceTests facts (6b504dac… -> 3bad6ad8…).
@@ -242,7 +244,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
             // purchasing
             ["tools/relational_inventory/purchasing.txt"] =
-                "fa954703de830ced5227080599b846c4bb124efa1eb3ba6d904e4f8dbfd238a6",
+                "18d2d359f6688645ef4a0021c9d59045539ffe9b62c2b9e1cddb942073f8c691",
 
             // sales
             // DEC-SAL-003: +3 SalesDeliveryScheduleSqlServerRelationalAcceptanceTests facts (16fa5110… -> 00189b7b…).
@@ -264,9 +266,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     private const string BackendTestGroupVerifierTestsPath =
         "tests/backend_test_group_verifier/test_verify_backend_test_groups.py";
     private const string ReviewedBackendTestGroupVerifierFingerprint =
-        "bf9e9e280721596221ef38cc44981872f6a43f270d58422f8498a08f09d5f962";
+        "506e74354da8ce9033a15fbd511f2038854af62a4edd0b9bda3fa14f82854d82";
     private const string ReviewedBackendTestGroupVerifierTestsFingerprint =
-        "368376be22ed9889b6680dcf6ee1db67477256724fc8fb7a5e5f66144b789548";
+        "6ef52639c5bbd74aaf8e499ef0df203cd530831ebbfcce998170e334e8be29ab";
     private const string ReviewedContinuousIntegrationWorkflowFingerprint =
         "d997575b12f25c7145c65226df7c03b9a25faadf7d6532b4ee0b32d48cbb6fee";
     // Re-fingerprinted for the ORG master edit: the seeder's three existing IgnoreQueryFilters projections also read

@@ -691,6 +691,8 @@ public sealed class ManufacturingCommandServiceTests
             [new PlannedInputRequestV1(Roll, "10", LabelVersion)], null);
         var explicitNull = new SavePlanRequestV1(planId, WorkCenter,
             [new PlannedInputRequestV1(Roll, "10", LabelVersion, null)], null);
+        var explicitSpecNull = new SavePlanRequestV1(planId, WorkCenter,
+            [new PlannedInputRequestV1(Roll, "10", LabelVersion, null)], null, null);
         var legacyCanonical = new
         {
             planId,
@@ -702,6 +704,8 @@ public sealed class ManufacturingCommandServiceTests
             legacyCanonical, ManufacturingApiStatus.Created, LegacyPlanView(planId, 1));
         SeedLegacyPlanReplay(fixture, ManufacturingCommandNames.SavePlan, "legacy-save-null",
             legacyCanonical, ManufacturingApiStatus.Created, LegacyPlanView(planId, 1));
+        SeedLegacyPlanReplay(fixture, ManufacturingCommandNames.SavePlan, "legacy-save-spec-null",
+            legacyCanonical, ManufacturingApiStatus.Created, LegacyPlanView(planId, 1));
         fixture.ParentRolls.Exception = new InvalidOperationException("owner must not be read");
         fixture.PartyAccounts.Outcome = CounterpartyManufacturingPartyAccountOutcomeV1.Unavailable;
 
@@ -709,15 +713,54 @@ public sealed class ManufacturingCommandServiceTests
             omitted, "legacy-save-omitted", "manufacturing.plans.write", CancellationToken.None);
         var nullReplay = await fixture.Service.SavePlanAsync(
             explicitNull, "legacy-save-null", "manufacturing.plans.write", CancellationToken.None);
+        var specNullReplay = await fixture.Service.SavePlanAsync(
+            explicitSpecNull, "legacy-save-spec-null", "manufacturing.plans.write", CancellationToken.None);
 
         Assert.Equal((ManufacturingApiStatus.Created, true, "corr-legacy"),
             (omittedReplay.Status, omittedReplay.IsReplay, omittedReplay.OriginalCorrelationId));
         Assert.Equal((ManufacturingApiStatus.Created, true, "corr-legacy"),
             (nullReplay.Status, nullReplay.IsReplay, nullReplay.OriginalCorrelationId));
-        Assert.Equal(["authority", "authority", "authority", "authority"], fixture.Calls);
+        Assert.Equal((ManufacturingApiStatus.Created, true, "corr-legacy"),
+            (specNullReplay.Status, specNullReplay.IsReplay, specNullReplay.OriginalCorrelationId));
+        Assert.Equal(["authority", "authority", "authority", "authority", "authority", "authority"], fixture.Calls);
         Assert.Empty(fixture.ParentRolls.Selections);
         Assert.Empty(fixture.PartyAccounts.Selections);
         Assert.Empty(fixture.Store.Writes);
+    }
+
+    [Fact]
+    public async Task A_slitting_spec_is_in_the_canonical_request_and_replays_before_owner_reads()
+    {
+        var fixture = new Fixture();
+        var planId = Guid.NewGuid();
+        var request = new SavePlanRequestV1(planId, WorkCenter,
+            [new PlannedInputRequestV1(Roll, "10", LabelVersion)], null,
+            new SlittingSpecRequestV1([new SlitLineRequestV1("150.000", 4)], "2000.000"));
+
+        var created = await fixture.Service.SavePlanAsync(
+            request, "slitting-spec", "manufacturing.plans.write", CancellationToken.None);
+        var replay = await fixture.Service.SavePlanAsync(
+            request with
+            {
+                SlittingSpec = new SlittingSpecRequestV1([new SlitLineRequestV1("150", 4)], "2000"),
+            },
+            "slitting-spec", "manufacturing.plans.write", CancellationToken.None);
+        var mismatch = await fixture.Service.SavePlanAsync(
+            request with
+            {
+                SlittingSpec = new SlittingSpecRequestV1([new SlitLineRequestV1("150", 5)], "2000"),
+            },
+            "slitting-spec", "manufacturing.plans.write", CancellationToken.None);
+
+        Assert.Equal(ManufacturingApiStatus.Created, created.Status);
+        Assert.Equal((ManufacturingApiStatus.Created, true), (replay.Status, replay.IsReplay));
+        Assert.Equal((ManufacturingApiStatus.Conflict, ManufacturingApiCodes.IdempotencyConflict),
+            (mismatch.Status, mismatch.Code));
+        var replayedSpec = replay.Resource!.SlittingSpec!;
+        Assert.Equal("2000", replayedSpec.WindingTargetKg);
+        Assert.Equal([("150", 4)], replayedSpec.Lines.Select(line => (line.BandWidthMm, line.Count)));
+        Assert.Single(fixture.ParentRolls.Selections);
+        Assert.Single(fixture.Store.Writes);
     }
 
     [Fact]

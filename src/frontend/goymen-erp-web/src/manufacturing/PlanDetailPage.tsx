@@ -269,7 +269,7 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
   const unresolved = attempt.phase === 'unknown' && allowed(attempt.pending.snapshot.kind)
   // The edit starts from the plan's current content: the last history entry, of exactly the version shown.
   const current = history === null ? null : currentRevision(history)
-  const editable = plan.status === 'Draft' && canEdit
+  const editable = plan.status === 'Draft' && canEdit && plan.slittingSpec === null
   const editReady = current !== null && current.planVersion === plan.version
   const startRevision = (request: RevisePlanRequest) =>
     start({ kind: 'revise', idempotencyKey: newId(), request })
@@ -330,6 +330,25 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
           </table>
         </div>
       </section>
+
+      {plan.slittingSpec === null ? null : (
+        <section className={styles.commandCard} aria-labelledby="manufacturing-plan-slitting-spec-heading">
+          <h2 id="manufacturing-plan-slitting-spec-heading">Dilme ayrıntısı</h2>
+          <div className={styles.tableWrap}>
+            <table className={styles.table}>
+              <thead><tr><th scope="col">Sıra</th><th scope="col">Bant genişliği</th><th scope="col">Adet</th></tr></thead>
+              <tbody>
+                {plan.slittingSpec.lines.map((line, index) => (
+                  <tr key={`${index}:${line.bandWidthMm}:${line.count}`}>
+                    <th scope="row">{index + 1}</th><td>{line.bandWidthMm} mm</td><td>{line.count}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p>Sarım hedefi: {plan.slittingSpec.windingTargetKg === null ? 'Yok' : `${plan.slittingSpec.windingTargetKg} kg`}</p>
+        </section>
+      )}
 
       <section className={styles.commandCard} aria-labelledby="manufacturing-stored-plan-calculation-heading">
         <h2 id="manufacturing-stored-plan-calculation-heading">Kayıtlı plan hesaplaması</h2>
@@ -394,6 +413,7 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
               )
             ) : null}
             {plan.status === 'Approved' && canEdit ? <p className={styles.note}>{PLAN_EDIT_TEXT.approvedNote}</p> : null}
+            {plan.status === 'Draft' && canEdit && plan.slittingSpec !== null ? <p className={styles.note}>{PLAN_EDIT_TEXT.specNote}</p> : null}
             {plan.status === 'Draft' && canApprove && !editing ? (
               <div className={styles.actions}>
                 <button

@@ -14158,11 +14158,11 @@
           {
             "name": "X-ERP-Inventory-Stock-Display",
             "in": "header",
-            "description": "Optional exact compatibility selection. Omit for the previously published stock-position response; send 1.0 for Product identity and nominal technical display fields.",
+            "description": "Optional exact compatibility selection. Omit for the previously published stock-position response; send 1.0 for Product identity and nominal technical display fields, or 2.0 to add the exact Organization-owned location display identity.",
             "schema": {
               "maxLength": 3,
               "minLength": 3,
-              "pattern": "^1\\.0$",
+              "pattern": "^(?:1\\.0|2\\.0)$",
               "type": "string"
             }
           }
@@ -14320,6 +14320,9 @@
                     },
                     {
                       "$ref": "#/components/schemas/InventoryStockPositionPageV1"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InventoryStockPositionLocationPageV2"
                     }
                   ]
                 }
@@ -41413,13 +41416,18 @@
               "manufacturing_mass_scale_exceeded",
               "manufacturing_order_closed",
               "manufacturing_output_already_declared",
+              "manufacturing_plan_engine_refused",
+              "manufacturing_plan_label_not_usable",
               "manufacturing_plan_not_approved",
               "manufacturing_plan_not_draft",
+              "manufacturing_plan_parameters_unavailable",
+              "manufacturing_plan_winding_does_not_fit",
               "manufacturing_plan_without_inputs",
               "manufacturing_return_already_recorded",
               "manufacturing_return_exceeds_issued",
               "manufacturing_roll_not_in_order",
               "manufacturing_roll_not_issued",
+              "manufacturing_slitting_spec_without_lines",
               "manufacturing_stored_record_invalid",
               "manufacturing_unexplained_difference",
               "manufacturing_value_does_not_fit",
@@ -41965,13 +41973,18 @@
               "manufacturing_mass_scale_exceeded",
               "manufacturing_order_closed",
               "manufacturing_output_already_declared",
+              "manufacturing_plan_engine_refused",
+              "manufacturing_plan_label_not_usable",
               "manufacturing_plan_not_approved",
               "manufacturing_plan_not_draft",
+              "manufacturing_plan_parameters_unavailable",
+              "manufacturing_plan_winding_does_not_fit",
               "manufacturing_plan_without_inputs",
               "manufacturing_return_already_recorded",
               "manufacturing_return_exceeds_issued",
               "manufacturing_roll_not_in_order",
               "manufacturing_roll_not_issued",
+              "manufacturing_slitting_spec_without_lines",
               "manufacturing_stored_record_invalid",
               "manufacturing_unexplained_difference",
               "manufacturing_value_does_not_fit",
@@ -42343,13 +42356,18 @@
               "manufacturing_mass_scale_exceeded",
               "manufacturing_order_closed",
               "manufacturing_output_already_declared",
+              "manufacturing_plan_engine_refused",
+              "manufacturing_plan_label_not_usable",
               "manufacturing_plan_not_approved",
               "manufacturing_plan_not_draft",
+              "manufacturing_plan_parameters_unavailable",
+              "manufacturing_plan_winding_does_not_fit",
               "manufacturing_plan_without_inputs",
               "manufacturing_return_already_recorded",
               "manufacturing_return_exceeds_issued",
               "manufacturing_roll_not_in_order",
               "manufacturing_roll_not_issued",
+              "manufacturing_slitting_spec_without_lines",
               "manufacturing_stored_record_invalid",
               "manufacturing_unexplained_difference",
               "manufacturing_value_does_not_fit",
@@ -42797,16 +42815,21 @@
               "manufacturing_mass_scale_exceeded",
               "manufacturing_order_closed",
               "manufacturing_output_already_declared",
+              "manufacturing_plan_engine_refused",
+              "manufacturing_plan_label_not_usable",
               "manufacturing_plan_not_approved",
               "manufacturing_plan_not_draft",
+              "manufacturing_plan_parameters_unavailable",
               "manufacturing_plan_process_fixed",
               "manufacturing_plan_revision_no_change",
               "manufacturing_plan_slitting_spec_fixed",
+              "manufacturing_plan_winding_does_not_fit",
               "manufacturing_plan_without_inputs",
               "manufacturing_return_already_recorded",
               "manufacturing_return_exceeds_issued",
               "manufacturing_roll_not_in_order",
               "manufacturing_roll_not_issued",
+              "manufacturing_slitting_spec_without_lines",
               "manufacturing_stored_record_invalid",
               "manufacturing_unexplained_difference",
               "manufacturing_value_does_not_fit",
@@ -43598,13 +43621,18 @@
               "manufacturing_mass_scale_exceeded",
               "manufacturing_order_closed",
               "manufacturing_output_already_declared",
+              "manufacturing_plan_engine_refused",
+              "manufacturing_plan_label_not_usable",
               "manufacturing_plan_not_approved",
               "manufacturing_plan_not_draft",
+              "manufacturing_plan_parameters_unavailable",
+              "manufacturing_plan_winding_does_not_fit",
               "manufacturing_plan_without_inputs",
               "manufacturing_return_already_recorded",
               "manufacturing_return_exceeds_issued",
               "manufacturing_roll_not_in_order",
               "manufacturing_roll_not_issued",
+              "manufacturing_slitting_spec_without_lines",
               "manufacturing_stored_record_invalid",
               "manufacturing_unexplained_difference",
               "manufacturing_value_does_not_fit",
@@ -44233,13 +44261,18 @@
               "manufacturing_mass_scale_exceeded",
               "manufacturing_order_closed",
               "manufacturing_output_already_declared",
+              "manufacturing_plan_engine_refused",
+              "manufacturing_plan_label_not_usable",
               "manufacturing_plan_not_approved",
               "manufacturing_plan_not_draft",
+              "manufacturing_plan_parameters_unavailable",
+              "manufacturing_plan_winding_does_not_fit",
               "manufacturing_plan_without_inputs",
               "manufacturing_return_already_recorded",
               "manufacturing_return_exceeds_issued",
               "manufacturing_roll_not_in_order",
               "manufacturing_roll_not_issued",
+              "manufacturing_slitting_spec_without_lines",
               "manufacturing_stored_record_invalid",
               "manufacturing_unexplained_difference",
               "manufacturing_value_does_not_fit",
@@ -44651,13 +44684,18 @@
               "manufacturing_mass_scale_exceeded",
               "manufacturing_order_closed",
               "manufacturing_output_already_declared",
+              "manufacturing_plan_engine_refused",
+              "manufacturing_plan_label_not_usable",
               "manufacturing_plan_not_approved",
               "manufacturing_plan_not_draft",
+              "manufacturing_plan_parameters_unavailable",
+              "manufacturing_plan_winding_does_not_fit",
               "manufacturing_plan_without_inputs",
               "manufacturing_return_already_recorded",
               "manufacturing_return_exceeds_issued",
               "manufacturing_roll_not_in_order",
               "manufacturing_roll_not_issued",
+              "manufacturing_slitting_spec_without_lines",
               "manufacturing_stored_record_invalid",
               "manufacturing_unexplained_difference",
               "manufacturing_value_does_not_fit",
@@ -45065,13 +45103,18 @@
               "manufacturing_mass_scale_exceeded",
               "manufacturing_order_closed",
               "manufacturing_output_already_declared",
+              "manufacturing_plan_engine_refused",
+              "manufacturing_plan_label_not_usable",
               "manufacturing_plan_not_approved",
               "manufacturing_plan_not_draft",
+              "manufacturing_plan_parameters_unavailable",
+              "manufacturing_plan_winding_does_not_fit",
               "manufacturing_plan_without_inputs",
               "manufacturing_return_already_recorded",
               "manufacturing_return_exceeds_issued",
               "manufacturing_roll_not_in_order",
               "manufacturing_roll_not_issued",
+              "manufacturing_slitting_spec_without_lines",
               "manufacturing_stored_record_invalid",
               "manufacturing_unexplained_difference",
               "manufacturing_value_does_not_fit",
@@ -45479,13 +45522,18 @@
               "manufacturing_mass_scale_exceeded",
               "manufacturing_order_closed",
               "manufacturing_output_already_declared",
+              "manufacturing_plan_engine_refused",
+              "manufacturing_plan_label_not_usable",
               "manufacturing_plan_not_approved",
               "manufacturing_plan_not_draft",
+              "manufacturing_plan_parameters_unavailable",
+              "manufacturing_plan_winding_does_not_fit",
               "manufacturing_plan_without_inputs",
               "manufacturing_return_already_recorded",
               "manufacturing_return_exceeds_issued",
               "manufacturing_roll_not_in_order",
               "manufacturing_roll_not_issued",
+              "manufacturing_slitting_spec_without_lines",
               "manufacturing_stored_record_invalid",
               "manufacturing_unexplained_difference",
               "manufacturing_value_does_not_fit",
@@ -45897,13 +45945,18 @@
               "manufacturing_mass_scale_exceeded",
               "manufacturing_order_closed",
               "manufacturing_output_already_declared",
+              "manufacturing_plan_engine_refused",
+              "manufacturing_plan_label_not_usable",
               "manufacturing_plan_not_approved",
               "manufacturing_plan_not_draft",
+              "manufacturing_plan_parameters_unavailable",
+              "manufacturing_plan_winding_does_not_fit",
               "manufacturing_plan_without_inputs",
               "manufacturing_return_already_recorded",
               "manufacturing_return_exceeds_issued",
               "manufacturing_roll_not_in_order",
               "manufacturing_roll_not_issued",
+              "manufacturing_slitting_spec_without_lines",
               "manufacturing_stored_record_invalid",
               "manufacturing_unexplained_difference",
               "manufacturing_value_does_not_fit",
@@ -46311,13 +46364,18 @@
               "manufacturing_mass_scale_exceeded",
               "manufacturing_order_closed",
               "manufacturing_output_already_declared",
+              "manufacturing_plan_engine_refused",
+              "manufacturing_plan_label_not_usable",
               "manufacturing_plan_not_approved",
               "manufacturing_plan_not_draft",
+              "manufacturing_plan_parameters_unavailable",
+              "manufacturing_plan_winding_does_not_fit",
               "manufacturing_plan_without_inputs",
               "manufacturing_return_already_recorded",
               "manufacturing_return_exceeds_issued",
               "manufacturing_roll_not_in_order",
               "manufacturing_roll_not_issued",
+              "manufacturing_slitting_spec_without_lines",
               "manufacturing_stored_record_invalid",
               "manufacturing_unexplained_difference",
               "manufacturing_value_does_not_fit",
@@ -69283,6 +69341,147 @@
           }
         }
       },
+      "InventoryStockPositionLocationDisplayV2": {
+        "required": [
+          "companyId",
+          "labelId",
+          "labelVersion",
+          "labelCode",
+          "productId",
+          "productVersion",
+          "classification",
+          "lot",
+          "heatNumber",
+          "coilNumber",
+          "documentStatus",
+          "ownerKind",
+          "ownerId",
+          "custodianKind",
+          "custodianId",
+          "locationId",
+          "physicalKg",
+          "freePhysicalKg",
+          "blockedPhysicalKg",
+          "activeAllocationKg",
+          "availableKg",
+          "productDisplay",
+          "locationDisplay"
+        ],
+        "type": "object",
+        "properties": {
+          "companyId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "labelId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "labelVersion": {
+            "type": "string"
+          },
+          "labelCode": {
+            "type": "string"
+          },
+          "productId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "productVersion": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "classification": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "lot": {
+            "$ref": "#/components/schemas/InventoryLotV1"
+          },
+          "heatNumber": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "coilNumber": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "documentStatus": {
+            "type": "string"
+          },
+          "ownerKind": {
+            "type": "string"
+          },
+          "ownerId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "custodianKind": {
+            "type": "string"
+          },
+          "custodianId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "locationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "physicalKg": {
+            "type": "string"
+          },
+          "freePhysicalKg": {
+            "type": "string"
+          },
+          "blockedPhysicalKg": {
+            "type": "string"
+          },
+          "activeAllocationKg": {
+            "type": "string"
+          },
+          "availableKg": {
+            "type": "string"
+          },
+          "productDisplay": {
+            "$ref": "#/components/schemas/ProductStockDisplayResultV1"
+          },
+          "locationDisplay": {
+            "$ref": "#/components/schemas/OrganizationLocationDisplayV1"
+          }
+        }
+      },
+      "InventoryStockPositionLocationPageV2": {
+        "required": [
+          "items",
+          "searchWindowFull"
+        ],
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/InventoryStockPositionLocationDisplayV2"
+            }
+          },
+          "searchWindowFull": {
+            "type": "boolean"
+          },
+          "nextCursor": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
       "InventoryStockPositionPageV1": {
         "required": [
           "items",
@@ -71569,6 +71768,26 @@
           }
         }
       },
+      "OrganizationLocationDisplayV1": {
+        "required": [
+          "locationId",
+          "locationCode",
+          "locationName"
+        ],
+        "type": "object",
+        "properties": {
+          "locationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "locationCode": {
+            "type": "string"
+          },
+          "locationName": {
+            "type": "string"
+          }
+        }
+      },
       "PageResultOfLocationSummary": {
         "required": [
           "items",
@@ -72187,6 +72406,16 @@
                 "$ref": "#/components/schemas/TargetRequestV1"
               }
             ]
+          },
+          "slittingSpec": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SlittingSpecRequestV1"
+              }
+            ]
           }
         }
       },
@@ -72287,6 +72516,16 @@
               },
               {
                 "$ref": "#/components/schemas/CapturedPlanCommercialContextViewV1"
+              }
+            ]
+          },
+          "technicalSnapshot": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/CapturedPlanTechnicalSnapshotViewV1"
               }
             ]
           }
@@ -72583,6 +72822,16 @@
               },
               {
                 "$ref": "#/components/schemas/PlanPreviewViewV1"
+              }
+            ]
+          },
+          "slittingSpec": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SlittingSpecViewV1"
               }
             ]
           }
@@ -78951,6 +79200,16 @@
                 "$ref": "#/components/schemas/TargetRequestV1"
               }
             ]
+          },
+          "slittingSpec": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SlittingSpecRequestV1"
+              }
+            ]
           }
         }
       },
@@ -79080,6 +79339,93 @@
           "version": {
             "type": "integer",
             "format": "int64"
+          }
+        }
+      },
+      "SlitLineRequestV1": {
+        "required": [
+          "bandWidthMm",
+          "count"
+        ],
+        "type": "object",
+        "properties": {
+          "bandWidthMm": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "count": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          }
+        }
+      },
+      "SlitLineViewV1": {
+        "required": [
+          "bandWidthMm",
+          "count"
+        ],
+        "type": "object",
+        "properties": {
+          "bandWidthMm": {
+            "type": "string"
+          },
+          "count": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          }
+        }
+      },
+      "SlittingSpecRequestV1": {
+        "required": [
+          "lines"
+        ],
+        "type": "object",
+        "properties": {
+          "lines": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/SlitLineRequestV1"
+            }
+          },
+          "windingTargetKg": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "SlittingSpecViewV1": {
+        "required": [
+          "lines",
+          "windingTargetKg"
+        ],
+        "type": "object",
+        "properties": {
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SlitLineViewV1"
+            }
+          },
+          "windingTargetKg": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
