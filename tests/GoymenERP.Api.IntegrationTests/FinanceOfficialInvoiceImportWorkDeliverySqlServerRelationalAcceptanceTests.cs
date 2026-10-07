@@ -26,9 +26,22 @@ public sealed class FinanceOfficialInvoiceImportWorkDeliverySqlServerRelationalA
     private const string LegacyBatchIdentityPhase = "finance_work_legacy_batch_identity";
     private const string LegacyBatchContentPhase = "finance_work_legacy_batch_content";
     private const string LegacyBatchCompanyForeignKeyPhase = "finance_work_legacy_batch_company_fk";
+    private const string LegacyBatchConstraintPhase = "finance_work_legacy_batch_constraint";
     private const string LegacyBatchDuplicatePhase = "finance_work_legacy_batch_duplicate";
+    private const string LegacyBatchIdentityInsertPhase = "finance_work_legacy_batch_identity_insert";
+    private const string LegacyBatchConversionPhase = "finance_work_legacy_batch_conversion";
+    private const string LegacyBatchOverflowPhase = "finance_work_legacy_batch_overflow";
     private const string LegacyBatchNullPhase = "finance_work_legacy_batch_null";
     private const string LegacyBatchTruncatedPhase = "finance_work_legacy_batch_truncated";
+    private const string LegacyBatchTimeoutPhase = "finance_work_legacy_batch_timeout";
+    private const string LegacyBatchDeadlockPhase = "finance_work_legacy_batch_deadlock";
+    private const string LegacyBatchSnapshotConflictPhase = "finance_work_legacy_batch_snapshot_conflict";
+    private const string LegacyBatchPermissionPhase = "finance_work_legacy_batch_permission";
+    private const string LegacyBatchSchemaPhase = "finance_work_legacy_batch_schema";
+    private const string LegacyBatchSetOptionsPhase = "finance_work_legacy_batch_set_options";
+    private const string LegacyBatchOperandTypePhase = "finance_work_legacy_batch_operand_type";
+    private const string LegacyBatchCollationPhase = "finance_work_legacy_batch_collation";
+    private const string LegacyBatchTriggerOutputPhase = "finance_work_legacy_batch_trigger_output";
     private const string LegacyBatchTablePhase = "finance_work_legacy_batch_table";
     private const string LegacyBatchColumnPhase = "finance_work_legacy_batch_column";
     private const string LegacyBatchOtherSqlPhase = "finance_work_legacy_batch_other_sql";
@@ -444,13 +457,26 @@ public sealed class FinanceOfficialInvoiceImportWorkDeliverySqlServerRelationalA
             {
                 return LegacyBatchCompanyForeignKeyPhase;
             }
+            return LegacyBatchConstraintPhase;
         }
 
         return exception.Number switch
         {
             2601 or 2627 => LegacyBatchDuplicatePhase,
+            544 => LegacyBatchIdentityInsertPhase,
+            245 or 8114 or 8169 => LegacyBatchConversionPhase,
+            8115 => LegacyBatchOverflowPhase,
             515 => LegacyBatchNullPhase,
             8152 or 2628 => LegacyBatchTruncatedPhase,
+            -2 => LegacyBatchTimeoutPhase,
+            1205 => LegacyBatchDeadlockPhase,
+            3960 => LegacyBatchSnapshotConflictPhase,
+            229 => LegacyBatchPermissionPhase,
+            2760 => LegacyBatchSchemaPhase,
+            1934 => LegacyBatchSetOptionsPhase,
+            206 => LegacyBatchOperandTypePhase,
+            468 => LegacyBatchCollationPhase,
+            334 => LegacyBatchTriggerOutputPhase,
             208 => LegacyBatchTablePhase,
             207 => LegacyBatchColumnPhase,
             _ => LegacyBatchOtherSqlPhase,
