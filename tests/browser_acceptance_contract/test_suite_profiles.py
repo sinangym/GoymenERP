@@ -193,6 +193,33 @@ class SuiteComposeContractTests(unittest.TestCase):
                     with self.assertRaisesRegex(browser.ContractError, message):
                         browser.validate_suite_compose(broken, suite, COMMIT, PROJECT)
 
+    def test_l04_delegates_disposable_database_refusal_with_safe_diagnostic(self):
+        broken = model("normal")
+        raw_connection = (
+            "Server=sqlserver;Database=SENTETIK-L04-Wrong;User Id=sa;"
+            "Password=SENTETIK-L04-Secret"
+        )
+        broken["services"]["api"]["environment"]["DB_CONNECTION_STRING"] = raw_connection
+        no_extension = dict(
+            browser.SUITE_API_EXTENSIONS["l04"], issuer=False, actors=False, identity=False)
+        with mock.patch.dict(browser.SUITE_API_EXTENSIONS, {"l04": no_extension}):
+            with self.assertRaises(browser.ContractError) as caught:
+                browser.validate_suite_compose(broken, "l04", COMMIT, PROJECT)
+
+        message = str(caught.exception)
+        self.assertIn(
+            "rule=api_disposable_database;service=api;binding=DB_CONNECTION_STRING;",
+            message,
+        )
+        self.assertRegex(
+            message,
+            r"expectedCatalogSha256=[0-9a-f]{64};actualCatalogSha256=[0-9a-f]{64}\]$",
+        )
+        self.assertNotIn(raw_connection, message)
+        self.assertNotIn("SENTETIK-L04-Wrong", message)
+        self.assertNotIn("SENTETIK-L04-Secret", message)
+        self.assertTrue(message.isascii())
+
     def test_normal_refuses_any_part_of_the_envelope(self):
         for key in (*ENVELOPE, "C01E2e__Profile", "C01E2e__Anything"):
             with self.subTest(key=key):

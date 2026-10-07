@@ -1,7 +1,9 @@
 import copy
+import hashlib
 import pathlib
 import tempfile
 import unittest
+import unicodedata
 
 import sys
 
@@ -165,6 +167,48 @@ class ComposeContractTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(validator.ContractError, "disposable DB"):
             validator.validate_compose(model, COMMIT, PROJECT)
+
+    def test_disposable_database_diagnostic_is_closed_and_secret_free(self):
+        expected = "GoymenErpC01_100_1"
+        actual = "SENTETIK-Catalog-Actual"
+        password = "SENTETIK-Password-Must-Not-Appear"
+        model = valid_compose()
+        model["services"]["api"]["environment"]["DB_CONNECTION_STRING"] = (
+            f"Server=sqlserver;Initial Catalog={actual};User Id=sa;Password={password}"
+        )
+
+        def digest(value):
+            normalized = unicodedata.normalize("NFC", value.strip()).casefold()
+            return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+
+        with self.assertRaises(validator.ContractError) as caught:
+            validator.validate_compose(model, COMMIT, PROJECT)
+
+        self.assertEqual(
+            "API disposable DB drift "
+            "[rule=api_disposable_database;service=api;binding=DB_CONNECTION_STRING;"
+            f"expectedCatalogSha256={digest(expected)};actualCatalogSha256={digest(actual)}]",
+            str(caught.exception),
+        )
+        for forbidden in (expected, actual, password, "Server=sqlserver", "Initial Catalog="):
+            self.assertNotIn(forbidden, str(caught.exception))
+        self.assertTrue(str(caught.exception).isascii())
+
+    def test_disposable_database_diagnostic_closes_missing_and_ambiguous_catalogs(self):
+        cases = (
+            ("Server=sqlserver;User Id=sa;Password=SENTETIK-missing", "missing"),
+            ("Database=one;Initial Catalog=two;Password=SENTETIK-ambiguous", "ambiguous"),
+        )
+        for connection_string, sentinel in cases:
+            with self.subTest(sentinel=sentinel):
+                model = valid_compose()
+                model["services"]["api"]["environment"]["DB_CONNECTION_STRING"] = connection_string
+                with self.assertRaises(validator.ContractError) as caught:
+                    validator.validate_compose(model, COMMIT, PROJECT)
+                message = str(caught.exception)
+                self.assertIn(f"actualCatalogSha256={sentinel}]", message)
+                self.assertNotIn(connection_string, message)
+                self.assertNotIn("SENTETIK-", message)
 
     def test_missing_or_reordered_bootstrap_identity_fails(self):
         for key, value, message in (
