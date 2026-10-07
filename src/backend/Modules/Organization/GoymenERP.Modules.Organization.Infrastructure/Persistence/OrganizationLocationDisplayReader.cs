@@ -24,14 +24,16 @@ internal sealed class OrganizationLocationDisplayReader(
         RequireCompany(companyId);
         ArgumentNullException.ThrowIfNull(locationIds);
 
-        if (locationIds.Count is < 1 or > MaximumLocations
-            || locationIds.Any(id => id == Guid.Empty)
-            || locationIds.Distinct().Count() != locationIds.Count)
+        // IReadOnlyCollection does not promise an immutable implementation. Snapshot once so the
+        // validated batch is exactly the batch translated into the one SQL query.
+        var requestedIds = locationIds.ToArray();
+        if (requestedIds.Length is < 1 or > MaximumLocations
+            || requestedIds.Any(id => id == Guid.Empty)
+            || requestedIds.Distinct().Count() != requestedIds.Length)
         {
             throw new OrganizationLocationDisplayQueryException();
         }
 
-        var requestedIds = locationIds.ToArray();
         var rows = await dbContext.Locations
             .AsNoTracking()
             .Where(location => requestedIds.Contains(location.Id))

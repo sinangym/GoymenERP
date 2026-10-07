@@ -69,6 +69,40 @@ public sealed class OrganizationLocationDisplayReaderTests
     }
 
     [Fact]
+    public async Task Validates_and_queries_one_snapshot_of_a_stateful_collection()
+    {
+        var database = await SeedAsync();
+        var reader = Reader(database, Resolved(CompanyA));
+        var stateful = new StatefulCollection(Active,
+            Enumerable.Range(0, 101)
+                .Select(index => Guid.Parse($"da210000-0000-4000-8000-{index:D12}"))
+                .ToArray());
+
+        await Assert.ThrowsAsync<OrganizationLocationDisplayQueryException>(() =>
+            reader.ReadAsync(CompanyA, stateful));
+        Assert.Equal(1, stateful.EnumerationCount);
+    }
+
+    [Fact]
+    public async Task Accepts_the_exact_upper_bound_and_preserves_cancellation()
+    {
+        var database = await SeedAsync();
+        var ids = Enumerable.Range(0, 99)
+            .Select(index => Guid.Parse($"da220000-0000-4000-8000-{index:D12}"))
+            .Prepend(Active)
+            .ToArray();
+        var reader = Reader(database, Resolved(CompanyA));
+
+        Assert.Equal(new OrganizationLocationDisplayV1(Active, "A-HALL", "Aktif hol"),
+            Assert.Single(await reader.ReadAsync(CompanyA, ids)));
+
+        using var cancelled = new CancellationTokenSource();
+        cancelled.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            reader.ReadAsync(CompanyA, [Active], cancelled.Token));
+    }
+
+    [Fact]
     public async Task A_context_that_unresolves_during_the_query_releases_no_location_names()
     {
         var database = await SeedAsync();
@@ -142,5 +176,22 @@ public sealed class OrganizationLocationDisplayReaderTests
         public Guid CompanyId => companyId;
 
         public void Set(Guid value) => throw new NotSupportedException();
+    }
+
+    private sealed class StatefulCollection(Guid first, IReadOnlyCollection<Guid> subsequent)
+        : IReadOnlyCollection<Guid>
+    {
+        public int EnumerationCount { get; private set; }
+
+        public int Count => 1;
+
+        public IEnumerator<Guid> GetEnumerator()
+        {
+            EnumerationCount++;
+            IEnumerable<Guid> values = EnumerationCount == 1 ? subsequent : new[] { first };
+            return values.GetEnumerator();
+        }
+
+        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
     }
 }
