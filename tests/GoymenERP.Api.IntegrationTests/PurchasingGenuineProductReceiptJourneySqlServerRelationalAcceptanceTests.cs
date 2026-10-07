@@ -36,6 +36,7 @@ public sealed class PurchasingGenuineProductReceiptJourneySqlServerRelationalAcc
 {
     private static readonly Guid ActorId = Guid.Parse("20000000-0000-0000-0000-000000000003");
     private static readonly Guid ActorExternalId = Guid.Parse("21000000-0000-0000-0000-000000000003");
+    private static readonly Guid CompanyBActorId = Guid.Parse("20000000-0000-0000-0000-000000000002");
     private static readonly Guid SystemRoleId = Guid.Parse("30000000-0000-0000-0000-000000000003");
     private static readonly Guid CompanyA = TestCompanyIds.CompanyA;
     private static readonly Guid CompanyB = TestCompanyIds.CompanyB;
@@ -67,7 +68,7 @@ public sealed class PurchasingGenuineProductReceiptJourneySqlServerRelationalAcc
             await GrantDisposableJourneyAuthorityAsync(factory);
 
             using var companyA = factory.CreateClientFor(TestUsers.GroupAdmin, CompanyA);
-            using var companyB = factory.CreateClientFor(TestUsers.GroupAdmin, CompanyB);
+            using var companyB = factory.CreateClientFor(TestUsers.CompanyB, CompanyB);
             companyA.DefaultRequestHeaders.Remove("Idempotency-Key");
             companyB.DefaultRequestHeaders.Remove("Idempotency-Key");
 
@@ -295,6 +296,19 @@ public sealed class PurchasingGenuineProductReceiptJourneySqlServerRelationalAcc
         assignment.AddScope(AccessScopeType.Company, CompanyA);
         identity.Roles.Add(role);
         identity.RoleAssignments.Add(assignment);
+
+        var foreignReaderRoleId = Guid.NewGuid();
+        var foreignReaderRole = new RoleDefinition(foreignReaderRoleId,
+            $"PURCHASE-GENUINE-FOREIGN-READER-{foreignReaderRoleId:N}",
+            "Disposable Company B Inventory reader for tenant non-disclosure proof", true);
+        foreignReaderRole.AddPermission(ErpPermissions.InventoryLabelsRead);
+        foreignReaderRole.AddPermission(ErpPermissions.InventoryBalancesRead);
+        var foreignReaderAssignment = new RoleAssignment(Guid.NewGuid(), CompanyBActorId,
+            foreignReaderRoleId, CompanyB, DateTimeOffset.UtcNow.AddMinutes(-1), null,
+            approvedByUserId: null);
+        foreignReaderAssignment.AddScope(AccessScopeType.Company, CompanyB);
+        identity.Roles.Add(foreignReaderRole);
+        identity.RoleAssignments.Add(foreignReaderAssignment);
         await identity.SaveChangesAsync();
     }
 
