@@ -70,14 +70,16 @@ function canonicalDecimal(value: string): string {
 
 function installPlanApi(options: {
   readonly failFirstSave?: boolean
+  readonly commitThenLoseFirstSave?: boolean
   readonly refuseFirstSave?: boolean
   readonly candidates?: () => unknown
   readonly preview?: (body: Record<string, unknown>) => Response | Promise<Response>
+  readonly capabilities?: readonly string[]
 } = {}) {
   let saves = 0
   let stored: Record<string, unknown> | null = null
   const recorded = installFetch({
-    capabilities: [MANUFACTURING_CAPABILITY.planCreate, MANUFACTURING_CAPABILITY.planDetail],
+    capabilities: options.capabilities ?? [MANUFACTURING_CAPABILITY.planCreate, MANUFACTURING_CAPABILITY.planDetail],
     respond: (url, init) => {
       if (url.includes('/organization/work-centers')) return json([workCenter()])
       if (url.includes('/inventory/references/parent-rolls')) {
@@ -108,6 +110,10 @@ function installPlanApi(options: {
           workCenterId: string
           inputs: Array<{ parentRollId: string; plannedKg: string }>
           target: { basis: string; kg: string } | null
+          slittingSpec?: {
+            lines: Array<{ bandWidthMm: string; count: number }>
+            windingTargetKg: string | null
+          } | null
         }
         stored = plan({
           planId: request.planId,
@@ -117,8 +123,25 @@ function installPlanApi(options: {
             plannedKg: canonicalDecimal(plannedKg),
           })),
           target: request.target,
+          slittingSpec: request.slittingSpec === undefined || request.slittingSpec === null
+            ? null
+            : {
+                lines: request.slittingSpec.lines.map((line) => ({
+                  bandWidthMm: canonicalDecimal(line.bandWidthMm),
+                  count: line.count,
+                })),
+                windingTargetKg: request.slittingSpec.windingTargetKg === null
+                  ? null
+                  : canonicalDecimal(request.slittingSpec.windingTargetKg),
+              },
         })
-        return json(stored, 201, { Location: `/api/v1/manufacturing/plans/${request.planId}` })
+        if (options.commitThenLoseFirstSave && saves === 1) throw new TypeError('response lost after commit')
+        return json(stored, 201, {
+          Location: `/api/v1/manufacturing/plans/${request.planId}`,
+          ...(options.commitThenLoseFirstSave && saves > 1
+            ? { 'Idempotency-Replayed': 'true', 'Idempotency-Original-Correlation-Id': 'corr-slitting-1' }
+            : {}),
+        })
       }
       if (url.includes('/manufacturing/plans/') && init?.method !== 'POST' && stored !== null) return json(stored)
       return undefined
@@ -189,6 +212,57 @@ describe('plan create and reopen', () => {
     const [first, second] = saveRequests(recorded)
     expect(second.body).toEqual(first.body)
     expect(second.headers['Idempotency-Key']).toBe(first.headers['Idempotency-Key'])
+  })
+
+  it('previews, saves and reopens the exact ordered slitting draft content while keeping revision unavailable', async () => {
+    const user = userEvent.setup()
+    const recorded = installPlanApi({
+      preview: (body) => json(previewAnswer(body)),
+      commitThenLoseFirstSave: true,
+      capabilities: [
+        MANUFACTURING_CAPABILITY.planCreate,
+        MANUFACTURING_CAPABILITY.planDetail,
+        MANUFACTURING_CAPABILITY.planEdit,
+      ],
+    })
+    renderAt('/uretim/plan/yeni')
+    await fillPlan(user)
+    await user.click(screen.getByRole('checkbox', { name: 'Sıralı bant planı ekle' }))
+    await user.type(screen.getByLabelText('Bant 1 genişliği mm'), '150.000')
+    await user.type(screen.getByLabelText('Bant 1 adedi'), '4')
+    await user.click(screen.getByRole('button', { name: 'Bant satırı ekle' }))
+    await user.type(screen.getByLabelText('Bant 2 genişliği mm'), '240.50')
+    await user.type(screen.getByLabelText('Bant 2 adedi'), '3')
+    await user.type(screen.getByLabelText('İsteğe bağlı sarım hedefi (kg)'), '2000.00')
+
+    await waitFor(() => expect(requestsFor(recorded, '/manufacturing/plans/preview', 'POST').at(-1)?.body)
+      .toMatchObject({
+        slittingSpec: {
+          lines: [{ bandWidthMm: '150.000', count: 4 }, { bandWidthMm: '240.50', count: 3 }],
+          windingTargetKg: '2000.00',
+        },
+      }))
+    await user.click(screen.getByRole('button', { name: 'Taslak planı kaydet' }))
+    await user.click(await screen.findByRole('button', { name: 'Aynı anahtarla yeniden gönder' }))
+    const reopen = await screen.findByRole('link', { name: 'Formu kapat ve planı yeniden aç' })
+    const [first, saved] = saveRequests(recorded)
+    expect(saved.body).toEqual(first.body)
+    expect(saved.headers['Idempotency-Key']).toBe(first.headers['Idempotency-Key'])
+    const lastPreview = requestsFor(recorded, '/manufacturing/plans/preview', 'POST').at(-1)
+    expect(lastPreview).toBeDefined()
+    expect((saved.body as { slittingSpec: unknown }).slittingSpec).toEqual(
+      (lastPreview!.body as { slittingSpec: unknown }).slittingSpec,
+    )
+
+    await user.click(reopen)
+    const spec = await screen.findByRole('heading', { name: 'Dilme ayrıntısı' })
+    const section = spec.closest('section') as HTMLElement
+    const rows = within(section).getAllByRole('row')
+    expect(rows[1].textContent).toContain('150 mm')
+    expect(rows[2].textContent).toContain('240.5 mm')
+    expect(within(section).getByText('Sarım hedefi: 2000 kg')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Planı düzenle' })).toBeNull()
+    expect(screen.getByText(/Dilme ayrıntısı taşıyan plan düzenlenmez/)).toBeTruthy()
   })
 
   it('allows a new attempt with a new key after a definitive refusal', async () => {
@@ -325,6 +399,7 @@ describe('AT-061 / AT-062: the live plan preview', () => {
       workCenterId: WORK_CENTER,
       inputs: [{ parentRollId: ROLL_1, plannedKg: '900.50', expectedLabelVersion: '7' }],
       target: null,
+      slittingSpec: null,
     })
     expect(previews.at(-1)?.headers['Idempotency-Key']).toBeUndefined()
     expect(within(panel).getByText('Toplam planlanan girdi').nextSibling?.textContent).toBe('900.5 kg')

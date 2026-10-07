@@ -79,12 +79,13 @@ public sealed class MfgBrowserSeed : IBrowserSuiteFixture
     private static readonly ParentRollFixture ProcessPaintRoll = Roll(14);
     private static readonly ParentRollFixture ProcessCutToLengthRoll = Roll(15);
     private static readonly ParentRollFixture CustomerOwnedRoll = Roll(16);
+    private static readonly ParentRollFixture SlittingSpecRoll = Roll(17);
     private static readonly ParentRollFixture[] CaseRolls =
     [
         IssueRoll, ReplayRoll, ConflictRoll, ListRoll, CloseRoll,
         PlanCreateRoll, PlanReplayRoll, PlanRefusalRoll, OutputUiRoll,
         ProcessSlittingRoll, ProcessColdRollingRoll, ProcessTubeProfileRoll, ProcessPaintRoll,
-        ProcessCutToLengthRoll,
+        ProcessCutToLengthRoll, SlittingSpecRoll,
     ];
 
     private const string ManufacturingPath = "/api/v1/manufacturing";
