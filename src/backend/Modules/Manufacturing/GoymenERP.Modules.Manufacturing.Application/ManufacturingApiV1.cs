@@ -138,7 +138,8 @@ public sealed record PlanRevisionInputViewV1(
     Guid ParentRollId,
     string PlannedKg,
     string? ExpectedLabelVersion,
-    CapturedPlanCommercialContextViewV1? CommercialContext = null);
+    CapturedPlanCommercialContextViewV1? CommercialContext = null,
+    CapturedPlanTechnicalSnapshotViewV1? TechnicalSnapshot = null);
 
 /// <summary>
 /// MFG-PLAN-EDIT: one entry of a plan's history. Revision 0 is the plan as created (no reason, no reviser); each later
@@ -2321,7 +2322,7 @@ public sealed partial class ManufacturingCommandService(
         revision.Revision, revision.PlanVersion, revision.WorkCenterId,
         [.. revision.Inputs.Select(input => new PlanRevisionInputViewV1(input.ParentRollId, Text(input.PlannedMass.Value),
             input.ExpectedLabelVersion?.ToString(CultureInfo.InvariantCulture),
-            CommercialContextView(input.CommercialContext)))],
+            CommercialContextView(input.CommercialContext), TechnicalSnapshotView(input.TechnicalSnapshot)))],
         revision.Target is { } target ? new TargetViewV1(target.Basis.ToString(), Text(target.Mass.Value)) : null,
         revision.Reason, revision.RevisedBy, revision.RecordedAtUtc);
 
