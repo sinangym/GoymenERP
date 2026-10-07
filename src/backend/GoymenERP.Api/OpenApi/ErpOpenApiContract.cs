@@ -1228,7 +1228,7 @@ public static partial class ErpOpenApiContract
                 cancellationToken: cancellationToken);
             content.Schema = new OpenApiSchema
             {
-                OneOf = [legacy, enriched],
+                AnyOf = [legacy, enriched],
             };
         }
     }
