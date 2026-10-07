@@ -72187,6 +72187,16 @@
                 "$ref": "#/components/schemas/TargetRequestV1"
               }
             ]
+          },
+          "slittingSpec": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SlittingSpecRequestV1"
+              }
+            ]
           }
         }
       },
@@ -72593,6 +72603,16 @@
               },
               {
                 "$ref": "#/components/schemas/PlanPreviewViewV1"
+              }
+            ]
+          },
+          "slittingSpec": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SlittingSpecViewV1"
               }
             ]
           }
@@ -78961,6 +78981,16 @@
                 "$ref": "#/components/schemas/TargetRequestV1"
               }
             ]
+          },
+          "slittingSpec": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SlittingSpecRequestV1"
+              }
+            ]
           }
         }
       },
@@ -79090,6 +79120,93 @@
           "version": {
             "type": "integer",
             "format": "int64"
+          }
+        }
+      },
+      "SlitLineRequestV1": {
+        "required": [
+          "bandWidthMm",
+          "count"
+        ],
+        "type": "object",
+        "properties": {
+          "bandWidthMm": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "count": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          }
+        }
+      },
+      "SlitLineViewV1": {
+        "required": [
+          "bandWidthMm",
+          "count"
+        ],
+        "type": "object",
+        "properties": {
+          "bandWidthMm": {
+            "type": "string"
+          },
+          "count": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          }
+        }
+      },
+      "SlittingSpecRequestV1": {
+        "required": [
+          "lines"
+        ],
+        "type": "object",
+        "properties": {
+          "lines": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/SlitLineRequestV1"
+            }
+          },
+          "windingTargetKg": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "SlittingSpecViewV1": {
+        "required": [
+          "lines",
+          "windingTargetKg"
+        ],
+        "type": "object",
+        "properties": {
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SlitLineViewV1"
+            }
+          },
+          "windingTargetKg": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },

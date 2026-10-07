@@ -3934,7 +3934,16 @@ public sealed partial class OpenApiContractGenerationTests
                     ("target", "oneOf:ref:TargetViewV1|type:null"),
                     ("approvedByUserId", "type:null|string;format:uuid"),
                     ("approvedAtUtc", "type:null|string;format:date-time"),
-                    ("calculation", "oneOf:ref:PlanPreviewViewV1|type:null")),
+                    ("calculation", "oneOf:ref:PlanPreviewViewV1|type:null"),
+                    ("slittingSpec", "oneOf:ref:SlittingSpecViewV1|type:null")),
+                ["SlitLineViewV1"] = ObjectSchema(
+                    ["bandWidthMm", "count"],
+                    ("bandWidthMm", "type:string"),
+                    ("count", "type:integer|string;format:int32")),
+                ["SlittingSpecViewV1"] = ObjectSchema(
+                    ["lines", "windingTargetKg"],
+                    ("lines", "type:array;items:ref:SlitLineViewV1"),
+                    ("windingTargetKg", "type:null|string")),
                 ["RemainingTargetViewV1"] = ObjectSchema(
                     ["basis", "targetKg", "achievedKg", "remainingKg"],
                     ("basis", "type:null|string"),
@@ -5342,6 +5351,14 @@ public sealed partial class OpenApiContractGenerationTests
                     ("plannedKg", "type:null|string"),
                     ("expectedLabelVersion", "type:string"),
                     ("commercialContext", "oneOf:ref:PlanCommercialContextRequestV1|type:null")),
+                ["SlitLineRequestV1"] = ObjectSchema(
+                    ["bandWidthMm", "count"],
+                    ("bandWidthMm", "type:null|string"),
+                    ("count", "type:integer|string;format:int32")),
+                ["SlittingSpecRequestV1"] = ObjectSchema(
+                    ["lines"],
+                    ("lines", "type:array|null;items:ref:SlitLineRequestV1"),
+                    ("windingTargetKg", "type:null|string")),
                 ["RecordFactRequestV1"] = ObjectSchema(
                     ["factId", "expectedVersion", "parentRollId", "kg", "occurredAtUtc"],
                     ("factId", "type:string;format:uuid"),
@@ -5354,13 +5371,15 @@ public sealed partial class OpenApiContractGenerationTests
                     ("planId", "type:string;format:uuid"),
                     ("workCenterId", "type:string;format:uuid"),
                     ("inputs", "type:array|null;items:ref:PlannedInputRequestV1"),
-                    ("target", "oneOf:ref:TargetRequestV1|type:null")),
+                    ("target", "oneOf:ref:TargetRequestV1|type:null"),
+                    ("slittingSpec", "oneOf:ref:SlittingSpecRequestV1|type:null")),
                 // AT-061: the preview takes the save's grammar without the plan id (nothing is created).
                 ["PlanPreviewRequestV1"] = ObjectSchema(
                     ["workCenterId", "inputs", "target"],
                     ("workCenterId", "type:string;format:uuid"),
                     ("inputs", "type:array|null;items:ref:PlannedInputRequestV1"),
-                    ("target", "oneOf:ref:TargetRequestV1|type:null")),
+                    ("target", "oneOf:ref:TargetRequestV1|type:null"),
+                    ("slittingSpec", "oneOf:ref:SlittingSpecRequestV1|type:null")),
                 // MFG-PLAN-EDIT: a Draft plan's revision names the version read and a reason; the process stays fixed.
                 ["RevisePlanRequestV1"] = ObjectSchema(
                     ["expectedVersion", "workCenterId", "inputs", "target", "reason"],

@@ -265,6 +265,83 @@ public sealed class ManufacturingPlanPreviewTests
     }
 
     [Fact]
+    public async Task A_slitting_spec_is_shared_by_preview_save_and_read_without_defaulting_external_parameters()
+    {
+        var fixture = new Fixture();
+        var inputs = new[] { new PlannedInputRequestV1(RollA, "1000", "7") };
+        var spec = new SlittingSpecRequestV1(
+            [new SlitLineRequestV1("150.000", 4), new SlitLineRequestV1("240", 3)], "2000.000");
+
+        var preview = await fixture.Service.PreviewPlanAsync(
+            new PlanPreviewRequestV1(WorkCenter, inputs, null, spec), Permission, CancellationToken.None);
+        var saved = await fixture.Service.SavePlanAsync(
+            new SavePlanRequestV1(Guid.NewGuid(), WorkCenter, inputs, null, spec),
+            "slitting-spec", Permission, CancellationToken.None);
+
+        Assert.Equal(ManufacturingApiStatus.Ok, preview.Status);
+        Assert.Equal(ManufacturingApiStatus.Created, saved.Status);
+        var stored = fixture.Store.Plans[saved.Resource!.PlanId];
+        Assert.Equal(new SlittingSpec([new SlitLine(150m, 4), new SlitLine(240m, 3)], new Kilograms(2000m)),
+            stored.Spec);
+        var savedSpec = saved.Resource.SlittingSpec!;
+        Assert.Equal("2000", savedSpec.WindingTargetKg);
+        Assert.Equal([("150", 4), ("240", 3)],
+            savedSpec.Lines.Select(line => (line.BandWidthMm, line.Count)));
+
+        var storedCalculation = ManufacturingCommandService.PlanPreviewView(stored.WorkCenterId,
+            ProductionPlanCalculatorV1.Calculate(stored, PlanCalculationParameters.FromCapturedSnapshots(stored.Inputs)));
+        Assert.Equal(JsonSerializer.Serialize(storedCalculation, Json),
+            JsonSerializer.Serialize(preview.Resource, Json));
+        Assert.DoesNotContain(preview.Resource!.MissingParameters,
+            parameter => parameter.StartsWith("lines[", StringComparison.Ordinal));
+        Assert.Contains("netUsableWidthMm", preview.Resource.MissingParameters);
+        Assert.Empty(fixture.Store.Commands.Where(command => command.Value.CommandName != ManufacturingCommandNames.SavePlan));
+    }
+
+    [Fact]
+    public async Task Slitting_spec_grammar_is_precise_and_non_slitting_work_centers_refuse_it_before_owner_reads()
+    {
+        var invalid = new (SlittingSpecRequestV1 Spec, string Field)[]
+        {
+            (new SlittingSpecRequestV1(null), "slittingSpec.lines"),
+            (new SlittingSpecRequestV1([new SlitLineRequestV1("1,5", 1)]),
+                "slittingSpec.lines[0].bandWidthMm"),
+            (new SlittingSpecRequestV1([new SlitLineRequestV1("1.0001", 1)]),
+                "slittingSpec.lines[0].bandWidthMm"),
+            (new SlittingSpecRequestV1([new SlitLineRequestV1("1", 0)]), "slittingSpec.lines[0].count"),
+            (new SlittingSpecRequestV1([new SlitLineRequestV1("1", 1)], "0"),
+                "slittingSpec.windingTargetKg"),
+        };
+        foreach (var (spec, field) in invalid)
+        {
+            var fixture = new Fixture();
+            var answer = await fixture.Service.PreviewPlanAsync(
+                Request("10") with { SlittingSpec = spec }, Permission, CancellationToken.None);
+            Assert.Equal((ManufacturingApiStatus.Invalid, field), (answer.Status, answer.Field));
+            Assert.Empty(fixture.Calls);
+        }
+
+        var empty = new Fixture();
+        var noLines = await empty.Service.PreviewPlanAsync(
+            Request("10") with { SlittingSpec = new SlittingSpecRequestV1([]) },
+            Permission, CancellationToken.None);
+        Assert.Equal((ManufacturingApiStatus.Unprocessable, ManufacturingRuleCodes.SlittingSpecWithoutLines),
+            (noLines.Status, noLines.Code));
+
+        var otherProcess = new Fixture();
+        otherProcess.WorkCenters.Kind = ManufacturingProcess.ColdRolling.ToString();
+        var refused = await otherProcess.Service.PreviewPlanAsync(
+            Request("10") with
+            {
+                SlittingSpec = new SlittingSpecRequestV1([new SlitLineRequestV1("150", 4)]),
+            },
+            Permission, CancellationToken.None);
+        Assert.Equal((ManufacturingApiStatus.Invalid, "slittingSpec"), (refused.Status, refused.Field));
+        Assert.Equal(["authority", "work-center", "authority"], otherProcess.Calls);
+        Assert.Empty(otherProcess.Store.Writes);
+    }
+
+    [Fact]
     public async Task The_preview_runs_the_save_checks_in_the_save_order()
     {
         var fixture = new Fixture();
