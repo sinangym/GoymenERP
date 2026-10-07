@@ -23,6 +23,15 @@ public sealed class FinanceOfficialInvoiceImportWorkDeliverySqlServerRelationalA
     private const string LegacyPreviewPhase = "finance_work_legacy_preview_validation";
     private const string LegacySerializationPhase = "finance_work_legacy_serialization";
     private const string LegacyBatchInsertPhase = "finance_work_legacy_batch_insert";
+    private const string LegacyBatchIdentityPhase = "finance_work_legacy_batch_identity";
+    private const string LegacyBatchContentPhase = "finance_work_legacy_batch_content";
+    private const string LegacyBatchCompanyForeignKeyPhase = "finance_work_legacy_batch_company_fk";
+    private const string LegacyBatchDuplicatePhase = "finance_work_legacy_batch_duplicate";
+    private const string LegacyBatchNullPhase = "finance_work_legacy_batch_null";
+    private const string LegacyBatchTruncatedPhase = "finance_work_legacy_batch_truncated";
+    private const string LegacyBatchTablePhase = "finance_work_legacy_batch_table";
+    private const string LegacyBatchColumnPhase = "finance_work_legacy_batch_column";
+    private const string LegacyBatchOtherSqlPhase = "finance_work_legacy_batch_other_sql";
     private const string LegacyCommandInsertPhase = "finance_work_legacy_command_insert";
     private const string LegacyUpPhase = "finance_work_legacy_up";
     private const string LegacyReplayPhase = "finance_work_legacy_replay";
@@ -165,7 +174,15 @@ public sealed class FinanceOfficialInvoiceImportWorkDeliverySqlServerRelationalA
                 batchCommand.Parameters.AddWithValue("@actor", "SENTETIK-maker");
                 batchCommand.Parameters.AddWithValue("@at", uploadedAt);
                 batchCommand.Parameters.AddWithValue("@correlation", "legacy-correlation");
-                await batchCommand.ExecuteNonQueryAsync();
+                try
+                {
+                    await batchCommand.ExecuteNonQueryAsync();
+                }
+                catch (SqlException exception)
+                {
+                    failurePhase = LegacyBatchInsertDiagnostic(exception);
+                    throw;
+                }
             }
 
             failurePhase = LegacyCommandInsertPhase;
@@ -410,6 +427,38 @@ public sealed class FinanceOfficialInvoiceImportWorkDeliverySqlServerRelationalA
         hash.AppendData(request.Utf8Csv.Span);
         return Convert.ToHexString(hash.GetHashAndReset()).ToLowerInvariant();
     }
+
+    private static string LegacyBatchInsertDiagnostic(SqlException exception)
+    {
+        if (exception.Number == 547)
+        {
+            if (ContainsExactSqlObject(exception, "CK_OfficialInvoiceImportBatches_Identity"))
+            {
+                return LegacyBatchIdentityPhase;
+            }
+            if (ContainsExactSqlObject(exception, "CK_OfficialInvoiceImportBatches_Content"))
+            {
+                return LegacyBatchContentPhase;
+            }
+            if (ContainsExactSqlObject(exception, "FK_OfficialInvoiceImportBatches_Companies_CompanyId"))
+            {
+                return LegacyBatchCompanyForeignKeyPhase;
+            }
+        }
+
+        return exception.Number switch
+        {
+            2601 or 2627 => LegacyBatchDuplicatePhase,
+            515 => LegacyBatchNullPhase,
+            8152 or 2628 => LegacyBatchTruncatedPhase,
+            208 => LegacyBatchTablePhase,
+            207 => LegacyBatchColumnPhase,
+            _ => LegacyBatchOtherSqlPhase,
+        };
+    }
+
+    private static bool ContainsExactSqlObject(SqlException exception, string objectName) =>
+        exception.Errors.Cast<SqlError>().Any(error => error.Message.Contains(objectName, StringComparison.Ordinal));
 
     private static string SafeCount(int value) => value < 0 ? "not_available" : value.ToString();
 }
