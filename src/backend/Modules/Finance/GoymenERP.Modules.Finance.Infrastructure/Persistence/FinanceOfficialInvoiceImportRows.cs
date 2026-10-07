@@ -39,8 +39,29 @@ internal sealed class FinanceOfficialInvoiceImportCommandRow : IFinanceTenantRow
     public string IdempotencyKeyHash { get; set; } = string.Empty;
     public string ActorId { get; set; } = string.Empty;
     public string PayloadHash { get; set; } = string.Empty;
+    public int? ProducerSchemaVersion { get; set; }
     public Guid BatchId { get; set; }
     public string ResultJson { get; set; } = string.Empty;
     public string CorrelationId { get; set; } = string.Empty;
     public DateTimeOffset RecordedAtUtc { get; set; }
+}
+
+/// <summary>Immutable owner delivery for the internal Work admission bridge.</summary>
+internal sealed class FinanceOfficialInvoiceImportWorkDeliveryRow : IFinanceTenantRow
+{
+    public Guid DeliveryId { get; set; }
+    public Guid CompanyId { get; set; }
+    public Guid CommandReceiptId { get; set; }
+    public Guid BatchId { get; set; }
+    public string SourceKey { get; set; } = string.Empty;
+    public string ScopeKey { get; set; } = string.Empty;
+    public long ObservationOrdinal { get; set; }
+    public int DesiredState { get; set; }
+    public Guid EvidenceId { get; set; }
+    public int PayloadSchemaVersion { get; set; }
+    public byte[] PayloadUtf8 { get; set; } = [];
+    public string PayloadSha256 { get; set; } = string.Empty;
+    public string CorrelationId { get; set; } = string.Empty;
+    public string? CausationId { get; set; }
+    public DateTimeOffset OccurredAtUtc { get; set; }
 }
