@@ -1,5 +1,6 @@
 /* SHELL-PILOT-01 shell layout. Tokens are placeholders until WCAG 2.2 AA
-   measurement + brand review (ERP-000K_SHELL_CONTRACT §15.3). */
+   measurement + brand review (ERP-000K_SHELL_CONTRACT §15.3).
+   P1-b: the sidebar's values are UX v1.2's approved ones (no new design round). */
 
 .shell {
   --shell-navy: #0f1f3d;
@@ -7,13 +8,23 @@
   --shell-surface: #f4f6fa;
   --shell-border: #d5dbe6;
   --shell-action: #1f5fd0;
+  --shell-nav-muted: #a9b6d0;
+  --shell-nav-hover: #1a2d55;
+  --shell-nav-active: #24396a;
+  --shell-nav-accent: #8fb4ff;
 
   display: grid;
-  grid-template-columns: 240px 1fr;
+  grid-template-columns: 240px minmax(0, 1fr);
   min-height: 100vh;
   background: var(--shell-surface);
   color: #1a2233;
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+/* The sidebar's own `display` would otherwise beat the user agent's `[hidden] { display: none }`. */
+.sidebar[hidden],
+.groupList[hidden] {
+  display: none;
 }
 
 .skipLink {
@@ -30,25 +41,175 @@
   top: 8px;
 }
 
-.nav {
-  background: var(--shell-navy);
-  color: var(--shell-navy-text);
-  padding: 16px;
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.icon {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* NAV-001: the sidebar stays in place on every desktop screen and scrolls on its own. */
+.sidebar {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  background: var(--shell-navy);
+  color: var(--shell-navy-text);
 }
 
 .brand {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 16px 20px 8px;
   font-weight: 700;
   font-size: 1.05rem;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.01em;
+}
+
+.closeButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 36px;
+  min-height: 36px;
+  padding: 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--shell-navy-text);
+  cursor: pointer;
+}
+.closeButton:hover {
+  background: var(--shell-nav-hover);
+}
+
+.nav {
+  padding: 4px 8px 24px;
 }
 
 .navEmpty {
+  margin: 12px 12px 0;
   font-size: 0.85rem;
   opacity: 0.75;
   line-height: 1.4;
+}
+
+.navList,
+.groupList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.navList {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.groupList {
+  padding: 2px 0 8px;
+}
+
+.topLink,
+.topLinkActive,
+.groupButton {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 40px;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--shell-navy-text);
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 600;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.groupLabel {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.chevron {
+  width: 16px;
+  height: 16px;
+  opacity: 0.8;
+  transition: transform 0.15s;
+}
+.groupButton[aria-expanded="true"] .chevron {
+  transform: rotate(90deg);
+}
+
+/* The open page's work area stays recognisable even while its group is closed. */
+.groupActive > .groupButton[aria-expanded="false"]::after {
+  content: "";
+  order: 3;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--shell-nav-accent);
+}
+
+.navLink,
+.navLinkActive {
+  display: flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 6px 10px 6px 40px;
+  border-radius: 6px;
+  color: var(--shell-navy-text);
+  text-decoration: none;
+  font-size: 0.875rem;
+}
+
+.topLink:hover,
+.groupButton:hover,
+.navLink:hover {
+  background: var(--shell-nav-hover);
+}
+
+.topLinkActive,
+.navLinkActive {
+  background: var(--shell-nav-active);
+  font-weight: 600;
+  box-shadow: inset 3px 0 0 var(--shell-nav-accent);
+}
+
+.topLink:focus-visible,
+.topLinkActive:focus-visible,
+.groupButton:focus-visible,
+.navLink:focus-visible,
+.navLinkActive:focus-visible,
+.closeButton:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: -2px;
 }
 
 .body {
@@ -68,6 +229,26 @@
   padding: 12px 20px;
   background: #fff;
   border-bottom: 1px solid var(--shell-border);
+}
+
+.menuButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 6px 12px;
+  border: 1px solid var(--shell-border);
+  border-radius: 6px;
+  background: #fff;
+  color: #1a2233;
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+.menuButton:focus-visible {
+  outline: 2px solid var(--shell-action);
+  outline-offset: 2px;
 }
 
 .companyPicker {
@@ -117,14 +298,42 @@
   margin: 0 0 12px;
 }
 
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(8, 14, 28, 0.5);
+  touch-action: none;
+  overscroll-behavior: contain;
+}
+
+/* UX v1.2 on a phone: the page starts at the top and the sidebar becomes a drawer behind "Menü". */
 @media (max-width: 767px) {
   .shell {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
-  .nav {
-    flex-direction: row;
-    align-items: center;
-    flex-wrap: wrap;
+  .drawer {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 1001;
+    width: min(320px, 86vw);
+    height: auto;
+    box-shadow: 0 8px 28px rgba(8, 14, 28, 0.35);
+  }
+  /* "Menü" stays one tap away while the page scrolls. */
+  .toolbar {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    padding: 8px 16px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chevron {
+    transition: none;
   }
 }
 
@@ -145,35 +354,4 @@
   color: #1f5fd0;
   font: inherit;
   cursor: pointer;
-}
-
-.navList {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.navLink,
-.navLinkActive {
-  display: block;
-  padding: 8px 10px;
-  border-radius: 4px;
-  color: var(--shell-navy-text);
-  text-decoration: none;
-  font-size: 0.92rem;
-}
-.navLink:hover {
-  background: rgba(255, 255, 255, 0.08);
-}
-.navLinkActive {
-  background: rgba(255, 255, 255, 0.16);
-  font-weight: 600;
-}
-.navLink:focus-visible,
-.navLinkActive:focus-visible {
-  outline: 2px solid #fff;
-  outline-offset: 2px;
 }
