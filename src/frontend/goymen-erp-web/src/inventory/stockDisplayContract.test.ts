@@ -271,4 +271,3 @@ describe('decodeStockDisplayPage — every guard can fail on its own', () => {
     expect(decodeStockDisplayPage(page({ items: [row({ productVersion: 'v7', productDisplay: { ...unreadable, expectedProductVersion: '7' } })] }))).toBeNull()
   })
 })
-
