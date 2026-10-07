@@ -11,9 +11,9 @@
 
 import { describe, expect, it } from 'vitest'
 import { matchPath } from 'react-router'
-import { CAPABILITY, CAPABILITY_ROUTE, CAPABILITY_NAV_LABEL } from './capabilities'
+import { CAPABILITY, CAPABILITY_ROUTE } from './capabilities'
 import { SALES_CAPABILITY, SALES_ROUTE, salesDetailPath } from '../sales/capabilities'
-import { NAV_CAPABILITIES } from './AppShell'
+import { CAPABILITY_NAV_LABEL, NAV_CAPABILITIES } from './navigation'
 
 describe('shell ↔ Sales lane capability ids', () => {
   it('declares the same three ids the lane does', () => {

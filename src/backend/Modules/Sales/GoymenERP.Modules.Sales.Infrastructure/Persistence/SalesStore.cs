@@ -591,7 +591,7 @@ public sealed class SalesStore(
             ?? throw new InvalidOperationException("Kayıtlı tekrar sonucu okunamadı.");
         if (result.Visible.Draft.Id != draftId || result.Withheld.Draft.Id != draftId
             || result.Visible.Draft.CompanyId != attempt.CompanyId || result.Withheld.Draft.CompanyId != attempt.CompanyId
-            || result.Visible.Draft != result.Withheld.Draft
+            || !ReplaySummariesMatch(result.Visible.Draft, result.Withheld.Draft)
             || result.Visible.Lines.Count != result.Withheld.Lines.Count
             || result.Visible.Lines.Any(line => line.PriceDisclosure != SalesPriceDisclosure.Visible)
             || result.Withheld.Lines.Any(line => line.PriceDisclosure != SalesPriceDisclosure.Withheld
@@ -602,6 +602,56 @@ public sealed class SalesStore(
         }
 
         return result;
+    }
+
+    internal static bool ReplaySummariesMatch(SalesOrderDraftSummaryView left, SalesOrderDraftSummaryView right) =>
+        left.Id == right.Id
+        && left.CompanyId == right.CompanyId
+        && string.Equals(left.DocumentNo, right.DocumentNo, StringComparison.Ordinal)
+        && string.Equals(left.Kind, right.Kind, StringComparison.Ordinal)
+        && string.Equals(left.State, right.State, StringComparison.Ordinal)
+        && string.Equals(left.Version, right.Version, StringComparison.Ordinal)
+        && string.Equals(left.Revision, right.Revision, StringComparison.Ordinal)
+        && left.PartyId == right.PartyId
+        && left.CompanyAccountId == right.CompanyAccountId
+        && left.CurrencyId == right.CurrencyId
+        && left.BusinessDate == right.BusinessDate
+        && left.CreatedAtUtc == right.CreatedAtUtc
+        && left.LineCount == right.LineCount
+        && string.Equals(left.ApprovalState, right.ApprovalState, StringComparison.Ordinal)
+        && left.CommercialStage == right.CommercialStage
+        && SameProductSnapshots(left.ProductSnapshots, right.ProductSnapshots);
+
+    private static bool SameProductSnapshots(
+        IReadOnlyList<SalesOrderDraftProductSnapshotViewV1>? left,
+        IReadOnlyList<SalesOrderDraftProductSnapshotViewV1>? right)
+    {
+        if (left is null || right is null)
+        {
+            return left is null && right is null;
+        }
+
+        if (left.Count != right.Count)
+        {
+            return false;
+        }
+
+        for (var index = 0; index < left.Count; index++)
+        {
+            var visible = left[index];
+            var withheld = right[index];
+            if (visible.ProductId != withheld.ProductId
+                || !string.Equals(visible.ProductVersion, withheld.ProductVersion, StringComparison.Ordinal)
+                || !string.Equals(visible.ProductCode, withheld.ProductCode, StringComparison.Ordinal)
+                || !string.Equals(visible.ProductName, withheld.ProductName, StringComparison.Ordinal)
+                || visible.OrderUnitId != withheld.OrderUnitId
+                || !string.Equals(visible.OrderUnitCode, withheld.OrderUnitCode, StringComparison.Ordinal))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /// <summary>

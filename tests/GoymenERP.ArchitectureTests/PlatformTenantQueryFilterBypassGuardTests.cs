@@ -155,8 +155,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // captured instead of printed.
     // Re-fingerprinted for LOG-4a: a Logistics class maps to its own module.
     // Re-fingerprinted for PUR-4a: a Purchasing class maps to its own module.
+    // Re-fingerprinted for Work desired-state admission: the mandatory-set test now pins the three
+    // canonical admission/snapshot SQL cases already present in work.txt; verifier behavior is unchanged.
     private const string ReviewedSqlServerRcsiVerifierTestsFingerprint =
-        "38ce36cc9465a28a829c0452f29c08bc2fe275f0f47bbba8226bcba55d2acc87";
+        "aa467cb28fbf2a643bb79b42dc8eb134758f3d718bc5114694b92f877265613d";
     // The broad relational inventory, one file per module (see RelationalInventoryDirectory). Each
     // pin is its own paragraph so that two modules re-pinning their own files change lines that are
     // not adjacent and combine cleanly; a file's owner is its module, the pin line is central.
@@ -250,7 +252,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // work
             // JV03: the five ordinal desired-state storage SQL facts are mandatory and skip-free.
             ["tools/relational_inventory/work.txt"] =
-                "1b4e97363d97f585be14fb59c431ed6137237b9fdd45d907a58d57de50c5082a",
+                "8eeffadbd31f1caf0ecf5c48a55cece883b292df8e3f3acd56ab2a1d53a29eb2",
         };
     private const string ContinuousIntegrationWorkflowPath = ".github/workflows/ci.yml";
     private const string BackendTestGroupVerifierPath = "tools/verify_backend_test_groups.py";
@@ -1144,8 +1146,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // core (still a single save through the filtered context); SqlClient count unchanged.
                     // Re-fingerprinted for PL04: the first complete price-floor approval response is persisted and
                     // replayed from the existing company-filtered attempt; SqlClient count remains unchanged.
+                    // Re-fingerprinted for the stored product-snapshot replay check: structural summary equality
+                    // replaces record equality; no database, connection, command, raw SQL or filter-bypass API was added.
                     new(
-                        "890a1bea27e988b824d25ee71860f58aaea64a93be88ab8a891106b6a4d2ef8c",
+                        "dcd91635cea0a3eaf85e19590b5168e6b0da20a647576ba3ce98b130803a9d69",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                          {
                              ["Microsoft.Data.SqlClient"] = 1
@@ -1166,7 +1170,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/"
                  + "Persistence/WorkDesiredStateStoreV2.cs"] =
                     new(
-                        "fe4cb7eb9663d827927b9d1e15cff17f7987537061a5cfd38b4b128852c1300e",
+                        "c8b78e13e5a6b5d2075730346a718dbf48672ca47356de212271240a7f76b472",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1

@@ -77759,6 +77759,12 @@
           },
           "priceDisclosure": {
             "$ref": "#/components/schemas/SalesPriceDisclosure"
+          },
+          "orderUnitCode": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
@@ -77897,6 +77903,39 @@
             "items": {
               "$ref": "#/components/schemas/SalesDraftPriceReferenceV1"
             }
+          }
+        }
+      },
+      "SalesOrderDraftProductSnapshotViewV1": {
+        "required": [
+          "productId",
+          "productVersion",
+          "productCode",
+          "productName",
+          "orderUnitId",
+          "orderUnitCode"
+        ],
+        "type": "object",
+        "properties": {
+          "productId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "productVersion": {
+            "type": "string"
+          },
+          "productCode": {
+            "type": "string"
+          },
+          "productName": {
+            "type": "string"
+          },
+          "orderUnitId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "orderUnitCode": {
+            "type": "string"
           }
         }
       },
@@ -78044,6 +78083,15 @@
                 "$ref": "#/components/schemas/SalesCommercialStageV1"
               }
             ]
+          },
+          "productSnapshots": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/SalesOrderDraftProductSnapshotViewV1"
+            }
           }
         }
       },
