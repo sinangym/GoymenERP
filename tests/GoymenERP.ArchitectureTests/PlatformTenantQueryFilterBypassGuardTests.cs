@@ -1146,8 +1146,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // core (still a single save through the filtered context); SqlClient count unchanged.
                     // Re-fingerprinted for PL04: the first complete price-floor approval response is persisted and
                     // replayed from the existing company-filtered attempt; SqlClient count remains unchanged.
+                    // Re-fingerprinted for the stored product-snapshot replay check: structural summary equality
+                    // replaces record equality; no database, connection, command, raw SQL or filter-bypass API was added.
                     new(
-                        "890a1bea27e988b824d25ee71860f58aaea64a93be88ab8a891106b6a4d2ef8c",
+                        "dcd91635cea0a3eaf85e19590b5168e6b0da20a647576ba3ce98b130803a9d69",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                          {
                              ["Microsoft.Data.SqlClient"] = 1

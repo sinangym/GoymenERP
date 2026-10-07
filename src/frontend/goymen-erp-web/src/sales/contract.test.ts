@@ -188,6 +188,15 @@ describe('decodeDraftMutation', () => {
 })
 
 describe('decodeDraftDetail / decodeDraftPage', () => {
+  const productSnapshot = {
+    productId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1',
+    productVersion: ' 9007199254740993 ',
+    productCode: ' SENTETIK-P-01 ',
+    productName: ' Sentetik Rulo ',
+    orderUnitId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1',
+    orderUnitCode: ' KG ',
+  }
+
   it('reads the detail example, bound to the id that was asked for', () => {
     const id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
     expect(decodeDraftDetail(parse(detailResponse), id)?.lines[0].requestedDeliverySlices).toHaveLength(2)
@@ -198,6 +207,84 @@ describe('decodeDraftDetail / decodeDraftPage', () => {
     const page = decodeDraftPage(parse(listResponse))
     expect(page?.items).toHaveLength(1)
     expect(page?.nextCursor).toBeNull()
+  })
+
+  it('normalizes omitted and explicit-null product snapshots to absent, and preserves a valid stored snapshot verbatim', () => {
+    const omitted = decodeDraftPage(parse(listResponse))?.items[0]
+    expect(omitted).not.toHaveProperty('productSnapshots')
+
+    const nullable = clone(parse(listResponse)) as any
+    nullable.items[0].productSnapshots = null
+    expect(decodeDraftPage(nullable)?.items[0]).not.toHaveProperty('productSnapshots')
+
+    const present = clone(parse(listResponse)) as any
+    present.items[0].productSnapshots = [productSnapshot]
+    expect(decodeDraftPage(present)?.items[0].productSnapshots).toEqual([productSnapshot])
+  })
+
+  it('requires all six non-null snapshot fields and refuses invalid text, ids and unknown parsed keys', () => {
+    for (const field of Object.keys(productSnapshot)) {
+      const missing = clone(parse(listResponse)) as any
+      missing.items[0].productSnapshots = [clone(productSnapshot)]
+      delete missing.items[0].productSnapshots[0][field]
+      expect(decodeDraftPage(missing), field).toBeNull()
+    }
+
+    const invalidCases: Array<(snapshot: Record<string, unknown>) => void> = [
+      (snapshot) => { snapshot.productId = '00000000-0000-0000-0000-000000000000' },
+      (snapshot) => { snapshot.orderUnitId = 'not-an-id' },
+      (snapshot) => { snapshot.productVersion = '   ' },
+      (snapshot) => { snapshot.productCode = '   ' },
+      (snapshot) => { snapshot.productName = '' },
+      (snapshot) => { snapshot.orderUnitCode = '\t' },
+      (snapshot) => { snapshot.currentProductName = 'live master must not enter the stored snapshot' },
+    ]
+    for (const mutate of invalidCases) {
+      const body = clone(parse(listResponse)) as any
+      const snapshot = clone(productSnapshot) as Record<string, unknown>
+      mutate(snapshot)
+      body.items[0].productSnapshots = [snapshot]
+      expect(decodeDraftPage(body)).toBeNull()
+    }
+  })
+
+  it('normalizes omitted and explicit-null line unit code to absent, preserving only valid nonblank text', () => {
+    const omitted = decodeDraftDetail(parse(detailResponse), 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')?.lines[0]
+    expect(omitted).not.toHaveProperty('orderUnitCode')
+
+    const nullable = clone(parse(detailResponse)) as any
+    nullable.lines[0].orderUnitCode = null
+    expect(decodeDraftDetail(nullable, nullable.draft.id)?.lines[0]).not.toHaveProperty('orderUnitCode')
+
+    const present = clone(parse(detailResponse)) as any
+    present.lines[0].orderUnitCode = ' KG '
+    expect(decodeDraftDetail(present, present.draft.id)?.lines[0].orderUnitCode).toBe(' KG ')
+
+    for (const invalid of ['', '   ', '\n']) {
+      const body = clone(parse(detailResponse)) as any
+      body.lines[0].orderUnitCode = invalid
+      expect(decodeDraftDetail(body, body.draft.id)).toBeNull()
+    }
+    const unknown = clone(parse(detailResponse)) as any
+    unknown.lines[0].currentOrderUnitCode = 'KG'
+    expect(decodeDraftDetail(unknown, unknown.draft.id)).toBeNull()
+  })
+
+  it('keeps stored product/unit facts while a Withheld line remains commercially null', () => {
+    const body = clone(parse(detailResponse)) as any
+    body.draft.productSnapshots = [productSnapshot]
+    Object.assign(body.lines[0], {
+      orderUnitCode: ' KG ',
+      priceDisclosure: 'Withheld',
+      unitPrice: null,
+      priceUnitId: null,
+      discountPercent: null,
+    })
+    const decoded = decodeDraftDetail(body, body.draft.id)
+    expect(decoded?.draft.productSnapshots).toEqual([productSnapshot])
+    expect(decoded?.lines[0]).toMatchObject({
+      orderUnitCode: ' KG ', unitPrice: null, priceUnitId: null, discountPercent: null, priceDisclosure: 'Withheld',
+    })
   })
 
   it('refuses a list row missing a member, or repeated', () => {

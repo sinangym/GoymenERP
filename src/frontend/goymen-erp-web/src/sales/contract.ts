@@ -303,6 +303,16 @@ export const OWNER_REFERENCE_FIELDS = [
 
 /* ── Responses ────────────────────────────────────────────────────────────── */
 
+/** Product-owned display facts stored with the Sales record; never refreshed from the live Product master. */
+export interface ProductSnapshot {
+  readonly productId: string
+  readonly productVersion: string
+  readonly productCode: string
+  readonly productName: string
+  readonly orderUnitId: string
+  readonly orderUnitCode: string
+}
+
 export interface DraftSummary {
   readonly id: string
   readonly companyId: string
@@ -323,6 +333,8 @@ export interface DraftSummary {
   readonly approvalState: ApprovalState
   /** Q9: never inferred by the client; Unavailable means an older stored wire result omitted the additive member. */
   readonly commercialStage: CommercialStage
+  /** Additive stored facts. Omitted and explicit null are both normalized to an absent property. */
+  readonly productSnapshots?: readonly ProductSnapshot[]
 }
 
 export interface DraftLine {
@@ -333,6 +345,8 @@ export interface DraftLine {
   readonly productCode: string
   readonly productName: string
   readonly orderUnitId: string
+  /** Additive stored display text. Omitted and explicit null are both normalized to an absent property. */
+  readonly orderUnitCode?: string
   readonly quantity: string
   readonly unitPrice: string | null
   readonly priceUnitId: string | null
@@ -559,6 +573,39 @@ const SUMMARY_KEYS = [
   'companyAccountId', 'currencyId', 'businessDate', 'createdAtUtc', 'lineCount', 'approvalState',
 ] as const
 
+const PRODUCT_SNAPSHOT_KEYS = [
+  'productId', 'productVersion', 'productCode', 'productName', 'orderUnitId', 'orderUnitCode',
+] as const
+
+function decodeProductSnapshots(value: unknown): readonly ProductSnapshot[] | undefined | null {
+  if (value === undefined || value === null) return undefined
+  if (!Array.isArray(value)) return null
+  const snapshots: ProductSnapshot[] = []
+  for (const entry of value) {
+    const o = exact(entry, PRODUCT_SNAPSHOT_KEYS)
+    if (
+      o === null ||
+      !isReferenceId(o.productId) ||
+      !isOwnerVersion(o.productVersion) ||
+      !isText(o.productCode, 200) || o.productCode.trim().length === 0 ||
+      !isText(o.productName, 500) || o.productName.trim().length === 0 ||
+      !isReferenceId(o.orderUnitId) ||
+      !isText(o.orderUnitCode, 200) || o.orderUnitCode.trim().length === 0
+    ) {
+      return null
+    }
+    snapshots.push({
+      productId: o.productId,
+      productVersion: o.productVersion,
+      productCode: o.productCode,
+      productName: o.productName,
+      orderUnitId: o.orderUnitId,
+      orderUnitCode: o.orderUnitCode,
+    })
+  }
+  return snapshots
+}
+
 const isApprovalState = (v: unknown): v is ApprovalState => typeof v === 'string' && APPROVAL_STATES.includes(v)
 const isInstant = (v: unknown): v is string => typeof v === 'string' && INSTANT_RE.test(v) && !Number.isNaN(Date.parse(v))
 const isActor = (v: unknown): v is string => isText(v, 128)
@@ -606,16 +653,18 @@ function decodeApproval(value: unknown, state: ApprovalState): ApprovalFacts | n
 }
 
 export function decodeDraftSummary(value: unknown): DraftSummary | null {
-  const o = exactWithOptional(value, SUMMARY_KEYS, ['commercialStage'])
+  const o = exactWithOptional(value, SUMMARY_KEYS, ['commercialStage', 'productSnapshots'])
   const hasCommercialStage = o !== null && Object.hasOwn(o, 'commercialStage')
   const commercialStage = !hasCommercialStage || o?.commercialStage === null
     ? COMMERCIAL_STAGE.unavailable
     : o?.commercialStage === COMMERCIAL_STAGE.quote || o?.commercialStage === COMMERCIAL_STAGE.order
       ? o.commercialStage
       : null
+  const productSnapshots = decodeProductSnapshots(o?.productSnapshots)
   if (
     o === null ||
     commercialStage === null ||
+    productSnapshots === null ||
     !isReferenceId(o.id) ||
     !isReferenceId(o.companyId) ||
     !isText(o.documentNo, 200) ||
@@ -656,6 +705,7 @@ export function decodeDraftSummary(value: unknown): DraftSummary | null {
     lineCount: o.lineCount,
     approvalState: o.approvalState,
     commercialStage,
+    ...(productSnapshots === undefined ? {} : { productSnapshots }),
   }
 }
 
@@ -666,10 +716,16 @@ const LINE_KEYS = [
 ] as const
 
 function decodeLine(value: unknown): DraftLine | null {
-  const o = exact(value, LINE_KEYS)
+  const o = exactWithOptional(value, LINE_KEYS, ['orderUnitCode'])
   if (o === null) return null
   const slices = decodeSlices(o.requestedDeliverySlices)
+  const orderUnitCode = o.orderUnitCode === undefined || o.orderUnitCode === null
+    ? undefined
+    : isText(o.orderUnitCode, 200) && o.orderUnitCode.trim().length > 0
+      ? o.orderUnitCode
+      : null
   if (
+    orderUnitCode === null ||
     !isReferenceId(o.lineId) ||
     !isPositiveInt(o.lineNo, LIMITS.lines) ||
     !isReferenceId(o.productId) ||
@@ -702,6 +758,7 @@ function decodeLine(value: unknown): DraftLine | null {
     productCode: o.productCode,
     productName: o.productName,
     orderUnitId: o.orderUnitId,
+    ...(orderUnitCode === undefined ? {} : { orderUnitCode }),
     quantity: o.quantity,
     unitPrice: o.unitPrice,
     priceUnitId: o.priceUnitId,

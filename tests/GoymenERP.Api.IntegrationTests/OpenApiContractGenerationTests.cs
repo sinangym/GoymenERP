@@ -3371,7 +3371,8 @@ public sealed partial class OpenApiContractGenerationTests
                     // texts above stay nullable and come back null for a caller without sales.orders.price.read;
                     // this marker is what says WHY, so "withheld" stays distinguishable from "unpriced". A
                     // nullable marker would have reintroduced the very ambiguity it exists to remove.
-                    ("priceDisclosure", "ref:SalesPriceDisclosure")),
+                    ("priceDisclosure", "ref:SalesPriceDisclosure"),
+                    ("orderUnitCode", "type:null|string")),
                 ["SalesOrderDraftListResponse"] = ObjectSchema(
                     ["items", "nextCursor"],
                     ("items", "type:array;items:ref:SalesOrderDraftSummaryView"),
@@ -3397,7 +3398,16 @@ public sealed partial class OpenApiContractGenerationTests
                     ("createdAtUtc", "type:string;format:date-time"),
                     ("lineCount", "type:integer|string;format:int32"),
                       ("approvalState", "type:string"),
-                      ("commercialStage", "oneOf:ref:SalesCommercialStageV1|type:null")),
+                      ("commercialStage", "oneOf:ref:SalesCommercialStageV1|type:null"),
+                      ("productSnapshots", "type:array|null;items:ref:SalesOrderDraftProductSnapshotViewV1")),
+                ["SalesOrderDraftProductSnapshotViewV1"] = ObjectSchema(
+                    ["productId", "productVersion", "productCode", "productName", "orderUnitId", "orderUnitCode"],
+                    ("productId", "type:string;format:uuid"),
+                    ("productVersion", "type:string"),
+                    ("productCode", "type:string"),
+                    ("productName", "type:string"),
+                    ("orderUnitId", "type:string;format:uuid"),
+                    ("orderUnitCode", "type:string")),
                   ["SalesCommercialStageV1"] = ScalarSchema("enum:Quote|Order|"),
                 // SALES-P2: the disclosure marker's own component. Two members only — there is deliberately no
                 // "Unavailable" third value as AmountDisclosure and CommandOutcome carry, because this answer is

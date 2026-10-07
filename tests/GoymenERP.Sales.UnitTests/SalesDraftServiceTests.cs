@@ -60,8 +60,13 @@ public sealed partial class SalesDraftServiceTests
             (draft.CompanyId, draft.DocumentNo, draft.Kind, draft.State, draft.Version, draft.Revision, draft.LineCount));
         Assert.Equal((Party, Account, Currency, Day), (draft.PartyId, draft.CompanyAccountId, draft.CurrencyId, draft.BusinessDate));
         var line = response.Detail.Lines[0];
-        Assert.Equal((1, Product, "7", "GDC-001", "Sentetik bant", KgUnit, "1.25"),
-            (line.LineNo, line.ProductId, line.ProductVersion, line.ProductCode, line.ProductName, line.OrderUnitId, line.Quantity));
+        Assert.Equal((1, Product, "7", "GDC-001", "Sentetik bant", KgUnit, "kg", "1.25"),
+            (line.LineNo, line.ProductId, line.ProductVersion, line.ProductCode, line.ProductName, line.OrderUnitId,
+                line.OrderUnitCode, line.Quantity));
+        var product = Assert.Single(draft.ProductSnapshots!);
+        Assert.Equal((Product, "7", "GDC-001", "Sentetik bant", KgUnit, "kg"),
+            (product.ProductId, product.ProductVersion, product.ProductCode, product.ProductName,
+                product.OrderUnitId, product.OrderUnitCode));
         Assert.Null(line.UnitPrice);
         Assert.Equal(2, line.RequestedDeliverySlices!.Count);
         Assert.Null(response.Detail.DeliveryAddress);
@@ -1079,7 +1084,8 @@ public sealed partial class SalesDraftServiceTests
         var created = await world.Service().CreateDraftAsync(Request(lines: 2), Metadata("k-1"));
 
         var detail = await world.Service().GetDraftDetailAsync(created.Detail.Draft.Id);
-        Assert.Equal(created.Detail.Draft, detail.Draft);
+        Assert.Equal(created.Detail.Draft with { ProductSnapshots = null }, detail.Draft with { ProductSnapshots = null });
+        Assert.Equal(created.Detail.Draft.ProductSnapshots, detail.Draft.ProductSnapshots);
         Assert.Equal(created.Detail.Lines.Select(line => line.LineId), detail.Lines.Select(line => line.LineId));
         // The read's own fence is re-measured AFTER the read (#276); K3 P2 then asks the price READ last, fresh, to decide the
         // disclosure — so the read name is the second-to-last measurement and the disclosure ask is the last.
@@ -1090,7 +1096,13 @@ public sealed partial class SalesDraftServiceTests
         Assert.Equal(404, missing.Status);
 
         var page = await world.Service().GetDraftListAsync(new SalesOrderDraftListQuery());
-        Assert.Equal(new[] { created.Detail.Draft }, page.Items);
+        var listedDraft = Assert.Single(page.Items);
+        Assert.Equal(created.Detail.Draft with { ProductSnapshots = null }, listedDraft with { ProductSnapshots = null });
+        Assert.Equal(created.Detail.Draft.ProductSnapshots, listedDraft.ProductSnapshots);
+        var listedProduct = Assert.Single(Assert.Single(page.Items).ProductSnapshots!);
+        Assert.Equal((Product, "7", "GDC-001", "Sentetik bant", KgUnit, "kg"),
+            (listedProduct.ProductId, listedProduct.ProductVersion, listedProduct.ProductCode,
+                listedProduct.ProductName, listedProduct.OrderUnitId, listedProduct.OrderUnitCode));
         Assert.Null(page.NextCursor);
 
         var tooBig = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().GetDraftListAsync(new SalesOrderDraftListQuery(101)));

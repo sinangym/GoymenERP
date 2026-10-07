@@ -45,7 +45,18 @@ public sealed record SalesOrderDraftSummaryView(
     string Version, string Revision, Guid PartyId, Guid CompanyAccountId,
     Guid CurrencyId, DateOnly BusinessDate, DateTimeOffset CreatedAtUtc, int LineCount,
     string ApprovalState,
-    SalesCommercialStageV1? CommercialStage = null);
+    SalesCommercialStageV1? CommercialStage = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    IReadOnlyList<SalesOrderDraftProductSnapshotViewV1>? ProductSnapshots = null);
+
+/// <summary>
+/// Product presentation already accepted from the Product owner and stored on the order line.
+/// The list projects each distinct product/version/order-unit snapshot once; it performs no master
+/// read, price calculation or current-name claim.
+/// </summary>
+public sealed record SalesOrderDraftProductSnapshotViewV1(
+    Guid ProductId, string ProductVersion, string ProductCode, string ProductName,
+    Guid OrderUnitId, string OrderUnitCode);
 
 /// <summary>SALES-A1: the approval facts of the detail; every member null until it happened (ADR-009 audit facts, shown, never derived).</summary>
 public sealed record SalesDraftApprovalV1(
@@ -203,7 +214,9 @@ public sealed record SalesOrderDraftLineDetail(
     string? UnitPrice, Guid? PriceUnitId, DateOnly? RequestedDeliveryDate, string? Note,
     IReadOnlyList<SalesDraftDeliverySliceV1>? RequestedDeliverySlices,
     string? DiscountPercent,
-    SalesPriceDisclosure PriceDisclosure);
+    SalesPriceDisclosure PriceDisclosure,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? OrderUnitCode = null);
 
 /// <summary>
 /// D2 (Sinan 5749046401): <c>IsOwnDraft</c> is the RELATIONSHIP, computed on the server for the caller — "the caller is
