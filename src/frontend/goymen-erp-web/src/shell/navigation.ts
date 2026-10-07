@@ -15,11 +15,18 @@
  * built before `CAPABILITY` existed. The type import below is erased at build time, and
  * `CapabilityId` keeps the compiler as the check: an unknown or renamed id fails `tsc` in either
  * table, and a missing one fails it in the label table.
+ *
+ * P1-b added the sidebar's grouping (`NAV_GROUPS`) below the two tables. It decides WHERE an entry is
+ * drawn and in which order; `NAV_CAPABILITIES` still decides WHETHER a capability has an entry at all.
  */
 
 import type { CapabilityId } from './capabilities'
+import type { PriceListCapabilityId } from '../product/priceLists/capabilities'
 
-/** Every capability the frontend can actually mount, in nav order. */
+/**
+ * Every capability the frontend can actually mount as a sidebar entry. Where each one is drawn, and in
+ * which order, is `NAV_GROUPS` below; this list's own order is no longer the drawn order.
+ */
 /** Exported for `navEntryPointInvariant.test.ts`: the nav list and the label table must agree. */
 export const NAV_CAPABILITIES: readonly CapabilityId[] = [
   'cari.parties.list',
@@ -215,3 +222,103 @@ export const CAPABILITY_NAV_LABEL: Record<CapabilityId, string> = {
   'purchasing.orders.create': '',
   'purchasing.orders.detail': '',
 }
+
+/**
+ * The price list's own list capability (#590). It is a sidebar entry without being a shell capability:
+ * it is granted by `product.price-lists.read` alone, never by a Sales permission.
+ */
+export type PriceListNavEntry = Extract<PriceListCapabilityId, 'price-lists.list'>
+
+/** Anything a sidebar group may hold: a shell capability from `NAV_CAPABILITIES`, or the price list. */
+export type NavEntryId = CapabilityId | PriceListNavEntry
+
+export type NavGroupId =
+  | 'sales'
+  | 'purchasing'
+  | 'product-stock'
+  | 'manufacturing'
+  | 'logistics'
+  | 'cari'
+  | 'finance'
+  | 'accounting'
+  | 'settings'
+
+export interface NavGroup {
+  readonly id: NavGroupId
+  readonly label: string
+  readonly entries: readonly NavEntryId[]
+}
+
+/**
+ * The sidebar's work-area groups, in drawn order (UX v1.2, approved by Sinan on 7 October 2026;
+ * coordinator record 12 for P1-b). "Ana sayfa" is not a group: it is the single `NAV_HOME` link above
+ * them.
+ *
+ * A group is a HEADING, never a permission. It has no capability of its own and is drawn exactly when
+ * at least one of its entries is granted, so an authorised entry can never be lost to its group, and a
+ * group with nothing granted is not drawn at all.
+ *
+ * Raporlar and Belgeler are absent on purpose. They get a group the day a real, published workspace
+ * exists for them; until then a group would be empty or a planned link, and neither is ever drawn.
+ *
+ * Leaf labels are `CAPABILITY_NAV_LABEL`'s, unchanged. The preview's proposed leaf names (e.g.
+ * "Satış siparişleri", "Stok durumu") belong to their pages and are not this package's to change.
+ */
+export const NAV_GROUPS: readonly NavGroup[] = [
+  { id: 'sales', label: 'Satış', entries: ['sales.drafts.list', 'price-lists.list'] },
+  {
+    id: 'purchasing',
+    label: 'Satın alma',
+    entries: ['purchasing.requests.list', 'purchasing.orders.list', 'logistics.operations-work.purchase'],
+  },
+  {
+    id: 'product-stock',
+    label: 'Ürün ve stok',
+    entries: ['product.items.list', 'inventory.stock-positions.list', 'inventory.opening-stock.record'],
+  },
+  { id: 'manufacturing', label: 'Üretim', entries: ['manufacturing.orders.list'] },
+  {
+    id: 'logistics',
+    label: 'Sevkiyat',
+    entries: ['logistics.operations-work.sales', 'logistics.instructions.list'],
+  },
+  { id: 'cari', label: 'Cari', entries: ['cari.parties.list', 'cari.accounts.link'] },
+  {
+    id: 'finance',
+    label: 'Finans',
+    entries: [
+      'finance.receipts.list',
+      'finance.manual-bank-payments.list',
+      'finance.bank-accounts.list',
+      'finance.customer-instruments.list',
+      'finance.allocations.list',
+      'finance.official-invoice-import.upload',
+      'finance.official-invoice-import.approve',
+      'finance.receipts.reverse.approve',
+    ],
+  },
+  {
+    id: 'accounting',
+    label: 'Muhasebe',
+    entries: ['accounting.journals.list', 'accounting.periods.list', 'accounting.posting-queues'],
+  },
+  {
+    id: 'settings',
+    label: 'Ayarlar',
+    entries: ['organization.sites.list', 'organization.work-centers.list', 'identity.assignments.list'],
+  },
+]
+
+/** The home link above the groups. The index route is always mounted, so it needs no capability. */
+export const NAV_HOME = { label: 'Ana sayfa', path: '/' } as const
+
+/** The sidebar's own words, apart from the entry and group labels. */
+export const NAV_TEXT = {
+  /** The phone toolbar button that opens the menu drawer. */
+  menuButton: 'Menü',
+  /** The drawer's accessible name. Its navigation region keeps the name it has on the desktop. */
+  drawer: 'Menü',
+  closeDrawer: 'Menüyü kapat',
+  /** Read after a group's name when the open page is one of its entries or below one of them. */
+  activeGroupHint: ', açık sayfa bu grupta',
+} as const
