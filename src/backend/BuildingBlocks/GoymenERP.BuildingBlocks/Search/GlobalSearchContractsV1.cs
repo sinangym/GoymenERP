@@ -36,7 +36,10 @@ public static class GlobalSearchKindsV1
     /// <summary>A sales order (draft, approved or cancelled) of the context company (Sales owner).</summary>
     public const string SalesOrder = "sales.order";
 
-    public static IReadOnlyList<string> Ordered { get; } = [CounterpartyParty, ProductItem, SalesOrder];
+    /// <summary>A physical Inventory label in the context company, found by its exact printed code.</summary>
+    public const string InventoryMaterialLabel = "inventory.material-label";
+
+    public static IReadOnlyList<string> Ordered { get; } = [CounterpartyParty, ProductItem, SalesOrder, InventoryMaterialLabel];
 }
 
 /// <summary>A normalized term (trimmed, NFC, within the composer's bounds) and the per-kind hit bound.</summary>

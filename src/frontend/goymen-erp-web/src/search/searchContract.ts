@@ -25,11 +25,12 @@ export const SEARCH_KIND = {
   party: 'counterparty.party',
   product: 'product.item',
   salesOrder: 'sales.order',
+  materialLabel: 'inventory.material-label',
 } as const
 
 export type SearchKind = (typeof SEARCH_KIND)[keyof typeof SEARCH_KIND]
 
-export const SEARCH_KIND_ORDER: readonly SearchKind[] = [SEARCH_KIND.party, SEARCH_KIND.product, SEARCH_KIND.salesOrder]
+export const SEARCH_KIND_ORDER: readonly SearchKind[] = [SEARCH_KIND.party, SEARCH_KIND.product, SEARCH_KIND.salesOrder, SEARCH_KIND.materialLabel]
 
 export interface SearchItem {
   readonly id: string
