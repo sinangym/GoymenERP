@@ -97,6 +97,15 @@
   padding: 4px 8px 24px;
 }
 
+/* UX v1.2: on a phone the signed-in name leaves the toolbar for the foot of the drawer. */
+.sidebarFoot {
+  margin-top: auto;
+  padding: 12px 20px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--shell-nav-muted);
+  font-size: 0.85rem;
+}
+
 .navEmpty {
   margin: 12px 12px 0;
   font-size: 0.85rem;
@@ -171,6 +180,7 @@
 .navLinkActive {
   display: flex;
   align-items: center;
+  box-sizing: border-box;
   min-height: 36px;
   padding: 6px 10px 6px 40px;
   border-radius: 6px;
@@ -289,7 +299,7 @@
 }
 
 /* The drawer is a shell dialog: it shares the layer of the shell's other dialog (SwitchConfirmDialog,
-   20) above feature modals (15), while the shell chrome — the phone toolbar included — stays at 10. */
+   20) above feature modals (15), while the shell chrome stays at 10. */
 .backdrop {
   position: fixed;
   inset: 0;
@@ -314,12 +324,10 @@
     height: auto;
     box-shadow: 0 8px 28px rgba(8, 14, 28, 0.35);
   }
-  /* "Menü" stays one tap away while the page scrolls — at the shell-chrome layer, so a dialog's
-     backdrop (the company-switch question, a feature modal) still covers it. */
+  /* Not sticky, unlike the v1.2 preview: a positioned toolbar would paint over every page modal whose
+     backdrop is below its layer (ProductCreatePage's has no z-index) and hide focus under it
+     (WCAG 2.4.11). "Menü" is the first control of every page instead. */
   .toolbar {
-    position: sticky;
-    top: 0;
-    z-index: 10;
     padding: 8px 16px;
   }
   /* UX v1.2 phone bar: the company picker shares the row with "Menü"; its label stays its

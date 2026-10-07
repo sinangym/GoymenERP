@@ -307,14 +307,16 @@ export function AppShell() {
     if (compact && sidebarRef.current?.contains(document.activeElement)) menuButtonRef.current?.focus()
   }, [compact])
 
-  // The page behind an open drawer does not scroll.
+  // The page behind an open drawer does not scroll, and does not shift sideways where a scrollbar goes.
   useEffect(() => {
     if (!drawerOpen) return
     const root = document.documentElement
-    const previous = root.style.overflow
+    const previous = { overflow: root.style.overflow, gutter: root.style.scrollbarGutter }
     root.style.overflow = 'hidden'
+    root.style.scrollbarGutter = 'stable'
     return () => {
-      root.style.overflow = previous
+      root.style.overflow = previous.overflow
+      root.style.scrollbarGutter = previous.gutter
     }
   }, [drawerOpen])
 
@@ -431,6 +433,7 @@ export function AppShell() {
             </p>
           ) : null}
         </nav>
+        {drawerOpen ? <div className={styles.sidebarFoot}>{identity ? identity.displayName : '…'}</div> : null}
       </div>
       {drawerOpen ? <div className={styles.backdrop} aria-hidden="true" onClick={closeDrawer} /> : null}
 

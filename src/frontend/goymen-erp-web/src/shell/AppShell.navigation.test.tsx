@@ -389,6 +389,8 @@ describe('phone menu drawer (UX v1.2)', () => {
     await waitFor(() => expect(document.activeElement).toBe(current))
     expect(shellBody().hasAttribute('inert')).toBe(true)
     expect(screen.getByRole('link', { name: 'Ana içeriğe geç', hidden: true }).hasAttribute('inert')).toBe(true)
+    // UX v1.2: on a phone the signed-in name is at the foot of the drawer, not in the toolbar.
+    expect(within(dialog).getByText('Kullanici A')).toBeTruthy()
   })
 
   it('focuses its close button when the open page has no entry of its own', async () => {
