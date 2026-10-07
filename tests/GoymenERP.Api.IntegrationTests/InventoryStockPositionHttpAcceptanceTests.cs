@@ -1,9 +1,11 @@
 using System.Net;
 using System.Text.Json;
+using GoymenERP.Api.Endpoints;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Product.Application.Contracts;
+using GoymenERP.Modules.Organization.Application.Contracts;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
@@ -52,6 +54,64 @@ public sealed class InventoryStockPositionHttpAcceptanceTests(GoymenErpApiFactor
         var display = item.GetProperty("productDisplay");
         Assert.Equal("P-1", display.GetProperty("identity").GetProperty("code").GetString());
         Assert.Equal(1.5m, display.GetProperty("technical").GetProperty("thicknessMm").GetDecimal());
+    }
+
+    [Fact]
+    public async Task Location_display_contract_batches_the_distinct_page_locations_once_and_returns_owner_identity()
+    {
+        var product = new StubProductDisplays(ProductDisplays());
+        var locations = new StubLocationDisplays(LocationDisplays());
+        using var host = CreateHost(new ControlledAuthority(), new StubPositions(Positions()), product, locations);
+        using var client = CreateClient(host);
+
+        using var request = LocationDisplayRequest(InventoryStockPositionApiV1.PositionsPath);
+        using var response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal([LocationId], Assert.Single(locations.Queries).LocationIds);
+        Assert.Equal(TestCompanyIds.CompanyA, Assert.Single(locations.Queries).CompanyId);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var item = Assert.Single(document.RootElement.GetProperty("items").EnumerateArray());
+        Assert.Equal("P-1", item.GetProperty("productDisplay").GetProperty("identity").GetProperty("code").GetString());
+        var location = item.GetProperty("locationDisplay");
+        Assert.Equal(LocationId, location.GetProperty("locationId").GetGuid());
+        Assert.Equal("DEP-01", location.GetProperty("locationCode").GetString());
+        Assert.Equal("Ana Depo", location.GetProperty("locationName").GetString());
+    }
+
+    [Fact]
+    public async Task Product_display_1_0_keeps_its_shape_and_does_not_call_Organization()
+    {
+        var locations = new StubLocationDisplays(LocationDisplays());
+        using var host = CreateHost(new ControlledAuthority(), new StubPositions(Positions()),
+            locations: locations);
+        using var client = CreateClient(host);
+
+        using var request = ProductDisplayRequest(InventoryStockPositionApiV1.PositionsPath);
+        using var response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Empty(locations.Queries);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var item = Assert.Single(document.RootElement.GetProperty("items").EnumerateArray());
+        Assert.True(item.TryGetProperty("productDisplay", out _));
+        Assert.False(item.TryGetProperty("locationDisplay", out _));
+    }
+
+    [Fact]
+    public async Task Empty_location_display_page_skips_both_display_owner_reads()
+    {
+        var product = new StubProductDisplays(ProductDisplays());
+        var locations = new StubLocationDisplays(LocationDisplays());
+        using var host = CreateHost(new ControlledAuthority(), new StubPositions(new([], false)), product, locations);
+        using var client = CreateClient(host);
+
+        using var request = LocationDisplayRequest(InventoryStockPositionApiV1.PositionsPath);
+        using var response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Empty(product.Queries);
+        Assert.Empty(locations.Queries);
     }
 
     [Fact]
@@ -131,7 +191,7 @@ public sealed class InventoryStockPositionHttpAcceptanceTests(GoymenErpApiFactor
     [Fact]
     public async Task Invalid_or_duplicate_display_contract_is_coded_400_before_owner_read()
     {
-        foreach (var values in new[] { new[] { "2.0" }, new[] { "1.0", "1.0" } })
+        foreach (var values in new[] { new[] { "3.0" }, new[] { "1.0", "1.0" } })
         {
             var owner = new StubPositions(Positions());
             using var host = CreateHost(new ControlledAuthority(), owner);
@@ -214,6 +274,59 @@ public sealed class InventoryStockPositionHttpAcceptanceTests(GoymenErpApiFactor
     }
 
     [Theory]
+    [InlineData("missing")]
+    [InlineData("duplicate")]
+    [InlineData("mismatch")]
+    public async Task Invalid_Organization_batch_is_code_less_503_without_position_disclosure(string invalid)
+    {
+        var other = Guid.Parse("55555555-5555-4555-8555-555555555555");
+        var answer = invalid switch
+        {
+            "missing" => Array.Empty<OrganizationLocationDisplayV1>(),
+            "duplicate" => new[]
+            {
+                new OrganizationLocationDisplayV1(LocationId, "DEP-01", "Ana Depo"),
+                new OrganizationLocationDisplayV1(LocationId, "DEP-01", "Ana Depo"),
+            },
+            _ => new[] { new OrganizationLocationDisplayV1(other, "DEP-02", "Başka Depo") },
+        };
+        using var host = CreateHost(new ControlledAuthority(), new StubPositions(Positions()),
+            locations: new StubLocationDisplays(answer));
+        using var client = CreateClient(host);
+
+        using var request = LocationDisplayRequest(InventoryStockPositionApiV1.PositionsPath);
+        using var response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(body);
+        Assert.NotEqual(InventoryStockPositionCodesV1.Unavailable,
+            document.RootElement.GetProperty("code").GetString());
+        Assert.DoesNotContain("ROLL-1", body, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Organization_owner_failure_is_code_less_503_without_owner_or_position_disclosure()
+    {
+        var locations = new StubLocationDisplays(LocationDisplays())
+        {
+            Failure = new InvalidOperationException("private_location_detail"),
+        };
+        using var host = CreateHost(new ControlledAuthority(), new StubPositions(Positions()), locations: locations);
+        using var client = CreateClient(host);
+
+        using var request = LocationDisplayRequest(InventoryStockPositionApiV1.PositionsPath);
+        using var response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(body);
+        Assert.NotEqual("private_location_detail", document.RootElement.GetProperty("code").GetString());
+        Assert.DoesNotContain("private_location_detail", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("ROLL-1", body, StringComparison.Ordinal);
+    }
+
+    [Theory]
     [InlineData(ErpPermissions.InventoryLabelsRead)]
     [InlineData(ErpPermissions.InventoryBalancesRead)]
     public async Task Inventory_permission_revoked_during_Product_read_refuses_without_old_positions(string permission)
@@ -245,7 +358,8 @@ public sealed class InventoryStockPositionHttpAcceptanceTests(GoymenErpApiFactor
                 else company.Set(TestCompanyIds.CompanyB);
             },
         };
-        using var host = CreateHost(new ControlledAuthority(), new StubPositions(Positions()), product, company, user);
+        using var host = CreateHost(new ControlledAuthority(), new StubPositions(Positions()), product,
+            company: company, user: user);
         using var client = CreateClient(host);
         using var request = ProductDisplayRequest(InventoryStockPositionApiV1.PositionsPath);
 
@@ -255,10 +369,45 @@ public sealed class InventoryStockPositionHttpAcceptanceTests(GoymenErpApiFactor
         Assert.DoesNotContain("ROLL-1", await response.Content.ReadAsStringAsync(), StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData("actor")]
+    [InlineData("company")]
+    [InlineData("permission")]
+    public async Task Authority_drift_during_Organization_read_is_code_less_403(string changed)
+    {
+        var authority = new ControlledAuthority();
+        var company = new MutableCompanyContext();
+        var user = new MutableCurrentUser();
+        var locations = new StubLocationDisplays(LocationDisplays())
+        {
+            DuringRead = () =>
+            {
+                if (changed == "actor") user.UserId = "other-actor";
+                else if (changed == "company") company.Set(TestCompanyIds.CompanyB);
+                else authority.MissingPermission = ErpPermissions.InventoryBalancesRead;
+            },
+        };
+        using var host = CreateHost(authority, new StubPositions(Positions()), locations: locations,
+            company: company, user: user);
+        using var client = CreateClient(host);
+
+        using var request = LocationDisplayRequest(InventoryStockPositionApiV1.PositionsPath);
+        using var response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(body);
+        Assert.NotEqual(InventoryStockPositionCodesV1.Forbidden,
+            document.RootElement.GetProperty("code").GetString());
+        Assert.DoesNotContain("ROLL-1", body, StringComparison.Ordinal);
+    }
+
     private WebApplicationFactory<Program> CreateHost(ControlledAuthority authority, StubPositions owner,
-        StubProductDisplays? product = null, MutableCompanyContext? company = null, MutableCurrentUser? user = null)
+        StubProductDisplays? product = null, StubLocationDisplays? locations = null,
+        MutableCompanyContext? company = null, MutableCurrentUser? user = null)
     {
         product ??= new StubProductDisplays(ProductDisplays());
+        locations ??= new StubLocationDisplays(LocationDisplays());
         return factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
         {
             services.RemoveAll<IErpAuthorizationService>();
@@ -269,6 +418,8 @@ public sealed class InventoryStockPositionHttpAcceptanceTests(GoymenErpApiFactor
             services.AddSingleton<IInventoryStockPositionsV1>(owner);
             services.RemoveAll<IProductStockDisplayReferencesV1>();
             services.AddSingleton<IProductStockDisplayReferencesV1>(product);
+            services.RemoveAll<IOrganizationLocationDisplayReaderV1>();
+            services.AddSingleton<IOrganizationLocationDisplayReaderV1>(locations);
             if (company is not null)
             {
                 services.RemoveAll<ICompanyContext>();
@@ -287,6 +438,14 @@ public sealed class InventoryStockPositionHttpAcceptanceTests(GoymenErpApiFactor
         var request = new HttpRequestMessage(HttpMethod.Get, uri);
         request.Headers.Add(InventoryStockPositionApiV1.ProductDisplayContractHeader,
             InventoryStockPositionApiV1.ProductDisplayContractVersion);
+        return request;
+    }
+
+    private static HttpRequestMessage LocationDisplayRequest(string uri)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Get, uri);
+        request.Headers.Add(InventoryStockPositionApiV1.ProductDisplayContractHeader,
+            InventoryStockPositionDisplayHost.LocationDisplayContractVersion);
         return request;
     }
 
@@ -312,6 +471,9 @@ public sealed class InventoryStockPositionHttpAcceptanceTests(GoymenErpApiFactor
             new(new(Guid.NewGuid(), "coil", "#66/stock-display"),
                 new(Guid.NewGuid(), "1", "coil-v1", "#66/stock-display"), 1.5m, 1250m), []),
     ]);
+
+    private static IReadOnlyList<OrganizationLocationDisplayV1> LocationDisplays() =>
+        [new(LocationId, "DEP-01", "Ana Depo")];
 
     private static void AssertPrivateNoStore(HttpResponseMessage response)
     {
@@ -350,6 +512,25 @@ public sealed class InventoryStockPositionHttpAcceptanceTests(GoymenErpApiFactor
             CancellationToken cancellationToken = default)
         {
             Queries.Add(query);
+            DuringRead?.Invoke();
+            if (Failure is not null) throw Failure;
+            return Task.FromResult(answer);
+        }
+    }
+
+    private sealed class StubLocationDisplays(IReadOnlyList<OrganizationLocationDisplayV1> answer)
+        : IOrganizationLocationDisplayReaderV1
+    {
+        public List<(Guid CompanyId, IReadOnlyCollection<Guid> LocationIds)> Queries { get; } = [];
+        public Exception? Failure { get; init; }
+        public Action? DuringRead { get; init; }
+
+        public Task<IReadOnlyList<OrganizationLocationDisplayV1>> ReadAsync(
+            Guid companyId,
+            IReadOnlyCollection<Guid> locationIds,
+            CancellationToken cancellationToken = default)
+        {
+            Queries.Add((companyId, locationIds));
             DuringRead?.Invoke();
             if (Failure is not null) throw Failure;
             return Task.FromResult(answer);
