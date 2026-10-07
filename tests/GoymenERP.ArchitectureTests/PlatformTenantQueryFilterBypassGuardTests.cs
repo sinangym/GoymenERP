@@ -197,8 +197,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // R20 transfer lifecycle: +3 transfer SQL facts (bd676b05… -> c74360d3…).
             // Product-version provenance rollback: +1 isolated no-loss SQL fact (c444f707… -> d9cb549b…).
             // Customer-owned opening: +2 exact account-context and fail-closed authority SQL facts.
+            // Inventory stock-position read: +4 exact bounded search, tenant isolation, allocation invariant
+            // and provenance/classification SQL facts; every listed case remains mandatory and zero-skip.
             ["tools/relational_inventory/inventory.txt"] =
-                "eed522152458f731f588b7f0d60188028f75b7143e33bcf54e6eeca338c9a3c1",
+                "a1bab0d9d058267b10ebf98ba02103ffbc0a734db1de17922c6b84182cdbf1c9",
 
             // logistics
             // AT-053: +4 weighbridge SQL facts (81c1ff0b… -> 264898d7…).
