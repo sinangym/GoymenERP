@@ -13,7 +13,7 @@
  * hidden navigation for the keyboard or a screen reader to find.
  */
 
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router'
 import { capabilityFailClosed, hasCapability, type ShellState } from './shellState'
 import { useShellDispatch, useShellState } from './shellContext'
@@ -303,7 +303,8 @@ export function AppShell() {
   }, [drawerOpen])
 
   // Narrowing the window while focus is in the sidebar hides it; hand focus to "Menü" instead of losing it.
-  useEffect(() => {
+  // A layout effect: it must run before the browser recalculates styles and drops focus from the hidden link.
+  useLayoutEffect(() => {
     if (compact && sidebarRef.current?.contains(document.activeElement)) menuButtonRef.current?.focus()
   }, [compact])
 

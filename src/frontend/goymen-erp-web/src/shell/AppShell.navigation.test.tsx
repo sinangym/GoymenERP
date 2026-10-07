@@ -1,9 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { useEffect } from 'react'
 import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient } from '@tanstack/react-query'
 import { RouterProvider, createMemoryRouter } from 'react-router'
 import { ShellProvider } from './ShellProvider'
+import { useShellDispatch } from './shellContext'
 import { AppShell } from './AppShell'
 import { SHELL_CAPABILITY_CONTRACT_VERSION } from './api'
 import { CAPABILITY, CAPABILITY_ROUTE } from './capabilities'
@@ -93,6 +95,7 @@ async function mountShell(path: string, granted: readonly string[]) {
         { path: CAPABILITY_ROUTE[CAPABILITY.salesDraftsList].slice(1), element: <h1>Siparis listesi</h1> },
         { path: CAPABILITY_ROUTE[CAPABILITY.salesDraftsCreate].slice(1), element: <h1>Yeni siparis</h1> },
         { path: PRICE_LIST_ROUTE.list.slice(1), element: <h1>{PRICE_LIST_TEXT.listHeading}</h1> },
+        { path: 'sonda', element: <DispatchProbe /> },
         // Any other page: the sidebar is under test, not the screens it opens.
         { path: '*', element: <h1>Diger sayfa</h1> },
       ],
@@ -123,6 +126,24 @@ const labelOf = (entry: NavEntryId) =>
   entry === PRICE_LIST_CAPABILITY.list ? PRICE_LIST_TEXT.listHeading : CAPABILITY_NAV_LABEL[entry]
 
 const ALL_GRANTED = [...Object.values(CAPABILITY), PRICE_LIST_CAPABILITY.list]
+
+// The stylesheet as written: jsdom applies no CSS, so a rule the browser depends on is read as source
+// (the `src/logistics/capabilities.test.ts` precedent). Vitest runs from the web package.
+const nodeProcess = (globalThis as unknown as {
+  readonly process: { readonly cwd: () => string; readonly getBuiltinModule: (name: string) => unknown }
+}).process
+const nodeFs = nodeProcess.getBuiltinModule('node:fs') as { readFileSync(path: string, encoding: 'utf8'): string }
+const shellCss = nodeFs.readFileSync(`${nodeProcess.cwd()}/src/shell/AppShell.module.css`, 'utf8')
+
+/** The shell's dispatch, captured by a page so a test can raise a gate (a 401) while the drawer is open. */
+const probe: { dispatch: ReturnType<typeof useShellDispatch> | null } = { dispatch: null }
+function DispatchProbe() {
+  const dispatch = useShellDispatch()
+  useEffect(() => {
+    probe.dispatch = dispatch
+  }, [dispatch])
+  return <h1>Sonda</h1>
+}
 
 afterEach(() => {
   cleanup()
@@ -337,6 +358,42 @@ describe('desktop groups open and close (UX v1.2)', () => {
     expect(within(navigation).queryAllByRole('button', { name: new RegExp(ACTIVE_HINT) })).toEqual([])
   })
 
+  it('closing one open header on the home page leaves the other groups open', async () => {
+    const user = userEvent.setup()
+    const navigation = await renderShell('/', GRANTS)
+
+    await user.click(groupButton(navigation, 'Satış'))
+    expect(groupButton(navigation, 'Satış').getAttribute('aria-expanded')).toBe('false')
+    expect(groupButton(navigation, 'Cari').getAttribute('aria-expanded')).toBe('true')
+  })
+
+  it('is no keyboard trap on a desktop: Tab leaves the sidebar after its last control', async () => {
+    const user = userEvent.setup()
+    const navigation = await renderShell(CAPABILITY_ROUTE[CAPABILITY.salesDraftsList], GRANTS)
+
+    groupButton(navigation, 'Cari').focus()
+    await user.tab()
+    expect(navigation.contains(document.activeElement)).toBe(false)
+    expect(document.activeElement).toBe(screen.getByRole('combobox', { name: 'Şirket' }))
+  })
+
+  it('hands focus to "Menü" when a narrowing window hides the sidebar it was in', async () => {
+    const viewport = stubViewport(false)
+    const navigation = await renderShell(CAPABILITY_ROUTE[CAPABILITY.salesDraftsList], GRANTS)
+    within(navigation).getByRole('link', { name: CAPABILITY_NAV_LABEL[CAPABILITY.salesDraftsList] }).focus()
+
+    viewport.resize(true)
+
+    expect(screen.queryByRole('navigation', { name: NAV_NAME })).toBeNull()
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: NAV_TEXT.menuButton }))
+  })
+
+  it('pins the rule that lets `hidden` hide the sidebar and closed groups in a browser', () => {
+    // jsdom applies no CSS, so the tests above prove only the accessibility tree. In a browser the
+    // sidebar's own `display: flex` beats the user agent's `[hidden]` rule unless this rule exists.
+    expect(shellCss).toMatch(/\.sidebar\[hidden\],\s*\.groupList\[hidden\]\s*\{\s*display:\s*none;/)
+  })
+
   it('names each header’s list and is the only navigation landmark on a desktop', async () => {
     const navigation = await renderShell('/', GRANTS)
 
@@ -363,7 +420,7 @@ describe('phone menu drawer (UX v1.2)', () => {
   const drawer = () => screen.getByRole('dialog', { name: NAV_TEXT.drawer })
   const shellBody = () => screen.getByRole('main').parentElement as HTMLElement
 
-  it('keeps the closed menu out of the page: no navigation landmark, and content is not pushed down', async () => {
+  it('keeps the closed menu out of the accessibility tree: no navigation landmark, no entries', async () => {
     const { menu } = await renderPhone(CAPABILITY_ROUTE[CAPABILITY.salesDraftsList])
 
     expect(screen.queryByRole('navigation', { name: NAV_NAME })).toBeNull()
@@ -468,6 +525,52 @@ describe('phone menu drawer (UX v1.2)', () => {
     expect(screen.getByRole('heading', { level: 1, name: PRICE_LIST_TEXT.listHeading })).toBeTruthy()
     await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('main')))
     expect(shellBody().hasAttribute('inert')).toBe(false)
+  })
+
+  it('is no keyboard trap while closed: Tab moves on from "Menü" into the page', async () => {
+    const user = userEvent.setup()
+    const { menu } = await renderPhone(CAPABILITY_ROUTE[CAPABILITY.salesDraftsList])
+
+    menu.focus()
+    await user.tab()
+    expect(document.activeElement).toBe(screen.getByRole('combobox', { name: 'Şirket' }))
+  })
+
+  it('locks the page’s scroll only while open, keeping its scrollbar gutter', async () => {
+    const user = userEvent.setup()
+    const { menu } = await renderPhone(CAPABILITY_ROUTE[CAPABILITY.salesDraftsList])
+
+    await user.click(menu)
+    expect(document.documentElement.style.overflow).toBe('hidden')
+    expect(document.documentElement.style.scrollbarGutter).toBe('stable')
+    await user.keyboard('{Escape}')
+    expect(document.documentElement.style.overflow).toBe('')
+    expect(document.documentElement.style.scrollbarGutter).toBe('')
+  })
+
+  it('closes when the page changes underneath it (Back, a redirect)', async () => {
+    const user = userEvent.setup()
+    const { router, menu } = await renderPhone(CAPABILITY_ROUTE[CAPABILITY.salesDraftsList])
+
+    await user.click(menu)
+    await act(() => router.navigate(PRICE_LIST_ROUTE.list))
+
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(shellBody().hasAttribute('inert')).toBe(false)
+    expect(document.documentElement.style.overflow).toBe('')
+  })
+
+  it('closes, and releases the page, when a gate (a 401) replaces the shell', async () => {
+    const user = userEvent.setup()
+    const { menu } = await renderPhone('/sonda')
+
+    await user.click(menu)
+    expect(document.documentElement.style.overflow).toBe('hidden')
+    act(() => probe.dispatch?.({ type: 'SESSION_INVALIDATED' }))
+
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(screen.queryByRole('navigation', { name: NAV_NAME })).toBeNull()
+    expect(document.documentElement.style.overflow).toBe('')
   })
 
   it('reopens on the open page’s entry even after another group was opened in it', async () => {
