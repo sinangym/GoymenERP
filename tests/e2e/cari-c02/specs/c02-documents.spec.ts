@@ -16,7 +16,7 @@ import { ACCESS_ADMIN_ACTOR, CREATOR_ACTOR, OTHER_COMPANY_ACTOR, readEnvironment
  * `documents.files.read` + `documents.files.upload` in their own company; the suite's closed permission list in
  * tools/validate_browser_acceptance.py gains the two names. c02-access-admin is unchanged.
  *
- * IT WRITES (a Party, two documents and their audit events): the suite is already on the writing arm.
+ * IT WRITES (a Party, three documents and their audit events): the suite is already on the writing arm.
  */
 
 const { apiBaseUrl, testedCommit } = readEnvironment()
@@ -38,6 +38,11 @@ const DUPLICATE_TITLE = 'Aynı dosya bu şirkette daha önce yüklenmiş'
 const LEGAL_NAME = `SENTETIK C02 belge ${testedCommit.slice(0, 12)}`
 const FILE_NAME = `SENTETIK Sözleşme ${testedCommit.slice(0, 8)}.pdf`
 const PDF = Buffer.from(`%PDF-1.4\n% SENTETIK browser-suite:c02 ${testedCommit}\n%%EOF\n`, 'utf8')
+const PREVIEW_FILE_NAME = `SENTETIK Tarama ${testedCommit.slice(0, 8)}.png`
+const PNG = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+  'base64',
+)
 
 async function signInAs(page: Page, actor: string): Promise<void> {
   await page.setExtraHTTPHeaders({ [DEVELOPMENT_USER_HEADER]: actor })
@@ -99,6 +104,41 @@ test('C02-D1 a document uploaded on the Cari card is listed after close and reop
   expect(Buffer.concat(chunks).equals(PDF)).toBe(true)
 })
 
+test('C02-D1P a verified PNG opens as an accessible preview and closes back to its trigger', async ({ page }) => {
+  expect(partyId, 'C02-D1 must have created the card').not.toBe('')
+  await signInAs(page, CREATOR_ACTOR)
+  await page.goto(`/cari/${partyId}`)
+  const panel = documentsPanel(page)
+  await panel.getByLabel(FILE_LABEL).setInputFiles({ name: PREVIEW_FILE_NAME, mimeType: 'image/png', buffer: PNG })
+  const uploaded = page.waitForResponse((r) => r.request().method() === 'POST' && new URL(r.url()).pathname === '/api/v1/documents')
+  await panel.getByRole('button', { name: UPLOAD_LABEL, exact: true }).click()
+  const uploadResponse = await uploaded
+  expect(uploadResponse.status()).toBe(201)
+  const body = (await uploadResponse.json()) as { document: { id: string; scanState: string; downloadable: boolean } }
+  expect(body.document.scanState).toBe('Clean')
+  expect(body.document.downloadable).toBe(true)
+
+  const row = panel.locator(`tr[data-document-id="${body.document.id}"]`)
+  await expect(row).toBeVisible()
+  const trigger = row.getByRole('button', { name: `${PREVIEW_FILE_NAME} dosyasını önizle` })
+  await trigger.click()
+
+  const dialog = page.getByRole('dialog', { name: `${PREVIEW_FILE_NAME} önizlemesi` })
+  await expect(dialog).toBeVisible()
+  const image = dialog.getByRole('img', { name: `${PREVIEW_FILE_NAME} belge önizlemesi` })
+  await expect(image).toBeVisible()
+  await expect.poll(() => image.evaluate((node: HTMLImageElement) => node.naturalWidth)).toBe(1)
+  const close = dialog.getByRole('button', { name: 'Önizlemeyi kapat' })
+  await expect(close).toBeFocused()
+  await page.keyboard.press('Tab')
+  await expect(close).toBeFocused()
+  await page.keyboard.press('Shift+Tab')
+  await expect(close).toBeFocused()
+  await page.keyboard.press('Escape')
+  await expect(dialog).toBeHidden()
+  await expect(trigger).toBeFocused()
+})
+
 test('C02-D2 uploading the same file again stores it and warns with the earlier document (AT-057)', async ({ page }) => {
   expect(partyId, 'C02-D1 must have created the card').not.toBe('')
   await signInAs(page, CREATOR_ACTOR)
@@ -112,7 +152,7 @@ test('C02-D2 uploading the same file again stores it and warns with the earlier 
   const warning = panel.locator('[data-documents-state="duplicate"]')
   await expect(warning).toContainText(DUPLICATE_TITLE)
   await expect(warning.locator(`[data-duplicate-id="${documentId}"]`)).toContainText(FILE_NAME)
-  await expect(panel.locator('tbody tr')).toHaveCount(2)
+  await expect(panel.locator('tbody tr')).toHaveCount(3)
 })
 
 test('C02-D3 another company\'s fully authorized actor gets 404 and an actor without the document names gets 403', async ({ page }) => {
