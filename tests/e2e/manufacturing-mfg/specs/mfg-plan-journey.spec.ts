@@ -33,6 +33,42 @@ interface CandidateAnswer {
 const CANONICAL_PROCESSES = ['Slitting', 'ColdRolling', 'TubeProfile', 'Paint', 'CutToLength'] as const
 type CanonicalProcess = (typeof CANONICAL_PROCESSES)[number]
 
+const PROCESS_PREVIEW_CONTRACT: Readonly<Record<CanonicalProcess, {
+  readonly formulas: readonly string[]
+  readonly missingParameters: readonly string[]
+}>> = {
+  Slitting: {
+    formulas: ['SLT-001…007', 'SLT-010'],
+    missingParameters: [
+      'densityKgPerCubicMetre', 'lineSpeedMetresPerMinute', 'lines[0].bandWidthMm',
+      'lines[0].count', 'netUsableWidthMm',
+    ],
+  },
+  ColdRolling: {
+    formulas: ['CR-001…005'],
+    missingParameters: ['densityKgPerCubicMetre', 'scrapKg', 'targetThicknessMm'],
+  },
+  TubeProfile: {
+    formulas: ['TUB-001…003', 'TUB-004'],
+    missingParameters: [
+      'lineSpeedMetresPerMinute', 'packageCount', 'pieceLengthMm', 'piecesPerPackage',
+      'totalPieces', 'unitKg',
+    ],
+  },
+  Paint: {
+    formulas: ['PNT-001…004', 'PNT-005', 'PNT-006'],
+    missingParameters: [
+      'areaSquareMetres', 'filmMicrons', 'lineSpeedMetresPerMinute', 'packageCount',
+      'perimeterMm', 'pieces', 'piecesPerPackage', 'profileLengthMm', 'scrapFactor',
+      'simultaneousProfiles', 'solidsRatio',
+    ],
+  },
+  CutToLength: {
+    formulas: ['CUT-001…006'],
+    missingParameters: ['densityKgPerCubicMetre', 'lines[0].count', 'lines[0].targetLengthMm'],
+  },
+}
+
 interface WorkCenterAnswer {
   readonly id: string
   readonly kind: CanonicalProcess
@@ -457,6 +493,129 @@ test.describe('MFG plan create and reopen (real Inventory parent roll)', () => {
     expectEveryAnswerRewritten(answered, rewritten)
   })
 
+  test('ordered slitting lines survive committed response loss and reopen as a fixed specification', async ({ page, context }) => {
+    const rewritten = await asActor(context, env.seed.recorderActor)
+    const answered = watchAnswers(page)
+    const candidate = await openPlanForm(page, env.seed.rolls.slittingSpec)
+    const expectedSpec = {
+      lines: [
+        { bandWidthMm: '150.000', count: 4 },
+        { bandWidthMm: '240.50', count: 3 },
+      ],
+      windingTargetKg: '2000.00',
+    }
+
+    await page.getByRole('checkbox', { name: 'Sıralı bant planı ekle' }).check()
+    await page.getByLabel('Bant 1 genişliği mm').fill(expectedSpec.lines[0].bandWidthMm)
+    await page.getByLabel('Bant 1 adedi').fill(String(expectedSpec.lines[0].count))
+    await page.getByRole('button', { name: 'Bant satırı ekle', exact: true }).click()
+    await page.getByLabel('Bant 2 genişliği mm').fill(expectedSpec.lines[1].bandWidthMm)
+    await page.getByLabel('Bant 2 adedi').fill(String(expectedSpec.lines[1].count))
+    const finalPreview = page.waitForResponse((response) => {
+      if (!PLAN_PREVIEW_RE.test(response.url()) || response.request().method() !== 'POST') return false
+      const body = response.request().postDataJSON() as { slittingSpec?: unknown }
+      return JSON.stringify(body.slittingSpec) === JSON.stringify(expectedSpec)
+    })
+    await page.getByLabel('İsteğe bağlı sarım hedefi (kg)').fill(expectedSpec.windingTargetKg)
+    const preview = await finalPreview
+    expect(preview.status()).toBe(200)
+    expect((preview.request().postDataJSON() as { slittingSpec: unknown }).slittingSpec).toEqual(expectedSpec)
+
+    let committedRequest: Request | null = null
+    let committedStatus: number | null = null
+    await page.route(PLAN_POST_RE, async (route) => {
+      if (committedRequest !== null) return route.fallback()
+      committedRequest = route.request()
+      const response = await route.fetch({
+        headers: { ...route.request().headers(), 'x-development-user': env.seed.recorderActor },
+      })
+      committedStatus = response.status()
+      await route.abort('failed')
+    })
+
+    await page.getByRole('button', { name: 'Taslak planı kaydet', exact: true }).click()
+    await expect(page.getByText('Sonuç bilinmiyor.', { exact: false })).toBeVisible()
+    expect(committedStatus).toBe(201)
+    const first = committedRequest as Request | null
+    expect(first).not.toBeNull()
+    const firstBody = first!.postDataJSON() as {
+      planId: string
+      workCenterId: string
+      inputs: Array<{ parentRollId: string; plannedKg: string; expectedLabelVersion: string }>
+      slittingSpec: typeof expectedSpec
+    }
+    const firstKey = first!.headers()['idempotency-key']
+    expect(firstBody).toMatchObject({
+      workCenterId: env.seed.workCenterId,
+      inputs: [{
+        parentRollId: candidate.labelId,
+        plannedKg: '1000',
+        expectedLabelVersion: candidate.labelVersion,
+      }],
+      slittingSpec: expectedSpec,
+    })
+    expect(firstBody.slittingSpec).toEqual(
+      (preview.request().postDataJSON() as { slittingSpec: typeof expectedSpec }).slittingSpec,
+    )
+
+    const replayed = page.waitForResponse(
+      (response) => PLAN_POST_RE.test(response.url()) && response.request().method() === 'POST',
+    )
+    await page.getByRole('button', { name: 'Aynı anahtarla yeniden gönder', exact: true }).click()
+    const replay = await replayed
+    expect(replay.status()).toBe(201)
+    expect(replay.headers()['idempotency-replayed']).toBe('true')
+    expect(replay.request().headers()['idempotency-key']).toBe(firstKey)
+    expect(replay.request().postDataJSON()).toEqual(first!.postDataJSON())
+    await expect(page.getByText('Önceki kayıtlı sonuç yeniden gösterildi.', { exact: true })).toBeVisible()
+
+    const api = await apiAs(env, env.seed.recorderActor)
+    try {
+      const stored = await readPlan(api, firstBody.planId)
+      expect(stored.response.status()).toBe(200)
+      expect(stored.body).toMatchObject({
+        planId: firstBody.planId,
+        status: 'Draft',
+        version: 1,
+        inputs: [{ parentRollId: candidate.labelId, plannedKg: '1000' }],
+        slittingSpec: {
+          lines: [{ bandWidthMm: '150', count: 4 }, { bandWidthMm: '240.5', count: 3 }],
+          windingTargetKg: '2000',
+        },
+      })
+    } finally {
+      await api.dispose()
+    }
+
+    await page.goto('/uretim/emirler')
+    const listAnswer = page.waitForResponse(
+      (response) => PLAN_LIST_RE.test(response.url()) && response.request().method() === 'GET',
+    )
+    await page.getByRole('link', { name: 'Üretim planları', exact: true }).click()
+    const listed = (await (await listAnswer).json()) as { plans: Array<{ planId: string }> }
+    expect(listed.plans.filter((plan) => plan.planId === firstBody.planId)).toHaveLength(1)
+    const reference = firstBody.planId.slice(-8)
+    const freshRead = page.waitForResponse(
+      (response) => PLAN_GET_RE.test(response.url()) && response.url().endsWith(firstBody.planId)
+        && response.request().method() === 'GET',
+    )
+    await page.getByRole('row', { name: new RegExp(reference) }).getByRole('link', { name: new RegExp(reference) }).click()
+    expect((await freshRead).status()).toBe(200)
+    await expect(page.getByRole('heading', { name: 'Plan yeniden açıldı' })).toBeVisible()
+    const specHeading = page.getByRole('heading', { name: 'Dilme ayrıntısı' })
+    const spec = specHeading.locator('..')
+    const rows = spec.getByRole('row')
+    await expect(rows.nth(1)).toContainText('150 mm')
+    await expect(rows.nth(1)).toContainText('4')
+    await expect(rows.nth(2)).toContainText('240.5 mm')
+    await expect(rows.nth(2)).toContainText('3')
+    await expect(spec.getByText('Sarım hedefi: 2000 kg', { exact: true })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Planı düzenle', exact: true })).toHaveCount(0)
+    await expect(page.getByText('Dilme ayrıntısı taşıyan plan düzenlenmez; ana ruloyla dengesi iş kararı bekliyor (AT-044).', { exact: true }))
+      .toBeVisible()
+    expectEveryAnswerRewritten(answered, rewritten)
+  })
+
   test('AT-061 / AT-062: the form previews the typed content live through the server calculator and writes nothing', async ({ page, context }) => {
     const rewritten = await asActor(context, env.seed.recorderActor)
     const answered = watchAnswers(page)
@@ -569,6 +728,73 @@ test.describe('MFG plan create and reopen (real Inventory parent roll)', () => {
     expectEveryAnswerRewritten(answered, rewritten)
   })
 
+  test('each canonical process previews through its server engine and names every still-unknown parameter', async ({ page, context }) => {
+    const rewritten = await asActor(context, env.seed.recorderActor)
+    const answered = watchAnswers(page)
+    const api = await apiAs(env, env.seed.recorderActor)
+
+    try {
+      const workCenters = await readCanonicalWorkCenters(api)
+      const newestPlan = async () => {
+        const response = await api.get('/api/v1/manufacturing/plans?pageSize=1')
+        expect(response.status()).toBe(200)
+        return ((await response.json()) as { plans: Array<{ planId: string }> }).plans[0]?.planId ?? null
+      }
+      const newestBefore = await newestPlan()
+
+      for (const process of CANONICAL_PROCESSES) {
+        const workCenter = workCenters.get(process)!
+        const previewAnswer = page.waitForResponse((response) => {
+          if (!PLAN_PREVIEW_RE.test(response.url()) || response.request().method() !== 'POST') return false
+          const request = response.request().postDataJSON() as {
+            workCenterId?: string
+            inputs?: Array<{ plannedKg?: string }>
+          }
+          return request.workCenterId === workCenter.id && request.inputs?.[0]?.plannedKg === '1000'
+        })
+
+        await openPlanForm(page, env.seed.rolls.planCreate, workCenter.id)
+        const response = await previewAnswer
+        expect(response.status()).toBe(200)
+        const preview = await response.json() as {
+          calculatorVersion: string
+          process: string
+          plannedRollCount: number
+          plannedInputKg: string
+          answers: Array<{ formula: string; outcome: string }>
+          rolls: Array<{ answers: Array<{ formula: string; outcome: string }> }>
+          missingParameters: string[]
+          hasRefusal: boolean
+        }
+        const expected = PROCESS_PREVIEW_CONTRACT[process]
+        const answers = [...preview.answers, ...preview.rolls.flatMap((roll) => roll.answers)]
+
+        expect(preview).toMatchObject({
+          calculatorVersion: 'GDC-PLAN-CALC/1',
+          process,
+          plannedRollCount: 1,
+          plannedInputKg: '1000',
+          missingParameters: expected.missingParameters,
+          hasRefusal: false,
+        })
+        expect(answers.map((answer) => answer.formula)).toEqual(expected.formulas)
+        expect(answers.every((answer) => answer.outcome === 'Unavailable')).toBe(true)
+
+        const panel = page.getByTestId('plan-preview')
+        await expect(panel.getByText(/Önizleme güncel/)).toBeVisible()
+        await expect(panel.getByRole('list', { name: 'Eksik parametreler' }))
+          .toContainText(expected.missingParameters[0])
+        await expect(panel).toContainText('varsayılan değer kullanmaz')
+      }
+
+      // A preview is a read-only calculation for every process; the loop must not create a plan.
+      expect(await newestPlan()).toBe(newestBefore)
+    } finally {
+      await api.dispose()
+    }
+    expectEveryAnswerRewritten(answered, rewritten)
+  })
+
   test('permission and stale-label refusals write no plan, and a refusal replay is stable', async () => {
     const candidate = await readParentRollCandidate(env, env.seed.rolls.planRefusal)
     const refusedPlanId = randomUUID()
@@ -641,16 +867,62 @@ test.describe('MFG plan create and reopen (real Inventory parent roll)', () => {
     const candidate = await openPlanForm(page, env.seed.rolls.planCreate)
 
     const sentPlan = page.waitForRequest((request) => PLAN_POST_RE.test(request.url()) && request.method() === 'POST')
+    const createdAnswer = page.waitForResponse(
+      (response) => PLAN_POST_RE.test(response.url()) && response.request().method() === 'POST',
+    )
     await page.getByRole('button', { name: 'Taslak planı kaydet', exact: true }).click()
     const body = (await sentPlan).postDataJSON() as { planId: string }
     await expect(page.getByRole('heading', { name: 'Taslak plan kaydedildi' })).toBeVisible()
+
+    const createdResponse = await createdAnswer
+    expect(createdResponse.status()).toBe(201)
+    const createdPlan = (await createdResponse.json()) as { inputs: Array<{ parentRollId: string; technicalSnapshot: unknown }> }
+    expect(createdPlan.inputs).toHaveLength(1)
+    expect(createdPlan.inputs[0].parentRollId).toBe(candidate.labelId)
+    const createdTechnicalSnapshot = createdPlan.inputs[0].technicalSnapshot
 
     // Reopen: the plan and its history are both read from the server; the history has only the creation.
     const historyRead = page.waitForResponse(
       (response) => PLAN_REVISIONS_RE.test(response.url()) && response.request().method() === 'GET',
     )
     await page.getByRole('link', { name: 'Formu kapat ve planı yeniden aç' }).click()
-    expect((await historyRead).status()).toBe(200)
+    const initialHistoryResponse = await historyRead
+    expect(initialHistoryResponse.status()).toBe(200)
+    const initialHistory = (await initialHistoryResponse.json()) as {
+      revisions: Array<{ recordedAtUtc: string; inputs: Array<{ technicalSnapshot: unknown }> }>
+    }
+    const capturedTechnicalSnapshot = initialHistory.revisions[0]?.inputs[0]?.technicalSnapshot
+    // Exact released tuple used by MfgBrowserSeed.EnsureGenuineProductAsync:
+    // Product.Infrastructure/Persistence/ProductInitialTechnicalDefinitionV1.cs (4A source release),
+    // Settings.Application/ApprovedUnitProfileCatalog.cs + Contracts/V1/SettingsUnitIdentitiesV1.cs.
+    // ManufacturingApiV1.VerifyPlanContentAsync selects UTC today; revision 0 records the creation time.
+    const createdOnUtc = new Date(initialHistory.revisions[0].recordedAtUtc).toISOString().slice(0, 10)
+    expect(capturedTechnicalSnapshot).toEqual({
+      productId: env.seed.output.productId,
+      productVersion: env.seed.output.productVersion,
+      family: {
+        familyId: '2ffdf417-c7b0-4cc5-8c58-40b5cd906c55',
+        familyCode: 'hr-slit-coil',
+        sourceRevision: 'issue66-5973142585-4A',
+      },
+      template: {
+        templateId: 'ca5be23e-1f56-40c7-9e4a-6cdfc5e884b2',
+        templateVersion: '1',
+        templateCode: 'gdc-flat-coil-v1',
+        sourceRevision: 'issue66-5973142585-4A',
+      },
+      thicknessMm: '1',
+      widthMm: '1000',
+      unitKg: {
+        companyId: '10000000-0000-0000-0000-000000000001',
+        unitId: 'c5ef643e-a6e8-51f3-89f2-8e68b00cb983',
+        unitCode: 'kg',
+        profileId: '4a790fdc-2a6b-5126-835f-d3a13d28b71c',
+        profileVersion: '1',
+      },
+      effectiveOn: createdOnUtc,
+    })
+    expect(capturedTechnicalSnapshot).toEqual(createdTechnicalSnapshot)
     await expect(page.getByRole('heading', { name: 'Plan yeniden açıldı' })).toBeVisible()
     await expect(page.getByText('Plan oluşturulduğundan beri düzenlenmedi.', { exact: true })).toBeVisible()
 
@@ -673,6 +945,10 @@ test.describe('MFG plan create and reopen (real Inventory parent roll)', () => {
     await page.getByRole('button', { name: 'Değişikliği kaydet', exact: true }).click()
     const revised = await revision
     expect(revised.status()).toBe(200)
+    const revisedPlan = (await revised.json()) as { inputs: Array<{ parentRollId: string; technicalSnapshot: unknown }> }
+    expect(revisedPlan.inputs).toHaveLength(1)
+    expect(revisedPlan.inputs[0].parentRollId).toBe(candidate.labelId)
+    expect(revisedPlan.inputs[0].technicalSnapshot).toEqual(capturedTechnicalSnapshot)
     const key = revised.request().headers()['idempotency-key']
     expect(key).toMatch(/^[0-9a-f-]{36}$/)
     expect(revised.request().headers()['x-company-id']).toBe(env.seed.companyId)
@@ -689,7 +965,12 @@ test.describe('MFG plan create and reopen (real Inventory parent roll)', () => {
       target: { basis: 'GoodOutputMass', kg: '750' },
       reason: 'Tarayıcı kabulü: bobin kg düşürüldü',
     })
-    expect((await revisedRead).status()).toBe(200)
+    const revisedPlanResponse = await revisedRead
+    expect(revisedPlanResponse.status()).toBe(200)
+    const freshPlan = (await revisedPlanResponse.json()) as { inputs: Array<{ parentRollId: string; technicalSnapshot: unknown }> }
+    expect(freshPlan.inputs).toHaveLength(1)
+    expect(freshPlan.inputs[0].parentRollId).toBe(candidate.labelId)
+    expect(freshPlan.inputs[0].technicalSnapshot).toEqual(capturedTechnicalSnapshot)
     await expect(page.getByText('Plan güncellendi (sürüm 2); güncel kayıt ve geçmiş yeniden okundu.', { exact: true }))
       .toBeVisible()
     await expect(storedPlanInputRows(page).getByRole('row', { name: new RegExp(`${candidate.labelId}.*800`) }))
@@ -714,7 +995,17 @@ test.describe('MFG plan create and reopen (real Inventory parent roll)', () => {
       (response) => PLAN_REVISIONS_RE.test(response.url()) && response.request().method() === 'GET',
     )
     await page.getByRole('row', { name: new RegExp(reference) }).getByRole('link', { name: new RegExp(reference) }).click()
-    expect((await reopenedHistory).status()).toBe(200)
+    const reopenedHistoryResponse = await reopenedHistory
+    expect(reopenedHistoryResponse.status()).toBe(200)
+    const reopenedRevisions = (await reopenedHistoryResponse.json()) as {
+      revisions: Array<{ revision: number; inputs: Array<{ parentRollId: string; technicalSnapshot: unknown }> }>
+    }
+    expect(reopenedRevisions.revisions.map((entry) => entry.revision)).toEqual([0, 1])
+    for (const entry of reopenedRevisions.revisions) {
+      expect(entry.inputs).toHaveLength(1)
+      expect(entry.inputs[0].parentRollId).toBe(candidate.labelId)
+      expect(entry.inputs[0].technicalSnapshot).toEqual(capturedTechnicalSnapshot)
+    }
     const history = page.getByRole('region', { name: 'Plan geçmişi' })
     const latest = history.getByRole('listitem', { name: 'Revizyon 1' })
     await expect(latest).toContainText('Gerekçe: Tarayıcı kabulü: bobin kg düşürüldü')
@@ -725,13 +1016,18 @@ test.describe('MFG plan create and reopen (real Inventory parent roll)', () => {
     const api = await apiAs(env, env.seed.recorderActor)
     try {
       // The stored plan and its history are the edit.
-      expect((await readPlan(api, body.planId)).body).toMatchObject({
+      const storedPlan = (await readPlan(api, body.planId)).body
+      if (storedPlan === null) throw new Error('The edited plan must reopen from the stored plan read.')
+      expect(storedPlan).toMatchObject({
         planId: body.planId,
         status: 'Draft',
         version: 2,
         inputs: [{ parentRollId: candidate.labelId, plannedKg: '800' }],
         target: { basis: 'GoodOutputMass', kg: '750' },
       })
+      const storedInputs = storedPlan.inputs as Array<{ technicalSnapshot: unknown }>
+      expect(storedInputs).toHaveLength(1)
+      expect(storedInputs[0].technicalSnapshot).toEqual(capturedTechnicalSnapshot)
       const revisions = await api.get(`/api/v1/manufacturing/plans/${body.planId}/revisions`)
       expect(revisions.status()).toBe(200)
       const stored = (await revisions.json()) as { revisions: Array<Record<string, unknown>> }
@@ -739,8 +1035,17 @@ test.describe('MFG plan create and reopen (real Inventory parent roll)', () => {
       expect(stored.revisions[1]).toMatchObject({
         planVersion: 2,
         reason: 'Tarayıcı kabulü: bobin kg düşürüldü',
-        inputs: [{ parentRollId: candidate.labelId, plannedKg: '800', expectedLabelVersion: candidate.labelVersion }],
+        inputs: [{
+          parentRollId: candidate.labelId,
+          plannedKg: '800',
+          expectedLabelVersion: candidate.labelVersion,
+        }],
       })
+      for (const entry of stored.revisions) {
+        const inputs = (entry as { inputs: Array<{ technicalSnapshot: unknown }> }).inputs
+        expect(inputs).toHaveLength(1)
+        expect(inputs[0].technicalSnapshot).toEqual(capturedTechnicalSnapshot)
+      }
 
       // Idempotent replay: the browser's key and body again answer the stored result, no second revision.
       const replay = await api.post(`/api/v1/manufacturing/plans/${body.planId}/revision`, {

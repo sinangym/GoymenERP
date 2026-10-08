@@ -7,6 +7,7 @@ envelope present in "normal", envelope or profile key missing in "cari-staged", 
 suite or profile.
 """
 import copy
+import base64
 import importlib.util
 import pathlib
 import sys
@@ -330,6 +331,29 @@ class SuiteExtensionTests(unittest.TestCase):
         without_identity = dict(browser.SUITE_API_EXTENSIONS["org03"], identity=False)
         with mock.patch.dict(browser.SUITE_API_EXTENSIONS, {"org03": without_identity}):
             browser.validate_suite_compose(extended("org03", actors("org03", 6)), "org03", COMMIT, PROJECT)
+
+    def test_r14_requires_the_exact_disposable_stock_position_cursor_key(self):
+        key = browser.INVENTORY_STOCK_POSITION_CURSOR_KEY
+        reviewed = base64.b64encode(bytes(range(32))).decode("ascii")
+        browser.validate_suite_compose(extended("r14", {key: reviewed}), "r14", COMMIT, PROJECT)
+
+        with self.assertRaisesRegex(browser.ContractError, "runtime fixture key set is not exact"):
+            browser.validate_suite_compose(model("normal"), "r14", COMMIT, PROJECT)
+
+        candidates = (
+            "not-base64",
+            base64.b64encode(bytes(range(31))).decode("ascii"),
+            base64.b64encode(bytes(reversed(range(32)))).decode("ascii"),
+        )
+        for candidate in candidates:
+            with self.subTest(candidate_length=len(candidate)):
+                with self.assertRaises(browser.ContractError) as caught:
+                    browser.validate_suite_compose(extended("r14", {key: candidate}), "r14", COMMIT, PROJECT)
+                self.assertNotIn(candidate, str(caught.exception))
+
+        unknown = extended("r14", {key: reviewed, "Inventory__UnknownSigningKey": reviewed})
+        with self.assertRaisesRegex(browser.ContractError, "key set is not exact"):
+            browser.validate_suite_compose(unknown, "r14", COMMIT, PROJECT)
 
     def test_mfg_api_read_fixture_requires_the_exact_disposable_run_binding(self):
         no_identity = {"mfg": dict(browser.SUITE_API_EXTENSIONS["mfg"],

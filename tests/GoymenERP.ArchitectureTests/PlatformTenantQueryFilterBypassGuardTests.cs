@@ -201,8 +201,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // Customer-owned opening: +2 exact account-context and fail-closed authority SQL facts.
             // Inventory stock-position read: +1 actual bounded filter/classification SQL fact;
             // every listed case remains mandatory and zero-skip.
+            // Inventory location display and ST-01 Product-authority capability: +2 reviewed Inventory SQL facts.
             ["tools/relational_inventory/inventory.txt"] =
-                "3a9b7bce5b3c874ba82ce7cb475db4314a5eacedd3ba6a2bc9cc6143b21c764a",
+                "586d709cc35eec077c275bb32145d090f6c9f43d43c886a7b7a046bd9d49bda8",
 
             // logistics
             // AT-053: +4 weighbridge SQL facts (81c1ff0b… -> 264898d7…).
@@ -217,8 +218,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // MFG close: owner-added closure/tolerance SQL facts extend the exact Manufacturing discovery inventory.
             // MFG technical snapshot: +4 migration/constraint SQL facts (38590e95... -> b1f5f069...).
             // Customer-owned input context: replace one obsolete refusal with three exact persistence/replay facts.
+            // Slitting draft spec: +1 public API SQL fact (e6aa3795... -> 286281c0...).
             ["tools/relational_inventory/manufacturing.txt"] =
-                "e6aa3795605379f774c8256126305e931aec3e9fb7bce62ca31a449d6b764cba",
+                "286281c0b2413bc4ff55d747ecf0b8b8e5c43e99bc78d353defdc4a668f66915",
 
             // organization
             // ORG master edit: +2 OrganizationMasterDataSqlServerRelationalAcceptanceTests facts (6b504dac… -> 3bad6ad8…).
@@ -229,8 +231,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // platform
             // AT-002: +2 GlobalSearchSqlServerRelationalAcceptanceTests facts (5bc60202… -> a5df5046…).
             // ERP-000G / AT-065: +8 DocumentVaultSqlServerRelationalAcceptanceTests facts (4ed7462b… -> e57500e0…).
+            // Inventory material-label exact-code global search: +1 reviewed Platform SQL fact, kept ordinal-sorted.
             ["tools/relational_inventory/platform.txt"] =
-                "e57500e0de619eb42b1694318c08e907a8bc363d04d23038ef55841e01506b10",
+                "0d5d3ae6c318cf68925b6e387c30828e073cdf35d418b351197a77bdf10a2f36",
 
             // product
             // DEC-CAR-003: +4 ProductDeactivationSqlServerRelationalAcceptanceTests facts (d7dbec7f… -> ddeead62…).
@@ -242,7 +245,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
             // purchasing
             ["tools/relational_inventory/purchasing.txt"] =
-                "fa954703de830ced5227080599b846c4bb124efa1eb3ba6d904e4f8dbfd238a6",
+                "18d2d359f6688645ef4a0021c9d59045539ffe9b62c2b9e1cddb942073f8c691",
 
             // sales
             // DEC-SAL-003: +3 SalesDeliveryScheduleSqlServerRelationalAcceptanceTests facts (16fa5110… -> 00189b7b…).

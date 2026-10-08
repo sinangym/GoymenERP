@@ -1,4 +1,5 @@
 import contextlib
+import base64
 import io
 import json
 import pathlib
@@ -6,6 +7,7 @@ import re
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "tools"))
@@ -181,6 +183,80 @@ class PrivacyTests(unittest.TestCase):
         with self._root({"browser-c03-junit.xml": b"<x>long-enough-secret</x>"}) as root:
             with self.assertRaisesRegex(validator.ContractError, "runtime secret 0"):
                 validator.validate_privacy(root, "c03", ["long-enough-secret"])
+
+    def test_r14_runtime_key_leak_is_refused_without_disclosing_the_value(self):
+        cursor_key = base64.b64encode(bytes(range(32))).decode("ascii")
+        compose_model = {
+            "services": {
+                "api": {
+                    "environment": {validator.INVENTORY_STOCK_POSITION_CURSOR_KEY: cursor_key},
+                },
+            },
+        }
+        with self._root({"browser-r14-junit.xml": f"<x>{cursor_key}</x>".encode("utf-8")}) as root:
+            compose_path = pathlib.Path(root) / "compose.json"
+            compose_path.write_text(json.dumps(compose_model), encoding="utf-8")
+            stdout = io.StringIO()
+            stderr = io.StringIO()
+            with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                result = validator.main([
+                    "privacy",
+                    "--root", root,
+                    "--suite", "r14",
+                    "--compose-model", str(compose_path),
+                ])
+
+            self.assertEqual(1, result)
+            self.assertIn("runtime secret 0", stderr.getvalue())
+            self.assertNotIn(cursor_key, stdout.getvalue())
+            self.assertNotIn(cursor_key, stderr.getvalue())
+
+    @staticmethod
+    def _legacy_forbidden_values() -> list[str]:
+        return [
+            "long-enough-mssql-password",
+            base64.b64encode(bytes(range(48))).decode("ascii"),
+            "Server=127.0.0.1;Database=SENTETIK;User Id=sa;Password=long-enough-mssql-password",
+        ]
+
+    def test_r14_legacy_privacy_uses_the_reviewed_override_with_the_exact_old_candidate_composition(self):
+        with self._root({"browser-r14-junit.xml": b"<ok/>"}) as root:
+            validator.validate_privacy(root, "r14", self._legacy_forbidden_values())
+
+    def test_r14_legacy_privacy_refuses_a_runtime_key_leak_without_disclosing_the_value(self):
+        cursor_key = base64.b64encode(bytes(range(32))).decode("ascii")
+        with self._root({"browser-r14-junit.xml": f"<x>{cursor_key}</x>".encode("utf-8")}) as root:
+            stdout = io.StringIO()
+            stderr = io.StringIO()
+            with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                result = validator.main([
+                    "privacy",
+                    "--root", root,
+                    "--suite", "r14",
+                    *[argument for value in self._legacy_forbidden_values()
+                      for argument in ("--forbidden-value", value)],
+                ])
+
+            self.assertEqual(1, result)
+            self.assertIn("runtime secret", stderr.getvalue())
+            self.assertNotIn(cursor_key, stdout.getvalue())
+            self.assertNotIn(cursor_key, stderr.getvalue())
+
+    def test_r14_legacy_privacy_fails_closed_when_the_reviewed_override_binding_is_missing_or_mismatched(self):
+        mismatched = base64.b64encode(bytes(reversed(range(32)))).decode("ascii")
+        with self._root({"browser-r14-junit.xml": b"<ok/>"}) as root:
+            for source, error in (
+                ("services:\n  api:\n    environment:\n      Other: value\n", "exactly one reviewed runtime binding"),
+                (f"services:\n  api:\n    environment:\n      {validator.INVENTORY_STOCK_POSITION_CURSOR_KEY}: {mismatched}\n",
+                 "does not match the reviewed disposable value"),
+            ):
+                with self.subTest(error=error), tempfile.TemporaryDirectory() as repository:
+                    override = pathlib.Path(repository) / "infra" / "browser-suites" / "r14.override.yml"
+                    override.parent.mkdir(parents=True)
+                    override.write_text(source, encoding="utf-8")
+                    with mock.patch.object(validator.c01, "REPOSITORY_ROOT", pathlib.Path(repository)):
+                        with self.assertRaisesRegex(validator.ContractError, error):
+                            validator.validate_privacy(root, "r14", self._legacy_forbidden_values())
 
     def test_a_c01_forbidden_pattern_is_refused(self):
         with self._root({"browser-smoke-junit.xml": b"GET /api/v1/counterparties?cursor=abc"}) as root:
@@ -872,6 +948,32 @@ class WorkflowTests(unittest.TestCase):
         }
         self.assertEqual("inventory.label-classification.write", recorder[6])
         self.assertNotIn("inventory.label-classification.write", denied.values())
+        for role_index in range(8, 13):
+            role_permissions = {
+                permission
+                for _, permission in re.findall(
+                    rf"IdentitySeed__Roles__{role_index}__Permissions__(\d+): ([^\r\n]+)", source)
+            }
+            self.assertTrue(
+                {
+                    "inventory.labels.read",
+                    "inventory.balances.read",
+                    "product.operational-selection.read",
+                }.issubset(role_permissions),
+                f"R14 role {role_index} must retain the complete stock-position read authority",
+            )
+
+        key_match = re.search(
+            rf"{validator.INVENTORY_STOCK_POSITION_CURSOR_KEY}: ([^\r\n]+)",
+            source,
+        )
+        self.assertIsNotNone(key_match)
+        cursor_key = key_match.group(1)
+        self.assertEqual(32, len(base64.b64decode(cursor_key, validate=True)))
+        validator.validate_suite_extensions(
+            "r14",
+            {validator.INVENTORY_STOCK_POSITION_CURSOR_KEY: cursor_key},
+        )
 
     def _trigger_block(self) -> str:
         return self.workflow.split("\non:\n", 1)[1].split("\npermissions:\n", 1)[0]
@@ -924,6 +1026,7 @@ class WorkflowTests(unittest.TestCase):
             "down -v --remove-orphans",
             "id: artifact_privacy",
             "tools/validate_browser_acceptance.py privacy",
+            '--compose-model "$compose_model"',
             "steps.artifact_privacy.outcome == 'success'",
         ):
             with self.subTest(required=required):

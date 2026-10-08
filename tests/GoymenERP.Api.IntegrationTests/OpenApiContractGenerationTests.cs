@@ -869,7 +869,7 @@ public sealed partial class OpenApiContractGenerationTests
             ["GetInventoryLabelBalancesV1"] = "ref:InventoryLabelBalancesV1",
             ["GetInventoryLabelDetailV1"] = "ref:InventoryLabelDetailV1",
             ["GetInventoryParentRollCandidatesV1"] = "ref:InventoryParentRollCandidatesV1",
-            ["GetInventoryStockPositionsV1"] = "anyOf:inline:items,searchWindowFull|InventoryStockPositionPageV1",
+            ["GetInventoryStockPositionsV1"] = "anyOf:inline:items,searchWindowFull|InventoryStockPositionPageV1|InventoryStockPositionLocationPageV2",
             ["GetInventoryMovementTimelineV1"] = "ref:InventoryMovementTimelinePageV1",
             ["GetInventoryPhysicalAllocationsV1"] = "ref:InventoryPhysicalAllocationReadsV1",
             ["GetInventoryProductCandidatesV1"] = "ref:ProductStockCandidatesV1",
@@ -1944,11 +1944,14 @@ public sealed partial class OpenApiContractGenerationTests
         "manufacturing_kilogram_precision_exceeded", "manufacturing_kilogram_profile_company_mismatch",
         "manufacturing_kilogram_profile_invalid", "manufacturing_kilogram_profile_not_in_effect",
         "manufacturing_mass_negative", "manufacturing_mass_scale_exceeded", "manufacturing_order_closed",
-        "manufacturing_output_already_declared", "manufacturing_plan_not_approved",
-        "manufacturing_plan_not_draft", "manufacturing_plan_without_inputs",
+        "manufacturing_output_already_declared", "manufacturing_plan_engine_refused",
+        "manufacturing_plan_label_not_usable", "manufacturing_plan_not_approved",
+        "manufacturing_plan_not_draft", "manufacturing_plan_parameters_unavailable",
+        "manufacturing_plan_winding_does_not_fit", "manufacturing_plan_without_inputs",
         "manufacturing_return_already_recorded", "manufacturing_return_exceeds_issued",
         "manufacturing_roll_not_in_order", "manufacturing_roll_not_issued",
-        "manufacturing_stored_record_invalid", "manufacturing_unexplained_difference",
+        "manufacturing_slitting_spec_without_lines", "manufacturing_stored_record_invalid",
+        "manufacturing_unexplained_difference",
         "manufacturing_closure_policy_invalid", "manufacturing_closure_policy_not_effective",
         "manufacturing_closure_policy_scope_mismatch", "manufacturing_closure_fire_declaration_required",
         "manufacturing_closure_approval_required", "manufacturing_closure_approval_invalid",
@@ -2489,7 +2492,8 @@ public sealed partial class OpenApiContractGenerationTests
                     ("parentRollId", "type:string;format:uuid"),
                     ("plannedKg", "type:string"),
                     ("expectedLabelVersion", "type:null|string"),
-                    ("commercialContext", "oneOf:ref:CapturedPlanCommercialContextViewV1|type:null")),
+                    ("commercialContext", "oneOf:ref:CapturedPlanCommercialContextViewV1|type:null"),
+                    ("technicalSnapshot", "oneOf:ref:CapturedPlanTechnicalSnapshotViewV1|type:null")),
                 // AT-061 / AT-062: the plan calculator's answer for an unsaved plan content; every value is lossless text.
                 ["PlanPreviewViewV1"] = ObjectSchema(
                     ["calculatorVersion", "workCenterId", "process", "plannedRollCount", "plannedInputKg", "target", "answers", "rolls", "missingParameters", "hasRefusal"],
@@ -3933,7 +3937,16 @@ public sealed partial class OpenApiContractGenerationTests
                     ("target", "oneOf:ref:TargetViewV1|type:null"),
                     ("approvedByUserId", "type:null|string;format:uuid"),
                     ("approvedAtUtc", "type:null|string;format:date-time"),
-                    ("calculation", "oneOf:ref:PlanPreviewViewV1|type:null")),
+                    ("calculation", "oneOf:ref:PlanPreviewViewV1|type:null"),
+                    ("slittingSpec", "oneOf:ref:SlittingSpecViewV1|type:null")),
+                ["SlitLineViewV1"] = ObjectSchema(
+                    ["bandWidthMm", "count"],
+                    ("bandWidthMm", "type:string"),
+                    ("count", "type:integer|string;format:int32")),
+                ["SlittingSpecViewV1"] = ObjectSchema(
+                    ["lines", "windingTargetKg"],
+                    ("lines", "type:array;items:ref:SlitLineViewV1"),
+                    ("windingTargetKg", "type:null|string")),
                 ["RemainingTargetViewV1"] = ObjectSchema(
                     ["basis", "targetKg", "achievedKg", "remainingKg"],
                     ("basis", "type:null|string"),
@@ -4386,6 +4399,44 @@ public sealed partial class OpenApiContractGenerationTests
                     ("activeAllocationKg", "type:string"),
                     ("availableKg", "type:string"),
                     ("productDisplay", "ref:ProductStockDisplayResultV1")),
+                ["InventoryStockPositionLocationPageV2"] = ObjectSchema(
+                    ["items", "searchWindowFull"],
+                    ("items", "type:array;items:ref:InventoryStockPositionLocationDisplayV2"),
+                    ("searchWindowFull", "type:boolean"),
+                    ("nextCursor", "type:null|string")),
+                ["InventoryStockPositionLocationDisplayV2"] = ObjectSchema(
+                    ["companyId", "labelId", "labelVersion", "labelCode", "productId", "productVersion",
+                        "classification", "lot", "heatNumber", "coilNumber", "documentStatus", "ownerKind", "ownerId",
+                        "custodianKind", "custodianId", "locationId", "physicalKg", "freePhysicalKg",
+                        "blockedPhysicalKg", "activeAllocationKg", "availableKg", "productDisplay", "locationDisplay"],
+                    ("companyId", "type:string;format:uuid"),
+                    ("labelId", "type:string;format:uuid"),
+                    ("labelVersion", "type:string"),
+                    ("labelCode", "type:string"),
+                    ("productId", "type:string;format:uuid"),
+                    ("productVersion", "type:null|string"),
+                    ("classification", "type:null|string"),
+                    ("lot", "ref:InventoryLotV1"),
+                    ("heatNumber", "type:null|string"),
+                    ("coilNumber", "type:null|string"),
+                    ("documentStatus", "type:string"),
+                    ("ownerKind", "type:string"),
+                    ("ownerId", "type:string;format:uuid"),
+                    ("custodianKind", "type:string"),
+                    ("custodianId", "type:string;format:uuid"),
+                    ("locationId", "type:string;format:uuid"),
+                    ("physicalKg", "type:string"),
+                    ("freePhysicalKg", "type:string"),
+                    ("blockedPhysicalKg", "type:string"),
+                    ("activeAllocationKg", "type:string"),
+                    ("availableKg", "type:string"),
+                    ("productDisplay", "ref:ProductStockDisplayResultV1"),
+                    ("locationDisplay", "ref:OrganizationLocationDisplayV1")),
+                ["OrganizationLocationDisplayV1"] = ObjectSchema(
+                    ["locationId", "locationCode", "locationName"],
+                    ("locationId", "type:string;format:uuid"),
+                    ("locationCode", "type:string"),
+                    ("locationName", "type:string")),
                 ["InventoryMovementTimelinePageV1"] = ObjectSchema(
                     ["items", "nextCursor"],
                     ("items", "type:array;items:ref:InventoryMovementV1"),
@@ -5341,6 +5392,14 @@ public sealed partial class OpenApiContractGenerationTests
                     ("plannedKg", "type:null|string"),
                     ("expectedLabelVersion", "type:string"),
                     ("commercialContext", "oneOf:ref:PlanCommercialContextRequestV1|type:null")),
+                ["SlitLineRequestV1"] = ObjectSchema(
+                    ["bandWidthMm", "count"],
+                    ("bandWidthMm", "type:null|string"),
+                    ("count", "type:integer|string;format:int32")),
+                ["SlittingSpecRequestV1"] = ObjectSchema(
+                    ["lines"],
+                    ("lines", "type:array|null;items:ref:SlitLineRequestV1"),
+                    ("windingTargetKg", "type:null|string")),
                 ["RecordFactRequestV1"] = ObjectSchema(
                     ["factId", "expectedVersion", "parentRollId", "kg", "occurredAtUtc"],
                     ("factId", "type:string;format:uuid"),
@@ -5353,13 +5412,15 @@ public sealed partial class OpenApiContractGenerationTests
                     ("planId", "type:string;format:uuid"),
                     ("workCenterId", "type:string;format:uuid"),
                     ("inputs", "type:array|null;items:ref:PlannedInputRequestV1"),
-                    ("target", "oneOf:ref:TargetRequestV1|type:null")),
+                    ("target", "oneOf:ref:TargetRequestV1|type:null"),
+                    ("slittingSpec", "oneOf:ref:SlittingSpecRequestV1|type:null")),
                 // AT-061: the preview takes the save's grammar without the plan id (nothing is created).
                 ["PlanPreviewRequestV1"] = ObjectSchema(
                     ["workCenterId", "inputs", "target"],
                     ("workCenterId", "type:string;format:uuid"),
                     ("inputs", "type:array|null;items:ref:PlannedInputRequestV1"),
-                    ("target", "oneOf:ref:TargetRequestV1|type:null")),
+                    ("target", "oneOf:ref:TargetRequestV1|type:null"),
+                    ("slittingSpec", "oneOf:ref:SlittingSpecRequestV1|type:null")),
                 // MFG-PLAN-EDIT: a Draft plan's revision names the version read and a reason; the process stays fixed.
                 ["RevisePlanRequestV1"] = ObjectSchema(
                     ["expectedVersion", "workCenterId", "inputs", "target", "reason"],
@@ -6694,7 +6755,7 @@ public sealed partial class OpenApiContractGenerationTests
         var contract = Assert.Single(operation.GetProperty("parameters").EnumerateArray(), parameter =>
             parameter.GetProperty("in").GetString() == "header"
             && parameter.GetProperty("name").GetString() == InventoryStockPositionApiV1.ProductDisplayContractHeader);
-        Assert.Equal("^1\\.0$", contract.GetProperty("schema").GetProperty("pattern").GetString());
+        Assert.Equal("^(?:1\\.0|2\\.0)$", contract.GetProperty("schema").GetProperty("pattern").GetString());
         var success = operation.GetProperty("responses").GetProperty("200").GetProperty("content")
             .GetProperty("application/json").GetProperty("schema").GetProperty("anyOf");
         var alternatives = success.EnumerateArray().ToArray();
@@ -6710,6 +6771,15 @@ public sealed partial class OpenApiContractGenerationTests
             ], legacyItem.GetProperty("required").EnumerateArray().Select(value => value.GetString()));
         Assert.Equal("#/components/schemas/InventoryStockPositionPageV1",
             alternatives[1].GetProperty("$ref").GetString());
+        Assert.Equal("#/components/schemas/InventoryStockPositionLocationPageV2",
+            alternatives[2].GetProperty("$ref").GetString());
+        var locationItem = root.GetProperty("components").GetProperty("schemas")
+            .GetProperty("InventoryStockPositionLocationDisplayV2");
+        Assert.Contains("locationDisplay", locationItem.GetProperty("required")
+            .EnumerateArray().Select(value => value.GetString()));
+        Assert.Equal("#/components/schemas/OrganizationLocationDisplayV1",
+            locationItem.GetProperty("properties").GetProperty("locationDisplay")
+                .GetProperty("$ref").GetString());
 
         using var legacyEmpty = JsonDocument.Parse("""{"items":[],"searchWindowFull":false}""");
         using var enrichedEmpty = JsonDocument.Parse("""{"items":[],"nextCursor":null,"searchWindowFull":false}""");
