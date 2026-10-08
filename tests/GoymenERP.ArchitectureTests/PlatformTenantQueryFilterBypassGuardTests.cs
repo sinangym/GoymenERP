@@ -175,8 +175,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // counterparty
             // AT-009: +2 real-SQL fresh-authority interleavings (duplicate read and same-key winner replay).
             // Sales party display source: +1 bounded, company-scoped and fresh-authority batch SQL fact.
+            // Record-bound Sales projection: +1 company/actor-fenced, single-query and non-disclosing SQL fact.
             ["tools/relational_inventory/counterparty.txt"] =
-                "fcbd7de4ddf1bcb6c203c5b67f4e6826516e389becff8264b0aeb4d2dabaa7b0",
+                "ac82b1a9bccd46b6c882a2850c787716ad88acabdd02b27a353e431e3a54de63",
 
             // finance
             // DEC-FIN-014: +3 POS collection SQL facts (b18c13d9… -> 7af8ecf1…).
