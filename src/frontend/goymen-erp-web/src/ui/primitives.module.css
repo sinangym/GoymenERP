@@ -1,0 +1,120 @@
+/* GOY-DS-001 T1 primitives. Every value comes from a --goy-ds-* token; no literal colour. */
+
+/* ── Button ── */
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: var(--goy-ds-control-height);
+  padding: 0 12px;
+  border: 1px solid transparent;
+  border-radius: var(--goy-ds-radius-sm);
+  font: inherit;
+  font-size: var(--goy-ds-font-size-md);
+  font-weight: var(--goy-ds-font-weight-medium);
+  line-height: 1.2;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.button:focus-visible {
+  outline: 2px solid var(--goy-ds-color-accent);
+  outline-offset: 2px;
+}
+.button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+.sm {
+  min-height: var(--goy-ds-control-height-sm);
+  padding: 0 10px;
+  font-size: var(--goy-ds-font-size-sm);
+}
+.primary {
+  background: var(--goy-ds-color-accent);
+  color: var(--goy-ds-color-on-accent);
+  box-shadow: var(--goy-ds-shadow-1);
+}
+.primary:hover:not(:disabled) {
+  background: var(--goy-ds-color-accent-hover);
+}
+.secondary {
+  background: var(--goy-ds-color-surface);
+  border-color: var(--goy-ds-color-border-control);
+  color: var(--goy-ds-color-text);
+  box-shadow: var(--goy-ds-shadow-1);
+}
+.secondary:hover:not(:disabled) {
+  background: var(--goy-ds-color-surface-muted);
+  border-color: var(--goy-ds-color-border-hover);
+}
+.ghost {
+  background: transparent;
+  color: var(--goy-ds-color-text-secondary);
+}
+.ghost:hover:not(:disabled) {
+  background: var(--goy-ds-color-surface-pressed);
+  color: var(--goy-ds-color-text);
+}
+.danger {
+  background: var(--goy-ds-color-danger-fill);
+  color: var(--goy-ds-color-on-accent);
+  box-shadow: var(--goy-ds-shadow-1);
+}
+.danger:hover:not(:disabled) {
+  background: var(--goy-ds-color-danger-fill-hover);
+}
+
+/* ── Field ── */
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+.label {
+  font-size: var(--goy-ds-font-size-sm);
+  font-weight: var(--goy-ds-font-weight-medium);
+  color: var(--goy-ds-color-text-secondary);
+}
+.help {
+  margin: 0;
+  font-size: var(--goy-ds-font-size-sm);
+  color: var(--goy-ds-color-text-tertiary);
+}
+.error {
+  margin: 0;
+  font-size: var(--goy-ds-font-size-sm);
+  color: var(--goy-ds-color-danger);
+}
+
+/* ── StatusIndicator ── */
+.status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--goy-ds-font-size-sm);
+  font-weight: var(--goy-ds-font-weight-medium);
+  color: var(--goy-ds-color-text);
+  white-space: nowrap;
+}
+.dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: none;
+  background: var(--goy-ds-color-neutral-dot);
+}
+.status[data-tone='info'] .dot {
+  background: var(--goy-ds-color-info-dot);
+}
+.status[data-tone='success'] .dot {
+  background: var(--goy-ds-color-success-dot);
+}
+.status[data-tone='warning'] .dot {
+  background: var(--goy-ds-color-warning-dot);
+}
+.status[data-tone='danger'] .dot {
+  background: var(--goy-ds-color-danger-dot);
+}

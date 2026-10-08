@@ -1,0 +1,71 @@
+/*
+ * GOY-DS-001 design tokens (T0).
+ *
+ * Only custom properties, only in the --goy-ds-* namespace, only on :root. This file
+ * deliberately sets no element style: no reset, no font on html/body, no aliases for the
+ * legacy --shell-* / --color-* names. A token changes nothing until a component reads it.
+ *
+ * The font stacks keep today's system chain (the shell's own stack). IBM Plex is a later,
+ * separate allocation with its own local-asset, licence and layout-shift acceptance.
+ */
+:root {
+  /* Surfaces and lines */
+  --goy-ds-color-surface: #ffffff;
+  --goy-ds-color-surface-muted: #f6f7f9;
+  --goy-ds-color-surface-pressed: #eceef2;
+  --goy-ds-color-border: #e1e4e9;
+  --goy-ds-color-border-control: #d0d5dd;
+  --goy-ds-color-border-hover: #b3bac5;
+
+  /* Text */
+  --goy-ds-color-text: #141920;
+  --goy-ds-color-text-secondary: #48505d;
+  --goy-ds-color-text-tertiary: #646e7e;
+
+  /* Accent: primary action, link, focus, selection */
+  --goy-ds-color-accent: #2a57e3;
+  --goy-ds-color-accent-hover: #1f47c4;
+  --goy-ds-color-accent-text: #1d44be;
+  --goy-ds-color-accent-soft: #edf1fe;
+  --goy-ds-color-on-accent: #ffffff;
+  --goy-ds-focus-ring: rgba(42, 87, 227, 0.32);
+
+  /* Semantic tones (separate from the accent) */
+  --goy-ds-color-success: #18733f;
+  --goy-ds-color-success-dot: #23a15c;
+  --goy-ds-color-warning: #8f5400;
+  --goy-ds-color-warning-dot: #df9512;
+  --goy-ds-color-danger: #be2f27;
+  --goy-ds-color-danger-dot: #e0463c;
+  --goy-ds-color-danger-soft: #fceae8;
+  --goy-ds-color-danger-fill: #c3322a;
+  --goy-ds-color-danger-fill-hover: #a6271f;
+  --goy-ds-color-info-dot: #2a57e3;
+  --goy-ds-color-neutral-dot: #97a0ad;
+
+  /* Type — today's system chain, unchanged */
+  --goy-ds-font-sans: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --goy-ds-font-mono: ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace;
+  --goy-ds-font-size-xs: 0.71875rem; /* 11.5px */
+  --goy-ds-font-size-sm: 0.78125rem; /* 12.5px */
+  --goy-ds-font-size-md: 0.84375rem; /* 13.5px */
+  --goy-ds-font-size-base: 0.875rem; /* 14px */
+  --goy-ds-font-weight-regular: 400;
+  --goy-ds-font-weight-medium: 500;
+  --goy-ds-font-weight-semibold: 600;
+
+  /* Space (4px grid), radius, control size */
+  --goy-ds-space-1: 4px;
+  --goy-ds-space-2: 8px;
+  --goy-ds-space-3: 12px;
+  --goy-ds-space-4: 16px;
+  --goy-ds-space-6: 24px;
+  --goy-ds-radius-xs: 4px;
+  --goy-ds-radius-sm: 6px;
+  --goy-ds-radius-md: 8px;
+  --goy-ds-control-height-sm: 28px;
+  --goy-ds-control-height: 32px;
+
+  /* Elevation */
+  --goy-ds-shadow-1: 0 1px 2px rgba(20, 25, 32, 0.06);
+}

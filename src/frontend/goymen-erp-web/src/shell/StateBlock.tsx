@@ -5,6 +5,7 @@
  */
 
 import type { RemoteViewState } from './uiState'
+import { Button } from '../ui/Button'
 import styles from './StateBlock.module.css'
 
 const MESSAGES: Record<string, { title: string; detail: string }> = {
@@ -77,9 +78,9 @@ export function StateBlock({
       </p>
       {message.detail ? <p className={styles.detail}>{message.detail}</p> : null}
       {showRetry ? (
-        <button type="button" className={styles.retry} onClick={onRetry}>
+        <Button type="button" variant="secondary" className={styles.retry} onClick={onRetry}>
           Tekrar dene
-        </button>
+        </Button>
       ) : null}
     </div>
   )
