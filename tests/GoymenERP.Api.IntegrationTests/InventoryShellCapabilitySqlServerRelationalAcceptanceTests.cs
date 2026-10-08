@@ -6,6 +6,7 @@ using GoymenERP.Api.Shell;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Identity.Domain.Assignments;
 using GoymenERP.Modules.Identity.Domain.Roles;
+using GoymenERP.Modules.Identity.Domain.Users;
 using GoymenERP.Modules.Identity.Infrastructure.Persistence;
 using GoymenERP.Modules.Identity.Infrastructure.Services;
 using GoymenERP.Modules.Inventory.Infrastructure.Shell;
@@ -86,14 +87,21 @@ public sealed class InventoryShellCapabilitySqlServerRelationalAcceptanceTests
         var actorId = await identity.ExternalIdentities
             .Where(x => x.Issuer == BootstrapIdentityOptions.Issuer
                 && x.Subject == DevelopmentUser)
-            .Select(x => x.UserId)
-            .SingleAsync();
+            .Select(x => (Guid?)x.UserId)
+            .SingleOrDefaultAsync();
+        if (actorId is null)
+        {
+            actorId = Guid.NewGuid();
+            identity.Users.Add(new UserAccount(actorId.Value, "Synthetic ST-01 shell reader", null));
+            identity.ExternalIdentities.Add(new ExternalIdentityLink(
+                Guid.NewGuid(), actorId.Value, BootstrapIdentityOptions.Issuer, DevelopmentUser));
+        }
         var roleId = Guid.NewGuid();
         var role = new RoleDefinition(roleId, $"ST01-INVENTORY-SHELL-{roleId:N}",
             "Synthetic company-scoped ST-01 shell reader", true);
         role.AddPermission(ErpPermissions.InventoryLabelsRead);
         role.AddPermission(ErpPermissions.InventoryBalancesRead);
-        var assignment = new RoleAssignment(Guid.NewGuid(), actorId, roleId, CompanyA,
+        var assignment = new RoleAssignment(Guid.NewGuid(), actorId.Value, roleId, CompanyA,
             DateTimeOffset.UtcNow.AddMinutes(-1), null, approvedByUserId: null);
         assignment.AddScope(AccessScopeType.Company, CompanyA);
         identity.Roles.Add(role);
