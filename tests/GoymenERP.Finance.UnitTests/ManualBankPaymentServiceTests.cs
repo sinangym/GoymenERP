@@ -226,6 +226,100 @@ public sealed class ManualBankPaymentServiceTests
         Assert.Empty(await verify.Set<AuditEvent>().ToListAsync());
     }
 
+    [Theory]
+    [InlineData(false, PermissionDecision.Denied, ReadOutcome.Denied)]
+    [InlineData(true, PermissionDecision.Denied, ReadOutcome.Denied)]
+    [InlineData(false, PermissionDecision.Unavailable, ReadOutcome.Unavailable)]
+    [InlineData(true, PermissionDecision.Unavailable, ReadOutcome.Unavailable)]
+    public async Task Read_authority_lost_after_initial_admission_returns_no_resource_or_money_effect(
+        bool detail,
+        PermissionDecision subsequentDecision,
+        ReadOutcome expectedOutcome)
+    {
+        await using var run = await Run.StartAsync();
+        ManualBankPaymentCommandResult saved;
+        await using (var maker = run.Scope("maker", new AllowAll()))
+        {
+            saved = await maker.Service.DraftSaveAsync(maker.Context, Key("draft-1"), Draft(),
+                CancellationToken.None);
+        }
+        Assert.Equal(CommandOutcome.Succeeded, saved.Outcome);
+
+        var permission = new AfterInitialReadPermission(subsequentDecision);
+        await using (var reader = run.Scope("reader", permission))
+        {
+            if (detail)
+            {
+                var result = await reader.Service.DetailAuthorizedAsync(reader.Context, saved.Resource!.Id,
+                    CancellationToken.None);
+                Assert.Equal(expectedOutcome, result.Outcome);
+                Assert.Null(result.Resource);
+            }
+            else
+            {
+                var result = await reader.Service.ListAuthorizedAsync(reader.Context, null, CancellationToken.None);
+                Assert.Equal(expectedOutcome, result.Outcome);
+                Assert.Null(result.Resource);
+            }
+        }
+        Assert.Equal(2, permission.ReadChecks);
+
+        await using var verify = run.Context();
+        Assert.Empty(await verify.OutgoingMoneyEvents.ToListAsync());
+        Assert.Equal(1, await verify.Commands.CountAsync());
+        Assert.Equal(1, await verify.Set<AuditEvent>().CountAsync());
+        var payment = await verify.ManualBankPayments.SingleAsync();
+        Assert.Equal(saved.Resource!.Id, payment.Id);
+        Assert.Equal((ManualBankPaymentStatuses.Draft, 1L), (payment.Status, payment.Version));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Company_switch_after_initial_read_admission_returns_no_resource_or_money_effect(bool detail)
+    {
+        await using var run = await Run.StartAsync();
+        ManualBankPaymentCommandResult saved;
+        await using (var maker = run.Scope("maker", new AllowAll()))
+        {
+            saved = await maker.Service.DraftSaveAsync(maker.Context, Key("draft-1"), Draft(),
+                CancellationToken.None);
+        }
+        Assert.Equal(CommandOutcome.Succeeded, saved.Outcome);
+
+        var permission = new AfterInitialReadPermission(PermissionDecision.Allowed);
+        // Simulate a faulty context provider drifting across an await; the production context remains immutable.
+        await using (var reader = run.Scope("reader", permission,
+            companyContext: new MutableCompanyContext(Company)))
+        {
+            var otherCompany = Guid.NewGuid();
+            permission.OnSubsequentReadCheck = () => reader.CompanyContext.Set(otherCompany);
+            if (detail)
+            {
+                var result = await reader.Service.DetailAuthorizedAsync(reader.Context, saved.Resource!.Id,
+                    CancellationToken.None);
+                Assert.Equal(ReadOutcome.Denied, result.Outcome);
+                Assert.Null(result.Resource);
+            }
+            else
+            {
+                var result = await reader.Service.ListAuthorizedAsync(reader.Context, null, CancellationToken.None);
+                Assert.Equal(ReadOutcome.Denied, result.Outcome);
+                Assert.Null(result.Resource);
+            }
+            Assert.Equal(otherCompany, reader.CompanyContext.CompanyId);
+        }
+        Assert.Equal(2, permission.ReadChecks);
+
+        await using var verify = run.Context();
+        Assert.Empty(await verify.OutgoingMoneyEvents.ToListAsync());
+        Assert.Equal(1, await verify.Commands.CountAsync());
+        Assert.Equal(1, await verify.Set<AuditEvent>().CountAsync());
+        var payment = await verify.ManualBankPayments.SingleAsync();
+        Assert.Equal(saved.Resource!.Id, payment.Id);
+        Assert.Equal((ManualBankPaymentStatuses.Draft, 1L), (payment.Status, payment.Version));
+    }
+
     private static CommandMetadata Key(string value) => new(value);
 
     private static ManualBankPaymentDraftSaveRequest Draft(
@@ -275,10 +369,11 @@ public sealed class ManualBankPaymentServiceTests
         }
 
         public Scope Scope(string actor, IFinancePermissionPort permission,
-            IManualBankPaymentDocumentValidationPort? documentPort = null)
+            IManualBankPaymentDocumentValidationPort? documentPort = null,
+            ICompanyContext? companyContext = null)
         {
-            var company = new CompanyContext();
-            company.Set(Company);
+            var company = companyContext ?? new CompanyContext();
+            if (!company.IsResolved) company.Set(Company);
             var collector = new AuditEventCollector();
             var context = new FinanceDbContext(new DbContextOptionsBuilder<FinanceDbContext>()
                 .UseInMemoryDatabase(databaseName)
@@ -292,7 +387,8 @@ public sealed class ManualBankPaymentServiceTests
                     Envelope(FinancePermissionNames.ManualBankPaymentApprove),
                     Envelope(FinancePermissionNames.ManualBankPaymentRecord)),
                 TimeProvider.System);
-            return new Scope(context, service, new FinanceContext(Company, actor, $"r47-{Guid.NewGuid():N}", null));
+            return new Scope(context, service, new FinanceContext(Company, actor, $"r47-{Guid.NewGuid():N}", null),
+                company);
         }
 
         public async ValueTask DisposeAsync()
@@ -305,12 +401,40 @@ public sealed class ManualBankPaymentServiceTests
             new(permission, ["SENTETIK-FINANCE"], "Web");
     }
 
-    private sealed class Scope(FinanceDbContext db, ManualBankPaymentService service, FinanceContext context)
+    private sealed class Scope(FinanceDbContext db, ManualBankPaymentService service, FinanceContext context,
+        ICompanyContext companyContext)
         : IAsyncDisposable
     {
         public IManualBankPaymentService Service => service;
         public FinanceContext Context => context;
+        public ICompanyContext CompanyContext => companyContext;
         public ValueTask DisposeAsync() => db.DisposeAsync();
+    }
+
+    private sealed class MutableCompanyContext(Guid companyId) : ICompanyContext
+    {
+        public bool IsResolved => true;
+        public Guid CompanyId { get; private set; } = companyId;
+        public void Set(Guid value) => CompanyId = value;
+    }
+
+    private sealed class AfterInitialReadPermission(PermissionDecision subsequentDecision) : IFinancePermissionPort
+    {
+        private int count;
+        public int ReadChecks => Volatile.Read(ref count);
+        public Action? OnSubsequentReadCheck { get; set; }
+
+        public async Task<PermissionDecision> CheckAsync(FinanceContext context, FinanceAction action, Guid? sourceId,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (action != FinanceAction.ReadManualBankPayments) return PermissionDecision.Allowed;
+            var readCheck = Interlocked.Increment(ref count);
+            await Task.Yield();
+            if (readCheck == 1) return PermissionDecision.Allowed;
+            OnSubsequentReadCheck?.Invoke();
+            return subsequentDecision;
+        }
     }
 
     private sealed class AllowAll : IFinancePermissionPort
