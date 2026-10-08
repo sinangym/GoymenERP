@@ -84,7 +84,7 @@ public sealed class ProductStockDisplayQualifiedFixtureStoreTests
         var db = scope.ServiceProvider.GetRequiredService<ProductDbContext>();
         var registryAfter = await new SqlProductFamilyDefinitionSource(db).GetAsync(default);
         Assert.Equal(registryBefore.Families, registryAfter.Families);
-        Assert.Equal(registryBefore.Templates, registryAfter.Templates);
+        AssertExactTemplates(registryBefore.Templates, registryAfter.Templates);
         Assert.Equal(registryBefore.Entries, registryAfter.Entries);
         Assert.Single(await db.Families.ToListAsync());
         Assert.Empty(await db.Products.ToListAsync());
@@ -129,6 +129,28 @@ public sealed class ProductStockDisplayQualifiedFixtureStoreTests
             .AddProductTechnicalCardFixtureStore()
             .AddProductStockDisplayQualifiedFixtureStore()
             .BuildServiceProvider();
+    }
+
+    private static void AssertExactTemplates(
+        IReadOnlyList<ProductTemplateV2> expected,
+        IReadOnlyList<ProductTemplateV2> actual)
+    {
+        var expectedRows = expected.OrderBy(row => row.Id)
+            .ThenBy(row => row.Version, StringComparer.Ordinal).ToArray();
+        var actualRows = actual.OrderBy(row => row.Id)
+            .ThenBy(row => row.Version, StringComparer.Ordinal).ToArray();
+        Assert.Equal(expectedRows.Length, actualRows.Length);
+        for (var index = 0; index < expectedRows.Length; index++)
+        {
+            var expectedRow = expectedRows[index];
+            var actualRow = actualRows[index];
+            Assert.Equal((expectedRow.Id, expectedRow.Version, expectedRow.Code,
+                    expectedRow.Name, expectedRow.SourceRef),
+                (actualRow.Id, actualRow.Version, actualRow.Code,
+                    actualRow.Name, actualRow.SourceRef));
+            Assert.True(expectedRow.FamilyIds.SetEquals(actualRow.FamilyIds));
+            Assert.Equal(expectedRow.Fields, actualRow.Fields);
+        }
     }
 
     private sealed class Definition(ProductFamilyDefinitionV2 value) : IProductFamilyDefinitionSourceV2
