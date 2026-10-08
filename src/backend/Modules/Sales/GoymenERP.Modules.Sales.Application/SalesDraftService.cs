@@ -297,7 +297,7 @@ public sealed partial class SalesDraftService(
 
         var displays = await ReadPartyDisplaysAsync(scope, [draft.Header.PartyId], cancellationToken);
         scope = displays.Scope;
-        return Detail(
+        return ReadDetail(
             draft,
             await DiscloseAsync(scope, cancellationToken),
             IsOwn(scope, draft),
@@ -379,7 +379,7 @@ public sealed partial class SalesDraftService(
 
         var displays = await ReadPartyDisplaysAsync(scope, page.Items.Select(item => item.Header.PartyId), cancellationToken);
         return new SalesOrderDraftListResponse(
-            [.. page.Items.Select(item => Summary(item, displays.Items[item.Header.PartyId]))],
+            [.. page.Items.Select(item => ReadSummary(item, displays.Items[item.Header.PartyId]))],
             page.NextCursor);
     }
 
@@ -414,6 +414,11 @@ public sealed partial class SalesDraftService(
             throw;
         }
         catch
+        {
+            throw new SalesDraftServiceException(503, SalesDraftProblemCodesV1.CounterpartyProviderUnavailable);
+        }
+
+        if (answer is null)
         {
             throw new SalesDraftServiceException(503, SalesDraftProblemCodesV1.CounterpartyProviderUnavailable);
         }
@@ -1622,7 +1627,13 @@ public sealed partial class SalesDraftService(
             : SalesPriceDisclosure.Withheld;
     }
 
-    private static SalesOrderDraftSummaryView Summary(SalesOrderDraft draft, SalesPartyDisplayV1? partyDisplay = null) =>
+    private static SalesOrderDraftSummaryView Summary(SalesOrderDraft draft) =>
+        new(draft.Id, draft.CompanyId, draft.DocumentNo, draft.Kind.ToString(), draft.State.ToString(),
+            draft.Version.ToString(CultureInfo.InvariantCulture), SalesDraftApiV1.RevisionText(draft.Revision), draft.Header.PartyId,
+            draft.Header.CompanyAccountId, draft.Header.CurrencyId, draft.Header.BusinessDate, draft.CreatedAtUtc, draft.Lines.Count,
+            draft.ApprovalState.ToString(), CommercialStage(draft), ProductSnapshots(draft));
+
+    private static SalesOrderDraftReadSummaryView ReadSummary(SalesOrderDraft draft, SalesPartyDisplayV1 partyDisplay) =>
         new(draft.Id, draft.CompanyId, draft.DocumentNo, draft.Kind.ToString(), draft.State.ToString(),
             draft.Version.ToString(CultureInfo.InvariantCulture), SalesDraftApiV1.RevisionText(draft.Revision), draft.Header.PartyId,
             draft.Header.CompanyAccountId, draft.Header.CurrencyId, draft.Header.BusinessDate, draft.CreatedAtUtc, draft.Lines.Count,
@@ -1641,13 +1652,12 @@ public sealed partial class SalesDraftService(
             : SalesCommercialStageV1.Order;
 
     /// <summary>Withheld ⇒ the three commercial fields are null BECAUSE of the marker; Visible ⇒ the texts as stored (null = unpriced).</summary>
-    private static SalesOrderDraftDetailView Detail(
+    private static SalesOrderDraftCommandDetailView Detail(
         SalesOrderDraft draft,
         SalesPriceDisclosure disclosure,
         bool isOwnDraft,
-        bool isOwnDecisionRestricted,
-        SalesPartyDisplayV1? partyDisplay = null) =>
-        new(Summary(draft, partyDisplay), draft.Header.RequestedDeliveryDate, draft.Header.Note,
+        bool isOwnDecisionRestricted) =>
+        new(Summary(draft), draft.Header.RequestedDeliveryDate, draft.Header.Note,
             [.. draft.Lines.Select(line => new SalesOrderDraftLineDetail(line.Id, line.LineNo, line.Product.ProductId,
                 line.Product.ProductVersion, line.Product.Code, line.Product.Name, line.OrderUnit.UnitId, line.QuantityText,
                 Disclosed(disclosure, line.Commercial.UnitPrice), Disclosed(disclosure, line.Commercial.PriceUnitId), line.RequestedDeliveryDate, line.Note,
@@ -1664,6 +1674,20 @@ public sealed partial class SalesDraftService(
                 draft.CustomerAcceptance is null ? null : SalesDraftApiV1.RevisionText(draft.CustomerAcceptance.Revision),
                 draft.CustomerAcceptance?.AcceptedBy, draft.CustomerAcceptance?.AcceptedAtUtc, draft.IsCustomerAccepted),
             isOwnDraft, isOwnDecisionRestricted);
+
+    private static SalesOrderDraftDetailView ReadDetail(
+        SalesOrderDraft draft,
+        SalesPriceDisclosure disclosure,
+        bool isOwnDraft,
+        bool isOwnDecisionRestricted,
+        SalesPartyDisplayV1 partyDisplay)
+    {
+        var command = Detail(draft, disclosure, isOwnDraft, isOwnDecisionRestricted);
+        return new(command.Draft, command.RequestedDeliveryDate, command.Note, command.Lines,
+            command.DeliveryAddress, command.Contact, command.Responsible, command.PaymentTerms,
+            command.SourceStrategy, command.Package, command.Approval, command.CustomerAcceptance,
+            command.IsOwnDraft, command.IsOwnDecisionRestricted, partyDisplay);
+    }
 
     private static SalesDraftRevisionV1 Revision(ApprovedRevisionSnapshot archived, SalesPriceDisclosure disclosure) =>
         new(SalesDraftApiV1.RevisionText(archived.Revision), archived.Approval.SubmittedBy, archived.Approval.SubmittedAtUtc,

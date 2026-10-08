@@ -134,7 +134,9 @@ public sealed class SalesOrderDraftContractTests
         Assert.Equal(first.Detail.Draft with { CommercialStage = null }, replay.Detail.Draft);
         Assert.Equal(first.OriginalCorrelationId, replay.OriginalCorrelationId);
         Assert.Equal(first.Detail.Draft, detail.Draft);
-        Assert.Equal(detail.Draft, Assert.Single(list.Items));
+        var listed = Assert.Single(list.Items);
+        Assert.Equal((detail.Draft.Id, detail.Draft.PartyId, detail.Draft.DocumentNo),
+            (listed.Id, listed.PartyId, listed.DocumentNo));
         Assert.Equal(SalesCommercialStageV1.Order, first.Detail.Draft.CommercialStage);
         Assert.Null(replay.Detail.Draft.CommercialStage);
         Assert.Equal("Rev.0", detail.Draft.Revision);

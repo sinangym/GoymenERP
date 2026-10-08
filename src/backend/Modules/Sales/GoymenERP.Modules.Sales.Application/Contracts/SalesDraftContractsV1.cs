@@ -47,8 +47,19 @@ public sealed record SalesOrderDraftSummaryView(
     string ApprovalState,
     SalesCommercialStageV1? CommercialStage = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    IReadOnlyList<SalesOrderDraftProductSnapshotViewV1>? ProductSnapshots = null,
-    SalesPartyDisplayV1? PartyDisplay = null);
+    IReadOnlyList<SalesOrderDraftProductSnapshotViewV1>? ProductSnapshots = null);
+
+/// <summary>
+/// Read-only list projection. Command and replay responses keep <see cref="SalesOrderDraftSummaryView"/>
+/// unchanged; only GET list rows carry the required current Cari presentation.
+/// </summary>
+public sealed record SalesOrderDraftReadSummaryView(
+    Guid Id, Guid CompanyId, string DocumentNo, string Kind, string State,
+    string Version, string Revision, Guid PartyId, Guid CompanyAccountId,
+    Guid CurrencyId, DateOnly BusinessDate, DateTimeOffset CreatedAtUtc, int LineCount,
+    string ApprovalState, SalesCommercialStageV1 CommercialStage,
+    IReadOnlyList<SalesOrderDraftProductSnapshotViewV1> ProductSnapshots,
+    SalesPartyDisplayV1 PartyDisplay);
 
 /// <summary>
 /// Product presentation already accepted from the Product owner and stored on the order line.
@@ -226,7 +237,7 @@ public sealed record SalesOrderDraftLineDetail(
 /// under the caller's scope, so a replay is the replaying actor's own answer (ADR-011 §3 keeps that the same actor).
 /// The screen mirrors it; the server refuses regardless.
 /// </summary>
-public sealed record SalesOrderDraftDetailView(
+public sealed record SalesOrderDraftCommandDetailView(
     SalesOrderDraftSummaryView Draft, DateOnly? RequestedDeliveryDate, string? Note,
     IReadOnlyList<SalesOrderDraftLineDetail> Lines,
     SalesDraftOwnerReferenceV1? DeliveryAddress,
@@ -240,11 +251,30 @@ public sealed record SalesOrderDraftDetailView(
     bool IsOwnDraft,
     bool IsOwnDecisionRestricted);
 
+/// <summary>
+/// GET detail projection. Its Cari presentation is required and non-null; command/replay responses
+/// use <see cref="SalesOrderDraftCommandDetailView"/> and therefore do not silently acquire this field.
+/// </summary>
+public sealed record SalesOrderDraftDetailView(
+    SalesOrderDraftSummaryView Draft, DateOnly? RequestedDeliveryDate, string? Note,
+    IReadOnlyList<SalesOrderDraftLineDetail> Lines,
+    SalesDraftOwnerReferenceV1? DeliveryAddress,
+    SalesDraftOwnerReferenceV1? Contact,
+    SalesDraftOwnerReferenceV1? Responsible,
+    SalesDraftOwnerReferenceV1? PaymentTerms,
+    SalesDraftOwnerReferenceV1? SourceStrategy,
+    SalesDraftOwnerReferenceV1? Package,
+    SalesDraftApprovalV1 Approval,
+    SalesDraftCustomerAcceptanceV1 CustomerAcceptance,
+    bool IsOwnDraft,
+    bool IsOwnDecisionRestricted,
+    SalesPartyDisplayV1 PartyDisplay);
+
 public sealed record SalesOrderDraftResponse(
-    SalesOrderDraftDetailView Detail, bool IsReplay, string OriginalCorrelationId);
+    SalesOrderDraftCommandDetailView Detail, bool IsReplay, string OriginalCorrelationId);
 
 public sealed record SalesOrderDraftListResponse(
-    IReadOnlyList<SalesOrderDraftSummaryView> Items, string? NextCursor);
+    IReadOnlyList<SalesOrderDraftReadSummaryView> Items, string? NextCursor);
 /// <param name="ApprovalState">SALES-A1: an exact approval state name to narrow the list to, or null for every draft.</param>
 public sealed record SalesOrderDraftListQuery(int PageSize = 50, string? Cursor = null, string? ApprovalState = null);
 public sealed record SalesDraftFieldError(string Field, string Code);

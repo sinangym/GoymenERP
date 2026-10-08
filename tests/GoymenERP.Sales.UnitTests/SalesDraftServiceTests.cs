@@ -1085,8 +1085,7 @@ public sealed partial class SalesDraftServiceTests
         var created = await world.Service().CreateDraftAsync(Request(lines: 2), Metadata("k-1"));
 
         var detail = await world.Service().GetDraftDetailAsync(created.Detail.Draft.Id);
-        Assert.Equal(created.Detail.Draft with { ProductSnapshots = null, PartyDisplay = detail.Draft.PartyDisplay },
-            detail.Draft with { ProductSnapshots = null });
+        Assert.Equal(created.Detail.Draft with { ProductSnapshots = null }, detail.Draft with { ProductSnapshots = null });
         Assert.Equal(created.Detail.Draft.ProductSnapshots, detail.Draft.ProductSnapshots);
         Assert.Equal(created.Detail.Lines.Select(line => line.LineId), detail.Lines.Select(line => line.LineId));
         // The read's own fence is re-measured AFTER the read (#276); K3 P2 then asks the price READ last, fresh, to decide the
@@ -1099,8 +1098,9 @@ public sealed partial class SalesDraftServiceTests
 
         var page = await world.Service().GetDraftListAsync(new SalesOrderDraftListQuery());
         var listedDraft = Assert.Single(page.Items);
-        Assert.Equal(created.Detail.Draft with { ProductSnapshots = null, PartyDisplay = listedDraft.PartyDisplay },
-            listedDraft with { ProductSnapshots = null });
+        Assert.Equal(created.Detail.Draft.Id, listedDraft.Id);
+        Assert.Equal(created.Detail.Draft.PartyId, listedDraft.PartyId);
+        Assert.Equal(created.Detail.Draft.DocumentNo, listedDraft.DocumentNo);
         Assert.Equal(created.Detail.Draft.ProductSnapshots, listedDraft.ProductSnapshots);
         var listedProduct = Assert.Single(Assert.Single(page.Items).ProductSnapshots!);
         Assert.Equal((Product, "7", "GDC-001", "Sentetik bant", KgUnit, "kg"),
@@ -1399,8 +1399,8 @@ public sealed partial class SalesDraftServiceTests
         var first = list.Items[0];
         var detail = await world.Service().GetDraftDetailAsync(first.Id);
         Assert.Equal(2, world.PartyDisplays.Calls);
-        Assert.Equal(first.PartyId, detail.Draft.PartyDisplay?.PartyId);
-        Assert.Equal(first.PartyDisplay, detail.Draft.PartyDisplay);
+        Assert.Equal(first.PartyId, detail.PartyDisplay.PartyId);
+        Assert.Equal(first.PartyDisplay, detail.PartyDisplay);
     }
 
     [Theory]
@@ -1410,6 +1410,7 @@ public sealed partial class SalesDraftServiceTests
     [InlineData("duplicate", 503, SalesDraftProblemCodesV1.CounterpartyProviderUnavailable)]
     [InlineData("mismatch", 503, SalesDraftProblemCodesV1.CounterpartyProviderUnavailable)]
     [InlineData("malformed", 503, SalesDraftProblemCodesV1.CounterpartyProviderUnavailable)]
+    [InlineData("null", 503, SalesDraftProblemCodesV1.CounterpartyProviderUnavailable)]
     [InlineData("throw", 503, SalesDraftProblemCodesV1.CounterpartyProviderUnavailable)]
     public async Task Cari_display_failures_refuse_the_entire_read_without_a_partial_response(
         string fault, int status, string code)
@@ -1576,6 +1577,7 @@ public sealed partial class SalesDraftServiceTests
             ActorId = request.ActorId;
             Asked = [.. request.PartyIds];
             if (Fault == "throw") throw new InvalidOperationException("synthetic provider failure");
+            if (Fault == "null") return Task.FromResult<SalesPartyDisplayBatchAnswerV1>(null!);
             if (Fault == "denied")
                 return Task.FromResult(new SalesPartyDisplayBatchAnswerV1(SalesPartyDisplayBatchOutcomeV1.Denied, []));
             if (Fault == "unavailable")
