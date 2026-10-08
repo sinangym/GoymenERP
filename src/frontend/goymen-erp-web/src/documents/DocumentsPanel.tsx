@@ -20,6 +20,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { downloadDocument, fetchDocuments, uploadDocument, type UploadAttempt } from './api'
 import { DOCUMENT_PROBLEM, type DocumentList, type DocumentRow, type DocumentUpload, type OwnerKind } from './contract'
 import { DOCUMENTS_TEXT as TEXT, formatInstant, formatSize, refusalText, typeLabel } from './documentsText'
+import { DocumentPreview } from './DocumentPreview'
 import styles from './DocumentsPanel.module.css'
 
 type UploadState =
@@ -325,15 +326,18 @@ function DocumentTable({ items, companyId }: { readonly items: readonly Document
               <td data-scan-state={row.scanState}>{row.downloadable ? TEXT.scanClean : TEXT.scanPending}</td>
               <td>
                 {row.downloadable ? (
-                  <button
-                    type="button"
-                    className={styles.action}
-                    aria-label={TEXT.download(row.fileName)}
-                    disabled={downloading !== null}
-                    onClick={() => void download(row)}
-                  >
-                    {downloading === row.id ? TEXT.downloading : TEXT.downloadLabel}
-                  </button>
+                  <div className={styles.rowActions}>
+                    <button
+                      type="button"
+                      className={styles.action}
+                      aria-label={TEXT.download(row.fileName)}
+                      disabled={downloading !== null}
+                      onClick={() => void download(row)}
+                    >
+                      {downloading === row.id ? TEXT.downloading : TEXT.downloadLabel}
+                    </button>
+                    <DocumentPreview row={row} companyId={companyId} />
+                  </div>
                 ) : null}
                 {problem?.id === row.id ? (
                   <p role="alert" className={styles.problem} data-documents-state="download-refused">
