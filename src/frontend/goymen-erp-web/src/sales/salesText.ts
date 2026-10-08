@@ -545,7 +545,7 @@ export const ORDER_DETAIL_TEXT = {
   /** K3 P2: the server withheld the price from this caller — not "no price", not "unknown". */
   priceWithheld: 'Fiyat bu yetkiyle görüntülenmez',
   referenceNote:
-    'Cari ve birim adları bu sözleşmede yok; kimlikler gösteriliyor. Taslak onay, stok veya finans etkisi oluşturmaz.',
+    'Cari gösterimi güncel sahip projeksiyonundan gelir; diğer referansların etiket ve kimlikleri mevcut sözleşme anlamıyla gösterilir. Taslak onay, stok veya finans etkisi oluşturmaz.',
   /** SALES-A2a: the delivery block — the owner's texts for the stored references, read afresh; never a guessed name. */
   delivery: {
     heading: 'Teslimat',
