@@ -320,6 +320,138 @@ public sealed class ManualBankPaymentServiceTests
         Assert.Equal((ManualBankPaymentStatuses.Draft, 1L), (payment.Status, payment.Version));
     }
 
+    [Fact]
+    public async Task Draft_edit_preserves_identity_clears_optional_fields_replays_and_refuses_stale_version()
+    {
+        await using var run = await Run.StartAsync();
+        var initial = Draft();
+        initial = initial with
+        {
+            Preparation = initial.Preparation with
+            {
+                ValueOn = OccurredOn.AddDays(1),
+                BankReference = "SENTETIK-old-reference",
+            },
+        };
+        ManualBankPaymentCommandResult saved;
+        await using (var maker = run.Scope("maker", new AllowAll()))
+        {
+            saved = await maker.Service.DraftSaveAsync(maker.Context, Key("draft-1"), initial,
+                CancellationToken.None);
+        }
+        Assert.Equal(CommandOutcome.Succeeded, saved.Outcome);
+        var original = Assert.IsType<ManualBankPaymentView>(saved.Resource);
+
+        var replacement = new ManualBankPaymentDraftSaveRequest(original.Id, original.Version,
+            initial.Preparation with
+            {
+                Money = new MoneyText("900.00", Currency),
+                ValueOn = null,
+                BankReference = null,
+                Description = null,
+            }, null);
+        ManualBankPaymentCommandResult edited;
+        await using (var editor = run.Scope("maker", new AllowAll()))
+        {
+            var reopened = await editor.Service.DetailAuthorizedAsync(editor.Context, original.Id,
+                CancellationToken.None);
+            Assert.Equal(ReadOutcome.Found, reopened.Outcome);
+            Assert.Equal(initial.Preparation, reopened.Resource!.Preparation);
+
+            edited = await editor.Service.DraftSaveAsync(editor.Context, Key("edit-1"), replacement,
+                CancellationToken.None);
+            Assert.Equal(CommandOutcome.Succeeded, edited.Outcome);
+            Assert.Equal((original.Id, ManualBankPaymentStatus.Draft, "2"),
+                (edited.Resource!.Id, edited.Resource.Status, edited.Resource.Version));
+            Assert.Equal(replacement.Preparation, edited.Resource.Preparation);
+        }
+        await using (var replayActor = run.Scope("maker", new AllowAll()))
+        {
+            var replay = await replayActor.Service.DraftSaveAsync(replayActor.Context, Key("edit-1"), replacement,
+                CancellationToken.None);
+            Assert.Equal((CommandOutcome.Succeeded, true, edited.OriginalCorrelationId),
+                (replay.Outcome, replay.IsReplay, replay.OriginalCorrelationId));
+            Assert.Equal(edited.Resource, replay.Resource);
+        }
+        await using (var staleActor = run.Scope("maker", new AllowAll()))
+        {
+            var stale = await staleActor.Service.DraftSaveAsync(staleActor.Context, Key("edit-stale"), replacement,
+                CancellationToken.None);
+            Assert.Equal(CommandOutcome.VersionConflict, stale.Outcome);
+            Assert.Null(stale.Resource);
+            Assert.Contains(stale.Issues, issue => issue.Code == "version_conflict");
+        }
+        await using (var reader = run.Scope("reader", new AllowAll()))
+        {
+            var reopened = await reader.Service.DetailAuthorizedAsync(reader.Context, original.Id,
+                CancellationToken.None);
+            Assert.Equal(ReadOutcome.Found, reopened.Outcome);
+            Assert.Equal(edited.Resource, reopened.Resource);
+        }
+        await using var verify = run.Context();
+        var payment = Assert.Single(await verify.ManualBankPayments.ToListAsync());
+        Assert.Equal((original.Id, ManualBankPaymentStatuses.Draft, 2L),
+            (payment.Id, payment.Status, payment.Version));
+        Assert.Equal("900.00", payment.AmountText);
+        Assert.Null(payment.ValueOn);
+        Assert.Null(payment.BankReference);
+        Assert.Null(payment.Description);
+        Assert.Empty(await verify.OutgoingMoneyEvents.ToListAsync());
+        Assert.Equal(2, await verify.Set<AuditEvent>().CountAsync());
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Approved_or_recorded_payment_cannot_be_replaced_by_draft_edit(bool record)
+    {
+        await using var run = await Run.StartAsync();
+        ManualBankPaymentCommandResult saved;
+        await using (var maker = run.Scope("maker", new AllowAll()))
+        {
+            saved = await maker.Service.DraftSaveAsync(maker.Context, Key("draft-1"), Draft(),
+                CancellationToken.None);
+        }
+        Assert.Equal(CommandOutcome.Succeeded, saved.Outcome);
+        ManualBankPaymentCommandResult current;
+        await using (var checker = run.Scope("checker", new AllowAll()))
+        {
+            current = await checker.Service.ApproveAsync(checker.Context, Key("approve-1"),
+                new ApproveManualBankPaymentRequest(saved.Resource!.Id, saved.Resource.Version),
+                CancellationToken.None);
+            Assert.Equal(CommandOutcome.Succeeded, current.Outcome);
+            if (record)
+            {
+                current = await checker.Service.RecordAsync(checker.Context, Key("record-1"),
+                    new RecordManualBankPaymentRequest(current.Resource!.Id, current.Resource.Version, true),
+                    CancellationToken.None);
+                Assert.Equal(CommandOutcome.Succeeded, current.Outcome);
+            }
+        }
+        var before = Assert.IsType<ManualBankPaymentView>(current.Resource);
+        await using (var editor = run.Scope("maker", new AllowAll()))
+        {
+            var refused = await editor.Service.DraftSaveAsync(editor.Context, Key("edit-final"),
+                new ManualBankPaymentDraftSaveRequest(before.Id, before.Version,
+                    before.Preparation with { Money = new MoneyText("900.00", Currency) }, null),
+                CancellationToken.None);
+            Assert.Equal(CommandOutcome.ValidationFailed, refused.Outcome);
+            Assert.Null(refused.Resource);
+            Assert.Contains(refused.Issues, issue => issue.Code == "payment_not_draft");
+        }
+        await using (var reader = run.Scope("reader", new AllowAll()))
+        {
+            var reopened = await reader.Service.DetailAuthorizedAsync(reader.Context, before.Id,
+                CancellationToken.None);
+            Assert.Equal(ReadOutcome.Found, reopened.Outcome);
+            Assert.Equal(before, reopened.Resource);
+        }
+        await using var verify = run.Context();
+        Assert.Equal(record ? 1 : 0, await verify.OutgoingMoneyEvents.CountAsync());
+        Assert.Equal(record ? 3 : 2, await verify.Commands.CountAsync());
+        Assert.Equal(record ? 3 : 2, await verify.Set<AuditEvent>().CountAsync());
+    }
+
     private static CommandMetadata Key(string value) => new(value);
 
     private static ManualBankPaymentDraftSaveRequest Draft(
