@@ -547,7 +547,7 @@ public sealed partial class OpenApiContractGenerationTests
             AuthenticatedResponses("201:application/json", "400:application/problem+json", "415:", "409:application/problem+json", "422:application/problem+json", "503:application/problem+json"),
             "#/components/schemas/CreateSalesOrderDraftRequest"),
         new("get", "/api/v1/sales/drafts/{id}", "GetSalesOrderDraftV1",
-            AuthenticatedResponses("200:application/json", "404:application/problem+json", "503:application/problem+json"),
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "404:application/problem+json", "503:application/problem+json"),
             ParameterValues: ["path:id:true:type:string;format:uuid"]),
         // SALES-A1: the internal-approval state command (strict {expectedVersion} body, replayable 200/409).
         new("post", "/api/v1/sales/drafts/{id}/submission", "SubmitSalesOrderDraftV1",
@@ -983,9 +983,9 @@ public sealed partial class OpenApiContractGenerationTests
             ["RevisePriceListDraftV1"] = "ref:PriceListResultV1",
             ["StartPriceListVersionV1"] = "ref:PriceListResultV1",
             ["PublishPriceListVersionV1"] = "ref:PriceListResultV1",
-            ["GetSalesOrderDraftsV1"] = "ref:SalesOrderDraftReadListResponseV1",
+            ["GetSalesOrderDraftsV1"] = "anyOf:SalesOrderDraftListResponse|SalesOrderDraftReadListResponseV1",
             ["CreateSalesOrderDraftV1"] = "ref:SalesOrderDraftResponse",
-            ["GetSalesOrderDraftV1"] = "ref:SalesOrderDraftReadDetailViewV1",
+            ["GetSalesOrderDraftV1"] = "anyOf:SalesOrderDraftDetailView|SalesOrderDraftReadDetailViewV1",
             ["SubmitSalesOrderDraftV1"] = "ref:SalesOrderDraftResponse",
             ["ApproveSalesOrderDraftV1"] = "ref:SalesOrderDraftResponse",
             ["RecordSalesOrderDraftCustomerAcceptanceV1"] = "ref:SalesOrderDraftResponse",
@@ -2148,6 +2148,7 @@ public sealed partial class OpenApiContractGenerationTests
             ["DeclareManufacturingOutputV1:409"] = ManufacturingInventoryRealizationConflictCodes,
             ["DeclareManufacturingOutputV1:422"] = ManufacturingUnprocessableCodes,
             ["GetSalesOrderDraftsV1:400"] = ["invalid_cursor", "validation_failed"],
+            ["GetSalesOrderDraftV1:400"] = ["validation_failed"],
             ["CreateSalesOrderDraftV1:400"] = ["command_metadata_invalid", "validation_failed"],
             ["CreateSalesOrderDraftV1:409"] = ["account_state", "concurrent_change", "same_key_payload_mismatch", "version_conflict"],
             ["CreateSalesOrderDraftV1:422"] = ["commercial_not_available", "owner_reference_unavailable", "unsupported_currency", "unsupported_product", "unsupported_unit", "validation_failed"],
@@ -3411,6 +3412,10 @@ public sealed partial class OpenApiContractGenerationTests
                     // nullable marker would have reintroduced the very ambiguity it exists to remove.
                     ("priceDisclosure", "ref:SalesPriceDisclosure"),
                     ("orderUnitCode", "type:null|string")),
+                ["SalesOrderDraftListResponse"] = ObjectSchema(
+                    ["items", "nextCursor"],
+                    ("items", "type:array;items:ref:SalesOrderDraftSummaryView"),
+                    ("nextCursor", "type:null|string")),
                 ["SalesOrderDraftReadListResponseV1"] = ObjectSchema(
                     ["items", "nextCursor"],
                     ("items", "type:array;items:ref:SalesOrderDraftReadSummaryViewV1"),
@@ -6304,6 +6309,13 @@ public sealed partial class OpenApiContractGenerationTests
             {
                 expectedHeaderNames.Add(InventoryStockPositionApiV1.ProductDisplayContractHeader);
             }
+            if (operation.OperationId is "GetSalesOrderDraftsV1" or "GetSalesOrderDraftV1")
+            {
+                expectedHeaderNames.Add(SalesEndpoints.DraftReadContractHeader);
+                AssertHeaderSchema(parameters, SalesEndpoints.DraftReadContractHeader,
+                    required: false, type: "string",
+                    pattern: SalesEndpoints.DraftReadContractVersionPattern);
+            }
 
             Assert.Equal(
                 expectedHeaderNames.Order(StringComparer.Ordinal),
@@ -6417,6 +6429,19 @@ public sealed partial class OpenApiContractGenerationTests
                     Assert.Contains("fresh, successful, validated GET", description, StringComparison.Ordinal);
                     Assert.Contains("Absence on an error is not proof of an old server", description,
                         StringComparison.Ordinal);
+                }
+                var salesAcknowledgmentExpected = numericStatusCode == StatusCodes.Status200OK
+                    && operation.OperationId is "GetSalesOrderDraftsV1" or "GetSalesOrderDraftV1";
+                var hasSalesAcknowledgment = responseHeaders.TryGetProperty(
+                    SalesEndpoints.DraftReadContractHeader, out _);
+                Assert.True(
+                    salesAcknowledgmentExpected == hasSalesAcknowledgment,
+                    $"Operation '{operation.OperationId}' response '{response.Name}' Sales read acknowledgment mismatch. Expected {salesAcknowledgmentExpected}, actual {hasSalesAcknowledgment}.");
+                if (salesAcknowledgmentExpected)
+                {
+                    AssertResponseHeaderSchema(responseHeaders,
+                        SalesEndpoints.DraftReadContractHeader, "string",
+                        pattern: SalesEndpoints.DraftReadContractVersionPattern);
                 }
                 var replayHeadersExpected = ReplayableResponseStatuses
                     .GetValueOrDefault(operation.OperationId, [])

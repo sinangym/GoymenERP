@@ -90,7 +90,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // from configuration; no key is generated and no network or hosted-service surface is added.
     // Re-fingerprinted for the Sales-Cari bounded display adapter: scoped in-process DI only; no network or hosted service.
     private const string ReviewedOpenApiStartupFingerprint =
-        "d28b626e960383bc20ba57bf06b0a073dec2a34f5c613d338a71d5015d7929a3";
+        "6076cac5c001978467e103d1e215b9dcd3f352c49e6503ede93ccd2449de28eb";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedProductManufacturingTechnicalRegistrationPath =

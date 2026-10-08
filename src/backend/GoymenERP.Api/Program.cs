@@ -101,6 +101,8 @@ builder.Configuration.AddJsonFile(
 
 builder.Services.AddErpProblemDetails();
 builder.Services.AddErpOpenApi();
+builder.Services.AddOpenApi(ErpOpenApiContract.DocumentName, options =>
+    options.AddOperationTransformer(SalesEndpoints.TransformDraftReadContractOpenApiAsync));
 builder.Services.AddLocalization(options => options.ResourcesPath = "Resources");
 builder.Services.AddHealthChecks()
     .AddCheck<DatabaseSchemaCompatibilityHealthCheck>(

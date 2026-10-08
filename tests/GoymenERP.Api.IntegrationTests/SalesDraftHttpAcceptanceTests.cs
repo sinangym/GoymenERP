@@ -71,7 +71,7 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
     }
 
     [Fact]
-    public async Task List_and_detail_publish_stored_product_snapshots_without_disclosing_withheld_prices()
+    public async Task List_and_detail_keep_the_legacy_default_and_publish_party_display_only_for_the_exact_sales_contract()
     {
         var draftId = Guid.NewGuid();
         var productId = Guid.NewGuid();
@@ -90,7 +90,11 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
             summary, null, null, [line], null, null, null, null, null, null,
             new SalesDraftApprovalV1(null, null, null, null, null),
             new SalesDraftCustomerAcceptanceV1(false, null, null, null, false), false, false);
-        var service = new StubDraftService();
+        var service = new StubDraftService
+        {
+            List = _ => Task.FromResult(new SalesOrderDraftListResponse([summary], null)),
+            DetailRead = _ => Task.FromResult(detail),
+        };
         var display = new SalesPartyDisplayV1(summary.PartyId, "CAR-000001", "Sentetik Musteri A.S.", "Sentetik Musteri");
         var readService = new StubDraftReadService
         {
@@ -101,9 +105,42 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
         using var host = CreateHost(service, readService);
         using var client = CreateClient(host);
 
+        using (var legacyListResponse = await client.GetAsync(SalesEndpoints.DraftsPath))
+        {
+            Assert.Equal(HttpStatusCode.OK, legacyListResponse.StatusCode);
+            Assert.False(legacyListResponse.Headers.Contains(SalesEndpoints.DraftReadContractHeader));
+            var legacyBody = await legacyListResponse.Content.ReadAsStringAsync();
+            Assert.Equal(
+                JsonSerializer.Serialize(new SalesOrderDraftListResponse([summary], null), SalesDraftJson.Options),
+                legacyBody);
+            using var legacyDocument = JsonDocument.Parse(legacyBody);
+            var legacy = legacyDocument.RootElement;
+            var legacyItem = legacy.GetProperty("items")[0];
+            Assert.False(legacyItem.TryGetProperty("partyDisplay", out _));
+            Assert.Equal(summary.PartyId, legacyItem.GetProperty("partyId").GetGuid());
+        }
+
+        using (var legacyDetailResponse = await client.GetAsync($"{SalesEndpoints.DraftsPath}/{draftId:D}"))
+        {
+            Assert.Equal(HttpStatusCode.OK, legacyDetailResponse.StatusCode);
+            Assert.False(legacyDetailResponse.Headers.Contains(SalesEndpoints.DraftReadContractHeader));
+            var legacyBody = await legacyDetailResponse.Content.ReadAsStringAsync();
+            Assert.Equal(JsonSerializer.Serialize(detail, SalesDraftJson.Options), legacyBody);
+            using var legacyDocument = JsonDocument.Parse(legacyBody);
+            var legacy = legacyDocument.RootElement;
+            Assert.False(legacy.TryGetProperty("partyDisplay", out _));
+            Assert.Equal(summary.PartyId, legacy.GetProperty("draft").GetProperty("partyId").GetGuid());
+        }
+
+        client.DefaultRequestHeaders.Add(
+            SalesEndpoints.DraftReadContractHeader,
+            SalesEndpoints.DraftReadContractVersion);
+
         using (var listResponse = await client.GetAsync(SalesEndpoints.DraftsPath))
         {
             Assert.Equal(HttpStatusCode.OK, listResponse.StatusCode);
+            Assert.Equal(SalesEndpoints.DraftReadContractVersion,
+                Assert.Single(listResponse.Headers.GetValues(SalesEndpoints.DraftReadContractHeader)));
             var list = await listResponse.Content.ReadFromJsonAsync<JsonElement>();
             var item = list.GetProperty("items")[0];
             Assert.Equal(CompanyA, item.GetProperty("companyId").GetGuid());
@@ -122,6 +159,8 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
         using (var detailResponse = await client.GetAsync($"{SalesEndpoints.DraftsPath}/{draftId:D}"))
         {
             Assert.Equal(HttpStatusCode.OK, detailResponse.StatusCode);
+            Assert.Equal(SalesEndpoints.DraftReadContractVersion,
+                Assert.Single(detailResponse.Headers.GetValues(SalesEndpoints.DraftReadContractHeader)));
             var read = await detailResponse.Content.ReadFromJsonAsync<JsonElement>();
             Assert.Equal(display.PartyId, read.GetProperty("partyDisplay").GetProperty("partyId").GetGuid());
             Assert.Equal(display.Code, read.GetProperty("partyDisplay").GetProperty("code").GetString());
@@ -132,6 +171,37 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
             Assert.Equal(JsonValueKind.Null, publishedLine.GetProperty("priceUnitId").ValueKind);
             Assert.Equal(JsonValueKind.Null, publishedLine.GetProperty("discountPercent").ValueKind);
         }
+    }
+
+    [Theory]
+    [InlineData("unknown-v1")]
+    [InlineData("record-party-display-v1,record-party-display-v1")]
+    public async Task List_and_detail_reject_an_unknown_or_ambiguous_sales_read_contract_without_calling_either_reader(
+        string declaration)
+    {
+        var service = new StubDraftService
+        {
+            List = _ => throw new InvalidOperationException("Legacy reader must not run."),
+            DetailRead = _ => throw new InvalidOperationException("Legacy reader must not run."),
+        };
+        var readService = new StubDraftReadService
+        {
+            List = _ => throw new InvalidOperationException("Enriched reader must not run."),
+            Detail = _ => throw new InvalidOperationException("Enriched reader must not run."),
+        };
+        using var host = CreateHost(service, readService);
+        using var client = CreateClient(host);
+        client.DefaultRequestHeaders.TryAddWithoutValidation(
+            SalesEndpoints.DraftReadContractHeader,
+            declaration);
+
+        using var list = await client.GetAsync(SalesEndpoints.DraftsPath);
+        using var detail = await client.GetAsync($"{SalesEndpoints.DraftsPath}/{Guid.NewGuid():D}");
+
+        Assert.Equal(HttpStatusCode.BadRequest, list.StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, detail.StatusCode);
+        Assert.False(list.Headers.Contains(SalesEndpoints.DraftReadContractHeader));
+        Assert.False(detail.Headers.Contains(SalesEndpoints.DraftReadContractHeader));
     }
 
     [Theory]

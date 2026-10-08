@@ -31845,6 +31845,15 @@
               "format": "uuid",
               "x-erp-non-empty-uuid": true
             }
+          },
+          {
+            "name": "X-ERP-Sales-Read-Contract",
+            "in": "header",
+            "description": "Optional Sales read contract selector. Omit for the byte/schema-compatible legacy response; use the exact version to receive the record-bound Cari display.",
+            "schema": {
+              "pattern": "^record-party-display-v1$",
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -31859,12 +31868,26 @@
                   "pattern": "^[A-Za-z0-9._:-]+$",
                   "type": "string"
                 }
+              },
+              "X-ERP-Sales-Read-Contract": {
+                "description": "Present only on a successful enriched Sales read that accepted the exact request selector.",
+                "schema": {
+                  "pattern": "^record-party-display-v1$",
+                  "type": "string"
+                }
               }
             },
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SalesOrderDraftReadListResponseV1"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/SalesOrderDraftListResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/SalesOrderDraftReadListResponseV1"
+                    }
+                  ]
                 }
               }
             }
@@ -32049,6 +32072,15 @@
               "format": "uuid",
               "x-erp-non-empty-uuid": true
             }
+          },
+          {
+            "name": "X-ERP-Sales-Read-Contract",
+            "in": "header",
+            "description": "Optional Sales read contract selector. Omit for the byte/schema-compatible legacy response; use the exact version to receive the record-bound Cari display.",
+            "schema": {
+              "pattern": "^record-party-display-v1$",
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -32063,15 +32095,55 @@
                   "pattern": "^[A-Za-z0-9._:-]+$",
                   "type": "string"
                 }
+              },
+              "X-ERP-Sales-Read-Contract": {
+                "description": "Present only on a successful enriched Sales read that accepted the exact request selector.",
+                "schema": {
+                  "pattern": "^record-party-display-v1$",
+                  "type": "string"
+                }
               }
             },
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SalesOrderDraftReadDetailViewV1"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/SalesOrderDraftDetailView"
+                    },
+                    {
+                      "$ref": "#/components/schemas/SalesOrderDraftReadDetailViewV1"
+                    }
+                  ]
                 }
               }
             }
+          },
+          "400": {
+            "description": "Bad Request",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "company_context_invalid",
+              "correlation_metadata_invalid",
+              "validation_failed"
+            ]
           },
           "404": {
             "description": "Not Found",
@@ -78852,6 +78924,27 @@
             }
           },
           "discountPercent": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "SalesOrderDraftListResponse": {
+        "required": [
+          "items",
+          "nextCursor"
+        ],
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SalesOrderDraftSummaryView"
+            }
+          },
+          "nextCursor": {
             "type": [
               "null",
               "string"

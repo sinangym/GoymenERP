@@ -180,14 +180,12 @@ public sealed class SalesDraftApiSqlServerRelationalAcceptanceTests
             Assert.Equal(CompanyA, body.GetProperty("draft").GetProperty("companyId").GetGuid());
             Assert.Equal("Rev.0", body.GetProperty("draft").GetProperty("revision").GetString());
             Assert.Single(body.GetProperty("lines").EnumerateArray());
-            Assert.Equal((draftOfA.PartyId, draftOfA.Code, draftOfA.LegalName, draftOfA.TradeName),
-                Display(body));
+            Assert.False(body.TryGetProperty("partyDisplay", out _));
 
             var list = await Result(await clientOfA.GetAsync(SalesEndpoints.DraftsPath));
             var item = Assert.Single(list.GetProperty("items").EnumerateArray());
             Assert.Equal(draftOfA.DraftId, item.GetProperty("id").GetGuid());
-            Assert.Equal((draftOfA.PartyId, draftOfA.Code, draftOfA.LegalName, draftOfA.TradeName),
-                Display(item));
+            Assert.False(item.TryGetProperty("partyDisplay", out _));
         }
 
         var readerOfB = await run.GrantAsync(TestUsers.CompanyB, CompanyB, DraftGrants);
@@ -210,13 +208,32 @@ public sealed class SalesDraftApiSqlServerRelationalAcceptanceTests
         var reader = await run.GrantAsync(TestUsers.CompanyA, CompanyA, SalesPermissionManifestV1.DraftsRead);
         using var client = run.Factory.CreateClientFor(reader, CompanyA);
 
+        var legacyDetailResponse = await client.GetAsync($"{SalesEndpoints.DraftsPath}/{stored.DraftId:D}");
+        Assert.Equal(HttpStatusCode.OK, legacyDetailResponse.StatusCode);
+        Assert.False(legacyDetailResponse.Headers.Contains(SalesEndpoints.DraftReadContractHeader));
+        Assert.False((await Result(legacyDetailResponse)).TryGetProperty("partyDisplay", out _));
+
+        var legacyListResponse = await client.GetAsync(SalesEndpoints.DraftsPath);
+        Assert.Equal(HttpStatusCode.OK, legacyListResponse.StatusCode);
+        Assert.False(legacyListResponse.Headers.Contains(SalesEndpoints.DraftReadContractHeader));
+        Assert.False(Assert.Single((await Result(legacyListResponse)).GetProperty("items").EnumerateArray())
+            .TryGetProperty("partyDisplay", out _));
+
+        client.DefaultRequestHeaders.Add(
+            SalesEndpoints.DraftReadContractHeader,
+            SalesEndpoints.DraftReadContractVersion);
+
         var detailResponse = await client.GetAsync($"{SalesEndpoints.DraftsPath}/{stored.DraftId:D}");
         Assert.Equal(HttpStatusCode.OK, detailResponse.StatusCode);
+        Assert.Equal(SalesEndpoints.DraftReadContractVersion,
+            Assert.Single(detailResponse.Headers.GetValues(SalesEndpoints.DraftReadContractHeader)));
         Assert.Equal((stored.PartyId, stored.Code, stored.LegalName, stored.TradeName),
             Display(await Result(detailResponse)));
 
         var listResponse = await client.GetAsync(SalesEndpoints.DraftsPath);
         Assert.Equal(HttpStatusCode.OK, listResponse.StatusCode);
+        Assert.Equal(SalesEndpoints.DraftReadContractVersion,
+            Assert.Single(listResponse.Headers.GetValues(SalesEndpoints.DraftReadContractHeader)));
         var item = Assert.Single((await Result(listResponse)).GetProperty("items").EnumerateArray());
         Assert.Equal(stored.DraftId, item.GetProperty("id").GetGuid());
         Assert.Equal((stored.PartyId, stored.Code, stored.LegalName, stored.TradeName), Display(item));
