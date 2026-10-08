@@ -182,9 +182,51 @@ function movement(value: unknown): InventoryMovement | null {
   }
 }
 
+const INSTANT_PARTS = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.(\d{1,7}))?(?:Z|\+00:00)$/
+const TICKS_PER_MILLISECOND = 10_000n
+
+/** The exact instant in 100 ns ticks; `Date.parse` alone would fold sub-millisecond instants together. */
+function instantTicks(value: string): bigint {
+  const [, seconds, fraction = ''] = INSTANT_PARTS.exec(value)!
+  return BigInt(Date.parse(`${seconds}Z`)) * TICKS_PER_MILLISECOND + BigInt(fraction.padEnd(7, '0'))
+}
+
 /**
- * One owner page. `limit` is the limit the request asked for: a page longer than it, a duplicate movement, an
- * out-of-order (older-before-newer) entry, or a continuation without any item is refused as malformed.
+ * SQL Server `uniqueidentifier` order (`SqlGuid.CompareTo`): bytes of `Guid.ToByteArray()` compared in the order
+ * 10..15, 8, 9, 6, 7, 4, 5, 0..3. Expressed over the canonical text's byte positions, that is the last group left to
+ * right, then the fourth group, then the third, second and first groups with their bytes taken right to left.
+ */
+const SQL_GUID_TEXT_BYTE_ORDER = [10, 11, 12, 13, 14, 15, 8, 9, 7, 6, 5, 4, 3, 2, 1, 0] as const
+
+function textBytes(value: string): number[] {
+  const hex = value.replace(/-/g, '')
+  return Array.from({ length: 16 }, (_, index) => Number.parseInt(hex.slice(index * 2, index * 2 + 2), 16))
+}
+
+export function compareSqlServerUniqueIdentifiers(left: string, right: string): number {
+  const a = textBytes(left)
+  const b = textBytes(right)
+  for (const index of SQL_GUID_TEXT_BYTE_ORDER) {
+    if (a[index] !== b[index]) return a[index] < b[index] ? -1 : 1
+  }
+  return 0
+}
+
+/**
+ * The owner's newest-first key, exactly as `InventoryMovementTimelineService` enforces it: a strictly earlier instant,
+ * or the same instant with a strictly smaller SQL Server `uniqueidentifier`.
+ */
+export function followsInTimeline(previous: InventoryMovement, current: InventoryMovement): boolean {
+  const before = instantTicks(previous.occurredAtUtc)
+  const after = instantTicks(current.occurredAtUtc)
+  return after < before ||
+    (after === before && compareSqlServerUniqueIdentifiers(current.movementId, previous.movementId) < 0)
+}
+
+/**
+ * One owner page. `limit` is the limit the request asked for: a page longer than it, a duplicate movement, an entry
+ * out of the owner's (time, SQL Server uniqueidentifier) descending order, or a continuation without any item is
+ * refused as malformed.
  */
 export function decodeInventoryMovementTimelinePage(value: unknown, limit: number): InventoryMovementTimelinePage | null {
   const source = record(value)
@@ -196,14 +238,14 @@ export function decodeInventoryMovementTimelinePage(value: unknown, limit: numbe
   if (decoded.some((item) => item === null)) return null
   const items = decoded as InventoryMovement[]
   if (new Set(items.map((item) => item.movementId.toLowerCase())).size !== items.length ||
-    items.some((item, index) => index > 0 &&
-      Date.parse(items[index - 1].occurredAtUtc) < Date.parse(item.occurredAtUtc))) return null
+    items.some((item, index) => index > 0 && !followsInTimeline(items[index - 1], item))) return null
   return { items, nextCursor: source.nextCursor as string | null }
 }
 
 /**
- * A continuation must extend the pages already shown: no movement twice, and nothing newer than the last one shown.
- * Returns false when the owner's answer cannot honestly follow what is on screen.
+ * A continuation must extend the pages already shown: no movement twice, and its first movement strictly after the
+ * last one shown in the owner's (time, SQL Server uniqueidentifier) descending order. Returns false when the owner's
+ * answer cannot honestly follow what is on screen.
  */
 export function continuesTimeline(
   shown: readonly InventoryMovement[],
@@ -212,5 +254,5 @@ export function continuesTimeline(
   if (shown.length === 0 || next.length === 0) return true
   const seen = new Set(shown.map((item) => item.movementId.toLowerCase()))
   return next.every((item) => !seen.has(item.movementId.toLowerCase())) &&
-    Date.parse(shown[shown.length - 1].occurredAtUtc) >= Date.parse(next[0].occurredAtUtc)
+    followsInTimeline(shown[shown.length - 1], next[0])
 }

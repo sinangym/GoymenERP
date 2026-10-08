@@ -202,6 +202,20 @@ describe('InventoryMovementTimelinePage', () => {
   })
 
   it.each([
+    ['an unknown code', { code: 'company_context_invalid' }],
+    ['no code', { status: 400 }],
+    ['an empty code', { code: '' }],
+    ['no body', undefined],
+  ])('keeps a first-page 400 with %s in the shared fail-closed state, not an invalid query', async (_name, body) => {
+    api.timeline.mockResolvedValueOnce({ type: 'http', status: 400, body })
+    mount()
+    expect(await screen.findByText(/Beklenmeyen yanıt/)).not.toBeNull()
+    expect(screen.queryByText(/isteği geçersiz bulundu/)).toBeNull()
+    expect(screen.queryByRole('table')).toBeNull()
+    expect(scenario.report).not.toHaveBeenCalled()
+  })
+
+  it.each([
     [401, /Oturum sonlandı/],
     [403, /Yetkiniz yok/],
   ])('reports a first-page %s to the auth boundary and shows its shared state', async (status, text) => {
@@ -269,8 +283,37 @@ describe('InventoryMovementTimelinePage', () => {
     expect(api.timeline.mock.calls.map(([, cursor]) => cursor)).toEqual([null, 'cursor.1', 'cursor.1'])
   })
 
+  it('keeps the shown pages when a continuation 400 has an unknown code, without calling it an expired cursor', async () => {
+    const user = userEvent.setup()
+    api.timeline.mockResolvedValueOnce(ok([NEWEST], 'cursor.1'))
+      .mockResolvedValueOnce({ type: 'http', status: 400, body: { code: 'company_context_invalid' } })
+    mount()
+    await screen.findByText('SYN-LBL-1')
+    await user.click(screen.getByRole('button', { name: 'Daha eski hareketleri yükle' }))
+
+    expect(await screen.findByText(/doğrulanamadı; gösterilen listeyi devam ettirmiyor/)).not.toBeNull()
+    expect(screen.queryByText(/Devam bağlantısının süresi doldu/)).toBeNull()
+    expect(rows()).toHaveLength(1)
+  })
+
+  it('appends an equal-instant continuation in SQL Server uniqueidentifier order', async () => {
+    const user = userEvent.setup()
+    const at = '2026-10-07T12:00:00+00:00'
+    const sqlFirst = movement('00000000-0000-4000-8000-000000000001', at)
+    const sqlSecond = movement('01000000-0000-4000-8000-000000000000', at)
+    api.timeline.mockResolvedValueOnce(ok([sqlFirst], 'cursor.1')).mockResolvedValueOnce(ok([sqlSecond]))
+    mount()
+    await screen.findByText('SYN-LBL-1')
+    await user.click(screen.getByRole('button', { name: 'Daha eski hareketleri yükle' }))
+
+    await waitFor(() => expect(rows().map((row) => row.getAttribute('data-movement-id')))
+      .toEqual([sqlFirst.movementId, sqlSecond.movementId]))
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
   it.each([
     ['repeats a shown movement', ok([NEWEST])],
+    ['precedes the last shown movement at the same instant', ok([movement('ffffffff-ffff-4fff-8fff-ffffffffffff', NEWEST.occurredAtUtc)])],
     ['is newer than the shown list', ok([movement('cccccccc-cccc-4ccc-8ccc-cccccccccccc', '2026-10-08T10:00:00+00:00')])],
     ['is malformed', { type: 'malformed' } as ViewOutcome<TimelinePage>],
   ])('refuses a continuation that %s and keeps the shown pages', async (_name, outcome) => {

@@ -100,7 +100,9 @@ function InventoryMovementTimelineView({ companyId, canOpenLabel, fromLabelId, s
     if (outcome === null) return
     if (outcome.type === 'ok-single') {
       setState({ type: 'ready', items: outcome.data.items, nextCursor: outcome.data.nextCursor, more: 'idle' })
-    } else if (outcome.type === 'http' && outcome.status === 400) {
+    } else if (outcome.type === 'http' && outcome.status === 400 &&
+      movementTimelineProblemCode(outcome.body) === MOVEMENT_TIMELINE_INVALID_QUERY) {
+      // Only the owner's closed code is an invalid query; any other 400 stays the shared fail-closed state.
       setState({ type: 'failed', view: { kind: 'invalid-query' } })
     } else {
       setState({ type: 'failed', view: classifyOutcome(outcome) })

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  compareSqlServerUniqueIdentifiers,
   continuesTimeline,
   decodeInventoryMovementTimelinePage,
   isCanonicalKg,
@@ -146,6 +147,76 @@ describe('decodeInventoryMovementTimelinePage', () => {
       expect(decodeInventoryMovementTimelinePage(page([movement({ kind, lines: ok })]), 25), kind).not.toBeNull()
       expect(decodeInventoryMovementTimelinePage(page([movement({ kind, lines: bad })]), 25), kind).toBeNull()
     }
+  })
+})
+
+// InventoryMovementTimelineTests.Equal_timestamp_order_uses_sql_server_uniqueidentifier_semantics: at one instant the
+// owner answers SQL Server uniqueidentifier DESCENDING, where the last group outweighs the first.
+const SQL_FIRST = '00000000-0000-0000-0000-000000000001'
+const SQL_SECOND = '01000000-0000-0000-0000-000000000000'
+const SAME_AT = '2026-10-07T12:00:00+00:00'
+
+describe('compareSqlServerUniqueIdentifiers', () => {
+  it.each([
+    // [larger, smaller]: each pair differs in exactly one byte, ranked by SqlGuid's byte significance.
+    ['00000000-0000-0000-0000-000000000001', '01000000-0000-0000-0000-000000000000'],
+    ['00000000-0000-0000-0000-010000000000', '00000000-0000-0000-0000-000000000001'],
+    ['00000000-0000-0000-0001-000000000000', '00000000-0000-0000-0000-000000000000'],
+    ['00000000-0000-0000-0100-000000000000', '00000000-0000-0001-0000-000000000000'],
+    ['00000000-0000-0001-0000-000000000000', '00000000-0000-0100-0000-000000000000'],
+    ['00000000-0000-0100-0000-000000000000', '00000000-0001-0000-0000-000000000000'],
+    ['00000000-0001-0000-0000-000000000000', '00000000-0100-0000-0000-000000000000'],
+    ['00000000-0100-0000-0000-000000000000', '00000001-0000-0000-0000-000000000000'],
+    ['00000001-0000-0000-0000-000000000000', '00000100-0000-0000-0000-000000000000'],
+    ['00010000-0000-0000-0000-000000000000', '01000000-0000-0000-0000-000000000000'],
+  ])('%s sorts after %s', (larger, smaller) => {
+    expect(compareSqlServerUniqueIdentifiers(larger, smaller)).toBe(1)
+    expect(compareSqlServerUniqueIdentifiers(smaller, larger)).toBe(-1)
+  })
+
+  it('is case-insensitive and zero for the same id', () => {
+    expect(compareSqlServerUniqueIdentifiers(MOVEMENT_A, MOVEMENT_A.toUpperCase())).toBe(0)
+  })
+})
+
+describe('equal-instant order', () => {
+  it('accepts the owner order and refuses the reversed order inside one page', () => {
+    expect(decodeInventoryMovementTimelinePage(page([
+      movement({ movementId: SQL_FIRST, occurredAtUtc: SAME_AT }),
+      movement({ movementId: SQL_SECOND, occurredAtUtc: SAME_AT }),
+    ]), 25)).not.toBeNull()
+    expect(decodeInventoryMovementTimelinePage(page([
+      movement({ movementId: SQL_SECOND, occurredAtUtc: SAME_AT }),
+      movement({ movementId: SQL_FIRST, occurredAtUtc: SAME_AT }),
+    ]), 25)).toBeNull()
+  })
+
+  it('compares instants below a millisecond exactly instead of folding them together', () => {
+    // .0000002 is newer than .0000001: SQL_SECOND may precede SQL_FIRST only because its instant is later.
+    expect(decodeInventoryMovementTimelinePage(page([
+      movement({ movementId: SQL_SECOND, occurredAtUtc: '2026-10-07T12:00:00.0000002Z' }),
+      movement({ movementId: SQL_FIRST, occurredAtUtc: '2026-10-07T12:00:00.0000001Z' }),
+    ]), 25)).not.toBeNull()
+    expect(decodeInventoryMovementTimelinePage(page([
+      movement({ movementId: SQL_FIRST, occurredAtUtc: '2026-10-07T12:00:00.0000001Z' }),
+      movement({ movementId: SQL_SECOND, occurredAtUtc: '2026-10-07T12:00:00.0000002Z' }),
+    ]), 25)).toBeNull()
+    // The same instant written with Z or +00:00 and with trailing fraction zeros is one instant.
+    expect(decodeInventoryMovementTimelinePage(page([
+      movement({ movementId: SQL_FIRST, occurredAtUtc: '2026-10-07T12:00:00.5Z' }),
+      movement({ movementId: SQL_SECOND, occurredAtUtc: '2026-10-07T12:00:00.5000000+00:00' }),
+    ]), 25)).not.toBeNull()
+  })
+
+  it('applies the same tie-break across a continuation', () => {
+    const shown = decodeInventoryMovementTimelinePage(page([
+      movement({ movementId: SQL_FIRST, occurredAtUtc: SAME_AT }),
+    ]), 25)!.items
+    const next = decodeInventoryMovementTimelinePage(page([
+      movement({ movementId: SQL_SECOND, occurredAtUtc: SAME_AT }),
+    ]), 25)!.items
+    expect(continuesTimeline(shown, next)).toBe(true)
+    expect(continuesTimeline(next, shown)).toBe(false)
   })
 })
 
