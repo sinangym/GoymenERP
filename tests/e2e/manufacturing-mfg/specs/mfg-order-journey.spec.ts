@@ -608,8 +608,9 @@ test.describe('MFG order screen (real API, real SQL)', () => {
     await page.getByRole('combobox', { name: 'Çıktı sınıfı', exact: true }).selectOption('GoodProduct')
     await page.getByRole('combobox', { name: 'Ürün', exact: true }).selectOption(env.seed.output.productId)
     await page.getByRole('combobox', { name: 'Lokasyon', exact: true }).selectOption(env.seed.output.locationId)
+    const outputCode = `SYN-MFG-FASON-OUT-${arranged.orderId.replaceAll('-', '')}`
     await page.getByLabel('Yeni etiket kodu', { exact: true })
-      .fill(`SYN-MFG-FASON-OUT-${arranged.orderId.replaceAll('-', '')}`)
+      .fill(outputCode)
     await page.getByRole('combobox', { name: 'İlk stok durumu', exact: true })
       .selectOption(env.seed.output.initialBlock)
     await kgField(page).fill('300')
@@ -680,6 +681,61 @@ test.describe('MFG order screen (real API, real SQL)', () => {
     } finally {
       await api.dispose()
     }
+
+    // The same real output must be usable from Inventory's user-facing ST-01 list. The screen deliberately does
+    // not print a raw Party id: it names the ownership and custody, while its own row-derived location filter
+    // carries the exact location identity back to the owner API.
+    const positions = page.waitForResponse((response) => {
+      const url = new URL(response.url())
+      return response.request().method() === 'GET' && url.pathname === '/api/v1/inventory/positions'
+        && url.searchParams.get('q') === outputCode
+    })
+    await page.goto(`/stok/pozisyonlar?etiket=${encodeURIComponent(outputCode)}`)
+    const positionResponse = await positions
+    expect(positionResponse.status()).toBe(200)
+    const positionPage = await positionResponse.json() as {
+      items: Array<{
+        labelId: string
+        labelCode: string
+        locationId: string
+        ownerKind: string
+        ownerId: string
+        custodianKind: string
+        custodianId: string
+        physicalKg: string
+      }>
+    }
+    expect(positionPage.items).toContainEqual(expect.objectContaining({
+      labelId: outputBody.labelId,
+      labelCode: outputCode,
+      locationId: env.seed.output.locationId,
+      ownerKind: 'Counterparty',
+      ownerId: beforeRoll.commercialContext.partyId,
+      custodianKind: 'Company',
+      custodianId: env.seed.companyId,
+      physicalKg: '300',
+    }))
+
+    const outputRow = page.locator(`tr[data-label-id="${outputBody.labelId as string}"]`)
+    await expect(outputRow).toBeVisible({ timeout: 30_000 })
+    await expect(outputRow.getByRole('link', { name: outputCode, exact: true })).toBeVisible()
+    await expect(outputRow.getByText('Cari malı', { exact: true })).toBeVisible()
+    await expect(outputRow.getByText('Malı tutan: Şirket', { exact: true })).toBeVisible()
+    await expect(outputRow).not.toContainText(beforeRoll.commercialContext.partyId)
+    const cells = outputRow.getByRole('cell')
+    await expect(cells.nth(3).getByText('—', { exact: true })).toBeVisible()
+    await expect(cells.nth(5)).toHaveText('300')
+
+    const exactLocation = page.waitForResponse((response) => {
+      const url = new URL(response.url())
+      return response.request().method() === 'GET' && url.pathname === '/api/v1/inventory/positions'
+        && url.searchParams.get('q') === outputCode
+        && url.searchParams.get('locationId') === env.seed.output.locationId
+    })
+    await outputRow.getByRole('button', { name: `${outputCode}: bu lokasyona göre filtrele`, exact: true }).click()
+    expect((await exactLocation).status()).toBe(200)
+    await expect(page).toHaveURL(new RegExp(`etiket=${encodeURIComponent(outputCode)}.*lokasyon=${env.seed.output.locationId}`))
+    await expect(page.locator(`tr[data-label-id="${outputBody.labelId as string}"]`)).toBeVisible()
     expectEveryAnswerRewritten(answered, rewritten)
   })
 
