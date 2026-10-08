@@ -173,28 +173,57 @@ public sealed class SalesDraftApiSqlServerRelationalAcceptanceTests
         var readerOfA = await run.GrantAsync(TestUsers.CompanyA, CompanyA, DraftGrants);
         using (var clientOfA = run.Factory.CreateClientFor(readerOfA, CompanyA))
         {
-            var detail = await clientOfA.GetAsync($"{SalesEndpoints.DraftsPath}/{draftOfA}");
+            var detail = await clientOfA.GetAsync($"{SalesEndpoints.DraftsPath}/{draftOfA.DraftId}");
             Assert.Equal(HttpStatusCode.OK, detail.StatusCode);
             var body = await Result(detail);
-            Assert.Equal(draftOfA, body.GetProperty("draft").GetProperty("id").GetGuid());
+            Assert.Equal(draftOfA.DraftId, body.GetProperty("draft").GetProperty("id").GetGuid());
             Assert.Equal(CompanyA, body.GetProperty("draft").GetProperty("companyId").GetGuid());
             Assert.Equal("Rev.0", body.GetProperty("draft").GetProperty("revision").GetString());
             Assert.Single(body.GetProperty("lines").EnumerateArray());
+            Assert.Equal((draftOfA.PartyId, draftOfA.Code, draftOfA.LegalName, draftOfA.TradeName),
+                Display(body));
 
             var list = await Result(await clientOfA.GetAsync(SalesEndpoints.DraftsPath));
-            Assert.Equal(draftOfA, Assert.Single(list.GetProperty("items").EnumerateArray()).GetProperty("id").GetGuid());
+            var item = Assert.Single(list.GetProperty("items").EnumerateArray());
+            Assert.Equal(draftOfA.DraftId, item.GetProperty("id").GetGuid());
+            Assert.Equal((draftOfA.PartyId, draftOfA.Code, draftOfA.LegalName, draftOfA.TradeName),
+                Display(item));
         }
 
         var readerOfB = await run.GrantAsync(TestUsers.CompanyB, CompanyB, DraftGrants);
         using (var clientOfB = run.Factory.CreateClientFor(readerOfB, CompanyB))
         {
-            Assert.Equal(HttpStatusCode.NotFound, (await clientOfB.GetAsync($"{SalesEndpoints.DraftsPath}/{draftOfA}")).StatusCode);
+            Assert.Equal(HttpStatusCode.NotFound, (await clientOfB.GetAsync($"{SalesEndpoints.DraftsPath}/{draftOfA.DraftId}")).StatusCode);
             Assert.Empty((await Result(await clientOfB.GetAsync(SalesEndpoints.DraftsPath))).GetProperty("items").EnumerateArray());
             var cursorOfA = SalesStore.ListCursor.Encode(CompanyA, DateTimeOffset.UtcNow, Guid.NewGuid());
             var foreign = await clientOfB.GetAsync($"{SalesEndpoints.DraftsPath}?cursor={Uri.EscapeDataString(cursorOfA)}");
             Assert.Equal(HttpStatusCode.BadRequest, foreign.StatusCode);
             Assert.Equal(SalesDraftProblemCodesV1.InvalidCursor, (await Result(foreign)).GetProperty("code").GetString());
         }
+    }
+
+    [SqlServerFact]
+    public async Task Sales_read_without_general_Cari_read_publishes_only_the_linked_party_display()
+    {
+        await using var run = await Run.StartAsync();
+        var stored = await run.StoredDraftAsync(CompanyA);
+        var reader = await run.GrantAsync(TestUsers.CompanyA, CompanyA, SalesPermissionManifestV1.DraftsRead);
+        using var client = run.Factory.CreateClientFor(reader, CompanyA);
+
+        var detailResponse = await client.GetAsync($"{SalesEndpoints.DraftsPath}/{stored.DraftId:D}");
+        Assert.Equal(HttpStatusCode.OK, detailResponse.StatusCode);
+        Assert.Equal((stored.PartyId, stored.Code, stored.LegalName, stored.TradeName),
+            Display(await Result(detailResponse)));
+
+        var listResponse = await client.GetAsync(SalesEndpoints.DraftsPath);
+        Assert.Equal(HttpStatusCode.OK, listResponse.StatusCode);
+        var item = Assert.Single((await Result(listResponse)).GetProperty("items").EnumerateArray());
+        Assert.Equal(stored.DraftId, item.GetProperty("id").GetGuid());
+        Assert.Equal((stored.PartyId, stored.Code, stored.LegalName, stored.TradeName), Display(item));
+
+        Assert.Equal(0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM identity.RolePermissions rp INNER JOIN identity.Roles r ON r.Id = rp.RoleId "
+            + "WHERE rp.PermissionCode = N'counterparty.parties.read' AND r.Code LIKE N'SALES-API-%'"));
     }
 
     /// <summary>
@@ -535,6 +564,13 @@ public sealed class SalesDraftApiSqlServerRelationalAcceptanceTests
     private static async Task<JsonElement> Result(HttpResponseMessage response) =>
         await response.Content.ReadFromJsonAsync<JsonElement>();
 
+    private static (Guid PartyId, string? Code, string? LegalName, string? TradeName) Display(JsonElement value)
+    {
+        var display = value.GetProperty("partyDisplay");
+        return (display.GetProperty("partyId").GetGuid(), display.GetProperty("code").GetString(),
+            display.GetProperty("legalName").GetString(), display.GetProperty("tradeName").GetString());
+    }
+
     private sealed class Run : IAsyncDisposable
     {
         private readonly string baseConnectionString;
@@ -567,19 +603,31 @@ public sealed class SalesDraftApiSqlServerRelationalAcceptanceTests
         }
 
         /// <summary>A SENTETIK stored draft of the company with one line, written as rows (its owners are synthetic identities).</summary>
-        public async Task<Guid> StoredDraftAsync(Guid company)
+        public async Task<StoredDraftFixture> StoredDraftAsync(Guid company)
         {
             var id = Guid.NewGuid();
+            var partyId = Guid.NewGuid();
+            var accountId = Guid.NewGuid();
+            var code = $"CAR-{partyId:N}";
+            const string legalName = "SENTETIK Bagli Musteri A.S.";
+            const string tradeName = "SENTETIK Musteri";
             var unit = Guid.NewGuid();
             var profile = Guid.NewGuid();
+            await ExecuteAsync(
+                "INSERT INTO counterparty.Parties (Id, Code, Kind, LegalName, TradeName, IsActive, Version, CreatedAtUtc, UpdatedAtUtc) "
+                + "VALUES (@party, @code, N'LegalEntity', @legal, @trade, 1, 1, SYSDATETIMEOFFSET(), SYSDATETIMEOFFSET()); "
+                + "INSERT INTO counterparty.CompanyPartyAccounts (Id, CompanyId, PartyId, Roles, ExternalIntegrationCode, IsActive, Version, CreatedAtUtc, UpdatedAtUtc) "
+                + "VALUES (@account, @c, @party, 0, NULL, 1, 1, SYSDATETIMEOFFSET(), SYSDATETIMEOFFSET())",
+                ("@party", partyId), ("@code", code), ("@legal", legalName), ("@trade", tradeName),
+                ("@account", accountId), ("@c", company));
             await ExecuteAsync(
                 "INSERT INTO sales.Drafts (Id, CompanyId, DocumentNo, Kind, State, Revision, Version, PartyId, CompanyAccountId, CurrencyId, "
                 + "BusinessDate, MoneyOperation, MoneyProfileId, MoneyProfileVersion, MoneyEffectiveOn, MoneyIsActive, MoneyEffectiveFrom, "
                 + "MoneyScale, CreatedAtUtc, UpdatedAtUtc, CreatedBy, CorrelationId, ApprovalState, CustomerAcceptanceRequired) "
-                + "VALUES (@id, @c, N'SO-2026-000001', 1, 1, 0, 2, NEWID(), "
-                + "NEWID(), NEWID(), '2026-09-18', N'sales.order-draft.v1', NEWID(), N'3', '2026-09-18', 1, '2026-09-01', 2, "
+                + "VALUES (@id, @c, N'SO-2026-000001', 1, 1, 0, 2, @party, "
+                + "@account, NEWID(), '2026-09-18', N'sales.order-draft.v1', NEWID(), N'3', '2026-09-18', 1, '2026-09-01', 2, "
                 + "SYSDATETIMEOFFSET(), SYSDATETIMEOFFSET(), N'SENTETIK-actor', N'SENTETIK-correlation', 1, 0)",
-                ("@id", id), ("@c", company));
+                ("@id", id), ("@c", company), ("@party", partyId), ("@account", accountId));
             await ExecuteAsync(
                 "INSERT INTO sales.DraftLines (CompanyId, DraftId, [LineNo], LineId, ProductId, ProductVersion, ProductCode, ProductName, "
                 + "ProductEffectiveOn, StockUnitCompanyId, StockUnitId, StockUnitProfileId, StockUnitProfileVersion, SalesUnitCompanyId, SalesUnitId, "
@@ -589,7 +637,7 @@ public sealed class SalesDraftApiSqlServerRelationalAcceptanceTests
                 + "Quantity, QuantityText) VALUES (@c, @id, 1, NEWID(), NEWID(), N'7', N'GDC-001', N'Sentetik bant', '2026-09-18', "
                 + "@c, @u, @p, N'4', @c, @u, @p, N'4', @c, @u, @p, N'4', @c, @u, N'kg', N'weight', @p, N'4', 1, 3, 3, 1, '2026-09-01', 1.250, N'1.25')",
                 ("@id", id), ("@c", company), ("@u", unit), ("@p", profile));
-            return id;
+            return new StoredDraftFixture(id, partyId, accountId, code, legalName, tradeName);
         }
 
         /// <summary>A synthetic role with exactly these permissions in one company, assigned to a configured development user.</summary>
@@ -670,4 +718,12 @@ public sealed class SalesDraftApiSqlServerRelationalAcceptanceTests
             await command.ExecuteNonQueryAsync();
         }
     }
+
+    private sealed record StoredDraftFixture(
+        Guid DraftId,
+        Guid PartyId,
+        Guid CompanyAccountId,
+        string Code,
+        string LegalName,
+        string? TradeName);
 }

@@ -31864,7 +31864,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SalesOrderDraftListResponse"
+                  "$ref": "#/components/schemas/SalesOrderDraftReadListResponseV1"
                 }
               }
             }
@@ -32068,7 +32068,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SalesOrderDraftDetailView"
+                  "$ref": "#/components/schemas/SalesOrderDraftReadDetailViewV1"
                 }
               }
             }
@@ -78859,27 +78859,6 @@
           }
         }
       },
-      "SalesOrderDraftListResponse": {
-        "required": [
-          "items",
-          "nextCursor"
-        ],
-        "type": "object",
-        "properties": {
-          "items": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/SalesOrderDraftSummaryView"
-            }
-          },
-          "nextCursor": {
-            "type": [
-              "null",
-              "string"
-            ]
-          }
-        }
-      },
       "SalesOrderDraftPriceReferencesResponse": {
         "required": [
           "lineId",
@@ -78938,6 +78917,246 @@
           },
           "orderUnitCode": {
             "type": "string"
+          }
+        }
+      },
+      "SalesOrderDraftReadDetailViewV1": {
+        "required": [
+          "draft",
+          "requestedDeliveryDate",
+          "note",
+          "lines",
+          "deliveryAddress",
+          "contact",
+          "responsible",
+          "paymentTerms",
+          "sourceStrategy",
+          "package",
+          "approval",
+          "customerAcceptance",
+          "isOwnDraft",
+          "isOwnDecisionRestricted",
+          "partyDisplay"
+        ],
+        "type": "object",
+        "properties": {
+          "draft": {
+            "$ref": "#/components/schemas/SalesOrderDraftSummaryView"
+          },
+          "requestedDeliveryDate": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date"
+          },
+          "note": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SalesOrderDraftLineDetail"
+            }
+          },
+          "deliveryAddress": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SalesDraftOwnerReferenceV1"
+              }
+            ]
+          },
+          "contact": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SalesDraftOwnerReferenceV1"
+              }
+            ]
+          },
+          "responsible": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SalesDraftOwnerReferenceV1"
+              }
+            ]
+          },
+          "paymentTerms": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SalesDraftOwnerReferenceV1"
+              }
+            ]
+          },
+          "sourceStrategy": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SalesDraftOwnerReferenceV1"
+              }
+            ]
+          },
+          "package": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SalesDraftOwnerReferenceV1"
+              }
+            ]
+          },
+          "approval": {
+            "$ref": "#/components/schemas/SalesDraftApprovalV1"
+          },
+          "customerAcceptance": {
+            "$ref": "#/components/schemas/SalesDraftCustomerAcceptanceV1"
+          },
+          "isOwnDraft": {
+            "type": "boolean"
+          },
+          "isOwnDecisionRestricted": {
+            "type": "boolean"
+          },
+          "partyDisplay": {
+            "$ref": "#/components/schemas/SalesPartyDisplayV1"
+          }
+        }
+      },
+      "SalesOrderDraftReadListResponseV1": {
+        "required": [
+          "items",
+          "nextCursor"
+        ],
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SalesOrderDraftReadSummaryViewV1"
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "SalesOrderDraftReadSummaryViewV1": {
+        "required": [
+          "id",
+          "companyId",
+          "documentNo",
+          "kind",
+          "state",
+          "version",
+          "revision",
+          "partyId",
+          "companyAccountId",
+          "currencyId",
+          "businessDate",
+          "createdAtUtc",
+          "lineCount",
+          "approvalState",
+          "commercialStage",
+          "productSnapshots",
+          "partyDisplay"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "companyId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "documentNo": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "string"
+          },
+          "partyId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "companyAccountId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "currencyId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "businessDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "createdAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "lineCount": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "approvalState": {
+            "type": "string"
+          },
+          "commercialStage": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SalesCommercialStageV1"
+              }
+            ]
+          },
+          "productSnapshots": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/SalesOrderDraftProductSnapshotViewV1"
+            }
+          },
+          "partyDisplay": {
+            "$ref": "#/components/schemas/SalesPartyDisplayV1"
           }
         }
       },
@@ -79094,6 +79313,33 @@
             "items": {
               "$ref": "#/components/schemas/SalesOrderDraftProductSnapshotViewV1"
             }
+          }
+        }
+      },
+      "SalesPartyDisplayV1": {
+        "required": [
+          "partyId",
+          "code",
+          "legalName",
+          "tradeName"
+        ],
+        "type": "object",
+        "properties": {
+          "partyId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "code": {
+            "type": "string"
+          },
+          "legalName": {
+            "type": "string"
+          },
+          "tradeName": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },

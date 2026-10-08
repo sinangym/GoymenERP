@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 using GoymenERP.Api.Endpoints;
+using GoymenERP.Modules.Counterparty.Application.Contracts;
 using GoymenERP.Modules.Sales.Application.Contracts;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
@@ -89,12 +90,15 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
             summary, null, null, [line], null, null, null, null, null, null,
             new SalesDraftApprovalV1(null, null, null, null, null),
             new SalesDraftCustomerAcceptanceV1(false, null, null, null, false), false, false);
-        var service = new StubDraftService
+        var service = new StubDraftService();
+        var display = new SalesPartyDisplayV1(summary.PartyId, "CAR-000001", "Sentetik Musteri A.S.", "Sentetik Musteri");
+        var readService = new StubDraftReadService
         {
-            List = _ => Task.FromResult(new SalesOrderDraftListResponse([summary], null)),
-            DetailRead = _ => Task.FromResult(detail),
+            List = _ => Task.FromResult(new SalesOrderDraftReadListResponseV1(
+                [ReadSummary(summary, display)], null)),
+            Detail = _ => Task.FromResult(ReadDetail(detail, display)),
         };
-        using var host = CreateHost(service);
+        using var host = CreateHost(service, readService);
         using var client = CreateClient(host);
 
         using (var listResponse = await client.GetAsync(SalesEndpoints.DraftsPath))
@@ -103,6 +107,11 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
             var list = await listResponse.Content.ReadFromJsonAsync<JsonElement>();
             var item = list.GetProperty("items")[0];
             Assert.Equal(CompanyA, item.GetProperty("companyId").GetGuid());
+            Assert.Equal((summary.PartyId, "CAR-000001", "Sentetik Musteri A.S.", "Sentetik Musteri"),
+                (item.GetProperty("partyDisplay").GetProperty("partyId").GetGuid(),
+                    item.GetProperty("partyDisplay").GetProperty("code").GetString(),
+                    item.GetProperty("partyDisplay").GetProperty("legalName").GetString(),
+                    item.GetProperty("partyDisplay").GetProperty("tradeName").GetString()));
             var product = item.GetProperty("productSnapshots")[0];
             Assert.Equal((productId, "7", "GDC-001", "Sentetik bant", unitId, "kg"),
                 (product.GetProperty("productId").GetGuid(), product.GetProperty("productVersion").GetString(),
@@ -114,6 +123,8 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
         {
             Assert.Equal(HttpStatusCode.OK, detailResponse.StatusCode);
             var read = await detailResponse.Content.ReadFromJsonAsync<JsonElement>();
+            Assert.Equal(display.PartyId, read.GetProperty("partyDisplay").GetProperty("partyId").GetGuid());
+            Assert.Equal(display.Code, read.GetProperty("partyDisplay").GetProperty("code").GetString());
             var publishedLine = read.GetProperty("lines")[0];
             Assert.Equal("kg", publishedLine.GetProperty("orderUnitCode").GetString());
             Assert.Equal("Withheld", publishedLine.GetProperty("priceDisclosure").GetString());
@@ -121,6 +132,56 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
             Assert.Equal(JsonValueKind.Null, publishedLine.GetProperty("priceUnitId").ValueKind);
             Assert.Equal(JsonValueKind.Null, publishedLine.GetProperty("discountPercent").ValueKind);
         }
+    }
+
+    [Theory]
+    [InlineData(CounterpartySalesRecordPartyDisplayOutcomeV1.Denied, SalesPartyDisplayBatchOutcomeV1.Denied)]
+    [InlineData(CounterpartySalesRecordPartyDisplayOutcomeV1.Unavailable, SalesPartyDisplayBatchOutcomeV1.Unavailable)]
+    public async Task Central_display_host_forwards_the_server_context_and_maps_closed_owner_outcomes(
+        CounterpartySalesRecordPartyDisplayOutcomeV1 ownerOutcome,
+        SalesPartyDisplayBatchOutcomeV1 expected)
+    {
+        var partyId = Guid.NewGuid();
+        var owner = new StubSalesRecordPartyDisplaySource
+        {
+            Answer = new CounterpartySalesRecordPartyDisplayAnswerV1(ownerOutcome, []),
+        };
+        var host = new SalesPartyDisplayHost(owner);
+
+        var answer = await host.GetAuthorizedBatchAsync(
+            new SalesPartyDisplayBatchRequestV1(CompanyA, "SENTETIK-actor", [partyId]),
+            CancellationToken.None);
+
+        Assert.Equal(expected, answer.Outcome);
+        Assert.Empty(answer.Items);
+        Assert.Equal((CompanyA, "SENTETIK-actor", partyId),
+            (owner.Request!.CompanyId, owner.Request.ActorId, Assert.Single(owner.Request.PartyIds)));
+    }
+
+    [Fact]
+    public async Task Central_display_host_maps_the_exact_owner_rows_and_preserves_cancellation()
+    {
+        var partyId = Guid.NewGuid();
+        var owner = new StubSalesRecordPartyDisplaySource
+        {
+            Answer = new CounterpartySalesRecordPartyDisplayAnswerV1(
+                CounterpartySalesRecordPartyDisplayOutcomeV1.Found,
+                [new(partyId, "CAR-000002", "Bagli Musteri A.S.", null)]),
+        };
+        var host = new SalesPartyDisplayHost(owner);
+
+        var answer = await host.GetAuthorizedBatchAsync(
+            new SalesPartyDisplayBatchRequestV1(CompanyA, "SENTETIK-actor", [partyId]),
+            CancellationToken.None);
+        Assert.Equal(SalesPartyDisplayBatchOutcomeV1.Success, answer.Outcome);
+        Assert.Equal(new SalesPartyDisplayV1(partyId, "CAR-000002", "Bagli Musteri A.S.", null),
+            Assert.Single(answer.Items));
+
+        using var cancelled = new CancellationTokenSource();
+        cancelled.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => host.GetAuthorizedBatchAsync(
+            new SalesPartyDisplayBatchRequestV1(CompanyA, "SENTETIK-actor", [partyId]),
+            cancelled.Token));
     }
 
     [Fact]
@@ -211,11 +272,29 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
         null, null, [], null, null, null, null, null, null, new SalesDraftApprovalV1(null, null, null, null, null),
         new SalesDraftCustomerAcceptanceV1(false, null, null, null, false), false, false);
 
-    private WebApplicationFactory<Program> CreateHost(ISalesDraftService service) => factory.WithWebHostBuilder(builder =>
+    private static SalesOrderDraftReadSummaryViewV1 ReadSummary(
+        SalesOrderDraftSummaryView draft,
+        SalesPartyDisplayV1 display) => new(
+        draft.Id, draft.CompanyId, draft.DocumentNo, draft.Kind, draft.State, draft.Version, draft.Revision,
+        draft.PartyId, draft.CompanyAccountId, draft.CurrencyId, draft.BusinessDate, draft.CreatedAtUtc,
+        draft.LineCount, draft.ApprovalState, draft.CommercialStage, draft.ProductSnapshots, display);
+
+    private static SalesOrderDraftReadDetailViewV1 ReadDetail(
+        SalesOrderDraftDetailView detail,
+        SalesPartyDisplayV1 display) => new(
+        detail.Draft, detail.RequestedDeliveryDate, detail.Note, detail.Lines, detail.DeliveryAddress,
+        detail.Contact, detail.Responsible, detail.PaymentTerms, detail.SourceStrategy, detail.Package,
+        detail.Approval, detail.CustomerAcceptance, detail.IsOwnDraft, detail.IsOwnDecisionRestricted, display);
+
+    private WebApplicationFactory<Program> CreateHost(
+        ISalesDraftService service,
+        ISalesDraftReadServiceV1? readService = null) => factory.WithWebHostBuilder(builder =>
         builder.ConfigureTestServices(services =>
         {
             services.RemoveAll<ISalesDraftService>();
             services.AddSingleton(service);
+            services.RemoveAll<ISalesDraftReadServiceV1>();
+            services.AddSingleton(readService ?? new StubDraftReadService());
         }));
 
     private static HttpClient CreateClient(WebApplicationFactory<Program> host)
@@ -422,6 +501,38 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
         {
             StateCalls.Add((command, draftId, request.ExpectedVersion, request.Reason, metadata.IdempotencyKey));
             return State(command, draftId, request);
+        }
+    }
+
+    private sealed class StubDraftReadService : ISalesDraftReadServiceV1
+    {
+        public Func<Guid, Task<SalesOrderDraftReadDetailViewV1>> Detail { get; set; } =
+            _ => Task.FromException<SalesOrderDraftReadDetailViewV1>(new SalesDraftServiceException(404, "not_found"));
+        public Func<SalesOrderDraftListQuery, Task<SalesOrderDraftReadListResponseV1>> List { get; set; } =
+            _ => Task.FromResult(new SalesOrderDraftReadListResponseV1([], null));
+
+        public Task<SalesOrderDraftReadDetailViewV1> GetDraftDetailAsync(
+            Guid draftId,
+            CancellationToken cancellationToken = default) => Detail(draftId);
+
+        public Task<SalesOrderDraftReadListResponseV1> GetDraftListAsync(
+            SalesOrderDraftListQuery query,
+            CancellationToken cancellationToken = default) => List(query);
+    }
+
+    private sealed class StubSalesRecordPartyDisplaySource : ICounterpartySalesRecordPartyDisplaySourceV1
+    {
+        public CounterpartySalesRecordPartyDisplayAnswerV1 Answer { get; init; } =
+            new(CounterpartySalesRecordPartyDisplayOutcomeV1.Unavailable, []);
+        public CounterpartySalesRecordPartyDisplayRequestV1? Request { get; private set; }
+
+        public Task<CounterpartySalesRecordPartyDisplayAnswerV1> ReadForAuthorizedSalesRecordsAsync(
+            CounterpartySalesRecordPartyDisplayRequestV1 request,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Request = request;
+            return Task.FromResult(Answer);
         }
     }
 

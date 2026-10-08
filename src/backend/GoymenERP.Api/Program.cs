@@ -255,6 +255,10 @@ builder.Services.AddSalesModule(
     builder.Configuration,
     (services, options) => options.AddInterceptors(
         services.GetRequiredService<AuditSaveChangesInterceptor>()));
+// A Sales draft read may disclose only the code/name of the Cari record already linked to that
+// authorized Sales result. The adapter grants no generic Cari read and has no public lookup route.
+builder.Services.AddScoped<ISalesPartyDisplaySourceV1, SalesPartyDisplayHost>();
+builder.Services.AddScoped<ISalesDraftReadServiceV1, SalesDraftReadServiceV1>();
 // STK/T11: the host-owned allocation boundary consumes Sales only through its approved-line port and
 // hands the derived command to Inventory's writer after fresh company-wide authority fences.
 builder.Services.AddScoped<InventoryPhysicalAllocationHostService>();

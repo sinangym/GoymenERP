@@ -310,7 +310,7 @@ public static class SalesEndpoints
             [FromQuery] string? cursor,
             [FromQuery] string? approvalState,
             HttpContext httpContext,
-            [FromServices] ISalesDraftService service,
+            [FromServices] ISalesDraftReadServiceV1 service,
             ICorrelationContext correlation,
             CancellationToken cancellationToken) =>
         {
@@ -334,7 +334,7 @@ public static class SalesEndpoints
             }
         })
             .WithName("GetSalesOrderDraftsV1")
-            .Produces<SalesOrderDraftListResponse>()
+            .Produces<SalesOrderDraftReadListResponseV1>()
             .ProducesErpBadRequest("validation_failed", SalesDraftProblemCodesV1.InvalidCursor)
             .AllowsEmptyErpBadRequestBody()
             .ProducesErpServiceUnavailable()
@@ -1197,7 +1197,7 @@ public static class SalesEndpoints
         drafts.MapGet("/{id:guid}", async (
             Guid id,
             HttpContext httpContext,
-            [FromServices] ISalesDraftService service,
+            [FromServices] ISalesDraftReadServiceV1 service,
             ICorrelationContext correlation,
             CancellationToken cancellationToken) =>
         {
@@ -1212,7 +1212,7 @@ public static class SalesEndpoints
             }
         })
             .WithName("GetSalesOrderDraftV1")
-            .Produces<SalesOrderDraftDetailView>()
+            .Produces<SalesOrderDraftReadDetailViewV1>()
             .ProducesErpCodeLessNotFound()
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();
