@@ -141,6 +141,19 @@ public sealed class BrowserSuiteHostEnvelopeTests
         }
     }
 
+    [Theory]
+    [InlineData("productCode", "10000000-0000-0000-0000-000000000001")]
+    [InlineData("productName", "r14-recorder")]
+    public void R14_product_identity_validation_does_not_accept_guid_or_actor_fallback(
+        string key,
+        string value)
+    {
+        Assert.Throws<InvalidOperationException>(() => BrowserSuiteSeedOutputValidator.Validate(
+            "r14",
+            new Dictionary<string, string> { [key] = value },
+            new HashSet<string>(["r14-recorder"], StringComparer.Ordinal)));
+    }
+
     [Fact]
     public void Acc01_output_validation_accepts_only_its_closed_normal_journal_scalar_contract()
     {

@@ -48,6 +48,18 @@ internal static class BrowserSuiteSeedOutputValidator
                 continue;
             }
 
+            if (string.Equals(suite, "r14", StringComparison.Ordinal)
+                && IsR14ProductScalarKey(key))
+            {
+                if (!IsSuiteSpecificScalar(suite, key, value))
+                {
+                    throw new InvalidOperationException(
+                        $"Seed output '{key}' must match its exact R14 Product scalar contract.");
+                }
+
+                continue;
+            }
+
             if (!isGuid && !actors.Contains(value) && !IsSuiteSpecificScalar(suite, key, value))
             {
                 throw new InvalidOperationException(
@@ -171,6 +183,8 @@ internal static class BrowserSuiteSeedOutputValidator
     private static bool IsAcc01ScalarKey(string key) => key is
         "normalSourceLabel" or "normalOccurredOn" or "normalAmount"
         or "normalDebitLabel" or "normalCreditLabel";
+
+    private static bool IsR14ProductScalarKey(string key) => key is "productCode" or "productName";
 
     private static bool IsAcc01SourceLabel(string value)
     {
