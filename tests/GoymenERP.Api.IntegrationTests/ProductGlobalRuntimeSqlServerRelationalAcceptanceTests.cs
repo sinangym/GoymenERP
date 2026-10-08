@@ -28,6 +28,7 @@ using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Manufacturing.Application;
 using GoymenERP.Modules.Organization.Application.Contracts;
 using GoymenERP.Modules.Product.Application.Contracts;
+using GoymenERP.Modules.Product.Infrastructure.Fixtures;
 using GoymenERP.Modules.Product.Infrastructure.Persistence;
 using GoymenERP.Modules.Settings.Application;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
@@ -446,6 +447,83 @@ public sealed class ProductGlobalRuntimeSqlServerRelationalAcceptanceTests
             await product.GetService<IMigrator>().MigrateAsync(ProductCodeGroupMigration);
             Assert.Equal(productMigrations, await product.Database.GetAppliedMigrationsAsync());
             Assert.Equal(afterEdit, await SnapshotAsync(factory.DatabaseConnectionString));
+        });
+
+    [SqlServerFact]
+    public Task Stock_display_qualified_fixture_replays_and_reads_released_technical_sources() =>
+        WithDatabaseAsync(async (factory, _) =>
+        {
+            // The shared Product SQL harness adds two unrelated code groups for command scenarios.
+            // This fixture owns an isolated Product store, so remove only those known unreferenced rows.
+            await using (var sql = new SqlConnection(factory.DatabaseConnectionString))
+            {
+                await sql.OpenAsync();
+                await using var removeHarnessGroups = sql.CreateCommand();
+                removeHarnessGroups.CommandText =
+                    "DELETE FROM [product].[CodeGroups] WHERE [Id] IN (@first, @second);";
+                removeHarnessGroups.Parameters.AddWithValue("@first", GroupId);
+                removeHarnessGroups.Parameters.AddWithValue("@second",
+                    Guid.Parse("82000000-0000-0000-0000-000000000002"));
+                Assert.Equal(2, await removeHarnessGroups.ExecuteNonQueryAsync());
+            }
+
+            await using (var registryScope = factory.Services.CreateAsyncScope())
+            {
+                await new ProductTechnicalCardFixtureStore(
+                        registryScope.ServiceProvider.GetRequiredService<ProductDbContext>())
+                    .EnsureAsync(default);
+            }
+
+            ProductStockDisplayQualifiedFixtureOutput? first = null;
+            for (var attempt = 0; attempt < 2; attempt++)
+            {
+                await using var fixtureScope = factory.Services.CreateAsyncScope();
+                var db = fixtureScope.ServiceProvider.GetRequiredService<ProductDbContext>();
+                var store = new ProductStockDisplayQualifiedFixtureStore(
+                    db,
+                    new ProductUnitProfileAdapter(
+                        new StockDisplayFixtureSettings(),
+                        new StockDisplayFixtureCompany()));
+                var current = await store.EnsureAsync(default);
+                first ??= current;
+                Assert.Equal(first, current);
+            }
+
+            await using var readScope = factory.Services.CreateAsyncScope();
+            var product = readScope.ServiceProvider.GetRequiredService<ProductDbContext>();
+            Assert.True(product.Database.IsSqlServer());
+            var authority = new StockDisplayFixtureAuthority();
+            var service = new ProductStockDisplayReferenceService(
+                new StockDisplayFixtureCompany(),
+                new StockDisplayFixtureUser(),
+                authority,
+                new ProductReadStore(product),
+                new SqlProductFamilyDefinitionSource(product));
+            var batch = await service.ReadAsync(new([
+                new(first!.ProductId, first.ProductVersion),
+            ]));
+
+            var item = Assert.Single(batch.Items);
+            Assert.Empty(item.Errors);
+            Assert.Equal((first.ProductId, first.ProductVersion, first.Code, first.Name),
+                (item.Identity!.ProductId, item.Identity.ProductVersion, item.Identity.Code, item.Identity.Name));
+            var technical = Assert.IsType<ProductStockNominalTechnicalV1>(item.Technical);
+            Assert.Equal((ProductInitialTechnicalDefinitionV1.HotRolledSlitCoilFamilyId,
+                    ProductInitialTechnicalDefinitionV1.SourceRef),
+                (technical.Family.FamilyId, technical.Family.SourceRevision));
+            Assert.Equal((ProductInitialTechnicalDefinitionV1.TemplateId, "1",
+                    ProductInitialTechnicalDefinitionV1.SourceRef),
+                (technical.Template.TemplateId, technical.Template.TemplateVersion,
+                    technical.Template.SourceRevision));
+            Assert.Equal((1.000m, 1000.000m), (technical.ThicknessMm, technical.WidthMm));
+            Assert.All(authority.Permissions,
+                permission => Assert.Equal(ProductPermissionManifestV1.OperationalSelectionRead, permission));
+
+            var stored = (await product.Products.AsNoTracking().SingleAsync()).ToRecord();
+            Assert.Equal(ProductStockDisplayQualifiedFixture.Record(), stored);
+            Assert.Equal(2, await product.CodeGroups.CountAsync());
+            Assert.Single(await product.CodeRegistrations.ToListAsync());
+            Assert.Single(await product.CodeCounters.ToListAsync());
         });
 
     [SqlServerFact]
@@ -1299,6 +1377,76 @@ public sealed class ProductGlobalRuntimeSqlServerRelationalAcceptanceTests
             new("product.items." + action, "product.items." + action, path, "PRODUCT-TEST-" + action.ToUpperInvariant(),
                 parameterized ? ShellCapabilityRoutePrecedence.ParameterizedAfterStatic : ShellCapabilityRoutePrecedence.Static,
                 ShellCapabilityContextRequirement.SingleCompany, ShellCapabilityScopeRequirement.AnyGrantedScope, [], true, operation);
+    }
+
+    private sealed class StockDisplayFixtureCompany : ICompanyContext
+    {
+        public bool IsResolved => true;
+        public Guid CompanyId { get; private set; } = ApprovedUnitProfileCatalog.GdcCompanyId;
+        public void Set(Guid companyId) => CompanyId = companyId;
+    }
+
+    private sealed class StockDisplayFixtureUser : ICurrentUser
+    {
+        public bool IsAuthenticated => true;
+        public string? UserId => "stock-display-fixture-actor";
+        public IReadOnlySet<Guid> AllowedCompanyIds { get; } =
+            new HashSet<Guid> { ApprovedUnitProfileCatalog.GdcCompanyId };
+        public bool CanAccessCompany(Guid companyId) => AllowedCompanyIds.Contains(companyId);
+    }
+
+    private sealed class StockDisplayFixtureAuthority : IErpAuthorityRevalidationService
+    {
+        public List<string> Permissions { get; } = [];
+
+        public Task<PermissionScope> RevalidatePermissionScopeAsync(
+            string permission,
+            Guid companyId,
+            CancellationToken cancellationToken = default)
+        {
+            Permissions.Add(permission);
+            return Task.FromResult(companyId == ApprovedUnitProfileCatalog.GdcCompanyId
+                ? new PermissionScope(true, true,
+                    new HashSet<string>(StringComparer.Ordinal) { "synthetic-stock-display-fixture" },
+                    new HashSet<Guid>(), new HashSet<Guid>(), new HashSet<Guid>())
+                : PermissionScope.Denied);
+        }
+    }
+
+    private sealed class StockDisplayFixtureSettings : ISettingsPrerequisiteProvider
+    {
+        public Task<UnitProfileV1> GetUnitProfileAsync(
+            Guid unitId,
+            DateOnly effectiveOn,
+            CancellationToken cancellationToken = default)
+        {
+            var approved = ApprovedUnitProfileCatalog.GdcKilogramV1;
+            Assert.Equal(approved.UnitId, unitId);
+            Assert.Equal(ProductStockDisplayQualifiedFixture.EffectiveOn, effectiveOn);
+            return Task.FromResult(new UnitProfileV1(
+                approved.CompanyId,
+                approved.UnitId,
+                approved.UnitCode,
+                approved.DimensionCode,
+                approved.IsKilogram,
+                new(approved.ProfileId, approved.Version),
+                approved.Scale,
+                approved.IsActive,
+                approved.EffectiveFrom,
+                approved.EffectiveThrough));
+        }
+
+        public Task<MoneyProfileV1> GetMoneyProfileAsync(
+            Guid currencyId,
+            string operation,
+            DateOnly effectiveOn,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+        public Task<PeriodEligibilityV1> GetPeriodEligibilityAsync(
+            string operation,
+            DateOnly occurredOn,
+            DateOnly? valueOn,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
     }
 
     private static async Task WithDatabaseAsync(Func<SqlServerRelationalApiFactory, TestObserver, Task> test,
