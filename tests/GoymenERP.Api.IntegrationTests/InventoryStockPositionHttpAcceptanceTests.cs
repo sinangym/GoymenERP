@@ -4,6 +4,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using GoymenERP.Api.ProductRuntime;
 using GoymenERP.Api.Endpoints;
+using GoymenERP.Api.Errors;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Identity.Domain.Assignments;
@@ -391,7 +392,7 @@ public sealed class InventoryStockPositionHttpAcceptanceTests(GoymenErpApiFactor
     }
 
     [Fact]
-    public async Task Product_operational_selection_refusal_is_code_less_403_and_discloses_no_position()
+    public async Task Product_operational_selection_refusal_uses_the_safe_platform_403_and_discloses_no_position()
     {
         var product = new StubProductDisplays(ProductDisplays())
         {
@@ -407,7 +408,8 @@ public sealed class InventoryStockPositionHttpAcceptanceTests(GoymenErpApiFactor
         AssertPrivateNoStore(response);
         var body = await response.Content.ReadAsStringAsync();
         using var document = JsonDocument.Parse(body);
-        Assert.False(document.RootElement.TryGetProperty("code", out _));
+        Assert.Equal(ErpProblemCodes.Forbidden,
+            document.RootElement.GetProperty("code").GetString());
         Assert.DoesNotContain("product_access_denied", body, StringComparison.Ordinal);
         Assert.DoesNotContain("ROLL-1", body, StringComparison.Ordinal);
         Assert.Single(product.Queries);
