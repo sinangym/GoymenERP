@@ -23,6 +23,25 @@ export const INVENTORY_STOCK_SCRAP_APPROVE_CAPABILITY = 'inventory.stock-scrap.a
 
 export const INVENTORY_STOCK_POSITIONS_ROUTE = '/stok/pozisyonlar' as const
 
+/**
+ * ST-04 company movement timeline. Reached from a label detail, never the sidebar; it rides the existing
+ * `inventory.stock-positions.list` capability (labels + balances read, company-wide) and adds no name of its own. The
+ * API re-measures both reads on every page.
+ */
+export const INVENTORY_MOVEMENT_TIMELINE_ROUTE = '/stok/hareketler' as const
+
+/** Router state a label detail hands the timeline so its return link reopens the same label (and its ST-01 filter). */
+export interface MovementTimelineEntryState {
+  readonly movementTimelineFromLabelId: string
+  readonly stockPositionsSearch?: string
+}
+
+export function movementTimelineEntryState(labelId: string, stockSearch: string | null): MovementTimelineEntryState {
+  return stockSearch === null
+    ? { movementTimelineFromLabelId: labelId }
+    : { movementTimelineFromLabelId: labelId, stockPositionsSearch: stockSearch }
+}
+
 export const INVENTORY_OPENING_ROUTE = {
   home: '/stok/acilis',
   create: '/stok/acilis/yeni',

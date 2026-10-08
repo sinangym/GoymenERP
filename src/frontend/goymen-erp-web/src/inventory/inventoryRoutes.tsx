@@ -4,10 +4,12 @@ import { CapabilityRoute } from '../shell/CapabilityRoute'
 import type { CapabilityId } from '../shell/capabilities'
 import {
   INVENTORY_OPENING_CAPABILITY,
+  INVENTORY_MOVEMENT_TIMELINE_ROUTE,
   INVENTORY_OPENING_ROUTE,
   INVENTORY_STOCK_POSITIONS_CAPABILITY,
   INVENTORY_STOCK_POSITIONS_ROUTE,
 } from './capabilities'
+import { InventoryMovementTimelinePage } from './InventoryMovementTimelinePage'
 import { InventoryOpeningCreatePage } from './InventoryOpeningCreatePage'
 import { InventoryOpeningDetailPage } from './InventoryOpeningDetailPage'
 import { InventoryOpeningHomePage } from './InventoryOpeningHomePage'
@@ -33,6 +35,14 @@ export const inventoryRoutes: RouteObject[] = [
     element: (
       <CapabilityRoute capability={INVENTORY_STOCK_POSITIONS_CAPABILITY as CapabilityId}>
         <InventoryLabelDetailPage />
+      </CapabilityRoute>
+    ),
+  },
+  {
+    path: INVENTORY_MOVEMENT_TIMELINE_ROUTE.slice(1),
+    element: (
+      <CapabilityRoute capability={INVENTORY_STOCK_POSITIONS_CAPABILITY as CapabilityId}>
+        <InventoryMovementTimelinePage />
       </CapabilityRoute>
     ),
   },
