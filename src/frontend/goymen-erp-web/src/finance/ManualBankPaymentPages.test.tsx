@@ -142,7 +142,7 @@ describe('manual bank payment pages', () => {
     </FinancePortProvider>)
 
     fireEvent.click(await screen.findByRole('button', { name: 'Düzenle' }))
-    expect(screen.getByLabelText('Tutar')).toHaveValue('1250,50')
+    expect((screen.getByLabelText('Tutar') as HTMLInputElement).value).toBe('1250,50')
     fireEvent.change(screen.getByLabelText('Tutar'), { target: { value: '1300,75' } })
     fireEvent.change(screen.getByLabelText('İşlem tarihi'), { target: { value: '2026-09-25' } })
     fireEvent.change(screen.getByLabelText('Valör'), { target: { value: '' } })
