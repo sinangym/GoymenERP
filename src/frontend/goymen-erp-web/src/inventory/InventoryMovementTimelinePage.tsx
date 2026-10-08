@@ -95,9 +95,8 @@ function InventoryMovementTimelineView({ companyId, canOpenLabel, fromLabelId, s
     return outcome
   }, [companyId])
 
-  const loadFirst = useCallback(async () => {
-    setState({ type: 'loading' })
-    const outcome = await read(null)
+  /** Applies a first-page answer; a superseded one (null) changes nothing. */
+  const applyFirst = useCallback((outcome: ViewOutcome<InventoryMovementTimelinePage> | null) => {
     if (outcome === null) return
     if (outcome.type === 'ok-single') {
       setState({ type: 'ready', items: outcome.data.items, nextCursor: outcome.data.nextCursor, more: 'idle' })
@@ -106,13 +105,20 @@ function InventoryMovementTimelineView({ companyId, canOpenLabel, fromLabelId, s
     } else {
       setState({ type: 'failed', view: classifyOutcome(outcome) })
     }
-  }, [read])
+  }, [])
 
+  // The view starts in `loading`, so the mount read sets no state before its answer.
   useEffect(() => {
     const currentFence = fence.current
-    if (companyId !== null) void loadFirst()
+    if (companyId !== null) void read(null).then(applyFirst)
     return () => currentFence.invalidate()
-  }, [companyId, loadFirst])
+  }, [companyId, read, applyFirst])
+
+  /** Restart from the first page: what was shown is dropped, nothing is carried into the new read. */
+  const loadFirst = () => {
+    setState({ type: 'loading' })
+    void read(null).then(applyFirst)
+  }
 
   const loadMore = async (shown: readonly InventoryMovement[], cursor: string) => {
     setState({ type: 'ready', items: shown, nextCursor: cursor, more: 'loading' })
