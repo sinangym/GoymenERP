@@ -547,8 +547,7 @@ public sealed partial class SalesDraftServiceTests
         var archivedLine = Assert.Single(Assert.Single(history.Items).Lines);
         Assert.Equal((SalesPriceDisclosure.Withheld, null, null, null), (archivedLine.PriceDisclosure, archivedLine.UnitPrice, archivedLine.PriceUnitId, archivedLine.DiscountPercent));
         // The ask is pinned by its property: the read name was asked (each read once, after the draft read), for this company.
-        Assert.Equal([ReadPermission, ReadPermission, ReadPermission, PriceReadPermission,
-            ReadPermission, ReadPermission, PriceReadPermission], world.Authority.Measured);
+        Assert.Equal([ReadPermission, ReadPermission, PriceReadPermission, ReadPermission, ReadPermission, PriceReadPermission], world.Authority.Measured);
 
         world.Authority.Denied.Remove(PriceReadPermission);
         var visible = await world.Service().GetDraftDetailAsync(created.Draft.Id);
@@ -1098,9 +1097,7 @@ public sealed partial class SalesDraftServiceTests
 
         var page = await world.Service().GetDraftListAsync(new SalesOrderDraftListQuery());
         var listedDraft = Assert.Single(page.Items);
-        Assert.Equal(created.Detail.Draft.Id, listedDraft.Id);
-        Assert.Equal(created.Detail.Draft.PartyId, listedDraft.PartyId);
-        Assert.Equal(created.Detail.Draft.DocumentNo, listedDraft.DocumentNo);
+        Assert.Equal(created.Detail.Draft with { ProductSnapshots = null }, listedDraft with { ProductSnapshots = null });
         Assert.Equal(created.Detail.Draft.ProductSnapshots, listedDraft.ProductSnapshots);
         var listedProduct = Assert.Single(Assert.Single(page.Items).ProductSnapshots!);
         Assert.Equal((Product, "7", "GDC-001", "Sentetik bant", KgUnit, "kg"),
@@ -1369,7 +1366,7 @@ public sealed partial class SalesDraftServiceTests
         new(key, correlation ?? "synthetic-correlation", null, new DateTimeOffset(2026, 9, 18, 14, 0, 0, TimeSpan.Zero));
 
     [Fact]
-    public async Task List_and_detail_read_Cari_display_once_per_read_and_preserve_the_Sales_order()
+    public async Task Enriched_list_and_detail_read_Cari_display_once_per_read_and_preserve_the_Sales_order()
     {
         var world = new World();
         var partyIds = Enumerable.Range(1, 100)
@@ -1382,7 +1379,7 @@ public sealed partial class SalesDraftServiceTests
         }
 
         world.PartyDisplays.Reverse = true;
-        var list = await world.Service().GetDraftListAsync(new SalesOrderDraftListQuery(100));
+        var list = await world.ReadService().GetDraftListAsync(new SalesOrderDraftListQuery(100));
 
         Assert.Equal(100, list.Items.Count);
         Assert.Equal(1, world.PartyDisplays.Calls);
@@ -1390,14 +1387,14 @@ public sealed partial class SalesDraftServiceTests
         Assert.Equal((Company, Actor), (world.PartyDisplays.CompanyId, world.PartyDisplays.ActorId));
         Assert.All(list.Items, item =>
         {
-            Assert.Equal(item.PartyId, item.PartyDisplay?.PartyId);
-            Assert.Equal($"CAR-{item.PartyId:N}", item.PartyDisplay?.Code);
-            Assert.Equal($"Legal {item.PartyId:N}", item.PartyDisplay?.LegalName);
-            Assert.Equal($"Trade {item.PartyId:N}", item.PartyDisplay?.TradeName);
+            Assert.Equal(item.PartyId, item.PartyDisplay.PartyId);
+            Assert.Equal($"CAR-{item.PartyId:N}", item.PartyDisplay.Code);
+            Assert.Equal($"Legal {item.PartyId:N}", item.PartyDisplay.LegalName);
+            Assert.Equal($"Trade {item.PartyId:N}", item.PartyDisplay.TradeName);
         });
 
         var first = list.Items[0];
-        var detail = await world.Service().GetDraftDetailAsync(first.Id);
+        var detail = await world.ReadService().GetDraftDetailAsync(first.Id);
         Assert.Equal(2, world.PartyDisplays.Calls);
         Assert.Equal(first.PartyId, detail.PartyDisplay.PartyId);
         Assert.Equal(first.PartyDisplay, detail.PartyDisplay);
@@ -1412,7 +1409,7 @@ public sealed partial class SalesDraftServiceTests
     [InlineData("malformed", 503, SalesDraftProblemCodesV1.CounterpartyProviderUnavailable)]
     [InlineData("null", 503, SalesDraftProblemCodesV1.CounterpartyProviderUnavailable)]
     [InlineData("throw", 503, SalesDraftProblemCodesV1.CounterpartyProviderUnavailable)]
-    public async Task Cari_display_failures_refuse_the_entire_read_without_a_partial_response(
+    public async Task Enriched_Cari_display_failures_refuse_the_entire_read_without_a_partial_response(
         string fault, int status, string code)
     {
         var world = new World();
@@ -1420,12 +1417,26 @@ public sealed partial class SalesDraftServiceTests
         world.PartyDisplays.Fault = fault;
 
         var detail = await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
-            world.Service().GetDraftDetailAsync(created.Detail.Draft.Id));
+            world.ReadService().GetDraftDetailAsync(created.Detail.Draft.Id));
         Assert.Equal((status, code), (detail.Status, detail.Code));
 
         var list = await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
-            world.Service().GetDraftListAsync(new SalesOrderDraftListQuery()));
+            world.ReadService().GetDraftListAsync(new SalesOrderDraftListQuery()));
         Assert.Equal((status, code), (list.Status, list.Code));
+    }
+
+    [Fact]
+    public async Task Enriched_read_refuses_data_when_Sales_authority_is_lost_during_the_Cari_read()
+    {
+        var world = new World();
+        var created = await world.Service().CreateDraftAsync(Request(), Metadata("k-late-loss"));
+        world.PartyDisplays.OnRead = () => world.Authority.Granted = false;
+
+        var refused = await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
+            world.ReadService().GetDraftDetailAsync(created.Detail.Draft.Id));
+
+        Assert.Equal((403, "forbidden"), (refused.Status, refused.Code));
+        Assert.Equal(1, world.PartyDisplays.Calls);
     }
 
     // ---- synthetic world --------------------------------------------------------------------
@@ -1458,9 +1469,16 @@ public sealed partial class SalesDraftServiceTests
         {
             var company = new CompanyContext();
             company.Set(Company);
-            return new SalesDraftService(company, User, Authority, ActiveRoleCodes, new FixedCorrelation(), Accounts, PartyDisplays, Settings,
+            return new SalesDraftService(company, User, Authority, ActiveRoleCodes, new FixedCorrelation(), Accounts, Settings,
                 NoProducts ? null : Products, Store, Bindings, TimeProvider.System, NoContactInformation ? null : ContactInformation, Deliveries,
                 Allocations, Loadings, PriceReferences);
+        }
+
+        public SalesDraftReadServiceV1 ReadService()
+        {
+            var company = new CompanyContext();
+            company.Set(Company);
+            return new SalesDraftReadServiceV1(Service(), PartyDisplays, company, User, Authority, Bindings);
         }
 
         public void ResetOwnerCalls()
@@ -1562,6 +1580,7 @@ public sealed partial class SalesDraftServiceTests
     {
         public string Fault { get; set; } = "";
         public bool Reverse { get; set; }
+        public Action? OnRead { get; set; }
         public int Calls { get; private set; }
         public Guid CompanyId { get; private set; }
         public string ActorId { get; private set; } = "";
@@ -1576,6 +1595,7 @@ public sealed partial class SalesDraftServiceTests
             CompanyId = request.CompanyId;
             ActorId = request.ActorId;
             Asked = [.. request.PartyIds];
+            OnRead?.Invoke();
             if (Fault == "throw") throw new InvalidOperationException("synthetic provider failure");
             if (Fault == "null") return Task.FromResult<SalesPartyDisplayBatchAnswerV1>(null!);
             if (Fault == "denied")

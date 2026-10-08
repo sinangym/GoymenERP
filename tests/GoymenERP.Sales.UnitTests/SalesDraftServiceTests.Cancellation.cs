@@ -399,7 +399,7 @@ public sealed partial class SalesDraftServiceTests
     // ---- helpers ------------------------------------------------------------------------------------------------------
 
     /// <summary>A one-line draft created, submitted and approved through the service: version 4.</summary>
-    private static async Task<SalesOrderDraftCommandDetailView> ApprovedAsync(World world)
+    private static async Task<SalesOrderDraftDetailView> ApprovedAsync(World world)
     {
         var created = (await world.Service().CreateDraftAsync(Request(), Metadata("k-create"))).Detail.Draft;
         await world.Service().SubmitDraftAsync(created.Id, Command("2"), Metadata("k-submit"));

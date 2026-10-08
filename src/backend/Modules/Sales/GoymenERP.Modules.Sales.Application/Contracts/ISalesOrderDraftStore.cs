@@ -125,7 +125,7 @@ public sealed record SalesDraftStoreResult(SalesOrderDraft Draft, SalesDraftWrit
 public sealed record SalesDraftTerminalRefusal(int Status, string Code, IReadOnlyList<SalesDraftFieldError> Errors);
 
 /// <summary>What the attempt key already holds: the stored draft, or the recorded terminal refusal — never both.</summary>
-public sealed record SalesDraftReplayResult(SalesOrderDraftCommandDetailView Visible, SalesOrderDraftCommandDetailView Withheld);
+public sealed record SalesDraftReplayResult(SalesOrderDraftDetailView Visible, SalesOrderDraftDetailView Withheld);
 
 public sealed record SalesDraftReplay(SalesOrderDraft? Draft, SalesDraftTerminalRefusal? Refusal, string OriginalCorrelationId,
     SalesDraftReplayResult? Result = null);

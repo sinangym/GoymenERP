@@ -71,11 +71,5 @@
     "isCurrentRevisionAccepted": true
   },
   "isOwnDraft": false,
-  "isOwnDecisionRestricted": false,
-  "partyDisplay": {
-    "partyId": "11111111-1111-1111-1111-111111111111",
-    "code": "CAR-000001",
-    "legalName": "Example Customer A.S.",
-    "tradeName": "Example Customer"
-  }
+  "isOwnDecisionRestricted": false
 }
