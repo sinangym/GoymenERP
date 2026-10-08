@@ -400,6 +400,63 @@ public sealed partial class LogisticsInstructionServiceTests
         Assert.Empty(world.Store.Refusals);
     }
 
+    [Theory]
+    [InlineData("permission")]
+    [InlineData("actor")]
+    [InlineData("company")]
+    public async Task A_terminal_refusal_rechecks_the_original_authority_before_it_is_recorded(string drift)
+    {
+        var world = new World();
+        var service = world.Service();
+        var created = await service.CreateInstructionAsync(Request(), Metadata("k-create-terminal-fence"));
+        world.Store.MutateFault = _ =>
+        {
+            switch (drift)
+            {
+                case "permission":
+                    world.Authority.Granted = false;
+                    break;
+                case "actor":
+                    world.User.CurrentActor = "synthetic-other-actor";
+                    break;
+                case "company":
+                    world.Company.CurrentCompanyId = Guid.Parse("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");
+                    break;
+            }
+
+            return null;
+        };
+
+        var denied = await Assert.ThrowsAsync<LogisticsInstructionServiceException>(() =>
+            service.IssueInstructionAsync(created.Detail.Instruction.Id, new IssueLoadingInstructionRequest("1"), Metadata("k-terminal-fence")));
+
+        Assert.Equal((403, "forbidden", false), (denied.Status, denied.Code, denied.IsReplay));
+        Assert.Empty(world.Store.Refusals);
+        Assert.Empty(world.Store.Transitions);
+    }
+
+    [Fact]
+    public async Task A_terminal_race_winner_is_not_disclosed_after_the_grant_is_revoked()
+    {
+        var world = new World();
+        var service = world.Service();
+        var id = (await service.CreateInstructionAsync(Request(quantity: "4"), Metadata("k-create-race-fence"))).Detail.Instruction.Id;
+        await service.IssueInstructionAsync(id, new IssueLoadingInstructionRequest("2"), Metadata("k-winning-transition"));
+        world.Store.BeforeRefusal = (envelope, hash, command) =>
+        {
+            world.Store.PlantWinner(envelope, hash, command, id, "SENTETIK-protected-winner");
+            world.Store.AfterReplay = () => world.Authority.Granted = false;
+        };
+
+        var denied = await Assert.ThrowsAsync<LogisticsInstructionServiceException>(() =>
+            service.IssueInstructionAsync(id, new IssueLoadingInstructionRequest("2"), Metadata("k-losing-terminal")));
+
+        Assert.Equal((403, "forbidden", false, null),
+            (denied.Status, denied.Code, denied.IsReplay, denied.OriginalCorrelationId));
+        Assert.Empty(world.Store.Refusals);
+        Assert.Single(world.Store.Transitions);
+    }
+
     [Fact]
     public async Task The_approved_order_lines_read_is_price_free_needs_the_create_name_and_is_the_companys_own()
     {
@@ -476,6 +533,7 @@ public sealed partial class LogisticsInstructionServiceTests
 
     private sealed class World
     {
+        public MutableCompanyContext Company { get; } = new();
         public FixedUser User { get; } = new();
         public FixedAuthority Authority { get; init; } = new();
         public FakeAccounts Accounts { get; init; } = new();
@@ -486,9 +544,7 @@ public sealed partial class LogisticsInstructionServiceTests
 
         public LogisticsInstructionService Service(ILogisticsRealizationTransactionRunnerV1? runner = null)
         {
-            var company = new CompanyContext();
-            company.Set(Company);
-            return new LogisticsInstructionService(company, User, Authority, new FixedCorrelation(), Accounts, OrderLines,
+            return new LogisticsInstructionService(Company, User, Authority, new FixedCorrelation(), Accounts, OrderLines,
                 new LoadingUnitVerifier(Settings), Store, Bindings, TimeProvider.System, runner);
         }
 
@@ -503,9 +559,17 @@ public sealed partial class LogisticsInstructionServiceTests
     private sealed class FixedUser : ICurrentUser
     {
         public bool IsAuthenticated => true;
-        public string? UserId => Actor;
-        public IReadOnlySet<Guid> AllowedCompanyIds => new HashSet<Guid> { Company };
-        public bool CanAccessCompany(Guid companyId) => companyId == Company;
+        public string CurrentActor { get; set; } = Actor;
+        public string? UserId => CurrentActor;
+        public IReadOnlySet<Guid> AllowedCompanyIds => new HashSet<Guid> { Company, Guid.Parse("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa") };
+        public bool CanAccessCompany(Guid companyId) => AllowedCompanyIds.Contains(companyId);
+    }
+
+    private sealed class MutableCompanyContext : ICompanyContext
+    {
+        public Guid CurrentCompanyId { get; set; } = Company;
+        public bool IsResolved => true;
+        public Guid CompanyId => CurrentCompanyId;
     }
 
     private sealed class FixedAuthority : IErpAuthorityRevalidationService
@@ -666,6 +730,7 @@ public sealed partial class LogisticsInstructionServiceTests
         public Exception? CreateFault { get; set; }
         public Func<string, Exception?>? MutateFault { get; set; }
         public Action<LogisticsWriteEnvelope, string, string>? BeforeRefusal { get; set; }
+        public Action? AfterReplay { get; set; }
 
         /// <summary>Simulates the same key's winner storing its transition between this caller's replay read and its refusal record (§8).</summary>
         public void PlantWinner(LogisticsWriteEnvelope envelope, string requestHash, string commandName, Guid instructionId, string correlation) =>
@@ -700,7 +765,9 @@ public sealed partial class LogisticsInstructionServiceTests
             }
 
             Check(attempt, envelope, requestHash);
-            return Task.FromResult<LogisticsReplay?>(new LogisticsReplay(attempt.Stored, attempt.Refusal, attempt.Correlation));
+            var replay = new LogisticsReplay(attempt.Stored, attempt.Refusal, attempt.Correlation);
+            AfterReplay?.Invoke();
+            return Task.FromResult<LogisticsReplay?>(replay);
         }
 
         public Task RecordRefusalAsync(LogisticsWriteEnvelope envelope, string requestHash, string commandName, LogisticsTerminalRefusal refusal,
