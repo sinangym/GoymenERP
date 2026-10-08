@@ -6,7 +6,6 @@ using GoymenERP.Api.Shell;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Identity.Domain.Assignments;
 using GoymenERP.Modules.Identity.Domain.Roles;
-using GoymenERP.Modules.Identity.Domain.Users;
 using GoymenERP.Modules.Identity.Infrastructure.Persistence;
 using GoymenERP.Modules.Identity.Infrastructure.Services;
 using GoymenERP.Modules.Inventory.Infrastructure.Shell;
@@ -18,7 +17,7 @@ namespace GoymenERP.Api.IntegrationTests;
 
 public sealed class InventoryShellCapabilitySqlServerRelationalAcceptanceTests
 {
-    private const string DevelopmentUser = "st01-product-capability-shell-reader";
+    private const string DevelopmentUser = TestUsers.NoAssignment;
     private static readonly Guid CompanyA = TestCompanyIds.CompanyA;
 
     [SqlServerFact]
@@ -84,12 +83,12 @@ public sealed class InventoryShellCapabilitySqlServerRelationalAcceptanceTests
         var identity = scope.ServiceProvider.GetRequiredService<IdentityDbContext>();
         Assert.True(identity.Database.IsSqlServer());
 
-        var actorId = Guid.NewGuid();
+        var actorId = await identity.ExternalIdentities
+            .Where(x => x.Issuer == BootstrapIdentityOptions.Issuer
+                && x.Subject == DevelopmentUser)
+            .Select(x => x.UserId)
+            .SingleAsync();
         var roleId = Guid.NewGuid();
-        identity.Users.Add(new UserAccount(actorId, "Synthetic ST-01 shell reader", null));
-        identity.ExternalIdentities.Add(new ExternalIdentityLink(
-            Guid.NewGuid(), actorId, BootstrapIdentityOptions.Issuer, DevelopmentUser));
-
         var role = new RoleDefinition(roleId, $"ST01-INVENTORY-SHELL-{roleId:N}",
             "Synthetic company-scoped ST-01 shell reader", true);
         role.AddPermission(ErpPermissions.InventoryLabelsRead);
