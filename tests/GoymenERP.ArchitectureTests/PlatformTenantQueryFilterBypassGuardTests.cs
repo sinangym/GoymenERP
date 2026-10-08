@@ -88,8 +88,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // owner-account seam to Cari's existing authorized source; no network or hosted-service surface changed.
     // Re-fingerprinted for ST-04 inventory movement publication: the reviewed Inventory cursor seam is registered
     // from configuration; no key is generated and no network or hosted-service surface is added.
+    // Re-fingerprinted for the Sales-Cari bounded display adapter: scoped in-process DI only; no network or hosted service.
     private const string ReviewedOpenApiStartupFingerprint =
-        "761839eb456a1ce4485a8a46ac3df44871d655a3a345a1822fc35ec9572abbe1";
+        "6076cac5c001978467e103d1e215b9dcd3f352c49e6503ede93ccd2449de28eb";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedProductManufacturingTechnicalRegistrationPath =
@@ -256,8 +257,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // DEC-SAL-002: +4 SalesOrderQuantityRevisionSqlServerRelationalAcceptanceTests facts (5508f4ed… -> 3ef99851…).
             // #527 Q9: +1 customer-acceptance persistence/replay/cutover fact (3ef99851… -> dd3c72d9…).
             // PL04: +1 exact price-floor approval replay/down-refusal fact.
+            // Sales-Cari bounded display acceptance: +1 reviewed Sales SQL fact, kept ordinal-sorted.
             ["tools/relational_inventory/sales.txt"] =
-                "8f04fb503dda544c48637cd2ca42a9d4fc05479c4b3ed05cdc798902fb9a7aad",
+                "337ce3c9ace60221990875eeb509bb55e5b281bfe51f61ea179c6ab5b9ecd253",
 
             // work
             // JV03: the five ordinal desired-state storage SQL facts are mandatory and skip-free.

@@ -538,3 +538,83 @@ describe('decodeDraftRevisions', () => {
     expect(decodeDraftRevisions(input)).toBeNull()
   })
 })
+
+/* SALES-CARI-OPTIN (#626): the record-bound Cari display, added by the opt-in read contract to the list rows and the detail. */
+import {
+  decodeDraftDetailWithParty,
+  decodeDraftPageWithParty,
+  decodeDraftSummary,
+  decodeDraftSummaryWithParty,
+} from './contract'
+
+describe('the record-bound Cari display (opt-in list/detail only)', () => {
+  const display = (partyId: string, tradeName: string | null = null) => ({ partyId, code: 'CARI-000123', legalName: 'ABC Demir Sanayi ve Ticaret A.Ş.', tradeName })
+  const page = () => {
+    const body = JSON.parse(listResponse)
+    for (const item of body.items) item.partyDisplay = display(item.partyId)
+    return body
+  }
+  const detail = () => {
+    const body = JSON.parse(detailResponse)
+    body.partyDisplay = display(body.draft.partyId)
+    return body
+  }
+
+  it('decodes the enriched page and detail with the legacy rules unchanged around the display', () => {
+    const decodedPage = decodeDraftPageWithParty(page())
+    const legacyPage = decodeDraftPage(JSON.parse(listResponse))
+    expect(decodedPage?.items.map(({ partyDisplay: _display, ...rest }) => rest)).toEqual(legacyPage?.items)
+    expect(decodedPage?.items.every((item) => item.partyDisplay.partyId === item.partyId)).toBe(true)
+    const decodedDetail = decodeDraftDetailWithParty(detail(), null)
+    const { partyDisplay, ...rest } = decodedDetail!
+    expect(rest).toEqual(decodeDraftDetail(JSON.parse(detailResponse), null))
+    expect(partyDisplay).toEqual(display(rest.draft.partyId))
+  })
+
+  it('keeps the legacy and mutation decoders exactly as they were: no display required, none accepted', () => {
+    expect(decodeDraftPage(JSON.parse(listResponse))).not.toBeNull()
+    expect(decodeDraftDetail(JSON.parse(detailResponse), null)).not.toBeNull()
+    expect(decodeDraftMutation(JSON.parse(createResponse))).not.toBeNull()
+    // The legacy contract has no such member, so a legacy read that carried one is not that contract.
+    expect(decodeDraftSummary({ ...JSON.parse(listResponse).items[0], partyDisplay: display(JSON.parse(listResponse).items[0].partyId) })).toBeNull()
+    expect(decodeDraftDetail(detail(), null)).toBeNull()
+  })
+
+  it('requires the display: an enriched row or detail without one is refused', () => {
+    expect(decodeDraftSummaryWithParty(JSON.parse(listResponse).items[0])).toBeNull()
+    expect(decodeDraftPageWithParty(JSON.parse(listResponse))).toBeNull()
+    expect(decodeDraftDetailWithParty(JSON.parse(detailResponse), null)).toBeNull()
+  })
+
+  it.each([
+    ['another party', { partyId: '11111111-1111-1111-1111-111111111112' }],
+    ['a party id that is not a reference', { partyId: 'not-a-uuid' }],
+    ['a blank code', { code: ' ' }],
+    ['a code that is not text', { code: 123 }],
+    ['an empty legal name', { legalName: '' }],
+    ['a blank trade name', { tradeName: '   ' }],
+  ])('refuses a display with %s', (_, change) => {
+    const body = detail()
+    Object.assign(body.partyDisplay, change)
+    expect(decodeDraftDetailWithParty(body, null)).toBeNull()
+  })
+
+  it('refuses a display with a missing or an unknown member', () => {
+    const missing = detail()
+    delete missing.partyDisplay.tradeName
+    expect(decodeDraftDetailWithParty(missing, null)).toBeNull()
+    const extra = detail()
+    extra.partyDisplay.taxNumber = '1234567890'
+    expect(decodeDraftDetailWithParty(extra, null)).toBeNull()
+  })
+
+  it('accepts a party id differing only in letter case, and keeps a published trade name', () => {
+    const body = detail()
+    body.partyDisplay = display(body.draft.partyId.toUpperCase(), 'ABC Demir')
+    expect(decodeDraftDetailWithParty(body, null)?.partyDisplay.tradeName).toBe('ABC Demir')
+  })
+
+  it('still applies the detail\'s own record binding', () => {
+    expect(decodeDraftDetailWithParty(detail(), 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaab')).toBeNull()
+  })
+})
