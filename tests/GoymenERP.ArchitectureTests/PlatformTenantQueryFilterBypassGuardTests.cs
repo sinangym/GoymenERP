@@ -241,7 +241,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // Q16 / AT-020: +3 Product import API SQL facts (d434c2b8… -> 9958c91f…).
             // Product 4A: +3 initial technical-definition release/rollback SQL facts.
             ["tools/relational_inventory/product.txt"] =
-                "c90763b6c2d8b804179f6805bb956920d93071a86a01f3fa664881045853e46e",
+                "e02948f7d4d4ebc817db08478c9c0c47bbd30abcaa5880e90cd68880a8d0aeee",
 
             // purchasing
             ["tools/relational_inventory/purchasing.txt"] =
@@ -384,7 +384,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 "87d1403fdacdb821f93b7a470921264467afb667066e1cdff7963e08f6121835",
             ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/"
              + "Persistence/ProductDbContext.cs"] =
-                "6979e3af6bf17bd2c7071431dc1dbc808c2c1c5609fe187d782dadb1412761d3",
+                "abcde128e9ef58607fd88106a45e5640689c71e6e6a9ea227eac6b4da7a8025e",
             // AT-018: the Product-owned price-list aggregate is company-filtered independently from the
             // existing Product card context; every durable row and audit event carries CompanyId.
             ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/"

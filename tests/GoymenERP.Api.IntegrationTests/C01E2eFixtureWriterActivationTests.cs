@@ -55,8 +55,8 @@ public sealed class C01E2eFixtureWriterActivationTests
             || descriptor.ServiceType == typeof(IProductMasterAssignmentFixtureStore)
             || descriptor.ServiceType == typeof(C01E2eProductTechnicalCardFixtureWriter)
             || descriptor.ServiceType == typeof(IProductTechnicalCardFixtureStore)
-            || descriptor.ServiceType == typeof(C01E2eProductSalesCandidateFixtureWriter)
-            || descriptor.ServiceType == typeof(IProductSalesCandidateFixtureStore)
+            || descriptor.ServiceType == typeof(C01E2eProductStockDisplayQualifiedFixtureWriter)
+            || descriptor.ServiceType == typeof(IProductStockDisplayQualifiedFixtureStore)
             || descriptor.ServiceType == typeof(C01E2eProductPurchaseSalesStockJourneyFixtureWriter)
             || descriptor.ServiceType == typeof(IProductPurchaseSalesStockJourneyFixtureStore)
             || descriptor.ServiceType == typeof(C01E2eAccountingOpenPeriodFixtureWriter)
@@ -128,8 +128,10 @@ public sealed class C01E2eFixtureWriterActivationTests
         Assert.Single(services, descriptor =>
             descriptor.ServiceType == typeof(IProductTechnicalCardFixtureStore));
         Assert.Single(services, descriptor =>
-            descriptor.ServiceType == typeof(C01E2eProductSalesCandidateFixtureWriter));
+            descriptor.ServiceType == typeof(C01E2eProductStockDisplayQualifiedFixtureWriter));
         Assert.Single(services, descriptor =>
+            descriptor.ServiceType == typeof(IProductStockDisplayQualifiedFixtureStore));
+        Assert.DoesNotContain(services, descriptor =>
             descriptor.ServiceType == typeof(IProductSalesCandidateFixtureStore));
         Assert.Single(services, descriptor =>
             descriptor.ServiceType == typeof(C01E2eProductPurchaseSalesStockJourneyFixtureWriter));
@@ -142,6 +144,24 @@ public sealed class C01E2eFixtureWriterActivationTests
         // acc01 ACC01-09: the posted-journal port, only behind the same gate.
         Assert.Single(services, descriptor =>
             descriptor.ServiceType == typeof(IAccountingPostedJournalFixtureStore));
+    }
+
+    [Fact]
+    public async Task The_s04_product_writer_returns_the_stock_display_qualified_output()
+    {
+        var expected = new ProductStockDisplayQualifiedFixtureOutput(
+            Guid.Parse("b6b00000-0000-4000-8000-000000000401"), "2",
+            Guid.Parse("c5ef643e-a6e8-51f3-89f2-8e68b00cb983"),
+            Guid.Parse("4a790fdc-2a6b-5126-835f-d3a13d28b71c"), "1", "SYNS04G-1",
+            "SENTETIK browser-suite:s04 stock-display-qualified sales candidate");
+        var writer = new C01E2eProductStockDisplayQualifiedFixtureWriter(
+            new TestHostEnvironment("Testing"),
+            Configuration(Gate),
+            new RecordingStockDisplayQualifiedStore(expected));
+
+        var actual = await writer.EnsureAsync(CancellationToken.None);
+
+        Assert.Equal(expected, actual);
     }
 
     public static TheoryData<string, string, string?> BrokenGates => new()
@@ -186,8 +206,8 @@ public sealed class C01E2eFixtureWriterActivationTests
             || descriptor.ServiceType == typeof(C01E2eProductTechnicalCardFixtureWriter)
             || descriptor.ImplementationType == typeof(C01E2eManufacturingToleranceFixtureProvider)
             || descriptor.ServiceType == typeof(IProductTechnicalCardFixtureStore)
-            || descriptor.ServiceType == typeof(C01E2eProductSalesCandidateFixtureWriter)
-            || descriptor.ServiceType == typeof(IProductSalesCandidateFixtureStore)
+            || descriptor.ServiceType == typeof(C01E2eProductStockDisplayQualifiedFixtureWriter)
+            || descriptor.ServiceType == typeof(IProductStockDisplayQualifiedFixtureStore)
             || descriptor.ServiceType == typeof(C01E2eProductPurchaseSalesStockJourneyFixtureWriter)
             || descriptor.ServiceType == typeof(IProductPurchaseSalesStockJourneyFixtureStore)
             || descriptor.ServiceType == typeof(C01E2eAccountingOpenPeriodFixtureWriter)
@@ -201,10 +221,10 @@ public sealed class C01E2eFixtureWriterActivationTests
                 configuration,
                 new RecordingTechnicalCardStore()));
         Assert.Throws<InvalidOperationException>(() =>
-            new C01E2eProductSalesCandidateFixtureWriter(
+            new C01E2eProductStockDisplayQualifiedFixtureWriter(
                 environment,
                 configuration,
-                new RecordingSalesCandidateStore()));
+                new RecordingStockDisplayQualifiedStore()));
         Assert.Throws<InvalidOperationException>(() =>
             new C01E2eProductPurchaseSalesStockJourneyFixtureWriter(
                 environment,
@@ -290,14 +310,15 @@ public sealed class C01E2eFixtureWriterActivationTests
         public Task EnsureAsync(CancellationToken cancellationToken) => Task.CompletedTask;
     }
 
-    private sealed class RecordingSalesCandidateStore : IProductSalesCandidateFixtureStore
+    private sealed class RecordingStockDisplayQualifiedStore(
+        ProductStockDisplayQualifiedFixtureOutput? output = null) : IProductStockDisplayQualifiedFixtureStore
     {
-        public Task<ProductSalesCandidateFixtureOutput> EnsureAsync(CancellationToken cancellationToken) =>
-            Task.FromResult(new ProductSalesCandidateFixtureOutput(
-                Guid.Parse("b6300000-0000-4000-8000-000000000401"), "2",
+        public Task<ProductStockDisplayQualifiedFixtureOutput> EnsureAsync(CancellationToken cancellationToken) =>
+            Task.FromResult(output ?? new ProductStockDisplayQualifiedFixtureOutput(
+                Guid.Parse("b6b00000-0000-4000-8000-000000000401"), "2",
                 Guid.Parse("c5ef643e-a6e8-51f3-89f2-8e68b00cb983"),
-                Guid.Parse("4a790fdc-2a6b-5126-835f-d3a13d28b71c"), "1", "SYNS04-1",
-                "SENTETIK browser-suite:s04 sales candidate"));
+                Guid.Parse("4a790fdc-2a6b-5126-835f-d3a13d28b71c"), "1", "SYNS04G-1",
+                "SENTETIK browser-suite:s04 stock-display-qualified sales candidate"));
     }
 
     private sealed class RecordingPurchaseSalesStockJourneyStore

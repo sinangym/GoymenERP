@@ -285,6 +285,23 @@ public sealed class ProductDbContext(DbContextOptions<ProductDbContext> options)
         return base.SaveChangesAsync(acceptAllChangesOnSuccess: true, cancellationToken);
     }
 
+    internal Task<int> AddStockDisplayQualifiedFixtureAsync(CancellationToken cancellationToken)
+    {
+        // One fixed test-only Product row referencing the separately released technical registry.
+        // No caller-selected data, master release or public writer enrollment is accepted here.
+        if (ChangeTracker.Entries().Any())
+            throw new InvalidOperationException("A stock-display-qualified fixture requires a clean Product context.");
+        var group = Fixtures.ProductStockDisplayQualifiedFixture.Group();
+        var counter = ProductCodeCounter.ForGroup(group);
+        var row = ProductRow.FromRecord(Fixtures.ProductStockDisplayQualifiedFixture.Record());
+        if (counter.Advance().Value != row.Code) throw new InvalidOperationException("Invalid fixture code.");
+        CodeGroups.Add(group);
+        CodeCounters.Add(counter);
+        Products.Add(row);
+        CodeRegistrations.Add(ProductCodeRegistration.Current(row));
+        return base.SaveChangesAsync(acceptAllChangesOnSuccess: true, cancellationToken);
+    }
+
     internal Task<int> AddFixtureCodeGroupAsync(ProductCodeGroupRow group, CancellationToken cancellationToken)
     {
         // The gated browser-suite code-group port (Fixtures/ProductCodeGroupFixtureStore) only: the change

@@ -97,11 +97,11 @@ internal static class BrowserSuiteSeedOutputValidator
             {
                 "productVersion" or "productUnitProfileVersion" or "allocationLabelVersion" =>
                     IsPositiveDecimal(value),
-                "productCode" => value.StartsWith("SYNS04-", StringComparison.Ordinal)
-                                 && IsPositiveDecimal(value[7..]),
+                "productCode" => value.StartsWith("SYNS04G-", StringComparison.Ordinal)
+                                 && IsPositiveDecimal(value[8..]),
                 "productName" => string.Equals(
                     value,
-                    "SENTETIK browser-suite:s04 sales candidate",
+                    "SENTETIK browser-suite:s04 stock-display-qualified sales candidate",
                     StringComparison.Ordinal),
                 _ => false,
             };
