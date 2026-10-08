@@ -82,8 +82,12 @@ public sealed class CounterpartySalesRecordPartyDisplaySourceTests
     private sealed class TestCompanyContext(Guid companyId)
         : GoymenERP.BuildingBlocks.Multitenancy.ICompanyContext
     {
-        public bool IsResolved => true;
-        public Guid CompanyId => companyId;
+        private Guid currentCompanyId = companyId;
+
+        public bool IsResolved => currentCompanyId != Guid.Empty;
+        public Guid CompanyId => currentCompanyId;
+
+        public void Set(Guid value) => currentCompanyId = value;
     }
 
     private sealed class TestCurrentUser(string actorId, IReadOnlySet<Guid> companies)
