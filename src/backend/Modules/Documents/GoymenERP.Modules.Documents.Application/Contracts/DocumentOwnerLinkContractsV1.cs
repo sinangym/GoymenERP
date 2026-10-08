@@ -11,6 +11,9 @@ public static class DocumentOwnerLinkKindsV1
 
     /// <summary>An Inventory material label in the context company (Inventory owner).</summary>
     public const string InventoryMaterialLabel = "inventory.material-label";
+
+    /// <summary>A Purchasing purchase order readable in the context company (Purchasing owner).</summary>
+    public const string PurchasingPurchaseOrder = "purchasing.purchase-order";
 }
 
 /// <summary>
