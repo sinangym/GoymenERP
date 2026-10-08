@@ -367,7 +367,7 @@ function InventoryStockPositionView({
       <span className={styles.product}>
         {identity === null
           ? STOCK_TEXT.unknown
-          : <><span className={styles.code}>{identity.code}</span><span className={styles.name} title={identity.name}>{identity.name}</span></>}
+          : <><span className={styles.code}>{identity.code}</span><span className={styles.name}>{identity.name}</span></>}
         {canOpenProduct ? <Link className={styles.cardLink} to={productDetailPath(row.productId)}>{STOCK_TEXT.productCard}</Link> : null}
       </span>
       {filters.productId === row.productId ? null : filterButton(STOCK_TEXT.filterBy.product(row.labelCode), { ...filters, productId: row.productId })}

@@ -266,11 +266,14 @@
   white-space: nowrap;
 }
 
+/* A label code stays whole; only a code longer than the column (e.g. a long year-and-serial label) wraps at its
+   hyphens, and never into a cut. */
 .labelCol {
-  white-space: nowrap;
+  min-width: 6.5rem;
 }
 
 .labelLink {
+  overflow-wrap: anywhere;
   color: var(--goy-ds-color-accent-text);
   font-weight: var(--goy-ds-font-weight-semibold);
   text-decoration: none;
@@ -287,13 +290,13 @@
   border-radius: 2px;
 }
 
-/* The second line of a cell: secondary facts in the label size, kept on one line so a row stays two lines. */
+/* The second line of a cell: secondary facts in the label size. It wraps between its tokens rather than widening
+   the table, so the quantity columns keep their room; each token itself stays whole. */
 .sub {
   display: block;
   color: var(--goy-ds-color-text-tertiary);
   font-size: var(--goy-ds-font-size-sm);
   line-height: 16px;
-  white-space: nowrap;
 }
 
 .cellLine {
@@ -312,17 +315,19 @@
   min-width: 0;
 }
 
+/* A long Product name is shown whole on as many lines as it needs (the row grows); it is never cut to one line or
+   left to a hover title. The cap only decides where it wraps, so the quantities keep their room. */
 .name {
   order: -1;
   flex-basis: 100%;
   min-width: 0;
   max-width: 16rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: break-word;
 }
 
 .code {
+  min-width: 0;
+  overflow-wrap: anywhere;
   color: var(--goy-ds-color-text-secondary);
   font-family: var(--goy-ds-font-mono);
   font-size: var(--goy-ds-font-size-sm);
@@ -330,7 +335,7 @@
 }
 
 .productCol {
-  min-width: 11rem;
+  min-width: 9rem;
 }
 
 .cardLink {
@@ -338,7 +343,6 @@
   font-size: var(--goy-ds-font-size-sm);
   line-height: 16px;
   text-decoration: none;
-  white-space: nowrap;
 }
 
 .cardLink:hover {
@@ -539,13 +543,13 @@ tr:hover .filterButton,
 
 .cardFacts,
 .cardQuantities {
-  display: grid;
-  gap: 6px var(--goy-ds-space-3);
   margin: 0;
 }
 
 /* Label above value, two facts a row; the Product spans the card. */
 .cardFacts {
+  display: grid;
+  gap: 6px var(--goy-ds-space-3);
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
@@ -576,11 +580,18 @@ tr:hover .filterButton,
   min-width: 0;
 }
 
-/* Quantities in one row where the phone is wide enough, wrapping (never shrinking) where it is not. */
+/* Quantities side by side; each keeps its whole number (no wrap, no cut) and the row wraps to a new line instead. */
 .cardQuantities {
-  grid-template-columns: repeat(auto-fit, minmax(4.75rem, 1fr));
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px var(--goy-ds-space-3);
   padding-top: var(--goy-ds-space-2);
   border-top: 1px solid var(--goy-ds-color-border);
+}
+
+.cardQuantities > div {
+  flex: 1 0 auto;
+  min-width: 4.75rem;
 }
 
 .cardQuantities dd {

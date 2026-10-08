@@ -661,6 +661,47 @@ describe('ST-01 on GOY-DS-001 (STOCK-DS-01)', () => {
     expect(within(actionsCell).getByRole('button', { name: 'ROLL-1 işlemleri' })).toBeTruthy()
   })
 
+  it('shows a long real Product name, a long code and long quantities whole: visible wrapping, no cut, no rounding', async () => {
+    const LONG_NAME = 'Sıcak haddelenmiş dekapajlı yağlı rulo sac S235JR+AR EN 10025-2 kenarı kesilmiş, Çağlayan Öğütücü İşçiliği'
+    const LONG_CODE = 'SAC-DKP-S235JR-1,50X1250-HRC-2026-ÖZEL'
+    stubViewport(false)
+    api.page.mockResolvedValue(ready([row({
+      labelCode: 'ETK-2026-0001234567',
+      physicalKg: '123456789.125', blockedPhysicalKg: '12345678.5', freePhysicalKg: '111111110.625',
+      activeAllocationKg: '98765432.25', availableKg: '12345678.375',
+      productDisplay: { ...row().productDisplay, identity: { productId: PRODUCT, productVersion: '7', code: LONG_CODE, name: LONG_NAME } },
+    })]))
+    mount()
+    const tr = (await screen.findByRole('link', { name: 'ETK-2026-0001234567' })).closest('tr')!
+    const name = within(tr).getByText(LONG_NAME)
+    // The whole name is the element's own visible text — not a shortened text with the rest in a hover title.
+    expect(name.textContent).toBe(LONG_NAME)
+    expect(name.getAttribute('title')).toBeNull()
+    expect(within(tr).getByText(LONG_CODE).textContent).toBe(LONG_CODE)
+    expect(cellTexts(tr).slice(5, 9)).toEqual(['123.456.789,125', '12.345.678,5', '98.765.432,25', '12.345.678,375'])
+
+    // The stylesheet the browser draws with: the name and the label code wrap, nothing in a cell is clipped to one
+    // line, and a quantity never wraps. (Visible-in-a-browser evidence is the STOCK-DS-01 P1 probe.)
+    const nodeProcess = (globalThis as unknown as {
+      readonly process: { readonly cwd: () => string; readonly getBuiltinModule: (name: string) => unknown }
+    }).process
+    const fs = nodeProcess.getBuiltinModule('node:fs') as { readFileSync(path: string, encoding: 'utf8'): string }
+    // Vitest runs from the web package (`npm test` in src/frontend/goymen-erp-web).
+    const css = fs.readFileSync(`${nodeProcess.cwd()}/src/inventory/stockPosition.module.css`, 'utf8')
+    const rule = (selector: string) => {
+      const match = new RegExp(`(^|\\n)${selector.replace('.', '\\.')} \\{([^}]*)\\}`).exec(css)
+      expect(match, selector).not.toBeNull()
+      return match![2]
+    }
+    expect(css).not.toMatch(/text-overflow:\s*ellipsis/)
+    expect(css).not.toMatch(/line-clamp/)
+    expect(rule('.name')).not.toMatch(/white-space:\s*nowrap|overflow:\s*hidden/)
+    expect(rule('.name')).toMatch(/overflow-wrap:\s*break-word/)
+    expect(rule('.labelLink')).toMatch(/overflow-wrap:\s*anywhere/)
+    expect(rule('.labelCol')).not.toMatch(/nowrap/)
+    expect(rule('.sub')).not.toMatch(/nowrap/)
+  })
+
   it('keeps Kullanılabilir the only pinned quantity when Blokajsız fiziksel is shown', async () => {
     const user = userEvent.setup()
     stubViewport(false)
