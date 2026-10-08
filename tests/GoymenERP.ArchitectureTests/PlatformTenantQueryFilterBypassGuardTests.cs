@@ -235,9 +235,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // AT-002: +2 GlobalSearchSqlServerRelationalAcceptanceTests facts (5bc60202… -> a5df5046…).
             // ERP-000G / AT-065: +8 DocumentVaultSqlServerRelationalAcceptanceTests facts (4ed7462b… -> e57500e0…).
             // Inventory material-label exact-code global search: +1 reviewed Platform SQL fact, kept ordinal-sorted.
-            // Sales-Cari bounded display acceptance: +1 reviewed Platform SQL fact, kept ordinal-sorted.
             ["tools/relational_inventory/platform.txt"] =
-                "1082720042e6a11ce2736008b13e395c4c5be5232097cd05fa024909f9b0a533",
+                "0d5d3ae6c318cf68925b6e387c30828e073cdf35d418b351197a77bdf10a2f36",
 
             // product
             // DEC-CAR-003: +4 ProductDeactivationSqlServerRelationalAcceptanceTests facts (d7dbec7f… -> ddeead62…).
@@ -258,8 +257,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // DEC-SAL-002: +4 SalesOrderQuantityRevisionSqlServerRelationalAcceptanceTests facts (5508f4ed… -> 3ef99851…).
             // #527 Q9: +1 customer-acceptance persistence/replay/cutover fact (3ef99851… -> dd3c72d9…).
             // PL04: +1 exact price-floor approval replay/down-refusal fact.
+            // Sales-Cari bounded display acceptance: +1 reviewed Sales SQL fact, kept ordinal-sorted.
             ["tools/relational_inventory/sales.txt"] =
-                "8f04fb503dda544c48637cd2ca42a9d4fc05479c4b3ed05cdc798902fb9a7aad",
+                "337ce3c9ace60221990875eeb509bb55e5b281bfe51f61ea179c6ab5b9ecd253",
 
             // work
             // JV03: the five ordinal desired-state storage SQL facts are mandatory and skip-free.
