@@ -257,6 +257,10 @@ internal static class ShellCapabilityRegistryAuthorities
         "sha256:k_hMHg7I4fVXYCl3RnpA1AG6iYVCmEp29nFswYuN9vw";
     internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV16PublishedFinanceV15PublishedManufacturingV15PublishedLogisticsV13PublishedPurchasingV14PublishedAccountingV13AndPublishedInventoryV16 =
         "sha256:odPyp9bzgEhmKfm1TE5y2A9YdrWrpabftJv85dQn7OY";
+    // ST-01 Product display: Inventory 1.7 requires the existing Product operational-selection read on the route
+    // and every child control. Re-derived from the same full normal-host provider tuple; publication grants nothing.
+    internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV16PublishedFinanceV15PublishedManufacturingV15PublishedLogisticsV13PublishedPurchasingV14PublishedAccountingV13AndPublishedInventoryV17 =
+        "sha256:paopfRcQvL3LCh5FuAUunnp6UnTnTBFTri9iotKcT_o";
 
     // SY-01/SY-02 (read-only users-and-permissions view): Identity 1.0 joins the normal host with two screens on
     // identity.assignments.read. Only this new full-host row is added; every earlier row keeps its provider set and value.
@@ -271,10 +275,12 @@ internal static class ShellCapabilityRegistryAuthorities
         "sha256:pBfEusbEirf3XEsRBzPKYpcv35kt3TAFRZyMv9v2mY8";
     internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV16PublishedFinanceV15PublishedManufacturingV15PublishedLogisticsV13PublishedPurchasingV14PublishedAccountingV13PublishedInventoryV16AndPublishedIdentityV10 =
         "sha256:vDQf2otcUHTdIPiUgtAVmPDZo7LJUXMvIsrJeIZCGec";
+    internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV16PublishedFinanceV15PublishedManufacturingV15PublishedLogisticsV13PublishedPurchasingV14PublishedAccountingV13PublishedInventoryV17AndPublishedIdentityV10 =
+        "sha256:YY5yXdgL2HOugsRXyKzjwTxdKcn37JJwnmWS5AyV9w8";
 
     // AT-018 / AT-021: final normal host adds PRODUCT-PRICE-LISTS 1.0 and Sales 1.6 beside Inventory 1.6.
     internal const string FullNormalHostWithProductPriceListsAndSalesFloorApproval =
-        "sha256:imM8mxcQpGyHBoWxsAPbO1JSwIMEMJfxRMdx4qNoGb8";
+        "sha256:JdTctfanO3Z1XN4ORmoSJsHdtWTqXvJDdWh4B6Z0M_4";
 
     internal const string CounterpartyV15PublishedListCreateAndDetail =
         "sha256:UBHnivzhe_dp5f7vU7dP5n7HG-P8XYBGhxvD_OjMSnw";
