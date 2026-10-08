@@ -89,6 +89,12 @@ public sealed class C01E2eActivationBoundaryTests
             [
                 "src/backend/GoymenERP.Api/Shell/C01E2eFixtureWriterActivation.cs",
                 "src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/Fixtures/"
+                + "ProductStockDisplayQualifiedFixtureStore.cs",
+            ],
+            BackendFilesContaining("AddProductStockDisplayQualifiedFixtureStore"));
+        Assert.Equal(
+            [
+                "src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/Fixtures/"
                 + "ProductSalesCandidateFixtureStore.cs",
             ],
             BackendFilesContaining("AddProductSalesCandidateFixtureStore"));
@@ -171,20 +177,21 @@ public sealed class C01E2eActivationBoundaryTests
     }
 
     [Fact]
-    public void ProductSalesCandidateFixtureSave_HasOneCallerBehindTheGatedActivation()
+    public void ProductStockDisplayQualifiedFixtureSave_HasOneCallerBehindTheGatedActivation()
     {
         Assert.Equal(
             [
                 "src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/Fixtures/"
-                + "ProductSalesCandidateFixtureStore.cs",
+                + "ProductStockDisplayQualifiedFixtureStore.cs",
                 "src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/Persistence/"
                 + "ProductDbContext.cs",
             ],
-            BackendFilesContaining("AddSalesCandidateFixtureAsync"));
+            BackendFilesContaining("AddStockDisplayQualifiedFixtureAsync"));
         Assert.Equal(
             ["src/backend/GoymenERP.Api/Shell/C01E2eFixtureWriterActivation.cs"],
-            BackendFilesContaining("AddProductSalesCandidateFixtureStore(")
-                .Where(path => !path.EndsWith("ProductSalesCandidateFixtureStore.cs", StringComparison.Ordinal))
+            BackendFilesContaining("AddProductStockDisplayQualifiedFixtureStore(")
+                .Where(path => !path.EndsWith(
+                    "ProductStockDisplayQualifiedFixtureStore.cs", StringComparison.Ordinal))
                 .ToArray());
     }
 
