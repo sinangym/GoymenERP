@@ -288,7 +288,9 @@ public sealed class ManualBankPaymentServiceTests
         Assert.Equal(CommandOutcome.Succeeded, saved.Outcome);
 
         var permission = new AfterInitialReadPermission(PermissionDecision.Allowed);
-        await using (var reader = run.Scope("reader", permission))
+        // Simulate a faulty context provider drifting across an await; the production context remains immutable.
+        await using (var reader = run.Scope("reader", permission,
+            companyContext: new MutableCompanyContext(Company)))
         {
             var otherCompany = Guid.NewGuid();
             permission.OnSubsequentReadCheck = () => reader.CompanyContext.Set(otherCompany);
@@ -367,10 +369,11 @@ public sealed class ManualBankPaymentServiceTests
         }
 
         public Scope Scope(string actor, IFinancePermissionPort permission,
-            IManualBankPaymentDocumentValidationPort? documentPort = null)
+            IManualBankPaymentDocumentValidationPort? documentPort = null,
+            ICompanyContext? companyContext = null)
         {
-            var company = new CompanyContext();
-            company.Set(Company);
+            var company = companyContext ?? new CompanyContext();
+            if (!company.IsResolved) company.Set(Company);
             var collector = new AuditEventCollector();
             var context = new FinanceDbContext(new DbContextOptionsBuilder<FinanceDbContext>()
                 .UseInMemoryDatabase(databaseName)
@@ -406,6 +409,13 @@ public sealed class ManualBankPaymentServiceTests
         public FinanceContext Context => context;
         public ICompanyContext CompanyContext => companyContext;
         public ValueTask DisposeAsync() => db.DisposeAsync();
+    }
+
+    private sealed class MutableCompanyContext(Guid companyId) : ICompanyContext
+    {
+        public bool IsResolved => true;
+        public Guid CompanyId { get; private set; } = companyId;
+        public void Set(Guid value) => CompanyId = value;
     }
 
     private sealed class AfterInitialReadPermission(PermissionDecision subsequentDecision) : IFinancePermissionPort
