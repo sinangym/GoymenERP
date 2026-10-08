@@ -38,9 +38,11 @@ import {
   STATE_COMMAND_STATUS,
   decodeContactInformationOptions,
   decodeCurrencyOptions,
-  decodeDraftDetail,
+  SALES_READ_CONTRACT_HEADER,
+  SALES_READ_CONTRACT_PARTY_DISPLAY,
+  decodeDraftDetailWithParty,
   decodeDraftMutation,
-  decodeDraftPage,
+  decodeDraftPageWithParty,
   decodeDraftRevisions,
   decodeDeliverySchedules,
   decodeDeliveryProgress,
@@ -73,8 +75,9 @@ import {
   type CancellationRead,
   type DraftCancelRequest,
   type DraftDetail,
+  type DraftDetailWithParty,
   type DraftMutation,
-  type DraftPage,
+  type DraftPageWithParty,
   type DraftRevisions,
   type DraftStateCommand,
   type DraftStateCommandRequest,
@@ -110,6 +113,8 @@ type Raw =
       readonly body: unknown
       readonly location: string | null
       readonly replayed: boolean
+      /** The Sales read contract the server says it answered with (absent on a legacy answer). */
+      readonly readContract: string | null
     }
   | { readonly failure: 'aborted' | 'offline' | 'unreachable' }
 
@@ -134,6 +139,7 @@ async function request(path: string, init: RequestInit, signal: AbortSignal | un
     body,
     location: response.headers.get('Location'),
     replayed: response.headers.get(REPLAY_HEADER) === 'true',
+    readContract: response.headers.get(SALES_READ_CONTRACT_HEADER),
   }
 }
 
@@ -145,6 +151,17 @@ function readFailure<T>(failure: 'aborted' | 'offline' | 'unreachable'): ViewOut
   return { type: 'network-error' }
 }
 
+/**
+ * The two reads that show the record-bound Cari display send the Sales read selector, and an answer counts only when the
+ * server acknowledges exactly that contract: a 200 without the acknowledgment is not read as the legacy body instead.
+ */
+function partyDisplayReadHeaders(companyId: string): Record<string, string> {
+  return { ...headers(companyId), [SALES_READ_CONTRACT_HEADER]: SALES_READ_CONTRACT_PARTY_DISPLAY }
+}
+
+const acknowledgesPartyDisplay = (raw: { readonly readContract: string | null }) =>
+  raw.readContract === SALES_READ_CONTRACT_PARTY_DISPLAY
+
 /** Source bound: 1..100, default 50. */
 export const PAGE_SIZE = 50
 
@@ -153,15 +170,16 @@ export async function fetchDraftPage(
   companyId: string,
   signal?: AbortSignal,
   approvalState: ApprovalState | null = null,
-): Promise<ViewOutcome<DraftPage>> {
+): Promise<ViewOutcome<DraftPageWithParty>> {
   const params = new URLSearchParams({ pageSize: String(PAGE_SIZE) })
   if (cursor !== null) params.set('cursor', cursor)
   // SALES-A1: an exact approval state narrows the list on the server; no client-side filtering.
   if (approvalState !== null) params.set('approvalState', approvalState)
-  const raw = await request(`${SALES_DRAFT_PATH}?${params.toString()}`, { headers: headers(companyId) }, signal)
+  const raw = await request(`${SALES_DRAFT_PATH}?${params.toString()}`, { headers: partyDisplayReadHeaders(companyId) }, signal)
   if ('failure' in raw) return readFailure(raw.failure)
   if (raw.status !== 200) return { type: 'http', status: raw.status, body: raw.body }
-  const page = decodeDraftPage(raw.body)
+  if (!acknowledgesPartyDisplay(raw)) return { type: 'malformed' }
+  const page = decodeDraftPageWithParty(raw.body)
   // A row of another company is a tenant-binding breach, not a row to show.
   if (page === null || page.items.some((item) => item.companyId !== companyId)) return { type: 'malformed' }
   return { type: 'ok-single', data: page }
@@ -171,11 +189,12 @@ export async function fetchDraftDetail(
   draftId: string,
   companyId: string,
   signal?: AbortSignal,
-): Promise<ViewOutcome<DraftDetail>> {
-  const raw = await request(salesDraftDetailPath(draftId), { headers: headers(companyId) }, signal)
+): Promise<ViewOutcome<DraftDetailWithParty>> {
+  const raw = await request(salesDraftDetailPath(draftId), { headers: partyDisplayReadHeaders(companyId) }, signal)
   if ('failure' in raw) return readFailure(raw.failure)
   if (raw.status !== 200) return { type: 'http', status: raw.status, body: raw.body }
-  const detail = decodeDraftDetail(raw.body, draftId)
+  if (!acknowledgesPartyDisplay(raw)) return { type: 'malformed' }
+  const detail = decodeDraftDetailWithParty(raw.body, draftId)
   if (detail === null || detail.draft.companyId !== companyId) return { type: 'malformed' }
   return { type: 'ok-single', data: detail }
 }
