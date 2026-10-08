@@ -675,8 +675,8 @@ public sealed class DocumentVaultSqlServerRelationalAcceptanceTests
                 ([Id], [CompanyId], [SupplierPartyId], [CompanyAccountId], [SourceRequestId], [Status], [Version], [EffectiveOn],
                  [CreatedAtUtc], [UpdatedAtUtc], [CreatedBy], [CorrelationId])
             VALUES
-                (@OrderA, @CompanyA, @SupplierA, @AccountA, NULL, 1, 1, '2026-10-09', @Now, @Now, N'SENTETIK', N'SENTETIK-order-a'),
-                (@OrderB, @CompanyB, @SupplierB, @AccountB, NULL, 1, 1, '2026-10-09', @Now, @Now, N'SENTETIK', N'SENTETIK-order-b');
+                (@OrderA, @CompanyA, @SupplierA, @AccountA, NULL, 1, 2, '2026-10-09', @Now, @Now, N'SENTETIK', N'SENTETIK-order-a'),
+                (@OrderB, @CompanyB, @SupplierB, @AccountB, NULL, 1, 2, '2026-10-09', @Now, @Now, N'SENTETIK', N'SENTETIK-order-b');
 
             INSERT INTO [purchasing].[PurchaseOrderLines]
                 ([CompanyId], [OrderId], [LineNo], [LineId], [Kind], [ParentLineId], [SourceRequestLineId], [ProductId],
