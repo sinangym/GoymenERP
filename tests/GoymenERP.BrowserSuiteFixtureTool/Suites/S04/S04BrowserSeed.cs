@@ -202,7 +202,8 @@ public sealed class S04BrowserSeed : IBrowserSuiteFixture
                     new SalesDraftFixtureOwners(PartyId, CompanyAccountId, CurrencyId, MoneyProfileId, EffectiveFrom),
                     [
                         new SalesDraftFixtureLine(CoilLineId, productCandidate.ProductId, "S04-ALLOC", context.Label("tahsis rulosu"),
-                            productCandidate.UnitId, productCandidate.ProfileId, "kg", "weight", IsKilogram: true, Scale: 3, "1.250", 1.250m),
+                            productCandidate.UnitId, productCandidate.ProfileId, "kg", "weight", IsKilogram: true, Scale: 3, "1.250", 1.250m,
+                            ProductVersion: productCandidate.ProductVersion),
                         new SalesDraftFixtureLine(SheetLineId, SheetProductId, "S04-SHEET", context.Label("levha 2 × 1000 × 2000"),
                             PieceUnitId, PieceProfileId, "adet", "count", IsKilogram: false, Scale: 0, "3", 3m),
                     ],
@@ -259,12 +260,17 @@ public sealed class S04BrowserSeed : IBrowserSuiteFixture
         // approver only. A grant or a mount that does not resolve fails the run here, not in the browser.
         var detail = await context.GetJsonAsync(PreparerActor, CompanyGdc, $"{DraftsPath}/{DraftId:D}", cancellationToken);
         var draft = detail.GetProperty("draft");
+        var allocationLine = detail.GetProperty("lines").EnumerateArray().SingleOrDefault(line =>
+            line.GetProperty("lineId").GetGuid() == CoilLineId);
         if (draft.GetProperty("id").GetGuid() != DraftId
             || draft.GetProperty("approvalState").GetString() != "Preparing"
             || draft.GetProperty("lineCount").GetInt32() != 2
-            || detail.GetProperty("lines").GetArrayLength() != 2)
+            || detail.GetProperty("lines").GetArrayLength() != 2
+            || allocationLine.ValueKind != JsonValueKind.Object
+            || allocationLine.GetProperty("productVersion").GetString() != productCandidate.ProductVersion)
         {
-            throw new InvalidOperationException("The seeded draft is not a Preparing draft with two lines on the real detail route.");
+            throw new InvalidOperationException(
+                "The seeded draft is not a Preparing two-line draft with the exact qualified Product version on the real detail route.");
         }
 
         var list = await context.GetJsonAsync(ReaderActor, CompanyGdc, $"{DraftsPath}?approvalState=Preparing", cancellationToken);
