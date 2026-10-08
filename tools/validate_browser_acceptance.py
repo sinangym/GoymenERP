@@ -764,6 +764,14 @@ def seed_export(suite: str, seed: object) -> str:
                 require(acc01_exact_text[key] == value,
                         f"acc01 seed output {key} must match its exact closed-contract value")
             continue
+        if suite == "r14" and key in {"productCode", "productName"}:
+            r14_product_scalars = {
+                "productCode": "SAC-1",
+                "productName": "SENTETIK browser-suite:r14 genuine S235JR 3 mm x 248 mm kaplamasiz sac",
+            }
+            require(r14_product_scalars[key] == value,
+                    f"r14 seed output {key} must match its exact Product scalar contract")
+            continue
         is_s04_version = suite == "s04" and key in {"productVersion", "productUnitProfileVersion",
                                                      "allocationLabelVersion"} \
             and re.fullmatch(r"[1-9][0-9]*", value) is not None
@@ -779,13 +787,9 @@ def seed_export(suite: str, seed: object) -> str:
             and value == "SENTETIK browser-suite:pur01 purchase candidate"
         is_r14_version = suite == "r14" and key in {"productVersion", "productUnitProfileVersion"} \
             and re.fullmatch(r"[1-9][0-9]*", value) is not None
-        is_r14_code = suite == "r14" and key == "productCode" \
-            and re.fullmatch(r"SYNR14-[1-9][0-9]*", value) is not None
-        is_r14_name = suite == "r14" and key == "productName" \
-            and value == "SENTETIK browser-suite:r14 stock candidate"
         require(is_guid or is_actor or is_s04_version or is_s04_code or is_s04_name
                 or is_pur01_version or is_pur01_code or is_pur01_name
-                or is_r14_version or is_r14_code or is_r14_name,
+                or is_r14_version,
                 f"seed output {key} must be a GUID or an actor id or an approved suite scalar value")
     if suite == "mfg":
         require(seed["outputOwnerId"] == seed["companyId"],

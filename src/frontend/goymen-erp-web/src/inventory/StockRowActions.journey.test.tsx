@@ -32,12 +32,17 @@ const LINE_2 = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
 const SUPPLIER = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc'
 const UNIT = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd'
 
-const api = vi.hoisted(() => ({ positions: vi.fn(), detail: vi.fn(), purchase: vi.fn() }))
+const api = vi.hoisted(() => ({ positions: vi.fn(), legacy: vi.fn(), detail: vi.fn(), purchase: vi.fn() }))
 const shell = vi.hoisted(() => ({ capabilities: [] as string[], report: vi.fn() }))
 
+// ST-01 reads the #597 opt-in page (Stok UX FAZ-1); the previously published read must stay unused by it.
+vi.mock('./stockDisplayApi', async (importOriginal) => ({
+  ...await importOriginal<typeof import('./stockDisplayApi')>(),
+  fetchStockDisplayPage: api.positions,
+}))
 vi.mock('./api', async (importOriginal) => ({
   ...await importOriginal<typeof import('./api')>(),
-  fetchStockPositions: api.positions,
+  fetchStockPositions: api.legacy,
 }))
 vi.mock('./labelDetailApi', () => ({ fetchInventoryLabelDetail: api.detail }))
 vi.mock('../logistics/api', () => ({ fetchPurchaseWork: api.purchase }))
@@ -68,7 +73,12 @@ const position = {
   documentStatus: 'Complete', ownerKind: 'Company', ownerId: COMPANY,
   custodianKind: 'Company', custodianId: COMPANY, locationId: LOCATION,
   physicalKg: '100', freePhysicalKg: '90', blockedPhysicalKg: '10', activeAllocationKg: '30', availableKg: '60',
+  productVersion: '1', classification: null,
+  productDisplay: { productId: PRODUCT, expectedProductVersion: '1', identity: null, technical: null, errors: [] },
 }
+
+/** The filters ST-01 sends with only a label-code search. */
+const search = (q: string) => ({ q, productId: null, locationId: null, classification: null, owner: null })
 
 function detail() {
   return {
@@ -113,7 +123,7 @@ const address = () => screen.getByRole('status', { name: 'Adres' }).textContent
 beforeEach(() => {
   shell.capabilities = [INVENTORY_STOCK_POSITIONS_CAPABILITY]
   shell.report.mockReset()
-  api.positions.mockReset().mockResolvedValue({ type: 'ok-single', data: { items: [position], searchWindowFull: false } })
+  api.positions.mockReset().mockResolvedValue({ type: 'ok-single', data: { items: [position], searchWindowFull: false, nextCursor: null } })
   api.detail.mockReset().mockResolvedValue({ type: 'ok-single', data: detail() })
   api.purchase.mockReset().mockResolvedValue({ type: 'ok-single', data: { items: [purchaseRow(LINE, 1, '380')], nextCursor: null } })
 })
@@ -160,7 +170,7 @@ describe('AT-063 ST-01 row actions', () => {
   it('offers release only on a row holding active allocation kg', async () => {
     shell.capabilities = [INVENTORY_STOCK_POSITIONS_CAPABILITY, INVENTORY_PHYSICAL_ALLOCATION_WRITE_CAPABILITY]
     api.positions.mockReset().mockResolvedValue({ type: 'ok-single', data: {
-      items: [{ ...position, activeAllocationKg: '0', availableKg: '90' }], searchWindowFull: false,
+      items: [{ ...position, activeAllocationKg: '0', availableKg: '90' }], searchWindowFull: false, nextCursor: null,
     } })
     const user = userEvent.setup()
     mount()
@@ -231,7 +241,7 @@ describe('AT-063 ST-01 row actions', () => {
     await screen.findByText('LBL-1')
     await user.type(screen.getByLabelText('Etiket kodu'), 'LBL')
     await user.click(screen.getByRole('button', { name: 'Ara' }))
-    await waitFor(() => expect(api.positions).toHaveBeenLastCalledWith(COMPANY, 'LBL', expect.any(AbortSignal)))
+    await waitFor(() => expect(api.positions).toHaveBeenLastCalledWith(COMPANY, search('LBL'), null, expect.any(AbortSignal)))
     expect(address()).toBe('/stok/pozisyonlar?etiket=LBL')
     expect(api.positions).toHaveBeenCalledTimes(2)
 
@@ -249,14 +259,26 @@ describe('AT-063 ST-01 row actions', () => {
     await screen.findByText('LBL-1')
     expect(address()).toBe('/stok/pozisyonlar?etiket=LBL')
     expect((screen.getByLabelText('Etiket kodu') as HTMLInputElement).value).toBe('LBL')
-    expect(api.positions).toHaveBeenLastCalledWith(COMPANY, 'LBL', expect.any(AbortSignal))
+    expect(api.positions).toHaveBeenLastCalledWith(COMPANY, search('LBL'), null, expect.any(AbortSignal))
+  })
+
+  it('keeps the filter when the label code itself opens ST-02 and its back link is followed', async () => {
+    const user = userEvent.setup()
+    mount('/stok/pozisyonlar?etiket=LBL')
+    await user.click(await screen.findByRole('link', { name: 'LBL-1' }))
+    await screen.findByRole('heading', { level: 1, name: 'LBL-1' })
+    expect(address()).toBe(`/stok/etiket/${LABEL}`)
+    await user.click(screen.getByRole('link', { name: '← Stok pozisyonlarına dön' }))
+    await screen.findByRole('link', { name: 'LBL-1' })
+    expect(address()).toBe('/stok/pozisyonlar?etiket=LBL')
+    expect(api.positions).toHaveBeenLastCalledWith(COMPANY, search('LBL'), null, expect.any(AbortSignal))
   })
 
   it('reads a filter already in the URL on arrival', async () => {
     mount('/stok/pozisyonlar?etiket=LBL')
     await screen.findByText('LBL-1')
     expect(api.positions).toHaveBeenCalledTimes(1)
-    expect(api.positions).toHaveBeenCalledWith(COMPANY, 'LBL', expect.any(AbortSignal))
+    expect(api.positions).toHaveBeenCalledWith(COMPANY, search('LBL'), null, expect.any(AbortSignal))
   })
 
   it('says so when a named panel is not open to the actor, and shows no back link without an ST-01 origin', async () => {
@@ -288,11 +310,11 @@ describe('AT-064 ST-01 purchase remainder as future supply', () => {
     ])
     expect(within(row).queryByRole('link')).toBeNull()
     const physical = screen.getByText('LBL-1').closest('tr')!
-    expect(within(physical).getAllByRole('cell').map((cell) => cell.textContent).slice(1, 2)).toEqual(['Fiziksel Stok'])
-    expect(physical.textContent).toContain('100')
-    expect(physical.textContent).toContain('60')
+    // The physical row keeps its own four quantities (Fiziksel, Bloklu, Tahsisli, Kullanılabilir) …
+    expect(within(physical).getAllByRole('cell').map((cell) => cell.textContent).slice(5, 9)).toEqual(['100', '10', '30', '60'])
     expect(physical.textContent).not.toContain('380')
     expect(api.positions).toHaveBeenCalledTimes(1)
+    expect(api.legacy).not.toHaveBeenCalled()
   })
 
   it('links the order and product only for their own capabilities, and pages with the owner cursor', async () => {

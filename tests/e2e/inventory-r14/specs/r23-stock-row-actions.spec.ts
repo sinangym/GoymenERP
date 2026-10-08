@@ -20,7 +20,10 @@ import { readEnvironment } from '../src/env'
  *  5. The transformer's menu on the same row offers split/merge and not count.
  */
 const env = readEnvironment()
-const { recorderActor, counterActor, transformerActor, companyId, locationId, productId, productVersion } = env.seed
+const {
+  recorderActor, counterActor, transformerActor, companyId, locationId,
+  productId, productVersion, productCode, productName,
+} = env.seed
 
 const DEVELOPMENT_USER_HEADER = 'X-Development-User'
 const OPENINGS = '/api/v1/inventory/opening-counts'
@@ -114,7 +117,8 @@ test('AT-063 opens permitted stock row actions on the row label and returns to t
     await expect(page.getByLabel('Etiket kodu', { exact: true })).toHaveValue(LABEL)
     await expect(page.getByRole('heading', { name: 'Gelecek arz — Alış Siparişi' })).toHaveCount(0)
     const row = page.locator(`tr[data-label-id="${labelId}"]`)
-    await expect(row.getByRole('cell', { name: 'Fiziksel Stok', exact: true })).toBeVisible()
+    await expect(row.getByText(productCode, { exact: true })).toBeVisible()
+    await expect(row.getByText(productName, { exact: true })).toBeVisible()
     await row.getByRole('button', { name: MENU, exact: true }).click()
     const menu = page.getByRole('list', { name: MENU_LIST, exact: true })
     await expect(menu.getByRole('link')).toHaveText(['Etiket 360’ı aç', 'Sayım / fark', 'Etiket / lot soy ağacı'])

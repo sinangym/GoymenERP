@@ -121,8 +121,8 @@ public sealed class BrowserSuiteHostEnvelopeTests
             {
                 ["productVersion"] = "2",
                 ["productUnitProfileVersion"] = "1",
-                ["productCode"] = "SYNR14-1",
-                ["productName"] = "SENTETIK browser-suite:r14 stock candidate",
+                ["productCode"] = "SAC-1",
+                ["productName"] = "SENTETIK browser-suite:r14 genuine S235JR 3 mm x 248 mm kaplamasiz sac",
             },
             new HashSet<string>(StringComparer.Ordinal));
 
@@ -130,8 +130,8 @@ public sealed class BrowserSuiteHostEnvelopeTests
                  {
                      ("productVersion", "02"),
                      ("productUnitProfileVersion", "0"),
-                     ("productCode", "SYNR14-0"),
-                     ("productName", "SENTETIK browser-suite:r14 stock candidate "),
+                     ("productCode", "SAC-2"),
+                     ("productName", "SENTETIK browser-suite:r14 genuine S235JR 3 mm x 248 mm kaplamasiz sac "),
                  })
         {
             Assert.Throws<InvalidOperationException>(() => BrowserSuiteSeedOutputValidator.Validate(
@@ -139,6 +139,19 @@ public sealed class BrowserSuiteHostEnvelopeTests
                 new Dictionary<string, string> { [key] = value },
                 new HashSet<string>(StringComparer.Ordinal)));
         }
+    }
+
+    [Theory]
+    [InlineData("productCode", "10000000-0000-0000-0000-000000000001")]
+    [InlineData("productName", "r14-recorder")]
+    public void R14_product_identity_validation_does_not_accept_guid_or_actor_fallback(
+        string key,
+        string value)
+    {
+        Assert.Throws<InvalidOperationException>(() => BrowserSuiteSeedOutputValidator.Validate(
+            "r14",
+            new Dictionary<string, string> { [key] = value },
+            new HashSet<string>(["r14-recorder"], StringComparer.Ordinal)));
     }
 
     [Fact]

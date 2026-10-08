@@ -2,13 +2,15 @@ using System.Text.Json;
 using GoymenERP.Api.Shell;
 using GoymenERP.Modules.Identity.Domain.Assignments;
 using GoymenERP.Modules.Identity.Infrastructure.Fixtures;
-using GoymenERP.Modules.Product.Infrastructure.Fixtures;
+using GoymenERP.Modules.Product.Application.Contracts;
+using GoymenERP.Modules.Product.Infrastructure.Persistence;
+using GoymenERP.Modules.Settings.Application;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace GoymenERP.BrowserSuiteFixtureTool.Suites.R14;
 
 /// <summary>
-/// R14 materializes Product's fixed stock candidate through its gated owner port, then resolves one
+/// R14 creates, replays, reopens and activates one genuine SAC Product through its public owner API, then resolves one
 /// active non-external GDC location through Organization's real public read. The opening count itself
 /// is never seeded: the browser records it through the real Inventory command.
 /// <para>
@@ -58,8 +60,13 @@ public sealed class R14BrowserSeed : IBrowserSuiteFixture
 
     private static readonly Guid ProductReadAssignmentId = Guid.Parse("b5000000-0000-4000-8000-000000000701");
     private static readonly Guid ProductReadDecisionId = Guid.Parse("b5100000-0000-4000-8000-000000000701");
+    private static readonly Guid ProductCreateAssignmentId = Guid.Parse("b5000000-0000-4000-8000-000000000702");
+    private static readonly Guid ProductCreateDecisionId = Guid.Parse("b5100000-0000-4000-8000-000000000702");
+    private static readonly Guid ProductActivateAssignmentId = Guid.Parse("b5000000-0000-4000-8000-000000000703");
+    private static readonly Guid ProductActivateDecisionId = Guid.Parse("b5100000-0000-4000-8000-000000000703");
     private static readonly DateTimeOffset ProductReadValidFromUtc =
         new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
+    private static readonly DateOnly ProductEffectiveOn = new(2026, 9, 18);
 
     private const string LocationsPath = "/api/v1/organization/locations?page=1&pageSize=100";
     private const string ProductCandidatesPath = "/api/v1/inventory/references/products";
@@ -81,34 +88,32 @@ public sealed class R14BrowserSeed : IBrowserSuiteFixture
         BrowserSuiteFixtureContext context,
         CancellationToken cancellationToken)
     {
-        await using (var registryScope = context.Services.CreateAsyncScope())
-        {
-            await registryScope.ServiceProvider.GetRequiredService<C01E2eProductTechnicalCardFixtureWriter>()
-                .EnsureAsync(cancellationToken);
-        }
-
         await using (var authorityScope = context.Services.CreateAsyncScope())
         {
-            await authorityScope.ServiceProvider.GetRequiredService<C01E2eProductMasterAssignmentFixtureWriter>()
-                .EnsureAsync(new ProductMasterAssignmentFixtureRow(
-                    ProductReadAssignmentId,
+            var assignments = authorityScope.ServiceProvider
+                .GetRequiredService<C01E2eProductMasterAssignmentFixtureWriter>();
+            var grants = new[]
+            {
+                (ProductMasterOperation.Read, ProductReadAssignmentId, ProductReadDecisionId),
+                (ProductMasterOperation.DraftCreate, ProductCreateAssignmentId, ProductCreateDecisionId),
+                (ProductMasterOperation.Activate, ProductActivateAssignmentId, ProductActivateDecisionId),
+            };
+            foreach (var (operation, assignmentId, decisionId) in grants)
+            {
+                await assignments.EnsureAsync(new ProductMasterAssignmentFixtureRow(
+                    assignmentId,
                     RecorderUserId,
                     ProductReadRoleId,
-                    ProductMasterOperation.Read,
+                    operation,
                     ProductIssuerUserId,
                     ProductIssuerExternalIdentityId,
-                    ProductReadDecisionId,
-                    context.Label($"Product master Read for {RecorderActor}"),
+                    decisionId,
+                    context.Label($"R14 genuine Product {operation}"),
                     ProductReadValidFromUtc), cancellationToken);
+            }
         }
 
-        ProductStockCandidateFixtureOutput product;
-        await using (var productScope = context.Services.CreateAsyncScope())
-        {
-            product = await productScope.ServiceProvider
-                .GetRequiredService<C01E2eProductStockCandidateFixtureWriter>()
-                .EnsureAsync(cancellationToken);
-        }
+        GenuineProduct product = await EnsureGenuineProductAsync(context, cancellationToken);
 
         JsonElement locationList = await context.GetJsonAsync(
             ArrangerActor, CompanyGdc, LocationsPath, cancellationToken);
@@ -130,15 +135,12 @@ public sealed class R14BrowserSeed : IBrowserSuiteFixture
             RecorderActor,
             CompanyGdc,
             $"{ProductCandidatesPath}?q={Uri.EscapeDataString(product.Code)}"
-            + $"&effectiveOn={ProductStockCandidateFixture.EffectiveOn:yyyy-MM-dd}&limit=25",
+            + $"&effectiveOn={ProductEffectiveOn:yyyy-MM-dd}&limit=25",
             cancellationToken);
         JsonElement[] products = productCandidates.GetProperty("items").EnumerateArray().ToArray();
         if (products.Length != 1
             || products[0].GetProperty("productId").GetGuid() != product.ProductId
             || products[0].GetProperty("productVersion").GetString() != product.ProductVersion
-            || products[0].GetProperty("stockUnitId").GetGuid() != product.UnitId
-            || products[0].GetProperty("profileId").GetGuid() != product.ProfileId
-            || products[0].GetProperty("profileVersion").GetString() != product.ProfileVersion
             || products[0].GetProperty("code").GetString() != product.Code
             || products[0].GetProperty("name").GetString() != product.Name)
         {
@@ -248,13 +250,100 @@ public sealed class R14BrowserSeed : IBrowserSuiteFixture
             ["locationId"] = locationId.ToString("D"),
             ["productId"] = product.ProductId.ToString("D"),
             ["productVersion"] = product.ProductVersion,
-            ["productUnitId"] = product.UnitId.ToString("D"),
-            ["productUnitProfileId"] = product.ProfileId.ToString("D"),
-            ["productUnitProfileVersion"] = product.ProfileVersion,
+            ["productUnitId"] = products[0].GetProperty("stockUnitId").GetGuid().ToString("D"),
+            ["productUnitProfileId"] = products[0].GetProperty("profileId").GetGuid().ToString("D"),
+            ["productUnitProfileVersion"] = products[0].GetProperty("profileVersion").GetString()!,
             ["productCode"] = product.Code,
             ["productName"] = product.Name,
         };
     }
+
+    private static async Task<GenuineProduct> EnsureGenuineProductAsync(
+        BrowserSuiteFixtureContext context,
+        CancellationToken cancellationToken)
+    {
+        const string name = "SENTETIK browser-suite:r14 genuine S235JR 3 mm x 248 mm kaplamasiz sac";
+        var draft = new CreateProductDraftRequest(
+            name,
+            ProductInitialCodeGroupV1.SacGroupId,
+            FamilyId: ProductInitialTechnicalDefinitionV1.HotRolledSlitCoilFamilyId,
+            References: new ProductReferences(
+                ProductInitialTechnicalDefinitionV1.TemplateId,
+                "1",
+                new Dictionary<string, JsonElement>(StringComparer.Ordinal)
+                {
+                    ["thickness-mm"] = JsonSerializer.SerializeToElement(3m),
+                    ["width-mm"] = JsonSerializer.SerializeToElement(248m),
+                    ["steel-grade"] = JsonSerializer.SerializeToElement("S235JR"),
+                    ["coating"] = JsonSerializer.SerializeToElement("uncoated"),
+                },
+                new ProductUnitReferences(
+                    Stock: ApprovedUnitProfileCatalog.GdcKilogramV1.UnitId,
+                    Sales: ApprovedUnitProfileCatalog.GdcKilogramV1.UnitId)));
+
+        var created = await context.PostJsonAsync(
+            RecorderActor, CompanyGdc, ProductApiV1.BasePath, draft, "genuine-product-create", cancellationToken);
+        if (created.GetProperty("isReplay").GetBoolean())
+        {
+            throw new InvalidOperationException("The first R14 genuine Product create unexpectedly replayed.");
+        }
+
+        var createdProduct = created.GetProperty("card").GetProperty("product");
+        var productId = createdProduct.GetProperty("id").GetGuid();
+        if (productId == Guid.Empty
+            || createdProduct.GetProperty("code").GetString() != "SAC-1"
+            || createdProduct.GetProperty("name").GetString() != name
+            || createdProduct.GetProperty("lifecycle").GetString() != "Draft"
+            || createdProduct.GetProperty("version").GetString() != "1")
+        {
+            throw new InvalidOperationException("The R14 genuine Product draft answer is not the exact SAC-1 card.");
+        }
+
+        var replay = await context.PostJsonAsync(
+            RecorderActor, CompanyGdc, ProductApiV1.BasePath, draft, "genuine-product-create", cancellationToken);
+        if (!replay.GetProperty("isReplay").GetBoolean()
+            || replay.GetProperty("card").GetProperty("product").GetProperty("id").GetGuid() != productId)
+        {
+            throw new InvalidOperationException("The R14 genuine Product create did not replay its exact card.");
+        }
+
+        var reopenedDraft = await context.GetJsonAsync(
+            RecorderActor, CompanyGdc, $"{ProductApiV1.BasePath}/{productId:D}", cancellationToken);
+        if (reopenedDraft.GetProperty("product").GetProperty("version").GetString() != "1")
+        {
+            throw new InvalidOperationException("The R14 genuine Product draft did not reopen at version 1.");
+        }
+
+        var activated = await context.PostJsonAsync(
+            RecorderActor,
+            CompanyGdc,
+            $"{ProductApiV1.BasePath}/{productId:D}/activation",
+            new ActivateProductRequest("1"),
+            "genuine-product-activate",
+            cancellationToken);
+        var activeProduct = activated.GetProperty("card").GetProperty("product");
+        if (activeProduct.GetProperty("id").GetGuid() != productId
+            || activeProduct.GetProperty("name").GetString() != name
+            || activeProduct.GetProperty("lifecycle").GetString() != "Active"
+            || activeProduct.GetProperty("version").GetString() != "2")
+        {
+            throw new InvalidOperationException("The R14 genuine Product did not activate at version 2.");
+        }
+
+        var reopenedActive = await context.GetJsonAsync(
+            RecorderActor, CompanyGdc, $"{ProductApiV1.BasePath}/{productId:D}", cancellationToken);
+        if (reopenedActive.GetProperty("product").GetProperty("lifecycle").GetString() != "Active"
+            || reopenedActive.GetProperty("product").GetProperty("version").GetString() != "2"
+            || reopenedActive.GetProperty("references").GetProperty("templateId").GetGuid()
+                != ProductInitialTechnicalDefinitionV1.TemplateId)
+        {
+            throw new InvalidOperationException("The R14 genuine active Product did not reopen with its template.");
+        }
+
+        return new GenuineProduct(productId, "2", "SAC-1", name);
+    }
+
+    private sealed record GenuineProduct(Guid ProductId, string ProductVersion, string Code, string Name);
 
     private static async Task<string[]> CapabilitiesAsync(
         BrowserSuiteFixtureContext context,

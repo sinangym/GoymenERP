@@ -462,8 +462,8 @@ test('R19 splits a label in the browser, reopens exact children and genealogy, r
     expect(await effects(pool)).toEqual({ transformations: 2, commands: 2, audits: 2, labels: 4 })
     expect(await positiveBalances(pool)).toEqual({ [MERGED]: '10' })
     expect(await journeyMassKg(pool)).toBe('10')
-    // The product the journey started from is the r14 stock candidate; nothing else was touched.
-    expect(productCode).toMatch(/^SYNR14-[1-9]\d*$/)
+    // The product the journey started from is the genuine R14 SAC card; nothing else was touched.
+    expect(productCode).toBe('SAC-1')
   } finally {
     await pool.close()
   }
