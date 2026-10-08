@@ -106,6 +106,7 @@ describe('AT-065 document panel', () => {
     const rows = within(table).getAllByRole('row').slice(1)
     expect(rows.map((r) => within(r).getByRole('rowheader').textContent)).toEqual(['Sözleşme.pdf', 'Tarama.png'])
     expect(within(rows[0]).getByRole('button', { name: T.download('Sözleşme.pdf') })).toBeTruthy()
+    expect(within(rows[0]).queryByRole('button', { name: T.preview('Sözleşme.pdf') })).toBeNull()
     expect(within(rows[1]).queryByRole('button')).toBeNull()
     expect(within(rows[1]).getByText(T.scanPending)).toBeTruthy()
     expect(within(rows[0]).getByText(formatSize(2048))).toBeTruthy()

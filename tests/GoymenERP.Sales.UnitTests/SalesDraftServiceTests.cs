@@ -1365,6 +1365,80 @@ public sealed partial class SalesDraftServiceTests
     private static SalesCommandMetadata Metadata(string key, string? correlation = null) =>
         new(key, correlation ?? "synthetic-correlation", null, new DateTimeOffset(2026, 9, 18, 14, 0, 0, TimeSpan.Zero));
 
+    [Fact]
+    public async Task Enriched_list_and_detail_read_Cari_display_once_per_read_and_preserve_the_Sales_order()
+    {
+        var world = new World();
+        var partyIds = Enumerable.Range(1, 100)
+            .Select(index => Guid.Parse($"b7000000-0000-4000-8000-{index:D12}"))
+            .ToArray();
+
+        foreach (var partyId in partyIds)
+        {
+            await world.Service().CreateDraftAsync(Request() with { PartyId = partyId }, Metadata($"k-{partyId:N}"));
+        }
+
+        world.PartyDisplays.Reverse = true;
+        var list = await world.ReadService().GetDraftListAsync(new SalesOrderDraftListQuery(100));
+
+        Assert.Equal(100, list.Items.Count);
+        Assert.Equal(1, world.PartyDisplays.Calls);
+        Assert.Equal(100, world.PartyDisplays.Asked.Distinct().Count());
+        Assert.Equal((Company, Actor), (world.PartyDisplays.CompanyId, world.PartyDisplays.ActorId));
+        Assert.All(list.Items, item =>
+        {
+            Assert.Equal(item.PartyId, item.PartyDisplay.PartyId);
+            Assert.Equal($"CAR-{item.PartyId:N}", item.PartyDisplay.Code);
+            Assert.Equal($"Legal {item.PartyId:N}", item.PartyDisplay.LegalName);
+            Assert.Equal($"Trade {item.PartyId:N}", item.PartyDisplay.TradeName);
+        });
+
+        var first = list.Items[0];
+        var detail = await world.ReadService().GetDraftDetailAsync(first.Id);
+        Assert.Equal(2, world.PartyDisplays.Calls);
+        Assert.Equal(first.PartyId, detail.PartyDisplay.PartyId);
+        Assert.Equal(first.PartyDisplay, detail.PartyDisplay);
+    }
+
+    [Theory]
+    [InlineData("denied", 403, "forbidden")]
+    [InlineData("unavailable", 503, SalesDraftProblemCodesV1.CounterpartyProviderUnavailable)]
+    [InlineData("missing", 503, SalesDraftProblemCodesV1.CounterpartyProviderUnavailable)]
+    [InlineData("duplicate", 503, SalesDraftProblemCodesV1.CounterpartyProviderUnavailable)]
+    [InlineData("mismatch", 503, SalesDraftProblemCodesV1.CounterpartyProviderUnavailable)]
+    [InlineData("malformed", 503, SalesDraftProblemCodesV1.CounterpartyProviderUnavailable)]
+    [InlineData("null", 503, SalesDraftProblemCodesV1.CounterpartyProviderUnavailable)]
+    [InlineData("throw", 503, SalesDraftProblemCodesV1.CounterpartyProviderUnavailable)]
+    public async Task Enriched_Cari_display_failures_refuse_the_entire_read_without_a_partial_response(
+        string fault, int status, string code)
+    {
+        var world = new World();
+        var created = await world.Service().CreateDraftAsync(Request(), Metadata("k-display-failure"));
+        world.PartyDisplays.Fault = fault;
+
+        var detail = await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
+            world.ReadService().GetDraftDetailAsync(created.Detail.Draft.Id));
+        Assert.Equal((status, code), (detail.Status, detail.Code));
+
+        var list = await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
+            world.ReadService().GetDraftListAsync(new SalesOrderDraftListQuery()));
+        Assert.Equal((status, code), (list.Status, list.Code));
+    }
+
+    [Fact]
+    public async Task Enriched_read_refuses_data_when_Sales_authority_is_lost_during_the_Cari_read()
+    {
+        var world = new World();
+        var created = await world.Service().CreateDraftAsync(Request(), Metadata("k-late-loss"));
+        world.PartyDisplays.OnRead = () => world.Authority.Granted = false;
+
+        var refused = await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
+            world.ReadService().GetDraftDetailAsync(created.Detail.Draft.Id));
+
+        Assert.Equal((403, "forbidden"), (refused.Status, refused.Code));
+        Assert.Equal(1, world.PartyDisplays.Calls);
+    }
+
     // ---- synthetic world --------------------------------------------------------------------
 
     private sealed class World
@@ -1372,6 +1446,7 @@ public sealed partial class SalesDraftServiceTests
         public FixedUser User { get; } = new();
         public FixedAuthority Authority { get; } = new();
         public FakeAccounts Accounts { get; init; } = new();
+        public FakePartyDisplays PartyDisplays { get; init; } = new();
         public FakeContactInformation ContactInformation { get; init; } = new();
         public FakeSettings Settings { get; init; } = new();
         public FakeProducts Products { get; init; } = new();
@@ -1397,6 +1472,13 @@ public sealed partial class SalesDraftServiceTests
             return new SalesDraftService(company, User, Authority, ActiveRoleCodes, new FixedCorrelation(), Accounts, Settings,
                 NoProducts ? null : Products, Store, Bindings, TimeProvider.System, NoContactInformation ? null : ContactInformation, Deliveries,
                 Allocations, Loadings, PriceReferences);
+        }
+
+        public SalesDraftReadServiceV1 ReadService()
+        {
+            var company = new CompanyContext();
+            company.Set(Company);
+            return new SalesDraftReadServiceV1(Service(), PartyDisplays, company, User, Authority, Bindings);
         }
 
         public void ResetOwnerCalls()
@@ -1491,6 +1573,47 @@ public sealed partial class SalesDraftServiceTests
                 _ => new SalesPartyAccountAnswerV1(SalesPartyAccountOutcomeV1.Found, new SalesPartyAccountV1(partyId, companyAccountId,
                     Fault == "other-company" ? Guid.NewGuid() : Company, Fault != "passive-party", Fault != "passive-account", "3", "2")),
             });
+        }
+    }
+
+    private sealed class FakePartyDisplays : ISalesPartyDisplaySourceV1
+    {
+        public string Fault { get; set; } = "";
+        public bool Reverse { get; set; }
+        public Action? OnRead { get; set; }
+        public int Calls { get; private set; }
+        public Guid CompanyId { get; private set; }
+        public string ActorId { get; private set; } = "";
+        public IReadOnlyList<Guid> Asked { get; private set; } = [];
+
+        public Task<SalesPartyDisplayBatchAnswerV1> GetAuthorizedBatchAsync(
+            SalesPartyDisplayBatchRequestV1 request,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Calls++;
+            CompanyId = request.CompanyId;
+            ActorId = request.ActorId;
+            Asked = [.. request.PartyIds];
+            OnRead?.Invoke();
+            if (Fault == "throw") throw new InvalidOperationException("synthetic provider failure");
+            if (Fault == "null") return Task.FromResult<SalesPartyDisplayBatchAnswerV1>(null!);
+            if (Fault == "denied")
+                return Task.FromResult(new SalesPartyDisplayBatchAnswerV1(SalesPartyDisplayBatchOutcomeV1.Denied, []));
+            if (Fault == "unavailable")
+                return Task.FromResult(new SalesPartyDisplayBatchAnswerV1(SalesPartyDisplayBatchOutcomeV1.Unavailable, []));
+
+            var items = request.PartyIds.Select(id => new SalesPartyDisplayV1(
+                id,
+                Fault == "malformed" ? " " : $"CAR-{id:N}",
+                $"Legal {id:N}",
+                $"Trade {id:N}"))
+                .ToList();
+            if (Reverse) items.Reverse();
+            if (Fault == "missing" && items.Count != 0) items.RemoveAt(items.Count - 1);
+            if (Fault == "duplicate" && items.Count != 0) items.Add(items[0]);
+            if (Fault == "mismatch" && items.Count != 0) items[0] = items[0] with { PartyId = Guid.NewGuid() };
+            return Task.FromResult(new SalesPartyDisplayBatchAnswerV1(SalesPartyDisplayBatchOutcomeV1.Success, items));
         }
     }
 

@@ -85,6 +85,65 @@
   gap: 8px;
   margin: 0;
 }
+.rowActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.previewBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  padding: 24px;
+  background: rgb(20 32 54 / 48%);
+}
+.previewDialog {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  max-width: 1200px;
+  max-height: 100%;
+  margin: auto;
+  padding: 16px;
+  border: 1px solid #b9c1d1;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 16px 48px rgb(20 32 54 / 24%);
+}
+.previewHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.previewTitle {
+  margin: 0;
+  color: #1a2233;
+  font-size: 0.95rem;
+  overflow-wrap: anywhere;
+}
+.previewImage {
+  display: block;
+  width: auto;
+  max-width: 100%;
+  height: auto;
+  max-height: calc(100vh - 120px);
+  margin: auto;
+  object-fit: contain;
+}
+
+@media (max-width: 640px) {
+  .previewBackdrop {
+    padding: 8px;
+  }
+  .previewDialog {
+    padding: 12px;
+  }
+}
 
 .problem {
   font-size: 0.85rem;
