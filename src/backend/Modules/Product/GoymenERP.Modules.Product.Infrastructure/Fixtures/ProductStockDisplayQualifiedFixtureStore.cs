@@ -93,11 +93,11 @@ internal sealed class ProductStockDisplayQualifiedFixtureStore(
     public async Task<ProductStockDisplayQualifiedFixtureOutput> EnsureAsync(
         CancellationToken cancellationToken)
     {
-        // The host must materialize the released definition, then the existing synthetic technical
-        // fixture, in a prior clean scope. This store never creates or repairs master registry rows.
+        // The host must materialize the released definition and existing synthetic technical fixture
+        // in a prior clean scope. This store only validates that exact state; it never creates or
+        // repairs registry rows.
         if (context.ChangeTracker.Entries().Any()) throw Conflict();
         if (!await context.Families.AnyAsync(cancellationToken)) throw Conflict();
-        await new ProductTechnicalCardFixtureStore(context).EnsureAsync(cancellationToken);
 
         var expected = ProductStockDisplayQualifiedFixture.Record();
         var card = new ProductCardView(
@@ -105,6 +105,7 @@ internal sealed class ProductStockDisplayQualifiedFixtureStore(
             expected.RestoreReferences());
         var definition = await new SqlProductFamilyDefinitionSource(context).GetAsync(cancellationToken);
         ProductFamilyDefinitionRulesV2.RequireWellFormed(definition);
+        if (!MatchesPreparedRegistry(definition)) throw Conflict();
         var family = definition.Families.SingleOrDefault(candidate =>
             candidate.Id == ProductInitialTechnicalDefinitionV1.HotRolledSlitCoilFamilyId);
         var template = family is null ? null : ProductFamilyDefinitionRulesV2.TemplateOf(definition, family.Id);
@@ -180,6 +181,39 @@ internal sealed class ProductStockDisplayQualifiedFixtureStore(
             profile.Profile.Version.ToString(CultureInfo.InvariantCulture),
             persisted.Code,
             persisted.Name);
+    }
+
+    private static bool MatchesPreparedRegistry(ProductFamilyDefinitionV2 actual)
+    {
+        var genuine = ProductInitialTechnicalDefinitionV1.Definition();
+        var synthetic = ProductTechnicalCardFixture.Definition();
+        var expected = new ProductFamilyDefinitionV2(
+            [.. genuine.Families, .. synthetic.Families],
+            [.. genuine.Templates, .. synthetic.Templates],
+            [.. genuine.Entries, .. synthetic.Entries]);
+        if (!actual.Families.OrderBy(row => row.Id)
+                .SequenceEqual(expected.Families.OrderBy(row => row.Id))
+            || !actual.Entries.OrderBy(row => row.Dictionary, StringComparer.Ordinal)
+                .ThenBy(row => row.Code, StringComparer.Ordinal)
+                .SequenceEqual(expected.Entries.OrderBy(row => row.Dictionary, StringComparer.Ordinal)
+                    .ThenBy(row => row.Code, StringComparer.Ordinal)))
+        {
+            return false;
+        }
+
+        var actualTemplates = actual.Templates.OrderBy(row => row.Id)
+            .ThenBy(row => row.Version, StringComparer.Ordinal).ToArray();
+        var expectedTemplates = expected.Templates.OrderBy(row => row.Id)
+            .ThenBy(row => row.Version, StringComparer.Ordinal).ToArray();
+        if (actualTemplates.Length != expectedTemplates.Length) return false;
+        return actualTemplates.Zip(expectedTemplates).All(pair =>
+            pair.First.Id == pair.Second.Id
+            && pair.First.Version == pair.Second.Version
+            && pair.First.Code == pair.Second.Code
+            && pair.First.Name == pair.Second.Name
+            && pair.First.SourceRef == pair.Second.SourceRef
+            && pair.First.FamilyIds.SetEquals(pair.Second.FamilyIds)
+            && pair.First.Fields.SequenceEqual(pair.Second.Fields));
     }
 
     private static InvalidOperationException Conflict() => new(

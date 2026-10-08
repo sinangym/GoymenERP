@@ -467,6 +467,33 @@ public sealed class ProductGlobalRuntimeSqlServerRelationalAcceptanceTests
                 Assert.Equal(2, await removeHarnessGroups.ExecuteNonQueryAsync());
             }
 
+            await using (var genuineOnlyScope = factory.Services.CreateAsyncScope())
+            {
+                var genuineOnly = genuineOnlyScope.ServiceProvider.GetRequiredService<ProductDbContext>();
+                var before = (
+                    Families: await genuineOnly.Families.CountAsync(),
+                    Templates: await genuineOnly.Templates.CountAsync(),
+                    Links: await genuineOnly.TemplateFamilies.CountAsync(),
+                    Fields: await genuineOnly.TemplateFields.CountAsync(),
+                    Entries: await genuineOnly.DictionaryEntries.CountAsync());
+                Assert.Equal((4, 1, 4, 5, 5), before);
+                var store = new ProductStockDisplayQualifiedFixtureStore(
+                    genuineOnly,
+                    new ProductUnitProfileAdapter(
+                        new StockDisplayFixtureSettings(),
+                        new StockDisplayFixtureCompany()));
+                await Assert.ThrowsAsync<InvalidOperationException>(() => store.EnsureAsync(default));
+                Assert.Equal(before, (
+                    Families: await genuineOnly.Families.CountAsync(),
+                    Templates: await genuineOnly.Templates.CountAsync(),
+                    Links: await genuineOnly.TemplateFamilies.CountAsync(),
+                    Fields: await genuineOnly.TemplateFields.CountAsync(),
+                    Entries: await genuineOnly.DictionaryEntries.CountAsync()));
+                Assert.Empty(await genuineOnly.Products.ToListAsync());
+                Assert.Empty(await genuineOnly.CodeRegistrations.ToListAsync());
+                Assert.Empty(await genuineOnly.CodeCounters.ToListAsync());
+            }
+
             await using (var registryScope = factory.Services.CreateAsyncScope())
             {
                 await new ProductTechnicalCardFixtureStore(

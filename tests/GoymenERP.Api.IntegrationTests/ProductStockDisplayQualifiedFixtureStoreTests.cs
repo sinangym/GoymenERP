@@ -76,12 +76,19 @@ public sealed class ProductStockDisplayQualifiedFixtureStoreTests
         }
 
         await using var scope = provider.CreateAsyncScope();
+        var before = scope.ServiceProvider.GetRequiredService<ProductDbContext>();
+        var registryBefore = await new SqlProductFamilyDefinitionSource(before).GetAsync(default);
         await Assert.ThrowsAsync<InvalidOperationException>(() => scope.ServiceProvider
             .GetRequiredService<IProductStockDisplayQualifiedFixtureStore>()
             .EnsureAsync(default));
         var db = scope.ServiceProvider.GetRequiredService<ProductDbContext>();
+        var registryAfter = await new SqlProductFamilyDefinitionSource(db).GetAsync(default);
+        Assert.Equal(registryBefore.Families, registryAfter.Families);
+        Assert.Equal(registryBefore.Templates, registryAfter.Templates);
+        Assert.Equal(registryBefore.Entries, registryAfter.Entries);
         Assert.Single(await db.Families.ToListAsync());
         Assert.Empty(await db.Products.ToListAsync());
+        Assert.Empty(await db.CodeGroups.ToListAsync());
         Assert.Empty(await db.CodeRegistrations.ToListAsync());
         Assert.Empty(await db.CodeCounters.ToListAsync());
     }
