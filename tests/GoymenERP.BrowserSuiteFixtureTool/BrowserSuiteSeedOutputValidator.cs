@@ -100,11 +100,10 @@ internal static class BrowserSuiteSeedOutputValidator
             return key switch
             {
                 "productVersion" or "productUnitProfileVersion" => IsPositiveDecimal(value),
-                "productCode" => value.StartsWith("SYNR14-", StringComparison.Ordinal)
-                                 && IsPositiveDecimal(value[7..]),
+                "productCode" => string.Equals(value, "SAC-1", StringComparison.Ordinal),
                 "productName" => string.Equals(
                     value,
-                    "SENTETIK browser-suite:r14 stock candidate",
+                    "SENTETIK browser-suite:r14 genuine S235JR 3 mm x 248 mm kaplamasiz sac",
                     StringComparison.Ordinal),
                 _ => false,
             };

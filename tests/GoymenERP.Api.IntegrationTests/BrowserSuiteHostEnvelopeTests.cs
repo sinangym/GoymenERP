@@ -121,8 +121,8 @@ public sealed class BrowserSuiteHostEnvelopeTests
             {
                 ["productVersion"] = "2",
                 ["productUnitProfileVersion"] = "1",
-                ["productCode"] = "SYNR14-1",
-                ["productName"] = "SENTETIK browser-suite:r14 stock candidate",
+                ["productCode"] = "SAC-1",
+                ["productName"] = "SENTETIK browser-suite:r14 genuine S235JR 3 mm x 248 mm kaplamasiz sac",
             },
             new HashSet<string>(StringComparer.Ordinal));
 
@@ -130,8 +130,8 @@ public sealed class BrowserSuiteHostEnvelopeTests
                  {
                      ("productVersion", "02"),
                      ("productUnitProfileVersion", "0"),
-                     ("productCode", "SYNR14-0"),
-                     ("productName", "SENTETIK browser-suite:r14 stock candidate "),
+                     ("productCode", "SAC-2"),
+                     ("productName", "SENTETIK browser-suite:r14 genuine S235JR 3 mm x 248 mm kaplamasiz sac "),
                  })
         {
             Assert.Throws<InvalidOperationException>(() => BrowserSuiteSeedOutputValidator.Validate(
