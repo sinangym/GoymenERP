@@ -73,7 +73,7 @@ internal static class C01E2eFixtureWriterActivation
         // s04 E1: Product's fixed Active+Sellable candidate whose stock display resolves only from the
         // released technical definition prepared by the preceding registry scope.
         services.AddProductStockDisplayQualifiedFixtureStore(CreateProductFixtureUnitProfiles);
-        services.AddScoped<C01E2eProductSalesCandidateFixtureWriter>();
+        services.AddScoped<C01E2eProductStockDisplayQualifiedFixtureWriter>();
         // pur01 P-04: Product's separate fixed Active+Purchasable candidate. It shares only the
         // approved Settings adapter and complete runner gate; the s04 record is never upgraded.
         services.AddProductPurchaseCandidateFixtureStore(CreateProductFixtureUnitProfiles);
@@ -597,11 +597,11 @@ public sealed class C01E2eProductTechnicalCardFixtureWriter
 /// Product-owned port accepts no caller-selected identity or business value and returns the exact
 /// persisted Product/Settings tuple for the suite binding.
 /// </summary>
-public sealed class C01E2eProductSalesCandidateFixtureWriter
+public sealed class C01E2eProductStockDisplayQualifiedFixtureWriter
 {
     private readonly IProductStockDisplayQualifiedFixtureStore _store;
 
-    public C01E2eProductSalesCandidateFixtureWriter(
+    public C01E2eProductStockDisplayQualifiedFixtureWriter(
         IHostEnvironment environment,
         IConfiguration configuration,
         IProductStockDisplayQualifiedFixtureStore store)

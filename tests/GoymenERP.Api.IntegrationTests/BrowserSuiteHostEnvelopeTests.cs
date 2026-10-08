@@ -289,7 +289,7 @@ public sealed class BrowserSuiteHostEnvelopeTests
             var registered = host.Services.GetRequiredService<IServiceProviderIsService>();
             Assert.False(registered.IsService(typeof(C01E2eProductTechnicalCardFixtureWriter)));
             Assert.False(registered.IsService(typeof(IProductTechnicalCardFixtureStore)));
-            Assert.False(registered.IsService(typeof(C01E2eProductSalesCandidateFixtureWriter)));
+            Assert.False(registered.IsService(typeof(C01E2eProductStockDisplayQualifiedFixtureWriter)));
             Assert.False(registered.IsService(typeof(IProductStockDisplayQualifiedFixtureStore)));
             Assert.False(registered.IsService(typeof(C01E2eProductPurchaseCandidateFixtureWriter)));
             Assert.False(registered.IsService(typeof(IProductPurchaseCandidateFixtureStore)));
@@ -399,7 +399,7 @@ public sealed class BrowserSuiteHostEnvelopeTests
         var registered = host.Services.GetRequiredService<IServiceProviderIsService>();
         Assert.True(registered.IsService(typeof(C01E2eProductMasterAssignmentFixtureWriter)));
         Assert.True(registered.IsService(typeof(C01E2eProductCodeGroupFixtureWriter)));
-        Assert.True(registered.IsService(typeof(C01E2eProductSalesCandidateFixtureWriter)));
+        Assert.True(registered.IsService(typeof(C01E2eProductStockDisplayQualifiedFixtureWriter)));
         Assert.True(registered.IsService(typeof(IProductStockDisplayQualifiedFixtureStore)));
         Assert.False(registered.IsService(typeof(IProductSalesCandidateFixtureStore)));
         Assert.True(registered.IsService(typeof(C01E2eProductPurchaseCandidateFixtureWriter)));

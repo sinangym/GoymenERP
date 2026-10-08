@@ -55,7 +55,7 @@ public sealed class C01E2eFixtureWriterActivationTests
             || descriptor.ServiceType == typeof(IProductMasterAssignmentFixtureStore)
             || descriptor.ServiceType == typeof(C01E2eProductTechnicalCardFixtureWriter)
             || descriptor.ServiceType == typeof(IProductTechnicalCardFixtureStore)
-            || descriptor.ServiceType == typeof(C01E2eProductSalesCandidateFixtureWriter)
+            || descriptor.ServiceType == typeof(C01E2eProductStockDisplayQualifiedFixtureWriter)
             || descriptor.ServiceType == typeof(IProductStockDisplayQualifiedFixtureStore)
             || descriptor.ServiceType == typeof(C01E2eProductPurchaseSalesStockJourneyFixtureWriter)
             || descriptor.ServiceType == typeof(IProductPurchaseSalesStockJourneyFixtureStore)
@@ -128,7 +128,7 @@ public sealed class C01E2eFixtureWriterActivationTests
         Assert.Single(services, descriptor =>
             descriptor.ServiceType == typeof(IProductTechnicalCardFixtureStore));
         Assert.Single(services, descriptor =>
-            descriptor.ServiceType == typeof(C01E2eProductSalesCandidateFixtureWriter));
+            descriptor.ServiceType == typeof(C01E2eProductStockDisplayQualifiedFixtureWriter));
         Assert.Single(services, descriptor =>
             descriptor.ServiceType == typeof(IProductStockDisplayQualifiedFixtureStore));
         Assert.DoesNotContain(services, descriptor =>
@@ -154,7 +154,7 @@ public sealed class C01E2eFixtureWriterActivationTests
             Guid.Parse("c5ef643e-a6e8-51f3-89f2-8e68b00cb983"),
             Guid.Parse("4a790fdc-2a6b-5126-835f-d3a13d28b71c"), "1", "SYNS04G-1",
             "SENTETIK browser-suite:s04 stock-display-qualified sales candidate");
-        var writer = new C01E2eProductSalesCandidateFixtureWriter(
+        var writer = new C01E2eProductStockDisplayQualifiedFixtureWriter(
             new TestHostEnvironment("Testing"),
             Configuration(Gate),
             new RecordingStockDisplayQualifiedStore(expected));
@@ -206,7 +206,7 @@ public sealed class C01E2eFixtureWriterActivationTests
             || descriptor.ServiceType == typeof(C01E2eProductTechnicalCardFixtureWriter)
             || descriptor.ImplementationType == typeof(C01E2eManufacturingToleranceFixtureProvider)
             || descriptor.ServiceType == typeof(IProductTechnicalCardFixtureStore)
-            || descriptor.ServiceType == typeof(C01E2eProductSalesCandidateFixtureWriter)
+            || descriptor.ServiceType == typeof(C01E2eProductStockDisplayQualifiedFixtureWriter)
             || descriptor.ServiceType == typeof(IProductStockDisplayQualifiedFixtureStore)
             || descriptor.ServiceType == typeof(C01E2eProductPurchaseSalesStockJourneyFixtureWriter)
             || descriptor.ServiceType == typeof(IProductPurchaseSalesStockJourneyFixtureStore)
@@ -221,7 +221,7 @@ public sealed class C01E2eFixtureWriterActivationTests
                 configuration,
                 new RecordingTechnicalCardStore()));
         Assert.Throws<InvalidOperationException>(() =>
-            new C01E2eProductSalesCandidateFixtureWriter(
+            new C01E2eProductStockDisplayQualifiedFixtureWriter(
                 environment,
                 configuration,
                 new RecordingStockDisplayQualifiedStore()));
