@@ -69,7 +69,7 @@ function amountOf(position: Position): readonly string[] {
 }
 
 /** Measures text ink and hit testing, not DOM existence or the hover title. Scrolls a non-pinned cell into reach. */
-async function desktopInk(row: Locator, header: string, expected: string, wrapped = false): Promise<void> {
+async function desktopInk(row: Locator, header: string, expected: string, spanText = false): Promise<void> {
   const measured = await row.evaluate((element, input) => {
     const table = element.closest('table')
     const scroll = table?.parentElement
@@ -77,7 +77,7 @@ async function desktopInk(row: Locator, header: string, expected: string, wrappe
     const cells = [...element.querySelectorAll('td')]
     const index = headers.findIndex((candidate) => candidate.textContent?.trim() === input.header)
     if (!table || !scroll || index < 0 || cells.length !== headers.length) return null
-    const target = input.wrapped
+    const target = input.spanText
       ? [...cells[index].querySelectorAll('span')].find((node) => node.textContent === input.expected)
       : cells[index]
     if (!target) return null
@@ -127,20 +127,20 @@ async function desktopInk(row: Locator, header: string, expected: string, wrappe
       actionHit: !!actionButton && !!buttonHit && actionButton.contains(buttonHit),
       noEllipsis: getComputedStyle(target).textOverflow !== 'ellipsis',
     }
-  }, { header, expected, wrapped })
+  }, { header, expected, spanText })
   expect(measured, `${header}: ${expected} must be fully readable and uncovered`).not.toBeNull()
   expect(measured?.text).toBe(expected)
   expect(measured?.fragmentsReachable).toBe(true)
   expect(measured?.pinsClear).toBe(true)
   expect(measured?.actionHit).toBe(true)
   expect(measured?.noEllipsis).toBe(true)
-  if (wrapped) expect(measured?.lines).toBeGreaterThan(1)
+  if (spanText && expected === productName) expect(measured?.lines).toBeGreaterThan(1)
 }
 
 async function assertDesktopPosition(page: Page, position: Position): Promise<void> {
   const row = stockRow(page, position.labelId)
   await expect(row).toBeVisible()
-  await expect(row.getByText(productCode, { exact: true })).toBeVisible()
+  await desktopInk(row, 'Ürün', productCode, true)
   await desktopInk(row, 'Ürün', productName, true)
   for (const [index, label] of QUANTITIES.entries()) {
     await desktopInk(row, label, trNumber(amountOf(position)[index]))
@@ -153,13 +153,15 @@ async function assertMobilePosition(page: Page, position: Position): Promise<voi
   await expect(card).toBeVisible()
   const measured = await card.evaluate((element, input) => {
     element.scrollIntoView({ block: 'center' })
-    const name = [...element.querySelectorAll('span')].find((node) => node.textContent === input.name)
+    const spans = [...element.querySelectorAll('span')]
+    const name = spans.find((node) => node.textContent === input.name)
+    const code = spans.find((node) => node.textContent === input.code)
     const facts = [...element.querySelectorAll('dl:last-of-type > div')]
     const amounts = input.labels.map((label) => {
       const fact = facts.find((node) => node.querySelector('dt')?.textContent?.trim() === label)
       return fact?.querySelector('dd') ?? null
     })
-    if (!name || amounts.some((node) => node === null)) return null
+    if (!name || !code || amounts.some((node) => node === null)) return null
     const cardRect = element.getBoundingClientRect()
     const inspect = (node: Element) => {
       const range = document.createRange()
@@ -177,9 +179,10 @@ async function assertMobilePosition(page: Page, position: Position): Promise<voi
         noEllipsis: getComputedStyle(node).textOverflow !== 'ellipsis',
       }
     }
-    return { name: inspect(name), amounts: amounts.map((node) => inspect(node as Element)) }
-  }, { name: productName, labels: QUANTITIES })
+    return { name: inspect(name), code: inspect(code), amounts: amounts.map((node) => inspect(node as Element)) }
+  }, { name: productName, code: productCode, labels: QUANTITIES })
   expect(measured).not.toBeNull()
+  expect(measured?.code).toMatchObject({ text: productCode, reachable: true, noEllipsis: true })
   expect(measured?.name).toMatchObject({ text: productName, reachable: true, noEllipsis: true })
   expect(measured?.name.lines).toBeGreaterThan(1)
   for (const [index, value] of amountOf(position).entries()) {
