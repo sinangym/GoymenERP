@@ -85,8 +85,8 @@ export function readEnvironment(): R14Environment {
   }
   if (new Set([seed.recorderActor, seed.deniedActor, seed.arrangerActor, seed.transformerActor,
     seed.counterActor, seed.countApproverActor, seed.scrapperActor, seed.scrapApproverActor]).size !== 8 ||
-      seed.companyId === seed.otherCompanyId || !/^SYNR14-[1-9]\d*$/.test(seed.productCode) ||
-      seed.productName !== 'SENTETIK browser-suite:r14 stock candidate') {
+      seed.companyId === seed.otherCompanyId || seed.productCode !== 'SAC-1' ||
+      seed.productName !== 'SENTETIK browser-suite:r14 genuine S235JR 3 mm x 248 mm kaplamasiz sac') {
     throw new Error('BROWSER_E2E_R14_SEED semantic binding is invalid')
   }
   return { apiBaseUrl, sqlConnection, database, testedCommit, seed }
