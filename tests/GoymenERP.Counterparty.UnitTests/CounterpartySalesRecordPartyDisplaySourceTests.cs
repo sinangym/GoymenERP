@@ -1,46 +1,61 @@
-using GoymenERP.Modules.Counterparty.Application;
 using GoymenERP.Modules.Counterparty.Application.Contracts;
+using GoymenERP.Modules.Counterparty.Infrastructure;
+using GoymenERP.Modules.Counterparty.Infrastructure.Persistence;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace GoymenERP.Counterparty.UnitTests;
 
 public sealed class CounterpartySalesRecordPartyDisplaySourceTests
 {
     private static readonly Guid Company = Guid.Parse("10000000-0000-0000-0000-000000000001");
-    private static readonly Guid PartyA = Guid.Parse("71000000-0000-0000-0000-000000000001");
-    private static readonly Guid PartyB = Guid.Parse("71000000-0000-0000-0000-000000000002");
+    private static readonly Guid Party = Guid.Parse("71000000-0000-0000-0000-000000000001");
 
     [Fact]
-    public async Task Authorized_record_ids_are_canonicalized_once_and_missing_rows_remain_omitted()
+    public void Module_exposes_only_the_public_record_bound_source_and_keeps_its_runtime_internal()
     {
-        var reader = new Reader
-        {
-            Answer = new(
-                CounterpartySalesRecordPartyDisplayOutcomeV1.Found,
-                [new(PartyB, "CAR-B", "Cari B", null)]),
-        };
-        var source = new CounterpartySalesRecordPartyDisplaySourceV1(reader);
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["DB_PROVIDER"] = "SqlServer",
+                ["DB_CONNECTION_STRING"] = "Server=127.0.0.1;Database=not-opened;User Id=x;Password=x;",
+            })
+            .Build();
+        var services = new ServiceCollection();
 
-        var answer = await source.ReadForAuthorizedSalesRecordsAsync(
-            new(Company, "sales-reader", [PartyB, PartyA]));
+        services.AddCounterpartyModule(configuration);
 
-        Assert.Equal(CounterpartySalesRecordPartyDisplayOutcomeV1.Found, answer.Outcome);
-        Assert.Equal(PartyB, Assert.Single(answer.Items).PartyId);
-        Assert.Equal([PartyA, PartyB], Assert.Single(reader.Requests).PartyIds);
+        var source = Assert.Single(services.Where(descriptor =>
+            descriptor.ServiceType == typeof(ICounterpartySalesRecordPartyDisplaySourceV1)));
+        Assert.Equal(typeof(CounterpartySalesRecordPartyDisplaySourceV1), source.ImplementationType);
+        Assert.False(source.ImplementationType!.IsPublic);
+        Assert.DoesNotContain(services, descriptor =>
+            descriptor.ServiceType.Name.Contains("OwnerReader", StringComparison.Ordinal));
+        Assert.Null(typeof(ICounterpartySalesRecordPartyDisplaySourceV1).Assembly.GetType(
+            "GoymenERP.Modules.Counterparty.Application.ICounterpartySalesRecordPartyDisplayOwnerReaderV1"));
     }
 
     [Fact]
-    public async Task Empty_duplicate_noncanonical_and_over_bound_requests_are_denied_before_the_owner_reader()
+    public async Task Invalid_or_unbound_requests_are_denied_before_database_or_organization_access()
     {
-        var reader = new Reader();
-        var source = new CounterpartySalesRecordPartyDisplaySourceV1(reader);
+        var context = new TestCompanyContext(Company);
+        var user = new TestCurrentUser("sales-reader", [Company]);
+        var source = new CounterpartySalesRecordPartyDisplaySourceV1(
+            null!,
+            context,
+            user,
+            null!,
+            null!);
         var requests = new CounterpartySalesRecordPartyDisplayRequestV1[]
         {
-            new(Guid.Empty, "sales-reader", [PartyA]),
-            new(Company, " ", [PartyA]),
+            new(Guid.Empty, "sales-reader", [Party]),
+            new(Company, " ", [Party]),
             new(Company, "sales-reader", []),
             new(Company, "sales-reader", [Guid.Empty]),
-            new(Company, "sales-reader", [PartyA, PartyA]),
+            new(Company, "sales-reader", [Party, Party]),
             new(Company, "sales-reader", Enumerable.Range(0, 101).Select(_ => Guid.NewGuid()).ToArray()),
+            new(Guid.NewGuid(), "sales-reader", [Party]),
+            new(Company, "other-reader", [Party]),
         };
 
         foreach (var request in requests)
@@ -49,68 +64,34 @@ public sealed class CounterpartySalesRecordPartyDisplaySourceTests
             Assert.Equal(CounterpartySalesRecordPartyDisplayOutcomeV1.Denied, answer.Outcome);
             Assert.Empty(answer.Items);
         }
-
-        Assert.Empty(reader.Requests);
     }
 
     [Fact]
-    public async Task Foreign_duplicate_or_malformed_owner_rows_fail_closed_without_disclosure()
+    public async Task Cancellation_is_not_collapsed_into_a_closed_business_outcome()
     {
-        var cases = new IReadOnlyList<CounterpartySalesRecordPartyDisplayV1>[]
-        {
-            [new(Guid.NewGuid(), "CAR-X", "Foreign", null)],
-            [new(PartyA, "CAR-A", "Cari A", null), new(PartyA, "CAR-A", "Cari A", null)],
-            [new(PartyA, " ", "Cari A", null)],
-        };
-
-        foreach (var items in cases)
-        {
-            var reader = new Reader
-            {
-                Answer = new(CounterpartySalesRecordPartyDisplayOutcomeV1.Found, items),
-            };
-            var answer = await new CounterpartySalesRecordPartyDisplaySourceV1(reader)
-                .ReadForAuthorizedSalesRecordsAsync(new(Company, "sales-reader", [PartyA]));
-            Assert.Equal(CounterpartySalesRecordPartyDisplayOutcomeV1.Unavailable, answer.Outcome);
-            Assert.Empty(answer.Items);
-        }
-    }
-
-    [Fact]
-    public async Task Owner_denial_failure_and_cancellation_keep_distinct_closed_outcomes()
-    {
-        var denied = await new CounterpartySalesRecordPartyDisplaySourceV1(
-                new Reader { Exception = new UnauthorizedAccessException() })
-            .ReadForAuthorizedSalesRecordsAsync(new(Company, "sales-reader", [PartyA]));
-        var unavailable = await new CounterpartySalesRecordPartyDisplaySourceV1(
-                new Reader { Exception = new InvalidOperationException() })
-            .ReadForAuthorizedSalesRecordsAsync(new(Company, "sales-reader", [PartyA]));
         using var cancellation = new CancellationTokenSource();
         cancellation.Cancel();
+        var source = new CounterpartySalesRecordPartyDisplaySourceV1(null!, null!, null!, null!, null!);
 
-        Assert.Equal(CounterpartySalesRecordPartyDisplayOutcomeV1.Denied, denied.Outcome);
-        Assert.Equal(CounterpartySalesRecordPartyDisplayOutcomeV1.Unavailable, unavailable.Outcome);
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
-            new CounterpartySalesRecordPartyDisplaySourceV1(new Reader())
-                .ReadForAuthorizedSalesRecordsAsync(new(Company, "sales-reader", [PartyA]), cancellation.Token));
+            source.ReadForAuthorizedSalesRecordsAsync(
+                new(Company, "sales-reader", [Party]),
+                cancellation.Token));
     }
 
-    private sealed class Reader : ICounterpartySalesRecordPartyDisplayOwnerReaderV1
+    private sealed class TestCompanyContext(Guid companyId)
+        : GoymenERP.BuildingBlocks.Multitenancy.ICompanyContext
     {
-        public List<CounterpartySalesRecordPartyDisplayRequestV1> Requests { get; } = [];
-        public CounterpartySalesRecordPartyDisplayAnswerV1 Answer { get; init; } =
-            new(CounterpartySalesRecordPartyDisplayOutcomeV1.Found, []);
-        public Exception? Exception { get; init; }
+        public bool IsResolved => true;
+        public Guid CompanyId => companyId;
+    }
 
-        public Task<CounterpartySalesRecordPartyDisplayAnswerV1> ReadAsync(
-            CounterpartySalesRecordPartyDisplayRequestV1 request,
-            CancellationToken cancellationToken = default)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            Requests.Add(request);
-            return Exception is null
-                ? Task.FromResult(Answer)
-                : Task.FromException<CounterpartySalesRecordPartyDisplayAnswerV1>(Exception);
-        }
+    private sealed class TestCurrentUser(string actorId, IReadOnlySet<Guid> companies)
+        : GoymenERP.BuildingBlocks.Security.ICurrentUser
+    {
+        public bool IsAuthenticated => true;
+        public string? UserId => actorId;
+        public IReadOnlySet<Guid> AllowedCompanyIds => companies;
+        public bool CanAccessCompany(Guid companyId) => companies.Contains(companyId);
     }
 }

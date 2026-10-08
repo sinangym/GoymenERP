@@ -3,69 +3,90 @@ using System.Data.Common;
 using System.Text.Json;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
-using GoymenERP.Modules.Counterparty.Application;
 using GoymenERP.Modules.Counterparty.Application.Contracts;
 using GoymenERP.Modules.Organization.Application.Contracts;
 using Microsoft.EntityFrameworkCore;
 
 namespace GoymenERP.Modules.Counterparty.Infrastructure.Persistence;
 
-internal sealed class CounterpartySalesRecordPartyDisplayQueryV1(
+/// <summary>
+/// Internal runtime for the record-bound Sales projection. The only public DI surface is
+/// <see cref="ICounterpartySalesRecordPartyDisplaySourceV1"/>; no owner reader is resolvable.
+/// </summary>
+internal sealed class CounterpartySalesRecordPartyDisplaySourceV1(
     CounterpartyDbContext dbContext,
     ICompanyContext companyContext,
     ICurrentUser currentUser,
     IOrganizationService organizationService,
     ICounterpartySalesRecordPartyDisplaySqlObserver sqlObserver)
-    : ICounterpartySalesRecordPartyDisplayOwnerReaderV1
+    : ICounterpartySalesRecordPartyDisplaySourceV1
 {
-    public async Task<CounterpartySalesRecordPartyDisplayAnswerV1> ReadAsync(
+    private const int MaximumPartyCount = 100;
+
+    public async Task<CounterpartySalesRecordPartyDisplayAnswerV1> ReadForAuthorizedSalesRecordsAsync(
         CounterpartySalesRecordPartyDisplayRequestV1 request,
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        if (!RequestMatchesCurrentContext(request))
+        if (!TryCanonicalize(request, out var canonical)
+            || !RequestMatchesCurrentContext(canonical))
         {
             return Closed(CounterpartySalesRecordPartyDisplayOutcomeV1.Denied);
         }
 
         var companyId = companyContext.CompanyId;
         var actorId = currentUser.UserId!;
-        if (!await HasFreshCompanyAccessAsync(request, companyId, actorId, cancellationToken))
+        try
         {
-            return Closed(CounterpartySalesRecordPartyDisplayOutcomeV1.Denied);
-        }
-
-        var rows = await ReadRowsAsync(companyId, request.PartyIds, cancellationToken);
-        if (!RemainsCurrent(request, companyId, actorId)
-            || !await HasFreshCompanyAccessAsync(request, companyId, actorId, cancellationToken))
-        {
-            return Closed(CounterpartySalesRecordPartyDisplayOutcomeV1.Denied);
-        }
-
-        var seen = new HashSet<Guid>();
-        var requested = request.PartyIds.ToHashSet();
-        var items = new List<CounterpartySalesRecordPartyDisplayV1>(rows.Count);
-        foreach (var row in rows)
-        {
-            if (row.PartyId == Guid.Empty
-                || !requested.Contains(row.PartyId)
-                || !seen.Add(row.PartyId)
-                || string.IsNullOrWhiteSpace(row.Code)
-                || string.IsNullOrWhiteSpace(row.LegalName))
+            if (!await HasFreshCompanyAccessAsync(canonical, companyId, actorId, cancellationToken))
             {
-                return Closed(CounterpartySalesRecordPartyDisplayOutcomeV1.Unavailable);
+                return Closed(CounterpartySalesRecordPartyDisplayOutcomeV1.Denied);
             }
 
-            items.Add(new CounterpartySalesRecordPartyDisplayV1(
-                row.PartyId,
-                row.Code,
-                row.LegalName,
-                row.TradeName));
-        }
+            var rows = await ReadRowsAsync(companyId, canonical.PartyIds, cancellationToken);
+            if (!RemainsCurrent(canonical, companyId, actorId)
+                || !await HasFreshCompanyAccessAsync(canonical, companyId, actorId, cancellationToken))
+            {
+                return Closed(CounterpartySalesRecordPartyDisplayOutcomeV1.Denied);
+            }
 
-        return new CounterpartySalesRecordPartyDisplayAnswerV1(
-            CounterpartySalesRecordPartyDisplayOutcomeV1.Found,
-            items);
+            var requested = canonical.PartyIds.ToHashSet();
+            var seen = new HashSet<Guid>();
+            var items = new List<CounterpartySalesRecordPartyDisplayV1>(rows.Count);
+            foreach (var row in rows)
+            {
+                if (row.PartyId == Guid.Empty
+                    || !requested.Contains(row.PartyId)
+                    || !seen.Add(row.PartyId)
+                    || string.IsNullOrWhiteSpace(row.Code)
+                    || string.IsNullOrWhiteSpace(row.LegalName))
+                {
+                    return Closed(CounterpartySalesRecordPartyDisplayOutcomeV1.Unavailable);
+                }
+
+                items.Add(new CounterpartySalesRecordPartyDisplayV1(
+                    row.PartyId,
+                    row.Code,
+                    row.LegalName,
+                    row.TradeName));
+            }
+
+            return new CounterpartySalesRecordPartyDisplayAnswerV1(
+                CounterpartySalesRecordPartyDisplayOutcomeV1.Found,
+                items);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return Closed(CounterpartySalesRecordPartyDisplayOutcomeV1.Denied);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            return Closed(CounterpartySalesRecordPartyDisplayOutcomeV1.Unavailable);
+        }
     }
 
     private async Task<bool> HasFreshCompanyAccessAsync(
@@ -164,6 +185,31 @@ internal sealed class CounterpartySalesRecordPartyDisplayQueryV1(
         RequestMatchesCurrentContext(request)
         && companyContext.CompanyId == expectedCompanyId
         && string.Equals(currentUser.UserId, expectedActorId, StringComparison.Ordinal);
+
+    private static bool TryCanonicalize(
+        CounterpartySalesRecordPartyDisplayRequestV1? request,
+        out CounterpartySalesRecordPartyDisplayRequestV1 canonical)
+    {
+        canonical = null!;
+        if (request is null
+            || request.CompanyId == Guid.Empty
+            || string.IsNullOrWhiteSpace(request.ActorId)
+            || request.PartyIds is null
+            || request.PartyIds.Count is 0 or > MaximumPartyCount
+            || request.PartyIds.Any(id => id == Guid.Empty))
+        {
+            return false;
+        }
+
+        var partyIds = request.PartyIds.Distinct().Order().ToArray();
+        if (partyIds.Length != request.PartyIds.Count)
+        {
+            return false;
+        }
+
+        canonical = request with { PartyIds = partyIds };
+        return true;
+    }
 
     private static void AddParameter(DbCommand command, string name, object value, DbType type)
     {

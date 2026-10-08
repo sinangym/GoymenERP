@@ -1,5 +1,4 @@
 using GoymenERP.BuildingBlocks.Shell;
-using GoymenERP.Modules.Counterparty.Application;
 using GoymenERP.Modules.Counterparty.Application.Contracts;
 using GoymenERP.Modules.Counterparty.Infrastructure.Persistence;
 using GoymenERP.Modules.Counterparty.Infrastructure.Shell;
@@ -49,9 +48,6 @@ public static class CounterpartyModuleExtensions
         services.AddScoped<
             ICounterpartySalesRecordPartyDisplaySourceV1,
             CounterpartySalesRecordPartyDisplaySourceV1>();
-        services.AddScoped<
-            ICounterpartySalesRecordPartyDisplayOwnerReaderV1,
-            CounterpartySalesRecordPartyDisplayQueryV1>();
         services.AddScoped<
             ICounterpartyManufacturingPartyAccountSourceV1,
             CounterpartyManufacturingPartyAccountSourceV1>();

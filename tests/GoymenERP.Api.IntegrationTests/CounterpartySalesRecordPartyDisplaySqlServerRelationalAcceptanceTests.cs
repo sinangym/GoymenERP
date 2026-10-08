@@ -96,6 +96,43 @@ public sealed class CounterpartySalesRecordPartyDisplaySqlServerRelationalAccept
             Assert.Equal(CounterpartySalesRecordPartyDisplayOutcomeV1.Denied, stale.Outcome);
             Assert.Empty(stale.Items);
             Assert.Single(staleObserver.Commands);
+
+            var actorContext = new TestCompanyContext(TestCompanyIds.CompanyA);
+            var mutableUser = new TestCurrentUser("sales-reader", [TestCompanyIds.CompanyA]);
+            var actorOrganization = new TestOrganizationService(TestCompanyIds.CompanyA)
+            {
+                OnRead = read =>
+                {
+                    if (read == 2)
+                    {
+                        mutableUser.SetActor("replacement-reader");
+                    }
+                },
+            };
+            var actorObserver = new CapturingSqlObserver();
+            await using var actorDbContext = CreateDbContext(factory.DatabaseConnectionString, actorContext);
+            var actorDrift = await Source(actorDbContext, actorContext, mutableUser, actorOrganization, actorObserver)
+                .ReadForAuthorizedSalesRecordsAsync(request);
+            Assert.Equal(CounterpartySalesRecordPartyDisplayOutcomeV1.Denied, actorDrift.Outcome);
+            Assert.Empty(actorDrift.Items);
+            Assert.Single(actorObserver.Commands);
+
+            var accessContext = new TestCompanyContext(TestCompanyIds.CompanyA);
+            var accessOrganization = new TestOrganizationService(TestCompanyIds.CompanyA);
+            accessOrganization.OnRead = read =>
+            {
+                if (read == 2)
+                {
+                    accessOrganization.Authorized = false;
+                }
+            };
+            var accessObserver = new CapturingSqlObserver();
+            await using var accessDbContext = CreateDbContext(factory.DatabaseConnectionString, accessContext);
+            var accessLost = await Source(accessDbContext, accessContext, user, accessOrganization, accessObserver)
+                .ReadForAuthorizedSalesRecordsAsync(request);
+            Assert.Equal(CounterpartySalesRecordPartyDisplayOutcomeV1.Denied, accessLost.Outcome);
+            Assert.Empty(accessLost.Items);
+            Assert.Single(accessObserver.Commands);
         }
         finally
         {
@@ -110,12 +147,12 @@ public sealed class CounterpartySalesRecordPartyDisplaySqlServerRelationalAccept
         ICurrentUser user,
         IOrganizationService organization,
         ICounterpartySalesRecordPartyDisplaySqlObserver observer) =>
-        new(new CounterpartySalesRecordPartyDisplayQueryV1(
+        new(
             dbContext,
             context,
             user,
             organization,
-            observer));
+            observer);
 
     private static CounterpartyDbContext CreateDbContext(string connectionString, ICompanyContext context) =>
         new(new DbContextOptionsBuilder<CounterpartyDbContext>().UseSqlServer(connectionString).Options, context);
@@ -186,16 +223,19 @@ public sealed class CounterpartySalesRecordPartyDisplaySqlServerRelationalAccept
 
     private sealed class TestCurrentUser(string actorId, IReadOnlySet<Guid> companies) : ICurrentUser
     {
+        private string actor = actorId;
         public bool IsAuthenticated => true;
-        public string? UserId => actorId;
+        public string? UserId => actor;
         public IReadOnlySet<Guid> AllowedCompanyIds => companies;
         public bool CanAccessCompany(Guid companyId) => companies.Contains(companyId);
+        public void SetActor(string value) => actor = value;
     }
 
     private sealed class TestOrganizationService(Guid activeCompanyId) : IOrganizationService
     {
         public int Reads { get; private set; }
-        public Action<int>? OnRead { get; init; }
+        public Action<int>? OnRead { get; set; }
+        public bool Authorized { get; set; } = true;
 
         public Task<IReadOnlyList<CompanySummary>> GetAuthorizedCompaniesAsync(CancellationToken cancellationToken)
         {
@@ -203,7 +243,7 @@ public sealed class CounterpartySalesRecordPartyDisplaySqlServerRelationalAccept
             Reads++;
             OnRead?.Invoke(Reads);
             return Task.FromResult<IReadOnlyList<CompanySummary>>(
-                [new CompanySummary(activeCompanyId, "TEST", "Test Company", false)]);
+                Authorized ? [new CompanySummary(activeCompanyId, "TEST", "Test Company", false)] : []);
         }
 
         public Task<IReadOnlyList<SiteSummary>> GetSitesAsync(CancellationToken cancellationToken) =>
