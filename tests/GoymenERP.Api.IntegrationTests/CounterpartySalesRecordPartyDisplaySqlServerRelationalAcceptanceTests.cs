@@ -34,7 +34,9 @@ public sealed class CounterpartySalesRecordPartyDisplaySqlServerRelationalAccept
             await SeedAsync(factory.DatabaseConnectionString);
 
             var context = new TestCompanyContext(TestCompanyIds.CompanyA);
-            var user = new TestCurrentUser("sales-reader", [TestCompanyIds.CompanyA]);
+            var user = new TestCurrentUser(
+                "sales-reader",
+                new HashSet<Guid> { TestCompanyIds.CompanyA });
             var observer = new CapturingSqlObserver();
             var organization = new TestOrganizationService(TestCompanyIds.CompanyA);
             await using var dbContext = CreateDbContext(factory.DatabaseConnectionString, context);
@@ -98,7 +100,9 @@ public sealed class CounterpartySalesRecordPartyDisplaySqlServerRelationalAccept
             Assert.Single(staleObserver.Commands);
 
             var actorContext = new TestCompanyContext(TestCompanyIds.CompanyA);
-            var mutableUser = new TestCurrentUser("sales-reader", [TestCompanyIds.CompanyA]);
+            var mutableUser = new TestCurrentUser(
+                "sales-reader",
+                new HashSet<Guid> { TestCompanyIds.CompanyA });
             var actorOrganization = new TestOrganizationService(TestCompanyIds.CompanyA)
             {
                 OnRead = read =>
