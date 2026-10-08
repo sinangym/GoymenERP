@@ -37,10 +37,11 @@ describe('GOY-DS-001 tokens.css', () => {
     expect(tokensCss).not.toMatch(/url\(/i)
   })
 
-  it('keeps the current system font chain (IBM Plex is a separate allocation)', () => {
+  it('leads with IBM Plex and keeps the current system chain as the fallback (FONT-01)', () => {
     const sans = declarations.find((d) => d.name === '--goy-ds-font-sans')?.value
-    expect(sans).toBe("system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif")
-    expect(tokensCss).not.toMatch(/plex/i)
+    const mono = declarations.find((d) => d.name === '--goy-ds-font-mono')?.value
+    expect(sans).toBe("'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif")
+    expect(mono).toBe("'IBM Plex Mono', ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace")
   })
 })
 
@@ -60,8 +61,8 @@ describe('GOY-DS-001 primitives.module.css', () => {
 })
 
 describe('index.css', () => {
-  it('only gains the namespaced token import; its existing rules are unchanged', () => {
+  it('only gains the namespaced token and local font imports; its existing rules are unchanged', () => {
     const lines = indexCss.split('\n').map((l) => l.trim()).filter(Boolean)
-    expect(lines).toEqual(["@import './ui/tokens.css';", 'body { margin: 0; }', '#root { min-height: 100vh; }'])
+    expect(lines).toEqual(["@import './ui/tokens.css';", "@import './ui/fonts.css';", 'body { margin: 0; }', '#root { min-height: 100vh; }'])
   })
 })

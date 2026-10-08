@@ -5,8 +5,8 @@
  * deliberately sets no element style: no reset, no font on html/body, no aliases for the
  * legacy --shell-* / --color-* names. A token changes nothing until a component reads it.
  *
- * The font stacks keep today's system chain (the shell's own stack). IBM Plex is a later,
- * separate allocation with its own local-asset, licence and layout-shift acceptance.
+ * FONT-01: the font stacks lead with IBM Plex (local @font-face in ./fonts.css) and keep
+ * today's system chain behind it as the fallback when a font file cannot be used.
  */
 :root {
   /* Surfaces and lines */
@@ -43,9 +43,9 @@
   --goy-ds-color-info-dot: #2a57e3;
   --goy-ds-color-neutral-dot: #97a0ad;
 
-  /* Type — today's system chain, unchanged */
-  --goy-ds-font-sans: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
-  --goy-ds-font-mono: ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace;
+  /* Type — IBM Plex first, today's system chain as the fallback */
+  --goy-ds-font-sans: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --goy-ds-font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace;
   --goy-ds-font-size-xs: 0.71875rem; /* 11.5px */
   --goy-ds-font-size-sm: 0.78125rem; /* 12.5px */
   --goy-ds-font-size-md: 0.84375rem; /* 13.5px */
