@@ -40,6 +40,9 @@
  * read from the owners and the order is cancelled with a reason only when nothing blocks it (`SalesDraftCancellation`). A
  * cancelled order reads "İptal edildi" beside its unchanged approval facts, shows its recorded cancellation, and offers no
  * other command (no schedule, price, allocation or approval action).
+ *
+ * SALES-CARI-OPTIN — the "Cari" fact is the record-bound party display of the opt-in read contract (#626): the Cari code
+ * and name published for THIS draft's party, linked to the Cari card only with that card's own capability.
  */
 
 import { useContext, useRef, useState } from 'react'
@@ -53,6 +56,7 @@ import {
   REV_0,
   type ContactInformationOptions,
   type DraftDetail,
+  type DraftDetailWithParty,
   type DraftLine,
   type DraftMutation,
   type DraftStateCommand,
@@ -104,6 +108,8 @@ import { SalesDraftRemainderChangePanel } from './SalesDraftRemainderChangePanel
 import { SalesDraftCancellation } from './SalesDraftCancellation'
 import { SalesDraftLinkedEffects, SalesDraftLinkedEffectsUnbound } from './SalesDraftLinkedEffects'
 import { INVENTORY_PHYSICAL_ALLOCATION_WRITE_CAPABILITY } from '../inventory/capabilities'
+import { SalesPartyDisplay } from './SalesDraftListPage'
+import { CAPABILITY } from '../shell/capabilities'
 import styles from './SalesPages.module.css'
 
 const orUnknown = (value: string | null) => value ?? T.unknown
@@ -151,6 +157,7 @@ export function SalesDraftDetailPage() {
   return (
     <DraftView
       detail={outcome.data}
+      canOpenParty={hasCapability(shell, CAPABILITY.cariPartiesDetail)}
       backLink={backLink}
       delivery={companyId === null ? null : <DeliveryBlock shell={shell} detail={outcome.data} companyId={companyId} />}
       revisionHistory={
@@ -296,6 +303,7 @@ export function SalesDraftDetailPage() {
 
 export function DraftView({
   detail,
+  canOpenParty,
   backLink,
   commands = null,
   delivery = null,
@@ -310,7 +318,9 @@ export function DraftView({
   linkedEffects = null,
   cancellation = null,
 }: {
-  readonly detail: DraftDetail
+  readonly detail: DraftDetailWithParty
+  /** The shell publishes the Cari card's own detail capability: only then is the party a link. */
+  readonly canOpenParty: boolean
   readonly backLink: React.ReactNode
   readonly commands?: React.ReactNode
   /** SALES-A2a: the "Teslimat" block (the owner's texts for the stored references); null when no company is bound. */
@@ -381,7 +391,7 @@ export function DraftView({
         </div>
         <div>
           <dt>{T.party}</dt>
-          <dd className={styles.identifier}>{draft.partyId}</dd>
+          <dd data-testid="sales-draft-party"><SalesPartyDisplay party={detail.partyDisplay} canOpen={canOpenParty} /></dd>
         </div>
         <div>
           <dt>{T.account}</dt>

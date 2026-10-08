@@ -3,7 +3,10 @@
  * `GET /api/v1/sales/drafts?pageSize&cursor` (#257). Newest first, as the server orders.
  *
  * The columns are what `SalesOrderDraftSummaryView` carries and nothing more: no
- * amount, no KPI, no party name (the summary has none), no derived "overall" status.
+ * amount, no KPI, no derived "overall" status. The Cari column is the record-bound party
+ * display of the opt-in read contract (#626): the code and name the Cari owner published for
+ * THIS row's party — never a name looked up elsewhere. It links to the Cari card only when the
+ * shell publishes that card's own capability; otherwise it is plain text.
  * Continuation follows the contract: `nextCursor = null` is the end, there is no
  * total count, and a failed next page keeps the rows already shown and offers an
  * explicit retry of the SAME cursor — never an automatic resend.
@@ -13,9 +16,10 @@ import { useCallback, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router'
 import { fetchDraftPage } from './api'
-import { APPROVAL_STATE, CANCELLED_STATE, type ApprovalState, type DraftSummary } from './contract'
+import { APPROVAL_STATE, CANCELLED_STATE, type ApprovalState, type DraftSummaryWithParty, type PartyDisplay } from './contract'
 import { SALES_CAPABILITY, SALES_ROUTE, salesDetailPath } from './capabilities'
-import { APPROVAL_STATE_TEXT, COMMERCIAL_STAGE_TEXT, ORDER_DETAIL_TEXT, ORDER_LIST_TEXT } from './salesText'
+import { APPROVAL_STATE_TEXT, COMMERCIAL_STAGE_TEXT, ORDER_DETAIL_TEXT, ORDER_LIST_TEXT, partyDisplayText } from './salesText'
+import { CAPABILITY, CAPABILITY_ROUTE } from '../shell/capabilities'
 import { classifyOutcome, type RemoteViewState } from '../shell/uiState'
 import { useShellState } from '../shell/shellContext'
 import { contextKey, contextKeyString, hasCapability } from '../shell/shellState'
@@ -23,6 +27,14 @@ import { StateBlock } from '../shell/StateBlock'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
 import { formatBusinessDate, formatInstant } from './format'
 import styles from './SalesPages.module.css'
+
+/** The record-bound Cari: a link to its card only with the card's own capability, plain text otherwise. */
+export function SalesPartyDisplay({ party, canOpen }: { readonly party: PartyDisplay; readonly canOpen: boolean }) {
+  const text = partyDisplayText(party)
+  return canOpen
+    ? <Link to={CAPABILITY_ROUTE[CAPABILITY.cariPartiesDetail].replace(':partyId', encodeURIComponent(party.partyId))}>{text}</Link>
+    : <>{text}</>
+}
 
 export function SalesDraftListPage() {
   const shell = useShellState()
@@ -38,6 +50,7 @@ function DraftList({ namespace }: { readonly namespace: string | null }) {
   const companyId = shell.activeContext?.scopeMode === 'single' ? shell.activeContext.companyId : null
   const canOpen = hasCapability(shell, SALES_CAPABILITY.draftsDetail)
   const canCreate = hasCapability(shell, SALES_CAPABILITY.draftsCreate)
+  const canOpenParty = hasCapability(shell, CAPABILITY.cariPartiesDetail)
   // SALES-A1: the internal approval filter is the server's (`approvalState`); changing it restarts the list.
   const [approvalFilter, setApprovalFilter] = useState<ApprovalState | null>(null)
 
@@ -52,7 +65,7 @@ function DraftList({ namespace }: { readonly namespace: string | null }) {
     },
   })
 
-  const [more, setMore] = useState<readonly DraftSummary[]>([])
+  const [more, setMore] = useState<readonly DraftSummaryWithParty[]>([])
   const [cursor, setCursor] = useState<string | null | undefined>(undefined)
   const [continuation, setContinuation] = useState<'idle' | 'loading' | RemoteViewState<unknown>>('idle')
   const loadingRef = useRef(false)
@@ -145,6 +158,7 @@ function DraftList({ namespace }: { readonly namespace: string | null }) {
           <thead>
             <tr>
               <th scope="col">{ORDER_LIST_TEXT.documentNo}</th>
+              <th scope="col">{ORDER_LIST_TEXT.party}</th>
               <th scope="col">{ORDER_LIST_TEXT.businessDate}</th>
               <th scope="col">{ORDER_LIST_TEXT.commercialStage}</th>
               <th scope="col">{ORDER_LIST_TEXT.state}</th>
@@ -159,6 +173,9 @@ function DraftList({ namespace }: { readonly namespace: string | null }) {
                 <th scope="row">
                   {canOpen ? <Link to={salesDetailPath(row.id)}>{row.documentNo}</Link> : row.documentNo}
                 </th>
+                <td data-testid={`sales-row-party-${row.id}`}>
+                  <SalesPartyDisplay party={row.partyDisplay} canOpen={canOpenParty} />
+                </td>
                 <td>{formatBusinessDate(row.businessDate)}</td>
                 <td data-testid={`sales-row-commercial-stage-${row.id}`}>{COMMERCIAL_STAGE_TEXT[row.commercialStage]}</td>
                 <td>
