@@ -18,6 +18,7 @@ using GoymenERP.Modules.Identity.Domain.Roles;
 using GoymenERP.Modules.Identity.Domain.Users;
 using GoymenERP.Modules.Identity.Infrastructure.Persistence;
 using GoymenERP.Modules.Inventory.Application;
+using GoymenERP.Modules.Purchasing.Application.Contracts;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -45,6 +46,8 @@ public sealed class DocumentVaultSqlServerRelationalAcceptanceTests
     private static readonly Guid PartyA = Guid.Parse("d0c00000-0000-4000-8000-00000000000a");
     private static readonly Guid PartyB = Guid.Parse("d0c00000-0000-4000-8000-00000000000b");
     private static readonly Guid PartyShared = Guid.Parse("d0c00000-0000-4000-8000-0000000000ab");
+    private static readonly Guid PurchaseOrderA = Guid.Parse("d0c00000-0000-4000-8000-0000000000a1");
+    private static readonly Guid PurchaseOrderB = Guid.Parse("d0c00000-0000-4000-8000-0000000000b1");
     private static readonly DateTimeOffset T0 = new(2026, 9, 30, 9, 0, 0, TimeSpan.Zero);
     private static readonly byte[] Pdf = "%PDF-1.7\n% SENTETIK sözleşme\n"u8.ToArray();
     private static readonly byte[] OtherPdf = "%PDF-1.7\n% SENTETIK başka belge\n"u8.ToArray();
@@ -311,6 +314,7 @@ public sealed class DocumentVaultSqlServerRelationalAcceptanceTests
         var inventoryOwner = new InventoryOwnerFixture(Guid.Parse("d0c00000-0000-4000-8000-00000000a065"));
         await using var run = await Run.StartAsync(inventoryOwner);
         await run.SeedPartiesAsync();
+        await run.SeedPurchaseOrdersAsync();
 
         // The vault's names without the Cari read: the party is not found (never a hint that it exists), nothing is stored.
         await run.GrantAsync(TestUsers.CompanyAViewer, CompanyA, DocumentsPermissionManifestV1.FilesRead, DocumentsPermissionManifestV1.FilesUpload);
@@ -461,9 +465,86 @@ public sealed class DocumentVaultSqlServerRelationalAcceptanceTests
 
         Assert.Equal(effectsBeforeNegatives, await run.CountsAsync());
 
-        Assert.Equal(3, await run.ScalarAsync<int>("SELECT COUNT(*) FROM documents.Documents"));
-        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM documents.ContentBlobs"));
-        Assert.Equal(3, await run.ScalarAsync<int>(
+        // T23A Purchasing owner: the real Purchasing service performs its own fresh, company-scoped authorized detail
+        // read. The vault persists one link and replay only after that owner read succeeds.
+        await run.GrantAsync(TestUsers.CompanyA, CompanyA, PurchasingPermissionManifestV1.OrdersRead);
+        Guid purchaseDocumentId;
+        using (var uploaded = await run.UploadAsync(writer, PurchaseOrderA, OtherPdf, "Satınalma siparişi.pdf", "k-purchase-order",
+                   DocumentOwnerLinkKindsV1.PurchasingPurchaseOrder))
+        {
+            Assert.Equal(HttpStatusCode.Created, uploaded.StatusCode);
+            purchaseDocumentId = (await uploaded.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("document").GetProperty("id").GetGuid();
+        }
+
+        using (var replay = await run.UploadAsync(writer, PurchaseOrderA, OtherPdf, "Satınalma siparişi.pdf", "k-purchase-order",
+                   DocumentOwnerLinkKindsV1.PurchasingPurchaseOrder))
+        {
+            Assert.Equal(HttpStatusCode.Created, replay.StatusCode);
+            Assert.Equal("true", replay.Headers.GetValues("Idempotency-Replayed").Single());
+            Assert.Equal(purchaseDocumentId,
+                (await replay.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("document").GetProperty("id").GetGuid());
+        }
+
+        using (var list = await writer.GetAsync(ListPath(PurchaseOrderA, DocumentOwnerLinkKindsV1.PurchasingPurchaseOrder)))
+        {
+            Assert.Equal(HttpStatusCode.OK, list.StatusCode);
+            Assert.Equal("Satınalma siparişi.pdf",
+                Assert.Single((await list.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("items").EnumerateArray())
+                    .GetProperty("fileName").GetString());
+        }
+
+        using (var download = await writer.GetAsync(ContentPath(purchaseDocumentId)))
+        {
+            Assert.Equal(HttpStatusCode.OK, download.StatusCode);
+            Assert.Equal(OtherPdf, await download.Content.ReadAsByteArrayAsync());
+        }
+
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM documents.Documents WHERE CompanyId = @company AND Id = @document",
+            ("@company", CompanyA), ("@document", purchaseDocumentId)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM documents.DocumentVersions WHERE CompanyId = @company AND DocumentId = @document",
+            ("@company", CompanyA), ("@document", purchaseDocumentId)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM documents.DocumentLinks WHERE CompanyId = @company AND OwnerKind = @kind AND OwnerId = @owner AND DocumentId = @document",
+            ("@company", CompanyA), ("@kind", DocumentOwnerLinkKindsV1.PurchasingPurchaseOrder), ("@owner", PurchaseOrderA),
+            ("@document", purchaseDocumentId)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM documents.DocumentAttempts WHERE CompanyId = @company AND DocumentId = @document AND CommandName = @command",
+            ("@company", CompanyA), ("@document", purchaseDocumentId), ("@command", DocumentCommands.UploadV1)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE CompanyId = @company AND EntityId = @entity AND EventType = N'documents.document.uploaded.v1'",
+            ("@company", CompanyA), ("@entity", purchaseDocumentId.ToString("D"))));
+
+        var purchaseEffects = await run.CountsAsync();
+        using (var noPurchasingRead = run.Client(TestUsers.CompanyAViewer, CompanyA))
+        {
+            Assert.Equal(HttpStatusCode.NotFound,
+                (await noPurchasingRead.GetAsync(ListPath(PurchaseOrderA, DocumentOwnerLinkKindsV1.PurchasingPurchaseOrder))).StatusCode);
+            Assert.Equal(HttpStatusCode.NotFound, (await noPurchasingRead.GetAsync(ContentPath(purchaseDocumentId))).StatusCode);
+            using var refused = await run.UploadAsync(noPurchasingRead, PurchaseOrderA, Pdf, "Reddedildi.pdf", "k-purchase-no-owner",
+                DocumentOwnerLinkKindsV1.PurchasingPurchaseOrder);
+            Assert.Equal(HttpStatusCode.NotFound, refused.StatusCode);
+        }
+
+        await run.GrantAsync(TestUsers.CompanyB, CompanyB, DocumentsPermissionManifestV1.FilesRead,
+            DocumentsPermissionManifestV1.FilesUpload, PurchasingPermissionManifestV1.OrdersRead);
+        using (var foreign = run.Client(TestUsers.CompanyB, CompanyB))
+        {
+            Assert.Equal(HttpStatusCode.NotFound,
+                (await foreign.GetAsync(ListPath(PurchaseOrderA, DocumentOwnerLinkKindsV1.PurchasingPurchaseOrder))).StatusCode);
+            Assert.Equal(HttpStatusCode.NotFound, (await foreign.GetAsync(ContentPath(purchaseDocumentId))).StatusCode);
+            Assert.Equal(HttpStatusCode.OK,
+                (await foreign.GetAsync(ListPath(PurchaseOrderB, DocumentOwnerLinkKindsV1.PurchasingPurchaseOrder))).StatusCode);
+        }
+
+        Assert.Equal(HttpStatusCode.NotFound,
+            (await writer.GetAsync(ListPath(Guid.NewGuid(), DocumentOwnerLinkKindsV1.PurchasingPurchaseOrder))).StatusCode);
+        Assert.Equal(purchaseEffects, await run.CountsAsync());
+
+        Assert.Equal(4, await run.ScalarAsync<int>("SELECT COUNT(*) FROM documents.Documents"));
+        Assert.Equal(2, await run.ScalarAsync<int>("SELECT COUNT(*) FROM documents.ContentBlobs"));
+        Assert.Equal(4, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType = N'documents.document.uploaded.v1' AND SourceChannel = N'Web' AND CompanyId = @c",
             ("@c", CompanyA)));
     }
@@ -587,6 +668,25 @@ public sealed class DocumentVaultSqlServerRelationalAcceptanceTests
             """,
             ("@PartyA", PartyA), ("@PartyB", PartyB), ("@Shared", PartyShared), ("@A", CompanyA), ("@B", CompanyB),
             ("@Customer", (int)PartyRole.Customer), ("@Now", T0));
+
+        public Task SeedPurchaseOrdersAsync() => ExecuteAsync(
+            """
+            INSERT INTO [purchasing].[PurchaseOrders]
+                ([Id], [CompanyId], [SupplierPartyId], [CompanyAccountId], [SourceRequestId], [Status], [Version], [EffectiveOn],
+                 [CreatedAtUtc], [UpdatedAtUtc], [CreatedBy], [CorrelationId])
+            VALUES
+                (@OrderA, @CompanyA, @SupplierA, @AccountA, NULL, 1, 1, '2026-10-09', @Now, @Now, N'SENTETIK', N'SENTETIK-order-a'),
+                (@OrderB, @CompanyB, @SupplierB, @AccountB, NULL, 1, 1, '2026-10-09', @Now, @Now, N'SENTETIK', N'SENTETIK-order-b');
+
+            INSERT INTO [purchasing].[PurchaseOrderLines]
+                ([CompanyId], [OrderId], [LineNo], [LineId], [Kind], [ParentLineId], [SourceRequestLineId], [ProductId],
+                 [ProductVersion], [UnitId], [UnitIsKilogram], [Ordered], [Technical], [Accepted])
+            VALUES
+                (@CompanyA, @OrderA, 1, NEWID(), 1, NULL, NULL, NEWID(), N'1', NEWID(), 1, 100.000, 0.000, 0.000),
+                (@CompanyB, @OrderB, 1, NEWID(), 1, NULL, NULL, NEWID(), N'1', NEWID(), 1, 100.000, 0.000, 0.000);
+            """,
+            ("@OrderA", PurchaseOrderA), ("@OrderB", PurchaseOrderB), ("@CompanyA", CompanyA), ("@CompanyB", CompanyB),
+            ("@SupplierA", PartyA), ("@SupplierB", PartyB), ("@AccountA", Guid.NewGuid()), ("@AccountB", Guid.NewGuid()), ("@Now", T0));
 
         public HttpClient Client(string subject, Guid company)
         {
