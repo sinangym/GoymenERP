@@ -9,12 +9,15 @@ import userEvent from '@testing-library/user-event'
 import listResponseRaw from './examples/list-response.json?raw'
 import detailResponseRaw from './examples/detail-response.json?raw'
 import { SALES_CAPABILITY } from './capabilities'
+import { CAPABILITY } from '../shell/capabilities'
 import type { UseContactInformation } from './referenceSource'
 import { ORDER_DETAIL_TEXT, ORDER_DRAFT_TEXT, ORDER_LIST_TEXT } from './salesText'
 import {
   ADDRESS,
   ADDRESS_TEXT,
+  ALL_SALES,
   COMPANY_A,
+  HARNESS_PARTY_DISPLAY,
   CONTACT,
   CURRENCY,
   controlledContactInformation,
@@ -270,5 +273,68 @@ describe('SALES-A2a — the delivery block on the detail', () => {
     expect(screen.getByTestId('sales-delivery-address-text').textContent).toBe(`${ADDRESS} — ${D.noGrant}`)
     expect(screen.getByTestId('sales-currency-code').textContent).toBe(`${CURRENCY} — ${D.noGrant}`)
     expect(asked).not.toHaveBeenCalled()
+  })
+})
+
+/**
+ * SALES-CARI-OPTIN (#626): the list and the detail read the record-bound Cari through the Sales opt-in contract and show
+ * the code and name; the Cari card link follows the card's own capability. (The harness plays the #626 server.)
+ */
+describe('the record-bound Cari on the list and the detail', () => {
+  const PARTY_TEXT = `${HARNESS_PARTY_DISPLAY.code} — ${HARNESS_PARTY_DISPLAY.legalName} (${HARNESS_PARTY_DISPLAY.tradeName})`
+  const PARTY_ID = JSON.parse(listResponseRaw).items[0].partyId as string
+
+  it('the list shows the Cari code and name as plain text for a reader without the Cari card capability', async () => {
+    const fetch = installFetch({ onList: () => json(listResponseRaw) })
+    renderSalesApp('/satis/siparisler')
+    const table = await screen.findByRole('table', { name: ORDER_LIST_TEXT.caption })
+    expect(within(table).getByRole('columnheader', { name: ORDER_LIST_TEXT.party })).toBeTruthy()
+    const cell = within(table).getByTestId(`sales-row-party-${DRAFT}`)
+    expect(cell.textContent).toBe(PARTY_TEXT)
+    expect(within(cell).queryByRole('link')).toBeNull()
+    const list = fetch.salesCalls().filter((call) => call.method === 'GET')
+    expect(list.map((call) => call.readContract)).toEqual(['record-party-display-v1'])
+    // The display comes with the Sales read; no Cari read is made for it.
+    expect(fetch.calls.some((call) => /counterpart|\/cari/.test(call.url))).toBe(false)
+  })
+
+  it('the list links the Cari to its card only when the shell publishes the card capability', async () => {
+    installFetch({ capabilities: [...ALL_SALES, CAPABILITY.cariPartiesDetail], onList: () => json(listResponseRaw) })
+    renderSalesApp('/satis/siparisler')
+    const cell = await screen.findByTestId(`sales-row-party-${DRAFT}`)
+    expect(within(cell).getByRole('link', { name: PARTY_TEXT }).getAttribute('href')).toBe(`/cari/${PARTY_ID}`)
+  })
+
+  it('the detail shows the same Cari instead of the bare id, and links it only with the card capability', async () => {
+    const fetch = installFetch({ onDetail: () => json(detailResponseRaw) })
+    renderSalesApp(`/satis/siparisler/${DRAFT}`)
+    const party = await screen.findByTestId('sales-draft-party')
+    expect(party.textContent).toBe(PARTY_TEXT)
+    expect(within(party).queryByRole('link')).toBeNull()
+    expect(screen.queryByText(JSON.parse(detailResponseRaw).draft.partyId)).toBeNull()
+    const detailRead = fetch.salesCalls().find((call) => call.method === 'GET' && call.url.endsWith(`/sales/drafts/${DRAFT}`))
+    expect(detailRead?.readContract).toBe('record-party-display-v1')
+    // The other reads of the detail keep their own contracts.
+    expect(fetch.salesCalls().filter((call) => call !== detailRead).every((call) => call.readContract === null)).toBe(true)
+    cleanup()
+    installFetch({ capabilities: [...ALL_SALES, CAPABILITY.cariPartiesDetail], onDetail: () => json(detailResponseRaw) })
+    renderSalesApp(`/satis/siparisler/${DRAFT}`)
+    const linked = await screen.findByTestId('sales-draft-party')
+    expect(within(linked).getByRole('link', { name: PARTY_TEXT }).getAttribute('href')).toBe(`/cari/${PARTY_ID}`)
+  })
+
+  it('a detail answer the server did not acknowledge is not shown as the legacy record', async () => {
+    installFetch({ onDetail: () => json(detailResponseRaw) })
+    // A server that ignores the selector: the legacy body, no acknowledgment.
+    const fetchMock = vi.mocked(fetch)
+    const original = fetchMock.getMockImplementation()!
+    fetchMock.mockImplementation(async (input, init) => {
+      const url = typeof input === 'string' ? input : input.toString()
+      if (url.endsWith(`/sales/drafts/${DRAFT}`)) return json(detailResponseRaw)
+      return original(input, init)
+    })
+    renderSalesApp(`/satis/siparisler/${DRAFT}`)
+    await waitFor(() => expect(document.querySelector('[data-state="malformed-response"]')).not.toBeNull())
+    expect(screen.queryByTestId('sales-draft-party')).toBeNull()
   })
 })

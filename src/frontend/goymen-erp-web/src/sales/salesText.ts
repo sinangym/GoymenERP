@@ -203,6 +203,8 @@ export const ORDER_LIST_TEXT = {
   newDraft: 'Yeni taslak',
   caption: 'Seçili şirketteki sipariş taslakları, en yeni önce',
   documentNo: 'Belge no',
+  /** The record-bound Cari, as the Cari owner publishes it for this Sales record. */
+  party: 'Cari',
   businessDate: 'Sipariş tarihi',
   commercialStage: 'Ticari aşama',
   state: 'İç onay',
@@ -516,7 +518,8 @@ export const ORDER_DETAIL_TEXT = {
   version: 'Kayıt sürümü',
   businessDate: 'Sipariş tarihi',
   createdAt: 'Oluşturulma',
-  party: 'Cari kimliği',
+  /** The record-bound Cari code and name (no longer the bare id). */
+  party: 'Cari',
   account: 'Şirket hesabı kimliği',
   currency: 'Para birimi kimliği',
   requestedDeliveryDate: 'Üst termin',
@@ -542,7 +545,7 @@ export const ORDER_DETAIL_TEXT = {
   /** K3 P2: the server withheld the price from this caller — not "no price", not "unknown". */
   priceWithheld: 'Fiyat bu yetkiyle görüntülenmez',
   referenceNote:
-    'Cari ve birim adları bu sözleşmede yok; kimlikler gösteriliyor. Taslak onay, stok veya finans etkisi oluşturmaz.',
+    'Cari gösterimi güncel sahip projeksiyonundan gelir; diğer referansların etiket ve kimlikleri mevcut sözleşme anlamıyla gösterilir. Taslak onay, stok veya finans etkisi oluşturmaz.',
   /** SALES-A2a: the delivery block — the owner's texts for the stored references, read afresh; never a guessed name. */
   delivery: {
     heading: 'Teslimat',
@@ -678,3 +681,11 @@ export const LINE_PRICING_TEXT = {
   } as Record<string, string>,
   lineError: (lineNo: number, text: string) => `${lineNo}. satır: ${text}`,
 } as const
+
+/**
+ * The record-bound Cari as one line: "code — legal name", with the trade name in brackets when the party has one (the
+ * same reading as the Finance draft's party label). Only the texts the Cari owner published for this record.
+ */
+export function partyDisplayText(party: { readonly code: string; readonly legalName: string; readonly tradeName: string | null }): string {
+  return party.tradeName === null ? `${party.code} — ${party.legalName}` : `${party.code} — ${party.legalName} (${party.tradeName})`
+}

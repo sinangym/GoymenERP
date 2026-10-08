@@ -23,7 +23,12 @@ import {
   type UseCurrencyOptions,
   type UseReferenceOptions,
 } from './referenceSource'
-import type { ContactInformationOptions, CurrencyOption } from './contract'
+import {
+  SALES_READ_CONTRACT_HEADER,
+  SALES_READ_CONTRACT_PARTY_DISPLAY,
+  type ContactInformationOptions,
+  type CurrencyOption,
+} from './contract'
 import type { OrderDraftOptions } from './orderDraftForm'
 
 // Company A is the examples' company, so the Backend's own bodies describe it.
@@ -133,6 +138,45 @@ export interface RecordedCall {
   readonly companyId: string | null
   readonly idempotencyKey: string | null
   readonly body: string | null
+  /** The Sales read selector the request sent (#626); null when it sent none. */
+  readonly readContract: string | null
+}
+
+/**
+ * SALES-CARI-OPTIN: the Cari texts the harness's server publishes for a Sales record's party (synthetic). Every party id
+ * gets them, bound to that id — the decoder's own check is what binds a display to its record.
+ */
+export const HARNESS_PARTY_DISPLAY = { code: 'CARI-000123', legalName: 'ABC Demir Sanayi ve Ticaret A.Ş.', tradeName: 'ABC Demir' } as const
+
+const isObject = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value)
+const displayFor = (partyId: unknown) => ({ partyId, ...HARNESS_PARTY_DISPLAY })
+
+/**
+ * The #626 server, around a test's own legacy GET list/detail body: a request that sent the selector gets, on a 200, the
+ * record-bound display added (where the body does not already carry one) and the exact acknowledgment — so the existing
+ * component tests keep their legacy fixtures. A request without the selector, and any other status, pass unchanged.
+ */
+async function asPartyDisplayRead(response: Response, kind: 'list' | 'detail', call: RecordedCall): Promise<Response> {
+  if (call.readContract !== SALES_READ_CONTRACT_PARTY_DISPLAY || response.status !== 200) return response
+  const body: unknown = await response.clone().json().catch(() => undefined)
+  let enriched: unknown = body
+  if (kind === 'list' && isObject(body) && Array.isArray(body.items)) {
+    enriched = {
+      ...body,
+      items: body.items.map((item: unknown) =>
+        isObject(item) && !Object.hasOwn(item, 'partyDisplay') ? { ...item, partyDisplay: displayFor(item.partyId) } : item),
+    }
+  }
+  if (kind === 'detail' && isObject(body) && isObject(body.draft) && !Object.hasOwn(body, 'partyDisplay')) {
+    enriched = { ...body, partyDisplay: displayFor(body.draft.partyId) }
+  }
+  const headers: Record<string, string> = {}
+  response.headers.forEach((value, name) => { headers[name] = value })
+  return new Response(enriched === undefined ? await response.text() : JSON.stringify(enriched), {
+    status: 200,
+    headers: { ...headers, [SALES_READ_CONTRACT_HEADER]: SALES_READ_CONTRACT_PARTY_DISPLAY },
+  })
 }
 
 /** DEC-SAL-003: a valid history holding only schedule 0 (the draft as created, nobody changed it). */
@@ -196,6 +240,7 @@ export function installFetch(config: HarnessConfig = {}) {
         companyId: headers['X-Company-Id'] ?? null,
         idempotencyKey: headers['Idempotency-Key'] ?? null,
         body: typeof init?.body === 'string' ? init.body : null,
+        readContract: headers[SALES_READ_CONTRACT_HEADER] ?? null,
       }
       calls.push(call)
       if (url.includes('/identity/me')) return json(IDENTITY)
@@ -266,12 +311,12 @@ export function installFetch(config: HarnessConfig = {}) {
         }
         if (/\/sales\/drafts\/[^?]+/.test(url)) {
           if (config.onDetail === undefined) throw new Error('unexpected detail read')
-          const response = await config.onDetail(url, call.companyId)
+          const response = await asPartyDisplayRead(await config.onDetail(url, call.companyId), 'detail', call)
           if (response.ok) details.set(url, await response.clone().json().catch(() => undefined))
           return response
         }
         if (config.onList === undefined) throw new Error('unexpected list read')
-        return config.onList(url, call.companyId)
+        return asPartyDisplayRead(await config.onList(url, call.companyId), 'list', call)
       }
       if (call.method === 'GET' && url.includes('/logistics/dispatch-notes?')) {
         if (config.onDispatchNotes === undefined) throw new Error('unexpected dispatch-notes read')

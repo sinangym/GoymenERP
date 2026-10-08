@@ -10,7 +10,9 @@ using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Counterparty.Application.Contracts;
 using GoymenERP.Modules.Counterparty.Domain.Accounts;
 using GoymenERP.Modules.Sales.Application.Contracts;
+using Microsoft.AspNetCore.OpenApi;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.OpenApi;
 
 namespace GoymenERP.Api.Endpoints;
 
@@ -23,6 +25,9 @@ public static class SalesEndpoints
     public const string ContactInformationPath = "/api/v1/sales/references/contact-information";
     public const string CurrenciesPath = "/api/v1/sales/references/currencies";
     public const string DraftsPath = SalesDraftApiV1.DraftPath;
+    public const string DraftReadContractHeader = "X-ERP-Sales-Read-Contract";
+    public const string DraftReadContractVersion = "record-party-display-v1";
+    public const string DraftReadContractVersionPattern = "^record-party-display-v1$";
     private const string IdempotencyHeaderName = SalesDraftApiV1.IdempotencyHeader;
     private const int MaximumIdempotencyKeyLength = 128;
     private const int MaximumCursorLength = 8192;
@@ -310,7 +315,8 @@ public static class SalesEndpoints
             [FromQuery] string? cursor,
             [FromQuery] string? approvalState,
             HttpContext httpContext,
-            [FromServices] ISalesDraftService service,
+            [FromServices] ISalesDraftService legacyService,
+            [FromServices] ISalesDraftReadServiceV1 enrichedService,
             ICorrelationContext correlation,
             CancellationToken cancellationToken) =>
         {
@@ -321,12 +327,23 @@ public static class SalesEndpoints
             {
                 return DraftProblem(StatusCodes.Status400BadRequest, "validation_failed", correlation);
             }
+            if (!TryReadDraftContract(httpContext.Request.Headers, out var contract))
+            {
+                return DraftProblem(StatusCodes.Status400BadRequest, "validation_failed", correlation);
+            }
 
             try
             {
                 // SALES-A1: `approvalState` narrows to one exact internal approval state (the service validates the name).
-                return Results.Json(await service.GetDraftListAsync(new SalesOrderDraftListQuery(pageSize ?? 50, cursor, approvalState), cancellationToken),
-                    SalesDraftJson.Options);
+                var query = new SalesOrderDraftListQuery(pageSize ?? 50, cursor, approvalState);
+                if (contract == SalesDraftReadContract.RecordPartyDisplay)
+                {
+                    var result = await enrichedService.GetDraftListAsync(query, cancellationToken);
+                    AcknowledgeDraftReadContract(httpContext.Response);
+                    return Results.Json(result, SalesDraftJson.Options);
+                }
+
+                return Results.Json(await legacyService.GetDraftListAsync(query, cancellationToken), SalesDraftJson.Options);
             }
             catch (SalesDraftServiceException exception)
             {
@@ -1197,14 +1214,26 @@ public static class SalesEndpoints
         drafts.MapGet("/{id:guid}", async (
             Guid id,
             HttpContext httpContext,
-            [FromServices] ISalesDraftService service,
+            [FromServices] ISalesDraftService legacyService,
+            [FromServices] ISalesDraftReadServiceV1 enrichedService,
             ICorrelationContext correlation,
             CancellationToken cancellationToken) =>
         {
             SetPrivateNoStore(httpContext.Response);
+            if (!TryReadDraftContract(httpContext.Request.Headers, out var contract))
+            {
+                return DraftProblem(StatusCodes.Status400BadRequest, "validation_failed", correlation);
+            }
             try
             {
-                return Results.Json(await service.GetDraftDetailAsync(id, cancellationToken), SalesDraftJson.Options);
+                if (contract == SalesDraftReadContract.RecordPartyDisplay)
+                {
+                    var result = await enrichedService.GetDraftDetailAsync(id, cancellationToken);
+                    AcknowledgeDraftReadContract(httpContext.Response);
+                    return Results.Json(result, SalesDraftJson.Options);
+                }
+
+                return Results.Json(await legacyService.GetDraftDetailAsync(id, cancellationToken), SalesDraftJson.Options);
             }
             catch (SalesDraftServiceException exception)
             {
@@ -1213,9 +1242,162 @@ public static class SalesEndpoints
         })
             .WithName("GetSalesOrderDraftV1")
             .Produces<SalesOrderDraftDetailView>()
+            .ProducesErpBadRequest("validation_failed")
             .ProducesErpCodeLessNotFound()
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();
+    }
+
+    private static bool TryReadDraftContract(
+        IHeaderDictionary headers,
+        out SalesDraftReadContract contract)
+    {
+        contract = SalesDraftReadContract.Legacy;
+        if (!headers.TryGetValue(DraftReadContractHeader, out var values))
+        {
+            return true;
+        }
+
+        if (values.Count != 1
+            || !string.Equals(values[0], DraftReadContractVersion, StringComparison.Ordinal))
+        {
+            contract = SalesDraftReadContract.Invalid;
+            return false;
+        }
+
+        contract = SalesDraftReadContract.RecordPartyDisplay;
+        return true;
+    }
+
+    private static void AcknowledgeDraftReadContract(HttpResponse response) =>
+        response.Headers[DraftReadContractHeader] = DraftReadContractVersion;
+
+    public static async Task TransformDraftReadContractOpenApiAsync(
+        OpenApiOperation operation,
+        OpenApiOperationTransformerContext context,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (operation.OperationId is not "GetSalesOrderDraftsV1" and not "GetSalesOrderDraftV1")
+        {
+            return;
+        }
+
+        operation.Parameters ??= [];
+        operation.Parameters.Add(new OpenApiParameter
+        {
+            Name = DraftReadContractHeader,
+            In = ParameterLocation.Header,
+            Required = false,
+            Description = "Optional Sales read contract selector. Omit for the byte/schema-compatible legacy response; use the exact version to receive the record-bound Cari display.",
+            Schema = new OpenApiSchema
+            {
+                Type = JsonSchemaType.String,
+                Pattern = DraftReadContractVersionPattern,
+            },
+        });
+
+        var legacyType = operation.OperationId == "GetSalesOrderDraftsV1"
+            ? typeof(SalesOrderDraftListResponse)
+            : typeof(SalesOrderDraftDetailView);
+        var enrichedType = operation.OperationId == "GetSalesOrderDraftsV1"
+            ? typeof(SalesOrderDraftReadListResponseV1)
+            : typeof(SalesOrderDraftReadDetailViewV1);
+        var document = context.Document
+            ?? throw new InvalidOperationException("Sales read OpenAPI document is missing.");
+        var enrichedSchema = await context.GetOrCreateSchemaAsync(
+            enrichedType, cancellationToken: cancellationToken);
+        var displaySchema = await context.GetOrCreateSchemaAsync(
+            typeof(SalesPartyDisplayV1), cancellationToken: cancellationToken);
+        var summarySchema = await context.GetOrCreateSchemaAsync(
+            typeof(SalesOrderDraftReadSummaryViewV1), cancellationToken: cancellationToken);
+        var productSnapshotSchema = await context.GetOrCreateSchemaAsync(
+            typeof(SalesOrderDraftProductSnapshotViewV1), cancellationToken: cancellationToken);
+        var components = document.Components ??= new OpenApiComponents();
+        components.Schemas ??= new Dictionary<string, IOpenApiSchema>(StringComparer.Ordinal);
+        components.Schemas[enrichedType.Name] = enrichedSchema;
+        components.Schemas[nameof(SalesPartyDisplayV1)] = displaySchema;
+        components.Schemas[nameof(SalesOrderDraftReadSummaryViewV1)] = summarySchema;
+        components.Schemas[nameof(SalesOrderDraftProductSnapshotViewV1)] = productSnapshotSchema;
+        var legacy = new OpenApiSchemaReference(legacyType.Name, document, externalResource: null);
+        var enriched = new OpenApiSchemaReference(enrichedType.Name, document, externalResource: null);
+        var display = new OpenApiSchemaReference(nameof(SalesPartyDisplayV1), document, externalResource: null);
+        var summary = new OpenApiSchemaReference(nameof(SalesOrderDraftReadSummaryViewV1), document, externalResource: null);
+        var stage = new OpenApiSchemaReference(nameof(SalesCommercialStageV1), document, externalResource: null);
+        var productSnapshot = new OpenApiSchemaReference(nameof(SalesOrderDraftProductSnapshotViewV1), document, externalResource: null);
+        var concreteSummarySchema = (OpenApiSchema)summarySchema;
+        concreteSummarySchema.Properties!["partyDisplay"] = display;
+        concreteSummarySchema.Properties["commercialStage"] = new OpenApiSchema
+        {
+            OneOf = [new OpenApiSchema { Type = JsonSchemaType.Null }, stage],
+        };
+        concreteSummarySchema.Properties["productSnapshots"] = new OpenApiSchema
+        {
+            Type = JsonSchemaType.Array | JsonSchemaType.Null,
+            Items = productSnapshot,
+        };
+        if (enrichedType == typeof(SalesOrderDraftReadListResponseV1))
+        {
+            ((OpenApiSchema)enrichedSchema).Properties!["items"] = new OpenApiSchema
+            {
+                Type = JsonSchemaType.Array,
+                Items = summary,
+            };
+        }
+
+        if (enrichedType == typeof(SalesOrderDraftReadDetailViewV1))
+        {
+            var enrichedDetailSchema = (OpenApiSchema)enrichedSchema;
+            enrichedDetailSchema.Properties!["draft"] = new OpenApiSchemaReference(
+                nameof(SalesOrderDraftSummaryView), document, externalResource: null);
+            enrichedDetailSchema.Properties["lines"] = new OpenApiSchema
+            {
+                Type = JsonSchemaType.Array,
+                Items = new OpenApiSchemaReference(
+                    nameof(SalesOrderDraftLineDetail), document, externalResource: null),
+            };
+            foreach (var propertyName in new[]
+                     {
+                         "deliveryAddress", "contact", "responsible", "paymentTerms", "sourceStrategy", "package",
+                     })
+            {
+                enrichedDetailSchema.Properties[propertyName] = new OpenApiSchema
+                {
+                    OneOf =
+                    [
+                        new OpenApiSchema { Type = JsonSchemaType.Null },
+                        new OpenApiSchemaReference(
+                            nameof(SalesDraftOwnerReferenceV1), document, externalResource: null),
+                    ],
+                };
+            }
+            enrichedDetailSchema.Properties["approval"] = new OpenApiSchemaReference(
+                nameof(SalesDraftApprovalV1), document, externalResource: null);
+            enrichedDetailSchema.Properties["customerAcceptance"] = new OpenApiSchemaReference(
+                nameof(SalesDraftCustomerAcceptanceV1), document, externalResource: null);
+            enrichedDetailSchema.Properties!["partyDisplay"] = display;
+        }
+        var response = (OpenApiResponse)operation.Responses!["200"];
+        var content = (OpenApiMediaType)response.Content!["application/json"];
+        content.Schema = new OpenApiSchema { AnyOf = [legacy, enriched] };
+        response.Headers ??= new Dictionary<string, IOpenApiHeader>(StringComparer.Ordinal);
+        response.Headers[DraftReadContractHeader] = new OpenApiHeader
+        {
+            Required = false,
+            Description = "Present only on a successful enriched Sales read that accepted the exact request selector.",
+            Schema = new OpenApiSchema
+            {
+                Type = JsonSchemaType.String,
+                Pattern = DraftReadContractVersionPattern,
+            },
+        };
+    }
+
+    private enum SalesDraftReadContract
+    {
+        Invalid,
+        Legacy,
+        RecordPartyDisplay,
     }
 
     /// <summary>Exactly one Idempotency-Key: non-blank, canonical (no surrounding whitespace), at most 128 characters, no comma.</summary>

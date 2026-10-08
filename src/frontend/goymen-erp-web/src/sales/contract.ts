@@ -877,6 +877,106 @@ export function decodeDraftPage(value: unknown): DraftPage | null {
   return { items, nextCursor: o.nextCursor }
 }
 
+/* ── Record-bound Cari display (opt-in read contract, #626) ──────────────── */
+
+/**
+ * The Sales-owned read selector of `GET /sales/drafts` and `GET /sales/drafts/{id}`. Without it the server answers the
+ * legacy body unchanged; with exactly this value it answers the enriched body AND echoes the value back. Only those two
+ * reads send it — create, commands and every other read keep the legacy contract and its decoders.
+ */
+export const SALES_READ_CONTRACT_HEADER = 'X-ERP-Sales-Read-Contract'
+export const SALES_READ_CONTRACT_PARTY_DISPLAY = 'record-party-display-v1'
+
+/**
+ * The Cari party the Sales record is bound to, as the Cari owner publishes it for a Sales reader: its own `partyId` (equal
+ * to the record's), the Cari code and legal name, and the trade name when the party has one. Never the party's other
+ * facts, and never a substitute for the Cari card's own authority.
+ */
+export interface PartyDisplay {
+  readonly partyId: string
+  readonly code: string
+  readonly legalName: string
+  readonly tradeName: string | null
+}
+
+export interface DraftSummaryWithParty extends DraftSummary {
+  readonly partyDisplay: PartyDisplay
+}
+
+export interface DraftPageWithParty {
+  readonly items: readonly DraftSummaryWithParty[]
+  readonly nextCursor: string | null
+}
+
+export interface DraftDetailWithParty extends DraftDetail {
+  readonly partyDisplay: PartyDisplay
+}
+
+const PARTY_DISPLAY_KEYS = ['partyId', 'code', 'legalName', 'tradeName'] as const
+const isFilledText = (v: unknown, max: number): v is string => isText(v, max) && v.trim().length > 0
+
+/** Exactly the four members, bound to the record's own party; a blank code or name is not a display. */
+function decodePartyDisplay(value: unknown, partyId: string): PartyDisplay | null {
+  const o = exact(value, PARTY_DISPLAY_KEYS)
+  if (
+    o === null ||
+    !isReferenceId(o.partyId) ||
+    o.partyId.toLowerCase() !== partyId.toLowerCase() ||
+    !isFilledText(o.code, 200) ||
+    !isFilledText(o.legalName, 500) ||
+    !isNullable(o.tradeName, (v): v is string => isFilledText(v, 500))
+  ) {
+    return null
+  }
+  return { partyId: o.partyId, code: o.code, legalName: o.legalName, tradeName: o.tradeName }
+}
+
+/** The members of `value` other than `partyDisplay`, or null when `value` is not an object holding one. */
+function withoutPartyDisplay(value: unknown): { readonly rest: Obj; readonly partyDisplay: unknown } | null {
+  if (typeof value !== 'object' || value === null || Array.isArray(value) || !Object.hasOwn(value, 'partyDisplay')) return null
+  const { partyDisplay, ...rest } = value as Obj
+  return { rest, partyDisplay }
+}
+
+/** An enriched list row: the legacy summary rules unchanged, plus the required record-bound party display. */
+export function decodeDraftSummaryWithParty(value: unknown): DraftSummaryWithParty | null {
+  const split = withoutPartyDisplay(value)
+  if (split === null) return null
+  const summary = decodeDraftSummary(split.rest)
+  if (summary === null) return null
+  const partyDisplay = decodePartyDisplay(split.partyDisplay, summary.partyId)
+  return partyDisplay === null ? null : { ...summary, partyDisplay }
+}
+
+export function decodeDraftPageWithParty(value: unknown): DraftPageWithParty | null {
+  const o = exact(value, ['items', 'nextCursor'])
+  if (o === null || !Array.isArray(o.items) || !isNullable(o.nextCursor, (v): v is string => isText(v, 4096))) {
+    return null
+  }
+  const items: DraftSummaryWithParty[] = []
+  const ids = new Set<string>()
+  for (const entry of o.items) {
+    const item = decodeDraftSummaryWithParty(entry)
+    if (item === null || ids.has(item.id)) return null
+    ids.add(item.id)
+    items.push(item)
+  }
+  return { items, nextCursor: o.nextCursor }
+}
+
+/**
+ * An enriched detail: the legacy detail rules unchanged (its `draft` is the legacy summary and must not carry a display
+ * of its own), plus the top-level record-bound party display.
+ */
+export function decodeDraftDetailWithParty(value: unknown, expectedId: string | null): DraftDetailWithParty | null {
+  const split = withoutPartyDisplay(value)
+  if (split === null) return null
+  const detail = decodeDraftDetail(split.rest, expectedId)
+  if (detail === null) return null
+  const partyDisplay = decodePartyDisplay(split.partyDisplay, detail.draft.partyId)
+  return partyDisplay === null ? null : { ...detail, partyDisplay }
+}
+
 /* ── S-04 approved commercial revision history ───────────────────────────── */
 
 const REVISION_KEYS = [
