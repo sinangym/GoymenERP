@@ -18,7 +18,7 @@
   min-height: 100vh;
   background: var(--shell-surface);
   color: #1a2233;
-  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-family: var(--goy-ds-font-sans, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif);
 }
 
 /* The sidebar's own `display` would otherwise beat the user agent's `[hidden] { display: none }`. */
