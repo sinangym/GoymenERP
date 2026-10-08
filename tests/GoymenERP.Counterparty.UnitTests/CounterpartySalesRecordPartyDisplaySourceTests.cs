@@ -3,6 +3,7 @@ using GoymenERP.Modules.Counterparty.Infrastructure;
 using GoymenERP.Modules.Counterparty.Infrastructure.Persistence;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Primitives;
 
 namespace GoymenERP.Counterparty.UnitTests;
 
@@ -14,19 +15,13 @@ public sealed class CounterpartySalesRecordPartyDisplaySourceTests
     [Fact]
     public void Module_exposes_only_the_public_record_bound_source_and_keeps_its_runtime_internal()
     {
-        var configuration = new ConfigurationBuilder()
-            .AddInMemoryCollection(new Dictionary<string, string?>
-            {
-                ["DB_PROVIDER"] = "SqlServer",
-                ["DB_CONNECTION_STRING"] = "Server=127.0.0.1;Database=not-opened;User Id=x;Password=x;",
-            })
-            .Build();
+        var configuration = new TestConfiguration();
         var services = new ServiceCollection();
 
         services.AddCounterpartyModule(configuration);
 
-        var source = Assert.Single(services.Where(descriptor =>
-            descriptor.ServiceType == typeof(ICounterpartySalesRecordPartyDisplaySourceV1)));
+        var source = Assert.Single(services, descriptor =>
+            descriptor.ServiceType == typeof(ICounterpartySalesRecordPartyDisplaySourceV1));
         Assert.Equal(typeof(CounterpartySalesRecordPartyDisplaySourceV1), source.ImplementationType);
         Assert.False(source.ImplementationType!.IsPublic);
         Assert.DoesNotContain(services, descriptor =>
@@ -39,7 +34,7 @@ public sealed class CounterpartySalesRecordPartyDisplaySourceTests
     public async Task Invalid_or_unbound_requests_are_denied_before_database_or_organization_access()
     {
         var context = new TestCompanyContext(Company);
-        var user = new TestCurrentUser("sales-reader", [Company]);
+        var user = new TestCurrentUser("sales-reader", new HashSet<Guid> { Company });
         var source = new CounterpartySalesRecordPartyDisplaySourceV1(
             null!,
             context,
@@ -97,5 +92,23 @@ public sealed class CounterpartySalesRecordPartyDisplaySourceTests
         public string? UserId => actorId;
         public IReadOnlySet<Guid> AllowedCompanyIds => companies;
         public bool CanAccessCompany(Guid companyId) => companies.Contains(companyId);
+    }
+
+    private sealed class TestConfiguration : IConfiguration
+    {
+        public string? this[string key]
+        {
+            get => key switch
+            {
+                "DB_PROVIDER" => "SqlServer",
+                "DB_CONNECTION_STRING" => "Server=127.0.0.1;Database=not-opened;User Id=x;Password=x;",
+                _ => null,
+            };
+            set => throw new NotSupportedException();
+        }
+
+        public IEnumerable<IConfigurationSection> GetChildren() => [];
+        public IChangeToken GetReloadToken() => new CancellationChangeToken(CancellationToken.None);
+        public IConfigurationSection GetSection(string key) => throw new NotSupportedException();
     }
 }
