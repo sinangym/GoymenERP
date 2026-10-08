@@ -349,7 +349,7 @@ test.describe.serial('FIN-01 bank account and draft (real API, real SQL)', () =>
     await expect(page.getByText('Draft', { exact: true })).toBeVisible()
 
     await page.getByRole('button', { name: 'Düzenle', exact: true }).click()
-    await expect(page.getByLabel('Tutar', { exact: true })).toHaveValue('875.25')
+    await expect(page.getByLabel('Tutar', { exact: true })).toHaveValue('875,25')
     await expect(page.getByLabel('İşlem tarihi', { exact: true })).toHaveValue('2026-09-18')
     await page.getByLabel('Valör', { exact: true }).fill('')
     await page.getByLabel('Banka referansı (opsiyonel)', { exact: true }).fill('')

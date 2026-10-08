@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { isDateOnly } from './dateOnly'
-import { parseAmountInput } from './decimalText'
+import { amountInputFromWire, parseAmountInput } from './decimalText'
 import { decodeReadResult, isBoundUuid, isOpaqueVersion, type ProfileReference } from './contract'
 import { useFinancePort } from './financePort'
 import {
@@ -237,7 +237,7 @@ export function ManualBankPaymentDetailPage({
 
   const beginEdit = () => {
     if (payment === null || payment.status !== 'Draft' || !canEdit || busy) return
-    setAmount(payment.preparation.money.amount)
+    setAmount(amountInputFromWire(payment.preparation.money.amount))
     setOccurredOn(payment.preparation.occurredOn)
     setValueOn(payment.preparation.valueOn ?? '')
     setBankReference(payment.preparation.bankReference ?? '')
