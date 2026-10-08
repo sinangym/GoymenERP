@@ -163,11 +163,11 @@ public sealed class S04BrowserSeed : IBrowserSuiteFixture
                 .EnsureAsync(cancellationToken);
         }
 
-        ProductSalesCandidateFixtureOutput productCandidate;
+        ProductStockDisplayQualifiedFixtureOutput productCandidate;
         await using (var productScope = context.Services.CreateAsyncScope())
         {
             productCandidate = await productScope.ServiceProvider
-                .GetRequiredService<C01E2eProductSalesCandidateFixtureWriter>()
+                .GetRequiredService<C01E2eProductStockDisplayQualifiedFixtureWriter>()
                 .EnsureAsync(cancellationToken);
         }
 
@@ -457,7 +457,7 @@ public sealed class S04BrowserSeed : IBrowserSuiteFixture
 
     private static async Task<string> EnsureAllocationLabelAsync(
         BrowserSuiteFixtureContext context,
-        ProductSalesCandidateFixtureOutput product,
+        ProductStockDisplayQualifiedFixtureOutput product,
         Guid locationId,
         CancellationToken cancellationToken)
     {

@@ -94,7 +94,7 @@ function positiveVersion(raw: Record<string, unknown>, field: keyof S04Seed): st
 
 function productCode(raw: Record<string, unknown>): string {
   const value = text(raw, 'productCode')
-  if (!/^SYNS04-[1-9][0-9]*$/.test(value)) {
+  if (!/^SYNS04G-[1-9][0-9]*$/.test(value)) {
     throw new Error('BROWSER_E2E_S04_SEED field "productCode" is not the isolated s04 product code')
   }
   return value
@@ -102,7 +102,7 @@ function productCode(raw: Record<string, unknown>): string {
 
 function productName(raw: Record<string, unknown>): string {
   const value = text(raw, 'productName')
-  if (value !== 'SENTETIK browser-suite:s04 sales candidate') {
+  if (value !== 'SENTETIK browser-suite:s04 stock-display-qualified sales candidate') {
     throw new Error('BROWSER_E2E_S04_SEED field "productName" is not the isolated s04 product name')
   }
   return value
