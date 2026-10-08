@@ -317,16 +317,18 @@ class SeedExportTests(unittest.TestCase):
         good = {
             "productVersion": "2",
             "productUnitProfileVersion": "1",
-            "productCode": "SYNR14-1",
-            "productName": "SENTETIK browser-suite:r14 stock candidate",
+            "productCode": "SAC-1",
+            "productName": "SENTETIK browser-suite:r14 genuine S235JR 3 mm x 248 mm kaplamasiz sac",
         }
         with mock.patch.dict(browser.SUITE_FIXTURE_OUTPUTS, {"r14": keys}):
-            self.assertIn('"productCode":"SYNR14-1"', browser.seed_export("r14", good))
+            self.assertIn('"productCode":"SAC-1"', browser.seed_export("r14", good))
             for key, value in (
                 ("productVersion", "02"),
                 ("productUnitProfileVersion", "0"),
-                ("productCode", "SYNR14-0"),
-                ("productName", "SENTETIK browser-suite:r14 stock candidate "),
+                ("productCode", "SAC-2"),
+                ("productCode", "10000000-0000-0000-0000-000000000001"),
+                ("productName", "r14-recorder"),
+                ("productName", "SENTETIK browser-suite:r14 genuine S235JR 3 mm x 248 mm kaplamasiz sac "),
             ):
                 with self.subTest(key=key, value=value), self.assertRaises(browser.ContractError):
                     browser.seed_export("r14", {**good, key: value})
