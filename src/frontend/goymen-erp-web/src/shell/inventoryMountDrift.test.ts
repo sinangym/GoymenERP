@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { matchPath, matchRoutes } from 'react-router'
 import {
+  INVENTORY_MOVEMENT_TIMELINE_ROUTE,
   INVENTORY_OPENING_CAPABILITY,
   INVENTORY_OPENING_ROUTE,
   INVENTORY_STOCK_POSITIONS_CAPABILITY,
@@ -21,7 +22,16 @@ describe('shell ↔ Inventory opening-stock contract', () => {
     expect(CAPABILITY_ROUTE[CAPABILITY.inventoryStockPositionsList]).toBe(INVENTORY_STOCK_POSITIONS_ROUTE)
     expect(CAPABILITY_NAV_LABEL[CAPABILITY.inventoryStockPositionsList]).toBe('Stok / Malzeme Pozisyonu')
     expect(NAV_CAPABILITIES.filter((item) => item === INVENTORY_STOCK_POSITIONS_CAPABILITY)).toHaveLength(1)
-    expect(inventoryRoutes).toHaveLength(5)
+    expect(inventoryRoutes).toHaveLength(6)
+    // ST-04 company timeline: an owner route reached from a label detail under the SAME stock-positions
+    // capability. It adds no capability, no sidebar entry and no CAPABILITY_ROUTE mapping of its own.
+    expect(matchRoutes(inventoryRoutes, INVENTORY_MOVEMENT_TIMELINE_ROUTE)?.at(-1)?.route.path).toBe(
+      INVENTORY_MOVEMENT_TIMELINE_ROUTE.slice(1),
+    )
+    expect(Object.values(CAPABILITY_ROUTE)).not.toContain(INVENTORY_MOVEMENT_TIMELINE_ROUTE)
+    expect(matchRoutes(inventoryRoutes, '/stok/etiket/hareketler')?.at(-1)?.route.path).toBe(
+      INVENTORY_LABEL_DETAIL_ROUTE.slice(1),
+    )
     expect(matchRoutes(inventoryRoutes, INVENTORY_STOCK_POSITIONS_ROUTE)?.at(-1)?.route.path).toBe(
       INVENTORY_STOCK_POSITIONS_ROUTE.slice(1),
     )

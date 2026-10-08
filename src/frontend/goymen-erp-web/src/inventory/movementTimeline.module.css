@@ -1,0 +1,7 @@
+.scope { border-left: 4px solid var(--color-border, #cbd5e1); margin: 0; padding: .25rem 0 .25rem .75rem; }
+.movementStart td { border-top: 2px solid var(--color-border, #cbd5e1); }
+.secondary { color: var(--color-text-muted, #475569); font-size: .85rem; }
+.idText { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .85rem; overflow-wrap: anywhere; }
+.footer { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem; }
+.notice { border: 1px solid #fdba74; background: #fff7ed; border-radius: .5rem; display: grid; gap: .5rem; justify-items: start; padding: .75rem; }
+.caption { caption-side: top; color: var(--color-text-muted, #475569); font-size: .85rem; padding-bottom: .5rem; text-align: left; }

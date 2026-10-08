@@ -13,13 +13,16 @@ import { classifyOutcome, type RemoteViewState } from '../shell/uiState'
 import {
   INVENTORY_LABEL_TRANSFORMATION_CAPABILITY,
   INVENTORY_LABEL_CLASSIFICATION_WRITE_CAPABILITY,
+  INVENTORY_MOVEMENT_TIMELINE_ROUTE,
   INVENTORY_PHYSICAL_ALLOCATION_WRITE_CAPABILITY,
   INVENTORY_STOCK_COUNT_APPROVE_CAPABILITY,
   INVENTORY_STOCK_COUNT_RECORD_CAPABILITY,
   INVENTORY_STOCK_SCRAP_APPROVE_CAPABILITY,
   INVENTORY_STOCK_SCRAP_RECORD_CAPABILITY,
   inventoryOpeningDetailPath,
+  movementTimelineEntryState,
 } from './capabilities'
+import { MOVEMENT_TIMELINE_TEXT } from './movementTimelineText'
 import { fetchInventoryLabelDetail } from './labelDetailApi'
 import { LabelAllocationPanel } from './LabelAllocationPanel'
 import { LabelTransformationPanel } from './LabelTransformationPanel'
@@ -209,6 +212,14 @@ function InventoryLabelDetailView({ namespace, labelId, target, stockSearch }: {
           </tr>))}</tbody>
         </table></div>}
       {movementTimeline.windowFull ? <p>Daha eski stok hareketleri bu görünümde yer almıyor.</p> : null}
+      {canReadLabel
+        ? <p>
+          <Link to={INVENTORY_MOVEMENT_TIMELINE_ROUTE} state={movementTimelineEntryState(identity.labelId, stockSearch)}>
+            {MOVEMENT_TIMELINE_TEXT.entryLink}
+          </Link>{' '}
+          <span>{MOVEMENT_TIMELINE_TEXT.entryNote}</span>
+        </p>
+        : null}
     </section>
 
     <ActionTarget id={ROW_ACTION_TARGET.genealogy} target={target}><section aria-labelledby="label-genealogy-heading">
