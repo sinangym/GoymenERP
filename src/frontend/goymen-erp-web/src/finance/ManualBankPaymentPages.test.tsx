@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { FinancePortProvider } from './financePort'
+import type { ManualBankPaymentView } from './manualBankPaymentContract'
 import type { FinanceReceiptPort } from './port'
 import {
   ManualBankPaymentCreatePage,
@@ -32,7 +33,7 @@ function view(status: 'Draft' | 'Approved' | 'Recorded') {
   }
 }
 
-function success(resource: ReturnType<typeof view>) {
+function success(resource: ManualBankPaymentView) {
   return { kind: 'body' as const, body: { outcome: 'Succeeded', resource, isReplay: false, originalCorrelationId: 'c', issues: [] } }
 }
 
