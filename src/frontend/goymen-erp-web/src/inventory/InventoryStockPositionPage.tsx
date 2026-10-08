@@ -9,6 +9,9 @@ import { CAPABILITY } from '../shell/capabilities'
 import { contextKey, contextKeyString, hasCapability } from '../shell/shellState'
 import { classifyOutcome, type RemoteViewState } from '../shell/uiState'
 import { StateBlock } from '../shell/StateBlock'
+import { Button } from '../ui/Button'
+import { Field } from '../ui/Field'
+import { DataTable, type DataTableColumn } from '../ui/DataTable'
 import { productDetailPath } from '../product/capabilities'
 import { locationDetailPath } from '../organization/capabilities'
 import { inventoryLabelDetailPath } from './labelDetailRoute'
@@ -142,9 +145,25 @@ export function InventoryStockPositionPage() {
   />
 }
 
+/** GOY-DS-001: Kullanılabilir and the row actions stay at the table's right edge while it scrolls sideways. */
+const AVAILABLE_PIN_WIDTH = '7.5rem'
+const ACTIONS_PIN_WIDTH = '5.5rem'
+
 function FilterIcon() {
   return <svg className={styles.icon} viewBox="0 0 24 24" aria-hidden="true" focusable="false">
     <path d="M4 5h16l-6 7.5V19l-4-2v-4.5z" />
+  </svg>
+}
+
+function SearchIcon() {
+  return <svg className={styles.searchIcon} viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+    <circle cx="11" cy="11" r="6.5" /><path d="M16 16l4.5 4.5" />
+  </svg>
+}
+
+function ColumnsIcon() {
+  return <svg className={styles.icon} viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+    <rect x="4" y="5" width="16" height="14" rx="1.5" /><path d="M10 5v14M14 5v14" />
   </svg>
 }
 
@@ -194,6 +213,13 @@ function InventoryStockPositionView({
     focusLabelRef.current = null
     resultsRef.current?.querySelector<HTMLElement>(`[data-label-id="${labelId}"] a`)?.focus()
   }, [state])
+
+  // The opened row menu is a popover inside the table's scroll area: bring it into view there (a last row's menu
+  // would otherwise open below the visible part). Nothing else moves; focus stays on the toggle.
+  useEffect(() => {
+    if (openMenu === null) return
+    resultsRef.current?.querySelector(`[data-label-id="${openMenu}"] ul`)?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' })
+  }, [openMenu])
 
   const load = useCallback(async (current: StockPositionFilters) => {
     if (companyId === null) return
@@ -386,61 +412,103 @@ function InventoryStockPositionView({
     { key: 'available', label: STOCK_TEXT.column.available, value: row.availableKg, shown: true },
   ].filter((entry) => entry.shown)
 
+  /** The same facts and order as the cards; only the table's layout comes from the shared DataTable. */
+  const quantityColumn = (key: string, label: string, value: (row: StockDisplayRow) => string): DataTableColumn<StockDisplayRow> =>
+    key === 'available'
+      ? {
+        key, header: label, align: 'end', pin: 'end', pinWidth: AVAILABLE_PIN_WIDTH, className: styles.available,
+        cell: (row) => <>{formatKg(value(row))}{classMark(row)}</>,
+      }
+      : { key, header: label, align: 'end', cell: (row) => formatKg(value(row)) }
+  const columns: DataTableColumn<StockDisplayRow>[] = [
+    { key: 'label', header: STOCK_TEXT.column.label, pin: 'start', className: styles.labelCol, cell: labelCell },
+    { key: 'product', header: STOCK_TEXT.column.product, className: styles.productCol, cell: productCell },
+    {
+      key: 'dimension', header: STOCK_TEXT.column.dimension, className: styles.nowrap,
+      cell: (row) => dimensionText(row.productDisplay.technical),
+    },
+    ...(showClassification
+      ? [{ key: 'classification', header: STOCK_TEXT.column.classification, cell: (row: StockDisplayRow) => classificationText(row.classification) }]
+      : []),
+    { key: 'location', header: STOCK_TEXT.column.location, cell: locationCell },
+    { key: 'owner', header: STOCK_TEXT.column.owner, cell: ownerCell },
+    quantityColumn('physical', STOCK_TEXT.column.physical, (row) => row.physicalKg),
+    quantityColumn('blocked', STOCK_TEXT.column.blocked, (row) => row.blockedPhysicalKg),
+    ...(showFreePhysical ? [quantityColumn('free', STOCK_TEXT.column.freePhysical, (row) => row.freePhysicalKg)] : []),
+    quantityColumn('allocated', STOCK_TEXT.column.allocated, (row) => row.activeAllocationKg),
+    quantityColumn('available', STOCK_TEXT.column.available, (row) => row.availableKg),
+    {
+      key: 'actions', header: STOCK_TEXT.column.actions, pin: 'end', pinWidth: ACTIONS_PIN_WIDTH,
+      className: styles.actionsCol, cell: menu,
+    },
+  ]
+
+  const restart = () => { setState({ type: 'loading' }); void load(filters) }
+
   return <main className={styles.page}>
     <header className={styles.header}><h1>{STOCK_TEXT.heading}</h1></header>
 
     <div className={styles.toolbar}>
       <form className={styles.search} onSubmit={submit} role="search">
-        <label htmlFor="stock-position-search">{STOCK_TEXT.searchLabel}</label>
-        <input
-          id="stock-position-search"
-          value={q}
-          maxLength={64}
-          aria-invalid={searchTooLong || undefined}
-          aria-describedby={searchTooLong ? 'stock-position-search-error' : undefined}
-          onChange={(event) => setQ(event.target.value)}
-        />
-        <button type="submit">{STOCK_TEXT.searchButton}</button>
+        <label htmlFor="stock-position-search" className={styles.visuallyHidden}>{STOCK_TEXT.searchLabel}</label>
+        <span className={styles.searchBox}>
+          <SearchIcon />
+          <input
+            id="stock-position-search"
+            className={styles.searchInput}
+            value={q}
+            maxLength={64}
+            placeholder={STOCK_TEXT.searchLabel}
+            aria-invalid={searchTooLong || undefined}
+            aria-describedby={searchTooLong ? 'stock-position-search-error' : undefined}
+            onChange={(event) => setQ(event.target.value)}
+          />
+        </span>
+        <Button type="submit" variant="secondary">{STOCK_TEXT.searchButton}</Button>
       </form>
       <div className={styles.disclosures}>
-        <button
+        <Button
           type="button"
+          variant={openPanel === 'filters' ? 'secondary' : 'ghost'}
           className={styles.disclosure}
           aria-expanded={openPanel === 'filters'}
           aria-controls="stock-other-filters"
           onClick={() => setOpenPanel(openPanel === 'filters' ? null : 'filters')}
-        >{STOCK_TEXT.otherFilters}</button>
-        <button
+        ><FilterIcon />{STOCK_TEXT.otherFilters}</Button>
+        <Button
           type="button"
+          variant={openPanel === 'columns' ? 'secondary' : 'ghost'}
           className={styles.disclosure}
           aria-expanded={openPanel === 'columns'}
           aria-controls="stock-columns"
           onClick={() => setOpenPanel(openPanel === 'columns' ? null : 'columns')}
-        >{STOCK_TEXT.columns}</button>
+        ><ColumnsIcon />{STOCK_TEXT.columns}</Button>
       </div>
     </div>
     {searchTooLong
       ? <p id="stock-position-search-error" role="alert" className={styles.error}>{STOCK_TEXT.searchTooLong}</p>
       : null}
     <div id="stock-other-filters" className={styles.panel} hidden={openPanel !== 'filters'}>
-      <label htmlFor="stock-classification-filter">{STOCK_TEXT.classificationFilter}</label>
-      <select
-        id="stock-classification-filter"
-        value={filters.classification ?? ''}
-        onChange={(event) => applyFilters({
-          ...filters,
-          classification: isStockClassification(event.target.value) ? event.target.value : null,
-        })}
-      >
-        <option value="">{STOCK_TEXT.classificationAll}</option>
-        {(Object.keys(CLASSIFICATION_TEXT) as StockClassification[]).map((value) =>
-          <option key={value} value={value}>{CLASSIFICATION_TEXT[value]}</option>)}
-      </select>
+      <Field label={STOCK_TEXT.classificationFilter} id="stock-classification-filter" className={styles.panelField}>
+        {(control) => <select
+          {...control}
+          className={styles.select}
+          value={filters.classification ?? ''}
+          onChange={(event) => applyFilters({
+            ...filters,
+            classification: isStockClassification(event.target.value) ? event.target.value : null,
+          })}
+        >
+          <option value="">{STOCK_TEXT.classificationAll}</option>
+          {(Object.keys(CLASSIFICATION_TEXT) as StockClassification[]).map((value) =>
+            <option key={value} value={value}>{CLASSIFICATION_TEXT[value]}</option>)}
+        </select>}
+      </Field>
     </div>
     <fieldset id="stock-columns" className={styles.panel} hidden={openPanel !== 'columns'}>
       <legend>{STOCK_TEXT.visibleColumns}</legend>
-      <label><input type="checkbox" aria-label={STOCK_TEXT.columnToggle(STOCK_TEXT.column.classification)} checked={showClassification} onChange={(event) => setShowClassification(event.target.checked)} /> {STOCK_TEXT.column.classification}</label>
-      <label><input type="checkbox" aria-label={STOCK_TEXT.columnToggle(STOCK_TEXT.column.freePhysical)} checked={showFreePhysical} onChange={(event) => setShowFreePhysical(event.target.checked)} /> {STOCK_TEXT.column.freePhysical}</label>
+      <label className={styles.check}><input type="checkbox" aria-label={STOCK_TEXT.columnToggle(STOCK_TEXT.column.classification)} checked={showClassification} onChange={(event) => setShowClassification(event.target.checked)} /> {STOCK_TEXT.column.classification}</label>
+      <label className={styles.check}><input type="checkbox" aria-label={STOCK_TEXT.columnToggle(STOCK_TEXT.column.freePhysical)} checked={showFreePhysical} onChange={(event) => setShowFreePhysical(event.target.checked)} /> {STOCK_TEXT.column.freePhysical}</label>
     </fieldset>
 
     {chips.length > 0 || filters.q !== ''
@@ -451,25 +519,25 @@ function InventoryStockPositionView({
             <button type="button" aria-label={STOCK_TEXT.filterChip.remove(chip.label)} onClick={() => applyFilters(chip.remove, true)}>×</button>
           </li>)}</ul>
           : null}
-        <button type="button" className={styles.clear} onClick={() => { setQ(''); applyFilters({ q: '', productId: null, locationId: null, classification: null, owner: null }, true) }}>
+        <Button type="button" variant="ghost" size="sm" onClick={() => { setQ(''); applyFilters({ q: '', productId: null, locationId: null, classification: null, owner: null }, true) }}>
           {STOCK_TEXT.clearFilters}
-        </button>
+        </Button>
       </div>
       : null}
 
     <section ref={resultsRef} tabIndex={-1} aria-label={STOCK_TEXT.results} className={styles.results}>
-    {state.type === 'loading' && !searchTooLong ? <p role="status">{STOCK_TEXT.loading}</p> : null}
+    {state.type === 'loading' && !searchTooLong ? <p role="status" className={styles.status}>{STOCK_TEXT.loading}</p> : null}
     {state.type === 'failed'
       ? <>
-        <StateBlock state={state.view} subject={STOCK_TEXT.stateSubject} onRetry={() => { setState({ type: 'loading' }); void load(filters) }} />
+        <StateBlock state={state.view} subject={STOCK_TEXT.stateSubject} onRetry={restart} />
         {/* A 409 here is a label that moved between the owner's two reads: transient, so the list can simply restart. */}
         {state.view.kind === 'conflict'
-          ? <button type="button" className={styles.more} onClick={() => { setState({ type: 'loading' }); void load(filters) }}>{STOCK_TEXT.restart}</button>
+          ? <Button type="button" variant="secondary" className={styles.more} onClick={restart}>{STOCK_TEXT.restart}</Button>
           : null}
       </>
       : null}
     {state.type === 'ready' && state.rows.length === 0
-      ? <p role="status">{filters.q !== '' || hasRowFilter(filters) ? STOCK_TEXT.emptyFiltered : STOCK_TEXT.emptyNoFilter}</p>
+      ? <p role="status" className={styles.status}>{filters.q !== '' || hasRowFilter(filters) ? STOCK_TEXT.emptyFiltered : STOCK_TEXT.emptyNoFilter}</p>
       : null}
     {state.type === 'ready' && state.rows.length > 0
       ? <>
@@ -491,42 +559,29 @@ function InventoryStockPositionView({
               </dl>
             </li>)}
           </ul>
-          : <div className={styles.tableWrap}><table className={styles.table} aria-label={STOCK_TEXT.heading}><thead><tr>
-            <th scope="col">{STOCK_TEXT.column.label}</th>
-            <th scope="col" className={styles.productCol}>{STOCK_TEXT.column.product}</th>
-            <th scope="col">{STOCK_TEXT.column.dimension}</th>
-            {showClassification ? <th scope="col">{STOCK_TEXT.column.classification}</th> : null}
-            <th scope="col">{STOCK_TEXT.column.location}</th>
-            <th scope="col">{STOCK_TEXT.column.owner}</th>
-            {quantities(state.rows[0]).map((entry) => <th key={entry.key} scope="col" className={styles.number}>{entry.label}</th>)}
-            <th scope="col">{STOCK_TEXT.column.actions}</th>
-          </tr></thead><tbody>{state.rows.map((row) => <tr key={row.labelId} data-label-id={row.labelId}>
-            <td>{labelCell(row)}</td>
-            <td className={styles.productCol}>{productCell(row)}</td>
-            <td className={styles.nowrap}>{dimensionText(row.productDisplay.technical)}</td>
-            {showClassification ? <td>{classificationText(row.classification)}</td> : null}
-            <td>{locationCell(row)}</td>
-            <td>{ownerCell(row)}</td>
-            {quantities(row).map((entry) => <td key={entry.key} className={entry.key === 'available' ? `${styles.number} ${styles.available}` : styles.number}>
-              {formatKg(entry.value)}
-              {entry.key === 'available' ? classMark(row) : null}
-            </td>)}
-            <td>{menu(row)}</td>
-          </tr>)}</tbody></table></div>}
-        {state.more.type === 'loading' ? <p role="status">{STOCK_TEXT.loadingMore}</p> : null}
+          : <DataTable
+            label={STOCK_TEXT.heading}
+            columns={columns}
+            rows={state.rows}
+            rowKey={(row) => row.labelId}
+            rowAttributes={(row) => ({ 'data-label-id': row.labelId })}
+            className={styles.tableArea}
+          />}
+        {state.more.type === 'loading' ? <p role="status" className={styles.status}>{STOCK_TEXT.loadingMore}</p> : null}
         {state.more.type === 'failed'
-          ? <div role="alert" className={styles.error}>
+          ? <div role="alert" className={styles.moreError}>
             <p>{state.more.expired ? STOCK_TEXT.loadMoreExpired : STOCK_TEXT.loadMoreFailed}</p>
-            <button type="button" onClick={() => { setState({ type: 'loading' }); void load(filters) }}>{STOCK_TEXT.restart}</button>
+            <Button type="button" variant="secondary" size="sm" onClick={restart}>{STOCK_TEXT.restart}</Button>
           </div>
           : null}
         {state.nextCursor !== null && !(state.more.type === 'failed' && state.more.expired)
-          ? <button
+          ? <Button
             type="button"
+            variant="secondary"
             className={styles.more}
             aria-disabled={state.more.type === 'loading' || undefined}
             onClick={() => void loadMore()}
-          >{STOCK_TEXT.loadMore}</button>
+          >{STOCK_TEXT.loadMore}</Button>
           : null}
       </>
       : null}

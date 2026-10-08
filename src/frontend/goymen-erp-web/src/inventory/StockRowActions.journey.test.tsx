@@ -139,6 +139,10 @@ describe('AT-063 ST-01 row actions', () => {
     await user.click(toggle)
     expect(toggle.getAttribute('aria-expanded')).toBe('true')
     const menu = screen.getByRole('list', { name: 'LBL-1 için işlemler' })
+    // STOCK-DS-01: the toggle and its list stay together in the row's own pinned actions cell (its last cell).
+    const actionsCell = toggle.closest('td')!
+    expect(actionsCell.closest('tr')!.lastElementChild).toBe(actionsCell)
+    expect(actionsCell.contains(menu)).toBe(true)
     expect(within(menu).getAllByRole('link').map((link) => link.textContent))
       .toEqual(['Etiket 360’ı aç', 'Sayım / fark', 'Etiket / lot soy ağacı'])
     expect(within(menu).queryByRole('link', { name: 'Tahsisi görüntüle / revize et' })).toBeNull()

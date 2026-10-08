@@ -1,76 +1,177 @@
-/* ST-01 stock list (Stok UX FAZ-1). UX v1.2 density: the data starts early, cells are compact two-line blocks,
-   numbers are right-aligned in tabular figures; on a phone each row is a readable card. No new colour, font or
-   radius round: the values are the shell's and the existing inventory screens'. */
+/* ST-01 stock list on GOY-DS-001 (STOCK-DS-01). The table's layout is the shared ui/DataTable; this file only
+   places the page's toolbar, filters, cells and phone cards on the --goy-ds-* tokens. Nothing is hidden or shrunk
+   to fit more rows: 13.5/18 table text, the 44 px standard row, numbers right-aligned in tabular figures. */
 
 .page {
   display: grid;
-  gap: 0.75rem;
+  gap: var(--goy-ds-space-3);
   margin: 0 auto;
-  padding: 1rem 0;
+  padding: var(--goy-ds-space-1) 0 var(--goy-ds-space-4);
   min-width: 0;
+  font-family: var(--goy-ds-font-sans);
+  color: var(--goy-ds-color-text);
 }
 
 .header h1 {
   margin: 0;
+  font-size: 1.25rem;
+  line-height: 28px;
+  font-weight: var(--goy-ds-font-weight-semibold);
 }
 
+/* ── Toolbar: search on the left, the two disclosures on the right ── */
 .toolbar {
   display: flex;
   flex-wrap: wrap;
-  align-items: flex-end;
+  align-items: center;
   justify-content: space-between;
-  gap: 0.5rem 1rem;
+  gap: var(--goy-ds-space-2) var(--goy-ds-space-4);
 }
 
 .search {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--goy-ds-space-2);
+  min-width: 0;
+  flex: 0 1 26rem;
+}
+
+.searchBox {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 1 1 auto;
   min-width: 0;
 }
 
-.search input {
+.searchIcon {
+  position: absolute;
+  left: 10px;
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: var(--goy-ds-color-text-tertiary);
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  pointer-events: none;
+}
+
+.searchInput,
+.select {
+  box-sizing: border-box;
+  min-height: var(--goy-ds-control-height);
+  border: 1px solid var(--goy-ds-color-border-control);
+  border-radius: var(--goy-ds-radius-sm);
+  background: var(--goy-ds-color-surface);
+  color: var(--goy-ds-color-text);
+  font: inherit;
+  font-size: var(--goy-ds-font-size-md);
+}
+
+.searchInput {
+  width: 100%;
   min-width: 0;
-  width: 16rem;
-  max-width: 100%;
+  padding: 0 10px 0 32px;
+}
+
+.searchInput::placeholder {
+  color: var(--goy-ds-color-text-tertiary);
+}
+
+.select {
+  padding: 0 8px;
+  min-width: 10rem;
+}
+
+.searchInput:hover,
+.select:hover {
+  border-color: var(--goy-ds-color-border-hover);
+}
+
+.searchInput:focus-visible,
+.select:focus-visible {
+  outline: none;
+  border-color: var(--goy-ds-color-accent);
+  box-shadow: 0 0 0 3px var(--goy-ds-focus-ring);
+}
+
+.searchInput[aria-invalid="true"] {
+  border-color: var(--goy-ds-color-danger);
 }
 
 .disclosures {
   display: flex;
-  gap: 0.5rem;
+  gap: var(--goy-ds-space-1);
 }
 
-.disclosure[aria-expanded="true"] {
-  font-weight: 600;
+.icon {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linejoin: round;
 }
 
+.error {
+  margin: 0;
+  color: var(--goy-ds-color-danger);
+  font-size: var(--goy-ds-font-size-sm);
+}
+
+/* ── Disclosure panels ── */
 .panel {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.5rem 1rem;
+  gap: var(--goy-ds-space-2) var(--goy-ds-space-4);
   margin: 0;
-  padding: 0.5rem 0.75rem;
-  border: 1px solid var(--color-border, #cbd5e1);
-  border-radius: 6px;
+  padding: var(--goy-ds-space-2) var(--goy-ds-space-3);
+  border: 1px solid var(--goy-ds-color-border);
+  border-radius: var(--goy-ds-radius-md);
+  background: var(--goy-ds-color-surface-muted);
+  font-size: var(--goy-ds-font-size-md);
 }
 
 .panel[hidden] {
   display: none;
 }
 
+.panel legend {
+  float: left;
+  margin-right: var(--goy-ds-space-2);
+  padding: 0;
+  font-size: var(--goy-ds-font-size-sm);
+  font-weight: var(--goy-ds-font-weight-medium);
+  color: var(--goy-ds-color-text-secondary);
+}
+
+.panelField {
+  flex-direction: row;
+  align-items: center;
+  gap: var(--goy-ds-space-2);
+}
+
+.check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 24px;
+}
+
+/* ── Active filter chips ── */
 .chips {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--goy-ds-space-2);
 }
 
 .chips ul {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.5rem;
+  gap: var(--goy-ds-space-2);
   list-style: none;
   margin: 0;
   padding: 0;
@@ -79,138 +180,59 @@
 .chips li {
   display: inline-flex;
   align-items: center;
-  gap: 0.25rem;
-  padding: 0.125rem 0.25rem 0.125rem 0.625rem;
-  border: 1px solid var(--color-border, #cbd5e1);
+  gap: 2px;
+  min-height: var(--goy-ds-control-height-sm);
+  box-sizing: border-box;
+  padding: 0 2px 0 10px;
+  border: 1px solid var(--goy-ds-color-border-control);
   border-radius: 999px;
-  font-size: 0.875rem;
+  background: var(--goy-ds-color-accent-soft);
+  color: var(--goy-ds-color-accent-text);
+  font-size: var(--goy-ds-font-size-sm);
+  font-weight: var(--goy-ds-font-weight-medium);
 }
 
 .chips li button {
   min-width: 24px;
   min-height: 24px;
   border: 0;
+  border-radius: 999px;
   background: none;
+  color: inherit;
+  font: inherit;
+  font-size: var(--goy-ds-font-size-base);
   cursor: pointer;
 }
 
-.clear {
-  font-size: 0.875rem;
+.chips li button:hover {
+  background: var(--goy-ds-color-surface);
 }
 
-.error {
-  color: #9b1c1c;
+.chips li button:focus-visible {
+  outline: 2px solid var(--goy-ds-color-accent);
+  outline-offset: 1px;
 }
 
-.tableWrap {
-  overflow-x: auto;
-}
-
-.table {
-  border-collapse: collapse;
-  width: 100%;
-  font-size: 0.875rem;
-}
-
-.table th,
-.table td {
-  padding: 0.5rem 0.625rem;
-  border-bottom: 1px solid var(--color-border, #cbd5e1);
-  text-align: left;
-  vertical-align: top;
-}
-
-.table th {
-  font-weight: 600;
-  white-space: nowrap;
-}
-
-.number {
-  text-align: right !important;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-
-.available {
-  font-weight: 600;
-}
-
-.nowrap {
-  white-space: nowrap;
-}
-
-.labelLink {
-  font-weight: 600;
-}
-
-.sub {
-  display: block;
-  color: #55607a;
-  font-size: 0.8125rem;
-}
-
-.cellLine {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.25rem;
-}
-
-.product {
+/* ── Result region ── */
+.results {
   display: grid;
+  gap: var(--goy-ds-space-3);
   min-width: 0;
 }
 
-.code {
-  color: #55607a;
-  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
-  font-size: 0.8125rem;
+.results:focus {
+  outline: none;
 }
 
-/* The Product is the main new fact: its column keeps v1.2's width and a long name wraps to two lines. */
-.productCol {
-  min-width: 12.5rem;
+.results:focus-visible {
+  outline: 2px solid var(--goy-ds-color-accent);
+  outline-offset: 2px;
 }
 
-.name {
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  max-width: 18rem;
-  overflow: hidden;
-}
-
-.cardLink {
-  font-size: 0.8125rem;
-}
-
-.filterButton {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex: none;
-  min-width: 24px;
-  min-height: 24px;
-  padding: 2px;
-  border: 1px solid transparent;
-  border-radius: 6px;
-  background: none;
-  color: #55607a;
-  cursor: pointer;
-}
-
-.filterButton:hover,
-.filterButton:focus-visible {
-  border-color: var(--color-border, #cbd5e1);
-  color: #1a2233;
-}
-
-.icon {
-  width: 16px;
-  height: 16px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.8;
-  stroke-linejoin: round;
+.status {
+  margin: 0;
+  color: var(--goy-ds-color-text-secondary);
+  font-size: var(--goy-ds-font-size-md);
 }
 
 .more {
@@ -222,25 +244,227 @@
   cursor: progress;
 }
 
-.results {
-  display: grid;
-  gap: 0.75rem;
+.moreError {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--goy-ds-space-2) var(--goy-ds-space-3);
+  color: var(--goy-ds-color-danger);
+  font-size: var(--goy-ds-font-size-md);
+}
+
+.moreError p {
+  margin: 0;
+}
+
+/* ── Table cells ── */
+.tableArea {
   min-width: 0;
 }
 
-.results:focus {
-  outline: none;
+.nowrap {
+  white-space: nowrap;
 }
 
-.results:focus-visible {
-  outline: 2px solid var(--color-focus, #1f5fd0);
-  outline-offset: 2px;
+.labelCol {
+  white-space: nowrap;
 }
 
+.labelLink {
+  color: var(--goy-ds-color-accent-text);
+  font-weight: var(--goy-ds-font-weight-semibold);
+  text-decoration: none;
+}
+
+.labelLink:hover {
+  text-decoration: underline;
+}
+
+.labelLink:focus-visible,
+.cardLink:focus-visible {
+  outline: 2px solid var(--goy-ds-color-accent);
+  outline-offset: 1px;
+  border-radius: 2px;
+}
+
+/* The second line of a cell: secondary facts in the label size, kept on one line so a row stays two lines. */
+.sub {
+  display: block;
+  color: var(--goy-ds-color-text-tertiary);
+  font-size: var(--goy-ds-font-size-sm);
+  line-height: 16px;
+  white-space: nowrap;
+}
+
+.cellLine {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+/* Product: the name on the first line; the code (mono) and the card link share the second. The DOM order —
+   code, name, link — stays what a screen reader and the tests read. */
+.product {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 6px;
+  min-width: 0;
+}
+
+.name {
+  order: -1;
+  flex-basis: 100%;
+  min-width: 0;
+  max-width: 16rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.code {
+  color: var(--goy-ds-color-text-secondary);
+  font-family: var(--goy-ds-font-mono);
+  font-size: var(--goy-ds-font-size-sm);
+  line-height: 16px;
+}
+
+.productCol {
+  min-width: 11rem;
+}
+
+.cardLink {
+  color: var(--goy-ds-color-accent-text);
+  font-size: var(--goy-ds-font-size-sm);
+  line-height: 16px;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.cardLink:hover {
+  text-decoration: underline;
+}
+
+/* A row filter is a quiet icon until its row is pointed at or it has focus; it never moves the cell. */
+.filterButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  min-width: 24px;
+  min-height: 24px;
+  padding: 2px;
+  border: 1px solid transparent;
+  border-radius: var(--goy-ds-radius-sm);
+  background: none;
+  color: var(--goy-ds-color-text-tertiary);
+  opacity: 0.55;
+  cursor: pointer;
+}
+
+tr:hover .filterButton,
+.card .filterButton {
+  opacity: 1;
+}
+
+.filterButton:hover,
+.filterButton:focus-visible {
+  opacity: 1;
+  border-color: var(--goy-ds-color-border-control);
+  background: var(--goy-ds-color-surface);
+  color: var(--goy-ds-color-text);
+}
+
+.filterButton:focus-visible {
+  outline: 2px solid var(--goy-ds-color-accent);
+  outline-offset: 1px;
+}
+
+.available {
+  font-weight: var(--goy-ds-font-weight-semibold);
+}
+
+/* A non-standard class next to Kullanılabilir: a square-cornered category tag, not a status dot. */
 .classMark {
   display: block;
-  font-size: 0.75rem;
-  font-weight: 600;
+  width: fit-content;
+  margin-left: auto;
+  margin-top: 2px;
+  padding: 0 6px;
+  border-radius: var(--goy-ds-radius-xs);
+  border: 1px solid var(--goy-ds-color-warning-dot);
+  background: var(--goy-ds-color-surface);
+  color: var(--goy-ds-color-warning);
+  font-size: var(--goy-ds-font-size-xs);
+  font-weight: var(--goy-ds-font-weight-semibold);
+  line-height: 16px;
+}
+
+/* The row action disclosure keeps its own component and DOM; in the pinned column it reads as a quiet toolbar button
+   and its open list is a popover under it, right-aligned, so the pinned columns keep their widths. */
+.actionsCol button[aria-expanded] {
+  min-height: var(--goy-ds-control-height-sm);
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: var(--goy-ds-radius-sm);
+  background: transparent;
+  color: var(--goy-ds-color-text-secondary);
+  font: inherit;
+  font-size: var(--goy-ds-font-size-sm);
+  font-weight: var(--goy-ds-font-weight-medium);
+  cursor: pointer;
+}
+
+.actionsCol button[aria-expanded]:hover,
+.actionsCol button[aria-expanded="true"] {
+  border-color: var(--goy-ds-color-border-control);
+  background: var(--goy-ds-color-surface);
+  color: var(--goy-ds-color-text);
+}
+
+.actionsCol button[aria-expanded]:focus-visible {
+  outline: 2px solid var(--goy-ds-color-accent);
+  outline-offset: 1px;
+}
+
+.actionsCol ul {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 1;
+  min-width: 14rem;
+  margin: 0;
+  padding: var(--goy-ds-space-1) 0;
+  border: 1px solid var(--goy-ds-color-border);
+  border-radius: var(--goy-ds-radius-md);
+  background: var(--goy-ds-color-surface);
+  box-shadow: var(--goy-ds-shadow-1);
+  gap: 0;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.actionsCol ul a {
+  display: block;
+  padding: 6px var(--goy-ds-space-3);
+  color: var(--goy-ds-color-text);
+  font-size: var(--goy-ds-font-size-md);
+  line-height: 18px;
+  text-decoration: none;
+}
+
+.actionsCol ul a:hover {
+  background: var(--goy-ds-color-surface-muted);
+}
+
+.actionsCol ul a:focus-visible {
+  outline: 2px solid var(--goy-ds-color-accent);
+  outline-offset: -2px;
+}
+
+/* The open row's pinned cell rises above the later rows' pinned cells, so its popover is not painted under them. */
+.actionsCol:has(button[aria-expanded="true"]) {
+  z-index: 4;
 }
 
 .visuallyHidden {
@@ -255,29 +479,57 @@
   border: 0;
 }
 
-/* Phone: one card per row; the four quantities stay on the card's face. */
+/* ── Phone: one card per row; the four quantities stay on the card's face ── */
+@media (max-width: 767px) {
+  .search {
+    flex: 1 1 100%;
+  }
+
+  .disclosures {
+    flex: 1 1 100%;
+  }
+}
+
 .cards {
   display: grid;
-  gap: 0.75rem;
   list-style: none;
   margin: 0;
   padding: 0;
+  border: 1px solid var(--goy-ds-color-border);
+  border-radius: var(--goy-ds-radius-md);
+  background: var(--goy-ds-color-surface);
 }
 
 .card {
   display: grid;
-  gap: 0.5rem;
-  padding: 0.75rem;
-  border: 1px solid var(--color-border, #cbd5e1);
-  border-radius: 6px;
-  background: #fff;
+  gap: var(--goy-ds-space-2);
+  padding: var(--goy-ds-space-3);
+  border-bottom: 1px solid var(--goy-ds-color-border);
+  font-size: var(--goy-ds-font-size-md);
+  line-height: 18px;
+}
+
+.card:last-child {
+  border-bottom: 0;
 }
 
 .cardHead {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 0.5rem;
+  gap: var(--goy-ds-space-2);
+}
+
+.cardHead button[aria-expanded] {
+  min-height: var(--goy-ds-control-height-sm);
+  padding: 0 10px;
+  border: 1px solid var(--goy-ds-color-border-control);
+  border-radius: var(--goy-ds-radius-sm);
+  background: var(--goy-ds-color-surface);
+  color: var(--goy-ds-color-text);
+  font: inherit;
+  font-size: var(--goy-ds-font-size-sm);
+  font-weight: var(--goy-ds-font-weight-medium);
 }
 
 .cardLabel {
@@ -288,16 +540,15 @@
 .cardFacts,
 .cardQuantities {
   display: grid;
-  gap: 0.375rem;
+  gap: 6px var(--goy-ds-space-3);
   margin: 0;
 }
 
+/* Label above value, two facts a row; the Product spans the card. */
 .cardFacts {
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  column-gap: 0.75rem;
 }
 
-/* Label above value, two facts a row; the Product spans the card. */
 .cardFacts div {
   min-width: 0;
 }
@@ -306,17 +557,17 @@
   grid-column: 1 / -1;
 }
 
-.card .product {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 0 0.375rem;
+.card .name {
+  max-width: none;
+  white-space: normal;
+  font-weight: var(--goy-ds-font-weight-semibold);
 }
 
 .cardFacts dt,
 .cardQuantities dt {
-  color: #55607a;
-  font-size: 0.8125rem;
+  color: var(--goy-ds-color-text-tertiary);
+  font-size: var(--goy-ds-font-size-xs);
+  line-height: 16px;
 }
 
 .cardFacts dd,
@@ -325,21 +576,22 @@
   min-width: 0;
 }
 
+/* Quantities in one row where the phone is wide enough, wrapping (never shrinking) where it is not. */
 .cardQuantities {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  padding-top: 0.5rem;
-  border-top: 1px solid var(--color-border, #cbd5e1);
+  grid-template-columns: repeat(auto-fit, minmax(4.75rem, 1fr));
+  padding-top: var(--goy-ds-space-2);
+  border-top: 1px solid var(--goy-ds-color-border);
 }
 
 .cardQuantities dd {
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .cardQuantities .available dd {
-  font-weight: 600;
+  font-weight: var(--goy-ds-font-weight-semibold);
 }
 
-.card .name {
-  max-width: none;
-  white-space: normal;
+.cardQuantities .classMark {
+  margin-left: 0;
 }

@@ -10,6 +10,8 @@ import { shellRoutes } from '../shell/router'
 import { SHELL_CAPABILITY_CONTRACT_VERSION } from '../shell/api'
 import { STOCK_DISPLAY_HEADER } from './stockDisplayApi'
 import type { StockPositionFilters } from './stockDisplayApi'
+import { INVENTORY_STOCK_POSITIONS_CAPABILITY } from './capabilities'
+import tableStyles from '../ui/dataTable.module.css'
 
 const COMPANY = '22222222-2222-4222-8222-222222222222'
 const GROUP_COMPANY = '22222222-2222-4222-8222-2222222222bb'
@@ -624,6 +626,105 @@ describe('ST-01 on a phone', () => {
     viewport.set(false)
     expect(screen.getByRole('table')).toBeTruthy()
     expect(api.page).toHaveBeenCalledTimes(1)
+  })
+})
+
+/**
+ * STOCK-DS-01: the same page on the GOY-DS-001 primitives. Only the presentation moved — the facts, their order,
+ * the read, the URL and the row actions are the ones every case above already pins.
+ */
+describe('ST-01 on GOY-DS-001 (STOCK-DS-01)', () => {
+  it('draws the rows in the shared DataTable: label pinned at the start, Kullanılabilir and İşlemler at the end', async () => {
+    shell.capabilities = [INVENTORY_STOCK_POSITIONS_CAPABILITY]
+    stubViewport(false)
+    mount()
+    await screen.findByRole('link', { name: 'ROLL-1' })
+    const table = screen.getByRole('table', { name: 'Stok / Malzeme Pozisyonu' })
+    expect(table.parentElement!.classList.contains(tableStyles.scroll)).toBe(true)
+    const header = (name: string) => screen.getByRole('columnheader', { name })
+    expect(header('Etiket / lot').classList.contains(tableStyles.pinStart)).toBe(true)
+    expect(header('Kullanılabilir kg').classList.contains(tableStyles.pinEnd)).toBe(true)
+    expect(header('İşlemler').classList.contains(tableStyles.pinEnd)).toBe(true)
+    // Kullanılabilir sits left of the pinned actions column; the actions column sits on the edge.
+    expect(header('Kullanılabilir kg').style.right).toBe(header('İşlemler').style.width)
+    expect(header('İşlemler').style.right).toBe('0px')
+    for (const name of ['Fiziksel kg', 'Bloklu kg', 'Tahsisli kg', 'Kullanılabilir kg']) {
+      expect(header(name).classList.contains(tableStyles.end), name).toBe(true)
+    }
+    for (const name of ['Ürün', 'Ölçü (mm)', 'Lokasyon', 'Mal sahibi', 'Fiziksel kg', 'Bloklu kg', 'Tahsisli kg']) {
+      expect(header(name).classList.contains(tableStyles.pinStart) || header(name).classList.contains(tableStyles.pinEnd), name).toBe(false)
+    }
+    // The row's menu lives in the pinned actions cell, and the row keeps its label id for the browser specs.
+    const tr = bodyRow('ROLL-1')
+    expect(tr.getAttribute('data-label-id')).toBe(LABEL)
+    const actionsCell = within(tr).getAllByRole('cell').at(-1)!
+    expect(within(actionsCell).getByRole('button', { name: 'ROLL-1 işlemleri' })).toBeTruthy()
+  })
+
+  it('keeps Kullanılabilir the only pinned quantity when Blokajsız fiziksel is shown', async () => {
+    const user = userEvent.setup()
+    stubViewport(false)
+    mount()
+    await screen.findByRole('link', { name: 'ROLL-1' })
+    await user.click(screen.getByRole('button', { name: 'Sütunlar' }))
+    await user.click(screen.getByRole('checkbox', { name: 'Blokajsız fiziksel kg sütunu' }))
+    const free = screen.getByRole('columnheader', { name: 'Blokajsız fiziksel kg' })
+    expect(free.classList.contains(tableStyles.end)).toBe(true)
+    expect(free.classList.contains(tableStyles.pinEnd)).toBe(false)
+    expect(screen.getByRole('columnheader', { name: 'Kullanılabilir kg' }).classList.contains(tableStyles.pinEnd)).toBe(true)
+    expect(screen.getAllByRole('table')).toHaveLength(1)
+  })
+
+  it('builds the toolbar from the design-system controls without changing what they do', async () => {
+    const user = userEvent.setup()
+    mount()
+    await screen.findByRole('link', { name: 'ROLL-1' })
+    const search = screen.getByRole('search')
+    const input = within(search).getByLabelText('Etiket kodu') as HTMLInputElement
+    expect(input.getAttribute('placeholder')).toBe('Etiket kodu')
+    expect(input.maxLength).toBe(64)
+    expect(within(search).getByRole('button', { name: 'Ara' }).getAttribute('type')).toBe('submit')
+    expect(screen.getAllByRole('button', { name: 'Ara' })).toHaveLength(1)
+
+    const filters = screen.getByRole('button', { name: 'Diğer filtreler' })
+    const columns = screen.getByRole('button', { name: 'Sütunlar' })
+    for (const button of [filters, columns]) {
+      expect(button.getAttribute('type')).toBe('button')
+      expect(button.getAttribute('aria-expanded')).toBe('false')
+    }
+    expect(filters.getAttribute('aria-controls')).toBe('stock-other-filters')
+    expect(columns.getAttribute('aria-controls')).toBe('stock-columns')
+    await user.click(filters)
+    expect(filters.getAttribute('aria-expanded')).toBe('true')
+    const select = screen.getByRole('combobox', { name: 'Sınıf' }) as HTMLSelectElement
+    expect(select.id).toBe('stock-classification-filter')
+    expect([...select.options].map((option) => option.textContent)).toEqual(['Tümü', 'Standart', 'İkinci kalite', 'Hurda'])
+    // Opening a panel reads nothing.
+    expect(api.page).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps "Daha fazla göster" and "Filtreleri temizle" plain buttons that submit nothing', async () => {
+    const user = userEvent.setup()
+    api.page.mockResolvedValue(ready([row()], { nextCursor: 'opaque-1' }))
+    mount('/stok/pozisyonlar?etiket=ROLL')
+    await screen.findByRole('link', { name: 'ROLL-1' })
+    expect(screen.getByRole('button', { name: 'Daha fazla göster' }).getAttribute('type')).toBe('button')
+    const clear = screen.getByRole('button', { name: 'Filtreleri temizle' })
+    expect(clear.getAttribute('type')).toBe('button')
+    await user.click(clear)
+    await waitFor(() => expect(address()).toBe('/stok/pozisyonlar'))
+    expect(api.page).toHaveBeenLastCalledWith(COMPANY, NO_FILTERS, null, expect.any(AbortSignal))
+  })
+
+  it('keeps the phone card free of a table, with the menu in its head', async () => {
+    shell.capabilities = [INVENTORY_STOCK_POSITIONS_CAPABILITY]
+    stubViewport(true)
+    mount()
+    const cards = await screen.findByTestId('stock-position-cards')
+    expect(screen.queryByRole('table')).toBeNull()
+    const card = within(cards).getAllByRole('listitem')[0]
+    expect(within(card).getByRole('button', { name: 'ROLL-1 işlemleri' })).toBeTruthy()
+    expect(within(card).getByRole('link', { name: 'ROLL-1' })).toBeTruthy()
   })
 })
 

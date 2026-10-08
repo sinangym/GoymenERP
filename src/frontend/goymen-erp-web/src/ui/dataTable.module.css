@@ -1,0 +1,87 @@
+/* GOY-DS-001 DataTable. Every value comes from a --goy-ds-* token; no literal colour.
+   Business Central density: 13.5/18 text, a two-line cell fits the 44 px standard row, the header and pinned
+   columns stay in place while the area scrolls. */
+
+/* The scroll area is at most one viewport tall, so once the page brings the table to the top the header stays
+   visible over a long list instead of scrolling away with the page. */
+.scroll {
+  overflow: auto;
+  max-height: 100dvh;
+  min-width: 0;
+  border: 1px solid var(--goy-ds-color-border);
+  border-radius: var(--goy-ds-radius-md);
+  background: var(--goy-ds-color-surface);
+  scrollbar-width: thin;
+}
+
+.table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-family: var(--goy-ds-font-sans);
+  font-size: var(--goy-ds-font-size-md);
+  line-height: 18px;
+  color: var(--goy-ds-color-text);
+}
+
+.table th,
+.table td {
+  padding: 6px 7px;
+  border-bottom: 1px solid var(--goy-ds-color-border);
+  text-align: left;
+  vertical-align: middle;
+  background: var(--goy-ds-color-surface);
+}
+
+.table td {
+  height: 44px;
+  box-sizing: border-box;
+}
+
+.table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.table th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  height: 36px;
+  box-sizing: border-box;
+  background: var(--goy-ds-color-surface-muted);
+  color: var(--goy-ds-color-text-secondary);
+  font-size: var(--goy-ds-font-size-sm);
+  font-weight: var(--goy-ds-font-weight-medium);
+  white-space: nowrap;
+}
+
+.table tbody tr:hover td {
+  background: var(--goy-ds-color-surface-muted);
+}
+
+.end {
+  text-align: right !important;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.pinStart,
+.pinEnd {
+  position: sticky;
+  z-index: 1;
+}
+
+.table th.pinStart,
+.table th.pinEnd {
+  z-index: 3;
+}
+
+.pinStart {
+  left: 0;
+  box-shadow: inset -1px 0 0 var(--goy-ds-color-border);
+}
+
+/* The first pinned end column draws the edge between the scrolling and the pinned part. */
+.pinEdge {
+  box-shadow: inset 1px 0 0 var(--goy-ds-color-border);
+}
