@@ -1,4 +1,5 @@
 using GoymenERP.BuildingBlocks.Shell;
+using GoymenERP.Modules.Counterparty.Application;
 using GoymenERP.Modules.Counterparty.Application.Contracts;
 using GoymenERP.Modules.Counterparty.Infrastructure.Persistence;
 using GoymenERP.Modules.Counterparty.Infrastructure.Shell;
@@ -46,6 +47,12 @@ public static class CounterpartyModuleExtensions
             ICounterpartyPartyDisplayBatchReadServiceV1,
             CounterpartyPartyDisplayBatchReadServiceV1>();
         services.AddScoped<
+            ICounterpartySalesRecordPartyDisplaySourceV1,
+            CounterpartySalesRecordPartyDisplaySourceV1>();
+        services.AddScoped<
+            ICounterpartySalesRecordPartyDisplayOwnerReaderV1,
+            CounterpartySalesRecordPartyDisplayQueryV1>();
+        services.AddScoped<
             ICounterpartyManufacturingPartyAccountSourceV1,
             CounterpartyManufacturingPartyAccountSourceV1>();
         services.AddScoped<ICounterpartyLinkCandidateReadService, CounterpartyLinkCandidateReadService>();
@@ -54,6 +61,9 @@ public static class CounterpartyModuleExtensions
         services.TryAddSingleton<
             ICounterpartyPartyDisplayBatchSqlObserver,
             NullCounterpartyPartyDisplayBatchSqlObserver>();
+        services.TryAddSingleton<
+            ICounterpartySalesRecordPartyDisplaySqlObserver,
+            NullCounterpartySalesRecordPartyDisplaySqlObserver>();
         services.TryAddSingleton<
             ICounterpartyLinkCandidateSqlObserver,
             NullCounterpartyLinkCandidateSqlObserver>();
