@@ -454,9 +454,17 @@ jobs:
         id: artifact_privacy
         if: always() && steps.bind.outputs.bound == 'true'
         run: |
+          set -euo pipefail
+          compose_model="$RUNNER_TEMP/browser-suite-artifact-privacy-compose.json"
+          trap 'rm -f "$compose_model"' EXIT
+          docker compose \
+            -p "$C01_E2E_COMPOSE_PROJECT" \
+            -f "$C01_E2E_COMPOSE_FILE" ${BROWSER_E2E_COMPOSE_OVERRIDE:+-f "$BROWSER_E2E_COMPOSE_OVERRIDE"} \
+            config --format json > "$compose_model"
           python3 -I -S -B tools/validate_browser_acceptance.py privacy \
             --root artifacts \
             --suite "$BROWSER_SUITE" \
+            --compose-model "$compose_model" \
             --forbidden-value "$MSSQL_SA_PASSWORD" \
             --forbidden-value "$C01_E2E_CURSOR_SIGNING_KEY" \
             --forbidden-value "$GOYMEN_ERP_C01_E2E_SQLSERVER_CONNECTION"

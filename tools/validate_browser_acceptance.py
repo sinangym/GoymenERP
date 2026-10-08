@@ -18,6 +18,9 @@ every profile; on top of that the API environment key set must be exact.
 from __future__ import annotations
 
 import argparse
+import base64
+import binascii
+import hashlib
 import importlib.util
 import json
 import pathlib
@@ -155,6 +158,8 @@ _GUID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}
 # No leading zeros: .NET configuration binds "Users__02" and "Users__2" as two different list items, so a
 # zero-padded index would silently add an actor outside the contiguity check (#322 ORG P3).
 _ACTOR_KEY = re.compile(r"^BootstrapIdentity__Users__(0|[1-9][0-9]*)__(UserId|DisplayName)$")
+INVENTORY_STOCK_POSITION_CURSOR_KEY = "Inventory__StockPositionCursorSigningKeyBase64"
+_R14_STOCK_POSITION_CURSOR_SHA256 = "630dcd2966c4336691125448bbb25b4ff412a49c732db2c8abc1b8581bd710dd"
 MAX_SUITE_ACTORS = 8
 # S04's accepted remainder journey adds exactly the L04-provenance preparer/loader pair to its existing
 # eight disposable actors. Every other suite keeps the global cap; this is not a general expansion knob.
@@ -187,7 +192,12 @@ SUITE_API_EXTENSIONS = {
     # disposable Identity users and grants. The issuer itself has no actor, role, assignment or grant.
     "pur01": {"issuer": True, "actors": True, "identity": True},
     # R14: Product issuer plus recorder, denied and Organization arranger actors in the disposable DB.
-    "r14": {"issuer": True, "actors": True, "identity": True},
+    "r14": {
+        "issuer": True,
+        "actors": True,
+        "identity": True,
+        "runtime": {INVENTORY_STOCK_POSITION_CURSOR_KEY: _R14_STOCK_POSITION_CURSOR_SHA256},
+    },
     # CARI-NORMAL: two actors holding the SAME two names in DIFFERENT companies, with their Identity
     # users and grants — the difference is the company, because that is the fence being measured.
     "c02": {"issuer": False, "actors": True, "identity": True},
@@ -804,15 +814,45 @@ def suite_override_file(suite: str) -> str | None:
     return relative if exists else None
 
 
+def _reviewed_r14_runtime_values() -> dict[str, str]:
+    """Read the one reviewed disposable R14 runtime key from the checked-out suite override."""
+    relative = suite_override_file("r14")
+    require(relative is not None, "suite r14 artifact privacy requires exactly one reviewed runtime binding")
+    source = (c01.REPOSITORY_ROOT / relative).read_text(encoding="utf-8")
+    matches = re.findall(
+        rf"^[ \t]+{re.escape(INVENTORY_STOCK_POSITION_CURSOR_KEY)}:[ \t]+([^#\r\n]+?)[ \t]*$",
+        source,
+        flags=re.MULTILINE,
+    )
+    require(len(matches) == 1,
+            "suite r14 artifact privacy requires exactly one reviewed runtime binding")
+    runtime_values = {INVENTORY_STOCK_POSITION_CURSOR_KEY: matches[0].strip()}
+    validate_suite_extensions("r14", runtime_values)
+    return runtime_values
+
+
 def validate_suite_extensions(suite: str, extra: dict) -> None:
     """The keys a suite adds are exactly allowed by its closed list, with values of the right shape."""
+    allowed = SUITE_API_EXTENSIONS.get(suite)
+    runtime = allowed.get("runtime", {}) if allowed is not None else {}
+    missing_runtime = sorted(set(runtime) - set(extra))
+    require(not missing_runtime,
+            f"suite {suite} runtime fixture key set is not exact: missing {missing_runtime}")
     if not extra:
         return
-    allowed = SUITE_API_EXTENSIONS.get(suite)
     require(allowed is not None, f"suite {suite} may not extend the API environment: {sorted(extra)}")
     actors: dict[int, dict[str, str]] = {}
     for key, value in extra.items():
         require(isinstance(value, str), f"suite extension {key} must be a string")
+        if key in runtime:
+            try:
+                decoded = base64.b64decode(value, validate=True)
+            except (binascii.Error, ValueError):
+                raise ContractError(f"suite {suite} runtime fixture {key} is not valid base64") from None
+            require(len(decoded) == 32, f"suite {suite} runtime fixture {key} must decode to 32 bytes")
+            require(hashlib.sha256(decoded).hexdigest() == runtime[key],
+                    f"suite {suite} runtime fixture {key} does not match the reviewed disposable value")
+            continue
         if key in ISSUER_KEYS:
             require(allowed["issuer"], f"suite {suite} may not set {key}")
             require(_GUID.fullmatch(value) is not None, f"{key} must be a lowercase non-nil GUID")
@@ -916,9 +956,10 @@ def validate_suite_compose(model: dict, suite: str, expected_commit: str, expect
         })
     extra = {key: environment[key] for key in set(environment) - set(expected_keys)}
     missing = sorted(set(expected_keys) - set(environment))
+    runtime_keys = set(SUITE_API_EXTENSIONS.get(suite, {}).get("runtime", {}))
     unlisted = sorted(key for key in extra
                       if key not in ISSUER_KEYS and _ACTOR_KEY.fullmatch(key) is None
-                      and _IDENTITY_KEY.fullmatch(key) is None)
+                      and _IDENTITY_KEY.fullmatch(key) is None and key not in runtime_keys)
     require(not missing and not unlisted,
             f"{profile} API environment key set is not exact: missing {missing}, extra {unlisted}")
     validate_suite_extensions(suite, extra)
@@ -1048,10 +1089,34 @@ def validate_privacy(
     root: str | pathlib.Path,
     suite: str,
     forbidden_values: list[str] | tuple[str, ...] = (),
+    compose_model: dict | None = None,
 ) -> str | None:
     """Every file that would be uploaded is free of C-01's forbidden patterns and of the run's secrets."""
     artifact_root = pathlib.Path(root).resolve()
     selected = upload_paths(artifact_root, suite)
+    runtime = SUITE_API_EXTENSIONS.get(suite, {}).get("runtime", {})
+    if runtime:
+        if compose_model is not None:
+            require(isinstance(compose_model, dict),
+                    "artifact privacy compose model is not an object")
+            services = compose_model.get("services")
+            require(isinstance(services, dict) and isinstance(services.get("api"), dict),
+                    "artifact privacy compose model has no API service")
+            environment = services["api"].get("environment")
+            require(isinstance(environment, dict), "artifact privacy compose model has no API environment")
+            runtime_values = {key: environment.get(key) for key in runtime}
+            require(all(isinstance(value, str) for value in runtime_values.values()),
+                    f"suite {suite} artifact privacy runtime key set is not exact")
+        else:
+            # A workflow-dispatch run uses the workflow definition on the default branch while checking out the
+            # selected PR head. During that narrow version-skew window the old workflow has no compose-model
+            # argument and its forbidden values do not contain R14's key. Recover only the checked-out R14 override's
+            # single reviewed binding; validation below enforces strict base64, exact length and pinned decoded hash.
+            require(suite == "r14" and len(runtime) == 1,
+                    f"suite {suite} artifact privacy requires the merged compose model")
+            runtime_values = _reviewed_r14_runtime_values()
+        validate_suite_extensions(suite, runtime_values)
+        forbidden_values = (*forbidden_values, *runtime_values.values())
     needles: list[bytes] = []
     for index, value in enumerate(forbidden_values):
         require(isinstance(value, str) and len(value.encode("utf-8")) >= 8,
@@ -1078,6 +1143,7 @@ def parser() -> argparse.ArgumentParser:
     privacy.add_argument("--root", required=True)
     privacy.add_argument("--suite", required=True)
     privacy.add_argument("--forbidden-value", action="append", default=[])
+    privacy.add_argument("--compose-model")
     profile = commands.add_parser("profile")
     profile.add_argument("--suite", required=True)
     compose = commands.add_parser("compose")
@@ -1099,7 +1165,18 @@ def main(argv: list[str] | None = None) -> int:
     arguments = parser().parse_args(argv)
     try:
         if arguments.command == "privacy":
-            safe_phase = validate_privacy(arguments.root, arguments.suite, arguments.forbidden_value)
+            compose_model = None
+            if arguments.compose_model is not None:
+                try:
+                    compose_model = json.loads(pathlib.Path(arguments.compose_model).read_text(encoding="utf-8"))
+                except (OSError, json.JSONDecodeError) as error:
+                    raise ContractError("artifact privacy compose model is unreadable") from error
+            safe_phase = validate_privacy(
+                arguments.root,
+                arguments.suite,
+                arguments.forbidden_value,
+                compose_model,
+            )
             if safe_phase is not None:
                 print(f"BROWSER_SAFE_PHASE={safe_phase}")
         elif arguments.command == "profile":
