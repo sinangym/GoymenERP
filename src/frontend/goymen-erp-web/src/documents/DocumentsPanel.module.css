@@ -92,13 +92,22 @@
   gap: 6px;
 }
 
-.previewDialog {
+.previewBackdrop {
   position: fixed;
-  inset: 24px;
+  inset: 0;
   z-index: 1000;
+  display: flex;
+  padding: 24px;
+  background: rgb(20 32 54 / 48%);
+}
+.previewDialog {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  width: 100%;
+  max-width: 1200px;
+  max-height: 100%;
+  margin: auto;
   padding: 16px;
   border: 1px solid #b9c1d1;
   border-radius: 8px;
@@ -128,8 +137,10 @@
 }
 
 @media (max-width: 640px) {
+  .previewBackdrop {
+    padding: 8px;
+  }
   .previewDialog {
-    inset: 8px;
     padding: 12px;
   }
 }
