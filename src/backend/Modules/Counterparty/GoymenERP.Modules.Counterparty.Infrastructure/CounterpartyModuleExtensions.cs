@@ -43,11 +43,17 @@ public static class CounterpartyModuleExtensions
         });
         services.AddScoped<ICounterpartyReadService, CounterpartyReadService>();
         services.AddScoped<
+            ICounterpartyPartyDisplayBatchReadServiceV1,
+            CounterpartyPartyDisplayBatchReadServiceV1>();
+        services.AddScoped<
             ICounterpartyManufacturingPartyAccountSourceV1,
             CounterpartyManufacturingPartyAccountSourceV1>();
         services.AddScoped<ICounterpartyLinkCandidateReadService, CounterpartyLinkCandidateReadService>();
         services.TryAddSingleton(TimeProvider.System);
         services.TryAddSingleton<ICounterpartyReadSqlObserver, NullCounterpartyReadSqlObserver>();
+        services.TryAddSingleton<
+            ICounterpartyPartyDisplayBatchSqlObserver,
+            NullCounterpartyPartyDisplayBatchSqlObserver>();
         services.TryAddSingleton<
             ICounterpartyLinkCandidateSqlObserver,
             NullCounterpartyLinkCandidateSqlObserver>();
