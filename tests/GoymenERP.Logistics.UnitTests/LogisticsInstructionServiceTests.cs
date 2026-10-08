@@ -570,6 +570,16 @@ public sealed partial class LogisticsInstructionServiceTests
         public Guid CurrentCompanyId { get; set; } = Company;
         public bool IsResolved => true;
         public Guid CompanyId => CurrentCompanyId;
+
+        public void Set(Guid companyId)
+        {
+            if (companyId == Guid.Empty)
+            {
+                throw new ArgumentException("Company id cannot be empty.", nameof(companyId));
+            }
+
+            CurrentCompanyId = companyId;
+        }
     }
 
     private sealed class FixedAuthority : IErpAuthorityRevalidationService
