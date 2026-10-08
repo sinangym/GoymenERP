@@ -85,9 +85,7 @@ public sealed class S04BrowserSeed : IBrowserSuiteFixture
     /// <summary>DEC-SAL-003: the planner's own order (one line, no slice), written Preparing by the preparer.</summary>
     public static readonly Guid ScheduleDraftId = Guid.Parse("d1000000-0000-4000-8000-000000000414");
 
-    // Synthetic owner identities: nothing in Cari, Settings or Product answers them; the draft stores snapshots.
-    private static readonly Guid PartyId = Guid.Parse("d2000000-0000-4000-8000-000000000401");
-    private static readonly Guid CompanyAccountId = Guid.Parse("d3000000-0000-4000-8000-000000000401");
+    // Currency and unit identities remain synthetic snapshots; every draft uses the genuine Cari party/account opened below.
     private static readonly Guid CurrencyId = Guid.Parse("d4000000-0000-4000-8000-000000000401");
     private static readonly Guid MoneyProfileId = Guid.Parse("d5000000-0000-4000-8000-000000000401");
     private static readonly Guid KgUnitId = Guid.Parse("d6000000-0000-4000-8000-000000000401");
@@ -199,7 +197,7 @@ public sealed class S04BrowserSeed : IBrowserSuiteFixture
                     DocumentNo,
                     context.Label(string.Empty).TrimEnd(),
                     BusinessDate,
-                    new SalesDraftFixtureOwners(PartyId, CompanyAccountId, CurrencyId, MoneyProfileId, EffectiveFrom),
+                    new SalesDraftFixtureOwners(customer.PartyId, customer.AccountId, CurrencyId, MoneyProfileId, EffectiveFrom),
                     [
                         new SalesDraftFixtureLine(CoilLineId, productCandidate.ProductId, "S04-ALLOC", context.Label("tahsis rulosu"),
                             productCandidate.UnitId, productCandidate.ProfileId, "kg", "weight", IsKilogram: true, Scale: 3, "1.250", 1.250m,
@@ -242,16 +240,16 @@ public sealed class S04BrowserSeed : IBrowserSuiteFixture
                 throw new InvalidOperationException("The Sales fixture writer answered another id for the delivery draft.");
             }
 
-            await EnsureD2DraftAsync(writer, context, SupportDraftId, "SO-D2-SUPPORT", SupportCreatorIdentityId.ToString("D"),
+            await EnsureD2DraftAsync(writer, context, customer, SupportDraftId, "SO-D2-SUPPORT", SupportCreatorIdentityId.ToString("D"),
                 SupportProductId, SupportLineId, "support-creator-draft", cancellationToken);
-            await EnsureD2DraftAsync(writer, context, OrdinaryApproveDraftId, "SO-D2-ORD-APPROVE", OrdinaryCreatorIdentityId.ToString("D"),
+            await EnsureD2DraftAsync(writer, context, customer, OrdinaryApproveDraftId, "SO-D2-ORD-APPROVE", OrdinaryCreatorIdentityId.ToString("D"),
                 OrdinaryApproveProductId, OrdinaryApproveLineId, "ordinary-approve-draft", cancellationToken);
-            await EnsureD2DraftAsync(writer, context, OrdinaryRejectDraftId, "SO-D2-ORD-REJECT", OrdinaryCreatorIdentityId.ToString("D"),
+            await EnsureD2DraftAsync(writer, context, customer, OrdinaryRejectDraftId, "SO-D2-ORD-REJECT", OrdinaryCreatorIdentityId.ToString("D"),
                 OrdinaryRejectProductId, OrdinaryRejectLineId, "ordinary-reject-draft", cancellationToken);
-            await EnsureD2DraftAsync(writer, context, WithdrawalDraftId, "SO-D2-WITHDRAW", OrdinaryCreatorIdentityId.ToString("D"),
+            await EnsureD2DraftAsync(writer, context, customer, WithdrawalDraftId, "SO-D2-WITHDRAW", OrdinaryCreatorIdentityId.ToString("D"),
                 WithdrawalProductId, WithdrawalLineId, "withdrawal-draft", cancellationToken);
             // DEC-SAL-003: the same one-line shape (the D2 helper), created by the preparer who later submits it.
-            await EnsureD2DraftAsync(writer, context, ScheduleDraftId, "SO-DS-SCHEDULE", PreparerIdentityId.ToString("D"),
+            await EnsureD2DraftAsync(writer, context, customer, ScheduleDraftId, "SO-DS-SCHEDULE", PreparerIdentityId.ToString("D"),
                 ScheduleProductId, ScheduleLineId, "schedule-draft", cancellationToken);
         }
 
@@ -523,6 +521,7 @@ public sealed class S04BrowserSeed : IBrowserSuiteFixture
     private static async Task EnsureD2DraftAsync(
         C01E2eSalesDraftFixtureWriter writer,
         BrowserSuiteFixtureContext context,
+        CariBrowserAccount customer,
         Guid draftId,
         string documentSuffix,
         string creator,
@@ -538,7 +537,7 @@ public sealed class S04BrowserSeed : IBrowserSuiteFixture
                 context.Label(documentSuffix),
                 context.Label(string.Empty).TrimEnd(),
                 BusinessDate,
-                new SalesDraftFixtureOwners(PartyId, CompanyAccountId, CurrencyId, MoneyProfileId, EffectiveFrom),
+                new SalesDraftFixtureOwners(customer.PartyId, customer.AccountId, CurrencyId, MoneyProfileId, EffectiveFrom),
                 [
                     new SalesDraftFixtureLine(lineId, productId, $"S04-{documentSuffix}", context.Label(documentSuffix),
                         PieceUnitId, PieceProfileId, "adet", "count", IsKilogram: false, Scale: 0, "1", 1m),
