@@ -776,9 +776,9 @@ def seed_export(suite: str, seed: object) -> str:
                                                      "allocationLabelVersion"} \
             and re.fullmatch(r"[1-9][0-9]*", value) is not None
         is_s04_code = suite == "s04" and key == "productCode" \
-            and re.fullmatch(r"SYNS04-[1-9][0-9]*", value) is not None
+            and re.fullmatch(r"SYNS04G-[1-9][0-9]*", value) is not None
         is_s04_name = suite == "s04" and key == "productName" \
-            and value == "SENTETIK browser-suite:s04 sales candidate"
+            and value == "SENTETIK browser-suite:s04 stock-display-qualified sales candidate"
         is_pur01_version = suite == "pur01" and key in {"productVersion", "productUnitProfileVersion"} \
             and re.fullmatch(r"[1-9][0-9]*", value) is not None
         is_pur01_code = suite == "pur01" and key == "productCode" \

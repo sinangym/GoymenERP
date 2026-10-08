@@ -51,8 +51,8 @@ public sealed class BrowserSuiteHostEnvelopeTests
                 ["productVersion"] = "2",
                 ["productUnitProfileVersion"] = "1",
                 ["allocationLabelVersion"] = "3",
-                ["productCode"] = "SYNS04-1",
-                ["productName"] = "SENTETIK browser-suite:s04 sales candidate",
+                ["productCode"] = "SYNS04G-1",
+                ["productName"] = "SENTETIK browser-suite:s04 stock-display-qualified sales candidate",
             },
             new HashSet<string>(StringComparer.Ordinal));
 
@@ -69,9 +69,10 @@ public sealed class BrowserSuiteHostEnvelopeTests
     [InlineData("allocationLabelVersion", "0")]
     [InlineData("allocationLabelVersion", "03")]
     [InlineData("allocationLabelVersion", "3.5")]
-    [InlineData("productCode", "SYNS04-0")]
+    [InlineData("productCode", "SYNS04G-0")]
+    [InlineData("productCode", "SYNS04-1")]
     [InlineData("productCode", "OTHER-1")]
-    [InlineData("productName", "SENTETIK browser-suite:s04 sales candidate ")]
+    [InlineData("productName", "SENTETIK browser-suite:s04 stock-display-qualified sales candidate ")]
     [InlineData("unexpected", "2")]
     public void S04_output_validation_rejects_values_outside_its_closed_product_scalar_contract(
         string key,
@@ -288,8 +289,8 @@ public sealed class BrowserSuiteHostEnvelopeTests
             var registered = host.Services.GetRequiredService<IServiceProviderIsService>();
             Assert.False(registered.IsService(typeof(C01E2eProductTechnicalCardFixtureWriter)));
             Assert.False(registered.IsService(typeof(IProductTechnicalCardFixtureStore)));
-            Assert.False(registered.IsService(typeof(C01E2eProductSalesCandidateFixtureWriter)));
-            Assert.False(registered.IsService(typeof(IProductSalesCandidateFixtureStore)));
+            Assert.False(registered.IsService(typeof(C01E2eProductStockDisplayQualifiedFixtureWriter)));
+            Assert.False(registered.IsService(typeof(IProductStockDisplayQualifiedFixtureStore)));
             Assert.False(registered.IsService(typeof(C01E2eProductPurchaseCandidateFixtureWriter)));
             Assert.False(registered.IsService(typeof(IProductPurchaseCandidateFixtureStore)));
             Assert.False(registered.IsService(typeof(C01E2eProductStockCandidateFixtureWriter)));
@@ -398,8 +399,9 @@ public sealed class BrowserSuiteHostEnvelopeTests
         var registered = host.Services.GetRequiredService<IServiceProviderIsService>();
         Assert.True(registered.IsService(typeof(C01E2eProductMasterAssignmentFixtureWriter)));
         Assert.True(registered.IsService(typeof(C01E2eProductCodeGroupFixtureWriter)));
-        Assert.True(registered.IsService(typeof(C01E2eProductSalesCandidateFixtureWriter)));
-        Assert.True(registered.IsService(typeof(IProductSalesCandidateFixtureStore)));
+        Assert.True(registered.IsService(typeof(C01E2eProductStockDisplayQualifiedFixtureWriter)));
+        Assert.True(registered.IsService(typeof(IProductStockDisplayQualifiedFixtureStore)));
+        Assert.False(registered.IsService(typeof(IProductSalesCandidateFixtureStore)));
         Assert.True(registered.IsService(typeof(C01E2eProductPurchaseCandidateFixtureWriter)));
         Assert.True(registered.IsService(typeof(IProductPurchaseCandidateFixtureStore)));
         Assert.True(registered.IsService(typeof(C01E2eProductStockCandidateFixtureWriter)));

@@ -70,9 +70,10 @@ internal static class C01E2eFixtureWriterActivation
         // behind the same complete runner-bound gate. The port accepts no caller-selected values.
         services.AddProductTechnicalCardFixtureStore();
         services.AddScoped<C01E2eProductTechnicalCardFixtureWriter>();
-        // s04 E1: Product's fixed Active+Sellable candidate, after the technical registry prerequisite.
-        services.AddProductSalesCandidateFixtureStore(CreateProductFixtureUnitProfiles);
-        services.AddScoped<C01E2eProductSalesCandidateFixtureWriter>();
+        // s04 E1: Product's fixed Active+Sellable candidate whose stock display resolves only from the
+        // released technical definition prepared by the preceding registry scope.
+        services.AddProductStockDisplayQualifiedFixtureStore(CreateProductFixtureUnitProfiles);
+        services.AddScoped<C01E2eProductStockDisplayQualifiedFixtureWriter>();
         // pur01 P-04: Product's separate fixed Active+Purchasable candidate. It shares only the
         // approved Settings adapter and complete runner gate; the s04 record is never upgraded.
         services.AddProductPurchaseCandidateFixtureStore(CreateProductFixtureUnitProfiles);
@@ -596,20 +597,20 @@ public sealed class C01E2eProductTechnicalCardFixtureWriter
 /// Product-owned port accepts no caller-selected identity or business value and returns the exact
 /// persisted Product/Settings tuple for the suite binding.
 /// </summary>
-public sealed class C01E2eProductSalesCandidateFixtureWriter
+public sealed class C01E2eProductStockDisplayQualifiedFixtureWriter
 {
-    private readonly IProductSalesCandidateFixtureStore _store;
+    private readonly IProductStockDisplayQualifiedFixtureStore _store;
 
-    public C01E2eProductSalesCandidateFixtureWriter(
+    public C01E2eProductStockDisplayQualifiedFixtureWriter(
         IHostEnvironment environment,
         IConfiguration configuration,
-        IProductSalesCandidateFixtureStore store)
+        IProductStockDisplayQualifiedFixtureStore store)
     {
         C01E2eFixtureWriterActivation.RequireGate(environment, configuration);
         _store = store;
     }
 
-    public Task<ProductSalesCandidateFixtureOutput> EnsureAsync(CancellationToken cancellationToken) =>
+    public Task<ProductStockDisplayQualifiedFixtureOutput> EnsureAsync(CancellationToken cancellationToken) =>
         _store.EnsureAsync(cancellationToken);
 }
 

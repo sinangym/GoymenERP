@@ -298,13 +298,18 @@ class SeedExportTests(unittest.TestCase):
         good = {
             "productVersion": "2",
             "productUnitProfileVersion": "1",
-            "productCode": "SYNS04-1",
-            "productName": "SENTETIK browser-suite:s04 sales candidate",
+            "productCode": "SYNS04G-1",
+            "productName": "SENTETIK browser-suite:s04 stock-display-qualified sales candidate",
             "allocationLabelVersion": "3",
         }
         with mock.patch.dict(browser.SUITE_FIXTURE_OUTPUTS, {"s04": keys}):
             self.assertIn('"allocationLabelVersion":"3"', browser.seed_export("s04", good))
             for key, value in (
+                ("productCode", "SYNS04-1"),
+                ("productCode", "SYNS04G-0"),
+                ("productCode", "SYNS04G-01"),
+                ("productName", "SENTETIK browser-suite:s04 sales candidate"),
+                ("productName", "SENTETIK browser-suite:s04 stock-display-qualified sales candidate "),
                 ("allocationLabelVersion", "0"),
                 ("allocationLabelVersion", "03"),
                 ("allocationLabelVersion", "3.5"),
