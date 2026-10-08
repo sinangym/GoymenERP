@@ -45,6 +45,7 @@ public sealed partial class SalesDraftService(
     IActiveRoleCodeReader activeRoleCodes,
     ICorrelationContext correlation,
     ISalesPartyAccountPortV1 accounts,
+    ISalesPartyDisplaySourceV1 partyDisplays,
     ISettingsPrerequisiteProvider settings,
     IProductSalesEligibilityV1? products,
     ISalesOrderDraftStore store,
@@ -289,13 +290,19 @@ public sealed partial class SalesDraftService(
         }
 
         // Another company's draft is null under the tenant filter: 404, never 403 (#257).
-        return draft is null
-            ? throw new SalesDraftServiceException(404, "not_found")
-            : Detail(
-                draft,
-                await DiscloseAsync(scope, cancellationToken),
-                IsOwn(scope, draft),
-                IsOwn(scope, draft) && scope.IsSalesSupport);
+        if (draft is null)
+        {
+            throw new SalesDraftServiceException(404, "not_found");
+        }
+
+        var displays = await ReadPartyDisplaysAsync(scope, [draft.Header.PartyId], cancellationToken);
+        scope = displays.Scope;
+        return Detail(
+            draft,
+            await DiscloseAsync(scope, cancellationToken),
+            IsOwn(scope, draft),
+            IsOwn(scope, draft) && scope.IsSalesSupport,
+            displays.Items[draft.Header.PartyId]);
     }
 
     /// <summary>K3 Head B: the archived approved revisions of a draft, oldest first, under the draft read; another company's draft is 404.</summary>
@@ -365,7 +372,77 @@ public sealed partial class SalesDraftService(
             throw Store(exception);
         }
 
-        return new SalesOrderDraftListResponse([.. page.Items.Select(Summary)], page.NextCursor);
+        if (page.Items.Count == 0)
+        {
+            return new SalesOrderDraftListResponse([], page.NextCursor);
+        }
+
+        var displays = await ReadPartyDisplaysAsync(scope, page.Items.Select(item => item.Header.PartyId), cancellationToken);
+        return new SalesOrderDraftListResponse(
+            [.. page.Items.Select(item => Summary(item, displays.Items[item.Header.PartyId]))],
+            page.NextCursor);
+    }
+
+    private async Task<(IReadOnlyDictionary<Guid, SalesPartyDisplayV1> Items, Scope Scope)> ReadPartyDisplaysAsync(
+        Scope scope,
+        IEnumerable<Guid> partyIds,
+        CancellationToken cancellationToken)
+    {
+        var distinctIds = partyIds.Distinct().ToArray();
+        if (distinctIds.Length is < 1 or > MaximumPageSize || distinctIds.Any(id => id == Guid.Empty))
+        {
+            throw new SalesDraftServiceException(503, SalesDraftProblemCodesV1.CounterpartyProviderUnavailable);
+        }
+
+        SalesPartyDisplayBatchAnswerV1 answer;
+        try
+        {
+            var guarded = await GuardedWithScopeAsync(scope, bindings.ReadPermission,
+                () => partyDisplays.GetAuthorizedBatchAsync(
+                    new SalesPartyDisplayBatchRequestV1(scope.CompanyId, scope.ActorId, distinctIds),
+                    cancellationToken),
+                cancellationToken);
+            answer = guarded.Result;
+            scope = guarded.Scope;
+        }
+        catch (SalesDraftServiceException)
+        {
+            throw;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch
+        {
+            throw new SalesDraftServiceException(503, SalesDraftProblemCodesV1.CounterpartyProviderUnavailable);
+        }
+
+        if (answer.Outcome == SalesPartyDisplayBatchOutcomeV1.Denied)
+        {
+            throw new SalesDraftServiceException(403, "forbidden");
+        }
+
+        if (answer.Outcome != SalesPartyDisplayBatchOutcomeV1.Success || answer.Items is null
+            || answer.Items.Count != distinctIds.Length)
+        {
+            throw new SalesDraftServiceException(503, SalesDraftProblemCodesV1.CounterpartyProviderUnavailable);
+        }
+
+        var requested = distinctIds.ToHashSet();
+        var byId = new Dictionary<Guid, SalesPartyDisplayV1>();
+        foreach (var item in answer.Items)
+        {
+            if (item is null || item.PartyId == Guid.Empty || !requested.Contains(item.PartyId)
+                || string.IsNullOrWhiteSpace(item.Code) || string.IsNullOrWhiteSpace(item.LegalName)
+                || item.TradeName is not null && string.IsNullOrWhiteSpace(item.TradeName)
+                || !byId.TryAdd(item.PartyId, item))
+            {
+                throw new SalesDraftServiceException(503, SalesDraftProblemCodesV1.CounterpartyProviderUnavailable);
+            }
+        }
+
+        return (byId, scope);
     }
 
     // ---- internal approval (SALES-A1) ------------------------------------------------------------
@@ -1545,11 +1622,11 @@ public sealed partial class SalesDraftService(
             : SalesPriceDisclosure.Withheld;
     }
 
-    private static SalesOrderDraftSummaryView Summary(SalesOrderDraft draft) =>
+    private static SalesOrderDraftSummaryView Summary(SalesOrderDraft draft, SalesPartyDisplayV1? partyDisplay = null) =>
         new(draft.Id, draft.CompanyId, draft.DocumentNo, draft.Kind.ToString(), draft.State.ToString(),
             draft.Version.ToString(CultureInfo.InvariantCulture), SalesDraftApiV1.RevisionText(draft.Revision), draft.Header.PartyId,
             draft.Header.CompanyAccountId, draft.Header.CurrencyId, draft.Header.BusinessDate, draft.CreatedAtUtc, draft.Lines.Count,
-            draft.ApprovalState.ToString(), CommercialStage(draft), ProductSnapshots(draft));
+            draft.ApprovalState.ToString(), CommercialStage(draft), ProductSnapshots(draft), partyDisplay);
 
     private static IReadOnlyList<SalesOrderDraftProductSnapshotViewV1> ProductSnapshots(SalesOrderDraft draft) =>
         [.. draft.Lines
@@ -1568,8 +1645,9 @@ public sealed partial class SalesDraftService(
         SalesOrderDraft draft,
         SalesPriceDisclosure disclosure,
         bool isOwnDraft,
-        bool isOwnDecisionRestricted) =>
-        new(Summary(draft), draft.Header.RequestedDeliveryDate, draft.Header.Note,
+        bool isOwnDecisionRestricted,
+        SalesPartyDisplayV1? partyDisplay = null) =>
+        new(Summary(draft, partyDisplay), draft.Header.RequestedDeliveryDate, draft.Header.Note,
             [.. draft.Lines.Select(line => new SalesOrderDraftLineDetail(line.Id, line.LineNo, line.Product.ProductId,
                 line.Product.ProductVersion, line.Product.Code, line.Product.Name, line.OrderUnit.UnitId, line.QuantityText,
                 Disclosed(disclosure, line.Commercial.UnitPrice), Disclosed(disclosure, line.Commercial.PriceUnitId), line.RequestedDeliveryDate, line.Note,

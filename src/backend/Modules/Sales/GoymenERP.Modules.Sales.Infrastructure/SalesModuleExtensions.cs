@@ -72,6 +72,7 @@ public static class SalesModuleExtensions
         serviceProvider.GetRequiredService<IActiveRoleCodeReader>(),
         serviceProvider.GetRequiredService<ICorrelationContext>(),
         serviceProvider.GetRequiredService<ISalesPartyAccountPortV1>(),
+        serviceProvider.GetRequiredService<ISalesPartyDisplaySourceV1>(),
         serviceProvider.GetRequiredService<ISettingsPrerequisiteProvider>(),
         serviceProvider.GetService<IProductSalesEligibilityV1>(),
         serviceProvider.GetRequiredService<ISalesOrderDraftStore>(),

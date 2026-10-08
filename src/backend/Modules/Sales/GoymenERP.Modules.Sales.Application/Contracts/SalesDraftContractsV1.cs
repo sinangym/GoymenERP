@@ -47,7 +47,8 @@ public sealed record SalesOrderDraftSummaryView(
     string ApprovalState,
     SalesCommercialStageV1? CommercialStage = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    IReadOnlyList<SalesOrderDraftProductSnapshotViewV1>? ProductSnapshots = null);
+    IReadOnlyList<SalesOrderDraftProductSnapshotViewV1>? ProductSnapshots = null,
+    SalesPartyDisplayV1? PartyDisplay = null);
 
 /// <summary>
 /// Product presentation already accepted from the Product owner and stored on the order line.
