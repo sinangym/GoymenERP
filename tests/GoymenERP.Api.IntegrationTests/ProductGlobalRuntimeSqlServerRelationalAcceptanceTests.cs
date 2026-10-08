@@ -476,6 +476,9 @@ public sealed class ProductGlobalRuntimeSqlServerRelationalAcceptanceTests
                     Links: await genuineOnly.TemplateFamilies.CountAsync(),
                     Fields: await genuineOnly.TemplateFields.CountAsync(),
                     Entries: await genuineOnly.DictionaryEntries.CountAsync());
+                var definitionBefore = await new SqlProductFamilyDefinitionSource(genuineOnly).GetAsync(default);
+                var groupsBefore = (await genuineOnly.CodeGroups.AsNoTracking().ToListAsync())
+                    .Select(row => row.ToContract()).OrderBy(row => row.Id).ToArray();
                 Assert.Equal((4, 1, 4, 5, 5), before);
                 var store = new ProductStockDisplayQualifiedFixtureStore(
                     genuineOnly,
@@ -489,6 +492,11 @@ public sealed class ProductGlobalRuntimeSqlServerRelationalAcceptanceTests
                     Links: await genuineOnly.TemplateFamilies.CountAsync(),
                     Fields: await genuineOnly.TemplateFields.CountAsync(),
                     Entries: await genuineOnly.DictionaryEntries.CountAsync()));
+                var definitionAfter = await new SqlProductFamilyDefinitionSource(genuineOnly).GetAsync(default);
+                AssertExactDefinition(definitionBefore, definitionAfter);
+                var groupsAfter = (await genuineOnly.CodeGroups.AsNoTracking().ToListAsync())
+                    .Select(row => row.ToContract()).OrderBy(row => row.Id).ToArray();
+                Assert.Equal(groupsBefore, groupsAfter);
                 Assert.Empty(await genuineOnly.Products.ToListAsync());
                 Assert.Empty(await genuineOnly.CodeRegistrations.ToListAsync());
                 Assert.Empty(await genuineOnly.CodeCounters.ToListAsync());
@@ -1474,6 +1482,34 @@ public sealed class ProductGlobalRuntimeSqlServerRelationalAcceptanceTests
             DateOnly occurredOn,
             DateOnly? valueOn,
             CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    }
+
+    private static void AssertExactDefinition(
+        ProductFamilyDefinitionV2 expected,
+        ProductFamilyDefinitionV2 actual)
+    {
+        Assert.Equal(expected.Families.OrderBy(row => row.Id), actual.Families.OrderBy(row => row.Id));
+        Assert.Equal(
+            expected.Entries.OrderBy(row => row.Dictionary, StringComparer.Ordinal)
+                .ThenBy(row => row.Code, StringComparer.Ordinal),
+            actual.Entries.OrderBy(row => row.Dictionary, StringComparer.Ordinal)
+                .ThenBy(row => row.Code, StringComparer.Ordinal));
+        var expectedTemplates = expected.Templates.OrderBy(row => row.Id)
+            .ThenBy(row => row.Version, StringComparer.Ordinal).ToArray();
+        var actualTemplates = actual.Templates.OrderBy(row => row.Id)
+            .ThenBy(row => row.Version, StringComparer.Ordinal).ToArray();
+        Assert.Equal(expectedTemplates.Length, actualTemplates.Length);
+        for (var index = 0; index < expectedTemplates.Length; index++)
+        {
+            var expectedTemplate = expectedTemplates[index];
+            var actualTemplate = actualTemplates[index];
+            Assert.Equal((expectedTemplate.Id, expectedTemplate.Version, expectedTemplate.Code,
+                    expectedTemplate.Name, expectedTemplate.SourceRef),
+                (actualTemplate.Id, actualTemplate.Version, actualTemplate.Code,
+                    actualTemplate.Name, actualTemplate.SourceRef));
+            Assert.True(expectedTemplate.FamilyIds.SetEquals(actualTemplate.FamilyIds));
+            Assert.Equal(expectedTemplate.Fields, actualTemplate.Fields);
+        }
     }
 
     private static async Task WithDatabaseAsync(Func<SqlServerRelationalApiFactory, TestObserver, Task> test,
