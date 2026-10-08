@@ -1,9 +1,14 @@
 import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter, useLocation } from 'react-router'
+import { MemoryRouter, RouterProvider, createMemoryRouter, useLocation } from 'react-router'
+import { QueryClient } from '@tanstack/react-query'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { InventoryStockPositionPage } from './InventoryStockPositionPage'
 import { CAPABILITY } from '../shell/capabilities'
+import { ShellProvider } from '../shell/ShellProvider'
+import { shellRoutes } from '../shell/router'
+import { SHELL_CAPABILITY_CONTRACT_VERSION } from '../shell/api'
+import { STOCK_DISPLAY_HEADER } from './stockDisplayApi'
 import type { StockPositionFilters } from './stockDisplayApi'
 
 const COMPANY = '22222222-2222-4222-8222-222222222222'
@@ -26,33 +31,57 @@ const auth = vi.hoisted(() => ({
   freshPerRender: false,
 }))
 const shell = vi.hoisted(() => ({ capabilities: [] as string[], scopeMode: 'single' as string }))
+/**
+ * Test kind, fixed for a whole test and reset before each one. `fixture` (the default) draws the page
+ * alone over a fixed shell context and a recording boundary. `real` mounts the page through the real
+ * `ShellProvider`, router, `CapabilityRoute`, reducer and `useAuthBoundary`, and reads through the real
+ * `fetchStockDisplayPage` over a stubbed `fetch`: every mock below then hands the call to the original.
+ */
+const mode = vi.hoisted(() => ({ real: false }))
 
-vi.mock('./stockDisplayApi', async (importOriginal) => ({
-  ...await importOriginal<typeof import('./stockDisplayApi')>(),
-  fetchStockDisplayPage: api.page,
-}))
+vi.mock('./stockDisplayApi', async (importOriginal) => {
+  const real = await importOriginal<typeof import('./stockDisplayApi')>()
+  return {
+    ...real,
+    fetchStockDisplayPage: (...args: Parameters<typeof real.fetchStockDisplayPage>) =>
+      mode.real ? real.fetchStockDisplayPage(...args) : api.page(...args),
+  }
+})
 // The previously published read must never be used by this screen, not even as a fallback.
 vi.mock('./api', async (importOriginal) => ({
   ...await importOriginal<typeof import('./api')>(),
   fetchStockPositions: api.legacy,
 }))
-vi.mock('../shell/shellContext', () => ({
-  useShellState: () => ({
-    sessionEpoch: 1, routeEntryGeneration: 1,
-    activeContext: { userId: 'actor-a', companyId: COMPANY, scopeMode: shell.scopeMode, capabilities: shell.capabilities },
-  }),
-}))
-vi.mock('../shell/shellState', () => ({
-  contextKey: () => ['fixture'],
-  contextKeyString: () => 'fixture',
-  hasCapability: (
-    state: { readonly activeContext?: { readonly capabilities?: readonly string[] } },
-    capability: string,
-  ) => state.activeContext?.capabilities?.includes(capability) ?? false,
-}))
-vi.mock('../shell/useAuthBoundary', () => ({
-  useAuthBoundary: () => (auth.freshPerRender ? { capture: auth.capture, report: auth.report } : auth),
-}))
+vi.mock('../shell/shellContext', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../shell/shellContext')>()
+  return {
+    ...real,
+    useShellState: () => mode.real ? real.useShellState() : ({
+      sessionEpoch: 1, routeEntryGeneration: 1,
+      activeContext: { userId: 'actor-a', companyId: COMPANY, scopeMode: shell.scopeMode, capabilities: shell.capabilities },
+    } as unknown as ReturnType<typeof real.useShellState>),
+  }
+})
+vi.mock('../shell/shellState', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../shell/shellState')>()
+  return {
+    ...real,
+    contextKey: (...args: Parameters<typeof real.contextKey>) => mode.real ? real.contextKey(...args) : ['fixture'] as unknown as ReturnType<typeof real.contextKey>,
+    contextKeyString: (...args: Parameters<typeof real.contextKeyString>) => mode.real ? real.contextKeyString(...args) : 'fixture',
+    hasCapability: (...args: Parameters<typeof real.hasCapability>) => mode.real
+      ? real.hasCapability(...args)
+      : (args[0] as { readonly activeContext?: { readonly capabilities?: readonly string[] } }).activeContext?.capabilities?.includes(args[1]) ?? false,
+  }
+})
+vi.mock('../shell/useAuthBoundary', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../shell/useAuthBoundary')>()
+  return {
+    ...real,
+    useAuthBoundary: () => mode.real
+      ? real.useAuthBoundary()
+      : (auth.freshPerRender ? { capture: auth.capture, report: auth.report } : auth) as unknown as ReturnType<typeof real.useAuthBoundary>,
+  }
+})
 
 /** The #597 producer fixture (`InventoryStockPositionHttpAcceptanceTests`) in this company. */
 function row(overrides: Record<string, unknown> = {}) {
@@ -123,6 +152,7 @@ function stubViewport(phone: boolean) {
 }
 
 beforeEach(() => {
+  mode.real = false
   shell.capabilities = []
   shell.scopeMode = 'single'
   auth.freshPerRender = false
@@ -594,5 +624,174 @@ describe('ST-01 on a phone', () => {
     viewport.set(false)
     expect(screen.getByRole('table')).toBeTruthy()
     expect(api.page).toHaveBeenCalledTimes(1)
+  })
+})
+
+/**
+ * The real shell around ST-01 (#606 integration regression; #612 composite ST-01 capability).
+ *
+ * Every case above draws the page alone over a recording boundary, so they can only show that the
+ * page REPORTS a 401/403. These cases mount the real `ShellProvider`, router (`shellRoutes`),
+ * `CapabilityRoute`, reducer and `useAuthBoundary`, and read through the real `fetchStockDisplayPage`
+ * over a stubbed `fetch`: what is asserted is what the shell does with the report. The `fetch` stub
+ * stands in for the server, so this is no HTTP/SQL/browser evidence, and it does not prove how the
+ * server composes the ST-01 capability (#612 backend acceptance owns that).
+ */
+describe('ST-01 inside the real shell: capability route, auth boundary, no legacy read', () => {
+  const ST01 = CAPABILITY.inventoryStockPositionsList
+  const OTHER = CAPABILITY.productItemsList
+  const OTHER_LABEL = 'Ürünler'
+  const ST01_LABEL = 'Stok / Malzeme Pozisyonu'
+  const USER = '11111111-1111-4111-8111-111111111111'
+
+  interface Server {
+    capabilities: string[]
+    generation: string
+    identityStatus: number
+    positions: (url: URL) => Response
+  }
+  const json = (body: unknown, status = 200) =>
+    new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
+  const positionCalls: { url: string; optIn: string | null }[] = []
+
+  function installServer(initial: Partial<Server>): Server {
+    const server: Server = {
+      capabilities: [ST01, OTHER], generation: 'gen-1', identityStatus: 200,
+      positions: () => json(ready([row()]).data), ...initial,
+    }
+    positionCalls.length = 0
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = new URL(String(input), 'http://localhost')
+      if (url.pathname.endsWith('/identity/me')) {
+        return server.identityStatus === 200
+          ? json({ userId: USER, displayName: 'Kullanıcı A', email: null, allowedCompanyIds: [COMPANY] })
+          : json({ code: 'unauthenticated' }, server.identityStatus)
+      }
+      if (url.pathname.endsWith('/organization/companies')) {
+        return json([{ id: COMPANY, code: 'GDC', legalName: 'Göymen A', isPlaceholder: false }])
+      }
+      if (url.pathname.endsWith('/shell/capabilities')) {
+        return json({ contractVersion: SHELL_CAPABILITY_CONTRACT_VERSION, generation: server.generation, capabilities: server.capabilities })
+      }
+      if (url.pathname.endsWith('/inventory/positions')) {
+        positionCalls.push({ url: url.toString(), optIn: new Headers(init?.headers).get(STOCK_DISPLAY_HEADER) })
+        return server.positions(url)
+      }
+      return json({ code: 'unavailable' }, 503)
+    }))
+    return server
+  }
+
+  async function mountShell(path = '/stok/pozisyonlar') {
+    const router = createMemoryRouter(shellRoutes, { initialEntries: [path] })
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: 30_000 } } })
+    render(<ShellProvider queryClient={queryClient}><RouterProvider router={router} /></ShellProvider>)
+    await screen.findByText('Kullanıcı A', undefined, { timeout: 5000 })
+    return router
+  }
+
+  const nav = () => screen.queryByRole('navigation', { name: 'Modül navigasyonu' })
+  const navLink = (name: string) => {
+    const region = nav()
+    return region ? within(region).queryByRole('link', { name }) : null
+  }
+  const stockHeading = () => screen.queryByRole('heading', { level: 1, name: ST01_LABEL })
+  const notFound = () => document.querySelector('[data-state="not-found"]')
+  /** No read of this screen may go out without the #597 opt-in, and the legacy reader is never called. */
+  function expectNoLegacyRead() {
+    expect(api.legacy).not.toHaveBeenCalled()
+    expect(positionCalls.every((call) => call.optIn === '1.0')).toBe(true)
+  }
+
+  beforeEach(() => {
+    mode.real = true
+    try { window.localStorage.clear() } catch { /* ignore */ }
+    vi.stubGlobal('navigator', { onLine: true })
+    stubViewport(false)
+  })
+
+  it('without ST-01 (an Inventory-only snapshot) the route is neutral, the entry is absent and nothing is read', async () => {
+    installServer({ capabilities: [OTHER] })
+    await mountShell()
+
+    await waitFor(() => expect(notFound()).not.toBeNull())
+    expect(stockHeading()).toBeNull()
+    expect(navLink(ST01_LABEL)).toBeNull()
+    expect(navLink(OTHER_LABEL)).not.toBeNull()
+    expect(positionCalls).toEqual([])
+    expectNoLegacyRead()
+  })
+
+  it('a current generic 403 clears the snapshot: ST-01 and its stale row unmount; a fresh snapshot brings back only what it grants', async () => {
+    const server = installServer({})
+    const router = await mountShell()
+    expect(await screen.findByRole('link', { name: 'ROLL-1' }, { timeout: 5000 })).toBeTruthy()
+    expect(navLink(ST01_LABEL)).not.toBeNull()
+
+    server.capabilities = [OTHER]
+    server.generation = 'gen-2'
+    server.positions = () => json({ code: 'forbidden' }, 403)
+    await userEvent.type(screen.getByLabelText('Etiket kodu'), 'ROLL{Enter}')
+
+    await waitFor(() => expect(notFound()).not.toBeNull(), { timeout: 5000 })
+    expect(screen.queryByRole('link', { name: 'ROLL-1' })).toBeNull()
+    expect(stockHeading()).toBeNull()
+    // The revocation clears the whole snapshot: no entry is assumed to survive it.
+    expect(navLink(ST01_LABEL)).toBeNull()
+    expect(navLink(OTHER_LABEL)).toBeNull()
+
+    // The next route entry verifies a FRESH snapshot; only what it grants comes back.
+    await act(async () => { await router.navigate('/urun') })
+    await waitFor(() => expect(navLink(OTHER_LABEL)).not.toBeNull(), { timeout: 5000 })
+    expect(navLink(ST01_LABEL)).toBeNull()
+    expect(positionCalls.length).toBe(2)
+    expectNoLegacyRead()
+  })
+
+  it('a generic 403 on the next page does not keep the earlier rows under the shell', async () => {
+    const server = installServer({ positions: () => json(ready([row()], { nextCursor: 'cursor-1' }).data) })
+    await mountShell()
+    expect(await screen.findByRole('link', { name: 'ROLL-1' }, { timeout: 5000 })).toBeTruthy()
+
+    server.capabilities = [OTHER]
+    server.generation = 'gen-2'
+    server.positions = () => json({ code: 'forbidden' }, 403)
+    await userEvent.click(screen.getByRole('button', { name: 'Daha fazla göster' }))
+
+    await waitFor(() => expect(notFound()).not.toBeNull(), { timeout: 5000 })
+    expect(screen.queryByRole('link', { name: 'ROLL-1' })).toBeNull()
+    expect(stockHeading()).toBeNull()
+    expect(positionCalls.at(-1)?.url).toContain('cursor=cursor-1')
+    expectNoLegacyRead()
+  })
+
+  it('a 401 resets the session through the real boundary: the stock content is gone and nothing falls back', async () => {
+    const server = installServer({})
+    await mountShell()
+    expect(await screen.findByRole('link', { name: 'ROLL-1' }, { timeout: 5000 })).toBeTruthy()
+
+    server.identityStatus = 401
+    server.positions = () => json({ code: 'unauthenticated' }, 401)
+    await userEvent.type(screen.getByLabelText('Etiket kodu'), 'ROLL{Enter}')
+
+    await waitFor(() => expect(screen.queryByRole('link', { name: 'ROLL-1' })).toBeNull(), { timeout: 5000 })
+    expect(stockHeading()).toBeNull()
+    expect(nav()).toBeNull()
+    expectNoLegacyRead()
+  })
+
+  it('a 503 keeps the snapshot: the page stays mounted with its retryable state and the entry stays', async () => {
+    const server = installServer({})
+    await mountShell()
+    expect(await screen.findByRole('link', { name: 'ROLL-1' }, { timeout: 5000 })).toBeTruthy()
+
+    server.positions = () => json({ code: 'unavailable' }, 503)
+    await userEvent.type(screen.getByLabelText('Etiket kodu'), 'ROLL{Enter}')
+
+    await waitFor(() => expect(document.querySelector('[data-state="service-unavailable"]')).not.toBeNull(), { timeout: 5000 })
+    expect(stockHeading()).not.toBeNull()
+    expect(notFound()).toBeNull()
+    expect(navLink(ST01_LABEL)).not.toBeNull()
+    expectNoLegacyRead()
   })
 })
