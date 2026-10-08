@@ -88,8 +88,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // owner-account seam to Cari's existing authorized source; no network or hosted-service surface changed.
     // Re-fingerprinted for ST-04 inventory movement publication: the reviewed Inventory cursor seam is registered
     // from configuration; no key is generated and no network or hosted-service surface is added.
+    // Re-fingerprinted for the Sales-Cari bounded display adapter: scoped in-process DI only; no network or hosted service.
     private const string ReviewedOpenApiStartupFingerprint =
-        "761839eb456a1ce4485a8a46ac3df44871d655a3a345a1822fc35ec9572abbe1";
+        "d28b626e960383bc20ba57bf06b0a073dec2a34f5c613d338a71d5015d7929a3";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedProductManufacturingTechnicalRegistrationPath =
@@ -234,8 +235,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // AT-002: +2 GlobalSearchSqlServerRelationalAcceptanceTests facts (5bc60202… -> a5df5046…).
             // ERP-000G / AT-065: +8 DocumentVaultSqlServerRelationalAcceptanceTests facts (4ed7462b… -> e57500e0…).
             // Inventory material-label exact-code global search: +1 reviewed Platform SQL fact, kept ordinal-sorted.
+            // Sales-Cari bounded display acceptance: +1 reviewed Platform SQL fact, kept ordinal-sorted.
             ["tools/relational_inventory/platform.txt"] =
-                "0d5d3ae6c318cf68925b6e387c30828e073cdf35d418b351197a77bdf10a2f36",
+                "1082720042e6a11ce2736008b13e395c4c5be5232097cd05fa024909f9b0a533",
 
             // product
             // DEC-CAR-003: +4 ProductDeactivationSqlServerRelationalAcceptanceTests facts (d7dbec7f… -> ddeead62…).
