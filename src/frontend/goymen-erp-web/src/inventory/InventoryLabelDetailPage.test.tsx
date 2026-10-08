@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter, Route, Routes, useNavigate, useParams } from 'react-router'
+import { MemoryRouter, Route, Routes, useLocation, useNavigate, useParams } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { InventoryLabelDetailPage } from './InventoryLabelDetailPage'
 import type { InventoryLabelDetailWithMovementTimeline } from './labelDetailContract'
@@ -101,6 +101,10 @@ function OpeningRouteReceipt() {
     scenario.generation += 1; void navigate(-1)
   }}>Test opening back</button></>
 }
+function TimelineRouteReceipt() {
+  const location = useLocation()
+  return <h1>Timeline route: {JSON.stringify(location.state ?? null)}</h1>
+}
 function mount() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: 60_000 } } })
   clients.push(client)
@@ -109,6 +113,7 @@ function mount() {
       <Route path="/stok/etiket/:labelId" element={<InventoryLabelDetailPage />} />
       <Route path="/urun/:productId" element={<ProductRouteReceipt />} />
       <Route path="/stok/acilis/:countId" element={<OpeningRouteReceipt />} />
+      <Route path="/stok/hareketler" element={<TimelineRouteReceipt />} />
     </Routes>
   </MemoryRouter></QueryClientProvider>
   const view = render(element()); return { ...view, refresh: () => view.rerender(element()) }
@@ -164,6 +169,21 @@ describe('InventoryLabelDetailPage', () => {
 
     expect(screen.getByText('Transfer çıkışı')).not.toBeNull()
     expect(screen.getByText('Transfer kabulü')).not.toBeNull()
+  })
+  it('opens the company-wide ST-04 timeline without presenting it as this label\'s filter', async () => {
+    const user = userEvent.setup()
+    mount(); await ready()
+    const link = screen.getByRole('link', { name: 'Şirket stok hareketlerini aç' })
+    expect(link.getAttribute('href')).toBe('/stok/hareketler')
+    expect(screen.getByText('Şirketin tüm etiketlerindeki hareketleri gösterir; bu etikete göre filtrelenmez.')).not.toBeNull()
+    await user.click(link)
+    expect(await screen.findByRole('heading', { name: `Timeline route: {"movementTimelineFromLabelId":"${LABEL}"}` }))
+      .not.toBeNull()
+  })
+  it('offers no company timeline entry without the label capability', async () => {
+    scenario.canReadLabel = false
+    mount(); await ready()
+    expect(screen.queryByRole('link', { name: 'Şirket stok hareketlerini aç' })).toBeNull()
   })
   it('keeps a forbidden read in the shared terminal error state', async () => {
     api.detail.mockResolvedValueOnce({ type: 'http', status: 403, body: { status: 403 } }); mount()
