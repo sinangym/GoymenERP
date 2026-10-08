@@ -35,6 +35,7 @@ public sealed class SalesDraftApiSqlServerRelationalAcceptanceTests
     private static readonly Guid CompanyA = TestCompanyIds.CompanyA;
     private static readonly Guid CompanyB = TestCompanyIds.CompanyB;
     private static readonly string[] DraftGrants = [SalesPermissionManifestV1.DraftsCreate, SalesPermissionManifestV1.DraftsRead];
+    private static long nextSyntheticPartyCode = 1_000_000;
 
     [SqlServerFact]
     public async Task The_draft_routes_answer_only_with_fresh_sales_grants_and_only_for_the_context_company()
@@ -239,7 +240,7 @@ public sealed class SalesDraftApiSqlServerRelationalAcceptanceTests
         Assert.Equal((stored.PartyId, stored.Code, stored.LegalName, stored.TradeName), Display(item));
 
         Assert.Equal(0, await run.ScalarAsync<int>(
-            "SELECT COUNT(*) FROM identity.RolePermissions rp INNER JOIN identity.Roles r ON r.Id = rp.RoleId "
+            "SELECT COUNT(*) FROM [identity].RolePermissions rp INNER JOIN [identity].Roles r ON r.Id = rp.RoleId "
             + "WHERE rp.PermissionCode = N'counterparty.parties.read' AND r.Code LIKE N'SALES-API-%'"));
     }
 
@@ -625,7 +626,7 @@ public sealed class SalesDraftApiSqlServerRelationalAcceptanceTests
             var id = Guid.NewGuid();
             var partyId = Guid.NewGuid();
             var accountId = Guid.NewGuid();
-            var code = $"CAR-{partyId:N}";
+            var code = $"CAR-{Interlocked.Increment(ref nextSyntheticPartyCode)}";
             const string legalName = "SENTETIK Bagli Musteri A.S.";
             const string tradeName = "SENTETIK Musteri";
             var unit = Guid.NewGuid();
