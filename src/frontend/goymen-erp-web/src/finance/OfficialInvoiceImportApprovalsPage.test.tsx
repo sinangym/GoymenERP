@@ -42,6 +42,20 @@ function ApprovalPage({ initialEntry = OFFICIAL_INVOICE_IMPORT_APPROVALS_ROUTE, 
   </MemoryRouter>
 }
 
+function ApprovalPageAcrossContextBoundary({ initialEntry = OFFICIAL_INVOICE_IMPORT_APPROVALS_ROUTE,
+  context: mountedContext, ...props }:
+  Omit<ComponentProps<typeof OfficialInvoiceImportApprovalsPage>, 'context'> & {
+    readonly initialEntry?: string
+    readonly context: OfficialInvoiceApprovalAttemptContext | null
+  }) {
+  return <MemoryRouter initialEntries={[initialEntry]}>
+    {mountedContext === null
+      ? <p>Şirket bağlamı değiştiriliyor.</p>
+      : <OfficialInvoiceImportApprovalsPage {...props} context={mountedContext} />}
+    <LocationProbe />
+  </MemoryRouter>
+}
+
 function LocationProbe() {
   const location = useLocation()
   const navigate = useNavigate()
@@ -125,6 +139,32 @@ describe('official invoice checker journey', () => {
     expect(screen.getByTestId('approval-location').textContent).toBe(OFFICIAL_INVOICE_IMPORT_APPROVALS_ROUTE)
     expect(screen.queryByText('1250.50')).toBeNull()
     expect(screen.queryByRole('button', { name: 'Onaylanan kaynağı aktar' })).toBeNull()
+  })
+
+  it('clears a selected approval when the shell unmounts and remounts the page for another company', async () => {
+    const otherCompanyId = '99999999-9999-4999-8999-999999999999'
+    const listPending = vi.fn().mockResolvedValue({ companyId: otherCompanyId, items: [], nextCursor: null })
+    const getPending = vi.fn().mockResolvedValue(detail)
+    const client: OfficialInvoiceApprovalClient = { listPending, getPending, approve: vi.fn() }
+    const entry = `${OFFICIAL_INVOICE_IMPORT_APPROVALS_ROUTE}?approvalId=${pending.batchId}`
+    const pageProps = { initialEntry: entry, client, onApprovedSource: () => undefined }
+    const view = render(<ApprovalPageAcrossContextBoundary {...pageProps} context={context} />)
+
+    expect(await screen.findByText('1250.50')).toBeTruthy()
+    expect(screen.getByTestId('approval-location').textContent).toBe(entry)
+    view.rerender(<ApprovalPageAcrossContextBoundary {...pageProps} context={null} />)
+    expect(await screen.findByText('Şirket bağlamı değiştiriliyor.')).toBeTruthy()
+    view.rerender(<ApprovalPageAcrossContextBoundary {...pageProps}
+      context={{ ...context, sessionEpoch: 2, companyId: otherCompanyId,
+        committedContextRevision: 4, requestFenceGeneration: 6, capabilityGeneration: '12',
+        securityNamespace: 'finance-gsp-checker' }} />)
+
+    await waitFor(() => expect(screen.getByTestId('approval-location').textContent)
+      .toBe(OFFICIAL_INVOICE_IMPORT_APPROVALS_ROUTE))
+    expect(await screen.findByText('Onay bekleyen kaynak yok.')).toBeTruthy()
+    expect(getPending).toHaveBeenCalledTimes(1)
+    expect(listPending).toHaveBeenCalledTimes(1)
+    expect(screen.queryByText('1250.50')).toBeNull()
   })
 
   it('keeps the same key and body when a wrong-batch success is retried as unknown', async () => {

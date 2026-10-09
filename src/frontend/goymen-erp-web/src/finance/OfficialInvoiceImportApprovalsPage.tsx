@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { useSearchParams } from 'react-router'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useLocation, useSearchParams } from 'react-router'
 import type { SecuritySnapshot } from '../shell/authBoundary'
 import type {
   OfficialInvoiceApprovalReply,
@@ -41,24 +41,16 @@ interface ApprovalPageProps {
 }
 
 const APPROVAL_ID_QUERY = 'approvalId'
+const APPROVAL_NAMESPACE_STATE = 'officialInvoiceApprovalNamespace'
 const boundUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const emptyUuid = '00000000-0000-0000-0000-000000000000'
 
 export function OfficialInvoiceImportApprovalsPage(props: ApprovalPageProps) {
+  const location = useLocation()
   const [searchParams, setSearchParams] = useSearchParams()
   const approvalIds = searchParams.getAll(APPROVAL_ID_QUERY)
   const selectedApprovalId = approvalIds.length === 1 && isBoundUuid(approvalIds[0]) ? approvalIds[0] : null
   const invalidSelection = approvalIds.length > 0 && selectedApprovalId === null
-  const selectApproval = useCallback((approvalId: string) => {
-    const next = new URLSearchParams(searchParams)
-    next.set(APPROVAL_ID_QUERY, approvalId)
-    setSearchParams(next)
-  }, [searchParams, setSearchParams])
-  const clearSelection = useCallback(() => {
-    const next = new URLSearchParams(searchParams)
-    next.delete(APPROVAL_ID_QUERY)
-    setSearchParams(next, { replace: true })
-  }, [searchParams, setSearchParams])
   const namespace = JSON.stringify([
     props.context.sessionEpoch,
     props.context.companyId,
@@ -68,16 +60,50 @@ export function OfficialInvoiceImportApprovalsPage(props: ApprovalPageProps) {
     props.context.capabilityGeneration,
     props.context.securityNamespace,
   ])
+  const selectedNamespace = approvalLocationNamespace(location.state)
+  const selectApproval = useCallback((approvalId: string) => {
+    const next = new URLSearchParams(searchParams)
+    next.set(APPROVAL_ID_QUERY, approvalId)
+    setSearchParams(next, { state: approvalLocationState(location.state, namespace) })
+  }, [location.state, namespace, searchParams, setSearchParams])
+  const clearSelection = useCallback(() => {
+    const next = new URLSearchParams(searchParams)
+    next.delete(APPROVAL_ID_QUERY)
+    setSearchParams(next, { replace: true, state: approvalLocationState(location.state, null) })
+  }, [location.state, searchParams, setSearchParams])
+  const bindSelection = useCallback(() => {
+    setSearchParams(new URLSearchParams(searchParams), {
+      replace: true,
+      state: approvalLocationState(location.state, namespace),
+    })
+  }, [location.state, namespace, searchParams, setSearchParams])
   const previousNamespace = useRef(namespace)
   const contextChanged = previousNamespace.current !== namespace
-  useEffect(() => {
+    || (selectedNamespace !== null && selectedNamespace !== namespace)
+  useLayoutEffect(() => {
     previousNamespace.current = namespace
     if (contextChanged && approvalIds.length > 0) clearSelection()
-  }, [approvalIds.length, clearSelection, contextChanged, namespace])
+    else if (approvalIds.length > 0 && selectedNamespace === null) bindSelection()
+  }, [approvalIds.length, bindSelection, clearSelection, contextChanged, namespace, selectedNamespace])
   return <OfficialInvoiceImportApprovalsPageState key={namespace} {...props}
     selectedApprovalId={contextChanged ? null : selectedApprovalId}
     invalidSelection={contextChanged ? false : invalidSelection}
     onSelectApproval={selectApproval} onClearSelection={clearSelection} />
+}
+
+function approvalLocationNamespace(state: unknown): string | null {
+  if (state === null || typeof state !== 'object' || Array.isArray(state)) return null
+  const value = (state as Record<string, unknown>)[APPROVAL_NAMESPACE_STATE]
+  return typeof value === 'string' ? value : null
+}
+
+function approvalLocationState(state: unknown, namespace: string | null): Record<string, unknown> | null {
+  const next = state !== null && typeof state === 'object' && !Array.isArray(state)
+    ? { ...(state as Record<string, unknown>) }
+    : {}
+  if (namespace === null) delete next[APPROVAL_NAMESPACE_STATE]
+  else next[APPROVAL_NAMESPACE_STATE] = namespace
+  return Object.keys(next).length === 0 ? null : next
 }
 
 function OfficialInvoiceImportApprovalsPageState({ client, context,
