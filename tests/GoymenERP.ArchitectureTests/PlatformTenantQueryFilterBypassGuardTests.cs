@@ -265,8 +265,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // #527 Q9: +1 customer-acceptance persistence/replay/cutover fact (3ef99851… -> dd3c72d9…).
             // PL04: +1 exact price-floor approval replay/down-refusal fact.
             // Sales-Cari bounded display acceptance: +1 reviewed Sales SQL fact, kept ordinal-sorted.
+            // D-05: +1 pending-approval owner-read SQL fact, kept ordinal-sorted.
             ["tools/relational_inventory/sales.txt"] =
-                "337ce3c9ace60221990875eeb509bb55e5b281bfe51f61ea179c6ab5b9ecd253",
+                "581c2605bffcd652ee080df9e38d26fb2e28b21670dbcc88c215fff74f537b1c",
 
             // work
             // JV03: the five ordinal desired-state storage SQL facts are mandatory and skip-free.
@@ -1156,10 +1157,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Sales/"
                  + "GoymenERP.Modules.Sales.Infrastructure/"
                  + "SalesModuleExtensions.cs"] =
-                    // Re-fingerprinted for DEC-SAL-005: the draft service also receives the optional allocation and
-                    // loading read ports; the provider branch and its token counts are unchanged.
+                    // Re-fingerprinted for #641: the scoped pending-approval read seam is DI-only; the provider
+                    // branch and its database capability token counts are unchanged.
                     new(
-                        "58edd9e0bc2229d1675561b904b64575a84edd9979925531b9add20148630447",
+                        "318a1490df72db9671b335ca4dbcbc42d4e69dfcbe875d2fcff5b03c026e80a9",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,

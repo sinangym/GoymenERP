@@ -56,6 +56,8 @@ public static class SalesModuleExtensions
         // capability provider is registered by the host once the Sales names are in the catalogue.
         services.TryAddSingleton(new SalesDraftServiceBindings());
         services.AddScoped<ISalesDraftService>(CreateDraftService);
+        services.AddScoped<ISalesOrderDraftPendingApprovalReadServiceV1,
+            SalesOrderDraftPendingApprovalReadServiceV1>();
         // SALES-A1: the Sales-owned line reference port (Business 5737989917 = B) for the allocation
         // and loading consumers, over the same company-filtered store. Registered here, in the module
         // (no host file), so that a consumer module reads Sales only through this port.
