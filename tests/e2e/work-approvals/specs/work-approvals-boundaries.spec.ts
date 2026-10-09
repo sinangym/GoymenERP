@@ -115,6 +115,17 @@ test('WA-B2 one aborted continuation retries the same real cursor and keeps the 
 
 test('WA-B3 an abandoned late terminal answer cannot close or roll back the recovered generation', async ({ page }) => {
   const reads = await signIn(page, bothActor)
+  await page.addInitScript(() => {
+    const originalJson = Response.prototype.json
+    Response.prototype.json = async function json() {
+      const body = await originalJson.call(this)
+      if (this.url.includes('invalid-late-terminal')) {
+        ;(globalThis as typeof globalThis & { __goymenLateTerminalJsonRead?: boolean })
+          .__goymenLateTerminalJsonRead = true
+      }
+      return body
+    }
+  })
   let financeCursorCalls = 0
   let releaseOld: (() => void) | null = null
   let oldRequestObserved: (() => void) | null = null
@@ -161,6 +172,12 @@ test('WA-B3 an abandoned late terminal answer cannot close or roll back the reco
   const firstPageReadsBeforeLateAnswer = reads.filter((read) =>
     read.url.pathname === WORK_PATH && !read.url.searchParams.has('cursor') && !read.url.searchParams.has('kind')).length
   releaseOld?.()
+  // Wait until the real late response body has reached the consumer. The marker is set by the
+  // Response.json wrapper immediately before the awaiting application continuation resumes; the
+  // waitForFunction task therefore runs only after that continuation has rejected the stale attempt.
+  await page.waitForFunction(() =>
+    (globalThis as typeof globalThis & { __goymenLateTerminalJsonRead?: boolean })
+      .__goymenLateTerminalJsonRead === true)
   await expect(page.getByTestId('work-approvals-closed')).toHaveCount(0)
   await expect(table.locator(`tr[data-approval-id="${financeBatchId}"]`)).toBeVisible()
 
