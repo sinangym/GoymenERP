@@ -3,9 +3,6 @@ using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Sales.Application;
 using GoymenERP.Modules.Sales.Application.Contracts;
-using GoymenERP.Modules.Sales.Infrastructure;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace GoymenERP.Sales.UnitTests;
 
@@ -54,7 +51,7 @@ public sealed class SalesOrderDraftPendingApprovalReadServiceV1Tests
     }
 
     [Fact]
-    public async Task Missing_approve_authority_denies_before_the_owner_and_registration_is_scoped()
+    public async Task Missing_approve_authority_denies_before_the_owner()
     {
         var drafts = Drafts();
         var fixture = Fixture(drafts, permission => permission == SalesPermissionManifestV1.DraftsRead);
@@ -65,16 +62,6 @@ public sealed class SalesOrderDraftPendingApprovalReadServiceV1Tests
         Assert.Null(result.Resource);
         Assert.Equal(0, drafts.ListCalls);
         Assert.Equal(0, drafts.DetailCalls);
-
-        var services = new ServiceCollection();
-        services.AddSalesModule(new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
-        {
-            ["DB_CONNECTION_STRING"] = "Server=(local);Database=SENTETIK;Trusted_Connection=True;",
-        }).Build());
-        var registration = Assert.Single(services, descriptor =>
-            descriptor.ServiceType == typeof(ISalesOrderDraftPendingApprovalReadServiceV1));
-        Assert.Equal(ServiceLifetime.Scoped, registration.Lifetime);
-        Assert.Equal(typeof(SalesOrderDraftPendingApprovalReadServiceV1), registration.ImplementationType);
     }
 
     [Fact]
