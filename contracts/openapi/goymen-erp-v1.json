@@ -13348,6 +13348,13 @@
         "operationId": "GetWorkApprovalsV1",
         "parameters": [
           {
+            "name": "kind",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "name": "cursor",
             "in": "query",
             "schema": {
@@ -71479,11 +71486,18 @@
         }
       },
       "NativeApprovalReadDetailV1": {
+        "type": "object",
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/NativeApprovalReadDetailV1FinanceInvoiceImportNativeApprovalReadDetailV1"
+          }
+        ]
+      },
+      "NativeApprovalReadDetailV1FinanceInvoiceImportNativeApprovalReadDetailV1": {
         "required": [
           "item",
           "preview"
         ],
-        "type": "object",
         "properties": {
           "item": {
             "$ref": "#/components/schemas/NativeApprovalReadItemV1"
@@ -71495,7 +71509,23 @@
       },
       "NativeApprovalReadItemV1": {
         "required": [
-          "kind",
+          "kind"
+        ],
+        "type": "object",
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/NativeApprovalReadItemV1FinanceInvoiceImportNativeApprovalReadItemV1"
+          }
+        ],
+        "discriminator": {
+          "propertyName": "kind",
+          "mapping": {
+            "finance.official-invoice-import.v1": "#/components/schemas/NativeApprovalReadItemV1FinanceInvoiceImportNativeApprovalReadItemV1"
+          }
+        }
+      },
+      "NativeApprovalReadItemV1FinanceInvoiceImportNativeApprovalReadItemV1": {
+        "required": [
           "approvalId",
           "companyId",
           "status",
@@ -71507,9 +71537,11 @@
           "submittedBy",
           "submittedAtUtc"
         ],
-        "type": "object",
         "properties": {
           "kind": {
+            "enum": [
+              "finance.official-invoice-import.v1"
+            ],
             "type": "string"
           },
           "approvalId": {
@@ -71521,7 +71553,7 @@
             "format": "uuid"
           },
           "status": {
-            "$ref": "#/components/schemas/FinanceOfficialInvoiceImportApprovalStatusV1"
+            "type": "string"
           },
           "version": {
             "type": "string"
