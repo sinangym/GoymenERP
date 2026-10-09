@@ -14,6 +14,9 @@ public static class DocumentOwnerLinkKindsV1
 
     /// <summary>A Purchasing purchase order readable in the context company (Purchasing owner).</summary>
     public const string PurchasingPurchaseOrder = "purchasing.purchase-order";
+
+    /// <summary>A Sales order readable in the context company (Sales owner).</summary>
+    public const string SalesOrder = "sales.order";
 }
 
 /// <summary>
