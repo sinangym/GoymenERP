@@ -391,8 +391,8 @@ SUITE_IDENTITY_PERMISSIONS = {
               "counterparty.parties.read", "product.operational-selection.read",
               "documents.files.read", "documents.files.upload",
               "purchasing.goods-receipts.record", "inventory.labels.read", "inventory.balances.read"),
-    # R14: one Inventory recorder with opening and detail reads, one owner-read-only denied actor,
-    # and one Organization location reader.
+    # R14: one Inventory recorder with opening/detail reads plus the disposable location-card read,
+    # one owner-read-only denied actor, and one dedicated Organization owner-row reader.
     # R19 (user decision 2026-09-27): the disposable r14-transformer adds only the split/merge command name
     # beside the two label reads; no other r14 actor holds it.
     # AT-037 (user decision 2026-09-27): the disposable r14-counter holds only stock-count.record and the
@@ -649,6 +649,35 @@ def validate_suite_identity(suite: str, extra: dict, actor_ids: list[str]) -> No
                 role[f"Permissions__{index}"] for index in range(len(permission_keys)))
             require(role["Code"] == role_code and actual_permissions == expected_permissions,
                     f"{actor} requires its exact isolated permissions")
+    if suite == "r14":
+        actor_users = {subject: identity_id for identity_id, subject in users.items()}
+        recorder_user = actor_users.get("r14-recorder")
+        recorder_assignments = [row for row in grouped["Assignments"].values()
+                                if row["UserId"] == recorder_user]
+        require(recorder_user is not None and len(recorder_assignments) == 1,
+                "r14-recorder requires exactly one isolated assignment")
+        recorder_role = roles[recorder_assignments[0]["RoleId"]]
+        recorder_permissions = tuple(
+            recorder_role[f"Permissions__{index}"]
+            for index in range(len([key for key in recorder_role if key.startswith("Permissions__")]))
+        )
+        require(recorder_role["Code"] == "BROWSER_R14_RECORDER" and recorder_permissions == (
+            "inventory.opening-stock.record",
+            "product.operational-selection.read",
+            "inventory.labels.read",
+            "inventory.balances.read",
+            "documents.files.read",
+            "documents.files.upload",
+            "inventory.label-classification.write",
+            "organization.locations.read",
+        ), "r14-recorder requires its exact isolated permissions")
+        for actor, user_id in actor_users.items():
+            if actor in ("r14-recorder", "r14-arranger"):
+                continue
+            actor_roles = [roles[row["RoleId"]] for row in grouped["Assignments"].values()
+                           if row["UserId"] == user_id]
+            require(all("organization.locations.read" not in role.values() for role in actor_roles),
+                    "only r14-recorder and the dedicated arranger may hold the location read")
     if suite == "u02":
         company_id = "10000000-0000-0000-0000-000000000001"
         issuer_ids = ("b2000000-0000-4000-8000-000000000201",

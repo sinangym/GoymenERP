@@ -1,7 +1,9 @@
 /**
  * ST-01's read of the #597 stock positions in the OPT-IN shape (contract pin d821e6b8, handoff STOK-UX r7).
  *
- * - Sends `X-ERP-Inventory-Stock-Display: 1.0` exactly once and decodes only with `./stockDisplayContract`.
+ * - STOCK-LOCATION-2: sends `X-ERP-Inventory-Stock-Display: 2.0` exactly once (#607: Product + Location display) and
+ *   decodes only with the `2.0` decoder of `./stockDisplayContract`. The `1.0` decoder stays for `1.0` readers; a `2.0`
+ *   answer is never decoded as `1.0` or legacy, and a failed `2.0` read is never retried as either.
  * - Sends only the published query keys, each at most once: `q`, `limit`, `cursor`, `productId`, `locationId`,
  *   `classification`, and `ownerKind` + `ownerId` together or not at all. Anything else is a 400 on the server.
  * - The cursor is opaque and forward-only; the caller passes back exactly what the server issued.
@@ -12,16 +14,19 @@
 import type { ViewOutcome } from '../shell/uiState'
 import { INVENTORY_STOCK_POSITIONS_PATH, inventoryHeaders } from './api'
 import {
-  decodeStockDisplayPage,
+  decodeStockLocationDisplayPage,
   STOCK_CLASSIFICATIONS,
   STOCK_PARTY_KINDS,
   type StockClassification,
-  type StockDisplayPage,
+  type StockLocationDisplayPage,
   type StockPartyKind,
 } from './stockDisplayContract'
 
 export const STOCK_DISPLAY_HEADER = 'X-ERP-Inventory-Stock-Display'
-export const STOCK_DISPLAY_VERSION = '1.0'
+/** The Product-enriched shape (#597); its decoder is kept for its readers. */
+export const STOCK_DISPLAY_VERSION_PRODUCT = '1.0'
+/** The Product + Location shape (#607) this screen selects. */
+export const STOCK_DISPLAY_VERSION = '2.0'
 /** The server's default page size; changing it would only reset the cursor. */
 export const STOCK_PAGE_LIMIT = 25
 /** The Inventory owner's label-code limit after trimming (`MaterialLabel.MaximumCodeLength`). */
@@ -104,7 +109,7 @@ export async function fetchStockDisplayPage(
   filters: StockPositionFilters,
   cursor: string | null,
   signal?: AbortSignal,
-): Promise<ViewOutcome<StockDisplayPage>> {
+): Promise<ViewOutcome<StockLocationDisplayPage>> {
   const query = stockPositionQuery(filters, cursor)
   if (query === null) return { type: 'malformed' }
   try {
@@ -115,7 +120,7 @@ export async function fetchStockDisplayPage(
     })
     const body = await bodyOf(response)
     if (response.status !== 200) return { type: 'http', status: response.status, body }
-    const decoded = decodeStockDisplayPage(body)
+    const decoded = decodeStockLocationDisplayPage(body)
     if (decoded === null || decoded.items.some((item) => item.companyId !== companyId)) return { type: 'malformed' }
     return { type: 'ok-single', data: decoded }
   } catch {
