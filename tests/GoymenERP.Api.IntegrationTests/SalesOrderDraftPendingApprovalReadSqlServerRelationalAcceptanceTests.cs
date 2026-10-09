@@ -251,17 +251,33 @@ public sealed class SalesOrderDraftPendingApprovalReadSqlServerRelationalAccepta
                 SqlServerRelationalAcceptanceTests.ConnectionStringEnvironmentVariable)!;
             var factory = new SqlServerRelationalApiFactory(baseConnectionString);
             var run = new Run(baseConnectionString, factory);
-            using var client = factory.CreateClient();
-            using var health = await client.GetAsync("/health/live");
-            health.EnsureSuccessStatusCode();
-            var companyContext = new CompanyContext();
-            companyContext.Set(CompanyA);
-            await using var context = new SalesDbContext(new DbContextOptionsBuilder<SalesDbContext>()
-                .UseSqlServer(factory.DatabaseConnectionString,
-                    sql => sql.MigrationsHistoryTable("__EFMigrationsHistory", SalesDbContext.Schema))
-                .Options, companyContext);
-            await context.Database.MigrateAsync();
-            return run;
+            try
+            {
+                using var client = factory.CreateClient();
+                using var health = await client.GetAsync("/health/live");
+                health.EnsureSuccessStatusCode();
+                var companyContext = new CompanyContext();
+                companyContext.Set(CompanyA);
+                await using var context = new SalesDbContext(new DbContextOptionsBuilder<SalesDbContext>()
+                    .UseSqlServer(factory.DatabaseConnectionString,
+                        sql => sql.MigrationsHistoryTable("__EFMigrationsHistory", SalesDbContext.Schema))
+                    .Options, companyContext);
+                await context.Database.MigrateAsync();
+                return run;
+            }
+            catch
+            {
+                try
+                {
+                    await run.DisposeAsync();
+                }
+                catch
+                {
+                    // Preserve the startup/health/migration exception that made initialization fail.
+                }
+
+                throw;
+            }
         }
 
         public SalesDraftWriteEnvelope Envelope(string key, string actor) =>
