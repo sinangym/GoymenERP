@@ -95,8 +95,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // discriminator because route kind owns dispatch; no network or hosted-service behavior changes.
     // Re-fingerprinted for the D-05 Sales adapter: one scoped in-process owner adapter is added beside Finance;
     // no permission, network, hosted-service or production-activation surface changes.
+    // Re-fingerprinted for C01 request evidence activation (#199): one Testing-only recorder creation and
+    // conditional singleton registration; no OpenAPI-generation, network or hosted-service surface changes.
     private const string ReviewedOpenApiStartupFingerprint =
-        "ab3a4cc7172620cf106f3be8dda3253ee975cba34ab8c8f8ee8a9e7dc9b05a76";
+        "a360d72b63444383e7ea12a1e763ac66668c141e09c758a21e2b66eef0bc61a5";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedProductManufacturingTechnicalRegistrationPath =
