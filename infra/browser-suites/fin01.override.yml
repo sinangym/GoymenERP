@@ -7,6 +7,8 @@
 #
 # Three synthetic actors after the canonical two, each with its Identity user, a synthetic role and a
 # company-wide assignment in GDC (the company whose approved TRY money profile Settings answers).
+# The approver also has one isolated GSP role containing only the already registered official-invoice
+# approval permission. It exists solely to exercise a real company-context fence in the disposable suite.
 # Company-wide because every Finance name is CompanyWideOnly. Disposable test database only: no
 # production user, role or permission.
 #   fin01-proposer: proposes the bank account and prepares the draft —
@@ -96,6 +98,11 @@ services:
       IdentitySeed__Roles__7__Name: SENTETIK FIN01 Allocation reader
       IdentitySeed__Roles__7__IsSystem: "false"
       IdentitySeed__Roles__7__Permissions__0: finance.allocation.read
+      IdentitySeed__Roles__8__Id: b3000000-0000-4000-8000-00000000f104
+      IdentitySeed__Roles__8__Code: BROWSER_FIN01_GSP_APPROVER
+      IdentitySeed__Roles__8__Name: SENTETIK FIN01 GSP invoice approver
+      IdentitySeed__Roles__8__IsSystem: "false"
+      IdentitySeed__Roles__8__Permissions__0: finance.official-invoice-import.approve
       IdentitySeed__Assignments__7__Id: b4000000-0000-4000-8000-00000000f101
       IdentitySeed__Assignments__7__UserId: b2000000-0000-4000-8000-00000000f101
       IdentitySeed__Assignments__7__RoleId: b3000000-0000-4000-8000-00000000f101
@@ -117,3 +124,10 @@ services:
       IdentitySeed__Assignments__9__ValidFromUtc: "2026-01-01T00:00:00+00:00"
       IdentitySeed__Assignments__9__Scopes__0__Type: Company
       IdentitySeed__Assignments__9__Scopes__0__Id: 10000000-0000-0000-0000-000000000001
+      IdentitySeed__Assignments__10__Id: b4000000-0000-4000-8000-00000000f104
+      IdentitySeed__Assignments__10__UserId: b2000000-0000-4000-8000-00000000f102
+      IdentitySeed__Assignments__10__RoleId: b3000000-0000-4000-8000-00000000f104
+      IdentitySeed__Assignments__10__CompanyId: 10000000-0000-0000-0000-000000000002
+      IdentitySeed__Assignments__10__ValidFromUtc: "2026-01-01T00:00:00+00:00"
+      IdentitySeed__Assignments__10__Scopes__0__Type: Company
+      IdentitySeed__Assignments__10__Scopes__0__Id: 10000000-0000-0000-0000-000000000002

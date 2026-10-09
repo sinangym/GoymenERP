@@ -659,7 +659,7 @@ SUITE_FIXTURE_OUTPUTS: dict[str, frozenset[str]] = {
     # FİNANS's Suites/Fin01 seed (#332): the company, the customer opened through the real Cari API and
     # its company account, and the three suite actors. No SQL, no gated writer, no Finance row.
     "fin01": frozenset({
-        "companyId", "partyId", "companyAccountId", "proposerActor", "approverActor", "readerActor",
+        "companyId", "otherCompanyId", "partyId", "companyAccountId", "proposerActor", "approverActor", "readerActor",
     }),
     # SİPARİŞ's Suites/S04 seed: the three actors, the company and the one Preparing draft written through
     # the gated Sales draft writer (C01E2eSalesDraftFixtureWriter).
@@ -746,6 +746,7 @@ def seed_export(suite: str, seed: object) -> str:
     if suite == "fin01":
         actors = [seed[key] for key in ("proposerActor", "approverActor", "readerActor")]
         require(len(set(actors)) == len(actors), "fin01 seed actors must be distinct")
+        require(seed["companyId"] != seed["otherCompanyId"], "fin01 seed companies must be distinct")
     mfg_actor_keys = frozenset({"recorderActor", "readerActor", "closerActor"})
     mfg_exact_text = {
         "issueRollCode": "SYN-MFG-ROLL-2",

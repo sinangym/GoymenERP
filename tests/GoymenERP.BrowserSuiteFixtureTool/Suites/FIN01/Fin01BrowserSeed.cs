@@ -28,9 +28,13 @@ public sealed class Fin01BrowserSeed : IBrowserSuiteFixture
     /// <summary>The GDC company of the built-in organization seed, whose approved TRY money profile Settings answers.</summary>
     public static readonly Guid CompanyGdc = Guid.Parse("10000000-0000-0000-0000-000000000001");
 
+    /// <summary>GSP, where the checker has only the existing official-invoice approval permission.</summary>
+    public static readonly Guid CompanyGsp = Guid.Parse("10000000-0000-0000-0000-000000000002");
+
     private const string BankAccountMasterPath = "/api/v1/finance/bank-accounts/master";
     private const string AccountingPeriodsPath = "/api/v1/accounting/periods";
     private const string AllocationsPath = "/api/v1/finance/allocations";
+    private const string PendingOfficialInvoiceBatchesPath = "/api/v1/finance/official-invoice-import-batches/pending";
     private const int CustomerRole = 1;
 
     public string Suite => "fin01";
@@ -79,9 +83,19 @@ public sealed class Fin01BrowserSeed : IBrowserSuiteFixture
             }
         }
 
+        var otherCompanyPending = await context.GetJsonAsync(
+            ApproverActor, CompanyGsp, PendingOfficialInvoiceBatchesPath, cancellationToken);
+        if (otherCompanyPending.GetProperty("companyId").GetGuid() != CompanyGsp
+            || otherCompanyPending.GetProperty("items").GetArrayLength() != 0)
+        {
+            throw new InvalidOperationException(
+                "The official-invoice approval queue did not remain empty and company-scoped in GSP.");
+        }
+
         return new Dictionary<string, string>(StringComparer.Ordinal)
         {
             ["companyId"] = CompanyGdc.ToString("D"),
+            ["otherCompanyId"] = CompanyGsp.ToString("D"),
             ["partyId"] = customer.PartyId.ToString("D"),
             ["companyAccountId"] = customer.AccountId.ToString("D"),
             ["proposerActor"] = ProposerActor,

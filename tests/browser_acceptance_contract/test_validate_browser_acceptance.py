@@ -682,6 +682,7 @@ class WorkflowTests(unittest.TestCase):
     def test_fin01_fixture_output_requires_the_read_only_actor(self):
         seed = {
             "companyId": "10000000-0000-0000-0000-000000000001",
+            "otherCompanyId": "10000000-0000-0000-0000-000000000002",
             "partyId": "b1000000-0000-4000-8000-00000000f101",
             "companyAccountId": "b1000000-0000-4000-8000-00000000f102",
             "proposerActor": "fin01-proposer",
@@ -709,6 +710,11 @@ class WorkflowTests(unittest.TestCase):
         duplicate["readerActor"] = duplicate["approverActor"]
         with self.assertRaisesRegex(validator.ContractError, "distinct"):
             validator.seed_export("fin01", duplicate)
+
+        duplicate_company = dict(seed)
+        duplicate_company["otherCompanyId"] = duplicate_company["companyId"]
+        with self.assertRaisesRegex(validator.ContractError, "companies must be distinct"):
+            validator.seed_export("fin01", duplicate_company)
 
     def test_s04_identity_permissions_accept_customer_acceptance_and_reject_unlisted_grants(self):
         permissions = validator.SUITE_IDENTITY_PERMISSIONS["s04"]
