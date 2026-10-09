@@ -7,6 +7,7 @@
  * tests/GoymenERP.BrowserSuiteFixtureTool/Suites/FIN01 (the real counterparty API only):
  *
  *   companyId        — GDC, whose approved TRY money profile the real Settings provider answers
+ *   otherCompanyId   — GSP, used only for the approver's company-context fence
  *   partyId          — the synthetic customer the seed opened through the real Cari API
  *   companyAccountId — its company account in GDC
  *   proposerActor    — Development user proposing the account and preparing the draft
@@ -19,6 +20,7 @@
 
 export interface Fin01Seed {
   readonly companyId: string
+  readonly otherCompanyId: string
   readonly partyId: string
   readonly companyAccountId: string
   readonly proposerActor: string
@@ -53,11 +55,12 @@ export function readEnvironment(): Fin01Environment {
   const raw = JSON.parse(required('BROWSER_E2E_FIN01_SEED')) as Record<string, unknown>
   const seed: Fin01Seed = {
     companyId: text(raw, 'companyId', true),
+    otherCompanyId: text(raw, 'otherCompanyId', true),
     partyId: text(raw, 'partyId', true),
     companyAccountId: text(raw, 'companyAccountId', true),
     proposerActor: text(raw, 'proposerActor'),
     approverActor: text(raw, 'approverActor'),
-      readerActor: text(raw, 'readerActor'),
+    readerActor: text(raw, 'readerActor'),
   }
   if (new Set([seed.proposerActor, seed.approverActor, seed.readerActor]).size !== 3) {
     throw new Error('BROWSER_E2E_FIN01_SEED must bind distinct proposer, approver and reader actors')

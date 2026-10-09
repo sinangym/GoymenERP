@@ -1,8 +1,11 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import type { ComponentProps } from 'react'
+import { MemoryRouter, useLocation, useNavigate } from 'react-router'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { OfficialInvoiceImportApprovalsPage, type OfficialInvoiceApprovalAttemptContext,
   type OfficialInvoiceApprovalClient } from './OfficialInvoiceImportApprovalsPage'
 import type { OfficialInvoicePendingBatch, OfficialInvoicePendingDetail } from './officialInvoiceImportApprovalContract'
+import { OFFICIAL_INVOICE_IMPORT_APPROVALS_ROUTE } from './officialInvoiceImportRoutes'
 
 const pending: OfficialInvoicePendingBatch = {
   batchId: '11111111-1111-4111-8111-111111111111', companyId: '22222222-2222-4222-8222-222222222222',
@@ -31,7 +34,40 @@ const context: OfficialInvoiceApprovalAttemptContext = {
   securityNamespace: 'finance-checker',
 }
 
+function ApprovalPage({ initialEntry = OFFICIAL_INVOICE_IMPORT_APPROVALS_ROUTE, ...props }:
+  ComponentProps<typeof OfficialInvoiceImportApprovalsPage> & { readonly initialEntry?: string }) {
+  return <MemoryRouter initialEntries={[initialEntry]}>
+    <OfficialInvoiceImportApprovalsPage {...props} />
+    <LocationProbe />
+  </MemoryRouter>
+}
+
+function ApprovalPageAcrossContextBoundary({ initialEntry = OFFICIAL_INVOICE_IMPORT_APPROVALS_ROUTE,
+  context: mountedContext, ...props }:
+  Omit<ComponentProps<typeof OfficialInvoiceImportApprovalsPage>, 'context'> & {
+    readonly initialEntry?: string
+    readonly context: OfficialInvoiceApprovalAttemptContext | null
+  }) {
+  return <MemoryRouter initialEntries={[initialEntry]}>
+    {mountedContext === null
+      ? <p>Şirket bağlamı değiştiriliyor.</p>
+      : <OfficialInvoiceImportApprovalsPage {...props} context={mountedContext} />}
+    <LocationProbe />
+  </MemoryRouter>
+}
+
+function LocationProbe() {
+  const location = useLocation()
+  const navigate = useNavigate()
+  return <>
+    <output data-testid="approval-location">{`${location.pathname}${location.search}`}</output>
+    <button type="button" onClick={() => navigate(-1)}>Tarayıcıda geri</button>
+  </>
+}
+
 describe('official invoice checker journey', () => {
+  beforeEach(() => sessionStorage.clear())
+
   it('keeps the terminal approved source after the fresh pending list becomes empty', async () => {
     const selected = vi.fn()
     const client: OfficialInvoiceApprovalClient = {
@@ -40,7 +76,7 @@ describe('official invoice checker journey', () => {
       getPending: vi.fn().mockResolvedValue(detail),
       approve: vi.fn().mockResolvedValue({ kind: 'succeeded', replayed: false, batch: approved }),
     }
-    render(<OfficialInvoiceImportApprovalsPage client={client} context={context}
+    render(<ApprovalPage client={client} context={context}
       createIdempotencyKey={() => 'approval-key'} onApprovedSource={selected} />)
 
     fireEvent.click(await screen.findByRole('button', { name: 'İncele' }))
@@ -60,7 +96,7 @@ describe('official invoice checker journey', () => {
       listPending: vi.fn().mockResolvedValue({ companyId: pending.companyId, items: [pending], nextCursor: null }),
       getPending: vi.fn().mockResolvedValue(detail), approve,
     }
-    render(<OfficialInvoiceImportApprovalsPage client={client} context={context}
+    render(<ApprovalPage client={client} context={context}
       createIdempotencyKey={() => 'stable-key'} onApprovedSource={() => undefined} />)
     fireEvent.click(await screen.findByRole('button', { name: 'İncele' }))
     fireEvent.click(await screen.findByRole('button', { name: 'Onayla' }))
@@ -76,7 +112,7 @@ describe('official invoice checker journey', () => {
       listPending: vi.fn().mockResolvedValue({ companyId: pending.companyId, items: [pending], nextCursor: null }),
       getPending: vi.fn().mockResolvedValue(detail), approve: vi.fn(),
     }
-    render(<OfficialInvoiceImportApprovalsPage client={client} context={{ ...context, actorId: 'maker' }}
+    render(<ApprovalPage client={client} context={{ ...context, actorId: 'maker' }}
       onApprovedSource={() => undefined} />)
     fireEvent.click(await screen.findByRole('button', { name: 'İncele' }))
     expect((await screen.findByRole('button', { name: 'Onayla' }) as HTMLButtonElement).disabled).toBe(true)
@@ -91,10 +127,10 @@ describe('official invoice checker journey', () => {
         .mockResolvedValueOnce({ companyId: '99999999-9999-4999-8999-999999999999', items: [], nextCursor: null }),
       getPending: vi.fn().mockReturnValue(lateDetail), approve: vi.fn(),
     }
-    const view = render(<OfficialInvoiceImportApprovalsPage client={client} context={context}
+    const view = render(<ApprovalPage client={client} context={context}
       onApprovedSource={() => undefined} />)
     fireEvent.click(await screen.findByRole('button', { name: 'İncele' }))
-    view.rerender(<OfficialInvoiceImportApprovalsPage client={client}
+    view.rerender(<ApprovalPage client={client}
       context={{ ...context, sessionEpoch: 2, companyId: '99999999-9999-4999-8999-999999999999', actorId: 'other',
         committedContextRevision: 4, requestFenceGeneration: 6, capabilityGeneration: '12',
         securityNamespace: 'finance-other' }}
@@ -102,8 +138,35 @@ describe('official invoice checker journey', () => {
     resolveDetail(detail)
 
     expect(await screen.findByText('Onay bekleyen kaynak yok.')).toBeTruthy()
+    expect(screen.getByTestId('approval-location').textContent).toBe(OFFICIAL_INVOICE_IMPORT_APPROVALS_ROUTE)
     expect(screen.queryByText('1250.50')).toBeNull()
     expect(screen.queryByRole('button', { name: 'Onaylanan kaynağı aktar' })).toBeNull()
+  })
+
+  it('clears a selected approval when the shell unmounts and remounts the page for another company', async () => {
+    const otherCompanyId = '99999999-9999-4999-8999-999999999999'
+    const listPending = vi.fn().mockResolvedValue({ companyId: otherCompanyId, items: [], nextCursor: null })
+    const getPending = vi.fn().mockResolvedValue(detail)
+    const client: OfficialInvoiceApprovalClient = { listPending, getPending, approve: vi.fn() }
+    const entry = `${OFFICIAL_INVOICE_IMPORT_APPROVALS_ROUTE}?approvalId=${pending.batchId}`
+    const pageProps = { initialEntry: entry, client, onApprovedSource: () => undefined }
+    const view = render(<ApprovalPageAcrossContextBoundary {...pageProps} context={context} />)
+
+    expect(await screen.findByText('1250.50')).toBeTruthy()
+    expect(screen.getByTestId('approval-location').textContent).toBe(entry)
+    view.rerender(<ApprovalPageAcrossContextBoundary {...pageProps} context={null} />)
+    expect(await screen.findByText('Şirket bağlamı değiştiriliyor.')).toBeTruthy()
+    view.rerender(<ApprovalPageAcrossContextBoundary {...pageProps}
+      context={{ ...context, sessionEpoch: 2, companyId: otherCompanyId,
+        committedContextRevision: 4, requestFenceGeneration: 6, capabilityGeneration: '12',
+        securityNamespace: 'finance-gsp-checker' }} />)
+
+    await waitFor(() => expect(screen.getByTestId('approval-location').textContent)
+      .toBe(OFFICIAL_INVOICE_IMPORT_APPROVALS_ROUTE))
+    expect(await screen.findByText('Onay bekleyen kaynak yok.')).toBeTruthy()
+    expect(getPending).toHaveBeenCalledTimes(1)
+    expect(listPending).toHaveBeenCalledTimes(1)
+    expect(screen.queryByText('1250.50')).toBeNull()
   })
 
   it('keeps the same key and body when a wrong-batch success is retried as unknown', async () => {
@@ -117,7 +180,7 @@ describe('official invoice checker journey', () => {
       getPending: vi.fn().mockResolvedValue(detail),
       approve,
     }
-    render(<OfficialInvoiceImportApprovalsPage client={client} context={context}
+    render(<ApprovalPage client={client} context={context}
       createIdempotencyKey={() => 'frozen-key'} onApprovedSource={selected} />)
     fireEvent.click(await screen.findByRole('button', { name: 'İncele' }))
     fireEvent.click(await screen.findByRole('button', { name: 'Onayla' }))
@@ -146,7 +209,7 @@ describe('official invoice checker journey', () => {
       listPending, getPending,
       approve: vi.fn().mockResolvedValue({ kind: 'conflicted' }),
     }
-    render(<OfficialInvoiceImportApprovalsPage client={client} context={context}
+    render(<ApprovalPage client={client} context={context}
       onApprovedSource={() => undefined} />)
 
     fireEvent.click((await screen.findByRole('alert')).querySelector('button')!)
@@ -170,17 +233,19 @@ describe('official invoice checker journey', () => {
       getPending: vi.fn().mockResolvedValue(detail), approve,
     }
     const selected = vi.fn()
-    const view = render(<OfficialInvoiceImportApprovalsPage client={client} context={context}
+    const view = render(<ApprovalPage client={client} context={context}
       createIdempotencyKey={() => 'reauth-key'} onApprovedSource={selected} />)
     fireEvent.click(await screen.findByRole('button', { name: 'İncele' }))
     fireEvent.click(await screen.findByRole('button', { name: 'Onayla' }))
     fireEvent.click(await screen.findByRole('button', { name: 'Aynı anahtarla yeniden gönder' }))
     await waitFor(() => expect(approve).toHaveBeenCalledTimes(2))
 
-    view.rerender(<OfficialInvoiceImportApprovalsPage client={client}
+    view.rerender(<ApprovalPage client={client}
       context={{ ...context, requestFenceGeneration: 6, capabilityGeneration: '12',
         securityNamespace: 'finance-checker-refenced' }}
       createIdempotencyKey={() => 'must-not-mint'} onApprovedSource={selected} />)
+    await waitFor(() => expect(screen.getByTestId('approval-location').textContent)
+      .toBe(OFFICIAL_INVOICE_IMPORT_APPROVALS_ROUTE))
     expect(screen.queryByText('1250.50')).toBeNull()
     expect(screen.queryByRole('button', { name: 'Onaylanan kaynağı aktar' })).toBeNull()
     fireEvent.click(await screen.findByRole('button', { name: 'İncele' }))
@@ -204,17 +269,18 @@ describe('official invoice checker journey', () => {
       .mockRejectedValueOnce(new Error('approved batches are not pending'))
     const client: OfficialInvoiceApprovalClient = { listPending, getPending, approve }
     const selected = vi.fn()
-    const view = render(<OfficialInvoiceImportApprovalsPage client={client} context={context}
+    const view = render(<ApprovalPage client={client} context={context}
       createIdempotencyKey={() => 'committed-lost-key'} onApprovedSource={selected} />)
     fireEvent.click(await screen.findByRole('button', { name: 'İncele' }))
     fireEvent.click(await screen.findByRole('button', { name: 'Onayla' }))
     expect(await screen.findByRole('button', { name: 'Aynı anahtarla yeniden gönder' })).toBeTruthy()
 
-    view.rerender(<OfficialInvoiceImportApprovalsPage client={client}
+    view.rerender(<ApprovalPage client={client}
       context={{ ...context, requestFenceGeneration: 6, capabilityGeneration: '12',
         securityNamespace: 'finance-checker-refenced' }}
       createIdempotencyKey={() => 'must-not-mint'} onApprovedSource={selected} />)
     expect(await screen.findByText('Onay bekleyen kaynak yok.')).toBeTruthy()
+    expect(screen.getByTestId('approval-location').textContent).toBe(OFFICIAL_INVOICE_IMPORT_APPROVALS_ROUTE)
     expect(getPending).toHaveBeenCalledTimes(1)
     const recover = await screen.findByRole('button', { name: 'Aynı onay anahtarıyla sonucu yeniden oku' })
     fireEvent.click(recover)
@@ -224,5 +290,106 @@ describe('official invoice checker journey', () => {
     expect(approve.mock.calls[1].slice(0, 3)).toEqual([pending.batchId, '1', 'committed-lost-key'])
     expect(await screen.findByRole('button', { name: 'Onaylanan kaynağı aktar' })).toBeTruthy()
     expect(selected).not.toHaveBeenCalled()
+  })
+
+  it('opens and reopens the exact pending approval from the query-bound URL', async () => {
+    const listPending = vi.fn()
+    const getPending = vi.fn().mockResolvedValue(detail)
+    const client: OfficialInvoiceApprovalClient = { listPending, getPending, approve: vi.fn() }
+    const entry = `${OFFICIAL_INVOICE_IMPORT_APPROVALS_ROUTE}?approvalId=${pending.batchId}`
+
+    const first = render(<ApprovalPage initialEntry={entry} client={client} context={context}
+      onApprovedSource={() => undefined} />)
+    expect(await screen.findByText('1250.50')).toBeTruthy()
+    expect(screen.getByTestId('approval-location').textContent).toBe(entry)
+    first.unmount()
+
+    render(<ApprovalPage initialEntry={entry} client={client} context={context}
+      onApprovedSource={() => undefined} />)
+    expect(await screen.findByText('1250.50')).toBeTruthy()
+    expect(getPending).toHaveBeenCalledTimes(2)
+    expect(getPending.mock.calls.every((call) => call[0] === pending.batchId)).toBe(true)
+    expect(listPending).not.toHaveBeenCalled()
+  })
+
+  it('writes the approval URL only for a real queue selection and browser back restores the queue', async () => {
+    const listPending = vi.fn().mockResolvedValue({ companyId: pending.companyId, items: [pending], nextCursor: null })
+    const getPending = vi.fn().mockResolvedValue(detail)
+    const client: OfficialInvoiceApprovalClient = { listPending, getPending, approve: vi.fn() }
+    render(<ApprovalPage client={client} context={context} onApprovedSource={() => undefined} />)
+
+    expect((await screen.findByTestId('approval-location')).textContent).toBe(OFFICIAL_INVOICE_IMPORT_APPROVALS_ROUTE)
+    expect(getPending).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'İncele' }))
+
+    const selectedLocation = `${OFFICIAL_INVOICE_IMPORT_APPROVALS_ROUTE}?approvalId=${pending.batchId}`
+    await waitFor(() => expect(screen.getByTestId('approval-location').textContent).toBe(selectedLocation))
+    expect(await screen.findByText('1250.50')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Tarayıcıda geri' }))
+
+    await waitFor(() => expect(screen.getByTestId('approval-location').textContent)
+      .toBe(OFFICIAL_INVOICE_IMPORT_APPROVALS_ROUTE))
+    expect(await screen.findByText('invoice-v1')).toBeTruthy()
+    expect(listPending).toHaveBeenCalledTimes(2)
+  })
+
+  it.each([
+    ['malformed', 'approvalId=not-a-record'],
+    ['duplicated', `approvalId=${pending.batchId}&approvalId=${pending.batchId}`],
+  ])('does not call Finance APIs for a %s approval query and clears it explicitly', async (_name, query) => {
+    const listPending = vi.fn().mockResolvedValue({ companyId: pending.companyId, items: [], nextCursor: null })
+    const getPending = vi.fn()
+    const client: OfficialInvoiceApprovalClient = { listPending, getPending, approve: vi.fn() }
+    const entry = `${OFFICIAL_INVOICE_IMPORT_APPROVALS_ROUTE}?${query}`
+    render(<ApprovalPage initialEntry={entry} client={client} context={context} onApprovedSource={() => undefined} />)
+
+    expect(await screen.findByText('Bağlantıdaki onay kaydı geçersiz.')).toBeTruthy()
+    expect(listPending).not.toHaveBeenCalled()
+    expect(getPending).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Onay kuyruğuna dön' }))
+
+    expect(await screen.findByText('Onay bekleyen kaynak yok.')).toBeTruthy()
+    expect(screen.getByTestId('approval-location').textContent).toBe(OFFICIAL_INVOICE_IMPORT_APPROVALS_ROUTE)
+    expect(listPending).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps a list-selected approval opaque when the detail version changed before the read', async () => {
+    const changedDetail = { ...detail, batch: { ...detail.batch, version: '2' } } as unknown as OfficialInvoicePendingDetail
+    const listPending = vi.fn().mockResolvedValue({ companyId: pending.companyId, items: [pending], nextCursor: null })
+    const getPending = vi.fn().mockResolvedValue(changedDetail)
+    const client: OfficialInvoiceApprovalClient = { listPending, getPending, approve: vi.fn() }
+    render(<ApprovalPage client={client} context={context} onApprovedSource={() => undefined} />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'İncele' }))
+
+    expect(await screen.findByText('Seçilen onay kaydı güvenli biçimde açılamadı.')).toBeTruthy()
+    expect(screen.queryByText('1250.50')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Onayla' })).toBeNull()
+    expect(getPending).toHaveBeenCalledTimes(1)
+    expect(screen.getByTestId('approval-location').textContent)
+      .toBe(`${OFFICIAL_INVOICE_IMPORT_APPROVALS_ROUTE}?approvalId=${pending.batchId}`)
+  })
+
+  it.each([
+    ['not found', () => Promise.reject(new Error('404-secret'))],
+    ['denied', () => Promise.reject(new Error('403-secret'))],
+    ['foreign company', () => Promise.resolve({ ...detail, batch: { ...pending,
+      companyId: '99999999-9999-4999-8999-999999999999' } })],
+  ])('keeps a %s deep link opaque and returns to the queue only after close', async (_name, getPendingReply) => {
+    const listPending = vi.fn().mockResolvedValue({ companyId: pending.companyId, items: [], nextCursor: null })
+    const getPending = vi.fn().mockImplementation(getPendingReply)
+    const client: OfficialInvoiceApprovalClient = { listPending, getPending, approve: vi.fn() }
+    const entry = `${OFFICIAL_INVOICE_IMPORT_APPROVALS_ROUTE}?approvalId=${pending.batchId}`
+    render(<ApprovalPage initialEntry={entry} client={client} context={context} onApprovedSource={() => undefined} />)
+
+    expect(await screen.findByText('Seçilen onay kaydı güvenli biçimde açılamadı.')).toBeTruthy()
+    expect(screen.queryByText(/403-secret|404-secret/)).toBeNull()
+    expect(screen.getByTestId('approval-location').textContent).toBe(entry)
+    expect(listPending).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Onay kuyruğuna dön' }))
+
+    expect(await screen.findByText('Onay bekleyen kaynak yok.')).toBeTruthy()
+    expect(screen.getByTestId('approval-location').textContent).toBe(OFFICIAL_INVOICE_IMPORT_APPROVALS_ROUTE)
+    expect(listPending).toHaveBeenCalledTimes(1)
   })
 })

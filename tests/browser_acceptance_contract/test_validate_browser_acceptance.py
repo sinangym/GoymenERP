@@ -679,9 +679,46 @@ class WorkflowTests(unittest.TestCase):
             validator.SUITE_IDENTITY_PERMISSIONS["fin01"],
         )
 
+    @staticmethod
+    def _fin01_environment():
+        source = (ROOT / "infra" / "browser-suites" / "fin01.override.yml").read_text(encoding="utf-8")
+        environment = {}
+        for line in source.splitlines():
+            match = re.fullmatch(r"\s{6}([A-Za-z0-9_]+):\s*(.+)", line)
+            if match is not None:
+                raw = match.group(2)
+                environment[match.group(1)] = json.loads(raw) if raw.startswith('"') else raw
+        return environment
+
+    def test_fin01_gsp_approval_role_and_assignment_are_exact_and_isolated(self):
+        environment = self._fin01_environment()
+        validator.validate_suite_extensions("fin01", environment)
+        self.assertEqual("finance.official-invoice-import.approve",
+                         environment["IdentitySeed__Roles__8__Permissions__0"])
+        self.assertEqual("b2000000-0000-4000-8000-00000000f102",
+                         environment["IdentitySeed__Assignments__10__UserId"])
+        self.assertEqual("10000000-0000-0000-0000-000000000002",
+                         environment["IdentitySeed__Assignments__10__CompanyId"])
+
+        mutations = (
+            {"IdentitySeed__Roles__8__Permissions__0": "finance.allocation.read"},
+            {"IdentitySeed__Roles__8__Permissions__1": "finance.allocation.read"},
+            {"IdentitySeed__Assignments__10__UserId": "b2000000-0000-4000-8000-00000000f101"},
+            {"IdentitySeed__Assignments__10__RoleId": "b3000000-0000-4000-8000-00000000f102"},
+            {"IdentitySeed__Assignments__10__CompanyId": "10000000-0000-0000-0000-000000000001",
+             "IdentitySeed__Assignments__10__Scopes__0__Id": "10000000-0000-0000-0000-000000000001"},
+        )
+        for changed in mutations:
+            with self.subTest(changed=changed):
+                candidate = dict(environment)
+                candidate.update(changed)
+                with self.assertRaises(validator.ContractError):
+                    validator.validate_suite_extensions("fin01", candidate)
+
     def test_fin01_fixture_output_requires_the_read_only_actor(self):
         seed = {
             "companyId": "10000000-0000-0000-0000-000000000001",
+            "otherCompanyId": "10000000-0000-0000-0000-000000000002",
             "partyId": "b1000000-0000-4000-8000-00000000f101",
             "companyAccountId": "b1000000-0000-4000-8000-00000000f102",
             "proposerActor": "fin01-proposer",
@@ -709,6 +746,11 @@ class WorkflowTests(unittest.TestCase):
         duplicate["readerActor"] = duplicate["approverActor"]
         with self.assertRaisesRegex(validator.ContractError, "distinct"):
             validator.seed_export("fin01", duplicate)
+
+        duplicate_company = dict(seed)
+        duplicate_company["otherCompanyId"] = duplicate_company["companyId"]
+        with self.assertRaisesRegex(validator.ContractError, "companies must be distinct"):
+            validator.seed_export("fin01", duplicate_company)
 
     def test_s04_identity_permissions_accept_customer_acceptance_and_reject_unlisted_grants(self):
         permissions = validator.SUITE_IDENTITY_PERMISSIONS["s04"]

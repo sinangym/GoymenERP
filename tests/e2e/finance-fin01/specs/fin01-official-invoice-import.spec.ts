@@ -259,6 +259,44 @@ test.describe.serial('FIN01 official invoice import (real API, real SQL, real Ch
     await expect(detail).toContainText(sourceInstallmentId)
     await expect(detail).toContainText(amount)
 
+    const approvalsPath = '/finans/resmi-fatura-aktarim-onaylari'
+    const approvalUrl = `${approvalsPath}?approvalId=${batchId}`
+    await expect(checker).toHaveURL(new RegExp(`${approvalUrl.replaceAll('?', '\\?')}$`))
+
+    await checker.reload()
+    await expect(checker.getByLabel(`Fatura kaynağı ${batchId}`, { exact: true })).toContainText(batchVersion)
+    await expect(checker).toHaveURL(new RegExp(`${approvalUrl.replaceAll('?', '\\?')}$`))
+
+    await checker.goBack()
+    await expect(checker).toHaveURL(new RegExp(`${approvalsPath}$`))
+    await expect(pending).toHaveCount(1)
+
+    await checker.goto(approvalUrl)
+    await expect(checker.getByLabel(`Fatura kaynağı ${batchId}`, { exact: true })).toContainText(sourceDocumentId)
+
+    const detailRequestsDuringCompanySwitch: string[] = []
+    checker.on('request', (request) => {
+      if (new URL(request.url()).pathname === `${BATCHES}/${batchId}`) {
+        detailRequestsDuringCompanySwitch.push(request.url())
+      }
+    })
+    const companyPicker = checker.getByRole('combobox', { name: 'Şirket', exact: true })
+    await companyPicker.selectOption(env.seed.otherCompanyId)
+    const leaveGdc = checker.getByRole('dialog')
+    if (await leaveGdc.count()) await leaveGdc.getByRole('button', { name: 'Değişiklikleri bırak' }).click()
+    await expect(companyPicker).toHaveValue(env.seed.otherCompanyId, { timeout: 30_000 })
+    await expect(checker).toHaveURL(new RegExp(`${approvalsPath}$`))
+    await expect(checker.getByText('Onay bekleyen kaynak yok.', { exact: true })).toBeVisible({ timeout: 30_000 })
+    expect(detailRequestsDuringCompanySwitch).toEqual([])
+
+    await companyPicker.selectOption(env.seed.companyId)
+    const leaveGsp = checker.getByRole('dialog')
+    if (await leaveGsp.count()) await leaveGsp.getByRole('button', { name: 'Değişiklikleri bırak' }).click()
+    await expect(companyPicker).toHaveValue(env.seed.companyId, { timeout: 30_000 })
+    await expect(pending).toHaveCount(1, { timeout: 30_000 })
+    await pending.getByRole('button', { name: 'İncele', exact: true }).click()
+    await expect(detail).toContainText(sourceDocumentId)
+
     const approvalPost = checker.waitForRequest((request) =>
       request.url().endsWith(`/api/v1/finance/official-invoice-import-batches/${batchId}/approval`)
       && request.method() === 'POST')
