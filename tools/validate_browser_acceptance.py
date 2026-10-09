@@ -571,6 +571,21 @@ def validate_suite_identity(suite: str, extra: dict, actor_ids: list[str]) -> No
                     f"{actor} requires its exact GDC assignment")
 
         work_permissions = {
+            "fin01-approver": (
+                "finance.bank-account.read",
+                "finance.bank-account.approve",
+                "finance.manual-receipt.reverse.approve",
+                "accounting.periods.read",
+                "finance.manual-bank-payment.draft.read",
+                "finance.manual-bank-payment.approve",
+                "finance.manual-bank-payment.record",
+                "counterparty.parties.read",
+                "finance.official-invoice-import.approve",
+                "finance.manual-receipt.draft.read",
+                "finance.allocation.read",
+                "finance.allocation.write",
+                "finance.manual-receipt.amount.read",
+            ),
             "fin01-sales-preparer": ("sales.drafts.create", "sales.drafts.read"),
             "fin01-sales-approver": ("sales.drafts.read", "sales.orders.approve"),
             "fin01-both-approver": (

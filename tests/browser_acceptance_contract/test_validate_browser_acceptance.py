@@ -735,6 +735,8 @@ class WorkflowTests(unittest.TestCase):
                 for permission_index in range(len(permissions))))
 
         for changed in (
+            {"IdentitySeed__Roles__6__Permissions__13": "sales.drafts.read"},
+            {"IdentitySeed__Roles__6__Permissions__13": "sales.orders.approve"},
             {"IdentitySeed__Roles__10__Permissions__0": "finance.official-invoice-import.approve"},
             {"IdentitySeed__Roles__11__Permissions__3": "finance.allocation.read"},
             {"IdentitySeed__Assignments__12__CompanyId": "10000000-0000-0000-0000-000000000002",
