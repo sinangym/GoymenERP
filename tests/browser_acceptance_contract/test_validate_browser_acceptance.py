@@ -675,6 +675,9 @@ class WorkflowTests(unittest.TestCase):
                 "finance.official-invoice-import.approve",
                 "finance.allocation.read",
                 "finance.allocation.write",
+                "sales.drafts.create",
+                "sales.drafts.read",
+                "sales.orders.approve",
             ),
             validator.SUITE_IDENTITY_PERMISSIONS["fin01"],
         )
@@ -715,6 +718,34 @@ class WorkflowTests(unittest.TestCase):
                 with self.assertRaises(validator.ContractError):
                     validator.validate_suite_extensions("fin01", candidate)
 
+    def test_fin01_work_personas_are_exact_and_isolated(self):
+        environment = self._fin01_environment()
+        validator.validate_suite_extensions("fin01", environment)
+        expected = {
+            9: ("BROWSER_FIN01_SALES_PREPARER", ("sales.drafts.create", "sales.drafts.read")),
+            10: ("BROWSER_FIN01_SALES_APPROVER", ("sales.drafts.read", "sales.orders.approve")),
+            11: ("BROWSER_FIN01_COMBINED_APPROVER", (
+                "finance.official-invoice-import.approve", "sales.drafts.read", "sales.orders.approve")),
+        }
+        for role_index, (code, permissions) in expected.items():
+            prefix = f"IdentitySeed__Roles__{role_index}__"
+            self.assertEqual(code, environment[prefix + "Code"])
+            self.assertEqual(permissions, tuple(
+                environment[prefix + f"Permissions__{permission_index}"]
+                for permission_index in range(len(permissions))))
+
+        for changed in (
+            {"IdentitySeed__Roles__10__Permissions__0": "finance.official-invoice-import.approve"},
+            {"IdentitySeed__Roles__11__Permissions__3": "finance.allocation.read"},
+            {"IdentitySeed__Assignments__12__CompanyId": "10000000-0000-0000-0000-000000000002",
+             "IdentitySeed__Assignments__12__Scopes__0__Id": "10000000-0000-0000-0000-000000000002"},
+        ):
+            with self.subTest(changed=changed):
+                candidate = dict(environment)
+                candidate.update(changed)
+                with self.assertRaises(validator.ContractError):
+                    validator.validate_suite_extensions("fin01", candidate)
+
     def test_fin01_fixture_output_requires_the_read_only_actor(self):
         seed = {
             "companyId": "10000000-0000-0000-0000-000000000001",
@@ -724,6 +755,12 @@ class WorkflowTests(unittest.TestCase):
             "proposerActor": "fin01-proposer",
             "approverActor": "fin01-approver",
             "readerActor": "fin01-reader",
+            "salesPreparerActor": "fin01-sales-preparer",
+            "financeOnlyActor": "fin01-approver",
+            "salesOnlyActor": "fin01-sales-approver",
+            "bothActor": "fin01-both-approver",
+            "neitherActor": "company-a-user",
+            "salesDraftId": "b5000000-0000-4000-8000-00000000f101",
         }
 
         exported = validator.seed_export("fin01", seed)
@@ -732,9 +769,9 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual("BROWSER_E2E_FIN01_SEED", prefix)
         self.assertEqual(seed, json.loads(payload))
         self.assertEqual(frozenset(seed), validator.SUITE_FIXTURE_OUTPUTS["fin01"])
-        for key in ("readerActor", "unexpectedActor"):
+        for key in ("salesOnlyActor", "unexpectedActor"):
             malformed = dict(seed)
-            if key == "readerActor":
+            if key == "salesOnlyActor":
                 malformed.pop(key)
             else:
                 malformed[key] = "fin01-unlisted"
@@ -743,9 +780,19 @@ class WorkflowTests(unittest.TestCase):
                     validator.seed_export("fin01", malformed)
 
         duplicate = dict(seed)
-        duplicate["readerActor"] = duplicate["approverActor"]
+        duplicate["salesOnlyActor"] = duplicate["approverActor"]
         with self.assertRaisesRegex(validator.ContractError, "distinct"):
             validator.seed_export("fin01", duplicate)
+
+        wrong_finance = dict(seed)
+        wrong_finance["financeOnlyActor"] = wrong_finance["bothActor"]
+        with self.assertRaisesRegex(validator.ContractError, "Finance-only"):
+            validator.seed_export("fin01", wrong_finance)
+
+        wrong_neither = dict(seed)
+        wrong_neither["neitherActor"] = "fin01-neither"
+        with self.assertRaisesRegex(validator.ContractError, "canonical unauthorized"):
+            validator.seed_export("fin01", wrong_neither)
 
         duplicate_company = dict(seed)
         duplicate_company["otherCompanyId"] = duplicate_company["companyId"]
