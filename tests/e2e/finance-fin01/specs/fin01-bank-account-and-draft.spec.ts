@@ -8,8 +8,12 @@
  *   FIN01-01 the proposer proposes a bank account (a currency picked from Settings' candidates,
  *            nothing preselected); it is pending and marked as the proposer's own, with no approval;
  *   FIN01-02 ANOTHER user approves it once (Ö4) — it becomes usable;
- *   FIN01-03 the proposer saves a draft against it, entered from the customer, and reopens the
- *            draft from the list — a draft, no money effect;
+ *   FIN01-02D the proposer saves a payment draft, reopens and completely replaces it without
+ *             changing the amount, clears nullable facts, and a stale replacement changes nothing;
+ *   FIN01-02E another actor approves and records that edited payment once; the maker cannot replace
+ *             the terminal record, and replay adds no second money effect;
+ *   FIN01-03 the proposer saves a receipt draft against it, entered from the customer, and reopens
+ *            the draft from the list — a draft, no money effect;
  *   FIN01-04 the approver (no draft grant) and the ungranted profile are closed out of the screens
  *            they may not use, and send no Finance request.
  *   FIN01-06 DEC-FIN-016: the proposer receives a customer cheque into the portfolio (no money effect),
@@ -27,6 +31,7 @@
  * The cases run in order on one database: FIN01-02 approves what FIN01-01 proposed.
  */
 
+import { randomUUID } from 'node:crypto'
 import { expect, test, type BrowserContext, type Page, type Request, type Route } from '@playwright/test'
 import { readEnvironment } from '../src/env.js'
 
@@ -76,6 +81,7 @@ let rejectedReceiptSourceId = ''
 let rejectedProposalId = ''
 let bankAccountId = ''
 let manualPaymentId = ''
+let manualPaymentEditBody: Record<string, unknown> | null = null
 
 /** Binds `actor` to every API request of this context and records which requests it rewrote. */
 async function asActor(context: BrowserContext, actor: string): Promise<Set<Request>> {
@@ -297,6 +303,8 @@ test.describe.serial('FIN-01 bank account and draft (real API, real SQL)', () =>
       .toBeVisible({ timeout: 30_000 })
     await page.getByLabel('Tutar', { exact: true }).fill('875,25')
     await page.getByLabel('İşlem tarihi', { exact: true }).fill('2026-09-18')
+    await page.getByLabel('Valör', { exact: true }).fill('2026-09-19')
+    await page.getByLabel('Banka referansı (opsiyonel)', { exact: true }).fill('SENTETIK-FIN01-OLD')
     await page.getByLabel('Açıklama', { exact: true }).fill('SENTETIK FIN01 giden ödeme')
 
     const post = page.waitForRequest((request) => MANUAL_PAYMENT_RE.test(request.url()) && request.method() === 'POST')
@@ -314,7 +322,9 @@ test.describe.serial('FIN-01 bank account and draft (real API, real SQL)', () =>
         money: { amount: '875.25', currencyId: entry.currencyId },
         profile: { profileId: entry.profileId, version: entry.profileVersion },
         occurredOn: '2026-09-18',
-        bankReference: null,
+        valueOn: '2026-09-19',
+        bankReference: 'SENTETIK-FIN01-OLD',
+        description: 'SENTETIK FIN01 giden ödeme',
       },
       linkedDocument: null,
     })
@@ -338,6 +348,71 @@ test.describe.serial('FIN-01 bank account and draft (real API, real SQL)', () =>
     await row.getByRole('button', { name: 'Aç', exact: true }).click()
     await expect(page).toHaveURL(new RegExp(`/finans/odemeler/${manualPaymentId}$`))
     await expect(page.getByText('Draft', { exact: true })).toBeVisible()
+
+    await page.getByRole('button', { name: 'Düzenle', exact: true }).click()
+    await expect(page.getByLabel('Tutar', { exact: true })).toHaveValue('875,25')
+    await expect(page.getByLabel('İşlem tarihi', { exact: true })).toHaveValue('2026-09-18')
+    await page.getByLabel('Valör', { exact: true }).fill('')
+    await page.getByLabel('Banka referansı (opsiyonel)', { exact: true }).fill('')
+    await page.getByLabel('Açıklama', { exact: true }).fill('')
+
+    const editPost = page.waitForRequest((request) => MANUAL_PAYMENT_RE.test(request.url()) && request.method() === 'POST')
+    const editAnswer = page.waitForResponse((answer) => MANUAL_PAYMENT_RE.test(answer.url()) && answer.request().method() === 'POST')
+    await page.getByRole('button', { name: 'Değişiklikleri kaydet', exact: true }).click()
+    const editSent = await editPost
+    expect(editSent.headers()['idempotency-key']).toMatch(/^[0-9a-f-]{36}$/)
+    const editBody = editSent.postDataJSON() as Record<string, unknown>
+    expect(editBody).toEqual({
+      paymentId: manualPaymentId,
+      expectedVersion: '1',
+      preparation: {
+        partyId: entry.partyId,
+        companyAccountId: entry.companyAccountId,
+        treasuryAccountId: entry.treasuryAccountId,
+        money: { amount: '875.25', currencyId: entry.currencyId },
+        profile: { profileId: entry.profileId, version: entry.profileVersion },
+        occurredOn: '2026-09-18',
+        valueOn: null,
+        bankReference: null,
+        description: null,
+      },
+      linkedDocument: null,
+    })
+    manualPaymentEditBody = editBody
+    const editedAnswer = await editAnswer
+    const edited = await editedAnswer.json() as {
+      readonly resource?: { readonly id?: unknown; readonly status?: unknown; readonly version?: unknown }
+    }
+    expect(editedAnswer.status(), JSON.stringify(edited)).toBe(200)
+    expect(edited.resource).toMatchObject({ id: manualPaymentId, status: 'Draft', version: '2' })
+    await expect(page.getByText('Giden ödeme taslağı güncellendi.', { exact: true })).toBeVisible()
+
+    // The exact old replacement with a fresh key is stale and terminal; it cannot overwrite version 2.
+    const stale = await page.evaluate(async ({ body, companyId }) => {
+      const response = await fetch('/api/v1/finance/manual-bank-payments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID(), 'X-Company-Id': companyId },
+        body: JSON.stringify(body),
+      })
+      return response.status
+    }, { body: editBody, companyId: env.seed.companyId })
+    expect(stale).toBe(409)
+
+    // Close, list and reopen the server record: updated facts and version 2 remain authoritative.
+    await page.goto('/finans/odemeler')
+    const editedRow = page.getByRole('row').filter({ hasText: '875.25' })
+    await expect(editedRow).toHaveCount(1, { timeout: 30_000 })
+    await editedRow.getByRole('button', { name: 'Aç', exact: true }).click()
+    await expect(page).toHaveURL(new RegExp(`/finans/odemeler/${manualPaymentId}$`))
+    await expect(page.getByText('2026-09-18', { exact: true })).toBeVisible()
+    await expect(page.getByText('Yok', { exact: true })).toHaveCount(2)
+    await page.getByRole('button', { name: 'Düzenle', exact: true }).click()
+    await expect(page.getByLabel('Tutar', { exact: true })).toHaveValue('875,25')
+    await expect(page.getByLabel('İşlem tarihi', { exact: true })).toHaveValue('2026-09-18')
+    await expect(page.getByLabel('Valör', { exact: true })).toHaveValue('')
+    await expect(page.getByLabel('Banka referansı (opsiyonel)', { exact: true })).toHaveValue('')
+    await expect(page.getByLabel('Açıklama', { exact: true })).toHaveValue('')
+    await page.getByRole('button', { name: 'Vazgeç', exact: true }).click()
     expectEveryAnswerRewritten(answered, rewritten)
   })
 
@@ -352,7 +427,7 @@ test.describe.serial('FIN-01 bank account and draft (real API, real SQL)', () =>
     const approvalPost = page.waitForRequest((request) => MANUAL_PAYMENT_APPROVAL_RE.test(request.url()) && request.method() === 'POST')
     const approvalAnswer = page.waitForResponse((answer) => MANUAL_PAYMENT_APPROVAL_RE.test(answer.url()) && answer.request().method() === 'POST')
     await page.getByRole('button', { name: 'Onayla', exact: true }).click()
-    expect((await approvalPost).postDataJSON()).toEqual({ paymentId: manualPaymentId, expectedVersion: '1' })
+    expect((await approvalPost).postDataJSON()).toEqual({ paymentId: manualPaymentId, expectedVersion: '2' })
     expect((await approvalAnswer).status()).toBe(200)
     await expect(page.getByText('Ödeme onaylandı.', { exact: true })).toBeVisible()
 
@@ -364,7 +439,7 @@ test.describe.serial('FIN-01 bank account and draft (real API, real SQL)', () =>
     await recordButton.click()
     const recordedRequest = await recordPost
     const recordedBody = recordedRequest.postDataJSON()
-    expect(recordedBody).toEqual({ paymentId: manualPaymentId, expectedVersion: '2', bankResultConfirmed: true })
+    expect(recordedBody).toEqual({ paymentId: manualPaymentId, expectedVersion: '3', bankResultConfirmed: true })
     const recordedResponse = await recordAnswer
     const first = await recordedResponse.json() as {
       readonly isReplay?: unknown
@@ -372,7 +447,7 @@ test.describe.serial('FIN-01 bank account and draft (real API, real SQL)', () =>
       readonly resource?: { readonly id?: unknown; readonly status?: unknown; readonly version?: unknown }
     }
     expect(recordedResponse.status(), JSON.stringify(first)).toBe(200)
-    expect(first).toMatchObject({ isReplay: false, resource: { id: manualPaymentId, status: 'Recorded', version: '3' } })
+    expect(first).toMatchObject({ isReplay: false, resource: { id: manualPaymentId, status: 'Recorded', version: '4' } })
     await expect(page.getByText('Giden ödeme kesin kaydedildi.', { exact: true })).toBeVisible()
 
     const replay = await page.evaluate(async ({ paymentId, key, body, companyId }) => {
@@ -392,12 +467,45 @@ test.describe.serial('FIN-01 bank account and draft (real API, real SQL)', () =>
     expect(replay.body).toMatchObject({
       isReplay: true,
       originalCorrelationId: first.originalCorrelationId,
-      resource: { id: manualPaymentId, status: 'Recorded', version: '3' },
+      resource: { id: manualPaymentId, status: 'Recorded', version: '4' },
     })
 
     await page.getByRole('button', { name: 'Kesin kaydı yeniden aç', exact: true }).click()
     await expect(page).toHaveURL(new RegExp(`/finans/odemeler/${manualPaymentId}$`))
     await expect(page.getByText('Recorded', { exact: true })).toBeVisible()
+    expectEveryAnswerRewritten(answered, rewritten)
+  })
+
+  test('FIN01-02F the maker cannot replace the recorded payment with a draft', async ({ page, context }) => {
+    const rewritten = await asActor(context, env.seed.proposerActor)
+    const answered = watchAnswers(page)
+    expect(manualPaymentId).toMatch(/^[0-9a-f-]{36}$/)
+    if (manualPaymentEditBody === null) throw new Error('FIN01-02D edit body was not captured')
+
+    await page.goto(`/finans/odemeler/${manualPaymentId}`)
+    await expect(page.getByText('Recorded', { exact: true })).toBeVisible({ timeout: 30_000 })
+    const terminalReplacement = { ...manualPaymentEditBody, expectedVersion: '4' }
+    const terminalReplacementKey = randomUUID()
+    const refused = await page.evaluate(async ({ body, companyId, key }) => {
+      const response = await fetch('/api/v1/finance/manual-bank-payments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Idempotency-Key': key, 'X-Company-Id': companyId },
+        body: JSON.stringify(body),
+      })
+      return { status: response.status, body: await response.json() as unknown }
+    }, { body: terminalReplacement, companyId: env.seed.companyId, key: terminalReplacementKey })
+    expect(refused.status).toBe(422)
+    expect(refused.body).toMatchObject({
+      outcome: 'ValidationFailed',
+      resource: null,
+      issues: [{ field: 'paymentId', code: 'payment_not_draft' }],
+    })
+
+    await page.goto(`/finans/odemeler/${manualPaymentId}`)
+    await expect(page.getByText('Recorded', { exact: true })).toBeVisible({ timeout: 30_000 })
+    await expect(page.getByText('875.25', { exact: true })).toBeVisible()
+    await expect(page.getByText('2026-09-18', { exact: true })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Düzenle', exact: true })).toHaveCount(0)
     expectEveryAnswerRewritten(answered, rewritten)
   })
 

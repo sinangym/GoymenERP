@@ -130,6 +130,7 @@ function ManualBankPaymentDetailRoute() {
   }
   return <ManualBankPaymentDetailPage companyId={context.companyId} actorId={context.userId}
     paymentId={paymentId}
+    canEdit={hasCapability(shell, FINANCE_CAPABILITY.manualBankPaymentsCreate)}
     canApprove={hasCapability(shell, FINANCE_CAPABILITY.manualBankPaymentsApprove)}
     canRecord={hasCapability(shell, FINANCE_CAPABILITY.manualBankPaymentsRecord)}
     onOpen={(id) => navigate(manualBankPaymentDetailPath(id))} />
