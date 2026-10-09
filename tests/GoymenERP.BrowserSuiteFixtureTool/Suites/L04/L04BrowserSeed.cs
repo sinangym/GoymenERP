@@ -82,8 +82,8 @@ public sealed class L04BrowserSeed : IBrowserSuiteFixture
     // add a production role, permission, provider or public fixture writer.
     private static readonly Guid ProductActorUserId = Guid.Parse("20000000-0000-0000-0000-000000000003");
     private static readonly Guid ProductSystemRoleId = Guid.Parse("30000000-0000-0000-0000-000000000003");
-    private static readonly Guid ProductIssuerUserId = Guid.Parse("e6500000-0000-4000-8000-000000000401");
-    private static readonly Guid ProductIssuerExternalIdentityId = Guid.Parse("e6510000-0000-4000-8000-000000000401");
+    private static readonly Guid ProductIssuerUserId = Guid.Parse("b2000000-0000-4000-8000-000000000201");
+    private static readonly Guid ProductIssuerExternalIdentityId = Guid.Parse("b2100000-0000-4000-8000-000000000201");
     private static readonly DateTimeOffset ProductAuthorityValidFrom =
         new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
 
@@ -175,13 +175,23 @@ public sealed class L04BrowserSeed : IBrowserSuiteFixture
 
         JsonElement approved = await context.GetJsonAsync(SalesApproverActor, CompanyGdc, $"{DraftsPath}/{DraftId:D}", cancellationToken);
         JsonElement approvedDraft = approved.GetProperty("draft");
+        JsonElement approvedSalesLines = approved.GetProperty("lines");
+        if (approvedSalesLines.GetArrayLength() != 1)
+        {
+            throw new InvalidOperationException("The real Sales detail did not answer exactly one approved line.");
+        }
+
+        JsonElement approvedLine = approvedSalesLines[0];
         if (approvedDraft.GetProperty("approvalState").GetString() != "Approved"
             || approvedDraft.GetProperty("partyId").GetGuid() != customer.PartyId
             || approvedDraft.GetProperty("companyAccountId").GetGuid() != customer.AccountId
-            || approved.GetProperty("lines").GetArrayLength() != 1
-            || approved.GetProperty("lines")[0].GetProperty("lineId").GetGuid() != LineId)
+            || approvedLine.GetProperty("lineId").GetGuid() != LineId
+            || approvedLine.GetProperty("productId").GetGuid() != product.ProductId
+            || approvedLine.GetProperty("productVersion").GetString() != product.ProductVersion
+            || approvedLine.GetProperty("orderUnitId").GetGuid() != product.UnitId)
         {
-            throw new InvalidOperationException("The seeded draft is not an APPROVED one-line draft of the seeded customer on the real detail route.");
+            throw new InvalidOperationException(
+                "The real Sales detail did not preserve the genuine Product identity, version and approved kg unit on its approved line.");
         }
 
         // Deny-first (Sinan §4 #66 5738113623): the Logistics preparer holds no Sales grant — the Sales detail refuses it (403) —
@@ -202,11 +212,24 @@ public sealed class L04BrowserSeed : IBrowserSuiteFixture
         }
 
         JsonElement approvedLines = await context.GetJsonAsync(PreparerActor, CompanyGdc, ApprovedLinesPath, cancellationToken);
-        string approvedLinesJson = approvedLines.GetRawText();
-        if (!approvedLinesJson.Contains(DocumentNo, StringComparison.Ordinal) || !approvedLinesJson.Contains(LineId.ToString("D"), StringComparison.OrdinalIgnoreCase))
+        JsonElement logisticsLine = approvedLines.GetProperty("items").EnumerateArray().SingleOrDefault(item =>
+            item.GetProperty("orderId").GetGuid() == DraftId
+            && item.GetProperty("lineId").GetGuid() == LineId);
+        if (logisticsLine.ValueKind == JsonValueKind.Undefined)
         {
             throw new InvalidOperationException("The price-free approved-order-lines read does not answer the seeded approved line to the preparer.");
         }
+
+        if (logisticsLine.GetProperty("documentNo").GetString() != DocumentNo
+            || logisticsLine.GetProperty("productId").GetGuid() != product.ProductId
+            || logisticsLine.GetProperty("productVersion").GetString() != product.ProductVersion
+            || logisticsLine.GetProperty("unitId").GetGuid() != product.UnitId)
+        {
+            throw new InvalidOperationException(
+                "The price-free approved-order-lines read did not preserve the genuine Product identity, version and approved kg unit.");
+        }
+
+        string approvedLinesJson = approvedLines.GetRawText();
 
         if (!CarriesCustomerName(approvedLines, CustomerName))
         {
