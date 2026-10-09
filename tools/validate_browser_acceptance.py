@@ -535,6 +535,45 @@ def validate_suite_identity(suite: str, extra: dict, actor_ids: list[str]) -> No
                 f"{label} must be company-wide on its own company")
         assigned.add(assignment["UserId"])
     require(set(users) - {issuer_user} <= assigned, "every suite actor's Identity user needs at least one assignment")
+    if suite == "fin01":
+        company_gdc = "10000000-0000-0000-0000-000000000001"
+        company_gsp = "10000000-0000-0000-0000-000000000002"
+        expected = {
+            "fin01-proposer": ("b3000000-0000-4000-8000-00000000f101", "BROWSER_FIN01_PROPOSER",
+                               "b4000000-0000-4000-8000-00000000f101"),
+            "fin01-approver": ("b3000000-0000-4000-8000-00000000f102", "BROWSER_FIN01_APPROVER",
+                               "b4000000-0000-4000-8000-00000000f102"),
+            "fin01-reader": ("b3000000-0000-4000-8000-00000000f103", "BROWSER_FIN01_ALLOCATION_READER",
+                             "b4000000-0000-4000-8000-00000000f103"),
+        }
+        require(set(actor_ids) == set(expected), "fin01 requires its exact disposable actor set")
+        require(len(roles) == 4 and len(grouped["Assignments"]) == 4,
+                "fin01 requires its three GDC roles plus one isolated GSP approval role")
+        actor_users = {subject: identity_id for identity_id, subject in users.items()}
+        for actor, (role_id, role_code, assignment_id) in expected.items():
+            role = roles.get(role_id)
+            matching = [row for row in grouped["Assignments"].values()
+                        if row["UserId"] == actor_users.get(actor) and row["CompanyId"] == company_gdc]
+            require(role is not None and role["Code"] == role_code,
+                    f"{actor} requires its exact GDC role")
+            require(len(matching) == 1 and matching[0]["Id"] == assignment_id
+                    and matching[0]["RoleId"] == role_id,
+                    f"{actor} requires its exact GDC assignment")
+
+        gsp_role_id = "b3000000-0000-4000-8000-00000000f104"
+        gsp_role = roles.get(gsp_role_id)
+        require(gsp_role is not None and gsp_role["Code"] == "BROWSER_FIN01_GSP_APPROVER"
+                and tuple(gsp_role[key] for key in sorted(
+                    (key for key in gsp_role if key.startswith("Permissions__")),
+                    key=lambda key: int(key.rsplit("__", 1)[1])))
+                == ("finance.official-invoice-import.approve",),
+                "fin01 GSP role must contain only the existing official-invoice approval permission")
+        gsp_assignments = [row for row in grouped["Assignments"].values() if row["CompanyId"] == company_gsp]
+        require(len(gsp_assignments) == 1
+                and gsp_assignments[0]["Id"] == "b4000000-0000-4000-8000-00000000f104"
+                and gsp_assignments[0]["UserId"] == actor_users.get("fin01-approver")
+                and gsp_assignments[0]["RoleId"] == gsp_role_id,
+                "fin01 GSP assignment must bind only the approver to the isolated approval role")
     if suite == "pur01":
         expected = {
             "pur01-approver": ("BROWSER_PUR01_APPROVER",

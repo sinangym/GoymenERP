@@ -274,11 +274,10 @@ test.describe.serial('FIN01 official invoice import (real API, real SQL, real Ch
     await checker.goto(approvalUrl)
     await expect(checker.getByLabel(`Fatura kaynağı ${batchId}`, { exact: true })).toContainText(sourceDocumentId)
 
-    const oldDetailRequestsInOtherCompany: string[] = []
+    const detailRequestsDuringCompanySwitch: string[] = []
     checker.on('request', (request) => {
-      if (new URL(request.url()).pathname === `${BATCHES}/${batchId}`
-        && request.headers()['x-company-id'] === env.seed.otherCompanyId) {
-        oldDetailRequestsInOtherCompany.push(request.url())
+      if (new URL(request.url()).pathname === `${BATCHES}/${batchId}`) {
+        detailRequestsDuringCompanySwitch.push(request.url())
       }
     })
     const companyPicker = checker.getByRole('combobox', { name: 'Şirket', exact: true })
@@ -288,7 +287,7 @@ test.describe.serial('FIN01 official invoice import (real API, real SQL, real Ch
     await expect(companyPicker).toHaveValue(env.seed.otherCompanyId, { timeout: 30_000 })
     await expect(checker).toHaveURL(new RegExp(`${approvalsPath}$`))
     await expect(checker.getByText('Onay bekleyen kaynak yok.', { exact: true })).toBeVisible({ timeout: 30_000 })
-    expect(oldDetailRequestsInOtherCompany).toEqual([])
+    expect(detailRequestsDuringCompanySwitch).toEqual([])
 
     await companyPicker.selectOption(env.seed.companyId)
     const leaveGsp = checker.getByRole('dialog')
