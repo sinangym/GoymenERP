@@ -28,7 +28,7 @@ export default defineConfig({
   testDir: '.',
   testMatch: [
     /finance-fin01[\\/]specs[\\/].*\.spec\.ts$/,
-    /work-approvals[\\/]specs[\\/]work-approvals\.spec\.ts$/,
+    /work-approvals[\\/]specs[\\/].*\.spec\.ts$/,
   ],
   fullyParallel: false,
   workers: 1,
