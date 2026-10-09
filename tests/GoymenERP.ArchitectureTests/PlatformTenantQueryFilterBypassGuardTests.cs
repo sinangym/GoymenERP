@@ -1154,10 +1154,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Sales/"
                  + "GoymenERP.Modules.Sales.Infrastructure/"
                  + "SalesModuleExtensions.cs"] =
-                    // Re-fingerprinted for DEC-SAL-005: the draft service also receives the optional allocation and
-                    // loading read ports; the provider branch and its token counts are unchanged.
+                    // Re-fingerprinted for #641: the scoped pending-approval read seam is DI-only; the provider
+                    // branch and its database capability token counts are unchanged.
                     new(
-                        "58edd9e0bc2229d1675561b904b64575a84edd9979925531b9add20148630447",
+                        "318a1490df72db9671b335ca4dbcbc42d4e69dfcbe875d2fcff5b03c026e80a9",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
