@@ -160,7 +160,8 @@ public sealed partial class SalesDraftServiceTests
         Assert.Empty(refused.Errors);
         Assert.Empty(world.Store.Refusals);
         Assert.Equal(1, world.Store.Attempts);
-        Assert.Equal(1, world.Store.Replays);
+        // The guarded winner read reaches the store, then its post-read fence detects the drift before disclosing it.
+        Assert.Equal(2, world.Store.Replays);
     }
 
     private static void Drift(World world, string drift)
