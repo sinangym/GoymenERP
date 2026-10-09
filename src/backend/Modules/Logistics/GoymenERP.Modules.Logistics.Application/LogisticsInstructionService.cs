@@ -132,7 +132,7 @@ public sealed partial class LogisticsInstructionService(
         }
         catch (LogisticsStoreException exception) when (exception.Code == LogisticsStoreCodes.AggregateLimitExceeded)
         {
-            return await TerminalAsync(envelope, requestHash, LogisticsCommands.CreateV1,
+            return await TerminalAsync(scope, bindings.CreatePermission, envelope, requestHash, LogisticsCommands.CreateV1,
                 new LogisticsTerminalRefusal(409, LogisticsProblemCodesV1.OrderLineAggregateLimitExceeded,
                     [new("lines", exception.Code)]), cancellationToken);
         }
@@ -460,58 +460,58 @@ public sealed partial class LogisticsInstructionService(
         }
         catch (LogisticsVersionConflictException)
         {
-            return await TerminalAsync(envelope, requestHash, commandName,
+            return await TerminalAsync(scope, permission, envelope, requestHash, commandName,
                 new LogisticsTerminalRefusal(409, LogisticsProblemCodesV1.VersionConflict, [new("expectedVersion", "version_conflict")]), cancellationToken);
         }
         catch (LogisticsRuleException exception) when (exception.Code is LogisticsRuleCodes.InstructionNotDraft or LogisticsRuleCodes.InstructionNotIssued)
         {
-            return await TerminalAsync(envelope, requestHash, commandName,
+            return await TerminalAsync(scope, permission, envelope, requestHash, commandName,
                 new LogisticsTerminalRefusal(409, LogisticsProblemCodesV1.InstructionState, [new("status", exception.Code)]), cancellationToken);
         }
         catch (LogisticsRuleException exception) when (exception.Code == LogisticsRuleCodes.LoadExceedsInstructed)
         {
-            return await TerminalAsync(envelope, requestHash, commandName,
+            return await TerminalAsync(scope, permission, envelope, requestHash, commandName,
                 new LogisticsTerminalRefusal(409, LogisticsProblemCodesV1.LoadExceedsInstructed, [new("quantity", exception.Code)]), cancellationToken);
         }
         catch (LogisticsRuleException exception) when (exception.Code == LogisticsRuleCodes.LineBlocked)
         {
-            return await TerminalAsync(envelope, requestHash, commandName,
+            return await TerminalAsync(scope, permission, envelope, requestHash, commandName,
                 new LogisticsTerminalRefusal(409, LogisticsProblemCodesV1.LineBlocked, [new("lineId", exception.Code)]), cancellationToken);
         }
         catch (LogisticsRuleException exception) when (exception.Code == LogisticsRuleCodes.DuplicateShareId)
         {
-            return await TerminalAsync(envelope, requestHash, commandName,
+            return await TerminalAsync(scope, permission, envelope, requestHash, commandName,
                 new LogisticsTerminalRefusal(409, LogisticsProblemCodesV1.DuplicateShare, [new("loadId", exception.Code)]), cancellationToken);
         }
         catch (LogisticsRuleException exception) when (exception.Code == LogisticsRuleCodes.WeighingAlreadyRecorded)
         {
             // AT-053: one weighbridge record per instruction; a second one (another weighing id, another key) is a recorded
             // terminal refusal — never a replacement, since how a wrong entry is corrected is not decided.
-            return await TerminalAsync(envelope, requestHash, commandName,
+            return await TerminalAsync(scope, permission, envelope, requestHash, commandName,
                 new LogisticsTerminalRefusal(409, LogisticsProblemCodesV1.WeighingAlreadyRecorded, [new("weighingId", exception.Code)]), cancellationToken);
         }
         catch (LogisticsRuleException exception) when (exception.Code == LogisticsRuleCodes.ShipmentAlreadyDispatched)
         {
             // AT-055: a shipment is on at most one non-cancelled dispatch note; a second link (another draft, another key) is a
             // recorded terminal refusal and the first note stays as it is.
-            return await TerminalAsync(envelope, requestHash, commandName,
+            return await TerminalAsync(scope, permission, envelope, requestHash, commandName,
                 new LogisticsTerminalRefusal(409, LogisticsProblemCodesV1.ShipmentAlreadyDispatched, [new("shipmentIds", exception.Code)]), cancellationToken);
         }
         catch (LogisticsRuleException exception) when (exception.Code == LogisticsRuleCodes.DuplicateDispatchNoteId)
         {
             // The note id is taken in this company — on this instruction or (the store's check) on another one, even a cancelled note.
-            return await TerminalAsync(envelope, requestHash, commandName,
+            return await TerminalAsync(scope, permission, envelope, requestHash, commandName,
                 new LogisticsTerminalRefusal(409, LogisticsProblemCodesV1.DuplicateDispatchNote, [new("dispatchNoteId", exception.Code)]), cancellationToken);
         }
         catch (LogisticsRuleException exception) when (exception.Code == LogisticsRuleCodes.DispatchNoteState)
         {
             // AT-055 lifecycle: approve needs a Draft, cancel a non-cancelled note, the e-İrsaliye number an Approved note without one.
-            return await TerminalAsync(envelope, requestHash, commandName,
+            return await TerminalAsync(scope, permission, envelope, requestHash, commandName,
                 new LogisticsTerminalRefusal(409, LogisticsProblemCodesV1.DispatchNoteState, [new("status", exception.Code)]), cancellationToken);
         }
         catch (LogisticsRuleException exception) when (exception.Code == LogisticsRuleCodes.EDispatchNumberInUse)
         {
-            return await TerminalAsync(envelope, requestHash, commandName,
+            return await TerminalAsync(scope, permission, envelope, requestHash, commandName,
                 new LogisticsTerminalRefusal(409, LogisticsProblemCodesV1.EDispatchNumberInUse, [new("eDispatchNumber", exception.Code)]), cancellationToken);
         }
         catch (LogisticsRuleException exception) when (exception.Code == LogisticsRuleCodes.DispatchNoteNotFound)
@@ -551,7 +551,7 @@ public sealed partial class LogisticsInstructionService(
         }
         catch (LogisticsStoreException exception) when (exception.Code == LogisticsStoreCodes.AggregateLimitExceeded)
         {
-            return await TerminalAsync(envelope, requestHash, commandName,
+            return await TerminalAsync(scope, permission, envelope, requestHash, commandName,
                 new LogisticsTerminalRefusal(409, LogisticsProblemCodesV1.OrderLineAggregateLimitExceeded,
                     [new("quantity", exception.Code)]), cancellationToken);
         }
@@ -836,24 +836,17 @@ public sealed partial class LogisticsInstructionService(
     /// the answer — its refusal replayed, or its stored transition returned as a replay (FİNANS #350 P3-1: never <c>concurrent_change</c>
     /// for a loser that lands on a terminal path after the winner committed).
     /// </summary>
-    private async Task<LoadingInstructionResponse> TerminalAsync(LogisticsWriteEnvelope envelope, string requestHash, string commandName,
-        LogisticsTerminalRefusal refusal, CancellationToken cancellationToken)
+    private async Task<LoadingInstructionResponse> TerminalAsync(Scope scope, string? permission, LogisticsWriteEnvelope envelope,
+        string requestHash, string commandName, LogisticsTerminalRefusal refusal, CancellationToken cancellationToken)
     {
+        await RequireStillAsync(scope, permission, cancellationToken);
         try
         {
             await store.RecordRefusalAsync(envelope, requestHash, commandName, refusal, cancellationToken);
         }
         catch (LogisticsStoreException exception) when (exception.Code == LogisticsStoreCodes.ConcurrentChange)
         {
-            LogisticsReplay? won;
-            try
-            {
-                won = await store.FindReplayAsync(envelope, requestHash, commandName, cancellationToken);
-            }
-            catch (LogisticsStoreException raced)
-            {
-                throw Store(raced);
-            }
+            var won = await FindReplayAsync(scope, permission, envelope, requestHash, commandName, cancellationToken);
 
             if (won?.Refusal is { } recorded)
             {
