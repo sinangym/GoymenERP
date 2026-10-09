@@ -763,6 +763,7 @@ class WorkflowTests(unittest.TestCase):
             "bothActor": "fin01-both-approver",
             "neitherActor": "company-a-user",
             "salesDraftId": "b5000000-0000-4000-8000-00000000f101",
+            "financeBatchId": "b6000000-0000-4000-8000-000000000033",
         }
 
         exported = validator.seed_export("fin01", seed)
@@ -771,13 +772,20 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual("BROWSER_E2E_FIN01_SEED", prefix)
         self.assertEqual(seed, json.loads(payload))
         self.assertEqual(frozenset(seed), validator.SUITE_FIXTURE_OUTPUTS["fin01"])
-        for key in ("salesOnlyActor", "unexpectedActor"):
+        for key in ("salesOnlyActor", "financeBatchId", "unexpectedActor"):
             malformed = dict(seed)
-            if key == "salesOnlyActor":
+            if key != "unexpectedActor":
                 malformed.pop(key)
             else:
                 malformed[key] = "fin01-unlisted"
             with self.subTest(key=key):
+                with self.assertRaises(validator.ContractError):
+                    validator.seed_export("fin01", malformed)
+
+        for value in (None, "", "not-a-guid", "fin01-proposer", "00000000-0000-0000-0000-000000000000"):
+            malformed = dict(seed)
+            malformed["financeBatchId"] = value
+            with self.subTest(financeBatchId=value):
                 with self.assertRaises(validator.ContractError):
                     validator.seed_export("fin01", malformed)
 

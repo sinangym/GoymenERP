@@ -738,7 +738,7 @@ SUITE_FIXTURE_OUTPUTS: dict[str, frozenset[str]] = {
     # disposable writer and the real Sales submission command.
     "fin01": frozenset({
         "companyId", "otherCompanyId", "partyId", "companyAccountId", "proposerActor", "approverActor", "readerActor",
-        "salesPreparerActor", "financeOnlyActor", "salesOnlyActor", "bothActor", "neitherActor", "salesDraftId",
+        "salesPreparerActor", "financeOnlyActor", "salesOnlyActor", "bothActor", "neitherActor", "salesDraftId", "financeBatchId",
     }),
     # SİPARİŞ's Suites/S04 seed: the three actors, the company and the one Preparing draft written through
     # the gated Sales draft writer (C01E2eSalesDraftFixtureWriter).
@@ -823,6 +823,10 @@ def seed_export(suite: str, seed: object) -> str:
                 and len(set(actor_values)) == len(actor_keys),
                 "u02 seed actors must be distinct and use the exact Inventory recorder")
     if suite == "fin01":
+        require(isinstance(seed["financeBatchId"], str)
+                and _ANY_GUID.fullmatch(seed["financeBatchId"]) is not None
+                and seed["financeBatchId"] != "00000000-0000-0000-0000-000000000000",
+                "fin01 financeBatchId must be a canonical nonzero lowercase GUID")
         actors = [seed[key] for key in (
             "proposerActor", "approverActor", "readerActor", "salesPreparerActor",
             "salesOnlyActor", "bothActor", "neitherActor",
