@@ -59,7 +59,7 @@ services:
         host_ip: 127.0.0.1
         protocol: tcp
     volumes:
-      - ../artifacts:/evidence
+      - ../artifacts/c01-server-evidence:/evidence
     depends_on:
       sqlserver:
         condition: service_healthy

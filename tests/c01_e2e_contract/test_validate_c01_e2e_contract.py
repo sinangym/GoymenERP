@@ -86,7 +86,7 @@ def valid_compose():
                 "ports": [port(8080, 15080)],
                 "volumes": [{
                     "type": "bind",
-                    "source": str(ROOT / "artifacts"),
+                    "source": str(ROOT / "artifacts" / "c01-server-evidence"),
                     "target": "/evidence",
                     "bind": {},
                 }],
@@ -186,10 +186,17 @@ class ComposeContractTests(unittest.TestCase):
                 "type": "bind", "source": str(ROOT / "other"), "target": "/evidence",
             }], "source"),
             ("service", "volumes", [{
-                "type": "bind", "source": str(ROOT / "artifacts"), "target": "/other",
+                "type": "bind", "source": str(ROOT / "artifacts"), "target": "/evidence",
+            }], "source"),
+            ("service", "volumes", [{
+                "type": "bind",
+                "source": str(ROOT / "artifacts" / "c01-server-evidence"),
+                "target": "/other",
             }], "target"),
             ("service", "volumes", [{
-                "type": "bind", "source": str(ROOT / "artifacts"), "target": "/evidence",
+                "type": "bind",
+                "source": str(ROOT / "artifacts" / "c01-server-evidence"),
+                "target": "/evidence",
                 "read_only": True,
             }], "writable"),
         )
@@ -432,6 +439,26 @@ class ArtifactPrivacyTests(unittest.TestCase):
         html.write_text("<html>?cursor=SIGNED-CURSOR</html>", encoding="utf-8")
         with self.assertRaisesRegex(validator.ContractError, "cursor query"):
             validator.validate_artifact_privacy(self.root)
+
+    def test_activation_server_evidence_has_a_dedicated_pending_upload_boundary(self):
+        relative = validator.ACTIVATION_SERVER_EVIDENCE_RELATIVE_PATH
+        self.assertNotIn(relative, validator.ARTIFACT_UPLOAD_ALLOWLIST)
+        workflow = (ROOT / ".github" / "workflows" / "c01-real-browser-e2e.yml").read_text(
+            encoding="utf-8"
+        )
+        self.assertNotIn(f"artifacts/{relative}", workflow)
+
+        evidence = self.root / relative
+        evidence.parent.mkdir(parents=True)
+        evidence.write_text(
+            '{"correlationDigest":"' + ("a" * 64) + '","path":"/api/v1/counterparties"}\n',
+            encoding="utf-8",
+        )
+        validator.validate_activation_server_evidence_privacy(self.root)
+
+        evidence.write_text("Authorization: Bearer header.payload.signature", encoding="utf-8")
+        with self.assertRaisesRegex(validator.ContractError, "authorization credential"):
+            validator.validate_activation_server_evidence_privacy(self.root)
 
     def test_raw_compose_log_is_not_uploadable(self):
         raw_log = self.root / "container-logs" / "compose.log"

@@ -21,12 +21,14 @@ ISSUER = "goymenerp-api-c01-testing-v1"
 CONTAINER = f"{PROJECT}-api"
 PROCESS_ID = "1"
 PROCESS_START = f"{CONTAINER}-process-{PROCESS_ID}"
+CAPABILITY_DIGEST = "a" * 64
+BUSINESS_DIGEST = "b" * 64
 
 
-def server_record(correlation, ordinal, path="/api/v1/counterparties", status=200):
+def server_record(correlation_digest, ordinal, path="/api/v1/counterparties", status=200):
     return {
         "schemaVersion": 1,
-        "correlationId": correlation,
+        "correlationDigest": correlation_digest,
         "method": "GET",
         "path": path,
         "status": status,
@@ -45,22 +47,22 @@ def server_record(correlation, ordinal, path="/api/v1/counterparties", status=20
 
 def server_records():
     return [
-        server_record("c01a-evidence-capability", 1, "/api/v1/shell/capabilities"),
-        server_record("c01a-evidence-business", 2),
+        server_record(CAPABILITY_DIGEST, 1, "/api/v1/shell/capabilities"),
+        server_record(BUSINESS_DIGEST, 2),
     ]
 
 
 def browser_requests():
     return [
         {
-            "correlationId": "c01a-evidence-capability",
+            "correlationDigest": CAPABILITY_DIGEST,
             "method": "GET",
             "path": "/api/v1/shell/capabilities",
             "status": 200,
             "ordinal": 1,
         },
         {
-            "correlationId": "c01a-evidence-business",
+            "correlationDigest": BUSINESS_DIGEST,
             "method": "GET",
             "path": "/api/v1/counterparties",
             "status": 200,
@@ -260,7 +262,7 @@ class ActivationEvidenceContractTests(unittest.TestCase):
                 with self.assertRaises(validator.ContractError):
                     self.validate()
 
-        record = server_record("c01a-evidence-business", 1)
+        record = server_record(BUSINESS_DIGEST, 1)
         record["query"] = "cursor=secret"
         self.write(records=[record])
         with self.assertRaisesRegex(validator.ContractError, "keys mismatch"):
@@ -274,7 +276,7 @@ class ActivationEvidenceContractTests(unittest.TestCase):
             self.validate()
 
         duplicate_browser = (
-            '[{"correlationId":"c01a-evidence-capability","method":"GET",'
+            f'[{{"correlationDigest":"{CAPABILITY_DIGEST}","method":"GET",'
             '"path":"/api/v1/shell/capabilities","status":200,"status":200,"ordinal":1}]'
         )
         self.write(xml=junit({"activation.requestEvidence": duplicate_browser}))
@@ -284,7 +286,7 @@ class ActivationEvidenceContractTests(unittest.TestCase):
     def test_server_ordinals_correlations_and_provenance_are_exact(self):
         duplicate = [
             server_records()[0],
-            {**server_records()[1], "correlationId": "c01a-evidence-capability"},
+            {**server_records()[1], "correlationDigest": CAPABILITY_DIGEST},
         ]
         gap = [server_records()[0], {**server_records()[1], "ordinal": 3}]
         for records in (duplicate, gap):
@@ -313,27 +315,41 @@ class ActivationEvidenceContractTests(unittest.TestCase):
                     self.validate()
 
         self.write(records=server_records() + [
-            server_record("c01a-evidence-extra", 3, "/api/v1/other")
+            server_record("c" * 64, 3)
         ])
         with self.assertRaisesRegex(validator.ContractError, "unmatched server"):
             self.validate()
 
-    def test_browser_and_server_correlations_require_the_evidence_namespace(self):
+    def test_server_evidence_accepts_only_exact_route_templates_and_success(self):
+        mutations = (
+            ("GET", "/api/v1/counterparties/10000000-0000-0000-0000-000000000001", 200),
+            ("POST", "/api/v1/counterparties", 200),
+            ("GET", "/api/v1/counterparties", 503),
+        )
+        for method, path, status in mutations:
+            with self.subTest(method=method, path=path, status=status):
+                records = server_records()
+                records[1].update({"method": method, "path": path, "status": status})
+                self.write(records=records)
+                with self.assertRaisesRegex(validator.ContractError, "route-template allowlist"):
+                    self.validate()
+
+    def test_browser_and_server_correlations_require_exact_non_reversible_digests(self):
         records = server_records()
-        records[0]["correlationId"] = "ordinary-capability"
+        records[0]["correlationDigest"] = "ordinary-capability"
         self.write(records=records)
-        with self.assertRaisesRegex(validator.ContractError, "outside the evidence"):
+        with self.assertRaisesRegex(validator.ContractError, "digest mismatch"):
             self.validate()
 
         requests = browser_requests()
-        requests[0]["correlationId"] = "ordinary-capability"
+        requests[0]["correlationDigest"] = "A" * 64
         self.write(
             xml=junit({
                 "activation.requestEvidence": json.dumps(requests, separators=(",", ":"))
             }),
             records=server_records(),
         )
-        with self.assertRaisesRegex(validator.ContractError, "outside the evidence"):
+        with self.assertRaisesRegex(validator.ContractError, "digest mismatch"):
             self.validate()
 
     def test_cli_returns_zero_only_for_exact_evidence(self):

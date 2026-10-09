@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 
 namespace GoymenERP.Api.Observability;
@@ -10,6 +12,8 @@ public sealed class C01E2eRequestEvidenceRecorder
 {
     internal const string EvidenceIssuer = "goymenerp-api-c01-testing-v1";
     internal const string EvidenceCorrelationPrefix = "c01a-evidence-";
+    internal const string CapabilityRouteTemplate = "/api/v1/shell/capabilities";
+    internal const string BusinessRouteTemplate = "/api/v1/counterparties";
     internal const string EvidencePathConfigurationKey =
         "GOYMEN_ERP_C01_E2E_REQUEST_EVIDENCE_PATH";
     internal const string DatabaseConfigurationKey =
@@ -178,23 +182,36 @@ public sealed class C01E2eRequestEvidenceRecorder
             return;
         }
 
-        var requestPath = context.Request.Path.Value ?? "/";
-        if (!requestPath.StartsWith("/", StringComparison.Ordinal)
-            || requestPath.Contains('?')
-            || requestPath.Contains('#')
-            || requestPath.Any(char.IsControl))
+        var correlationSuffix = correlationId[EvidenceCorrelationPrefix.Length..];
+        if (!Guid.TryParseExact(correlationSuffix, "D", out var correlationGuid)
+            || !string.Equals(
+                correlationSuffix,
+                correlationGuid.ToString("D"),
+                StringComparison.Ordinal))
         {
-            throw new InvalidOperationException("C-01 request evidence path is not redacted.");
+            throw new InvalidOperationException(
+                "C-01 request evidence requires a canonical lowercase UUID correlation suffix.");
         }
+
+        var routeTemplate = (context.Request.Method, context.Request.Path.Value) switch
+        {
+            ("GET", CapabilityRouteTemplate) => CapabilityRouteTemplate,
+            ("GET", BusinessRouteTemplate) => BusinessRouteTemplate,
+            _ => throw new InvalidOperationException(
+                "C-01 request evidence request is outside the exact route-template allowlist."),
+        };
+        var correlationDigest = Convert.ToHexString(
+                SHA256.HashData(Encoding.UTF8.GetBytes(correlationId)))
+            .ToLowerInvariant();
 
         await writeLock.WaitAsync(context.RequestAborted);
         try
         {
             var record = new RequestEvidence(
                 SchemaVersion: 1,
-                CorrelationId: correlationId,
+                CorrelationDigest: correlationDigest,
                 Method: context.Request.Method,
-                Path: requestPath,
+                Path: routeTemplate,
                 Status: context.Response.StatusCode,
                 TestedCommit: testedCommit,
                 RunId: runId,
@@ -257,7 +274,7 @@ public sealed class C01E2eRequestEvidenceRecorder
 
     private sealed record RequestEvidence(
         int SchemaVersion,
-        string CorrelationId,
+        string CorrelationDigest,
         string Method,
         string Path,
         int Status,

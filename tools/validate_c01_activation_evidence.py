@@ -14,13 +14,12 @@ from typing import Any
 
 CASE_ID = "C01A-HISTORY-REVOKE-forward"
 CASE_FILE = "historyRevoke.spec.ts"
-EVIDENCE_CORRELATION_PREFIX = "c01a-evidence-"
 EVIDENCE_ISSUER = "goymenerp-api-c01-testing-v1"
 STALE_WINDOW_MS = Decimal("30000")
 SHA40 = re.compile(r"[0-9a-f]{40}\Z")
 POSITIVE_INTEGER = re.compile(r"[1-9][0-9]*\Z")
 SAFE_IDENTITY = re.compile(r"[A-Za-z0-9_.-]{1,128}\Z")
-SAFE_CORRELATION = re.compile(r"[A-Za-z0-9_.:-]{1,128}\Z")
+SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 SAFE_METHOD = re.compile(r"[A-Z]{3,10}\Z")
 STRICT_DECIMAL = re.compile(r"(?:0|[1-9][0-9]*)(?:\.[0-9]+)?\Z")
 IDENTITY_PROPERTIES = {
@@ -39,11 +38,15 @@ ROOT_REPORTER_KEYS = {"id", "name", "time"}
 SUITE_REPORTER_KEYS = {"name", "timestamp", "hostname", "time"}
 CASE_KEYS = {"name", "classname", "time"}
 SERVER_KEYS = {
-    "schemaVersion", "correlationId", "method", "path", "status", "testedCommit",
+    "schemaVersion", "correlationDigest", "method", "path", "status", "testedCommit",
     "runId", "runAttempt", "composeProject", "database", "issuer", "containerId",
     "processId", "processStartIdentity", "ordinal",
 }
-BROWSER_KEYS = {"correlationId", "method", "path", "status", "ordinal"}
+BROWSER_KEYS = {"correlationDigest", "method", "path", "status", "ordinal"}
+ALLOWED_REQUESTS = {
+    ("GET", "/api/v1/shell/capabilities", 200),
+    ("GET", "/api/v1/counterparties", 200),
+}
 
 
 class ContractError(ValueError):
@@ -243,13 +246,12 @@ def validate(
     for index, record in enumerate(server_records, start=1):
         require(record["schemaVersion"] == 1 and type(record["schemaVersion"]) is int,
                 f"server record {index} schema mismatch")
-        require(type(record["correlationId"]) is str
-                and SAFE_CORRELATION.fullmatch(record["correlationId"]) is not None,
-                f"server record {index} correlation mismatch")
-        require(record["correlationId"].startswith(EVIDENCE_CORRELATION_PREFIX),
-                f"server record {index} is outside the evidence correlation namespace")
-        require(record["correlationId"] not in correlations, "server correlation ids must be unique")
-        correlations.add(record["correlationId"])
+        require(type(record["correlationDigest"]) is str
+                and SHA256.fullmatch(record["correlationDigest"]) is not None,
+                f"server record {index} correlation digest mismatch")
+        require(record["correlationDigest"] not in correlations,
+                "server correlation digests must be unique")
+        correlations.add(record["correlationDigest"])
         require(type(record["method"]) is str and SAFE_METHOD.fullmatch(record["method"]) is not None,
                 f"server record {index} method mismatch")
         require(type(record["path"]) is str and record["path"].startswith("/")
@@ -258,6 +260,10 @@ def validate(
                 f"server record {index} path is not redacted")
         require(type(record["status"]) is int and 100 <= record["status"] <= 599,
                 f"server record {index} status mismatch")
+        require(
+            (record["method"], record["path"], record["status"]) in ALLOWED_REQUESTS,
+            f"server record {index} is outside the exact route-template allowlist",
+        )
         for field, value in expected.items():
             require(record[field] == value, f"server record {index} {field} mismatch")
         require(SAFE_IDENTITY.fullmatch(record["containerId"]) is not None,
@@ -280,14 +286,16 @@ def validate(
                 f"browser record {ordinal} keys mismatch")
         require(type(browser["ordinal"]) is int and browser["ordinal"] == ordinal,
                 "browser ordinals must be contiguous and ordered")
-        correlation = browser["correlationId"]
-        require(type(correlation) is str and SAFE_CORRELATION.fullmatch(correlation) is not None,
-                f"browser record {ordinal} correlation mismatch")
-        require(correlation.startswith(EVIDENCE_CORRELATION_PREFIX),
-                f"browser record {ordinal} is outside the evidence correlation namespace")
-        require(correlation not in seen_browser, "browser correlation ids must be unique")
-        seen_browser.add(correlation)
-        matches = [record for record in server_records if record["correlationId"] == correlation]
+        correlation_digest = browser["correlationDigest"]
+        require(type(correlation_digest) is str and SHA256.fullmatch(correlation_digest) is not None,
+                f"browser record {ordinal} correlation digest mismatch")
+        require(correlation_digest not in seen_browser,
+                "browser correlation digests must be unique")
+        seen_browser.add(correlation_digest)
+        matches = [
+            record for record in server_records
+            if record["correlationDigest"] == correlation_digest
+        ]
         require(len(matches) == 1, f"browser record {ordinal} has no unique server match")
         server = matches[0]
         require(

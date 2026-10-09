@@ -1,5 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using GoymenERP.Api.Errors;
 using GoymenERP.Api.Observability;
@@ -58,13 +60,15 @@ public sealed class CorrelationBoundaryAcceptanceTests(GoymenErpApiFactory facto
             context.Request.Method = "GET";
             context.Request.Path = "/api/v1/counterparties";
             context.Request.QueryString = new QueryString("?cursor=must-not-appear");
+            var rawEvidenceCorrelation = $"c01a-evidence-{Guid.NewGuid():D}";
             context.Request.Headers[CorrelationContextMiddleware.CorrelationHeaderName] =
-                "c01a-evidence-business";
+                rawEvidenceCorrelation;
             var correlation = new CorrelationContext();
 
             await middleware.InvokeAsync(context, correlation);
 
             var line = Assert.Single(await File.ReadAllLinesAsync(path));
+            Assert.DoesNotContain(rawEvidenceCorrelation, line, StringComparison.Ordinal);
             Assert.DoesNotContain("cursor", line, StringComparison.OrdinalIgnoreCase);
             Assert.DoesNotContain("header", line, StringComparison.OrdinalIgnoreCase);
             Assert.DoesNotContain("credential", line, StringComparison.OrdinalIgnoreCase);
@@ -73,6 +77,11 @@ public sealed class CorrelationBoundaryAcceptanceTests(GoymenErpApiFactory facto
             Assert.Equal("/api/v1/counterparties", root.GetProperty("path").GetString());
             Assert.Equal("GET", root.GetProperty("method").GetString());
             Assert.Equal(200, root.GetProperty("status").GetInt32());
+            Assert.Equal(
+                Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(rawEvidenceCorrelation)))
+                    .ToLowerInvariant(),
+                root.GetProperty("correlationDigest").GetString());
+            Assert.False(root.TryGetProperty("correlationId", out _));
             Assert.Equal(1, root.GetProperty("ordinal").GetInt64());
             Assert.Equal("100", root.GetProperty("runId").GetString());
             Assert.Equal("2", root.GetProperty("runAttempt").GetString());
@@ -121,7 +130,7 @@ public sealed class CorrelationBoundaryAcceptanceTests(GoymenErpApiFactory facto
                 context.Request.Method = "GET";
                 context.Request.Path = "/api/v1/counterparties";
                 context.Response.StatusCode = StatusCodes.Status200OK;
-                return recorder.RecordAsync(context, $"c01a-evidence-{index}");
+                return recorder.RecordAsync(context, $"c01a-evidence-{Guid.NewGuid():D}");
             });
 
             await Task.WhenAll(writes);
@@ -182,6 +191,64 @@ public sealed class CorrelationBoundaryAcceptanceTests(GoymenErpApiFactory facto
     }
 
     [Fact]
+    public async Task DisposableRecorder_RefusesMalformedEvidenceCorrelationsAndNonTemplateRoutes()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), $"c01-evidence-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        try
+        {
+            var path = Path.Combine(directory, "requests.jsonl");
+            var recorder = C01E2eRequestEvidenceRecorder.Create(
+                new TestHostEnvironment("Testing"),
+                new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["C01E2e:EnableListCapability"] = "true",
+                    ["GOYMEN_ERP_C01_E2E_DISPOSABLE"] = "CONFIRMED",
+                    ["GOYMEN_ERP_C01_E2E_TESTED_COMMIT"] = "0123456789abcdef0123456789abcdef01234567",
+                    ["GOYMEN_ERP_C01_E2E_RUN_ID"] = "100",
+                    ["GOYMEN_ERP_C01_E2E_COMPOSE_PROJECT"] = "goymen-c01-100-2",
+                    ["GOYMEN_ERP_C01_E2E_DATABASE_NAME"] = "GoymenErpC01_100_2",
+                    ["GOYMEN_ERP_C01_E2E_REQUEST_EVIDENCE_PATH"] = path,
+                    ["GOYMEN_ERP_C01_E2E_EVIDENCE_ISSUER"] = "goymenerp-api-c01-testing-v1",
+                    ["GOYMEN_ERP_C01_E2E_CONTAINER_IDENTITY"] = Environment.MachineName,
+                    ["GOYMEN_ERP_C01_E2E_PROCESS_ID"] = Environment.ProcessId.ToString(),
+                    ["GOYMEN_ERP_C01_E2E_PROCESS_START_IDENTITY"] = $"test-start-{Environment.ProcessId}",
+                }).Build());
+            Assert.NotNull(recorder);
+
+            var allowed = new DefaultHttpContext();
+            allowed.Request.Method = "GET";
+            allowed.Request.Path = "/api/v1/counterparties";
+            allowed.Response.StatusCode = StatusCodes.Status200OK;
+            await Assert.ThrowsAsync<InvalidOperationException>(() => recorder.RecordAsync(
+                allowed,
+                "c01a-evidence-semantic-label"));
+
+            var identifierPath = new DefaultHttpContext();
+            identifierPath.Request.Method = "GET";
+            identifierPath.Request.Path = $"/api/v1/counterparties/{Guid.NewGuid():D}";
+            identifierPath.Response.StatusCode = StatusCodes.Status200OK;
+            await Assert.ThrowsAsync<InvalidOperationException>(() => recorder.RecordAsync(
+                identifierPath,
+                $"c01a-evidence-{Guid.NewGuid():D}"));
+
+            var wrongMethod = new DefaultHttpContext();
+            wrongMethod.Request.Method = "POST";
+            wrongMethod.Request.Path = "/api/v1/counterparties";
+            wrongMethod.Response.StatusCode = StatusCodes.Status200OK;
+            await Assert.ThrowsAsync<InvalidOperationException>(() => recorder.RecordAsync(
+                wrongMethod,
+                $"c01a-evidence-{Guid.NewGuid():D}"));
+
+            Assert.Empty(await File.ReadAllLinesAsync(path));
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task DisposableRecorder_RefusesToTruncateEvidenceFromAnEarlierProcessStart()
     {
         var directory = Path.Combine(Path.GetTempPath(), $"c01-evidence-{Guid.NewGuid():N}");
@@ -212,7 +279,7 @@ public sealed class CorrelationBoundaryAcceptanceTests(GoymenErpApiFactory facto
             context.Request.Method = "GET";
             context.Request.Path = "/api/v1/counterparties";
             context.Response.StatusCode = StatusCodes.Status200OK;
-            await recorder.RecordAsync(context, "c01a-evidence-before-restart");
+            await recorder.RecordAsync(context, $"c01a-evidence-{Guid.NewGuid():D}");
             var original = Assert.Single(await File.ReadAllLinesAsync(path));
 
             Assert.Throws<IOException>(() => C01E2eRequestEvidenceRecorder.Create(

@@ -79,6 +79,13 @@ C01_ARTIFACT_UPLOAD_ALLOWLIST = (
 ACTIVATION_ARTIFACT_UPLOAD_ALLOWLIST = (
     "activation-junit.xml",
 )
+# PR A owns the server/evidence producer and its exact privacy boundary. PR B
+# must add this path to ACTIVATION_ARTIFACT_UPLOAD_ALLOWLIST and to the workflow's
+# exact upload list in the same commit that produces the browser half. Until
+# then, the source foundation is not activation-acceptance evidence.
+ACTIVATION_SERVER_EVIDENCE_RELATIVE_PATH = (
+    "c01-server-evidence/c01-activation-api-requests.jsonl"
+)
 
 SAB_ARTIFACT_UPLOAD_ALLOWLIST = (
     "sab-junit.xml",
@@ -341,7 +348,7 @@ def validate_compose(model: dict[str, Any], expected_commit: str, expected_proje
     require(evidence_mount.get("type") == "bind", "API request-evidence mount type drift")
     require(
         pathlib.Path(str(evidence_mount.get("source", ""))).resolve()
-        == (REPOSITORY_ROOT / "artifacts").resolve(),
+        == (REPOSITORY_ROOT / "artifacts" / "c01-server-evidence").resolve(),
         "API request-evidence mount source drift",
     )
     require(evidence_mount.get("target") == "/evidence",
@@ -643,6 +650,28 @@ def validate_artifact_privacy(
                 needle not in content,
                 f"artifact privacy violation (runtime secret {index}): {relative}",
             )
+
+
+def validate_activation_server_evidence_privacy(
+    root: str | pathlib.Path,
+    forbidden_values: tuple[str, ...] | list[str] = (),
+) -> None:
+    artifact_root = pathlib.Path(root).resolve()
+    require(artifact_root.is_dir(), "artifact root is missing")
+    candidate = artifact_root / ACTIVATION_SERVER_EVIDENCE_RELATIVE_PATH
+    require(candidate.is_file(), "activation server evidence is missing")
+    require(not candidate.is_symlink(), "activation server evidence is a symlink")
+    require(candidate.resolve().is_relative_to(artifact_root),
+            "activation server evidence escapes root")
+    content = candidate.read_bytes()
+    for label, pattern in ARTIFACT_FORBIDDEN_PATTERNS:
+        require(pattern.search(content) is None,
+                f"activation server evidence privacy violation ({label})")
+    for index, value in enumerate(forbidden_values):
+        require(isinstance(value, str) and len(value.encode("utf-8")) >= 8,
+                f"runtime forbidden value {index} is missing or too short")
+        require(value.encode("utf-8") not in content,
+                f"activation server evidence privacy violation (runtime secret {index})")
 
 
 def parser() -> argparse.ArgumentParser:
