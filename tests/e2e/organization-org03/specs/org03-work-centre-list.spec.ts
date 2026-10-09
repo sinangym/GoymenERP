@@ -40,6 +40,9 @@ const WORK_CENTRE_LIST_ROUTE = '/ayarlar/organizasyon/is-merkezleri'
 const LOCATION_LIST_ROUTE = '/ayarlar/organizasyon'
 const NAV_LABEL = 'İş Merkezleri'
 const DEVELOPMENT_USER_HEADER = 'X-Development-User'
+// The built-in GDC organization operator. The disposable editor creates master data, while this
+// existing public persona holds the separately authorized location lifecycle command.
+const LOCATION_STATUS_ACTOR = 'company-a-user'
 
 /** The five seeded work centres of GDC, by code — the whole authorized set for a company-wide reader. */
 const SEEDED_WORK_CENTRE_CODES = ['WC-PAINT', 'WC-TUBE', 'WC-SLIT', 'WC-CR', 'WC-CUT'] as const
@@ -643,6 +646,12 @@ test('ORG-ME-05 a newly created location persists its reasoned passive and activ
   const initial = await initialRead.json() as { readonly id: string; readonly version: number; readonly isActive: boolean }
   expect(initial).toMatchObject({ id: created.id, version: created.version, isActive: true })
 
+  // The editor's write grant deliberately does not confer the separate lifecycle authority.
+  // Reopen the stored card as the existing organization operator before exercising that command.
+  await signInAs(page, LOCATION_STATUS_ACTOR)
+  await page.goto(cardRoute)
+  await expect(page.locator('[data-state="active"]')).toHaveText('Aktif')
+
   // Deactivate from the card, with the canonical modal and its own justification.
   await page.getByRole('button', { name: 'Pasife al', exact: true }).click()
   const deactivateDialog = page.getByRole('dialog', { name: 'Lokasyonu pasife al' })
@@ -659,7 +668,7 @@ test('ORG-ME-05 a newly created location persists its reasoned passive and activ
   await expect(page.locator('[data-outcome="applied"]')).toContainText('Değişiklik kaydedildi', { timeout: 30_000 })
   await expect(page.locator('[data-state="passive"]')).toHaveText('Pasif')
 
-  const passiveRead = await page.request.get(`${apiBaseUrl}${cardApi}`, { headers: apiHeaders(EDITOR_ACTOR) })
+  const passiveRead = await page.request.get(`${apiBaseUrl}${cardApi}`, { headers: apiHeaders(LOCATION_STATUS_ACTOR) })
   expect(passiveRead.status()).toBe(200)
   const passive = await passiveRead.json() as { readonly id: string; readonly version: number; readonly isActive: boolean }
   expect(passive).toMatchObject({ id: created.id, isActive: false })
@@ -691,7 +700,7 @@ test('ORG-ME-05 a newly created location persists its reasoned passive and activ
   await expect(page.locator('[data-outcome="applied"]')).toContainText('Değişiklik kaydedildi', { timeout: 30_000 })
   await expect(page.locator('[data-state="active"]')).toHaveText('Aktif')
 
-  const activeRead = await page.request.get(`${apiBaseUrl}${cardApi}`, { headers: apiHeaders(EDITOR_ACTOR) })
+  const activeRead = await page.request.get(`${apiBaseUrl}${cardApi}`, { headers: apiHeaders(LOCATION_STATUS_ACTOR) })
   expect(activeRead.status()).toBe(200)
   const active = await activeRead.json() as { readonly id: string; readonly version: number; readonly isActive: boolean }
   expect(active).toMatchObject({ id: created.id, isActive: true })
@@ -699,7 +708,7 @@ test('ORG-ME-05 a newly created location persists its reasoned passive and activ
 
   // The paged owner list contains exactly one committed record for this unique code.
   const locations = await page.request.get(`${apiBaseUrl}${LOCATIONS_API}?page=1&pageSize=100`, {
-    headers: apiHeaders(EDITOR_ACTOR),
+    headers: apiHeaders(LOCATION_STATUS_ACTOR),
   })
   expect(locations.status()).toBe(200)
   const matches = ((await locations.json() as { readonly items: readonly {
