@@ -91,8 +91,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // Re-fingerprinted for the Sales-Cari bounded display adapter: scoped in-process DI only; no network or hosted service.
     // Re-fingerprinted for D-05: one scoped in-process approval-read adapter/query registration and one endpoint map;
     // no OpenAPI-generation, network or hosted-service surface was added.
+    // Re-fingerprinted for D-05 phase A: the Finance-only adapter collection is documented at its existing scoped
+    // registration; the comment changes no OpenAPI-generation, network or hosted-service behavior.
     private const string ReviewedOpenApiStartupFingerprint =
-        "cc75400a2773dbdf79abc9355731b50138f31eb189cf7cc723b9ead7c451e24c";
+        "6a0451af74cd067553a82de47fd85f4d63a11911fe430c3c20e3cd5ed1f6fef9";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedProductManufacturingTechnicalRegistrationPath =

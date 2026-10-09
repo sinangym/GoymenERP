@@ -418,7 +418,7 @@ public sealed partial class OpenApiContractGenerationTests
             ParameterValues: ["path:batchId:true:type:string;format:uuid"]),
         new("get", "/api/v1/work/approvals", "GetWorkApprovalsV1",
             AuthenticatedResponses("200:application/json", "404:application/problem+json", "503:application/problem+json"),
-            ParameterValues: ["query:cursor:false:type:string"]),
+            ParameterValues: ["query:kind:false:type:string", "query:cursor:false:type:string"]),
         new("get", "/api/v1/work/approvals/{kind}/{approvalId}", "GetWorkApprovalV1",
             AuthenticatedResponses("200:application/json", "404:application/problem+json", "503:application/problem+json"),
             ParameterValues:
@@ -2406,16 +2406,18 @@ public sealed partial class OpenApiContractGenerationTests
         ExpectedSuccessComponentSchemas =
             new Dictionary<string, ComponentSchemaExpectation>(StringComparer.Ordinal)
             {
-                ["NativeApprovalReadDetailV1"] = ObjectSchema(
+                ["NativeApprovalReadDetailV1"] = ObjectSchema([]),
+                ["NativeApprovalReadDetailV1FinanceInvoiceImportNativeApprovalReadDetailV1"] = ObjectSchema(
                     ["item", "preview"],
                     ("item", "ref:NativeApprovalReadItemV1"),
                     ("preview", "ref:FinanceOfficialInvoiceImportPreviewV1")),
-                ["NativeApprovalReadItemV1"] = ObjectSchema(
-                    ["kind", "approvalId", "companyId", "status", "version", "batchVersion", "checksum", "templateVersion", "itemCount", "submittedBy", "submittedAtUtc"],
+                ["NativeApprovalReadItemV1"] = ObjectSchema(["kind"]),
+                ["NativeApprovalReadItemV1FinanceInvoiceImportNativeApprovalReadItemV1"] = ObjectSchema(
+                    ["approvalId", "companyId", "status", "version", "batchVersion", "checksum", "templateVersion", "itemCount", "submittedBy", "submittedAtUtc"],
                     ("kind", "type:string"),
                     ("approvalId", "type:string;format:uuid"),
                     ("companyId", "type:string;format:uuid"),
-                    ("status", "ref:FinanceOfficialInvoiceImportApprovalStatusV1"),
+                    ("status", "type:string"),
                     ("version", "type:string"),
                     ("batchVersion", "type:string"),
                     ("checksum", "type:string"),
@@ -6547,6 +6549,7 @@ public sealed partial class OpenApiContractGenerationTests
 
         var schemas = root.GetProperty("components").GetProperty("schemas");
         AssertSchemaSemantics(schemas);
+        AssertNativeApprovalPolymorphism(schemas);
         AssertSuccessComponentSchemas(schemas);
         AssertProductSchemas(schemas);
         AssertDispatchNoteRequestBounds(schemas);
@@ -6556,6 +6559,28 @@ public sealed partial class OpenApiContractGenerationTests
             .GetProperty("companyAccounts");
         Assert.Equal(1, mutationAccounts.GetProperty("minItems").GetInt32());
         Assert.Equal(1, mutationAccounts.GetProperty("maxItems").GetInt32());
+    }
+
+    private static void AssertNativeApprovalPolymorphism(JsonElement schemas)
+    {
+        const string financeKind = "finance.official-invoice-import.v1";
+        const string financeItemSchema =
+            "#/components/schemas/NativeApprovalReadItemV1FinanceInvoiceImportNativeApprovalReadItemV1";
+
+        var item = schemas.GetProperty("NativeApprovalReadItemV1");
+        var discriminator = item.GetProperty("discriminator");
+        Assert.Equal("kind", discriminator.GetProperty("propertyName").GetString());
+        var mapping = Assert.Single(discriminator.GetProperty("mapping").EnumerateObject());
+        Assert.Equal(financeKind, mapping.Name);
+        Assert.Equal(financeItemSchema, mapping.Value.GetString());
+        var itemVariant = Assert.Single(item.GetProperty("anyOf").EnumerateArray());
+        Assert.Equal(financeItemSchema, itemVariant.GetProperty("$ref").GetString());
+
+        var detail = schemas.GetProperty("NativeApprovalReadDetailV1");
+        var detailVariant = Assert.Single(detail.GetProperty("anyOf").EnumerateArray());
+        Assert.Equal(
+            "#/components/schemas/NativeApprovalReadDetailV1FinanceInvoiceImportNativeApprovalReadDetailV1",
+            detailVariant.GetProperty("$ref").GetString());
     }
 
     private static IReadOnlyList<OpenApiOperationSnapshot> ReadOperations(JsonElement paths)
@@ -7081,7 +7106,11 @@ public sealed partial class OpenApiContractGenerationTests
                     .Order(StringComparer.Ordinal));
         }
 
-        var type = schema.GetProperty("type");
+        if (!schema.TryGetProperty("type", out var type))
+        {
+            Assert.True(schema.TryGetProperty("properties", out _));
+            return "type:object";
+        }
         IEnumerable<string?> types = type.ValueKind == JsonValueKind.Array
             ? type.EnumerateArray()
                 .Select(value => value.GetString())
