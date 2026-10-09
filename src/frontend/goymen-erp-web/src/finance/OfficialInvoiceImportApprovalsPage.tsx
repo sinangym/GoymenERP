@@ -8,7 +8,7 @@ import type {
   OfficialInvoicePendingDetail,
   OfficialInvoicePendingPage,
 } from './officialInvoiceImportApprovalContract'
-import styles from './Finance.module.css'
+import styles from './OfficialInvoiceImportApprovals.module.css'
 
 export interface OfficialInvoiceApprovalClient {
   listPending(cursor: string | null, signal: AbortSignal): Promise<OfficialInvoicePendingPage>
@@ -297,7 +297,7 @@ function OfficialInvoiceImportApprovalsPageState({ client, context,
   }
 
   return (
-    <section aria-labelledby="official-invoice-approvals-title">
+    <section className={styles.page} aria-labelledby="official-invoice-approvals-title">
       <h1 id="official-invoice-approvals-title">Resmî fatura aktarım onayları</h1>
       <p className={styles.notice}>Yükleyen kişi kendi dosyasını onaylayamaz. Onay yalnız değişmez kaynak snapshot'ını yayımlar.</p>
       {settled === null ? null : (
@@ -339,10 +339,15 @@ function OfficialInvoiceImportApprovalsPageState({ client, context,
         <article className={styles.command} aria-label={`Fatura kaynağı ${detail.batch.batchId}`}>
           <h2>{detail.batch.batchVersion}</h2>
           <p>SHA-256: {detail.batch.batchChecksum}</p>
-          <table><thead><tr><th>Belge</th><th>Taksit</th><th>Tutar</th><th>Vade</th></tr></thead>
+          <div className={styles.tableRegion}>
+          <table className={styles.table}><thead><tr><th>Belge</th><th>Taksit</th><th>Tutar</th><th>Vade</th></tr></thead>
             <tbody>{detail.preview.batch.rows.map((row) => <tr key={row.openItemId}>
-              <td>{row.sourceDocumentId}</td><td>{row.sourceInstallmentId}</td><td>{row.amount}</td><td>{row.dueOn ?? 'Yok'}</td>
+              <td data-label="Belge">{row.sourceDocumentId}</td>
+              <td data-label="Taksit">{row.sourceInstallmentId}</td>
+              <td data-label="Tutar">{row.amount}</td>
+              <td data-label="Vade">{row.dueOn ?? 'Yok'}</td>
             </tr>)}</tbody></table>
+          </div>
           {detail.batch.uploadedBy === context.actorId ? <p role="status">Bu kaynağı siz yüklediniz; başka bir yetkili onaylamalı.</p> : null}
           {phase === 'unknown' ? <div role="status"><p>Sonuç bilinmiyor; aynı anahtarla yeniden gönderin.</p>
             <button type="button" onClick={() => approve(true)}>Aynı anahtarla yeniden gönder</button></div> : null}
