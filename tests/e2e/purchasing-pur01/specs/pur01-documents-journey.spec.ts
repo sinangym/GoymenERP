@@ -184,7 +184,7 @@ test('PUR01-DOC uploads once, reopens, previews/downloads and hides the vault fr
   const foreign = await page.request.get(`${env.apiBaseUrl}${listPath()}`, {
     headers: apiHeaders(creatorActor, otherCompanyId),
   })
-  expect(foreign.status()).toBe(404)
+  expect(foreign.status()).toBe(403)
   expect(await foreign.text()).not.toContain(FILE_NAME)
   const unknownOwner = crypto.randomUUID()
   const unknown = await page.request.get(`${env.apiBaseUrl}${listPath(unknownOwner)}`, {
