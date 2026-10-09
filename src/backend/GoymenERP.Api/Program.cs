@@ -103,7 +103,19 @@ builder.Configuration.AddJsonFile(
 builder.Services.AddErpProblemDetails();
 builder.Services.AddErpOpenApi();
 builder.Services.AddOpenApi(ErpOpenApiContract.DocumentName, options =>
-    options.AddOperationTransformer(SalesEndpoints.TransformDraftReadContractOpenApiAsync));
+{
+    options.AddOperationTransformer(SalesEndpoints.TransformDraftReadContractOpenApiAsync);
+    options.AddSchemaTransformer((schema, context, _) =>
+    {
+        if (context.JsonTypeInfo.Type == typeof(NativeApprovalReadDetailV1))
+        {
+            // Detail dispatch is owned by the route kind. The wire intentionally has only item + payload.
+            schema.Discriminator = null;
+        }
+
+        return Task.CompletedTask;
+    });
+});
 builder.Services.AddLocalization(options => options.ResourcesPath = "Resources");
 builder.Services.AddHealthChecks()
     .AddCheck<DatabaseSchemaCompatibilityHealthCheck>(
@@ -156,6 +168,7 @@ builder.Services.AddScoped<IAccountingPeriodStatusPortV1, AccountingPeriodStatus
 builder.Services.AddScoped<IFinanceRecordPeriodRule, OccurredOnFinanceRecordPeriodRule>();
 builder.Services.AddFinanceServices();
 builder.Services.AddFinanceOfficialInvoiceImportHost();
+// Phase A publishes Finance as the sole kind; the query composes the scoped adapter collection.
 builder.Services.AddScoped<INativeApprovalReadAdapterV1, FinanceInvoiceImportPendingApprovalAdapterV1>();
 builder.Services.AddScoped<NativeApprovalReadQueryV1>();
 builder.Services.AddScoped<IFinancePartyAccountPort, CounterpartyFinancePartyAccountPort>();

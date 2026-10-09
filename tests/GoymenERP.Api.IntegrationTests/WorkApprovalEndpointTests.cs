@@ -21,51 +21,78 @@ public sealed class WorkApprovalEndpointTests(GoymenErpApiFactory factory)
     private static readonly Guid Batch = Guid.Parse("a2000000-0000-0000-0000-000000000001");
 
     [Fact]
-    public async Task List_and_detail_publish_the_native_read_contract_as_private_string_enum_json()
+    public async Task Default_and_explicit_finance_list_preserve_the_legacy_json_and_cursor()
     {
         var adapter = new Adapter
         {
-            Page = new(ReadOutcome.Found, new NativeApprovalReadPageV1(
+            Page = new(NativeApprovalReadOutcomeV1.Found, new NativeApprovalReadPageV1(
                 Company,
                 [Item()],
                 "opaque+/=cursor")),
-            Detail = new(ReadOutcome.Found, new NativeApprovalReadDetailV1(Item(), Preview())),
         };
-        using var host = Host(adapter);
+        using var host = Host([adapter]);
         using var client = Client(host);
 
-        using var list = await client.GetAsync(WorkApprovalEndpoints.Path + "?cursor=opaque%2B%2F%3Drequest");
-        using var detail = await client.GetAsync(
+        using var defaultList = await client.GetAsync(
+            WorkApprovalEndpoints.Path + "?cursor=opaque%2B%2F%3Drequest");
+        using var explicitList = await client.GetAsync(
+            WorkApprovalEndpoints.Path
+            + "?kind=finance.official-invoice-import.v1&cursor=second%2Bcursor");
+
+        Assert.Equal(HttpStatusCode.OK, defaultList.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, explicitList.StatusCode);
+        AssertPrivateNoStore(defaultList);
+        Assert.Equal(("second+cursor", 2), (adapter.Cursor, adapter.ListCalls));
+
+        using var json = JsonDocument.Parse(await defaultList.Content.ReadAsStringAsync());
+        Assert.Equal(
+            ["companyId", "items", "nextCursor"],
+            json.RootElement.EnumerateObject().Select(property => property.Name).ToArray());
+        var item = Assert.Single(json.RootElement.GetProperty("items").EnumerateArray());
+        Assert.Equal(
+            ["kind", "approvalId", "companyId", "status", "version", "batchVersion",
+                "checksum", "templateVersion", "itemCount", "submittedBy", "submittedAtUtc"],
+            item.EnumerateObject().Select(property => property.Name).ToArray());
+        Assert.Equal("Pending", item.GetProperty("status").GetString());
+        Assert.Equal(NativeApprovalKindsV1.FinanceOfficialInvoiceImport,
+            item.GetProperty("kind").GetString());
+        Assert.Equal(Company, json.RootElement.GetProperty("companyId").GetGuid());
+    }
+
+    [Fact]
+    public async Task Finance_detail_preserves_item_and_preview_without_a_root_discriminator()
+    {
+        var adapter = new Adapter
+        {
+            Detail = new(NativeApprovalReadOutcomeV1.Found,
+                new FinanceInvoiceImportNativeApprovalReadDetailV1(Item(), Preview())),
+        };
+        using var host = Host([adapter]);
+        using var client = Client(host);
+
+        using var response = await client.GetAsync(
             $"{WorkApprovalEndpoints.Path}/{NativeApprovalKindsV1.FinanceOfficialInvoiceImport}/{Batch:D}");
 
-        Assert.Equal(HttpStatusCode.OK, list.StatusCode);
-        Assert.Equal(HttpStatusCode.OK, detail.StatusCode);
-        AssertPrivateNoStore(list);
-        Assert.Contains("no-cache", list.Headers.Pragma.Select(value => value.Name));
-        Assert.Equal("opaque+/=request", adapter.Cursor);
-        Assert.Equal((1, 1), (adapter.ListCalls, adapter.GetCalls));
-
-        using var listJson = JsonDocument.Parse(await list.Content.ReadAsStringAsync());
-        var item = Assert.Single(listJson.RootElement.GetProperty("items").EnumerateArray());
-        Assert.Equal("Pending", item.GetProperty("status").GetString());
-        Assert.Equal(NativeApprovalKindsV1.FinanceOfficialInvoiceImport, item.GetProperty("kind").GetString());
-        Assert.Equal(Company, listJson.RootElement.GetProperty("companyId").GetGuid());
-
-        using var detailJson = JsonDocument.Parse(await detail.Content.ReadAsStringAsync());
-        Assert.Equal(Batch, detailJson.RootElement.GetProperty("item").GetProperty("approvalId").GetGuid());
-        Assert.Equal(new string('a', 64), detailJson.RootElement.GetProperty("preview").GetProperty("sourceSha256").GetString());
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(["item", "preview"],
+            json.RootElement.EnumerateObject().Select(property => property.Name).ToArray());
+        Assert.Equal(Batch, json.RootElement.GetProperty("item").GetProperty("approvalId").GetGuid());
+        Assert.Equal(new string('a', 64),
+            json.RootElement.GetProperty("preview").GetProperty("sourceSha256").GetString());
     }
 
     [Theory]
-    [InlineData(ReadOutcome.Denied, HttpStatusCode.Forbidden)]
-    [InlineData(ReadOutcome.NotFound, HttpStatusCode.NotFound)]
-    [InlineData(ReadOutcome.Unavailable, HttpStatusCode.ServiceUnavailable)]
-    public async Task Owner_failures_are_not_converted_to_empty_success(
-        ReadOutcome outcome,
+    [InlineData("Denied", HttpStatusCode.Forbidden)]
+    [InlineData("NotFound", HttpStatusCode.NotFound)]
+    [InlineData("Unavailable", HttpStatusCode.ServiceUnavailable)]
+    public async Task Adapter_failures_are_not_converted_to_empty_success(
+        string outcomeName,
         HttpStatusCode expectedStatus)
     {
+        var outcome = Enum.Parse<NativeApprovalReadOutcomeV1>(outcomeName);
         var adapter = new Adapter { Page = new(outcome, null) };
-        using var host = Host(adapter);
+        using var host = Host([adapter]);
         using var client = Client(host);
 
         using var response = await client.GetAsync(WorkApprovalEndpoints.Path);
@@ -76,13 +103,30 @@ public sealed class WorkApprovalEndpointTests(GoymenErpApiFactory factory)
     }
 
     [Fact]
-    public async Task Unknown_kind_is_a_code_less_not_found_without_calling_the_owner()
+    public async Task Unknown_kind_is_404_and_known_unregistered_is_503_without_an_adapter_call()
     {
-        var adapter = new Adapter();
-        using var host = Host(adapter);
+        using var host = Host([]);
         using var client = Client(host);
 
-        using var response = await client.GetAsync($"{WorkApprovalEndpoints.Path}/unknown/{Batch:D}");
+        using var unknown = await client.GetAsync(WorkApprovalEndpoints.Path + "?kind=unknown");
+        using var known = await client.GetAsync(
+            WorkApprovalEndpoints.Path + "?kind=finance.official-invoice-import.v1");
+
+        Assert.Equal(HttpStatusCode.NotFound, unknown.StatusCode);
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, known.StatusCode);
+        using var problem = JsonDocument.Parse(await unknown.Content.ReadAsStringAsync());
+        Assert.False(problem.RootElement.TryGetProperty("code", out _));
+    }
+
+    [Fact]
+    public async Task Unknown_detail_kind_is_code_less_404_without_calling_an_adapter()
+    {
+        var adapter = new Adapter();
+        using var host = Host([adapter]);
+        using var client = Client(host);
+
+        using var response = await client.GetAsync(
+            $"{WorkApprovalEndpoints.Path}/unknown/{Batch:D}");
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
         Assert.Equal(0, adapter.GetCalls);
@@ -94,7 +138,7 @@ public sealed class WorkApprovalEndpointTests(GoymenErpApiFactory factory)
     public async Task Anonymous_request_is_rejected_before_the_native_reader()
     {
         var adapter = new Adapter();
-        using var host = Host(adapter);
+        using var host = Host([adapter]);
         using var client = host.CreateClient();
         client.DefaultRequestHeaders.Add("X-Company-Id", Company.ToString("D"));
 
@@ -109,8 +153,8 @@ public sealed class WorkApprovalEndpointTests(GoymenErpApiFactory factory)
     [InlineData("actor")]
     [InlineData("access")]
     [InlineData("correlation")]
-    [InlineData("permission")]
-    public async Task Post_await_context_or_permission_drift_is_denied_over_http(string drift)
+    [InlineData("authority")]
+    public async Task Post_await_context_or_authority_drift_is_denied_over_http(string drift)
     {
         var company = new MutableCompanyContext(Company);
         var user = new MutableUser("checker", Company);
@@ -122,13 +166,17 @@ public sealed class WorkApprovalEndpointTests(GoymenErpApiFactory factory)
                 if (drift == "company") company.Set(Guid.NewGuid());
                 if (drift == "actor") user.ActorId = "other-checker";
                 if (drift == "access") user.AllowedCompanyIds.Remove(Company);
-                if (drift == "correlation") correlation.Set("changed-correlation", null, "test", null, null);
-                return drift == "permission"
-                    ? new(ReadOutcome.Denied, null)
-                    : new(ReadOutcome.Found, new NativeApprovalReadPageV1(context.CompanyId, [], null));
+                if (drift == "correlation")
+                {
+                    correlation.Set("changed-correlation", null, "test", null, null);
+                }
+                return drift == "authority"
+                    ? new(NativeApprovalReadOutcomeV1.Denied, null)
+                    : new(NativeApprovalReadOutcomeV1.Found,
+                        new NativeApprovalReadPageV1(context.CompanyId, [], null));
             },
         };
-        using var host = Host(adapter, services =>
+        using var host = Host([adapter], services =>
         {
             services.RemoveAll<ICompanyContext>();
             services.AddSingleton<ICompanyContext>(company);
@@ -146,48 +194,27 @@ public sealed class WorkApprovalEndpointTests(GoymenErpApiFactory factory)
     }
 
     [Fact]
-    public async Task Foreign_or_malformed_owner_payloads_fail_closed_over_http()
-    {
-        var owner = new Owner
-        {
-            Page = new(ReadOutcome.Found,
-                new FinanceOfficialInvoiceImportPendingBatchPageV1(Guid.NewGuid(), [], null)),
-            Detail = new(ReadOutcome.Found, null),
-        };
-        using var host = factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
-        {
-            services.RemoveAll<IFinanceOfficialInvoiceImportPendingApprovalReadServiceV1>();
-            services.AddSingleton<IFinanceOfficialInvoiceImportPendingApprovalReadServiceV1>(owner);
-        }));
-        using var client = Client(host);
-
-        using var list = await client.GetAsync(WorkApprovalEndpoints.Path);
-        using var detail = await client.GetAsync(
-            $"{WorkApprovalEndpoints.Path}/{NativeApprovalKindsV1.FinanceOfficialInvoiceImport}/{Batch:D}");
-
-        Assert.Equal(HttpStatusCode.ServiceUnavailable, list.StatusCode);
-        Assert.Equal(HttpStatusCode.ServiceUnavailable, detail.StatusCode);
-        Assert.Equal((1, 1), (owner.ListCalls, owner.GetCalls));
-    }
-
-    [Fact]
-    public void Production_registration_resolves_the_read_only_finance_adapter_and_query()
+    public void Production_registration_resolves_one_scoped_finance_adapter_and_query()
     {
         using var scope = factory.Services.CreateScope();
 
         var adapters = scope.ServiceProvider.GetServices<INativeApprovalReadAdapterV1>().ToArray();
         Assert.Single(adapters);
         Assert.IsType<FinanceInvoiceImportPendingApprovalAdapterV1>(adapters[0]);
+        Assert.Equal(NativeApprovalKindsV1.FinanceOfficialInvoiceImport, adapters[0].Kind);
         Assert.NotNull(scope.ServiceProvider.GetRequiredService<NativeApprovalReadQueryV1>());
     }
 
     private WebApplicationFactory<Program> Host(
-        Adapter adapter,
+        IReadOnlyList<INativeApprovalReadAdapterV1> adapters,
         Action<IServiceCollection>? configure = null) =>
         factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
         {
             services.RemoveAll<INativeApprovalReadAdapterV1>();
-            services.AddSingleton<INativeApprovalReadAdapterV1>(adapter);
+            foreach (var adapter in adapters)
+            {
+                services.AddSingleton(adapter);
+            }
             configure?.Invoke(services);
         }));
 
@@ -206,11 +233,10 @@ public sealed class WorkApprovalEndpointTests(GoymenErpApiFactory factory)
         Assert.True(response.Headers.CacheControl.NoStore);
     }
 
-    private static NativeApprovalReadItemV1 Item() => new(
-        NativeApprovalKindsV1.FinanceOfficialInvoiceImport,
+    private static FinanceInvoiceImportNativeApprovalReadItemV1 Item() => new(
         Batch,
         Company,
-        FinanceOfficialInvoiceImportApprovalStatusV1.Pending,
+        "Pending",
         "1",
         "source-version-7",
         new string('a', 64),
@@ -244,17 +270,20 @@ public sealed class WorkApprovalEndpointTests(GoymenErpApiFactory factory)
 
     private sealed class Adapter : INativeApprovalReadAdapterV1
     {
-        public Func<FinanceContext, ReadResult<NativeApprovalReadPageV1>>? OnList { get; init; }
-        public ReadResult<NativeApprovalReadPageV1> Page { get; init; } =
-            new(ReadOutcome.Found, new NativeApprovalReadPageV1(Company, [], null));
-        public ReadResult<NativeApprovalReadDetailV1> Detail { get; init; } =
-            new(ReadOutcome.NotFound, null);
+        public string Kind { get; init; } = NativeApprovalKindsV1.FinanceOfficialInvoiceImport;
+        public Func<NativeApprovalReadContextV1,
+            NativeApprovalReadResultV1<NativeApprovalReadPageV1>>? OnList { get; init; }
+        public NativeApprovalReadResultV1<NativeApprovalReadPageV1> Page { get; init; } =
+            new(NativeApprovalReadOutcomeV1.Found,
+                new NativeApprovalReadPageV1(Company, [], null));
+        public NativeApprovalReadResultV1<NativeApprovalReadDetailV1> Detail { get; init; } =
+            new(NativeApprovalReadOutcomeV1.NotFound, null);
         public string? Cursor { get; private set; }
         public int ListCalls { get; private set; }
         public int GetCalls { get; private set; }
 
-        public Task<ReadResult<NativeApprovalReadPageV1>> ListAsync(
-            FinanceContext context,
+        public Task<NativeApprovalReadResultV1<NativeApprovalReadPageV1>> ListAsync(
+            NativeApprovalReadContextV1 context,
             string? cursor,
             CancellationToken cancellationToken)
         {
@@ -263,38 +292,9 @@ public sealed class WorkApprovalEndpointTests(GoymenErpApiFactory factory)
             return Task.FromResult(OnList?.Invoke(context) ?? Page);
         }
 
-        public Task<ReadResult<NativeApprovalReadDetailV1>> GetAsync(
-            FinanceContext context,
-            string kind,
+        public Task<NativeApprovalReadResultV1<NativeApprovalReadDetailV1>> GetAsync(
+            NativeApprovalReadContextV1 context,
             Guid approvalId,
-            CancellationToken cancellationToken)
-        {
-            GetCalls++;
-            return Task.FromResult(Detail);
-        }
-    }
-
-    private sealed class Owner : IFinanceOfficialInvoiceImportPendingApprovalReadServiceV1
-    {
-        public ReadResult<FinanceOfficialInvoiceImportPendingBatchPageV1> Page { get; init; } =
-            new(ReadOutcome.Found, new FinanceOfficialInvoiceImportPendingBatchPageV1(Company, [], null));
-        public ReadResult<FinanceOfficialInvoiceImportPendingBatchDetailV1> Detail { get; init; } =
-            new(ReadOutcome.NotFound, null);
-        public int ListCalls { get; private set; }
-        public int GetCalls { get; private set; }
-
-        public Task<ReadResult<FinanceOfficialInvoiceImportPendingBatchPageV1>> ListAsync(
-            FinanceContext context,
-            string? cursor,
-            CancellationToken cancellationToken)
-        {
-            ListCalls++;
-            return Task.FromResult(Page);
-        }
-
-        public Task<ReadResult<FinanceOfficialInvoiceImportPendingBatchDetailV1>> GetAsync(
-            FinanceContext context,
-            Guid batchId,
             CancellationToken cancellationToken)
         {
             GetCalls++;
