@@ -1,7 +1,8 @@
 # R14 Inventory opening-stock acceptance and existing label/Product detail drill-down.
-# Recorder has the existing opening, selector and label/balance permissions only; Product detail is
-# derived from the gated disposable Product master Read assignment created by the R14 fixture.
-# Denied retains only selector-read; arranger only Organization location-read. All are disposable GDC.
+# Recorder has the existing opening, selector and label/balance permissions plus the disposable
+# STOCK-LOCATION-2 location read; Product detail is derived from the gated disposable Product master
+# Read assignment created by the R14 fixture. Denied retains only selector-read; arranger remains the
+# dedicated Organization owner-row reader. All are disposable GDC.
 # The Product issuer has no role, assignment or sign-in actor. No production grant or policy changes.
 # R19 split/merge (user decision 2026-09-27): the disposable r14-transformer is the ONLY holder of
 # inventory.label-transformation.record, beside the label/balance reads of its label detail. No real user and

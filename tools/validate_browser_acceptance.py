@@ -391,8 +391,8 @@ SUITE_IDENTITY_PERMISSIONS = {
               "counterparty.parties.read", "product.operational-selection.read",
               "documents.files.read", "documents.files.upload",
               "purchasing.goods-receipts.record", "inventory.labels.read", "inventory.balances.read"),
-    # R14: one Inventory recorder with opening and detail reads, one owner-read-only denied actor,
-    # and one Organization location reader.
+    # R14: one Inventory recorder with opening/detail reads plus the disposable location-card read,
+    # one owner-read-only denied actor, and one dedicated Organization owner-row reader.
     # R19 (user decision 2026-09-27): the disposable r14-transformer adds only the split/merge command name
     # beside the two label reads; no other r14 actor holds it.
     # AT-037 (user decision 2026-09-27): the disposable r14-counter holds only stock-count.record and the
