@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { FinancePortProvider } from './financePort'
+import type { ManualBankPaymentView } from './manualBankPaymentContract'
 import type { FinanceReceiptPort } from './port'
 import {
   ManualBankPaymentCreatePage,
@@ -32,7 +33,7 @@ function view(status: 'Draft' | 'Approved' | 'Recorded') {
   }
 }
 
-function success(resource: ReturnType<typeof view>) {
+function success(resource: ManualBankPaymentView) {
   return { kind: 'body' as const, body: { outcome: 'Succeeded', resource, isReplay: false, originalCorrelationId: 'c', issues: [] } }
 }
 
@@ -98,9 +99,10 @@ describe('manual bank payment pages', () => {
     const open = vi.fn()
     render(<FinancePortProvider port={provider({ manualBankPaymentDetail: detail, recordManualBankPayment: record })}>
       <ManualBankPaymentDetailPage companyId={COMPANY} actorId="checker" paymentId={PAYMENT}
-        canApprove={false} canRecord onOpen={open} />
+        canEdit canApprove={false} canRecord onOpen={open} />
     </FinancePortProvider>)
     const recordButton = await screen.findByRole('button', { name: 'Kesin kaydet' })
+    expect(screen.queryByRole('button', { name: 'Düzenle' })).toBeNull()
     expect((recordButton as HTMLButtonElement).disabled).toBe(true)
     fireEvent.click(screen.getByLabelText('Banka sonucu gerçekleşti'))
     fireEvent.click(recordButton)
@@ -110,6 +112,109 @@ describe('manual bank payment pages', () => {
     })
     fireEvent.click(screen.getByRole('button', { name: 'Kesin kaydı yeniden aç' }))
     expect(open).toHaveBeenCalledWith(PAYMENT)
+    expect(screen.queryByRole('button', { name: 'Düzenle' })).toBeNull()
+  })
+
+  it('reopens a draft for complete replacement and clears nullable fields explicitly', async () => {
+    const original = {
+      ...view('Draft'),
+      linkedDocument: { documentId: '88888888-8888-4888-8888-888888888888', version: '4' },
+      preparation: {
+        ...view('Draft').preparation,
+        valueOn: '2026-09-24', bankReference: 'BANK-OLD', description: 'Eski açıklama',
+      },
+    }
+    const updated = {
+      ...original,
+      version: '2',
+      linkedDocument: null,
+      preparation: {
+        ...original.preparation,
+        money: { ...original.preparation.money, amount: '1300.75' },
+        occurredOn: '2026-09-25', valueOn: null, bankReference: null, description: null,
+      },
+    }
+    const detail = vi.fn(async () => ({ kind: 'body' as const, body: { outcome: 'Found', resource: original } }))
+    const save = vi.fn(async () => success(updated))
+    render(<FinancePortProvider port={provider({ manualBankPaymentDetail: detail, saveManualBankPaymentDraft: save })}>
+      <ManualBankPaymentDetailPage companyId={COMPANY} actorId="maker" paymentId={PAYMENT}
+        canEdit canApprove={false} canRecord={false} onOpen={() => undefined} />
+    </FinancePortProvider>)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Düzenle' }))
+    expect((screen.getByLabelText('Tutar') as HTMLInputElement).value).toBe('1250,50')
+    fireEvent.change(screen.getByLabelText('Tutar'), { target: { value: '1300,75' } })
+    fireEvent.change(screen.getByLabelText('İşlem tarihi'), { target: { value: '2026-09-25' } })
+    fireEvent.change(screen.getByLabelText('Valör'), { target: { value: '' } })
+    fireEvent.change(screen.getByLabelText('Banka referansı (opsiyonel)'), { target: { value: '' } })
+    fireEvent.change(screen.getByLabelText('Açıklama'), { target: { value: '' } })
+    fireEvent.change(screen.getByLabelText('Belge kimliği (opsiyonel)'), { target: { value: '' } })
+    fireEvent.change(screen.getByLabelText('Belge sürümü (opsiyonel)'), { target: { value: '' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Değişiklikleri kaydet' }))
+
+    await screen.findByText('Giden ödeme taslağı güncellendi.')
+    expect(save).toHaveBeenCalledWith({ companyId: COMPANY }, expect.any(String), {
+      paymentId: PAYMENT,
+      expectedVersion: '1',
+      preparation: {
+        partyId: PARTY,
+        companyAccountId: ACCOUNT,
+        treasuryAccountId: BANK,
+        money: { amount: '1300.75', currencyId: CURRENCY },
+        profile: { profileId: PROFILE, version: '1' },
+        occurredOn: '2026-09-25',
+        valueOn: null,
+        bankReference: null,
+        description: null,
+      },
+      linkedDocument: null,
+    })
+    expect(screen.queryByRole('button', { name: 'Değişiklikleri kaydet' })).toBeNull()
+    expect(screen.getByText('1300.75')).toBeTruthy()
+  })
+
+  it('freezes and retries an unknown edit with the same body and key, then resets after terminal success', async () => {
+    const original = view('Draft')
+    const updated = {
+      ...original,
+      version: '2',
+      preparation: { ...original.preparation, money: { ...original.preparation.money, amount: '1300' } },
+    }
+    const updatedAgain = {
+      ...updated,
+      version: '3',
+      preparation: { ...updated.preparation, money: { ...updated.preparation.money, amount: '1400' } },
+    }
+    const detail = vi.fn(async () => ({ kind: 'body' as const, body: { outcome: 'Found', resource: original } }))
+    const save = vi.fn()
+      .mockResolvedValueOnce({ kind: 'no-reply' as const })
+      .mockResolvedValueOnce(success(updated))
+      .mockResolvedValueOnce(success(updatedAgain))
+    render(<FinancePortProvider port={provider({ manualBankPaymentDetail: detail, saveManualBankPaymentDraft: save })}>
+      <ManualBankPaymentDetailPage companyId={COMPANY} actorId="maker" paymentId={PAYMENT}
+        canEdit canApprove={false} canRecord={false} onOpen={() => undefined} />
+    </FinancePortProvider>)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Düzenle' }))
+    fireEvent.change(screen.getByLabelText('Tutar'), { target: { value: '1300' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Değişiklikleri kaydet' }))
+    await screen.findByText('Sonuç bilinmiyor. Aynı anahtar ve değişmeyen alanlarla tekrar deneyin.')
+    expect((screen.getByLabelText('Tutar') as HTMLInputElement).disabled).toBe(true)
+    const [firstScope, firstKey, firstBody] = save.mock.calls[0]
+
+    fireEvent.click(screen.getByRole('button', { name: 'Aynı anahtarla tekrar dene' }))
+    await screen.findByText('Giden ödeme taslağı güncellendi.')
+    expect(save.mock.calls[1][0]).toEqual(firstScope)
+    expect(save.mock.calls[1][1]).toBe(firstKey)
+    expect(save.mock.calls[1][2]).toBe(firstBody)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Düzenle' }))
+    fireEvent.change(screen.getByLabelText('Tutar'), { target: { value: '1400' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Değişiklikleri kaydet' }))
+    await waitFor(() => expect(save).toHaveBeenCalledTimes(3))
+    expect(save.mock.calls[2][1]).not.toBe(firstKey)
+    expect(save.mock.calls[2][2]).not.toBe(firstBody)
+    expect(save.mock.calls[2][2]).toMatchObject({ paymentId: PAYMENT, expectedVersion: '2' })
   })
 
   it('shows approval only to a non-maker and carries the current version', async () => {
@@ -117,7 +222,7 @@ describe('manual bank payment pages', () => {
     const approve = vi.fn(async () => success(view('Approved')))
     render(<FinancePortProvider port={provider({ manualBankPaymentDetail: detail, approveManualBankPayment: approve })}>
       <ManualBankPaymentDetailPage companyId={COMPANY} actorId="checker" paymentId={PAYMENT}
-        canApprove canRecord onOpen={() => undefined} />
+        canEdit={false} canApprove canRecord onOpen={() => undefined} />
     </FinancePortProvider>)
     fireEvent.click(await screen.findByRole('button', { name: 'Onayla' }))
     await waitFor(() => expect(approve).toHaveBeenCalledWith(
@@ -130,19 +235,21 @@ describe('manual bank payment pages', () => {
     const draftDetail = vi.fn(async () => ({ kind: 'body' as const, body: { outcome: 'Found', resource: view('Draft') } }))
     const draft = render(<FinancePortProvider port={provider({ manualBankPaymentDetail: draftDetail })}>
       <ManualBankPaymentDetailPage companyId={COMPANY} actorId="checker" paymentId={PAYMENT}
-        canApprove={false} canRecord={false} onOpen={() => undefined} />
+        canEdit={false} canApprove={false} canRecord={false} onOpen={() => undefined} />
     </FinancePortProvider>)
     await screen.findByText('1250.50')
     expect(screen.queryByRole('button', { name: 'Onayla' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Düzenle' })).toBeNull()
     draft.unmount()
 
     const approvedDetail = vi.fn(async () => ({ kind: 'body' as const, body: { outcome: 'Found', resource: view('Approved') } }))
     render(<FinancePortProvider port={provider({ manualBankPaymentDetail: approvedDetail })}>
       <ManualBankPaymentDetailPage companyId={COMPANY} actorId="checker" paymentId={PAYMENT}
-        canApprove={false} canRecord={false} onOpen={() => undefined} />
+        canEdit canApprove={false} canRecord={false} onOpen={() => undefined} />
     </FinancePortProvider>)
     await screen.findByText('Approved')
     expect(screen.queryByLabelText('Banka sonucu gerçekleşti')).toBeNull()
     expect(screen.queryByRole('button', { name: 'Kesin kaydet' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Düzenle' })).toBeNull()
   })
 })
