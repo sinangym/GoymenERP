@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useSearchParams } from 'react-router'
 import type { SecuritySnapshot } from '../shell/authBoundary'
 import type {
   OfficialInvoiceApprovalReply,
@@ -39,7 +40,25 @@ interface ApprovalPageProps {
   readonly onApprovedSource: (batch: OfficialInvoiceApprovedBatch) => void
 }
 
+const APPROVAL_ID_QUERY = 'approvalId'
+const boundUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+const emptyUuid = '00000000-0000-0000-0000-000000000000'
+
 export function OfficialInvoiceImportApprovalsPage(props: ApprovalPageProps) {
+  const [searchParams, setSearchParams] = useSearchParams()
+  const approvalIds = searchParams.getAll(APPROVAL_ID_QUERY)
+  const selectedApprovalId = approvalIds.length === 1 && isBoundUuid(approvalIds[0]) ? approvalIds[0] : null
+  const invalidSelection = approvalIds.length > 0 && selectedApprovalId === null
+  const selectApproval = useCallback((approvalId: string) => {
+    const next = new URLSearchParams(searchParams)
+    next.set(APPROVAL_ID_QUERY, approvalId)
+    setSearchParams(next)
+  }, [searchParams, setSearchParams])
+  const clearSelection = useCallback(() => {
+    const next = new URLSearchParams(searchParams)
+    next.delete(APPROVAL_ID_QUERY)
+    setSearchParams(next, { replace: true })
+  }, [searchParams, setSearchParams])
   const namespace = JSON.stringify([
     props.context.sessionEpoch,
     props.context.companyId,
@@ -49,18 +68,35 @@ export function OfficialInvoiceImportApprovalsPage(props: ApprovalPageProps) {
     props.context.capabilityGeneration,
     props.context.securityNamespace,
   ])
-  return <OfficialInvoiceImportApprovalsPageState key={namespace} {...props} />
+  const previousNamespace = useRef(namespace)
+  const contextChanged = previousNamespace.current !== namespace
+  useEffect(() => {
+    previousNamespace.current = namespace
+    if (contextChanged && approvalIds.length > 0) clearSelection()
+  }, [approvalIds.length, clearSelection, contextChanged, namespace])
+  return <OfficialInvoiceImportApprovalsPageState key={namespace} {...props}
+    selectedApprovalId={contextChanged ? null : selectedApprovalId}
+    invalidSelection={contextChanged ? false : invalidSelection}
+    onSelectApproval={selectApproval} onClearSelection={clearSelection} />
 }
 
 function OfficialInvoiceImportApprovalsPageState({ client, context,
-  createIdempotencyKey = () => crypto.randomUUID(), onApprovedSource }: ApprovalPageProps) {
+  createIdempotencyKey = () => crypto.randomUUID(), onApprovedSource,
+  selectedApprovalId, invalidSelection, onSelectApproval, onClearSelection,
+}: ApprovalPageProps & {
+  readonly selectedApprovalId: string | null
+  readonly invalidSelection: boolean
+  readonly onSelectApproval: (approvalId: string) => void
+  readonly onClearSelection: () => void
+}) {
   const [page, setPage] = useState<OfficialInvoicePendingPage | null>(null)
   const [detail, setDetail] = useState<OfficialInvoicePendingDetail | null>(null)
   const [settled, setSettled] = useState<OfficialInvoiceApprovedBatch | null>(null)
-  const [phase, setPhase] = useState<'loading' | 'ready' | 'detail' | 'submitting' | 'unknown' | 'conflicted' | 'refused' | 'failed'>('loading')
+  const [phase, setPhase] = useState<'loading' | 'ready' | 'detail' | 'submitting' | 'unknown' | 'conflicted' | 'refused' | 'failed' | 'invalid-selection' | 'detail-failed'>('loading')
   const [issues, setIssues] = useState<readonly { readonly field: string; readonly code: string }[]>([])
   const request = useRef(0)
   const activeRequest = useRef<AbortController | null>(null)
+  const selectedListIdentity = useRef<{ readonly batchId: string; readonly version: string } | null>(null)
   const namespace = JSON.stringify([
     context.sessionEpoch,
     context.companyId,
@@ -90,25 +126,51 @@ function OfficialInvoiceImportApprovalsPageState({ client, context,
     return () => controller.abort()
   }, [beginRequest, client, context.companyId])
 
-  useEffect(() => fetchPage(), [fetchPage, namespace])
+  const fetchDetail = useCallback((batchId: string) => {
+    const { controller, generation } = beginRequest()
+    setDetail(null)
+    setIssues([])
+    setPhase('loading')
+    void client.getPending(batchId, controller.signal).then((value) => {
+      if (generation !== request.current) return
+      const selectedFromList = selectedListIdentity.current?.batchId === batchId
+        ? selectedListIdentity.current
+        : null
+      if (value.batch.companyId !== context.companyId || value.batch.batchId !== batchId
+        || (selectedFromList !== null && value.batch.version !== selectedFromList.version)) {
+        setPhase('detail-failed')
+        return
+      }
+      setDetail(value)
+      const outstanding = attempts.get(attemptSlot(actorScope, value.batch.batchId))
+      setRecovery(outstanding ?? null)
+      setPhase(outstanding === undefined ? 'detail' : 'unknown')
+    }).catch(() => { if (generation === request.current) setPhase('detail-failed') })
+    return () => controller.abort()
+  }, [actorScope, beginRequest, client, context.companyId])
+
+  useEffect(() => {
+    if (invalidSelection) {
+      request.current++
+      activeRequest.current?.abort()
+      setDetail(null)
+      setIssues([])
+      setPhase('invalid-selection')
+      return
+    }
+    if (selectedApprovalId === null) {
+      selectedListIdentity.current = null
+      setDetail(null)
+      setIssues([])
+      setPhase('loading')
+      return fetchPage()
+    }
+    return fetchDetail(selectedApprovalId)
+  }, [fetchDetail, fetchPage, invalidSelection, namespace, selectedApprovalId])
   useEffect(() => () => {
     request.current++
     activeRequest.current?.abort()
   }, [])
-
-  function open(batch: OfficialInvoicePendingBatch) {
-    const { controller, generation } = beginRequest()
-    setPhase('loading')
-    void client.getPending(batch.batchId, controller.signal).then((value) => {
-      if (generation !== request.current || value.batch.companyId !== context.companyId
-        || value.batch.batchId !== batch.batchId || value.batch.version !== batch.version) return
-      setDetail(value)
-      setIssues([])
-      const outstanding = attempts.get(attemptSlot(actorScope, value.batch.batchId))
-      setRecovery(outstanding ?? null)
-      setPhase(outstanding === undefined ? 'detail' : 'unknown')
-    }).catch(() => { if (generation === request.current) setPhase('failed') })
-  }
 
   function approve(retry: boolean) {
     if (detail === null || detail.batch.uploadedBy === context.actorId) return
@@ -140,7 +202,7 @@ function OfficialInvoiceImportApprovalsPageState({ client, context,
       setSettled(reply.batch)
       setDetail(null)
       setPhase('loading')
-      fetchPage()
+      onClearSelection()
     }).catch(() => { if (generation === request.current) setPhase('unknown') })
   }
 
@@ -161,17 +223,20 @@ function OfficialInvoiceImportApprovalsPageState({ client, context,
       attempts.delete(keyScope)
       setRecovery(null)
       setSettled(reply.batch)
+      setDetail(null)
       setPhase('loading')
-      fetchPage()
+      onClearSelection()
     }).catch(() => { if (generation === request.current) setPhase('unknown') })
   }
 
   function returnToQueue() {
     request.current++
     activeRequest.current?.abort()
+    selectedListIdentity.current = null
     setDetail(null)
     setIssues([])
-    setPhase('ready')
+    setPhase('loading')
+    onClearSelection()
   }
 
   return (
@@ -193,6 +258,10 @@ function OfficialInvoiceImportApprovalsPageState({ client, context,
         </article>
       ) : null}
       {phase === 'loading' ? <p role="status">Onay bekleyen kaynaklar yükleniyor…</p> : null}
+      {phase === 'invalid-selection' ? <div role="alert"><p>Bağlantıdaki onay kaydı geçersiz.</p>
+        <button type="button" onClick={returnToQueue}>Onay kuyruğuna dön</button></div> : null}
+      {phase === 'detail-failed' ? <div role="alert"><p>Seçilen onay kaydı güvenli biçimde açılamadı.</p>
+        <button type="button" onClick={returnToQueue}>Onay kuyruğuna dön</button></div> : null}
       {phase === 'failed' ? <div role="alert"><p>Onay kuyruğu güvenli biçimde okunamadı.</p>
         <button type="button" onClick={() => { setDetail(null); setPhase('loading'); fetchPage() }}>Kuyruğu yeniden oku</button></div> : null}
       {detail === null && phase === 'ready' && page?.items.length === 0 ? <p role="status">Onay bekleyen kaynak yok.</p> : null}
@@ -200,7 +269,10 @@ function OfficialInvoiceImportApprovalsPageState({ client, context,
         <article className={styles.command} key={batch.batchId}>
           <h2>{batch.batchVersion}</h2>
           <p>{batch.rowCount} taksit, yükleyen: {batch.uploadedBy}</p>
-          <button type="button" onClick={() => open(batch)}>İncele</button>
+          <button type="button" onClick={() => {
+            selectedListIdentity.current = { batchId: batch.batchId, version: batch.version }
+            onSelectApproval(batch.batchId)
+          }}>İncele</button>
         </article>
       )) : null}
       {detail === null && phase === 'ready' && page?.nextCursor !== null && page?.nextCursor !== undefined ? (
@@ -218,7 +290,7 @@ function OfficialInvoiceImportApprovalsPageState({ client, context,
           {phase === 'unknown' ? <div role="status"><p>Sonuç bilinmiyor; aynı anahtarla yeniden gönderin.</p>
             <button type="button" onClick={() => approve(true)}>Aynı anahtarla yeniden gönder</button></div> : null}
           {phase === 'conflicted' ? <div role="status"><p>Kayıt değişti; ayrıntıyı yeniden okuyun.</p>
-            <button type="button" onClick={() => open(detail.batch)}>Kaydı yeniden oku</button></div> : null}
+            <button type="button" onClick={() => fetchDetail(detail.batch.batchId)}>Kaydı yeniden oku</button></div> : null}
           {phase === 'refused' ? <div role="status">{issues.map((issue) => <p key={`${issue.field}-${issue.code}`}>{issue.code}</p>)}</div> : null}
           {phase === 'submitting' ? <p role="status">Onay gönderiliyor…</p> : null}
           {phase === 'detail' || phase === 'refused' ? <button type="button"
@@ -230,6 +302,10 @@ function OfficialInvoiceImportApprovalsPageState({ client, context,
       )}
     </section>
   )
+}
+
+function isBoundUuid(value: string | undefined): value is string {
+  return value !== undefined && boundUuid.test(value) && value.toLowerCase() !== emptyUuid
 }
 
 function sameApprovedIdentity(pending: OfficialInvoicePendingBatch, approved: OfficialInvoiceApprovedBatch,
