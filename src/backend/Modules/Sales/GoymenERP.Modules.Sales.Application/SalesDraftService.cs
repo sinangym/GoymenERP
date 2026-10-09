@@ -477,12 +477,12 @@ public sealed partial class SalesDraftService(
         }
         catch (SalesVersionConflictException exception)
         {
-            throw await TerminalAsync(scope, envelope, requestHash, new SalesDraftTerminalRefusal(409, SalesDraftProblemCodesV1.VersionConflict,
+            throw await TerminalAsync(scope, permission, envelope, requestHash, new SalesDraftTerminalRefusal(409, SalesDraftProblemCodesV1.VersionConflict,
                 [new("expectedVersion", exception.Code)]), cancellationToken, commandName, draftId);
         }
         catch (SalesRuleException exception) when (exception.Code == SalesRuleCodes.StateConflict)
         {
-            throw await TerminalAsync(scope, envelope, requestHash, new SalesDraftTerminalRefusal(409, SalesDraftProblemCodesV1.StateConflict,
+            throw await TerminalAsync(scope, permission, envelope, requestHash, new SalesDraftTerminalRefusal(409, SalesDraftProblemCodesV1.StateConflict,
                 [new("approvalState", exception.Code)]), cancellationToken, commandName, draftId);
         }
         catch (SalesRuleException exception)
@@ -583,7 +583,7 @@ public sealed partial class SalesDraftService(
         {
             try
             {
-                throw await TerminalAsync(scope, envelope, requestHash, new SalesDraftTerminalRefusal(409,
+                throw await TerminalAsync(scope, permission, envelope, requestHash, new SalesDraftTerminalRefusal(409,
                     SalesDraftProblemCodesV1.VersionConflict, [new("expectedVersion", exception.Code)]), cancellationToken,
                     commandName, draftId);
             }
@@ -596,7 +596,7 @@ public sealed partial class SalesDraftService(
         {
             try
             {
-                throw await TerminalAsync(scope, envelope, requestHash, new SalesDraftTerminalRefusal(409,
+                throw await TerminalAsync(scope, permission, envelope, requestHash, new SalesDraftTerminalRefusal(409,
                     SalesDraftProblemCodesV1.StateConflict, [new("approvalState", exception.Code)]), cancellationToken,
                     commandName, draftId);
             }
@@ -722,12 +722,12 @@ public sealed partial class SalesDraftService(
         }
         catch (SalesVersionConflictException exception)
         {
-            throw await TerminalAsync(scope, envelope, requestHash, new SalesDraftTerminalRefusal(409, SalesDraftProblemCodesV1.VersionConflict,
+            throw await TerminalAsync(scope, permission, envelope, requestHash, new SalesDraftTerminalRefusal(409, SalesDraftProblemCodesV1.VersionConflict,
                 [new("expectedVersion", exception.Code)]), cancellationToken, commandName, draftId);
         }
         catch (SalesRuleException exception) when (exception.Code == SalesRuleCodes.StateConflict)
         {
-            throw await TerminalAsync(scope, envelope, requestHash, new SalesDraftTerminalRefusal(409, SalesDraftProblemCodesV1.StateConflict,
+            throw await TerminalAsync(scope, permission, envelope, requestHash, new SalesDraftTerminalRefusal(409, SalesDraftProblemCodesV1.StateConflict,
                 [new("approvalState", exception.Code)]), cancellationToken, commandName, draftId);
         }
         catch (SalesRuleException exception)
@@ -875,13 +875,13 @@ public sealed partial class SalesDraftService(
         catch (SalesVersionConflictException exception)
         {
             // §7: the caller's expected version is stale — recorded under the key, replayed on retry.
-            throw await TerminalAsync(scope, envelope, requestHash, new SalesDraftTerminalRefusal(409, SalesDraftProblemCodesV1.VersionConflict,
+            throw await TerminalAsync(scope, permission, envelope, requestHash, new SalesDraftTerminalRefusal(409, SalesDraftProblemCodesV1.VersionConflict,
                 [new("expectedVersion", exception.Code)]), cancellationToken, commandName, draftId);
         }
         catch (SalesRuleException exception) when (exception.Code == SalesRuleCodes.StateConflict)
         {
             // §7: the transition is not allowed from the draft's state — terminal for this key too.
-            throw await TerminalAsync(scope, envelope, requestHash, new SalesDraftTerminalRefusal(409, SalesDraftProblemCodesV1.StateConflict,
+            throw await TerminalAsync(scope, permission, envelope, requestHash, new SalesDraftTerminalRefusal(409, SalesDraftProblemCodesV1.StateConflict,
                 [new("approvalState", exception.Code)]), cancellationToken, commandName, draftId);
         }
         catch (SalesRuleException exception) when (exception.Code == SalesRuleCodes.ApprovalReasonTooLong)
@@ -1200,7 +1200,7 @@ public sealed partial class SalesDraftService(
 
         if (stale.Count > 0)
         {
-            throw await TerminalAsync(scope, envelope, requestHash,
+            throw await TerminalAsync(scope, bindings.CreatePermission, envelope, requestHash,
                 new SalesDraftTerminalRefusal(409, SalesDraftProblemCodesV1.VersionConflict, stale), cancellationToken);
         }
 
@@ -1291,7 +1291,7 @@ public sealed partial class SalesDraftService(
             {
                 401 => new SalesDraftServiceException(401, "unauthenticated"),
                 403 => new SalesDraftServiceException(403, "forbidden"),
-                409 => await TerminalAsync(scope, envelope, requestHash,
+                409 => await TerminalAsync(scope, bindings.CreatePermission, envelope, requestHash,
                     new SalesDraftTerminalRefusal(409, SalesDraftProblemCodesV1.VersionConflict, [new(productField, exception.Code)]),
                     cancellationToken),
                 400 or 404 or 422 => new SalesDraftServiceException(422, "unsupported_product", [new(productField, exception.Code)]),
@@ -1310,7 +1310,7 @@ public sealed partial class SalesDraftService(
             // A stale product version is the terminal refusal of ADR-011 §7: recorded and replayed under this key.
             if (errors.Any(error => error.Code == ProductApiV1.VersionConflict))
             {
-                throw await TerminalAsync(scope, envelope, requestHash,
+                throw await TerminalAsync(scope, bindings.CreatePermission, envelope, requestHash,
                     new SalesDraftTerminalRefusal(409, SalesDraftProblemCodesV1.VersionConflict, errors), cancellationToken);
             }
 
@@ -1457,25 +1457,18 @@ public sealed partial class SalesDraftService(
     /// refusal as a replay, its draft through <see cref="RaceWon"/>; a key left empty by the race
     /// answers this refusal unrecorded (the retry records or replays).
     /// </summary>
-    private async Task<SalesDraftServiceException> TerminalAsync(Scope scope, SalesDraftWriteEnvelope envelope, string requestHash,
+    private async Task<SalesDraftServiceException> TerminalAsync(Scope scope, string? permission, SalesDraftWriteEnvelope envelope, string requestHash,
         SalesDraftTerminalRefusal refusal, CancellationToken cancellationToken, string commandName = SalesDraftCommands.CreateV1,
         Guid? draftId = null)
     {
+        await RequireStillAsync(scope, permission, cancellationToken);
         try
         {
             await store.RecordRefusalAsync(envelope, requestHash, refusal, cancellationToken, commandName, draftId);
         }
         catch (SalesDraftStoreException exception) when (exception.Code == SalesDraftStoreCodes.ConcurrentChange)
         {
-            SalesDraftReplay? won;
-            try
-            {
-                won = await store.FindReplayAsync(envelope, requestHash, cancellationToken, commandName);
-            }
-            catch (SalesDraftStoreException raced)
-            {
-                return Store(raced);
-            }
+            var won = await FindReplayAsync(scope, permission, envelope, requestHash, commandName, cancellationToken);
 
             if (won is not null)
             {

@@ -21,6 +21,7 @@ public static class DocumentsRuntimeExtensions
         services.AddScoped<IDocumentOwnerLinkPortV1, CounterpartyDocumentOwnerLinkPort>();
         services.AddScoped<IDocumentOwnerLinkPortV1, InventoryDocumentOwnerLinkPort>();
         services.AddScoped<IDocumentOwnerLinkPortV1, PurchasingDocumentOwnerLinkPort>();
+        services.AddScoped<IDocumentOwnerLinkPortV1, SalesDocumentOwnerLinkPort>();
         return services.AddDocumentsModule(
             configuration,
             (provider, options) => options.AddInterceptors(provider.GetRequiredService<AuditSaveChangesInterceptor>()),
