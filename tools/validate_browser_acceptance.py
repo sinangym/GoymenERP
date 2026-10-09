@@ -375,7 +375,8 @@ SUITE_IDENTITY_PERMISSIONS = {
     # two owner-read names are the same intersection the real Purchasing create command already uses;
     # this closed list grants nothing outside the disposable normal profile.
     # PUR-HOST (#478, user decision #5831467690): the disposable receiver adds only goods-receipts.record, and a
-    # separate stock reader adds only the two Inventory label reads that show the SAME received label.
+    # separate stock reader adds the two Inventory label reads plus Product's operational-selection owner read
+    # required by the Inventory screen that shows the SAME received label.
     "pur01": ("purchasing.orders.read", "purchasing.orders.approve", "purchasing.orders.create",
               "counterparty.parties.read", "product.operational-selection.read",
               "documents.files.read", "documents.files.upload",
