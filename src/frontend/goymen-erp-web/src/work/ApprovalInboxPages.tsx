@@ -12,7 +12,7 @@
  * actor) remounts the list, so nothing of one source is ever shown under another.
  */
 
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link, useParams, useSearchParams } from 'react-router'
 import { fetchApprovalDetail, fetchApprovalPage } from './approvalInboxApi'
@@ -96,7 +96,12 @@ export function ApprovalInboxPage() {
       : null}
     {/* Remounted per context AND per source: rows, cursors, errors and late answers never cross either. */}
     <SourceInbox key={memoryKey} source={source} generation={remembered.generation} closed={remembered.closed}
-      onClosed={(state) => setMemory((all) => ({ ...all, [memoryKey]: { generation: remembered.generation, closed: state } }))}
+      onClosed={(state, generation) => setMemory((all) => {
+        // Only a closure of the generation this source is on now: a late answer of an older read (#647 K2 delta P2)
+        // can neither close a recovered list nor roll its generation back.
+        const current = all[memoryKey] ?? { generation: 0, closed: null }
+        return current.generation === generation ? { ...all, [memoryKey]: { generation, closed: state } } : all
+      })}
       onRestart={() => setMemory((all) => ({ ...all, [memoryKey]: { generation: (all[memoryKey]?.generation ?? 0) + 1, closed: null } }))} />
   </section>
 }
@@ -115,7 +120,7 @@ function SourceInbox({ source, generation, closed, onClosed, onRestart }: {
   readonly generation: number
   /** Set by a terminal next-page answer; survives a source switch (see `SourceMemory`). */
   readonly closed: RemoteViewState<unknown> | null
-  readonly onClosed: (state: RemoteViewState<unknown>) => void
+  readonly onClosed: (state: RemoteViewState<unknown>, generation: number) => void
   readonly onRestart: () => void
 }) {
   const { shell, namespace, companyId } = useBoundCompany()
@@ -135,8 +140,14 @@ function SourceInbox({ source, generation, closed, onClosed, onRestart }: {
   const [cursor, setCursor] = useState<string | null | undefined>(undefined)
   const [continuation, setContinuation] = useState<'idle' | 'loading' | RemoteViewState<unknown>>('idle')
   const loadingRef = useRef(false)
-  // Bumped by a restart: a next-page answer of the list before it is dropped.
+  // Bumped by a restart and on unmount: a next-page answer of a list that was restarted or left is dropped.
   const attemptRef = useRef(0)
+  useEffect(() => {
+    const attempts = attemptRef
+    return () => {
+      attempts.current += 1
+    }
+  }, [])
   const firstPage = first.data?.type === 'ok-single' ? first.data.data : null
   const nextCursor = cursor === undefined ? (firstPage?.nextCursor ?? null) : cursor
 
@@ -166,9 +177,9 @@ function SourceInbox({ source, generation, closed, onClosed, onRestart }: {
       setContinuation(state)
     } else {
       setContinuation('idle')
-      onClosed(state)
+      onClosed(state, generation)
     }
-  }, [boundary, companyId, firstPage, nextCursor, onClosed, source.kind])
+  }, [boundary, companyId, firstPage, generation, nextCursor, onClosed, source.kind])
 
   const restart = () => {
     attemptRef.current += 1

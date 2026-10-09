@@ -542,3 +542,59 @@ function deferredResponse() {
     resolve: (response: Response) => release(response),
   }
 }
+
+/**
+ * #647 K2 delta P2: an old Sales instance's continuation answers terminally only AFTER the user left, came back, had
+ * the new instance closed and recovered it. That late answer must neither close the recovered list nor roll its read
+ * generation back (which would let a later restart reuse a cached first page instead of a fresh cursorless GET).
+ */
+describe('/onaylarim — a late terminal answer of a left source instance', () => {
+  it('cannot close the recovered list or roll back its generation (30 s cache)', async () => {
+    const SALES_LIST = '/api/v1/work/approvals?kind=sales.order-draft.v1'
+    const FOREIGN = json({ companyId: OTHER_COMPANY, items: [{ ...salesItem, approvalId: '22222222-2222-4222-8222-222222222222', companyId: OTHER_COMPANY }], nextCursor: null })
+    let release!: (response: Response) => void
+    const oldContinuation = new Promise<Response>((resolve) => { release = resolve })
+    let continuations = 0
+    const { work } = installFetch([APPROVE, SALES_CAPABILITY.ordersApprove, SALES_CAPABILITY.draftsDetail], {
+      list: (url) => {
+        if (!url.includes('kind=sales.order-draft.v1')) return json({ companyId: COMPANY, items: [item], nextCursor: null })
+        if (!url.includes('cursor=')) return json({ companyId: COMPANY, items: [salesItem], nextCursor: 's-1' })
+        continuations += 1
+        // R0 (the first continuation, of the instance the user leaves) stays pending; later ones are terminal at once.
+        return continuations === 1 ? oldContinuation as unknown as Response : FOREIGN.clone()
+      },
+    })
+    await renderAt('/onaylarim?kaynak=satis', 30_000)
+    const user = userEvent.setup()
+    const sourceLink = (name: string) => within(screen.getByRole('navigation', { name: APPROVALS_TEXT.sources })).getByRole('link', { name })
+    const salesRows = () => document.querySelectorAll(`[data-approval-id="${DRAFT}"]`).length
+    const cursorlessSalesReads = () => work().filter((call) => call.url === SALES_LIST).length
+
+    // R0 starts in the first Sales instance, then the user leaves and comes back.
+    await user.click(await screen.findByRole('button', { name: APPROVALS_TEXT.loadMore }))
+    await waitFor(() => expect(continuations).toBe(1))
+    await user.click(sourceLink('Finans'))
+    await user.click(sourceLink('Satış'))
+    // The new instance: its own continuation is terminal → closed → restart → fresh cursorless first page.
+    await user.click(await screen.findByRole('button', { name: APPROVALS_TEXT.loadMore }))
+    await screen.findByTestId('work-approvals-closed')
+    const beforeRestart = cursorlessSalesReads()
+    await user.click(screen.getByRole('button', { name: APPROVALS_TEXT.restart }))
+    await waitFor(() => expect(salesRows()).toBe(1))
+    expect(cursorlessSalesReads()).toBe(beforeRestart + 1)
+
+    // Now the old R0 answers terminally: nothing changes.
+    release(FOREIGN.clone())
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(screen.queryByTestId('work-approvals-closed')).toBeNull()
+    expect(salesRows()).toBe(1)
+
+    // The generation was not rolled back: the next closure's restart still reads a fresh cursorless first page.
+    await user.click(screen.getByRole('button', { name: APPROVALS_TEXT.loadMore }))
+    await screen.findByTestId('work-approvals-closed')
+    const beforeSecondRestart = cursorlessSalesReads()
+    await user.click(screen.getByRole('button', { name: APPROVALS_TEXT.restart }))
+    await waitFor(() => expect(salesRows()).toBe(1))
+    expect(cursorlessSalesReads()).toBe(beforeSecondRestart + 1)
+  })
+})
