@@ -3,6 +3,10 @@ using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Sales.Application;
 using GoymenERP.Modules.Sales.Application.Contracts;
+using GoymenERP.Modules.Sales.Infrastructure;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Primitives;
 
 namespace GoymenERP.Sales.UnitTests;
 
@@ -51,7 +55,7 @@ public sealed class SalesOrderDraftPendingApprovalReadServiceV1Tests
     }
 
     [Fact]
-    public async Task Missing_approve_authority_denies_before_the_owner()
+    public async Task Missing_approve_authority_denies_before_the_owner_and_registration_is_scoped()
     {
         var drafts = Drafts();
         var fixture = Fixture(drafts, permission => permission == SalesPermissionManifestV1.DraftsRead);
@@ -62,6 +66,16 @@ public sealed class SalesOrderDraftPendingApprovalReadServiceV1Tests
         Assert.Null(result.Resource);
         Assert.Equal(0, drafts.ListCalls);
         Assert.Equal(0, drafts.DetailCalls);
+
+        var services = new ServiceCollection();
+        services.AddSalesModule(new TestConfiguration(new Dictionary<string, string?>
+        {
+            ["DB_CONNECTION_STRING"] = "Server=(local);Database=SENTETIK;Trusted_Connection=True;",
+        }));
+        var registration = Assert.Single(services, descriptor =>
+            descriptor.ServiceType == typeof(ISalesOrderDraftPendingApprovalReadServiceV1));
+        Assert.Equal(ServiceLifetime.Scoped, registration.Lifetime);
+        Assert.Equal(typeof(SalesOrderDraftPendingApprovalReadServiceV1), registration.ImplementationType);
     }
 
     [Fact]
@@ -214,5 +228,58 @@ public sealed class SalesOrderDraftPendingApprovalReadServiceV1Tests
                     new HashSet<Guid>(), new HashSet<Guid>())
                 : PermissionScope.Denied);
         }
+    }
+
+    private sealed class TestConfiguration(IReadOnlyDictionary<string, string?> values) : IConfiguration
+    {
+        public string? this[string key]
+        {
+            get => values.TryGetValue(key, out var value) ? value : null;
+            set => throw new NotSupportedException();
+        }
+
+        public IEnumerable<IConfigurationSection> GetChildren() => [];
+
+        public IChangeToken GetReloadToken() => NeverChangeToken.Instance;
+
+        public IConfigurationSection GetSection(string key) => new TestConfigurationSection(this, key, key);
+    }
+
+    private sealed class TestConfigurationSection(TestConfiguration root, string key, string path)
+        : IConfigurationSection
+    {
+        public string Key { get; } = key;
+        public string Path { get; } = path;
+        public string? Value
+        {
+            get => root[Path];
+            set => throw new NotSupportedException();
+        }
+        public string? this[string key]
+        {
+            get => root[$"{Path}:{key}"];
+            set => throw new NotSupportedException();
+        }
+
+        public IEnumerable<IConfigurationSection> GetChildren() => [];
+
+        public IChangeToken GetReloadToken() => NeverChangeToken.Instance;
+
+        public IConfigurationSection GetSection(string key) =>
+            new TestConfigurationSection(root, key, $"{Path}:{key}");
+    }
+
+    private sealed class NeverChangeToken : IChangeToken
+    {
+        public static NeverChangeToken Instance { get; } = new();
+        public bool HasChanged => false;
+        public bool ActiveChangeCallbacks => false;
+        public IDisposable RegisterChangeCallback(Action<object?> callback, object? state) => NoopDisposable.Instance;
+    }
+
+    private sealed class NoopDisposable : IDisposable
+    {
+        public static NoopDisposable Instance { get; } = new();
+        public void Dispose() { }
     }
 }
