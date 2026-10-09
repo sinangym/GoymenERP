@@ -17,7 +17,7 @@
     "browser:s03:ci": "playwright test --config playwright.sales-s03.config.ts",
     "browser:u02:ci": "playwright test --config playwright.product-u02.config.ts",
     "browser:mfg:ci": "playwright test --config playwright.browser-mfg.config.ts",
-    "browser:fin01:ci": "playwright test --config playwright.finance-fin01.config.ts",
+    "browser:fin01:ci": "playwright test --config playwright.finance-work-approvals.config.ts",
     "browser:s04:ci": "playwright test --config playwright.sales-s04.config.ts",
     "browser:acc01:ci": "playwright test --config playwright.accounting-acc01.config.ts",
     "browser:l04:ci": "playwright test --config playwright.logistics-l04.config.ts",
