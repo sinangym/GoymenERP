@@ -16,10 +16,11 @@ export const DOCUMENTS_PATH = '/documents'
 export const REPLAY_HEADER = 'Idempotency-Replayed'
 export const CREATED_STATUS = 201
 
-/** The owner-declared link kinds the client knows. Only the Cari party today. */
+/** The owner-declared link kinds the client knows. */
 export const OWNER_KIND = {
   counterpartyParty: 'counterparty.party',
   inventoryMaterialLabel: 'inventory.material-label',
+  purchasingPurchaseOrder: 'purchasing.purchase-order',
 } as const
 export type OwnerKind = (typeof OWNER_KIND)[keyof typeof OWNER_KIND]
 

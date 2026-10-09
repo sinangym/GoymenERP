@@ -895,7 +895,15 @@ class WorkflowTests(unittest.TestCase):
             validator.SUITE_IDENTITY_PERMISSIONS["l04"],
         )
 
-    def test_pur01_identity_permissions_are_the_creator_owner_reads_and_existing_approval_axis(self):
+    @staticmethod
+    def _pur01_environment():
+        source = (ROOT / "infra" / "browser-suites" / "pur01.override.yml").read_text(encoding="utf-8")
+        return {
+            key: value.strip().strip('"')
+            for key, value in re.findall(r"^\s{6}([A-Za-z0-9_]+):\s+([^\r\n]+)$", source, re.MULTILINE)
+        }
+
+    def test_pur01_identity_permissions_include_creator_documents_and_existing_axes(self):
         self.assertEqual(
             (
                 "purchasing.orders.read",
@@ -903,12 +911,61 @@ class WorkflowTests(unittest.TestCase):
                 "purchasing.orders.create",
                 "counterparty.parties.read",
                 "product.operational-selection.read",
+                "documents.files.read",
+                "documents.files.upload",
                 "purchasing.goods-receipts.record",
                 "inventory.labels.read",
                 "inventory.balances.read",
             ),
             validator.SUITE_IDENTITY_PERMISSIONS["pur01"],
         )
+
+    def test_pur01_document_permissions_belong_only_to_creator(self):
+        environment = self._pur01_environment()
+
+        validator.validate_suite_extensions("pur01", environment)
+
+        self.assertEqual(
+            (
+                "purchasing.orders.create",
+                "purchasing.orders.read",
+                "counterparty.parties.read",
+                "product.operational-selection.read",
+                "documents.files.read",
+                "documents.files.upload",
+            ),
+            tuple(environment[f"IdentitySeed__Roles__7__Permissions__{index}"] for index in range(6)),
+        )
+        self.assertEqual(
+            ("purchasing.orders.read",),
+            tuple(environment[f"IdentitySeed__Roles__6__Permissions__{index}"] for index in range(1)),
+        )
+
+    def test_pur01_stock_reader_matches_the_inventory_screen_fence(self):
+        environment = self._pur01_environment()
+
+        validator.validate_suite_extensions("pur01", environment)
+
+        self.assertEqual(
+            ("inventory.labels.read", "inventory.balances.read", "product.operational-selection.read"),
+            tuple(environment[f"IdentitySeed__Roles__9__Permissions__{index}"] for index in range(3)),
+        )
+
+        missing_product_read = self._pur01_environment()
+        del missing_product_read["IdentitySeed__Roles__9__Permissions__2"]
+        with self.assertRaisesRegex(ValueError, "pur01-stock-reader requires its exact isolated permissions"):
+            validator.validate_suite_extensions("pur01", missing_product_read)
+
+    def test_pur01_document_permission_drift_fails_closed(self):
+        reader_grant = self._pur01_environment()
+        reader_grant["IdentitySeed__Roles__6__Permissions__1"] = "documents.files.read"
+        with self.assertRaisesRegex(ValueError, "pur01-reader requires its exact isolated permissions"):
+            validator.validate_suite_extensions("pur01", reader_grant)
+
+        creator_missing_upload = self._pur01_environment()
+        del creator_missing_upload["IdentitySeed__Roles__7__Permissions__5"]
+        with self.assertRaisesRegex(ValueError, "pur01-creator requires its exact isolated permissions"):
+            validator.validate_suite_extensions("pur01", creator_missing_upload)
 
     def test_r14_identity_permissions_are_the_command_detail_reads_and_location_arranger(self):
         self.assertEqual(

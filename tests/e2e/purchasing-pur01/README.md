@@ -26,6 +26,16 @@ same stack:
   one acceptance, lot, label, receipt movement, movement line and Inventory command;
 - the approver and the reader open the same order without the receipt control, and their direct calls are 403.
 
+The document-vault journey (`pur01-documents-journey.spec.ts`, P-03) uses the same seeded Purchase Order:
+
+- the creator role must publish `documents.files.read` and `documents.files.upload` only in the disposable PUR01
+  override; the ordinary order reader deliberately has neither Documents capability;
+- an empty order vault uploads one real PNG, loses only the first HTTP answer after commit, retries the same
+  key/file/company and receives the exact replay;
+- the user closes the order, reopens the same record, previews and downloads the stored image;
+- the ordinary reader gets no panel, while foreign-company and unknown owners remain non-disclosing;
+- read-only SQL proves exactly one document, version, owner link, upload attempt and audit event.
+
 The suite adds no production grant, role, policy, local database, mock response, or alternate API. Fixture
 rows are preconditions, not user acceptance; only the browser's real create/close/reopen/approve flow,
 fresh reads, replay, and negative calls are acceptance evidence.

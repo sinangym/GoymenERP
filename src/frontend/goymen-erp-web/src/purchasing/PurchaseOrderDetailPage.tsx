@@ -14,6 +14,8 @@ import styles from './purchasing.module.css'
 import { GoodsReceiptPanel } from './GoodsReceiptPanel'
 import { PURCHASE_GOODS_RECEIPT_CAPABILITY } from './goodsReceiptContract'
 import { PURCHASE_ORDER_DETAIL_TEXT as T } from './purchaseOrderDetailText'
+import { DocumentsPanel } from '../documents/DocumentsPanel'
+import { OWNER_KIND } from '../documents/contract'
 
 function newId(): string {
   if (typeof globalThis.crypto?.randomUUID === 'function') return globalThis.crypto.randomUUID()
@@ -119,6 +121,13 @@ function PurchaseOrderDetail({ namespace }: { readonly namespace: string | null 
         ? <p>{T.acceptanceHistoryEmpty}</p>
         : <div className={styles.tableWrap}><table><thead><tr><th>{T.acceptanceId}</th><th>{T.lineNo}</th><th>{T.quantity}</th><th>{T.recordedAtUtc}</th></tr></thead><tbody>{acceptances.map((acceptance) => <tr key={acceptance.acceptanceId} data-testid={`purchase-order-acceptance-${acceptance.acceptanceId}`}><td className={styles.mono}>{acceptance.acceptanceId}</td><td>{lineNoById.get(acceptance.lineId) ?? T.lineUnavailable}</td><td>{acceptance.quantity}</td><td><time dateTime={acceptance.recordedAtUtc}>{acceptance.recordedAtUtc}</time></td></tr>)}</tbody></table></div>}
     </section> : null}
+    {isCurrentDetail && namespace !== null ? <DocumentsPanel
+      ownerKind={OWNER_KIND.purchasingPurchaseOrder}
+      ownerId={order.id}
+      companyId={companyId}
+      namespace={namespace}
+      entryGeneration={shell.routeEntryGeneration}
+    /> : null}
     {canApprove ? outcomeNotice : null}
     {canApprove && (order.status === 'Draft' || unresolved) ? <section className={styles.actionCard}><h2>Siparişi onayla</h2><p>Onay, talep satırı paylarını sunucuda yeniden ölçer. Fiyat veya stok hareketi üretmez.</p>{attempt.phase === 'unknown' ? <p role="alert" className={styles.warning}>Sonuç bilinmiyor. Yeni işlem başlatmadan aynı anahtar ve sürümle yeniden gönderin.</p> : null}<button type="button" disabled={attempt.phase === 'submitting'} onClick={() => void sendApproval(attempt.phase === 'unknown' ? attempt.snapshot : undefined)}>{attempt.phase === 'submitting' ? 'Gönderiliyor…' : attempt.phase === 'unknown' ? 'Aynı onayı yeniden gönder' : 'Onayla'}</button></section> : null}
     {namespace === null ? null : <GoodsReceiptPanel enabled={hasCapability(shell, PURCHASE_GOODS_RECEIPT_CAPABILITY as never)}

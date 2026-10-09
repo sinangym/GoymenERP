@@ -18,6 +18,7 @@ const scenario = vi.hoisted(() => ({
   routeEntryGeneration: 1,
   lines: [] as PurchaseOrderLine[],
   acceptances: [] as PurchaseOrderAcceptanceHistory[],
+  documentMounts: [] as Array<Record<string, unknown>>,
 }))
 const COMPANY = '22222222-2222-4222-8222-222222222222'
 const ORDER = '11111111-1111-4111-8111-111111111111'
@@ -109,6 +110,13 @@ vi.mock('./GoodsReceiptPanel', () => ({
     : null,
 }))
 
+vi.mock('../documents/DocumentsPanel', () => ({
+  DocumentsPanel: (props: Record<string, unknown>) => {
+    scenario.documentMounts.push(props)
+    return <section aria-label="Sipariş belge kasası">Belgeler</section>
+  },
+}))
+
 function LocationReceipt() {
   const location = useLocation()
   return <output aria-label="Navigation state">{JSON.stringify(location.state)}</output>
@@ -141,7 +149,36 @@ beforeEach(() => {
   scenario.routeEntryGeneration = 1
   scenario.lines = []
   scenario.acceptances = []
+  scenario.documentMounts = []
   sessionStorage.clear()
+})
+
+describe('PurchaseOrderDetailPage document-vault mount', () => {
+  it('binds the exact current order, company, namespace and route generation', () => {
+    scenario.routeEntryGeneration = 7
+    renderDetail()
+
+    expect(screen.getByRole('region', { name: 'Sipariş belge kasası' })).toBeTruthy()
+    expect(scenario.documentMounts).toEqual([expect.objectContaining({
+      ownerKind: 'purchasing.purchase-order',
+      ownerId: ORDER,
+      companyId: COMPANY,
+      namespace: 'fixture',
+      entryGeneration: 7,
+    })])
+  })
+
+  it.each([
+    { name: 'foreign company answer', detailCompanyId: OTHER_COMPANY, detailOrderId: ORDER },
+    { name: 'another order answer', detailCompanyId: COMPANY, detailOrderId: OTHER_ORDER },
+  ])('does not mount for $name', ({ detailCompanyId, detailOrderId }) => {
+    scenario.detailCompanyId = detailCompanyId
+    scenario.detailOrderId = detailOrderId
+    renderDetail()
+
+    expect(screen.queryByRole('region', { name: 'Sipariş belge kasası' })).toBeNull()
+    expect(scenario.documentMounts).toEqual([])
+  })
 })
 
 describe('PurchaseOrderDetailPage canonical acceptance history', () => {

@@ -1,15 +1,17 @@
 # PUR-01 Purchasing order acceptance. Three disposable actors are appended to the canonical development
 # identities and exist only in the per-run SQL database. The creator can create/read and carries the two
-# owner-read permissions the real Purchasing command already requires; the approver can read/approve and
-# the reader can only read. The existing Product runtime's synthetic issuer binding enables its owned
+# owner-read permissions the real Purchasing command already requires plus the two P-03 Document Vault
+# permissions; the approver can read/approve and the reader can only read. The existing Product runtime's
+# synthetic issuer binding enables its owned
 # migrations before the gated fixture runs; its Identity user is not a Bootstrap actor and has no role,
 # assignment or permission. Every actor assignment is company-wide in GDC. No production role,
 # permission or user is changed.
 # PUR-HOST goods receipt (#478): by the user's decision (#5831467690, coordinator session 2026-09-26) two more
 # disposable actors exist only in this per-run database: the receiver holds exactly purchasing.orders.read +
 # purchasing.goods-receipts.record (the record command, its location options, its history and its shell control),
-# and a separate Inventory stock reader holds inventory.labels.read + inventory.balances.read to show the SAME
-# label. No real user, production role or seeded role receives purchasing.goods-receipts.record.
+# and a separate Inventory stock reader holds the Inventory screen's exact three-read fence:
+# inventory.labels.read + inventory.balances.read + product.operational-selection.read, to show the SAME label.
+# No real user, production role or seeded role receives purchasing.goods-receipts.record.
 services:
   api:
     environment:
@@ -74,6 +76,8 @@ services:
       IdentitySeed__Roles__7__Permissions__1: purchasing.orders.read
       IdentitySeed__Roles__7__Permissions__2: counterparty.parties.read
       IdentitySeed__Roles__7__Permissions__3: product.operational-selection.read
+      IdentitySeed__Roles__7__Permissions__4: documents.files.read
+      IdentitySeed__Roles__7__Permissions__5: documents.files.upload
       IdentitySeed__Roles__8__Id: b3000000-0000-4000-8000-000000000604
       IdentitySeed__Roles__8__Code: BROWSER_PUR01_RECEIVER
       IdentitySeed__Roles__8__Name: SENTETIK browser-suite:pur01 Purchasing goods receiver
@@ -86,6 +90,7 @@ services:
       IdentitySeed__Roles__9__IsSystem: "false"
       IdentitySeed__Roles__9__Permissions__0: inventory.labels.read
       IdentitySeed__Roles__9__Permissions__1: inventory.balances.read
+      IdentitySeed__Roles__9__Permissions__2: product.operational-selection.read
       IdentitySeed__Assignments__7__Id: b4000000-0000-4000-8000-000000000601
       IdentitySeed__Assignments__7__UserId: b2000000-0000-4000-8000-000000000601
       IdentitySeed__Assignments__7__RoleId: b3000000-0000-4000-8000-000000000601
