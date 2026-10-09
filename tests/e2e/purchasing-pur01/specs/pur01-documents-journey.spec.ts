@@ -163,7 +163,7 @@ test('PUR01-DOC uploads once, reopens, previews/downloads and hides the vault fr
           (SELECT COUNT(*) FROM documents.DocumentLinks WHERE CompanyId=@companyId AND DocumentId=@documentId
             AND OwnerKind=@ownerKind AND OwnerId=@ownerId) AS links,
           (SELECT COUNT(*) FROM documents.DocumentAttempts WHERE CompanyId=@companyId AND DocumentId=@documentId
-            AND CommandName=N'documents.document.upload.v1') AS attempts,
+            AND CommandName=N'documents.upload.v1') AS attempts,
           (SELECT COUNT(*) FROM audit.AuditEvents WHERE CompanyId=@companyId AND EntityId=@entityId
             AND EventType=N'documents.document.uploaded.v1') AS audits`)
     expect(effects.recordset[0]).toEqual({ documents: 1, versions: 1, links: 1, attempts: 1, audits: 1 })
