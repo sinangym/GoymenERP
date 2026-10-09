@@ -13,6 +13,7 @@ using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace GoymenERP.Api.IntegrationTests;
 
@@ -243,6 +244,63 @@ public sealed class CounterpartyContactInformationSqlServerRelationalAcceptanceT
         Assert.Equal(ownB.GetRawText(), (await ReadAsync(b, path)).GetRawText());
         Assert.Equal(2, await test.ScalarAsync<int>(
             "SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [EventType]=@Event;", party));
+    }
+
+    [SqlServerFact]
+    public async Task ContactCard_FreshAuthorityRevocationAfterOwnerReadDoesNotDiscloseOrPersist()
+    {
+        var authority = new SwitchableFreshAuthority(revoked: true);
+        await using var test = new ContactTest(freshAuthority: authority);
+        using var client = test.Client();
+        var party = await CreateAsync(client);
+        var path = PathFor(party);
+
+        using var deniedRead = await client.GetAsync(path);
+        Assert.Equal(HttpStatusCode.Forbidden, deniedRead.StatusCode);
+        Assert.DoesNotContain(
+            "information",
+            await deniedRead.Content.ReadAsStringAsync(),
+            StringComparison.OrdinalIgnoreCase);
+
+        NewKey(client);
+        using var deniedWrite = await PutAsync(
+            client,
+            path,
+            """{"expectedVersion":"1","changes":{"phone":"must-not-persist"}}""");
+        Assert.Equal(HttpStatusCode.Forbidden, deniedWrite.StatusCode);
+        Assert.Equal(1, await test.ScalarAsync<long>(
+            "SELECT [Version] FROM [counterparty].[CompanyPartyAccounts] WHERE [PartyId]=@Party;", party));
+        Assert.Equal(0, await test.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [EventType]=@Event;", party));
+        Assert.Equal(0, await test.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM [idempotency].[CommandExecutions] WHERE [CommandName]=@Command;", party));
+        Assert.True(authority.Measurements >= 2);
+    }
+
+    [SqlServerFact]
+    public async Task ContactCard_PersistedReplayRequiresFreshAuthorityAndKeepsSingleEffect()
+    {
+        var authority = new SwitchableFreshAuthority();
+        await using var test = new ContactTest(freshAuthority: authority);
+        using var client = test.Client();
+        var party = await CreateAsync(client);
+        var path = PathFor(party);
+        const string body = """{"expectedVersion":"1","changes":{"phone":"001"}}""";
+        NewKey(client);
+
+        using var saved = await PutAsync(client, path, body);
+        Assert.Equal(HttpStatusCode.NoContent, saved.StatusCode);
+        authority.Revoke();
+        using var deniedReplay = await PutAsync(client, path, body);
+
+        Assert.Equal(HttpStatusCode.Forbidden, deniedReplay.StatusCode);
+        Assert.False(deniedReplay.Headers.Contains("Idempotency-Replayed"));
+        Assert.Equal(2, await test.ScalarAsync<long>(
+            "SELECT [Version] FROM [counterparty].[CompanyPartyAccounts] WHERE [PartyId]=@Party;", party));
+        Assert.Equal(1, await test.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [EventType]=@Event;", party));
+        Assert.Equal(1, await test.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM [idempotency].[CommandExecutions] WHERE [CommandName]=@Command;", party));
     }
 
     [SqlServerFact]
@@ -533,12 +591,20 @@ public sealed class CounterpartyContactInformationSqlServerRelationalAcceptanceT
         private readonly string _baseConnection = Environment.GetEnvironmentVariable(
             SqlServerRelationalAcceptanceTests.ConnectionStringEnvironmentVariable)!;
 
-        public ContactTest(bool grantBasic = true, SaveChangesInterceptor? beforeSave = null)
+        public ContactTest(
+            bool grantBasic = true,
+            SaveChangesInterceptor? beforeSave = null,
+            IErpAuthorityRevalidationService? freshAuthority = null)
         {
             Factory = new SqlServerRelationalApiFactory(_baseConnection, services =>
             {
                 if (beforeSave is not null)
                     services.AddDbContext<CounterpartyDbContext>((_, options) => options.AddInterceptors(beforeSave));
+                if (freshAuthority is not null)
+                {
+                    services.RemoveAll<IErpAuthorityRevalidationService>();
+                    services.AddSingleton(freshAuthority);
+                }
                 if (grantBasic)
                 {
                     services.PostConfigure<IdentitySeedOptions>(options =>
@@ -595,6 +661,34 @@ public sealed class CounterpartyContactInformationSqlServerRelationalAcceptanceT
                 END;
                 """;
             await command.ExecuteNonQueryAsync();
+        }
+    }
+
+    private sealed class SwitchableFreshAuthority(bool revoked = false) : IErpAuthorityRevalidationService
+    {
+        private int _revoked = revoked ? 1 : 0;
+        private int _measurements;
+
+        public int Measurements => Volatile.Read(ref _measurements);
+
+        public void Revoke() => Volatile.Write(ref _revoked, 1);
+
+        public Task<PermissionScope> RevalidatePermissionScopeAsync(
+            string permission,
+            Guid companyId,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Interlocked.Increment(ref _measurements);
+            return Task.FromResult(Volatile.Read(ref _revoked) != 0
+                ? PermissionScope.Denied
+                : new PermissionScope(
+                    true,
+                    true,
+                    new HashSet<string>(StringComparer.Ordinal) { "SENTETIK-CONTACT-AUTHORITY" },
+                    new HashSet<Guid>(),
+                    new HashSet<Guid>(),
+                    new HashSet<Guid>()));
         }
     }
 

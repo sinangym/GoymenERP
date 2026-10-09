@@ -16,11 +16,14 @@ internal sealed partial class CounterpartyCommandService
     public async Task<CounterpartyContactInformationView?> GetContactInformationAsync(
         Guid partyId, CancellationToken cancellationToken)
     {
+        var authorityFence = CounterpartyContactInformationAuthorityFence.Capture(
+            currentUser, companyContext);
         await RequireCompanyWidePermissionAsync(ErpPermissions.CounterpartyPartiesRead, cancellationToken);
         var account = await dbContext.CompanyPartyAccounts.AsNoTracking()
             .SingleOrDefaultAsync(
-                candidate => candidate.CompanyId == companyContext.CompanyId && candidate.PartyId == partyId,
+                candidate => candidate.CompanyId == authorityFence.CompanyId && candidate.PartyId == partyId,
                 cancellationToken);
+        await RequireContactInformationReadStillAsync(authorityFence, cancellationToken);
         return account is null ? null : new(
             account.PartyId, account.Id, account.CompanyId,
             account.Version.ToString(CultureInfo.InvariantCulture), account.IsActive,
@@ -34,9 +37,18 @@ internal sealed partial class CounterpartyCommandService
         ArgumentNullException.ThrowIfNull(command);
         ArgumentNullException.ThrowIfNull(command.Changes);
         ValidateCommandMetadata(metadata);
+        var authorityFence = CounterpartyContactInformationAuthorityFence.Capture(
+            currentUser, companyContext);
+        if (authorityFence.CompanyId != metadata.CompanyId
+            || !string.Equals(authorityFence.ActorId, metadata.ActorId, StringComparison.Ordinal))
+        {
+            throw new UnauthorizedAccessException("Cari iletişim bilgisi command bağlamı değişti.");
+        }
         var scope = await RequireCompanyWidePermissionAsync(
             ErpPermissions.CounterpartyPartiesUpdateBasic, cancellationToken);
         await RequireCompanyWidePermissionAsync(ErpPermissions.CounterpartyPartiesRead, cancellationToken);
+        Func<CancellationToken, Task> beforeWrite = token =>
+            RequireContactInformationCommandStillAsync(authorityFence, token);
         if (partyId == Guid.Empty)
         {
             throw new ArgumentException("Cari kimliği boş olamaz.", nameof(partyId));
@@ -50,10 +62,12 @@ internal sealed partial class CounterpartyCommandService
         var account = await dbContext.CompanyPartyAccounts.SingleOrDefaultAsync(
             candidate => candidate.CompanyId == metadata.CompanyId && candidate.PartyId == partyId,
             cancellationToken);
+        await beforeWrite(cancellationToken);
         var existing = await FindCommandExecutionAsync(
             UpdateContactInformationCommandName, keyHash, cancellationToken);
         if (existing is not null)
         {
+            await beforeWrite(cancellationToken);
             var execution = ResolveExistingExecution(existing, requestHash, metadata);
             return account is null && execution.Response.Result == CounterpartyCommandResult.Succeeded
                 ? new(Responses.NotFound(), false, metadata.CorrelationId)
@@ -63,14 +77,14 @@ internal sealed partial class CounterpartyCommandService
         if (account is null)
         {
             return await CompleteCommandAsync(UpdateContactInformationCommandName, Responses.NotFound(),
-                keyHash, requestHash, metadata, null, cancellationToken);
+                keyHash, requestHash, metadata, null, cancellationToken, beforeWrite);
         }
 
         if (account.Version != expectedVersion)
         {
             return await CompleteCommandAsync(UpdateContactInformationCommandName,
                 Responses.VersionConflict(expectedVersion, account.Version),
-                keyHash, requestHash, metadata, null, cancellationToken);
+                keyHash, requestHash, metadata, null, cancellationToken, beforeWrite);
         }
 
         var before = CounterpartyContactInformationEditor.Load(account.ContactInformationJson);
@@ -85,9 +99,10 @@ internal sealed partial class CounterpartyCommandService
             dbContext.Entry(account).Property(value => value.ContactInformationJson).IsModified = true;
             return await CompleteCommandAsync(UpdateContactInformationCommandName, Responses.Succeeded(),
                 keyHash, requestHash, metadata, new AccountConcurrencyContext(partyId, expectedVersion),
-                cancellationToken);
+                cancellationToken, beforeWrite);
         }
 
+        await beforeWrite(cancellationToken);
         account.UpdateContactInformation(afterJson);
 
         auditEventCollector.Enqueue(new AuditEventDraft(
@@ -106,10 +121,33 @@ internal sealed partial class CounterpartyCommandService
 
         var result = await CompleteCommandAsync(UpdateContactInformationCommandName, Responses.Succeeded(),
             keyHash, requestHash, metadata, new AccountConcurrencyContext(partyId, expectedVersion),
-            cancellationToken);
+            cancellationToken, beforeWrite);
         logger.LogInformation(
             "Counterparty contact information command completed. CompanyId={CompanyId} AccountId={AccountId} CorrelationId={CorrelationId} Result={Result} IsReplay={IsReplay}",
             metadata.CompanyId, account.Id, metadata.CorrelationId, result.Response.Result, result.IsReplay);
         return result;
     }
+
+    private Task RequireContactInformationReadStillAsync(
+        CounterpartyContactInformationAuthorityFence authorityFence,
+        CancellationToken cancellationToken) =>
+        authorityFence.RequireStillAsync(
+            currentUser,
+            companyContext,
+            authorityRevalidationService,
+            [ErpPermissions.CounterpartyPartiesRead],
+            cancellationToken);
+
+    private Task RequireContactInformationCommandStillAsync(
+        CounterpartyContactInformationAuthorityFence authorityFence,
+        CancellationToken cancellationToken) =>
+        authorityFence.RequireStillAsync(
+            currentUser,
+            companyContext,
+            authorityRevalidationService,
+            [
+                ErpPermissions.CounterpartyPartiesUpdateBasic,
+                ErpPermissions.CounterpartyPartiesRead,
+            ],
+            cancellationToken);
 }
