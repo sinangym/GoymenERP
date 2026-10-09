@@ -89,8 +89,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // Re-fingerprinted for ST-04 inventory movement publication: the reviewed Inventory cursor seam is registered
     // from configuration; no key is generated and no network or hosted-service surface is added.
     // Re-fingerprinted for the Sales-Cari bounded display adapter: scoped in-process DI only; no network or hosted service.
+    // Re-fingerprinted for D-05: one scoped in-process approval-read adapter/query registration and one endpoint map;
+    // no OpenAPI-generation, network or hosted-service surface was added.
     private const string ReviewedOpenApiStartupFingerprint =
-        "6076cac5c001978467e103d1e215b9dcd3f352c49e6503ede93ccd2449de28eb";
+        "cc75400a2773dbdf79abc9355731b50138f31eb189cf7cc723b9ead7c451e24c";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedProductManufacturingTechnicalRegistrationPath =
@@ -188,8 +190,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // Party ledger: +2 SQL facts (de54339e… -> 84295fb2…).
             // Official invoice approval: +3 checker list/detail/approve/reopen and migration rollback SQL facts.
             // F-03 allocation read: +1 company/fresh-authority list/detail/reopen SQL fact.
+            // D-05 approval inbox: the existing pending-approval fact is renamed and strengthened to public HTTP/DI.
             ["tools/relational_inventory/finance.txt"] =
-                "5a32a228cf19c943a44232bc0c86588151c812bdb5b9fe1e317e1b640c5b1c83",
+                "eef003551be0201b4878e5778656914083c4ef7fde1d0a70fc3631572aa882ce",
 
             // identity
             // SY-01/SY-02: +2 IdentityAccessViewSqlServerRelationalAcceptanceTests facts (b159330c… -> a521143a…).
