@@ -263,8 +263,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // #527 Q9: +1 customer-acceptance persistence/replay/cutover fact (3ef99851… -> dd3c72d9…).
             // PL04: +1 exact price-floor approval replay/down-refusal fact.
             // Sales-Cari bounded display acceptance: +1 reviewed Sales SQL fact, kept ordinal-sorted.
+            // D-05: +1 pending-approval owner-read SQL fact, kept ordinal-sorted.
             ["tools/relational_inventory/sales.txt"] =
-                "337ce3c9ace60221990875eeb509bb55e5b281bfe51f61ea179c6ab5b9ecd253",
+                "581c2605bffcd652ee080df9e38d26fb2e28b21670dbcc88c215fff74f537b1c",
 
             // work
             // JV03: the five ordinal desired-state storage SQL facts are mandatory and skip-free.
