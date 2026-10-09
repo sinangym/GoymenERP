@@ -290,7 +290,8 @@ SUITE_IDENTITY_PERMISSIONS = {
         "counterparty.parties.read",
     ),
     # The Finance names and the Cari owner's authorized party read. The list is the complete
-    # union of the disposable proposer, approver and read-only allocation reader grants in fin01.override.yml.
+    # union of the disposable Finance actors plus the Work acceptance's Sales preparer,
+    # Sales-only approver and combined Finance+Sales approver in fin01.override.yml.
     "fin01": (
         "finance.bank-account.read",
         "finance.bank-account.propose",
@@ -325,6 +326,9 @@ SUITE_IDENTITY_PERMISSIONS = {
         # allocation created from the imported open item. These are existing Finance permissions.
         "finance.allocation.read",
         "finance.allocation.write",
+        "sales.drafts.create",
+        "sales.drafts.read",
+        "sales.orders.approve",
     ),
     # SALES-A1's approval axis: the preparer creates and reads, the approver approves and reads, the reader reads.
     # SALES-A2a: the preparer reaches the Cari owner's contact information through its OWN party read.
@@ -545,10 +549,16 @@ def validate_suite_identity(suite: str, extra: dict, actor_ids: list[str]) -> No
                                "b4000000-0000-4000-8000-00000000f102"),
             "fin01-reader": ("b3000000-0000-4000-8000-00000000f103", "BROWSER_FIN01_ALLOCATION_READER",
                              "b4000000-0000-4000-8000-00000000f103"),
+            "fin01-sales-preparer": ("b3000000-0000-4000-8000-00000000f105", "BROWSER_FIN01_SALES_PREPARER",
+                                      "b4000000-0000-4000-8000-00000000f105"),
+            "fin01-sales-approver": ("b3000000-0000-4000-8000-00000000f106", "BROWSER_FIN01_SALES_APPROVER",
+                                      "b4000000-0000-4000-8000-00000000f106"),
+            "fin01-both-approver": ("b3000000-0000-4000-8000-00000000f107", "BROWSER_FIN01_COMBINED_APPROVER",
+                                     "b4000000-0000-4000-8000-00000000f107"),
         }
         require(set(actor_ids) == set(expected), "fin01 requires its exact disposable actor set")
-        require(len(roles) == 4 and len(grouped["Assignments"]) == 4,
-                "fin01 requires its three GDC roles plus one isolated GSP approval role")
+        require(len(roles) == 7 and len(grouped["Assignments"]) == 7,
+                "fin01 requires its six GDC roles plus one isolated GSP approval role")
         actor_users = {subject: identity_id for identity_id, subject in users.items()}
         for actor, (role_id, role_code, assignment_id) in expected.items():
             role = roles.get(role_id)
@@ -559,6 +569,34 @@ def validate_suite_identity(suite: str, extra: dict, actor_ids: list[str]) -> No
             require(len(matching) == 1 and matching[0]["Id"] == assignment_id
                     and matching[0]["RoleId"] == role_id,
                     f"{actor} requires its exact GDC assignment")
+
+        work_permissions = {
+            "fin01-approver": (
+                "finance.bank-account.read",
+                "finance.bank-account.approve",
+                "finance.manual-receipt.reverse.approve",
+                "accounting.periods.read",
+                "finance.manual-bank-payment.draft.read",
+                "finance.manual-bank-payment.approve",
+                "finance.manual-bank-payment.record",
+                "counterparty.parties.read",
+                "finance.official-invoice-import.approve",
+                "finance.manual-receipt.draft.read",
+                "finance.allocation.read",
+                "finance.allocation.write",
+                "finance.manual-receipt.amount.read",
+            ),
+            "fin01-sales-preparer": ("sales.drafts.create", "sales.drafts.read"),
+            "fin01-sales-approver": ("sales.drafts.read", "sales.orders.approve"),
+            "fin01-both-approver": (
+                "finance.official-invoice-import.approve", "sales.drafts.read", "sales.orders.approve"),
+        }
+        for actor, permissions in work_permissions.items():
+            role = roles[expected[actor][0]]
+            actual = tuple(role[f"Permissions__{index}"] for index in range(len(permissions)))
+            permission_keys = [key for key in role if key.startswith("Permissions__")]
+            require(len(permission_keys) == len(permissions) and actual == permissions,
+                    f"{actor} requires its exact isolated Work permissions")
 
         gsp_role_id = "b3000000-0000-4000-8000-00000000f104"
         gsp_role = roles.get(gsp_role_id)
@@ -695,10 +733,12 @@ SUITE_FIXTURE_OUTPUTS: dict[str, frozenset[str]] = {
         "outputRequiredDocuments", "outputOwnerKind", "outputOwnerId", "outputCustodianKind",
         "outputCustodianId", "outputLocationId", "outputInitialBlock",
     }),
-    # FİNANS's Suites/Fin01 seed (#332): the company, the customer opened through the real Cari API and
-    # its company account, and the three suite actors. No SQL, no gated writer, no Finance row.
+    # FİNANS's Suites/Fin01 seed (#332): the companies, real Cari customer, Finance actors and the
+    # Work acceptance's isolated Sales/combined personas. Its fixed Sales draft uses only the gated
+    # disposable writer and the real Sales submission command.
     "fin01": frozenset({
         "companyId", "otherCompanyId", "partyId", "companyAccountId", "proposerActor", "approverActor", "readerActor",
+        "salesPreparerActor", "financeOnlyActor", "salesOnlyActor", "bothActor", "neitherActor", "salesDraftId", "financeBatchId",
     }),
     # SİPARİŞ's Suites/S04 seed: the three actors, the company and the one Preparing draft written through
     # the gated Sales draft writer (C01E2eSalesDraftFixtureWriter).
@@ -783,8 +823,19 @@ def seed_export(suite: str, seed: object) -> str:
                 and len(set(actor_values)) == len(actor_keys),
                 "u02 seed actors must be distinct and use the exact Inventory recorder")
     if suite == "fin01":
-        actors = [seed[key] for key in ("proposerActor", "approverActor", "readerActor")]
+        require(isinstance(seed["financeBatchId"], str)
+                and _ANY_GUID.fullmatch(seed["financeBatchId"]) is not None
+                and seed["financeBatchId"] != "00000000-0000-0000-0000-000000000000",
+                "fin01 financeBatchId must be a canonical nonzero lowercase GUID")
+        actors = [seed[key] for key in (
+            "proposerActor", "approverActor", "readerActor", "salesPreparerActor",
+            "salesOnlyActor", "bothActor", "neitherActor",
+        )]
         require(len(set(actors)) == len(actors), "fin01 seed actors must be distinct")
+        require(seed["financeOnlyActor"] == seed["approverActor"],
+                "fin01 Finance-only persona must be the suite's real Finance approver")
+        require(seed["neitherActor"] == "company-a-user",
+                "fin01 neither persona must be the canonical unauthorized actor")
         require(seed["companyId"] != seed["otherCompanyId"], "fin01 seed companies must be distinct")
     mfg_actor_keys = frozenset({"recorderActor", "readerActor", "closerActor"})
     mfg_exact_text = {
