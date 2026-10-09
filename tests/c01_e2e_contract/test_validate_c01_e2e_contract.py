@@ -51,6 +51,7 @@ def valid_compose():
                 "labels": labels,
             },
             "api": {
+                "hostname": f"{PROJECT}-api",
                 "build": {
                     "context": str(ROOT),
                     "dockerfile": "src/backend/GoymenERP.Api/Dockerfile",
@@ -66,6 +67,16 @@ def valid_compose():
                     "GOYMEN_ERP_C01_E2E_TESTED_COMMIT": COMMIT,
                     "GOYMEN_ERP_C01_E2E_RUN_ID": "100",
                     "GOYMEN_ERP_C01_E2E_COMPOSE_PROJECT": PROJECT,
+                    "GOYMEN_ERP_C01_E2E_DATABASE_NAME": "GoymenErpC01_100_1",
+                    "GOYMEN_ERP_C01_E2E_REQUEST_EVIDENCE_PATH": (
+                        "/evidence/c01-activation-api-requests.jsonl"
+                    ),
+                    "GOYMEN_ERP_C01_E2E_EVIDENCE_ISSUER": "goymenerp-api-c01-testing-v1",
+                    "GOYMEN_ERP_C01_E2E_CONTAINER_IDENTITY": f"{PROJECT}-api",
+                    "GOYMEN_ERP_C01_E2E_PROCESS_ID": "1",
+                    "GOYMEN_ERP_C01_E2E_PROCESS_START_IDENTITY": (
+                        f"{PROJECT}-api-process-1"
+                    ),
                     "BootstrapIdentity__HeaderName": "X-Development-User",
                     "BootstrapIdentity__Users__0__UserId": "group-bootstrap-admin",
                     "BootstrapIdentity__Users__0__DisplayName": "C01 E2E Group Administrator",
@@ -73,6 +84,12 @@ def valid_compose():
                     "BootstrapIdentity__Users__1__DisplayName": "C01 E2E Unauthorized User",
                 },
                 "ports": [port(8080, 15080)],
+                "volumes": [{
+                    "type": "bind",
+                    "source": str(ROOT / "artifacts" / "c01-server-evidence"),
+                    "target": "/evidence",
+                    "bind": {},
+                }],
                 "labels": labels,
             },
             "web-authorized": web("group-bootstrap-admin", 15173),
@@ -157,6 +174,57 @@ class ComposeContractTests(unittest.TestCase):
             with self.subTest(key=key):
                 model = valid_compose()
                 model["services"]["api"]["environment"][key] = value
+                with self.assertRaisesRegex(validator.ContractError, message):
+                    validator.validate_compose(model, COMMIT, PROJECT)
+
+    def test_request_evidence_database_path_and_mount_drift_fail(self):
+        mutations = (
+            ("environment", "GOYMEN_ERP_C01_E2E_DATABASE_NAME", "GoymenErpC01_100_2", "database"),
+            ("environment", "GOYMEN_ERP_C01_E2E_REQUEST_EVIDENCE_PATH", "/tmp/requests", "path"),
+            ("service", "volumes", ["../artifacts:/evidence"], "normalized"),
+            ("service", "volumes", [{
+                "type": "bind", "source": str(ROOT / "other"), "target": "/evidence",
+            }], "source"),
+            ("service", "volumes", [{
+                "type": "bind", "source": str(ROOT / "artifacts"), "target": "/evidence",
+            }], "source"),
+            ("service", "volumes", [{
+                "type": "bind",
+                "source": str(ROOT / "artifacts" / "c01-server-evidence"),
+                "target": "/other",
+            }], "target"),
+            ("service", "volumes", [{
+                "type": "bind",
+                "source": str(ROOT / "artifacts" / "c01-server-evidence"),
+                "target": "/evidence",
+                "read_only": True,
+            }], "writable"),
+        )
+        for kind, key, value, message in mutations:
+            with self.subTest(key=key):
+                model = valid_compose()
+                if kind == "environment":
+                    model["services"]["api"]["environment"][key] = value
+                else:
+                    model["services"]["api"][key] = value
+                with self.assertRaisesRegex(validator.ContractError, message):
+                    validator.validate_compose(model, COMMIT, PROJECT)
+
+    def test_request_evidence_provenance_envelope_drift_fails(self):
+        mutations = (
+            ("service", "hostname", "other-api", "hostname"),
+            ("environment", "GOYMEN_ERP_C01_E2E_EVIDENCE_ISSUER", "other", "issuer"),
+            ("environment", "GOYMEN_ERP_C01_E2E_CONTAINER_IDENTITY", "other", "container"),
+            ("environment", "GOYMEN_ERP_C01_E2E_PROCESS_ID", "2", "process id"),
+            ("environment", "GOYMEN_ERP_C01_E2E_PROCESS_START_IDENTITY", "other", "process start"),
+        )
+        for kind, key, value, message in mutations:
+            with self.subTest(key=key):
+                model = valid_compose()
+                if kind == "environment":
+                    model["services"]["api"]["environment"][key] = value
+                else:
+                    model["services"]["api"][key] = value
                 with self.assertRaisesRegex(validator.ContractError, message):
                     validator.validate_compose(model, COMMIT, PROJECT)
 
@@ -371,6 +439,26 @@ class ArtifactPrivacyTests(unittest.TestCase):
         html.write_text("<html>?cursor=SIGNED-CURSOR</html>", encoding="utf-8")
         with self.assertRaisesRegex(validator.ContractError, "cursor query"):
             validator.validate_artifact_privacy(self.root)
+
+    def test_activation_server_evidence_has_a_dedicated_pending_upload_boundary(self):
+        relative = validator.ACTIVATION_SERVER_EVIDENCE_RELATIVE_PATH
+        self.assertNotIn(relative, validator.ARTIFACT_UPLOAD_ALLOWLIST)
+        workflow = (ROOT / ".github" / "workflows" / "c01-real-browser-e2e.yml").read_text(
+            encoding="utf-8"
+        )
+        self.assertNotIn(f"artifacts/{relative}", workflow)
+
+        evidence = self.root / relative
+        evidence.parent.mkdir(parents=True)
+        evidence.write_text(
+            '{"correlationDigest":"' + ("a" * 64) + '","path":"/api/v1/counterparties"}\n',
+            encoding="utf-8",
+        )
+        validator.validate_activation_server_evidence_privacy(self.root)
+
+        evidence.write_text("Authorization: Bearer header.payload.signature", encoding="utf-8")
+        with self.assertRaisesRegex(validator.ContractError, "authorization credential"):
+            validator.validate_activation_server_evidence_privacy(self.root)
 
     def test_raw_compose_log_is_not_uploadable(self):
         raw_log = self.root / "container-logs" / "compose.log"

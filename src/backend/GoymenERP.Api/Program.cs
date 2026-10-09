@@ -124,6 +124,13 @@ builder.Services.AddHealthChecks()
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICompanyContext, CompanyContext>();
 builder.Services.AddScoped<ICorrelationContext, CorrelationContext>();
+var c01RequestEvidenceRecorder = C01E2eRequestEvidenceRecorder.Create(
+    builder.Environment,
+    builder.Configuration);
+if (c01RequestEvidenceRecorder is not null)
+{
+    builder.Services.AddSingleton(c01RequestEvidenceRecorder);
+}
 builder.Services.AddScoped<ICurrentUser, HttpCurrentUser>();
 builder.Services.AddSingleton<ShellCapabilityGenerationProtector>();
 builder.Services.AddSingleton<ShellCapabilityRegistry>();

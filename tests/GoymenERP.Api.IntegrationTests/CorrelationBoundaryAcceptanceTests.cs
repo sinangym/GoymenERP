@@ -1,5 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using GoymenERP.Api.Errors;
 using GoymenERP.Api.Observability;
@@ -9,7 +11,10 @@ using GoymenERP.Modules.Idempotency.Domain.Executions;
 using GoymenERP.Modules.Organization.Application.Contracts;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.FileProviders;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace GoymenERP.Api.IntegrationTests;
@@ -17,6 +22,315 @@ namespace GoymenERP.Api.IntegrationTests;
 public sealed class CorrelationBoundaryAcceptanceTests(GoymenErpApiFactory factory)
     : IClassFixture<GoymenErpApiFactory>
 {
+    [Fact]
+    public async Task DisposableRecorder_WritesOnlyRedactedServerRequestFields()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), $"c01-evidence-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        try
+        {
+            var path = Path.Combine(directory, "requests.jsonl");
+            var recorder = C01E2eRequestEvidenceRecorder.Create(
+                new TestHostEnvironment("Testing"),
+                new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["C01E2e:EnableListCapability"] = "true",
+                    ["GOYMEN_ERP_C01_E2E_DISPOSABLE"] = "CONFIRMED",
+                    ["GOYMEN_ERP_C01_E2E_TESTED_COMMIT"] = "0123456789abcdef0123456789abcdef01234567",
+                    ["GOYMEN_ERP_C01_E2E_RUN_ID"] = "100",
+                    ["GOYMEN_ERP_C01_E2E_COMPOSE_PROJECT"] = "goymen-c01-100-2",
+                    ["GOYMEN_ERP_C01_E2E_DATABASE_NAME"] = "GoymenErpC01_100_2",
+                    ["GOYMEN_ERP_C01_E2E_REQUEST_EVIDENCE_PATH"] = path,
+                    ["GOYMEN_ERP_C01_E2E_EVIDENCE_ISSUER"] = "goymenerp-api-c01-testing-v1",
+                    ["GOYMEN_ERP_C01_E2E_CONTAINER_IDENTITY"] = Environment.MachineName,
+                    ["GOYMEN_ERP_C01_E2E_PROCESS_ID"] = Environment.ProcessId.ToString(),
+                    ["GOYMEN_ERP_C01_E2E_PROCESS_START_IDENTITY"] = $"test-start-{Environment.ProcessId}",
+                }).Build());
+            Assert.NotNull(recorder);
+
+            var middleware = new CorrelationContextMiddleware(
+                context =>
+                {
+                    context.Response.StatusCode = StatusCodes.Status200OK;
+                    return Task.CompletedTask;
+                },
+                NullLogger<CorrelationContextMiddleware>.Instance,
+                recorder);
+            var context = new DefaultHttpContext();
+            context.Request.Method = "GET";
+            context.Request.Path = "/api/v1/counterparties";
+            context.Request.QueryString = new QueryString("?cursor=must-not-appear");
+            var rawEvidenceCorrelation = $"c01a-evidence-{Guid.NewGuid():D}";
+            context.Request.Headers[CorrelationContextMiddleware.CorrelationHeaderName] =
+                rawEvidenceCorrelation;
+            var correlation = new CorrelationContext();
+
+            await middleware.InvokeAsync(context, correlation);
+
+            var line = Assert.Single(await File.ReadAllLinesAsync(path));
+            Assert.DoesNotContain(rawEvidenceCorrelation, line, StringComparison.Ordinal);
+            Assert.DoesNotContain("cursor", line, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("header", line, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("credential", line, StringComparison.OrdinalIgnoreCase);
+            using var document = JsonDocument.Parse(line);
+            var root = document.RootElement;
+            Assert.Equal("/api/v1/counterparties", root.GetProperty("path").GetString());
+            Assert.Equal("GET", root.GetProperty("method").GetString());
+            Assert.Equal(200, root.GetProperty("status").GetInt32());
+            Assert.Equal(
+                Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(rawEvidenceCorrelation)))
+                    .ToLowerInvariant(),
+                root.GetProperty("correlationDigest").GetString());
+            Assert.False(root.TryGetProperty("correlationId", out _));
+            Assert.Equal(1, root.GetProperty("ordinal").GetInt64());
+            Assert.Equal("100", root.GetProperty("runId").GetString());
+            Assert.Equal("2", root.GetProperty("runAttempt").GetString());
+            Assert.Equal("goymenerp-api-c01-testing-v1", root.GetProperty("issuer").GetString());
+            Assert.Equal(Environment.MachineName, root.GetProperty("containerId").GetString());
+            Assert.True(root.GetProperty("processId").GetInt32() > 0);
+            Assert.Equal(
+                $"test-start-{Environment.ProcessId}",
+                root.GetProperty("processStartIdentity").GetString());
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task DisposableRecorder_SerializesConcurrentWritesWithContiguousFileOrdinals()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), $"c01-evidence-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        try
+        {
+            var path = Path.Combine(directory, "requests.jsonl");
+            var recorder = C01E2eRequestEvidenceRecorder.Create(
+                new TestHostEnvironment("Testing"),
+                new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["C01E2e:EnableListCapability"] = "true",
+                    ["GOYMEN_ERP_C01_E2E_DISPOSABLE"] = "CONFIRMED",
+                    ["GOYMEN_ERP_C01_E2E_TESTED_COMMIT"] = "0123456789abcdef0123456789abcdef01234567",
+                    ["GOYMEN_ERP_C01_E2E_RUN_ID"] = "100",
+                    ["GOYMEN_ERP_C01_E2E_COMPOSE_PROJECT"] = "goymen-c01-100-2",
+                    ["GOYMEN_ERP_C01_E2E_DATABASE_NAME"] = "GoymenErpC01_100_2",
+                    ["GOYMEN_ERP_C01_E2E_REQUEST_EVIDENCE_PATH"] = path,
+                    ["GOYMEN_ERP_C01_E2E_EVIDENCE_ISSUER"] = "goymenerp-api-c01-testing-v1",
+                    ["GOYMEN_ERP_C01_E2E_CONTAINER_IDENTITY"] = Environment.MachineName,
+                    ["GOYMEN_ERP_C01_E2E_PROCESS_ID"] = Environment.ProcessId.ToString(),
+                    ["GOYMEN_ERP_C01_E2E_PROCESS_START_IDENTITY"] = $"test-start-{Environment.ProcessId}",
+                }).Build());
+            Assert.NotNull(recorder);
+
+            var writes = Enumerable.Range(1, 20).Select(index =>
+            {
+                var context = new DefaultHttpContext();
+                context.Request.Method = "GET";
+                context.Request.Path = "/api/v1/counterparties";
+                context.Response.StatusCode = StatusCodes.Status200OK;
+                return recorder.RecordAsync(context, $"c01a-evidence-{Guid.NewGuid():D}");
+            });
+
+            await Task.WhenAll(writes);
+
+            var lines = await File.ReadAllLinesAsync(path);
+            Assert.Equal(20, lines.Length);
+            var ordinals = lines.Select(line =>
+            {
+                using var document = JsonDocument.Parse(line);
+                return document.RootElement.GetProperty("ordinal").GetInt64();
+            });
+            Assert.Equal(Enumerable.Range(1, 20).Select(index => (long)index), ordinals);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task DisposableRecorder_IgnoresRequestsOutsideTheEvidenceCorrelationNamespace()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), $"c01-evidence-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        try
+        {
+            var path = Path.Combine(directory, "requests.jsonl");
+            var recorder = C01E2eRequestEvidenceRecorder.Create(
+                new TestHostEnvironment("Testing"),
+                new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["C01E2e:EnableListCapability"] = "true",
+                    ["GOYMEN_ERP_C01_E2E_DISPOSABLE"] = "CONFIRMED",
+                    ["GOYMEN_ERP_C01_E2E_TESTED_COMMIT"] = "0123456789abcdef0123456789abcdef01234567",
+                    ["GOYMEN_ERP_C01_E2E_RUN_ID"] = "100",
+                    ["GOYMEN_ERP_C01_E2E_COMPOSE_PROJECT"] = "goymen-c01-100-2",
+                    ["GOYMEN_ERP_C01_E2E_DATABASE_NAME"] = "GoymenErpC01_100_2",
+                    ["GOYMEN_ERP_C01_E2E_REQUEST_EVIDENCE_PATH"] = path,
+                    ["GOYMEN_ERP_C01_E2E_EVIDENCE_ISSUER"] = "goymenerp-api-c01-testing-v1",
+                    ["GOYMEN_ERP_C01_E2E_CONTAINER_IDENTITY"] = Environment.MachineName,
+                    ["GOYMEN_ERP_C01_E2E_PROCESS_ID"] = Environment.ProcessId.ToString(),
+                    ["GOYMEN_ERP_C01_E2E_PROCESS_START_IDENTITY"] = $"test-start-{Environment.ProcessId}",
+                }).Build());
+            Assert.NotNull(recorder);
+            var context = new DefaultHttpContext();
+            context.Request.Method = "GET";
+            context.Request.Path = "/health/live";
+            context.Response.StatusCode = StatusCodes.Status200OK;
+
+            await recorder.RecordAsync(context, "setup-health-check");
+
+            Assert.Empty(await File.ReadAllLinesAsync(path));
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task DisposableRecorder_RefusesMalformedEvidenceCorrelationsAndNonTemplateRoutes()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), $"c01-evidence-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        try
+        {
+            var path = Path.Combine(directory, "requests.jsonl");
+            var recorder = C01E2eRequestEvidenceRecorder.Create(
+                new TestHostEnvironment("Testing"),
+                new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["C01E2e:EnableListCapability"] = "true",
+                    ["GOYMEN_ERP_C01_E2E_DISPOSABLE"] = "CONFIRMED",
+                    ["GOYMEN_ERP_C01_E2E_TESTED_COMMIT"] = "0123456789abcdef0123456789abcdef01234567",
+                    ["GOYMEN_ERP_C01_E2E_RUN_ID"] = "100",
+                    ["GOYMEN_ERP_C01_E2E_COMPOSE_PROJECT"] = "goymen-c01-100-2",
+                    ["GOYMEN_ERP_C01_E2E_DATABASE_NAME"] = "GoymenErpC01_100_2",
+                    ["GOYMEN_ERP_C01_E2E_REQUEST_EVIDENCE_PATH"] = path,
+                    ["GOYMEN_ERP_C01_E2E_EVIDENCE_ISSUER"] = "goymenerp-api-c01-testing-v1",
+                    ["GOYMEN_ERP_C01_E2E_CONTAINER_IDENTITY"] = Environment.MachineName,
+                    ["GOYMEN_ERP_C01_E2E_PROCESS_ID"] = Environment.ProcessId.ToString(),
+                    ["GOYMEN_ERP_C01_E2E_PROCESS_START_IDENTITY"] = $"test-start-{Environment.ProcessId}",
+                }).Build());
+            Assert.NotNull(recorder);
+
+            var allowed = new DefaultHttpContext();
+            allowed.Request.Method = "GET";
+            allowed.Request.Path = "/api/v1/counterparties";
+            allowed.Response.StatusCode = StatusCodes.Status200OK;
+            var invalidCorrelations = new[]
+            {
+                "c01a-evidence-semantic-label",
+                "c01a-evidence-00000000-0000-0000-0000-000000000000",
+                "c01a-evidence-00000000-0000-1000-8000-000000000000",
+                "c01a-evidence-00000000-0000-4000-7000-000000000000",
+            };
+            foreach (var invalidCorrelation in invalidCorrelations)
+            {
+                await Assert.ThrowsAsync<InvalidOperationException>(() => recorder.RecordAsync(
+                    allowed,
+                    invalidCorrelation));
+            }
+
+            var identifierPath = new DefaultHttpContext();
+            identifierPath.Request.Method = "GET";
+            identifierPath.Request.Path = $"/api/v1/counterparties/{Guid.NewGuid():D}";
+            identifierPath.Response.StatusCode = StatusCodes.Status200OK;
+            await Assert.ThrowsAsync<InvalidOperationException>(() => recorder.RecordAsync(
+                identifierPath,
+                $"c01a-evidence-{Guid.NewGuid():D}"));
+
+            var wrongMethod = new DefaultHttpContext();
+            wrongMethod.Request.Method = "POST";
+            wrongMethod.Request.Path = "/api/v1/counterparties";
+            wrongMethod.Response.StatusCode = StatusCodes.Status200OK;
+            await Assert.ThrowsAsync<InvalidOperationException>(() => recorder.RecordAsync(
+                wrongMethod,
+                $"c01a-evidence-{Guid.NewGuid():D}"));
+
+            Assert.Empty(await File.ReadAllLinesAsync(path));
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task DisposableRecorder_RefusesToTruncateEvidenceFromAnEarlierProcessStart()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), $"c01-evidence-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        try
+        {
+            var path = Path.Combine(directory, "requests.jsonl");
+            var configuration = new ConfigurationBuilder().AddInMemoryCollection(
+                new Dictionary<string, string?>
+                {
+                    ["C01E2e:EnableListCapability"] = "true",
+                    ["GOYMEN_ERP_C01_E2E_DISPOSABLE"] = "CONFIRMED",
+                    ["GOYMEN_ERP_C01_E2E_TESTED_COMMIT"] = "0123456789abcdef0123456789abcdef01234567",
+                    ["GOYMEN_ERP_C01_E2E_RUN_ID"] = "100",
+                    ["GOYMEN_ERP_C01_E2E_COMPOSE_PROJECT"] = "goymen-c01-100-2",
+                    ["GOYMEN_ERP_C01_E2E_DATABASE_NAME"] = "GoymenErpC01_100_2",
+                    ["GOYMEN_ERP_C01_E2E_REQUEST_EVIDENCE_PATH"] = path,
+                    ["GOYMEN_ERP_C01_E2E_EVIDENCE_ISSUER"] = "goymenerp-api-c01-testing-v1",
+                    ["GOYMEN_ERP_C01_E2E_CONTAINER_IDENTITY"] = Environment.MachineName,
+                    ["GOYMEN_ERP_C01_E2E_PROCESS_ID"] = Environment.ProcessId.ToString(),
+                    ["GOYMEN_ERP_C01_E2E_PROCESS_START_IDENTITY"] = $"test-start-{Environment.ProcessId}",
+                }).Build();
+
+            var recorder = C01E2eRequestEvidenceRecorder.Create(
+                new TestHostEnvironment("Testing"), configuration);
+            Assert.NotNull(recorder);
+            var context = new DefaultHttpContext();
+            context.Request.Method = "GET";
+            context.Request.Path = "/api/v1/counterparties";
+            context.Response.StatusCode = StatusCodes.Status200OK;
+            await recorder.RecordAsync(context, $"c01a-evidence-{Guid.NewGuid():D}");
+            var original = Assert.Single(await File.ReadAllLinesAsync(path));
+
+            Assert.Throws<IOException>(() => C01E2eRequestEvidenceRecorder.Create(
+                new TestHostEnvironment("Testing"), configuration));
+            Assert.Equal(original, Assert.Single(await File.ReadAllLinesAsync(path)));
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Theory]
+    [InlineData("Production", "GoymenErpC01_100_2")]
+    [InlineData("Testing", "GoymenErpC01_100_3")]
+    public void DisposableRecorder_RefusesAnInexactEnvelope(string environment, string database)
+    {
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["C01E2e:EnableListCapability"] = "true",
+            ["GOYMEN_ERP_C01_E2E_DISPOSABLE"] = "CONFIRMED",
+            ["GOYMEN_ERP_C01_E2E_TESTED_COMMIT"] = "0123456789abcdef0123456789abcdef01234567",
+            ["GOYMEN_ERP_C01_E2E_RUN_ID"] = "100",
+            ["GOYMEN_ERP_C01_E2E_COMPOSE_PROJECT"] = "goymen-c01-100-2",
+            ["GOYMEN_ERP_C01_E2E_DATABASE_NAME"] = database,
+            ["GOYMEN_ERP_C01_E2E_REQUEST_EVIDENCE_PATH"] = Path.GetFullPath("requests.jsonl"),
+            ["GOYMEN_ERP_C01_E2E_EVIDENCE_ISSUER"] = "goymenerp-api-c01-testing-v1",
+            ["GOYMEN_ERP_C01_E2E_CONTAINER_IDENTITY"] = Environment.MachineName,
+            ["GOYMEN_ERP_C01_E2E_PROCESS_ID"] = Environment.ProcessId.ToString(),
+            ["GOYMEN_ERP_C01_E2E_PROCESS_START_IDENTITY"] = $"test-start-{Environment.ProcessId}",
+        }).Build();
+
+        var error = Record.Exception(() =>
+        {
+            _ = C01E2eRequestEvidenceRecorder.Create(
+                new TestHostEnvironment(environment),
+                configuration);
+        });
+        Assert.IsType<InvalidOperationException>(error);
+    }
+
     public static TheoryData<string[]> InvalidCorrelationHeaderValues => new()
     {
         new[] { "   " },
@@ -427,4 +741,12 @@ public sealed class CorrelationBoundaryAcceptanceTests(GoymenErpApiFactory facto
         LocationSnapshot Location,
         int AuditCount,
         IReadOnlyList<CommandExecution> CommandExecutions);
+
+    private sealed class TestHostEnvironment(string environmentName) : IHostEnvironment
+    {
+        public string EnvironmentName { get; set; } = environmentName;
+        public string ApplicationName { get; set; } = "GoymenERP.Api.IntegrationTests";
+        public string ContentRootPath { get; set; } = AppContext.BaseDirectory;
+        public IFileProvider ContentRootFileProvider { get; set; } = new NullFileProvider();
+    }
 }
