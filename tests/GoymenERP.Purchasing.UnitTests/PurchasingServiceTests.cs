@@ -249,6 +249,83 @@ public sealed partial class PurchasingServiceTests
         Assert.Empty(world.Store.Refusals);
     }
 
+    [Theory]
+    [InlineData("permission")]
+    [InlineData("actor")]
+    [InlineData("company")]
+    public async Task A_terminal_refusal_rechecks_the_original_authority_before_it_is_recorded(string drift)
+    {
+        var world = new World();
+        var service = world.Service();
+        var id = (await service.CreateOrderAsync(OrderOf(null, null, "5"), Metadata("k-create-terminal-fence"))).Detail.Order.Id;
+        await service.ApproveOrderAsync(id, new ApprovePurchaseOrderRequest("2"), Metadata("k-winning-transition"));
+        world.Store.BeforeMutation = () =>
+        {
+            switch (drift)
+            {
+                case "permission":
+                    world.Authority.Granted = false;
+                    break;
+                case "actor":
+                    world.User.CurrentActor = "synthetic-other-actor";
+                    break;
+                case "company":
+                    world.Company.CurrentCompanyId = Guid.Parse("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");
+                    break;
+            }
+        };
+
+        var denied = await Assert.ThrowsAsync<PurchasingServiceException>(() =>
+            service.ApproveOrderAsync(id, new ApprovePurchaseOrderRequest("2"), Metadata("k-terminal-fence")));
+
+        Assert.Equal((403, "forbidden", false, null),
+            (denied.Status, denied.Code, denied.IsReplay, denied.OriginalCorrelationId));
+        Assert.Empty(world.Store.Refusals);
+        Assert.Single(world.Store.Transitions);
+    }
+
+    [Fact]
+    public async Task A_terminal_race_winner_is_not_disclosed_after_the_grant_is_revoked()
+    {
+        var world = new World();
+        var service = world.Service();
+        var id = (await service.CreateOrderAsync(OrderOf(null, null, "5"), Metadata("k-create-race-fence"))).Detail.Order.Id;
+        await service.ApproveOrderAsync(id, new ApprovePurchaseOrderRequest("2"), Metadata("k-winning-transition"));
+        world.Store.BeforeRefusal = (envelope, hash, command) =>
+        {
+            world.Store.PlantWinner(envelope, hash, command, id, "SENTETIK-protected-winner");
+            world.Store.AfterReplay = () => world.Authority.Granted = false;
+        };
+
+        var denied = await Assert.ThrowsAsync<PurchasingServiceException>(() =>
+            service.ApproveOrderAsync(id, new ApprovePurchaseOrderRequest("2"), Metadata("k-losing-terminal")));
+
+        Assert.Equal((403, "forbidden", false, null),
+            (denied.Status, denied.Code, denied.IsReplay, denied.OriginalCorrelationId));
+        Assert.Empty(world.Store.Refusals);
+        Assert.Single(world.Store.Transitions);
+    }
+
+    [Fact]
+    public async Task Cancellation_from_the_terminal_winner_read_is_not_translated()
+    {
+        var world = new World();
+        var service = world.Service();
+        var id = (await service.CreateOrderAsync(OrderOf(null, null, "5"), Metadata("k-create-cancel"))).Detail.Order.Id;
+        await service.ApproveOrderAsync(id, new ApprovePurchaseOrderRequest("2"), Metadata("k-winning-transition"));
+        world.Store.BeforeRefusal = (envelope, hash, command) =>
+        {
+            world.Store.PlantWinner(envelope, hash, command, id, "SENTETIK-protected-winner");
+            world.Store.ReplayFault = new OperationCanceledException("synthetic cancellation");
+        };
+
+        await Assert.ThrowsAsync<OperationCanceledException>(() =>
+            service.ApproveOrderAsync(id, new ApprovePurchaseOrderRequest("2"), Metadata("k-losing-terminal")));
+
+        Assert.Empty(world.Store.Refusals);
+        Assert.Single(world.Store.Transitions);
+    }
+
     [Fact]
     public async Task Approval_moves_the_order_one_version_under_the_approve_name_and_a_stale_version_is_a_recorded_terminal_refusal_that_replays()
     {
@@ -372,6 +449,7 @@ public sealed partial class PurchasingServiceTests
 
     private sealed class World
     {
+        public MutableCompanyContext Company { get; } = new();
         public FixedUser User { get; } = new();
         public FixedAuthority Authority { get; init; } = new();
         public FakeAccounts Accounts { get; init; } = new();
@@ -383,9 +461,7 @@ public sealed partial class PurchasingServiceTests
 
         public PurchasingService Service(IPurchaseGoodsReceiptTransactionV1? receipts = null, IPurchaseGoodsReceiptReadsV1? reads = null)
         {
-            var company = new CompanyContext();
-            company.Set(Company);
-            return new PurchasingService(company, User, Authority, new FixedCorrelation(), Accounts, ProductsPublished ? Products : null,
+            return new PurchasingService(Company, User, Authority, new FixedCorrelation(), Accounts, ProductsPublished ? Products : null,
                 new PurchaseUnitVerifier(Settings), Store, Bindings, TimeProvider.System, receipts, reads);
         }
 
@@ -400,9 +476,27 @@ public sealed partial class PurchasingServiceTests
     private sealed class FixedUser : ICurrentUser
     {
         public bool IsAuthenticated => true;
-        public string? UserId => Actor;
-        public IReadOnlySet<Guid> AllowedCompanyIds => new HashSet<Guid> { Company };
-        public bool CanAccessCompany(Guid companyId) => companyId == Company;
+        public string CurrentActor { get; set; } = Actor;
+        public string? UserId => CurrentActor;
+        public IReadOnlySet<Guid> AllowedCompanyIds => new HashSet<Guid> { Company, Guid.Parse("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa") };
+        public bool CanAccessCompany(Guid companyId) => AllowedCompanyIds.Contains(companyId);
+    }
+
+    private sealed class MutableCompanyContext : ICompanyContext
+    {
+        public Guid CurrentCompanyId { get; set; } = Company;
+        public bool IsResolved => true;
+        public Guid CompanyId => CurrentCompanyId;
+
+        public void Set(Guid companyId)
+        {
+            if (companyId == Guid.Empty)
+            {
+                throw new ArgumentException("Company id cannot be empty.", nameof(companyId));
+            }
+
+            CurrentCompanyId = companyId;
+        }
     }
 
     private sealed class FixedAuthority : IErpAuthorityRevalidationService
@@ -513,7 +607,10 @@ public sealed partial class PurchasingServiceTests
         private readonly List<StoredPurchaseOrder> _orders = [];
         public List<PurchasingWriteEnvelope> Envelopes { get; } = [];
         public List<(string Command, PurchasingTerminalRefusal Refusal)> Refusals { get; } = [];
+        public Action? BeforeMutation { get; set; }
         public Action<PurchasingWriteEnvelope, string, string>? BeforeRefusal { get; set; }
+        public Action? AfterReplay { get; set; }
+        public Exception? ReplayFault { get; set; }
 
         /// <summary>Simulates the same key's winner storing its transition between this caller's replay read and its refusal record (§8).</summary>
         public void PlantWinner(PurchasingWriteEnvelope envelope, string requestHash, string commandName, Guid orderId, string correlation) =>
@@ -551,6 +648,7 @@ public sealed partial class PurchasingServiceTests
 
             var stored = _requests.SingleOrDefault(candidate => candidate.Request.Id == requestId);
             if (stored is null) return Task.FromResult<PurchasingRequestStoreResult?>(null);
+            BeforeMutation?.Invoke();
             var before = stored.Request.Version;
             mutate(stored.Request, TimeProvider.System.GetUtcNow());
             _attempts[(commandName, envelope.IdempotencyKey)] = new Attempt(envelope.ActorId, requestHash, stored, null, null, envelope.CorrelationId);
@@ -593,6 +691,7 @@ public sealed partial class PurchasingServiceTests
 
             var stored = _orders.SingleOrDefault(candidate => candidate.Order.Id == orderId);
             if (stored is null) return Task.FromResult<PurchasingOrderStoreResult?>(null);
+            BeforeMutation?.Invoke();
             var before = stored.Order.Version;
             if (OverSourced && commandName == PurchasingCommands.OrderApproveV1)
             {
@@ -623,7 +722,14 @@ public sealed partial class PurchasingServiceTests
             }
 
             Check(attempt, envelope, requestHash);
-            return Task.FromResult<PurchasingReplay?>(new PurchasingReplay(attempt.Request, attempt.Order, attempt.Refusal, attempt.Correlation));
+            if (ReplayFault is not null)
+            {
+                return Task.FromException<PurchasingReplay?>(ReplayFault);
+            }
+
+            var replay = new PurchasingReplay(attempt.Request, attempt.Order, attempt.Refusal, attempt.Correlation);
+            AfterReplay?.Invoke();
+            return Task.FromResult<PurchasingReplay?>(replay);
         }
 
         public Task RecordRefusalAsync(PurchasingWriteEnvelope envelope, string requestHash, string commandName, PurchasingTerminalRefusal refusal,

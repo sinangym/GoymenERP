@@ -158,12 +158,12 @@ public sealed partial class PurchasingService(
         }
         catch (PurchasingVersionConflictException)
         {
-            return await TerminalAsync(envelope, requestHash, PurchasingCommands.RequestSubmitV1,
+            return await TerminalAsync(scope, bindings.CreatePermission, envelope, requestHash, PurchasingCommands.RequestSubmitV1,
                 new PurchasingTerminalRefusal(409, PurchasingProblemCodesV1.VersionConflict, [new("expectedVersion", "version_conflict")]), ReplayedRequest, cancellationToken);
         }
         catch (PurchasingRuleException exception) when (exception.Code == PurchasingRuleCodes.RequestNotDraft)
         {
-            return await TerminalAsync(envelope, requestHash, PurchasingCommands.RequestSubmitV1,
+            return await TerminalAsync(scope, bindings.CreatePermission, envelope, requestHash, PurchasingCommands.RequestSubmitV1,
                 new PurchasingTerminalRefusal(409, PurchasingProblemCodesV1.RequestNotDraft, [new("status", exception.Code)]), ReplayedRequest, cancellationToken);
         }
         catch (PurchasingRuleException exception)
@@ -343,12 +343,12 @@ public sealed partial class PurchasingService(
         }
         catch (PurchasingVersionConflictException)
         {
-            return await TerminalAsync(envelope, requestHash, PurchasingCommands.OrderApproveV1,
+            return await TerminalAsync(scope, bindings.ApprovePermission, envelope, requestHash, PurchasingCommands.OrderApproveV1,
                 new PurchasingTerminalRefusal(409, PurchasingProblemCodesV1.VersionConflict, [new("expectedVersion", "version_conflict")]), ReplayedOrder, cancellationToken);
         }
         catch (PurchasingRuleException exception) when (exception.Code == PurchasingRuleCodes.OrderNotDraft)
         {
-            return await TerminalAsync(envelope, requestHash, PurchasingCommands.OrderApproveV1,
+            return await TerminalAsync(scope, bindings.ApprovePermission, envelope, requestHash, PurchasingCommands.OrderApproveV1,
                 new PurchasingTerminalRefusal(409, PurchasingProblemCodesV1.OrderState, [new("status", exception.Code)]), ReplayedOrder, cancellationToken);
         }
         catch (PurchasingRuleException exception)
@@ -362,7 +362,7 @@ public sealed partial class PurchasingService(
         catch (PurchasingStoreException exception) when (exception.Code == PurchasingStoreCodes.RequestLineOverSourced)
         {
             // Sinan 5738113623 §1: the shares of a request line never exceed its need; terminal for this key (§7).
-            return await TerminalAsync(envelope, requestHash, PurchasingCommands.OrderApproveV1,
+            return await TerminalAsync(scope, bindings.ApprovePermission, envelope, requestHash, PurchasingCommands.OrderApproveV1,
                 new PurchasingTerminalRefusal(409, PurchasingProblemCodesV1.RequestLineOverSourced,
                     exception.Errors.Count > 0 ? exception.Errors : [new("lines", exception.Code)]), ReplayedOrder, cancellationToken);
         }
@@ -569,7 +569,7 @@ public sealed partial class PurchasingService(
 
                 if (errors.Any(error => error.Code == "version_conflict"))
                 {
-                    return await TerminalAsync<string>(envelope, requestHash, commandName,
+                    return await TerminalAsync<string>(scope, bindings.CreatePermission, envelope, requestHash, commandName,
                         new PurchasingTerminalRefusal(409, PurchasingProblemCodesV1.VersionConflict, errors),
                         replay => throw new ReplayWinnerException(replay), cancellationToken);
                 }
@@ -681,28 +681,23 @@ public sealed partial class PurchasingService(
     }
 
     /// <summary>
-    /// §7: the terminal refusal is recorded before it is answered. §8: if the same key was taken meanwhile, the winner's record is
-    /// the answer — its refusal replayed, or its stored record returned through <paramref name="winner"/> as a replay (FİNANS #350
-    /// P3-1, the same pattern here: never <c>concurrent_change</c> for a loser that lands on a terminal path after the winner committed).
+    /// §7: after a fresh measurement of the original command authority, the terminal refusal is recorded before it is answered.
+    /// §8: if the same key was taken meanwhile, the guarded winner read and its post-read authority fence decide whether its refusal
+    /// or stored record may be returned through <paramref name="winner"/> as a replay (FİNANS #350 P3-1, the same pattern here: never
+    /// <c>concurrent_change</c> for an authorized loser that lands on a terminal path after the winner committed).
     /// </summary>
-    private async Task<TResponse> TerminalAsync<TResponse>(PurchasingWriteEnvelope envelope, string requestHash, string commandName,
-        PurchasingTerminalRefusal refusal, Func<PurchasingReplay, TResponse> winner, CancellationToken cancellationToken)
+    private async Task<TResponse> TerminalAsync<TResponse>(Scope scope, string? permission, PurchasingWriteEnvelope envelope,
+        string requestHash, string commandName, PurchasingTerminalRefusal refusal, Func<PurchasingReplay, TResponse> winner,
+        CancellationToken cancellationToken)
     {
+        await RequireStillAsync(scope, permission, cancellationToken);
         try
         {
             await store.RecordRefusalAsync(envelope, requestHash, commandName, refusal, cancellationToken);
         }
         catch (PurchasingStoreException exception) when (exception.Code == PurchasingStoreCodes.ConcurrentChange)
         {
-            PurchasingReplay? won;
-            try
-            {
-                won = await store.FindReplayAsync(envelope, requestHash, commandName, cancellationToken);
-            }
-            catch (PurchasingStoreException raced)
-            {
-                throw Store(raced);
-            }
+            var won = await FindReplayAsync(scope, permission, envelope, requestHash, commandName, cancellationToken);
 
             if (won?.Refusal is { } recorded)
             {
