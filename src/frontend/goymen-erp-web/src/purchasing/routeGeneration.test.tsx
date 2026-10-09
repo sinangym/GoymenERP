@@ -50,6 +50,10 @@ vi.mock('../shell/useAuthBoundary', () => ({
   useAuthBoundary: () => ({ capture: () => ({ token: state.generation }), report: vi.fn() }),
 }))
 
+vi.mock('../documents/DocumentsPanel', () => ({
+  DocumentsPanel: () => null,
+}))
+
 vi.mock('@tanstack/react-query', () => ({
   useQuery: (options: { queryKey: readonly unknown[] }) => {
     const detail = options.queryKey.includes('purchase-order')

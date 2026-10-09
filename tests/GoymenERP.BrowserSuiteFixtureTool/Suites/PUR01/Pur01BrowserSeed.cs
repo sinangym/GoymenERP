@@ -201,7 +201,8 @@ public sealed class Pur01BrowserSeed : IBrowserSuiteFixture
             throw new InvalidOperationException("The receiver needs list/detail/goods receipt only and must not receive approve, create or the Inventory label screen.");
         }
 
-        // The Inventory label detail (inventory.labels.read + inventory.balances.read) with no Purchasing name at all.
+        // The Inventory label detail needs inventory.labels.read + inventory.balances.read plus Product's
+        // product.operational-selection.read owner read, with no Purchasing name at all.
         string[] stockReader = await CapabilitiesAsync(context, StockReaderActor, cancellationToken);
         if (!stockReader.Contains(StockLabelCapability, StringComparer.Ordinal)
             || stockReader.Any(capability => capability.StartsWith("purchasing.", StringComparison.Ordinal)))
