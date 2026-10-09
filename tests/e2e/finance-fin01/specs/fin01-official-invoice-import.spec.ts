@@ -82,7 +82,7 @@ async function expectApprovalDetailFitsViewport(page: Page, width: 390 | 320, he
 
   const widths = await page.evaluate(() => {
     const heading = document.getElementById('official-invoice-approvals-title')
-    const approvalPage = heading?.closest('section')
+    const approvalPage = heading?.closest('section') ?? null
     const main = document.querySelector('main')
     const measure = (element: Element | null) => element instanceof HTMLElement
       ? { clientWidth: element.clientWidth, scrollWidth: element.scrollWidth }
@@ -625,7 +625,7 @@ test.describe.serial('FIN01 official invoice import (real API, real SQL, real Ch
     }
     const allocationDetailResponse = await allocationDetailAnswer
     expect(allocationDetailResponse.status()).toBe(200)
-    const allocationDetail = await allocationDetailResponse.json() as unknown
+    const allocationDetail = await allocationDetailResponse.json() as Record<string, unknown>
 
     const closedBatch = await checker.evaluate(async ({ id, companyId }) => {
       const response = await fetch(`/api/v1/finance/official-invoice-imports/${id}`, {
