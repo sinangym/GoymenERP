@@ -35,6 +35,11 @@ interface DocumentUpload {
   readonly originalCorrelationId: string
 }
 
+interface DocumentList {
+  readonly items: readonly DocumentRow[]
+  readonly canUpload: boolean
+}
+
 function apiHeaders(actor: string, company = companyId): Record<string, string> {
   return { [DEVELOPMENT_USER_HEADER]: actor, 'X-Company-Id': company }
 }
@@ -52,26 +57,25 @@ async function capabilitiesOf(page: Page, actor: string): Promise<readonly strin
   return Array.isArray(body.capabilities) ? body.capabilities as string[] : []
 }
 
-async function listDocuments(page: Page, actor: string): Promise<readonly DocumentRow[]> {
+async function listDocuments(page: Page, actor: string): Promise<DocumentList> {
   const response = await page.request.get(`${env.apiBaseUrl}${listPath()}`, { headers: apiHeaders(actor) })
   expect(response.status()).toBe(200)
-  const body = await response.json() as { readonly items: readonly DocumentRow[] }
-  return body.items
+  return await response.json() as DocumentList
 }
 
 test('PUR01-DOC uploads once, reopens, previews/downloads and hides the vault from an order-only reader', async ({ page }) => {
   test.setTimeout(240_000)
+  // The shell endpoint publishes declared UI capability ids, not raw permission names. Documents authority is
+  // measured through the real Documents API and UI below; Purchasing detail is the declared route capability.
   const writerCapabilities = await capabilitiesOf(page, creatorActor)
-  expect(writerCapabilities).toEqual(expect.arrayContaining([
-    'purchasing.orders.detail', 'documents.files.read', 'documents.files.upload',
-  ]))
+  expect(writerCapabilities).toContain('purchasing.orders.detail')
   const readerCapabilities = await capabilitiesOf(page, readerActor)
   expect(readerCapabilities).toContain('purchasing.orders.detail')
-  expect(readerCapabilities).not.toContain('documents.files.read')
-  expect(readerCapabilities).not.toContain('documents.files.upload')
 
   await page.setExtraHTTPHeaders({ [DEVELOPMENT_USER_HEADER]: creatorActor })
-  expect(await listDocuments(page, creatorActor)).toEqual([])
+  const emptyVault = await listDocuments(page, creatorActor)
+  expect(emptyVault.canUpload).toBe(true)
+  expect(emptyVault.items).toEqual([])
   await page.goto(`${LIST_ROUTE}/${orderId}`)
   await expect(page.getByText(orderId, { exact: true })).toBeVisible({ timeout: 30_000 })
   await expect(page.locator('[data-documents-state="none"]')).toBeVisible()
@@ -130,8 +134,9 @@ test('PUR01-DOC uploads once, reopens, previews/downloads and hides the vault fr
   expect((await download).suggestedFilename()).toBe(FILE_NAME)
 
   const stored = await listDocuments(page, creatorActor)
-  expect(stored).toHaveLength(1)
-  expect(stored[0]).toMatchObject({
+  expect(stored.canUpload).toBe(true)
+  expect(stored.items).toHaveLength(1)
+  expect(stored.items[0]).toMatchObject({
     id: replay.document.id,
     companyId,
     ownerKind: OWNER_KIND,
@@ -173,7 +178,7 @@ test('PUR01-DOC uploads once, reopens, previews/downloads and hides the vault fr
       && url.searchParams.get('ownerKind') === OWNER_KIND && url.searchParams.get('ownerId') === orderId
   })
   await page.goto(`${LIST_ROUTE}/${orderId}`)
-  expect([403, 404]).toContain((await deniedList).status())
+  expect((await deniedList).status()).toBe(403)
   await expect(page.getByRole('heading', { level: 2, name: 'Belgeler', exact: true })).toHaveCount(0)
 
   const foreign = await page.request.get(`${env.apiBaseUrl}${listPath()}`, {
