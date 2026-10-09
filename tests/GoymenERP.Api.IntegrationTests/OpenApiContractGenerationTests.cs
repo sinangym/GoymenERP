@@ -2411,6 +2411,9 @@ public sealed partial class OpenApiContractGenerationTests
                     ["item", "preview"],
                     ("item", "ref:NativeApprovalReadItemV1"),
                     ("preview", "ref:FinanceOfficialInvoiceImportPreviewV1")),
+                ["NativeApprovalReadDetailV1SalesOrderDraftNativeApprovalReadDetailV1"] = ObjectSchema(
+                    ["item"],
+                    ("item", "ref:NativeApprovalReadItemV1")),
                 ["NativeApprovalReadItemV1"] = ObjectSchema(["kind"]),
                 ["NativeApprovalReadItemV1FinanceInvoiceImportNativeApprovalReadItemV1"] = ObjectSchema(
                     ["approvalId", "companyId", "status", "version", "batchVersion", "checksum", "templateVersion", "itemCount", "submittedBy", "submittedAtUtc"],
@@ -2423,6 +2426,18 @@ public sealed partial class OpenApiContractGenerationTests
                     ("checksum", "type:string"),
                     ("templateVersion", "type:string"),
                     ("itemCount", "type:integer|string;format:int32"),
+                    ("submittedBy", "type:string"),
+                    ("submittedAtUtc", "type:string;format:date-time")),
+                ["NativeApprovalReadItemV1SalesOrderDraftNativeApprovalReadItemV1"] = ObjectSchema(
+                    ["approvalId", "companyId", "status", "version", "revision", "documentNo", "isOwnDraft", "submittedBy", "submittedAtUtc"],
+                    ("kind", "type:string"),
+                    ("approvalId", "type:string;format:uuid"),
+                    ("companyId", "type:string;format:uuid"),
+                    ("status", "type:string"),
+                    ("version", "type:string"),
+                    ("revision", "type:string"),
+                    ("documentNo", "type:string"),
+                    ("isOwnDraft", "type:boolean"),
                     ("submittedBy", "type:string"),
                     ("submittedAtUtc", "type:string;format:date-time")),
                 ["NativeApprovalReadPageV1"] = ObjectSchema(
@@ -6566,22 +6581,38 @@ public sealed partial class OpenApiContractGenerationTests
         const string financeKind = "finance.official-invoice-import.v1";
         const string financeItemSchema =
             "#/components/schemas/NativeApprovalReadItemV1FinanceInvoiceImportNativeApprovalReadItemV1";
+        const string salesKind = "sales.order-draft.v1";
+        const string salesItemSchema =
+            "#/components/schemas/NativeApprovalReadItemV1SalesOrderDraftNativeApprovalReadItemV1";
 
         var item = schemas.GetProperty("NativeApprovalReadItemV1");
         var discriminator = item.GetProperty("discriminator");
         Assert.Equal("kind", discriminator.GetProperty("propertyName").GetString());
-        var mapping = Assert.Single(discriminator.GetProperty("mapping").EnumerateObject());
-        Assert.Equal(financeKind, mapping.Name);
-        Assert.Equal(financeItemSchema, mapping.Value.GetString());
-        var itemVariant = Assert.Single(item.GetProperty("anyOf").EnumerateArray());
-        Assert.Equal(financeItemSchema, itemVariant.GetProperty("$ref").GetString());
+        var mapping = discriminator.GetProperty("mapping").EnumerateObject()
+            .ToDictionary(property => property.Name, property => property.Value.GetString(),
+                StringComparer.Ordinal);
+        Assert.Equal(2, mapping.Count);
+        Assert.Equal(financeItemSchema, mapping[financeKind]);
+        Assert.Equal(salesItemSchema, mapping[salesKind]);
+        Assert.Equal([financeItemSchema, salesItemSchema],
+            item.GetProperty("anyOf").EnumerateArray()
+                .Select(variant => variant.GetProperty("$ref").GetString()
+                    ?? throw new InvalidOperationException("Native approval item schema reference is null."))
+                .Order(StringComparer.Ordinal)
+                .ToArray());
 
         var detail = schemas.GetProperty("NativeApprovalReadDetailV1");
         Assert.False(detail.TryGetProperty("discriminator", out _));
-        var detailVariant = Assert.Single(detail.GetProperty("anyOf").EnumerateArray());
         Assert.Equal(
-            "#/components/schemas/NativeApprovalReadDetailV1FinanceInvoiceImportNativeApprovalReadDetailV1",
-            detailVariant.GetProperty("$ref").GetString());
+            [
+                "#/components/schemas/NativeApprovalReadDetailV1FinanceInvoiceImportNativeApprovalReadDetailV1",
+                "#/components/schemas/NativeApprovalReadDetailV1SalesOrderDraftNativeApprovalReadDetailV1",
+            ],
+            detail.GetProperty("anyOf").EnumerateArray()
+                .Select(variant => variant.GetProperty("$ref").GetString()
+                    ?? throw new InvalidOperationException("Native approval detail schema reference is null."))
+                .Order(StringComparer.Ordinal)
+                .ToArray());
     }
 
     private static IReadOnlyList<OpenApiOperationSnapshot> ReadOperations(JsonElement paths)

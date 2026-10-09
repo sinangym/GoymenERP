@@ -71490,6 +71490,9 @@
         "anyOf": [
           {
             "$ref": "#/components/schemas/NativeApprovalReadDetailV1FinanceInvoiceImportNativeApprovalReadDetailV1"
+          },
+          {
+            "$ref": "#/components/schemas/NativeApprovalReadDetailV1SalesOrderDraftNativeApprovalReadDetailV1"
           }
         ]
       },
@@ -71507,6 +71510,16 @@
           }
         }
       },
+      "NativeApprovalReadDetailV1SalesOrderDraftNativeApprovalReadDetailV1": {
+        "required": [
+          "item"
+        ],
+        "properties": {
+          "item": {
+            "$ref": "#/components/schemas/NativeApprovalReadItemV1"
+          }
+        }
+      },
       "NativeApprovalReadItemV1": {
         "required": [
           "kind"
@@ -71515,12 +71528,16 @@
         "anyOf": [
           {
             "$ref": "#/components/schemas/NativeApprovalReadItemV1FinanceInvoiceImportNativeApprovalReadItemV1"
+          },
+          {
+            "$ref": "#/components/schemas/NativeApprovalReadItemV1SalesOrderDraftNativeApprovalReadItemV1"
           }
         ],
         "discriminator": {
           "propertyName": "kind",
           "mapping": {
-            "finance.official-invoice-import.v1": "#/components/schemas/NativeApprovalReadItemV1FinanceInvoiceImportNativeApprovalReadItemV1"
+            "finance.official-invoice-import.v1": "#/components/schemas/NativeApprovalReadItemV1FinanceInvoiceImportNativeApprovalReadItemV1",
+            "sales.order-draft.v1": "#/components/schemas/NativeApprovalReadItemV1SalesOrderDraftNativeApprovalReadItemV1"
           }
         }
       },
@@ -71574,6 +71591,57 @@
               "string"
             ],
             "format": "int32"
+          },
+          "submittedBy": {
+            "type": "string"
+          },
+          "submittedAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "NativeApprovalReadItemV1SalesOrderDraftNativeApprovalReadItemV1": {
+        "required": [
+          "approvalId",
+          "companyId",
+          "status",
+          "version",
+          "revision",
+          "documentNo",
+          "isOwnDraft",
+          "submittedBy",
+          "submittedAtUtc"
+        ],
+        "properties": {
+          "kind": {
+            "enum": [
+              "sales.order-draft.v1"
+            ],
+            "type": "string"
+          },
+          "approvalId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "companyId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "string"
+          },
+          "documentNo": {
+            "type": "string"
+          },
+          "isOwnDraft": {
+            "type": "boolean"
           },
           "submittedBy": {
             "type": "string"

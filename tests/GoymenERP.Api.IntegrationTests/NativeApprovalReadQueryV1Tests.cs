@@ -4,6 +4,7 @@ using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Observability;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Finance.Contracts;
+using GoymenERP.Modules.Sales.Application.Contracts;
 
 namespace GoymenERP.Api.IntegrationTests;
 
@@ -12,6 +13,7 @@ public sealed class NativeApprovalReadQueryV1Tests
     private static readonly Guid Company = Guid.Parse("a1000000-0000-0000-0000-000000000001");
     private static readonly Guid OtherCompany = Guid.Parse("a1000000-0000-0000-0000-000000000002");
     private static readonly Guid Batch = Guid.Parse("a2000000-0000-0000-0000-000000000001");
+    private static readonly Guid Draft = Guid.Parse("a3000000-0000-0000-0000-000000000001");
     private static readonly string Checksum = new('a', 64);
 
     [Fact]
@@ -46,6 +48,95 @@ public sealed class NativeApprovalReadQueryV1Tests
             (detail.Outcome, financeDetail.Item.ApprovalId, financeDetail.Preview.SourceSha256,
                 owner.GetCalls));
         Assert.Same(preview, financeDetail.Preview);
+    }
+
+    [Fact]
+    public async Task Sales_adapter_preserves_owner_cursor_and_projects_pending_draft_without_a_creator_ban()
+    {
+        var source = SalesItem(isOwnDraft: true);
+        var owner = new SalesOwner
+        {
+            ListResult = new(SalesOrderDraftPendingApprovalReadOutcomeV1.Found,
+                new SalesOrderDraftPendingApprovalPageV1(Company, [source], "sales+/=cursor")),
+            GetResult = new(SalesOrderDraftPendingApprovalReadOutcomeV1.Found,
+                new SalesOrderDraftPendingApprovalDetailV1(source)),
+        };
+        var adapter = new SalesOrderDraftPendingApprovalAdapterV1(owner);
+        var context = Context();
+
+        var page = await adapter.ListAsync(context, "sales+/=request", default);
+        var detail = await adapter.GetAsync(context, Draft, default);
+
+        var item = Assert.IsType<SalesOrderDraftNativeApprovalReadItemV1>(
+            Assert.Single(page.Resource!.Items));
+        Assert.Equal(NativeApprovalReadOutcomeV1.Found, page.Outcome);
+        Assert.Equal(("sales+/=request", "sales+/=cursor", 1),
+            (owner.ObservedCursor, page.Resource.NextCursor, owner.ListCalls));
+        Assert.Equal((NativeApprovalKindsV1.SalesOrderDraft, Draft, Company, "PendingApproval",
+                "7", "3", "SO-2026-001", true, "sales-maker"),
+            (item.Kind, item.ApprovalId, item.CompanyId, item.Status, item.Version,
+                item.Revision, item.DocumentNo, item.IsOwnDraft, item.SubmittedBy));
+        var salesDetail = Assert.IsType<SalesOrderDraftNativeApprovalReadDetailV1>(detail.Resource);
+        Assert.Equal(item, salesDetail.Item);
+        Assert.Equal((NativeApprovalReadOutcomeV1.Found, Draft, 1),
+            (detail.Outcome, salesDetail.Item.ApprovalId, owner.GetCalls));
+    }
+
+    [Theory]
+    [InlineData("duplicate")]
+    [InlineData("blank-document")]
+    [InlineData("company")]
+    [InlineData("found-null")]
+    [InlineData("failure-resource")]
+    public async Task Sales_adapter_malformed_owner_results_fail_closed(string defect)
+    {
+        var source = SalesItem(
+            companyId: defect == "company" ? OtherCompany : Company,
+            documentNo: defect == "blank-document" ? " " : "SO-2026-001");
+        var page = new SalesOrderDraftPendingApprovalPageV1(
+            Company,
+            defect == "duplicate" ? [source, source] : [source],
+            null);
+        var owner = new SalesOwner
+        {
+            ListResult = defect switch
+            {
+                "found-null" => new(SalesOrderDraftPendingApprovalReadOutcomeV1.Found, null),
+                "failure-resource" => new(SalesOrderDraftPendingApprovalReadOutcomeV1.Denied, page),
+                _ => new(SalesOrderDraftPendingApprovalReadOutcomeV1.Found, page),
+            },
+        };
+
+        var result = await new SalesOrderDraftPendingApprovalAdapterV1(owner)
+            .ListAsync(Context(), null, default);
+
+        Assert.Equal(NativeApprovalReadOutcomeV1.Unavailable, result.Outcome);
+        Assert.Null(result.Resource);
+    }
+
+    [Theory]
+    [InlineData("Denied")]
+    [InlineData("NotFound")]
+    [InlineData("Unavailable")]
+    public async Task Sales_adapter_preserves_strict_owner_refusals(
+        string outcomeName)
+    {
+        var ownerOutcome = Enum.Parse<SalesOrderDraftPendingApprovalReadOutcomeV1>(outcomeName);
+        var expected = Enum.Parse<NativeApprovalReadOutcomeV1>(outcomeName);
+        var owner = new SalesOwner
+        {
+            ListResult = new(ownerOutcome, null),
+            GetResult = new(ownerOutcome, null),
+        };
+        var adapter = new SalesOrderDraftPendingApprovalAdapterV1(owner);
+
+        var page = await adapter.ListAsync(Context(), null, default);
+        var detail = await adapter.GetAsync(Context(), Draft, default);
+
+        Assert.Equal(expected, page.Outcome);
+        Assert.Equal(expected, detail.Outcome);
+        Assert.Null(page.Resource);
+        Assert.Null(detail.Resource);
     }
 
     [Fact]
@@ -216,16 +307,18 @@ public sealed class NativeApprovalReadQueryV1Tests
     public void Runtime_dependencies_are_read_only_and_module_neutral()
     {
         var queryParameters = Constructor(typeof(NativeApprovalReadQueryV1));
-        var adapterParameters = Constructor(typeof(FinanceInvoiceImportPendingApprovalAdapterV1));
+        var financeAdapterParameters = Constructor(typeof(FinanceInvoiceImportPendingApprovalAdapterV1));
+        var salesAdapterParameters = Constructor(typeof(SalesOrderDraftPendingApprovalAdapterV1));
 
         Assert.Equal(
             [typeof(ICompanyContext), typeof(ICurrentUser), typeof(ICorrelationContext),
                 typeof(IEnumerable<INativeApprovalReadAdapterV1>)],
             queryParameters);
         Assert.Equal([typeof(IFinanceOfficialInvoiceImportPendingApprovalReadServiceV1)],
-            adapterParameters);
+            financeAdapterParameters);
+        Assert.Equal([typeof(ISalesOrderDraftPendingApprovalReadServiceV1)], salesAdapterParameters);
         Assert.DoesNotContain(queryParameters, type => type.Namespace?.Contains(".Finance.", StringComparison.Ordinal) == true);
-        Assert.DoesNotContain(queryParameters.Concat(adapterParameters), type =>
+        Assert.DoesNotContain(queryParameters.Concat(financeAdapterParameters).Concat(salesAdapterParameters), type =>
             type.Name.Contains("DbContext", StringComparison.Ordinal)
             || type.Name.Contains("Write", StringComparison.Ordinal)
             || type.Name.Contains("Command", StringComparison.Ordinal));
@@ -273,6 +366,19 @@ public sealed class NativeApprovalReadQueryV1Tests
 
     private static NativeApprovalReadContextV1 Context() =>
         new(Company, "checker", "corr-1", "cause-1");
+
+    private static SalesOrderDraftPendingApprovalItemV1 SalesItem(
+        Guid? companyId = null,
+        string documentNo = "SO-2026-001",
+        bool isOwnDraft = false) => new(
+        Draft,
+        companyId ?? Company,
+        documentNo,
+        "7",
+        "3",
+        "sales-maker",
+        DateTimeOffset.Parse("2026-10-09T07:00:00Z"),
+        isOwnDraft);
 
     private static FinanceOfficialInvoiceImportBatchViewV1 PendingBatch() => new(
         Batch,
@@ -332,6 +438,35 @@ public sealed class NativeApprovalReadQueryV1Tests
 
         public Task<ReadResult<FinanceOfficialInvoiceImportPendingBatchDetailV1>> GetAsync(
             FinanceContext context, Guid batchId, CancellationToken cancellationToken)
+        {
+            GetCalls++;
+            return Task.FromResult(GetResult);
+        }
+    }
+
+    private sealed class SalesOwner : ISalesOrderDraftPendingApprovalReadServiceV1
+    {
+        public SalesOrderDraftPendingApprovalReadResultV1<SalesOrderDraftPendingApprovalPageV1>
+            ListResult { get; init; } = new(SalesOrderDraftPendingApprovalReadOutcomeV1.Found,
+                new SalesOrderDraftPendingApprovalPageV1(Company, [], null));
+        public SalesOrderDraftPendingApprovalReadResultV1<SalesOrderDraftPendingApprovalDetailV1>
+            GetResult { get; init; } = new(SalesOrderDraftPendingApprovalReadOutcomeV1.NotFound, null);
+        public string? ObservedCursor { get; private set; }
+        public int ListCalls { get; private set; }
+        public int GetCalls { get; private set; }
+
+        public Task<SalesOrderDraftPendingApprovalReadResultV1<SalesOrderDraftPendingApprovalPageV1>>
+            ListAsync(SalesOrderDraftPendingApprovalReadContextV1 context, string? cursor,
+                CancellationToken cancellationToken)
+        {
+            ListCalls++;
+            ObservedCursor = cursor;
+            return Task.FromResult(ListResult);
+        }
+
+        public Task<SalesOrderDraftPendingApprovalReadResultV1<SalesOrderDraftPendingApprovalDetailV1>>
+            GetAsync(SalesOrderDraftPendingApprovalReadContextV1 context, Guid draftId,
+                CancellationToken cancellationToken)
         {
             GetCalls++;
             return Task.FromResult(GetResult);

@@ -93,8 +93,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // no OpenAPI-generation, network or hosted-service surface was added.
     // Re-fingerprinted for D-05 phase A correction: the detail schema removes the serializer-generated $type
     // discriminator because route kind owns dispatch; no network or hosted-service behavior changes.
+    // Re-fingerprinted for the D-05 Sales adapter: one scoped in-process owner adapter is added beside Finance;
+    // no permission, network, hosted-service or production-activation surface changes.
     private const string ReviewedOpenApiStartupFingerprint =
-        "73695894e8704a54946de3e9081347411079f75c94767eb09a6acf16560568a6";
+        "ab3a4cc7172620cf106f3be8dda3253ee975cba34ab8c8f8ee8a9e7dc9b05a76";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedProductManufacturingTechnicalRegistrationPath =
