@@ -4,15 +4,15 @@ import { DOCUMENT_PROBLEM } from './contract'
 
 export const DOCUMENTS_TEXT = {
   heading: 'Belgeler',
-  note: 'Bu cari kartına bu şirkette eklenen belgeler. Belgeler silinmez ve üzerine yazılmaz; her yükleme ayrı bir kayıttır.',
-  caption: 'Cari kartının belgeleri',
+  note: 'Bu kayda bu şirkette eklenen belgeler. Belgeler silinmez ve üzerine yazılmaz; her yükleme ayrı bir kayıttır.',
+  caption: 'Kayda bağlı belgeler',
   columnFile: 'Dosya',
   columnType: 'Tür',
   columnSize: 'Boyut',
   columnUploaded: 'Yüklenme',
   columnState: 'Güvenlik taraması',
   columnAction: 'İşlem',
-  none: 'Bu cari kartına bu şirkette henüz belge eklenmedi.',
+  none: 'Bu kayda bu şirkette henüz belge eklenmedi.',
   scanClean: 'Tarandı',
   scanPending: 'Taranmadı — indirilemez',
   download: (fileName: string) => `${fileName} dosyasını indir`,
@@ -70,8 +70,8 @@ export function refusalText(status: number, code: string | null): string {
     case DOCUMENT_PROBLEM.concurrentChange:
       return 'Aynı anda başka bir yükleme yapıldı. Tekrar deneyin.'
     default:
-      if (status === 403) return 'Bu cari kartına belge ekleme yetkiniz yok.'
-      if (status === 404) return 'Cari kartı bu şirkette bulunamadı.'
+      if (status === 403) return 'Bu kayda belge ekleme yetkiniz yok.'
+      if (status === 404) return 'Kayıt bu şirkette bulunamadı.'
       if (status === 413) return 'Dosya izin verilen boyuttan büyük.'
       return 'Belge yüklenemedi.'
   }
