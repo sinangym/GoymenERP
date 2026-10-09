@@ -40,6 +40,9 @@ const WORK_CENTRE_LIST_ROUTE = '/ayarlar/organizasyon/is-merkezleri'
 const LOCATION_LIST_ROUTE = '/ayarlar/organizasyon'
 const NAV_LABEL = 'İş Merkezleri'
 const DEVELOPMENT_USER_HEADER = 'X-Development-User'
+// The built-in GDC organization operator. The disposable editor creates master data, while this
+// existing public persona holds the separately authorized location lifecycle command.
+const LOCATION_STATUS_ACTOR = 'company-a-user'
 
 /** The five seeded work centres of GDC, by code — the whole authorized set for a company-wide reader. */
 const SEEDED_WORK_CENTRE_CODES = ['WC-PAINT', 'WC-TUBE', 'WC-SLIT', 'WC-CR', 'WC-CUT'] as const
@@ -422,6 +425,16 @@ const UNKNOWN_SITE = {
   name: 'SENTETIK org03 yanıt kaybı tesisi',
   reason: 'SENTETIK org03: kaydedilen yanıt ulaşmadı',
 }
+const LIFECYCLE_SITE = {
+  code: `ORG03-LC-${testedCommit.slice(0, 8).toUpperCase()}`,
+  name: 'SENTETIK org03 yaşam döngüsü tesisi',
+}
+const LIFECYCLE_LOCATION = {
+  code: `ORG03-LC-LOC-${testedCommit.slice(0, 6).toUpperCase()}`,
+  name: 'SENTETIK org03 yaşam döngüsü lokasyonu',
+  deactivateReason: 'SENTETIK org03: lokasyonu geçici olarak pasife alma kabulü',
+  reactivateReason: 'SENTETIK org03: lokasyonu yeniden aktifleştirme kabulü',
+}
 
 function apiHeaders(actor: string): Record<string, string> {
   return { [DEVELOPMENT_USER_HEADER]: actor, 'X-Company-Id': GDC_COMPANY_ID }
@@ -584,6 +597,132 @@ test('ORG-ME-01 the editor creates a site, a location under it and a work centre
       id: workCentre.id, locationId: location.id, code: NEW_WORK_CENTRE.code, name: NEW_WORK_CENTRE.editedName,
     }),
   ])
+})
+
+test('ORG-ME-05 a newly created location persists its reasoned passive and active lifecycle through fresh reads and reopen', async ({ page }) => {
+  await signInAs(page, EDITOR_ACTOR)
+
+  // Create the owning site through the real screen. Its commit-bound code keeps this
+  // record distinct from every other ORG03 master-edit acceptance row.
+  await page.goto(LOCATION_LIST_ROUTE)
+  await expect(page.getByRole('heading', { level: 1, name: 'Organizasyon' })).toBeVisible({ timeout: 30_000 })
+  await page.getByRole('button', { name: 'Yeni tesis', exact: true }).click()
+  const siteForm = page.getByRole('region', { name: 'Yeni tesis' })
+  await fillMasterForm(siteForm, {
+    code: LIFECYCLE_SITE.code,
+    name: LIFECYCLE_SITE.name,
+    choice: { label: 'Tesis türü', option: 'Depo' },
+    reason: 'SENTETIK org03: yaşam döngüsü tesisi oluşturma',
+  })
+  const siteCreated = page.waitForResponse((response) => isCall(response, 'POST', SITES_API))
+  await siteForm.getByRole('button', { name: 'Kaydet', exact: true }).click()
+  const siteAnswer = await siteCreated
+  expect(siteAnswer.status()).toBe(201)
+  const site = await siteAnswer.json() as { readonly id: string; readonly version: number }
+
+  // Create the location through its real form. The resulting card and every later state
+  // are read from the server; no expected version is manufactured by this test.
+  await page.getByRole('button', { name: 'Yeni lokasyon', exact: true }).click()
+  const locationForm = page.getByRole('region', { name: 'Yeni lokasyon' })
+  await fillMasterForm(locationForm, {
+    code: LIFECYCLE_LOCATION.code,
+    name: LIFECYCLE_LOCATION.name,
+    choice: { label: 'Tesis', option: new RegExp(`^${LIFECYCLE_SITE.code} — `) },
+    reason: 'SENTETIK org03: yaşam döngüsü lokasyonu oluşturma',
+  })
+  const locationCreated = page.waitForResponse((response) => isCall(response, 'POST', LOCATIONS_API))
+  await locationForm.getByRole('button', { name: 'Kaydet', exact: true }).click()
+  const locationAnswer = await locationCreated
+  expect(locationAnswer.status()).toBe(201)
+  const created = await locationAnswer.json() as { readonly id: string; readonly version: number }
+  const cardRoute = `${LOCATION_LIST_ROUTE}/lokasyon/${created.id}`
+  const cardApi = `${LOCATIONS_API}/${created.id}`
+  const activeStateApi = `${cardApi}/active-state`
+  await expect(page).toHaveURL(new RegExp(`${cardRoute}$`), { timeout: 30_000 })
+  await expect(page.locator('[data-state="active"]')).toHaveText('Aktif')
+
+  const initialRead = await page.request.get(`${apiBaseUrl}${cardApi}`, { headers: apiHeaders(EDITOR_ACTOR) })
+  expect(initialRead.status()).toBe(200)
+  const initial = await initialRead.json() as { readonly id: string; readonly version: number; readonly isActive: boolean }
+  expect(initial).toMatchObject({ id: created.id, version: created.version, isActive: true })
+
+  // The editor's write grant deliberately does not confer the separate lifecycle authority.
+  // Reopen the stored card as the existing organization operator before exercising that command.
+  await signInAs(page, LOCATION_STATUS_ACTOR)
+  await page.goto(cardRoute)
+  await expect(page.locator('[data-state="active"]')).toHaveText('Aktif')
+
+  // Deactivate from the card, with the canonical modal and its own justification.
+  await page.getByRole('button', { name: 'Pasife al', exact: true }).click()
+  const deactivateDialog = page.getByRole('dialog', { name: 'Lokasyonu pasife al' })
+  await deactivateDialog.getByLabel('Gerekçe', { exact: true }).fill(LIFECYCLE_LOCATION.deactivateReason)
+  const deactivated = page.waitForResponse((response) => isCall(response, 'PUT', activeStateApi))
+  await deactivateDialog.getByRole('button', { name: 'Pasife al', exact: true }).click()
+  const deactivateAnswer = await deactivated
+  expect(deactivateAnswer.status()).toBe(204)
+  expect(deactivateAnswer.request().postDataJSON()).toEqual({
+    isActive: false,
+    expectedVersion: initial.version.toString(),
+    reason: LIFECYCLE_LOCATION.deactivateReason,
+  })
+  await expect(page.locator('[data-outcome="applied"]')).toContainText('Değişiklik kaydedildi', { timeout: 30_000 })
+  await expect(page.locator('[data-state="passive"]')).toHaveText('Pasif')
+
+  const passiveRead = await page.request.get(`${apiBaseUrl}${cardApi}`, { headers: apiHeaders(LOCATION_STATUS_ACTOR) })
+  expect(passiveRead.status()).toBe(200)
+  const passive = await passiveRead.json() as { readonly id: string; readonly version: number; readonly isActive: boolean }
+  expect(passive).toMatchObject({ id: created.id, isActive: false })
+  expect(passive.version).toBeGreaterThan(initial.version)
+
+  // Leave the card, return through the list and reopen the exact stored record. This is
+  // a fresh route/list/card journey, so the passive badge cannot come from modal state.
+  await page.goto('/')
+  await page.goto(LOCATION_LIST_ROUTE)
+  const storedRow = page.getByRole('row').filter({ has: page.getByRole('link', { name: LIFECYCLE_LOCATION.code, exact: true }) })
+  await expect(storedRow.getByText('Pasif', { exact: true })).toBeVisible({ timeout: 30_000 })
+  await storedRow.getByRole('link', { name: LIFECYCLE_LOCATION.code, exact: true }).click()
+  await expect(page).toHaveURL(new RegExp(`${cardRoute}$`), { timeout: 30_000 })
+  await expect(page.locator('[data-state="passive"]')).toHaveText('Pasif')
+
+  // Reactivate with a distinct reason and the version from the passive fresh read.
+  await page.getByRole('button', { name: 'Aktifleştir', exact: true }).click()
+  const reactivateDialog = page.getByRole('dialog', { name: 'Lokasyonu aktifleştir' })
+  await reactivateDialog.getByLabel('Gerekçe', { exact: true }).fill(LIFECYCLE_LOCATION.reactivateReason)
+  const reactivated = page.waitForResponse((response) => isCall(response, 'PUT', activeStateApi))
+  await reactivateDialog.getByRole('button', { name: 'Aktifleştir', exact: true }).click()
+  const reactivateAnswer = await reactivated
+  expect(reactivateAnswer.status()).toBe(204)
+  expect(reactivateAnswer.request().postDataJSON()).toEqual({
+    isActive: true,
+    expectedVersion: passive.version.toString(),
+    reason: LIFECYCLE_LOCATION.reactivateReason,
+  })
+  await expect(page.locator('[data-outcome="applied"]')).toContainText('Değişiklik kaydedildi', { timeout: 30_000 })
+  await expect(page.locator('[data-state="active"]')).toHaveText('Aktif')
+
+  const activeRead = await page.request.get(`${apiBaseUrl}${cardApi}`, { headers: apiHeaders(LOCATION_STATUS_ACTOR) })
+  expect(activeRead.status()).toBe(200)
+  const active = await activeRead.json() as { readonly id: string; readonly version: number; readonly isActive: boolean }
+  expect(active).toMatchObject({ id: created.id, isActive: true })
+  expect(active.version).toBeGreaterThan(passive.version)
+
+  // The paged owner list contains exactly one committed record for this unique code.
+  const locations = await page.request.get(`${apiBaseUrl}${LOCATIONS_API}?page=1&pageSize=100`, {
+    headers: apiHeaders(LOCATION_STATUS_ACTOR),
+  })
+  expect(locations.status()).toBe(200)
+  const matches = ((await locations.json() as { readonly items: readonly {
+    readonly id: string; readonly siteId: string; readonly code: string; readonly name: string
+    readonly isActive: boolean; readonly version: number
+  }[] }).items).filter((location) => location.code === LIFECYCLE_LOCATION.code)
+  expect(matches).toEqual([expect.objectContaining({
+    id: created.id,
+    siteId: site.id,
+    code: LIFECYCLE_LOCATION.code,
+    name: LIFECYCLE_LOCATION.name,
+    isActive: true,
+    version: active.version,
+  })])
 })
 
 test('ORG-ME-04 a committed site create whose answer is lost stays frozen, replays the same command, and reopens once', async ({ page }) => {
