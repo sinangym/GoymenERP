@@ -119,9 +119,10 @@ test('WA-B3 an abandoned late terminal answer cannot close or roll back the reco
     const originalJson = Response.prototype.json
     Response.prototype.json = async function json() {
       const body = await originalJson.call(this)
-      if (this.url.includes('invalid-late-terminal')) {
-        ;(globalThis as typeof globalThis & { __goymenLateTerminalJsonRead?: boolean })
-          .__goymenLateTerminalJsonRead = true
+      const url = new URL(this.url)
+      if (url.pathname === '/api/v1/work/approvals' && url.searchParams.has('cursor') && !url.searchParams.has('kind')) {
+        const state = globalThis as typeof globalThis & { __goymenFinanceContinuationJsonReads?: number }
+        state.__goymenFinanceContinuationJsonReads = (state.__goymenFinanceContinuationJsonReads ?? 0) + 1
       }
       return body
     }
@@ -171,13 +172,15 @@ test('WA-B3 an abandoned late terminal answer cannot close or roll back the reco
 
   const firstPageReadsBeforeLateAnswer = reads.filter((read) =>
     read.url.pathname === WORK_PATH && !read.url.searchParams.has('cursor') && !read.url.searchParams.has('kind')).length
+  expect(await page.evaluate(() =>
+    (globalThis as typeof globalThis & { __goymenFinanceContinuationJsonReads?: number })
+      .__goymenFinanceContinuationJsonReads)).toBe(1)
   releaseOld?.()
-  // Wait until the real late response body has reached the consumer. The marker is set by the
-  // Response.json wrapper immediately before the awaiting application continuation resumes; the
-  // waitForFunction task therefore runs only after that continuation has rejected the stale attempt.
+  // The current generation's terminal body is read first. The held old request is the second
+  // Finance continuation body, independently of Playwright's route URL rewrite visibility.
   await page.waitForFunction(() =>
-    (globalThis as typeof globalThis & { __goymenLateTerminalJsonRead?: boolean })
-      .__goymenLateTerminalJsonRead === true)
+    (globalThis as typeof globalThis & { __goymenFinanceContinuationJsonReads?: number })
+      .__goymenFinanceContinuationJsonReads === 2)
   await expect(page.getByTestId('work-approvals-closed')).toHaveCount(0)
   await expect(table.locator(`tr[data-approval-id="${financeBatchId}"]`)).toBeVisible()
 
