@@ -55,9 +55,10 @@ function installFetch(granted: readonly string[], served: Served = {}) {
   return { calls, work: () => calls.filter((call) => call.url.includes('/work/approvals')) }
 }
 
-async function renderAt(path: string) {
+/** `staleTime`: 0 by default; 30_000 is the production ShellProvider cache timing. */
+async function renderAt(path: string, staleTime = 0) {
   const router = createMemoryRouter(shellRoutes, { initialEntries: [path] })
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: 0 } } })
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime } } })
   render(<ShellProvider queryClient={queryClient}><RouterProvider router={router} /></ShellProvider>)
   await screen.findByText('Onaycı', undefined, { timeout: 5000 })
   return router
@@ -438,3 +439,106 @@ describe('/onaylarim — Sales and Finance as separate connected sources', () =>
     expect(work()).toEqual([])
   })
 })
+
+/**
+ * #647 K2 P2 and the context-change rules: a source closed by a terminal next-page answer stays closed across a
+ * source switch under the PRODUCTION cache timing (staleTime 30 s), until a fresh cursorless first page; a late answer
+ * never paints into another source or another company.
+ */
+describe('/onaylarim — closure, late answers and context changes', () => {
+  const SALES_APPROVE = SALES_CAPABILITY.ordersApprove
+  const SALES_DETAIL = SALES_CAPABILITY.draftsDetail
+  const SALES_LIST = '/api/v1/work/approvals?kind=sales.order-draft.v1'
+  const BOTH = [APPROVE, SALES_APPROVE, SALES_DETAIL]
+  const sourceLink = (name: string) => within(screen.getByRole('navigation', { name: APPROVALS_TEXT.sources })).getByRole('link', { name })
+  const salesRows = () => document.querySelectorAll(`[data-approval-id="${DRAFT}"]`).length
+
+  it('a Sales list closed by a foreign next page stays closed after Finance and back (30 s cache), until a fresh first page', async () => {
+    const { work } = installFetch(BOTH, {
+      list: (url) => {
+        if (!url.includes('kind=sales.order-draft.v1')) return json({ companyId: COMPANY, items: [item], nextCursor: null })
+        return url.includes('cursor=')
+          ? json({ companyId: OTHER_COMPANY, items: [{ ...salesItem, approvalId: '22222222-2222-4222-8222-222222222222', companyId: OTHER_COMPANY }], nextCursor: null })
+          : json({ companyId: COMPANY, items: [salesItem], nextCursor: 's-1' })
+      },
+    })
+    await renderAt('/onaylarim?kaynak=satis', 30_000)
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole('button', { name: APPROVALS_TEXT.loadMore }))
+    await screen.findByTestId('work-approvals-closed')
+
+    await user.click(sourceLink('Finans'))
+    await waitFor(() => expect(screen.getByTestId('work-approvals-table').getAttribute('data-kind')).toBe('finance.official-invoice-import.v1'))
+    await user.click(sourceLink('Satış'))
+    // Back on Sales: still closed — no cached row, detail link or Sales link, and nothing read.
+    expect(await screen.findByTestId('work-approvals-closed')).toBeTruthy()
+    expect(screen.queryByTestId('work-approvals-table')).toBeNull()
+    expect(salesRows()).toBe(0)
+    expect(screen.queryByRole('link', { name: APPROVALS_TEXT.openNativeSales })).toBeNull()
+    expect(screen.queryByRole('link', { name: APPROVALS_TEXT.openDetail })).toBeNull()
+    const salesReads = () => work().filter((call) => call.url.startsWith(SALES_LIST))
+    expect(salesReads().map((call) => call.url)).toEqual([SALES_LIST, `${SALES_LIST}&cursor=s-1`])
+
+    await user.click(screen.getByRole('button', { name: APPROVALS_TEXT.restart }))
+    await waitFor(() => expect(salesRows()).toBe(1))
+    expect(salesReads().map((call) => call.url)).toEqual([SALES_LIST, `${SALES_LIST}&cursor=s-1`, SALES_LIST])
+    // And after the restart a switch away and back does not resurrect the closed page or the pre-closure page.
+    await user.click(sourceLink('Finans'))
+    await user.click(sourceLink('Satış'))
+    await waitFor(() => expect(salesRows()).toBe(1))
+    expect(screen.queryByTestId('work-approvals-closed')).toBeNull()
+  })
+
+  it('a Sales first page that answers after the switch to Finance never appears', async () => {
+    const late = deferredResponse()
+    installFetch(BOTH, {
+      list: (url) => url.includes('kind=sales.order-draft.v1') ? late.response : json({ companyId: COMPANY, items: [item], nextCursor: null }),
+    })
+    await renderAt('/onaylarim?kaynak=satis')
+    await waitFor(() => expect(late.requested()).toBe(true))
+    const user = userEvent.setup()
+    await user.click(sourceLink('Finans'))
+    await waitFor(() => expect(screen.getByTestId('work-approvals-table').getAttribute('data-kind')).toBe('finance.official-invoice-import.v1'))
+    late.resolve(json({ companyId: COMPANY, items: [salesItem], nextCursor: null }))
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(screen.getByTestId('work-approvals-table').getAttribute('data-kind')).toBe('finance.official-invoice-import.v1')
+    expect(salesRows()).toBe(0)
+  })
+
+  it('a company switch re-reads under the new company; the old company\'s rows and late next page never show', async () => {
+    const lateNext = deferredResponse()
+    const { work } = installFetch([SALES_APPROVE, SALES_DETAIL], {
+      list: (url, companyId) => {
+        if (companyId === OTHER_COMPANY) return json({ companyId: OTHER_COMPANY, items: [], nextCursor: null })
+        return url.includes('cursor=') ? lateNext.response : json({ companyId: COMPANY, items: [salesItem], nextCursor: 's-1' })
+      },
+    })
+    await renderAt('/onaylarim')
+    const user = userEvent.setup()
+    await waitFor(() => expect(salesRows()).toBe(1))
+    await user.click(screen.getByRole('button', { name: APPROVALS_TEXT.loadMore }))
+    await waitFor(() => expect(lateNext.requested()).toBe(true))
+    await user.selectOptions(screen.getByLabelText('Şirket'), OTHER_COMPANY)
+    await waitFor(() => expect(document.querySelector('[data-state="empty-no-data"]')).not.toBeNull())
+    expect(salesRows()).toBe(0)
+    lateNext.resolve(json({ companyId: COMPANY, items: [{ ...salesItem, approvalId: '22222222-2222-4222-8222-222222222222' }], nextCursor: null }))
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(salesRows()).toBe(0)
+    expect(document.querySelectorAll('[data-approval-id="22222222-2222-4222-8222-222222222222"]')).toHaveLength(0)
+    const companies = work().map((call) => call.companyId)
+    expect(companies.slice(-1)).toEqual([OTHER_COMPANY])
+    expect(work().filter((call) => call.companyId === OTHER_COMPANY).every((call) => call.url === SALES_LIST)).toBe(true)
+  })
+})
+
+/** A list answer the test releases by hand, recording whether it was asked for. */
+function deferredResponse() {
+  let release!: (response: Response) => void
+  let asked = false
+  const promise = new Promise<Response>((resolve) => { release = resolve })
+  return {
+    get response() { asked = true; return promise as unknown as Response },
+    requested: () => asked,
+    resolve: (response: Response) => release(response),
+  }
+}

@@ -62,12 +62,27 @@ function NativeLink({ source, approvalId, className }: { readonly source: Approv
   return <Link className={className} to={source.nativePath(approvalId)}>{source.openNative}</Link>
 }
 
+/**
+ * What a source's list must remember while another source is shown (#647 K2 P2): that it was CLOSED by a terminal
+ * next-page answer, and which first-page read generation it is on. Kept here, above the per-source remount, so going to
+ * the other source and back neither reopens a closed list from the query cache nor falls back to the first page read
+ * before a restart: a closed list stays closed — and reads nothing — until the user restarts it with a fresh first page.
+ * Keyed by context AND source; a new context starts clean.
+ */
+interface SourceMemory {
+  readonly generation: number
+  readonly closed: RemoteViewState<unknown> | null
+}
+
 export function ApprovalInboxPage() {
   const { shell, namespace } = useBoundCompany()
   const [searchParams] = useSearchParams()
+  const [memory, setMemory] = useState<Readonly<Record<string, SourceMemory>>>({})
   const granted = grantedSources(shell)
   const source = granted.find((one) => one.token === searchParams.get(SOURCE_PARAM)) ?? granted[0] ?? null
   if (source === null) return <StateBlock state={{ kind: 'not-found' }} subject="sayfa" />
+  const memoryKey = `${namespace ?? 'no-context'}::${source.kind}`
+  const remembered = memory[memoryKey] ?? { generation: 0, closed: null }
   return <section className={styles.page} aria-labelledby="work-approvals-heading">
     <header className={styles.header}>
       <h1 id="work-approvals-heading">{T.heading}</h1>
@@ -80,7 +95,9 @@ export function ApprovalInboxPage() {
       </nav>
       : null}
     {/* Remounted per context AND per source: rows, cursors, errors and late answers never cross either. */}
-    <SourceInbox key={`${namespace ?? 'no-context'}::${source.kind}`} source={source} />
+    <SourceInbox key={memoryKey} source={source} generation={remembered.generation} closed={remembered.closed}
+      onClosed={(state) => setMemory((all) => ({ ...all, [memoryKey]: { generation: remembered.generation, closed: state } }))}
+      onRestart={() => setMemory((all) => ({ ...all, [memoryKey]: { generation: (all[memoryKey]?.generation ?? 0) + 1, closed: null } }))} />
   </section>
 }
 
@@ -92,14 +109,21 @@ export function ApprovalInboxPage() {
  */
 const TRANSIENT_CONTINUATION: ReadonlySet<RemoteViewState<unknown>['kind']> = new Set(['offline', 'network-error', 'service-unavailable'])
 
-function SourceInbox({ source }: { readonly source: ApprovalSource }) {
+function SourceInbox({ source, generation, closed, onClosed, onRestart }: {
+  readonly source: ApprovalSource
+  /** A restart is a new read of the first page under a new key: nothing of the closed list is shown while it loads. */
+  readonly generation: number
+  /** Set by a terminal next-page answer; survives a source switch (see `SourceMemory`). */
+  readonly closed: RemoteViewState<unknown> | null
+  readonly onClosed: (state: RemoteViewState<unknown>) => void
+  readonly onRestart: () => void
+}) {
   const { shell, namespace, companyId } = useBoundCompany()
   const boundary = useAuthBoundary()
-  // A restart is a new read of the first page under a new key: nothing of the closed list is shown while it loads.
-  const [generation, setGeneration] = useState(0)
   const first = useQuery({
     queryKey: [namespace ?? 'no-context', shell.routeEntryGeneration, 'work-approvals', source.kind, 'first', generation],
-    enabled: namespace !== null && companyId !== null,
+    // A closed list reads nothing and serves nothing from the cache until the user restarts it.
+    enabled: namespace !== null && companyId !== null && closed === null,
     queryFn: async ({ signal }) => {
       const snapshot = boundary.capture()
       const outcome = await fetchApprovalPage(source.kind, null, companyId as string, signal)
@@ -110,7 +134,6 @@ function SourceInbox({ source }: { readonly source: ApprovalSource }) {
   const [more, setMore] = useState<readonly ApprovalItem[]>([])
   const [cursor, setCursor] = useState<string | null | undefined>(undefined)
   const [continuation, setContinuation] = useState<'idle' | 'loading' | RemoteViewState<unknown>>('idle')
-  const [closed, setClosed] = useState<RemoteViewState<unknown> | null>(null)
   const loadingRef = useRef(false)
   // Bumped by a restart: a next-page answer of the list before it is dropped.
   const attemptRef = useRef(0)
@@ -143,9 +166,9 @@ function SourceInbox({ source }: { readonly source: ApprovalSource }) {
       setContinuation(state)
     } else {
       setContinuation('idle')
-      setClosed(state)
+      onClosed(state)
     }
-  }, [boundary, companyId, firstPage, nextCursor, source.kind])
+  }, [boundary, companyId, firstPage, nextCursor, onClosed, source.kind])
 
   const restart = () => {
     attemptRef.current += 1
@@ -153,17 +176,10 @@ function SourceInbox({ source }: { readonly source: ApprovalSource }) {
     setMore([])
     setCursor(undefined)
     setContinuation('idle')
-    setClosed(null)
-    setGeneration((value) => value + 1)
+    onRestart()
   }
 
-  if (firstPage === null) {
-    const state: RemoteViewState<unknown> = first.data === undefined
-      ? { kind: 'initial-loading' }
-      : classifyOutcome(first.data) as RemoteViewState<unknown>
-    return <StateBlock state={state} subject={source.subject} onRetry={() => void first.refetch()} />
-  }
-
+  // Closed first: a remount after a source switch must not paint the cached first page of a closed list.
   if (closed !== null) {
     return <>
       <div role="alert" data-testid="work-approvals-closed">
@@ -172,6 +188,13 @@ function SourceInbox({ source }: { readonly source: ApprovalSource }) {
       </div>
       <button type="button" onClick={restart}>{T.restart}</button>
     </>
+  }
+
+  if (firstPage === null) {
+    const state: RemoteViewState<unknown> = first.data === undefined
+      ? { kind: 'initial-loading' }
+      : classifyOutcome(first.data) as RemoteViewState<unknown>
+    return <StateBlock state={state} subject={source.subject} onRetry={() => void first.refetch()} />
   }
 
   const rows = [...firstPage.items, ...more]
