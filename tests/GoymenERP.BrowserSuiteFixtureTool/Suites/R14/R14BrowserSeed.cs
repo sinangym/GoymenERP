@@ -74,6 +74,7 @@ public sealed class R14BrowserSeed : IBrowserSuiteFixture
     private const string CapabilitiesPath = "/api/v1/shell/capabilities";
     private const string OpeningCapability = "inventory.opening-stock.record";
     private const string LabelDetailCapability = "inventory.stock-positions.list";
+    private const string LocationDetailCapability = "organization.locations.detail";
     private const string ProductDetailCapability = "product.items.detail";
     private const string LabelClassificationCapability = "inventory.label-classification.write";
     private const string LabelTransformationCapability = "inventory.label-transformation.record";
@@ -188,6 +189,8 @@ public sealed class R14BrowserSeed : IBrowserSuiteFixture
         string[][] othersCapabilities =
             [recorderCapabilities, deniedCapabilities, arrangerCapabilities, transformerCapabilities];
         if (!counterCapabilities.Contains(LabelDetailCapability, StringComparer.Ordinal)
+            || !recorderCapabilities.Contains(LocationDetailCapability, StringComparer.Ordinal)
+            || counterCapabilities.Contains(LocationDetailCapability, StringComparer.Ordinal)
             || !counterCapabilities.Contains(StockCountRecordCapability, StringComparer.Ordinal)
             || counterCapabilities.Contains(StockCountApproveCapability, StringComparer.Ordinal)
             || !approverCapabilities.Contains(LabelDetailCapability, StringComparer.Ordinal)

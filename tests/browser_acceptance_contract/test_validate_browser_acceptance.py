@@ -1103,6 +1103,7 @@ class WorkflowTests(unittest.TestCase):
                 r"IdentitySeed__Roles__6__Permissions__(\d+): ([^\r\n]+)", source)
         }
         self.assertEqual("inventory.label-classification.write", recorder[6])
+        self.assertEqual("organization.locations.read", recorder[7])
         self.assertNotIn("inventory.label-classification.write", denied.values())
         for role_index in range(8, 13):
             role_permissions = {
@@ -1131,6 +1132,24 @@ class WorkflowTests(unittest.TestCase):
             {validator.INVENTORY_STOCK_POSITION_CURSOR_KEY: cursor_key},
         )
 
+        environment = {}
+        for line in source.splitlines():
+            match = re.fullmatch(r"\s{6}([A-Za-z0-9_]+):\s*(.+)", line)
+            if match is not None:
+                raw = match.group(2)
+                environment[match.group(1)] = json.loads(raw) if raw.startswith('"') else raw
+        validator.validate_suite_extensions("r14", environment)
+
+        missing_location_read = dict(environment)
+        del missing_location_read["IdentitySeed__Roles__5__Permissions__7"]
+        with self.assertRaisesRegex(validator.ContractError, "r14-recorder requires its exact isolated permissions"):
+            validator.validate_suite_extensions("r14", missing_location_read)
+
+        leaked_to_counter = dict(environment)
+        leaked_to_counter["IdentitySeed__Roles__9__Permissions__4"] = "organization.locations.read"
+        with self.assertRaisesRegex(validator.ContractError, "only r14-recorder and the dedicated arranger"):
+            validator.validate_suite_extensions("r14", leaked_to_counter)
+
     def _trigger_block(self) -> str:
         return self.workflow.split("\non:\n", 1)[1].split("\npermissions:\n", 1)[0]
 
@@ -1148,6 +1167,34 @@ class WorkflowTests(unittest.TestCase):
         permissions = self.workflow.split("\npermissions:\n", 1)[1].split("\n\n", 1)[0]
         self.assertEqual([line.strip() for line in permissions.strip().splitlines()], ["contents: read", "pull-requests: read"])
         self.assertIn("persist-credentials: false", self.workflow)
+
+    def test_docker_hub_cache_mirror_is_verified_before_compose_use(self):
+        for required in (
+            '-s tests/dockerhub_mirror_contract',
+            "sudo python3 -I -S -B tools/configure_dockerhub_mirror.py configure",
+            "--daemon-config /etc/docker/daemon.json",
+            "sudo systemctl restart docker",
+            "docker info --format '{{json .RegistryConfig.Mirrors}}'",
+            "python3 -I -S -B tools/configure_dockerhub_mirror.py verify",
+        ):
+            with self.subTest(required=required):
+                self.assertIn(required, self.workflow)
+
+        tooling = self.workflow.index("      - name: Validate browser workflow contract tooling")
+        mirror = self.workflow.index("      - name: Configure Docker Hub cache mirror")
+        select = self.workflow.index("      - name: Select the suite's capability profile")
+        compose = self.workflow.index("      - name: Validate loopback-only compose model")
+        build = self.workflow.index("      - name: Build and start disposable SQL/API")
+        self.assertLess(tooling, mirror)
+        self.assertLess(mirror, select)
+        self.assertLess(select, compose)
+        self.assertLess(compose, build)
+
+        mirror_body = self.workflow.split(
+            "      - name: Configure Docker Hub cache mirror", 1
+        )[1].split("      - name:", 1)[0]
+        self.assertNotIn("continue-on-error", mirror_body)
+        self.assertNotIn("secrets.", mirror_body)
 
     def test_dispatch_suites_match_the_validator(self):
         options = self.workflow.split("options:\n", 1)[1].split("      pr:", 1)[0]

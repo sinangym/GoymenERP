@@ -77,6 +77,7 @@ const position = {
   physicalKg: '100', freePhysicalKg: '90', blockedPhysicalKg: '10', activeAllocationKg: '30', availableKg: '60',
   productVersion: '1', classification: null,
   productDisplay: { productId: PRODUCT, expectedProductVersion: '1', identity: null, technical: null, errors: [] },
+  locationDisplay: { locationId: LOCATION, locationCode: 'DEPO-A', locationName: 'Ana depo' },
 }
 
 /** The filters ST-01 sends with only a label-code search. */
@@ -390,5 +391,17 @@ describe('AT-064 ST-01 purchase remainder as future supply', () => {
     api.purchase.mockReset().mockResolvedValue({ type: 'ok-single', data: { items: [], nextCursor: null } })
     mount()
     expect(await screen.findByText('Bu şirkette mal kabulü bekleyen onaylı alış siparişi satırı yok.')).toBeTruthy()
+  })
+})
+
+describe('STOCK-LOCATION-2 on the ST-01 row', () => {
+  it('shows the 2.0 location code and name on the same row its actions act on', async () => {
+    shell.capabilities = [INVENTORY_STOCK_POSITIONS_CAPABILITY, INVENTORY_STOCK_COUNT_RECORD_CAPABILITY]
+    mount()
+    const toggle = await screen.findByRole('button', { name: 'LBL-1 işlemleri' })
+    const tr = toggle.closest('tr')!
+    expect(within(tr).getByText('DEPO-A')).toBeTruthy()
+    expect(within(tr).getByText('Ana depo')).toBeTruthy()
+    expect(within(tr).getAllByRole('cell').map((cell) => cell.textContent).slice(5, 9)).toEqual(['100', '10', '30', '60'])
   })
 })

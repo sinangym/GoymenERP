@@ -87,7 +87,7 @@ vi.mock('../shell/useAuthBoundary', async (importOriginal) => {
 
 /** The #597 producer fixture (`InventoryStockPositionHttpAcceptanceTests`) in this company. */
 function row(overrides: Record<string, unknown> = {}) {
-  return {
+  const base = {
     companyId: COMPANY, labelId: LABEL, labelVersion: '3', labelCode: 'ROLL-1', productId: PRODUCT, productVersion: '7',
     classification: 'Standard', lot: { id: LOT, heatNumber: 'HEAT-1', coilNumber: 'COIL-1' }, heatNumber: 'HEAT-1',
     coilNumber: 'COIL-1', documentStatus: 'Complete', ownerKind: 'Company', ownerId: COMPANY,
@@ -105,6 +105,10 @@ function row(overrides: Record<string, unknown> = {}) {
     },
     ...overrides,
   }
+  // STOCK-LOCATION-2: the 2.0 row's Organization display, bound to the row's own location unless a case sets one.
+  return 'locationDisplay' in overrides
+    ? base
+    : { ...base, locationDisplay: { locationId: base.locationId, locationCode: 'HOL-1', locationName: 'Hol 1 · Boy kesme' } }
 }
 
 function ready(items: readonly unknown[], extra: { searchWindowFull?: boolean; nextCursor?: string | null } = {}) {
@@ -165,7 +169,7 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals())
 
 describe('ST-01 on the #597 opt-in contract', () => {
-  it('draws the producer row under the kept heading: label, Product, size, "—" location, owner, four quantities', async () => {
+  it('draws the producer row under the kept heading: label, Product, size, location code and name, owner, four quantities', async () => {
     shell.capabilities = [CAPABILITY.productItemsDetail, CAPABILITY.organizationLocationsDetail]
     stubViewport(false)
     mount()
@@ -180,7 +184,8 @@ describe('ST-01 on the #597 opt-in contract', () => {
       'ROLL-1Döküm HEAT-1 · Rulo COIL-1',
       'P-1Galvaniz bantÜrün kartı',
       '1,5 × 1.250',
-      '—Lokasyon kartı',
+      // STOCK-LOCATION-2: the Organization owner's code and name from the 2.0 read, beside the authorised card link.
+      'HOL-1Hol 1 · Boy kesmeLokasyon kartı',
       'Şirket malı',
     ])
     expect(screen.getByRole('link', { name: 'ROLL-1' }).getAttribute('href')).toBe(`/stok/etiket/${LABEL}`)
@@ -371,7 +376,7 @@ describe('ST-01 filters — only what #597 supports, from the URL', () => {
     const chips = await screen.findByRole('list', { name: 'Etkin filtreler' })
     // An exact owner filter names one owner: the contract has no counterparty name, so it says "seçili cari".
     expect(within(chips).getAllByRole('listitem').map((item) => item.firstChild?.textContent)).toEqual([
-      'Ürün: P-1 Galvaniz bant', 'Lokasyon: seçili lokasyon', 'Mal sahibi: seçili cari',
+      'Ürün: P-1 Galvaniz bant', 'Lokasyon: HOL-1 Hol 1 · Boy kesme', 'Mal sahibi: seçili cari',
     ])
     // A filter already applied is not offered again on the row.
     expect(screen.queryByRole('button', { name: 'ROLL-1: bu ürüne göre filtrele' })).toBeNull()
@@ -603,7 +608,7 @@ describe('ST-01 on a phone', () => {
     expect(facts(items[0])).toEqual([
       ['Ürün', 'P-1Galvaniz bant'],
       ['Ölçü (mm)', '1,5 × 1.250'],
-      ['Lokasyon', '—'],
+      ['Lokasyon', 'HOL-1Hol 1 · Boy kesme'],
       ['Mal sahibi', 'Şirket malı'],
       ['Fiziksel kg', '10'],
       ['Bloklu kg', '2'],
@@ -842,7 +847,7 @@ describe('ST-01 inside the real shell: capability route, auth boundary, no legac
   /** No read of this screen may go out without the #597 opt-in, and the legacy reader is never called. */
   function expectNoLegacyRead() {
     expect(api.legacy).not.toHaveBeenCalled()
-    expect(positionCalls.every((call) => call.optIn === '1.0')).toBe(true)
+    expect(positionCalls.every((call) => call.optIn === '2.0')).toBe(true)
   }
 
   beforeEach(() => {
@@ -935,5 +940,60 @@ describe('ST-01 inside the real shell: capability route, auth boundary, no legac
     expect(notFound()).toBeNull()
     expect(navLink(ST01_LABEL)).not.toBeNull()
     expectNoLegacyRead()
+  })
+})
+
+/** STOCK-LOCATION-2: the 2.0 read's location code and name on the real ST-01 table and phone card. */
+describe('ST-01 location display (#607 2.0)', () => {
+  const LONG_NAME = 'Çağlayan Öğütücü İşletmesi — Hol 2 · Boy kesme ve dilme hattı, güney kapı yanı'
+  const longRow = () => row({ locationDisplay: { locationId: LOCATION, locationCode: 'TS-B-HOL-02-BK-0001', locationName: LONG_NAME } })
+
+  it('shows the whole code and long Turkish name in the table, with the card link only for its own capability', async () => {
+    shell.capabilities = [CAPABILITY.organizationLocationsDetail]
+    stubViewport(false)
+    api.page.mockResolvedValue(ready([longRow()]))
+    mount()
+    const tr = (await screen.findByRole('link', { name: 'ROLL-1' })).closest('tr')!
+    expect(cellTexts(tr)[3]).toBe(`TS-B-HOL-02-BK-0001${LONG_NAME}Lokasyon kartı`)
+    const name = within(tr).getByText(LONG_NAME)
+    expect(name.textContent).toBe(LONG_NAME)
+    expect(name.getAttribute('title')).toBeNull()
+    expect(within(tr).getByRole('link', { name: 'Lokasyon kartı' }).getAttribute('href')).toBe(`/ayarlar/organizasyon/lokasyon/${LOCATION}`)
+  })
+
+  it('shows code and name without a card link for an actor without the location detail capability', async () => {
+    shell.capabilities = []
+    stubViewport(false)
+    mount()
+    const tr = (await screen.findByRole('link', { name: 'ROLL-1' })).closest('tr')!
+    expect(cellTexts(tr)[3]).toBe('HOL-1Hol 1 · Boy kesme')
+    expect(within(tr).queryByRole('link', { name: 'Lokasyon kartı' })).toBeNull()
+  })
+
+  it('shows code and name on the phone card too', async () => {
+    stubViewport(true)
+    api.page.mockResolvedValue(ready([longRow()]))
+    mount()
+    const card = within(await screen.findByTestId('stock-position-cards')).getAllByRole('listitem')[0]
+    const location = within(card).getAllByRole('term').find((term) => term.textContent === 'Lokasyon')!.nextElementSibling!
+    expect(location.textContent).toBe(`TS-B-HOL-02-BK-0001${LONG_NAME}`)
+  })
+
+  it('filters by the row\'s exact location id and names it with the published code and name', async () => {
+    const user = userEvent.setup()
+    stubViewport(false)
+    mount()
+    await user.click(await screen.findByRole('button', { name: 'ROLL-1: bu lokasyona göre filtrele' }))
+    await waitFor(() => expect(api.page).toHaveBeenLastCalledWith(COMPANY, { ...NO_FILTERS, locationId: LOCATION }, null, expect.any(AbortSignal)))
+    const chips = await screen.findByRole('list', { name: 'Etkin filtreler' })
+    expect(within(chips).getByText('Lokasyon: HOL-1 Hol 1 · Boy kesme')).toBeTruthy()
+  })
+
+  it('never shows "—" or the raw id for a location', async () => {
+    stubViewport(false)
+    mount()
+    const tr = (await screen.findByRole('link', { name: 'ROLL-1' })).closest('tr')!
+    expect(cellTexts(tr)[3]).not.toContain('—')
+    expect(main().textContent).not.toContain(LOCATION)
   })
 })

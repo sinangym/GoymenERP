@@ -82,6 +82,27 @@ export interface StockDisplayPage {
   readonly nextCursor: string | null
 }
 
+/**
+ * STOCK-LOCATION-2: the Organization owner's display of the row's own location, as the #607 producer publishes it in
+ * the `2.0` response (`OrganizationLocationDisplayV1`). Bound to the row's `locationId`; never looked up or guessed here.
+ */
+export interface StockLocationDisplay {
+  readonly locationId: string
+  readonly locationCode: string
+  readonly locationName: string
+}
+
+/** A `2.0` row: every `1.0` member unchanged, plus the required, non-null location display. */
+export interface StockLocationDisplayRow extends StockDisplayRow {
+  readonly locationDisplay: StockLocationDisplay
+}
+
+export interface StockLocationDisplayPage {
+  readonly items: readonly StockLocationDisplayRow[]
+  readonly searchWindowFull: boolean
+  readonly nextCursor: string | null
+}
+
 type JsonObject = Record<string, unknown>
 
 const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -201,9 +222,18 @@ function productDisplayOf(value: unknown, productId: string, productVersion: str
   return { productId, expectedProductVersion: productVersion, identity, technical, errors }
 }
 
-function rowOf(value: unknown): StockDisplayRow | null {
+/** Exactly the three members, bound to the row's own location; a blank code or name is not a display. */
+function locationDisplayOf(value: unknown, locationId: string): StockLocationDisplay | null {
   const source = record(value)
-  if (source === null || !exact(source, ROW_KEYS)) return null
+  if (source === null || !exact(source, ['locationId', 'locationCode', 'locationName']) ||
+    !guid(source.locationId) || source.locationId.toLowerCase() !== locationId.toLowerCase() ||
+    !text(source.locationCode) || !text(source.locationName)) return null
+  return { locationId: source.locationId, locationCode: source.locationCode, locationName: source.locationName }
+}
+
+function rowOf(value: unknown, keys: readonly string[] = ROW_KEYS): StockDisplayRow | null {
+  const source = record(value)
+  if (source === null || !exact(source, keys)) return null
   const {
     companyId, labelId, labelVersion, labelCode, productId, productVersion, classification, heatNumber, coilNumber,
     documentStatus, ownerKind, ownerId, custodianKind, custodianId, locationId,
@@ -235,20 +265,42 @@ function rowOf(value: unknown): StockDisplayRow | null {
   }
 }
 
-/** The opt-in page, or null when anything in it is outside the published contract. */
-export function decodeStockDisplayPage(value: unknown): StockDisplayPage | null {
+function pageOf<Row extends StockDisplayRow>(value: unknown, decodeRow: (row: unknown) => Row | null) {
   const source = record(value)
   // `nextCursor` is required-nullable at runtime but optional in the published schema: absent reads as null.
   if (source === null || Object.keys(source).some((key) => !(PAGE_KEYS as readonly string[]).includes(key)) ||
     !Array.isArray(source.items) || typeof source.searchWindowFull !== 'boolean') return null
   const cursor = source.nextCursor ?? null
   if (cursor !== null && (typeof cursor !== 'string' || cursor.length < 1 || cursor.length > MAX_CURSOR_LENGTH)) return null
-  const items: StockDisplayRow[] = []
+  const items: Row[] = []
   for (const entry of source.items) {
-    const row = rowOf(entry)
+    const row = decodeRow(entry)
     if (row === null) return null
     items.push(row)
   }
   if (new Set(items.map((item) => item.labelId)).size !== items.length) return null
-  return { items, searchWindowFull: source.searchWindowFull, nextCursor: cursor }
+  return { items, searchWindowFull: source.searchWindowFull, nextCursor: cursor as string | null }
+}
+
+/** The `1.0` opt-in page, or null when anything in it is outside the published contract. Kept for `1.0` readers. */
+export function decodeStockDisplayPage(value: unknown): StockDisplayPage | null {
+  return pageOf(value, (row) => rowOf(row))
+}
+
+const LOCATION_ROW_KEYS = [...ROW_KEYS, 'locationDisplay'] as const
+
+function locationRowOf(value: unknown): StockLocationDisplayRow | null {
+  const row = rowOf(value, LOCATION_ROW_KEYS)
+  if (row === null) return null
+  const locationDisplay = locationDisplayOf((value as JsonObject).locationDisplay, row.locationId)
+  return locationDisplay === null ? null : { ...row, locationDisplay }
+}
+
+/**
+ * The `2.0` (Product + Location) opt-in page (#607): the `1.0` rules unchanged for every row, plus a required
+ * `locationDisplay` bound to the row's `locationId`. A missing, null, mistyped, blank, foreign or extra member refuses
+ * the whole page; the `1.0` decoder above is never used for a `2.0` answer.
+ */
+export function decodeStockLocationDisplayPage(value: unknown): StockLocationDisplayPage | null {
+  return pageOf(value, locationRowOf)
 }
