@@ -1,3 +1,4 @@
+using GoymenERP.Api.Observability;
 using GoymenERP.Api.Shell;
 using GoymenERP.BrowserSuiteFixtureTool;
 using GoymenERP.BuildingBlocks.Shell;
@@ -313,6 +314,52 @@ public sealed class BrowserSuiteHostEnvelopeTests
             Assert.Contains(typeof(CounterpartyShellCapabilityProvider), providers);
             Assert.DoesNotContain(typeof(C01E2eShellCapabilityProvider), providers);
             AssertFixtureWritersRegistered(host);
+        });
+    }
+
+    [Fact]
+    public void Exact_c01_container_envelope_registers_the_request_evidence_recorder_only_there()
+    {
+        WithoutProcessEnvelope(() =>
+        {
+            var directory = Path.Combine(Path.GetTempPath(), $"c01-host-evidence-{Guid.NewGuid():N}");
+            Directory.CreateDirectory(directory);
+            try
+            {
+                var api = BaseApiEnvironment();
+                api["C01E2e__EnableListCapability"] = "true";
+                api["GOYMEN_ERP_C01_E2E_DISPOSABLE"] = "CONFIRMED";
+                api["GOYMEN_ERP_C01_E2E_TESTED_COMMIT"] = Commit;
+                api["GOYMEN_ERP_C01_E2E_RUN_ID"] = RunId;
+                api["GOYMEN_ERP_C01_E2E_COMPOSE_PROJECT"] = ComposeProject;
+                api["GOYMEN_ERP_C01_E2E_DATABASE_NAME"] = $"GoymenErpC01_{RunId}_1";
+                api["GOYMEN_ERP_C01_E2E_REQUEST_EVIDENCE_PATH"] =
+                    Path.Combine(directory, "requests.jsonl");
+                api["GOYMEN_ERP_C01_E2E_EVIDENCE_ISSUER"] = "goymenerp-api-c01-testing-v1";
+                api["GOYMEN_ERP_C01_E2E_CONTAINER_IDENTITY"] = Environment.MachineName;
+                api["GOYMEN_ERP_C01_E2E_PROCESS_ID"] = Environment.ProcessId.ToString();
+                api["GOYMEN_ERP_C01_E2E_PROCESS_START_IDENTITY"] =
+                    $"test-start-{Environment.ProcessId}";
+                using var host = StartedHost(api);
+
+                Assert.IsType<C01E2eRequestEvidenceRecorder>(
+                    host.Services.GetRequiredService<C01E2eRequestEvidenceRecorder>());
+            }
+            finally
+            {
+                Directory.Delete(directory, recursive: true);
+            }
+        });
+    }
+
+    [Fact]
+    public void Normal_host_does_not_register_the_c01_request_evidence_recorder()
+    {
+        WithoutProcessEnvelope(() =>
+        {
+            using var host = StartedHost(BaseApiEnvironment());
+            Assert.False(host.Services.GetRequiredService<IServiceProviderIsService>()
+                .IsService(typeof(C01E2eRequestEvidenceRecorder)));
         });
     }
 

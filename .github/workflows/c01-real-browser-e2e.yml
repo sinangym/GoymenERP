@@ -160,7 +160,13 @@ jobs:
           docker compose \
             -p "$C01_E2E_COMPOSE_PROJECT" \
             -f "$C01_E2E_COMPOSE_FILE" \
-            up -d --build web-authorized web-unauthorized
+            build web-authorized web-unauthorized
+          docker compose \
+            -p "$C01_E2E_COMPOSE_PROJECT" \
+            -f "$C01_E2E_COMPOSE_FILE" \
+            up -d --no-build --no-deps web-authorized web-unauthorized
+          curl --fail --silent --show-error \
+            "http://127.0.0.1:${C01_E2E_API_PORT}/health/live" >/dev/null
           for port in "$C01_E2E_AUTHORIZED_WEB_PORT" "$C01_E2E_UNAUTHORIZED_WEB_PORT"; do
             ready=false
             for attempt in $(seq 1 90); do
@@ -200,7 +206,10 @@ jobs:
           C01_E2E_UNAUTHORIZED_BASE_URL: http://127.0.0.1:15174
           C01_E2E_API_BASE_URL: http://127.0.0.1:15080
           C01_E2E_ARTIFACTS_DIR: ${{ github.workspace }}/artifacts
-        run: npm run c01:ci
+        run: |
+          curl --fail --silent --show-error \
+            "$C01_E2E_API_BASE_URL/health/live" >/dev/null
+          npm run c01:ci
 
       - name: Run SHELL-AUTH-BOUNDARY browser acceptance
         # Narrow extension, same disposable stack, same runner. Issue #165 requires
