@@ -1,3 +1,4 @@
+using System.Data.Common;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text;
@@ -290,11 +291,113 @@ public sealed class CounterpartyContactInformationSqlServerRelationalAcceptanceT
 
         using var saved = await PutAsync(client, path, body);
         Assert.Equal(HttpStatusCode.NoContent, saved.StatusCode);
-        authority.Revoke();
+        // The replay first passes the post-owner-read fence (two permissions). Revoke on
+        // the next measurement, immediately before the persisted answer could be released.
+        authority.DenyOnMeasurement(authority.Measurements + 3);
         using var deniedReplay = await PutAsync(client, path, body);
 
         Assert.Equal(HttpStatusCode.Forbidden, deniedReplay.StatusCode);
         Assert.False(deniedReplay.Headers.Contains("Idempotency-Replayed"));
+        Assert.Equal(2, await test.ScalarAsync<long>(
+            "SELECT [Version] FROM [counterparty].[CompanyPartyAccounts] WHERE [PartyId]=@Party;", party));
+        Assert.Equal(1, await test.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [EventType]=@Event;", party));
+        Assert.Equal(1, await test.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM [idempotency].[CommandExecutions] WHERE [CommandName]=@Command;", party));
+    }
+
+    [SqlServerFact]
+    public async Task ContactCard_LatePreSaveRevocationRollsBackBusinessAuditAndReceipt()
+    {
+        var authority = new SwitchableFreshAuthority();
+        authority.DenyOnMeasurement(5);
+        await using var test = new ContactTest(freshAuthority: authority);
+        using var client = test.Client();
+        var party = await CreateAsync(client);
+        var path = PathFor(party);
+        NewKey(client);
+
+        using var denied = await PutAsync(
+            client,
+            path,
+            """{"expectedVersion":"1","changes":{"phone":"must-roll-back"}}""");
+
+        Assert.Equal(HttpStatusCode.Forbidden, denied.StatusCode);
+        Assert.Equal(1, await test.ScalarAsync<long>(
+            "SELECT [Version] FROM [counterparty].[CompanyPartyAccounts] WHERE [PartyId]=@Party;", party));
+        Assert.Equal("null", await test.ScalarAsync<string>(
+            "SELECT COALESCE([ContactInformationJson], N'null') FROM [counterparty].[CompanyPartyAccounts] WHERE [PartyId]=@Party;",
+            party));
+        Assert.Equal(0, await test.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [EventType]=@Event;", party));
+        Assert.Equal(0, await test.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM [idempotency].[CommandExecutions] WHERE [CommandName]=@Command;", party));
+        Assert.Equal(5, authority.Measurements);
+    }
+
+    [SqlServerFact]
+    public async Task ContactCard_TerminalOrNoOpReceiptRequiresFreshAuthorityImmediatelyBeforeSave()
+    {
+        foreach (var (expectedVersion, changes) in new[]
+                 {
+                     ("1", "{}"),
+                     ("2", "{\"phone\":\"must-not-persist\"}"),
+                 })
+        {
+            var authority = new SwitchableFreshAuthority();
+            authority.DenyOnMeasurement(3);
+            await using var test = new ContactTest(freshAuthority: authority);
+            using var client = test.Client();
+            var party = await CreateAsync(client);
+            NewKey(client);
+
+            using var denied = await PutAsync(
+                client,
+                PathFor(party),
+                $$$"""{"expectedVersion":"{{{expectedVersion}}}","changes":{{{changes}}}}""");
+
+            Assert.Equal(HttpStatusCode.Forbidden, denied.StatusCode);
+            Assert.Equal(1, await test.ScalarAsync<long>(
+                "SELECT [Version] FROM [counterparty].[CompanyPartyAccounts] WHERE [PartyId]=@Party;", party));
+            Assert.Equal(0, await test.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [EventType]=@Event;", party));
+            Assert.Equal(0, await test.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM [idempotency].[CommandExecutions] WHERE [CommandName]=@Command;", party));
+            Assert.Equal(3, authority.Measurements);
+        }
+    }
+
+    [SqlServerFact]
+    public async Task ContactCard_ConcurrentWinnerIsNotReleasedAfterAuthorityLossFollowingWinnerRead()
+    {
+        var authority = new SwitchableFreshAuthority();
+        var saveInterleave = new ContactSaveInterleave();
+        var winnerReadRevocation = new WinnerReadRevocationInterceptor(authority);
+        await using var test = new ContactTest(
+            beforeSave: saveInterleave,
+            freshAuthority: authority,
+            additionalInterceptor: winnerReadRevocation);
+        using var losingClient = test.Client();
+        using var winnerClient = test.Client();
+        var party = await CreateAsync(losingClient);
+        var path = PathFor(party);
+        const string key = "contact-concurrent-winner-authority";
+        const string body = """{"expectedVersion":"1","changes":{"phone":"winner"}}""";
+        saveInterleave.BeforeSave = async () =>
+        {
+            NewKey(winnerClient, key);
+            using var winner = await PutAsync(winnerClient, path, body);
+            Assert.Equal(HttpStatusCode.NoContent, winner.StatusCode);
+            winnerReadRevocation.Arm();
+        };
+        NewKey(losingClient, key);
+
+        using var deniedWinnerReplay = await PutAsync(losingClient, path, body);
+
+        Assert.True(saveInterleave.Triggered);
+        Assert.True(winnerReadRevocation.Triggered);
+        Assert.Equal(HttpStatusCode.Forbidden, deniedWinnerReplay.StatusCode);
+        Assert.False(deniedWinnerReplay.Headers.Contains("Idempotency-Replayed"));
         Assert.Equal(2, await test.ScalarAsync<long>(
             "SELECT [Version] FROM [counterparty].[CompanyPartyAccounts] WHERE [PartyId]=@Party;", party));
         Assert.Equal(1, await test.ScalarAsync<int>(
@@ -594,12 +697,16 @@ public sealed class CounterpartyContactInformationSqlServerRelationalAcceptanceT
         public ContactTest(
             bool grantBasic = true,
             SaveChangesInterceptor? beforeSave = null,
-            IErpAuthorityRevalidationService? freshAuthority = null)
+            IErpAuthorityRevalidationService? freshAuthority = null,
+            IInterceptor? additionalInterceptor = null)
         {
             Factory = new SqlServerRelationalApiFactory(_baseConnection, services =>
             {
-                if (beforeSave is not null)
-                    services.AddDbContext<CounterpartyDbContext>((_, options) => options.AddInterceptors(beforeSave));
+                var interceptors = new List<IInterceptor>();
+                if (beforeSave is not null) interceptors.Add(beforeSave);
+                if (additionalInterceptor is not null) interceptors.Add(additionalInterceptor);
+                if (interceptors.Count > 0)
+                    services.AddDbContext<CounterpartyDbContext>((_, options) => options.AddInterceptors(interceptors));
                 if (freshAuthority is not null)
                 {
                     services.RemoveAll<IErpAuthorityRevalidationService>();
@@ -666,6 +773,7 @@ public sealed class CounterpartyContactInformationSqlServerRelationalAcceptanceT
 
     private sealed class SwitchableFreshAuthority(bool revoked = false) : IErpAuthorityRevalidationService
     {
+        private int _denyOnMeasurement;
         private int _revoked = revoked ? 1 : 0;
         private int _measurements;
 
@@ -673,14 +781,19 @@ public sealed class CounterpartyContactInformationSqlServerRelationalAcceptanceT
 
         public void Revoke() => Volatile.Write(ref _revoked, 1);
 
+        public void DenyOnMeasurement(int measurement) =>
+            Volatile.Write(ref _denyOnMeasurement, measurement);
+
         public Task<PermissionScope> RevalidatePermissionScopeAsync(
             string permission,
             Guid companyId,
             CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            Interlocked.Increment(ref _measurements);
+            var measurement = Interlocked.Increment(ref _measurements);
+            var denyOnMeasurement = Volatile.Read(ref _denyOnMeasurement);
             return Task.FromResult(Volatile.Read(ref _revoked) != 0
+                || denyOnMeasurement > 0 && measurement >= denyOnMeasurement
                 ? PermissionScope.Denied
                 : new PermissionScope(
                     true,
@@ -689,6 +802,59 @@ public sealed class CounterpartyContactInformationSqlServerRelationalAcceptanceT
                     new HashSet<Guid>(),
                     new HashSet<Guid>(),
                     new HashSet<Guid>()));
+        }
+    }
+
+    private sealed class ContactSaveInterleave : SaveChangesInterceptor
+    {
+        private int _triggered;
+
+        public Func<Task>? BeforeSave { get; set; }
+
+        public bool Triggered => Volatile.Read(ref _triggered) != 0;
+
+        public override async ValueTask<InterceptionResult<int>> SavingChangesAsync(
+            DbContextEventData eventData,
+            InterceptionResult<int> result,
+            CancellationToken cancellationToken = default)
+        {
+            if (BeforeSave is { } callback
+                && eventData.Context is CounterpartyDbContext context
+                && context.ChangeTracker.Entries<CompanyPartyAccount>().Any(entry =>
+                    entry.Property(account => account.ContactInformationJson).IsModified)
+                && Interlocked.CompareExchange(ref _triggered, 1, 0) == 0)
+            {
+                await callback();
+            }
+
+            return result;
+        }
+    }
+
+    private sealed class WinnerReadRevocationInterceptor(SwitchableFreshAuthority authority)
+        : DbCommandInterceptor
+    {
+        private int _armed;
+        private int _triggered;
+
+        public bool Triggered => Volatile.Read(ref _triggered) != 0;
+
+        public void Arm() => Volatile.Write(ref _armed, 1);
+
+        public override ValueTask<DbDataReader> ReaderExecutedAsync(
+            DbCommand command,
+            CommandExecutedEventData eventData,
+            DbDataReader result,
+            CancellationToken cancellationToken = default)
+        {
+            if (Volatile.Read(ref _armed) != 0
+                && command.CommandText.Contains("[idempotency].[CommandExecutions]", StringComparison.Ordinal)
+                && Interlocked.CompareExchange(ref _triggered, 1, 0) == 0)
+            {
+                authority.Revoke();
+            }
+
+            return ValueTask.FromResult(result);
         }
     }
 
