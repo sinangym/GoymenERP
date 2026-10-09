@@ -6,55 +6,57 @@ internal sealed class FinanceInvoiceImportPendingApprovalAdapterV1(
     IFinanceOfficialInvoiceImportPendingApprovalReadServiceV1 owner)
     : INativeApprovalReadAdapterV1
 {
-    public async Task<ReadResult<NativeApprovalReadPageV1>> ListAsync(
-        FinanceContext context,
+    public string Kind => NativeApprovalKindsV1.FinanceOfficialInvoiceImport;
+
+    public async Task<NativeApprovalReadResultV1<NativeApprovalReadPageV1>> ListAsync(
+        NativeApprovalReadContextV1 context,
         string? cursor,
         CancellationToken cancellationToken)
     {
-        var result = await owner.ListAsync(context, cursor, cancellationToken);
+        var result = await owner.ListAsync(Finance(context), cursor, cancellationToken);
         if (result.Outcome != ReadOutcome.Found)
         {
             return StrictFailure<NativeApprovalReadPageV1>(result.Outcome, result.Resource);
         }
         if (!TryMapPage(context, result.Resource, out var page))
         {
-            return new(ReadOutcome.Unavailable, null);
+            return new(NativeApprovalReadOutcomeV1.Unavailable, null);
         }
-        return new(ReadOutcome.Found, page);
+        return new(NativeApprovalReadOutcomeV1.Found, page);
     }
 
-    public async Task<ReadResult<NativeApprovalReadDetailV1>> GetAsync(
-        FinanceContext context,
-        string kind,
+    public async Task<NativeApprovalReadResultV1<NativeApprovalReadDetailV1>> GetAsync(
+        NativeApprovalReadContextV1 context,
         Guid approvalId,
         CancellationToken cancellationToken)
     {
-        if (!string.Equals(kind, NativeApprovalKindsV1.FinanceOfficialInvoiceImport, StringComparison.Ordinal)
-            || approvalId == Guid.Empty)
+        if (approvalId == Guid.Empty)
         {
-            return new(ReadOutcome.NotFound, null);
+            return new(NativeApprovalReadOutcomeV1.NotFound, null);
         }
 
-        var result = await owner.GetAsync(context, approvalId, cancellationToken);
+        var result = await owner.GetAsync(Finance(context), approvalId, cancellationToken);
         if (result.Outcome != ReadOutcome.Found)
         {
             return StrictFailure<NativeApprovalReadDetailV1>(result.Outcome, result.Resource);
         }
         if (!TryMapDetail(context, approvalId, result.Resource, out var detail))
         {
-            return new(ReadOutcome.Unavailable, null);
+            return new(NativeApprovalReadOutcomeV1.Unavailable, null);
         }
-        return new(ReadOutcome.Found, detail);
+        return new(NativeApprovalReadOutcomeV1.Found, detail);
     }
 
-    private static ReadResult<TTarget> StrictFailure<TTarget>(ReadOutcome outcome, object? resource)
+    private static NativeApprovalReadResultV1<TTarget> StrictFailure<TTarget>(
+        ReadOutcome outcome,
+        object? resource)
         where TTarget : class =>
         resource is null && outcome is ReadOutcome.Unavailable or ReadOutcome.Denied or ReadOutcome.NotFound
-            ? new(outcome, null)
-            : new(ReadOutcome.Unavailable, null);
+            ? new(Map(outcome), null)
+            : new(NativeApprovalReadOutcomeV1.Unavailable, null);
 
     private static bool TryMapPage(
-        FinanceContext context,
+        NativeApprovalReadContextV1 context,
         FinanceOfficialInvoiceImportPendingBatchPageV1? source,
         out NativeApprovalReadPageV1 page)
     {
@@ -70,10 +72,11 @@ internal sealed class FinanceInvoiceImportPendingApprovalAdapterV1(
         var items = new NativeApprovalReadItemV1[source.Items.Count];
         for (var index = 0; index < source.Items.Count; index++)
         {
-            if (!TryMapItem(context, source.Items[index], out items[index]))
+            if (!TryMapItem(context, source.Items[index], out var item))
             {
                 return false;
             }
+            items[index] = item;
         }
 
         page = new(source.CompanyId, items, source.NextCursor);
@@ -81,7 +84,7 @@ internal sealed class FinanceInvoiceImportPendingApprovalAdapterV1(
     }
 
     private static bool TryMapDetail(
-        FinanceContext context,
+        NativeApprovalReadContextV1 context,
         Guid approvalId,
         FinanceOfficialInvoiceImportPendingBatchDetailV1? source,
         out NativeApprovalReadDetailV1 detail)
@@ -106,14 +109,14 @@ internal sealed class FinanceInvoiceImportPendingApprovalAdapterV1(
             return false;
         }
 
-        detail = new(item, source.Preview);
+        detail = new FinanceInvoiceImportNativeApprovalReadDetailV1(item, source.Preview);
         return true;
     }
 
     private static bool TryMapItem(
-        FinanceContext context,
+        NativeApprovalReadContextV1 context,
         FinanceOfficialInvoiceImportBatchViewV1? source,
-        out NativeApprovalReadItemV1 item)
+        out FinanceInvoiceImportNativeApprovalReadItemV1 item)
     {
         item = null!;
         if (source is null
@@ -133,11 +136,10 @@ internal sealed class FinanceInvoiceImportPendingApprovalAdapterV1(
             return false;
         }
 
-        item = new(
-            NativeApprovalKindsV1.FinanceOfficialInvoiceImport,
+        item = new FinanceInvoiceImportNativeApprovalReadItemV1(
             source.BatchId,
             source.CompanyId,
-            source.Status,
+            source.Status.ToString(),
             source.Version,
             source.BatchVersion,
             source.BatchChecksum,
@@ -147,4 +149,19 @@ internal sealed class FinanceInvoiceImportPendingApprovalAdapterV1(
             source.UploadedAtUtc);
         return true;
     }
+
+    private static FinanceContext Finance(NativeApprovalReadContextV1 context) => new(
+        context.CompanyId,
+        context.ActorId,
+        context.CorrelationId,
+        context.CausationId);
+
+    private static NativeApprovalReadOutcomeV1 Map(ReadOutcome outcome) => outcome switch
+    {
+        ReadOutcome.Found => NativeApprovalReadOutcomeV1.Found,
+        ReadOutcome.NotFound => NativeApprovalReadOutcomeV1.NotFound,
+        ReadOutcome.Denied => NativeApprovalReadOutcomeV1.Denied,
+        ReadOutcome.Unavailable => NativeApprovalReadOutcomeV1.Unavailable,
+        _ => NativeApprovalReadOutcomeV1.Unavailable,
+    };
 }

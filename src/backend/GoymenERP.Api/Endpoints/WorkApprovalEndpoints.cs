@@ -2,7 +2,6 @@ using System.Text.Json;
 using GoymenERP.Api.Multitenancy;
 using GoymenERP.Api.OpenApi;
 using GoymenERP.Api.WorkRuntime;
-using GoymenERP.Modules.Finance.Contracts;
 using Microsoft.AspNetCore.Mvc;
 
 namespace GoymenERP.Api.Endpoints;
@@ -10,18 +9,19 @@ namespace GoymenERP.Api.Endpoints;
 public static class WorkApprovalEndpoints
 {
     public const string Path = "/api/v1/work/approvals";
-    private static readonly JsonSerializerOptions ContractJson = FinanceJson.CreateOptions();
+    private static readonly JsonSerializerOptions ContractJson = NativeApprovalJson.CreateOptions();
 
     public static IEndpointRouteBuilder MapWorkApprovalEndpoints(this IEndpointRouteBuilder endpoints)
     {
         endpoints.MapGet(Path, async (
+                [FromQuery] string? kind,
                 [FromQuery] string? cursor,
                 NativeApprovalReadQueryV1 query,
                 HttpContext httpContext,
                 CancellationToken cancellationToken) =>
             {
                 SetPrivateNoStore(httpContext);
-                return Read(await query.ListAsync(cursor, cancellationToken));
+                return Read(await query.ListAsync(kind, cursor, cancellationToken));
             })
             .WithName("GetWorkApprovalsV1")
             .WithTags("Work")
@@ -54,12 +54,14 @@ public static class WorkApprovalEndpoints
         return endpoints;
     }
 
-    private static IResult Read<T>(ReadResult<T> result) where T : class => result.Outcome switch
+    private static IResult Read<T>(NativeApprovalReadResultV1<T> result) where T : class => result.Outcome switch
     {
-        ReadOutcome.Found when result.Resource is not null => Results.Json(result.Resource, ContractJson),
-        ReadOutcome.NotFound => Results.Problem(statusCode: StatusCodes.Status404NotFound),
-        ReadOutcome.Denied => Results.Problem(statusCode: StatusCodes.Status403Forbidden),
-        ReadOutcome.Unavailable => Results.Problem(statusCode: StatusCodes.Status503ServiceUnavailable),
+        NativeApprovalReadOutcomeV1.Found when result.Resource is not null =>
+            Results.Json(result.Resource, ContractJson),
+        NativeApprovalReadOutcomeV1.NotFound => Results.Problem(statusCode: StatusCodes.Status404NotFound),
+        NativeApprovalReadOutcomeV1.Denied => Results.Problem(statusCode: StatusCodes.Status403Forbidden),
+        NativeApprovalReadOutcomeV1.Unavailable =>
+            Results.Problem(statusCode: StatusCodes.Status503ServiceUnavailable),
         _ => throw new InvalidOperationException("Work approval read returned an invalid outcome/resource combination."),
     };
 

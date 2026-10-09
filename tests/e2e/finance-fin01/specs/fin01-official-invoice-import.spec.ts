@@ -63,6 +63,44 @@ async function canonicalActorId(page: Page): Promise<string> {
   return identity.body.userId as string
 }
 
+async function expectApprovalDetailFitsViewport(page: Page, width: 390 | 320, height: 844 | 720,
+  batchId: string, sourceDocumentId: string, sourceInstallmentId: string): Promise<void> {
+  await page.setViewportSize({ width, height })
+  const detail = page.getByLabel(`Fatura kaynağı ${batchId}`, { exact: true })
+  await expect(detail).toBeVisible()
+  await expect(detail.getByText(sourceDocumentId, { exact: true })).toBeVisible()
+  await expect(detail.getByText(sourceInstallmentId, { exact: true })).toBeVisible()
+  await expect(detail.locator('tbody tr').filter({ hasText: sourceDocumentId })).toBeVisible()
+  const approve = detail.getByRole('button', { name: 'Onayla', exact: true })
+  const close = detail.getByRole('button', { name: 'Onay kuyruğuna dön', exact: true })
+  await expect(approve).toBeVisible()
+  await expect(close).toBeVisible()
+  await approve.focus()
+  await expect(approve).toBeFocused()
+  await close.focus()
+  await expect(close).toBeFocused()
+
+  const widths = await page.evaluate(() => {
+    const heading = document.getElementById('official-invoice-approvals-title')
+    const approvalPage = heading?.closest('section') ?? null
+    const main = document.querySelector('main')
+    const measure = (element: Element | null) => element instanceof HTMLElement
+      ? { clientWidth: element.clientWidth, scrollWidth: element.scrollWidth }
+      : null
+    return {
+      document: measure(document.documentElement),
+      body: measure(document.body),
+      main: measure(main),
+      approvalPage: measure(approvalPage),
+    }
+  })
+  for (const [surface, measurement] of Object.entries(widths)) {
+    expect(measurement, `${surface} must exist at ${width}px`).not.toBeNull()
+    expect(measurement!.scrollWidth, `${surface} scrollWidth at ${width}px`)
+      .toBeLessThanOrEqual(measurement!.clientWidth)
+  }
+}
+
 test.describe.serial('FIN01 official invoice import (real API, real SQL, real Chromium)', () => {
   test('different checker approves, applies once and reopens the exact Finance open item', async ({ browser }) => {
     const openItemId = randomUUID()
@@ -273,6 +311,10 @@ test.describe.serial('FIN01 official invoice import (real API, real SQL, real Ch
 
     await checker.goto(approvalUrl)
     await expect(checker.getByLabel(`Fatura kaynağı ${batchId}`, { exact: true })).toContainText(sourceDocumentId)
+
+    await expectApprovalDetailFitsViewport(checker, 390, 844, batchId, sourceDocumentId, sourceInstallmentId)
+    await expectApprovalDetailFitsViewport(checker, 320, 720, batchId, sourceDocumentId, sourceInstallmentId)
+    await checker.setViewportSize({ width: 1400, height: 900 })
 
     const detailRequestsDuringCompanySwitch: string[] = []
     checker.on('request', (request) => {
@@ -583,7 +625,7 @@ test.describe.serial('FIN01 official invoice import (real API, real SQL, real Ch
     }
     const allocationDetailResponse = await allocationDetailAnswer
     expect(allocationDetailResponse.status()).toBe(200)
-    const allocationDetail = await allocationDetailResponse.json() as unknown
+    const allocationDetail = await allocationDetailResponse.json() as Record<string, unknown>
 
     const closedBatch = await checker.evaluate(async ({ id, companyId }) => {
       const response = await fetch(`/api/v1/finance/official-invoice-imports/${id}`, {
