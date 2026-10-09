@@ -125,6 +125,12 @@ ENVELOPE_KEYS = (
     "GOYMEN_ERP_C01_E2E_TESTED_COMMIT",
     "GOYMEN_ERP_C01_E2E_RUN_ID",
     "GOYMEN_ERP_C01_E2E_COMPOSE_PROJECT",
+    "GOYMEN_ERP_C01_E2E_DATABASE_NAME",
+    "GOYMEN_ERP_C01_E2E_REQUEST_EVIDENCE_PATH",
+    "GOYMEN_ERP_C01_E2E_EVIDENCE_ISSUER",
+    "GOYMEN_ERP_C01_E2E_CONTAINER_IDENTITY",
+    "GOYMEN_ERP_C01_E2E_PROCESS_ID",
+    "GOYMEN_ERP_C01_E2E_PROCESS_START_IDENTITY",
 )
 API_READ_FIXTURE_KEYS = (
     "BrowserSuiteApi__Profile",
@@ -1081,6 +1087,18 @@ def validate_suite_compose(model: dict, suite: str, expected_commit: str, expect
             "GOYMEN_ERP_C01_E2E_TESTED_COMMIT": expected_commit,
             "GOYMEN_ERP_C01_E2E_RUN_ID": expected_project.split("-")[-2] if "-" in expected_project else "",
             "GOYMEN_ERP_C01_E2E_COMPOSE_PROJECT": expected_project,
+            "GOYMEN_ERP_C01_E2E_DATABASE_NAME": (
+                "GoymenErpC01_" + "_".join(expected_project.split("-")[-2:])
+            ),
+            "GOYMEN_ERP_C01_E2E_REQUEST_EVIDENCE_PATH": (
+                "/evidence/c01-activation-api-requests.jsonl"
+            ),
+            "GOYMEN_ERP_C01_E2E_EVIDENCE_ISSUER": "goymenerp-api-c01-testing-v1",
+            "GOYMEN_ERP_C01_E2E_CONTAINER_IDENTITY": f"{expected_project}-api",
+            "GOYMEN_ERP_C01_E2E_PROCESS_ID": "1",
+            "GOYMEN_ERP_C01_E2E_PROCESS_START_IDENTITY": (
+                f"{expected_project}-api-process-1"
+            ),
         })
     extra = {key: environment[key] for key in set(environment) - set(expected_keys)}
     missing = sorted(set(expected_keys) - set(environment))

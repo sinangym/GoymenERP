@@ -30,6 +30,7 @@ services:
       com.goymen.e2e.tested-commit: ${C01_E2E_TESTED_COMMIT:?C01_E2E_TESTED_COMMIT must be set}
 
   api:
+    hostname: ${C01_E2E_COMPOSE_PROJECT:?C01_E2E_COMPOSE_PROJECT must be set}-api
     build:
       context: ..
       dockerfile: src/backend/GoymenERP.Api/Dockerfile
@@ -51,6 +52,8 @@ services:
         published: ${C01_E2E_API_PORT:-15080}
         host_ip: 127.0.0.1
         protocol: tcp
+    volumes:
+      - ../artifacts/c01-server-evidence:/evidence
     depends_on:
       sqlserver:
         condition: service_healthy
