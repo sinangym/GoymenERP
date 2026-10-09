@@ -19,6 +19,7 @@ public sealed class WorkApprovalEndpointTests(GoymenErpApiFactory factory)
 {
     private static readonly Guid Company = TestCompanyIds.CompanyA;
     private static readonly Guid Batch = Guid.Parse("a2000000-0000-0000-0000-000000000001");
+    private static readonly Guid Draft = Guid.Parse("a3000000-0000-0000-0000-000000000001");
 
     [Fact]
     public async Task Default_and_explicit_finance_list_preserve_the_legacy_json_and_cursor()
@@ -80,6 +81,48 @@ public sealed class WorkApprovalEndpointTests(GoymenErpApiFactory factory)
         Assert.Equal(Batch, json.RootElement.GetProperty("item").GetProperty("approvalId").GetGuid());
         Assert.Equal(new string('a', 64),
             json.RootElement.GetProperty("preview").GetProperty("sourceSha256").GetString());
+    }
+
+    [Fact]
+    public async Task Explicit_sales_list_and_detail_serialize_only_the_sales_variant()
+    {
+        var adapter = new Adapter
+        {
+            Kind = NativeApprovalKindsV1.SalesOrderDraft,
+            Page = new(NativeApprovalReadOutcomeV1.Found, new NativeApprovalReadPageV1(
+                Company, [SalesItem()], "sales+/=cursor")),
+            Detail = new(NativeApprovalReadOutcomeV1.Found,
+                new SalesOrderDraftNativeApprovalReadDetailV1(SalesItem())),
+        };
+        using var host = Host([adapter]);
+        using var client = Client(host);
+
+        using var list = await client.GetAsync(
+            WorkApprovalEndpoints.Path + "?kind=sales.order-draft.v1&cursor=sales%2Brequest");
+        using var detail = await client.GetAsync(
+            $"{WorkApprovalEndpoints.Path}/{NativeApprovalKindsV1.SalesOrderDraft}/{Draft:D}");
+
+        Assert.Equal(HttpStatusCode.OK, list.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, detail.StatusCode);
+        AssertPrivateNoStore(list);
+        AssertPrivateNoStore(detail);
+        Assert.Equal(("sales+request", 1, 1), (adapter.Cursor, adapter.ListCalls, adapter.GetCalls));
+
+        using var listJson = JsonDocument.Parse(await list.Content.ReadAsStringAsync());
+        var item = Assert.Single(listJson.RootElement.GetProperty("items").EnumerateArray());
+        Assert.Equal(
+            ["kind", "approvalId", "companyId", "status", "version", "revision",
+                "documentNo", "isOwnDraft", "submittedBy", "submittedAtUtc"],
+            item.EnumerateObject().Select(property => property.Name).ToArray());
+        Assert.Equal(NativeApprovalKindsV1.SalesOrderDraft, item.GetProperty("kind").GetString());
+        Assert.Equal("PendingApproval", item.GetProperty("status").GetString());
+        Assert.True(item.GetProperty("isOwnDraft").GetBoolean());
+
+        using var detailJson = JsonDocument.Parse(await detail.Content.ReadAsStringAsync());
+        Assert.Equal(["item"],
+            detailJson.RootElement.EnumerateObject().Select(property => property.Name).ToArray());
+        Assert.Equal(Draft,
+            detailJson.RootElement.GetProperty("item").GetProperty("approvalId").GetGuid());
     }
 
     [Theory]
@@ -194,14 +237,23 @@ public sealed class WorkApprovalEndpointTests(GoymenErpApiFactory factory)
     }
 
     [Fact]
-    public void Production_registration_resolves_one_scoped_finance_adapter_and_query()
+    public void Production_registration_resolves_one_scoped_adapter_per_known_kind_and_query()
     {
         using var scope = factory.Services.CreateScope();
 
         var adapters = scope.ServiceProvider.GetServices<INativeApprovalReadAdapterV1>().ToArray();
-        Assert.Single(adapters);
-        Assert.IsType<FinanceInvoiceImportPendingApprovalAdapterV1>(adapters[0]);
-        Assert.Equal(NativeApprovalKindsV1.FinanceOfficialInvoiceImport, adapters[0].Kind);
+        Assert.Equal(2, adapters.Length);
+        Assert.Collection(adapters.OrderBy(adapter => adapter.Kind, StringComparer.Ordinal),
+            finance =>
+            {
+                Assert.IsType<FinanceInvoiceImportPendingApprovalAdapterV1>(finance);
+                Assert.Equal(NativeApprovalKindsV1.FinanceOfficialInvoiceImport, finance.Kind);
+            },
+            sales =>
+            {
+                Assert.IsType<SalesOrderDraftPendingApprovalAdapterV1>(sales);
+                Assert.Equal(NativeApprovalKindsV1.SalesOrderDraft, sales.Kind);
+            });
         Assert.NotNull(scope.ServiceProvider.GetRequiredService<NativeApprovalReadQueryV1>());
     }
 
@@ -244,6 +296,17 @@ public sealed class WorkApprovalEndpointTests(GoymenErpApiFactory factory)
         1,
         "maker",
         DateTimeOffset.Parse("2026-10-05T07:00:00Z"));
+
+    private static SalesOrderDraftNativeApprovalReadItemV1 SalesItem() => new(
+        Draft,
+        Company,
+        "PendingApproval",
+        "7",
+        "3",
+        "SO-2026-001",
+        true,
+        "sales-maker",
+        DateTimeOffset.Parse("2026-10-09T07:00:00Z"));
 
     private static FinanceOfficialInvoiceImportPreviewV1 Preview() => new(
         FinanceOfficialInvoiceImportTemplateV1.Version,

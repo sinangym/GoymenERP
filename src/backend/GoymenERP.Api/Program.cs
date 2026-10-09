@@ -168,8 +168,8 @@ builder.Services.AddScoped<IAccountingPeriodStatusPortV1, AccountingPeriodStatus
 builder.Services.AddScoped<IFinanceRecordPeriodRule, OccurredOnFinanceRecordPeriodRule>();
 builder.Services.AddFinanceServices();
 builder.Services.AddFinanceOfficialInvoiceImportHost();
-// Phase A publishes Finance as the sole kind; the query composes the scoped adapter collection.
 builder.Services.AddScoped<INativeApprovalReadAdapterV1, FinanceInvoiceImportPendingApprovalAdapterV1>();
+builder.Services.AddScoped<INativeApprovalReadAdapterV1, SalesOrderDraftPendingApprovalAdapterV1>();
 builder.Services.AddScoped<NativeApprovalReadQueryV1>();
 builder.Services.AddScoped<IFinancePartyAccountPort, CounterpartyFinancePartyAccountPort>();
 builder.Services.AddScoped<DraftReadContextReader>();
