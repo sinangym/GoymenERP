@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { ComponentProps } from 'react'
 import { MemoryRouter, useLocation, useNavigate } from 'react-router'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { OfficialInvoiceImportApprovalsPage, type OfficialInvoiceApprovalAttemptContext,
   type OfficialInvoiceApprovalClient } from './OfficialInvoiceImportApprovalsPage'
 import type { OfficialInvoicePendingBatch, OfficialInvoicePendingDetail } from './officialInvoiceImportApprovalContract'
@@ -66,6 +66,8 @@ function LocationProbe() {
 }
 
 describe('official invoice checker journey', () => {
+  beforeEach(() => sessionStorage.clear())
+
   it('keeps the terminal approved source after the fresh pending list becomes empty', async () => {
     const selected = vi.fn()
     const client: OfficialInvoiceApprovalClient = {

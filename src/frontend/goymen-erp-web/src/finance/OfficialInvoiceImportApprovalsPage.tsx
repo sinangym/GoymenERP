@@ -42,6 +42,7 @@ interface ApprovalPageProps {
 
 const APPROVAL_ID_QUERY = 'approvalId'
 const APPROVAL_NAMESPACE_STATE = 'officialInvoiceApprovalNamespace'
+const APPROVAL_NAMESPACE_STORAGE_PREFIX = 'goymen.finance.official-invoice-approval.'
 const boundUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const emptyUuid = '00000000-0000-0000-0000-000000000000'
 
@@ -60,31 +61,37 @@ export function OfficialInvoiceImportApprovalsPage(props: ApprovalPageProps) {
     props.context.capabilityGeneration,
     props.context.securityNamespace,
   ])
-  const selectedNamespace = approvalLocationNamespace(location.state)
+  const selectedNamespaces = [
+    approvalLocationNamespace(location.state),
+    selectedApprovalId === null ? null : readApprovalNamespace(selectedApprovalId),
+  ].filter((value): value is string => value !== null)
   const selectApproval = useCallback((approvalId: string) => {
+    writeApprovalNamespace(approvalId, namespace)
     const next = new URLSearchParams(searchParams)
     next.set(APPROVAL_ID_QUERY, approvalId)
     setSearchParams(next, { state: approvalLocationState(location.state, namespace) })
   }, [location.state, namespace, searchParams, setSearchParams])
   const clearSelection = useCallback(() => {
+    if (selectedApprovalId !== null) removeApprovalNamespace(selectedApprovalId)
     const next = new URLSearchParams(searchParams)
     next.delete(APPROVAL_ID_QUERY)
     setSearchParams(next, { replace: true, state: approvalLocationState(location.state, null) })
-  }, [location.state, searchParams, setSearchParams])
+  }, [location.state, searchParams, selectedApprovalId, setSearchParams])
   const bindSelection = useCallback(() => {
+    if (selectedApprovalId !== null) writeApprovalNamespace(selectedApprovalId, namespace)
     setSearchParams(new URLSearchParams(searchParams), {
       replace: true,
       state: approvalLocationState(location.state, namespace),
     })
-  }, [location.state, namespace, searchParams, setSearchParams])
+  }, [location.state, namespace, searchParams, selectedApprovalId, setSearchParams])
   const previousNamespace = useRef(namespace)
   const contextChanged = previousNamespace.current !== namespace
-    || (selectedNamespace !== null && selectedNamespace !== namespace)
+    || selectedNamespaces.some((selectedNamespace) => selectedNamespace !== namespace)
   useLayoutEffect(() => {
     previousNamespace.current = namespace
     if (contextChanged && approvalIds.length > 0) clearSelection()
-    else if (approvalIds.length > 0 && selectedNamespace === null) bindSelection()
-  }, [approvalIds.length, bindSelection, clearSelection, contextChanged, namespace, selectedNamespace])
+    else if (approvalIds.length > 0 && selectedNamespaces.length === 0) bindSelection()
+  }, [approvalIds.length, bindSelection, clearSelection, contextChanged, namespace, selectedNamespaces.length])
   return <OfficialInvoiceImportApprovalsPageState key={namespace} {...props}
     selectedApprovalId={contextChanged ? null : selectedApprovalId}
     invalidSelection={contextChanged ? false : invalidSelection}
@@ -104,6 +111,30 @@ function approvalLocationState(state: unknown, namespace: string | null): Record
   if (namespace === null) delete next[APPROVAL_NAMESPACE_STATE]
   else next[APPROVAL_NAMESPACE_STATE] = namespace
   return Object.keys(next).length === 0 ? null : next
+}
+
+function readApprovalNamespace(approvalId: string): string | null {
+  try {
+    return globalThis.sessionStorage?.getItem(`${APPROVAL_NAMESPACE_STORAGE_PREFIX}${approvalId}`) ?? null
+  } catch {
+    return null
+  }
+}
+
+function writeApprovalNamespace(approvalId: string, namespace: string): void {
+  try {
+    globalThis.sessionStorage?.setItem(`${APPROVAL_NAMESPACE_STORAGE_PREFIX}${approvalId}`, namespace)
+  } catch {
+    // Browser storage is an additional stale-link fence; API authority remains mandatory.
+  }
+}
+
+function removeApprovalNamespace(approvalId: string): void {
+  try {
+    globalThis.sessionStorage?.removeItem(`${APPROVAL_NAMESPACE_STORAGE_PREFIX}${approvalId}`)
+  } catch {
+    // Browser storage is an additional stale-link fence; API authority remains mandatory.
+  }
 }
 
 function OfficialInvoiceImportApprovalsPageState({ client, context,
