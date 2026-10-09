@@ -23,8 +23,15 @@ public static partial class CounterpartyEndpoints
                     "Şirket kapsamı yalnız X-Company-Id başlığından belirlenir; sorgu parametresi kabul edilmez.");
             }
 
-            var information = await service.GetContactInformationAsync(partyId, cancellationToken);
-            return information is null ? NotFound() : Results.Ok(information);
+            try
+            {
+                var information = await service.GetContactInformationAsync(partyId, cancellationToken);
+                return information is null ? NotFound() : Results.Ok(information);
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return Results.Problem(statusCode: StatusCodes.Status403Forbidden);
+            }
         })
             .RequireCompanyContext()
             .RequireAuthorization(ErpPermissions.CounterpartyPartiesRead)
@@ -58,6 +65,10 @@ public static partial class CounterpartyEndpoints
             {
                 execution = await service.UpdateContactInformationAsync(
                     partyId, command, metadata, cancellationToken);
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return Results.Problem(statusCode: StatusCodes.Status403Forbidden);
             }
             catch (ArgumentException exception)
             {
