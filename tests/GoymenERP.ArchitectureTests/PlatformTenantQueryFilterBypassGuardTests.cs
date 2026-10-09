@@ -286,8 +286,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         "506e74354da8ce9033a15fbd511f2038854af62a4edd0b9bda3fa14f82854d82";
     private const string ReviewedBackendTestGroupVerifierTestsFingerprint =
         "6ef52639c5bbd74aaf8e499ef0df203cd530831ebbfcce998170e334e8be29ab";
+    // Re-reviewed for the runner-only Docker Hub cache mirror: the exact workflow keeps every
+    // application gate and both image builds, and fails closed unless Docker reports the mirror active.
     private const string ReviewedContinuousIntegrationWorkflowFingerprint =
-        "d997575b12f25c7145c65226df7c03b9a25faadf7d6532b4ee0b32d48cbb6fee";
+        "e5be3e3e5e709866c4a159217c80cee909e08237932c94c2cc8f60db33e9e506";
     // Re-fingerprinted for the ORG master edit: the seeder's three existing IgnoreQueryFilters projections also read
     // the row id, so a seeded record a user renamed is recognised by its deterministic id and never re-added under
     // its old code. No new bypass, query or write path; the IgnoreQueryFilters reads are the same three.

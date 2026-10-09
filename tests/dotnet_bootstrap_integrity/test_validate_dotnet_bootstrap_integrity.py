@@ -1547,6 +1547,7 @@ class WorkflowOrderingTests(unittest.TestCase):
         body = self.job_body("containers")
         checkout_step = "      - uses: actions/checkout@v7"
         preflight_step = "      - name: .NET bootstrap integrity preflight"
+        mirror_step = "      - name: Configure Docker Hub cache mirror"
         compose_step = "      - name: Validate compose model"
         build_step = "      - name: Build application images"
         validator_command = (
@@ -1575,6 +1576,16 @@ class WorkflowOrderingTests(unittest.TestCase):
                 "      - name: .NET bootstrap integrity preflight\n"
                 "        run: |\n"
                 f"          {validator_command}\n"
+                "          python3 -I -S -B -m unittest discover "
+                "-s tests/dockerhub_mirror_contract -p \"test_*.py\" -v\n"
+                "\n"
+                "      - name: Configure Docker Hub cache mirror\n"
+                "        run: |\n"
+                "          sudo python3 -I -S -B tools/configure_dockerhub_mirror.py configure \\\n"
+                "            --daemon-config /etc/docker/daemon.json\n"
+                "          sudo systemctl restart docker\n"
+                "          docker info --format '{{json .RegistryConfig.Mirrors}}' | \\\n"
+                "            python3 -I -S -B tools/configure_dockerhub_mirror.py verify\n"
                 "\n"
                 "      - name: Validate compose model\n"
                 "        run: docker compose -f infra/docker-compose.yml config --quiet\n"
@@ -1601,7 +1612,23 @@ class WorkflowOrderingTests(unittest.TestCase):
         preflight = self.step_body(body, ".NET bootstrap integrity preflight")
         self.assertEqual(
             self.read_step_lines(preflight),
-            ["run: |", validator_command],
+            [
+                "run: |",
+                validator_command,
+                "python3 -I -S -B -m unittest discover "
+                '-s tests/dockerhub_mirror_contract -p "test_*.py" -v',
+            ],
+        )
+        self.assertEqual(
+            self.read_step_lines(self.step_body(body, "Configure Docker Hub cache mirror")),
+            [
+                "run: |",
+                "sudo python3 -I -S -B tools/configure_dockerhub_mirror.py configure \\",
+                "--daemon-config /etc/docker/daemon.json",
+                "sudo systemctl restart docker",
+                "docker info --format '{{json .RegistryConfig.Mirrors}}' | \\",
+                "python3 -I -S -B tools/configure_dockerhub_mirror.py verify",
+            ],
         )
         self.assertEqual(
             self.read_step_lines(self.step_body(body, "Validate compose model")),
@@ -1613,14 +1640,16 @@ class WorkflowOrderingTests(unittest.TestCase):
         )
 
         preflight_index = body.index(preflight_step)
+        mirror_index = body.index(mirror_step)
         compose_index = body.index(compose_step)
         build_index = body.index(build_step)
-        boundary = body[preflight_index:compose_index]
+        boundary = body[preflight_index:mirror_index]
         self.assertEqual(
             re.findall(r"^      - (?:name:|uses:|run:).*$", boundary, re.M),
             [preflight_step],
         )
-        self.assertLess(preflight_index, compose_index)
+        self.assertLess(preflight_index, mirror_index)
+        self.assertLess(mirror_index, compose_index)
         self.assertLess(compose_index, build_index)
 
     @staticmethod
