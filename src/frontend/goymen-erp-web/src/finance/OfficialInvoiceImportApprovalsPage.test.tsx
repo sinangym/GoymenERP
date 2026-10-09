@@ -291,11 +291,14 @@ describe('official invoice checker journey', () => {
     expect(listPending).toHaveBeenCalledTimes(2)
   })
 
-  it('does not call Finance APIs for an invalid or duplicated approval query and clears it explicitly', async () => {
+  it.each([
+    ['malformed', 'approvalId=not-a-record'],
+    ['duplicated', `approvalId=${pending.batchId}&approvalId=${pending.batchId}`],
+  ])('does not call Finance APIs for a %s approval query and clears it explicitly', async (_name, query) => {
     const listPending = vi.fn().mockResolvedValue({ companyId: pending.companyId, items: [], nextCursor: null })
     const getPending = vi.fn()
     const client: OfficialInvoiceApprovalClient = { listPending, getPending, approve: vi.fn() }
-    const entry = `${OFFICIAL_INVOICE_IMPORT_APPROVALS_ROUTE}?approvalId=not-a-record&approvalId=${pending.batchId}`
+    const entry = `${OFFICIAL_INVOICE_IMPORT_APPROVALS_ROUTE}?${query}`
     render(<ApprovalPage initialEntry={entry} client={client} context={context} onApprovedSource={() => undefined} />)
 
     expect(await screen.findByText('Bağlantıdaki onay kaydı geçersiz.')).toBeTruthy()
@@ -306,6 +309,23 @@ describe('official invoice checker journey', () => {
     expect(await screen.findByText('Onay bekleyen kaynak yok.')).toBeTruthy()
     expect(screen.getByTestId('approval-location').textContent).toBe(OFFICIAL_INVOICE_IMPORT_APPROVALS_ROUTE)
     expect(listPending).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps a list-selected approval opaque when the detail version changed before the read', async () => {
+    const changedDetail = { ...detail, batch: { ...detail.batch, version: '2' } } as unknown as OfficialInvoicePendingDetail
+    const listPending = vi.fn().mockResolvedValue({ companyId: pending.companyId, items: [pending], nextCursor: null })
+    const getPending = vi.fn().mockResolvedValue(changedDetail)
+    const client: OfficialInvoiceApprovalClient = { listPending, getPending, approve: vi.fn() }
+    render(<ApprovalPage client={client} context={context} onApprovedSource={() => undefined} />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'İncele' }))
+
+    expect(await screen.findByText('Seçilen onay kaydı güvenli biçimde açılamadı.')).toBeTruthy()
+    expect(screen.queryByText('1250.50')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Onayla' })).toBeNull()
+    expect(getPending).toHaveBeenCalledTimes(1)
+    expect(screen.getByTestId('approval-location').textContent)
+      .toBe(`${OFFICIAL_INVOICE_IMPORT_APPROVALS_ROUTE}?approvalId=${pending.batchId}`)
   })
 
   it.each([
