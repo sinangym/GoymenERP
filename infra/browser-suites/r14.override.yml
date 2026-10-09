@@ -96,6 +96,9 @@ services:
       IdentitySeed__Roles__5__Permissions__4: documents.files.read
       IdentitySeed__Roles__5__Permissions__5: documents.files.upload
       IdentitySeed__Roles__5__Permissions__6: inventory.label-classification.write
+      # STOCK-LOCATION-2 only: the disposable recorder already reads stock positions and now proves that the
+      # same row's owner location card is openable. The counter remains the no-link actor.
+      IdentitySeed__Roles__5__Permissions__7: organization.locations.read
       IdentitySeed__Roles__6__Id: b3000000-0000-4000-8000-000000000702
       IdentitySeed__Roles__6__Code: BROWSER_R14_DENIED
       IdentitySeed__Roles__6__Name: SENTETIK browser-suite:r14 Inventory denied actor

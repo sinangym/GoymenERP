@@ -1103,6 +1103,7 @@ class WorkflowTests(unittest.TestCase):
                 r"IdentitySeed__Roles__6__Permissions__(\d+): ([^\r\n]+)", source)
         }
         self.assertEqual("inventory.label-classification.write", recorder[6])
+        self.assertEqual("organization.locations.read", recorder[7])
         self.assertNotIn("inventory.label-classification.write", denied.values())
         for role_index in range(8, 13):
             role_permissions = {
@@ -1130,6 +1131,24 @@ class WorkflowTests(unittest.TestCase):
             "r14",
             {validator.INVENTORY_STOCK_POSITION_CURSOR_KEY: cursor_key},
         )
+
+        environment = {}
+        for line in source.splitlines():
+            match = re.fullmatch(r"\s{6}([A-Za-z0-9_]+):\s*(.+)", line)
+            if match is not None:
+                raw = match.group(2)
+                environment[match.group(1)] = json.loads(raw) if raw.startswith('"') else raw
+        validator.validate_suite_extensions("r14", environment)
+
+        missing_location_read = dict(environment)
+        del missing_location_read["IdentitySeed__Roles__5__Permissions__7"]
+        with self.assertRaisesRegex(validator.ContractError, "r14-recorder requires its exact isolated permissions"):
+            validator.validate_suite_extensions("r14", missing_location_read)
+
+        leaked_to_counter = dict(environment)
+        leaked_to_counter["IdentitySeed__Roles__9__Permissions__4"] = "organization.locations.read"
+        with self.assertRaisesRegex(validator.ContractError, "only r14-recorder and the dedicated arranger"):
+            validator.validate_suite_extensions("r14", leaked_to_counter)
 
     def _trigger_block(self) -> str:
         return self.workflow.split("\non:\n", 1)[1].split("\npermissions:\n", 1)[0]

@@ -13,7 +13,6 @@ const { companyId, otherCompanyId, locationId, productId, productVersion, produc
 const POSITIONS = '/api/v1/inventory/positions'
 const OPENINGS = '/api/v1/inventory/opening-counts'
 const LOCATIONS = '/api/v1/organization/locations?page=1&pageSize=100'
-const AUTHORIZED_ACTOR = 'group-bootstrap-admin'
 const STOCK_DISPLAY_HEADER = 'X-ERP-Inventory-Stock-Display'
 const STOCK_DISPLAY_VERSION = '2.0'
 const PREFIX = `SYNDS01-${randomUUID().slice(0, 8).toUpperCase()}`
@@ -266,11 +265,11 @@ test('ST-01 shows long genuine Product and exact stock quantities at desktop and
   expect(locationRows).toHaveLength(1)
   const ownerLocation = locationRows[0]
 
-  // The normal profile's existing group administrator has both stock-list and Organization location-detail access.
+  // The disposable recorder has both the existing stock-list reads and Organization location-detail access.
   // Select it explicitly and enter through the shell root so company/capability context is committed before the
-  // filtered deep link. It proves that the exact row location opens its real owner card without a disposable grant.
+  // filtered deep link. The stock counter remains the independent no-link actor below.
   await page.setViewportSize({ width: 1440, height: 900 })
-  await page.setExtraHTTPHeaders({ 'X-Development-User': AUTHORIZED_ACTOR })
+  await page.setExtraHTTPHeaders({ 'X-Development-User': recorderActor })
   await page.goto('/')
   await expect(page.getByRole('link', { name: 'Stok / Malzeme Pozisyonu', exact: true })).toBeVisible()
   const authorized = await openList(page, PREFIX)
