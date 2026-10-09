@@ -1,5 +1,7 @@
 using System.Text;
+using GoymenERP.Api.WorkRuntime;
 using GoymenERP.BuildingBlocks.Multitenancy;
+using GoymenERP.BuildingBlocks.Observability;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Audit.Application.Contracts;
 using GoymenERP.Modules.Finance.Contracts;
@@ -36,18 +38,27 @@ public sealed class FinanceOfficialInvoiceImportPendingApprovalSqlServerRelation
         var uploaded = await maker.UploadAsync(Context("SENTETIK-maker"), new CommandMetadata("upload-key"), Request(), default);
         Assert.Equal(CommandOutcome.Succeeded, uploaded.Outcome);
 
+        var checkerUser = new User("SENTETIK-checker", Company);
         var pending = new FinanceOfficialInvoiceImportPendingApprovalReadServiceV1(db, company,
-            new User("SENTETIK-checker", Company), new FinanceOfficialInvoiceImportParserV1(), authority);
-        var page = await pending.ListAsync(Context("SENTETIK-checker"), null, default);
-        var detail = await pending.GetAsync(Context("SENTETIK-checker"), Batch, default);
+            checkerUser, new FinanceOfficialInvoiceImportParserV1(), authority);
+        var work = new NativeApprovalReadQueryV1(
+            company,
+            checkerUser,
+            new Correlation("sql-SENTETIK-checker"),
+            new FinanceInvoiceImportPendingApprovalAdapterV1(pending));
+        var page = await work.ListAsync(null, default);
+        var detail = await work.GetAsync(NativeApprovalKindsV1.FinanceOfficialInvoiceImport, Batch, default);
         Assert.Single(page.Resource!.Items);
         Assert.Equal(uploaded.Resource!.BatchChecksum, detail.Resource!.Preview.SourceSha256);
+        Assert.Equal((NativeApprovalKindsV1.FinanceOfficialInvoiceImport, Batch, Company, "SENTETIK-maker"),
+            (detail.Resource.Item.Kind, detail.Resource.Item.ApprovalId,
+                detail.Resource.Item.CompanyId, detail.Resource.Item.SubmittedBy));
 
         var checker = Approval(db, company, "SENTETIK-checker", authority);
         var approved = await checker.ApproveAsync(Context("SENTETIK-checker"), new CommandMetadata("approve-key"),
             new FinanceOfficialInvoiceImportApproveRequestV1(Batch, "1"), default);
         Assert.Equal(CommandOutcome.Succeeded, approved.Outcome);
-        Assert.Empty((await pending.ListAsync(Context("SENTETIK-checker"), null, default)).Resource!.Items);
+        Assert.Empty((await work.ListAsync(null, default)).Resource!.Items);
 
         var source = await checker.GetApprovedAsync(Context("SENTETIK-checker"),
             new FinanceOpenItemSourceReference(Batch, approved.Resource!.BatchVersion, approved.Resource.BatchChecksum), default);
@@ -78,6 +89,22 @@ public sealed class FinanceOfficialInvoiceImportPendingApprovalSqlServerRelation
         public string? UserId => actor;
         public IReadOnlySet<Guid> AllowedCompanyIds { get; } = new HashSet<Guid> { company };
         public bool CanAccessCompany(Guid companyId) => AllowedCompanyIds.Contains(companyId);
+    }
+    private sealed class Correlation(string correlationId) : ICorrelationContext
+    {
+        public bool IsResolved => true;
+        public string CorrelationId { get; } = correlationId;
+        public string? CausationId => null;
+        public string SourceChannel => "SQL";
+        public string? ClientIpAddress => null;
+        public string? UserAgent => null;
+        public void Set(
+            string candidateCorrelationId,
+            string? causationId,
+            string sourceChannel,
+            string? clientIpAddress,
+            string? userAgent) =>
+            throw new InvalidOperationException("The SQL acceptance correlation context is immutable.");
     }
     private sealed class AllowAuthority : IFinanceOfficialInvoiceImportApprovalAuthorityV1
     {

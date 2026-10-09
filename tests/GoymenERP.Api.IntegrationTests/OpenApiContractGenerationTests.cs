@@ -416,6 +416,16 @@ public sealed partial class OpenApiContractGenerationTests
         new("get", "/api/v1/finance/official-invoice-import-batches/{batchId}", "GetFinanceOfficialInvoiceImportPendingBatchV1",
             AuthenticatedResponses("200:application/json", "404:application/problem+json", "503:application/problem+json"),
             ParameterValues: ["path:batchId:true:type:string;format:uuid"]),
+        new("get", "/api/v1/work/approvals", "GetWorkApprovalsV1",
+            AuthenticatedResponses("200:application/json", "404:application/problem+json", "503:application/problem+json"),
+            ParameterValues: ["query:cursor:false:type:string"]),
+        new("get", "/api/v1/work/approvals/{kind}/{approvalId}", "GetWorkApprovalV1",
+            AuthenticatedResponses("200:application/json", "404:application/problem+json", "503:application/problem+json"),
+            ParameterValues:
+            [
+                "path:kind:true:type:string",
+                "path:approvalId:true:type:string;format:uuid",
+            ]),
         new("post", "/api/v1/finance/official-invoice-import-batches/{batchId}/approval", "ApproveFinanceOfficialInvoiceImportBatchV1",
             AuthenticatedResponses("200:application/json", "422:application/json", "409:application/json", "400:application/problem+json", "415:", "503:application/problem+json"),
             "#/components/schemas/FinanceOfficialInvoiceImportApproveRequestV1",
@@ -947,6 +957,8 @@ public sealed partial class OpenApiContractGenerationTests
                 "ref:FinanceOfficialInvoiceImportPendingBatchPageV1",
             ["GetFinanceOfficialInvoiceImportPendingBatchV1"] =
                 "ref:FinanceOfficialInvoiceImportPendingBatchDetailV1",
+            ["GetWorkApprovalsV1"] = "ref:NativeApprovalReadPageV1",
+            ["GetWorkApprovalV1"] = "ref:NativeApprovalReadDetailV1",
             ["ApproveFinanceOfficialInvoiceImportBatchV1"] = "ref:FinanceOfficialInvoiceImportApprovalResultV1",
             ["GetFinanceApprovedOfficialInvoiceImportSourcesV1"] = "ref:ApprovedFinanceOpenItemSourcePage",
             ["ApplyFinanceOfficialInvoiceImportV1"] = "ref:FinanceOfficialInvoiceImportApplyResultV1",
@@ -1165,6 +1177,8 @@ public sealed partial class OpenApiContractGenerationTests
         "UploadFinanceOfficialInvoiceImportBatchV1",
         "GetPendingFinanceOfficialInvoiceImportBatchesV1",
         "GetFinanceOfficialInvoiceImportPendingBatchV1",
+        "GetWorkApprovalsV1",
+        "GetWorkApprovalV1",
         "ApproveFinanceOfficialInvoiceImportBatchV1",
         "GetFinanceApprovedOfficialInvoiceImportSourcesV1",
         "ApplyFinanceOfficialInvoiceImportV1",
@@ -1731,6 +1745,8 @@ public sealed partial class OpenApiContractGenerationTests
 
     private static readonly HashSet<string> CodeLessProblemResponses =
     [
+        "GetWorkApprovalsV1:404",
+        "GetWorkApprovalV1:404",
         "GetOrganizationLocationV1:404",
         "GetOrganizationWorkCenterV1:404",
         "GetIdentityAccessUserV1:404",
@@ -2390,6 +2406,28 @@ public sealed partial class OpenApiContractGenerationTests
         ExpectedSuccessComponentSchemas =
             new Dictionary<string, ComponentSchemaExpectation>(StringComparer.Ordinal)
             {
+                ["NativeApprovalReadDetailV1"] = ObjectSchema(
+                    ["item", "preview"],
+                    ("item", "ref:NativeApprovalReadItemV1"),
+                    ("preview", "ref:FinanceOfficialInvoiceImportPreviewV1")),
+                ["NativeApprovalReadItemV1"] = ObjectSchema(
+                    ["kind", "approvalId", "companyId", "status", "version", "batchVersion", "checksum", "templateVersion", "itemCount", "submittedBy", "submittedAtUtc"],
+                    ("kind", "type:string"),
+                    ("approvalId", "type:string;format:uuid"),
+                    ("companyId", "type:string;format:uuid"),
+                    ("status", "ref:FinanceOfficialInvoiceImportApprovalStatusV1"),
+                    ("version", "type:string"),
+                    ("batchVersion", "type:string"),
+                    ("checksum", "type:string"),
+                    ("templateVersion", "type:string"),
+                    ("itemCount", "type:integer|string;format:int32"),
+                    ("submittedBy", "type:string"),
+                    ("submittedAtUtc", "type:string;format:date-time")),
+                ["NativeApprovalReadPageV1"] = ObjectSchema(
+                    ["companyId", "items", "nextCursor"],
+                    ("companyId", "type:string;format:uuid"),
+                    ("items", "type:array;items:ref:NativeApprovalReadItemV1"),
+                    ("nextCursor", "type:null|string")),
                 ["ApprovedAccountingSourceCatalogViewV1"] = ObjectSchema(
                     ["packageId", "companyId", "status", "version", "catalogVersion", "templateVersion", "accountPlanSourceVersion", "accountsSourceSha256", "postingMappingsSourceSha256", "preparedByUserId", "preparedAtUtc", "activatedByUserId", "activatedAtUtc", "accountCount", "bindingCount"],
                     ("packageId", "type:string;format:uuid"),
