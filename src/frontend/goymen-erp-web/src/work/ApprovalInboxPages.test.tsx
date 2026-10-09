@@ -13,7 +13,8 @@ import { ShellProvider } from '../shell/ShellProvider'
 import { shellRoutes } from '../shell/router'
 import { SHELL_CAPABILITY_CONTRACT_VERSION } from '../shell/api'
 import { CAPABILITY } from '../shell/capabilities'
-import { APPROVAL, COMPANY, detail, item } from './approvalInboxFixtures'
+import { APPROVAL, COMPANY, DRAFT, detail, item, salesDetail, salesItem } from './approvalInboxFixtures'
+import { SALES_CAPABILITY } from '../sales/capabilities'
 import { APPROVALS_TEXT } from './workText'
 
 const USER = '11111111-1111-1111-1111-111111111111'
@@ -274,4 +275,166 @@ describe('/onaylarim — the Finance pilot inbox', () => {
       expect(screen.queryByRole('heading', { level: 1, name: APPROVALS_TEXT.heading })).toBeNull()
       expect(work()).toEqual([])
     })
+})
+
+/**
+ * #645: Sales order drafts awaiting internal approval, next to (never mixed with) the Finance pilot. Each source is
+ * listed only for its owner's own approve capability, read with its own kind, and opens its owner's own screen.
+ */
+describe('/onaylarim — Sales and Finance as separate connected sources', () => {
+  const SALES_APPROVE = SALES_CAPABILITY.ordersApprove
+  const SALES_DETAIL = SALES_CAPABILITY.draftsDetail
+  const SALES_LIST = '/api/v1/work/approvals?kind=sales.order-draft.v1'
+  const OTHER_DRAFT = '22222222-2222-4222-8222-222222222222'
+  const bySource = (sales: () => Response, finance: () => Response = () => json({ companyId: COMPANY, items: [item], nextCursor: null })) =>
+    (url: string) => url.includes('kind=sales.order-draft.v1') ? sales() : finance()
+  const salesPage = (items: readonly unknown[] = [salesItem], nextCursor: string | null = null) => json({ companyId: COMPANY, items, nextCursor })
+
+  it('a Sales-only approver gets only the Sales list, asked for by its kind, linking the Sales order screen', async () => {
+    const { work } = installFetch([SALES_APPROVE, SALES_DETAIL], { list: bySource(() => salesPage()) })
+    await renderAt('/onaylarim')
+    const table = await screen.findByTestId('work-approvals-table')
+    expect(table.getAttribute('data-kind')).toBe('sales.order-draft.v1')
+    const row = within(table).getAllByRole('row')[1]
+    expect(row.getAttribute('data-approval-id')).toBe(DRAFT)
+    expect(within(row).getByText('SO-2026-000123')).toBeTruthy()
+    expect(within(row).getByText('Rev.0')).toBeTruthy()
+    expect(within(row).getByRole('link', { name: APPROVALS_TEXT.openNativeSales }).getAttribute('href')).toBe(`/satis/siparisler/${DRAFT}`)
+    expect(within(row).getByRole('link', { name: APPROVALS_TEXT.openDetail }).getAttribute('href'))
+      .toBe(`/onaylarim/sales.order-draft.v1/${DRAFT}`)
+    // No source switch for one source; the Finance list is never read; no approve control here.
+    expect(screen.queryByRole('navigation', { name: APPROVALS_TEXT.sources })).toBeNull()
+    expect(work().map((call) => call.url)).toEqual([SALES_LIST])
+    expect(work().every((call) => call.method === 'GET' && call.companyId === COMPANY)).toBe(true)
+    expect(screen.queryByRole('button', { name: /onayla/i })).toBeNull()
+  })
+
+  it('shows isOwnDraft as a fact only, and draws no Sales link without the Sales order screen capability', async () => {
+    installFetch([SALES_APPROVE], { list: bySource(() => salesPage([{ ...salesItem, isOwnDraft: true }])) })
+    await renderAt('/onaylarim')
+    const row = within(await screen.findByTestId('work-approvals-table')).getAllByRole('row')[1]
+    expect(within(row).getByText(APPROVALS_TEXT.ownDraftYes)).toBeTruthy()
+    expect(within(row).queryByRole('link', { name: APPROVALS_TEXT.openNativeSales })).toBeNull()
+    expect(within(row).getByRole('link', { name: APPROVALS_TEXT.openDetail })).toBeTruthy()
+  })
+
+  it('an approver of both sees a source switch; each source is read with its own request and never mixed', async () => {
+    const { work } = installFetch([APPROVE, SALES_APPROVE, SALES_DETAIL], { list: bySource(() => salesPage()) })
+    const router = await renderAt('/onaylarim')
+    const nav = await screen.findByRole('navigation', { name: APPROVALS_TEXT.sources })
+    expect(within(nav).getAllByRole('link').map((link) => link.textContent)).toEqual(['Finans', 'Satış'])
+    expect(within(nav).getByRole('link', { name: 'Finans' }).getAttribute('aria-current')).toBe('page')
+    const finance = await screen.findByTestId('work-approvals-table')
+    expect(finance.getAttribute('data-kind')).toBe('finance.official-invoice-import.v1')
+    expect(within(finance).queryByText('SO-2026-000123')).toBeNull()
+
+    const user = userEvent.setup()
+    await user.click(within(nav).getByRole('link', { name: 'Satış' }))
+    await waitFor(() => expect(screen.getByTestId('work-approvals-table').getAttribute('data-kind')).toBe('sales.order-draft.v1'))
+    expect(router.state.location.search).toBe('?kaynak=satis')
+    const sales = screen.getByTestId('work-approvals-table')
+    expect(within(sales).queryByRole('link', { name: APPROVALS_TEXT.openNative })).toBeNull()
+    expect(sales.querySelectorAll(`[data-approval-id="${APPROVAL}"]`)).toHaveLength(0)
+    expect(work().map((call) => call.url)).toEqual(['/api/v1/work/approvals', SALES_LIST])
+  })
+
+  it('a source the actor does not hold cannot be selected by the address', async () => {
+    const { work } = installFetch([APPROVE], { list: bySource(() => salesPage()) })
+    await renderAt('/onaylarim?kaynak=satis')
+    const table = await screen.findByTestId('work-approvals-table')
+    expect(table.getAttribute('data-kind')).toBe('finance.official-invoice-import.v1')
+    expect(work().some((call) => call.url.includes('kind=sales'))).toBe(false)
+  })
+
+  it('a source switch drops the other source\'s rows, cursor and continuation error', async () => {
+    const { work } = installFetch([APPROVE, SALES_APPROVE, SALES_DETAIL], {
+      list: (url) => {
+        if (url.includes('kind=sales.order-draft.v1')) {
+          return url.includes('cursor=') ? json({ status: 503 }, 503) : salesPage([salesItem], 's-1')
+        }
+        return json({ companyId: COMPANY, items: [item], nextCursor: 'f-1' })
+      },
+    })
+    const router = await renderAt('/onaylarim?kaynak=satis')
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole('button', { name: APPROVALS_TEXT.loadMore }))
+    expect(await screen.findByText(APPROVALS_TEXT.nextPageFailed)).toBeTruthy()
+    await user.click(within(screen.getByRole('navigation', { name: APPROVALS_TEXT.sources })).getByRole('link', { name: 'Finans' }))
+    await waitFor(() => expect(screen.getByTestId('work-approvals-table').getAttribute('data-kind')).toBe('finance.official-invoice-import.v1'))
+    expect(screen.queryByText(APPROVALS_TEXT.nextPageFailed)).toBeNull()
+    expect(screen.queryByText('SO-2026-000123')).toBeNull()
+    // The Finance list continues with ITS cursor, never the Sales one.
+    await user.click(screen.getByRole('button', { name: APPROVALS_TEXT.loadMore }))
+    await waitFor(() => expect(work().some((call) => call.url === '/api/v1/work/approvals?cursor=f-1')).toBe(true))
+    expect(work().filter((call) => call.url.includes('cursor=s-1'))).toHaveLength(1)
+    expect(work().some((call) => call.url.includes('kind=sales') && call.url.includes('cursor=f-1'))).toBe(false)
+    expect(router.state.location.search).toBe('?kaynak=finans')
+  })
+
+  it('a foreign-company Sales next page closes the Sales list; a fresh first page recovers it', async () => {
+    const { work } = installFetch([SALES_APPROVE, SALES_DETAIL], {
+      list: (url) => url.includes('cursor=')
+        ? json({ companyId: OTHER_COMPANY, items: [{ ...salesItem, approvalId: OTHER_DRAFT, companyId: OTHER_COMPANY }], nextCursor: null })
+        : salesPage([salesItem], 's-1'),
+    })
+    await renderAt('/onaylarim')
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole('button', { name: APPROVALS_TEXT.loadMore }))
+    await screen.findByTestId('work-approvals-closed')
+    expect(screen.queryByTestId('work-approvals-table')).toBeNull()
+    expect(screen.queryByRole('link', { name: APPROVALS_TEXT.openNativeSales })).toBeNull()
+    await user.click(screen.getByRole('button', { name: APPROVALS_TEXT.restart }))
+    await screen.findByTestId('work-approvals-table')
+    expect(work().map((call) => call.url)).toEqual([SALES_LIST, `${SALES_LIST}&cursor=s-1`, SALES_LIST])
+  })
+
+  it('opens the Sales detail (item only) and from there the Sales order screen', async () => {
+    const { work } = installFetch([SALES_APPROVE, SALES_DETAIL], { list: bySource(() => salesPage()), detail: () => json(salesDetail) })
+    await renderAt(`/onaylarim/sales.order-draft.v1/${DRAFT}`)
+    const facts = await screen.findByTestId('work-approval-facts')
+    expect(screen.getByRole('heading', { level: 1, name: APPROVALS_TEXT.detailHeadingSales })).toBeTruthy()
+    expect(within(facts).getByText('SO-2026-000123')).toBeTruthy()
+    expect(within(facts).getByText('Rev.0')).toBeTruthy()
+    expect(within(facts).getByText('3')).toBeTruthy()
+    expect(screen.getByRole('link', { name: APPROVALS_TEXT.openNativeSales }).getAttribute('href')).toBe(`/satis/siparisler/${DRAFT}`)
+    expect(screen.getByRole('link', { name: `← ${APPROVALS_TEXT.backToList}` }).getAttribute('href')).toBe('/onaylarim?kaynak=satis')
+    expect(work().map((call) => call.url)).toEqual([`/api/v1/work/approvals/sales.order-draft.v1/${DRAFT}`])
+  })
+
+  it.each([
+    ['a Finance-shaped answer', () => json(detail)],
+    ['another draft', () => json({ item: { ...salesItem, approvalId: OTHER_DRAFT } })],
+  ])('a Sales detail with %s is not shown', async (_, answer) => {
+    installFetch([SALES_APPROVE, SALES_DETAIL], { detail: answer })
+    await renderAt(`/onaylarim/sales.order-draft.v1/${DRAFT}`)
+    await waitFor(() => expect(document.querySelector('[data-state="malformed-response"]')).not.toBeNull())
+    expect(screen.queryByTestId('work-approval-facts')).toBeNull()
+  })
+
+  it.each([
+    ['a Sales detail for a Finance-only approver', [APPROVE], `/onaylarim/sales.order-draft.v1/${DRAFT}`],
+    ['a Finance detail for a Sales-only approver', [SALES_APPROVE, SALES_DETAIL], `/onaylarim/finance.official-invoice-import.v1/${APPROVAL}`],
+    ['an unconnected kind', [APPROVE, SALES_APPROVE], `/onaylarim/purchasing.order.v1/${DRAFT}`],
+  ])('%s is the neutral not-found block and reads nothing', async (_, granted, path) => {
+    const { work } = installFetch(granted)
+    await renderAt(path)
+    await waitFor(() => expect(notFound()).not.toBeNull())
+    expect(screen.queryByTestId('work-approval-facts')).toBeNull()
+    expect(work()).toEqual([])
+  })
+
+  it('the home entry names exactly the sources the actor holds', async () => {
+    installFetch([SALES_APPROVE])
+    await renderAt('/')
+    const entry = await screen.findByTestId('home-approvals')
+    expect(entry.textContent).toContain(APPROVALS_TEXT.homeText(['Satış']))
+    expect(entry.textContent).not.toContain('Finans')
+  })
+
+  it('an actor with neither approve capability (even with the Sales read) gets no entry and no inbox', async () => {
+    const { work } = installFetch([SALES_DETAIL, CAPABILITY.salesDraftsList, CAPABILITY.financeOfficialInvoiceImportUpload])
+    await renderAt('/onaylarim')
+    await waitFor(() => expect(notFound()).not.toBeNull())
+    expect(work()).toEqual([])
+  })
 })

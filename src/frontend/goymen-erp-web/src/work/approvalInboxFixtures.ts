@@ -1,5 +1,5 @@
 /** D-05 test fixtures shared by the Work approval tests (synthetic; not a test file itself). */
-import { FINANCE_OFFICIAL_INVOICE_IMPORT_KIND } from './approvalInboxContract'
+import { FINANCE_OFFICIAL_INVOICE_IMPORT_KIND, SALES_ORDER_DRAFT_KIND } from './approvalInboxContract'
 
 // The #639 wire (WorkApprovalEndpointTests): a Finance pending batch projected as a Work item. Synthetic.
 export const COMPANY = '10000000-0000-0000-0000-000000000001'
@@ -24,3 +24,12 @@ export const detail = {
     issues: [],
   },
 } as const
+
+// The #645 wire (WorkApprovalEndpointTests): a Sales order draft awaiting internal approval. Synthetic.
+export const DRAFT = 'aaaaaaaa-1111-4111-8111-000000000645'
+export const salesItem = {
+  kind: SALES_ORDER_DRAFT_KIND, approvalId: DRAFT, companyId: COMPANY, status: 'PendingApproval', version: '3',
+  revision: 'Rev.0', documentNo: 'SO-2026-000123', isOwnDraft: false, submittedBy: 'satis-hazirlayan',
+  submittedAtUtc: '2026-10-09T09:15:00Z',
+} as const
+export const salesDetail = { item: salesItem } as const

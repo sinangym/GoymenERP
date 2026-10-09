@@ -1,22 +1,36 @@
 /**
- * D-05 "Onaylarım" — the Finance pilot of the approval inbox: the native Finance approvals waiting for the signed-in
- * actor in the committed company, read through the Work read (#639), each opening Finance's own approval screen (#640
- * reopens it from `?approvalId=`).
+ * D-05 "Onaylarım" — the approval inbox: the native approvals waiting for the signed-in actor in the committed company,
+ * read through the Work read (#639/#644/#645), one connected source at a time, each record opening its owner's own
+ * screen. Connected: Finance official-invoice-import batches (Finance's approval screen, #640 `?approvalId=`) and Sales
+ * order drafts awaiting internal approval (the Sales order screen, `/satis/siparisler/{draftId}`).
  *
- * Read only. There is no approve button here and no approval rule: who sees a record (Finance's approve authority,
- * the company, never one's own upload), what may be approved and how, all stay in Finance. Mounted behind that same
- * native Finance capability; no shared permission is introduced. The page says plainly that only Finance is connected.
+ * Read only. There is no approve button here and no approval rule: who sees a record, what may be approved and how
+ * (authority, separation of duties, versions) all stay with the owner. A source is listed only for the owner's own
+ * approve capability; no shared permission is introduced. The page says plainly which sources are connected.
+ *
+ * Each source is its own list — its own rows, cursor, errors and late answers. Switching the source (or the company or
+ * actor) remounts the list, so nothing of one source is ever shown under another.
  */
 
 import { useCallback, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Link, useParams } from 'react-router'
+import { Link, useParams, useSearchParams } from 'react-router'
 import { fetchApprovalDetail, fetchApprovalPage } from './approvalInboxApi'
-import type { ApprovalItem } from './approvalInboxContract'
-import { APPROVAL_KIND_TEXT, APPROVALS_TEXT as T, WORK_ROUTE, approvalDetailRoute, formatInstant, nativeApprovalPath } from './workText'
+import type { ApprovalItem, FinanceApprovalItem, SalesApprovalItem } from './approvalInboxContract'
+import {
+  APPROVAL_KIND_TEXT,
+  APPROVAL_SOURCES,
+  APPROVALS_TEXT as T,
+  SOURCE_PARAM,
+  WORK_ROUTE,
+  approvalDetailRoute,
+  formatInstant,
+  sourceOfKind,
+  type ApprovalSource,
+} from './workText'
 import { classifyOutcome, type RemoteViewState } from '../shell/uiState'
 import { useShellState } from '../shell/shellContext'
-import { contextKey, contextKeyString } from '../shell/shellState'
+import { contextKey, contextKeyString, hasCapability, type ShellState } from '../shell/shellState'
 import { StateBlock } from '../shell/StateBlock'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
 import styles from './Work.module.css'
@@ -29,6 +43,11 @@ function useBoundCompany() {
   return { shell, namespace, companyId }
 }
 
+const grantedSources = (shell: ShellState) => APPROVAL_SOURCES.filter((source) => hasCapability(shell, source.capability))
+
+const sourceListPath = (source: ApprovalSource) =>
+  `${WORK_ROUTE.approvals}?${new URLSearchParams({ [SOURCE_PARAM]: source.token }).toString()}`
+
 function PilotScope() {
   return <div className={styles.scope}>
     <p>{T.pilotScope}</p>
@@ -36,10 +55,33 @@ function PilotScope() {
   </div>
 }
 
+/** The record's own screen, when the actor holds that screen's own capability; otherwise no link is drawn. */
+function NativeLink({ source, approvalId, className }: { readonly source: ApprovalSource; readonly approvalId: string; readonly className?: string }) {
+  const shell = useShellState()
+  if (!hasCapability(shell, source.nativeCapability)) return null
+  return <Link className={className} to={source.nativePath(approvalId)}>{source.openNative}</Link>
+}
+
 export function ApprovalInboxPage() {
-  const { namespace } = useBoundCompany()
-  // Remounted per context: rows and cursors of one company or actor never survive into another.
-  return <ApprovalInbox key={namespace ?? 'no-context'} />
+  const { shell, namespace } = useBoundCompany()
+  const [searchParams] = useSearchParams()
+  const granted = grantedSources(shell)
+  const source = granted.find((one) => one.token === searchParams.get(SOURCE_PARAM)) ?? granted[0] ?? null
+  if (source === null) return <StateBlock state={{ kind: 'not-found' }} subject="sayfa" />
+  return <section className={styles.page} aria-labelledby="work-approvals-heading">
+    <header className={styles.header}>
+      <h1 id="work-approvals-heading">{T.heading}</h1>
+      <PilotScope />
+    </header>
+    {granted.length > 1
+      ? <nav aria-label={T.sources} className={styles.sources}>
+        {granted.map((one) => <Link key={one.kind} to={sourceListPath(one)} aria-current={one === source ? 'page' : undefined}
+          className={one === source ? styles.sourceCurrent : styles.source}>{one.label}</Link>)}
+      </nav>
+      : null}
+    {/* Remounted per context AND per source: rows, cursors, errors and late answers never cross either. */}
+    <SourceInbox key={`${namespace ?? 'no-context'}::${source.kind}`} source={source} />
+  </section>
 }
 
 /**
@@ -50,17 +92,17 @@ export function ApprovalInboxPage() {
  */
 const TRANSIENT_CONTINUATION: ReadonlySet<RemoteViewState<unknown>['kind']> = new Set(['offline', 'network-error', 'service-unavailable'])
 
-function ApprovalInbox() {
+function SourceInbox({ source }: { readonly source: ApprovalSource }) {
   const { shell, namespace, companyId } = useBoundCompany()
   const boundary = useAuthBoundary()
   // A restart is a new read of the first page under a new key: nothing of the closed list is shown while it loads.
   const [generation, setGeneration] = useState(0)
   const first = useQuery({
-    queryKey: [namespace ?? 'no-context', shell.routeEntryGeneration, 'work-approvals', 'first', generation],
+    queryKey: [namespace ?? 'no-context', shell.routeEntryGeneration, 'work-approvals', source.kind, 'first', generation],
     enabled: namespace !== null && companyId !== null,
     queryFn: async ({ signal }) => {
       const snapshot = boundary.capture()
-      const outcome = await fetchApprovalPage(null, companyId as string, signal)
+      const outcome = await fetchApprovalPage(source.kind, null, companyId as string, signal)
       if (outcome.type === 'http') boundary.report(outcome.status, snapshot)
       return outcome
     },
@@ -81,7 +123,7 @@ function ApprovalInbox() {
     const attempt = attemptRef.current
     setContinuation('loading')
     const snapshot = boundary.capture()
-    const outcome = await fetchApprovalPage(nextCursor, companyId)
+    const outcome = await fetchApprovalPage(source.kind, nextCursor, companyId)
     if (attempt !== attemptRef.current) return
     loadingRef.current = false
     if (outcome.type === 'http') boundary.report(outcome.status, snapshot)
@@ -103,7 +145,7 @@ function ApprovalInbox() {
       setContinuation('idle')
       setClosed(state)
     }
-  }, [boundary, companyId, firstPage, nextCursor])
+  }, [boundary, companyId, firstPage, nextCursor, source.kind])
 
   const restart = () => {
     attemptRef.current += 1
@@ -115,64 +157,40 @@ function ApprovalInbox() {
     setGeneration((value) => value + 1)
   }
 
-  const header = <header className={styles.header}>
-    <h1 id="work-approvals-heading">{T.heading}</h1>
-    <PilotScope />
-  </header>
-
   if (firstPage === null) {
     const state: RemoteViewState<unknown> = first.data === undefined
       ? { kind: 'initial-loading' }
       : classifyOutcome(first.data) as RemoteViewState<unknown>
-    return <section className={styles.page} aria-labelledby="work-approvals-heading">
-      {header}
-      <StateBlock state={state} subject={T.subject} onRetry={() => void first.refetch()} />
-    </section>
+    return <StateBlock state={state} subject={source.subject} onRetry={() => void first.refetch()} />
   }
 
   if (closed !== null) {
-    return <section className={styles.page} aria-labelledby="work-approvals-heading">
-      {header}
+    return <>
       <div role="alert" data-testid="work-approvals-closed">
         <p>{T.listClosed}</p>
-        <StateBlock state={closed} subject={T.subject} />
+        <StateBlock state={closed} subject={source.subject} />
       </div>
       <button type="button" onClick={restart}>{T.restart}</button>
-    </section>
+    </>
   }
 
   const rows = [...firstPage.items, ...more]
-  return <section className={styles.page} aria-labelledby="work-approvals-heading">
-    {header}
+  return <>
     {rows.length === 0
-      ? <StateBlock state={{ kind: 'empty-no-data' }} subject={T.subject} />
-      : <div className={styles.tableWrap} tabIndex={0} role="region" aria-label={T.caption}>
-        <table className={styles.table} data-testid="work-approvals-table">
-          <caption className={styles.caption}>{T.caption}</caption>
-          <thead><tr>
-            <th scope="col">{T.kind}</th>
-            <th scope="col">{T.submittedBy}</th>
-            <th scope="col">{T.submittedAt}</th>
-            <th scope="col" className={styles.numeric}>{T.itemCount}</th>
-            <th scope="col">{T.record}</th>
-          </tr></thead>
-          <tbody>{rows.map((row) => <tr key={row.approvalId} data-approval-id={row.approvalId}>
-            <td>{APPROVAL_KIND_TEXT[row.kind]}</td>
-            <td>{row.submittedBy}</td>
-            <td>{formatInstant(row.submittedAtUtc)}</td>
-            <td className={styles.numeric}>{row.itemCount}</td>
-            <td className={styles.actions}>
-              <Link to={approvalDetailRoute(row.kind, row.approvalId)}>{T.openDetail}</Link>
-              <Link to={nativeApprovalPath(row)}>{T.openNative}</Link>
-            </td>
-          </tr>)}</tbody>
+      ? <StateBlock state={{ kind: 'empty-no-data' }} subject={source.subject} />
+      : <div className={styles.tableWrap} tabIndex={0} role="region" aria-label={source.caption}>
+        <table className={styles.table} data-testid="work-approvals-table" data-kind={source.kind}>
+          <caption className={styles.caption}>{source.caption}</caption>
+          {source.kind === 'sales.order-draft.v1'
+            ? <SalesRows rows={rows as readonly SalesApprovalItem[]} source={source} />
+            : <FinanceRows rows={rows as readonly FinanceApprovalItem[]} source={source} />}
         </table>
       </div>}
     {rows.length === 0 ? null : <div className={styles.continuation}>
       {typeof continuation === 'object'
         ? <div role="alert">
           <p>{T.nextPageFailed}</p>
-          <StateBlock state={continuation} subject={T.subject} onRetry={() => void loadMore()} />
+          <StateBlock state={continuation} subject={source.subject} onRetry={() => void loadMore()} />
         </div>
         : nextCursor === null
           ? <p className={styles.muted}>{T.end}</p>
@@ -181,30 +199,82 @@ function ApprovalInbox() {
             {continuation === 'loading' ? T.loadingMore : T.loadMore}
           </button>}
     </div>}
-  </section>
+  </>
+}
+
+function RecordLinks({ source, approvalId }: { readonly source: ApprovalSource; readonly approvalId: string }) {
+  return <td className={styles.actions}>
+    <Link to={approvalDetailRoute(source.kind, approvalId)}>{T.openDetail}</Link>
+    <NativeLink source={source} approvalId={approvalId} />
+  </td>
+}
+
+function FinanceRows({ rows, source }: { readonly rows: readonly FinanceApprovalItem[]; readonly source: ApprovalSource }) {
+  return <>
+    <thead><tr>
+      <th scope="col">{T.kind}</th>
+      <th scope="col">{T.submittedBy}</th>
+      <th scope="col">{T.submittedAt}</th>
+      <th scope="col" className={styles.numeric}>{T.itemCount}</th>
+      <th scope="col">{T.record}</th>
+    </tr></thead>
+    <tbody>{rows.map((row) => <tr key={row.approvalId} data-approval-id={row.approvalId}>
+      <td>{APPROVAL_KIND_TEXT[row.kind]}</td>
+      <td>{row.submittedBy}</td>
+      <td>{formatInstant(row.submittedAtUtc)}</td>
+      <td className={styles.numeric}>{row.itemCount}</td>
+      <RecordLinks source={source} approvalId={row.approvalId} />
+    </tr>)}</tbody>
+  </>
+}
+
+function SalesRows({ rows, source }: { readonly rows: readonly SalesApprovalItem[]; readonly source: ApprovalSource }) {
+  return <>
+    <thead><tr>
+      <th scope="col">{T.documentNo}</th>
+      <th scope="col">{T.revision}</th>
+      <th scope="col">{T.submittedBy}</th>
+      <th scope="col">{T.submittedAt}</th>
+      <th scope="col">{T.ownDraft}</th>
+      <th scope="col">{T.record}</th>
+    </tr></thead>
+    <tbody>{rows.map((row) => <tr key={row.approvalId} data-approval-id={row.approvalId}>
+      <td>{row.documentNo}</td>
+      <td>{row.revision}</td>
+      <td>{row.submittedBy}</td>
+      <td>{formatInstant(row.submittedAtUtc)}</td>
+      <td>{row.isOwnDraft ? T.ownDraftYes : '—'}</td>
+      <RecordLinks source={source} approvalId={row.approvalId} />
+    </tr>)}</tbody>
+  </>
 }
 
 export function ApprovalInboxDetailPage() {
-  const { namespace } = useBoundCompany()
+  const { shell, namespace } = useBoundCompany()
   const { kind, approvalId } = useParams()
-  return <ApprovalDetail key={`${namespace ?? 'no-context'}:${kind ?? ''}:${approvalId ?? ''}`}
-    kind={kind ?? ''} approvalId={approvalId ?? ''} />
+  const source = sourceOfKind(kind ?? '')
+  // A kind that is not connected, or one whose owner capability this actor lacks, is the neutral block — nothing read.
+  if (source === null || !hasCapability(shell, source.capability) || (approvalId ?? '').length === 0) {
+    return <StateBlock state={{ kind: 'not-found' }} subject="sayfa" />
+  }
+  return <ApprovalDetail key={`${namespace ?? 'no-context'}:${source.kind}:${approvalId ?? ''}`}
+    source={source} approvalId={approvalId ?? ''} />
 }
 
-function ApprovalDetail({ kind, approvalId }: { readonly kind: string; readonly approvalId: string }) {
+function ApprovalDetail({ source, approvalId }: { readonly source: ApprovalSource; readonly approvalId: string }) {
   const { shell, namespace, companyId } = useBoundCompany()
   const boundary = useAuthBoundary()
   const query = useQuery({
-    queryKey: [namespace ?? 'no-context', shell.routeEntryGeneration, 'work-approval', kind, approvalId],
-    enabled: namespace !== null && companyId !== null && kind.length > 0 && approvalId.length > 0,
+    queryKey: [namespace ?? 'no-context', shell.routeEntryGeneration, 'work-approval', source.kind, approvalId],
+    enabled: namespace !== null && companyId !== null,
     queryFn: async ({ signal }) => {
       const snapshot = boundary.capture()
-      const outcome = await fetchApprovalDetail(kind, approvalId, companyId as string, signal)
+      const outcome = await fetchApprovalDetail(source.kind, approvalId, companyId as string, signal)
       if (outcome.type === 'http') boundary.report(outcome.status, snapshot)
       return outcome
     },
   })
-  const backLink = <Link className={styles.backLink} to={WORK_ROUTE.approvals}>← {T.backToList}</Link>
+  const backLink = <Link className={styles.backLink} to={sourceListPath(source)}>← {T.backToList}</Link>
   const outcome = query.data
   if (outcome === undefined || outcome.type !== 'ok-single') {
     return <section className={styles.page} aria-label={T.detailSubject}>
@@ -217,18 +287,30 @@ function ApprovalDetail({ kind, approvalId }: { readonly kind: string; readonly 
   return <article className={styles.page} aria-labelledby="work-approval-heading">
     {backLink}
     <header className={styles.header}>
-      <h1 id="work-approval-heading">{T.detailHeading}</h1>
+      <h1 id="work-approval-heading">{item.kind === 'sales.order-draft.v1' ? T.detailHeadingSales : T.detailHeading}</h1>
       <PilotScope />
     </header>
     <dl className={styles.facts} data-testid="work-approval-facts">
       <div><dt>{T.kind}</dt><dd>{APPROVAL_KIND_TEXT[item.kind]}</dd></div>
-      <div><dt>{T.status}</dt><dd>{T.statusPending}</dd></div>
-      <div><dt>{T.submittedBy}</dt><dd>{item.submittedBy}</dd></div>
-      <div><dt>{T.submittedAt}</dt><dd>{formatInstant(item.submittedAtUtc)}</dd></div>
-      <div><dt>{T.itemCount}</dt><dd>{item.itemCount}</dd></div>
-      <div><dt>{T.templateVersion}</dt><dd>{item.templateVersion}</dd></div>
-      <div><dt>{T.batchVersion}</dt><dd>{item.batchVersion}</dd></div>
+      {item.kind === 'sales.order-draft.v1'
+        ? <>
+          <div><dt>{T.documentNo}</dt><dd>{item.documentNo}</dd></div>
+          <div><dt>{T.status}</dt><dd>{T.statusPending}</dd></div>
+          <div><dt>{T.revision}</dt><dd>{item.revision}</dd></div>
+          <div><dt>{T.version}</dt><dd>{item.version}</dd></div>
+          <div><dt>{T.submittedBy}</dt><dd>{item.submittedBy}</dd></div>
+          <div><dt>{T.submittedAt}</dt><dd>{formatInstant(item.submittedAtUtc)}</dd></div>
+          {item.isOwnDraft ? <div><dt>{T.ownDraft}</dt><dd>{T.ownDraftYes}</dd></div> : null}
+        </>
+        : <>
+          <div><dt>{T.status}</dt><dd>{T.statusPending}</dd></div>
+          <div><dt>{T.submittedBy}</dt><dd>{item.submittedBy}</dd></div>
+          <div><dt>{T.submittedAt}</dt><dd>{formatInstant(item.submittedAtUtc)}</dd></div>
+          <div><dt>{T.itemCount}</dt><dd>{item.itemCount}</dd></div>
+          <div><dt>{T.templateVersion}</dt><dd>{item.templateVersion}</dd></div>
+          <div><dt>{T.batchVersion}</dt><dd>{item.batchVersion}</dd></div>
+        </>}
     </dl>
-    <p><Link className={styles.primaryLink} to={nativeApprovalPath(item)}>{T.openNative}</Link></p>
+    <p><NativeLink className={styles.primaryLink} source={source} approvalId={item.approvalId} /></p>
   </article>
 }

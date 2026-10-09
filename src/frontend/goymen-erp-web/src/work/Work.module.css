@@ -153,3 +153,38 @@
 .home p {
   margin: 0;
 }
+
+/* The connected-source switch: one link per source the actor holds; the current one is marked, not hidden. */
+.sources {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--goy-ds-space-1, 4px);
+  border-bottom: 1px solid var(--goy-ds-color-border, #e1e4e9);
+}
+
+.source,
+.sourceCurrent {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--goy-ds-control-height, 32px);
+  padding: 0 12px;
+  border-bottom: 2px solid transparent;
+  color: var(--goy-ds-color-text-secondary, #48505d);
+  font-weight: var(--goy-ds-font-weight-medium, 500);
+  text-decoration: none;
+}
+
+.sourceCurrent {
+  border-bottom-color: var(--goy-ds-color-accent, #2a57e3);
+  color: var(--goy-ds-color-text, #141920);
+}
+
+.source:hover {
+  color: var(--goy-ds-color-text, #141920);
+}
+
+.source:focus-visible,
+.sourceCurrent:focus-visible {
+  outline: 2px solid var(--goy-ds-color-accent, #2a57e3);
+  outline-offset: 2px;
+}
