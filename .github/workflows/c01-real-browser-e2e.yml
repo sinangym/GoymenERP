@@ -206,7 +206,10 @@ jobs:
           C01_E2E_UNAUTHORIZED_BASE_URL: http://127.0.0.1:15174
           C01_E2E_API_BASE_URL: http://127.0.0.1:15080
           C01_E2E_ARTIFACTS_DIR: ${{ github.workspace }}/artifacts
-        run: npm run c01:ci
+        run: |
+          curl --fail --silent --show-error \
+            "$C01_E2E_API_BASE_URL/health/live" >/dev/null
+          npm run c01:ci
 
       - name: Run SHELL-AUTH-BOUNDARY browser acceptance
         # Narrow extension, same disposable stack, same runner. Issue #165 requires
