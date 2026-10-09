@@ -14,6 +14,8 @@ import {
 } from './capabilities'
 import { CAPABILITY } from '../shell/capabilities'
 import { MANUFACTURING_CAPABILITY } from '../manufacturing/capabilities'
+import { PURCHASE_SUPPLY_SCROLL_LABEL } from './PurchaseSupplySection'
+import inventoryStyles from './inventory.module.css'
 
 /**
  * AT-063 / AT-064 on the real ST-01 and ST-02 components: a row's action menu shows only what the server's capability
@@ -348,6 +350,39 @@ describe('AT-064 ST-01 purchase remainder as future supply', () => {
     expect((await screen.findByRole('alert')).textContent).toBe('Alış siparişi kalanları okunamadı (403).')
     expect(shell.report).toHaveBeenCalledWith(403, { token: 1 })
     expect(screen.getByText('LBL-1')).toBeTruthy()
+  })
+
+  it('keeps a wide table inside its own keyboard-reachable scroll surface, never widening the page (390px regression)', async () => {
+    shell.capabilities = [
+      INVENTORY_STOCK_POSITIONS_CAPABILITY, CAPABILITY.logisticsOperationsPurchase, CAPABILITY.purchasingOrdersDetail,
+      CAPABILITY.productItemsDetail,
+    ]
+    mount()
+    const table = await screen.findByTestId('stock-purchase-supply-table')
+    // The scroll surface is a named, focusable region that holds the whole table and nothing hidden from it.
+    const surface = screen.getByRole('region', { name: PURCHASE_SUPPLY_SCROLL_LABEL })
+    expect(surface).toBe(table.parentElement)
+    expect(surface.tabIndex).toBe(0)
+    expect(surface.className.split(' ')).toEqual(expect.arrayContaining([inventoryStyles.tableWrap, inventoryStyles.supplyScroll]))
+    // The section is contained in the page's grid, so the table — not the page — scrolls sideways on a phone.
+    const section = screen.getByRole('heading', { name: 'Gelecek arz — Alış Siparişi' }).closest('section')!
+    expect(section.className.split(' ')).toContain(inventoryStyles.supplySection)
+    expect(within(table).getAllByRole('cell')).toHaveLength(11)
+    expect(within(table).getAllByRole('link').map((link) => link.textContent)).toEqual(['Satın alma siparişi …99999999', 'Ürün kartı'])
+    // The stylesheet the browser draws with: containment on the section and the surface, the surface scrolls, and no
+    // rule hides or clips a cell. (Page/table overflow in a real browser is the STUB probe's and the real acceptance's.)
+    const nodeProcess = (globalThis as unknown as {
+      readonly process: { readonly cwd: () => string; readonly getBuiltinModule: (name: string) => unknown }
+    }).process
+    const fs = nodeProcess.getBuiltinModule('node:fs') as { readFileSync(path: string, encoding: 'utf8'): string }
+    // Vitest runs from the web package (`npm test` in src/frontend/goymen-erp-web).
+    const css = fs.readFileSync(`${nodeProcess.cwd()}/src/inventory/inventory.module.css`, 'utf8')
+    const rule = (selector: string) => new RegExp(`(^|\\n)\\.${selector} \\{([^}]*)\\}`).exec(css)?.[2] ?? ''
+    expect(rule('supplySection')).toMatch(/min-width:\s*0/)
+    expect(rule('supplySection')).toMatch(/max-width:\s*100%/)
+    expect(rule('supplyScroll')).toMatch(/max-width:\s*100%/)
+    expect(rule('tableWrap')).toMatch(/overflow-x:\s*auto/)
+    expect(`${rule('supplySection')}${rule('supplyScroll')}`).not.toMatch(/overflow:\s*hidden|display:\s*none|visibility|clip/)
   })
 
   it('states an empty remainder plainly', async () => {
