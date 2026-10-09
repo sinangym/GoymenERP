@@ -12,6 +12,7 @@ public sealed class SalesOrderDraftPendingApprovalReadServiceV1(
     : ISalesOrderDraftPendingApprovalReadServiceV1
 {
     private const int PageSize = 50;
+    private const int MaximumCursorLength = 8192;
     private const string PendingApproval = "PendingApproval";
     private const string DraftState = "Draft";
 
@@ -50,7 +51,8 @@ public sealed class SalesOrderDraftPendingApprovalReadServiceV1(
             return afterList;
         }
         if (source is null || source.Items is null || source.Items.Count > PageSize
-            || source.NextCursor is { Length: 0 })
+            || source.NextCursor is not null
+            && (string.IsNullOrWhiteSpace(source.NextCursor) || source.NextCursor.Length > MaximumCursorLength))
         {
             return Unavailable<SalesOrderDraftPendingApprovalPageV1>();
         }

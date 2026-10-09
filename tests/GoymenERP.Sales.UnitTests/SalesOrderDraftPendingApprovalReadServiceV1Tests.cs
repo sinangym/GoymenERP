@@ -101,6 +101,21 @@ public sealed class SalesOrderDraftPendingApprovalReadServiceV1Tests
     }
 
     [Fact]
+    public async Task Whitespace_or_oversized_owner_cursor_fails_closed()
+    {
+        foreach (var cursor in new[] { " ", new string('x', 8193) })
+        {
+            var drafts = Drafts();
+            drafts.List = (_, _) => Task.FromResult(new SalesOrderDraftListResponse([], cursor));
+
+            var result = await Fixture(drafts).Service.ListAsync(Context(), null, default);
+
+            Assert.Equal(SalesOrderDraftPendingApprovalReadOutcomeV1.Unavailable, result.Outcome);
+            Assert.Null(result.Resource);
+        }
+    }
+
+    [Fact]
     public async Task Detail_preserves_non_support_creator_and_hides_only_restricted_creator()
     {
         var drafts = Drafts();
