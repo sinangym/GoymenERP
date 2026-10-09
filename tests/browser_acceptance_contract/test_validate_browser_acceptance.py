@@ -1168,6 +1168,34 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual([line.strip() for line in permissions.strip().splitlines()], ["contents: read", "pull-requests: read"])
         self.assertIn("persist-credentials: false", self.workflow)
 
+    def test_docker_hub_cache_mirror_is_verified_before_compose_use(self):
+        for required in (
+            '-s tests/dockerhub_mirror_contract',
+            "sudo python3 -I -S -B tools/configure_dockerhub_mirror.py configure",
+            "--daemon-config /etc/docker/daemon.json",
+            "sudo systemctl restart docker",
+            "docker info --format '{{json .RegistryConfig.Mirrors}}'",
+            "python3 -I -S -B tools/configure_dockerhub_mirror.py verify",
+        ):
+            with self.subTest(required=required):
+                self.assertIn(required, self.workflow)
+
+        tooling = self.workflow.index("      - name: Validate browser workflow contract tooling")
+        mirror = self.workflow.index("      - name: Configure Docker Hub cache mirror")
+        select = self.workflow.index("      - name: Select the suite's capability profile")
+        compose = self.workflow.index("      - name: Validate loopback-only compose model")
+        build = self.workflow.index("      - name: Build and start disposable SQL/API")
+        self.assertLess(tooling, mirror)
+        self.assertLess(mirror, select)
+        self.assertLess(select, compose)
+        self.assertLess(compose, build)
+
+        mirror_body = self.workflow.split(
+            "      - name: Configure Docker Hub cache mirror", 1
+        )[1].split("      - name:", 1)[0]
+        self.assertNotIn("continue-on-error", mirror_body)
+        self.assertNotIn("secrets.", mirror_body)
+
     def test_dispatch_suites_match_the_validator(self):
         options = self.workflow.split("options:\n", 1)[1].split("      pr:", 1)[0]
         listed = [line.strip().removeprefix("- ") for line in options.splitlines() if line.strip()]

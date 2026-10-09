@@ -487,6 +487,15 @@ jobs:
       - name: .NET bootstrap integrity preflight
         run: |
           python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py
+          python3 -I -S -B -m unittest discover -s tests/dockerhub_mirror_contract -p "test_*.py" -v
+
+      - name: Configure Docker Hub cache mirror
+        run: |
+          sudo python3 -I -S -B tools/configure_dockerhub_mirror.py configure \
+            --daemon-config /etc/docker/daemon.json
+          sudo systemctl restart docker
+          docker info --format '{{json .RegistryConfig.Mirrors}}' | \
+            python3 -I -S -B tools/configure_dockerhub_mirror.py verify
 
       - name: Validate compose model
         run: docker compose -f infra/docker-compose.yml config --quiet

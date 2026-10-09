@@ -337,12 +337,30 @@ class ComposeContractTests(unittest.TestCase):
             "npm run sab:ci -- --reporter=list,junit,html",
             "tools/validate_sab_e2e_contract.py evidence",
             "PLAYWRIGHT_HTML_OUTPUT_DIR",
+            '-s tests/dockerhub_mirror_contract',
+            "sudo python3 -I -S -B tools/configure_dockerhub_mirror.py configure",
+            "--daemon-config /etc/docker/daemon.json",
+            "sudo systemctl restart docker",
+            "docker info --format '{{json .RegistryConfig.Mirrors}}'",
+            "python3 -I -S -B tools/configure_dockerhub_mirror.py verify",
         ):
             self.assertIn(required, workflow)
         self.assertNotIn("pull_request_target", workflow)
         self.assertNotIn("secrets.", workflow)
         self.assertNotIn("compose.log", workflow)
         self.assertNotIn("path: artifacts/", workflow)
+        tooling = workflow.index("      - name: Validate E2E contract tooling")
+        mirror = workflow.index("      - name: Configure Docker Hub cache mirror")
+        compose = workflow.index("      - name: Validate loopback-only compose model")
+        build = workflow.index("      - name: Build and start disposable SQL/API")
+        self.assertLess(tooling, mirror)
+        self.assertLess(mirror, compose)
+        self.assertLess(compose, build)
+        mirror_body = workflow.split(
+            "      - name: Configure Docker Hub cache mirror", 1
+        )[1].split("      - name:", 1)[0]
+        self.assertNotIn("continue-on-error", mirror_body)
+        self.assertNotIn("secrets.", mirror_body)
         sab_run = workflow.index("npm run sab:ci -- --reporter=list,junit,html")
         self.assertLess(workflow.index("npm ci"), sab_run)
         self.assertLess(
