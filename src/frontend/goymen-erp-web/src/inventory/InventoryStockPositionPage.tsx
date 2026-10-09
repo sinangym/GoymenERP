@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type FormEvent } from 'react'
 import { Link, useSearchParams } from 'react-router'
 import { fetchStockDisplayPage, isStockClassification, isStockId, normalizedLabelSearch, type StockPositionFilters } from './stockDisplayApi'
-import type { StockClassification, StockDisplayRow, StockPartyKind } from './stockDisplayContract'
+import type { StockClassification, StockLocationDisplayRow as StockDisplayRow, StockPartyKind } from './stockDisplayContract'
 import { createRequestFence } from '../purchasing/requestFence'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
 import { useShellState } from '../shell/shellContext'
@@ -42,8 +42,9 @@ import styles from './stockPosition.module.css'
  * The URL holds every filter, so the browser's Back from a label returns to the same filtered list. `?etiket=` keeps
  * its meaning; the other filters only ever hold ids a row of this list returned (no picker, no typed id, no guess):
  * `urun`, `lokasyon`, `sinif`, and `sahipTuru` + `sahip` together. Paging follows the server's forward cursor; the
- * client never reads ahead or totals. The location cell is "—" until the Organization owner publishes a readable
- * location; its existing card link stays where the capability allows it.
+ * client never reads ahead or totals. STOCK-LOCATION-2: the location cell shows the Organization owner's code and name
+ * that the `2.0` read (#607) publishes for the row's own location — never looked up per row or guessed; the existing
+ * card link stays, with the same location id, only where the capability allows it.
  */
 
 const PRODUCT_PARAM = 'urun'
@@ -316,8 +317,12 @@ function InventoryStockPositionView({
   if (filters.productId !== null) {
     chips.push({ key: 'product', label: `${STOCK_TEXT.filterChip.product}: ${productName(filters.productId)}`, remove: { ...filters, productId: null } })
   }
+  const locationName = (locationId: string): string => {
+    const display = rows.find((row) => row.locationId === locationId)?.locationDisplay
+    return display ? `${display.locationCode} ${display.locationName}` : STOCK_TEXT.selectedLocation
+  }
   if (filters.locationId !== null) {
-    chips.push({ key: 'location', label: `${STOCK_TEXT.filterChip.location}: ${STOCK_TEXT.selectedLocation}`, remove: { ...filters, locationId: null } })
+    chips.push({ key: 'location', label: `${STOCK_TEXT.filterChip.location}: ${locationName(filters.locationId)}`, remove: { ...filters, locationId: null } })
   }
   if (filters.owner !== null) {
     const owner = filters.owner.kind === 'Counterparty'
@@ -376,7 +381,8 @@ function InventoryStockPositionView({
 
   const locationCell = (row: StockDisplayRow) => <div className={styles.cellLine}>
     <span className={styles.product}>
-      <span>{STOCK_TEXT.unknown}</span>
+      <span className={styles.code}>{row.locationDisplay.locationCode}</span>
+      <span className={styles.name}>{row.locationDisplay.locationName}</span>
       {canOpenLocation ? <Link className={styles.cardLink} to={locationDetailPath(row.locationId)}>{STOCK_TEXT.locationCard}</Link> : null}
     </span>
     {filters.locationId === row.locationId ? null : filterButton(STOCK_TEXT.filterBy.location(row.labelCode), { ...filters, locationId: row.locationId })}

@@ -28,6 +28,8 @@ function row(companyId = COMPANY) {
       identity: { productId: PRODUCT, productVersion: '7', code: 'P-1', name: 'Galvaniz bant' },
       technical: null, errors: [],
     },
+    // STOCK-LOCATION-2: the 2.0 row's Organization display of its own location (#607).
+    locationDisplay: { locationId: LOCATION, locationCode: 'HOL-1', locationName: 'Hol 1 · Boy kesme' },
   }
 }
 
@@ -88,7 +90,7 @@ describe('fetchStockDisplayPage — the #597 opt-in read', () => {
     const { url, headers, init } = requested()
     expect(url.pathname).toBe('/api/v1/inventory/positions')
     expect(url.search).toBe('?q=ROLL&limit=25')
-    expect(headers.get(STOCK_DISPLAY_HEADER)).toBe('1.0')
+    expect(headers.get(STOCK_DISPLAY_HEADER)).toBe('2.0')
     expect(headers.get('X-Company-Id')).toBe(COMPANY)
     expect(init.cache).toBe('no-store')
   })
@@ -115,7 +117,7 @@ describe('fetchStockDisplayPage — the #597 opt-in read', () => {
     fetchMock.mockResolvedValue(json(status, problem))
     expect(await fetchStockDisplayPage(COMPANY, NO_STOCK_FILTERS, null)).toEqual({ type: 'http', status, body: problem })
     expect(fetchMock).toHaveBeenCalledTimes(1)
-    expect(requested().headers.get(STOCK_DISPLAY_HEADER)).toBe('1.0')
+    expect(requested().headers.get(STOCK_DISPLAY_HEADER)).toBe('2.0')
   })
 
   it('does not send a request for a filter the server would refuse', async () => {
@@ -131,5 +133,32 @@ describe('fetchStockDisplayPage — the #597 opt-in read', () => {
     expect(await fetchStockDisplayPage(COMPANY, NO_STOCK_FILTERS, null)).toEqual({ type: 'network-error' })
     vi.stubGlobal('navigator', { onLine: false })
     expect(await fetchStockDisplayPage(COMPANY, NO_STOCK_FILTERS, null)).toEqual({ type: 'offline' })
+  })
+})
+
+/** STOCK-LOCATION-2: the screen selects the #607 `2.0` shape and accepts nothing else for it. */
+describe('fetchStockDisplayPage — the 2.0 (Product + Location) selection', () => {
+  it('returns the row with its location display, from one request carrying exactly one 2.0 selector', async () => {
+    fetchMock.mockResolvedValue(json(200, { items: [row()], searchWindowFull: false, nextCursor: 'next-1' }))
+    const outcome = await fetchStockDisplayPage(COMPANY, { ...NO_STOCK_FILTERS, locationId: LOCATION }, 'opaque-1')
+    expect(outcome.type === 'ok-single' && outcome.data.items[0].locationDisplay)
+      .toEqual({ locationId: LOCATION, locationCode: 'HOL-1', locationName: 'Hol 1 · Boy kesme' })
+    expect(outcome.type === 'ok-single' && outcome.data.nextCursor).toBe('next-1')
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    const { url, headers } = requested()
+    expect(headers.get(STOCK_DISPLAY_HEADER)).toBe('2.0')
+    expect(url.searchParams.get('cursor')).toBe('opaque-1')
+    expect(url.searchParams.get('locationId')).toBe(LOCATION)
+  })
+
+  it.each([
+    ['the 1.0 (Product-only) shape', () => { const { locationDisplay: _d, ...productOnly } = row(); return productOnly }],
+    ['a null location display', () => ({ ...row(), locationDisplay: null })],
+    ['a display of another location', () => ({ ...row(), locationDisplay: { locationId: PRODUCT, locationCode: 'X', locationName: 'Y' } })],
+  ])('answers %s as malformed — no silent 1.0 or legacy fallback, no second request', async (_, body) => {
+    fetchMock.mockResolvedValue(json(200, { items: [body()], searchWindowFull: false, nextCursor: null }))
+    expect(await fetchStockDisplayPage(COMPANY, NO_STOCK_FILTERS, null)).toEqual({ type: 'malformed' })
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(requested().headers.get(STOCK_DISPLAY_HEADER)).toBe('2.0')
   })
 })

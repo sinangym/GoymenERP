@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { decodeInventoryStockPositions } from './contract'
-import { decodeStockDisplayPage } from './stockDisplayContract'
+import { decodeStockDisplayPage, decodeStockLocationDisplayPage } from './stockDisplayContract'
 
 /**
  * Fixtures are the #597 producer's own values (contract pin d821e6b8):
@@ -269,5 +269,67 @@ describe('decodeStockDisplayPage — every guard can fail on its own', () => {
     expect(decoded?.items[0].productVersion).toBe('v7')
     // Still bound: the display must answer for that exact stored text.
     expect(decodeStockDisplayPage(page({ items: [row({ productVersion: 'v7', productDisplay: { ...unreadable, expectedProductVersion: '7' } })] }))).toBeNull()
+  })
+})
+
+/**
+ * STOCK-LOCATION-2: the #607 `2.0` page (Product + Location display). Every `1.0` member and rule is unchanged; each row
+ * adds the required, non-null `locationDisplay` (`OrganizationLocationDisplayV1`) bound to the row's own `locationId`.
+ */
+describe('decodeStockLocationDisplayPage — #607 2.0 page', () => {
+  const display = (overrides: Record<string, unknown> = {}) =>
+    ({ locationId: LOCATION, locationCode: 'HOL-1', locationName: 'Hol 1 · Boy kesme', ...overrides })
+  const row2 = (overrides: Record<string, unknown> = {}) => ({ ...row(), locationDisplay: display(), ...overrides })
+  const page2 = (items: readonly unknown[] = [row2()], extra: Record<string, unknown> = {}) =>
+    ({ items, searchWindowFull: false, nextCursor: null, ...extra })
+
+  it('decodes the 2.0 row: every 1.0 member as the 1.0 decoder reads it, plus the bound location display', () => {
+    const decoded = decodeStockLocationDisplayPage(page2())
+    const { locationDisplay, ...rest } = decoded!.items[0]
+    expect(rest).toEqual(decodeStockDisplayPage(page())!.items[0])
+    expect(locationDisplay).toEqual(display())
+    expect(decodeStockLocationDisplayPage(page2([], { nextCursor: 'opaque' }))?.nextCursor).toBe('opaque')
+    const { nextCursor: _cursor, ...noCursor } = page2()
+    expect(decodeStockLocationDisplayPage(noCursor)?.nextCursor).toBeNull()
+  })
+
+  it('keeps a long Turkish name and a long code exactly as published', () => {
+    const name = 'Çağlayan Öğütücü İşletmesi — Hol 2 · Boy kesme ve dilme hattı, güney kapı yanı'
+    const decoded = decodeStockLocationDisplayPage(page2([row2({ locationDisplay: display({ locationCode: 'TS-B-HOL-02-BK-0001', locationName: name }) })]))
+    expect(decoded?.items[0].locationDisplay).toEqual({ locationId: LOCATION, locationCode: 'TS-B-HOL-02-BK-0001', locationName: name })
+  })
+
+  it('accepts the nested id in another letter case, still bound to the row', () => {
+    expect(decodeStockLocationDisplayPage(page2([row2({ locationDisplay: display({ locationId: LOCATION.toUpperCase() }) })]))).not.toBeNull()
+  })
+
+  it.each([
+    ['a missing location display', (r: Record<string, unknown>) => { delete r.locationDisplay }],
+    ['a null location display', (r: Record<string, unknown>) => { r.locationDisplay = null }],
+    ['a display of another location', (r: Record<string, unknown>) => { r.locationDisplay = display({ locationId: '99999999-9999-4999-8999-999999999999' }) }],
+    ['a null code', (r: Record<string, unknown>) => { r.locationDisplay = display({ locationCode: null }) }],
+    ['a null name', (r: Record<string, unknown>) => { r.locationDisplay = display({ locationName: null }) }],
+    ['a blank code', (r: Record<string, unknown>) => { r.locationDisplay = display({ locationCode: '  ' }) }],
+    ['a blank name', (r: Record<string, unknown>) => { r.locationDisplay = display({ locationName: '' }) }],
+    ['a code that is not text', (r: Record<string, unknown>) => { r.locationDisplay = display({ locationCode: 12 }) }],
+    ['a nested id that is not a GUID', (r: Record<string, unknown>) => { r.locationDisplay = display({ locationId: 'HOL-1' }) }],
+    ['an unknown member in the display', (r: Record<string, unknown>) => { r.locationDisplay = display({ siteId: LOCATION }) }],
+    ['a missing member in the display', (r: Record<string, unknown>) => { const { locationName: _n, ...rest } = display(); r.locationDisplay = rest }],
+    ['an unknown row member', (r: Record<string, unknown>) => { r.locationName = 'Hol 1' }],
+  ])('refuses the whole page for %s', (_, change) => {
+    const bad = row2()
+    change(bad as Record<string, unknown>)
+    expect(decodeStockLocationDisplayPage(page2([row2({ labelId: '22222222-2222-4222-8222-222222222223' }), bad]))).toBeNull()
+  })
+
+  it('applies every 1.0 rule to a 2.0 row (a broken quantity identity, a foreign Product display)', () => {
+    expect(decodeStockLocationDisplayPage(page2([row2({ availableKg: '6' })]))).toBeNull()
+    expect(decodeStockLocationDisplayPage(page2([row2({ productDisplay: { ...productDisplay(), expectedProductVersion: '8' } })]))).toBeNull()
+  })
+
+  it('keeps the two shapes apart: 2.0 never accepts a 1.0 row, 1.0 never accepts a 2.0 row', () => {
+    expect(decodeStockLocationDisplayPage(page())).toBeNull()
+    expect(decodeStockDisplayPage(page2())).toBeNull()
+    expect(decodeStockDisplayPage(page())).not.toBeNull()
   })
 })
