@@ -6596,7 +6596,8 @@ public sealed partial class OpenApiContractGenerationTests
         Assert.Equal(salesItemSchema, mapping[salesKind]);
         Assert.Equal([financeItemSchema, salesItemSchema],
             item.GetProperty("anyOf").EnumerateArray()
-                .Select(variant => variant.GetProperty("$ref").GetString())
+                .Select(variant => variant.GetProperty("$ref").GetString()
+                    ?? throw new InvalidOperationException("Native approval item schema reference is null."))
                 .Order(StringComparer.Ordinal)
                 .ToArray());
 
@@ -6608,7 +6609,8 @@ public sealed partial class OpenApiContractGenerationTests
                 "#/components/schemas/NativeApprovalReadDetailV1SalesOrderDraftNativeApprovalReadDetailV1",
             ],
             detail.GetProperty("anyOf").EnumerateArray()
-                .Select(variant => variant.GetProperty("$ref").GetString())
+                .Select(variant => variant.GetProperty("$ref").GetString()
+                    ?? throw new InvalidOperationException("Native approval detail schema reference is null."))
                 .Order(StringComparer.Ordinal)
                 .ToArray());
     }
