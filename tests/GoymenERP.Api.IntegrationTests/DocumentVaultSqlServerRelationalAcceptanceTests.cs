@@ -19,6 +19,10 @@ using GoymenERP.Modules.Identity.Domain.Users;
 using GoymenERP.Modules.Identity.Infrastructure.Persistence;
 using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Purchasing.Application.Contracts;
+using GoymenERP.Modules.Sales.Application.Contracts;
+using GoymenERP.Modules.Sales.Domain.Drafts;
+using GoymenERP.Modules.Sales.Infrastructure.Persistence;
+using GoymenERP.Modules.Settings.Application.Contracts.V1;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -48,6 +52,15 @@ public sealed class DocumentVaultSqlServerRelationalAcceptanceTests
     private static readonly Guid PartyShared = Guid.Parse("d0c00000-0000-4000-8000-0000000000ab");
     private static readonly Guid PurchaseOrderA = Guid.Parse("d0c00000-0000-4000-8000-0000000000a1");
     private static readonly Guid PurchaseOrderB = Guid.Parse("d0c00000-0000-4000-8000-0000000000b1");
+    private static readonly Guid SalesOrderA = Guid.Parse("d0c00000-0000-4000-8000-0000000000a2");
+    private static readonly Guid SalesOrderB = Guid.Parse("d0c00000-0000-4000-8000-0000000000b2");
+    private static readonly Guid Currency = Guid.Parse("d0c00000-0000-4000-8000-0000000000c1");
+    private static readonly Guid MoneyProfile = Guid.Parse("d0c00000-0000-4000-8000-0000000000c2");
+    private static readonly Guid KgUnit = Guid.Parse("d0c00000-0000-4000-8000-0000000000c3");
+    private static readonly Guid KgProfile = Guid.Parse("d0c00000-0000-4000-8000-0000000000c4");
+    private static readonly Guid Product = Guid.Parse("d0c00000-0000-4000-8000-0000000000c5");
+    private static readonly DateOnly BusinessDay = new(2026, 10, 9);
+    private static readonly DateOnly ProfileFrom = new(2026, 1, 1);
     private static readonly DateTimeOffset T0 = new(2026, 9, 30, 9, 0, 0, TimeSpan.Zero);
     private static readonly byte[] Pdf = "%PDF-1.7\n% SENTETIK sözleşme\n"u8.ToArray();
     private static readonly byte[] OtherPdf = "%PDF-1.7\n% SENTETIK başka belge\n"u8.ToArray();
@@ -315,6 +328,7 @@ public sealed class DocumentVaultSqlServerRelationalAcceptanceTests
         await using var run = await Run.StartAsync(inventoryOwner);
         await run.SeedPartiesAsync();
         await run.SeedPurchaseOrdersAsync();
+        await run.SeedSalesOrdersAsync();
 
         // The vault's names without the Cari read: the party is not found (never a hint that it exists), nothing is stored.
         await run.GrantAsync(TestUsers.CompanyAViewer, CompanyA, DocumentsPermissionManifestV1.FilesRead, DocumentsPermissionManifestV1.FilesUpload);
@@ -542,9 +556,85 @@ public sealed class DocumentVaultSqlServerRelationalAcceptanceTests
             (await writer.GetAsync(ListPath(Guid.NewGuid(), DocumentOwnerLinkKindsV1.PurchasingPurchaseOrder))).StatusCode);
         Assert.Equal(purchaseEffects, await run.CountsAsync());
 
-        Assert.Equal(4, await run.ScalarAsync<int>("SELECT COUNT(*) FROM documents.Documents"));
+        // Sales order owner: the adapter delegates to the real, authorized Sales detail read and repeats the outer
+        // actor/company fence after that await. A new client proves close/reopen instead of relying on response memory.
+        await run.GrantAsync(TestUsers.CompanyA, CompanyA, SalesPermissionManifestV1.DraftsRead);
+        Guid salesDocumentId;
+        using (var uploaded = await run.UploadAsync(writer, SalesOrderA, OtherPdf, "Satış siparişi.pdf", "k-sales-order",
+                   DocumentOwnerLinkKindsV1.SalesOrder))
+        {
+            Assert.Equal(HttpStatusCode.Created, uploaded.StatusCode);
+            salesDocumentId = (await uploaded.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("document").GetProperty("id").GetGuid();
+        }
+
+        using (var replay = await run.UploadAsync(writer, SalesOrderA, OtherPdf, "Satış siparişi.pdf", "k-sales-order",
+                   DocumentOwnerLinkKindsV1.SalesOrder))
+        {
+            Assert.Equal(HttpStatusCode.Created, replay.StatusCode);
+            Assert.Equal("true", replay.Headers.GetValues("Idempotency-Replayed").Single());
+            Assert.Equal(salesDocumentId,
+                (await replay.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("document").GetProperty("id").GetGuid());
+        }
+
+        using (var reopened = run.Client(TestUsers.CompanyA, CompanyA))
+        {
+            using var list = await reopened.GetAsync(ListPath(SalesOrderA, DocumentOwnerLinkKindsV1.SalesOrder));
+            Assert.Equal(HttpStatusCode.OK, list.StatusCode);
+            Assert.Equal("Satış siparişi.pdf",
+                Assert.Single((await list.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("items").EnumerateArray())
+                    .GetProperty("fileName").GetString());
+
+            using var download = await reopened.GetAsync(ContentPath(salesDocumentId));
+            Assert.Equal(HttpStatusCode.OK, download.StatusCode);
+            Assert.Equal(OtherPdf, await download.Content.ReadAsByteArrayAsync());
+        }
+
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM documents.Documents WHERE CompanyId = @company AND Id = @document",
+            ("@company", CompanyA), ("@document", salesDocumentId)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM documents.DocumentVersions WHERE CompanyId = @company AND DocumentId = @document",
+            ("@company", CompanyA), ("@document", salesDocumentId)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM documents.DocumentLinks WHERE CompanyId = @company AND OwnerKind = @kind AND OwnerId = @owner AND DocumentId = @document",
+            ("@company", CompanyA), ("@kind", DocumentOwnerLinkKindsV1.SalesOrder), ("@owner", SalesOrderA),
+            ("@document", salesDocumentId)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM documents.DocumentAttempts WHERE CompanyId = @company AND DocumentId = @document AND CommandName = @command",
+            ("@company", CompanyA), ("@document", salesDocumentId), ("@command", DocumentCommands.UploadV1)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE CompanyId = @company AND EntityId = @entity AND EventType = N'documents.document.uploaded.v1'",
+            ("@company", CompanyA), ("@entity", salesDocumentId.ToString("D"))));
+
+        var salesEffects = await run.CountsAsync();
+        using (var noSalesRead = run.Client(TestUsers.CompanyAViewer, CompanyA))
+        {
+            Assert.Equal(HttpStatusCode.NotFound,
+                (await noSalesRead.GetAsync(ListPath(SalesOrderA, DocumentOwnerLinkKindsV1.SalesOrder))).StatusCode);
+            Assert.Equal(HttpStatusCode.NotFound, (await noSalesRead.GetAsync(ContentPath(salesDocumentId))).StatusCode);
+            using var refused = await run.UploadAsync(noSalesRead, SalesOrderA, Pdf, "Reddedildi.pdf", "k-sales-no-owner",
+                DocumentOwnerLinkKindsV1.SalesOrder);
+            Assert.Equal(HttpStatusCode.NotFound, refused.StatusCode);
+        }
+
+        await run.GrantAsync(TestUsers.CompanyB, CompanyB, DocumentsPermissionManifestV1.FilesRead,
+            DocumentsPermissionManifestV1.FilesUpload, SalesPermissionManifestV1.DraftsRead);
+        using (var foreign = run.Client(TestUsers.CompanyB, CompanyB))
+        {
+            Assert.Equal(HttpStatusCode.NotFound,
+                (await foreign.GetAsync(ListPath(SalesOrderA, DocumentOwnerLinkKindsV1.SalesOrder))).StatusCode);
+            Assert.Equal(HttpStatusCode.NotFound, (await foreign.GetAsync(ContentPath(salesDocumentId))).StatusCode);
+            Assert.Equal(HttpStatusCode.OK,
+                (await foreign.GetAsync(ListPath(SalesOrderB, DocumentOwnerLinkKindsV1.SalesOrder))).StatusCode);
+        }
+
+        Assert.Equal(HttpStatusCode.NotFound,
+            (await writer.GetAsync(ListPath(Guid.NewGuid(), DocumentOwnerLinkKindsV1.SalesOrder))).StatusCode);
+        Assert.Equal(salesEffects, await run.CountsAsync());
+
+        Assert.Equal(5, await run.ScalarAsync<int>("SELECT COUNT(*) FROM documents.Documents"));
         Assert.Equal(2, await run.ScalarAsync<int>("SELECT COUNT(*) FROM documents.ContentBlobs"));
-        Assert.Equal(4, await run.ScalarAsync<int>(
+        Assert.Equal(5, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType = N'documents.document.uploaded.v1' AND SourceChannel = N'Web' AND CompanyId = @c",
             ("@c", CompanyA)));
     }
@@ -688,6 +778,13 @@ public sealed class DocumentVaultSqlServerRelationalAcceptanceTests
             ("@OrderA", PurchaseOrderA), ("@OrderB", PurchaseOrderB), ("@CompanyA", CompanyA), ("@CompanyB", CompanyB),
             ("@SupplierA", PartyA), ("@SupplierB", PartyB), ("@AccountA", Guid.NewGuid()), ("@AccountB", Guid.NewGuid()), ("@Now", T0));
 
+        /// <summary>Two one-line Sales orders persisted through the real Sales store, one in each company.</summary>
+        public async Task SeedSalesOrdersAsync()
+        {
+            await StoreSalesOrderAsync(CompanyA, SalesOrderA, PartyA, "sales-a");
+            await StoreSalesOrderAsync(CompanyB, SalesOrderB, PartyB, "sales-b");
+        }
+
         public HttpClient Client(string subject, Guid company)
         {
             var client = Factory.CreateClientFor(subject, company);
@@ -777,6 +874,28 @@ public sealed class DocumentVaultSqlServerRelationalAcceptanceTests
             await command.ExecuteNonQueryAsync();
         }
 
+        private async Task StoreSalesOrderAsync(Guid company, Guid orderId, Guid partyId, string key)
+        {
+            await using var scope = SalesStore(company);
+            await scope.Store.StoreDraftAsync(
+                new SalesDraftWriteEnvelope(Actor, SalesPermissionManifestV1.DraftsCreate, ["SENTETIK-SALES"], Correlation,
+                    null, key, "Web", "127.0.0.1", "SENTETIK-agent"),
+                Hash(key),
+                documentNo => SalesOrder(company, orderId, partyId, documentNo));
+        }
+
+        private SalesStoreScope SalesStore(Guid company)
+        {
+            var companyContext = new CompanyContext();
+            companyContext.Set(company);
+            var collector = new AuditEventCollector();
+            var dbContext = new SalesDbContext(new DbContextOptionsBuilder<SalesDbContext>()
+                .UseSqlServer(Factory.DatabaseConnectionString,
+                    sql => sql.MigrationsHistoryTable("__EFMigrationsHistory", SalesDbContext.Schema))
+                .AddInterceptors(new AuditSaveChangesInterceptor(collector, companyContext)).Options, companyContext);
+            return new SalesStoreScope(dbContext, new SalesStore(dbContext, companyContext, collector, TimeProvider.System));
+        }
+
         public async ValueTask DisposeAsync()
         {
             await Factory.DisposeAsync();
@@ -791,11 +910,32 @@ public sealed class DocumentVaultSqlServerRelationalAcceptanceTests
                 .UseSqlServer(factory.DatabaseConnectionString, sql => sql.MigrationsHistoryTable("__EFMigrationsHistory", DocumentsDbContext.Schema));
     }
 
+    private static SalesOrderDraft SalesOrder(Guid company, Guid orderId, Guid partyId, string documentNo)
+    {
+        var header = new SalesDraftHeader(partyId, Guid.NewGuid(), Currency, BusinessDay, BusinessDay.AddDays(10));
+        var money = new MoneyProfileSnapshot(
+            company, Currency, SalesOrderDraft.MoneyOperation, MoneyProfile, "1", BusinessDay, true, ProfileFrom, null, 2);
+        var draft = SalesOrderDraft.Create(orderId, company, documentNo, header, money, T0);
+        var unit = new UnitProfileSnapshot(company, KgUnit, "kg", "weight", KgProfile, "1", true, 3, 3, true, ProfileFrom, null);
+        var binding = new UnitBindingSnapshot(company, KgUnit, KgProfile, "1");
+        var product = new ProductSnapshot(Product, "1", "SENTETIK-SAC", "Sentetik sac", BusinessDay, binding, binding, binding);
+        draft.AddLine(draft.Version, new SalesDraftLineInput(
+            Guid.NewGuid(), product, unit, "100.000", 100.000m, BusinessDay.AddDays(3)), T0);
+        return draft;
+    }
+
     private sealed class StoreScope(DocumentsDbContext dbContext, DocumentsStore store) : IAsyncDisposable
     {
         public DocumentsDbContext Context => dbContext;
 
         public DocumentsStore Store => store;
+
+        public ValueTask DisposeAsync() => dbContext.DisposeAsync();
+    }
+
+    private sealed class SalesStoreScope(SalesDbContext dbContext, ISalesOrderDraftStore store) : IAsyncDisposable
+    {
+        public ISalesOrderDraftStore Store => store;
 
         public ValueTask DisposeAsync() => dbContext.DisposeAsync();
     }
