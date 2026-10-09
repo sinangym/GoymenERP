@@ -12,6 +12,8 @@ import styles from './inventory.module.css'
 
 /** Master v3 §25.5 / DEC-STK-002: the source type every row of this section carries. */
 export const PURCHASE_SUPPLY_SOURCE_TEXT = 'Alış Siparişi'
+/** The name of the table's own scroll surface (screen readers announce it as a region). */
+export const PURCHASE_SUPPLY_SCROLL_LABEL = 'Gelecek arz satırları, yatay kaydırılabilir'
 
 type State =
   | { readonly type: 'loading' }
@@ -80,7 +82,7 @@ export function PurchaseSupplySection({ companyId, canOpenOrder, canOpenProduct 
     void read(state.nextCursor)
   }
 
-  return <section aria-labelledby="purchase-supply-heading">
+  return <section aria-labelledby="purchase-supply-heading" className={styles.supplySection}>
     <h2 id="purchase-supply-heading">Gelecek arz — Alış Siparişi</h2>
     <p>
       Onaylı alış siparişlerinin mal kabulü bekleyen kalanı (satın alma kaydının kendi kalanı). Bu miktar fiziksel,
@@ -89,7 +91,15 @@ export function PurchaseSupplySection({ companyId, canOpenOrder, canOpenProduct 
     {state.type === 'loading' ? <p role="status">Alış siparişi kalanları yükleniyor…</p> : null}
     {state.type === 'failed' ? <p role="alert" className={styles.error}>{state.message}</p> : null}
     {state.type === 'ready' && state.rows.length === 0 ? <p>Bu şirkette mal kabulü bekleyen onaylı alış siparişi satırı yok.</p> : null}
-    {state.type === 'ready' && state.rows.length > 0 ? <div className={styles.tableWrap}><table data-testid="stock-purchase-supply-table">
+    {state.type === 'ready' && state.rows.length > 0 ? <div
+      className={`${styles.tableWrap} ${styles.supplyScroll}`}
+      // A table wider than the screen scrolls inside this surface, never the page: it takes keyboard focus so the arrow
+      // keys can scroll it even where a row has no link (touch scrolls it directly).
+      tabIndex={0}
+      role="region"
+      aria-label={PURCHASE_SUPPLY_SCROLL_LABEL}
+      data-testid="stock-purchase-supply-scroll"
+    ><table data-testid="stock-purchase-supply-table">
       <thead><tr>
         <th scope="col">Kaynak / durum</th><th scope="col">Alış siparişi</th><th scope="col">Sipariş tarihi</th>
         <th scope="col">Satır</th><th scope="col">Tür</th><th scope="col">Tedarikçi</th><th scope="col">Ürün</th>
