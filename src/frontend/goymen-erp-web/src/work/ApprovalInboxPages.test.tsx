@@ -147,6 +147,98 @@ describe('/onaylarim — the Finance pilot inbox', () => {
     expect(work().map((call) => call.url)).toEqual(['/api/v1/work/approvals', '/api/v1/work/approvals?cursor=c-1'])
   })
 
+  describe('a next page that does not verify (#642 K2 P2)', () => {
+    const SECOND = '22222222-2222-4222-8222-222222222222'
+    const rowsShown = () => document.querySelectorAll('[data-testid="work-approvals-table"] tbody tr').length
+    const nativeLinks = () => screen.queryAllByRole('link', { name: APPROVALS_TEXT.openNative })
+
+    it.each([
+      ['another company\'s page', () => json({ companyId: OTHER_COMPANY, items: [{ ...item, approvalId: SECOND, companyId: OTHER_COMPANY }], nextCursor: null })],
+      ['a row of another state', () => json({ companyId: COMPANY, items: [{ ...item, approvalId: SECOND, status: 'Approved' }], nextCursor: null })],
+      ['a broken body', () => new Response('not json', { status: 200 })],
+      ['a 404', () => json({ status: 404 }, 404)],
+      ['a 409', () => json({ status: 409 }, 409)],
+    ])('%s closes the list: no earlier row, link or "rows are valid" text; recovery is a fresh first page', async (_, bad) => {
+      let firstReads = 0
+      const { work } = installFetch([APPROVE], {
+        list: (url) => {
+          if (url.includes('cursor=')) return bad()
+          firstReads += 1
+          return json({ companyId: COMPANY, items: [item], nextCursor: 'c-1' })
+        },
+      })
+      await renderAt('/onaylarim')
+      const user = userEvent.setup()
+      await user.click(await screen.findByRole('button', { name: APPROVALS_TEXT.loadMore }))
+      const closed = await screen.findByTestId('work-approvals-closed')
+      expect(closed.textContent).toContain(APPROVALS_TEXT.listClosed)
+      expect(screen.queryByTestId('work-approvals-table')).toBeNull()
+      expect(nativeLinks()).toHaveLength(0)
+      expect(screen.queryByRole('link', { name: APPROVALS_TEXT.openDetail })).toBeNull()
+      expect(screen.queryByText(APPROVALS_TEXT.nextPageFailed)).toBeNull()
+      expect(screen.queryByRole('button', { name: APPROVALS_TEXT.loadMore })).toBeNull()
+
+      await user.click(screen.getByRole('button', { name: APPROVALS_TEXT.restart }))
+      await waitFor(() => expect(rowsShown()).toBe(1))
+      expect(firstReads).toBe(2)
+      // The bad cursor was read once and never resent; the recovery read has no cursor, under the same company.
+      expect(work().map((call) => call.url)).toEqual([
+        '/api/v1/work/approvals', '/api/v1/work/approvals?cursor=c-1', '/api/v1/work/approvals',
+      ])
+      expect(work().every((call) => call.companyId === COMPANY)).toBe(true)
+    })
+
+    it.each([401, 403])('a %s on the next page leaves no earlier row or link on screen', async (status) => {
+      installFetch([APPROVE], {
+        list: (url) => url.includes('cursor=')
+          ? json({ status }, status)
+          : json({ companyId: COMPANY, items: [item], nextCursor: 'c-1' }),
+      })
+      await renderAt('/onaylarim')
+      const user = userEvent.setup()
+      await user.click(await screen.findByRole('button', { name: APPROVALS_TEXT.loadMore }))
+      await waitFor(() => expect(screen.queryByTestId('work-approvals-table')).toBeNull())
+      expect(nativeLinks()).toHaveLength(0)
+      expect(screen.queryByText(APPROVALS_TEXT.nextPageFailed)).toBeNull()
+    })
+
+    it.each([
+      ['a 503', () => json({ status: 503 }, 503)],
+      ['no response', () => { throw new TypeError('Failed to fetch') }],
+    ])('%s only for now keeps the verified rows and retries the SAME cursor', async (_, transient) => {
+      let nextReads = 0
+      const { work } = installFetch([APPROVE], {
+        list: (url) => {
+          if (!url.includes('cursor=')) return json({ companyId: COMPANY, items: [item], nextCursor: 'c-1' })
+          nextReads += 1
+          return nextReads === 1 ? transient() : json({ companyId: COMPANY, items: [{ ...item, approvalId: SECOND }], nextCursor: null })
+        },
+      })
+      await renderAt('/onaylarim')
+      const user = userEvent.setup()
+      await user.click(await screen.findByRole('button', { name: APPROVALS_TEXT.loadMore }))
+      expect(await screen.findByText(APPROVALS_TEXT.nextPageFailed)).toBeTruthy()
+      expect(rowsShown()).toBe(1)
+      expect(screen.queryByTestId('work-approvals-closed')).toBeNull()
+      await user.click(screen.getByRole('button', { name: 'Tekrar dene' }))
+      await waitFor(() => expect(rowsShown()).toBe(2))
+      expect(work().map((call) => call.url)).toEqual([
+        '/api/v1/work/approvals', '/api/v1/work/approvals?cursor=c-1', '/api/v1/work/approvals?cursor=c-1',
+      ])
+      expect(screen.getByText(APPROVALS_TEXT.end)).toBeTruthy()
+    })
+  })
+
+  it.each([
+    [403, 'forbidden'],
+    [401, 'unauthenticated'],
+  ])('a %s on the first page shows no row', async (status) => {
+    installFetch([APPROVE], { list: () => json({ status }, status) })
+    await renderAt('/onaylarim')
+    await waitFor(() => expect(document.querySelector('[data-state]')).not.toBeNull())
+    expect(screen.queryByTestId('work-approvals-table')).toBeNull()
+  })
+
   it('says plainly when nothing waits', async () => {
     installFetch([APPROVE], { list: () => json({ companyId: COMPANY, items: [], nextCursor: null }) })
     await renderAt('/onaylarim')

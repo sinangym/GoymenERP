@@ -37,7 +37,11 @@ export const APPROVALS_TEXT = {
   loadMore: 'Daha fazla göster',
   loadingMore: 'Yükleniyor…',
   end: 'Listenin sonu.',
-  nextPageFailed: 'Sonraki sayfa alınamadı. Gösterilen satırlar geçerli.',
+  /** Only for a failure that is temporary: the rows already shown were verified and stay. */
+  nextPageFailed: 'Sonraki sayfa şu anda alınamadı. Gösterilen satırlar geçerli; aynı sayfayı yeniden deneyebilirsiniz.',
+  /** Any other next-page answer closes the list: nothing of it is shown as the current result any more. */
+  listClosed: 'Sonraki sayfa doğrulanamadı veya bu oturumla okunamadı; liste kapatıldı. Güncel liste için baştan yükleyin.',
+  restart: 'Listeyi baştan yükle',
   subject: 'bekleyen Finans onayları',
   detailSubject: 'Finans onay kaydı',
   backToList: 'Onaylarım',

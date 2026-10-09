@@ -42,11 +42,21 @@ export function ApprovalInboxPage() {
   return <ApprovalInbox key={namespace ?? 'no-context'} />
 }
 
+/**
+ * A next page that fails only for now (no response, offline, 5xx) leaves the rows already shown, which were verified,
+ * and retries the SAME cursor. Any other answer — one that does not verify (another company, another kind or state,
+ * a broken body), or an authority/record refusal — closes the list: the earlier rows and their links are no longer
+ * shown as the current result, the cursor is dropped, and the only way on is a fresh first page.
+ */
+const TRANSIENT_CONTINUATION: ReadonlySet<RemoteViewState<unknown>['kind']> = new Set(['offline', 'network-error', 'service-unavailable'])
+
 function ApprovalInbox() {
   const { shell, namespace, companyId } = useBoundCompany()
   const boundary = useAuthBoundary()
+  // A restart is a new read of the first page under a new key: nothing of the closed list is shown while it loads.
+  const [generation, setGeneration] = useState(0)
   const first = useQuery({
-    queryKey: [namespace ?? 'no-context', shell.routeEntryGeneration, 'work-approvals', 'first'],
+    queryKey: [namespace ?? 'no-context', shell.routeEntryGeneration, 'work-approvals', 'first', generation],
     enabled: namespace !== null && companyId !== null,
     queryFn: async ({ signal }) => {
       const snapshot = boundary.capture()
@@ -58,16 +68,21 @@ function ApprovalInbox() {
   const [more, setMore] = useState<readonly ApprovalItem[]>([])
   const [cursor, setCursor] = useState<string | null | undefined>(undefined)
   const [continuation, setContinuation] = useState<'idle' | 'loading' | RemoteViewState<unknown>>('idle')
+  const [closed, setClosed] = useState<RemoteViewState<unknown> | null>(null)
   const loadingRef = useRef(false)
+  // Bumped by a restart: a next-page answer of the list before it is dropped.
+  const attemptRef = useRef(0)
   const firstPage = first.data?.type === 'ok-single' ? first.data.data : null
   const nextCursor = cursor === undefined ? (firstPage?.nextCursor ?? null) : cursor
 
   const loadMore = useCallback(async () => {
     if (loadingRef.current || nextCursor === null || companyId === null) return
     loadingRef.current = true
+    const attempt = attemptRef.current
     setContinuation('loading')
     const snapshot = boundary.capture()
     const outcome = await fetchApprovalPage(nextCursor, companyId)
+    if (attempt !== attemptRef.current) return
     loadingRef.current = false
     if (outcome.type === 'http') boundary.report(outcome.status, snapshot)
     if (outcome.type === 'ok-single') {
@@ -79,8 +94,26 @@ function ApprovalInbox() {
       setContinuation('idle')
       return
     }
-    setContinuation(classifyOutcome(outcome) as RemoteViewState<unknown>)
+    const state = classifyOutcome(outcome) as RemoteViewState<unknown>
+    if (state.kind === 'stale-rejected') {
+      setContinuation('idle')
+    } else if (TRANSIENT_CONTINUATION.has(state.kind)) {
+      setContinuation(state)
+    } else {
+      setContinuation('idle')
+      setClosed(state)
+    }
   }, [boundary, companyId, firstPage, nextCursor])
+
+  const restart = () => {
+    attemptRef.current += 1
+    loadingRef.current = false
+    setMore([])
+    setCursor(undefined)
+    setContinuation('idle')
+    setClosed(null)
+    setGeneration((value) => value + 1)
+  }
 
   const header = <header className={styles.header}>
     <h1 id="work-approvals-heading">{T.heading}</h1>
@@ -94,6 +127,17 @@ function ApprovalInbox() {
     return <section className={styles.page} aria-labelledby="work-approvals-heading">
       {header}
       <StateBlock state={state} subject={T.subject} onRetry={() => void first.refetch()} />
+    </section>
+  }
+
+  if (closed !== null) {
+    return <section className={styles.page} aria-labelledby="work-approvals-heading">
+      {header}
+      <div role="alert" data-testid="work-approvals-closed">
+        <p>{T.listClosed}</p>
+        <StateBlock state={closed} subject={T.subject} />
+      </div>
+      <button type="button" onClick={restart}>{T.restart}</button>
     </section>
   }
 
