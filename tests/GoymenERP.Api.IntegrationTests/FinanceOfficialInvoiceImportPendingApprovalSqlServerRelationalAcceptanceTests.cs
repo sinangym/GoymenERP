@@ -1,7 +1,9 @@
+using System.Net;
 using System.Text;
+using System.Text.Json;
+using GoymenERP.Api.Endpoints;
 using GoymenERP.Api.WorkRuntime;
 using GoymenERP.BuildingBlocks.Multitenancy;
-using GoymenERP.BuildingBlocks.Observability;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Audit.Application.Contracts;
 using GoymenERP.Modules.Finance.Contracts;
@@ -16,14 +18,17 @@ public sealed class FinanceOfficialInvoiceImportPendingApprovalSqlServerRelation
 {
     private static readonly Guid Company = TestCompanyIds.CompanyA;
     private static readonly Guid Batch = Guid.Parse("93000000-0000-0000-0000-000000000003");
+    private static readonly Guid SelfBatch = Guid.Parse("93000000-0000-0000-0000-000000000004");
+    private const string GroupAdminActor = "20000000-0000-0000-0000-000000000003";
+    private const string Correlation = "d05-real-sql-http";
 
     [SqlServerFact]
-    public async Task A_different_checker_reads_pending_detail_approves_and_then_reopens_the_approved_source()
+    public async Task Public_http_uses_production_di_for_authorized_list_detail_isolation_and_true_empty()
     {
         await using var factory = new SqlServerRelationalApiFactory(
             Environment.GetEnvironmentVariable(SqlServerRelationalAcceptanceTests.ConnectionStringEnvironmentVariable)!);
-        using var client = factory.CreateClient();
-        using var health = await client.GetAsync("/health/live");
+        using var healthClient = factory.CreateClient();
+        using var health = await healthClient.GetAsync("/health/live");
         health.EnsureSuccessStatusCode();
 
         var company = new CompanyContext();
@@ -35,30 +40,74 @@ public sealed class FinanceOfficialInvoiceImportPendingApprovalSqlServerRelation
         await db.Database.MigrateAsync();
         var authority = new AllowAuthority();
         var maker = Approval(db, company, "SENTETIK-maker", authority);
-        var uploaded = await maker.UploadAsync(Context("SENTETIK-maker"), new CommandMetadata("upload-key"), Request(), default);
+        var uploaded = await maker.UploadAsync(Context("SENTETIK-maker"), new CommandMetadata("upload-key"),
+            Request(Batch), default);
         Assert.Equal(CommandOutcome.Succeeded, uploaded.Outcome);
+        var selfMaker = Approval(db, company, GroupAdminActor, authority);
+        var selfUploaded = await selfMaker.UploadAsync(Context(GroupAdminActor),
+            new CommandMetadata("self-upload-key"), Request(SelfBatch), default);
+        Assert.Equal(CommandOutcome.Succeeded, selfUploaded.Outcome);
 
-        var checkerUser = new User("SENTETIK-checker", Company);
-        var pending = new FinanceOfficialInvoiceImportPendingApprovalReadServiceV1(db, company,
-            checkerUser, new FinanceOfficialInvoiceImportParserV1(), authority);
-        var work = new NativeApprovalReadQueryV1(
-            company,
-            checkerUser,
-            new Correlation("sql-SENTETIK-checker"),
-            new FinanceInvoiceImportPendingApprovalAdapterV1(pending));
-        var page = await work.ListAsync(null, default);
-        var detail = await work.GetAsync(NativeApprovalKindsV1.FinanceOfficialInvoiceImport, Batch, default);
-        Assert.Single(page.Resource!.Items);
-        Assert.Equal(uploaded.Resource!.BatchChecksum, detail.Resource!.Preview.SourceSha256);
-        Assert.Equal((NativeApprovalKindsV1.FinanceOfficialInvoiceImport, Batch, Company, "SENTETIK-maker"),
-            (detail.Resource.Item.Kind, detail.Resource.Item.ApprovalId,
-                detail.Resource.Item.CompanyId, detail.Resource.Item.SubmittedBy));
+        using var client = WorkClient(factory, TestUsers.GroupAdmin, Company, Correlation);
+        using var list = await client.GetAsync(WorkApprovalEndpoints.Path);
+        using var detail = await client.GetAsync(
+            $"{WorkApprovalEndpoints.Path}/{NativeApprovalKindsV1.FinanceOfficialInvoiceImport}/{Batch:D}");
+        Assert.Equal(HttpStatusCode.OK, list.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, detail.StatusCode);
+        Assert.Equal(Correlation, list.Headers.GetValues("X-Correlation-Id").Single());
+        using (var page = JsonDocument.Parse(await list.Content.ReadAsStringAsync()))
+        {
+            var item = Assert.Single(page.RootElement.GetProperty("items").EnumerateArray());
+            Assert.Equal(Batch, item.GetProperty("approvalId").GetGuid());
+            Assert.Equal("SENTETIK-maker", item.GetProperty("submittedBy").GetString());
+            Assert.Equal(JsonValueKind.Null, page.RootElement.GetProperty("nextCursor").ValueKind);
+        }
+        using (var body = JsonDocument.Parse(await detail.Content.ReadAsStringAsync()))
+        {
+            Assert.Equal(uploaded.Resource!.BatchChecksum,
+                body.RootElement.GetProperty("preview").GetProperty("sourceSha256").GetString());
+            Assert.Equal(Company,
+                body.RootElement.GetProperty("item").GetProperty("companyId").GetGuid());
+        }
+
+        using var anonymous = factory.CreateClient();
+        using var anonymousResponse = await anonymous.GetAsync(WorkApprovalEndpoints.Path);
+        Assert.Equal(HttpStatusCode.Unauthorized, anonymousResponse.StatusCode);
+
+        using var noCompany = WorkClient(factory, TestUsers.GroupAdmin, null, "d05-no-company");
+        using var noCompanyResponse = await noCompany.GetAsync(WorkApprovalEndpoints.Path);
+        Assert.Equal(HttpStatusCode.BadRequest, noCompanyResponse.StatusCode);
+
+        using var badCorrelation = WorkClient(factory, TestUsers.GroupAdmin, Company, "invalid/correlation");
+        using var badCorrelationResponse = await badCorrelation.GetAsync(WorkApprovalEndpoints.Path);
+        Assert.Equal(HttpStatusCode.BadRequest, badCorrelationResponse.StatusCode);
+
+        using var denied = WorkClient(factory, TestUsers.CompanyAViewer, Company, "d05-denied");
+        using var deniedResponse = await denied.GetAsync(WorkApprovalEndpoints.Path);
+        Assert.Equal(HttpStatusCode.Forbidden, deniedResponse.StatusCode);
+
+        using var foreign = WorkClient(factory, TestUsers.GroupAdmin, TestCompanyIds.CompanyB, "d05-foreign");
+        using var foreignList = await foreign.GetAsync(WorkApprovalEndpoints.Path);
+        using var foreignDetail = await foreign.GetAsync(
+            $"{WorkApprovalEndpoints.Path}/{NativeApprovalKindsV1.FinanceOfficialInvoiceImport}/{Batch:D}");
+        Assert.Equal(HttpStatusCode.OK, foreignList.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, foreignDetail.StatusCode);
+        using (var foreignPage = JsonDocument.Parse(await foreignList.Content.ReadAsStringAsync()))
+        {
+            Assert.Empty(foreignPage.RootElement.GetProperty("items").EnumerateArray());
+        }
 
         var checker = Approval(db, company, "SENTETIK-checker", authority);
         var approved = await checker.ApproveAsync(Context("SENTETIK-checker"), new CommandMetadata("approve-key"),
             new FinanceOfficialInvoiceImportApproveRequestV1(Batch, "1"), default);
         Assert.Equal(CommandOutcome.Succeeded, approved.Outcome);
-        Assert.Empty((await work.ListAsync(null, default)).Resource!.Items);
+        using var afterApproval = await client.GetAsync(WorkApprovalEndpoints.Path);
+        Assert.Equal(HttpStatusCode.OK, afterApproval.StatusCode);
+        using (var empty = JsonDocument.Parse(await afterApproval.Content.ReadAsStringAsync()))
+        {
+            Assert.Empty(empty.RootElement.GetProperty("items").EnumerateArray());
+            Assert.Equal(JsonValueKind.Null, empty.RootElement.GetProperty("nextCursor").ValueKind);
+        }
 
         var source = await checker.GetApprovedAsync(Context("SENTETIK-checker"),
             new FinanceOpenItemSourceReference(Batch, approved.Resource!.BatchVersion, approved.Resource.BatchChecksum), default);
@@ -75,11 +124,27 @@ public sealed class FinanceOfficialInvoiceImportPendingApprovalSqlServerRelation
                 new FinanceAuditEnvelope(FinanceOfficialInvoiceImportPermissionNamesV1.Approve, ["SENTETIK-FINANCE"], "SQL")),
             TimeProvider.System);
 
-    private static FinanceOfficialInvoiceImportPreviewRequestV1 Request()
+    private static FinanceOfficialInvoiceImportPreviewRequestV1 Request(Guid batchId)
     {
         var csv = string.Join('\n', FinanceOfficialInvoiceImportTemplateV1.Header,
             $"{Guid.NewGuid():D},{Guid.NewGuid():D},{Guid.NewGuid():D},invoice-v1,{Guid.NewGuid():D},{Guid.NewGuid():D},{Guid.NewGuid():D},1250.50,2026-10-31");
-        return new(Batch, "official-file-v1", Encoding.UTF8.GetBytes(csv));
+        return new(batchId, $"official-file-{batchId:N}", Encoding.UTF8.GetBytes(csv));
+    }
+
+    private static HttpClient WorkClient(
+        SqlServerRelationalApiFactory factory,
+        string user,
+        Guid? company,
+        string correlation)
+    {
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add("X-Development-User", user);
+        if (company is not null)
+        {
+            client.DefaultRequestHeaders.Add("X-Company-Id", company.Value.ToString("D"));
+        }
+        client.DefaultRequestHeaders.Add("X-Correlation-Id", correlation);
+        return client;
     }
 
     private static FinanceContext Context(string actor) => new(Company, actor, $"sql-{actor}", null);
@@ -89,22 +154,6 @@ public sealed class FinanceOfficialInvoiceImportPendingApprovalSqlServerRelation
         public string? UserId => actor;
         public IReadOnlySet<Guid> AllowedCompanyIds { get; } = new HashSet<Guid> { company };
         public bool CanAccessCompany(Guid companyId) => AllowedCompanyIds.Contains(companyId);
-    }
-    private sealed class Correlation(string correlationId) : ICorrelationContext
-    {
-        public bool IsResolved => true;
-        public string CorrelationId { get; } = correlationId;
-        public string? CausationId => null;
-        public string SourceChannel => "SQL";
-        public string? ClientIpAddress => null;
-        public string? UserAgent => null;
-        public void Set(
-            string candidateCorrelationId,
-            string? causationId,
-            string sourceChannel,
-            string? clientIpAddress,
-            string? userAgent) =>
-            throw new InvalidOperationException("The SQL acceptance correlation context is immutable.");
     }
     private sealed class AllowAuthority : IFinanceOfficialInvoiceImportApprovalAuthorityV1
     {
