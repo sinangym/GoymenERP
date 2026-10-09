@@ -8,10 +8,13 @@ import { readEnvironment } from '../src/env'
  * then reads the actual stock page. No route, response, Product card, or permission is mocked.
  */
 const env = readEnvironment()
-const { companyId, locationId, productId, productVersion, productCode, productName,
-  recorderActor, counterActor } = env.seed
+const { companyId, otherCompanyId, locationId, productId, productVersion, productCode, productName,
+  recorderActor, arrangerActor, counterActor } = env.seed
 const POSITIONS = '/api/v1/inventory/positions'
 const OPENINGS = '/api/v1/inventory/opening-counts'
+const LOCATIONS = '/api/v1/organization/locations?page=1&pageSize=100'
+const STOCK_DISPLAY_HEADER = 'X-ERP-Inventory-Stock-Display'
+const STOCK_DISPLAY_VERSION = '2.0'
 const PREFIX = `SYNDS01-${randomUUID().slice(0, 8).toUpperCase()}`
 const EXTREME = '999999999999999.999' // The largest positive decimal(18,3) value, sent as lossless text.
 const NORMAL = '12345.678'
@@ -19,14 +22,21 @@ const QUANTITIES = ['Fiziksel kg', 'Bloklu kg', 'Tahsisli kg', 'Kullanılabilir 
 const LABEL_COUNT = 26 // The accepted stock-position page size is 25, so this forces a real cursor read.
 
 type Position = {
+  readonly companyId: string
   readonly labelId: string
   readonly labelCode: string
   readonly productId: string
+  readonly locationId: string
   readonly physicalKg: string
   readonly blockedPhysicalKg: string
   readonly activeAllocationKg: string
   readonly availableKg: string
   readonly productDisplay: { readonly identity: { readonly code: string; readonly name: string } | null }
+  readonly locationDisplay: {
+    readonly locationId: string
+    readonly locationCode: string
+    readonly locationName: string
+  }
 }
 type PositionPage = { readonly items: readonly Position[]; readonly nextCursor: string | null }
 
@@ -46,6 +56,7 @@ async function openList(page: Page, q: string): Promise<PositionPage> {
   await page.goto(`/stok/pozisyonlar?etiket=${encodeURIComponent(q)}`)
   const response = await answer
   expect(response.status()).toBe(200)
+  expect(await response.request().headerValue(STOCK_DISPLAY_HEADER)).toBe(STOCK_DISPLAY_VERSION)
   await expect(page.getByRole('heading', { level: 1, name: 'Stok / Malzeme Pozisyonu' })).toBeVisible()
   return response.json() as Promise<PositionPage>
 }
@@ -142,6 +153,8 @@ async function assertDesktopPosition(page: Page, position: Position): Promise<vo
   await expect(row).toBeVisible()
   await desktopInk(row, 'Ürün', productCode, true)
   await desktopInk(row, 'Ürün', productName, true)
+  await desktopInk(row, 'Lokasyon', position.locationDisplay.locationCode, true)
+  await desktopInk(row, 'Lokasyon', position.locationDisplay.locationName, true)
   for (const [index, label] of QUANTITIES.entries()) {
     await desktopInk(row, label, trNumber(amountOf(position)[index]))
   }
@@ -156,12 +169,14 @@ async function assertMobilePosition(page: Page, position: Position): Promise<voi
     const spans = [...element.querySelectorAll('span')]
     const name = spans.find((node) => node.textContent === input.name)
     const code = spans.find((node) => node.textContent === input.code)
+    const locationCode = spans.find((node) => node.textContent === input.locationCode)
+    const locationName = spans.find((node) => node.textContent === input.locationName)
     const facts = [...element.querySelectorAll('dl:last-of-type > div')]
     const amounts = input.labels.map((label) => {
       const fact = facts.find((node) => node.querySelector('dt')?.textContent?.trim() === label)
       return fact?.querySelector('dd') ?? null
     })
-    if (!name || !code || amounts.some((node) => node === null)) return null
+    if (!name || !code || !locationCode || !locationName || amounts.some((node) => node === null)) return null
     const cardRect = element.getBoundingClientRect()
     const inspect = (node: Element) => {
       const range = document.createRange()
@@ -179,11 +194,26 @@ async function assertMobilePosition(page: Page, position: Position): Promise<voi
         noEllipsis: getComputedStyle(node).textOverflow !== 'ellipsis',
       }
     }
-    return { name: inspect(name), code: inspect(code), amounts: amounts.map((node) => inspect(node as Element)) }
-  }, { name: productName, code: productCode, labels: QUANTITIES })
+    return {
+      name: inspect(name), code: inspect(code),
+      locationCode: inspect(locationCode), locationName: inspect(locationName),
+      amounts: amounts.map((node) => inspect(node as Element)),
+    }
+  }, {
+    name: productName, code: productCode,
+    locationCode: position.locationDisplay.locationCode,
+    locationName: position.locationDisplay.locationName,
+    labels: QUANTITIES,
+  })
   expect(measured).not.toBeNull()
   expect(measured?.code).toMatchObject({ text: productCode, reachable: true, noEllipsis: true })
   expect(measured?.name).toMatchObject({ text: productName, reachable: true, noEllipsis: true })
+  expect(measured?.locationCode).toMatchObject({
+    text: position.locationDisplay.locationCode, reachable: true, noEllipsis: true,
+  })
+  expect(measured?.locationName).toMatchObject({
+    text: position.locationDisplay.locationName, reachable: true, noEllipsis: true,
+  })
   expect(measured?.name.lines).toBeGreaterThan(1)
   for (const [index, value] of amountOf(position).entries()) {
     expect(measured?.amounts[index]).toMatchObject({ text: trNumber(value), reachable: true, noEllipsis: true })
@@ -203,6 +233,12 @@ async function assertMenu(page: Page, labelId: string, labelCode: string, cards:
 
 test('ST-01 shows long genuine Product and exact stock quantities at desktop and phone widths, then follows cursor, filters and row actions', async ({ page }) => {
   test.setTimeout(240_000)
+  const stockDisplayVersions: string[] = []
+  page.on('request', (request) => {
+    if (request.method() === 'GET' && new URL(request.url()).pathname === POSITIONS) {
+      stockDisplayVersions.push(request.headers()[STOCK_DISPLAY_HEADER.toLowerCase()] ?? '')
+    }
+  })
   expect(productCode).toBe('SAC-1')
   expect(productName).toHaveLength(70)
   const lines = Array.from({ length: LABEL_COUNT }, (_, index) => ({
@@ -220,11 +256,34 @@ test('ST-01 shows long genuine Product and exact stock quantities at desktop and
   expect(stored.lines).toHaveLength(LABEL_COUNT)
   expect(stored.lines.map((line) => line.labelId).sort()).toEqual(lines.map((line) => line.labelId).sort())
 
-  await page.setExtraHTTPHeaders({ 'X-Development-User': counterActor })
+  // Bind the Inventory projection to Organization's own public row, not to a string copied into this test.
+  const locations = await page.request.get(`${env.apiBaseUrl}${LOCATIONS}`, { headers: headers(arrangerActor) })
+  expect(locations.status()).toBe(200)
+  const locationRows = (await locations.json() as {
+    readonly items: readonly { readonly id: string; readonly code: string; readonly name: string }[]
+  }).items.filter((item) => item.id === locationId)
+  expect(locationRows).toHaveLength(1)
+  const ownerLocation = locationRows[0]
+
+  // The normal profile's existing group administrator has both stock-list and Organization location-detail access.
+  // It proves that the exact row location opens its real owner card without adding a disposable grant.
   await page.setViewportSize({ width: 1440, height: 900 })
+  const authorized = await openList(page, PREFIX)
+  expect(authorized.items).toHaveLength(25)
+  const authorizedRow = stockRow(page, authorized.items[0].labelId)
+  await expect(authorizedRow).toBeVisible()
+  await expect(authorizedRow.getByRole('link', { name: 'Lokasyon kartı', exact: true }))
+    .toHaveAttribute('href', `/ayarlar/organizasyon/lokasyon/${locationId}`)
+
+  // The existing stock counter can read the same physical rows but has no Organization location read grant.
+  // A full navigation rereads shell capabilities under that actor; code and name remain visible, the card link does not.
+  await page.setExtraHTTPHeaders({ 'X-Development-User': counterActor })
   const first = await openList(page, PREFIX)
   expect(first.items).toHaveLength(25)
   expect(first.nextCursor).toBeTruthy()
+  const counterRow = stockRow(page, first.items[0].labelId)
+  await expect(counterRow).toBeVisible()
+  await expect(counterRow.getByRole('link', { name: 'Lokasyon kartı', exact: true })).toHaveCount(0)
   await expect(page.getByRole('table', { name: 'Stok / Malzeme Pozisyonu' }).locator('tbody tr')).toHaveCount(25)
   const next = page.waitForResponse((response) => isPositionRead(response, PREFIX, first.nextCursor!))
   await page.getByRole('button', { name: 'Daha fazla göster', exact: true }).click()
@@ -236,6 +295,18 @@ test('ST-01 shows long genuine Product and exact stock quantities at desktop and
   const all = [...first.items, ...second.items]
   expect(new Set(all.map((item) => item.labelId)).size).toBe(LABEL_COUNT)
   expect(all.map((item) => item.labelCode).sort()).toEqual(lines.map((line) => line.labelCode).sort())
+  for (const position of all) {
+    expect(position.companyId).toBe(companyId)
+    expect(position.locationId).toBe(locationId)
+    expect(position.locationDisplay.locationId).toBe(position.locationId)
+    expect(position.locationDisplay.locationCode.trim()).toBe(position.locationDisplay.locationCode)
+    expect(position.locationDisplay.locationCode).not.toBe('')
+    expect(position.locationDisplay.locationName.trim()).toBe(position.locationDisplay.locationName)
+    expect(position.locationDisplay.locationName).not.toBe('')
+    expect(position.locationDisplay).toEqual({
+      locationId, locationCode: ownerLocation.code, locationName: ownerLocation.name,
+    })
+  }
   const extreme = all.find((item) => item.labelId === lines[0].labelId)
   const normal = all.find((item) => item.labelId === lines[1].labelId)
   expect(extreme).toMatchObject({ productId, physicalKg: EXTREME, blockedPhysicalKg: '0', activeAllocationKg: '0', availableKg: EXTREME,
@@ -257,6 +328,7 @@ test('ST-01 shows long genuine Product and exact stock quantities at desktop and
   await expect(page.getByTestId('stock-position-cards').locator('li')).toHaveCount(LABEL_COUNT)
   await assertMobilePosition(page, extreme!)
   await assertMobilePosition(page, normal!)
+  await expect(stockCard(page, extreme!.labelId).getByRole('link', { name: 'Lokasyon kartı', exact: true })).toHaveCount(0)
   await assertMenu(page, all[0].labelId, all[0].labelCode, true)
   await assertMenu(page, all[all.length - 1].labelId, all[all.length - 1].labelCode, true)
 
@@ -267,6 +339,23 @@ test('ST-01 shows long genuine Product and exact stock quantities at desktop and
   expect((await productFiltered).status()).toBe(200)
   await expect(page).toHaveURL(new RegExp(`etiket=${PREFIX}.*urun=${productId}`))
   await expect(page.getByRole('list', { name: 'Etkin filtreler' })).toContainText(productName)
+
+  // Location filtering carries the row's exact id; the returned rows keep the same owner-bound display tuple.
+  const locationFiltered = page.waitForResponse((response) => isPositionRead(response, PREFIX)
+    && new URL(response.url()).searchParams.get('productId') === productId
+    && new URL(response.url()).searchParams.get('locationId') === locationId)
+  await stockCard(page, extreme!.labelId)
+    .getByRole('button', { name: `${lines[0].labelCode}: bu lokasyona göre filtrele` }).click()
+  const locationResponse = await locationFiltered
+  expect(locationResponse.status()).toBe(200)
+  expect(await locationResponse.request().headerValue(STOCK_DISPLAY_HEADER)).toBe(STOCK_DISPLAY_VERSION)
+  const locationPage = await locationResponse.json() as PositionPage
+  expect(locationPage.items.length).toBeGreaterThan(0)
+  expect(locationPage.items.every((item) => item.locationId === locationId
+    && item.locationDisplay.locationId === item.locationId)).toBe(true)
+  await expect(page).toHaveURL(new RegExp(`urun=${productId}.*lokasyon=${locationId}`))
+  await expect(page.getByRole('list', { name: 'Etkin filtreler' })).toContainText(
+    `${extreme!.locationDisplay.locationCode} ${extreme.locationDisplay.locationName}`)
 
   // The label link and its existing back link return to the same label filter after a fresh owner read.
   await openList(page, PREFIX)
@@ -283,4 +372,12 @@ test('ST-01 shows long genuine Product and exact stock quantities at desktop and
   expect((await returned).status()).toBe(200)
   await expect(page).toHaveURL(new RegExp(`/stok/pozisyonlar\\?etiket=${PREFIX}$`))
   await expect(page.getByLabel('Etiket kodu', { exact: true })).toHaveValue(PREFIX)
+
+  // The same actor cannot move the read into the other company, and no browser read silently retries 1.0 or legacy.
+  const foreign = await page.request.get(`${env.apiBaseUrl}${POSITIONS}?q=${encodeURIComponent(PREFIX)}&limit=25`, {
+    headers: { ...headers(counterActor), 'X-Company-Id': otherCompanyId, [STOCK_DISPLAY_HEADER]: STOCK_DISPLAY_VERSION },
+  })
+  expect(foreign.status()).toBe(403)
+  expect(stockDisplayVersions.length).toBeGreaterThan(0)
+  expect(stockDisplayVersions.every((version) => version === STOCK_DISPLAY_VERSION)).toBe(true)
 })
