@@ -279,7 +279,9 @@ public sealed class Fin01BrowserSeed : IBrowserSuiteFixture
                 new
                 {
                     batchId,
-                    batchVersion = context.Label($"WORK-FINANCE-{index:D4}"),
+                    // Finance treats batchVersion as a machine token: no whitespace or display-label text.
+                    // Keep the synthetic provenance while satisfying the owner's accepted token grammar.
+                    batchVersion = $"SENTETIK-browser-suite:{context.Suite}/WORK-FINANCE-{index:D4}",
                     utf8Csv = Convert.ToBase64String(Encoding.UTF8.GetBytes(csv)),
                 },
                 $"work-finance-upload-{index}", cancellationToken);
