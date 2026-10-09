@@ -941,6 +941,21 @@ class WorkflowTests(unittest.TestCase):
             tuple(environment[f"IdentitySeed__Roles__6__Permissions__{index}"] for index in range(1)),
         )
 
+    def test_pur01_stock_reader_matches_the_inventory_screen_fence(self):
+        environment = self._pur01_environment()
+
+        validator.validate_suite_extensions("pur01", environment)
+
+        self.assertEqual(
+            ("inventory.labels.read", "inventory.balances.read", "product.operational-selection.read"),
+            tuple(environment[f"IdentitySeed__Roles__9__Permissions__{index}"] for index in range(3)),
+        )
+
+        missing_product_read = self._pur01_environment()
+        del missing_product_read["IdentitySeed__Roles__9__Permissions__2"]
+        with self.assertRaisesRegex(ValueError, "pur01-stock-reader requires its exact isolated permissions"):
+            validator.validate_suite_extensions("pur01", missing_product_read)
+
     def test_pur01_document_permission_drift_fails_closed(self):
         reader_grant = self._pur01_environment()
         reader_grant["IdentitySeed__Roles__6__Permissions__1"] = "documents.files.read"

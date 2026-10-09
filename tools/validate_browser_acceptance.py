@@ -548,7 +548,8 @@ def validate_suite_identity(suite: str, extra: dict, actor_ids: list[str]) -> No
             "pur01-receiver": ("BROWSER_PUR01_RECEIVER",
                                ("purchasing.orders.read", "purchasing.goods-receipts.record")),
             "pur01-stock-reader": ("BROWSER_PUR01_STOCK_READER",
-                                   ("inventory.labels.read", "inventory.balances.read")),
+                                   ("inventory.labels.read", "inventory.balances.read",
+                                    "product.operational-selection.read")),
         }
         require(set(actor_ids) == set(expected), "pur01 requires its exact disposable actor set")
         require(len(roles) == len(expected) and len(grouped["Assignments"]) == len(expected),

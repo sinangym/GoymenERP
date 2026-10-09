@@ -9,8 +9,9 @@
 # PUR-HOST goods receipt (#478): by the user's decision (#5831467690, coordinator session 2026-09-26) two more
 # disposable actors exist only in this per-run database: the receiver holds exactly purchasing.orders.read +
 # purchasing.goods-receipts.record (the record command, its location options, its history and its shell control),
-# and a separate Inventory stock reader holds inventory.labels.read + inventory.balances.read to show the SAME
-# label. No real user, production role or seeded role receives purchasing.goods-receipts.record.
+# and a separate Inventory stock reader holds the Inventory screen's exact three-read fence:
+# inventory.labels.read + inventory.balances.read + product.operational-selection.read, to show the SAME label.
+# No real user, production role or seeded role receives purchasing.goods-receipts.record.
 services:
   api:
     environment:
@@ -89,6 +90,7 @@ services:
       IdentitySeed__Roles__9__IsSystem: "false"
       IdentitySeed__Roles__9__Permissions__0: inventory.labels.read
       IdentitySeed__Roles__9__Permissions__1: inventory.balances.read
+      IdentitySeed__Roles__9__Permissions__2: product.operational-selection.read
       IdentitySeed__Assignments__7__Id: b4000000-0000-4000-8000-000000000601
       IdentitySeed__Assignments__7__UserId: b2000000-0000-4000-8000-000000000601
       IdentitySeed__Assignments__7__RoleId: b3000000-0000-4000-8000-000000000601
