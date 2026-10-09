@@ -28,6 +28,7 @@ import { purchasingRoutes } from '../purchasing/purchasingRoutes'
 import { inventoryRoutes } from '../inventory/inventoryRoutes'
 import { identityRoutes } from '../identity/identityRoutes'
 import { searchRoutes } from '../search/searchRoutes'
+import { workRoutes } from '../work/workRoutes'
 import { StateBlock } from './StateBlock'
 
 export const shellRoutes: RouteObject[] = [
@@ -191,6 +192,12 @@ export const shellRoutes: RouteObject[] = [
        * gate on the first searchable owner list the actor holds; it has no capability of its own.
        */
       ...searchRoutes,
+      /**
+       * D-05 "Onaylarım" (`/onaylarim`, `/onaylarim/:kind/:approvalId`), declared in `src/work/workRoutes.tsx`: the
+       * Finance pilot of the approval inbox. Both entries are gated on the native Finance approve capability — no shared
+       * permission — so an actor without it gets the neutral not-found block and reads nothing.
+       */
+      ...workRoutes,
       {
         /**
          * Catch-all. Without it react-router renders its own error boundary —

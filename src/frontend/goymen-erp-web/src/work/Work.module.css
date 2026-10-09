@@ -1,0 +1,155 @@
+/* D-05 "Onaylarım" — Finance pilot. GOY-DS-001 tokens; a wide table scrolls inside its own surface, never the page. */
+
+.page {
+  display: grid;
+  gap: var(--goy-ds-space-3, 12px);
+  min-width: 0;
+  max-width: 100%;
+  font-family: var(--goy-ds-font-sans, system-ui, sans-serif);
+}
+
+.header {
+  display: grid;
+  gap: var(--goy-ds-space-2, 8px);
+}
+
+.header h1 {
+  margin: 0;
+}
+
+.scope {
+  padding: var(--goy-ds-space-2, 8px) var(--goy-ds-space-3, 12px);
+  border: 1px solid var(--goy-ds-color-border, #e1e4e9);
+  border-radius: var(--goy-ds-radius-md, 8px);
+  background: var(--goy-ds-color-surface-muted, #f6f7f9);
+  color: var(--goy-ds-color-text-secondary, #48505d);
+  font-size: var(--goy-ds-font-size-md, 0.84375rem);
+}
+
+.scope p {
+  margin: 0;
+}
+
+.scope p + p {
+  margin-top: var(--goy-ds-space-1, 4px);
+}
+
+.tableWrap {
+  overflow-x: auto;
+  max-width: 100%;
+  border: 1px solid var(--goy-ds-color-border, #e1e4e9);
+  border-radius: var(--goy-ds-radius-md, 8px);
+}
+
+.tableWrap:focus-visible {
+  outline: 2px solid var(--goy-ds-color-accent, #2a57e3);
+  outline-offset: 2px;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--goy-ds-font-size-md, 0.84375rem);
+}
+
+.table th,
+.table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--goy-ds-color-border, #e1e4e9);
+  text-align: left;
+  vertical-align: middle;
+}
+
+.table th {
+  background: var(--goy-ds-color-surface-muted, #f6f7f9);
+  color: var(--goy-ds-color-text-secondary, #48505d);
+  font-weight: var(--goy-ds-font-weight-medium, 500);
+  white-space: nowrap;
+}
+
+.caption {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.numeric {
+  text-align: right !important;
+  font-variant-numeric: tabular-nums;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+}
+
+.continuation {
+  display: flex;
+  align-items: center;
+  gap: var(--goy-ds-space-2, 8px);
+}
+
+.muted {
+  margin: 0;
+  color: var(--goy-ds-color-text-tertiary, #646e7e);
+}
+
+.backLink {
+  justify-self: start;
+}
+
+.facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  gap: var(--goy-ds-space-2, 8px) var(--goy-ds-space-4, 16px);
+  margin: 0;
+}
+
+.facts dt {
+  color: var(--goy-ds-color-text-tertiary, #646e7e);
+  font-size: var(--goy-ds-font-size-sm, 0.78125rem);
+}
+
+.facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.primaryLink {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--goy-ds-control-height, 32px);
+  padding: 0 12px;
+  border-radius: var(--goy-ds-radius-sm, 6px);
+  background: var(--goy-ds-color-accent, #2a57e3);
+  color: var(--goy-ds-color-on-accent, #fff);
+  font-weight: var(--goy-ds-font-weight-medium, 500);
+  text-decoration: none;
+}
+
+.primaryLink:focus-visible {
+  outline: 2px solid var(--goy-ds-color-accent, #2a57e3);
+  outline-offset: 2px;
+}
+
+.home {
+  display: grid;
+  gap: var(--goy-ds-space-1, 4px);
+  padding: var(--goy-ds-space-3, 12px);
+  border: 1px solid var(--goy-ds-color-border, #e1e4e9);
+  border-radius: var(--goy-ds-radius-md, 8px);
+  max-width: 36rem;
+}
+
+.home h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.home p {
+  margin: 0;
+}
