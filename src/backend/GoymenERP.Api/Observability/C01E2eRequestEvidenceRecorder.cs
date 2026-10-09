@@ -187,10 +187,12 @@ public sealed class C01E2eRequestEvidenceRecorder
             || !string.Equals(
                 correlationSuffix,
                 correlationGuid.ToString("D"),
-                StringComparison.Ordinal))
+                StringComparison.Ordinal)
+            || correlationSuffix[14] != '4'
+            || correlationSuffix[19] is not ('8' or '9' or 'a' or 'b'))
         {
             throw new InvalidOperationException(
-                "C-01 request evidence requires a canonical lowercase UUID correlation suffix.");
+                "C-01 request evidence requires a canonical lowercase RFC-variant UUID v4 correlation suffix.");
         }
 
         var routeTemplate = (context.Request.Method, context.Request.Path.Value) switch

@@ -81,6 +81,7 @@ def junit(properties=None, *, root=None, suite=None,
         "activation.composeProject": PROJECT,
         "activation.database": DATABASE,
         "activation.elapsedMs": "125.50",
+        "activation.retryCount": "0",
         "activation.authorizedResponsePath": "/api/v1/counterparties",
         "activation.authorizedResponseStatus": "200",
         "activation.requestEvidence": json.dumps(browser_requests(), separators=(",", ":")),
@@ -205,6 +206,29 @@ class ActivationEvidenceContractTests(unittest.TestCase):
             with self.subTest(value=value):
                 self.write(xml=junit({"activation.elapsedMs": value}))
                 with self.assertRaisesRegex(validator.ContractError, "elapsed"):
+                    self.validate()
+
+    def test_per_case_retry_property_is_required_unique_and_exactly_zero(self):
+        missing = junit().replace(
+            '<property name="activation.retryCount" value="0" />',
+            "",
+        )
+        duplicate = junit().replace(
+            '<property name="activation.retryCount" value="0" />',
+            '<property name="activation.retryCount" value="0" />'
+            '<property name="activation.retryCount" value="0" />',
+        )
+        mutations = (
+            missing,
+            duplicate,
+            junit({"activation.retryCount": "1"}),
+            junit({"activation.retryCount": "00"}),
+            junit({"activation.retryCount": "0.0"}),
+        )
+        for mutation in mutations:
+            with self.subTest(mutation=mutation[:100]):
+                self.write(xml=mutation)
+                with self.assertRaises(validator.ContractError):
                     self.validate()
 
     def test_exact_path_status_and_identity_are_bound(self):

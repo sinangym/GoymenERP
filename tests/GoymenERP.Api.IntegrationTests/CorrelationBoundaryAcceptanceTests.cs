@@ -220,9 +220,19 @@ public sealed class CorrelationBoundaryAcceptanceTests(GoymenErpApiFactory facto
             allowed.Request.Method = "GET";
             allowed.Request.Path = "/api/v1/counterparties";
             allowed.Response.StatusCode = StatusCodes.Status200OK;
-            await Assert.ThrowsAsync<InvalidOperationException>(() => recorder.RecordAsync(
-                allowed,
-                "c01a-evidence-semantic-label"));
+            var invalidCorrelations = new[]
+            {
+                "c01a-evidence-semantic-label",
+                "c01a-evidence-00000000-0000-0000-0000-000000000000",
+                "c01a-evidence-00000000-0000-1000-8000-000000000000",
+                "c01a-evidence-00000000-0000-4000-7000-000000000000",
+            };
+            foreach (var invalidCorrelation in invalidCorrelations)
+            {
+                await Assert.ThrowsAsync<InvalidOperationException>(() => recorder.RecordAsync(
+                    allowed,
+                    invalidCorrelation));
+            }
 
             var identifierPath = new DefaultHttpContext();
             identifierPath.Request.Method = "GET";

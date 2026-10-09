@@ -30,6 +30,7 @@ IDENTITY_PROPERTIES = {
     "database": "activation.database",
 }
 ELAPSED_PROPERTY = "activation.elapsedMs"
+RETRY_COUNT_PROPERTY = "activation.retryCount"
 PATH_PROPERTY = "activation.authorizedResponsePath"
 STATUS_PROPERTY = "activation.authorizedResponseStatus"
 REQUESTS_PROPERTY = "activation.requestEvidence"
@@ -154,10 +155,14 @@ def parse_junit(path: pathlib.Path) -> tuple[dict[str, str], list[dict[str, Any]
         properties[name] = child.attrib["value"]
 
     expected_properties = set(IDENTITY_PROPERTIES.values()) | {
-        ELAPSED_PROPERTY, PATH_PROPERTY, STATUS_PROPERTY, REQUESTS_PROPERTY,
+        ELAPSED_PROPERTY, RETRY_COUNT_PROPERTY, PATH_PROPERTY, STATUS_PROPERTY,
+        REQUESTS_PROPERTY,
     }
     require(set(properties) == expected_properties, "activation property set mismatch")
     _reject_text(root)
+
+    require(properties[RETRY_COUNT_PROPERTY] == "0",
+            "activation retry count must be the exact canonical integer 0")
 
     elapsed_raw = properties[ELAPSED_PROPERTY]
     require(STRICT_DECIMAL.fullmatch(elapsed_raw) is not None, "elapsed must be a strict decimal")
