@@ -31,6 +31,7 @@
  * The cases run in order on one database: FIN01-02 approves what FIN01-01 proposed.
  */
 
+import { randomUUID } from 'node:crypto'
 import { expect, test, type BrowserContext, type Page, type Request, type Route } from '@playwright/test'
 import { readEnvironment } from '../src/env.js'
 
@@ -482,14 +483,15 @@ test.describe.serial('FIN-01 bank account and draft (real API, real SQL)', () =>
     if (manualPaymentEditBody === null) throw new Error('FIN01-02D edit body was not captured')
 
     const terminalReplacement = { ...manualPaymentEditBody, expectedVersion: '4' }
-    const refused = await page.evaluate(async ({ body, companyId }) => {
+    const terminalReplacementKey = randomUUID()
+    const refused = await page.evaluate(async ({ body, companyId, key }) => {
       const response = await fetch('/api/v1/finance/manual-bank-payments', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID(), 'X-Company-Id': companyId },
+        headers: { 'Content-Type': 'application/json', 'Idempotency-Key': key, 'X-Company-Id': companyId },
         body: JSON.stringify(body),
       })
       return { status: response.status, body: await response.json() as unknown }
-    }, { body: terminalReplacement, companyId: env.seed.companyId })
+    }, { body: terminalReplacement, companyId: env.seed.companyId, key: terminalReplacementKey })
     expect(refused.status).toBe(422)
     expect(refused.body).toMatchObject({
       outcome: 'ValidationFailed',
