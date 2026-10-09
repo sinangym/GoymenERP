@@ -1,7 +1,8 @@
 # PUR-01 Purchasing order acceptance. Three disposable actors are appended to the canonical development
 # identities and exist only in the per-run SQL database. The creator can create/read and carries the two
-# owner-read permissions the real Purchasing command already requires; the approver can read/approve and
-# the reader can only read. The existing Product runtime's synthetic issuer binding enables its owned
+# owner-read permissions the real Purchasing command already requires plus the two P-03 Document Vault
+# permissions; the approver can read/approve and the reader can only read. The existing Product runtime's
+# synthetic issuer binding enables its owned
 # migrations before the gated fixture runs; its Identity user is not a Bootstrap actor and has no role,
 # assignment or permission. Every actor assignment is company-wide in GDC. No production role,
 # permission or user is changed.
@@ -74,6 +75,8 @@ services:
       IdentitySeed__Roles__7__Permissions__1: purchasing.orders.read
       IdentitySeed__Roles__7__Permissions__2: counterparty.parties.read
       IdentitySeed__Roles__7__Permissions__3: product.operational-selection.read
+      IdentitySeed__Roles__7__Permissions__4: documents.files.read
+      IdentitySeed__Roles__7__Permissions__5: documents.files.upload
       IdentitySeed__Roles__8__Id: b3000000-0000-4000-8000-000000000604
       IdentitySeed__Roles__8__Code: BROWSER_PUR01_RECEIVER
       IdentitySeed__Roles__8__Name: SENTETIK browser-suite:pur01 Purchasing goods receiver

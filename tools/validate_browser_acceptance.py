@@ -378,6 +378,7 @@ SUITE_IDENTITY_PERMISSIONS = {
     # separate stock reader adds only the two Inventory label reads that show the SAME received label.
     "pur01": ("purchasing.orders.read", "purchasing.orders.approve", "purchasing.orders.create",
               "counterparty.parties.read", "product.operational-selection.read",
+              "documents.files.read", "documents.files.upload",
               "purchasing.goods-receipts.record", "inventory.labels.read", "inventory.balances.read"),
     # R14: one Inventory recorder with opening and detail reads, one owner-read-only denied actor,
     # and one Organization location reader.
@@ -533,6 +534,36 @@ def validate_suite_identity(suite: str, extra: dict, actor_ids: list[str]) -> No
                 f"{label} must be company-wide on its own company")
         assigned.add(assignment["UserId"])
     require(set(users) - {issuer_user} <= assigned, "every suite actor's Identity user needs at least one assignment")
+    if suite == "pur01":
+        expected = {
+            "pur01-approver": ("BROWSER_PUR01_APPROVER",
+                               ("purchasing.orders.read", "purchasing.orders.approve")),
+            "pur01-reader": ("BROWSER_PUR01_READER", ("purchasing.orders.read",)),
+            "pur01-creator": (
+                "BROWSER_PUR01_CREATOR",
+                ("purchasing.orders.create", "purchasing.orders.read",
+                 "counterparty.parties.read", "product.operational-selection.read",
+                 "documents.files.read", "documents.files.upload"),
+            ),
+            "pur01-receiver": ("BROWSER_PUR01_RECEIVER",
+                               ("purchasing.orders.read", "purchasing.goods-receipts.record")),
+            "pur01-stock-reader": ("BROWSER_PUR01_STOCK_READER",
+                                   ("inventory.labels.read", "inventory.balances.read")),
+        }
+        require(set(actor_ids) == set(expected), "pur01 requires its exact disposable actor set")
+        require(len(roles) == len(expected) and len(grouped["Assignments"]) == len(expected),
+                "pur01 requires one isolated role and assignment per disposable actor")
+        for actor, (role_code, expected_permissions) in expected.items():
+            user_id = next((identity_id for identity_id, subject in users.items() if subject == actor), None)
+            matching = [row for row in grouped["Assignments"].values() if row["UserId"] == user_id]
+            require(user_id is not None and len(matching) == 1,
+                    f"{actor} requires exactly one isolated assignment")
+            role = roles[matching[0]["RoleId"]]
+            permission_keys = [key for key in role if key.startswith("Permissions__")]
+            actual_permissions = tuple(
+                role[f"Permissions__{index}"] for index in range(len(permission_keys)))
+            require(role["Code"] == role_code and actual_permissions == expected_permissions,
+                    f"{actor} requires its exact isolated permissions")
     if suite == "u02":
         company_id = "10000000-0000-0000-0000-000000000001"
         issuer_ids = ("b2000000-0000-4000-8000-000000000201",
