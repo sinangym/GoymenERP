@@ -36,13 +36,15 @@ import { organizationRoutes } from '../organization/organizationRoutes'
 import { purchasingRoutes } from '../purchasing/purchasingRoutes'
 import { PRODUCT_LIST_TEXT } from '../product/productText'
 import { productPage } from '../product/testHarness'
+import { workRoutes } from '../work/workRoutes'
+import { APPROVALS_TEXT } from '../work/workText'
 
 const COMPANY = 'aaaaaaaa-0000-0000-0000-000000000001'
 const USER = '11111111-1111-1111-1111-111111111111'
 const DIRECTORY = [{ id: COMPANY, code: 'GDC', legalName: 'Göymen A', isPlaceholder: false }]
 
-/** Business endpoints of the two lanes: an ungranted route must reach none of them. */
-const BUSINESS_PATHS = ['/api/v1/products', '/api/v1/organization/sites', '/api/v1/organization/locations']
+/** Business endpoints of the lanes: an ungranted route must reach none of them. */
+const BUSINESS_PATHS = ['/api/v1/products', '/api/v1/organization/sites', '/api/v1/organization/locations', '/api/v1/work/approvals']
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -72,6 +74,7 @@ function installFetch(granted: readonly string[]): string[] {
       if (url.includes('/organization/sites')) return json([])
       if (url.includes('/organization/locations'))
         return json({ items: [], page: 1, pageSize: 25, totalCount: 0 })
+      if (url.includes('/work/approvals')) return json({ companyId: COMPANY, items: [], nextCursor: null })
       // Anything else is not what these cases are about; answer it as unavailable
       // rather than throwing, so the heading assertions stay about the ROUTE.
       return json({ code: 'unavailable' }, 503)
@@ -159,6 +162,30 @@ describe('shell mounts the Organization routes: reachable when granted, neutral 
   })
 })
 
+describe('shell mounts the D-05 Onaylarım routes on the native Finance approve capability', () => {
+  const path = '/onaylarim'
+
+  it('a snapshot granting finance.official-invoice-import.approve opens the inbox inside the shell', async () => {
+    installFetch([CAPABILITY.financeOfficialInvoiceImportApprove])
+    await renderShellAt(path)
+
+    expect(
+      await screen.findByRole('heading', { level: 1, name: APPROVALS_TEXT.heading }, { timeout: 5000 }),
+      'a granted /onaylarim rendered no inbox — is ...workRoutes still mounted?',
+    ).toBeTruthy()
+    expect(notFoundBlock()).toBeNull()
+  })
+
+  it('any other snapshot — even one holding the Finance upload — gets the neutral not-found block and reads nothing', async () => {
+    const calls = installFetch([CAPABILITY.financeOfficialInvoiceImportUpload, CAPABILITY.productItemsList])
+    await renderShellAt(path)
+
+    await waitFor(() => expect(notFoundBlock()).not.toBeNull())
+    expect(screen.queryByRole('heading', { level: 1, name: APPROVALS_TEXT.heading })).toBeNull()
+    expect(calls.filter((url) => BUSINESS_PATHS.some((p) => url.includes(p)))).toEqual([])
+  })
+})
+
 describe('shell router source shape (not a reachability check)', () => {
   it('mounts every lane route object, each ahead of the catch-all', () => {
     const children: readonly RouteObject[] = shellRoutes[0]?.children ?? []
@@ -170,6 +197,7 @@ describe('shell router source shape (not a reachability check)', () => {
       ['Product', productRoutes],
       ['Organization', organizationRoutes],
       ['Purchasing', purchasingRoutes],
+      ['Work', workRoutes],
     ] as const) {
       expect(routes.length, `${lane} declares no routes`).toBeGreaterThan(0)
       for (const route of routes) {
