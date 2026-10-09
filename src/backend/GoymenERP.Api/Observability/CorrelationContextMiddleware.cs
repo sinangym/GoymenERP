@@ -5,7 +5,8 @@ namespace GoymenERP.Api.Observability;
 
 public sealed class CorrelationContextMiddleware(
     RequestDelegate next,
-    ILogger<CorrelationContextMiddleware> logger)
+    ILogger<CorrelationContextMiddleware> logger,
+    C01E2eRequestEvidenceRecorder? requestEvidenceRecorder = null)
 {
     public const string CorrelationHeaderName = "X-Correlation-Id";
 
@@ -44,6 +45,11 @@ public sealed class CorrelationContextMiddleware(
                     .WriteCorrelationMetadataInvalidAsync(httpContext);
             }
 
+            if (requestEvidenceRecorder is not null)
+            {
+                await requestEvidenceRecorder.RecordAsync(httpContext, rejectedRequestCorrelationId);
+            }
+
             return;
         }
 
@@ -54,6 +60,11 @@ public sealed class CorrelationContextMiddleware(
         using (logger.BeginScope(CreateLoggingScope(correlationContext)))
         {
             await next(httpContext);
+        }
+
+        if (requestEvidenceRecorder is not null)
+        {
+            await requestEvidenceRecorder.RecordAsync(httpContext, correlationId);
         }
     }
 

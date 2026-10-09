@@ -298,6 +298,19 @@ def validate_compose(model: dict[str, Any], expected_commit: str, expected_proje
         "API disposable compose project drift",
     )
     require(
+        api_environment.get("GOYMEN_ERP_C01_E2E_DATABASE_NAME") == expected_database,
+        "API request-evidence database drift",
+    )
+    require(
+        api_environment.get("GOYMEN_ERP_C01_E2E_REQUEST_EVIDENCE_PATH")
+        == "/evidence/c01-activation-api-requests.jsonl",
+        "API request-evidence path drift",
+    )
+    require(
+        api.get("volumes") == ["../artifacts:/evidence"],
+        "API request-evidence mount drift",
+    )
+    require(
         api_environment.get("BootstrapIdentity__HeaderName") == "X-Development-User",
         "API bootstrap header drift",
     )

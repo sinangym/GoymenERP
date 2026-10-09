@@ -66,6 +66,10 @@ def valid_compose():
                     "GOYMEN_ERP_C01_E2E_TESTED_COMMIT": COMMIT,
                     "GOYMEN_ERP_C01_E2E_RUN_ID": "100",
                     "GOYMEN_ERP_C01_E2E_COMPOSE_PROJECT": PROJECT,
+                    "GOYMEN_ERP_C01_E2E_DATABASE_NAME": "GoymenErpC01_100_1",
+                    "GOYMEN_ERP_C01_E2E_REQUEST_EVIDENCE_PATH": (
+                        "/evidence/c01-activation-api-requests.jsonl"
+                    ),
                     "BootstrapIdentity__HeaderName": "X-Development-User",
                     "BootstrapIdentity__Users__0__UserId": "group-bootstrap-admin",
                     "BootstrapIdentity__Users__0__DisplayName": "C01 E2E Group Administrator",
@@ -73,6 +77,7 @@ def valid_compose():
                     "BootstrapIdentity__Users__1__DisplayName": "C01 E2E Unauthorized User",
                 },
                 "ports": [port(8080, 15080)],
+                "volumes": ["../artifacts:/evidence"],
                 "labels": labels,
             },
             "web-authorized": web("group-bootstrap-admin", 15173),
@@ -157,6 +162,22 @@ class ComposeContractTests(unittest.TestCase):
             with self.subTest(key=key):
                 model = valid_compose()
                 model["services"]["api"]["environment"][key] = value
+                with self.assertRaisesRegex(validator.ContractError, message):
+                    validator.validate_compose(model, COMMIT, PROJECT)
+
+    def test_request_evidence_database_path_and_mount_drift_fail(self):
+        mutations = (
+            ("environment", "GOYMEN_ERP_C01_E2E_DATABASE_NAME", "GoymenErpC01_100_2", "database"),
+            ("environment", "GOYMEN_ERP_C01_E2E_REQUEST_EVIDENCE_PATH", "/tmp/requests", "path"),
+            ("service", "volumes", ["../other:/evidence"], "mount"),
+        )
+        for kind, key, value, message in mutations:
+            with self.subTest(key=key):
+                model = valid_compose()
+                if kind == "environment":
+                    model["services"]["api"]["environment"][key] = value
+                else:
+                    model["services"]["api"][key] = value
                 with self.assertRaisesRegex(validator.ContractError, message):
                     validator.validate_compose(model, COMMIT, PROJECT)
 
