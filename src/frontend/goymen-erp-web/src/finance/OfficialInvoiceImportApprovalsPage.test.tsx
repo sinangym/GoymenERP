@@ -6,6 +6,7 @@ import { OfficialInvoiceImportApprovalsPage, type OfficialInvoiceApprovalAttempt
   type OfficialInvoiceApprovalClient } from './OfficialInvoiceImportApprovalsPage'
 import type { OfficialInvoicePendingBatch, OfficialInvoicePendingDetail } from './officialInvoiceImportApprovalContract'
 import { OFFICIAL_INVOICE_IMPORT_APPROVALS_ROUTE } from './officialInvoiceImportRoutes'
+import styles from './OfficialInvoiceImportApprovals.module.css'
 
 const pending: OfficialInvoicePendingBatch = {
   batchId: '11111111-1111-4111-8111-111111111111', companyId: '22222222-2222-4222-8222-222222222222',
@@ -310,6 +311,46 @@ describe('official invoice checker journey', () => {
     expect(getPending).toHaveBeenCalledTimes(2)
     expect(getPending.mock.calls.every((call) => call[0] === pending.batchId)).toBe(true)
     expect(listPending).not.toHaveBeenCalled()
+  })
+
+  it.each([390, 320])('keeps the approval detail usable at %ipx without page-level horizontal overflow', async (width) => {
+    const client: OfficialInvoiceApprovalClient = {
+      listPending: vi.fn(), getPending: vi.fn().mockResolvedValue(detail), approve: vi.fn(),
+    }
+    const entry = `${OFFICIAL_INVOICE_IMPORT_APPROVALS_ROUTE}?approvalId=${pending.batchId}`
+    render(<ApprovalPage initialEntry={entry} client={client} context={context} onApprovedSource={() => undefined} />)
+
+    const heading = await screen.findByRole('heading', { name: 'Resmî fatura aktarım onayları' })
+    expect(heading.closest('section')?.classList.contains(styles.page)).toBe(true)
+    const table = await screen.findByRole('table')
+    expect(table.classList.contains(styles.table)).toBe(true)
+    expect(table.parentElement?.classList.contains(styles.tableRegion)).toBe(true)
+    expect(screen.getAllByRole('cell').map((cell) => cell.getAttribute('data-label')))
+      .toEqual(['Belge', 'Taksit', 'Tutar', 'Vade'])
+    const approveButton = screen.getByRole('button', { name: 'Onayla' })
+    approveButton.focus()
+    expect(document.activeElement).toBe(approveButton)
+
+    const nodeProcess = (globalThis as unknown as {
+      readonly process: { readonly cwd: () => string; readonly getBuiltinModule: (name: string) => unknown }
+    }).process
+    const fs = nodeProcess.getBuiltinModule('node:fs') as { readFileSync(path: string, encoding: 'utf8'): string }
+    const css = fs.readFileSync(
+      `${nodeProcess.cwd()}/src/finance/OfficialInvoiceImportApprovals.module.css`, 'utf8')
+    const pageRule = /(^|\n)\.page \{([^}]*)\}/.exec(css)?.[2] ?? ''
+    const tableRegionRule = /(^|\n)\.tableRegion \{([^}]*)\}/.exec(css)?.[2] ?? ''
+    const mobileStart = css.search(/@media\s*\(max-width:\s*480px\)/)
+    expect(width).toBeLessThanOrEqual(480)
+    expect(pageRule).toMatch(/min-width:\s*0/)
+    expect(pageRule).toMatch(/max-width:\s*100%/)
+    expect(pageRule).toMatch(/overflow-wrap:\s*anywhere/)
+    expect(tableRegionRule).toMatch(/max-width:\s*100%/)
+    expect(mobileStart).toBeGreaterThanOrEqual(0)
+    const mobileCss = css.slice(mobileStart)
+    expect(mobileCss).toMatch(/\.tableRegion\s*\{[^}]*overflow-x:\s*visible/s)
+    expect(mobileCss).toMatch(/\.table td\s*\{[^}]*display:\s*grid/s)
+    expect(mobileCss).toMatch(/\.page button\s*\{[^}]*width:\s*100%/s)
+    expect(mobileCss).not.toMatch(/overflow-x:\s*hidden|display:\s*none|visibility:\s*hidden/)
   })
 
   it('writes the approval URL only for a real queue selection and browser back restores the queue', async () => {
