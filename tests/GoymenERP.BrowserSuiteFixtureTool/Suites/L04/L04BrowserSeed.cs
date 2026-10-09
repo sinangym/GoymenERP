@@ -3,10 +3,14 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using GoymenERP.Api.Shell;
 using GoymenERP.BrowserSuiteFixtureTool.Shared;
+using GoymenERP.Modules.Identity.Domain.Assignments;
+using GoymenERP.Modules.Identity.Infrastructure.Fixtures;
 using GoymenERP.Modules.Logistics.Infrastructure.Fixtures;
-using GoymenERP.Modules.Product.Infrastructure.Fixtures;
+using GoymenERP.Modules.Product.Application.Contracts;
+using GoymenERP.Modules.Product.Infrastructure.Persistence;
 using GoymenERP.Modules.Purchasing.Infrastructure.Fixtures;
 using GoymenERP.Modules.Sales.Infrastructure.Fixtures;
+using GoymenERP.Modules.Settings.Application;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace GoymenERP.BrowserSuiteFixtureTool.Suites.L04;
@@ -16,8 +20,9 @@ namespace GoymenERP.BrowserSuiteFixtureTool.Suites.L04;
 /// <list type="number">
 /// <item>ONE Cari customer (party + company account, Customer role) through the REAL Counterparty API as the
 /// bootstrap admin (the fin01 way).</item>
-/// <item>ONE Sales draft written by the gated Sales fixture writer (decision W1/C: synthetic product / money
-/// snapshots, no attempt, no audit) with the REAL customer ids and the REAL Settings kilogram unit, then
+/// <item>ONE genuine Product created, replayed, reopened and activated through Product's real API, then ONE Sales
+/// draft written by the gated Sales fixture writer (decision W1/C: synthetic money snapshots, no attempt, no audit)
+/// with that Product identity/version, the REAL customer ids and the REAL Settings kilogram unit, then
 /// SUBMITTED and APPROVED through the REAL Sales API by two Sales actors (Ö4: never the same one).</item>
 /// <item>ONE loading instruction (two lines on that approved line) created and ISSUED through the REAL
 /// Logistics API by the preparer; its second line is then BLOCKED by the gated Logistics fixture writer —
@@ -72,6 +77,16 @@ public sealed class L04BrowserSeed : IBrowserSuiteFixture
     private static readonly Guid ShipmentAllocationId = Guid.Parse("e6400000-0000-4000-8000-000000000401");
     private const string ShipmentLabelCode = "SYNL04-RECEIPT-LABEL-1";
 
+    // The assignment rows exist only in the disposable l04 database. They authorize the canonical
+    // bootstrap administrator to drive Product's real create/replay/reopen/activate API; they do not
+    // add a production role, permission, provider or public fixture writer.
+    private static readonly Guid ProductActorUserId = Guid.Parse("20000000-0000-0000-0000-000000000003");
+    private static readonly Guid ProductSystemRoleId = Guid.Parse("30000000-0000-0000-0000-000000000003");
+    private static readonly Guid ProductIssuerUserId = Guid.Parse("e6500000-0000-4000-8000-000000000401");
+    private static readonly Guid ProductIssuerExternalIdentityId = Guid.Parse("e6510000-0000-4000-8000-000000000401");
+    private static readonly DateTimeOffset ProductAuthorityValidFrom =
+        new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
+
     private static readonly DateOnly BusinessDate = new DateOnly(2026, 9, 19);
     private static readonly DateTimeOffset At = new DateTimeOffset(2026, 9, 19, 9, 0, 0, TimeSpan.Zero);
 
@@ -98,22 +113,8 @@ public sealed class L04BrowserSeed : IBrowserSuiteFixture
         BrowserSuiteFixtureContext context,
         CancellationToken cancellationToken)
     {
-        await using (var registryScope = context.Services.CreateAsyncScope())
-        {
-            await registryScope.ServiceProvider.GetRequiredService<C01E2eProductTechnicalCardFixtureWriter>()
-                .EnsureAsync(cancellationToken);
-        }
-
-        ProductPurchaseSalesStockJourneyFixtureOutput product;
-        await using (var productScope = context.Services.CreateAsyncScope())
-        {
-            product = await productScope.ServiceProvider.GetRequiredService<C01E2eProductPurchaseSalesStockJourneyFixtureWriter>()
-                .EnsureAsync(cancellationToken);
-        }
-        if (product.CompanyId != CompanyGdc)
-        {
-            throw new InvalidOperationException("The Product purchase-to-delivery fixture answered another company.");
-        }
+        await EnsureProductAuthorityAsync(context, cancellationToken);
+        var product = await EnsureGenuineProductAsync(context, cancellationToken);
 
         Guid receiptLocationId = await ResolveReceiptLocationAsync(context, cancellationToken);
         ShipmentReceipt shipmentReceipt = await EnsureApprovedPurchaseOrderAndReceiptAsync(
@@ -324,7 +325,7 @@ public sealed class L04BrowserSeed : IBrowserSuiteFixture
     /// </summary>
     private static async Task<ShipmentReceipt> EnsureApprovedPurchaseOrderAndReceiptAsync(
         BrowserSuiteFixtureContext context,
-        ProductPurchaseSalesStockJourneyFixtureOutput product,
+        GenuineProduct product,
         Guid locationId,
         CancellationToken cancellationToken)
     {
@@ -527,6 +528,159 @@ public sealed class L04BrowserSeed : IBrowserSuiteFixture
         Guid MovementId,
         string ReceiptLabelVersion,
         string CurrentLabelVersion);
+
+    private static async Task EnsureProductAuthorityAsync(
+        BrowserSuiteFixtureContext context,
+        CancellationToken cancellationToken)
+    {
+        var grants = new[]
+        {
+            (ProductMasterOperation.Read,
+                Guid.Parse("e6520000-0000-4000-8000-000000000401"),
+                Guid.Parse("e6530000-0000-4000-8000-000000000401")),
+            (ProductMasterOperation.DraftCreate,
+                Guid.Parse("e6520000-0000-4000-8000-000000000402"),
+                Guid.Parse("e6530000-0000-4000-8000-000000000402")),
+            (ProductMasterOperation.Activate,
+                Guid.Parse("e6520000-0000-4000-8000-000000000403"),
+                Guid.Parse("e6530000-0000-4000-8000-000000000403")),
+        };
+        await using var scope = context.Services.CreateAsyncScope();
+        var assignments = scope.ServiceProvider.GetRequiredService<C01E2eProductMasterAssignmentFixtureWriter>();
+        foreach (var (operation, assignmentId, decisionId) in grants)
+        {
+            await assignments.EnsureAsync(new ProductMasterAssignmentFixtureRow(
+                assignmentId,
+                ProductActorUserId,
+                ProductSystemRoleId,
+                operation,
+                ProductIssuerUserId,
+                ProductIssuerExternalIdentityId,
+                decisionId,
+                context.Label($"L04 genuine Product {operation}"),
+                ProductAuthorityValidFrom), cancellationToken);
+        }
+    }
+
+    private static async Task<GenuineProduct> EnsureGenuineProductAsync(
+        BrowserSuiteFixtureContext context,
+        CancellationToken cancellationToken)
+    {
+        var approved = ApprovedUnitProfileCatalog.GdcKilogramV1;
+        var draft = new CreateProductDraftRequest(
+            ProductName,
+            ProductInitialCodeGroupV1.SacGroupId,
+            FamilyId: ProductInitialTechnicalDefinitionV1.HotRolledSlitCoilFamilyId,
+            Roles: new ProductRoleInputs(
+                Purchasable: new ProductRoleInput(true, "manual"),
+                Sellable: new ProductRoleInput(true, "manual")),
+            References: new ProductReferences(
+                ProductInitialTechnicalDefinitionV1.TemplateId,
+                "1",
+                new Dictionary<string, JsonElement>(StringComparer.Ordinal)
+                {
+                    ["thickness-mm"] = JsonSerializer.SerializeToElement(1m),
+                    ["width-mm"] = JsonSerializer.SerializeToElement(1000m),
+                    ["steel-grade"] = JsonSerializer.SerializeToElement("S235JR"),
+                    ["coating"] = JsonSerializer.SerializeToElement("uncoated"),
+                },
+                new ProductUnitReferences(
+                    Stock: approved.UnitId,
+                    Purchase: approved.UnitId,
+                    Sales: approved.UnitId)));
+
+        var first = await context.PostJsonAsync(
+            CariActor, CompanyGdc, ProductApiV1.BasePath, draft, "genuine-product-create", cancellationToken);
+        var product = first.GetProperty("card").GetProperty("product");
+        var productId = product.GetProperty("id").GetGuid();
+        if (productId == Guid.Empty
+            || product.GetProperty("code").GetString() != "SAC-1"
+            || product.GetProperty("name").GetString() != ProductName
+            || product.GetProperty("lifecycle").GetString() != "Draft"
+            || product.GetProperty("version").GetString() != "1")
+        {
+            throw new InvalidOperationException("The L04 genuine Product draft is not the exact SAC-1 card.");
+        }
+
+        var replay = await context.PostJsonAsync(
+            CariActor, CompanyGdc, ProductApiV1.BasePath, draft, "genuine-product-create", cancellationToken);
+        if (!replay.GetProperty("isReplay").GetBoolean()
+            || replay.GetProperty("card").GetProperty("product").GetProperty("id").GetGuid() != productId)
+        {
+            throw new InvalidOperationException("The L04 genuine Product create did not replay its exact card.");
+        }
+
+        var reopenedDraft = await context.GetJsonAsync(
+            CariActor, CompanyGdc, $"{ProductApiV1.BasePath}/{productId:D}", cancellationToken);
+        var reopenedDraftProduct = reopenedDraft.GetProperty("product");
+        var reopenedDraftState = (
+            reopenedDraftProduct.GetProperty("lifecycle").GetString(),
+            reopenedDraftProduct.GetProperty("version").GetString());
+        if (reopenedDraftState != ("Draft", "1") && reopenedDraftState != ("Active", "2"))
+        {
+            throw new InvalidOperationException("The L04 genuine Product did not reopen at its exact lifecycle version.");
+        }
+
+        var activated = await context.PostJsonAsync(
+            CariActor,
+            CompanyGdc,
+            $"{ProductApiV1.BasePath}/{productId:D}/activation",
+            new ActivateProductRequest("1"),
+            "genuine-product-activate",
+            cancellationToken);
+        var active = activated.GetProperty("card").GetProperty("product");
+        if (active.GetProperty("id").GetGuid() != productId
+            || active.GetProperty("lifecycle").GetString() != "Active"
+            || active.GetProperty("version").GetString() != "2")
+        {
+            throw new InvalidOperationException("The L04 genuine Product did not activate at version 2.");
+        }
+
+        var reopened = await context.GetJsonAsync(
+            CariActor, CompanyGdc, $"{ProductApiV1.BasePath}/{productId:D}", cancellationToken);
+        var reopenedProduct = reopened.GetProperty("product");
+        var roles = reopenedProduct.GetProperty("roles");
+        var references = reopened.GetProperty("references");
+        var units = references.GetProperty("units");
+        var attributes = references.GetProperty("attributes");
+        if (reopenedProduct.GetProperty("lifecycle").GetString() != "Active"
+            || reopenedProduct.GetProperty("version").GetString() != "2"
+            || !roles.GetProperty("purchasable").GetProperty("value").GetBoolean()
+            || !roles.GetProperty("sellable").GetProperty("value").GetBoolean()
+            || references.GetProperty("templateId").GetGuid() != ProductInitialTechnicalDefinitionV1.TemplateId
+            || references.GetProperty("templateVersion").GetString() != "1"
+            || attributes.GetProperty("thickness-mm").GetDecimal() != 1m
+            || attributes.GetProperty("width-mm").GetDecimal() != 1000m
+            || attributes.GetProperty("steel-grade").GetString() != "S235JR"
+            || attributes.GetProperty("coating").GetString() != "uncoated"
+            || units.GetProperty("stock").GetGuid() != approved.UnitId
+            || units.GetProperty("purchase").GetGuid() != approved.UnitId
+            || units.GetProperty("sales").GetGuid() != approved.UnitId)
+        {
+            throw new InvalidOperationException(
+                "The L04 genuine active Product did not reopen with its exact roles and technical references.");
+        }
+
+        return new GenuineProduct(
+            productId,
+            "2",
+            approved.UnitId,
+            approved.ProfileId,
+            approved.Version.ToString(CultureInfo.InvariantCulture),
+            BusinessDate,
+            "SAC-1",
+            ProductName);
+    }
+
+    private sealed record GenuineProduct(
+        Guid ProductId,
+        string ProductVersion,
+        Guid UnitId,
+        Guid ProfileId,
+        string ProfileVersion,
+        DateOnly EffectiveOn,
+        string Code,
+        string Name);
 
     private static async Task EnsureShipmentAllocationAsync(BrowserSuiteFixtureContext context,
         string labelVersion, CancellationToken cancellationToken)
