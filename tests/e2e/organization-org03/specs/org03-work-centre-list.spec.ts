@@ -662,7 +662,7 @@ test('ORG-ME-05 a newly created location persists its reasoned passive and activ
   expect(deactivateAnswer.status()).toBe(204)
   expect(deactivateAnswer.request().postDataJSON()).toEqual({
     isActive: false,
-    expectedVersion: initial.version,
+    expectedVersion: initial.version.toString(),
     reason: LIFECYCLE_LOCATION.deactivateReason,
   })
   await expect(page.locator('[data-outcome="applied"]')).toContainText('Değişiklik kaydedildi', { timeout: 30_000 })
@@ -694,7 +694,7 @@ test('ORG-ME-05 a newly created location persists its reasoned passive and activ
   expect(reactivateAnswer.status()).toBe(204)
   expect(reactivateAnswer.request().postDataJSON()).toEqual({
     isActive: true,
-    expectedVersion: passive.version,
+    expectedVersion: passive.version.toString(),
     reason: LIFECYCLE_LOCATION.reactivateReason,
   })
   await expect(page.locator('[data-outcome="applied"]')).toContainText('Değişiklik kaydedildi', { timeout: 30_000 })
