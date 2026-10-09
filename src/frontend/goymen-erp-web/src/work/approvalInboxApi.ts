@@ -1,5 +1,5 @@
 /**
- * D-05 transport for the Work approval reads (#639). Read-only: this module has no command — an approval is given on
+ * D-05 transport for the Work approval reads (#639/#644/#645). Read-only: this module has no command — an approval is given on
  * the owning module's own screen, with that module's authority, separation of duties and version rules.
  *
  * `X-Company-Id` is the committed shell company; an answer of another company is a tenant-binding breach, not data.
@@ -7,11 +7,14 @@
 
 import type { ViewOutcome } from '../shell/uiState'
 import {
+  FINANCE_OFFICIAL_INVOICE_IMPORT_KIND,
   WORK_APPROVALS_PATH,
   decodeApprovalDetail,
   decodeApprovalPage,
   workApprovalPath,
   type ApprovalDetail,
+  type ApprovalItemOf,
+  type ApprovalKind,
   type ApprovalPage,
 } from './approvalInboxContract'
 
@@ -52,18 +55,30 @@ async function read<T>(
   return data === null || !belongs(data) ? { type: 'malformed' } : { type: 'ok-single', data }
 }
 
-export function fetchApprovalPage(cursor: string | null, companyId: string, signal?: AbortSignal): Promise<ViewOutcome<ApprovalPage>> {
-  const query = cursor === null ? '' : `?${new URLSearchParams({ cursor }).toString()}`
-  return read(`${WORK_APPROVALS_PATH}${query}`, companyId, signal, decodeApprovalPage,
+/**
+ * One page of ONE kind. The Finance pilot keeps the request it was accepted with (no `kind`: the server's Finance
+ * default); every other kind is asked for explicitly. The answer must be of that kind and of this company.
+ */
+export function fetchApprovalPage<K extends ApprovalKind>(
+  kind: K,
+  cursor: string | null,
+  companyId: string,
+  signal?: AbortSignal,
+): Promise<ViewOutcome<ApprovalPage<ApprovalItemOf<K>>>> {
+  const params = new URLSearchParams()
+  if (kind !== FINANCE_OFFICIAL_INVOICE_IMPORT_KIND) params.set('kind', kind)
+  if (cursor !== null) params.set('cursor', cursor)
+  const query = params.size === 0 ? '' : `?${params.toString()}`
+  return read(`${WORK_APPROVALS_PATH}${query}`, companyId, signal, (body) => decodeApprovalPage(body, kind),
     (page) => page.companyId.toLowerCase() === companyId.toLowerCase())
 }
 
 export function fetchApprovalDetail(
-  kind: string,
+  kind: ApprovalKind,
   approvalId: string,
   companyId: string,
   signal?: AbortSignal,
 ): Promise<ViewOutcome<ApprovalDetail>> {
-  return read(workApprovalPath(kind, approvalId), companyId, signal, (body) => decodeApprovalDetail(body, approvalId),
+  return read(workApprovalPath(kind, approvalId), companyId, signal, (body) => decodeApprovalDetail(body, kind, approvalId),
     (detail) => detail.item.companyId.toLowerCase() === companyId.toLowerCase())
 }

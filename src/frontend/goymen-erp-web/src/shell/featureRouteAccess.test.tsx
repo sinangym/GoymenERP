@@ -162,11 +162,14 @@ describe('shell mounts the Organization routes: reachable when granted, neutral 
   })
 })
 
-describe('shell mounts the D-05 Onaylarım routes on the native Finance approve capability', () => {
+describe('shell mounts the D-05 Onaylarım routes on ANY connected owner\'s own approve capability', () => {
   const path = '/onaylarim'
 
-  it('a snapshot granting finance.official-invoice-import.approve opens the inbox inside the shell', async () => {
-    installFetch([CAPABILITY.financeOfficialInvoiceImportApprove])
+  it.each([
+    ['finance.official-invoice-import.approve', [CAPABILITY.financeOfficialInvoiceImportApprove]],
+    ['sales.orders.approve', ['sales.orders.approve']],
+  ])('a snapshot granting only %s opens the inbox inside the shell', async (_, granted) => {
+    installFetch(granted)
     await renderShellAt(path)
 
     expect(
@@ -176,8 +179,11 @@ describe('shell mounts the D-05 Onaylarım routes on the native Finance approve 
     expect(notFoundBlock()).toBeNull()
   })
 
-  it('any other snapshot — even one holding the Finance upload — gets the neutral not-found block and reads nothing', async () => {
-    const calls = installFetch([CAPABILITY.financeOfficialInvoiceImportUpload, CAPABILITY.productItemsList])
+  it('any other snapshot — even one holding the Finance upload or the Sales read — gets the neutral not-found block and reads nothing', async () => {
+    const calls = installFetch([
+      CAPABILITY.financeOfficialInvoiceImportUpload, CAPABILITY.productItemsList, CAPABILITY.salesDraftsList,
+      CAPABILITY.salesDraftsDetail,
+    ])
     await renderShellAt(path)
 
     await waitFor(() => expect(notFoundBlock()).not.toBeNull())

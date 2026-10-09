@@ -36,11 +36,17 @@ import { fetchShellCapabilities } from './api'
 import { resolveCapability } from './useShellOrchestrator'
 import type { CapabilityId } from './capabilities'
 
+/**
+ * `capability` is one registry capability, or — for a screen that brings several owners' records together (D-05
+ * "Onaylarım") — a list of the owners' EXISTING capabilities, any one of which opens it. A list adds no permission and
+ * changes nothing else here: the same fresh entry verification, failure handling and neutral block apply; an empty list
+ * opens nothing. The screen itself still shows each owner's records only for that owner's own capability.
+ */
 export function CapabilityRoute({
   capability,
   children,
 }: {
-  readonly capability: CapabilityId
+  readonly capability: CapabilityId | readonly string[]
   readonly children: ReactNode
 }) {
   const state = useShellState()
@@ -171,7 +177,10 @@ export function CapabilityRoute({
     return <StateBlock state={{ kind: 'initial-loading' }} subject="sayfa" />
   }
 
-  if (!hasCapability(state, capability)) {
+  const granted = typeof capability === 'string'
+    ? hasCapability(state, capability)
+    : capability.some((one) => hasCapability(state, one))
+  if (!granted) {
     return <StateBlock state={{ kind: 'not-found' }} subject="sayfa" />
   }
   return <>{children}</>
