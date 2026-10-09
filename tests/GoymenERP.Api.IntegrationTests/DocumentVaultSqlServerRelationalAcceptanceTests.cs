@@ -880,7 +880,7 @@ public sealed class DocumentVaultSqlServerRelationalAcceptanceTests
             await scope.Store.StoreDraftAsync(
                 new SalesDraftWriteEnvelope(Actor, SalesPermissionManifestV1.DraftsCreate, ["SENTETIK-SALES"], Correlation,
                     null, key, "Web", "127.0.0.1", "SENTETIK-agent"),
-                Hash(key),
+                Hash(key).ToLowerInvariant(),
                 documentNo => SalesOrder(company, orderId, partyId, documentNo));
         }
 
