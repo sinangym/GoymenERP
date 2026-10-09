@@ -306,9 +306,51 @@ def validate_compose(model: dict[str, Any], expected_commit: str, expected_proje
         == "/evidence/c01-activation-api-requests.jsonl",
         "API request-evidence path drift",
     )
+    expected_container = f"{expected_project}-api"
+    require(api.get("hostname") == expected_container, "API evidence hostname drift")
     require(
-        api.get("volumes") == ["../artifacts:/evidence"],
-        "API request-evidence mount drift",
+        api_environment.get("GOYMEN_ERP_C01_E2E_EVIDENCE_ISSUER")
+        == "goymenerp-api-c01-testing-v1",
+        "API request-evidence issuer drift",
+    )
+    require(
+        api_environment.get("GOYMEN_ERP_C01_E2E_CONTAINER_IDENTITY") == expected_container,
+        "API request-evidence container identity drift",
+    )
+    require(
+        api_environment.get("GOYMEN_ERP_C01_E2E_PROCESS_ID") == "1",
+        "API request-evidence process id drift",
+    )
+    require(
+        api_environment.get("GOYMEN_ERP_C01_E2E_PROCESS_START_IDENTITY")
+        == f"{expected_container}-process-1",
+        "API request-evidence process start identity drift",
+    )
+    volumes = api.get("volumes")
+    require(isinstance(volumes, list) and len(volumes) == 1,
+            "API request-evidence mount drift")
+    evidence_mount = volumes[0]
+    require(isinstance(evidence_mount, dict),
+            "API request-evidence mount must be normalized")
+    allowed_mount_keys = {"type", "source", "target", "bind", "read_only"}
+    require(
+        {"type", "source", "target"}.issubset(evidence_mount)
+        and set(evidence_mount).issubset(allowed_mount_keys),
+        "API request-evidence mount shape drift",
+    )
+    require(evidence_mount.get("type") == "bind", "API request-evidence mount type drift")
+    require(
+        pathlib.Path(str(evidence_mount.get("source", ""))).resolve()
+        == (REPOSITORY_ROOT / "artifacts").resolve(),
+        "API request-evidence mount source drift",
+    )
+    require(evidence_mount.get("target") == "/evidence",
+            "API request-evidence mount target drift")
+    require(evidence_mount.get("bind", {}) in ({}, {"create_host_path": True}),
+            "API request-evidence bind options drift")
+    require(
+        evidence_mount.get("read_only", False) is False,
+        "API request-evidence mount must remain writable",
     )
     require(
         api_environment.get("BootstrapIdentity__HeaderName") == "X-Development-User",

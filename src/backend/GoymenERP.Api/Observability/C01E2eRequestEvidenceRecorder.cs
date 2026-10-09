@@ -8,10 +8,20 @@ namespace GoymenERP.Api.Observability;
 /// </summary>
 public sealed class C01E2eRequestEvidenceRecorder
 {
+    internal const string EvidenceIssuer = "goymenerp-api-c01-testing-v1";
+    internal const string EvidenceCorrelationPrefix = "c01a-evidence-";
     internal const string EvidencePathConfigurationKey =
         "GOYMEN_ERP_C01_E2E_REQUEST_EVIDENCE_PATH";
     internal const string DatabaseConfigurationKey =
         "GOYMEN_ERP_C01_E2E_DATABASE_NAME";
+    internal const string EvidenceIssuerConfigurationKey =
+        "GOYMEN_ERP_C01_E2E_EVIDENCE_ISSUER";
+    internal const string ContainerIdentityConfigurationKey =
+        "GOYMEN_ERP_C01_E2E_CONTAINER_IDENTITY";
+    internal const string ProcessIdConfigurationKey =
+        "GOYMEN_ERP_C01_E2E_PROCESS_ID";
+    internal const string ProcessStartIdentityConfigurationKey =
+        "GOYMEN_ERP_C01_E2E_PROCESS_START_IDENTITY";
 
     private const string DisposableConfirmationConfigurationKey =
         "GOYMEN_ERP_C01_E2E_DISPOSABLE";
@@ -33,8 +43,10 @@ public sealed class C01E2eRequestEvidenceRecorder
     private readonly string runAttempt;
     private readonly string composeProject;
     private readonly string database;
+    private readonly string issuer;
     private readonly string containerId;
     private readonly int processId;
+    private readonly string processStartIdentity;
     private long ordinal;
 
     private C01E2eRequestEvidenceRecorder(
@@ -44,8 +56,10 @@ public sealed class C01E2eRequestEvidenceRecorder
         string runAttempt,
         string composeProject,
         string database,
+        string issuer,
         string containerId,
-        int processId)
+        int processId,
+        string processStartIdentity)
     {
         this.path = path;
         this.testedCommit = testedCommit;
@@ -53,13 +67,19 @@ public sealed class C01E2eRequestEvidenceRecorder
         this.runAttempt = runAttempt;
         this.composeProject = composeProject;
         this.database = database;
+        this.issuer = issuer;
         this.containerId = containerId;
         this.processId = processId;
+        this.processStartIdentity = processStartIdentity;
 
         var directory = Path.GetDirectoryName(path)
             ?? throw new InvalidOperationException("C-01 request evidence path requires a directory.");
         Directory.CreateDirectory(directory);
-        File.WriteAllText(path, string.Empty);
+        using var evidence = new FileStream(
+            path,
+            FileMode.CreateNew,
+            FileAccess.Write,
+            FileShare.Read);
     }
 
     internal static C01E2eRequestEvidenceRecorder? Create(
@@ -105,15 +125,31 @@ public sealed class C01E2eRequestEvidenceRecorder
         var expectedDatabase = $"GoymenErpC01_{runId}_{runAttempt}";
         RequireExact(database, expectedDatabase, DatabaseConfigurationKey);
 
-        if (!Path.IsPathFullyQualified(evidencePath))
-        {
-            throw new InvalidOperationException("C-01 request evidence path must be absolute.");
-        }
+        var issuer = Required(configuration, EvidenceIssuerConfigurationKey);
+        RequireExact(issuer, EvidenceIssuer, EvidenceIssuerConfigurationKey);
 
-        var containerId = Environment.MachineName;
+        var containerId = Required(configuration, ContainerIdentityConfigurationKey);
         if (!IsSafeIdentity(containerId))
         {
             throw new InvalidOperationException("C-01 request evidence container identity is invalid.");
+        }
+        RequireExact(Environment.MachineName, containerId, ContainerIdentityConfigurationKey);
+
+        var expectedProcessId = RequiredDigits(configuration, ProcessIdConfigurationKey);
+        RequireExact(
+            Environment.ProcessId.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            expectedProcessId,
+            ProcessIdConfigurationKey);
+
+        var processStartIdentity = Required(configuration, ProcessStartIdentityConfigurationKey);
+        if (!IsSafeIdentity(processStartIdentity))
+        {
+            throw new InvalidOperationException("C-01 request evidence process start identity is invalid.");
+        }
+
+        if (!Path.IsPathFullyQualified(evidencePath))
+        {
+            throw new InvalidOperationException("C-01 request evidence path must be absolute.");
         }
 
         return new C01E2eRequestEvidenceRecorder(
@@ -123,14 +159,24 @@ public sealed class C01E2eRequestEvidenceRecorder
             runAttempt,
             composeProject,
             database,
+            issuer,
             containerId,
-            Environment.ProcessId);
+            Environment.ProcessId,
+            processStartIdentity);
     }
 
     internal async Task RecordAsync(HttpContext context, string correlationId)
     {
         ArgumentNullException.ThrowIfNull(context);
         ArgumentException.ThrowIfNullOrWhiteSpace(correlationId);
+
+        // The disposable host serves setup and health traffic before Playwright
+        // begins. Only explicitly namespaced browser evidence belongs in the
+        // strict browser/server bijection; all unrelated host traffic is ignored.
+        if (!correlationId.StartsWith(EvidenceCorrelationPrefix, StringComparison.Ordinal))
+        {
+            return;
+        }
 
         var requestPath = context.Request.Path.Value ?? "/";
         if (!requestPath.StartsWith("/", StringComparison.Ordinal)
@@ -155,8 +201,10 @@ public sealed class C01E2eRequestEvidenceRecorder
                 RunAttempt: runAttempt,
                 ComposeProject: composeProject,
                 Database: database,
+                Issuer: issuer,
                 ContainerId: containerId,
                 ProcessId: processId,
+                ProcessStartIdentity: processStartIdentity,
                 Ordinal: ++ordinal);
             var line = JsonSerializer.Serialize(record, Json) + Environment.NewLine;
             await File.AppendAllTextAsync(path, line, context.RequestAborted);
@@ -218,7 +266,9 @@ public sealed class C01E2eRequestEvidenceRecorder
         string RunAttempt,
         string ComposeProject,
         string Database,
+        string Issuer,
         string ContainerId,
         int ProcessId,
+        string ProcessStartIdentity,
         long Ordinal);
 }

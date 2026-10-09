@@ -51,6 +51,7 @@ def valid_compose():
                 "labels": labels,
             },
             "api": {
+                "hostname": f"{PROJECT}-api",
                 "build": {
                     "context": str(ROOT),
                     "dockerfile": "src/backend/GoymenERP.Api/Dockerfile",
@@ -70,6 +71,12 @@ def valid_compose():
                     "GOYMEN_ERP_C01_E2E_REQUEST_EVIDENCE_PATH": (
                         "/evidence/c01-activation-api-requests.jsonl"
                     ),
+                    "GOYMEN_ERP_C01_E2E_EVIDENCE_ISSUER": "goymenerp-api-c01-testing-v1",
+                    "GOYMEN_ERP_C01_E2E_CONTAINER_IDENTITY": f"{PROJECT}-api",
+                    "GOYMEN_ERP_C01_E2E_PROCESS_ID": "1",
+                    "GOYMEN_ERP_C01_E2E_PROCESS_START_IDENTITY": (
+                        f"{PROJECT}-api-process-1"
+                    ),
                     "BootstrapIdentity__HeaderName": "X-Development-User",
                     "BootstrapIdentity__Users__0__UserId": "group-bootstrap-admin",
                     "BootstrapIdentity__Users__0__DisplayName": "C01 E2E Group Administrator",
@@ -77,7 +84,12 @@ def valid_compose():
                     "BootstrapIdentity__Users__1__DisplayName": "C01 E2E Unauthorized User",
                 },
                 "ports": [port(8080, 15080)],
-                "volumes": ["../artifacts:/evidence"],
+                "volumes": [{
+                    "type": "bind",
+                    "source": str(ROOT / "artifacts"),
+                    "target": "/evidence",
+                    "bind": {},
+                }],
                 "labels": labels,
             },
             "web-authorized": web("group-bootstrap-admin", 15173),
@@ -169,7 +181,35 @@ class ComposeContractTests(unittest.TestCase):
         mutations = (
             ("environment", "GOYMEN_ERP_C01_E2E_DATABASE_NAME", "GoymenErpC01_100_2", "database"),
             ("environment", "GOYMEN_ERP_C01_E2E_REQUEST_EVIDENCE_PATH", "/tmp/requests", "path"),
-            ("service", "volumes", ["../other:/evidence"], "mount"),
+            ("service", "volumes", ["../artifacts:/evidence"], "normalized"),
+            ("service", "volumes", [{
+                "type": "bind", "source": str(ROOT / "other"), "target": "/evidence",
+            }], "source"),
+            ("service", "volumes", [{
+                "type": "bind", "source": str(ROOT / "artifacts"), "target": "/other",
+            }], "target"),
+            ("service", "volumes", [{
+                "type": "bind", "source": str(ROOT / "artifacts"), "target": "/evidence",
+                "read_only": True,
+            }], "writable"),
+        )
+        for kind, key, value, message in mutations:
+            with self.subTest(key=key):
+                model = valid_compose()
+                if kind == "environment":
+                    model["services"]["api"]["environment"][key] = value
+                else:
+                    model["services"]["api"][key] = value
+                with self.assertRaisesRegex(validator.ContractError, message):
+                    validator.validate_compose(model, COMMIT, PROJECT)
+
+    def test_request_evidence_provenance_envelope_drift_fails(self):
+        mutations = (
+            ("service", "hostname", "other-api", "hostname"),
+            ("environment", "GOYMEN_ERP_C01_E2E_EVIDENCE_ISSUER", "other", "issuer"),
+            ("environment", "GOYMEN_ERP_C01_E2E_CONTAINER_IDENTITY", "other", "container"),
+            ("environment", "GOYMEN_ERP_C01_E2E_PROCESS_ID", "2", "process id"),
+            ("environment", "GOYMEN_ERP_C01_E2E_PROCESS_START_IDENTITY", "other", "process start"),
         )
         for kind, key, value, message in mutations:
             with self.subTest(key=key):

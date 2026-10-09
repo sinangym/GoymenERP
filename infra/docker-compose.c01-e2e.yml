@@ -25,6 +25,7 @@ services:
       com.goymen.e2e.tested-commit: ${C01_E2E_TESTED_COMMIT:?C01_E2E_TESTED_COMMIT must be set}
 
   api:
+    hostname: ${C01_E2E_COMPOSE_PROJECT:?C01_E2E_COMPOSE_PROJECT must be set}-api
     build:
       context: ..
       dockerfile: src/backend/GoymenERP.Api/Dockerfile
@@ -43,6 +44,10 @@ services:
       GOYMEN_ERP_C01_E2E_COMPOSE_PROJECT: ${GOYMEN_ERP_C01_E2E_COMPOSE_PROJECT:?GOYMEN_ERP_C01_E2E_COMPOSE_PROJECT must be set}
       GOYMEN_ERP_C01_E2E_DATABASE_NAME: ${C01_E2E_DATABASE_NAME:?C01_E2E_DATABASE_NAME must be set}
       GOYMEN_ERP_C01_E2E_REQUEST_EVIDENCE_PATH: /evidence/c01-activation-api-requests.jsonl
+      GOYMEN_ERP_C01_E2E_EVIDENCE_ISSUER: goymenerp-api-c01-testing-v1
+      GOYMEN_ERP_C01_E2E_CONTAINER_IDENTITY: ${C01_E2E_COMPOSE_PROJECT:?C01_E2E_COMPOSE_PROJECT must be set}-api
+      GOYMEN_ERP_C01_E2E_PROCESS_ID: "1"
+      GOYMEN_ERP_C01_E2E_PROCESS_START_IDENTITY: ${C01_E2E_COMPOSE_PROJECT:?C01_E2E_COMPOSE_PROJECT must be set}-api-process-1
       BootstrapIdentity__HeaderName: X-Development-User
       BootstrapIdentity__Users__0__UserId: group-bootstrap-admin
       BootstrapIdentity__Users__0__DisplayName: C01 E2E Group Administrator

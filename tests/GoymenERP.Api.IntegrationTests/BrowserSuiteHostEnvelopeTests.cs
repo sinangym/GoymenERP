@@ -335,6 +335,11 @@ public sealed class BrowserSuiteHostEnvelopeTests
                 api["GOYMEN_ERP_C01_E2E_DATABASE_NAME"] = $"GoymenErpC01_{RunId}_1";
                 api["GOYMEN_ERP_C01_E2E_REQUEST_EVIDENCE_PATH"] =
                     Path.Combine(directory, "requests.jsonl");
+                api["GOYMEN_ERP_C01_E2E_EVIDENCE_ISSUER"] = "goymenerp-api-c01-testing-v1";
+                api["GOYMEN_ERP_C01_E2E_CONTAINER_IDENTITY"] = Environment.MachineName;
+                api["GOYMEN_ERP_C01_E2E_PROCESS_ID"] = Environment.ProcessId.ToString();
+                api["GOYMEN_ERP_C01_E2E_PROCESS_START_IDENTITY"] =
+                    $"test-start-{Environment.ProcessId}";
                 using var host = StartedHost(api);
 
                 Assert.IsType<C01E2eRequestEvidenceRecorder>(

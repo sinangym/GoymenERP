@@ -39,6 +39,10 @@ public sealed class CorrelationBoundaryAcceptanceTests(GoymenErpApiFactory facto
                     ["GOYMEN_ERP_C01_E2E_COMPOSE_PROJECT"] = "goymen-c01-100-2",
                     ["GOYMEN_ERP_C01_E2E_DATABASE_NAME"] = "GoymenErpC01_100_2",
                     ["GOYMEN_ERP_C01_E2E_REQUEST_EVIDENCE_PATH"] = path,
+                    ["GOYMEN_ERP_C01_E2E_EVIDENCE_ISSUER"] = "goymenerp-api-c01-testing-v1",
+                    ["GOYMEN_ERP_C01_E2E_CONTAINER_IDENTITY"] = Environment.MachineName,
+                    ["GOYMEN_ERP_C01_E2E_PROCESS_ID"] = Environment.ProcessId.ToString(),
+                    ["GOYMEN_ERP_C01_E2E_PROCESS_START_IDENTITY"] = $"test-start-{Environment.ProcessId}",
                 }).Build());
             Assert.NotNull(recorder);
 
@@ -54,6 +58,8 @@ public sealed class CorrelationBoundaryAcceptanceTests(GoymenErpApiFactory facto
             context.Request.Method = "GET";
             context.Request.Path = "/api/v1/counterparties";
             context.Request.QueryString = new QueryString("?cursor=must-not-appear");
+            context.Request.Headers[CorrelationContextMiddleware.CorrelationHeaderName] =
+                "c01a-evidence-business";
             var correlation = new CorrelationContext();
 
             await middleware.InvokeAsync(context, correlation);
@@ -70,7 +76,12 @@ public sealed class CorrelationBoundaryAcceptanceTests(GoymenErpApiFactory facto
             Assert.Equal(1, root.GetProperty("ordinal").GetInt64());
             Assert.Equal("100", root.GetProperty("runId").GetString());
             Assert.Equal("2", root.GetProperty("runAttempt").GetString());
+            Assert.Equal("goymenerp-api-c01-testing-v1", root.GetProperty("issuer").GetString());
+            Assert.Equal(Environment.MachineName, root.GetProperty("containerId").GetString());
             Assert.True(root.GetProperty("processId").GetInt32() > 0);
+            Assert.Equal(
+                $"test-start-{Environment.ProcessId}",
+                root.GetProperty("processStartIdentity").GetString());
         }
         finally
         {
@@ -97,6 +108,10 @@ public sealed class CorrelationBoundaryAcceptanceTests(GoymenErpApiFactory facto
                     ["GOYMEN_ERP_C01_E2E_COMPOSE_PROJECT"] = "goymen-c01-100-2",
                     ["GOYMEN_ERP_C01_E2E_DATABASE_NAME"] = "GoymenErpC01_100_2",
                     ["GOYMEN_ERP_C01_E2E_REQUEST_EVIDENCE_PATH"] = path,
+                    ["GOYMEN_ERP_C01_E2E_EVIDENCE_ISSUER"] = "goymenerp-api-c01-testing-v1",
+                    ["GOYMEN_ERP_C01_E2E_CONTAINER_IDENTITY"] = Environment.MachineName,
+                    ["GOYMEN_ERP_C01_E2E_PROCESS_ID"] = Environment.ProcessId.ToString(),
+                    ["GOYMEN_ERP_C01_E2E_PROCESS_START_IDENTITY"] = $"test-start-{Environment.ProcessId}",
                 }).Build());
             Assert.NotNull(recorder);
 
@@ -106,7 +121,7 @@ public sealed class CorrelationBoundaryAcceptanceTests(GoymenErpApiFactory facto
                 context.Request.Method = "GET";
                 context.Request.Path = "/api/v1/counterparties";
                 context.Response.StatusCode = StatusCodes.Status200OK;
-                return recorder.RecordAsync(context, $"correlation-{index}");
+                return recorder.RecordAsync(context, $"c01a-evidence-{index}");
             });
 
             await Task.WhenAll(writes);
@@ -119,6 +134,90 @@ public sealed class CorrelationBoundaryAcceptanceTests(GoymenErpApiFactory facto
                 return document.RootElement.GetProperty("ordinal").GetInt64();
             });
             Assert.Equal(Enumerable.Range(1, 20).Select(index => (long)index), ordinals);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task DisposableRecorder_IgnoresRequestsOutsideTheEvidenceCorrelationNamespace()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), $"c01-evidence-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        try
+        {
+            var path = Path.Combine(directory, "requests.jsonl");
+            var recorder = C01E2eRequestEvidenceRecorder.Create(
+                new TestHostEnvironment("Testing"),
+                new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["C01E2e:EnableListCapability"] = "true",
+                    ["GOYMEN_ERP_C01_E2E_DISPOSABLE"] = "CONFIRMED",
+                    ["GOYMEN_ERP_C01_E2E_TESTED_COMMIT"] = "0123456789abcdef0123456789abcdef01234567",
+                    ["GOYMEN_ERP_C01_E2E_RUN_ID"] = "100",
+                    ["GOYMEN_ERP_C01_E2E_COMPOSE_PROJECT"] = "goymen-c01-100-2",
+                    ["GOYMEN_ERP_C01_E2E_DATABASE_NAME"] = "GoymenErpC01_100_2",
+                    ["GOYMEN_ERP_C01_E2E_REQUEST_EVIDENCE_PATH"] = path,
+                    ["GOYMEN_ERP_C01_E2E_EVIDENCE_ISSUER"] = "goymenerp-api-c01-testing-v1",
+                    ["GOYMEN_ERP_C01_E2E_CONTAINER_IDENTITY"] = Environment.MachineName,
+                    ["GOYMEN_ERP_C01_E2E_PROCESS_ID"] = Environment.ProcessId.ToString(),
+                    ["GOYMEN_ERP_C01_E2E_PROCESS_START_IDENTITY"] = $"test-start-{Environment.ProcessId}",
+                }).Build());
+            Assert.NotNull(recorder);
+            var context = new DefaultHttpContext();
+            context.Request.Method = "GET";
+            context.Request.Path = "/health/live";
+            context.Response.StatusCode = StatusCodes.Status200OK;
+
+            await recorder.RecordAsync(context, "setup-health-check");
+
+            Assert.Empty(await File.ReadAllLinesAsync(path));
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task DisposableRecorder_RefusesToTruncateEvidenceFromAnEarlierProcessStart()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), $"c01-evidence-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        try
+        {
+            var path = Path.Combine(directory, "requests.jsonl");
+            var configuration = new ConfigurationBuilder().AddInMemoryCollection(
+                new Dictionary<string, string?>
+                {
+                    ["C01E2e:EnableListCapability"] = "true",
+                    ["GOYMEN_ERP_C01_E2E_DISPOSABLE"] = "CONFIRMED",
+                    ["GOYMEN_ERP_C01_E2E_TESTED_COMMIT"] = "0123456789abcdef0123456789abcdef01234567",
+                    ["GOYMEN_ERP_C01_E2E_RUN_ID"] = "100",
+                    ["GOYMEN_ERP_C01_E2E_COMPOSE_PROJECT"] = "goymen-c01-100-2",
+                    ["GOYMEN_ERP_C01_E2E_DATABASE_NAME"] = "GoymenErpC01_100_2",
+                    ["GOYMEN_ERP_C01_E2E_REQUEST_EVIDENCE_PATH"] = path,
+                    ["GOYMEN_ERP_C01_E2E_EVIDENCE_ISSUER"] = "goymenerp-api-c01-testing-v1",
+                    ["GOYMEN_ERP_C01_E2E_CONTAINER_IDENTITY"] = Environment.MachineName,
+                    ["GOYMEN_ERP_C01_E2E_PROCESS_ID"] = Environment.ProcessId.ToString(),
+                    ["GOYMEN_ERP_C01_E2E_PROCESS_START_IDENTITY"] = $"test-start-{Environment.ProcessId}",
+                }).Build();
+
+            var recorder = C01E2eRequestEvidenceRecorder.Create(
+                new TestHostEnvironment("Testing"), configuration);
+            Assert.NotNull(recorder);
+            var context = new DefaultHttpContext();
+            context.Request.Method = "GET";
+            context.Request.Path = "/api/v1/counterparties";
+            context.Response.StatusCode = StatusCodes.Status200OK;
+            await recorder.RecordAsync(context, "c01a-evidence-before-restart");
+            var original = Assert.Single(await File.ReadAllLinesAsync(path));
+
+            Assert.Throws<IOException>(() => C01E2eRequestEvidenceRecorder.Create(
+                new TestHostEnvironment("Testing"), configuration));
+            Assert.Equal(original, Assert.Single(await File.ReadAllLinesAsync(path)));
         }
         finally
         {
@@ -140,6 +239,10 @@ public sealed class CorrelationBoundaryAcceptanceTests(GoymenErpApiFactory facto
             ["GOYMEN_ERP_C01_E2E_COMPOSE_PROJECT"] = "goymen-c01-100-2",
             ["GOYMEN_ERP_C01_E2E_DATABASE_NAME"] = database,
             ["GOYMEN_ERP_C01_E2E_REQUEST_EVIDENCE_PATH"] = Path.GetFullPath("requests.jsonl"),
+            ["GOYMEN_ERP_C01_E2E_EVIDENCE_ISSUER"] = "goymenerp-api-c01-testing-v1",
+            ["GOYMEN_ERP_C01_E2E_CONTAINER_IDENTITY"] = Environment.MachineName,
+            ["GOYMEN_ERP_C01_E2E_PROCESS_ID"] = Environment.ProcessId.ToString(),
+            ["GOYMEN_ERP_C01_E2E_PROCESS_START_IDENTITY"] = $"test-start-{Environment.ProcessId}",
         }).Build();
 
         var error = Record.Exception(() =>
