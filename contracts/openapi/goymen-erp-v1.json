@@ -71491,10 +71491,7 @@
           {
             "$ref": "#/components/schemas/NativeApprovalReadDetailV1FinanceInvoiceImportNativeApprovalReadDetailV1"
           }
-        ],
-        "discriminator": {
-          "propertyName": "$type"
-        }
+        ]
       },
       "NativeApprovalReadDetailV1FinanceInvoiceImportNativeApprovalReadDetailV1": {
         "required": [

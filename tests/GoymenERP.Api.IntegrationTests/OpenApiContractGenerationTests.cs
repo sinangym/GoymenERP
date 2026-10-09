@@ -6577,6 +6577,7 @@ public sealed partial class OpenApiContractGenerationTests
         Assert.Equal(financeItemSchema, itemVariant.GetProperty("$ref").GetString());
 
         var detail = schemas.GetProperty("NativeApprovalReadDetailV1");
+        Assert.False(detail.TryGetProperty("discriminator", out _));
         var detailVariant = Assert.Single(detail.GetProperty("anyOf").EnumerateArray());
         Assert.Equal(
             "#/components/schemas/NativeApprovalReadDetailV1FinanceInvoiceImportNativeApprovalReadDetailV1",
