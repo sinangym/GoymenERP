@@ -120,6 +120,68 @@ public sealed partial class SalesDraftServiceTests
         Assert.Equal(0, world.Products.Calls);
     }
 
+    [Theory]
+    [InlineData("permission")]
+    [InlineData("actor")]
+    [InlineData("company")]
+    public async Task Authority_drift_before_a_terminal_refusal_records_nothing(string drift)
+    {
+        var world = new World { Products = { VersionConflict = true } };
+        world.Products.BeforeErrorsEnumerated = () => Drift(world, drift);
+
+        var refused = await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
+            world.Service().CreateDraftAsync(Request(), Metadata("k-terminal-drift")));
+
+        Assert.Equal((403, "forbidden", false, null),
+            (refused.Status, refused.Code, refused.IsReplay, refused.OriginalCorrelationId));
+        Assert.Empty(refused.Errors);
+        Assert.Empty(world.Store.Refusals);
+        Assert.Equal(0, world.Store.Attempts);
+    }
+
+    [Theory]
+    [InlineData("permission")]
+    [InlineData("actor")]
+    [InlineData("company")]
+    public async Task A_terminal_race_winner_is_not_disclosed_after_authority_drift(string drift)
+    {
+        var world = new World
+        {
+            Products = { VersionConflict = true },
+            Store = { Race = "refusal-at-record" },
+        };
+        world.Store.OnRecordRefusal = () => Drift(world, drift);
+
+        var refused = await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
+            world.Service().CreateDraftAsync(Request(), Metadata("k-terminal-race-drift")));
+
+        Assert.Equal((403, "forbidden", false, null),
+            (refused.Status, refused.Code, refused.IsReplay, refused.OriginalCorrelationId));
+        Assert.Empty(refused.Errors);
+        Assert.Empty(world.Store.Refusals);
+        Assert.Equal(1, world.Store.Attempts);
+        // The guarded winner read reaches the store, then its post-read fence detects the drift before disclosing it.
+        Assert.Equal(2, world.Store.Replays);
+    }
+
+    private static void Drift(World world, string drift)
+    {
+        switch (drift)
+        {
+            case "permission":
+                world.Authority.Granted = false;
+                break;
+            case "actor":
+                world.User.Id = "SENTETIK-other-actor";
+                break;
+            case "company":
+                world.User.Company = Guid.NewGuid();
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(drift), drift, null);
+        }
+    }
+
     [Fact]
     public async Task An_authority_lost_after_the_commit_does_not_hide_the_stored_draft()
     {
@@ -1689,6 +1751,7 @@ public sealed partial class SalesDraftServiceTests
         public string Fault { get; set; } = "";
         public bool VersionConflict { get; set; }
         public int Calls { get; set; }
+        public Action? BeforeErrorsEnumerated { get; set; }
 
         public Task<ProductSalesEligibilityV1> EvaluateAsync(ProductSalesSelectionV1 selection, CancellationToken cancellationToken)
         {
@@ -1696,12 +1759,35 @@ public sealed partial class SalesDraftServiceTests
             if (Fault == "unavailable") throw new ProductOperationException("product_family_policy_unavailable", 503);
             if (Fault == "conflict-exception") throw new ProductOperationException("product_selection_changed", 409);
             if (Fault == "not-found") throw new ProductOperationException("product_not_found", 404);
-            if (VersionConflict) return Task.FromResult(new ProductSalesEligibilityV1(null, [new("productId", ProductApiV1.VersionConflict)]));
+            if (VersionConflict)
+            {
+                IReadOnlyList<ProductFieldError> errors = [new("productId", ProductApiV1.VersionConflict)];
+                if (BeforeErrorsEnumerated is not null)
+                {
+                    errors = new OnEnumeratedList<ProductFieldError>(errors, BeforeErrorsEnumerated);
+                }
+
+                return Task.FromResult(new ProductSalesEligibilityV1(null, errors));
+            }
             if (Fault == "field-errors") return Task.FromResult(new ProductSalesEligibilityV1(null, [new("productId", ProductApiV1.LifecycleConflict)]));
             var unit = new ProductSalesUnitProfileV1(Company, Fault == "other-unit" ? Guid.NewGuid() : selection.OrderUnitId, KgProfile, "4");
             return Task.FromResult(new ProductSalesEligibilityV1(
                 new ProductSalesSnapshotV1(selection.ProductId, "7", "GDC-001", "Sentetik bant", unit, unit, unit, selection.EffectiveOn), []));
         }
+    }
+
+    private sealed class OnEnumeratedList<T>(IReadOnlyList<T> items, Action beforeEnumeration) : IReadOnlyList<T>
+    {
+        public int Count => items.Count;
+        public T this[int index] => items[index];
+
+        public IEnumerator<T> GetEnumerator()
+        {
+            beforeEnumeration();
+            return items.GetEnumerator();
+        }
+
+        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
     }
 
     /// <summary>An in-memory store with the contract's replay semantics; no database, no owner rule.</summary>
@@ -1718,6 +1804,8 @@ public sealed partial class SalesDraftServiceTests
         public string? Fault { get; set; }
         /// <summary>Runs when the store is about to commit: what changes in the world between the last fence and the commit.</summary>
         public Action? OnStore { get; set; }
+        /// <summary>Runs after the terminal fence and before the refusal store arbitrates the idempotency key.</summary>
+        public Action? OnRecordRefusal { get; set; }
         /// <summary>A same-key race lost once: "draft-at-store" (the winner stored a draft), "empty-at-store" (nothing under the key), "refusal-at-record" (the winner recorded the refusal), or "floor-result-at-refusal" (the winner's immutable floor result exists while the live draft has advanced).</summary>
         public string? Race { get; set; }
         public SalesOrderDraft? Winner { get; private set; }
@@ -1881,6 +1969,7 @@ public sealed partial class SalesDraftServiceTests
         public Task RecordRefusalAsync(SalesDraftWriteEnvelope envelope, string requestHash, SalesDraftTerminalRefusal refusal,
             CancellationToken cancellationToken = default, string commandName = SalesDraftCommands.CreateV1, Guid? draftId = null)
         {
+            OnRecordRefusal?.Invoke();
             if (Race == "refusal-at-record")
             {
                 Race = null;

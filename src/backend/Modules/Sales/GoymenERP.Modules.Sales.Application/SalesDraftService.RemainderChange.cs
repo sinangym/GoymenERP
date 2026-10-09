@@ -92,7 +92,7 @@ public sealed partial class SalesDraftService
         }
         catch (Exception exception) when (exception is not SalesDraftServiceException && IsRemainderRefusal(exception))
         {
-            throw await RemainderRefusalAsync(scope, envelope, requestHash, commandName, draftId, exception, cancellationToken);
+            throw await RemainderRefusalAsync(scope, permission, envelope, requestHash, commandName, draftId, exception, cancellationToken);
         }
         catch (SalesDraftStoreException exception) when (exception.Code == SalesDraftStoreCodes.ConcurrentChange)
         {
@@ -191,7 +191,7 @@ public sealed partial class SalesDraftService
         }
         catch (Exception exception) when (exception is not SalesDraftServiceException && IsRemainderRefusal(exception))
         {
-            throw await RemainderRefusalAsync(scope, envelope, requestHash, commandName, draftId, exception, cancellationToken);
+            throw await RemainderRefusalAsync(scope, permission, envelope, requestHash, commandName, draftId, exception, cancellationToken);
         }
         catch (SalesDraftStoreException exception) when (exception.Code == SalesDraftStoreCodes.ConcurrentChange)
         {
@@ -318,16 +318,16 @@ public sealed partial class SalesDraftService
     /// The answer to a refusal: a stale version, a wrong state and an allocation block are the key's TERMINAL 409s (recorded,
     /// replayed); a rule is a 422 on its field (not recorded: the floor may move); a malformed input is 400.
     /// </summary>
-    private async Task<SalesDraftServiceException> RemainderRefusalAsync(Scope scope, SalesDraftWriteEnvelope envelope, string requestHash,
+    private async Task<SalesDraftServiceException> RemainderRefusalAsync(Scope scope, string? permission, SalesDraftWriteEnvelope envelope, string requestHash,
         string commandName, Guid draftId, Exception exception, CancellationToken cancellationToken) => exception switch
     {
-        SalesVersionConflictException conflict => await TerminalAsync(scope, envelope, requestHash,
+        SalesVersionConflictException conflict => await TerminalAsync(scope, permission, envelope, requestHash,
             new SalesDraftTerminalRefusal(409, SalesDraftProblemCodesV1.VersionConflict, [new("expectedVersion", conflict.Code)]),
             cancellationToken, commandName, draftId),
-        SalesRuleException { Code: SalesRuleCodes.StateConflict } rule => await TerminalAsync(scope, envelope, requestHash,
+        SalesRuleException { Code: SalesRuleCodes.StateConflict } rule => await TerminalAsync(scope, permission, envelope, requestHash,
             new SalesDraftTerminalRefusal(409, SalesDraftProblemCodesV1.StateConflict, [new("remainder", rule.Code)]),
             cancellationToken, commandName, draftId),
-        RemainderBlocked blocked => await TerminalAsync(scope, envelope, requestHash,
+        RemainderBlocked blocked => await TerminalAsync(scope, permission, envelope, requestHash,
             new SalesDraftTerminalRefusal(409, SalesDraftProblemCodesV1.RemainderBlocked,
                 [new SalesDraftFieldError(blocked.BlockingSource, SalesCancellationImpactStatusesV1.Present)]),
             cancellationToken, commandName, draftId),

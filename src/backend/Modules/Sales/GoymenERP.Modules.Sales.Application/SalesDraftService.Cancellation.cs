@@ -132,22 +132,22 @@ public sealed partial class SalesDraftService
         }
         catch (SalesVersionConflictException exception)
         {
-            throw await TerminalAsync(scope, envelope, requestHash, new SalesDraftTerminalRefusal(409, SalesDraftProblemCodesV1.VersionConflict,
+            throw await TerminalAsync(scope, permission, envelope, requestHash, new SalesDraftTerminalRefusal(409, SalesDraftProblemCodesV1.VersionConflict,
                 [new("expectedVersion", exception.Code)]), cancellationToken, commandName, draftId);
         }
         catch (SalesRuleException exception) when (exception.Code == SalesRuleCodes.StateConflict)
         {
-            throw await TerminalAsync(scope, envelope, requestHash, new SalesDraftTerminalRefusal(409, SalesDraftProblemCodesV1.StateConflict,
+            throw await TerminalAsync(scope, permission, envelope, requestHash, new SalesDraftTerminalRefusal(409, SalesDraftProblemCodesV1.StateConflict,
                 [new("state", exception.Code)]), cancellationToken, commandName, draftId);
         }
         catch (ImpactChanged)
         {
-            throw await TerminalAsync(scope, envelope, requestHash, new SalesDraftTerminalRefusal(409, SalesDraftProblemCodesV1.CancellationImpactChanged,
+            throw await TerminalAsync(scope, permission, envelope, requestHash, new SalesDraftTerminalRefusal(409, SalesDraftProblemCodesV1.CancellationImpactChanged,
                 [new("impactToken", SalesDraftProblemCodesV1.CancellationImpactChanged)]), cancellationToken, commandName, draftId);
         }
         catch (CancellationBlocked blocked)
         {
-            throw await TerminalAsync(scope, envelope, requestHash, new SalesDraftTerminalRefusal(409, SalesDraftProblemCodesV1.CancellationBlocked,
+            throw await TerminalAsync(scope, permission, envelope, requestHash, new SalesDraftTerminalRefusal(409, SalesDraftProblemCodesV1.CancellationBlocked,
                 [.. blocked.Sources.Select(source => new SalesDraftFieldError(source, SalesCancellationImpactStatusesV1.Present))]),
                 cancellationToken, commandName, draftId);
         }
