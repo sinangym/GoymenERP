@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Observability;
@@ -188,10 +190,13 @@ public sealed class AccountingApiFenceTests
         var result = new AccountingApiResult<PeriodViewV1>(AccountingApiStatus.Created, period, false, null);
         var request = new { periodId = period.PeriodId, startsOn = "2026-10-01", endsOn = "2026-10-31" };
         return new AccountingCommandRecord(AccountingCommandNames.ProposePeriod,
-            AccountingApiService.Sha256("SENTETIK-replay"), Actor.ToString("D"),
-            AccountingApiService.Sha256(AccountingCommandNames.ProposePeriod + "|" + JsonSerializer.Serialize(request, json)),
+            Sha256("SENTETIK-replay"), Actor.ToString("D"),
+            Sha256(AccountingCommandNames.ProposePeriod + "|" + JsonSerializer.Serialize(request, json)),
             JsonSerializer.Serialize(result, json), correlation);
     }
+
+    private static string Sha256(string text) =>
+        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(text)));
 
     private static PermissionScope Granted() => new(true, true,
         new HashSet<string>(["SENTETIK-ROLE"], StringComparer.Ordinal), new HashSet<Guid>(), new HashSet<Guid>(), new HashSet<Guid>());
