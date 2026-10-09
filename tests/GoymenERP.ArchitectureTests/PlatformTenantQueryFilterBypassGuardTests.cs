@@ -170,8 +170,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         new Dictionary<string, string>(StringComparer.Ordinal)
         {
             // accounting
+            // Fresh authority: +1 real-SQL post-read refusal acceptance fact.
             ["tools/relational_inventory/accounting.txt"] =
-                "e7f5b933a7a4d534caaf68eb7a2c5531d874c86adb865441fe06f9a325f7aa98",
+                "2865c0fb0c76cee1d71e1460e2785e5a8e9cc4f03d5603bd41afdaf218429484",
 
             // counterparty
             // AT-009: +2 real-SQL fresh-authority interleavings (duplicate read and same-key winner replay).

@@ -817,6 +817,47 @@ public sealed class AccountingApiSqlServerRelationalAcceptanceTests
     }
 
     /// <summary>
+    /// ACC-FRESH-AUTH: the endpoint policy is only the first gate. Losing the same narrow grant while the
+    /// application awaits its command-log or period-list read returns 403 and exposes/stores nothing.
+    /// </summary>
+    [SqlServerFact]
+    public async Task Fresh_authority_loss_after_real_sql_reads_returns_no_resource_or_effect()
+    {
+        var authority = new ControlledFreshAuthority();
+        await using var run = await Run.StartAsync(services =>
+        {
+            services.RemoveAll<IErpAuthorityRevalidationService>();
+            services.AddSingleton<IErpAuthorityRevalidationService>(authority);
+        });
+        await run.GrantAsync(Preparer, CompanyA, PreparerGrants);
+        using var client = run.Client(Preparer, CompanyA);
+
+        authority.Answer(GrantedFresh(), PermissionScope.Denied);
+        using (var refused = await client.SendAsync(Post(PeriodsPath, "SENTETIK-fresh-command", Guid.NewGuid().ToString("N"),
+                   new ProposePeriodRequestV1(Guid.NewGuid(), September1, September30))))
+        {
+            Assert.Equal(HttpStatusCode.Forbidden, refused.StatusCode);
+            Assert.Equal("forbidden", Code(await Json(refused)));
+        }
+
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM accounting.Periods"));
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM accounting.Commands"));
+        Assert.Equal(0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityType = N'Accounting.Period'"));
+
+        authority.Answer(GrantedFresh(), PermissionScope.Denied);
+        using (var refused = await client.GetAsync(PeriodsPath))
+        {
+            Assert.Equal(HttpStatusCode.Forbidden, refused.StatusCode);
+            Assert.Equal("forbidden", Code(await Json(refused)));
+        }
+
+        Assert.Equal(4, authority.Calls);
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM accounting.Periods"));
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM accounting.Commands"));
+    }
+
+    /// <summary>
     /// The M-04 and M-01 reads answer exactly what the ledger stored, and Ö2 holds against Settings' REAL
     /// approved GDC/TRY money profile under Accounting's operation key: two decimals post, a third is
     /// refused and stores nothing; company B (no approved source) is refused with Settings' own code.
@@ -1129,6 +1170,39 @@ public sealed class AccountingApiSqlServerRelationalAcceptanceTests
 
     private static async Task<JsonElement> Json(HttpResponseMessage response) =>
         await response.Content.ReadFromJsonAsync<JsonElement>();
+
+    private static PermissionScope GrantedFresh() => new(true, true,
+        new HashSet<string>(["SYNTHETIC-ACCOUNTING-FRESH"], StringComparer.Ordinal),
+        new HashSet<Guid>(), new HashSet<Guid>(), new HashSet<Guid>());
+
+    private sealed class ControlledFreshAuthority : IErpAuthorityRevalidationService
+    {
+        private readonly object gate = new();
+        private PermissionScope[] answers = [PermissionScope.Denied];
+        private int index;
+
+        public int Calls { get; private set; }
+
+        public void Answer(params PermissionScope[] next)
+        {
+            lock (gate)
+            {
+                answers = next;
+                index = 0;
+            }
+        }
+
+        public Task<PermissionScope> RevalidatePermissionScopeAsync(string permission, Guid companyId,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            lock (gate)
+            {
+                Calls++;
+                return Task.FromResult(answers[Math.Min(index++, answers.Length - 1)]);
+            }
+        }
+    }
 
     private sealed class Run : IAsyncDisposable
     {

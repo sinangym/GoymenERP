@@ -144,9 +144,10 @@ public static class AccountingCommandNames
 /// same save as the change and its audit event (§6); a terminal not-found or version conflict is recorded
 /// on its own (§7); two attempts racing on one key leave one record, and the loser answers from it (§8).
 /// The Manufacturing command surface's shape.</item>
-/// <item><b>Authority (#276):</b> the endpoint's policy answers first; the permission is measured fresh
-/// with <see cref="IErpAuthorityRevalidationService"/> before any stored answer is read, and only a
-/// company-wide grant writes. Its role codes go into the audit envelope.</item>
+/// <item><b>Authority (#276):</b> the endpoint's policy answers first; the original actor and company are
+/// captured with the narrow permission, every awaited command/resource read is fenced again before its
+/// result is used, and terminal persistence has its own final fence. Only a company-wide grant writes;
+/// its role codes go into the audit envelope.</item>
 /// </list>
 /// It decides no accounting, period or permission policy: no chart of accounts, no voucher, no reopen,
 /// no withdraw or reject of a proposal (NEEDS-BUSINESS #66 5742097485).
@@ -233,7 +234,8 @@ public sealed class AccountingApiService(
     public async Task<AccountingApiResult<PeriodPageV1>> ListPeriodsAsync(int? pageSize, string? cursor,
         CancellationToken cancellationToken)
     {
-        if (!HasContext() || ActorGuid() is not { } actor)
+        var scope = await RequireAsync(AccountingPermissionManifestV1.PeriodsRead, cancellationToken);
+        if (scope is null)
         {
             return Denied<PeriodPageV1>();
         }
@@ -245,9 +247,14 @@ public sealed class AccountingApiService(
 
         try
         {
-            var page = await periods.ListPeriodsAsync(size, cursor, cancellationToken);
+            var page = await GuardedAsync(scope, AccountingPermissionManifestV1.PeriodsRead,
+                () => periods.ListPeriodsAsync(size, cursor, cancellationToken), cancellationToken);
             return new AccountingApiResult<PeriodPageV1>(AccountingApiStatus.Ok,
-                new PeriodPageV1([.. page.Items.Select(record => PeriodView(record, actor))], page.NextCursor), false, null);
+                new PeriodPageV1([.. page.Items.Select(record => PeriodView(record, scope.ActorGuid))], page.NextCursor), false, null);
+        }
+        catch (FreshAuthorityDeniedException)
+        {
+            return Denied<PeriodPageV1>();
         }
         catch (AccountingStoreException exception) when (exception.Code == AccountingStoreCodes.ListRequestInvalid)
         {
@@ -257,14 +264,26 @@ public sealed class AccountingApiService(
 
     public async Task<AccountingApiResult<PeriodViewV1>> GetPeriodAsync(Guid periodId, CancellationToken cancellationToken)
     {
-        if (!HasContext() || ActorGuid() is not { } actor)
+        var scope = await RequireAsync(AccountingPermissionManifestV1.PeriodsRead, cancellationToken);
+        if (scope is null)
         {
             return Denied<PeriodViewV1>();
         }
 
-        return periodId != Guid.Empty && await periods.FindPeriodAsync(periodId, cancellationToken) is { } record
-            ? new AccountingApiResult<PeriodViewV1>(AccountingApiStatus.Ok, PeriodView(record, actor), false, null)
-            : NotFoundResult<PeriodViewV1>();
+        try
+        {
+            var record = periodId == Guid.Empty
+                ? null
+                : await GuardedAsync(scope, AccountingPermissionManifestV1.PeriodsRead,
+                    () => periods.FindPeriodAsync(periodId, cancellationToken), cancellationToken);
+            return record is not null
+                ? new AccountingApiResult<PeriodViewV1>(AccountingApiStatus.Ok, PeriodView(record, scope.ActorGuid), false, null)
+                : NotFoundResult<PeriodViewV1>();
+        }
+        catch (FreshAuthorityDeniedException)
+        {
+            return Denied<PeriodViewV1>();
+        }
     }
 
     // ---- journals and queues (read-only) --------------------------------------------------------
@@ -272,7 +291,8 @@ public sealed class AccountingApiService(
     public async Task<AccountingApiResult<JournalPageV1>> ListJournalsAsync(Guid? periodId, int? pageSize, string? cursor,
         CancellationToken cancellationToken)
     {
-        if (!HasContext())
+        var scope = await RequireAsync(AccountingPermissionManifestV1.JournalsRead, cancellationToken);
+        if (scope is null)
         {
             return Denied<JournalPageV1>();
         }
@@ -289,9 +309,14 @@ public sealed class AccountingApiService(
 
         try
         {
-            var page = await postings.ListJournalsAsync(periodId, size, cursor, cancellationToken);
+            var page = await GuardedAsync(scope, AccountingPermissionManifestV1.JournalsRead,
+                () => postings.ListJournalsAsync(periodId, size, cursor, cancellationToken), cancellationToken);
             return new AccountingApiResult<JournalPageV1>(AccountingApiStatus.Ok,
                 new JournalPageV1([.. page.Items.Select(JournalSummary)], page.NextCursor), false, null);
+        }
+        catch (FreshAuthorityDeniedException)
+        {
+            return Denied<JournalPageV1>();
         }
         catch (AccountingStoreException exception) when (exception.Code == AccountingStoreCodes.ListRequestInvalid)
         {
@@ -301,30 +326,52 @@ public sealed class AccountingApiService(
 
     public async Task<AccountingApiResult<JournalDetailV1>> GetJournalAsync(Guid journalId, CancellationToken cancellationToken)
     {
-        if (!HasContext())
+        var scope = await RequireAsync(AccountingPermissionManifestV1.JournalsRead, cancellationToken);
+        if (scope is null)
         {
             return Denied<JournalDetailV1>();
         }
 
-        return journalId != Guid.Empty && await postings.ReadJournalAsync(journalId, cancellationToken) is { } record
-            ? new AccountingApiResult<JournalDetailV1>(AccountingApiStatus.Ok, JournalDetail(record), false, null)
-            : NotFoundResult<JournalDetailV1>();
+        try
+        {
+            var record = journalId == Guid.Empty
+                ? null
+                : await GuardedAsync(scope, AccountingPermissionManifestV1.JournalsRead,
+                    () => postings.ReadJournalAsync(journalId, cancellationToken), cancellationToken);
+            return record is not null
+                ? new AccountingApiResult<JournalDetailV1>(AccountingApiStatus.Ok, JournalDetail(record), false, null)
+                : NotFoundResult<JournalDetailV1>();
+        }
+        catch (FreshAuthorityDeniedException)
+        {
+            return Denied<JournalDetailV1>();
+        }
     }
 
     public async Task<AccountingApiResult<PostingQueuesV1>> GetPostingQueuesAsync(CancellationToken cancellationToken)
     {
-        if (!HasContext())
+        var scope = await RequireAsync(AccountingPermissionManifestV1.PostingQueuesRead, cancellationToken);
+        if (scope is null)
         {
             return Denied<PostingQueuesV1>();
         }
 
-        var exceptions = await postings.ReadOpenExceptionsAsync(cancellationToken);
-        var pending = await postings.ReadPendingValuationsAsync(cancellationToken);
-        return new AccountingApiResult<PostingQueuesV1>(AccountingApiStatus.Ok, new PostingQueuesV1(
-            [.. exceptions.Select(entry => new PostingExceptionViewV1(entry.Source.SourceId, entry.Source.PostingPurpose,
-                entry.PostingRuleVersion, [.. entry.MissingMappingKeys], entry.FirstMessageId))],
-            [.. pending.Select(entry => new PendingValuationViewV1(entry.Source.SourceId, entry.Source.PostingPurpose,
-                entry.PostingRuleVersion, entry.LinesAwaitingAmount, entry.FirstMessageId))]), false, null);
+        try
+        {
+            var exceptions = await GuardedAsync(scope, AccountingPermissionManifestV1.PostingQueuesRead,
+                () => postings.ReadOpenExceptionsAsync(cancellationToken), cancellationToken);
+            var pending = await GuardedAsync(scope, AccountingPermissionManifestV1.PostingQueuesRead,
+                () => postings.ReadPendingValuationsAsync(cancellationToken), cancellationToken);
+            return new AccountingApiResult<PostingQueuesV1>(AccountingApiStatus.Ok, new PostingQueuesV1(
+                [.. exceptions.Select(entry => new PostingExceptionViewV1(entry.Source.SourceId, entry.Source.PostingPurpose,
+                    entry.PostingRuleVersion, [.. entry.MissingMappingKeys], entry.FirstMessageId))],
+                [.. pending.Select(entry => new PendingValuationViewV1(entry.Source.SourceId, entry.Source.PostingPurpose,
+                    entry.PostingRuleVersion, entry.LinesAwaitingAmount, entry.FirstMessageId))]), false, null);
+        }
+        catch (FreshAuthorityDeniedException)
+        {
+            return Denied<PostingQueuesV1>();
+        }
     }
 
     // ---- the command run (ADR-011 §2–§8, #276) --------------------------------------------------
@@ -335,34 +382,32 @@ public sealed class AccountingApiService(
         CancellationToken cancellationToken)
         where T : class
     {
-        if (!HasContext() || ActorGuid() is not { } actor)
+        var scope = await RequireAsync(permission, cancellationToken);
+        if (scope is null)
         {
             return Denied<T>();
         }
 
-        var scope = await authority.RevalidatePermissionScopeAsync(permission, companyContext.CompanyId, cancellationToken);
-        if (!scope.IsGranted || !scope.IsCompanyWide || !HasContext())
-        {
-            return Denied<T>();
-        }
-
-        var actorId = currentUser.UserId!;
+        var actor = scope.ActorGuid;
+        var actorId = scope.ActorId;
         var keyHash = Sha256(idempotencyKey.Trim());
         var requestHash = Sha256(commandName + "|" + JsonSerializer.Serialize(canonicalRequest, Json));
 
-        // §4/§3: a stored answer for this command and key, after the fence and before any other read.
-        if (await commands.FindCommandAsync(commandName, keyHash, cancellationToken) is { } prior)
+        AccountingCommandRecord? prior;
+        try
         {
-            return Answer<T>(prior, actorId, requestHash);
+            prior = await GuardedAsync(scope, permission,
+                () => commands.FindCommandAsync(commandName, keyHash, cancellationToken), cancellationToken);
         }
-
-        // #276, measured again after the awaited lookup and right before the one write (the store reads the period
-        // and saves in that call; Manufacturing's FenceAsync shape). A grant lost meanwhile stores nothing.
-        var fence = await authority.RevalidatePermissionScopeAsync(permission, companyContext.CompanyId, cancellationToken);
-        if (!fence.IsGranted || !fence.IsCompanyWide || !HasContext()
-            || !string.Equals(currentUser.UserId, actorId, StringComparison.Ordinal))
+        catch (FreshAuthorityDeniedException)
         {
             return Denied<T>();
+        }
+
+        // §4/§3: a stored answer for this command and key, after a post-read fence and before any other read.
+        if (prior is not null)
+        {
+            return Answer<T>(prior, actorId, requestHash);
         }
 
         AccountingApiResult<T>? completed = null;
@@ -397,9 +442,18 @@ public sealed class AccountingApiService(
         catch (AccountingStoreException exception) when (exception.Code == AccountingStoreCodes.ConcurrentChange)
         {
             // §8: the same key's other attempt may have won; then its record is the answer.
-            return await commands.FindCommandAsync(commandName, keyHash, cancellationToken) is { } winner
-                ? Answer<T>(winner, actorId, requestHash)
-                : new AccountingApiResult<T>(AccountingApiStatus.Conflict, null, false, exception.Code);
+            try
+            {
+                var winner = await GuardedAsync(scope, permission,
+                    () => commands.FindCommandAsync(commandName, keyHash, cancellationToken), cancellationToken);
+                return winner is not null
+                    ? Answer<T>(winner, actorId, requestHash)
+                    : new AccountingApiResult<T>(AccountingApiStatus.Conflict, null, false, exception.Code);
+            }
+            catch (FreshAuthorityDeniedException)
+            {
+                return Denied<T>();
+            }
         }
         catch (AccountingStoreException exception)
         {
@@ -433,23 +487,45 @@ public sealed class AccountingApiService(
             || result.Status == successStatus;
         if (!terminal)
         {
-            return result.Status is AccountingApiStatus.Invalid or AccountingApiStatus.Unavailable
-                ? result
-                : await commands.FindCommandAsync(commandName, keyHash, cancellationToken) is { } winner
-                    ? Answer<T>(winner, actorId, requestHash)
-                    : result;
+            if (result.Status is AccountingApiStatus.Invalid or AccountingApiStatus.Unavailable)
+            {
+                return result;
+            }
+
+            try
+            {
+                var winner = await GuardedAsync(scope, permission,
+                    () => commands.FindCommandAsync(commandName, keyHash, cancellationToken), cancellationToken);
+                return winner is not null ? Answer<T>(winner, actorId, requestHash) : result;
+            }
+            catch (FreshAuthorityDeniedException)
+            {
+                return Denied<T>();
+            }
         }
 
         try
         {
+            await RequireStillAsync(scope, permission, cancellationToken);
             await commands.RecordCommandAsync(Record(commandName, keyHash, actorId, requestHash, result), cancellationToken);
             return result;
         }
+        catch (FreshAuthorityDeniedException)
+        {
+            return Denied<T>();
+        }
         catch (AccountingStoreException exception) when (exception.Code == AccountingStoreCodes.ConcurrentChange)
         {
-            return await commands.FindCommandAsync(commandName, keyHash, cancellationToken) is { } winner
-                ? Answer<T>(winner, actorId, requestHash)
-                : result;
+            try
+            {
+                var winner = await GuardedAsync(scope, permission,
+                    () => commands.FindCommandAsync(commandName, keyHash, cancellationToken), cancellationToken);
+                return winner is not null ? Answer<T>(winner, actorId, requestHash) : result;
+            }
+            catch (FreshAuthorityDeniedException)
+            {
+                return Denied<T>();
+            }
         }
     }
 
@@ -476,6 +552,64 @@ public sealed class AccountingApiService(
             correlation.CorrelationId);
 
     // ---- views and helpers ----------------------------------------------------------------------
+
+    private sealed record AccessScope(Guid CompanyId, string ActorId, Guid ActorGuid, IReadOnlyCollection<string> RoleCodes);
+
+    private sealed class FreshAuthorityDeniedException : Exception
+    {
+    }
+
+    private async Task<AccessScope?> RequireAsync(string permission, CancellationToken cancellationToken)
+    {
+        if (!HasContext() || ActorGuid() is not { } actor)
+        {
+            return null;
+        }
+
+        var companyId = companyContext.CompanyId;
+        var actorId = currentUser.UserId!;
+        var granted = await authority.RevalidatePermissionScopeAsync(permission, companyId, cancellationToken);
+        return granted.IsGranted && granted.IsCompanyWide && Matches(companyId, actorId)
+            ? new AccessScope(companyId, actorId, actor, [.. granted.RoleCodes.Order(StringComparer.Ordinal)])
+            : null;
+    }
+
+    private async Task RequireStillAsync(AccessScope expected, string permission, CancellationToken cancellationToken)
+    {
+        var current = await authority.RevalidatePermissionScopeAsync(permission, expected.CompanyId, cancellationToken);
+        if (!current.IsGranted || !current.IsCompanyWide || !Matches(expected.CompanyId, expected.ActorId))
+        {
+            throw new FreshAuthorityDeniedException();
+        }
+    }
+
+    private async Task<T> GuardedAsync<T>(AccessScope scope, string permission, Func<Task<T>> read,
+        CancellationToken cancellationToken)
+    {
+        T result;
+        try
+        {
+            result = await read();
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch
+        {
+            await RequireStillAsync(scope, permission, cancellationToken);
+            throw;
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        await RequireStillAsync(scope, permission, cancellationToken);
+        return result;
+    }
+
+    private bool Matches(Guid companyId, string actorId) =>
+        currentUser.IsAuthenticated && string.Equals(currentUser.UserId, actorId, StringComparison.Ordinal)
+        && companyContext.IsResolved && companyContext.CompanyId == companyId && currentUser.CanAccessCompany(companyId)
+        && correlation.IsResolved;
 
     private bool HasContext() =>
         companyContext.IsResolved && companyContext.CompanyId != Guid.Empty && currentUser.IsAuthenticated
