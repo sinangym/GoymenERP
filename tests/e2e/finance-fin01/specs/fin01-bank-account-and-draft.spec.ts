@@ -482,6 +482,8 @@ test.describe.serial('FIN-01 bank account and draft (real API, real SQL)', () =>
     expect(manualPaymentId).toMatch(/^[0-9a-f-]{36}$/)
     if (manualPaymentEditBody === null) throw new Error('FIN01-02D edit body was not captured')
 
+    await page.goto(`/finans/odemeler/${manualPaymentId}`)
+    await expect(page.getByText('Recorded', { exact: true })).toBeVisible({ timeout: 30_000 })
     const terminalReplacement = { ...manualPaymentEditBody, expectedVersion: '4' }
     const terminalReplacementKey = randomUUID()
     const refused = await page.evaluate(async ({ body, companyId, key }) => {
