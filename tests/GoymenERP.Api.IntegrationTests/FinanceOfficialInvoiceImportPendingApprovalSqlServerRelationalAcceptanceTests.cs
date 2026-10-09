@@ -2,6 +2,7 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using GoymenERP.Api.Endpoints;
+using GoymenERP.Api.Security;
 using GoymenERP.Api.WorkRuntime;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
@@ -9,7 +10,11 @@ using GoymenERP.Modules.Audit.Application.Contracts;
 using GoymenERP.Modules.Finance.Contracts;
 using GoymenERP.Modules.Finance.Infrastructure;
 using GoymenERP.Modules.Finance.Infrastructure.Persistence;
+using GoymenERP.Modules.Identity.Domain.Assignments;
+using GoymenERP.Modules.Identity.Domain.Roles;
+using GoymenERP.Modules.Identity.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace GoymenERP.Api.IntegrationTests;
 
@@ -19,7 +24,6 @@ public sealed class FinanceOfficialInvoiceImportPendingApprovalSqlServerRelation
     private static readonly Guid Company = TestCompanyIds.CompanyA;
     private static readonly Guid Batch = Guid.Parse("93000000-0000-0000-0000-000000000003");
     private static readonly Guid SelfBatch = Guid.Parse("93000000-0000-0000-0000-000000000004");
-    private const string GroupAdminActor = "20000000-0000-0000-0000-000000000003";
     private const string Correlation = "d05-real-sql-http";
 
     [SqlServerFact]
@@ -30,6 +34,8 @@ public sealed class FinanceOfficialInvoiceImportPendingApprovalSqlServerRelation
         using var healthClient = factory.CreateClient();
         using var health = await healthClient.GetAsync("/health/live");
         health.EnsureSuccessStatusCode();
+        var authorizedActor = await GrantAsync(factory, TestUsers.GroupAdmin, Company);
+        await GrantAsync(factory, TestUsers.GroupAdmin, TestCompanyIds.CompanyB);
 
         var company = new CompanyContext();
         company.Set(Company);
@@ -43,8 +49,8 @@ public sealed class FinanceOfficialInvoiceImportPendingApprovalSqlServerRelation
         var uploaded = await maker.UploadAsync(Context("SENTETIK-maker"), new CommandMetadata("upload-key"),
             Request(Batch), default);
         Assert.Equal(CommandOutcome.Succeeded, uploaded.Outcome);
-        var selfMaker = Approval(db, company, GroupAdminActor, authority);
-        var selfUploaded = await selfMaker.UploadAsync(Context(GroupAdminActor),
+        var selfMaker = Approval(db, company, authorizedActor, authority);
+        var selfUploaded = await selfMaker.UploadAsync(Context(authorizedActor),
             new CommandMetadata("self-upload-key"), Request(SelfBatch), default);
         Assert.Equal(CommandOutcome.Succeeded, selfUploaded.Outcome);
 
@@ -145,6 +151,37 @@ public sealed class FinanceOfficialInvoiceImportPendingApprovalSqlServerRelation
         }
         client.DefaultRequestHeaders.Add("X-Correlation-Id", correlation);
         return client;
+    }
+
+    private static async Task<string> GrantAsync(
+        SqlServerRelationalApiFactory factory,
+        string developmentUser,
+        Guid company)
+    {
+        await using var scope = factory.Services.CreateAsyncScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<IdentityDbContext>();
+        var actor = (await dbContext.ExternalIdentities.SingleAsync(link =>
+            link.Issuer == BootstrapIdentityOptions.Issuer && link.Subject == developmentUser)).UserId;
+        var roleId = Guid.NewGuid();
+        var role = new RoleDefinition(
+            roleId,
+            $"D05-APPROVE-{roleId:N}",
+            "Synthetic D-05 approval inbox test role",
+            isSystem: true);
+        role.AddPermission(FinanceOfficialInvoiceImportPermissionNamesV1.Approve);
+        var assignment = new RoleAssignment(
+            Guid.NewGuid(),
+            actor,
+            roleId,
+            company,
+            DateTimeOffset.UtcNow.AddMinutes(-1),
+            validUntilUtc: null,
+            approvedByUserId: null);
+        assignment.AddScope(AccessScopeType.Company, company);
+        dbContext.Roles.Add(role);
+        dbContext.RoleAssignments.Add(assignment);
+        await dbContext.SaveChangesAsync();
+        return actor.ToString("D");
     }
 
     private static FinanceContext Context(string actor) => new(Company, actor, $"sql-{actor}", null);
