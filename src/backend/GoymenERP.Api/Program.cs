@@ -315,6 +315,9 @@ builder.Services.AddPurchasingModule(
     builder.Configuration,
     (services, options) => options.AddInterceptors(
         services.GetRequiredService<AuditSaveChangesInterceptor>()));
+// Purchasing list/detail may disclose only the current Cari presentation of the supplier already
+// bound to the authorized order. This adapter grants no generic Cari read capability or route.
+builder.Services.AddScoped<IPurchasingSupplierDisplaySourceV1, PurchasingSupplierDisplayHost>();
 // ACC-V0a: Accounting's periods, journals and posting queues (its verifier reads Settings' amount profile through
 // the Settings prerequisite provider the host already registers; no shell screen until ACC-V0b).
 builder.Services.AddAccountingModule(

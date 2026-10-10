@@ -61,6 +61,15 @@ public sealed record PurchaseOrderSummaryView(
     Guid Id, Guid CompanyId, string Status, string Version, Guid SupplierPartyId, Guid CompanyAccountId, Guid? SourceRequestId,
     DateOnly EffectiveOn, DateTimeOffset CreatedAtUtc, DateTimeOffset UpdatedAtUtc, int LineCount);
 
+/// <summary>
+/// Authorized list/detail projection. Unlike command responses, every returned order has an exact,
+/// record-bound current Cari supplier display and never falls back to the raw Party id alone.
+/// </summary>
+public sealed record PurchaseOrderReadSummaryViewV1(
+    Guid Id, Guid CompanyId, string Status, string Version, Guid SupplierPartyId, Guid CompanyAccountId, Guid? SourceRequestId,
+    DateOnly EffectiveOn, DateTimeOffset CreatedAtUtc, DateTimeOffset UpdatedAtUtc, int LineCount,
+    PurchasingSupplierDisplayV1 SupplierDisplay);
+
 /// <summary>The line's shares as exact text (§7.2, §13): ordered, moved into technical lines, committed (= ordered − technical), accepted, remaining (= committed − accepted, the expected supply).</summary>
 public sealed record PurchaseOrderLineView(
     Guid LineId, int LineNo, string Kind, Guid? ParentLineId, Guid? SourceRequestLineId,
@@ -76,9 +85,20 @@ public sealed record PurchaseOrderDetailView(PurchaseOrderSummaryView Order, IRe
     public IReadOnlyList<PurchaseOrderAcceptanceHistoryView> Acceptances { get; init; } = [];
 }
 
+public sealed record PurchaseOrderReadDetailViewV1(
+    PurchaseOrderReadSummaryViewV1 Order,
+    IReadOnlyList<PurchaseOrderLineView> Lines)
+{
+    public IReadOnlyList<PurchaseOrderAcceptanceHistoryView> Acceptances { get; init; } = [];
+}
+
 public sealed record PurchaseOrderResponse(PurchaseOrderDetailView Detail, bool IsReplay, string OriginalCorrelationId);
 
 public sealed record PurchaseOrderListResponse(IReadOnlyList<PurchaseOrderSummaryView> Items, string? NextCursor);
+
+public sealed record PurchaseOrderReadListResponseV1(
+    IReadOnlyList<PurchaseOrderReadSummaryViewV1> Items,
+    string? NextCursor);
 
 /// <param name="Status">An exact status name ("Draft" | "Approved") to narrow the list to, or null.</param>
 public sealed record PurchaseOrderListQuery(int PageSize = 50, string? Cursor = null, string? Status = null);
