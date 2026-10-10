@@ -25,7 +25,7 @@ import { expect, test, type Page, type Request, type Response } from '@playwrigh
 import { readEnvironment } from '../src/env.js'
 
 const env = readEnvironment()
-const { preparerActor, readerActor, companyId, deliveryDraftId, realPartyId } = env.seed
+const { preparerActor, readerActor, companyId, deliveryDraftId, scheduleDraftId, realPartyId } = env.seed
 const DEVELOPMENT_USER_HEADER = 'X-Development-User'
 const SALES_READ_CONTRACT_HEADER = 'x-erp-sales-read-contract'
 const SALES_READ_CONTRACT = 'record-party-display-v1'
@@ -47,7 +47,7 @@ interface PartyDisplay {
 interface DetailLine {
   readonly lineNo: number
   readonly requestedDeliveryDate: string | null
-  readonly priceDisclosure: 'Disclosed' | 'NotPriced' | 'Withheld'
+  readonly priceDisclosure: 'Visible' | 'Withheld'
 }
 
 async function signInAs(page: Page, actor: string): Promise<void> {
@@ -75,6 +75,8 @@ const isListRead = (response: Response) =>
   response.request().method() === 'GET' && new URL(response.url()).pathname === DRAFTS_PATH
 const isDetailRead = (response: Response) =>
   response.request().method() === 'GET' && new URL(response.url()).pathname === DETAIL_PATH
+const isDetailReadFor = (response: Response, draftId: string) =>
+  response.request().method() === 'GET' && new URL(response.url()).pathname === `${DRAFTS_PATH}/${draftId}`
 
 /** The UI read sent exactly the selector, and the answer acknowledges exactly it and binds the display to the record. */
 async function expectOptedIn(response: Response, kind: 'list' | 'detail'): Promise<PartyDisplay> {
@@ -183,7 +185,7 @@ test('S04-PD3 the preparer\'s Cari link follows the published Cari detail capabi
   }
 })
 
-test('S04-DS-02 Sipariş 360 keeps long Cari, due date and withheld price distinct at every accepted width', async ({ page }) => {
+test('S04-GOYDS-01 Sipariş 360 keeps long Cari, due date and withheld price distinct at every accepted width', async ({ page }) => {
   await signInAs(page, readerActor)
   await page.setViewportSize({ width: 1440, height: 900 })
   const detailAnswer = page.waitForResponse(isDetailRead)
@@ -195,10 +197,9 @@ test('S04-DS-02 Sipariş 360 keeps long Cari, due date and withheld price distin
   expect(detail.partyDisplay.legalName).toContain(LONG_LEGAL_NAME)
   expect(detail.lines.length).toBeGreaterThan(0)
   const line = detail.lines[0]
-  expect(line.requestedDeliveryDate, 'the real delivery draft carries its due date').not.toBeNull()
+  expect(line.requestedDeliveryDate, 'the untouched reference draft has no invented due date').toBeNull()
   expect(line.priceDisclosure, 'the read-only actor receives no commercial value').toBe('Withheld')
 
-  const expectedDate = line.requestedDeliveryDate!.split('-').reverse().join('.')
   const party = page.getByTestId('sales-draft-party')
   const facts = page.getByTestId(`sales-line-${line.lineNo}-facts`)
   const due = facts.locator('[data-layout-field="delivery-date"]')
@@ -206,9 +207,8 @@ test('S04-DS-02 Sipariş 360 keeps long Cari, due date and withheld price distin
   await expect(page.getByTestId('sales-order-summary')).toBeVisible()
   await expect(page.getByTestId('sales-order-status-facts')).toBeVisible()
   await expect(party).toHaveText(partyText(detail.partyDisplay))
-  await expect(due).toContainText(expectedDate)
+  await expect(due).toContainText('Belirtilmedi')
   await expect(price).toContainText('Fiyat bu yetkiyle görüntülenmez')
-  await expect(page.getByTestId('sales-delivery-progress')).toBeVisible()
 
   const expectStableLayout = async (width: number, height: number) => {
     await page.setViewportSize({ width, height })
@@ -243,4 +243,26 @@ test('S04-DS-02 Sipariş 360 keeps long Cari, due date and withheld price distin
     await page.keyboard.press('Escape')
     await expect(page.getByRole('dialog', { name: 'Menü' })).toHaveCount(0)
   }
+
+  // The earlier DEC-SAL-003 journey leaves this separate real order Approved with a recorded line due date.
+  // It is the source-backed record for due-date and delivery-progress layout; the untouched reference draft above is not.
+  await page.setViewportSize({ width: 1440, height: 900 })
+  const scheduledAnswer = page.waitForResponse((candidate) => isDetailReadFor(candidate, scheduleDraftId))
+  await page.goto(`/satis/siparisler/${scheduleDraftId}`)
+  const scheduledResponse = await scheduledAnswer
+  expect(scheduledResponse.status()).toBe(200)
+  expect(await scheduledResponse.headerValue(SALES_READ_CONTRACT_HEADER)).toBe(SALES_READ_CONTRACT)
+  const scheduled = await scheduledResponse.json() as {
+    readonly draft: { readonly approvalState: string }
+    readonly lines: readonly DetailLine[]
+  }
+  expect(scheduled.draft.approvalState).toBe('Approved')
+  expect(scheduled.lines).toHaveLength(1)
+  expect(scheduled.lines[0].requestedDeliveryDate).toBe('2026-10-20')
+  expect(scheduled.lines[0].priceDisclosure).toBe('Withheld')
+  const scheduledFacts = page.getByTestId(`sales-line-${scheduled.lines[0].lineNo}-facts`)
+  await expect(scheduledFacts.locator('[data-layout-field="delivery-date"]')).toContainText('20.10.2026')
+  await expect(scheduledFacts.locator('[data-layout-field="price"]')).toContainText('Fiyat bu yetkiyle görüntülenmez')
+  await expect(page.getByTestId('sales-delivery-progress')).toBeVisible()
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true)
 })
