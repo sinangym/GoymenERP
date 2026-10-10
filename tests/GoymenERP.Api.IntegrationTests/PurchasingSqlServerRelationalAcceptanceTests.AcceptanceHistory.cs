@@ -25,6 +25,7 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
         await GrantOrdersReadAsync(run, TestUsers.CompanyA, CompanyA);
         await GrantOrdersReadAsync(run, TestUsers.CompanyB, CompanyB);
         var owners = Owners.For(CompanyA);
+        await SeedCounterpartyOwnerAsync(run, owners);
         StoredPurchaseOrder approved;
         await using (var scope = run.Store(CompanyA))
         {
@@ -94,6 +95,23 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
         }
         await transaction.CommitAsync();
     }
+
+    private static Task SeedCounterpartyOwnerAsync(Run run, Owners owners) => run.ExecuteAsync(
+        """
+        INSERT INTO counterparty.Parties
+            (Id, Code, Kind, LegalName, TradeName, IsActive, Version, CreatedAtUtc, UpdatedAtUtc)
+        VALUES
+            (@party, N'CAR-909661', N'LegalEntity', N'SENTETIK Tarihsel Tedarikci', NULL, 1, 1, @now, @now);
+
+        INSERT INTO counterparty.CompanyPartyAccounts
+            (Id, CompanyId, PartyId, Roles, ExternalIntegrationCode, IsActive, Version, CreatedAtUtc, UpdatedAtUtc)
+        VALUES
+            (@account, @company, @party, 0, NULL, 1, 1, @now, @now);
+        """,
+        ("@party", owners.Party),
+        ("@account", owners.Account),
+        ("@company", owners.Company),
+        ("@now", AcceptanceHistoryTime));
 
     private static async Task GrantOrdersReadAsync(Run run, string developmentUser, Guid company)
     {

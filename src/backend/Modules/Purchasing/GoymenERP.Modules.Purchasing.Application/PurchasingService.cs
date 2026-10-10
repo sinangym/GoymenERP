@@ -43,7 +43,8 @@ public sealed partial class PurchasingService(
     PurchasingServiceBindings bindings,
     TimeProvider timeProvider,
     IPurchaseGoodsReceiptTransactionV1? goodsReceipts = null,
-    IPurchaseGoodsReceiptReadsV1? receiptReads = null) : IPurchasingService, IPurchaseGoodsReceiptServiceV1, IPurchaseGoodsReceiptQuantityComparisonServiceV1
+    IPurchaseGoodsReceiptReadsV1? receiptReads = null) : IPurchasingService, IPurchasingOrderRecordReadSourceV1,
+    IPurchaseGoodsReceiptServiceV1, IPurchaseGoodsReceiptQuantityComparisonServiceV1
 {
     private const int DefaultPageSize = 50;
     private const int MaximumPageSize = 100;

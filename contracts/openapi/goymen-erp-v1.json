@@ -54848,7 +54848,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PurchaseOrderListResponse"
+                  "$ref": "#/components/schemas/PurchaseOrderReadListResponseV1"
                 }
               }
             }
@@ -55052,7 +55052,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PurchaseOrderDetailView"
+                  "$ref": "#/components/schemas/PurchaseOrderReadDetailViewV1"
                 }
               }
             }
@@ -76181,7 +76181,31 @@
           }
         }
       },
-      "PurchaseOrderListResponse": {
+      "PurchaseOrderReadDetailViewV1": {
+        "required": [
+          "order",
+          "lines"
+        ],
+        "type": "object",
+        "properties": {
+          "order": {
+            "$ref": "#/components/schemas/PurchaseOrderReadSummaryViewV1"
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PurchaseOrderLineView"
+            }
+          },
+          "acceptances": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PurchaseOrderAcceptanceHistoryView"
+            }
+          }
+        }
+      },
+      "PurchaseOrderReadListResponseV1": {
         "required": [
           "items",
           "nextCursor"
@@ -76191,7 +76215,7 @@
           "items": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/PurchaseOrderSummaryView"
+              "$ref": "#/components/schemas/PurchaseOrderReadSummaryViewV1"
             }
           },
           "nextCursor": {
@@ -76199,6 +76223,77 @@
               "null",
               "string"
             ]
+          }
+        }
+      },
+      "PurchaseOrderReadSummaryViewV1": {
+        "required": [
+          "id",
+          "companyId",
+          "status",
+          "version",
+          "supplierPartyId",
+          "companyAccountId",
+          "sourceRequestId",
+          "effectiveOn",
+          "createdAtUtc",
+          "updatedAtUtc",
+          "lineCount",
+          "supplierDisplay"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "companyId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          },
+          "supplierPartyId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "companyAccountId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sourceRequestId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "effectiveOn": {
+            "type": "string",
+            "format": "date"
+          },
+          "createdAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "lineCount": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "supplierDisplay": {
+            "$ref": "#/components/schemas/PurchasingSupplierDisplayV1"
           }
         }
       },
@@ -76530,6 +76625,33 @@
               "string"
             ],
             "format": "int32"
+          }
+        }
+      },
+      "PurchasingSupplierDisplayV1": {
+        "required": [
+          "partyId",
+          "code",
+          "legalName",
+          "tradeName"
+        ],
+        "type": "object",
+        "properties": {
+          "partyId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "code": {
+            "type": "string"
+          },
+          "legalName": {
+            "type": "string"
+          },
+          "tradeName": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },

@@ -49,6 +49,9 @@ public static class CounterpartyModuleExtensions
             ICounterpartySalesRecordPartyDisplaySourceV1,
             CounterpartySalesRecordPartyDisplaySourceV1>();
         services.AddScoped<
+            ICounterpartyPurchasingRecordPartyDisplaySourceV1,
+            CounterpartyPurchasingRecordPartyDisplaySourceV1>();
+        services.AddScoped<
             ICounterpartyManufacturingPartyAccountSourceV1,
             CounterpartyManufacturingPartyAccountSourceV1>();
         services.AddScoped<ICounterpartyLinkCandidateReadService, CounterpartyLinkCandidateReadService>();
@@ -60,6 +63,9 @@ public static class CounterpartyModuleExtensions
         services.TryAddSingleton<
             ICounterpartySalesRecordPartyDisplaySqlObserver,
             NullCounterpartySalesRecordPartyDisplaySqlObserver>();
+        services.TryAddSingleton<
+            ICounterpartyPurchasingRecordPartyDisplaySqlObserver,
+            NullCounterpartyPurchasingRecordPartyDisplaySqlObserver>();
         services.TryAddSingleton<
             ICounterpartyLinkCandidateSqlObserver,
             NullCounterpartyLinkCandidateSqlObserver>();
