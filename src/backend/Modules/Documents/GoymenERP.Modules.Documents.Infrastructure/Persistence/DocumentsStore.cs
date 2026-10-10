@@ -319,7 +319,7 @@ public sealed class DocumentsStore(DocumentsDbContext dbContext, ICompanyContext
         };
     }
 
-    public async Task<IReadOnlyList<StoredDocument>> ListVersionsAsync(Guid documentId, int limit,
+    public async Task<IReadOnlyList<StoredDocument>> ListVersionsAsync(Guid documentId, int limit, int? beforeVersionNo,
         CancellationToken cancellationToken = default)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(limit, 1);
@@ -329,7 +329,8 @@ public sealed class DocumentsStore(DocumentsDbContext dbContext, ICompanyContext
             return [];
         }
 
-        var rows = await Versions().Where(row => row.Id == documentId)
+        var rows = await Versions().Where(row => row.Id == documentId
+                && (!beforeVersionNo.HasValue || row.VersionNo < beforeVersionNo.Value))
             .OrderByDescending(row => row.VersionNo).Take(limit).ToListAsync(cancellationToken);
         return [.. rows.Select(Map)];
     }

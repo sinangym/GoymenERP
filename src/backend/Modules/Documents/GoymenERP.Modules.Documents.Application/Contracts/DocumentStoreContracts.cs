@@ -30,7 +30,8 @@ public interface IDocumentStore
 
     Task<StoredDocument?> FindDocumentVersionAsync(Guid documentId, int versionNo, CancellationToken cancellationToken = default);
 
-    Task<IReadOnlyList<StoredDocument>> ListVersionsAsync(Guid documentId, int limit, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<StoredDocument>> ListVersionsAsync(Guid documentId, int limit, int? beforeVersionNo,
+        CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<StoredDocument>> ListByOwnerAsync(string ownerKind, Guid ownerId, int limit, CancellationToken cancellationToken = default);
 

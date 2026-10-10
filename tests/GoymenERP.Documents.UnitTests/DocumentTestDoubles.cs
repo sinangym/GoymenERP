@@ -124,9 +124,12 @@ internal sealed class FixedScanner(DocumentScanVerdictV1 verdict) : IDocumentCon
 
     public int Scans { get; private set; }
 
+    public Action? AfterScan { get; set; }
+
     public Task<DocumentScanVerdictV1> ScanAsync(ReadOnlyMemory<byte> content, DocumentFileKind kind, CancellationToken cancellationToken = default)
     {
         Scans++;
+        AfterScan?.Invoke();
         return Task.FromResult(verdict);
     }
 }
@@ -231,9 +234,10 @@ internal sealed class MemoryDocumentStore(ICompanyContext companyContext, Harnes
         Task.FromResult(world.Versions.SingleOrDefault(document => document.CompanyId == companyContext.CompanyId && document.Id == documentId
             && document.VersionNo == versionNo));
 
-    public Task<IReadOnlyList<StoredDocument>> ListVersionsAsync(Guid documentId, int limit,
+    public Task<IReadOnlyList<StoredDocument>> ListVersionsAsync(Guid documentId, int limit, int? beforeVersionNo,
         CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<StoredDocument>>(
             [.. world.Versions.Where(document => document.CompanyId == companyContext.CompanyId && document.Id == documentId)
+                .Where(document => !beforeVersionNo.HasValue || document.VersionNo < beforeVersionNo.Value)
                 .OrderByDescending(document => document.VersionNo).Take(limit)]);
 
     public Task<IReadOnlyList<StoredDocument>> ListByOwnerAsync(string ownerKind, Guid ownerId, int limit, CancellationToken cancellationToken = default)

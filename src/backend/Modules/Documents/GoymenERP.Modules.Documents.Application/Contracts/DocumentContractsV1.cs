@@ -81,8 +81,8 @@ public sealed record DocumentUploadResponse(DocumentView Document, IReadOnlyList
 /// <summary>An append answer; a replay returns the exact version created by the first attempt.</summary>
 public sealed record DocumentVersionWriteResponse(DocumentView Document, bool IsReplay, string OriginalCorrelationId);
 
-/// <summary>Visible immutable history, newest version first.</summary>
-public sealed record DocumentVersionHistoryResponse(Guid DocumentId, IReadOnlyList<DocumentView> Versions);
+/// <summary>A deterministic immutable-history page, newest version first.</summary>
+public sealed record DocumentVersionHistoryResponse(Guid DocumentId, IReadOnlyList<DocumentView> Versions, string? NextCursor);
 
 /// <summary>The upload bounds the client may pre-check against; the server re-checks every upload regardless.</summary>
 public sealed record DocumentUploadLimitsView(long MaximumBytes, IReadOnlyList<string> Extensions, IReadOnlyList<string> ContentTypes);
@@ -126,7 +126,8 @@ public interface IDocumentService
     Task<DocumentVersionWriteResponse> AppendVersionAsync(Guid documentId, AppendDocumentVersionRequest request,
         DocumentCommandMetadata metadata, CancellationToken cancellationToken = default);
 
-    Task<DocumentVersionHistoryResponse> ListVersionsAsync(Guid documentId, CancellationToken cancellationToken = default);
+    Task<DocumentVersionHistoryResponse> ListVersionsAsync(Guid documentId, int? pageSize, string? cursor,
+        CancellationToken cancellationToken = default);
 
     Task<DocumentContentV1> GetVersionContentAsync(Guid documentId, int versionNo, CancellationToken cancellationToken = default);
 }

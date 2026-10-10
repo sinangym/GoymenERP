@@ -40,7 +40,8 @@ public sealed class DocumentService(
     TimeProvider timeProvider) : IDocumentService
 {
     private const int ListLimit = 200;
-    private const int VersionListLimit = 200;
+    private const int DefaultVersionPageSize = 50;
+    private const int MaximumVersionPageSize = 100;
     private const int DuplicateLimit = 10;
     private readonly IReadOnlyDictionary<string, IDocumentOwnerLinkPortV1> owners = IndexOwners(ownerPorts);
 
@@ -100,6 +101,9 @@ public sealed class DocumentService(
         var scanState = verdict == DocumentScanVerdictV1.Clean ? DocumentScanState.Clean : DocumentScanState.NotScanned;
         var objectKey = DocumentObjectKeys.For(scope.CompanyId, sha256);
         var objectStore = objects ?? throw new DocumentServiceException(503, "service_unavailable");
+        // The scanner is an awaited external boundary. Re-measure the captured actor/company/permission and the
+        // requested owner immediately before the first external write; a drift leaves no object or metadata effect.
+        await RequireOwnerStillReadableAsync(scope, Permission, owner, cancellationToken);
         try
         {
             // The object first, then the metadata: a failed save leaves at most an unreferenced, immutable,
@@ -206,6 +210,9 @@ public sealed class DocumentService(
         var scanState = verdict == DocumentScanVerdictV1.Clean ? DocumentScanState.Clean : DocumentScanState.NotScanned;
         var objectKey = DocumentObjectKeys.For(scope.CompanyId, sha256);
         var objectStore = objects ?? throw new DocumentServiceException(503, "service_unavailable");
+        // The scanner is an awaited external boundary. Re-measure the captured actor/company/permission and the
+        // document owner immediately before the first external write; a drift leaves no object or metadata effect.
+        await RequireOwnerStillReadableAsync(scope, Permission, owner, cancellationToken);
         try
         {
             await objectStore.PutAsync(objectKey, content, sha256, cancellationToken);
@@ -230,17 +237,39 @@ public sealed class DocumentService(
         }
     }
 
-    public async Task<DocumentVersionHistoryResponse> ListVersionsAsync(Guid documentId, CancellationToken cancellationToken = default)
+    public async Task<DocumentVersionHistoryResponse> ListVersionsAsync(Guid documentId, int? pageSize, string? cursor,
+        CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
         const string Permission = DocumentsPermissionManifestV1.FilesRead;
         var scope = await RequireAsync(Permission, cancellationToken);
+        var size = pageSize ?? DefaultVersionPageSize;
+        if (size is < 1 or > MaximumVersionPageSize)
+        {
+            throw new DocumentServiceException(400, DocumentProblemCodesV1.ValidationFailed,
+                [new("pageSize", DocumentProblemCodesV1.ValidationFailed)]);
+        }
+
+        int? beforeVersionNo = null;
+        if (cursor is not null)
+        {
+            if (string.IsNullOrWhiteSpace(cursor) || !string.Equals(cursor, cursor.Trim(), StringComparison.Ordinal)
+                || !int.TryParse(cursor, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture,
+                    out var parsedCursor) || parsedCursor < 1)
+            {
+                throw new DocumentServiceException(400, DocumentProblemCodesV1.ValidationFailed,
+                    [new("cursor", DocumentProblemCodesV1.ValidationFailed)]);
+            }
+
+            beforeVersionNo = parsedCursor;
+        }
+
         var current = await FindReadableDocumentAsync(documentId, scope, Permission, cancellationToken);
         IReadOnlyList<StoredDocument> versions;
         try
         {
-            versions = await GuardedAsync(scope, Permission, () => store.ListVersionsAsync(documentId, VersionListLimit, cancellationToken),
-                cancellationToken);
+            versions = await GuardedAsync(scope, Permission,
+                () => store.ListVersionsAsync(documentId, checked(size + 1), beforeVersionNo, cancellationToken), cancellationToken);
         }
         catch (DocumentStoreException exception)
         {
@@ -249,7 +278,12 @@ public sealed class DocumentService(
 
         await RequireOwnerStillReadableAsync(scope, Permission,
             DocumentOwnerLink.TryCreate(current.OwnerKind, current.OwnerId)!, cancellationToken);
-        return new DocumentVersionHistoryResponse(documentId, [.. versions.Select(version => View(version, scope.CompanyId))]);
+        var hasMore = versions.Count > size;
+        var page = versions.Take(size).ToArray();
+        var nextCursor = hasMore
+            ? page[^1].VersionNo.ToString(System.Globalization.CultureInfo.InvariantCulture)
+            : null;
+        return new DocumentVersionHistoryResponse(documentId, [.. page.Select(version => View(version, scope.CompanyId))], nextCursor);
     }
 
     public async Task<DocumentContentV1> GetVersionContentAsync(Guid documentId, int versionNo,

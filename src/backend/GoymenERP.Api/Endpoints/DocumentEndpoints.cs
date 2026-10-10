@@ -39,6 +39,7 @@ public static class DocumentEndpoints
     private static readonly HashSet<string> FormFieldNames = new([DocumentsApiV1.OwnerKindField, DocumentsApiV1.OwnerIdField],
         StringComparer.Ordinal);
     private static readonly HashSet<string> VersionFormFieldNames = new([DocumentsApiV1.ExpectedCurrentVersionField], StringComparer.Ordinal);
+    private static readonly HashSet<string> VersionListQueryNames = new(["pageSize", "cursor"], StringComparer.Ordinal);
     private static readonly JsonSerializerOptions Json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
 
     public static IEndpointRouteBuilder MapDocumentEndpoints(this IEndpointRouteBuilder endpoints)
@@ -144,18 +145,19 @@ public static class DocumentEndpoints
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();
 
-        group.MapGet("/{id:guid}/versions", async (Guid id, HttpContext httpContext, [FromServices] IDocumentService service,
-            ICorrelationContext correlation, CancellationToken cancellationToken) =>
+        group.MapGet("/{id:guid}/versions", async (Guid id, [FromQuery] int? pageSize, [FromQuery] string? cursor,
+            HttpContext httpContext, [FromServices] IDocumentService service, ICorrelationContext correlation,
+            CancellationToken cancellationToken) =>
         {
             SetPrivateNoStore(httpContext.Response);
-            if (httpContext.Request.Query.Count > 0)
+            if (!httpContext.Request.Query.All(pair => VersionListQueryNames.Contains(pair.Key) && pair.Value.Count == 1))
             {
                 return Problem(StatusCodes.Status400BadRequest, DocumentProblemCodesV1.ValidationFailed, correlation);
             }
 
             try
             {
-                return Results.Json(await service.ListVersionsAsync(id, cancellationToken), Json);
+                return Results.Json(await service.ListVersionsAsync(id, pageSize, cursor, cancellationToken), Json);
             }
             catch (DocumentServiceException exception)
             {

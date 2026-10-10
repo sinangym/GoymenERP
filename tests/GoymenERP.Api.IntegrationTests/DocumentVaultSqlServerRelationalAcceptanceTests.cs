@@ -671,10 +671,21 @@ public sealed class DocumentVaultSqlServerRelationalAcceptanceTests
         Assert.Equal(2, replay.Document.VersionNo);
         Assert.Equal(appended.Document.Sha256, replay.Document.Sha256);
 
-        using var historyResponse = await writer.GetAsync($"{DocumentsApiV1.DocumentsPath}/{created.Document.Id:D}/versions");
-        Assert.Equal(HttpStatusCode.OK, historyResponse.StatusCode);
-        var history = (await historyResponse.Content.ReadFromJsonAsync<DocumentVersionHistoryResponse>())!;
-        Assert.Equal([2, 1], history.Versions.Select(version => version.VersionNo));
+        var traversed = new List<int>();
+        string? cursor = null;
+        do
+        {
+            var path = $"{DocumentsApiV1.DocumentsPath}/{created.Document.Id:D}/versions?pageSize=1"
+                + (cursor is null ? string.Empty : $"&cursor={cursor}");
+            using var historyResponse = await writer.GetAsync(path);
+            Assert.Equal(HttpStatusCode.OK, historyResponse.StatusCode);
+            var page = (await historyResponse.Content.ReadFromJsonAsync<DocumentVersionHistoryResponse>())!;
+            traversed.AddRange(page.Versions.Select(version => version.VersionNo));
+            cursor = page.NextCursor;
+        }
+        while (cursor is not null);
+        Assert.Equal([2, 1], traversed);
+        Assert.Equal(traversed.Count, traversed.Distinct().Count());
 
         using var v1 = await writer.GetAsync($"{DocumentsApiV1.DocumentsPath}/{created.Document.Id:D}/versions/1/content");
         using var v2 = await writer.GetAsync($"{DocumentsApiV1.DocumentsPath}/{created.Document.Id:D}/versions/2/content");

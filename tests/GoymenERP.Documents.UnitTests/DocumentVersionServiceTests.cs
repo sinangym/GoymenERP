@@ -5,6 +5,8 @@ namespace GoymenERP.Documents.UnitTests;
 
 public sealed class DocumentVersionServiceTests
 {
+    private const string Read = DocumentsPermissionManifestV1.FilesRead;
+    private const string Upload = DocumentsPermissionManifestV1.FilesUpload;
     private static readonly byte[] V1 = [0x25, 0x50, 0x44, 0x46, 0x2D, 0x31];
     private static readonly byte[] V2 = [0x25, 0x50, 0x44, 0x46, 0x2D, 0x32];
     private static readonly byte[] V3 = [0x25, 0x50, 0x44, 0x46, 0x2D, 0x33];
@@ -22,7 +24,7 @@ public sealed class DocumentVersionServiceTests
 
         Assert.False(appended.IsReplay);
         Assert.Equal(2, appended.Document.VersionNo);
-        var history = await service.Service.ListVersionsAsync(original.Id);
+        var history = await service.Service.ListVersionsAsync(original.Id, null, null);
         Assert.Equal([2, 1], history.Versions.Select(version => version.VersionNo));
         Assert.Equal(["Sözleşme-v2.pdf", "Sözleşme-v1.pdf"], history.Versions.Select(version => version.FileName));
         Assert.Equal(V1, (await service.Service.GetVersionContentAsync(original.Id, 1)).Content);
@@ -54,7 +56,7 @@ public sealed class DocumentVersionServiceTests
         Assert.True(answer.IsReplay);
         Assert.Equal(v2.Document.Sha256, answer.Document.Sha256);
         Assert.Equal(2, answer.Document.VersionNo);
-        Assert.Equal(3, (await replay.Service.ListVersionsAsync(document.Id)).Versions.Count);
+        Assert.Equal(3, (await replay.Service.ListVersionsAsync(document.Id, null, null)).Versions.Count);
         Assert.Equal(3, world.Attempts.Count);
     }
 
@@ -132,6 +134,68 @@ public sealed class DocumentVersionServiceTests
     }
 
     [Fact]
+    public async Task History_keyset_pages_traverse_every_version_in_order_without_duplicates()
+    {
+        var world = World();
+        var service = new Harness(CompanyA, new FixedScanner(DocumentScanVerdictV1.Clean), world: world).Grant(Upload, Read);
+        var document = (await service.Service.UploadAsync(Harness.Upload(Party, V1), service.Metadata("page-v1"))).Document;
+        for (var expected = 1; expected < 5; expected++)
+        {
+            await service.Service.AppendVersionAsync(document.Id,
+                new AppendDocumentVersionRequest(expected, $"v{expected + 1}.pdf", "application/pdf",
+                    [0x25, 0x50, 0x44, 0x46, 0x2D, checked((byte)(0x31 + expected))]),
+                service.Metadata($"page-v{expected + 1}"));
+        }
+
+        var visited = new List<int>();
+        string? cursor = null;
+        do
+        {
+            var page = await service.Service.ListVersionsAsync(document.Id, 2, cursor);
+            visited.AddRange(page.Versions.Select(version => version.VersionNo));
+            cursor = page.NextCursor;
+        }
+        while (cursor is not null);
+
+        Assert.Equal([5, 4, 3, 2, 1], visited);
+        Assert.Equal(visited.Count, visited.Distinct().Count());
+    }
+
+    [Theory]
+    [InlineData("permission", 403)]
+    [InlineData("actor", 403)]
+    [InlineData("company", 403)]
+    [InlineData("owner", 404)]
+    public async Task Scanner_boundary_drift_is_refused_before_object_or_metadata_write(string drift, int status)
+    {
+        var world = World();
+        var scanner = new FixedScanner(DocumentScanVerdictV1.Clean);
+        var service = new Harness(CompanyA, scanner, world: world).Grant(Upload);
+        var document = (await service.Service.UploadAsync(Harness.Upload(Party, V1), service.Metadata("scan-create"))).Document;
+        var puts = world.Objects.Puts;
+        var versions = world.Versions.Count;
+        var attempts = world.Attempts.Count;
+        scanner.AfterScan = () =>
+        {
+            switch (drift)
+            {
+                case "permission": service.Authority.Grants.Clear(); break;
+                case "actor": service.User.CurrentUserId = "SENTETIK-other-actor"; break;
+                case "company": service.User.MutableAllowedCompanyIds.Remove(CompanyA); break;
+                case "owner": world.OwnerOutcomes[(CompanyA, Party)] = DocumentOwnerAccessV1.Denied; break;
+            }
+        };
+
+        var refusal = await Assert.ThrowsAsync<DocumentServiceException>(() => service.Service.AppendVersionAsync(document.Id,
+            new AppendDocumentVersionRequest(1, "scan-v2.pdf", "application/pdf", V2), service.Metadata($"scan-{drift}")));
+
+        Assert.Equal(status, refusal.Status);
+        Assert.Equal(puts, world.Objects.Puts);
+        Assert.Equal(versions, world.Versions.Count);
+        Assert.Equal(attempts, world.Attempts.Count);
+    }
+
+    [Fact]
     public async Task Foreign_company_and_unreadable_owner_are_not_disclosed()
     {
         var world = World();
@@ -141,7 +205,7 @@ public sealed class DocumentVersionServiceTests
         var foreign = new Harness(CompanyB, new FixedScanner(DocumentScanVerdictV1.Clean), world: world).Grant(Upload, Read);
         Assert.Equal(404, (await Refused(foreign.Service.AppendVersionAsync(document.Id,
             new AppendDocumentVersionRequest(1, "foreign.pdf", "application/pdf", V2), foreign.Metadata("foreign")))).Status);
-        Assert.Equal(404, (await Refused(foreign.Service.ListVersionsAsync(document.Id))).Status);
+        Assert.Equal(404, (await Refused(foreign.Service.ListVersionsAsync(document.Id, null, null))).Status);
 
         world.OwnerOutcomes[(CompanyA, Party)] = DocumentOwnerAccessV1.Denied;
         var denied = new Harness(CompanyA, new FixedScanner(DocumentScanVerdictV1.Clean), world: world).Grant(Upload, Read);
