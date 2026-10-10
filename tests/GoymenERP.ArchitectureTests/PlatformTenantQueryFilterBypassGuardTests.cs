@@ -100,8 +100,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // SETTINGS–MFG-POLICY-01 adds one in-process Settings module registration and its Development/Testing
     // initializer. It adds no endpoint, hosted service or build-time network surface.
     // PUR-P05 adds one in-process record-bound Cari display host; no network or hosted-service surface.
+    // D05 Inventory approvals add two scoped in-process owner readers and two Work adapters; no permission,
+    // network, hosted-service or production-activation surface changes.
     private const string ReviewedOpenApiStartupFingerprint =
-        "6ff38ce8b5d618074c169dfd6ba12fb19ce8bd2c8d9215d6b4237ab508bb977f";
+        "9e0a8f80ebbcfbebf9309d28c39762cedc8223911ad6b644faefdc33c667f7bd";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedProductManufacturingTechnicalRegistrationPath =
@@ -221,8 +223,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // every listed case remains mandatory and zero-skip.
             // Inventory location display and ST-01 Product-authority capability: +2 reviewed Inventory SQL facts.
             // ST-01 owner/custodian read: +1 exact-party, read-without-side-effect SQL fact.
+            // D05 Inventory approvals: +3 pending stock-count/scrap read and fail-closed SQL facts.
             ["tools/relational_inventory/inventory.txt"] =
-                "33374528de2fb0123a1deec1307ea74a0590df904ab54652f8dee14d7f7ca165",
+                "42fa46d35a9008adbabc5ebdd4a65211180292d03f88c4506732b46bac2d5cfb",
 
             // logistics
             // AT-053: +4 weighbridge SQL facts (81c1ff0b… -> 264898d7…).
