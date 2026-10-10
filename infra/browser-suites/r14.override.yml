@@ -15,6 +15,12 @@
 # undecided): the disposable r14-scrapper is the ONLY holder of inventory.stock-scrap.record and the disposable
 # r14-scrap-approver the ONLY holder of inventory.stock-scrap.approve, each beside the label/balance reads. No real
 # user and no seeded role receives either name. r14 now has 8 suite actors (MAX_SUITE_ACTORS).
+# STOCK-OWNER-DISPLAY-3 (#664 consumer): no actor is added. The disposable recorder additionally holds
+# counterparty.parties.read — the name the real opening command already requires for a Cari-owned count, and the
+# one behind the Cari card link — and the disposable arranger additionally holds counterparty.parties.create so the
+# gated seed can open ONE synthetic Cari owner through the public Cari API. The stock counter keeps neither: it is
+# the restricted reader that must see the same owner identity as plain text. No real user, seeded role or
+# production grant receives either name.
 services:
   api:
     environment:
@@ -100,6 +106,8 @@ services:
       # STOCK-LOCATION-2 only: the disposable recorder already reads stock positions and now proves that the
       # same row's owner location card is openable. The counter remains the no-link actor.
       IdentitySeed__Roles__5__Permissions__7: organization.locations.read
+      # STOCK-OWNER-DISPLAY-3 only: the Cari owner-account read of a Cari-owned opening count and the Cari card link.
+      IdentitySeed__Roles__5__Permissions__8: counterparty.parties.read
       IdentitySeed__Roles__6__Id: b3000000-0000-4000-8000-000000000702
       IdentitySeed__Roles__6__Code: BROWSER_R14_DENIED
       IdentitySeed__Roles__6__Name: SENTETIK browser-suite:r14 Inventory denied actor
@@ -110,6 +118,8 @@ services:
       IdentitySeed__Roles__7__Name: SENTETIK browser-suite:r14 Organization arranger
       IdentitySeed__Roles__7__IsSystem: "false"
       IdentitySeed__Roles__7__Permissions__0: organization.locations.read
+      # STOCK-OWNER-DISPLAY-3 only: the seed's single public Cari create. It grants no Cari read and no stock read.
+      IdentitySeed__Roles__7__Permissions__1: counterparty.parties.create
       IdentitySeed__Roles__8__Id: b3000000-0000-4000-8000-000000000704
       IdentitySeed__Roles__8__Code: BROWSER_R14_TRANSFORMER
       IdentitySeed__Roles__8__Name: SENTETIK browser-suite:r14 Inventory label transformer

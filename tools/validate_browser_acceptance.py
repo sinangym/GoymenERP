@@ -405,7 +405,10 @@ SUITE_IDENTITY_PERMISSIONS = {
             "inventory.label-classification.write",
             "organization.locations.read", "inventory.label-transformation.record",
             "inventory.stock-count.record", "inventory.stock-count.approve",
-            "inventory.stock-scrap.record", "inventory.stock-scrap.approve"),
+            "inventory.stock-scrap.record", "inventory.stock-scrap.approve",
+            # STOCK-OWNER-DISPLAY-3: read held only by the disposable r14-recorder (Cari-owned opening count and
+            # the Cari card link), create only by the disposable r14-arranger (the seed's one public Cari create).
+            "counterparty.parties.read", "counterparty.parties.create"),
 }
 
 
@@ -678,6 +681,7 @@ def validate_suite_identity(suite: str, extra: dict, actor_ids: list[str]) -> No
             "documents.files.upload",
             "inventory.label-classification.write",
             "organization.locations.read",
+            "counterparty.parties.read",
         ), "r14-recorder requires its exact isolated permissions")
         for actor, user_id in actor_users.items():
             if actor in ("r14-recorder", "r14-arranger"):
@@ -686,6 +690,31 @@ def validate_suite_identity(suite: str, extra: dict, actor_ids: list[str]) -> No
                            if row["UserId"] == user_id]
             require(all("organization.locations.read" not in role.values() for role in actor_roles),
                     "only r14-recorder and the dedicated arranger may hold the location read")
+        # STOCK-OWNER-DISPLAY-3: the Cari names stay on exactly one disposable actor each. The arranger's role is
+        # pinned whole, so the create name cannot arrive beside a Cari read or any stock read.
+        arranger_user = actor_users.get("r14-arranger")
+        arranger_assignments = [row for row in grouped["Assignments"].values()
+                                if row["UserId"] == arranger_user]
+        require(arranger_user is not None and len(arranger_assignments) == 1,
+                "r14-arranger requires exactly one isolated assignment")
+        arranger_role = roles[arranger_assignments[0]["RoleId"]]
+        arranger_permissions = tuple(
+            arranger_role[f"Permissions__{index}"]
+            for index in range(len([key for key in arranger_role if key.startswith("Permissions__")]))
+        )
+        require(arranger_role["Code"] == "BROWSER_R14_ARRANGER" and arranger_permissions == (
+            "organization.locations.read",
+            "counterparty.parties.create",
+        ), "r14-arranger requires its exact isolated permissions")
+        for actor, user_id in actor_users.items():
+            actor_roles = [roles[row["RoleId"]] for row in grouped["Assignments"].values()
+                           if row["UserId"] == user_id]
+            if actor != "r14-recorder":
+                require(all("counterparty.parties.read" not in role.values() for role in actor_roles),
+                        "only r14-recorder may hold the Cari read")
+            if actor != "r14-arranger":
+                require(all("counterparty.parties.create" not in role.values() for role in actor_roles),
+                        "only the dedicated r14-arranger may hold the Cari create")
     if suite == "u02":
         company_id = "10000000-0000-0000-0000-000000000001"
         issuer_ids = ("b2000000-0000-4000-8000-000000000201",
@@ -826,7 +855,10 @@ SUITE_FIXTURE_OUTPUTS: dict[str, frozenset[str]] = {
                       "counterActor", "countApproverActor", "scrapperActor", "scrapApproverActor", "companyId",
                       "otherCompanyId",
                       "locationId", "productId", "productVersion", "productUnitId",
-                      "productUnitProfileId", "productUnitProfileVersion", "productCode", "productName"}),
+                      "productUnitProfileId", "productUnitProfileVersion", "productCode", "productName",
+                      # STOCK-OWNER-DISPLAY-3: the one synthetic Cari owner the seed opens through the public
+                      # Cari API, and its GDC account (the opening command's owner-account reference). GUIDs only.
+                      "ownerPartyId", "ownerCompanyAccountId"}),
 }
 _OUTPUT_KEY = re.compile(r"^[a-z][A-Za-z0-9]{0,39}$")
 # Any non-nil lowercase GUID: seeded reference ids (companies, work centres) need not be RFC 4122.
@@ -930,6 +962,10 @@ def seed_export(suite: str, seed: object) -> str:
             else:
                 require(acc01_exact_text[key] == value,
                         f"acc01 seed output {key} must match its exact closed-contract value")
+            continue
+        if suite == "r14" and key in {"ownerPartyId", "ownerCompanyAccountId"}:
+            # STOCK-OWNER-DISPLAY-3: ids only — never an actor id, a party code or a name.
+            require(is_guid, f"r14 seed output {key} must be the GUID of the stock owner")
             continue
         if suite == "r14" and key in {"productCode", "productName"}:
             r14_product_scalars = {

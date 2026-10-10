@@ -106,9 +106,20 @@ function row(overrides: Record<string, unknown> = {}) {
     ...overrides,
   }
   // STOCK-LOCATION-2: the 2.0 row's Organization display, bound to the row's own location unless a case sets one.
-  return 'locationDisplay' in overrides
+  const located = 'locationDisplay' in overrides
     ? base
     : { ...base, locationDisplay: { locationId: base.locationId, locationCode: 'HOL-1', locationName: 'Hol 1 · Boy kesme' } }
+  // STOCK-OWNER-DISPLAY-3: the 3.0 row's owner display — null for a Company owner, the bound Cari identity otherwise,
+  // unless a case sets one.
+  return 'ownerDisplay' in overrides
+    ? located
+    : { ...located, ownerDisplay: base.ownerKind === 'Counterparty' ? ownerDisplay({ partyId: base.ownerId }) : null }
+}
+
+const OWNER_LEGAL = 'KARADENİZ ÇELİK DÖKÜM MAKİNA İMALAT SANAYİ VE DIŞ TİCARET ANONİM ŞİRKETİ GEBZE ORGANİZE SANAYİ BÖLGESİ ŞUBESİ'
+const OWNER_IDENTITY = `CAR-000042 — ${OWNER_LEGAL}`
+function ownerDisplay(overrides: Record<string, unknown> = {}) {
+  return { partyId: COUNTERPARTY, code: 'CAR-000042', legalName: OWNER_LEGAL, tradeName: 'Karadeniz Döküm', ...overrides }
 }
 
 function ready(items: readonly unknown[], extra: { searchWindowFull?: boolean; nextCursor?: string | null } = {}) {
@@ -285,7 +296,7 @@ describe('ST-01 on the #597 opt-in contract', () => {
     await screen.findByRole('link', { name: 'ROLL-1' })
     expect(['ROLL-1', 'ROLL-2', 'ROLL-3', 'ROLL-4', 'ROLL-5'].map((code) => cellTexts(bodyRow(code))[4])).toEqual([
       'Şirket malı',
-      'Cari malıMalı tutan: Şirket',
+      `Cari malı${OWNER_IDENTITY}Karadeniz DökümMalı tutan: Şirket`,
       '—',
       'Şirket malıMalı tutan: Cari',
       'Şirket malıMalı tutan: —',
@@ -374,9 +385,9 @@ describe('ST-01 filters — only what #597 supports, from the URL', () => {
     expect(address()).toBe(`/stok/pozisyonlar?urun=${PRODUCT}&lokasyon=${LOCATION}&sahipTuru=cari&sahip=${COUNTERPARTY}`)
 
     const chips = await screen.findByRole('list', { name: 'Etkin filtreler' })
-    // An exact owner filter names one owner: the contract has no counterparty name, so it says "seçili cari".
+    // An exact owner filter names one owner: the 3.0 row of that Cari on this list publishes its identity.
     expect(within(chips).getAllByRole('listitem').map((item) => item.firstChild?.textContent)).toEqual([
-      'Ürün: P-1 Galvaniz bant', 'Lokasyon: HOL-1 Hol 1 · Boy kesme', 'Mal sahibi: seçili cari',
+      'Ürün: P-1 Galvaniz bant', 'Lokasyon: HOL-1 Hol 1 · Boy kesme', `Mal sahibi: ${OWNER_IDENTITY}`,
     ])
     // A filter already applied is not offered again on the row.
     expect(screen.queryByRole('button', { name: 'ROLL-1: bu ürüne göre filtrele' })).toBeNull()
@@ -847,7 +858,7 @@ describe('ST-01 inside the real shell: capability route, auth boundary, no legac
   /** No read of this screen may go out without the #597 opt-in, and the legacy reader is never called. */
   function expectNoLegacyRead() {
     expect(api.legacy).not.toHaveBeenCalled()
-    expect(positionCalls.every((call) => call.optIn === '2.0')).toBe(true)
+    expect(positionCalls.every((call) => call.optIn === '3.0')).toBe(true)
   }
 
   beforeEach(() => {
@@ -995,5 +1006,110 @@ describe('ST-01 location display (#607 2.0)', () => {
     const tr = (await screen.findByRole('link', { name: 'ROLL-1' })).closest('tr')!
     expect(cellTexts(tr)[3]).not.toContain('—')
     expect(main().textContent).not.toContain(LOCATION)
+  })
+})
+
+/** STOCK-OWNER-DISPLAY-3: the 3.0 read's Cari owner identity on the real ST-01 table and phone card. */
+describe('ST-01 owner display (#664 3.0)', () => {
+  const cariRow = (overrides: Record<string, unknown> = {}) =>
+    row({ labelId: LABEL_2, labelCode: 'ROLL-2', ownerKind: 'Counterparty', ownerId: COUNTERPARTY, ...overrides })
+  const ownerCellOf = (code: string) => cellTexts(bodyRow(code))[4]
+  const identityOf = (labelId: string) => screen.getByTestId(`stock-owner-${labelId}`)
+
+  it('keeps a company\'s own stock as "Şirket malı", with no identity, link or id', async () => {
+    shell.capabilities = [CAPABILITY.cariPartiesDetail]
+    stubViewport(false)
+    api.page.mockResolvedValue(ready([row(), cariRow()]))
+    mount()
+    await screen.findByRole('link', { name: 'ROLL-1' })
+    expect(ownerCellOf('ROLL-1')).toBe('Şirket malı')
+    expect(screen.queryByTestId(`stock-owner-${LABEL}`)).toBeNull()
+    expect(within(bodyRow('ROLL-1')).queryByRole('link', { name: /CAR-/ })).toBeNull()
+  })
+
+  it('shows a Cari owner\'s exact code, whole long legal name and distinct trade name, linked with cari.parties.detail', async () => {
+    shell.capabilities = [CAPABILITY.cariPartiesDetail]
+    stubViewport(false)
+    api.page.mockResolvedValue(ready([row(), cariRow()]))
+    mount()
+    await screen.findByRole('link', { name: 'ROLL-2' })
+    expect(ownerCellOf('ROLL-2')).toBe(`Cari malı${OWNER_IDENTITY}Karadeniz DökümMalı tutan: Şirket`)
+    const identity = identityOf(LABEL_2)
+    expect(identity.textContent).toBe(OWNER_IDENTITY)
+    expect(identity.getAttribute('title')).toBeNull()
+    const link = within(identity).getByRole('link', { name: OWNER_IDENTITY })
+    expect(link.getAttribute('href')).toBe(`/cari/${COUNTERPARTY}`)
+    // The existing words stay: the manufacturing journey reads "Cari malı" as its own text.
+    expect(within(bodyRow('ROLL-2')).getByText('Cari malı', { exact: true })).toBeTruthy()
+    // The id is in the link target only, never drawn.
+    expect(main().textContent).not.toContain(COUNTERPARTY)
+  })
+
+  it('shows the identical identity as plain text without cari.parties.detail, whatever else the reader holds', async () => {
+    shell.capabilities = [CAPABILITY.productItemsDetail, CAPABILITY.organizationLocationsDetail, CAPABILITY.cariPartiesList]
+    stubViewport(false)
+    api.page.mockResolvedValue(ready([cariRow()]))
+    mount()
+    await screen.findByRole('link', { name: 'ROLL-2' })
+    expect(ownerCellOf('ROLL-2')).toBe(`Cari malı${OWNER_IDENTITY}Karadeniz DökümMalı tutan: Şirket`)
+    expect(identityOf(LABEL_2).textContent).toBe(OWNER_IDENTITY)
+    expect(identityOf(LABEL_2).querySelector('a')).toBeNull()
+    expect(document.querySelector('a[href^="/cari"]')).toBeNull()
+  })
+
+  it.each([
+    ['null', null],
+    ['blank', '   '],
+    ['the same as the legal name', OWNER_LEGAL],
+  ])('leaves the trade name out when it is %s', async (_, tradeName) => {
+    stubViewport(false)
+    api.page.mockResolvedValue(ready([cariRow({ ownerDisplay: ownerDisplay({ tradeName }) })]))
+    mount()
+    await screen.findByRole('link', { name: 'ROLL-2' })
+    expect(ownerCellOf('ROLL-2')).toBe(`Cari malı${OWNER_IDENTITY}Malı tutan: Şirket`)
+  })
+
+  it('shows the same identity on the phone card, linked or plain by the same capability', async () => {
+    shell.capabilities = [CAPABILITY.cariPartiesDetail]
+    stubViewport(true)
+    api.page.mockResolvedValue(ready([row(), cariRow()]))
+    const view = mount()
+    const cards = within(await screen.findByTestId('stock-position-cards')).getAllByRole('listitem')
+    const ownerOf = (card: HTMLElement) => within(card).getAllByRole('term').find((term) => term.textContent === 'Mal sahibi')!.nextElementSibling!
+    expect(ownerOf(cards[0]).textContent).toBe('Şirket malı')
+    expect(ownerOf(cards[1]).textContent).toBe(`Cari malı${OWNER_IDENTITY}Karadeniz DökümMalı tutan: Şirket`)
+    expect(within(cards[1]).getByRole('link', { name: OWNER_IDENTITY }).getAttribute('href')).toBe(`/cari/${COUNTERPARTY}`)
+    view.unmount()
+
+    shell.capabilities = []
+    mount()
+    const plain = within(await screen.findByTestId('stock-position-cards')).getAllByRole('listitem')[1]
+    expect(ownerOf(plain).textContent).toBe(`Cari malı${OWNER_IDENTITY}Karadeniz DökümMalı tutan: Şirket`)
+    expect(within(plain).queryByRole('link', { name: OWNER_IDENTITY })).toBeNull()
+  })
+
+  it('filters by the row\'s exact owner id and names the chip with the published identity, in one read per page', async () => {
+    const user = userEvent.setup()
+    stubViewport(false)
+    api.page.mockResolvedValue(ready([cariRow()]))
+    mount()
+    await user.click(await screen.findByRole('button', { name: 'ROLL-2: bu mal sahibine göre filtrele' }))
+    await waitFor(() => expect(api.page).toHaveBeenLastCalledWith(
+      COMPANY, { ...NO_FILTERS, owner: { kind: 'Counterparty', id: COUNTERPARTY } }, null, expect.any(AbortSignal)))
+    const chips = await screen.findByRole('list', { name: 'Etkin filtreler' })
+    expect(within(chips).getByText(`Mal sahibi: ${OWNER_IDENTITY}`)).toBeTruthy()
+    expect(address()).toBe(`/stok/pozisyonlar?sahipTuru=cari&sahip=${COUNTERPARTY}`)
+    // Two reads for two filter states — never one per row, never a Cari lookup.
+    expect(api.page).toHaveBeenCalledTimes(2)
+    expect(api.legacy).not.toHaveBeenCalled()
+  })
+
+  it('names the owner chip generically when no row of the list carries that Cari', async () => {
+    stubViewport(false)
+    api.page.mockResolvedValue(ready([]))
+    mount(`/stok/pozisyonlar?sahipTuru=cari&sahip=${COUNTERPARTY}`)
+    const chips = await screen.findByRole('list', { name: 'Etkin filtreler' })
+    expect(within(chips).getByText('Mal sahibi: seçili cari')).toBeTruthy()
+    expect(main().textContent).not.toContain(COUNTERPARTY)
   })
 })

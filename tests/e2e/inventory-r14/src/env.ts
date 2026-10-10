@@ -22,6 +22,10 @@ export interface R14Seed {
   readonly productUnitProfileVersion: string
   readonly productCode: string
   readonly productName: string
+  /** STOCK-OWNER-DISPLAY-3: the one synthetic Cari owner the seed opened through the public Cari API. */
+  readonly ownerPartyId: string
+  /** That owner's account in the seeded company — the opening command's owner-account reference. */
+  readonly ownerCompanyAccountId: string
 }
 
 export interface R14Environment {
@@ -65,7 +69,7 @@ export function readEnvironment(): R14Environment {
   const expectedKeys: (keyof R14Seed)[] = [
     'recorderActor', 'deniedActor', 'arrangerActor', 'transformerActor', 'counterActor', 'countApproverActor', 'scrapperActor', 'scrapApproverActor', 'companyId', 'otherCompanyId', 'locationId',
     'productId', 'productVersion', 'productUnitId', 'productUnitProfileId',
-    'productUnitProfileVersion', 'productCode', 'productName',
+    'productUnitProfileVersion', 'productCode', 'productName', 'ownerPartyId', 'ownerCompanyAccountId',
   ]
   if (Object.keys(raw).sort().join('|') !== [...expectedKeys].sort().join('|')) {
     throw new Error('BROWSER_E2E_R14_SEED keys are not the closed contract')
@@ -82,10 +86,14 @@ export function readEnvironment(): R14Environment {
     productUnitProfileId: text(raw, 'productUnitProfileId', GUID),
     productUnitProfileVersion: text(raw, 'productUnitProfileVersion', VERSION),
     productCode: text(raw, 'productCode'), productName: text(raw, 'productName'),
+    ownerPartyId: text(raw, 'ownerPartyId', GUID),
+    ownerCompanyAccountId: text(raw, 'ownerCompanyAccountId', GUID),
   }
   if (new Set([seed.recorderActor, seed.deniedActor, seed.arrangerActor, seed.transformerActor,
     seed.counterActor, seed.countApproverActor, seed.scrapperActor, seed.scrapApproverActor]).size !== 8 ||
       seed.companyId === seed.otherCompanyId || seed.productCode !== 'SAC-1' ||
+      seed.ownerPartyId === seed.ownerCompanyAccountId ||
+      [seed.companyId, seed.otherCompanyId].includes(seed.ownerPartyId) ||
       seed.productName !== 'SENTETIK browser-suite:r14 genuine S235JR 3 mm x 248 mm kaplamasiz sac') {
     throw new Error('BROWSER_E2E_R14_SEED semantic binding is invalid')
   }

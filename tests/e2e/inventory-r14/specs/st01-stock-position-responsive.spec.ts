@@ -9,12 +9,17 @@ import { readEnvironment } from '../src/env'
  */
 const env = readEnvironment()
 const { companyId, otherCompanyId, locationId, productId, productVersion, productCode, productName,
-  recorderActor, arrangerActor, counterActor } = env.seed
+  recorderActor, arrangerActor, counterActor, ownerPartyId, ownerCompanyAccountId } = env.seed
 const POSITIONS = '/api/v1/inventory/positions'
 const OPENINGS = '/api/v1/inventory/opening-counts'
 const LOCATIONS = '/api/v1/organization/locations?page=1&pageSize=100'
 const STOCK_DISPLAY_HEADER = 'X-ERP-Inventory-Stock-Display'
-const STOCK_DISPLAY_VERSION = '2.0'
+const STOCK_DISPLAY_VERSION = '3.0'
+const COUNTERPARTIES = '/api/v1/counterparties'
+/** The Cari owner's negotiated client contract (`CounterpartyClientContract`), required on every Cari read. */
+const CARI_CONTRACT_HEADER = 'X-ERP-Counterparty-Contract'
+const CARI_CONTRACT_VERSION = 'optional-trade-roles-v1'
+const OWNER_PREFIX = `SYNOWN3-${randomUUID().slice(0, 8).toUpperCase()}`
 const PREFIX = `SYNDS01-${randomUUID().slice(0, 8).toUpperCase()}`
 const EXTREME = '999999999999999.999' // The largest positive decimal(18,3) value, sent as lossless text.
 const NORMAL = '12345.678'
@@ -37,6 +42,16 @@ type Position = {
     readonly locationCode: string
     readonly locationName: string
   }
+  readonly ownerKind: 'Company' | 'Counterparty'
+  readonly ownerId: string
+  /** STOCK-OWNER-DISPLAY-3 (#664): the Cari owner's identity, and null exactly for a Company owner. */
+  readonly ownerDisplay: OwnerDisplay | null
+}
+type OwnerDisplay = {
+  readonly partyId: string
+  readonly code: string
+  readonly legalName: string
+  readonly tradeName: string | null
 }
 type PositionPage = { readonly items: readonly Position[]; readonly nextCursor: string | null }
 
@@ -220,6 +235,71 @@ async function assertMobilePosition(page: Page, position: Position): Promise<voi
   }
 }
 
+/** The "Mal sahibi" fact of a phone card. */
+function ownerFact(card: Locator): Locator {
+  return card.locator('dl').first().locator('div').filter({ has: card.page().locator('dt', { hasText: /^Mal sahibi$/ }) }).locator('dd')
+}
+
+/** The Cari owner's identity as the screen draws it: `KOD — Unvan`. */
+function identityOf(owner: OwnerDisplay): string {
+  return `${owner.code} — ${owner.legalName}`
+}
+
+async function expectNoPageOverflow(page: Page, where: string): Promise<void> {
+  const overflows = await page.evaluate(
+    () => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1,
+  )
+  expect(overflows, `the page scrolls horizontally on ${where}`).toBe(false)
+}
+
+/**
+ * The whole identity is drawn inside its own row or card: every ink fragment is within the viewport and within
+ * that container, hit-testable there, and not ellipsised. Scrolls the table sideways the way a user would when a
+ * pinned column covers the cell.
+ */
+async function assertOwnerIdentityReadable(container: Locator, labelId: string, expected: string, where: string): Promise<void> {
+  const measured = await container.evaluate((element, input) => {
+    element.scrollIntoView({ block: 'center', inline: 'nearest' })
+    const target = element.querySelector(`[data-testid="stock-owner-${input.labelId}"]`)
+    if (!target) return null
+    const scroll = element.closest('table')?.parentElement ?? null
+    if (scroll) {
+      const cells = [...element.querySelectorAll('td')]
+      const headers = [...(element.closest('table')?.querySelectorAll('thead th') ?? [])]
+      const label = cells[0]
+      const available = cells[headers.findIndex((candidate) => candidate.textContent?.trim() === 'Kullanılabilir kg')]
+      for (let attempt = 0; attempt < 3 && label && available; attempt += 1) {
+        const rect = target.getBoundingClientRect()
+        const left = label.getBoundingClientRect().right + 2
+        const right = available.getBoundingClientRect().left - 2
+        if (rect.left < left) scroll.scrollLeft += rect.left - left
+        else if (rect.right > right) scroll.scrollLeft += rect.right - right
+        else break
+      }
+    }
+    const box = element.getBoundingClientRect()
+    const range = document.createRange()
+    range.selectNodeContents(target)
+    const ink = [...range.getClientRects()].filter((rect) => rect.width > 0 && rect.height > 0)
+    return {
+      text: target.textContent,
+      lines: ink.length,
+      reachable: ink.length > 0 && ink.every((rect) => {
+        const hit = document.elementFromPoint((rect.left + rect.right) / 2, (rect.top + rect.bottom) / 2)
+        return rect.left >= 0 && rect.right <= window.innerWidth + 1
+          && rect.left >= box.left - 1 && rect.right <= box.right + 1
+          && rect.top >= box.top - 1 && rect.bottom <= box.bottom + 1
+          && hit !== null && target.contains(hit)
+      }),
+      noEllipsis: getComputedStyle(target).textOverflow !== 'ellipsis',
+    }
+  }, { labelId })
+  expect(measured, `the owner identity is missing on ${where}`).not.toBeNull()
+  expect(measured?.text, where).toBe(expected)
+  expect(measured?.reachable, `the owner identity is covered or cut on ${where}`).toBe(true)
+  expect(measured?.noEllipsis, where).toBe(true)
+}
+
 async function assertMenu(page: Page, labelId: string, labelCode: string, cards: boolean): Promise<void> {
   const row = cards ? stockCard(page, labelId) : stockRow(page, labelId)
   const toggle = row.getByRole('button', { name: `${labelCode} işlemleri`, exact: true })
@@ -310,6 +390,11 @@ test('ST-01 shows long genuine Product and exact stock quantities at desktop and
     expect(position.locationDisplay).toEqual({
       locationId, locationCode: ownerLocation.code, locationName: ownerLocation.name,
     })
+    // STOCK-OWNER-DISPLAY-3: the company's own stock has no owner display — the key is there, and it is null.
+    expect(position.ownerKind).toBe('Company')
+    expect(position.ownerId).toBe(companyId)
+    expect(Object.prototype.hasOwnProperty.call(position, 'ownerDisplay')).toBe(true)
+    expect(position.ownerDisplay).toBeNull()
   }
   const extreme = all.find((item) => item.labelId === lines[0].labelId)
   const normal = all.find((item) => item.labelId === lines[1].labelId)
@@ -324,6 +409,7 @@ test('ST-01 shows long genuine Product and exact stock quantities at desktop and
     await expect(page.getByRole('table', { name: 'Stok / Malzeme Pozisyonu' })).toBeVisible()
     await assertDesktopPosition(page, extreme!)
     await assertDesktopPosition(page, normal!)
+    await desktopInk(stockRow(page, extreme!.labelId), 'Mal sahibi', 'Şirket malı', true)
     await assertMenu(page, all[0].labelId, all[0].labelCode, false)
     await assertMenu(page, all[all.length - 1].labelId, all[all.length - 1].labelCode, false)
   }
@@ -332,6 +418,7 @@ test('ST-01 shows long genuine Product and exact stock quantities at desktop and
   await expect(page.getByTestId('stock-position-cards').locator('li')).toHaveCount(LABEL_COUNT)
   await assertMobilePosition(page, extreme!)
   await assertMobilePosition(page, normal!)
+  await expect(ownerFact(stockCard(page, extreme!.labelId))).toHaveText('Şirket malı')
   await expect(stockCard(page, extreme!.labelId).getByRole('link', { name: 'Lokasyon kartı', exact: true })).toHaveCount(0)
   await assertMenu(page, all[0].labelId, all[0].labelCode, true)
   await assertMenu(page, all[all.length - 1].labelId, all[all.length - 1].labelCode, true)
@@ -359,7 +446,7 @@ test('ST-01 shows long genuine Product and exact stock quantities at desktop and
     && item.locationDisplay.locationId === item.locationId)).toBe(true)
   await expect(page).toHaveURL(new RegExp(`urun=${productId}.*lokasyon=${locationId}`))
   await expect(page.getByRole('list', { name: 'Etkin filtreler' })).toContainText(
-    `${extreme!.locationDisplay.locationCode} ${extreme.locationDisplay.locationName}`)
+    `${extreme!.locationDisplay.locationCode} ${extreme!.locationDisplay.locationName}`)
 
   // The label link and its existing back link return to the same label filter after a fresh owner read.
   await openList(page, PREFIX)
@@ -384,4 +471,233 @@ test('ST-01 shows long genuine Product and exact stock quantities at desktop and
   expect(foreign.status()).toBe(403)
   expect(stockDisplayVersions.length).toBeGreaterThan(0)
   expect(stockDisplayVersions.every((version) => version === STOCK_DISPLAY_VERSION)).toBe(true)
+})
+
+/**
+ * STOCK-OWNER-DISPLAY-3 (#664 consumer) on the same disposable stack. The R14 seed opens ONE synthetic Cari owner
+ * through the public Cari create; this test records two labels it owns and one the company owns through the real
+ * opening command, then reads the real stock page. The expected identity is the Cari owner's own public row — never
+ * a string kept in this test — and nothing is mocked.
+ */
+test('ST-01 names a Cari owner exactly, links its card only for the capability holder, and keeps a company owner as "Şirket malı"', async ({ page }) => {
+  test.setTimeout(240_000)
+  const positionReads: { readonly version: string; readonly company: string }[] = []
+  const cariReads: string[] = []
+  page.on('request', (request) => {
+    const url = new URL(request.url())
+    if (request.method() === 'GET' && url.pathname === POSITIONS) {
+      positionReads.push({
+        version: request.headers()[STOCK_DISPLAY_HEADER.toLowerCase()] ?? '',
+        company: request.headers()['x-company-id'] ?? '',
+      })
+    }
+    if (url.pathname.startsWith(COUNTERPARTIES)) cariReads.push(url.pathname)
+  })
+
+  // The Cari owner's own public row is the truth the stock page must repeat. Only the recorder may read it.
+  const cari = await page.request.get(`${env.apiBaseUrl}${COUNTERPARTIES}/${ownerPartyId}`, {
+    headers: { ...headers(recorderActor), [CARI_CONTRACT_HEADER]: CARI_CONTRACT_VERSION },
+  })
+  expect(cari.status()).toBe(200)
+  const party = await cari.json() as {
+    readonly id: string; readonly code: string; readonly legalName: string; readonly tradeName: string | null
+    readonly companyAccounts: readonly { readonly id: string; readonly companyId: string }[]
+  }
+  expect(party.id).toBe(ownerPartyId)
+  expect(party.companyAccounts.filter((account) => account.companyId === companyId).map((account) => account.id))
+    .toEqual([ownerCompanyAccountId])
+  const owner: OwnerDisplay = { partyId: party.id, code: party.code, legalName: party.legalName, tradeName: party.tradeName }
+  expect(owner.code.trim()).not.toBe('')
+  // The fixture's owner is long on purpose and has a trade name that differs from the legal name.
+  expect(owner.legalName.length).toBeGreaterThan(90)
+  expect(owner.tradeName).not.toBeNull()
+  expect(owner.tradeName).not.toBe(owner.legalName)
+  const identity = identityOf(owner)
+  const restrictedCari = await page.request.get(`${env.apiBaseUrl}${COUNTERPARTIES}/${ownerPartyId}`, {
+    headers: { ...headers(counterActor), [CARI_CONTRACT_HEADER]: CARI_CONTRACT_VERSION },
+  })
+  expect(restrictedCari.status(), 'the stock counter must hold no Cari read').toBe(403)
+
+  // Two Cari-owned labels and one company-owned label, through the real opening command.
+  const cariLines = [0, 1].map((index) => ({
+    lineId: randomUUID(), labelId: randomUUID(), labelCode: `${OWNER_PREFIX}-C${index}`,
+    lotId: randomUUID(), heatNumber: `SYNOWN3-HEAT-${index}`, coilNumber: null,
+    productId, productVersion, quantityKg: String(100 + index),
+  }))
+  const companyLine = {
+    lineId: randomUUID(), labelId: randomUUID(), labelCode: `${OWNER_PREFIX}-S0`,
+    lotId: randomUUID(), heatNumber: 'SYNOWN3-HEAT-S', coilNumber: null,
+    productId, productVersion, quantityKg: '50',
+  }
+  const open = (lines: readonly unknown[], positionContext?: unknown) => page.request.post(`${env.apiBaseUrl}${OPENINGS}`, {
+    headers: { ...headers(recorderActor), 'Content-Type': 'application/json', 'Idempotency-Key': `st01-owner-${randomUUID()}` },
+    data: {
+      countId: randomUUID(), locationId, countedOn: '2026-09-18',
+      sheetReference: `SENTETIK browser-suite:r14 STOCK-OWNER-DISPLAY-3 ${OWNER_PREFIX}`, lines,
+      ...(positionContext === undefined ? {} : { positionContext }),
+    },
+  })
+  expect((await open(cariLines, {
+    ownerKind: 'Counterparty', ownerId: ownerPartyId, ownerCompanyPartyAccountId: ownerCompanyAccountId,
+    custodianKind: 'Company', custodianId: companyId,
+  })).status()).toBe(201)
+  expect((await open([companyLine])).status()).toBe(201)
+  const cariLabelIds: readonly string[] = cariLines.map((line) => line.labelId)
+
+  const assertPage = (pageBody: PositionPage) => {
+    expect(pageBody.items.map((item) => item.labelCode).sort())
+      .toEqual([...cariLines.map((line) => line.labelCode), companyLine.labelCode].sort())
+    for (const item of pageBody.items) {
+      expect(item.companyId).toBe(companyId)
+      expect(Object.prototype.hasOwnProperty.call(item, 'ownerDisplay')).toBe(true)
+      if (cariLabelIds.includes(item.labelId)) {
+        expect(item.ownerKind).toBe('Counterparty')
+        expect(item.ownerId).toBe(ownerPartyId)
+        // Exactly the Cari owner's row: four members, bound to this row's own owner id.
+        expect(item.ownerDisplay).toEqual(owner)
+      } else {
+        expect(item.ownerKind).toBe('Company')
+        expect(item.ownerId).toBe(companyId)
+        expect(item.ownerDisplay).toBeNull()
+      }
+    }
+  }
+
+  // ── Capability holder (recorder), desktop: exact identity, linked to the Cari card. ──
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.setExtraHTTPHeaders({ 'X-Development-User': recorderActor })
+  await page.goto('/')
+  await expect(page.getByRole('link', { name: 'Stok / Malzeme Pozisyonu', exact: true })).toBeVisible()
+  assertPage(await openList(page, OWNER_PREFIX))
+  const table = page.getByRole('table', { name: 'Stok / Malzeme Pozisyonu' })
+  await expect(table.locator('tbody tr')).toHaveCount(3)
+  const cariRow = stockRow(page, cariLabelIds[0])
+  const companyRow = stockRow(page, companyLine.labelId)
+  await desktopInk(companyRow, 'Mal sahibi', 'Şirket malı', true)
+  await expect(companyRow.locator('[data-testid^="stock-owner-"]')).toHaveCount(0)
+  await expect(companyRow.locator('a[href^="/cari"]')).toHaveCount(0)
+  await expect(cariRow.getByText('Cari malı', { exact: true })).toBeVisible()
+  await assertOwnerIdentityReadable(cariRow, cariLabelIds[0], identity, 'the desktop table (capability holder)')
+  await expect(cariRow.getByText(owner.tradeName!, { exact: true })).toBeVisible()
+  await expect(cariRow).not.toContainText(ownerPartyId)
+  const cariLink = cariRow.getByRole('link', { name: identity, exact: true })
+  await expect(cariLink).toHaveAttribute('href', `/cari/${ownerPartyId}`)
+  // The existing location link and both row menus are still there beside it.
+  await expect(cariRow.getByRole('link', { name: 'Lokasyon kartı', exact: true }))
+    .toHaveAttribute('href', `/ayarlar/organizasyon/lokasyon/${locationId}`)
+  await assertMenu(page, cariLabelIds[0], cariLines[0].labelCode, false)
+  await assertMenu(page, companyLine.labelId, companyLine.labelCode, false)
+  await expectNoPageOverflow(page, 'the desktop table')
+  // Keyboard: the link takes focus and Enter opens that party's own card; Back returns to the same filtered list.
+  await cariLink.focus()
+  await expect(cariLink).toBeFocused()
+  await page.keyboard.press('Enter')
+  await expect(page).toHaveURL(new RegExp(`/cari/${ownerPartyId}$`))
+  await expect(page.getByRole('heading', { level: 1, name: owner.legalName, exact: true })).toBeVisible({ timeout: 30_000 })
+  const returned = page.waitForResponse((response) => isPositionRead(response, OWNER_PREFIX))
+  await page.goBack()
+  expect((await returned).status()).toBe(200)
+  await expect(page).toHaveURL(new RegExp(`/stok/pozisyonlar\\?etiket=${OWNER_PREFIX}$`))
+  await expect(stockRow(page, cariLabelIds[0]).getByRole('link', { name: identity, exact: true })).toBeVisible()
+
+  // The owner filter still carries the row's exact owner id, and the chip names the Cari from the same read.
+  const ownerFiltered = page.waitForResponse((response) => isPositionRead(response, OWNER_PREFIX)
+    && new URL(response.url()).searchParams.get('ownerKind') === 'Counterparty'
+    && new URL(response.url()).searchParams.get('ownerId') === ownerPartyId)
+  await stockRow(page, cariLabelIds[0])
+    .getByRole('button', { name: `${cariLines[0].labelCode}: bu mal sahibine göre filtrele` }).click()
+  const ownerResponse = await ownerFiltered
+  expect(ownerResponse.status()).toBe(200)
+  expect(await ownerResponse.request().headerValue(STOCK_DISPLAY_HEADER)).toBe(STOCK_DISPLAY_VERSION)
+  const ownerPage = await ownerResponse.json() as PositionPage
+  expect(ownerPage.items.map((item) => item.labelId).sort()).toEqual([...cariLabelIds].sort())
+  expect(ownerPage.items.every((item) => item.ownerId === ownerPartyId && item.ownerDisplay?.partyId === ownerPartyId)).toBe(true)
+  await expect(page).toHaveURL(new RegExp(`sahipTuru=cari.*sahip=${ownerPartyId}`))
+  await expect(page.getByRole('list', { name: 'Etkin filtreler' })).toContainText(`Mal sahibi: ${identity}`)
+  await expect(table.locator('tbody tr')).toHaveCount(2)
+  await expect(stockRow(page, companyLine.labelId)).toHaveCount(0)
+
+  // ── Capability holder, 390 px card: the same link, reachable by touch. ──
+  await page.setViewportSize({ width: 390, height: 844 })
+  assertPage(await openList(page, OWNER_PREFIX))
+  await expect(page.getByTestId('stock-position-cards').locator('li')).toHaveCount(3)
+  await expect(ownerFact(stockCard(page, companyLine.labelId))).toHaveText('Şirket malı')
+  const holderCard = stockCard(page, cariLabelIds[0])
+  await assertOwnerIdentityReadable(holderCard, cariLabelIds[0], identity, 'the phone card (capability holder)')
+  await expect(holderCard.getByText(owner.tradeName!, { exact: true })).toBeVisible()
+  await expect(holderCard.getByRole('link', { name: identity, exact: true })).toHaveAttribute('href', `/cari/${ownerPartyId}`)
+  await assertMenu(page, cariLabelIds[0], cariLines[0].labelCode, true)
+  await expectNoPageOverflow(page, 'the phone cards (capability holder)')
+
+  // ── Restricted reader (stock counter): the identical identity as plain text, on the card and the table. ──
+  await page.setExtraHTTPHeaders({ 'X-Development-User': counterActor })
+  const cariReadsBefore = cariReads.length
+  assertPage(await openList(page, OWNER_PREFIX))
+  const readerCard = stockCard(page, cariLabelIds[0])
+  await expect(ownerFact(stockCard(page, companyLine.labelId))).toHaveText('Şirket malı')
+  await assertOwnerIdentityReadable(readerCard, cariLabelIds[0], identity, 'the phone card (restricted reader)')
+  await expect(readerCard.getByText('Cari malı', { exact: true })).toBeVisible()
+  await expect(readerCard.getByText(owner.tradeName!, { exact: true })).toBeVisible()
+  await expect(readerCard.getByRole('link', { name: identity, exact: true })).toHaveCount(0)
+  await expect(page.locator('a[href^="/cari"]')).toHaveCount(0)
+  await expect(readerCard).not.toContainText(ownerPartyId)
+  await assertMenu(page, cariLabelIds[0], cariLines[0].labelCode, true)
+  await expectNoPageOverflow(page, 'the phone cards (restricted reader)')
+
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await expect(table.locator('tbody tr')).toHaveCount(3)
+  const readerRow = stockRow(page, cariLabelIds[0])
+  await assertOwnerIdentityReadable(readerRow, cariLabelIds[0], identity, 'the desktop table (restricted reader)')
+  await expect(readerRow.getByRole('link', { name: identity, exact: true })).toHaveCount(0)
+  await expect(readerRow.getByRole('link', { name: 'Lokasyon kartı', exact: true })).toHaveCount(0)
+  await expect(page.locator('a[href^="/cari"]')).toHaveCount(0)
+  await desktopInk(stockRow(page, companyLine.labelId), 'Mal sahibi', 'Şirket malı', true)
+  // The identity came with the stock read: the screen asked the Cari owner nothing for this reader.
+  expect(cariReads.slice(cariReadsBefore), 'a Cari read was issued for the restricted reader').toEqual([])
+
+  // ── A superseded read cannot put its rows back: the older answer is held, a newer search replaces it. ──
+  const emptyQuery = `${OWNER_PREFIX}-YOK`
+  let releaseStale: () => void = () => {}
+  const staleGate = new Promise<void>((resolve) => { releaseStale = resolve })
+  let staleSeen = false
+  await page.route((url) => url.pathname === POSITIONS && url.searchParams.get('q') === OWNER_PREFIX, async (route) => {
+    staleSeen = true
+    const response = await route.fetch()
+    await staleGate
+    await route.fulfill({ response }).catch(() => {})
+  })
+  await page.getByLabel('Etiket kodu', { exact: true }).fill(emptyQuery)
+  await page.getByRole('button', { name: 'Ara', exact: true }).click()
+  await expect(page.getByText('Filtrelere uyan fiziksel stok yok.', { exact: true })).toBeVisible()
+  await expect(table.locator('tbody tr')).toHaveCount(0)
+  // Ask for the owner list again and, while its answer is held, move on to the empty search once more.
+  await page.getByLabel('Etiket kodu', { exact: true }).fill(OWNER_PREFIX)
+  await page.getByRole('button', { name: 'Ara', exact: true }).click()
+  await expect.poll(() => staleSeen, { timeout: 20_000 }).toBe(true)
+  const superseding = page.waitForResponse((response) => isPositionRead(response, emptyQuery))
+  await page.getByLabel('Etiket kodu', { exact: true }).fill(emptyQuery)
+  await page.getByRole('button', { name: 'Ara', exact: true }).click()
+  expect((await superseding).status()).toBe(200)
+  releaseStale()
+  await page.waitForTimeout(1500)
+  await expect(page).toHaveURL(new RegExp(`etiket=${emptyQuery}$`))
+  await expect(page.getByText('Filtrelere uyan fiziksel stok yok.', { exact: true })).toBeVisible()
+  await expect(page.locator(`[data-label-id="${cariLabelIds[0]}"]`)).toHaveCount(0)
+  expect(await page.getByRole('main').innerText()).not.toContain(owner.legalName)
+  await page.unroute((url) => url.pathname === POSITIONS && url.searchParams.get('q') === OWNER_PREFIX)
+
+  // ── The other company stays closed, and the answer carries nothing of this owner. ──
+  const foreign = await page.request.get(`${env.apiBaseUrl}${POSITIONS}?q=${encodeURIComponent(OWNER_PREFIX)}&limit=25`, {
+    headers: { ...headers(counterActor), 'X-Company-Id': otherCompanyId, [STOCK_DISPLAY_HEADER]: STOCK_DISPLAY_VERSION },
+  })
+  expect(foreign.status()).toBe(403)
+  const foreignBody = await foreign.text()
+  expect(foreignBody).not.toContain(owner.legalName)
+  expect(foreignBody).not.toContain(owner.code)
+  expect(foreignBody).not.toContain(ownerPartyId)
+  expect(foreignBody).not.toContain(OWNER_PREFIX)
+
+  // Every browser read asked for 3.0, in this company, and never fell back to 2.0, 1.0 or the legacy shape.
+  expect(positionReads.length).toBeGreaterThan(0)
+  expect(positionReads.every((read) => read.version === STOCK_DISPLAY_VERSION && read.company === companyId)).toBe(true)
 })

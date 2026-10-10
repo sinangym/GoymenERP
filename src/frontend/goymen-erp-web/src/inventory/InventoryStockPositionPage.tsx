@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type FormEvent } from 'react'
 import { Link, useSearchParams } from 'react-router'
 import { fetchStockDisplayPage, isStockClassification, isStockId, normalizedLabelSearch, type StockPositionFilters } from './stockDisplayApi'
-import type { StockClassification, StockLocationDisplayRow as StockDisplayRow, StockPartyKind } from './stockDisplayContract'
+import type { StockClassification, StockOwnerDisplay, StockOwnerDisplayRow as StockDisplayRow, StockPartyKind } from './stockDisplayContract'
 import { createRequestFence } from '../purchasing/requestFence'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
 import { useShellState } from '../shell/shellContext'
-import { CAPABILITY } from '../shell/capabilities'
+import { CAPABILITY, CAPABILITY_ROUTE } from '../shell/capabilities'
 import { contextKey, contextKeyString, hasCapability } from '../shell/shellState'
 import { classifyOutcome, type RemoteViewState } from '../shell/uiState'
 import { StateBlock } from '../shell/StateBlock'
@@ -44,8 +44,22 @@ import styles from './stockPosition.module.css'
  * `urun`, `lokasyon`, `sinif`, and `sahipTuru` + `sahip` together. Paging follows the server's forward cursor; the
  * client never reads ahead or totals. STOCK-LOCATION-2: the location cell shows the Organization owner's code and name
  * that the `2.0` read (#607) publishes for the row's own location — never looked up per row or guessed; the existing
- * card link stays, with the same location id, only where the capability allows it.
+ * card link stays, with the same location id, only where the capability allows it. STOCK-OWNER-DISPLAY-3: a Cari
+ * owner's code and legal name come with the same `3.0` read (#664) and link to the Cari card only with that card's
+ * own capability; a company's own stock stays "Şirket malı".
  */
+
+/** `KOD — Unvan`: the Cari owner's identity exactly as the read published it. */
+function ownerIdentityText(owner: StockOwnerDisplay): string {
+  return `${owner.code} — ${owner.legalName}`
+}
+
+/** The trade name, only when it says something the legal name does not. */
+function distinctTradeName(owner: StockOwnerDisplay): string | null {
+  return owner.tradeName !== null && owner.tradeName.trim() !== '' && owner.tradeName !== owner.legalName
+    ? owner.tradeName
+    : null
+}
 
 const PRODUCT_PARAM = 'urun'
 const LOCATION_PARAM = 'lokasyon'
@@ -140,6 +154,7 @@ export function InventoryStockPositionPage() {
     companyId={shell.activeContext?.scopeMode === 'single' ? shell.activeContext.companyId : null}
     canOpenProduct={hasCapability(shell, CAPABILITY.productItemsDetail)}
     canOpenLocation={hasCapability(shell, CAPABILITY.organizationLocationsDetail)}
+    canOpenParty={hasCapability(shell, CAPABILITY.cariPartiesDetail)}
     rowActions={permittedStockRowActions((capability) => hasCapability(shell, capability))}
     canReadPurchaseSupply={hasCapability(shell, CAPABILITY.logisticsOperationsPurchase)}
     canOpenPurchaseOrder={hasCapability(shell, CAPABILITY.purchasingOrdersDetail)}
@@ -172,6 +187,7 @@ function InventoryStockPositionView({
   companyId,
   canOpenProduct,
   canOpenLocation,
+  canOpenParty,
   rowActions,
   canReadPurchaseSupply,
   canOpenPurchaseOrder,
@@ -179,6 +195,7 @@ function InventoryStockPositionView({
   readonly companyId: string | null
   readonly canOpenProduct: boolean
   readonly canOpenLocation: boolean
+  readonly canOpenParty: boolean
   readonly rowActions: readonly StockRowAction[]
   readonly canReadPurchaseSupply: boolean
   readonly canOpenPurchaseOrder: boolean
@@ -325,8 +342,11 @@ function InventoryStockPositionView({
     chips.push({ key: 'location', label: `${STOCK_TEXT.filterChip.location}: ${locationName(filters.locationId)}`, remove: { ...filters, locationId: null } })
   }
   if (filters.owner !== null) {
+    const ownerId = filters.owner.id
+    // The chip names the Cari only from a row of this list that carries that exact owner; otherwise it stays generic.
+    const counterparty = rows.find((row) => row.ownerKind === 'Counterparty' && row.ownerId === ownerId)?.ownerDisplay
     const owner = filters.owner.kind === 'Counterparty'
-      ? STOCK_TEXT.selectedCounterparty
+      ? counterparty ? ownerIdentityText(counterparty) : STOCK_TEXT.selectedCounterparty
       : filters.owner.id === companyId ? ownerText('Company', filters.owner.id, companyId) : STOCK_TEXT.selectedCompany
     chips.push({
       key: 'owner',
@@ -394,6 +414,18 @@ function InventoryStockPositionView({
     return <div className={styles.cellLine}>
       <span className={styles.product}>
         <span>{ownerText(row.ownerKind, row.ownerId, companyId)}</span>
+        {/* A Cari owner's identity is the read's own `ownerDisplay` (never an id, never a second request): a link to
+            the Cari card with that card's capability, the identical text without it. A company owner has none. */}
+        {row.ownerKind === 'Counterparty' && row.ownerDisplay
+          ? <span className={styles.name} data-testid={`stock-owner-${row.labelId}`}>
+            {canOpenParty
+              ? <Link className={styles.cardLink} to={CAPABILITY_ROUTE[CAPABILITY.cariPartiesDetail].replace(':partyId', encodeURIComponent(row.ownerDisplay.partyId))}>{ownerIdentityText(row.ownerDisplay)}</Link>
+              : ownerIdentityText(row.ownerDisplay)}
+          </span>
+          : null}
+        {row.ownerKind === 'Counterparty' && row.ownerDisplay && distinctTradeName(row.ownerDisplay) !== null
+          ? <span className={styles.sub}>{distinctTradeName(row.ownerDisplay)}</span>
+          : null}
         {holderDiffers
           ? <span className={styles.sub}>{STOCK_TEXT.custodian}: {custodianText(row.custodianKind, row.custodianId, companyId)}</span>
           : null}

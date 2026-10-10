@@ -60,6 +60,20 @@ internal static class BrowserSuiteSeedOutputValidator
                 continue;
             }
 
+            if (string.Equals(suite, "r14", StringComparison.Ordinal)
+                && IsR14StockOwnerKey(key))
+            {
+                // STOCK-OWNER-DISPLAY-3: the Cari owner and its account are ids only — never an actor id, a
+                // party code or a name, which would let a display value leak into the seed contract.
+                if (!isGuid)
+                {
+                    throw new InvalidOperationException(
+                        $"Seed output '{key}' must be the lowercase GUID of the R14 stock owner.");
+                }
+
+                continue;
+            }
+
             if (!isGuid && !actors.Contains(value) && !IsSuiteSpecificScalar(suite, key, value))
             {
                 throw new InvalidOperationException(
@@ -185,6 +199,8 @@ internal static class BrowserSuiteSeedOutputValidator
         or "normalDebitLabel" or "normalCreditLabel";
 
     private static bool IsR14ProductScalarKey(string key) => key is "productCode" or "productName";
+
+    private static bool IsR14StockOwnerKey(string key) => key is "ownerPartyId" or "ownerCompanyAccountId";
 
     private static bool IsAcc01SourceLabel(string value)
     {

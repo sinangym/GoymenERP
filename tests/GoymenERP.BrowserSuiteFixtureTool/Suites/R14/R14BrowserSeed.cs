@@ -1,5 +1,6 @@
 using System.Text.Json;
 using GoymenERP.Api.Shell;
+using GoymenERP.BrowserSuiteFixtureTool.Shared;
 using GoymenERP.Modules.Identity.Domain.Assignments;
 using GoymenERP.Modules.Identity.Infrastructure.Fixtures;
 using GoymenERP.Modules.Product.Application.Contracts;
@@ -33,6 +34,13 @@ namespace GoymenERP.BrowserSuiteFixtureTool.Suites.R14;
 /// <see cref="ScrapperActor"/> and <c>inventory.stock-scrap.approve</c> ONLY by the disposable
 /// <see cref="ScrapApproverActor"/>; the read-back pins the same split, and that no other r14 actor (the stock
 /// counters included) is offered either scrap control.
+/// </para>
+/// <para>
+/// STOCK-OWNER-DISPLAY-3 (#664 consumer): the disposable <see cref="ArrangerActor"/> opens ONE synthetic Cari
+/// owner, with its GDC account, through the public Cari create — no Party row is written directly. This seed
+/// records no stock for it: the browser spec opens the Cari-owned labels through the recorder's real opening
+/// command. The read-back pins the split the spec relies on: only the recorder is offered the Cari card, and the
+/// stock counter — which reads the same rows — is not.
 /// </para>
 /// </summary>
 public sealed class R14BrowserSeed : IBrowserSuiteFixture
@@ -82,6 +90,13 @@ public sealed class R14BrowserSeed : IBrowserSuiteFixture
     private const string StockCountApproveCapability = "inventory.stock-count.approve";
     private const string StockScrapRecordCapability = "inventory.stock-scrap.record";
     private const string StockScrapApproveCapability = "inventory.stock-scrap.approve";
+    private const string CariDetailCapability = "cari.parties.detail";
+
+    /// <summary>The Cari owner's names: a long Turkish legal name and a distinct trade name, both synthetic.</summary>
+    public const string OwnerLegalName =
+        "Karadeniz Çelik Döküm Makina İmalat Sanayi ve Dış Ticaret Anonim Şirketi Gebze Organize Sanayi Bölgesi Şubesi";
+    public const string OwnerTradeName = "Karadeniz Döküm Fason";
+    private const int CustomerRole = 1;
 
     public string Suite => "r14";
 
@@ -238,6 +253,20 @@ public sealed class R14BrowserSeed : IBrowserSuiteFixture
                 "Only the disposable scrapper may record and only the disposable scrap approver may decide a scrap.");
         }
 
+        CariOwner owner = await EnsureCariOwnerAsync(context, cancellationToken);
+        string[][] nonCariCapabilities =
+        [
+            deniedCapabilities, arrangerCapabilities, transformerCapabilities, counterCapabilities,
+            approverCapabilities, scrapperCapabilities, scrapApproverCapabilities,
+        ];
+        if (!recorderCapabilities.Contains(CariDetailCapability, StringComparer.Ordinal)
+            || nonCariCapabilities.Any(capabilities =>
+                capabilities.Contains(CariDetailCapability, StringComparer.Ordinal)))
+        {
+            throw new InvalidOperationException(
+                "Only the disposable R14 recorder may be offered the Cari card; the stock counter must not be.");
+        }
+
         return new Dictionary<string, string>(StringComparer.Ordinal)
         {
             ["recorderActor"] = RecorderActor,
@@ -258,8 +287,60 @@ public sealed class R14BrowserSeed : IBrowserSuiteFixture
             ["productUnitProfileVersion"] = products[0].GetProperty("profileVersion").GetString()!,
             ["productCode"] = product.Code,
             ["productName"] = product.Name,
+            ["ownerPartyId"] = owner.PartyId.ToString("D"),
+            ["ownerCompanyAccountId"] = owner.AccountId.ToString("D"),
         };
     }
+
+    /// <summary>
+    /// One synthetic Cari owner with a GDC account, opened by the arranger through the public Cari create with the
+    /// owner's negotiated client contract. The answer must be exactly that party: the names as sent, one account,
+    /// in GDC, active.
+    /// </summary>
+    private static async Task<CariOwner> EnsureCariOwnerAsync(
+        BrowserSuiteFixtureContext context,
+        CancellationToken cancellationToken)
+    {
+        string legalName = context.Label(OwnerLegalName);
+        string tradeName = context.Label(OwnerTradeName);
+        JsonElement created = await context.PostJsonAsync(
+            ArrangerActor,
+            CompanyGdc,
+            CariBrowserSeed.CounterpartiesPath,
+            new
+            {
+                kind = CariBrowserSeed.LegalEntity,
+                legalName,
+                tradeName,
+                roles = CustomerRole,
+            },
+            "stock-owner-cari-create",
+            cancellationToken,
+            new Dictionary<string, string>
+            {
+                [CariBrowserSeed.ClientContractHeader] = CariBrowserSeed.ClientContractVersion,
+            });
+
+        Guid partyId = created.GetProperty("id").GetGuid();
+        JsonElement[] accounts = created.GetProperty("companyAccounts").EnumerateArray().ToArray();
+        if (partyId == Guid.Empty
+            || created.GetProperty("legalName").GetString() != legalName
+            || created.GetProperty("tradeName").GetString() != tradeName
+            || string.IsNullOrWhiteSpace(created.GetProperty("code").GetString())
+            || !created.GetProperty("isActive").GetBoolean()
+            || accounts.Length != 1
+            || accounts[0].GetProperty("companyId").GetGuid() != CompanyGdc
+            || !accounts[0].GetProperty("isActive").GetBoolean()
+            || accounts[0].GetProperty("id").GetGuid() == Guid.Empty)
+        {
+            throw new InvalidOperationException(
+                "The public Cari create did not answer the exact synthetic R14 stock owner with one active GDC account.");
+        }
+
+        return new CariOwner(partyId, accounts[0].GetProperty("id").GetGuid());
+    }
+
+    private sealed record CariOwner(Guid PartyId, Guid AccountId);
 
     private static async Task<GenuineProduct> EnsureGenuineProductAsync(
         BrowserSuiteFixtureContext context,
