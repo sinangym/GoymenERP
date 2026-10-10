@@ -15,6 +15,22 @@ export interface PurchaseOrderSummary {
   readonly lineCount: number
 }
 
+/**
+ * The supplier identity bound to one Purchasing order (#661 `PurchasingSupplierDisplayV1`). Record-bound: it comes with
+ * the order the caller is already authorized to read, never from a separate Cari lookup.
+ */
+export interface PurchasingSupplierDisplay {
+  readonly partyId: string
+  readonly code: string
+  readonly legalName: string
+  readonly tradeName: string | null
+}
+
+/** GET list/detail summary (`PurchaseOrderReadSummaryViewV1`): the order plus its record-bound supplier identity. */
+export interface PurchaseOrderReadSummary extends PurchaseOrderSummary {
+  readonly supplierDisplay: PurchasingSupplierDisplay
+}
+
 export interface PurchaseOrderLine {
   readonly lineId: string
   readonly lineNo: number
@@ -47,6 +63,16 @@ export interface PurchaseOrderDetail {
 export interface PurchaseOrderList {
   readonly items: readonly PurchaseOrderSummary[]
   readonly nextCursor: string | null
+}
+
+/** What GET detail answers. Create/approve command responses keep the legacy `PurchaseOrderDetail` shape. */
+export interface PurchaseOrderReadDetail extends PurchaseOrderDetail {
+  readonly order: PurchaseOrderReadSummary
+}
+
+/** What GET list answers. */
+export interface PurchaseOrderReadList extends PurchaseOrderList {
+  readonly items: readonly PurchaseOrderReadSummary[]
 }
 
 export interface PurchaseOrderCommandResponse {
@@ -225,14 +251,56 @@ function instant(value: unknown): value is string {
     && (offsetHour < 14 || offsetMinute === 0) && Number.isFinite(Date.parse(value))
 }
 
+const SUMMARY_FIELDS = [
+  'id', 'companyId', 'status', 'version', 'supplierPartyId', 'companyAccountId',
+  'sourceRequestId', 'effectiveOn', 'createdAtUtc', 'updatedAtUtc', 'lineCount',
+] as const
+
+/**
+ * The exact #661 supplier identity: a real party id, a non-empty code and legal name, and a trade name that is a
+ * string or null. Anything missing, extra or mistyped is refused; nothing is defaulted.
+ */
+function decodeSupplierDisplay(value: unknown): PurchasingSupplierDisplay | null {
+  const source = record(value)
+  if (
+    source === null ||
+    !exact(source, ['partyId', 'code', 'legalName', 'tradeName']) ||
+    !guid(source.partyId) || !text(source.code) || !text(source.legalName) ||
+    (source.tradeName !== null && typeof source.tradeName !== 'string')
+  ) return null
+  return source as unknown as PurchasingSupplierDisplay
+}
+
+/**
+ * The supplier identity an order carries, or null when it carries none that can be trusted: absent (a legacy
+ * command-shaped order), malformed, or naming a different party than the order's own `supplierPartyId`.
+ */
+export function supplierDisplayOf(order: PurchaseOrderSummary): PurchasingSupplierDisplay | null {
+  const display = decodeSupplierDisplay((order as { readonly supplierDisplay?: unknown }).supplierDisplay)
+  return display !== null && display.partyId.toLowerCase() === order.supplierPartyId.toLowerCase() ? display : null
+}
+
+/**
+ * GET list/detail summary. Fails closed: the read DTO must carry exactly the legacy fields plus a valid
+ * `supplierDisplay` bound to this order's `supplierPartyId`. A legacy-shaped read is not accepted here.
+ */
+function decodeReadSummary(value: unknown): PurchaseOrderReadSummary | null {
+  const source = record(value)
+  if (source === null || !exact(source, [...SUMMARY_FIELDS, 'supplierDisplay'])) return null
+  const { supplierDisplay, ...legacy } = source
+  const summary = decodeSummary(legacy)
+  if (summary === null) return null
+  const display = decodeSupplierDisplay(supplierDisplay)
+  if (display === null || display.partyId.toLowerCase() !== summary.supplierPartyId.toLowerCase()) return null
+  return { ...summary, supplierDisplay: display }
+}
+
+/** The legacy `PurchaseOrderSummaryView`: what create/approve command responses still carry. */
 function decodeSummary(value: unknown): PurchaseOrderSummary | null {
   const source = record(value)
   if (
     source === null ||
-    !exact(source, [
-      'id', 'companyId', 'status', 'version', 'supplierPartyId', 'companyAccountId',
-      'sourceRequestId', 'effectiveOn', 'createdAtUtc', 'updatedAtUtc', 'lineCount',
-    ]) ||
+    !exact(source, SUMMARY_FIELDS) ||
     !guid(source.id) || !guid(source.companyId) || !status(source.status) || !canonicalVersion(source.version) ||
     !guid(source.supplierPartyId) || !guid(source.companyAccountId) || !nullableGuid(source.sourceRequestId) ||
     !dateOnly(source.effectiveOn) || !instant(source.createdAtUtc) || !instant(source.updatedAtUtc) ||
@@ -311,23 +379,33 @@ function decodeProductPurchaseCandidate(value: unknown): ProductPurchaseCandidat
   return source as unknown as ProductPurchaseCandidate
 }
 
-export function decodePurchaseOrderList(value: unknown): PurchaseOrderList | null {
+/** GET list (`PurchaseOrderReadListResponseV1`). */
+export function decodePurchaseOrderList(value: unknown): PurchaseOrderReadList | null {
   const source = record(value)
   if (source === null || !exact(source, ['items', 'nextCursor']) || !Array.isArray(source.items)) return null
   if (source.nextCursor !== null && !text(source.nextCursor)) return null
-  const items = source.items.map(decodeSummary)
+  const items = source.items.map(decodeReadSummary)
   return items.some((item) => item === null)
     ? null
-    : { items: items as PurchaseOrderSummary[], nextCursor: source.nextCursor as string | null }
+    : { items: items as PurchaseOrderReadSummary[], nextCursor: source.nextCursor as string | null }
 }
 
-export function decodePurchaseOrderDetail(value: unknown): PurchaseOrderDetail | null {
+/** GET detail (`PurchaseOrderReadDetailViewV1`). */
+export function decodePurchaseOrderDetail(value: unknown): PurchaseOrderReadDetail | null {
+  return decodeDetailWith(value, decodeReadSummary)
+}
+
+/** The detail body shared by reads and command responses; only the order summary's shape differs. */
+function decodeDetailWith<Summary extends PurchaseOrderSummary>(
+  value: unknown,
+  summaryOf: (value: unknown) => Summary | null,
+): { readonly order: Summary; readonly lines: readonly PurchaseOrderLine[]; readonly acceptances: readonly PurchaseOrderAcceptanceHistory[] } | null {
   const source = record(value)
   if (source === null || !Array.isArray(source.lines)) return null
   const legacy = exact(source, ['order', 'lines'])
   const current = exact(source, ['order', 'lines', 'acceptances']) && Array.isArray(source.acceptances)
   if (!legacy && !current) return null
-  const order = decodeSummary(source.order)
+  const order = summaryOf(source.order)
   const lines = source.lines.map(decodeLine)
   if (order === null || lines.some((line) => line === null) || order.lineCount !== lines.length) return null
   const acceptedLines = lines as PurchaseOrderLine[]
@@ -345,7 +423,8 @@ export function decodePurchaseOrderDetail(value: unknown): PurchaseOrderDetail |
 export function decodePurchaseOrderCommandResponse(value: unknown): PurchaseOrderCommandResponse | null {
   const source = record(value)
   if (source === null || !exact(source, ['detail', 'isReplay', 'originalCorrelationId'])) return null
-  const detail = decodePurchaseOrderDetail(source.detail)
+  // Create/approve answer the legacy detail (no `supplierDisplay`); a read-shaped body is not a command response.
+  const detail = decodeDetailWith(source.detail, decodeSummary)
   if (detail === null || typeof source.isReplay !== 'boolean' || !text(source.originalCorrelationId)) return null
   return { detail, isReplay: source.isReplay, originalCorrelationId: source.originalCorrelationId }
 }
