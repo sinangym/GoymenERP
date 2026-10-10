@@ -20,7 +20,7 @@ public sealed class CounterpartyPurchasingRecordPartyDisplaySqlServerRelationalA
     private static readonly Guid ForeignParty = Guid.Parse("72000000-0000-0000-0000-000000000005");
 
     [SqlServerFact]
-    public async Task Authorized_sales_record_projection_is_one_query_company_scoped_fresh_and_non_disclosing()
+    public async Task Authorized_purchasing_record_projection_is_one_query_company_scoped_fresh_and_non_disclosing()
     {
         var baseConnectionString = Environment.GetEnvironmentVariable(
             SqlServerRelationalAcceptanceTests.ConnectionStringEnvironmentVariable)!;
