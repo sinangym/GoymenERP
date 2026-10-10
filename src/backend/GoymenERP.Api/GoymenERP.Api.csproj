@@ -24,6 +24,7 @@
     <ProjectReference Include="..\Modules\Sales\GoymenERP.Modules.Sales.Application\GoymenERP.Modules.Sales.Application.csproj" />
     <ProjectReference Include="..\Modules\Sales\GoymenERP.Modules.Sales.Infrastructure\GoymenERP.Modules.Sales.Infrastructure.csproj" />
     <ProjectReference Include="..\Modules\Settings\GoymenERP.Modules.Settings.Application\GoymenERP.Modules.Settings.Application.csproj" />
+    <ProjectReference Include="..\Modules\Settings\GoymenERP.Modules.Settings.Infrastructure\GoymenERP.Modules.Settings.Infrastructure.csproj" />
   </ItemGroup>
 
   <ItemGroup>
