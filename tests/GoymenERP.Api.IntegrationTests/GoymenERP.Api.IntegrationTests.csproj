@@ -44,6 +44,7 @@
     <ProjectReference Include="..\..\src\backend\Modules\Manufacturing\GoymenERP.Modules.Manufacturing.Infrastructure\GoymenERP.Modules.Manufacturing.Infrastructure.csproj" />
     <ProjectReference Include="..\..\src\backend\Modules\Work\GoymenERP.Modules.Work.Infrastructure\GoymenERP.Modules.Work.Infrastructure.csproj" />
     <ProjectReference Include="..\..\src\backend\Modules\Sales\GoymenERP.Modules.Sales.Infrastructure\GoymenERP.Modules.Sales.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\backend\Modules\Settings\GoymenERP.Modules.Settings.Infrastructure\GoymenERP.Modules.Settings.Infrastructure.csproj" />
     <ProjectReference Include="..\..\tools\GoymenERP.SqlServerRcsiReadiness\GoymenERP.SqlServerRcsiReadiness.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>
 

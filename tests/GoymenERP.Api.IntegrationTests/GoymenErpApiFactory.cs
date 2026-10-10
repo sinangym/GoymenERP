@@ -13,6 +13,7 @@ using GoymenERP.Modules.Identity.Domain.Assignments;
 using GoymenERP.Modules.Organization.Infrastructure.Persistence;
 using GoymenERP.Modules.Purchasing.Infrastructure.Persistence;
 using GoymenERP.Modules.Sales.Infrastructure.Persistence;
+using GoymenERP.Modules.Settings.Infrastructure.Persistence;
 using GoymenERP.Modules.Identity.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -151,6 +152,14 @@ public sealed class GoymenErpApiFactory : WebApplicationFactory<Program>
         services.RemoveAll<IDbContextOptionsConfiguration<ManufacturingDbContext>>();
         services.AddDbContext<ManufacturingDbContext>((serviceProvider, options) =>
             options.UseInMemoryDatabase($"{databaseName}-manufacturing")
+                .AddInterceptors(serviceProvider.GetRequiredService<AuditSaveChangesInterceptor>()));
+
+        // SETTINGS–MFG-POLICY-01 adds a normal-runtime SQL source; the broad host suite keeps its
+        // isolated database and supplies no policy rows, preserving the production-empty outcome.
+        services.RemoveAll<DbContextOptions<SettingsDbContext>>();
+        services.RemoveAll<IDbContextOptionsConfiguration<SettingsDbContext>>();
+        services.AddDbContext<SettingsDbContext>((serviceProvider, options) =>
+            options.UseInMemoryDatabase($"{databaseName}-settings")
                 .AddInterceptors(serviceProvider.GetRequiredService<AuditSaveChangesInterceptor>()));
 
         // Inventory is host-wired since T07(a) (#310); without this the in-memory host would

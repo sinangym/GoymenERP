@@ -8,6 +8,7 @@ using GoymenERP.Modules.Sales.Application;
 using GoymenERP.Modules.Sales.Application.Contracts;
 using GoymenERP.Modules.Settings.Application;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
+using GoymenERP.Modules.Settings.Infrastructure.Persistence;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -58,7 +59,7 @@ public sealed class SettingsHostWiringTests
 
         var provider = scope.ServiceProvider.GetRequiredService<ISettingsManufacturingToleranceProviderV1>();
 
-        Assert.IsType<ApprovedSettingsPrerequisiteProvider>(provider);
+        Assert.IsType<SettingsManufacturingToleranceProviderV1>(provider);
         Assert.Single(scope.ServiceProvider.GetServices<ISettingsManufacturingToleranceProviderV1>());
     }
 

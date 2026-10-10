@@ -55,6 +55,7 @@ using GoymenERP.Modules.Sales.Infrastructure;
 using GoymenERP.Modules.Sales.Infrastructure.Shell;
 using GoymenERP.Modules.Settings.Application;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
+using GoymenERP.Modules.Settings.Infrastructure;
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -184,7 +185,6 @@ builder.Services.AddScoped<IFinanceDraftContextEndpointService, FinanceDraftCont
 builder.Services.AddSingleton<IFinanceDraftReadBinding, ManualReceiptDraftReadBinding>();
 builder.Services.AddScoped<ISettingsPrerequisiteProvider, ApprovedSettingsPrerequisiteProvider>();
 builder.Services.AddScoped<ISettingsMoneyCandidateReader, ApprovedSettingsPrerequisiteProvider>();
-builder.Services.AddScoped<ISettingsManufacturingToleranceProviderV1, ApprovedSettingsPrerequisiteProvider>();
 // PRD-UNIT-1: the company-independent unit identities of the approved catalog (immutable source data).
 builder.Services.AddSingleton<ISettingsUnitIdentityCatalogV1, ApprovedSettingsUnitIdentityCatalog>();
 builder.Services.AddScoped<ISalesAccountSelectionSourceV1, CounterpartySalesAccountSelectionSourceV1>();
@@ -201,6 +201,10 @@ builder.Services.AddScoped<ISalesPartyAccountPortV1, CounterpartySalesPartyAccou
 builder.Services.AddScoped<ISalesPartyContactInformationPortV1, CounterpartySalesPartyAccountPortV1>();
 builder.Services.AddScoped<ISalesReferenceReadService>(CreateSalesReferenceReadService);
 builder.Services.AddAuditModule(builder.Configuration);
+builder.Services.AddSettingsModule(
+    builder.Configuration,
+    (services, options) => options.AddInterceptors(
+        services.GetRequiredService<AuditSaveChangesInterceptor>()));
 
 static ISalesReferenceReadService CreateSalesReferenceReadService(IServiceProvider services) =>
     new SalesReferenceReadHandler(
@@ -413,6 +417,7 @@ if (!isOpenApiDocumentGeneration
     && (app.Environment.IsDevelopment() || app.Environment.IsEnvironment("Testing")))
 {
     await app.Services.InitializeOrganizationModuleAsync();
+    await app.Services.InitializeSettingsModuleAsync();
     await app.Services.InitializeIdentityModuleAsync();
     await app.Services.InitializeAuditModuleAsync();
     await app.Services.InitializeIdempotencyModuleAsync();
