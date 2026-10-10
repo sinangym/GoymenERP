@@ -717,6 +717,7 @@ public static partial class InventoryEndpoints
                 IInventoryStockPositionsV1 positions,
                 IProductStockDisplayReferencesV1 productDisplays,
                 IOrganizationLocationDisplayReaderV1 locationDisplays,
+                IInventoryStockOwnerDisplaySourceV1 ownerDisplays,
                 ICompanyContext companyContext,
                 ICurrentUser currentUser,
                 IErpAuthorityRevalidationService authority,
@@ -750,6 +751,13 @@ public static partial class InventoryEndpoints
                         return Results.Ok(await InventoryStockPositionDisplayHost.ComposeWithLocationAuthorizedAsync(
                             scope!, page, productDisplays, locationDisplays, companyContext, currentUser, authority,
                             cancellationToken));
+                    }
+
+                    if (displayContract == InventoryStockPositionDisplayContract.ProductLocationAndOwner)
+                    {
+                        return Results.Ok(await InventoryStockPositionDisplayHost.ComposeWithOwnerAuthorizedAsync(
+                            scope!, page, productDisplays, locationDisplays, ownerDisplays, companyContext,
+                            currentUser, authority, cancellationToken));
                     }
 
                     return Results.Ok(await InventoryStockPositionDisplayHost.ComposeAuthorizedAsync(
@@ -821,6 +829,8 @@ public static partial class InventoryEndpoints
                 InventoryStockPositionDisplayContract.Product,
             InventoryStockPositionDisplayHost.LocationDisplayContractVersion =>
                 InventoryStockPositionDisplayContract.ProductAndLocation,
+            InventoryStockPositionApiV1.OwnerDisplayContractVersion =>
+                InventoryStockPositionDisplayContract.ProductLocationAndOwner,
             _ => InventoryStockPositionDisplayContract.Invalid,
         };
         return contract != InventoryStockPositionDisplayContract.Invalid;
@@ -832,6 +842,7 @@ public static partial class InventoryEndpoints
         Legacy,
         Product,
         ProductAndLocation,
+        ProductLocationAndOwner,
     }
 
     private static bool TryReadStockPositionQuery(

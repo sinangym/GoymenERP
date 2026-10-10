@@ -14565,11 +14565,11 @@
           {
             "name": "X-ERP-Inventory-Stock-Display",
             "in": "header",
-            "description": "Optional exact compatibility selection. Omit for the previously published stock-position response; send 1.0 for Product identity and nominal technical display fields, or 2.0 to add the exact Organization-owned location display identity.",
+            "description": "Optional exact compatibility selection. Omit for the previously published stock-position response; send 1.0 for Product identity and nominal technical display fields, 2.0 to add the exact Organization-owned location display identity, or 3.0 to add the record-bound Counterparty owner display.",
             "schema": {
               "maxLength": 3,
               "minLength": 3,
-              "pattern": "^(?:1\\.0|2\\.0)$",
+              "pattern": "^(?:1\\.0|2\\.0|3\\.0)$",
               "type": "string"
             }
           }
@@ -14730,6 +14730,9 @@
                     },
                     {
                       "$ref": "#/components/schemas/InventoryStockPositionLocationPageV2"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InventoryStockPositionOwnerPageV3"
                     }
                   ]
                 }
@@ -69707,6 +69710,33 @@
           }
         }
       },
+      "InventoryStockOwnerDisplayV1": {
+        "required": [
+          "partyId",
+          "code",
+          "legalName",
+          "tradeName"
+        ],
+        "type": "object",
+        "properties": {
+          "partyId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "code": {
+            "type": "string"
+          },
+          "legalName": {
+            "type": "string"
+          },
+          "tradeName": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
       "InventoryStockPositionDisplayV1": {
         "required": [
           "companyId",
@@ -69948,6 +69978,158 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/InventoryStockPositionLocationDisplayV2"
+            }
+          },
+          "searchWindowFull": {
+            "type": "boolean"
+          },
+          "nextCursor": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "InventoryStockPositionOwnerDisplayV3": {
+        "required": [
+          "companyId",
+          "labelId",
+          "labelVersion",
+          "labelCode",
+          "productId",
+          "productVersion",
+          "classification",
+          "lot",
+          "heatNumber",
+          "coilNumber",
+          "documentStatus",
+          "ownerKind",
+          "ownerId",
+          "custodianKind",
+          "custodianId",
+          "locationId",
+          "physicalKg",
+          "freePhysicalKg",
+          "blockedPhysicalKg",
+          "activeAllocationKg",
+          "availableKg",
+          "productDisplay",
+          "locationDisplay",
+          "ownerDisplay"
+        ],
+        "type": "object",
+        "properties": {
+          "companyId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "labelId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "labelVersion": {
+            "type": "string"
+          },
+          "labelCode": {
+            "type": "string"
+          },
+          "productId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "productVersion": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "classification": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "lot": {
+            "$ref": "#/components/schemas/InventoryLotV1"
+          },
+          "heatNumber": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "coilNumber": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "documentStatus": {
+            "type": "string"
+          },
+          "ownerKind": {
+            "type": "string"
+          },
+          "ownerId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "custodianKind": {
+            "type": "string"
+          },
+          "custodianId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "locationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "physicalKg": {
+            "type": "string"
+          },
+          "freePhysicalKg": {
+            "type": "string"
+          },
+          "blockedPhysicalKg": {
+            "type": "string"
+          },
+          "activeAllocationKg": {
+            "type": "string"
+          },
+          "availableKg": {
+            "type": "string"
+          },
+          "productDisplay": {
+            "$ref": "#/components/schemas/ProductStockDisplayResultV1"
+          },
+          "locationDisplay": {
+            "$ref": "#/components/schemas/OrganizationLocationDisplayV1"
+          },
+          "ownerDisplay": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/InventoryStockOwnerDisplayV1"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "InventoryStockPositionOwnerPageV3": {
+        "required": [
+          "items",
+          "searchWindowFull"
+        ],
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/InventoryStockPositionOwnerDisplayV3"
             }
           },
           "searchWindowFull": {
