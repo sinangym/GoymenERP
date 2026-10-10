@@ -155,16 +155,30 @@ async function readDeliveryDraft(page: Page, actor: string): Promise<DeliveryDra
 }
 
 async function readPreparingDraftIds(page: Page): Promise<readonly string[]> {
-  const response = await page.request.get(`${env.apiBaseUrl}${DRAFTS_PATH}?approvalState=Preparing`, {
-    headers: { [DEVELOPMENT_USER_HEADER]: preparerActor, 'X-Company-Id': companyId },
-  })
-  expect(response.status(), 'the typed Sales list reads the business rows').toBe(200)
-  const reading = (await response.json()) as {
-    readonly items: readonly { readonly id: string }[]
-    readonly nextCursor?: string | null
-  }
-  expect(reading.nextCursor ?? null, 'the measured list is complete').toBeNull()
-  return reading.items.map((item) => item.id).sort()
+  const ids: string[] = []
+  const consumedCursors = new Set<string>()
+  let cursor: string | null = null
+  do {
+    const query = new URLSearchParams({ approvalState: 'Preparing', pageSize: '50' })
+    if (cursor !== null) query.set('cursor', cursor)
+    const response = await page.request.get(`${env.apiBaseUrl}${DRAFTS_PATH}?${query.toString()}`, {
+      headers: { [DEVELOPMENT_USER_HEADER]: preparerActor, 'X-Company-Id': companyId },
+    })
+    expect(response.status(), 'the typed Sales list reads every business-row page').toBe(200)
+    const reading = (await response.json()) as {
+      readonly items: readonly { readonly id: string }[]
+      readonly nextCursor?: string | null
+    }
+    ids.push(...reading.items.map((item) => item.id))
+    const next = reading.nextCursor ?? null
+    if (next !== null) {
+      expect(consumedCursors.has(next), 'the real list cursor advances without cycling').toBe(false)
+      consumedCursors.add(next)
+    }
+    cursor = next
+  } while (cursor !== null)
+  expect(new Set(ids).size, 'the terminal cursor walk repeats no business row').toBe(ids.length)
+  return ids.sort()
 }
 
 /** Collects the browser's own answers on one GET reference route. */

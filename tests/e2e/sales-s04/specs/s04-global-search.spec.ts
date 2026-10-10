@@ -167,6 +167,11 @@ test('S04-GS1 box → grouped results → open the order → Back returns to the
 test('S04-GS2 the preparer finds the REAL Cari party and opens its detail', async ({ page }) => {
   const party = await readParty(page)
   await signInAs(page, preparerActor)
+  await page.goto('/')
+  const companyPicker = page.getByRole('combobox', { name: 'Şirket' })
+  await expect(companyPicker).toBeVisible()
+  await companyPicker.selectOption(companyId)
+  await expect(companyPicker).toHaveValue(companyId)
   const response = page.waitForResponse((candidate) => isSearch(candidate, party.legalName))
   await page.goto(`/arama?q=${encodeURIComponent(party.legalName)}`)
   const answer = await searchAnswer(await response)
