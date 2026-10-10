@@ -286,9 +286,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     private const string BackendTestGroupVerifierTestsPath =
         "tests/backend_test_group_verifier/test_verify_backend_test_groups.py";
     private const string ReviewedBackendTestGroupVerifierFingerprint =
-        "506e74354da8ce9033a15fbd511f2038854af62a4edd0b9bda3fa14f82854d82";
+        "7b5999d3529adaccd72c13d3c3412f6f4acae56616839f8ede77732150806f76";
     private const string ReviewedBackendTestGroupVerifierTestsFingerprint =
-        "6ef52639c5bbd74aaf8e499ef0df203cd530831ebbfcce998170e334e8be29ab";
+        "95abaadfa075a9f6077670a2e15660629e6b1073ade36b64e45d74404fd3f4cb";
     // Re-reviewed for the runner-only Docker Hub cache mirror: the exact workflow keeps every
     // application gate and both image builds, and fails closed unless Docker reports the mirror active.
     private const string ReviewedContinuousIntegrationWorkflowFingerprint =
