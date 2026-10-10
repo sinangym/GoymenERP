@@ -1,0 +1,228 @@
+/* S-02 sales order drafts on GOY-DS-001 (SALES-DS-01). The table's layout is the shared ui/DataTable; this file
+   only places the page's header, filter, cells and phone cards on the --goy-ds-* tokens. Nothing is hidden or
+   shrunk to fit: a long Cari name wraps on as many lines as it needs, it is never cut with an ellipsis. */
+
+.page {
+  display: grid;
+  gap: var(--goy-ds-space-3);
+  padding: var(--goy-ds-space-1) 0 var(--goy-ds-space-4);
+  min-width: 0;
+  font-family: var(--goy-ds-font-sans);
+  color: var(--goy-ds-color-text);
+}
+
+.header {
+  display: grid;
+  gap: var(--goy-ds-space-3);
+  min-width: 0;
+}
+
+.titleRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--goy-ds-space-2) var(--goy-ds-space-4);
+}
+
+.title {
+  margin: 0;
+  font-size: 1.25rem;
+  line-height: 28px;
+  font-weight: var(--goy-ds-font-weight-semibold);
+}
+
+/* The primary action is a navigation, so it is a link drawn like the design-system primary button. */
+.createLink {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  min-height: var(--goy-ds-control-height);
+  padding: 0 12px;
+  border: 1px solid transparent;
+  border-radius: var(--goy-ds-radius-sm);
+  background: var(--goy-ds-color-accent);
+  color: var(--goy-ds-color-on-accent);
+  box-shadow: var(--goy-ds-shadow-1);
+  font-size: var(--goy-ds-font-size-md);
+  font-weight: var(--goy-ds-font-weight-medium);
+  line-height: 1.2;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.createLink:hover {
+  background: var(--goy-ds-color-accent-hover);
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--goy-ds-space-2) var(--goy-ds-space-4);
+}
+
+.filter {
+  flex: 0 1 16rem;
+}
+
+/* The native select takes the page's font instead of the browser's control font; nothing global is reset. */
+.select {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: var(--goy-ds-control-height);
+  padding: 0 8px;
+  border: 1px solid var(--goy-ds-color-border-control);
+  border-radius: var(--goy-ds-radius-sm);
+  background: var(--goy-ds-color-surface);
+  color: var(--goy-ds-color-text);
+  font: inherit;
+  font-size: var(--goy-ds-font-size-md);
+}
+
+.select:hover {
+  border-color: var(--goy-ds-color-border-hover);
+}
+
+.select:focus-visible {
+  outline: none;
+  border-color: var(--goy-ds-color-accent);
+  box-shadow: 0 0 0 3px var(--goy-ds-focus-ring);
+}
+
+.createLink:focus-visible,
+.documentLink:focus-visible,
+.party a:focus-visible {
+  outline: 2px solid var(--goy-ds-color-accent);
+  outline-offset: 2px;
+}
+
+/* ── Cells ── */
+.documentColumn,
+.nowrap {
+  white-space: nowrap;
+}
+
+.documentLink,
+.party a {
+  color: var(--goy-ds-color-accent-text);
+  font-weight: var(--goy-ds-font-weight-medium);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* A long legal name wraps on word boundaries (and inside a word only when it must); the column keeps a readable
+   width so a two-line name does not turn into a narrow tower. */
+.partyColumn {
+  min-width: 16rem;
+}
+
+.party {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+/* The state text is the row's own two facts: one line in the table; on a narrow card it may wrap, never be cut. */
+.card .status {
+  white-space: normal;
+  align-items: flex-start;
+}
+
+.card .status > span[aria-hidden='true'] {
+  margin-top: 5px;
+}
+
+/* ── Continuation ── */
+.continuation {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--goy-ds-space-2);
+}
+
+.inlineError {
+  border-left: 3px solid var(--goy-ds-color-danger);
+  padding-left: var(--goy-ds-space-3);
+}
+
+.inlineError p,
+.muted {
+  margin: 0;
+}
+
+.muted {
+  color: var(--goy-ds-color-text-secondary);
+  font-size: var(--goy-ds-font-size-md);
+}
+
+/* ── Phone: one card per row, every fact labelled ── */
+@media (max-width: 767px) {
+  .filter {
+    flex: 1 1 100%;
+  }
+}
+
+.cards {
+  display: grid;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--goy-ds-color-border);
+  border-radius: var(--goy-ds-radius-md);
+  background: var(--goy-ds-color-surface);
+}
+
+.card {
+  display: grid;
+  gap: var(--goy-ds-space-2);
+  padding: var(--goy-ds-space-3);
+  border-bottom: 1px solid var(--goy-ds-color-border);
+  font-size: var(--goy-ds-font-size-md);
+  line-height: 18px;
+  min-width: 0;
+}
+
+.card:last-child {
+  border-bottom: 0;
+}
+
+.cardHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--goy-ds-space-1) var(--goy-ds-space-2);
+}
+
+.cardDocument {
+  font-weight: var(--goy-ds-font-weight-semibold);
+  overflow-wrap: anywhere;
+}
+
+.cardFacts {
+  display: grid;
+  gap: 6px var(--goy-ds-space-3);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 0;
+}
+
+.cardFacts div {
+  min-width: 0;
+}
+
+.cardFacts .wide {
+  grid-column: 1 / -1;
+}
+
+.cardFacts dt {
+  color: var(--goy-ds-color-text-tertiary);
+  font-size: var(--goy-ds-font-size-xs);
+  line-height: 16px;
+}
+
+.cardFacts dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}

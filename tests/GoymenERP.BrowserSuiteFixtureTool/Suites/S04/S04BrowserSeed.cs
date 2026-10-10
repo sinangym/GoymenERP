@@ -85,6 +85,12 @@ public sealed class S04BrowserSeed : IBrowserSuiteFixture
     /// <summary>DEC-SAL-003: the planner's own order (one line, no slice), written Preparing by the preparer.</summary>
     public static readonly Guid ScheduleDraftId = Guid.Parse("d1000000-0000-4000-8000-000000000414");
 
+    // SALES-DS-01: enough immutable Preparing rows for the real list's pageSize=50 cursor boundary.
+    // They use the existing gated fixture writer and the same genuine Cari account; no command attempt or audit is added.
+    private const int DsListDraftCount = 55;
+    private const string DsListCustomerName =
+        "Teslimat müşterisi KARADENİZ ÇELİK DÖKÜM MAKİNA İMALAT SANAYİ VE DIŞ TİCARET ANONİM ŞİRKETİ GEBZE ÜRETİM VE LOJİSTİK TESİSLERİ";
+
     // Currency and unit identities remain synthetic snapshots; every draft uses the genuine Cari party/account opened below.
     private static readonly Guid CurrencyId = Guid.Parse("d4000000-0000-4000-8000-000000000401");
     private static readonly Guid MoneyProfileId = Guid.Parse("d5000000-0000-4000-8000-000000000401");
@@ -184,7 +190,7 @@ public sealed class S04BrowserSeed : IBrowserSuiteFixture
 
         // SALES-A2a: the REAL customer, opened and described through the real Cari API (audited commands).
         var customer = await CariBrowserSeed.OpenPartyWithAccountAsync(
-            context, CariActor, CompanyGdc, "cari-party", "Teslimat müşterisi", CustomerRole, cancellationToken);
+            context, CariActor, CompanyGdc, "cari-party", DsListCustomerName, CustomerRole, cancellationToken);
         var (addressVersion, contactVersion) = await EnsureContactInformationAsync(context, customer, cancellationToken);
 
         await using (var scope = context.Services.CreateAsyncScope())
@@ -251,6 +257,21 @@ public sealed class S04BrowserSeed : IBrowserSuiteFixture
             // DEC-SAL-003: the same one-line shape (the D2 helper), created by the preparer who later submits it.
             await EnsureD2DraftAsync(writer, context, customer, ScheduleDraftId, "SO-DS-SCHEDULE", PreparerIdentityId.ToString("D"),
                 ScheduleProductId, ScheduleLineId, "schedule-draft", cancellationToken);
+
+            for (var index = 1; index <= DsListDraftCount; index++)
+            {
+                await EnsureD2DraftAsync(
+                    writer,
+                    context,
+                    customer,
+                    Guid.Parse($"e1000000-0000-4000-8000-{index:D12}"),
+                    $"SO-DS-LIST-{index:D2}",
+                    PreparerIdentityId.ToString("D"),
+                    Guid.Parse($"e2000000-0000-4000-8000-{index:D12}"),
+                    Guid.Parse($"e3000000-0000-4000-8000-{index:D12}"),
+                    $"ds-list-draft-{index:D2}",
+                    cancellationToken);
+            }
         }
 
         // Read back through the real host, as each actor: the fixture is only done when the product actually
@@ -271,7 +292,8 @@ public sealed class S04BrowserSeed : IBrowserSuiteFixture
                 "The seeded draft is not a Preparing two-line draft with the exact qualified Product version on the real detail route.");
         }
 
-        var list = await context.GetJsonAsync(ReaderActor, CompanyGdc, $"{DraftsPath}?approvalState=Preparing", cancellationToken);
+        var list = await context.GetJsonAsync(
+            ReaderActor, CompanyGdc, $"{DraftsPath}?pageSize=100&approvalState=Preparing", cancellationToken);
         if (!list.GetProperty("items").EnumerateArray().Any(item => item.GetProperty("id").GetGuid() == DraftId))
         {
             throw new InvalidOperationException("The reader does not see the seeded draft in the real list.");

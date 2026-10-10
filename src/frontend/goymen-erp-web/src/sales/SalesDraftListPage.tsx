@@ -10,9 +10,13 @@
  * Continuation follows the contract: `nextCursor = null` is the end, there is no
  * total count, and a failed next page keeps the rows already shown and offers an
  * explicit retry of the SAME cursor — never an automatic resend.
+ *
+ * SALES-DS-01 (GOY-DS-001): the same facts on the design system — the shared DataTable on a wide
+ * screen, one card per row on a phone (the shell's compact width), the filter in a Field, the
+ * continuation on Button and the state on StatusIndicator. Long Cari names wrap; nothing is cut.
  */
 
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useRef, useState, useSyncExternalStore } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router'
 import { fetchDraftPage } from './api'
@@ -25,8 +29,12 @@ import { useShellState } from '../shell/shellContext'
 import { contextKey, contextKeyString, hasCapability } from '../shell/shellState'
 import { StateBlock } from '../shell/StateBlock'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
+import { Button } from '../ui/Button'
+import { DataTable, type DataTableColumn } from '../ui/DataTable'
+import { Field } from '../ui/Field'
+import { StatusIndicator, type StatusTone } from '../ui/StatusIndicator'
 import { formatBusinessDate, formatInstant } from './format'
-import styles from './SalesPages.module.css'
+import styles from './SalesDraftListPage.module.css'
 
 /** The record-bound Cari: a link to its card only with the card's own capability, plain text otherwise. */
 export function SalesPartyDisplay({ party, canOpen }: { readonly party: PartyDisplay; readonly canOpen: boolean }) {
@@ -34,6 +42,41 @@ export function SalesPartyDisplay({ party, canOpen }: { readonly party: PartyDis
   return canOpen
     ? <Link to={CAPABILITY_ROUTE[CAPABILITY.cariPartiesDetail].replace(':partyId', encodeURIComponent(party.partyId))}>{text}</Link>
     : <>{text}</>
+}
+
+/** The shell's phone width (`AppShell` COMPACT_VIEWPORT): rows become cards instead of a squeezed table. */
+const CARD_VIEWPORT = '(max-width: 767px)'
+
+function subscribeCards(onChange: () => void): () => void {
+  if (typeof window.matchMedia !== 'function') return () => {}
+  const query = window.matchMedia(CARD_VIEWPORT)
+  query.addEventListener('change', onChange)
+  return () => query.removeEventListener('change', onChange)
+}
+
+function readCards(): boolean {
+  return typeof window.matchMedia === 'function' && window.matchMedia(CARD_VIEWPORT).matches
+}
+
+/** The row's own two facts, as one text: the lifecycle beside the internal approval, never merged into a new state. */
+function stateText(row: DraftSummaryWithParty): string {
+  return `${row.state === CANCELLED_STATE ? ORDER_DETAIL_TEXT.stateCancelled : ORDER_DETAIL_TEXT.stateDraft} · ${APPROVAL_STATE_TEXT[row.approvalState]}`
+}
+
+/**
+ * The dot's colour only — the text above carries the meaning. A cancelled draft is neutral whatever its approval;
+ * otherwise the approval alone picks the colour. No value here is derived from anything but those two fields.
+ */
+const APPROVAL_TONE: Record<ApprovalState, StatusTone> = {
+  [APPROVAL_STATE.preparing]: 'neutral',
+  [APPROVAL_STATE.pendingApproval]: 'warning',
+  [APPROVAL_STATE.approved]: 'success',
+  [APPROVAL_STATE.rejected]: 'danger',
+  [APPROVAL_STATE.withdrawn]: 'neutral',
+}
+
+function stateTone(row: DraftSummaryWithParty): StatusTone {
+  return row.state === CANCELLED_STATE ? 'neutral' : APPROVAL_TONE[row.approvalState]
 }
 
 export function SalesDraftListPage() {
@@ -51,6 +94,7 @@ function DraftList({ namespace }: { readonly namespace: string | null }) {
   const canOpen = hasCapability(shell, SALES_CAPABILITY.draftsDetail)
   const canCreate = hasCapability(shell, SALES_CAPABILITY.draftsCreate)
   const canOpenParty = hasCapability(shell, CAPABILITY.cariPartiesDetail)
+  const cards = useSyncExternalStore(subscribeCards, readCards, () => false)
   // SALES-A1: the internal approval filter is the server's (`approvalState`); changing it restarts the list.
   const [approvalFilter, setApprovalFilter] = useState<ApprovalState | null>(null)
 
@@ -96,35 +140,42 @@ function DraftList({ namespace }: { readonly namespace: string | null }) {
 
   const header = (
     <header className={styles.header}>
-      <h1 id="sales-list-heading" className={styles.title}>
-        {ORDER_LIST_TEXT.heading}
-      </h1>
-      <label htmlFor="sales-approval-filter">
-        {ORDER_LIST_TEXT.filter}
-        <select
-          id="sales-approval-filter"
-          value={approvalFilter ?? ''}
-          onChange={(event) => {
-            const value = event.target.value
-            setMore([])
-            setCursor(undefined)
-            setContinuation('idle')
-            setApprovalFilter(value === '' ? null : (value as ApprovalState))
-          }}
-        >
-          <option value="">{ORDER_LIST_TEXT.filterAll}</option>
-          {Object.values(APPROVAL_STATE).map((state) => (
-            <option key={state} value={state}>
-              {APPROVAL_STATE_TEXT[state]}
-            </option>
-          ))}
-        </select>
-      </label>
-      {canCreate ? (
-        <Link className={styles.primaryLink} to={SALES_ROUTE.create}>
-          {ORDER_LIST_TEXT.newDraft}
-        </Link>
-      ) : null}
+      <div className={styles.titleRow}>
+        <h1 id="sales-list-heading" className={styles.title}>
+          {ORDER_LIST_TEXT.heading}
+        </h1>
+        {/* A link styled as the primary action: it navigates, so it stays a link (no button inside it). */}
+        {canCreate ? (
+          <Link className={styles.createLink} to={SALES_ROUTE.create}>
+            {ORDER_LIST_TEXT.newDraft}
+          </Link>
+        ) : null}
+      </div>
+      <div className={styles.toolbar}>
+        <Field id="sales-approval-filter" label={ORDER_LIST_TEXT.filter} className={styles.filter}>
+          {(control) => (
+            <select
+              {...control}
+              className={styles.select}
+              value={approvalFilter ?? ''}
+              onChange={(event) => {
+                const value = event.target.value
+                setMore([])
+                setCursor(undefined)
+                setContinuation('idle')
+                setApprovalFilter(value === '' ? null : (value as ApprovalState))
+              }}
+            >
+              <option value="">{ORDER_LIST_TEXT.filterAll}</option>
+              {Object.values(APPROVAL_STATE).map((state) => (
+                <option key={state} value={state}>
+                  {APPROVAL_STATE_TEXT[state]}
+                </option>
+              ))}
+            </select>
+          )}
+        </Field>
+      </div>
     </header>
   )
 
@@ -149,48 +200,65 @@ function DraftList({ namespace }: { readonly namespace: string | null }) {
     )
   }
 
+  // The cells the table and the cards share, so both say exactly the same thing.
+  const documentCell = (row: DraftSummaryWithParty) =>
+    canOpen ? <Link className={styles.documentLink} to={salesDetailPath(row.id)}>{row.documentNo}</Link> : row.documentNo
+  const partyCell = (row: DraftSummaryWithParty) => (
+    <span className={styles.party} data-testid={`sales-row-party-${row.id}`}>
+      <SalesPartyDisplay party={row.partyDisplay} canOpen={canOpenParty} />
+    </span>
+  )
+  const stageCell = (row: DraftSummaryWithParty) => (
+    <span data-testid={`sales-row-commercial-stage-${row.id}`}>{COMMERCIAL_STAGE_TEXT[row.commercialStage]}</span>
+  )
+  const statusCell = (row: DraftSummaryWithParty) => (
+    <StatusIndicator tone={stateTone(row)} className={styles.status}>
+      <span data-testid={`sales-row-approval-${row.id}`}>{stateText(row)}</span>
+    </StatusIndicator>
+  )
+
+  const columns: readonly DataTableColumn<DraftSummaryWithParty>[] = [
+    { key: 'documentNo', header: ORDER_LIST_TEXT.documentNo, cell: documentCell, pin: 'start', className: styles.documentColumn },
+    { key: 'party', header: ORDER_LIST_TEXT.party, cell: partyCell, className: styles.partyColumn },
+    { key: 'businessDate', header: ORDER_LIST_TEXT.businessDate, cell: (row) => formatBusinessDate(row.businessDate), className: styles.nowrap },
+    { key: 'commercialStage', header: ORDER_LIST_TEXT.commercialStage, cell: stageCell },
+    { key: 'state', header: ORDER_LIST_TEXT.state, cell: statusCell },
+    { key: 'revision', header: ORDER_LIST_TEXT.revision, cell: (row) => row.revision, className: styles.nowrap },
+    { key: 'lineCount', header: ORDER_LIST_TEXT.lineCount, cell: (row) => row.lineCount, align: 'end' },
+    { key: 'createdAt', header: ORDER_LIST_TEXT.createdAt, cell: (row) => formatInstant(row.createdAtUtc), className: styles.nowrap },
+  ]
+
   return (
     <section className={styles.page} aria-labelledby="sales-list-heading">
       {header}
-      <div className={styles.tableWrap}>
-        <table className={styles.table}>
-          <caption className={styles.caption}>{ORDER_LIST_TEXT.caption}</caption>
-          <thead>
-            <tr>
-              <th scope="col">{ORDER_LIST_TEXT.documentNo}</th>
-              <th scope="col">{ORDER_LIST_TEXT.party}</th>
-              <th scope="col">{ORDER_LIST_TEXT.businessDate}</th>
-              <th scope="col">{ORDER_LIST_TEXT.commercialStage}</th>
-              <th scope="col">{ORDER_LIST_TEXT.state}</th>
-              <th scope="col">{ORDER_LIST_TEXT.revision}</th>
-              <th scope="col" className={styles.numeric}>{ORDER_LIST_TEXT.lineCount}</th>
-              <th scope="col">{ORDER_LIST_TEXT.createdAt}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row) => (
-              <tr key={row.id}>
-                <th scope="row">
-                  {canOpen ? <Link to={salesDetailPath(row.id)}>{row.documentNo}</Link> : row.documentNo}
-                </th>
-                <td data-testid={`sales-row-party-${row.id}`}>
-                  <SalesPartyDisplay party={row.partyDisplay} canOpen={canOpenParty} />
-                </td>
-                <td>{formatBusinessDate(row.businessDate)}</td>
-                <td data-testid={`sales-row-commercial-stage-${row.id}`}>{COMMERCIAL_STAGE_TEXT[row.commercialStage]}</td>
-                <td>
-                  <span className={styles.badge} data-testid={`sales-row-approval-${row.id}`}>
-                    {row.state === CANCELLED_STATE ? ORDER_DETAIL_TEXT.stateCancelled : ORDER_DETAIL_TEXT.stateDraft} · {APPROVAL_STATE_TEXT[row.approvalState]}
-                  </span>
-                </td>
-                <td>{row.revision}</td>
-                <td className={styles.numeric}>{row.lineCount}</td>
-                <td>{formatInstant(row.createdAtUtc)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      {cards ? (
+        <ul className={styles.cards} aria-label={ORDER_LIST_TEXT.caption} data-testid="sales-draft-cards">
+          {rows.map((row) => (
+            <li key={row.id} className={styles.card} data-draft-id={row.id}>
+              <div className={styles.cardHead}>
+                <span className={styles.cardDocument}>{documentCell(row)}</span>
+                {statusCell(row)}
+              </div>
+              <dl className={styles.cardFacts}>
+                <div className={styles.wide}><dt>{ORDER_LIST_TEXT.party}</dt><dd>{partyCell(row)}</dd></div>
+                <div><dt>{ORDER_LIST_TEXT.businessDate}</dt><dd>{formatBusinessDate(row.businessDate)}</dd></div>
+                <div><dt>{ORDER_LIST_TEXT.commercialStage}</dt><dd>{stageCell(row)}</dd></div>
+                <div><dt>{ORDER_LIST_TEXT.revision}</dt><dd>{row.revision}</dd></div>
+                <div><dt>{ORDER_LIST_TEXT.lineCount}</dt><dd>{row.lineCount}</dd></div>
+                <div className={styles.wide}><dt>{ORDER_LIST_TEXT.createdAt}</dt><dd>{formatInstant(row.createdAtUtc)}</dd></div>
+              </dl>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <DataTable
+          label={ORDER_LIST_TEXT.caption}
+          columns={columns}
+          rows={rows}
+          rowKey={(row) => row.id}
+          rowAttributes={(row) => ({ 'data-draft-id': row.id })}
+        />
+      )}
       <div className={styles.continuation}>
         {typeof continuation === 'object' ? (
           <div className={styles.inlineError}>
@@ -200,15 +268,15 @@ function DraftList({ namespace }: { readonly namespace: string | null }) {
         ) : nextCursor === null ? (
           <p className={styles.muted}>{ORDER_LIST_TEXT.end}</p>
         ) : (
-          <button
+          <Button
             type="button"
-            className={styles.secondaryButton}
+            variant="secondary"
             onClick={() => void loadMore()}
             disabled={continuation === 'loading'}
             aria-busy={continuation === 'loading'}
           >
             {continuation === 'loading' ? ORDER_LIST_TEXT.loadingMore : ORDER_LIST_TEXT.loadMore}
-          </button>
+          </Button>
         )}
       </div>
     </section>

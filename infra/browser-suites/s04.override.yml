@@ -308,3 +308,14 @@ services:
       IdentitySeed__Assignments__17__ApprovedByUserId: 20000000-0000-0000-0000-000000000003
       IdentitySeed__Assignments__17__Scopes__0__Type: Company
       IdentitySeed__Assignments__17__Scopes__0__Id: 10000000-0000-0000-0000-000000000001
+      # SALES-DS-01 company-boundary acceptance only: reuse the existing disposable preparer role in
+      # the second synthetic company so the real shell picker can prove that A's list state is fenced.
+      # This is neither a new permission/role nor a production/default grant.
+      IdentitySeed__Assignments__18__Id: b4000000-0000-4000-8000-000000000412
+      IdentitySeed__Assignments__18__UserId: b2000000-0000-4000-8000-000000000401
+      IdentitySeed__Assignments__18__RoleId: b3000000-0000-4000-8000-000000000401
+      IdentitySeed__Assignments__18__CompanyId: 10000000-0000-0000-0000-000000000002
+      IdentitySeed__Assignments__18__ValidFromUtc: "2026-01-01T00:00:00+00:00"
+      IdentitySeed__Assignments__18__ApprovedByUserId: 20000000-0000-0000-0000-000000000003
+      IdentitySeed__Assignments__18__Scopes__0__Type: Company
+      IdentitySeed__Assignments__18__Scopes__0__Id: 10000000-0000-0000-0000-000000000002

@@ -167,9 +167,15 @@ test('S04-GS1 box → grouped results → open the order → Back returns to the
 test('S04-GS2 the preparer finds the REAL Cari party and opens its detail', async ({ page }) => {
   const party = await readParty(page)
   await signInAs(page, preparerActor)
-  const response = page.waitForResponse((candidate) => isSearch(candidate, party.legalName))
-  await page.goto(`/arama?q=${encodeURIComponent(party.legalName)}`)
+  await page.goto('/')
+  const box = page.getByRole('search', { name: 'Genel arama' }).first()
+  await expect(box).toBeVisible()
+  const searchTerm = party.code
+  await box.getByRole('textbox', { name: 'Genel arama', exact: true }).fill(searchTerm)
+  const response = page.waitForResponse((candidate) => isSearch(candidate, searchTerm))
+  await box.getByRole('button', { name: 'Genel aramada ara' }).click()
   const answer = await searchAnswer(await response)
+  await expect(page).toHaveURL(isResultsUrl(searchTerm))
   const cari = answer.groups.find((group) => group.kind === PARTY_KIND)
   expect(cari?.items.map((item) => item.id)).toContain(realPartyId)
   expect(answer.groups.map((group) => group.kind)).not.toContain(PRODUCT_KIND)
@@ -185,7 +191,7 @@ test('S04-GS2 the preparer finds the REAL Cari party and opens its detail', asyn
   expect((await detailRead).status()).toBe(200)
   await expect(page.getByTestId(`global-search-group-${PARTY_KIND}`)).toHaveCount(0)
   // Back is a new route entry: a fresh read answers the same party.
-  const again = await backExpectingFreshSearch(page, party.legalName)
+  const again = await backExpectingFreshSearch(page, searchTerm)
   expect(again.groups.find((group) => group.kind === PARTY_KIND)?.items.map((item) => item.id)).toContain(realPartyId)
   await expect(page.getByTestId(`global-search-group-${PARTY_KIND}`).getByRole('link', { name: new RegExp(party.code) })).toBeVisible()
 })
@@ -195,11 +201,11 @@ test('S04-GS3 the reader, without the Cari read, gets no Cari group — its orde
   const documentNo = await readDocumentNo(page)
   await signInAs(page, readerActor)
 
-  const byName = page.waitForResponse((candidate) => isSearch(candidate, party.legalName))
-  await page.goto(`/arama?q=${encodeURIComponent(party.legalName)}`)
-  const nameAnswer = await searchAnswer(await byName)
-  expect(nameAnswer.groups.map((group) => group.kind)).not.toContain(PARTY_KIND)
-  expect(JSON.stringify(nameAnswer)).not.toContain(realPartyId)
+  const byCode = page.waitForResponse((candidate) => isSearch(candidate, party.code))
+  await page.goto(`/arama?q=${encodeURIComponent(party.code)}`)
+  const codeAnswer = await searchAnswer(await byCode)
+  expect(codeAnswer.groups.map((group) => group.kind)).not.toContain(PARTY_KIND)
+  expect(JSON.stringify(codeAnswer)).not.toContain(realPartyId)
   await expect(page.getByTestId(`global-search-group-${PARTY_KIND}`)).toHaveCount(0)
 
   const byNumber = page.waitForResponse((candidate) => isSearch(candidate, documentNo))
