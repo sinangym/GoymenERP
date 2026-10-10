@@ -140,7 +140,7 @@ public sealed partial class InventoryStore : IInventoryPendingApprovalReaderV1
         RequireResolvedCompany();
         if (string.IsNullOrWhiteSpace(excludingActorId)
             || (afterSubmittedAtUtc is null) != (afterApprovalId is null)
-            || afterSubmittedAtUtc is { Offset: not TimeSpan.Zero }
+            || (afterSubmittedAtUtc is not null && afterSubmittedAtUtc.Value.Offset != TimeSpan.Zero)
             || afterApprovalId == Guid.Empty
             || limit is < 1 or > InventoryPendingApprovalReadServiceV1.ReadLimit)
         {
