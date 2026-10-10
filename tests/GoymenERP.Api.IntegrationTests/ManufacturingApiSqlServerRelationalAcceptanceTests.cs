@@ -899,7 +899,7 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
                    new CloseOrderRequestV1(inactiveBalanced.Version), "sql-settings-inactive"))
         {
             Assert.Equal(HttpStatusCode.ServiceUnavailable, inactive.StatusCode);
-            Assert.Equal(ClosureAssessmentCodesV1.PolicyNotEffective, (await Problem(inactive)).Code);
+            Assert.Equal("service_unavailable", (await Problem(inactive)).Code);
         }
 
         var (futureOrder, futureBalanced) = await run.BalancedOrderAsync(
@@ -908,7 +908,7 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
                    new CloseOrderRequestV1(futureBalanced.Version), "sql-settings-future"))
         {
             Assert.Equal(HttpStatusCode.ServiceUnavailable, future.StatusCode);
-            Assert.Equal(ClosureAssessmentCodesV1.PolicyNotEffective, (await Problem(future)).Code);
+            Assert.Equal("service_unavailable", (await Problem(future)).Code);
         }
 
         // Published Settings history is immutable, and an overlapping successor cannot replace the captured source.
