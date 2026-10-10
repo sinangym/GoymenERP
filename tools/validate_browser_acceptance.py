@@ -636,14 +636,22 @@ def validate_suite_identity(suite: str, extra: dict, actor_ids: list[str]) -> No
                                     "product.operational-selection.read")),
         }
         require(set(actor_ids) == set(expected), "pur01 requires its exact disposable actor set")
-        require(len(roles) == len(expected) and len(grouped["Assignments"]) == len(expected),
-                "pur01 requires one isolated role and assignment per disposable actor")
+        require(len(roles) == len(expected) and len(grouped["Assignments"]) == 6,
+                "pur01 requires five isolated roles and exactly six assignments")
+        actor_users = {subject: identity_id for identity_id, subject in users.items()}
+        company_gdc = "10000000-0000-0000-0000-000000000001"
+        company_other = "10000000-0000-0000-0000-000000000002"
         for actor, (role_code, expected_permissions) in expected.items():
-            user_id = next((identity_id for identity_id, subject in users.items() if subject == actor), None)
+            user_id = actor_users.get(actor)
             matching = [row for row in grouped["Assignments"].values() if row["UserId"] == user_id]
-            require(user_id is not None and len(matching) == 1,
-                    f"{actor} requires exactly one isolated assignment")
-            role = roles[matching[0]["RoleId"]]
+            expected_companies = {company_gdc, company_other} if actor == "pur01-creator" else {company_gdc}
+            require(user_id is not None and len(matching) == len(expected_companies)
+                    and {row["CompanyId"] for row in matching} == expected_companies,
+                    f"{actor} requires its exact isolated company assignments")
+            role_ids = {row["RoleId"] for row in matching}
+            require(len(role_ids) == 1,
+                    f"{actor} assignments must reuse one isolated role")
+            role = roles[next(iter(role_ids))]
             permission_keys = [key for key in role if key.startswith("Permissions__")]
             actual_permissions = tuple(
                 role[f"Permissions__{index}"] for index in range(len(permission_keys)))
