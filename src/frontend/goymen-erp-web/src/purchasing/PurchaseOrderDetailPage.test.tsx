@@ -168,6 +168,19 @@ describe('PurchaseOrderDetailPage document-vault mount', () => {
     })])
   })
 
+  it('shows the server-backed 360 summary, supplier identities, commitment and linked documents', () => {
+    scenario.status = 'Approved'
+    scenario.lines = [serverLine()]
+    renderDetail()
+
+    expect(screen.getByTestId('purchase-order-summary').textContent).toContain(ORDER)
+    expect(screen.getByTestId('purchase-order-status-facts').textContent).toContain('2026-09-23')
+    expect(screen.getByTestId('purchase-order-supplier-facts').textContent).toContain('44444444-4444-4444-8444-444444444444')
+    expect(screen.getByTestId('purchase-order-supplier-facts').textContent).toContain('55555555-5555-4555-8555-555555555555')
+    expect(screen.getByTestId('purchase-order-lines').textContent).toContain('5.7500')
+    expect(screen.getByRole('region', { name: 'Sipariş belge kasası' })).toBeTruthy()
+  })
+
   it.each([
     { name: 'foreign company answer', detailCompanyId: OTHER_COMPANY, detailOrderId: ORDER },
     { name: 'another order answer', detailCompanyId: COMPANY, detailOrderId: OTHER_ORDER },
@@ -290,7 +303,7 @@ describe('PurchaseOrderDetailPage source-return hint', () => {
 
   it('does not manufacture a request link for an unlinked order', () => {
     renderDetail()
-    expect(screen.getByText('Bağlı değil')).toBeTruthy()
+    expect(screen.getByText(T.sourceNotLinked)).toBeTruthy()
     expect(screen.queryByRole('link')).toBeNull()
   })
 })
