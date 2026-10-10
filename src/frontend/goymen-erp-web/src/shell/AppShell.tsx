@@ -13,7 +13,7 @@
  * hidden navigation for the keyboard or a screen reader to find.
  */
 
-import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { Fragment, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router'
 import { capabilityFailClosed, hasCapability, type ShellState } from './shellState'
 import { useShellDispatch, useShellState } from './shellContext'
@@ -29,6 +29,7 @@ import {
   NAV_CAPABILITIES,
   NAV_GROUPS,
   NAV_HOME,
+  NAV_PATH_OWNERS,
   NAV_TEXT,
   type NavEntryId,
   type NavGroupId,
@@ -46,6 +47,8 @@ interface NavLeaf {
   readonly key: NavEntryId
   readonly path: string
   readonly label: string
+  /** NAV-OPENING-01: the intermediate label drawn above this entry, when its group names one. */
+  readonly subheading?: string | undefined
 }
 
 interface DrawnGroup {
@@ -67,7 +70,9 @@ function drawnGroups(state: ShellState): DrawnGroup[] {
   return NAV_GROUPS.map((group) => ({
     id: group.id,
     label: group.label,
-    leaves: group.entries.filter((entry) => hasCapability(state, entry)).map(leafOf),
+    // A subheading travels with its granted entry, so it is never drawn on its own or for an ungranted one.
+    leaves: group.entries.filter((entry) => hasCapability(state, entry))
+      .map((entry) => ({ ...leafOf(entry), subheading: group.subheadings?.[entry] })),
   })).filter((group) => group.leaves.length > 0)
 }
 
@@ -75,8 +80,11 @@ const firstSegment = (path: string) => path.split('/')[1] ?? ''
 
 /**
  * The work area the open page belongs to: the group of the longest entry path the page is or lies
- * under (`/satis/siparisler/yeni` is Satış). A page under no entry (a plan, a label card) falls back to
- * its first path segment, but only when exactly one group owns that segment.
+ * under (`/satis/siparisler/yeni` is Satış; `/stok/acilis/yeni` is the opening-stock entry's group). A page
+ * under no entry first asks `NAV_PATH_OWNERS`: a declared prefix belongs to the group that draws its owner
+ * ENTRY (a label card under `/stok` is Ürün ve stok's while the stock positions are granted) and to no group
+ * when that entry is not drawn — never to another group that merely shares the segment. Any other page (a
+ * plan) falls back to its first path segment, but only when exactly one group owns that segment.
  */
 function activeGroupOf(groups: readonly DrawnGroup[], pathname: string): NavGroupId | null {
   let best: { readonly id: NavGroupId; readonly length: number } | null = null
@@ -89,6 +97,10 @@ function activeGroupOf(groups: readonly DrawnGroup[], pathname: string): NavGrou
     }
   }
   if (best) return best.id
+  const declared = NAV_PATH_OWNERS.find((owner) => pathname === owner.prefix || pathname.startsWith(`${owner.prefix}/`))
+  if (declared) {
+    return groups.find((group) => group.leaves.some((leaf) => leaf.key === declared.entry))?.id ?? null
+  }
   const segment = firstSegment(pathname)
   if (!segment) return null
   const owners = groups.filter((group) => group.leaves.some((leaf) => firstSegment(leaf.path) === segment))
@@ -415,11 +427,17 @@ export function AppShell() {
                   </button>
                   <ul id={listId} className={styles.groupList} hidden={!open}>
                     {group.leaves.map((leaf) => (
-                      <li key={leaf.key}>
-                        <NavLink to={leaf.path} end className={linkClass} onClick={chooseEntry}>
-                          {leaf.label}
-                        </NavLink>
-                      </li>
+                      <Fragment key={leaf.key}>
+                        {/* NAV-OPENING-01: words above the entry — not a link, not focusable, no control. */}
+                        {leaf.subheading
+                          ? <li className={styles.subheading} data-nav-subheading={leaf.key}>{leaf.subheading}</li>
+                          : null}
+                        <li>
+                          <NavLink to={leaf.path} end className={linkClass} onClick={chooseEntry}>
+                            {leaf.label}
+                          </NavLink>
+                        </li>
+                      </Fragment>
                     ))}
                   </ul>
                 </li>

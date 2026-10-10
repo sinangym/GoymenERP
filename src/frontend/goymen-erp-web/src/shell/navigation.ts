@@ -249,6 +249,11 @@ export interface NavGroup {
   readonly id: NavGroupId
   readonly label: string
   readonly entries: readonly NavEntryId[]
+  /**
+   * A visible intermediate label drawn directly above the named entry (NAV-OPENING-01). It is words only: not a
+   * link, not a control and never a permission — it is drawn exactly when its entry is, and never on its own.
+   */
+  readonly subheadings?: Readonly<Partial<Record<NavEntryId, string>>>
 }
 
 /**
@@ -319,7 +324,19 @@ export const NAV_GROUPS: readonly NavGroup[] = [
       'identity.assignments.list',
       'inventory.opening-stock.record',
     ],
+    subheadings: { 'inventory.opening-stock.record': 'İlk kurulum ve veri aktarımı' },
   },
+]
+
+/**
+ * Who owns a page that lies under no sidebar entry (NAV-OPENING-01). `/stok/acilis` and everything below it belong
+ * to the opening-stock entry by the ordinary longest-entry rule; every OTHER `/stok/…` page (a label card, the
+ * movement timeline) is daily stock work and belongs to the stock-positions ENTRY — so to whichever group draws that
+ * entry, and only while the actor is granted it. Ownership hangs on the authorised entry, never on a group: a heading
+ * gains no permission, and an actor without the entry has no work area claimed for those pages.
+ */
+export const NAV_PATH_OWNERS: readonly { readonly prefix: string; readonly entry: NavEntryId }[] = [
+  { prefix: '/stok', entry: 'inventory.stock-positions.list' },
 ]
 
 /** The home link above the groups. The index route is always mounted, so it needs no capability. */

@@ -718,15 +718,107 @@ describe('NAV-OPENING-01: Açılış stokları under Ayarlar', () => {
     expect(groupButton(positions, 'Ayarlar').getAttribute('aria-expanded')).toBe('false')
   })
 
-  it('pins the existing first-segment rule now that Ayarlar and Ürün ve stok both own /stok', async () => {
-    // A label card (`/stok/etiket/…`) lies under no entry. With both groups drawn, the rule claims no work area
-    // (no guess, as for `/lojistik/…`); with only the stock positions drawn, Ürün ve stok still opens.
-    const both = await renderShell('/stok/etiket/LBL-1', [OPENING, CAPABILITY.inventoryStockPositionsList])
-    expect(within(both).queryAllByRole('button', { name: new RegExp(ACTIVE_HINT) })).toEqual([])
+  const SUBHEADING = 'İlk kurulum ve veri aktarımı'
+  const POSITIONS = CAPABILITY.inventoryStockPositionsList
+  const activeGroups = (scope: HTMLElement) =>
+    within(scope).queryAllByRole('button', { name: new RegExp(ACTIVE_HINT) }).map((button) => button.textContent)
+  /** Stock pages under no sidebar entry: a label card, its sub-page, the company movement timeline. */
+  const STOCK_DETAIL_PAGES = ['/stok/etiket/LBL-1', '/stok/etiket/LBL-1/hareketler', '/stok/hareketler']
+
+  it('gives every non-opening stock page to Ürün ve stok through the authorised stock entry, for both-capability and positions-only actors', async () => {
+    for (const granted of [[OPENING, POSITIONS], [POSITIONS], [OPENING, POSITIONS, CAPABILITY.organizationSitesList]]) {
+      for (const page of STOCK_DETAIL_PAGES) {
+        const navigation = await renderShell(page, granted)
+        expect(activeGroups(navigation), `${page} with ${granted.join(',')}`).toEqual(['Ürün ve stok'])
+        expect(groupButton(navigation, 'Ürün ve stok').getAttribute('aria-expanded')).toBe('true')
+        // The page is nobody's own leaf, and opening stock is not one of the daily stock leaves.
+        expect(within(navigation).getAllByRole('link').filter((link) => link.getAttribute('aria-current') === 'page')).toEqual([])
+        cleanup()
+      }
+    }
+  })
+
+  it('claims no work area for those pages when the stock entry is not granted: a heading is never the owner', async () => {
+    // Opening-only: Ayarlar is drawn and its entry lives under `/stok`, but it does not own the other stock pages.
+    for (const page of STOCK_DETAIL_PAGES) {
+      const openingOnly = await renderShell(page, [OPENING, CAPABILITY.productItemsList])
+      expect(activeGroups(openingOnly), page).toEqual([])
+      expect(within(openingOnly).getAllByRole('button').map((button) => button.textContent)).toEqual(['Ürün ve stok', 'Ayarlar'])
+      cleanup()
+    }
+    // No stock capability at all: nothing stock-related is drawn or claimed.
+    const unauthorised = await renderShell('/stok/etiket/LBL-1', [CAPABILITY.cariPartiesList])
+    expect(activeGroups(unauthorised)).toEqual([])
+    expect(within(unauthorised).getAllByRole('button').map((button) => button.textContent)).toEqual(['Cari'])
+    expect(within(unauthorised).queryByText(SUBHEADING)).toBeNull()
+  })
+
+  it('keeps /stok/acilis and every child with Ayarlar for each profile that holds the opening entry', async () => {
+    for (const granted of [[OPENING], [OPENING, POSITIONS]]) {
+      for (const page of [OPENING_PATH, '/stok/acilis/yeni', '/stok/acilis/COUNT-1']) {
+        const navigation = await renderShell(page, granted)
+        expect(activeGroups(navigation), `${page} with ${granted.join(',')}`).toEqual(['Ayarlar'])
+        cleanup()
+      }
+    }
+  })
+
+  it('draws "İlk kurulum ve veri aktarımı" above Açılış stokları as words only, and only with that entry', async () => {
+    const navigation = await renderShell(OPENING_PATH, [OPENING, CAPABILITY.organizationSitesList, POSITIONS])
+    const list = groupButton(navigation, 'Ayarlar').parentElement!.querySelector('ul')!
+    // Order inside Ayarlar: the settings entry, then the label, then the entry it introduces.
+    expect([...list.children].map((item) => item.textContent)).toEqual(['Organizasyon', SUBHEADING, OPENING_LABEL])
+    const label = within(navigation).getByText(SUBHEADING)
+    expect(label.tagName).toBe('LI')
+    expect(label.getAttribute('data-nav-subheading')).toBe(OPENING)
+    // Words, not a control: no link, no button, not focusable — the keyboard order is unchanged.
+    expect(label.querySelector('a, button')).toBeNull()
+    expect(label.hasAttribute('tabindex')).toBe(false)
+    expect(within(navigation).queryByRole('link', { name: SUBHEADING })).toBeNull()
+    expect(within(navigation).queryByRole('button', { name: SUBHEADING })).toBeNull()
+    expect(within(navigation).getAllByText(SUBHEADING)).toHaveLength(1)
+    // It is not drawn in Ürün ve stok, whose daily leaves do not include opening stock.
+    const stock = groupButton(navigation, 'Ürün ve stok').parentElement!.querySelector('ul')!
+    expect([...stock.children].map((item) => item.textContent)).toEqual([CAPABILITY_NAV_LABEL[POSITIONS]])
     cleanup()
-    const positionsOnly = await renderShell('/stok/etiket/LBL-1', [CAPABILITY.inventoryStockPositionsList])
-    expect(within(positionsOnly).getByRole('button', { name: `Ürün ve stok${ACTIVE_HINT}` }).getAttribute('aria-expanded'))
-      .toBe('true')
+
+    // Without the opening capability neither the entry nor its label is drawn, even with every other Ayarlar entry.
+    const without = await renderShell('/', [
+      CAPABILITY.organizationSitesList, CAPABILITY.organizationWorkCentersList, CAPABILITY.identityAssignmentsList, POSITIONS,
+    ])
+    expect(within(without).queryByText(SUBHEADING)).toBeNull()
+    expect(within(without).queryByRole('link', { name: OPENING_LABEL })).toBeNull()
+    cleanup()
+
+    // Opening-only: Ayarlar holds just the label and its entry.
+    const only = await renderShell('/', [OPENING])
+    const onlyList = groupButton(only, 'Ayarlar').parentElement!.querySelector('ul')!
+    expect([...onlyList.children].map((item) => item.textContent)).toEqual([SUBHEADING, OPENING_LABEL])
+  })
+
+  it('keeps the keyboard order: Tab goes from the previous Ayarlar entry straight to Açılış stokları', async () => {
+    const user = userEvent.setup()
+    const navigation = await renderShell(OPENING_PATH, [OPENING, CAPABILITY.organizationSitesList])
+    within(navigation).getByRole('link', { name: 'Organizasyon' }).focus()
+    await user.tab()
+    expect(document.activeElement).toBe(within(navigation).getByRole('link', { name: OPENING_LABEL }))
+  })
+
+  it('shows the same label in the phone drawer, above the entry', async () => {
+    stubViewport(true)
+    await mountShell('/', [OPENING, POSITIONS])
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: NAV_TEXT.menuButton }))
+    const drawerNav = within(screen.getByRole('dialog', { name: NAV_TEXT.drawer })).getByRole('navigation', { name: NAV_NAME })
+    const list = groupButton(drawerNav, 'Ayarlar').parentElement!.querySelector('ul')!
+    expect([...list.children].map((item) => item.textContent)).toEqual([SUBHEADING, OPENING_LABEL])
+    expect(within(drawerNav).queryByRole('link', { name: SUBHEADING })).toBeNull()
+  })
+
+  it('pins the stylesheet rule that draws the label without cutting it', () => {
+    const rule = /\.subheading \{([^}]*)\}/.exec(shellCss)?.[1] ?? ''
+    expect(rule).toMatch(/padding:/)
+    expect(rule).not.toMatch(/overflow:\s*hidden|text-overflow|white-space:\s*nowrap|display:\s*none/)
   })
 
   it('is reachable from the phone menu under Ayarlar, and choosing it closes the drawer', async () => {
