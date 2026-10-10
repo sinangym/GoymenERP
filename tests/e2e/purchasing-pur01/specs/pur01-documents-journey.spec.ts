@@ -184,8 +184,16 @@ test('PUR01-DOC uploads once, reopens, previews/downloads and hides the vault fr
   const foreign = await page.request.get(`${env.apiBaseUrl}${listPath()}`, {
     headers: apiHeaders(creatorActor, otherCompanyId),
   })
-  expect(foreign.status()).toBe(403)
-  expect(await foreign.text()).not.toContain(FILE_NAME)
+  // The creator may read documents in the other company, but this order is not that company's record:
+  // DocumentService answers another company's owner as 404 (non-disclosure), never as a readable or refused vault.
+  expect(foreign.status()).toBe(404)
+  const foreignBody = await foreign.text()
+  expect(foreignBody).not.toContain(FILE_NAME)
+  expect(foreignBody).not.toContain(companyId)
+  const foreignProblem = JSON.parse(foreignBody) as Record<string, unknown>
+  for (const leaked of ['items', 'canUpload', 'document', 'fileName', 'ownerKind', 'ownerId']) {
+    expect(foreignProblem, `the foreign-company answer carries "${leaked}"`).not.toHaveProperty(leaked)
+  }
   const unknownOwner = crypto.randomUUID()
   const unknown = await page.request.get(`${env.apiBaseUrl}${listPath(unknownOwner)}`, {
     headers: apiHeaders(creatorActor),
@@ -194,4 +202,8 @@ test('PUR01-DOC uploads once, reopens, previews/downloads and hides the vault fr
   const unknownBody = await unknown.text()
   expect(unknownBody).not.toContain(orderId)
   expect(unknownBody).not.toContain(FILE_NAME)
+  // An owner that exists in another company and an owner that does not exist answer with the same shape — the
+  // same fields, whatever the platform's problem writer names them — so nothing says which of the two it was.
+  const unknownProblem = JSON.parse(unknownBody) as Record<string, unknown>
+  expect(Object.keys(foreignProblem).sort()).toEqual(Object.keys(unknownProblem).sort())
 })

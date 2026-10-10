@@ -410,6 +410,20 @@ test('P04 creates one real order, closes the form, reopens that record and uses 
     data: deniedRequest,
   })
   expect(denied.status()).toBe(403)
+  // The creator also holds its role in the other company, so the create is authorized there and reaches the
+  // supplier check: GDC's supplier account is not that company's, which PurchasingService.RequireSupplierAsync
+  // answers 409 account_state with invalid_reference on both references — never an order.
+  const otherCompanyOrderIds = async (): Promise<readonly string[]> => {
+    const response = await page.request.get(`${env.apiBaseUrl}${ORDERS_PATH}`, {
+      headers: { [DEVELOPMENT_USER_HEADER]: creatorActor, 'X-Company-Id': otherCompanyId },
+    })
+    expect(response.status()).toBe(200)
+    const body = (await response.json()) as { readonly items: readonly OrderSummary[]; readonly nextCursor: string | null }
+    expect(body.nextCursor).toBeNull()
+    expect(body.items.every((item) => item.companyId === otherCompanyId)).toBe(true)
+    return body.items.map((item) => item.id)
+  }
+  const otherBefore = await otherCompanyOrderIds()
   const elsewhere = await page.request.post(`${env.apiBaseUrl}${ORDERS_PATH}`, {
     headers: {
       [DEVELOPMENT_USER_HEADER]: creatorActor, 'X-Company-Id': otherCompanyId,
@@ -417,7 +431,18 @@ test('P04 creates one real order, closes the form, reopens that record and uses 
     },
     data: deniedRequest,
   })
-  expect([403, 404]).toContain(elsewhere.status())
+  expect(elsewhere.status()).toBe(409)
+  const refusal = (await elsewhere.json()) as Record<string, unknown>
+  expect(refusal.code).toBe('account_state')
+  expect(refusal.errors).toEqual([
+    { field: 'supplierPartyId', code: 'invalid_reference' },
+    { field: 'companyAccountId', code: 'invalid_reference' },
+  ])
+  // A refusal is not a command answer: it carries no order and is not a replay.
+  expect(refusal).not.toHaveProperty('order')
+  expect(refusal).not.toHaveProperty('isReplay')
+  // Nothing was written in either company.
+  expect(await otherCompanyOrderIds()).toEqual(otherBefore)
   expect(await readOrders(page, readerActor)).toHaveLength(before.length + 1)
 })
 
