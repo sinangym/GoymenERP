@@ -1,190 +1,64 @@
+/* C-01 Cari Kartlar on GOY-DS-001 (CARI-DS-01). The table is the shared ui/DataTable and the controls are
+   ui/Field and ui/Button; this file only places the page, its controls, its cells and its phone cards on the
+   --goy-ds-* tokens. Nothing is hidden or shrunk to fit: a long legal name wraps on as many lines as it needs, it
+   is never cut with an ellipsis. */
+
 .page {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
+  display: grid;
+  gap: var(--goy-ds-space-3);
+  padding: var(--goy-ds-space-1) 0 var(--goy-ds-space-4);
+  min-width: 0;
+  font-family: var(--goy-ds-font-sans);
+  color: var(--goy-ds-color-text);
 }
 
-.page h1 {
+.titleRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--goy-ds-space-2) var(--goy-ds-space-4);
+  min-width: 0;
+}
+
+.title {
+  margin: 0;
   font-size: 1.25rem;
-  margin: 0;
+  line-height: 28px;
+  font-weight: var(--goy-ds-font-weight-semibold);
 }
 
-.filters {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 16px;
-  align-items: flex-end;
-  padding: 12px 14px;
-  background: #fff;
-  border: 1px solid #d5dbe6;
-  border-radius: 6px;
-}
-
-.field {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  font-size: 0.85rem;
-  color: #55607a;
-}
-.field input,
-.field select {
-  padding: 6px 10px;
-  border: 1px solid #d5dbe6;
-  border-radius: 4px;
-  font: inherit;
-  color: #1a2233;
-}
-
-.roles {
-  border: 1px solid #d5dbe6;
-  border-radius: 4px;
-  padding: 6px 10px 8px;
-  display: flex;
-  gap: 12px;
+/* K5's single authorised "Yeni …" action. It navigates, so it is a link drawn like the design-system primary
+   button. */
+.primaryAction {
+  display: inline-flex;
   align-items: center;
-}
-.roles legend {
-  font-size: 0.8rem;
-  color: #55607a;
-  padding: 0 4px;
-}
-.roles label {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 0.88rem;
-}
-
-/* What narrowed the list, and the way out of it. Sits between the controls and the
-   results because that is where the cause of an empty result is looked for. */
-.activeFilters {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px 10px;
-  padding: 8px 12px;
-  border: 1px solid #d5dbe6;
-  border-left: 4px solid #1f5fd0;
-  border-radius: 4px;
-  background: #f7f9fc;
-  font-size: 0.85rem;
-  color: #35405c;
-}
-.activeFiltersLabel {
-  font-weight: 600;
-}
-.chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-.chip {
-  padding: 2px 8px;
-  border: 1px solid #c3ccdd;
-  border-radius: 999px;
-  background: #fff;
-  color: #35405c;
-}
-/* Pushed to the end of the row so it keeps one predictable place as chips wrap. */
-.clear {
-  margin-left: auto;
-  padding: 5px 12px;
-  border: 1px solid #1f5fd0;
-  border-radius: 4px;
-  background: #fff;
-  color: #1f5fd0;
-  font: inherit;
-  font-size: 0.85rem;
-  cursor: pointer;
-}
-.clear:focus-visible {
-  outline: 2px solid #1f5fd0;
-  outline-offset: 2px;
+  justify-content: center;
+  box-sizing: border-box;
+  min-height: var(--goy-ds-control-height);
+  padding: 0 12px;
+  border: 1px solid transparent;
+  border-radius: var(--goy-ds-radius-sm);
+  background: var(--goy-ds-color-accent);
+  color: var(--goy-ds-color-on-accent);
+  box-shadow: var(--goy-ds-shadow-1);
+  font-size: var(--goy-ds-font-size-md);
+  font-weight: var(--goy-ds-font-weight-medium);
+  line-height: 1.2;
+  text-decoration: none;
+  white-space: nowrap;
 }
 
-/**
- * Six columns do not fit a phone. WCAG 1.4.10 allows the TABLE to scroll sideways —
- * it does not allow the PAGE to. Without this container the table pushed the document
- * wider than the viewport, so every screen (filters, heading, nav) scrolled with it
- * and the last column was simply unreachable.
- *
- * `tabindex="0"` + a label make the scroll region reachable by keyboard: a sighted
- * mouse user can drag it, and without this a keyboard user could not reach the
- * off-screen columns at all.
- */
-.tableScroll {
-  overflow-x: auto;
-  max-width: 100%;
+.primaryAction:hover {
+  background: var(--goy-ds-color-accent-hover);
 }
+
+.primaryAction:focus-visible,
+.rowLink:focus-visible,
+.legacySummary:focus-visible,
 .tableScroll:focus-visible {
-  outline: 2px solid #1f5fd0;
+  outline: 2px solid var(--goy-ds-color-accent);
   outline-offset: 2px;
-}
-
-.table {
-  width: 100%;
-  border-collapse: collapse;
-  background: #fff;
-  border: 1px solid #d5dbe6;
-  border-radius: 6px;
-  overflow: hidden;
-  /* Keeps columns legible instead of crushing them; the container scrolls instead. */
-  min-width: 42rem;
-}
-.caption {
-  text-align: left;
-  padding: 10px 12px;
-  font-size: 0.85rem;
-  color: #55607a;
-}
-.table th,
-.table td {
-  text-align: left;
-  padding: 10px 12px;
-  border-top: 1px solid #eef1f6;
-  font-size: 0.9rem;
-  vertical-align: top;
-}
-.table th {
-  background: #f7f9fc;
-  font-weight: 600;
-  color: #35405c;
-}
-.table th button {
-  background: none;
-  border: 0;
-  padding: 0;
-  font: inherit;
-  color: inherit;
-  cursor: pointer;
-  text-align: left;
-}
-.table th button:focus-visible {
-  outline: 2px solid #1f5fd0;
-  outline-offset: 2px;
-}
-.table tr[data-inactive='true'] td {
-  color: #7b8499;
-}
-
-.legalName {
-  display: block;
-}
-.tradeName {
-  display: block;
-  font-size: 0.82rem;
-  color: #7b8499;
-}
-/* Passive cells carry a visible cue as well as their text — colour is never the only
-   signal (ERP-000K §15). */
-td[data-party-state='inactive'],
-td[data-account-state='inactive'] {
-  color: #a3592f;
-  font-weight: 600;
 }
 
 /* Announcement region: read by assistive tech, not a visual banner. */
@@ -200,187 +74,400 @@ td[data-account-state='inactive'] {
   border: 0;
 }
 
-.more {
-  align-self: flex-start;
-  padding: 8px 16px;
-  border: 1px solid #1f5fd0;
-  border-radius: 4px;
-  background: #fff;
-  color: #1f5fd0;
+/* ── Controls ── */
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--goy-ds-space-3) var(--goy-ds-space-4);
+  padding: var(--goy-ds-space-3) var(--goy-ds-space-4);
+  border: 1px solid var(--goy-ds-color-border);
+  border-radius: var(--goy-ds-radius-md);
+  background: var(--goy-ds-color-surface);
+}
+
+.searchField {
+  flex: 2 1 18rem;
+}
+
+.filterField {
+  flex: 1 1 11rem;
+}
+
+.sizeField {
+  flex: 0 1 7rem;
+}
+
+/* Native controls take the page's font and the token border; nothing global is reset. */
+.input,
+.select {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  min-height: var(--goy-ds-control-height);
+  padding: 0 8px;
+  border: 1px solid var(--goy-ds-color-border-control);
+  border-radius: var(--goy-ds-radius-sm);
+  background: var(--goy-ds-color-surface);
+  color: var(--goy-ds-color-text);
   font: inherit;
+  font-size: var(--goy-ds-font-size-md);
+}
+
+.input:hover,
+.select:hover {
+  border-color: var(--goy-ds-color-border-hover);
+}
+
+.input:focus-visible,
+.select:focus-visible {
+  outline: none;
+  border-color: var(--goy-ds-color-accent);
+  box-shadow: 0 0 0 3px var(--goy-ds-focus-ring);
+}
+
+/* The legacy commercial classification: one fold away from the primary filters, and visually subordinate to
+   them, because it is history rather than the way a counterparty is found today (ILK_DILIM §4.1). */
+.legacy {
+  padding: var(--goy-ds-space-2) var(--goy-ds-space-4);
+  border: 1px solid var(--goy-ds-color-border);
+  border-radius: var(--goy-ds-radius-md);
+  background: var(--goy-ds-color-surface);
+}
+
+.legacySummary {
   cursor: pointer;
-}
-.more:disabled {
-  opacity: 0.6;
-  cursor: default;
-}
-
-@media (max-width: 767px) {
-  .filters {
-    flex-direction: column;
-    align-items: stretch;
-  }
-  /* Stretching a column is not enough: a flex item defaults to `min-width: auto`, and
-     an <input>/<select> has an intrinsic minimum width, so the fields refused to
-     shrink and pushed the whole page wider than the viewport at 320 CSS px. */
-  .field {
-    min-width: 0;
-  }
-  .field input,
-  .field select {
-    width: 100%;
-    min-width: 0;
-    max-width: 100%;
-  }
-  /* Four role checkboxes do not fit one 320px row. */
-  .roles {
-    flex-wrap: wrap;
-    min-width: 0;
-  }
-  /* `margin-left: auto` on a wrapped single-column row pushes the button off the
-     right edge instead of aligning it; stretch it to the row instead. */
-  .clear {
-    margin-left: 0;
-    width: 100%;
-  }
+  font-size: var(--goy-ds-font-size-sm);
+  color: var(--goy-ds-color-text-secondary);
+  /* The marker is the affordance; keep it. */
+  list-style: revert;
 }
 
-/*
- * The old rule here was `.table { display: block; overflow-x: auto }`. It did not
- * work — the browser measurement showed the document still scrolling sideways at
- * 375px — and `display: block` on a <table> drops the table's row/cell semantics in
- * the accessibility tree, which costs a screen-reader user the column headers. The
- * scroll now lives on a wrapper element instead, so the table stays a table.
- */
+.legacyNote {
+  margin: var(--goy-ds-space-2) 0 var(--goy-ds-space-3);
+  max-width: 62ch;
+  font-size: var(--goy-ds-font-size-sm);
+  color: var(--goy-ds-color-text-secondary);
+}
 
-/* Continuation-level failure: scoped to the "load more" affordance, never a
-   replacement for the list above it (B-C01-008). */
+.legacyControls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--goy-ds-space-3) var(--goy-ds-space-4);
+  padding-bottom: var(--goy-ds-space-1);
+}
+
+.roles {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--goy-ds-space-2) var(--goy-ds-space-3);
+  min-width: 0;
+  margin: 0;
+  padding: 6px 10px 8px;
+  border: 1px solid var(--goy-ds-color-border-control);
+  border-radius: var(--goy-ds-radius-sm);
+}
+
+.roles legend {
+  padding: 0 4px;
+  font-size: var(--goy-ds-font-size-sm);
+  color: var(--goy-ds-color-text-secondary);
+}
+
+.roles label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--goy-ds-font-size-md);
+}
+
+/* What narrowed the list, and the way out of it. Sits between the controls and the results because that is where
+   the cause of an empty result is looked for. */
+.activeFilters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--goy-ds-space-2) var(--goy-ds-space-3);
+  padding: var(--goy-ds-space-2) var(--goy-ds-space-3);
+  border: 1px solid var(--goy-ds-color-border);
+  border-left: 3px solid var(--goy-ds-color-accent);
+  border-radius: var(--goy-ds-radius-sm);
+  background: var(--goy-ds-color-surface);
+  font-size: var(--goy-ds-font-size-sm);
+}
+
+.activeFiltersLabel {
+  font-weight: var(--goy-ds-font-weight-semibold);
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.chip {
+  padding: 2px 8px;
+  border: 1px solid var(--goy-ds-color-border-control);
+  border-radius: 999px;
+  background: var(--goy-ds-color-surface-muted);
+  overflow-wrap: anywhere;
+}
+
+/* Pushed to the end of the row so it keeps one predictable place as chips wrap. */
+.clear {
+  margin-left: auto;
+}
+
+/* ── Count ── */
+/* The total, and the sentence that says what it counts. The scope sits on its own line: it qualifies the number,
+   it is not a second number. */
+.count {
+  margin: 0;
+  font-size: var(--goy-ds-font-size-sm);
+  color: var(--goy-ds-color-text-secondary);
+}
+
+.countValue {
+  font-weight: var(--goy-ds-font-weight-semibold);
+  color: var(--goy-ds-color-text);
+}
+
+.countScope {
+  display: block;
+  font-size: var(--goy-ds-font-size-xs);
+}
+
+/* ── Table ── */
+/* The scroll lives on this labelled, keyboard-reachable region (WCAG 1.4.10: the table may scroll sideways, the
+   page may not); the DataTable inside keeps its look but hands the scrolling to the region, so the header and the
+   pinned code column stick to the region's edges. */
+.tableScroll {
+  overflow: auto;
+  max-height: 100dvh;
+  min-width: 0;
+  border: 1px solid var(--goy-ds-color-border);
+  border-radius: var(--goy-ds-radius-md);
+  background: var(--goy-ds-color-surface);
+  scrollbar-width: thin;
+}
+
+.tableScroll > div {
+  overflow: visible;
+  max-height: none;
+  border: 0;
+  border-radius: 0;
+}
+
+/* Keeps the columns legible instead of crushing them; the region scrolls instead. */
+.tableScroll table {
+  min-width: 48rem;
+}
+
+.tableScroll tr[data-inactive='true'] td {
+  color: var(--goy-ds-color-text-secondary);
+}
+
+.sortButton {
+  margin: -4px -6px;
+  padding: 0 6px;
+  color: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+}
+
+.sortMark {
+  display: inline-block;
+  min-width: 1em;
+  font-size: 0.7em;
+}
+
+.codeColumn,
+.nowrap {
+  white-space: nowrap;
+}
+
+/* A long legal name wraps on word boundaries (and inside a word only when it must); the column keeps a readable
+   width so a two-line name does not turn into a narrow tower. */
+.nameColumn {
+  min-width: 18rem;
+}
+
+.rolesColumn {
+  min-width: 10rem;
+}
+
+/* The row's link target. Underlined, not colour-only — a link must be findable without relying on hue
+   (ERP-000K §15). */
+.rowLink {
+  color: var(--goy-ds-color-accent-text);
+  font-weight: var(--goy-ds-font-weight-medium);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  white-space: nowrap;
+}
+
+.code {
+  font-weight: var(--goy-ds-font-weight-medium);
+}
+
+.legalName {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.tradeName {
+  display: block;
+  font-size: var(--goy-ds-font-size-sm);
+  color: var(--goy-ds-color-text-secondary);
+  overflow-wrap: anywhere;
+}
+
+/* Passive carries its own word and its own dot tone; colour is never the only signal (ERP-000K §15). */
+.state {
+  white-space: nowrap;
+}
+
+/* ── Phone: one card per counterparty, every fact labelled ── */
+.cards {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--goy-ds-color-border);
+  border-radius: var(--goy-ds-radius-md);
+  background: var(--goy-ds-color-surface);
+}
+
+.card {
+  display: grid;
+  gap: var(--goy-ds-space-2);
+  min-width: 0;
+  padding: var(--goy-ds-space-3);
+  border-bottom: 1px solid var(--goy-ds-color-border);
+  font-size: var(--goy-ds-font-size-md);
+  line-height: 18px;
+}
+
+.card:last-child {
+  border-bottom: 0;
+}
+
+.card[data-inactive='true'] .cardName {
+  color: var(--goy-ds-color-text-secondary);
+}
+
+.cardHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--goy-ds-space-1) var(--goy-ds-space-2);
+}
+
+.cardKind {
+  font-size: var(--goy-ds-font-size-sm);
+  color: var(--goy-ds-color-text-secondary);
+}
+
+.cardName {
+  min-width: 0;
+  font-weight: var(--goy-ds-font-weight-medium);
+}
+
+.cardFacts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px var(--goy-ds-space-3);
+  margin: 0;
+}
+
+.cardFacts div {
+  min-width: 0;
+}
+
+.cardFacts .wide {
+  grid-column: 1 / -1;
+}
+
+.cardFacts dt {
+  font-size: var(--goy-ds-font-size-xs);
+  line-height: 16px;
+  color: var(--goy-ds-color-text-tertiary);
+}
+
+.cardFacts dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+/* ── Continuation ── */
+.more {
+  justify-self: start;
+}
+
+/* Continuation-level failure: scoped to the "load more" affordance, never a replacement for the list above it
+   (B-C01-008). */
 .continuationError {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px 12px;
-  padding: 10px 14px;
-  border: 1px solid #d9a441;
-  border-left: 4px solid #a3592f;
-  border-radius: 4px;
-  background: #fdf7ec;
-  color: #6b4415;
-  font-size: 0.9rem;
-}
-.continuationError button {
-  padding: 6px 14px;
-  border: 1px solid #1f5fd0;
-  border-radius: 4px;
-  background: #fff;
-  color: #1f5fd0;
-  font: inherit;
-  cursor: pointer;
-}
-.continuationError button:disabled {
-  opacity: 0.6;
-  cursor: default;
+  gap: var(--goy-ds-space-2) var(--goy-ds-space-3);
+  padding: var(--goy-ds-space-2) var(--goy-ds-space-3);
+  border: 1px solid var(--goy-ds-color-border);
+  border-left: 3px solid var(--goy-ds-color-warning);
+  border-radius: var(--goy-ds-radius-sm);
+  background: var(--goy-ds-color-surface);
+  font-size: var(--goy-ds-font-size-md);
 }
 
-/* The row's link target. Underlined, not colour-only — a link must be findable
-   without relying on hue (ERP-000K §15). */
-.rowLink {
-  color: #1f5fd0;
-  text-decoration: underline;
-  white-space: nowrap;
-}
-.rowLink:focus-visible {
-  outline: 2px solid #1f5fd0;
-  outline-offset: 2px;
-}
-
-/* The legacy commercial classification: one fold away from the primary filters,
-   and visually subordinate to them, because it is history rather than the way a
-   counterparty is found today (ILK_DILIM §4.1). */
-.legacy {
-  border: 1px solid #d5dbe6;
-  border-radius: 6px;
-  background: #fbfcfe;
-  padding: 8px 14px;
-}
-.legacySummary {
-  cursor: pointer;
-  font-size: 0.85rem;
-  color: #55607a;
-  /* The marker is the affordance; keep it. */
-  list-style: revert;
-}
-.legacySummary:focus-visible {
-  outline: 2px solid #2f5bd7;
-  outline-offset: 2px;
-}
-.legacyNote {
-  margin: 8px 0 10px;
-  font-size: 0.82rem;
-  color: #55607a;
-  max-width: 62ch;
-}
-.legacyControls {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 16px;
-  align-items: flex-end;
-  padding-bottom: 6px;
-}
-
-/* The total, and the sentence that says what it counts. The scope sits on its own
-   line: it qualifies the number, it is not a second number. */
-.countValue {
-  font-weight: 600;
-  color: #1a2233;
-}
-.countLoaded {
-  color: #55607a;
-}
-.countScope {
-  display: block;
-  font-weight: 400;
-  font-size: 0.78rem;
-  color: #55607a;
-}
-
-/* The client-contract refusal. Deliberately not styled like the generic error block:
-   it is about this browser session being out of step with the server, and the action
-   it asks for (reload) is different from "retry". */
+/* The client-contract refusal. Deliberately not styled like the generic error block: it is about this browser
+   session being out of step with the server, and the action it asks for (reload) is different from "retry". */
 .contractRefusal {
-  border: 1px solid #d9a441;
-  background: #fdf7ec;
-  border-radius: 6px;
-  padding: 12px 14px;
-  color: #4a3a1a;
   max-width: 70ch;
+  padding: var(--goy-ds-space-3) var(--goy-ds-space-4);
+  border: 1px solid var(--goy-ds-color-border);
+  border-left: 3px solid var(--goy-ds-color-warning);
+  border-radius: var(--goy-ds-radius-md);
+  background: var(--goy-ds-color-surface);
 }
+
 .contractRefusalTitle {
   margin: 0 0 6px;
-  font-weight: 600;
+  font-weight: var(--goy-ds-font-weight-semibold);
 }
+
 .contractRefusal p {
   margin: 0;
 }
 
-/* K5's single authorised "Yeni …" action, inside the list. Mirrors CariDetailPage.module.css's
-   .action rule for rule — same colour, border, radius and padding — so the two Cari screens do not
-   drift into two different action affordances. No new design token is introduced here. */
-.primaryAction {
-  align-self: flex-start;
-  margin-top: 8px;
-  display: inline-block;
-  font-size: 0.9rem;
-  color: #1f5fd0;
-  text-decoration: none;
-  border: 1px solid #b9c1d1;
-  border-radius: 4px;
-  padding: 6px 12px;
-}
-.primaryAction:hover {
-  text-decoration: underline;
-}
-.primaryAction:focus-visible {
-  outline: 2px solid #1f5fd0;
-  outline-offset: 2px;
+@media (max-width: 767px) {
+  .filters {
+    padding: var(--goy-ds-space-3);
+    gap: var(--goy-ds-space-3);
+  }
+
+  /* The search takes the row; the selects pair up two to a row so the first cards are not pushed below the fold. */
+  .searchField {
+    flex: 1 1 100%;
+  }
+
+  .filterField,
+  .sizeField {
+    flex: 1 1 7rem;
+  }
+
+  /* `margin-left: auto` on a wrapped row pushes the button off the right edge instead of aligning it; stretch it
+     to the row instead. */
+  .clear {
+    margin-left: 0;
+    width: 100%;
+  }
 }

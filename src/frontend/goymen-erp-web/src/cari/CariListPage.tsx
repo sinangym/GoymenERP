@@ -7,9 +7,13 @@
  * allocations, CRM, AI. No create (C-02), no 360 (C-03).
  *
  * Every column below maps to a field the merged API actually returns.
+ *
+ * CARI-DS-01: laid out on GOY-DS-001 — the shared DataTable on wider screens, one labelled card per counterparty
+ * at phone width, Field/Button for the controls. The reads, the filters, the cursor, the gates and the context
+ * fence below are unchanged; only how the same facts are drawn moved.
  */
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { Link, useSearchParams } from 'react-router'
 import {
@@ -59,7 +63,44 @@ import {
   CARI_LIST_ENTRY_QUERY_PARAM,
   type CariListView,
 } from './listViewState'
+import { DataTable, type DataTableColumn } from '../ui/DataTable'
+import { Field } from '../ui/Field'
+import { Button } from '../ui/Button'
+import { StatusIndicator } from '../ui/StatusIndicator'
 import styles from './CariListPage.module.css'
+
+/**
+ * Phone width: the same bound the shell uses for its compact layout, so the list turns into cards exactly when the
+ * navigation does. Without `matchMedia` (jsdom, old engines) the table is drawn, which is the layout every existing
+ * test and spec was written against.
+ */
+const CARD_VIEWPORT = '(max-width: 767px)'
+
+function subscribeCards(onChange: () => void): () => void {
+  if (typeof window.matchMedia !== 'function') return () => {}
+  const query = window.matchMedia(CARD_VIEWPORT)
+  query.addEventListener('change', onChange)
+  return () => query.removeEventListener('change', onChange)
+}
+
+function readCards(): boolean {
+  return typeof window.matchMedia === 'function' && window.matchMedia(CARD_VIEWPORT).matches
+}
+
+/**
+ * The sorts the table headers offer, as one control for the cards, which have no headers. The same two fields and
+ * two directions — nothing the table cannot already do.
+ */
+const CARD_SORT_OPTIONS: readonly { readonly value: string; readonly label: string }[] = [
+  { value: 'code:asc', label: 'Kod (artan)' },
+  { value: 'code:desc', label: 'Kod (azalan)' },
+  { value: 'legalName:asc', label: 'Unvan (A→Z)' },
+  { value: 'legalName:desc', label: 'Unvan (Z→A)' },
+]
+
+/** The per-cell state markers the table mirrors onto their `<td>` (see the effect in CariList). */
+const CELL_MARKERS = ['data-party-state', 'data-account-state', 'data-roles'] as const
+const CELL_MARKER_SELECTOR = CELL_MARKERS.map((name) => `[${name}]`).join(', ')
 
 const KIND_LABEL: Record<number, string> = {
   [PARTY_KIND.LegalEntity]: 'Tüzel kişi',
@@ -242,6 +283,9 @@ function CariList({ namespace }: { readonly namespace: string | null }) {
   const [cursor, setCursor] = useState<string | undefined>(undefined)
   const [loaded, setLoaded] = useState<readonly CounterpartyListItem[]>([])
   const searchRef = useRef<HTMLInputElement>(null)
+  /** Cards or table is a layout choice only: the same rows, the same order, no new read when it flips. */
+  const cards = useSyncExternalStore(subscribeCards, readCards, () => false)
+  const tableHostRef = useRef<HTMLDivElement>(null)
   /**
    * The row to return to, read ONCE at mount for the same reason the view is: this
    * component is remounted per context, so "once per mount" is "once per return".
@@ -618,6 +662,129 @@ function CariList({ namespace }: { readonly namespace: string | null }) {
   const ariaSort = (field: SortField): 'ascending' | 'descending' | 'none' =>
     sort !== field ? 'none' : direction === 'asc' ? 'ascending' : 'descending'
 
+  /**
+   * The shared DataTable draws `<table>`, `<th>` and `<td>` without taking attributes for them, but this screen's
+   * accepted contract puts three facts exactly there: `aria-sort` on the sortable header cells (screen readers read
+   * it from the header, nowhere else), `aria-busy` on the table while a read is in flight, and the party/account
+   * state markers on their cells (`td[data-party-state]`, `td[data-account-state]`, `td[data-roles]`, which the
+   * browser acceptance reads). Rather than drop them, they are written onto those elements after every render:
+   * - each header's sort button names its field, and its `<th>` gets that field's aria-sort;
+   * - each state marker inside a cell is mirrored onto its own `<td>`.
+   * Only these attributes are touched and React never sets them, so nothing here competes with the reconciler.
+   */
+  const busy = query.isFetching
+  useLayoutEffect(() => {
+    const host = tableHostRef.current
+    if (host === null) return
+    host.querySelector('table')?.setAttribute('aria-busy', String(busy))
+    for (const button of host.querySelectorAll<HTMLButtonElement>('button[data-sort-field]')) {
+      button.closest('th')?.setAttribute('aria-sort', ariaSort(button.dataset.sortField as SortField))
+    }
+    for (const marker of host.querySelectorAll<HTMLElement>(CELL_MARKER_SELECTOR)) {
+      const cell = marker.closest('td')
+      if (cell === null) continue
+      for (const name of CELL_MARKERS) {
+        const value = marker.getAttribute(name)
+        if (value !== null) cell.setAttribute(name, value)
+      }
+    }
+  })
+
+  function chooseCardSort(value: string) {
+    const [field, dir] = value.split(':') as [SortField, SortDirection]
+    setSort(field)
+    setDirection(dir)
+    resetPaging()
+  }
+
+  const sortHeader = (field: SortField, label: string) => (
+    <Button
+      type="button"
+      variant="ghost"
+      size="sm"
+      className={styles.sortButton}
+      data-sort-field={field}
+      onClick={() => toggleSort(field)}
+    >
+      {label}
+      {/* The direction is drawn for the eye; for a screen reader it is the header's aria-sort. */}
+      <span aria-hidden="true" className={styles.sortMark}>
+        {sort !== field ? '' : direction === 'asc' ? '▲' : '▼'}
+      </span>
+    </Button>
+  )
+
+  const codeCell = (item: CounterpartyListItem) =>
+    /* The code is the row's identity, so it carries the link: short, unique and stable, which makes it a better
+       target than a long legal name that wraps to three lines on a phone. The accessible name includes the legal
+       name so a screen-reader user hearing the link out of context knows which counterparty it opens. */
+    isRendered(detailGate) ? (
+      <Link
+        className={styles.rowLink}
+        to={`/cari/${item.id}`}
+        data-row-link={item.id}
+        aria-label={`${item.code} — ${item.legalName}`}
+        onClick={() => rememberOpenedRecord(namespace, item.id)}
+      >
+        {item.code}
+      </Link>
+    ) : (
+      // No detail grant: the code is still shown, but as text — no link, no disabled link, no explanation.
+      // Rendering a link the route would refuse anyway offers an action the caller is not entitled to and tells
+      // them the screen exists. Codex caught this on #172 (P1-1); actionGating.ts now states it as the general rule.
+      <span className={styles.code}>{item.code}</span>
+    )
+
+  const nameCell = (item: CounterpartyListItem) => (
+    <>
+      <span className={styles.legalName}>{item.legalName}</span>
+      {item.tradeName !== null && item.tradeName !== item.legalName ? (
+        <span className={styles.tradeName}>{item.tradeName}</span>
+      ) : null}
+    </>
+  )
+
+  /* An empty value here would read exactly like the "unknown" the two state facts were written to avoid. A
+     counterparty with no commercial classification is an ordinary record as of the 10 September decision, and the
+     value says so. DEC-CAR-002: the account of the ACTIVE company only; roles are never unioned across companies.
+     The decoder guarantees this account exists and belongs to the active company in single mode. */
+  const rolesCell = (item: CounterpartyListItem) => {
+    const account = item.companyAccounts[0]
+    return (
+      <span data-roles={account.roles === 0 ? 'none' : 'legacy'}>
+        {rolesText(account.roles, NO_COMMERCIAL_ROLE_LIST)}
+      </span>
+    )
+  }
+
+  /* AT-013 + DEC-CAR-002: two separate facts, both stated explicitly. Showing only the passive one would leave
+     "active" as an absence, which reads the same as "unknown". The text carries the meaning; the dot is decoration. */
+  const partyStateCell = (item: CounterpartyListItem) => (
+    <span data-party-state={item.isActive ? 'active' : 'inactive'} className={styles.state}>
+      <StatusIndicator tone={item.isActive ? 'success' : 'warning'}>{item.isActive ? 'Aktif' : 'Pasif'}</StatusIndicator>
+    </span>
+  )
+
+  const accountStateCell = (item: CounterpartyListItem) => {
+    const active = item.companyAccounts[0].isActive
+    return (
+      <span data-account-state={active ? 'active' : 'inactive'} className={styles.state}>
+        <StatusIndicator tone={active ? 'success' : 'warning'}>{active ? 'Aktif' : 'Pasif'}</StatusIndicator>
+      </span>
+    )
+  }
+
+  const columns: readonly DataTableColumn<CounterpartyListItem>[] = [
+    { key: 'code', header: sortHeader('code', 'Kod'), cell: codeCell, pin: 'start', className: styles.codeColumn },
+    { key: 'legalName', header: sortHeader('legalName', 'Unvan'), cell: nameCell, className: styles.nameColumn },
+    { key: 'kind', header: 'Tür', cell: (item) => KIND_LABEL[item.kind], className: styles.nowrap },
+    /* Named as history, for the same reason the filter is: a column called "Bu şirketteki roller" states the
+       classification as the counterparty's current commercial direction (ILK_DILIM §7). */
+    { key: 'roles', header: LEGACY_ROLE_HEADING, cell: rolesCell, className: styles.rolesColumn },
+    { key: 'partyState', header: 'Taraf durumu', cell: partyStateCell, className: styles.nowrap },
+    { key: 'accountState', header: 'Şirket hesabı durumu', cell: accountStateCell, className: styles.nowrap },
+  ]
+
   // C-01A only. Deliberately before any data render: no request is issued and no row
   // is drawn in a context this screen cannot represent honestly.
   if (!singleCompanyContext) {
@@ -634,24 +801,28 @@ function CariList({ namespace }: { readonly namespace: string | null }) {
 
   return (
     <section aria-labelledby="cari-list-heading" className={styles.page}>
-      <h1 id="cari-list-heading">Cari Kartlar</h1>
+      <div className={styles.titleRow}>
+        <h1 id="cari-list-heading" className={styles.title}>Cari Kartlar</h1>
 
-      {/**
-        * K5 (Sinan, 20 Eylül 2026): creation is ONE authorised "Yeni …" action INSIDE the relevant
-        * list, and cari is named among the modules whose parallel sidebar-create must not be
-        * duplicated. This is that action, and the sidebar entry is removed in the SAME change —
-        * `navEntryPointInvariant.test.ts` warns that deleting one without adding the other
-        * recreates the MFG-02 condition (a screen reachable from nowhere), so the two move
-        * atomically.
-        *
-        * Gated on the create capability, not on a role: a reader without it gets a list with no
-        * action rather than a button that exists in order to be refused.
-        */}
-      {hasCapability(shell, CAPABILITY.cariPartiesCreate) ? (
-        <Link className={styles.primaryAction} to="/cari/yeni">
-          Yeni Cari
-        </Link>
-      ) : null}
+        {/**
+          * K5 (Sinan, 20 Eylül 2026): creation is ONE authorised "Yeni …" action INSIDE the relevant
+          * list, and cari is named among the modules whose parallel sidebar-create must not be
+          * duplicated. This is that action, and the sidebar entry is removed in the SAME change —
+          * `navEntryPointInvariant.test.ts` warns that deleting one without adding the other
+          * recreates the MFG-02 condition (a screen reachable from nowhere), so the two move
+          * atomically.
+          *
+          * Gated on the create capability, not on a role: a reader without it gets a list with no
+          * action rather than a button that exists in order to be refused.
+          *
+          * It navigates, so it stays a link; it is drawn as the design-system primary button.
+          */}
+        {hasCapability(shell, CAPABILITY.cariPartiesCreate) ? (
+          <Link className={styles.primaryAction} to="/cari/yeni">
+            Yeni Cari
+          </Link>
+        ) : null}
+      </div>
 
       <div role="status" aria-live="polite" className={styles.announce}>
         {cursorRecovered
@@ -664,87 +835,124 @@ function CariList({ namespace }: { readonly namespace: string | null }) {
       </div>
 
       <div className={styles.filters} role="search">
-        <label className={styles.field}>
-          <span>Ara</span>
-          <input
-            ref={searchRef}
-            type="search"
-            value={q}
-            placeholder="Kod, unvan veya ticari unvan"
-            onChange={(event) => {
-              setQ(event.target.value)
-              resetPaging()
-            }}
-          />
-        </label>
+        {/* The search is the server's (`q`): typing restarts paging and nothing is filtered on this side. */}
+        <Field id="cari-list-search" label="Ara" className={styles.searchField}>
+          {(control) => (
+            <input
+              {...control}
+              ref={searchRef}
+              className={styles.input}
+              type="search"
+              value={q}
+              placeholder="Kod, unvan veya ticari unvan"
+              onChange={(event) => {
+                setQ(event.target.value)
+                resetPaging()
+              }}
+            />
+          )}
+        </Field>
 
-        <label className={styles.field}>
-          <span>Tür</span>
-          <select
-            value={kind}
-            onChange={(event) => {
-              setKind(event.target.value as KindFilter | '')
-              resetPaging()
-            }}
-          >
-            <option value="">Hepsi</option>
-            <option value="LegalEntity">Tüzel kişi</option>
-            <option value="NaturalPerson">Gerçek kişi</option>
-          </select>
-        </label>
+        <Field id="cari-list-kind" label="Tür" className={styles.filterField}>
+          {(control) => (
+            <select
+              {...control}
+              className={styles.select}
+              value={kind}
+              onChange={(event) => {
+                setKind(event.target.value as KindFilter | '')
+                resetPaging()
+              }}
+            >
+              <option value="">Hepsi</option>
+              <option value="LegalEntity">Tüzel kişi</option>
+              <option value="NaturalPerson">Gerçek kişi</option>
+            </select>
+          )}
+        </Field>
 
         {/* Two INDEPENDENT facts, two filters. A Party can be globally active while its
             account in the selected company is passive, and the reverse never happens —
             collapsing them into one control would hide that (DEC-CAR-002). */}
-        <label className={styles.field}>
-          <span>Taraf durumu</span>
-          <select
-            value={partyState}
-            onChange={(event) => {
-              setPartyState(event.target.value as PartyStateFilter)
-              resetPaging()
-            }}
-          >
-            <option value="active">Aktif</option>
-            <option value="inactive">Pasif</option>
-            <option value="all">Hepsi</option>
-          </select>
-        </label>
+        <Field id="cari-list-party-state" label="Taraf durumu" className={styles.filterField}>
+          {(control) => (
+            <select
+              {...control}
+              className={styles.select}
+              value={partyState}
+              onChange={(event) => {
+                setPartyState(event.target.value as PartyStateFilter)
+                resetPaging()
+              }}
+            >
+              <option value="active">Aktif</option>
+              <option value="inactive">Pasif</option>
+              <option value="all">Hepsi</option>
+            </select>
+          )}
+        </Field>
 
-        <label className={styles.field}>
-          <span>Şirket hesabı durumu</span>
-          <select
-            value={accountState}
-            onChange={(event) => {
-              setAccountState(event.target.value as AccountStateFilter)
-              resetPaging()
-            }}
-          >
-            <option value="all">Hepsi</option>
-            <option value="active">Aktif</option>
-            <option value="inactive">Pasif</option>
-          </select>
-        </label>
+        <Field id="cari-list-account-state" label="Şirket hesabı durumu" className={styles.filterField}>
+          {(control) => (
+            <select
+              {...control}
+              className={styles.select}
+              value={accountState}
+              onChange={(event) => {
+                setAccountState(event.target.value as AccountStateFilter)
+                resetPaging()
+              }}
+            >
+              <option value="all">Hepsi</option>
+              <option value="active">Aktif</option>
+              <option value="inactive">Pasif</option>
+            </select>
+          )}
+        </Field>
 
         {/* Changing the size restarts paging: the cursor already handed out was
             issued for the OLD size, and continuing it would silently mix two page
             lengths into one accumulated list. */}
-        <label className={styles.field}>
-          <span>Sayfa boyutu</span>
-          <select
-            value={String(pageSize)}
-            onChange={(event) => {
-              setPageSize(Number(event.target.value))
-              resetPaging()
-            }}
-          >
-            {PAGE_SIZE_OPTIONS.map((size) => (
-              <option key={size} value={String(size)}>
-                {size}
-              </option>
-            ))}
-          </select>
-        </label>
+        <Field id="cari-list-page-size" label="Sayfa boyutu" className={styles.sizeField}>
+          {(control) => (
+            <select
+              {...control}
+              className={styles.select}
+              value={String(pageSize)}
+              onChange={(event) => {
+                setPageSize(Number(event.target.value))
+                resetPaging()
+              }}
+            >
+              {PAGE_SIZE_OPTIONS.map((size) => (
+                <option key={size} value={String(size)}>
+                  {size}
+                </option>
+              ))}
+            </select>
+          )}
+        </Field>
+
+        {/* The cards have no column headers to click, so the same sort is offered here. It sends exactly what a
+            header click would (`sort` + `direction`) and restarts paging the same way. */}
+        {cards ? (
+          <Field id="cari-list-sort" label="Sıralama" className={styles.filterField}>
+            {(control) => (
+              <select
+                {...control}
+                className={styles.select}
+                value={`${sort}:${direction}`}
+                onChange={(event) => chooseCardSort(event.target.value)}
+              >
+                {CARD_SORT_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            )}
+          </Field>
+        ) : null}
       </div>
 
       {/*
@@ -790,19 +998,22 @@ function CariList({ namespace }: { readonly namespace: string | null }) {
           {/* Only meaningful with 2+ roles — with one role `any` and `all` are the same
               query, so offering the choice would imply a distinction that does not exist. */}
           {roles.length > 1 ? (
-            <label className={styles.field}>
-              <span>İşaret eşleşmesi</span>
-              <select
-                value={roleMatch}
-                onChange={(event) => {
-                  setRoleMatch(event.target.value as RoleMatch)
-                  resetPaging()
-                }}
-              >
-                <option value="any">Herhangi biri</option>
-                <option value="all">Hepsi birden</option>
-              </select>
-            </label>
+            <Field id="cari-list-role-match" label="İşaret eşleşmesi" className={styles.filterField}>
+              {(control) => (
+                <select
+                  {...control}
+                  className={styles.select}
+                  value={roleMatch}
+                  onChange={(event) => {
+                    setRoleMatch(event.target.value as RoleMatch)
+                    resetPaging()
+                  }}
+                >
+                  <option value="any">Herhangi biri</option>
+                  <option value="all">Hepsi birden</option>
+                </select>
+              )}
+            </Field>
           ) : null}
         </div>
       </details>
@@ -820,9 +1031,9 @@ function CariList({ namespace }: { readonly namespace: string | null }) {
               </li>
             ))}
           </ul>
-          <button type="button" className={styles.clear} onClick={clearFilters}>
+          <Button type="button" variant="secondary" size="sm" className={styles.clear} onClick={clearFilters}>
             Filtreleri temizle
-          </button>
+          </Button>
         </div>
       ) : null}
 
@@ -859,132 +1070,88 @@ function CariList({ namespace }: { readonly namespace: string | null }) {
         )
       ) : (
         <>
-          {/* The rows below are the last VALIDATED set. While a refetch is in flight
-              (filter change, or a continuation page) that is a fact the user is
-              entitled to, not a detail to hide behind unchanged-looking content. */}
-          {/* Six columns do not fit a phone. The TABLE may scroll sideways; the PAGE
-              must not (WCAG 1.4.10). `tabindex=0` makes the scroll region reachable
-              by keyboard — otherwise the off-screen columns are mouse-only. */}
-          <div
-            className={styles.tableScroll}
-            // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex
-            tabIndex={0}
-            role="region"
-            aria-label="Cari listesi tablosu"
-          >
-          <table className={styles.table} aria-busy={query.isFetching}>
-            <caption className={styles.caption}>
-              {/*
-                The total and WHAT IT COVERS, together (§8.7/65).
+          {/* The total and WHAT IT COVERS, together (§8.7/65), right above the rows it counts.
 
-                A bare "128 kayıt" over a filtered, authorization-scoped read invites
-                the one reading we are not entitled to offer — "this company has 128
-                counterparties". The scope sentence is not decoration; it is the
-                difference between a number and a claim.
+              A bare "128 kayıt" over a filtered, authorization-scoped read invites the one reading we are not
+              entitled to offer — "this company has 128 counterparties". The scope sentence is not decoration; it
+              is the difference between a number and a claim.
 
-                `totalCount` is carried as a STRING all the way here: it is an int64
-                that can exceed the JS safe range, and it is displayed, never math'd.
-                That is also why "loaded" is stated separately instead of being
-                subtracted from it.
-              */}
-              <span className={styles.countValue}>
-                {page?.totalCount != null
-                  ? `${page.totalCount} kayıt`
-                  : `${items.length} kayıt yüklendi`}
-              </span>
-              {page?.totalCount != null && items.length > 0 ? (
-                <span className={styles.countLoaded}>{` · ${items.length} tanesi yüklendi`}</span>
-              ) : null}
-              {page?.countScope != null && COUNT_SCOPE_LABEL[page.countScope] !== undefined ? (
-                <span className={styles.countScope}>{COUNT_SCOPE_LABEL[page.countScope]}</span>
-              ) : null}
-            </caption>
-            <thead>
-              <tr>
-                <th scope="col" aria-sort={ariaSort('code')}>
-                  <button type="button" onClick={() => toggleSort('code')}>
-                    Kod
-                  </button>
-                </th>
-                <th scope="col" aria-sort={ariaSort('legalName')}>
-                  <button type="button" onClick={() => toggleSort('legalName')}>
-                    Unvan
-                  </button>
-                </th>
-                <th scope="col">Tür</th>
-                {/* Named as history, for the same reason the filter is: a column
-                    called "Bu şirketteki roller" states the classification as the
-                    counterparty's current commercial direction (ILK_DILIM §7). */}
-                <th scope="col">{LEGACY_ROLE_HEADING}</th>
-                <th scope="col">Taraf durumu</th>
-                <th scope="col">Şirket hesabı durumu</th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((item) => {
-                // DEC-CAR-002: the account of the ACTIVE company only. One account holds
-                // combined role flags; roles are never unioned across companies. The
-                // decoder already guarantees this account exists and belongs to the
-                // active company in single mode, so there is no "—" case left.
-                const account = item.companyAccounts[0]
-                return (
-                  <tr key={item.id} data-inactive={!item.isActive ? 'true' : undefined}>
-                    <td>
-                      {/* The code is the row's identity, so it carries the link:
-                          short, unique and stable, which makes it a better target
-                          than a long legal name that wraps to three lines on a
-                          phone. The accessible name includes the legal name so a
-                          screen-reader user hearing the link out of context knows
-                          which counterparty it opens. */}
-                      {isRendered(detailGate) ? (
-                        <Link
-                          className={styles.rowLink}
-                          to={`/cari/${item.id}`}
-                          data-row-link={item.id}
-                          aria-label={`${item.code} — ${item.legalName}`}
-                          onClick={() => rememberOpenedRecord(namespace, item.id)}
-                        >
-                          {item.code}
-                        </Link>
-                      ) : (
-                        // No detail grant: the code is still shown, but as text —
-                        // no link, no disabled link, no explanation. Rendering a
-                        // link the route would refuse anyway offers an action the
-                        // caller is not entitled to and tells them the screen
-                        // exists. Codex caught this on #172 (P1-1); actionGating.ts
-                        // now states it as the general rule.
-                        item.code
-                      )}
-                    </td>
-                    <td>
-                      <span className={styles.legalName}>{item.legalName}</span>
-                      {item.tradeName !== null && item.tradeName !== item.legalName ? (
-                        <span className={styles.tradeName}>{item.tradeName}</span>
-                      ) : null}
-                    </td>
-                    <td>{KIND_LABEL[item.kind]}</td>
-                    {/* An empty cell here would read exactly like the "unknown" the
-                        two state columns below were written to avoid. A counterparty
-                        with no commercial classification is an ordinary record as of
-                        the 10 September decision, and the cell says so. */}
-                    <td data-roles={account.roles === 0 ? 'none' : 'legacy'}>
-                      {rolesText(account.roles, NO_COMMERCIAL_ROLE_LIST)}
-                    </td>
-                    {/* AT-013 + DEC-CAR-002: two separate facts, both stated explicitly.
-                        Showing only the passive one would leave "active" as an absence,
-                        which reads the same as "unknown". */}
-                    <td data-party-state={item.isActive ? 'active' : 'inactive'}>
-                      {item.isActive ? 'Aktif' : 'Pasif'}
-                    </td>
-                    <td data-account-state={account.isActive ? 'active' : 'inactive'}>
-                      {account.isActive ? 'Aktif' : 'Pasif'}
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-          </div>
+              `totalCount` is carried as a STRING all the way here: it is an int64 that can exceed the JS safe
+              range, and it is displayed, never math'd. That is also why "loaded" is stated separately instead of
+              being subtracted from it. */}
+          <p id="cari-list-count" className={styles.count} data-testid="cari-list-count">
+            <span className={styles.countValue}>
+              {page?.totalCount != null ? `${page.totalCount} kayıt` : `${items.length} kayıt yüklendi`}
+            </span>
+            {page?.totalCount != null && items.length > 0 ? (
+              <span className={styles.countLoaded}>{` · ${items.length} tanesi yüklendi`}</span>
+            ) : null}
+            {page?.countScope != null && COUNT_SCOPE_LABEL[page.countScope] !== undefined ? (
+              <span className={styles.countScope}>{COUNT_SCOPE_LABEL[page.countScope]}</span>
+            ) : null}
+          </p>
+
+          {/* The rows below are the last VALIDATED set. While a refetch is in flight (filter change, or a
+              continuation page) that is a fact the user is entitled to, not a detail to hide behind
+              unchanged-looking content — hence aria-busy on the table and on the card list. */}
+          {cards ? (
+            /* Phone: one card per counterparty, every fact labelled, in the table's order. Nothing is cut — a long
+               legal name wraps for as many lines as it needs. */
+            <ul
+              className={styles.cards}
+              aria-label="Cari listesi"
+              aria-describedby="cari-list-count"
+              aria-busy={busy}
+              data-testid="cari-list-cards"
+            >
+              {items.map((item) => (
+                <li key={item.id} className={styles.card} data-party-id={item.id} data-inactive={!item.isActive ? 'true' : undefined}>
+                  <div className={styles.cardHead}>
+                    {codeCell(item)}
+                    <span className={styles.cardKind}>{KIND_LABEL[item.kind]}</span>
+                  </div>
+                  <div className={styles.cardName}>{nameCell(item)}</div>
+                  <dl className={styles.cardFacts}>
+                    <div>
+                      <dt>Taraf durumu</dt>
+                      <dd>{partyStateCell(item)}</dd>
+                    </div>
+                    <div>
+                      <dt>Şirket hesabı durumu</dt>
+                      <dd>{accountStateCell(item)}</dd>
+                    </div>
+                    <div className={styles.wide}>
+                      <dt>{LEGACY_ROLE_HEADING}</dt>
+                      <dd>{rolesCell(item)}</dd>
+                    </div>
+                  </dl>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            /* Six columns do not always fit. The TABLE may scroll sideways; the PAGE must not (WCAG 1.4.10). The
+               scroll lives on this labelled region, and `tabindex=0` makes it reachable by keyboard — otherwise the
+               off-screen columns are mouse-only. The code column stays pinned while it scrolls. */
+            <div
+              ref={tableHostRef}
+              className={styles.tableScroll}
+              // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex
+              tabIndex={0}
+              role="region"
+              aria-label="Cari listesi tablosu"
+              aria-describedby="cari-list-count"
+            >
+              <DataTable
+                label="Cari listesi"
+                columns={columns}
+                rows={items}
+                rowKey={(item) => item.id}
+                rowAttributes={(item): { [name: `data-${string}`]: string } =>
+                  item.isActive ? {} : { 'data-inactive': 'true' }
+                }
+              />
+            </div>
+          )}
 
           {continuationFailed ? (
             /* Scoped to the continuation, not the list. Retry re-issues the SAME
@@ -992,19 +1159,20 @@ function CariList({ namespace }: { readonly namespace: string | null }) {
                exactly where they are. */
             <div className={styles.continuationError} role="alert">
               <span>Daha fazla kayıt yüklenemedi; mevcut kayıtlar korunuyor.</span>
-              <button type="button" onClick={() => void query.refetch()} disabled={query.isFetching}>
+              <Button type="button" variant="secondary" size="sm" onClick={() => void query.refetch()} disabled={query.isFetching}>
                 {query.isFetching ? 'Yükleniyor…' : 'Tekrar dene'}
-              </button>
+              </Button>
             </div>
           ) : page?.hasMore ? (
-            <button
+            <Button
               type="button"
+              variant="secondary"
               className={styles.more}
               onClick={loadMore}
               disabled={query.isFetching}
             >
               {query.isFetching ? 'Yükleniyor…' : 'Daha fazla yükle'}
-            </button>
+            </Button>
           ) : null}
         </>
       )}
