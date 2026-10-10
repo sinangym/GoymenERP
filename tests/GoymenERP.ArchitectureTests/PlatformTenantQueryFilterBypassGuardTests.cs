@@ -237,7 +237,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // Slitting draft spec: +1 public API SQL fact (e6aa3795... -> 286281c0...).
             // Settings Manufacturing tolerance registry: +1 company/constraint/provider SQL fact.
             ["tools/relational_inventory/manufacturing.txt"] =
-                "e2272ca5f961d772d2e08420b953f0c0e0622e73464df18126d1aaaae4c8d621",
+                "8a8f8016a5e52d0e80423542f15f2a03160c5ebc2acd9c26f22df932b85519f7",
 
             // organization
             // ORG master edit: +2 OrganizationMasterDataSqlServerRelationalAcceptanceTests facts (6b504dac… -> 3bad6ad8…).
