@@ -4,7 +4,7 @@
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { act, cleanup, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import listResponseRaw from './examples/list-response.json?raw'
 import detailResponseRaw from './examples/detail-response.json?raw'
@@ -13,6 +13,8 @@ import { CAPABILITY } from '../shell/capabilities'
 import type { UseContactInformation } from './referenceSource'
 import { ORDER_DETAIL_TEXT, ORDER_DRAFT_TEXT, ORDER_LIST_TEXT } from './salesText'
 import { formatInstant } from './format'
+import { DraftView } from './SalesDraftDetailPage'
+import { decodeDraftDetailWithParty } from './contract'
 import {
   ADDRESS,
   ADDRESS_TEXT,
@@ -122,6 +124,43 @@ describe('S-02 list', () => {
 })
 
 describe('S-04 detail', () => {
+  it('renders the 360 summary as separate status facts and keeps long Cari, line due date and price in the normal layout flow', async () => {
+    const longParty = {
+      legalName: 'KARADENİZ ÇELİK DÖKÜM MAKİNA İMALAT SANAYİ VE DIŞ TİCARET ANONİM ŞİRKETİ',
+      tradeName: 'Karadeniz Döküm Gebze Şubesi',
+    }
+    const rawDetail = JSON.parse(detailResponseRaw)
+    const decoded = decodeDraftDetailWithParty({
+      ...rawDetail,
+      partyDisplay: { partyId: rawDetail.draft.partyId, code: HARNESS_PARTY_DISPLAY.code, ...longParty },
+    }, DRAFT)
+    expect(decoded).not.toBeNull()
+    render(
+      <DraftView
+        detail={{ ...decoded!, partyDisplay: { ...decoded!.partyDisplay, ...longParty } }}
+        canOpenParty={false}
+        backLink={null}
+      />,
+    )
+
+    expect(screen.getByTestId('sales-order-summary')).toBeTruthy()
+    const statusFacts = screen.getByTestId('sales-order-status-facts')
+    expect(within(statusFacts).getByTestId('sales-draft-lifecycle-state').textContent).toBe('Taslak')
+    expect(within(statusFacts).getByTestId('sales-draft-approval-state').textContent).toBe('Hazırlanıyor')
+    expect(within(statusFacts).getByTestId('sales-draft-revision').textContent).toBe('Rev.0')
+    expect(within(statusFacts).getByTestId('sales-draft-version').textContent).toBe('9007199254740993')
+    expect(within(statusFacts).getByTestId('sales-draft-party').textContent).toContain(longParty.legalName)
+
+    const lineFacts = screen.getByTestId('sales-line-1-facts')
+    const due = within(lineFacts).getByTestId('sales-line-1-delivery-date')
+    const price = within(lineFacts).getByTestId('sales-line-1-price')
+    expect(due.textContent).toBe('20.09.2026')
+    expect(price.textContent).toBe(ORDER_DETAIL_TEXT.notPriced)
+    expect(due.closest('[data-layout-field]')?.getAttribute('data-layout-field')).toBe('delivery-date')
+    expect(price.closest('[data-layout-field]')?.getAttribute('data-layout-field')).toBe('price')
+    expect(due.closest('[data-layout-field]')).not.toBe(price.closest('[data-layout-field]'))
+  })
+
   it('keeps commercial revision and record version apart, and shows the 400 + 600 plan', async () => {
     installFetch({ onDetail: () => json(detailResponseRaw) })
     renderSalesApp(`/satis/siparisler/${DRAFT}`)
