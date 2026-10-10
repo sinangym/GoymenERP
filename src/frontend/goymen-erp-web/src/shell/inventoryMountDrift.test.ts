@@ -11,12 +11,17 @@ import { inventoryRoutes } from '../inventory/inventoryRoutes'
 import { INVENTORY_LABEL_DETAIL_ROUTE } from '../inventory/labelDetailRoute'
 import { NAV_CAPABILITIES } from './AppShell'
 import { CAPABILITY, CAPABILITY_NAV_LABEL, CAPABILITY_ROUTE } from './capabilities'
+import { NAV_GROUPS } from './navigation'
 
 describe('shell ↔ Inventory opening-stock contract', () => {
   it('mounts the owner routes under one existing capability and one navigation entry', () => {
     expect(CAPABILITY.inventoryOpeningStockRecord).toBe(INVENTORY_OPENING_CAPABILITY)
     expect(CAPABILITY_ROUTE[CAPABILITY.inventoryOpeningStockRecord]).toBe(INVENTORY_OPENING_ROUTE.home)
-    expect(CAPABILITY_NAV_LABEL[CAPABILITY.inventoryOpeningStockRecord]).toBe('Stok Açılışı')
+    // NAV-OPENING-01: one entry, under Ayarlar, as "Açılış stokları"; the route and capability are unchanged.
+    expect(CAPABILITY_NAV_LABEL[CAPABILITY.inventoryOpeningStockRecord]).toBe('Açılış stokları')
+    expect(NAV_GROUPS.filter((group) => group.entries.includes(INVENTORY_OPENING_CAPABILITY)).map((group) => group.id))
+      .toEqual(['settings'])
+    expect(NAV_GROUPS.find((group) => group.id === 'product-stock')?.entries).not.toContain(INVENTORY_OPENING_CAPABILITY)
     expect(NAV_CAPABILITIES.filter((item) => item === INVENTORY_OPENING_CAPABILITY)).toHaveLength(1)
     expect(CAPABILITY.inventoryStockPositionsList).toBe(INVENTORY_STOCK_POSITIONS_CAPABILITY)
     expect(CAPABILITY_ROUTE[CAPABILITY.inventoryStockPositionsList]).toBe(INVENTORY_STOCK_POSITIONS_ROUTE)
