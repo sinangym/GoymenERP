@@ -61,10 +61,14 @@ namespace GoymenERP.Modules.Settings.Infrastructure.Persistence.Migrations
                 """
                 CREATE TRIGGER [settings].[TR_ManufacturingTolerancePolicies_NoOverlap]
                 ON [settings].[ManufacturingTolerancePolicies]
-                AFTER INSERT, UPDATE
+                AFTER INSERT, UPDATE, DELETE
                 AS
                 BEGIN
                     SET NOCOUNT ON;
+                    IF EXISTS (SELECT 1 FROM deleted)
+                    BEGIN
+                        THROW 51002, 'settings_manufacturing_tolerance_profile_immutable', 1;
+                    END
                     IF EXISTS (
                         SELECT 1
                         FROM inserted AS incoming
@@ -84,6 +88,11 @@ namespace GoymenERP.Modules.Settings.Infrastructure.Persistence.Migrations
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
+            migrationBuilder.Sql(
+                """
+                IF EXISTS (SELECT 1 FROM [settings].[ManufacturingTolerancePolicies])
+                    THROW 51003, 'settings_manufacturing_tolerance_history_exists', 1;
+                """);
             migrationBuilder.Sql(
                 "DROP TRIGGER IF EXISTS [settings].[TR_ManufacturingTolerancePolicies_NoOverlap]");
             migrationBuilder.DropTable(

@@ -4,6 +4,8 @@ using GoymenERP.Modules.Settings.Application.Contracts.V1;
 using GoymenERP.Modules.Settings.Infrastructure.Persistence;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 
 namespace GoymenERP.Api.IntegrationTests;
 
@@ -67,7 +69,42 @@ public sealed class ManufacturingSettingsToleranceSqlServerRelationalAcceptanceT
                 SettingsManufacturingProcessesV1.ColdRolling, 1, 2m, true,
                 new DateOnly(2026, 1, 1), null, "", "missing approval actor");
 
-            Assert.Equal(3, await CountAsync(factory.DatabaseConnectionString));
+            var fixedVersionProfile = Guid.NewGuid();
+            await InsertAsync(factory.DatabaseConnectionString, CompanyA, fixedVersionProfile,
+                SettingsManufacturingProcessesV1.CutToLength, 1, 0.750000m, true,
+                new DateOnly(2026, 1, 1), new DateOnly(2026, 1, 31),
+                "synthetic-settings-sql-approver", "version uniqueness evidence");
+            await AssertInsertRejectedAsync(factory.DatabaseConnectionString, CompanyA, Guid.NewGuid(),
+                SettingsManufacturingProcessesV1.CutToLength, 1, 0.800000m, true,
+                new DateOnly(2026, 2, 1), null,
+                "synthetic-settings-sql-approver", "duplicate version must fail");
+
+            var start = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var contenders = new[]
+            {
+                ConcurrentInsertAsync(start.Task, factory.DatabaseConnectionString, CompanyA, Guid.NewGuid(), 1,
+                    new DateOnly(2028, 1, 1), new DateOnly(2028, 12, 31)),
+                ConcurrentInsertAsync(start.Task, factory.DatabaseConnectionString, CompanyA, Guid.NewGuid(), 2,
+                    new DateOnly(2028, 6, 1), null),
+            };
+            start.SetResult();
+            var outcomes = await Task.WhenAll(contenders);
+            Assert.Equal(1, outcomes.Count(x => x));
+            Assert.Equal(1, await CountProcessAsync(factory.DatabaseConnectionString,
+                SettingsManufacturingProcessesV1.ColdRolling));
+
+            await AssertCommandRejectedAsync(factory.DatabaseConnectionString,
+                "UPDATE [settings].[ManufacturingTolerancePolicies] SET [MaximumFirePercent] = 99 WHERE [CompanyId] = @company AND [ProfileId] = @profile",
+                CompanyA, profileId);
+            await AssertCommandRejectedAsync(factory.DatabaseConnectionString,
+                "DELETE FROM [settings].[ManufacturingTolerancePolicies] WHERE [CompanyId] = @company AND [ProfileId] = @profile",
+                CompanyA, profileId);
+
+            Assert.Equal(5, await CountAsync(factory.DatabaseConnectionString));
+            await using var rollback = Context(factory.DatabaseConnectionString, CompanyA);
+            await Assert.ThrowsAsync<SqlException>(() =>
+                rollback.GetService<IMigrator>().MigrateAsync("0"));
+            Assert.Equal(5, await CountAsync(factory.DatabaseConnectionString));
         }
         finally
         {
@@ -80,13 +117,21 @@ public sealed class ManufacturingSettingsToleranceSqlServerRelationalAcceptanceT
     private static ProviderScope Provider(string connectionString, Guid company)
     {
         var companyContext = new FixedCompany(company);
+        var database = Context(connectionString, companyContext);
+        return new ProviderScope(database,
+            new SettingsManufacturingToleranceProviderV1(database, companyContext, new FixedActor(company)));
+    }
+
+    private static SettingsDbContext Context(string connectionString, Guid company) =>
+        Context(connectionString, new FixedCompany(company));
+
+    private static SettingsDbContext Context(string connectionString, ICompanyContext companyContext)
+    {
         var options = new DbContextOptionsBuilder<SettingsDbContext>()
             .UseSqlServer(connectionString,
                 sql => sql.MigrationsHistoryTable("__EFMigrationsHistory", SettingsDbContext.Schema))
             .Options;
-        var database = new SettingsDbContext(options, companyContext);
-        return new ProviderScope(database,
-            new SettingsManufacturingToleranceProviderV1(database, companyContext, new FixedActor(company)));
+        return new SettingsDbContext(options, companyContext);
     }
 
     private static async Task InsertAsync(string connectionString, Guid companyId, Guid profileId,
@@ -122,6 +167,45 @@ public sealed class ManufacturingSettingsToleranceSqlServerRelationalAcceptanceT
         DateOnly? through, string approvedBy, string reason) =>
         await Assert.ThrowsAsync<SqlException>(() => InsertAsync(connectionString, companyId, profileId,
             process, version, maximumFirePercent, isActive, from, through, approvedBy, reason));
+
+    private static async Task<bool> ConcurrentInsertAsync(Task start, string connectionString, Guid companyId,
+        Guid profileId, long version, DateOnly from, DateOnly? through)
+    {
+        await start;
+        try
+        {
+            await InsertAsync(connectionString, companyId, profileId,
+                SettingsManufacturingProcessesV1.ColdRolling, version, 0.625000m, true, from, through,
+                "synthetic-settings-sql-approver", "concurrent overlap evidence");
+            return true;
+        }
+        catch (SqlException)
+        {
+            return false;
+        }
+    }
+
+    private static async Task AssertCommandRejectedAsync(string connectionString, string commandText,
+        Guid companyId, Guid profileId)
+    {
+        await using var connection = new SqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = commandText;
+        command.Parameters.AddWithValue("@company", companyId);
+        command.Parameters.AddWithValue("@profile", profileId);
+        await Assert.ThrowsAsync<SqlException>(() => command.ExecuteNonQueryAsync());
+    }
+
+    private static async Task<int> CountProcessAsync(string connectionString, string process)
+    {
+        await using var connection = new SqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT COUNT(*) FROM [settings].[ManufacturingTolerancePolicies] WHERE [Process] = @process";
+        command.Parameters.AddWithValue("@process", process);
+        return Convert.ToInt32(await command.ExecuteScalarAsync());
+    }
 
     private static async Task<int> CountAsync(string connectionString)
     {

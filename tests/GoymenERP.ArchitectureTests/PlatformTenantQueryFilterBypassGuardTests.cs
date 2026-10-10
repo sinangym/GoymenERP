@@ -1344,10 +1344,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/Persistence/"
                  + "Migrations/20261010095724_AddManufacturingTolerancePolicyRegistry.cs"] =
                     new(
-                        "33acf73b2854be212de81a9356be7d9a6b6d656c2c6e5d3121106700bbf8bc17",
+                        "9868ed38480264de7dc83081ef6dfed6f4390d10e38be6a160d6354bda0ef04b",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
-                            ["Sql"] = 2
+                            ["Sql"] = 3
                         }),
                 // AT-018 price-list history is durable; Down refuses destructive rollback while any
                 // company-scoped price-list row remains.
