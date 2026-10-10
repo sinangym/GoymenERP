@@ -3,7 +3,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace GoymenERP.Modules.Inventory.Infrastructure.Persistence;
 
-internal sealed partial class InventoryStore : IInventoryPendingApprovalReaderV1
+public sealed partial class InventoryStore : IInventoryPendingApprovalReaderV1
 {
     public async Task<IReadOnlyList<InventoryStockCountPendingApprovalItemV1>> ReadStockCountsAsync(
         string excludingActorId,
