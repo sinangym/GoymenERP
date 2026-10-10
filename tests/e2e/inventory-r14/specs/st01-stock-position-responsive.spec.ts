@@ -720,7 +720,10 @@ test('ST-01 names a Cari owner exactly, links its card only for the capability h
   await expect(page).toHaveURL(new RegExp(`etiket=${emptyQuery}$`))
   await expect(page.getByText('Filtrelere uyan fiziksel stok yok.', { exact: true })).toBeVisible()
   await expect(page.locator(`[data-label-id="${cariLabelIds[0]}"]`)).toHaveCount(0)
-  expect(await page.getByRole('main').innerText()).not.toContain(owner.legalName)
+  // The shell's one content root (`main#main-content`) holds the whole page, the stock screen's own <main> included.
+  const shellContent = page.locator('main#main-content')
+  await expect(shellContent).toHaveCount(1)
+  expect(await shellContent.innerText()).not.toContain(owner.legalName)
   await page.unroute((url) => url.pathname === POSITIONS && url.searchParams.get('q') === OWNER_PREFIX)
 
   // ── The other company stays closed, and the answer carries nothing of this owner. ──
