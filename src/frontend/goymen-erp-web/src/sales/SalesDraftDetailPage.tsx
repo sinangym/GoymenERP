@@ -110,9 +110,19 @@ import { SalesDraftLinkedEffects, SalesDraftLinkedEffectsUnbound } from './Sales
 import { INVENTORY_PHYSICAL_ALLOCATION_WRITE_CAPABILITY } from '../inventory/capabilities'
 import { SalesPartyDisplay } from './SalesDraftListPage'
 import { CAPABILITY } from '../shell/capabilities'
-import styles from './SalesPages.module.css'
+import { Button } from '../ui/Button'
+import { StatusIndicator, type StatusTone } from '../ui/StatusIndicator'
+import styles from './SalesDraftDetailPage.module.css'
 
 const orUnknown = (value: string | null) => value ?? T.unknown
+
+function approvalTone(state: DraftDetail['draft']['approvalState'], cancelled: boolean): StatusTone {
+  if (cancelled) return 'neutral'
+  if (state === APPROVAL_STATE.approved) return 'success'
+  if (state === APPROVAL_STATE.pendingApproval) return 'warning'
+  if (state === APPROVAL_STATE.rejected) return 'danger'
+  return 'neutral'
+}
 
 export function SalesDraftDetailPage() {
   const shell = useShellState()
@@ -348,19 +358,21 @@ export function DraftView({
   return (
     <article className={styles.page} aria-labelledby="sales-detail-heading">
       {backLink}
-      <header className={styles.header}>
+      <header className={styles.header} data-testid="sales-order-summary">
         <div>
           <h1 id="sales-detail-heading" className={styles.title}>
             {draft.documentNo}
           </h1>
           <p className={styles.muted}>{T.referenceNote}</p>
         </div>
-        <span className={styles.badge} data-testid="sales-draft-state">
-          {cancelled ? T.stateCancelled : T.stateDraft} · {APPROVAL_STATE_TEXT[draft.approvalState]}
-        </span>
+        <StatusIndicator tone={approvalTone(draft.approvalState, cancelled)} className={styles.badge}>
+          <span data-testid="sales-draft-state">
+            {cancelled ? T.stateCancelled : T.stateDraft} · {APPROVAL_STATE_TEXT[draft.approvalState]}
+          </span>
+        </StatusIndicator>
       </header>
 
-      <dl className={styles.facts}>
+      <dl className={`${styles.facts} ${styles.summaryFacts}`} data-testid="sales-order-status-facts">
         <div>
           <dt>{T.commercialStage}</dt>
           <dd data-testid="sales-draft-commercial-stage">{COMMERCIAL_STAGE_TEXT[draft.commercialStage]}</dd>
@@ -389,7 +401,7 @@ export function DraftView({
           <dt>{T.createdAt}</dt>
           <dd>{formatInstant(draft.createdAtUtc)}</dd>
         </div>
-        <div>
+        <div className={styles.partyFact}>
           <dt>{T.party}</dt>
           <dd data-testid="sales-draft-party"><SalesPartyDisplay party={detail.partyDisplay} canOpen={canOpenParty} /></dd>
         </div>
@@ -407,7 +419,7 @@ export function DraftView({
             {detail.requestedDeliveryDate === null ? T.unknown : formatBusinessDate(detail.requestedDeliveryDate)}
           </dd>
         </div>
-        <div>
+        <div className={styles.noteFact}>
           <dt>{T.note}</dt>
           <dd>{orUnknown(detail.note)}</dd>
         </div>
@@ -592,9 +604,9 @@ function IdWithNote({ id, note, retry }: { readonly id: string; readonly note: s
       {retry === undefined ? null : (
         <>
           {' '}
-          <button type="button" className={styles.linkButton} onClick={retry}>
+          <Button type="button" variant="ghost" size="sm" className={styles.linkButton} onClick={retry}>
             {ORDER_DRAFT_TEXT.references.retry}
-          </button>
+          </Button>
         </>
       )}
     </>
@@ -751,24 +763,24 @@ function ApprovalCommands({
       )}
       {isOutcomeStillUnknown(attempt) && attempt.phase !== 'submitting' ? (
         <>
-          <button type="button" className={styles.secondaryButton} onClick={retry}>
+          <Button type="button" variant="secondary" onClick={retry}>
             {T.approval.retry}
-          </button>
-          <button type="button" className={styles.linkButton} onClick={leave}>
+          </Button>
+          <Button type="button" variant="ghost" className={styles.linkButton} onClick={leave}>
             {T.approval.abandon}
-          </button>
+          </Button>
         </>
       ) : null}
       {offerSubmit ? (
-        <button type="button" className={styles.primaryButton} disabled={frozen} onClick={() => start('submission')}>
+        <Button type="button" variant="primary" disabled={frozen} onClick={() => start('submission')}>
           {T.approval.submit}
-        </button>
+        </Button>
       ) : null}
       {offerDecision ? (
         <>
-          <button type="button" className={styles.primaryButton} disabled={frozen} onClick={() => start('approval')}>
+          <Button type="button" variant="primary" disabled={frozen} onClick={() => start('approval')}>
             {T.approval.approve}
-          </button>
+          </Button>
           <label htmlFor="sales-rejection-reason">{T.approval.reasonLabel}</label>
           <textarea
             id="sales-rejection-reason"
@@ -777,9 +789,9 @@ function ApprovalCommands({
             disabled={frozen}
             onChange={(event) => setReason(event.target.value)}
           />
-          <button type="button" className={styles.secondaryButton} disabled={frozen} onClick={() => start('rejection')}>
+          <Button type="button" variant="secondary" disabled={frozen} onClick={() => start('rejection')}>
             {T.approval.reject}
-          </button>
+          </Button>
         </>
       ) : null}
       {ownDecisionWithheld ? (
@@ -797,15 +809,15 @@ function ApprovalCommands({
             disabled={frozen}
             onChange={(event) => setWithdrawReason(event.target.value)}
           />
-          <button type="button" className={styles.secondaryButton} disabled={frozen} onClick={() => start('withdrawal')}>
+          <Button type="button" variant="secondary" disabled={frozen} onClick={() => start('withdrawal')}>
             {T.approval.withdraw}
-          </button>
+          </Button>
         </>
       ) : null}
       {offerCustomerAcceptance ? (
-        <button type="button" className={styles.primaryButton} disabled={frozen} onClick={() => start('customer-acceptance')}>
+        <Button type="button" variant="primary" disabled={frozen} onClick={() => start('customer-acceptance')}>
           {T.approval.recordCustomerAcceptance}
-        </button>
+        </Button>
       ) : null}
     </div>
   )
@@ -858,7 +870,7 @@ function LineView({ line }: { readonly line: DraftLine }) {
       <h3 id={headingId} className={styles.lineTitle}>
         {line.lineNo}. {line.productCode} — {line.productName}
       </h3>
-      <dl className={styles.facts}>
+      <dl className={`${styles.facts} ${styles.lineFacts}`} data-testid={`sales-line-${line.lineNo}-facts`}>
         <div>
           <dt>{T.productVersion}</dt>
           <dd>{line.productVersion}</dd>
@@ -871,11 +883,13 @@ function LineView({ line }: { readonly line: DraftLine }) {
           <dt>{T.orderUnit}</dt>
           <dd className={styles.identifier}>{line.orderUnitId}</dd>
         </div>
-        <div>
+        <div className={styles.lineDueFact} data-layout-field="delivery-date">
           <dt>{T.lineDeliveryDate}</dt>
-          <dd>{line.requestedDeliveryDate === null ? T.unknown : formatBusinessDate(line.requestedDeliveryDate)}</dd>
+          <dd data-testid={`sales-line-${line.lineNo}-delivery-date`}>
+            {line.requestedDeliveryDate === null ? T.unknown : formatBusinessDate(line.requestedDeliveryDate)}
+          </dd>
         </div>
-        <div>
+        <div className={styles.linePriceFact} data-layout-field="price">
           <dt>{T.price}</dt>
           <dd data-testid={`sales-line-${line.lineNo}-price`}>
             {line.priceDisclosure === 'Withheld' ? T.priceWithheld : line.unitPrice === null ? T.notPriced : `${line.unitPrice} / ${line.priceUnitId}`}

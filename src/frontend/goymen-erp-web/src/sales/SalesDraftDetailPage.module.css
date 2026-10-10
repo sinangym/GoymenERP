@@ -1,0 +1,268 @@
+/* S-04 Siparis 360 on GOY-DS-001. This module owns layout only; every value comes from design-system tokens. */
+
+.page {
+  display: grid;
+  gap: var(--goy-ds-space-3);
+  min-width: 0;
+  padding: var(--goy-ds-space-1) 0 var(--goy-ds-space-6);
+  color: var(--goy-ds-color-text);
+  font-family: var(--goy-ds-font-sans);
+}
+
+.backLink {
+  width: fit-content;
+  color: var(--goy-ds-color-accent-text);
+  font-size: var(--goy-ds-font-size-md);
+  font-weight: var(--goy-ds-font-weight-medium);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: var(--goy-ds-space-3);
+  padding: var(--goy-ds-space-4);
+  border: 1px solid var(--goy-ds-color-border);
+  border-radius: var(--goy-ds-radius-md);
+  background: var(--goy-ds-color-surface);
+  box-shadow: var(--goy-ds-shadow-1);
+  min-width: 0;
+}
+
+.title {
+  margin: 0;
+  font-size: 1.25rem;
+  line-height: 28px;
+  font-weight: var(--goy-ds-font-weight-semibold);
+  overflow-wrap: anywhere;
+}
+
+.badge {
+  max-width: 100%;
+  padding: var(--goy-ds-space-1) var(--goy-ds-space-2);
+  border-radius: 999px;
+  background: var(--goy-ds-color-surface-muted);
+  white-space: normal;
+}
+
+.facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
+  gap: var(--goy-ds-space-2) var(--goy-ds-space-4);
+  margin: 0;
+  min-width: 0;
+}
+
+.facts > div {
+  min-width: 0;
+}
+
+.facts dt {
+  color: var(--goy-ds-color-text-tertiary);
+  font-size: var(--goy-ds-font-size-xs);
+  line-height: 16px;
+}
+
+.facts dd {
+  margin: 0;
+  min-width: 0;
+  color: var(--goy-ds-color-text);
+  font-size: var(--goy-ds-font-size-md);
+  line-height: 20px;
+  overflow-wrap: anywhere;
+}
+
+.summaryFacts,
+.section {
+  padding: var(--goy-ds-space-4);
+  border: 1px solid var(--goy-ds-color-border);
+  border-radius: var(--goy-ds-radius-md);
+  background: var(--goy-ds-color-surface);
+  box-shadow: var(--goy-ds-shadow-1);
+}
+
+.partyFact,
+.noteFact {
+  grid-column: span 2;
+}
+
+.section {
+  display: grid;
+  gap: var(--goy-ds-space-3);
+  min-width: 0;
+}
+
+.section > h2 {
+  margin: 0;
+  font-size: 1rem;
+  line-height: 24px;
+  font-weight: var(--goy-ds-font-weight-semibold);
+}
+
+.section a,
+.page a {
+  color: var(--goy-ds-color-accent-text);
+}
+
+.line {
+  display: grid;
+  gap: var(--goy-ds-space-3);
+  min-width: 0;
+  padding: var(--goy-ds-space-3);
+  border: 1px solid var(--goy-ds-color-border);
+  border-radius: var(--goy-ds-radius-md);
+  background: var(--goy-ds-color-surface-muted);
+}
+
+.lineTitle {
+  margin: 0;
+  font-size: var(--goy-ds-font-size-base);
+  line-height: 22px;
+  font-weight: var(--goy-ds-font-weight-semibold);
+  overflow-wrap: anywhere;
+}
+
+/* The due date and price are ordinary grid cells. Neither is pinned or positioned, so the 1366px side-panel
+   layout and phone widths cannot stack the due date underneath the price. */
+.lineFacts {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 10.5rem), 1fr));
+  align-items: start;
+}
+
+.lineDueFact,
+.linePriceFact {
+  position: static;
+  min-width: 0;
+  z-index: auto;
+}
+
+.identifier {
+  font-family: var(--goy-ds-font-mono);
+  font-size: var(--goy-ds-font-size-sm);
+  overflow-wrap: anywhere;
+}
+
+.numeric,
+.numericValue {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--goy-ds-font-size-md);
+}
+
+.table th,
+.table td {
+  padding: var(--goy-ds-space-2);
+  border-bottom: 1px solid var(--goy-ds-color-border);
+  text-align: left;
+}
+
+.caption {
+  padding-bottom: var(--goy-ds-space-2);
+  text-align: left;
+  font-weight: var(--goy-ds-font-weight-semibold);
+}
+
+.muted {
+  margin: 0;
+  color: var(--goy-ds-color-text-secondary);
+  font-size: var(--goy-ds-font-size-md);
+  overflow-wrap: anywhere;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--goy-ds-space-2);
+  min-width: 0;
+}
+
+.actions label {
+  color: var(--goy-ds-color-text-secondary);
+  font-size: var(--goy-ds-font-size-sm);
+  font-weight: var(--goy-ds-font-weight-medium);
+}
+
+.actions textarea {
+  box-sizing: border-box;
+  flex: 1 1 18rem;
+  min-width: min(100%, 14rem);
+  min-height: 5rem;
+  padding: var(--goy-ds-space-2);
+  border: 1px solid var(--goy-ds-color-border-control);
+  border-radius: var(--goy-ds-radius-sm);
+  background: var(--goy-ds-color-surface);
+  color: var(--goy-ds-color-text);
+  font: inherit;
+}
+
+.notice {
+  flex: 1 1 100%;
+  margin: 0;
+  padding: var(--goy-ds-space-2) var(--goy-ds-space-3);
+  border: 1px solid var(--goy-ds-color-border-control);
+  border-radius: var(--goy-ds-radius-sm);
+  background: var(--goy-ds-color-surface-muted);
+}
+
+.linkButton {
+  color: var(--goy-ds-color-accent-text);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.backLink:focus-visible,
+.page a:focus-visible,
+.page textarea:focus-visible {
+  outline: 2px solid var(--goy-ds-color-accent);
+  outline-offset: 2px;
+}
+
+.page textarea:focus-visible {
+  border-color: var(--goy-ds-color-accent);
+  box-shadow: 0 0 0 3px var(--goy-ds-focus-ring);
+  outline: none;
+}
+
+@media (max-width: 767px) {
+  .header {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .badge {
+    justify-self: start;
+  }
+
+  .partyFact,
+  .noteFact {
+    grid-column: 1 / -1;
+  }
+
+  .summaryFacts,
+  .section {
+    padding: var(--goy-ds-space-3);
+  }
+
+  .actions > button {
+    flex: 1 1 auto;
+  }
+}
+
+@media (max-width: 359px) {
+  .facts,
+  .lineFacts {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .actions,
+  .actions textarea {
+    width: 100%;
+  }
+}
