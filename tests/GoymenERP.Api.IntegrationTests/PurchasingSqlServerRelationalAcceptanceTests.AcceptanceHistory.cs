@@ -101,7 +101,7 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
         INSERT INTO counterparty.Parties
             (Id, Code, Kind, LegalName, TradeName, IsActive, Version, CreatedAtUtc, UpdatedAtUtc)
         VALUES
-            (@party, N'SENTETIK-PUR-HISTORY', N'LegalEntity', N'SENTETIK Tarihsel Tedarikci', NULL, 1, 1, @now, @now);
+            (@party, N'CAR-909661', N'LegalEntity', N'SENTETIK Tarihsel Tedarikci', NULL, 1, 1, @now, @now);
 
         INSERT INTO counterparty.CompanyPartyAccounts
             (Id, CompanyId, PartyId, Roles, ExternalIntegrationCode, IsActive, Version, CreatedAtUtc, UpdatedAtUtc)
