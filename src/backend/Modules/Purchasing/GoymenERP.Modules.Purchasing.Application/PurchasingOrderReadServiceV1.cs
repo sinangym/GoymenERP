@@ -18,7 +18,7 @@ public sealed class PurchasingOrderReadServiceV1(
 {
     private const int MaximumBatchSize = 100;
 
-    public async Task<PurchaseOrderDetailView> GetOrderDetailAsync(
+    public async Task<PurchaseOrderReadDetailViewV1> GetOrderDetailAsync(
         Guid orderId,
         CancellationToken cancellationToken = default)
     {
@@ -31,16 +31,15 @@ public sealed class PurchasingOrderReadServiceV1(
             detail.Order.CompanyId,
             cancellationToken);
 
-        return detail with
+        return new PurchaseOrderReadDetailViewV1(
+            ToReadSummary(detail.Order, displays[detail.Order.SupplierPartyId]),
+            detail.Lines)
         {
-            Order = detail.Order with
-            {
-                SupplierDisplay = displays[detail.Order.SupplierPartyId],
-            },
+            Acceptances = detail.Acceptances,
         };
     }
 
-    public async Task<PurchaseOrderListResponse> GetOrderListAsync(
+    public async Task<PurchaseOrderReadListResponseV1> GetOrderListAsync(
         PurchaseOrderListQuery query,
         CancellationToken cancellationToken = default)
     {
@@ -50,7 +49,7 @@ public sealed class PurchasingOrderReadServiceV1(
             cancellationToken);
         if (page.Items.Count == 0)
         {
-            return page;
+            return new PurchaseOrderReadListResponseV1([], page.NextCursor);
         }
 
         var companyId = page.Items[0].CompanyId;
@@ -64,13 +63,9 @@ public sealed class PurchasingOrderReadServiceV1(
             page.Items.Select(item => item.SupplierPartyId),
             companyId,
             cancellationToken);
-        return page with
-        {
-            Items = [.. page.Items.Select(item => item with
-            {
-                SupplierDisplay = displays[item.SupplierPartyId],
-            })],
-        };
+        return new PurchaseOrderReadListResponseV1(
+            [.. page.Items.Select(item => ToReadSummary(item, displays[item.SupplierPartyId]))],
+            page.NextCursor);
     }
 
     private async Task<(ReadScope Scope, T Result)> ReadOwnerAsync<T>(
@@ -215,6 +210,23 @@ public sealed class PurchasingOrderReadServiceV1(
         && companyContext.IsResolved
         && companyContext.CompanyId == companyId
         && currentUser.CanAccessCompany(companyId);
+
+    private static PurchaseOrderReadSummaryViewV1 ToReadSummary(
+        PurchaseOrderSummaryView order,
+        PurchasingSupplierDisplayV1 supplierDisplay) =>
+        new(
+            order.Id,
+            order.CompanyId,
+            order.Status,
+            order.Version,
+            order.SupplierPartyId,
+            order.CompanyAccountId,
+            order.SourceRequestId,
+            order.EffectiveOn,
+            order.CreatedAtUtc,
+            order.UpdatedAtUtc,
+            order.LineCount,
+            supplierDisplay);
 
     private static PurchasingServiceException Unavailable() =>
         new(503, PurchasingProblemCodesV1.CounterpartyProviderUnavailable);

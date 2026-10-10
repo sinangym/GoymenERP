@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
+using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Purchasing.Application.Contracts;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
@@ -89,6 +90,56 @@ public sealed class PurchasingHttpAcceptanceTests(GoymenErpApiFactory factory) :
     }
 
     [Fact]
+    public async Task Read_routes_require_supplier_display_while_command_wire_shape_stays_unchanged()
+    {
+        var detail = OrderDetail(PurchaseOrderId);
+        var service = new StubService
+        {
+            CreateOrder = () => Task.FromResult(new PurchaseOrderResponse(detail, false, "SENTETIK-create")),
+            Approve = () => Task.FromResult(new PurchaseOrderResponse(detail, false, "SENTETIK-approve")),
+        };
+        var owner = new StubOrderRecordSource { Detail = detail };
+        var displays = new StubSupplierDisplaySource();
+        using var host = CreateHost(service, owner, displays);
+        using var client = CreateClient(host);
+
+        using (var listResponse = await client.GetAsync(PurchasingApiV1.OrdersPath))
+        {
+            Assert.Equal(HttpStatusCode.OK, listResponse.StatusCode);
+            var list = await listResponse.Content.ReadFromJsonAsync<JsonElement>();
+            var supplier = list.GetProperty("items")[0].GetProperty("supplierDisplay");
+            Assert.Equal("TED-HTTP", supplier.GetProperty("code").GetString());
+            Assert.Equal(detail.Order.SupplierPartyId, supplier.GetProperty("partyId").GetGuid());
+        }
+
+        using (var detailResponse = await client.GetAsync($"{PurchasingApiV1.OrdersPath}/{PurchaseOrderId:D}"))
+        {
+            Assert.Equal(HttpStatusCode.OK, detailResponse.StatusCode);
+            var body = await detailResponse.Content.ReadFromJsonAsync<JsonElement>();
+            Assert.Equal("Tedarikçi HTTP A.Ş.", body.GetProperty("order").GetProperty("supplierDisplay").GetProperty("legalName").GetString());
+        }
+
+        using (var createResponse = await client.SendAsync(Post(PurchasingApiV1.OrdersPath, "SENTETIK-read-shape-create", OrderBody())))
+        {
+            Assert.Equal(HttpStatusCode.Created, createResponse.StatusCode);
+            var order = (await createResponse.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("detail").GetProperty("order");
+            Assert.False(order.TryGetProperty("supplierDisplay", out _));
+        }
+
+        using (var approvalResponse = await client.SendAsync(Post(
+                   $"{PurchasingApiV1.OrdersPath}/{PurchaseOrderId:D}/approval",
+                   "SENTETIK-read-shape-approve",
+                   "{\"expectedVersion\":\"2\"}")))
+        {
+            Assert.Equal(HttpStatusCode.OK, approvalResponse.StatusCode);
+            var order = (await approvalResponse.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("detail").GetProperty("order");
+            Assert.False(order.TryGetProperty("supplierDisplay", out _));
+        }
+
+        Assert.Equal(2, displays.Requests.Count);
+    }
+
+    [Fact]
     public async Task A_created_request_answers_201_under_the_requests_path_and_its_submission_200()
     {
         var id = Guid.NewGuid();
@@ -131,8 +182,9 @@ public sealed class PurchasingHttpAcceptanceTests(GoymenErpApiFactory factory) :
                 new PurchaseOrderAcceptanceHistoryView(second, line, "25", firstAt.AddMinutes(1)),
             ],
         };
-        var service = new StubService { GetOrder = _ => Task.FromResult(detail) };
-        using var host = CreateHost(service);
+        var service = new StubService();
+        var owner = new StubOrderRecordSource { Detail = detail };
+        using var host = CreateHost(service, owner, new StubSupplierDisplaySource());
         using var client = CreateClient(host);
 
         using var response = await client.GetAsync($"{PurchasingApiV1.OrdersPath}/{PurchaseOrderId:D}");
@@ -163,8 +215,12 @@ public sealed class PurchasingHttpAcceptanceTests(GoymenErpApiFactory factory) :
     public async Task Order_detail_failures_release_no_acceptance_history(int status, string code)
     {
         var protectedAcceptance = Guid.Parse("63000000-0000-0000-0000-000000000001");
-        var service = new StubService { GetOrder = _ => throw new PurchasingServiceException(status, code) };
-        using var host = CreateHost(service);
+        var service = new StubService();
+        var owner = new StubOrderRecordSource
+        {
+            GetOrder = _ => throw new PurchasingServiceException(status, code),
+        };
+        using var host = CreateHost(service, owner, new StubSupplierDisplaySource());
         using var client = CreateClient(host);
 
         using var response = await client.GetAsync($"{PurchasingApiV1.OrdersPath}/{PurchaseOrderId:D}");
@@ -334,11 +390,27 @@ public sealed class PurchasingHttpAcceptanceTests(GoymenErpApiFactory factory) :
         new PurchaseRequestSummaryView(id, CompanyA, status, version, new DateOnly(2026, 9, 19), DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, 1),
         [new PurchaseRequestLineView(Guid.NewGuid(), 1, Guid.NewGuid(), "7", Guid.NewGuid(), "6")]);
 
-    private WebApplicationFactory<Program> CreateHost(StubService service) => factory.WithWebHostBuilder(builder =>
+    private WebApplicationFactory<Program> CreateHost(
+        StubService service,
+        StubOrderRecordSource? orderSource = null,
+        StubSupplierDisplaySource? displaySource = null) => factory.WithWebHostBuilder(builder =>
         builder.ConfigureTestServices(services =>
         {
             services.Replace(ServiceDescriptor.Scoped<IPurchasingService>(_ => service));
             services.Replace(ServiceDescriptor.Scoped<IPurchaseGoodsReceiptQuantityComparisonServiceV1>(_ => service));
+            if (orderSource is not null)
+            {
+                services.RemoveAll<IPurchasingOrderRecordReadSourceV1>();
+                services.AddScoped<IPurchasingOrderRecordReadSourceV1>(_ => orderSource);
+                services.RemoveAll<IErpAuthorityRevalidationService>();
+                services.AddScoped<IErpAuthorityRevalidationService, StubAuthority>();
+            }
+
+            if (displaySource is not null)
+            {
+                services.RemoveAll<IPurchasingSupplierDisplaySourceV1>();
+                services.AddScoped<IPurchasingSupplierDisplaySourceV1>(_ => displaySource);
+            }
         }));
 
     private static HttpClient CreateClient(WebApplicationFactory<Program> host)
@@ -418,5 +490,55 @@ public sealed class PurchasingHttpAcceptanceTests(GoymenErpApiFactory factory) :
 
         public Task<PurchaseOrderListResponse> GetOrderListAsync(PurchaseOrderListQuery query, CancellationToken cancellationToken = default) =>
             Task.FromResult(new PurchaseOrderListResponse([], null));
+    }
+
+    private sealed class StubOrderRecordSource : IPurchasingOrderRecordReadSourceV1
+    {
+        public PurchaseOrderDetailView Detail { get; init; } = OrderDetail(PurchaseOrderId);
+        public Func<Guid, Task<PurchaseOrderDetailView>>? GetOrder { get; init; }
+
+        public Task<PurchaseOrderDetailView> GetOrderDetailAsync(
+            Guid orderId,
+            CancellationToken cancellationToken = default) =>
+            GetOrder?.Invoke(orderId) ?? Task.FromResult(Detail);
+
+        public Task<PurchaseOrderListResponse> GetOrderListAsync(
+            PurchaseOrderListQuery query,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(new PurchaseOrderListResponse([Detail.Order], null));
+    }
+
+    private sealed class StubSupplierDisplaySource : IPurchasingSupplierDisplaySourceV1
+    {
+        public List<PurchasingSupplierDisplayBatchRequestV1> Requests { get; } = [];
+
+        public Task<PurchasingSupplierDisplayBatchAnswerV1> GetAuthorizedBatchAsync(
+            PurchasingSupplierDisplayBatchRequestV1 request,
+            CancellationToken cancellationToken = default)
+        {
+            Requests.Add(request);
+            return Task.FromResult(new PurchasingSupplierDisplayBatchAnswerV1(
+                PurchasingSupplierDisplayBatchOutcomeV1.Success,
+                [.. request.PartyIds.Select(id => new PurchasingSupplierDisplayV1(
+                    id,
+                    "TED-HTTP",
+                    "Tedarikçi HTTP A.Ş.",
+                    "HTTP Metal"))]));
+        }
+    }
+
+    private sealed class StubAuthority : IErpAuthorityRevalidationService
+    {
+        public Task<PermissionScope> RevalidatePermissionScopeAsync(
+            string permission,
+            Guid companyId,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(new PermissionScope(
+                true,
+                true,
+                new HashSet<string>(StringComparer.Ordinal) { "PURCHASING-HTTP" },
+                new HashSet<Guid>(),
+                new HashSet<Guid>(),
+                new HashSet<Guid>()));
     }
 }

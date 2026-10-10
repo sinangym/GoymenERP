@@ -99,8 +99,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // conditional singleton registration; no OpenAPI-generation, network or hosted-service surface changes.
     // SETTINGS–MFG-POLICY-01 adds one in-process Settings module registration and its Development/Testing
     // initializer. It adds no endpoint, hosted service or build-time network surface.
+    // PUR-P05 adds one in-process record-bound Cari display host; no network or hosted-service surface.
     private const string ReviewedOpenApiStartupFingerprint =
-        "3aeaab9714a3c16d492b3513ea6c8f36a06e77e1b33ca6eee113921a69b753d2";
+        "4dfe3ea109dbf351d3cacd38e798579d8210d7380b453e42f4d32b9605d458f5";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedProductManufacturingTechnicalRegistrationPath =
@@ -188,9 +189,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // AT-009: +2 real-SQL fresh-authority interleavings (duplicate read and same-key winner replay).
             // Sales party display source: +1 bounded, company-scoped and fresh-authority batch SQL fact.
             // Record-bound Sales projection: +1 company/actor-fenced, single-query and non-disclosing SQL fact.
+            // Record-bound Purchasing projection: +1 company/actor-fenced, single-query and non-disclosing SQL fact.
             // Contact information fresh authority: +5 late-revocation, replay, no-op and winner SQL facts.
             ["tools/relational_inventory/counterparty.txt"] =
-                "60490c49fcdae6d284cad398bcd294396dcc2046cdf3f52415be5800b3e85949",
+                "dc43fcf4c2011217bdceb788e4c06f8cd3c76412a4fe11fcd11e78efa81bb223",
 
             // finance
             // DEC-FIN-014: +3 POS collection SQL facts (b18c13d9… -> 7af8ecf1…).
@@ -1075,7 +1077,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "GoymenERP.Modules.Purchasing.Infrastructure/"
                  + "PurchasingModuleExtensions.cs"] =
                     new(
-                        "30a3f0bf81e311a6e92b8d888dce33bc038f9da67f73a4bd0e895bba0fbd28c9",
+                        // PUR-P05 adds one scoped read decorator; provider capability counts are unchanged.
+                        "af5a23e1542bc2163d9f1de826a53154c4a2cc1c820ce51baa32aec2c61e5c6c",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -1138,6 +1141,20 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
+                        }),
+                // PUR-P05: one parameterized, company-filtered record-bound Cari read. The exact source and
+                // database API counts keep this narrower than a general SQL or generic Party-read surface.
+                ["src/backend/Modules/Counterparty/"
+                 + "GoymenERP.Modules.Counterparty.Infrastructure/Persistence/"
+                 + "CounterpartyPurchasingRecordPartyDisplaySourceV1.cs"] =
+                    new(
+                        "e0b2b15909349eef669089d381e7a80521e9f3d896cbda8f47c3aa415e391173",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["System.Data.Common"] = 1,
+                            ["GetDbConnection"] = 1,
+                            ["CreateCommand"] = 1,
+                            ["DbCommand"] = 1
                         }),
                 // ERP-000G / AT-065: the vault initializer's one provider branch, as Logistics. Re-fingerprinted for
                 // the production adapters (own-server store + Windows Defender registration); the branch and its

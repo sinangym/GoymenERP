@@ -12,6 +12,13 @@ public sealed class PurchasingOrderReadServiceV1Tests
     private static readonly Guid SupplierB = Guid.Parse("76000000-0000-0000-0000-000000000002");
 
     [Fact]
+    public void Command_summary_wire_contract_stays_separate_from_required_read_display()
+    {
+        Assert.Null(typeof(PurchaseOrderSummaryView).GetProperty("SupplierDisplay"));
+        Assert.NotNull(typeof(PurchaseOrderReadSummaryViewV1).GetProperty("SupplierDisplay"));
+    }
+
+    [Fact]
     public async Task List_and_detail_publish_exact_record_bound_supplier_presentations()
     {
         var owner = new StubOrderSource();
@@ -59,7 +66,7 @@ public sealed class PurchasingOrderReadServiceV1Tests
     }
 
     [Fact]
-    public async Task Authority_actor_and_company_drift_are_refused_before_or_after_the_owner_read()
+    public async Task Authority_before_read_and_actor_drift_after_supplier_read_are_refused()
     {
         var owner = new StubOrderSource();
         var displays = new StubDisplaySource

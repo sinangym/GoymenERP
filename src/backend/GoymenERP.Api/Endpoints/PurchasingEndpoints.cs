@@ -174,7 +174,7 @@ public static class PurchasingEndpoints
             }
         })
             .WithName("GetPurchaseOrdersV1")
-            .Produces<PurchaseOrderListResponse>()
+            .Produces<PurchaseOrderReadListResponseV1>()
             .ProducesErpBadRequest("validation_failed", PurchasingProblemCodesV1.InvalidCursor)
             .AllowsEmptyErpBadRequestBody()
             .ProducesErpServiceUnavailable()
@@ -194,7 +194,7 @@ public static class PurchasingEndpoints
             }
         })
             .WithName("GetPurchaseOrderV1")
-            .Produces<PurchaseOrderDetailView>()
+            .Produces<PurchaseOrderReadDetailViewV1>()
             .ProducesErpCodeLessNotFound()
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();

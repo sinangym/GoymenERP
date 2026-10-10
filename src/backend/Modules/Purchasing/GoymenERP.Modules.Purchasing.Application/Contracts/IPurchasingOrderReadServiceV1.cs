@@ -16,4 +16,13 @@ public interface IPurchasingOrderRecordReadSourceV1
 /// List/detail projection that requires an exact Cari display for every supplier id extracted from
 /// the already-authorized Purchasing records. It never accepts a caller-supplied Party id.
 /// </summary>
-public interface IPurchasingOrderReadServiceV1 : IPurchasingOrderRecordReadSourceV1;
+public interface IPurchasingOrderReadServiceV1
+{
+    Task<PurchaseOrderReadDetailViewV1> GetOrderDetailAsync(
+        Guid orderId,
+        CancellationToken cancellationToken = default);
+
+    Task<PurchaseOrderReadListResponseV1> GetOrderListAsync(
+        PurchaseOrderListQuery query,
+        CancellationToken cancellationToken = default);
+}
