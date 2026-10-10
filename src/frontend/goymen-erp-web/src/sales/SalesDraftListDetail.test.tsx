@@ -4,7 +4,7 @@
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import listResponseRaw from './examples/list-response.json?raw'
 import detailResponseRaw from './examples/detail-response.json?raw'
@@ -12,11 +12,13 @@ import { SALES_CAPABILITY } from './capabilities'
 import { CAPABILITY } from '../shell/capabilities'
 import type { UseContactInformation } from './referenceSource'
 import { ORDER_DETAIL_TEXT, ORDER_DRAFT_TEXT, ORDER_LIST_TEXT } from './salesText'
+import { formatInstant } from './format'
 import {
   ADDRESS,
   ADDRESS_TEXT,
   ALL_SALES,
   COMPANY_A,
+  COMPANY_B,
   HARNESS_PARTY_DISPLAY,
   CONTACT,
   CURRENCY,
@@ -336,5 +338,270 @@ describe('the record-bound Cari on the list and the detail', () => {
     renderSalesApp(`/satis/siparisler/${DRAFT}`)
     await waitFor(() => expect(document.querySelector('[data-state="malformed-response"]')).not.toBeNull())
     expect(screen.queryByTestId('sales-draft-party')).toBeNull()
+  })
+})
+
+/**
+ * SALES-DS-01 (GOY-DS-001): the same S-02 list on the design system. The facts, their order, the server filter, the
+ * cursor, the Cari link rule and the context fence stay as they were; only the layout is new — the shared DataTable on
+ * a wide screen and one labelled card per row at the shell's phone width.
+ */
+describe('SALES-DS-01: the S-02 list on GOY-DS-001', () => {
+  const LONG_PARTY = {
+    code: 'CARI-İZM-0004567',
+    legalName: 'KARADENİZ ÇELİK DÖKÜM MAKİNA İMALAT SANAYİ VE DIŞ TİCARET ANONİM ŞİRKETİ',
+    tradeName: 'Karadeniz Döküm Gebze Şubesi',
+  }
+  const LONG_PARTY_TEXT = `${LONG_PARTY.code} — ${LONG_PARTY.legalName} (${LONG_PARTY.tradeName})`
+  const PARTY_ID = JSON.parse(listResponseRaw).items[0].partyId as string
+  const ids = (n: number) => `aaaaaaaa-aaaa-aaaa-aaaa-${String(n).padStart(12, '0')}`
+
+  /** A row of the #257 example with the given id and changes; the long Cari is the server's record-bound display. */
+  function draftRow(n: number, change: Record<string, unknown> = {}) {
+    const example = JSON.parse(listResponseRaw).items[0]
+    return {
+      ...example,
+      id: ids(n),
+      documentNo: `SO-2026-${String(n).padStart(4, '0')}`,
+      partyDisplay: { partyId: example.partyId, ...LONG_PARTY },
+      ...change,
+    }
+  }
+
+  /** Every lifecycle × approval pair the contract allows on a list row (a cancelled draft is an approved one). */
+  const STATE_ROWS = [
+    draftRow(1, { approvalState: 'Preparing', commercialStage: 'Quote', businessDate: '2026-10-01', revision: 'Rev.0', lineCount: 1 }),
+    draftRow(2, { approvalState: 'PendingApproval', businessDate: '2026-10-02', revision: 'Rev.1', lineCount: 12 }),
+    draftRow(3, { approvalState: 'Approved', businessDate: '2026-10-03', revision: 'Rev.2', lineCount: 3 }),
+    draftRow(4, { approvalState: 'Rejected', businessDate: '2026-10-04' }),
+    draftRow(5, { approvalState: 'Withdrawn', businessDate: '2026-10-05' }),
+    draftRow(6, { state: 'Cancelled', approvalState: 'Approved', businessDate: '2026-10-06' }),
+  ]
+  const STATE_TEXTS = [
+    ['Taslak · Hazırlanıyor', 'neutral'],
+    ['Taslak · Onay bekliyor', 'warning'],
+    ['Taslak · Onaylı', 'success'],
+    ['Taslak · Reddedildi', 'danger'],
+    ['Taslak · Geri çekildi', 'neutral'],
+    ['İptal edildi · Onaylı', 'neutral'],
+  ] as const
+
+  /** A controllable viewport for the shell's phone width (`(max-width: 767px)`); `false` is an explicit desktop. */
+  function stubViewport(phone: boolean) {
+    const viewport = { phone }
+    const listeners = new Set<() => void>()
+    vi.stubGlobal('matchMedia', vi.fn((query: string) => ({
+      get matches() { return viewport.phone },
+      media: query, onchange: null,
+      addEventListener: (_type: string, listener: () => void) => listeners.add(listener),
+      removeEventListener: (_type: string, listener: () => void) => listeners.delete(listener),
+      addListener: () => {}, removeListener: () => {}, dispatchEvent: () => false,
+    })))
+    return {
+      set(next: boolean) {
+        viewport.phone = next
+        act(() => { for (const listener of [...listeners]) listener() })
+      },
+    }
+  }
+
+  const listReads = (fetch: ReturnType<typeof installFetch>) => fetch.salesCalls()
+    .filter((call) => call.method === 'GET')
+    .map((call) => {
+      const params = new URL(call.url, 'http://x').searchParams
+      return { companyId: call.companyId, cursor: params.get('cursor'), approvalState: params.get('approvalState') }
+    })
+
+  it('draws one semantic DataTable: the kept columns in their order, one row per draft, every fact as the server sent it', async () => {
+    stubViewport(false)
+    installFetch({ capabilities: [...ALL_SALES, CAPABILITY.cariPartiesDetail], onList: () => json({ items: STATE_ROWS, nextCursor: null }) })
+    renderSalesApp('/satis/siparisler')
+    const table = await screen.findByRole('table', { name: ORDER_LIST_TEXT.caption })
+
+    expect(within(table).getAllByRole('columnheader').map((header) => [header.textContent, header.getAttribute('scope')])).toEqual([
+      ORDER_LIST_TEXT.documentNo, ORDER_LIST_TEXT.party, ORDER_LIST_TEXT.businessDate, ORDER_LIST_TEXT.commercialStage,
+      ORDER_LIST_TEXT.state, ORDER_LIST_TEXT.revision, ORDER_LIST_TEXT.lineCount, ORDER_LIST_TEXT.createdAt,
+    ].map((text) => [text, 'col']))
+    const body = within(table).getAllByRole('row').slice(1)
+    expect(body.map((row) => row.getAttribute('data-draft-id'))).toEqual(STATE_ROWS.map((row) => row.id))
+    expect(within(body[1]).getAllByRole('cell').map((cell) => cell.textContent)).toEqual([
+      'SO-2026-0002', LONG_PARTY_TEXT, '02.10.2026', 'Sipariş', 'Taslak · Onay bekliyor', 'Rev.1', '12', formatInstant(STATE_ROWS[1].createdAtUtc),
+    ])
+    expect(within(body[0]).getByTestId(`sales-row-commercial-stage-${ids(1)}`).textContent).toBe('Teklif')
+    // The whole Cari, never cut: the full text in the cell and as the link's name, with its card link.
+    const party = within(body[0]).getByTestId(`sales-row-party-${ids(1)}`)
+    expect(within(party).getByRole('link', { name: LONG_PARTY_TEXT }).getAttribute('href')).toBe(`/cari/${PARTY_ID}`)
+    expect(party.closest('td')).not.toBeNull()
+    // No amount, total, count or search was added.
+    expect(within(table).queryByText(/Tutar|KDV|Toplam|Kur/)).toBeNull()
+    expect(screen.queryByRole('searchbox')).toBeNull()
+    expect(screen.getByText(ORDER_LIST_TEXT.end)).toBeTruthy()
+  })
+
+  it('shows the lifecycle beside the approval in each StatusIndicator; the dot is decorative and the text is exact', async () => {
+    stubViewport(false)
+    installFetch({ onList: () => json({ items: STATE_ROWS, nextCursor: null }) })
+    renderSalesApp('/satis/siparisler')
+    await screen.findByRole('table', { name: ORDER_LIST_TEXT.caption })
+
+    for (const [index, row] of STATE_ROWS.entries()) {
+      const text = screen.getByTestId(`sales-row-approval-${row.id}`)
+      const indicator = text.parentElement!
+      expect([text.textContent, indicator.getAttribute('data-tone')]).toEqual(STATE_TEXTS[index])
+      expect(indicator.querySelector('[aria-hidden="true"]')?.textContent).toBe('')
+      expect(indicator.getAttribute('role')).toBeNull()
+      expect(indicator.getAttribute('aria-live')).toBeNull()
+    }
+  })
+
+  it('keeps the create action a link and the next page a plain button: no nested interactive element, no form to submit', async () => {
+    stubViewport(false)
+    installFetch({ onList: () => json({ items: [draftRow(1)], nextCursor: 'cursor-2' }) })
+    renderSalesApp('/satis/siparisler')
+    await screen.findByRole('table', { name: ORDER_LIST_TEXT.caption })
+    const page = screen.getByRole('region', { name: ORDER_LIST_TEXT.heading })
+
+    const create = within(page).getByRole('link', { name: ORDER_LIST_TEXT.newDraft })
+    expect(create.getAttribute('href')).toBe('/satis/siparisler/yeni')
+    expect(create.querySelector('button, a, input, select')).toBeNull()
+    expect(create.closest('button')).toBeNull()
+    const more = within(page).getByRole('button', { name: ORDER_LIST_TEXT.loadMore })
+    expect(more.getAttribute('type')).toBe('button')
+    expect(more.querySelector('a, button')).toBeNull()
+    expect(page.querySelector('form')).toBeNull()
+    for (const link of within(page).getAllByRole('link')) expect(link.querySelector('a, button')).toBeNull()
+
+    // The filter is one labelled Field control, reachable by keyboard after the create link.
+    const filter = within(page).getByLabelText(ORDER_LIST_TEXT.filter)
+    expect(filter.id).toBe('sales-approval-filter')
+    expect(within(filter).getAllByRole('option').map((option) => option.textContent))
+      .toEqual(['Tümü', 'Hazırlanıyor', 'Onay bekliyor', 'Onaylı', 'Reddedildi', 'Geri çekildi'])
+    create.focus()
+    await userEvent.tab()
+    expect(document.activeElement).toBe(filter)
+    await userEvent.tab()
+    expect(document.activeElement).toBe(within(page).getByRole('link', { name: 'SO-2026-0001' }))
+  })
+
+  it('the filter is the server\'s: it restarts at the first page without a cursor and drops the rows of the old filter', async () => {
+    stubViewport(false)
+    const fetch = installFetch({
+      onList: (url) => {
+        const params = new URL(url, 'http://x').searchParams
+        if (params.get('approvalState') === 'Approved') return json({ items: [draftRow(9, { approvalState: 'Approved' })], nextCursor: null })
+        return params.get('cursor') === null
+          ? json({ items: [draftRow(1)], nextCursor: 'cursor-2' })
+          : json({ items: [draftRow(2)], nextCursor: null })
+      },
+    })
+    renderSalesApp('/satis/siparisler')
+    await userEvent.click(await screen.findByRole('button', { name: ORDER_LIST_TEXT.loadMore }))
+    await screen.findByRole('link', { name: 'SO-2026-0002' })
+
+    await userEvent.selectOptions(screen.getByLabelText(ORDER_LIST_TEXT.filter), 'Approved')
+    await screen.findByRole('link', { name: 'SO-2026-0009' })
+    expect(screen.queryByRole('link', { name: 'SO-2026-0001' })).toBeNull()
+    expect(screen.queryByRole('link', { name: 'SO-2026-0002' })).toBeNull()
+    expect(screen.getByTestId(`sales-row-approval-${ids(9)}`).textContent).toBe('Taslak · Onaylı')
+    expect(listReads(fetch)).toEqual([
+      { companyId: COMPANY_A, cursor: null, approvalState: null },
+      { companyId: COMPANY_A, cursor: 'cursor-2', approvalState: null },
+      { companyId: COMPANY_A, cursor: null, approvalState: 'Approved' },
+    ])
+    expect(screen.getByText(ORDER_LIST_TEXT.end)).toBeTruthy()
+  })
+
+  it('on a phone each draft is one labelled card with the same facts; the long Cari is whole and there is no table', async () => {
+    stubViewport(true)
+    installFetch({ capabilities: [...ALL_SALES, CAPABILITY.cariPartiesDetail], onList: () => json({ items: STATE_ROWS, nextCursor: null }) })
+    renderSalesApp('/satis/siparisler')
+    const cards = await screen.findByRole('list', { name: ORDER_LIST_TEXT.caption })
+    expect(screen.queryByRole('table')).toBeNull()
+
+    const items = within(cards).getAllByRole('listitem')
+    expect(items.map((item) => item.getAttribute('data-draft-id'))).toEqual(STATE_ROWS.map((row) => row.id))
+    const second = items[1]
+    expect(within(second).getByRole('link', { name: 'SO-2026-0002' }).getAttribute('href')).toBe(`/satis/siparisler/${ids(2)}`)
+    expect(within(second).getByTestId(`sales-row-approval-${ids(2)}`).textContent).toBe('Taslak · Onay bekliyor')
+    // Every value sits under its own label (dt → dd), in the table's order after the number and the state.
+    const facts = within(second).getAllByRole('term').map((term) => [term.textContent, term.nextElementSibling?.textContent])
+    expect(facts).toEqual([
+      [ORDER_LIST_TEXT.party, LONG_PARTY_TEXT],
+      [ORDER_LIST_TEXT.businessDate, '02.10.2026'],
+      [ORDER_LIST_TEXT.commercialStage, 'Sipariş'],
+      [ORDER_LIST_TEXT.revision, 'Rev.1'],
+      [ORDER_LIST_TEXT.lineCount, '12'],
+      [ORDER_LIST_TEXT.createdAt, formatInstant(STATE_ROWS[1].createdAtUtc)],
+    ])
+    const party = within(second).getByTestId(`sales-row-party-${ids(2)}`)
+    expect(within(party).getByRole('link', { name: LONG_PARTY_TEXT }).getAttribute('href')).toBe(`/cari/${PARTY_ID}`)
+    for (const [index, row] of STATE_ROWS.entries()) {
+      expect(screen.getByTestId(`sales-row-approval-${row.id}`).textContent).toBe(STATE_TEXTS[index][0])
+    }
+  })
+
+  it('crossing the phone width swaps the layout over the same rows without a new read, and a failed next page keeps the cards', async () => {
+    const viewport = stubViewport(false)
+    let reads = 0
+    const fetch = installFetch({
+      onList: (url) => {
+        reads += 1
+        if (!url.includes('cursor=')) return json({ items: [draftRow(1)], nextCursor: 'cursor-2' })
+        return reads === 2 ? json('{}', 503) : json({ items: [draftRow(2)], nextCursor: null })
+      },
+    })
+    renderSalesApp('/satis/siparisler')
+    await screen.findByRole('table', { name: ORDER_LIST_TEXT.caption })
+    viewport.set(true)
+    expect(screen.queryByRole('table')).toBeNull()
+    expect(screen.getByRole('list', { name: ORDER_LIST_TEXT.caption })).toBeTruthy()
+
+    await userEvent.click(screen.getByRole('button', { name: ORDER_LIST_TEXT.loadMore }))
+    expect(await screen.findByText(ORDER_LIST_TEXT.nextPageFailed)).toBeTruthy()
+    expect(within(screen.getByRole('list', { name: ORDER_LIST_TEXT.caption })).getAllByRole('listitem')).toHaveLength(1)
+    await userEvent.click(screen.getByRole('button', { name: 'Tekrar dene' }))
+    await waitFor(() => expect(within(screen.getByRole('list', { name: ORDER_LIST_TEXT.caption })).getAllByRole('listitem')).toHaveLength(2))
+
+    viewport.set(false)
+    const table = screen.getByRole('table', { name: ORDER_LIST_TEXT.caption })
+    expect(within(table).getAllByRole('row').slice(1).map((row) => row.getAttribute('data-draft-id'))).toEqual([ids(1), ids(2)])
+    expect(listReads(fetch).map((read) => read.cursor)).toEqual([null, 'cursor-2', 'cursor-2'])
+  })
+
+  it('a reader with only the list grant gets plain text on the table and the card: no detail, Cari or create link', async () => {
+    for (const phone of [false, true]) {
+      stubViewport(phone)
+      installFetch({ capabilities: [SALES_CAPABILITY.draftsList], onList: () => json({ items: [draftRow(1)], nextCursor: null }) })
+      renderSalesApp('/satis/siparisler')
+      const party = await screen.findByTestId(`sales-row-party-${ids(1)}`)
+      expect(party.textContent).toBe(LONG_PARTY_TEXT)
+      const page = screen.getByRole('region', { name: ORDER_LIST_TEXT.heading })
+      expect(within(page).queryAllByRole('link')).toEqual([])
+      expect(within(page).getByText('SO-2026-0001')).toBeTruthy()
+      cleanup()
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('a company switch starts the new company from its first page; the old company\'s rows and cursor never show', async () => {
+    stubViewport(false)
+    const fetch = installFetch({
+      onList: (url, companyId) => {
+        if (companyId === COMPANY_B) return json({ items: [draftRow(7, { companyId: COMPANY_B, documentNo: 'SO-B-0007' })], nextCursor: null })
+        return url.includes('cursor=')
+          ? json({ items: [draftRow(2)], nextCursor: null })
+          : json({ items: [draftRow(1)], nextCursor: 'cursor-a' })
+      },
+    })
+    renderSalesApp('/satis/siparisler')
+    await userEvent.click(await screen.findByRole('button', { name: ORDER_LIST_TEXT.loadMore }))
+    await screen.findByRole('link', { name: 'SO-2026-0002' })
+
+    await userEvent.selectOptions(screen.getByLabelText('Şirket'), COMPANY_B)
+    await screen.findByRole('link', { name: 'SO-B-0007' })
+    expect(screen.queryByRole('link', { name: 'SO-2026-0001' })).toBeNull()
+    expect(screen.queryByRole('link', { name: 'SO-2026-0002' })).toBeNull()
+    expect(listReads(fetch).at(-1)).toEqual({ companyId: COMPANY_B, cursor: null, approvalState: null })
+    expect(screen.getByText(ORDER_LIST_TEXT.end)).toBeTruthy()
   })
 })
