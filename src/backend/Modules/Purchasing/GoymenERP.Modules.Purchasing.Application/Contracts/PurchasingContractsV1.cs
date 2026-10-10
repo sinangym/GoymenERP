@@ -59,7 +59,14 @@ public sealed record PurchaseRequestListQuery(int PageSize = 50, string? Cursor 
 
 public sealed record PurchaseOrderSummaryView(
     Guid Id, Guid CompanyId, string Status, string Version, Guid SupplierPartyId, Guid CompanyAccountId, Guid? SourceRequestId,
-    DateOnly EffectiveOn, DateTimeOffset CreatedAtUtc, DateTimeOffset UpdatedAtUtc, int LineCount);
+    DateOnly EffectiveOn, DateTimeOffset CreatedAtUtc, DateTimeOffset UpdatedAtUtc, int LineCount)
+{
+    /// <summary>
+    /// Present only on authorized order list/detail reads. Commands keep their existing response and do
+    /// not synthesize a Cari fallback when the record-bound owner source is unavailable.
+    /// </summary>
+    public PurchasingSupplierDisplayV1? SupplierDisplay { get; init; }
+}
 
 /// <summary>The line's shares as exact text (§7.2, §13): ordered, moved into technical lines, committed (= ordered − technical), accepted, remaining (= committed − accepted, the expected supply).</summary>
 public sealed record PurchaseOrderLineView(

@@ -155,7 +155,7 @@ public static class PurchasingEndpoints
             .ProducesErpAuthenticatedProblems();
 
         group.MapGet("/", async ([FromQuery] int? pageSize, [FromQuery] string? cursor, [FromQuery] string? status, HttpContext httpContext,
-            [FromServices] IPurchasingService service, ICorrelationContext correlation, CancellationToken cancellationToken) =>
+            [FromServices] IPurchasingOrderReadServiceV1 service, ICorrelationContext correlation, CancellationToken cancellationToken) =>
         {
             SetPrivateNoStore(httpContext.Response);
             if (!IsListQueryValid(httpContext, pageSize, cursor, status))
@@ -180,7 +180,7 @@ public static class PurchasingEndpoints
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();
 
-        group.MapGet("/{id:guid}", async (Guid id, HttpContext httpContext, [FromServices] IPurchasingService service,
+        group.MapGet("/{id:guid}", async (Guid id, HttpContext httpContext, [FromServices] IPurchasingOrderReadServiceV1 service,
             ICorrelationContext correlation, CancellationToken cancellationToken) =>
         {
             SetPrivateNoStore(httpContext.Response);
@@ -200,7 +200,7 @@ public static class PurchasingEndpoints
             .ProducesErpAuthenticatedProblems();
 
         group.MapPost("/{id:guid}/approval", (Guid id, HttpContext httpContext, [FromServices] IPurchasingService service,
-                ICorrelationContext correlation, CancellationToken cancellationToken) =>
+            ICorrelationContext correlation, CancellationToken cancellationToken) =>
             MutateAsync(httpContext, correlation, PurchasingJson.ReadApprove,
                 (body, metadata) => service.ApproveOrderAsync(id, body, metadata, cancellationToken), cancellationToken))
             .WithName("ApprovePurchaseOrderV1")
