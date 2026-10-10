@@ -179,9 +179,14 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         public Action? AfterCountRead { get; init; }
 
         public async Task<IReadOnlyList<InventoryStockCountPendingApprovalItemV1>> ReadStockCountsAsync(
-            string excludingActorId, int offset, int limit, CancellationToken cancellationToken)
+            string excludingActorId,
+            DateTimeOffset? afterSubmittedAtUtc,
+            Guid? afterCountId,
+            int limit,
+            CancellationToken cancellationToken)
         {
-            var rows = await inner.ReadStockCountsAsync(excludingActorId, offset, limit, cancellationToken);
+            var rows = await inner.ReadStockCountsAsync(
+                excludingActorId, afterSubmittedAtUtc, afterCountId, limit, cancellationToken);
             AfterCountRead?.Invoke();
             return MutateCounts?.Invoke(rows) ?? rows;
         }
@@ -191,8 +196,12 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             inner.ReadStockCountAsync(countId, excludingActorId, cancellationToken);
 
         public Task<IReadOnlyList<InventoryStockScrapPendingApprovalItemV1>> ReadStockScrapsAsync(
-            string excludingActorId, int offset, int limit, CancellationToken cancellationToken) =>
-            inner.ReadStockScrapsAsync(excludingActorId, offset, limit, cancellationToken);
+            string excludingActorId,
+            DateTimeOffset? afterSubmittedAtUtc,
+            Guid? afterScrapId,
+            int limit,
+            CancellationToken cancellationToken) =>
+            inner.ReadStockScrapsAsync(excludingActorId, afterSubmittedAtUtc, afterScrapId, limit, cancellationToken);
 
         public Task<InventoryStockScrapPendingApprovalItemV1?> ReadStockScrapAsync(
             Guid scrapId, string excludingActorId, CancellationToken cancellationToken) =>

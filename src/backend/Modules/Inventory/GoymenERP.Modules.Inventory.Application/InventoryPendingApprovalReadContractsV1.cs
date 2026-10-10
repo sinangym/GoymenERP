@@ -84,7 +84,8 @@ public interface IInventoryPendingApprovalReaderV1
 {
     Task<IReadOnlyList<InventoryStockCountPendingApprovalItemV1>> ReadStockCountsAsync(
         string excludingActorId,
-        int offset,
+        DateTimeOffset? afterSubmittedAtUtc,
+        Guid? afterCountId,
         int limit,
         CancellationToken cancellationToken);
 
@@ -95,7 +96,8 @@ public interface IInventoryPendingApprovalReaderV1
 
     Task<IReadOnlyList<InventoryStockScrapPendingApprovalItemV1>> ReadStockScrapsAsync(
         string excludingActorId,
-        int offset,
+        DateTimeOffset? afterSubmittedAtUtc,
+        Guid? afterScrapId,
         int limit,
         CancellationToken cancellationToken);
 

@@ -2411,6 +2411,12 @@ public sealed partial class OpenApiContractGenerationTests
                     ["item", "preview"],
                     ("item", "ref:NativeApprovalReadItemV1"),
                     ("preview", "ref:FinanceOfficialInvoiceImportPreviewV1")),
+                ["NativeApprovalReadDetailV1InventoryStockCountNativeApprovalReadDetailV1"] = ObjectSchema(
+                    ["item"],
+                    ("item", "ref:NativeApprovalReadItemV1")),
+                ["NativeApprovalReadDetailV1InventoryStockScrapNativeApprovalReadDetailV1"] = ObjectSchema(
+                    ["item"],
+                    ("item", "ref:NativeApprovalReadItemV1")),
                 ["NativeApprovalReadDetailV1SalesOrderDraftNativeApprovalReadDetailV1"] = ObjectSchema(
                     ["item"],
                     ("item", "ref:NativeApprovalReadItemV1")),
@@ -2426,6 +2432,50 @@ public sealed partial class OpenApiContractGenerationTests
                     ("checksum", "type:string"),
                     ("templateVersion", "type:string"),
                     ("itemCount", "type:integer|string;format:int32"),
+                    ("submittedBy", "type:string"),
+                    ("submittedAtUtc", "type:string;format:date-time")),
+                ["NativeApprovalReadItemV1InventoryStockCountNativeApprovalReadItemV1"] = ObjectSchema(
+                    ["approvalId", "companyId", "status", "version", "labelId", "productId", "locationId", "differenceKg", "labelVersion", "ownerKind", "ownerId", "custodianKind", "custodianId", "block", "bookKg", "countedKg", "reason", "submittedBy", "submittedAtUtc"],
+                    ("kind", "type:string"),
+                    ("approvalId", "type:string;format:uuid"),
+                    ("companyId", "type:string;format:uuid"),
+                    ("status", "type:string"),
+                    ("version", "type:string"),
+                    ("labelId", "type:string;format:uuid"),
+                    ("productId", "type:string;format:uuid"),
+                    ("locationId", "type:string;format:uuid"),
+                    ("differenceKg", "type:string"),
+                    ("labelVersion", "type:string"),
+                    ("ownerKind", "type:string"),
+                    ("ownerId", "type:string;format:uuid"),
+                    ("custodianKind", "type:string"),
+                    ("custodianId", "type:string;format:uuid"),
+                    ("block", "type:string"),
+                    ("bookKg", "type:string"),
+                    ("countedKg", "type:string"),
+                    ("reason", "type:string"),
+                    ("submittedBy", "type:string"),
+                    ("submittedAtUtc", "type:string;format:date-time")),
+                ["NativeApprovalReadItemV1InventoryStockScrapNativeApprovalReadItemV1"] = ObjectSchema(
+                    ["approvalId", "companyId", "status", "version", "labelId", "productId", "locationId", "scrapKg", "labelVersion", "ownerKind", "ownerId", "custodianKind", "custodianId", "block", "bookKg", "remainingKg", "reason", "submittedBy", "submittedAtUtc"],
+                    ("kind", "type:string"),
+                    ("approvalId", "type:string;format:uuid"),
+                    ("companyId", "type:string;format:uuid"),
+                    ("status", "type:string"),
+                    ("version", "type:string"),
+                    ("labelId", "type:string;format:uuid"),
+                    ("productId", "type:string;format:uuid"),
+                    ("locationId", "type:string;format:uuid"),
+                    ("scrapKg", "type:string"),
+                    ("labelVersion", "type:string"),
+                    ("ownerKind", "type:string"),
+                    ("ownerId", "type:string;format:uuid"),
+                    ("custodianKind", "type:string"),
+                    ("custodianId", "type:string;format:uuid"),
+                    ("block", "type:string"),
+                    ("bookKg", "type:string"),
+                    ("remainingKg", "type:string"),
+                    ("reason", "type:string"),
                     ("submittedBy", "type:string"),
                     ("submittedAtUtc", "type:string;format:date-time")),
                 ["NativeApprovalReadItemV1SalesOrderDraftNativeApprovalReadItemV1"] = ObjectSchema(
@@ -6647,6 +6697,12 @@ public sealed partial class OpenApiContractGenerationTests
         const string financeKind = "finance.official-invoice-import.v1";
         const string financeItemSchema =
             "#/components/schemas/NativeApprovalReadItemV1FinanceInvoiceImportNativeApprovalReadItemV1";
+        const string countKind = "inventory.stock-count.v1";
+        const string countItemSchema =
+            "#/components/schemas/NativeApprovalReadItemV1InventoryStockCountNativeApprovalReadItemV1";
+        const string scrapKind = "inventory.stock-scrap.v1";
+        const string scrapItemSchema =
+            "#/components/schemas/NativeApprovalReadItemV1InventoryStockScrapNativeApprovalReadItemV1";
         const string salesKind = "sales.order-draft.v1";
         const string salesItemSchema =
             "#/components/schemas/NativeApprovalReadItemV1SalesOrderDraftNativeApprovalReadItemV1";
@@ -6657,10 +6713,12 @@ public sealed partial class OpenApiContractGenerationTests
         var mapping = discriminator.GetProperty("mapping").EnumerateObject()
             .ToDictionary(property => property.Name, property => property.Value.GetString(),
                 StringComparer.Ordinal);
-        Assert.Equal(2, mapping.Count);
+        Assert.Equal(4, mapping.Count);
         Assert.Equal(financeItemSchema, mapping[financeKind]);
+        Assert.Equal(countItemSchema, mapping[countKind]);
+        Assert.Equal(scrapItemSchema, mapping[scrapKind]);
         Assert.Equal(salesItemSchema, mapping[salesKind]);
-        Assert.Equal([financeItemSchema, salesItemSchema],
+        Assert.Equal([financeItemSchema, countItemSchema, scrapItemSchema, salesItemSchema],
             item.GetProperty("anyOf").EnumerateArray()
                 .Select(variant => variant.GetProperty("$ref").GetString()
                     ?? throw new InvalidOperationException("Native approval item schema reference is null."))
@@ -6672,6 +6730,8 @@ public sealed partial class OpenApiContractGenerationTests
         Assert.Equal(
             [
                 "#/components/schemas/NativeApprovalReadDetailV1FinanceInvoiceImportNativeApprovalReadDetailV1",
+                "#/components/schemas/NativeApprovalReadDetailV1InventoryStockCountNativeApprovalReadDetailV1",
+                "#/components/schemas/NativeApprovalReadDetailV1InventoryStockScrapNativeApprovalReadDetailV1",
                 "#/components/schemas/NativeApprovalReadDetailV1SalesOrderDraftNativeApprovalReadDetailV1",
             ],
             detail.GetProperty("anyOf").EnumerateArray()

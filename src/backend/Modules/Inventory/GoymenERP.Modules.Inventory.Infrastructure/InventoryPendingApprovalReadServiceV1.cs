@@ -16,7 +16,6 @@ public sealed class InventoryPendingApprovalReadServiceV1(
 {
     private const int PageSize = 50;
     internal const int ReadLimit = PageSize + 1;
-    internal const int MaximumOffset = 1_000_000;
 
     Task<InventoryPendingApprovalReadResultV1<InventoryStockCountPendingApprovalPageV1>>
         IInventoryStockCountPendingApprovalReadServiceV1.ListAsync(
@@ -49,7 +48,8 @@ public sealed class InventoryPendingApprovalReadServiceV1(
     {
         ArgumentNullException.ThrowIfNull(context);
         cancellationToken.ThrowIfCancellationRequested();
-        if (!TryCursor(context.CompanyId, InventoryPendingApprovalKindsV1.StockCount, cursor, out var offset))
+        if (!TryCursor(context.CompanyId, InventoryPendingApprovalKindsV1.StockCount, cursor,
+                out var afterSubmittedAtUtc, out var afterCountId))
         {
             return NotFound<InventoryStockCountPendingApprovalPageV1>();
         }
@@ -62,7 +62,8 @@ public sealed class InventoryPendingApprovalReadServiceV1(
         IReadOnlyList<InventoryStockCountPendingApprovalItemV1> rows;
         try
         {
-            rows = await reader.ReadStockCountsAsync(context.ActorId, offset, ReadLimit, cancellationToken);
+            rows = await reader.ReadStockCountsAsync(
+                context.ActorId, afterSubmittedAtUtc, afterCountId, ReadLimit, cancellationToken);
         }
         catch (OperationCanceledException)
         {
@@ -84,14 +85,15 @@ public sealed class InventoryPendingApprovalReadServiceV1(
             return Unavailable<InventoryStockCountPendingApprovalPageV1>();
         }
 
+        var visible = rows.Take(PageSize).ToArray();
         var hasMore = rows.Count > PageSize;
         return new(InventoryPendingApprovalReadOutcomeV1.Found,
             new InventoryStockCountPendingApprovalPageV1(
                 context.CompanyId,
-                rows.Take(PageSize).ToArray(),
+                visible,
                 hasMore
                     ? EncodeCursor(context.CompanyId, InventoryPendingApprovalKindsV1.StockCount,
-                        checked(offset + PageSize))
+                        visible[^1].SubmittedAtUtc, visible[^1].CountId)
                     : null));
     }
 
@@ -149,7 +151,8 @@ public sealed class InventoryPendingApprovalReadServiceV1(
     {
         ArgumentNullException.ThrowIfNull(context);
         cancellationToken.ThrowIfCancellationRequested();
-        if (!TryCursor(context.CompanyId, InventoryPendingApprovalKindsV1.StockScrap, cursor, out var offset))
+        if (!TryCursor(context.CompanyId, InventoryPendingApprovalKindsV1.StockScrap, cursor,
+                out var afterSubmittedAtUtc, out var afterScrapId))
         {
             return NotFound<InventoryStockScrapPendingApprovalPageV1>();
         }
@@ -162,7 +165,8 @@ public sealed class InventoryPendingApprovalReadServiceV1(
         IReadOnlyList<InventoryStockScrapPendingApprovalItemV1> rows;
         try
         {
-            rows = await reader.ReadStockScrapsAsync(context.ActorId, offset, ReadLimit, cancellationToken);
+            rows = await reader.ReadStockScrapsAsync(
+                context.ActorId, afterSubmittedAtUtc, afterScrapId, ReadLimit, cancellationToken);
         }
         catch (OperationCanceledException)
         {
@@ -184,14 +188,15 @@ public sealed class InventoryPendingApprovalReadServiceV1(
             return Unavailable<InventoryStockScrapPendingApprovalPageV1>();
         }
 
+        var visible = rows.Take(PageSize).ToArray();
         var hasMore = rows.Count > PageSize;
         return new(InventoryPendingApprovalReadOutcomeV1.Found,
             new InventoryStockScrapPendingApprovalPageV1(
                 context.CompanyId,
-                rows.Take(PageSize).ToArray(),
+                visible,
                 hasMore
                     ? EncodeCursor(context.CompanyId, InventoryPendingApprovalKindsV1.StockScrap,
-                        checked(offset + PageSize))
+                        visible[^1].SubmittedAtUtc, visible[^1].ScrapId)
                     : null));
     }
 
@@ -333,6 +338,7 @@ public sealed class InventoryPendingApprovalReadServiceV1(
         && item.DifferenceKg != "0"
         && !string.IsNullOrWhiteSpace(item.Reason)
         && !string.IsNullOrWhiteSpace(item.SubmittedBy)
+        && item.SubmittedAtUtc.Offset == TimeSpan.Zero
         && !string.Equals(item.SubmittedBy, context.ActorId, StringComparison.Ordinal);
 
     private static bool ValidScrap(
@@ -355,18 +361,29 @@ public sealed class InventoryPendingApprovalReadServiceV1(
         && !string.IsNullOrWhiteSpace(item.RemainingKg)
         && !string.IsNullOrWhiteSpace(item.Reason)
         && !string.IsNullOrWhiteSpace(item.SubmittedBy)
+        && item.SubmittedAtUtc.Offset == TimeSpan.Zero
         && !string.Equals(item.SubmittedBy, context.ActorId, StringComparison.Ordinal);
 
-    private static string EncodeCursor(Guid companyId, string kind, int offset)
+    private static string EncodeCursor(
+        Guid companyId,
+        string kind,
+        DateTimeOffset submittedAtUtc,
+        Guid approvalId)
     {
         var bytes = Encoding.UTF8.GetBytes(
-            $"{companyId:N}:{kind}:{offset.ToString(CultureInfo.InvariantCulture)}");
+            $"{companyId:N}:{kind}:{submittedAtUtc.UtcDateTime.Ticks.ToString(CultureInfo.InvariantCulture)}:{approvalId:N}");
         return Convert.ToBase64String(bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_');
     }
 
-    private static bool TryCursor(Guid companyId, string kind, string? cursor, out int offset)
+    private static bool TryCursor(
+        Guid companyId,
+        string kind,
+        string? cursor,
+        out DateTimeOffset? submittedAtUtc,
+        out Guid? approvalId)
     {
-        offset = 0;
+        submittedAtUtc = null;
+        approvalId = null;
         if (cursor is null)
         {
             return true;
@@ -382,14 +399,30 @@ public sealed class InventoryPendingApprovalReadServiceV1(
             value = value.PadRight(value.Length + ((4 - value.Length % 4) % 4), '=');
             var decoded = Encoding.UTF8.GetString(Convert.FromBase64String(value));
             var prefix = $"{companyId:N}:{kind}:";
-            if (!decoded.StartsWith(prefix, StringComparison.Ordinal)
-                || !int.TryParse(decoded[prefix.Length..], NumberStyles.None,
-                    CultureInfo.InvariantCulture, out offset)
-                || offset < 0 || offset > MaximumOffset)
+            if (!decoded.StartsWith(prefix, StringComparison.Ordinal))
             {
                 return false;
             }
-            return string.Equals(cursor, EncodeCursor(companyId, kind, offset), StringComparison.Ordinal);
+            var separator = decoded.IndexOf(':', prefix.Length);
+            if (separator < 0
+                || !long.TryParse(decoded.AsSpan(prefix.Length, separator - prefix.Length), NumberStyles.None,
+                    CultureInfo.InvariantCulture, out var ticks)
+                || ticks < DateTime.MinValue.Ticks || ticks > DateTime.MaxValue.Ticks
+                || !Guid.TryParseExact(decoded[(separator + 1)..], "N", out var parsedId)
+                || parsedId == Guid.Empty)
+            {
+                return false;
+            }
+
+            var parsedAt = new DateTimeOffset(ticks, TimeSpan.Zero);
+            if (!string.Equals(cursor, EncodeCursor(companyId, kind, parsedAt, parsedId), StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            submittedAtUtc = parsedAt;
+            approvalId = parsedId;
+            return true;
         }
         catch (FormatException)
         {

@@ -8,6 +8,7 @@ namespace GoymenERP.Inventory.UnitTests;
 public sealed class InventoryPendingApprovalReadServiceV1Tests
 {
     private static readonly Guid Company = Guid.Parse("10000000-0000-0000-0000-000000000001");
+    private static readonly Guid CompanyB = Guid.Parse("10000000-0000-0000-0000-000000000002");
     private static readonly Guid CountId = Guid.Parse("71000000-0000-0000-0000-000000000001");
     private static readonly Guid ScrapId = Guid.Parse("72000000-0000-0000-0000-000000000001");
 
@@ -97,6 +98,66 @@ public sealed class InventoryPendingApprovalReadServiceV1Tests
             (await failed.Counts.GetAsync(failed.Context(), CountId, default)).Outcome);
     }
 
+    [Fact]
+    public async Task Keyset_cursor_does_not_skip_or_repeat_when_the_pending_queue_changes_between_pages()
+    {
+        var world = new World();
+        var start = DateTimeOffset.Parse("2026-10-10T12:00:00Z");
+        world.Reader.Counts = Enumerable.Range(1, 51)
+            .Select(index => Count() with
+            {
+                CountId = Guid.Parse($"71000000-0000-0000-0000-{index:D12}"),
+                SubmittedAtUtc = start.AddMinutes(-index),
+            })
+            .ToArray();
+
+        var first = await world.Counts.ListAsync(world.Context(), null, default);
+        Assert.Equal(50, first.Resource!.Items.Count);
+        Assert.NotNull(first.Resource.NextCursor);
+        var expectedRemaining = world.Reader.Counts.Single(item =>
+            item.CountId == Guid.Parse("71000000-0000-0000-0000-000000000051"));
+
+        world.Reader.Counts =
+        [
+            Count() with
+            {
+                CountId = Guid.Parse("71000000-0000-0000-0000-999999999999"),
+                SubmittedAtUtc = start.AddMinutes(1),
+            },
+            .. world.Reader.Counts.Skip(10),
+        ];
+        var second = await world.Counts.ListAsync(world.Context(), first.Resource.NextCursor, default);
+
+        Assert.Equal(expectedRemaining.CountId, Assert.Single(second.Resource!.Items).CountId);
+        Assert.DoesNotContain(second.Resource.Items,
+            item => first.Resource.Items.Any(firstItem => firstItem.CountId == item.CountId));
+    }
+
+    [Fact]
+    public async Task Keyset_cursor_is_bound_to_company_kind_and_canonical_payload()
+    {
+        var world = new World();
+        world.Reader.Counts = Enumerable.Range(1, 51)
+            .Select(index => Count() with
+            {
+                CountId = Guid.Parse($"71000000-0000-0000-0000-{index:D12}"),
+                SubmittedAtUtc = DateTimeOffset.Parse("2026-10-10T12:00:00Z").AddMinutes(-index),
+            })
+            .ToArray();
+        var first = await world.Counts.ListAsync(world.Context(), null, default);
+        var cursor = first.Resource!.NextCursor!;
+
+        Assert.Equal(InventoryPendingApprovalReadOutcomeV1.NotFound,
+            (await world.Scraps.ListAsync(world.Context(), cursor, default)).Outcome);
+        Assert.Equal(InventoryPendingApprovalReadOutcomeV1.NotFound,
+            (await world.Counts.ListAsync(world.Context(), "not-base64", default)).Outcome);
+
+        world.Company.Set(CompanyB);
+        world.User.Allowed.Add(CompanyB);
+        Assert.Equal(InventoryPendingApprovalReadOutcomeV1.NotFound,
+            (await world.Counts.ListAsync(world.Context(), cursor, default)).Outcome);
+    }
+
     private sealed class World
     {
         public MutableCompany Company { get; } = new();
@@ -127,8 +188,9 @@ public sealed class InventoryPendingApprovalReadServiceV1Tests
     {
         public bool IsAuthenticated { get; set; } = true;
         public string? UserId { get; set; } = "approver";
-        public IReadOnlySet<Guid> AllowedCompanyIds { get; } = new HashSet<Guid> { Company };
-        public bool CanAccessCompany(Guid companyId) => AllowedCompanyIds.Contains(companyId);
+        public HashSet<Guid> Allowed { get; } = [Company];
+        public IReadOnlySet<Guid> AllowedCompanyIds => Allowed;
+        public bool CanAccessCompany(Guid companyId) => Allowed.Contains(companyId);
     }
 
     private sealed class MutableAuthority : IErpAuthorityRevalidationService
@@ -169,11 +231,24 @@ public sealed class InventoryPendingApprovalReadServiceV1Tests
         public int CountListCalls { get; private set; }
 
         public Task<IReadOnlyList<InventoryStockCountPendingApprovalItemV1>> ReadStockCountsAsync(
-            string excludingActorId, int offset, int limit, CancellationToken cancellationToken)
+            string excludingActorId,
+            DateTimeOffset? afterSubmittedAtUtc,
+            Guid? afterCountId,
+            int limit,
+            CancellationToken cancellationToken)
         {
             CountListCalls++;
             OnCountList?.Invoke();
-            return Task.FromResult(Counts);
+            var rows = Counts
+                .Where(item => afterSubmittedAtUtc is null
+                    || item.SubmittedAtUtc < afterSubmittedAtUtc.Value
+                    || item.SubmittedAtUtc == afterSubmittedAtUtc.Value
+                    && item.CountId.CompareTo(afterCountId!.Value) > 0)
+                .OrderByDescending(item => item.SubmittedAtUtc)
+                .ThenBy(item => item.CountId)
+                .Take(limit)
+                .ToArray();
+            return Task.FromResult<IReadOnlyList<InventoryStockCountPendingApprovalItemV1>>(rows);
         }
 
         public Task<InventoryStockCountPendingApprovalItemV1?> ReadStockCountAsync(
@@ -183,10 +258,23 @@ public sealed class InventoryPendingApprovalReadServiceV1Tests
                 : Task.FromResult(Count);
 
         public Task<IReadOnlyList<InventoryStockScrapPendingApprovalItemV1>> ReadStockScrapsAsync(
-            string excludingActorId, int offset, int limit, CancellationToken cancellationToken)
+            string excludingActorId,
+            DateTimeOffset? afterSubmittedAtUtc,
+            Guid? afterScrapId,
+            int limit,
+            CancellationToken cancellationToken)
         {
             OnScrapList?.Invoke();
-            return Task.FromResult(Scraps);
+            var rows = Scraps
+                .Where(item => afterSubmittedAtUtc is null
+                    || item.SubmittedAtUtc < afterSubmittedAtUtc.Value
+                    || item.SubmittedAtUtc == afterSubmittedAtUtc.Value
+                    && item.ScrapId.CompareTo(afterScrapId!.Value) > 0)
+                .OrderByDescending(item => item.SubmittedAtUtc)
+                .ThenBy(item => item.ScrapId)
+                .Take(limit)
+                .ToArray();
+            return Task.FromResult<IReadOnlyList<InventoryStockScrapPendingApprovalItemV1>>(rows);
         }
 
         public Task<InventoryStockScrapPendingApprovalItemV1?> ReadStockScrapAsync(

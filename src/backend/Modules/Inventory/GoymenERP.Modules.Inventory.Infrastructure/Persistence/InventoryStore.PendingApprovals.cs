@@ -7,18 +7,24 @@ internal sealed partial class InventoryStore : IInventoryPendingApprovalReaderV1
 {
     public async Task<IReadOnlyList<InventoryStockCountPendingApprovalItemV1>> ReadStockCountsAsync(
         string excludingActorId,
-        int offset,
+        DateTimeOffset? afterSubmittedAtUtc,
+        Guid? afterCountId,
         int limit,
         CancellationToken cancellationToken)
     {
-        RequirePendingRead(excludingActorId, offset, limit);
-        var rows = await dbContext.StockCounts.AsNoTracking()
+        RequirePendingRead(excludingActorId, afterSubmittedAtUtc, afterCountId, limit);
+        var query = dbContext.StockCounts.AsNoTracking()
             .Where(row => row.CountedKg != row.BookKg
                 && row.RecordedBy != excludingActorId
-                && !dbContext.StockCountDecisions.Any(decision => decision.CountId == row.Id))
+                && !dbContext.StockCountDecisions.Any(decision => decision.CountId == row.Id));
+        if (afterSubmittedAtUtc is not null && afterCountId is not null)
+        {
+            query = query.Where(row => row.RecordedAtUtc < afterSubmittedAtUtc.Value
+                || row.RecordedAtUtc == afterSubmittedAtUtc.Value && row.Id.CompareTo(afterCountId.Value) > 0);
+        }
+        var rows = await query
             .OrderByDescending(row => row.RecordedAtUtc)
             .ThenBy(row => row.Id)
-            .Skip(offset)
             .Take(limit)
             .ToListAsync(cancellationToken);
 
@@ -42,17 +48,23 @@ internal sealed partial class InventoryStore : IInventoryPendingApprovalReaderV1
 
     public async Task<IReadOnlyList<InventoryStockScrapPendingApprovalItemV1>> ReadStockScrapsAsync(
         string excludingActorId,
-        int offset,
+        DateTimeOffset? afterSubmittedAtUtc,
+        Guid? afterScrapId,
         int limit,
         CancellationToken cancellationToken)
     {
-        RequirePendingRead(excludingActorId, offset, limit);
-        var rows = await dbContext.StockScraps.AsNoTracking()
+        RequirePendingRead(excludingActorId, afterSubmittedAtUtc, afterScrapId, limit);
+        var query = dbContext.StockScraps.AsNoTracking()
             .Where(row => row.RecordedBy != excludingActorId
-                && !dbContext.StockScrapDecisions.Any(decision => decision.ScrapId == row.Id))
+                && !dbContext.StockScrapDecisions.Any(decision => decision.ScrapId == row.Id));
+        if (afterSubmittedAtUtc is not null && afterScrapId is not null)
+        {
+            query = query.Where(row => row.RecordedAtUtc < afterSubmittedAtUtc.Value
+                || row.RecordedAtUtc == afterSubmittedAtUtc.Value && row.Id.CompareTo(afterScrapId.Value) > 0);
+        }
+        var rows = await query
             .OrderByDescending(row => row.RecordedAtUtc)
             .ThenBy(row => row.Id)
-            .Skip(offset)
             .Take(limit)
             .ToListAsync(cancellationToken);
 
@@ -119,11 +131,17 @@ internal sealed partial class InventoryStore : IInventoryPendingApprovalReaderV1
             view.RecordedAtUtc);
     }
 
-    private void RequirePendingRead(string excludingActorId, int offset, int limit)
+    private void RequirePendingRead(
+        string excludingActorId,
+        DateTimeOffset? afterSubmittedAtUtc,
+        Guid? afterApprovalId,
+        int limit)
     {
         RequireResolvedCompany();
         if (string.IsNullOrWhiteSpace(excludingActorId)
-            || offset is < 0 or > InventoryPendingApprovalReadServiceV1.MaximumOffset
+            || (afterSubmittedAtUtc is null) != (afterApprovalId is null)
+            || afterSubmittedAtUtc is { Offset: not TimeSpan.Zero }
+            || afterApprovalId == Guid.Empty
             || limit is < 1 or > InventoryPendingApprovalReadServiceV1.ReadLimit)
         {
             throw new InvalidOperationException("Inventory pending-approval read arguments are invalid.");
