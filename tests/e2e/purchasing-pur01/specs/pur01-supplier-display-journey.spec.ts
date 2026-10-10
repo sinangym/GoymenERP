@@ -28,9 +28,12 @@ const DEVELOPMENT_USER_HEADER = 'X-Development-User'
 const LIST_HEADING = 'Satın alma siparişleri'
 const DETAIL_HEADING = 'Satın alma siparişi'
 
-/** The legal name the gated fixture gives its Supplier (Pur01BrowserSeed.SupplierLegalName): long on purpose. */
+/**
+ * The legal name the gated fixture gives its Supplier: the suite's synthetic label followed by
+ * Pur01BrowserSeed.SupplierLegalName, which is long on purpose. Measured on the real stack, not assumed.
+ */
 const FIXTURE_SUPPLIER_LEGAL_NAME =
-  'Göymen Endüstriyel Çelik Ürünleri Tedarik ve Lojistik Sanayi ve Ticaret Anonim Şirketi Uzun Ünvan Kabul Tedarikçisi'
+  'SENTETIK browser-suite:pur01 Göymen Endüstriyel Çelik Ürünleri Tedarik ve Lojistik Sanayi ve Ticaret Anonim Şirketi Uzun Ünvan Kabul Tedarikçisi'
 
 interface SupplierDisplay {
   readonly partyId: string
