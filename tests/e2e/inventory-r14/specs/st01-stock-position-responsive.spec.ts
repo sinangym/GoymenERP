@@ -240,6 +240,24 @@ function ownerFact(card: Locator): Locator {
   return card.locator('dl').first().locator('div').filter({ has: card.page().locator('dt', { hasText: /^Mal sahibi$/ }) }).locator('dd')
 }
 
+/** Every text inside a parsed JSON value: string values and object keys, at any depth. */
+function textsOf(value: unknown): string[] {
+  if (typeof value === 'string') return [value]
+  if (Array.isArray(value)) return value.flatMap(textsOf)
+  if (typeof value === 'object' && value !== null) {
+    return Object.entries(value).flatMap(([key, member]) => [key, ...textsOf(member)])
+  }
+  return []
+}
+
+/**
+ * Case folding that is safe for Turkish: `İ`/`i` and `I`/`ı` each fold to one letter, so neither an upper-cased
+ * nor a lower-cased copy of a name escapes the comparison. Composed and decomposed forms compare equal.
+ */
+function foldTurkish(value: string): string {
+  return value.normalize('NFKD').replace(/̇/g, '').toLocaleLowerCase('tr').replace(/ı/g, 'i').normalize('NFC')
+}
+
 /** The Cari owner's identity as the screen draws it: `KOD — Unvan`. */
 function identityOf(owner: OwnerDisplay): string {
   return `${owner.code} — ${owner.legalName}`
@@ -519,13 +537,23 @@ test('ST-01 names a Cari owner exactly, links its card only for the capability h
   // The stock counter holds no Cari read. The Cari owner answers a party the caller may not read as 404
   // (non-disclosure, `CounterpartyReadAcceptanceTests`), never as a readable or a merely refused record.
   expect(restrictedCari.status(), 'the stock counter must hold no Cari read').toBe(404)
-  const restrictedBody = await restrictedCari.text()
-  for (const secret of [ownerPartyId, ownerCompanyAccountId, owner.code, owner.legalName, owner.tradeName!]) {
-    expect(restrictedBody, 'the refused Cari answer discloses the owner').not.toContain(secret)
+  // The answer is read as parsed JSON, so an escaped Turkish letter is the letter it stands for, and every text in
+  // it — keys and values, at any depth — is compared without regard to case under the Turkish rules.
+  const restrictedProblem: unknown = JSON.parse(await restrictedCari.text())
+  expect(typeof restrictedProblem === 'object' && restrictedProblem !== null && !Array.isArray(restrictedProblem)).toBe(true)
+  const disclosed = textsOf(restrictedProblem).map(foldTurkish)
+  const secrets = [ownerPartyId, ownerCompanyAccountId, owner.code, owner.legalName,
+    ...(owner.tradeName === null ? [] : [owner.tradeName])]
+  for (const secret of secrets) {
+    const folded = foldTurkish(secret)
+    expect(disclosed.filter((text) => text.includes(folded)), `the refused Cari answer discloses "${secret}"`).toEqual([])
   }
-  // Where the problem carries the owner's stable code it is `not_found`; no other field is read or assumed.
-  const restrictedProblem = JSON.parse(restrictedBody) as { readonly code?: unknown }
-  expect(restrictedProblem.code ?? 'not_found').toBe('not_found')
+  // The owner's stable code: when the key is there it is exactly the string `not_found` — not null, not another
+  // type, not another value. An answer without the key is the code-less variant and is accepted as it is.
+  const restrictedRecord = restrictedProblem as Record<string, unknown>
+  if (Object.prototype.hasOwnProperty.call(restrictedRecord, 'code')) {
+    expect(restrictedRecord.code).toBe('not_found')
+  }
 
   // Two Cari-owned labels and one company-owned label, through the real opening command.
   const cariLines = [0, 1].map((index) => ({
