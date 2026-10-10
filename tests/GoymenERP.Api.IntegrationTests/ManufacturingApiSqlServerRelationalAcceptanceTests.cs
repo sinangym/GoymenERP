@@ -827,7 +827,7 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
         var closer = await run.GrantAsync(TestUsers.CompanyA, CompanyA,
             [.. AllWrites, ErpPermissions.ManufacturingOrdersClose]);
         using var client = run.ClientFor(closer, CompanyA);
-        var selectedForDate = DateOnly.FromDateTime(DateTime.UtcNow);
+        var selectedForDate = run.UtcToday;
         var effectiveFrom = selectedForDate.AddDays(-30);
         var effectiveThrough = selectedForDate.AddDays(30);
 
@@ -1196,14 +1196,20 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
     private sealed class Run : IAsyncDisposable
     {
         private readonly string baseConnectionString;
+        private readonly TimeProvider clock;
 
-        private Run(string baseConnectionString, SqlServerRelationalApiFactory factory)
+        private Run(
+            string baseConnectionString,
+            SqlServerRelationalApiFactory factory,
+            TimeProvider clock)
         {
             this.baseConnectionString = baseConnectionString;
+            this.clock = clock;
             Factory = factory;
         }
 
         public SqlServerRelationalApiFactory Factory { get; }
+        public DateOnly UtcToday => DateOnly.FromDateTime(clock.GetUtcNow().UtcDateTime);
 
         public static async Task<Run> StartAsync(bool useSqlSettings = false)
         {
@@ -1216,6 +1222,7 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
             }.ConnectionString;
             // Output admission exercises Product's real stock eligibility against this same isolated database.
             var technicalSnapshotFixture = new SyntheticManufacturingTechnicalSnapshotFixture();
+            TimeProvider clock = useSqlSettings ? new FixedTimeProvider(At) : TimeProvider.System;
             var factory = new SqlServerRelationalApiFactory(baseConnectionString, services =>
             {
                 services.RemoveAll<ProductRuntimeOptions>();
@@ -1227,6 +1234,12 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
                 services.AddSingleton(technicalSnapshotFixture);
                 services.AddScoped<IProductManufacturingTechnicalSnapshotV1,
                     SyntheticManufacturingTechnicalSnapshotProvider>();
+                if (useSqlSettings)
+                {
+                    services.RemoveAll<TimeProvider>();
+                    services.AddSingleton(clock);
+                }
+
                 if (!useSqlSettings)
                 {
                     // Explicit test-only source for the older broad suite. The normal-host acceptance path leaves
@@ -1236,7 +1249,7 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
                         SyntheticManufacturingToleranceProvider>();
                 }
             }, databaseName: databaseName);
-            var run = new Run(baseConnectionString, factory);
+            var run = new Run(baseConnectionString, factory, clock);
             // The host migrates Organization first and Manufacturing after it.
             using var client = factory.CreateClient();
             using var health = await client.GetAsync("/health/live");
@@ -1636,7 +1649,7 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
                 ("@effectiveThrough", effectiveThrough is { } through
                     ? through.ToDateTime(TimeOnly.MinValue)
                     : DBNull.Value),
-                ("@approvedAtUtc", DateTimeOffset.UtcNow));
+                ("@approvedAtUtc", clock.GetUtcNow()));
 
         public async Task<ClosureSnapshot> ClosureSnapshotAsync(Guid orderId)
         {
@@ -1693,6 +1706,11 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
         DateOnly EffectiveFrom,
         DateOnly? EffectiveThrough,
         DateOnly SelectedForDate);
+
+    private sealed class FixedTimeProvider(DateTimeOffset utcNow) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => utcNow;
+    }
 
     private sealed class InventoryStoreScope(InventoryDbContext dbContext, InventoryStore store) : IAsyncDisposable
     {
