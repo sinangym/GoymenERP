@@ -6,6 +6,8 @@ const { preparerActor, readerActor } = env.seed
 const DRAFTS_PATH = '/api/v1/sales/drafts'
 const LIST_ROUTE = '/satis/siparisler'
 const DEVELOPMENT_USER_HEADER = 'X-Development-User'
+const COMPANY_A = '10000000-0000-0000-0000-000000000001'
+const COMPANY_B = '10000000-0000-0000-0000-000000000002'
 const LONG_LEGAL_NAME =
   'Teslimat müşterisi KARADENİZ ÇELİK DÖKÜM MAKİNA İMALAT SANAYİ VE DIŞ TİCARET ANONİM ŞİRKETİ GEBZE ÜRETİM VE LOJİSTİK TESİSLERİ'
 
@@ -90,6 +92,33 @@ test('SALES-DS-01 real list keeps exact Cari, cursor retry, context fence and 39
   await expect(page.locator('tbody tr')).toHaveCount(first.items.length + second.items.length)
   expect(cursorRequests).toEqual([first.nextCursor, first.nextCursor])
   await expect(page.getByText('Listenin sonu.')).toBeVisible()
+
+  // The suite-only second assignment exposes the real shell company picker without adding a role or
+  // permission. Company B has no seeded Sales drafts: its terminal first page must remove every row,
+  // Cari link and continuation state that belonged to company A.
+  const companyBFirstPage = page.waitForResponse((response) =>
+    isPreparingList(response, false)
+      && response.request().headers()['x-company-id'] === COMPANY_B)
+  await page.getByRole('combobox', { name: 'Şirket' }).selectOption(COMPANY_B)
+  const companyBAnswer = await companyBFirstPage
+  expect(companyBAnswer.status()).toBe(200)
+  expect((await companyBAnswer.json() as DraftPage).items).toHaveLength(0)
+  await expect(page.getByTestId(`sales-row-party-${row.id}`)).toHaveCount(0)
+  await expect(page.locator('a[href^="/cari/"]')).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Daha fazla göster' })).toHaveCount(0)
+  await expect(page.getByText('Listenin sonu.')).toHaveCount(0)
+  await expect(page.getByText(/henüz kayıt yok/i)).toBeVisible()
+  await expect(page.getByRole('table')).toHaveCount(0)
+
+  // Return to A before the existing actor-boundary assertions, proving the successor read is fresh
+  // rather than a one-way navigation or a locally hidden table.
+  const companyAFirstPage = page.waitForResponse((response) =>
+    isPreparingList(response, false)
+      && response.request().headers()['x-company-id'] === COMPANY_A)
+  await page.getByRole('combobox', { name: 'Şirket' }).selectOption(COMPANY_A)
+  expect((await companyAFirstPage).status()).toBe(200)
+  await expect(page.getByTestId(`sales-row-party-${row.id}`)).toHaveText(exactParty)
+  await expect(page.getByRole('table')).toBeVisible()
 
   // A fresh actor context must not retain the previous actor's published Cari link.
   await signInAs(page, readerActor)
