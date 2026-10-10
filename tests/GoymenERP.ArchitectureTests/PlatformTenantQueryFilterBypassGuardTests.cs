@@ -235,8 +235,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // MFG technical snapshot: +4 migration/constraint SQL facts (38590e95... -> b1f5f069...).
             // Customer-owned input context: replace one obsolete refusal with three exact persistence/replay facts.
             // Slitting draft spec: +1 public API SQL fact (e6aa3795... -> 286281c0...).
+            // Settings Manufacturing tolerance registry: +1 company/constraint/provider SQL fact.
             ["tools/relational_inventory/manufacturing.txt"] =
-                "286281c0b2413bc4ff55d747ecf0b8b8e5c43e99bc78d353defdc4a668f66915",
+                "e2272ca5f961d772d2e08420b953f0c0e0622e73464df18126d1aaaae4c8d621",
 
             // organization
             // ORG master edit: +2 OrganizationMasterDataSqlServerRelationalAcceptanceTests facts (6b504dac… -> 3bad6ad8…).
