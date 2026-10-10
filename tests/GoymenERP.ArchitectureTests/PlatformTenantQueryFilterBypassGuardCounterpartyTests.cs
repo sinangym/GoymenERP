@@ -13,6 +13,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         "src/backend/Modules/Counterparty/"
         + "GoymenERP.Modules.Counterparty.Infrastructure/Persistence/"
         + "CounterpartyPurchasingRecordPartyDisplaySourceV1.cs";
+    private const string ReviewedCounterpartyInventoryStockOwnerDisplaySourcePath =
+        "src/backend/Modules/Counterparty/"
+        + "GoymenERP.Modules.Counterparty.Infrastructure/Persistence/"
+        + "CounterpartyInventoryStockOwnerDisplaySourceV1.cs";
     private static readonly IReadOnlyDictionary<string, ReviewedRuntimeDatabaseBypassSource>
         ReviewedCounterpartyRuntimeDatabaseBypassSources =
             new Dictionary<string, ReviewedRuntimeDatabaseBypassSource>(StringComparer.Ordinal)
@@ -23,6 +27,16 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 [ReviewedCounterpartyPurchasingRecordPartyDisplaySourcePath] =
                     new(
                         "0c47607b901edaf39127fcf080ab473dd8d17aa8bad1edd56b097326a807b703",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["System.Data.Common"] = 1,
+                            ["GetDbConnection"] = 1,
+                            ["CreateCommand"] = 1,
+                            ["DbCommand"] = 1
+                        }),
+                [ReviewedCounterpartyInventoryStockOwnerDisplaySourcePath] =
+                    new(
+                        "6c077ce8f84b6a5544e9303d92b8662340f04009c77359a58a66ea7eeb392eb4",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["System.Data.Common"] = 1,
@@ -65,15 +79,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     public void Counterparty_reviewed_direct_SQL_source_matches_exact_fingerprint_and_API_inventory()
     {
         var repositoryRoot = FindRepositoryRoot();
-        var source = File.ReadAllText(Path.Combine(
-            repositoryRoot,
-            ReviewedCounterpartyPurchasingRecordPartyDisplaySourcePath.Replace(
-                '/',
-                Path.DirectorySeparatorChar)));
-        var exactSources = new Dictionary<string, string>(StringComparer.Ordinal)
-        {
-            [ReviewedCounterpartyPurchasingRecordPartyDisplaySourcePath] = source
-        };
+        var exactSources = ReviewedCounterpartyRuntimeDatabaseBypassSources.Keys.ToDictionary(
+            path => path,
+            path => File.ReadAllText(Path.Combine(
+                repositoryRoot,
+                path.Replace('/', Path.DirectorySeparatorChar))),
+            StringComparer.Ordinal);
+        var source = exactSources[ReviewedCounterpartyPurchasingRecordPartyDisplaySourcePath];
 
         Assert.Empty(ValidateNoDirectDatabaseBypassCapabilities(
             exactSources,

@@ -249,6 +249,7 @@ builder.Services.AddInventoryModule(
         services.GetRequiredService<AuditSaveChangesInterceptor>()));
 builder.Services.AddInventoryStockPositionCursor(
     builder.Configuration["Inventory:StockPositionCursorSigningKeyBase64"]);
+builder.Services.AddScoped<IInventoryStockOwnerDisplaySourceV1, InventoryStockOwnerDisplayHost>();
 builder.Services.AddInventoryMovementTimelineCursor(
     builder.Configuration["Inventory:StockPositionCursorSigningKeyBase64"]);
 builder.Services.AddInventoryParentRollReferences();

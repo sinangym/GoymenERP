@@ -879,7 +879,7 @@ public sealed partial class OpenApiContractGenerationTests
             ["GetInventoryLabelBalancesV1"] = "ref:InventoryLabelBalancesV1",
             ["GetInventoryLabelDetailV1"] = "ref:InventoryLabelDetailV1",
             ["GetInventoryParentRollCandidatesV1"] = "ref:InventoryParentRollCandidatesV1",
-            ["GetInventoryStockPositionsV1"] = "anyOf:inline:items,searchWindowFull|InventoryStockPositionPageV1|InventoryStockPositionLocationPageV2",
+            ["GetInventoryStockPositionsV1"] = "anyOf:inline:items,searchWindowFull|InventoryStockPositionPageV1|InventoryStockPositionLocationPageV2|InventoryStockPositionOwnerPageV3",
             ["GetInventoryMovementTimelineV1"] = "ref:InventoryMovementTimelinePageV1",
             ["GetInventoryPhysicalAllocationsV1"] = "ref:InventoryPhysicalAllocationReadsV1",
             ["GetInventoryProductCandidatesV1"] = "ref:ProductStockCandidatesV1",
@@ -4559,6 +4559,47 @@ public sealed partial class OpenApiContractGenerationTests
                     ("availableKg", "type:string"),
                     ("productDisplay", "ref:ProductStockDisplayResultV1"),
                     ("locationDisplay", "ref:OrganizationLocationDisplayV1")),
+                ["InventoryStockPositionOwnerPageV3"] = ObjectSchema(
+                    ["items", "searchWindowFull"],
+                    ("items", "type:array;items:ref:InventoryStockPositionOwnerDisplayV3"),
+                    ("searchWindowFull", "type:boolean"),
+                    ("nextCursor", "type:null|string")),
+                ["InventoryStockPositionOwnerDisplayV3"] = ObjectSchema(
+                    ["companyId", "labelId", "labelVersion", "labelCode", "productId", "productVersion",
+                        "classification", "lot", "heatNumber", "coilNumber", "documentStatus", "ownerKind", "ownerId",
+                        "custodianKind", "custodianId", "locationId", "physicalKg", "freePhysicalKg",
+                        "blockedPhysicalKg", "activeAllocationKg", "availableKg", "productDisplay", "locationDisplay",
+                        "ownerDisplay"],
+                    ("companyId", "type:string;format:uuid"),
+                    ("labelId", "type:string;format:uuid"),
+                    ("labelVersion", "type:string"),
+                    ("labelCode", "type:string"),
+                    ("productId", "type:string;format:uuid"),
+                    ("productVersion", "type:null|string"),
+                    ("classification", "type:null|string"),
+                    ("lot", "ref:InventoryLotV1"),
+                    ("heatNumber", "type:null|string"),
+                    ("coilNumber", "type:null|string"),
+                    ("documentStatus", "type:string"),
+                    ("ownerKind", "type:string"),
+                    ("ownerId", "type:string;format:uuid"),
+                    ("custodianKind", "type:string"),
+                    ("custodianId", "type:string;format:uuid"),
+                    ("locationId", "type:string;format:uuid"),
+                    ("physicalKg", "type:string"),
+                    ("freePhysicalKg", "type:string"),
+                    ("blockedPhysicalKg", "type:string"),
+                    ("activeAllocationKg", "type:string"),
+                    ("availableKg", "type:string"),
+                    ("productDisplay", "ref:ProductStockDisplayResultV1"),
+                    ("locationDisplay", "ref:OrganizationLocationDisplayV1"),
+                    ("ownerDisplay", "oneOf:ref:InventoryStockOwnerDisplayV1|type:null")),
+                ["InventoryStockOwnerDisplayV1"] = ObjectSchema(
+                    ["partyId", "code", "legalName", "tradeName"],
+                    ("partyId", "type:string;format:uuid"),
+                    ("code", "type:string"),
+                    ("legalName", "type:string"),
+                    ("tradeName", "type:null|string")),
                 ["OrganizationLocationDisplayV1"] = ObjectSchema(
                     ["locationId", "locationCode", "locationName"],
                     ("locationId", "type:string;format:uuid"),
@@ -6942,7 +6983,7 @@ public sealed partial class OpenApiContractGenerationTests
         var contract = Assert.Single(operation.GetProperty("parameters").EnumerateArray(), parameter =>
             parameter.GetProperty("in").GetString() == "header"
             && parameter.GetProperty("name").GetString() == InventoryStockPositionApiV1.ProductDisplayContractHeader);
-        Assert.Equal("^(?:1\\.0|2\\.0)$", contract.GetProperty("schema").GetProperty("pattern").GetString());
+        Assert.Equal("^(?:1\\.0|2\\.0|3\\.0)$", contract.GetProperty("schema").GetProperty("pattern").GetString());
         var success = operation.GetProperty("responses").GetProperty("200").GetProperty("content")
             .GetProperty("application/json").GetProperty("schema").GetProperty("anyOf");
         var alternatives = success.EnumerateArray().ToArray();
@@ -6960,6 +7001,8 @@ public sealed partial class OpenApiContractGenerationTests
             alternatives[1].GetProperty("$ref").GetString());
         Assert.Equal("#/components/schemas/InventoryStockPositionLocationPageV2",
             alternatives[2].GetProperty("$ref").GetString());
+        Assert.Equal("#/components/schemas/InventoryStockPositionOwnerPageV3",
+            alternatives[3].GetProperty("$ref").GetString());
         var locationItem = root.GetProperty("components").GetProperty("schemas")
             .GetProperty("InventoryStockPositionLocationDisplayV2");
         Assert.Contains("locationDisplay", locationItem.GetProperty("required")
@@ -6967,6 +7010,13 @@ public sealed partial class OpenApiContractGenerationTests
         Assert.Equal("#/components/schemas/OrganizationLocationDisplayV1",
             locationItem.GetProperty("properties").GetProperty("locationDisplay")
                 .GetProperty("$ref").GetString());
+        var ownerItem = root.GetProperty("components").GetProperty("schemas")
+            .GetProperty("InventoryStockPositionOwnerDisplayV3");
+        Assert.Contains("ownerDisplay", ownerItem.GetProperty("required")
+            .EnumerateArray().Select(value => value.GetString()));
+        Assert.Equal("#/components/schemas/InventoryStockOwnerDisplayV1",
+            ownerItem.GetProperty("properties").GetProperty("ownerDisplay")
+                .GetProperty("oneOf")[0].GetProperty("$ref").GetString());
 
         using var legacyEmpty = JsonDocument.Parse("""{"items":[],"searchWindowFull":false}""");
         using var enrichedEmpty = JsonDocument.Parse("""{"items":[],"nextCursor":null,"searchWindowFull":false}""");

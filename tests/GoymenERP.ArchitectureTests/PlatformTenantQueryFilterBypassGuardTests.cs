@@ -101,7 +101,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // initializer. It adds no endpoint, hosted service or build-time network surface.
     // PUR-P05 adds one in-process record-bound Cari display host; no network or hosted-service surface.
     private const string ReviewedOpenApiStartupFingerprint =
-        "4dfe3ea109dbf351d3cacd38e798579d8210d7380b453e42f4d32b9605d458f5";
+        "6ff38ce8b5d618074c169dfd6ba12fb19ce8bd2c8d9215d6b4237ab508bb977f";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedProductManufacturingTechnicalRegistrationPath =
@@ -192,7 +192,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // Record-bound Purchasing projection: +1 company/actor-fenced, single-query and non-disclosing SQL fact.
             // Contact information fresh authority: +5 late-revocation, replay, no-op and winner SQL facts.
             ["tools/relational_inventory/counterparty.txt"] =
-                "dc43fcf4c2011217bdceb788e4c06f8cd3c76412a4fe11fcd11e78efa81bb223",
+                "698c48b101bd081deeffd01a3d613c941fa4160e04a645c89d011e7621b7764a",
 
             // finance
             // DEC-FIN-014: +3 POS collection SQL facts (b18c13d9… -> 7af8ecf1…).

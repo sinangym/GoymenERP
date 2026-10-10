@@ -1143,11 +1143,11 @@ public static partial class ErpOpenApiContract
             GoymenERP.Modules.Inventory.Application.InventoryStockPositionApiV1.ProductDisplayContractHeader,
             required: false,
             "Optional exact compatibility selection. Omit for the previously published stock-position response; "
-            + "send 1.0 for Product identity and nominal technical display fields, or 2.0 to add the exact "
-            + "Organization-owned location display identity.",
+            + "send 1.0 for Product identity and nominal technical display fields, 2.0 to add the exact "
+            + "Organization-owned location display identity, or 3.0 to add the record-bound Counterparty owner display.",
             minimumLength: 3,
             maximumLength: 3,
-            pattern: "^(?:1\\.0|2\\.0)$");
+            pattern: "^(?:1\\.0|2\\.0|3\\.0)$");
 
         if (operation.Responses is not null
             && operation.Responses.TryGetValue("200", out var response)
@@ -1182,6 +1182,12 @@ public static partial class ErpOpenApiContract
                     typeof(GoymenERP.Api.Endpoints.InventoryStockPositionLocationDisplayV2)),
                 (nameof(GoymenERP.Api.Endpoints.InventoryStockPositionLocationPageV2),
                     typeof(GoymenERP.Api.Endpoints.InventoryStockPositionLocationPageV2)),
+                (nameof(GoymenERP.Modules.Inventory.Application.InventoryStockOwnerDisplayV1),
+                    typeof(GoymenERP.Modules.Inventory.Application.InventoryStockOwnerDisplayV1)),
+                (nameof(GoymenERP.Api.Endpoints.InventoryStockPositionOwnerDisplayV3),
+                    typeof(GoymenERP.Api.Endpoints.InventoryStockPositionOwnerDisplayV3)),
+                (nameof(GoymenERP.Api.Endpoints.InventoryStockPositionOwnerPageV3),
+                    typeof(GoymenERP.Api.Endpoints.InventoryStockPositionOwnerPageV3)),
             };
             foreach (var (name, type) in stockDisplayTypes)
             {
@@ -1252,18 +1258,46 @@ public static partial class ErpOpenApiContract
                 nameof(GoymenERP.Modules.Product.Application.Contracts.ProductStockDisplayResultV1));
             locationDisplaySchema.Properties["locationDisplay"] = Reference(
                 nameof(GoymenERP.Modules.Organization.Application.Contracts.OrganizationLocationDisplayV1));
+            var ownerPageSchema = (OpenApiSchema)document.Components.Schemas[
+                nameof(GoymenERP.Api.Endpoints.InventoryStockPositionOwnerPageV3)];
+            ownerPageSchema.Properties ??= new Dictionary<string, IOpenApiSchema>(StringComparer.Ordinal);
+            ownerPageSchema.Properties["items"] = new OpenApiSchema
+            {
+                Type = JsonSchemaType.Array,
+                Items = Reference(nameof(GoymenERP.Api.Endpoints.InventoryStockPositionOwnerDisplayV3)),
+            };
+            var ownerDisplaySchema = (OpenApiSchema)document.Components.Schemas[
+                nameof(GoymenERP.Api.Endpoints.InventoryStockPositionOwnerDisplayV3)];
+            ownerDisplaySchema.Properties ??= new Dictionary<string, IOpenApiSchema>(StringComparer.Ordinal);
+            ownerDisplaySchema.Properties["lot"] = Reference(
+                nameof(GoymenERP.Modules.Inventory.Application.InventoryLotV1));
+            ownerDisplaySchema.Properties["productDisplay"] = Reference(
+                nameof(GoymenERP.Modules.Product.Application.Contracts.ProductStockDisplayResultV1));
+            ownerDisplaySchema.Properties["locationDisplay"] = Reference(
+                nameof(GoymenERP.Modules.Organization.Application.Contracts.OrganizationLocationDisplayV1));
+            ownerDisplaySchema.Properties["ownerDisplay"] = new OpenApiSchema
+            {
+                OneOf =
+                [
+                    Reference(nameof(GoymenERP.Modules.Inventory.Application.InventoryStockOwnerDisplayV1)),
+                    new OpenApiSchema { Type = JsonSchemaType.Null },
+                ],
+            };
 
             var enriched = new OpenApiSchemaReference(
                 nameof(GoymenERP.Api.Endpoints.InventoryStockPositionPageV1), document, externalResource: null);
             var locationEnriched = new OpenApiSchemaReference(
                 nameof(GoymenERP.Api.Endpoints.InventoryStockPositionLocationPageV2), document,
                 externalResource: null);
+            var ownerEnriched = new OpenApiSchemaReference(
+                nameof(GoymenERP.Api.Endpoints.InventoryStockPositionOwnerPageV3), document,
+                externalResource: null);
             var legacy = await context.GetOrCreateSchemaAsync(
                 typeof(GoymenERP.Api.Endpoints.InventoryStockPositionLegacyPageV1),
                 cancellationToken: cancellationToken);
             content.Schema = new OpenApiSchema
             {
-                AnyOf = [legacy, enriched, locationEnriched],
+                AnyOf = [legacy, enriched, locationEnriched, ownerEnriched],
             };
         }
     }
