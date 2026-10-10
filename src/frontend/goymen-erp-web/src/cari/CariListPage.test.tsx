@@ -1519,12 +1519,14 @@ describe('C-01 page size and the meaning of the total (UX review §8.7/65)', () 
     renderAt('/cari')
     await screen.findByRole('row', { name: /C-0001/ })
 
-    const caption = document.querySelector('caption') as HTMLElement
-    expect(caption.textContent).toContain('128 kayıt')
-    expect(caption.textContent).toContain('Filtrelenmiş, yetkili ve görünür cariler')
+    const count = screen.getByTestId('cari-list-count')
+    // The count is the table region's description: it is what the rows it sits over add up to.
+    expect(screen.getByRole('region', { name: 'Cari listesi tablosu' }).getAttribute('aria-describedby')).toBe(count.id)
+    expect(count.textContent).toContain('128 kayıt')
+    expect(count.textContent).toContain('Filtrelenmiş, yetkili ve görünür cariler')
     // The count and what is on screen are stated separately: the difference between
     // them is the whole point of a cursor-paged list.
-    expect(caption.textContent).toContain('1 tanesi yüklendi')
+    expect(count.textContent).toContain('1 tanesi yüklendi')
   })
 
   it('carries a count past the JS safe-integer range verbatim', async () => {
@@ -1534,7 +1536,7 @@ describe('C-01 page size and the meaning of the total (UX review §8.7/65)', () 
     renderAt('/cari')
     await screen.findByRole('row', { name: /C-0001/ })
 
-    expect((document.querySelector('caption') as HTMLElement).textContent).toContain(
+    expect(screen.getByTestId('cari-list-count').textContent).toContain(
       '9007199254740993 kayıt',
     )
   })
@@ -1570,9 +1572,9 @@ describe('C-01 page size and the meaning of the total (UX review §8.7/65)', () 
     renderAt('/cari')
     await screen.findByRole('row', { name: /C-0001/ })
 
-    const caption = document.querySelector('caption') as HTMLElement
-    expect(caption.textContent).toContain('1 kayıt yüklendi')
-    expect(caption.textContent).not.toContain('Filtrelenmiş, yetkili ve görünür cariler')
+    const count = screen.getByTestId('cari-list-count')
+    expect(count.textContent).toContain('1 kayıt yüklendi')
+    expect(count.textContent).not.toContain('Filtrelenmiş, yetkili ve görünür cariler')
   })
 
   it('keeps the chosen size when the filters are cleared — size is not a filter', async () => {
@@ -1980,4 +1982,334 @@ describe('C-01 client contract on the wire (PR #230 080e7a1)', () => {
     expect(document.querySelector('[data-state="client-contract"]')).toBeNull()
   })
 
+})
+
+describe('CARI-DS-01 GOY-DS-001 layout (DataTable, Field, Button, phone cards)', () => {
+  const LONG_CODE = 'CARI-ÇORUM-ÖZEL-2026-000000017'
+  const LONG_LEGAL =
+    'KARADENİZ ÇELİK DÖKÜM MAKİNA İMALAT SANAYİ VE DIŞ TİCARET ANONİM ŞİRKETİ GEBZE ORGANİZE SANAYİ BÖLGESİ ŞUBESİ'
+  const LONG_TRADE = 'Karadeniz Döküm — Çağlayan Öğütücü Şişecam Ürünleri'
+
+  /** The phone width as the page reads it: `matchMedia('(max-width: 767px)')`, switchable mid-test. */
+  function installViewport(phone: boolean) {
+    const viewport = { phone }
+    const listeners = new Set<() => void>()
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn((query: string) => ({
+        get matches() {
+          return viewport.phone
+        },
+        media: query,
+        onchange: null,
+        addEventListener: (_type: string, listener: () => void) => listeners.add(listener),
+        removeEventListener: (_type: string, listener: () => void) => listeners.delete(listener),
+        addListener: () => {},
+        removeListener: () => {},
+        dispatchEvent: () => false,
+      })),
+    )
+    return {
+      set(next: boolean) {
+        viewport.phone = next
+        act(() => {
+          for (const listener of [...listeners]) listener()
+        })
+      },
+    }
+  }
+
+  function longRow() {
+    return party({
+      id: PARTY_2,
+      code: LONG_CODE,
+      legalName: LONG_LEGAL,
+      tradeName: LONG_TRADE,
+      isActive: false,
+      companyAccounts: [{ id: ACC_2, companyId: A_ID, roles: 0, isActive: false, version: 1 }],
+    })
+  }
+
+  const counterpartyReads = (calls: readonly { url: string }[]) =>
+    calls.filter((c) => c.url.includes('/counterparties')).length
+
+  it('desktop: one DataTable, six scoped headers in the accepted order, state markers on their cells', async () => {
+    installViewport(false)
+    installFetch({ counterparties: () => json(page({ items: [party(), longRow()] })) })
+    renderAt('/cari')
+    const longTableRow = await screen.findByRole('row', { name: /CARI-ÇORUM/ })
+
+    const table = screen.getByRole('table', { name: 'Cari listesi' })
+    expect(screen.getAllByRole('table')).toHaveLength(1)
+    expect(
+      within(table)
+        .getAllByRole('columnheader')
+        .map((th) => [th.getAttribute('scope'), th.textContent?.replace(/[▲▼]/g, '')]),
+    ).toEqual([
+      ['col', 'Kod'],
+      ['col', 'Unvan'],
+      ['col', 'Tür'],
+      ['col', 'Geçmiş ticari sınıflandırma'],
+      ['col', 'Taraf durumu'],
+      ['col', 'Şirket hesabı durumu'],
+    ])
+    expect(screen.queryByTestId('cari-list-cards')).toBeNull()
+
+    const cells = within(longTableRow).getAllByRole('cell')
+    // The first cell is the code and nothing else; the long name is whole, never cut.
+    expect(cells[0].textContent).toBe(LONG_CODE)
+    expect(cells[1].textContent).toBe(`${LONG_LEGAL}${LONG_TRADE}`)
+    // The facts the browser acceptance reads from the cell itself.
+    expect(cells[3].getAttribute('data-roles')).toBe('none')
+    expect(cells[3].textContent).toBe('Ticari rol yok')
+    expect(cells[4].tagName).toBe('TD')
+    expect(cells[4].getAttribute('data-party-state')).toBe('inactive')
+    expect(cells[4].textContent).toBe('Pasif')
+    expect(cells[5].getAttribute('data-account-state')).toBe('inactive')
+    expect(cells[5].querySelector('[data-tone]')?.getAttribute('data-tone')).toBe('warning')
+    expect(longTableRow.getAttribute('data-inactive')).toBe('true')
+    expect(screen.getByRole('row', { name: /C-0001/ }).hasAttribute('data-inactive')).toBe(false)
+
+    const link = within(longTableRow).getByRole('link')
+    expect(link.getAttribute('href')).toBe(`/cari/${PARTY_2}`)
+    expect(link.getAttribute('data-row-link')).toBe(PARTY_2)
+    expect(link.getAttribute('aria-label')).toBe(`${LONG_CODE} — ${LONG_LEGAL}`)
+  })
+
+  it('desktop: the sort buttons are design-system buttons and aria-sort follows them on both headers', async () => {
+    installViewport(false)
+    const { calls } = installFetch()
+    renderAt('/cari')
+    await screen.findByRole('row', { name: /C-0001/ })
+
+    const codeHeader = screen.getByRole('columnheader', { name: /Kod/ })
+    const nameHeader = screen.getByRole('columnheader', { name: /Unvan/ })
+    expect(within(codeHeader).getAllByRole('button')).toHaveLength(1)
+    expect(within(nameHeader).getByRole('button').getAttribute('type')).toBe('button')
+    expect(nameHeader.getAttribute('aria-sort')).toBe('none')
+
+    await userEvent.click(within(nameHeader).getByRole('button'))
+    await waitFor(() => expect(nameHeader.getAttribute('aria-sort')).toBe('ascending'))
+    expect(codeHeader.getAttribute('aria-sort')).toBe('none')
+    expect(calls.some((c) => c.url.includes('sort=legalName') && c.url.includes('direction=asc'))).toBe(true)
+    // Focus stays on the control that was used, across the re-render.
+    expect(document.activeElement).toBe(within(nameHeader).getByRole('button'))
+  })
+
+  it('every filter is a labelled Field control, the search stays server-side, and nothing is a form', async () => {
+    installViewport(false)
+    const { calls } = installFetch()
+    renderAt('/cari')
+    await screen.findByRole('row', { name: /C-0001/ })
+
+    const search = screen.getByRole('searchbox', { name: 'Ara' })
+    for (const label of ['Ara', 'Tür', 'Taraf durumu', 'Şirket hesabı durumu', 'Sayfa boyutu']) {
+      const control = screen.getByLabelText(label)
+      expect(document.querySelector(`label[for="${control.id}"]`)?.textContent).toBe(label)
+    }
+    // Sorting is the headers' job on a table; the phone-only sort control is absent.
+    expect(screen.queryByLabelText('Sıralama')).toBeNull()
+    expect(document.querySelector('main form')).toBeNull()
+
+    await userEvent.type(search, 'çelik')
+    await waitFor(() =>
+      expect(calls.some((c) => c.url.includes(`q=${encodeURIComponent('çelik')}`))).toBe(true),
+    )
+  })
+
+  it('the create action is the one link to /cari/yeni, only with the create grant, and the keyboard walks on to the filters', async () => {
+    installViewport(false)
+    installFetch({
+      capabilities: [CAPABILITY.cariPartiesList, CAPABILITY.cariPartiesDetail, CAPABILITY.cariPartiesCreate],
+    })
+    renderAt('/cari')
+    await screen.findByRole('row', { name: /C-0001/ })
+
+    const create = screen.getAllByRole('link', { name: 'Yeni Cari' })
+    expect(create).toHaveLength(1)
+    expect(create[0].getAttribute('href')).toBe('/cari/yeni')
+    expect(create[0].querySelector('a, button')).toBeNull()
+
+    create[0].focus()
+    const order: string[] = []
+    for (let i = 0; i < 5; i += 1) {
+      await userEvent.tab()
+      order.push((document.activeElement as HTMLElement).id)
+    }
+    expect(order).toEqual([
+      'cari-list-search',
+      'cari-list-kind',
+      'cari-list-party-state',
+      'cari-list-account-state',
+      'cari-list-page-size',
+    ])
+  })
+
+  it('phone: one labelled card per counterparty, the same facts in the same order, nothing cut', async () => {
+    installViewport(true)
+    installFetch({ counterparties: () => json(page({ items: [party(), longRow()] })) })
+    renderAt('/cari')
+
+    const list = await screen.findByRole('list', { name: 'Cari listesi' })
+    expect(screen.queryByRole('table')).toBeNull()
+    const cards = within(list).getAllByRole('listitem')
+    expect(cards.map((card) => card.getAttribute('data-party-id'))).toEqual([PARTY_1, PARTY_2])
+
+    const long = cards[1]
+    expect(long.getAttribute('data-inactive')).toBe('true')
+    expect(long.textContent).toContain(LONG_LEGAL)
+    expect(long.textContent).toContain(LONG_TRADE)
+    expect([...long.querySelectorAll('dt')].map((dt) => dt.textContent)).toEqual([
+      'Taraf durumu',
+      'Şirket hesabı durumu',
+      'Geçmiş ticari sınıflandırma',
+    ])
+    expect([...long.querySelectorAll('dd')].map((dd) => dd.textContent)).toEqual(['Pasif', 'Pasif', 'Ticari rol yok'])
+    expect(long.querySelector('[data-party-state]')?.getAttribute('data-party-state')).toBe('inactive')
+    expect(long.querySelector('[data-account-state]')?.getAttribute('data-account-state')).toBe('inactive')
+
+    const link = within(long).getByRole('link')
+    expect(link.getAttribute('href')).toBe(`/cari/${PARTY_2}`)
+    expect(link.getAttribute('data-row-link')).toBe(PARTY_2)
+    expect(link.getAttribute('aria-label')).toBe(`${LONG_CODE} — ${LONG_LEGAL}`)
+    expect(list.getAttribute('aria-describedby')).toBe(screen.getByTestId('cari-list-count').id)
+  })
+
+  it('phone: the cards offer the headers’ sort as one control, and choosing it restarts paging', async () => {
+    installViewport(true)
+    const { calls } = installFetch({
+      counterparties: (url) =>
+        url.includes('cursor=next-1')
+          ? json(page({ items: [party({ id: PARTY_2, code: 'C-0002' })] }))
+          : json(page({ hasMore: true, nextCursor: 'next-1' })),
+    })
+    renderAt('/cari')
+    await screen.findByRole('list', { name: 'Cari listesi' })
+    await userEvent.click(screen.getByRole('button', { name: 'Daha fazla yükle' }))
+    await waitFor(() => expect(screen.getAllByRole('listitem').length).toBeGreaterThanOrEqual(2))
+
+    const sort = screen.getByLabelText('Sıralama') as HTMLSelectElement
+    expect(sort.value).toBe('code:asc')
+    expect([...sort.options].map((o) => o.value)).toEqual([
+      'code:asc',
+      'code:desc',
+      'legalName:asc',
+      'legalName:desc',
+    ])
+    await userEvent.selectOptions(sort, 'legalName:desc')
+    await waitFor(() => {
+      const latest = calls.filter((c) => c.url.includes('/counterparties')).at(-1)?.url ?? ''
+      expect(latest).toContain('sort=legalName')
+      expect(latest).toContain('direction=desc')
+      expect(latest).not.toContain('cursor=')
+    })
+  })
+
+  it('switching between table and cards keeps the same rows and issues no new read', async () => {
+    const viewport = installViewport(false)
+    const { calls } = installFetch({ counterparties: () => json(page({ items: [party(), longRow()] })) })
+    renderAt('/cari')
+    await screen.findByRole('row', { name: /CARI-ÇORUM/ })
+    const reads = counterpartyReads(calls)
+
+    viewport.set(true)
+    const list = await screen.findByRole('list', { name: 'Cari listesi' })
+    expect(within(list).getAllByRole('listitem')).toHaveLength(2)
+    expect(screen.queryByRole('table')).toBeNull()
+
+    viewport.set(false)
+    const table = await screen.findByRole('table', { name: 'Cari listesi' })
+    expect(within(table).getAllByRole('row')).toHaveLength(3)
+    expect(counterpartyReads(calls)).toBe(reads)
+  })
+
+  it('phone: a failed continuation keeps the cards and retries the same cursor', async () => {
+    installViewport(true)
+    let attempt = 0
+    const { calls } = installFetch({
+      counterparties: (url) => {
+        if (!url.includes('cursor=next-1')) return json(page({ hasMore: true, nextCursor: 'next-1' }))
+        attempt += 1
+        return attempt === 1
+          ? json({ code: 'service_unavailable', title: 'x', status: 503 }, 503)
+          : json(page({ items: [party({ id: PARTY_2, code: 'C-0002' })] }))
+      },
+    })
+    renderAt('/cari')
+    const list = await screen.findByRole('list', { name: 'Cari listesi' })
+    await userEvent.click(screen.getByRole('button', { name: 'Daha fazla yükle' }))
+
+    const alert = await screen.findByRole('alert')
+    expect(within(alert).getAllByRole('button')).toHaveLength(1)
+    expect(within(list).getAllByRole('listitem')).toHaveLength(1)
+
+    await userEvent.click(within(alert).getByRole('button', { name: 'Tekrar dene' }))
+    await waitFor(() => expect(within(list).getAllByRole('listitem')).toHaveLength(2))
+    const cursorReads = calls.filter((c) => c.url.includes('cursor='))
+    expect(cursorReads).toHaveLength(2)
+    expect(cursorReads.every((c) => c.url.includes('cursor=next-1'))).toBe(true)
+  })
+
+  it('a list-only reader gets no record link and no create action, on the table and on the cards', async () => {
+    const viewport = installViewport(false)
+    installFetch({ capabilities: [CAPABILITY.cariPartiesList] })
+    renderAt('/cari')
+    const row = await screen.findByRole('row', { name: /C-0001/ })
+    expect(within(row).queryByRole('link')).toBeNull()
+    expect(within(row).getAllByRole('cell')[0].textContent).toBe('C-0001')
+    expect(screen.queryByRole('link', { name: 'Yeni Cari' })).toBeNull()
+
+    viewport.set(true)
+    const list = await screen.findByRole('list', { name: 'Cari listesi' })
+    expect(within(list).queryAllByRole('link')).toHaveLength(0)
+    expect(list.textContent).toContain('C-0001')
+    expect(screen.queryByRole('link', { name: 'Yeni Cari' })).toBeNull()
+  })
+
+  it('phone: a 403 closes the cards instead of keeping them', async () => {
+    installViewport(true)
+    installFetch({ counterparties: () => json({ code: 'forbidden' }, 403) })
+    renderAt('/cari')
+    await waitFor(() => expect(document.querySelector('[data-state]')).not.toBeNull())
+    expect(screen.queryByTestId('cari-list-cards')).toBeNull()
+    expect(screen.queryByText('C-0001')).toBeNull()
+  })
+
+  it('phone: a company switch never leaves company A cards under company B', async () => {
+    const viewport = installViewport(true)
+    const { calls } = installFetch({
+      counterparties: (_url, companyId) =>
+        companyId === B_ID
+          ? json(
+              page({
+                items: [
+                  party({
+                    id: PARTY_2,
+                    code: 'B-0001',
+                    legalName: 'Beta Lojistik A.Ş.',
+                    tradeName: null,
+                    companyAccounts: [
+                      { id: ACC_2, companyId: B_ID, roles: PARTY_ROLE_FLAG.Supplier, isActive: true, version: 1 },
+                    ],
+                  }),
+                ],
+              }),
+            )
+          : json(page()),
+    })
+    renderAt('/cari')
+    await screen.findByRole('list', { name: 'Cari listesi' })
+    expect(screen.getByText('C-0001')).toBeTruthy()
+
+    // The company selector is the shell's; the switch is the shell's, the fence is this screen's.
+    viewport.set(false)
+    await userEvent.selectOptions(await screen.findByRole('combobox', { name: 'Şirket' }), B_ID)
+    viewport.set(true)
+
+    const list = await screen.findByRole('list', { name: 'Cari listesi' })
+    await waitFor(() => expect(within(list).getByText('B-0001')).toBeTruthy())
+    expect(screen.queryByText('C-0001')).toBeNull()
+    expect(screen.queryByText(/Alfa Metal/)).toBeNull()
+    expect(calls.filter((c) => c.url.includes('/counterparties')).at(-1)?.companyId).toBe(B_ID)
+  })
 })
