@@ -97,9 +97,13 @@ test('SALES-DS-01 real list keeps exact Cari, cursor retry, context fence and 39
   // permission. Company B has no seeded Sales drafts: its terminal first page must remove every row,
   // Cari link and continuation state that belonged to company A.
   const companyPicker = page.getByRole('combobox', { name: 'Şirket' })
-  const companyBFirstPage = page.waitForResponse((response) => isPreparingList(response, false))
   await companyPicker.selectOption(COMPANY_B)
-  await expect(companyPicker).toHaveValue(COMPANY_B)
+  const leaveCompanyA = page.getByRole('dialog')
+  if (await leaveCompanyA.count()) await leaveCompanyA.getByRole('button', { name: 'Değişiklikleri bırak' }).click()
+  await expect(companyPicker).toHaveValue(COMPANY_B, { timeout: 30_000 })
+  await expect(page.getByRole('heading', { level: 1, name: 'Satış siparişi taslakları' })).toBeVisible({ timeout: 30_000 })
+  const companyBFirstPage = page.waitForResponse((response) => isPreparingList(response, false))
+  await page.getByLabel('İç onay durumu').selectOption('Preparing')
   const companyBAnswer = await companyBFirstPage
   expect(companyBAnswer.status()).toBe(200)
   expect((await companyBAnswer.json() as DraftPage).items).toHaveLength(0)
@@ -112,9 +116,13 @@ test('SALES-DS-01 real list keeps exact Cari, cursor retry, context fence and 39
 
   // Return to A before the existing actor-boundary assertions, proving the successor read is fresh
   // rather than a one-way navigation or a locally hidden table.
-  const companyAFirstPage = page.waitForResponse((response) => isPreparingList(response, false))
   await companyPicker.selectOption(COMPANY_A)
-  await expect(companyPicker).toHaveValue(COMPANY_A)
+  const leaveCompanyB = page.getByRole('dialog')
+  if (await leaveCompanyB.count()) await leaveCompanyB.getByRole('button', { name: 'Değişiklikleri bırak' }).click()
+  await expect(companyPicker).toHaveValue(COMPANY_A, { timeout: 30_000 })
+  await expect(page.getByRole('heading', { level: 1, name: 'Satış siparişi taslakları' })).toBeVisible({ timeout: 30_000 })
+  const companyAFirstPage = page.waitForResponse((response) => isPreparingList(response, false))
+  await page.getByLabel('İç onay durumu').selectOption('Preparing')
   expect((await companyAFirstPage).status()).toBe(200)
   await expect(page.getByTestId(`sales-row-party-${row.id}`)).toHaveText(exactParty)
   await expect(page.getByRole('table')).toBeVisible()
