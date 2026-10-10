@@ -12,6 +12,9 @@ public interface IDocumentStore
     Task<DocumentStoreResult?> FindReplayAsync(DocumentWriteEnvelope envelope, string requestHash, string commandName,
         CancellationToken cancellationToken = default);
 
+    Task<DocumentStoreResult?> FindVersionReplayAsync(DocumentWriteEnvelope envelope, string requestHash, Guid documentId,
+        int resultVersionNo, CancellationToken cancellationToken = default);
+
     /// <summary>
     /// Stores a new logical document (version 1, the owner link and — when the company does not hold this content yet —
     /// the blob row), the recorded attempt and the audit event in one save. <paramref name="beforeWrite"/> runs after
@@ -20,7 +23,14 @@ public interface IDocumentStore
     Task<DocumentStoreResult> StoreUploadAsync(DocumentWriteEnvelope envelope, string requestHash, NewDocumentUpload upload,
         Func<CancellationToken, Task> beforeWrite, CancellationToken cancellationToken = default);
 
+    Task<DocumentStoreResult> StoreVersionAsync(DocumentWriteEnvelope envelope, string requestHash, int expectedCurrentVersion,
+        NewDocumentVersion version, Func<CancellationToken, Task> beforeWrite, CancellationToken cancellationToken = default);
+
     Task<StoredDocument?> FindDocumentAsync(Guid documentId, CancellationToken cancellationToken = default);
+
+    Task<StoredDocument?> FindDocumentVersionAsync(Guid documentId, int versionNo, CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<StoredDocument>> ListVersionsAsync(Guid documentId, int limit, CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<StoredDocument>> ListByOwnerAsync(string ownerKind, Guid ownerId, int limit, CancellationToken cancellationToken = default);
 
@@ -45,6 +55,18 @@ public sealed record DocumentWriteEnvelope(
 public sealed record NewDocumentUpload(
     Guid DocumentId,
     DocumentOwnerLink Owner,
+    DocumentFileName FileName,
+    DocumentFileKindInfo Kind,
+    long SizeBytes,
+    string Sha256,
+    string ObjectKey,
+    DocumentScanState ScanState,
+    string? ScannerId,
+    DateTimeOffset UploadedAtUtc);
+
+/// <summary>A classified, scanned immutable version to append to one existing logical document.</summary>
+public sealed record NewDocumentVersion(
+    Guid DocumentId,
     DocumentFileName FileName,
     DocumentFileKindInfo Kind,
     long SizeBytes,

@@ -639,6 +639,70 @@ public sealed class DocumentVaultSqlServerRelationalAcceptanceTests
             ("@c", CompanyA)));
     }
 
+    [SqlServerFact]
+    public async Task Immutable_versions_replay_the_exact_created_version_reject_stale_writes_and_preserve_history_and_content()
+    {
+        await using var run = await Run.StartAsync();
+        await run.SeedPartiesAsync();
+        await run.GrantAsync(TestUsers.CompanyA, CompanyA, DocumentsPermissionManifestV1.FilesRead,
+            DocumentsPermissionManifestV1.FilesUpload, ErpPermissions.CounterpartyPartiesRead);
+        using var writer = run.Client(TestUsers.CompanyA, CompanyA);
+
+        using var createdResponse = await run.UploadAsync(writer, PartyA, Pdf, "Sözleşme-v1.pdf", "version-create");
+        Assert.Equal(HttpStatusCode.Created, createdResponse.StatusCode);
+        var created = (await createdResponse.Content.ReadFromJsonAsync<DocumentUploadResponse>())!;
+
+        using var appendResponse = await run.AppendVersionAsync(writer, created.Document.Id, 1, OtherPdf, "Sözleşme-v2.pdf", "version-v2");
+        Assert.Equal(HttpStatusCode.Created, appendResponse.StatusCode);
+        var appended = (await appendResponse.Content.ReadFromJsonAsync<DocumentVersionWriteResponse>())!;
+        Assert.False(appended.IsReplay);
+        Assert.Equal(2, appended.Document.VersionNo);
+
+        using var stale = await run.AppendVersionAsync(writer, created.Document.Id, 1, Pdf, "Sözleşme-stale.pdf", "version-stale");
+        Assert.Equal(HttpStatusCode.Conflict, stale.StatusCode);
+        Assert.Equal(DocumentProblemCodesV1.ConcurrentChange, (await stale.Content.ReadFromJsonAsync<JsonElement>())
+            .GetProperty("code").GetString());
+
+        using var replayResponse = await run.AppendVersionAsync(writer, created.Document.Id, 1, OtherPdf, "Sözleşme-v2.pdf", "version-v2");
+        Assert.Equal(HttpStatusCode.Created, replayResponse.StatusCode);
+        Assert.Equal("true", replayResponse.Headers.GetValues("Idempotency-Replayed").Single());
+        var replay = (await replayResponse.Content.ReadFromJsonAsync<DocumentVersionWriteResponse>())!;
+        Assert.True(replay.IsReplay);
+        Assert.Equal(2, replay.Document.VersionNo);
+        Assert.Equal(appended.Document.Sha256, replay.Document.Sha256);
+
+        using var historyResponse = await writer.GetAsync($"{DocumentsApiV1.DocumentsPath}/{created.Document.Id:D}/versions");
+        Assert.Equal(HttpStatusCode.OK, historyResponse.StatusCode);
+        var history = (await historyResponse.Content.ReadFromJsonAsync<DocumentVersionHistoryResponse>())!;
+        Assert.Equal([2, 1], history.Versions.Select(version => version.VersionNo));
+
+        using var v1 = await writer.GetAsync($"{DocumentsApiV1.DocumentsPath}/{created.Document.Id:D}/versions/1/content");
+        using var v2 = await writer.GetAsync($"{DocumentsApiV1.DocumentsPath}/{created.Document.Id:D}/versions/2/content");
+        Assert.Equal(Pdf, await v1.Content.ReadAsByteArrayAsync());
+        Assert.Equal(OtherPdf, await v2.Content.ReadAsByteArrayAsync());
+
+        Assert.Equal(2, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM documents.DocumentVersions WHERE CompanyId = @company AND DocumentId = @document",
+            ("@company", CompanyA), ("@document", created.Document.Id)));
+        Assert.Equal(2, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM documents.DocumentAttempts WHERE CompanyId = @company AND DocumentId = @document",
+            ("@company", CompanyA), ("@document", created.Document.Id)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE CompanyId = @company AND EntityId = @document AND EventType = N'documents.document.version-appended.v1'",
+            ("@company", CompanyA), ("@document", created.Document.Id.ToString("D"))));
+
+        await run.GrantAsync(TestUsers.CompanyB, CompanyB, DocumentsPermissionManifestV1.FilesRead,
+            DocumentsPermissionManifestV1.FilesUpload, ErpPermissions.CounterpartyPartiesRead);
+        using var foreign = run.Client(TestUsers.CompanyB, CompanyB);
+        Assert.Equal(HttpStatusCode.NotFound,
+            (await foreign.GetAsync($"{DocumentsApiV1.DocumentsPath}/{created.Document.Id:D}/versions")).StatusCode);
+        using var foreignAppend = await run.AppendVersionAsync(foreign, created.Document.Id, 2, Pdf, "foreign.pdf", "version-foreign");
+        Assert.Equal(HttpStatusCode.NotFound, foreignAppend.StatusCode);
+        Assert.Equal(2, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM documents.DocumentVersions WHERE CompanyId = @company AND DocumentId = @document",
+            ("@company", CompanyA), ("@document", created.Document.Id)));
+    }
+
     private static string ListPath(Guid party, string ownerKind = DocumentOwnerLinkKindsV1.CounterpartyParty) =>
         $"{DocumentsApiV1.DocumentsPath}?ownerKind={ownerKind}&ownerId={party:D}";
 
@@ -803,6 +867,21 @@ public sealed class DocumentVaultSqlServerRelationalAcceptanceTests
             file.Headers.ContentType = new MediaTypeHeaderValue("application/pdf");
             form.Add(file, DocumentsApiV1.FileField, fileName);
             using var request = new HttpRequestMessage(HttpMethod.Post, DocumentsApiV1.DocumentsPath) { Content = form };
+            request.Headers.Add("Idempotency-Key", key);
+            return await client.SendAsync(request);
+        }
+
+        public async Task<HttpResponseMessage> AppendVersionAsync(HttpClient client, Guid documentId, int expectedCurrentVersion,
+            byte[] content, string fileName, string key)
+        {
+            using var form = new MultipartFormDataContent();
+            form.Add(new StringContent(expectedCurrentVersion.ToString(System.Globalization.CultureInfo.InvariantCulture)),
+                DocumentsApiV1.ExpectedCurrentVersionField);
+            var file = new ByteArrayContent(content);
+            file.Headers.ContentType = new MediaTypeHeaderValue("application/pdf");
+            form.Add(file, DocumentsApiV1.FileField, fileName);
+            using var request = new HttpRequestMessage(HttpMethod.Post,
+                $"{DocumentsApiV1.DocumentsPath}/{documentId:D}/versions") { Content = form };
             request.Headers.Add("Idempotency-Key", key);
             return await client.SendAsync(request);
         }

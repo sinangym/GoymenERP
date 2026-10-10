@@ -40,6 +40,7 @@ public sealed class DocumentService(
     TimeProvider timeProvider) : IDocumentService
 {
     private const int ListLimit = 200;
+    private const int VersionListLimit = 200;
     private const int DuplicateLimit = 10;
     private readonly IReadOnlyDictionary<string, IDocumentOwnerLinkPortV1> owners = IndexOwners(ownerPorts);
 
@@ -126,6 +127,162 @@ public sealed class DocumentService(
         return await AnswerAsync(stored, scope, Permission, stored.IsReplay, cancellationToken);
     }
 
+    public async Task<DocumentVersionWriteResponse> AppendVersionAsync(Guid documentId, AppendDocumentVersionRequest request,
+        DocumentCommandMetadata metadata, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(metadata);
+        cancellationToken.ThrowIfCancellationRequested();
+        const string Permission = DocumentsPermissionManifestV1.FilesUpload;
+        var scope = await RequireAsync(Permission, cancellationToken);
+        if (documentId == Guid.Empty || request.ExpectedCurrentVersion < 1 || request.ExpectedCurrentVersion == int.MaxValue)
+        {
+            throw new DocumentServiceException(400, DocumentProblemCodesV1.ValidationFailed,
+                [new(documentId == Guid.Empty ? "documentId" : "expectedCurrentVersion", DocumentProblemCodesV1.ValidationFailed)]);
+        }
+
+        var fileName = DocumentFileName.TryCreate(request.FileName)
+            ?? throw new DocumentServiceException(400, DocumentProblemCodesV1.ValidationFailed,
+                [new("file", DocumentRuleCodes.FileNameInvalid)]);
+        var content = request.Content ?? [];
+        var decision = DocumentContentPolicy.Classify(fileName, request.DeclaredContentType, content, bindings.MaximumUploadBytes);
+        if (!decision.IsAccepted)
+        {
+            throw new DocumentServiceException(422, decision.RefusalCode!, [new("file", decision.RefusalCode!)]);
+        }
+
+        var kind = decision.Kind!;
+        var sha256 = DocumentContentHash.Compute(content);
+        var requestHash = VersionRequestHash(documentId, request.ExpectedCurrentVersion, fileName, kind, sha256);
+        var envelope = Envelope(scope, metadata, Permission);
+        DocumentStoreResult? replay;
+        try
+        {
+            replay = await GuardedAsync(scope, Permission,
+                () => store.FindVersionReplayAsync(envelope, requestHash, documentId, checked(request.ExpectedCurrentVersion + 1), cancellationToken),
+                cancellationToken);
+        }
+        catch (DocumentStoreException exception)
+        {
+            throw Store(exception);
+        }
+
+        if (replay is not null)
+        {
+            await RequireVersionOwnerReadableAsync(replay.Document, scope, Permission, cancellationToken);
+            return new DocumentVersionWriteResponse(View(replay.Document, scope.CompanyId), true, replay.OriginalCorrelationId);
+        }
+
+        StoredDocument? current;
+        try
+        {
+            current = await GuardedAsync(scope, Permission, () => store.FindDocumentAsync(documentId, cancellationToken), cancellationToken);
+        }
+        catch (DocumentStoreException exception)
+        {
+            throw Store(exception);
+        }
+
+        if (current is null || current.CompanyId != scope.CompanyId)
+        {
+            throw new DocumentServiceException(404, "not_found");
+        }
+
+        var owner = DocumentOwnerLink.TryCreate(current.OwnerKind, current.OwnerId)!;
+        await RequireOwnerStillReadableAsync(scope, Permission, owner, cancellationToken);
+        if (current.VersionNo != request.ExpectedCurrentVersion)
+        {
+            throw new DocumentServiceException(409, DocumentProblemCodesV1.ConcurrentChange,
+                [new("expectedCurrentVersion", DocumentProblemCodesV1.ConcurrentChange)]);
+        }
+
+        var verdict = await ScanAsync(content, kind.Kind, cancellationToken);
+        if (verdict == DocumentScanVerdictV1.Infected)
+        {
+            throw new DocumentServiceException(422, DocumentProblemCodesV1.ContentRejected,
+                [new("file", DocumentProblemCodesV1.ContentRejected)]);
+        }
+
+        var scanState = verdict == DocumentScanVerdictV1.Clean ? DocumentScanState.Clean : DocumentScanState.NotScanned;
+        var objectKey = DocumentObjectKeys.For(scope.CompanyId, sha256);
+        var objectStore = objects ?? throw new DocumentServiceException(503, "service_unavailable");
+        try
+        {
+            await objectStore.PutAsync(objectKey, content, sha256, cancellationToken);
+        }
+        catch (DocumentObjectStoreUnavailableException)
+        {
+            throw new DocumentServiceException(503, "service_unavailable");
+        }
+
+        await RequireStillAsync(scope, Permission, cancellationToken);
+        try
+        {
+            var result = await store.StoreVersionAsync(envelope, requestHash, request.ExpectedCurrentVersion,
+                new NewDocumentVersion(documentId, fileName, kind, content.LongLength, sha256, objectKey, scanState,
+                    scanState == DocumentScanState.Clean ? scanner!.ScannerId : null, timeProvider.GetUtcNow()),
+                token => RequireWritableOwnerStillAsync(scope, Permission, owner, token), cancellationToken);
+            return new DocumentVersionWriteResponse(View(result.Document, scope.CompanyId), result.IsReplay, result.OriginalCorrelationId);
+        }
+        catch (DocumentStoreException exception)
+        {
+            throw Store(exception);
+        }
+    }
+
+    public async Task<DocumentVersionHistoryResponse> ListVersionsAsync(Guid documentId, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        const string Permission = DocumentsPermissionManifestV1.FilesRead;
+        var scope = await RequireAsync(Permission, cancellationToken);
+        var current = await FindReadableDocumentAsync(documentId, scope, Permission, cancellationToken);
+        IReadOnlyList<StoredDocument> versions;
+        try
+        {
+            versions = await GuardedAsync(scope, Permission, () => store.ListVersionsAsync(documentId, VersionListLimit, cancellationToken),
+                cancellationToken);
+        }
+        catch (DocumentStoreException exception)
+        {
+            throw Store(exception);
+        }
+
+        await RequireOwnerStillReadableAsync(scope, Permission,
+            DocumentOwnerLink.TryCreate(current.OwnerKind, current.OwnerId)!, cancellationToken);
+        return new DocumentVersionHistoryResponse(documentId, [.. versions.Select(version => View(version, scope.CompanyId))]);
+    }
+
+    public async Task<DocumentContentV1> GetVersionContentAsync(Guid documentId, int versionNo,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        const string Permission = DocumentsPermissionManifestV1.FilesRead;
+        var scope = await RequireAsync(Permission, cancellationToken);
+        if (documentId == Guid.Empty || versionNo < 1)
+        {
+            throw new DocumentServiceException(404, "not_found");
+        }
+
+        StoredDocument? document;
+        try
+        {
+            document = await GuardedAsync(scope, Permission,
+                () => store.FindDocumentVersionAsync(documentId, versionNo, cancellationToken), cancellationToken);
+        }
+        catch (DocumentStoreException exception)
+        {
+            throw Store(exception);
+        }
+
+        if (document is null)
+        {
+            throw new DocumentServiceException(404, "not_found");
+        }
+
+        await RequireVersionOwnerReadableAsync(document, scope, Permission, cancellationToken);
+        return await ReadContentAsync(document, scope, Permission, cancellationToken);
+    }
+
     public async Task<DocumentListResponse> ListAsync(string? ownerKind, Guid ownerId, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -186,6 +343,49 @@ public sealed class DocumentService(
             throw new DocumentServiceException(404, "not_found");
         }
 
+        return await ReadContentAsync(document, scope, Permission, cancellationToken);
+    }
+
+    private async Task<StoredDocument> FindReadableDocumentAsync(Guid documentId, Scope scope, string permission,
+        CancellationToken cancellationToken)
+    {
+        if (documentId == Guid.Empty)
+        {
+            throw new DocumentServiceException(404, "not_found");
+        }
+
+        StoredDocument? document;
+        try
+        {
+            document = await GuardedAsync(scope, permission, () => store.FindDocumentAsync(documentId, cancellationToken), cancellationToken);
+        }
+        catch (DocumentStoreException exception)
+        {
+            throw Store(exception);
+        }
+
+        if (document is null)
+        {
+            throw new DocumentServiceException(404, "not_found");
+        }
+
+        await RequireVersionOwnerReadableAsync(document, scope, permission, cancellationToken);
+        return document;
+    }
+
+    private async Task RequireVersionOwnerReadableAsync(StoredDocument document, Scope scope, string permission,
+        CancellationToken cancellationToken)
+    {
+        if (document.CompanyId != scope.CompanyId || !IsReadableOwner(await GuardedAsync(scope, permission,
+                () => CheckOwnerAsync(document.OwnerKind, document.OwnerId, cancellationToken), cancellationToken)))
+        {
+            throw new DocumentServiceException(404, "not_found");
+        }
+    }
+
+    private async Task<DocumentContentV1> ReadContentAsync(StoredDocument document, Scope scope, string permission,
+        CancellationToken cancellationToken)
+    {
         if (document.ScanState != DocumentScanState.Clean)
         {
             throw new DocumentServiceException(409, DocumentProblemCodesV1.NotScanned, [new("document", DocumentProblemCodesV1.NotScanned)]);
@@ -202,15 +402,14 @@ public sealed class DocumentService(
             throw new DocumentServiceException(503, "service_unavailable");
         }
 
-        // The bytes served are the bytes recorded: length and SHA-256 re-checked, else nothing is served.
         if (content is null || content.LongLength != document.SizeBytes
             || !string.Equals(DocumentContentHash.Compute(content), document.Sha256, StringComparison.Ordinal))
         {
             throw new DocumentServiceException(503, "service_unavailable");
         }
 
-        await RequireStillAsync(scope, Permission, cancellationToken);
-        await RequireOwnerStillReadableAsync(scope, Permission,
+        await RequireStillAsync(scope, permission, cancellationToken);
+        await RequireOwnerStillReadableAsync(scope, permission,
             DocumentOwnerLink.TryCreate(document.OwnerKind, document.OwnerId)!, cancellationToken);
         return new DocumentContentV1(document.Id, document.FileName, DocumentContentPolicy.Info(document.Kind).ContentType, content, document.Sha256);
     }
@@ -372,6 +571,11 @@ public sealed class DocumentService(
     private static string RequestHash(DocumentOwnerLink owner, DocumentFileName fileName, DocumentFileKindInfo kind, string sha256) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(string.Join('\n', DocumentCommands.UploadV1, owner.Kind,
             owner.OwnerId.ToString("D"), fileName.Value, kind.ContentType, sha256))));
+
+    private static string VersionRequestHash(Guid documentId, int expectedCurrentVersion, DocumentFileName fileName,
+        DocumentFileKindInfo kind, string sha256) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(string.Join('\n',
+            DocumentCommands.AppendVersionV1, documentId.ToString("D"), expectedCurrentVersion.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            fileName.Value, kind.ContentType, sha256))));
 
     private static IReadOnlyDictionary<string, IDocumentOwnerLinkPortV1> IndexOwners(IEnumerable<IDocumentOwnerLinkPortV1> ports)
     {
