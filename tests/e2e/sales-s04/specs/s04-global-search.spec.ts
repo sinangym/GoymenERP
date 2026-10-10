@@ -201,11 +201,11 @@ test('S04-GS3 the reader, without the Cari read, gets no Cari group — its orde
   const documentNo = await readDocumentNo(page)
   await signInAs(page, readerActor)
 
-  const byName = page.waitForResponse((candidate) => isSearch(candidate, party.legalName))
-  await page.goto(`/arama?q=${encodeURIComponent(party.legalName)}`)
-  const nameAnswer = await searchAnswer(await byName)
-  expect(nameAnswer.groups.map((group) => group.kind)).not.toContain(PARTY_KIND)
-  expect(JSON.stringify(nameAnswer)).not.toContain(realPartyId)
+  const byCode = page.waitForResponse((candidate) => isSearch(candidate, party.code))
+  await page.goto(`/arama?q=${encodeURIComponent(party.code)}`)
+  const codeAnswer = await searchAnswer(await byCode)
+  expect(codeAnswer.groups.map((group) => group.kind)).not.toContain(PARTY_KIND)
+  expect(JSON.stringify(codeAnswer)).not.toContain(realPartyId)
   await expect(page.getByTestId(`global-search-group-${PARTY_KIND}`)).toHaveCount(0)
 
   const byNumber = page.waitForResponse((candidate) => isSearch(candidate, documentNo))
