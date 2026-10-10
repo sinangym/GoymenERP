@@ -193,7 +193,9 @@ export const CAPABILITY_NAV_LABEL: Record<CapabilityId, string> = {
   'accounting.posting-queues': 'Muhasebe Kontrol',
   // Staged until the actual M-06 browser acceptance; no sidebar publication yet.
   'accounting.trial-balance': '',
-  'inventory.opening-stock.record': 'Stok Açılışı',
+  // NAV-OPENING-01: the one-time opening count is set-up work, drawn under Ayarlar (see NAV_GROUPS). Same route,
+  // same capability; only the sidebar place and its wording changed.
+  'inventory.opening-stock.record': 'Açılış stokları',
   'inventory.stock-positions.list': 'Stok / Malzeme Pozisyonu',
   'identity.assignments.list': 'Kullanıcılar ve yetkiler',
   // The role card is opened from a row of the access list, never from the sidebar.
@@ -247,6 +249,11 @@ export interface NavGroup {
   readonly id: NavGroupId
   readonly label: string
   readonly entries: readonly NavEntryId[]
+  /**
+   * A visible intermediate label drawn directly above the named entry (NAV-OPENING-01). It is words only: not a
+   * link, not a control and never a permission — it is drawn exactly when its entry is, and never on its own.
+   */
+  readonly subheadings?: Readonly<Partial<Record<NavEntryId, string>>>
 }
 
 /**
@@ -274,7 +281,7 @@ export const NAV_GROUPS: readonly NavGroup[] = [
   {
     id: 'product-stock',
     label: 'Ürün ve stok',
-    entries: ['product.items.list', 'inventory.stock-positions.list', 'inventory.opening-stock.record'],
+    entries: ['product.items.list', 'inventory.stock-positions.list'],
   },
   { id: 'manufacturing', label: 'Üretim', entries: ['manufacturing.orders.list'] },
   {
@@ -305,8 +312,31 @@ export const NAV_GROUPS: readonly NavGroup[] = [
   {
     id: 'settings',
     label: 'Ayarlar',
-    entries: ['organization.sites.list', 'organization.work-centers.list', 'identity.assignments.list'],
+    /**
+     * NAV-OPENING-01 (coordinator allocation 2026-10-10): the opening stock count — first set-up and data transfer,
+     * not daily stock work — moved here from Ürün ve stok, as the last Ayarlar entry. Its route (`/stok/acilis` and
+     * its children), capability and screens are unchanged. Ayarlar stays a heading: holding the opening-stock
+     * capability alone draws Ayarlar with just this entry, and no admin or Settings permission is asked for.
+     */
+    entries: [
+      'organization.sites.list',
+      'organization.work-centers.list',
+      'identity.assignments.list',
+      'inventory.opening-stock.record',
+    ],
+    subheadings: { 'inventory.opening-stock.record': 'İlk kurulum ve veri aktarımı' },
   },
+]
+
+/**
+ * Who owns a page that lies under no sidebar entry (NAV-OPENING-01). `/stok/acilis` and everything below it belong
+ * to the opening-stock entry by the ordinary longest-entry rule; every OTHER `/stok/…` page (a label card, the
+ * movement timeline) is daily stock work and belongs to the stock-positions ENTRY — so to whichever group draws that
+ * entry, and only while the actor is granted it. Ownership hangs on the authorised entry, never on a group: a heading
+ * gains no permission, and an actor without the entry has no work area claimed for those pages.
+ */
+export const NAV_PATH_OWNERS: readonly { readonly prefix: string; readonly entry: NavEntryId }[] = [
+  { prefix: '/stok', entry: 'inventory.stock-positions.list' },
 ]
 
 /** The home link above the groups. The index route is always mounted, so it needs no capability. */

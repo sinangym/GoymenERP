@@ -189,6 +189,17 @@
   font-size: 0.875rem;
 }
 
+/* NAV-OPENING-01: an intermediate label above an entry — words only, aligned with the entries; it wraps
+   rather than being cut. */
+.subheading {
+  box-sizing: border-box;
+  padding: 8px 10px 2px 40px;
+  color: var(--shell-nav-muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
 .topLink:hover,
 .groupButton:hover,
 .navLink:hover {
