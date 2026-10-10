@@ -9,8 +9,8 @@ using Microsoft.Extensions.DependencyInjection;
 namespace GoymenERP.BrowserSuiteFixtureTool.Suites.PUR01;
 
 /// <summary>
-/// pur01 writes one synthetic Draft order as the approval scenario precondition and opens one separate
-/// active Supplier account through the real Cari API for the P-04 create path. Approval, create,
+/// pur01 opens one active Supplier account through the real Cari API, then binds the synthetic Draft
+/// approval order and the P-04 create path to that same record. Approval, create,
 /// close/reopen, replay and every permission/company negative run through the real host and browser.
 /// The goods-receipt journey writes nothing here: its approved order is created and approved by the spec
 /// through the real commands. The seed only proves the capability split of the disposable receiver (the
@@ -30,8 +30,6 @@ public sealed class Pur01BrowserSeed : IBrowserSuiteFixture
     public static readonly Guid OrderId = Guid.Parse("ea000000-0000-4000-8000-000000000301");
     public static readonly Guid LineId = Guid.Parse("ea000000-0000-4000-8000-000000000302");
 
-    private static readonly Guid SeededSupplierPartyId = Guid.Parse("ea000000-0000-4000-8000-000000000303");
-    private static readonly Guid SeededCompanyAccountId = Guid.Parse("ea000000-0000-4000-8000-000000000304");
     private static readonly Guid ProductId = Guid.Parse("ea000000-0000-4000-8000-000000000305");
     private static readonly Guid UnitId = SettingsUnitIdentitiesV1.Kilogram;
     private static readonly DateOnly EffectiveOn = new(2026, 9, 23);
@@ -46,6 +44,8 @@ public sealed class Pur01BrowserSeed : IBrowserSuiteFixture
     private const string CreateCapability = "purchasing.orders.create";
     private const string GoodsReceiptCapability = "purchasing.goods-receipts.record";
     private const string StockLabelCapability = "inventory.stock-positions.list";
+    private const string SupplierLegalName =
+        "Göymen Endüstriyel Çelik Ürünleri Tedarik ve Lojistik Sanayi ve Ticaret Anonim Şirketi Uzun Ünvan Kabul Tedarikçisi";
     private const int SupplierRole = 2;
 
     public string Suite => "pur01";
@@ -59,7 +59,7 @@ public sealed class Pur01BrowserSeed : IBrowserSuiteFixture
             CariActor,
             CompanyGdc,
             "supplier",
-            "P-04 tedarikçisi",
+            SupplierLegalName,
             SupplierRole,
             cancellationToken);
 
@@ -85,8 +85,8 @@ public sealed class Pur01BrowserSeed : IBrowserSuiteFixture
                     new PurchaseOrderFixtureRequest(
                         OrderId,
                         CompanyGdc,
-                        SeededSupplierPartyId,
-                        SeededCompanyAccountId,
+                        supplier.PartyId,
+                        supplier.AccountId,
                         EffectiveOn,
                         new PurchaseOrderFixtureLine(LineId, ProductId, "1", UnitId, IsKilogram: true, Quantity: 5m),
                         context.Label(string.Empty).TrimEnd(),
@@ -103,6 +103,8 @@ public sealed class Pur01BrowserSeed : IBrowserSuiteFixture
         JsonElement detail = await context.GetJsonAsync(ApproverActor, CompanyGdc, $"{OrdersPath}/{OrderId:D}", cancellationToken);
         JsonElement order = detail.GetProperty("order");
         if (order.GetProperty("id").GetGuid() != OrderId
+            || order.GetProperty("supplierPartyId").GetGuid() != supplier.PartyId
+            || order.GetProperty("companyAccountId").GetGuid() != supplier.AccountId
             || order.GetProperty("status").GetString() is not ("Draft" or "Approved")
             || detail.GetProperty("lines").GetArrayLength() != 1
             || detail.GetProperty("lines")[0].GetProperty("lineId").GetGuid() != LineId)

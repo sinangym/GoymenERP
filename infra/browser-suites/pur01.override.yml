@@ -1,11 +1,12 @@
-# PUR-01 Purchasing order acceptance. Three disposable actors are appended to the canonical development
+# PUR-01 Purchasing order acceptance. Five disposable actors are appended to the canonical development
 # identities and exist only in the per-run SQL database. The creator can create/read and carries the two
 # owner-read permissions the real Purchasing command already requires plus the two P-03 Document Vault
 # permissions; the approver can read/approve and the reader can only read. The existing Product runtime's
 # synthetic issuer binding enables its owned
 # migrations before the gated fixture runs; its Identity user is not a Bootstrap actor and has no role,
-# assignment or permission. Every actor assignment is company-wide in GDC. No production role,
-# permission or user is changed.
+# assignment or permission. Every actor assignment is company-wide in GDC except the creator's second
+# assignment of its existing isolated role to CompanyOther, used only for the company-switch refusal.
+# No production role, permission or user is changed.
 # PUR-HOST goods receipt (#478): by the user's decision (#5831467690, coordinator session 2026-09-26) two more
 # disposable actors exist only in this per-run database: the receiver holds exactly purchasing.orders.read +
 # purchasing.goods-receipts.record (the record command, its location options, its history and its shell control),
@@ -131,3 +132,11 @@ services:
       IdentitySeed__Assignments__11__ApprovedByUserId: 20000000-0000-0000-0000-000000000003
       IdentitySeed__Assignments__11__Scopes__0__Type: Company
       IdentitySeed__Assignments__11__Scopes__0__Id: 10000000-0000-0000-0000-000000000001
+      IdentitySeed__Assignments__12__Id: b4000000-0000-4000-8000-000000000606
+      IdentitySeed__Assignments__12__UserId: b2000000-0000-4000-8000-000000000603
+      IdentitySeed__Assignments__12__RoleId: b3000000-0000-4000-8000-000000000603
+      IdentitySeed__Assignments__12__CompanyId: 10000000-0000-0000-0000-000000000002
+      IdentitySeed__Assignments__12__ValidFromUtc: "2026-01-01T00:00:00+00:00"
+      IdentitySeed__Assignments__12__ApprovedByUserId: 20000000-0000-0000-0000-000000000003
+      IdentitySeed__Assignments__12__Scopes__0__Type: Company
+      IdentitySeed__Assignments__12__Scopes__0__Id: 10000000-0000-0000-0000-000000000002

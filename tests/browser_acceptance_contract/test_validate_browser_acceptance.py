@@ -1040,6 +1040,49 @@ class WorkflowTests(unittest.TestCase):
             tuple(environment[f"IdentitySeed__Roles__6__Permissions__{index}"] for index in range(1)),
         )
 
+        creator_assignments = [
+            index for index in range(7, 13)
+            if environment[f"IdentitySeed__Assignments__{index}__UserId"]
+            == "b2000000-0000-4000-8000-000000000603"
+        ]
+        self.assertEqual([9, 12], creator_assignments)
+        self.assertEqual(
+            {
+                "10000000-0000-0000-0000-000000000001",
+                "10000000-0000-0000-0000-000000000002",
+            },
+            {environment[f"IdentitySeed__Assignments__{index}__CompanyId"] for index in creator_assignments},
+        )
+        self.assertEqual(
+            {"b3000000-0000-4000-8000-000000000603"},
+            {environment[f"IdentitySeed__Assignments__{index}__RoleId"] for index in creator_assignments},
+        )
+
+    def test_pur01_company_other_assignment_is_creator_only_and_fails_closed_on_drift(self):
+        environment = self._pur01_environment()
+
+        validator.validate_suite_extensions("pur01", environment)
+
+        missing_creator_other = dict(environment)
+        for field in (
+            "Id", "UserId", "RoleId", "CompanyId", "ValidFromUtc", "ApprovedByUserId",
+            "Scopes__0__Type", "Scopes__0__Id",
+        ):
+            del missing_creator_other[f"IdentitySeed__Assignments__12__{field}"]
+        with self.assertRaisesRegex(ValueError, "exactly six assignments"):
+            validator.validate_suite_extensions("pur01", missing_creator_other)
+
+        leaked_to_reader = dict(environment)
+        leaked_to_reader["IdentitySeed__Assignments__12__UserId"] = "b2000000-0000-4000-8000-000000000602"
+        leaked_to_reader["IdentitySeed__Assignments__12__RoleId"] = "b3000000-0000-4000-8000-000000000602"
+        with self.assertRaisesRegex(ValueError, "pur01-reader requires its exact isolated company assignments"):
+            validator.validate_suite_extensions("pur01", leaked_to_reader)
+
+        creator_role_drift = dict(environment)
+        creator_role_drift["IdentitySeed__Assignments__12__RoleId"] = "b3000000-0000-4000-8000-000000000601"
+        with self.assertRaisesRegex(ValueError, "pur01-creator assignments must reuse one isolated role"):
+            validator.validate_suite_extensions("pur01", creator_role_drift)
+
     def test_pur01_stock_reader_matches_the_inventory_screen_fence(self):
         environment = self._pur01_environment()
 
