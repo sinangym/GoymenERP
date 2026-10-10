@@ -25,7 +25,7 @@ import { expect, test, type Page, type Request, type Response } from '@playwrigh
 import { readEnvironment } from '../src/env.js'
 
 const env = readEnvironment()
-const { preparerActor, readerActor, companyId, deliveryDraftId, realPartyId } = env.seed
+const { preparerActor, readerActor, companyId, deliveryDraftId, scheduleDraftId, realPartyId } = env.seed
 const DEVELOPMENT_USER_HEADER = 'X-Development-User'
 const SALES_READ_CONTRACT_HEADER = 'x-erp-sales-read-contract'
 const SALES_READ_CONTRACT = 'record-party-display-v1'
@@ -34,12 +34,20 @@ const COUNTERPARTY_CONTRACT_VERSION = 'optional-trade-roles-v1'
 const DRAFTS_PATH = '/api/v1/sales/drafts'
 const DETAIL_PATH = `${DRAFTS_PATH}/${deliveryDraftId}`
 const CARI_DETAIL_CAPABILITY = 'cari.parties.detail'
+const LONG_LEGAL_NAME =
+  'Teslimat müşterisi KARADENİZ ÇELİK DÖKÜM MAKİNA İMALAT SANAYİ VE DIŞ TİCARET ANONİM ŞİRKETİ GEBZE ÜRETİM VE LOJİSTİK TESİSLERİ'
 
 interface PartyDisplay {
   readonly partyId: string
   readonly code: string
   readonly legalName: string
   readonly tradeName: string | null
+}
+
+interface DetailLine {
+  readonly lineNo: number
+  readonly requestedDeliveryDate: string | null
+  readonly priceDisclosure: 'Visible' | 'Withheld'
 }
 
 async function signInAs(page: Page, actor: string): Promise<void> {
@@ -67,6 +75,8 @@ const isListRead = (response: Response) =>
   response.request().method() === 'GET' && new URL(response.url()).pathname === DRAFTS_PATH
 const isDetailRead = (response: Response) =>
   response.request().method() === 'GET' && new URL(response.url()).pathname === DETAIL_PATH
+const isDetailReadFor = (response: Response, draftId: string) =>
+  response.request().method() === 'GET' && new URL(response.url()).pathname === `${DRAFTS_PATH}/${draftId}`
 
 /** The UI read sent exactly the selector, and the answer acknowledges exactly it and binds the display to the record. */
 async function expectOptedIn(response: Response, kind: 'list' | 'detail'): Promise<PartyDisplay> {
@@ -173,4 +183,86 @@ test('S04-PD3 the preparer\'s Cari link follows the published Cari detail capabi
   } else {
     await expect(party.getByRole('link')).toHaveCount(0)
   }
+})
+
+test('S04-GOYDS-01 Sipariş 360 keeps long Cari, due date and withheld price distinct at every accepted width', async ({ page }) => {
+  await signInAs(page, readerActor)
+  await page.setViewportSize({ width: 1440, height: 900 })
+  const detailAnswer = page.waitForResponse(isDetailRead)
+  await page.goto(`/satis/siparisler/${deliveryDraftId}`)
+  const response = await detailAnswer
+  expect(response.status()).toBe(200)
+  expect(await response.headerValue(SALES_READ_CONTRACT_HEADER)).toBe(SALES_READ_CONTRACT)
+  const detail = await response.json() as { readonly partyDisplay: PartyDisplay; readonly lines: readonly DetailLine[] }
+  expect(detail.partyDisplay.legalName).toContain(LONG_LEGAL_NAME)
+  expect(detail.lines.length).toBeGreaterThan(0)
+  const line = detail.lines[0]
+  expect(line.requestedDeliveryDate, 'the untouched reference draft has no invented due date').toBeNull()
+  expect(line.priceDisclosure, 'the read-only actor receives no commercial value').toBe('Withheld')
+
+  const party = page.getByTestId('sales-draft-party')
+  const facts = page.getByTestId(`sales-line-${line.lineNo}-facts`)
+  const due = facts.locator('[data-layout-field="delivery-date"]')
+  const price = facts.locator('[data-layout-field="price"]')
+  await expect(page.getByTestId('sales-order-summary')).toBeVisible()
+  await expect(page.getByTestId('sales-order-status-facts')).toBeVisible()
+  await expect(party).toHaveText(partyText(detail.partyDisplay))
+  await expect(due).toContainText('Bilinmiyor')
+  await expect(price).toContainText('Fiyat bu yetkiyle görüntülenmez')
+
+  const expectStableLayout = async (width: number, height: number) => {
+    await page.setViewportSize({ width, height })
+    await expect(party).toBeVisible()
+    await expect(due).toBeVisible()
+    await expect(price).toBeVisible()
+    const geometry = await page.evaluate(({ lineNo }) => {
+      const dueElement = document.querySelector(`[data-testid="sales-line-${lineNo}-facts"] [data-layout-field="delivery-date"]`)
+      const priceElement = document.querySelector(`[data-testid="sales-line-${lineNo}-facts"] [data-layout-field="price"]`)
+      if (!(dueElement instanceof HTMLElement) || !(priceElement instanceof HTMLElement)) return null
+      const dueRect = dueElement.getBoundingClientRect()
+      const priceRect = priceElement.getBoundingClientRect()
+      const overlaps = dueRect.left < priceRect.right && dueRect.right > priceRect.left
+        && dueRect.top < priceRect.bottom && dueRect.bottom > priceRect.top
+      return {
+        pageFits: document.documentElement.scrollWidth <= document.documentElement.clientWidth,
+        dueFits: dueRect.left >= 0 && dueRect.right <= document.documentElement.clientWidth,
+        priceFits: priceRect.left >= 0 && priceRect.right <= document.documentElement.clientWidth,
+        overlaps,
+      }
+    }, { lineNo: line.lineNo })
+    expect(geometry).toEqual({ pageFits: true, dueFits: true, priceFits: true, overlaps: false })
+  }
+
+  await expectStableLayout(1440, 900)
+  // A 1366-wide host with its real 350px right panel open leaves this exact page viewport.
+  await expectStableLayout(1016, 768)
+  for (const width of [390, 320]) {
+    await expectStableLayout(width, 844)
+    await page.getByRole('button', { name: 'Menü', exact: true }).click()
+    await expect(page.getByRole('dialog', { name: 'Menü' })).toBeVisible()
+    await page.keyboard.press('Escape')
+    await expect(page.getByRole('dialog', { name: 'Menü' })).toHaveCount(0)
+  }
+
+  // The earlier DEC-SAL-003 journey leaves this separate real order Approved with a recorded line due date.
+  // It is the source-backed record for due-date and delivery-progress layout; the untouched reference draft above is not.
+  await page.setViewportSize({ width: 1440, height: 900 })
+  const scheduledAnswer = page.waitForResponse((candidate) => isDetailReadFor(candidate, scheduleDraftId))
+  await page.goto(`/satis/siparisler/${scheduleDraftId}`)
+  const scheduledResponse = await scheduledAnswer
+  expect(scheduledResponse.status()).toBe(200)
+  expect(await scheduledResponse.headerValue(SALES_READ_CONTRACT_HEADER)).toBe(SALES_READ_CONTRACT)
+  const scheduled = await scheduledResponse.json() as {
+    readonly draft: { readonly approvalState: string }
+    readonly lines: readonly DetailLine[]
+  }
+  expect(scheduled.draft.approvalState).toBe('Approved')
+  expect(scheduled.lines).toHaveLength(1)
+  expect(scheduled.lines[0].requestedDeliveryDate).toBe('2026-10-20')
+  expect(scheduled.lines[0].priceDisclosure).toBe('Withheld')
+  const scheduledFacts = page.getByTestId(`sales-line-${scheduled.lines[0].lineNo}-facts`)
+  await expect(scheduledFacts.locator('[data-layout-field="delivery-date"]')).toContainText('20.10.2026')
+  await expect(scheduledFacts.locator('[data-layout-field="price"]')).toContainText('Fiyat bu yetkiyle görüntülenmez')
+  await expect(page.getByTestId('sales-delivery-progress')).toBeVisible()
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true)
 })
