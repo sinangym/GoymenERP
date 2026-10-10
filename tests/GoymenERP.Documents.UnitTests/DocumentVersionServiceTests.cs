@@ -195,6 +195,42 @@ public sealed class DocumentVersionServiceTests
         Assert.Equal(attempts, world.Attempts.Count);
     }
 
+    [Theory]
+    [InlineData("permission", DocumentScanVerdictV1.Clean, 403)]
+    [InlineData("actor", DocumentScanVerdictV1.Clean, 403)]
+    [InlineData("company", DocumentScanVerdictV1.Clean, 403)]
+    [InlineData("owner", DocumentScanVerdictV1.Clean, 404)]
+    [InlineData("permission", DocumentScanVerdictV1.Infected, 403)]
+    [InlineData("actor", DocumentScanVerdictV1.Infected, 403)]
+    [InlineData("company", DocumentScanVerdictV1.Infected, 403)]
+    [InlineData("owner", DocumentScanVerdictV1.Infected, 404)]
+    public async Task Upload_scanner_boundary_drift_wins_before_verdict_and_has_no_effect(
+        string drift, DocumentScanVerdictV1 verdict, int status)
+    {
+        var world = World();
+        var scanner = new FixedScanner(verdict);
+        var service = new Harness(CompanyA, scanner, world: world).Grant(Upload);
+        scanner.AfterScan = () =>
+        {
+            switch (drift)
+            {
+                case "permission": service.Authority.Grants.Clear(); break;
+                case "actor": service.User.CurrentUserId = "SENTETIK-other-actor"; break;
+                case "company": service.User.MutableAllowedCompanyIds.Remove(CompanyA); break;
+                case "owner": world.OwnerOutcomes[(CompanyA, Party)] = DocumentOwnerAccessV1.Denied; break;
+            }
+        };
+
+        var refusal = await Assert.ThrowsAsync<DocumentServiceException>(() => service.Service.UploadAsync(
+            Harness.Upload(Party, V1), service.Metadata($"upload-scan-{drift}-{verdict}")));
+
+        Assert.Equal(status, refusal.Status);
+        Assert.Equal(0, world.Objects.Puts);
+        Assert.Empty(world.Documents);
+        Assert.Empty(world.Versions);
+        Assert.Empty(world.Attempts);
+    }
+
     [Fact]
     public async Task Foreign_company_and_unreadable_owner_are_not_disclosed()
     {

@@ -166,6 +166,8 @@ public static class DocumentEndpoints
         })
             .WithName("GetDocumentVersionsV1")
             .Produces<DocumentVersionHistoryResponse>()
+            .ProducesErpBadRequest(DocumentProblemCodesV1.ValidationFailed)
+            .AllowsEmptyErpBadRequestBody()
             .ProducesErpCodeLessNotFound()
             .ProducesErpConflict(DocumentProblemCodesV1.ConcurrentChange)
             .ProducesErpServiceUnavailable()

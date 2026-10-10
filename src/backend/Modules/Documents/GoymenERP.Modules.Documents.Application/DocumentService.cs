@@ -92,6 +92,9 @@ public sealed class DocumentService(
         }
 
         var verdict = await ScanAsync(content, kind.Kind, cancellationToken);
+        // The scanner is an awaited external boundary. Re-measure the captured actor/company/permission and the
+        // requested owner before interpreting its result or producing any external effect.
+        await RequireOwnerStillReadableAsync(scope, Permission, owner, cancellationToken);
         if (verdict == DocumentScanVerdictV1.Infected)
         {
             // Nothing is stored: not the object, not a version, not an attempt. The same key may be retried with other bytes.
@@ -101,9 +104,6 @@ public sealed class DocumentService(
         var scanState = verdict == DocumentScanVerdictV1.Clean ? DocumentScanState.Clean : DocumentScanState.NotScanned;
         var objectKey = DocumentObjectKeys.For(scope.CompanyId, sha256);
         var objectStore = objects ?? throw new DocumentServiceException(503, "service_unavailable");
-        // The scanner is an awaited external boundary. Re-measure the captured actor/company/permission and the
-        // requested owner immediately before the first external write; a drift leaves no object or metadata effect.
-        await RequireOwnerStillReadableAsync(scope, Permission, owner, cancellationToken);
         try
         {
             // The object first, then the metadata: a failed save leaves at most an unreferenced, immutable,
@@ -201,6 +201,9 @@ public sealed class DocumentService(
         }
 
         var verdict = await ScanAsync(content, kind.Kind, cancellationToken);
+        // The scanner is an awaited external boundary. Re-measure the captured actor/company/permission and the
+        // document owner before interpreting its result or producing any external effect.
+        await RequireOwnerStillReadableAsync(scope, Permission, owner, cancellationToken);
         if (verdict == DocumentScanVerdictV1.Infected)
         {
             throw new DocumentServiceException(422, DocumentProblemCodesV1.ContentRejected,
@@ -210,9 +213,6 @@ public sealed class DocumentService(
         var scanState = verdict == DocumentScanVerdictV1.Clean ? DocumentScanState.Clean : DocumentScanState.NotScanned;
         var objectKey = DocumentObjectKeys.For(scope.CompanyId, sha256);
         var objectStore = objects ?? throw new DocumentServiceException(503, "service_unavailable");
-        // The scanner is an awaited external boundary. Re-measure the captured actor/company/permission and the
-        // document owner immediately before the first external write; a drift leaves no object or metadata effect.
-        await RequireOwnerStillReadableAsync(scope, Permission, owner, cancellationToken);
         try
         {
             await objectStore.PutAsync(objectKey, content, sha256, cancellationToken);
