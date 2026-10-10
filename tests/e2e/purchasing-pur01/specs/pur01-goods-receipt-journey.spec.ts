@@ -216,7 +216,7 @@ function orderRow(page: Page, orderId: string) {
 }
 
 function lineRow(page: Page) {
-  return page.getByRole('row').filter({ hasText: `…${productId.slice(-8)}` })
+  return page.getByTestId('purchase-order-line-1').filter({ hasText: productId })
 }
 
 /**
@@ -230,6 +230,25 @@ async function openOrderFromList(page: Page, orderId: string, arm: () => void = 
   await orderRow(page, orderId).getByRole('link', { name: `…${orderId.slice(-8)}` }).click()
   await expect(page.getByRole('heading', { level: 1, name: 'Satın alma siparişi' })).toBeVisible({ timeout: 30_000 })
   await expect(page.getByText(orderId, { exact: true })).toBeVisible()
+}
+
+async function assertOrder360Responsive(page: Page): Promise<void> {
+  const viewports = [
+    { width: 1440, height: 900 },
+    // Effective content width of a 1366px desktop while the host's 350px side drawer is open.
+    { width: 1016, height: 768 },
+    { width: 390, height: 844 },
+    { width: 320, height: 720 },
+  ]
+  for (const viewport of viewports) {
+    await page.setViewportSize(viewport)
+    await expect(page.getByTestId('purchase-order-summary')).toBeVisible()
+    await expect(page.getByTestId('purchase-order-supplier-facts')).toContainText(supplierPartyId)
+    await expect(page.getByTestId('purchase-order-supplier-facts')).toContainText(companyAccountId)
+    await expect(page.getByTestId('purchase-order-lines')).toBeVisible()
+    await expect(page.getByTestId('purchase-order-receipt-action')).toBeVisible()
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true)
+  }
 }
 
 /** The receipt view without its instant, which is compared as a point in time rather than as text. */
@@ -334,6 +353,8 @@ test('PUR01-GR records one partial receipt in the browser, reopens it, finds the
     const historyResponse = await firstOpen.history!
     expect(historyResponse.status()).toBe(200)
     expect(await historyResponse.json()).toEqual({ items: [], searchWindowFull: false })
+
+    await assertOrder360Responsive(page)
 
     const panel = page.getByRole('region', { name: 'Mal kabulü', exact: true })
     await expect(panel).toBeVisible()

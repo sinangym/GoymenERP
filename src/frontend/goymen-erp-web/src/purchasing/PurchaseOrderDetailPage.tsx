@@ -16,6 +16,8 @@ import { PURCHASE_GOODS_RECEIPT_CAPABILITY } from './goodsReceiptContract'
 import { PURCHASE_ORDER_DETAIL_TEXT as T } from './purchaseOrderDetailText'
 import { DocumentsPanel } from '../documents/DocumentsPanel'
 import { OWNER_KIND } from '../documents/contract'
+import { Button } from '../ui/Button'
+import { StatusIndicator } from '../ui/StatusIndicator'
 
 function newId(): string {
   if (typeof globalThis.crypto?.randomUUID === 'function') return globalThis.crypto.randomUUID()
@@ -100,7 +102,16 @@ function PurchaseOrderDetail({ namespace }: { readonly namespace: string | null 
     if (result.type === 'applied' || result.status === 409) await query.refetch()
   }, [actorId, boundary, companyId, orderId, query, state, storeKey])
 
-  const frame = (child: ReactNode) => <main className={styles.page}><header><p className={styles.eyebrow}>P-03-DETAIL</p><h1>Satın alma siparişi</h1></header>{child}</main>
+  const frame = (child: ReactNode, status?: ReactNode) => <main className={styles.order360Page}>
+    <header className={styles.order360Header}>
+      <div className={styles.order360HeaderCopy}>
+        <p className={styles.order360Eyebrow}>{T.eyebrow}</p>
+        <h1 className={styles.order360Title}>{T.heading}</h1>
+      </div>
+      {status}
+    </header>
+    {child}
+  </main>
   if (companyId === null) return frame(<StateBlock state={{ kind: 'no-authorized-company' }} subject="satın alma siparişi" />)
   if (state.kind !== 'ready') return frame(<StateBlock state={state} subject="satın alma siparişi" onRetry={() => void query.refetch()} />)
   const { order, lines, acceptances } = state.data
@@ -113,13 +124,29 @@ function PurchaseOrderDetail({ namespace }: { readonly namespace: string | null 
       ? <p role="alert" className={styles.error}>Onay kaydedilmedi ({attempt.code ?? attempt.status}). Kayıt yeniden okundu.</p>
       : null
   return frame(<>
-    <dl className={styles.facts}><div><dt>Sipariş</dt><dd className={styles.mono}>{order.id}</dd></div><div><dt>Durum</dt><dd><span className={order.status === 'Approved' ? styles.approved : styles.draft}>{order.status === 'Approved' ? 'Onaylandı' : 'Taslak'}</span></dd></div><div><dt>Sürüm</dt><dd>{order.version}</dd></div><div><dt>Tedarikçi hesabı</dt><dd className={styles.mono}>{order.companyAccountId}</dd></div><div><dt>Kaynak talep</dt><dd className={styles.mono}>{order.sourceRequestId === null ? 'Bağlı değil' : canReadSourceRequest && namespace !== null && order.id === orderId && order.companyId === companyId ? <Link to={purchaseRequestDetailPath(order.sourceRequestId)} state={{ ns: namespace, requestId: order.sourceRequestId, orderId: order.id }}>{order.sourceRequestId}</Link> : order.sourceRequestId}</dd></div><div><dt>İş tarihi</dt><dd>{order.effectiveOn}</dd></div></dl>
-    <section><h2>Taahhüt satırları</h2><div className={styles.tableWrap}><table><thead><tr><th>No</th><th>Ürün</th><th>Birim</th><th>Sipariş</th><th>Teknik</th><th>Taahhüt</th><th>Kabul</th><th>Kalan</th></tr></thead><tbody>{lines.map((line) => <tr key={line.lineId}><td>{line.lineNo}</td><td className={styles.mono}>…{line.productId.slice(-8)}</td><td className={styles.mono}>…{line.unitId.slice(-8)}</td><td>{line.ordered}</td><td>{line.technical}</td><td>{line.committed}</td><td>{line.accepted}</td><td>{line.remaining}</td></tr>)}</tbody></table></div></section>
-    {isCurrentDetail ? <section aria-labelledby="purchase-order-acceptance-history-heading">
+    <section className={styles.order360Section} aria-labelledby="purchase-order-summary-heading" data-testid="purchase-order-summary">
+      <h2 id="purchase-order-summary-heading">{T.summaryHeading}</h2>
+      <dl className={styles.order360Facts} data-testid="purchase-order-status-facts">
+        <div><dt>{T.orderId}</dt><dd className={styles.order360Identifier}>{order.id}</dd></div>
+        <div><dt>{T.version}</dt><dd>{order.version}</dd></div>
+        <div><dt>{T.businessDate}</dt><dd>{order.effectiveOn}</dd></div>
+        <div><dt>{T.sourceRequest}</dt><dd className={styles.order360Identifier}>{order.sourceRequestId === null ? T.sourceNotLinked : canReadSourceRequest && namespace !== null && order.id === orderId && order.companyId === companyId ? <Link className={styles.order360Link} to={purchaseRequestDetailPath(order.sourceRequestId)} state={{ ns: namespace, requestId: order.sourceRequestId, orderId: order.id }}>{order.sourceRequestId}</Link> : order.sourceRequestId}</dd></div>
+      </dl>
+      <h3>{T.supplierHeading}</h3>
+      <dl className={styles.order360Facts} data-testid="purchase-order-supplier-facts">
+        <div><dt>{T.supplierPartyId}</dt><dd className={styles.order360Identifier}>{order.supplierPartyId}</dd></div>
+        <div><dt>{T.supplierAccountId}</dt><dd className={styles.order360Identifier}>{order.companyAccountId}</dd></div>
+      </dl>
+    </section>
+    <section className={styles.order360Section} aria-labelledby="purchase-order-lines-heading" data-testid="purchase-order-lines">
+      <h2 id="purchase-order-lines-heading">{T.linesHeading}</h2>
+      <div className={styles.order360TableWrap}><table className={styles.order360Table} aria-label={T.linesCaption}><thead><tr><th>No</th><th>{T.productId}</th><th>{T.unitId}</th><th className={styles.order360Number}>{T.ordered}</th><th className={styles.order360Number}>{T.technical}</th><th className={styles.order360Number}>{T.committed}</th><th className={styles.order360Number}>{T.accepted}</th><th className={styles.order360Number}>{T.remaining}</th></tr></thead><tbody>{lines.map((line) => <tr key={line.lineId} data-testid={`purchase-order-line-${line.lineNo}`}><td>{line.lineNo}</td><td className={styles.order360Identifier}>{line.productId}</td><td className={styles.order360Identifier}>{line.unitId}</td><td className={styles.order360Number}>{line.ordered}</td><td className={styles.order360Number}>{line.technical}</td><td className={styles.order360Number}>{line.committed}</td><td className={styles.order360Number}>{line.accepted}</td><td className={styles.order360Number}>{line.remaining}</td></tr>)}</tbody></table></div>
+    </section>
+    {isCurrentDetail ? <section className={styles.order360Section} aria-labelledby="purchase-order-acceptance-history-heading" data-testid="purchase-order-acceptance-history">
       <h2 id="purchase-order-acceptance-history-heading">{T.acceptanceHistoryHeading}</h2>
       {acceptances.length === 0
         ? <p>{T.acceptanceHistoryEmpty}</p>
-        : <div className={styles.tableWrap}><table><thead><tr><th>{T.acceptanceId}</th><th>{T.lineNo}</th><th>{T.quantity}</th><th>{T.recordedAtUtc}</th></tr></thead><tbody>{acceptances.map((acceptance) => <tr key={acceptance.acceptanceId} data-testid={`purchase-order-acceptance-${acceptance.acceptanceId}`}><td className={styles.mono}>{acceptance.acceptanceId}</td><td>{lineNoById.get(acceptance.lineId) ?? T.lineUnavailable}</td><td>{acceptance.quantity}</td><td><time dateTime={acceptance.recordedAtUtc}>{acceptance.recordedAtUtc}</time></td></tr>)}</tbody></table></div>}
+        : <div className={styles.order360TableWrap}><table className={styles.order360Table}><thead><tr><th>{T.acceptanceId}</th><th>{T.lineNo}</th><th className={styles.order360Number}>{T.quantity}</th><th>{T.recordedAtUtc}</th></tr></thead><tbody>{acceptances.map((acceptance) => <tr key={acceptance.acceptanceId} data-testid={`purchase-order-acceptance-${acceptance.acceptanceId}`}><td className={styles.order360Identifier}>{acceptance.acceptanceId}</td><td>{lineNoById.get(acceptance.lineId) ?? T.lineUnavailable}</td><td className={styles.order360Number}>{acceptance.quantity}</td><td><time dateTime={acceptance.recordedAtUtc}>{acceptance.recordedAtUtc}</time></td></tr>)}</tbody></table></div>}
     </section> : null}
     {isCurrentDetail && namespace !== null ? <DocumentsPanel
       ownerKind={OWNER_KIND.purchasingPurchaseOrder}
@@ -129,8 +156,10 @@ function PurchaseOrderDetail({ namespace }: { readonly namespace: string | null 
       entryGeneration={shell.routeEntryGeneration}
     /> : null}
     {canApprove ? outcomeNotice : null}
-    {canApprove && (order.status === 'Draft' || unresolved) ? <section className={styles.actionCard}><h2>Siparişi onayla</h2><p>Onay, talep satırı paylarını sunucuda yeniden ölçer. Fiyat veya stok hareketi üretmez.</p>{attempt.phase === 'unknown' ? <p role="alert" className={styles.warning}>Sonuç bilinmiyor. Yeni işlem başlatmadan aynı anahtar ve sürümle yeniden gönderin.</p> : null}<button type="button" disabled={attempt.phase === 'submitting'} onClick={() => void sendApproval(attempt.phase === 'unknown' ? attempt.snapshot : undefined)}>{attempt.phase === 'submitting' ? 'Gönderiliyor…' : attempt.phase === 'unknown' ? 'Aynı onayı yeniden gönder' : 'Onayla'}</button></section> : null}
-    {namespace === null ? null : <GoodsReceiptPanel enabled={hasCapability(shell, PURCHASE_GOODS_RECEIPT_CAPABILITY as never)}
-      binding={namespace} detail={state.data} onRecorded={() => void query.refetch()} />}
-  </>)
+    {canApprove && (order.status === 'Draft' || unresolved) ? <section className={styles.order360Section}><h2>{T.approvalHeading}</h2><p>{T.approvalNote}</p>{attempt.phase === 'unknown' ? <p role="alert" className={styles.warning}>Sonuç bilinmiyor. Yeni işlem başlatmadan aynı anahtar ve sürümle yeniden gönderin.</p> : null}<Button type="button" variant="primary" disabled={attempt.phase === 'submitting'} onClick={() => void sendApproval(attempt.phase === 'unknown' ? attempt.snapshot : undefined)}>{attempt.phase === 'submitting' ? 'Gönderiliyor…' : attempt.phase === 'unknown' ? 'Aynı onayı yeniden gönder' : 'Onayla'}</Button></section> : null}
+    {namespace !== null && hasCapability(shell, PURCHASE_GOODS_RECEIPT_CAPABILITY as never)
+      ? <div className={styles.order360Section} data-testid="purchase-order-receipt-action"><GoodsReceiptPanel enabled
+          binding={namespace} detail={state.data} onRecorded={() => void query.refetch()} /></div>
+      : null}
+  </>, <StatusIndicator className={styles.order360Status} tone={order.status === 'Approved' ? 'success' : 'warning'}>{order.status === 'Approved' ? T.approved : T.draft}</StatusIndicator>)
 }

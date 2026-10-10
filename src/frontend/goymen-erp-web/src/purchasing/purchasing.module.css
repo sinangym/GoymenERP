@@ -36,3 +36,28 @@
 .warningCard { border-color: #d5a04d; background: #fff7e7; }
 @media (max-width: 640px) { .page { padding: 1rem; } .header { align-items: stretch; } .header label { justify-content: space-between; width: 100%; } }
 @media (max-width: 640px) { .formGrid { grid-template-columns: 1fr; } .headerActions { align-items: stretch; flex-direction: column; } }
+
+/* P-05 Purchase Order 360. Page-specific selectors keep legacy purchasing screens unchanged. */
+.order360Page { display: grid; gap: var(--goy-ds-space-3); min-width: 0; padding: var(--goy-ds-space-1) 0 var(--goy-ds-space-6); color: var(--goy-ds-color-text); font-family: var(--goy-ds-font-sans); }
+.order360Header, .order360Section { min-width: 0; padding: var(--goy-ds-space-4); border: 1px solid var(--goy-ds-color-border); border-radius: var(--goy-ds-radius-md); background: var(--goy-ds-color-surface); box-shadow: var(--goy-ds-shadow-1); }
+.order360Header { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: var(--goy-ds-space-3); }
+.order360HeaderCopy, .order360Section { display: grid; gap: var(--goy-ds-space-3); }
+.order360Title, .order360Section h2, .order360Section h3, .order360Section p { margin-top: 0; }
+.order360Title { margin-bottom: 0; font-size: 1.25rem; line-height: 28px; font-weight: var(--goy-ds-font-weight-semibold); overflow-wrap: anywhere; }
+.order360Eyebrow { margin: 0; color: var(--goy-ds-color-text-tertiary); font-size: var(--goy-ds-font-size-xs); font-weight: var(--goy-ds-font-weight-semibold); letter-spacing: .08em; text-transform: uppercase; }
+.order360Status { justify-self: end; max-width: 100%; padding: var(--goy-ds-space-1) var(--goy-ds-space-2); border-radius: 999px; background: var(--goy-ds-color-surface-muted); white-space: normal; }
+.order360Facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr)); gap: var(--goy-ds-space-2) var(--goy-ds-space-4); margin: 0; min-width: 0; }
+.order360Facts > div { min-width: 0; }
+.order360Facts dt { color: var(--goy-ds-color-text-tertiary); font-size: var(--goy-ds-font-size-xs); line-height: 16px; }
+.order360Facts dd { margin: 0; min-width: 0; overflow-wrap: anywhere; font-size: var(--goy-ds-font-size-md); line-height: 20px; }
+.order360Identifier { font-family: var(--goy-ds-font-mono); font-size: var(--goy-ds-font-size-sm); overflow-wrap: anywhere; }
+.order360Section h2, .order360Section h3 { margin-bottom: 0; font-size: 1rem; line-height: 24px; font-weight: var(--goy-ds-font-weight-semibold); }
+.order360TableWrap { max-width: 100%; overflow-x: auto; overscroll-behavior-inline: contain; }
+.order360Table { width: 100%; min-width: 58rem; border-collapse: collapse; font-size: var(--goy-ds-font-size-md); }
+.order360Table th, .order360Table td { padding: var(--goy-ds-space-2); border-bottom: 1px solid var(--goy-ds-color-border); text-align: left; vertical-align: top; }
+.order360Table th { color: var(--goy-ds-color-text-secondary); font-weight: var(--goy-ds-font-weight-semibold); }
+.order360Number { text-align: right !important; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.order360Link { color: var(--goy-ds-color-accent-text); text-decoration: underline; text-underline-offset: 2px; }
+.order360Notice { margin: 0; padding: var(--goy-ds-space-2) var(--goy-ds-space-3); border: 1px solid var(--goy-ds-color-border-control); border-radius: var(--goy-ds-radius-sm); background: var(--goy-ds-color-surface-muted); }
+@media (max-width: 767px) { .order360Header { grid-template-columns: minmax(0, 1fr); } .order360Status { justify-self: start; } .order360Header, .order360Section { padding: var(--goy-ds-space-3); } }
+@media (max-width: 359px) { .order360Facts { grid-template-columns: minmax(0, 1fr); } }
