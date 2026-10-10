@@ -1,6 +1,7 @@
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Inventory.Application;
+using GoymenERP.Modules.Inventory.Domain.Stock;
 using GoymenERP.Modules.Inventory.Infrastructure;
 using GoymenERP.Modules.Inventory.Infrastructure.Persistence;
 
@@ -8,6 +9,32 @@ namespace GoymenERP.Api.IntegrationTests;
 
 public sealed partial class InventorySqlServerRelationalAcceptanceTests
 {
+    [SqlServerFact]
+    public async Task Customer_owned_company_custodied_stock_position_preserves_exact_parties_without_a_read_effect()
+    {
+        await using var run = await Run.StartAsync();
+        var customerId = Guid.NewGuid();
+        var source = await SeedOtherPartyFreeSourceAsync(
+            run,
+            "SYN-ST01-CUSTOMER-HELD",
+            new StockOwner(StockPartyKind.Counterparty, customerId),
+            new StockCustodian(StockPartyKind.Company, CompanyA));
+        var before = await StockPositionReadEffectCountsAsync(run);
+
+        await using var context = run.Context(CompanyA);
+        var result = await StockPositions(context, CompanyA).SearchAsync(
+            new("SYN-ST01-CUSTOMER-HELD", 25));
+
+        var item = Assert.Single(result.Items);
+        Assert.Equal((source.LabelId, source.ProductId, "Counterparty", customerId, "Company", CompanyA),
+            (item.LabelId, item.ProductId, item.OwnerKind, item.OwnerId,
+                item.CustodianKind, item.CustodianId));
+        Assert.Equal(("100", "100", "0", "0", "100"),
+            (item.PhysicalKg, item.FreePhysicalKg, item.BlockedPhysicalKg,
+                item.ActiveAllocationKg, item.AvailableKg));
+        Assert.Equal(before, await StockPositionReadEffectCountsAsync(run));
+    }
+
     [SqlServerFact]
     public async Task Stock_position_read_reports_physical_allocation_and_available_components_from_real_SQL()
     {
@@ -122,6 +149,19 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
                     Convert.ToBase64String(Enumerable.Range(1, 32).Select(value => (byte)value).ToArray())),
                 TimeProvider.System));
     }
+
+    private static async Task<(int Balances, decimal BalanceKg, int Movements, int MovementLines,
+        int Allocations, int Commands, int Audits)> StockPositionReadEffectCountsAsync(Run run) =>
+        (
+            await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.Balances"),
+            await run.ScalarAsync<decimal>(
+                "SELECT COALESCE(SUM(QuantityKg), 0) FROM inventory.Balances"),
+            await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.Movements"),
+            await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.MovementLines"),
+            await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.Allocations"),
+            await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.Commands"),
+            await run.ScalarAsync<int>("SELECT COUNT(*) FROM audit.AuditEvents")
+        );
 
     private sealed class StockPositionUser(Guid companyId) : ICurrentUser
     {

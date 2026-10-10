@@ -220,8 +220,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // Inventory stock-position read: +1 actual bounded filter/classification SQL fact;
             // every listed case remains mandatory and zero-skip.
             // Inventory location display and ST-01 Product-authority capability: +2 reviewed Inventory SQL facts.
+            // ST-01 owner/custodian read: +1 exact-party, read-without-side-effect SQL fact.
             ["tools/relational_inventory/inventory.txt"] =
-                "586d709cc35eec077c275bb32145d090f6c9f43d43c886a7b7a046bd9d49bda8",
+                "33374528de2fb0123a1deec1307ea74a0590df904ab54652f8dee14d7f7ca165",
 
             // logistics
             // AT-053: +4 weighbridge SQL facts (81c1ff0b… -> 264898d7…).
