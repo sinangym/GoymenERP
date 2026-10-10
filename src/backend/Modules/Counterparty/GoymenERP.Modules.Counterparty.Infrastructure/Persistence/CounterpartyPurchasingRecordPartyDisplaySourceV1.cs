@@ -12,6 +12,8 @@ namespace GoymenERP.Modules.Counterparty.Infrastructure.Persistence;
 /// <summary>
 /// Internal runtime for the record-bound Purchasing projection. The only public DI surface is
 /// <see cref="ICounterpartyPurchasingRecordPartyDisplaySourceV1"/>; no owner reader is resolvable.
+/// Historical records keep their same-company Party/account display after deactivation; this source
+/// is not a selection or transaction-eligibility surface.
 /// </summary>
 internal sealed class CounterpartyPurchasingRecordPartyDisplaySourceV1(
     CounterpartyDbContext dbContext,
@@ -139,8 +141,6 @@ internal sealed class CounterpartyPurchasingRecordPartyDisplaySourceV1(
                 INNER JOIN [counterparty].[Parties] AS p
                     ON p.[Id] = a.[PartyId]
                 WHERE a.[CompanyId] = @CompanyId
-                  AND a.[IsActive] = 1
-                  AND p.[IsActive] = 1
                 ORDER BY p.[Id];
                 """;
             AddParameter(command, "@PartyIds", JsonSerializer.Serialize(partyIds), DbType.String);

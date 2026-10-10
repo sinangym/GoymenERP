@@ -1142,13 +1142,14 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         {
                             ["Microsoft.Data.SqlClient"] = 1
                         }),
-                // PUR-P05: one parameterized, company-filtered record-bound Cari read. The exact source and
-                // database API counts keep this narrower than a general SQL or generic Party-read surface.
+                // PUR-P05: one parameterized, company-filtered record-bound Cari read. Historical same-company
+                // Party/account displays survive deactivation without becoming a selection surface. The exact
+                // source and database API counts keep this narrower than a general SQL or generic Party read.
                 ["src/backend/Modules/Counterparty/"
                  + "GoymenERP.Modules.Counterparty.Infrastructure/Persistence/"
                  + "CounterpartyPurchasingRecordPartyDisplaySourceV1.cs"] =
                     new(
-                        "e0b2b15909349eef669089d381e7a80521e9f3d896cbda8f47c3aa415e391173",
+                        "0c47607b901edaf39127fcf080ab473dd8d17aa8bad1edd56b097326a807b703",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["System.Data.Common"] = 1,

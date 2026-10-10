@@ -56,13 +56,18 @@ public sealed class CounterpartyPurchasingRecordPartyDisplaySqlServerRelationalA
                     (item.PartyId, item.Code, item.LegalName, item.TradeName)),
                 item => Assert.Equal(
                     (ActivePartyB, "CAR-991002", "Tedarikçi Cari B", (string?)null),
+                    (item.PartyId, item.Code, item.LegalName, item.TradeName)),
+                item => Assert.Equal(
+                    (InactiveParty, "CAR-991003", "Pasif Cari", (string?)null),
+                    (item.PartyId, item.Code, item.LegalName, item.TradeName)),
+                item => Assert.Equal(
+                    (InactiveAccountParty, "CAR-991004", "Pasif Hesap Cari", (string?)null),
                     (item.PartyId, item.Code, item.LegalName, item.TradeName)));
             Assert.Equal(2, organization.Reads);
             var command = Assert.Single(observer.Commands);
             Assert.Contains("OPENJSON(@PartyIds)", command, StringComparison.Ordinal);
             Assert.Contains("a.[CompanyId] = @CompanyId", command, StringComparison.Ordinal);
-            Assert.Contains("a.[IsActive] = 1", command, StringComparison.Ordinal);
-            Assert.Contains("p.[IsActive] = 1", command, StringComparison.Ordinal);
+            Assert.DoesNotContain("[IsActive]", command, StringComparison.Ordinal);
 
             var beforeDenied = observer.Commands.Count;
             var wrongCompany = await source.ReadForAuthorizedPurchasingRecordsAsync(request with

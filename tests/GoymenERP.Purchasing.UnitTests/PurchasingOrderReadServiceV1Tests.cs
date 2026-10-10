@@ -19,6 +19,27 @@ public sealed class PurchasingOrderReadServiceV1Tests
     }
 
     [Fact]
+    public async Task Historical_inactive_supplier_display_is_preserved_for_existing_order_reads()
+    {
+        var owner = new StubOrderSource();
+        var displays = new StubDisplaySource
+        {
+            Answer = new(PurchasingSupplierDisplayBatchOutcomeV1.Success,
+            [
+                new(SupplierA, "PASIF-001", "Pasif Tarihsel Tedarikçi", null),
+                new(SupplierB, "TED-002", "Tedarikçi B", null),
+            ]),
+        };
+        var service = new Fixture(owner, displays).Service;
+
+        var list = await service.GetOrderListAsync(new PurchaseOrderListQuery());
+        var detail = await service.GetOrderDetailAsync(owner.First.Id);
+
+        Assert.Equal("PASIF-001", list.Items[0].SupplierDisplay.Code);
+        Assert.Equal("Pasif Tarihsel Tedarikçi", detail.Order.SupplierDisplay.LegalName);
+    }
+
+    [Fact]
     public async Task List_and_detail_publish_exact_record_bound_supplier_presentations()
     {
         var owner = new StubOrderSource();

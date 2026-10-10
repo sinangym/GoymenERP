@@ -28,6 +28,7 @@ public sealed class CounterpartyPurchasingRecordPartyDisplaySourceTests
             descriptor.ServiceType.Name.Contains("OwnerReader", StringComparison.Ordinal));
         Assert.Null(typeof(ICounterpartyPurchasingRecordPartyDisplaySourceV1).Assembly.GetType(
             "GoymenERP.Modules.Counterparty.Application.ICounterpartyPurchasingRecordPartyDisplayOwnerReaderV1"));
+        Assert.Null(typeof(CounterpartyPurchasingRecordPartyDisplayV1).GetProperty("IsActive"));
     }
 
     [Fact]

@@ -140,6 +140,52 @@ public sealed class PurchasingHttpAcceptanceTests(GoymenErpApiFactory factory) :
     }
 
     [Fact]
+    public async Task Historical_inactive_supplier_remains_visible_while_missing_relation_closes_list_and_detail()
+    {
+        var detail = OrderDetail(PurchaseOrderId);
+        var service = new StubService();
+        var owner = new StubOrderRecordSource { Detail = detail };
+        var historical = new StubSupplierDisplaySource
+        {
+            Answer = request => new PurchasingSupplierDisplayBatchAnswerV1(
+                PurchasingSupplierDisplayBatchOutcomeV1.Success,
+                [.. request.PartyIds.Select(id => new PurchasingSupplierDisplayV1(
+                    id,
+                    "PASIF-HTTP",
+                    "Pasif Tarihsel Tedarikçi",
+                    null))]),
+        };
+        using (var historicalHost = CreateHost(service, owner, historical))
+        using (var historicalClient = CreateClient(historicalHost))
+        {
+            using var listResponse = await historicalClient.GetAsync(PurchasingApiV1.OrdersPath);
+            Assert.Equal(HttpStatusCode.OK, listResponse.StatusCode);
+            var list = await listResponse.Content.ReadFromJsonAsync<JsonElement>();
+            Assert.Equal("PASIF-HTTP", list.GetProperty("items")[0].GetProperty("supplierDisplay").GetProperty("code").GetString());
+
+            using var detailResponse = await historicalClient.GetAsync($"{PurchasingApiV1.OrdersPath}/{PurchaseOrderId:D}");
+            Assert.Equal(HttpStatusCode.OK, detailResponse.StatusCode);
+            var body = await detailResponse.Content.ReadFromJsonAsync<JsonElement>();
+            Assert.Equal("Pasif Tarihsel Tedarikçi", body.GetProperty("order").GetProperty("supplierDisplay").GetProperty("legalName").GetString());
+        }
+
+        var missing = new StubSupplierDisplaySource
+        {
+            Answer = _ => new PurchasingSupplierDisplayBatchAnswerV1(
+                PurchasingSupplierDisplayBatchOutcomeV1.Success,
+                []),
+        };
+        using var missingHost = CreateHost(service, owner, missing);
+        using var missingClient = CreateClient(missingHost);
+        using var missingList = await missingClient.GetAsync(PurchasingApiV1.OrdersPath);
+        using var missingDetail = await missingClient.GetAsync($"{PurchasingApiV1.OrdersPath}/{PurchaseOrderId:D}");
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, missingList.StatusCode);
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, missingDetail.StatusCode);
+        Assert.DoesNotContain(detail.Order.SupplierPartyId.ToString(), await missingList.Content.ReadAsStringAsync(), StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(detail.Order.SupplierPartyId.ToString(), await missingDetail.Content.ReadAsStringAsync(), StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task A_created_request_answers_201_under_the_requests_path_and_its_submission_200()
     {
         var id = Guid.NewGuid();
@@ -511,12 +557,18 @@ public sealed class PurchasingHttpAcceptanceTests(GoymenErpApiFactory factory) :
     private sealed class StubSupplierDisplaySource : IPurchasingSupplierDisplaySourceV1
     {
         public List<PurchasingSupplierDisplayBatchRequestV1> Requests { get; } = [];
+        public Func<PurchasingSupplierDisplayBatchRequestV1, PurchasingSupplierDisplayBatchAnswerV1>? Answer { get; init; }
 
         public Task<PurchasingSupplierDisplayBatchAnswerV1> GetAuthorizedBatchAsync(
             PurchasingSupplierDisplayBatchRequestV1 request,
             CancellationToken cancellationToken = default)
         {
             Requests.Add(request);
+            if (Answer is not null)
+            {
+                return Task.FromResult(Answer(request));
+            }
+
             return Task.FromResult(new PurchasingSupplierDisplayBatchAnswerV1(
                 PurchasingSupplierDisplayBatchOutcomeV1.Success,
                 [.. request.PartyIds.Select(id => new PurchasingSupplierDisplayV1(

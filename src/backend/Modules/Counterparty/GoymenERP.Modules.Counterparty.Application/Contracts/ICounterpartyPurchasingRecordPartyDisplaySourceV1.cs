@@ -3,7 +3,9 @@ namespace GoymenERP.Modules.Counterparty.Application.Contracts;
 /// <summary>
 /// Cari-owned projection for a central Purchasing adapter that has already authorized the Purchasing records
 /// from which every requested Party id was obtained. This is not a general Cari read, search, list,
-/// or card contract and it must never accept arbitrary client-provided Party ids.
+/// or card contract and it must never accept arbitrary client-provided Party ids. Same-company historical
+/// records remain displayable after Party or account deactivation; this contract grants no selection or
+/// new-transaction eligibility.
 /// </summary>
 public interface ICounterpartyPurchasingRecordPartyDisplaySourceV1
 {
