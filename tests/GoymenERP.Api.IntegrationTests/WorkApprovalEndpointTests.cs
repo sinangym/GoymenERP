@@ -126,6 +126,44 @@ public sealed class WorkApprovalEndpointTests(GoymenErpApiFactory factory)
     }
 
     [Theory]
+    [InlineData("inventory.stock-count.v1")]
+    [InlineData("inventory.stock-scrap.v1")]
+    public async Task Explicit_inventory_list_and_detail_serialize_only_the_selected_variant(string kind)
+    {
+        var approvalId = Guid.NewGuid();
+        var item = InventoryItem(kind, approvalId);
+        NativeApprovalReadDetailV1 detail = kind == NativeApprovalKindsV1.InventoryStockCount
+            ? new InventoryStockCountNativeApprovalReadDetailV1(item)
+            : new InventoryStockScrapNativeApprovalReadDetailV1(item);
+        var adapter = new Adapter
+        {
+            Kind = kind,
+            Page = new(NativeApprovalReadOutcomeV1.Found,
+                new NativeApprovalReadPageV1(Company, [item], null)),
+            Detail = new(NativeApprovalReadOutcomeV1.Found, detail),
+        };
+        using var host = Host([adapter]);
+        using var client = Client(host);
+
+        using var list = await client.GetAsync(WorkApprovalEndpoints.Path + $"?kind={kind}");
+        using var itemResponse = await client.GetAsync(
+            $"{WorkApprovalEndpoints.Path}/{kind}/{approvalId:D}");
+
+        Assert.Equal(HttpStatusCode.OK, list.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, itemResponse.StatusCode);
+        using var listJson = JsonDocument.Parse(await list.Content.ReadAsStringAsync());
+        var serialized = Assert.Single(listJson.RootElement.GetProperty("items").EnumerateArray());
+        Assert.Equal(kind, serialized.GetProperty("kind").GetString());
+        Assert.Equal(approvalId, serialized.GetProperty("approvalId").GetGuid());
+        Assert.Equal("PendingApproval", serialized.GetProperty("status").GetString());
+        Assert.Equal("1", serialized.GetProperty("labelVersion").GetString());
+
+        using var detailJson = JsonDocument.Parse(await itemResponse.Content.ReadAsStringAsync());
+        Assert.Equal(approvalId,
+            detailJson.RootElement.GetProperty("item").GetProperty("approvalId").GetGuid());
+    }
+
+    [Theory]
     [InlineData("Denied", HttpStatusCode.Forbidden)]
     [InlineData("NotFound", HttpStatusCode.NotFound)]
     [InlineData("Unavailable", HttpStatusCode.ServiceUnavailable)]
@@ -242,12 +280,22 @@ public sealed class WorkApprovalEndpointTests(GoymenErpApiFactory factory)
         using var scope = factory.Services.CreateScope();
 
         var adapters = scope.ServiceProvider.GetServices<INativeApprovalReadAdapterV1>().ToArray();
-        Assert.Equal(2, adapters.Length);
+        Assert.Equal(4, adapters.Length);
         Assert.Collection(adapters.OrderBy(adapter => adapter.Kind, StringComparer.Ordinal),
             finance =>
             {
                 Assert.IsType<FinanceInvoiceImportPendingApprovalAdapterV1>(finance);
                 Assert.Equal(NativeApprovalKindsV1.FinanceOfficialInvoiceImport, finance.Kind);
+            },
+            count =>
+            {
+                Assert.IsType<InventoryStockCountPendingApprovalAdapterV1>(count);
+                Assert.Equal(NativeApprovalKindsV1.InventoryStockCount, count.Kind);
+            },
+            scrap =>
+            {
+                Assert.IsType<InventoryStockScrapPendingApprovalAdapterV1>(scrap);
+                Assert.Equal(NativeApprovalKindsV1.InventoryStockScrap, scrap.Kind);
             },
             sales =>
             {
@@ -307,6 +355,19 @@ public sealed class WorkApprovalEndpointTests(GoymenErpApiFactory factory)
         true,
         "sales-maker",
         DateTimeOffset.Parse("2026-10-09T07:00:00Z"));
+
+    private static NativeApprovalReadItemV1 InventoryItem(string kind, Guid approvalId) =>
+        kind == NativeApprovalKindsV1.InventoryStockCount
+            ? new InventoryStockCountNativeApprovalReadItemV1(
+                approvalId, Company, "PendingApproval", "1",
+                Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), "-3", "1",
+                "Company", Company, "Company", Company, "Free", "100", "97", "Sayım farkı",
+                "counter", DateTimeOffset.Parse("2026-10-10T07:00:00Z"))
+            : new InventoryStockScrapNativeApprovalReadItemV1(
+                approvalId, Company, "PendingApproval", "1",
+                Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), "6", "1",
+                "Company", Company, "Company", Company, "Free", "100", "94", "Hurda",
+                "recorder", DateTimeOffset.Parse("2026-10-10T08:00:00Z"));
 
     private static FinanceOfficialInvoiceImportPreviewV1 Preview() => new(
         FinanceOfficialInvoiceImportTemplateV1.Version,
