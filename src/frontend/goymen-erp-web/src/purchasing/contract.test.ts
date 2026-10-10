@@ -53,6 +53,10 @@ describe('purchasing read contract', () => {
     ['a missing field', { ...commandSummary, supplierDisplay: { partyId: supplierDisplay.partyId, code: 'CAR-000042', legalName: 'A' } }],
     ['an empty code', { ...summary, supplierDisplay: { ...supplierDisplay, code: '' } }],
     ['an empty legal name', { ...summary, supplierDisplay: { ...supplierDisplay, legalName: '' } }],
+    ['a whitespace-only code', { ...summary, supplierDisplay: { ...supplierDisplay, code: '   ' } }],
+    ['a whitespace-only legal name', { ...summary, supplierDisplay: { ...supplierDisplay, legalName: ' \t\n ' } }],
+    ['an empty trade name', { ...summary, supplierDisplay: { ...supplierDisplay, tradeName: '' } }],
+    ['a whitespace-only trade name', { ...summary, supplierDisplay: { ...supplierDisplay, tradeName: '   ' } }],
     ['a non-string trade name', { ...summary, supplierDisplay: { ...supplierDisplay, tradeName: 7 } }],
     ['a malformed party id', { ...summary, supplierDisplay: { ...supplierDisplay, partyId: 'not-a-guid' } }],
     ['a nil party id', { ...summary, supplierDisplay: { ...supplierDisplay, partyId: '00000000-0000-0000-0000-000000000000' } }],
@@ -78,6 +82,12 @@ describe('purchasing read contract', () => {
     expect(supplierDisplayOf(commandSummary as never)).toBeNull()
     expect(supplierDisplayOf({ ...summary, supplierDisplay: { ...supplierDisplay, partyId: COMPANY_GDC } } as never)).toBeNull()
     expect(supplierDisplayOf({ ...summary, supplierDisplay: { ...supplierDisplay, code: '' } } as never)).toBeNull()
+    expect(supplierDisplayOf({ ...summary, supplierDisplay: { ...supplierDisplay, tradeName: '  ' } } as never)).toBeNull()
+  })
+
+  it('checks the identity without rewriting it: surrounding spaces are kept exactly as sent', () => {
+    const padded = { ...supplierDisplay, code: ' CAR-000042 ', legalName: ' Örnek A.Ş. ', tradeName: ' Örnek ' }
+    expect(decodePurchaseOrderDetail({ order: { ...summary, supplierDisplay: padded }, lines: [line] })?.order.supplierDisplay).toEqual(padded)
   })
 
   it('decodes exact immutable acceptance history in details and command responses', () => {

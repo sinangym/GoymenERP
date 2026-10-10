@@ -256,17 +256,23 @@ const SUMMARY_FIELDS = [
   'sourceRequestId', 'effectiveOn', 'createdAtUtc', 'updatedAtUtc', 'lineCount',
 ] as const
 
+/** A string with something other than whitespace in it — the producer's own `IsNullOrWhiteSpace` rule. */
+function nonBlankText(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0
+}
+
 /**
- * The exact #661 supplier identity: a real party id, a non-empty code and legal name, and a trade name that is a
- * string or null. Anything missing, extra or mistyped is refused; nothing is defaulted.
+ * The exact #661 supplier identity: a real party id, a code and a legal name that are not blank, and a trade name
+ * that is either null or not blank. Anything missing, extra, mistyped or whitespace-only is refused. The values are
+ * checked, never trimmed or defaulted: what is shown is exactly what the server sent.
  */
 function decodeSupplierDisplay(value: unknown): PurchasingSupplierDisplay | null {
   const source = record(value)
   if (
     source === null ||
     !exact(source, ['partyId', 'code', 'legalName', 'tradeName']) ||
-    !guid(source.partyId) || !text(source.code) || !text(source.legalName) ||
-    (source.tradeName !== null && typeof source.tradeName !== 'string')
+    !guid(source.partyId) || !nonBlankText(source.code) || !nonBlankText(source.legalName) ||
+    (source.tradeName !== null && !nonBlankText(source.tradeName))
   ) return null
   return source as unknown as PurchasingSupplierDisplay
 }
