@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { decodeInventoryStockPositions } from './contract'
-import { decodeStockDisplayPage, decodeStockLocationDisplayPage } from './stockDisplayContract'
+import { decodeStockDisplayPage, decodeStockLocationDisplayPage, decodeStockOwnerDisplayPage } from './stockDisplayContract'
 
 /**
  * Fixtures are the #597 producer's own values (contract pin d821e6b8):
@@ -330,6 +330,111 @@ describe('decodeStockLocationDisplayPage — #607 2.0 page', () => {
   it('keeps the two shapes apart: 2.0 never accepts a 1.0 row, 1.0 never accepts a 2.0 row', () => {
     expect(decodeStockLocationDisplayPage(page())).toBeNull()
     expect(decodeStockDisplayPage(page2())).toBeNull()
+    expect(decodeStockDisplayPage(page())).not.toBeNull()
+  })
+})
+
+/**
+ * STOCK-OWNER-DISPLAY-3: the `3.0` page (#664, `X-ERP-Inventory-Stock-Display: 3.0`). Every `2.0` member stays as it
+ * is; a `3.0` row adds the required-nullable `ownerDisplay` — the Cari owner's identity bound to the row's own
+ * `ownerId`, and null exactly when the owner is a Company.
+ */
+describe('decodeStockOwnerDisplayPage — #664 3.0 page', () => {
+  const COUNTERPARTY = '88888888-8888-4888-8888-888888888888'
+  const LONG_LEGAL = 'KARADENİZ ÇELİK DÖKÜM MAKİNA İMALAT SANAYİ VE DIŞ TİCARET ANONİM ŞİRKETİ GEBZE ŞUBESİ'
+  const location = () => ({ locationId: LOCATION, locationCode: 'HOL-1', locationName: 'Hol 1 · Boy kesme' })
+  const owner = (overrides: Record<string, unknown> = {}) => ({
+    partyId: COUNTERPARTY, code: 'CAR-000042', legalName: LONG_LEGAL, tradeName: 'Karadeniz Döküm', ...overrides,
+  })
+  /** A Company-owned `3.0` row: the `2.0` row plus a null owner display. */
+  const companyRow = (overrides: Record<string, unknown> = {}) => ({ ...row(), locationDisplay: location(), ownerDisplay: null, ...overrides })
+  /** A Cari-owned `3.0` row with its bound identity. */
+  const cariRow = (overrides: Record<string, unknown> = {}) => companyRow({
+    labelId: '22222222-2222-4222-8222-222222222223', ownerKind: 'Counterparty', ownerId: COUNTERPARTY, ownerDisplay: owner(), ...overrides,
+  })
+  const page3 = (items: unknown[] = [companyRow()], overrides: Record<string, unknown> = {}) =>
+    ({ items, searchWindowFull: false, nextCursor: null, ...overrides })
+
+  it('decodes the 3.0 row: every 2.0 member as the 2.0 decoder reads it, plus the owner display', () => {
+    const decoded = decodeStockOwnerDisplayPage(page3([companyRow(), cariRow()]))
+    expect(decoded?.items.map((item) => item.ownerDisplay)).toEqual([null, owner()])
+    const { ownerDisplay: _o, ...rest } = decoded!.items[0]
+    const { ownerDisplay: _raw, ...wire } = companyRow()
+    expect(rest).toEqual(decodeStockLocationDisplayPage({ items: [wire], searchWindowFull: false, nextCursor: null })!.items[0])
+    expect(decodeStockOwnerDisplayPage(page3([], { nextCursor: 'opaque' }))?.nextCursor).toBe('opaque')
+    const { nextCursor: _c, ...noCursor } = page3()
+    expect(decodeStockOwnerDisplayPage(noCursor)?.nextCursor).toBeNull()
+  })
+
+  it('keeps a long Turkish legal name, the code and the trade name exactly as published — nothing trimmed', () => {
+    const padded = owner({ code: ' CAR-000042 ', legalName: ` ${LONG_LEGAL} `, tradeName: ' Karadeniz ' })
+    expect(decodeStockOwnerDisplayPage(page3([cariRow({ ownerDisplay: padded })]))?.items[0].ownerDisplay).toEqual(padded)
+  })
+
+  it('accepts a null trade name and any string the Cari owner publishes for it', () => {
+    for (const tradeName of [null, '', '   ', LONG_LEGAL]) {
+      expect(decodeStockOwnerDisplayPage(page3([cariRow({ ownerDisplay: owner({ tradeName }) })]))?.items[0].ownerDisplay?.tradeName).toBe(tradeName)
+    }
+  })
+
+  it('accepts the party id in another letter case, still bound to the row', () => {
+    expect(decodeStockOwnerDisplayPage(page3([cariRow({ ownerDisplay: owner({ partyId: COUNTERPARTY.toUpperCase() }) })]))).not.toBeNull()
+  })
+
+  it.each([
+    ['a missing ownerDisplay key (the 2.0 shape)', (r: Record<string, unknown>) => { delete r.ownerDisplay }],
+    ['an undefined ownerDisplay', (r: Record<string, unknown>) => { r.ownerDisplay = undefined }],
+    ['a Cari owner with a null display', (r: Record<string, unknown>) => { r.ownerDisplay = null }],
+    ['a display of another party', (r: Record<string, unknown>) => { r.ownerDisplay = owner({ partyId: '99999999-9999-4999-8999-999999999999' }) }],
+    ['a display naming the company', (r: Record<string, unknown>) => { r.ownerDisplay = owner({ partyId: COMPANY }) }],
+    ['a nil party id', (r: Record<string, unknown>) => { r.ownerDisplay = owner({ partyId: '00000000-0000-0000-0000-000000000000' }) }],
+    ['a party id that is not a GUID', (r: Record<string, unknown>) => { r.ownerDisplay = owner({ partyId: 'CAR-000042' }) }],
+    ['a null code', (r: Record<string, unknown>) => { r.ownerDisplay = owner({ code: null }) }],
+    ['a blank code', (r: Record<string, unknown>) => { r.ownerDisplay = owner({ code: '  ' }) }],
+    ['a code that is not text', (r: Record<string, unknown>) => { r.ownerDisplay = owner({ code: 42 }) }],
+    ['a null legal name', (r: Record<string, unknown>) => { r.ownerDisplay = owner({ legalName: null }) }],
+    ['a blank legal name', (r: Record<string, unknown>) => { r.ownerDisplay = owner({ legalName: '' }) }],
+    ['a trade name that is not text', (r: Record<string, unknown>) => { r.ownerDisplay = owner({ tradeName: 7 }) }],
+    ['a missing trade name', (r: Record<string, unknown>) => { const { tradeName: _t, ...rest } = owner(); r.ownerDisplay = rest }],
+    ['an unknown member in the display', (r: Record<string, unknown>) => { r.ownerDisplay = owner({ taxNumber: '1' }) }],
+    ['a display that is an array', (r: Record<string, unknown>) => { r.ownerDisplay = [owner()] }],
+    ['a display that is text', (r: Record<string, unknown>) => { r.ownerDisplay = 'CAR-000042' }],
+  ])('refuses the whole page for a Cari row with %s', (_, mutate) => {
+    const bad: Record<string, unknown> = cariRow()
+    mutate(bad)
+    expect(decodeStockOwnerDisplayPage(page3([bad]))).toBeNull()
+    // One bad row refuses the page: a good row beside it is not shown either.
+    expect(decodeStockOwnerDisplayPage(page3([companyRow(), bad]))).toBeNull()
+  })
+
+  it.each([
+    ['a Cari identity', owner()],
+    ['an identity naming the company itself', owner({ partyId: COMPANY })],
+    ['an empty object', {}],
+    ['text', 'Şirket malı'],
+  ])('refuses a Company row carrying %s: a company owner has no display', (_, ownerDisplay) => {
+    expect(decodeStockOwnerDisplayPage(page3([companyRow({ ownerDisplay })]))).toBeNull()
+  })
+
+  it('applies every 2.0 and 1.0 rule to a 3.0 row', () => {
+    expect(decodeStockOwnerDisplayPage(page3([companyRow({ availableKg: '6' })]))).toBeNull()
+    expect(decodeStockOwnerDisplayPage(page3([companyRow({ locationDisplay: null })]))).toBeNull()
+    expect(decodeStockOwnerDisplayPage(page3([companyRow({ locationDisplay: { ...location(), locationId: PRODUCT } })]))).toBeNull()
+    expect(decodeStockOwnerDisplayPage(page3([companyRow({ productDisplay: { ...productDisplay(), expectedProductVersion: '8' } })]))).toBeNull()
+    expect(decodeStockOwnerDisplayPage(page3([companyRow({ extra: true })]))).toBeNull()
+    expect(decodeStockOwnerDisplayPage(page3([companyRow(), companyRow()]))).toBeNull()
+  })
+
+  it('keeps the three shapes apart: no decoder accepts another version\'s row', () => {
+    const v3 = page3([companyRow()])
+    const { ownerDisplay: _o, ...row2 } = companyRow()
+    const v2 = { items: [row2], searchWindowFull: false, nextCursor: null }
+    expect(decodeStockOwnerDisplayPage(v2)).toBeNull()
+    expect(decodeStockOwnerDisplayPage(page())).toBeNull()
+    expect(decodeStockLocationDisplayPage(v3)).toBeNull()
+    expect(decodeStockDisplayPage(v3)).toBeNull()
+    // The older decoders still read their own shapes, unchanged.
+    expect(decodeStockLocationDisplayPage(v2)).not.toBeNull()
     expect(decodeStockDisplayPage(page())).not.toBeNull()
   })
 })

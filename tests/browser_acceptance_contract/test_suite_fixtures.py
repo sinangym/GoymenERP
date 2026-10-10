@@ -114,8 +114,29 @@ class FixtureListTests(unittest.TestCase):
                 "companyId", "otherCompanyId",
                 "locationId", "productId", "productVersion", "productUnitId",
                 "productUnitProfileId", "productUnitProfileVersion", "productCode", "productName",
+                # STOCK-OWNER-DISPLAY-3: the seed's one synthetic Cari owner and its GDC account.
+                "ownerPartyId", "ownerCompanyAccountId",
             }),
             browser.SUITE_FIXTURE_OUTPUTS["r14"])
+
+    def test_r14_owner_outputs_are_guids_only_and_part_of_the_closed_environment_contract(self):
+        keys = frozenset({"ownerPartyId", "ownerCompanyAccountId"})
+        good = {
+            "ownerPartyId": "c0100000-0000-4000-8000-000000000001",
+            "ownerCompanyAccountId": "c0200000-0000-4000-8000-000000000001",
+        }
+        with mock.patch.dict(browser.SUITE_FIXTURE_OUTPUTS, {"r14": keys}):
+            self.assertIn('"ownerPartyId":"c0100000-0000-4000-8000-000000000001"', browser.seed_export("r14", good))
+            for key in sorted(keys):
+                for value in ("CAR-000001", "SENTETIK browser-suite:r14 Cari", "00000000-0000-0000-0000-000000000000",
+                              "r14-recorder"):
+                    with self.subTest(key=key, value=value):
+                        with self.assertRaises(browser.ContractError):
+                            browser.seed_export("r14", {**good, key: value})
+        source = (ROOT / "tests/e2e/inventory-r14/src/env.ts").read_text(encoding="utf-8")
+        for key in sorted(keys):
+            self.assertIn(f"'{key}'", source)
+            self.assertIn(f"{key}: text(raw, '{key}', GUID)", source)
 
     def test_a_read_only_suite_cannot_have_a_fixture(self):
         with mock.patch.dict(browser.SUITE_FIXTURE_OUTPUTS, {"c03": frozenset({"partyId"})}):

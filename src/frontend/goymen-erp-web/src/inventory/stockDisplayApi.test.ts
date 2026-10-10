@@ -30,6 +30,16 @@ function row(companyId = COMPANY) {
     },
     // STOCK-LOCATION-2: the 2.0 row's Organization display of its own location (#607).
     locationDisplay: { locationId: LOCATION, locationCode: 'HOL-1', locationName: 'Hol 1 · Boy kesme' },
+    // STOCK-OWNER-DISPLAY-3: the 3.0 row's owner display (#664) — null for a Company owner.
+    ownerDisplay: null as unknown,
+  }
+}
+
+/** The same row owned by a Cari, with the identity the 3.0 read binds to that owner. */
+function counterpartyRow() {
+  return {
+    ...row(), ownerKind: 'Counterparty', ownerId: COUNTERPARTY,
+    ownerDisplay: { partyId: COUNTERPARTY, code: 'CAR-000042', legalName: 'Çağlayan Öğütücü Sanayi A.Ş.', tradeName: 'Çağlayan' },
   }
 }
 
@@ -90,7 +100,7 @@ describe('fetchStockDisplayPage — the #597 opt-in read', () => {
     const { url, headers, init } = requested()
     expect(url.pathname).toBe('/api/v1/inventory/positions')
     expect(url.search).toBe('?q=ROLL&limit=25')
-    expect(headers.get(STOCK_DISPLAY_HEADER)).toBe('2.0')
+    expect(headers.get(STOCK_DISPLAY_HEADER)).toBe('3.0')
     expect(headers.get('X-Company-Id')).toBe(COMPANY)
     expect(init.cache).toBe('no-store')
   })
@@ -107,7 +117,7 @@ describe('fetchStockDisplayPage — the #597 opt-in read', () => {
   })
 
   it('refuses the previously published shape when the opt-in shape was asked for', async () => {
-    const { productVersion: _v, classification: _c, productDisplay: _d, ...legacy } = row()
+    const { productVersion: _v, classification: _c, productDisplay: _d, locationDisplay: _l, ownerDisplay: _o, ...legacy } = row()
     fetchMock.mockResolvedValue(json(200, { items: [legacy], searchWindowFull: false }))
     expect(await fetchStockDisplayPage(COMPANY, NO_STOCK_FILTERS, null)).toEqual({ type: 'malformed' })
   })
@@ -117,7 +127,7 @@ describe('fetchStockDisplayPage — the #597 opt-in read', () => {
     fetchMock.mockResolvedValue(json(status, problem))
     expect(await fetchStockDisplayPage(COMPANY, NO_STOCK_FILTERS, null)).toEqual({ type: 'http', status, body: problem })
     expect(fetchMock).toHaveBeenCalledTimes(1)
-    expect(requested().headers.get(STOCK_DISPLAY_HEADER)).toBe('2.0')
+    expect(requested().headers.get(STOCK_DISPLAY_HEADER)).toBe('3.0')
   })
 
   it('does not send a request for a filter the server would refuse', async () => {
@@ -136,9 +146,9 @@ describe('fetchStockDisplayPage — the #597 opt-in read', () => {
   })
 })
 
-/** STOCK-LOCATION-2: the screen selects the #607 `2.0` shape and accepts nothing else for it. */
-describe('fetchStockDisplayPage — the 2.0 (Product + Location) selection', () => {
-  it('returns the row with its location display, from one request carrying exactly one 2.0 selector', async () => {
+/** STOCK-LOCATION-2 members stay part of the read: the `3.0` row is the `2.0` row plus the owner display. */
+describe('fetchStockDisplayPage — the location display inside the 3.0 selection', () => {
+  it('returns the row with its location display, from one request carrying exactly one 3.0 selector', async () => {
     fetchMock.mockResolvedValue(json(200, { items: [row()], searchWindowFull: false, nextCursor: 'next-1' }))
     const outcome = await fetchStockDisplayPage(COMPANY, { ...NO_STOCK_FILTERS, locationId: LOCATION }, 'opaque-1')
     expect(outcome.type === 'ok-single' && outcome.data.items[0].locationDisplay)
@@ -146,19 +156,59 @@ describe('fetchStockDisplayPage — the 2.0 (Product + Location) selection', () 
     expect(outcome.type === 'ok-single' && outcome.data.nextCursor).toBe('next-1')
     expect(fetchMock).toHaveBeenCalledTimes(1)
     const { url, headers } = requested()
-    expect(headers.get(STOCK_DISPLAY_HEADER)).toBe('2.0')
+    expect(headers.get(STOCK_DISPLAY_HEADER)).toBe('3.0')
     expect(url.searchParams.get('cursor')).toBe('opaque-1')
     expect(url.searchParams.get('locationId')).toBe(LOCATION)
   })
 
   it.each([
-    ['the 1.0 (Product-only) shape', () => { const { locationDisplay: _d, ...productOnly } = row(); return productOnly }],
+    ['the 1.0 (Product-only) shape', () => { const { locationDisplay: _d, ownerDisplay: _o, ...productOnly } = row(); return productOnly }],
     ['a null location display', () => ({ ...row(), locationDisplay: null })],
     ['a display of another location', () => ({ ...row(), locationDisplay: { locationId: PRODUCT, locationCode: 'X', locationName: 'Y' } })],
   ])('answers %s as malformed — no silent 1.0 or legacy fallback, no second request', async (_, body) => {
     fetchMock.mockResolvedValue(json(200, { items: [body()], searchWindowFull: false, nextCursor: null }))
     expect(await fetchStockDisplayPage(COMPANY, NO_STOCK_FILTERS, null)).toEqual({ type: 'malformed' })
     expect(fetchMock).toHaveBeenCalledTimes(1)
-    expect(requested().headers.get(STOCK_DISPLAY_HEADER)).toBe('2.0')
+    expect(requested().headers.get(STOCK_DISPLAY_HEADER)).toBe('3.0')
+  })
+})
+
+/** STOCK-OWNER-DISPLAY-3: the screen selects the #664 `3.0` shape, strictly, and accepts nothing else for it. */
+describe('fetchStockDisplayPage — the 3.0 (Product + Location + Owner) selection', () => {
+  it('sends the selector exactly once, as 3.0, and never a second or fallback selector', async () => {
+    fetchMock.mockResolvedValue(json(200, { items: [row()], searchWindowFull: false, nextCursor: null }))
+    await fetchStockDisplayPage(COMPANY, NO_STOCK_FILTERS, null)
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    const sent = Object.entries(init.headers as Record<string, string>).filter(([name]) => name.toLowerCase() === STOCK_DISPLAY_HEADER.toLowerCase())
+    expect(sent).toEqual([[STOCK_DISPLAY_HEADER, '3.0']])
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('reads a Company owner with a null display and a Cari owner with its exact identity, in one request', async () => {
+    const second = { ...counterpartyRow(), labelId: '22222222-2222-4222-8222-222222222223', labelCode: 'ROLL-2' }
+    fetchMock.mockResolvedValue(json(200, { items: [row(), second], searchWindowFull: false, nextCursor: null }))
+    const outcome = await fetchStockDisplayPage(COMPANY, { ...NO_STOCK_FILTERS, owner: { kind: 'Counterparty', id: COUNTERPARTY } }, null)
+    expect(outcome.type === 'ok-single' && outcome.data.items.map((item) => item.ownerDisplay)).toEqual([
+      null,
+      { partyId: COUNTERPARTY, code: 'CAR-000042', legalName: 'Çağlayan Öğütücü Sanayi A.Ş.', tradeName: 'Çağlayan' },
+    ])
+    // The identity arrives with the page: one read, and the owner filter is still the row's exact id.
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(requested().url.searchParams.get('ownerId')).toBe(COUNTERPARTY)
+    expect(requested().url.pathname).toBe('/api/v1/inventory/positions')
+  })
+
+  it.each([
+    ['the 2.0 shape (no ownerDisplay key)', () => { const { ownerDisplay: _o, ...location } = row(); return location }],
+    ['a Company owner carrying a display', () => ({ ...row(), ownerDisplay: counterpartyRow().ownerDisplay })],
+    ['a Cari owner with a null display', () => ({ ...counterpartyRow(), ownerDisplay: null })],
+    ['a Cari display bound to another party', () => ({ ...counterpartyRow(), ownerDisplay: { ...counterpartyRow().ownerDisplay, partyId: PRODUCT } })],
+    ['a Cari display with a blank code', () => ({ ...counterpartyRow(), ownerDisplay: { ...counterpartyRow().ownerDisplay, code: '  ' } })],
+    ['a Cari display with an extra member', () => ({ ...counterpartyRow(), ownerDisplay: { ...counterpartyRow().ownerDisplay, taxNumber: '1' } })],
+  ])('answers %s as malformed — no 2.0, 1.0 or legacy fallback, no second request', async (_, body) => {
+    fetchMock.mockResolvedValue(json(200, { items: [body()], searchWindowFull: false, nextCursor: null }))
+    expect(await fetchStockDisplayPage(COMPANY, NO_STOCK_FILTERS, null)).toEqual({ type: 'malformed' })
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(requested().headers.get(STOCK_DISPLAY_HEADER)).toBe('3.0')
   })
 })

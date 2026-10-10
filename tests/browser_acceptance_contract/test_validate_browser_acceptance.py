@@ -1130,6 +1130,9 @@ class WorkflowTests(unittest.TestCase):
                 # ST-02 scrap write-off: record held only by r14-scrapper, approve only by r14-scrap-approver.
                 "inventory.stock-scrap.record",
                 "inventory.stock-scrap.approve",
+                # STOCK-OWNER-DISPLAY-3: read held only by the disposable r14-recorder, create only by r14-arranger.
+                "counterparty.parties.read",
+                "counterparty.parties.create",
             ),
             validator.SUITE_IDENTITY_PERMISSIONS["r14"],
         )
@@ -1147,7 +1150,24 @@ class WorkflowTests(unittest.TestCase):
         }
         self.assertEqual("inventory.label-classification.write", recorder[6])
         self.assertEqual("organization.locations.read", recorder[7])
+        self.assertEqual("counterparty.parties.read", recorder[8])
+        self.assertEqual(9, len(recorder))
         self.assertNotIn("inventory.label-classification.write", denied.values())
+        arranger = {
+            int(index): permission
+            for index, permission in re.findall(
+                r"IdentitySeed__Roles__7__Permissions__(\d+): ([^\r\n]+)", source)
+        }
+        self.assertEqual({0: "organization.locations.read", 1: "counterparty.parties.create"}, arranger)
+        # One holder each: no other R14 role carries either Cari name.
+        for role_index in range(5, 13):
+            role_permissions = [
+                permission
+                for _, permission in re.findall(
+                    rf"IdentitySeed__Roles__{role_index}__Permissions__(\d+): ([^\r\n]+)", source)
+            ]
+            self.assertEqual(role_index == 5, "counterparty.parties.read" in role_permissions)
+            self.assertEqual(role_index == 7, "counterparty.parties.create" in role_permissions)
         for role_index in range(8, 13):
             role_permissions = {
                 permission
@@ -1183,15 +1203,49 @@ class WorkflowTests(unittest.TestCase):
                 environment[match.group(1)] = json.loads(raw) if raw.startswith('"') else raw
         validator.validate_suite_extensions("r14", environment)
 
+        # The recorder without its location read: the remaining names stay contiguous, so the refusal is the exact
+        # recorder pin and not the generic index rule.
         missing_location_read = dict(environment)
-        del missing_location_read["IdentitySeed__Roles__5__Permissions__7"]
+        missing_location_read["IdentitySeed__Roles__5__Permissions__7"] = "counterparty.parties.read"
+        del missing_location_read["IdentitySeed__Roles__5__Permissions__8"]
         with self.assertRaisesRegex(validator.ContractError, "r14-recorder requires its exact isolated permissions"):
             validator.validate_suite_extensions("r14", missing_location_read)
+
+        missing_cari_read = dict(environment)
+        del missing_cari_read["IdentitySeed__Roles__5__Permissions__8"]
+        with self.assertRaisesRegex(validator.ContractError, "r14-recorder requires its exact isolated permissions"):
+            validator.validate_suite_extensions("r14", missing_cari_read)
 
         leaked_to_counter = dict(environment)
         leaked_to_counter["IdentitySeed__Roles__9__Permissions__4"] = "organization.locations.read"
         with self.assertRaisesRegex(validator.ContractError, "only r14-recorder and the dedicated arranger"):
             validator.validate_suite_extensions("r14", leaked_to_counter)
+
+        # STOCK-OWNER-DISPLAY-3: each Cari name has exactly one disposable holder.
+        cari_read_leaked_to_counter = dict(environment)
+        cari_read_leaked_to_counter["IdentitySeed__Roles__9__Permissions__4"] = "counterparty.parties.read"
+        with self.assertRaisesRegex(validator.ContractError, "only r14-recorder may hold the Cari read"):
+            validator.validate_suite_extensions("r14", cari_read_leaked_to_counter)
+
+        cari_create_leaked_to_counter = dict(environment)
+        cari_create_leaked_to_counter["IdentitySeed__Roles__9__Permissions__4"] = "counterparty.parties.create"
+        with self.assertRaisesRegex(validator.ContractError, "only the dedicated r14-arranger may hold the Cari create"):
+            validator.validate_suite_extensions("r14", cari_create_leaked_to_counter)
+
+        cari_create_leaked_to_recorder = dict(environment)
+        cari_create_leaked_to_recorder["IdentitySeed__Roles__5__Permissions__9"] = "counterparty.parties.create"
+        with self.assertRaisesRegex(validator.ContractError, "r14-recorder requires its exact isolated permissions"):
+            validator.validate_suite_extensions("r14", cari_create_leaked_to_recorder)
+
+        arranger_with_cari_read = dict(environment)
+        arranger_with_cari_read["IdentitySeed__Roles__7__Permissions__2"] = "counterparty.parties.read"
+        with self.assertRaisesRegex(validator.ContractError, "r14-arranger requires its exact isolated permissions"):
+            validator.validate_suite_extensions("r14", arranger_with_cari_read)
+
+        arranger_without_cari_create = dict(environment)
+        del arranger_without_cari_create["IdentitySeed__Roles__7__Permissions__1"]
+        with self.assertRaisesRegex(validator.ContractError, "r14-arranger requires its exact isolated permissions"):
+            validator.validate_suite_extensions("r14", arranger_without_cari_create)
 
     def _trigger_block(self) -> str:
         return self.workflow.split("\non:\n", 1)[1].split("\npermissions:\n", 1)[0]

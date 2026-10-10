@@ -103,6 +103,31 @@ export interface StockLocationDisplayPage {
   readonly nextCursor: string | null
 }
 
+/**
+ * STOCK-OWNER-DISPLAY-3: the Cari owner's identity of a row's Counterparty owner, as the #664 producer publishes it in
+ * the `3.0` response (`InventoryStockOwnerDisplayV1`). Bound to the row's `ownerId`; never looked up or guessed here.
+ */
+export interface StockOwnerDisplay {
+  readonly partyId: string
+  readonly code: string
+  readonly legalName: string
+  readonly tradeName: string | null
+}
+
+/**
+ * A `3.0` row: every `2.0` member unchanged, plus the required-nullable owner display — the Counterparty owner's
+ * identity, and null exactly when the owner is a Company.
+ */
+export interface StockOwnerDisplayRow extends StockLocationDisplayRow {
+  readonly ownerDisplay: StockOwnerDisplay | null
+}
+
+export interface StockOwnerDisplayPage {
+  readonly items: readonly StockOwnerDisplayRow[]
+  readonly searchWindowFull: boolean
+  readonly nextCursor: string | null
+}
+
 type JsonObject = Record<string, unknown>
 
 const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -303,4 +328,44 @@ function locationRowOf(value: unknown): StockLocationDisplayRow | null {
  */
 export function decodeStockLocationDisplayPage(value: unknown): StockLocationDisplayPage | null {
   return pageOf(value, locationRowOf)
+}
+
+const OWNER_ROW_KEYS = [...LOCATION_ROW_KEYS, 'ownerDisplay'] as const
+
+/**
+ * The row's owner display under the `3.0` rule, or `undefined` when it breaks it:
+ * - a Company owner carries exactly `null`;
+ * - a Counterparty owner carries exactly the four members, with a `partyId` that is the row's own `ownerId`, a code
+ *   and a legal name that are not blank, and a trade name that is a string or null.
+ * The values are checked, never trimmed or rewritten.
+ */
+function ownerDisplayOf(value: unknown, ownerKind: StockPartyKind, ownerId: string): StockOwnerDisplay | null | undefined {
+  if (ownerKind === 'Company') return value === null ? null : undefined
+  const source = record(value)
+  if (source === null || !exact(source, ['partyId', 'code', 'legalName', 'tradeName']) ||
+    !guid(source.partyId) || source.partyId.toLowerCase() !== ownerId.toLowerCase() ||
+    !text(source.code) || !text(source.legalName) ||
+    !(source.tradeName === null || typeof source.tradeName === 'string')) return undefined
+  return { partyId: source.partyId, code: source.code, legalName: source.legalName, tradeName: source.tradeName }
+}
+
+function ownerRowOf(value: unknown): StockOwnerDisplayRow | null {
+  const source = record(value)
+  // The key must be present: a missing `ownerDisplay` is not the same answer as a null one.
+  if (source === null || !exact(source, OWNER_ROW_KEYS)) return null
+  const { ownerDisplay: rawOwnerDisplay, ...locationRow } = source
+  const row = locationRowOf(locationRow)
+  if (row === null) return null
+  const ownerDisplay = ownerDisplayOf(rawOwnerDisplay, row.ownerKind, row.ownerId)
+  return ownerDisplay === undefined ? null : { ...row, ownerDisplay }
+}
+
+/**
+ * The `3.0` (Product + Location + Owner) opt-in page (#664): the `2.0` rules unchanged for every row, plus the
+ * required-nullable `ownerDisplay`. A missing key, a Company row with a display, a Counterparty row without one, or a
+ * blank, foreign, mistyped or extra member refuses the whole page. The `1.0` and `2.0` decoders above are never used
+ * for a `3.0` answer, and a `2.0` answer is never accepted here.
+ */
+export function decodeStockOwnerDisplayPage(value: unknown): StockOwnerDisplayPage | null {
+  return pageOf(value, ownerRowOf)
 }

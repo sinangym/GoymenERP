@@ -143,6 +143,39 @@ public sealed class BrowserSuiteHostEnvelopeTests
         }
     }
 
+    [Fact]
+    public void R14_stock_owner_outputs_are_lowercase_guids_and_never_a_name_code_or_actor()
+    {
+        BrowserSuiteSeedOutputValidator.Validate(
+            "r14",
+            new Dictionary<string, string>
+            {
+                ["ownerPartyId"] = "c0100000-0000-4000-8000-000000000001",
+                ["ownerCompanyAccountId"] = "c0200000-0000-4000-8000-000000000001",
+            },
+            new HashSet<string>(StringComparer.Ordinal));
+
+        foreach (var key in new[] { "ownerPartyId", "ownerCompanyAccountId" })
+        {
+            foreach (var value in new[]
+                     {
+                         "CAR-000001",
+                         "SENTETIK browser-suite:r14 Karadeniz Döküm Fason",
+                         "C0100000-0000-4000-8000-000000000001",
+                         "00000000-0000-0000-0000-000000000000",
+                         "SAC-1",
+                         "2",
+                         "r14-recorder",
+                     })
+            {
+                Assert.Throws<InvalidOperationException>(() => BrowserSuiteSeedOutputValidator.Validate(
+                    "r14",
+                    new Dictionary<string, string> { [key] = value },
+                    new HashSet<string>(["r14-recorder"], StringComparer.Ordinal)));
+            }
+        }
+    }
+
     [Theory]
     [InlineData("productCode", "10000000-0000-0000-0000-000000000001")]
     [InlineData("productName", "r14-recorder")]
