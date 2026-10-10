@@ -19,6 +19,7 @@ const scenario = vi.hoisted(() => ({
   lines: [] as PurchaseOrderLine[],
   acceptances: [] as PurchaseOrderAcceptanceHistory[],
   documentMounts: [] as Array<Record<string, unknown>>,
+  supplierDisplay: undefined as unknown,
 }))
 const COMPANY = '22222222-2222-4222-8222-222222222222'
 const ORDER = '11111111-1111-4111-8111-111111111111'
@@ -54,7 +55,14 @@ function summary() {
     createdAtUtc: '2026-09-23T09:00:00Z',
     updatedAtUtc: '2026-09-23T09:00:00Z',
     lineCount: scenario.lines.length,
+    ...(scenario.supplierDisplay === undefined ? {} : { supplierDisplay: scenario.supplierDisplay }),
   }
+}
+
+const SUPPLIER_PARTY = '44444444-4444-4444-8444-444444444444'
+const LONG_LEGAL = 'KARADENİZ ÇELİK DÖKÜM MAKİNA İMALAT SANAYİ VE DIŞ TİCARET ANONİM ŞİRKETİ GEBZE ORGANİZE SANAYİ BÖLGESİ ŞUBESİ'
+function supplier(over: Record<string, unknown> = {}) {
+  return { partyId: SUPPLIER_PARTY, code: 'CAR-000042', legalName: LONG_LEGAL, tradeName: 'Karadeniz Döküm', ...over }
 }
 
 vi.mock('../shell/shellContext', () => ({
@@ -150,7 +158,95 @@ beforeEach(() => {
   scenario.lines = []
   scenario.acceptances = []
   scenario.documentMounts = []
+  scenario.supplierDisplay = supplier()
   sessionStorage.clear()
+})
+
+describe('PurchaseOrderDetailPage record-bound supplier identity (#661)', () => {
+  it('shows the supplier code, the whole long legal name and the trade name beside the existing id facts', () => {
+    renderDetail()
+    const identity = screen.getByTestId('purchase-order-supplier-identity')
+    expect(identity.textContent).toContain(`CAR-000042 — ${LONG_LEGAL}`)
+    expect(identity.textContent).toContain(`${T.supplierTradeName}: Karadeniz Döküm`)
+    expect(identity.textContent).not.toContain('…')
+    // The #660 id facts stay exactly where the browser acceptance reads them.
+    const facts = screen.getByTestId('purchase-order-supplier-facts')
+    expect(facts.contains(identity)).toBe(true)
+    expect(facts.textContent).toContain(SUPPLIER_PARTY)
+    expect(facts.textContent).toContain('55555555-5555-4555-8555-555555555555')
+  })
+
+  it('links to the Cari card only with cari.parties.detail', () => {
+    scenario.capabilities = ['cari.parties.detail']
+    renderDetail()
+    const link = screen.getByRole('link', { name: `CAR-000042 — ${LONG_LEGAL}` })
+    expect(link.getAttribute('href')).toBe(`/cari/${SUPPLIER_PARTY}`)
+  })
+
+  it('is plain text without that capability, whatever else the reader holds', () => {
+    scenario.capabilities = ['purchasing.orders.detail', 'cari.parties.list']
+    renderDetail()
+    const identity = screen.getByTestId('purchase-order-supplier-identity')
+    expect(identity.textContent).toContain(`CAR-000042 — ${LONG_LEGAL}`)
+    expect(identity.querySelector('a')).toBeNull()
+  })
+
+  it.each([
+    ['null', null],
+    ['the same as the legal name', LONG_LEGAL],
+  ])('shows the code and legal name with no separate trade-name line when the trade name is %s', (_name, tradeName) => {
+    scenario.capabilities = ['cari.parties.detail']
+    scenario.supplierDisplay = supplier({ tradeName })
+    renderDetail()
+    const identity = screen.getByTestId('purchase-order-supplier-identity')
+    // The identity itself is there, read from the record and linked — only the trade-name line is left out.
+    expect(identity.querySelector('[data-supplier-display="record"]')?.textContent).toBe(`CAR-000042 — ${LONG_LEGAL}`)
+    expect(identity.querySelector('[data-supplier-display="unavailable"]')).toBeNull()
+    expect(screen.getByRole('link', { name: `CAR-000042 — ${LONG_LEGAL}` }).getAttribute('href')).toBe(`/cari/${SUPPLIER_PARTY}`)
+    expect(identity.textContent).not.toContain(T.supplierTradeName)
+  })
+
+  it('treats a whitespace-only trade name as a malformed identity: unavailable, with no code, name or link', () => {
+    scenario.capabilities = ['cari.parties.detail']
+    scenario.supplierDisplay = supplier({ tradeName: '   ' })
+    renderDetail()
+    const identity = screen.getByTestId('purchase-order-supplier-identity')
+    expect(identity.querySelector('[data-supplier-display="unavailable"]')?.textContent).toBe(T.supplierUnavailable)
+    expect(identity.querySelector('[data-supplier-display="record"]')).toBeNull()
+    expect(identity.querySelector('a')).toBeNull()
+    expect(identity.textContent).not.toContain('CAR-000042')
+    expect(identity.textContent).not.toContain(LONG_LEGAL)
+    expect(identity.textContent).not.toContain(T.supplierTradeName)
+  })
+
+  it('never links or names a supplier from an answer for another company or order', () => {
+    scenario.capabilities = ['cari.parties.detail']
+    scenario.detailCompanyId = OTHER_COMPANY
+    renderDetail()
+    expect(screen.getByTestId('purchase-order-supplier-identity').querySelector('a')).toBeNull()
+  })
+
+  it.each([
+    ['absent', undefined],
+    ['bound to another party', { partyId: OTHER_ORDER, code: 'CAR-000042', legalName: 'Başka', tradeName: null }],
+    ['malformed', { partyId: SUPPLIER_PARTY, code: '', legalName: 'Adı var', tradeName: null }],
+  ])('says the identity could not be read when it is %s, and shows no name, link or id in its place', (_name, display) => {
+    scenario.capabilities = ['cari.parties.detail']
+    scenario.supplierDisplay = display
+    renderDetail()
+    const identity = screen.getByTestId('purchase-order-supplier-identity')
+    expect(identity.querySelector('[data-supplier-display="unavailable"]')?.textContent).toBe(T.supplierUnavailable)
+    expect(identity.querySelector('a')).toBeNull()
+    expect(identity.textContent).not.toContain('Başka')
+    expect(identity.textContent).not.toContain('Adı var')
+  })
+
+  it('keeps approval working: the command answers without a supplier identity and the order is re-read', async () => {
+    renderDetail()
+    await userEvent.click(screen.getByRole('button', { name: 'Onayla' }))
+    expect(await screen.findByRole('status')).toBeTruthy()
+    expect(screen.getByTestId('purchase-order-supplier-identity').textContent).toContain('CAR-000042')
+  })
 })
 
 describe('PurchaseOrderDetailPage document-vault mount', () => {

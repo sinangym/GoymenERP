@@ -14,6 +14,8 @@ import styles from './purchasing.module.css'
 import { GoodsReceiptPanel } from './GoodsReceiptPanel'
 import { PURCHASE_GOODS_RECEIPT_CAPABILITY } from './goodsReceiptContract'
 import { PURCHASE_ORDER_DETAIL_TEXT as T } from './purchaseOrderDetailText'
+import { PurchaseOrderSupplierIdentity } from './PurchaseOrderListPage'
+import { CAPABILITY } from '../shell/capabilities'
 import { DocumentsPanel } from '../documents/DocumentsPanel'
 import { OWNER_KIND } from '../documents/contract'
 import { Button } from '../ui/Button'
@@ -43,6 +45,7 @@ function PurchaseOrderDetail({ namespace }: { readonly namespace: string | null 
   const actorId = shell.activeContext?.userId ?? null
   const canApprove = hasCapability(shell, PURCHASING_CAPABILITY.orderApprove as never)
   const canReadSourceRequest = hasCapability(shell, PURCHASING_CAPABILITY.requestDetail as never)
+  const canOpenParty = hasCapability(shell, CAPABILITY.cariPartiesDetail)
   const storeKey = pendingApprovalKey(shell.sessionEpoch, actorId, companyId, orderId ?? '')
   const [attempt, setAttempt] = useState<
     | { readonly phase: 'idle' }
@@ -134,6 +137,7 @@ function PurchaseOrderDetail({ namespace }: { readonly namespace: string | null 
       </dl>
       <h3>{T.supplierHeading}</h3>
       <dl className={styles.order360Facts} data-testid="purchase-order-supplier-facts">
+        <div data-testid="purchase-order-supplier-identity"><dt>{T.supplierIdentity}</dt><dd><PurchaseOrderSupplierIdentity order={order} canOpenParty={canOpenParty && isCurrentDetail} /></dd></div>
         <div><dt>{T.supplierPartyId}</dt><dd className={styles.order360Identifier}>{order.supplierPartyId}</dd></div>
         <div><dt>{T.supplierAccountId}</dt><dd className={styles.order360Identifier}>{order.companyAccountId}</dd></div>
       </dl>

@@ -3,7 +3,9 @@ import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router'
 import { fetchPurchaseOrders } from './api'
 import { PURCHASING_CAPABILITY, PURCHASING_ROUTE, purchaseOrderDetailPath } from './capabilities'
-import type { PurchaseOrderStatus, PurchaseOrderSummary } from './contract'
+import { supplierDisplayOf, type PurchaseOrderStatus, type PurchaseOrderSummary } from './contract'
+import { PURCHASE_ORDER_DETAIL_TEXT as T } from './purchaseOrderDetailText'
+import { CAPABILITY, CAPABILITY_ROUTE } from '../shell/capabilities'
 import { classifyOutcome, type RemoteViewState } from '../shell/uiState'
 import { useShellState } from '../shell/shellContext'
 import { contextKey, contextKeyString, hasCapability } from '../shell/shellState'
@@ -13,6 +15,30 @@ import { createRequestFence } from './requestFence'
 import styles from './purchasing.module.css'
 
 const STATUS: Record<PurchaseOrderStatus, string> = { Draft: 'Taslak', Approved: 'Onaylandı' }
+
+/** The table's cells do not wrap; a supplier's legal name must, so it is never cut or pushed off the page. */
+const SUPPLIER_CELL = { whiteSpace: 'normal', overflowWrap: 'anywhere', minWidth: '14rem' } as const
+const SUPPLIER_LINE = { display: 'block' } as const
+
+/**
+ * The supplier bound to this order by the read DTO (#661): code and legal name, the trade name beneath when it adds
+ * something. It links to the Cari card only with that card's own capability; otherwise it is plain text. No lookup
+ * is made and no id is shown in place of a name — an order without a trustworthy identity says so.
+ */
+export function PurchaseOrderSupplierIdentity({ order, canOpenParty }: { readonly order: PurchaseOrderSummary; readonly canOpenParty: boolean }) {
+  const supplier = supplierDisplayOf(order)
+  if (supplier === null) return <span data-supplier-display="unavailable">{T.supplierUnavailable}</span>
+  const identity = `${supplier.code} — ${supplier.legalName}`
+  const tradeName = supplier.tradeName !== null && supplier.tradeName.trim() !== '' && supplier.tradeName !== supplier.legalName
+    ? supplier.tradeName
+    : null
+  return <span data-supplier-display="record">
+    <span style={SUPPLIER_LINE}>{canOpenParty
+      ? <Link to={CAPABILITY_ROUTE[CAPABILITY.cariPartiesDetail].replace(':partyId', encodeURIComponent(supplier.partyId))}>{identity}</Link>
+      : identity}</span>
+    {tradeName === null ? null : <span style={SUPPLIER_LINE}>{T.supplierTradeName}: {tradeName}</span>}
+  </span>
+}
 
 export function PurchaseOrderListPage() {
   const shell = useShellState()
@@ -27,6 +53,7 @@ function PurchaseOrderList({ namespace }: { readonly namespace: string | null })
   const companyId = shell.activeContext?.scopeMode === 'single' ? shell.activeContext.companyId : null
   const canOpen = hasCapability(shell, PURCHASING_CAPABILITY.orderDetail as never)
   const canCreate = hasCapability(shell, PURCHASING_CAPABILITY.orderCreate as never)
+  const canOpenParty = hasCapability(shell, CAPABILITY.cariPartiesDetail)
   const [status, setStatus] = useState<PurchaseOrderStatus | null>(null)
   const [more, setMore] = useState<readonly PurchaseOrderSummary[]>([])
   const [cursor, setCursor] = useState<string | null | undefined>(undefined)
@@ -76,5 +103,5 @@ function PurchaseOrderList({ namespace }: { readonly namespace: string | null })
     return <main className={styles.page}>{header}<StateBlock state={state as RemoteViewState<unknown>} subject="satın alma siparişleri" onRetry={() => void first.refetch()} /></main>
   }
   const rows = [...page.items, ...more]
-  return <main className={styles.page} data-testid="purchase-order-list">{header}<p className={styles.note}>Bu görünüm fiyat veya stok göstermez; yalnız satın alma taahhüdünün sunucuda kayıtlı durumunu gösterir.</p>{rows.length === 0 ? <StateBlock state={{ kind: status === null ? 'empty-no-data' : 'empty-filtered' }} subject="satın alma siparişleri" /> : <div className={styles.tableWrap}><table><caption>Şirketin satın alma siparişleri</caption><thead><tr><th>Sipariş</th><th>Durum</th><th>Tedarikçi hesabı</th><th>İş tarihi</th><th>Satır</th><th>Güncellendi</th></tr></thead><tbody>{rows.map((row) => <tr key={row.id}><th className={styles.mono}>{canOpen ? <Link to={purchaseOrderDetailPath(row.id)}>…{row.id.slice(-8)}</Link> : `…${row.id.slice(-8)}`}</th><td><span className={row.status === 'Approved' ? styles.approved : styles.draft}>{STATUS[row.status]}</span></td><td className={styles.mono}>…{row.companyAccountId.slice(-8)}</td><td>{row.effectiveOn}</td><td>{row.lineCount}</td><td>{new Date(row.updatedAtUtc).toLocaleString('tr-TR')}</td></tr>)}</tbody></table></div>}{nextCursor !== null ? <div>{continuation === 'loading' ? <p role="status">Sonraki sayfa yükleniyor…</p> : continuation === 'idle' ? <button type="button" className={styles.secondary} onClick={() => void loadMore()}>Daha fazla göster</button> : <><StateBlock state={continuation} subject="sonraki sipariş sayfası" /><button type="button" className={styles.secondary} onClick={() => void loadMore()}>Aynı sayfayı yeniden dene</button></>}</div> : null}</main>
+  return <main className={styles.page} data-testid="purchase-order-list">{header}<p className={styles.note}>Bu görünüm fiyat veya stok göstermez; yalnız satın alma taahhüdünün sunucuda kayıtlı durumunu gösterir.</p>{rows.length === 0 ? <StateBlock state={{ kind: status === null ? 'empty-no-data' : 'empty-filtered' }} subject="satın alma siparişleri" /> : <div className={styles.tableWrap}><table><caption>Şirketin satın alma siparişleri</caption><thead><tr><th>Sipariş</th><th>Durum</th><th>{T.supplierColumn}</th><th>İş tarihi</th><th>Satır</th><th>Güncellendi</th></tr></thead><tbody>{rows.map((row) => <tr key={row.id}><th className={styles.mono}>{canOpen ? <Link to={purchaseOrderDetailPath(row.id)}>…{row.id.slice(-8)}</Link> : `…${row.id.slice(-8)}`}</th><td><span className={row.status === 'Approved' ? styles.approved : styles.draft}>{STATUS[row.status]}</span></td><td style={SUPPLIER_CELL} data-testid={`purchase-order-supplier-${row.id}`}><PurchaseOrderSupplierIdentity order={row} canOpenParty={canOpenParty} /></td><td>{row.effectiveOn}</td><td>{row.lineCount}</td><td>{new Date(row.updatedAtUtc).toLocaleString('tr-TR')}</td></tr>)}</tbody></table></div>}{nextCursor !== null ? <div>{continuation === 'loading' ? <p role="status">Sonraki sayfa yükleniyor…</p> : continuation === 'idle' ? <button type="button" className={styles.secondary} onClick={() => void loadMore()}>Daha fazla göster</button> : <><StateBlock state={continuation} subject="sonraki sipariş sayfası" /><button type="button" className={styles.secondary} onClick={() => void loadMore()}>Aynı sayfayı yeniden dene</button></>}</div> : null}</main>
 }
