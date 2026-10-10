@@ -28,6 +28,14 @@ const GDC_ACTIVE_VISIBLE = 52
 const GSP_ACTIVE_VISIBLE = 2
 const SPLIT_STATE_ROW = 'CAR-000002'
 const GLOBAL_INACTIVE_ROW = 'CAR-000053'
+/** `q=Örnek` matches a legal name in two GDC parties and nothing else (`C01-E2E-GOLDEN-V1`). */
+const SEARCH_TERM = 'Örnek'
+const SEARCH_MATCHES = ['CAR-000001', 'CAR-000003']
+/** Active GDC natural persons: the odd codes CAR-000003 … CAR-000051 plus CAR-000006. */
+const GDC_ACTIVE_NATURAL_PERSONS = 25
+
+/** CARI-DS-01: the table is the layout from 768 px up; below that the same rows are one labelled card each. */
+const PHONE_MAX_WIDTH = 767
 
 const UUID_RE = /[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/
 
@@ -81,6 +89,13 @@ test('B-C01-001 the authorized first page is the fixture, and only the fixture',
   expect(UUID_RE.test(body)).toBe(false)
   expect(body.toLowerCase()).not.toContain('externalintegrationcode')
   expect(body).not.toContain('filtered-authorized-visible-parties')
+
+  // The fixture's authorized profile holds the LIST grant only (verify_c01_e2e_api.py pins it to exactly
+  // `cari.parties.list`). Opening a record and creating one are separate grants, so neither may be offered: the
+  // code is plain text, never a link the route would refuse, and there is no "Yeni Cari" action.
+  await expect(page.getByRole('main').getByRole('link', { name: 'Yeni Cari' })).toHaveCount(0)
+  await expect(first.locator('td').nth(0).getByRole('link')).toHaveCount(0)
+  await expect(page.getByRole('main').locator('[data-row-link]')).toHaveCount(0)
 
   await net.detach(testInfo)
 })
@@ -191,7 +206,7 @@ test('B-C01-003 a company switch cancels the old read, so it cannot leak', async
   await net.detach(testInfo)
 })
 
-test('B-C01-004 sorting is done by the server, and focus survives it', async ({
+test('B-C01-004 sorting, search and filters are done by the server, and focus survives sorting', async ({
   page,
 }, testInfo) => {
   const net = await NetworkRecorder.attach(page)
@@ -211,6 +226,53 @@ test('B-C01-004 sorting is done by the server, and focus survives it', async ({
   // Focus must stay on the control the user actuated, across a full re-render.
   await expect(sortButton).toBeFocused()
 
+  // Back to ascending, so every expectation below reads in fixture order.
+  await page.keyboard.press('Enter')
+  await expect(codeHeader).toHaveAttribute('aria-sort', 'ascending', { timeout: 20_000 })
+  await expect(rows(page).first().locator('td').nth(0)).toHaveText(FIRST_ROW.code)
+
+  // SEARCH is the server's. Typing alone issues the read (no submit), and the rows are exactly what the real
+  // query returns for the term — a client-side filter over page one could not produce this set and this count.
+  const search = page.getByRole('main').getByRole('searchbox', { name: 'Ara', exact: true })
+  const searched = page.waitForRequest((request) => {
+    const url = new URL(request.url())
+    return url.pathname === '/api/v1/counterparties' && url.searchParams.get('q') === SEARCH_TERM
+  })
+  await search.fill(SEARCH_TERM)
+  const searchRequest = new URL((await searched).url())
+  expect(searchRequest.searchParams.get('cursor'), 'a new search must start from the first page').toBeNull()
+  await expect(rows(page)).toHaveCount(SEARCH_MATCHES.length, { timeout: 20_000 })
+  expect(await codesOf(page)).toEqual(SEARCH_MATCHES)
+  await search.fill('')
+  await expect(rows(page)).toHaveCount(50, { timeout: 20_000 })
+
+  // FILTERS are the server's too, each one a labelled control. Every expected set is the fixture's own truth.
+  const main = page.getByRole('main')
+  await main.getByLabel('Tür', { exact: true }).selectOption('NaturalPerson')
+  await expect(rows(page)).toHaveCount(GDC_ACTIVE_NATURAL_PERSONS, { timeout: 20_000 })
+  for (const kind of await rows(page).locator('td:nth-child(3)').allInnerTexts()) {
+    expect(kind).toBe('Gerçek kişi')
+  }
+  await main.getByLabel('Tür', { exact: true }).selectOption('')
+  await expect(rows(page)).toHaveCount(50, { timeout: 20_000 })
+
+  // The globally passive party is the ONE row the default filter hides; asking for passive parties shows it alone.
+  await main.getByLabel('Taraf durumu', { exact: true }).selectOption('inactive')
+  await expect(rows(page)).toHaveCount(1, { timeout: 20_000 })
+  expect(await codesOf(page)).toEqual([GLOBAL_INACTIVE_ROW])
+  await expect(rows(page).first().locator('td[data-party-state]')).toHaveAttribute('data-party-state', 'inactive')
+  await main.getByLabel('Taraf durumu', { exact: true }).selectOption('active')
+
+  // The company-account state is a separate fact with its own filter: one active party is passive in GDC.
+  await main.getByLabel('Şirket hesabı durumu', { exact: true }).selectOption('inactive')
+  await expect(rows(page)).toHaveCount(1, { timeout: 20_000 })
+  expect(await codesOf(page)).toEqual([SPLIT_STATE_ROW])
+
+  // Clearing restores the untouched list and hands the keyboard to the search box.
+  await main.getByRole('button', { name: 'Filtreleri temizle' }).click()
+  await expect(rows(page)).toHaveCount(50, { timeout: 20_000 })
+  await expect(search).toBeFocused()
+
   await net.detach(testInfo)
 })
 
@@ -221,7 +283,46 @@ test('B-C01-005 the page reflows without a horizontal scrollbar', async ({ page 
   for (const size of ['1600x900', '768x1024', '390x844', '640x900', '320x900']) {
     const [width, height] = size.split('x').map(Number)
     await page.setViewportSize({ width, height })
-    await expect(rows(page).first()).toBeVisible()
+
+    if (width > PHONE_MAX_WIDTH) {
+      await expect(rows(page).first()).toBeVisible()
+      // The table may scroll, but only inside its own labelled region, and it must
+      // keep table semantics while doing so.
+      const display = await page.locator('table').evaluate((el) => getComputedStyle(el).display)
+      expect(display, `table lost table semantics at ${size}`).toBe('table')
+      await expect(page.getByRole('region', { name: 'Cari listesi tablosu' })).toBeVisible()
+    } else {
+      // CARI-DS-01: at phone width the same rows are one labelled card each, not a sideways-scrolling table.
+      const cards = page.getByRole('main').getByRole('list', { name: 'Cari listesi', exact: true })
+      await expect(cards, `no Cari card list at ${size}`).toBeVisible()
+      await expect(page.getByRole('table')).toHaveCount(0)
+      await expect(page.getByRole('region', { name: 'Cari listesi tablosu' })).toHaveCount(0)
+      // The rows did not change with the layout: still the verified first page, in the same order.
+      await expect(cards.getByRole('listitem')).toHaveCount(50)
+      const firstCard = cards.getByRole('listitem').first()
+      await expect(firstCard).toBeVisible()
+      await expect(firstCard).toContainText(FIRST_ROW.code)
+      await expect(firstCard).toContainText(FIRST_ROW.name)
+      // Every fact on the card is labelled, so it reads without the table's column headers.
+      expect(await firstCard.locator('dt').allInnerTexts()).toEqual([
+        'Taraf durumu',
+        'Şirket hesabı durumu',
+        'Geçmiş ticari sınıflandırma',
+      ])
+      // The name is shown whole: not cut, not pushed past the card's edge.
+      const name = firstCard.getByText(FIRST_ROW.name, { exact: true })
+      const clipped = await name.evaluate((el) => {
+        const box = el.getBoundingClientRect()
+        const style = getComputedStyle(el)
+        return (
+          el.scrollWidth > el.clientWidth + 1 ||
+          style.textOverflow === 'ellipsis' ||
+          box.left < 0 ||
+          box.right > document.documentElement.clientWidth + 0.5
+        )
+      })
+      expect(clipped, `the legal name is cut at ${size}`).toBe(false)
+    }
 
     // WCAG 1.4.10: the PAGE must not scroll horizontally. A previous version of
     // this screen passed jsdom and failed exactly here.
@@ -229,12 +330,6 @@ test('B-C01-005 the page reflows without a horizontal scrollbar', async ({ page 
       () => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1,
     )
     expect(overflows, `page scrolls horizontally at ${size}`).toBe(false)
-
-    // The table may scroll, but only inside its own labelled region, and it must
-    // keep table semantics while doing so.
-    const display = await page.locator('table').evaluate((el) => getComputedStyle(el).display)
-    expect(display, `table lost table semantics at ${size}`).toBe('table')
-    await expect(page.getByRole('region', { name: 'Cari listesi tablosu' })).toBeVisible()
   }
 
   await page.setViewportSize({ width: 1600, height: 900 })
