@@ -821,6 +821,110 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
     }
 
     [SqlServerFact]
+    public async Task Normal_host_closes_from_the_approved_settings_sql_profile_and_keeps_its_exact_snapshot()
+    {
+        await using var run = await Run.StartAsync(useSqlSettings: true);
+        var closer = await run.GrantAsync(TestUsers.CompanyA, CompanyA,
+            [.. AllWrites, ErpPermissions.ManufacturingOrdersClose]);
+        using var client = run.ClientFor(closer, CompanyA);
+        var selectedForDate = run.UtcToday;
+        var effectiveFrom = selectedForDate.AddDays(-30);
+        var effectiveThrough = selectedForDate.AddDays(30);
+
+        var (orderId, balanced) = await run.BalancedOrderAsync(client, closer, ManufacturingProcess.Slitting);
+
+        // No company-A Settings row means no source. A row for another process makes the source reachable,
+        // but does not manufacture a Slitting answer.
+        using (var noSource = await client.PostWithKeyAsync($"{Base}/orders/{orderId}/close",
+                   new CloseOrderRequestV1(balanced.Version), "sql-settings-no-source"))
+        {
+            Assert.Equal(HttpStatusCode.ServiceUnavailable, noSource.StatusCode);
+            Assert.Equal("service_unavailable", (await Problem(noSource)).Code);
+        }
+
+        await run.InsertToleranceAsync(CompanyA, Guid.NewGuid(), ManufacturingProcess.ColdRolling, 1, 9.5m, true,
+            selectedForDate.AddDays(1), selectedForDate.AddDays(60));
+        using (var missingProcess = await client.PostWithKeyAsync($"{Base}/orders/{orderId}/close",
+                   new CloseOrderRequestV1(balanced.Version), "sql-settings-process-missing"))
+        {
+            Assert.Equal(HttpStatusCode.UnprocessableEntity, missingProcess.StatusCode);
+            Assert.Equal(SettingsPrerequisiteCodesV1.ManufacturingToleranceProfileNotFound,
+                (await Problem(missingProcess)).Code);
+        }
+
+        // The foreign profile has the same process and date but cannot be selected through company A's query filter.
+        var foreignProfile = Guid.NewGuid();
+        await run.InsertToleranceAsync(CompanyB, foreignProfile, ManufacturingProcess.Slitting, 99, 88m, true,
+            effectiveFrom, effectiveThrough);
+        var acceptedProfile = Guid.NewGuid();
+        await run.InsertToleranceAsync(CompanyA, acceptedProfile, ManufacturingProcess.Slitting, 7, 1.234567m, true,
+            effectiveFrom, effectiveThrough);
+
+        using var accepted = await client.PostWithKeyAsync($"{Base}/orders/{orderId}/close",
+            new CloseOrderRequestV1(balanced.Version), "sql-settings-close");
+        Assert.Equal(HttpStatusCode.OK, accepted.StatusCode);
+        var closed = (await accepted.Content.ReadFromJsonAsync<OrderViewV1>())!;
+        Assert.Equal(("Closed", balanced.Version + 1), (closed.Status, closed.Version));
+
+        var expectedSnapshot = new ClosureSnapshot(
+            acceptedProfile, 7, nameof(ManufacturingProcess.Slitting), "1.234567", true,
+            effectiveFrom, effectiveThrough, selectedForDate);
+        Assert.Equal(expectedSnapshot, await run.ClosureSnapshotAsync(orderId));
+
+        // A fresh client/read rebuilds the closed order from SQL. The captured policy row stays byte-for-value exact.
+        using (var reopenedClient = run.ClientFor(closer, CompanyA))
+        {
+            var reopened = await reopenedClient.GetFromJsonAsync<OrderViewV1>($"{Base}/orders/{orderId}");
+            Assert.Equal((closed.OrderId, closed.Status, closed.Version, closed.ClosedAtUtc),
+                (reopened!.OrderId, reopened.Status, reopened.Version, reopened.ClosedAtUtc));
+        }
+        Assert.Equal(expectedSnapshot, await run.ClosureSnapshotAsync(orderId));
+
+        // Company B cannot disclose or close company A's order, even though B owns a competing profile.
+        var foreignCloser = await run.GrantAsync(TestUsers.CompanyB, CompanyB,
+            ErpPermissions.ManufacturingOrdersRead, ErpPermissions.ManufacturingOrdersClose);
+        using (var foreignClient = run.ClientFor(foreignCloser, CompanyB))
+        {
+            using var foreignClose = await foreignClient.PostWithKeyAsync($"{Base}/orders/{orderId}/close",
+                new CloseOrderRequestV1(closed.Version), "sql-settings-foreign-company");
+            Assert.Equal(HttpStatusCode.NotFound, foreignClose.StatusCode);
+        }
+
+        // The normal provider returns stored inactive/future profiles unchanged; Manufacturing rejects both.
+        await run.InsertToleranceAsync(CompanyA, Guid.NewGuid(), ManufacturingProcess.TubeProfile, 1, 3m, false,
+            effectiveFrom, effectiveThrough);
+        var (inactiveOrder, inactiveBalanced) = await run.BalancedOrderAsync(
+            client, closer, ManufacturingProcess.TubeProfile);
+        using (var inactive = await client.PostWithKeyAsync($"{Base}/orders/{inactiveOrder}/close",
+                   new CloseOrderRequestV1(inactiveBalanced.Version), "sql-settings-inactive"))
+        {
+            Assert.Equal(HttpStatusCode.ServiceUnavailable, inactive.StatusCode);
+            Assert.Equal("service_unavailable", (await Problem(inactive)).Code);
+        }
+
+        var (futureOrder, futureBalanced) = await run.BalancedOrderAsync(
+            client, closer, ManufacturingProcess.ColdRolling);
+        using (var future = await client.PostWithKeyAsync($"{Base}/orders/{futureOrder}/close",
+                   new CloseOrderRequestV1(futureBalanced.Version), "sql-settings-future"))
+        {
+            Assert.Equal(HttpStatusCode.ServiceUnavailable, future.StatusCode);
+            Assert.Equal("service_unavailable", (await Problem(future)).Code);
+        }
+
+        // Published Settings history is immutable, and an overlapping successor cannot replace the captured source.
+        await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync(
+            "UPDATE settings.ManufacturingTolerancePolicies SET MaximumFirePercent = 77 WHERE CompanyId = @c AND ProfileId = @p",
+            ("@c", CompanyA), ("@p", acceptedProfile)));
+        await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync(
+            "DELETE FROM settings.ManufacturingTolerancePolicies WHERE CompanyId = @c AND ProfileId = @p",
+            ("@c", CompanyA), ("@p", acceptedProfile)));
+        await Assert.ThrowsAsync<SqlException>(() => run.InsertToleranceAsync(
+            CompanyA, Guid.NewGuid(), ManufacturingProcess.Slitting, 8, 2m, true,
+            selectedForDate, selectedForDate.AddDays(90)));
+        Assert.Equal(expectedSnapshot, await run.ClosureSnapshotAsync(orderId));
+    }
+
+    [SqlServerFact]
     public async Task The_order_list_is_this_companys_stored_orders_newest_first_under_the_read_grant()
     {
         await using var run = await Run.StartAsync();
@@ -1092,16 +1196,22 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
     private sealed class Run : IAsyncDisposable
     {
         private readonly string baseConnectionString;
+        private readonly TimeProvider clock;
 
-        private Run(string baseConnectionString, SqlServerRelationalApiFactory factory)
+        private Run(
+            string baseConnectionString,
+            SqlServerRelationalApiFactory factory,
+            TimeProvider clock)
         {
             this.baseConnectionString = baseConnectionString;
+            this.clock = clock;
             Factory = factory;
         }
 
         public SqlServerRelationalApiFactory Factory { get; }
+        public DateOnly UtcToday => DateOnly.FromDateTime(clock.GetUtcNow().UtcDateTime);
 
-        public static async Task<Run> StartAsync()
+        public static async Task<Run> StartAsync(bool useSqlSettings = false)
         {
             var baseConnectionString = Environment.GetEnvironmentVariable(
                 SqlServerRelationalAcceptanceTests.ConnectionStringEnvironmentVariable)!;
@@ -1112,6 +1222,7 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
             }.ConnectionString;
             // Output admission exercises Product's real stock eligibility against this same isolated database.
             var technicalSnapshotFixture = new SyntheticManufacturingTechnicalSnapshotFixture();
+            TimeProvider clock = useSqlSettings ? new FixedTimeProvider(At) : TimeProvider.System;
             var factory = new SqlServerRelationalApiFactory(baseConnectionString, services =>
             {
                 services.RemoveAll<ProductRuntimeOptions>();
@@ -1123,13 +1234,22 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
                 services.AddSingleton(technicalSnapshotFixture);
                 services.AddScoped<IProductManufacturingTechnicalSnapshotV1,
                     SyntheticManufacturingTechnicalSnapshotProvider>();
-                // Explicit test-only source. Production's approved catalog remains empty; this fixture proves the
-                // consumer contract without installing a default or a real company policy.
-                services.RemoveAll<ISettingsManufacturingToleranceProviderV1>();
-                services.AddSingleton<ISettingsManufacturingToleranceProviderV1,
-                    SyntheticManufacturingToleranceProvider>();
+                if (useSqlSettings)
+                {
+                    services.RemoveAll<TimeProvider>();
+                    services.AddSingleton(clock);
+                }
+
+                if (!useSqlSettings)
+                {
+                    // Explicit test-only source for the older broad suite. The normal-host acceptance path leaves
+                    // #655's scoped SQL provider intact and inserts only disposable approved rows.
+                    services.RemoveAll<ISettingsManufacturingToleranceProviderV1>();
+                    services.AddSingleton<ISettingsManufacturingToleranceProviderV1,
+                        SyntheticManufacturingToleranceProvider>();
+                }
             }, databaseName: databaseName);
-            var run = new Run(baseConnectionString, factory);
+            var run = new Run(baseConnectionString, factory, clock);
             // The host migrates Organization first and Manufacturing after it.
             using var client = factory.CreateClient();
             using var health = await client.GetAsync("/health/live");
@@ -1331,11 +1451,13 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
         }
 
         /// <summary>An approved plan of one roll and its open order in company A, through the API.</summary>
-        public async Task<(Guid OrderId, Guid Roll)> OpenOrderAsync(string user)
+        public async Task<(Guid OrderId, Guid Roll)> OpenOrderAsync(
+            string user,
+            ManufacturingProcess process = ManufacturingProcess.Slitting)
         {
             using var client = ClientFor(user, CompanyA);
             var roll = await StockedLabelAsync($"SYN-MFG-ORDER-{Guid.NewGuid():N}");
-            var plan = new SavePlanRequestV1(Guid.NewGuid(), await WorkCenterOfAsync(CompanyA),
+            var plan = new SavePlanRequestV1(Guid.NewGuid(), await WorkCenterOfKindAsync(CompanyA, process.ToString()),
                 [new PlannedInputRequestV1(roll.Id, "1000", roll.Version)], null);
             Assert.Equal(HttpStatusCode.Created, (await client.PostWithKeyAsync($"{Base}/plans", plan)).StatusCode);
             Assert.Equal(HttpStatusCode.OK, (await client.PostWithKeyAsync($"{Base}/plans/{plan.PlanId}/approval",
@@ -1344,6 +1466,19 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
             Assert.Equal(HttpStatusCode.Created, (await client.PostWithKeyAsync($"{Base}/orders",
                 new CreateOrderRequestV1(orderId, plan.PlanId))).StatusCode);
             return (orderId, roll.Id);
+        }
+
+        public async Task<(Guid OrderId, OrderViewV1 Balanced)> BalancedOrderAsync(
+            HttpClient client,
+            string user,
+            ManufacturingProcess process)
+        {
+            var (orderId, roll) = await OpenOrderAsync(user, process);
+            var issued = await OkAsync(client, $"{Base}/orders/{orderId}/input-issues",
+                Issue(1, roll, "1000", At));
+            var balanced = await OkAsync(client, $"{Base}/orders/{orderId}/outputs",
+                await OutputAsync(client, issued.Version, roll, "GoodProduct", "1000", At.AddMinutes(1)));
+            return (orderId, balanced);
         }
 
         public async Task<OrderViewV1> OkAsync<T>(HttpClient client, string path, T body, string? key = null)
@@ -1472,6 +1607,76 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
             return (T)(await command.ExecuteScalarAsync())!;
         }
 
+        public async Task<int> ExecuteAsync(string sql, params (string Name, object Value)[] parameters)
+        {
+            await using var connection = new SqlConnection(Factory.DatabaseConnectionString);
+            await connection.OpenAsync();
+            await using var command = new SqlCommand(sql, connection);
+            foreach (var (name, value) in parameters)
+            {
+                command.Parameters.AddWithValue(name, value);
+            }
+
+            return await command.ExecuteNonQueryAsync();
+        }
+
+        public Task<int> InsertToleranceAsync(
+            Guid companyId,
+            Guid profileId,
+            ManufacturingProcess process,
+            long version,
+            decimal maximumFirePercent,
+            bool isActive,
+            DateOnly effectiveFrom,
+            DateOnly? effectiveThrough) =>
+            ExecuteAsync(
+                """
+                INSERT INTO settings.ManufacturingTolerancePolicies
+                    (CompanyId, ProfileId, Process, Version, MaximumFirePercent, IsActive,
+                     EffectiveFrom, EffectiveThrough, ApprovalStatus, ApprovedBy, ApprovedAtUtc, ApprovalReason)
+                VALUES
+                    (@company, @profile, @process, @version, @maximumFirePercent, @isActive,
+                     @effectiveFrom, @effectiveThrough, N'Approved', N'synthetic-sql-approver',
+                     @approvedAtUtc, N'Disposable normal-host close acceptance fixture')
+                """,
+                ("@company", companyId),
+                ("@profile", profileId),
+                ("@process", process.ToString()),
+                ("@version", version),
+                ("@maximumFirePercent", maximumFirePercent),
+                ("@isActive", isActive),
+                ("@effectiveFrom", effectiveFrom.ToDateTime(TimeOnly.MinValue)),
+                ("@effectiveThrough", effectiveThrough is { } through
+                    ? through.ToDateTime(TimeOnly.MinValue)
+                    : DBNull.Value),
+                ("@approvedAtUtc", clock.GetUtcNow()));
+
+        public async Task<ClosureSnapshot> ClosureSnapshotAsync(Guid orderId)
+        {
+            await using var connection = new SqlConnection(Factory.DatabaseConnectionString);
+            await connection.OpenAsync();
+            await using var command = new SqlCommand(
+                """
+                SELECT PolicyId, PolicyVersion, Process, MaximumFirePercent, IsActive,
+                       EffectiveFrom, EffectiveThrough, SelectedForDate
+                FROM manufacturing.OrderClosureDecisions
+                WHERE CompanyId = @company AND OrderId = @order
+                """, connection);
+            command.Parameters.AddWithValue("@company", CompanyA);
+            command.Parameters.AddWithValue("@order", orderId);
+            await using var reader = await command.ExecuteReaderAsync();
+            Assert.True(await reader.ReadAsync());
+            return new ClosureSnapshot(
+                reader.GetGuid(0),
+                reader.GetInt64(1),
+                ((ManufacturingProcess)reader.GetInt32(2)).ToString(),
+                reader.GetString(3),
+                reader.GetBoolean(4),
+                DateOnly.FromDateTime(reader.GetDateTime(5)),
+                reader.IsDBNull(6) ? null : DateOnly.FromDateTime(reader.GetDateTime(6)),
+                DateOnly.FromDateTime(reader.GetDateTime(7)));
+        }
+
         public async ValueTask DisposeAsync()
         {
             await Factory.DisposeAsync();
@@ -1491,6 +1696,21 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
     }
 
     private sealed record ParentRollFixture(Guid Id, string Version);
+
+    private sealed record ClosureSnapshot(
+        Guid ProfileId,
+        long Version,
+        string Process,
+        string MaximumFirePercent,
+        bool IsActive,
+        DateOnly EffectiveFrom,
+        DateOnly? EffectiveThrough,
+        DateOnly SelectedForDate);
+
+    private sealed class FixedTimeProvider(DateTimeOffset utcNow) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => utcNow;
+    }
 
     private sealed class InventoryStoreScope(InventoryDbContext dbContext, InventoryStore store) : IAsyncDisposable
     {
