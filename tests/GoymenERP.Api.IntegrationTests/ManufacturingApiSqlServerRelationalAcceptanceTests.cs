@@ -839,7 +839,7 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
                    new CloseOrderRequestV1(balanced.Version), "sql-settings-no-source"))
         {
             Assert.Equal(HttpStatusCode.ServiceUnavailable, noSource.StatusCode);
-            Assert.Equal("settings_provider_unavailable", (await Problem(noSource)).Code);
+            Assert.Equal("service_unavailable", (await Problem(noSource)).Code);
         }
 
         await run.InsertToleranceAsync(CompanyA, Guid.NewGuid(), ManufacturingProcess.ColdRolling, 1, 9.5m, true,
