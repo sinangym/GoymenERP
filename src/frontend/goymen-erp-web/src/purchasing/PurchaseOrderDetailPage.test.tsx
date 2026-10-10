@@ -191,13 +191,32 @@ describe('PurchaseOrderDetailPage record-bound supplier identity (#661)', () => 
     expect(identity.querySelector('a')).toBeNull()
   })
 
-  it('omits a trade name that is null, blank or the same as the legal name', () => {
-    for (const tradeName of [null, '   ', LONG_LEGAL]) {
-      scenario.supplierDisplay = supplier({ tradeName })
-      const view = renderDetail()
-      expect(screen.getByTestId('purchase-order-supplier-identity').textContent).not.toContain(T.supplierTradeName)
-      view.unmount()
-    }
+  it.each([
+    ['null', null],
+    ['the same as the legal name', LONG_LEGAL],
+  ])('shows the code and legal name with no separate trade-name line when the trade name is %s', (_name, tradeName) => {
+    scenario.capabilities = ['cari.parties.detail']
+    scenario.supplierDisplay = supplier({ tradeName })
+    renderDetail()
+    const identity = screen.getByTestId('purchase-order-supplier-identity')
+    // The identity itself is there, read from the record and linked — only the trade-name line is left out.
+    expect(identity.querySelector('[data-supplier-display="record"]')?.textContent).toBe(`CAR-000042 — ${LONG_LEGAL}`)
+    expect(identity.querySelector('[data-supplier-display="unavailable"]')).toBeNull()
+    expect(screen.getByRole('link', { name: `CAR-000042 — ${LONG_LEGAL}` }).getAttribute('href')).toBe(`/cari/${SUPPLIER_PARTY}`)
+    expect(identity.textContent).not.toContain(T.supplierTradeName)
+  })
+
+  it('treats a whitespace-only trade name as a malformed identity: unavailable, with no code, name or link', () => {
+    scenario.capabilities = ['cari.parties.detail']
+    scenario.supplierDisplay = supplier({ tradeName: '   ' })
+    renderDetail()
+    const identity = screen.getByTestId('purchase-order-supplier-identity')
+    expect(identity.querySelector('[data-supplier-display="unavailable"]')?.textContent).toBe(T.supplierUnavailable)
+    expect(identity.querySelector('[data-supplier-display="record"]')).toBeNull()
+    expect(identity.querySelector('a')).toBeNull()
+    expect(identity.textContent).not.toContain('CAR-000042')
+    expect(identity.textContent).not.toContain(LONG_LEGAL)
+    expect(identity.textContent).not.toContain(T.supplierTradeName)
   })
 
   it('never links or names a supplier from an answer for another company or order', () => {
