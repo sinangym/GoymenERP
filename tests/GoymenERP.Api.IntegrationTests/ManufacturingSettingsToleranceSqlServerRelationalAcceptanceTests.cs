@@ -7,7 +7,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace GoymenERP.Api.IntegrationTests;
 
-public sealed class SettingsManufacturingToleranceSqlServerRelationalAcceptanceTests
+public sealed class ManufacturingSettingsToleranceSqlServerRelationalAcceptanceTests
 {
     private static readonly Guid CompanyA = Guid.Parse("10000000-0000-0000-0000-000000000001");
     private static readonly Guid CompanyB = Guid.Parse("10000000-0000-0000-0000-000000000002");
