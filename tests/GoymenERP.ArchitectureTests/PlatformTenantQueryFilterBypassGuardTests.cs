@@ -1142,21 +1142,6 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         {
                             ["Microsoft.Data.SqlClient"] = 1
                         }),
-                // PUR-P05: one parameterized, company-filtered record-bound Cari read. Historical same-company
-                // Party/account displays survive deactivation without becoming a selection surface. The exact
-                // source and database API counts keep this narrower than a general SQL or generic Party read.
-                ["src/backend/Modules/Counterparty/"
-                 + "GoymenERP.Modules.Counterparty.Infrastructure/Persistence/"
-                 + "CounterpartyPurchasingRecordPartyDisplaySourceV1.cs"] =
-                    new(
-                        "0c47607b901edaf39127fcf080ab473dd8d17aa8bad1edd56b097326a807b703",
-                        new Dictionary<string, int>(StringComparer.Ordinal)
-                        {
-                            ["System.Data.Common"] = 1,
-                            ["GetDbConnection"] = 1,
-                            ["CreateCommand"] = 1,
-                            ["DbCommand"] = 1
-                        }),
                 // ERP-000G / AT-065: the vault initializer's one provider branch, as Logistics. Re-fingerprinted for
                 // the production adapters (own-server store + Windows Defender registration); the branch and its
                 // token counts are unchanged.
@@ -6011,14 +5996,16 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
     private static IReadOnlyList<string> ValidateNoDirectDatabaseBypassCapabilities(
         IReadOnlyDictionary<string, string> sources,
-        bool requireReviewedSources = false)
+        bool requireReviewedSources = false,
+        IReadOnlyDictionary<string, ReviewedRuntimeDatabaseBypassSource>? reviewedSources = null)
     {
         var errors = new List<string>();
         var occurrences = FindDirectDatabaseBypassOccurrences(sources);
+        reviewedSources ??= ReviewedRuntimeDatabaseBypassSources;
 
         foreach (var occurrence in occurrences)
         {
-            var isReviewed = ReviewedRuntimeDatabaseBypassSources.TryGetValue(
+            var isReviewed = reviewedSources.TryGetValue(
                                  occurrence.RepositoryPath,
                                  out var reviewed)
                              && reviewed.ExpectedApiOccurrences.ContainsKey(
@@ -6033,7 +6020,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             }
         }
 
-        foreach (var (reviewedPath, reviewed) in ReviewedRuntimeDatabaseBypassSources)
+        foreach (var (reviewedPath, reviewed) in reviewedSources)
         {
             if (!sources.TryGetValue(reviewedPath, out var source))
             {

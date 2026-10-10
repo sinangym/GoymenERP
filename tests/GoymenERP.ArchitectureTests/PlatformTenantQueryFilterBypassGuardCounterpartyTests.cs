@@ -9,6 +9,28 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         + "GoymenERP.Modules.Counterparty.Infrastructure/Persistence/CounterpartyDbContext.cs";
     private const string ReviewedCounterpartyDbContextFingerprint =
         "b11fc999edc6b7f1c93d3c38288e9883c58e54a1b8db9d9565a96c6f76f5d259";
+    private const string ReviewedCounterpartyPurchasingRecordPartyDisplaySourcePath =
+        "src/backend/Modules/Counterparty/"
+        + "GoymenERP.Modules.Counterparty.Infrastructure/Persistence/"
+        + "CounterpartyPurchasingRecordPartyDisplaySourceV1.cs";
+    private static readonly IReadOnlyDictionary<string, ReviewedRuntimeDatabaseBypassSource>
+        ReviewedCounterpartyRuntimeDatabaseBypassSources =
+            new Dictionary<string, ReviewedRuntimeDatabaseBypassSource>(StringComparer.Ordinal)
+            {
+                // PUR-P05: one parameterized, company-filtered record-bound Cari read. Historical same-company
+                // Party/account displays survive deactivation without becoming a selection surface. The exact
+                // source and database API counts keep this narrower than a general SQL or generic Party read.
+                [ReviewedCounterpartyPurchasingRecordPartyDisplaySourcePath] =
+                    new(
+                        "0c47607b901edaf39127fcf080ab473dd8d17aa8bad1edd56b097326a807b703",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["System.Data.Common"] = 1,
+                            ["GetDbConnection"] = 1,
+                            ["CreateCommand"] = 1,
+                            ["DbCommand"] = 1
+                        })
+            };
 
     [Fact]
     public void Counterparty_command_execution_filter_and_no_bypass_surface_are_locked()
@@ -37,6 +59,35 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             .ToDictionary(file => file.Path, file => file.Source, StringComparer.Ordinal);
 
         Assert.Empty(FindOccurrences(counterpartySources));
+    }
+
+    [Fact]
+    public void Counterparty_reviewed_direct_SQL_source_matches_exact_fingerprint_and_API_inventory()
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var source = File.ReadAllText(Path.Combine(
+            repositoryRoot,
+            ReviewedCounterpartyPurchasingRecordPartyDisplaySourcePath.Replace(
+                '/',
+                Path.DirectorySeparatorChar)));
+        var exactSources = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            [ReviewedCounterpartyPurchasingRecordPartyDisplaySourcePath] = source
+        };
+
+        Assert.Empty(ValidateNoDirectDatabaseBypassCapabilities(
+            exactSources,
+            requireReviewedSources: true,
+            reviewedSources: ReviewedCounterpartyRuntimeDatabaseBypassSources));
+
+        exactSources[ReviewedCounterpartyPurchasingRecordPartyDisplaySourcePath] =
+            source + "\n// fingerprint drift";
+        Assert.Contains(
+            ValidateNoDirectDatabaseBypassCapabilities(
+                exactSources,
+                requireReviewedSources: true,
+                reviewedSources: ReviewedCounterpartyRuntimeDatabaseBypassSources),
+            error => error.Contains("does not match the exact fingerprint", StringComparison.Ordinal));
     }
 
     [Theory]
