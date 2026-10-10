@@ -207,7 +207,7 @@ test('S04-GOYDS-01 Sipariş 360 keeps long Cari, due date and withheld price dis
   await expect(page.getByTestId('sales-order-summary')).toBeVisible()
   await expect(page.getByTestId('sales-order-status-facts')).toBeVisible()
   await expect(party).toHaveText(partyText(detail.partyDisplay))
-  await expect(due).toContainText('Belirtilmedi')
+  await expect(due).toContainText('Bilinmiyor')
   await expect(price).toContainText('Fiyat bu yetkiyle görüntülenmez')
 
   const expectStableLayout = async (width: number, height: number) => {
