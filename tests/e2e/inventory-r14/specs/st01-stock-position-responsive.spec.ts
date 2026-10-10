@@ -516,7 +516,16 @@ test('ST-01 names a Cari owner exactly, links its card only for the capability h
   const restrictedCari = await page.request.get(`${env.apiBaseUrl}${COUNTERPARTIES}/${ownerPartyId}`, {
     headers: { ...headers(counterActor), [CARI_CONTRACT_HEADER]: CARI_CONTRACT_VERSION },
   })
-  expect(restrictedCari.status(), 'the stock counter must hold no Cari read').toBe(403)
+  // The stock counter holds no Cari read. The Cari owner answers a party the caller may not read as 404
+  // (non-disclosure, `CounterpartyReadAcceptanceTests`), never as a readable or a merely refused record.
+  expect(restrictedCari.status(), 'the stock counter must hold no Cari read').toBe(404)
+  const restrictedBody = await restrictedCari.text()
+  for (const secret of [ownerPartyId, ownerCompanyAccountId, owner.code, owner.legalName, owner.tradeName!]) {
+    expect(restrictedBody, 'the refused Cari answer discloses the owner').not.toContain(secret)
+  }
+  // Where the problem carries the owner's stable code it is `not_found`; no other field is read or assumed.
+  const restrictedProblem = JSON.parse(restrictedBody) as { readonly code?: unknown }
+  expect(restrictedProblem.code ?? 'not_found').toBe('not_found')
 
   // Two Cari-owned labels and one company-owned label, through the real opening command.
   const cariLines = [0, 1].map((index) => ({
