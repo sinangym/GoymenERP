@@ -218,3 +218,72 @@
   white-space: nowrap;
   border: 0;
 }
+
+/* One document's immutable versions, opened under the table. */
+.versions {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid #d5dbe6;
+  border-radius: 6px;
+  background: #fff;
+  min-width: 0;
+}
+.versionsTitle {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #1a2233;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.versionsTitle:focus-visible {
+  outline: 2px solid #1f5fd0;
+  outline-offset: 2px;
+}
+
+/* Below 768 px the same version table is drawn as labelled cards; the cells stay cells. */
+@media (max-width: 767px) {
+  .versionTable thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+  }
+  .versionTable,
+  .versionTable tbody,
+  .versionTable tr,
+  .versionTable tbody th,
+  .versionTable td {
+    display: block;
+  }
+  .versionTable tr {
+    padding: 8px 12px;
+    border-bottom: 1px solid #e3e7ee;
+  }
+  .versionTable tbody tr:last-child {
+    border-bottom: 0;
+  }
+  .versionTable tbody th,
+  .versionTable td {
+    padding: 2px 0;
+    border-bottom: 0;
+  }
+  .versionTable tbody th {
+    font-weight: 600;
+  }
+  .versionTable td {
+    display: grid;
+    grid-template-columns: minmax(96px, 40%) minmax(0, 1fr);
+    gap: 8px;
+  }
+  .versionTable td::before {
+    content: attr(data-label);
+    font-size: 0.8rem;
+    color: #55607a;
+  }
+}
