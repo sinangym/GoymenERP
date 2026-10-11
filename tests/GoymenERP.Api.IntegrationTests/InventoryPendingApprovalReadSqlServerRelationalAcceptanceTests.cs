@@ -64,9 +64,10 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
 
         Assert.Equal(InventoryPendingApprovalReadOutcomeV1.Found, page.Outcome);
         var item = Assert.Single(page.Resource!.Items);
-        Assert.Equal((countId, own.LabelId, "-3", run.Actor.ToString("D")),
-            (item.CountId, item.LabelId, item.DifferenceKg, item.SubmittedBy));
-        Assert.Equal(countId, detail.Resource!.Item.CountId);
+        Assert.Equal((countId, own.LabelId, "SYN-D05-COUNT-A", "-3", run.Actor.ToString("D")),
+            (item.CountId, item.LabelId, item.LabelCode, item.DifferenceKg, item.SubmittedBy));
+        Assert.Equal((countId, "SYN-D05-COUNT-A"),
+            (detail.Resource!.Item.CountId, detail.Resource.Item.LabelCode));
         Assert.DoesNotContain(page.Resource.Items, candidate => candidate.CountId == foreignCountId);
         Assert.Equal(before, await PendingReadEffects(run));
 
@@ -116,7 +117,8 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         var pending = await service.ListAsync(new(CompanyA, ownActor), null, default);
 
         var item = Assert.Single(pending.Resource!.Items);
-        Assert.Equal((visibleId, "6", recorder.ActorId), (item.ScrapId, item.ScrapKg, item.SubmittedBy));
+        Assert.Equal((visibleId, "SYN-D05-SCRAP", "6", recorder.ActorId),
+            (item.ScrapId, item.LabelCode, item.ScrapKg, item.SubmittedBy));
         Assert.DoesNotContain(pending.Resource.Items, candidate => candidate.ScrapId == ownId);
         Assert.Equal(before, await PendingReadEffects(run));
 

@@ -324,6 +324,7 @@ public sealed class InventoryPendingApprovalReadServiceV1(
         && item.CountId != Guid.Empty
         && item.CompanyId == context.CompanyId
         && item.LabelId != Guid.Empty
+        && InventoryPendingApprovalReadContractV1.IsCanonicalLabelCode(item.LabelCode)
         && item.ProductId != Guid.Empty
         && item.LocationId != Guid.Empty
         && item.OwnerId != Guid.Empty
@@ -348,6 +349,7 @@ public sealed class InventoryPendingApprovalReadServiceV1(
         && item.ScrapId != Guid.Empty
         && item.CompanyId == context.CompanyId
         && item.LabelId != Guid.Empty
+        && InventoryPendingApprovalReadContractV1.IsCanonicalLabelCode(item.LabelCode)
         && item.ProductId != Guid.Empty
         && item.LocationId != Guid.Empty
         && item.OwnerId != Guid.Empty

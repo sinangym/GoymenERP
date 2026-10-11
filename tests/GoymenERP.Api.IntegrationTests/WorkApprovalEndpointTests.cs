@@ -6,6 +6,7 @@ using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Observability;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Finance.Contracts;
+using GoymenERP.Modules.Inventory.Application;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
@@ -161,6 +162,169 @@ public sealed class WorkApprovalEndpointTests(GoymenErpApiFactory factory)
         using var detailJson = JsonDocument.Parse(await itemResponse.Content.ReadAsStringAsync());
         Assert.Equal(approvalId,
             detailJson.RootElement.GetProperty("item").GetProperty("approvalId").GetGuid());
+    }
+
+    [Fact]
+    public async Task Contract_2_emits_inventory_label_code_while_the_legacy_shape_remains_unchanged()
+    {
+        var approvalId = Guid.NewGuid();
+        var adapter = new Adapter
+        {
+            Kind = NativeApprovalKindsV1.InventoryStockCount,
+            OnList = context => new(NativeApprovalReadOutcomeV1.Found,
+                new NativeApprovalReadPageV1(Company,
+                    [InventoryItem(NativeApprovalKindsV1.InventoryStockCount, approvalId,
+                        context.IncludeInventoryLabelCode ? "ETK-D05-0001" : null)], null)),
+        };
+        using var host = Host([adapter]);
+        using var client = Client(host);
+
+        using var legacy = await client.GetAsync(
+            WorkApprovalEndpoints.Path + "?kind=inventory.stock-count.v1");
+        using var request = new HttpRequestMessage(HttpMethod.Get,
+            WorkApprovalEndpoints.Path + "?kind=inventory.stock-count.v1");
+        request.Headers.Add(NativeApprovalReadContractV1.Header,
+            NativeApprovalReadContractV1.InventoryLabelDisplayVersion);
+        using var enriched = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.OK, legacy.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, enriched.StatusCode);
+        using var legacyJson = JsonDocument.Parse(await legacy.Content.ReadAsStringAsync());
+        using var enrichedJson = JsonDocument.Parse(await enriched.Content.ReadAsStringAsync());
+        Assert.False(Assert.Single(legacyJson.RootElement.GetProperty("items").EnumerateArray())
+            .TryGetProperty("labelCode", out _));
+        Assert.Equal("ETK-D05-0001", Assert.Single(
+            enrichedJson.RootElement.GetProperty("items").EnumerateArray())
+            .GetProperty("labelCode").GetString());
+        Assert.Equal(NativeApprovalReadContractV1.InventoryLabelDisplayVersion,
+            Assert.Single(enriched.Headers.GetValues(NativeApprovalReadContractV1.Header)));
+    }
+
+    [Theory]
+    [MemberData(nameof(InvalidInventoryLabelCodes))]
+    public async Task Contract_2_fails_closed_when_an_inventory_item_has_no_canonical_label_code(
+        string? labelCode)
+    {
+        var adapter = new Adapter
+        {
+            Kind = NativeApprovalKindsV1.InventoryStockCount,
+            Page = new(NativeApprovalReadOutcomeV1.Found,
+                new NativeApprovalReadPageV1(Company,
+                    [InventoryItem(NativeApprovalKindsV1.InventoryStockCount, Guid.NewGuid(), labelCode)],
+                    null)),
+        };
+        using var host = Host([adapter]);
+        using var client = Client(host);
+        using var request = new HttpRequestMessage(HttpMethod.Get,
+            WorkApprovalEndpoints.Path + "?kind=inventory.stock-count.v1");
+        request.Headers.Add(NativeApprovalReadContractV1.Header,
+            NativeApprovalReadContractV1.InventoryLabelDisplayVersion);
+
+        using var response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+        AssertPrivateNoStore(response);
+    }
+
+    public static TheoryData<string?> InvalidInventoryLabelCodes => new()
+    {
+        null,
+        "",
+        " ETK-D05",
+        "ETK-D05 ",
+        new string('X', InventoryPendingApprovalReadContractV1.MaximumLabelCodeLength + 1),
+    };
+
+    [Fact]
+    public async Task Inventory_adapters_emit_owner_label_code_only_for_the_opted_in_context()
+    {
+        var legacyContext = new NativeApprovalReadContextV1(
+            Company, "checker", "corr-legacy", null);
+        var enrichedContext = legacyContext with { IncludeInventoryLabelCode = true };
+        var count = new InventoryStockCountPendingApprovalAdapterV1(new CountOwner());
+        var scrap = new InventoryStockScrapPendingApprovalAdapterV1(new ScrapOwner());
+
+        var legacyCount = Assert.IsType<InventoryStockCountNativeApprovalReadItemV1>(
+            Assert.Single((await count.ListAsync(legacyContext, null, default)).Resource!.Items));
+        var enrichedCount = Assert.IsType<InventoryStockCountNativeApprovalReadItemV1>(
+            Assert.Single((await count.ListAsync(enrichedContext, null, default)).Resource!.Items));
+        var legacyScrap = Assert.IsType<InventoryStockScrapNativeApprovalReadItemV1>(
+            Assert.Single((await scrap.ListAsync(legacyContext, null, default)).Resource!.Items));
+        var enrichedScrap = Assert.IsType<InventoryStockScrapNativeApprovalReadItemV1>(
+            Assert.Single((await scrap.ListAsync(enrichedContext, null, default)).Resource!.Items));
+
+        Assert.Null(legacyCount.LabelCode);
+        Assert.Equal("ETK-D05-COUNT", enrichedCount.LabelCode);
+        Assert.Null(legacyScrap.LabelCode);
+        Assert.Equal("ETK-D05-SCRAP", enrichedScrap.LabelCode);
+    }
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public async Task Invalid_or_duplicate_work_contract_is_a_code_less_problem_before_owner_read(
+        bool detail,
+        bool duplicate)
+    {
+        var adapter = new Adapter { Kind = NativeApprovalKindsV1.InventoryStockCount };
+        using var host = Host([adapter]);
+        using var client = Client(host);
+        using var request = new HttpRequestMessage(HttpMethod.Get,
+            detail
+                ? $"{WorkApprovalEndpoints.Path}/{NativeApprovalKindsV1.InventoryStockCount}/{Batch:D}"
+                : WorkApprovalEndpoints.Path + "?kind=inventory.stock-count.v1");
+        request.Headers.TryAddWithoutValidation(
+            NativeApprovalReadContractV1.Header,
+            duplicate
+                ? [NativeApprovalReadContractV1.InventoryLabelDisplayVersion,
+                   NativeApprovalReadContractV1.InventoryLabelDisplayVersion]
+                : ["1.0"]);
+
+        using var response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.False(response.Headers.Contains(NativeApprovalReadContractV1.Header));
+        Assert.Equal(0, adapter.ListCalls);
+        Assert.Equal(0, adapter.GetCalls);
+        Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
+        using var problem = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(400, problem.RootElement.GetProperty("status").GetInt32());
+        Assert.Equal("Bad Request", problem.RootElement.GetProperty("title").GetString());
+        Assert.Equal(
+            WorkApprovalEndpoints.InvalidContractSelectorDetail,
+            problem.RootElement.GetProperty("detail").GetString());
+        Assert.False(problem.RootElement.TryGetProperty("code", out _));
+        Assert.False(problem.RootElement.TryGetProperty("correlationId", out _));
+    }
+
+    [Theory]
+    [InlineData("Denied", HttpStatusCode.Forbidden)]
+    [InlineData("NotFound", HttpStatusCode.NotFound)]
+    [InlineData("Unavailable", HttpStatusCode.ServiceUnavailable)]
+    public async Task Contract_2_acknowledgment_accompanies_handler_generated_failures(
+        string outcomeName,
+        HttpStatusCode expectedStatus)
+    {
+        var outcome = Enum.Parse<NativeApprovalReadOutcomeV1>(outcomeName);
+        var adapter = new Adapter
+        {
+            Kind = NativeApprovalKindsV1.InventoryStockCount,
+            Page = new(outcome, null),
+        };
+        using var host = Host([adapter]);
+        using var client = Client(host);
+        using var request = new HttpRequestMessage(HttpMethod.Get,
+            WorkApprovalEndpoints.Path + "?kind=inventory.stock-count.v1");
+        request.Headers.Add(NativeApprovalReadContractV1.Header,
+            NativeApprovalReadContractV1.InventoryLabelDisplayVersion);
+
+        using var response = await client.SendAsync(request);
+
+        Assert.Equal(expectedStatus, response.StatusCode);
+        Assert.Equal(NativeApprovalReadContractV1.InventoryLabelDisplayVersion,
+            Assert.Single(response.Headers.GetValues(NativeApprovalReadContractV1.Header)));
     }
 
     [Theory]
@@ -356,18 +520,21 @@ public sealed class WorkApprovalEndpointTests(GoymenErpApiFactory factory)
         "sales-maker",
         DateTimeOffset.Parse("2026-10-09T07:00:00Z"));
 
-    private static NativeApprovalReadItemV1 InventoryItem(string kind, Guid approvalId) =>
+    private static NativeApprovalReadItemV1 InventoryItem(
+        string kind,
+        Guid approvalId,
+        string? labelCode = null) =>
         kind == NativeApprovalKindsV1.InventoryStockCount
             ? new InventoryStockCountNativeApprovalReadItemV1(
                 approvalId, Company, "PendingApproval", "1",
                 Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), "-3", "1",
                 "Company", Company, "Company", Company, "Free", "100", "97", "Sayım farkı",
-                "counter", DateTimeOffset.Parse("2026-10-10T07:00:00Z"))
+                labelCode, "counter", DateTimeOffset.Parse("2026-10-10T07:00:00Z"))
             : new InventoryStockScrapNativeApprovalReadItemV1(
                 approvalId, Company, "PendingApproval", "1",
                 Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), "6", "1",
                 "Company", Company, "Company", Company, "Free", "100", "94", "Hurda",
-                "recorder", DateTimeOffset.Parse("2026-10-10T08:00:00Z"));
+                labelCode, "recorder", DateTimeOffset.Parse("2026-10-10T08:00:00Z"));
 
     private static FinanceOfficialInvoiceImportPreviewV1 Preview() => new(
         FinanceOfficialInvoiceImportTemplateV1.Version,
@@ -425,6 +592,62 @@ public sealed class WorkApprovalEndpointTests(GoymenErpApiFactory factory)
             return Task.FromResult(Detail);
         }
     }
+
+    private sealed class CountOwner : IInventoryStockCountPendingApprovalReadServiceV1
+    {
+        public Task<InventoryPendingApprovalReadResultV1<InventoryStockCountPendingApprovalPageV1>> ListAsync(
+            InventoryPendingApprovalReadContextV1 context,
+            string? cursor,
+            CancellationToken cancellationToken) => Task.FromResult(new
+                InventoryPendingApprovalReadResultV1<InventoryStockCountPendingApprovalPageV1>(
+                    InventoryPendingApprovalReadOutcomeV1.Found,
+                    new InventoryStockCountPendingApprovalPageV1(Company, [CountSource()], null)));
+
+        public Task<InventoryPendingApprovalReadResultV1<InventoryStockCountPendingApprovalDetailV1>> GetAsync(
+            InventoryPendingApprovalReadContextV1 context,
+            Guid countId,
+            CancellationToken cancellationToken) => Task.FromResult(new
+                InventoryPendingApprovalReadResultV1<InventoryStockCountPendingApprovalDetailV1>(
+                    InventoryPendingApprovalReadOutcomeV1.Found,
+                    new InventoryStockCountPendingApprovalDetailV1(CountSource())));
+    }
+
+    private sealed class ScrapOwner : IInventoryStockScrapPendingApprovalReadServiceV1
+    {
+        public Task<InventoryPendingApprovalReadResultV1<InventoryStockScrapPendingApprovalPageV1>> ListAsync(
+            InventoryPendingApprovalReadContextV1 context,
+            string? cursor,
+            CancellationToken cancellationToken) => Task.FromResult(new
+                InventoryPendingApprovalReadResultV1<InventoryStockScrapPendingApprovalPageV1>(
+                    InventoryPendingApprovalReadOutcomeV1.Found,
+                    new InventoryStockScrapPendingApprovalPageV1(Company, [ScrapSource()], null)));
+
+        public Task<InventoryPendingApprovalReadResultV1<InventoryStockScrapPendingApprovalDetailV1>> GetAsync(
+            InventoryPendingApprovalReadContextV1 context,
+            Guid scrapId,
+            CancellationToken cancellationToken) => Task.FromResult(new
+                InventoryPendingApprovalReadResultV1<InventoryStockScrapPendingApprovalDetailV1>(
+                    InventoryPendingApprovalReadOutcomeV1.Found,
+                    new InventoryStockScrapPendingApprovalDetailV1(ScrapSource())));
+    }
+
+    private static InventoryStockCountPendingApprovalItemV1 CountSource() => new(
+        Guid.Parse("71000000-0000-0000-0000-000000000001"), Company,
+        Guid.Parse("71000000-0000-0000-0000-000000000002"), "ETK-D05-COUNT", "1",
+        "Company", Company, "Company", Company,
+        Guid.Parse("71000000-0000-0000-0000-000000000003"),
+        Guid.Parse("71000000-0000-0000-0000-000000000004"),
+        "Free", "100", "97", "-3", "Sayım farkı", "counter",
+        DateTimeOffset.Parse("2026-10-10T07:00:00Z"));
+
+    private static InventoryStockScrapPendingApprovalItemV1 ScrapSource() => new(
+        Guid.Parse("72000000-0000-0000-0000-000000000001"), Company,
+        Guid.Parse("72000000-0000-0000-0000-000000000002"), "ETK-D05-SCRAP", "1",
+        "Company", Company, "Company", Company,
+        Guid.Parse("72000000-0000-0000-0000-000000000003"),
+        Guid.Parse("72000000-0000-0000-0000-000000000004"),
+        "Free", "100", "6", "94", "Hurda", "recorder",
+        DateTimeOffset.Parse("2026-10-10T08:00:00Z"));
 
     private sealed class MutableCompanyContext(Guid companyId) : ICompanyContext
     {

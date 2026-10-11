@@ -106,6 +106,22 @@ public static partial class ErpOpenApiContract
                     schema.Required.Add("discountPercent");
                 }
 
+                if (context.JsonTypeInfo.Type == typeof(
+                        GoymenERP.Api.WorkRuntime.InventoryStockCountNativeApprovalReadItemV1)
+                    || context.JsonTypeInfo.Type == typeof(
+                        GoymenERP.Api.WorkRuntime.InventoryStockScrapNativeApprovalReadItemV1))
+                {
+                    schema.Required?.Remove("labelCode");
+                    if (schema.Properties?.TryGetValue("labelCode", out var labelCode) != true
+                        || labelCode is not OpenApiSchema concreteLabelCode)
+                    {
+                        throw new InvalidOperationException(
+                            "Inventory Work labelCode is not a concrete OpenAPI schema.");
+                    }
+                    concreteLabelCode.MaxLength = GoymenERP.Modules.Inventory.Application
+                        .InventoryPendingApprovalReadContractV1.MaximumLabelCodeLength;
+                }
+
                 if (context.JsonTypeInfo.Type == typeof(CreateCounterparty))
                 {
                     schema.Required?.Remove("tradeName");
@@ -420,6 +436,19 @@ public static partial class ErpOpenApiContract
             "application/problem+json");
     }
 
+    public static RouteHandlerBuilder ProducesErpCodeLessBadRequest(
+        this RouteHandlerBuilder builder)
+    {
+        builder.Produces<ErpCodeLessProblemDetailsContract>(
+            StatusCodes.Status400BadRequest,
+            "application/problem+json");
+        AddProblemCodeMetadata(
+            builder,
+            StatusCodes.Status400BadRequest,
+            [ErpProblemCodes.CorrelationMetadataInvalid]);
+        return builder;
+    }
+
     public static RouteHandlerBuilder ProducesErpUnprocessableEntity(
         this RouteHandlerBuilder builder,
         params string[] stableCodes)
@@ -513,6 +542,8 @@ public static partial class ErpOpenApiContract
         var endpointMetadata = context.Description.ActionDescriptor.EndpointMetadata;
         var hasCounterpartyClientContract = endpointMetadata
             .OfType<CounterpartyClientContractMetadata>().Any();
+        var hasWorkApprovalContract = operation.OperationId is
+            "GetWorkApprovalsV1" or "GetWorkApprovalV1";
         var problemCodesByStatus = endpointMetadata
             .OfType<ErpProblemCodeMetadata>()
             .GroupBy(metadata => metadata.StatusCode)
@@ -727,6 +758,20 @@ public static partial class ErpOpenApiContract
             await AddInventoryStockPositionParametersAsync(operation, context, cancellationToken);
         }
 
+        if (operation.OperationId is "GetWorkApprovalsV1" or "GetWorkApprovalV1")
+        {
+            AddHeaderParameter(
+                operation,
+                GoymenERP.Api.WorkRuntime.NativeApprovalReadContractV1.Header,
+                required: false,
+                "Optional exact compatibility selection. Omit for the previously published Work approval response; "
+                + "send 2.0 to include the Inventory-owned material label code on Inventory stock-count and "
+                + "stock-scrap records. Finance and Sales shapes are unchanged.",
+                minimumLength: 3,
+                maximumLength: 3,
+                pattern: "^2\\.0$");
+        }
+
         if (string.Equals(
                 operation.OperationId,
                 GoymenERP.Modules.Inventory.Application.InventoryMovementTimelineApiV1.GetOperationId,
@@ -830,6 +875,26 @@ public static partial class ErpOpenApiContract
                         {
                             Type = JsonSchemaType.String,
                             Pattern = CounterpartyClientContract.VersionPattern,
+                        },
+                    };
+            }
+            if (hasWorkApprovalContract)
+            {
+                concreteResponse.Headers[
+                    GoymenERP.Api.WorkRuntime.NativeApprovalReadContractV1.Header] =
+                    new OpenApiHeader
+                    {
+                        Required = false,
+                        Description = "Optional server acknowledgment, present only after the handler "
+                            + "accepts the exact 2.0 request selector. It can accompany handler-generated "
+                            + "success or error responses; errors before the handler and a rejected selector "
+                            + "may omit it. Its presence on an error is not read success or client readiness.",
+                        Schema = new OpenApiSchema
+                        {
+                            Type = JsonSchemaType.String,
+                            MinLength = 3,
+                            MaxLength = 3,
+                            Pattern = "^2\\.0$",
                         },
                     };
             }

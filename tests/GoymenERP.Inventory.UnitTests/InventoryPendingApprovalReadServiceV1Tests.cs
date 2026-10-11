@@ -20,7 +20,8 @@ public sealed class InventoryPendingApprovalReadServiceV1Tests
         var scrap = await world.Scraps.GetAsync(world.Context(), ScrapId, default);
 
         Assert.Equal(InventoryPendingApprovalReadOutcomeV1.Found, count.Outcome);
-        Assert.Equal(CountId, Assert.Single(count.Resource!.Items).CountId);
+        Assert.Equal((CountId, "ETK-D05-COUNT"),
+            (Assert.Single(count.Resource!.Items).CountId, count.Resource.Items[0].LabelCode));
         Assert.Equal(InventoryPendingApprovalReadOutcomeV1.Found, scrap.Outcome);
         Assert.Equal((ScrapId, "recorder", "6"),
             (scrap.Resource!.Item.ScrapId, scrap.Resource.Item.SubmittedBy, scrap.Resource.Item.ScrapKg));
@@ -82,6 +83,45 @@ public sealed class InventoryPendingApprovalReadServiceV1Tests
 
         Assert.Equal(InventoryPendingApprovalReadOutcomeV1.Unavailable, result.Outcome);
         Assert.Null(result.Resource);
+    }
+
+    [Fact]
+    public async Task Noncanonical_label_code_fails_the_whole_pending_page_closed()
+    {
+        var invalidCodes = new[]
+        {
+            "",
+            " ETK-D05-COUNT",
+            "ETK-D05-COUNT ",
+            new string('X', InventoryPendingApprovalReadContractV1.MaximumLabelCodeLength + 1),
+        };
+
+        foreach (var invalidCode in invalidCodes)
+        {
+            var world = new World();
+            world.Reader.Counts = [Count() with { LabelCode = invalidCode }];
+
+            var result = await world.Counts.ListAsync(world.Context(), null, default);
+
+            Assert.Equal(InventoryPendingApprovalReadOutcomeV1.Unavailable, result.Outcome);
+            Assert.Null(result.Resource);
+        }
+
+        var maximum = new World();
+        maximum.Reader.Counts =
+        [
+            Count() with
+            {
+                LabelCode = new string('X',
+                    InventoryPendingApprovalReadContractV1.MaximumLabelCodeLength),
+            },
+        ];
+
+        var accepted = await maximum.Counts.ListAsync(maximum.Context(), null, default);
+
+        Assert.Equal(InventoryPendingApprovalReadOutcomeV1.Found, accepted.Outcome);
+        Assert.Equal(InventoryPendingApprovalReadContractV1.MaximumLabelCodeLength,
+            Assert.Single(accepted.Resource!.Items).LabelCode.Length);
     }
 
     [Fact]
@@ -282,12 +322,12 @@ public sealed class InventoryPendingApprovalReadServiceV1Tests
     }
 
     private static InventoryStockCountPendingApprovalItemV1 Count() => new(
-        CountId, Company, Guid.NewGuid(), "1", "Company", Company, "Company", Company,
+        CountId, Company, Guid.NewGuid(), "ETK-D05-COUNT", "1", "Company", Company, "Company", Company,
         Guid.NewGuid(), Guid.NewGuid(), "Free", "100", "97", "-3", "Sayım farkı",
         "counter", DateTimeOffset.Parse("2026-10-10T07:00:00Z"));
 
     private static InventoryStockScrapPendingApprovalItemV1 Scrap() => new(
-        ScrapId, Company, Guid.NewGuid(), "1", "Company", Company, "Company", Company,
+        ScrapId, Company, Guid.NewGuid(), "ETK-D05-SCRAP", "1", "Company", Company, "Company", Company,
         Guid.NewGuid(), Guid.NewGuid(), "Free", "100", "6", "94", "Hurda",
         "recorder", DateTimeOffset.Parse("2026-10-10T08:00:00Z"));
 }

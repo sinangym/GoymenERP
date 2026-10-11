@@ -1,6 +1,7 @@
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Observability;
 using GoymenERP.BuildingBlocks.Security;
+using GoymenERP.Modules.Inventory.Application;
 
 namespace GoymenERP.Api.WorkRuntime;
 
@@ -40,9 +41,16 @@ internal sealed class NativeApprovalReadQueryV1
         registrationIsValid = valid;
     }
 
+    public Task<NativeApprovalReadResultV1<NativeApprovalReadPageV1>> ListAsync(
+        string? kind,
+        string? cursor,
+        CancellationToken cancellationToken) =>
+        ListAsync(kind, cursor, includeInventoryLabelCode: false, cancellationToken);
+
     public async Task<NativeApprovalReadResultV1<NativeApprovalReadPageV1>> ListAsync(
         string? kind,
         string? cursor,
+        bool includeInventoryLabelCode,
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -51,7 +59,7 @@ internal sealed class NativeApprovalReadQueryV1
         {
             return NotFound<NativeApprovalReadPageV1>();
         }
-        if (!TryCapture(out var context, out var refusal))
+        if (!TryCapture(includeInventoryLabelCode, out var context, out var refusal))
         {
             return new(refusal, null);
         }
@@ -68,9 +76,16 @@ internal sealed class NativeApprovalReadQueryV1
         return ValidatePage(selectedKind, context, result);
     }
 
+    public Task<NativeApprovalReadResultV1<NativeApprovalReadDetailV1>> GetAsync(
+        string kind,
+        Guid approvalId,
+        CancellationToken cancellationToken) =>
+        GetAsync(kind, approvalId, includeInventoryLabelCode: false, cancellationToken);
+
     public async Task<NativeApprovalReadResultV1<NativeApprovalReadDetailV1>> GetAsync(
         string kind,
         Guid approvalId,
+        bool includeInventoryLabelCode,
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -78,7 +93,7 @@ internal sealed class NativeApprovalReadQueryV1
         {
             return NotFound<NativeApprovalReadDetailV1>();
         }
-        if (!TryCapture(out var context, out var refusal))
+        if (!TryCapture(includeInventoryLabelCode, out var context, out var refusal))
         {
             return new(refusal, null);
         }
@@ -114,7 +129,7 @@ internal sealed class NativeApprovalReadQueryV1
 
         foreach (var item in page.Items)
         {
-            if (!ValidItem(kind, context.CompanyId, item))
+            if (!ValidItem(kind, context, item))
             {
                 return Unavailable<NativeApprovalReadPageV1>();
             }
@@ -134,19 +149,33 @@ internal sealed class NativeApprovalReadQueryV1
         }
         return result.Resource is { Item: { } item }
             && item.ApprovalId == approvalId
-            && ValidItem(kind, context.CompanyId, item)
+            && ValidItem(kind, context, item)
                 ? result
                 : Unavailable<NativeApprovalReadDetailV1>();
     }
 
-    private static bool ValidItem(string kind, Guid companyId, NativeApprovalReadItemV1? item) =>
+    private static bool ValidItem(
+        string kind,
+        NativeApprovalReadContextV1 context,
+        NativeApprovalReadItemV1? item) =>
         item is not null
         && string.Equals(item.Kind, kind, StringComparison.Ordinal)
         && item.ApprovalId != Guid.Empty
-        && item.CompanyId == companyId
+        && item.CompanyId == context.CompanyId
         && !string.IsNullOrWhiteSpace(item.Status)
         && !string.IsNullOrWhiteSpace(item.Version)
-        && !string.IsNullOrWhiteSpace(item.SubmittedBy);
+        && !string.IsNullOrWhiteSpace(item.SubmittedBy)
+        && (!context.IncludeInventoryLabelCode
+            || kind is not (NativeApprovalKindsV1.InventoryStockCount
+                or NativeApprovalKindsV1.InventoryStockScrap)
+            || item switch
+            {
+                InventoryStockCountNativeApprovalReadItemV1 count =>
+                    InventoryPendingApprovalReadContractV1.IsCanonicalLabelCode(count.LabelCode),
+                InventoryStockScrapNativeApprovalReadItemV1 scrap =>
+                    InventoryPendingApprovalReadContractV1.IsCanonicalLabelCode(scrap.LabelCode),
+                _ => false,
+            });
 
     private static NativeApprovalReadResultV1<T> StrictFailure<T>(NativeApprovalReadResultV1<T> result)
         where T : class =>
@@ -158,6 +187,7 @@ internal sealed class NativeApprovalReadQueryV1
                 : Unavailable<T>();
 
     private bool TryCapture(
+        bool includeInventoryLabelCode,
         out NativeApprovalReadContextV1 context,
         out NativeApprovalReadOutcomeV1 refusal)
     {
@@ -181,7 +211,8 @@ internal sealed class NativeApprovalReadQueryV1
             companyContext.CompanyId,
             currentUser.UserId,
             correlationContext.CorrelationId,
-            correlationContext.CausationId);
+            correlationContext.CausationId,
+            includeInventoryLabelCode);
         refusal = default;
         return true;
     }

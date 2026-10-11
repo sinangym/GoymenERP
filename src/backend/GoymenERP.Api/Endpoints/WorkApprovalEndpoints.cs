@@ -9,6 +9,8 @@ namespace GoymenERP.Api.Endpoints;
 public static class WorkApprovalEndpoints
 {
     public const string Path = "/api/v1/work/approvals";
+    internal const string InvalidContractSelectorDetail =
+        "The Work approval contract selector must be a single exact 2.0 value.";
     private static readonly JsonSerializerOptions ContractJson = NativeApprovalJson.CreateOptions();
 
     public static IEndpointRouteBuilder MapWorkApprovalEndpoints(this IEndpointRouteBuilder endpoints)
@@ -21,13 +23,21 @@ public static class WorkApprovalEndpoints
                 CancellationToken cancellationToken) =>
             {
                 SetPrivateNoStore(httpContext);
-                return Read(await query.ListAsync(kind, cursor, cancellationToken));
+                if (!TryReadContract(httpContext.Request.Headers, out var includeInventoryLabelCode))
+                {
+                    return InvalidContractSelector();
+                }
+                SetContractResponseHeader(httpContext, includeInventoryLabelCode);
+                return Read(await query.ListAsync(
+                    kind, cursor, includeInventoryLabelCode, cancellationToken));
             })
             .WithName("GetWorkApprovalsV1")
             .WithTags("Work")
             .RequireAuthorization()
             .RequireCompanyContext()
             .Produces<NativeApprovalReadPageV1>()
+            .ProducesErpCodeLessBadRequest()
+            .AllowsCodeLessErpBadRequestBody()
             .ProducesErpAuthenticatedProblems()
             .ProducesErpCodeLessNotFound()
             .ProducesErpServiceUnavailable();
@@ -40,19 +50,31 @@ public static class WorkApprovalEndpoints
                 CancellationToken cancellationToken) =>
             {
                 SetPrivateNoStore(httpContext);
-                return Read(await query.GetAsync(kind, approvalId, cancellationToken));
+                if (!TryReadContract(httpContext.Request.Headers, out var includeInventoryLabelCode))
+                {
+                    return InvalidContractSelector();
+                }
+                SetContractResponseHeader(httpContext, includeInventoryLabelCode);
+                return Read(await query.GetAsync(
+                    kind, approvalId, includeInventoryLabelCode, cancellationToken));
             })
             .WithName("GetWorkApprovalV1")
             .WithTags("Work")
             .RequireAuthorization()
             .RequireCompanyContext()
             .Produces<NativeApprovalReadDetailV1>()
+            .ProducesErpCodeLessBadRequest()
+            .AllowsCodeLessErpBadRequestBody()
             .ProducesErpAuthenticatedProblems()
             .ProducesErpCodeLessNotFound()
             .ProducesErpServiceUnavailable();
 
         return endpoints;
     }
+
+    private static IResult InvalidContractSelector() => Results.Problem(
+        detail: InvalidContractSelectorDetail,
+        statusCode: StatusCodes.Status400BadRequest);
 
     private static IResult Read<T>(NativeApprovalReadResultV1<T> result) where T : class => result.Outcome switch
     {
@@ -69,5 +91,38 @@ public static class WorkApprovalEndpoints
     {
         httpContext.Response.Headers.CacheControl = "private, no-store";
         httpContext.Response.Headers.Pragma = "no-cache";
+    }
+
+    private static bool TryReadContract(
+        IHeaderDictionary headers,
+        out bool includeInventoryLabelCode)
+    {
+        includeInventoryLabelCode = false;
+        if (!headers.TryGetValue(NativeApprovalReadContractV1.Header, out var values))
+        {
+            return true;
+        }
+
+        if (values.Count != 1
+            || !string.Equals(values[0],
+                NativeApprovalReadContractV1.InventoryLabelDisplayVersion,
+                StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        includeInventoryLabelCode = true;
+        return true;
+    }
+
+    private static void SetContractResponseHeader(
+        HttpContext httpContext,
+        bool includeInventoryLabelCode)
+    {
+        if (includeInventoryLabelCode)
+        {
+            httpContext.Response.Headers[NativeApprovalReadContractV1.Header] =
+                NativeApprovalReadContractV1.InventoryLabelDisplayVersion;
+        }
     }
 }

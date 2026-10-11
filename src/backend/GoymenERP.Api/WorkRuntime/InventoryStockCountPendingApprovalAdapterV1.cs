@@ -93,6 +93,7 @@ internal sealed class InventoryStockCountPendingApprovalAdapterV1(
             || source.CountId != approvalId
             || source.CompanyId != context.CompanyId
             || source.LabelId == Guid.Empty
+            || !InventoryPendingApprovalReadContractV1.IsCanonicalLabelCode(source.LabelCode)
             || source.ProductId == Guid.Empty
             || source.LocationId == Guid.Empty
             || source.OwnerId == Guid.Empty
@@ -130,6 +131,7 @@ internal sealed class InventoryStockCountPendingApprovalAdapterV1(
             source.BookKg,
             source.CountedKg,
             source.Reason,
+            context.IncludeInventoryLabelCode ? source.LabelCode : null,
             source.SubmittedBy,
             source.SubmittedAtUtc);
         return true;

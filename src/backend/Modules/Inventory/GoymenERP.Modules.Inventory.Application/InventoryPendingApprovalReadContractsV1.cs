@@ -1,4 +1,16 @@
+using GoymenERP.Modules.Inventory.Domain.Labels;
+
 namespace GoymenERP.Modules.Inventory.Application;
+
+public static class InventoryPendingApprovalReadContractV1
+{
+    public const int MaximumLabelCodeLength = MaterialLabel.MaximumCodeLength;
+
+    public static bool IsCanonicalLabelCode(string? value) =>
+        !string.IsNullOrWhiteSpace(value)
+        && value.Length <= MaximumLabelCodeLength
+        && string.Equals(value, value.Trim(), StringComparison.Ordinal);
+}
 
 public static class InventoryPendingApprovalKindsV1
 {
@@ -22,6 +34,7 @@ public sealed record InventoryStockCountPendingApprovalItemV1(
     Guid CountId,
     Guid CompanyId,
     Guid LabelId,
+    string LabelCode,
     string LabelVersion,
     string OwnerKind,
     Guid OwnerId,
@@ -41,6 +54,7 @@ public sealed record InventoryStockScrapPendingApprovalItemV1(
     Guid ScrapId,
     Guid CompanyId,
     Guid LabelId,
+    string LabelCode,
     string LabelVersion,
     string OwnerKind,
     Guid OwnerId,

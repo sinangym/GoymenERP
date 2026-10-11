@@ -9,6 +9,7 @@ using System.Text.RegularExpressions;
 using GoymenERP.Api.Endpoints;
 using GoymenERP.Api.OpenApi;
 using GoymenERP.Api.Contracts;
+using GoymenERP.Api.WorkRuntime;
 using GoymenERP.BuildingBlocks.OpenApi;
 using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Logistics.Application.Contracts;
@@ -417,10 +418,10 @@ public sealed partial class OpenApiContractGenerationTests
             AuthenticatedResponses("200:application/json", "404:application/problem+json", "503:application/problem+json"),
             ParameterValues: ["path:batchId:true:type:string;format:uuid"]),
         new("get", "/api/v1/work/approvals", "GetWorkApprovalsV1",
-            AuthenticatedResponses("200:application/json", "404:application/problem+json", "503:application/problem+json"),
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "404:application/problem+json", "503:application/problem+json"),
             ParameterValues: ["query:kind:false:type:string", "query:cursor:false:type:string"]),
         new("get", "/api/v1/work/approvals/{kind}/{approvalId}", "GetWorkApprovalV1",
-            AuthenticatedResponses("200:application/json", "404:application/problem+json", "503:application/problem+json"),
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "404:application/problem+json", "503:application/problem+json"),
             ParameterValues:
             [
                 "path:kind:true:type:string",
@@ -1900,6 +1901,8 @@ public sealed partial class OpenApiContractGenerationTests
 
     private static readonly HashSet<string> MixedProblemResponses =
     [
+        "GetWorkApprovalsV1:400",
+        "GetWorkApprovalV1:400",
         "CreateAccountingNormalJournalDraftV1:400",
         "PrepareAccountingApprovedSourceCatalogV1:400",
         "ActivateAccountingApprovedSourceCatalogV1:400",
@@ -2503,6 +2506,7 @@ public sealed partial class OpenApiContractGenerationTests
                     ("bookKg", "type:string"),
                     ("countedKg", "type:string"),
                     ("reason", "type:string"),
+                    ("labelCode", "type:null|string"),
                     ("submittedBy", "type:string"),
                     ("submittedAtUtc", "type:string;format:date-time")),
                 ["NativeApprovalReadItemV1InventoryStockScrapNativeApprovalReadItemV1"] = ObjectSchema(
@@ -2525,6 +2529,7 @@ public sealed partial class OpenApiContractGenerationTests
                     ("bookKg", "type:string"),
                     ("remainingKg", "type:string"),
                     ("reason", "type:string"),
+                    ("labelCode", "type:null|string"),
                     ("submittedBy", "type:string"),
                     ("submittedAtUtc", "type:string;format:date-time")),
                 ["NativeApprovalReadItemV1SalesOrderDraftNativeApprovalReadItemV1"] = ObjectSchema(
@@ -6522,6 +6527,8 @@ public sealed partial class OpenApiContractGenerationTests
                 "X-Causation-Id",
             };
             var isCounterparty = operation.Path.StartsWith("/api/v1/counterparties", StringComparison.Ordinal);
+            var isWorkApproval = operation.OperationId is
+                "GetWorkApprovalsV1" or "GetWorkApprovalV1";
             if (isCounterparty)
             {
                 expectedHeaderNames.Add(CounterpartyClientContract.HeaderName);
@@ -6549,6 +6556,13 @@ public sealed partial class OpenApiContractGenerationTests
                 AssertHeaderSchema(parameters, SalesEndpoints.DraftReadContractHeader,
                     required: false, type: "string",
                     pattern: SalesEndpoints.DraftReadContractVersionPattern);
+            }
+            if (operation.OperationId is "GetWorkApprovalsV1" or "GetWorkApprovalV1")
+            {
+                expectedHeaderNames.Add(NativeApprovalReadContractV1.Header);
+                AssertHeaderSchema(parameters, NativeApprovalReadContractV1.Header,
+                    required: false, type: "string", minimumLength: 3, maximumLength: 3,
+                    pattern: "^2\\.0$");
             }
 
             Assert.Equal(
@@ -6662,6 +6676,28 @@ public sealed partial class OpenApiContractGenerationTests
                     Assert.Contains("not command success or client readiness", description, StringComparison.Ordinal);
                     Assert.Contains("fresh, successful, validated GET", description, StringComparison.Ordinal);
                     Assert.Contains("Absence on an error is not proof of an old server", description,
+                        StringComparison.Ordinal);
+                }
+                var hasWorkAcknowledgment = responseHeaders.TryGetProperty(
+                    NativeApprovalReadContractV1.Header, out var workAcknowledgment);
+                Assert.True(
+                    isWorkApproval == hasWorkAcknowledgment,
+                    $"Operation '{operation.OperationId}' response '{response.Name}' Work acknowledgment mismatch. Expected {isWorkApproval}, actual {hasWorkAcknowledgment}.");
+                if (isWorkApproval)
+                {
+                    AssertResponseHeaderSchema(responseHeaders,
+                        NativeApprovalReadContractV1.Header, "string",
+                        minimumLength: 3, maximumLength: 3, pattern: "^2\\.0$");
+                    Assert.False(workAcknowledgment.TryGetProperty("required", out var required)
+                        && required.GetBoolean());
+                    var description = workAcknowledgment.GetProperty("description").GetString();
+                    Assert.Contains("accepts the exact 2.0 request selector", description,
+                        StringComparison.Ordinal);
+                    Assert.Contains("handler-generated success or error responses", description,
+                        StringComparison.Ordinal);
+                    Assert.Contains("errors before the handler", description, StringComparison.Ordinal);
+                    Assert.Contains("rejected selector", description, StringComparison.Ordinal);
+                    Assert.Contains("not read success or client readiness", description,
                         StringComparison.Ordinal);
                 }
                 var salesAcknowledgmentExpected = numericStatusCode == StatusCodes.Status200OK
@@ -6787,6 +6823,19 @@ public sealed partial class OpenApiContractGenerationTests
                     ?? throw new InvalidOperationException("Native approval item schema reference is null."))
                 .Order(StringComparer.Ordinal)
                 .ToArray());
+
+        foreach (var schemaName in new[]
+                 {
+                     "NativeApprovalReadItemV1InventoryStockCountNativeApprovalReadItemV1",
+                     "NativeApprovalReadItemV1InventoryStockScrapNativeApprovalReadItemV1",
+                 })
+        {
+            var labelCode = schemas.GetProperty(schemaName)
+                .GetProperty("properties")
+                .GetProperty("labelCode");
+            Assert.Equal(InventoryPendingApprovalReadContractV1.MaximumLabelCodeLength,
+                labelCode.GetProperty("maxLength").GetInt32());
+        }
 
         var detail = schemas.GetProperty("NativeApprovalReadDetailV1");
         Assert.False(detail.TryGetProperty("discriminator", out _));

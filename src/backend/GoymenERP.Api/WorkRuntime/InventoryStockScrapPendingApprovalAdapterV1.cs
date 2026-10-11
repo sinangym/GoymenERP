@@ -93,6 +93,7 @@ internal sealed class InventoryStockScrapPendingApprovalAdapterV1(
             || source.ScrapId != approvalId
             || source.CompanyId != context.CompanyId
             || source.LabelId == Guid.Empty
+            || !InventoryPendingApprovalReadContractV1.IsCanonicalLabelCode(source.LabelCode)
             || source.ProductId == Guid.Empty
             || source.LocationId == Guid.Empty
             || source.OwnerId == Guid.Empty
@@ -129,6 +130,7 @@ internal sealed class InventoryStockScrapPendingApprovalAdapterV1(
             source.BookKg,
             source.RemainingKg,
             source.Reason,
+            context.IncludeInventoryLabelCode ? source.LabelCode : null,
             source.SubmittedBy,
             source.SubmittedAtUtc);
         return true;

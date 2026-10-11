@@ -21,7 +21,14 @@ internal sealed record NativeApprovalReadContextV1(
     Guid CompanyId,
     string ActorId,
     string CorrelationId,
-    string? CausationId);
+    string? CausationId,
+    bool IncludeInventoryLabelCode = false);
+
+internal static class NativeApprovalReadContractV1
+{
+    public const string Header = "X-ERP-Work-Approval-Contract";
+    public const string InventoryLabelDisplayVersion = "2.0";
+}
 
 internal enum NativeApprovalReadOutcomeV1
 {
@@ -119,6 +126,8 @@ internal sealed record InventoryStockCountNativeApprovalReadItemV1(
     [property: JsonPropertyOrder(17)] string BookKg,
     [property: JsonPropertyOrder(18)] string CountedKg,
     [property: JsonPropertyOrder(19)] string Reason,
+    [property: JsonPropertyOrder(20),
+     JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? LabelCode,
     string SubmittedBy,
     DateTimeOffset SubmittedAtUtc)
     : NativeApprovalReadItemV1(
@@ -151,6 +160,8 @@ internal sealed record InventoryStockScrapNativeApprovalReadItemV1(
     [property: JsonPropertyOrder(17)] string BookKg,
     [property: JsonPropertyOrder(18)] string RemainingKg,
     [property: JsonPropertyOrder(19)] string Reason,
+    [property: JsonPropertyOrder(20),
+     JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? LabelCode,
     string SubmittedBy,
     DateTimeOffset SubmittedAtUtc)
     : NativeApprovalReadItemV1(
