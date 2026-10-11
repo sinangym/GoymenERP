@@ -23,7 +23,11 @@ const OPENINGS = '/api/v1/inventory/opening-counts'
 const COUNTS = '/api/v1/inventory/stock-counts'
 const SCRAPS = '/api/v1/inventory/stock-scraps'
 const WORK = '/api/v1/work/approvals'
+const WORK_CONTRACT_HEADER = 'X-ERP-Work-Approval-Contract'
+const WORK_CONTRACT_V2 = '2.0'
 const CAPABILITIES = '/api/v1/shell/capabilities'
+const FINANCE_KIND = 'finance.official-invoice-import.v1'
+const SALES_KIND = 'sales.order-draft.v1'
 const COUNT_KIND = 'inventory.stock-count.v1'
 const SCRAP_KIND = 'inventory.stock-scrap.v1'
 const COUNT_APPROVE = 'inventory.stock-count.approve'
@@ -68,6 +72,20 @@ interface WorkObservation {
   readonly reads: string[]
   readonly posts: string[]
   readonly companies: (string | null)[]
+}
+
+interface WorkApprovalItemBody {
+  readonly kind: string
+  readonly approvalId: string
+  readonly labelCode?: string | null
+}
+
+interface WorkApprovalPageBody {
+  readonly items: readonly WorkApprovalItemBody[]
+}
+
+interface WorkApprovalDetailBody {
+  readonly item: WorkApprovalItemBody
 }
 
 type SqlPool = Awaited<ReturnType<InstanceType<typeof sql.ConnectionPool>['connect']>>
@@ -155,6 +173,90 @@ async function arrangePendingPair(page: Page, suffix: string): Promise<PendingPa
   expect(scrap.status()).toBe(201)
   expect((await scrap.json()) as ScrapBody).toMatchObject({ scrapId, labelId: scrapLabelId, status: 'PendingApproval', decision: null })
   return { countId, countLabelId, countLabelCode, scrapId, scrapLabelId, scrapLabelCode }
+}
+
+function contractHeaders(actor: string, version?: string): Record<string, string> {
+  return version === undefined
+    ? apiHeaders(actor)
+    : { ...apiHeaders(actor), [WORK_CONTRACT_HEADER]: version }
+}
+
+function findApproval(
+  page: WorkApprovalPageBody,
+  kind: string,
+  approvalId: string,
+): WorkApprovalItemBody {
+  const matching = page.items.filter((item) => item.kind === kind && item.approvalId === approvalId)
+  expect(matching).toHaveLength(1)
+  return matching[0]
+}
+
+async function expectInventoryLabelDisplayContract(page: Page, pair: PendingPair): Promise<void> {
+  const cases = [
+    { kind: COUNT_KIND, approvalId: pair.countId, labelCode: pair.countLabelCode },
+    { kind: SCRAP_KIND, approvalId: pair.scrapId, labelCode: pair.scrapLabelCode },
+  ] as const
+
+  for (const itemCase of cases) {
+    const listPath = `${env.apiBaseUrl}${WORK}?kind=${itemCase.kind}`
+    const detailPath = `${env.apiBaseUrl}${WORK}/${itemCase.kind}/${itemCase.approvalId}`
+
+    const legacyList = await page.request.get(listPath, { headers: contractHeaders(bothApproverActor) })
+    expect(legacyList.status()).toBe(200)
+    expect(legacyList.headers()[WORK_CONTRACT_HEADER.toLowerCase()]).toBeUndefined()
+    const legacyListItem = findApproval(
+      (await legacyList.json()) as WorkApprovalPageBody,
+      itemCase.kind,
+      itemCase.approvalId,
+    )
+    expect(Object.hasOwn(legacyListItem, 'labelCode')).toBe(false)
+
+    const enrichedList = await page.request.get(listPath, {
+      headers: contractHeaders(bothApproverActor, WORK_CONTRACT_V2),
+    })
+    expect(enrichedList.status()).toBe(200)
+    expect(enrichedList.headers()[WORK_CONTRACT_HEADER.toLowerCase()]).toBe(WORK_CONTRACT_V2)
+    expect(findApproval(
+      (await enrichedList.json()) as WorkApprovalPageBody,
+      itemCase.kind,
+      itemCase.approvalId,
+    ).labelCode).toBe(itemCase.labelCode)
+
+    const legacyDetail = await page.request.get(detailPath, { headers: contractHeaders(bothApproverActor) })
+    expect(legacyDetail.status()).toBe(200)
+    expect(legacyDetail.headers()[WORK_CONTRACT_HEADER.toLowerCase()]).toBeUndefined()
+    const legacyDetailItem = ((await legacyDetail.json()) as WorkApprovalDetailBody).item
+    expect(legacyDetailItem).toMatchObject({ kind: itemCase.kind, approvalId: itemCase.approvalId })
+    expect(Object.hasOwn(legacyDetailItem, 'labelCode')).toBe(false)
+
+    const enrichedDetail = await page.request.get(detailPath, {
+      headers: contractHeaders(bothApproverActor, WORK_CONTRACT_V2),
+    })
+    expect(enrichedDetail.status()).toBe(200)
+    expect(enrichedDetail.headers()[WORK_CONTRACT_HEADER.toLowerCase()]).toBe(WORK_CONTRACT_V2)
+    expect(((await enrichedDetail.json()) as WorkApprovalDetailBody).item).toMatchObject({
+      kind: itemCase.kind,
+      approvalId: itemCase.approvalId,
+      labelCode: itemCase.labelCode,
+    })
+  }
+
+  // The Inventory selector neither creates Finance/Sales authority nor discloses the arranged Inventory records.
+  for (const kind of [FINANCE_KIND, SALES_KIND]) {
+    for (const version of [undefined, WORK_CONTRACT_V2]) {
+      const response = await page.request.get(`${env.apiBaseUrl}${WORK}?kind=${kind}`, {
+        headers: contractHeaders(bothApproverActor, version),
+      })
+      expect(response.status()).toBe(403)
+      expect(response.headers()[WORK_CONTRACT_HEADER.toLowerCase()])
+        .toBe(version === undefined ? undefined : WORK_CONTRACT_V2)
+      const text = await response.text()
+      expect(text).not.toContain(pair.countId)
+      expect(text).not.toContain(pair.scrapId)
+      expect(text).not.toContain(pair.countLabelCode)
+      expect(text).not.toContain(pair.scrapLabelCode)
+    }
+  }
 }
 
 function observeWork(page: Page): WorkObservation {
@@ -291,6 +393,9 @@ for (const [width, height] of VIEWPORTS) {
       expect(deniedCaps).not.toContain(SCRAP_APPROVE)
 
       const pair = await arrangePendingPair(page, width.toString())
+
+      // The same genuine pending rows prove legacy omission and the explicit Work 2.0 label-display contract.
+      await expectInventoryLabelDisplayContract(page, pair)
 
       // Each single-source actor sees only its native source; no capability is inferred from the Work screen.
       await expectProfile(page, countApproverActor, COUNT_KIND, pair.countId, SCRAP_KIND, width, height)
