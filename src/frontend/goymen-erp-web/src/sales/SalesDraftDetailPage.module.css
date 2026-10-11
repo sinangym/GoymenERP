@@ -90,6 +90,8 @@
 
 .section {
   display: grid;
+  /* One column bound to the section's own width: a wide child cannot stretch the track past the container. */
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--goy-ds-space-3);
   min-width: 0;
 }
