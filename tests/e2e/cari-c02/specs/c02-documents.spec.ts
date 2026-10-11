@@ -42,6 +42,7 @@ const FILE_NAME = `SENTETIK Sözleşme ${testedCommit.slice(0, 8)}.pdf`
 const PDF = Buffer.from(`%PDF-1.4\n% SENTETIK browser-suite:c02 ${testedCommit}\n%%EOF\n`, 'utf8')
 const PDF_V2 = Buffer.from(`%PDF-1.4\n% SENTETIK browser-suite:c02 version-2 ${testedCommit}\n%%EOF\n`, 'utf8')
 const PDF_V3 = Buffer.from(`%PDF-1.4\n% SENTETIK browser-suite:c02 version-3 ${testedCommit}\n%%EOF\n`, 'utf8')
+const DUPLICATE_PDF = Buffer.from(`%PDF-1.4\n% SENTETIK browser-suite:c02 duplicate ${testedCommit}\n%%EOF\n`, 'utf8')
 const EICAR_PDF = Buffer.from(
   '%PDF-1.4\nX5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*\n%%EOF\n',
   'utf8',
@@ -376,15 +377,29 @@ test('C02-D2 uploading the same file again stores it and warns with the earlier 
   await signInAs(page, CREATOR_ACTOR)
   await page.goto(`/cari/${partyId}`)
   const panel = documentsPanel(page)
-  await panel.getByLabel(FILE_LABEL).setInputFiles({ name: `Tekrar ${FILE_NAME}`, mimeType: 'application/pdf', buffer: PDF })
+  const rowsBefore = await panel.locator('tbody tr').count()
+
+  // D1V/H deliberately move the original document through many immutable versions. Duplicate detection concerns the
+  // current content of another document, so establish that earlier document here instead of treating D1's historical
+  // v1 bytes as the current upload. Both writes still use the real API through the page.
+  const earlierName = `SENTETIK Önceki belge ${testedCommit.slice(0, 8)}.pdf`
+  await panel.getByLabel(FILE_LABEL).setInputFiles({ name: earlierName, mimeType: 'application/pdf', buffer: DUPLICATE_PDF })
+  const earlierUpload = page.waitForResponse((r) => r.request().method() === 'POST' && new URL(r.url()).pathname === '/api/v1/documents')
+  await panel.getByRole('button', { name: UPLOAD_LABEL, exact: true }).click()
+  const earlierResponse = await earlierUpload
+  expect(earlierResponse.status()).toBe(201)
+  const earlierBody = (await earlierResponse.json()) as { document: { id: string }; duplicates: unknown[] }
+  expect(earlierBody.duplicates).toEqual([])
+
+  await panel.getByLabel(FILE_LABEL).setInputFiles({ name: `Tekrar ${earlierName}`, mimeType: 'application/pdf', buffer: DUPLICATE_PDF })
   const uploaded = page.waitForResponse((r) => r.request().method() === 'POST' && new URL(r.url()).pathname === '/api/v1/documents')
   await panel.getByRole('button', { name: UPLOAD_LABEL, exact: true }).click()
   expect((await uploaded).status()).toBe(201)
 
   const warning = panel.locator('[data-documents-state="duplicate"]')
   await expect(warning).toContainText(DUPLICATE_TITLE)
-  await expect(warning.locator(`[data-duplicate-id="${documentId}"]`)).toContainText(FILE_NAME)
-  await expect(panel.locator('tbody tr')).toHaveCount(3)
+  await expect(warning.locator(`[data-duplicate-id="${earlierBody.document.id}"]`)).toContainText(earlierName)
+  await expect(panel.locator('tbody tr')).toHaveCount(rowsBefore + 2)
 })
 
 test('C02-D3 another company\'s fully authorized actor gets 404 and an actor without the document names gets 403', async ({ page }) => {
