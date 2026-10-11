@@ -211,8 +211,19 @@ async function capabilitiesOf(page: Page, actor: string): Promise<readonly strin
   return Array.isArray(snapshot.capabilities) ? snapshot.capabilities as string[] : []
 }
 
-function orderRow(page: Page, orderId: string) {
-  return page.getByRole('row').filter({ hasText: `…${orderId.slice(-8)}` })
+/** The real list's own layout switch (PURCHASING-DS-LIST-01): the table from 768 px, one card per order below it. */
+const LIST_TABLE_MIN_WIDTH = 768
+
+/**
+ * The order's own record on the real list: its table row from 768 px, its card below. Which one is decided by the
+ * viewport width alone, at the list's own breakpoint — never by whichever element happens to be on screen.
+ */
+function orderRecord(page: Page, orderId: string) {
+  const viewport = page.viewportSize()
+  if (viewport === null) throw new Error('the PUR01 list record needs a fixed viewport')
+  return viewport.width >= LIST_TABLE_MIN_WIDTH
+    ? page.getByRole('row').filter({ hasText: `…${orderId.slice(-8)}` })
+    : page.locator(`li[data-order-id="${orderId}"]`)
 }
 
 function lineRow(page: Page) {
@@ -220,14 +231,15 @@ function lineRow(page: Page) {
 }
 
 /**
- * Closes whatever is open by going to the real list, then opens the order from its row. `arm` runs once the list
- * is on screen and before the row is clicked, so a response waiter can never match a request of the page just left.
+ * Closes whatever is open by going to the real list, then opens the order from its own record there (row or card,
+ * by the viewport). `arm` runs once the list is on screen and before the order's link is clicked, so a response
+ * waiter can never match a request of the page just left.
  */
 async function openOrderFromList(page: Page, orderId: string, arm: () => void = () => undefined): Promise<void> {
   await page.goto(LIST_ROUTE)
   await expect(page.getByRole('heading', { level: 1, name: 'Satın alma siparişleri' })).toBeVisible({ timeout: 30_000 })
   arm()
-  await orderRow(page, orderId).getByRole('link', { name: `…${orderId.slice(-8)}` }).click()
+  await orderRecord(page, orderId).getByRole('link', { name: `…${orderId.slice(-8)}` }).click()
   await expect(page.getByRole('heading', { level: 1, name: 'Satın alma siparişi' })).toBeVisible({ timeout: 30_000 })
   await expect(page.getByText(orderId, { exact: true })).toBeVisible()
 }
