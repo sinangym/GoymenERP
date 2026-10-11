@@ -267,8 +267,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 "e02948f7d4d4ebc817db08478c9c0c47bbd30abcaa5880e90cd68880a8d0aeee",
 
             // purchasing
+            // Purchasing supplier filter: +1 company-scoped cursor-paging SQL fact, kept ordinal-sorted.
             ["tools/relational_inventory/purchasing.txt"] =
-                "18d2d359f6688645ef4a0021c9d59045539ffe9b62c2b9e1cddb942073f8c691",
+                "23decb3344e381ed4ac26013080378c6eb37d5cf97c79962ae75226c0dbfc9b7",
 
             // sales
             // DEC-SAL-003: +3 SalesDeliveryScheduleSqlServerRelationalAcceptanceTests facts (16fa5110… -> 00189b7b…).
