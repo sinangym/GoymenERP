@@ -46,6 +46,7 @@ public sealed class Pur01BrowserSeed : IBrowserSuiteFixture
     private const string StockLabelCapability = "inventory.stock-positions.list";
     private const string SupplierLegalName =
         "Göymen Endüstriyel Çelik Ürünleri Tedarik ve Lojistik Sanayi ve Ticaret Anonim Şirketi Uzun Ünvan Kabul Tedarikçisi";
+    private const string OtherSupplierLegalName = "Alternatif Tedarikçi Metal Sanayi ve Ticaret Limited Şirketi";
     private const int SupplierRole = 2;
 
     public string Suite => "pur01";
@@ -60,6 +61,14 @@ public sealed class Pur01BrowserSeed : IBrowserSuiteFixture
             CompanyGdc,
             "supplier",
             SupplierLegalName,
+            SupplierRole,
+            cancellationToken);
+        var otherSupplier = await CariBrowserSeed.OpenPartyWithAccountAsync(
+            context,
+            CariActor,
+            CompanyGdc,
+            "other-supplier",
+            OtherSupplierLegalName,
             SupplierRole,
             cancellationToken);
 
@@ -124,21 +133,28 @@ public sealed class Pur01BrowserSeed : IBrowserSuiteFixture
             $"{CariBrowserSeed.CounterpartiesPath}?role=Supplier&partyState=active&accountState=active&pageSize=200",
             cancellationToken);
         JsonElement[] parties = suppliers.GetProperty("items").EnumerateArray()
-            .Where(item => item.GetProperty("id").GetGuid() == supplier.PartyId)
+            .Where(item => item.GetProperty("id").GetGuid() == supplier.PartyId
+                || item.GetProperty("id").GetGuid() == otherSupplier.PartyId)
             .ToArray();
-        if (parties.Length != 1 || !parties[0].GetProperty("isActive").GetBoolean())
+        if (parties.Length != 2 || parties.Any(party => !party.GetProperty("isActive").GetBoolean()))
         {
-            throw new InvalidOperationException("The creator cannot resolve the real active Supplier party.");
+            throw new InvalidOperationException("The creator cannot resolve both real active Supplier parties.");
         }
 
-        JsonElement[] accounts = parties[0].GetProperty("companyAccounts").EnumerateArray()
-            .Where(account => account.GetProperty("id").GetGuid() == supplier.AccountId
-                && account.GetProperty("companyId").GetGuid() == CompanyGdc)
-            .ToArray();
-        if (accounts.Length != 1 || !accounts[0].GetProperty("isActive").GetBoolean()
-            || (accounts[0].GetProperty("roles").GetInt32() & SupplierRole) == 0)
+        static bool HasActiveSupplierAccount(JsonElement party, Guid accountId) => party
+            .GetProperty("companyAccounts")
+            .EnumerateArray()
+            .Any(account => account.GetProperty("id").GetGuid() == accountId
+                && account.GetProperty("companyId").GetGuid() == CompanyGdc
+                && account.GetProperty("isActive").GetBoolean()
+                && (account.GetProperty("roles").GetInt32() & SupplierRole) != 0);
+
+        JsonElement supplierParty = parties.Single(party => party.GetProperty("id").GetGuid() == supplier.PartyId);
+        JsonElement otherSupplierParty = parties.Single(party => party.GetProperty("id").GetGuid() == otherSupplier.PartyId);
+        if (!HasActiveSupplierAccount(supplierParty, supplier.AccountId)
+            || !HasActiveSupplierAccount(otherSupplierParty, otherSupplier.AccountId))
         {
-            throw new InvalidOperationException("The creator cannot resolve the real active Supplier company account.");
+            throw new InvalidOperationException("The creator cannot resolve both real active Supplier company accounts.");
         }
 
         JsonElement candidates = await context.GetJsonAsync(
@@ -225,6 +241,8 @@ public sealed class Pur01BrowserSeed : IBrowserSuiteFixture
             ["lineId"] = LineId.ToString("D"),
             ["supplierPartyId"] = supplier.PartyId.ToString("D"),
             ["companyAccountId"] = supplier.AccountId.ToString("D"),
+            ["otherSupplierPartyId"] = otherSupplier.PartyId.ToString("D"),
+            ["otherCompanyAccountId"] = otherSupplier.AccountId.ToString("D"),
             ["productId"] = productCandidate.ProductId.ToString("D"),
             ["productVersion"] = productCandidate.ProductVersion,
             ["productUnitId"] = productCandidate.UnitId.ToString("D"),

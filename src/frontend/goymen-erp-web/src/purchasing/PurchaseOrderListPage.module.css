@@ -99,6 +99,38 @@
   outline-offset: 2px;
 }
 
+/* ── Active supplier filter: what the list is narrowed to, and the way out of it ── */
+.activeFilter {
+  display: flex;
+  flex: 1 1 20rem;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--goy-ds-space-1) var(--goy-ds-space-2);
+  box-sizing: border-box;
+  min-width: 0;
+  min-height: var(--goy-ds-control-height);
+  padding: var(--goy-ds-space-1) var(--goy-ds-space-2);
+  border: 1px solid var(--goy-ds-color-border-control);
+  border-radius: var(--goy-ds-radius-sm);
+  background: var(--goy-ds-color-surface-muted);
+  font-size: var(--goy-ds-font-size-md);
+  line-height: 18px;
+}
+
+.activeFilterLabel {
+  color: var(--goy-ds-color-text-secondary);
+  font-size: var(--goy-ds-font-size-sm);
+  font-weight: var(--goy-ds-font-weight-medium);
+}
+
+/* The supplier's code and name wrap like they do in the list; the remove control keeps its own line if it must. */
+.activeFilterValue {
+  flex: 1 1 12rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-weight: var(--goy-ds-font-weight-medium);
+}
+
 /* What this list does not show, said once and quietly. */
 .scope {
   margin: 0;
@@ -130,12 +162,40 @@
 /* A long legal name wraps on word boundaries (and inside a word only when it must); the column keeps a readable
    width so a wrapped name does not turn into a narrow tower. */
 .supplierColumn {
-  min-width: 16rem;
+  min-width: 20rem;
+}
+
+/* The identity takes the room; the row's filter action keeps its own width beside it. */
+.supplierCell {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--goy-ds-space-2);
+  min-width: 0;
 }
 
 .supplier {
   display: block;
+  flex: 1 1 auto;
+  min-width: 0;
   overflow-wrap: anywhere;
+}
+
+.filterBySupplier {
+  flex: none;
+}
+
+/* Read by assistive technology, not drawn: which supplier a row's "Filtrele" means. The box is one pixel and
+   hides what does not fit, so a long name in it can never widen the page. */
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 /* The trade name sits under the legal name as the quieter second line. */
@@ -162,7 +222,8 @@
 
 /* ── Phone: one card per order, every fact labelled ── */
 @media (max-width: 767px) {
-  .filter {
+  .filter,
+  .activeFilter {
     flex: 1 1 100%;
   }
 }
