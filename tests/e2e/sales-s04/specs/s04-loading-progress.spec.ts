@@ -161,7 +161,39 @@ async function expectFacts(page: Page, lineId: string, expected: {
 }
 
 async function expectNoPageOverflow(page: Page): Promise<void> {
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true)
+  const measurement = await page.evaluate(() => {
+    const root = document.documentElement
+    const clientWidth = root.clientWidth
+    const offenders = [...document.body.querySelectorAll<HTMLElement>('*')]
+      .map((element) => {
+        const rect = element.getBoundingClientRect()
+        const style = getComputedStyle(element)
+        return {
+          className: typeof element.className === 'string' ? element.className.slice(0, 120) : '',
+          display: style.display,
+          height: rect.height,
+          right: rect.right,
+          tag: element.tagName.toLowerCase(),
+          testId: element.dataset.testid ?? '',
+          visibility: style.visibility,
+          width: rect.width,
+        }
+      })
+      .filter((item) => item.display !== 'none' && item.visibility !== 'hidden'
+        && item.height > 0 && item.width > 0 && item.right > clientWidth + 0.5)
+      .sort((left, right) => right.right - left.right || right.width - left.width)
+      .slice(0, 24)
+      .map((item) => ({
+        className: item.className,
+        right: item.right,
+        tag: item.tag,
+        testId: item.testId,
+        width: item.width,
+      }))
+    return { clientWidth, offenders, pageFits: root.scrollWidth <= clientWidth, scrollWidth: root.scrollWidth }
+  })
+  expect(measurement.pageFits,
+    `page overflow diagnostics (no content): ${JSON.stringify(measurement)}`).toBe(true)
 }
 
 async function arrangeRealJourney(request: APIRequestContext): Promise<JourneyRecord> {
