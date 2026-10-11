@@ -9,6 +9,12 @@
  * PURCHASING-DS-LIST-01 (GOY-DS-001): the same facts on the design system — the shared DataTable on a wide screen,
  * one labelled card per order on a phone (the shell's compact width), the status filter in a Field, the continuation
  * on Button and the status on StatusIndicator. A long supplier name wraps; nothing is cut.
+ *
+ * PURCHASING-SUPPLIER-FILTER-UI-01: a row's own supplier can be made the list's filter. It is the server's
+ * `supplierPartyId` query (#671), taken only from that row's record-bound identity — no picker, no lookup, no
+ * client-side filtering. The active filter stays on screen with its own remove control; applying, changing or
+ * removing it drops the pages already read and starts the cursor over. A read the server refuses is shown as
+ * refused: the list never quietly falls back to the unfiltered one.
  */
 
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
@@ -53,9 +59,20 @@ const LIST_TEXT = {
   loadingMore: 'Sonraki sayfa yükleniyor…',
   retrySamePage: 'Aynı sayfayı yeniden dene',
   nextPageSubject: 'sonraki sipariş sayfası',
+  filterBySupplier: 'Filtrele',
+  supplierFilter: 'Tedarikçi filtresi',
+  clearSupplierFilter: 'Tedarikçi filtresini kaldır',
 } as const
 
 const HEADING_ID = 'purchase-order-list-heading'
+const SUPPLIER_FILTER_VALUE_ID = 'purchase-order-supplier-filter-value'
+
+/** The supplier the list is filtered to: the party the server filters by, and the identity the chosen row showed. */
+interface SupplierFilter {
+  readonly partyId: string
+  readonly label: string
+}
+
 
 /** The shell's phone width (`AppShell` COMPACT_VIEWPORT): rows become cards instead of a squeezed table. */
 const CARD_VIEWPORT = '(max-width: 767px)'
@@ -122,21 +139,33 @@ function PurchaseOrderList({ namespace }: { readonly namespace: string | null })
   /** Cards or table is a layout choice only: the same rows, the same order, no new read when it flips. */
   const cards = useSyncExternalStore(subscribeCards, readCards, () => false)
   const [status, setStatus] = useState<PurchaseOrderStatus | null>(null)
+  const [supplier, setSupplier] = useState<SupplierFilter | null>(null)
   const [more, setMore] = useState<readonly PurchaseOrderSummary[]>([])
   const [cursor, setCursor] = useState<string | null | undefined>(undefined)
   const [continuation, setContinuation] = useState<'idle' | 'loading' | RemoteViewState<unknown>>('idle')
   const loading = useRef(false)
   const pageFence = useRef(createRequestFence())
+  const statusControl = useRef<HTMLSelectElement>(null)
+  const clearSupplierControl = useRef<HTMLButtonElement>(null)
+  /** Where focus goes once the supplier filter has changed: the control it was on is gone by then. */
+  const focusAfterSupplierChange = useRef<'clear' | 'status' | null>(null)
+  useEffect(() => {
+    if (focusAfterSupplierChange.current === 'clear') clearSupplierControl.current?.focus()
+    else if (focusAfterSupplierChange.current === 'status') statusControl.current?.focus()
+    focusAfterSupplierChange.current = null
+  }, [supplier])
+  /** The server's supplier filter, or none: the one value both the first page and every next page send. */
+  const supplierPartyId = supplier?.partyId ?? null
   useEffect(() => {
     const fence = pageFence.current
     return () => fence.invalidate()
   }, [namespace, shell.routeEntryGeneration])
   const first = useQuery({
-    queryKey: [namespace ?? 'no-context', shell.routeEntryGeneration, 'purchasing-orders', status ?? 'all'],
+    queryKey: [namespace ?? 'no-context', shell.routeEntryGeneration, 'purchasing-orders', status ?? 'all', supplierPartyId ?? 'all-suppliers'],
     enabled: namespace !== null && companyId !== null,
     queryFn: async ({ signal }) => {
       const snapshot = boundary.capture()
-      const outcome = await fetchPurchaseOrders(companyId ?? '', { status }, signal)
+      const outcome = await fetchPurchaseOrders(companyId ?? '', { status, supplierPartyId }, signal)
       if (outcome.type === 'http' && (outcome.status === 401 || outcome.status === 403)) boundary.report(outcome.status, snapshot)
       return outcome
     },
@@ -149,7 +178,7 @@ function PurchaseOrderList({ namespace }: { readonly namespace: string | null })
     setContinuation('loading')
     const token = pageFence.current.capture()
     const snapshot = boundary.capture()
-    const outcome = await fetchPurchaseOrders(companyId, { cursor: nextCursor, status }, token.signal)
+    const outcome = await fetchPurchaseOrders(companyId, { cursor: nextCursor, status, supplierPartyId }, token.signal)
     if (!pageFence.current.isCurrent(token)) return
     loading.current = false
     if (outcome.type === 'http' && (outcome.status === 401 || outcome.status === 403)) boundary.report(outcome.status, snapshot)
@@ -161,16 +190,36 @@ function PurchaseOrderList({ namespace }: { readonly namespace: string | null })
       setCursor(outcome.data.nextCursor)
       setContinuation('idle')
     } else setContinuation(classifyOutcome(outcome) as RemoteViewState<unknown>)
-  }, [boundary, companyId, nextCursor, page, status])
+  }, [boundary, companyId, nextCursor, page, status, supplierPartyId])
 
-  /** The filter is the server's (`status`); changing it drops the pages already read and restarts the list. */
-  function chooseStatus(value: string) {
+  /** Any filter change drops the pages already read, abandons a next page in flight and starts the cursor over. */
+  function restartList() {
     pageFence.current.invalidate()
     loading.current = false
-    setStatus(value === '' ? null : value as PurchaseOrderStatus)
     setMore([])
     setCursor(undefined)
     setContinuation('idle')
+  }
+
+  /** The filter is the server's (`status`); changing it restarts the list. */
+  function chooseStatus(value: string) {
+    restartList()
+    setStatus(value === '' ? null : value as PurchaseOrderStatus)
+  }
+
+  /** The row's own record-bound supplier becomes the server filter; a row without one offers no filter. */
+  function filterBySupplierOf(row: PurchaseOrderSummary) {
+    const display = supplierDisplayOf(row)
+    if (display === null) return
+    restartList()
+    focusAfterSupplierChange.current = 'clear'
+    setSupplier({ partyId: display.partyId, label: `${display.code} — ${display.legalName}` })
+  }
+
+  function clearSupplierFilter() {
+    restartList()
+    focusAfterSupplierChange.current = 'status'
+    setSupplier(null)
   }
 
   const header = (
@@ -185,13 +234,30 @@ function PurchaseOrderList({ namespace }: { readonly namespace: string | null })
       <div className={styles.toolbar}>
         <Field id="purchase-order-status-filter" label={LIST_TEXT.filter} className={styles.filter}>
           {(control) => (
-            <select {...control} className={styles.select} value={status ?? ''} onChange={(event) => chooseStatus(event.target.value)}>
+            <select {...control} ref={statusControl} className={styles.select} value={status ?? ''} onChange={(event) => chooseStatus(event.target.value)}>
               <option value="">{LIST_TEXT.filterAll}</option>
               <option value="Draft">{STATUS.Draft}</option>
               <option value="Approved">{STATUS.Approved}</option>
             </select>
           )}
         </Field>
+        {/* The active supplier filter stays on screen, on every width, with its own remove control. */}
+        {supplier !== null ? (
+          <div className={styles.activeFilter} role="group" aria-label={LIST_TEXT.supplierFilter} data-testid="purchase-order-supplier-filter">
+            <span className={styles.activeFilterLabel}>{LIST_TEXT.supplierFilter}</span>
+            <span className={styles.activeFilterValue} id={SUPPLIER_FILTER_VALUE_ID}>{supplier.label}</span>
+            <Button
+              ref={clearSupplierControl}
+              type="button"
+              size="sm"
+              variant="secondary"
+              aria-describedby={SUPPLIER_FILTER_VALUE_ID}
+              onClick={clearSupplierFilter}
+            >
+              {LIST_TEXT.clearSupplierFilter}
+            </Button>
+          </div>
+        ) : null}
       </div>
     </header>
   )
@@ -221,11 +287,31 @@ function PurchaseOrderList({ namespace }: { readonly namespace: string | null })
     ? <Link className={styles.orderLink} to={purchaseOrderDetailPath(row.id)}>…{row.id.slice(-8)}</Link>
     : <span className={styles.orderId}>…{row.id.slice(-8)}</span>
   const statusCell = (row: PurchaseOrderSummary) => <StatusIndicator tone={STATUS_TONE[row.status]}>{STATUS[row.status]}</StatusIndicator>
-  const supplierCell = (row: PurchaseOrderSummary) => (
-    <span className={styles.supplier} data-testid={`purchase-order-supplier-${row.id}`}>
-      <PurchaseOrderSupplierIdentity order={row} canOpenParty={canOpenParty} />
-    </span>
-  )
+  // The filter action sits beside the identity, outside it: the identity element holds the supplier and nothing else.
+  // While a supplier filter is active every row is that supplier's, so the action is not repeated on each of them.
+  const supplierCell = (row: PurchaseOrderSummary) => {
+    const display = supplier === null ? supplierDisplayOf(row) : null
+    return (
+      <span className={styles.supplierCell}>
+        <span className={styles.supplier} data-testid={`purchase-order-supplier-${row.id}`}>
+          <PurchaseOrderSupplierIdentity order={row} canOpenParty={canOpenParty} />
+        </span>
+        {display === null ? null : (
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            className={styles.filterBySupplier}
+            data-testid={`purchase-order-filter-supplier-${row.id}`}
+            onClick={() => filterBySupplierOf(row)}
+          >
+            {LIST_TEXT.filterBySupplier}
+            <span className={styles.srOnly}>: {display.code} — {display.legalName}</span>
+          </Button>
+        )}
+      </span>
+    )
+  }
 
   const columns: readonly DataTableColumn<PurchaseOrderSummary>[] = [
     { key: 'order', header: LIST_TEXT.order, cell: orderCell, pin: 'start', className: styles.nowrap },
@@ -241,7 +327,7 @@ function PurchaseOrderList({ namespace }: { readonly namespace: string | null })
       {header}
       <p className={styles.scope}>{LIST_TEXT.scope}</p>
       {rows.length === 0 ? (
-        <StateBlock state={{ kind: status === null ? 'empty-no-data' : 'empty-filtered' }} subject={LIST_TEXT.subject} />
+        <StateBlock state={{ kind: status === null && supplier === null ? 'empty-no-data' : 'empty-filtered' }} subject={LIST_TEXT.subject} />
       ) : cards ? (
         /* Phone: one card per order, every fact labelled, in the table's order. */
         <ul className={styles.cards} aria-label={LIST_TEXT.tableLabel} data-testid="purchase-order-cards">
