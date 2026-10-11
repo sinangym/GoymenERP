@@ -361,6 +361,8 @@ test('S04-LOAD-01 real owner facts show exact quantities and real zeros at 1440 
     })
     await expect(page.getByRole('table', { name: 'Satır bazında yükleme ilerlemesi' })).toBeVisible()
     await expect(page.getByTestId('sales-linked-allocation')).toBeVisible()
+    await expect(page.getByTestId(`sales-linked-allocation-line-${journey.instructedLineId}`)).toBeVisible()
+    await expect(page.getByTestId(`sales-linked-allocation-line-${journey.untouchedLineId}`)).toBeVisible()
     await expect(page.getByTestId('sales-line-1')).toBeVisible()
     await expect(page.getByTestId('sales-line-2')).toBeVisible()
     await expectNoPageOverflow(page)
@@ -409,8 +411,7 @@ test('S04-LOAD-02 authentication, actor and company fences disclose no departed 
   await expect(page.getByTestId('sales-linked-loading-progress')).toHaveCount(0)
   await expect(page.getByTestId(`sales-linked-loading-line-${journey.instructedLineId}`)).toHaveCount(0)
 
-  await page.setExtraHTTPHeaders({ [DEVELOPMENT_USER_HEADER]: readerActor })
-  await page.reload()
+  await openDetail(page, journey.orderId, readerActor)
   await expect(page.getByTestId('sales-linked-loading-progress')).toHaveAttribute('data-state', 'ready')
 })
 
