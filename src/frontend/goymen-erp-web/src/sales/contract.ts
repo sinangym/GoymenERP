@@ -1202,7 +1202,10 @@ function compareDecimalText(a: string, b: string): number {
   return leftFraction === rightFraction ? 0 : leftFraction < rightFraction ? -1 : 1
 }
 
-const isCountOfLines = (v: unknown): v is number => typeof v === 'number' && Number.isSafeInteger(v) && v >= 0
+/** The wire type is OpenAPI `int32`: a count above its maximum is not this contract. */
+const INT32_MAX = 2147483647
+const isCountOfLines = (v: unknown): v is number =>
+  typeof v === 'number' && Number.isSafeInteger(v) && v >= 0 && v <= INT32_MAX
 
 /**
  * DEC-SAL-005: `SalesOrderDraftLoadingProgressResponse` (#684), read exactly — and only as the loading facts OF the

@@ -705,6 +705,7 @@ describe('decodeLoadingProgress', () => {
     ['an instructed quantity without an instruction line', answer([first({ loadingInstructionLines: 0 }), second()])],
     ['an instruction line without an instructed quantity', answer([first(), second({ loadingInstructionLines: 1 })])],
     ['a negative instruction-line count', answer([first({ loadingInstructionLines: -1 }), second()])],
+    ['an instruction-line count above int32', answer([first({ loadingInstructionLines: 2147483648 }), second()])],
     ['a fractional instruction-line count', answer([first({ loadingInstructionLines: 1.5 }), second()])],
     ['an instruction-line count as text', answer([first({ loadingInstructionLines: '2' }), second()])],
     ['a line that is not an object', answer([first(), null])],
@@ -712,6 +713,12 @@ describe('decodeLoadingProgress', () => {
     ['a list', [first(), second()]],
   ])('refuses %s whole', (_name, value) => {
     expect(decodeLoadingProgress(value, BOUND)).toBeNull()
+  })
+
+  it('accepts an instruction-line count up to the int32 maximum and no further', () => {
+    expect(decodeLoadingProgress(answer([first({ loadingInstructionLines: 2147483647 }), second()]), BOUND)?.lines[0].loadingInstructionLines)
+      .toBe(2147483647)
+    expect(decodeLoadingProgress(answer([first({ loadingInstructionLines: 2147483648 }), second()]), BOUND)).toBeNull()
   })
 
   it('an order without lines has an empty answer, and nothing else fits it', () => {
