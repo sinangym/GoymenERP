@@ -482,7 +482,7 @@ test('S04-LOAD-03 definite 404 and controlled failures show no quantities; retry
     response.request().method() === 'GET'
       && new URL(response.url()).pathname === loadingPath(journey!.orderId)
       && response.status() === 200)
-  await page.getByTestId('sales-linked-loading').getByRole('button', { name: 'Tekrar dene' }).click()
+  await page.getByTestId('sales-linked-loading').getByRole('button', { name: 'Tekrar oku' }).click()
   await realRetry
   await expect(page.getByTestId('sales-linked-loading-progress')).toHaveAttribute('data-state', 'ready')
   await expectFacts(page, journey.instructedLineId, {
@@ -503,7 +503,7 @@ test('S04-LOAD-03 definite 404 and controlled failures show no quantities; retry
     response.request().method() === 'GET'
       && new URL(response.url()).pathname === loadingPath(journey!.orderId)
       && response.status() === 200)
-  await page.getByTestId('sales-linked-loading').getByRole('button', { name: 'Tekrar dene' }).click()
+  await page.getByTestId('sales-linked-loading').getByRole('button', { name: 'Tekrar oku' }).click()
   await malformedRetry
   await expect(page.getByTestId('sales-linked-loading-progress')).toHaveAttribute('data-state', 'ready')
   await expectNoPageOverflow(page)
