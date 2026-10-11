@@ -101,7 +101,12 @@ public sealed record PurchaseOrderReadListResponseV1(
     string? NextCursor);
 
 /// <param name="Status">An exact status name ("Draft" | "Approved") to narrow the list to, or null.</param>
-public sealed record PurchaseOrderListQuery(int PageSize = 50, string? Cursor = null, string? Status = null);
+/// <param name="SupplierPartyId">The exact supplier Party identity to narrow the list to, or null.</param>
+public sealed record PurchaseOrderListQuery(
+    int PageSize = 50,
+    string? Cursor = null,
+    string? Status = null,
+    Guid? SupplierPartyId = null);
 
 public sealed record PurchasingFieldError(string Field, string Code);
 

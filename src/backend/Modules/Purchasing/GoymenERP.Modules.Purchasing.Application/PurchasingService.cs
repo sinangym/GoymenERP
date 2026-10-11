@@ -411,10 +411,16 @@ public sealed partial class PurchasingService(
         var scope = await RequireAsync(bindings.ReadPermission, cancellationToken);
         var pageSize = RequirePage(query.PageSize, query.Cursor);
         var status = ParseStatus<PurchaseOrderStatus>(query.Status);
+        if (query.SupplierPartyId == Guid.Empty)
+        {
+            throw new PurchasingServiceException(400, "validation_failed");
+        }
+
         PurchasingOrderPage page;
         try
         {
-            page = await GuardedAsync(scope, bindings.ReadPermission, () => store.ListOrdersAsync(pageSize, query.Cursor, status, cancellationToken),
+            page = await GuardedAsync(scope, bindings.ReadPermission,
+                () => store.ListOrdersAsync(pageSize, query.Cursor, status, query.SupplierPartyId, cancellationToken),
                 cancellationToken);
         }
         catch (PurchasingStoreException exception)
