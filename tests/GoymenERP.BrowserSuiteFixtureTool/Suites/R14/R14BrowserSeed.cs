@@ -26,14 +26,14 @@ namespace GoymenERP.BrowserSuiteFixtureTool.Suites.R14;
 /// AT-037 stock count (user decision 2026-09-27): <c>inventory.stock-count.record</c> is held ONLY by the disposable
 /// <see cref="CounterActor"/> and <c>inventory.stock-count.approve</c> ONLY by the disposable
 /// <see cref="CountApproverActor"/> — two different actors, so maker ≠ checker is a fact of the grants as well as
-/// of the command. This seed writes nothing for them; the read-back pins that each is offered exactly its own
-/// control beside the label detail and no other r14 actor is offered either.
+/// of the command. D-05 also gives <see cref="BothApproverActor"/> the same existing approve name beside scrap
+/// approval, without changing the submitter or any production grant.
 /// </para>
 /// <para>
 /// ST-02 scrap write-off (the AT-037 pattern): <c>inventory.stock-scrap.record</c> is held ONLY by the disposable
 /// <see cref="ScrapperActor"/> and <c>inventory.stock-scrap.approve</c> ONLY by the disposable
-/// <see cref="ScrapApproverActor"/>; the read-back pins the same split, and that no other r14 actor (the stock
-/// counters included) is offered either scrap control.
+/// <see cref="ScrapApproverActor"/>. D-05 also gives <see cref="BothApproverActor"/> that existing approve name so
+/// Work's source switch is accepted with one genuine combined profile. The count-only and scrap-only profiles remain.
 /// </para>
 /// <para>
 /// STOCK-OWNER-DISPLAY-3 (#664 consumer): the disposable <see cref="ArrangerActor"/> opens ONE synthetic Cari
@@ -53,6 +53,7 @@ public sealed class R14BrowserSeed : IBrowserSuiteFixture
     public const string CountApproverActor = "r14-count-approver";
     public const string ScrapperActor = "r14-scrapper";
     public const string ScrapApproverActor = "r14-scrap-approver";
+    public const string BothApproverActor = "r14-both-approver";
 
     public static readonly Guid CompanyGdc = Guid.Parse("10000000-0000-0000-0000-000000000001");
     public static readonly Guid CompanyOther = Guid.Parse("10000000-0000-0000-0000-000000000002");
@@ -201,6 +202,7 @@ public sealed class R14BrowserSeed : IBrowserSuiteFixture
 
         string[] counterCapabilities = await CapabilitiesAsync(context, CounterActor, cancellationToken);
         string[] approverCapabilities = await CapabilitiesAsync(context, CountApproverActor, cancellationToken);
+        string[] bothApproverCapabilities = await CapabilitiesAsync(context, BothApproverActor, cancellationToken);
         string[][] othersCapabilities =
             [recorderCapabilities, deniedCapabilities, arrangerCapabilities, transformerCapabilities];
         if (!counterCapabilities.Contains(LabelDetailCapability, StringComparer.Ordinal)
@@ -211,12 +213,15 @@ public sealed class R14BrowserSeed : IBrowserSuiteFixture
             || !approverCapabilities.Contains(LabelDetailCapability, StringComparer.Ordinal)
             || !approverCapabilities.Contains(StockCountApproveCapability, StringComparer.Ordinal)
             || approverCapabilities.Contains(StockCountRecordCapability, StringComparer.Ordinal)
+            || !bothApproverCapabilities.Contains(LabelDetailCapability, StringComparer.Ordinal)
+            || !bothApproverCapabilities.Contains(StockCountApproveCapability, StringComparer.Ordinal)
+            || bothApproverCapabilities.Contains(StockCountRecordCapability, StringComparer.Ordinal)
             || othersCapabilities.Any(capabilities =>
                 capabilities.Contains(StockCountRecordCapability, StringComparer.Ordinal)
                 || capabilities.Contains(StockCountApproveCapability, StringComparer.Ordinal)))
         {
             throw new InvalidOperationException(
-                "Only the disposable AT-037 counter may record and only the disposable count approver may decide a count.");
+                "Only the disposable AT-037 counter may record; only the count-only and combined approvers may decide a count.");
         }
 
         string[] scrapperCapabilities = await CapabilitiesAsync(context, ScrapperActor, cancellationToken);
@@ -224,7 +229,7 @@ public sealed class R14BrowserSeed : IBrowserSuiteFixture
         string[][] nonClassificationCapabilities =
         [
             deniedCapabilities, arrangerCapabilities, transformerCapabilities, counterCapabilities,
-            approverCapabilities, scrapperCapabilities, scrapApproverCapabilities,
+            approverCapabilities, scrapperCapabilities, scrapApproverCapabilities, bothApproverCapabilities,
         ];
         if (!recorderCapabilities.Contains(LabelClassificationCapability, StringComparer.Ordinal)
             || nonClassificationCapabilities.Any(capabilities =>
@@ -245,19 +250,21 @@ public sealed class R14BrowserSeed : IBrowserSuiteFixture
             || !scrapApproverCapabilities.Contains(LabelDetailCapability, StringComparer.Ordinal)
             || !scrapApproverCapabilities.Contains(StockScrapApproveCapability, StringComparer.Ordinal)
             || scrapApproverCapabilities.Contains(StockScrapRecordCapability, StringComparer.Ordinal)
+            || !bothApproverCapabilities.Contains(StockScrapApproveCapability, StringComparer.Ordinal)
+            || bothApproverCapabilities.Contains(StockScrapRecordCapability, StringComparer.Ordinal)
             || nonScrapCapabilities.Any(capabilities =>
                 capabilities.Contains(StockScrapRecordCapability, StringComparer.Ordinal)
                 || capabilities.Contains(StockScrapApproveCapability, StringComparer.Ordinal)))
         {
             throw new InvalidOperationException(
-                "Only the disposable scrapper may record and only the disposable scrap approver may decide a scrap.");
+                "Only the disposable scrapper may record; only the scrap-only and combined approvers may decide a scrap.");
         }
 
         CariOwner owner = await EnsureCariOwnerAsync(context, cancellationToken);
         string[][] nonCariCapabilities =
         [
             deniedCapabilities, arrangerCapabilities, transformerCapabilities, counterCapabilities,
-            approverCapabilities, scrapperCapabilities, scrapApproverCapabilities,
+            approverCapabilities, scrapperCapabilities, scrapApproverCapabilities, bothApproverCapabilities,
         ];
         if (!recorderCapabilities.Contains(CariDetailCapability, StringComparer.Ordinal)
             || nonCariCapabilities.Any(capabilities =>
@@ -277,6 +284,7 @@ public sealed class R14BrowserSeed : IBrowserSuiteFixture
             ["countApproverActor"] = CountApproverActor,
             ["scrapperActor"] = ScrapperActor,
             ["scrapApproverActor"] = ScrapApproverActor,
+            ["bothApproverActor"] = BothApproverActor,
             ["companyId"] = CompanyGdc.ToString("D"),
             ["otherCompanyId"] = CompanyOther.ToString("D"),
             ["locationId"] = locationId.ToString("D"),
