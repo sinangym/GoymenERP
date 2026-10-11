@@ -273,13 +273,18 @@ function observeWork(page: Page): WorkObservation {
 }
 
 async function expectProfile(page: Page, actor: string, expectedKind: string, approvalId: string,
-  forbiddenKind: string, width: number, height: number): Promise<void> {
+  labelId: string, labelCode: string, forbiddenKind: string, width: number, height: number): Promise<void> {
   await signIn(page, actor, width, height)
   const observed = observeWork(page)
   await page.goto('/onaylarim')
   const table = page.getByTestId('work-approvals-table')
   await expect(table).toHaveAttribute('data-kind', expectedKind)
-  await expect(table.locator(`tr[data-approval-id="${approvalId}"]`)).toHaveCount(1)
+  const row = table.locator(`tr[data-approval-id="${approvalId}"]`)
+  await expect(row).toHaveCount(1)
+  await expect(row).toHaveAttribute('data-label-id', labelId)
+  await expect(row.getByRole('cell').first()).toHaveText(labelCode)
+  await expect(row.getByRole('link', { name: 'Etiket ekranında aç', exact: true }))
+    .toHaveAttribute('href', `/stok/etiket/${labelId}`)
   await expect(page.getByRole('navigation', { name: 'Onay kaynağı' })).toHaveCount(0)
   expect(observed.reads.some((call) => call.includes(`kind=${forbiddenKind}`))).toBe(false)
   expect(observed.posts).toEqual([])
@@ -296,7 +301,13 @@ async function movementCount(pool: SqlPool, sourceKind: string, sourceId: string
   return Number(result.recordset[0].count)
 }
 
-async function openWorkDetail(page: Page, kind: string, approvalId: string, labelId: string): Promise<void> {
+async function openWorkDetail(
+  page: Page,
+  kind: string,
+  approvalId: string,
+  labelId: string,
+  labelCode: string,
+): Promise<void> {
   const table = page.getByTestId('work-approvals-table')
   const row = table.locator(`tr[data-approval-id="${approvalId}"]`)
   await expect(row).toHaveCount(1)
@@ -305,7 +316,10 @@ async function openWorkDetail(page: Page, kind: string, approvalId: string, labe
   await expect(page).toHaveURL(new RegExp(`/onaylarim/${kind}/${approvalId}$`))
   const facts = page.getByTestId('work-approval-facts')
   await expect(facts).toBeVisible()
-  await expect(facts).toContainText(labelId)
+  await expect(facts.locator(`[data-label-id="${labelId}"]`)).toHaveText(labelCode)
+  await expect(facts).not.toContainText(labelId)
+  await expect(page.getByRole('link', { name: 'Etiket ekranında aç', exact: true }))
+    .toHaveAttribute('href', `/stok/etiket/${labelId}`)
 }
 
 async function openNativeLabel(page: Page, labelId: string): Promise<void> {
@@ -398,8 +412,14 @@ for (const [width, height] of VIEWPORTS) {
       await expectInventoryLabelDisplayContract(page, pair)
 
       // Each single-source actor sees only its native source; no capability is inferred from the Work screen.
-      await expectProfile(page, countApproverActor, COUNT_KIND, pair.countId, SCRAP_KIND, width, height)
-      await expectProfile(page, scrapApproverActor, SCRAP_KIND, pair.scrapId, COUNT_KIND, width, height)
+      await expectProfile(
+        page, countApproverActor, COUNT_KIND, pair.countId,
+        pair.countLabelId, pair.countLabelCode, SCRAP_KIND, width, height,
+      )
+      await expectProfile(
+        page, scrapApproverActor, SCRAP_KIND, pair.scrapId,
+        pair.scrapLabelId, pair.scrapLabelCode, COUNT_KIND, width, height,
+      )
 
       // The denied actor gets neither navigation nor Work read, even with a direct route.
       await signIn(page, deniedActor, width, height)
@@ -426,6 +446,10 @@ for (const [width, height] of VIEWPORTS) {
       await expect(table).toHaveAttribute('data-kind', COUNT_KIND)
       await expect(table.locator('tbody tr')).toHaveCount(1)
       await expect(table.locator(`tr[data-approval-id="${pair.scrapId}"]`)).toHaveCount(0)
+      const countRow = table.locator(`tr[data-approval-id="${pair.countId}"]`)
+      await expect(countRow.getByRole('cell').first()).toHaveText(pair.countLabelCode)
+      await expect(countRow.getByRole('link', { name: 'Etiket ekranında aç', exact: true }))
+        .toHaveAttribute('href', `/stok/etiket/${pair.countLabelId}`)
       await nav.getByRole('link', { name: 'Stok hurda çıkışı', exact: true }).click()
       await expect(table).toHaveAttribute('data-kind', SCRAP_KIND)
       await expect(table.locator('tbody tr')).toHaveCount(1)
@@ -435,7 +459,7 @@ for (const [width, height] of VIEWPORTS) {
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true)
 
       // Work detail names the exact label; Inventory's own label screen owns the count decision and replay.
-      await openWorkDetail(page, COUNT_KIND, pair.countId, pair.countLabelId)
+      await openWorkDetail(page, COUNT_KIND, pair.countId, pair.countLabelId, pair.countLabelCode)
       await openNativeLabel(page, pair.countLabelId)
       await expect(page.getByRole('heading', { level: 1, name: pair.countLabelCode, exact: true })).toBeVisible()
       await expect(page.getByRole('heading', { level: 2, name: 'Sayım ve fark (ST-05)', exact: true })).toBeVisible()
@@ -446,7 +470,11 @@ for (const [width, height] of VIEWPORTS) {
       await expect(page.getByTestId('work-approvals-table')).toHaveCount(0)
       await page.goto(`/onaylarim?kaynak=stok-hurda`)
       await expect(table).toHaveAttribute('data-kind', SCRAP_KIND)
-      await openWorkDetail(page, SCRAP_KIND, pair.scrapId, pair.scrapLabelId)
+      const scrapRow = table.locator(`tr[data-approval-id="${pair.scrapId}"]`)
+      await expect(scrapRow.getByRole('cell').first()).toHaveText(pair.scrapLabelCode)
+      await expect(scrapRow.getByRole('link', { name: 'Etiket ekranında aç', exact: true }))
+        .toHaveAttribute('href', `/stok/etiket/${pair.scrapLabelId}`)
+      await openWorkDetail(page, SCRAP_KIND, pair.scrapId, pair.scrapLabelId, pair.scrapLabelCode)
       await openNativeLabel(page, pair.scrapLabelId)
       await expect(page.getByRole('heading', { level: 1, name: pair.scrapLabelCode, exact: true })).toBeVisible()
       await expect(page.getByRole('heading', { level: 2, name: 'Hurda / fire çıkışı', exact: true })).toBeVisible()
