@@ -52,6 +52,8 @@ const BUSINESS_DATE = '2026-09-18'
 const RUN = testedCommit.slice(0, 12)
 const ORDERED_QUANTITY = '5'
 const REVISED_QUANTITY = '3'
+const INSTRUCTED_QUANTITY = '2'
+const OVER_CAP_QUANTITY = '4'
 
 interface DraftReading {
   readonly draft: {
@@ -315,7 +317,7 @@ test('S04-RM-01 one accepted order revises then cancels only its remainder while
         sourceOrderId: draftId,
         sourceOrderLineId: lineId,
         unitId: productUnitId,
-        quantity: REVISED_QUANTITY,
+        quantity: INSTRUCTED_QUANTITY,
       }],
     },
   })
@@ -323,15 +325,15 @@ test('S04-RM-01 one accepted order revises then cancels only its remainder while
   const createdInstruction = (await instructionCreated.json()) as LoadingInstructionResponse
   expect(createdInstruction.detail.lines[0]).toMatchObject({
     lineId: logisticsLineId, sourceOrderId: draftId, sourceOrderLineId: lineId,
-    instructed: REVISED_QUANTITY, loaded: '0',
+    instructed: INSTRUCTED_QUANTITY, loaded: '0',
   })
   const instructionId = createdInstruction.detail.instruction.id
 
   // 7B: without a configured tolerance the exact current order quantity is the ceiling across every instruction.
-  // A second instruction for this same Sales line would make the aggregate 6 > 5, so the real store refuses it.
-  // The accepted first instruction is 3: it remains exactly valid after the later 5 → 3 remainder revision, while
-  // the realized 2 / 1 / 0.5 owner facts and the approved dispatch note stay immutable.
-  // atomically. The same key replays the terminal refusal and the first instruction remains usable below.
+  // A second 4-unit instruction for this same Sales line would make the aggregate 6 > 5, so the real store refuses it.
+  // The accepted first instruction is 2: it remains exactly valid after the later 5 → 3 revision and the final
+  // remainder cancellation to the realized 2-unit floor, while the 2 / 1 / 0.5 owner facts and the approved dispatch
+  // note stay immutable. The same key replays the terminal refusal and the first instruction remains usable below.
   const overCapKey = `SENTETIK-s04-rm-log-over-cap-${RUN}`
   const overCapRequest = {
     customerPartyId: realPartyId,
@@ -342,7 +344,7 @@ test('S04-RM-01 one accepted order revises then cancels only its remainder while
       sourceOrderId: draftId,
       sourceOrderLineId: lineId,
       unitId: productUnitId,
-      quantity: REVISED_QUANTITY,
+      quantity: OVER_CAP_QUANTITY,
     }],
   }
   const overCap = await request.post(`${apiBaseUrl}/api/v1/logistics/loading-instructions`, {
