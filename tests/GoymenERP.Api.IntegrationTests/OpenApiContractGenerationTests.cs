@@ -848,6 +848,29 @@ public sealed partial class OpenApiContractGenerationTests
             AuthenticatedResponses("200:application/pdf,image/jpeg,image/png", "400:application/problem+json", "404:application/problem+json",
                 "409:application/problem+json", "503:application/problem+json"),
             ParameterValues: ["path:id:true:type:string;format:uuid"]),
+        // DEC-DOC-003: one logical document has immutable versions; history and content stay addressable.
+        new("post", "/api/v1/documents/{id}/versions", "AppendDocumentVersionV1",
+            AuthenticatedResponses("201:application/json", "400:application/problem+json", "415:", "404:application/problem+json", "413:",
+                "409:application/problem+json", "422:application/problem+json", "503:application/problem+json"),
+            "#/components/schemas/DocumentVersionUploadFormV1",
+            ["path:id:true:type:string;format:uuid"], RequestMediaType: "multipart/form-data"),
+        new("get", "/api/v1/documents/{id}/versions", "GetDocumentVersionsV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "404:application/problem+json", "409:application/problem+json",
+                "503:application/problem+json"),
+            ParameterValues:
+            [
+                "path:id:true:type:string;format:uuid",
+                "query:pageSize:false:type:integer|string;format:int32;pattern:^-?(?:0|[1-9]\\d*)$",
+                "query:cursor:false:type:string",
+            ]),
+        new("get", "/api/v1/documents/{id}/versions/{versionNo}/content", "GetDocumentVersionContentV1",
+            AuthenticatedResponses("200:application/pdf,image/jpeg,image/png", "400:application/problem+json", "404:application/problem+json",
+                "409:application/problem+json", "503:application/problem+json"),
+            ParameterValues:
+            [
+                "path:id:true:type:string;format:uuid",
+                "path:versionNo:true:type:integer;format:int32;pattern:^-?(?:0|[1-9]\\d*)$",
+            ]),
         new("get", "/api/v1/sales/references/contact-information", "GetSalesContactInformationReferencesV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "404:application/problem+json", "503:application/problem+json"),
             ParameterValues: ["query:partyId:true:type:string;format:uuid", "query:companyAccountId:true:type:string;format:uuid"]),
@@ -1086,6 +1109,9 @@ public sealed partial class OpenApiContractGenerationTests
             ["UploadDocumentV1"] = "ref:DocumentUploadResponse",
             ["GetDocumentsV1"] = "ref:DocumentListResponse",
             ["GetDocumentContentV1"] = "ref:Stream",
+            ["AppendDocumentVersionV1"] = "ref:DocumentVersionWriteResponse",
+            ["GetDocumentVersionsV1"] = "ref:DocumentVersionHistoryResponse",
+            ["GetDocumentVersionContentV1"] = "ref:Stream",
             ["GetSalesContactInformationReferencesV1"] = "ref:SalesContactInformationOptionsV1",
             ["GetSalesCurrencyReferencesV1"] = "ref:SalesCurrencyOptionsV1",
         };
@@ -1297,6 +1323,9 @@ public sealed partial class OpenApiContractGenerationTests
         "UploadDocumentV1",
         "GetDocumentsV1",
         "GetDocumentContentV1",
+        "AppendDocumentVersionV1",
+        "GetDocumentVersionsV1",
+        "GetDocumentVersionContentV1",
         "GetSalesContactInformationReferencesV1",
         "GetSalesCurrencyReferencesV1",
     ];
@@ -1410,6 +1439,7 @@ public sealed partial class OpenApiContractGenerationTests
         "ApproveAccountingJournalReversalV1",
         "CloseManufacturingOrderV1",
         "UploadDocumentV1",
+        "AppendDocumentVersionV1",
     ];
 
     private static readonly IReadOnlyDictionary<string, HashSet<int>>
@@ -1598,6 +1628,8 @@ public sealed partial class OpenApiContractGenerationTests
                 ["CloseManufacturingOrderV1"] = [StatusCodes.Status200OK, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict],
                 // AT-065: only the stored upload (201) is replayed; a refusal stores nothing under the key.
                 ["UploadDocumentV1"] = [StatusCodes.Status201Created],
+                // DEC-DOC-003: the immutable version append has the same stored-command replay contract.
+                ["AppendDocumentVersionV1"] = [StatusCodes.Status201Created],
             };
 
     private static readonly HashSet<string> EmptyBodyPossible400Operations =
@@ -1742,6 +1774,8 @@ public sealed partial class OpenApiContractGenerationTests
         "UploadDocumentV1",
         "GetDocumentsV1",
         "GetDocumentContentV1",
+        "AppendDocumentVersionV1",
+        "GetDocumentVersionsV1",
     ];
 
     private static readonly HashSet<string> CodeLessProblemResponses =
@@ -1859,6 +1893,9 @@ public sealed partial class OpenApiContractGenerationTests
         "UploadDocumentV1:404",
         "GetDocumentsV1:404",
         "GetDocumentContentV1:404",
+        "AppendDocumentVersionV1:404",
+        "GetDocumentVersionsV1:404",
+        "GetDocumentVersionContentV1:404",
     ];
 
     private static readonly HashSet<string> MixedProblemResponses =
@@ -2399,6 +2436,17 @@ public sealed partial class OpenApiContractGenerationTests
             ["GetDocumentsV1:409"] = ["concurrent_change"],
             ["GetDocumentContentV1:400"] = ["validation_failed"],
             ["GetDocumentContentV1:409"] = ["concurrent_change", "document_not_scanned"],
+            ["AppendDocumentVersionV1:400"] = ["command_metadata_invalid", "validation_failed"],
+            ["AppendDocumentVersionV1:409"] = ["concurrent_change", "same_key_payload_mismatch"],
+            ["AppendDocumentVersionV1:422"] =
+            [
+                "document_content_mismatch", "document_content_rejected", "document_empty", "document_too_large",
+                "document_type_not_allowed",
+            ],
+            ["GetDocumentVersionsV1:400"] = ["validation_failed"],
+            ["GetDocumentVersionsV1:409"] = ["concurrent_change"],
+            ["GetDocumentVersionContentV1:400"] = ["validation_failed"],
+            ["GetDocumentVersionContentV1:409"] = ["document_not_scanned"],
             ["GetSalesContactInformationReferencesV1:400"] = ["validation_failed"],
             ["GetSalesCurrencyReferencesV1:400"] = ["validation_failed"],
         };
@@ -4911,6 +4959,16 @@ public sealed partial class OpenApiContractGenerationTests
                     ("items", "type:array;items:ref:DocumentView"),
                     ("canUpload", "type:boolean"),
                     ("limits", "ref:DocumentUploadLimitsView")),
+                ["DocumentVersionWriteResponse"] = ObjectSchema(
+                    ["document", "isReplay", "originalCorrelationId"],
+                    ("document", "ref:DocumentView"),
+                    ("isReplay", "type:boolean"),
+                    ("originalCorrelationId", "type:string")),
+                ["DocumentVersionHistoryResponse"] = ObjectSchema(
+                    ["documentId", "versions", "nextCursor"],
+                    ("documentId", "type:string;format:uuid"),
+                    ("versions", "type:array;items:ref:DocumentView"),
+                    ("nextCursor", "type:null|string")),
                 ["DocumentView"] = ObjectSchema(
                     ["id", "companyId", "ownerKind", "ownerId", "versionNo", "fileName", "contentType", "sizeBytes", "sha256", "scanState",
                         "downloadable", "uploadedBy", "uploadedAtUtc"],
@@ -5063,6 +5121,10 @@ public sealed partial class OpenApiContractGenerationTests
                     ["ownerKind", "ownerId", "file"],
                     ("ownerKind", "type:string"),
                     ("ownerId", "type:string;format:uuid"),
+                    ("file", "ref:IFormFile")),
+                ["DocumentVersionUploadFormV1"] = ObjectSchema(
+                    ["expectedCurrentVersion", "file"],
+                    ("expectedCurrentVersion", "type:integer|string;format:int32"),
                     ("file", "ref:IFormFile")),
                 ["ApproveNormalJournalDraftRequestV1"] = ObjectSchema(
                     ["expectedVersion", "periodId"],
