@@ -1,0 +1,264 @@
+/* P-03 detail — purchase order 360 on GOY-DS-001 (PURCHASING-DS-DETAIL-01). Page-specific: the other purchasing
+   screens keep purchasing.module.css. Every value is a --goy-ds-* token. Nothing is cut: ids, supplier and product
+   text wrap on as many lines as they need. */
+
+.page {
+  display: grid;
+  gap: var(--goy-ds-space-3);
+  min-width: 0;
+  padding: var(--goy-ds-space-1) 0 var(--goy-ds-space-6);
+  color: var(--goy-ds-color-text);
+  font-family: var(--goy-ds-font-sans);
+}
+
+.header,
+.section {
+  min-width: 0;
+  padding: var(--goy-ds-space-4);
+  border: 1px solid var(--goy-ds-color-border);
+  border-radius: var(--goy-ds-radius-md);
+  background: var(--goy-ds-color-surface);
+  box-shadow: var(--goy-ds-shadow-1);
+}
+
+.header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: var(--goy-ds-space-3);
+}
+
+.headerCopy,
+.section {
+  display: grid;
+  gap: var(--goy-ds-space-3);
+}
+
+.title,
+.section h2,
+.section h3,
+.section p {
+  margin-top: 0;
+}
+
+.title {
+  margin-bottom: 0;
+  font-size: 1.25rem;
+  line-height: 28px;
+  font-weight: var(--goy-ds-font-weight-semibold);
+  overflow-wrap: anywhere;
+}
+
+.eyebrow {
+  margin: 0;
+  color: var(--goy-ds-color-text-tertiary);
+  font-size: var(--goy-ds-font-size-xs);
+  font-weight: var(--goy-ds-font-weight-semibold);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.status {
+  justify-self: end;
+  max-width: 100%;
+  padding: var(--goy-ds-space-1) var(--goy-ds-space-2);
+  border-radius: 999px;
+  background: var(--goy-ds-color-surface-muted);
+  white-space: normal;
+}
+
+.section h2,
+.section h3 {
+  margin-bottom: 0;
+  font-size: 1rem;
+  line-height: 24px;
+  font-weight: var(--goy-ds-font-weight-semibold);
+}
+
+/* ── Facts: label over value, as many columns as fit ── */
+.facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
+  gap: var(--goy-ds-space-2) var(--goy-ds-space-4);
+  margin: 0;
+  min-width: 0;
+}
+
+.facts > div {
+  min-width: 0;
+}
+
+.facts dt {
+  color: var(--goy-ds-color-text-tertiary);
+  font-size: var(--goy-ds-font-size-xs);
+  line-height: 16px;
+}
+
+.facts dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: var(--goy-ds-font-size-md);
+  line-height: 20px;
+}
+
+.identifier {
+  font-family: var(--goy-ds-font-mono);
+  font-size: var(--goy-ds-font-size-sm);
+  overflow-wrap: anywhere;
+}
+
+.link,
+.facts a {
+  color: var(--goy-ds-color-accent-text);
+  font-weight: var(--goy-ds-font-weight-medium);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.link:focus-visible,
+.facts a:focus-visible {
+  outline: 2px solid var(--goy-ds-color-accent);
+  outline-offset: 2px;
+}
+
+/* ── Records: one real table. From 768 px a compact table that scrolls inside its own area. ── */
+.tableWrap {
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+}
+
+.table {
+  width: 100%;
+  min-width: 58rem;
+  border-collapse: collapse;
+  font-size: var(--goy-ds-font-size-md);
+}
+
+.table th,
+.table td {
+  padding: var(--goy-ds-space-2);
+  border-bottom: 1px solid var(--goy-ds-color-border);
+  text-align: left;
+  vertical-align: top;
+}
+
+.table th {
+  color: var(--goy-ds-color-text-secondary);
+  font-size: var(--goy-ds-font-size-sm);
+  font-weight: var(--goy-ds-font-weight-semibold);
+}
+
+.number {
+  text-align: right !important;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* ── Notices ── */
+.success,
+.warning,
+.error {
+  margin: 0;
+  font-weight: var(--goy-ds-font-weight-medium);
+}
+
+.success {
+  color: var(--goy-ds-color-success);
+}
+
+.warning {
+  color: var(--goy-ds-color-warning);
+}
+
+.error {
+  color: var(--goy-ds-color-danger);
+}
+
+/* ── Phone (the shell's compact width): the SAME table drawn as one labelled card per record. The cells stay
+   cells — their roles are written on the elements — and each shows its column's name before its value. The
+   header row is kept for assistive technology but not drawn; nothing is duplicated. ── */
+@media (max-width: 767px) {
+  .header {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .status {
+    justify-self: start;
+  }
+
+  .header,
+  .section {
+    padding: var(--goy-ds-space-3);
+  }
+
+  .tableWrap {
+    overflow-x: visible;
+  }
+
+  .table,
+  .table tbody,
+  .table tr,
+  .table td {
+    display: block;
+  }
+
+  .table {
+    min-width: 0;
+  }
+
+  .table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .table tbody {
+    display: grid;
+    gap: var(--goy-ds-space-2);
+  }
+
+  .table tr {
+    display: grid;
+    gap: var(--goy-ds-space-1);
+    padding: var(--goy-ds-space-3);
+    border: 1px solid var(--goy-ds-color-border);
+    border-radius: var(--goy-ds-radius-md);
+    background: var(--goy-ds-color-surface);
+  }
+
+  .table td {
+    display: grid;
+    grid-template-columns: minmax(6.5rem, 38%) minmax(0, 1fr);
+    gap: var(--goy-ds-space-2);
+    padding: 0;
+    border-bottom: 0;
+    min-width: 0;
+    overflow-wrap: anywhere;
+    white-space: normal;
+  }
+
+  .table td::before {
+    content: attr(data-label);
+    color: var(--goy-ds-color-text-tertiary);
+    font-family: var(--goy-ds-font-sans);
+    font-size: var(--goy-ds-font-size-xs);
+    line-height: 20px;
+  }
+
+  .number {
+    text-align: left !important;
+    white-space: normal;
+  }
+}
+
+@media (max-width: 359px) {
+  .facts {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
