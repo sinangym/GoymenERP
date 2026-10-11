@@ -374,11 +374,18 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
             secondA = (await a.Store.StoreOrderAsync(run.Envelope("k-supplier-a-2"), Hash("supplier-a-2"), supplierA.Account, Day,
                 () => builtA2, VersionsOf(builtA2))).Order.Order.Id;
 
+            // All three fixture orders use T0. Insertion order is deliberately not observable and SQL Server's
+            // uniqueidentifier ordering must not be reimplemented in the test. The opaque cursor contract is that
+            // the two supplier rows are returned once each across consecutive pages, in the store's stable order.
+            HashSet<Guid> expected = [firstA, secondA];
             PurchasingOrderPage page1 = await a.Store.ListOrdersAsync(1, null, supplierPartyId: supplierA.Party);
-            Assert.Equal(secondA, Assert.Single(page1.Items).Order.Id);
+            Guid page1Id = Assert.Single(page1.Items).Order.Id;
+            Assert.Contains(page1Id, expected);
             Assert.NotNull(page1.NextCursor);
             PurchasingOrderPage page2 = await a.Store.ListOrdersAsync(1, page1.NextCursor, supplierPartyId: supplierA.Party);
-            Assert.Equal(firstA, Assert.Single(page2.Items).Order.Id);
+            Guid page2Id = Assert.Single(page2.Items).Order.Id;
+            Assert.NotEqual(page1Id, page2Id);
+            Assert.True(expected.SetEquals([page1Id, page2Id]));
             Assert.Null(page2.NextCursor);
             Assert.Empty((await a.Store.ListOrdersAsync(10, null, supplierPartyId: Guid.NewGuid())).Items);
         }
