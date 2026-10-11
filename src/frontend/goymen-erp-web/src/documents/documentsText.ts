@@ -50,7 +50,61 @@ export const DOCUMENTS_TEXT = {
   typeLocal: 'Bu dosya türü eklenemez. Yalnız PDF, PNG veya JPEG dosyası seçin.',
   downloadRefused: 'Belge indirilemedi.',
   notScanned: 'Bu belge güvenlik taramasından geçmediği için indirilemez.',
+  versionsShow: (fileName: string) => `${fileName} sürümlerini göster`,
+  versionsHide: (fileName: string) => `${fileName} sürümlerini gizle`,
+  versionsLabel: 'Sürümler',
+  versionsHeading: (fileName: string) => `${fileName} — sürümler`,
+  versionsNote: 'Her sürüm ayrı saklanır; yeni sürüm eskisini değiştirmez. En yeni sürüm en üsttedir.',
+  versionsCaption: (fileName: string) => `${fileName} sürüm geçmişi`,
+  versionsLoading: 'Sürümler getiriliyor…',
+  versionsFailed: 'Sürüm geçmişi getirilemedi.',
+  versionsAgain: 'Sürümleri yeniden getir',
+  versionsGone: 'Bu belgenin sürüm geçmişi bu şirkette görüntülenemiyor.',
+  versionsMore: 'Daha eski sürümleri getir',
+  versionsMoreLoading: 'Daha eski sürümler getiriliyor…',
+  versionsMoreFailed: 'Daha eski sürümler getirilemedi. Gösterilen sürümler yerinde duruyor.',
+  versionsMoreAgain: 'Kaldığı yerden tekrar dene',
+  versionsEnd: 'Bu belgenin tüm sürümleri gösteriliyor.',
+  versionsClose: 'Sürümleri kapat',
+  columnVersion: 'Sürüm',
+  versionNo: (versionNo: number) => `Sürüm ${versionNo}`,
+  versionDownload: (fileName: string, versionNo: number) => `${fileName} sürüm ${versionNo} içeriğini indir`,
+  versionDownloadRefused: 'Bu sürüm indirilemedi.',
+  versionNotScanned: 'Bu sürüm güvenlik taramasından geçmediği için indirilemez.',
+  appendLegend: 'Yeni sürüm ekle',
+  appendFileLabel: 'Yeni sürüm dosyası',
+  appendNote: (versionNo: number) => `Dosya bu belgenin ${versionNo}. sürümü olarak eklenir; önceki sürümler değişmez.`,
+  append: 'Sürümü ekle',
+  appending: 'Sürüm ekleniyor…',
+  appended: (fileName: string, versionNo: number) => `${fileName}, sürüm ${versionNo} olarak eklendi.`,
+  appendReplayed: 'Bu sürüm daha önce kaydedilmişti; aynı sürüm gösteriliyor.',
+  appendUnknownTitle: 'Sürüm eklemenin sonucu bilinmiyor',
+  appendUnknownDetail:
+    'Sunucudan yanıt alınamadı; sürüm kaydedilmiş olabilir. Aynı denemeyi tekrarlamak ikinci bir sürüm oluşturmaz.',
+  appendRetry: 'Aynı sürüm denemesini tekrarla',
 } as const
+
+/** Why a new version was refused, by its stable code. No version was added in any of these cases. */
+export function versionRefusalText(status: number, code: string | null): string {
+  switch (code) {
+    case DOCUMENT_PROBLEM.concurrentChange:
+      return 'Bu belgeye siz bakarken başka bir sürüm eklendi. Sürüm geçmişi yenilendi; dosyayı yeniden seçip tekrar deneyin.'
+    case DOCUMENT_PROBLEM.sameKeyPayloadMismatch:
+      return 'Bu deneme başka bir dosyayla karıştı. Dosyayı yeniden seçip tekrar deneyin.'
+    case DOCUMENT_PROBLEM.contentRejected:
+      return 'Güvenlik taraması dosyada zararlı içerik buldu. Yeni sürüm oluşmadı.'
+    case DOCUMENT_PROBLEM.empty:
+    case DOCUMENT_PROBLEM.tooLarge:
+    case DOCUMENT_PROBLEM.typeNotAllowed:
+    case DOCUMENT_PROBLEM.contentMismatch:
+      return `${refusalText(status, code)} Yeni sürüm oluşmadı.`
+    default:
+      if (status === 403) return 'Bu belgeye yeni sürüm ekleme yetkiniz yok.'
+      if (status === 404) return 'Belge bu şirkette bulunamadı.'
+      if (status === 413) return 'Dosya izin verilen boyuttan büyük. Yeni sürüm oluşmadı.'
+      return 'Yeni sürüm eklenemedi.'
+  }
+}
 
 /** Why an upload was refused, by its stable code; an unknown code gets the generic text. */
 export function refusalText(status: number, code: string | null): string {
