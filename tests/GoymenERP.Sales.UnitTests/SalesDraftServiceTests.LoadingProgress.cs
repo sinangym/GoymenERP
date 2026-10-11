@@ -85,7 +85,8 @@ public sealed partial class SalesDraftServiceTests
     public static TheoryData<string> MalformedLoadingAnswers => new()
     {
         "owner-throws", "another-company", "another-order", "null-lines", "unknown-line", "another-unit",
-        "negative", "wrong-order", "above-scale", "zero-count-with-quantity",
+        "negative", "wrong-order", "above-scale", "zero-count-with-quantity", "positive-count-with-zero-quantity",
+        "aggregate-above-ordered",
     };
 
     [Theory]
@@ -107,6 +108,10 @@ public sealed partial class SalesDraftServiceTests
             "wrong-order" => new(Company, order, [new(line, KgUnit, 1, 1m, 0.5m, 0.75m, 0m)]),
             "above-scale" => new(Company, order, [new(line, KgUnit, 1, 1.0001m, 0m, 0m, 0m)]),
             "zero-count-with-quantity" => new(Company, order, [new(line, KgUnit, 0, 1m, 0m, 0m, 0m)]),
+            "positive-count-with-zero-quantity" => new(Company, order, [new(line, KgUnit, 1, 0m, 0m, 0m, 0m)]),
+            // The canonical ordered quantity is 1.25. Validate the final aggregate, not only each owner row.
+            "aggregate-above-ordered" => new(Company, order,
+                [new(line, KgUnit, 1, 1m, 0m, 0m, 0m), new(line, KgUnit, 1, 1m, 0m, 0m, 0m)]),
             _ => throw new ArgumentOutOfRangeException(nameof(fault)),
         });
 

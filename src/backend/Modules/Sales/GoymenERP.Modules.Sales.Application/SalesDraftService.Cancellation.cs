@@ -334,7 +334,8 @@ public sealed partial class SalesDraftService
     /// <summary>
     /// The loading owner's answer per order line in the line's own order unit, or null when it is not composed, fails or
     /// answers a malformed value (another company or order, an unknown line, another unit — no conversion —, a negative or
-    /// over-scale total, a count below zero, or totals out of the owner's own order delivered ≤ shipped ≤ loaded ≤ instructed).
+    /// over-scale total, a count/zero mismatch, or totals outside the owner chain
+    /// delivered ≤ shipped ≤ loaded ≤ instructed ≤ ordered).
     /// </summary>
     private async Task<Dictionary<Guid, LineLoading>?> ReadLoadingAsync(Scope scope, string? permission, SalesOrderDraft draft,
         CancellationToken cancellationToken)
@@ -368,7 +369,7 @@ public sealed partial class SalesDraftService
                 || entry.Shipped > entry.Loaded || entry.Loaded > entry.Instructed
                 || !FitsScale(entry.Instructed, line.Quantity.Unit) || !FitsScale(entry.Loaded, line.Quantity.Unit)
                 || !FitsScale(entry.Shipped, line.Quantity.Unit) || !FitsScale(entry.Delivered, line.Quantity.Unit)
-                || (entry.InstructionLineCount == 0 && entry.Instructed != 0m))
+                || ((entry.InstructionLineCount == 0) != (entry.Instructed == 0m)))
             {
                 return null;
             }
@@ -377,6 +378,15 @@ public sealed partial class SalesDraftService
                 ? new LineLoading(checked(sum.Count + entry.InstructionLineCount), sum.Instructed + entry.Instructed, sum.Loaded + entry.Loaded,
                     sum.Shipped + entry.Shipped, sum.Delivered + entry.Delivered)
                 : new LineLoading(entry.InstructionLineCount, entry.Instructed, entry.Loaded, entry.Shipped, entry.Delivered);
+        }
+
+        // The Logistics producer caps the aggregate instructed quantity through the Sales-owned approved-order limit.
+        // Validate the fully aggregated answer as well: two individually plausible owner rows must not jointly exceed
+        // the canonical Sales quantity. An absent Logistics row remains a valid zero; a positive-count row cannot be zero.
+        if (result.Any(pair => pair.Value.Instructed > lines[pair.Key].Quantity.Value
+            || ((pair.Value.Count == 0) != (pair.Value.Instructed == 0m))))
+        {
+            return null;
         }
 
         return result;

@@ -203,7 +203,7 @@ order; the delivery facts are the delivery owner's (Logistics), never a Sales co
 |---|---|
 | Source | The accepted `ISalesOrderLoadingReadPortV1`, answered by `LogisticsSalesOrderLoadingReadPort`: every loading-instruction line linked to this Sales order line, grouped in its stored unit. Sales reads no Logistics table and stores no copy. |
 | Route | `GET /api/v1/sales/drafts/{id}/loading-progress` (`GetSalesOrderDraftLoadingProgressV1`) under `sales.drafts.read`: `{draftVersion, lines[{lineId, lineNo, orderUnitId, ordered, loadingInstructionLines, instructed, loaded, shipped, delivered}]}`. Every Sales line appears once; a zero is emitted only after the owner answered successfully. Private/no-store, company-bound; 404/503 are code-less. |
-| Exactness | No conversion or rounding. The owner invariant `delivered ≤ shipped ≤ loaded ≤ instructed`, the order-line unit and Ö2 scale are validated; absent, failing or malformed owners fail closed with 503 instead of showing a plausible number. |
+| Exactness | No conversion or rounding. The full owner chain `0 ≤ delivered ≤ shipped ≤ loaded ≤ instructed ≤ ordered`, count/zero consistency, the order-line unit and Ö2 scale are validated after per-line aggregation; absent, failing or malformed owners fail closed with 503 instead of showing a plausible number. |
 | Effects | Read-only in both modules. Existing `sales.drafts.read` is the only authority; the route creates no Logistics permission, Work command, attempt, audit or stock movement. |
 | Evidence | Sales unit and HTTP wire tests; the existing two inventoried `SalesDeliveryProgressSqlServerRelationalAcceptanceTests` cases additionally exercise this route through the real composed host and real Logistics SQL records. |
 
