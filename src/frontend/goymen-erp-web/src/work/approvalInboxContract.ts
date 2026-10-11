@@ -11,6 +11,8 @@
  *    commercial revision and version, and `isOwnDraft` as a FACT the Sales screen's own policy interprets;
  *  - an Inventory item (#667) is a stock-count difference or a stock scrap still awaiting its decision, judged by
  *    Inventory's own count/scrap rules, by mapping it back onto the Inventory view the label screen itself reads.
+ *    The two Inventory kinds are read under the Work approval contract 2.0 (#683), which adds the label's own readable
+ *    `labelCode` to each item; an Inventory item without a valid one is not an answer to that request.
  * An item of another kind, company or state, a duplicate, or an unknown member is not this contract: the whole answer
  * is refused rather than partly shown.
  */
@@ -38,6 +40,20 @@ export const APPROVAL_KINDS: readonly ApprovalKind[] = [
 ]
 export const isApprovalKind = (value: unknown): value is ApprovalKind =>
   typeof value === 'string' && (APPROVAL_KINDS as readonly string[]).includes(value)
+
+/**
+ * The opt-in selector of the Work approval reads (#683). Under `2.0` the two Inventory kinds publish `labelCode`; the
+ * server acknowledges the selection with the same header. Finance and Sales are read without it, as accepted.
+ */
+export const WORK_APPROVAL_CONTRACT_HEADER = 'X-ERP-Work-Approval-Contract'
+export const INVENTORY_LABEL_DISPLAY_CONTRACT = '2.0'
+/** Inventory's own bound for a label code (`MaterialLabel.MaximumCodeLength`). */
+export const LABEL_CODE_MAX_LENGTH = 64
+
+/** The contract a kind is read under: `2.0` for the two Inventory kinds, none (the legacy read) for every other. */
+export function workApprovalContractOf(kind: string): typeof INVENTORY_LABEL_DISPLAY_CONTRACT | null {
+  return kind === INVENTORY_STOCK_COUNT_KIND || kind === INVENTORY_STOCK_SCRAP_KIND ? INVENTORY_LABEL_DISPLAY_CONTRACT : null
+}
 
 export const WORK_APPROVALS_PATH = '/work/approvals'
 export const workApprovalPath = (kind: string, approvalId: string) =>
@@ -81,6 +97,8 @@ interface InventoryApprovalFacts {
   /** The label's version, as the producer publishes it for both `version` and `labelVersion`. */
   readonly version: string
   readonly labelId: string
+  /** The label's readable code, published by Inventory under contract 2.0. Display only: `labelId` stays the binding. */
+  readonly labelCode: string
   readonly productId: string
   readonly locationId: string
   readonly labelVersion: string
@@ -148,18 +166,18 @@ const SALES_ITEM_KEYS = [
   'submittedAtUtc',
 ] as const
 
-/** The producer's exact members (#667 `InventoryStockCountNativeApprovalReadItemV1`). */
+/** The producer's exact members under contract 2.0 (#667/#683 `InventoryStockCountNativeApprovalReadItemV1`). */
 const INVENTORY_COUNT_ITEM_KEYS = [
   'kind', 'approvalId', 'companyId', 'status', 'version', 'labelId', 'productId', 'locationId', 'differenceKg',
   'submittedBy', 'submittedAtUtc', 'labelVersion', 'ownerKind', 'ownerId', 'custodianKind', 'custodianId', 'block',
-  'bookKg', 'countedKg', 'reason',
+  'bookKg', 'countedKg', 'reason', 'labelCode',
 ] as const
 
-/** The producer's exact members (#667 `InventoryStockScrapNativeApprovalReadItemV1`). */
+/** The producer's exact members under contract 2.0 (#667/#683 `InventoryStockScrapNativeApprovalReadItemV1`). */
 const INVENTORY_SCRAP_ITEM_KEYS = [
   'kind', 'approvalId', 'companyId', 'status', 'version', 'labelId', 'productId', 'locationId', 'scrapKg',
   'submittedBy', 'submittedAtUtc', 'labelVersion', 'ownerKind', 'ownerId', 'custodianKind', 'custodianId', 'block',
-  'bookKg', 'remainingKg', 'reason',
+  'bookKg', 'remainingKg', 'reason', 'labelCode',
 ] as const
 
 type Obj = Record<string, unknown>
@@ -251,20 +269,25 @@ function decodeSalesItem(value: Obj): SalesApprovalItem | null {
   }
 }
 
+/** Inventory's canonical label code: text that is not blank, carries no outer whitespace and fits the owner's bound. */
+const isLabelCode = (value: unknown): value is string =>
+  typeof value === 'string' && value.length <= LABEL_CODE_MAX_LENGTH && value.trim().length > 0 && value === value.trim()
+
 const isPartyKind = (value: unknown): value is StockPartyKind =>
   typeof value === 'string' && (STOCK_PARTY_KINDS as readonly string[]).includes(value)
 
 /**
  * What a count and a scrap item share, checked here because the Work projection adds it: the kind's own state, the
  * producer's `version` (the label version, published twice), who submitted it and when, and the two closed party
- * kinds. Everything about the label, its position and its kilograms is then judged by the Inventory owner's decoder.
+ * kinds, and the label code contract 2.0 adds. Everything else about the label, its position and its kilograms is then
+ * judged by the Inventory owner's decoder.
  */
 function inventoryFactsHold(value: Obj): boolean {
   return value.status === 'PendingApproval' &&
     isId(value.approvalId) && isId(value.companyId) && isId(value.labelId) && isId(value.productId) &&
     isId(value.locationId) && isId(value.ownerId) && isId(value.custodianId) &&
     typeof value.version === 'string' && VERSION.test(value.version) && value.version === value.labelVersion &&
-    isPartyKind(value.ownerKind) && isPartyKind(value.custodianKind) &&
+    isPartyKind(value.ownerKind) && isPartyKind(value.custodianKind) && isLabelCode(value.labelCode) &&
     isFilled(value.submittedBy, 128) && isInstant(value.submittedAtUtc)
 }
 
@@ -286,7 +309,8 @@ function decodeInventoryCountItem(value: Obj): InventoryStockCountApprovalItem |
   return {
     kind: INVENTORY_STOCK_COUNT_KIND,
     approvalId: view.countId, companyId: view.companyId, status: 'PendingApproval', version: value.version as string,
-    labelId: view.labelId, productId: view.productId, locationId: view.locationId, labelVersion: view.labelVersion,
+    labelId: view.labelId, labelCode: value.labelCode as string,
+    productId: view.productId, locationId: view.locationId, labelVersion: view.labelVersion,
     ownerKind: value.ownerKind as StockPartyKind, ownerId: view.ownerId,
     custodianKind: value.custodianKind as StockPartyKind, custodianId: view.custodianId,
     block: view.block as 'Free' | 'Blocked', bookKg: view.bookKg, countedKg: view.countedKg,
@@ -310,7 +334,8 @@ function decodeInventoryScrapItem(value: Obj): InventoryStockScrapApprovalItem |
   return {
     kind: INVENTORY_STOCK_SCRAP_KIND,
     approvalId: view.scrapId, companyId: view.companyId, status: 'PendingApproval', version: value.version as string,
-    labelId: view.labelId, productId: view.productId, locationId: view.locationId, labelVersion: view.labelVersion,
+    labelId: view.labelId, labelCode: value.labelCode as string,
+    productId: view.productId, locationId: view.locationId, labelVersion: view.labelVersion,
     ownerKind: value.ownerKind as StockPartyKind, ownerId: view.ownerId,
     custodianKind: value.custodianKind as StockPartyKind, custodianId: view.custodianId,
     block: view.block as 'Free' | 'Blocked', bookKg: view.bookKg, scrapKg: view.scrapKg,

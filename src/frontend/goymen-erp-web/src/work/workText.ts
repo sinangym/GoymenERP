@@ -176,7 +176,7 @@ export const APPROVALS_TEXT = {
   detailHeading: FINANCE_SOURCE.detailHeading,
   detailHeadingSales: SALES_SOURCE.detailHeading,
   /** Inventory facts, in the label screen's own words. */
-  labelId: 'Etiket kimliği',
+  labelCode: 'Etiket kodu',
   labelVersion: 'Etiket sürümü',
   bookKg: 'Defter (kg)',
   countedKg: 'Sayılan (kg)',

@@ -14,7 +14,7 @@ import { shellRoutes } from '../shell/router'
 import { SHELL_CAPABILITY_CONTRACT_VERSION } from '../shell/api'
 import { CAPABILITY } from '../shell/capabilities'
 import {
-  APPROVAL, COMPANY, COUNT, COUNTERPARTY, DRAFT, LABEL, SCRAP, SCRAP_LABEL,
+  APPROVAL, COMPANY, COUNT, COUNTERPARTY, DRAFT, LABEL, LABEL_CODE, SCRAP, SCRAP_LABEL, SCRAP_LABEL_CODE,
   countDetail, countItem, detail, item, salesDetail, salesItem, scrapDetail, scrapItem,
 } from './approvalInboxFixtures'
 import { SALES_CAPABILITY } from '../sales/capabilities'
@@ -26,6 +26,7 @@ import {
   INVENTORY_STOCK_SCRAP_RECORD_CAPABILITY,
 } from '../inventory/capabilities'
 import { APPROVALS_TEXT, formatSignedKg } from './workText'
+import { WORK_APPROVAL_CONTRACT_HEADER } from './approvalInboxContract'
 
 const USER = '11111111-1111-1111-1111-111111111111'
 const OTHER_COMPANY = '10000000-0000-0000-0000-000000000002'
@@ -43,22 +44,38 @@ function json(body: unknown, status = 200): Response {
 interface Served {
   readonly list?: (url: string, companyId: string | null) => Response
   readonly detail?: (url: string, companyId: string | null) => Response
+  /**
+   * What the Work read acknowledges for the contract a request selected (null: no selector). The default plays the
+   * accepted server (#683): the selected value is echoed, and a request without a selector gets no acknowledgment.
+   */
+  readonly acknowledge?: (selected: string | null) => string | null
 }
 
 function installFetch(granted: readonly string[], served: Served = {}) {
-  const calls: { url: string; companyId: string | null; method: string }[] = []
+  const calls: { url: string; companyId: string | null; method: string; contract: string | null }[] = []
+  const acknowledged = async (answer: Response, selected: string | null) => {
+    // A served answer may be a late promise (deferredResponse); the acknowledgment is written when it arrives.
+    const response = await answer
+    const value = (served.acknowledge ?? ((one) => one))(selected)
+    if (value !== null) response.headers.set(WORK_APPROVAL_CONTRACT_HEADER, value)
+    return response
+  }
   vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input)
     const headers = (init?.headers ?? {}) as Record<string, string>
-    calls.push({ url, companyId: headers['X-Company-Id'] ?? null, method: (init?.method ?? 'GET').toUpperCase() })
+    const contract = headers[WORK_APPROVAL_CONTRACT_HEADER] ?? null
+    calls.push({ url, companyId: headers['X-Company-Id'] ?? null, method: (init?.method ?? 'GET').toUpperCase(), contract })
     if (url.includes('/identity/me')) return json({ userId: USER, displayName: 'Onaycı', email: null, allowedCompanyIds: [COMPANY, OTHER_COMPANY] })
     if (url.includes('/organization/companies')) return json(DIRECTORY)
     if (url.includes('/shell/capabilities')) {
       return json({ contractVersion: SHELL_CAPABILITY_CONTRACT_VERSION, generation: 'gen-1', capabilities: granted })
     }
-    if (/\/work\/approvals\/[^/?]+\/[^/?]+/.test(url)) return (served.detail ?? (() => json(detail)))(url, headers['X-Company-Id'] ?? null)
+    if (/\/work\/approvals\/[^/?]+\/[^/?]+/.test(url)) {
+      return acknowledged((served.detail ?? (() => json(detail)))(url, headers['X-Company-Id'] ?? null), contract)
+    }
     if (url.includes('/work/approvals')) {
-      return (served.list ?? (() => json({ companyId: COMPANY, items: [item], nextCursor: null })))(url, headers['X-Company-Id'] ?? null)
+      return acknowledged(
+        (served.list ?? (() => json({ companyId: COMPANY, items: [item], nextCursor: null })))(url, headers['X-Company-Id'] ?? null), contract)
     }
     return json({ code: 'unavailable' }, 503)
   }))
@@ -127,7 +144,7 @@ describe('/onaylarim — the Finance pilot inbox', () => {
       .toBe(`/onaylarim/finance.official-invoice-import.v1/${APPROVAL}`)
     // Read only: no approve control on this screen; one GET, under the committed company.
     expect(screen.queryByRole('button', { name: /onayla/i })).toBeNull()
-    expect(work()).toEqual([{ url: '/api/v1/work/approvals', companyId: COMPANY, method: 'GET' }])
+    expect(work()).toEqual([{ url: '/api/v1/work/approvals', companyId: COMPANY, method: 'GET', contract: null }])
     expect(screen.getByText(APPROVALS_TEXT.end)).toBeTruthy()
   })
 
@@ -644,14 +661,14 @@ describe('/onaylarim — Inventory stock-count and stock-scrap sources (#667)', 
     await renderAt('/onaylarim')
     await screen.findByTestId('work-approvals-table')
     expect(table().getAttribute('data-kind')).toBe('inventory.stock-count.v1')
-    expect(headers()).toEqual(['Etiket kimliği', 'Defter (kg)', 'Sayılan (kg)', 'Fark (kg)', 'Gerekçe', 'Gönderen', 'Gönderim', 'Kayıt'])
+    expect(headers()).toEqual(['Etiket kodu', 'Defter (kg)', 'Sayılan (kg)', 'Fark (kg)', 'Gerekçe', 'Gönderen', 'Gönderim', 'Kayıt'])
     const [row] = bodyRows()
     expect(bodyRows()).toHaveLength(1)
     expect(row.getAttribute('data-approval-id')).toBe(COUNT)
     expect(row.getAttribute('data-label-id')).toBe(LABEL)
     // Kilograms are the producer's own text in Turkish digits; nothing is rounded, summed or re-derived.
     expect(cells(row).slice(0, 6)).toEqual([
-      LABEL, '1.250,5', '1.247,25', '-3,25', 'Sayımda rulo ucu eksik çıktı; tartı fişi ekte.', 'stok-sayici',
+      LABEL_CODE, '1.250,5', '1.247,25', '-3,25', 'Sayımda rulo ucu eksik çıktı; tartı fişi ekte.', 'stok-sayici',
     ])
     expect(within(row).getByRole('link', { name: OPEN_LABEL }).getAttribute('href')).toBe(`/stok/etiket/${LABEL}`)
     expect(within(row).getByRole('link', { name: APPROVALS_TEXT.openDetail }).getAttribute('href'))
@@ -670,11 +687,11 @@ describe('/onaylarim — Inventory stock-count and stock-scrap sources (#667)', 
     await renderAt('/onaylarim')
     await screen.findByTestId('work-approvals-table')
     expect(table().getAttribute('data-kind')).toBe('inventory.stock-scrap.v1')
-    expect(headers()).toEqual(['Etiket kimliği', 'Defter (kg)', 'Hurda (kg)', 'Kalan (kg)', 'Gerekçe', 'Gönderen', 'Gönderim', 'Kayıt'])
+    expect(headers()).toEqual(['Etiket kodu', 'Defter (kg)', 'Hurda (kg)', 'Kalan (kg)', 'Gerekçe', 'Gönderen', 'Gönderim', 'Kayıt'])
     const [row] = bodyRows()
     expect(row.getAttribute('data-approval-id')).toBe(SCRAP)
     expect(cells(row).slice(0, 6)).toEqual([
-      SCRAP_LABEL, '100', '6', '94', 'Kenar ezilmesi; müşteri onayıyla hurdaya ayrıldı.', 'hurda-kaydeden',
+      SCRAP_LABEL_CODE, '100', '6', '94', 'Kenar ezilmesi; müşteri onayıyla hurdaya ayrıldı.', 'hurda-kaydeden',
     ])
     expect(within(row).getByRole('link', { name: OPEN_LABEL }).getAttribute('href')).toBe(`/stok/etiket/${SCRAP_LABEL}`)
     expect(work().map((call) => call.url)).toEqual([SCRAP_LIST])
@@ -736,7 +753,7 @@ describe('/onaylarim — Inventory stock-count and stock-scrap sources (#667)', 
     ['an item of another company', () => page([{ ...countItem, companyId: OTHER_COMPANY }])],
     ['a page of another company', () => page([{ ...countItem, companyId: OTHER_COMPANY }], null, OTHER_COMPANY)],
     ['the same record twice', () => page([countItem, countItem])],
-    ['an unknown member', () => page([{ ...countItem, labelCode: 'ROLL-1' }])],
+    ['an unknown member', () => page([{ ...countItem, labelName: 'Rulo' }])],
     ['a difference that is not counted − book', () => page([{ ...countItem, differenceKg: '-3' }])],
     ['a decided record', () => page([{ ...countItem, status: 'Approved' }])],
   ])('a count list carrying %s is refused whole: a state, never rows', async (_, answer) => {
@@ -779,7 +796,7 @@ describe('/onaylarim — Inventory stock-count and stock-scrap sources (#667)', 
     expect(screen.getByTestId('work-approval-facts').getAttribute('data-kind')).toBe('inventory.stock-count.v1')
     expect(facts().slice(0, 12)).toEqual([
       ['Onay türü', 'Stok · Sayım farkı onayı'],
-      ['Etiket kimliği', LABEL],
+      ['Etiket kodu', LABEL_CODE],
       ['Durum', 'Onay bekliyor'],
       ['Defter (kg)', '1.250,5'],
       ['Sayılan (kg)', '1.247,25'],
@@ -805,7 +822,7 @@ describe('/onaylarim — Inventory stock-count and stock-scrap sources (#667)', 
     expect(screen.getByRole('heading', { level: 1, name: 'Stok hurda çıkışı onayı' })).toBeTruthy()
     expect(Object.fromEntries(facts())).toMatchObject({
       'Onay türü': 'Stok · Hurda çıkışı onayı',
-      'Etiket kimliği': SCRAP_LABEL,
+      'Etiket kodu': SCRAP_LABEL_CODE,
       'Defter (kg)': '100',
       'Hurda (kg)': '6',
       'Kalan (kg)': '94',
@@ -824,7 +841,7 @@ describe('/onaylarim — Inventory stock-count and stock-scrap sources (#667)', 
     ['a scrap-shaped answer', () => json(scrapDetail)],
     ['another count', () => json({ item: { ...countItem, approvalId: OTHER_COUNT } })],
     ['another company\'s count', () => json({ item: { ...countItem, companyId: OTHER_COMPANY } })],
-    ['an item with an unknown member', () => json({ item: { ...countItem, labelCode: 'ROLL-1' } })],
+    ['an item with an unknown member', () => json({ item: { ...countItem, labelName: 'Rulo' } })],
     ['a Finance-shaped answer', () => json(detail)],
     ['more than { item }', () => json({ ...countDetail, history: [] })],
   ])('a count detail with %s is not shown and offers no label link', async (_, answer) => {
@@ -906,5 +923,234 @@ describe('/onaylarim — Inventory stock-count and stock-scrap sources (#667)', 
     expect(document.querySelector('a[href^="/stok/etiket"]')).toBeNull()
     expect(work().map((call) => call.companyId).slice(-1)).toEqual([OTHER_COMPANY])
     expect(work().filter((call) => call.companyId === OTHER_COMPANY).every((call) => call.url === COUNT_LIST)).toBe(true)
+  })
+})
+
+/**
+ * #683: the two Inventory sources are read under the Work approval contract 2.0 and show the label's readable code.
+ * The selector goes out only with those two kinds; a successful answer must acknowledge it and carry a valid code in
+ * every item, or nothing of it is shown. There is no second (legacy) request, no code made from an id and no extra read
+ * per row. Finance and Sales are requested and shown exactly as before.
+ */
+describe('/onaylarim — Inventory label code under Work approval contract 2.0 (#683)', () => {
+  const COUNT_APPROVE = INVENTORY_STOCK_COUNT_APPROVE_CAPABILITY
+  const SCRAP_APPROVE = INVENTORY_STOCK_SCRAP_APPROVE_CAPABILITY
+  const LABEL_SCREEN = INVENTORY_STOCK_POSITIONS_CAPABILITY
+  const COUNT_LIST = '/api/v1/work/approvals?kind=inventory.stock-count.v1'
+  const SCRAP_LIST = '/api/v1/work/approvals?kind=inventory.stock-scrap.v1'
+  const COUNT_DETAIL = `/api/v1/work/approvals/inventory.stock-count.v1/${COUNT}`
+  const OTHER_COUNT = 'cccccccc-2222-4222-8222-000000000667'
+  const OPEN_LABEL = 'Etiket ekranında aç'
+  const LONG_CODE = `ŞERİT-İÇ-DEPO-${'9'.repeat(50)}`
+  const page = (items: readonly unknown[], nextCursor: string | null = null) => json({ companyId: COMPANY, items, nextCursor })
+  const byKind = (url: string, served: Partial<Record<'count' | 'scrap' | 'sales' | 'finance', () => Response>>) => {
+    const answer = url.includes('kind=inventory.stock-count.v1') ? served.count
+      : url.includes('kind=inventory.stock-scrap.v1') ? served.scrap
+        : url.includes('kind=sales.order-draft.v1') ? served.sales
+          : served.finance
+    return answer === undefined ? json({ code: 'unavailable' }, 503) : answer()
+  }
+  const legacy = (source: Record<string, unknown>) => {
+    const { labelCode: _dropped, ...rest } = source
+    return rest
+  }
+  const table = () => screen.getByTestId('work-approvals-table')
+  const bodyRows = () => within(table()).getAllByRole('row').slice(1)
+  const malformed = () => document.querySelector('[data-state="malformed-response"]')
+
+  it('selects 2.0 only for the two Inventory lists; Finance and Sales are asked without a selector, as before', async () => {
+    const { work } = installFetch([APPROVE, SALES_CAPABILITY.ordersApprove, COUNT_APPROVE, SCRAP_APPROVE, LABEL_SCREEN], {
+      list: (url) => byKind(url, {
+        finance: () => page([item]), sales: () => page([salesItem]), count: () => page([countItem]), scrap: () => page([scrapItem]),
+      }),
+    })
+    await renderAt('/onaylarim')
+    const nav = await screen.findByRole('navigation', { name: APPROVALS_TEXT.sources })
+    await screen.findByTestId('work-approvals-table')
+    const user = userEvent.setup()
+    for (const [name, kind] of [['Satış', 'sales.order-draft.v1'], ['Stok sayım farkı', 'inventory.stock-count.v1'], ['Stok hurda çıkışı', 'inventory.stock-scrap.v1']]) {
+      await user.click(within(nav).getByRole('link', { name }))
+      await waitFor(() => expect(table().getAttribute('data-kind')).toBe(kind))
+    }
+    expect(work().map((call) => [call.url, call.contract])).toEqual([
+      ['/api/v1/work/approvals', null],
+      ['/api/v1/work/approvals?kind=sales.order-draft.v1', null],
+      [COUNT_LIST, '2.0'],
+      [SCRAP_LIST, '2.0'],
+    ])
+    expect(work().every((call) => call.method === 'GET')).toBe(true)
+    // The scrap row shows its Turkish code whole.
+    expect(within(bodyRows()[0]).getAllByRole('cell')[0].textContent).toBe(SCRAP_LABEL_CODE)
+  })
+
+  it('selects 2.0 for an Inventory detail and for neither a Finance nor a Sales detail', async () => {
+    const first = installFetch([COUNT_APPROVE, LABEL_SCREEN], { detail: () => json(countDetail) })
+    await renderAt(`/onaylarim/inventory.stock-count.v1/${COUNT}`)
+    await screen.findByTestId('work-approval-facts')
+    expect(first.work().map((call) => [call.url, call.contract, call.method])).toEqual([[COUNT_DETAIL, '2.0', 'GET']])
+  })
+
+  it.each([
+    ['Finance', [APPROVE], `/onaylarim/finance.official-invoice-import.v1/${APPROVAL}`, () => json(detail)],
+    ['Sales', [SALES_CAPABILITY.ordersApprove], `/onaylarim/sales.order-draft.v1/${DRAFT}`, () => json(salesDetail)],
+  ])('reads a %s detail without the selector and needs no acknowledgment for it', async (_, granted, path, answer) => {
+    const { work } = installFetch(granted, { detail: answer })
+    await renderAt(path)
+    await screen.findByTestId('work-approval-facts')
+    expect(work().map((call) => call.contract)).toEqual([null])
+  })
+
+  it('shows the label code in the list while the row and the label screen link stay bound to the label id', async () => {
+    const { work } = installFetch([COUNT_APPROVE, LABEL_SCREEN], {
+      list: (url) => byKind(url, { count: () => page([{ ...countItem, labelCode: LONG_CODE }]) }),
+    })
+    await renderAt('/onaylarim')
+    await screen.findByTestId('work-approvals-table')
+    const [row] = bodyRows()
+    const [code] = within(row).getAllByRole('cell')
+    expect(LONG_CODE).toHaveLength(64)
+    // The whole 64-character Turkish code, as published; the label's id is not text anywhere in the row.
+    expect(code.textContent).toBe(LONG_CODE)
+    expect(row.textContent).not.toContain(LABEL)
+    expect(row.getAttribute('data-label-id')).toBe(LABEL)
+    expect(within(row).getByRole('link', { name: OPEN_LABEL }).getAttribute('href')).toBe(`/stok/etiket/${LABEL}`)
+    // One list read; no read per row and no label lookup beside it.
+    expect(work().map((call) => call.url)).toEqual([COUNT_LIST])
+  })
+
+  it('shows the label code in the detail, bound to the label id, and opens the exact label', async () => {
+    const { calls, work } = installFetch([SCRAP_APPROVE, LABEL_SCREEN], { detail: () => json(scrapDetail) })
+    await renderAt(`/onaylarim/inventory.stock-scrap.v1/${SCRAP}`)
+    const facts = await screen.findByTestId('work-approval-facts')
+    const code = within(facts).getByText('Etiket kodu').nextElementSibling as HTMLElement
+    expect(code.textContent).toBe(SCRAP_LABEL_CODE)
+    expect(code.getAttribute('data-label-id')).toBe(SCRAP_LABEL)
+    expect(facts.textContent).not.toContain(SCRAP_LABEL)
+    expect(within(facts).queryByText('Etiket kimliği')).toBeNull()
+    expect(screen.getByRole('link', { name: OPEN_LABEL }).getAttribute('href')).toBe(`/stok/etiket/${SCRAP_LABEL}`)
+    expect(work()).toHaveLength(1)
+    expect(calls.some((call) => call.url.includes('/inventory/'))).toBe(false)
+    expect(screen.queryByRole('button', { name: /onayla|reddet/i })).toBeNull()
+  })
+
+  it('draws the code but no label link for an approver without the label screen', async () => {
+    installFetch([COUNT_APPROVE], { list: (url) => byKind(url, { count: () => page([countItem]) }) })
+    await renderAt('/onaylarim')
+    await screen.findByTestId('work-approvals-table')
+    expect(within(bodyRows()[0]).getAllByRole('cell')[0].textContent).toBe(LABEL_CODE)
+    expect(document.querySelector('a[href^="/stok/etiket"]')).toBeNull()
+  })
+
+  it.each([
+    ['no acknowledgment', () => null],
+    ['another version', () => '1.0'],
+    ['a longer value', () => '2.0.1'],
+    ['a repeated acknowledgment', () => '2.0, 2.0'],
+    ['an empty acknowledgment', () => ''],
+  ])('a 2.0 list answered with %s is refused whole, with no legacy request after it', async (_, acknowledge) => {
+    const { work } = installFetch([COUNT_APPROVE, LABEL_SCREEN], {
+      list: (url) => byKind(url, { count: () => page([countItem]) }), acknowledge,
+    })
+    await renderAt('/onaylarim')
+    await waitFor(() => expect(malformed()).not.toBeNull())
+    expect(screen.queryByTestId('work-approvals-table')).toBeNull()
+    expect(document.body.textContent).not.toContain(LABEL_CODE)
+    expect(document.querySelector('a[href^="/stok/etiket"]')).toBeNull()
+    // Exactly the one selected read: nothing was asked again without the selector.
+    expect(work().map((call) => [call.url, call.contract])).toEqual([[COUNT_LIST, '2.0']])
+  })
+
+  it.each([
+    ['the legacy shape (no label code)', legacy(countItem)],
+    ['an empty code', { ...countItem, labelCode: '' }],
+    ['a blank code', { ...countItem, labelCode: '  ' }],
+    ['a code with outer whitespace', { ...countItem, labelCode: ' RULO-1' }],
+    ['a 65-character code', { ...countItem, labelCode: 'X'.repeat(65) }],
+    ['a null code', { ...countItem, labelCode: null }],
+  ])('an acknowledged 2.0 list carrying %s is refused whole: no id is shown in the code\'s place', async (_, bad) => {
+    const { work } = installFetch([COUNT_APPROVE, LABEL_SCREEN], {
+      list: (url) => byKind(url, { count: () => page([{ ...countItem, approvalId: OTHER_COUNT }, bad]) }),
+    })
+    await renderAt('/onaylarim')
+    await waitFor(() => expect(malformed()).not.toBeNull())
+    expect(screen.queryByTestId('work-approvals-table')).toBeNull()
+    expect(document.body.textContent).not.toContain(LABEL)
+    expect(document.querySelector('a[href^="/stok/etiket"]')).toBeNull()
+    expect(work().map((call) => [call.url, call.contract])).toEqual([[COUNT_LIST, '2.0']])
+  })
+
+  const UNSHOWN_DETAILS: readonly (readonly [string, () => Response, ((selected: string | null) => string | null) | undefined])[] = [
+    ['no acknowledgment', () => json(countDetail), () => null],
+    ['another version acknowledged', () => json(countDetail), () => '1.0'],
+    ['the legacy shape', () => json({ item: legacy(countItem) }), undefined],
+    ['a blank code', () => json({ item: { ...countItem, labelCode: ' ' } }), undefined],
+  ]
+  it.each(UNSHOWN_DETAILS)('a 2.0 detail with %s is not shown and offers no label link', async (_, answer, acknowledge) => {
+    const { work } = installFetch([COUNT_APPROVE, LABEL_SCREEN], { detail: answer, acknowledge })
+    await renderAt(`/onaylarim/inventory.stock-count.v1/${COUNT}`)
+    await waitFor(() => expect(malformed()).not.toBeNull())
+    expect(screen.queryByTestId('work-approval-facts')).toBeNull()
+    expect(document.querySelector('a[href^="/stok/etiket"]')).toBeNull()
+    expect(work().map((call) => [call.url, call.contract])).toEqual([[COUNT_DETAIL, '2.0']])
+  })
+
+  it('a next page that is not acknowledged closes the list; the restart is again a 2.0 first page', async () => {
+    let acknowledgeNext = false
+    let nextPages = 0
+    const { work } = installFetch([COUNT_APPROVE, LABEL_SCREEN], {
+      list: (url) => byKind(url, {
+        count: () => {
+          if (!url.includes('cursor=')) return page([countItem], 'c-1')
+          nextPages += 1
+          return page([{ ...countItem, approvalId: OTHER_COUNT }])
+        },
+      }),
+      // The first continuation is acknowledged as another version; after the restart the server echoes again.
+      acknowledge: (selected) => (nextPages > 0 && !acknowledgeNext ? '1.0' : selected),
+    })
+    await renderAt('/onaylarim')
+    await screen.findByTestId('work-approvals-table')
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: APPROVALS_TEXT.loadMore }))
+    await screen.findByTestId('work-approvals-closed')
+    // The rows that were verified are no longer shown as the current result, and their links are gone.
+    expect(screen.queryByTestId('work-approvals-table')).toBeNull()
+    expect(document.querySelector('a[href^="/stok/etiket"]')).toBeNull()
+
+    acknowledgeNext = true
+    await user.click(screen.getByRole('button', { name: APPROVALS_TEXT.restart }))
+    await screen.findByTestId('work-approvals-table')
+    expect(bodyRows()).toHaveLength(1)
+    expect(work().map((call) => [call.url, call.contract])).toEqual([
+      [COUNT_LIST, '2.0'], [`${COUNT_LIST}&cursor=c-1`, '2.0'], [COUNT_LIST, '2.0'],
+    ])
+  })
+
+  it.each([400, 403, 404, 503])('a %i answer to the 2.0 read is a state, never rows, and is not asked again without the selector', async (status) => {
+    const { work } = installFetch([COUNT_APPROVE, LABEL_SCREEN], {
+      list: (url) => byKind(url, { count: () => json({ title: 'x' }, status) }),
+    })
+    await renderAt('/onaylarim')
+    await waitFor(() => expect(document.querySelector('[data-state]')).not.toBeNull())
+    await new Promise((resolve) => setTimeout(resolve, 30))
+    expect(screen.queryByTestId('work-approvals-table')).toBeNull()
+    expect(work().every((call) => call.url === COUNT_LIST && call.contract === '2.0' && call.method === 'GET')).toBe(true)
+  })
+
+  it('a company switch re-reads the count list under the new company with the selector; the old code never shows', async () => {
+    const { work } = installFetch([COUNT_APPROVE, LABEL_SCREEN], {
+      list: (url, companyId) => byKind(url, {
+        count: () => (companyId === OTHER_COMPANY
+          ? json({ companyId: OTHER_COMPANY, items: [], nextCursor: null })
+          : page([countItem])),
+      }),
+    })
+    await renderAt('/onaylarim')
+    await screen.findByTestId('work-approvals-table')
+    expect(document.body.textContent).toContain(LABEL_CODE)
+    await userEvent.setup().selectOptions(screen.getByLabelText('Şirket'), OTHER_COMPANY)
+    await waitFor(() => expect(document.querySelector('[data-state="empty-no-data"]')).not.toBeNull())
+    expect(document.body.textContent).not.toContain(LABEL_CODE)
+    expect(work().at(-1)).toMatchObject({ url: COUNT_LIST, companyId: OTHER_COMPANY, contract: '2.0' })
   })
 })

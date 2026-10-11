@@ -9,8 +9,12 @@ import {
   SALES_ORDER_DRAFT_KIND as SALES,
   decodeApprovalDetail,
   decodeApprovalItem,
+  INVENTORY_LABEL_DISPLAY_CONTRACT,
+  LABEL_CODE_MAX_LENGTH,
+  WORK_APPROVAL_CONTRACT_HEADER,
   decodeApprovalPage,
   isApprovalKind,
+  workApprovalContractOf,
   workApprovalPath,
 } from './approvalInboxContract'
 
@@ -209,7 +213,7 @@ describe('the Work approval read — Inventory stock counts and scraps awaiting 
   })
 
   it('refuses unknown members, missing members and the other kind\'s members', () => {
-    expect(decodeApprovalItem({ ...countItem, labelCode: 'ROLL-1' }, COUNT_KIND)).toBeNull()
+    expect(decodeApprovalItem({ ...countItem, labelName: 'Rulo' }, COUNT_KIND)).toBeNull()
     expect(decodeApprovalItem({ ...countItem, scrapKg: '6' }, COUNT_KIND)).toBeNull()
     expect(decodeApprovalItem({ ...scrapItem, countedKg: '94' }, SCRAP_KIND)).toBeNull()
     expect(decodeApprovalItem({ ...scrapItem, decision: null }, SCRAP_KIND)).toBeNull()
@@ -273,5 +277,90 @@ describe('the Work approval read — Inventory stock counts and scraps awaiting 
     expect(isApprovalKind('inventory.stock-count.v2')).toBe(false)
     expect(workApprovalPath(COUNT_KIND, COUNT)).toBe(`/work/approvals/inventory.stock-count.v1/${COUNT}`)
     expect(workApprovalPath(SCRAP_KIND, SCRAP)).toBe(`/work/approvals/inventory.stock-scrap.v1/${SCRAP}`)
+  })
+})
+
+/**
+ * #683: the two Inventory kinds are read under the Work approval contract 2.0, which adds the label's readable code.
+ * The code is Inventory's own text — required, trimmed, not blank, at most 64 characters — and is display only: the
+ * label id stays the record binding. Finance and Sales have no selector and no such member.
+ */
+describe('the Work approval contract 2.0 — Inventory label code (#683)', () => {
+  const legacy = (source: Record<string, unknown>) => {
+    const { labelCode: _dropped, ...rest } = source
+    return rest
+  }
+
+  it('pins the selector and selects 2.0 for exactly the two Inventory kinds', () => {
+    expect(WORK_APPROVAL_CONTRACT_HEADER).toBe('X-ERP-Work-Approval-Contract')
+    expect(INVENTORY_LABEL_DISPLAY_CONTRACT).toBe('2.0')
+    expect(LABEL_CODE_MAX_LENGTH).toBe(64)
+    expect(workApprovalContractOf(COUNT_KIND)).toBe('2.0')
+    expect(workApprovalContractOf(SCRAP_KIND)).toBe('2.0')
+    expect(workApprovalContractOf(FINANCE)).toBeNull()
+    expect(workApprovalContractOf(SALES)).toBeNull()
+    expect(workApprovalContractOf('inventory.transfer.v1')).toBeNull()
+    expect(workApprovalContractOf('inventory.stock-count.v2')).toBeNull()
+  })
+
+  it('carries the published code beside the label id, on the item, the page and the detail', () => {
+    expect(decodeApprovalItem(countItem, COUNT_KIND)).toMatchObject({ labelId: countItem.labelId, labelCode: 'RULO-2026-000667' })
+    expect(decodeApprovalItem(scrapItem, SCRAP_KIND)).toMatchObject({ labelId: scrapItem.labelId, labelCode: 'ŞERİT-İÇ-2026-000668' })
+    expect(decodeApprovalPage({ companyId: COMPANY, items: [countItem], nextCursor: null }, COUNT_KIND)?.items[0].labelCode).toBe('RULO-2026-000667')
+    const shown = decodeApprovalDetail(scrapDetail, SCRAP_KIND, SCRAP)
+    expect(shown !== null && 'labelCode' in shown.item ? shown.item.labelCode : null).toBe('ŞERİT-İÇ-2026-000668')
+  })
+
+  it('accepts the owner\'s whole range: one character, inner spaces, Turkish letters and exactly 64 characters', () => {
+    for (const labelCode of ['A', 'RULO 12 / B', 'ÇĞİÖŞÜ-çğıöşü', 'X'.repeat(64)]) {
+      expect(decodeApprovalItem({ ...countItem, labelCode }, COUNT_KIND)?.labelCode, labelCode).toBe(labelCode)
+      expect(decodeApprovalItem({ ...scrapItem, labelCode }, SCRAP_KIND)?.labelCode, labelCode).toBe(labelCode)
+    }
+  })
+
+  it.each([
+    ['empty', ''],
+    ['blank', '   '],
+    ['led by a space', ' RULO-1'],
+    ['followed by a space', 'RULO-1 '],
+    ['followed by a line break', 'RULO-1\n'],
+    ['65 characters', 'X'.repeat(65)],
+    ['null', null],
+    ['a number', 667],
+    ['a list', ['RULO-1']],
+    ['the label id as an object', { id: 'RULO-1' }],
+  ])('refuses an Inventory item whose label code is %s, and the page and detail that carry it', (_, labelCode) => {
+    expect(decodeApprovalItem({ ...countItem, labelCode }, COUNT_KIND)).toBeNull()
+    expect(decodeApprovalItem({ ...scrapItem, labelCode }, SCRAP_KIND)).toBeNull()
+    expect(decodeApprovalPage({ companyId: COMPANY, items: [{ ...countItem, labelCode }], nextCursor: null }, COUNT_KIND)).toBeNull()
+    expect(decodeApprovalDetail({ item: { ...scrapItem, labelCode } }, SCRAP_KIND, SCRAP)).toBeNull()
+  })
+
+  it('refuses the legacy Inventory shape: an item without a label code is not an answer to the 2.0 read', () => {
+    expect(decodeApprovalItem(legacy(countItem), COUNT_KIND)).toBeNull()
+    expect(decodeApprovalItem(legacy(scrapItem), SCRAP_KIND)).toBeNull()
+    expect(decodeApprovalPage({ companyId: COMPANY, items: [legacy(countItem)], nextCursor: null }, COUNT_KIND)).toBeNull()
+    // One legacy row among 2.0 rows refuses the whole page.
+    expect(decodeApprovalPage({
+      companyId: COMPANY, items: [countItem, legacy({ ...countItem, approvalId: OTHER })], nextCursor: null,
+    }, COUNT_KIND)).toBeNull()
+    expect(decodeApprovalDetail({ item: legacy(countItem) }, COUNT_KIND, COUNT)).toBeNull()
+    expect(decodeApprovalDetail({ item: legacy(scrapItem) }, SCRAP_KIND, SCRAP)).toBeNull()
+  })
+
+  it('never reads the code from another member, and keeps the label id as the binding', () => {
+    // A code that happens to look like an id is still only text; the id members keep their own rules.
+    const shown = decodeApprovalItem({ ...countItem, labelCode: countItem.labelId }, COUNT_KIND)
+    expect(shown?.labelCode).toBe(countItem.labelId)
+    expect(shown?.labelId).toBe(countItem.labelId)
+    expect(decodeApprovalItem({ ...countItem, labelId: 'RULO-2026-000667' }, COUNT_KIND)).toBeNull()
+  })
+
+  it('gives Finance and Sales no label code: with one, the item is refused as before', () => {
+    expect(decodeApprovalItem({ ...item, labelCode: 'RULO-1' }, FINANCE)).toBeNull()
+    expect(decodeApprovalItem({ ...salesItem, labelCode: 'RULO-1' }, SALES)).toBeNull()
+    expect(decodeApprovalDetail({ item: { ...salesItem, labelCode: 'RULO-1' } }, SALES, DRAFT)).toBeNull()
+    expect(decodeApprovalItem(item, FINANCE)).toEqual(item)
+    expect(decodeApprovalItem(salesItem, SALES)).toEqual(salesItem)
   })
 })

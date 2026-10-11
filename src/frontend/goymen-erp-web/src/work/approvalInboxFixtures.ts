@@ -39,7 +39,8 @@ export const salesItem = {
 } as const
 export const salesDetail = { item: salesItem } as const
 
-// The #667 wire (WorkApprovalEndpointTests): a stock-count difference and a stock scrap awaiting their decision. Synthetic.
+// The #667 wire under contract 2.0 (#683, WorkApprovalEndpointTests): a stock-count difference and a stock scrap
+// awaiting their decision, each with its label's readable code. Synthetic.
 export const COUNT = 'cccccccc-1111-4111-8111-000000000667'
 export const SCRAP = 'dddddddd-1111-4111-8111-000000000667'
 export const LABEL = 'eeeeeeee-1111-4111-8111-000000000667'
@@ -47,12 +48,15 @@ export const SCRAP_LABEL = 'eeeeeeee-2222-4222-8222-000000000667'
 export const PRODUCT = 'ffffffff-1111-4111-8111-000000000667'
 export const LOCATION = 'abababab-1111-4111-8111-000000000667'
 export const COUNTERPARTY = 'cdcdcdcd-1111-4111-8111-000000000667'
+export const LABEL_CODE = 'RULO-2026-000667'
+export const SCRAP_LABEL_CODE = 'ŞERİT-İÇ-2026-000668'
 export const countItem = {
   kind: INVENTORY_STOCK_COUNT_KIND, approvalId: COUNT, companyId: COMPANY, status: 'PendingApproval', version: '4',
   labelId: LABEL, productId: PRODUCT, locationId: LOCATION, differenceKg: '-3.25',
   submittedBy: 'stok-sayici', submittedAtUtc: '2026-10-10T07:00:00+00:00', labelVersion: '4',
   ownerKind: 'Company', ownerId: COMPANY, custodianKind: 'Company', custodianId: COMPANY, block: 'Free',
   bookKg: '1250.5', countedKg: '1247.25', reason: 'Sayımda rulo ucu eksik çıktı; tartı fişi ekte.',
+  labelCode: LABEL_CODE,
 } as const
 export const countDetail = { item: countItem } as const
 export const scrapItem = {
@@ -61,5 +65,6 @@ export const scrapItem = {
   submittedBy: 'hurda-kaydeden', submittedAtUtc: '2026-10-10T08:00:00Z', labelVersion: '7',
   ownerKind: 'Counterparty', ownerId: COUNTERPARTY, custodianKind: 'Company', custodianId: COMPANY, block: 'Blocked',
   bookKg: '100', remainingKg: '94', reason: 'Kenar ezilmesi; müşteri onayıyla hurdaya ayrıldı.',
+  labelCode: SCRAP_LABEL_CODE,
 } as const
 export const scrapDetail = { item: scrapItem } as const
