@@ -1,5 +1,10 @@
 /** D-05 test fixtures shared by the Work approval tests (synthetic; not a test file itself). */
-import { FINANCE_OFFICIAL_INVOICE_IMPORT_KIND, SALES_ORDER_DRAFT_KIND } from './approvalInboxContract'
+import {
+  FINANCE_OFFICIAL_INVOICE_IMPORT_KIND,
+  INVENTORY_STOCK_COUNT_KIND,
+  INVENTORY_STOCK_SCRAP_KIND,
+  SALES_ORDER_DRAFT_KIND,
+} from './approvalInboxContract'
 
 // The #639 wire (WorkApprovalEndpointTests): a Finance pending batch projected as a Work item. Synthetic.
 export const COMPANY = '10000000-0000-0000-0000-000000000001'
@@ -33,3 +38,28 @@ export const salesItem = {
   submittedAtUtc: '2026-10-09T09:15:00Z',
 } as const
 export const salesDetail = { item: salesItem } as const
+
+// The #667 wire (WorkApprovalEndpointTests): a stock-count difference and a stock scrap awaiting their decision. Synthetic.
+export const COUNT = 'cccccccc-1111-4111-8111-000000000667'
+export const SCRAP = 'dddddddd-1111-4111-8111-000000000667'
+export const LABEL = 'eeeeeeee-1111-4111-8111-000000000667'
+export const SCRAP_LABEL = 'eeeeeeee-2222-4222-8222-000000000667'
+export const PRODUCT = 'ffffffff-1111-4111-8111-000000000667'
+export const LOCATION = 'abababab-1111-4111-8111-000000000667'
+export const COUNTERPARTY = 'cdcdcdcd-1111-4111-8111-000000000667'
+export const countItem = {
+  kind: INVENTORY_STOCK_COUNT_KIND, approvalId: COUNT, companyId: COMPANY, status: 'PendingApproval', version: '4',
+  labelId: LABEL, productId: PRODUCT, locationId: LOCATION, differenceKg: '-3.25',
+  submittedBy: 'stok-sayici', submittedAtUtc: '2026-10-10T07:00:00+00:00', labelVersion: '4',
+  ownerKind: 'Company', ownerId: COMPANY, custodianKind: 'Company', custodianId: COMPANY, block: 'Free',
+  bookKg: '1250.5', countedKg: '1247.25', reason: 'Sayımda rulo ucu eksik çıktı; tartı fişi ekte.',
+} as const
+export const countDetail = { item: countItem } as const
+export const scrapItem = {
+  kind: INVENTORY_STOCK_SCRAP_KIND, approvalId: SCRAP, companyId: COMPANY, status: 'PendingApproval', version: '7',
+  labelId: SCRAP_LABEL, productId: PRODUCT, locationId: LOCATION, scrapKg: '6',
+  submittedBy: 'hurda-kaydeden', submittedAtUtc: '2026-10-10T08:00:00Z', labelVersion: '7',
+  ownerKind: 'Counterparty', ownerId: COUNTERPARTY, custodianKind: 'Company', custodianId: COMPANY, block: 'Blocked',
+  bookKg: '100', remainingKg: '94', reason: 'Kenar ezilmesi; müşteri onayıyla hurdaya ayrıldı.',
+} as const
+export const scrapDetail = { item: scrapItem } as const
