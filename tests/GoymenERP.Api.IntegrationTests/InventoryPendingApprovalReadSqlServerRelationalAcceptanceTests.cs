@@ -1,7 +1,9 @@
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Inventory.Application;
+using GoymenERP.Modules.Inventory.Domain.Stock;
 using GoymenERP.Modules.Inventory.Infrastructure;
+using GoymenERP.Modules.Inventory.Infrastructure.Persistence;
 
 namespace GoymenERP.Api.IntegrationTests;
 
@@ -21,11 +23,31 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
                 new(countId, own.LabelId, own.LabelVersion.ToString(), "97", At.AddHours(2), "D05 sayım farkı"),
                 Metadata(run), static _ => Task.CompletedTask);
         }
-        await using (var scope = run.Store(CompanyB))
+        await using (var context = run.Context(CompanyB))
         {
-            await scope.Store.RecordStockCountAsync(
-                new(foreignCountId, foreign.LabelId, foreign.LabelVersion.ToString(), "96", At.AddHours(2),
-                    "D05 yabancı şirket sayımı"), Metadata(run), static _ => Task.CompletedTask);
+            context.StockCounts.Add(new StockCountRow
+            {
+                Id = foreignCountId,
+                CompanyId = CompanyB,
+                LabelId = foreign.LabelId,
+                LabelVersion = foreign.LabelVersion,
+                OwnerKind = (int)StockPartyKind.Company,
+                OwnerId = CompanyB,
+                CustodianKind = (int)StockPartyKind.Company,
+                CustodianId = CompanyB,
+                LocationId = await run.LocationOfAsync(CompanyB),
+                ProductId = foreign.ProductId,
+                Block = (int)BlockState.Free,
+                BookKg = 100m,
+                CountedKg = 96m,
+                CountedAtUtc = At.AddHours(2),
+                Reason = "D05 yabancı şirket sayımı",
+                PayloadHash = new string('f', 64),
+                RecordedAtUtc = At.AddHours(2),
+                RecordedBy = run.Actor.ToString("D"),
+                CorrelationId = $"d05-foreign-{Guid.NewGuid():N}",
+            });
+            await context.SaveChangesAsync();
         }
 
         await using var readScope = run.Store(CompanyA);
@@ -76,7 +98,12 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
                 recorder, static _ => Task.CompletedTask);
             await scope.Store.RecordStockScrapAsync(
                 new(ownId, source.LabelId, source.LabelVersion.ToString(), "5", At.AddHours(3), "D05 kendi hurda"),
-                recorder with { ActorId = ownActor }, static _ => Task.CompletedTask);
+                recorder with
+                {
+                    ActorId = ownActor,
+                    IdempotencyKey = $"d05-own-scrap-{Guid.NewGuid():N}",
+                    CorrelationId = $"d05-own-scrap-{Guid.NewGuid():N}",
+                }, static _ => Task.CompletedTask);
         }
 
         await using var readScope = run.Store(CompanyA);

@@ -71827,6 +71827,8 @@
           "productId",
           "locationId",
           "differenceKg",
+          "submittedBy",
+          "submittedAtUtc",
           "labelVersion",
           "ownerKind",
           "ownerId",
@@ -71835,9 +71837,7 @@
           "block",
           "bookKg",
           "countedKg",
-          "reason",
-          "submittedBy",
-          "submittedAtUtc"
+          "reason"
         ],
         "properties": {
           "kind": {
@@ -71875,6 +71875,13 @@
           "differenceKg": {
             "type": "string"
           },
+          "submittedBy": {
+            "type": "string"
+          },
+          "submittedAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
           "labelVersion": {
             "type": "string"
           },
@@ -71903,13 +71910,6 @@
           },
           "reason": {
             "type": "string"
-          },
-          "submittedBy": {
-            "type": "string"
-          },
-          "submittedAtUtc": {
-            "type": "string",
-            "format": "date-time"
           }
         }
       },
@@ -71923,6 +71923,8 @@
           "productId",
           "locationId",
           "scrapKg",
+          "submittedBy",
+          "submittedAtUtc",
           "labelVersion",
           "ownerKind",
           "ownerId",
@@ -71931,9 +71933,7 @@
           "block",
           "bookKg",
           "remainingKg",
-          "reason",
-          "submittedBy",
-          "submittedAtUtc"
+          "reason"
         ],
         "properties": {
           "kind": {
@@ -71971,6 +71971,13 @@
           "scrapKg": {
             "type": "string"
           },
+          "submittedBy": {
+            "type": "string"
+          },
+          "submittedAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
           "labelVersion": {
             "type": "string"
           },
@@ -71999,13 +72006,6 @@
           },
           "reason": {
             "type": "string"
-          },
-          "submittedBy": {
-            "type": "string"
-          },
-          "submittedAtUtc": {
-            "type": "string",
-            "format": "date-time"
           }
         }
       },
