@@ -200,15 +200,17 @@ public sealed class WorkApprovalEndpointTests(GoymenErpApiFactory factory)
             Assert.Single(enriched.Headers.GetValues(NativeApprovalReadContractV1.Header)));
     }
 
-    [Fact]
-    public async Task Contract_2_fails_closed_when_an_inventory_item_has_no_label_code()
+    [Theory]
+    [MemberData(nameof(InvalidInventoryLabelCodes))]
+    public async Task Contract_2_fails_closed_when_an_inventory_item_has_no_canonical_label_code(
+        string? labelCode)
     {
         var adapter = new Adapter
         {
             Kind = NativeApprovalKindsV1.InventoryStockCount,
             Page = new(NativeApprovalReadOutcomeV1.Found,
                 new NativeApprovalReadPageV1(Company,
-                    [InventoryItem(NativeApprovalKindsV1.InventoryStockCount, Guid.NewGuid())],
+                    [InventoryItem(NativeApprovalKindsV1.InventoryStockCount, Guid.NewGuid(), labelCode)],
                     null)),
         };
         using var host = Host([adapter]);
@@ -223,6 +225,15 @@ public sealed class WorkApprovalEndpointTests(GoymenErpApiFactory factory)
         Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
         AssertPrivateNoStore(response);
     }
+
+    public static TheoryData<string?> InvalidInventoryLabelCodes => new()
+    {
+        null,
+        "",
+        " ETK-D05",
+        "ETK-D05 ",
+        new string('X', InventoryPendingApprovalReadContractV1.MaximumLabelCodeLength + 1),
+    };
 
     [Fact]
     public async Task Inventory_adapters_emit_owner_label_code_only_for_the_opted_in_context()
@@ -264,7 +275,56 @@ public sealed class WorkApprovalEndpointTests(GoymenErpApiFactory factory)
         using var response = await client.SendAsync(request);
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.False(response.Headers.Contains(NativeApprovalReadContractV1.Header));
         Assert.Equal(0, adapter.ListCalls);
+    }
+
+    [Fact]
+    public async Task Multiple_work_contract_header_values_are_rejected_before_owner_read()
+    {
+        var adapter = new Adapter { Kind = NativeApprovalKindsV1.InventoryStockCount };
+        using var host = Host([adapter]);
+        using var client = Client(host);
+        using var request = new HttpRequestMessage(HttpMethod.Get,
+            WorkApprovalEndpoints.Path + "?kind=inventory.stock-count.v1");
+        request.Headers.TryAddWithoutValidation(
+            NativeApprovalReadContractV1.Header,
+            [NativeApprovalReadContractV1.InventoryLabelDisplayVersion,
+             NativeApprovalReadContractV1.InventoryLabelDisplayVersion]);
+
+        using var response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.False(response.Headers.Contains(NativeApprovalReadContractV1.Header));
+        Assert.Equal(0, adapter.ListCalls);
+    }
+
+    [Theory]
+    [InlineData("Denied", HttpStatusCode.Forbidden)]
+    [InlineData("NotFound", HttpStatusCode.NotFound)]
+    [InlineData("Unavailable", HttpStatusCode.ServiceUnavailable)]
+    public async Task Contract_2_acknowledgment_accompanies_handler_generated_failures(
+        string outcomeName,
+        HttpStatusCode expectedStatus)
+    {
+        var outcome = Enum.Parse<NativeApprovalReadOutcomeV1>(outcomeName);
+        var adapter = new Adapter
+        {
+            Kind = NativeApprovalKindsV1.InventoryStockCount,
+            Page = new(outcome, null),
+        };
+        using var host = Host([adapter]);
+        using var client = Client(host);
+        using var request = new HttpRequestMessage(HttpMethod.Get,
+            WorkApprovalEndpoints.Path + "?kind=inventory.stock-count.v1");
+        request.Headers.Add(NativeApprovalReadContractV1.Header,
+            NativeApprovalReadContractV1.InventoryLabelDisplayVersion);
+
+        using var response = await client.SendAsync(request);
+
+        Assert.Equal(expectedStatus, response.StatusCode);
+        Assert.Equal(NativeApprovalReadContractV1.InventoryLabelDisplayVersion,
+            Assert.Single(response.Headers.GetValues(NativeApprovalReadContractV1.Header)));
     }
 
     [Theory]

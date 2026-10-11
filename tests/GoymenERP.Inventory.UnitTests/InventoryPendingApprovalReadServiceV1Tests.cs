@@ -86,15 +86,42 @@ public sealed class InventoryPendingApprovalReadServiceV1Tests
     }
 
     [Fact]
-    public async Task Missing_label_code_fails_the_whole_pending_page_closed()
+    public async Task Noncanonical_label_code_fails_the_whole_pending_page_closed()
     {
-        var world = new World();
-        world.Reader.Counts = [Count() with { LabelCode = "" }];
+        var invalidCodes = new[]
+        {
+            "",
+            " ETK-D05-COUNT",
+            "ETK-D05-COUNT ",
+            new string('X', InventoryPendingApprovalReadContractV1.MaximumLabelCodeLength + 1),
+        };
 
-        var result = await world.Counts.ListAsync(world.Context(), null, default);
+        foreach (var invalidCode in invalidCodes)
+        {
+            var world = new World();
+            world.Reader.Counts = [Count() with { LabelCode = invalidCode }];
 
-        Assert.Equal(InventoryPendingApprovalReadOutcomeV1.Unavailable, result.Outcome);
-        Assert.Null(result.Resource);
+            var result = await world.Counts.ListAsync(world.Context(), null, default);
+
+            Assert.Equal(InventoryPendingApprovalReadOutcomeV1.Unavailable, result.Outcome);
+            Assert.Null(result.Resource);
+        }
+
+        var maximum = new World();
+        maximum.Reader.Counts =
+        [
+            Count() with
+            {
+                LabelCode = new string('X',
+                    InventoryPendingApprovalReadContractV1.MaximumLabelCodeLength),
+            },
+        ];
+
+        var accepted = await maximum.Counts.ListAsync(maximum.Context(), null, default);
+
+        Assert.Equal(InventoryPendingApprovalReadOutcomeV1.Found, accepted.Outcome);
+        Assert.Equal(InventoryPendingApprovalReadContractV1.MaximumLabelCodeLength,
+            Assert.Single(accepted.Resource!.Items).LabelCode.Length);
     }
 
     [Fact]

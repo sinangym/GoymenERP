@@ -6525,6 +6525,8 @@ public sealed partial class OpenApiContractGenerationTests
                 "X-Causation-Id",
             };
             var isCounterparty = operation.Path.StartsWith("/api/v1/counterparties", StringComparison.Ordinal);
+            var isWorkApproval = operation.OperationId is
+                "GetWorkApprovalsV1" or "GetWorkApprovalV1";
             if (isCounterparty)
             {
                 expectedHeaderNames.Add(CounterpartyClientContract.HeaderName);
@@ -6674,6 +6676,28 @@ public sealed partial class OpenApiContractGenerationTests
                     Assert.Contains("Absence on an error is not proof of an old server", description,
                         StringComparison.Ordinal);
                 }
+                var hasWorkAcknowledgment = responseHeaders.TryGetProperty(
+                    NativeApprovalReadContractV1.Header, out var workAcknowledgment);
+                Assert.True(
+                    isWorkApproval == hasWorkAcknowledgment,
+                    $"Operation '{operation.OperationId}' response '{response.Name}' Work acknowledgment mismatch. Expected {isWorkApproval}, actual {hasWorkAcknowledgment}.");
+                if (isWorkApproval)
+                {
+                    AssertResponseHeaderSchema(responseHeaders,
+                        NativeApprovalReadContractV1.Header, "string",
+                        minimumLength: 3, maximumLength: 3, pattern: "^2\\.0$");
+                    Assert.False(workAcknowledgment.TryGetProperty("required", out var required)
+                        && required.GetBoolean());
+                    var description = workAcknowledgment.GetProperty("description").GetString();
+                    Assert.Contains("accepts the exact 2.0 request selector", description,
+                        StringComparison.Ordinal);
+                    Assert.Contains("handler-generated success or error responses", description,
+                        StringComparison.Ordinal);
+                    Assert.Contains("errors before the handler", description, StringComparison.Ordinal);
+                    Assert.Contains("rejected selector", description, StringComparison.Ordinal);
+                    Assert.Contains("not read success or client readiness", description,
+                        StringComparison.Ordinal);
+                }
                 var salesAcknowledgmentExpected = numericStatusCode == StatusCodes.Status200OK
                     && operation.OperationId is "GetSalesOrderDraftsV1" or "GetSalesOrderDraftV1";
                 var hasSalesAcknowledgment = responseHeaders.TryGetProperty(
@@ -6797,6 +6821,19 @@ public sealed partial class OpenApiContractGenerationTests
                     ?? throw new InvalidOperationException("Native approval item schema reference is null."))
                 .Order(StringComparer.Ordinal)
                 .ToArray());
+
+        foreach (var schemaName in new[]
+                 {
+                     "NativeApprovalReadItemV1InventoryStockCountNativeApprovalReadItemV1",
+                     "NativeApprovalReadItemV1InventoryStockScrapNativeApprovalReadItemV1",
+                 })
+        {
+            var labelCode = schemas.GetProperty(schemaName)
+                .GetProperty("properties")
+                .GetProperty("labelCode");
+            Assert.Equal(InventoryPendingApprovalReadContractV1.MaximumLabelCodeLength,
+                labelCode.GetProperty("maxLength").GetInt32());
+        }
 
         var detail = schemas.GetProperty("NativeApprovalReadDetailV1");
         Assert.False(detail.TryGetProperty("discriminator", out _));

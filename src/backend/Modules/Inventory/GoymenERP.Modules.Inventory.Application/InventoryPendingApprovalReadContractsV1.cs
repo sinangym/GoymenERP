@@ -1,4 +1,16 @@
+using GoymenERP.Modules.Inventory.Domain.Labels;
+
 namespace GoymenERP.Modules.Inventory.Application;
+
+public static class InventoryPendingApprovalReadContractV1
+{
+    public const int MaximumLabelCodeLength = MaterialLabel.MaximumCodeLength;
+
+    public static bool IsCanonicalLabelCode(string? value) =>
+        !string.IsNullOrWhiteSpace(value)
+        && value.Length <= MaximumLabelCodeLength
+        && string.Equals(value, value.Trim(), StringComparison.Ordinal);
+}
 
 public static class InventoryPendingApprovalKindsV1
 {

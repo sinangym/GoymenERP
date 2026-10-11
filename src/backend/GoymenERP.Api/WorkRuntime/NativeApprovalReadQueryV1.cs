@@ -1,6 +1,7 @@
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Observability;
 using GoymenERP.BuildingBlocks.Security;
+using GoymenERP.Modules.Inventory.Application;
 
 namespace GoymenERP.Api.WorkRuntime;
 
@@ -170,9 +171,9 @@ internal sealed class NativeApprovalReadQueryV1
             || item switch
             {
                 InventoryStockCountNativeApprovalReadItemV1 count =>
-                    !string.IsNullOrWhiteSpace(count.LabelCode),
+                    InventoryPendingApprovalReadContractV1.IsCanonicalLabelCode(count.LabelCode),
                 InventoryStockScrapNativeApprovalReadItemV1 scrap =>
-                    !string.IsNullOrWhiteSpace(scrap.LabelCode),
+                    InventoryPendingApprovalReadContractV1.IsCanonicalLabelCode(scrap.LabelCode),
                 _ => false,
             });
 

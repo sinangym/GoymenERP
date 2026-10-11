@@ -93,7 +93,7 @@ internal sealed class InventoryStockScrapPendingApprovalAdapterV1(
             || source.ScrapId != approvalId
             || source.CompanyId != context.CompanyId
             || source.LabelId == Guid.Empty
-            || string.IsNullOrWhiteSpace(source.LabelCode)
+            || !InventoryPendingApprovalReadContractV1.IsCanonicalLabelCode(source.LabelCode)
             || source.ProductId == Guid.Empty
             || source.LocationId == Guid.Empty
             || source.OwnerId == Guid.Empty
