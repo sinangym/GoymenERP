@@ -1,7 +1,8 @@
+import { useEffect } from 'react'
 import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { MemoryRouter } from 'react-router'
+import { MemoryRouter, useLocation, useNavigate, type Location, type NavigateFunction } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { PurchaseOrderListPage } from './PurchaseOrderListPage'
 import { PURCHASE_ORDER_DETAIL_TEXT as T } from './purchaseOrderDetailText'
@@ -77,9 +78,22 @@ function installFetch(answer: (url: URL, companyId: string | null) => Response |
   return calls
 }
 
-function mount() {
+/** The router as the page sees it: the current address, and the history moves a browser's Back/Forward make. */
+const router: { location: Location | null; navigate: NavigateFunction } = { location: null, navigate: () => {} }
+
+function RouterProbe() {
+  const location = useLocation()
+  const navigate = useNavigate()
+  useEffect(() => {
+    router.location = location
+    router.navigate = navigate
+  }, [location, navigate])
+  return null
+}
+
+function mount(initialEntries?: string[]) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } })
-  const element = () => <QueryClientProvider client={client}><MemoryRouter><PurchaseOrderListPage /></MemoryRouter></QueryClientProvider>
+  const element = () => <QueryClientProvider client={client}><MemoryRouter initialEntries={initialEntries}><RouterProbe /><PurchaseOrderListPage /></MemoryRouter></QueryClientProvider>
   const view = render(element())
   return { rerender: () => view.rerender(element()), unmount: () => view.unmount() }
 }
@@ -906,5 +920,294 @@ describe('PurchaseOrderListPage supplier filter (PURCHASING-SUPPLIER-FILTER-UI-0
     expect(rule('.supplierCell')).toMatch(/min-width:\s*0/)
     expect(rule('.supplier')).toMatch(/min-width:\s*0/)
     expect(css).not.toMatch(/text-overflow|line-clamp|#[0-9a-fA-F]{3,8}\b|rgb\(|hsl\(/)
+  })
+})
+
+/**
+ * The filters live in the address: a link opens the filtered list, applying and removing a filter writes the
+ * address, and the browser's Back/Forward bring the earlier supplier + status back. The address holds only the
+ * party id — the name shown is the record-bound identity of the answer (or of the row the filter was taken
+ * from), never one made up for an id.
+ */
+describe('PurchaseOrderListPage filters in the address (PURCHASING-SUPPLIER-FILTER-UI-01)', () => {
+  const LIST = '/satinalma/siparisler'
+  const longOrder = (over: Record<string, unknown> = {}) => order(ORDER_1, COMPANY_A, long, over)
+  const shortOrder = (over: Record<string, unknown> = {}) => order(ORDER_2, COMPANY_A, short, { supplierPartyId: PARTY_2, ...over })
+  const shortOrder3 = (over: Record<string, unknown> = {}) => order(ORDER_3, COMPANY_A, short, { supplierPartyId: PARTY_2, ...over })
+  const page = (items: unknown[], nextCursor: string | null = null) => json({ items, nextCursor })
+  const queryOf = (url: URL) => Object.fromEntries(url.searchParams.entries())
+  const address = () => `${router.location?.pathname}${router.location?.search}`
+  const chip = () => screen.queryByTestId('purchase-order-supplier-filter')
+  const chipName = () => chip()?.querySelector('[data-supplier-name]') as HTMLElement | null
+  const filterButton = (orderId: string) => screen.getByTestId(`purchase-order-filter-supplier-${orderId}`)
+  const clearButton = () => screen.getByRole('button', { name: 'Tedarikçi filtresini kaldır' })
+  const statusSelect = () => screen.getByLabelText('Durum') as HTMLSelectElement
+  const rowIds = () => [...document.querySelectorAll('tbody tr[data-order-id]')].map((row) => row.getAttribute('data-order-id'))
+  const go = async (delta: number) => { await act(async () => { router.navigate(delta) }) }
+
+  /** The server's own behaviour for these tests: status and supplier both filter; nothing else does. */
+  function serve() {
+    return installFetch((url) => {
+      const status = url.searchParams.get('status') ?? 'Draft'
+      const supplierPartyId = url.searchParams.get('supplierPartyId')
+      if (supplierPartyId === PARTY_2) return page([shortOrder({ status })])
+      if (supplierPartyId === PARTY_1) return page([longOrder({ status })])
+      return page([longOrder({ status }), shortOrder({ status })])
+    })
+  }
+
+  it('opens a link with a supplier and a status as that filtered list, named from the answer’s own record', async () => {
+    const calls = serve()
+    mount([`${LIST}?status=Approved&supplierPartyId=${PARTY_2}`])
+    await waitFor(() => expect(rowIds()).toEqual([ORDER_2]))
+    // One read, already filtered: the unfiltered list is never fetched first.
+    expect(calls.map((call) => queryOf(call.url))).toEqual([{ status: 'Approved', supplierPartyId: PARTY_2 }])
+    expect(statusSelect().value).toBe('Approved')
+    expect(chipName()?.textContent).toBe('CAR-000007 — Kısa Ltd.')
+    expect(chipName()?.getAttribute('data-supplier-name')).toBe('record')
+    expect(screen.queryByRole('button', { name: /^Filtrele/ })).toBeNull()
+    // The address is left as it was opened.
+    expect(address()).toBe(`${LIST}?status=Approved&supplierPartyId=${PARTY_2}`)
+  })
+
+  it('names nothing it was not given: a linked supplier with no order in the answer has no name, and stays removable', async () => {
+    const calls = installFetch((url) => url.searchParams.has('supplierPartyId') ? page([]) : page([longOrder(), shortOrder()]))
+    mount([`${LIST}?supplierPartyId=${PARTY_2}`])
+    await waitFor(() => expect(document.querySelector('[data-state="empty-filtered"]')).not.toBeNull())
+    expect(chipName()?.getAttribute('data-supplier-name')).toBe('unavailable')
+    expect(chipName()?.textContent).toBe('Tedarikçi adı bu listeden okunamadı')
+    // Neither a name nor the raw id stands in for one.
+    expect(document.body.textContent).not.toContain('Kısa Ltd.')
+    expect(document.body.textContent).not.toContain(PARTY_2)
+    expect(calls.map((call) => queryOf(call.url))).toEqual([{ supplierPartyId: PARTY_2 }])
+    await userEvent.click(clearButton())
+    await waitFor(() => expect(rowIds()).toEqual([ORDER_1, ORDER_2]))
+    expect(address()).toBe(LIST)
+  })
+
+  it('a linked supplier the server refuses is shown as refused, unnamed, with no unfiltered fallback', async () => {
+    const calls = installFetch((url) => url.searchParams.has('supplierPartyId') ? json({ code: 'validation_failed' }, 400) : page([longOrder()]))
+    mount([`${LIST}?supplierPartyId=${PARTY_2}`])
+    await waitFor(() => expect(document.querySelector('[data-state="malformed-response"]')).not.toBeNull())
+    expect(chipName()?.getAttribute('data-supplier-name')).toBe('unavailable')
+    expect(calls.map((call) => queryOf(call.url))).toEqual([{ supplierPartyId: PARTY_2 }])
+    expect(address()).toBe(`${LIST}?supplierPartyId=${PARTY_2}`)
+  })
+
+  it.each([
+    ['a value that is not an id', '?supplierPartyId=CAR-000007'],
+    ['the empty id', '?supplierPartyId=00000000-0000-0000-0000-000000000000'],
+    ['an unknown status', '?status=Cancelled'],
+    ['an empty supplier', '?supplierPartyId='],
+  ])('ignores %s in the address: the list is read unfiltered and shows no filter', async (_name, search) => {
+    const calls = serve()
+    mount([`${LIST}${search}`])
+    await waitFor(() => expect(rowIds()).toEqual([ORDER_1, ORDER_2]))
+    expect(calls.map((call) => queryOf(call.url))).toEqual([{}])
+    expect(chip()).toBeNull()
+    expect(statusSelect().value).toBe('')
+  })
+
+  it('reads an upper-case id in the address as the same supplier, in the server’s form', async () => {
+    const lettered = 'abcdef12-3456-4abc-8def-abcdef123456'
+    const calls = installFetch((url) => url.searchParams.get('supplierPartyId') === lettered
+      ? page([order(ORDER_2, COMPANY_A, { ...short, partyId: lettered }, { supplierPartyId: lettered })])
+      : page([longOrder()]))
+    mount([`${LIST}?supplierPartyId=${lettered.toUpperCase()}`])
+    await waitFor(() => expect(rowIds()).toEqual([ORDER_2]))
+    expect(calls.map((call) => queryOf(call.url))).toEqual([{ supplierPartyId: lettered }])
+    expect(chipName()?.textContent).toBe('CAR-000007 — Kısa Ltd.')
+  })
+
+  it('never borrows a name a history entry remembered for another supplier', async () => {
+    installFetch((url) => url.searchParams.has('supplierPartyId') ? page([]) : page([longOrder(), shortOrder()]))
+    mount([LIST])
+    await screen.findByRole('table')
+    // An entry whose address names one supplier while its remembered row was another's.
+    await act(async () => {
+      router.navigate(`${LIST}?supplierPartyId=${PARTY_1}`, {
+        state: { purchaseOrderFilter: { namespace: 'ctx-a', supplierPartyId: PARTY_2, supplierLabel: 'CAR-000007 — Kısa Ltd.' } },
+      })
+    })
+    await waitFor(() => expect(chipName()?.getAttribute('data-supplier-name')).toBe('unavailable'))
+    expect(document.body.textContent).not.toContain('Kısa Ltd.')
+  })
+
+  it('writes the address when a filter is applied, changed and removed, keeping what is not its own', async () => {
+    serve()
+    mount([`${LIST}?kaynak=menu`])
+    await screen.findByRole('table')
+    await userEvent.click(filterButton(ORDER_2))
+    await waitFor(() => expect(address()).toBe(`${LIST}?kaynak=menu&supplierPartyId=${PARTY_2}`))
+    await userEvent.selectOptions(statusSelect(), 'Approved')
+    await waitFor(() => expect(address()).toBe(`${LIST}?kaynak=menu&supplierPartyId=${PARTY_2}&status=Approved`))
+    await userEvent.click(clearButton())
+    await waitFor(() => expect(address()).toBe(`${LIST}?kaynak=menu&status=Approved`))
+    await userEvent.selectOptions(statusSelect(), '')
+    await waitFor(() => expect(address()).toBe(`${LIST}?kaynak=menu`))
+    expect(chip()).toBeNull()
+  })
+
+  it('Back and Forward bring the earlier status and supplier back, with one read per filter and the row’s name', async () => {
+    const calls = serve()
+    mount([LIST])
+    await screen.findByRole('table')
+    await userEvent.selectOptions(statusSelect(), 'Approved')
+    await waitFor(() => expect(queryOf(calls.at(-1)!.url)).toEqual({ status: 'Approved' }))
+    await userEvent.click(await screen.findByTestId(`purchase-order-filter-supplier-${ORDER_2}`))
+    await waitFor(() => expect(rowIds()).toEqual([ORDER_2]))
+    expect(address()).toBe(`${LIST}?status=Approved&supplierPartyId=${PARTY_2}`)
+
+    // BACK: the status-only list.
+    await go(-1)
+    await waitFor(() => expect(rowIds()).toEqual([ORDER_1, ORDER_2]))
+    expect(address()).toBe(`${LIST}?status=Approved`)
+    expect(chip()).toBeNull()
+    expect(statusSelect().value).toBe('Approved')
+    expect(queryOf(calls.at(-1)!.url)).toEqual({ status: 'Approved' })
+    // BACK again: the unfiltered list.
+    await go(-1)
+    await waitFor(() => expect(statusSelect().value).toBe(''))
+    expect(address()).toBe(LIST)
+    await waitFor(() => expect(queryOf(calls.at(-1)!.url)).toEqual({}))
+    // FORWARD twice: status, then status + supplier — the supplier named as the row named it, the same query sent.
+    await go(1)
+    await waitFor(() => expect(statusSelect().value).toBe('Approved'))
+    expect(chip()).toBeNull()
+    await go(1)
+    await waitFor(() => expect(chipName()?.textContent).toBe('CAR-000007 — Kısa Ltd.'))
+    await waitFor(() => expect(rowIds()).toEqual([ORDER_2]))
+    expect(address()).toBe(`${LIST}?status=Approved&supplierPartyId=${PARTY_2}`)
+    expect(statusSelect().value).toBe('Approved')
+    expect(queryOf(calls.at(-1)!.url)).toEqual({ status: 'Approved', supplierPartyId: PARTY_2 })
+    // Focus is moved only by the user's own filter action, not by history.
+    expect(document.activeElement).not.toBe(clearButton())
+  })
+
+  it('Back and Forward restart the cursor: each filter’s list opens at its own first page', async () => {
+    const calls = installFetch((url) => {
+      const cursor = url.searchParams.get('cursor')
+      if (url.searchParams.get('supplierPartyId') === PARTY_2) {
+        return cursor === 'supplier-2' ? page([shortOrder3()]) : page([shortOrder()], 'supplier-2')
+      }
+      return cursor === 'next-1' ? page([shortOrder()]) : page([longOrder()], 'next-1')
+    })
+    mount([LIST])
+    await screen.findByRole('table')
+    await userEvent.click(screen.getByRole('button', { name: 'Daha fazla göster' }))
+    await waitFor(() => expect(rowIds()).toEqual([ORDER_1, ORDER_2]))
+    await userEvent.click(filterButton(ORDER_2))
+    await waitFor(() => expect(rowIds()).toEqual([ORDER_2]))
+    await userEvent.click(await screen.findByRole('button', { name: 'Daha fazla göster' }))
+    await waitFor(() => expect(rowIds()).toEqual([ORDER_2, ORDER_3]))
+
+    await go(-1)
+    await waitFor(() => expect(rowIds()).toEqual([ORDER_1]))
+    expect(chip()).toBeNull()
+    expect(await screen.findByRole('button', { name: 'Daha fazla göster' })).toBeTruthy()
+    await go(1)
+    await waitFor(() => expect(rowIds()).toEqual([ORDER_2]))
+    await userEvent.click(await screen.findByRole('button', { name: 'Daha fazla göster' }))
+    await waitFor(() => expect(rowIds()).toEqual([ORDER_2, ORDER_3]))
+    // No cursor ever crossed from one filter to the other.
+    const withCursor = calls.map((call) => queryOf(call.url)).filter((query) => 'cursor' in query)
+    expect(withCursor).toEqual([
+      { cursor: 'next-1' },
+      { cursor: 'supplier-2', supplierPartyId: PARTY_2 },
+      { cursor: 'supplier-2', supplierPartyId: PARTY_2 },
+    ])
+  })
+
+  it('going Back while a next page is in flight abandons it: its late answer is never drawn', async () => {
+    let release: (response: Response) => void = () => {}
+    installFetch((url) => {
+      if (url.searchParams.get('supplierPartyId') === PARTY_2) {
+        return url.searchParams.has('cursor') ? new Promise<Response>((resolve) => { release = resolve }) : page([shortOrder()], 'supplier-2')
+      }
+      return page([longOrder(), shortOrder()])
+    })
+    mount([LIST])
+    await screen.findByRole('table')
+    await userEvent.click(filterButton(ORDER_2))
+    await waitFor(() => expect(rowIds()).toEqual([ORDER_2]))
+    await userEvent.click(screen.getByRole('button', { name: 'Daha fazla göster' }))
+    await screen.findByRole('button', { name: 'Sonraki sayfa yükleniyor…' })
+    await go(-1)
+    await waitFor(() => expect(rowIds()).toEqual([ORDER_1, ORDER_2]))
+    await act(async () => release(page([shortOrder3()])))
+    expect(rowIds()).toEqual([ORDER_1, ORDER_2])
+    expect(screen.queryByRole('button', { name: 'Sonraki sayfa yükleniyor…' })).toBeNull()
+  })
+
+  it('a failed next page of a linked filter retries the same supplier, status and cursor', async () => {
+    let attempt = 0
+    const calls = installFetch((url) => {
+      if (!url.searchParams.has('cursor')) return page([shortOrder({ status: 'Approved' })], 'supplier-2')
+      attempt += 1
+      return attempt === 1 ? json({ code: 'service_unavailable' }, 503) : page([shortOrder3({ status: 'Approved' })])
+    })
+    mount([`${LIST}?status=Approved&supplierPartyId=${PARTY_2}`])
+    await waitFor(() => expect(rowIds()).toEqual([ORDER_2]))
+    await userEvent.click(screen.getByRole('button', { name: 'Daha fazla göster' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Aynı sayfayı yeniden dene' }))
+    await waitFor(() => expect(rowIds()).toEqual([ORDER_2, ORDER_3]))
+    expect(calls.slice(1).map((call) => queryOf(call.url))).toEqual([
+      { cursor: 'supplier-2', status: 'Approved', supplierPartyId: PARTY_2 },
+      { cursor: 'supplier-2', status: 'Approved', supplierPartyId: PARTY_2 },
+    ])
+    expect(address()).toBe(`${LIST}?status=Approved&supplierPartyId=${PARTY_2}`)
+  })
+
+  it.each([
+    ['a filter applied on the page', LIST, true],
+    ['a filter opened from a link', `${LIST}?status=Approved&supplierPartyId=${PARTY_1}`, false],
+  ])('a company change removes %s from the address and reads the new company unfiltered', async (_name, start, applyByClick) => {
+    const calls = installFetch((url, companyId) => {
+      if (companyId === COMPANY_B) return page([order(ORDER_3, COMPANY_B, short, { supplierPartyId: PARTY_2 })])
+      return url.searchParams.get('supplierPartyId') === PARTY_1 ? page([longOrder()]) : page([longOrder(), shortOrder()])
+    })
+    const view = mount([start])
+    if (applyByClick) {
+      await screen.findByRole('table')
+      await userEvent.click(filterButton(ORDER_1))
+    }
+    await waitFor(() => expect(rowIds()).toEqual([ORDER_1]))
+    expect(address()).toContain(`supplierPartyId=${PARTY_1}`)
+
+    scenario.companyId = COMPANY_B
+    scenario.namespace = 'ctx-b'
+    act(() => view.rerender())
+    await waitFor(() => expect(rowIds()).toEqual([ORDER_3]))
+    expect(address()).toBe(LIST)
+    expect(chip()).toBeNull()
+    expect(statusSelect().value).toBe('')
+    // Company B was never asked with company A's supplier or status.
+    expect(calls.filter((call) => call.companyId === COMPANY_B).map((call) => queryOf(call.url))).toEqual([{}])
+  })
+
+  it('an actor change removes the filter from the address too', async () => {
+    const calls = serve()
+    const view = mount([`${LIST}?supplierPartyId=${PARTY_2}`])
+    await waitFor(() => expect(rowIds()).toEqual([ORDER_2]))
+    const before = calls.length
+    scenario.namespace = 'ctx-a-second-actor'
+    act(() => view.rerender())
+    await waitFor(() => expect(rowIds()).toEqual([ORDER_1, ORDER_2]))
+    expect(address()).toBe(LIST)
+    expect(calls.slice(before).map((call) => queryOf(call.url))).toEqual([{}])
+  })
+
+  it('keeps the order link and the Cari link on their own grants under a linked filter', async () => {
+    serve()
+    const withoutGrants = mount([`${LIST}?supplierPartyId=${PARTY_2}`])
+    await waitFor(() => expect(rowIds()).toEqual([ORDER_2]))
+    expect(within(screen.getByRole('table')).queryAllByRole('link')).toHaveLength(0)
+    withoutGrants.unmount()
+
+    scenario.capabilities = ['purchasing.orders.list', 'purchasing.orders.detail']
+    mount([`${LIST}?supplierPartyId=${PARTY_2}`])
+    await waitFor(() => expect(rowIds()).toEqual([ORDER_2]))
+    // The order's own link, by the order's own grant — and still no Cari link without the Cari grant.
+    expect(within(screen.getByRole('table')).getAllByRole('link').map((link) => link.getAttribute('href'))).toEqual([`/satinalma/siparisler/${ORDER_2}`])
   })
 })
