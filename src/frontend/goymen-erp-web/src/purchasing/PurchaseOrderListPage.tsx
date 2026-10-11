@@ -15,11 +15,17 @@
  * client-side filtering. The active filter stays on screen with its own remove control; applying, changing or
  * removing it drops the pages already read and starts the cursor over. A read the server refuses is shown as
  * refused: the list never quietly falls back to the unfiltered one.
+ *
+ * The status and the supplier filter live in the address (`?status=…&supplierPartyId=…`), so a link opens the
+ * filtered list and the browser's Back/Forward bring a previous filter back. The address carries only the party
+ * id: the supplier's name is the record-bound identity of an order of the answer (or of the row the filter was
+ * taken from) — never looked up and never made up; with neither, the filter says its name is not available.
+ * Filters set in one company/actor context are dropped from the address when the context changes.
  */
 
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Link } from 'react-router'
+import { Link, useLocation, useSearchParams } from 'react-router'
 import { fetchPurchaseOrders } from './api'
 import { PURCHASING_CAPABILITY, PURCHASING_ROUTE, purchaseOrderDetailPath } from './capabilities'
 import { supplierDisplayOf, type PurchaseOrderStatus, type PurchaseOrderSummary } from './contract'
@@ -62,15 +68,47 @@ const LIST_TEXT = {
   filterBySupplier: 'Filtrele',
   supplierFilter: 'Tedarikçi filtresi',
   clearSupplierFilter: 'Tedarikçi filtresini kaldır',
+  supplierFilterUnnamed: 'Tedarikçi adı bu listeden okunamadı',
 } as const
 
 const HEADING_ID = 'purchase-order-list-heading'
 const SUPPLIER_FILTER_VALUE_ID = 'purchase-order-supplier-filter-value'
 
-/** The supplier the list is filtered to: the party the server filters by, and the identity the chosen row showed. */
-interface SupplierFilter {
-  readonly partyId: string
-  readonly label: string
+const STATUS_PARAM = 'status'
+const SUPPLIER_PARAM = 'supplierPartyId'
+const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+const NIL_GUID = '00000000-0000-0000-0000-000000000000'
+
+/** Only the server's two states are a status filter; anything else in the address is no filter. */
+function statusOf(params: URLSearchParams): PurchaseOrderStatus | null {
+  const value = params.get(STATUS_PARAM)
+  return value === 'Draft' || value === 'Approved' ? value : null
+}
+
+/** Only a real, non-empty party id is a supplier filter; it is compared in the server's lower-case form. */
+function supplierPartyIdOf(params: URLSearchParams): string | null {
+  const value = params.get(SUPPLIER_PARAM)?.toLowerCase() ?? null
+  return value !== null && GUID.test(value) && value !== NIL_GUID ? value : null
+}
+
+/**
+ * What a history entry remembers beside its address: the context its filters were set in, and — when the filter
+ * was taken from a row — that row's record-bound supplier identity. An entry opened from a bare link has none.
+ */
+interface FilterEntryState {
+  readonly namespace: string
+  readonly supplierPartyId: string | null
+  readonly supplierLabel: string | null
+}
+
+function filterEntryStateOf(state: unknown): FilterEntryState | null {
+  const entry = typeof state === 'object' && state !== null ? (state as { readonly purchaseOrderFilter?: unknown }).purchaseOrderFilter : null
+  if (typeof entry !== 'object' || entry === null) return null
+  const { namespace, supplierPartyId, supplierLabel } = entry as Record<string, unknown>
+  return typeof namespace === 'string' && (supplierPartyId === null || typeof supplierPartyId === 'string') &&
+    (supplierLabel === null || typeof supplierLabel === 'string')
+    ? { namespace, supplierPartyId, supplierLabel }
+    : null
 }
 
 
@@ -138,8 +176,26 @@ function PurchaseOrderList({ namespace }: { readonly namespace: string | null })
   const canOpenParty = hasCapability(shell, CAPABILITY.cariPartiesDetail)
   /** Cards or table is a layout choice only: the same rows, the same order, no new read when it flips. */
   const cards = useSyncExternalStore(subscribeCards, readCards, () => false)
-  const [status, setStatus] = useState<PurchaseOrderStatus | null>(null)
-  const [supplier, setSupplier] = useState<SupplierFilter | null>(null)
+  const location = useLocation()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const entry = filterEntryStateOf(location.state)
+  /** Filters that were set in another company/actor context are not this context's: they are not read, and are removed. */
+  const foreignFilters = namespace !== null && entry !== null && entry.namespace !== namespace
+  const status = foreignFilters ? null : statusOf(searchParams)
+  /** The server's supplier filter, or none: the one value both the first page and every next page send. */
+  const supplierPartyId = foreignFilters ? null : supplierPartyIdOf(searchParams)
+  useEffect(() => {
+    if (namespace === null) return
+    if (foreignFilters) {
+      const cleared = new URLSearchParams(searchParams)
+      cleared.delete(STATUS_PARAM)
+      cleared.delete(SUPPLIER_PARAM)
+      setSearchParams(cleared, { replace: true, state: null })
+    } else if (entry === null && (status !== null || supplierPartyId !== null)) {
+      // A bare link's filters are bound to the context they were first read in, so a later context change drops them.
+      setSearchParams(searchParams, { replace: true, state: { purchaseOrderFilter: { namespace, supplierPartyId, supplierLabel: null } } })
+    }
+  }, [entry, foreignFilters, namespace, searchParams, setSearchParams, status, supplierPartyId])
   const [more, setMore] = useState<readonly PurchaseOrderSummary[]>([])
   const [cursor, setCursor] = useState<string | null | undefined>(undefined)
   const [continuation, setContinuation] = useState<'idle' | 'loading' | RemoteViewState<unknown>>('idle')
@@ -153,13 +209,24 @@ function PurchaseOrderList({ namespace }: { readonly namespace: string | null })
     if (focusAfterSupplierChange.current === 'clear') clearSupplierControl.current?.focus()
     else if (focusAfterSupplierChange.current === 'status') statusControl.current?.focus()
     focusAfterSupplierChange.current = null
-  }, [supplier])
-  /** The server's supplier filter, or none: the one value both the first page and every next page send. */
-  const supplierPartyId = supplier?.partyId ?? null
+  }, [supplierPartyId])
+  // A filter that changed without this page's own controls (Back/Forward, a link) restarts the list the same way:
+  // the pages already read and the cursor belong to the filter they were read with.
+  const filterKey = `${status ?? ''}|${supplierPartyId ?? ''}`
+  const [listFilterKey, setListFilterKey] = useState(filterKey)
+  if (listFilterKey !== filterKey) {
+    setListFilterKey(filterKey)
+    setMore([])
+    setCursor(undefined)
+    setContinuation('idle')
+  }
   useEffect(() => {
     const fence = pageFence.current
-    return () => fence.invalidate()
-  }, [namespace, shell.routeEntryGeneration])
+    return () => {
+      fence.invalidate()
+      loading.current = false
+    }
+  }, [namespace, shell.routeEntryGeneration, filterKey])
   const first = useQuery({
     queryKey: [namespace ?? 'no-context', shell.routeEntryGeneration, 'purchasing-orders', status ?? 'all', supplierPartyId ?? 'all-suppliers'],
     enabled: namespace !== null && companyId !== null,
@@ -201,25 +268,44 @@ function PurchaseOrderList({ namespace }: { readonly namespace: string | null })
     setContinuation('idle')
   }
 
-  /** The filter is the server's (`status`); changing it restarts the list. */
-  function chooseStatus(value: string) {
+  // The filtered answer's own orders name the supplier: every one of them is that supplier's (./api refuses the
+  // page otherwise). Before an answer, or when it is empty, the row the filter was taken from still does.
+  const answered = page !== null && page.items.length > 0 ? supplierDisplayOf(page.items[0]) : null
+  const supplierLabel = supplierPartyId === null
+    ? null
+    : answered !== null && answered.partyId === supplierPartyId
+      ? `${answered.code} — ${answered.legalName}`
+      : entry !== null && entry.supplierPartyId === supplierPartyId ? entry.supplierLabel : null
+
+  /** A filter change is a new history entry: the address says what is filtered, and Back returns to what was. */
+  function showFilters(nextStatus: PurchaseOrderStatus | null, nextSupplierPartyId: string | null, nextSupplierLabel: string | null) {
     restartList()
-    setStatus(value === '' ? null : value as PurchaseOrderStatus)
+    const next = new URLSearchParams(searchParams)
+    if (nextStatus === null) next.delete(STATUS_PARAM)
+    else next.set(STATUS_PARAM, nextStatus)
+    if (nextSupplierPartyId === null) next.delete(SUPPLIER_PARAM)
+    else next.set(SUPPLIER_PARAM, nextSupplierPartyId)
+    setSearchParams(next, {
+      state: namespace === null ? null : { purchaseOrderFilter: { namespace, supplierPartyId: nextSupplierPartyId, supplierLabel: nextSupplierLabel } },
+    })
+  }
+
+  /** The filter is the server's (`status`); changing it restarts the list and keeps the supplier filter. */
+  function chooseStatus(value: string) {
+    showFilters(value === 'Draft' || value === 'Approved' ? value : null, supplierPartyId, supplierLabel)
   }
 
   /** The row's own record-bound supplier becomes the server filter; a row without one offers no filter. */
   function filterBySupplierOf(row: PurchaseOrderSummary) {
     const display = supplierDisplayOf(row)
     if (display === null) return
-    restartList()
     focusAfterSupplierChange.current = 'clear'
-    setSupplier({ partyId: display.partyId, label: `${display.code} — ${display.legalName}` })
+    showFilters(status, display.partyId, `${display.code} — ${display.legalName}`)
   }
 
   function clearSupplierFilter() {
-    restartList()
     focusAfterSupplierChange.current = 'status'
-    setSupplier(null)
+    showFilters(status, null, null)
   }
 
   const header = (
@@ -242,10 +328,16 @@ function PurchaseOrderList({ namespace }: { readonly namespace: string | null })
           )}
         </Field>
         {/* The active supplier filter stays on screen, on every width, with its own remove control. */}
-        {supplier !== null ? (
+        {supplierPartyId !== null ? (
           <div className={styles.activeFilter} role="group" aria-label={LIST_TEXT.supplierFilter} data-testid="purchase-order-supplier-filter">
             <span className={styles.activeFilterLabel}>{LIST_TEXT.supplierFilter}</span>
-            <span className={styles.activeFilterValue} id={SUPPLIER_FILTER_VALUE_ID}>{supplier.label}</span>
+            <span
+              className={styles.activeFilterValue}
+              id={SUPPLIER_FILTER_VALUE_ID}
+              data-supplier-name={supplierLabel === null ? 'unavailable' : 'record'}
+            >
+              {supplierLabel ?? LIST_TEXT.supplierFilterUnnamed}
+            </span>
             <Button
               ref={clearSupplierControl}
               type="button"
@@ -290,7 +382,7 @@ function PurchaseOrderList({ namespace }: { readonly namespace: string | null })
   // The filter action sits beside the identity, outside it: the identity element holds the supplier and nothing else.
   // While a supplier filter is active every row is that supplier's, so the action is not repeated on each of them.
   const supplierCell = (row: PurchaseOrderSummary) => {
-    const display = supplier === null ? supplierDisplayOf(row) : null
+    const display = supplierPartyId === null ? supplierDisplayOf(row) : null
     return (
       <span className={styles.supplierCell}>
         <span className={styles.supplier} data-testid={`purchase-order-supplier-${row.id}`}>
@@ -327,7 +419,7 @@ function PurchaseOrderList({ namespace }: { readonly namespace: string | null })
       {header}
       <p className={styles.scope}>{LIST_TEXT.scope}</p>
       {rows.length === 0 ? (
-        <StateBlock state={{ kind: status === null && supplier === null ? 'empty-no-data' : 'empty-filtered' }} subject={LIST_TEXT.subject} />
+        <StateBlock state={{ kind: status === null && supplierPartyId === null ? 'empty-no-data' : 'empty-filtered' }} subject={LIST_TEXT.subject} />
       ) : cards ? (
         /* Phone: one card per order, every fact labelled, in the table's order. */
         <ul className={styles.cards} aria-label={LIST_TEXT.tableLabel} data-testid="purchase-order-cards">
