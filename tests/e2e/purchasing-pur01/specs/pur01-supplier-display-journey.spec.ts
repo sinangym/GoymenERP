@@ -61,17 +61,28 @@ interface OrderRead {
   readonly supplierDisplay: SupplierDisplay
 }
 
+interface OrderLineRead {
+  readonly productId: string
+  readonly unitId: string
+}
+
+interface OrderDetailRead {
+  readonly order: OrderRead
+  readonly lines: readonly OrderLineRead[]
+}
+
 async function signInAs(page: Page, actor: string): Promise<void> {
   await page.setExtraHTTPHeaders({ [DEVELOPMENT_USER_HEADER]: actor })
 }
 
-/** The seeded order exactly as the real read DTO answers it for this actor; the identity is the server's own. */
-async function readSeededOrder(page: Page, actor: string): Promise<OrderRead> {
+/** The seeded order exactly as the real read DTO answers it for this actor; all expectations bind to that record. */
+async function readSeededOrderDetail(page: Page, actor: string): Promise<OrderDetailRead> {
   const response = await page.request.get(`${env.apiBaseUrl}${ORDERS_PATH}/${orderId}`, {
     headers: { [DEVELOPMENT_USER_HEADER]: actor, 'X-Company-Id': companyId },
   })
   expect(response.status()).toBe(200)
-  const order = ((await response.json()) as { readonly order: OrderRead }).order
+  const detail = (await response.json()) as OrderDetailRead
+  const { order } = detail
   expect(order.id).toBe(orderId)
   expect(order.companyId).toBe(companyId)
   expect(order.supplierPartyId).toBe(supplierPartyId)
@@ -81,7 +92,14 @@ async function readSeededOrder(page: Page, actor: string): Promise<OrderRead> {
   expect(order.supplierDisplay.partyId).toBe(supplierPartyId)
   expect(order.supplierDisplay.code.trim()).not.toBe('')
   expect(order.supplierDisplay.legalName).toBe(FIXTURE_SUPPLIER_LEGAL_NAME)
-  return order
+  expect(detail.lines).toHaveLength(1)
+  expect(detail.lines[0].productId).toMatch(/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i)
+  expect(detail.lines[0].unitId).toMatch(/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i)
+  return detail
+}
+
+async function readSeededOrder(page: Page, actor: string): Promise<OrderRead> {
+  return (await readSeededOrderDetail(page, actor)).order
 }
 
 function identityText(supplier: SupplierDisplay): string {
@@ -269,7 +287,9 @@ test.describe('PUR01-DETAIL-DS the real purchase-order detail on the design syst
     test(`PUR01-DETAIL-DS-${width} keeps the real line readable in the intended table/card layout without page overflow`, async ({ page }) => {
       await page.setViewportSize({ width, height: width >= 768 ? 900 : 844 })
       await signInAs(page, creatorActor)
-      const supplier = (await readSeededOrder(page, creatorActor)).supplierDisplay
+      const detail = await readSeededOrderDetail(page, creatorActor)
+      const supplier = detail.order.supplierDisplay
+      const line = detail.lines[0]
 
       await page.goto(DETAIL_ROUTE)
       await expect(page.getByRole('heading', { level: 1, name: DETAIL_HEADING })).toBeVisible({ timeout: 30_000 })
@@ -285,8 +305,8 @@ test.describe('PUR01-DETAIL-DS the real purchase-order detail on the design syst
       await expect(row).toBeVisible()
       await expect(cells).toHaveCount(DETAIL_LINE_LABELS.length)
       expect(await cells.evaluateAll((items) => items.map((item) => item.getAttribute('data-label')))).toEqual(DETAIL_LINE_LABELS)
-      await expect(row).toContainText(productId)
-      await expect(row).toContainText(productUnitId)
+      await expect(row).toContainText(line.productId)
+      await expect(row).toContainText(line.unitId)
 
       if (width >= 768) {
         await expect(headers).toHaveCount(DETAIL_LINE_LABELS.length)
