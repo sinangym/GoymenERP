@@ -25,6 +25,7 @@ import { readEnvironment } from '../src/env'
 const env = readEnvironment()
 const {
   creatorActor, readerActor, companyId, otherCompanyId, orderId, supplierPartyId, companyAccountId,
+  otherSupplierPartyId, otherCompanyAccountId,
   productId, productVersion, productUnitId,
 } = env.seed
 
@@ -307,6 +308,7 @@ interface OrderPage {
 interface ListQuery {
   readonly status: string | null
   readonly cursor: string | null
+  readonly supplierPartyId?: string | null
 }
 
 function apiHeaders(actor: string, company = companyId): Record<string, string> {
@@ -315,11 +317,15 @@ function apiHeaders(actor: string, company = companyId): Record<string, string> 
 
 /** One page exactly as the real list read answers it for this actor and company. */
 async function readPage(
-  request: APIRequestContext, actor: string, query: { readonly status?: OrderStatus; readonly cursor?: string } = {}, company = companyId,
+  request: APIRequestContext,
+  actor: string,
+  query: { readonly status?: OrderStatus; readonly cursor?: string; readonly supplierPartyId?: string } = {},
+  company = companyId,
 ): Promise<OrderPage> {
   const search = new URLSearchParams()
   if (query.cursor !== undefined) search.set('cursor', query.cursor)
   if (query.status !== undefined) search.set('status', query.status)
+  if (query.supplierPartyId !== undefined) search.set('supplierPartyId', query.supplierPartyId)
   const suffix = search.toString()
   const response = await request.get(`${env.apiBaseUrl}${ORDERS_PATH}${suffix ? `?${suffix}` : ''}`, { headers: apiHeaders(actor, company) })
   expect(response.status()).toBe(200)
@@ -356,6 +362,7 @@ function listRead(page: Page, want: ListQuery, company = companyId): Promise<Res
     if (!isListRead(response, company)) return false
     const got = queryOf(response.url())
     return got.status === want.status && got.cursor === want.cursor
+      && new URL(response.url()).searchParams.get('supplierPartyId') === (want.supplierPartyId ?? null)
   }, { timeout: 30_000 })
 }
 
@@ -395,10 +402,31 @@ async function holdFirstContinuation(page: Page): Promise<{ readonly held: Promi
 test.describe('PUR01-LIST the purchase-order list on the design system', () => {
   /** The Drafts this journey arranged through the creator's real create command. */
   let arranged: readonly string[] = []
+  let otherSupplierOrderId = ''
 
   test.beforeAll(async ({ request }) => {
     test.setTimeout(300_000)
     const created: string[] = []
+    const otherResponse = await request.post(`${env.apiBaseUrl}${ORDERS_PATH}`, {
+      headers: {
+        ...apiHeaders(creatorActor), 'Idempotency-Key': 'browser-suite:pur01:ds-list-other-supplier-order', 'Content-Type': 'application/json',
+      },
+      data: {
+        supplierPartyId: otherSupplierPartyId, companyAccountId: otherCompanyAccountId,
+        sourceRequestId: null, effectiveOn: ARRANGED_EFFECTIVE_ON,
+        lines: [{
+          lineId: '0670d511-0000-4a00-8000-000000000099', productId, expectedProductVersion: productVersion,
+          unitId: productUnitId, quantity: ARRANGED_QUANTITY, sourceRequestLineId: null,
+        }],
+      },
+    })
+    expect(otherResponse.status(), 'arranging the second supplier order').toBe(201)
+    const otherOrder = ((await otherResponse.json()) as { readonly detail: { readonly order: { readonly id: string } } }).detail.order
+    expect(otherOrder).toMatchObject({
+      companyId, status: 'Draft', supplierPartyId: otherSupplierPartyId,
+      companyAccountId: otherCompanyAccountId, effectiveOn: ARRANGED_EFFECTIVE_ON,
+    })
+    otherSupplierOrderId = otherOrder.id
     for (let number = 1; number <= ARRANGED_ORDERS; number += 1) {
       const suffix = String(number).padStart(2, '0')
       const response = await request.post(`${env.apiBaseUrl}${ORDERS_PATH}`, {
@@ -780,5 +808,120 @@ test.describe('PUR01-LIST the purchase-order list on the design system', () => {
     await expectRows(tableRows(page), idsOf(gdc), 'the GDC list after returning')
     await expect(page.getByRole('button', { name: MORE, exact: true })).toBeEnabled()
     expect(sent, 'the departed list’s continuation was resent on return').toHaveLength(1)
+  })
+
+  test('PUR01-SUP-FILTER-1 filters a real multi-supplier list, combines status and retries the same filtered cursor', async ({ page }) => {
+    test.setTimeout(180_000)
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await signInAs(page, readerActor)
+
+    const filteredFirst = await readPage(page.request, readerActor, { status: 'Draft', supplierPartyId })
+    expect(filteredFirst.items).toHaveLength(SERVER_PAGE)
+    expect(filteredFirst.nextCursor).not.toBeNull()
+    expect(filteredFirst.items.every((item) => item.status === 'Draft' && item.supplierDisplay.partyId === supplierPartyId)).toBe(true)
+    const otherSupplier = await readPage(page.request, readerActor, { status: 'Draft', supplierPartyId: otherSupplierPartyId })
+    expect(idsOf(otherSupplier)).toEqual([otherSupplierOrderId])
+    expect(otherSupplier.items[0].supplierDisplay.partyId).toBe(otherSupplierPartyId)
+
+    await page.goto(LIST_ROUTE)
+    await expect(page.getByRole('heading', { level: 1, name: LIST_HEADING })).toBeVisible({ timeout: 30_000 })
+    const probe = (await readPage(page.request, readerActor)).items[0]
+    const supplierRead = listRead(page, { status: null, cursor: null, supplierPartyId })
+    await page.getByTestId(`purchase-order-filter-supplier-${probe.id}`).click()
+    expect((await supplierRead).status()).toBe(200)
+    await expect(page).toHaveURL(new RegExp(`[?&]supplierPartyId=${supplierPartyId}(?:&|$)`))
+    await expect(page.getByTestId('purchase-order-supplier-filter')).toBeVisible()
+    await expectRows(tableRows(page), idsOf(await readPage(page.request, readerActor, { supplierPartyId })), 'the supplier-filtered first page')
+
+    const draftRead = listRead(page, { status: 'Draft', cursor: null, supplierPartyId })
+    await statusFilter(page).selectOption('Draft')
+    const draftFirst = (await (await draftRead).json()) as OrderPage
+    await expectRows(tableRows(page), idsOf(draftFirst), 'the supplier and Draft filtered first page')
+    const activeUrl = new URL(page.url())
+    expect(activeUrl.searchParams.get('supplierPartyId')).toBe(supplierPartyId)
+    expect(activeUrl.searchParams.get('status')).toBe('Draft')
+
+    const { held, sent } = await holdFirstContinuation(page)
+    await page.getByRole('button', { name: MORE, exact: true }).click()
+    const failedRoute = await held
+    const failedUrl = new URL(failedRoute.request().url())
+    expect(failedUrl.searchParams.get('supplierPartyId')).toBe(supplierPartyId)
+    expect(failedUrl.searchParams.get('status')).toBe('Draft')
+    expect(failedUrl.searchParams.get('cursor')).toBe(draftFirst.nextCursor)
+    await failedRoute.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ code: 'service_unavailable' }) })
+    await expectRows(tableRows(page), idsOf(draftFirst), 'the filtered rows after the failed continuation')
+    const retry = page.getByRole('button', { name: RETRY_SAME_PAGE, exact: true })
+    await expect(retry).toBeVisible()
+    const retried = listRead(page, { status: 'Draft', cursor: draftFirst.nextCursor, supplierPartyId })
+    await retry.click()
+    const second = (await (await retried).json()) as OrderPage
+    expect(sent).toHaveLength(2)
+    expect(sent[1]).toBe(sent[0])
+    await expectRows(tableRows(page), [...idsOf(draftFirst), ...idsOf(second)], 'the filtered rows after the real retry')
+  })
+
+  test('PUR01-SUP-FILTER-2 keeps the filter in URL history, opens a second real supplier and clears it without a lookup', async ({ page }) => {
+    test.setTimeout(180_000)
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await signInAs(page, creatorActor)
+
+    const deepLink = `${LIST_ROUTE}?status=Draft&supplierPartyId=${otherSupplierPartyId}`
+    const deepRead = listRead(page, { status: 'Draft', cursor: null, supplierPartyId: otherSupplierPartyId })
+    await page.goto(deepLink)
+    expect((await deepRead).status()).toBe(200)
+    await expectRows(tableRows(page), [otherSupplierOrderId], 'the second supplier deep link')
+    const chip = page.getByTestId('purchase-order-supplier-filter')
+    await expect(chip).toBeVisible()
+    await expect(chip).not.toContainText(otherSupplierPartyId)
+    await expect(page.locator(`tbody tr[data-order-id="${otherSupplierOrderId}"] a[href="/cari/${otherSupplierPartyId}"]`)).toHaveCount(1)
+
+    const clearedRead = listRead(page, { status: 'Draft', cursor: null })
+    await page.getByRole('button', { name: 'Tedarikçi filtresini kaldır', exact: true }).click()
+    expect((await clearedRead).status()).toBe(200)
+    expect(new URL(page.url()).searchParams.get('supplierPartyId')).toBeNull()
+    expect(new URL(page.url()).searchParams.get('status')).toBe('Draft')
+
+    const backRead = listRead(page, { status: 'Draft', cursor: null, supplierPartyId: otherSupplierPartyId })
+    await page.goBack()
+    expect((await backRead).status()).toBe(200)
+    await expectRows(tableRows(page), [otherSupplierOrderId], 'the restored supplier deep link after Back')
+    const forwardRead = listRead(page, { status: 'Draft', cursor: null })
+    await page.goForward()
+    expect((await forwardRead).status()).toBe(200)
+    expect(new URL(page.url()).searchParams.get('supplierPartyId')).toBeNull()
+  })
+
+  test('PUR01-SUP-FILTER-3 draws the filtered real supplier as accessible cards at 390 and 320 for a limited reader', async ({ page }) => {
+    await signInAs(page, readerActor)
+    for (const width of [390, 320]) {
+      await page.setViewportSize({ width, height: 844 })
+      const read = listRead(page, { status: 'Draft', cursor: null, supplierPartyId: otherSupplierPartyId })
+      await page.goto(`${LIST_ROUTE}?status=Draft&supplierPartyId=${otherSupplierPartyId}`)
+      expect((await read).status()).toBe(200)
+      await expectRows(cards(page), [otherSupplierOrderId], `the second supplier cards at ${width}`)
+      await expect(page.getByRole('table', { name: LIST_NAME, exact: true })).toHaveCount(0)
+      await expect(page.locator('a[href^="/cari"]')).toHaveCount(0)
+      await expect(page.getByTestId('purchase-order-supplier-filter')).not.toContainText(otherSupplierPartyId)
+      await expectNoPageOverflow(page, `the supplier filter cards at ${width}`)
+    }
+  })
+
+  test('PUR01-SUP-FILTER-4 drops the departed company supplier query and its rows before reading the next company', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await signInAs(page, creatorActor)
+    const initial = listRead(page, { status: 'Draft', cursor: null, supplierPartyId })
+    await page.goto(`${LIST_ROUTE}?status=Draft&supplierPartyId=${supplierPartyId}`)
+    expect((await initial).status()).toBe(200)
+    await expect(page.getByTestId('purchase-order-supplier-filter')).toBeVisible()
+
+    const picker = page.getByRole('combobox', { name: 'Şirket', exact: true })
+    const otherRead = listRead(page, { status: null, cursor: null }, otherCompanyId)
+    await picker.selectOption(otherCompanyId)
+    expect((await otherRead).status()).toBe(200)
+    expect(new URL(page.url()).searchParams.get('supplierPartyId')).toBeNull()
+    expect(new URL(page.url()).searchParams.get('status')).toBeNull()
+    await expect(page.getByTestId('purchase-order-supplier-filter')).toHaveCount(0)
+    for (const id of arranged) await expect(page.locator(`[data-order-id="${id}"]`)).toHaveCount(0)
+    await expect(page.locator(`[data-order-id="${otherSupplierOrderId}"]`)).toHaveCount(0)
   })
 })
