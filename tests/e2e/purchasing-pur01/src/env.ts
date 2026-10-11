@@ -12,6 +12,8 @@ export interface Pur01Seed {
   readonly lineId: string
   readonly supplierPartyId: string
   readonly companyAccountId: string
+  readonly otherSupplierPartyId: string
+  readonly otherCompanyAccountId: string
   readonly productId: string
   readonly productVersion: string
   readonly productUnitId: string
@@ -74,6 +76,8 @@ export function readEnvironment(): Pur01Environment {
     lineId: text(raw, 'lineId', true),
     supplierPartyId: text(raw, 'supplierPartyId', true),
     companyAccountId: text(raw, 'companyAccountId', true),
+    otherSupplierPartyId: text(raw, 'otherSupplierPartyId', true),
+    otherCompanyAccountId: text(raw, 'otherCompanyAccountId', true),
     productId: text(raw, 'productId', true),
     productVersion: version(raw, 'productVersion'),
     productUnitId: text(raw, 'productUnitId', true),
@@ -86,6 +90,9 @@ export function readEnvironment(): Pur01Environment {
     throw new Error('BROWSER_E2E_PUR01_SEED binds one actor to multiple personas')
   }
   if (seed.companyId === seed.otherCompanyId) throw new Error('BROWSER_E2E_PUR01_SEED names the same company twice')
+  if (seed.supplierPartyId === seed.otherSupplierPartyId || seed.companyAccountId === seed.otherCompanyAccountId) {
+    throw new Error('BROWSER_E2E_PUR01_SEED must bind two distinct Supplier parties and accounts')
+  }
   if (!/^SYNPUR01-[1-9]\d*$/.test(seed.productCode)) throw new Error('BROWSER_E2E_PUR01_SEED productCode is not the gated fixture code')
   if (seed.productName !== 'SENTETIK browser-suite:pur01 purchase candidate') throw new Error('BROWSER_E2E_PUR01_SEED productName is not the gated fixture name')
   return { apiBaseUrl, testedCommit, seed }

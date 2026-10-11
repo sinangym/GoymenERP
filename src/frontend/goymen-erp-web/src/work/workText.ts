@@ -1,11 +1,21 @@
 /** D-05 "Onaylarım" — the user-facing words, paths and connected sources of the approval inbox. */
 
 import { OFFICIAL_INVOICE_IMPORT_APPROVALS_ROUTE } from '../finance/officialInvoiceImportRoutes'
+import {
+  INVENTORY_STOCK_COUNT_APPROVE_CAPABILITY,
+  INVENTORY_STOCK_POSITIONS_CAPABILITY,
+  INVENTORY_STOCK_SCRAP_APPROVE_CAPABILITY,
+} from '../inventory/capabilities'
+import { inventoryLabelDetailPath } from '../inventory/labelDetailRoute'
+import { formatKg } from '../inventory/stockPositionText'
 import { SALES_CAPABILITY, salesDetailPath } from '../sales/capabilities'
 import { CAPABILITY } from '../shell/capabilities'
 import {
   FINANCE_OFFICIAL_INVOICE_IMPORT_KIND,
+  INVENTORY_STOCK_COUNT_KIND,
+  INVENTORY_STOCK_SCRAP_KIND,
   SALES_ORDER_DRAFT_KIND,
+  type ApprovalItem,
   type ApprovalKind,
 } from './approvalInboxContract'
 
@@ -36,8 +46,10 @@ export interface ApprovalSource {
   readonly kindText: string
   readonly caption: string
   readonly subject: string
+  readonly detailHeading: string
   readonly openNative: string
-  readonly nativePath: (approvalId: string) => string
+  /** The owner's own screen for this exact record: built only from the verified item the read returned. */
+  readonly nativePath: (item: ApprovalItem) => string
 }
 
 export const FINANCE_SOURCE: ApprovalSource = {
@@ -49,10 +61,11 @@ export const FINANCE_SOURCE: ApprovalSource = {
   kindText: 'Finans · Resmî fatura aktarımı',
   caption: 'Onayınızı bekleyen Finans kayıtları',
   subject: 'bekleyen Finans onayları',
+  detailHeading: 'Resmî fatura aktarım onayı',
   openNative: 'Finans onay ekranında aç',
   // #640 reopens Finance's own approval screen on this record from `?approvalId=`.
-  nativePath: (approvalId) =>
-    `${OFFICIAL_INVOICE_IMPORT_APPROVALS_ROUTE}?${new URLSearchParams({ approvalId }).toString()}`,
+  nativePath: (item) =>
+    `${OFFICIAL_INVOICE_IMPORT_APPROVALS_ROUTE}?${new URLSearchParams({ approvalId: item.approvalId }).toString()}`,
 }
 
 export const SALES_SOURCE: ApprovalSource = {
@@ -64,12 +77,58 @@ export const SALES_SOURCE: ApprovalSource = {
   kindText: 'Satış · Sipariş taslağı iç onayı',
   caption: 'İç onayınızı bekleyen satış sipariş taslakları',
   subject: 'iç onay bekleyen satış taslakları',
+  detailHeading: 'Satış sipariş taslağı iç onayı',
   openNative: 'Satış siparişinde aç',
-  nativePath: (approvalId) => salesDetailPath(approvalId),
+  nativePath: (item) => salesDetailPath(item.approvalId),
+}
+
+/**
+ * Inventory (#667): a count or a scrap is decided on the label's own screen, so the native link is the label —
+ * `/stok/etiket/{labelId}`, the route the stock-positions capability already gates — never a Work command. An item of
+ * another kind has no label; its link then stays on the inbox itself.
+ */
+const inventoryLabelPath = (item: ApprovalItem): string =>
+  item.kind === INVENTORY_STOCK_COUNT_KIND || item.kind === INVENTORY_STOCK_SCRAP_KIND
+    ? inventoryLabelDetailPath(item.labelId)
+    : WORK_ROUTE.approvals
+
+export const INVENTORY_STOCK_COUNT_SOURCE: ApprovalSource = {
+  kind: INVENTORY_STOCK_COUNT_KIND,
+  capability: INVENTORY_STOCK_COUNT_APPROVE_CAPABILITY,
+  nativeCapability: INVENTORY_STOCK_POSITIONS_CAPABILITY,
+  token: 'stok-sayim',
+  label: 'Stok sayım farkı',
+  kindText: 'Stok · Sayım farkı onayı',
+  caption: 'Onayınızı bekleyen stok sayım farkları',
+  subject: 'onay bekleyen stok sayım farkları',
+  detailHeading: 'Stok sayım farkı onayı',
+  openNative: 'Etiket ekranında aç',
+  nativePath: inventoryLabelPath,
+}
+
+export const INVENTORY_STOCK_SCRAP_SOURCE: ApprovalSource = {
+  kind: INVENTORY_STOCK_SCRAP_KIND,
+  capability: INVENTORY_STOCK_SCRAP_APPROVE_CAPABILITY,
+  nativeCapability: INVENTORY_STOCK_POSITIONS_CAPABILITY,
+  token: 'stok-hurda',
+  label: 'Stok hurda çıkışı',
+  kindText: 'Stok · Hurda çıkışı onayı',
+  caption: 'Onayınızı bekleyen stok hurda çıkışları',
+  subject: 'onay bekleyen stok hurda çıkışları',
+  detailHeading: 'Stok hurda çıkışı onayı',
+  openNative: 'Etiket ekranında aç',
+  nativePath: inventoryLabelPath,
 }
 
 /** Every connected source, in the order the inbox offers them. */
-export const APPROVAL_SOURCES: readonly ApprovalSource[] = [FINANCE_SOURCE, SALES_SOURCE]
+export const APPROVAL_SOURCES: readonly ApprovalSource[] = [
+  FINANCE_SOURCE, SALES_SOURCE, INVENTORY_STOCK_COUNT_SOURCE, INVENTORY_STOCK_SCRAP_SOURCE,
+]
+
+/** "A", "A ve B", "A, B ve C": the Turkish list the home entry and the scope sentence read. */
+export function joinLabels(labels: readonly string[]): string {
+  return labels.length <= 1 ? labels.join('') : `${labels.slice(0, -1).join(', ')} ve ${labels[labels.length - 1]}`
+}
 
 /** The capabilities any one of which opens the inbox (each the owner's own; none is new). */
 export const WORK_APPROVALS_CAPABILITIES: readonly string[] = APPROVAL_SOURCES.map((source) => source.capability)
@@ -81,7 +140,7 @@ export const APPROVALS_TEXT = {
   heading: 'Onaylarım',
   /** The inbox's honest scope: exactly the connected sources; nothing else is presented as connected. */
   pilotScope:
-    'Bu listeye bağlı kaynaklar: Finans — resmî fatura aktarım onayları; Satış — sipariş taslağı iç onayları. Diğer modüllerin onayları henüz bağlanmadı.',
+    'Bu listeye bağlı kaynaklar: Finans — resmî fatura aktarım onayları; Satış — sipariş taslağı iç onayları; Stok — sayım farkı ve hurda çıkışı onayları. Diğer modüllerin onayları henüz bağlanmadı.',
   /** The approval is never given here. */
   nativeOnly:
     'Onay bu ekrandan verilmez; kaydın kendi modül ekranında, o modülün kendi yetki, kişi ayrılığı ve sürüm kurallarıyla verilir.',
@@ -114,15 +173,29 @@ export const APPROVALS_TEXT = {
   subject: FINANCE_SOURCE.subject,
   detailSubject: 'onay kaydı',
   backToList: 'Onaylarım',
-  detailHeading: 'Resmî fatura aktarım onayı',
-  detailHeadingSales: 'Satış sipariş taslağı iç onayı',
+  detailHeading: FINANCE_SOURCE.detailHeading,
+  detailHeadingSales: SALES_SOURCE.detailHeading,
+  /** Inventory facts, in the label screen's own words. */
+  labelId: 'Etiket kimliği',
+  labelVersion: 'Etiket sürümü',
+  bookKg: 'Defter (kg)',
+  countedKg: 'Sayılan (kg)',
+  differenceKg: 'Fark (kg)',
+  scrapKg: 'Hurda (kg)',
+  remainingKg: 'Kalan (kg)',
+  reason: 'Gerekçe',
+  block: 'Blokaj',
+  blockFree: 'Serbest',
+  blockBlocked: 'Bloklu',
+  owner: 'Mal sahibi',
+  custodian: 'Malı tutan',
   status: 'Durum',
   statusPending: 'Onay bekliyor',
   templateVersion: 'Şablon sürümü',
   batchVersion: 'Aktarım sürümü',
   /** Home entry point. */
   homeHeading: 'Onaylarım',
-  homeText: (labels: readonly string[]) => `Onayınızı bekleyen kayıtlar: ${labels.join(' ve ')}.`,
+  homeText: (labels: readonly string[]) => `Onayınızı bekleyen kayıtlar: ${joinLabels(labels)}.`,
   homeLink: 'Bekleyen onaylarımı aç',
 } as const
 
@@ -136,4 +209,12 @@ export function formatInstant(value: string): string {
   return Number.isNaN(parsed.getTime())
     ? value
     : parsed.toLocaleString('tr-TR', { dateStyle: 'medium', timeStyle: 'short' })
+}
+
+/**
+ * A stock-count difference as the label screen says it: the producer's exact signed kilograms in Turkish digits, with
+ * the sign kept visible both ways (a shortage "-3", a surplus "+3"). Nothing is rounded or recomputed.
+ */
+export function formatSignedKg(value: string): string {
+  return value.startsWith('-') ? `-${formatKg(value.slice(1))}` : `+${formatKg(value)}`
 }

@@ -150,3 +150,72 @@ describe('purchasing response binding', () => {
     }))
   })
 })
+
+/**
+ * PURCHASING-SUPPLIER-FILTER-UI-01: the list read forwards the accepted optional `supplierPartyId` query (#671).
+ * The server filters; the client only sends the parameter and refuses an answer that is not that supplier's.
+ */
+describe('purchase order list supplier filter', () => {
+  const supplier = commandSummary.supplierPartyId
+  const otherSupplier = '77777777-7777-4777-8777-777777777777'
+  const otherOrder = {
+    ...summary, id: '88888888-8888-4888-8888-888888888888', supplierPartyId: otherSupplier,
+    supplierDisplay: { ...supplierDisplay, partyId: otherSupplier, code: 'CAR-000099' },
+  }
+  const answer = (items: unknown[], nextCursor: string | null = null) =>
+    new Response(JSON.stringify({ items, nextCursor }), { status: 200 })
+  const sent = (fetch: ReturnType<typeof vi.fn>, call: number) => {
+    const url = new URL(String(fetch.mock.calls[call][0]), 'http://local')
+    return { path: url.pathname, query: Object.fromEntries(url.searchParams.entries()), headers: new Headers((fetch.mock.calls[call][1] as RequestInit).headers) }
+  }
+
+  it('forwards supplierPartyId as the server query, alone and together with the status and the cursor', async () => {
+    const fetch = vi.fn().mockImplementation(async () => answer([summary], 'c-3'))
+    vi.stubGlobal('fetch', fetch)
+    expect(await fetchPurchaseOrders(company, { supplierPartyId: supplier })).toEqual({ type: 'ok-single', data: { items: [summary], nextCursor: 'c-3' } })
+    await fetchPurchaseOrders(company, { supplierPartyId: supplier, status: 'Approved', cursor: 'c-2' })
+    expect(sent(fetch, 0).query).toEqual({ supplierPartyId: supplier })
+    expect(sent(fetch, 1).query).toEqual({ cursor: 'c-2', status: 'Approved', supplierPartyId: supplier })
+    // The same endpoint and the same company header as the unfiltered read; one request each.
+    expect(sent(fetch, 0).path).toBe('/api/v1/purchasing/orders')
+    expect(sent(fetch, 1).headers.get('X-Company-Id')).toBe(company)
+    expect(fetch).toHaveBeenCalledTimes(2)
+  })
+
+  it.each([
+    ['no query', undefined],
+    ['an empty query', {}],
+    ['a null supplier', { supplierPartyId: null }],
+    ['a blank supplier', { supplierPartyId: '' }],
+  ])('sends no supplier parameter for %s: the unfiltered read is unchanged', async (_name, query) => {
+    const fetch = vi.fn().mockImplementation(async () => answer([summary, otherOrder]))
+    vi.stubGlobal('fetch', fetch)
+    const list = await fetchPurchaseOrders(company, query)
+    expect(sent(fetch, 0).query).toEqual({})
+    expect(String(fetch.mock.calls[0][0])).not.toContain('?')
+    // An unfiltered page may hold any number of suppliers.
+    expect(list).toEqual({ type: 'ok-single', data: { items: [summary, otherOrder], nextCursor: null } })
+  })
+
+  it('refuses a filtered page that holds another supplier’s order — whole, with nothing kept from it', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(async () => answer([summary, otherOrder])))
+    expect(await fetchPurchaseOrders(company, { supplierPartyId: supplier })).toEqual({ type: 'malformed' })
+    expect(await fetchPurchaseOrders(company, { supplierPartyId: otherSupplier })).toEqual({ type: 'malformed' })
+  })
+
+  it('accepts an empty filtered page and still refuses another company’s order in a filtered one', async () => {
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(answer([]))
+      .mockResolvedValueOnce(answer([{ ...summary, companyId: '99999999-9999-4999-8999-999999999999' }]))
+    vi.stubGlobal('fetch', fetch)
+    expect(await fetchPurchaseOrders(company, { supplierPartyId: supplier })).toEqual({ type: 'ok-single', data: { items: [], nextCursor: null } })
+    expect(await fetchPurchaseOrders(company, { supplierPartyId: supplier })).toEqual({ type: 'malformed' })
+  })
+
+  it('hands a filter the server refuses back as the server’s own answer, with no second read', async () => {
+    const fetch = vi.fn().mockResolvedValueOnce(new Response(JSON.stringify({ code: 'validation_failed' }), { status: 400 }))
+    vi.stubGlobal('fetch', fetch)
+    expect(await fetchPurchaseOrders(company, { supplierPartyId: supplier })).toEqual({ type: 'http', status: 400, body: { code: 'validation_failed' } })
+    expect(fetch).toHaveBeenCalledTimes(1)
+  })
+})

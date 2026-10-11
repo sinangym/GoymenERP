@@ -100,8 +100,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // SETTINGS–MFG-POLICY-01 adds one in-process Settings module registration and its Development/Testing
     // initializer. It adds no endpoint, hosted service or build-time network surface.
     // PUR-P05 adds one in-process record-bound Cari display host; no network or hosted-service surface.
+    // D05 Inventory approvals add two scoped in-process owner readers and two Work adapters; no permission,
+    // network, hosted-service or production-activation surface changes.
     private const string ReviewedOpenApiStartupFingerprint =
-        "6ff38ce8b5d618074c169dfd6ba12fb19ce8bd2c8d9215d6b4237ab508bb977f";
+        "9e0a8f80ebbcfbebf9309d28c39762cedc8223911ad6b644faefdc33c667f7bd";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedProductManufacturingTechnicalRegistrationPath =
@@ -221,8 +223,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // every listed case remains mandatory and zero-skip.
             // Inventory location display and ST-01 Product-authority capability: +2 reviewed Inventory SQL facts.
             // ST-01 owner/custodian read: +1 exact-party, read-without-side-effect SQL fact.
+            // D05 Inventory approvals: +3 pending stock-count/scrap read and fail-closed SQL facts.
             ["tools/relational_inventory/inventory.txt"] =
-                "33374528de2fb0123a1deec1307ea74a0590df904ab54652f8dee14d7f7ca165",
+                "42fa46d35a9008adbabc5ebdd4a65211180292d03f88c4506732b46bac2d5cfb",
 
             // logistics
             // AT-053: +4 weighbridge SQL facts (81c1ff0b… -> 264898d7…).
@@ -264,8 +267,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 "e02948f7d4d4ebc817db08478c9c0c47bbd30abcaa5880e90cd68880a8d0aeee",
 
             // purchasing
+            // Purchasing supplier filter: +1 company-scoped cursor-paging SQL fact, kept ordinal-sorted.
             ["tools/relational_inventory/purchasing.txt"] =
-                "18d2d359f6688645ef4a0021c9d59045539ffe9b62c2b9e1cddb942073f8c691",
+                "23decb3344e381ed4ac26013080378c6eb37d5cf97c79962ae75226c0dbfc9b7",
 
             // sales
             // DEC-SAL-003: +3 SalesDeliveryScheduleSqlServerRelationalAcceptanceTests facts (16fa5110… -> 00189b7b…).
@@ -1138,7 +1142,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Purchasing/"
                  + "GoymenERP.Modules.Purchasing.Infrastructure/Persistence/PurchasingStore.cs"] =
                     new(
-                        "36aea9f4b51ff348de16e93b30d424172e8fa829c7ca09ee06f7d6c721a8ee2d",
+                        "72c1ab9720210ec278472130d7600650f941fe300a2e7bc2fa182d85b8acaef3",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1

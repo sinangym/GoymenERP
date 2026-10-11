@@ -140,6 +140,31 @@ public sealed class PurchasingHttpAcceptanceTests(GoymenErpApiFactory factory) :
     }
 
     [Fact]
+    public async Task Order_list_accepts_one_exact_supplier_filter_while_request_list_rejects_it()
+    {
+        var supplierPartyId = Guid.Parse("60000000-0000-0000-0000-000000000006");
+        var owner = new StubOrderRecordSource();
+        using var host = CreateHost(new StubService(), owner, new StubSupplierDisplaySource());
+        using var client = CreateClient(host);
+
+        using (var response = await client.GetAsync($"{PurchasingApiV1.OrdersPath}?supplierPartyId={supplierPartyId:D}&status=Draft"))
+        {
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            Assert.Equal((supplierPartyId, "Draft"), (owner.LastQuery?.SupplierPartyId, owner.LastQuery?.Status));
+        }
+
+        using (var response = await client.GetAsync($"{PurchasingApiV1.RequestsPath}?supplierPartyId={supplierPartyId:D}"))
+        {
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        }
+
+        using (var response = await client.GetAsync($"{PurchasingApiV1.OrdersPath}?supplierPartyId={Guid.Empty:D}"))
+        {
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        }
+    }
+
+    [Fact]
     public async Task Historical_inactive_supplier_remains_visible_while_missing_relation_closes_list_and_detail()
     {
         var detail = OrderDetail(PurchaseOrderId);
@@ -542,6 +567,7 @@ public sealed class PurchasingHttpAcceptanceTests(GoymenErpApiFactory factory) :
     {
         public PurchaseOrderDetailView Detail { get; init; } = OrderDetail(PurchaseOrderId);
         public Func<Guid, Task<PurchaseOrderDetailView>>? GetOrder { get; init; }
+        public PurchaseOrderListQuery? LastQuery { get; private set; }
 
         public Task<PurchaseOrderDetailView> GetOrderDetailAsync(
             Guid orderId,
@@ -550,8 +576,11 @@ public sealed class PurchasingHttpAcceptanceTests(GoymenErpApiFactory factory) :
 
         public Task<PurchaseOrderListResponse> GetOrderListAsync(
             PurchaseOrderListQuery query,
-            CancellationToken cancellationToken = default) =>
-            Task.FromResult(new PurchaseOrderListResponse([Detail.Order], null));
+            CancellationToken cancellationToken = default)
+        {
+            LastQuery = query;
+            return Task.FromResult(new PurchaseOrderListResponse([Detail.Order], null));
+        }
     }
 
     private sealed class StubSupplierDisplaySource : IPurchasingSupplierDisplaySourceV1

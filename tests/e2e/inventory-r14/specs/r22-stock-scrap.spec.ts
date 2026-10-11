@@ -192,9 +192,11 @@ async function effects(pool: SqlPool, labelId: string): Promise<Effects> {
               (SELECT COUNT(*) FROM [inventory].[StockScrapDecisions] AS d
                 JOIN [inventory].[StockScraps] AS s ON s.[Id] = d.[ScrapId]
                 WHERE s.[CompanyId] = @companyId AND s.[LabelId] = @labelId) AS decisions,
-              -- Every Scrap movement (kind 7) of the company: this journey is the only one in the run that posts any.
-              (SELECT COUNT(*) FROM [inventory].[Movements]
-                WHERE [CompanyId] = @companyId AND [Kind] = 7) AS scrapMovements,
+              -- Exactly this label's scrap-sourced movement. Other R14 journeys may post the same movement kind.
+              (SELECT COUNT(*) FROM [inventory].[Movements] AS m
+                JOIN [inventory].[StockScraps] AS s ON s.[CompanyId] = m.[CompanyId] AND s.[Id] = m.[SourceId]
+                WHERE m.[CompanyId] = @companyId AND m.[Kind] = 7
+                  AND m.[SourceKind] = N'inventory.stock-scrap' AND s.[LabelId] = @labelId) AS scrapMovements,
               (SELECT COUNT(*) FROM [audit].[AuditEvents] AS a
                 JOIN [inventory].[StockScraps] AS s ON LOWER(CONVERT(nvarchar(36), s.[Id])) = LOWER(a.[EntityId])
                 WHERE a.[CompanyId] = @companyId AND a.[EntityType] = N'Inventory.StockScrap'

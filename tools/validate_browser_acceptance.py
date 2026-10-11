@@ -168,8 +168,9 @@ INVENTORY_STOCK_POSITION_CURSOR_KEY = "Inventory__StockPositionCursorSigningKeyB
 _R14_STOCK_POSITION_CURSOR_SHA256 = "630dcd2966c4336691125448bbb25b4ff412a49c732db2c8abc1b8581bd710dd"
 MAX_SUITE_ACTORS = 8
 # S04's accepted remainder journey adds exactly the L04-provenance preparer/loader pair to its existing
-# eight disposable actors. Every other suite keeps the global cap; this is not a general expansion knob.
-SUITE_ACTOR_LIMITS = {"s04": 10}
+# eight disposable actors. D-05 Inventory needs one ninth R14-only combined approver beside the old count-only and
+# scrap-only actors. Every other suite keeps the global cap; this is not a general expansion knob.
+SUITE_ACTOR_LIMITS = {"s04": 10, "r14": 9}
 SUITE_API_EXTENSIONS = {
     # U-02: the Product runtime's issuer binding, matching the suite seed's local user and
     # external identity (ÜRÜN, #319 P3). U-01-360 (#466, user decision 2026-09-27): one disposable
@@ -662,6 +663,10 @@ def validate_suite_identity(suite: str, extra: dict, actor_ids: list[str]) -> No
                     f"{actor} requires its exact isolated permissions")
     if suite == "r14":
         actor_users = {subject: identity_id for identity_id, subject in users.items()}
+        require(set(actor_ids) == {
+            "r14-recorder", "r14-denied", "r14-arranger", "r14-transformer", "r14-counter",
+            "r14-count-approver", "r14-scrapper", "r14-scrap-approver", "r14-both-approver",
+        }, "r14 requires its exact nine disposable actors")
         recorder_user = actor_users.get("r14-recorder")
         recorder_assignments = [row for row in grouped["Assignments"].values()
                                 if row["UserId"] == recorder_user]
@@ -706,6 +711,36 @@ def validate_suite_identity(suite: str, extra: dict, actor_ids: list[str]) -> No
             "organization.locations.read",
             "counterparty.parties.create",
         ), "r14-arranger requires its exact isolated permissions")
+        both_approver_user = actor_users.get("r14-both-approver")
+        both_approver_assignments = [row for row in grouped["Assignments"].values()
+                                     if row["UserId"] == both_approver_user]
+        require(both_approver_user is not None and len(both_approver_assignments) == 1,
+                "r14-both-approver requires exactly one isolated assignment")
+        both_approver_role = roles[both_approver_assignments[0]["RoleId"]]
+        both_approver_permissions = tuple(
+            both_approver_role[f"Permissions__{index}"]
+            for index in range(len([key for key in both_approver_role if key.startswith("Permissions__")]))
+        )
+        require(both_approver_role["Code"] == "BROWSER_R14_BOTH_APPROVER"
+                and both_approver_permissions == (
+                    "inventory.labels.read",
+                    "inventory.balances.read",
+                    "inventory.stock-count.approve",
+                    "inventory.stock-scrap.approve",
+                    "product.operational-selection.read",
+                ), "r14-both-approver requires its exact isolated permissions")
+        for actor, user_id in actor_users.items():
+            actor_permissions = {
+                permission
+                for row in grouped["Assignments"].values() if row["UserId"] == user_id
+                for key, permission in roles[row["RoleId"]].items() if key.startswith("Permissions__")
+            }
+            if "inventory.stock-count.approve" in actor_permissions:
+                require(actor in ("r14-count-approver", "r14-both-approver"),
+                        "only the R14 count-only and combined approvers may hold stock-count approval")
+            if "inventory.stock-scrap.approve" in actor_permissions:
+                require(actor in ("r14-scrap-approver", "r14-both-approver"),
+                        "only the R14 scrap-only and combined approvers may hold stock-scrap approval")
         for actor, user_id in actor_users.items():
             actor_roles = [roles[row["RoleId"]] for row in grouped["Assignments"].values()
                            if row["UserId"] == user_id]
@@ -846,13 +881,15 @@ SUITE_FIXTURE_OUTPUTS: dict[str, frozenset[str]] = {
     # the real Cari-owned active Supplier account and Product's exact gated purchase-candidate tuple.
     "pur01": frozenset({"creatorActor", "approverActor", "readerActor", "receiverActor", "stockReaderActor",
                         "companyId", "otherCompanyId",
-                        "orderId", "lineId", "supplierPartyId", "companyAccountId", "productId",
+                        "orderId", "lineId", "supplierPartyId", "companyAccountId",
+                        "otherSupplierPartyId", "otherCompanyAccountId", "productId",
                         "productVersion", "productUnitId", "productUnitProfileId",
                         "productUnitProfileVersion", "productCode", "productName"}),
-    # STOK's Suites/R14 seed: three actors, company fence, active Organization location and Product's
+    # STOK's Suites/R14 seed: disposable actors, company fence, active Organization location and Product's
     # exact gated stock-candidate tuple. The browser creates the Inventory record itself.
     "r14": frozenset({"recorderActor", "deniedActor", "arrangerActor", "transformerActor",
-                      "counterActor", "countApproverActor", "scrapperActor", "scrapApproverActor", "companyId",
+                      "counterActor", "countApproverActor", "scrapperActor", "scrapApproverActor",
+                      "bothApproverActor", "companyId",
                       "otherCompanyId",
                       "locationId", "productId", "productVersion", "productUnitId",
                       "productUnitProfileId", "productUnitProfileVersion", "productCode", "productName",

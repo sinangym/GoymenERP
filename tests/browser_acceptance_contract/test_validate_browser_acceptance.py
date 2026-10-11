@@ -934,7 +934,7 @@ class WorkflowTests(unittest.TestCase):
                 environment[match.group(1)] = json.loads(raw) if raw.startswith('"') else raw
 
         self.assertEqual(8, validator.MAX_SUITE_ACTORS)
-        self.assertEqual({"s04": 10}, validator.SUITE_ACTOR_LIMITS)
+        self.assertEqual(10, validator.SUITE_ACTOR_LIMITS["s04"])
         validator.validate_suite_extensions("s04", environment)
 
         too_many = dict(environment)
@@ -1110,6 +1110,7 @@ class WorkflowTests(unittest.TestCase):
             validator.validate_suite_extensions("pur01", creator_missing_upload)
 
     def test_r14_identity_permissions_are_the_command_detail_reads_and_location_arranger(self):
+        self.assertEqual(9, validator.SUITE_ACTOR_LIMITS["r14"])
         self.assertEqual(
             (
                 "inventory.opening-stock.record",
@@ -1160,7 +1161,7 @@ class WorkflowTests(unittest.TestCase):
         }
         self.assertEqual({0: "organization.locations.read", 1: "counterparty.parties.create"}, arranger)
         # One holder each: no other R14 role carries either Cari name.
-        for role_index in range(5, 13):
+        for role_index in range(5, 14):
             role_permissions = [
                 permission
                 for _, permission in re.findall(
@@ -1168,7 +1169,7 @@ class WorkflowTests(unittest.TestCase):
             ]
             self.assertEqual(role_index == 5, "counterparty.parties.read" in role_permissions)
             self.assertEqual(role_index == 7, "counterparty.parties.create" in role_permissions)
-        for role_index in range(8, 13):
+        for role_index in range(8, 14):
             role_permissions = {
                 permission
                 for _, permission in re.findall(
@@ -1182,6 +1183,18 @@ class WorkflowTests(unittest.TestCase):
                 }.issubset(role_permissions),
                 f"R14 role {role_index} must retain the complete stock-position read authority",
             )
+        both_approver = {
+            int(index): permission
+            for index, permission in re.findall(
+                r"IdentitySeed__Roles__13__Permissions__(\d+): ([^\r\n]+)", source)
+        }
+        self.assertEqual({
+            0: "inventory.labels.read",
+            1: "inventory.balances.read",
+            2: "inventory.stock-count.approve",
+            3: "inventory.stock-scrap.approve",
+            4: "product.operational-selection.read",
+        }, both_approver)
 
         key_match = re.search(
             rf"{validator.INVENTORY_STOCK_POSITION_CURSOR_KEY}: ([^\r\n]+)",
@@ -1202,6 +1215,17 @@ class WorkflowTests(unittest.TestCase):
                 raw = match.group(2)
                 environment[match.group(1)] = json.loads(raw) if raw.startswith('"') else raw
         validator.validate_suite_extensions("r14", environment)
+
+        missing_combined_scrap = dict(environment)
+        missing_combined_scrap["IdentitySeed__Roles__13__Permissions__3"] = "product.operational-selection.read"
+        del missing_combined_scrap["IdentitySeed__Roles__13__Permissions__4"]
+        with self.assertRaisesRegex(validator.ContractError, "r14-both-approver requires its exact isolated permissions"):
+            validator.validate_suite_extensions("r14", missing_combined_scrap)
+
+        approval_leaked_to_arranger = dict(environment)
+        approval_leaked_to_arranger["IdentitySeed__Roles__7__Permissions__2"] = "inventory.stock-count.approve"
+        with self.assertRaisesRegex(validator.ContractError, "r14-arranger requires its exact isolated permissions"):
+            validator.validate_suite_extensions("r14", approval_leaked_to_arranger)
 
         # The recorder without its location read: the remaining names stay contiguous, so the refusal is the exact
         # recorder pin and not the generic index rule.

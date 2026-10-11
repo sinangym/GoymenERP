@@ -354,6 +354,48 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
             ("@id", id), ("@command", PurchasingCommands.OrderCreateV1)));
     }
 
+    [SqlServerFact]
+    public async Task Supplier_filter_is_company_scoped_and_keeps_opaque_cursor_paging_inside_the_supplier()
+    {
+        await using Run run = await Run.StartAsync();
+        Owners supplierA = Owners.For(CompanyA);
+        Owners supplierB = Owners.For(CompanyA);
+        Guid firstA;
+        Guid secondA;
+        await using (StoreScope a = run.Store(CompanyA))
+        {
+            PurchaseOrder builtA1 = Order(supplierA, null, null, 6m);
+            firstA = (await a.Store.StoreOrderAsync(run.Envelope("k-supplier-a-1"), Hash("supplier-a-1"), supplierA.Account, Day,
+                () => builtA1, VersionsOf(builtA1))).Order.Order.Id;
+            PurchaseOrder builtB = Order(supplierB, null, null, 7m);
+            await a.Store.StoreOrderAsync(run.Envelope("k-supplier-b"), Hash("supplier-b"), supplierB.Account, Day,
+                () => builtB, VersionsOf(builtB));
+            PurchaseOrder builtA2 = Order(supplierA, null, null, 8m);
+            secondA = (await a.Store.StoreOrderAsync(run.Envelope("k-supplier-a-2"), Hash("supplier-a-2"), supplierA.Account, Day,
+                () => builtA2, VersionsOf(builtA2))).Order.Order.Id;
+
+            // All three fixture orders use T0. Insertion order is deliberately not observable and SQL Server's
+            // uniqueidentifier ordering must not be reimplemented in the test. The opaque cursor contract is that
+            // the two supplier rows are returned once each across consecutive pages, in the store's stable order.
+            HashSet<Guid> expected = [firstA, secondA];
+            PurchasingOrderPage page1 = await a.Store.ListOrdersAsync(1, null, supplierPartyId: supplierA.Party);
+            Guid page1Id = Assert.Single(page1.Items).Order.Id;
+            Assert.Contains(page1Id, expected);
+            Assert.NotNull(page1.NextCursor);
+            PurchasingOrderPage page2 = await a.Store.ListOrdersAsync(1, page1.NextCursor, supplierPartyId: supplierA.Party);
+            Guid page2Id = Assert.Single(page2.Items).Order.Id;
+            Assert.NotEqual(page1Id, page2Id);
+            Assert.True(expected.SetEquals([page1Id, page2Id]));
+            Assert.Null(page2.NextCursor);
+            Assert.Empty((await a.Store.ListOrdersAsync(10, null, supplierPartyId: Guid.NewGuid())).Items);
+        }
+
+        await using (StoreScope b = run.Store(CompanyB))
+        {
+            Assert.Empty((await b.Store.ListOrdersAsync(10, null, supplierPartyId: supplierA.Party)).Items);
+        }
+    }
+
     // ---- helpers --------------------------------------------------------------------------------
 
     private static Quantity Kg(decimal value) => Quantity.Of(value, QuantityUnit.Kilogram);

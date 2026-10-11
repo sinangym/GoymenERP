@@ -1,0 +1,294 @@
+/* P-03 purchase orders on GOY-DS-001 (PURCHASING-DS-LIST-01). The table's layout is the shared ui/DataTable; this
+   file only places this page's header, filter, cells and phone cards on the --goy-ds-* tokens. It is page-specific:
+   the other purchasing screens keep purchasing.module.css. Nothing is hidden or shrunk to fit — a long supplier
+   name wraps on as many lines as it needs. */
+
+.page {
+  display: grid;
+  gap: var(--goy-ds-space-3);
+  padding: var(--goy-ds-space-1) 0 var(--goy-ds-space-4);
+  min-width: 0;
+  font-family: var(--goy-ds-font-sans);
+  color: var(--goy-ds-color-text);
+}
+
+.header {
+  display: grid;
+  gap: var(--goy-ds-space-3);
+  min-width: 0;
+}
+
+.titleRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--goy-ds-space-2) var(--goy-ds-space-4);
+}
+
+.title {
+  margin: 0;
+  font-size: 1.25rem;
+  line-height: 28px;
+  font-weight: var(--goy-ds-font-weight-semibold);
+}
+
+/* The primary action is a navigation, so it is a link drawn like the design-system primary button. */
+.createLink {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  min-height: var(--goy-ds-control-height);
+  padding: 0 12px;
+  border: 1px solid transparent;
+  border-radius: var(--goy-ds-radius-sm);
+  background: var(--goy-ds-color-accent);
+  color: var(--goy-ds-color-on-accent);
+  box-shadow: var(--goy-ds-shadow-1);
+  font-size: var(--goy-ds-font-size-md);
+  font-weight: var(--goy-ds-font-weight-medium);
+  line-height: 1.2;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.createLink:hover {
+  background: var(--goy-ds-color-accent-hover);
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--goy-ds-space-2) var(--goy-ds-space-4);
+}
+
+.filter {
+  flex: 0 1 16rem;
+}
+
+/* The native select takes the page's font instead of the browser's control font; nothing global is reset. */
+.select {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: var(--goy-ds-control-height);
+  padding: 0 8px;
+  border: 1px solid var(--goy-ds-color-border-control);
+  border-radius: var(--goy-ds-radius-sm);
+  background: var(--goy-ds-color-surface);
+  color: var(--goy-ds-color-text);
+  font: inherit;
+  font-size: var(--goy-ds-font-size-md);
+}
+
+.select:hover {
+  border-color: var(--goy-ds-color-border-hover);
+}
+
+.select:focus-visible {
+  outline: none;
+  border-color: var(--goy-ds-color-accent);
+  box-shadow: 0 0 0 3px var(--goy-ds-focus-ring);
+}
+
+.createLink:focus-visible,
+.orderLink:focus-visible,
+.supplier a:focus-visible {
+  outline: 2px solid var(--goy-ds-color-accent);
+  outline-offset: 2px;
+}
+
+/* ── Active supplier filter: what the list is narrowed to, and the way out of it ── */
+.activeFilter {
+  display: flex;
+  flex: 1 1 20rem;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--goy-ds-space-1) var(--goy-ds-space-2);
+  box-sizing: border-box;
+  min-width: 0;
+  min-height: var(--goy-ds-control-height);
+  padding: var(--goy-ds-space-1) var(--goy-ds-space-2);
+  border: 1px solid var(--goy-ds-color-border-control);
+  border-radius: var(--goy-ds-radius-sm);
+  background: var(--goy-ds-color-surface-muted);
+  font-size: var(--goy-ds-font-size-md);
+  line-height: 18px;
+}
+
+.activeFilterLabel {
+  color: var(--goy-ds-color-text-secondary);
+  font-size: var(--goy-ds-font-size-sm);
+  font-weight: var(--goy-ds-font-weight-medium);
+}
+
+/* The supplier's code and name wrap like they do in the list; the remove control keeps its own line if it must. */
+.activeFilterValue {
+  flex: 1 1 12rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-weight: var(--goy-ds-font-weight-medium);
+}
+
+/* What this list does not show, said once and quietly. */
+.scope {
+  margin: 0;
+  color: var(--goy-ds-color-text-secondary);
+  font-size: var(--goy-ds-font-size-sm);
+  line-height: 18px;
+}
+
+/* ── Cells ── */
+.nowrap {
+  white-space: nowrap;
+}
+
+/* The order is known by the end of its record id until the read carries a document number. */
+.orderLink,
+.orderId {
+  font-family: var(--goy-ds-font-mono);
+  font-size: var(--goy-ds-font-size-sm);
+}
+
+.orderLink,
+.supplier a {
+  color: var(--goy-ds-color-accent-text);
+  font-weight: var(--goy-ds-font-weight-medium);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* A long legal name wraps on word boundaries (and inside a word only when it must); the column keeps a readable
+   width so a wrapped name does not turn into a narrow tower. */
+.supplierColumn {
+  min-width: 20rem;
+}
+
+/* The identity takes the room; the row's filter action keeps its own width beside it. */
+.supplierCell {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--goy-ds-space-2);
+  min-width: 0;
+}
+
+.supplier {
+  display: block;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.filterBySupplier {
+  flex: none;
+}
+
+/* Read by assistive technology, not drawn: which supplier a row's "Filtrele" means. The box is one pixel and
+   hides what does not fit, so a long name in it can never widen the page. */
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* The trade name sits under the legal name as the quieter second line. */
+.supplier [data-supplier-display='record'] > span + span {
+  color: var(--goy-ds-color-text-secondary);
+  font-size: var(--goy-ds-font-size-sm);
+}
+
+/* ── Continuation ── */
+.continuation {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--goy-ds-space-2);
+}
+
+.inlineError {
+  display: grid;
+  justify-items: start;
+  gap: var(--goy-ds-space-2);
+  border-left: 3px solid var(--goy-ds-color-danger);
+  padding-left: var(--goy-ds-space-3);
+}
+
+/* ── Phone: one card per order, every fact labelled ── */
+@media (max-width: 767px) {
+  .filter,
+  .activeFilter {
+    flex: 1 1 100%;
+  }
+}
+
+.cards {
+  display: grid;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--goy-ds-color-border);
+  border-radius: var(--goy-ds-radius-md);
+  background: var(--goy-ds-color-surface);
+}
+
+.card {
+  display: grid;
+  gap: var(--goy-ds-space-2);
+  padding: var(--goy-ds-space-3);
+  border-bottom: 1px solid var(--goy-ds-color-border);
+  font-size: var(--goy-ds-font-size-md);
+  line-height: 18px;
+  min-width: 0;
+}
+
+.card:last-child {
+  border-bottom: 0;
+}
+
+.cardHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--goy-ds-space-1) var(--goy-ds-space-2);
+}
+
+.cardOrder {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.cardOrderLabel,
+.cardFacts dt {
+  color: var(--goy-ds-color-text-tertiary);
+  font-size: var(--goy-ds-font-size-xs);
+  line-height: 16px;
+}
+
+.cardFacts {
+  display: grid;
+  gap: 6px var(--goy-ds-space-3);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 0;
+}
+
+.cardFacts div {
+  min-width: 0;
+}
+
+.cardFacts .wide {
+  grid-column: 1 / -1;
+}
+
+.cardFacts dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}

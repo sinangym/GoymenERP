@@ -140,8 +140,8 @@ public interface IPurchasingStore
 
     Task<StoredPurchaseOrder?> FindOrderAsync(Guid orderId, CancellationToken cancellationToken = default);
 
-    /// <summary>The company's orders, newest first, by opaque company-bound cursor; <paramref name="status"/> narrows to one status.</summary>
-    Task<PurchasingOrderPage> ListOrdersAsync(int pageSize, string? cursor, PurchaseOrderStatus? status = null,
+    /// <summary>The company's orders, newest first, by opaque company-bound cursor; status and supplier are optional exact filters.</summary>
+    Task<PurchasingOrderPage> ListOrdersAsync(int pageSize, string? cursor, PurchaseOrderStatus? status = null, Guid? supplierPartyId = null,
         CancellationToken cancellationToken = default);
 
     Task<PurchasingReplay?> FindReplayAsync(PurchasingWriteEnvelope envelope, string requestHash, string commandName,

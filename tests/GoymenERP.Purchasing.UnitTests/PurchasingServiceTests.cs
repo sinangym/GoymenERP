@@ -409,12 +409,17 @@ public sealed partial class PurchasingServiceTests
         Assert.Equal(404, missing.Status);
         Assert.Single((await world.Service().GetOrderListAsync(new PurchaseOrderListQuery(Status: "Draft"))).Items);
         Assert.Empty((await world.Service().GetOrderListAsync(new PurchaseOrderListQuery(Status: "Approved"))).Items);
+        Assert.Single((await world.Service().GetOrderListAsync(new PurchaseOrderListQuery(SupplierPartyId: Party))).Items);
+        Assert.Empty((await world.Service().GetOrderListAsync(new PurchaseOrderListQuery(SupplierPartyId: Guid.NewGuid()))).Items);
         Assert.Single((await world.Service().GetRequestListAsync(new PurchaseRequestListQuery(Status: "Draft"))).Items);
         Assert.Empty((await world.Service().GetRequestListAsync(new PurchaseRequestListQuery(Status: "Submitted"))).Items);
         var bad = await Assert.ThrowsAsync<PurchasingServiceException>(() => world.Service().GetOrderListAsync(new PurchaseOrderListQuery(Status: "draft")));
         Assert.Equal((400, "validation_failed"), (bad.Status, bad.Code));
         var wrongKind = await Assert.ThrowsAsync<PurchasingServiceException>(() => world.Service().GetRequestListAsync(new PurchaseRequestListQuery(Status: "Approved")));
         Assert.Equal(400, wrongKind.Status);
+        var emptySupplier = await Assert.ThrowsAsync<PurchasingServiceException>(() =>
+            world.Service().GetOrderListAsync(new PurchaseOrderListQuery(SupplierPartyId: Guid.Empty)));
+        Assert.Equal((400, "validation_failed"), (emptySupplier.Status, emptySupplier.Code));
         Assert.Equal(ReadPermission, world.Authority.LastPermission);
     }
 
@@ -710,8 +715,11 @@ public sealed partial class PurchasingServiceTests
         public Task<StoredPurchaseOrder?> FindOrderAsync(Guid orderId, CancellationToken cancellationToken = default) =>
             Task.FromResult(_orders.SingleOrDefault(candidate => candidate.Order.Id == orderId));
 
-        public Task<PurchasingOrderPage> ListOrdersAsync(int pageSize, string? cursor, PurchaseOrderStatus? status = null, CancellationToken cancellationToken = default) =>
-            Task.FromResult(new PurchasingOrderPage([.. _orders.Where(stored => status is null || stored.Order.Status == status)], null));
+        public Task<PurchasingOrderPage> ListOrdersAsync(int pageSize, string? cursor, PurchaseOrderStatus? status = null, Guid? supplierPartyId = null,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(new PurchasingOrderPage([.. _orders.Where(stored =>
+                (status is null || stored.Order.Status == status)
+                && (supplierPartyId is null || stored.Order.SupplierPartyId == supplierPartyId))], null));
 
         public Task<PurchasingReplay?> FindReplayAsync(PurchasingWriteEnvelope envelope, string requestHash, string commandName, CancellationToken cancellationToken = default)
         {

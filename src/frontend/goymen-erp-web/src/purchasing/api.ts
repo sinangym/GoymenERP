@@ -55,12 +55,18 @@ async function bodyOf(response: Response): Promise<unknown> {
 
 export async function fetchPurchaseOrders(
   companyId: string,
-  query: { readonly cursor?: string | null; readonly status?: PurchaseOrderStatus | null } = {},
+  query: {
+    readonly cursor?: string | null
+    readonly status?: PurchaseOrderStatus | null
+    /** The server's optional supplier filter (#671). Sent only when given; never applied on the client. */
+    readonly supplierPartyId?: string | null
+  } = {},
   signal?: AbortSignal,
 ): Promise<ViewOutcome<PurchaseOrderList>> {
   const search = new URLSearchParams()
   if (query.cursor) search.set('cursor', query.cursor)
   if (query.status) search.set('status', query.status)
+  if (query.supplierPartyId) search.set('supplierPartyId', query.supplierPartyId)
   try {
     const suffix = search.toString()
     const response = await fetch(`${PURCHASING_ORDERS_BASE}${suffix ? `?${suffix}` : ''}`, {
@@ -69,7 +75,9 @@ export async function fetchPurchaseOrders(
     const body = await bodyOf(response)
     if (response.status !== 200) return { type: 'http', status: response.status, body }
     const page = decodePurchaseOrderList(body)
-    return page === null || page.items.some((item) => item.companyId !== companyId)
+    // A page asked for one supplier is refused whole if it holds another's order: it is not the filtered list.
+    return page === null || page.items.some((item) =>
+      item.companyId !== companyId || (Boolean(query.supplierPartyId) && item.supplierPartyId !== query.supplierPartyId))
       ? { type: 'malformed' }
       : { type: 'ok-single', data: page }
   } catch {
