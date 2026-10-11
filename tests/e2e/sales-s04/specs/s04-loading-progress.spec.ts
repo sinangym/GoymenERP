@@ -214,6 +214,14 @@ async function arrangeRealJourney(request: APIRequestContext): Promise<JourneyRe
   })
   expect(approved.status()).toBe(200)
 
+  current = await readDraft(request, orderId, preparerActor)
+  const customerAccepted = await request.post(`${apiBaseUrl}${DRAFTS_PATH}/${orderId}/customer-acceptance`, {
+    headers: commandHeaders(preparerActor, `SENTETIK-s04-load-customer-acceptance-${RUN}`),
+    data: { expectedVersion: current.draft.version },
+  })
+  expect(customerAccepted.status(), 'the exact approved Sales revision is customer-accepted before Logistics binds it')
+    .toBe(200)
+
   const logisticsLineId = randomUUID()
   const instructionCreated = await request.post(`${apiBaseUrl}/api/v1/logistics/loading-instructions`, {
     headers: commandHeaders(LOGISTICS_PREPARER_ACTOR, `SENTETIK-s04-load-instruction-${RUN}`),

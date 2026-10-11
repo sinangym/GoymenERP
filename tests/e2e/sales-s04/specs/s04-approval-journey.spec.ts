@@ -264,7 +264,7 @@ test('S04-06 authorized allocation saves, closes, reopens, releases and reopens 
     await signInAs(page, preparerActor)
     await openDraft(page)
     await expect(state(page)).toHaveText('Onaylı')
-    // S-04 linked effects: Inventory's server count, never an assumed 0; loading is named as not readable.
+    // S-04 linked effects: Inventory's server count and Logistics' owner-backed zero facts, never assumed values.
     // Exact text (salesText.ts linkedEffects: `${lineLabel(lineNo)}: ${active(count)}`); the allocation line is
     // the seed's first line (S04BrowserSeed adds the coil line first), so it renders as "Satır 1".
     const linkedAllocation = page.getByTestId(`sales-linked-allocation-line-${allocationLineId}`)
@@ -274,7 +274,12 @@ test('S04-06 authorized allocation saves, closes, reopens, releases and reopens 
     }
     await expect(linkedAllocation).toHaveAttribute('data-state', 'ready')
     await expectLinkedCount(0)
-    await expect(page.getByTestId('sales-linked-loading')).toContainText('Sales ekranından henüz okunamıyor')
+    const loadingLine = page.getByTestId(`sales-linked-loading-line-${allocationLineId}`)
+    await expect(loadingLine).toHaveAttribute('data-instruction-lines', '0')
+    await expect(loadingLine.locator('[data-fact="ordered"]')).not.toHaveText('')
+    for (const fact of ['instructed', 'loaded', 'shipped', 'delivered']) {
+      await expect(loadingLine.locator(`[data-fact="${fact}"]`)).toHaveText('0')
+    }
     const line = page.getByTestId(`sales-allocation-line-${allocationLineId}`)
     await expect(line).toBeVisible()
     await line.getByLabel('Etiket kimliği').fill(allocationLabelId)
