@@ -267,8 +267,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 "e02948f7d4d4ebc817db08478c9c0c47bbd30abcaa5880e90cd68880a8d0aeee",
 
             // purchasing
+            // Purchasing supplier filter: +1 company-scoped cursor-paging SQL fact, kept ordinal-sorted.
             ["tools/relational_inventory/purchasing.txt"] =
-                "18d2d359f6688645ef4a0021c9d59045539ffe9b62c2b9e1cddb942073f8c691",
+                "23decb3344e381ed4ac26013080378c6eb37d5cf97c79962ae75226c0dbfc9b7",
 
             // sales
             // DEC-SAL-003: +3 SalesDeliveryScheduleSqlServerRelationalAcceptanceTests facts (16fa5110… -> 00189b7b…).
@@ -1141,7 +1142,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Purchasing/"
                  + "GoymenERP.Modules.Purchasing.Infrastructure/Persistence/PurchasingStore.cs"] =
                     new(
-                        "36aea9f4b51ff348de16e93b30d424172e8fa829c7ca09ee06f7d6c721a8ee2d",
+                        "72c1ab9720210ec278472130d7600650f941fe300a2e7bc2fa182d85b8acaef3",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1

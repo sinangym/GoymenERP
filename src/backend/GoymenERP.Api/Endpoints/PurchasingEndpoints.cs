@@ -31,7 +31,8 @@ public static class PurchasingEndpoints
     private const int MaximumIdempotencyKeyLength = 128;
     private const int MaximumCursorLength = 8192;
     private const int MaximumStatusLength = 32;
-    private static readonly HashSet<string> ListQueryNames = new(["pageSize", "cursor", "status"], StringComparer.Ordinal);
+    private static readonly HashSet<string> RequestListQueryNames = new(["pageSize", "cursor", "status"], StringComparer.Ordinal);
+    private static readonly HashSet<string> OrderListQueryNames = new(["pageSize", "cursor", "status", "supplierPartyId"], StringComparer.Ordinal);
 
     public static IEndpointRouteBuilder MapPurchasingEndpoints(this IEndpointRouteBuilder endpoints)
     {
@@ -69,7 +70,7 @@ public static class PurchasingEndpoints
             [FromServices] IPurchasingService service, ICorrelationContext correlation, CancellationToken cancellationToken) =>
         {
             SetPrivateNoStore(httpContext.Response);
-            if (!IsListQueryValid(httpContext, pageSize, cursor, status))
+            if (!IsListQueryValid(httpContext, RequestListQueryNames, pageSize, cursor, status))
             {
                 return Problem(StatusCodes.Status400BadRequest, "validation_failed", correlation);
             }
@@ -154,18 +155,20 @@ public static class PurchasingEndpoints
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();
 
-        group.MapGet("/", async ([FromQuery] int? pageSize, [FromQuery] string? cursor, [FromQuery] string? status, HttpContext httpContext,
+        group.MapGet("/", async ([FromQuery] int? pageSize, [FromQuery] string? cursor, [FromQuery] string? status,
+            [FromQuery] Guid? supplierPartyId, HttpContext httpContext,
             [FromServices] IPurchasingOrderReadServiceV1 service, ICorrelationContext correlation, CancellationToken cancellationToken) =>
         {
             SetPrivateNoStore(httpContext.Response);
-            if (!IsListQueryValid(httpContext, pageSize, cursor, status))
+            if (!IsListQueryValid(httpContext, OrderListQueryNames, pageSize, cursor, status, supplierPartyId))
             {
                 return Problem(StatusCodes.Status400BadRequest, "validation_failed", correlation);
             }
 
             try
             {
-                return Results.Json(await service.GetOrderListAsync(new PurchaseOrderListQuery(pageSize ?? 50, cursor, status), cancellationToken),
+                return Results.Json(await service.GetOrderListAsync(
+                        new PurchaseOrderListQuery(pageSize ?? 50, cursor, status, supplierPartyId), cancellationToken),
                     PurchasingJson.Options);
             }
             catch (PurchasingServiceException exception)
@@ -296,9 +299,11 @@ public static class PurchasingEndpoints
             .ProducesErpAuthenticatedProblems();
     }
 
-    private static bool IsListQueryValid(HttpContext httpContext, int? pageSize, string? cursor, string? status) =>
-        httpContext.Request.Query.All(pair => ListQueryNames.Contains(pair.Key) && pair.Value.Count == 1)
-        && pageSize is null or (>= 1 and <= 100) && !(cursor?.Length > MaximumCursorLength) && status is not { Length: 0 or > MaximumStatusLength };
+    private static bool IsListQueryValid(HttpContext httpContext, HashSet<string> allowedNames, int? pageSize, string? cursor, string? status,
+        Guid? supplierPartyId = null) =>
+        httpContext.Request.Query.All(pair => allowedNames.Contains(pair.Key) && pair.Value.Count == 1)
+        && pageSize is null or (>= 1 and <= 100) && !(cursor?.Length > MaximumCursorLength)
+        && status is not { Length: 0 or > MaximumStatusLength } && supplierPartyId != Guid.Empty;
 
     private static async Task<IResult> CreateAsync<TBody, TResponse>(HttpContext httpContext, ICorrelationContext correlation, Func<string, TBody> read,
         Func<TBody, PurchasingCommandMetadata, Task<TResponse>> command, Func<TResponse, string> locationPath, CancellationToken cancellationToken)

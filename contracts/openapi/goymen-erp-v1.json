@@ -54801,6 +54801,14 @@
             }
           },
           {
+            "name": "supplierPartyId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
             "name": "X-Correlation-Id",
             "in": "header",
             "description": "Optional client correlation identifier; the server creates one when absent.",

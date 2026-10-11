@@ -448,7 +448,7 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
         return row is null ? null : (await RestoreOrdersAsync([row], cancellationToken)).Single();
     }
 
-    public async Task<PurchasingOrderPage> ListOrdersAsync(int pageSize, string? cursor, PurchaseOrderStatus? status = null,
+    public async Task<PurchasingOrderPage> ListOrdersAsync(int pageSize, string? cursor, PurchaseOrderStatus? status = null, Guid? supplierPartyId = null,
         CancellationToken cancellationToken = default)
     {
         var companyId = RequireResolvedCompany();
@@ -463,6 +463,16 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
 
             var value = (int)wanted;
             query = query.Where(row => row.Status == value);
+        }
+
+        if (supplierPartyId is { } supplier)
+        {
+            if (supplier == Guid.Empty)
+            {
+                throw new ArgumentOutOfRangeException(nameof(supplierPartyId));
+            }
+
+            query = query.Where(row => row.SupplierPartyId == supplier);
         }
 
         if (cursor is not null)
