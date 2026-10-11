@@ -23,12 +23,9 @@
 .facts { display: grid; grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr)); gap: 0.5rem 1.25rem; margin: 0; }
 .facts dt { font-size: 0.75rem; color: #52606d; }
 .facts dd { margin: 0; }
-/* A wide value inside a fact (the loading table) scrolls inside its own .tableWrap and never widens the page: the
-   fact's cell may shrink below its content, and the scroll area takes its cell's width without adding the table's
-   own width to any ancestor's minimum size. */
-.facts > div { min-width: 0; }
-.facts .tableWrap { width: 0; min-width: 100%; }
-.section { border-top: 1px solid #e4e7eb; padding-top: 0.75rem; }
+/* A section may shrink below its content: where it is a grid item of the order detail, a wide table then scrolls inside
+   its own .tableWrap instead of setting the page's column width (the delivery-progress table did at 390px). */
+.section { border-top: 1px solid #e4e7eb; padding-top: 0.75rem; min-width: 0; }
 .line { border: 1px solid #e4e7eb; border-radius: 8px; padding: 0.75rem 1rem; margin: 0 0 0.75rem; }
 .lineTitle { margin: 0 0 0.5rem; font-size: 1rem; }
 .fieldset { border: 1px solid #cbd2d9; border-radius: 8px; padding: 0.75rem 1rem; margin: 0; }
