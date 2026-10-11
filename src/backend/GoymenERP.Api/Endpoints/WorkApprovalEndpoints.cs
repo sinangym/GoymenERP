@@ -9,6 +9,8 @@ namespace GoymenERP.Api.Endpoints;
 public static class WorkApprovalEndpoints
 {
     public const string Path = "/api/v1/work/approvals";
+    internal const string InvalidContractSelectorDetail =
+        "The Work approval contract selector must be a single exact 2.0 value.";
     private static readonly JsonSerializerOptions ContractJson = NativeApprovalJson.CreateOptions();
 
     public static IEndpointRouteBuilder MapWorkApprovalEndpoints(this IEndpointRouteBuilder endpoints)
@@ -23,7 +25,7 @@ public static class WorkApprovalEndpoints
                 SetPrivateNoStore(httpContext);
                 if (!TryReadContract(httpContext.Request.Headers, out var includeInventoryLabelCode))
                 {
-                    return Results.Problem(statusCode: StatusCodes.Status400BadRequest);
+                    return InvalidContractSelector();
                 }
                 SetContractResponseHeader(httpContext, includeInventoryLabelCode);
                 return Read(await query.ListAsync(
@@ -50,7 +52,7 @@ public static class WorkApprovalEndpoints
                 SetPrivateNoStore(httpContext);
                 if (!TryReadContract(httpContext.Request.Headers, out var includeInventoryLabelCode))
                 {
-                    return Results.Problem(statusCode: StatusCodes.Status400BadRequest);
+                    return InvalidContractSelector();
                 }
                 SetContractResponseHeader(httpContext, includeInventoryLabelCode);
                 return Read(await query.GetAsync(
@@ -69,6 +71,10 @@ public static class WorkApprovalEndpoints
 
         return endpoints;
     }
+
+    private static IResult InvalidContractSelector() => Results.Problem(
+        detail: InvalidContractSelectorDetail,
+        statusCode: StatusCodes.Status400BadRequest);
 
     private static IResult Read<T>(NativeApprovalReadResultV1<T> result) where T : class => result.Outcome switch
     {

@@ -260,43 +260,43 @@ public sealed class WorkApprovalEndpointTests(GoymenErpApiFactory factory)
     }
 
     [Theory]
-    [InlineData("1.0")]
-    [InlineData(" 2.0")]
-    [InlineData("2.0,3.0")]
-    public async Task Invalid_or_ambiguous_work_contract_is_rejected_before_owner_read(string value)
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public async Task Invalid_or_duplicate_work_contract_is_a_code_less_problem_before_owner_read(
+        bool detail,
+        bool duplicate)
     {
         var adapter = new Adapter { Kind = NativeApprovalKindsV1.InventoryStockCount };
         using var host = Host([adapter]);
         using var client = Client(host);
         using var request = new HttpRequestMessage(HttpMethod.Get,
-            WorkApprovalEndpoints.Path + "?kind=inventory.stock-count.v1");
-        request.Headers.TryAddWithoutValidation(NativeApprovalReadContractV1.Header, value);
-
-        using var response = await client.SendAsync(request);
-
-        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-        Assert.False(response.Headers.Contains(NativeApprovalReadContractV1.Header));
-        Assert.Equal(0, adapter.ListCalls);
-    }
-
-    [Fact]
-    public async Task Multiple_work_contract_header_values_are_rejected_before_owner_read()
-    {
-        var adapter = new Adapter { Kind = NativeApprovalKindsV1.InventoryStockCount };
-        using var host = Host([adapter]);
-        using var client = Client(host);
-        using var request = new HttpRequestMessage(HttpMethod.Get,
-            WorkApprovalEndpoints.Path + "?kind=inventory.stock-count.v1");
+            detail
+                ? $"{WorkApprovalEndpoints.Path}/{NativeApprovalKindsV1.InventoryStockCount}/{Batch:D}"
+                : WorkApprovalEndpoints.Path + "?kind=inventory.stock-count.v1");
         request.Headers.TryAddWithoutValidation(
             NativeApprovalReadContractV1.Header,
-            [NativeApprovalReadContractV1.InventoryLabelDisplayVersion,
-             NativeApprovalReadContractV1.InventoryLabelDisplayVersion]);
+            duplicate
+                ? [NativeApprovalReadContractV1.InventoryLabelDisplayVersion,
+                   NativeApprovalReadContractV1.InventoryLabelDisplayVersion]
+                : ["1.0"]);
 
         using var response = await client.SendAsync(request);
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         Assert.False(response.Headers.Contains(NativeApprovalReadContractV1.Header));
         Assert.Equal(0, adapter.ListCalls);
+        Assert.Equal(0, adapter.GetCalls);
+        Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
+        using var problem = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(400, problem.RootElement.GetProperty("status").GetInt32());
+        Assert.Equal("Bad Request", problem.RootElement.GetProperty("title").GetString());
+        Assert.Equal(
+            WorkApprovalEndpoints.InvalidContractSelectorDetail,
+            problem.RootElement.GetProperty("detail").GetString());
+        Assert.False(problem.RootElement.TryGetProperty("code", out _));
+        Assert.False(problem.RootElement.TryGetProperty("correlationId", out _));
     }
 
     [Theory]
