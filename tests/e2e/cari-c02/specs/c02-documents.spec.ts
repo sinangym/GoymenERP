@@ -148,7 +148,7 @@ test('C02-D1V the same version attempt survives a lost answer, replays once and 
   await page.goto(`/cari/${partyId}`)
   const panel = documentsPanel(page)
   const row = panel.locator(`tr[data-document-id="${documentId}"]`)
-  await row.getByRole('button', { name: `${FILE_NAME} sürümlerini göster` }).click()
+  await row.locator(`[data-document-versions-toggle="${documentId}"]`).click()
   const history = panel.locator(`section[data-document-versions="${documentId}"]`)
   await expect(history.locator('tr[data-version-no="1"]')).toBeVisible()
 
@@ -197,7 +197,7 @@ test('C02-D1V the same version attempt survives a lost answer, replays once and 
   await page.goto('/')
   await page.goto(`/cari/${partyId}`)
   const reopened = documentsPanel(page)
-  await reopened.locator(`tr[data-document-id="${documentId}"]`).getByRole('button', { name: `${FILE_NAME} sürümlerini göster` }).click()
+  await reopened.locator(`[data-document-versions-toggle="${documentId}"]`).click()
   const reopenedHistory = reopened.locator(`section[data-document-versions="${documentId}"]`)
   await expect(reopenedHistory.locator('tr[data-version-no]').nth(0)).toHaveAttribute('data-version-no', '2')
   await expect(reopenedHistory.locator('tr[data-version-no]').nth(1)).toHaveAttribute('data-version-no', '1')
@@ -208,7 +208,7 @@ test('C02-D1R a stale expected version and scanner rejection create no extra ver
   await signInAs(page, CREATOR_ACTOR)
   await page.goto(`/cari/${partyId}`)
   const panel = documentsPanel(page)
-  await panel.locator(`tr[data-document-id="${documentId}"]`).getByRole('button', { name: `${FILE_NAME} sürümlerini göster` }).click()
+  await panel.locator(`[data-document-versions-toggle="${documentId}"]`).click()
   const history = panel.locator(`section[data-document-versions="${documentId}"]`)
   await expect(history.locator('tr[data-version-no="2"]')).toBeVisible()
 
@@ -256,7 +256,7 @@ test('C02-D1H continuation failure keeps fifty real rows, retries the same curso
   await page.setViewportSize({ width: 1440, height: 900 })
   await page.goto(`/cari/${partyId}`)
   const panel = documentsPanel(page)
-  const toggle = panel.locator(`tr[data-document-id="${documentId}"]`).getByRole('button', { name: `${FILE_NAME} sürümlerini göster` })
+  const toggle = panel.locator(`[data-document-versions-toggle="${documentId}"]`)
   await toggle.click()
   const history = panel.locator(`section[data-document-versions="${documentId}"]`)
   await expect(history.locator('tr[data-version-no]')).toHaveCount(50)
@@ -283,7 +283,7 @@ test('C02-D1H continuation failure keeps fifty real rows, retries the same curso
   expect(new URL(continuationUrls[0]).searchParams.get('cursor')).toBe(new URL(continuationUrls[1]).searchParams.get('cursor'))
   await history.getByRole('button', { name: 'Sürümleri kapat' }).click()
   await page.setViewportSize({ width: 390, height: 844 })
-  const mobileToggle = panel.getByRole('button', { name: `${FILE_NAME} sürümlerini göster` })
+  const mobileToggle = panel.locator(`[data-document-versions-toggle="${documentId}"]`)
   await mobileToggle.focus()
   await expect(mobileToggle).toBeFocused()
   await page.keyboard.press('Enter')
@@ -320,7 +320,7 @@ test('C02-D1B a late real history answer cannot cross the owner generation and t
       // A navigation is allowed to abort the obsolete transport; either way its bytes must not enter the new owner view.
     }
   })
-  await firstPanel.locator(`tr[data-document-id="${documentId}"]`).getByRole('button', { name: `${FILE_NAME} sürümlerini göster` }).click()
+  await firstPanel.locator(`[data-document-versions-toggle="${documentId}"]`).click()
   await fetchedGate
   const navigation = page.goto(`/cari/${otherPartyId}`)
   await page.waitForURL(new RegExp(`/cari/${otherPartyId}$`))
