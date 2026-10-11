@@ -372,6 +372,7 @@ public static class SalesEndpoints
         MapDeliveryScheduleCommand(drafts);
         MapDeliverySchedules(drafts);
         MapDeliveryProgress(drafts);
+        MapLoadingProgress(drafts);
         MapCancellationImpact(drafts);
         MapCancelCommand(drafts);
         MapCancellation(drafts);
@@ -831,6 +832,36 @@ public static class SalesEndpoints
         })
             .WithName("GetSalesOrderDraftDeliveryProgressV1")
             .Produces<SalesOrderDraftDeliveryProgressResponse>()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+    }
+
+    /// <summary>
+    /// DEC-SAL-005: per line the current loading-instruction facts from Logistics, read through the Sales-declared owner
+    /// port under <c>sales.drafts.read</c>. Another company's draft is 404; the read writes nothing in either module.
+    /// </summary>
+    private static void MapLoadingProgress(RouteGroupBuilder drafts)
+    {
+        drafts.MapGet("/{id:guid}/loading-progress", async (
+            Guid id,
+            HttpContext httpContext,
+            [FromServices] ISalesDraftService service,
+            ICorrelationContext correlation,
+            CancellationToken cancellationToken) =>
+        {
+            SetPrivateNoStore(httpContext.Response);
+            try
+            {
+                return Results.Json(await service.GetDraftLoadingProgressAsync(id, cancellationToken), SalesDraftJson.Options);
+            }
+            catch (SalesDraftServiceException exception)
+            {
+                return DraftProblem(exception, correlation);
+            }
+        })
+            .WithName("GetSalesOrderDraftLoadingProgressV1")
+            .Produces<SalesOrderDraftLoadingProgressResponse>()
             .ProducesErpCodeLessNotFound()
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();

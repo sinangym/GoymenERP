@@ -35259,6 +35259,203 @@
         ]
       }
     },
+    "/api/v1/sales/drafts/{id}/loading-progress": {
+      "get": {
+        "tags": [
+          "Sales"
+        ],
+        "operationId": "GetSalesOrderDraftLoadingProgressV1",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "X-Correlation-Id",
+            "in": "header",
+            "description": "Optional client correlation identifier; the server creates one when absent.",
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9._:-]+$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Causation-Id",
+            "in": "header",
+            "description": "Optional identifier of the command or event that caused this request.",
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9._:-]+$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Company-Id",
+            "in": "header",
+            "description": "Selected company identifier for this company-scoped request.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "x-erp-non-empty-uuid": true
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SalesOrderDraftLoadingProgressResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpCodeLessProblemDetailsContract"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "service_unavailable"
+            ]
+          },
+          "401": {
+            "description": "Unauthorized",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "authentication_required"
+            ]
+          },
+          "403": {
+            "description": "Forbidden",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "forbidden"
+            ]
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "internal_error"
+            ]
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
     "/api/v1/sales/drafts/{id}/cancellation-impact": {
       "get": {
         "tags": [
@@ -79928,6 +80125,61 @@
           }
         }
       },
+      "SalesDraftLineLoadingProgressV1": {
+        "required": [
+          "lineId",
+          "lineNo",
+          "orderUnitId",
+          "ordered",
+          "loadingInstructionLines",
+          "instructed",
+          "loaded",
+          "shipped",
+          "delivered"
+        ],
+        "type": "object",
+        "properties": {
+          "lineId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "lineNo": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "orderUnitId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "ordered": {
+            "type": "string"
+          },
+          "loadingInstructionLines": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "instructed": {
+            "type": "string"
+          },
+          "loaded": {
+            "type": "string"
+          },
+          "shipped": {
+            "type": "string"
+          },
+          "delivered": {
+            "type": "string"
+          }
+        }
+      },
       "SalesDraftLinePricingV1": {
         "required": [
           "lineId",
@@ -81255,6 +81507,24 @@
               "null",
               "string"
             ]
+          }
+        }
+      },
+      "SalesOrderDraftLoadingProgressResponse": {
+        "required": [
+          "draftVersion",
+          "lines"
+        ],
+        "type": "object",
+        "properties": {
+          "draftVersion": {
+            "type": "string"
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SalesDraftLineLoadingProgressV1"
+            }
           }
         }
       },

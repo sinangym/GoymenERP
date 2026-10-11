@@ -77,9 +77,12 @@ public sealed class SalesDeliveryProgressSqlServerRelationalAcceptanceTests
         var subject = await run.GrantAsync(TestUsers.CompanyA, CompanyA, SalesPermissionManifestV1.DraftsRead, LogisticsPermissionManifestV1.DeliveriesRecord);
         using var client = run.Client(subject, CompanyA);
         var progressPath = $"{SalesEndpoints.DraftsPath}/{draft.Id:D}/delivery-progress";
+        var loadingPath = $"{SalesEndpoints.DraftsPath}/{draft.Id:D}/loading-progress";
 
         // Shipped but nothing delivered yet: the whole order line remains.
         Assert.Equal(("4", "0", "6", "0"), Line(await run.ProgressAsync(client, progressPath), orderLine.Id));
+        // The same real Logistics instruction is readable as loading facts: no Sales copy and no dispatch-note fiction.
+        Assert.Equal((1, "6", "6", "4", "0"), Loading(await run.ProgressAsync(client, loadingPath), orderLine.Id));
 
         // The read writes nothing in either module (no attempt, audit, share or version effect).
         var before = await run.EffectsAsync(draft.Id, instructionId);
@@ -95,6 +98,7 @@ public sealed class SalesDeliveryProgressSqlServerRelationalAcceptanceTests
         }
 
         Assert.Equal(("4", "2.5", "3.5", "0"), Line(await run.ProgressAsync(client, progressPath), orderLine.Id));
+        Assert.Equal((1, "6", "6", "4", "2.5"), Loading(await run.ProgressAsync(client, loadingPath), orderLine.Id));
 
         // The same delivery again under its key: the stored answer, replayed — no second share, nothing counted twice.
         using (var replayed = await client.SendAsync(Delivery(instructionId, lineId, "SENTETIK-delivery-1", version, deliveryId, shipmentId, "2.5")))
@@ -104,6 +108,7 @@ public sealed class SalesDeliveryProgressSqlServerRelationalAcceptanceTests
         }
 
         Assert.Equal(("4", "2.5", "3.5", "0"), Line(await run.ProgressAsync(client, progressPath), orderLine.Id));
+        Assert.Equal((1, "6", "6", "4", "2.5"), Loading(await run.ProgressAsync(client, loadingPath), orderLine.Id));
         Assert.Equal(1, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM [logistics].[LoadingShares] WHERE [InstructionId] = @id AND [SourceShipmentId] = @s",
             ("@id", instructionId), ("@s", shipmentId)));
@@ -122,6 +127,7 @@ public sealed class SalesDeliveryProgressSqlServerRelationalAcceptanceTests
 
         var reopened = await run.ProgressAsync(client, progressPath);
         Assert.Equal(("4", "4", "2", "0"), Line(reopened, orderLine.Id));
+        Assert.Equal((1, "6", "6", "4", "4"), Loading(await run.ProgressAsync(client, loadingPath), orderLine.Id));
         Assert.Equal("4", reopened.GetProperty("draftVersion").GetString());
         Assert.Equal(4m, await run.ScalarAsync<decimal>(
             "SELECT [Delivered] FROM [logistics].[LoadingInstructionLines] WHERE [LineId] = @id", ("@id", lineId)));
@@ -168,10 +174,12 @@ public sealed class SalesDeliveryProgressSqlServerRelationalAcceptanceTests
         }
 
         var path = $"{SalesEndpoints.DraftsPath}/{draft.Id:D}/delivery-progress";
+        var loadingPath = $"{SalesEndpoints.DraftsPath}/{draft.Id:D}/loading-progress";
         // Company A's read-only user holds no Sales permission (none is seeded): 403 before anything is read.
         using (var ungranted = run.Client(TestUsers.CompanyAViewer, CompanyA))
         {
             Assert.Equal(HttpStatusCode.Forbidden, (await ungranted.GetAsync(path)).StatusCode);
+            Assert.Equal(HttpStatusCode.Forbidden, (await ungranted.GetAsync(loadingPath)).StatusCode);
         }
 
         // Company B with its own draft read: A's draft does not exist for it (404, never 403).
@@ -179,12 +187,14 @@ public sealed class SalesDeliveryProgressSqlServerRelationalAcceptanceTests
         using (var clientOfB = run.Client(readerOfB, CompanyB))
         {
             Assert.Equal(HttpStatusCode.NotFound, (await clientOfB.GetAsync(path)).StatusCode);
+            Assert.Equal(HttpStatusCode.NotFound, (await clientOfB.GetAsync(loadingPath)).StatusCode);
         }
 
         var readerOfA = await run.GrantAsync(TestUsers.CompanyA, CompanyA, SalesPermissionManifestV1.DraftsRead);
         using (var clientOfA = run.Client(readerOfA, CompanyA))
         {
             Assert.Equal(("0", "0", "6", "0"), Line(await run.ProgressAsync(clientOfA, path), orderLine.Id));
+            Assert.Equal((0, "0", "0", "0", "0"), Loading(await run.ProgressAsync(clientOfA, loadingPath), orderLine.Id));
         }
     }
 
@@ -196,6 +206,16 @@ public sealed class SalesDeliveryProgressSqlServerRelationalAcceptanceTests
         Assert.Equal(lineId.ToString("D"), line.GetProperty("lineId").GetString());
         return (line.GetProperty("shipped").GetString()!, line.GetProperty("delivered").GetString()!,
             line.GetProperty("remaining").GetString()!, line.GetProperty("excess").GetString()!);
+    }
+
+    private static (int Count, string Instructed, string Loaded, string Shipped, string Delivered) Loading(
+        JsonElement progress, Guid lineId)
+    {
+        var line = Assert.Single(progress.GetProperty("lines").EnumerateArray());
+        Assert.Equal(lineId.ToString("D"), line.GetProperty("lineId").GetString());
+        return (line.GetProperty("loadingInstructionLines").GetInt32(), line.GetProperty("instructed").GetString()!,
+            line.GetProperty("loaded").GetString()!, line.GetProperty("shipped").GetString()!,
+            line.GetProperty("delivered").GetString()!);
     }
 
     private static HttpRequestMessage Delivery(Guid instructionId, Guid lineId, string key, long expectedVersion, Guid deliveryId,

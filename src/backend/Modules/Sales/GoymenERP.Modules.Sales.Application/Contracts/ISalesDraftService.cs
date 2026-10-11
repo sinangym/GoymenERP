@@ -65,6 +65,11 @@ public interface ISalesDraftService
     Task<SalesOrderDraftDeliveryProgressResponse> GetDraftDeliveryProgressAsync(Guid draftId,
         CancellationToken cancellationToken = default);
 
+    // DEC-SAL-005 — per line the current loading-instruction facts from Logistics, under the draft read. The read creates
+    // nothing and adds no Logistics or Work authority; the loading owner remains the only source of these quantities.
+    Task<SalesOrderDraftLoadingProgressResponse> GetDraftLoadingProgressAsync(Guid draftId,
+        CancellationToken cancellationToken = default);
+
     // DEC-SAL-005 / AT-007 — the impact preview and the cancellation of an approved order under `sales.orders.cancel`
     // (owners read through their ports; fail-closed: any recorded effect or an unreadable owner refuses), and the read of the
     // recorded cancellation (`sales.drafts.read`).
