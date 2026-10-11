@@ -9,6 +9,7 @@ using System.Text.RegularExpressions;
 using GoymenERP.Api.Endpoints;
 using GoymenERP.Api.OpenApi;
 using GoymenERP.Api.Contracts;
+using GoymenERP.Api.WorkRuntime;
 using GoymenERP.BuildingBlocks.OpenApi;
 using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Logistics.Application.Contracts;
@@ -2503,6 +2504,7 @@ public sealed partial class OpenApiContractGenerationTests
                     ("bookKg", "type:string"),
                     ("countedKg", "type:string"),
                     ("reason", "type:string"),
+                    ("labelCode", "type:null|string"),
                     ("submittedBy", "type:string"),
                     ("submittedAtUtc", "type:string;format:date-time")),
                 ["NativeApprovalReadItemV1InventoryStockScrapNativeApprovalReadItemV1"] = ObjectSchema(
@@ -2525,6 +2527,7 @@ public sealed partial class OpenApiContractGenerationTests
                     ("bookKg", "type:string"),
                     ("remainingKg", "type:string"),
                     ("reason", "type:string"),
+                    ("labelCode", "type:null|string"),
                     ("submittedBy", "type:string"),
                     ("submittedAtUtc", "type:string;format:date-time")),
                 ["NativeApprovalReadItemV1SalesOrderDraftNativeApprovalReadItemV1"] = ObjectSchema(
@@ -6549,6 +6552,13 @@ public sealed partial class OpenApiContractGenerationTests
                 AssertHeaderSchema(parameters, SalesEndpoints.DraftReadContractHeader,
                     required: false, type: "string",
                     pattern: SalesEndpoints.DraftReadContractVersionPattern);
+            }
+            if (operation.OperationId is "GetWorkApprovalsV1" or "GetWorkApprovalV1")
+            {
+                expectedHeaderNames.Add(NativeApprovalReadContractV1.Header);
+                AssertHeaderSchema(parameters, NativeApprovalReadContractV1.Header,
+                    required: false, type: "string", minimumLength: 3, maximumLength: 3,
+                    pattern: "^2\\.0$");
             }
 
             Assert.Equal(

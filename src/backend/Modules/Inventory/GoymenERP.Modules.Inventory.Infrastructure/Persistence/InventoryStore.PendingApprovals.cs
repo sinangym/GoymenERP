@@ -22,13 +22,16 @@ public sealed partial class InventoryStore : IInventoryPendingApprovalReaderV1
             query = query.Where(row => row.RecordedAtUtc < afterSubmittedAtUtc.Value
                 || row.RecordedAtUtc == afterSubmittedAtUtc.Value && row.Id.CompareTo(afterCountId.Value) > 0);
         }
-        var rows = await query
-            .OrderByDescending(row => row.RecordedAtUtc)
-            .ThenBy(row => row.Id)
+        var rows = await (from row in query
+                          join label in dbContext.Labels.AsNoTracking()
+                              on new { row.CompanyId, row.LabelId }
+                              equals new { label.CompanyId, LabelId = label.Id }
+                          orderby row.RecordedAtUtc descending, row.Id
+                          select new { Row = row, LabelCode = label.Code })
             .Take(limit)
             .ToListAsync(cancellationToken);
 
-        return [.. rows.Select(StockCountPending)];
+        return [.. rows.Select(item => StockCountPending(item.Row, item.LabelCode))];
     }
 
     public async Task<InventoryStockCountPendingApprovalItemV1?> ReadStockCountAsync(
@@ -37,13 +40,17 @@ public sealed partial class InventoryStore : IInventoryPendingApprovalReaderV1
         CancellationToken cancellationToken)
     {
         RequirePendingIdentity(countId, excludingActorId);
-        var row = await dbContext.StockCounts.AsNoTracking()
-            .SingleOrDefaultAsync(candidate => candidate.Id == countId
-                && candidate.CountedKg != candidate.BookKg
-                && candidate.RecordedBy != excludingActorId
-                && !dbContext.StockCountDecisions.Any(decision => decision.CountId == candidate.Id),
-                cancellationToken);
-        return row is null ? null : StockCountPending(row);
+        var row = await (from candidate in dbContext.StockCounts.AsNoTracking()
+                         join label in dbContext.Labels.AsNoTracking()
+                             on new { candidate.CompanyId, candidate.LabelId }
+                             equals new { label.CompanyId, LabelId = label.Id }
+                         where candidate.Id == countId
+                             && candidate.CountedKg != candidate.BookKg
+                             && candidate.RecordedBy != excludingActorId
+                             && !dbContext.StockCountDecisions.Any(decision => decision.CountId == candidate.Id)
+                         select new { Row = candidate, LabelCode = label.Code })
+            .SingleOrDefaultAsync(cancellationToken);
+        return row is null ? null : StockCountPending(row.Row, row.LabelCode);
     }
 
     public async Task<IReadOnlyList<InventoryStockScrapPendingApprovalItemV1>> ReadStockScrapsAsync(
@@ -62,13 +69,16 @@ public sealed partial class InventoryStore : IInventoryPendingApprovalReaderV1
             query = query.Where(row => row.RecordedAtUtc < afterSubmittedAtUtc.Value
                 || row.RecordedAtUtc == afterSubmittedAtUtc.Value && row.Id.CompareTo(afterScrapId.Value) > 0);
         }
-        var rows = await query
-            .OrderByDescending(row => row.RecordedAtUtc)
-            .ThenBy(row => row.Id)
+        var rows = await (from row in query
+                          join label in dbContext.Labels.AsNoTracking()
+                              on new { row.CompanyId, row.LabelId }
+                              equals new { label.CompanyId, LabelId = label.Id }
+                          orderby row.RecordedAtUtc descending, row.Id
+                          select new { Row = row, LabelCode = label.Code })
             .Take(limit)
             .ToListAsync(cancellationToken);
 
-        return [.. rows.Select(StockScrapPending)];
+        return [.. rows.Select(item => StockScrapPending(item.Row, item.LabelCode))];
     }
 
     public async Task<InventoryStockScrapPendingApprovalItemV1?> ReadStockScrapAsync(
@@ -77,21 +87,28 @@ public sealed partial class InventoryStore : IInventoryPendingApprovalReaderV1
         CancellationToken cancellationToken)
     {
         RequirePendingIdentity(scrapId, excludingActorId);
-        var row = await dbContext.StockScraps.AsNoTracking()
-            .SingleOrDefaultAsync(candidate => candidate.Id == scrapId
-                && candidate.RecordedBy != excludingActorId
-                && !dbContext.StockScrapDecisions.Any(decision => decision.ScrapId == candidate.Id),
-                cancellationToken);
-        return row is null ? null : StockScrapPending(row);
+        var row = await (from candidate in dbContext.StockScraps.AsNoTracking()
+                         join label in dbContext.Labels.AsNoTracking()
+                             on new { candidate.CompanyId, candidate.LabelId }
+                             equals new { label.CompanyId, LabelId = label.Id }
+                         where candidate.Id == scrapId
+                             && candidate.RecordedBy != excludingActorId
+                             && !dbContext.StockScrapDecisions.Any(decision => decision.ScrapId == candidate.Id)
+                         select new { Row = candidate, LabelCode = label.Code })
+            .SingleOrDefaultAsync(cancellationToken);
+        return row is null ? null : StockScrapPending(row.Row, row.LabelCode);
     }
 
-    private static InventoryStockCountPendingApprovalItemV1 StockCountPending(StockCountRow row)
+    private static InventoryStockCountPendingApprovalItemV1 StockCountPending(
+        StockCountRow row,
+        string labelCode)
     {
         var view = StockCountView(row, decision: null);
         return new(
             view.CountId,
             view.CompanyId,
             view.LabelId,
+            labelCode,
             view.LabelVersion,
             view.OwnerKind,
             view.OwnerId,
@@ -108,13 +125,16 @@ public sealed partial class InventoryStore : IInventoryPendingApprovalReaderV1
             view.RecordedAtUtc);
     }
 
-    private static InventoryStockScrapPendingApprovalItemV1 StockScrapPending(StockScrapRow row)
+    private static InventoryStockScrapPendingApprovalItemV1 StockScrapPending(
+        StockScrapRow row,
+        string labelCode)
     {
         var view = StockScrapView(row, decision: null);
         return new(
             view.ScrapId,
             view.CompanyId,
             view.LabelId,
+            labelCode,
             view.LabelVersion,
             view.OwnerKind,
             view.OwnerId,

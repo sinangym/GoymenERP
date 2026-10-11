@@ -21,13 +21,20 @@ public static class WorkApprovalEndpoints
                 CancellationToken cancellationToken) =>
             {
                 SetPrivateNoStore(httpContext);
-                return Read(await query.ListAsync(kind, cursor, cancellationToken));
+                if (!TryReadContract(httpContext.Request.Headers, out var includeInventoryLabelCode))
+                {
+                    return Results.Problem(statusCode: StatusCodes.Status400BadRequest);
+                }
+                SetContractResponseHeader(httpContext, includeInventoryLabelCode);
+                return Read(await query.ListAsync(
+                    kind, cursor, includeInventoryLabelCode, cancellationToken));
             })
             .WithName("GetWorkApprovalsV1")
             .WithTags("Work")
             .RequireAuthorization()
             .RequireCompanyContext()
             .Produces<NativeApprovalReadPageV1>()
+            .AllowsCodeLessErpBadRequestBody()
             .ProducesErpAuthenticatedProblems()
             .ProducesErpCodeLessNotFound()
             .ProducesErpServiceUnavailable();
@@ -40,13 +47,20 @@ public static class WorkApprovalEndpoints
                 CancellationToken cancellationToken) =>
             {
                 SetPrivateNoStore(httpContext);
-                return Read(await query.GetAsync(kind, approvalId, cancellationToken));
+                if (!TryReadContract(httpContext.Request.Headers, out var includeInventoryLabelCode))
+                {
+                    return Results.Problem(statusCode: StatusCodes.Status400BadRequest);
+                }
+                SetContractResponseHeader(httpContext, includeInventoryLabelCode);
+                return Read(await query.GetAsync(
+                    kind, approvalId, includeInventoryLabelCode, cancellationToken));
             })
             .WithName("GetWorkApprovalV1")
             .WithTags("Work")
             .RequireAuthorization()
             .RequireCompanyContext()
             .Produces<NativeApprovalReadDetailV1>()
+            .AllowsCodeLessErpBadRequestBody()
             .ProducesErpAuthenticatedProblems()
             .ProducesErpCodeLessNotFound()
             .ProducesErpServiceUnavailable();
@@ -69,5 +83,38 @@ public static class WorkApprovalEndpoints
     {
         httpContext.Response.Headers.CacheControl = "private, no-store";
         httpContext.Response.Headers.Pragma = "no-cache";
+    }
+
+    private static bool TryReadContract(
+        IHeaderDictionary headers,
+        out bool includeInventoryLabelCode)
+    {
+        includeInventoryLabelCode = false;
+        if (!headers.TryGetValue(NativeApprovalReadContractV1.Header, out var values))
+        {
+            return true;
+        }
+
+        if (values.Count != 1
+            || !string.Equals(values[0],
+                NativeApprovalReadContractV1.InventoryLabelDisplayVersion,
+                StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        includeInventoryLabelCode = true;
+        return true;
+    }
+
+    private static void SetContractResponseHeader(
+        HttpContext httpContext,
+        bool includeInventoryLabelCode)
+    {
+        if (includeInventoryLabelCode)
+        {
+            httpContext.Response.Headers[NativeApprovalReadContractV1.Header] =
+                NativeApprovalReadContractV1.InventoryLabelDisplayVersion;
+        }
     }
 }

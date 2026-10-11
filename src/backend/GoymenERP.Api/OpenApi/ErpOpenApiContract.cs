@@ -106,6 +106,14 @@ public static partial class ErpOpenApiContract
                     schema.Required.Add("discountPercent");
                 }
 
+                if (context.JsonTypeInfo.Type == typeof(
+                        GoymenERP.Api.WorkRuntime.InventoryStockCountNativeApprovalReadItemV1)
+                    || context.JsonTypeInfo.Type == typeof(
+                        GoymenERP.Api.WorkRuntime.InventoryStockScrapNativeApprovalReadItemV1))
+                {
+                    schema.Required?.Remove("labelCode");
+                }
+
                 if (context.JsonTypeInfo.Type == typeof(CreateCounterparty))
                 {
                     schema.Required?.Remove("tradeName");
@@ -725,6 +733,20 @@ public static partial class ErpOpenApiContract
                 StringComparison.Ordinal))
         {
             await AddInventoryStockPositionParametersAsync(operation, context, cancellationToken);
+        }
+
+        if (operation.OperationId is "GetWorkApprovalsV1" or "GetWorkApprovalV1")
+        {
+            AddHeaderParameter(
+                operation,
+                GoymenERP.Api.WorkRuntime.NativeApprovalReadContractV1.Header,
+                required: false,
+                "Optional exact compatibility selection. Omit for the previously published Work approval response; "
+                + "send 2.0 to include the Inventory-owned material label code on Inventory stock-count and "
+                + "stock-scrap records. Finance and Sales shapes are unchanged.",
+                minimumLength: 3,
+                maximumLength: 3,
+                pattern: "^2\\.0$");
         }
 
         if (string.Equals(

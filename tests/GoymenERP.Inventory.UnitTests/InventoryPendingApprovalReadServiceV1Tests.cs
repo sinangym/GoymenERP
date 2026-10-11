@@ -20,7 +20,8 @@ public sealed class InventoryPendingApprovalReadServiceV1Tests
         var scrap = await world.Scraps.GetAsync(world.Context(), ScrapId, default);
 
         Assert.Equal(InventoryPendingApprovalReadOutcomeV1.Found, count.Outcome);
-        Assert.Equal(CountId, Assert.Single(count.Resource!.Items).CountId);
+        Assert.Equal((CountId, "ETK-D05-COUNT"),
+            (Assert.Single(count.Resource!.Items).CountId, count.Resource.Items[0].LabelCode));
         Assert.Equal(InventoryPendingApprovalReadOutcomeV1.Found, scrap.Outcome);
         Assert.Equal((ScrapId, "recorder", "6"),
             (scrap.Resource!.Item.ScrapId, scrap.Resource.Item.SubmittedBy, scrap.Resource.Item.ScrapKg));
@@ -77,6 +78,18 @@ public sealed class InventoryPendingApprovalReadServiceV1Tests
     {
         var world = new World();
         world.Reader.Counts = [Count() with { SubmittedBy = world.User.UserId! }];
+
+        var result = await world.Counts.ListAsync(world.Context(), null, default);
+
+        Assert.Equal(InventoryPendingApprovalReadOutcomeV1.Unavailable, result.Outcome);
+        Assert.Null(result.Resource);
+    }
+
+    [Fact]
+    public async Task Missing_label_code_fails_the_whole_pending_page_closed()
+    {
+        var world = new World();
+        world.Reader.Counts = [Count() with { LabelCode = "" }];
 
         var result = await world.Counts.ListAsync(world.Context(), null, default);
 
@@ -282,12 +295,12 @@ public sealed class InventoryPendingApprovalReadServiceV1Tests
     }
 
     private static InventoryStockCountPendingApprovalItemV1 Count() => new(
-        CountId, Company, Guid.NewGuid(), "1", "Company", Company, "Company", Company,
+        CountId, Company, Guid.NewGuid(), "ETK-D05-COUNT", "1", "Company", Company, "Company", Company,
         Guid.NewGuid(), Guid.NewGuid(), "Free", "100", "97", "-3", "Sayım farkı",
         "counter", DateTimeOffset.Parse("2026-10-10T07:00:00Z"));
 
     private static InventoryStockScrapPendingApprovalItemV1 Scrap() => new(
-        ScrapId, Company, Guid.NewGuid(), "1", "Company", Company, "Company", Company,
+        ScrapId, Company, Guid.NewGuid(), "ETK-D05-SCRAP", "1", "Company", Company, "Company", Company,
         Guid.NewGuid(), Guid.NewGuid(), "Free", "100", "6", "94", "Hurda",
         "recorder", DateTimeOffset.Parse("2026-10-10T08:00:00Z"));
 }

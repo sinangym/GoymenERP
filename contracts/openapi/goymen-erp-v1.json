@@ -13393,6 +13393,17 @@
               "format": "uuid",
               "x-erp-non-empty-uuid": true
             }
+          },
+          {
+            "name": "X-ERP-Work-Approval-Contract",
+            "in": "header",
+            "description": "Optional exact compatibility selection. Omit for the previously published Work approval response; send 2.0 to include the Inventory-owned material label code on Inventory stock-count and stock-scrap records. Finance and Sales shapes are unchanged.",
+            "schema": {
+              "maxLength": 3,
+              "minLength": 3,
+              "pattern": "^2\\.0$",
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -13597,6 +13608,17 @@
               "type": "string",
               "format": "uuid",
               "x-erp-non-empty-uuid": true
+            }
+          },
+          {
+            "name": "X-ERP-Work-Approval-Contract",
+            "in": "header",
+            "description": "Optional exact compatibility selection. Omit for the previously published Work approval response; send 2.0 to include the Inventory-owned material label code on Inventory stock-count and stock-scrap records. Finance and Sales shapes are unchanged.",
+            "schema": {
+              "maxLength": 3,
+              "minLength": 3,
+              "pattern": "^2\\.0$",
+              "type": "string"
             }
           }
         ],
@@ -72860,6 +72882,12 @@
           },
           "reason": {
             "type": "string"
+          },
+          "labelCode": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
@@ -72956,6 +72984,12 @@
           },
           "reason": {
             "type": "string"
+          },
+          "labelCode": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
