@@ -36,6 +36,8 @@ const CARI_ROUTE = `/cari/${supplierPartyId}`
 const DEVELOPMENT_USER_HEADER = 'X-Development-User'
 const LIST_HEADING = 'Satın alma siparişleri'
 const DETAIL_HEADING = 'Satın alma siparişi'
+const DETAIL_LINES_TABLE = 'Sipariş kalem miktarları'
+const DETAIL_LINE_LABELS = ['No', 'Ürün ID', 'Sipariş birimi ID', 'Sipariş', 'Teknik', 'Taahhüt', 'Kabul', 'Kalan']
 
 /**
  * The legal name the gated fixture gives its Supplier: the suite's synthetic label followed by
@@ -260,6 +262,67 @@ test('PUR01-SUP-3 the creator switches GDC → Other → GDC and the departed co
   await expect(supplierCell(page)).toBeVisible({ timeout: 30_000 })
   await expectWholeName(supplierCell(page), supplier, 'the GDC list after returning')
   await expect(supplierCell(page).getByRole('link', { name: identityText(supplier), exact: true })).toHaveAttribute('href', CARI_ROUTE)
+})
+
+test.describe('PUR01-DETAIL-DS the real purchase-order detail on the design system', () => {
+  for (const width of [1440, 768, 390, 320] as const) {
+    test(`PUR01-DETAIL-DS-${width} keeps the real line readable in the intended table/card layout without page overflow`, async ({ page }) => {
+      await page.setViewportSize({ width, height: width >= 768 ? 900 : 844 })
+      await signInAs(page, creatorActor)
+      const supplier = (await readSeededOrder(page, creatorActor)).supplierDisplay
+
+      await page.goto(DETAIL_ROUTE)
+      await expect(page.getByRole('heading', { level: 1, name: DETAIL_HEADING })).toBeVisible({ timeout: 30_000 })
+      await expect(page.getByTestId('purchase-order-status-facts').locator('time')).toHaveAttribute('datetime', '2026-09-23')
+      await expect(page.getByTestId('purchase-order-status-facts').locator('time')).toHaveText('23.09.2026')
+      await expectWholeName(supplierIdentity(page), supplier, `the detail at ${width}`)
+
+      const table = page.getByRole('table', { name: DETAIL_LINES_TABLE })
+      const headers = table.getByRole('columnheader')
+      const row = table.locator('tbody tr').first()
+      const cells = row.getByRole('cell')
+      await expect(table).toBeVisible()
+      await expect(row).toBeVisible()
+      await expect(cells).toHaveCount(DETAIL_LINE_LABELS.length)
+      expect(await cells.evaluateAll((items) => items.map((item) => item.getAttribute('data-label')))).toEqual(DETAIL_LINE_LABELS)
+      await expect(row).toContainText(productId)
+      await expect(row).toContainText(productUnitId)
+
+      if (width >= 768) {
+        await expect(headers).toHaveCount(DETAIL_LINE_LABELS.length)
+        for (const header of await headers.all()) await expect(header).toBeVisible()
+        expect(await table.evaluate((element) => getComputedStyle(element).display)).toBe('table')
+        if (width === 768) {
+          const tableWrap = table.locator('..')
+          expect(await tableWrap.evaluate((element) => element.scrollWidth > element.clientWidth)).toBe(true)
+        }
+      } else {
+        for (const header of await headers.all()) await expect(header).toBeHidden()
+        expect(await table.evaluate((element) => getComputedStyle(element).display)).toBe('block')
+        expect(await row.evaluate((element) => getComputedStyle(element).display)).toBe('grid')
+        expect(await cells.evaluateAll((items) => items.every((item) => {
+          const style = getComputedStyle(item)
+          const box = item.getBoundingClientRect()
+          return style.display === 'grid' && box.width > 0 && box.height > 0 && box.left >= -0.5 && box.right <= innerWidth + 0.5
+        }))).toBe(true)
+      }
+      await expectNoPageOverflow(page, `the detail at ${width}`)
+
+      const supplierLink = supplierIdentity(page).getByRole('link', { name: identityText(supplier), exact: true })
+      await expect(supplierLink).toHaveAttribute('href', CARI_ROUTE)
+      if (width === 390) {
+        await supplierLink.focus()
+        await expect(supplierLink).toBeFocused()
+        await page.keyboard.press('Enter')
+        await expect(page).toHaveURL(new RegExp(`${CARI_ROUTE}$`))
+        await page.goBack()
+        await expect(page.getByRole('heading', { level: 1, name: DETAIL_HEADING })).toBeVisible({ timeout: 30_000 })
+      } else if (width === 320) {
+        await supplierLink.click()
+        await expect(page).toHaveURL(new RegExp(`${CARI_ROUTE}$`))
+      }
+    })
+  }
 })
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
