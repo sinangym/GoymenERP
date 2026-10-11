@@ -374,11 +374,16 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
             secondA = (await a.Store.StoreOrderAsync(run.Envelope("k-supplier-a-2"), Hash("supplier-a-2"), supplierA.Account, Day,
                 () => builtA2, VersionsOf(builtA2))).Order.Order.Id;
 
+            // All three fixture orders use T0. The production keyset order therefore uses its documented Id DESC
+            // tie-breaker; insertion order is deliberately not observable. Assert the same stable order so this
+            // acceptance proves cursor continuity instead of depending on random Guid allocation order.
+            Guid[] expected = [firstA, secondA];
+            Array.Sort(expected, (left, right) => right.CompareTo(left));
             PurchasingOrderPage page1 = await a.Store.ListOrdersAsync(1, null, supplierPartyId: supplierA.Party);
-            Assert.Equal(secondA, Assert.Single(page1.Items).Order.Id);
+            Assert.Equal(expected[0], Assert.Single(page1.Items).Order.Id);
             Assert.NotNull(page1.NextCursor);
             PurchasingOrderPage page2 = await a.Store.ListOrdersAsync(1, page1.NextCursor, supplierPartyId: supplierA.Party);
-            Assert.Equal(firstA, Assert.Single(page2.Items).Order.Id);
+            Assert.Equal(expected[1], Assert.Single(page2.Items).Order.Id);
             Assert.Null(page2.NextCursor);
             Assert.Empty((await a.Store.ListOrdersAsync(10, null, supplierPartyId: Guid.NewGuid())).Items);
         }
