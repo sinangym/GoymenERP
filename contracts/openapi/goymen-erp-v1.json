@@ -71674,6 +71674,12 @@
             "$ref": "#/components/schemas/NativeApprovalReadDetailV1FinanceInvoiceImportNativeApprovalReadDetailV1"
           },
           {
+            "$ref": "#/components/schemas/NativeApprovalReadDetailV1InventoryStockCountNativeApprovalReadDetailV1"
+          },
+          {
+            "$ref": "#/components/schemas/NativeApprovalReadDetailV1InventoryStockScrapNativeApprovalReadDetailV1"
+          },
+          {
             "$ref": "#/components/schemas/NativeApprovalReadDetailV1SalesOrderDraftNativeApprovalReadDetailV1"
           }
         ]
@@ -71689,6 +71695,26 @@
           },
           "preview": {
             "$ref": "#/components/schemas/FinanceOfficialInvoiceImportPreviewV1"
+          }
+        }
+      },
+      "NativeApprovalReadDetailV1InventoryStockCountNativeApprovalReadDetailV1": {
+        "required": [
+          "item"
+        ],
+        "properties": {
+          "item": {
+            "$ref": "#/components/schemas/NativeApprovalReadItemV1"
+          }
+        }
+      },
+      "NativeApprovalReadDetailV1InventoryStockScrapNativeApprovalReadDetailV1": {
+        "required": [
+          "item"
+        ],
+        "properties": {
+          "item": {
+            "$ref": "#/components/schemas/NativeApprovalReadItemV1"
           }
         }
       },
@@ -71712,6 +71738,12 @@
             "$ref": "#/components/schemas/NativeApprovalReadItemV1FinanceInvoiceImportNativeApprovalReadItemV1"
           },
           {
+            "$ref": "#/components/schemas/NativeApprovalReadItemV1InventoryStockCountNativeApprovalReadItemV1"
+          },
+          {
+            "$ref": "#/components/schemas/NativeApprovalReadItemV1InventoryStockScrapNativeApprovalReadItemV1"
+          },
+          {
             "$ref": "#/components/schemas/NativeApprovalReadItemV1SalesOrderDraftNativeApprovalReadItemV1"
           }
         ],
@@ -71719,6 +71751,8 @@
           "propertyName": "kind",
           "mapping": {
             "finance.official-invoice-import.v1": "#/components/schemas/NativeApprovalReadItemV1FinanceInvoiceImportNativeApprovalReadItemV1",
+            "inventory.stock-count.v1": "#/components/schemas/NativeApprovalReadItemV1InventoryStockCountNativeApprovalReadItemV1",
+            "inventory.stock-scrap.v1": "#/components/schemas/NativeApprovalReadItemV1InventoryStockScrapNativeApprovalReadItemV1",
             "sales.order-draft.v1": "#/components/schemas/NativeApprovalReadItemV1SalesOrderDraftNativeApprovalReadItemV1"
           }
         }
@@ -71780,6 +71814,198 @@
           "submittedAtUtc": {
             "type": "string",
             "format": "date-time"
+          }
+        }
+      },
+      "NativeApprovalReadItemV1InventoryStockCountNativeApprovalReadItemV1": {
+        "required": [
+          "approvalId",
+          "companyId",
+          "status",
+          "version",
+          "labelId",
+          "productId",
+          "locationId",
+          "differenceKg",
+          "submittedBy",
+          "submittedAtUtc",
+          "labelVersion",
+          "ownerKind",
+          "ownerId",
+          "custodianKind",
+          "custodianId",
+          "block",
+          "bookKg",
+          "countedKg",
+          "reason"
+        ],
+        "properties": {
+          "kind": {
+            "enum": [
+              "inventory.stock-count.v1"
+            ],
+            "type": "string"
+          },
+          "approvalId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "companyId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          },
+          "labelId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "productId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "locationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "differenceKg": {
+            "type": "string"
+          },
+          "submittedBy": {
+            "type": "string"
+          },
+          "submittedAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "labelVersion": {
+            "type": "string"
+          },
+          "ownerKind": {
+            "type": "string"
+          },
+          "ownerId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "custodianKind": {
+            "type": "string"
+          },
+          "custodianId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "block": {
+            "type": "string"
+          },
+          "bookKg": {
+            "type": "string"
+          },
+          "countedKg": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        }
+      },
+      "NativeApprovalReadItemV1InventoryStockScrapNativeApprovalReadItemV1": {
+        "required": [
+          "approvalId",
+          "companyId",
+          "status",
+          "version",
+          "labelId",
+          "productId",
+          "locationId",
+          "scrapKg",
+          "submittedBy",
+          "submittedAtUtc",
+          "labelVersion",
+          "ownerKind",
+          "ownerId",
+          "custodianKind",
+          "custodianId",
+          "block",
+          "bookKg",
+          "remainingKg",
+          "reason"
+        ],
+        "properties": {
+          "kind": {
+            "enum": [
+              "inventory.stock-scrap.v1"
+            ],
+            "type": "string"
+          },
+          "approvalId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "companyId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          },
+          "labelId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "productId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "locationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "scrapKg": {
+            "type": "string"
+          },
+          "submittedBy": {
+            "type": "string"
+          },
+          "submittedAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "labelVersion": {
+            "type": "string"
+          },
+          "ownerKind": {
+            "type": "string"
+          },
+          "ownerId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "custodianKind": {
+            "type": "string"
+          },
+          "custodianId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "block": {
+            "type": "string"
+          },
+          "bookKg": {
+            "type": "string"
+          },
+          "remainingKg": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
           }
         }
       },

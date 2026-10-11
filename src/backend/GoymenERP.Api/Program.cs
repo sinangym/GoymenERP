@@ -177,6 +177,8 @@ builder.Services.AddScoped<IFinanceRecordPeriodRule, OccurredOnFinanceRecordPeri
 builder.Services.AddFinanceServices();
 builder.Services.AddFinanceOfficialInvoiceImportHost();
 builder.Services.AddScoped<INativeApprovalReadAdapterV1, FinanceInvoiceImportPendingApprovalAdapterV1>();
+builder.Services.AddScoped<INativeApprovalReadAdapterV1, InventoryStockCountPendingApprovalAdapterV1>();
+builder.Services.AddScoped<INativeApprovalReadAdapterV1, InventoryStockScrapPendingApprovalAdapterV1>();
 builder.Services.AddScoped<INativeApprovalReadAdapterV1, SalesOrderDraftPendingApprovalAdapterV1>();
 builder.Services.AddScoped<NativeApprovalReadQueryV1>();
 builder.Services.AddScoped<IFinancePartyAccountPort, CounterpartyFinancePartyAccountPort>();
@@ -267,6 +269,8 @@ builder.Services.AddScoped<IInventoryLabelClassificationCommandV1, InventoryLabe
 builder.Services.AddInventoryStockCounts();
 // ST-02 scrap write-off: the fenced record/decide commands and the label scrap read behind the published routes.
 builder.Services.AddInventoryStockScraps();
+// D-05: read-only Inventory pending approvals composed into the existing Work inbox.
+builder.Services.AddInventoryPendingApprovalReads();
 // INV-OPEN-1 part 2: the opening command's host ports — Organization's company-scoped location module read
 // and Product's stock eligibility (the owners' contracts; no user read, no copy of either owner's rows).
 builder.Services.AddScoped<IInventoryLocationStatusPort, OrganizationInventoryLocationStatusPort>();

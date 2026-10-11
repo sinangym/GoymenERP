@@ -6,10 +6,14 @@ namespace GoymenERP.Api.WorkRuntime;
 internal static class NativeApprovalKindsV1
 {
     public const string FinanceOfficialInvoiceImport = "finance.official-invoice-import.v1";
+    public const string InventoryStockCount = "inventory.stock-count.v1";
+    public const string InventoryStockScrap = "inventory.stock-scrap.v1";
     public const string SalesOrderDraft = "sales.order-draft.v1";
 
     public static bool IsKnown(string kind) =>
         string.Equals(kind, FinanceOfficialInvoiceImport, StringComparison.Ordinal)
+        || string.Equals(kind, InventoryStockCount, StringComparison.Ordinal)
+        || string.Equals(kind, InventoryStockScrap, StringComparison.Ordinal)
         || string.Equals(kind, SalesOrderDraft, StringComparison.Ordinal);
 }
 
@@ -34,6 +38,10 @@ internal sealed record NativeApprovalReadResultV1<T>(
 [JsonPolymorphic(TypeDiscriminatorPropertyName = "kind")]
 [JsonDerivedType(typeof(FinanceInvoiceImportNativeApprovalReadItemV1),
     NativeApprovalKindsV1.FinanceOfficialInvoiceImport)]
+[JsonDerivedType(typeof(InventoryStockCountNativeApprovalReadItemV1),
+    NativeApprovalKindsV1.InventoryStockCount)]
+[JsonDerivedType(typeof(InventoryStockScrapNativeApprovalReadItemV1),
+    NativeApprovalKindsV1.InventoryStockScrap)]
 [JsonDerivedType(typeof(SalesOrderDraftNativeApprovalReadItemV1),
     NativeApprovalKindsV1.SalesOrderDraft)]
 internal abstract record NativeApprovalReadItemV1(
@@ -93,12 +101,78 @@ internal sealed record FinanceInvoiceImportNativeApprovalReadItemV1(
     public override string Kind => NativeApprovalKindsV1.FinanceOfficialInvoiceImport;
 }
 
+internal sealed record InventoryStockCountNativeApprovalReadItemV1(
+    Guid ApprovalId,
+    Guid CompanyId,
+    string Status,
+    string Version,
+    [property: JsonPropertyOrder(5)] Guid LabelId,
+    [property: JsonPropertyOrder(6)] Guid ProductId,
+    [property: JsonPropertyOrder(7)] Guid LocationId,
+    [property: JsonPropertyOrder(8)] string DifferenceKg,
+    [property: JsonPropertyOrder(11)] string LabelVersion,
+    [property: JsonPropertyOrder(12)] string OwnerKind,
+    [property: JsonPropertyOrder(13)] Guid OwnerId,
+    [property: JsonPropertyOrder(14)] string CustodianKind,
+    [property: JsonPropertyOrder(15)] Guid CustodianId,
+    [property: JsonPropertyOrder(16)] string Block,
+    [property: JsonPropertyOrder(17)] string BookKg,
+    [property: JsonPropertyOrder(18)] string CountedKg,
+    [property: JsonPropertyOrder(19)] string Reason,
+    string SubmittedBy,
+    DateTimeOffset SubmittedAtUtc)
+    : NativeApprovalReadItemV1(
+        ApprovalId,
+        CompanyId,
+        Status,
+        Version,
+        SubmittedBy,
+        SubmittedAtUtc)
+{
+    [JsonIgnore]
+    public override string Kind => NativeApprovalKindsV1.InventoryStockCount;
+}
+
+internal sealed record InventoryStockScrapNativeApprovalReadItemV1(
+    Guid ApprovalId,
+    Guid CompanyId,
+    string Status,
+    string Version,
+    [property: JsonPropertyOrder(5)] Guid LabelId,
+    [property: JsonPropertyOrder(6)] Guid ProductId,
+    [property: JsonPropertyOrder(7)] Guid LocationId,
+    [property: JsonPropertyOrder(8)] string ScrapKg,
+    [property: JsonPropertyOrder(11)] string LabelVersion,
+    [property: JsonPropertyOrder(12)] string OwnerKind,
+    [property: JsonPropertyOrder(13)] Guid OwnerId,
+    [property: JsonPropertyOrder(14)] string CustodianKind,
+    [property: JsonPropertyOrder(15)] Guid CustodianId,
+    [property: JsonPropertyOrder(16)] string Block,
+    [property: JsonPropertyOrder(17)] string BookKg,
+    [property: JsonPropertyOrder(18)] string RemainingKg,
+    [property: JsonPropertyOrder(19)] string Reason,
+    string SubmittedBy,
+    DateTimeOffset SubmittedAtUtc)
+    : NativeApprovalReadItemV1(
+        ApprovalId,
+        CompanyId,
+        Status,
+        Version,
+        SubmittedBy,
+        SubmittedAtUtc)
+{
+    [JsonIgnore]
+    public override string Kind => NativeApprovalKindsV1.InventoryStockScrap;
+}
+
 internal sealed record NativeApprovalReadPageV1(
     Guid CompanyId,
     IReadOnlyList<NativeApprovalReadItemV1> Items,
     string? NextCursor);
 
 [JsonDerivedType(typeof(FinanceInvoiceImportNativeApprovalReadDetailV1))]
+[JsonDerivedType(typeof(InventoryStockCountNativeApprovalReadDetailV1))]
+[JsonDerivedType(typeof(InventoryStockScrapNativeApprovalReadDetailV1))]
 [JsonDerivedType(typeof(SalesOrderDraftNativeApprovalReadDetailV1))]
 internal abstract record NativeApprovalReadDetailV1(
     [property: JsonPropertyOrder(0)] NativeApprovalReadItemV1 Item);
@@ -110,6 +184,14 @@ internal sealed record FinanceInvoiceImportNativeApprovalReadDetailV1(
     : NativeApprovalReadDetailV1(Item);
 
 internal sealed record SalesOrderDraftNativeApprovalReadDetailV1(
+    NativeApprovalReadItemV1 Item)
+    : NativeApprovalReadDetailV1(Item);
+
+internal sealed record InventoryStockCountNativeApprovalReadDetailV1(
+    NativeApprovalReadItemV1 Item)
+    : NativeApprovalReadDetailV1(Item);
+
+internal sealed record InventoryStockScrapNativeApprovalReadDetailV1(
     NativeApprovalReadItemV1 Item)
     : NativeApprovalReadDetailV1(Item);
 
