@@ -13437,6 +13437,47 @@
               }
             }
           },
+          "400": {
+            "description": "Bad Request",
+            "headers": {
+              "X-ERP-Work-Approval-Contract": {
+                "description": "Optional server acknowledgment, present only after the handler accepts the exact 2.0 request selector. It can accompany handler-generated success or error responses; errors before the handler and a rejected selector may omit it. Its presence on an error is not read success or client readiness.",
+                "schema": {
+                  "maxLength": 3,
+                  "minLength": 3,
+                  "pattern": "^2\\.0$",
+                  "type": "string"
+                }
+              },
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ErpCodeLessProblemDetailsContract"
+                    }
+                  ]
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "company_context_invalid",
+              "correlation_metadata_invalid"
+            ]
+          },
           "401": {
             "description": "Unauthorized",
             "headers": {
@@ -13706,6 +13747,47 @@
                 }
               }
             }
+          },
+          "400": {
+            "description": "Bad Request",
+            "headers": {
+              "X-ERP-Work-Approval-Contract": {
+                "description": "Optional server acknowledgment, present only after the handler accepts the exact 2.0 request selector. It can accompany handler-generated success or error responses; errors before the handler and a rejected selector may omit it. Its presence on an error is not read success or client readiness.",
+                "schema": {
+                  "maxLength": 3,
+                  "minLength": 3,
+                  "pattern": "^2\\.0$",
+                  "type": "string"
+                }
+              },
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ErpCodeLessProblemDetailsContract"
+                    }
+                  ]
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "company_context_invalid",
+              "correlation_metadata_invalid"
+            ]
           },
           "401": {
             "description": "Unauthorized",

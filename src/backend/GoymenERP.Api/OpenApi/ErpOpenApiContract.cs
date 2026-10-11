@@ -436,6 +436,19 @@ public static partial class ErpOpenApiContract
             "application/problem+json");
     }
 
+    public static RouteHandlerBuilder ProducesErpCodeLessBadRequest(
+        this RouteHandlerBuilder builder)
+    {
+        builder.Produces<ErpCodeLessProblemDetailsContract>(
+            StatusCodes.Status400BadRequest,
+            "application/problem+json");
+        AddProblemCodeMetadata(
+            builder,
+            StatusCodes.Status400BadRequest,
+            [ErpProblemCodes.CorrelationMetadataInvalid]);
+        return builder;
+    }
+
     public static RouteHandlerBuilder ProducesErpUnprocessableEntity(
         this RouteHandlerBuilder builder,
         params string[] stableCodes)

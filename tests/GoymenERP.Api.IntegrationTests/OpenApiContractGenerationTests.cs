@@ -418,10 +418,10 @@ public sealed partial class OpenApiContractGenerationTests
             AuthenticatedResponses("200:application/json", "404:application/problem+json", "503:application/problem+json"),
             ParameterValues: ["path:batchId:true:type:string;format:uuid"]),
         new("get", "/api/v1/work/approvals", "GetWorkApprovalsV1",
-            AuthenticatedResponses("200:application/json", "404:application/problem+json", "503:application/problem+json"),
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "404:application/problem+json", "503:application/problem+json"),
             ParameterValues: ["query:kind:false:type:string", "query:cursor:false:type:string"]),
         new("get", "/api/v1/work/approvals/{kind}/{approvalId}", "GetWorkApprovalV1",
-            AuthenticatedResponses("200:application/json", "404:application/problem+json", "503:application/problem+json"),
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "404:application/problem+json", "503:application/problem+json"),
             ParameterValues:
             [
                 "path:kind:true:type:string",
@@ -1901,6 +1901,8 @@ public sealed partial class OpenApiContractGenerationTests
 
     private static readonly HashSet<string> MixedProblemResponses =
     [
+        "GetWorkApprovalsV1:400",
+        "GetWorkApprovalV1:400",
         "CreateAccountingNormalJournalDraftV1:400",
         "PrepareAccountingApprovedSourceCatalogV1:400",
         "ActivateAccountingApprovedSourceCatalogV1:400",
