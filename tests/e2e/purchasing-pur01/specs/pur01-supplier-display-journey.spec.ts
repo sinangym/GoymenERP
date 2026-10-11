@@ -317,7 +317,25 @@ test.describe('PUR01-DETAIL-DS the real purchase-order detail on the design syst
           expect(await tableWrap.evaluate((element) => element.scrollWidth > element.clientWidth)).toBe(true)
         }
       } else {
-        for (const header of await headers.all()) await expect(header).toBeHidden()
+        // The semantic column headers remain in the accessibility tree while their one-pixel, clipped thead is
+        // not drawn above the labelled cards. Playwright deliberately still resolves those roles as visible, so
+        // assert the actual visual-hiding contract on the owning row group instead of misclassifying its children.
+        const headerPresentation = await table.locator('thead').evaluate((element) => {
+          const style = getComputedStyle(element)
+          const box = element.getBoundingClientRect()
+          return {
+            position: style.position,
+            overflow: style.overflow,
+            clipPath: style.clipPath,
+            width: box.width,
+            height: box.height,
+          }
+        })
+        expect(headerPresentation.position).toBe('absolute')
+        expect(headerPresentation.overflow).toBe('hidden')
+        expect(headerPresentation.clipPath).toBe('inset(50%)')
+        expect(headerPresentation.width).toBeLessThanOrEqual(1)
+        expect(headerPresentation.height).toBeLessThanOrEqual(1)
         expect(await table.evaluate((element) => getComputedStyle(element).display)).toBe('block')
         expect(await row.evaluate((element) => getComputedStyle(element).display)).toBe('grid')
         expect(await cells.evaluateAll((items) => items.every((item) => {
