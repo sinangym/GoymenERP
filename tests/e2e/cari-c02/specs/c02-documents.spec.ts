@@ -53,6 +53,10 @@ const PNG = Buffer.from(
   'base64',
 )
 
+function generatedVersionPdf(version: number): Buffer {
+  return Buffer.from(`%PDF-1.4\n% SENTETIK C02 version-${version} ${testedCommit}\n%%EOF\n`, 'utf8')
+}
+
 async function signInAs(page: Page, actor: string): Promise<void> {
   await page.setExtraHTTPHeaders({ [DEVELOPMENT_USER_HEADER]: actor })
 }
@@ -242,7 +246,7 @@ test('C02-D1H continuation failure keeps fifty real rows, retries the same curso
   expect(documentId, 'C02-D1 must have stored a document').not.toBe('')
   await signInAs(page, CREATOR_ACTOR)
   for (let version = 4; version <= 51; version += 1) {
-    const bytes = Buffer.from(`%PDF-1.4\n% SENTETIK C02 version-${version} ${testedCommit}\n%%EOF\n`, 'utf8')
+    const bytes = generatedVersionPdf(version)
     const response = await appendVersion(
       page.request,
       documentId,
@@ -430,6 +434,6 @@ test('C02-D3 another company\'s fully authorized actor gets 404 and an actor wit
   const creator = { [DEVELOPMENT_USER_HEADER]: CREATOR_ACTOR, 'X-Company-Id': COMPANY_A }
   const allowed = await page.request.get(content, { headers: creator })
   expect(allowed.status()).toBe(200)
-  expect(Buffer.from(await allowed.body()).equals(PDF)).toBe(true)
+  expect(Buffer.from(await allowed.body()).equals(generatedVersionPdf(51))).toBe(true)
   expect(allowed.headers()['x-content-type-options']).toBe('nosniff')
 })
