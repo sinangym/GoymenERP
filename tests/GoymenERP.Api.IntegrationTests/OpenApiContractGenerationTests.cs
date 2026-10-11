@@ -2446,7 +2446,7 @@ public sealed partial class OpenApiContractGenerationTests
             ["GetDocumentVersionsV1:400"] = ["validation_failed"],
             ["GetDocumentVersionsV1:409"] = ["concurrent_change"],
             ["GetDocumentVersionContentV1:400"] = ["validation_failed"],
-            ["GetDocumentVersionContentV1:409"] = ["document_not_scanned"],
+            ["GetDocumentVersionContentV1:409"] = ["concurrent_change", "document_not_scanned"],
             ["GetSalesContactInformationReferencesV1:400"] = ["validation_failed"],
             ["GetSalesCurrencyReferencesV1:400"] = ["validation_failed"],
         };

@@ -202,7 +202,7 @@ public static class DocumentEndpoints
             .Produces<Stream>(StatusCodes.Status200OK, "application/pdf", "image/png", "image/jpeg")
             .ProducesErpBadRequest(DocumentProblemCodesV1.ValidationFailed)
             .ProducesErpCodeLessNotFound()
-            .ProducesErpConflict(DocumentProblemCodesV1.NotScanned)
+            .ProducesErpConflict(DocumentProblemCodesV1.ConcurrentChange, DocumentProblemCodesV1.NotScanned)
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();
 

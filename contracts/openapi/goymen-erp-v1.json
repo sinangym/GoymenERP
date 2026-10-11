@@ -63257,6 +63257,7 @@
               }
             },
             "x-erp-problem-codes": [
+              "concurrent_change",
               "document_not_scanned"
             ]
           },

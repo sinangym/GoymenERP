@@ -251,6 +251,21 @@ public sealed class DocumentVersionServiceTests
         Assert.Single(world.Versions);
     }
 
+    [Fact]
+    public async Task Version_content_owner_conflict_after_object_read_is_reported_as_concurrent_change()
+    {
+        var world = World();
+        var service = new Harness(CompanyA, new FixedScanner(DocumentScanVerdictV1.Clean), world: world).Grant(Upload, Read);
+        var document = (await service.Service.UploadAsync(Harness.Upload(Party, V1), service.Metadata("version-content-owner-conflict"))).Document;
+        world.Objects.BeforeRead = () => world.OwnerOutcomes[(CompanyA, Party)] = DocumentOwnerAccessV1.Conflict;
+
+        var refusal = await Assert.ThrowsAsync<DocumentServiceException>(() =>
+            service.Service.GetVersionContentAsync(document.Id, 1));
+
+        Assert.Equal(409, refusal.Status);
+        Assert.Equal(DocumentProblemCodesV1.ConcurrentChange, refusal.Code);
+    }
+
     private static Harness.SharedWorld World()
     {
         var world = new Harness.SharedWorld();
