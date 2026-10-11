@@ -36,6 +36,8 @@ const CARI_ROUTE = `/cari/${supplierPartyId}`
 const DEVELOPMENT_USER_HEADER = 'X-Development-User'
 const LIST_HEADING = 'Satın alma siparişleri'
 const DETAIL_HEADING = 'Satın alma siparişi'
+const DETAIL_LINES_TABLE = 'Sipariş kalem miktarları'
+const DETAIL_LINE_LABELS = ['No', 'Ürün ID', 'Sipariş birimi ID', 'Sipariş', 'Teknik', 'Taahhüt', 'Kabul', 'Kalan']
 
 /**
  * The legal name the gated fixture gives its Supplier: the suite's synthetic label followed by
@@ -59,17 +61,28 @@ interface OrderRead {
   readonly supplierDisplay: SupplierDisplay
 }
 
+interface OrderLineRead {
+  readonly productId: string
+  readonly unitId: string
+}
+
+interface OrderDetailRead {
+  readonly order: OrderRead
+  readonly lines: readonly OrderLineRead[]
+}
+
 async function signInAs(page: Page, actor: string): Promise<void> {
   await page.setExtraHTTPHeaders({ [DEVELOPMENT_USER_HEADER]: actor })
 }
 
-/** The seeded order exactly as the real read DTO answers it for this actor; the identity is the server's own. */
-async function readSeededOrder(page: Page, actor: string): Promise<OrderRead> {
+/** The seeded order exactly as the real read DTO answers it for this actor; all expectations bind to that record. */
+async function readSeededOrderDetail(page: Page, actor: string): Promise<OrderDetailRead> {
   const response = await page.request.get(`${env.apiBaseUrl}${ORDERS_PATH}/${orderId}`, {
     headers: { [DEVELOPMENT_USER_HEADER]: actor, 'X-Company-Id': companyId },
   })
   expect(response.status()).toBe(200)
-  const order = ((await response.json()) as { readonly order: OrderRead }).order
+  const detail = (await response.json()) as OrderDetailRead
+  const { order } = detail
   expect(order.id).toBe(orderId)
   expect(order.companyId).toBe(companyId)
   expect(order.supplierPartyId).toBe(supplierPartyId)
@@ -79,7 +92,14 @@ async function readSeededOrder(page: Page, actor: string): Promise<OrderRead> {
   expect(order.supplierDisplay.partyId).toBe(supplierPartyId)
   expect(order.supplierDisplay.code.trim()).not.toBe('')
   expect(order.supplierDisplay.legalName).toBe(FIXTURE_SUPPLIER_LEGAL_NAME)
-  return order
+  expect(detail.lines).toHaveLength(1)
+  expect(detail.lines[0].productId).toMatch(/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i)
+  expect(detail.lines[0].unitId).toMatch(/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i)
+  return detail
+}
+
+async function readSeededOrder(page: Page, actor: string): Promise<OrderRead> {
+  return (await readSeededOrderDetail(page, actor)).order
 }
 
 function identityText(supplier: SupplierDisplay): string {
@@ -260,6 +280,87 @@ test('PUR01-SUP-3 the creator switches GDC → Other → GDC and the departed co
   await expect(supplierCell(page)).toBeVisible({ timeout: 30_000 })
   await expectWholeName(supplierCell(page), supplier, 'the GDC list after returning')
   await expect(supplierCell(page).getByRole('link', { name: identityText(supplier), exact: true })).toHaveAttribute('href', CARI_ROUTE)
+})
+
+test.describe('PUR01-DETAIL-DS the real purchase-order detail on the design system', () => {
+  for (const width of [1440, 768, 390, 320] as const) {
+    test(`PUR01-DETAIL-DS-${width} keeps the real line readable in the intended table/card layout without page overflow`, async ({ page }) => {
+      await page.setViewportSize({ width, height: width >= 768 ? 900 : 844 })
+      await signInAs(page, creatorActor)
+      const detail = await readSeededOrderDetail(page, creatorActor)
+      const supplier = detail.order.supplierDisplay
+      const line = detail.lines[0]
+
+      await page.goto(DETAIL_ROUTE)
+      await expect(page.getByRole('heading', { level: 1, name: DETAIL_HEADING })).toBeVisible({ timeout: 30_000 })
+      await expect(page.getByTestId('purchase-order-status-facts').locator('time')).toHaveAttribute('datetime', '2026-09-23')
+      await expect(page.getByTestId('purchase-order-status-facts').locator('time')).toHaveText('23.09.2026')
+      await expectWholeName(supplierIdentity(page), supplier, `the detail at ${width}`)
+
+      const table = page.getByRole('table', { name: DETAIL_LINES_TABLE })
+      const headers = table.getByRole('columnheader')
+      const row = table.locator('tbody tr').first()
+      const cells = row.getByRole('cell')
+      await expect(table).toBeVisible()
+      await expect(row).toBeVisible()
+      await expect(cells).toHaveCount(DETAIL_LINE_LABELS.length)
+      expect(await cells.evaluateAll((items) => items.map((item) => item.getAttribute('data-label')))).toEqual(DETAIL_LINE_LABELS)
+      await expect(row).toContainText(line.productId)
+      await expect(row).toContainText(line.unitId)
+
+      if (width >= 768) {
+        await expect(headers).toHaveCount(DETAIL_LINE_LABELS.length)
+        for (const header of await headers.all()) await expect(header).toBeVisible()
+        expect(await table.evaluate((element) => getComputedStyle(element).display)).toBe('table')
+        if (width === 768) {
+          const tableWrap = table.locator('..')
+          expect(await tableWrap.evaluate((element) => element.scrollWidth > element.clientWidth)).toBe(true)
+        }
+      } else {
+        // The semantic column headers remain in the accessibility tree while their one-pixel, clipped thead is
+        // not drawn above the labelled cards. Playwright deliberately still resolves those roles as visible, so
+        // assert the actual visual-hiding contract on the owning row group instead of misclassifying its children.
+        const headerPresentation = await table.locator('thead').evaluate((element) => {
+          const style = getComputedStyle(element)
+          const box = element.getBoundingClientRect()
+          return {
+            position: style.position,
+            overflow: style.overflow,
+            clipPath: style.clipPath,
+            width: box.width,
+            height: box.height,
+          }
+        })
+        expect(headerPresentation.position).toBe('absolute')
+        expect(headerPresentation.overflow).toBe('hidden')
+        expect(headerPresentation.clipPath).toBe('inset(50%)')
+        expect(headerPresentation.width).toBeLessThanOrEqual(1)
+        expect(headerPresentation.height).toBeLessThanOrEqual(1)
+        expect(await table.evaluate((element) => getComputedStyle(element).display)).toBe('block')
+        expect(await row.evaluate((element) => getComputedStyle(element).display)).toBe('grid')
+        expect(await cells.evaluateAll((items) => items.every((item) => {
+          const style = getComputedStyle(item)
+          const box = item.getBoundingClientRect()
+          return style.display === 'grid' && box.width > 0 && box.height > 0 && box.left >= -0.5 && box.right <= innerWidth + 0.5
+        }))).toBe(true)
+      }
+      await expectNoPageOverflow(page, `the detail at ${width}`)
+
+      const supplierLink = supplierIdentity(page).getByRole('link', { name: identityText(supplier), exact: true })
+      await expect(supplierLink).toHaveAttribute('href', CARI_ROUTE)
+      if (width === 390) {
+        await supplierLink.focus()
+        await expect(supplierLink).toBeFocused()
+        await page.keyboard.press('Enter')
+        await expect(page).toHaveURL(new RegExp(`${CARI_ROUTE}$`))
+        await page.goBack()
+        await expect(page.getByRole('heading', { level: 1, name: DETAIL_HEADING })).toBeVisible({ timeout: 30_000 })
+      } else if (width === 320) {
+        await supplierLink.click()
+        await expect(page).toHaveURL(new RegExp(`${CARI_ROUTE}$`))
+      }
+    })
+  }
 })
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────────────────────

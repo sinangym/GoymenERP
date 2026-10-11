@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -270,7 +270,9 @@ describe('PurchaseOrderDetailPage document-vault mount', () => {
     renderDetail()
 
     expect(screen.getByTestId('purchase-order-summary').textContent).toContain(ORDER)
-    expect(screen.getByTestId('purchase-order-status-facts').textContent).toContain('2026-09-23')
+    // The business date is shown as the order list shows it; the wire value stays on the element.
+    expect(screen.getByTestId('purchase-order-status-facts').textContent).toContain('23.09.2026')
+    expect(screen.getByTestId('purchase-order-status-facts').textContent).not.toContain('2026-09-23')
     expect(screen.getByTestId('purchase-order-supplier-facts').textContent).toContain('44444444-4444-4444-8444-444444444444')
     expect(screen.getByTestId('purchase-order-supplier-facts').textContent).toContain('55555555-5555-4555-8555-555555555555')
     expect(screen.getByTestId('purchase-order-lines').textContent).toContain('5.7500')
@@ -420,5 +422,135 @@ describe('PurchaseOrderDetailPage goods-receipt capability mount', () => {
     renderDetail()
 
     expect(screen.queryByRole('region', { name: 'Mal kabul paneli' })).toBeNull()
+  })
+})
+
+/**
+ * PURCHASING-DS-DETAIL-01: the order detail on GOY-DS-001. One real table per record set, for every width: from
+ * 768 px a compact table, below it the same rows drawn as labelled cards by the page stylesheet. The cells keep
+ * their roles and their order, so nothing is duplicated and nothing has to be found twice.
+ */
+describe('PurchaseOrderDetailPage on the design system (PURCHASING-DS-DETAIL-01)', () => {
+  const nodeProcess = (globalThis as unknown as {
+    readonly process: { readonly cwd: () => string; readonly getBuiltinModule: (name: string) => unknown }
+  }).process
+  const fs = nodeProcess.getBuiltinModule('node:fs') as { readFileSync(path: string, encoding: 'utf8'): string }
+  const path = nodeProcess.getBuiltinModule('node:path') as { resolve(...segments: string[]): string }
+  // Vitest runs from the web package (`npm test` in src/frontend/goymen-erp-web).
+  const css = fs
+    .readFileSync(path.resolve(nodeProcess.cwd(), 'src/purchasing/PurchaseOrderDetailPage.module.css'), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+  const phone = css.slice(css.indexOf('@media (max-width: 767px)'))
+  const rule = (source: string, selector: string) => {
+    // The last rule for a selector: a grouped rule may name it earlier, its own rule comes after.
+    const start = source.lastIndexOf(`\n${selector} {`)
+    return start < 0 ? '' : source.slice(start, source.indexOf('}', start))
+  }
+  const LINE_LABELS = ['No', T.productId, T.unitId, T.ordered, T.technical, T.committed, T.accepted, T.remaining]
+  const ACCEPTANCE_LABELS = [T.acceptanceId, T.lineNo, T.quantity, T.recordedAtUtc]
+
+  it('is one labelled region under its own heading, not a second main landmark', () => {
+    renderDetail()
+    const heading = screen.getByRole('heading', { level: 1, name: T.heading })
+    const region = screen.getByRole('region', { name: T.heading })
+    expect(region.getAttribute('aria-labelledby')).toBe(heading.id)
+    expect(region.contains(screen.getByTestId('purchase-order-summary'))).toBe(true)
+    expect(document.querySelector('main')).toBeNull()
+  })
+
+  it('shows the business date in Turkish order and keeps the wire date on the time element', () => {
+    renderDetail()
+    const time = screen.getByTestId('purchase-order-status-facts').querySelector('time') as HTMLTimeElement
+    expect(time.textContent).toBe('23.09.2026')
+    expect(time.getAttribute('datetime')).toBe('2026-09-23')
+    expect(time.closest('div')?.querySelector('dt')?.textContent).toBe(T.businessDate)
+  })
+
+  it('draws the lines as one named table whose every cell carries its column and its role', () => {
+    scenario.lines = [serverLine()]
+    renderDetail()
+    const table = screen.getByRole('table', { name: T.linesCaption })
+    expect(screen.getByTestId('purchase-order-lines').querySelectorAll('table')).toHaveLength(1)
+    const headers = within(table).getAllByRole('columnheader')
+    expect(headers.map((header) => header.textContent)).toEqual(LINE_LABELS)
+    expect(headers.every((header) => header.getAttribute('scope') === 'col')).toBe(true)
+    const row = screen.getByTestId('purchase-order-line-7')
+    expect(row.getAttribute('role')).toBe('row')
+    const cells = within(row).getAllByRole('cell')
+    // The label a card shows is the column's own name, in the column's own position.
+    expect(cells.map((cell) => cell.getAttribute('data-label'))).toEqual(LINE_LABELS)
+    expect(cells.map((cell) => cell.textContent)).toEqual([
+      '7', 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', '10', '0', '10', '4.2500', '5.7500',
+    ])
+    expect(cells.every((cell) => cell.tagName === 'TD' && cell.getAttribute('role') === 'cell')).toBe(true)
+  })
+
+  it('draws the acceptance history the same way, with the recorded instant exactly as the server sent it', () => {
+    scenario.lines = [serverLine()]
+    scenario.acceptances = [serverAcceptance()]
+    renderDetail()
+    const table = screen.getByRole('table', { name: T.acceptanceHistoryHeading })
+    expect(within(table).getAllByRole('columnheader').map((header) => header.textContent)).toEqual(ACCEPTANCE_LABELS)
+    const cells = within(screen.getByTestId(`purchase-order-acceptance-${ACCEPTANCE}`)).getAllByRole('cell')
+    expect(cells.map((cell) => cell.getAttribute('data-label'))).toEqual(ACCEPTANCE_LABELS)
+    expect(cells.map((cell) => cell.textContent)).toEqual([ACCEPTANCE, '7', '4.2500', '2026-10-05T18:30:00Z'])
+    expect(cells[3].querySelector('time')?.getAttribute('datetime')).toBe('2026-10-05T18:30:00Z')
+  })
+
+  it('shows the status as text beside the heading, with a tone that is never the only signal', () => {
+    scenario.status = 'Approved'
+    const approved = renderDetail()
+    const tone = document.querySelector('header [data-tone]') as HTMLElement
+    expect([tone.textContent, tone.getAttribute('data-tone')]).toEqual([T.approved, 'success'])
+    approved.unmount()
+    scenario.status = 'Draft'
+    renderDetail()
+    const draft = document.querySelector('header [data-tone]') as HTMLElement
+    expect([draft.textContent, draft.getAttribute('data-tone')]).toEqual([T.draft, 'warning'])
+  })
+
+  it('keeps the related operations in reading order: summary, lines, history, documents, approval, goods receipt', () => {
+    scenario.lines = [serverLine()]
+    scenario.capabilities = ['purchasing.goods-receipts.record']
+    renderDetail()
+    const order = [
+      screen.getByTestId('purchase-order-summary'),
+      screen.getByTestId('purchase-order-lines'),
+      screen.getByTestId('purchase-order-acceptance-history'),
+      screen.getByRole('region', { name: 'Sipariş belge kasası' }),
+      screen.getByRole('button', { name: 'Onayla' }),
+      screen.getByTestId('purchase-order-receipt-action'),
+    ]
+    for (let index = 1; index < order.length; index += 1) {
+      expect(order[index - 1].compareDocumentPosition(order[index]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    }
+    expect(within(screen.getByTestId('purchase-order-receipt-action')).getByRole('region', { name: 'Mal kabul paneli' })).toBeTruthy()
+  })
+
+  it('below 768 px draws the same rows as labelled cards without a second copy (page stylesheet)', () => {
+    expect(css).toContain('@media (max-width: 767px)')
+    // Each cell shows its column's name before its value.
+    expect(rule(phone, '  .table td::before')).toMatch(/content:\s*attr\(data-label\)/)
+    expect(rule(phone, '  .table tr')).toMatch(/border:\s*1px solid/)
+    // The header row is kept for assistive technology, not drawn, and cannot widen the page.
+    expect(rule(phone, '  .table thead')).toMatch(/position:\s*absolute/)
+    expect(rule(phone, '  .table thead')).toMatch(/overflow:\s*hidden/)
+    expect(rule(phone, '  .table thead')).not.toMatch(/display:\s*none/)
+    // The table gives up its desktop minimum width and its sideways scroll.
+    expect(rule(phone, '  .table')).toMatch(/min-width:\s*0/)
+    expect(rule(phone, '  .tableWrap')).toMatch(/overflow-x:\s*visible/)
+    // Values wrap; numbers are no longer pushed to the right edge on one line.
+    expect(rule(phone, '  .table td')).toMatch(/overflow-wrap:\s*anywhere/)
+    expect(rule(phone, '  .number')).toMatch(/white-space:\s*normal/)
+  })
+
+  it('keeps long ids and names wrapping and the page on design-system tokens (page stylesheet)', () => {
+    expect(rule(css, '.identifier')).toMatch(/overflow-wrap:\s*anywhere/)
+    expect(rule(css, '.facts dd')).toMatch(/overflow-wrap:\s*anywhere/)
+    expect(rule(css, '.title')).toMatch(/overflow-wrap:\s*anywhere/)
+    expect(css).not.toMatch(/text-overflow|line-clamp/)
+    expect(css).not.toMatch(/#[0-9a-fA-F]{3,8}\b|rgb\(|hsl\(/)
+    // From 768 px the table scrolls inside its own area instead of widening the page.
+    expect(rule(css, '.tableWrap')).toMatch(/overflow-x:\s*auto/)
   })
 })

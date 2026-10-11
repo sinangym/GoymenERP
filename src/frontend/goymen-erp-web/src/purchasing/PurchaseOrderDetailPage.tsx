@@ -10,7 +10,7 @@ import { contextKey, contextKeyString, hasCapability } from '../shell/shellState
 import { StateBlock } from '../shell/StateBlock'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
 import { pendingApprovalKey, recallPendingApproval, releasePendingApproval, reservePendingApproval, type ApprovalSnapshot } from './pendingApprovalStore'
-import styles from './purchasing.module.css'
+import styles from './PurchaseOrderDetailPage.module.css'
 import { GoodsReceiptPanel } from './GoodsReceiptPanel'
 import { PURCHASE_GOODS_RECEIPT_CAPABILITY } from './goodsReceiptContract'
 import { PURCHASE_ORDER_DETAIL_TEXT as T } from './purchaseOrderDetailText'
@@ -21,6 +21,45 @@ import { OWNER_KIND } from '../documents/contract'
 import { Button } from '../ui/Button'
 import { StatusIndicator } from '../ui/StatusIndicator'
 
+const HEADING_ID = 'purchase-order-detail-heading'
+
+/**
+ * Presentation only: the wire's `yyyy-MM-dd` business date in Turkish order, as the order list shows it. The value
+ * is not reinterpreted — anything that is not a wire date is shown as received.
+ */
+function formatBusinessDate(value: string): string {
+  const parts = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value)
+  return parts === null ? value : `${parts[3]}.${parts[2]}.${parts[1]}`
+}
+
+/**
+ * One real table for both widths. The roles are written on the elements because below 768 px the stylesheet draws
+ * each row as a labelled card (`data-label` before each value) and a restyled table would otherwise lose its
+ * semantics; the cells stay cells for assistive technology and for the acceptance specs alike.
+ */
+function RecordTable({ label, columns, children }: {
+  readonly label: string
+  readonly columns: readonly { readonly name: string; readonly numeric?: boolean }[]
+  readonly children: ReactNode
+}) {
+  return <div className={styles.tableWrap}>
+    <table className={styles.table} role="table" aria-label={label}>
+      <thead role="rowgroup"><tr role="row">{columns.map((column) =>
+        <th key={column.name} role="columnheader" scope="col" className={column.numeric ? styles.number : undefined}>{column.name}</th>)}</tr></thead>
+      <tbody role="rowgroup">{children}</tbody>
+    </table>
+  </div>
+}
+
+function Cell({ label, numeric, identifier, children }: {
+  readonly label: string
+  readonly numeric?: boolean
+  readonly identifier?: boolean
+  readonly children: ReactNode
+}) {
+  return <td role="cell" data-label={label} className={numeric ? styles.number : identifier ? styles.identifier : undefined}>{children}</td>
+}
+
 function newId(): string {
   if (typeof globalThis.crypto?.randomUUID === 'function') return globalThis.crypto.randomUUID()
   const bytes = Array.from({ length: 16 }, () => Math.floor(Math.random() * 256))
@@ -28,6 +67,16 @@ function newId(): string {
   const hex = bytes.map((value) => value.toString(16).padStart(2, '0')).join('')
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
 }
+
+const LINE_NO = 'No'
+const LINE_COLUMNS = [
+  { name: LINE_NO }, { name: T.productId }, { name: T.unitId },
+  { name: T.ordered, numeric: true }, { name: T.technical, numeric: true }, { name: T.committed, numeric: true },
+  { name: T.accepted, numeric: true }, { name: T.remaining, numeric: true },
+] as const
+const ACCEPTANCE_COLUMNS = [
+  { name: T.acceptanceId }, { name: T.lineNo }, { name: T.quantity, numeric: true }, { name: T.recordedAtUtc },
+] as const
 
 export function PurchaseOrderDetailPage() {
   const shell = useShellState()
@@ -105,16 +154,16 @@ function PurchaseOrderDetail({ namespace }: { readonly namespace: string | null 
     if (result.type === 'applied' || result.status === 409) await query.refetch()
   }, [actorId, boundary, companyId, orderId, query, state, storeKey])
 
-  const frame = (child: ReactNode, status?: ReactNode) => <main className={styles.order360Page}>
-    <header className={styles.order360Header}>
-      <div className={styles.order360HeaderCopy}>
-        <p className={styles.order360Eyebrow}>{T.eyebrow}</p>
-        <h1 className={styles.order360Title}>{T.heading}</h1>
+  const frame = (child: ReactNode, status?: ReactNode) => <section className={styles.page} aria-labelledby={HEADING_ID}>
+    <header className={styles.header}>
+      <div className={styles.headerCopy}>
+        <p className={styles.eyebrow}>{T.eyebrow}</p>
+        <h1 id={HEADING_ID} className={styles.title}>{T.heading}</h1>
       </div>
       {status}
     </header>
     {child}
-  </main>
+  </section>
   if (companyId === null) return frame(<StateBlock state={{ kind: 'no-authorized-company' }} subject="satın alma siparişi" />)
   if (state.kind !== 'ready') return frame(<StateBlock state={state} subject="satın alma siparişi" onRetry={() => void query.refetch()} />)
   const { order, lines, acceptances } = state.data
@@ -127,30 +176,48 @@ function PurchaseOrderDetail({ namespace }: { readonly namespace: string | null 
       ? <p role="alert" className={styles.error}>Onay kaydedilmedi ({attempt.code ?? attempt.status}). Kayıt yeniden okundu.</p>
       : null
   return frame(<>
-    <section className={styles.order360Section} aria-labelledby="purchase-order-summary-heading" data-testid="purchase-order-summary">
+    <section className={styles.section} aria-labelledby="purchase-order-summary-heading" data-testid="purchase-order-summary">
       <h2 id="purchase-order-summary-heading">{T.summaryHeading}</h2>
-      <dl className={styles.order360Facts} data-testid="purchase-order-status-facts">
-        <div><dt>{T.orderId}</dt><dd className={styles.order360Identifier}>{order.id}</dd></div>
+      <dl className={styles.facts} data-testid="purchase-order-status-facts">
+        <div><dt>{T.orderId}</dt><dd className={styles.identifier}>{order.id}</dd></div>
         <div><dt>{T.version}</dt><dd>{order.version}</dd></div>
-        <div><dt>{T.businessDate}</dt><dd>{order.effectiveOn}</dd></div>
-        <div><dt>{T.sourceRequest}</dt><dd className={styles.order360Identifier}>{order.sourceRequestId === null ? T.sourceNotLinked : canReadSourceRequest && namespace !== null && order.id === orderId && order.companyId === companyId ? <Link className={styles.order360Link} to={purchaseRequestDetailPath(order.sourceRequestId)} state={{ ns: namespace, requestId: order.sourceRequestId, orderId: order.id }}>{order.sourceRequestId}</Link> : order.sourceRequestId}</dd></div>
+        <div><dt>{T.businessDate}</dt><dd><time dateTime={order.effectiveOn}>{formatBusinessDate(order.effectiveOn)}</time></dd></div>
+        <div><dt>{T.sourceRequest}</dt><dd className={styles.identifier}>{order.sourceRequestId === null ? T.sourceNotLinked : canReadSourceRequest && namespace !== null && order.id === orderId && order.companyId === companyId ? <Link className={styles.link} to={purchaseRequestDetailPath(order.sourceRequestId)} state={{ ns: namespace, requestId: order.sourceRequestId, orderId: order.id }}>{order.sourceRequestId}</Link> : order.sourceRequestId}</dd></div>
       </dl>
       <h3>{T.supplierHeading}</h3>
-      <dl className={styles.order360Facts} data-testid="purchase-order-supplier-facts">
+      <dl className={styles.facts} data-testid="purchase-order-supplier-facts">
         <div data-testid="purchase-order-supplier-identity"><dt>{T.supplierIdentity}</dt><dd><PurchaseOrderSupplierIdentity order={order} canOpenParty={canOpenParty && isCurrentDetail} /></dd></div>
-        <div><dt>{T.supplierPartyId}</dt><dd className={styles.order360Identifier}>{order.supplierPartyId}</dd></div>
-        <div><dt>{T.supplierAccountId}</dt><dd className={styles.order360Identifier}>{order.companyAccountId}</dd></div>
+        <div><dt>{T.supplierPartyId}</dt><dd className={styles.identifier}>{order.supplierPartyId}</dd></div>
+        <div><dt>{T.supplierAccountId}</dt><dd className={styles.identifier}>{order.companyAccountId}</dd></div>
       </dl>
     </section>
-    <section className={styles.order360Section} aria-labelledby="purchase-order-lines-heading" data-testid="purchase-order-lines">
+    <section className={styles.section} aria-labelledby="purchase-order-lines-heading" data-testid="purchase-order-lines">
       <h2 id="purchase-order-lines-heading">{T.linesHeading}</h2>
-      <div className={styles.order360TableWrap}><table className={styles.order360Table} aria-label={T.linesCaption}><thead><tr><th>No</th><th>{T.productId}</th><th>{T.unitId}</th><th className={styles.order360Number}>{T.ordered}</th><th className={styles.order360Number}>{T.technical}</th><th className={styles.order360Number}>{T.committed}</th><th className={styles.order360Number}>{T.accepted}</th><th className={styles.order360Number}>{T.remaining}</th></tr></thead><tbody>{lines.map((line) => <tr key={line.lineId} data-testid={`purchase-order-line-${line.lineNo}`}><td>{line.lineNo}</td><td className={styles.order360Identifier}>{line.productId}</td><td className={styles.order360Identifier}>{line.unitId}</td><td className={styles.order360Number}>{line.ordered}</td><td className={styles.order360Number}>{line.technical}</td><td className={styles.order360Number}>{line.committed}</td><td className={styles.order360Number}>{line.accepted}</td><td className={styles.order360Number}>{line.remaining}</td></tr>)}</tbody></table></div>
+      <RecordTable label={T.linesCaption} columns={LINE_COLUMNS}>
+        {lines.map((line) => <tr key={line.lineId} role="row" data-testid={`purchase-order-line-${line.lineNo}`}>
+          <Cell label={LINE_NO}>{line.lineNo}</Cell>
+          <Cell label={T.productId} identifier>{line.productId}</Cell>
+          <Cell label={T.unitId} identifier>{line.unitId}</Cell>
+          <Cell label={T.ordered} numeric>{line.ordered}</Cell>
+          <Cell label={T.technical} numeric>{line.technical}</Cell>
+          <Cell label={T.committed} numeric>{line.committed}</Cell>
+          <Cell label={T.accepted} numeric>{line.accepted}</Cell>
+          <Cell label={T.remaining} numeric>{line.remaining}</Cell>
+        </tr>)}
+      </RecordTable>
     </section>
-    {isCurrentDetail ? <section className={styles.order360Section} aria-labelledby="purchase-order-acceptance-history-heading" data-testid="purchase-order-acceptance-history">
+    {isCurrentDetail ? <section className={styles.section} aria-labelledby="purchase-order-acceptance-history-heading" data-testid="purchase-order-acceptance-history">
       <h2 id="purchase-order-acceptance-history-heading">{T.acceptanceHistoryHeading}</h2>
       {acceptances.length === 0
         ? <p>{T.acceptanceHistoryEmpty}</p>
-        : <div className={styles.order360TableWrap}><table className={styles.order360Table}><thead><tr><th>{T.acceptanceId}</th><th>{T.lineNo}</th><th className={styles.order360Number}>{T.quantity}</th><th>{T.recordedAtUtc}</th></tr></thead><tbody>{acceptances.map((acceptance) => <tr key={acceptance.acceptanceId} data-testid={`purchase-order-acceptance-${acceptance.acceptanceId}`}><td className={styles.order360Identifier}>{acceptance.acceptanceId}</td><td>{lineNoById.get(acceptance.lineId) ?? T.lineUnavailable}</td><td className={styles.order360Number}>{acceptance.quantity}</td><td><time dateTime={acceptance.recordedAtUtc}>{acceptance.recordedAtUtc}</time></td></tr>)}</tbody></table></div>}
+        : <RecordTable label={T.acceptanceHistoryHeading} columns={ACCEPTANCE_COLUMNS}>
+          {acceptances.map((acceptance) => <tr key={acceptance.acceptanceId} role="row" data-testid={`purchase-order-acceptance-${acceptance.acceptanceId}`}>
+            <Cell label={T.acceptanceId} identifier>{acceptance.acceptanceId}</Cell>
+            <Cell label={T.lineNo}>{lineNoById.get(acceptance.lineId) ?? T.lineUnavailable}</Cell>
+            <Cell label={T.quantity} numeric>{acceptance.quantity}</Cell>
+            <Cell label={T.recordedAtUtc}><time dateTime={acceptance.recordedAtUtc}>{acceptance.recordedAtUtc}</time></Cell>
+          </tr>)}
+        </RecordTable>}
     </section> : null}
     {isCurrentDetail && namespace !== null ? <DocumentsPanel
       ownerKind={OWNER_KIND.purchasingPurchaseOrder}
@@ -160,10 +227,10 @@ function PurchaseOrderDetail({ namespace }: { readonly namespace: string | null 
       entryGeneration={shell.routeEntryGeneration}
     /> : null}
     {canApprove ? outcomeNotice : null}
-    {canApprove && (order.status === 'Draft' || unresolved) ? <section className={styles.order360Section}><h2>{T.approvalHeading}</h2><p>{T.approvalNote}</p>{attempt.phase === 'unknown' ? <p role="alert" className={styles.warning}>Sonuç bilinmiyor. Yeni işlem başlatmadan aynı anahtar ve sürümle yeniden gönderin.</p> : null}<Button type="button" variant="primary" disabled={attempt.phase === 'submitting'} onClick={() => void sendApproval(attempt.phase === 'unknown' ? attempt.snapshot : undefined)}>{attempt.phase === 'submitting' ? 'Gönderiliyor…' : attempt.phase === 'unknown' ? 'Aynı onayı yeniden gönder' : 'Onayla'}</Button></section> : null}
+    {canApprove && (order.status === 'Draft' || unresolved) ? <section className={styles.section}><h2>{T.approvalHeading}</h2><p>{T.approvalNote}</p>{attempt.phase === 'unknown' ? <p role="alert" className={styles.warning}>Sonuç bilinmiyor. Yeni işlem başlatmadan aynı anahtar ve sürümle yeniden gönderin.</p> : null}<Button type="button" variant="primary" disabled={attempt.phase === 'submitting'} onClick={() => void sendApproval(attempt.phase === 'unknown' ? attempt.snapshot : undefined)}>{attempt.phase === 'submitting' ? 'Gönderiliyor…' : attempt.phase === 'unknown' ? 'Aynı onayı yeniden gönder' : 'Onayla'}</Button></section> : null}
     {namespace !== null && hasCapability(shell, PURCHASE_GOODS_RECEIPT_CAPABILITY as never)
-      ? <div className={styles.order360Section} data-testid="purchase-order-receipt-action"><GoodsReceiptPanel enabled
+      ? <div className={styles.section} data-testid="purchase-order-receipt-action"><GoodsReceiptPanel enabled
           binding={namespace} detail={state.data} onRecorded={() => void query.refetch()} /></div>
       : null}
-  </>, <StatusIndicator className={styles.order360Status} tone={order.status === 'Approved' ? 'success' : 'warning'}>{order.status === 'Approved' ? T.approved : T.draft}</StatusIndicator>)
+  </>, <StatusIndicator className={styles.status} tone={order.status === 'Approved' ? 'success' : 'warning'}>{order.status === 'Approved' ? T.approved : T.draft}</StatusIndicator>)
 }
