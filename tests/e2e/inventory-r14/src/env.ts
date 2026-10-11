@@ -12,6 +12,8 @@ export interface R14Seed {
   readonly scrapperActor: string
   /** ST-02 scrap: the ONLY holder of inventory.stock-scrap.approve (disposable), never the scrapper. */
   readonly scrapApproverActor: string
+  /** D-05: a separate disposable approver holding both existing Inventory approve capabilities. */
+  readonly bothApproverActor: string
   readonly companyId: string
   readonly otherCompanyId: string
   readonly locationId: string
@@ -67,7 +69,7 @@ export function readEnvironment(): R14Environment {
 
   const raw = JSON.parse(required('BROWSER_E2E_R14_SEED')) as Record<string, unknown>
   const expectedKeys: (keyof R14Seed)[] = [
-    'recorderActor', 'deniedActor', 'arrangerActor', 'transformerActor', 'counterActor', 'countApproverActor', 'scrapperActor', 'scrapApproverActor', 'companyId', 'otherCompanyId', 'locationId',
+    'recorderActor', 'deniedActor', 'arrangerActor', 'transformerActor', 'counterActor', 'countApproverActor', 'scrapperActor', 'scrapApproverActor', 'bothApproverActor', 'companyId', 'otherCompanyId', 'locationId',
     'productId', 'productVersion', 'productUnitId', 'productUnitProfileId',
     'productUnitProfileVersion', 'productCode', 'productName', 'ownerPartyId', 'ownerCompanyAccountId',
   ]
@@ -79,6 +81,7 @@ export function readEnvironment(): R14Environment {
     arrangerActor: text(raw, 'arrangerActor'), transformerActor: text(raw, 'transformerActor'),
     counterActor: text(raw, 'counterActor'), countApproverActor: text(raw, 'countApproverActor'),
     scrapperActor: text(raw, 'scrapperActor'), scrapApproverActor: text(raw, 'scrapApproverActor'),
+    bothApproverActor: text(raw, 'bothApproverActor'),
     companyId: text(raw, 'companyId', GUID),
     otherCompanyId: text(raw, 'otherCompanyId', GUID), locationId: text(raw, 'locationId', GUID),
     productId: text(raw, 'productId', GUID), productVersion: text(raw, 'productVersion', VERSION),
@@ -90,7 +93,8 @@ export function readEnvironment(): R14Environment {
     ownerCompanyAccountId: text(raw, 'ownerCompanyAccountId', GUID),
   }
   if (new Set([seed.recorderActor, seed.deniedActor, seed.arrangerActor, seed.transformerActor,
-    seed.counterActor, seed.countApproverActor, seed.scrapperActor, seed.scrapApproverActor]).size !== 8 ||
+    seed.counterActor, seed.countApproverActor, seed.scrapperActor, seed.scrapApproverActor,
+    seed.bothApproverActor]).size !== 9 ||
       seed.companyId === seed.otherCompanyId || seed.productCode !== 'SAC-1' ||
       seed.ownerPartyId === seed.ownerCompanyAccountId ||
       [seed.companyId, seed.otherCompanyId].includes(seed.ownerPartyId) ||

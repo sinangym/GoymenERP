@@ -1,8 +1,10 @@
 /**
  * D-05 "Onaylarım" — the approval inbox: the native approvals waiting for the signed-in actor in the committed company,
  * read through the Work read (#639/#644/#645), one connected source at a time, each record opening its owner's own
- * screen. Connected: Finance official-invoice-import batches (Finance's approval screen, #640 `?approvalId=`) and Sales
- * order drafts awaiting internal approval (the Sales order screen, `/satis/siparisler/{draftId}`).
+ * screen. Connected: Finance official-invoice-import batches (Finance's approval screen, #640 `?approvalId=`), Sales
+ * order drafts awaiting internal approval (the Sales order screen, `/satis/siparisler/{draftId}`), and Inventory
+ * stock-count differences and stock scraps awaiting their decision (#667; the label's own screen, `/stok/etiket/{labelId}`,
+ * where the count/scrap panel decides).
  *
  * Read only. There is no approve button here and no approval rule: who sees a record, what may be approved and how
  * (authority, separation of duties, versions) all stay with the owner. A source is listed only for the owner's own
@@ -16,7 +18,14 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link, useParams, useSearchParams } from 'react-router'
 import { fetchApprovalDetail, fetchApprovalPage } from './approvalInboxApi'
-import type { ApprovalItem, FinanceApprovalItem, SalesApprovalItem } from './approvalInboxContract'
+import type {
+  ApprovalItem,
+  FinanceApprovalItem,
+  InventoryApprovalItem,
+  InventoryStockCountApprovalItem,
+  InventoryStockScrapApprovalItem,
+  SalesApprovalItem,
+} from './approvalInboxContract'
 import {
   APPROVAL_KIND_TEXT,
   APPROVAL_SOURCES,
@@ -25,9 +34,11 @@ import {
   WORK_ROUTE,
   approvalDetailRoute,
   formatInstant,
+  formatSignedKg,
   sourceOfKind,
   type ApprovalSource,
 } from './workText'
+import { custodianText, formatKg, ownerText } from '../inventory/stockPositionText'
 import { classifyOutcome, type RemoteViewState } from '../shell/uiState'
 import { useShellState } from '../shell/shellContext'
 import { contextKey, contextKeyString, hasCapability, type ShellState } from '../shell/shellState'
@@ -55,11 +66,14 @@ function PilotScope() {
   </div>
 }
 
-/** The record's own screen, when the actor holds that screen's own capability; otherwise no link is drawn. */
-function NativeLink({ source, approvalId, className }: { readonly source: ApprovalSource; readonly approvalId: string; readonly className?: string }) {
+/**
+ * The record's own screen, when the actor holds that screen's own capability; otherwise no link is drawn. The target
+ * is built from the verified item itself (its approval id, or for Inventory its label id) — never from the address.
+ */
+function NativeLink({ source, item, className }: { readonly source: ApprovalSource; readonly item: ApprovalItem; readonly className?: string }) {
   const shell = useShellState()
-  if (!hasCapability(shell, source.nativeCapability)) return null
-  return <Link className={className} to={source.nativePath(approvalId)}>{source.openNative}</Link>
+  if (item.kind !== source.kind || !hasCapability(shell, source.nativeCapability)) return null
+  return <Link className={className} to={source.nativePath(item)}>{source.openNative}</Link>
 }
 
 /**
@@ -215,9 +229,7 @@ function SourceInbox({ source, generation, closed, onClosed, onRestart }: {
       : <div className={styles.tableWrap} tabIndex={0} role="region" aria-label={source.caption}>
         <table className={styles.table} data-testid="work-approvals-table" data-kind={source.kind}>
           <caption className={styles.caption}>{source.caption}</caption>
-          {source.kind === 'sales.order-draft.v1'
-            ? <SalesRows rows={rows as readonly SalesApprovalItem[]} source={source} />
-            : <FinanceRows rows={rows as readonly FinanceApprovalItem[]} source={source} />}
+          <SourceRows rows={rows} source={source} />
         </table>
       </div>}
     {rows.length === 0 ? null : <div className={styles.continuation}>
@@ -236,10 +248,24 @@ function SourceInbox({ source, generation, closed, onClosed, onRestart }: {
   </>
 }
 
-function RecordLinks({ source, approvalId }: { readonly source: ApprovalSource; readonly approvalId: string }) {
+/** The rows of ONE source: only items of that source's own kind are drawn, each by its kind's own columns. */
+function SourceRows({ rows, source }: { readonly rows: readonly ApprovalItem[]; readonly source: ApprovalSource }) {
+  switch (source.kind) {
+    case 'finance.official-invoice-import.v1':
+      return <FinanceRows rows={rows.filter((row): row is FinanceApprovalItem => row.kind === source.kind)} source={source} />
+    case 'sales.order-draft.v1':
+      return <SalesRows rows={rows.filter((row): row is SalesApprovalItem => row.kind === source.kind)} source={source} />
+    case 'inventory.stock-count.v1':
+      return <StockCountRows rows={rows.filter((row): row is InventoryStockCountApprovalItem => row.kind === source.kind)} source={source} />
+    case 'inventory.stock-scrap.v1':
+      return <StockScrapRows rows={rows.filter((row): row is InventoryStockScrapApprovalItem => row.kind === source.kind)} source={source} />
+  }
+}
+
+function RecordLinks({ source, item }: { readonly source: ApprovalSource; readonly item: ApprovalItem }) {
   return <td className={styles.actions}>
-    <Link to={approvalDetailRoute(source.kind, approvalId)}>{T.openDetail}</Link>
-    <NativeLink source={source} approvalId={approvalId} />
+    <Link to={approvalDetailRoute(source.kind, item.approvalId)}>{T.openDetail}</Link>
+    <NativeLink source={source} item={item} />
   </td>
 }
 
@@ -257,7 +283,7 @@ function FinanceRows({ rows, source }: { readonly rows: readonly FinanceApproval
       <td>{row.submittedBy}</td>
       <td>{formatInstant(row.submittedAtUtc)}</td>
       <td className={styles.numeric}>{row.itemCount}</td>
-      <RecordLinks source={source} approvalId={row.approvalId} />
+      <RecordLinks source={source} item={row} />
     </tr>)}</tbody>
   </>
 }
@@ -278,8 +304,87 @@ function SalesRows({ rows, source }: { readonly rows: readonly SalesApprovalItem
       <td>{row.submittedBy}</td>
       <td>{formatInstant(row.submittedAtUtc)}</td>
       <td>{row.isOwnDraft ? T.ownDraftYes : '—'}</td>
-      <RecordLinks source={source} approvalId={row.approvalId} />
+      <RecordLinks source={source} item={row} />
     </tr>)}</tbody>
+  </>
+}
+
+/**
+ * Inventory rows. The producer publishes ids, kilograms and the reason — no label code — so the label is named by its
+ * id, the same id the label screen opens with. Kilograms are the producer's own text in Turkish digits, never summed.
+ */
+function StockCountRows({ rows, source }: { readonly rows: readonly InventoryStockCountApprovalItem[]; readonly source: ApprovalSource }) {
+  return <>
+    <thead><tr>
+      <th scope="col">{T.labelId}</th>
+      <th scope="col" className={styles.numeric}>{T.bookKg}</th>
+      <th scope="col" className={styles.numeric}>{T.countedKg}</th>
+      <th scope="col" className={styles.numeric}>{T.differenceKg}</th>
+      <th scope="col">{T.reason}</th>
+      <th scope="col">{T.submittedBy}</th>
+      <th scope="col">{T.submittedAt}</th>
+      <th scope="col">{T.record}</th>
+    </tr></thead>
+    <tbody>{rows.map((row) => <tr key={row.approvalId} data-approval-id={row.approvalId} data-label-id={row.labelId}>
+      <td>{row.labelId}</td>
+      <td className={styles.numeric}>{formatKg(row.bookKg)}</td>
+      <td className={styles.numeric}>{formatKg(row.countedKg)}</td>
+      <td className={styles.numeric}>{formatSignedKg(row.differenceKg)}</td>
+      <td>{row.reason}</td>
+      <td>{row.submittedBy}</td>
+      <td>{formatInstant(row.submittedAtUtc)}</td>
+      <RecordLinks source={source} item={row} />
+    </tr>)}</tbody>
+  </>
+}
+
+function StockScrapRows({ rows, source }: { readonly rows: readonly InventoryStockScrapApprovalItem[]; readonly source: ApprovalSource }) {
+  return <>
+    <thead><tr>
+      <th scope="col">{T.labelId}</th>
+      <th scope="col" className={styles.numeric}>{T.bookKg}</th>
+      <th scope="col" className={styles.numeric}>{T.scrapKg}</th>
+      <th scope="col" className={styles.numeric}>{T.remainingKg}</th>
+      <th scope="col">{T.reason}</th>
+      <th scope="col">{T.submittedBy}</th>
+      <th scope="col">{T.submittedAt}</th>
+      <th scope="col">{T.record}</th>
+    </tr></thead>
+    <tbody>{rows.map((row) => <tr key={row.approvalId} data-approval-id={row.approvalId} data-label-id={row.labelId}>
+      <td>{row.labelId}</td>
+      <td className={styles.numeric}>{formatKg(row.bookKg)}</td>
+      <td className={styles.numeric}>{formatKg(row.scrapKg)}</td>
+      <td className={styles.numeric}>{formatKg(row.remainingKg)}</td>
+      <td>{row.reason}</td>
+      <td>{row.submittedBy}</td>
+      <td>{formatInstant(row.submittedAtUtc)}</td>
+      <RecordLinks source={source} item={row} />
+    </tr>)}</tbody>
+  </>
+}
+
+/** The label and position facts a count and a scrap share, in the stock screen's own words for owner and holder. */
+function InventoryFacts({ item, companyId }: { readonly item: InventoryApprovalItem; readonly companyId: string }) {
+  return <>
+    <div><dt>{T.labelId}</dt><dd>{item.labelId}</dd></div>
+    <div><dt>{T.status}</dt><dd>{T.statusPending}</dd></div>
+    <div><dt>{T.bookKg}</dt><dd>{formatKg(item.bookKg)}</dd></div>
+    {item.kind === 'inventory.stock-count.v1'
+      ? <>
+        <div><dt>{T.countedKg}</dt><dd>{formatKg(item.countedKg)}</dd></div>
+        <div><dt>{T.differenceKg}</dt><dd>{formatSignedKg(item.differenceKg)}</dd></div>
+      </>
+      : <>
+        <div><dt>{T.scrapKg}</dt><dd>{formatKg(item.scrapKg)}</dd></div>
+        <div><dt>{T.remainingKg}</dt><dd>{formatKg(item.remainingKg)}</dd></div>
+      </>}
+    <div><dt>{T.reason}</dt><dd>{item.reason}</dd></div>
+    <div><dt>{T.block}</dt><dd>{item.block === 'Blocked' ? T.blockBlocked : T.blockFree}</dd></div>
+    <div><dt>{T.owner}</dt><dd>{ownerText(item.ownerKind, item.ownerId, companyId)}</dd></div>
+    <div><dt>{T.custodian}</dt><dd>{custodianText(item.custodianKind, item.custodianId, companyId)}</dd></div>
+    <div><dt>{T.labelVersion}</dt><dd>{item.labelVersion}</dd></div>
+    <div><dt>{T.submittedBy}</dt><dd>{item.submittedBy}</dd></div>
+    <div><dt>{T.submittedAt}</dt><dd>{formatInstant(item.submittedAtUtc)}</dd></div>
   </>
 }
 
@@ -318,15 +423,24 @@ function ApprovalDetail({ source, approvalId }: { readonly source: ApprovalSourc
     </section>
   }
   const { item } = outcome.data
+  // The answer was decoded as this source's kind; an item of any other kind is not this record and is not drawn.
+  if (item.kind !== source.kind) {
+    return <section className={styles.page} aria-label={T.detailSubject}>
+      {backLink}
+      <StateBlock state={{ kind: 'malformed-response' }} subject={T.detailSubject} onRetry={() => void query.refetch()} />
+    </section>
+  }
   return <article className={styles.page} aria-labelledby="work-approval-heading">
     {backLink}
     <header className={styles.header}>
-      <h1 id="work-approval-heading">{item.kind === 'sales.order-draft.v1' ? T.detailHeadingSales : T.detailHeading}</h1>
+      <h1 id="work-approval-heading">{source.detailHeading}</h1>
       <PilotScope />
     </header>
-    <dl className={styles.facts} data-testid="work-approval-facts">
+    <dl className={styles.facts} data-testid="work-approval-facts" data-kind={item.kind}>
       <div><dt>{T.kind}</dt><dd>{APPROVAL_KIND_TEXT[item.kind]}</dd></div>
-      {item.kind === 'sales.order-draft.v1'
+      {item.kind === 'inventory.stock-count.v1' || item.kind === 'inventory.stock-scrap.v1'
+        ? <InventoryFacts item={item} companyId={companyId as string} />
+        : item.kind === 'sales.order-draft.v1'
         ? <>
           <div><dt>{T.documentNo}</dt><dd>{item.documentNo}</dd></div>
           <div><dt>{T.status}</dt><dd>{T.statusPending}</dd></div>
@@ -345,6 +459,6 @@ function ApprovalDetail({ source, approvalId }: { readonly source: ApprovalSourc
           <div><dt>{T.batchVersion}</dt><dd>{item.batchVersion}</dd></div>
         </>}
     </dl>
-    <p><NativeLink className={styles.primaryLink} source={source} approvalId={item.approvalId} /></p>
+    <p><NativeLink className={styles.primaryLink} source={source} item={item} /></p>
   </article>
 }

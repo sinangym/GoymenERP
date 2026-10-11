@@ -8,13 +8,14 @@
 # inventory.label-transformation.record, beside the label/balance reads of its label detail. No real user and
 # no seeded role receives the name; the real-user mapping stays with persona #66/5802952566.
 # AT-037 stock count (user decision 2026-09-27): the disposable r14-counter is the ONLY holder of
-# inventory.stock-count.record and the disposable r14-count-approver the ONLY holder of inventory.stock-count.approve,
-# each beside the label/balance reads of the label detail — two different actors (maker ≠ checker). No real user and
-# no seeded role receives either name.
+# inventory.stock-count.record and the disposable r14-count-approver the count-only holder of
+# inventory.stock-count.approve, each beside the label/balance reads of the label detail — two different actors
+# (maker ≠ checker). D-05 adds one separate disposable combined approver below; no real user receives either name.
 # ST-02 scrap write-off (the AT-037 pattern, maker ≠ checker for every scrap while the scrap approval authority is
 # undecided): the disposable r14-scrapper is the ONLY holder of inventory.stock-scrap.record and the disposable
-# r14-scrap-approver the ONLY holder of inventory.stock-scrap.approve, each beside the label/balance reads. No real
-# user and no seeded role receives either name. r14 now has 8 suite actors (MAX_SUITE_ACTORS).
+# r14-scrap-approver the scrap-only holder of inventory.stock-scrap.approve, each beside the label/balance reads.
+# D-05 adds r14-both-approver with both existing approve names so Work's source separation is exercised by one real
+# actor without adding a Work permission or changing a production grant. r14 alone has 9 disposable suite actors.
 # STOCK-OWNER-DISPLAY-3 (#664 consumer): no actor is added. The disposable recorder additionally holds
 # counterparty.parties.read — the name the real opening command already requires for a Cari-owned count, and the
 # one behind the Cari card link — and the disposable arranger additionally holds counterparty.parties.create so the
@@ -45,6 +46,8 @@ services:
       BootstrapIdentity__Users__8__DisplayName: SENTETIK browser-suite:r14 Inventory scrap recorder
       BootstrapIdentity__Users__9__UserId: r14-scrap-approver
       BootstrapIdentity__Users__9__DisplayName: SENTETIK browser-suite:r14 Inventory scrap approver
+      BootstrapIdentity__Users__10__UserId: r14-both-approver
+      BootstrapIdentity__Users__10__DisplayName: SENTETIK browser-suite:r14 Inventory combined approver
       IdentitySeed__Users__5__Id: b2000000-0000-4000-8000-000000000701
       IdentitySeed__Users__5__DisplayName: SENTETIK browser-suite:r14 Inventory recorder
       IdentitySeed__Users__5__ExternalIdentities__0__Id: b2100000-0000-4000-8000-000000000701
@@ -90,6 +93,11 @@ services:
       IdentitySeed__Users__13__ExternalIdentities__0__Id: b2100000-0000-4000-8000-000000000708
       IdentitySeed__Users__13__ExternalIdentities__0__Issuer: urn:goymen:development-bootstrap
       IdentitySeed__Users__13__ExternalIdentities__0__Subject: r14-scrap-approver
+      IdentitySeed__Users__14__Id: b2000000-0000-4000-8000-000000000709
+      IdentitySeed__Users__14__DisplayName: SENTETIK browser-suite:r14 Inventory combined approver
+      IdentitySeed__Users__14__ExternalIdentities__0__Id: b2100000-0000-4000-8000-000000000709
+      IdentitySeed__Users__14__ExternalIdentities__0__Issuer: urn:goymen:development-bootstrap
+      IdentitySeed__Users__14__ExternalIdentities__0__Subject: r14-both-approver
       IdentitySeed__Roles__5__Id: b3000000-0000-4000-8000-000000000701
       IdentitySeed__Roles__5__Code: BROWSER_R14_RECORDER
       IdentitySeed__Roles__5__Name: SENTETIK browser-suite:r14 Inventory recorder
@@ -160,6 +168,15 @@ services:
       IdentitySeed__Roles__12__Permissions__1: inventory.balances.read
       IdentitySeed__Roles__12__Permissions__2: inventory.stock-scrap.approve
       IdentitySeed__Roles__12__Permissions__3: product.operational-selection.read
+      IdentitySeed__Roles__13__Id: b3000000-0000-4000-8000-000000000709
+      IdentitySeed__Roles__13__Code: BROWSER_R14_BOTH_APPROVER
+      IdentitySeed__Roles__13__Name: SENTETIK browser-suite:r14 Inventory combined approver
+      IdentitySeed__Roles__13__IsSystem: "false"
+      IdentitySeed__Roles__13__Permissions__0: inventory.labels.read
+      IdentitySeed__Roles__13__Permissions__1: inventory.balances.read
+      IdentitySeed__Roles__13__Permissions__2: inventory.stock-count.approve
+      IdentitySeed__Roles__13__Permissions__3: inventory.stock-scrap.approve
+      IdentitySeed__Roles__13__Permissions__4: product.operational-selection.read
       IdentitySeed__Assignments__7__Id: b4000000-0000-4000-8000-000000000701
       IdentitySeed__Assignments__7__UserId: b2000000-0000-4000-8000-000000000701
       IdentitySeed__Assignments__7__RoleId: b3000000-0000-4000-8000-000000000701
@@ -224,3 +241,11 @@ services:
       IdentitySeed__Assignments__14__ApprovedByUserId: 20000000-0000-0000-0000-000000000003
       IdentitySeed__Assignments__14__Scopes__0__Type: Company
       IdentitySeed__Assignments__14__Scopes__0__Id: 10000000-0000-0000-0000-000000000001
+      IdentitySeed__Assignments__15__Id: b4000000-0000-4000-8000-000000000709
+      IdentitySeed__Assignments__15__UserId: b2000000-0000-4000-8000-000000000709
+      IdentitySeed__Assignments__15__RoleId: b3000000-0000-4000-8000-000000000709
+      IdentitySeed__Assignments__15__CompanyId: 10000000-0000-0000-0000-000000000001
+      IdentitySeed__Assignments__15__ValidFromUtc: "2026-01-01T00:00:00+00:00"
+      IdentitySeed__Assignments__15__ApprovedByUserId: 20000000-0000-0000-0000-000000000003
+      IdentitySeed__Assignments__15__Scopes__0__Type: Company
+      IdentitySeed__Assignments__15__Scopes__0__Id: 10000000-0000-0000-0000-000000000001

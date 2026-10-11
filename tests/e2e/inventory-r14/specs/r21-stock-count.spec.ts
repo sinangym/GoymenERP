@@ -191,9 +191,11 @@ async function effects(pool: SqlPool, labelId: string): Promise<Effects> {
               (SELECT COUNT(*) FROM [inventory].[StockCountDecisions] AS d
                 JOIN [inventory].[StockCounts] AS c ON c.[Id] = d.[CountId]
                 WHERE c.[CompanyId] = @companyId AND c.[LabelId] = @labelId) AS decisions,
-              -- Every CountAdjustment (kind 6) of the company: this journey is the only one in the run that posts any.
-              (SELECT COUNT(*) FROM [inventory].[Movements]
-                WHERE [CompanyId] = @companyId AND [Kind] = 6) AS adjustments,
+              -- Exactly this label's count-sourced adjustment. Other R14 journeys may post the same movement kind.
+              (SELECT COUNT(*) FROM [inventory].[Movements] AS m
+                JOIN [inventory].[StockCounts] AS c ON c.[CompanyId] = m.[CompanyId] AND c.[Id] = m.[SourceId]
+                WHERE m.[CompanyId] = @companyId AND m.[Kind] = 6
+                  AND m.[SourceKind] = N'inventory.stock-count' AND c.[LabelId] = @labelId) AS adjustments,
               (SELECT COUNT(*) FROM [audit].[AuditEvents] AS a
                 JOIN [inventory].[StockCounts] AS c ON LOWER(CONVERT(nvarchar(36), c.[Id])) = LOWER(a.[EntityId])
                 WHERE a.[CompanyId] = @companyId AND a.[EntityType] = N'Inventory.StockCount'

@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { APPROVAL, COMPANY, DRAFT, detail, item, salesDetail, salesItem } from './approvalInboxFixtures'
+import {
+  APPROVAL, COMPANY, COUNT, DRAFT, SCRAP, countDetail, countItem, detail, item, salesDetail, salesItem, scrapDetail, scrapItem,
+} from './approvalInboxFixtures'
 import {
   FINANCE_OFFICIAL_INVOICE_IMPORT_KIND as FINANCE,
+  INVENTORY_STOCK_COUNT_KIND as COUNT_KIND,
+  INVENTORY_STOCK_SCRAP_KIND as SCRAP_KIND,
   SALES_ORDER_DRAFT_KIND as SALES,
   decodeApprovalDetail,
   decodeApprovalItem,
@@ -112,5 +116,162 @@ describe('paths and kinds', () => {
     expect(workApprovalPath(SALES, DRAFT)).toBe(`/work/approvals/sales.order-draft.v1/${DRAFT}`)
     expect([FINANCE, SALES].every(isApprovalKind)).toBe(true)
     expect(isApprovalKind('purchasing.order.v1')).toBe(false)
+  })
+})
+
+/**
+ * #667: Inventory stock-count differences and stock scraps awaiting their decision, read through the same Work read.
+ * Each is its own kind with its own exact members; the label, its position and its kilograms are judged by the
+ * Inventory owner's own count/scrap rules.
+ */
+describe('the Work approval read — Inventory stock counts and scraps awaiting a decision (#667)', () => {
+  const NIL = '00000000-0000-0000-0000-000000000000'
+
+  it('decodes the page and the item-only detail of each Inventory kind, exactly as published', () => {
+    expect(decodeApprovalPage({ companyId: COMPANY, items: [countItem], nextCursor: 'c-1' }, COUNT_KIND)).toEqual({
+      companyId: COMPANY, items: [countItem], nextCursor: 'c-1',
+    })
+    expect(decodeApprovalPage({ companyId: COMPANY, items: [scrapItem], nextCursor: null }, SCRAP_KIND)).toEqual({
+      companyId: COMPANY, items: [scrapItem], nextCursor: null,
+    })
+    expect(decodeApprovalDetail(countDetail, COUNT_KIND, COUNT)).toEqual({ item: countItem })
+    expect(decodeApprovalDetail(scrapDetail, SCRAP_KIND, SCRAP)).toEqual({ item: scrapItem })
+    // Member order on the wire is not part of the contract (#667 9cf4c35c only reordered it).
+    const reordered = Object.fromEntries(Object.entries(countItem).reverse())
+    expect(decodeApprovalItem(reordered, COUNT_KIND)).toEqual(countItem)
+  })
+
+  it('accepts a surplus, a count of zero, a three-decimal quantity and a seven-digit UTC fraction', () => {
+    expect(decodeApprovalItem({ ...countItem, countedKg: '1251', differenceKg: '0.5' }, COUNT_KIND)?.differenceKg).toBe('0.5')
+    expect(decodeApprovalItem({ ...countItem, countedKg: '0', differenceKg: '-1250.5' }, COUNT_KIND)?.countedKg).toBe('0')
+    expect(decodeApprovalItem({ ...countItem, bookKg: '10.125', countedKg: '10', differenceKg: '-0.125' }, COUNT_KIND)).not.toBeNull()
+    expect(decodeApprovalItem({ ...countItem, submittedAtUtc: '2026-10-10T07:00:00.1234567+00:00' }, COUNT_KIND)).not.toBeNull()
+    expect(decodeApprovalItem({ ...scrapItem, scrapKg: '100', remainingKg: '0' }, SCRAP_KIND)?.remainingKg).toBe('0')
+  })
+
+  it.each([
+    ['the scrap kind', { kind: SCRAP_KIND }],
+    ['the Sales kind', { kind: SALES }],
+    ['an unknown kind', { kind: 'inventory.transfer.v1' }],
+    ['a decided state', { status: 'Approved' }],
+    ['the no-difference state', { status: 'NoDifference' }],
+    ['the Finance state', { status: 'Pending' }],
+    ['a version that is not the label version', { version: '5' }],
+    ['a version of zero', { version: '0', labelVersion: '0' }],
+    ['a version as a number', { version: 4 }],
+    ['an empty approval id', { approvalId: NIL }],
+    ['a label that is not an id', { labelId: 'ROLL-1' }],
+    ['an empty product id', { productId: NIL }],
+    ['a location that is not an id', { locationId: 'HOL-1' }],
+    ['a company that is not an id', { companyId: 'GDC' }],
+    ['an owner kind outside the two', { ownerKind: 'Supplier' }],
+    ['an owner kind in another case', { ownerKind: 'company' }],
+    ['a holder kind outside the two', { custodianKind: '' }],
+    ['an empty owner id', { ownerId: NIL }],
+    ['a block outside Free/Blocked', { block: 'Quarantine' }],
+    ['no difference', { countedKg: '1250.5', differenceKg: '0' }],
+    ['a difference that is not counted − book', { differenceKg: '-3' }],
+    ['a difference with the wrong sign', { differenceKg: '3.25' }],
+    ['a non-canonical quantity', { bookKg: '1250.50' }],
+    ['a comma decimal', { countedKg: '1247,25' }],
+    ['a four-decimal quantity', { bookKg: '1250.5001', differenceKg: '-3.2501' }],
+    ['a negative counted quantity', { countedKg: '-1', differenceKg: '-1251.5' }],
+    ['a book of zero', { bookKg: '0', differenceKg: '1247.25' }],
+    ['a quantity as a number', { bookKg: 1250.5 }],
+    ['a blank reason', { reason: '   ' }],
+    ['a null reason', { reason: null }],
+    ['no submitter', { submittedBy: '' }],
+    ['a time that is not an instant', { submittedAtUtc: '10.10.2026 07:00' }],
+    ['a time that is not UTC', { submittedAtUtc: '2026-10-10T10:00:00+03:00' }],
+  ])('refuses a stock-count item with %s', (_, change) => {
+    expect(decodeApprovalItem({ ...countItem, ...change }, COUNT_KIND)).toBeNull()
+    // One bad item refuses the whole page: nothing of it is partly shown.
+    expect(decodeApprovalPage({ companyId: COMPANY, items: [{ ...countItem, ...change }], nextCursor: null }, COUNT_KIND)).toBeNull()
+  })
+
+  it.each([
+    ['the count kind', { kind: COUNT_KIND }],
+    ['a decided state', { status: 'Rejected' }],
+    ['a version that is not the label version', { labelVersion: '8' }],
+    ['a scrap of zero', { scrapKg: '0', remainingKg: '100' }],
+    ['a scrap larger than the book', { scrapKg: '101', remainingKg: '0' }],
+    ['a remaining that is not book − scrap', { remainingKg: '95' }],
+    ['a negative remaining', { scrapKg: '101', remainingKg: '-1' }],
+    ['a non-canonical scrap', { scrapKg: '6.0' }],
+    ['a block outside Free/Blocked', { block: 'free' }],
+    ['an owner kind outside the two', { ownerKind: 'Customer' }],
+    ['a blank reason', { reason: '' }],
+    ['a time that is not UTC', { submittedAtUtc: '2026-10-10T08:00:00-05:00' }],
+    ['an empty label id', { labelId: NIL }],
+  ])('refuses a stock-scrap item with %s', (_, change) => {
+    expect(decodeApprovalItem({ ...scrapItem, ...change }, SCRAP_KIND)).toBeNull()
+    expect(decodeApprovalPage({ companyId: COMPANY, items: [{ ...scrapItem, ...change }], nextCursor: null }, SCRAP_KIND)).toBeNull()
+  })
+
+  it('refuses unknown members, missing members and the other kind\'s members', () => {
+    expect(decodeApprovalItem({ ...countItem, labelCode: 'ROLL-1' }, COUNT_KIND)).toBeNull()
+    expect(decodeApprovalItem({ ...countItem, scrapKg: '6' }, COUNT_KIND)).toBeNull()
+    expect(decodeApprovalItem({ ...scrapItem, countedKg: '94' }, SCRAP_KIND)).toBeNull()
+    expect(decodeApprovalItem({ ...scrapItem, decision: null }, SCRAP_KIND)).toBeNull()
+    for (const member of Object.keys(countItem)) {
+      const { [member]: _dropped, ...missing } = countItem as Record<string, unknown>
+      expect(decodeApprovalItem(missing, COUNT_KIND), `count without ${member}`).toBeNull()
+    }
+    for (const member of Object.keys(scrapItem)) {
+      const { [member]: _dropped, ...missing } = scrapItem as Record<string, unknown>
+      expect(decodeApprovalItem(missing, SCRAP_KIND), `scrap without ${member}`).toBeNull()
+    }
+  })
+
+  it('binds a page to the kind, the company and one row per record', () => {
+    expect(decodeApprovalPage({ companyId: COMPANY, items: [countItem, scrapItem], nextCursor: null }, COUNT_KIND)).toBeNull()
+    expect(decodeApprovalPage({ companyId: COMPANY, items: [countItem], nextCursor: null }, SCRAP_KIND)).toBeNull()
+    expect(decodeApprovalPage({ companyId: COMPANY, items: [scrapItem], nextCursor: null }, COUNT_KIND)).toBeNull()
+    expect(decodeApprovalPage({ companyId: COMPANY, items: [countItem], nextCursor: null }, FINANCE)).toBeNull()
+    expect(decodeApprovalPage({ companyId: COMPANY, items: [countItem], nextCursor: null }, SALES)).toBeNull()
+    expect(decodeApprovalPage({ companyId: COMPANY, items: [salesItem], nextCursor: null }, COUNT_KIND)).toBeNull()
+    expect(decodeApprovalPage({ companyId: '99999999-9999-4999-8999-999999999999', items: [countItem], nextCursor: null }, COUNT_KIND)).toBeNull()
+    expect(decodeApprovalPage({ companyId: COMPANY, items: [countItem, countItem], nextCursor: null }, COUNT_KIND)).toBeNull()
+    expect(decodeApprovalPage({ companyId: COMPANY, items: [countItem, { ...countItem, approvalId: COUNT.toUpperCase() }], nextCursor: null }, COUNT_KIND)).toBeNull()
+  })
+
+  it('refuses a detail of another record or kind, or one that is not exactly { item }', () => {
+    expect(decodeApprovalDetail(countDetail, COUNT_KIND, OTHER)).toBeNull()
+    expect(decodeApprovalDetail(countDetail, SCRAP_KIND, COUNT)).toBeNull()
+    expect(decodeApprovalDetail(scrapDetail, COUNT_KIND, SCRAP)).toBeNull()
+    expect(decodeApprovalDetail({ ...countDetail, preview: detail.preview }, COUNT_KIND, COUNT)).toBeNull()
+    expect(decodeApprovalDetail({ ...scrapDetail, history: [] }, SCRAP_KIND, SCRAP)).toBeNull()
+    expect(decodeApprovalDetail({ item: { ...countItem, differenceKg: '-3' } }, COUNT_KIND, COUNT)).toBeNull()
+    expect(decodeApprovalDetail(countItem, COUNT_KIND, COUNT)).toBeNull()
+    expect(decodeApprovalDetail(salesDetail, COUNT_KIND, DRAFT)).toBeNull()
+    expect(decodeApprovalDetail(countDetail, SALES, COUNT)).toBeNull()
+    expect(decodeApprovalDetail(countDetail, FINANCE, COUNT)).toBeNull()
+  })
+
+  it('keeps a kind this client does not know closed, whatever the answer looks like', () => {
+    const unknown = 'inventory.transfer.v1' as never
+    expect(decodeApprovalItem({ ...countItem, kind: 'inventory.transfer.v1' }, unknown)).toBeNull()
+    expect(decodeApprovalItem(countItem, unknown)).toBeNull()
+    expect(decodeApprovalPage({ companyId: COMPANY, items: [], nextCursor: null }, unknown)).toBeNull()
+    expect(decodeApprovalPage({ companyId: COMPANY, items: [countItem], nextCursor: null }, unknown)).toBeNull()
+    expect(decodeApprovalDetail(countDetail, unknown, COUNT)).toBeNull()
+    expect(decodeApprovalDetail(detail, unknown, APPROVAL)).toBeNull()
+    // Prototype members are not kinds.
+    expect(decodeApprovalItem(countItem, 'constructor' as never)).toBeNull()
+    expect(decodeApprovalItem(countItem, 'toString' as never)).toBeNull()
+  })
+
+  it('leaves Finance and Sales exactly as they were', () => {
+    expect(decodeApprovalPage({ companyId: COMPANY, items: [item], nextCursor: null }, FINANCE)?.items).toEqual([item])
+    expect(decodeApprovalDetail(detail, FINANCE, APPROVAL)).toEqual({ item, preview: detail.preview })
+    expect(decodeApprovalDetail(salesDetail, SALES, DRAFT)).toEqual({ item: salesItem })
+  })
+
+  it('knows exactly the four connected kinds and builds their detail paths', () => {
+    expect([FINANCE, SALES, COUNT_KIND, SCRAP_KIND].every(isApprovalKind)).toBe(true)
+    expect(isApprovalKind('inventory.transfer.v1')).toBe(false)
+    expect(isApprovalKind('inventory.stock-count.v2')).toBe(false)
+    expect(workApprovalPath(COUNT_KIND, COUNT)).toBe(`/work/approvals/inventory.stock-count.v1/${COUNT}`)
+    expect(workApprovalPath(SCRAP_KIND, SCRAP)).toBe(`/work/approvals/inventory.stock-scrap.v1/${SCRAP}`)
   })
 })
