@@ -618,3 +618,105 @@ describe('the record-bound Cari display (opt-in list/detail only)', () => {
     expect(decodeDraftDetailWithParty(detail(), 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaab')).toBeNull()
   })
 })
+
+import { decodeLoadingProgress, salesDraftLoadingProgressPath, type LoadingProgressBinding } from './contract'
+
+/**
+ * SALES-LOADING-PROGRESS-UI-01 (#684): `GET /sales/drafts/{id}/loading-progress`, read exactly and only as the loading
+ * facts of the detail on screen.
+ */
+describe('decodeLoadingProgress', () => {
+  const LINE_1 = '30000000-0000-4000-8000-000000000001'
+  const LINE_2 = '30000000-0000-4000-8000-000000000002'
+  const OTHER = '30000000-0000-4000-8000-000000000009'
+  const UNIT = '70000000-0000-4000-8000-000000000001'
+  const BOUND: LoadingProgressBinding = {
+    draftVersion: '9007199254740993',
+    lines: [
+      { lineId: LINE_1, lineNo: 1, orderUnitId: UNIT, quantity: '10' },
+      { lineId: LINE_2, lineNo: 2, orderUnitId: UNIT, quantity: '1250.500' },
+    ],
+  }
+  const first = (over: Record<string, unknown> = {}) => ({
+    lineId: LINE_1, lineNo: 1, orderUnitId: UNIT, ordered: '10', loadingInstructionLines: 2, instructed: '8',
+    loaded: '6.5', shipped: '4', delivered: '1.25', ...over,
+  })
+  const second = (over: Record<string, unknown> = {}) => ({
+    lineId: LINE_2, lineNo: 2, orderUnitId: UNIT, ordered: '1250.500', loadingInstructionLines: 0, instructed: '0',
+    loaded: '0', shipped: '0', delivered: '0', ...over,
+  })
+  const answer = (lines: readonly unknown[] = [first(), second()], draftVersion: unknown = BOUND.draftVersion) => ({ draftVersion, lines })
+
+  it('builds the path under the draft', () => {
+    expect(salesDraftLoadingProgressPath('abc')).toBe('/sales/drafts/abc/loading-progress')
+  })
+
+  it('reads every line once with its exact text, in the detail\'s order', () => {
+    expect(decodeLoadingProgress(answer(), BOUND)).toEqual({ draftVersion: BOUND.draftVersion, lines: [first(), second()] })
+    // The answer's own order is not the contract; the detail's is what the screen shows.
+    expect(decodeLoadingProgress(answer([second(), first()]), BOUND)?.lines.map((line) => line.lineNo)).toEqual([1, 2])
+    // Ids are compared without case.
+    expect(decodeLoadingProgress(answer([first({ lineId: LINE_1.toUpperCase() }), second()]), BOUND)).not.toBeNull()
+  })
+
+  it('accepts the bounds of the owner\'s order: all equal, all zero, and a long exact decimal', () => {
+    const full = { loadingInstructionLines: 1, instructed: '10', loaded: '10', shipped: '10', delivered: '10' }
+    expect(decodeLoadingProgress(answer([first(full), second()]), BOUND)).not.toBeNull()
+    expect(decodeLoadingProgress(answer([first({ loadingInstructionLines: 0, instructed: '0', loaded: '0', shipped: '0', delivered: '0' }), second()]), BOUND)).not.toBeNull()
+    // Equal values written with a different scale are equal, never "more".
+    expect(decodeLoadingProgress(answer([first({ ...full, instructed: '10.000', loaded: '10.0' }), second()]), BOUND)).not.toBeNull()
+    // Beyond what a JS number can tell apart: 1250.4999999999999999 < 1250.500.
+    expect(decodeLoadingProgress(answer([first(), second({ loadingInstructionLines: 3, instructed: '1250.4999999999999999', loaded: '1250.4999999999999998' })]), BOUND)).not.toBeNull()
+    expect(decodeLoadingProgress(answer([first(), second({ loadingInstructionLines: 3, instructed: '1250.5000000000000001' })]), BOUND)).toBeNull()
+    expect(decodeLoadingProgress(answer([first({ ...full, instructed: '9', loaded: '10' }), second()]), BOUND)).toBeNull()
+  })
+
+  it.each([
+    ['another draft version', answer(undefined, '9007199254740994')],
+    ['a version as a number', answer(undefined, 7)],
+    ['no version', { lines: [first(), second()] }],
+    ['an unknown top-level member', { ...answer(), companyId: OTHER }],
+    ['lines that are not a list', { draftVersion: BOUND.draftVersion, lines: {} }],
+    ['a missing line', answer([first()])],
+    ['an extra line', answer([first(), second(), first({ lineId: OTHER, lineNo: 3 })])],
+    ['the same line twice', answer([first(), first()])],
+    ['the same line twice in another case', answer([first(), first({ lineId: LINE_1.toUpperCase() })])],
+    ['a foreign line', answer([first(), second({ lineId: OTHER })])],
+    ['another line number', answer([first({ lineNo: 2 }), second({ lineNo: 1 })])],
+    ['a fractional line number', answer([first({ lineNo: 1.5 }), second()])],
+    ['a negative line number', answer([first({ lineNo: -1 }), second()])],
+    ['another order unit', answer([first({ orderUnitId: OTHER }), second()])],
+    ['an order unit that is not an id', answer([first({ orderUnitId: 'KG' }), second()])],
+    ['a line id that is not an id', answer([first({ lineId: 'line-1' }), second()])],
+    ['another ordered quantity', answer([first({ ordered: '10.0' }), second()])],
+    ['an ordered quantity as a number', answer([first({ ordered: 10 }), second()])],
+    ['a missing member', answer([(({ delivered: _dropped, ...rest }) => rest)(first()), second()])],
+    ['an unknown member', answer([first({ remaining: '2' }), second()])],
+    ['the delivery-progress shape', answer([{ lineId: LINE_1, lineNo: 1, orderUnitId: UNIT, ordered: '10', shipped: '0', delivered: '0', remaining: '10', excess: '0' }, second()])],
+    ['a comma decimal', answer([first({ loaded: '6,5' }), second()])],
+    ['a signed quantity', answer([first({ delivered: '-1' }), second()])],
+    ['an exponent', answer([first({ shipped: '4e0' }), second()])],
+    ['a quantity with outer whitespace', answer([first({ shipped: ' 4' }), second()])],
+    ['a null quantity', answer([first({ loaded: null }), second()])],
+    ['more delivered than shipped', answer([first({ delivered: '4.01' }), second()])],
+    ['more shipped than loaded', answer([first({ shipped: '6.51' }), second()])],
+    ['more loaded than instructed', answer([first({ loaded: '8.5', shipped: '4' }), second()])],
+    ['more instructed than ordered', answer([first({ instructed: '10.5' }), second()])],
+    ['an instructed quantity without an instruction line', answer([first({ loadingInstructionLines: 0 }), second()])],
+    ['an instruction line without an instructed quantity', answer([first(), second({ loadingInstructionLines: 1 })])],
+    ['a negative instruction-line count', answer([first({ loadingInstructionLines: -1 }), second()])],
+    ['a fractional instruction-line count', answer([first({ loadingInstructionLines: 1.5 }), second()])],
+    ['an instruction-line count as text', answer([first({ loadingInstructionLines: '2' }), second()])],
+    ['a line that is not an object', answer([first(), null])],
+    ['null', null],
+    ['a list', [first(), second()]],
+  ])('refuses %s whole', (_name, value) => {
+    expect(decodeLoadingProgress(value, BOUND)).toBeNull()
+  })
+
+  it('an order without lines has an empty answer, and nothing else fits it', () => {
+    const empty: LoadingProgressBinding = { draftVersion: '3', lines: [] }
+    expect(decodeLoadingProgress({ draftVersion: '3', lines: [] }, empty)).toEqual({ draftVersion: '3', lines: [] })
+    expect(decodeLoadingProgress({ draftVersion: '3', lines: [first()] }, empty)).toBeNull()
+  })
+})

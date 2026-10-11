@@ -8,18 +8,23 @@
  *   `Active` allocations are counted. A count is shown only after a successful read; loading, no
  *   permission, an error or an unverifiable answer say so and show no number. A full search window is a
  *   lower bound ("en az"), never an exact count.
- * - Loading instruction: Logistics publishes no per-order read Sales could use, so the screen says it
- *   cannot be read yet — never 0.
+ * - Loading: per line, what was ordered and what Logistics has instructed, loaded, shipped and delivered,
+ *   from the Sales loading-progress read (#684) — ONE request for the whole order under the draft read, the
+ *   server asking the owner afresh each time. The answer is shown only when it describes exactly the detail
+ *   on screen (its version and each line once); a zero is the owner's zero, never a default. Loading, no
+ *   permission, not found, an unverifiable answer and a temporary failure each say so and show no number.
+ *   Quantities are the server's exact text in each line's order unit; nothing is converted or summed here.
  *
- * Stale answers: every line query is keyed by the shell context (company), the route entry generation, the
- * order, the line and its product version, and the response is decoded against that exact scope — the
- * allocation panel's pattern. A company or order change mounts a new key; an answer of the old one is
- * never shown.
+ * Stale answers: every query is keyed by the shell context (company), the route entry generation and the
+ * order — the allocation lines also by line and product version, the loading read also by the detail
+ * version — and each response is decoded against that exact scope. A company, actor, order or route-entry
+ * change mounts a new key; an answer of the old one is never shown.
  */
 
 import { useQuery } from '@tanstack/react-query'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
 import { classifyOutcome } from '../shell/uiState'
+import { fetchDraftLoadingProgress } from './api'
 import type { DraftLine } from './contract'
 import { fetchPhysicalAllocations } from './allocationApi'
 import type { AllocationScope } from './allocationContract'
@@ -35,6 +40,8 @@ export interface SalesDraftLinkedEffectsProps {
   readonly namespace: string
   readonly routeEntryGeneration: number
   readonly salesOrderId: string
+  /** The version of the detail these lines came from: a loading answer of any other version is not this order's. */
+  readonly draftVersion: string
   readonly lines: readonly DraftLine[]
 }
 
@@ -65,7 +72,16 @@ export function SalesDraftLinkedEffects(props: SalesDraftLinkedEffectsProps) {
         </div>
         <div>
           <dt>{T.loadingTitle}</dt>
-          <dd data-testid="sales-linked-loading">{T.loadingNotReadable}</dd>
+          <dd data-testid="sales-linked-loading">
+            {props.lines.length === 0 ? (
+              <span>{T.loadingNoLines}</span>
+            ) : (
+              <LinkedLoading
+                key={`${props.namespace}:${props.routeEntryGeneration}:${props.companyId}:${props.salesOrderId}:${props.draftVersion}`}
+                {...props}
+              />
+            )}
+          </dd>
         </div>
       </dl>
     </div>
@@ -147,5 +163,87 @@ function LinkedAllocationLine({ companyId, namespace, routeEntryGeneration, sale
         </>
       ) : null}
     </li>
+  )
+}
+
+/** The order's loading facts: one read for all lines, shown only as the facts of this exact detail. */
+function LinkedLoading({ companyId, namespace, routeEntryGeneration, salesOrderId, draftVersion, lines }: SalesDraftLinkedEffectsProps) {
+  const boundary = useAuthBoundary()
+  const query = useQuery({
+    queryKey: [namespace, routeEntryGeneration, 'sales-draft-loading-progress', salesOrderId, draftVersion] as const,
+    // Read afresh on every open: a loading recorded in Logistics shows on the next visit, never from a cache.
+    gcTime: 0,
+    staleTime: 0,
+    retry: false,
+    refetchOnWindowFocus: false,
+    queryFn: async ({ signal }) => {
+      const snapshot = boundary.capture()
+      const outcome = await fetchDraftLoadingProgress(salesOrderId, { draftVersion, lines }, companyId, signal)
+      if (outcome.type === 'http') boundary.report(outcome.status, snapshot)
+      return signal.aborted ? { type: 'fence-stale' as const } : outcome
+    },
+  })
+
+  const outcome = query.data
+  if (outcome?.type === 'ok-single') {
+    return (
+      <div data-testid="sales-linked-loading-progress" data-state="ready">
+        <p className={styles.muted}>{T.loadingNote}</p>
+        <div className={styles.tableWrap}>
+          <table className={styles.table}>
+            <caption className={styles.caption}>{T.loadingCaption}</caption>
+            <thead><tr>
+              <th scope="col">{T.loadingLine}</th><th scope="col">{T.loadingOrdered}</th>
+              <th scope="col">{T.loadingInstructed}</th><th scope="col">{T.loadingLoaded}</th>
+              <th scope="col">{T.loadingShipped}</th><th scope="col">{T.loadingDelivered}</th>
+            </tr></thead>
+            <tbody>{outcome.data.lines.map((line) => (
+              <tr key={line.lineId} data-testid={`sales-linked-loading-line-${line.lineId}`}
+                data-instruction-lines={line.loadingInstructionLines}>
+                <th scope="row">{line.lineNo}</th>
+                <td data-fact="ordered">{line.ordered}</td>
+                <td data-fact="instructed">{line.instructed}</td>
+                <td data-fact="loaded">{line.loaded}</td>
+                <td data-fact="shipped">{line.shipped}</td>
+                <td data-fact="delivered">{line.delivered}</td>
+              </tr>
+            ))}</tbody>
+          </table>
+        </div>
+      </div>
+    )
+  }
+
+  const state = outcome === undefined ? { kind: 'initial-loading' as const } : classifyOutcome(outcome)
+  let text: string
+  let status: 'loading' | 'forbidden' | 'not-found' | 'malformed' | 'error'
+  if (state.kind === 'initial-loading' || state.kind === 'stale-rejected') {
+    text = T.loadingReading
+    status = 'loading'
+  } else if (state.kind === 'forbidden' || state.kind === 'unauthenticated') {
+    text = T.loadingForbidden
+    status = 'forbidden'
+  } else if (state.kind === 'not-found') {
+    text = T.loadingNotFound
+    status = 'not-found'
+  } else if (state.kind === 'malformed-response') {
+    text = T.loadingMalformed
+    status = 'malformed'
+  } else {
+    text = T.loadingUnavailable
+    status = 'error'
+  }
+  // A refusal or a missing order is definite; an unverifiable or failed read may be asked again, the same way.
+  const retryable = status === 'malformed' || status === 'error'
+  return (
+    <span data-testid="sales-linked-loading-progress" data-state={status} role={status === 'loading' ? 'status' : undefined}>
+      {text}
+      {retryable ? (
+        <>
+          {' '}
+          <button type="button" className={styles.linkButton} onClick={() => void query.refetch()}>{T.retry}</button>
+        </>
+      ) : null}
+    </span>
   )
 }

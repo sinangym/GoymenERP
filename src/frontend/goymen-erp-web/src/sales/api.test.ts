@@ -5,7 +5,7 @@ import replayResponseRaw from './examples/replay-response.json?raw'
 import detailResponseRaw from './examples/detail-response.json?raw'
 import listResponseRaw from './examples/list-response.json?raw'
 import errorReplayRaw from './examples/error-replay.json?raw'
-import { createDraft, fetchDraftDetail, fetchDraftPage } from './api'
+import { createDraft, fetchDraftDetail, fetchDraftLoadingProgress, fetchDraftPage } from './api'
 import type { DraftCreateRequest } from './contract'
 
 // The examples' company. Synthetic.
@@ -224,5 +224,70 @@ describe('SALES-CARI-OPTIN — the list and detail reads opt in to the record-bo
     respond(200, detailWithParty((b) => (b.partyDisplay.tradeName = 'ABC Demir')), ACK)
     const detail = await fetchDraftDetail(DRAFT, COMPANY)
     expect(detail.type === 'ok-single' && detail.data.partyDisplay.tradeName).toBe('ABC Demir')
+  })
+})
+
+/** SALES-LOADING-PROGRESS-UI-01: the per-order loading read (#684) — one GET, no selector, bound to the detail on screen. */
+describe('fetchDraftLoadingProgress', () => {
+  const LINE = '30000000-0000-4000-8000-000000000001'
+  const UNIT = '70000000-0000-4000-8000-000000000001'
+  const BOUND = { draftVersion: '7', lines: [{ lineId: LINE, lineNo: 1, orderUnitId: UNIT, quantity: '10' }] }
+  const body = (over: Record<string, unknown> = {}, draftVersion = '7') => JSON.stringify({
+    draftVersion,
+    lines: [{
+      lineId: LINE, lineNo: 1, orderUnitId: UNIT, ordered: '10', loadingInstructionLines: 1, instructed: '8',
+      loaded: '6.5', shipped: '6.5', delivered: '0', ...over,
+    }],
+  })
+
+  it('asks the order once under the company, with no selector, key or body, and returns the exact text', async () => {
+    const calls = respond(200, body())
+    const outcome = await fetchDraftLoadingProgress(DRAFT, BOUND, COMPANY)
+    expect(outcome).toEqual({
+      type: 'ok-single',
+      data: {
+        draftVersion: '7',
+        lines: [{
+          lineId: LINE, lineNo: 1, orderUnitId: UNIT, ordered: '10', loadingInstructionLines: 1, instructed: '8',
+          loaded: '6.5', shipped: '6.5', delivered: '0',
+        }],
+      },
+    })
+    expect(calls).toHaveLength(1)
+    expect(calls[0].url).toBe(`/api/v1/sales/drafts/${DRAFT}/loading-progress`)
+    const headers = calls[0].init.headers as Record<string, string>
+    expect(calls[0].init.method).toBeUndefined()
+    expect(calls[0].init.body).toBeUndefined()
+    expect(headers['X-Company-Id']).toBe(COMPANY)
+    expect(headers['X-ERP-Sales-Read-Contract']).toBeUndefined()
+    expect(headers['Idempotency-Key']).toBeUndefined()
+  })
+
+  it.each([
+    ['another version', body({}, '8')],
+    ['another ordered quantity', body({ ordered: '11' })],
+    ['a broken quantity order', body({ delivered: '7' })],
+    ['an unknown member', body({ remaining: '4' })],
+    ['a body that is not JSON', '<html>'],
+  ])('a 200 with %s is malformed, and nothing else is asked in its place', async (_name, answer) => {
+    const calls = respond(200, answer)
+    expect(await fetchDraftLoadingProgress(DRAFT, BOUND, COMPANY)).toEqual({ type: 'malformed' })
+    expect(calls).toHaveLength(1)
+  })
+
+  it.each([401, 403, 404, 503])('a %i is reported as that status, without a second request', async (status) => {
+    const calls = respond(status, '{"status":0}')
+    const outcome = await fetchDraftLoadingProgress(DRAFT, BOUND, COMPANY)
+    expect(outcome.type === 'http' && outcome.status).toBe(status)
+    expect(calls).toHaveLength(1)
+  })
+
+  it('an aborted read is stale, a failed one is a network error', async () => {
+    const controller = new AbortController()
+    vi.stubGlobal('fetch', vi.fn(async () => { controller.abort(); throw new DOMException('aborted', 'AbortError') }))
+    expect(await fetchDraftLoadingProgress(DRAFT, BOUND, COMPANY, controller.signal)).toEqual({ type: 'fence-stale' })
+    vi.stubGlobal('navigator', { onLine: true })
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new TypeError('Failed to fetch') }))
+    expect(await fetchDraftLoadingProgress(DRAFT, BOUND, COMPANY)).toEqual({ type: 'network-error' })
   })
 })

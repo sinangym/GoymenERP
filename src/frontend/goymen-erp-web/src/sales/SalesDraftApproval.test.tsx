@@ -50,7 +50,7 @@ const mutation = (body: Body, isReplay = false) => ({ detail: body, isReplay, or
 
 describe('S-04 approval facts', () => {
   it('shows the axis beside the revision and version, "not yet" for facts that did not happen, and the honest linked effects', async () => {
-    installFetch({ onDetail: () => json(detail('Preparing')) })
+    const { calls } = installFetch({ onDetail: () => json(detail('Preparing')) })
     renderSalesApp(`/satis/siparisler/${DRAFT}`)
     await screen.findByRole('heading', { name: 'SO-2026-0001' })
     expect(screen.getByTestId('sales-draft-approval-state').textContent).toBe('Hazırlanıyor')
@@ -58,11 +58,22 @@ describe('S-04 approval facts', () => {
     expect(screen.getByTestId('sales-draft-version').textContent).toBe('9007199254740993')
     expect(screen.getByTestId('sales-approval-submitted-by').textContent).toBe(T.approval.notYet)
     expect(screen.getByTestId('sales-approval-decided-by').textContent).toBe(T.approval.notYet)
-    // Without Inventory's allocation capability nothing is read and no number is shown; loading is never 0.
+    // Without Inventory's allocation capability no allocation is read and no allocation number is shown.
     const effects = screen.getByTestId('sales-approval-linked-effects')
-    expect(within(effects).getByTestId('sales-linked-allocation').textContent).toBe(T.approval.linkedEffects.allocationNoAccess)
-    expect(within(effects).getByTestId('sales-linked-loading').textContent).toBe(T.approval.linkedEffects.loadingNotReadable)
-    expect(effects.textContent).not.toMatch(/\b0\b/)
+    const allocation = within(effects).getByTestId('sales-linked-allocation')
+    expect(allocation.textContent).toBe(T.approval.linkedEffects.allocationNoAccess)
+    expect(allocation.textContent).not.toMatch(/\b0\b/)
+    // The loading facts are read for this order and version: no instruction yet, shown as the owner's own zeros.
+    const loading = within(effects).getByTestId('sales-linked-loading')
+    await waitFor(() => expect(within(loading).getByTestId('sales-linked-loading-progress').dataset.state).toBe('ready'))
+    const body = detail('Preparing')
+    const rows = [...loading.querySelectorAll('tbody tr')]
+    expect(rows.map((row) => row.getAttribute('data-testid'))).toEqual(
+      body.lines.map((line: Body) => `sales-linked-loading-line-${line.lineId}`))
+    expect(rows.map((row) => [...row.querySelectorAll('[data-fact]')].map((cell) => cell.textContent))).toEqual(
+      body.lines.map((line: Body) => [line.quantity, '0', '0', '0', '0']))
+    expect(calls.filter((call) => call.url.endsWith('/loading-progress')).map((call) => [call.method, call.companyId]))
+      .toEqual([['GET', COMPANY_A]])
     expect(screen.queryByTestId('sales-approval-reason')).toBeNull()
   })
 
