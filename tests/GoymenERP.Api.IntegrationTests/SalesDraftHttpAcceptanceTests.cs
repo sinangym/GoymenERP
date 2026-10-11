@@ -484,6 +484,19 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
             return Progress(draftId);
         }
 
+        /// <summary>DEC-SAL-005: what the stub answers the loading-progress read with.</summary>
+        public Func<Guid, Task<SalesOrderDraftLoadingProgressResponse>> LoadingProgress { get; set; } =
+            _ => throw new SalesDraftServiceException(404, "not_found");
+
+        public List<Guid> LoadingProgressReads { get; } = [];
+
+        public Task<SalesOrderDraftLoadingProgressResponse> GetDraftLoadingProgressAsync(Guid draftId,
+            CancellationToken cancellationToken = default)
+        {
+            LoadingProgressReads.Add(draftId);
+            return LoadingProgress(draftId);
+        }
+
         public Task<SalesOrderDraftResponse> SubmitDraftAsync(Guid draftId, SalesDraftStateCommandRequest request, SalesCommandMetadata metadata,
             CancellationToken cancellationToken = default) => StateAsync("submit", draftId, request, metadata);
 
@@ -990,6 +1003,54 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
             Assert.Equal(HttpStatusCode.ServiceUnavailable, unavailable.StatusCode);
             Assert.DoesNotContain(code, await unavailable.Content.ReadAsStringAsync(), StringComparison.Ordinal);
         }
+    }
+
+    [Fact]
+    public async Task Loading_progress_is_a_private_read_of_the_service_answer_and_its_404_and_503_stay_code_less()
+    {
+        var draftId = Guid.NewGuid();
+        var lineId = Guid.NewGuid();
+        var unitId = Guid.NewGuid();
+        var service = new StubDraftService
+        {
+            LoadingProgress = id => Task.FromResult(new SalesOrderDraftLoadingProgressResponse("5",
+                [new SalesDraftLineLoadingProgressV1(lineId, 1, unitId, "6", 2, "6", "5", "4", "2.5")])),
+        };
+        using var host = CreateHost(service);
+        using var client = CreateClient(host);
+        client.DefaultRequestHeaders.Remove("Idempotency-Key");
+        var path = $"{SalesEndpoints.DraftsPath}/{draftId:D}/loading-progress";
+
+        using (var response = await client.GetAsync(path))
+        {
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            Assert.Contains("no-store", response.Headers.CacheControl!.ToString(), StringComparison.Ordinal);
+            var body = await response.Content.ReadFromJsonAsync<JsonElement>();
+            Assert.Equal(["draftVersion", "lines"], body.EnumerateObject().Select(member => member.Name));
+            Assert.Equal("5", body.GetProperty("draftVersion").GetString());
+            var line = Assert.Single(body.GetProperty("lines").EnumerateArray());
+            Assert.Equal(["lineId", "lineNo", "orderUnitId", "ordered", "loadingInstructionLines", "instructed", "loaded", "shipped", "delivered"],
+                line.EnumerateObject().Select(member => member.Name));
+            Assert.Equal((lineId.ToString("D"), 1, "6", 2, "6", "5", "4", "2.5"),
+                (line.GetProperty("lineId").GetString(), line.GetProperty("lineNo").GetInt32(), line.GetProperty("ordered").GetString(),
+                    line.GetProperty("loadingInstructionLines").GetInt32(), line.GetProperty("instructed").GetString(),
+                    line.GetProperty("loaded").GetString(), line.GetProperty("shipped").GetString(), line.GetProperty("delivered").GetString()));
+        }
+
+        Assert.Equal([draftId], service.LoadingProgressReads);
+
+        service.LoadingProgress = _ => throw new SalesDraftServiceException(404, "not_found");
+        using (var missing = await client.GetAsync(path))
+        {
+            Assert.Equal(HttpStatusCode.NotFound, missing.StatusCode);
+            Assert.DoesNotContain("not_found", await missing.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+        }
+
+        service.LoadingProgress = _ => throw new SalesDraftServiceException(503, SalesDraftProblemCodesV1.LoadingProviderUnavailable);
+        using var unavailable = await client.GetAsync(path);
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, unavailable.StatusCode);
+        Assert.DoesNotContain(SalesDraftProblemCodesV1.LoadingProviderUnavailable,
+            await unavailable.Content.ReadAsStringAsync(), StringComparison.Ordinal);
     }
 
     [Fact]

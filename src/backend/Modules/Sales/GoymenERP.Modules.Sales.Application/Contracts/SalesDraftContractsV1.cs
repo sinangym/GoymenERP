@@ -299,6 +299,9 @@ public static class SalesDraftApiV1
     public const string DeliverySchedulePath = "/api/v1/sales/drafts/{id}/delivery-schedule";
     public const string DeliverySchedulesPath = "/api/v1/sales/drafts/{id}/delivery-schedules";
 
+    // DEC-SAL-005: Logistics-owned loading-instruction facts per Sales line, read under the draft-read authority.
+    public const string LoadingProgressPath = "/api/v1/sales/drafts/{id}/loading-progress";
+
     // DEC-SAL-005 / AT-007: the impact preview (GET, the cancel permission), the cancel command (POST, 200 with the detail
     // after the change; same-key replay 200 + `Idempotency-Replayed`) and the recorded cancellation (GET, the draft read).
     // The detail wire is unchanged apart from the lifecycle `state` ("Cancelled"): the facts live on their own route so the

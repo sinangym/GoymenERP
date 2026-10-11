@@ -81,6 +81,12 @@ public static class SalesDraftProblemCodesV1
     public const string DeliveryProviderUnavailable = "delivery_provider_unavailable";
 
     /// <summary>
+    /// 503 (DEC-SAL-005): the Logistics loading owner is not composed, cannot answer, or answers a malformed value; the
+    /// Sales detail then shows no loading quantity, never an assumed zero. Code-less on the wire.
+    /// </summary>
+    public const string LoadingProviderUnavailable = "loading_provider_unavailable";
+
+    /// <summary>
     /// 503 (DEC-SAL-005): an impact owner that exists on main (Inventory allocations, Logistics loading) is not composed or
     /// cannot answer at the cancel command; the order is not cancelled on an unread impact. Code-less on the wire.
     /// </summary>

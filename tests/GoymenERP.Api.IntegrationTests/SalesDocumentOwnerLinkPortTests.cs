@@ -150,6 +150,9 @@ public sealed class SalesDocumentOwnerLinkPortTests
             CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<SalesOrderDraftDeliveryProgressResponse> GetDraftDeliveryProgressAsync(Guid draftId,
             CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+        public Task<SalesOrderDraftLoadingProgressResponse> GetDraftLoadingProgressAsync(Guid draftId,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<SalesOrderDraftCancellationImpactResponse> GetCancellationImpactAsync(Guid draftId,
             CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<SalesOrderDraftResponse> CancelDraftAsync(Guid draftId, SalesDraftCancelRequest request,

@@ -54,8 +54,9 @@ public interface ISalesOrderLoadingReadPortV1
 public sealed record SalesOrderLoadingReadAnswerV1(Guid CompanyId, Guid OrderId, IReadOnlyList<SalesOrderLineLoadingV1> Lines);
 
 /// <summary>
-/// One Sales order line's loading-instruction lines in one unit: their count and exact totals (delivered ≤ shipped ≤ loaded ≤
-/// instructed, the owner's stored invariant).
+/// One Sales order line's loading-instruction lines in one unit: their count and exact totals. A positive count has a
+/// positive instructed total (Logistics rejects zero-quantity instruction lines); zero count has zero totals. The full
+/// owner chain is delivered ≤ shipped ≤ loaded ≤ instructed ≤ the Sales-owned approved order quantity.
 /// </summary>
 public sealed record SalesOrderLineLoadingV1(Guid OrderLineId, Guid UnitId, int InstructionLineCount, decimal Instructed,
     decimal Loaded, decimal Shipped, decimal Delivered);
