@@ -377,7 +377,6 @@ test('C02-D2 uploading the same file again stores it and warns with the earlier 
   await signInAs(page, CREATOR_ACTOR)
   await page.goto(`/cari/${partyId}`)
   const panel = documentsPanel(page)
-  const rowsBefore = await panel.locator('tbody tr').count()
 
   // D1V/H deliberately move the original document through many immutable versions. Duplicate detection concerns the
   // current content of another document, so establish that earlier document here instead of treating D1's historical
@@ -394,12 +393,16 @@ test('C02-D2 uploading the same file again stores it and warns with the earlier 
   await panel.getByLabel(FILE_LABEL).setInputFiles({ name: `Tekrar ${earlierName}`, mimeType: 'application/pdf', buffer: DUPLICATE_PDF })
   const uploaded = page.waitForResponse((r) => r.request().method() === 'POST' && new URL(r.url()).pathname === '/api/v1/documents')
   await panel.getByRole('button', { name: UPLOAD_LABEL, exact: true }).click()
-  expect((await uploaded).status()).toBe(201)
+  const duplicateResponse = await uploaded
+  expect(duplicateResponse.status()).toBe(201)
+  const duplicateBody = (await duplicateResponse.json()) as { document: { id: string } }
+  expect(duplicateBody.document.id).not.toBe(earlierBody.document.id)
 
   const warning = panel.locator('[data-documents-state="duplicate"]')
   await expect(warning).toContainText(DUPLICATE_TITLE)
   await expect(warning.locator(`[data-duplicate-id="${earlierBody.document.id}"]`)).toContainText(earlierName)
-  await expect(panel.locator('tbody tr')).toHaveCount(rowsBefore + 2)
+  await expect(panel.locator(`tr[data-document-id="${earlierBody.document.id}"]`)).toBeVisible()
+  await expect(panel.locator(`tr[data-document-id="${duplicateBody.document.id}"]`)).toBeVisible()
 })
 
 test('C02-D3 another company\'s fully authorized actor gets 404 and an actor without the document names gets 403', async ({ page }) => {
