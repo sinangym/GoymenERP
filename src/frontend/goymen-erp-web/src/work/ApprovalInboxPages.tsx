@@ -310,13 +310,13 @@ function SalesRows({ rows, source }: { readonly rows: readonly SalesApprovalItem
 }
 
 /**
- * Inventory rows. The producer publishes ids, kilograms and the reason — no label code — so the label is named by its
- * id, the same id the label screen opens with. Kilograms are the producer's own text in Turkish digits, never summed.
+ * Inventory rows. The label is named by the readable code Inventory publishes under contract 2.0 (#683); the row and the
+ * label screen's link stay bound to the label id. Kilograms are the producer's own text in Turkish digits, never summed.
  */
 function StockCountRows({ rows, source }: { readonly rows: readonly InventoryStockCountApprovalItem[]; readonly source: ApprovalSource }) {
   return <>
     <thead><tr>
-      <th scope="col">{T.labelId}</th>
+      <th scope="col">{T.labelCode}</th>
       <th scope="col" className={styles.numeric}>{T.bookKg}</th>
       <th scope="col" className={styles.numeric}>{T.countedKg}</th>
       <th scope="col" className={styles.numeric}>{T.differenceKg}</th>
@@ -326,7 +326,7 @@ function StockCountRows({ rows, source }: { readonly rows: readonly InventorySto
       <th scope="col">{T.record}</th>
     </tr></thead>
     <tbody>{rows.map((row) => <tr key={row.approvalId} data-approval-id={row.approvalId} data-label-id={row.labelId}>
-      <td>{row.labelId}</td>
+      <td className={styles.code}>{row.labelCode}</td>
       <td className={styles.numeric}>{formatKg(row.bookKg)}</td>
       <td className={styles.numeric}>{formatKg(row.countedKg)}</td>
       <td className={styles.numeric}>{formatSignedKg(row.differenceKg)}</td>
@@ -341,7 +341,7 @@ function StockCountRows({ rows, source }: { readonly rows: readonly InventorySto
 function StockScrapRows({ rows, source }: { readonly rows: readonly InventoryStockScrapApprovalItem[]; readonly source: ApprovalSource }) {
   return <>
     <thead><tr>
-      <th scope="col">{T.labelId}</th>
+      <th scope="col">{T.labelCode}</th>
       <th scope="col" className={styles.numeric}>{T.bookKg}</th>
       <th scope="col" className={styles.numeric}>{T.scrapKg}</th>
       <th scope="col" className={styles.numeric}>{T.remainingKg}</th>
@@ -351,7 +351,7 @@ function StockScrapRows({ rows, source }: { readonly rows: readonly InventorySto
       <th scope="col">{T.record}</th>
     </tr></thead>
     <tbody>{rows.map((row) => <tr key={row.approvalId} data-approval-id={row.approvalId} data-label-id={row.labelId}>
-      <td>{row.labelId}</td>
+      <td className={styles.code}>{row.labelCode}</td>
       <td className={styles.numeric}>{formatKg(row.bookKg)}</td>
       <td className={styles.numeric}>{formatKg(row.scrapKg)}</td>
       <td className={styles.numeric}>{formatKg(row.remainingKg)}</td>
@@ -366,7 +366,7 @@ function StockScrapRows({ rows, source }: { readonly rows: readonly InventorySto
 /** The label and position facts a count and a scrap share, in the stock screen's own words for owner and holder. */
 function InventoryFacts({ item, companyId }: { readonly item: InventoryApprovalItem; readonly companyId: string }) {
   return <>
-    <div><dt>{T.labelId}</dt><dd>{item.labelId}</dd></div>
+    <div><dt>{T.labelCode}</dt><dd data-label-id={item.labelId}>{item.labelCode}</dd></div>
     <div><dt>{T.status}</dt><dd>{T.statusPending}</dd></div>
     <div><dt>{T.bookKg}</dt><dd>{formatKg(item.bookKg)}</dd></div>
     {item.kind === 'inventory.stock-count.v1'

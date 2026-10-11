@@ -76,6 +76,12 @@
   white-space: nowrap;
 }
 
+/* A label code is one unbroken token of up to 64 characters: it wraps inside its cell and is never cut. */
+.code {
+  min-width: 16ch;
+  overflow-wrap: anywhere;
+}
+
 .numeric {
   text-align: right !important;
   font-variant-numeric: tabular-nums;
