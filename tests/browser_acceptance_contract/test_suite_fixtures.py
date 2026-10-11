@@ -100,7 +100,8 @@ class FixtureListTests(unittest.TestCase):
             frozenset({
                 "creatorActor", "approverActor", "readerActor", "receiverActor", "stockReaderActor",
                 "companyId", "otherCompanyId",
-                "orderId", "lineId", "supplierPartyId", "companyAccountId", "productId",
+                "orderId", "lineId", "supplierPartyId", "companyAccountId",
+                "otherSupplierPartyId", "otherCompanyAccountId", "productId",
                 "productVersion", "productUnitId", "productUnitProfileId",
                 "productUnitProfileVersion", "productCode", "productName",
             }),

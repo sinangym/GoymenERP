@@ -881,7 +881,8 @@ SUITE_FIXTURE_OUTPUTS: dict[str, frozenset[str]] = {
     # the real Cari-owned active Supplier account and Product's exact gated purchase-candidate tuple.
     "pur01": frozenset({"creatorActor", "approverActor", "readerActor", "receiverActor", "stockReaderActor",
                         "companyId", "otherCompanyId",
-                        "orderId", "lineId", "supplierPartyId", "companyAccountId", "productId",
+                        "orderId", "lineId", "supplierPartyId", "companyAccountId",
+                        "otherSupplierPartyId", "otherCompanyAccountId", "productId",
                         "productVersion", "productUnitId", "productUnitProfileId",
                         "productUnitProfileVersion", "productCode", "productName"}),
     # STOK's Suites/R14 seed: disposable actors, company fence, active Organization location and Product's
