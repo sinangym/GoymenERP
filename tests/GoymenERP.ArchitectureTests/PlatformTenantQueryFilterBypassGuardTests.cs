@@ -256,7 +256,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // ERP-000G / AT-065: +8 DocumentVaultSqlServerRelationalAcceptanceTests facts (4ed7462b… -> e57500e0…).
             // Inventory material-label exact-code global search: +1 reviewed Platform SQL fact, kept ordinal-sorted.
             ["tools/relational_inventory/platform.txt"] =
-                "0d5d3ae6c318cf68925b6e387c30828e073cdf35d418b351197a77bdf10a2f36",
+                "b384d836e6824cf611260683ba7382455ab21761de36cd92b0c28b835c7a0aa8",
 
             // product
             // DEC-CAR-003: +4 ProductDeactivationSqlServerRelationalAcceptanceTests facts (d7dbec7f… -> ddeead62…).
@@ -1160,13 +1160,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                             ["EnsureCreatedAsync"] = 1,
                             ["MigrateAsync"] = 1
                         }),
-                // ERP-000G / AT-065: the SqlClient namespace only to recognise a unique-key violation (SqlException
-                // 2601/2627) after SaveChanges, as the Logistics store does. Re-fingerprinted for the mandatory
-                // after-read/before-save authority callback; no connection, command or raw SQL was added.
+                // ERP-000G / AT-065 / DEC-DOC-003: the SqlClient namespace only recognises a unique-key violation
+                // (SqlException 2601/2627) after SaveChanges, as the Logistics store does. Re-fingerprinted for the
+                // immutable version append/history implementation; no connection, command or raw SQL was added.
                 ["src/backend/Modules/Documents/"
                  + "GoymenERP.Modules.Documents.Infrastructure/Persistence/DocumentsStore.cs"] =
                     new(
-                        "def9f5f7896e28a482c5b8e9540e24cd009e802146755302a6fa3f83dbc5d3e0",
+                        "076a0c5b55a961716d99f2d407bf0ae7f1d48c835de7b82b9cf64ce3a3c822ea",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1

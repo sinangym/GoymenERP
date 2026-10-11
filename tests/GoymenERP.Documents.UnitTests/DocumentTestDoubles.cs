@@ -10,13 +10,17 @@ namespace GoymenERP.Documents.UnitTests;
 /// <summary>An actor with a fixed id and company set.</summary>
 internal sealed class FixedUser(string? userId, params Guid[] companies) : ICurrentUser
 {
-    public bool IsAuthenticated => userId is not null;
+    public bool IsAuthenticated => CurrentUserId is not null;
 
-    public string? UserId => userId;
+    public string? UserId => CurrentUserId;
 
-    public IReadOnlySet<Guid> AllowedCompanyIds { get; } = new HashSet<Guid>(companies);
+    public string? CurrentUserId { get; set; } = userId;
 
-    public bool CanAccessCompany(Guid companyId) => AllowedCompanyIds.Contains(companyId);
+    public HashSet<Guid> MutableAllowedCompanyIds { get; } = [.. companies];
+
+    public IReadOnlySet<Guid> AllowedCompanyIds => MutableAllowedCompanyIds;
+
+    public bool CanAccessCompany(Guid companyId) => MutableAllowedCompanyIds.Contains(companyId);
 }
 
 /// <summary>The central authority as a set of company-wide grants that a test can revoke between measurements.</summary>
@@ -120,9 +124,12 @@ internal sealed class FixedScanner(DocumentScanVerdictV1 verdict) : IDocumentCon
 
     public int Scans { get; private set; }
 
+    public Action? AfterScan { get; set; }
+
     public Task<DocumentScanVerdictV1> ScanAsync(ReadOnlyMemory<byte> content, DocumentFileKind kind, CancellationToken cancellationToken = default)
     {
         Scans++;
+        AfterScan?.Invoke();
         return Task.FromResult(verdict);
     }
 }
@@ -136,7 +143,7 @@ internal sealed class MemoryDocumentStore(ICompanyContext companyContext, Harnes
 {
     public List<StoredDocument> Documents => world.Documents;
 
-    public List<(Guid Company, string Command, string Key, string RequestHash, string Actor, Guid DocumentId, string Correlation)> Attempts =>
+    public List<(Guid Company, string Command, string Key, string RequestHash, string Actor, Guid DocumentId, int VersionNo, string Correlation)> Attempts =>
         world.Attempts;
 
     public List<DocumentWriteEnvelope> Envelopes => world.Envelopes;
@@ -162,8 +169,21 @@ internal sealed class MemoryDocumentStore(ICompanyContext companyContext, Harnes
             throw new DocumentStoreException(DocumentStoreCodes.SameKeyPayloadMismatch, "SENTETIK");
         }
 
-        return Task.FromResult<DocumentStoreResult?>(new DocumentStoreResult(Documents.Single(document => document.Id == attempt.DocumentId), true,
+        return Task.FromResult<DocumentStoreResult?>(new DocumentStoreResult(world.Versions.Single(document => document.Id == attempt.DocumentId
+                && document.VersionNo == attempt.VersionNo), true,
             attempt.Correlation));
+    }
+
+    public async Task<DocumentStoreResult?> FindVersionReplayAsync(DocumentWriteEnvelope envelope, string requestHash, Guid documentId,
+        int resultVersionNo, CancellationToken cancellationToken = default)
+    {
+        var result = await FindReplayAsync(envelope, requestHash, DocumentCommands.AppendVersionV1, cancellationToken);
+        if (result is not null && (result.Document.Id != documentId || result.Document.VersionNo != resultVersionNo))
+        {
+            throw new DocumentStoreException(DocumentStoreCodes.SameKeyPayloadMismatch, "SENTETIK");
+        }
+
+        return result;
     }
 
     public async Task<DocumentStoreResult> StoreUploadAsync(DocumentWriteEnvelope envelope, string requestHash, NewDocumentUpload upload,
@@ -178,13 +198,47 @@ internal sealed class MemoryDocumentStore(ICompanyContext companyContext, Harnes
             upload.Kind.Kind, upload.SizeBytes, upload.Sha256, upload.ObjectKey, upload.ScanState, upload.ScannerId, envelope.ActorId,
             upload.UploadedAtUtc);
         Documents.Add(stored);
-        Attempts.Add((companyId, DocumentCommands.UploadV1, envelope.IdempotencyKey, requestHash, envelope.ActorId, upload.DocumentId,
+        world.Versions.Add(stored);
+        Attempts.Add((companyId, DocumentCommands.UploadV1, envelope.IdempotencyKey, requestHash, envelope.ActorId, upload.DocumentId, 1,
             envelope.CorrelationId));
+        return new DocumentStoreResult(stored, false, envelope.CorrelationId);
+    }
+
+    public async Task<DocumentStoreResult> StoreVersionAsync(DocumentWriteEnvelope envelope, string requestHash, int expectedCurrentVersion,
+        NewDocumentVersion version, Func<CancellationToken, Task> beforeWrite, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(beforeWrite);
+        BeforeWrite?.Invoke();
+        await beforeWrite(cancellationToken);
+        var existing = Visible().SingleOrDefault(document => document.Id == version.DocumentId);
+        if (existing is null || existing.VersionNo != expectedCurrentVersion)
+        {
+            throw new DocumentStoreException(DocumentStoreCodes.ConcurrentChange, "SENTETIK");
+        }
+
+        var stored = new StoredDocument(version.DocumentId, existing.CompanyId, existing.OwnerKind, existing.OwnerId,
+            expectedCurrentVersion + 1, version.FileName.Value, version.Kind.Kind, version.SizeBytes, version.Sha256, version.ObjectKey,
+            version.ScanState, version.ScannerId, envelope.ActorId, version.UploadedAtUtc);
+        Documents.Remove(existing);
+        Documents.Add(stored);
+        world.Versions.Add(stored);
+        Attempts.Add((existing.CompanyId, DocumentCommands.AppendVersionV1, envelope.IdempotencyKey, requestHash, envelope.ActorId,
+            version.DocumentId, stored.VersionNo, envelope.CorrelationId));
         return new DocumentStoreResult(stored, false, envelope.CorrelationId);
     }
 
     public Task<StoredDocument?> FindDocumentAsync(Guid documentId, CancellationToken cancellationToken = default) =>
         Task.FromResult(Visible().SingleOrDefault(document => document.Id == documentId));
+
+    public Task<StoredDocument?> FindDocumentVersionAsync(Guid documentId, int versionNo, CancellationToken cancellationToken = default) =>
+        Task.FromResult(world.Versions.SingleOrDefault(document => document.CompanyId == companyContext.CompanyId && document.Id == documentId
+            && document.VersionNo == versionNo));
+
+    public Task<IReadOnlyList<StoredDocument>> ListVersionsAsync(Guid documentId, int limit, int? beforeVersionNo,
+        CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<StoredDocument>>(
+            [.. world.Versions.Where(document => document.CompanyId == companyContext.CompanyId && document.Id == documentId)
+                .Where(document => !beforeVersionNo.HasValue || document.VersionNo < beforeVersionNo.Value)
+                .OrderByDescending(document => document.VersionNo).Take(limit)]);
 
     public Task<IReadOnlyList<StoredDocument>> ListByOwnerAsync(string ownerKind, Guid ownerId, int limit, CancellationToken cancellationToken = default)
     {
@@ -277,7 +331,9 @@ internal sealed class Harness
 
         public List<StoredDocument> Documents { get; } = [];
 
-        public List<(Guid Company, string Command, string Key, string RequestHash, string Actor, Guid DocumentId, string Correlation)> Attempts { get; } = [];
+        public List<StoredDocument> Versions { get; } = [];
+
+        public List<(Guid Company, string Command, string Key, string RequestHash, string Actor, Guid DocumentId, int VersionNo, string Correlation)> Attempts { get; } = [];
 
         public List<DocumentWriteEnvelope> Envelopes { get; } = [];
     }

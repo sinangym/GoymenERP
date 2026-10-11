@@ -23,6 +23,7 @@ public sealed class DocumentsStore(DocumentsDbContext dbContext, ICompanyContext
 {
     private const string EntityType = "Documents.Document";
     private const string UploadedEventType = "documents.document.uploaded.v1";
+    private const string VersionAppendedEventType = "documents.document.version-appended.v1";
     private const int ActorMaximumLength = 128;
     private const int KeyMaximumLength = 200;
     private const int SaveRounds = 2;
@@ -37,6 +38,21 @@ public sealed class DocumentsStore(DocumentsDbContext dbContext, ICompanyContext
         RequireResolvedCompany();
         var attempt = await FindAttemptAsync(commandName, IdempotencyKeyHash(envelope.IdempotencyKey), cancellationToken);
         return attempt is null ? null : await ReplayAsync(attempt, envelope, requestHash, cancellationToken);
+    }
+
+    public async Task<DocumentStoreResult?> FindVersionReplayAsync(DocumentWriteEnvelope envelope, string requestHash, Guid documentId,
+        int resultVersionNo, CancellationToken cancellationToken = default)
+    {
+        RequireEnvelope(envelope);
+        RequireHash(requestHash);
+        RequireResolvedCompany();
+        if (documentId == Guid.Empty || resultVersionNo < 2)
+        {
+            throw new ArgumentException("Belge ve sonuç sürümü geçerli olmalıdır.");
+        }
+
+        var attempt = await FindAttemptAsync(DocumentCommands.AppendVersionV1, IdempotencyKeyHash(envelope.IdempotencyKey), cancellationToken);
+        return attempt is null ? null : await ReplayVersionAsync(attempt, envelope, requestHash, documentId, resultVersionNo, cancellationToken);
     }
 
     public async Task<DocumentStoreResult> StoreUploadAsync(DocumentWriteEnvelope envelope, string requestHash, NewDocumentUpload upload,
@@ -158,6 +174,115 @@ public sealed class DocumentsStore(DocumentsDbContext dbContext, ICompanyContext
         }
     }
 
+    public async Task<DocumentStoreResult> StoreVersionAsync(DocumentWriteEnvelope envelope, string requestHash, int expectedCurrentVersion,
+        NewDocumentVersion version, Func<CancellationToken, Task> beforeWrite, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(version);
+        ArgumentNullException.ThrowIfNull(beforeWrite);
+        RequireEnvelope(envelope);
+        RequireHash(requestHash);
+        var companyId = RequireResolvedCompany();
+        if (expectedCurrentVersion < 1)
+        {
+            throw new ArgumentOutOfRangeException(nameof(expectedCurrentVersion));
+        }
+
+        RequireVersion(version, companyId);
+        var resultVersionNo = checked(expectedCurrentVersion + 1);
+        var keyHash = IdempotencyKeyHash(envelope.IdempotencyKey);
+        var actorId = envelope.ActorId.Trim();
+        var correlationId = envelope.CorrelationId.Trim();
+
+        for (var round = 1; ; round++)
+        {
+            var attempt = await FindAttemptAsync(DocumentCommands.AppendVersionV1, keyHash, cancellationToken);
+            if (attempt is not null)
+            {
+                var replay = await ReplayVersionAsync(attempt, envelope, requestHash, version.DocumentId, resultVersionNo, cancellationToken);
+                await beforeWrite(cancellationToken);
+                return replay;
+            }
+
+            var current = await FindDocumentAsync(version.DocumentId, cancellationToken);
+            if (current is null)
+            {
+                throw Refused(DocumentStoreCodes.ConcurrentChange, "Sürümlenecek belge artık bulunamıyor.");
+            }
+
+            if (current.VersionNo != expectedCurrentVersion)
+            {
+                throw Refused(DocumentStoreCodes.ConcurrentChange, "Belgenin güncel sürümü beklenen sürüm değildir.");
+            }
+
+            var blob = await dbContext.Blobs.AsNoTracking().SingleOrDefaultAsync(row => row.Sha256 == version.Sha256, cancellationToken);
+            if (blob is not null && (blob.SizeBytes != version.SizeBytes || blob.ContentKind != (int)version.Kind.Kind
+                || !string.Equals(blob.ObjectKey, version.ObjectKey, StringComparison.Ordinal)))
+            {
+                throw new InvalidOperationException("Aynı içerik özetine kayıtlı içerik bu sürümle uyuşmuyor.");
+            }
+
+            await beforeWrite(cancellationToken);
+            if (blob is null)
+            {
+                dbContext.Blobs.Add(new ContentBlobRow
+                {
+                    CompanyId = companyId,
+                    Sha256 = version.Sha256,
+                    SizeBytes = version.SizeBytes,
+                    ContentKind = (int)version.Kind.Kind,
+                    ObjectKey = version.ObjectKey,
+                    FirstStoredBy = actorId,
+                    FirstStoredAtUtc = version.UploadedAtUtc,
+                });
+            }
+
+            dbContext.Versions.Add(new DocumentVersionRow
+            {
+                CompanyId = companyId,
+                DocumentId = version.DocumentId,
+                VersionNo = resultVersionNo,
+                FileName = version.FileName.Value,
+                Sha256 = version.Sha256,
+                ScanState = (int)version.ScanState,
+                ScannerId = version.ScannerId,
+                UploadedBy = actorId,
+                UploadedAtUtc = version.UploadedAtUtc,
+                CorrelationId = correlationId,
+            });
+            dbContext.Attempts.Add(new DocumentAttemptRow
+            {
+                CompanyId = companyId,
+                CommandName = DocumentCommands.AppendVersionV1,
+                IdempotencyKeyHash = keyHash,
+                RequestHash = requestHash,
+                ActorId = actorId,
+                DocumentId = version.DocumentId,
+                CorrelationId = correlationId,
+                RecordedAtUtc = version.UploadedAtUtc,
+            });
+            AuditVersion(envelope, companyId, version, expectedCurrentVersion, resultVersionNo);
+            try
+            {
+                await dbContext.SaveChangesAsync(cancellationToken);
+            }
+            catch (DbUpdateException exception) when (exception.InnerException is SqlException { Number: 2601 or 2627 })
+            {
+                dbContext.ChangeTracker.Clear();
+                if (round >= SaveRounds)
+                {
+                    throw Refused(DocumentStoreCodes.ConcurrentChange,
+                        "Sürüm numarası veya idempotency anahtarı başka bir yazmanın lehine sonuçlandı; ikinci etki oluşmadı.", exception);
+                }
+
+                continue;
+            }
+
+            var stored = await FindDocumentVersionAsync(version.DocumentId, resultVersionNo, cancellationToken)
+                ?? throw new InvalidOperationException("Kaydedilen belge sürümü okunamadı.");
+            return new DocumentStoreResult(stored, false, correlationId);
+        }
+    }
+
     public async Task<StoredDocument?> FindDocumentAsync(Guid documentId, CancellationToken cancellationToken = default)
     {
         RequireResolvedCompany();
@@ -174,6 +299,40 @@ public sealed class DocumentsStore(DocumentsDbContext dbContext, ICompanyContext
             // One owner link per document in this slice; a second would be a new, reviewed access rule (DEC-DOC-002).
             _ => throw new InvalidOperationException("Belgenin birden fazla kayıt bağlantısı bu sürümde desteklenmez."),
         };
+    }
+
+    public async Task<StoredDocument?> FindDocumentVersionAsync(Guid documentId, int versionNo,
+        CancellationToken cancellationToken = default)
+    {
+        RequireResolvedCompany();
+        if (documentId == Guid.Empty || versionNo < 1)
+        {
+            return null;
+        }
+
+        var rows = await Versions().Where(row => row.Id == documentId && row.VersionNo == versionNo).ToListAsync(cancellationToken);
+        return rows.Count switch
+        {
+            0 => null,
+            1 => Map(rows[0]),
+            _ => throw new InvalidOperationException("Belgenin birden fazla kayıt bağlantısı bu sürümde desteklenmez."),
+        };
+    }
+
+    public async Task<IReadOnlyList<StoredDocument>> ListVersionsAsync(Guid documentId, int limit, int? beforeVersionNo,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(limit, 1);
+        RequireResolvedCompany();
+        if (documentId == Guid.Empty)
+        {
+            return [];
+        }
+
+        var rows = await Versions().Where(row => row.Id == documentId
+                && (!beforeVersionNo.HasValue || row.VersionNo < beforeVersionNo.Value))
+            .OrderByDescending(row => row.VersionNo).Take(limit).ToListAsync(cancellationToken);
+        return [.. rows.Select(Map)];
     }
 
     public async Task<IReadOnlyList<StoredDocument>> ListByOwnerAsync(string ownerKind, Guid ownerId, int limit,
@@ -242,6 +401,32 @@ public sealed class DocumentsStore(DocumentsDbContext dbContext, ICompanyContext
             UploadedAtUtc = version.UploadedAtUtc,
         };
 
+    private IQueryable<LatestDocumentRow> Versions() =>
+        from document in dbContext.Documents.AsNoTracking()
+        join version in dbContext.Versions.AsNoTracking()
+            on new { document.CompanyId, DocumentId = document.Id } equals new { version.CompanyId, version.DocumentId }
+        join blob in dbContext.Blobs.AsNoTracking()
+            on new { version.CompanyId, version.Sha256 } equals new { blob.CompanyId, blob.Sha256 }
+        join link in dbContext.Links.AsNoTracking()
+            on new { document.CompanyId, DocumentId = document.Id } equals new { link.CompanyId, link.DocumentId }
+        select new LatestDocumentRow
+        {
+            Id = document.Id,
+            CompanyId = document.CompanyId,
+            OwnerKind = link.OwnerKind,
+            OwnerId = link.OwnerId,
+            VersionNo = version.VersionNo,
+            FileName = version.FileName,
+            ContentKind = blob.ContentKind,
+            SizeBytes = blob.SizeBytes,
+            Sha256 = version.Sha256,
+            ObjectKey = blob.ObjectKey,
+            ScanState = version.ScanState,
+            ScannerId = version.ScannerId,
+            UploadedBy = version.UploadedBy,
+            UploadedAtUtc = version.UploadedAtUtc,
+        };
+
     private static StoredDocument Map(LatestDocumentRow row) =>
         new StoredDocument(row.Id, row.CompanyId, row.OwnerKind, row.OwnerId, row.VersionNo, row.FileName, (DocumentFileKind)row.ContentKind, row.SizeBytes,
             row.Sha256, row.ObjectKey, (DocumentScanState)row.ScanState, row.ScannerId, row.UploadedBy, row.UploadedAtUtc);
@@ -260,8 +445,24 @@ public sealed class DocumentsStore(DocumentsDbContext dbContext, ICompanyContext
             throw Refused(DocumentStoreCodes.SameKeyPayloadMismatch, "Aynı Idempotency-Key başka bir istekle geldi; ilk cevap bu isteğe verilmez.");
         }
 
-        var stored = await FindDocumentAsync(attempt.DocumentId, cancellationToken)
+        // Upload creates version 1. Replaying that command must never drift to a later version appended afterwards.
+        var stored = await FindDocumentVersionAsync(attempt.DocumentId, 1, cancellationToken)
             ?? throw new InvalidOperationException("Kayıtlı denemenin belgesi bulunamadı.");
+        return new DocumentStoreResult(stored, true, attempt.CorrelationId);
+    }
+
+    private async Task<DocumentStoreResult> ReplayVersionAsync(DocumentAttemptRow attempt, DocumentWriteEnvelope envelope, string requestHash,
+        Guid documentId, int resultVersionNo, CancellationToken cancellationToken)
+    {
+        if (!string.Equals(attempt.ActorId, envelope.ActorId.Trim(), StringComparison.Ordinal)
+            || !string.Equals(attempt.RequestHash, requestHash, StringComparison.Ordinal)
+            || attempt.DocumentId != documentId)
+        {
+            throw Refused(DocumentStoreCodes.SameKeyPayloadMismatch, "Aynı Idempotency-Key başka bir istekle geldi; ilk cevap bu isteğe verilmez.");
+        }
+
+        var stored = await FindDocumentVersionAsync(documentId, resultVersionNo, cancellationToken)
+            ?? throw new InvalidOperationException("Kayıtlı sürüm denemesinin sonucu bulunamadı.");
         return new DocumentStoreResult(stored, true, attempt.CorrelationId);
     }
 
@@ -285,6 +486,23 @@ public sealed class DocumentsStore(DocumentsDbContext dbContext, ICompanyContext
             }, Json), "Belge yüklendi", ApprovalContextJson: null, AuditAiInvolvement.None, AiContextJson: null, envelope.SourceChannel,
             envelope.ClientIpAddress, envelope.UserAgent, envelope.CorrelationId, envelope.CausationId, envelope.IdempotencyKey));
 
+    private void AuditVersion(DocumentWriteEnvelope envelope, Guid companyId, NewDocumentVersion version, int expectedVersion, int resultVersion) =>
+        auditEvents.Enqueue(new AuditEventDraft(companyId, VersionAppendedEventType, EntityType, version.DocumentId.ToString("D"), "AppendVersion",
+            expectedVersion, resultVersion, AuditActorTypes.User, envelope.ActorId, envelope.PermissionCode, envelope.RoleCodes, "{}",
+            JsonSerializer.Serialize(new
+            {
+                expectedCurrentVersion = expectedVersion,
+                versionNo = resultVersion,
+                fileName = version.FileName.Value,
+                contentType = version.Kind.ContentType,
+                sizeBytes = version.SizeBytes,
+                sha256 = version.Sha256,
+                scanState = version.ScanState.ToString(),
+                scannerId = version.ScannerId,
+            }, Json), "Belgeye yeni sürüm eklendi", ApprovalContextJson: null, AuditAiInvolvement.None, AiContextJson: null,
+            envelope.SourceChannel, envelope.ClientIpAddress, envelope.UserAgent, envelope.CorrelationId, envelope.CausationId,
+            envelope.IdempotencyKey));
+
     // ---- guards ---------------------------------------------------------------------------------
 
     private Guid RequireResolvedCompany() =>
@@ -302,6 +520,21 @@ public sealed class DocumentsStore(DocumentsDbContext dbContext, ICompanyContext
         }
 
         if (!string.Equals(upload.ObjectKey, DocumentObjectKeys.For(companyId, upload.Sha256), StringComparison.Ordinal))
+        {
+            throw Refused(DocumentStoreCodes.CompanyContextMismatch, "Nesne anahtarı aktif şirketin içerik anahtarı değil.");
+        }
+    }
+
+    private static void RequireVersion(NewDocumentVersion version, Guid companyId)
+    {
+        if (version.DocumentId == Guid.Empty || version.SizeBytes < 1 || !DocumentContentHash.IsWellFormed(version.Sha256)
+            || version.FileName is null || version.Kind is null || !Enum.IsDefined(version.ScanState)
+            || (version.ScanState == DocumentScanState.Clean) != !string.IsNullOrWhiteSpace(version.ScannerId))
+        {
+            throw new ArgumentException("Belge sürümü eksik veya tutarsız.", nameof(version));
+        }
+
+        if (!string.Equals(version.ObjectKey, DocumentObjectKeys.For(companyId, version.Sha256), StringComparison.Ordinal))
         {
             throw Refused(DocumentStoreCodes.CompanyContextMismatch, "Nesne anahtarı aktif şirketin içerik anahtarı değil.");
         }

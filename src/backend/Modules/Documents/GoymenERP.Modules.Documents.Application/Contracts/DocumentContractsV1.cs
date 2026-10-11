@@ -11,14 +11,16 @@ public static class DocumentsApiV1
     public const string OwnerKindField = "ownerKind";
     public const string OwnerIdField = "ownerId";
     public const string FileField = "file";
+    public const string ExpectedCurrentVersionField = "expectedCurrentVersion";
 }
 
 /// <summary>The command names under which an attempt (ADR-011) is recorded.</summary>
 public static class DocumentCommands
 {
     public const string UploadV1 = "documents.upload.v1";
+    public const string AppendVersionV1 = "documents.append-version.v1";
 
-    public static bool IsKnown(string commandName) => string.Equals(commandName, UploadV1, StringComparison.Ordinal);
+    public static bool IsKnown(string commandName) => commandName is UploadV1 or AppendVersionV1;
 }
 
 /// <summary>The problem codes of the vault's routes. Platform 401/403/404 and every 503 stay code-less.</summary>
@@ -38,6 +40,9 @@ public static class DocumentProblemCodesV1
 
 /// <summary>What the upload route read from the multipart body; validated by the service.</summary>
 public sealed record UploadDocumentRequest(string? OwnerKind, Guid OwnerId, string? FileName, string? DeclaredContentType, byte[] Content);
+
+/// <summary>A new immutable version of an existing logical document.</summary>
+public sealed record AppendDocumentVersionRequest(int ExpectedCurrentVersion, string? FileName, string? DeclaredContentType, byte[] Content);
 
 /// <summary>The command metadata the route read from the headers (the Logistics shape).</summary>
 public sealed record DocumentCommandMetadata(string IdempotencyKey, string CorrelationId, string? CausationId);
@@ -72,6 +77,12 @@ public sealed record DocumentDuplicateView(Guid DocumentId, string FileName, str
 /// <summary>An upload's answer: the stored document, the readable duplicates, and whether this is a replayed attempt.</summary>
 public sealed record DocumentUploadResponse(DocumentView Document, IReadOnlyList<DocumentDuplicateView> Duplicates, bool IsReplay,
     string OriginalCorrelationId);
+
+/// <summary>An append answer; a replay returns the exact version created by the first attempt.</summary>
+public sealed record DocumentVersionWriteResponse(DocumentView Document, bool IsReplay, string OriginalCorrelationId);
+
+/// <summary>A deterministic immutable-history page, newest version first.</summary>
+public sealed record DocumentVersionHistoryResponse(Guid DocumentId, IReadOnlyList<DocumentView> Versions, string? NextCursor);
 
 /// <summary>The upload bounds the client may pre-check against; the server re-checks every upload regardless.</summary>
 public sealed record DocumentUploadLimitsView(long MaximumBytes, IReadOnlyList<string> Extensions, IReadOnlyList<string> ContentTypes);
@@ -111,6 +122,14 @@ public interface IDocumentService
     Task<DocumentListResponse> ListAsync(string? ownerKind, Guid ownerId, CancellationToken cancellationToken = default);
 
     Task<DocumentContentV1> GetContentAsync(Guid documentId, CancellationToken cancellationToken = default);
+
+    Task<DocumentVersionWriteResponse> AppendVersionAsync(Guid documentId, AppendDocumentVersionRequest request,
+        DocumentCommandMetadata metadata, CancellationToken cancellationToken = default);
+
+    Task<DocumentVersionHistoryResponse> ListVersionsAsync(Guid documentId, int? pageSize, string? cursor,
+        CancellationToken cancellationToken = default);
+
+    Task<DocumentContentV1> GetVersionContentAsync(Guid documentId, int versionNo, CancellationToken cancellationToken = default);
 }
 
 /// <summary>
