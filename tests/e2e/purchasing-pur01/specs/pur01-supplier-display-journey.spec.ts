@@ -877,18 +877,18 @@ test.describe('PUR01-LIST the purchase-order list on the design system', () => {
 
     const clearedRead = listRead(page, { status: 'Draft', cursor: null })
     await page.getByRole('button', { name: 'Tedarikçi filtresini kaldır', exact: true }).click()
-    expect((await clearedRead).status()).toBe(200)
+    const clearedResponse = await clearedRead
+    expect(clearedResponse.status()).toBe(200)
+    const clearedPage = (await clearedResponse.json()) as OrderPage
     expect(new URL(page.url()).searchParams.get('supplierPartyId')).toBeNull()
     expect(new URL(page.url()).searchParams.get('status')).toBe('Draft')
 
-    const backRead = listRead(page, { status: 'Draft', cursor: null, supplierPartyId: otherSupplierPartyId })
     await page.goBack()
-    expect((await backRead).status()).toBe(200)
+    await expect(page).toHaveURL(new RegExp(`[?&]supplierPartyId=${otherSupplierPartyId}(?:&|$)`))
     await expectRows(tableRows(page), [otherSupplierOrderId], 'the restored supplier deep link after Back')
-    const forwardRead = listRead(page, { status: 'Draft', cursor: null })
     await page.goForward()
-    expect((await forwardRead).status()).toBe(200)
-    expect(new URL(page.url()).searchParams.get('supplierPartyId')).toBeNull()
+    await expect(page).not.toHaveURL(new RegExp(`[?&]supplierPartyId=`))
+    await expectRows(tableRows(page), idsOf(clearedPage), 'the restored unfiltered Draft page after Forward')
   })
 
   test('PUR01-SUP-FILTER-3 draws the filtered real supplier as accessible cards at 390 and 320 for a limited reader', async ({ page }) => {
