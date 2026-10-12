@@ -413,19 +413,22 @@ test('B-C01-004 sorting, search and filters are done by the server, and focus su
   // the same actor/company namespace. No query from a different namespace is
   // replayed, and the visible values remain the ones the user chose.
   await page.getByRole('link', { name: 'Ana sayfa', exact: true }).click()
-  await expect(page.getByRole('heading', { level: 1 })).toBeVisible()
+  // Wait for the destination, not merely "some H1": the departing Cari heading
+  // remains visible for one render while the SPA transition commits. Accepting it
+  // let goBack race the forward navigation and occasionally left no Cari re-entry
+  // for the request waiter below to observe.
+  await expect(page).toHaveURL((url) => url.pathname === '/')
+  await expect(page.getByRole('heading', { level: 1, name: 'Ortak kabuk hazır' })).toBeVisible()
   const restoredRead = page.waitForRequest((request) => {
     const url = new URL(request.url())
-    return (
-      url.pathname === '/api/v1/counterparties' &&
-      url.searchParams.get('q') === SEARCH_TERM &&
-      url.searchParams.get('addressCity') === 'İstanbul' &&
-      url.searchParams.get('addressDistrict') === 'Çankaya' &&
-      url.searchParams.get('addressType') === 'delivery'
-    )
+    return url.pathname === '/api/v1/counterparties'
   })
   await page.goBack()
-  await restoredRead
+  const restoredUrl = new URL((await restoredRead).url())
+  expect(restoredUrl.searchParams.get('q')).toBe(SEARCH_TERM)
+  expect(restoredUrl.searchParams.get('addressCity')).toBe('İstanbul')
+  expect(restoredUrl.searchParams.get('addressDistrict')).toBe('Çankaya')
+  expect(restoredUrl.searchParams.get('addressType')).toBe('delivery')
   await expect(page.getByRole('heading', { level: 1, name: 'Cari Kartlar' })).toBeVisible()
   await expect(page.getByRole('searchbox', { name: 'Ara', exact: true })).toHaveValue(SEARCH_TERM)
   await expect(page.getByText('İl: İstanbul', { exact: true })).toBeVisible()
