@@ -213,11 +213,75 @@
 }
 
 .chip {
-  padding: 2px 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  padding: 2px 4px 2px 8px;
   border: 1px solid var(--goy-ds-color-border-control);
   border-radius: 999px;
   background: var(--goy-ds-color-surface-muted);
   overflow-wrap: anywhere;
+}
+
+/* Removes this one filter. Drawn as a cross, named in full for assistive technology; large enough to touch. */
+.chipRemove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  min-width: 24px;
+  min-height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--goy-ds-color-text-secondary);
+  font: inherit;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.chipRemove:hover {
+  background: var(--goy-ds-color-surface-pressed);
+  color: var(--goy-ds-color-text);
+}
+
+.chipRemove:focus-visible {
+  outline: 2px solid var(--goy-ds-color-accent);
+  outline-offset: 1px;
+}
+
+/* ── "Tüm filtreler": the less frequent filters, one explicit step away ── */
+.moreToggle {
+  flex: none;
+}
+
+/* Takes its own row under the frequent filters; its fields share that row where there is room and stack on a phone. */
+.morePanel {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
+  gap: var(--goy-ds-space-2) var(--goy-ds-space-4);
+  flex: 1 1 100%;
+  min-width: 0;
+  padding-top: var(--goy-ds-space-3);
+  border-top: 1px solid var(--goy-ds-color-border);
+}
+
+.moreHeading,
+.moreNote {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
+.moreHeading {
+  font-size: var(--goy-ds-font-size-md);
+  font-weight: var(--goy-ds-font-weight-semibold);
+}
+
+.moreNote {
+  color: var(--goy-ds-color-text-tertiary);
+  font-size: var(--goy-ds-font-size-sm);
 }
 
 /* Pushed to the end of the row so it keeps one predictable place as chips wrap. */

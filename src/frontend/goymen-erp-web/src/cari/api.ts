@@ -28,12 +28,24 @@ export type SortDirection = 'asc' | 'desc'
 export type RoleMatch = 'any' | 'all'
 export type KindFilter = 'LegalEntity' | 'NaturalPerson'
 export type RoleFilter = 'Customer' | 'Supplier' | 'Tolling' | 'Service'
+/** The address kinds the list can be narrowed by (#691): the exact query tokens, nothing else is accepted. */
+export type AddressTypeFilter = 'billing' | 'delivery' | 'operational'
+export const ADDRESS_TYPE_FILTERS: readonly AddressTypeFilter[] = ['billing', 'delivery', 'operational']
+/** The server's bound for the city and district text (runes, after trimming). */
+export const ADDRESS_FILTER_MAX_LENGTH = 100
 
 export interface CounterpartyQuery {
   readonly q?: string
   readonly kind?: KindFilter
   readonly role?: readonly RoleFilter[]
   readonly roleMatch?: RoleMatch
+  /**
+   * The address filters (#691). The server matches all that are given against ONE address row of the counterparty,
+   * before paging; the client sends them together and never narrows rows itself.
+   */
+  readonly addressCity?: string
+  readonly addressDistrict?: string
+  readonly addressType?: AddressTypeFilter
   readonly partyState?: PartyStateFilter
   readonly accountState?: AccountStateFilter
   readonly sort?: SortField
@@ -55,6 +67,12 @@ export interface CounterpartyScope {
   readonly companyId: string | null
 }
 
+/** A city or district as it is sent: trimmed, NFC-normalized, or null when nothing is left. */
+export function addressFilterText(value: string | undefined): string | null {
+  const text = (value ?? '').trim().normalize('NFC')
+  return text.length === 0 ? null : text
+}
+
 export function buildCounterpartyQuery(query: CounterpartyQuery): string {
   const params = new URLSearchParams()
   if (query.q !== undefined && query.q.trim().length > 0) params.set('q', query.q.trim())
@@ -62,6 +80,13 @@ export function buildCounterpartyQuery(query: CounterpartyQuery): string {
   // `role` is repeatable — never comma-joined into a single value.
   for (const role of query.role ?? []) params.append('role', role)
   if (query.roleMatch !== undefined) params.set('roleMatch', query.roleMatch)
+  // As the server reads them: trimmed and NFC, sent only when something is left. The letters are the user's own —
+  // no case is changed here; the comparison is the server's.
+  const addressCity = addressFilterText(query.addressCity)
+  if (addressCity !== null) params.set('addressCity', addressCity)
+  const addressDistrict = addressFilterText(query.addressDistrict)
+  if (addressDistrict !== null) params.set('addressDistrict', addressDistrict)
+  if (query.addressType !== undefined) params.set('addressType', query.addressType)
   if (query.partyState !== undefined) params.set('partyState', query.partyState)
   if (query.accountState !== undefined) params.set('accountState', query.accountState)
   if (query.includeCount !== undefined) params.set('includeCount', String(query.includeCount))

@@ -11,14 +11,22 @@
  * CARI-DS-01: laid out on GOY-DS-001 — the shared DataTable on wider screens, one labelled card per counterparty
  * at phone width, Field/Button for the controls. The reads, the filters, the cursor, the gates and the context
  * fence below are unchanged; only how the same facts are drawn moved.
+ *
+ * CARI-FILTER-UI-01 (#691): the list can be narrowed by an address — city, district and address kind — behind an
+ * explicit "Tüm filtreler" control. The three go to the server in one query and the server matches them against one
+ * address row before paging; nothing is filtered, completed or looked up on this side, and no city list is offered
+ * because none is published. Every applied filter is a chip that says what it is and can be removed on its own.
  */
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { Link, useSearchParams } from 'react-router'
 import {
+  ADDRESS_FILTER_MAX_LENGTH,
+  ADDRESS_TYPE_FILTERS,
   fetchCounterparties,
   type AccountStateFilter,
+  type AddressTypeFilter,
   type CounterpartyScope,
   type KindFilter,
   type PartyStateFilter,
@@ -51,6 +59,7 @@ import { useAuthBoundary } from '../shell/useAuthBoundary'
 import { allowed, isRendered, notEntitled, type ActionGate } from './actionGating'
 import { API_BASE, type ContractContext } from './clientContract'
 import {
+  addressFilterCount,
   clearedFilters,
   DEFAULT_CARI_LIST_VIEW,
   isFiltered,
@@ -120,6 +129,20 @@ const ACCOUNT_STATE_LABEL: Record<AccountStateFilter, string> = {
   inactive: 'Pasif',
 }
 
+/** The address kinds in the user's words. They label query tokens only; no stored name is rewritten. */
+const ADDRESS_TYPE_LABEL: Record<AddressTypeFilter, string> = {
+  billing: 'Fatura',
+  delivery: 'Teslimat',
+  operational: 'Operasyon',
+}
+
+/** One applied filter: which one it is (so it can be removed on its own) and how it reads. */
+type FilterKey = 'q' | 'kind' | 'roles' | 'addressCity' | 'addressDistrict' | 'addressType' | 'partyState' | 'accountState'
+interface ActiveFilter {
+  readonly key: FilterKey
+  readonly label: string
+}
+
 /**
  * The client-contract refusals (PR #230 `080e7a1`), which must NOT be shown as a
  * generic conflict.
@@ -185,10 +208,11 @@ const COUNT_SCOPE_LABEL: Record<string, string> = {
  * on a screen nobody has touched would make the normal state look like something the
  * user did.
  */
-function activeFilterLabels(view: CariListView): readonly string[] {
-  const labels: string[] = []
-  if (view.q.trim().length > 0) labels.push(`Arama: “${view.q.trim()}”`)
-  if (view.kind !== '') labels.push(`Tür: ${KIND_LABEL[PARTY_KIND[view.kind]]}`)
+function activeFilters(view: CariListView): readonly ActiveFilter[] {
+  const filters: ActiveFilter[] = []
+  const labels = { push: (key: FilterKey, label: string) => filters.push({ key, label }) }
+  if (view.q.trim().length > 0) labels.push('q', `Arama: “${view.q.trim()}”`)
+  if (view.kind !== '') labels.push('kind', `Tür: ${KIND_LABEL[PARTY_KIND[view.kind]]}`)
   if (view.roles.length > 0) {
     const names = view.roles.map((role) => ROLE_LABEL[role]).join(', ')
     /**
@@ -201,18 +225,23 @@ function activeFilterLabels(view: CariListView): readonly string[] {
      * The match mode only changes the query with 2+ roles, so it is only named there.
      */
     labels.push(
+      'roles',
       view.roles.length > 1 && view.roleMatch === 'all'
         ? `Geçmiş rol (hepsi birden): ${names}`
         : `Geçmiş rol: ${names}`,
     )
   }
+  // The address values are shown as typed (trimmed): a city or district is never re-cased here.
+  if (view.addressCity.trim().length > 0) labels.push('addressCity', `İl: ${view.addressCity.trim()}`)
+  if (view.addressDistrict.trim().length > 0) labels.push('addressDistrict', `İlçe: ${view.addressDistrict.trim()}`)
+  if (view.addressType !== '') labels.push('addressType', `Adres türü: ${ADDRESS_TYPE_LABEL[view.addressType]}`)
   if (view.partyState !== DEFAULT_CARI_LIST_VIEW.partyState) {
-    labels.push(`Taraf durumu: ${PARTY_STATE_LABEL[view.partyState]}`)
+    labels.push('partyState', `Taraf durumu: ${PARTY_STATE_LABEL[view.partyState]}`)
   }
   if (view.accountState !== DEFAULT_CARI_LIST_VIEW.accountState) {
-    labels.push(`Şirket hesabı durumu: ${ACCOUNT_STATE_LABEL[view.accountState]}`)
+    labels.push('accountState', `Şirket hesabı durumu: ${ACCOUNT_STATE_LABEL[view.accountState]}`)
   }
-  return labels
+  return filters
 }
 
 /**
@@ -266,6 +295,14 @@ function CariList({ namespace }: { readonly namespace: string | null }) {
   const [kind, setKind] = useState<KindFilter | ''>(restored.kind)
   const [roles, setRoles] = useState<readonly RoleFilter[]>(restored.roles)
   const [roleMatch, setRoleMatch] = useState<RoleMatch>(restored.roleMatch)
+  const [addressCity, setAddressCity] = useState(restored.addressCity)
+  const [addressDistrict, setAddressDistrict] = useState(restored.addressDistrict)
+  const [addressType, setAddressType] = useState<AddressTypeFilter | ''>(restored.addressType)
+  /**
+   * Whether "Tüm filtreler" is open. Closed on entry even over a restored address filter: unlike the legacy block,
+   * what it holds is never out of sight — the toggle counts it and every applied filter is a chip below.
+   */
+  const [moreOpen, setMoreOpen] = useState(false)
   const [partyState, setPartyState] = useState<PartyStateFilter>(restored.partyState)
   const [accountState, setAccountState] = useState<AccountStateFilter>(restored.accountState)
   const [sort, setSort] = useState<SortField>(restored.sort)
@@ -338,11 +375,14 @@ function CariList({ namespace }: { readonly namespace: string | null }) {
   )
 
   const view: CariListView = useMemo(
-    () => ({ q, kind, roles, roleMatch, partyState, accountState, sort, direction, pageSize }),
-    [q, kind, roles, roleMatch, partyState, accountState, sort, direction, pageSize],
+    () => ({
+      q, kind, roles, roleMatch, addressCity, addressDistrict, addressType, partyState, accountState, sort, direction, pageSize,
+    }),
+    [q, kind, roles, roleMatch, addressCity, addressDistrict, addressType, partyState, accountState, sort, direction, pageSize],
   )
   const filterActive = isFiltered(view)
-  const filterLabels = useMemo(() => activeFilterLabels(view), [view])
+  const filters = useMemo(() => activeFilters(view), [view])
+  const addressFilters = addressFilterCount(view)
 
   /**
    * Remember the query the user chose, so leaving for a record and coming back does
@@ -363,7 +403,7 @@ function CariList({ namespace }: { readonly namespace: string | null }) {
       // normally, because the generation only moves when the route is entered.
       entryGeneration,
       'counterparties',
-      { q, kind, roles, roleMatch, partyState, accountState, sort, direction, pageSize, cursor },
+      { q, kind, roles, roleMatch, addressCity, addressDistrict, addressType, partyState, accountState, sort, direction, pageSize, cursor },
     ],
     enabled: namespace !== null && singleCompanyContext,
     /**
@@ -384,6 +424,10 @@ function CariList({ namespace }: { readonly namespace: string | null }) {
           kind: kind === '' ? undefined : kind,
           role: roles.length > 0 ? roles : undefined,
           roleMatch: roles.length > 1 ? roleMatch : undefined,
+          // One query carries all three: the server matches them against the same address row (#691).
+          addressCity,
+          addressDistrict,
+          addressType: addressType === '' ? undefined : addressType,
           partyState,
           accountState,
           sort,
@@ -492,6 +536,9 @@ function CariList({ namespace }: { readonly namespace: string | null }) {
     setKind(cleared.kind)
     setRoles(cleared.roles)
     setRoleMatch(cleared.roleMatch)
+    setAddressCity(cleared.addressCity)
+    setAddressDistrict(cleared.addressDistrict)
+    setAddressType(cleared.addressType)
     setPartyState(cleared.partyState)
     setAccountState(cleared.accountState)
     // Page size is not a filter and survives, like the sort.
@@ -507,6 +554,29 @@ function CariList({ namespace }: { readonly namespace: string | null }) {
      * box: it is the control this row is about, and it is where a re-narrowed search
      * starts.
      */
+    searchRef.current?.focus()
+  }
+
+  /**
+   * Removes ONE applied filter and leaves every other as it is. Paging restarts, exactly as when the same filter is
+   * changed at its own control; and because the chip that was activated disappears, focus goes to the search box
+   * rather than falling to the top of the document.
+   */
+  function clearFilter(key: FilterKey) {
+    switch (key) {
+      case 'q': setQ(DEFAULT_CARI_LIST_VIEW.q); break
+      case 'kind': setKind(DEFAULT_CARI_LIST_VIEW.kind); break
+      case 'roles':
+        setRoles(DEFAULT_CARI_LIST_VIEW.roles)
+        setRoleMatch(DEFAULT_CARI_LIST_VIEW.roleMatch)
+        break
+      case 'addressCity': setAddressCity(''); break
+      case 'addressDistrict': setAddressDistrict(''); break
+      case 'addressType': setAddressType(''); break
+      case 'partyState': setPartyState(DEFAULT_CARI_LIST_VIEW.partyState); break
+      case 'accountState': setAccountState(DEFAULT_CARI_LIST_VIEW.accountState); break
+    }
+    resetPaging()
     searchRef.current?.focus()
   }
 
@@ -953,6 +1023,79 @@ function CariList({ namespace }: { readonly namespace: string | null }) {
             )}
           </Field>
         ) : null}
+
+        {/* The less frequent filters stay one explicit step away, so the normal view is the search and the states.
+            A real button: Tab reaches it, Enter and Space open it, and it says how many filters it holds. */}
+        <Button
+          type="button"
+          variant="secondary"
+          className={styles.moreToggle}
+          aria-expanded={moreOpen}
+          aria-controls={moreOpen ? 'cari-list-more-filters' : undefined}
+          onClick={() => setMoreOpen((open) => !open)}
+        >
+          {addressFilters > 0 ? `Tüm filtreler (${addressFilters})` : 'Tüm filtreler'}
+        </Button>
+
+        {moreOpen ? (
+          <div id="cari-list-more-filters" role="group" aria-labelledby="cari-list-more-heading" className={styles.morePanel}>
+            <p id="cari-list-more-heading" className={styles.moreHeading}>Adres</p>
+            <p className={styles.moreNote}>İl, ilçe ve adres türü aynı adres satırında birlikte aranır.</p>
+            {/* Free text, because no city or district list is published: the server compares what is typed. */}
+            <Field id="cari-list-address-city" label="İl" className={styles.filterField}>
+              {(control) => (
+                <input
+                  {...control}
+                  className={styles.input}
+                  type="text"
+                  autoComplete="off"
+                  maxLength={ADDRESS_FILTER_MAX_LENGTH}
+                  value={addressCity}
+                  onChange={(event) => {
+                    setAddressCity(event.target.value)
+                    resetPaging()
+                  }}
+                />
+              )}
+            </Field>
+            <Field id="cari-list-address-district" label="İlçe" className={styles.filterField}>
+              {(control) => (
+                <input
+                  {...control}
+                  className={styles.input}
+                  type="text"
+                  autoComplete="off"
+                  maxLength={ADDRESS_FILTER_MAX_LENGTH}
+                  value={addressDistrict}
+                  onChange={(event) => {
+                    setAddressDistrict(event.target.value)
+                    resetPaging()
+                  }}
+                />
+              )}
+            </Field>
+            <Field id="cari-list-address-type" label="Adres türü" className={styles.filterField}>
+              {(control) => (
+                <select
+                  {...control}
+                  className={styles.select}
+                  value={addressType}
+                  onChange={(event) => {
+                    setAddressType(event.target.value as AddressTypeFilter | '')
+                    resetPaging()
+                  }}
+                >
+                  <option value="">Hepsi</option>
+                  {ADDRESS_TYPE_FILTERS.map((type) => (
+                    <option key={type} value={type}>
+                      {ADDRESS_TYPE_LABEL[type]}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </Field>
+          </div>
+        ) : null}
       </div>
 
       {/*
@@ -1025,9 +1168,18 @@ function CariList({ namespace }: { readonly namespace: string | null }) {
         <div className={styles.activeFilters}>
           <span className={styles.activeFiltersLabel}>Etkin filtreler:</span>
           <ul className={styles.chips}>
-            {filterLabels.map((label) => (
-              <li key={label} className={styles.chip}>
-                {label}
+            {filters.map((filter) => (
+              <li key={filter.key} className={styles.chip}>
+                <span>{filter.label}</span>
+                {/* Named by what it removes; the cross is only its drawing. */}
+                <button
+                  type="button"
+                  className={styles.chipRemove}
+                  aria-label={`${filter.label} filtresini kaldır`}
+                  onClick={() => clearFilter(filter.key)}
+                >
+                  <span aria-hidden="true">×</span>
+                </button>
               </li>
             ))}
           </ul>
