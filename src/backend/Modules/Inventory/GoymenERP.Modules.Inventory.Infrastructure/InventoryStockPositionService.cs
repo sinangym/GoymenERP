@@ -42,6 +42,13 @@ internal sealed record InventoryStockPositionReadQuery(
     InventoryLabelClassificationV1? Classification,
     StockPartyKind? OwnerKind,
     Guid? OwnerId,
+    Guid? ProductFamilyId,
+    decimal? ThicknessMm,
+    decimal? ThicknessMinMm,
+    decimal? ThicknessMaxMm,
+    decimal? WidthMm,
+    decimal? WidthMinMm,
+    decimal? WidthMaxMm,
     InventoryStockPositionPosition? After);
 
 internal interface IInventoryStockPositionCursorCodec
@@ -66,8 +73,11 @@ internal sealed class InventoryStockPositionService(
     ICurrentUser user,
     IErpAuthorityRevalidationService authority,
     IInventoryStockPositionReader? reader,
-    IInventoryStockPositionCursorCodec? cursors = null) : IInventoryStockPositionsV1
+    IInventoryStockPositionCursorCodec? cursors = null,
+    IInventoryStockProductFilterV1? productFilter = null) : IInventoryStockPositionsV1
 {
+    private const int MaximumTypedFilterCandidateWindow = 1000;
+
     public async Task<InventoryStockPositionsV1> SearchAsync(
         InventoryStockPositionQueryV1 query,
         CancellationToken cancellationToken = default)
@@ -77,9 +87,11 @@ internal sealed class InventoryStockPositionService(
         var normalizedOwnerKind = query?.OwnerKind?.Trim();
         if (query is null || query.Limit is < 1 or > 100 || normalizedQ?.Length > MaterialLabel.MaximumCodeLength
             || query.ProductId == Guid.Empty || query.LocationId == Guid.Empty || query.OwnerId == Guid.Empty
+            || query.ProductFamilyId == Guid.Empty
             || (query.OwnerId.HasValue != !string.IsNullOrEmpty(normalizedOwnerKind))
             || query.Classification is { } classification && !Enum.IsDefined(classification)
-            || !TryOwnerKind(normalizedOwnerKind, out var ownerKind))
+            || !TryOwnerKind(normalizedOwnerKind, out var ownerKind)
+            || !ValidTypedProductFilter(query))
         {
             throw Error(400, InventoryStockPositionCodesV1.InvalidQuery);
         }
@@ -93,6 +105,13 @@ internal sealed class InventoryStockPositionService(
             query.Classification,
             ownerKind,
             query.OwnerId,
+            query.ProductFamilyId,
+            query.ThicknessMm,
+            query.ThicknessMinMm,
+            query.ThicknessMaxMm,
+            query.WidthMm,
+            query.WidthMinMm,
+            query.WidthMaxMm,
             null);
         if (query.Cursor is not null)
         {
@@ -111,10 +130,12 @@ internal sealed class InventoryStockPositionService(
             };
         }
 
-        var window = await FencedAsync(
-            () => source.SearchAsync(scope.CompanyId, readQuery, cancellationToken),
-            scope,
-            cancellationToken);
+        if (query.HasTypedProductFilter)
+        {
+            return await SearchTypedAsync(query, readQuery, source, scope, cancellationToken);
+        }
+
+        var window = await ReadWindowAsync(source, readQuery, scope, cancellationToken);
         string? nextCursor = null;
         if (window.HasMore)
         {
@@ -131,6 +152,103 @@ internal sealed class InventoryStockPositionService(
             window.HasMore,
             nextCursor);
     }
+
+    private async Task<InventoryStockPositionsV1> SearchTypedAsync(
+        InventoryStockPositionQueryV1 query,
+        InventoryStockPositionReadQuery readQuery,
+        IInventoryStockPositionReader source,
+        Scope scope,
+        CancellationToken cancellationToken)
+    {
+        var filter = productFilter ?? throw Error(503, InventoryStockPositionCodesV1.Unavailable);
+        var matches = new List<InventoryStockPositionV1>(query.Limit);
+        var scanned = 0;
+        InventoryStockPositionPosition? lastProcessed = readQuery.After;
+        var hasContinuation = false;
+
+        while (matches.Count < query.Limit && scanned < MaximumTypedFilterCandidateWindow)
+        {
+            var window = await ReadWindowAsync(source, readQuery, scope, cancellationToken);
+            if (window.Records.Count == 0)
+            {
+                if (window.HasMore) throw Error(503, InventoryStockPositionCodesV1.Unavailable);
+                return new(matches, false);
+            }
+
+            var views = window.Records.Select(record => View(record, scope.CompanyId)).ToArray();
+            var selections = views
+                .Where(item => !string.IsNullOrWhiteSpace(item.ProductVersion))
+                .Select(item => new InventoryStockProductSelectionV1(
+                    item.LabelId, item.ProductId, item.ProductVersion!))
+                .ToArray();
+            var matched = selections.Length == 0
+                ? new HashSet<Guid>()
+                : await FencedAsync(
+                    () => filter.MatchAsync(new(
+                        scope.CompanyId,
+                        scope.ActorId,
+                        selections,
+                        new(query.ProductFamilyId, query.ThicknessMm, query.ThicknessMinMm,
+                            query.ThicknessMaxMm, query.WidthMm, query.WidthMinMm, query.WidthMaxMm)),
+                        cancellationToken),
+                    scope,
+                    cancellationToken);
+            if (matched.Any(labelId => labelId == Guid.Empty
+                    || selections.All(selection => selection.LabelId != labelId)))
+            {
+                throw Error(503, InventoryStockPositionCodesV1.Unavailable);
+            }
+
+            for (var index = 0; index < views.Length; index++)
+            {
+                var item = views[index];
+                scanned++;
+                lastProcessed = new(item.LabelCode, item.LabelId);
+                if (matched.Contains(item.LabelId)) matches.Add(item);
+
+                var unprocessedInWindow = index + 1 < views.Length;
+                if (matches.Count == query.Limit || scanned == MaximumTypedFilterCandidateWindow)
+                {
+                    hasContinuation = unprocessedInWindow || window.HasMore;
+                    break;
+                }
+            }
+
+            if (matches.Count == query.Limit || scanned == MaximumTypedFilterCandidateWindow)
+            {
+                break;
+            }
+            if (!window.HasMore)
+            {
+                return new(matches, false);
+            }
+            if (window.LastPosition is null || window.LastPosition == readQuery.After)
+            {
+                throw Error(503, InventoryStockPositionCodesV1.Unavailable);
+            }
+            readQuery = readQuery with { After = window.LastPosition };
+        }
+
+        string? nextCursor = null;
+        if (hasContinuation)
+        {
+            if (lastProcessed is null || cursors is not { IsAvailable: true })
+            {
+                throw Error(503, InventoryStockPositionCodesV1.Unavailable);
+            }
+            nextCursor = cursors.Protect(scope.CompanyId, scope.ActorId, readQuery, lastProcessed);
+        }
+        return new(matches, hasContinuation, nextCursor);
+    }
+
+    private Task<InventoryStockPositionWindow> ReadWindowAsync(
+        IInventoryStockPositionReader source,
+        InventoryStockPositionReadQuery query,
+        Scope scope,
+        CancellationToken cancellationToken) => FencedAsync(
+            () => source.SearchAsync(scope.CompanyId, query, cancellationToken),
+            scope,
+            cancellationToken);
 
     private static InventoryStockPositionV1 View(InventoryStockPositionRecord record, Guid companyId)
     {
@@ -314,6 +432,30 @@ internal sealed class InventoryStockPositionService(
 
         kind = parsed;
         return true;
+    }
+
+    private static bool ValidTypedProductFilter(InventoryStockPositionQueryV1 query) =>
+        ValidMeasure(query.ThicknessMm)
+        && ValidMeasure(query.ThicknessMinMm)
+        && ValidMeasure(query.ThicknessMaxMm)
+        && ValidMeasure(query.WidthMm)
+        && ValidMeasure(query.WidthMinMm)
+        && ValidMeasure(query.WidthMaxMm)
+        && !(query.ThicknessMm.HasValue
+            && (query.ThicknessMinMm.HasValue || query.ThicknessMaxMm.HasValue))
+        && !(query.WidthMm.HasValue && (query.WidthMinMm.HasValue || query.WidthMaxMm.HasValue))
+        && (!query.ThicknessMinMm.HasValue || !query.ThicknessMaxMm.HasValue
+            || query.ThicknessMinMm <= query.ThicknessMaxMm)
+        && (!query.WidthMinMm.HasValue || !query.WidthMaxMm.HasValue
+            || query.WidthMinMm <= query.WidthMaxMm);
+
+    private static bool ValidMeasure(decimal? value)
+    {
+        if (!value.HasValue) return true;
+        if (value <= 0m) return false;
+        var bits = decimal.GetBits(value.Value);
+        var scale = (bits[3] >> 16) & 0x7F;
+        return scale <= 3;
     }
 
     private sealed record Scope(Guid CompanyId, string ActorId);

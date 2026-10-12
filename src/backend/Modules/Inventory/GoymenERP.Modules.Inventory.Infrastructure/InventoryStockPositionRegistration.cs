@@ -38,5 +38,6 @@ public static class InventoryStockPositionRegistration
             services.GetService<InventoryDbContext>() is { } db
                 ? new SqlInventoryStockPositionReader(db)
                 : null,
-            services.GetService<IInventoryStockPositionCursorCodec>());
+            services.GetService<IInventoryStockPositionCursorCodec>(),
+            services.GetService<IInventoryStockProductFilterV1>());
 }

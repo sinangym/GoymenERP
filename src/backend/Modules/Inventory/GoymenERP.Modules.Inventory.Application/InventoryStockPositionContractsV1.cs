@@ -29,7 +29,51 @@ public sealed record InventoryStockPositionQueryV1(
     Guid? LocationId = null,
     InventoryLabelClassificationV1? Classification = null,
     string? OwnerKind = null,
-    Guid? OwnerId = null);
+    Guid? OwnerId = null,
+    Guid? ProductFamilyId = null,
+    decimal? ThicknessMm = null,
+    decimal? ThicknessMinMm = null,
+    decimal? ThicknessMaxMm = null,
+    decimal? WidthMm = null,
+    decimal? WidthMinMm = null,
+    decimal? WidthMaxMm = null)
+{
+    public bool HasTypedProductFilter => ProductFamilyId.HasValue
+        || ThicknessMm.HasValue || ThicknessMinMm.HasValue || ThicknessMaxMm.HasValue
+        || WidthMm.HasValue || WidthMinMm.HasValue || WidthMaxMm.HasValue;
+}
+
+/// <summary>
+/// Inventory-owned filtering port for Product-owned typed facts. The caller supplies only the
+/// exact Product id/version recorded on each stock label. The implementation may return a label id
+/// only when that exact Product snapshot matches every requested predicate.
+/// </summary>
+public interface IInventoryStockProductFilterV1
+{
+    Task<IReadOnlySet<Guid>> MatchAsync(
+        InventoryStockProductFilterRequestV1 request,
+        CancellationToken cancellationToken = default);
+}
+
+public sealed record InventoryStockProductFilterRequestV1(
+    Guid CompanyId,
+    string ActorId,
+    IReadOnlyList<InventoryStockProductSelectionV1> Selections,
+    InventoryStockProductFilterV1 Filter);
+
+public sealed record InventoryStockProductSelectionV1(
+    Guid LabelId,
+    Guid ProductId,
+    string ProductVersion);
+
+public sealed record InventoryStockProductFilterV1(
+    Guid? ProductFamilyId,
+    decimal? ThicknessMm,
+    decimal? ThicknessMinMm,
+    decimal? ThicknessMaxMm,
+    decimal? WidthMm,
+    decimal? WidthMinMm,
+    decimal? WidthMaxMm);
 
 public sealed record InventoryStockPositionsV1(
     IReadOnlyList<InventoryStockPositionV1> Items,

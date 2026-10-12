@@ -852,7 +852,9 @@ public static partial class InventoryEndpoints
         parsed = new();
         if (query.Keys.Any(name => name is not "q" and not "limit" and not "cursor"
                 and not "productId" and not "locationId" and not "classification"
-                and not "ownerKind" and not "ownerId")
+                and not "ownerKind" and not "ownerId" and not "productFamilyId"
+                and not "thicknessMm" and not "thicknessMinMm" and not "thicknessMaxMm"
+                and not "widthMm" and not "widthMinMm" and not "widthMaxMm")
             || query.Any(parameter => parameter.Value.Count != 1))
         {
             return false;
@@ -878,7 +880,14 @@ public static partial class InventoryEndpoints
 
         if (!TryReadOptionalGuid(query, "productId", out var productId)
             || !TryReadOptionalGuid(query, "locationId", out var locationId)
-            || !TryReadOptionalGuid(query, "ownerId", out var ownerId))
+            || !TryReadOptionalGuid(query, "ownerId", out var ownerId)
+            || !TryReadOptionalGuid(query, "productFamilyId", out var productFamilyId)
+            || !TryReadOptionalMeasure(query, "thicknessMm", out var thicknessMm)
+            || !TryReadOptionalMeasure(query, "thicknessMinMm", out var thicknessMinMm)
+            || !TryReadOptionalMeasure(query, "thicknessMaxMm", out var thicknessMaxMm)
+            || !TryReadOptionalMeasure(query, "widthMm", out var widthMm)
+            || !TryReadOptionalMeasure(query, "widthMinMm", out var widthMinMm)
+            || !TryReadOptionalMeasure(query, "widthMaxMm", out var widthMaxMm))
         {
             return false;
         }
@@ -904,8 +913,14 @@ public static partial class InventoryEndpoints
         }
 
         parsed = new InventoryStockPositionQueryV1(
-            q, limit, cursor, productId, locationId, classification, ownerKind, ownerId);
-        return true;
+            q, limit, cursor, productId, locationId, classification, ownerKind, ownerId,
+            productFamilyId, thicknessMm, thicknessMinMm, thicknessMaxMm,
+            widthMm, widthMinMm, widthMaxMm);
+        return !(thicknessMm.HasValue && (thicknessMinMm.HasValue || thicknessMaxMm.HasValue))
+            && !(widthMm.HasValue && (widthMinMm.HasValue || widthMaxMm.HasValue))
+            && (!thicknessMinMm.HasValue || !thicknessMaxMm.HasValue
+                || thicknessMinMm <= thicknessMaxMm)
+            && (!widthMinMm.HasValue || !widthMaxMm.HasValue || widthMinMm <= widthMaxMm);
     }
 
     private static bool TryReadOptionalGuid(IQueryCollection query, string name, out Guid? value)
@@ -913,6 +928,23 @@ public static partial class InventoryEndpoints
         value = null;
         if (!query.TryGetValue(name, out var values)) return true;
         if (!Guid.TryParseExact(values[0], "D", out var parsed) || parsed == Guid.Empty) return false;
+        value = parsed;
+        return true;
+    }
+
+    private static bool TryReadOptionalMeasure(IQueryCollection query, string name, out decimal? value)
+    {
+        value = null;
+        if (!query.TryGetValue(name, out var values)) return true;
+        var raw = values[0];
+        if (string.IsNullOrEmpty(raw) || raw.Length > 32
+            || !System.Text.RegularExpressions.Regex.IsMatch(raw, "^(?:0|[1-9][0-9]*)(?:\\.[0-9]{1,3})?$")
+            || !decimal.TryParse(raw, System.Globalization.NumberStyles.AllowDecimalPoint,
+                System.Globalization.CultureInfo.InvariantCulture, out var parsed)
+            || parsed <= 0m)
+        {
+            return false;
+        }
         value = parsed;
         return true;
     }
