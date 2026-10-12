@@ -89,6 +89,43 @@ public sealed class ProductStockDisplayReferenceTests
     }
 
     [Fact]
+    public async Task Synthetic_fixture_family_is_omitted_while_released_real_families_remain_available()
+    {
+        var syntheticFamilyId = Guid.Parse("c6100000-0000-4000-8000-000000000399");
+        var syntheticTemplateId = Guid.Parse("c6200000-0000-4000-8000-000000000399");
+        var original = Definition();
+        var definition = original with
+        {
+            Families =
+            [
+                .. original.Families,
+                new(syntheticFamilyId, "fixture-family", "Fixture family", "coil", "rolling", "band",
+                    ProductFamilyRuleSetsV2.GdcBandCoil, "SYNTHETIC-browser-suite"),
+            ],
+            Templates =
+            [
+                .. original.Templates,
+                original.Templates[0] with
+                {
+                    Id = syntheticTemplateId,
+                    Code = "fixture-family-v7",
+                    Name = "Fixture family v7",
+                    FamilyIds = new HashSet<Guid> { syntheticFamilyId },
+                    SourceRef = "SYNTHETIC-browser-suite",
+                },
+            ],
+        };
+        var world = new World([], definition);
+
+        var result = await world.Service().ReadFamilyOptionsAsync();
+
+        var option = Assert.Single(result.Items);
+        Assert.Equal((FamilyId, "gdc-coil", "GDC Coil"),
+            (option.FamilyId, option.Code, option.DisplayName));
+        Assert.DoesNotContain(result.Items, item => item.FamilyId == syntheticFamilyId);
+    }
+
+    [Fact]
     public async Task One_authorized_batch_returns_exact_identity_and_accepted_nominal_dimensions_without_N_plus_one()
     {
         var world = new World([Record(FirstId, 7, "P-1", "Galvaniz bant", 1.25m, 1250m),

@@ -32,18 +32,19 @@ public sealed class ProductStockDisplayReferenceService(
         var definition = await FencedAsync(scope, () => definitions.GetAsync(cancellationToken), cancellationToken);
         ProductFamilyDefinitionRulesV2.RequireWellFormed(definition);
 
-        if (definition.Families.Any(family =>
-                ProductManufacturingTechnicalSnapshotService.IsSynthetic(family.SourceRef))
-            || definition.Templates.Any(template =>
-                ProductManufacturingTechnicalSnapshotService.IsSynthetic(template.SourceRef)))
+        var items = definition.Families
+            .Select(family => (Family: family,
+                Template: ProductFamilyDefinitionRulesV2.TemplateOf(definition, family.Id)!))
+            .Where(item => !ProductManufacturingTechnicalSnapshotService.IsSynthetic(item.Family.SourceRef)
+                && !ProductManufacturingTechnicalSnapshotService.IsSynthetic(item.Template.SourceRef))
+            .OrderBy(item => item.Family.Code, StringComparer.Ordinal)
+            .Select(item => new ProductStockFamilyOptionV1(
+                item.Family.Id, item.Family.Code, item.Family.Name))
+            .ToArray();
+        if (items.Length == 0)
         {
             throw new ProductOperationException(ProductManufacturingTechnicalSnapshotService.UnavailableCode, 503);
         }
-
-        var items = definition.Families
-            .OrderBy(family => family.Code, StringComparer.Ordinal)
-            .Select(family => new ProductStockFamilyOptionV1(family.Id, family.Code, family.Name))
-            .ToArray();
         await RequireScopeAsync(scope, cancellationToken);
         return new(items);
     }
