@@ -200,6 +200,11 @@ export interface HarnessConfig {
    * detail this harness last served for that draft (a 404 when it served none).
    */
   readonly onDeliveryProgress?: (url: string, companyId: string | null) => Response | Promise<Response>
+  /**
+   * DEC-SAL-005: GET `/sales/drafts/{id}/loading-progress`; default: no loading instruction for the lines of the detail
+   * this harness last served for that draft — the owner's real zeros (a 404 when it served none).
+   */
+  readonly onLoadingProgress?: (url: string, companyId: string | null) => Response | Promise<Response>
   /** DEC-SAL-003: a POST on `/sales/drafts/{id}/delivery-schedule`. */
   readonly onDeliverySchedule?: (call: RecordedCall) => Response | Promise<Response>
   /** SALES-A1: a POST on `/sales/drafts/{id}/(submission|approval|rejection)`. */
@@ -291,6 +296,9 @@ export function installFetch(config: HarnessConfig = {}) {
         if (call.method === 'GET' && /\/sales\/drafts\/[^/?]+\/delivery-progress$/.test(url)) {
           return config.onDeliveryProgress?.(url, call.companyId) ?? nothingDelivered(details.get(url.replace(/\/delivery-progress$/, '')))
         }
+        if (call.method === 'GET' && /\/sales\/drafts\/[^/?]+\/loading-progress$/.test(url)) {
+          return config.onLoadingProgress?.(url, call.companyId) ?? nothingLoaded(details.get(url.replace(/\/loading-progress$/, '')))
+        }
         if (call.method === 'GET' && /\/sales\/drafts\/[^/?]+\/delivery-schedules$/.test(url)) {
           return config.onDeliverySchedules?.(url, call.companyId) ?? json(ORIGINAL_SCHEDULE)
         }
@@ -337,6 +345,19 @@ function nothingDelivered(detail: unknown): Response {
     lines: body.lines.map((line) => ({
       lineId: line.lineId, lineNo: line.lineNo, orderUnitId: line.orderUnitId, ordered: line.quantity,
       shipped: '0', delivered: '0', remaining: line.quantity, excess: '0',
+    })),
+  })
+}
+
+/** DEC-SAL-005: the default loading progress — every line of the served detail, with no loading instruction at all. */
+function nothingLoaded(detail: unknown): Response {
+  const body = detail as { draft?: { version?: unknown }; lines?: { lineId: string; lineNo: number; orderUnitId: string; quantity: string }[] } | undefined
+  if (typeof body?.draft?.version !== 'string' || !Array.isArray(body.lines)) return json({ status: 404 }, 404)
+  return json({
+    draftVersion: body.draft.version,
+    lines: body.lines.map((line) => ({
+      lineId: line.lineId, lineNo: line.lineNo, orderUnitId: line.orderUnitId, ordered: line.quantity,
+      loadingInstructionLines: 0, instructed: '0', loaded: '0', shipped: '0', delivered: '0',
     })),
   })
 }

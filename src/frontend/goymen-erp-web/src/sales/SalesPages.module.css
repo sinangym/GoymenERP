@@ -23,8 +23,13 @@
 .facts { display: grid; grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr)); gap: 0.5rem 1.25rem; margin: 0; }
 .facts dt { font-size: 0.75rem; color: #52606d; }
 .facts dd { margin: 0; }
-.section { border-top: 1px solid #e4e7eb; padding-top: 0.75rem; }
-.line { border: 1px solid #e4e7eb; border-radius: 8px; padding: 0.75rem 1rem; margin: 0 0 0.75rem; }
+/* A section may shrink below its content: where it is a grid item of the order detail, a wide table then scrolls inside
+   its own .tableWrap instead of setting the page's column width (the delivery-progress table did at 390px). */
+.section { border-top: 1px solid #e4e7eb; padding-top: 0.75rem; min-width: 0; }
+/* A line's fieldset may be narrower than its content (a fieldset cannot by default), and a select in it is never wider
+   than the line: one whose longest option is a long unit name no longer pushes the page past a phone's width. */
+.line { border: 1px solid #e4e7eb; border-radius: 8px; padding: 0.75rem 1rem; margin: 0 0 0.75rem; min-width: 0; }
+.line select { max-width: 100%; }
 .lineTitle { margin: 0 0 0.5rem; font-size: 1rem; }
 .fieldset { border: 1px solid #cbd2d9; border-radius: 8px; padding: 0.75rem 1rem; margin: 0; }
 .grid { display: grid; grid-template-columns: minmax(10rem, 14rem) minmax(0, 1fr); gap: 0.5rem 1rem; align-items: center; }

@@ -245,6 +245,7 @@ export function SalesDraftDetailPage() {
             namespace={namespace}
             routeEntryGeneration={shell.routeEntryGeneration}
             salesOrderId={outcome.data.draft.id}
+            draftVersion={outcome.data.draft.version}
             lines={outcome.data.lines}
           />
         ) : null

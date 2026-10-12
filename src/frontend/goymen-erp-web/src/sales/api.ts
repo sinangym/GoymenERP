@@ -46,6 +46,7 @@ import {
   decodeDraftRevisions,
   decodeDeliverySchedules,
   decodeDeliveryProgress,
+  decodeLoadingProgress,
   decodeCancellation,
   decodeCancellationImpact,
   decodeProblem,
@@ -54,6 +55,7 @@ import {
   salesDraftDeliverySchedulePath,
   salesDraftDeliverySchedulesPath,
   salesDraftDeliveryProgressPath,
+  salesDraftLoadingProgressPath,
   salesDraftCancellationImpactPath,
   salesDraftCancellationPath,
   salesDraftCommandPath,
@@ -71,6 +73,8 @@ import {
   type DraftDeliveryScheduleRequest,
   type DeliverySchedules,
   type DeliveryProgress,
+  type LoadingProgress,
+  type LoadingProgressBinding,
   type CancellationImpact,
   type CancellationRead,
   type DraftCancelRequest,
@@ -267,6 +271,25 @@ export async function fetchDraftDeliveryProgress(
   if ('failure' in raw) return readFailure(raw.failure)
   if (raw.status !== 200) return { type: 'http', status: raw.status, body: raw.body }
   const progress = decodeDeliveryProgress(raw.body, detail)
+  return progress === null ? { type: 'malformed' } : { type: 'ok-single', data: progress }
+}
+
+/**
+ * DEC-SAL-005: the loading facts of every line of one order (#684), read-only under the draft read; the server reads
+ * them from the loading owner (Logistics) afresh on every request. One request for the whole order — no selector, no
+ * read per line. Data only when it describes exactly the detail on screen (`bound`); anything else is `malformed`,
+ * and no other read is tried in its place.
+ */
+export async function fetchDraftLoadingProgress(
+  draftId: string,
+  bound: LoadingProgressBinding,
+  companyId: string,
+  signal?: AbortSignal,
+): Promise<ViewOutcome<LoadingProgress>> {
+  const raw = await request(salesDraftLoadingProgressPath(draftId), { headers: headers(companyId) }, signal)
+  if ('failure' in raw) return readFailure(raw.failure)
+  if (raw.status !== 200) return { type: 'http', status: raw.status, body: raw.body }
+  const progress = decodeLoadingProgress(raw.body, bound)
   return progress === null ? { type: 'malformed' } : { type: 'ok-single', data: progress }
 }
 

@@ -57,7 +57,7 @@ export default defineConfig({
   // (the draft is Approved and S04-06 has released its allocation); it reuses the preparer's existing grants.
   // AT-002 (specs/s04-global-search.spec.ts): read-only global search with the preparer and the reader; it only reopens
   // the never-mutated delivery draft and the REAL Cari party, so file order does not matter; no actor or grant is added.
-  testMatch: /(^|[\\/])s04-(approval-journey|approved-allocation-change|cancellation|commercial-revision|customer-acceptance|d2-persona-withdrawal|delivery-schedule|draft-list-ds01|global-search|party-display|price-list|quantity-revision|references|remainder-changes)\.spec\.ts$/,
+  testMatch: /(^|[\\/])s04-(approval-journey|approved-allocation-change|cancellation|commercial-revision|customer-acceptance|d2-persona-withdrawal|delivery-schedule|draft-list-ds01|global-search|loading-progress|party-display|price-list|quantity-revision|references|remainder-changes)\.spec\.ts$/,
   fullyParallel: false,
   workers: 1,
   retries: 0,

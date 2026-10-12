@@ -210,6 +210,37 @@ export interface DeliveryProgress {
   readonly lines: readonly DeliveryProgressLine[]
 }
 
+/** DEC-SAL-005: GET — every line's loading facts, read by the server from the loading owner (Logistics) (#684). */
+export const salesDraftLoadingProgressPath = (id: string) => `${salesDraftDetailPath(id)}/loading-progress`
+
+/**
+ * One line's loading facts as exact decimal text in the line's order unit: `ordered` (the line), then what Logistics
+ * has instructed, loaded, shipped and delivered for it, and on how many loading-instruction lines. Facts only; a line
+ * without an instruction is all zeros, and only because the owner answered so.
+ */
+export interface LoadingProgressLine {
+  readonly lineId: string
+  readonly lineNo: number
+  readonly orderUnitId: string
+  readonly ordered: string
+  readonly loadingInstructionLines: number
+  readonly instructed: string
+  readonly loaded: string
+  readonly shipped: string
+  readonly delivered: string
+}
+
+export interface LoadingProgress {
+  readonly draftVersion: string
+  readonly lines: readonly LoadingProgressLine[]
+}
+
+/** The detail a loading-progress answer must describe: its version and each line's identity, unit and quantity text. */
+export interface LoadingProgressBinding {
+  readonly draftVersion: string
+  readonly lines: readonly Pick<DraftLine, 'lineId' | 'lineNo' | 'orderUnitId' | 'quantity'>[]
+}
+
 /** `SalesDraftApprovalV1`: who submitted / decided and when; null until it happened. Facts, never derived. */
 export interface ApprovalFacts {
   readonly submittedBy: string | null
@@ -1151,6 +1182,73 @@ export function decodeDeliveryProgress(value: unknown, detail: DraftDetail): Del
       lineId: o.lineId, lineNo: o.lineNo, orderUnitId: o.orderUnitId, ordered: o.ordered,
       shipped: o.shipped, delivered: o.delivered, remaining: o.remaining, excess: o.excess,
     })
+  }
+  return { draftVersion: response.draftVersion, lines }
+}
+
+/** Exact decimal text compared as text — never through a JS number. Both sides are already `isRevisionDecimal`. */
+function compareDecimalText(a: string, b: string): number {
+  const parts = (text: string) => {
+    const [whole, fraction = ''] = text.split('.')
+    return { whole: whole.replace(/^0+(?=\d)/, ''), fraction }
+  }
+  const left = parts(a)
+  const right = parts(b)
+  if (left.whole.length !== right.whole.length) return left.whole.length < right.whole.length ? -1 : 1
+  if (left.whole !== right.whole) return left.whole < right.whole ? -1 : 1
+  const scale = Math.max(left.fraction.length, right.fraction.length)
+  const leftFraction = left.fraction.padEnd(scale, '0')
+  const rightFraction = right.fraction.padEnd(scale, '0')
+  return leftFraction === rightFraction ? 0 : leftFraction < rightFraction ? -1 : 1
+}
+
+/** The wire type is OpenAPI `int32`: a count above its maximum is not this contract. */
+const INT32_MAX = 2147483647
+const isCountOfLines = (v: unknown): v is number =>
+  typeof v === 'number' && Number.isSafeInteger(v) && v >= 0 && v <= INT32_MAX
+
+/**
+ * DEC-SAL-005: `SalesOrderDraftLoadingProgressResponse` (#684), read exactly — and only as the loading facts OF the
+ * detail on screen: the same version, and every line of that detail exactly once with its own number, order unit and
+ * quantity text (a missing, extra, repeated or foreign line refuses the whole answer). Decimal text stays text. The
+ * owner's order holds on every line — delivered ≤ shipped ≤ loaded ≤ instructed ≤ ordered — and a line has instruction
+ * lines exactly when something was instructed. A body that does not fit is not shown as quantities.
+ */
+export function decodeLoadingProgress(value: unknown, bound: LoadingProgressBinding): LoadingProgress | null {
+  const response = exact(value, ['draftVersion', 'lines'])
+  if (
+    response === null || typeof response.draftVersion !== 'string' || response.draftVersion !== bound.draftVersion ||
+    !Array.isArray(response.lines) || response.lines.length !== bound.lines.length
+  ) return null
+  const answered = new Map<string, LoadingProgressLine>()
+  for (const entry of response.lines) {
+    const o = exact(entry, ['lineId', 'lineNo', 'orderUnitId', 'ordered', 'loadingInstructionLines', 'instructed',
+      'loaded', 'shipped', 'delivered'])
+    if (
+      o === null || !isRevisionId(o.lineId) || answered.has(o.lineId.toLowerCase()) ||
+      typeof o.lineNo !== 'number' || !Number.isSafeInteger(o.lineNo) || o.lineNo < 0 ||
+      !isRevisionId(o.orderUnitId) || !isRevisionDecimal(o.ordered, true) || !isCountOfLines(o.loadingInstructionLines) ||
+      !isRevisionDecimal(o.instructed, false) || !isRevisionDecimal(o.loaded, false) ||
+      !isRevisionDecimal(o.shipped, false) || !isRevisionDecimal(o.delivered, false) ||
+      compareDecimalText(o.delivered, o.shipped) > 0 || compareDecimalText(o.shipped, o.loaded) > 0 ||
+      compareDecimalText(o.loaded, o.instructed) > 0 || compareDecimalText(o.instructed, o.ordered) > 0 ||
+      // Instruction lines exist exactly when a quantity was instructed.
+      (o.loadingInstructionLines === 0) !== !/[1-9]/.test(o.instructed)
+    ) return null
+    answered.set(o.lineId.toLowerCase(), {
+      lineId: o.lineId, lineNo: o.lineNo, orderUnitId: o.orderUnitId, ordered: o.ordered,
+      loadingInstructionLines: o.loadingInstructionLines, instructed: o.instructed, loaded: o.loaded,
+      shipped: o.shipped, delivered: o.delivered,
+    })
+  }
+  const lines: LoadingProgressLine[] = []
+  for (const line of bound.lines) {
+    const match = answered.get(line.lineId.toLowerCase())
+    if (
+      match === undefined || match.lineNo !== line.lineNo ||
+      match.orderUnitId.toLowerCase() !== line.orderUnitId.toLowerCase() || match.ordered !== line.quantity
+    ) return null
+    lines.push(match)
   }
   return { draftVersion: response.draftVersion, lines }
 }
