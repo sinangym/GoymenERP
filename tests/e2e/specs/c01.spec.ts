@@ -210,7 +210,14 @@ test('B-C01-004 sorting, search and filters are done by the server, and focus su
   page,
 }, testInfo) => {
   const net = await NetworkRecorder.attach(page)
+  const initialRead = page.waitForRequest((request) =>
+    new URL(request.url()).pathname === '/api/v1/counterparties')
   await openList(page)
+  const initialHeaders = await (await initialRead).allHeaders()
+  const actor = initialHeaders['x-development-user']
+  const company = initialHeaders['x-company-id']
+  expect(actor, 'the real address-filter read must reuse the active actor').toBeTruthy()
+  expect(company, 'the real address-filter read must reuse the selected company').toBe(GDC)
 
   const codeHeader = page.locator('th').filter({ hasText: 'Kod' }).first()
   await expect(codeHeader).toHaveAttribute('aria-sort', 'ascending')
@@ -272,6 +279,53 @@ test('B-C01-004 sorting, search and filters are done by the server, and focus su
   await main.getByRole('button', { name: 'Filtreleri temizle' }).click()
   await expect(rows(page)).toHaveCount(50, { timeout: 20_000 })
   await expect(search).toBeFocused()
+
+  // Address filters are additive API contract in this backend slice. Use the same real
+  // actor/company headers the running page emitted; no mocked response or extra grant.
+  // CAR-000051 is outside the unfiltered first 50 records, so finding it on the second
+  // filtered page proves the server applied the address predicate before pagination.
+  const addressUrl = new URL('/api/v1/counterparties', env.apiBaseUrl)
+  addressUrl.searchParams.append('addressCity', 'İSTANBUL')
+  addressUrl.searchParams.append('addressDistrict', 'Çankaya')
+  addressUrl.searchParams.append('addressType', 'delivery')
+  addressUrl.searchParams.append('sort', 'code')
+  addressUrl.searchParams.append('direction', 'asc')
+  addressUrl.searchParams.append('pageSize', '1')
+  addressUrl.searchParams.append('includeCount', 'true')
+  const apiHeaders = { 'X-Development-User': actor!, 'X-Company-Id': company! }
+  const firstAddressPage = await page.context().request.get(addressUrl.toString(), { headers: apiHeaders })
+  expect(firstAddressPage.status()).toBe(200)
+  const firstAddressBody = await firstAddressPage.json()
+  expect(firstAddressBody.totalCount).toBe(2)
+  expect(firstAddressBody.items.map((item: { code: string }) => item.code)).toEqual(['CAR-000001'])
+  expect(firstAddressBody.hasMore).toBe(true)
+  expect(firstAddressBody.nextCursor).toBeTruthy()
+
+  addressUrl.searchParams.set('cursor', firstAddressBody.nextCursor)
+  const secondAddressPage = await page.context().request.get(addressUrl.toString(), { headers: apiHeaders })
+  expect(secondAddressPage.status()).toBe(200)
+  const secondAddressBody = await secondAddressPage.json()
+  expect(secondAddressBody.items.map((item: { code: string }) => item.code)).toEqual(['CAR-000051'])
+  expect(secondAddressBody.hasMore).toBe(false)
+
+  const sameRowUrl = new URL('/api/v1/counterparties', env.apiBaseUrl)
+  sameRowUrl.searchParams.append('addressCity', 'İstanbul')
+  sameRowUrl.searchParams.append('addressDistrict', 'Çankaya')
+  sameRowUrl.searchParams.append('addressType', 'billing')
+  const sameRowResponse = await page.context().request.get(sameRowUrl.toString(), { headers: apiHeaders })
+  expect(sameRowResponse.status()).toBe(200)
+  expect((await sameRowResponse.json()).items).toEqual([])
+
+  const roleUrl = new URL('/api/v1/counterparties', env.apiBaseUrl)
+  roleUrl.searchParams.append('addressCity', 'İstanbul')
+  roleUrl.searchParams.append('addressDistrict', 'Çankaya')
+  roleUrl.searchParams.append('addressType', 'delivery')
+  roleUrl.searchParams.append('role', 'Customer')
+  roleUrl.searchParams.append('role', 'Supplier')
+  roleUrl.searchParams.append('roleMatch', 'all')
+  const roleResponse = await page.context().request.get(roleUrl.toString(), { headers: apiHeaders })
+  expect(roleResponse.status()).toBe(200)
+  expect((await roleResponse.json()).items.map((item: { code: string }) => item.code)).toEqual(['CAR-000001'])
 
   await net.detach(testInfo)
 })

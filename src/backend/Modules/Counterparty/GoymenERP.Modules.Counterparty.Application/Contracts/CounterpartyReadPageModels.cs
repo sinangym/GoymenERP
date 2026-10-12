@@ -5,6 +5,9 @@ namespace GoymenERP.Modules.Counterparty.Application.Contracts;
 
 public sealed record CounterpartyPageQuery(
     string? Query,
+    string? AddressCity,
+    string? AddressDistrict,
+    CounterpartyAddressType? AddressType,
     PartyKind? Kind,
     PartyRole Roles,
     CounterpartyRoleMatch RoleMatch,
@@ -74,6 +77,13 @@ public enum CounterpartyRoleMatch
 {
     Any = 1,
     All = 2,
+}
+
+public enum CounterpartyAddressType
+{
+    Billing = 1,
+    Delivery = 2,
+    Operational = 3,
 }
 
 public enum CounterpartyRecordState

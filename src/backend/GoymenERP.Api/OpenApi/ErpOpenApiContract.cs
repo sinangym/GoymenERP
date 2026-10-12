@@ -1036,6 +1036,31 @@ public static partial class ErpOpenApiContract
             "Code, legalName or tradeName contains search; Unicode trim + NFC, Turkish CI/AS.");
         AddQueryParameter(
             operation,
+            "addressCity",
+            new OpenApiSchema
+            {
+                Type = JsonSchemaType.String,
+                MinLength = 0,
+                MaxLength = 100,
+            },
+            "Exact Turkish CI/AS city match on one account-owned address row; Unicode trim + NFC.");
+        AddQueryParameter(
+            operation,
+            "addressDistrict",
+            new OpenApiSchema
+            {
+                Type = JsonSchemaType.String,
+                MinLength = 0,
+                MaxLength = 100,
+            },
+            "Exact Turkish CI/AS district match on the same address row as the other address filters; Unicode trim + NFC.");
+        AddQueryParameter(
+            operation,
+            "addressType",
+            StringChoiceSchema("^(billing|delivery|operational)$"),
+            "Optional address purpose. No primary-address priority is inferred.");
+        AddQueryParameter(
+            operation,
             "kind",
             StringChoiceSchema("^(LegalEntity|NaturalPerson)$"),
             "Optional Party kind.");
@@ -1107,6 +1132,13 @@ public static partial class ErpOpenApiContract
             querySchema,
             CanonicalizationExtensionName,
             JsonValue.Create("unicode-trim+nfc")!);
+        foreach (var name in new[] { "addressCity", "addressDistrict" })
+        {
+            SetSchemaExtension(
+                GetConcreteParameterSchema(operation, ParameterLocation.Query, name),
+                CanonicalizationExtensionName,
+                JsonValue.Create("unicode-trim+nfc")!);
+        }
     }
 
     private static void AddCounterpartyLinkCandidateParameters(OpenApiOperation operation)

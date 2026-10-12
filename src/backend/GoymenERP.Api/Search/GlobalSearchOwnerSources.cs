@@ -41,7 +41,7 @@ public sealed class CounterpartyGlobalSearchSource(
             throw new InvalidOperationException("Cari araması için oturum bağı çözülemedi.");
         }
 
-        var query = new CounterpartyPageQuery(request.Term, null, PartyRole.None, CounterpartyRoleMatch.Any, CounterpartyRecordState.Active,
+        var query = new CounterpartyPageQuery(request.Term, null, null, null, null, PartyRole.None, CounterpartyRoleMatch.Any, CounterpartyRecordState.Active,
             CounterpartyRecordState.All, CounterpartySort.Code, CounterpartySortDirection.Ascending, request.Limit, null, false);
         var execution = await counterparties.GetAuthorizedPageAsync(new CounterpartyReadRequest(query, currentUser.UserId, binding),
             cancellationToken);
