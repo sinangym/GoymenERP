@@ -134,15 +134,22 @@ async function desktopInk(row: Locator, header: string, expected: string, spanTe
     const ink = [...range.getClientRects()].filter((rect) => rect.width > 0 && rect.height > 0)
     const left = target === available ? availableRect.left : labelRect.right + 1
     const right = target === available ? actionsRect.left : availableRect.left - 1
-    const fragmentsReachable = ink.length > 0 && ink.every((rect) => {
+    const fragmentDetails = ink.map((rect) => {
       const x = (rect.left + rect.right) / 2
       const y = (rect.top + rect.bottom) / 2
       const hit = document.elementFromPoint(x, y)
-      return rect.left >= Math.max(left, scrollRect.left) - 1 && rect.right <= Math.min(right, scrollRect.right) + 1
+      const reachable = rect.left >= Math.max(left, scrollRect.left) - 1 && rect.right <= Math.min(right, scrollRect.right) + 1
         && rect.left >= cellRect.left - 1 && rect.right <= cellRect.right + 1
         && rect.top >= cellRect.top - 1 && rect.bottom <= cellRect.bottom + 1
         && hit !== null && cells[index].contains(hit)
+      return {
+        rect: { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom },
+        reachable,
+        hit: hit === null ? null : { tag: hit.tagName, className: hit.getAttribute('class') },
+        hitInsideCell: hit !== null && cells[index].contains(hit),
+      }
     })
+    const fragmentsReachable = fragmentDetails.length > 0 && fragmentDetails.every((fragment) => fragment.reachable)
     const actionButton = actions.querySelector('button')
     const buttonRect = actionButton?.getBoundingClientRect()
     const buttonHit = buttonRect && document.elementFromPoint(
@@ -153,11 +160,33 @@ async function desktopInk(row: Locator, header: string, expected: string, spanTe
         && availableRect.right <= actionsRect.left + 1 && actionsRect.right <= scrollRect.right + 1,
       actionHit: !!actionButton && !!buttonHit && actionButton.contains(buttonHit),
       noEllipsis: getComputedStyle(target).textOverflow !== 'ellipsis',
+      diagnostic: {
+        viewport: { width: window.innerWidth, height: window.innerHeight },
+        scroll: {
+          left: scrollRect.left, right: scrollRect.right, top: scrollRect.top, bottom: scrollRect.bottom,
+          scrollLeft: scroll.scrollLeft, clientWidth: scroll.clientWidth, scrollWidth: scroll.scrollWidth,
+        },
+        reachableBounds: {
+          left: Math.max(left, scrollRect.left), right: Math.min(right, scrollRect.right),
+        },
+        cell: { left: cellRect.left, right: cellRect.right, top: cellRect.top, bottom: cellRect.bottom },
+        target: (() => {
+          const rect = target.getBoundingClientRect()
+          return { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom }
+        })(),
+        pins: {
+          label: { left: labelRect.left, right: labelRect.right },
+          available: { left: availableRect.left, right: availableRect.right },
+          actions: { left: actionsRect.left, right: actionsRect.right },
+        },
+        fragments: fragmentDetails,
+      },
     }
   }, { header, expected, spanText })
   expect(measured, `${header}: ${expected} must be fully readable and uncovered`).not.toBeNull()
   expect(measured?.text).toBe(expected)
-  expect(measured?.fragmentsReachable).toBe(true)
+  expect(measured?.fragmentsReachable,
+    `${header}: ${expected} ink was not fully reachable: ${JSON.stringify(measured?.diagnostic)}`).toBe(true)
   expect(measured?.pinsClear).toBe(true)
   expect(measured?.actionHit).toBe(true)
   expect(measured?.noEllipsis).toBe(true)
