@@ -23331,6 +23331,40 @@
             }
           },
           {
+            "name": "addressCity",
+            "in": "query",
+            "description": "Exact Turkish CI/AS city match on one account-owned address row; Unicode trim + NFC.",
+            "explode": false,
+            "schema": {
+              "maxLength": 100,
+              "minLength": 0,
+              "type": "string",
+              "x-erp-canonicalization": "unicode-trim+nfc"
+            }
+          },
+          {
+            "name": "addressDistrict",
+            "in": "query",
+            "description": "Exact Turkish CI/AS district match on the same address row as the other address filters; Unicode trim + NFC.",
+            "explode": false,
+            "schema": {
+              "maxLength": 100,
+              "minLength": 0,
+              "type": "string",
+              "x-erp-canonicalization": "unicode-trim+nfc"
+            }
+          },
+          {
+            "name": "addressType",
+            "in": "query",
+            "description": "Optional address purpose. No primary-address priority is inferred.",
+            "explode": false,
+            "schema": {
+              "pattern": "^(billing|delivery|operational)$",
+              "type": "string"
+            }
+          },
+          {
             "name": "kind",
             "in": "query",
             "description": "Optional Party kind.",
