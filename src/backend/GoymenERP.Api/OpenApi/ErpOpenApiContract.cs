@@ -1204,6 +1204,32 @@ public static partial class ErpOpenApiContract
         AddQueryParameter(operation, "ownerId",
             new OpenApiSchema { Type = JsonSchemaType.String, Format = "uuid" },
             "Optional exact owner identifier; ownerKind is required with it.");
+        AddQueryParameter(operation, "productFamilyId",
+            new OpenApiSchema { Type = JsonSchemaType.String, Format = "uuid" },
+            "Optional exact Product manufacturing-family identifier.");
+
+        static OpenApiSchema PositiveMillimetreSchema() => new()
+        {
+            Type = JsonSchemaType.Number,
+            Format = "decimal",
+            ExclusiveMinimum = "0",
+            MultipleOf = 0.001m,
+        };
+
+        AddQueryParameter(operation, "thicknessMm", PositiveMillimetreSchema(),
+            "Optional exact nominal thickness in millimetres, with at most three decimal places. "
+            + "Do not combine with thicknessMinMm or thicknessMaxMm.");
+        AddQueryParameter(operation, "thicknessMinMm", PositiveMillimetreSchema(),
+            "Optional inclusive minimum nominal thickness in millimetres, with at most three decimal places.");
+        AddQueryParameter(operation, "thicknessMaxMm", PositiveMillimetreSchema(),
+            "Optional inclusive maximum nominal thickness in millimetres, with at most three decimal places.");
+        AddQueryParameter(operation, "widthMm", PositiveMillimetreSchema(),
+            "Optional exact nominal width in millimetres, with at most three decimal places. "
+            + "Do not combine with widthMinMm or widthMaxMm.");
+        AddQueryParameter(operation, "widthMinMm", PositiveMillimetreSchema(),
+            "Optional inclusive minimum nominal width in millimetres, with at most three decimal places.");
+        AddQueryParameter(operation, "widthMaxMm", PositiveMillimetreSchema(),
+            "Optional inclusive maximum nominal width in millimetres, with at most three decimal places.");
         AddHeaderParameter(operation,
             GoymenERP.Modules.Inventory.Application.InventoryStockPositionApiV1.ProductDisplayContractHeader,
             required: false,
