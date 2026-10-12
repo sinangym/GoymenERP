@@ -65,6 +65,8 @@ async function fillExample(slices: readonly string[] = ['400', '600']) {
   await userEvent.selectOptions(screen.getByLabelText(T.field.product), PRODUCT)
   await userEvent.type(screen.getByLabelText(T.field.quantity), '1000')
   await userEvent.selectOptions(screen.getByLabelText(T.field.orderUnit), KG)
+  // The line's date and delivery slices are optional details: a person opens them first.
+  await userEvent.click(screen.getByRole('button', { name: 'Termin ve açıklama' }))
   fireEvent.change(screen.getByLabelText(T.field.lineDeliveryDate), { target: { value: '2026-09-20' } })
   for (const [index, quantity] of slices.entries()) {
     await userEvent.click(screen.getByRole('button', { name: T.addSlice }))
@@ -558,5 +560,224 @@ describe('SALES-A2a — delivery address, contact and the currencies list', () =
     expect((screen.getByTestId('sales-currency-select') as HTMLSelectElement).disabled).toBe(true)
     await userEvent.click(screen.getByTestId('sales-currency-retry'))
     expect(retry).toHaveBeenCalledTimes(1)
+  })
+})
+
+/**
+ * SALES-DS-CREATE-01: the same create behaviour on the GOY-DS layout — short named sections with the required choices
+ * first, the optional details behind a visible toggle that never hides an entered value or an error, and the full party
+ * and product before saving.
+ */
+describe('GOY-DS layout (SALES-DS-CREATE-01)', () => {
+  const LONG_CUSTOMER =
+    'SENTETIK Uzun Unvanlı Demir Çelik Sanayi ve Ticaret Anonim Şirketi — İstanbul Anadolu Yakası Merkez Şubesi cari hesabı'
+  const LONG_PRODUCT =
+    'PRF-40X40 — Sıcak haddelenmiş S235JR kalite kare kutu profil 40x40x3 mm, 6000 mm boy, galvaniz kaplamalı, paketli sevk'
+  const longNames: UseReferenceOptions = (companyId) =>
+    companyId === COMPANY_A
+      ? {
+          status: 'ready',
+          options: {
+            ...OPTIONS_A,
+            accounts: [{ partyId: PARTY, companyAccountId: ACCOUNT, label: LONG_CUSTOMER }],
+            products: [{ ...OPTIONS_A.products[0], label: LONG_PRODUCT }],
+          },
+        }
+      : { status: 'unavailable' }
+
+  const headerMore = () => screen.getByRole('button', { name: 'Termin ve not' })
+  const lineMore = () => screen.getByRole('button', { name: 'Termin ve açıklama' })
+  const pageForm = () => screen.getByLabelText(T.field.customer).closest('form') as HTMLFormElement
+  const labelsInOrder = () => Array.from(pageForm().querySelectorAll('label')).map((label) => label.textContent)
+
+  it('has one title, short named sections and the required choices before anything optional', async () => {
+    installFetch()
+    renderSalesApp(PATH)
+    await formVisible()
+
+    expect(screen.getAllByRole('heading', { level: 1 }).map((h) => h.textContent)).toEqual([T.heading])
+    expect(screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent)).toEqual([
+      'Müşteri', 'Sipariş ve teslimat', T.field.lines, T.summary.heading,
+    ])
+    // Every visible field keeps its own label; the optional details are not drawn until asked for.
+    expect(labelsInOrder()).toEqual([
+      T.references.accountSearch, T.field.customer, T.field.businessDate, T.field.currency,
+      T.field.deliveryAddress, T.field.deliveryContact, T.references.productSearch,
+      T.field.product, T.field.quantity, T.field.orderUnit,
+    ])
+    expect(screen.queryByLabelText(T.field.requestedDeliveryDate)).toBeNull()
+    expect(screen.queryByLabelText(T.field.note)).toBeNull()
+    expect(screen.queryByLabelText(T.field.lineDeliveryDate)).toBeNull()
+    expect(screen.queryByLabelText(T.field.lineNote)).toBeNull()
+    expect(screen.queryByRole('group', { name: T.field.slices })).toBeNull()
+    expect(headerMore().getAttribute('aria-expanded')).toBe('false')
+    expect(lineMore().getAttribute('aria-expanded')).toBe('false')
+
+    // Exactly one submit; every other control states its type, so none submits by accident.
+    const buttons = Array.from(pageForm().querySelectorAll('button'))
+    expect(buttons.every((button) => button.hasAttribute('type'))).toBe(true)
+    expect(buttons.filter((button) => button.getAttribute('type') === 'submit').map((b) => b.textContent)).toEqual([T.save])
+    // No record identity is printed on the screen: ids stay in the option values.
+    for (const id of [PARTY, ACCOUNT, PRODUCT, KG, COMPANY_A]) expect(document.body.textContent).not.toContain(id)
+  })
+
+  it('opens the optional header details from the keyboard, keeps what was entered when closed and sends it', async () => {
+    const pending = deferred<Response>()
+    const fetch = installFetch({ onCreate: () => pending.promise })
+    renderSalesApp(PATH)
+    await fillExample()
+
+    headerMore().focus()
+    await userEvent.keyboard('{Enter}')
+    expect(headerMore().getAttribute('aria-expanded')).toBe('true')
+    const panel = document.getElementById(headerMore().getAttribute('aria-controls') as string) as HTMLElement
+    expect(within(panel).getByLabelText(T.field.requestedDeliveryDate)).toBeTruthy()
+    fireEvent.change(screen.getByLabelText(T.field.requestedDeliveryDate), { target: { value: '2026-09-25' } })
+    await userEvent.type(screen.getByLabelText(T.field.note), 'Kapıda teslim')
+
+    // Closed again: the fields leave the screen, and the toggle says what they hold.
+    await userEvent.click(headerMore())
+    expect(headerMore().getAttribute('aria-expanded')).toBe('false')
+    expect(screen.queryByLabelText(T.field.note)).toBeNull()
+    expect(screen.getByTestId('sales-create-header-more').textContent).toContain(`${T.field.requestedDeliveryDate}: 25.09.2026 · not var`)
+
+    await userEvent.click(saveButton())
+    await screen.findByText(T.attempt.submitting)
+    const body = JSON.parse(fetch.salesCalls()[0].body as string)
+    expect(body.requestedDeliveryDate).toBe('2026-09-25')
+    expect(body.note).toBe('Kapıda teslim')
+  })
+
+  it('a closed line detail says what it holds, and opens by itself when a field inside is refused', async () => {
+    const fetch = installFetch({ onCreate: () => json('{}', 500) })
+    renderSalesApp(PATH)
+    await formVisible()
+    await userEvent.selectOptions(screen.getByLabelText(T.field.customer), `${PARTY}|${ACCOUNT}`)
+    fireEvent.change(screen.getByLabelText(T.field.businessDate), { target: { value: '2026-09-13' } })
+    await userEvent.selectOptions(screen.getByLabelText(T.field.currency), CURRENCY)
+    await userEvent.selectOptions(screen.getByLabelText(T.field.product), PRODUCT)
+    await userEvent.type(screen.getByLabelText(T.field.quantity), '1000')
+    await userEvent.selectOptions(screen.getByLabelText(T.field.orderUnit), KG)
+
+    // A slice with a quantity and no date, then the detail is closed over it.
+    await userEvent.click(lineMore())
+    await userEvent.click(screen.getByRole('button', { name: T.addSlice }))
+    await userEvent.type(screen.getByLabelText(`1. ${T.field.sliceQuantity}`), '400')
+    await userEvent.click(lineMore())
+    expect(lineMore().getAttribute('aria-expanded')).toBe('false')
+    expect(screen.queryByLabelText(`1. ${T.field.sliceQuantity}`)).toBeNull()
+    expect(screen.getByTestId('sales-line-editor-1-more').textContent).toContain('1 termin dilimi')
+
+    await userEvent.click(saveButton())
+    // Nothing was sent; the refused field is back on the screen with its message, and reachable from the summary.
+    const date = await screen.findByLabelText(`1. ${T.field.sliceDate}`)
+    expect(lineMore().getAttribute('aria-expanded')).toBe('true')
+    expect(date.getAttribute('aria-invalid')).toBe('true')
+    expect(document.getElementById(date.getAttribute('aria-describedby') as string)?.textContent).toBe(T.validation.sliceDateRequired)
+    await userEvent.click(screen.getByRole('link', { name: T.validation.sliceDateRequired }))
+    expect(document.activeElement).toBe(date)
+    expect(fetch.salesCalls()).toHaveLength(0)
+    // While the error stands the detail cannot be closed over it.
+    await userEvent.click(lineMore())
+    expect(screen.getByLabelText(`1. ${T.field.sliceDate}`)).toBeTruthy()
+  })
+
+  it('a refused optional header field opens its closed detail and shows the message', async () => {
+    const fetch = installFetch({ onCreate: () => json('{}', 500) })
+    renderSalesApp(PATH)
+    await fillExample()
+    await userEvent.click(headerMore())
+    fireEvent.change(screen.getByLabelText(T.field.note), { target: { value: 'x'.repeat(4001) } })
+    await userEvent.click(headerMore())
+    expect(screen.queryByLabelText(T.field.note)).toBeNull()
+
+    await userEvent.click(saveButton())
+    const note = await screen.findByLabelText(T.field.note)
+    expect(note.getAttribute('aria-invalid')).toBe('true')
+    expect(document.getElementById(`${ORDER_FIELD.note}-error`)?.textContent).toBe(T.validation.noteTooLong)
+    expect(fetch.salesCalls()).toHaveLength(0)
+  })
+
+  it('shows the whole party and product, with the quantity and unit, before saving', async () => {
+    installFetch()
+    renderSalesApp(PATH, longNames)
+    await formVisible()
+    const summary = screen.getByRole('region', { name: T.summary.heading })
+    // Nothing chosen yet is said as such — never a first option taken as a choice.
+    expect(within(summary).getByTestId('sales-summary-customer').textContent).toBe(T.notChosen)
+    expect(within(summary).getByTestId('sales-summary-lines').textContent).toBe(T.notChosen)
+
+    await userEvent.selectOptions(screen.getByLabelText(T.field.customer), `${PARTY}|${ACCOUNT}`)
+    fireEvent.change(screen.getByLabelText(T.field.businessDate), { target: { value: '2026-09-13' } })
+    await userEvent.selectOptions(screen.getByLabelText(T.field.product), PRODUCT)
+    await userEvent.type(screen.getByLabelText(T.field.quantity), '1.250,5')
+    await userEvent.selectOptions(screen.getByLabelText(T.field.orderUnit), KG)
+
+    // The full names as the owners gave them — not shortened, and not left to a tooltip.
+    const customer = within(summary).getByTestId('sales-summary-customer')
+    expect(customer.textContent).toBe(LONG_CUSTOMER)
+    expect(customer.hasAttribute('title')).toBe(false)
+    const lines = within(summary).getAllByRole('listitem')
+    // The quantity is the text as typed with its unit: nothing rounded, regrouped or dropped.
+    expect(lines.map((line) => line.textContent)).toEqual([`${LONG_PRODUCT} · 1.250,5 kg`])
+    expect(within(summary).getByText(/GDC — Göymen A/)).toBeTruthy()
+    expect(within(summary).getByText(T.summary.notPriced)).toBeTruthy()
+    expect(within(summary).getByText(T.summary.notApproved)).toBeTruthy()
+  })
+
+  it('with the lines withheld the product search stays usable and the summary lists no lines', async () => {
+    installFetch()
+    renderSalesApp(PATH, useHeaderOnlySource)
+    await formVisible()
+    expect(screen.getByTestId('sales-lines-withheld').getAttribute('role')).toBe('status')
+    expect(screen.getByTestId('sales-lines-withheld').getAttribute('data-tone')).toBe('unknown')
+    expect(screen.getByLabelText(T.references.productSearch)).toBeTruthy()
+    expect(screen.queryByTestId('sales-summary-lines')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Termin ve açıklama' })).toBeNull()
+    expect(screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent)).toEqual([
+      'Müşteri', 'Sipariş ve teslimat', T.field.lines, T.summary.heading,
+    ])
+  })
+
+  it('names each remove control by its row, and removing a line keeps the others', async () => {
+    installFetch()
+    renderSalesApp(PATH)
+    await formVisible()
+    await userEvent.click(screen.getByRole('button', { name: T.addLine }))
+    expect(screen.getAllByRole('group', { name: /^\d+\. satır$/ })).toHaveLength(2)
+    await userEvent.type(within(screen.getByTestId('sales-line-editor-2')).getByLabelText(T.field.quantity), '7')
+    await userEvent.click(screen.getByRole('button', { name: `1. satır: ${T.removeLine}` }))
+    expect(screen.getAllByRole('group', { name: /^\d+\. satır$/ })).toHaveLength(1)
+    expect((screen.getByLabelText(T.field.quantity) as HTMLInputElement).value).toBe('7')
+  })
+
+  it('the page stylesheet uses design-system tokens only and lets every fieldset and control shrink on a phone', () => {
+    // The stylesheet as written (a module import would only give the generated class names).
+    const nodeProcess = (globalThis as unknown as { process: { cwd(): string; getBuiltinModule(name: string): unknown } }).process
+    const fs = nodeProcess.getBuiltinModule('node:fs') as { readFileSync(path: string, encoding: 'utf8'): string }
+    const path = nodeProcess.getBuiltinModule('node:path') as { resolve(...segments: string[]): string }
+    const pageCss = fs.readFileSync(path.resolve(nodeProcess.cwd(), 'src/sales/SalesDraftCreatePage.module.css'), 'utf8')
+    const rule = (selector: string) => {
+      // The rule that starts a line with exactly this selector (not one that merely ends with it).
+      const at = pageCss.indexOf(`
+${selector} {`)
+      expect(at, selector).toBeGreaterThanOrEqual(0)
+      return pageCss.slice(at, pageCss.indexOf('}', at))
+    }
+    // No literal colour, and no pixel font size outside the tokens.
+    expect(pageCss).not.toMatch(/#[0-9a-fA-F]{3,8}\b|rgba?\(|hsla?\(/)
+    // A fieldset cannot be narrower than its content unless it is told so; a long option must not widen the page.
+    expect(rule('.frame')).toContain('min-width: 0')
+    expect(pageCss.slice(pageCss.indexOf('.line,\n.slices {'))).toContain('min-width: 0')
+    expect(rule('.control')).toContain('max-width: 100%')
+    expect(rule('.control')).toContain('min-width: 0')
+    // Every grid on the page is bound to its container, never to its widest child.
+    for (const selector of ['.page', '.form', '.frame', '.lines', '.more', '.morePanel', '.summaryFacts']) {
+      expect(rule(selector), selector).toContain('grid-template-columns: minmax(0, 1fr)')
+    }
+    // The whole name is wrapped where it is confirmed, never clipped.
+    expect(rule('.summaryFacts dd')).toContain('overflow-wrap: anywhere')
+    expect(pageCss).not.toMatch(/text-overflow:\s*ellipsis|line-clamp/)
+    expect(pageCss).toMatch(/@media \(max-width: 479px\)/)
   })
 })

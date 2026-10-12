@@ -1,0 +1,424 @@
+/* S-03 new sales order draft on GOY-DS-001. Layout of this page only; every value comes from a design-system token. */
+
+.page {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--goy-ds-space-3);
+  min-width: 0;
+  max-width: 60rem;
+  padding: var(--goy-ds-space-1) 0 var(--goy-ds-space-6);
+  color: var(--goy-ds-color-text);
+  font-family: var(--goy-ds-font-sans);
+  font-size: var(--goy-ds-font-size-base);
+}
+
+.header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--goy-ds-space-1) var(--goy-ds-space-4);
+  min-width: 0;
+}
+
+.title {
+  margin: 0;
+  font-size: 1.25rem;
+  line-height: 28px;
+  font-weight: var(--goy-ds-font-weight-semibold);
+  overflow-wrap: anywhere;
+}
+
+.backLink,
+.link {
+  width: fit-content;
+  color: var(--goy-ds-color-accent-text);
+  font-size: var(--goy-ds-font-size-md);
+  font-weight: var(--goy-ds-font-weight-medium);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.primaryLink {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--goy-ds-control-height);
+  padding: 0 var(--goy-ds-space-3);
+  border-radius: var(--goy-ds-radius-sm);
+  background: var(--goy-ds-color-accent);
+  color: var(--goy-ds-color-on-accent);
+  font-size: var(--goy-ds-font-size-md);
+  font-weight: var(--goy-ds-font-weight-medium);
+  text-decoration: none;
+  box-shadow: var(--goy-ds-shadow-1);
+}
+
+.primaryLink:hover {
+  background: var(--goy-ds-color-accent-hover);
+}
+
+.page a:focus-visible,
+.control:focus-visible,
+.errorSummary:focus,
+.lines:focus,
+.slices:focus {
+  outline: 2px solid var(--goy-ds-color-accent);
+  outline-offset: 2px;
+}
+
+/* ── the form ── */
+
+.form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--goy-ds-space-3);
+  min-width: 0;
+}
+
+/* The freezing fieldset is layout-neutral: no border, and — unlike a fieldset by default — free to be narrower than
+   its content, so a long option never widens the page. */
+.frame {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--goy-ds-space-3);
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.section,
+.summary,
+.done {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--goy-ds-space-3);
+  min-width: 0;
+  padding: var(--goy-ds-space-4);
+  border: 1px solid var(--goy-ds-color-border);
+  border-radius: var(--goy-ds-radius-md);
+  background: var(--goy-ds-color-surface);
+  box-shadow: var(--goy-ds-shadow-1);
+}
+
+.section > h2,
+.summary > h2 {
+  margin: 0;
+  font-size: 1rem;
+  line-height: 24px;
+  font-weight: var(--goy-ds-font-weight-semibold);
+}
+
+/* Two fields side by side where there is room; one under the other on a phone. */
+.pair,
+.shortPair,
+.customerRow,
+.lineMain {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
+  gap: var(--goy-ds-space-3) var(--goy-ds-space-4);
+  align-items: start;
+  min-width: 0;
+}
+
+/* A date and a currency code are short: they share a row even on a phone, and do not stretch on a desktop. */
+.shortPair {
+  grid-template-columns: minmax(0, 12rem) minmax(0, 12rem);
+}
+
+/* The search is a short word or code; the account it finds is a long name. */
+.customerRow {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+}
+
+/* One line, one row: the product takes the room, the quantity and its unit are short. */
+.lineMain {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 9rem) minmax(0, 11rem);
+}
+
+.stack {
+  display: grid;
+  gap: var(--goy-ds-space-1);
+  min-width: 0;
+}
+
+.control {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  min-height: var(--goy-ds-control-height);
+  padding: 0 var(--goy-ds-space-2);
+  border: 1px solid var(--goy-ds-color-border-control);
+  border-radius: var(--goy-ds-radius-sm);
+  background: var(--goy-ds-color-surface);
+  color: var(--goy-ds-color-text);
+  font: inherit;
+  font-size: var(--goy-ds-font-size-md);
+}
+
+textarea.control {
+  min-height: 4.5rem;
+  padding: var(--goy-ds-space-2);
+  resize: vertical;
+}
+
+.control:hover:not(:disabled) {
+  border-color: var(--goy-ds-color-border-hover);
+}
+
+.control:disabled {
+  background: var(--goy-ds-color-surface-muted);
+  color: var(--goy-ds-color-text-tertiary);
+}
+
+.control[aria-invalid='true'] {
+  border-color: var(--goy-ds-color-danger);
+}
+
+.searchRow {
+  display: flex;
+  gap: var(--goy-ds-space-2);
+  min-width: 0;
+}
+
+.searchRow > .control {
+  flex: 1 1 auto;
+  width: auto;
+}
+
+/* ── read states: short lines, never a card ── */
+
+.readStatus,
+.muted {
+  margin: 0;
+  color: var(--goy-ds-color-text-tertiary);
+  font-size: var(--goy-ds-font-size-sm);
+  overflow-wrap: anywhere;
+}
+
+.readFailed,
+.error {
+  margin: 0;
+  color: var(--goy-ds-color-danger);
+  font-size: var(--goy-ds-font-size-sm);
+  overflow-wrap: anywhere;
+}
+
+/* ── notices ── */
+
+.notice,
+.errorSummary {
+  display: grid;
+  gap: var(--goy-ds-space-2);
+  min-width: 0;
+  padding: var(--goy-ds-space-3) var(--goy-ds-space-4);
+  border: 1px solid var(--goy-ds-color-border);
+  border-left: 4px solid var(--goy-ds-color-neutral-dot);
+  border-radius: var(--goy-ds-radius-md);
+  background: var(--goy-ds-color-surface);
+  overflow-wrap: anywhere;
+}
+
+.notice p,
+.errorSummary p,
+.errorSummary ul {
+  margin: 0;
+}
+
+.errorSummary ul {
+  padding-left: var(--goy-ds-space-4);
+}
+
+.notice[data-tone='progress'] {
+  border-left-color: var(--goy-ds-color-info-dot);
+}
+
+.notice[data-tone='unknown'] {
+  border-left-color: var(--goy-ds-color-warning-dot);
+}
+
+.notice[data-tone='success'] {
+  border-left-color: var(--goy-ds-color-success-dot);
+}
+
+.notice[data-tone='error'],
+.errorSummary {
+  border-left-color: var(--goy-ds-color-danger-dot);
+  background: var(--goy-ds-color-danger-soft);
+}
+
+.errorSummary a {
+  color: var(--goy-ds-color-danger);
+}
+
+/* ── lines ── */
+
+.lines {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--goy-ds-space-3);
+  min-width: 0;
+}
+
+.line,
+.slices {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--goy-ds-space-3);
+  min-width: 0;
+  margin: 0;
+  padding: var(--goy-ds-space-3);
+  border: 1px solid var(--goy-ds-color-border);
+  border-radius: var(--goy-ds-radius-md);
+  background: var(--goy-ds-color-surface-muted);
+}
+
+.slices {
+  background: var(--goy-ds-color-surface);
+}
+
+.line > legend,
+.slices > legend {
+  padding: 0 var(--goy-ds-space-1);
+  font-size: var(--goy-ds-font-size-md);
+  font-weight: var(--goy-ds-font-weight-semibold);
+}
+
+.sliceRow {
+  display: grid;
+  grid-template-columns: minmax(0, 10rem) minmax(0, 12rem) auto;
+  gap: var(--goy-ds-space-2) var(--goy-ds-space-3);
+  align-items: end;
+  min-width: 0;
+}
+
+.sliceRemove {
+  justify-self: start;
+}
+
+
+/* ── optional details ── */
+
+.more {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--goy-ds-space-3);
+  min-width: 0;
+}
+
+.moreHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--goy-ds-space-1) var(--goy-ds-space-3);
+  min-width: 0;
+}
+
+.moreFilled {
+  color: var(--goy-ds-color-text-secondary);
+  font-size: var(--goy-ds-font-size-sm);
+  overflow-wrap: anywhere;
+}
+
+.moreAside {
+  margin-left: auto;
+}
+
+.morePanel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--goy-ds-space-3);
+  min-width: 0;
+  padding-left: var(--goy-ds-space-3);
+  border-left: 2px solid var(--goy-ds-color-border);
+}
+
+/* ── before saving ── */
+
+.summaryFacts {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--goy-ds-space-2);
+  margin: 0;
+  min-width: 0;
+}
+
+.searchRow {
+  max-width: 32rem;
+}
+
+.summaryFacts dt {
+  color: var(--goy-ds-color-text-tertiary);
+  font-size: var(--goy-ds-font-size-xs);
+  line-height: 16px;
+}
+
+/* The party and the products are shown whole: wrapped, never cut. */
+.summaryFacts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.summaryLines {
+  margin: 0;
+  padding-left: var(--goy-ds-space-4);
+}
+
+.quantity {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--goy-ds-space-2) var(--goy-ds-space-4);
+  margin: 0;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--goy-ds-space-3);
+}
+
+.done p {
+  margin: 0;
+}
+
+.doneFacts {
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 639px) {
+  .customerRow {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* The product keeps the whole width; the quantity and its unit stay side by side under it. */
+  .lineMain {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .lineProduct {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 479px) {
+  .section,
+  .summary,
+  .done {
+    padding: var(--goy-ds-space-3);
+  }
+
+  .shortPair {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .sliceRow {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
