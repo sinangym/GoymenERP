@@ -762,8 +762,8 @@ test('ST-01 applies genuine Product family and nominal dimension filters before 
 
   await page.getByLabel('Kalınlık (mm)', { exact: true }).fill('3')
   await page.getByLabel('En koşulu', { exact: true }).selectOption('range')
-  await page.getByLabel('En en az (mm)', { exact: true }).fill('248')
-  await page.getByLabel('En en çok (mm)', { exact: true }).fill('248')
+  await page.getByLabel('En alt sınır (mm)', { exact: true }).fill('248')
+  await page.getByLabel('En üst sınır (mm)', { exact: true }).fill('248')
   const typedFirstRead = page.waitForResponse((response) => {
     const url = new URL(response.url())
     return isPositionRead(response, filterPrefix) && !url.searchParams.has('cursor')
@@ -839,8 +839,8 @@ test('ST-01 applies genuine Product family and nominal dimension filters before 
 
   // Switch exact/range roles. The new read has no old continuation cursor, while both inclusive boundaries remain.
   await page.getByLabel('Kalınlık koşulu', { exact: true }).selectOption('range')
-  await page.getByLabel('Kalınlık en az (mm)', { exact: true }).fill('3')
-  await page.getByLabel('Kalınlık en çok (mm)', { exact: true }).fill('3')
+  await page.getByLabel('Kalınlık alt sınır (mm)', { exact: true }).fill('3')
+  await page.getByLabel('Kalınlık üst sınır (mm)', { exact: true }).fill('3')
   await page.getByLabel('En koşulu', { exact: true }).selectOption('exact')
   await page.getByLabel('En (mm)', { exact: true }).fill('248')
   const swappedRead = page.waitForResponse((response) => {
