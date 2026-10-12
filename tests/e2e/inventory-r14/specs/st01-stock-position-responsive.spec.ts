@@ -12,6 +12,7 @@ const { companyId, otherCompanyId, locationId, productId, productVersion, produc
   recorderActor, arrangerActor, counterActor, ownerPartyId, ownerCompanyAccountId } = env.seed
 const POSITIONS = '/api/v1/inventory/positions'
 const OPENINGS = '/api/v1/inventory/opening-counts'
+const PRODUCTS = '/api/v1/products'
 const LOCATIONS = '/api/v1/organization/locations?page=1&pageSize=100'
 const STOCK_DISPLAY_HEADER = 'X-ERP-Inventory-Stock-Display'
 const STOCK_DISPLAY_VERSION = '3.0'
@@ -489,6 +490,165 @@ test('ST-01 shows long genuine Product and exact stock quantities at desktop and
   expect(foreign.status()).toBe(403)
   expect(stockDisplayVersions.length).toBeGreaterThan(0)
   expect(stockDisplayVersions.every((version) => version === STOCK_DISPLAY_VERSION)).toBe(true)
+})
+
+test('ST-01 applies genuine Product family and nominal dimension filters before public pagination', async ({ page }) => {
+  test.setTimeout(240_000)
+  const filterPrefix = `SYNTYPED-${randomUUID().slice(0, 8).toUpperCase()}`
+
+  // Read the genuine Product card the R14 fixture created. The family/template/unit ids and the accepted dictionary
+  // values are Product-owned source data; this test neither copies a family id nor invents a typed attribute.
+  const sourceCardAnswer = await page.request.get(`${env.apiBaseUrl}${PRODUCTS}/${productId}`, {
+    headers: headers(recorderActor),
+  })
+  expect(sourceCardAnswer.status()).toBe(200)
+  const sourceCard = await sourceCardAnswer.json() as {
+    readonly product: {
+      readonly id: string
+      readonly groupId: string
+      readonly familyId: string | null
+      readonly version: string
+    }
+    readonly references: {
+      readonly templateId: string | null
+      readonly templateVersion: string | null
+      readonly attributes: Readonly<Record<string, unknown>> | null
+      readonly units: Readonly<Record<string, string | null>> | null
+    }
+  }
+  expect(sourceCard.product).toMatchObject({ id: productId, familyId: expect.any(String), version: productVersion })
+  expect(sourceCard.references).toMatchObject({ templateId: expect.any(String), templateVersion: expect.any(String) })
+  expect(sourceCard.references.attributes).toMatchObject({ 'thickness-mm': 3, 'width-mm': 248 })
+  expect(sourceCard.references.units).not.toBeNull()
+  const familyId = sourceCard.product.familyId
+  const attributes = sourceCard.references.attributes
+  if (familyId === null || attributes === null || sourceCard.references.units === null) {
+    throw new Error('The genuine R14 Product card lost its accepted family, attributes or units.')
+  }
+
+  // A second genuine card uses the same accepted family/template and dictionary values, but different nominal
+  // dimensions. Its 25 labels sort before the two 3 x 248 labels, so a public limit=1 read can succeed only if the
+  // server scans and applies Product's typed match before it cuts the public page.
+  const alternateProductAnswer = await page.request.post(`${env.apiBaseUrl}${PRODUCTS}`, {
+    headers: {
+      ...headers(recorderActor), 'Content-Type': 'application/json',
+      'Idempotency-Key': `st01-typed-product-${randomUUID()}`,
+    },
+    data: {
+      name: `SENTETIK browser-suite:r14 typed non-match ${filterPrefix}`,
+      groupId: sourceCard.product.groupId,
+      familyId,
+      references: {
+        ...sourceCard.references,
+        attributes: { ...attributes, 'thickness-mm': 4, 'width-mm': 300 },
+      },
+    },
+  })
+  expect(alternateProductAnswer.status()).toBe(201)
+  const alternateDraft = await alternateProductAnswer.json() as {
+    readonly card: { readonly product: { readonly id: string; readonly version: string } }
+  }
+  const alternateActivation = await page.request.post(
+    `${env.apiBaseUrl}${PRODUCTS}/${alternateDraft.card.product.id}/activation`, {
+      headers: {
+        ...headers(recorderActor), 'Content-Type': 'application/json',
+        'Idempotency-Key': `st01-typed-activate-${randomUUID()}`,
+      },
+      data: { expectedVersion: alternateDraft.card.product.version },
+    })
+  expect(alternateActivation.status()).toBe(200)
+  const alternateActive = await alternateActivation.json() as {
+    readonly card: { readonly product: { readonly id: string; readonly version: string; readonly lifecycle: string } }
+  }
+  expect(alternateActive.card.product.lifecycle).toBe('Active')
+
+  const nonMatches = Array.from({ length: 25 }, (_, index) => ({
+    lineId: randomUUID(), labelId: randomUUID(), labelCode: `${filterPrefix}-A${String(index).padStart(2, '0')}`,
+    lotId: randomUUID(), heatNumber: `${filterPrefix}-HEAT-A${index}`, coilNumber: null,
+    productId: alternateActive.card.product.id, productVersion: alternateActive.card.product.version, quantityKg: '1',
+  }))
+  const matches = [0, 1].map((index) => ({
+    lineId: randomUUID(), labelId: randomUUID(), labelCode: `${filterPrefix}-B${index}`,
+    lotId: randomUUID(), heatNumber: `${filterPrefix}-HEAT-B${index}`, coilNumber: null,
+    productId, productVersion, quantityKg: String(10 + index),
+  }))
+  const opened = await page.request.post(`${env.apiBaseUrl}${OPENINGS}`, {
+    headers: {
+      ...headers(recorderActor), 'Content-Type': 'application/json',
+      'Idempotency-Key': `st01-typed-opening-${randomUUID()}`,
+    },
+    data: {
+      countId: randomUUID(), locationId, countedOn: '2026-09-18',
+      sheetReference: `SENTETIK browser-suite:r14 typed filter ${filterPrefix}`,
+      lines: [...nonMatches, ...matches],
+    },
+  })
+  expect(opened.status()).toBe(201)
+
+  const read = (parameters: Readonly<Record<string, string>>) => {
+    const url = new URL(POSITIONS, env.apiBaseUrl)
+    Object.entries(parameters).forEach(([name, value]) => url.searchParams.set(name, value))
+    return page.request.get(url.toString(), {
+      headers: { ...headers(recorderActor), [STOCK_DISPLAY_HEADER]: STOCK_DISPLAY_VERSION },
+    })
+  }
+  const exactAndRange = {
+    q: filterPrefix, productFamilyId: familyId, thicknessMm: '3',
+    widthMinMm: '248', widthMaxMm: '248', limit: '1',
+  }
+  const firstAnswer = await read(exactAndRange)
+  expect(firstAnswer.status()).toBe(200)
+  const first = await firstAnswer.json() as PositionPage
+  expect(first.items.map((item) => item.labelId)).toEqual([matches[0].labelId])
+  expect(first.nextCursor).toEqual(expect.any(String))
+
+  const secondAnswer = await read({ ...exactAndRange, cursor: first.nextCursor! })
+  expect(secondAnswer.status()).toBe(200)
+  const second = await secondAnswer.json() as PositionPage
+  expect(second.items.map((item) => item.labelId)).toEqual([matches[1].labelId])
+  expect(second.nextCursor).toBeNull()
+
+  // The cursor is bound to every typed condition; it cannot be replayed under a wider width range.
+  expect((await read({ ...exactAndRange, widthMaxMm: '249', cursor: first.nextCursor! })).status()).toBe(400)
+
+  const rangeAndExactAnswer = await read({
+    q: filterPrefix, productFamilyId: familyId, thicknessMinMm: '3', thicknessMaxMm: '3',
+    widthMm: '248', limit: '25',
+  })
+  expect(rangeAndExactAnswer.status()).toBe(200)
+  const rangeAndExact = await rangeAndExactAnswer.json() as PositionPage
+  expect(rangeAndExact.items.map((item) => item.labelId)).toEqual(matches.map((item) => item.labelId))
+  expect(rangeAndExact.nextCursor).toBeNull()
+
+  // An omitted typed condition is absent query state. Zero is not its substitute and is rejected by the API.
+  const omittedWidthAnswer = await read({ q: filterPrefix, productFamilyId: familyId, thicknessMm: '3', limit: '25' })
+  expect(omittedWidthAnswer.status()).toBe(200)
+  expect((await omittedWidthAnswer.json() as PositionPage).items.map((item) => item.labelId))
+    .toEqual(matches.map((item) => item.labelId))
+  expect((await read({ q: filterPrefix, widthMm: '0', limit: '25' })).status()).toBe(400)
+  const anotherFamilyAnswer = await read({ q: filterPrefix, productFamilyId: randomUUID(), limit: '25' })
+  expect(anotherFamilyAnswer.status()).toBe(200)
+  expect((await anotherFamilyAnswer.json() as PositionPage).items).toEqual([])
+
+  // The same real records remain usable on the stock page. UI typed-filter controls are a later consumer slice;
+  // this owner test does not fake them, but it verifies both desktop rows and phone cards for the API-proven matches.
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.setExtraHTTPHeaders({ 'X-Development-User': recorderActor })
+  await page.goto('/')
+  const unfiltered = await openList(page, filterPrefix)
+  expect(unfiltered.items).toHaveLength(25)
+  expect(unfiltered.items.every((item) => item.labelCode.includes('-A'))).toBe(true)
+  const continuation = page.waitForResponse((response) => isPositionRead(response, filterPrefix, unfiltered.nextCursor!))
+  await page.getByRole('button', { name: 'Daha fazla göster', exact: true }).click()
+  expect((await continuation).status()).toBe(200)
+  await expect(page.getByRole('table', { name: 'Stok / Malzeme Pozisyonu' }).locator('tbody tr')).toHaveCount(27)
+  for (const item of [...first.items, ...second.items]) await assertDesktopPosition(page, item)
+  await expectNoPageOverflow(page, 'the typed-filter source rows on desktop')
+
+  await page.setViewportSize({ width: 390, height: 844 })
+  await expect(page.getByTestId('stock-position-cards').locator('li')).toHaveCount(27)
+  for (const item of [...first.items, ...second.items]) await assertMobilePosition(page, item)
+  await expectNoPageOverflow(page, 'the typed-filter source cards on phone')
 })
 
 /**
