@@ -23,9 +23,10 @@ const LABEL_3 = '66666666-6666-4666-8666-666666666668'
 const LOT = '77777777-7777-4777-8777-777777777777'
 const PRODUCT = '88888888-8888-4888-8888-888888888888'
 const FAMILY = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+const FAMILY_2 = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaab'
 const TEMPLATE = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
 
-const api = vi.hoisted(() => ({ page: vi.fn(), legacy: vi.fn() }))
+const api = vi.hoisted(() => ({ page: vi.fn(), legacy: vi.fn(), families: vi.fn() }))
 const auth = vi.hoisted(() => ({
   capture: vi.fn(() => ({ token: 1 })),
   report: vi.fn(),
@@ -47,6 +48,8 @@ vi.mock('./stockDisplayApi', async (importOriginal) => {
     ...real,
     fetchStockDisplayPage: (...args: Parameters<typeof real.fetchStockDisplayPage>) =>
       mode.real ? real.fetchStockDisplayPage(...args) : api.page(...args),
+    fetchStockProductFamilyOptions: (...args: Parameters<typeof real.fetchStockProductFamilyOptions>) =>
+      mode.real ? real.fetchStockProductFamilyOptions(...args) : api.families(...args),
   }
 })
 // The previously published read must never be used by this screen, not even as a fallback.
@@ -127,10 +130,21 @@ function ready(items: readonly unknown[], extra: { searchWindowFull?: boolean; n
   return { type: 'ok-single', data: { items, searchWindowFull: extra.searchWindowFull ?? nextCursor !== null, nextCursor } }
 }
 
-const NO_FILTERS: StockPositionFilters = { q: '', productId: null, locationId: null, classification: null, owner: null }
+const NO_FILTERS: StockPositionFilters = {
+  q: '', productId: null, locationId: null, classification: null, owner: null,
+  productFamilyId: null, thicknessMm: null, thicknessMinMm: null, thicknessMaxMm: null,
+  widthMm: null, widthMinMm: null, widthMaxMm: null,
+}
+/** The Product owner's authorized family list (#695). The fixture row's own family code ("coil") is not in it. */
+const FAMILIES = [
+  { familyId: FAMILY, code: 'gdc-flat-coil', displayName: 'Yassı rulo' },
+  { familyId: FAMILY_2, code: 'gdc-sheet', displayName: 'Sac levha' },
+]
+const familiesReady = (items: readonly unknown[] = FAMILIES) => ({ type: 'ok-single', data: items })
 /** Every supported filter at once, as the URL holds it and as the read must send it on every page. */
 const ALL_FILTERS_URL = `/stok/pozisyonlar?etiket=ROLL&urun=${PRODUCT}&lokasyon=${LOCATION}&sinif=hurda&sahipTuru=cari&sahip=${COUNTERPARTY}`
 const ALL_FILTERS: StockPositionFilters = {
+  ...NO_FILTERS,
   q: 'ROLL', productId: PRODUCT, locationId: LOCATION, classification: 'Scrap', owner: { kind: 'Counterparty', id: COUNTERPARTY },
 }
 
@@ -176,6 +190,7 @@ beforeEach(() => {
   auth.report.mockReset()
   api.legacy.mockReset()
   api.page.mockReset().mockResolvedValue(ready([row()]))
+  api.families.mockReset().mockResolvedValue(familiesReady())
 })
 afterEach(() => vi.unstubAllGlobals())
 
@@ -342,11 +357,11 @@ describe('ST-01 filters — only what #597 supports, from the URL', () => {
     expect(api.page).not.toHaveBeenCalled()
   })
 
-  it('filters by Sınıf under "Diğer filtreler", with a removable chip, and "Tümü" clears it', async () => {
+  it('filters by Sınıf under "Tüm filtreler", with a removable chip, and "Tümü" clears it', async () => {
     const user = userEvent.setup()
     mount()
     await screen.findByRole('link', { name: 'ROLL-1' })
-    const others = screen.getByRole('button', { name: 'Diğer filtreler' })
+    const others = screen.getByRole('button', { name: 'Tüm filtreler' })
     expect(others.getAttribute('aria-expanded')).toBe('false')
     await user.click(others)
     await user.selectOptions(screen.getByRole('combobox', { name: 'Sınıf' }), 'İkinci kalite')
@@ -450,7 +465,7 @@ describe('ST-01 paging follows the server cursor', () => {
     expect(screen.getAllByRole('row')).toHaveLength(3)
     expect(screen.queryByRole('button', { name: 'Daha fazla göster' })).toBeNull()
 
-    await user.click(screen.getByRole('button', { name: 'Diğer filtreler' }))
+    await user.click(screen.getByRole('button', { name: 'Tüm filtreler (1)' }))
     await user.selectOptions(screen.getByRole('combobox', { name: 'Sınıf' }), 'Standart')
     await waitFor(() => expect(api.page).toHaveBeenLastCalledWith(
       COMPANY, { ...ALL_FILTERS, classification: 'Standard' }, null, expect.any(AbortSignal)))
@@ -510,7 +525,7 @@ describe('ST-01 paging follows the server cursor', () => {
     mount()
     await screen.findByRole('link', { name: 'ROLL-1' })
     await user.click(screen.getByRole('button', { name: 'Daha fazla göster' }))
-    await user.click(screen.getByRole('button', { name: 'Diğer filtreler' }))
+    await user.click(screen.getByRole('button', { name: 'Tüm filtreler' }))
     await user.selectOptions(screen.getByRole('combobox', { name: 'Sınıf' }), 'Hurda')
     await screen.findByRole('link', { name: 'ROLL-3' })
     await act(async () => { answerMore(ready([row({ labelId: LABEL_2, labelCode: 'ROLL-2' })])) })
@@ -537,7 +552,8 @@ describe('ST-01 states — standard, never a silent legacy fallback', () => {
     expect(block.getAttribute('data-state')).toBe('forbidden')
     expect(block.textContent).toContain('Yetkiniz yok — stok pozisyonları')
     // No identified reason is invented: the code-less 403 does not say which permission was missing.
-    expect(main().textContent).not.toMatch(/Ürün[^]*yetki/)
+    expect(screen.getByRole('region', { name: 'Stok listesi' }).textContent).not.toMatch(/Ürün[^]*yetki/)
+    expect(block.textContent).not.toContain('Ürün')
     expect(auth.report).toHaveBeenCalledWith(403, { token: 1 })
     expect(api.page).toHaveBeenCalledTimes(1)
     expect(api.legacy).not.toHaveBeenCalled()
@@ -743,7 +759,7 @@ describe('ST-01 on GOY-DS-001 (STOCK-DS-01)', () => {
     expect(within(search).getByRole('button', { name: 'Ara' }).getAttribute('type')).toBe('submit')
     expect(screen.getAllByRole('button', { name: 'Ara' })).toHaveLength(1)
 
-    const filters = screen.getByRole('button', { name: 'Diğer filtreler' })
+    const filters = screen.getByRole('button', { name: 'Tüm filtreler' })
     const columns = screen.getByRole('button', { name: 'Sütunlar' })
     for (const button of [filters, columns]) {
       expect(button.getAttribute('type')).toBe('button')
@@ -756,8 +772,9 @@ describe('ST-01 on GOY-DS-001 (STOCK-DS-01)', () => {
     const select = screen.getByRole('combobox', { name: 'Sınıf' }) as HTMLSelectElement
     expect(select.id).toBe('stock-classification-filter')
     expect([...select.options].map((option) => option.textContent)).toEqual(['Tümü', 'Standart', 'İkinci kalite', 'Hurda'])
-    // Opening a panel reads nothing.
+    // Opening the panel reads no stock page; it reads the authorized family list, once.
     expect(api.page).toHaveBeenCalledTimes(1)
+    expect(api.families).toHaveBeenCalledTimes(1)
   })
 
   it('keeps "Daha fazla göster" and "Filtreleri temizle" plain buttons that submit nothing', async () => {
@@ -807,17 +824,20 @@ describe('ST-01 inside the real shell: capability route, auth boundary, no legac
     generation: string
     identityStatus: number
     positions: (url: URL) => Response
+    families: () => Response
   }
   const json = (body: unknown, status = 200) =>
     new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
   const positionCalls: { url: string; optIn: string | null }[] = []
+  const familyCalls: { url: string; company: string | null; optIn: string | null }[] = []
 
   function installServer(initial: Partial<Server>): Server {
     const server: Server = {
       capabilities: [ST01, OTHER], generation: 'gen-1', identityStatus: 200,
-      positions: () => json(ready([row()]).data), ...initial,
+      positions: () => json(ready([row()]).data), families: () => json({ items: FAMILIES }), ...initial,
     }
     positionCalls.length = 0
+    familyCalls.length = 0
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = new URL(String(input), 'http://localhost')
       if (url.pathname.endsWith('/identity/me')) {
@@ -834,6 +854,11 @@ describe('ST-01 inside the real shell: capability route, auth boundary, no legac
       if (url.pathname.endsWith('/inventory/positions')) {
         positionCalls.push({ url: url.toString(), optIn: new Headers(init?.headers).get(STOCK_DISPLAY_HEADER) })
         return server.positions(url)
+      }
+      if (url.pathname.endsWith('/inventory/references/product-families')) {
+        const headers = new Headers(init?.headers)
+        familyCalls.push({ url: url.toString(), company: headers.get('X-Company-Id'), optIn: headers.get(STOCK_DISPLAY_HEADER) })
+        return server.families()
       }
       return json({ code: 'unavailable' }, 503)
     }))
@@ -866,6 +891,41 @@ describe('ST-01 inside the real shell: capability route, auth boundary, no legac
     try { window.localStorage.clear() } catch { /* ignore */ }
     vi.stubGlobal('navigator', { onLine: true })
     stubViewport(false)
+  })
+
+  it('typed filters through the real client: the family list is one query-less read, and the filtered page carries the published names', async () => {
+    installServer({})
+    await mountShell()
+    await screen.findByRole('link', { name: 'ROLL-1' }, { timeout: 5000 })
+    expect(familyCalls).toEqual([])
+
+    await userEvent.click(screen.getByRole('button', { name: 'Tüm filtreler' }))
+    const family = await screen.findByRole('combobox', { name: 'Ürün ailesi' }) as HTMLSelectElement
+    await waitFor(() => expect(family.disabled).toBe(false), { timeout: 5000 })
+    expect(familyCalls).toEqual([{ url: 'http://localhost/api/v1/inventory/references/product-families', company: COMPANY, optIn: null }])
+
+    await userEvent.selectOptions(family, 'Sac levha')
+    await userEvent.type(screen.getByRole('textbox', { name: 'Kalınlık (mm)' }), '1,5')
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'En koşulu' }), 'Aralık')
+    await userEvent.type(screen.getByRole('textbox', { name: 'En alt sınır (mm)' }), '1000')
+    await userEvent.type(screen.getByRole('textbox', { name: 'En üst sınır (mm)' }), '1250{Enter}')
+    await waitFor(() => expect(new URL(positionCalls.at(-1)!.url).search)
+      .toBe(`?limit=25&productFamilyId=${FAMILY_2}&thicknessMm=1.5&widthMinMm=1000&widthMaxMm=1250`), { timeout: 5000 })
+    expect(familyCalls).toHaveLength(1)
+    expectNoLegacyRead()
+  })
+
+  it('a 403 on the family list alone is said beside the field: ST-01, its rows and its menu entry stay', async () => {
+    installServer({ families: () => json({ code: 'forbidden' }, 403) })
+    await mountShell()
+    await screen.findByRole('link', { name: 'ROLL-1' }, { timeout: 5000 })
+    await userEvent.click(screen.getByRole('button', { name: 'Tüm filtreler' }))
+    expect(await screen.findByText('Ürün ailesi listesini görme yetkiniz yok.', undefined, { timeout: 5000 })).toBeTruthy()
+    expect(familyCalls).toHaveLength(1)
+    expect(stockHeading()).not.toBeNull()
+    expect(screen.getByRole('link', { name: 'ROLL-1' })).toBeTruthy()
+    expect(navLink(ST01_LABEL)).not.toBeNull()
+    expect(notFound()).toBeNull()
   })
 
   it('without ST-01 (an Inventory-only snapshot) the route is neutral, the entry is absent and nothing is read', async () => {
@@ -1111,5 +1171,464 @@ describe('ST-01 owner display (#664 3.0)', () => {
     const chips = await screen.findByRole('list', { name: 'Etkin filtreler' })
     expect(within(chips).getByText('Mal sahibi: seçili cari')).toBeTruthy()
     expect(main().textContent).not.toContain(COUNTERPARTY)
+  })
+})
+
+/** STOCK-TYPED-FILTER-UI-01: Ürün ailesi, Kalınlık and En — matched by the server (#690), family choices from #695. */
+describe('ST-01 typed filters behind "Tüm filtreler"', () => {
+  const openFilters = (user: ReturnType<typeof userEvent.setup>) => user.click(screen.getByRole('button', { name: /^Tüm filtreler/ }))
+  const family = () => screen.getByRole('combobox', { name: 'Ürün ailesi' }) as HTMLSelectElement
+  const apply = (user: ReturnType<typeof userEvent.setup>) => user.click(screen.getByRole('button', { name: 'Ölçüleri uygula' }))
+  const chipTexts = () => within(screen.getByRole('list', { name: 'Etkin filtreler' })).getAllByRole('listitem').map((item) => item.firstChild?.textContent)
+  const TYPED_URL = `/stok/pozisyonlar?aile=${FAMILY_2}&kalinlik=1.5&enMin=1000&enMaks=1250`
+  const TYPED: StockPositionFilters = { ...NO_FILTERS, productFamilyId: FAMILY_2, thicknessMm: '1.5', widthMinMm: '1000', widthMaxMm: '1250' }
+
+  it('reads the authorized family list only when the panel opens, once, and offers exactly that list', async () => {
+    const user = userEvent.setup()
+    mount()
+    await screen.findByRole('link', { name: 'ROLL-1' })
+    expect(api.families).not.toHaveBeenCalled()
+
+    await openFilters(user)
+    await waitFor(() => expect(family().disabled).toBe(false))
+    expect(api.families).toHaveBeenCalledTimes(1)
+    expect(api.families).toHaveBeenCalledWith(COMPANY, expect.any(AbortSignal))
+    // The server's order and names; the row on screen belongs to a family code ("coil") the list does not offer.
+    expect([...family().options].map((option) => option.textContent)).toEqual(['Tümü', 'Yassı rulo', 'Sac levha'])
+    expect(main().textContent).not.toContain('gdc-flat-coil')
+
+    // Closing and opening again does not read the list a second time, and never reads the stock page.
+    await openFilters(user)
+    await openFilters(user)
+    expect(api.families).toHaveBeenCalledTimes(1)
+    expect(api.page).toHaveBeenCalledTimes(1)
+  })
+
+  it('filters by family on the server, shows a removable chip and counts it on the closed button', async () => {
+    const user = userEvent.setup()
+    mount()
+    await screen.findByRole('link', { name: 'ROLL-1' })
+    await openFilters(user)
+    await waitFor(() => expect(family().disabled).toBe(false))
+    await user.selectOptions(family(), 'Sac levha')
+    await waitFor(() => expect(api.page).toHaveBeenLastCalledWith(
+      COMPANY, { ...NO_FILTERS, productFamilyId: FAMILY_2 }, null, expect.any(AbortSignal)))
+    expect(address()).toBe(`/stok/pozisyonlar?aile=${FAMILY_2}`)
+    expect(chipTexts()).toEqual(['Ürün ailesi: Sac levha'])
+    expect(screen.getByRole('button', { name: 'Tüm filtreler (1)' }).getAttribute('aria-expanded')).toBe('true')
+    // The family id is never shown as text.
+    expect(main().textContent).not.toContain(FAMILY_2)
+
+    await user.click(screen.getByRole('button', { name: 'Ürün ailesi: Sac levha filtresini kaldır' }))
+    await waitFor(() => expect(api.page).toHaveBeenLastCalledWith(COMPANY, NO_FILTERS, null, expect.any(AbortSignal)))
+    expect(address()).toBe('/stok/pozisyonlar')
+    expect(family().value).toBe('')
+    expect(screen.getByRole('button', { name: 'Tüm filtreler' })).toBeTruthy()
+  })
+
+  it('applies an exact thickness only on "Ölçüleri uygula" or Enter, with the typed digits', async () => {
+    const user = userEvent.setup()
+    mount()
+    await screen.findByRole('link', { name: 'ROLL-1' })
+    await openFilters(user)
+    await user.type(screen.getByRole('textbox', { name: 'Kalınlık (mm)' }), '1,250')
+    // Typing reads nothing.
+    expect(api.page).toHaveBeenCalledTimes(1)
+    expect(address()).toBe('/stok/pozisyonlar')
+
+    await user.keyboard('{Enter}')
+    await waitFor(() => expect(api.page).toHaveBeenLastCalledWith(
+      COMPANY, { ...NO_FILTERS, thicknessMm: '1.250' }, null, expect.any(AbortSignal)))
+    expect(api.page).toHaveBeenCalledTimes(2)
+    expect(address()).toBe('/stok/pozisyonlar?kalinlik=1.250')
+    expect(chipTexts()).toEqual(['Kalınlık: 1,25 mm'])
+    expect(document.activeElement).toBe(screen.getByRole('region', { name: 'Stok listesi' }))
+    // The field still shows what was typed, not a reformatted number.
+    expect((screen.getByRole('textbox', { name: 'Kalınlık (mm)' }) as HTMLInputElement).value).toBe('1,250')
+  })
+
+  it('applies a width range with both ends, one open end, and back to an exact value', async () => {
+    const user = userEvent.setup()
+    mount()
+    await screen.findByRole('link', { name: 'ROLL-1' })
+    await openFilters(user)
+    expect(screen.queryByRole('textbox', { name: 'En alt sınır (mm)' })).toBeNull()
+    await user.selectOptions(screen.getByRole('combobox', { name: 'En koşulu' }), 'Aralık')
+    expect(screen.queryByRole('textbox', { name: 'En (mm)' })).toBeNull()
+    // Choosing the kind of condition reads nothing.
+    expect(api.page).toHaveBeenCalledTimes(1)
+    await user.type(screen.getByRole('textbox', { name: 'En alt sınır (mm)' }), '1000')
+    await user.type(screen.getByRole('textbox', { name: 'En üst sınır (mm)' }), '1250')
+    await apply(user)
+    await waitFor(() => expect(api.page).toHaveBeenLastCalledWith(
+      COMPANY, { ...NO_FILTERS, widthMinMm: '1000', widthMaxMm: '1250' }, null, expect.any(AbortSignal)))
+    expect(address()).toBe('/stok/pozisyonlar?enMin=1000&enMaks=1250')
+    expect(chipTexts()).toEqual(['En: 1.000–1.250 mm'])
+
+    await user.clear(screen.getByRole('textbox', { name: 'En üst sınır (mm)' }))
+    await apply(user)
+    await waitFor(() => expect(api.page).toHaveBeenLastCalledWith(
+      COMPANY, { ...NO_FILTERS, widthMinMm: '1000' }, null, expect.any(AbortSignal)))
+    expect(chipTexts()).toEqual(['En: en az 1.000 mm'])
+
+    await user.clear(screen.getByRole('textbox', { name: 'En alt sınır (mm)' }))
+    await user.type(screen.getByRole('textbox', { name: 'En üst sınır (mm)' }), '1250,5')
+    await apply(user)
+    await waitFor(() => expect(api.page).toHaveBeenLastCalledWith(
+      COMPANY, { ...NO_FILTERS, widthMaxMm: '1250.5' }, null, expect.any(AbortSignal)))
+    expect(chipTexts()).toEqual(['En: en çok 1.250,5 mm'])
+
+    // An exact value replaces the range: the two are never sent together.
+    await user.selectOptions(screen.getByRole('combobox', { name: 'En koşulu' }), 'Tam değer')
+    await user.type(screen.getByRole('textbox', { name: 'En (mm)' }), '1250')
+    await apply(user)
+    await waitFor(() => expect(api.page).toHaveBeenLastCalledWith(
+      COMPANY, { ...NO_FILTERS, widthMm: '1250' }, null, expect.any(AbortSignal)))
+    expect(address()).toBe('/stok/pozisyonlar?en=1250')
+  })
+
+  it('sends family, exact thickness and a width range in one read, beside the earlier filters', async () => {
+    const user = userEvent.setup()
+    mount(`/stok/pozisyonlar?etiket=ROLL&sinif=hurda`)
+    await screen.findByRole('link', { name: 'ROLL-1' })
+    await openFilters(user)
+    await waitFor(() => expect(family().disabled).toBe(false))
+    await user.selectOptions(family(), 'Sac levha')
+    await user.type(screen.getByRole('textbox', { name: 'Kalınlık (mm)' }), '1,5')
+    await user.selectOptions(screen.getByRole('combobox', { name: 'En koşulu' }), 'Aralık')
+    await user.type(screen.getByRole('textbox', { name: 'En alt sınır (mm)' }), '1000')
+    await user.type(screen.getByRole('textbox', { name: 'En üst sınır (mm)' }), '1250')
+    const before = api.page.mock.calls.length
+    await apply(user)
+    const all = { ...TYPED, q: 'ROLL', classification: 'Scrap' }
+    await waitFor(() => expect(api.page).toHaveBeenLastCalledWith(COMPANY, all, null, expect.any(AbortSignal)))
+    // Both measures go in ONE read, not one read per field.
+    expect(api.page.mock.calls.length).toBe(before + 1)
+    expect(address()).toBe(`/stok/pozisyonlar?etiket=ROLL&sinif=hurda&aile=${FAMILY_2}&kalinlik=1.5&enMin=1000&enMaks=1250`)
+    expect(chipTexts()).toEqual(['Sınıf: Hurda', 'Ürün ailesi: Sac levha', 'Kalınlık: 1,5 mm', 'En: 1.000–1.250 mm'])
+    expect(screen.getByRole('button', { name: 'Tüm filtreler (4)' })).toBeTruthy()
+  })
+
+  it.each([
+    ['a dot', '1.5', 'Yalnız rakam yazın; ondalık için virgül kullanın, binlik ayırıcı kullanmayın (ör. 1250 veya 1,5).'],
+    ['a grouped thousand', '1.250', 'Yalnız rakam yazın; ondalık için virgül kullanın, binlik ayırıcı kullanmayın (ör. 1250 veya 1,5).'],
+    ['a fourth fraction digit', '1,2345', 'En çok üç ondalık basamak yazılabilir; değer yuvarlanmaz.'],
+    ['zero', '0', 'Sıfırdan büyük bir değer yazın.'],
+  ])('refuses %s in a measure: said at the field, focused, nothing read and nothing rounded', async (_, typed, message) => {
+    const user = userEvent.setup()
+    mount()
+    await screen.findByRole('link', { name: 'ROLL-1' })
+    await openFilters(user)
+    const field = screen.getByRole('textbox', { name: 'Kalınlık (mm)' }) as HTMLInputElement
+    await user.type(field, typed)
+    await user.type(screen.getByRole('textbox', { name: 'En (mm)' }), '1250')
+    await apply(user)
+    await waitFor(() => expect(field.getAttribute('aria-invalid')).toBe('true'))
+    expect(document.getElementById(field.getAttribute('aria-describedby')!.split(' ').at(-1)!)?.textContent).toBe(message)
+    expect(document.activeElement).toBe(field)
+    expect(field.value).toBe(typed)
+    // The valid width is not applied on its own beside a refused thickness.
+    expect(api.page).toHaveBeenCalledTimes(1)
+    expect(address()).toBe('/stok/pozisyonlar')
+    expect(screen.queryByRole('list', { name: 'Etkin filtreler' })).toBeNull()
+
+    // Corrected, the same button applies both.
+    await user.clear(field)
+    await user.type(field, '1,5')
+    await apply(user)
+    await waitFor(() => expect(api.page).toHaveBeenLastCalledWith(
+      COMPANY, { ...NO_FILTERS, thicknessMm: '1.5', widthMm: '1250' }, null, expect.any(AbortSignal)))
+  })
+
+  it('refuses a minimum above the maximum, and accepts them equal', async () => {
+    const user = userEvent.setup()
+    mount()
+    await screen.findByRole('link', { name: 'ROLL-1' })
+    await openFilters(user)
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Kalınlık koşulu' }), 'Aralık')
+    const min = screen.getByRole('textbox', { name: 'Kalınlık alt sınır (mm)' }) as HTMLInputElement
+    const max = screen.getByRole('textbox', { name: 'Kalınlık üst sınır (mm)' }) as HTMLInputElement
+    await user.type(min, '3,001')
+    await user.type(max, '3')
+    await apply(user)
+    await waitFor(() => expect(min.getAttribute('aria-invalid')).toBe('true'))
+    expect(screen.getByText('Alt sınır, üst sınırdan büyük olamaz.')).toBeTruthy()
+    expect(document.activeElement).toBe(min)
+    expect(api.page).toHaveBeenCalledTimes(1)
+
+    await user.clear(min)
+    await user.type(min, '3')
+    await apply(user)
+    await waitFor(() => expect(api.page).toHaveBeenLastCalledWith(
+      COMPANY, { ...NO_FILTERS, thicknessMinMm: '3', thicknessMaxMm: '3' }, null, expect.any(AbortSignal)))
+    expect(chipTexts()).toEqual(['Kalınlık: 3–3 mm'])
+  })
+
+  it('opens a deep link with the typed filters: one read with all of them, names from the authorized list, fields filled', async () => {
+    const user = userEvent.setup()
+    mount(TYPED_URL)
+    await screen.findByRole('link', { name: 'ROLL-1' })
+    expect(api.page).toHaveBeenCalledTimes(1)
+    expect(api.page).toHaveBeenCalledWith(COMPANY, TYPED, null, expect.any(AbortSignal))
+    // The chip needs the family's name, so the list is read without opening the panel — once.
+    await waitFor(() => expect(chipTexts()).toEqual(['Ürün ailesi: Sac levha', 'Kalınlık: 1,5 mm', 'En: 1.000–1.250 mm']))
+    expect(api.families).toHaveBeenCalledTimes(1)
+    expect(screen.getByRole('button', { name: 'Tüm filtreler (3)' }).getAttribute('aria-expanded')).toBe('false')
+
+    await openFilters(user)
+    expect(family().value).toBe(FAMILY_2)
+    expect((screen.getByRole('textbox', { name: 'Kalınlık (mm)' }) as HTMLInputElement).value).toBe('1,5')
+    expect((screen.getByRole('combobox', { name: 'En koşulu' }) as HTMLSelectElement).value).toBe('range')
+    expect((screen.getByRole('textbox', { name: 'En alt sınır (mm)' }) as HTMLInputElement).value).toBe('1000')
+    expect((screen.getByRole('textbox', { name: 'En üst sınır (mm)' }) as HTMLInputElement).value).toBe('1250')
+    expect(api.families).toHaveBeenCalledTimes(1)
+  })
+
+  it.each([
+    ['an exact value with a range', 'kalinlik=1.5&kalinlikMin=1'],
+    ['a minimum above the maximum', 'enMin=1250&enMaks=1000'],
+    ['a decimal comma', 'kalinlik=1,5'],
+    ['a fourth fraction digit', 'en=1250.0001'],
+    ['zero', 'en=0'],
+    ['a family that is not an id', 'aile=coil'],
+  ])('treats %s in a hand-edited address as no filter — never half a condition, never a 400', async (_, search) => {
+    mount(`/stok/pozisyonlar?${search}`)
+    await screen.findByRole('link', { name: 'ROLL-1' })
+    expect(api.page).toHaveBeenCalledTimes(1)
+    expect(api.page).toHaveBeenCalledWith(COMPANY, NO_FILTERS, null, expect.any(AbortSignal))
+    expect(screen.queryByRole('list', { name: 'Etkin filtreler' })).toBeNull()
+  })
+
+  it('removes one filter and keeps the others; "Filtreleri temizle" clears every one and empties the fields', async () => {
+    const user = userEvent.setup()
+    mount(TYPED_URL)
+    await screen.findByRole('link', { name: 'ROLL-1' })
+    await openFilters(user)
+    await user.click(await screen.findByRole('button', { name: 'Kalınlık: 1,5 mm filtresini kaldır' }))
+    await waitFor(() => expect(api.page).toHaveBeenLastCalledWith(
+      COMPANY, { ...TYPED, thicknessMm: null }, null, expect.any(AbortSignal)))
+    expect(address()).toBe(`/stok/pozisyonlar?aile=${FAMILY_2}&enMin=1000&enMaks=1250`)
+    await waitFor(() => expect(chipTexts()).toEqual(['Ürün ailesi: Sac levha', 'En: 1.000–1.250 mm']))
+    expect((screen.getByRole('textbox', { name: 'Kalınlık (mm)' }) as HTMLInputElement).value).toBe('')
+    expect((screen.getByRole('textbox', { name: 'En alt sınır (mm)' }) as HTMLInputElement).value).toBe('1000')
+
+    await user.click(screen.getByRole('button', { name: 'Filtreleri temizle' }))
+    await waitFor(() => expect(api.page).toHaveBeenLastCalledWith(COMPANY, NO_FILTERS, null, expect.any(AbortSignal)))
+    expect(address()).toBe('/stok/pozisyonlar')
+    expect(family().value).toBe('')
+    expect((screen.getByRole('combobox', { name: 'En koşulu' }) as HTMLSelectElement).value).toBe('exact')
+    expect((screen.getByRole('textbox', { name: 'En (mm)' }) as HTMLInputElement).value).toBe('')
+    expect(screen.getByRole('button', { name: 'Tüm filtreler' })).toBeTruthy()
+  })
+
+  it('continues with the same typed filters and the server cursor, and retries a failed continuation with the same cursor', async () => {
+    const user = userEvent.setup()
+    api.page
+      .mockResolvedValueOnce(ready([row()], { nextCursor: 'cursor-1' }))
+      .mockResolvedValueOnce({ type: 'http', status: 503, body: null })
+      .mockResolvedValueOnce(ready([row({ labelId: LABEL_2, labelCode: 'ROLL-2' })]))
+      .mockResolvedValue(ready([row()]))
+    mount(TYPED_URL)
+    await screen.findByRole('link', { name: 'ROLL-1' })
+    await user.click(screen.getByRole('button', { name: 'Daha fazla göster' }))
+    expect((await screen.findByText('Sonraki stok satırları okunamadı.'))).toBeTruthy()
+    expect(api.page).toHaveBeenNthCalledWith(2, COMPANY, TYPED, 'cursor-1', expect.any(AbortSignal))
+    // The first page stays; the same question is asked again from the same place.
+    expect(screen.getByRole('link', { name: 'ROLL-1' })).toBeTruthy()
+    await user.click(screen.getByRole('button', { name: 'Daha fazla göster' }))
+    await screen.findByRole('link', { name: 'ROLL-2' })
+    expect(api.page).toHaveBeenNthCalledWith(3, COMPANY, TYPED, 'cursor-1', expect.any(AbortSignal))
+
+    // A changed filter starts from the first page again.
+    await openFilters(user)
+    await user.clear(screen.getByRole('textbox', { name: 'Kalınlık (mm)' }))
+    await user.type(screen.getByRole('textbox', { name: 'Kalınlık (mm)' }), '2')
+    await apply(user)
+    await waitFor(() => expect(api.page).toHaveBeenLastCalledWith(
+      COMPANY, { ...TYPED, thicknessMm: '2' }, null, expect.any(AbortSignal)))
+    await waitFor(() => expect(screen.queryByRole('link', { name: 'ROLL-2' })).toBeNull())
+  })
+
+  it('never shows the answer to an earlier filter after a later one', async () => {
+    const user = userEvent.setup()
+    let answerEarlier: (value: unknown) => void = () => {}
+    api.page
+      .mockResolvedValueOnce(ready([row()]))
+      .mockImplementationOnce(() => new Promise((resolve) => { answerEarlier = resolve }))
+      .mockResolvedValue(ready([row({ labelId: LABEL_3, labelCode: 'ROLL-LATER' })]))
+    mount()
+    await screen.findByRole('link', { name: 'ROLL-1' })
+    await openFilters(user)
+    await waitFor(() => expect(family().disabled).toBe(false))
+    await user.selectOptions(family(), 'Yassı rulo')
+    await user.selectOptions(family(), 'Sac levha')
+    await screen.findByRole('link', { name: 'ROLL-LATER' })
+    await act(async () => { answerEarlier(ready([row({ labelId: LABEL_2, labelCode: 'ROLL-EARLIER' })])) })
+    expect(screen.queryByRole('link', { name: 'ROLL-EARLIER' })).toBeNull()
+    expect(screen.getByRole('link', { name: 'ROLL-LATER' })).toBeTruthy()
+    expect(chipTexts()).toEqual(['Ürün ailesi: Sac levha'])
+  })
+
+  it('keeps "no match", "could not be read" and "not permitted" apart under typed filters', async () => {
+    api.page.mockResolvedValueOnce(ready([]))
+    const empty = mount(TYPED_URL)
+    expect(await screen.findByText('Filtrelere uyan fiziksel stok yok.')).toBeTruthy()
+    expect(screen.queryByRole('alert')).toBeNull()
+    empty.unmount()
+
+    api.page.mockResolvedValueOnce({ type: 'http', status: 503, body: null })
+    const unavailable = mount(TYPED_URL)
+    await waitFor(() => expect(document.querySelector('[data-state]')?.getAttribute('data-state')).toBe('service-unavailable'))
+    expect(screen.queryByText('Filtrelere uyan fiziksel stok yok.')).toBeNull()
+    unavailable.unmount()
+
+    api.page.mockResolvedValueOnce({ type: 'http', status: 403, body: null })
+    mount(TYPED_URL)
+    await waitFor(() => expect(document.querySelector('[data-state]')?.getAttribute('data-state')).toBe('forbidden'))
+    expect(screen.queryByText('Filtrelere uyan fiziksel stok yok.')).toBeNull()
+  })
+
+  it('says the family list could not be read, keeps the stock list and the other filters, and reads it again on request', async () => {
+    const user = userEvent.setup()
+    api.families
+      .mockResolvedValueOnce({ type: 'http', status: 503, body: null })
+      .mockResolvedValue(familiesReady())
+    mount()
+    await screen.findByRole('link', { name: 'ROLL-1' })
+    await openFilters(user)
+    expect((await screen.findByRole('alert')).textContent).toBe('Ürün ailesi listesi okunamadı.')
+    expect(family().disabled).toBe(true)
+    // No family is made up from the row on screen.
+    expect([...family().options].map((option) => option.textContent)).toEqual(['Tümü'])
+    expect(screen.getByRole('link', { name: 'ROLL-1' })).toBeTruthy()
+    expect(auth.report).not.toHaveBeenCalled()
+    // The measures do not depend on the list.
+    await user.type(screen.getByRole('textbox', { name: 'En (mm)' }), '1250')
+    await apply(user)
+    await waitFor(() => expect(api.page).toHaveBeenLastCalledWith(
+      COMPANY, { ...NO_FILTERS, widthMm: '1250' }, null, expect.any(AbortSignal)))
+    expect(api.families).toHaveBeenCalledTimes(1)
+
+    await user.click(screen.getByRole('button', { name: 'Yeniden dene' }))
+    await waitFor(() => expect(family().disabled).toBe(false))
+    expect(api.families).toHaveBeenCalledTimes(2)
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect([...family().options].map((option) => option.textContent)).toEqual(['Tümü', 'Yassı rulo', 'Sac levha'])
+  })
+
+  it.each([
+    ['a malformed list', { type: 'malformed' }],
+    ['a 409', { type: 'http', status: 409, body: { code: 'inventory_product_family_option_read_conflict' } }],
+    ['a network failure', { type: 'network-error' }],
+  ])('treats %s as unreadable, never as "no families"', async (_, outcome) => {
+    const user = userEvent.setup()
+    api.families.mockResolvedValue(outcome)
+    mount()
+    await screen.findByRole('link', { name: 'ROLL-1' })
+    await openFilters(user)
+    expect((await screen.findByRole('alert')).textContent).toBe('Ürün ailesi listesi okunamadı.')
+    expect(screen.getByRole('button', { name: 'Yeniden dene' })).toBeTruthy()
+  })
+
+  it('says a 403 on the family list as "not permitted", offers no retry and leaves the stock list’s own authority alone', async () => {
+    const user = userEvent.setup()
+    api.families.mockResolvedValue({ type: 'http', status: 403, body: null })
+    mount()
+    await screen.findByRole('link', { name: 'ROLL-1' })
+    await openFilters(user)
+    expect((await screen.findByRole('alert')).textContent).toBe('Ürün ailesi listesini görme yetkiniz yok.')
+    expect(screen.queryByRole('button', { name: 'Yeniden dene' })).toBeNull()
+    expect(screen.queryByText('Ürün ailesi listesi okunamadı.')).toBeNull()
+    expect(family().disabled).toBe(true)
+    expect(auth.report).not.toHaveBeenCalled()
+    expect(screen.getByRole('link', { name: 'ROLL-1' })).toBeTruthy()
+    expect(api.families).toHaveBeenCalledTimes(1)
+  })
+
+  it('reports a lost session (401) on the family list to the shell boundary', async () => {
+    const user = userEvent.setup()
+    api.families.mockResolvedValue({ type: 'http', status: 401, body: null })
+    mount()
+    await screen.findByRole('link', { name: 'ROLL-1' })
+    await openFilters(user)
+    await waitFor(() => expect(auth.report).toHaveBeenCalledWith(401, { token: 1 }))
+    expect(auth.report).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps a family from the address that the authorized list does not hold, without a name or its id', async () => {
+    const user = userEvent.setup()
+    const UNLISTED = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaac'
+    mount(`/stok/pozisyonlar?aile=${UNLISTED}`)
+    await screen.findByRole('link', { name: 'ROLL-1' })
+    expect(api.page).toHaveBeenCalledWith(COMPANY, { ...NO_FILTERS, productFamilyId: UNLISTED }, null, expect.any(AbortSignal))
+    await waitFor(() => expect(api.families).toHaveBeenCalledTimes(1))
+    expect(chipTexts()).toEqual(['Ürün ailesi: seçili ürün ailesi'])
+    await openFilters(user)
+    await waitFor(() => expect(family().disabled).toBe(false))
+    expect([...family().options].map((option) => option.textContent)).toEqual(['Tümü', 'seçili ürün ailesi', 'Yassı rulo', 'Sac levha'])
+    expect(family().value).toBe(UNLISTED)
+    expect(main().textContent).not.toContain(UNLISTED)
+  })
+
+  it('tells two families with the same name apart by their published code', async () => {
+    const user = userEvent.setup()
+    api.families.mockResolvedValue(familiesReady([
+      { familyId: FAMILY, code: 'gdc-flat-coil', displayName: 'Yassı ürün' },
+      { familyId: FAMILY_2, code: 'gdc-sheet', displayName: 'Yassı ürün' },
+      { familyId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaad', code: 'gdc-pipe', displayName: 'Boru' },
+    ]))
+    mount()
+    await screen.findByRole('link', { name: 'ROLL-1' })
+    await openFilters(user)
+    await waitFor(() => expect(family().disabled).toBe(false))
+    expect([...family().options].map((option) => option.textContent))
+      .toEqual(['Tümü', 'Yassı ürün (gdc-flat-coil)', 'Yassı ürün (gdc-sheet)', 'Boru'])
+  })
+
+  it('works the same on a phone: the panel, the fields and the chips above the cards', async () => {
+    const user = userEvent.setup()
+    stubViewport(true)
+    mount()
+    await screen.findByTestId('stock-position-cards')
+    await openFilters(user)
+    await user.type(screen.getByRole('textbox', { name: 'Kalınlık (mm)' }), '1,5{Enter}')
+    await waitFor(() => expect(api.page).toHaveBeenLastCalledWith(
+      COMPANY, { ...NO_FILTERS, thicknessMm: '1.5' }, null, expect.any(AbortSignal)))
+    expect(chipTexts()).toEqual(['Kalınlık: 1,5 mm'])
+    expect(await screen.findByTestId('stock-position-cards')).toBeTruthy()
+  })
+
+  it('keeps the measure controls real form controls with visible labels, and lets the panel shrink on a narrow screen', async () => {
+    const user = userEvent.setup()
+    mount()
+    await screen.findByRole('link', { name: 'ROLL-1' })
+    await openFilters(user)
+    const form = screen.getByRole('form', { name: 'Ölçü filtreleri' })
+    expect(within(form).getAllByRole('group').map((group) => group.querySelector('legend')?.textContent)).toEqual(['Kalınlık', 'En'])
+    expect(screen.getByRole('button', { name: 'Ölçüleri uygula' }).getAttribute('type')).toBe('submit')
+    for (const name of ['Kalınlık (mm)', 'En (mm)']) {
+      const field = screen.getByRole('textbox', { name }) as HTMLInputElement
+      expect(field.getAttribute('inputmode')).toBe('decimal')
+      expect(field.type).toBe('text')
+      expect(document.querySelector(`label[for="${field.id}"]`)?.textContent).toBe(name)
+    }
+    expect(within(form).getByText('Ondalık için virgül yazın (ör. 1,5). Boş bırakılan ölçü filtrelenmez.')).toBeTruthy()
+
+    const nodeProcess = (globalThis as unknown as { process: { cwd(): string; getBuiltinModule(name: string): unknown } }).process
+    const fs = nodeProcess.getBuiltinModule('node:fs') as { readFileSync(path: string, encoding: 'utf8'): string }
+    const path = nodeProcess.getBuiltinModule('node:path') as { resolve(...segments: string[]): string }
+    const css = fs.readFileSync(path.resolve(nodeProcess.cwd(), 'src/inventory/stockPosition.module.css'), 'utf8')
+    const rule = (selector: string) => {
+      const at = css.indexOf(`\n${selector} {`)
+      expect(at, selector).toBeGreaterThanOrEqual(0)
+      return css.slice(at, css.indexOf('}', at))
+    }
+    expect(rule('.measureForm')).toContain('grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr))')
+    expect(rule('.measureForm')).toContain('min-width: 0')
+    expect(rule('.measure')).toContain('min-width: 0')
+    expect(rule('.measureInput')).toContain('min-width: 0')
+    expect(rule('.filterPanel .select')).toContain('max-width: 100%')
+    // Nothing here changes how text is written.
+    expect(css).not.toMatch(/text-transform/)
   })
 })
