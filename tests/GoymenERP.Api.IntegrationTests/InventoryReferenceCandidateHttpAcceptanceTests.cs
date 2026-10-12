@@ -20,6 +20,94 @@ public sealed class InventoryReferenceCandidateHttpAcceptanceTests(GoymenErpApiF
     private static readonly Guid ProfileId = Guid.Parse("33333333-3333-4333-8333-333333333333");
     private static readonly Guid LocationId = Guid.Parse("44444444-4444-4444-8444-444444444444");
     private static readonly Guid SiteId = Guid.Parse("55555555-5555-4555-8555-555555555555");
+    private static readonly Guid FamilyId = Guid.Parse("66666666-6666-4666-8666-666666666666");
+
+    [Fact]
+    public async Task Stock_reader_gets_real_product_family_options_without_deriving_them_from_a_stock_page()
+    {
+        var authority = new ControlledAuthority();
+        var families = new StubFamilies(new([
+            new(FamilyId, "gdc-coil", "Galvanizli rulo"),
+        ]));
+        using var host = CreateHost(authority, new StubProducts(new([], false)),
+            new StubLocations(new([], false)), families);
+        using var client = CreateClient(host);
+
+        using var response = await client.GetAsync(InventoryReferenceEndpoints.ProductFamilyPath);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        AssertPrivateNoStore(response);
+        Assert.Equal(1, families.Reads);
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var item = Assert.Single(body.RootElement.GetProperty("items").EnumerateArray());
+        Assert.Equal(FamilyId, item.GetProperty("familyId").GetGuid());
+        Assert.Equal("gdc-coil", item.GetProperty("code").GetString());
+        Assert.Equal("Galvanizli rulo", item.GetProperty("displayName").GetString());
+        Assert.Contains(ErpPermissions.InventoryLabelsRead, authority.AskedPermissions);
+        Assert.Contains(ErpPermissions.InventoryBalancesRead, authority.AskedPermissions);
+    }
+
+    [Fact]
+    public async Task Product_family_options_reject_query_and_invalid_owner_output_at_the_closed_boundary()
+    {
+        var authority = new ControlledAuthority();
+        var families = new StubFamilies(new([
+            new(FamilyId, "duplicate", "Bir"),
+            new(Guid.NewGuid(), "duplicate", "İki"),
+        ]));
+        using var host = CreateHost(authority, new StubProducts(new([], false)),
+            new StubLocations(new([], false)), families);
+        using var client = CreateClient(host);
+
+        using var invalidQuery = await client.GetAsync(InventoryReferenceEndpoints.ProductFamilyPath + "?q=x");
+        Assert.Equal(HttpStatusCode.BadRequest, invalidQuery.StatusCode);
+        using var invalidBody = JsonDocument.Parse(await invalidQuery.Content.ReadAsStringAsync());
+        Assert.Equal(InventoryReferenceCodesV1.ProductFamilyInvalidQuery,
+            invalidBody.RootElement.GetProperty("code").GetString());
+        Assert.Equal(0, families.Reads);
+
+        using var invalidOutput = await client.GetAsync(InventoryReferenceEndpoints.ProductFamilyPath);
+        Assert.Equal(HttpStatusCode.Conflict, invalidOutput.StatusCode);
+        using var conflictBody = JsonDocument.Parse(await invalidOutput.Content.ReadAsStringAsync());
+        Assert.Equal(InventoryReferenceCodesV1.ProductFamilyReadConflict,
+            conflictBody.RootElement.GetProperty("code").GetString());
+    }
+
+    [Fact]
+    public async Task Stock_permission_revocation_after_family_read_returns_code_less_403_without_disclosure()
+    {
+        var authority = new ControlledAuthority();
+        var families = new StubFamilies(new([
+            new(FamilyId, "PRIVATE-CODE", "PRIVATE-NAME"),
+        ])) { During = () => authority.Granted = false };
+        using var host = CreateHost(authority, new StubProducts(new([], false)),
+            new StubLocations(new([], false)), families);
+        using var client = CreateClient(host);
+
+        using var response = await client.GetAsync(InventoryReferenceEndpoints.ProductFamilyPath);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        AssertPrivateNoStore(response);
+        Assert.DoesNotContain("PRIVATE-", await response.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(ErpPermissions.InventoryLabelsRead)]
+    [InlineData(ErpPermissions.InventoryBalancesRead)]
+    public async Task Missing_either_stock_read_permission_refuses_before_family_owner_read(string missing)
+    {
+        var authority = new ControlledAuthority();
+        authority.GrantedPermissions.Remove(missing);
+        var families = new StubFamilies(new([]));
+        using var host = CreateHost(authority, new StubProducts(new([], false)),
+            new StubLocations(new([], false)), families);
+        using var client = CreateClient(host);
+
+        using var response = await client.GetAsync(InventoryReferenceEndpoints.ProductFamilyPath);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(0, families.Reads);
+    }
 
     [Fact]
     public async Task Authorized_actor_gets_exact_product_and_location_candidates_with_private_no_store()
@@ -144,7 +232,8 @@ public sealed class InventoryReferenceCandidateHttpAcceptanceTests(GoymenErpApiF
     }
 
     private WebApplicationFactory<Program> CreateHost(
-        ControlledAuthority authority, StubProducts products, StubLocations locations) =>
+        ControlledAuthority authority, StubProducts products, StubLocations locations,
+        StubFamilies? families = null) =>
         factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
         {
             services.RemoveAll<IErpAuthorizationService>();
@@ -155,6 +244,8 @@ public sealed class InventoryReferenceCandidateHttpAcceptanceTests(GoymenErpApiF
             services.AddSingleton<IProductStockCandidatesV1>(products);
             services.RemoveAll<IOrganizationLocationCandidatesV1>();
             services.AddSingleton<IOrganizationLocationCandidatesV1>(locations);
+            services.RemoveAll<IProductStockFamilyOptionsV1>();
+            services.AddSingleton<IProductStockFamilyOptionsV1>(families ?? new StubFamilies(new([])));
         }));
 
     private static HttpClient CreateClient(WebApplicationFactory<Program> host)
@@ -217,21 +308,43 @@ public sealed class InventoryReferenceCandidateHttpAcceptanceTests(GoymenErpApiF
         }
     }
 
+    private sealed class StubFamilies(ProductStockFamilyOptionsV1 result) : IProductStockFamilyOptionsV1
+    {
+        public int Reads { get; private set; }
+        public Action? During { get; init; }
+
+        public Task<ProductStockFamilyOptionsV1> ReadFamilyOptionsAsync(
+            CancellationToken cancellationToken = default)
+        {
+            Reads++;
+            During?.Invoke();
+            return Task.FromResult(result);
+        }
+    }
+
     private sealed class ControlledAuthority : IErpAuthorizationService, IErpAuthorityRevalidationService
     {
         public bool Granted { get; set; } = true;
         public int FreshCalls { get; private set; }
+        public HashSet<string> GrantedPermissions { get; } = new(StringComparer.Ordinal)
+        {
+            ErpPermissions.InventoryOpeningStockRecord,
+            ErpPermissions.InventoryLabelsRead,
+            ErpPermissions.InventoryBalancesRead,
+        };
+        public List<string> AskedPermissions { get; } = [];
 
         public Task<bool> HasPermissionAsync(string permission, Guid companyId,
             CancellationToken cancellationToken = default) =>
-            Task.FromResult(Granted && permission == ErpPermissions.InventoryOpeningStockRecord
+            Task.FromResult(Granted && GrantedPermissions.Contains(permission)
                 && companyId == TestCompanyIds.CompanyA);
 
         public Task<PermissionScope> RevalidatePermissionScopeAsync(string permission, Guid companyId,
             CancellationToken cancellationToken = default)
         {
             FreshCalls++;
-            return Task.FromResult(Granted && permission == ErpPermissions.InventoryOpeningStockRecord
+            AskedPermissions.Add(permission);
+            return Task.FromResult(Granted && GrantedPermissions.Contains(permission)
                 && companyId == TestCompanyIds.CompanyA
                 ? new PermissionScope(true, true, new HashSet<string>(StringComparer.Ordinal),
                     new HashSet<Guid>(), new HashSet<Guid>(), new HashSet<Guid>())

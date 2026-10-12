@@ -15,6 +15,7 @@ public static class InventoryReferenceEndpoints
 {
     public const string ProductPath = "/api/v1/inventory/references/products";
     public const string LocationPath = "/api/v1/inventory/references/locations";
+    public const string ProductFamilyPath = "/api/v1/inventory/references/product-families";
 
     private static readonly HashSet<string> ProductQueryNames =
         new(["q", "effectiveOn", "limit"], StringComparer.Ordinal);
@@ -47,7 +48,65 @@ public static class InventoryReferenceEndpoints
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();
 
+        endpoints.MapGet(ProductFamilyPath, GetProductFamiliesAsync)
+            .WithName("GetInventoryProductFamilyOptionsV1")
+            .WithTags("Inventory")
+            .WithMetadata(new PrivateNoStoreOnAuthorizationFailureMetadata())
+            .RequireCompanyContext()
+            .RequireAuthorization(ErpPermissions.InventoryLabelsRead, ErpPermissions.InventoryBalancesRead)
+            .Produces<ProductStockFamilyOptionsV1>()
+            .ProducesErpBadRequest(InventoryReferenceCodesV1.ProductFamilyInvalidQuery)
+            .ProducesErpConflict(InventoryReferenceCodesV1.ProductFamilyReadConflict)
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+
         return endpoints;
+    }
+
+    private static async Task<IResult> GetProductFamiliesAsync(
+        HttpContext context,
+        ICompanyContext company,
+        ICurrentUser user,
+        IErpAuthorityRevalidationService authority,
+        IProductStockFamilyOptionsV1 options,
+        CancellationToken cancellationToken)
+    {
+        SetPrivateNoStore(context.Response);
+        var scope = await CaptureStockReadScopeAsync(company, user, authority, cancellationToken);
+        if (scope is null) return Problem(StatusCodes.Status403Forbidden);
+        if (context.Request.Query.Count != 0)
+            return Problem(StatusCodes.Status400BadRequest, InventoryReferenceCodesV1.ProductFamilyInvalidQuery);
+
+        try
+        {
+            var result = await options.ReadFamilyOptionsAsync(cancellationToken);
+            if (!await StillStockReadAuthorizedAsync(scope, company, user, authority, cancellationToken))
+                return Problem(StatusCodes.Status403Forbidden);
+            return IsValid(result)
+                ? Results.Ok(result)
+                : Problem(StatusCodes.Status409Conflict, InventoryReferenceCodesV1.ProductFamilyReadConflict);
+        }
+        catch (ProductOperationException exception)
+        {
+            return exception.StatusCode == StatusCodes.Status403Forbidden
+                ? Problem(StatusCodes.Status403Forbidden)
+                : await AuthorizedStockReadProblemAsync(scope, company, user, authority, cancellationToken,
+                    StatusCodes.Status503ServiceUnavailable);
+        }
+        catch (InvalidOperationException)
+        {
+            return await AuthorizedStockReadProblemAsync(scope, company, user, authority, cancellationToken,
+                StatusCodes.Status409Conflict, InventoryReferenceCodesV1.ProductFamilyReadConflict);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            return await AuthorizedStockReadProblemAsync(scope, company, user, authority, cancellationToken,
+                StatusCodes.Status503ServiceUnavailable);
+        }
     }
 
     private static async Task<IResult> GetProductsAsync(
@@ -205,6 +264,12 @@ public static class InventoryReferenceEndpoints
             && Required(item.SiteCode) && Required(item.SiteName))
         && result.Items.Select(item => item.LocationId).Distinct().Count() == result.Items.Count;
 
+    private static bool IsValid(ProductStockFamilyOptionsV1 result) =>
+        result.Items.Count > 0
+        && result.Items.All(item => item.FamilyId != Guid.Empty && Required(item.Code) && Required(item.DisplayName))
+        && result.Items.Select(item => item.FamilyId).Distinct().Count() == result.Items.Count
+        && result.Items.Select(item => item.Code).Distinct(StringComparer.Ordinal).Count() == result.Items.Count;
+
     private static bool Required(string? value) => !string.IsNullOrWhiteSpace(value);
 
     private static async Task<ConsumerScope?> CaptureScopeAsync(
@@ -238,6 +303,41 @@ public static class InventoryReferenceEndpoints
         user.IsAuthenticated && user.UserId == scope.ActorId && company.IsResolved
         && company.CompanyId == scope.CompanyId && user.CanAccessCompany(scope.CompanyId);
 
+    private static async Task<ConsumerScope?> CaptureStockReadScopeAsync(
+        ICompanyContext company,
+        ICurrentUser user,
+        IErpAuthorityRevalidationService authority,
+        CancellationToken cancellationToken)
+    {
+        if (!user.IsAuthenticated || string.IsNullOrWhiteSpace(user.UserId)
+            || !company.IsResolved || company.CompanyId == Guid.Empty
+            || !user.CanAccessCompany(company.CompanyId))
+            return null;
+        var scope = new ConsumerScope(company.CompanyId, user.UserId);
+        return await StillStockReadAuthorizedAsync(scope, company, user, authority, cancellationToken) ? scope : null;
+    }
+
+    private static async Task<bool> StillStockReadAuthorizedAsync(
+        ConsumerScope scope,
+        ICompanyContext company,
+        ICurrentUser user,
+        IErpAuthorityRevalidationService authority,
+        CancellationToken cancellationToken)
+    {
+        foreach (var permission in new[]
+                 {
+                     ErpPermissions.InventoryLabelsRead,
+                     ErpPermissions.InventoryBalancesRead,
+                 })
+        {
+            if (!Matches(scope, company, user)) return false;
+            var fresh = await authority.RevalidatePermissionScopeAsync(
+                permission, scope.CompanyId, cancellationToken);
+            if (!fresh.IsGranted || !Matches(scope, company, user)) return false;
+        }
+        return true;
+    }
+
     private static async Task<IResult> AuthorizedProblemAsync(
         ConsumerScope scope,
         ICompanyContext company,
@@ -247,6 +347,18 @@ public static class InventoryReferenceEndpoints
         int status,
         string? code = null) =>
         await StillAuthorizedAsync(scope, company, user, authority, cancellationToken)
+            ? Problem(status, code)
+            : Problem(StatusCodes.Status403Forbidden);
+
+    private static async Task<IResult> AuthorizedStockReadProblemAsync(
+        ConsumerScope scope,
+        ICompanyContext company,
+        ICurrentUser user,
+        IErpAuthorityRevalidationService authority,
+        CancellationToken cancellationToken,
+        int status,
+        string? code = null) =>
+        await StillStockReadAuthorizedAsync(scope, company, user, authority, cancellationToken)
             ? Problem(status, code)
             : Problem(StatusCodes.Status403Forbidden);
 
@@ -270,4 +382,6 @@ public static class InventoryReferenceCodesV1
     public const string ProductReadConflict = "inventory_product_candidate_read_conflict";
     public const string LocationInvalidQuery = "organization_location_candidate_invalid_query";
     public const string LocationReadConflict = "inventory_location_candidate_read_conflict";
+    public const string ProductFamilyInvalidQuery = "inventory_product_family_option_invalid_query";
+    public const string ProductFamilyReadConflict = "inventory_product_family_option_read_conflict";
 }

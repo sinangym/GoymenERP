@@ -25,6 +25,24 @@ public interface IProductStockTechnicalMatcherV1
         CancellationToken cancellationToken = default);
 }
 
+/// <summary>
+/// Product-owned, authorized reference read for the stock-position family filter. The options come
+/// from the released family registry in one read; Inventory never derives a global family list from
+/// the current stock page and never invents a display name.
+/// </summary>
+public interface IProductStockFamilyOptionsV1
+{
+    Task<ProductStockFamilyOptionsV1> ReadFamilyOptionsAsync(CancellationToken cancellationToken = default);
+}
+
+public sealed record ProductStockFamilyOptionsV1(
+    IReadOnlyList<ProductStockFamilyOptionV1> Items);
+
+public sealed record ProductStockFamilyOptionV1(
+    Guid FamilyId,
+    string Code,
+    string DisplayName);
+
 public sealed record ProductStockTechnicalMatchQueryV1(
     IReadOnlyList<ProductStockTechnicalMatchSelectionV1> Selections,
     Guid? ProductFamilyId,

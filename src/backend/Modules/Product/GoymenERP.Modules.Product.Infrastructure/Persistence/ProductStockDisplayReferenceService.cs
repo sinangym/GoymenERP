@@ -23,8 +23,32 @@ public sealed class ProductStockDisplayReferenceService(
     IErpAuthorityRevalidationService authority,
     IProductStockDisplayRecordReader records,
     IProductFamilyDefinitionSourceV2 definitions)
-    : IProductStockDisplayReferencesV1, IProductStockTechnicalMatcherV1
+    : IProductStockDisplayReferencesV1, IProductStockTechnicalMatcherV1, IProductStockFamilyOptionsV1
 {
+    public async Task<ProductStockFamilyOptionsV1> ReadFamilyOptionsAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var scope = await RequireScopeAsync(null, cancellationToken);
+        var definition = await FencedAsync(scope, () => definitions.GetAsync(cancellationToken), cancellationToken);
+        ProductFamilyDefinitionRulesV2.RequireWellFormed(definition);
+
+        var items = definition.Families
+            .Select(family => (Family: family,
+                Template: ProductFamilyDefinitionRulesV2.TemplateOf(definition, family.Id)!))
+            .Where(item => !ProductManufacturingTechnicalSnapshotService.IsSynthetic(item.Family.SourceRef)
+                && !ProductManufacturingTechnicalSnapshotService.IsSynthetic(item.Template.SourceRef))
+            .OrderBy(item => item.Family.Code, StringComparer.Ordinal)
+            .Select(item => new ProductStockFamilyOptionV1(
+                item.Family.Id, item.Family.Code, item.Family.Name))
+            .ToArray();
+        if (items.Length == 0)
+        {
+            throw new ProductOperationException(ProductManufacturingTechnicalSnapshotService.UnavailableCode, 503);
+        }
+        await RequireScopeAsync(scope, cancellationToken);
+        return new(items);
+    }
+
     public async Task<ProductStockDisplayBatchV1> ReadAsync(
         ProductStockDisplayBatchQueryV1 query,
         CancellationToken cancellationToken = default)
