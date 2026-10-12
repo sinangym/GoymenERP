@@ -150,6 +150,7 @@ public sealed class InventoryStockPositionTests
         Assert.False(page.SearchWindowFull);
         Assert.Null(page.NextCursor);
         Assert.Equal(2, world.Reader.Reads);
+        Assert.All(world.Reader.Queries, query => Assert.Equal(100, query.Limit));
         Assert.All(world.Reader.Queries, query => Assert.Equal(
             (familyId, 1.25m, 2.5m, 1250m),
             (query.ProductFamilyId, query.ThicknessMinMm, query.ThicknessMaxMm, query.WidthMm)));

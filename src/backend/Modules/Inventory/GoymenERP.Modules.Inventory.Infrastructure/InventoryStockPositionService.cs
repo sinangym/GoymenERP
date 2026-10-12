@@ -77,6 +77,7 @@ internal sealed class InventoryStockPositionService(
     IInventoryStockProductFilterV1? productFilter = null) : IInventoryStockPositionsV1
 {
     private const int MaximumTypedFilterCandidateWindow = 1000;
+    private const int TypedFilterCandidateBatchSize = 100;
 
     public async Task<InventoryStockPositionsV1> SearchAsync(
         InventoryStockPositionQueryV1 query,
@@ -165,10 +166,12 @@ internal sealed class InventoryStockPositionService(
         var scanned = 0;
         InventoryStockPositionPosition? lastProcessed = readQuery.After;
         var hasContinuation = false;
+        var cursorBindingQuery = readQuery;
+        var scanQuery = readQuery with { Limit = TypedFilterCandidateBatchSize };
 
         while (matches.Count < query.Limit && scanned < MaximumTypedFilterCandidateWindow)
         {
-            var window = await ReadWindowAsync(source, readQuery, scope, cancellationToken);
+            var window = await ReadWindowAsync(source, scanQuery, scope, cancellationToken);
             if (window.Records.Count == 0)
             {
                 if (window.HasMore) throw Error(503, InventoryStockPositionCodesV1.Unavailable);
@@ -222,11 +225,11 @@ internal sealed class InventoryStockPositionService(
             {
                 return new(matches, false);
             }
-            if (window.LastPosition is null || window.LastPosition == readQuery.After)
+            if (window.LastPosition is null || window.LastPosition == scanQuery.After)
             {
                 throw Error(503, InventoryStockPositionCodesV1.Unavailable);
             }
-            readQuery = readQuery with { After = window.LastPosition };
+            scanQuery = scanQuery with { After = window.LastPosition };
         }
 
         string? nextCursor = null;
@@ -236,7 +239,7 @@ internal sealed class InventoryStockPositionService(
             {
                 throw Error(503, InventoryStockPositionCodesV1.Unavailable);
             }
-            nextCursor = cursors.Protect(scope.CompanyId, scope.ActorId, readQuery, lastProcessed);
+            nextCursor = cursors.Protect(scope.CompanyId, scope.ActorId, cursorBindingQuery, lastProcessed);
         }
         return new(matches, hasContinuation, nextCursor);
     }
