@@ -8,7 +8,16 @@ import { shellRoutes } from '../shell/router'
 import { SHELL_CAPABILITY_CONTRACT_VERSION } from '../shell/api'
 import { CAPABILITY } from '../shell/capabilities'
 import { PARTY_ROLE_FLAG } from './contract'
-import { resetCariListView } from './listViewState'
+import {
+  DEFAULT_CARI_LIST_VIEW,
+  addressFilterCount,
+  clearedFilters,
+  isFiltered,
+  readCariListView,
+  resetCariListView,
+  writeCariListView,
+} from './listViewState'
+import { ADDRESS_FILTER_MAX_LENGTH, ADDRESS_TYPE_FILTERS, addressFilterText, buildCounterpartyQuery } from './api'
 
 const A_ID = 'aaaaaaaa-0000-0000-0000-000000000001'
 const B_ID = 'bbbbbbbb-0000-0000-0000-000000000002'
@@ -2311,5 +2320,324 @@ describe('CARI-DS-01 GOY-DS-001 layout (DataTable, Field, Button, phone cards)',
     expect(screen.queryByText('C-0001')).toBeNull()
     expect(screen.queryByText(/Alfa Metal/)).toBeNull()
     expect(calls.filter((c) => c.url.includes('/counterparties')).at(-1)?.companyId).toBe(B_ID)
+  })
+})
+
+/**
+ * CARI-FILTER-UI-01 (#691): city, district and address kind behind "Tüm filtreler". The three travel in ONE server
+ * query under the endpoint's own names; nothing is filtered or looked up on this side. Component evidence, NOT_ENV.
+ */
+describe('CARI-FILTER-UI-01 — address filters behind "Tüm filtreler"', () => {
+  const listReads = (calls: readonly { url: string }[]) =>
+    calls.filter((call) => /\/counterparties\?/.test(call.url)).map((call) => new URL(call.url, 'http://localhost').searchParams)
+  const lastRead = (calls: readonly { url: string }[]) => listReads(calls).at(-1) as URLSearchParams
+  const toggle = () => screen.getByRole('button', { name: /^Tüm filtreler/ })
+  const chipTexts = () =>
+    Array.from(document.querySelectorAll('ul li > span:first-child'))
+      .map((node) => node.textContent ?? '')
+      .filter((text) => /^(Arama|Tür|Geçmiş rol|İl|İlçe|Adres türü|Taraf durumu|Şirket hesabı durumu)/.test(text))
+
+  async function openList(config: Parameters<typeof installFetch>[0] = {}) {
+    const fetch = installFetch(config)
+    renderAt('/cari')
+    await screen.findByRole('row', { name: /C-0001/ })
+    return fetch
+  }
+
+  it('keeps the search in the normal view and the address filters one keyboard step away', async () => {
+    await openList()
+    expect(screen.getByRole('searchbox', { name: 'Ara' })).toBeTruthy()
+    // Closed: no address field is drawn, and the control says so.
+    expect(toggle().getAttribute('aria-expanded')).toBe('false')
+    expect(toggle().textContent).toBe('Tüm filtreler')
+    expect(screen.queryByLabelText('İl')).toBeNull()
+    expect(screen.queryByLabelText('İlçe')).toBeNull()
+    expect(screen.queryByLabelText('Adres türü')).toBeNull()
+
+    toggle().focus()
+    await userEvent.keyboard('{Enter}')
+    expect(toggle().getAttribute('aria-expanded')).toBe('true')
+    const panel = document.getElementById(toggle().getAttribute('aria-controls') as string) as HTMLElement
+    expect(panel.getAttribute('role')).toBe('group')
+    expect(within(panel).getByLabelText('İl')).toBeTruthy()
+    expect(within(panel).getByLabelText('İlçe')).toBeTruthy()
+    // The kinds in the user's words, bound to the exact query tokens; no city or district list is invented.
+    const kind = within(panel).getByLabelText('Adres türü') as HTMLSelectElement
+    expect(Array.from(kind.options).map((option) => [option.textContent, option.value])).toEqual([
+      ['Hepsi', ''], ['Fatura', 'billing'], ['Teslimat', 'delivery'], ['Operasyon', 'operational'],
+    ])
+    expect(within(panel).queryByRole('listbox')).toBeNull()
+    expect(panel.querySelector('datalist')).toBeNull()
+
+    await userEvent.keyboard(' ')
+    expect(toggle().getAttribute('aria-expanded')).toBe('false')
+    expect(screen.queryByLabelText('İl')).toBeNull()
+  })
+
+  it('sends city, district and address kind together in one query, trimmed and with the letters as typed', async () => {
+    const { calls } = await openList()
+    await userEvent.click(toggle())
+    await userEvent.type(screen.getByLabelText('İl'), '  İSTANBUL ')
+    await userEvent.type(screen.getByLabelText('İlçe'), 'çankaya')
+    await userEvent.selectOptions(screen.getByLabelText('Adres türü'), 'delivery')
+
+    await waitFor(() => expect(lastRead(calls).get('addressType')).toBe('delivery'))
+    const read = lastRead(calls)
+    // The endpoint's own names; the value is neither upper- nor title-cased here.
+    expect(read.get('addressCity')).toBe('İSTANBUL')
+    expect(read.get('addressDistrict')).toBe('çankaya')
+    expect(read.has('city')).toBe(false)
+    expect(read.has('district')).toBe(false)
+    // The rest of the query is what it was, and a changed filter starts from the first page.
+    expect(read.get('partyState')).toBe('active')
+    expect(read.get('accountState')).toBe('all')
+    expect(read.get('includeCount')).toBe('true')
+    expect(read.has('cursor')).toBe(false)
+    expect(chipTexts()).toEqual(['İl: İSTANBUL', 'İlçe: çankaya', 'Adres türü: Teslimat'])
+  })
+
+  it.each([
+    ['Fatura', 'billing'],
+    ['Teslimat', 'delivery'],
+    ['Operasyon', 'operational'],
+  ])('"%s" is sent as the %s token, and "Hepsi" sends none', async (label, token) => {
+    const { calls } = await openList()
+    await userEvent.click(toggle())
+    await userEvent.selectOptions(screen.getByLabelText('Adres türü'), screen.getByRole('option', { name: label }))
+    await waitFor(() => expect(lastRead(calls).get('addressType')).toBe(token))
+    expect(chipTexts()).toEqual([`Adres türü: ${label}`])
+    await userEvent.selectOptions(screen.getByLabelText('Adres türü'), '')
+    await waitFor(() => expect(lastRead(calls).has('addressType')).toBe(false))
+    expect(chipTexts()).toEqual([])
+  })
+
+  it('keeps the role filters and their match mode beside the address filters in the same query', async () => {
+    const { calls } = await openList()
+    await userEvent.click(screen.getByText('Geçmiş sınıflandırma'))
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Müşteri' }))
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Tedarikçi' }))
+    await userEvent.selectOptions(screen.getByLabelText('İşaret eşleşmesi'), 'all')
+    await userEvent.click(toggle())
+    await userEvent.type(screen.getByLabelText('İl'), 'Kocaeli')
+
+    await waitFor(() => expect(lastRead(calls).get('addressCity')).toBe('Kocaeli'))
+    const read = lastRead(calls)
+    // `role` stays repeated, never joined; the match mode travels with it.
+    expect(read.getAll('role')).toEqual(['Customer', 'Supplier'])
+    expect(read.get('roleMatch')).toBe('all')
+  })
+
+  it('a closed control says how many address filters it holds, and each chip is removed on its own', async () => {
+    const { calls } = await openList()
+    await userEvent.type(screen.getByRole('searchbox'), 'alfa')
+    await userEvent.click(toggle())
+    await userEvent.type(screen.getByLabelText('İl'), 'İstanbul')
+    await userEvent.type(screen.getByLabelText('İlçe'), 'Kadıköy')
+    await userEvent.selectOptions(screen.getByLabelText('Adres türü'), 'billing')
+    await userEvent.click(toggle())
+
+    // Closed over three filters: the count is in the control's own words, and every filter is still on screen.
+    expect(toggle().getAttribute('aria-expanded')).toBe('false')
+    expect(toggle().textContent).toBe('Tüm filtreler (3)')
+    expect(chipTexts()).toEqual(['Arama: “alfa”', 'İl: İstanbul', 'İlçe: Kadıköy', 'Adres türü: Fatura'])
+
+    // Removing the district leaves the search, the city and the kind applied — on screen and in the query.
+    await userEvent.click(screen.getByRole('button', { name: 'İlçe: Kadıköy filtresini kaldır' }))
+    await waitFor(() => expect(lastRead(calls).has('addressDistrict')).toBe(false))
+    const read = lastRead(calls)
+    expect(read.get('q')).toBe('alfa')
+    expect(read.get('addressCity')).toBe('İstanbul')
+    expect(read.get('addressType')).toBe('billing')
+    expect(read.has('cursor')).toBe(false)
+    expect(chipTexts()).toEqual(['Arama: “alfa”', 'İl: İstanbul', 'Adres türü: Fatura'])
+    expect(toggle().textContent).toBe('Tüm filtreler (2)')
+    // The chip that was activated is gone; the keyboard is not left at the top of the document.
+    expect(document.activeElement).toBe(screen.getByRole('searchbox'))
+
+    // The same for a filter that is not an address filter.
+    await userEvent.click(screen.getByRole('button', { name: 'Arama: “alfa” filtresini kaldır' }))
+    await waitFor(() => expect(lastRead(calls).has('q')).toBe(false))
+    expect(lastRead(calls).get('addressCity')).toBe('İstanbul')
+    expect(chipTexts()).toEqual(['İl: İstanbul', 'Adres türü: Fatura'])
+  })
+
+  it('"Filtreleri temizle" clears the address filters with the rest and asks again without them', async () => {
+    const { calls } = await openList()
+    await userEvent.click(toggle())
+    await userEvent.type(screen.getByLabelText('İl'), 'İzmir')
+    await userEvent.selectOptions(screen.getByLabelText('Adres türü'), 'operational')
+    await userEvent.selectOptions(screen.getByLabelText('Taraf durumu'), 'all')
+    await waitFor(() => expect(lastRead(calls).get('partyState')).toBe('all'))
+
+    await userEvent.click(screen.getByRole('button', { name: 'Filtreleri temizle' }))
+    await waitFor(() => expect(lastRead(calls).get('partyState')).toBe('active'))
+    const read = lastRead(calls)
+    for (const name of ['addressCity', 'addressDistrict', 'addressType', 'q', 'cursor']) expect(read.has(name), name).toBe(false)
+    expect((screen.getByLabelText('İl') as HTMLInputElement).value).toBe('')
+    expect((screen.getByLabelText('Adres türü') as HTMLSelectElement).value).toBe('')
+    expect(toggle().textContent).toBe('Tüm filtreler')
+    expect(screen.queryByText(/Etkin filtreler/i)).toBeNull()
+  })
+
+  it('a changed address filter drops the cursor; a failed next page is retried with the same cursor and filters', async () => {
+    let failNext = true
+    const { calls } = await openList({
+      counterparties: (url) => {
+        const params = new URL(url, 'http://localhost').searchParams
+        if (params.has('cursor')) {
+          if (failNext) {
+            failNext = false
+            return json({ title: 'x' }, 503)
+          }
+          return json(page({ items: [party({ id: 'bbbbbbbb-0000-4000-8000-000000000002', code: 'C-0002' })] }))
+        }
+        return json(page({ hasMore: true, nextCursor: 'c-1' }))
+      },
+    })
+    await userEvent.click(toggle())
+    await userEvent.type(screen.getByLabelText('İl'), 'Bursa')
+    await waitFor(() => expect(lastRead(calls).get('addressCity')).toBe('Bursa'))
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Daha fazla yükle' }))
+    // The continuation failed for now: the rows stay, and the retry is the SAME request.
+    await userEvent.click(await screen.findByRole('button', { name: 'Tekrar dene' }))
+    await screen.findByRole('row', { name: /C-0002/ })
+    const continuations = listReads(calls).filter((read) => read.has('cursor'))
+    expect(continuations.map((read) => read.toString())).toEqual([continuations[0].toString(), continuations[0].toString()])
+    expect(continuations[0].get('cursor')).toBe('c-1')
+    expect(continuations[0].get('addressCity')).toBe('Bursa')
+
+    // Another district is another question: it starts from the first page again.
+    await userEvent.type(screen.getByLabelText('İlçe'), 'N')
+    await waitFor(() => expect(lastRead(calls).get('addressDistrict')).toBe('N'))
+    expect(lastRead(calls).has('cursor')).toBe(false)
+  })
+
+  it('says "no match" for an empty filtered result, and keeps refusal and failure as their own states', async () => {
+    let answer: () => Response = () => json(page({ items: [] }))
+    const { calls } = await openList({
+      counterparties: (url) => (new URL(url, 'http://localhost').searchParams.has('addressCity') ? answer() : json(page())),
+    })
+    await userEvent.click(toggle())
+    await userEvent.type(screen.getByLabelText('İl'), 'X')
+    await findStateBlock('empty-filtered')
+    expect(queryStateBlock('empty-no-data')).toBeNull()
+    // The cause stays readable beside the empty result.
+    expect(chipTexts()).toEqual(['İl: X'])
+
+    answer = () => json({ title: 'x' }, 503)
+    await userEvent.type(screen.getByLabelText('İl'), 'Y')
+    await findStateBlock('service-unavailable')
+    expect(queryStateBlock('empty-filtered')).toBeNull()
+
+    answer = () => json({ title: 'x' }, 403)
+    await userEvent.type(screen.getByLabelText('İl'), 'Z')
+    await waitFor(() => expect(lastRead(calls).get('addressCity')).toBe('XYZ'))
+    await waitFor(() => expect(queryStateBlock('service-unavailable')).toBeNull())
+    expect(queryStateBlock('empty-filtered')).toBeNull()
+    expect(screen.queryByRole('row', { name: /C-0001/ })).toBeNull()
+  })
+
+  it('an answer for an earlier city never replaces the result of the one now asked for', async () => {
+    let release: (response: Response) => void = () => undefined
+    await openList({
+      counterparties: (url) => {
+        const city = new URL(url, 'http://localhost').searchParams.get('addressCity')
+        if (city === 'A') return new Promise<Response>((resolve) => { release = resolve }) as unknown as Response
+        if (city === 'AB') return json(page({ items: [party({ id: 'cccccccc-0000-4000-8000-000000000003', code: 'C-0003' })] }))
+        return json(page())
+      },
+    })
+    await userEvent.click(toggle())
+    await userEvent.type(screen.getByLabelText('İl'), 'AB')
+    await screen.findByRole('row', { name: /C-0003/ })
+    release(json(page({ items: [party({ id: 'dddddddd-0000-4000-8000-000000000004', code: 'C-0004' })] })))
+    await new Promise((resolve) => setTimeout(resolve, 30))
+    expect(screen.queryByRole('row', { name: /C-0004/ })).toBeNull()
+    expect(screen.getByRole('row', { name: /C-0003/ })).toBeTruthy()
+  })
+
+  it('restores the address filters with the saved view of the same context, and never under another one', () => {
+    const view = { ...DEFAULT_CARI_LIST_VIEW, addressCity: 'İstanbul', addressDistrict: ' Kadıköy ', addressType: 'delivery' as const }
+    writeCariListView('actor-1|company-a', view)
+    expect(readCariListView('actor-1|company-a')).toEqual(view)
+    expect(readCariListView('actor-1|company-b')).toEqual(DEFAULT_CARI_LIST_VIEW)
+    expect(readCariListView('actor-2|company-a')).toEqual(DEFAULT_CARI_LIST_VIEW)
+    // Each address filter narrows the view on its own; clearing keeps only the sort and page size.
+    expect(isFiltered({ ...DEFAULT_CARI_LIST_VIEW, addressCity: 'İstanbul' })).toBe(true)
+    expect(isFiltered({ ...DEFAULT_CARI_LIST_VIEW, addressDistrict: 'Kadıköy' })).toBe(true)
+    expect(isFiltered({ ...DEFAULT_CARI_LIST_VIEW, addressType: 'billing' })).toBe(true)
+    expect(isFiltered({ ...DEFAULT_CARI_LIST_VIEW, addressCity: '   ' })).toBe(false)
+    expect(addressFilterCount(view)).toBe(3)
+    expect(addressFilterCount({ addressCity: ' ', addressDistrict: '', addressType: '' })).toBe(0)
+    expect(clearedFilters({ ...view, sort: 'legalName', direction: 'desc', pageSize: 25 })).toEqual({
+      ...DEFAULT_CARI_LIST_VIEW, sort: 'legalName', direction: 'desc', pageSize: 25,
+    })
+  })
+
+  it('comes back from a record with the address filters still applied and still visible', async () => {
+    const { calls } = installFetch({
+      counterparties: (url) => (/\/counterparties\/[0-9a-f-]{36}/.test(url) ? json({ title: 'x' }, 404) : json(page())),
+    })
+    const router = renderRouterAt('/cari')
+    await screen.findByRole('row', { name: /C-0001/ })
+    await userEvent.click(toggle())
+    await userEvent.type(screen.getByLabelText('İl'), 'Ankara')
+    await userEvent.selectOptions(screen.getByLabelText('Adres türü'), 'billing')
+    await waitFor(() => expect(lastRead(calls).get('addressType')).toBe('billing'))
+
+    await act(async () => { await router.navigate(`/cari/${PARTY_1}`) })
+    await act(async () => { await router.navigate('/cari') })
+    await screen.findByRole('row', { name: /C-0001/ })
+    // Re-read, freshly, with the same question; the closed control and the chips say what is applied.
+    const read = lastRead(calls)
+    expect(read.get('addressCity')).toBe('Ankara')
+    expect(read.get('addressType')).toBe('billing')
+    expect(read.has('cursor')).toBe(false)
+    expect(toggle().getAttribute('aria-expanded')).toBe('false')
+    expect(toggle().textContent).toBe('Tüm filtreler (2)')
+    expect(chipTexts()).toEqual(['İl: Ankara', 'Adres türü: Fatura'])
+  })
+
+  it('builds the query as the endpoint reads it: its own names, trimmed, NFC, nothing for an empty value', () => {
+    const decomposed = 'İstanbul' // "İ" written as I + combining dot
+    const built = new URLSearchParams(buildCounterpartyQuery({
+      addressCity: `  ${decomposed} `, addressDistrict: '   ', addressType: 'operational', role: ['Customer', 'Service'], roleMatch: 'any',
+    }).slice(1))
+    expect(built.get('addressCity')).toBe('İstanbul')
+    expect(built.has('addressDistrict')).toBe(false)
+    expect(built.get('addressType')).toBe('operational')
+    expect(built.getAll('role')).toEqual(['Customer', 'Service'])
+    expect(buildCounterpartyQuery({})).toBe('')
+    expect(addressFilterText(undefined)).toBeNull()
+    expect(addressFilterText('  Gebze  ')).toBe('Gebze')
+    // The three kinds are exactly the server's tokens, and the text bound is the server's.
+    expect(ADDRESS_TYPE_FILTERS).toEqual(['billing', 'delivery', 'operational'])
+    expect(ADDRESS_FILTER_MAX_LENGTH).toBe(100)
+  })
+
+  it('the address inputs carry the server bound, and the stylesheet lets the panel and chips shrink on a phone', async () => {
+    await openList()
+    await userEvent.click(toggle())
+    expect((screen.getByLabelText('İl') as HTMLInputElement).maxLength).toBe(100)
+    expect((screen.getByLabelText('İlçe') as HTMLInputElement).maxLength).toBe(100)
+
+    const nodeProcess = (globalThis as unknown as { process: { cwd(): string; getBuiltinModule(name: string): unknown } }).process
+    const fs = nodeProcess.getBuiltinModule('node:fs') as { readFileSync(path: string, encoding: 'utf8'): string }
+    const path = nodeProcess.getBuiltinModule('node:path') as { resolve(...segments: string[]): string }
+    const css = fs.readFileSync(path.resolve(nodeProcess.cwd(), 'src/cari/CariListPage.module.css'), 'utf8')
+    const rule = (selector: string) => {
+      const at = css.indexOf(`\n${selector} {`)
+      expect(at, selector).toBeGreaterThanOrEqual(0)
+      return css.slice(at, css.indexOf('}', at))
+    }
+    expect(rule('.morePanel')).toContain('minmax(min(100%, 12rem), 1fr)')
+    expect(rule('.morePanel')).toContain('min-width: 0')
+    expect(rule('.chip')).toContain('overflow-wrap: anywhere')
+    expect(rule('.chip')).toContain('min-width: 0')
+    // A touch target, and a focus mark that is not colour alone.
+    expect(rule('.chipRemove')).toContain('min-width: 24px')
+    expect(rule('.chipRemove:focus-visible')).toContain('outline: 2px solid')
+    expect(css).not.toMatch(/text-transform/)
   })
 })

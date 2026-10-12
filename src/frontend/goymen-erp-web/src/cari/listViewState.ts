@@ -33,6 +33,7 @@
 
 import type {
   AccountStateFilter,
+  AddressTypeFilter,
   KindFilter,
   PartyStateFilter,
   RoleFilter,
@@ -46,6 +47,10 @@ export interface CariListView {
   readonly kind: KindFilter | ''
   readonly roles: readonly RoleFilter[]
   readonly roleMatch: RoleMatch
+  /** The address filters (#691), as typed; empty means "not narrowed by this". */
+  readonly addressCity: string
+  readonly addressDistrict: string
+  readonly addressType: AddressTypeFilter | ''
   readonly partyState: PartyStateFilter
   readonly accountState: AccountStateFilter
   readonly sort: SortField
@@ -68,6 +73,9 @@ export const DEFAULT_CARI_LIST_VIEW: CariListView = {
   kind: '',
   roles: [],
   roleMatch: 'any',
+  addressCity: '',
+  addressDistrict: '',
+  addressType: '',
   partyState: 'active',
   accountState: 'all',
   sort: 'code',
@@ -98,6 +106,9 @@ export function isFiltered(view: CariListView): boolean {
     view.q.trim().length > 0 ||
     view.kind !== '' ||
     view.roles.length > 0 ||
+    view.addressCity.trim().length > 0 ||
+    view.addressDistrict.trim().length > 0 ||
+    view.addressType !== '' ||
     view.partyState !== DEFAULT_CARI_LIST_VIEW.partyState ||
     view.accountState !== DEFAULT_CARI_LIST_VIEW.accountState
   )
@@ -141,6 +152,11 @@ export function readCariListView(namespace: string | null): CariListView {
     return DEFAULT_CARI_LIST_VIEW
   }
   return slot.view
+}
+
+/** How many of the address filters narrow the view — what a closed "Tüm filtreler" says it holds. */
+export function addressFilterCount(view: Pick<CariListView, 'addressCity' | 'addressDistrict' | 'addressType'>): number {
+  return [view.addressCity.trim(), view.addressDistrict.trim(), view.addressType].filter((value) => value !== '').length
 }
 
 /**
