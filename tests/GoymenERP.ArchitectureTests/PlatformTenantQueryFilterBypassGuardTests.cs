@@ -102,8 +102,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // PUR-P05 adds one in-process record-bound Cari display host; no network or hosted-service surface.
     // D05 Inventory approvals add two scoped in-process owner readers and two Work adapters; no permission,
     // network, hosted-service or production-activation surface changes.
+    // GOY-UX-TEXT-FILTER-01 adds one scoped in-process Product read adapter used only to evaluate
+    // version-bound stock filters before public cursor pagination; it adds no network, hosted-service or
+    // production-activation surface.
     private const string ReviewedOpenApiStartupFingerprint =
-        "9e0a8f80ebbcfbebf9309d28c39762cedc8223911ad6b644faefdc33c667f7bd";
+        "bb4a40dcbd9e8fb5df09f2d63af0b967098adbc9d137ad67bead74b5730a1d36";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedProductManufacturingTechnicalRegistrationPath =
