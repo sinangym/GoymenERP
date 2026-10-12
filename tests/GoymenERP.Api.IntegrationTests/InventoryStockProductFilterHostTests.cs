@@ -19,10 +19,8 @@ public sealed class InventoryStockProductFilterHostTests
         var secondProduct = Guid.NewGuid();
         var firstLabel = Guid.NewGuid();
         var secondLabel = Guid.NewGuid();
-        var products = new ProductDisplays(query => new([
-            .. query.Selections.Select(selection => selection.ProductId == firstProduct
-                ? Result(selection, familyId, 1.5m, 1250m)
-                : Result(selection, familyId, 3m, 1500m)),
+        var products = new ProductMatcher(query => new([
+            query.Selections.Single(selection => selection.ProductId == firstProduct),
         ]));
         var host = new InventoryStockProductFilterHost(products, new Company(CompanyId), new User());
 
@@ -42,11 +40,7 @@ public sealed class InventoryStockProductFilterHostTests
         var familyId = Guid.NewGuid();
         var productId = Guid.NewGuid();
         var labelId = Guid.NewGuid();
-        var products = new ProductDisplays(query => new([
-            new(query.Selections[0].ProductId, query.Selections[0].ExpectedProductVersion,
-                new(productId, "1", "P-1", "Eksik ölçülü ürün"), null,
-                [new("thickness-mm", "required")]),
-        ]));
+        var products = new ProductMatcher(_ => new([]));
         var host = new InventoryStockProductFilterHost(products, new Company(CompanyId), new User());
 
         var matches = await host.MatchAsync(new(
@@ -59,17 +53,14 @@ public sealed class InventoryStockProductFilterHostTests
     }
 
     [Fact]
-    public async Task Multiple_stored_versions_of_one_product_are_read_in_separate_bounded_layers()
+    public async Task Multiple_stored_versions_of_one_product_are_matched_in_one_bounded_product_read()
     {
         var familyId = Guid.NewGuid();
         var productId = Guid.NewGuid();
         var oldLabel = Guid.NewGuid();
         var currentLabel = Guid.NewGuid();
-        var products = new ProductDisplays(query => new([
-            .. query.Selections.Select(selection => selection.ExpectedProductVersion == "2"
-                ? Result(selection, familyId, 2m, 1000m)
-                : new(selection.ProductId, selection.ExpectedProductVersion, null, null,
-                    [new("expectedProductVersion", "version_conflict")]))
+        var products = new ProductMatcher(query => new([
+            query.Selections.Single(selection => selection.ExpectedProductVersion == "2"),
         ]));
         var host = new InventoryStockProductFilterHost(products, new Company(CompanyId), new User());
 
@@ -80,14 +71,14 @@ public sealed class InventoryStockProductFilterHostTests
             new(familyId, 2m, null, null, null, null, null)));
 
         Assert.Equal([currentLabel], matches);
-        Assert.Equal(2, products.Queries.Count);
-        Assert.All(products.Queries, query => Assert.Single(query.Selections));
+        Assert.Single(products.Queries);
+        Assert.Equal(2, products.Queries[0].Selections.Count);
     }
 
     [Fact]
     public async Task Company_or_actor_drift_is_code_less_forbidden_before_product_read()
     {
-        var products = new ProductDisplays(_ => throw new InvalidOperationException("must not read"));
+        var products = new ProductMatcher(_ => throw new InvalidOperationException("must not read"));
         var company = new Company(CompanyId);
         var user = new User();
         var host = new InventoryStockProductFilterHost(products, company, user);
@@ -104,25 +95,14 @@ public sealed class InventoryStockProductFilterHostTests
         Assert.Empty(products.Queries);
     }
 
-    private static ProductStockDisplayResultV1 Result(
-        ProductStockDisplaySelectionV1 selection,
-        Guid familyId,
-        decimal thickness,
-        decimal width) => new(
-        selection.ProductId,
-        selection.ExpectedProductVersion,
-        new(selection.ProductId, selection.ExpectedProductVersion, "P-1", "Ürün"),
-        new(new(familyId, "coil", "accepted-source"),
-            new(Guid.NewGuid(), "1", "coil-v1", "accepted-source"), thickness, width),
-        []);
-
-    private sealed class ProductDisplays(Func<ProductStockDisplayBatchQueryV1, ProductStockDisplayBatchV1> answer)
-        : IProductStockDisplayReferencesV1
+    private sealed class ProductMatcher(
+        Func<ProductStockTechnicalMatchQueryV1, ProductStockTechnicalMatchBatchV1> answer)
+        : IProductStockTechnicalMatcherV1
     {
-        public List<ProductStockDisplayBatchQueryV1> Queries { get; } = [];
+        public List<ProductStockTechnicalMatchQueryV1> Queries { get; } = [];
 
-        public Task<ProductStockDisplayBatchV1> ReadAsync(
-            ProductStockDisplayBatchQueryV1 query,
+        public Task<ProductStockTechnicalMatchBatchV1> MatchAsync(
+            ProductStockTechnicalMatchQueryV1 query,
             CancellationToken cancellationToken = default)
         {
             Queries.Add(query);

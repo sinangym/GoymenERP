@@ -20,11 +20,16 @@ public static class ProductStockDisplayRuntimeRegistration
             runtimeEnabled(provider) && provider.GetService<IProductFamilyDefinitionSourceV2>() is not null
                 ? provider.GetRequiredService<ProductStockDisplayReferenceService>()
                 : new UnavailableProductStockDisplayReferences());
+        services.AddScoped<IProductStockTechnicalMatcherV1>(provider =>
+            runtimeEnabled(provider) && provider.GetService<IProductFamilyDefinitionSourceV2>() is not null
+                ? provider.GetRequiredService<ProductStockDisplayReferenceService>()
+                : new UnavailableProductStockDisplayReferences());
         return services;
     }
 }
 
-internal sealed class UnavailableProductStockDisplayReferences : IProductStockDisplayReferencesV1
+internal sealed class UnavailableProductStockDisplayReferences
+    : IProductStockDisplayReferencesV1, IProductStockTechnicalMatcherV1
 {
     public Task<ProductStockDisplayBatchV1> ReadAsync(
         ProductStockDisplayBatchQueryV1 query,
@@ -32,6 +37,15 @@ internal sealed class UnavailableProductStockDisplayReferences : IProductStockDi
     {
         cancellationToken.ThrowIfCancellationRequested();
         return Task.FromException<ProductStockDisplayBatchV1>(
+            new ProductOperationException("product_runtime_unconfigured", 503));
+    }
+
+    public Task<ProductStockTechnicalMatchBatchV1> MatchAsync(
+        ProductStockTechnicalMatchQueryV1 query,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromException<ProductStockTechnicalMatchBatchV1>(
             new ProductOperationException("product_runtime_unconfigured", 503));
     }
 }

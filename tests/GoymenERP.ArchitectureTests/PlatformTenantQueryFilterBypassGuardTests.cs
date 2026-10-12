@@ -106,7 +106,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // version-bound stock filters before public cursor pagination; it adds no network, hosted-service or
     // production-activation surface.
     private const string ReviewedOpenApiStartupFingerprint =
-        "bb4a40dcbd9e8fb5df09f2d63af0b967098adbc9d137ad67bead74b5730a1d36";
+        "d043bd473b8706bf1504d0c5b9524752cc07a04bbd8790b775d5380fb96dc4c1";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedProductManufacturingTechnicalRegistrationPath =
