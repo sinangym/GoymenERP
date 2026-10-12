@@ -14,6 +14,81 @@ public sealed class ProductStockDisplayReferenceTests
     private static readonly Guid SecondId = Guid.Parse("c6300000-0000-4000-8000-000000000302");
 
     [Fact]
+    public async Task Authorized_family_options_come_from_one_released_definition_read_in_code_order()
+    {
+        var secondFamilyId = Guid.Parse("c6100000-0000-4000-8000-000000000302");
+        var secondTemplateId = Guid.Parse("c6200000-0000-4000-8000-000000000302");
+        var original = Definition();
+        var definition = original with
+        {
+            Families =
+            [
+                new(secondFamilyId, "crc-coil", "Soğuk haddelenmiş rulo", "coil", "cold-rolling", "coil",
+                    ProductFamilyRuleSetsV2.GdcBandCoil, "#66/stock-family-options"),
+                .. original.Families,
+            ],
+            Templates =
+            [
+                .. original.Templates,
+                original.Templates[0] with
+                {
+                    Id = secondTemplateId,
+                    Code = "crc-coil-v7",
+                    Name = "CRC Coil v7",
+                    FamilyIds = new HashSet<Guid> { secondFamilyId },
+                    SourceRef = "#66/stock-family-options",
+                },
+            ],
+        };
+        var world = new World([], definition);
+
+        var result = await world.Service().ReadFamilyOptionsAsync();
+
+        Assert.Collection(result.Items,
+            item => Assert.Equal((secondFamilyId, "crc-coil", "Soğuk haddelenmiş rulo"),
+                (item.FamilyId, item.Code, item.DisplayName)),
+            item => Assert.Equal((FamilyId, "gdc-coil", "GDC Coil"),
+                (item.FamilyId, item.Code, item.DisplayName)));
+        Assert.Equal(1, world.Definitions.Reads);
+        Assert.Equal(0, world.Records.Reads);
+        Assert.All(world.Authorization.AskedPermissions,
+            permission => Assert.Equal(ProductPermissionManifestV1.OperationalSelectionRead, permission));
+    }
+
+    [Theory]
+    [InlineData("permission")]
+    [InlineData("company")]
+    [InlineData("actor")]
+    public async Task Awaited_family_definition_is_followed_by_a_fresh_authority_and_scope_fence(string change)
+    {
+        var world = new World([]);
+        world.Definitions.During = () =>
+        {
+            if (change == "permission") world.Authorization.Granted = false;
+            else world.Change(change);
+        };
+
+        var error = await Assert.ThrowsAsync<ProductOperationException>(() =>
+            world.Service().ReadFamilyOptionsAsync());
+
+        Assert.Equal((403, ProductSalesEligibilityService.AccessDeniedCode),
+            (error.StatusCode, error.Code));
+        Assert.Equal(1, world.Definitions.Reads);
+    }
+
+    [Fact]
+    public async Task Synthetic_family_release_is_not_exposed_as_a_filter_option()
+    {
+        var world = new World([], Definition(source: "SYNTHETIC-browser"));
+
+        var error = await Assert.ThrowsAsync<ProductOperationException>(() =>
+            world.Service().ReadFamilyOptionsAsync());
+
+        Assert.Equal((503, ProductManufacturingTechnicalSnapshotService.UnavailableCode),
+            (error.StatusCode, error.Code));
+    }
+
+    [Fact]
     public async Task One_authorized_batch_returns_exact_identity_and_accepted_nominal_dimensions_without_N_plus_one()
     {
         var world = new World([Record(FirstId, 7, "P-1", "Galvaniz bant", 1.25m, 1250m),
@@ -196,6 +271,12 @@ public sealed class ProductStockDisplayReferenceTests
             matcher.MatchAsync(new([new(FirstId, "7")], FamilyId, null, null, null, null, null, null)));
         Assert.Equal((503, "product_runtime_unconfigured"), (matchError.StatusCode, matchError.Code));
         Assert.Single(provider.GetServices<IProductStockTechnicalMatcherV1>());
+
+        var families = provider.GetRequiredService<IProductStockFamilyOptionsV1>();
+        var familyError = await Assert.ThrowsAsync<ProductOperationException>(() =>
+            families.ReadFamilyOptionsAsync());
+        Assert.Equal((503, "product_runtime_unconfigured"), (familyError.StatusCode, familyError.Code));
+        Assert.Single(provider.GetServices<IProductStockFamilyOptionsV1>());
     }
 
     private static void AssertResult(ProductStockDisplayResultV1 item, Guid id, string version,
@@ -303,9 +384,11 @@ public sealed class ProductStockDisplayReferenceTests
     private sealed class Definitions(ProductFamilyDefinitionV2 definition) : IProductFamilyDefinitionSourceV2
     {
         public int Reads { get; private set; }
+        public Action? During { get; set; }
         public Task<ProductFamilyDefinitionV2> GetAsync(CancellationToken cancellationToken)
         {
             Reads++;
+            During?.Invoke();
             return Task.FromResult(definition);
         }
     }

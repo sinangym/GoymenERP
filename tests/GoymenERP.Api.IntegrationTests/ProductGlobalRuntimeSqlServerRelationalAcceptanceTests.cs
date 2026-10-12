@@ -537,6 +537,8 @@ public sealed class ProductGlobalRuntimeSqlServerRelationalAcceptanceTests
             var batch = await service.ReadAsync(new([
                 new(first!.ProductId, first.ProductVersion),
             ]));
+            var familyOptions = await service.ReadFamilyOptionsAsync();
+            var releasedDefinition = await new SqlProductFamilyDefinitionSource(product).GetAsync(default);
 
             var item = Assert.Single(batch.Items);
             Assert.Empty(item.Errors);
@@ -551,6 +553,12 @@ public sealed class ProductGlobalRuntimeSqlServerRelationalAcceptanceTests
                 (technical.Template.TemplateId, technical.Template.TemplateVersion,
                     technical.Template.SourceRevision));
             Assert.Equal((1.000m, 1000.000m), (technical.ThicknessMm, technical.WidthMm));
+            Assert.Equal(
+                releasedDefinition.Families.OrderBy(family => family.Code, StringComparer.Ordinal)
+                    .Select(family => (family.Id, family.Code, family.Name)),
+                familyOptions.Items.Select(option => (option.FamilyId, option.Code, option.DisplayName)));
+            Assert.Contains(familyOptions.Items,
+                option => option.FamilyId == ProductInitialTechnicalDefinitionV1.HotRolledSlitCoilFamilyId);
             Assert.All(authority.Permissions,
                 permission => Assert.Equal(ProductPermissionManifestV1.OperationalSelectionRead, permission));
 

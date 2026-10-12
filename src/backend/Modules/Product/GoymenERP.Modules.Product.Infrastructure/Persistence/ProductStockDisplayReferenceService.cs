@@ -23,8 +23,31 @@ public sealed class ProductStockDisplayReferenceService(
     IErpAuthorityRevalidationService authority,
     IProductStockDisplayRecordReader records,
     IProductFamilyDefinitionSourceV2 definitions)
-    : IProductStockDisplayReferencesV1, IProductStockTechnicalMatcherV1
+    : IProductStockDisplayReferencesV1, IProductStockTechnicalMatcherV1, IProductStockFamilyOptionsV1
 {
+    public async Task<ProductStockFamilyOptionsV1> ReadFamilyOptionsAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var scope = await RequireScopeAsync(null, cancellationToken);
+        var definition = await FencedAsync(scope, () => definitions.GetAsync(cancellationToken), cancellationToken);
+        ProductFamilyDefinitionRulesV2.RequireWellFormed(definition);
+
+        if (definition.Families.Any(family =>
+                ProductManufacturingTechnicalSnapshotService.IsSynthetic(family.SourceRef))
+            || definition.Templates.Any(template =>
+                ProductManufacturingTechnicalSnapshotService.IsSynthetic(template.SourceRef)))
+        {
+            throw new ProductOperationException(ProductManufacturingTechnicalSnapshotService.UnavailableCode, 503);
+        }
+
+        var items = definition.Families
+            .OrderBy(family => family.Code, StringComparer.Ordinal)
+            .Select(family => new ProductStockFamilyOptionV1(family.Id, family.Code, family.Name))
+            .ToArray();
+        await RequireScopeAsync(scope, cancellationToken);
+        return new(items);
+    }
+
     public async Task<ProductStockDisplayBatchV1> ReadAsync(
         ProductStockDisplayBatchQueryV1 query,
         CancellationToken cancellationToken = default)

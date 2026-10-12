@@ -24,13 +24,24 @@ public static class ProductStockDisplayRuntimeRegistration
             runtimeEnabled(provider) && provider.GetService<IProductFamilyDefinitionSourceV2>() is not null
                 ? provider.GetRequiredService<ProductStockDisplayReferenceService>()
                 : new UnavailableProductStockDisplayReferences());
+        services.AddScoped<IProductStockFamilyOptionsV1>(provider =>
+            runtimeEnabled(provider) && provider.GetService<IProductFamilyDefinitionSourceV2>() is not null
+                ? provider.GetRequiredService<ProductStockDisplayReferenceService>()
+                : new UnavailableProductStockDisplayReferences());
         return services;
     }
 }
 
 internal sealed class UnavailableProductStockDisplayReferences
-    : IProductStockDisplayReferencesV1, IProductStockTechnicalMatcherV1
+    : IProductStockDisplayReferencesV1, IProductStockTechnicalMatcherV1, IProductStockFamilyOptionsV1
 {
+    public Task<ProductStockFamilyOptionsV1> ReadFamilyOptionsAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromException<ProductStockFamilyOptionsV1>(
+            new ProductOperationException("product_runtime_unconfigured", 503));
+    }
+
     public Task<ProductStockDisplayBatchV1> ReadAsync(
         ProductStockDisplayBatchQueryV1 query,
         CancellationToken cancellationToken = default)
