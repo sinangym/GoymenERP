@@ -87,6 +87,34 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
     }
 
     [SqlServerFact]
+    public async Task Typed_product_filter_scans_real_SQL_before_public_pagination_and_resumes_from_the_match()
+    {
+        await using var run = await Run.StartAsync();
+        var familyId = Guid.NewGuid();
+        await SeedFreePhysicalSourceAsync(run, CompanyA, "SYN-ST01-TYPED-A", 10m);
+        var firstMatch = await SeedFreePhysicalSourceAsync(run, CompanyA, "SYN-ST01-TYPED-B", 20m);
+        var secondMatch = await SeedFreePhysicalSourceAsync(run, CompanyA, "SYN-ST01-TYPED-C", 30m);
+        var productFilter = new ProductSelectionFilter(
+            CompanyA, familyId, firstMatch.LabelId, secondMatch.LabelId);
+
+        await using var context = run.Context(CompanyA);
+        var positions = StockPositions(context, CompanyA, productFilter);
+        var firstPage = await positions.SearchAsync(new(
+            Q: "SYN-ST01-TYPED", Limit: 1, ProductFamilyId: familyId));
+
+        Assert.Equal(firstMatch.LabelId, Assert.Single(firstPage.Items).LabelId);
+        Assert.True(firstPage.SearchWindowFull);
+        Assert.NotNull(firstPage.NextCursor);
+
+        var secondPage = await positions.SearchAsync(new(
+            Q: "SYN-ST01-TYPED", Limit: 1, Cursor: firstPage.NextCursor, ProductFamilyId: familyId));
+
+        Assert.Equal(secondMatch.LabelId, Assert.Single(secondPage.Items).LabelId);
+        Assert.False(secondPage.SearchWindowFull);
+        Assert.Null(secondPage.NextCursor);
+    }
+
+    [SqlServerFact]
     public async Task Stock_position_filters_and_classification_are_applied_by_real_SQL_without_losing_provenance()
     {
         await using var run = await Run.StartAsync();
@@ -135,7 +163,10 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             (exception.StatusCode, exception.Code));
     }
 
-    private static InventoryStockPositionService StockPositions(InventoryDbContext context, Guid companyId)
+    private static InventoryStockPositionService StockPositions(
+        InventoryDbContext context,
+        Guid companyId,
+        IInventoryStockProductFilterV1? productFilter = null)
     {
         var company = new CompanyContext();
         company.Set(companyId);
@@ -147,7 +178,8 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             new InventoryStockPositionCursorCodec(
                 new InventoryStockPositionCursorRuntimeOptions(
                     Convert.ToBase64String(Enumerable.Range(1, 32).Select(value => (byte)value).ToArray())),
-                TimeProvider.System));
+                TimeProvider.System),
+            productFilter);
     }
 
     private static async Task<(int Balances, decimal BalanceKg, int Movements, int MovementLines,
@@ -184,5 +216,30 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
                 new HashSet<Guid>(),
                 new HashSet<Guid>(),
                 new HashSet<Guid>()));
+    }
+
+    private sealed class ProductSelectionFilter(
+        Guid companyId,
+        Guid familyId,
+        params Guid[] matchingLabelIds) : IInventoryStockProductFilterV1
+    {
+        // This fake is the Product-owned port result, whose public answer is a label-id set.
+        // The SQL fixture deliberately reuses one ProductId, so selecting by ProductId here
+        // would admit the non-matching A row and would not test scan-before-pagination.
+        private readonly HashSet<Guid> labels = [.. matchingLabelIds];
+
+        public Task<IReadOnlySet<Guid>> MatchAsync(
+            InventoryStockProductFilterRequestV1 request,
+            CancellationToken cancellationToken = default)
+        {
+            Assert.Equal(companyId, request.CompanyId);
+            Assert.Equal(familyId, request.Filter.ProductFamilyId);
+            Assert.False(string.IsNullOrWhiteSpace(request.ActorId));
+            IReadOnlySet<Guid> matches = request.Selections
+                .Where(selection => labels.Contains(selection.LabelId))
+                .Select(selection => selection.LabelId)
+                .ToHashSet();
+            return Task.FromResult(matches);
+        }
     }
 }

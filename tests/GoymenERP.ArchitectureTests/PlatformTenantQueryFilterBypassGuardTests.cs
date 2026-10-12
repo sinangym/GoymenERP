@@ -102,8 +102,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // PUR-P05 adds one in-process record-bound Cari display host; no network or hosted-service surface.
     // D05 Inventory approvals add two scoped in-process owner readers and two Work adapters; no permission,
     // network, hosted-service or production-activation surface changes.
+    // GOY-UX-TEXT-FILTER-01 adds one scoped in-process Product read adapter used only to evaluate
+    // version-bound stock filters before public cursor pagination; it adds no network, hosted-service or
+    // production-activation surface.
     private const string ReviewedOpenApiStartupFingerprint =
-        "9e0a8f80ebbcfbebf9309d28c39762cedc8223911ad6b644faefdc33c667f7bd";
+        "d043bd473b8706bf1504d0c5b9524752cc07a04bbd8790b775d5380fb96dc4c1";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedProductManufacturingTechnicalRegistrationPath =
@@ -225,8 +228,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // Inventory location display and ST-01 Product-authority capability: +2 reviewed Inventory SQL facts.
             // ST-01 owner/custodian read: +1 exact-party, read-without-side-effect SQL fact.
             // D05 Inventory approvals: +3 pending stock-count/scrap read and fail-closed SQL facts.
+            // GOY-UX-TEXT-FILTER-01: +1 typed-filter pre-pagination and cursor-resume SQL fact.
             ["tools/relational_inventory/inventory.txt"] =
-                "42fa46d35a9008adbabc5ebdd4a65211180292d03f88c4506732b46bac2d5cfb",
+                "146364d46fe02cb22f8e1b0d55d8041f962fd4460b94200382c5cbd8de1f4766",
 
             // logistics
             // AT-053: +4 weighbridge SQL facts (81c1ff0b… -> 264898d7…).

@@ -13,6 +13,35 @@ public interface IProductStockDisplayReferencesV1
         CancellationToken cancellationToken = default);
 }
 
+/// <summary>
+/// Product-owned, authorized batch predicate for Inventory filters over exact-version technical facts.
+/// Unlike the display port, one ProductId may occur with multiple stored versions; Product reads the
+/// current records once and returns only the exact product/version pairs whose accepted typed facts match.
+/// </summary>
+public interface IProductStockTechnicalMatcherV1
+{
+    Task<ProductStockTechnicalMatchBatchV1> MatchAsync(
+        ProductStockTechnicalMatchQueryV1 query,
+        CancellationToken cancellationToken = default);
+}
+
+public sealed record ProductStockTechnicalMatchQueryV1(
+    IReadOnlyList<ProductStockTechnicalMatchSelectionV1> Selections,
+    Guid? ProductFamilyId,
+    decimal? ThicknessMm,
+    decimal? ThicknessMinMm,
+    decimal? ThicknessMaxMm,
+    decimal? WidthMm,
+    decimal? WidthMinMm,
+    decimal? WidthMaxMm);
+
+public sealed record ProductStockTechnicalMatchSelectionV1(
+    Guid ProductId,
+    string ExpectedProductVersion);
+
+public sealed record ProductStockTechnicalMatchBatchV1(
+    IReadOnlyList<ProductStockTechnicalMatchSelectionV1> Matches);
+
 public sealed record ProductStockDisplayBatchQueryV1(
     IReadOnlyList<ProductStockDisplaySelectionV1> Selections);
 

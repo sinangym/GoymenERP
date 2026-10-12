@@ -23,7 +23,7 @@ public sealed class ProductStockDisplayReferenceService(
     IErpAuthorityRevalidationService authority,
     IProductStockDisplayRecordReader records,
     IProductFamilyDefinitionSourceV2 definitions)
-    : IProductStockDisplayReferencesV1
+    : IProductStockDisplayReferencesV1, IProductStockTechnicalMatcherV1
 {
     public async Task<ProductStockDisplayBatchV1> ReadAsync(
         ProductStockDisplayBatchQueryV1 query,
@@ -150,6 +150,112 @@ public sealed class ProductStockDisplayReferenceService(
         return new(items);
     }
 
+    public async Task<ProductStockTechnicalMatchBatchV1> MatchAsync(
+        ProductStockTechnicalMatchQueryV1 query,
+        CancellationToken cancellationToken = default)
+    {
+        var scope = await RequireScopeAsync(null, cancellationToken);
+        ArgumentNullException.ThrowIfNull(query);
+        ArgumentNullException.ThrowIfNull(query.Selections);
+        if (query.Selections.Count is < 1 or > ProductStockDisplayCodesV1.MaximumBatchSize
+            || query.Selections.Any(selection => selection is null || selection.ProductId == Guid.Empty
+                || string.IsNullOrWhiteSpace(selection.ExpectedProductVersion))
+            || query.Selections.DistinctBy(selection =>
+                    (selection.ProductId, selection.ExpectedProductVersion), ProductVersionKeyComparer.Instance)
+                .Count() != query.Selections.Count)
+        {
+            throw new ProductOperationException(ProductStockDisplayCodesV1.InvalidRequest, 400);
+        }
+
+        var ids = query.Selections.Select(selection => selection.ProductId).ToHashSet();
+        var stored = await FencedAsync(scope,
+            () => records.ReadForStockDisplayAsync(scope, ids, cancellationToken), cancellationToken);
+        if (stored.Count > ids.Count || stored.Select(record => record.Id).Distinct().Count() != stored.Count
+            || stored.Any(record => !ids.Contains(record.Id)))
+        {
+            throw new InvalidOperationException("Product stock-display reader returned an inconsistent batch.");
+        }
+
+        var byId = stored.ToDictionary(record => record.Id);
+        var exact = new List<(ProductStockTechnicalMatchSelectionV1 Selection, ProductCardView Card)>();
+        foreach (var selection in query.Selections)
+        {
+            if (!byId.TryGetValue(selection.ProductId, out var record)) continue;
+            try
+            {
+                if (ProductVersion.Parse(selection.ExpectedProductVersion) != record.Version) continue;
+            }
+            catch (ArgumentException)
+            {
+                continue;
+            }
+
+            exact.Add((selection, ProductManufacturingTechnicalSnapshotService.Restore(record)));
+        }
+
+        if (exact.Count == 0)
+        {
+            await RequireScopeAsync(scope, cancellationToken);
+            return new([]);
+        }
+
+        var definition = await FencedAsync(scope, () => definitions.GetAsync(cancellationToken), cancellationToken);
+        ProductFamilyDefinitionRulesV2.RequireWellFormed(definition);
+        var matches = new List<ProductStockTechnicalMatchSelectionV1>();
+        foreach (var (selection, card) in exact)
+        {
+            var family = card.Product.FamilyId is Guid familyId
+                ? definition.Families.SingleOrDefault(candidate => candidate.Id == familyId)
+                : null;
+            if (family is null)
+            {
+                throw new ProductOperationException(UnacceptedProductFamilyRequirementPolicyV1.UnavailableCode, 503);
+            }
+            var template = ProductFamilyDefinitionRulesV2.TemplateOf(definition, family.Id)
+                ?? throw new ProductOperationException(ProductFamilyDefinitionRulesV2.InvalidDefinitionCode, 503);
+            if (ProductManufacturingTechnicalSnapshotService.IsSynthetic(family.SourceRef)
+                || ProductManufacturingTechnicalSnapshotService.IsSynthetic(template.SourceRef))
+            {
+                throw new ProductOperationException(ProductManufacturingTechnicalSnapshotService.UnavailableCode, 503);
+            }
+
+            var errors = ProductManufacturingTechnicalSnapshotService.ValidateTechnicalReferences(
+                card.References, definition, template);
+            if (errors.Count > 0) continue;
+            if (ProductManufacturingTechnicalSnapshotService.UsesSyntheticDictionaryValue(
+                    card.References, definition, template))
+            {
+                throw new ProductOperationException(ProductManufacturingTechnicalSnapshotService.UnavailableCode, 503);
+            }
+            var thickness = ProductManufacturingTechnicalSnapshotService.ReadMeasure(
+                card.References, template, ProductTemplateFieldRolesV2.Thickness);
+            var width = ProductManufacturingTechnicalSnapshotService.ReadMeasure(
+                card.References, template, ProductTemplateFieldRolesV2.Width);
+            if (thickness.Error is not null || width.Error is not null) continue;
+            if (Matches(new(family.Id, family.Code, family.SourceRef),
+                    thickness.Millimetres!.Value, width.Millimetres!.Value, query))
+            {
+                matches.Add(selection);
+            }
+        }
+
+        await RequireScopeAsync(scope, cancellationToken);
+        return new(matches);
+    }
+
+    private static bool Matches(
+        ProductManufacturingFamilyRevisionV1 family,
+        decimal thickness,
+        decimal width,
+        ProductStockTechnicalMatchQueryV1 query) =>
+        (!query.ProductFamilyId.HasValue || family.FamilyId == query.ProductFamilyId)
+        && (!query.ThicknessMm.HasValue || thickness == query.ThicknessMm)
+        && (!query.ThicknessMinMm.HasValue || thickness >= query.ThicknessMinMm)
+        && (!query.ThicknessMaxMm.HasValue || thickness <= query.ThicknessMaxMm)
+        && (!query.WidthMm.HasValue || width == query.WidthMm)
+        && (!query.WidthMinMm.HasValue || width >= query.WidthMinMm)
+        && (!query.WidthMaxMm.HasValue || width <= query.WidthMaxMm);
+
     private async Task<T> FencedAsync<T>(ProductStockDisplayReadScope scope, Func<Task<T>> read,
         CancellationToken cancellationToken)
     {
@@ -206,4 +312,17 @@ public sealed class ProductStockDisplayReferenceService(
 
     private static ProductOperationException Denied() =>
         new(ProductSalesEligibilityService.AccessDeniedCode, 403);
+
+    private sealed class ProductVersionKeyComparer : IEqualityComparer<(Guid ProductId, string ExpectedVersion)>
+    {
+        public static ProductVersionKeyComparer Instance { get; } = new();
+
+        public bool Equals((Guid ProductId, string ExpectedVersion) x,
+            (Guid ProductId, string ExpectedVersion) y) =>
+            x.ProductId == y.ProductId
+            && string.Equals(x.ExpectedVersion, y.ExpectedVersion, StringComparison.Ordinal);
+
+        public int GetHashCode((Guid ProductId, string ExpectedVersion) value) =>
+            HashCode.Combine(value.ProductId, StringComparer.Ordinal.GetHashCode(value.ExpectedVersion));
+    }
 }

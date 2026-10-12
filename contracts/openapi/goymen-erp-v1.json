@@ -14775,6 +14775,88 @@
             }
           },
           {
+            "name": "productFamilyId",
+            "in": "query",
+            "description": "Optional exact Product manufacturing-family identifier.",
+            "explode": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "thicknessMm",
+            "in": "query",
+            "description": "Optional exact nominal thickness in millimetres, with at most three decimal places. Do not combine with thicknessMinMm or thicknessMaxMm.",
+            "explode": false,
+            "schema": {
+              "multipleOf": 0.001,
+              "exclusiveMinimum": 0,
+              "type": "number",
+              "format": "decimal"
+            }
+          },
+          {
+            "name": "thicknessMinMm",
+            "in": "query",
+            "description": "Optional inclusive minimum nominal thickness in millimetres, with at most three decimal places.",
+            "explode": false,
+            "schema": {
+              "multipleOf": 0.001,
+              "exclusiveMinimum": 0,
+              "type": "number",
+              "format": "decimal"
+            }
+          },
+          {
+            "name": "thicknessMaxMm",
+            "in": "query",
+            "description": "Optional inclusive maximum nominal thickness in millimetres, with at most three decimal places.",
+            "explode": false,
+            "schema": {
+              "multipleOf": 0.001,
+              "exclusiveMinimum": 0,
+              "type": "number",
+              "format": "decimal"
+            }
+          },
+          {
+            "name": "widthMm",
+            "in": "query",
+            "description": "Optional exact nominal width in millimetres, with at most three decimal places. Do not combine with widthMinMm or widthMaxMm.",
+            "explode": false,
+            "schema": {
+              "multipleOf": 0.001,
+              "exclusiveMinimum": 0,
+              "type": "number",
+              "format": "decimal"
+            }
+          },
+          {
+            "name": "widthMinMm",
+            "in": "query",
+            "description": "Optional inclusive minimum nominal width in millimetres, with at most three decimal places.",
+            "explode": false,
+            "schema": {
+              "multipleOf": 0.001,
+              "exclusiveMinimum": 0,
+              "type": "number",
+              "format": "decimal"
+            }
+          },
+          {
+            "name": "widthMaxMm",
+            "in": "query",
+            "description": "Optional inclusive maximum nominal width in millimetres, with at most three decimal places.",
+            "explode": false,
+            "schema": {
+              "multipleOf": 0.001,
+              "exclusiveMinimum": 0,
+              "type": "number",
+              "format": "decimal"
+            }
+          },
+          {
             "name": "X-ERP-Inventory-Stock-Display",
             "in": "header",
             "description": "Optional exact compatibility selection. Omit for the previously published stock-position response; send 1.0 for Product identity and nominal technical display fields, 2.0 to add the exact Organization-owned location display identity, or 3.0 to add the record-bound Counterparty owner display.",

@@ -86,6 +86,13 @@ public sealed partial class OpenApiContractGenerationTests
                 "query:classification:false:type:string",
                 "query:ownerKind:false:type:string",
                 "query:ownerId:false:type:string;format:uuid",
+                "query:productFamilyId:false:type:string;format:uuid",
+                "query:thicknessMm:false:type:number;format:decimal",
+                "query:thicknessMinMm:false:type:number;format:decimal",
+                "query:thicknessMaxMm:false:type:number;format:decimal",
+                "query:widthMm:false:type:number;format:decimal",
+                "query:widthMinMm:false:type:number;format:decimal",
+                "query:widthMaxMm:false:type:number;format:decimal",
             ]),
         new("get", "/api/v1/inventory/movements", "GetInventoryMovementTimelineV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "503:application/problem+json"),
@@ -7174,7 +7181,7 @@ public sealed partial class OpenApiContractGenerationTests
     private static void AssertInventoryStockPositionQueryContract(JsonElement operation, JsonElement root)
     {
         var parameters = ReadQuerySchemas(operation);
-        Assert.Equal(8, parameters.Count);
+        Assert.Equal(15, parameters.Count);
         var q = parameters["q"];
         Assert.Equal("trim", q.GetProperty(ErpOpenApiContract.CanonicalizationExtensionName).GetString());
         Assert.Equal(64, q.GetProperty(ErpOpenApiContract.CanonicalMaximumLengthExtensionName).GetInt32());
@@ -7182,8 +7189,21 @@ public sealed partial class OpenApiContractGenerationTests
             parameters["limit"].GetProperty("maximum").GetInt32()));
         Assert.Equal((1, 4096), (parameters["cursor"].GetProperty("minLength").GetInt32(),
             parameters["cursor"].GetProperty("maxLength").GetInt32()));
-        Assert.All(new[] { "productId", "locationId", "ownerId" }, name =>
+        Assert.All(new[] { "productId", "locationId", "ownerId", "productFamilyId" }, name =>
             Assert.Equal("uuid", parameters[name].GetProperty("format").GetString()));
+        Assert.All(new[]
+            {
+                "thicknessMm", "thicknessMinMm", "thicknessMaxMm",
+                "widthMm", "widthMinMm", "widthMaxMm",
+            },
+            name =>
+            {
+                var schema = parameters[name];
+                Assert.Equal("number", schema.GetProperty("type").GetString());
+                Assert.Equal("decimal", schema.GetProperty("format").GetString());
+                Assert.Equal(0m, schema.GetProperty("exclusiveMinimum").GetDecimal());
+                Assert.Equal(0.001m, schema.GetProperty("multipleOf").GetDecimal());
+            });
         Assert.Equal(["Standard", "SecondQuality", "Scrap"],
             parameters["classification"].GetProperty("enum").EnumerateArray().Select(value => value.GetString()));
         Assert.Equal(["Company", "Counterparty"],

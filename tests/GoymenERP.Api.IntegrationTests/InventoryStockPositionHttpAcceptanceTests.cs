@@ -113,7 +113,9 @@ public sealed class InventoryStockPositionHttpAcceptanceTests(GoymenErpApiFactor
                 InventoryStockPositionDisplayHost.LocationDisplayContractVersion);
             using var response = await freshActor.GetAsync(
                 $"{InventoryStockPositionApiV1.PositionsPath}?productId={active.Card.Product.Id:D}" +
-                $"&locationId={location.LocationId:D}&limit=25");
+                $"&locationId={location.LocationId:D}" +
+                $"&productFamilyId={ProductInitialTechnicalDefinitionV1.HotRolledSlitCoilFamilyId:D}" +
+                "&thicknessMinMm=2.999&thicknessMaxMm=3&widthMm=248&limit=25");
             Assert.Equal(HttpStatusCode.OK, response.StatusCode);
             var page = (await response.Content.ReadFromJsonAsync<InventoryStockPositionLocationPageV2>())!;
             var position = Assert.Single(page.Items);
@@ -172,6 +174,25 @@ public sealed class InventoryStockPositionHttpAcceptanceTests(GoymenErpApiFactor
         var display = item.GetProperty("productDisplay");
         Assert.Equal("P-1", display.GetProperty("identity").GetProperty("code").GetString());
         Assert.Equal(1.5m, display.GetProperty("technical").GetProperty("thicknessMm").GetDecimal());
+    }
+
+    [Fact]
+    public async Task Typed_product_filters_are_strictly_parsed_and_forwarded_as_server_query_state()
+    {
+        var owner = new StubPositions(Positions());
+        using var host = CreateHost(new ControlledAuthority(), owner);
+        using var client = CreateClient(host);
+        var familyId = Guid.NewGuid();
+
+        using var request = ProductDisplayRequest(InventoryStockPositionApiV1.PositionsPath
+            + $"?productFamilyId={familyId:D}&thicknessMinMm=1.250&thicknessMaxMm=2.5"
+            + "&widthMm=1250&limit=25");
+        using var response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var query = Assert.Single(owner.Queries);
+        Assert.Equal((familyId, 1.250m, 2.5m, 1250m),
+            (query.ProductFamilyId, query.ThicknessMinMm, query.ThicknessMaxMm, query.WidthMm));
     }
 
     [Fact]
@@ -389,7 +410,10 @@ public sealed class InventoryStockPositionHttpAcceptanceTests(GoymenErpApiFactor
 
         foreach (var query in new[] { "?unknown=x", "?q=a&q=b", "?limit=abc", "?limit=101",
                      "?productId=not-a-guid", "?classification=standard", "?ownerId=not-a-guid",
-                     "?ownerKind=1", "?ownerKind=2" })
+                     "?ownerKind=1", "?ownerKind=2", "?productFamilyId=00000000-0000-0000-0000-000000000000",
+                     "?thicknessMm=0", "?thicknessMm=1.0001", "?thicknessMm=1,5", "?widthMm=1e3",
+                     "?widthMm=1000&widthMinMm=900", "?thicknessMinMm=2&thicknessMaxMm=1",
+                     "?widthMinMm=10&widthMinMm=20" })
         {
             using var response = await client.GetAsync(InventoryStockPositionApiV1.PositionsPath + query);
             Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);

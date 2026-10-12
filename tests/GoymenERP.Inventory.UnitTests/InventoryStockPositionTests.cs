@@ -126,6 +126,62 @@ public sealed class InventoryStockPositionTests
         Assert.NotNull(world.Reader.Query.After);
     }
 
+    [Fact]
+    public async Task Typed_product_filters_are_applied_before_the_public_page_and_can_match_after_the_first_window()
+    {
+        var world = new World();
+        var first = Record(productVersion: "5");
+        var matching = Record(productVersion: "8");
+        world.Reader.Windows.Enqueue(new([first], true,
+            new(first.Label.Code, first.Label.Id)));
+        world.Reader.Windows.Enqueue(new([matching], false,
+            new(matching.Label.Code, matching.Label.Id)));
+        world.Filter.Matches.Add(matching.Label.Id);
+        var familyId = Guid.NewGuid();
+
+        var page = await world.Service().SearchAsync(new(
+            Limit: 1,
+            ProductFamilyId: familyId,
+            ThicknessMinMm: 1.25m,
+            ThicknessMaxMm: 2.5m,
+            WidthMm: 1250m));
+
+        Assert.Equal(matching.Label.Id, Assert.Single(page.Items).LabelId);
+        Assert.False(page.SearchWindowFull);
+        Assert.Null(page.NextCursor);
+        Assert.Equal(2, world.Reader.Reads);
+        Assert.All(world.Reader.Queries, query => Assert.Equal(100, query.Limit));
+        Assert.All(world.Reader.Queries, query => Assert.Equal(
+            (familyId, 1.25m, 2.5m, 1250m),
+            (query.ProductFamilyId, query.ThicknessMinMm, query.ThicknessMaxMm, query.WidthMm)));
+        Assert.Equal(2, world.Filter.Requests.Count);
+        Assert.Equal(matching.Label.Id,
+            Assert.Single(world.Filter.Requests[1].Selections).LabelId);
+    }
+
+    [Theory]
+    [InlineData("zero")]
+    [InlineData("precision")]
+    [InlineData("reversed")]
+    [InlineData("exact-and-range")]
+    public async Task Invalid_typed_product_filters_are_rejected_before_SQL(string invalid)
+    {
+        var world = new World();
+        var query = invalid switch
+        {
+            "zero" => new InventoryStockPositionQueryV1(ThicknessMm: 0m),
+            "precision" => new InventoryStockPositionQueryV1(WidthMm: 1.0001m),
+            "reversed" => new InventoryStockPositionQueryV1(
+                ThicknessMinMm: 2m, ThicknessMaxMm: 1m),
+            _ => new InventoryStockPositionQueryV1(
+                WidthMm: 1250m, WidthMinMm: 1000m),
+        };
+
+        await Refused(world.Service().SearchAsync(query), 400, InventoryStockPositionCodesV1.InvalidQuery);
+        Assert.Equal(0, world.Reader.Reads);
+        Assert.Empty(world.Filter.Requests);
+    }
+
     [Theory]
     [InlineData("owner-without-id")]
     [InlineData("id-without-owner")]
@@ -192,6 +248,13 @@ public sealed class InventoryStockPositionTests
             query with { Classification = InventoryLabelClassificationV1.Scrap },
             query with { OwnerKind = StockPartyKind.Counterparty },
             query with { OwnerId = Guid.NewGuid() },
+            query with { ProductFamilyId = Guid.NewGuid() },
+            query with { ThicknessMm = 2m },
+            query with { ThicknessMinMm = 1m },
+            query with { ThicknessMaxMm = 3m },
+            query with { WidthMm = 1000m },
+            query with { WidthMinMm = 900m },
+            query with { WidthMaxMm = 1100m },
         })
         {
             AssertInvalid(() => codec.Unprotect(Company, actor, changed, cursor));
@@ -330,7 +393,7 @@ public sealed class InventoryStockPositionTests
 
     private static InventoryStockPositionReadQuery CursorQuery() => new(
         "ROLL", 25, Guid.NewGuid(), Guid.NewGuid(), InventoryLabelClassificationV1.SecondQuality,
-        StockPartyKind.Company, Company, null);
+        StockPartyKind.Company, Company, Guid.NewGuid(), 1.5m, null, null, null, 1000m, 1500m, null);
 
     private static void AssertInvalid(Action action)
     {
@@ -386,10 +449,11 @@ public sealed class InventoryStockPositionTests
         public User User { get; } = new();
         public Authority Authority { get; } = new();
         public Reader Reader { get; } = new();
+        public ProductFilter Filter { get; } = new();
         private readonly InventoryStockPositionCursorCodec cursors = new(
             new InventoryStockPositionCursorRuntimeOptions(Convert.ToBase64String(new byte[32])),
             TimeProvider.System);
-        public InventoryStockPositionService Service() => new(Context, User, Authority, Reader, cursors);
+        public InventoryStockPositionService Service() => new(Context, User, Authority, Reader, cursors, Filter);
     }
 
     private sealed class Context : ICompanyContext
@@ -427,6 +491,8 @@ public sealed class InventoryStockPositionTests
 
     private sealed class Reader : IInventoryStockPositionReader
     {
+        public Queue<InventoryStockPositionWindow> Windows { get; } = new();
+        public List<InventoryStockPositionReadQuery> Queries { get; } = [];
         public InventoryStockPositionRecord? Record { get; set; } = InventoryStockPositionTests.Record();
         public Action? During { get; set; }
         public bool Fail { get; set; }
@@ -443,6 +509,7 @@ public sealed class InventoryStockPositionTests
             Reads++;
             CompanyId = companyId;
             Query = query;
+            Queries.Add(query);
             await Task.Yield();
             During?.Invoke();
             if (Fail)
@@ -450,9 +517,26 @@ public sealed class InventoryStockPositionTests
                 throw new InvalidOperationException("Provider failure");
             }
 
+            if (Windows.Count > 0) return Windows.Dequeue();
             var records = Record is null ? Array.Empty<InventoryStockPositionRecord>() : [Record];
             return new InventoryStockPositionWindow(records, HasMore,
                 records.Length == 0 ? null : new(records[^1].Label.Code, records[^1].Label.Id));
+        }
+    }
+
+    private sealed class ProductFilter : IInventoryStockProductFilterV1
+    {
+        public HashSet<Guid> Matches { get; } = [];
+        public List<InventoryStockProductFilterRequestV1> Requests { get; } = [];
+
+        public Task<IReadOnlySet<Guid>> MatchAsync(
+            InventoryStockProductFilterRequestV1 request,
+            CancellationToken cancellationToken = default)
+        {
+            Requests.Add(request);
+            IReadOnlySet<Guid> answer = request.Selections.Select(selection => selection.LabelId)
+                .Where(Matches.Contains).ToHashSet();
+            return Task.FromResult(answer);
         }
     }
 

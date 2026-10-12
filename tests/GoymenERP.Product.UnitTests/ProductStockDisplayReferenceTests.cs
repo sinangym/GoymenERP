@@ -34,6 +34,48 @@ public sealed class ProductStockDisplayReferenceTests
     }
 
     [Fact]
+    public async Task Technical_match_reads_many_versions_of_one_product_in_one_product_batch()
+    {
+        var world = new World([Record(FirstId, 100, "P-1", "Galvaniz bant", 1.25m, 1250m)]);
+        var selections = Enumerable.Range(1, ProductStockDisplayCodesV1.MaximumBatchSize)
+            .Select(version => new ProductStockTechnicalMatchSelectionV1(FirstId, version.ToString()))
+            .ToArray();
+
+        var result = await world.Service().MatchAsync(new(
+            selections, FamilyId, null, 1m, 2m, 1250m, null, null));
+
+        var match = Assert.Single(result.Matches);
+        Assert.Equal((FirstId, "100"), (match.ProductId, match.ExpectedProductVersion));
+        Assert.Equal(1, world.Records.Reads);
+        Assert.Equal(1, world.Definitions.Reads);
+    }
+
+    [Fact]
+    public async Task Technical_match_never_treats_a_missing_width_as_zero_or_as_an_unfiltered_match()
+    {
+        var missingWidth = Record(FirstId, 7, "P-1", "Genişliği eksik bant", 1.25m, null);
+        var complete = Record(SecondId, 3, "P-2", "Tam ölçülü bant", 1.25m, 1250m);
+        var world = new World([missingWidth, complete]);
+        var selections = new ProductStockTechnicalMatchSelectionV1[]
+        {
+            new(FirstId, "7"),
+            new(SecondId, "3"),
+        };
+
+        var unfiltered = await world.Service().MatchAsync(new(
+            selections, null, null, null, null, null, null, null));
+        var widthFiltered = await world.Service().MatchAsync(new(
+            selections, null, null, null, null, 1250m, null, null));
+
+        Assert.Equal(new ProductStockTechnicalMatchSelectionV1(SecondId, "3"),
+            Assert.Single(unfiltered.Matches));
+        Assert.Equal(new ProductStockTechnicalMatchSelectionV1(SecondId, "3"),
+            Assert.Single(widthFiltered.Matches));
+        Assert.Equal(2, world.Records.Reads);
+        Assert.Equal(2, world.Definitions.Reads);
+    }
+
+    [Fact]
     public async Task Missing_stale_and_invalid_versions_never_relabel_a_stock_row_with_current_identity()
     {
         var invalidId = Guid.NewGuid();
@@ -148,6 +190,12 @@ public sealed class ProductStockDisplayReferenceTests
 
         Assert.Equal((503, "product_runtime_unconfigured"), (error.StatusCode, error.Code));
         Assert.Single(provider.GetServices<IProductStockDisplayReferencesV1>());
+
+        var matcher = provider.GetRequiredService<IProductStockTechnicalMatcherV1>();
+        var matchError = await Assert.ThrowsAsync<ProductOperationException>(() =>
+            matcher.MatchAsync(new([new(FirstId, "7")], FamilyId, null, null, null, null, null, null)));
+        Assert.Equal((503, "product_runtime_unconfigured"), (matchError.StatusCode, matchError.Code));
+        Assert.Single(provider.GetServices<IProductStockTechnicalMatcherV1>());
     }
 
     private static void AssertResult(ProductStockDisplayResultV1 item, Guid id, string version,
@@ -169,15 +217,16 @@ public sealed class ProductStockDisplayReferenceTests
     }
 
     private static ProductStoredRecord Record(Guid id, long version, string code, string name,
-        decimal thickness, decimal width, string quality = "DX51D", string templateVersion = "7")
+        decimal thickness, decimal? width, string quality = "DX51D", string templateVersion = "7")
     {
-        var references = new ProductReferences(TemplateId, templateVersion, new Dictionary<string, JsonElement>
+        var attributes = new Dictionary<string, JsonElement>
         {
             ["thicknessMm"] = JsonSerializer.SerializeToElement(thickness),
-            ["widthMm"] = JsonSerializer.SerializeToElement(width),
             ["quality"] = JsonSerializer.SerializeToElement(quality),
             ["coating"] = JsonSerializer.SerializeToElement("none"),
-        });
+        };
+        if (width.HasValue) attributes["widthMm"] = JsonSerializer.SerializeToElement(width.Value);
+        var references = new ProductReferences(TemplateId, templateVersion, attributes);
         return new(id, code, name, Guid.NewGuid(), null, FamilyId,
             new(null, 0), new(true, 1), new(null, 0), new(null, 0), 1, version,
             DateTimeOffset.UnixEpoch, DateTimeOffset.UnixEpoch,
