@@ -496,10 +496,23 @@ test('ST-01 applies genuine Product family and nominal dimension filters before 
   test.setTimeout(240_000)
   const filterPrefix = `SYNTYPED-${randomUUID().slice(0, 8).toUpperCase()}`
 
+  // Product master authority is NOT inferred from the recorder's Identity role. The R14 fixture has already
+  // issued this disposable actor the three explicit owner assignments (Read, DraftCreate and Activate), through
+  // its configured Product issuer. Reading the real shell snapshot here pins that existing path; this test adds
+  // no role permission or Product assignment of its own.
+  const productFixtureActor = recorderActor
+  const productCapabilitiesAnswer = await page.request.get(`${env.apiBaseUrl}/api/v1/shell/capabilities`, {
+    headers: headers(productFixtureActor),
+  })
+  expect(productCapabilitiesAnswer.status()).toBe(200)
+  const productCapabilitiesBody = await productCapabilitiesAnswer.json() as { readonly capabilities: readonly string[] }
+  expect(productCapabilitiesBody.capabilities.filter((capability) => capability.startsWith('product.')).sort())
+    .toEqual(['product.items.activate', 'product.items.create', 'product.items.detail', 'product.items.list'])
+
   // Read the genuine Product card the R14 fixture created. The family/template/unit ids and the accepted dictionary
   // values are Product-owned source data; this test neither copies a family id nor invents a typed attribute.
   const sourceCardAnswer = await page.request.get(`${env.apiBaseUrl}${PRODUCTS}/${productId}`, {
-    headers: headers(recorderActor),
+    headers: headers(productFixtureActor),
   })
   expect(sourceCardAnswer.status()).toBe(200)
   const sourceCard = await sourceCardAnswer.json() as {
@@ -531,7 +544,7 @@ test('ST-01 applies genuine Product family and nominal dimension filters before 
   // server scans and applies Product's typed match before it cuts the public page.
   const alternateProductAnswer = await page.request.post(`${env.apiBaseUrl}${PRODUCTS}`, {
     headers: {
-      ...headers(recorderActor), 'Content-Type': 'application/json',
+      ...headers(productFixtureActor), 'Content-Type': 'application/json',
       'Idempotency-Key': `st01-typed-product-${randomUUID()}`,
     },
     data: {
@@ -551,7 +564,7 @@ test('ST-01 applies genuine Product family and nominal dimension filters before 
   const alternateActivation = await page.request.post(
     `${env.apiBaseUrl}${PRODUCTS}/${alternateDraft.card.product.id}/activation`, {
       headers: {
-        ...headers(recorderActor), 'Content-Type': 'application/json',
+        ...headers(productFixtureActor), 'Content-Type': 'application/json',
         'Idempotency-Key': `st01-typed-activate-${randomUUID()}`,
       },
       data: { expectedVersion: alternateDraft.card.product.version },
@@ -561,6 +574,95 @@ test('ST-01 applies genuine Product family and nominal dimension filters before 
     readonly card: { readonly product: { readonly id: string; readonly version: string; readonly lifecycle: string } }
   }
   expect(alternateActive.card.product.lifecycle).toBe('Active')
+
+  // Activation does not invent Product completeness. Store and reopen a real Product whose released technical
+  // template has no width value, then prove the untyped Product list still carries the card. Inventory's real
+  // opening admission must reject that same card: a missing typed width is not silently substituted with 0 and
+  // cannot be turned into stock merely to manufacture an Inventory filter fixture.
+  const attributesWithoutWidth = { ...attributes }
+  delete attributesWithoutWidth['width-mm']
+  expect(Object.hasOwn(attributesWithoutWidth, 'width-mm')).toBe(false)
+  const withheldName = `SENTETIK browser-suite:r14 width withheld ${filterPrefix}`
+  const withheldProductAnswer = await page.request.post(`${env.apiBaseUrl}${PRODUCTS}`, {
+    headers: {
+      ...headers(productFixtureActor), 'Content-Type': 'application/json',
+      'Idempotency-Key': `st01-width-withheld-${randomUUID()}`,
+    },
+    data: {
+      name: withheldName,
+      groupId: sourceCard.product.groupId,
+      familyId,
+      references: { ...sourceCard.references, attributes: attributesWithoutWidth },
+    },
+  })
+  expect(withheldProductAnswer.status()).toBe(201)
+  const withheldDraft = await withheldProductAnswer.json() as {
+    readonly card: { readonly product: { readonly id: string; readonly version: string } }
+  }
+  const withheldActivation = await page.request.post(
+    `${env.apiBaseUrl}${PRODUCTS}/${withheldDraft.card.product.id}/activation`, {
+      headers: {
+        ...headers(productFixtureActor), 'Content-Type': 'application/json',
+        'Idempotency-Key': `st01-width-withheld-activate-${randomUUID()}`,
+      },
+      data: { expectedVersion: withheldDraft.card.product.version },
+    })
+  expect(withheldActivation.status()).toBe(200)
+  const withheldActive = await withheldActivation.json() as {
+    readonly card: { readonly product: { readonly id: string; readonly version: string; readonly lifecycle: string } }
+  }
+  expect(withheldActive.card.product.lifecycle).toBe('Active')
+
+  const withheldCardAnswer = await page.request.get(
+    `${env.apiBaseUrl}${PRODUCTS}/${withheldActive.card.product.id}`, {
+      headers: headers(productFixtureActor),
+    })
+  expect(withheldCardAnswer.status()).toBe(200)
+  const withheldCard = await withheldCardAnswer.json() as {
+    readonly references: { readonly attributes: Readonly<Record<string, unknown>> | null }
+  }
+  expect(withheldCard.references.attributes).not.toBeNull()
+  expect(Object.hasOwn(withheldCard.references.attributes!, 'width-mm')).toBe(false)
+
+  const untypedProductsAnswer = await page.request.get(
+    `${env.apiBaseUrl}${PRODUCTS}?q=${encodeURIComponent(withheldName)}&lifecycle=Active&pageSize=100`, {
+      headers: headers(productFixtureActor),
+    })
+  expect(untypedProductsAnswer.status()).toBe(200)
+  const untypedProducts = await untypedProductsAnswer.json() as {
+    readonly items: readonly { readonly id: string; readonly name: string }[]
+  }
+  expect(untypedProducts.items).toEqual(expect.arrayContaining([
+    expect.objectContaining({ id: withheldActive.card.product.id, name: withheldName }),
+  ]))
+
+  const withheldOpening = await page.request.post(`${env.apiBaseUrl}${OPENINGS}`, {
+    headers: {
+      ...headers(recorderActor), 'Content-Type': 'application/json',
+      'Idempotency-Key': `st01-width-withheld-opening-${randomUUID()}`,
+    },
+    data: {
+      countId: randomUUID(), locationId, countedOn: '2026-09-18',
+      sheetReference: `SENTETIK browser-suite:r14 withheld width refusal ${filterPrefix}`,
+      lines: [{
+        lineId: randomUUID(), labelId: randomUUID(), labelCode: `${filterPrefix}-MISSING-WIDTH`,
+        lotId: randomUUID(), heatNumber: `${filterPrefix}-HEAT-MISSING`, coilNumber: null,
+        productId: withheldActive.card.product.id,
+        productVersion: withheldActive.card.product.version,
+        quantityKg: '1',
+      }],
+    },
+  })
+  expect(withheldOpening.status()).toBe(422)
+  const withheldProblem = await withheldOpening.json() as {
+    readonly code: string
+    readonly errors: readonly { readonly field: string; readonly code: string }[]
+  }
+  expect(withheldProblem.code).toBe('inventory_product_ineligible')
+  expect(withheldProblem.errors).toContainEqual({
+    field: 'lines[0].references.attributes.width-mm',
+    code: 'required',
+  })
 
   const nonMatches = Array.from({ length: 25 }, (_, index) => ({
     lineId: randomUUID(), labelId: randomUUID(), labelCode: `${filterPrefix}-A${String(index).padStart(2, '0')}`,
