@@ -234,6 +234,9 @@ public sealed partial class OpenApiContractGenerationTests
             ParameterValues:
             [
                 "query:q:false:type:string;canonicalization:unicode-trim+nfc",
+                "query:addressCity:false:type:string;canonicalization:unicode-trim+nfc",
+                "query:addressDistrict:false:type:string;canonicalization:unicode-trim+nfc",
+                "query:addressType:false:type:string;pattern:^(billing|delivery|operational)$",
                 "query:kind:false:type:string;pattern:^(LegalEntity|NaturalPerson)$",
                 "query:role:false:type:array;items:type:string",
                 "query:roleMatch:false:type:string;pattern:^(any|all)$",
@@ -7086,12 +7089,23 @@ public sealed partial class OpenApiContractGenerationTests
                 parameter => parameter.GetProperty("schema"),
                 StringComparer.Ordinal);
 
-        Assert.Equal(11, parameters.Count);
+        Assert.Equal(14, parameters.Count);
         var search = parameters["q"];
         Assert.Equal(200, search.GetProperty("maxLength").GetInt32());
         Assert.Equal(
             "unicode-trim+nfc",
             search.GetProperty(ErpOpenApiContract.CanonicalizationExtensionName).GetString());
+        foreach (var name in new[] { "addressCity", "addressDistrict" })
+        {
+            Assert.Equal(100, parameters[name].GetProperty("maxLength").GetInt32());
+            Assert.Equal(
+                "unicode-trim+nfc",
+                parameters[name].GetProperty(ErpOpenApiContract.CanonicalizationExtensionName).GetString());
+        }
+
+        Assert.Equal(
+            "^(billing|delivery|operational)$",
+            parameters["addressType"].GetProperty("pattern").GetString());
 
         var role = parameters["role"];
         Assert.Equal("array", role.GetProperty("type").GetString());

@@ -117,6 +117,31 @@ public sealed class CounterpartyReadAcceptanceTests(GoymenErpApiFactory factory)
     }
 
     [Fact]
+    public async Task AddressFilters_MatchOneAuthorizedAccountAddressRowWithoutCrossCompanyLeakage()
+    {
+        await PrepareScenarioAsync();
+        using var client = factory.CreateClientFor(TestUsers.CompanyA, TestCompanyIds.CompanyA);
+
+        using var matchingResponse = await client.GetAsync(
+            "/api/v1/counterparties?addressCity=%C4%B0STANBUL&addressDistrict=%C3%87ankaya"
+            + "&addressType=delivery&includeCount=true");
+        Assert.Equal(HttpStatusCode.OK, matchingResponse.StatusCode);
+        using var matching = JsonDocument.Parse(await matchingResponse.Content.ReadAsStringAsync());
+        var item = Assert.Single(matching.RootElement.GetProperty("items").EnumerateArray());
+        Assert.Equal(SharedPartyId, item.GetProperty("id").GetGuid());
+        Assert.Equal(1, matching.RootElement.GetProperty("totalCount").GetInt64());
+        Assert.All(item.GetProperty("companyAccounts").EnumerateArray(),
+            account => Assert.Equal(TestCompanyIds.CompanyA, account.GetProperty("companyId").GetGuid()));
+
+        using var crossRowResponse = await client.GetAsync(
+            "/api/v1/counterparties?addressCity=%C4%B0stanbul&addressDistrict=%C3%87ankaya"
+            + "&addressType=billing");
+        Assert.Equal(HttpStatusCode.OK, crossRowResponse.StatusCode);
+        using var crossRow = JsonDocument.Parse(await crossRowResponse.Content.ReadAsStringAsync());
+        Assert.Empty(crossRow.RootElement.GetProperty("items").EnumerateArray());
+    }
+
+    [Fact]
     public async Task Authorized_detail_is_scoped_redacted_lossless_and_private()
     {
         await PrepareScenarioAsync();
@@ -340,6 +365,10 @@ public sealed class CounterpartyReadAcceptanceTests(GoymenErpApiFactory factory)
     [InlineData("?direction=unknown")]
     [InlineData("?role=Customer,Supplier")]
     [InlineData("?includeCount=1")]
+    [InlineData("?addressType=unknown")]
+    [InlineData("?addressCity=Osmaniye&addressCity=Gaziantep")]
+    [InlineData("?addressDistrict=Merkez&addressDistrict=Gebze")]
+    [InlineData("?addressType=delivery&addressType=billing")]
     [InlineData("?q=ok&q=duplicate")]
     [InlineData("?sort=code&sort=code")]
     [InlineData("?unknown=value")]
@@ -501,18 +530,24 @@ public sealed class CounterpartyReadAcceptanceTests(GoymenErpApiFactory factory)
                 PartyKind.LegalEntity,
                 "Yalnız A Cari A.Ş."));
 
-        dbContext.CompanyPartyAccounts.AddRange(
-            new CompanyPartyAccount(
+        var sharedAccount = new CompanyPartyAccount(
                 Guid.Parse("52000000-0000-0000-0000-000000000001"),
                 TestCompanyIds.CompanyA,
                 SharedPartyId,
                 PartyRole.Customer,
-                CompanyAIntegrationSecret),
-            new CompanyPartyAccount(
+                CompanyAIntegrationSecret);
+        var companyAOnlyAccount = new CompanyPartyAccount(
                 Guid.Parse("52000000-0000-0000-0000-000000000003"),
                 TestCompanyIds.CompanyA,
                 CompanyAOnlyPartyId,
-                PartyRole.Customer));
+                PartyRole.Customer);
+        dbContext.CompanyPartyAccounts.AddRange(sharedAccount, companyAOnlyAccount);
+        dbContext.Entry(sharedAccount).Property(account => account.ContactInformationJson).CurrentValue =
+            AddressInformation(("delivery", "İstanbul", "Çankaya"));
+        dbContext.Entry(companyAOnlyAccount).Property(account => account.ContactInformationJson).CurrentValue =
+            AddressInformation(
+                ("billing", "İstanbul", "Kadıköy"),
+                ("delivery", "Ankara", "Çankaya"));
 
         await dbContext.SaveChangesAsync();
     }
@@ -530,19 +565,43 @@ public sealed class CounterpartyReadAcceptanceTests(GoymenErpApiFactory factory)
                 PartyKind.LegalEntity,
                 "Yalnız B Cari A.Ş."));
 
-        dbContext.CompanyPartyAccounts.AddRange(
-            new CompanyPartyAccount(
+        var sharedAccount = new CompanyPartyAccount(
                 Guid.Parse("52000000-0000-0000-0000-000000000002"),
                 TestCompanyIds.CompanyB,
                 SharedPartyId,
                 PartyRole.Supplier,
-                CompanyBIntegrationSecret),
-            new CompanyPartyAccount(
+                CompanyBIntegrationSecret);
+        var companyBOnlyAccount = new CompanyPartyAccount(
                 Guid.Parse("52000000-0000-0000-0000-000000000004"),
                 TestCompanyIds.CompanyB,
                 CompanyBOnlyPartyId,
-                PartyRole.Supplier));
+                PartyRole.Supplier);
+        dbContext.CompanyPartyAccounts.AddRange(sharedAccount, companyBOnlyAccount);
+        dbContext.Entry(sharedAccount).Property(account => account.ContactInformationJson).CurrentValue =
+            AddressInformation(("delivery", "Ankara", "Çankaya"));
+        dbContext.Entry(companyBOnlyAccount).Property(account => account.ContactInformationJson).CurrentValue =
+            AddressInformation(("delivery", "İstanbul", "Çankaya"));
 
         await dbContext.SaveChangesAsync();
     }
+
+    private static string AddressInformation(
+        params (string Purpose, string City, string District)[] addresses) =>
+        CounterpartyContactInformationEditor.Serialize(new CounterpartyContactInformation(
+            null,
+            null,
+            null,
+            null,
+            addresses.Select(address => new CounterpartyOperationalAddress(
+                Guid.NewGuid(),
+                "1",
+                true,
+                address.Purpose,
+                "TR",
+                "Test adresi",
+                null,
+                address.City,
+                address.District,
+                null)).ToArray(),
+            []));
 }

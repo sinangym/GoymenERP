@@ -14,6 +14,11 @@
  * if the screen is still mounted under that same binding — so company A's answer
  * never paints, navigates or announces in company B.
  *
+ * GOY-DS-001 layout (SALES-DS-CREATE-01): the shared Button, Field and StatusIndicator; short named sections with the
+ * required choices first; the optional details (header date and note, a line's date, note and delivery slices) behind
+ * a visible toggle that says what is already filled and opens by itself when a field inside holds an error; and, before
+ * saving, the company, the party and every product in full. None of this changes what is sent.
+ *
  * Fails closed without a selection source (see ./referenceSource.ts): no guessed
  * account, product, version, unit or currency is ever offered. SALES-A2a: the header
  * references are real on main — the accounts list, the currencies list for the business
@@ -22,7 +27,7 @@
  * list (E1); the withheld notice says so honestly.
  */
 
-import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useContext, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router'
 import { createDraft, type AccountOption, type ProductOffer, type ProductOption } from './api'
 import { SALES_DRAFT_PATH, SALES_PROBLEM_CODE } from './contract'
@@ -73,14 +78,33 @@ import {
   type ReferenceReadState,
 } from './referenceSource'
 import { SALES_CAPABILITY, SALES_ROUTE, salesDetailPath } from './capabilities'
-import { contactLabel } from './format'
+import { contactLabel, formatBusinessDate } from './format'
 import { ORDER_DRAFT_TEXT as T, problemCodeText } from './salesText'
 import type { DraftCreateRequest, DraftMutation } from './contract'
 import { useShellDispatch, useShellState } from '../shell/shellContext'
 import { hasCapability } from '../shell/shellState'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
 import { useCompanyDirectory } from '../shell/useShellOrchestrator'
-import styles from './SalesPages.module.css'
+import { Button } from '../ui/Button'
+import { Field } from '../ui/Field'
+import { StatusIndicator } from '../ui/StatusIndicator'
+import styles from './SalesDraftCreatePage.module.css'
+
+/**
+ * Words that belong to this page's layout only: short section names, the toggles of the optional details and what a
+ * closed toggle says is already filled in. Every field label and message stays in ./salesText.
+ */
+const PAGE = {
+  list: 'Sipariş taslakları',
+  openDraft: 'Taslağı aç',
+  sections: { customer: 'Müşteri', order: 'Sipariş ve teslimat' },
+  headerMore: 'Termin ve not',
+  lineMore: 'Termin ve açıklama',
+  line: (lineNo: number) => `${lineNo}. satır`,
+  noteFilled: 'not var',
+  lineNoteFilled: 'açıklama var',
+  slicesFilled: (count: number) => `${count} termin dilimi`,
+} as const
 
 /** The shell's dirty scope: a company switch ASKS while this form holds work. */
 export const SALES_CREATE_DIRTY_SCOPE = 'sales.order.create'
@@ -378,26 +402,33 @@ function CreateForm({ binding, companyId }: { readonly binding: string; readonly
   const notice = attemptNotice(attempt, blockedChange)
   const errorEntries = useMemo(() => Object.entries(errors), [errors])
 
+  // The optional header details stay closed until asked for — unless they already hold a value or an error.
+  const headerMoreIds = [ORDER_FIELD.requestedDeliveryDate, ORDER_FIELD.note]
+  const [headerMoreAsked, setHeaderMoreAsked] = useState(() => values.requestedDeliveryDate !== '' || values.note !== '')
+  const headerMoreOpen = headerMoreAsked || headerMoreIds.some((id) => errors[id] !== undefined)
+
   if (attempt.phase === 'completed') {
     const draft = attempt.result.detail.draft
     return (
       <section className={styles.page} aria-labelledby="sales-created-heading">
-        <div role="status" className={styles.success}>
+        <div role="status" className={styles.done}>
           <h1 id="sales-created-heading" className={styles.title}>
             {T.attempt.completed}
           </h1>
-          <p>
+          <p className={styles.doneFacts}>
             {draft.documentNo} · {draft.revision} · {T.summary.notApproved}
           </p>
-          {attempt.result.isReplay ? <p>{T.attempt.replayed}</p> : null}
+          {attempt.result.isReplay ? <p className={styles.muted}>{T.attempt.replayed}</p> : null}
           <div className={styles.actions}>
             {hasCapability(shell, SALES_CAPABILITY.draftsDetail) ? (
               <Link className={styles.primaryLink} to={salesDetailPath(draft.id)}>
-                Taslağı aç
+                {PAGE.openDraft}
               </Link>
             ) : null}
             {hasCapability(shell, SALES_CAPABILITY.draftsList) ? (
-              <Link to={SALES_ROUTE.list}>Sipariş taslakları</Link>
+              <Link className={styles.link} to={SALES_ROUTE.list}>
+                {PAGE.list}
+              </Link>
             ) : null}
           </div>
         </div>
@@ -406,17 +437,12 @@ function CreateForm({ binding, companyId }: { readonly binding: string; readonly
   }
 
   const frozen = attempt.phase === 'submitting'
-  const fieldProps = (id: string) => ({
-    id,
-    'aria-invalid': errors[id] !== undefined ? true : undefined,
-    'aria-describedby': errors[id] !== undefined ? `${id}-error` : undefined,
-  })
-  const fieldError = (id: string) =>
-    errors[id] === undefined ? null : (
-      <p id={`${id}-error`} className={styles.fieldError}>
-        {errors[id]}
-      </p>
-    )
+  const chosenCustomerLabel =
+    accounts?.find((a) => a.partyId === values.partyId && a.companyAccountId === values.companyAccountId)?.label ?? null
+  const headerMoreFilled = [
+    values.requestedDeliveryDate === '' ? null : `${T.field.requestedDeliveryDate}: ${formatBusinessDate(values.requestedDeliveryDate)}`,
+    values.note.trim() === '' ? null : PAGE.noteFilled,
+  ].filter((part): part is string => part !== null)
 
   return (
     <section className={styles.page} aria-labelledby="sales-create-heading">
@@ -426,7 +452,7 @@ function CreateForm({ binding, companyId }: { readonly binding: string; readonly
         </h1>
         {hasCapability(shell, SALES_CAPABILITY.draftsList) ? (
           <Link className={styles.backLink} to={SALES_ROUTE.list}>
-            ← Sipariş taslakları
+            ← {PAGE.list}
           </Link>
         ) : null}
       </header>
@@ -441,12 +467,12 @@ function CreateForm({ binding, companyId }: { readonly binding: string; readonly
           <p>{notice.message}</p>
           {notice.actions.length > 0 ? (
             <div className={styles.actions}>
-              <button type="button" className={styles.primaryButton} onClick={retry}>
+              <Button type="button" variant="primary" onClick={retry}>
                 {T.attempt.retry}
-              </button>
-              <button type="button" className={styles.secondaryButton} onClick={leaveAttempt}>
+              </Button>
+              <Button type="button" onClick={leaveAttempt}>
                 {T.attempt.abandon}
-              </button>
+              </Button>
             </div>
           ) : null}
         </div>
@@ -460,7 +486,7 @@ function CreateForm({ binding, companyId }: { readonly binding: string; readonly
           ) : null}
         </div>
       ) : (
-        <form onSubmit={onSubmit} noValidate>
+        <form onSubmit={onSubmit} noValidate className={styles.form}>
           {errorEntries.length > 0 || serverMessages.length > 0 ? (
             <div ref={summaryRef} tabIndex={-1} role="alert" className={styles.errorSummary}>
               <p>{isOutcomeStillUnknown(attempt) ? T.errorSummaryUnresolved : T.errorSummary}</p>
@@ -485,224 +511,181 @@ function CreateForm({ binding, companyId }: { readonly binding: string; readonly
             </div>
           ) : null}
 
-          <fieldset disabled={frozen} className={styles.fieldset}>
-            <legend>Sipariş bilgileri</legend>
-            <div className={styles.grid}>
-              <label htmlFor="sales-customer-search">{T.references.accountSearch}</label>
-              <div className={styles.actions}>
-                <input
-                  id="sales-customer-search"
-                  type="search"
-                  maxLength={200}
-                  value={accountSearchInput}
-                  onChange={(event) => setAccountSearchInput(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter') {
-                      event.preventDefault()
-                      setAccountSearch(accountSearchInput)
-                    }
-                  }}
-                  aria-describedby="sales-customer-search-hint"
-                  data-testid="sales-customer-search"
-                />
-                <button type="button" onClick={() => setAccountSearch(accountSearchInput)} data-testid="sales-customer-search-button">
-                  {T.references.accountSearchSubmit}
-                </button>
-                <span id="sales-customer-search-hint" className={styles.muted}>
-                  {T.references.accountSearchHint}
-                </span>
+          {/* One fieldset freezes every control while a send is in flight; the sections inside carry the names. */}
+          <fieldset disabled={frozen} className={styles.frame}>
+            <section className={styles.section} aria-labelledby="sales-create-customer">
+              <h2 id="sales-create-customer">{PAGE.sections.customer}</h2>
+              <div className={styles.customerRow}>
+              <Field id="sales-customer-search" label={T.references.accountSearch} help={T.references.accountSearchHint}>
+                {(control) => (
+                  <div className={styles.searchRow}>
+                    <input
+                      {...control}
+                      className={styles.control}
+                      type="search"
+                      maxLength={200}
+                      value={accountSearchInput}
+                      onChange={(event) => setAccountSearchInput(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter') {
+                          event.preventDefault()
+                          setAccountSearch(accountSearchInput)
+                        }
+                      }}
+                      data-testid="sales-customer-search"
+                    />
+                    <Button type="button" onClick={() => setAccountSearch(accountSearchInput)} data-testid="sales-customer-search-button">
+                      {T.references.accountSearchSubmit}
+                    </Button>
+                  </div>
+                )}
+              </Field>
+              <Field id={ORDER_FIELD.customer} label={T.field.customer} error={errors[ORDER_FIELD.customer]}>
+                {(control) => (
+                  <select
+                    {...control}
+                    className={styles.control}
+                    value={values.partyId === '' ? '' : `${values.partyId}|${values.companyAccountId}`}
+                    onChange={(event) => {
+                      const [partyId = '', companyAccountId = ''] = event.target.value.split('|')
+                      setChosenAccount(accounts.find((a) => a.partyId === partyId && a.companyAccountId === companyAccountId) ?? null)
+                      setValues((v) => setAccount(v, partyId, companyAccountId))
+                    }}
+                  >
+                    <option value="">{T.choose}</option>
+                    {accounts.map((a) => (
+                      <option key={`${a.partyId}|${a.companyAccountId}`} value={`${a.partyId}|${a.companyAccountId}`}>
+                        {a.label}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </Field>
               </div>
-              <label htmlFor={ORDER_FIELD.customer}>{T.field.customer}</label>
-              <select
-                {...fieldProps(ORDER_FIELD.customer)}
-                value={values.partyId === '' ? '' : `${values.partyId}|${values.companyAccountId}`}
-                onChange={(event) => {
-                  const [partyId = '', companyAccountId = ''] = event.target.value.split('|')
-                  setChosenAccount(accounts.find((a) => a.partyId === partyId && a.companyAccountId === companyAccountId) ?? null)
-                  setValues((v) => setAccount(v, partyId, companyAccountId))
-                }}
-              >
-                <option value="">{T.choose}</option>
-                {accounts.map((a) => (
-                  <option key={`${a.partyId}|${a.companyAccountId}`} value={`${a.partyId}|${a.companyAccountId}`}>
-                    {a.label}
-                  </option>
-                ))}
-              </select>
-              {fieldError(ORDER_FIELD.customer)}
               {accountsOffer !== null ? (
-                <p className={styles.muted} style={{ gridColumn: 2 }} data-testid="sales-customer-more-status">
+                <p className={styles.readStatus} data-testid="sales-customer-more-status">
                   {accountsOffer.nextCursor !== null ? (
-                    <button
+                    <Button
                       type="button"
+                      size="sm"
                       onClick={accountsOffer.loadMore}
                       disabled={accountsOffer.loadingMore}
                       aria-busy={accountsOffer.loadingMore}
                       data-testid="sales-customer-more"
                     >
                       {accountsOffer.loadingMore ? T.references.accountsMoreLoading : T.references.accountsMore}
-                    </button>
+                    </Button>
                   ) : (
                     T.references.accountsEnd
                   )}
                   {accountsOffer.moreFailed !== null ? ` ${T.references.accountsMoreFailed(accountsOffer.moreFailed)}` : ''}
                 </p>
               ) : null}
+            </section>
 
-              <label htmlFor={ORDER_FIELD.businessDate}>{T.field.businessDate}</label>
-              <input
-                type="date"
-                {...fieldProps(ORDER_FIELD.businessDate)}
-                value={values.businessDate}
-                onChange={(event) => setValues((v) => ({ ...v, businessDate: event.target.value }))}
-              />
-              {fieldError(ORDER_FIELD.businessDate)}
-
-              <label htmlFor={ORDER_FIELD.currency}>{T.field.currency}</label>
-              <select
-                {...fieldProps(ORDER_FIELD.currency)}
-                data-testid="sales-currency-select"
-                value={values.currencyId}
-                disabled={!currenciesListed}
-                onChange={(event) => setValues((v) => ({ ...v, currencyId: event.target.value }))}
-              >
-                <option value="">{T.choose}</option>
-                {currencyOptions.map((c) => (
-                  <option key={c.currencyId} value={c.currencyId}>
-                    {c.label}
-                  </option>
-                ))}
-              </select>
-              {fieldError(ORDER_FIELD.currency)}
-              {currencyState === null ? null : (
-                <ReadStatus
-                  testId="sales-currency-status"
-                  state={currencyState}
-                  idle={T.references.currencyIdle}
-                  loading={T.references.currencyLoading}
-                  empty={currencyState.status === 'ready' && currencyState.data.length === 0 ? T.references.currencyEmpty : null}
-                  unavailable={T.references.currencyUnavailable}
-                  retryTestId="sales-currency-retry"
-                />
-              )}
-
-              <label htmlFor="sales-product-search">{T.references.productSearch}</label>
-              <div className={styles.actions}>
-                <input
-                  id="sales-product-search"
-                  type="search"
-                  maxLength={200}
-                  value={productSearchInput}
-                  disabled={values.businessDate === ''}
-                  onChange={(event) => setProductSearchInput(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter') {
-                      event.preventDefault()
-                      setProductSearch(productSearchInput)
-                    }
-                  }}
-                  aria-describedby="sales-product-search-hint"
-                  data-testid="sales-product-search"
-                />
-                <button
-                  type="button"
-                  disabled={values.businessDate === ''}
-                  onClick={() => setProductSearch(productSearchInput)}
-                  data-testid="sales-product-search-button"
-                >
-                  {T.references.productSearchSubmit}
-                </button>
-                <span id="sales-product-search-hint" className={styles.muted}>
-                  {T.references.productSearchHint}
-                </span>
+            <section className={styles.section} aria-labelledby="sales-create-order">
+              <h2 id="sales-create-order">{PAGE.sections.order}</h2>
+              <div className={styles.shortPair}>
+                <Field id={ORDER_FIELD.businessDate} label={T.field.businessDate} error={errors[ORDER_FIELD.businessDate]}>
+                  {(control) => (
+                    <input
+                      {...control}
+                      className={styles.control}
+                      type="date"
+                      value={values.businessDate}
+                      onChange={(event) => setValues((v) => ({ ...v, businessDate: event.target.value }))}
+                    />
+                  )}
+                </Field>
+                <div className={styles.stack}>
+                  <Field id={ORDER_FIELD.currency} label={T.field.currency} error={errors[ORDER_FIELD.currency]}>
+                    {(control) => (
+                      <select
+                        {...control}
+                        className={styles.control}
+                        data-testid="sales-currency-select"
+                        value={values.currencyId}
+                        disabled={!currenciesListed}
+                        onChange={(event) => setValues((v) => ({ ...v, currencyId: event.target.value }))}
+                      >
+                        <option value="">{T.choose}</option>
+                        {currencyOptions.map((c) => (
+                          <option key={c.currencyId} value={c.currencyId}>
+                            {c.label}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                  </Field>
+                  {currencyState === null ? null : (
+                    <ReadStatus
+                      testId="sales-currency-status"
+                      state={currencyState}
+                      idle={T.references.currencyIdle}
+                      loading={T.references.currencyLoading}
+                      empty={currencyState.status === 'ready' && currencyState.data.length === 0 ? T.references.currencyEmpty : null}
+                      unavailable={T.references.currencyUnavailable}
+                      retryTestId="sales-currency-retry"
+                    />
+                  )}
+                </div>
               </div>
-              {productState === null ? null : (
-                <ReadStatus
-                  testId="sales-product-status"
-                  state={productState}
-                  idle={T.references.productIdle}
-                  loading={T.references.productLoading}
-                  empty={
-                    productState.status === 'ready' && productState.data.items.length === 0
-                      ? T.references.productEmpty
-                      : null
-                  }
-                  unavailable={T.references.productUnavailable}
-                  retryTestId="sales-product-retry"
-                />
-              )}
-              {productOffer?.searchWindowFull ? (
-                <p className={styles.muted} style={{ gridColumn: 2 }} data-testid="sales-product-window-full">
-                  {T.references.productWindowFull}
-                </p>
-              ) : null}
-
-              <label htmlFor={ORDER_FIELD.requestedDeliveryDate}>{T.field.requestedDeliveryDate}</label>
-              <input
-                type="date"
-                {...fieldProps(ORDER_FIELD.requestedDeliveryDate)}
-                value={values.requestedDeliveryDate}
-                onChange={(event) => setValues((v) => ({ ...v, requestedDeliveryDate: event.target.value }))}
-              />
-              {fieldError(ORDER_FIELD.requestedDeliveryDate)}
-
-              <label htmlFor={ORDER_FIELD.note}>{T.field.note}</label>
-              <textarea
-                {...fieldProps(ORDER_FIELD.note)}
-                value={values.note}
-                onChange={(event) => setValues((v) => ({ ...v, note: event.target.value }))}
-              />
-              {fieldError(ORDER_FIELD.note)}
-
-              <label htmlFor={ORDER_FIELD.deliveryAddress}>{T.field.deliveryAddress}</label>
-              <select
-                {...fieldProps(ORDER_FIELD.deliveryAddress)}
-                data-testid="sales-delivery-address-select"
-                value={values.deliveryAddressId}
-                disabled={delivery.status !== 'ready' || delivery.data.addresses.length === 0}
-                onChange={(event) => setValues((v) => ({ ...v, deliveryAddressId: event.target.value }))}
-              >
-                {delivery.status === 'ready' && delivery.data.addresses.length === 0 ? (
-                  <option value="" disabled>
-                    {T.references.noAddress}
-                  </option>
-                ) : (
-                  <option value="">{delivery.status === 'loading' ? T.references.deliveryLoading : T.notChosen}</option>
-                )}
-                {delivery.status === 'ready'
-                  ? delivery.data.addresses.map((a) => (
-                      <option key={a.id} value={a.id}>
-                        {a.text}
-                      </option>
-                    ))
-                  : null}
-              </select>
-              {fieldError(ORDER_FIELD.deliveryAddress)}
-
-              <label htmlFor={ORDER_FIELD.contact}>{T.field.deliveryContact}</label>
-              <select
-                {...fieldProps(ORDER_FIELD.contact)}
-                data-testid="sales-delivery-contact-select"
-                value={values.contactId}
-                disabled={delivery.status !== 'ready' || delivery.data.contacts.length === 0}
-                onChange={(event) => setValues((v) => ({ ...v, contactId: event.target.value }))}
-              >
-                {delivery.status === 'ready' && delivery.data.contacts.length === 0 ? (
-                  <option value="" disabled>
-                    {T.references.noContact}
-                  </option>
-                ) : (
-                  <option value="">{delivery.status === 'loading' ? T.references.deliveryLoading : T.notChosen}</option>
-                )}
-                {delivery.status === 'ready'
-                  ? delivery.data.contacts.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {contactLabel(c)}
-                      </option>
-                    ))
-                  : null}
-              </select>
-              {fieldError(ORDER_FIELD.contact)}
+              <div className={styles.pair}>
+                <Field id={ORDER_FIELD.deliveryAddress} label={T.field.deliveryAddress} error={errors[ORDER_FIELD.deliveryAddress]}>
+                  {(control) => (
+                    <select
+                      {...control}
+                      className={styles.control}
+                      data-testid="sales-delivery-address-select"
+                      value={values.deliveryAddressId}
+                      disabled={delivery.status !== 'ready' || delivery.data.addresses.length === 0}
+                      onChange={(event) => setValues((v) => ({ ...v, deliveryAddressId: event.target.value }))}
+                    >
+                      {delivery.status === 'ready' && delivery.data.addresses.length === 0 ? (
+                        <option value="" disabled>
+                          {T.references.noAddress}
+                        </option>
+                      ) : (
+                        <option value="">{delivery.status === 'loading' ? T.references.deliveryLoading : T.notChosen}</option>
+                      )}
+                      {delivery.status === 'ready'
+                        ? delivery.data.addresses.map((a) => (
+                            <option key={a.id} value={a.id}>
+                              {a.text}
+                            </option>
+                          ))
+                        : null}
+                    </select>
+                  )}
+                </Field>
+                <Field id={ORDER_FIELD.contact} label={T.field.deliveryContact} error={errors[ORDER_FIELD.contact]}>
+                  {(control) => (
+                    <select
+                      {...control}
+                      className={styles.control}
+                      data-testid="sales-delivery-contact-select"
+                      value={values.contactId}
+                      disabled={delivery.status !== 'ready' || delivery.data.contacts.length === 0}
+                      onChange={(event) => setValues((v) => ({ ...v, contactId: event.target.value }))}
+                    >
+                      {delivery.status === 'ready' && delivery.data.contacts.length === 0 ? (
+                        <option value="" disabled>
+                          {T.references.noContact}
+                        </option>
+                      ) : (
+                        <option value="">{delivery.status === 'loading' ? T.references.deliveryLoading : T.notChosen}</option>
+                      )}
+                      {delivery.status === 'ready'
+                        ? delivery.data.contacts.map((c) => (
+                            <option key={c.id} value={c.id}>
+                              {contactLabel(c)}
+                            </option>
+                          ))
+                        : null}
+                    </select>
+                  )}
+                </Field>
+              </div>
               <ReadStatus
                 testId="sales-delivery-status"
                 state={delivery}
@@ -712,74 +695,232 @@ function CreateForm({ binding, companyId }: { readonly binding: string; readonly
                 unavailable={T.references.deliveryUnavailable}
                 retryTestId="sales-contact-information-retry"
               />
-            </div>
-          </fieldset>
-
-          {options === null ? (
-            // The header remains usable; lines and submit wait for the current Product owner read. Said plainly.
-            <div role="status" className={styles.notice} data-tone="unknown" data-testid="sales-lines-withheld">
-              <p>{T.references.linesWithheld}</p>
-              {missing !== null && missing.length > 0 ? (
-                <p data-testid="sales-references-missing">{T.referencesMissing(missing)}</p>
-              ) : null}
-            </div>
-          ) : (
-            <fieldset disabled={frozen} className={styles.fieldset}>
-              <legend>{T.field.lines}</legend>
-              {fieldError(ORDER_FIELD.lines)}
-              {values.lines.map((line, index) => (
-                <LineEditor
-                  key={line.lineId}
-                  line={line}
-                  index={index}
-                  options={options}
-                  fieldProps={fieldProps}
-                  fieldError={fieldError}
-                  onChange={setValues}
-                  onProductChange={(productId) => {
-                    const candidate = options.products.find((product) => product.productId === productId)
-                    if (candidate !== undefined) {
-                      setChosenProducts((current) => [
-                        ...current.filter((entry) => entry.option.productId !== candidate.productId),
-                        { effectiveOn: values.businessDate, option: candidate },
-                      ])
-                    }
-                    setValues((current) => setLineProduct(current, line.lineId, productId))
-                  }}
-                />
-              ))}
-              <button
-                type="button"
-                className={styles.secondaryButton}
-                onClick={() => setValues((v) => addLine(v, browserIds()))}
+              <More
+                label={PAGE.headerMore}
+                open={headerMoreOpen}
+                filled={headerMoreFilled}
+                onToggle={() => setHeaderMoreAsked(!headerMoreOpen)}
+                testId="sales-create-header-more"
               >
-                {T.addLine}
-              </button>
-            </fieldset>
-          )}
+                <div className={styles.pair}>
+                  <Field
+                    id={ORDER_FIELD.requestedDeliveryDate}
+                    label={T.field.requestedDeliveryDate}
+                    error={errors[ORDER_FIELD.requestedDeliveryDate]}
+                  >
+                    {(control) => (
+                      <input
+                        {...control}
+                        className={styles.control}
+                        type="date"
+                        value={values.requestedDeliveryDate}
+                        onChange={(event) => setValues((v) => ({ ...v, requestedDeliveryDate: event.target.value }))}
+                      />
+                    )}
+                  </Field>
+                  <Field id={ORDER_FIELD.note} label={T.field.note} error={errors[ORDER_FIELD.note]}>
+                    {(control) => (
+                      <textarea
+                        {...control}
+                        className={styles.control}
+                        value={values.note}
+                        onChange={(event) => setValues((v) => ({ ...v, note: event.target.value }))}
+                      />
+                    )}
+                  </Field>
+                </div>
+              </More>
+            </section>
+
+            <section className={styles.section} aria-labelledby="sales-create-lines">
+              <h2 id="sales-create-lines">{T.field.lines}</h2>
+              <Field id="sales-product-search" label={T.references.productSearch} help={T.references.productSearchHint}>
+                {(control) => (
+                  <div className={styles.searchRow}>
+                    <input
+                      {...control}
+                      className={styles.control}
+                      type="search"
+                      maxLength={200}
+                      value={productSearchInput}
+                      disabled={values.businessDate === ''}
+                      onChange={(event) => setProductSearchInput(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter') {
+                          event.preventDefault()
+                          setProductSearch(productSearchInput)
+                        }
+                      }}
+                      data-testid="sales-product-search"
+                    />
+                    <Button
+                      type="button"
+                      disabled={values.businessDate === ''}
+                      onClick={() => setProductSearch(productSearchInput)}
+                      data-testid="sales-product-search-button"
+                    >
+                      {T.references.productSearchSubmit}
+                    </Button>
+                  </div>
+                )}
+              </Field>
+              {productState === null ? null : (
+                <ReadStatus
+                  testId="sales-product-status"
+                  state={productState}
+                  idle={T.references.productIdle}
+                  loading={T.references.productLoading}
+                  empty={productState.status === 'ready' && productState.data.items.length === 0 ? T.references.productEmpty : null}
+                  unavailable={T.references.productUnavailable}
+                  retryTestId="sales-product-retry"
+                />
+              )}
+              {productOffer?.searchWindowFull ? (
+                <p className={styles.readStatus} data-testid="sales-product-window-full">
+                  {T.references.productWindowFull}
+                </p>
+              ) : null}
+
+              {options === null ? (
+                // The header remains usable; lines and submit wait for the current Product owner read. Said plainly.
+                <div role="status" className={styles.notice} data-tone="unknown" data-testid="sales-lines-withheld">
+                  <p>{T.references.linesWithheld}</p>
+                  {missing !== null && missing.length > 0 ? (
+                    <p data-testid="sales-references-missing">{T.referencesMissing(missing)}</p>
+                  ) : null}
+                </div>
+              ) : (
+                <div id={ORDER_FIELD.lines} tabIndex={-1} className={styles.lines}>
+                  {errors[ORDER_FIELD.lines] === undefined ? null : (
+                    <p id={`${ORDER_FIELD.lines}-error`} className={styles.error}>
+                      {errors[ORDER_FIELD.lines]}
+                    </p>
+                  )}
+                  {values.lines.map((line, index) => (
+                    <LineEditor
+                      key={line.lineId}
+                      line={line}
+                      index={index}
+                      options={options}
+                      errors={errors}
+                      onChange={setValues}
+                      onProductChange={(productId) => {
+                        const candidate = options.products.find((product) => product.productId === productId)
+                        if (candidate !== undefined) {
+                          setChosenProducts((current) => [
+                            ...current.filter((entry) => entry.option.productId !== candidate.productId),
+                            { effectiveOn: values.businessDate, option: candidate },
+                          ])
+                        }
+                        setValues((current) => setLineProduct(current, line.lineId, productId))
+                      }}
+                    />
+                  ))}
+                  <div>
+                    <Button type="button" onClick={() => setValues((v) => addLine(v, browserIds()))}>
+                      {T.addLine}
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </section>
+          </fieldset>
 
           <section className={styles.summary} aria-labelledby="sales-summary-heading">
             <h2 id="sales-summary-heading">{T.summary.heading}</h2>
-            <p>
-              {T.summary.company}: <strong>{company === undefined ? companyId : `${company.code} — ${company.legalName}`}</strong>
-            </p>
-            <p>
-              <span className={styles.badge}>{T.summary.notPriced}</span>{' '}
-              <span className={styles.badge}>{T.summary.notApproved}</span>
+            {/* What is about to be saved, in full: the party and each product are never shortened here. */}
+            <dl className={styles.summaryFacts}>
+              <div>
+                <dt>{T.summary.company}</dt>
+                <dd>
+                  <strong>{company === undefined ? companyId : `${company.code} — ${company.legalName}`}</strong>
+                </dd>
+              </div>
+              <div>
+                <dt>{T.field.customer}</dt>
+                <dd data-testid="sales-summary-customer">{chosenCustomerLabel ?? T.notChosen}</dd>
+              </div>
+              {options === null ? null : (
+                <div>
+                  <dt>{T.field.lines}</dt>
+                  <dd>
+                    <ol className={styles.summaryLines} data-testid="sales-summary-lines">
+                      {values.lines.map((line) => {
+                        const product = options.products.find((p) => p.productId === line.productId)
+                        const unit = product?.orderUnits.find((u) => u.unitId === line.orderUnitId)
+                        const quantity = [line.quantityText.trim(), unit?.label ?? ''].filter((part) => part !== '').join(' ')
+                        return (
+                          <li key={line.lineId}>
+                            {product?.label ?? T.notChosen}
+                            {quantity === '' ? null : <span className={styles.quantity}> · {quantity}</span>}
+                          </li>
+                        )
+                      })}
+                    </ol>
+                  </dd>
+                </div>
+              )}
+            </dl>
+            <p className={styles.badges}>
+              <StatusIndicator tone="warning">{T.summary.notPriced}</StatusIndicator>
+              <StatusIndicator>{T.summary.notApproved}</StatusIndicator>
             </p>
             <p className={styles.muted}>{T.summary.noEffects}</p>
           </section>
 
           {options === null ? null : (
             <div className={styles.actions}>
-              <button type="submit" className={styles.primaryButton} disabled={frozen} aria-busy={frozen}>
+              <Button type="submit" variant="primary" disabled={frozen} aria-busy={frozen}>
                 {T.save}
-              </button>
+              </Button>
             </div>
           )}
         </form>
       )}
     </section>
+  )
+}
+
+/**
+ * Optional fields behind a visible toggle (mouse, touch and keyboard: a real button). Closed, it names what is already
+ * filled in, so nothing entered is out of sight; the caller opens it whenever a field inside holds an error.
+ */
+function More({
+  label,
+  open,
+  filled,
+  onToggle,
+  testId,
+  aside,
+  children,
+}: {
+  readonly label: string
+  readonly open: boolean
+  /** What the closed toggle says is filled in; empty when nothing is. */
+  readonly filled: readonly string[]
+  readonly onToggle: () => void
+  readonly testId: string
+  /** A control that shares the toggle's row (a line's remove button), so it costs no row of its own. */
+  readonly aside?: React.ReactNode
+  readonly children: React.ReactNode
+}) {
+  const panelId = useId()
+  return (
+    <div className={styles.more} data-testid={testId} data-open={open}>
+      <div className={styles.moreHead}>
+        <Button type="button" variant="ghost" size="sm" aria-expanded={open} aria-controls={open ? panelId : undefined} onClick={onToggle}>
+          <span aria-hidden="true">{open ? '▾' : '▸'}</span>
+          {label}
+        </Button>
+        {!open && filled.length > 0 ? <span className={styles.moreFilled}>{filled.join(' · ')}</span> : null}
+        {aside === undefined ? null : <span className={styles.moreAside}>{aside}</span>}
+      </div>
+      {open ? (
+        <div id={panelId} className={styles.morePanel}>
+          {children}
+        </div>
+      ) : null}
+    </div>
   )
 }
 
@@ -807,29 +948,29 @@ function ReadStatus({
   switch (state.status) {
     case 'idle':
       return (
-        <p className={styles.muted} style={{ gridColumn: 2 }} data-testid={testId} data-state="idle">
+        <p className={styles.readStatus} data-testid={testId} data-state="idle">
           {idle}
         </p>
       )
     case 'loading':
       return (
-        <p className={styles.muted} style={{ gridColumn: 2 }} data-testid={testId} data-state="loading" aria-live="polite">
+        <p className={styles.readStatus} data-testid={testId} data-state="loading" aria-live="polite">
           {loading}
         </p>
       )
     case 'ready':
       return empty === null ? null : (
-        <p className={styles.muted} style={{ gridColumn: 2 }} data-testid={testId} data-state="empty">
+        <p className={styles.readStatus} data-testid={testId} data-state="empty">
           {empty}
         </p>
       )
     case 'unavailable':
       return (
-        <p className={styles.fieldError} data-testid={testId} data-state="unavailable" role="status">
+        <p className={styles.readFailed} data-testid={testId} data-state="unavailable" role="status">
           {unavailable(state.reason)}{' '}
-          <button type="button" className={styles.linkButton} data-testid={retryTestId} onClick={state.retry}>
+          <Button type="button" variant="ghost" size="sm" data-testid={retryTestId} onClick={state.retry}>
             {T.references.retry}
-          </button>
+          </Button>
         </p>
       )
   }
@@ -839,154 +980,196 @@ function LineEditor({
   line,
   index,
   options,
-  fieldProps,
-  fieldError,
+  errors,
   onChange,
   onProductChange,
 }: {
   readonly line: LineValues
   readonly index: number
   readonly options: OrderDraftOptions
-  readonly fieldProps: (id: string) => Record<string, unknown>
-  readonly fieldError: (id: string) => React.ReactNode
+  readonly errors: OrderDraftErrors
   readonly onChange: React.Dispatch<React.SetStateAction<OrderDraftFormValues>>
   readonly onProductChange: (productId: string) => void
 }) {
   const product = options.products.find((p) => p.productId === line.productId)
   const hint = linePlanHint(line)
   const id = (field: Parameters<typeof lineFieldId>[1]) => lineFieldId(line.lineId, field)
+  const slices = line.slices ?? []
+  // The line's optional details stay closed until asked for — unless they already hold a value or an error.
+  const moreIds = [
+    id('requestedDeliveryDate'), id('note'), id('slices'),
+    ...slices.flatMap((slice) => [
+      sliceFieldId(line.lineId, slice.sliceId, 'quantity'),
+      sliceFieldId(line.lineId, slice.sliceId, 'requestedDeliveryDate'),
+    ]),
+  ]
+  const [moreAsked, setMoreAsked] = useState(() => line.requestedDeliveryDate !== '' || line.note !== '' || slices.length > 0)
+  const moreOpen = moreAsked || moreIds.some((fieldId) => errors[fieldId] !== undefined)
+  const moreFilled = [
+    line.requestedDeliveryDate === '' ? null : `${T.field.lineDeliveryDate}: ${formatBusinessDate(line.requestedDeliveryDate)}`,
+    slices.length === 0 ? null : PAGE.slicesFilled(slices.length),
+    line.note.trim() === '' ? null : PAGE.lineNoteFilled,
+  ].filter((part): part is string => part !== null)
   return (
     <fieldset className={styles.line} data-testid={`sales-line-editor-${index + 1}`}>
-      <legend>{index + 1}. satır</legend>
-      <div className={styles.grid}>
-        <label htmlFor={id('productId')}>{T.field.product}</label>
-        <select
-          {...fieldProps(id('productId'))}
-          value={line.productId}
-          onChange={(event) => onProductChange(event.target.value)}
-        >
-          <option value="">{T.choose}</option>
-          {options.products.map((p) => (
-            <option key={p.productId} value={p.productId}>
-              {p.label}
-            </option>
-          ))}
-        </select>
-        {fieldError(id('productId'))}
-
-        <label htmlFor={id('quantity')}>{T.field.quantity}</label>
-        <input
-          type="text"
-          inputMode="decimal"
-          autoComplete="off"
-          {...fieldProps(id('quantity'))}
-          value={line.quantityText}
-          onChange={(event) => onChange((v) => updateLine(v, line.lineId, { quantityText: event.target.value }))}
-        />
-        {fieldError(id('quantity'))}
-
-        <label htmlFor={id('orderUnitId')}>{T.field.orderUnit}</label>
-        <select
-          {...fieldProps(id('orderUnitId'))}
-          value={line.orderUnitId}
-          onChange={(event) => onChange((v) => updateLine(v, line.lineId, { orderUnitId: event.target.value }))}
-        >
-          <option value="">{T.choose}</option>
-          {(product?.orderUnits ?? []).map((u) => (
-            <option key={u.unitId} value={u.unitId}>
-              {u.label}
-            </option>
-          ))}
-        </select>
-        {fieldError(id('orderUnitId'))}
-
-        <label htmlFor={id('requestedDeliveryDate')}>{T.field.lineDeliveryDate}</label>
-        <input
-          type="date"
-          {...fieldProps(id('requestedDeliveryDate'))}
-          value={line.requestedDeliveryDate}
-          onChange={(event) =>
-            onChange((v) => updateLine(v, line.lineId, { requestedDeliveryDate: event.target.value }))
-          }
-        />
-        {fieldError(id('requestedDeliveryDate'))}
-
-        <label htmlFor={id('note')}>{T.field.lineNote}</label>
-        <textarea
-          {...fieldProps(id('note'))}
-          value={line.note}
-          onChange={(event) => onChange((v) => updateLine(v, line.lineId, { note: event.target.value }))}
-        />
-        {fieldError(id('note'))}
+      <legend>{PAGE.line(index + 1)}</legend>
+      <div className={styles.lineMain}>
+      <Field id={id('productId')} label={T.field.product} error={errors[id('productId')]} className={styles.lineProduct}>
+        {(control) => (
+          <select {...control} className={styles.control} value={line.productId} onChange={(event) => onProductChange(event.target.value)}>
+            <option value="">{T.choose}</option>
+            {options.products.map((p) => (
+              <option key={p.productId} value={p.productId}>
+                {p.label}
+              </option>
+            ))}
+          </select>
+        )}
+      </Field>
+        <Field id={id('quantity')} label={T.field.quantity} error={errors[id('quantity')]}>
+          {(control) => (
+            <input
+              {...control}
+              className={styles.control}
+              type="text"
+              inputMode="decimal"
+              autoComplete="off"
+              value={line.quantityText}
+              onChange={(event) => onChange((v) => updateLine(v, line.lineId, { quantityText: event.target.value }))}
+            />
+          )}
+        </Field>
+        <Field id={id('orderUnitId')} label={T.field.orderUnit} error={errors[id('orderUnitId')]}>
+          {(control) => (
+            <select
+              {...control}
+              className={styles.control}
+              value={line.orderUnitId}
+              onChange={(event) => onChange((v) => updateLine(v, line.lineId, { orderUnitId: event.target.value }))}
+            >
+              <option value="">{T.choose}</option>
+              {(product?.orderUnits ?? []).map((u) => (
+                <option key={u.unitId} value={u.unitId}>
+                  {u.label}
+                </option>
+              ))}
+            </select>
+          )}
+        </Field>
       </div>
 
-      <fieldset className={styles.slices} id={id('slices')} tabIndex={-1} aria-describedby={`${id('slices')}-error`}>
-        <legend>{T.field.slices}</legend>
-        {(line.slices ?? []).map((slice, sliceIndex) => {
-          const q = sliceFieldId(line.lineId, slice.sliceId, 'quantity')
-          const d = sliceFieldId(line.lineId, slice.sliceId, 'requestedDeliveryDate')
-          return (
-            <div key={slice.sliceId} className={styles.sliceRow}>
-              <label htmlFor={q}>
-                {sliceIndex + 1}. {T.field.sliceQuantity}
-              </label>
-              <input
-                type="text"
-                inputMode="decimal"
-                autoComplete="off"
-                {...fieldProps(q)}
-                value={slice.quantityText}
-                onChange={(event) =>
-                  onChange((v) => updateSlice(v, line.lineId, slice.sliceId, { quantityText: event.target.value }))
-                }
-              />
-              {fieldError(q)}
-              <label htmlFor={d}>
-                {sliceIndex + 1}. {T.field.sliceDate}
-              </label>
-              <input
-                type="date"
-                {...fieldProps(d)}
-                value={slice.requestedDeliveryDate}
-                onChange={(event) =>
-                  onChange((v) =>
-                    updateSlice(v, line.lineId, slice.sliceId, { requestedDeliveryDate: event.target.value }),
-                  )
-                }
-              />
-              {fieldError(d)}
-              <button
-                type="button"
-                className={styles.linkButton}
-                onClick={() => onChange((v) => removeSlice(v, line.lineId, slice.sliceId))}
-              >
-                {T.removeSlice}
-              </button>
-            </div>
-          )
-        })}
-        {fieldError(id('slices'))}
-        {hint === null ? null : 'exceeds' in hint ? null : (
-          <p className={styles.muted} aria-live="polite" data-testid={`sales-line-editor-${index + 1}-unplanned`}>
-            {T.unplanned(hint.unplanned)} {T.unplannedNote}
-          </p>
-        )}
-        <button
-          type="button"
-          className={styles.secondaryButton}
-          onClick={() => onChange((v) => addSlice(v, line.lineId, browserIds()))}
-        >
-          {T.addSlice}
-        </button>
-      </fieldset>
-
-      <button
-        type="button"
-        className={styles.linkButton}
-        onClick={() => onChange((v) => removeLine(v, line.lineId))}
+      <More
+        label={PAGE.lineMore}
+        open={moreOpen}
+        filled={moreFilled}
+        onToggle={() => setMoreAsked(!moreOpen)}
+        testId={`sales-line-editor-${index + 1}-more`}
+        aside={
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            aria-label={`${PAGE.line(index + 1)}: ${T.removeLine}`}
+            onClick={() => onChange((v) => removeLine(v, line.lineId))}
+          >
+            {T.removeLine}
+          </Button>
+        }
       >
-        {T.removeLine}
-      </button>
+        <div className={styles.pair}>
+          <Field id={id('requestedDeliveryDate')} label={T.field.lineDeliveryDate} error={errors[id('requestedDeliveryDate')]}>
+            {(control) => (
+              <input
+                {...control}
+                className={styles.control}
+                type="date"
+                value={line.requestedDeliveryDate}
+                onChange={(event) => onChange((v) => updateLine(v, line.lineId, { requestedDeliveryDate: event.target.value }))}
+              />
+            )}
+          </Field>
+          <Field id={id('note')} label={T.field.lineNote} error={errors[id('note')]}>
+            {(control) => (
+              <textarea
+                {...control}
+                className={styles.control}
+                value={line.note}
+                onChange={(event) => onChange((v) => updateLine(v, line.lineId, { note: event.target.value }))}
+              />
+            )}
+          </Field>
+        </div>
+
+        <fieldset
+          className={styles.slices}
+          id={id('slices')}
+          tabIndex={-1}
+          aria-describedby={errors[id('slices')] === undefined ? undefined : `${id('slices')}-error`}
+        >
+          <legend>{T.field.slices}</legend>
+          {slices.map((slice, sliceIndex) => {
+            const q = sliceFieldId(line.lineId, slice.sliceId, 'quantity')
+            const d = sliceFieldId(line.lineId, slice.sliceId, 'requestedDeliveryDate')
+            return (
+              <div key={slice.sliceId} className={styles.sliceRow}>
+                <Field id={q} label={`${sliceIndex + 1}. ${T.field.sliceQuantity}`} error={errors[q]}>
+                  {(control) => (
+                    <input
+                      {...control}
+                      className={styles.control}
+                      type="text"
+                      inputMode="decimal"
+                      autoComplete="off"
+                      value={slice.quantityText}
+                      onChange={(event) =>
+                        onChange((v) => updateSlice(v, line.lineId, slice.sliceId, { quantityText: event.target.value }))
+                      }
+                    />
+                  )}
+                </Field>
+                <Field id={d} label={`${sliceIndex + 1}. ${T.field.sliceDate}`} error={errors[d]}>
+                  {(control) => (
+                    <input
+                      {...control}
+                      className={styles.control}
+                      type="date"
+                      value={slice.requestedDeliveryDate}
+                      onChange={(event) =>
+                        onChange((v) => updateSlice(v, line.lineId, slice.sliceId, { requestedDeliveryDate: event.target.value }))
+                      }
+                    />
+                  )}
+                </Field>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className={styles.sliceRemove}
+                  aria-label={`${sliceIndex + 1}. ${T.removeSlice}`}
+                  onClick={() => onChange((v) => removeSlice(v, line.lineId, slice.sliceId))}
+                >
+                  {T.removeSlice}
+                </Button>
+              </div>
+            )
+          })}
+          {errors[id('slices')] === undefined ? null : (
+            <p id={`${id('slices')}-error`} className={styles.error}>
+              {errors[id('slices')]}
+            </p>
+          )}
+          {hint === null ? null : 'exceeds' in hint ? null : (
+            <p className={styles.readStatus} aria-live="polite" data-testid={`sales-line-editor-${index + 1}-unplanned`}>
+              {T.unplanned(hint.unplanned)} {T.unplannedNote}
+            </p>
+          )}
+          <div>
+            <Button type="button" size="sm" onClick={() => onChange((v) => addSlice(v, line.lineId, browserIds()))}>
+              {T.addSlice}
+            </Button>
+          </div>
+        </fieldset>
+      </More>
     </fieldset>
   )
 }

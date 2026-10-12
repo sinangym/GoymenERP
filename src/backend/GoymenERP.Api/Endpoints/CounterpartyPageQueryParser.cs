@@ -11,6 +11,9 @@ internal static class CounterpartyPageQueryParser
     private static readonly HashSet<string> KnownParameters = new(
         [
             "q",
+            "addressCity",
+            "addressDistrict",
+            "addressType",
             "kind",
             "role",
             "roleMatch",
@@ -41,6 +44,9 @@ internal static class CounterpartyPageQueryParser
         }
 
         if (!TrySingle(raw, "q", out var rawQuery)
+            || !TrySingle(raw, "addressCity", out var rawAddressCity)
+            || !TrySingle(raw, "addressDistrict", out var rawAddressDistrict)
+            || !TrySingle(raw, "addressType", out var rawAddressType)
             || !TrySingle(raw, "kind", out var rawKind)
             || !TrySingle(raw, "roleMatch", out var rawRoleMatch)
             || !TrySingle(raw, "partyState", out var rawPartyState)
@@ -60,22 +66,16 @@ internal static class CounterpartyPageQueryParser
             return CounterpartyPageQueryParseResult.InvalidCursor;
         }
 
-        string? normalizedQuery = null;
-        if (rawQuery is not null)
+        if (!TryCanonicalText(rawQuery, 200, out var normalizedQuery)
+            || !TryCanonicalText(rawAddressCity, 100, out var addressCity)
+            || !TryCanonicalText(rawAddressDistrict, 100, out var addressDistrict))
         {
-            normalizedQuery = rawQuery.Trim().Normalize(NormalizationForm.FormC);
-            if (normalizedQuery.Length == 0)
-            {
-                normalizedQuery = null;
-            }
-            else if (normalizedQuery.EnumerateRunes().Count() > 200)
-            {
-                error = "Arama metni en fazla 200 karakter olabilir.";
-                return CounterpartyPageQueryParseResult.ValidationFailed;
-            }
+            error = "Cari arama ve adres filtreleri izin verilen uzunluğu aşıyor.";
+            return CounterpartyPageQueryParseResult.ValidationFailed;
         }
 
         if (!TryKind(rawKind, out var kind)
+            || !TryAddressType(rawAddressType, out var addressType)
             || !TryRoles(raw, out var roles)
             || !TryRoleMatch(rawRoleMatch, out var roleMatch)
             || !TryState(rawPartyState, CounterpartyRecordState.Active, out var partyState)
@@ -91,6 +91,9 @@ internal static class CounterpartyPageQueryParser
 
         query = new CounterpartyPageQuery(
             normalizedQuery,
+            addressCity,
+            addressDistrict,
+            addressType,
             kind,
             roles,
             roleMatch,
@@ -102,6 +105,20 @@ internal static class CounterpartyPageQueryParser
             cursor,
             includeCount);
         return CounterpartyPageQueryParseResult.Succeeded;
+    }
+
+    private static bool TryCanonicalText(
+        string? raw,
+        int maximumRunes,
+        out string? value)
+    {
+        value = raw?.Trim().Normalize(NormalizationForm.FormC);
+        if (value?.Length == 0)
+        {
+            value = null;
+        }
+
+        return value is null || value.EnumerateRunes().Count() <= maximumRunes;
     }
 
     private static bool TrySingle(
@@ -134,6 +151,21 @@ internal static class CounterpartyPageQueryParser
             _ => null,
         };
         return raw is null || kind is not null;
+    }
+
+    private static bool TryAddressType(
+        string? raw,
+        out CounterpartyAddressType? addressType)
+    {
+        addressType = raw switch
+        {
+            null => null,
+            "billing" => CounterpartyAddressType.Billing,
+            "delivery" => CounterpartyAddressType.Delivery,
+            "operational" => CounterpartyAddressType.Operational,
+            _ => null,
+        };
+        return raw is null || addressType is not null;
     }
 
     private static bool TryRoles(IQueryCollection raw, out PartyRole roles)

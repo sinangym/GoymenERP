@@ -172,6 +172,22 @@ internal static class C01E2eGoldenFixtureDatabaseVerifier
             cancellationToken,
             new SqlParameter("@CompanyId", GspCompanyId));
 
+        Require(
+            await ScalarAsync<long>(
+                connection,
+                "SELECT COUNT_BIG(*) FROM [counterparty].[CompanyPartyAccounts] WHERE [ContactInformationJson] IS NOT NULL;",
+                cancellationToken) == 4,
+            "C-01 adres filtresi için tam dört şirket hesabı hazırlanmalıdır.");
+        Require(
+            await AddressMatchCountAsync(connection, GdcCompanyId, "delivery", "İstanbul", "Çankaya", cancellationToken) == 2,
+            "GDC adres filtresi ilk sayfa içi ve dışı tam iki eşleşme üretmelidir.");
+        Require(
+            await AddressMatchCountAsync(connection, GspCompanyId, "delivery", "İstanbul", "Çankaya", cancellationToken) == 1,
+            "GSP adres filtresi şirket sınırındaki tek eşleşmeyi üretmelidir.");
+        Require(
+            await AddressMatchCountAsync(connection, GdcCompanyId, "billing", "İstanbul", "Çankaya", cancellationToken) == 0,
+            "Şehir, ilçe ve adres türü aynı adres satırında eşleşmelidir.");
+
         await RequireScalarAsync(
             connection,
             """
@@ -193,6 +209,36 @@ internal static class C01E2eGoldenFixtureDatabaseVerifier
 
         return evidence;
     }
+
+    private static Task<long> AddressMatchCountAsync(
+        SqlConnection connection,
+        Guid companyId,
+        string purpose,
+        string city,
+        string district,
+        CancellationToken cancellationToken) =>
+        ScalarAsync<long>(
+            connection,
+            """
+            SELECT COUNT_BIG(DISTINCT [a].[Id])
+            FROM [counterparty].[CompanyPartyAccounts] AS [a]
+            CROSS APPLY OPENJSON([a].[ContactInformationJson], '$.information.addresses')
+                WITH
+                (
+                    [purpose] nvarchar(120) '$.purpose',
+                    [city] nvarchar(100) '$.city',
+                    [district] nvarchar(100) '$.district'
+                ) AS [address]
+            WHERE [a].[CompanyId] = @CompanyId
+              AND [address].[purpose] = @Purpose
+              AND [address].[city] COLLATE Turkish_100_CI_AS = @City
+              AND [address].[district] COLLATE Turkish_100_CI_AS = @District;
+            """,
+            cancellationToken,
+            new SqlParameter("@CompanyId", companyId),
+            new SqlParameter("@Purpose", purpose),
+            new SqlParameter("@City", city),
+            new SqlParameter("@District", district));
 
     private static async Task<C01E2eSequenceEvidence> ReadSequenceAsync(
         SqlConnection connection,

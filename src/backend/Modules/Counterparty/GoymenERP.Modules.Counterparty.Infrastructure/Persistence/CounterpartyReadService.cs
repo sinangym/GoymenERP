@@ -26,7 +26,7 @@ internal sealed class CounterpartyReadService(
     : ICounterpartyReadService
 {
     private const string CountScope = "filtered-authorized-visible-parties";
-    private const string ContractVersion = "counterparty.read-page.v1";
+    private const string ContractVersion = "counterparty.read-page.v2";
     private const string TurkishCollation = "Turkish_100_CI_AS";
     private const string CodeCollation = "Latin1_General_100_BIN2";
     private static readonly TimeSpan CursorLifetime = TimeSpan.FromMinutes(30);
@@ -417,6 +417,39 @@ internal sealed class CounterpartyReadService(
                 : "AND (a.[Roles] & @Roles) <> 0");
             AddParameter(command, "@Roles", (int)query.Roles, DbType.Int32);
         }
+
+        if (query.AddressCity is not null
+            || query.AddressDistrict is not null
+            || query.AddressType is not null)
+        {
+            sql.AppendLine(
+                "AND EXISTS (SELECT 1 FROM OPENJSON(a.[ContactInformationJson], '$.information.addresses') "
+                + "WITH ([purpose] nvarchar(120) '$.purpose', [city] nvarchar(100) '$.city', "
+                + "[district] nvarchar(100) '$.district') AS address WHERE 1 = 1");
+            if (query.AddressCity is not null)
+            {
+                sql.AppendLine($"AND address.[city] COLLATE {TurkishCollation} = @AddressCity");
+                AddParameter(command, "@AddressCity", query.AddressCity, DbType.String);
+            }
+
+            if (query.AddressDistrict is not null)
+            {
+                sql.AppendLine($"AND address.[district] COLLATE {TurkishCollation} = @AddressDistrict");
+                AddParameter(command, "@AddressDistrict", query.AddressDistrict, DbType.String);
+            }
+
+            if (query.AddressType is not null)
+            {
+                sql.AppendLine("AND address.[purpose] = @AddressType");
+                AddParameter(
+                    command,
+                    "@AddressType",
+                    query.AddressType.Value.ToString().ToLowerInvariant(),
+                    DbType.String);
+            }
+
+            sql.AppendLine(")");
+        }
     }
 
     private static void AppendPartyFilters(
@@ -806,6 +839,9 @@ internal sealed class CounterpartyReadService(
 
         var query = request.Query;
         AppendCanonical(canonical, query.Query ?? "-");
+        AppendCanonical(canonical, query.AddressCity ?? "-");
+        AppendCanonical(canonical, query.AddressDistrict ?? "-");
+        AppendCanonical(canonical, query.AddressType?.ToString() ?? "-");
         AppendCanonical(canonical, query.Kind?.ToString() ?? "-");
         AppendCanonical(canonical, ((int)query.Roles).ToString(CultureInfo.InvariantCulture));
         AppendCanonical(canonical, query.RoleMatch.ToString());
@@ -874,15 +910,43 @@ internal sealed class CounterpartyReadService(
             return false;
         }
 
-        if (query.Roles == PartyRole.None)
+        if (query.Roles != PartyRole.None
+            && (query.RoleMatch == CounterpartyRoleMatch.All
+                ? (account.Roles & query.Roles) != query.Roles
+                : (account.Roles & query.Roles) == 0))
+        {
+            return false;
+        }
+
+        if (query.AddressCity is null
+            && query.AddressDistrict is null
+            && query.AddressType is null)
         {
             return true;
         }
 
-        return query.RoleMatch == CounterpartyRoleMatch.All
-            ? (account.Roles & query.Roles) == query.Roles
-            : (account.Roles & query.Roles) != 0;
+        CounterpartyContactInformation information;
+        try
+        {
+            information = CounterpartyContactInformationEditor.Load(account.ContactInformationJson);
+        }
+        catch (InvalidOperationException)
+        {
+            return false;
+        }
+
+        return information.Addresses.Any(address =>
+            (query.AddressCity is null || EqualsTurkish(address.City, query.AddressCity))
+            && (query.AddressDistrict is null || EqualsTurkish(address.District, query.AddressDistrict))
+            && (query.AddressType is null || string.Equals(
+                address.Purpose,
+                query.AddressType.Value.ToString(),
+                StringComparison.OrdinalIgnoreCase)));
     }
+
+    private static bool EqualsTurkish(string? value, string expected) =>
+        value is not null
+        && TurkishCompare.Compare(value, expected, CompareOptions.IgnoreCase) == 0;
 
     private static bool PartyMatches(Party party, CounterpartyPageQuery query)
     {
