@@ -95,7 +95,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         var firstMatch = await SeedFreePhysicalSourceAsync(run, CompanyA, "SYN-ST01-TYPED-B", 20m);
         var secondMatch = await SeedFreePhysicalSourceAsync(run, CompanyA, "SYN-ST01-TYPED-C", 30m);
         var productFilter = new ProductSelectionFilter(
-            CompanyA, familyId, firstMatch.ProductId, secondMatch.ProductId);
+            CompanyA, familyId, firstMatch.LabelId, secondMatch.LabelId);
 
         await using var context = run.Context(CompanyA);
         var positions = StockPositions(context, CompanyA, productFilter);
@@ -221,9 +221,12 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
     private sealed class ProductSelectionFilter(
         Guid companyId,
         Guid familyId,
-        params Guid[] matchingProductIds) : IInventoryStockProductFilterV1
+        params Guid[] matchingLabelIds) : IInventoryStockProductFilterV1
     {
-        private readonly HashSet<Guid> products = [.. matchingProductIds];
+        // This fake is the Product-owned port result, whose public answer is a label-id set.
+        // The SQL fixture deliberately reuses one ProductId, so selecting by ProductId here
+        // would admit the non-matching A row and would not test scan-before-pagination.
+        private readonly HashSet<Guid> labels = [.. matchingLabelIds];
 
         public Task<IReadOnlySet<Guid>> MatchAsync(
             InventoryStockProductFilterRequestV1 request,
@@ -233,7 +236,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             Assert.Equal(familyId, request.Filter.ProductFamilyId);
             Assert.False(string.IsNullOrWhiteSpace(request.ActorId));
             IReadOnlySet<Guid> matches = request.Selections
-                .Where(selection => products.Contains(selection.ProductId))
+                .Where(selection => labels.Contains(selection.LabelId))
                 .Select(selection => selection.LabelId)
                 .ToHashSet();
             return Task.FromResult(matches);
