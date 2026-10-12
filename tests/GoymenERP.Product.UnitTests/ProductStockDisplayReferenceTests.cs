@@ -51,6 +51,31 @@ public sealed class ProductStockDisplayReferenceTests
     }
 
     [Fact]
+    public async Task Technical_match_never_treats_a_missing_width_as_zero_or_as_an_unfiltered_match()
+    {
+        var missingWidth = Record(FirstId, 7, "P-1", "Genişliği eksik bant", 1.25m, null);
+        var complete = Record(SecondId, 3, "P-2", "Tam ölçülü bant", 1.25m, 1250m);
+        var world = new World([missingWidth, complete]);
+        var selections = new ProductStockTechnicalMatchSelectionV1[]
+        {
+            new(FirstId, "7"),
+            new(SecondId, "3"),
+        };
+
+        var unfiltered = await world.Service().MatchAsync(new(
+            selections, null, null, null, null, null, null, null));
+        var widthFiltered = await world.Service().MatchAsync(new(
+            selections, null, null, null, null, 1250m, null, null));
+
+        Assert.Equal(new ProductStockTechnicalMatchSelectionV1(SecondId, "3"),
+            Assert.Single(unfiltered.Matches));
+        Assert.Equal(new ProductStockTechnicalMatchSelectionV1(SecondId, "3"),
+            Assert.Single(widthFiltered.Matches));
+        Assert.Equal(2, world.Records.Reads);
+        Assert.Equal(2, world.Definitions.Reads);
+    }
+
+    [Fact]
     public async Task Missing_stale_and_invalid_versions_never_relabel_a_stock_row_with_current_identity()
     {
         var invalidId = Guid.NewGuid();
@@ -192,15 +217,16 @@ public sealed class ProductStockDisplayReferenceTests
     }
 
     private static ProductStoredRecord Record(Guid id, long version, string code, string name,
-        decimal thickness, decimal width, string quality = "DX51D", string templateVersion = "7")
+        decimal thickness, decimal? width, string quality = "DX51D", string templateVersion = "7")
     {
-        var references = new ProductReferences(TemplateId, templateVersion, new Dictionary<string, JsonElement>
+        var attributes = new Dictionary<string, JsonElement>
         {
             ["thicknessMm"] = JsonSerializer.SerializeToElement(thickness),
-            ["widthMm"] = JsonSerializer.SerializeToElement(width),
             ["quality"] = JsonSerializer.SerializeToElement(quality),
             ["coating"] = JsonSerializer.SerializeToElement("none"),
-        });
+        };
+        if (width.HasValue) attributes["widthMm"] = JsonSerializer.SerializeToElement(width.Value);
+        var references = new ProductReferences(TemplateId, templateVersion, attributes);
         return new(id, code, name, Guid.NewGuid(), null, FamilyId,
             new(null, 0), new(true, 1), new(null, 0), new(null, 0), 1, version,
             DateTimeOffset.UnixEpoch, DateTimeOffset.UnixEpoch,
