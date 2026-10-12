@@ -1,6 +1,26 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type FormEvent } from 'react'
 import { Link, useSearchParams } from 'react-router'
-import { fetchStockDisplayPage, isStockClassification, isStockId, normalizedLabelSearch, type StockPositionFilters } from './stockDisplayApi'
+import {
+  compareStockMeasures,
+  fetchStockDisplayPage,
+  fetchStockProductFamilyOptions,
+  isStockClassification,
+  isStockId,
+  isStockMeasure,
+  isStockMeasureFilterValid,
+  NO_STOCK_FILTERS,
+  NO_STOCK_MEASURE,
+  normalizedLabelSearch,
+  STOCK_MEASURES,
+  stockMeasureFilter,
+  stockMeasureFromInput,
+  stockMeasureInputText,
+  withStockMeasure,
+  type StockMeasure,
+  type StockMeasureFilter,
+  type StockPositionFilters,
+  type StockProductFamilyOption,
+} from './stockDisplayApi'
 import type { StockClassification, StockOwnerDisplay, StockOwnerDisplayRow as StockDisplayRow, StockPartyKind } from './stockDisplayContract'
 import { createRequestFence } from '../purchasing/requestFence'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
@@ -31,6 +51,7 @@ import {
   custodianText,
   dimensionText,
   formatKg,
+  measureFilterText,
   ownerText,
   STOCK_TEXT,
 } from './stockPositionText'
@@ -47,6 +68,11 @@ import styles from './stockPosition.module.css'
  * card link stays, with the same location id, only where the capability allows it. STOCK-OWNER-DISPLAY-3: a Cari
  * owner's code and legal name come with the same `3.0` read (#664) and link to the Cari card only with that card's
  * own capability; a company's own stock stays "Şirket malı".
+ *
+ * STOCK-TYPED-FILTER-UI-01: "Tüm filtreler" also holds Ürün ailesi, Kalınlık and En (#690). The server matches them
+ * before it pages; this screen never filters the rows it holds. The family choices are the Product owner's authorized
+ * list (#695), read when the panel opens or a family is already in the address — never collected from the rows. A
+ * measure is sent with the digits the person typed: an exact value or an inclusive range, never both.
  */
 
 /** `KOD — Unvan`: the Cari owner's identity exactly as the read published it. */
@@ -66,7 +92,15 @@ const LOCATION_PARAM = 'lokasyon'
 const CLASSIFICATION_PARAM = 'sinif'
 const OWNER_KIND_PARAM = 'sahipTuru'
 const OWNER_PARAM = 'sahip'
-const FILTER_PARAMS = [STOCK_SEARCH_PARAM, PRODUCT_PARAM, LOCATION_PARAM, CLASSIFICATION_PARAM, OWNER_KIND_PARAM, OWNER_PARAM]
+const FAMILY_PARAM = 'aile'
+const MEASURE_PARAM: Record<StockMeasure, { readonly exact: string; readonly min: string; readonly max: string }> = {
+  thickness: { exact: 'kalinlik', min: 'kalinlikMin', max: 'kalinlikMaks' },
+  width: { exact: 'en', min: 'enMin', max: 'enMaks' },
+}
+const FILTER_PARAMS = [
+  STOCK_SEARCH_PARAM, PRODUCT_PARAM, LOCATION_PARAM, CLASSIFICATION_PARAM, OWNER_KIND_PARAM, OWNER_PARAM, FAMILY_PARAM,
+  ...STOCK_MEASURES.flatMap((measure) => Object.values(MEASURE_PARAM[measure])),
+]
 
 /** URL tokens, so no API value is shown in the address bar. */
 const CLASSIFICATION_TOKEN: Record<StockClassification, string> = {
@@ -88,13 +122,29 @@ function filtersFromSearch(search: string): StockPositionFilters {
   const classification = tokenKey(CLASSIFICATION_TOKEN, params.get(CLASSIFICATION_PARAM))
   const ownerKind = tokenKey(OWNER_KIND_TOKEN, params.get(OWNER_KIND_PARAM))
   const ownerId = params.get(OWNER_PARAM)?.toLowerCase() ?? null
-  return {
+  const familyId = params.get(FAMILY_PARAM)?.toLowerCase() ?? null
+  let filters: StockPositionFilters = {
+    ...NO_STOCK_FILTERS,
     q: normalizeStockSearch(params.get(STOCK_SEARCH_PARAM)),
     productId: isStockId(productId) ? productId : null,
     locationId: isStockId(locationId) ? locationId : null,
     classification: isStockClassification(classification) ? classification : null,
     owner: ownerKind !== null && isStockId(ownerId) ? { kind: ownerKind, id: ownerId } : null,
+    productFamilyId: isStockId(familyId) ? familyId : null,
   }
+  for (const measure of STOCK_MEASURES) {
+    // A measure the server would refuse (not its grammar, exact with a range, min above max) is no filter at all:
+    // half of a hand-edited condition is never applied as if it were the whole.
+    const value = {
+      exact: params.get(MEASURE_PARAM[measure].exact),
+      min: params.get(MEASURE_PARAM[measure].min),
+      max: params.get(MEASURE_PARAM[measure].max),
+    }
+    if ([value.exact, value.min, value.max].every((text) => text === null || isStockMeasure(text)) && isStockMeasureFilterValid(value)) {
+      filters = withStockMeasure(filters, measure, value)
+    }
+  }
+  return filters
 }
 
 /** The canonical URL search of a filter set (also the key the read follows). */
@@ -108,12 +158,164 @@ function searchOfFilters(filters: StockPositionFilters): string {
     params.set(OWNER_KIND_PARAM, OWNER_KIND_TOKEN[filters.owner.kind])
     params.set(OWNER_PARAM, filters.owner.id)
   }
+  if (filters.productFamilyId !== null) params.set(FAMILY_PARAM, filters.productFamilyId)
+  for (const measure of STOCK_MEASURES) {
+    const value = stockMeasureFilter(filters, measure)
+    if (value.exact !== null) params.set(MEASURE_PARAM[measure].exact, value.exact)
+    if (value.min !== null) params.set(MEASURE_PARAM[measure].min, value.min)
+    if (value.max !== null) params.set(MEASURE_PARAM[measure].max, value.max)
+  }
   return params.toString()
 }
 
-function hasRowFilter(filters: StockPositionFilters): boolean {
-  return filters.productId !== null || filters.locationId !== null || filters.classification !== null || filters.owner !== null
+function hasMeasureFilter(filters: StockPositionFilters, measure: StockMeasure): boolean {
+  const value = stockMeasureFilter(filters, measure)
+  return value.exact !== null || value.min !== null || value.max !== null
 }
+
+/** How many filters the "Tüm filtreler" panel holds: Sınıf, Ürün ailesi, Kalınlık, En. */
+function panelFilterCount(filters: StockPositionFilters): number {
+  return (filters.classification !== null ? 1 : 0) + (filters.productFamilyId !== null ? 1 : 0)
+    + STOCK_MEASURES.filter((measure) => hasMeasureFilter(filters, measure)).length
+}
+
+function hasRowFilter(filters: StockPositionFilters): boolean {
+  return filters.productId !== null || filters.locationId !== null || filters.owner !== null || panelFilterCount(filters) > 0
+}
+
+type MeasureMode = 'exact' | 'range'
+type MeasureField = 'exact' | 'min' | 'max'
+interface MeasureDraft {
+  readonly mode: MeasureMode
+  readonly exact: string
+  readonly min: string
+  readonly max: string
+}
+type MeasureErrors = { readonly [field in MeasureField]?: string }
+
+function draftOf(value: StockMeasureFilter): MeasureDraft {
+  return {
+    mode: value.min !== null || value.max !== null ? 'range' : 'exact',
+    exact: stockMeasureInputText(value.exact),
+    min: stockMeasureInputText(value.min),
+    max: stockMeasureInputText(value.max),
+  }
+}
+
+/** What a draft means: the filter to send, or the message of every field that cannot be sent as typed. */
+function readDraft(draft: MeasureDraft): { readonly value: StockMeasureFilter } | { readonly errors: MeasureErrors } {
+  const errors: { [field in MeasureField]?: string } = {}
+  const read = (field: MeasureField): string | null => {
+    if (draft[field].trim() === '') return null
+    const parsed = stockMeasureFromInput(draft[field])
+    if ('problem' in parsed) {
+      errors[field] = STOCK_TEXT.measureProblem[parsed.problem]
+      return null
+    }
+    return parsed.wire
+  }
+  const value: StockMeasureFilter = draft.mode === 'exact'
+    ? { ...NO_STOCK_MEASURE, exact: read('exact') }
+    : { ...NO_STOCK_MEASURE, min: read('min'), max: read('max') }
+  if (value.min !== null && value.max !== null && compareStockMeasures(value.min, value.max) > 0) errors.min = STOCK_TEXT.measureOrder
+  return Object.keys(errors).length > 0 ? { errors } : { value }
+}
+
+const NO_MEASURE_ERRORS: Record<StockMeasure, MeasureErrors> = { thickness: {}, width: {} }
+
+/**
+ * Kalınlık and En. Typing reads nothing: the two measures are applied together with "Ölçüleri uygula" (or Enter in a
+ * field), so a half-typed number is never sent. A value that cannot be sent keeps its field, says why next to it and
+ * takes the focus; nothing is rounded or corrected for the person. The parent remounts this form when the applied
+ * measures change elsewhere (a chip, "Filtreleri temizle", Back).
+ */
+function MeasureFilterForm({ filters, onApply }: {
+  readonly filters: StockPositionFilters
+  readonly onApply: (next: StockPositionFilters) => void
+}) {
+  const [drafts, setDrafts] = useState<Record<StockMeasure, MeasureDraft>>(() => ({
+    thickness: draftOf(stockMeasureFilter(filters, 'thickness')),
+    width: draftOf(stockMeasureFilter(filters, 'width')),
+  }))
+  const [errors, setErrors] = useState(NO_MEASURE_ERRORS)
+  const [refusals, setRefusals] = useState(0)
+  const formRef = useRef<HTMLFormElement>(null)
+  useEffect(() => {
+    if (refusals > 0) formRef.current?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus()
+  }, [refusals])
+
+  const change = (measure: StockMeasure, patch: Partial<MeasureDraft>) =>
+    setDrafts((previous) => ({ ...previous, [measure]: { ...previous[measure], ...patch } }))
+
+  const submit = (event: FormEvent) => {
+    event.preventDefault()
+    let next = filters
+    const found: Record<StockMeasure, MeasureErrors> = { thickness: {}, width: {} }
+    let refused = false
+    for (const measure of STOCK_MEASURES) {
+      const read = readDraft(drafts[measure])
+      if ('errors' in read) {
+        found[measure] = read.errors
+        refused = true
+      } else next = withStockMeasure(next, measure, read.value)
+    }
+    setErrors(found)
+    if (refused) {
+      setRefusals((count) => count + 1)
+      return
+    }
+    onApply(next)
+  }
+
+  const input = (measure: StockMeasure, field: MeasureField) => <Field
+    label={STOCK_TEXT.measure[measure][field]}
+    id={`stock-${measure}-${field}`}
+    error={errors[measure][field]}
+    className={styles.measureField}
+  >
+    {(control) => <input
+      {...control}
+      className={styles.measureInput}
+      inputMode="decimal"
+      autoComplete="off"
+      maxLength={32}
+      value={drafts[measure][field]}
+      onChange={(event) => change(measure, { [field]: event.target.value })}
+    />}
+  </Field>
+
+  return <form ref={formRef} className={styles.measureForm} aria-label={STOCK_TEXT.measureForm} onSubmit={submit} noValidate>
+    {STOCK_MEASURES.map((measure) => <fieldset key={measure} className={styles.measure}>
+      <legend>{STOCK_TEXT.measure[measure].name}</legend>
+      <Field label={STOCK_TEXT.measure[measure].mode} id={`stock-${measure}-mode`} className={styles.measureField}>
+        {(control) => <select
+          {...control}
+          className={styles.select}
+          value={drafts[measure].mode}
+          onChange={(event) => {
+            change(measure, { mode: event.target.value === 'range' ? 'range' : 'exact' })
+            setErrors((previous) => ({ ...previous, [measure]: {} }))
+          }}
+        >
+          <option value="exact">{STOCK_TEXT.measureMode.exact}</option>
+          <option value="range">{STOCK_TEXT.measureMode.range}</option>
+        </select>}
+      </Field>
+      {drafts[measure].mode === 'exact'
+        ? input(measure, 'exact')
+        : <>{input(measure, 'min')}{input(measure, 'max')}</>}
+    </fieldset>)}
+    <div className={styles.measureActions}>
+      <Button type="submit" variant="secondary">{STOCK_TEXT.measureApply}</Button>
+      <p className={styles.panelNote}>{STOCK_TEXT.measureHelp}</p>
+    </div>
+  </form>
+}
+
+type FamilyState =
+  | { readonly type: 'pending' }
+  | { readonly type: 'ready'; readonly items: readonly StockProductFamilyOption[] }
+  | { readonly type: 'failed'; readonly forbidden: boolean }
 
 /** The shell's phone width (`AppShell` COMPACT_VIEWPORT): rows become cards instead of a squeezed table. */
 const CARD_VIEWPORT = '(max-width: 767px)'
@@ -219,6 +421,9 @@ function InventoryStockPositionView({
   const [showClassification, setShowClassification] = useState(false)
   const [showFreePhysical, setShowFreePhysical] = useState(false)
   const cards = useSyncExternalStore(subscribeCards, readCards, () => false)
+  const [families, setFamilies] = useState<FamilyState>({ type: 'pending' })
+  const familiesLoaded = useRef(false)
+  const familyFence = useRef(createRequestFence())
   const listFence = useRef(createRequestFence())
   const moreFence = useRef(createRequestFence())
   // Focus needs a stable place when the control holding it goes away with the list it changed: the result region
@@ -266,6 +471,30 @@ function InventoryStockPositionView({
       currentMore.invalidate()
     }
   }, [companyId, load, filters, searchTooLong])
+
+  // The authorized family list is read only when it is needed: the panel is open, or the address already names a
+  // family whose name the chip must show. Once read it is kept for this visit (the view remounts with the context).
+  const wantsFamilies = openPanel === 'filters' || filters.productFamilyId !== null
+  const loadFamilies = useCallback(async () => {
+    if (companyId === null || familiesLoaded.current) return
+    const token = familyFence.current.capture()
+    const security = boundaryRef.current.capture()
+    const outcome = await fetchStockProductFamilyOptions(companyId, token.signal)
+    if (!familyFence.current.isCurrent(token) || outcome.type === 'fence-stale') return
+    // A lost session is the shell's to handle. A 403 here may be the Product owner's selection authority alone, so it
+    // is said next to the field and takes nothing away from the stock list, which answers for its own authority.
+    if (outcome.type === 'http' && outcome.status === 401) boundaryRef.current.report(outcome.status, security)
+    familiesLoaded.current = outcome.type === 'ok-single'
+    setFamilies(outcome.type === 'ok-single'
+      ? { type: 'ready', items: outcome.data }
+      : { type: 'failed', forbidden: outcome.type === 'http' && outcome.status === 403 })
+  }, [companyId])
+
+  useEffect(() => {
+    const currentFence = familyFence.current
+    if (wantsFamilies) void loadFamilies()
+    return () => currentFence.invalidate()
+  }, [wantsFamilies, loadFamilies])
 
   const loadMore = async () => {
     if (companyId === null || state.type !== 'ready' || state.nextCursor === null || state.more.type === 'loading') return
@@ -360,6 +589,34 @@ function InventoryStockPositionView({
       label: `${STOCK_TEXT.filterChip.classification}: ${CLASSIFICATION_TEXT[filters.classification]}`,
       remove: { ...filters, classification: null },
     })
+  }
+  const familyItems = families.type === 'ready' ? families.items : []
+  /** The name as the Product owner published it; the code is added only where two families share a name. */
+  const familyName = (option: StockProductFamilyOption): string =>
+    familyItems.some((other) => other.familyId !== option.familyId && other.displayName === option.displayName)
+      ? `${option.displayName} (${option.code})`
+      : option.displayName
+  const selectedFamily = familyItems.find((option) => option.familyId === filters.productFamilyId) ?? null
+  if (filters.productFamilyId !== null) {
+    chips.push({
+      key: 'family',
+      label: `${STOCK_TEXT.filterChip.family}: ${selectedFamily === null ? STOCK_TEXT.selectedFamily : familyName(selectedFamily)}`,
+      remove: { ...filters, productFamilyId: null },
+    })
+  }
+  for (const measure of STOCK_MEASURES) {
+    const text = measureFilterText(stockMeasureFilter(filters, measure))
+    if (text !== null) {
+      chips.push({
+        key: measure,
+        label: `${STOCK_TEXT.measure[measure].name}: ${text}`,
+        remove: withStockMeasure(filters, measure, NO_STOCK_MEASURE),
+      })
+    }
+  }
+  const retryFamilies = () => {
+    setFamilies({ type: 'pending' })
+    void loadFamilies()
   }
 
   const filterButton = (label: string, next: StockPositionFilters) => <button
@@ -512,7 +769,7 @@ function InventoryStockPositionView({
           aria-expanded={openPanel === 'filters'}
           aria-controls="stock-other-filters"
           onClick={() => setOpenPanel(openPanel === 'filters' ? null : 'filters')}
-        ><FilterIcon />{STOCK_TEXT.otherFilters}</Button>
+        ><FilterIcon />{STOCK_TEXT.allFilters(panelFilterCount(filters))}</Button>
         <Button
           type="button"
           variant={openPanel === 'columns' ? 'secondary' : 'ghost'}
@@ -526,7 +783,7 @@ function InventoryStockPositionView({
     {searchTooLong
       ? <p id="stock-position-search-error" role="alert" className={styles.error}>{STOCK_TEXT.searchTooLong}</p>
       : null}
-    <div id="stock-other-filters" className={styles.panel} hidden={openPanel !== 'filters'}>
+    <div id="stock-other-filters" className={`${styles.panel} ${styles.filterPanel}`} hidden={openPanel !== 'filters'}>
       <Field label={STOCK_TEXT.classificationFilter} id="stock-classification-filter" className={styles.panelField}>
         {(control) => <select
           {...control}
@@ -542,6 +799,43 @@ function InventoryStockPositionView({
             <option key={value} value={value}>{CLASSIFICATION_TEXT[value]}</option>)}
         </select>}
       </Field>
+      <div className={styles.familyGroup}>
+        <Field label={STOCK_TEXT.familyFilter} id="stock-family-filter" className={styles.panelField}>
+          {(control) => <select
+            {...control}
+            className={styles.select}
+            disabled={families.type !== 'ready'}
+            value={filters.productFamilyId ?? ''}
+            onChange={(event) => applyFilters({
+              ...filters,
+              productFamilyId: familyItems.some((option) => option.familyId === event.target.value) ? event.target.value : null,
+            })}
+          >
+            <option value="">{STOCK_TEXT.familyAll}</option>
+            {/* A family from the address that the authorized list does not hold stays selected, without a made-up name. */}
+            {filters.productFamilyId !== null && selectedFamily === null
+              ? <option value={filters.productFamilyId}>{STOCK_TEXT.selectedFamily}</option>
+              : null}
+            {familyItems.map((option) => <option key={option.familyId} value={option.familyId}>{familyName(option)}</option>)}
+          </select>}
+        </Field>
+        {families.type === 'pending' && openPanel === 'filters'
+          ? <p role="status" className={styles.panelNote}>{STOCK_TEXT.familyLoading}</p>
+          : null}
+        {families.type === 'failed'
+          ? <>
+            <p role="alert" className={styles.error}>{families.forbidden ? STOCK_TEXT.familyForbidden : STOCK_TEXT.familyUnreadable}</p>
+            {families.forbidden
+              ? null
+              : <Button type="button" variant="ghost" size="sm" onClick={retryFamilies}>{STOCK_TEXT.familyRetry}</Button>}
+          </>
+          : null}
+      </div>
+      <MeasureFilterForm
+        key={STOCK_MEASURES.map((measure) => Object.values(stockMeasureFilter(filters, measure)).join('|')).join('/')}
+        filters={filters}
+        onApply={(next) => applyFilters(next, true)}
+      />
     </div>
     <fieldset id="stock-columns" className={styles.panel} hidden={openPanel !== 'columns'}>
       <legend>{STOCK_TEXT.visibleColumns}</legend>
@@ -557,7 +851,7 @@ function InventoryStockPositionView({
             <button type="button" aria-label={STOCK_TEXT.filterChip.remove(chip.label)} onClick={() => applyFilters(chip.remove, true)}>×</button>
           </li>)}</ul>
           : null}
-        <Button type="button" variant="ghost" size="sm" onClick={() => { setQ(''); applyFilters({ q: '', productId: null, locationId: null, classification: null, owner: null }, true) }}>
+        <Button type="button" variant="ghost" size="sm" onClick={() => { setQ(''); applyFilters(NO_STOCK_FILTERS, true) }}>
           {STOCK_TEXT.clearFilters}
         </Button>
       </div>

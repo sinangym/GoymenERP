@@ -153,6 +153,110 @@
   gap: var(--goy-ds-space-2);
 }
 
+/* STOCK-TYPED-FILTER-UI-01: Sınıf and Ürün ailesi on the first line, the two measures below them. */
+.filterPanel {
+  align-items: flex-start;
+  min-width: 0;
+}
+
+/* A family name can be longer than a phone is wide: the field and its select shrink instead of widening the page. */
+.filterPanel .panelField {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.filterPanel .select {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.familyGroup {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--goy-ds-space-2);
+  min-width: 0;
+  max-width: 100%;
+}
+
+.panelNote {
+  margin: 0;
+  color: var(--goy-ds-color-text-secondary);
+  font-size: var(--goy-ds-font-size-sm);
+}
+
+.measureForm {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
+  gap: var(--goy-ds-space-3) var(--goy-ds-space-4);
+  flex: 1 1 100%;
+  min-width: 0;
+  margin: 0;
+  padding-top: var(--goy-ds-space-2);
+  border-top: 1px solid var(--goy-ds-color-border);
+}
+
+.measure {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--goy-ds-space-2) var(--goy-ds-space-3);
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+/* The panel's legend rule floats a fieldset's legend beside its content; a measure's name heads its own row. */
+.panel .measure legend {
+  float: none;
+  width: 100%;
+  margin: 0 0 var(--goy-ds-space-1);
+  color: var(--goy-ds-color-text);
+}
+
+.measureField {
+  flex: 1 1 8rem;
+}
+
+.measureInput {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  min-height: var(--goy-ds-control-height);
+  padding: 0 8px;
+  border: 1px solid var(--goy-ds-color-border-control);
+  border-radius: var(--goy-ds-radius-sm);
+  background: var(--goy-ds-color-surface);
+  color: var(--goy-ds-color-text);
+  font: inherit;
+  font-size: var(--goy-ds-font-size-md);
+  font-variant-numeric: tabular-nums;
+}
+
+.measureInput:hover {
+  border-color: var(--goy-ds-color-border-hover);
+}
+
+.measureInput:focus-visible {
+  outline: none;
+  border-color: var(--goy-ds-color-accent);
+  box-shadow: 0 0 0 3px var(--goy-ds-focus-ring);
+}
+
+.measureInput[aria-invalid="true"] {
+  border-color: var(--goy-ds-color-danger);
+}
+
+.measureActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--goy-ds-space-2) var(--goy-ds-space-3);
+  grid-column: 1 / -1;
+}
+
 .check {
   display: inline-flex;
   align-items: center;

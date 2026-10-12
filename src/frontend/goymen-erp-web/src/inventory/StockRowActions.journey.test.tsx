@@ -81,7 +81,11 @@ const position = {
 }
 
 /** The filters ST-01 sends with only a label-code search. */
-const search = (q: string) => ({ q, productId: null, locationId: null, classification: null, owner: null })
+const search = (q: string) => ({
+  q, productId: null, locationId: null, classification: null, owner: null,
+  productFamilyId: null, thicknessMm: null, thicknessMinMm: null, thicknessMaxMm: null,
+  widthMm: null, widthMinMm: null, widthMaxMm: null,
+})
 
 function detail() {
   return {
