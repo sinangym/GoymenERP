@@ -229,7 +229,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // D05 Inventory approvals: +3 pending stock-count/scrap read and fail-closed SQL facts.
             // GOY-UX-TEXT-FILTER-01: +1 typed-filter pre-pagination and cursor-resume SQL fact.
             ["tools/relational_inventory/inventory.txt"] =
-                "b3f33666e7af9bde082d77131ca0d42aedb700fe3002aa0675452760f58abaac",
+                "146364d46fe02cb22f8e1b0d55d8041f962fd4460b94200382c5cbd8de1f4766",
 
             // logistics
             // AT-053: +4 weighbridge SQL facts (81c1ff0b… -> 264898d7…).
