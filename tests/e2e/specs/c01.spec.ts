@@ -33,6 +33,7 @@ const SEARCH_TERM = 'Örnek'
 const SEARCH_MATCHES = ['CAR-000001', 'CAR-000003']
 /** Active GDC natural persons: the odd codes CAR-000003 … CAR-000051 plus CAR-000006. */
 const GDC_ACTIVE_NATURAL_PERSONS = 25
+const ADDRESS_MATCHES = ['CAR-000001', 'CAR-000051']
 
 /** CARI-DS-01: the table is the layout from 768 px up; below that the same rows are one labelled card each. */
 const PHONE_MAX_WIDTH = 767
@@ -43,6 +44,15 @@ async function openList(page: Page): Promise<void> {
   await page.goto('/cari')
   await expect(page.getByRole('heading', { level: 1, name: 'Cari Kartlar' })).toBeVisible()
   await expect(page.getByRole('table')).toBeVisible()
+}
+
+async function openAllFilters(page: Page): Promise<void> {
+  const toggle = page.getByRole('button', { name: 'Tüm filtreler', exact: true })
+  await toggle.focus()
+  await page.keyboard.press('Enter')
+  await expect(page.getByLabel('İl', { exact: true })).toBeVisible()
+  await expect(page.getByLabel('İlçe', { exact: true })).toBeVisible()
+  await expect(page.getByLabel('Adres türü', { exact: true })).toBeVisible()
 }
 
 function rows(page: Page) {
@@ -327,14 +337,122 @@ test('B-C01-004 sorting, search and filters are done by the server, and focus su
   expect(roleResponse.status()).toBe(200)
   expect((await roleResponse.json()).items.map((item: { code: string }) => item.code)).toEqual(['CAR-000001'])
 
+  // The accepted UI must drive that same server query. The filter values are
+  // typed rather than populated from page one: presenting the first page as the
+  // complete city/district vocabulary would make authorized records on later
+  // pages unreachable.
+  await openAllFilters(page)
+  const city = main.getByLabel('İl', { exact: true })
+  const district = main.getByLabel('İlçe', { exact: true })
+  const addressType = main.getByLabel('Adres türü', { exact: true })
+
+  await city.fill(' İstanbul ')
+  await district.fill(' Çankaya ')
+  const deliveryRead = page.waitForRequest((request) => {
+    const url = new URL(request.url())
+    return (
+      url.pathname === '/api/v1/counterparties' &&
+      url.searchParams.get('addressCity') === 'İstanbul' &&
+      url.searchParams.get('addressDistrict') === 'Çankaya' &&
+      url.searchParams.get('addressType') === 'delivery'
+    )
+  })
+  await addressType.selectOption('delivery')
+  const deliveryUrl = new URL((await deliveryRead).url())
+  expect(deliveryUrl.searchParams.get('cursor'), 'an address-filter change must reset the cursor').toBeNull()
+  await expect(rows(page)).toHaveCount(ADDRESS_MATCHES.length, { timeout: 20_000 })
+  expect(await codesOf(page)).toEqual(ADDRESS_MATCHES)
+  expect(await codesOf(page), 'the server-side address filter lost the record beyond page one').toContain('CAR-000051')
+
+  // CAR-000004 owns an İstanbul/Kadıköy billing row and a separate
+  // Ankara/Çankaya delivery row. A query that combines İstanbul + Çankaya +
+  // billing must therefore be empty; matching the three facts across different
+  // address rows would be a false positive.
+  const splitRowRead = page.waitForRequest((request) => {
+    const url = new URL(request.url())
+    return (
+      url.pathname === '/api/v1/counterparties' &&
+      url.searchParams.get('addressCity') === 'İstanbul' &&
+      url.searchParams.get('addressDistrict') === 'Çankaya' &&
+      url.searchParams.get('addressType') === 'billing'
+    )
+  })
+  await addressType.selectOption('billing')
+  await splitRowRead
+  await expect(rows(page)).toHaveCount(0, { timeout: 20_000 })
+  await expect(page.locator('[data-state="empty-filtered"]')).toBeVisible()
+  await expect(page.getByText('Filtreye uyan kayıt bulunamadı.')).toBeVisible()
+
+  // Address, title, historical role and state filters remain one server query.
+  // CAR-000001 is the one fixture record satisfying all of them.
+  await addressType.selectOption('delivery')
+  await search.fill(SEARCH_TERM)
+  const legacy = main.locator('details').filter({ hasText: 'Geçmiş sınıflandırma' })
+  await legacy.locator('summary').click()
+  await legacy.getByLabel('Müşteri', { exact: true }).check()
+  await legacy.getByLabel('Tedarikçi', { exact: true }).check()
+  const combinedRead = page.waitForRequest((request) => {
+    const url = new URL(request.url())
+    return (
+      url.pathname === '/api/v1/counterparties' &&
+      url.searchParams.get('q') === SEARCH_TERM &&
+      url.searchParams.getAll('role').join(',') === 'Customer,Supplier' &&
+      url.searchParams.get('roleMatch') === 'all' &&
+      url.searchParams.get('partyState') === 'active' &&
+      url.searchParams.get('addressCity') === 'İstanbul' &&
+      url.searchParams.get('addressDistrict') === 'Çankaya' &&
+      url.searchParams.get('addressType') === 'delivery'
+    )
+  })
+  await main.getByLabel('İşaret eşleşmesi', { exact: true }).selectOption('all')
+  expect(new URL((await combinedRead).url()).searchParams.get('cursor')).toBeNull()
+  await expect(rows(page)).toHaveCount(1, { timeout: 20_000 })
+  expect(await codesOf(page)).toEqual([FIRST_ROW.code])
+
+  // Leaving through the SPA and using browser Back restores the saved view in
+  // the same actor/company namespace. No query from a different namespace is
+  // replayed, and the visible values remain the ones the user chose.
+  await page.getByRole('link', { name: 'Ana sayfa', exact: true }).click()
+  await expect(page.getByRole('heading', { level: 1 })).toBeVisible()
+  const restoredRead = page.waitForRequest((request) => {
+    const url = new URL(request.url())
+    return (
+      url.pathname === '/api/v1/counterparties' &&
+      url.searchParams.get('q') === SEARCH_TERM &&
+      url.searchParams.get('addressCity') === 'İstanbul' &&
+      url.searchParams.get('addressDistrict') === 'Çankaya' &&
+      url.searchParams.get('addressType') === 'delivery'
+    )
+  })
+  await page.goBack()
+  await restoredRead
+  await expect(page.getByRole('heading', { level: 1, name: 'Cari Kartlar' })).toBeVisible()
+  await expect(page.getByRole('searchbox', { name: 'Ara', exact: true })).toHaveValue(SEARCH_TERM)
+  await expect(page.getByText('İl: İstanbul', { exact: true })).toBeVisible()
+  await expect(page.getByText('İlçe: Çankaya', { exact: true })).toBeVisible()
+  await expect(page.getByText('Adres türü: Teslimat', { exact: true })).toBeVisible()
+  await expect(rows(page)).toHaveCount(1)
+
   await net.detach(testInfo)
 })
 
 test('B-C01-005 the page reflows without a horizontal scrollbar', async ({ page }, testInfo) => {
   const net = await NetworkRecorder.attach(page)
   await openList(page)
+  await openAllFilters(page)
 
-  for (const size of ['1600x900', '768x1024', '390x844', '640x900', '320x900']) {
+  // The canonical evidence matrix remains 1600/768/390/640/320. The 1440 and
+  // 1366 checks are additional real-use widths walked inside the same case; they
+  // do not create extra B-C01 identities or weaken the established matrix.
+  for (const size of [
+    '1600x900',
+    '1440x900',
+    '1366x768',
+    '768x1024',
+    '390x844',
+    '640x900',
+    '320x900',
+  ]) {
     const [width, height] = size.split('x').map(Number)
     await page.setViewportSize({ width, height })
 
@@ -384,6 +502,10 @@ test('B-C01-005 the page reflows without a horizontal scrollbar', async ({ page 
       () => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1,
     )
     expect(overflows, `page scrolls horizontally at ${size}`).toBe(false)
+    await expect(page.getByRole('button', { name: 'Tüm filtreler', exact: true })).toBeVisible()
+    await expect(page.getByLabel('İl', { exact: true })).toBeVisible()
+    await expect(page.getByLabel('İlçe', { exact: true })).toBeVisible()
+    await expect(page.getByLabel('Adres türü', { exact: true })).toBeVisible()
   }
 
   await page.setViewportSize({ width: 1600, height: 900 })
@@ -439,7 +561,18 @@ test('B-C01-008 a failed continuation keeps the verified rows and offers a retry
 }, testInfo) => {
   const net = await NetworkRecorder.attach(page)
   await openList(page)
-  await expect(rows(page)).toHaveCount(50)
+  const main = page.getByRole('main')
+  await main.getByLabel('Sayfa boyutu', { exact: true }).selectOption('10')
+  await main.getByLabel('Tür', { exact: true }).selectOption('NaturalPerson')
+  await expect(rows(page)).toHaveCount(10)
+
+  const continuationRequests: URL[] = []
+  page.on('request', (request) => {
+    const url = new URL(request.url())
+    if (url.pathname === '/api/v1/counterparties' && url.searchParams.has('cursor')) {
+      continuationRequests.push(url)
+    }
+  })
 
   const alert = page.getByRole('alert')
   const retry = alert.getByRole('button')
@@ -452,7 +585,7 @@ test('B-C01-008 a failed continuation keeps the verified rows and offers a retry
   await page.getByRole('button', { name: 'Daha fazla yükle' }).click()
   await expect.poll(used500, { timeout: 20_000 }).toBe(true)
   await expect(alert, 'no continuation error after injected-500').toBeVisible({ timeout: 30_000 })
-  await expect(rows(page), 'rows were dropped on injected-500').toHaveCount(50)
+  await expect(rows(page), 'rows were dropped on injected-500').toHaveCount(10)
   await expect(page.getByRole('button', { name: 'Daha fazla yükle' })).toHaveCount(0)
 
   for (const fault of ['injected-503', 'injected-abort'] as const) {
@@ -465,7 +598,7 @@ test('B-C01-008 a failed continuation keeps the verified rows and offers a retry
     await expect.poll(used, { timeout: 20_000 }).toBe(true)
     await expect(retry, `the retry never settled after ${fault}`).toBeEnabled({ timeout: 30_000 })
     await expect(alert, `no continuation error after ${fault}`).toBeVisible()
-    await expect(rows(page), `rows were dropped on ${fault}`).toHaveCount(50)
+    await expect(rows(page), `rows were dropped on ${fault}`).toHaveCount(10)
   }
 
   // A dropped connection is a transport fault, not a status code.
@@ -473,7 +606,7 @@ test('B-C01-008 a failed continuation keeps the verified rows and offers a retry
   await retry.click()
   await expect.poll(usedDrop, { timeout: 20_000 }).toBe(true)
   await expect(alert).toBeVisible({ timeout: 30_000 })
-  await expect(rows(page)).toHaveCount(50)
+  await expect(rows(page)).toHaveCount(10)
 
   // Four failures, and the verified rows never moved. The successful retry then
   // appends the rest exactly once — proof that each failed attempt re-issued the
@@ -482,8 +615,17 @@ test('B-C01-008 a failed continuation keeps the verified rows and offers a retry
   // retry-200 when a real 200 actually arrives for this read.
   net.expectRetrySuccess(1)
   await retry.click()
-  await expect(rows(page)).toHaveCount(GDC_ACTIVE_VISIBLE, { timeout: 30_000 })
-  expect(new Set(await codesOf(page)).size).toBe(GDC_ACTIVE_VISIBLE)
+  await expect(rows(page)).toHaveCount(20, { timeout: 30_000 })
+  expect(new Set(await codesOf(page)).size).toBe(20)
+
+  expect(continuationRequests.length, 'the filtered continuation and its retries were not observed').toBe(5)
+  const cursors = continuationRequests.map((url) => url.searchParams.get('cursor'))
+  expect(new Set(cursors).size, 'a retry advanced or replaced the failed cursor').toBe(1)
+  for (const request of continuationRequests) {
+    expect(request.searchParams.get('kind')).toBe('NaturalPerson')
+    expect(request.searchParams.get('pageSize')).toBe('10')
+    expect(request.searchParams.get('partyState')).toBe('active')
+  }
 
   await net.detach(testInfo)
 })
