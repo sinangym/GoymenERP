@@ -592,7 +592,7 @@ public sealed class SalesReferenceHttpAcceptanceTests(GoymenErpApiFactory factor
     }
 
     private static CounterpartyPageQuery ExpectedOwnerQuery(string? q, int pageSize, string? cursor) =>
-        new(q, null, PartyRole.None, CounterpartyRoleMatch.Any, CounterpartyRecordState.Active,
+        new(q, null, null, null, null, PartyRole.None, CounterpartyRoleMatch.Any, CounterpartyRecordState.Active,
             CounterpartyRecordState.Active, CounterpartySort.Code, CounterpartySortDirection.Ascending,
             pageSize, cursor, false);
 

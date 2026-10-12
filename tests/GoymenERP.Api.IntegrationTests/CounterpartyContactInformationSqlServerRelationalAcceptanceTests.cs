@@ -626,6 +626,61 @@ public sealed class CounterpartyContactInformationSqlServerRelationalAcceptanceT
     }
 
     [SqlServerFact]
+    public async Task CounterpartyPage_AddressFiltersUseOneRealAddressRowBeforePagination()
+    {
+        await using var test = new ContactTest();
+        using var companyA = test.Client();
+        using var companyB = test.Client(TestCompanyIds.CompanyB);
+
+        var splitRow = await CreateAsync(companyA, (int)(PartyRole.Customer | PartyRole.Supplier));
+        await SetAddressesAsync(
+            companyA,
+            splitRow,
+            ("billing", "İstanbul", "Kadıköy"),
+            ("delivery", "Ankara", "Çankaya"));
+
+        var firstMatch = await CreateAsync(companyA, (int)(PartyRole.Customer | PartyRole.Supplier));
+        await SetAddressesAsync(companyA, firstMatch, ("delivery", "İstanbul", "Çankaya"));
+        var secondMatch = await CreateAsync(companyA, (int)(PartyRole.Customer | PartyRole.Supplier));
+        await SetAddressesAsync(companyA, secondMatch, ("delivery", "İstanbul", "Çankaya"));
+
+        var foreignMatch = await CreateAsync(companyB, (int)(PartyRole.Customer | PartyRole.Supplier));
+        await SetAddressesAsync(companyB, foreignMatch, ("delivery", "İstanbul", "Çankaya"));
+
+        const string filter = "role=Customer&role=Supplier&roleMatch=all"
+            + "&addressCity=%C4%B0STANBUL&addressDistrict=%C3%87ankaya&addressType=delivery"
+            + "&sort=code&direction=asc&pageSize=1&includeCount=true";
+        var firstPage = await ReadAsync(companyA, "/api/v1/counterparties?" + filter);
+        Assert.Equal(2, firstPage.GetProperty("totalCount").GetInt64());
+        Assert.True(firstPage.GetProperty("hasMore").GetBoolean());
+        var firstItem = Assert.Single(firstPage.GetProperty("items").EnumerateArray());
+        Assert.Equal(firstMatch, firstItem.GetProperty("id").GetGuid());
+        Assert.NotEqual(foreignMatch, firstItem.GetProperty("id").GetGuid());
+
+        var cursor = firstPage.GetProperty("nextCursor").GetString();
+        Assert.False(string.IsNullOrWhiteSpace(cursor));
+        var secondPage = await ReadAsync(
+            companyA,
+            "/api/v1/counterparties?" + filter + "&cursor=" + Uri.EscapeDataString(cursor!));
+        Assert.Equal(secondMatch, Assert.Single(secondPage.GetProperty("items").EnumerateArray())
+            .GetProperty("id").GetGuid());
+        Assert.False(secondPage.GetProperty("hasMore").GetBoolean());
+
+        var crossRow = await ReadAsync(
+            companyA,
+            "/api/v1/counterparties?addressCity=%C4%B0stanbul&addressDistrict=%C3%87ankaya"
+            + "&addressType=billing&pageSize=50");
+        Assert.DoesNotContain(crossRow.GetProperty("items").EnumerateArray(),
+            item => item.GetProperty("id").GetGuid() == splitRow);
+
+        using var reboundCursor = await companyA.GetAsync(
+            "/api/v1/counterparties?" + filter.Replace("addressType=delivery", "addressType=billing", StringComparison.Ordinal)
+            + "&cursor=" + Uri.EscapeDataString(cursor!));
+        Assert.Equal(HttpStatusCode.BadRequest, reboundCursor.StatusCode);
+        Assert.Equal("invalid_cursor", (await JsonAsync(reboundCursor)).GetProperty("code").GetString());
+    }
+
+    [SqlServerFact]
     public async Task ContactCard_MigrationChecksJsonAndBlocksLossyDownWithoutChangingExistingIdentity()
     {
         await using var test = new ContactTest();
@@ -656,12 +711,40 @@ public sealed class CounterpartyContactInformationSqlServerRelationalAcceptanceT
 
     private static string PathFor(Guid party) => $"/api/v1/counterparties/{party}/contact-information";
 
-    private static async Task<Guid> CreateAsync(HttpClient client)
+    private static async Task<Guid> CreateAsync(HttpClient client, int roles = 0)
     {
         using var response = await client.PostAsJsonAsync("/api/v1/counterparties",
-            new { kind = 1, legalName = $"Contact SQL {Guid.NewGuid():N}", roles = 0 });
+            new { kind = 1, legalName = $"Contact SQL {Guid.NewGuid():N}", roles });
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         return (await JsonAsync(response)).GetProperty("id").GetGuid();
+    }
+
+    private static async Task SetAddressesAsync(
+        HttpClient client,
+        Guid party,
+        params (string Purpose, string City, string District)[] addresses)
+    {
+        var path = PathFor(party);
+        var current = await ReadAsync(client, path);
+        NewKey(client);
+        using var response = await client.PutAsJsonAsync(path, new
+        {
+            expectedVersion = current.GetProperty("version").GetString(),
+            changes = new
+            {
+                addresses = addresses.Select((address, index) => new
+                {
+                    id = Guid.NewGuid(),
+                    operation = "upsert",
+                    purpose = address.Purpose,
+                    countryCode = "TR",
+                    line1 = $"Adres {index + 1}",
+                    city = address.City,
+                    district = address.District,
+                }).ToArray(),
+            },
+        });
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
     }
 
     private static async Task<JsonElement> ReadAsync(HttpClient client, string path)

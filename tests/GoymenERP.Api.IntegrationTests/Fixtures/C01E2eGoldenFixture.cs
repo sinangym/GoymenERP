@@ -285,6 +285,10 @@ internal static class C01E2eGoldenFixture
                 await command.ExecuteNonQueryAsync(cancellationToken);
             }
 
+            await ApplyAddressFilterRowsAsync(
+                connection,
+                (SqlTransaction)transaction,
+                cancellationToken);
             await transaction.CommitAsync(cancellationToken);
         }
         catch
@@ -293,6 +297,82 @@ internal static class C01E2eGoldenFixture
             throw;
         }
     }
+
+    private static async Task ApplyAddressFilterRowsAsync(
+        SqlConnection connection,
+        SqlTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        var seeds = new[]
+        {
+            new AddressFilterFixtureRow("CAR-000001", "10000000-0000-0000-0000-000000000001",
+                AddressInformation(("c01a0000-0000-0000-0000-000000000001", "delivery", "İstanbul", "Çankaya"))),
+            new AddressFilterFixtureRow("CAR-000004", "10000000-0000-0000-0000-000000000001",
+                AddressInformation(
+                    ("c01a0000-0000-0000-0000-000000000004", "billing", "İstanbul", "Kadıköy"),
+                    ("c01a0000-0000-0000-0000-000000000005", "delivery", "Ankara", "Çankaya"))),
+            new AddressFilterFixtureRow("CAR-000051", "10000000-0000-0000-0000-000000000001",
+                AddressInformation(("c01a0000-0000-0000-0000-000000000051", "delivery", "İstanbul", "Çankaya"))),
+            new AddressFilterFixtureRow("CAR-000054", "10000000-0000-0000-0000-000000000002",
+                AddressInformation(("c01a0000-0000-0000-0000-000000000054", "delivery", "İstanbul", "Çankaya"))),
+        };
+
+        foreach (var seed in seeds)
+        {
+            await using var command = connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText =
+                """
+                UPDATE [a]
+                SET [ContactInformationJson] = @InformationJson
+                FROM [counterparty].[CompanyPartyAccounts] AS [a]
+                INNER JOIN [counterparty].[Parties] AS [p] ON [p].[Id] = [a].[PartyId]
+                WHERE [p].[Code] = @Code
+                  AND [a].[CompanyId] = @CompanyId
+                  AND [a].[ContactInformationJson] IS NULL;
+
+                IF @@ROWCOUNT <> 1
+                    THROW 51026, 'c01_address_filter_fixture_conflict', 1;
+                """;
+            command.Parameters.AddWithValue("@Code", seed.PartyCode);
+            command.Parameters.AddWithValue("@CompanyId", Guid.Parse(seed.CompanyId));
+            command.Parameters.AddWithValue("@InformationJson", seed.InformationJson);
+            await command.ExecuteNonQueryAsync(cancellationToken);
+        }
+    }
+
+    private static string AddressInformation(
+        params (string Id, string Purpose, string City, string District)[] addresses) =>
+        JsonSerializer.Serialize(new
+        {
+            schemaVersion = 1,
+            information = new
+            {
+                phone = (string?)null,
+                phoneExtension = (string?)null,
+                email = (string?)null,
+                website = (string?)null,
+                addresses = addresses.Select((address, index) => new
+                {
+                    id = address.Id,
+                    version = "1",
+                    isActive = true,
+                    purpose = address.Purpose,
+                    countryCode = "TR",
+                    line1 = $"C-01 adres {index + 1}",
+                    line2 = (string?)null,
+                    city = address.City,
+                    district = address.District,
+                    postalCode = (string?)null,
+                }),
+                contacts = Array.Empty<object>(),
+            },
+        });
+
+    private sealed record AddressFilterFixtureRow(
+        string PartyCode,
+        string CompanyId,
+        string InformationJson);
 
     private static void ValidateEnvelope(JsonElement root)
     {

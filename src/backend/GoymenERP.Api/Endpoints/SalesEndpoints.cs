@@ -1581,7 +1581,7 @@ public sealed class CounterpartySalesAccountSelectionSourceV1(
         try
         {
             execution = await counterparties.GetAuthorizedPageAsync(new(
-                new(request.Q, null, PartyRole.None, CounterpartyRoleMatch.Any,
+                new(request.Q, null, null, null, null, PartyRole.None, CounterpartyRoleMatch.Any,
                     CounterpartyRecordState.Active, CounterpartyRecordState.Active,
                     CounterpartySort.Code, CounterpartySortDirection.Ascending,
                     request.PageSize, request.Cursor, false),

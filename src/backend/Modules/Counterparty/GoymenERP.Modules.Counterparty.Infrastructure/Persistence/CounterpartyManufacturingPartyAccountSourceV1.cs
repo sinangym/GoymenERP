@@ -47,6 +47,9 @@ public sealed class CounterpartyManufacturingPartyAccountSourceV1(
                 new CounterpartyReadRequest(
                     new CounterpartyPageQuery(
                         canonicalQuery.Query,
+                        AddressCity: null,
+                        AddressDistrict: null,
+                        AddressType: null,
                         Kind: null,
                         ManufacturingRoles,
                         CounterpartyRoleMatch.Any,
