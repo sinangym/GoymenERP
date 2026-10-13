@@ -91,7 +91,7 @@ describe('FI04 open item decoder', () => {
 })
 
 describe('FI04 open item page decoder', () => {
-  const page = (patch: Record<string, unknown> = {}) => ({ companyId: COMPANY, items: [wire(), metadataOnly({ id: id(6) })], nextCursor: 'opaque+/=', ...patch })
+  const page = (patch: Record<string, unknown> = {}) => ({ companyId: COMPANY, items: [wire(), wire({ id: id(6) })], nextCursor: 'opaque+/=', ...patch })
 
   it('accepts a page, its opaque cursor verbatim, the last page and an empty page', () => {
     const decoded = decodeOpenItemPage(page(), COMPANY)
@@ -108,6 +108,8 @@ describe('FI04 open item page decoder', () => {
     ['one item of another company', page({ items: [wire(), wire({ id: id(6), companyId: OTHER_COMPANY })] })],
     ['one malformed item', page({ items: [wire(), { id: id(6) }] })],
     ['the same item twice', page({ items: [wire(), wire()] })],
+    ['disclosed and withheld rows in one answer', page({ items: [wire(), metadataOnly({ id: id(6) })] })],
+    ['withheld and unavailable rows in one answer', page({ items: [metadataOnly(), metadataOnly({ id: id(6), initialAmount: unavailable, outstandingAmount: unavailable })] })],
     ['more items than the server page', page({ items: Array.from({ length: OPEN_ITEM_PAGE_SIZE + 1 }, (_unused, index) => wire({ id: id(100 + index) })) })],
     ['a blank cursor', page({ nextCursor: ' ' })],
     ['a cursor longer than the server accepts', page({ nextCursor: 'c'.repeat(OPEN_ITEM_CURSOR_MAX_LENGTH + 1) })],

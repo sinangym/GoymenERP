@@ -125,6 +125,8 @@ export function decodeOpenItemPage(value: unknown, companyId: string): OpenItemP
   for (const candidate of body.items) {
     const item = decodeOpenItem(candidate, companyId)
     if (item === null || seen.has(item.id.toLowerCase())) return null
+    // One read is answered under one amount authority: a page that discloses some rows and withholds others is refused.
+    if (items.length > 0 && item.initialAmount.disclosure !== items[0].initialAmount.disclosure) return null
     seen.add(item.id.toLowerCase())
     items.push(item)
   }
