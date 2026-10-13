@@ -20,6 +20,10 @@ public sealed class FinancePermissionPortTests
         Assert.Equal("finance.manual-receipt.draft.save", FinancePermissionPort.NameOf(FinanceAction.SaveDraft));
         Assert.Equal("finance.manual-receipt.draft.read", FinancePermissionPort.NameOf(FinanceAction.ReadSources));
         Assert.Equal("finance.manual-receipt.amount.read", FinancePermissionPort.NameOf(FinanceAction.ReadAmount));
+        Assert.Equal(FinancePermissionNames.OpenItemRead,
+            FinancePermissionPort.NameOf(FinanceAction.ReadOpenItems));
+        Assert.Equal(FinancePermissionNames.OpenItemAmountRead,
+            FinancePermissionPort.NameOf(FinanceAction.ReadOpenItemAmount));
         Assert.Equal(ErpPermissions.FinanceBankAccountRead, FinancePermissionPort.NameOf(FinanceAction.ReadBankAccounts));
         Assert.Equal(ErpPermissions.FinanceBankAccountPropose, FinancePermissionPort.NameOf(FinanceAction.ProposeBankAccount));
         Assert.Equal(ErpPermissions.FinanceBankAccountApprove, FinancePermissionPort.NameOf(FinanceAction.ApproveBankAccount));

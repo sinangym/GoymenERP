@@ -48,6 +48,10 @@ public sealed class FinancePermissionPort(
         FinanceAction.ApproveReversal => FinancePermissionNames.ReverseApprove,
         FinanceAction.WriteAllocation => FinancePermissionNames.AllocationWrite,
         FinanceAction.ReadAllocation => FinancePermissionNames.AllocationRead,
+        // FI04 has independent metadata and amount disclosures. These declarations grant nothing; until the
+        // central registry knows each name, CheckAsync deliberately returns Unavailable rather than inferring a role.
+        FinanceAction.ReadOpenItems => FinancePermissionNames.OpenItemRead,
+        FinanceAction.ReadOpenItemAmount => FinancePermissionNames.OpenItemAmountRead,
         FinanceAction.ReadBankAccounts => ErpPermissions.FinanceBankAccountRead,
         FinanceAction.ProposeBankAccount => ErpPermissions.FinanceBankAccountPropose,
         FinanceAction.ApproveBankAccount => ErpPermissions.FinanceBankAccountApprove,

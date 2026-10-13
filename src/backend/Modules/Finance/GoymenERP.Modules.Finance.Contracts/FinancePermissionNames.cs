@@ -55,4 +55,9 @@ public static class FinancePermissionNames
     // ledger needs the amount read as well.
     public const string PartyLedgerRead = "finance.party-ledger.read";
     public const string PartyLedgerAmountRead = "finance.party-ledger.amount.read";
+
+    // FI04-READ-01 (#66/6140298123): independent open-item metadata and amount disclosure reads.
+    // Declarations grant nothing; the central registry and every human role assignment remain separate.
+    public const string OpenItemRead = "finance.open-items.read";
+    public const string OpenItemAmountRead = "finance.open-items.amount.read";
 }
