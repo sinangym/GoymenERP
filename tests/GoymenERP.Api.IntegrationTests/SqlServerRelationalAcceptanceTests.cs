@@ -64,7 +64,7 @@ public sealed class SqlServerRelationalAcceptanceTests
         await connection.OpenAsync();
 
         Assert.Equal(
-            3,
+            4,
             await ScalarAsync<int>(
                 connection,
                 "SELECT COUNT(*) FROM [organization].[__EFMigrationsHistory];"));
