@@ -1,8 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
+  compareStockMeasures,
+  decodeStockProductFamilyOptions,
   fetchStockDisplayPage,
+  fetchStockProductFamilyOptions,
+  isStockMeasure,
   NO_STOCK_FILTERS,
   STOCK_DISPLAY_HEADER,
+  STOCK_PRODUCT_FAMILIES_PATH,
+  stockMeasureFromInput,
+  stockMeasureInputText,
   stockPositionQuery,
   type StockPositionFilters,
 } from './stockDisplayApi'
@@ -14,6 +21,8 @@ const LOT = '33333333-3333-4333-8333-333333333333'
 const LOCATION = '44444444-4444-4444-8444-444444444444'
 const PRODUCT = '55555555-5555-4555-8555-555555555555'
 const COUNTERPARTY = '88888888-8888-4888-8888-888888888888'
+const FAMILY = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+const FAMILY_2 = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaab'
 
 /** The #597 producer fixture row (`InventoryStockPositionHttpAcceptanceTests`), opt-in shape. */
 function row(companyId = COMPANY) {
@@ -68,6 +77,7 @@ describe('stockPositionQuery — only the published keys, each once', () => {
 
   it('serializes every supported filter and the cursor with their exact names and values', () => {
     const filters: StockPositionFilters = {
+      ...NO_STOCK_FILTERS,
       q: '  ROLL-1 ', productId: PRODUCT, locationId: LOCATION, classification: 'SecondQuality',
       owner: { kind: 'Counterparty', id: COUNTERPARTY },
     }
@@ -210,5 +220,157 @@ describe('fetchStockDisplayPage — the 3.0 (Product + Location + Owner) selecti
     expect(await fetchStockDisplayPage(COMPANY, NO_STOCK_FILTERS, null)).toEqual({ type: 'malformed' })
     expect(fetchMock).toHaveBeenCalledTimes(1)
     expect(requested().headers.get(STOCK_DISPLAY_HEADER)).toBe('3.0')
+  })
+})
+
+/** STOCK-TYPED-FILTER-UI-01: the typed filters of #690, by the server's own names and grammar. */
+describe('stockPositionQuery — family, thickness and width (#690)', () => {
+  it('sends the family and an exact and a range measure under the published names, after the earlier keys', () => {
+    const query = stockPositionQuery({
+      ...NO_STOCK_FILTERS, q: 'ROLL', productFamilyId: FAMILY, thicknessMm: '1.5', widthMinMm: '1000', widthMaxMm: '1250.5',
+    }, 'opaque-1')!
+    expect([...query.keys()]).toEqual(['q', 'limit', 'cursor', 'productFamilyId', 'thicknessMm', 'widthMinMm', 'widthMaxMm'])
+    expect(Object.fromEntries(query)).toEqual({
+      q: 'ROLL', limit: '25', cursor: 'opaque-1', productFamilyId: FAMILY, thicknessMm: '1.5', widthMinMm: '1000', widthMaxMm: '1250.5',
+    })
+  })
+
+  it('sends a range with one open end, and min equal to max (both ends belong to the range)', () => {
+    expect(stockPositionQuery({ ...NO_STOCK_FILTERS, thicknessMinMm: '2' }, null)?.toString()).toBe('limit=25&thicknessMinMm=2')
+    expect(stockPositionQuery({ ...NO_STOCK_FILTERS, widthMaxMm: '1250' }, null)?.toString()).toBe('limit=25&widthMaxMm=1250')
+    expect(stockPositionQuery({ ...NO_STOCK_FILTERS, thicknessMinMm: '3', thicknessMaxMm: '3.000' }, null)?.toString())
+      .toBe('limit=25&thicknessMinMm=3&thicknessMaxMm=3.000')
+  })
+
+  it('keeps the digits exactly as given: nothing is rounded, padded or trimmed', () => {
+    const query = stockPositionQuery({ ...NO_STOCK_FILTERS, thicknessMm: '1.250', widthMm: '0.125' }, null)!
+    expect(query.get('thicknessMm')).toBe('1.250')
+    expect(query.get('widthMm')).toBe('0.125')
+  })
+
+  it.each([
+    ['an exact value together with a range', { thicknessMm: '1.5', thicknessMinMm: '1' }],
+    ['an exact width together with a maximum', { widthMm: '1250', widthMaxMm: '1300' }],
+    ['a minimum above the maximum', { widthMinMm: '1250.001', widthMaxMm: '1250' }],
+    ['a decimal comma', { thicknessMm: '1,5' }],
+    ['a fourth fraction digit', { thicknessMm: '1.2345' }],
+    ['a leading zero', { widthMm: '01250' }],
+    ['zero', { widthMm: '0' }],
+    ['zero written with a fraction', { thicknessMm: '0.000' }],
+    ['a sign', { thicknessMm: '-1' }],
+    ['an exponent', { widthMm: '1e3' }],
+    ['more than 32 characters', { widthMm: '1'.repeat(33) }],
+    ['an empty value', { thicknessMaxMm: '' }],
+    ['a family that is not an id', { productFamilyId: 'coil' }],
+    ['the nil family id', { productFamilyId: '00000000-0000-0000-0000-000000000000' }],
+  ])('refuses %s without a request, as the server would answer 400', async (_, patch) => {
+    const filters = { ...NO_STOCK_FILTERS, ...patch } as StockPositionFilters
+    expect(stockPositionQuery(filters, null)).toBeNull()
+    expect(await fetchStockDisplayPage(COMPANY, filters, null)).toEqual({ type: 'malformed' })
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('reads the filtered page once, with the 3.0 selector and every typed condition on the wire', async () => {
+    fetchMock.mockResolvedValue(json(200, { items: [row()], searchWindowFull: false, nextCursor: null }))
+    await fetchStockDisplayPage(COMPANY, { ...NO_STOCK_FILTERS, productFamilyId: FAMILY, thicknessMinMm: '1', thicknessMaxMm: '3', widthMm: '1250' }, 'c-1')
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    const { url, headers } = requested()
+    expect(url.pathname).toBe('/api/v1/inventory/positions')
+    expect(url.search).toBe(`?limit=25&cursor=c-1&productFamilyId=${FAMILY}&thicknessMinMm=1&thicknessMaxMm=3&widthMm=1250`)
+    expect(headers.get(STOCK_DISPLAY_HEADER)).toBe('3.0')
+  })
+})
+
+describe('stock measures — decimal text, never floating point', () => {
+  it.each([
+    ['9', '10', -1], ['10', '9', 1], ['1.5', '1.50', 0], ['1.25', '1.3', -1], ['1250', '1250.001', -1],
+    ['0.125', '0.12', 1], ['3', '3.000', 0], ['12345678901234567890.001', '12345678901234567890.002', -1],
+  ])('compares %s with %s', (left, right, expected) => {
+    expect(compareStockMeasures(left, right)).toBe(expected)
+  })
+
+  it.each([
+    ['1,5', '1.5'], [' 1250 ', '1250'], ['0,125', '0.125'], ['1,250', '1.250'], ['3,10', '3.10'],
+  ])('reads "%s" as the wire value %s — the typed digits, a comma for the fraction', (text, wire) => {
+    expect(stockMeasureFromInput(text)).toEqual({ wire })
+  })
+
+  it.each([
+    ['1.5', 'format'], ['1.250', 'format'], ['1 250', 'format'], ['abc', 'format'], ['-1', 'format'], ['01', 'format'],
+    ['1,', 'format'], [',5', 'format'], ['', 'format'], ['1,2345', 'precision'], ['0', 'zero'], ['0,000', 'zero'],
+  ])('refuses "%s" (%s) rather than guessing or rounding it', (text, problem) => {
+    expect(stockMeasureFromInput(text)).toEqual({ problem })
+  })
+
+  it('shows a wire value in the field again with the same digits', () => {
+    expect(stockMeasureInputText('1.250')).toBe('1,250')
+    expect(stockMeasureInputText('1250')).toBe('1250')
+    expect(stockMeasureInputText(null)).toBe('')
+    expect(isStockMeasure('1.5')).toBe(true)
+    expect(isStockMeasure(1.5)).toBe(false)
+  })
+})
+
+describe('authorized product family options (#695)', () => {
+  const options = [
+    { familyId: FAMILY, code: 'gdc-flat-coil', displayName: 'Yassı rulo' },
+    { familyId: FAMILY_2, code: 'gdc-sheet', displayName: 'Sac levha' },
+  ]
+
+  it('reads the list once from the published path, with no query and no stock-display selector', async () => {
+    fetchMock.mockResolvedValue(json(200, { items: options }))
+    expect(await fetchStockProductFamilyOptions(COMPANY)).toEqual({ type: 'ok-single', data: options })
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    const { url, headers, init } = requested()
+    expect(url.pathname).toBe('/api/v1/inventory/references/product-families')
+    expect(STOCK_PRODUCT_FAMILIES_PATH).toBe('/api/v1/inventory/references/product-families')
+    expect(url.search).toBe('')
+    expect(headers.get('X-Company-Id')).toBe(COMPANY)
+    expect(headers.get(STOCK_DISPLAY_HEADER)).toBeNull()
+    expect(init.cache).toBe('no-store')
+  })
+
+  it('keeps the server order and the names as published', () => {
+    const published = [options[1], { familyId: FAMILY.toUpperCase(), code: 'GDC İnce', displayName: 'ince SAC ürünleri' }]
+    expect(decodeStockProductFamilyOptions({ items: published })).toEqual([
+      options[1], { familyId: FAMILY, code: 'GDC İnce', displayName: 'ince SAC ürünleri' },
+    ])
+  })
+
+  it.each([
+    ['no body', null],
+    ['an array instead of the envelope', options],
+    ['no items member', { families: options }],
+    ['an empty list (the endpoint answers 409 for it)', { items: [] }],
+    ['a family without an id', { items: [{ code: 'x', displayName: 'X' }] }],
+    ['the nil id', { items: [{ familyId: '00000000-0000-0000-0000-000000000000', code: 'x', displayName: 'X' }] }],
+    ['a blank code', { items: [{ ...options[0], code: ' ' }] }],
+    ['a blank name', { items: [{ ...options[0], displayName: '' }] }],
+    ['a name that is not text', { items: [{ ...options[0], displayName: 7 }] }],
+    ['the same id twice', { items: [options[0], { ...options[1], familyId: FAMILY }] }],
+    ['the same code twice', { items: [options[0], { ...options[1], code: 'gdc-flat-coil' }] }],
+    ['one unreadable family among readable ones', { items: [options[0], null] }],
+  ])('refuses %s whole — a partial list is never offered as all families', async (_, body) => {
+    expect(decodeStockProductFamilyOptions(body)).toBeNull()
+    fetchMock.mockResolvedValue(json(200, body))
+    expect(await fetchStockProductFamilyOptions(COMPANY)).toEqual({ type: 'malformed' })
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it.each([400, 401, 403, 409, 503])('answers a %i as itself, with its body, and does not retry', async (status) => {
+    const problem = { status, code: 'inventory_product_family_option_read_conflict' }
+    fetchMock.mockResolvedValue(json(status, problem))
+    expect(await fetchStockProductFamilyOptions(COMPANY)).toEqual({ type: 'http', status, body: problem })
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('tells an abandoned read from a network failure and from being offline', async () => {
+    const aborted = new AbortController()
+    aborted.abort()
+    fetchMock.mockRejectedValue(new Error('down'))
+    expect(await fetchStockProductFamilyOptions(COMPANY, aborted.signal)).toEqual({ type: 'fence-stale' })
+    expect(await fetchStockProductFamilyOptions(COMPANY)).toEqual({ type: 'network-error' })
+    vi.stubGlobal('navigator', { onLine: false })
+    expect(await fetchStockProductFamilyOptions(COMPANY)).toEqual({ type: 'offline' })
   })
 })

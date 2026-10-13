@@ -9,7 +9,7 @@ import { readEnvironment } from '../src/env'
  */
 const env = readEnvironment()
 const { companyId, otherCompanyId, locationId, productId, productVersion, productCode, productName,
-  recorderActor, arrangerActor, counterActor, ownerPartyId, ownerCompanyAccountId } = env.seed
+  recorderActor, deniedActor, arrangerActor, counterActor, ownerPartyId, ownerCompanyAccountId } = env.seed
 const POSITIONS = '/api/v1/inventory/positions'
 const OPENINGS = '/api/v1/inventory/opening-counts'
 const PRODUCTS = '/api/v1/products'
@@ -134,15 +134,22 @@ async function desktopInk(row: Locator, header: string, expected: string, spanTe
     const ink = [...range.getClientRects()].filter((rect) => rect.width > 0 && rect.height > 0)
     const left = target === available ? availableRect.left : labelRect.right + 1
     const right = target === available ? actionsRect.left : availableRect.left - 1
-    const fragmentsReachable = ink.length > 0 && ink.every((rect) => {
+    const fragmentDetails = ink.map((rect) => {
       const x = (rect.left + rect.right) / 2
       const y = (rect.top + rect.bottom) / 2
       const hit = document.elementFromPoint(x, y)
-      return rect.left >= Math.max(left, scrollRect.left) - 1 && rect.right <= Math.min(right, scrollRect.right) + 1
+      const reachable = rect.left >= Math.max(left, scrollRect.left) - 1 && rect.right <= Math.min(right, scrollRect.right) + 1
         && rect.left >= cellRect.left - 1 && rect.right <= cellRect.right + 1
         && rect.top >= cellRect.top - 1 && rect.bottom <= cellRect.bottom + 1
         && hit !== null && cells[index].contains(hit)
+      return {
+        rect: { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom },
+        reachable,
+        hit: hit === null ? null : { tag: hit.tagName, className: hit.getAttribute('class') },
+        hitInsideCell: hit !== null && cells[index].contains(hit),
+      }
     })
+    const fragmentsReachable = fragmentDetails.length > 0 && fragmentDetails.every((fragment) => fragment.reachable)
     const actionButton = actions.querySelector('button')
     const buttonRect = actionButton?.getBoundingClientRect()
     const buttonHit = buttonRect && document.elementFromPoint(
@@ -153,11 +160,33 @@ async function desktopInk(row: Locator, header: string, expected: string, spanTe
         && availableRect.right <= actionsRect.left + 1 && actionsRect.right <= scrollRect.right + 1,
       actionHit: !!actionButton && !!buttonHit && actionButton.contains(buttonHit),
       noEllipsis: getComputedStyle(target).textOverflow !== 'ellipsis',
+      diagnostic: {
+        viewport: { width: window.innerWidth, height: window.innerHeight },
+        scroll: {
+          left: scrollRect.left, right: scrollRect.right, top: scrollRect.top, bottom: scrollRect.bottom,
+          scrollLeft: scroll.scrollLeft, clientWidth: scroll.clientWidth, scrollWidth: scroll.scrollWidth,
+        },
+        reachableBounds: {
+          left: Math.max(left, scrollRect.left), right: Math.min(right, scrollRect.right),
+        },
+        cell: { left: cellRect.left, right: cellRect.right, top: cellRect.top, bottom: cellRect.bottom },
+        target: (() => {
+          const rect = target.getBoundingClientRect()
+          return { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom }
+        })(),
+        pins: {
+          label: { left: labelRect.left, right: labelRect.right },
+          available: { left: availableRect.left, right: availableRect.right },
+          actions: { left: actionsRect.left, right: actionsRect.right },
+        },
+        fragments: fragmentDetails,
+      },
     }
   }, { header, expected, spanText })
   expect(measured, `${header}: ${expected} must be fully readable and uncovered`).not.toBeNull()
   expect(measured?.text).toBe(expected)
-  expect(measured?.fragmentsReachable).toBe(true)
+  expect(measured?.fragmentsReachable,
+    `${header}: ${expected} ink was not fully reachable: ${JSON.stringify(measured?.diagnostic)}`).toBe(true)
   expect(measured?.pinsClear).toBe(true)
   expect(measured?.actionHit).toBe(true)
   expect(measured?.noEllipsis).toBe(true)
@@ -492,7 +521,7 @@ test('ST-01 shows long genuine Product and exact stock quantities at desktop and
   expect(stockDisplayVersions.every((version) => version === STOCK_DISPLAY_VERSION)).toBe(true)
 })
 
-test('ST-01 applies genuine Product family and nominal dimension filters before public pagination', async ({ page }) => {
+test('ST-01 applies genuine Product family and nominal dimension filters before public pagination and through the real UI', async ({ page }) => {
   test.setTimeout(240_000)
   const filterPrefix = `SYNTYPED-${randomUUID().slice(0, 8).toUpperCase()}`
 
@@ -540,8 +569,8 @@ test('ST-01 applies genuine Product family and nominal dimension filters before 
   }
 
   // A second genuine card uses the same accepted family/template and dictionary values, but different nominal
-  // dimensions. Its 25 labels sort before the two 3 x 248 labels, so a public limit=1 read can succeed only if the
-  // server scans and applies Product's typed match before it cuts the public page.
+  // dimensions. Its 25 labels sort before 26 genuine 3 x 248 labels, so the typed UI can find a later match and
+  // exercise its own continuation without ever filtering the page it already holds.
   const alternateProductAnswer = await page.request.post(`${env.apiBaseUrl}${PRODUCTS}`, {
     headers: {
       ...headers(productFixtureActor), 'Content-Type': 'application/json',
@@ -669,9 +698,11 @@ test('ST-01 applies genuine Product family and nominal dimension filters before 
     lotId: randomUUID(), heatNumber: `${filterPrefix}-HEAT-A${index}`, coilNumber: null,
     productId: alternateActive.card.product.id, productVersion: alternateActive.card.product.version, quantityKg: '1',
   }))
-  const matches = [0, 1].map((index) => ({
-    lineId: randomUUID(), labelId: randomUUID(), labelCode: `${filterPrefix}-B${index}`,
-    lotId: randomUUID(), heatNumber: `${filterPrefix}-HEAT-B${index}`, coilNumber: null,
+  // More than one public page of matching rows lets the real UI prove that its continuation cursor remains bound to
+  // the family and both nominal-dimension conditions. The 25 nonmatches still sort first in the unfiltered list.
+  const matches = Array.from({ length: 26 }, (_, index) => ({
+    lineId: randomUUID(), labelId: randomUUID(), labelCode: `${filterPrefix}-B${String(index).padStart(2, '0')}`,
+    lotId: randomUUID(), heatNumber: `${filterPrefix}-HEAT-B${String(index).padStart(2, '0')}`, coilNumber: null,
     productId, productVersion, quantityKg: String(10 + index),
   }))
   const opened = await page.request.post(`${env.apiBaseUrl}${OPENINGS}`, {
@@ -708,14 +739,14 @@ test('ST-01 applies genuine Product family and nominal dimension filters before 
   expect(secondAnswer.status()).toBe(200)
   const second = await secondAnswer.json() as PositionPage
   expect(second.items.map((item) => item.labelId)).toEqual([matches[1].labelId])
-  expect(second.nextCursor).toBeNull()
+  expect(second.nextCursor).toEqual(expect.any(String))
 
   // The cursor is bound to every typed condition; it cannot be replayed under a wider width range.
   expect((await read({ ...exactAndRange, widthMaxMm: '249', cursor: first.nextCursor! })).status()).toBe(400)
 
   const rangeAndExactAnswer = await read({
     q: filterPrefix, productFamilyId: familyId, thicknessMinMm: '3', thicknessMaxMm: '3',
-    widthMm: '248', limit: '25',
+    widthMm: '248', limit: '100',
   })
   expect(rangeAndExactAnswer.status()).toBe(200)
   const rangeAndExact = await rangeAndExactAnswer.json() as PositionPage
@@ -723,7 +754,7 @@ test('ST-01 applies genuine Product family and nominal dimension filters before 
   expect(rangeAndExact.nextCursor).toBeNull()
 
   // An omitted typed condition is absent query state. Zero is not its substitute and is rejected by the API.
-  const omittedWidthAnswer = await read({ q: filterPrefix, productFamilyId: familyId, thicknessMm: '3', limit: '25' })
+  const omittedWidthAnswer = await read({ q: filterPrefix, productFamilyId: familyId, thicknessMm: '3', limit: '100' })
   expect(omittedWidthAnswer.status()).toBe(200)
   expect((await omittedWidthAnswer.json() as PositionPage).items.map((item) => item.labelId))
     .toEqual(matches.map((item) => item.labelId))
@@ -732,25 +763,191 @@ test('ST-01 applies genuine Product family and nominal dimension filters before 
   expect(anotherFamilyAnswer.status()).toBe(200)
   expect((await anotherFamilyAnswer.json() as PositionPage).items).toEqual([])
 
-  // The same real records remain usable on the stock page. UI typed-filter controls are a later consumer slice;
-  // this owner test does not fake them, but it verifies both desktop rows and phone cards for the API-proven matches.
+  // The same real records drive the UI consumer: family choices come from the authorized reference endpoint and all
+  // typed conditions stay in the server request. The page never derives options or filters its current 25 rows.
   await page.setViewportSize({ width: 1440, height: 900 })
   await page.setExtraHTTPHeaders({ 'X-Development-User': recorderActor })
   await page.goto('/')
   const unfiltered = await openList(page, filterPrefix)
   expect(unfiltered.items).toHaveLength(25)
   expect(unfiltered.items.every((item) => item.labelCode.includes('-A'))).toBe(true)
-  const continuation = page.waitForResponse((response) => isPositionRead(response, filterPrefix, unfiltered.nextCursor!))
-  await page.getByRole('button', { name: 'Daha fazla göster', exact: true }).click()
-  expect((await continuation).status()).toBe(200)
-  await expect(page.getByRole('table', { name: 'Stok / Malzeme Pozisyonu' }).locator('tbody tr')).toHaveCount(27)
-  for (const item of [...first.items, ...second.items]) await assertDesktopPosition(page, item)
-  await expectNoPageOverflow(page, 'the typed-filter source rows on desktop')
+  expect(unfiltered.nextCursor).toEqual(expect.any(String))
 
-  await page.setViewportSize({ width: 390, height: 844 })
-  await expect(page.getByTestId('stock-position-cards').locator('li')).toHaveCount(27)
-  for (const item of [...first.items, ...second.items]) await assertMobilePosition(page, item)
-  await expectNoPageOverflow(page, 'the typed-filter source cards on phone')
+  const familyOptions = page.waitForResponse((response) => response.request().method() === 'GET'
+    && new URL(response.url()).pathname === '/api/v1/inventory/references/product-families')
+  const allFilters = page.getByRole('button', { name: 'Tüm filtreler', exact: true })
+  await allFilters.focus()
+  await allFilters.press('Enter')
+  expect((await familyOptions).status()).toBe(200)
+  await expect(page.getByLabel('Ürün ailesi', { exact: true })).toBeEnabled()
+
+  const familyRead = page.waitForResponse((response) => {
+    const url = new URL(response.url())
+    return isPositionRead(response, filterPrefix) && !url.searchParams.has('cursor')
+      && url.searchParams.get('productFamilyId') === familyId
+  })
+  await page.getByLabel('Ürün ailesi', { exact: true }).selectOption(familyId)
+  expect((await familyRead).status()).toBe(200)
+
+  await page.getByLabel('Kalınlık (mm)', { exact: true }).fill('3')
+  await page.getByLabel('En koşulu', { exact: true }).selectOption('range')
+  await page.getByLabel('En alt sınır (mm)', { exact: true }).fill('248')
+  await page.getByLabel('En üst sınır (mm)', { exact: true }).fill('248')
+  const typedFirstRead = page.waitForResponse((response) => {
+    const url = new URL(response.url())
+    return isPositionRead(response, filterPrefix) && !url.searchParams.has('cursor')
+      && url.searchParams.get('productFamilyId') === familyId
+      && url.searchParams.get('thicknessMm') === '3'
+      && url.searchParams.get('widthMinMm') === '248'
+      && url.searchParams.get('widthMaxMm') === '248'
+  })
+  await page.getByRole('button', { name: 'Ölçüleri uygula', exact: true }).click()
+  const typedFirstAnswer = await typedFirstRead
+  expect(typedFirstAnswer.status()).toBe(200)
+  const typedFirst = await typedFirstAnswer.json() as PositionPage
+  expect(typedFirst.items.map((item) => item.labelId)).toEqual(matches.slice(0, 25).map((item) => item.labelId))
+  expect(typedFirst.nextCursor).toEqual(expect.any(String))
+  await expect(page).toHaveURL(new RegExp(`aile=${familyId}.*kalinlik=3.*enMin=248.*enMaks=248`))
+  await expect(page.getByRole('list', { name: 'Etkin filtreler' })).toContainText('Kalınlık: 3 mm')
+  await expect(page.getByRole('list', { name: 'Etkin filtreler' })).toContainText('En: 248–248 mm')
+  await expect(page.getByRole('table', { name: 'Stok / Malzeme Pozisyonu' }).locator('tbody tr')).toHaveCount(25)
+
+  // The first continuation is a controlled transport failure only. Retry must use the identical real filter+cursor;
+  // its successful answer is fetched from the real API, and the first 25 rows remain visible between the attempts.
+  const continuationSearches: string[] = []
+  let refuseOnce = true
+  await page.route('**/api/v1/inventory/positions?**', async (route) => {
+    const url = new URL(route.request().url())
+    const isTypedContinuation = url.searchParams.get('q') === filterPrefix
+      && url.searchParams.get('cursor') === typedFirst.nextCursor
+      && url.searchParams.get('productFamilyId') === familyId
+      && url.searchParams.get('thicknessMm') === '3'
+      && url.searchParams.get('widthMinMm') === '248'
+      && url.searchParams.get('widthMaxMm') === '248'
+    if (!isTypedContinuation) {
+      await route.continue()
+      return
+    }
+    continuationSearches.push(url.search)
+    if (refuseOnce) {
+      refuseOnce = false
+      await route.fulfill({
+        status: 503,
+        contentType: 'application/problem+json',
+        body: JSON.stringify({ code: 'inventory_acceptance_retry', title: 'Controlled acceptance failure' }),
+      })
+      return
+    }
+    await route.continue()
+  })
+  const refusedContinuation = page.waitForResponse((response) => isPositionRead(response, filterPrefix, typedFirst.nextCursor!))
+  await page.getByRole('button', { name: 'Daha fazla göster', exact: true }).click()
+  expect((await refusedContinuation).status()).toBe(503)
+  await expect(page.getByText('Sonraki stok satırları okunamadı.', { exact: true })).toBeVisible()
+  await expect(page.getByRole('table', { name: 'Stok / Malzeme Pozisyonu' }).locator('tbody tr')).toHaveCount(25)
+
+  const retriedContinuation = page.waitForResponse((response) => isPositionRead(response, filterPrefix, typedFirst.nextCursor!))
+  await page.getByRole('button', { name: 'Daha fazla göster', exact: true }).click()
+  const retriedAnswer = await retriedContinuation
+  expect(retriedAnswer.status()).toBe(200)
+  const typedSecond = await retriedAnswer.json() as PositionPage
+  expect(typedSecond.items.map((item) => item.labelId)).toEqual([matches[25].labelId])
+  expect(continuationSearches).toHaveLength(2)
+  expect(continuationSearches[1]).toBe(continuationSearches[0])
+  await page.unroute('**/api/v1/inventory/positions?**')
+  await expect(page.getByRole('table', { name: 'Stok / Malzeme Pozisyonu' }).locator('tbody tr')).toHaveCount(26)
+
+  // Precision is refused beside the field and never rounded into a request.
+  await page.getByLabel('Kalınlık (mm)', { exact: true }).fill('3,0001')
+  const noRoundedRequest = page.waitForRequest((request) => new URL(request.url()).pathname === POSITIONS, { timeout: 500 })
+    .then(() => false, () => true)
+  await page.getByRole('button', { name: 'Ölçüleri uygula', exact: true }).click()
+  await expect(page.getByText('En çok üç ondalık basamak yazılabilir; değer yuvarlanmaz.', { exact: true })).toBeVisible()
+  expect(await noRoundedRequest).toBe(true)
+  await expect(page.getByLabel('Kalınlık (mm)', { exact: true })).toBeFocused()
+
+  // Switch exact/range roles. The new read has no old continuation cursor, while both inclusive boundaries remain.
+  await page.getByLabel('Kalınlık koşulu', { exact: true }).selectOption('range')
+  await page.getByLabel('Kalınlık alt sınır (mm)', { exact: true }).fill('3')
+  await page.getByLabel('Kalınlık üst sınır (mm)', { exact: true }).fill('3')
+  await page.getByLabel('En koşulu', { exact: true }).selectOption('exact')
+  await page.getByLabel('En (mm)', { exact: true }).fill('248')
+  const swappedRead = page.waitForResponse((response) => {
+    const url = new URL(response.url())
+    return isPositionRead(response, filterPrefix) && !url.searchParams.has('cursor')
+      && url.searchParams.get('productFamilyId') === familyId
+      && url.searchParams.get('thicknessMinMm') === '3'
+      && url.searchParams.get('thicknessMaxMm') === '3'
+      && url.searchParams.get('widthMm') === '248'
+  })
+  await page.getByRole('button', { name: 'Ölçüleri uygula', exact: true }).click()
+  const swappedAnswer = await swappedRead
+  expect(swappedAnswer.status()).toBe(200)
+  const swapped = await swappedAnswer.json() as PositionPage
+  expect(swapped.items.map((item) => item.labelId)).toEqual(matches.slice(0, 25).map((item) => item.labelId))
+  await expect(page.getByRole('table', { name: 'Stok / Malzeme Pozisyonu' }).locator('tbody tr')).toHaveCount(25)
+
+  for (const width of [1440, 1366]) {
+    await page.setViewportSize({ width, height: 900 })
+    await expect(page.getByRole('table', { name: 'Stok / Malzeme Pozisyonu' })).toBeVisible()
+    await assertDesktopPosition(page, swapped.items[0])
+    await assertDesktopPosition(page, swapped.items[24])
+    await expectNoPageOverflow(page, `the typed-filter table at ${width}px`)
+  }
+  for (const width of [768, 390, 320]) {
+    await page.setViewportSize({ width, height: 844 })
+    await expect(page.getByTestId('stock-position-cards').locator('li')).toHaveCount(25)
+    await assertMobilePosition(page, swapped.items[0])
+    await assertMobilePosition(page, swapped.items[24])
+    await expect(stockCard(page, swapped.items[0].labelId)
+      .getByRole('link', { name: swapped.items[0].labelCode, exact: true })).toBeVisible()
+    await expect(stockCard(page, swapped.items[24].labelId)
+      .getByRole('link', { name: swapped.items[24].labelCode, exact: true })).toBeVisible()
+    await assertMenu(page, swapped.items[0].labelId, swapped.items[0].labelCode, true)
+    await assertMenu(page, swapped.items[24].labelId, swapped.items[24].labelCode, true)
+    await expectNoPageOverflow(page, `the typed-filter cards at ${width}px`)
+  }
+
+  // Space opens the mobile filter panel. Browser Back/Forward returns to the complete typed URL rather than a first-
+  // page-only client filter; reopening the list issues the same server-side conditions.
+  const mobileFilters = page.getByRole('button', { name: /^Tüm filtreler/ })
+  if (await mobileFilters.getAttribute('aria-expanded') === 'true') await mobileFilters.click()
+  await mobileFilters.focus()
+  await mobileFilters.press('Space')
+  await expect(page.getByLabel('Ürün ailesi', { exact: true })).toBeVisible()
+
+  await page.setViewportSize({ width: 1440, height: 900 })
+  const chosen = swapped.items[0]
+  const detail = page.waitForResponse((response) => response.request().method() === 'GET'
+    && new URL(response.url()).pathname === `/api/v1/inventory/labels/${chosen.labelId}/detail`)
+  await page.getByRole('link', { name: chosen.labelCode, exact: true }).click()
+  expect((await detail).status()).toBe(200)
+  await expect(page).toHaveURL(new RegExp(`/stok/etiket/${chosen.labelId}$`))
+  const backRead = page.waitForResponse((response) => {
+    const url = new URL(response.url())
+    return isPositionRead(response, filterPrefix) && url.searchParams.get('productFamilyId') === familyId
+      && url.searchParams.get('thicknessMinMm') === '3' && url.searchParams.get('thicknessMaxMm') === '3'
+      && url.searchParams.get('widthMm') === '248' && !url.searchParams.has('cursor')
+  })
+  await page.goBack()
+  expect((await backRead).status()).toBe(200)
+  await expect(page.getByRole('list', { name: 'Etkin filtreler' })).toContainText('Kalınlık: 3–3 mm')
+  await page.goForward()
+  await expect(page).toHaveURL(new RegExp(`/stok/etiket/${chosen.labelId}$`))
+  await page.goBack()
+  await expect(page.getByRole('table', { name: 'Stok / Malzeme Pozisyonu' })).toBeVisible()
+
+  // Existing actor/company fences also bind the new query. Neither a denied actor nor a foreign company receives it.
+  const typedBoundaryQuery = `q=${encodeURIComponent(filterPrefix)}&productFamilyId=${familyId}`
+    + '&thicknessMinMm=3&thicknessMaxMm=3&widthMm=248&limit=25'
+  const denied = await page.request.get(`${env.apiBaseUrl}${POSITIONS}?${typedBoundaryQuery}`, {
+    headers: { ...headers(deniedActor), [STOCK_DISPLAY_HEADER]: STOCK_DISPLAY_VERSION },
+  })
+  expect(denied.status()).toBe(403)
+  const foreign = await page.request.get(`${env.apiBaseUrl}${POSITIONS}?${typedBoundaryQuery}`, {
+    headers: { ...headers(counterActor), 'X-Company-Id': otherCompanyId, [STOCK_DISPLAY_HEADER]: STOCK_DISPLAY_VERSION },
+  })
+  expect(foreign.status()).toBe(403)
 })
 
 /**

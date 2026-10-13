@@ -8,15 +8,38 @@
  */
 import { formatDecimalTextTr } from '../finance/decimalText'
 import type { StockClassification, StockPartyKind } from './stockDisplayContract'
+import type { StockMeasure, StockMeasureFilter, StockMeasureInputProblem } from './stockDisplayApi'
 
 export const STOCK_TEXT = {
   heading: 'Stok / Malzeme Pozisyonu',
   searchLabel: 'Etiket kodu',
   searchButton: 'Ara',
   searchTooLong: 'Etiket kodu en çok 64 karakter olabilir.',
-  otherFilters: 'Diğer filtreler',
+  /** The panel's button; closed, it says how many filters it holds so none is applied out of sight. */
+  allFilters: (held: number) => held > 0 ? `Tüm filtreler (${held})` : 'Tüm filtreler',
   classificationFilter: 'Sınıf',
   classificationAll: 'Tümü',
+  familyFilter: 'Ürün ailesi',
+  familyAll: 'Tümü',
+  familyLoading: 'Ürün aileleri yükleniyor…',
+  /** Three different facts: the list could not be read, the person may not see it — and "no family" cannot happen. */
+  familyUnreadable: 'Ürün ailesi listesi okunamadı.',
+  familyForbidden: 'Ürün ailesi listesini görme yetkiniz yok.',
+  familyRetry: 'Yeniden dene',
+  measureForm: 'Ölçü filtreleri',
+  measureApply: 'Ölçüleri uygula',
+  measureHelp: 'Ondalık için virgül yazın (ör. 1,5). Boş bırakılan ölçü filtrelenmez.',
+  measure: {
+    thickness: { name: 'Kalınlık', mode: 'Kalınlık koşulu', exact: 'Kalınlık (mm)', min: 'Kalınlık alt sınır (mm)', max: 'Kalınlık üst sınır (mm)' },
+    width: { name: 'En', mode: 'En koşulu', exact: 'En (mm)', min: 'En alt sınır (mm)', max: 'En üst sınır (mm)' },
+  } satisfies Record<StockMeasure, { name: string; mode: string; exact: string; min: string; max: string }>,
+  measureMode: { exact: 'Tam değer', range: 'Aralık' },
+  measureProblem: {
+    format: 'Yalnız rakam yazın; ondalık için virgül kullanın, binlik ayırıcı kullanmayın (ör. 1250 veya 1,5).',
+    precision: 'En çok üç ondalık basamak yazılabilir; değer yuvarlanmaz.',
+    zero: 'Sıfırdan büyük bir değer yazın.',
+  } satisfies Record<StockMeasureInputProblem, string>,
+  measureOrder: 'Alt sınır, üst sınırdan büyük olamaz.',
   columns: 'Sütunlar',
   visibleColumns: 'Görünen sütunlar',
   columnToggle: (column: string) => `${column} sütunu`,
@@ -60,6 +83,7 @@ export const STOCK_TEXT = {
     location: 'Lokasyon',
     owner: 'Mal sahibi',
     classification: 'Sınıf',
+    family: 'Ürün ailesi',
     remove: (what: string) => `${what} filtresini kaldır`,
   },
   /** The row filter actions: each filters by the row's own exact id, never by a guessed or typed value. */
@@ -74,6 +98,8 @@ export const STOCK_TEXT = {
   /** An exact owner filter names one owner, not a category: the contract publishes no owner name. */
   selectedCounterparty: 'seçili cari',
   selectedCompany: 'seçili şirket',
+  /** A filtered family whose name is not known here (the list is still loading, unreadable or does not hold it). */
+  selectedFamily: 'seçili ürün ailesi',
 } as const
 
 /** The Inventory classification axis in the accepted Turkish words; "Hurda" is a value, never the column. */
@@ -131,4 +157,15 @@ export function formatMm(value: string): string {
 /** "kalınlık × en", or "—" when the Product owner published no accepted nominal measures. */
 export function dimensionText(technical: { readonly thicknessMm: string; readonly widthMm: string } | null): string {
   return technical === null ? STOCK_TEXT.unknown : `${formatMm(technical.thicknessMm)} × ${formatMm(technical.widthMm)}`
+}
+
+/**
+ * One measure filter in words, in the table's own number writing: "1,5 mm", "1–3 mm", "en az 1 mm", "en çok 3 mm".
+ * Both ends of a range are part of it, as on the server.
+ */
+export function measureFilterText({ exact, min, max }: StockMeasureFilter): string | null {
+  if (exact !== null) return `${formatMm(exact)} mm`
+  if (min !== null && max !== null) return `${formatMm(min)}–${formatMm(max)} mm`
+  if (min !== null) return `en az ${formatMm(min)} mm`
+  return max !== null ? `en çok ${formatMm(max)} mm` : null
 }
