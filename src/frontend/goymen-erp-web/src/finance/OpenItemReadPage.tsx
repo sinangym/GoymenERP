@@ -8,7 +8,12 @@
  *
  * The read carries no party name, document number or currency name, so none is shown or looked up per row. The main
  * view keeps to the source kind, the due date and the disclosed facts; the record's identities live under
- * "Teknik bilgiler" on the detail. A currency code appears only where the caller's existing currency read gives one.
+ * "Teknik bilgiler" on the detail. The currency is shown as the reference the read carries: this screen makes no
+ * other read to name it.
+ *
+ * The server measures the amount authority on every read. Rows are therefore kept only while they share one
+ * disclosure: an answer that discloses differently from what is on screen drops everything shown before anything
+ * else is drawn, so money or a status the caller may no longer read never stays behind.
  *
  * Continuation follows the contract: 50 per page, newest first, `nextCursor = null` is the end, there is no filter,
  * sort or total. A failed next page keeps the rows already shown and retries the SAME cursor only when asked.
@@ -30,7 +35,6 @@ import { DataTable, type DataTableColumn } from '../ui/DataTable'
 import { StatusIndicator, type StatusTone } from '../ui/StatusIndicator'
 import { FINANCE_CAPABILITY, FINANCE_ROUTE, openItemDetailPath } from './capabilities'
 import { isBoundUuid, type AmountView } from './contract'
-import { WithCurrencyCodes, type CurrencyCodes } from './currencyCodes'
 import { formatDecimalTextTr } from './decimalText'
 import type { OpenItem, OpenItemStatus } from './openItemReadContract'
 import { fetchOpenItem, fetchOpenItems } from './openItemReadHttp'
@@ -74,8 +78,11 @@ function Instant({ value }: { readonly value: string }) {
   </time>
 }
 
-/** The currency's code when the caller's existing currency read gives one; otherwise its reference, never a guess. */
-const currencyText = (currencyId: string, codes: CurrencyCodes) => codes?.get(currencyId) ?? T.currencyReference(shortReference(currencyId))
+/** The currency as the read carries it: a reference. No code or name is looked up or guessed. */
+const currencyText = (currencyId: string) => T.currencyReference(shortReference(currencyId))
+
+/** The one disclosure a server answer was made under (the decoder refuses a mixed answer); `null` for no rows. */
+const disclosureOf = (items: readonly OpenItem[]) => items.length === 0 ? null : items[0].initialAmount.disclosure
 
 const dueOnText = (item: OpenItem) => item.dueOn === null ? T.noDueOn : formatDate(item.dueOn)
 
@@ -94,6 +101,8 @@ function Status({ item }: { readonly item: OpenItem }) {
 
 /** True when the server withheld money and status from this caller on every row: the columns are then left out. */
 const allRedacted = (items: readonly OpenItem[]) => items.every((item) => item.initialAmount.disclosure === 'Redacted')
+
+const NO_ROWS: readonly OpenItem[] = []
 
 function useBinding() {
   const shell = useShellState()
@@ -114,20 +123,31 @@ function OpenItemList() {
   const canOpen = hasCapability(shell, FINANCE_CAPABILITY.openItemsDetail as never)
   /** Cards or table is a layout choice only: the same rows, the same order, no new read when it flips. */
   const cards = useSyncExternalStore(subscribeCards, readCards, () => false)
+  /**
+   * One disclosure epoch: every row on screen was answered under the same amount authority. A new epoch drops all of
+   * them at once and reads the first page afresh — rows of two authorities are never shown together.
+   */
+  const [epoch, setEpoch] = useState(0)
   const [more, setMore] = useState<readonly OpenItem[]>([])
   const [cursor, setCursor] = useState<string | null | undefined>(undefined)
   const [continuation, setContinuation] = useState<'idle' | 'loading' | RemoteViewState<unknown>>('idle')
+  /** A next page the server refused outright: the list is closed rather than left on screen above the refusal. */
+  const [refused, setRefused] = useState<RemoteViewState<unknown> | null>(null)
   const loading = useRef(false)
-  /** The next-page read in flight; leaving the screen or its context aborts it, and its answer is then dropped. */
+  /** The next-page read in flight; a new first-page answer, a new epoch or leaving the screen aborts it. */
   const inFlight = useRef<AbortController | null>(null)
-  useEffect(() => () => {
+  const dropInFlight = useCallback(() => {
     inFlight.current?.abort()
     inFlight.current = null
+    loading.current = false
   }, [])
+  useEffect(() => dropInFlight, [dropInFlight])
 
   const first = useQuery({
-    queryKey: [namespace ?? 'no-context', shell.routeEntryGeneration, 'finance-open-items'],
+    queryKey: [namespace ?? 'no-context', shell.routeEntryGeneration, 'finance-open-items', epoch],
     enabled: namespace !== null && companyId !== null,
+    // Nothing of this read outlives the screen that shows it: no disclosed amount waits in a cache.
+    gcTime: 0,
     queryFn: async ({ signal }) => {
       const snapshot = boundary.capture()
       const outcome = await fetchOpenItems(companyId ?? '', null, signal)
@@ -136,10 +156,25 @@ function OpenItemList() {
     },
   })
   const page = first.data?.type === 'ok-single' ? first.data.data : null
-  const nextCursor = cursor === undefined ? page?.nextCursor ?? null : cursor
+
+  // The later pages continue ONE first-page answer. When the first page is answered again, they and their cursor
+  // belong to the answer before it: they are dropped in the same render, before the new answer is drawn.
+  const answeredAt = first.dataUpdatedAt
+  const [continues, setContinues] = useState(answeredAt)
+  if (continues !== answeredAt) {
+    setContinues(answeredAt)
+    setMore([])
+    setCursor(undefined)
+    setContinuation('idle')
+    setRefused(null)
+  }
+  useEffect(() => dropInFlight, [answeredAt, dropInFlight])
+  const current = continues === answeredAt
+  const shownMore = current ? more : NO_ROWS
+  const nextCursor = !current || cursor === undefined ? page?.nextCursor ?? null : cursor
 
   const loadMore = useCallback(async () => {
-    if (loading.current || companyId === null || nextCursor === null) return
+    if (loading.current || companyId === null || page === null || nextCursor === null) return
     loading.current = true
     setContinuation('loading')
     const controller = new AbortController()
@@ -149,16 +184,33 @@ function OpenItemList() {
     if (inFlight.current !== controller || controller.signal.aborted) return
     inFlight.current = null
     loading.current = false
-    if (outcome.type === 'http' && (outcome.status === 401 || outcome.status === 403)) boundary.report(outcome.status, snapshot)
-    if (outcome.type === 'ok-single') {
-      setMore((current) => {
-        const seen = new Set([...(page?.items ?? []), ...current].map((item) => item.id))
-        return [...current, ...outcome.data.items.filter((item) => !seen.has(item.id))]
-      })
-      setCursor(outcome.data.nextCursor)
+    if (outcome.type === 'http' && (outcome.status === 401 || outcome.status === 403)) {
+      boundary.report(outcome.status, snapshot)
+      setMore([])
+      setRefused(classifyOutcome(outcome) as RemoteViewState<unknown>)
+      return
+    }
+    if (outcome.type !== 'ok-single') {
+      setContinuation(classifyOutcome(outcome) as RemoteViewState<unknown>)
+      return
+    }
+    const shown = disclosureOf([...page.items, ...shownMore])
+    const answered = disclosureOf(outcome.data.items)
+    if (shown !== null && answered !== null && shown !== answered) {
+      // The amount authority changed between two pages. Nothing already shown is kept and this page is not added.
+      setMore([])
+      setCursor(undefined)
       setContinuation('idle')
-    } else setContinuation(classifyOutcome(outcome) as RemoteViewState<unknown>)
-  }, [boundary, companyId, nextCursor, page])
+      setEpoch((value) => value + 1)
+      return
+    }
+    setMore((existing) => {
+      const seen = new Set([...page.items, ...existing].map((item) => item.id))
+      return [...existing, ...outcome.data.items.filter((item) => !seen.has(item.id))]
+    })
+    setCursor(outcome.data.nextCursor)
+    setContinuation('idle')
+  }, [boundary, companyId, nextCursor, page, shownMore])
 
   const frame = (body: ReactNode) => (
     <section className={styles.page} aria-labelledby={LIST_HEADING_ID} data-testid="finance-open-item-list">
@@ -168,38 +220,38 @@ function OpenItemList() {
   )
 
   if (companyId === null) return frame(<StateBlock state={{ kind: 'no-authorized-company' }} subject={T.subject} />)
+  if (refused !== null && current) return frame(<StateBlock state={refused} subject={T.subject} />)
   if (page === null) {
     const state = first.data === undefined ? { kind: 'initial-loading' } : classifyOutcome(first.data)
     return frame(<StateBlock state={state as RemoteViewState<unknown>} subject={T.subject} onRetry={() => void first.refetch()} />)
   }
 
-  const rows = [...page.items, ...more]
+  // Fail closed: later pages are drawn only while they share the first page's disclosure.
+  const sameAuthority = shownMore.length === 0 || page.items.length === 0 || disclosureOf(shownMore) === disclosureOf(page.items)
+  const rows = sameAuthority ? [...page.items, ...shownMore] : page.items
   if (rows.length === 0 && nextCursor === null) return frame(<StateBlock state={{ kind: 'empty-no-data' }} subject={T.subject} />)
   const withheld = allRedacted(rows)
 
-  return frame(
-    <WithCurrencyCodes>{(codes) => <>
-      <p className={styles.note}>{T.order}{withheld ? ` ${T.amountsHidden}` : ''}</p>
-      {cards
-        ? <OpenItemCards rows={rows} codes={codes} canOpen={canOpen} withheld={withheld} />
-        : <OpenItemTable rows={rows} codes={codes} canOpen={canOpen} withheld={withheld} />}
-      {nextCursor !== null ? (
-        <div className={styles.continuation}>
-          {typeof continuation === 'object'
-            ? <StateBlock state={continuation} subject={T.nextPageSubject} onRetry={() => void loadMore()} />
-            : <Button type="button" variant="secondary" onClick={() => void loadMore()}
-                disabled={continuation === 'loading'} aria-busy={continuation === 'loading'}>
-                {continuation === 'loading' ? T.loadingMore : T.loadMore}
-              </Button>}
-        </div>
-      ) : null}
-    </>}</WithCurrencyCodes>,
-  )
+  return frame(<>
+    <p className={styles.note}>{T.order}{withheld ? ` ${T.amountsHidden}` : ''}</p>
+    {cards
+      ? <OpenItemCards rows={rows} canOpen={canOpen} withheld={withheld} />
+      : <OpenItemTable rows={rows} canOpen={canOpen} withheld={withheld} />}
+    {nextCursor !== null ? (
+      <div className={styles.continuation}>
+        {typeof continuation === 'object'
+          ? <StateBlock state={continuation} subject={T.nextPageSubject} onRetry={() => void loadMore()} />
+          : <Button type="button" variant="secondary" onClick={() => void loadMore()}
+              disabled={continuation === 'loading'} aria-busy={continuation === 'loading'}>
+              {continuation === 'loading' ? T.loadingMore : T.loadMore}
+            </Button>}
+      </div>
+    ) : null}
+  </>)
 }
 
 interface RowsProps {
   readonly rows: readonly OpenItem[]
-  readonly codes: CurrencyCodes
   readonly canOpen: boolean
   readonly withheld: boolean
 }
@@ -213,7 +265,7 @@ function RecordCell({ item, canOpen }: { readonly item: OpenItem; readonly canOp
     : <span className={styles.record}>{reference}</span>
 }
 
-function OpenItemTable({ rows, codes, canOpen, withheld }: RowsProps) {
+function OpenItemTable({ rows, canOpen, withheld }: RowsProps) {
   const columns: readonly DataTableColumn<OpenItem>[] = [
     { key: 'record', header: T.record, cell: (item) => <RecordCell item={item} canOpen={canOpen} />, pin: 'start', className: styles.nowrap },
     { key: 'sourceKind', header: T.sourceKind, cell: (item) => sourceKindLabel(item.sourceKind), className: styles.kind },
@@ -222,7 +274,7 @@ function OpenItemTable({ rows, codes, canOpen, withheld }: RowsProps) {
       { key: 'status', header: T.status, cell: (item: OpenItem) => <Status item={item} /> },
       { key: 'initial', header: T.initialAmount, cell: (item: OpenItem) => <Amount amount={item.initialAmount} />, align: 'end' as const },
       { key: 'outstanding', header: T.outstandingAmount, cell: (item: OpenItem) => <Amount amount={item.outstandingAmount} />, align: 'end' as const },
-      { key: 'currency', header: T.currency, cell: (item: OpenItem) => currencyText(item.currencyId, codes) },
+      { key: 'currency', header: T.currency, cell: (item: OpenItem) => currencyText(item.currencyId) },
     ]),
     { key: 'createdAt', header: T.createdAt, cell: (item) => <Instant value={item.createdAtUtc} />, className: styles.nowrap },
   ]
@@ -230,7 +282,7 @@ function OpenItemTable({ rows, codes, canOpen, withheld }: RowsProps) {
     rowAttributes={(item) => ({ 'data-open-item-id': item.id })} />
 }
 
-function OpenItemCards({ rows, codes, canOpen, withheld }: RowsProps) {
+function OpenItemCards({ rows, canOpen, withheld }: RowsProps) {
   return <ul className={styles.cards} aria-label={T.tableLabel} data-testid="finance-open-item-cards">
     {rows.map((item) => (
       <li key={item.id} className={styles.card} data-open-item-id={item.id}>
@@ -245,7 +297,7 @@ function OpenItemCards({ rows, codes, canOpen, withheld }: RowsProps) {
           {withheld ? null : <>
             <div><dt>{T.initialAmount}</dt><dd><Amount amount={item.initialAmount} /></dd></div>
             <div><dt>{T.outstandingAmount}</dt><dd><Amount amount={item.outstandingAmount} /></dd></div>
-            <div className={styles.wide}><dt>{T.currency}</dt><dd>{currencyText(item.currencyId, codes)}</dd></div>
+            <div className={styles.wide}><dt>{T.currency}</dt><dd>{currencyText(item.currencyId)}</dd></div>
           </>}
         </dl>
       </li>
@@ -266,6 +318,8 @@ function OpenItemDetail({ openItemId }: { readonly openItemId: string | undefine
   const valid = isBoundUuid(openItemId)
   const read = useQuery({
     queryKey: [namespace ?? 'no-context', shell.routeEntryGeneration, 'finance-open-item', openItemId ?? ''],
+    // The answer is replaced whole by the next one and kept nowhere once the screen is left.
+    gcTime: 0,
     enabled: namespace !== null && companyId !== null && valid,
     queryFn: async ({ signal }) => {
       const snapshot = boundary.capture()
@@ -287,12 +341,12 @@ function OpenItemDetail({ openItemId }: { readonly openItemId: string | undefine
       <h1 id={DETAIL_HEADING_ID} className={styles.title}>{T.detailHeading}</h1>
       {item === null
         ? <StateBlock state={state} subject={T.detailSubject} onRetry={() => void read.refetch()} />
-        : <WithCurrencyCodes>{(codes) => <OpenItemFacts item={item} codes={codes} />}</WithCurrencyCodes>}
+        : <OpenItemFacts item={item} />}
     </section>
   )
 }
 
-function OpenItemFacts({ item, codes }: { readonly item: OpenItem; readonly codes: CurrencyCodes }) {
+function OpenItemFacts({ item }: { readonly item: OpenItem }) {
   const shell = useShellState()
   // The party card is Cari's own screen: its link is offered only to a caller Cari already lets in.
   const canOpenParty = hasCapability(shell, CAPABILITY.cariPartiesDetail)
@@ -306,7 +360,7 @@ function OpenItemFacts({ item, codes }: { readonly item: OpenItem; readonly code
         <div><dt>{T.status}</dt><dd><Status item={item} /></dd></div>
         <div><dt>{T.initialAmount}</dt><dd><Amount amount={item.initialAmount} /></dd></div>
         <div><dt>{T.outstandingAmount}</dt><dd><Amount amount={item.outstandingAmount} /></dd></div>
-        <div><dt>{T.currency}</dt><dd>{currencyText(item.currencyId, codes)}</dd></div>
+        <div><dt>{T.currency}</dt><dd>{currencyText(item.currencyId)}</dd></div>
       </>}
       {canOpenParty
         ? <div><dt>{T.party}</dt><dd>
