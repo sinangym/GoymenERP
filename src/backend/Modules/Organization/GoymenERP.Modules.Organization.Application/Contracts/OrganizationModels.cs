@@ -27,7 +27,8 @@ public sealed record LocationSummary(
     string Name,
     bool IsExternal,
     bool IsActive,
-    long Version);
+    long Version,
+    Guid? OperatorPartyId = null);
 
 /// <param name="CanOpenLocationDetail">
 /// Whether the caller's current <c>organization.locations.read</c> scope reaches THIS

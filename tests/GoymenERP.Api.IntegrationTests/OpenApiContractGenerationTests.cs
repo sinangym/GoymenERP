@@ -184,6 +184,10 @@ public sealed partial class OpenApiContractGenerationTests
             AuthenticatedResponses("204:", "400:application/problem+json", "404:application/problem+json", "409:application/problem+json", "415:"),
             "#/components/schemas/SetLocationActiveState",
             ["path:id:true:type:string;format:uuid"]),
+        new("put", "/api/v1/organization/locations/{id}/operator", "SetOrganizationLocationOperatorV1",
+            AuthenticatedResponses("204:", "400:application/problem+json", "404:application/problem+json", "409:application/problem+json", "415:", "422:application/problem+json", "503:application/problem+json"),
+            "#/components/schemas/SetLocationOperator",
+            ["path:id:true:type:string;format:uuid"]),
         // ORG master edit: create and edit sites, locations and work centres (the active-state protocol: an
         // Idempotency-Key, expectedVersion on every edit, code-less 404/409, 422 organization_code_in_use).
         new("post", "/api/v1/organization/sites", "CreateOrganizationSiteV1",
@@ -950,6 +954,7 @@ public sealed partial class OpenApiContractGenerationTests
             ["DecideInventoryStockScrapV1"] = "ref:InventoryStockScrapViewV1",
             ["GetInventoryLabelStockScrapsV1"] = "ref:InventoryLabelStockScrapsV1",
             ["SetOrganizationLocationActiveStateV1"] = "none",
+            ["SetOrganizationLocationOperatorV1"] = "none",
             ["CreateOrganizationSiteV1"] = "ref:OrganizationCreatedRecord",
             ["UpdateOrganizationSiteV1"] = "none",
             ["CreateOrganizationLocationV1"] = "ref:OrganizationCreatedRecord",
@@ -1162,6 +1167,7 @@ public sealed partial class OpenApiContractGenerationTests
         "GetOrganizationLocationsV1",
         "GetOrganizationLocationV1",
         "SetOrganizationLocationActiveStateV1",
+        "SetOrganizationLocationOperatorV1",
         "CreateOrganizationSiteV1",
         "UpdateOrganizationSiteV1",
         "CreateOrganizationLocationV1",
@@ -1390,6 +1396,7 @@ public sealed partial class OpenApiContractGenerationTests
         "RequestCounterpartyTaxIdentityChangeV1",
         "DecideCounterpartyTaxIdentityChangeV1",
         "SetOrganizationLocationActiveStateV1",
+        "SetOrganizationLocationOperatorV1",
         "CreateOrganizationSiteV1",
         "UpdateOrganizationSiteV1",
         "CreateOrganizationLocationV1",
@@ -1487,6 +1494,13 @@ public sealed partial class OpenApiContractGenerationTests
                     StatusCodes.Status204NoContent,
                     StatusCodes.Status404NotFound,
                     StatusCodes.Status409Conflict,
+                ],
+                ["SetOrganizationLocationOperatorV1"] =
+                [
+                    StatusCodes.Status204NoContent,
+                    StatusCodes.Status404NotFound,
+                    StatusCodes.Status409Conflict,
+                    StatusCodes.Status422UnprocessableEntity,
                 ],
                 // ORG master edit: every final answer is stored and replayed, as the active-state command's.
                 ["CreateOrganizationSiteV1"] =
@@ -1692,6 +1706,7 @@ public sealed partial class OpenApiContractGenerationTests
         "DecideInventoryStockScrapV1",
         "GetOrganizationLocationsV1",
         "SetOrganizationLocationActiveStateV1",
+        "SetOrganizationLocationOperatorV1",
         "CreateOrganizationSiteV1",
         "UpdateOrganizationSiteV1",
         "CreateOrganizationLocationV1",
@@ -1837,6 +1852,8 @@ public sealed partial class OpenApiContractGenerationTests
         "GetInventoryLabelPhysicalAllocationsV1:404",
         "SetOrganizationLocationActiveStateV1:404",
         "SetOrganizationLocationActiveStateV1:409",
+        "SetOrganizationLocationOperatorV1:404",
+        "SetOrganizationLocationOperatorV1:409",
         "CreateOrganizationSiteV1:404",
         "CreateOrganizationSiteV1:409",
         "UpdateOrganizationSiteV1:404",
@@ -1952,6 +1969,7 @@ public sealed partial class OpenApiContractGenerationTests
         "ApproveAccountingJournalReversalV1:400",
         "GetAuditEventsV1:400",
         "SetOrganizationLocationActiveStateV1:400",
+        "SetOrganizationLocationOperatorV1:400",
         "CreateOrganizationSiteV1:400",
         "UpdateOrganizationSiteV1:400",
         "CreateOrganizationLocationV1:400",
@@ -2082,6 +2100,9 @@ public sealed partial class OpenApiContractGenerationTests
             ["ChangeInventoryPhysicalAllocationV1:409"] = [.. InventoryPhysicalAllocationHttpCodesV1.ChangeStatus409Codes.Order(StringComparer.Ordinal)],
             ["ChangeInventoryPhysicalAllocationV1:422"] = [.. InventoryPhysicalAllocationHttpCodesV1.ChangeStatus422Codes.Order(StringComparer.Ordinal)],
             // ORG master edit: the one stable 422 code, the owner's constant.
+            ["SetOrganizationLocationOperatorV1:422"] = [OrganizationProblemCodesV1.LocationOperatorIneligible],
+            ["SetOrganizationLocationOperatorV1:503"] =
+                [OrganizationProblemCodesV1.LocationOperatorDependencyUnavailable],
             ["CreateOrganizationSiteV1:422"] = [OrganizationProblemCodesV1.CodeInUse],
             ["UpdateOrganizationSiteV1:422"] = [OrganizationProblemCodesV1.CodeInUse],
             ["CreateOrganizationLocationV1:422"] = [OrganizationProblemCodesV1.CodeInUse],
@@ -4995,7 +5016,8 @@ public sealed partial class OpenApiContractGenerationTests
                     ("name", "type:string"),
                     ("isExternal", "type:boolean"),
                     ("isActive", "type:boolean"),
-                    ("version", "type:integer;format:int64")),
+                    ("version", "type:integer;format:int64"),
+                    ("operatorPartyId", "type:null|string;format:uuid")),
                 ["PageResultOfLocationSummary"] = ObjectSchema(
                     ["items", "page", "pageSize", "totalCount"],
                     ("items", "type:array;items:ref:LocationSummary"),
@@ -5885,6 +5907,11 @@ public sealed partial class OpenApiContractGenerationTests
                 ["SetLocationActiveState"] = ObjectSchema(
                     ["isActive", "expectedVersion", "reason"],
                     ("isActive", "type:boolean"),
+                    ("expectedVersion", "type:integer|string;format:int64"),
+                    ("reason", "type:string")),
+                ["SetLocationOperator"] = ObjectSchema(
+                    ["operatorPartyId", "expectedVersion", "reason"],
+                    ("operatorPartyId", "type:string;format:uuid"),
                     ("expectedVersion", "type:integer|string;format:int64"),
                     ("reason", "type:string")),
                 // ORG master edit: code and name only; a site's type, a location's site and a work centre's location

@@ -105,8 +105,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // GOY-UX-TEXT-FILTER-01 adds one scoped in-process Product read adapter used only to evaluate
     // version-bound stock filters before public cursor pagination; it adds no network, hosted-service or
     // production-activation surface.
+    // ORG-LOCATION-OPERATOR-API-01B adds one scoped in-process Counterparty-to-Organization eligibility
+    // adapter after both modules are registered; it adds no network, hosted-service or production-activation surface.
     private const string ReviewedOpenApiStartupFingerprint =
-        "386c80c4b02a89415f2cfdde0d315e6ff8742ebe8f4c4888ca98a16e76f213cd";
+        "08d1f4762a909861cc7013c37600235e04c7f5f0693435d9c952550df8e32be4";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedProductManufacturingTechnicalRegistrationPath =
@@ -256,8 +258,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // ORG master edit: +2 OrganizationMasterDataSqlServerRelationalAcceptanceTests facts (6b504dac… -> 3bad6ad8…).
             // Location display reader: +1 real-SQL tenant/display identity fact.
             // ORG-LOCATION-OPERATOR-CRUD-01A: +1 real-SQL persistence/concurrency/destination-read fact.
+            // ORG-LOCATION-OPERATOR-API-01B: +1 real-SQL host-adapter/API/read/replay fact.
             ["tools/relational_inventory/organization.txt"] =
-                "efe72cd6a27a4a84ec51baaa23da3401359f4a9e5b97362b0d435a2383278ea8",
+                "c2609fdb7d543a2a588da6ac9d215f0e46ca9e308f588a462c35df100656f78b",
 
             // platform
             // AT-002: +2 GlobalSearchSqlServerRelationalAcceptanceTests facts (5bc60202… -> a5df5046…).

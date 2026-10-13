@@ -100,7 +100,8 @@ internal sealed class OrganizationService(
                 x.Name,
                 x.IsExternal,
                 x.IsActive,
-                x.Version))
+                x.Version,
+                x.OperatorPartyId))
             .ToListAsync(cancellationToken);
 
         return new PageResult<LocationSummary>(
@@ -127,7 +128,8 @@ internal sealed class OrganizationService(
                 x.Name,
                 x.IsExternal,
                 x.IsActive,
-                x.Version))
+                x.Version,
+                x.OperatorPartyId))
             .SingleOrDefaultAsync(cancellationToken);
     }
 

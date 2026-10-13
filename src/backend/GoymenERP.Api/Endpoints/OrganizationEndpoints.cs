@@ -309,6 +309,101 @@ public static class OrganizationEndpoints
             .RequireAuthorization(OrganizationPermissionManifestV1.LocationsWrite)
             .WithMasterDataUpdateContract<UpdateLocation>("UpdateOrganizationLocationV1");
 
+        group.MapPut("/locations/{id:guid}/operator", async (
+                Guid id,
+                SetLocationOperator command,
+                IOrganizationMasterDataService service,
+                ICurrentUser currentUser,
+                ICompanyContext companyContext,
+                ICorrelationContext correlationContext,
+                HttpContext httpContext,
+                CancellationToken cancellationToken) =>
+        {
+            if (command.OperatorPartyId == Guid.Empty)
+            {
+                return InvalidMasterData("Lokasyon operatörü olarak kullanılacak cari seçilmelidir.");
+            }
+
+            if (command.ExpectedVersion <= 0)
+            {
+                return Results.Problem(
+                    title: "Beklenen sürüm gerekli.",
+                    detail: "Operatör değişikliği için sıfırdan büyük beklenen sürüm zorunludur.",
+                    statusCode: StatusCodes.Status400BadRequest);
+            }
+
+            if (!OrganizationMasterDataRules.IsValidReason(command.Reason))
+            {
+                return Results.Problem(
+                    title: "Gerekçe gerekli.",
+                    detail: "Kritik değişiklik için 1-1000 karakter arasında bir gerekçe girin.",
+                    statusCode: StatusCodes.Status400BadRequest);
+            }
+
+            if (!TryReadCommandMetadata(
+                    httpContext,
+                    currentUser,
+                    companyContext,
+                    correlationContext,
+                    out var metadata))
+            {
+                return Results.Problem(
+                    title: "Command bilgisi eksik.",
+                    detail: "İşlem için geçerli Idempotency-Key ve correlation bilgisi gerekir.",
+                    statusCode: StatusCodes.Status400BadRequest);
+            }
+
+            var execution = await service.SetLocationOperatorAsync(
+                id,
+                command,
+                metadata,
+                cancellationToken);
+            if (execution.IsReplay)
+            {
+                httpContext.Response.Headers["Idempotency-Replayed"] = "true";
+                httpContext.Response.Headers["Idempotency-Original-Correlation-Id"] =
+                    execution.OriginalCorrelationId;
+            }
+
+            return execution.Response.Result switch
+            {
+                CommandResult.OperatorIneligible => Results.Problem(
+                    title: execution.Response.Title,
+                    detail: execution.Response.Detail,
+                    statusCode: execution.Response.StatusCode,
+                    extensions: new Dictionary<string, object?>
+                    {
+                        ["code"] = OrganizationProblemCodesV1.LocationOperatorIneligible,
+                    }),
+                CommandResult.DependencyUnavailable => Results.Problem(
+                    title: execution.Response.Title,
+                    detail: execution.Response.Detail,
+                    statusCode: execution.Response.StatusCode,
+                    extensions: new Dictionary<string, object?>
+                    {
+                        ["code"] = OrganizationProblemCodesV1.LocationOperatorDependencyUnavailable,
+                    }),
+                _ => ToHttpResult(execution.Response),
+            };
+        }).RequireCompanyContext()
+            .RequireAuthorization(OrganizationPermissionManifestV1.LocationsWrite)
+            .WithIdempotencyContract(
+                StatusCodes.Status204NoContent,
+                StatusCodes.Status404NotFound,
+                StatusCodes.Status409Conflict,
+                StatusCodes.Status422UnprocessableEntity)
+            .WithName("SetOrganizationLocationOperatorV1")
+            .Accepts<SetLocationOperator>("application/json")
+            .Produces(StatusCodes.Status204NoContent)
+            .ProducesErpBadRequest()
+            .AllowsCodeLessErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpCodeLessConflict()
+            .ProducesErpUnprocessableEntity(OrganizationProblemCodesV1.LocationOperatorIneligible)
+            .ProducesErpServiceUnavailable(OrganizationProblemCodesV1.LocationOperatorDependencyUnavailable)
+            .ProducesErpAuthenticatedProblems();
+
         group.MapPost("/work-centers", async (
                 CreateWorkCenter command,
                 IOrganizationMasterDataService service,
