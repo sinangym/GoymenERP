@@ -5,7 +5,7 @@
 # (SUITES / its staged Finance profile, SUITE_API_EXTENSIONS["fin01"] = actors + identity,
 # SUITE_IDENTITY_PERMISSIONS["fin01"] = the closed permission names below).
 #
-# Six synthetic actors after the canonical two, each with its Identity user, a synthetic role and a
+# Nine synthetic actors after the canonical two, each with its Identity user, a synthetic role and a
 # company-wide assignment in GDC (the company whose approved TRY money profile Settings answers).
 # The approver also has one isolated GSP role containing only the already registered official-invoice
 # approval permission. It exists solely to exercise a real company-context fence in the disposable suite.
@@ -32,6 +32,9 @@
 #   fin01-sales-preparer: submits the fixture Sales draft through the real Sales command.
 #   fin01-sales-approver: Sales-only Work persona; reads and decides Sales drafts, with no Finance grant.
 #   fin01-both-approver: Work persona holding both native approval permissions in GDC.
+#   fin01-open-items-metadata: independent FI04 metadata read; no amount/status disclosure.
+#   fin01-open-items-visible: FI04 metadata read plus the separate amount/status disclosure.
+#   fin01-open-items-amount-only: amount permission without metadata read; FI04 stays closed.
 services:
   api:
     environment:
@@ -47,6 +50,12 @@ services:
       BootstrapIdentity__Users__6__DisplayName: SENTETIK FIN01 Sales approver
       BootstrapIdentity__Users__7__UserId: fin01-both-approver
       BootstrapIdentity__Users__7__DisplayName: SENTETIK FIN01 combined approver
+      BootstrapIdentity__Users__8__UserId: fin01-open-items-metadata
+      BootstrapIdentity__Users__8__DisplayName: SENTETIK FIN01 open-item metadata reader
+      BootstrapIdentity__Users__9__UserId: fin01-open-items-visible
+      BootstrapIdentity__Users__9__DisplayName: SENTETIK FIN01 open-item amount reader
+      BootstrapIdentity__Users__10__UserId: fin01-open-items-amount-only
+      BootstrapIdentity__Users__10__DisplayName: SENTETIK FIN01 open-item amount-only guard
       IdentitySeed__Users__5__Id: b2000000-0000-4000-8000-00000000f101
       IdentitySeed__Users__5__DisplayName: SENTETIK FIN01 Proposer
       IdentitySeed__Users__5__ExternalIdentities__0__Id: b2100000-0000-4000-8000-00000000f101
@@ -77,6 +86,21 @@ services:
       IdentitySeed__Users__10__ExternalIdentities__0__Id: b2100000-0000-4000-8000-00000000f107
       IdentitySeed__Users__10__ExternalIdentities__0__Issuer: "urn:goymen:development-bootstrap"
       IdentitySeed__Users__10__ExternalIdentities__0__Subject: fin01-both-approver
+      IdentitySeed__Users__11__Id: b2000000-0000-4000-8000-00000000f108
+      IdentitySeed__Users__11__DisplayName: SENTETIK FIN01 open-item metadata reader
+      IdentitySeed__Users__11__ExternalIdentities__0__Id: b2100000-0000-4000-8000-00000000f108
+      IdentitySeed__Users__11__ExternalIdentities__0__Issuer: "urn:goymen:development-bootstrap"
+      IdentitySeed__Users__11__ExternalIdentities__0__Subject: fin01-open-items-metadata
+      IdentitySeed__Users__12__Id: b2000000-0000-4000-8000-00000000f109
+      IdentitySeed__Users__12__DisplayName: SENTETIK FIN01 open-item amount reader
+      IdentitySeed__Users__12__ExternalIdentities__0__Id: b2100000-0000-4000-8000-00000000f109
+      IdentitySeed__Users__12__ExternalIdentities__0__Issuer: "urn:goymen:development-bootstrap"
+      IdentitySeed__Users__12__ExternalIdentities__0__Subject: fin01-open-items-visible
+      IdentitySeed__Users__13__Id: b2000000-0000-4000-8000-00000000f10a
+      IdentitySeed__Users__13__DisplayName: SENTETIK FIN01 open-item amount-only guard
+      IdentitySeed__Users__13__ExternalIdentities__0__Id: b2100000-0000-4000-8000-00000000f10a
+      IdentitySeed__Users__13__ExternalIdentities__0__Issuer: "urn:goymen:development-bootstrap"
+      IdentitySeed__Users__13__ExternalIdentities__0__Subject: fin01-open-items-amount-only
       IdentitySeed__Roles__5__Id: b3000000-0000-4000-8000-00000000f101
       IdentitySeed__Roles__5__Code: BROWSER_FIN01_PROPOSER
       IdentitySeed__Roles__5__Name: SENTETIK FIN01 Proposer
@@ -146,6 +170,22 @@ services:
       IdentitySeed__Roles__11__Permissions__0: finance.official-invoice-import.approve
       IdentitySeed__Roles__11__Permissions__1: sales.drafts.read
       IdentitySeed__Roles__11__Permissions__2: sales.orders.approve
+      IdentitySeed__Roles__12__Id: b3000000-0000-4000-8000-00000000f108
+      IdentitySeed__Roles__12__Code: BROWSER_FIN01_OPEN_ITEMS_METADATA
+      IdentitySeed__Roles__12__Name: SENTETIK FIN01 open-item metadata reader
+      IdentitySeed__Roles__12__IsSystem: "false"
+      IdentitySeed__Roles__12__Permissions__0: finance.open-items.read
+      IdentitySeed__Roles__13__Id: b3000000-0000-4000-8000-00000000f109
+      IdentitySeed__Roles__13__Code: BROWSER_FIN01_OPEN_ITEMS_VISIBLE
+      IdentitySeed__Roles__13__Name: SENTETIK FIN01 open-item amount reader
+      IdentitySeed__Roles__13__IsSystem: "false"
+      IdentitySeed__Roles__13__Permissions__0: finance.open-items.read
+      IdentitySeed__Roles__13__Permissions__1: finance.open-items.amount.read
+      IdentitySeed__Roles__14__Id: b3000000-0000-4000-8000-00000000f10a
+      IdentitySeed__Roles__14__Code: BROWSER_FIN01_OPEN_ITEMS_AMOUNT_ONLY
+      IdentitySeed__Roles__14__Name: SENTETIK FIN01 open-item amount-only guard
+      IdentitySeed__Roles__14__IsSystem: "false"
+      IdentitySeed__Roles__14__Permissions__0: finance.open-items.amount.read
       IdentitySeed__Assignments__7__Id: b4000000-0000-4000-8000-00000000f101
       IdentitySeed__Assignments__7__UserId: b2000000-0000-4000-8000-00000000f101
       IdentitySeed__Assignments__7__RoleId: b3000000-0000-4000-8000-00000000f101
@@ -195,3 +235,31 @@ services:
       IdentitySeed__Assignments__13__ValidFromUtc: "2026-01-01T00:00:00+00:00"
       IdentitySeed__Assignments__13__Scopes__0__Type: Company
       IdentitySeed__Assignments__13__Scopes__0__Id: 10000000-0000-0000-0000-000000000001
+      IdentitySeed__Assignments__14__Id: b4000000-0000-4000-8000-00000000f108
+      IdentitySeed__Assignments__14__UserId: b2000000-0000-4000-8000-00000000f108
+      IdentitySeed__Assignments__14__RoleId: b3000000-0000-4000-8000-00000000f108
+      IdentitySeed__Assignments__14__CompanyId: 10000000-0000-0000-0000-000000000001
+      IdentitySeed__Assignments__14__ValidFromUtc: "2026-01-01T00:00:00+00:00"
+      IdentitySeed__Assignments__14__Scopes__0__Type: Company
+      IdentitySeed__Assignments__14__Scopes__0__Id: 10000000-0000-0000-0000-000000000001
+      IdentitySeed__Assignments__15__Id: b4000000-0000-4000-8000-00000000f109
+      IdentitySeed__Assignments__15__UserId: b2000000-0000-4000-8000-00000000f109
+      IdentitySeed__Assignments__15__RoleId: b3000000-0000-4000-8000-00000000f109
+      IdentitySeed__Assignments__15__CompanyId: 10000000-0000-0000-0000-000000000001
+      IdentitySeed__Assignments__15__ValidFromUtc: "2026-01-01T00:00:00+00:00"
+      IdentitySeed__Assignments__15__Scopes__0__Type: Company
+      IdentitySeed__Assignments__15__Scopes__0__Id: 10000000-0000-0000-0000-000000000001
+      IdentitySeed__Assignments__16__Id: b4000000-0000-4000-8000-00000000f10a
+      IdentitySeed__Assignments__16__UserId: b2000000-0000-4000-8000-00000000f10a
+      IdentitySeed__Assignments__16__RoleId: b3000000-0000-4000-8000-00000000f10a
+      IdentitySeed__Assignments__16__CompanyId: 10000000-0000-0000-0000-000000000001
+      IdentitySeed__Assignments__16__ValidFromUtc: "2026-01-01T00:00:00+00:00"
+      IdentitySeed__Assignments__16__Scopes__0__Type: Company
+      IdentitySeed__Assignments__16__Scopes__0__Id: 10000000-0000-0000-0000-000000000001
+      IdentitySeed__Assignments__17__Id: b4000000-0000-4000-8000-00000000f10b
+      IdentitySeed__Assignments__17__UserId: b2000000-0000-4000-8000-00000000f109
+      IdentitySeed__Assignments__17__RoleId: b3000000-0000-4000-8000-00000000f109
+      IdentitySeed__Assignments__17__CompanyId: 10000000-0000-0000-0000-000000000002
+      IdentitySeed__Assignments__17__ValidFromUtc: "2026-01-01T00:00:00+00:00"
+      IdentitySeed__Assignments__17__Scopes__0__Type: Company
+      IdentitySeed__Assignments__17__Scopes__0__Id: 10000000-0000-0000-0000-000000000002
