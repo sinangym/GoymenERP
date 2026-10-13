@@ -30,8 +30,9 @@ namespace GoymenERP.Api.IntegrationTests;
 
 /// <summary>
 /// DEC-SAL-005 / AT-007 against a REAL SQL Server and the REAL host composition: the impact preview of an approved order is
-/// read through the real routes from the owners' real ports (Inventory's active allocations, Logistics's loading lines — each
-/// registered by its own module; the other four categories have no owner on main and read "NoSource"); the cancellation is one
+/// read through the real routes from the owners' real ports (Inventory's active allocations, Logistics's loading lines and
+/// active approved dispatch-note candidates — each registered by its own module; the remaining three categories have no owner
+/// on main and read "NoSource"); the cancellation is one
 /// save (header state + version, the appended cancellation row, the attempt, the audit event with SourceChannel Web); the
 /// reopened order reads Cancelled with its reason and unchanged approval facts; the same key replays with no second effect;
 /// the Sales line port no longer answers its lines as an approved demand; a loading line of the order blocks the cancellation
@@ -83,7 +84,7 @@ public sealed class SalesOrderCancellationSqlServerRelationalAcceptanceTests
                 (SalesCancellationImpactSourcesV1.LinkedPurchasing, SalesCancellationImpactStatusesV1.NoSource),
                 (SalesCancellationImpactSourcesV1.LinkedProduction, SalesCancellationImpactStatusesV1.NoSource),
                 (SalesCancellationImpactSourcesV1.LoadingWithoutDispatchNote, SalesCancellationImpactStatusesV1.None),
-                (SalesCancellationImpactSourcesV1.UninvoicedDispatchNotes, SalesCancellationImpactStatusesV1.NoSource),
+                (SalesCancellationImpactSourcesV1.UninvoicedDispatchNotes, SalesCancellationImpactStatusesV1.None),
                 (SalesCancellationImpactSourcesV1.UnmatchedAdvances, SalesCancellationImpactStatusesV1.NoSource),
             ],
             preview.GetProperty("sources").EnumerateArray().Select(source => (source.GetProperty("source").GetString(), source.GetProperty("status").GetString())));
@@ -146,6 +147,41 @@ public sealed class SalesOrderCancellationSqlServerRelationalAcceptanceTests
         var answer = await run.LineAsync(CompanyA, draft.Id, orderLine.Id);
         Assert.Equal((SalesOrderLineReferenceOutcomeV1.NotApproved, "Cancelled"), (answer.Outcome, answer.ApprovalState));
         Assert.DoesNotContain(await run.ApprovedLinesAsync(CompanyA), item => item.OrderId == draft.Id);
+    }
+
+    [SqlServerFact]
+    public async Task An_approved_active_dispatch_note_is_an_uninvoiced_source_candidate_and_blocks_cancellation_on_real_sql()
+    {
+        await using var run = await Run.StartAsync();
+        var draft = await run.ApprovedDraftAsync(CompanyA, "dispatch", "6");
+        var noteId = await run.ApprovedDispatchNoteAsync(CompanyA, draft, "dispatch");
+        var subject = await run.GrantAsync(TestUsers.CompanyA, CompanyA,
+            SalesPermissionManifestV1.DraftsRead, SalesPermissionManifestV1.OrdersCancel);
+        using var client = run.Client(subject, CompanyA);
+        var impactPath = $"{SalesEndpoints.DraftsPath}/{draft.Id:D}/cancellation-impact";
+        var cancelPath = $"{SalesEndpoints.DraftsPath}/{draft.Id:D}/cancellation";
+
+        var preview = await run.JsonAsync(client, impactPath);
+
+        Assert.False(preview.GetProperty("cancellable").GetBoolean());
+        Assert.Equal(SalesCancellationImpactStatusesV1.Present, preview.GetProperty("sources").EnumerateArray()
+            .Single(source => source.GetProperty("source").GetString() == SalesCancellationImpactSourcesV1.UninvoicedDispatchNotes)
+            .GetProperty("status").GetString());
+        using (var blocked = await client.SendAsync(Cancel(cancelPath, "SENTETIK-dispatch-blocked", "4", "neden",
+                   preview.GetProperty("impactToken").GetString()!)))
+        {
+            Assert.Equal(HttpStatusCode.Conflict, blocked.StatusCode);
+            var problem = await blocked.Content.ReadFromJsonAsync<JsonElement>();
+            Assert.Equal(SalesDraftProblemCodesV1.CancellationBlocked, problem.GetProperty("code").GetString());
+            Assert.Contains(problem.GetProperty("errors").EnumerateArray(),
+                error => error.GetProperty("field").GetString() == SalesCancellationImpactSourcesV1.UninvoicedDispatchNotes);
+        }
+
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM [logistics].[DispatchNotes] WHERE [DispatchNoteId] = @id AND [Status] = 2",
+            ("@id", noteId)));
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[DraftCancellations] WHERE [DraftId] = @id",
+            ("@id", draft.Id)));
     }
 
     [SqlServerFact]
@@ -370,6 +406,50 @@ public sealed class SalesOrderCancellationSqlServerRelationalAcceptanceTests
                     orderLine.Product.ProductId, KgUnit, null, Kg(6m), T0);
                 return instruction;
             });
+        }
+
+        /// <summary>
+        /// Creates, issues, loads, ships, drafts and approves one dispatch note for the order through Logistics's real store.
+        /// </summary>
+        public async Task<Guid> ApprovedDispatchNoteAsync(Guid company, SalesOrderDraft draft, string keyPrefix)
+        {
+            var orderLine = Assert.Single(draft.Lines);
+            var instructionLineId = Guid.NewGuid();
+            var shipmentId = Guid.NewGuid();
+            var noteId = Guid.NewGuid();
+            await using var scope = LogisticsStore(company);
+            var stored = (await scope.Store.StoreInstructionAsync(LogisticsEnvelope($"{keyPrefix}-l-create"),
+                Hash($"{keyPrefix}-l-create"), Day, () =>
+                {
+                    var instruction = LoadingInstruction.Create(Guid.NewGuid(), company, draft.Header.PartyId,
+                        draft.Header.CompanyAccountId, T0);
+                    instruction.AddLine(instruction.Version, instructionLineId,
+                        new SourceOrderLineRef(draft.Id, orderLine.Id, draft.Revision), orderLine.Product.ProductId,
+                        KgUnit, null, Kg(6m), T0);
+                    return instruction;
+                })).Instruction;
+            stored = (await scope.Store.MutateInstructionAsync(LogisticsEnvelope($"{keyPrefix}-l-issue"),
+                Hash($"{keyPrefix}-l-issue"), LogisticsCommands.IssueV1, stored.Instruction.Id,
+                (value, now) => value.Issue(stored.Instruction.Version, now),
+                new LogisticsMutationAudit("logistics.loading-instruction.issued.v1", "Issue", "SENTETIK yayımlandı")))!.Instruction;
+            stored = (await scope.Store.MutateInstructionAsync(LogisticsEnvelope($"{keyPrefix}-l-load"),
+                Hash($"{keyPrefix}-l-load"), LogisticsCommands.RecordLoadV1, stored.Instruction.Id,
+                (value, now) => value.RecordLoad(stored.Instruction.Version, Guid.NewGuid(), instructionLineId, Kg(6m),
+                    MeasurementKind.Measured, now),
+                new LogisticsMutationAudit("logistics.loading-instruction.load-recorded.v1", "RecordLoad", "SENTETIK yüklendi")))!.Instruction;
+            stored = (await scope.Store.MutateInstructionAsync(LogisticsEnvelope($"{keyPrefix}-l-ship"),
+                Hash($"{keyPrefix}-l-ship"), LogisticsCommands.RecordShipmentV1, stored.Instruction.Id,
+                (value, now) => value.MarkShipped(stored.Instruction.Version, shipmentId, instructionLineId, Kg(6m), now),
+                new LogisticsMutationAudit("logistics.loading-instruction.shipment-recorded.v1", "RecordShipment", "SENTETIK sevk edildi")))!.Instruction;
+            stored = (await scope.Store.MutateInstructionAsync(LogisticsEnvelope($"{keyPrefix}-l-note"),
+                Hash($"{keyPrefix}-l-note"), LogisticsCommands.CreateDispatchNoteV1, stored.Instruction.Id,
+                (value, now) => value.CreateDispatchNoteDraft(stored.Instruction.Version, noteId, [shipmentId], Actor, now),
+                new LogisticsMutationAudit("logistics.loading-instruction.dispatch-note-created.v1", "CreateDispatchNote", "SENTETIK irsaliye taslağı")))!.Instruction;
+            await scope.Store.MutateInstructionAsync(LogisticsEnvelope($"{keyPrefix}-l-approve-note"),
+                Hash($"{keyPrefix}-l-approve-note"), LogisticsCommands.ApproveDispatchNoteV1, stored.Instruction.Id,
+                (value, now) => value.ApproveDispatchNote(stored.Instruction.Version, noteId, Actor, now),
+                new LogisticsMutationAudit("logistics.loading-instruction.dispatch-note-approved.v1", "ApproveDispatchNote", "SENTETIK irsaliye onaylandı"));
+            return noteId;
         }
 
         public async Task<JsonElement> JsonAsync(HttpClient client, string path)
