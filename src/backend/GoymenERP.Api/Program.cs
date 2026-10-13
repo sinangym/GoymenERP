@@ -407,6 +407,7 @@ app.MapCounterpartyEndpoints();
 app.MapProductEndpoints();
 app.MapProductPriceListEndpoints();
 app.MapFinanceEndpoints();
+app.MapFinanceOpenItemReadEndpoints();
 app.MapWorkApprovalEndpoints();
 app.MapSalesEndpoints();
 app.MapSalesProductCandidateEndpoints();

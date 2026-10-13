@@ -100,6 +100,8 @@ public enum FinanceAction
     ChangeCustomerInstrumentStatus, CollectCustomerInstrument,
     // The first-release party ledger (cari hesap ekstresi): read-only, amounts under their own grant.
     ReadPartyLedger, ReadPartyLedgerAmount,
+    // FI04: open-item metadata and its monetary disclosure are independent reads.
+    ReadOpenItems, ReadOpenItemAmount,
 }
 public enum PermissionDecision { Unavailable, Denied, Allowed }
 

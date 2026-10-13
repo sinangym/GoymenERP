@@ -90,6 +90,19 @@ public static partial class ErpOpenApiContract
                         BearerFormat = "JWT",
                         Description = "OIDC/JWT bearer access token.",
                     };
+                // FI04's nullable property already owns the oneOf null alternative. ASP.NET's nullable
+                // enum component also contains null; leaving it there would make a redacted null match
+                // both branches. Normalize only this new enum, keeping every pre-existing schema intact.
+                if (components.Schemas?.TryGetValue(
+                        nameof(GoymenERP.Modules.Finance.Contracts.FinanceOpenItemStatusV1),
+                        out var openItemStatus) == true)
+                {
+                    if (openItemStatus is not OpenApiSchema { Enum: not null } concreteOpenItemStatus)
+                        throw new InvalidOperationException("FI04 status is not a concrete enum schema.");
+                    concreteOpenItemStatus.Enum = concreteOpenItemStatus.Enum
+                        .Where(value => value is not null)
+                        .ToList();
+                }
                 return Task.CompletedTask;
             });
             options.AddOperationTransformer(TransformOperationAsync);
