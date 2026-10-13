@@ -106,7 +106,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // version-bound stock filters before public cursor pagination; it adds no network, hosted-service or
     // production-activation surface.
     private const string ReviewedOpenApiStartupFingerprint =
-        "d043bd473b8706bf1504d0c5b9524752cc07a04bbd8790b775d5380fb96dc4c1";
+        "386c80c4b02a89415f2cfdde0d315e6ff8742ebe8f4c4888ca98a16e76f213cd";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedProductManufacturingTechnicalRegistrationPath =
@@ -207,8 +207,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // Official invoice approval: +3 checker list/detail/approve/reopen and migration rollback SQL facts.
             // F-03 allocation read: +1 company/fresh-authority list/detail/reopen SQL fact.
             // D-05 approval inbox: the existing pending-approval fact is renamed and strengthened to public HTTP/DI.
+            // FI04: +2 approved-source open-item read facts (real HTTP authority/redaction and SQL keyset/no-write).
             ["tools/relational_inventory/finance.txt"] =
-                "eef003551be0201b4878e5778656914083c4ef7fde1d0a70fc3631572aa882ce",
+                "a56ebd84fde486ccab64354108945a6c1bd65cbc71dd9da33cfcd8afb690e1e1",
 
             // identity
             // SY-01/SY-02: +2 IdentityAccessViewSqlServerRelationalAcceptanceTests facts (b159330c… -> a521143a…).
@@ -472,6 +473,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     private const string ReviewedFinanceOpenItemSourceAdmissionServicePath =
         "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
         + "FinanceOpenItemSourceAdmissionService.cs";
+    private const string ReviewedFinanceOpenItemReadServicePath =
+        "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
+        + "FinanceOpenItemReadService.cs";
     private const string ReviewedAccountingStorePath =
         "src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Infrastructure/"
         + "Persistence/AccountingStore.cs";
@@ -504,6 +508,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 [ReviewedPurchaseAcceptanceSourcePath] = ("PurchasingDbContext", 3),
                 [ReviewedPurchaseGoodsReceiptHostPath] = ("PurchasingDbContext", 3),
                 [ReviewedFinanceOpenItemSourceAdmissionServicePath] = ("FinanceDbContext", 1),
+                // Target-typed DTO/cursor/ReadResult return sites are conservatively counted as context
+                // constructions. FI04 has four exact sites; all database access is tenant-filtered EF/DI.
+                [ReviewedFinanceOpenItemReadServicePath] = ("FinanceDbContext", 4),
                 ["src/backend/GoymenERP.Api/Shell/FinanceOfficialInvoiceImportHost.cs"] =
                     ("FinanceDbContext", 2),
                 // The conservative target-typed scanner includes DTO/ReadResult return sites in the
@@ -843,7 +850,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "GoymenERP.Modules.Finance.Infrastructure/"
                  + "FinanceModuleExtensions.cs"] =
                     new(
-                        "8ce601f343ad4c3501f730f4800c420ce08b66fd1e1c1e5240b2e5299e1f3689",
+                        "4bf369041ce89baefb00c125957b02b3fd7bf811b77dbadf03f32f91ce7e671c",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -916,6 +923,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         {
                             ["Microsoft.Data.SqlClient"] = 1
                         }),
+                // FI04 adds a separate read-only scoped service. No raw SQL, connection, save or filter bypass.
+                [ReviewedFinanceOpenItemReadServicePath] =
+                    new(
+                        "4a3631d5a45e8ded736fc9cc23762f3d9e706ae05a3952453cbc050fd92e9d59",
+                        new Dictionary<string, int>(StringComparer.Ordinal)),
                 // FS0 (#312): the bank-account master is the module's second writer; the SqlClient
                 // namespace only to recognise a unique-key violation (SqlException 2601/2627) after
                 // SaveChanges, as ReceiptDraftService does. No connection, command or raw SQL.

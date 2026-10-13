@@ -540,6 +540,12 @@ public sealed partial class OpenApiContractGenerationTests
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "422:application/problem+json", "503:application/problem+json"),
             ParameterValues: ["query:partyId:true:type:string;format:uuid", "query:companyAccountId:true:type:string;format:uuid",
                 "query:from:true:type:string;format:date", "query:to:true:type:string;format:date"]),
+        new("get", "/api/v1/finance/open-items", "ListFinanceOpenItemsV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "503:application/problem+json"),
+            ParameterValues: ["query:cursor:false:type:string"]),
+        new("get", "/api/v1/finance/open-items/{openItemId}", "GetFinanceOpenItemV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "404:application/problem+json", "503:application/problem+json"),
+            ParameterValues: ["path:openItemId:true:type:string;format:uuid"]),
         new("get", "/api/v1/finance/bank-accounts", "GetFinanceBankAccountsV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "503:application/problem+json")),
         new("get", "/api/v1/price-lists", "GetPriceListsV1",
@@ -1013,6 +1019,8 @@ public sealed partial class OpenApiContractGenerationTests
             ["GetFinanceCustomerInstrumentV1"] = "ref:CustomerInstrumentDetail",
             ["GetFinanceCustomerInstrumentRiskV1"] = "ref:CustomerInstrumentRiskView",
             ["GetFinancePartyLedgerV1"] = "ref:PartyLedgerView",
+            ["ListFinanceOpenItemsV1"] = "ref:FinanceOpenItemPageV1",
+            ["GetFinanceOpenItemV1"] = "ref:FinanceOpenItemViewV1",
             ["SaveFinanceManualBankPaymentDraftV1"] = "ref:ManualBankPaymentCommandResult",
             ["GetFinanceManualBankPaymentsV1"] = "ref:ManualBankPaymentPage",
             ["GetFinanceManualBankPaymentV1"] = "ref:ManualBankPaymentView",
@@ -1245,6 +1253,8 @@ public sealed partial class OpenApiContractGenerationTests
         "GetFinanceCustomerInstrumentV1",
         "GetFinanceCustomerInstrumentRiskV1",
         "GetFinancePartyLedgerV1",
+        "ListFinanceOpenItemsV1",
+        "GetFinanceOpenItemV1",
         "GetFinanceBankAccountsV1",
         "GetPriceListsV1",
         "CreatePriceListV1",
@@ -1802,6 +1812,7 @@ public sealed partial class OpenApiContractGenerationTests
 
     private static readonly HashSet<string> CodeLessProblemResponses =
     [
+        "GetFinanceOpenItemV1:404",
         "GetWorkApprovalsV1:404",
         "GetWorkApprovalV1:404",
         "GetOrganizationLocationV1:404",
@@ -1923,6 +1934,8 @@ public sealed partial class OpenApiContractGenerationTests
 
     private static readonly HashSet<string> MixedProblemResponses =
     [
+        "ListFinanceOpenItemsV1:400",
+        "GetFinanceOpenItemV1:400",
         "GetWorkApprovalsV1:400",
         "GetWorkApprovalV1:400",
         "CreateAccountingNormalJournalDraftV1:400",
@@ -4036,6 +4049,29 @@ public sealed partial class OpenApiContractGenerationTests
                     ("to", "type:string;format:date"),
                     ("carryForward", "ref:PartyLedgerCarryForward"),
                     ("currencies", "type:array;items:ref:PartyLedgerCurrency")),
+                ["FinanceOpenItemPageV1"] = ObjectSchema(
+                    ["companyId", "items", "nextCursor"],
+                    ("companyId", "type:string;format:uuid"),
+                    ("items", "type:array;items:ref:FinanceOpenItemViewV1"),
+                    ("nextCursor", "type:null|string")),
+                ["FinanceOpenItemViewV1"] = ObjectSchema(
+                    ["id", "companyId", "sourceKind", "sourceId", "sourceLineId", "sourceVersion", "partyId", "companyAccountId", "currencyId", "version", "dueOn", "status", "createdAtUtc", "initialAmount", "outstandingAmount"],
+                    ("id", "type:string;format:uuid"),
+                    ("companyId", "type:string;format:uuid"),
+                    ("sourceKind", "type:string"),
+                    ("sourceId", "type:string;format:uuid"),
+                    ("sourceLineId", "type:string;format:uuid"),
+                    ("sourceVersion", "type:string"),
+                    ("partyId", "type:string;format:uuid"),
+                    ("companyAccountId", "type:string;format:uuid"),
+                    ("currencyId", "type:string;format:uuid"),
+                    ("version", "type:string"),
+                    ("dueOn", "type:null|string;format:date"),
+                    ("status", "ref:FinanceOpenItemStatusV1"),
+                    ("createdAtUtc", "type:string;format:date-time"),
+                    ("initialAmount", "ref:AmountView"),
+                    ("outstandingAmount", "ref:AmountView")),
+                ["FinanceOpenItemStatusV1"] = ScalarSchema("enum:Open|Closed"),
                 ["PartyLedgerCarryForward"] = ScalarSchema("enum:NoneOpen018"),
                 ["PartyLedgerCurrency"] = ObjectSchema(
                     ["currencyId", "entries", "debitTotal", "creditTotal", "closingBalance"],

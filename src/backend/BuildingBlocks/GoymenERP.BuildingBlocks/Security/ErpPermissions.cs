@@ -313,6 +313,10 @@ public static class ErpPermissions
     public const string FinancePartyLedgerRead = "finance.party-ledger.read";
     public const string FinancePartyLedgerAmountRead = "finance.party-ledger.amount.read";
 
+    /// <summary>FI04 independent read and amount disclosure; registration grants no user or role access.</summary>
+    public const string FinanceOpenItemsRead = "finance.open-items.read";
+    public const string FinanceOpenItemsAmountRead = "finance.open-items.amount.read";
+
     /// <summary>
     /// F-03 allocation commands. Registration makes the Finance owner's permission name available
     /// to endpoint authorization; it grants no role or user access.
@@ -715,6 +719,8 @@ public static class ErpPermissions
         FinanceCustomerInstrumentCollect,
         FinancePartyLedgerRead,
         FinancePartyLedgerAmountRead,
+        FinanceOpenItemsRead,
+        FinanceOpenItemsAmountRead,
         FinanceAllocationWrite,
         FinanceAllocationRead,
             DocumentsFilesRead,
@@ -834,6 +840,8 @@ public static class ErpPermissions
         FinanceCustomerInstrumentCollect,
         FinancePartyLedgerRead,
         FinancePartyLedgerAmountRead,
+        FinanceOpenItemsRead,
+        FinanceOpenItemsAmountRead,
         FinanceAllocationWrite,
         FinanceAllocationRead,
             DocumentsFilesRead,
