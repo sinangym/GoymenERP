@@ -349,14 +349,18 @@ public sealed partial class SalesDraftService
     /// </summary>
     private async Task<Dictionary<Guid, LineLoading>?> ReadLoadingAsync(Scope scope, string? permission, SalesOrderDraft draft,
         CancellationToken cancellationToken) =>
-        (await ReadLoadingImpactAsync(scope, permission, draft, cancellationToken))?.Lines;
+        (await ReadLoadingAnswerAsync(scope, permission, draft, includeDispatchNoteCandidates: false, cancellationToken))?.Lines;
 
     /// <summary>
     /// The Logistics owner's combined cancellation-impact answer. Loading totals and active approved dispatch-note
     /// candidate count share one company/order envelope and one guarded owner read.
     /// </summary>
-    private async Task<LoadingImpact?> ReadLoadingImpactAsync(Scope scope, string? permission, SalesOrderDraft draft,
-        CancellationToken cancellationToken)
+    private Task<LoadingImpact?> ReadLoadingImpactAsync(Scope scope, string? permission, SalesOrderDraft draft,
+        CancellationToken cancellationToken) =>
+        ReadLoadingAnswerAsync(scope, permission, draft, includeDispatchNoteCandidates: true, cancellationToken);
+
+    private async Task<LoadingImpact?> ReadLoadingAnswerAsync(Scope scope, string? permission, SalesOrderDraft draft,
+        bool includeDispatchNoteCandidates, CancellationToken cancellationToken)
     {
         if (loadings is null)
         {
@@ -366,8 +370,11 @@ public sealed partial class SalesDraftService
         SalesOrderLoadingReadAnswerV1? answer;
         try
         {
+            Func<Task<SalesOrderLoadingReadAnswerV1>> read = includeDispatchNoteCandidates
+                ? () => loadings.ReadOrderCancellationImpactAsync(draft.Id, cancellationToken)
+                : () => loadings.ReadOrderLoadingAsync(draft.Id, cancellationToken);
             answer = await GuardedAsync(scope, permission,
-                () => loadings.ReadOrderCancellationImpactAsync(draft.Id, cancellationToken), cancellationToken);
+                read, cancellationToken);
         }
         catch (Exception exception) when (exception is not (OperationCanceledException or SalesDraftServiceException))
         {
@@ -375,7 +382,7 @@ public sealed partial class SalesDraftService
         }
 
         if (answer is null || answer.Lines is null || answer.CompanyId != scope.CompanyId || answer.OrderId != draft.Id
-            || answer.ActiveApprovedDispatchNoteCount < 0)
+            || (includeDispatchNoteCandidates && answer.ActiveApprovedDispatchNoteCount < 0))
         {
             return null;
         }
@@ -409,7 +416,7 @@ public sealed partial class SalesDraftService
             return null;
         }
 
-        return new LoadingImpact(result, answer.ActiveApprovedDispatchNoteCount);
+        return new LoadingImpact(result, includeDispatchNoteCandidates ? answer.ActiveApprovedDispatchNoteCount : 0);
     }
 
     private static bool FitsScale(decimal value, QuantityUnit unit)

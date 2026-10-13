@@ -27,6 +27,27 @@ public sealed partial class SalesDraftServiceTests
     ];
 
     [Fact]
+    public async Task Ordinary_loading_progress_never_uses_the_cancellation_only_dispatch_note_read()
+    {
+        var world = new World();
+        var created = (await world.Service().CreateDraftAsync(Request(), Metadata("loading-not-cancellation"))).Detail;
+        var line = Assert.Single(created.Lines);
+        var loadings = new FakeLoadings(order => new(Company, order,
+            [new(line.LineId, KgUnit, 1, 1m, 0.5m, 0m, 0m)]))
+        {
+            CancellationImpactAnswer = _ => throw new InvalidOperationException("SENTETIK cancellation-only owner outage"),
+        };
+        world.Loadings = loadings;
+
+        var progress = await world.Service().GetDraftLoadingProgressAsync(created.Draft.Id);
+
+        Assert.Equal((1, "1", "0.5"),
+            (Assert.Single(progress.Lines).LoadingInstructionLines, progress.Lines[0].Instructed, progress.Lines[0].Loaded));
+        Assert.Equal([created.Draft.Id], loadings.Asked);
+        Assert.Empty(loadings.CancellationImpactAsked);
+    }
+
+    [Fact]
     public async Task An_approved_order_with_nothing_recorded_by_its_owners_previews_cancellable_cancels_once_and_keeps_its_history()
     {
         var world = new World();
@@ -469,12 +490,25 @@ public sealed partial class SalesDraftServiceTests
     {
         public Func<Guid, SalesOrderLoadingReadAnswerV1> Answer { get; set; } = answer;
 
+        public Func<Guid, SalesOrderLoadingReadAnswerV1>? CancellationImpactAnswer { get; set; }
+
         public List<Guid> Asked { get; } = [];
+
+        public List<Guid> CancellationImpactAsked { get; } = [];
 
         public Task<SalesOrderLoadingReadAnswerV1> ReadOrderLoadingAsync(Guid orderId, CancellationToken cancellationToken = default)
         {
             Asked.Add(orderId);
             return Task.FromResult(Answer(orderId));
+        }
+
+        public Task<SalesOrderLoadingReadAnswerV1> ReadOrderCancellationImpactAsync(Guid orderId,
+            CancellationToken cancellationToken = default)
+        {
+            CancellationImpactAsked.Add(orderId);
+            return CancellationImpactAnswer is null
+                ? ReadOrderLoadingAsync(orderId, cancellationToken)
+                : Task.FromResult(CancellationImpactAnswer(orderId));
         }
     }
 }
