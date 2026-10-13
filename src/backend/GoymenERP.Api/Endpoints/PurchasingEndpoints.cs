@@ -283,6 +283,27 @@ public static class PurchasingEndpoints
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();
 
+        group.MapGet("/{id:guid}/goods-receipts/{acceptanceId:guid}", async (Guid id, Guid acceptanceId,
+            HttpContext httpContext, [FromServices] IPurchaseGoodsReceiptServiceV1 service,
+            ICorrelationContext correlation, CancellationToken cancellationToken) =>
+        {
+            SetPrivateNoStore(httpContext.Response);
+            if (httpContext.Request.Query.Count != 0)
+                return Problem(StatusCodes.Status400BadRequest, "validation_failed", correlation);
+            try
+            {
+                return Results.Json(await service.GetGoodsReceiptAsync(id, acceptanceId, cancellationToken),
+                    PurchasingJson.Options);
+            }
+            catch (PurchasingServiceException exception) { return Problem(httpContext, exception, correlation); }
+        })
+            .WithName("GetPurchaseGoodsReceiptV1")
+            .Produces<PurchaseGoodsReceiptDetailV1>()
+            .ProducesErpBadRequest("validation_failed")
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+
         group.MapGet("/{id:guid}/goods-receipts", async (Guid id, [FromQuery] int? limit, HttpContext httpContext,
             [FromServices] IPurchaseGoodsReceiptServiceV1 service, ICorrelationContext correlation,
             CancellationToken cancellationToken) =>
