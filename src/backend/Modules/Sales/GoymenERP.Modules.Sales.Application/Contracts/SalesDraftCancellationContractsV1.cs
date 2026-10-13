@@ -48,6 +48,13 @@ public interface ISalesOrderLoadingReadPortV1
     /// the owner holds nothing for is absent. An unknown order answers an empty list.
     /// </summary>
     Task<SalesOrderLoadingReadAnswerV1> ReadOrderLoadingAsync(Guid orderId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// The cancellation-specific Logistics answer, including active approved dispatch-note invoice-source candidates.
+    /// Existing loading-only adapters remain source-compatible and answer zero until their owner implements the richer read.
+    /// </summary>
+    Task<SalesOrderLoadingReadAnswerV1> ReadOrderCancellationImpactAsync(Guid orderId,
+        CancellationToken cancellationToken = default) => ReadOrderLoadingAsync(orderId, cancellationToken);
 }
 
 /// <summary>

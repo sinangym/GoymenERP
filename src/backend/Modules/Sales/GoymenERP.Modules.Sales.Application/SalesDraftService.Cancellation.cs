@@ -366,7 +366,8 @@ public sealed partial class SalesDraftService
         SalesOrderLoadingReadAnswerV1? answer;
         try
         {
-            answer = await GuardedAsync(scope, permission, () => loadings.ReadOrderLoadingAsync(draft.Id, cancellationToken), cancellationToken);
+            answer = await GuardedAsync(scope, permission,
+                () => loadings.ReadOrderCancellationImpactAsync(draft.Id, cancellationToken), cancellationToken);
         }
         catch (Exception exception) when (exception is not (OperationCanceledException or SalesDraftServiceException))
         {

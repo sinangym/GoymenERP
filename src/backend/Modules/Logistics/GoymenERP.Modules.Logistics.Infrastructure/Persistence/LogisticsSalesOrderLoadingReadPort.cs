@@ -19,7 +19,14 @@ namespace GoymenERP.Modules.Logistics.Infrastructure.Persistence;
 internal sealed class LogisticsSalesOrderLoadingReadPort(LogisticsDbContext dbContext, ICompanyContext companyContext)
     : ISalesOrderLoadingReadPortV1
 {
-    public async Task<SalesOrderLoadingReadAnswerV1> ReadOrderLoadingAsync(Guid orderId, CancellationToken cancellationToken = default)
+    public Task<SalesOrderLoadingReadAnswerV1> ReadOrderLoadingAsync(Guid orderId,
+        CancellationToken cancellationToken = default) => ReadAsync(orderId, includeDispatchNotes: false, cancellationToken);
+
+    public Task<SalesOrderLoadingReadAnswerV1> ReadOrderCancellationImpactAsync(Guid orderId,
+        CancellationToken cancellationToken = default) => ReadAsync(orderId, includeDispatchNotes: true, cancellationToken);
+
+    private async Task<SalesOrderLoadingReadAnswerV1> ReadAsync(Guid orderId, bool includeDispatchNotes,
+        CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         if (!companyContext.IsResolved || companyContext.CompanyId == Guid.Empty)
@@ -49,18 +56,20 @@ internal sealed class LogisticsSalesOrderLoadingReadPort(LogisticsDbContext dbCo
             })
             .ToListAsync(cancellationToken);
 
-        var activeApprovedDispatchNoteCount = await (
-            from note in dbContext.DispatchNotes.AsNoTracking()
-            join line in dbContext.DispatchNoteLines.AsNoTracking()
-                on new { note.CompanyId, note.InstructionId, note.DispatchNoteId }
-                equals new { line.CompanyId, line.InstructionId, line.DispatchNoteId }
-            where note.CompanyId == companyId
-                && note.Status == (int)DispatchNoteStatus.Approved
-                && !line.Released
-                && line.SourceOrderId == orderId
-            select note.DispatchNoteId)
-            .Distinct()
-            .CountAsync(cancellationToken);
+        var activeApprovedDispatchNoteCount = includeDispatchNotes
+            ? await (
+                from note in dbContext.DispatchNotes.AsNoTracking()
+                join line in dbContext.DispatchNoteLines.AsNoTracking()
+                    on new { note.CompanyId, note.InstructionId, note.DispatchNoteId }
+                    equals new { line.CompanyId, line.InstructionId, line.DispatchNoteId }
+                where note.CompanyId == companyId
+                    && note.Status == (int)DispatchNoteStatus.Approved
+                    && !line.Released
+                    && line.SourceOrderId == orderId
+                select note.DispatchNoteId)
+                .Distinct()
+                .CountAsync(cancellationToken)
+            : 0;
 
         return new SalesOrderLoadingReadAnswerV1(companyId, orderId,
             [.. totals.OrderBy(total => total.SourceOrderLineId).ThenBy(total => total.UnitId)
