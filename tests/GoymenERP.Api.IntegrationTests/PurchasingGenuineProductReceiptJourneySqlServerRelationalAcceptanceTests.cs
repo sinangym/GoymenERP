@@ -191,6 +191,14 @@ public sealed class PurchasingGenuineProductReceiptJourneySqlServerRelationalAcc
             var stored = await StoredEffectsAsync(factory.DatabaseConnectionString, receipt);
             Assert.Equal(new StoredEffects(1, 1, 1, 1, 1), stored);
 
+            var receiptDetailPath =
+                $"/api/v1/purchasing/orders/{approved.Detail.Order.Id:D}/goods-receipts/{receipt.AcceptanceId:D}";
+            using var detailResponse = await companyA.GetAsync(receiptDetailPath);
+            Assert.Equal(HttpStatusCode.OK, detailResponse.StatusCode);
+            var detail = (await detailResponse.Content.ReadFromJsonAsync<PurchaseGoodsReceiptDetailV1>())!;
+            Assert.Equal(recorded.Receipt, detail.Receipt);
+            Assert.Equal(stored, await StoredEffectsAsync(factory.DatabaseConnectionString, receipt));
+
             using var replayResponse = await SendCommandAsync(companyA, HttpMethod.Post, receiptPath, receipt,
                 "purchase-genuine-goods-receipt");
             Assert.Equal(HttpStatusCode.Created, replayResponse.StatusCode);
@@ -201,6 +209,12 @@ public sealed class PurchasingGenuineProductReceiptJourneySqlServerRelationalAcc
             Assert.Equal(stored, await StoredEffectsAsync(factory.DatabaseConnectionString, receipt));
 
             using var freshA = factory.CreateClientFor(TestUsers.GroupAdmin, CompanyA);
+            using var reopenedDetailResponse = await freshA.GetAsync(receiptDetailPath);
+            Assert.Equal(HttpStatusCode.OK, reopenedDetailResponse.StatusCode);
+            var reopenedDetail = (await reopenedDetailResponse.Content.ReadFromJsonAsync<PurchaseGoodsReceiptDetailV1>())!;
+            Assert.Equal(recorded.Receipt, reopenedDetail.Receipt);
+            Assert.Equal(stored, await StoredEffectsAsync(factory.DatabaseConnectionString, receipt));
+
             freshA.DefaultRequestHeaders.Add(InventoryStockPositionApiV1.ProductDisplayContractHeader,
                 InventoryStockPositionApiV1.ProductDisplayContractVersion);
             using var positionsResponse = await freshA.GetAsync(

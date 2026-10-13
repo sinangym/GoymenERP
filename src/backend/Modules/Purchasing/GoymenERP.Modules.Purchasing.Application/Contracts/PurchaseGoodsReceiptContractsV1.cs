@@ -18,6 +18,7 @@ public sealed record PurchaseGoodsReceiptViewV1(
     string MeasuredQuantityKg, string InitialBlock, DateTimeOffset OccurredAtUtc);
 
 public sealed record PurchaseGoodsReceiptResponseV1(PurchaseGoodsReceiptViewV1 Receipt, bool IsReplay, string OriginalCorrelationId);
+public sealed record PurchaseGoodsReceiptDetailV1(PurchaseGoodsReceiptViewV1 Receipt);
 public sealed record PurchaseGoodsReceiptPageV1(IReadOnlyList<PurchaseGoodsReceiptViewV1> Items, bool SearchWindowFull);
 public sealed record PurchaseReceiptLocationV1(Guid LocationId, string LocationCode, string LocationName, string SiteName);
 public sealed record PurchaseReceiptSourceV1(Guid CompanyId, Guid PurchaseOrderId, Guid PurchaseOrderLineId,
@@ -30,6 +31,8 @@ public interface IPurchaseGoodsReceiptServiceV1
     Task<PurchaseGoodsReceiptResponseV1> RecordGoodsReceiptAsync(Guid orderId, Guid lineId, RecordPurchaseGoodsReceiptV1 request,
         PurchasingCommandMetadata metadata, CancellationToken cancellationToken = default);
     Task<PurchaseGoodsReceiptOptionsV1> GetGoodsReceiptOptionsAsync(Guid orderId, Guid lineId, CancellationToken cancellationToken = default);
+    Task<PurchaseGoodsReceiptDetailV1> GetGoodsReceiptAsync(Guid orderId, Guid acceptanceId,
+        CancellationToken cancellationToken = default);
     Task<PurchaseGoodsReceiptPageV1> GetGoodsReceiptsAsync(Guid orderId, int limit = 100, CancellationToken cancellationToken = default);
 }
 
@@ -38,6 +41,7 @@ public static class PurchaseGoodsReceiptApiV1
     public const string RecordPath = PurchasingApiV1.OrderDetailPath + "/lines/{lineId}/goods-receipts";
     public const string OptionsPath = PurchasingApiV1.OrderDetailPath + "/lines/{lineId}/goods-receipt-options";
     public const string ReceiptsPath = PurchasingApiV1.OrderDetailPath + "/goods-receipts";
+    public const string ReceiptDetailPath = ReceiptsPath + "/{acceptanceId}";
     public const string InitialBlock = "Free";
 }
 
