@@ -11,9 +11,10 @@ public enum FinanceOpenItemStatusV1
 }
 
 /// <summary>
-/// FI04 read projection over the Finance-owned open-item row. It exposes only stored identities and state.
-/// <paramref name="InitialAmount"/> and <paramref name="OutstandingAmount"/> carry money only when the
-/// caller holds the separate open-item amount-read authority; no total, difference or converted amount is derived.
+/// FI04 read projection over the Finance-owned open-item row. It exposes stored identities independently.
+/// <paramref name="Status"/> is derived from the remaining amount by the Finance allocation policy, so it and
+/// the money in <paramref name="InitialAmount"/> and <paramref name="OutstandingAmount"/> are returned only when
+/// the caller holds the separate open-item amount-read authority. No total, difference or converted amount is derived.
 /// </summary>
 public sealed record FinanceOpenItemViewV1(
     Guid Id,
@@ -27,7 +28,7 @@ public sealed record FinanceOpenItemViewV1(
     Guid CurrencyId,
     string Version,
     DateOnly? DueOn,
-    FinanceOpenItemStatusV1 Status,
+    FinanceOpenItemStatusV1? Status,
     DateTimeOffset CreatedAtUtc,
     AmountView InitialAmount,
     AmountView OutstandingAmount);
@@ -39,8 +40,9 @@ public sealed record FinanceOpenItemPageV1(
     string? NextCursor);
 
 /// <summary>
-/// Independent FI04 list/detail read. The read authority reveals stored metadata; the amount authority only
-/// changes the two <see cref="AmountView"/> disclosures. Neither operation writes, allocates or posts money.
+/// Independent FI04 list/detail read. The read authority reveals stored metadata that is independent of money;
+/// the amount authority controls <see cref="FinanceOpenItemViewV1.Status"/> and the two <see cref="AmountView"/>
+/// disclosures. Neither operation writes, allocates or posts money.
 /// </summary>
 public interface IFinanceOpenItemReadServiceV1
 {

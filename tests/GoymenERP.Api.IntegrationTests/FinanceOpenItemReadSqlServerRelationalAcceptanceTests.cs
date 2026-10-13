@@ -59,6 +59,7 @@ public sealed class FinanceOpenItemReadSqlServerRelationalAcceptanceTests
             {
                 Assert.Equal(CompanyA, item.CompanyId);
                 Assert.Equal(FinanceOpenItemSourceKinds.ApprovedOfficialInvoiceInstallment, item.SourceKind);
+                Assert.Null(item.Status);
                 AssertRedacted(item.InitialAmount);
                 AssertRedacted(item.OutstandingAmount);
             });
@@ -73,6 +74,7 @@ public sealed class FinanceOpenItemReadSqlServerRelationalAcceptanceTests
                 reopened.Context, new SourceListRequest(null), CancellationToken.None)).Resource);
             Assert.Equal(firstPage.Items.Select(item => item.Id), repeated.Items.Select(item => item.Id));
             Assert.Equal(firstPage.NextCursor, repeated.NextCursor);
+            Assert.All(repeated.Items, item => Assert.Equal(FinanceOpenItemStatusV1.Open, item.Status));
         }
 
         FinanceOpenItemPageV1 secondPage;
@@ -101,6 +103,7 @@ public sealed class FinanceOpenItemReadSqlServerRelationalAcceptanceTests
             var detail = Assert.IsType<FinanceOpenItemViewV1>(result.Resource);
             Assert.Equal(ReadOutcome.Found, result.Outcome);
             Assert.Equal(outsideFirstPage.Id, detail.Id);
+            Assert.Equal(FinanceOpenItemStatusV1.Open, detail.Status);
             Assert.Equal(AmountDisclosure.Visible, detail.InitialAmount.Disclosure);
             Assert.NotNull(detail.InitialAmount.Money);
             Assert.Equal(AmountDisclosure.Visible, detail.OutstandingAmount.Disclosure);
@@ -156,6 +159,7 @@ public sealed class FinanceOpenItemReadSqlServerRelationalAcceptanceTests
                 amountRevoked.Context, outsideFirstPage.Id, CancellationToken.None);
             var detail = Assert.IsType<FinanceOpenItemViewV1>(result.Resource);
             Assert.Equal(ReadOutcome.Found, result.Outcome);
+            Assert.Null(detail.Status);
             AssertRedacted(detail.InitialAmount);
             AssertRedacted(detail.OutstandingAmount);
         }
@@ -297,6 +301,15 @@ public sealed class FinanceOpenItemReadSqlServerRelationalAcceptanceTests
             "initialAmount", "outstandingAmount");
         AssertAmount(item.GetProperty("initialAmount"), disclosure);
         AssertAmount(item.GetProperty("outstandingAmount"), disclosure);
+        var status = item.GetProperty("status");
+        if (disclosure == AmountDisclosure.Visible)
+        {
+            Assert.Equal(FinanceOpenItemStatusV1.Open.ToString(), status.GetString());
+        }
+        else
+        {
+            Assert.Equal(JsonValueKind.Null, status.ValueKind);
+        }
     }
 
     private static void AssertAmount(JsonElement amount, AmountDisclosure disclosure)

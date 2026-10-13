@@ -70321,7 +70321,8 @@
       "FinanceOpenItemStatusV1": {
         "enum": [
           "Open",
-          "Closed"
+          "Closed",
+          null
         ]
       },
       "FinanceOpenItemViewV1": {
@@ -70389,7 +70390,14 @@
             "format": "date"
           },
           "status": {
-            "$ref": "#/components/schemas/FinanceOpenItemStatusV1"
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/FinanceOpenItemStatusV1"
+              }
+            ]
           },
           "createdAtUtc": {
             "type": "string",

@@ -206,7 +206,7 @@ public sealed class FinanceOpenItemReadService(
             row.CurrencyId,
             row.Version.ToString(CultureInfo.InvariantCulture),
             row.DueOn,
-            status,
+            disclosure == AmountDisclosure.Visible ? status : null,
             row.CreatedAtUtc,
             Amount(disclosure, row.OriginalAmountText, row.CurrencyId),
             Amount(disclosure, row.OutstandingAmountText, row.CurrencyId));

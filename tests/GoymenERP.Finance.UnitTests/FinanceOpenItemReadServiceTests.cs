@@ -88,6 +88,75 @@ public sealed class FinanceOpenItemReadServiceTests
         Assert.Null(resource.InitialAmount.Money);
         Assert.Equal(expected, resource.OutstandingAmount.Disclosure);
         Assert.Null(resource.OutstandingAmount.Money);
+        Assert.Null(resource.Status);
+        Assert.False(run.Db.ChangeTracker.HasChanges());
+    }
+
+    [Theory]
+    [InlineData(FinanceOpenItemStatuses.Open, "75.25")]
+    [InlineData(FinanceOpenItemStatuses.Closed, "0")]
+    public async Task Metadata_only_list_and_detail_hide_status_for_valid_open_and_closed_rows(
+        int storedStatus,
+        string outstandingAmount)
+    {
+        var row = Row();
+        row.Status = storedStatus;
+        row.OutstandingAmountText = outstandingAmount;
+        await using var run = await Run.CreateAsync(row);
+        var service = run.Service(Company, "reader", new SequencePermission(
+            PermissionDecision.Allowed,
+            PermissionDecision.Denied,
+            PermissionDecision.Denied,
+            PermissionDecision.Allowed,
+            PermissionDecision.Allowed,
+            PermissionDecision.Denied,
+            PermissionDecision.Denied,
+            PermissionDecision.Allowed));
+
+        var list = await service.ListAuthorizedAsync(
+            Context(Company, "reader"), new SourceListRequest(null), CancellationToken.None);
+        var detail = await service.DetailAuthorizedAsync(
+            Context(Company, "reader"), OpenItem, CancellationToken.None);
+
+        Assert.Equal(ReadOutcome.Found, list.Outcome);
+        Assert.Equal(ReadOutcome.Found, detail.Outcome);
+        var listed = Assert.Single(Assert.IsType<FinanceOpenItemPageV1>(list.Resource).Items);
+        var reopened = Assert.IsType<FinanceOpenItemViewV1>(detail.Resource);
+        Assert.Equal(listed, reopened);
+        foreach (var resource in new[] { listed, reopened })
+        {
+            Assert.Equal(OpenItem, resource.Id);
+            Assert.Equal("7", resource.Version);
+            Assert.Null(resource.Status);
+            Assert.Equal(AmountDisclosure.Redacted, resource.InitialAmount.Disclosure);
+            Assert.Null(resource.InitialAmount.Money);
+            Assert.Equal(AmountDisclosure.Redacted, resource.OutstandingAmount.Disclosure);
+            Assert.Null(resource.OutstandingAmount.Money);
+        }
+        Assert.False(run.Db.ChangeTracker.HasChanges());
+    }
+
+    [Theory]
+    [InlineData(FinanceOpenItemStatuses.Open, "0", FinanceOpenItemStatusV1.Open)]
+    [InlineData(FinanceOpenItemStatuses.Closed, "75.25", FinanceOpenItemStatusV1.Closed)]
+    public async Task Visible_status_is_the_stored_value_not_an_inference_from_outstanding_amount(
+        int storedStatus,
+        string outstandingAmount,
+        FinanceOpenItemStatusV1 expectedStatus)
+    {
+        var row = Row();
+        row.Status = storedStatus;
+        row.OutstandingAmountText = outstandingAmount;
+        await using var run = await Run.CreateAsync(row);
+
+        var result = await run.Service(Company, "reader", Allowed(4))
+            .DetailAuthorizedAsync(Context(Company, "reader"), OpenItem, CancellationToken.None);
+
+        var resource = Assert.IsType<FinanceOpenItemViewV1>(result.Resource);
+        Assert.Equal(ReadOutcome.Found, result.Outcome);
+        Assert.Equal(expectedStatus, resource.Status);
+        Assert.Equal(AmountDisclosure.Visible, resource.OutstandingAmount.Disclosure);
+        Assert.Equal(outstandingAmount, resource.OutstandingAmount.Money!.Amount);
         Assert.False(run.Db.ChangeTracker.HasChanges());
     }
 
@@ -115,6 +184,25 @@ public sealed class FinanceOpenItemReadServiceTests
         await using var run = await Run.CreateAsync(malformed);
 
         var result = await run.Service(Company, "reader", Allowed(4))
+            .DetailAuthorizedAsync(Context(Company, "reader"), OpenItem, CancellationToken.None);
+
+        Assert.Equal(ReadOutcome.Unavailable, result.Outcome);
+        Assert.Null(result.Resource);
+        Assert.False(run.Db.ChangeTracker.HasChanges());
+    }
+
+    [Fact]
+    public async Task Malformed_stored_status_fails_closed_even_when_amount_is_redacted()
+    {
+        var malformed = Row();
+        malformed.Status = int.MaxValue;
+        await using var run = await Run.CreateAsync(malformed);
+
+        var result = await run.Service(Company, "reader", new SequencePermission(
+                PermissionDecision.Allowed,
+                PermissionDecision.Denied,
+                PermissionDecision.Denied,
+                PermissionDecision.Allowed))
             .DetailAuthorizedAsync(Context(Company, "reader"), OpenItem, CancellationToken.None);
 
         Assert.Equal(ReadOutcome.Unavailable, result.Outcome);

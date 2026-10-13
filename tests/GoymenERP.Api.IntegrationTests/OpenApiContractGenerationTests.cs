@@ -4077,11 +4077,11 @@ public sealed partial class OpenApiContractGenerationTests
                     ("currencyId", "type:string;format:uuid"),
                     ("version", "type:string"),
                     ("dueOn", "type:null|string;format:date"),
-                    ("status", "ref:FinanceOpenItemStatusV1"),
+                    ("status", "oneOf:ref:FinanceOpenItemStatusV1|type:null"),
                     ("createdAtUtc", "type:string;format:date-time"),
                     ("initialAmount", "ref:AmountView"),
                     ("outstandingAmount", "ref:AmountView")),
-                ["FinanceOpenItemStatusV1"] = ScalarSchema("enum:Open|Closed"),
+                ["FinanceOpenItemStatusV1"] = ScalarSchema("enum:Open|Closed|"),
                 ["PartyLedgerCarryForward"] = ScalarSchema("enum:NoneOpen018"),
                 ["PartyLedgerCurrency"] = ObjectSchema(
                     ["currencyId", "entries", "debitTotal", "creditTotal", "closingBalance"],

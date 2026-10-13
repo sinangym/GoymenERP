@@ -71,6 +71,7 @@ public sealed class FinanceOpenItemReadHttpAcceptanceTests(GoymenErpApiFactory f
         Assert.Equal(TestCompanyIds.CompanyA, body.RootElement.GetProperty("companyId").GetGuid());
         Assert.Equal(["companyId", "items", "nextCursor"], body.RootElement.EnumerateObject().Select(p => p.Name).Order().ToArray());
         var item = Assert.Single(body.RootElement.GetProperty("items").EnumerateArray());
+        Assert.Equal(JsonValueKind.Null, item.GetProperty("status").ValueKind);
         foreach (var property in new[] { "initialAmount", "outstandingAmount" })
         {
             var amount = item.GetProperty(property);
@@ -189,7 +190,7 @@ public sealed class FinanceOpenItemReadHttpAcceptanceTests(GoymenErpApiFactory f
     private static FinanceOpenItemViewV1 Item(bool visible = false) => new(
         ItemId, TestCompanyIds.CompanyA, "approved-file", Guid.NewGuid(), Guid.NewGuid(),
         "9007199254740993", Guid.NewGuid(), Guid.NewGuid(), CurrencyId, "1", null,
-        FinanceOpenItemStatusV1.Open, new DateTimeOffset(2026, 10, 13, 0, 0, 0, TimeSpan.Zero),
+        visible ? FinanceOpenItemStatusV1.Open : null, new DateTimeOffset(2026, 10, 13, 0, 0, 0, TimeSpan.Zero),
         new(visible ? AmountDisclosure.Visible : AmountDisclosure.Redacted, visible ? new("123456.78", CurrencyId) : null),
         new(visible ? AmountDisclosure.Visible : AmountDisclosure.Redacted, visible ? new("99999.01", CurrencyId) : null));
 

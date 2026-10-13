@@ -926,7 +926,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // FI04 adds a separate read-only scoped service. No raw SQL, connection, save or filter bypass.
                 [ReviewedFinanceOpenItemReadServicePath] =
                     new(
-                        "4a3631d5a45e8ded736fc9cc23762f3d9e706ae05a3952453cbc050fd92e9d59",
+                        "72dac8509838056308bba451ece7686f4caa0d891ae8eda432d7d4006e582f53",
                         new Dictionary<string, int>(StringComparer.Ordinal)),
                 // FS0 (#312): the bank-account master is the module's second writer; the SqlClient
                 // namespace only to recognise a unique-key violation (SqlException 2601/2627) after
