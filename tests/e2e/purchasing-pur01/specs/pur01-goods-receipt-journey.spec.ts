@@ -499,6 +499,9 @@ test('PUR01-GR records once, reopens, follows the read-only receipt detail to th
     expect(await readReceiptEffects(pool, identity)).toEqual(ONCE)
 
     // 3. Close the order and reopen it from the list: the same receipt comes from a fresh read, once.
+    // The label round-trip intentionally uses the read-only cross-module actor. Restore the receiver whose
+    // capability was proved above before opening the receipt record panel again.
+    await signInAs(page, receiverActor)
     const reopen: { history?: Promise<Response>; comparison?: Promise<Response> } = {}
     await openOrderFromList(page, orderId, () => {
       reopen.history = page.waitForResponse((response) => isCall(response, 'GET', receiptsPath))
