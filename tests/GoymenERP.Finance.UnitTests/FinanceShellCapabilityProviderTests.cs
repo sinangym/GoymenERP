@@ -17,7 +17,7 @@ public sealed class FinanceShellCapabilityProviderTests
     {
         var declarations = new FinanceShellCapabilityProvider().GetDeclarations();
 
-        Assert.Equal(19, declarations.Count);
+        Assert.Equal(21, declarations.Count);
         Assert.All(declarations, declaration => Assert.True(declaration.ImplementationAvailable));
     }
 
@@ -28,7 +28,7 @@ public sealed class FinanceShellCapabilityProviderTests
         var byId = provider.GetDeclarations().ToDictionary(declaration => declaration.CapabilityId, StringComparer.Ordinal);
 
         Assert.Equal("CHATGPT-BUSINESS/FINANCE", provider.Owner);
-        Assert.Equal("1.5", provider.ContractVersion);
+        Assert.Equal("1.6", provider.ContractVersion);
         (string Capability, string Route, string Path, string Screen, ShellCapabilityRoutePrecedence Precedence, string[] Permissions)[] expected =
         [
             ("finance.receipts.list", "finance.receipts", "/finans/tahsilatlar", "F-02", ShellCapabilityRoutePrecedence.Static,
@@ -83,6 +83,11 @@ public sealed class FinanceShellCapabilityProviderTests
             ("finance.allocations.write", "finance.allocations.list", "/finans/dagitimlar", "F-03",
                 ShellCapabilityRoutePrecedence.Static,
                 [FinancePermissionNames.AllocationRead, FinancePermissionNames.AllocationWrite]),
+            ("finance.open-items.list", "finance.open-items.list", "/finans/acik-kalemler", "F-03-OPEN-ITEMS",
+                ShellCapabilityRoutePrecedence.Static, [FinancePermissionNames.OpenItemRead]),
+            ("finance.open-items.detail", "finance.open-items.detail", "/finans/acik-kalemler/:openItemId",
+                "F-03-OPEN-ITEM-DETAIL", ShellCapabilityRoutePrecedence.ParameterizedAfterStatic,
+                [FinancePermissionNames.OpenItemRead]),
         ];
 
         Assert.Equal(expected.Select(item => item.Capability).Order(StringComparer.Ordinal), byId.Keys.Order(StringComparer.Ordinal));
@@ -172,7 +177,8 @@ public sealed class FinanceShellCapabilityProviderTests
         Assert.Equal(["F-02", "F-02-DETAIL", "F-02-INSTRUMENTS", "F-02-NEW",
                 "F-02-OFFICIAL-INVOICE-APPROVALS", "F-02-OFFICIAL-INVOICE-UPLOAD",
                 "F-02-PAYMENT-DETAIL", "F-02-PAYMENT-NEW",
-                "F-02-PAYMENTS", "F-02-REVERSAL-APPROVAL", "F-03", "F-04", "F-04-NEW"],
+                "F-02-PAYMENTS", "F-02-REVERSAL-APPROVAL", "F-03", "F-03-OPEN-ITEM-DETAIL",
+                "F-03-OPEN-ITEMS", "F-04", "F-04-NEW"],
             routes.Select(item => item.ScreenId).Order(StringComparer.Ordinal));
     }
 }

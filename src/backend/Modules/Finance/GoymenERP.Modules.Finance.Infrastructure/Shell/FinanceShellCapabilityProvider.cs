@@ -26,11 +26,16 @@ namespace GoymenERP.Modules.Finance.Infrastructure.Shell;
 /// The host registers this provider together with its shell authority (the central writer's); this
 /// module does not.
 /// </para>
+/// <para>
+/// <b>FI04:</b> F-03's allocation workspace remains at <c>/finans/dagitimlar</c>. The admitted open-item
+/// metadata read adds its own list and detail routes under <c>finance.open-items.read</c>. Amount disclosure
+/// stays an endpoint/DTO decision under <c>finance.open-items.amount.read</c>; it is not a shell route gate.
+/// </para>
 /// </summary>
 public sealed class FinanceShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "CHATGPT-BUSINESS/FINANCE";
-    public const string OwnerContractVersion = "1.5";
+    public const string OwnerContractVersion = "1.6";
     public const string ReceiptListScreenId = "F-02";
     public const string ReceiptDraftScreenId = "F-02-NEW";
     public const string ReceiptDetailScreenId = "F-02-DETAIL";
@@ -93,6 +98,14 @@ public sealed class FinanceShellCapabilityProvider : IShellCapabilityProvider
     public const string AllocationListRouteId = "finance.allocations.list";
     public const string AllocationListRoutePath = "/finans/dagitimlar";
     public const string AllocationWriteCapabilityId = "finance.allocations.write";
+    public const string OpenItemListScreenId = "F-03-OPEN-ITEMS";
+    public const string OpenItemDetailScreenId = "F-03-OPEN-ITEM-DETAIL";
+    public const string OpenItemListCapabilityId = "finance.open-items.list";
+    public const string OpenItemListRouteId = "finance.open-items.list";
+    public const string OpenItemListRoutePath = "/finans/acik-kalemler";
+    public const string OpenItemDetailCapabilityId = "finance.open-items.detail";
+    public const string OpenItemDetailRouteId = "finance.open-items.detail";
+    public const string OpenItemDetailRoutePath = "/finans/acik-kalemler/:openItemId";
 
     public string Owner => OwnerId;
 
@@ -189,6 +202,14 @@ public sealed class FinanceShellCapabilityProvider : IShellCapabilityProvider
                 ParentCapabilityId = AllocationListCapabilityId,
                 RequiredPermissions = [FinancePermissionNames.AllocationRead, FinancePermissionNames.AllocationWrite],
             },
+            // FI04: route visibility is metadata-read only. Amount disclosure remains the endpoint's separate
+            // finance.open-items.amount.read decision and must not become a shell/navigation gate.
+            Declaration(OpenItemListCapabilityId, OpenItemListRouteId, OpenItemListRoutePath,
+                OpenItemListScreenId, ShellCapabilityRoutePrecedence.Static,
+                [FinancePermissionNames.OpenItemRead]),
+            Declaration(OpenItemDetailCapabilityId, OpenItemDetailRouteId, OpenItemDetailRoutePath,
+                OpenItemDetailScreenId, ShellCapabilityRoutePrecedence.ParameterizedAfterStatic,
+                [FinancePermissionNames.OpenItemRead]),
         ];
     }
 

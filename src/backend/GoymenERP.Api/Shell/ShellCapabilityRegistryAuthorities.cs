@@ -115,9 +115,12 @@ internal static class ShellCapabilityRegistryAuthorities
     // DEC-SAL-003: re-derived the same way over main aaea20d0's providers with Sales 1.2 (SalesV11 -> SalesV12).
     // Finance 1.3 adds the dedicated customer-instrument list route under the existing read permission. This row and
     // every later live normal-host row were re-derived from the integrated provider tuple; disposable envelopes do not move.
-    // F-03 allocation reads: Finance 1.5 adds the allocation list route and write child control under separate read/write permissions; all live normal-host Finance rows move together.
+    // F-03 allocation reads: Finance 1.5 adds the allocation list route and write child control under separate read/write permissions.
+    // FI04: Finance 1.6 adds metadata-read list/detail routes; amount-read remains endpoint disclosure only.
+    // The long-lived constant identifiers retain their historical V15 suffix so references outside this central file do not
+    // churn; their reviewed values below are re-derived from the provider that reports ContractVersion 1.6.
     internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV15AndPublishedFinanceV15 =
-        "sha256:kja5w-G_8FGXYihdOqd3nxpMwlfVC0Zz-bneWwySotg";
+        "sha256:JPXHWPdi6y1-xVcgoEJYoKVTUJtUlV79AxEey-z16XU";
 
     // FIN-UI-1c: ... + Manufacturing 1.0 staged: the normal host (C+O+P+S(published)+F(published)+M(staged)).
     // Computed by the ComputeRevision reproduction and, independently, by ORG (DATA ONLY); pinned by test.
@@ -140,7 +143,7 @@ internal static class ShellCapabilityRegistryAuthorities
     // This row and every later normal-host row that carries Manufacturing were re-derived by
     // ShellCapabilityRegistry.ComputeCandidateRevision over main 0b6a68cd's providers (ManufacturingV13 -> V14).
     internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV15PublishedFinanceV15AndPublishedManufacturingV15 =
-        "sha256:VRCZL_Cb8DG0AEavVAvAfLb_gtncqhvAd2wQ14pQesc";
+        "sha256:fyRmtm5UHD-Qsr_Hv5kYa50KGAhBYJItc1nj4_l2EfI";
 
     // LOG-PUBLISH: ... + Logistics 1.1 PUBLISHED (the loading-instruction routes plus shipment/delivery actions,
     // master v3 §27.8): the normal host (C+O+P+S(published)+F(published)+M(published)+L(published)). Computed by
@@ -154,7 +157,7 @@ internal static class ShellCapabilityRegistryAuthorities
         "sha256:81Fyf0AWZg0ZgaXbMoaw77U_GTLsBrtoQOfUDH-jd8g";
     // AT-021 + LOG-HOST: Sales 1.6's floor-approval child is present before Logistics 1.3 joins.
     internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV16PublishedFinanceV15PublishedManufacturingV15AndPublishedLogisticsV13 =
-        "sha256:KqkE4-slYIAa4wPQoXpm9IHf_pD6Pw8DB99en5Mo4Jw";
+        "sha256:oMY56y2eYA6rqpGdQfz3TTlu7q90opjJugfZzwL-eWo";
 
     // PUR-HOST: ... + Purchasing 1.4, with the goods-receipt child control published beside the
     // request list/create/detail/submit and order list/create/detail/approve declarations. Every declaration remains
@@ -177,7 +180,7 @@ internal static class ShellCapabilityRegistryAuthorities
         "sha256:Z_-hXm4Ro9t8EZ5elBZP78KnlWU2SU8NmlJkOfg0cBQ";
     // AT-021 + PUR-HOST: the same Sales 1.6 tuple continues through Purchasing 1.4.
     internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV16PublishedFinanceV15PublishedManufacturingV15PublishedLogisticsV13AndPublishedPurchasingV14 =
-        "sha256:NiXC57E2jpBjxHptffDfBKLSIH7oQi6nOJY7HskPe2A";
+        "sha256:BVViiJhL6DRpAVeJ5JKwfDwubByWu3_XXRJAEV3LYOE";
 
     // ACC-V0b: ... + Accounting 1.0 STAGED (the period list M-07 and its propose screen, the approve and
     // close controls of that list, the journal list M-04 and its detail, the posting queues M-01): the normal
@@ -229,7 +232,7 @@ internal static class ShellCapabilityRegistryAuthorities
         "sha256:ogZHB2SN1LdJDjhsVrFBRZtrtVwNlhn9hXvHgWBwD4Y";
     // AT-021 + ACC-V0b: the same Sales 1.6 tuple continues through Accounting 1.3.
     internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV16PublishedFinanceV15PublishedManufacturingV15PublishedLogisticsV13PublishedPurchasingV14AndPublishedAccountingV13 =
-        "sha256:liRJER5kPU40Jc8pqyMNxL-DqVC-XWrmQOI47aghe0g";
+        "sha256:K3AagNIf5Z28WplRw51gW_7Sf1auVcpPa9L0TcuxBpo";
 
     // R14: Inventory 1.0 publishes one opening-stock workspace after the existing normal tuple.
     // The capability reuses the accepted company-wide permission; publication grants nothing.
@@ -260,7 +263,7 @@ internal static class ShellCapabilityRegistryAuthorities
     // ST-01 Product display: Inventory 1.7 requires the existing Product operational-selection read on the route
     // and every child control. Re-derived from the same full normal-host provider tuple; publication grants nothing.
     internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV16PublishedFinanceV15PublishedManufacturingV15PublishedLogisticsV13PublishedPurchasingV14PublishedAccountingV13AndPublishedInventoryV17 =
-        "sha256:paopfRcQvL3LCh5FuAUunnp6UnTnTBFTri9iotKcT_o";
+        "sha256:6jIKHcT_j8TNssKCsREdwCdvObtw5Oltak98wYDyrlo";
 
     // SY-01/SY-02 (read-only users-and-permissions view): Identity 1.0 joins the normal host with two screens on
     // identity.assignments.read. Only this new full-host row is added; every earlier row keeps its provider set and value.
@@ -276,11 +279,11 @@ internal static class ShellCapabilityRegistryAuthorities
     internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV16PublishedFinanceV15PublishedManufacturingV15PublishedLogisticsV13PublishedPurchasingV14PublishedAccountingV13PublishedInventoryV16AndPublishedIdentityV10 =
         "sha256:vDQf2otcUHTdIPiUgtAVmPDZo7LJUXMvIsrJeIZCGec";
     internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV16PublishedFinanceV15PublishedManufacturingV15PublishedLogisticsV13PublishedPurchasingV14PublishedAccountingV13PublishedInventoryV17AndPublishedIdentityV10 =
-        "sha256:YY5yXdgL2HOugsRXyKzjwTxdKcn37JJwnmWS5AyV9w8";
+        "sha256:kQWb6_AwhtDuHVnUCrx9ZOpvBlN0rJ7NlD8RqtB7038";
 
     // AT-018 / AT-021: final normal host adds PRODUCT-PRICE-LISTS 1.0 and Sales 1.6 beside Inventory 1.6.
     internal const string FullNormalHostWithProductPriceListsAndSalesFloorApproval =
-        "sha256:JdTctfanO3Z1XN4ORmoSJsHdtWTqXvJDdWh4B6Z0M_4";
+        "sha256:pApB0lTOmnsZu6O0W1ZRqwmNC2neEZzSLVQ5pl94fgc";
 
     internal const string CounterpartyV15PublishedListCreateAndDetail =
         "sha256:UBHnivzhe_dp5f7vU7dP5n7HG-P8XYBGhxvD_OjMSnw";
