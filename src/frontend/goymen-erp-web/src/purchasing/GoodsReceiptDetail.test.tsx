@@ -3,7 +3,7 @@ import { cleanup, render, screen, waitFor, within } from '@testing-library/react
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, useLocation } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { GoodsReceiptDetail } from './GoodsReceiptDetail'
+import { GoodsReceiptDetail, GoodsReceiptDetailRow } from './GoodsReceiptDetail'
 import { decodeGoodsReceiptDetail, type GoodsReceipt } from './goodsReceiptContract'
 import { GOODS_RECEIPT_TEXT as T } from './goodsReceiptText'
 import type { PurchaseOrderDetail } from './contract'
@@ -27,6 +27,7 @@ const ACCEPTANCE = '66666666-6666-6666-6666-666666666666'
 const OTHER = '77777777-7777-7777-7777-777777777777'
 const LABEL = '88888888-8888-8888-8888-888888888888'
 const LABEL_CODE = 'SENTETIK-ETIKET-2026-000123'
+const NAME = T.detailOf('7', '2', '2026-09-25T10:00:00Z')
 const ORDER_PATH = `/satinalma/siparisler/${ORDER}`
 const DETAIL_URL = `/api/v1/purchasing/orders/${ORDER}/goods-receipts/${ACCEPTANCE}`
 
@@ -62,7 +63,7 @@ function Address() {
   return <output aria-label="Adres">{location.pathname + location.search}</output>
 }
 function view(binding: string, acceptanceId = ACCEPTANCE) {
-  return <GoodsReceiptDetail binding={binding} detail={order} acceptanceId={acceptanceId} labelCode={LABEL_CODE} />
+  return <GoodsReceiptDetail binding={binding} detail={order} acceptanceId={acceptanceId} name={NAME} />
 }
 function mount(entry = ORDER_PATH, binding = 'actor-a:session:company') {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -72,7 +73,7 @@ function mount(entry = ORDER_PATH, binding = 'actor-a:session:company') {
   const result = render(wrap(view(binding)))
   return { rebind: (next: string) => result.rerender(wrap(view(next))) }
 }
-const toggle = () => screen.getByRole('button', { name: T.detailOf(LABEL_CODE) })
+const toggle = () => screen.getByRole('button', { name: NAME })
 const region = () => screen.getByRole('region', { name: T.detailHeading })
 const fact = (name: string) => {
   const term = within(region()).getByText(name)
@@ -235,6 +236,25 @@ describe('GoodsReceiptDetail — "Ayrıntı" on a recorded receipt', () => {
     calls.length = 0
     mount(`${ORDER_PATH}?kabul=${ACCEPTANCE}`)
     await waitFor(() => expect(fact(T.detailLabel)).toBe(LABEL_CODE))
+    expect(calls).toEqual([{ url: DETAIL_URL, method: 'GET' }])
+  })
+
+  it('as a table row it is one full-width cell under its acceptance, with the same control inside', async () => {
+    const calls = serve(() => json({ receipt: receipt() }))
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(<QueryClientProvider client={client}><MemoryRouter initialEntries={[ORDER_PATH]}>
+      <table><tbody>
+        <GoodsReceiptDetailRow colSpan={4} binding="actor-a:session:company" detail={order} acceptanceId={ACCEPTANCE} name={NAME} />
+      </tbody></table>
+    </MemoryRouter></QueryClientProvider>)
+    const row = screen.getByTestId(`purchase-order-acceptance-detail-${ACCEPTANCE}`)
+    expect(row.tagName).toBe('TR')
+    expect(within(row).getAllByRole('cell')).toHaveLength(1)
+    expect(within(row).getByRole('cell').getAttribute('colspan')).toBe('4')
+    expect(calls).toEqual([])
+    await userEvent.click(within(row).getByRole('button', { name: NAME }))
+    await waitFor(() => expect(fact(T.detailLabel)).toBe(LABEL_CODE))
+    expect(row.contains(region())).toBe(true)
     expect(calls).toEqual([{ url: DETAIL_URL, method: 'GET' }])
   })
 

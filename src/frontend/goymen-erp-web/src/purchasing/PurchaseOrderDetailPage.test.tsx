@@ -118,6 +118,15 @@ vi.mock('./GoodsReceiptPanel', () => ({
     : null,
 }))
 
+vi.mock('./GoodsReceiptDetail', () => ({
+  GoodsReceiptDetailRow: (props: { readonly binding: string; readonly acceptanceId: string; readonly name: string;
+    readonly colSpan: number; readonly detail: { readonly order: { readonly id: string } } }) =>
+    <tr role="row" data-testid={`purchase-order-acceptance-detail-${props.acceptanceId}`}><td role="cell" colSpan={props.colSpan}>
+      <button type="button" data-binding={props.binding} data-order={props.detail.order.id}
+        data-acceptance={props.acceptanceId} aria-label={props.name}>Ayrıntı</button>
+    </td></tr>,
+}))
+
 vi.mock('../documents/DocumentsPanel', () => ({
   DocumentsPanel: (props: Record<string, unknown>) => {
     scenario.documentMounts.push(props)
@@ -293,6 +302,35 @@ describe('PurchaseOrderDetailPage document-vault mount', () => {
 })
 
 describe('PurchaseOrderDetailPage canonical acceptance history', () => {
+  // PUR-RECEIPT-DETAIL-UI addendum: the detail read needs only the order read, so its control sits in the summary every
+  // order reader sees — not in the record panel.
+  it('offers "Ayrıntı" for each acceptance to a reader without the receipt-record capability', () => {
+    scenario.status = 'Approved'
+    scenario.lines = [serverLine()]
+    scenario.acceptances = [serverAcceptance()]
+    renderDetail()
+
+    expect(screen.queryByRole('region', { name: 'Mal kabul paneli' })).toBeNull()
+    const detailRow = screen.getByTestId(`purchase-order-acceptance-detail-${ACCEPTANCE}`)
+    expect(screen.getByRole('region', { name: T.acceptanceHistoryHeading }).contains(detailRow)).toBe(true)
+    // It follows its own acceptance row and leaves that row's four cells as they were.
+    expect(detailRow.previousElementSibling).toBe(screen.getByTestId(`purchase-order-acceptance-${ACCEPTANCE}`))
+    expect(within(detailRow).getAllByRole('cell')).toHaveLength(1)
+    expect(within(detailRow).getByRole('cell').getAttribute('colspan')).toBe('4')
+    const control = within(detailRow).getByRole('button', { name: 'Mal kabul ayrıntısı: satır 7, miktar 4.2500, 2026-10-05T18:30:00Z' })
+    expect(control.textContent).toBe('Ayrıntı')
+    // The same order and acceptance, under the page's own context key.
+    expect(control.getAttribute('data-acceptance')).toBe(ACCEPTANCE)
+    expect(control.getAttribute('data-order')).toBe(summary().id)
+    expect(control.getAttribute('data-binding')).toBe('fixture')
+  })
+
+  it('offers no "Ayrıntı" when the order has no acceptance', () => {
+    scenario.status = 'Approved'
+    renderDetail()
+    expect(screen.queryByRole('button', { name: /Mal kabul ayrıntısı/ })).toBeNull()
+  })
+
   it('explains an empty normalized history without requiring the receipt-record capability', () => {
     scenario.status = 'Approved'
     renderDetail()

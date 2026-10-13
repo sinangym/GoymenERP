@@ -41,7 +41,6 @@ function fixture(unknownFirst = false) {
   const posts: { key: string; body: string }[] = []
   const receipts: GoodsReceipt[] = []
   const comparisonReads: string[] = []
-  const detailReads: string[] = []
   vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
     if (init?.method === 'POST') {
       posts.push({ key: (init.headers as Record<string, string>)['Idempotency-Key'], body: init.body as string })
@@ -55,11 +54,9 @@ function fixture(unknownFirst = false) {
     locations: [{ locationId: LOCATION, locationCode: 'D-01', locationName: 'Mal Kabul', siteName: 'Fabrika' }], searchWindowFull: false })
     const compared = receipts.find((receipt) => url.endsWith(`/goods-receipts/${receipt.acceptanceId}/quantity-comparison`))
     if (compared !== undefined) { comparisonReads.push(compared.acceptanceId); return json(comparison(compared)) }
-    const opened = receipts.find((receipt) => url.endsWith(`/goods-receipts/${receipt.acceptanceId}`))
-    if (opened !== undefined) { detailReads.push(url); return json({ receipt: opened }) }
     return json({ items: receipts, searchWindowFull: false })
   }))
-  return { posts, receipts, comparisonReads, detailReads }
+  return { posts, receipts, comparisonReads }
 }
 function mount(enabled = true) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -160,30 +157,6 @@ describe('Purchasing goods receipt consumer, synthetic NOT_ENV', () => {
     expect((await screen.findByTestId(`goods-receipt-${LOCATION}`)).textContent).toContain(T.initialBlocked)
     expect(server.posts).toHaveLength(0)
     expect(screen.queryByRole('button', { name: /serbest bırak/i })).toBeNull()
-  })
-  it('opens one recorded receipt in place on "Ayrıntı": one GET for that receipt, no second record or comparison read', async () => {
-    const server = fixture()
-    const request: GoodsReceiptRequest = { expectedPurchaseOrderVersion: '3', expectedProductVersion: '7', acceptanceId: LOCATION,
-      acceptedQuantity: '2', measuredQuantityKg: '1.9', locationId: LOCATION, lotId: LINE, labelId: UNIT, labelCode: 'HISTORICAL',
-      heatNumber: null, coilNumber: null, movementId: PRODUCT, occurredAtUtc: '2026-09-25T10:00:00Z' }
-    server.receipts.push(recorded(request))
-    mount()
-    const row = await screen.findByTestId(`goods-receipt-${LOCATION}`)
-    await screen.findByTestId(`goods-receipt-comparison-${LOCATION}`)
-    const toggle = screen.getByRole('button', { name: T.detailOf('HISTORICAL') })
-    expect(row.contains(toggle)).toBe(true)
-    // Listing the history reads no detail by itself.
-    expect(server.detailReads).toEqual([])
-
-    await userEvent.click(toggle)
-    const opened = await screen.findByTestId(`goods-receipt-detail-${LOCATION}`)
-    await waitFor(() => expect(opened.textContent).toContain(T.detailRemaining))
-    expect(row.contains(opened)).toBe(true)
-    expect(server.detailReads).toEqual([`/api/v1/purchasing/orders/${ORDER}/goods-receipts/${LOCATION}`])
-    expect(opened.textContent).toContain('1.9 kg')
-    expect(server.posts).toHaveLength(0)
-    expect(server.comparisonReads).toEqual([LOCATION])
-    expect(screen.getByRole('button', { name: T.save })).toBeTruthy()
   })
   it('rejects unknown historical block values instead of describing them as Free', () => {
     const request: GoodsReceiptRequest = { expectedPurchaseOrderVersion: '3', expectedProductVersion: '7', acceptanceId: LOCATION,
