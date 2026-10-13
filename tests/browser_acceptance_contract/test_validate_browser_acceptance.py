@@ -675,12 +675,35 @@ class WorkflowTests(unittest.TestCase):
                 "finance.official-invoice-import.approve",
                 "finance.allocation.read",
                 "finance.allocation.write",
+                "finance.open-items.read",
+                "finance.open-items.amount.read",
                 "sales.drafts.create",
                 "sales.drafts.read",
                 "sales.orders.approve",
             ),
             validator.SUITE_IDENTITY_PERMISSIONS["fin01"],
         )
+
+    def test_fin01_open_item_metadata_and_amount_permissions_are_independent_admissions(self):
+        permissions = validator.SUITE_IDENTITY_PERMISSIONS["fin01"]
+
+        self.assertEqual(1, permissions.count("finance.open-items.read"))
+        self.assertEqual(1, permissions.count("finance.open-items.amount.read"))
+        self.assertNotEqual(
+            permissions.index("finance.open-items.read"),
+            permissions.index("finance.open-items.amount.read"),
+        )
+
+        # Closed-list admission is not a disposable grant. The fixture owner must still place each
+        # permission on the exact reviewed FIN01 profile in its own separately claimed files.
+        environment = self._fin01_environment()
+        granted = {
+            value
+            for key, value in environment.items()
+            if key.startswith("IdentitySeed__Roles__") and "__Permissions__" in key
+        }
+        self.assertNotIn("finance.open-items.read", granted)
+        self.assertNotIn("finance.open-items.amount.read", granted)
 
     @staticmethod
     def _fin01_environment():
