@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import { Fragment, useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link, useParams } from 'react-router'
 import { approvePurchaseOrder, type ApprovalOutcome } from './approvalApi'
@@ -11,7 +11,9 @@ import { StateBlock } from '../shell/StateBlock'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
 import { pendingApprovalKey, recallPendingApproval, releasePendingApproval, reservePendingApproval, type ApprovalSnapshot } from './pendingApprovalStore'
 import styles from './PurchaseOrderDetailPage.module.css'
+import { GoodsReceiptDetailRow } from './GoodsReceiptDetail'
 import { GoodsReceiptPanel } from './GoodsReceiptPanel'
+import { GOODS_RECEIPT_TEXT } from './goodsReceiptText'
 import { PURCHASE_GOODS_RECEIPT_CAPABILITY } from './goodsReceiptContract'
 import { PURCHASE_ORDER_DETAIL_TEXT as T } from './purchaseOrderDetailText'
 import { PurchaseOrderSupplierIdentity } from './PurchaseOrderListPage'
@@ -211,12 +213,19 @@ function PurchaseOrderDetail({ namespace }: { readonly namespace: string | null 
       {acceptances.length === 0
         ? <p>{T.acceptanceHistoryEmpty}</p>
         : <RecordTable label={T.acceptanceHistoryHeading} columns={ACCEPTANCE_COLUMNS}>
-          {acceptances.map((acceptance) => <tr key={acceptance.acceptanceId} role="row" data-testid={`purchase-order-acceptance-${acceptance.acceptanceId}`}>
-            <Cell label={T.acceptanceId} identifier>{acceptance.acceptanceId}</Cell>
-            <Cell label={T.lineNo}>{lineNoById.get(acceptance.lineId) ?? T.lineUnavailable}</Cell>
-            <Cell label={T.quantity} numeric>{acceptance.quantity}</Cell>
-            <Cell label={T.recordedAtUtc}><time dateTime={acceptance.recordedAtUtc}>{acceptance.recordedAtUtc}</time></Cell>
-          </tr>)}
+          {acceptances.map((acceptance) => <Fragment key={acceptance.acceptanceId}>
+            <tr role="row" data-testid={`purchase-order-acceptance-${acceptance.acceptanceId}`}>
+              <Cell label={T.acceptanceId} identifier>{acceptance.acceptanceId}</Cell>
+              <Cell label={T.lineNo}>{lineNoById.get(acceptance.lineId) ?? T.lineUnavailable}</Cell>
+              <Cell label={T.quantity} numeric>{acceptance.quantity}</Cell>
+              <Cell label={T.recordedAtUtc}><time dateTime={acceptance.recordedAtUtc}>{acceptance.recordedAtUtc}</time></Cell>
+            </tr>
+            {/* The order's reader reopens the immutable receipt here; the record panel below stays a record control. */}
+            {namespace !== null ? <GoodsReceiptDetailRow colSpan={ACCEPTANCE_COLUMNS.length} binding={namespace} detail={state.data}
+              acceptanceId={acceptance.acceptanceId}
+              name={GOODS_RECEIPT_TEXT.detailOf(String(lineNoById.get(acceptance.lineId) ?? T.lineUnavailable),
+                acceptance.quantity, acceptance.recordedAtUtc)} /> : null}
+          </Fragment>)}
         </RecordTable>}
     </section> : null}
     {isCurrentDetail && namespace !== null ? <DocumentsPanel

@@ -1,7 +1,7 @@
 import { purchasingHeaders, PURCHASING_ORDERS_BASE } from './api'
 import type { PurchaseOrderDetail, PurchaseOrderLine } from './contract'
 import type { ViewOutcome } from '../shell/uiState'
-import { decodeGoodsReceiptOptions, decodeGoodsReceiptPage, decodeGoodsReceiptResponse,
+import { decodeGoodsReceiptDetail, decodeGoodsReceiptOptions, decodeGoodsReceiptPage, decodeGoodsReceiptResponse,
   type GoodsReceipt, type GoodsReceiptOptions, type GoodsReceiptPage, type GoodsReceiptRequest, type GoodsReceiptResponse } from './goodsReceiptContract'
 import { decodeGoodsReceiptQuantityComparison, type GoodsReceiptQuantityComparison } from './goodsReceiptComparisonContract'
 
@@ -27,6 +27,13 @@ async function read<T>(path: string, companyId: string, decode: (body: unknown) 
 
 export function fetchGoodsReceipts(detail: PurchaseOrderDetail, signal?: AbortSignal): Promise<ViewOutcome<GoodsReceiptPage>> {
   return read(`${base(detail.order.id)}/goods-receipts`, detail.order.companyId, (body) => decodeGoodsReceiptPage(body, detail), signal)
+}
+
+/** One recorded receipt, read again by its own identity. The endpoint takes no query; reading it records nothing. */
+export function fetchGoodsReceiptDetail(detail: PurchaseOrderDetail, acceptanceId: string,
+  signal?: AbortSignal): Promise<ViewOutcome<GoodsReceipt>> {
+  return read(`${base(detail.order.id)}/goods-receipts/${encodeURIComponent(acceptanceId)}`, detail.order.companyId,
+    (body) => decodeGoodsReceiptDetail(body, detail, acceptanceId), signal)
 }
 
 export function fetchGoodsReceiptQuantityComparison(detail: PurchaseOrderDetail, receipt: GoodsReceipt,

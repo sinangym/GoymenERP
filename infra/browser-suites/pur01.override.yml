@@ -1,4 +1,4 @@
-# PUR-01 Purchasing order acceptance. Five disposable actors are appended to the canonical development
+# PUR-01 Purchasing order acceptance. Six disposable actors are appended to the canonical development
 # identities and exist only in the per-run SQL database. The creator can create/read and carries the two
 # owner-read permissions the real Purchasing command already requires plus the two P-03 Document Vault
 # permissions; the approver can read/approve and the reader can only read. The existing Product runtime's
@@ -12,6 +12,8 @@
 # purchasing.goods-receipts.record (the record command, its location options, its history and its shell control),
 # and a separate Inventory stock reader holds the Inventory screen's exact three-read fence:
 # inventory.labels.read + inventory.balances.read + product.operational-selection.read, to show the SAME label.
+# The receipt-detail reader combines only the existing order-read and Inventory label-read fences so the browser can
+# follow one immutable receipt to its native label and back. It deliberately has no receipt-record permission.
 # No real user, production role or seeded role receives purchasing.goods-receipts.record.
 services:
   api:
@@ -28,6 +30,8 @@ services:
       BootstrapIdentity__Users__5__DisplayName: SENTETIK browser-suite:pur01 Purchasing goods receiver
       BootstrapIdentity__Users__6__UserId: pur01-stock-reader
       BootstrapIdentity__Users__6__DisplayName: SENTETIK browser-suite:pur01 Inventory label reader
+      BootstrapIdentity__Users__7__UserId: pur01-receipt-detail-reader
+      BootstrapIdentity__Users__7__DisplayName: SENTETIK browser-suite:pur01 receipt detail reader
       IdentitySeed__Users__5__Id: b2000000-0000-4000-8000-000000000601
       IdentitySeed__Users__5__DisplayName: SENTETIK browser-suite:pur01 Purchasing approver
       IdentitySeed__Users__5__ExternalIdentities__0__Id: b2100000-0000-4000-8000-000000000601
@@ -58,6 +62,11 @@ services:
       IdentitySeed__Users__10__ExternalIdentities__0__Id: b2100000-0000-4000-8000-000000000605
       IdentitySeed__Users__10__ExternalIdentities__0__Issuer: urn:goymen:development-bootstrap
       IdentitySeed__Users__10__ExternalIdentities__0__Subject: pur01-stock-reader
+      IdentitySeed__Users__11__Id: b2000000-0000-4000-8000-000000000606
+      IdentitySeed__Users__11__DisplayName: SENTETIK browser-suite:pur01 receipt detail reader
+      IdentitySeed__Users__11__ExternalIdentities__0__Id: b2100000-0000-4000-8000-000000000606
+      IdentitySeed__Users__11__ExternalIdentities__0__Issuer: urn:goymen:development-bootstrap
+      IdentitySeed__Users__11__ExternalIdentities__0__Subject: pur01-receipt-detail-reader
       IdentitySeed__Roles__5__Id: b3000000-0000-4000-8000-000000000601
       IdentitySeed__Roles__5__Code: BROWSER_PUR01_APPROVER
       IdentitySeed__Roles__5__Name: SENTETIK browser-suite:pur01 Purchasing approver
@@ -92,6 +101,14 @@ services:
       IdentitySeed__Roles__9__Permissions__0: inventory.labels.read
       IdentitySeed__Roles__9__Permissions__1: inventory.balances.read
       IdentitySeed__Roles__9__Permissions__2: product.operational-selection.read
+      IdentitySeed__Roles__10__Id: b3000000-0000-4000-8000-000000000606
+      IdentitySeed__Roles__10__Code: BROWSER_PUR01_RECEIPT_DETAIL_READER
+      IdentitySeed__Roles__10__Name: SENTETIK browser-suite:pur01 receipt detail reader
+      IdentitySeed__Roles__10__IsSystem: "false"
+      IdentitySeed__Roles__10__Permissions__0: purchasing.orders.read
+      IdentitySeed__Roles__10__Permissions__1: inventory.labels.read
+      IdentitySeed__Roles__10__Permissions__2: inventory.balances.read
+      IdentitySeed__Roles__10__Permissions__3: product.operational-selection.read
       IdentitySeed__Assignments__7__Id: b4000000-0000-4000-8000-000000000601
       IdentitySeed__Assignments__7__UserId: b2000000-0000-4000-8000-000000000601
       IdentitySeed__Assignments__7__RoleId: b3000000-0000-4000-8000-000000000601
@@ -140,3 +157,11 @@ services:
       IdentitySeed__Assignments__12__ApprovedByUserId: 20000000-0000-0000-0000-000000000003
       IdentitySeed__Assignments__12__Scopes__0__Type: Company
       IdentitySeed__Assignments__12__Scopes__0__Id: 10000000-0000-0000-0000-000000000002
+      IdentitySeed__Assignments__13__Id: b4000000-0000-4000-8000-000000000607
+      IdentitySeed__Assignments__13__UserId: b2000000-0000-4000-8000-000000000606
+      IdentitySeed__Assignments__13__RoleId: b3000000-0000-4000-8000-000000000606
+      IdentitySeed__Assignments__13__CompanyId: 10000000-0000-0000-0000-000000000001
+      IdentitySeed__Assignments__13__ValidFromUtc: "2026-01-01T00:00:00+00:00"
+      IdentitySeed__Assignments__13__ApprovedByUserId: 20000000-0000-0000-0000-000000000003
+      IdentitySeed__Assignments__13__Scopes__0__Type: Company
+      IdentitySeed__Assignments__13__Scopes__0__Id: 10000000-0000-0000-0000-000000000001
