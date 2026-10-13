@@ -180,7 +180,10 @@ public sealed class FinanceShellCapabilitySqlServerRelationalAcceptanceTests
 
             // FI04 metadata read opens both list and detail routes. The separate amount name is endpoint
             // disclosure only: by itself it opens no shell route and cannot imply metadata access.
-            const string openItemReader = "finance-open-items-reader";
+            // DevelopmentBootstrap authenticates only the configured TestUsers subjects. Keep two distinct
+            // actors while using that real fixture contract; adding an ExternalIdentityLink does not itself
+            // admit an arbitrary HTTP header value to the authentication handler.
+            const string openItemReader = TestUsers.Unprovisioned;
             await GrantAsync(factory, openItemReader, CompanyA, FinancePermissionNames.OpenItemRead,
                 AccessScopeType.Company, CompanyA);
             using (var openItems = factory.CreateClientFor(openItemReader, CompanyA))
@@ -191,7 +194,7 @@ public sealed class FinanceShellCapabilitySqlServerRelationalAcceptanceTests
                     (await openItems.GetAsync(FinanceOpenItemReadEndpoints.Path)).StatusCode);
             }
 
-            const string amountOnlyReader = "finance-open-items-amount-only";
+            const string amountOnlyReader = TestUsers.CompanyB;
             await GrantAsync(factory, amountOnlyReader, CompanyA, FinancePermissionNames.OpenItemAmountRead,
                 AccessScopeType.Company, CompanyA);
             using (var amountOnly = factory.CreateClientFor(amountOnlyReader, CompanyA))
