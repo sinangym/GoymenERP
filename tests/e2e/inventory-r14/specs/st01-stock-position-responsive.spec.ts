@@ -887,18 +887,24 @@ test('ST-01 applies genuine Product family and nominal dimension filters before 
   expect(swapped.items.map((item) => item.labelId)).toEqual(matches.slice(0, 25).map((item) => item.labelId))
   await expect(page.getByRole('table', { name: 'Stok / Malzeme Pozisyonu' }).locator('tbody tr')).toHaveCount(25)
 
-  for (const width of [1440, 1366, 768]) {
+  for (const width of [1440, 1366]) {
     await page.setViewportSize({ width, height: 900 })
     await expect(page.getByRole('table', { name: 'Stok / Malzeme Pozisyonu' })).toBeVisible()
     await assertDesktopPosition(page, swapped.items[0])
     await assertDesktopPosition(page, swapped.items[24])
     await expectNoPageOverflow(page, `the typed-filter table at ${width}px`)
   }
-  for (const width of [390, 320]) {
+  for (const width of [768, 390, 320]) {
     await page.setViewportSize({ width, height: 844 })
     await expect(page.getByTestId('stock-position-cards').locator('li')).toHaveCount(25)
     await assertMobilePosition(page, swapped.items[0])
     await assertMobilePosition(page, swapped.items[24])
+    await expect(stockCard(page, swapped.items[0].labelId)
+      .getByRole('link', { name: swapped.items[0].labelCode, exact: true })).toBeVisible()
+    await expect(stockCard(page, swapped.items[24].labelId)
+      .getByRole('link', { name: swapped.items[24].labelCode, exact: true })).toBeVisible()
+    await assertMenu(page, swapped.items[0].labelId, swapped.items[0].labelCode, true)
+    await assertMenu(page, swapped.items[24].labelId, swapped.items[24].labelCode, true)
     await expectNoPageOverflow(page, `the typed-filter cards at ${width}px`)
   }
 
