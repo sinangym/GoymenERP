@@ -114,6 +114,59 @@ public sealed partial class PurchasingService
         return answer;
     }
 
+    public async Task<PurchaseGoodsReceiptDetailV1> GetGoodsReceiptAsync(Guid orderId, Guid acceptanceId,
+        CancellationToken cancellationToken = default)
+    {
+        var permission = bindings.ReadPermission;
+        var scope = await RequireAsync(permission, cancellationToken);
+        if (orderId == Guid.Empty || acceptanceId == Guid.Empty)
+        {
+            throw new PurchasingServiceException(404, "not_found");
+        }
+
+        var stored = await GuardedAsync(scope, permission,
+            () => store.FindOrderAsync(orderId, cancellationToken), cancellationToken)
+            ?? throw new PurchasingServiceException(404, "not_found");
+        var acceptance = stored.Order.Acceptances.SingleOrDefault(candidate => candidate.AcceptanceId == acceptanceId)
+            ?? throw new PurchasingServiceException(404, "not_found");
+        var line = stored.Order.Lines.SingleOrDefault(candidate => candidate.Id == acceptance.LineId)
+            ?? throw ReceiptSourceInvalid();
+        var reads = receiptReads ?? throw ReceiptUnavailable();
+        var receipt = await GuardedAsync(scope, permission,
+            () => reads.GetReceiptAsync(orderId, acceptanceId, cancellationToken), cancellationToken)
+            ?? throw ReceiptSourceInvalid();
+
+        try
+        {
+            _ = PurchaseGoodsReceiptQuantityComparisonFactoryV1.Create(
+                receipt,
+                scope.CompanyId,
+                orderId,
+                acceptanceId,
+                acceptance.LineId,
+                line.ProductId,
+                VersionOf(stored.ProductVersionsByLineId, line.Id),
+                line.UnitId,
+                Text(acceptance.Quantity),
+                storedUnitIsKilogram: false,
+                currentPurchaseOrderVersion: stored.Order.Version.ToString(CultureInfo.InvariantCulture));
+        }
+        catch (ArgumentException)
+        {
+            throw ReceiptSourceInvalid();
+        }
+
+        if (receipt.LotId == Guid.Empty || receipt.LabelId == Guid.Empty || receipt.MovementId == Guid.Empty
+            || receipt.LocationId == Guid.Empty || !ReceiptToken(receipt.LabelCode)
+            || !ReceiptVersion(receipt.LabelVersion) || !ReceiptNonNegativeQuantity(receipt.RemainingQuantity)
+            || receipt.InitialBlock is not ("Free" or "Blocked") || receipt.OccurredAtUtc != acceptance.RecordedAtUtc)
+        {
+            throw ReceiptSourceInvalid();
+        }
+
+        return new(receipt);
+    }
+
     public async Task<PurchaseGoodsReceiptPageV1> GetGoodsReceiptsAsync(Guid orderId, int limit = 100,
         CancellationToken cancellationToken = default)
     {
@@ -183,6 +236,11 @@ public sealed partial class PurchasingService
 
     private static bool ReceiptVersion(string value) => long.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var version)
         && version > 0 && version.ToString(CultureInfo.InvariantCulture) == value;
+    private static bool ReceiptNonNegativeQuantity(string value) =>
+        decimal.TryParse(value, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var quantity)
+        && quantity >= 0m && value == PurchaseAcceptanceParticipantContractV1.FormatQuantity(quantity);
+    private static bool ReceiptToken(string value) => !string.IsNullOrWhiteSpace(value) && value.Length <= 64
+        && value == value.Trim() && !value.Any(char.IsControl);
     private static PurchasingServiceException ReceiptUnavailable() => new(503, PurchaseGoodsReceiptCodesV1.Unavailable);
     private static PurchasingServiceException ReceiptSourceInvalid() => new(503, PurchaseGoodsReceiptCodesV1.SourceInvalid);
 }
