@@ -26,6 +26,7 @@ public sealed class OrganizationMasterDataServiceTests
     private static readonly Guid FactorySite = Guid.Parse("0f200000-0000-4000-8000-0000000000a1");
     private static readonly Guid ExternalSite = Guid.Parse("0f200000-0000-4000-8000-0000000000a2");
     private static readonly Guid Hall = Guid.Parse("0f100000-0000-4000-8000-0000000000a1");
+    private static readonly Guid ExternalLocation = Guid.Parse("0f100000-0000-4000-8000-0000000000a2");
     private static readonly Guid Line = Guid.Parse("0f300000-0000-4000-8000-0000000000a1");
     private static readonly Guid SiteOfB = Guid.Parse("0f200000-0000-4000-8000-0000000000b1");
     private static readonly Guid LocationOfB = Guid.Parse("0f100000-0000-4000-8000-0000000000b1");
@@ -364,6 +365,156 @@ public sealed class OrganizationMasterDataServiceTests
         Assert.Empty(await new Run(database, CompanyA, CompanyWide()).Db.CommandExecutions.ToListAsync());
     }
 
+    [Fact]
+    public async Task External_location_operator_is_versioned_audited_and_replayed_without_rechecking_eligibility()
+    {
+        var database = await SeedAsync();
+        var partyId = Guid.NewGuid();
+        var eligibility = new FixedEligibility(OrganizationLocationOperatorEligibilityStatusV1.Eligible);
+        var run = new Run(database, CompanyA, CompanyWide(), eligibility: eligibility);
+        var metadata = run.Metadata("operator-1");
+
+        var assigned = await run.Service.SetLocationOperatorAsync(
+            ExternalLocation,
+            new SetLocationOperator(partyId, 1, "Operatör atandı"),
+            metadata,
+            CancellationToken.None);
+
+        Assert.Equal(CommandResult.Succeeded, assigned.Result);
+        Assert.Equal(1, eligibility.Calls);
+        var saved = await new Run(database, CompanyA, CompanyWide()).Db.Locations.SingleAsync(x => x.Id == ExternalLocation);
+        Assert.Equal(partyId, saved.OperatorPartyId);
+        Assert.Equal(2, saved.Version);
+        var audit = Assert.Single(run.Audit.Drafts);
+        Assert.Equal(("Update", (long?)1, (long?)2), (audit.Operation, audit.EntityVersionBefore, audit.EntityVersionAfter));
+
+        var replayEligibility = new FixedEligibility(OrganizationLocationOperatorEligibilityStatusV1.Ineligible);
+        var replay = await new Run(database, CompanyA, CompanyWide(), eligibility: replayEligibility).Service.SetLocationOperatorAsync(
+            ExternalLocation,
+            new SetLocationOperator(partyId, 1, "Operatör atandı"),
+            metadata,
+            CancellationToken.None);
+        Assert.True(replay.IsReplay);
+        Assert.Equal(CommandResult.Succeeded, replay.Result);
+        Assert.Equal(0, replayEligibility.Calls);
+
+        var differentPayload = await new Run(database, CompanyA, CompanyWide()).Service.SetLocationOperatorAsync(
+            ExternalLocation,
+            new SetLocationOperator(Guid.NewGuid(), 1, "Operatör atandı"),
+            metadata,
+            CancellationToken.None);
+        Assert.Equal(CommandResult.IdempotencyConflict, differentPayload.Result);
+
+        var noChangeRun = new Run(database, CompanyA, CompanyWide());
+        var noChange = await noChangeRun.Service.SetLocationOperatorAsync(
+            ExternalLocation,
+            new SetLocationOperator(partyId, 2, "Atama doğrulandı"),
+            noChangeRun.Metadata("operator-same"),
+            CancellationToken.None);
+        Assert.Equal(CommandResult.Succeeded, noChange.Result);
+        Assert.Equal(2, (await noChangeRun.Db.Locations.SingleAsync(x => x.Id == ExternalLocation)).Version);
+        Assert.Equal("NoChange", Assert.Single(noChangeRun.Audit.Drafts).Operation);
+    }
+
+    [Fact]
+    public async Task Operator_assignment_fails_closed_and_does_not_store_a_terminal_receipt_when_dependency_is_unavailable()
+    {
+        var database = await SeedAsync();
+        var run = new Run(
+            database,
+            CompanyA,
+            CompanyWide(),
+            eligibility: new FixedEligibility(OrganizationLocationOperatorEligibilityStatusV1.Unavailable));
+
+        var result = await run.Service.SetLocationOperatorAsync(
+            ExternalLocation,
+            new SetLocationOperator(Guid.NewGuid(), 1, "Doğrula"),
+            run.Metadata("operator-unavailable"),
+            CancellationToken.None);
+
+        Assert.Equal(CommandResult.DependencyUnavailable, result.Result);
+        Assert.Equal(503, result.Response.StatusCode);
+        Assert.Null((await run.Db.Locations.SingleAsync(x => x.Id == ExternalLocation)).OperatorPartyId);
+        Assert.Empty(run.Audit.Drafts);
+        Assert.Empty(await run.Db.CommandExecutions.Where(x => x.CommandName == OrganizationMasterDataService.SetLocationOperatorCommandName).ToListAsync());
+    }
+
+    [Fact]
+    public async Task Internal_location_and_ineligible_party_are_terminal_without_mutating_the_location()
+    {
+        var database = await SeedAsync();
+        var eligibility = new FixedEligibility(OrganizationLocationOperatorEligibilityStatusV1.Ineligible);
+        var run = new Run(database, CompanyA, CompanyWide(), eligibility: eligibility);
+
+        var internalResult = await run.Service.SetLocationOperatorAsync(
+            Hall,
+            new SetLocationOperator(Guid.NewGuid(), 1, "İç depo"),
+            run.Metadata("operator-internal"),
+            CancellationToken.None);
+        Assert.Equal(CommandResult.OperatorIneligible, internalResult.Result);
+        Assert.Equal(0, eligibility.Calls);
+
+        var externalResult = await run.Service.SetLocationOperatorAsync(
+            ExternalLocation,
+            new SetLocationOperator(Guid.NewGuid(), 1, "Uygun olmayan cari"),
+            run.Metadata("operator-ineligible"),
+            CancellationToken.None);
+        Assert.Equal(CommandResult.OperatorIneligible, externalResult.Result);
+        Assert.Equal(1, eligibility.Calls);
+        Assert.Null((await run.Db.Locations.SingleAsync(x => x.Id == ExternalLocation)).OperatorPartyId);
+    }
+
+    [Fact]
+    public async Task Authority_loss_during_eligibility_read_writes_no_operator_audit_or_terminal_receipt()
+    {
+        var database = await SeedAsync();
+        var company = Resolved(CompanyA);
+        await using var db = Context(database, company);
+        var audit = new RecordingAudit();
+        var authority = new SequencedAuthority(CompanyWide(), new PermissionScope(
+            false,
+            false,
+            new HashSet<string>(),
+            new HashSet<Guid>(),
+            new HashSet<Guid>(),
+            new HashSet<Guid>()));
+        var service = new OrganizationMasterDataService(
+            db,
+            new FixedUser(Actor, CompanyA),
+            company,
+            authority,
+            authority,
+            new FixedEligibility(OrganizationLocationOperatorEligibilityStatusV1.Eligible),
+            audit,
+            NullLogger<OrganizationMasterDataService>.Instance);
+
+        var result = await service.SetLocationOperatorAsync(
+            ExternalLocation,
+            new SetLocationOperator(Guid.NewGuid(), 1, "Yetki yeniden ölçüldü"),
+            new CommandMetadata(CompanyA, Actor, "authority-drift", null, SourceChannels.Web, null, null, "authority-drift"),
+            CancellationToken.None);
+
+        Assert.Equal(CommandResult.NotFound, result.Result);
+        Assert.Empty(audit.Drafts);
+        Assert.Empty(await db.CommandExecutions.Where(x => x.CommandName == OrganizationMasterDataService.SetLocationOperatorCommandName).ToListAsync());
+        Assert.Null((await db.Locations.SingleAsync(x => x.Id == ExternalLocation)).OperatorPartyId);
+    }
+
+    [Fact]
+    public async Task Transfer_destination_source_returns_only_the_current_company_location_shape()
+    {
+        var database = await SeedAsync();
+        var company = Resolved(CompanyA);
+        await using var db = Context(database, company);
+        var source = new OrganizationTransferDestinationSourceV1(db, company);
+
+        Assert.Equal(
+            new OrganizationTransferDestinationV1(ExternalLocation, true, true, null, 1),
+            await source.ReadAsync(CompanyA, ExternalLocation));
+        Assert.Null(await source.ReadAsync(CompanyA, LocationOfB));
+        Assert.Null(await source.ReadAsync(CompanyB, ExternalLocation));
+    }
+
     private static PermissionScope CompanyWide() =>
         new(true, true, new HashSet<string>(["SENTETIK-ORG-EDITOR"], StringComparer.Ordinal),
             new HashSet<Guid>(), new HashSet<Guid>(), new HashSet<Guid>());
@@ -380,6 +531,7 @@ public sealed class OrganizationMasterDataServiceTests
             a.Sites.Add(new Site(FactorySite, CompanyA, "SYN-SITE-A", "Sentetik fabrika", SiteType.Factory));
             a.Sites.Add(new Site(ExternalSite, CompanyA, "SYN-SITE-EXT", "Sentetik harici", SiteType.ExternalWarehouse));
             a.Locations.Add(new Location(Hall, CompanyA, FactorySite, "SYN-HOL-0", "Sentetik Hol 0", false));
+            a.Locations.Add(new Location(ExternalLocation, CompanyA, ExternalSite, "SYN-EXT-0", "Sentetik harici depo", true));
             a.WorkCenters.Add(new WorkCenter(Line, CompanyA, Hall, "SYN-WC-1", "Sentetik Boya Hattı", WorkCenterKind.Paint));
             await a.SaveChangesAsync();
         }
@@ -419,14 +571,26 @@ public sealed class OrganizationMasterDataServiceTests
 
     private sealed class Run
     {
-        public Run(string database, Guid companyId, PermissionScope scope, string actor = Actor)
+        public Run(
+            string database,
+            Guid companyId,
+            PermissionScope scope,
+            string actor = Actor,
+            IOrganizationLocationOperatorEligibilityPortV1? eligibility = null)
         {
             Company = Resolved(companyId);
             Db = Context(database, Company);
             var user = new FixedUser(actor, companyId);
             var authority = new FixedAuthority(scope);
             Service = new OrganizationMasterDataService(
-                Db, user, Company, authority, Audit, NullLogger<OrganizationMasterDataService>.Instance);
+                Db,
+                user,
+                Company,
+                authority,
+                authority,
+                eligibility ?? new FixedEligibility(OrganizationLocationOperatorEligibilityStatusV1.Eligible),
+                Audit,
+                NullLogger<OrganizationMasterDataService>.Instance);
             Reads = new OrganizationService(
                 Db, user, Company, authority, Audit, NullLogger<OrganizationService>.Instance);
             ActorId = actor;
@@ -460,7 +624,7 @@ public sealed class OrganizationMasterDataServiceTests
     }
 
     /// <summary>Every permission the service asks for answers the same synthetic scope.</summary>
-    private sealed class FixedAuthority(PermissionScope scope) : IErpAuthorizationService
+    private sealed class FixedAuthority(PermissionScope scope) : IErpAuthorizationService, IErpAuthorityRevalidationService
     {
         public Task<AuthorizationSnapshot> GetAuthorizationSnapshotAsync(
             Guid companyId, IReadOnlyCollection<string> permissions, CancellationToken cancellationToken = default) =>
@@ -472,6 +636,53 @@ public sealed class OrganizationMasterDataServiceTests
         public Task<PermissionScope> GetPermissionScopeAsync(
             string permission, Guid companyId, CancellationToken cancellationToken = default) =>
             Task.FromResult(scope);
+
+        public Task<PermissionScope> RevalidatePermissionScopeAsync(
+            string permission, Guid companyId, CancellationToken cancellationToken = default) =>
+            Task.FromResult(scope);
+    }
+
+    private sealed class FixedEligibility(OrganizationLocationOperatorEligibilityStatusV1 status)
+        : IOrganizationLocationOperatorEligibilityPortV1
+    {
+        public int Calls { get; private set; }
+
+        public Task<OrganizationLocationOperatorEligibilityV1> CheckAsync(
+            Guid companyId,
+            string actorId,
+            Guid partyId,
+            CancellationToken cancellationToken = default)
+        {
+            Calls++;
+            return Task.FromResult(new OrganizationLocationOperatorEligibilityV1(
+                status,
+                status == OrganizationLocationOperatorEligibilityStatusV1.Eligible ? partyId : null));
+        }
+    }
+
+    private sealed class SequencedAuthority(params PermissionScope[] scopes)
+        : IErpAuthorizationService, IErpAuthorityRevalidationService
+    {
+        private int _index;
+
+        public Task<AuthorizationSnapshot> GetAuthorizationSnapshotAsync(
+            Guid companyId, IReadOnlyCollection<string> permissions, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public Task<bool> HasPermissionAsync(string permission, Guid companyId, CancellationToken cancellationToken = default) =>
+            Task.FromResult(scopes[Math.Min(_index, scopes.Length - 1)].IsGranted);
+
+        public Task<PermissionScope> GetPermissionScopeAsync(
+            string permission, Guid companyId, CancellationToken cancellationToken = default) =>
+            Task.FromResult(scopes[Math.Min(_index, scopes.Length - 1)]);
+
+        public Task<PermissionScope> RevalidatePermissionScopeAsync(
+            string permission, Guid companyId, CancellationToken cancellationToken = default)
+        {
+            var scope = scopes[Math.Min(_index, scopes.Length - 1)];
+            _index++;
+            return Task.FromResult(scope);
+        }
     }
 
     private sealed class RecordingAudit : IAuditEventCollector

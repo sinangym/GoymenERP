@@ -130,7 +130,7 @@ public sealed class OrganizationRuntimeSeedSqlServerRelationalAcceptanceTests
             await AssertLegacyGspDeterministicTopologyRetiredAsync(connection);
             await AssertCustomGspTopologyRemainsActiveAsync(connection);
             Assert.Equal(
-                3,
+                4,
                 await ScalarAsync<int>(
                     connection,
                     "SELECT COUNT(*) FROM [organization].[__EFMigrationsHistory];"));
@@ -270,7 +270,7 @@ public sealed class OrganizationRuntimeSeedSqlServerRelationalAcceptanceTests
                 invoiceCapable: false);
             Assert.Equal(12, company.Version);
             Assert.Equal(
-                3,
+                4,
                 await ScalarAsync<int>(
                     verification,
                     "SELECT COUNT(*) FROM [organization].[__EFMigrationsHistory];"));

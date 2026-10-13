@@ -91,4 +91,28 @@ public sealed class OrganizationDomainTests
             "Lokasyon",
             false));
     }
+
+    [Fact]
+    public void External_location_assigns_replaces_and_keeps_the_same_operator_without_a_clear_path()
+    {
+        var location = new Location(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), "EXT-01", "Harici depo", true);
+        var first = Guid.NewGuid();
+        var second = Guid.NewGuid();
+
+        Assert.True(location.AssignOperator(first));
+        Assert.Equal(first, location.OperatorPartyId);
+        Assert.False(location.AssignOperator(first));
+        Assert.True(location.AssignOperator(second));
+        Assert.Equal(second, location.OperatorPartyId);
+        Assert.Throws<ArgumentException>(() => location.AssignOperator(Guid.Empty));
+    }
+
+    [Fact]
+    public void Internal_location_rejects_an_operator()
+    {
+        var location = new Location(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), "INT-01", "İç depo", false);
+
+        Assert.Throws<InvalidOperationException>(() => location.AssignOperator(Guid.NewGuid()));
+        Assert.Null(location.OperatorPartyId);
+    }
 }

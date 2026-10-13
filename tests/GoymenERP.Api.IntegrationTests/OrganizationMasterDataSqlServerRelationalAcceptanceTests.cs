@@ -14,7 +14,9 @@ using GoymenERP.Modules.Identity.Infrastructure.Persistence;
 using GoymenERP.Modules.Organization.Application.Contracts;
 using GoymenERP.Modules.Organization.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace GoymenERP.Api.IntegrationTests;
 
@@ -175,6 +177,75 @@ public sealed class OrganizationMasterDataSqlServerRelationalAcceptanceTests
                 var locationUpdate = Assert.Single(audits, x => x.EventType == "organization.location.updated.v1");
                 Assert.Equal(("Update", 1L, 2L), (locationUpdate.Operation, locationUpdate.EntityVersionBefore, locationUpdate.EntityVersionAfter));
             }
+        });
+    }
+
+    [SqlServerFact]
+    public async Task External_location_operator_is_persisted_and_same_version_concurrency_has_one_winner()
+    {
+        await WithDatabaseAsync(async factory =>
+        {
+            Guid locationId;
+            await using (var seedScope = factory.Services.CreateAsyncScope())
+            {
+                seedScope.ServiceProvider.GetRequiredService<ICompanyContext>().Set(TestCompanyIds.CompanyA);
+                locationId = await seedScope.ServiceProvider.GetRequiredService<OrganizationDbContext>().Locations
+                    .Where(x => x.IsExternal)
+                    .Select(x => x.Id)
+                    .FirstAsync();
+            }
+
+            var barrier = new BarrierEligibility(expectedCalls: 2);
+            await using var host = factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
+            {
+                services.RemoveAll<ICurrentUser>();
+                services.AddScoped<ICurrentUser>(_ => new FixedCurrentUser(TestUsers.NoAssignment, TestCompanyIds.CompanyA));
+                services.RemoveAll<IErpAuthorizationService>();
+                services.RemoveAll<IErpAuthorityRevalidationService>();
+                services.AddScoped<FixedAuthority>();
+                services.AddScoped<IErpAuthorizationService>(sp => sp.GetRequiredService<FixedAuthority>());
+                services.AddScoped<IErpAuthorityRevalidationService>(sp => sp.GetRequiredService<FixedAuthority>());
+                services.RemoveAll<IOrganizationLocationOperatorEligibilityPortV1>();
+                services.AddSingleton<IOrganizationLocationOperatorEligibilityPortV1>(barrier);
+            }));
+
+            await using var firstScope = host.Services.CreateAsyncScope();
+            await using var secondScope = host.Services.CreateAsyncScope();
+            firstScope.ServiceProvider.GetRequiredService<ICompanyContext>().Set(TestCompanyIds.CompanyA);
+            secondScope.ServiceProvider.GetRequiredService<ICompanyContext>().Set(TestCompanyIds.CompanyA);
+            var first = firstScope.ServiceProvider.GetRequiredService<IOrganizationMasterDataService>();
+            var second = secondScope.ServiceProvider.GetRequiredService<IOrganizationMasterDataService>();
+            var firstParty = Guid.NewGuid();
+            var secondParty = Guid.NewGuid();
+
+            var results = await Task.WhenAll(
+                first.SetLocationOperatorAsync(
+                    locationId,
+                    new SetLocationOperator(firstParty, 1, "İlk sentetik operatör"),
+                    Metadata("operator-race-a"),
+                    CancellationToken.None),
+                second.SetLocationOperatorAsync(
+                    locationId,
+                    new SetLocationOperator(secondParty, 1, "İkinci sentetik operatör"),
+                    Metadata("operator-race-b"),
+                    CancellationToken.None));
+
+            Assert.Single(results, x => x.Result == CommandResult.Succeeded);
+            Assert.Single(results, x => x.Result == CommandResult.VersionConflict);
+
+            await using var readScope = host.Services.CreateAsyncScope();
+            readScope.ServiceProvider.GetRequiredService<ICompanyContext>().Set(TestCompanyIds.CompanyA);
+            var db = readScope.ServiceProvider.GetRequiredService<OrganizationDbContext>();
+            var saved = await db.Locations.SingleAsync(x => x.Id == locationId);
+            Assert.Contains(saved.OperatorPartyId, new Guid?[] { firstParty, secondParty });
+            Assert.Equal(2, saved.Version);
+            Assert.Single(await db.Set<AuditEvent>().Where(x => x.EntityId == locationId.ToString()).ToListAsync());
+            Assert.Equal(2, await db.CommandExecutions.CountAsync(x => x.CommandName == "organization.location.operator.assign.v1"));
+
+            var source = readScope.ServiceProvider.GetRequiredService<IOrganizationTransferDestinationSourceV1>();
+            Assert.Equal(
+                new OrganizationTransferDestinationV1(locationId, true, true, saved.OperatorPartyId, 2),
+                await source.ReadAsync(TestCompanyIds.CompanyA, locationId));
         });
     }
 
@@ -394,6 +465,78 @@ public sealed class OrganizationMasterDataSqlServerRelationalAcceptanceTests
         finally
         {
             await cleanupDb.Database.EnsureDeletedAsync();
+        }
+    }
+
+    private static CommandMetadata Metadata(string key) => new(
+        TestCompanyIds.CompanyA,
+        TestUsers.NoAssignment,
+        Guid.NewGuid().ToString("D"),
+        null,
+        SourceChannels.Web,
+        "127.0.0.1",
+        "SENTETIK-agent",
+        key);
+
+    private sealed class FixedCurrentUser(string actorId, Guid companyId) : ICurrentUser
+    {
+        public bool IsAuthenticated => true;
+        public string? UserId => actorId;
+        public IReadOnlySet<Guid> AllowedCompanyIds { get; } = new HashSet<Guid>([companyId]);
+        public bool CanAccessCompany(Guid candidate) => AllowedCompanyIds.Contains(candidate);
+    }
+
+    private sealed class FixedAuthority : IErpAuthorizationService, IErpAuthorityRevalidationService
+    {
+        private static readonly PermissionScope Scope = new(
+            true,
+            true,
+            new HashSet<string>(["SENTETIK-ORG-EDITOR"], StringComparer.Ordinal),
+            new HashSet<Guid>(),
+            new HashSet<Guid>(),
+            new HashSet<Guid>());
+
+        public Task<AuthorizationSnapshot> GetAuthorizationSnapshotAsync(
+            Guid companyId,
+            IReadOnlyCollection<string> permissions,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+        public Task<bool> HasPermissionAsync(
+            string permission,
+            Guid companyId,
+            CancellationToken cancellationToken = default) => Task.FromResult(true);
+
+        public Task<PermissionScope> GetPermissionScopeAsync(
+            string permission,
+            Guid companyId,
+            CancellationToken cancellationToken = default) => Task.FromResult(Scope);
+
+        public Task<PermissionScope> RevalidatePermissionScopeAsync(
+            string permission,
+            Guid companyId,
+            CancellationToken cancellationToken = default) => Task.FromResult(Scope);
+    }
+
+    private sealed class BarrierEligibility(int expectedCalls) : IOrganizationLocationOperatorEligibilityPortV1
+    {
+        private readonly TaskCompletionSource _ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private int _calls;
+
+        public async Task<OrganizationLocationOperatorEligibilityV1> CheckAsync(
+            Guid companyId,
+            string actorId,
+            Guid partyId,
+            CancellationToken cancellationToken = default)
+        {
+            if (Interlocked.Increment(ref _calls) == expectedCalls)
+            {
+                _ready.TrySetResult();
+            }
+
+            await _ready.Task.WaitAsync(cancellationToken);
+            return new OrganizationLocationOperatorEligibilityV1(
+                OrganizationLocationOperatorEligibilityStatusV1.Eligible,
+                partyId);
         }
     }
 

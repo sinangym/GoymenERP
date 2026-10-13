@@ -58,5 +58,13 @@ public sealed class OrganizationMigrationScriptTests
         Assert.Contains("Latin1_General_100_BIN2", script, StringComparison.Ordinal);
         Assert.Contains("CK_Companies_Placeholder_InvoiceDisabled", script, StringComparison.Ordinal);
         Assert.DoesNotContain("IX_Companies_Vkn", script, StringComparison.Ordinal);
+        Assert.Contains("AddLocationOperatorParty", script, StringComparison.Ordinal);
+        Assert.Contains("[OperatorPartyId]", script, StringComparison.Ordinal);
+        Assert.Contains("CK_Locations_InternalOperatorParty", script, StringComparison.Ordinal);
+        Assert.Contains("CK_Locations_OperatorParty_NotEmpty", script, StringComparison.Ordinal);
+        var rollback = migrator.GenerateScript(
+            "20261013155012_AddLocationOperatorParty",
+            "20260831142045_AddCompanyFiscalRuntimeSeed");
+        Assert.Contains("DROP COLUMN [OperatorPartyId]", rollback, StringComparison.Ordinal);
     }
 }
