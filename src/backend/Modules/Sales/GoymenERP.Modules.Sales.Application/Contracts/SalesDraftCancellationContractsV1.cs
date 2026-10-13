@@ -50,8 +50,16 @@ public interface ISalesOrderLoadingReadPortV1
     Task<SalesOrderLoadingReadAnswerV1> ReadOrderLoadingAsync(Guid orderId, CancellationToken cancellationToken = default);
 }
 
-/// <summary>The loading owner's answer for one Sales order in the context company.</summary>
-public sealed record SalesOrderLoadingReadAnswerV1(Guid CompanyId, Guid OrderId, IReadOnlyList<SalesOrderLineLoadingV1> Lines);
+/// <summary>
+/// The Logistics owner's answer for one Sales order in the context company. Besides loading totals it carries the number
+/// of approved, non-cancelled dispatch-note invoice-source candidates. Main has no accepted native invoice-consumption
+/// owner yet, so those candidates remain blockers rather than being silently treated as invoiced.
+/// </summary>
+public sealed record SalesOrderLoadingReadAnswerV1(
+    Guid CompanyId,
+    Guid OrderId,
+    IReadOnlyList<SalesOrderLineLoadingV1> Lines,
+    int ActiveApprovedDispatchNoteCount = 0);
 
 /// <summary>
 /// One Sales order line's loading-instruction lines in one unit: their count and exact totals. A positive count has a
@@ -76,7 +84,10 @@ public static class SalesCancellationImpactSourcesV1
     /// <summary>"irsaliyesiz yükleme" — Logistics's loading-instruction lines (owner port <see cref="ISalesOrderLoadingReadPortV1"/>).</summary>
     public const string LoadingWithoutDispatchNote = "logistics.loading-without-dispatch-note";
 
-    /// <summary>"faturalanmamış irsaliye" — no dispatch-note or invoice record exists on main: no source.</summary>
+    /// <summary>
+    /// "faturalanmamış irsaliye" — Logistics's active approved dispatch-note invoice-source candidates. Main has no
+    /// accepted native invoice-consumption owner yet, so an approved active candidate is not silently treated as invoiced.
+    /// </summary>
     public const string UninvoicedDispatchNotes = "invoicing.uninvoiced-dispatch-notes";
 
     /// <summary>"eşleşmemiş avans/dekont" — Finance records no link from an advance/receipt to a Sales order on main: no source.</summary>

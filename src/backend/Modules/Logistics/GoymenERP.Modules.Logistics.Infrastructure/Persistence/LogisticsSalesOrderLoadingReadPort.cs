@@ -1,4 +1,5 @@
 using GoymenERP.BuildingBlocks.Multitenancy;
+using GoymenERP.Modules.Logistics.Domain.Loading;
 using GoymenERP.Modules.Sales.Application.Contracts;
 using Microsoft.EntityFrameworkCore;
 
@@ -11,8 +12,9 @@ namespace GoymenERP.Modules.Logistics.Infrastructure.Persistence;
 /// loaded, shipped and delivered totals. It complements the AT-024 <see cref="LogisticsSalesOrderDeliveryReadPort"/> (definite
 /// totals only) with the lines that are only instructed or loaded. It reads Logistics's own company-filtered lines only
 /// (another company's are invisible, never a 403), untracked, and creates nothing. The totals are the stored share totals
-/// (<c>CK_LoadingInstructionLines_Shares</c>: delivered ≤ shipped ≤ loaded ≤ instructed). No authority (LOG-4 D6): the Sales
-/// caller measures its own name around the call.
+/// (<c>CK_LoadingInstructionLines_Shares</c>: delivered ≤ shipped ≤ loaded ≤ instructed). The same Logistics-owned answer also
+/// counts distinct approved, non-cancelled dispatch-note invoice-source candidates bound to the order for DEC-SAL-005's
+/// "faturalanmamış irsaliye" category. No authority (LOG-4 D6): the Sales caller measures its own name around the call.
 /// </summary>
 internal sealed class LogisticsSalesOrderLoadingReadPort(LogisticsDbContext dbContext, ICompanyContext companyContext)
     : ISalesOrderLoadingReadPortV1
@@ -47,9 +49,23 @@ internal sealed class LogisticsSalesOrderLoadingReadPort(LogisticsDbContext dbCo
             })
             .ToListAsync(cancellationToken);
 
+        var activeApprovedDispatchNoteCount = await (
+            from note in dbContext.DispatchNotes.AsNoTracking()
+            join line in dbContext.DispatchNoteLines.AsNoTracking()
+                on new { note.CompanyId, note.InstructionId, note.DispatchNoteId }
+                equals new { line.CompanyId, line.InstructionId, line.DispatchNoteId }
+            where note.CompanyId == companyId
+                && note.Status == (int)DispatchNoteStatus.Approved
+                && !line.Released
+                && line.SourceOrderId == orderId
+            select note.DispatchNoteId)
+            .Distinct()
+            .CountAsync(cancellationToken);
+
         return new SalesOrderLoadingReadAnswerV1(companyId, orderId,
             [.. totals.OrderBy(total => total.SourceOrderLineId).ThenBy(total => total.UnitId)
                 .Select(total => new SalesOrderLineLoadingV1(total.SourceOrderLineId, total.UnitId, total.Count, total.Instructed,
-                    total.Loaded, total.Shipped, total.Delivered))]);
+                    total.Loaded, total.Shipped, total.Delivered))],
+            activeApprovedDispatchNoteCount);
     }
 }

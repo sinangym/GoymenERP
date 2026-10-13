@@ -8,7 +8,8 @@ namespace GoymenERP.Sales.UnitTests;
 
 /// <summary>
 /// DEC-SAL-005 / AT-007 over SYNTHETIC owners: the impact preview reads each category from its owner's port (Inventory
-/// allocations, Logistics loading) and shows a category without an owner on main as "no source", never zero; the fail-closed
+/// allocations plus Logistics loading and approved dispatch notes), shows a composed owner failure as unreadable and a
+/// category with no implemented source as no source, never zero; the fail-closed
 /// reading refuses a cancellation while any effect exists or an owner cannot answer; the command carries the preview's token;
 /// a stale version, a wrong state, a changed impact and a blocked cancellation are the key's terminal 409s; the same key
 /// replays with no second effect; the cancelled order keeps its history and refuses every later mutation; its lines are no
@@ -22,7 +23,7 @@ public sealed partial class SalesDraftServiceTests
     private static readonly string[] NoSourceCategories =
     [
         SalesCancellationImpactSourcesV1.LinkedPurchasing, SalesCancellationImpactSourcesV1.LinkedProduction,
-        SalesCancellationImpactSourcesV1.UninvoicedDispatchNotes, SalesCancellationImpactSourcesV1.UnmatchedAdvances,
+        SalesCancellationImpactSourcesV1.UnmatchedAdvances,
     ];
 
     [Fact]
@@ -43,7 +44,7 @@ public sealed partial class SalesDraftServiceTests
                 (SalesCancellationImpactSourcesV1.LinkedPurchasing, SalesCancellationImpactStatusesV1.NoSource),
                 (SalesCancellationImpactSourcesV1.LinkedProduction, SalesCancellationImpactStatusesV1.NoSource),
                 (SalesCancellationImpactSourcesV1.LoadingWithoutDispatchNote, SalesCancellationImpactStatusesV1.None),
-                (SalesCancellationImpactSourcesV1.UninvoicedDispatchNotes, SalesCancellationImpactStatusesV1.NoSource),
+                (SalesCancellationImpactSourcesV1.UninvoicedDispatchNotes, SalesCancellationImpactStatusesV1.None),
                 (SalesCancellationImpactSourcesV1.UnmatchedAdvances, SalesCancellationImpactStatusesV1.NoSource),
             ],
             preview.Sources.Select(source => (source.Source, source.Status)));
@@ -163,6 +164,26 @@ public sealed partial class SalesDraftServiceTests
     }
 
     [Fact]
+    public async Task An_approved_dispatch_note_blocks_cancellation_as_an_uninvoiced_source_candidate()
+    {
+        var world = new World();
+        var approved = await ApprovedAsync(world);
+        var (_, loadings) = Owners(world);
+        loadings.Answer = order => new(Company, order, [], 1);
+
+        var preview = await world.Service().GetCancellationImpactAsync(approved.Draft.Id);
+
+        Assert.False(preview.Cancellable);
+        Assert.Equal(SalesCancellationImpactStatusesV1.Present,
+            preview.Sources.Single(source => source.Source == SalesCancellationImpactSourcesV1.UninvoicedDispatchNotes).Status);
+        var blocked = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().CancelDraftAsync(approved.Draft.Id,
+            new SalesDraftCancelRequest("4", "neden", preview.ImpactToken), Metadata("k-cancel-dispatch-note")));
+        Assert.Equal((409, SalesDraftProblemCodesV1.CancellationBlocked,
+                SalesCancellationImpactSourcesV1.UninvoicedDispatchNotes),
+            (blocked.Status, blocked.Code, Assert.Single(blocked.Errors).Field));
+    }
+
+    [Fact]
     public async Task A_cancellation_on_a_preview_the_owners_no_longer_answer_is_the_keys_terminal_impact_changed()
     {
         var world = new World();
@@ -226,7 +247,8 @@ public sealed partial class SalesDraftServiceTests
         var preview = await world.Service().GetCancellationImpactAsync(approved.Draft.Id);
 
         Assert.False(preview.Cancellable);
-        Assert.Equal([SalesCancellationImpactStatusesV1.Unreadable, SalesCancellationImpactStatusesV1.Unreadable],
+        Assert.Equal([SalesCancellationImpactStatusesV1.Unreadable, SalesCancellationImpactStatusesV1.Unreadable,
+                SalesCancellationImpactStatusesV1.Unreadable],
             preview.Sources.Where(source => !NoSourceCategories.Contains(source.Source)).Select(source => source.Status));
         Assert.Equal(new SalesDraftCancellationImpactLineV1(approved.Lines[0].LineId, 1, KgUnit, "1.25", null, null, null, null, null, null, null),
             preview.Lines[0]);
@@ -251,7 +273,7 @@ public sealed partial class SalesDraftServiceTests
     {
         "allocation-other-company", "allocation-other-order", "allocation-unknown-line", "allocation-twice", "allocation-negative",
         "allocation-above-scale", "loading-other-unit", "loading-delivered-above-shipped", "loading-loaded-above-instructed",
-        "loading-above-scale", "loading-null-lines",
+        "loading-above-scale", "loading-null-lines", "dispatch-other-company", "dispatch-other-order", "dispatch-negative",
     };
 
     [Theory]
@@ -275,7 +297,10 @@ public sealed partial class SalesDraftServiceTests
             case "loading-delivered-above-shipped": loadings.Answer = order => new(Company, order, [new(line, KgUnit, 1, 1m, 1m, 0.5m, 0.6m)]); break;
             case "loading-loaded-above-instructed": loadings.Answer = order => new(Company, order, [new(line, KgUnit, 1, 1m, 1.5m, 0m, 0m)]); break;
             case "loading-above-scale": loadings.Answer = order => new(Company, order, [new(line, KgUnit, 1, 1.0005m, 0m, 0m, 0m)]); break;
-            default: loadings.Answer = order => new(Company, order, null!); break;
+            case "loading-null-lines": loadings.Answer = order => new(Company, order, null!); break;
+            case "dispatch-other-company": loadings.Answer = order => new(Guid.NewGuid(), order, [], 0); break;
+            case "dispatch-other-order": loadings.Answer = _ => new(Company, Guid.NewGuid(), [], 0); break;
+            default: loadings.Answer = order => new(Company, order, [], -1); break;
         }
 
         var preview = await world.Service().GetCancellationImpactAsync(approved.Draft.Id);
@@ -283,9 +308,18 @@ public sealed partial class SalesDraftServiceTests
         Assert.False(preview.Cancellable);
         var unreadable = fault.StartsWith("allocation", StringComparison.Ordinal)
             ? SalesCancellationImpactSourcesV1.ActiveAllocations
-            : SalesCancellationImpactSourcesV1.LoadingWithoutDispatchNote;
+            : fault.StartsWith("loading", StringComparison.Ordinal)
+                ? SalesCancellationImpactSourcesV1.LoadingWithoutDispatchNote
+                : SalesCancellationImpactSourcesV1.UninvoicedDispatchNotes;
         Assert.Equal(SalesCancellationImpactStatusesV1.Unreadable, preview.Sources.Single(source => source.Source == unreadable).Status);
-        Assert.Null(unreadable == SalesCancellationImpactSourcesV1.ActiveAllocations ? preview.Lines[0].AllocatedKg : preview.Lines[0].Instructed);
+        if (unreadable == SalesCancellationImpactSourcesV1.ActiveAllocations)
+        {
+            Assert.Null(preview.Lines[0].AllocatedKg);
+        }
+        else if (unreadable == SalesCancellationImpactSourcesV1.LoadingWithoutDispatchNote)
+        {
+            Assert.Null(preview.Lines[0].Instructed);
+        }
     }
 
     [Fact]
