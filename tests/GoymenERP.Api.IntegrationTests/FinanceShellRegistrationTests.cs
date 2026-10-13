@@ -58,9 +58,9 @@ public sealed class FinanceShellRegistrationTests
         var finance = registry.Registrations
             .Where(item => item.Owner == FinanceShellCapabilityProvider.OwnerId)
             .ToArray();
-        // Thirteen routes plus six controls. A declaration still grants nothing:
+        // Fifteen routes plus six controls. A declaration still grants nothing:
         // each route or control service measures its own Finance permission afresh.
-        Assert.Equal(19, finance.Length);
+        Assert.Equal(21, finance.Length);
         Assert.All(finance, item => Assert.True(item.Declaration.ImplementationAvailable));
         // Sales 1.5: three routes plus seven detail controls. Pin identities, parents and authorities here instead of
         // accepting a blind declaration count: another control, parent or permission must receive its own review.

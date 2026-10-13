@@ -52,6 +52,7 @@ export const NAV_CAPABILITIES: readonly CapabilityId[] = [
   'product.items.list',
   'finance.manual-bank-payments.list',
   'finance.allocations.list',
+  'finance.open-items.list',
   /**
    * Listed together with the route that serves it, on purpose: a nav entry whose route
    * is not mounted is a link to the not-found block. It still renders only where the
@@ -178,6 +179,8 @@ export const CAPABILITY_NAV_LABEL: Record<CapabilityId, string> = {
   'finance.official-invoice-import.upload': 'Onaylı fatura taksit kaynağı yükle',
   'finance.official-invoice-import.approve': 'Resmî fatura aktarım onayları',
   'finance.allocations.list': 'Finansal Dağıtımlar',
+  'finance.open-items.list': 'Açık kalemler',
+  'finance.open-items.detail': '',
   'finance.receipts.reverse.approve': 'Ters Kayıt Onayları',
   'finance.bank-accounts.list': 'Banka Hesapları',
   // None of these three: the new draft is entered from a Cari account, the detail from a list row and
@@ -298,6 +301,7 @@ export const NAV_GROUPS: readonly NavGroup[] = [
       'finance.manual-bank-payments.list',
       'finance.bank-accounts.list',
       'finance.customer-instruments.list',
+      'finance.open-items.list',
       'finance.allocations.list',
       'finance.official-invoice-import.upload',
       'finance.official-invoice-import.approve',

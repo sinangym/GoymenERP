@@ -178,6 +178,32 @@ public sealed class FinanceShellCapabilitySqlServerRelationalAcceptanceTests
                     (await customerInstrumentRead.GetAsync(FinanceEndpoints.ManualReceiptsPath)).StatusCode);
             }
 
+            // FI04 metadata read opens both list and detail routes. The separate amount name is endpoint
+            // disclosure only: by itself it opens no shell route and cannot imply metadata access.
+            // DevelopmentBootstrap authenticates only the configured TestUsers subjects. Keep two distinct
+            // actors while using that real fixture contract; adding an ExternalIdentityLink does not itself
+            // admit an arbitrary HTTP header value to the authentication handler.
+            const string openItemReader = TestUsers.Unprovisioned;
+            await GrantAsync(factory, openItemReader, CompanyA, FinancePermissionNames.OpenItemRead,
+                AccessScopeType.Company, CompanyA);
+            using (var openItems = factory.CreateClientFor(openItemReader, CompanyA))
+            {
+                Assert.Equal(new[] { "finance.open-items.detail", "finance.open-items.list" },
+                    FinanceOnly(await ReadAsync(openItems)));
+                Assert.Equal(HttpStatusCode.OK,
+                    (await openItems.GetAsync(FinanceOpenItemReadEndpoints.Path)).StatusCode);
+            }
+
+            const string amountOnlyReader = TestUsers.CompanyB;
+            await GrantAsync(factory, amountOnlyReader, CompanyA, FinancePermissionNames.OpenItemAmountRead,
+                AccessScopeType.Company, CompanyA);
+            using (var amountOnly = factory.CreateClientFor(amountOnlyReader, CompanyA))
+            {
+                Assert.Empty(FinanceOnly(await ReadAsync(amountOnly)));
+                Assert.Equal(HttpStatusCode.Forbidden,
+                    (await amountOnly.GetAsync(FinanceOpenItemReadEndpoints.Path)).StatusCode);
+            }
+
             // The grants are company A's. The same actor gets a non-Finance assignment in company B, so the
             // company-B context resolves and the answer is measured: no Finance screen there.
             await GrantAsync(factory, TestUsers.CompanyA, CompanyB, ErpPermissions.OrganizationLocationsRead, AccessScopeType.Company, CompanyB);
@@ -197,6 +223,8 @@ public sealed class FinanceShellCapabilitySqlServerRelationalAcceptanceTests
                 FinanceOfficialInvoiceImportPermissionNamesV1.Upload, AccessScopeType.Site, SyntheticSiteOfB);
             await GrantAsync(factory, TestUsers.CompanyB, CompanyB,
                 FinanceOfficialInvoiceImportPermissionNamesV1.Approve, AccessScopeType.Site, SyntheticSiteOfB);
+            await GrantAsync(factory, TestUsers.CompanyB, CompanyB,
+                FinancePermissionNames.OpenItemRead, AccessScopeType.Site, SyntheticSiteOfB);
             using (var siteScoped = factory.CreateClientFor(TestUsers.CompanyB, CompanyB))
             {
                 var snapshot = await ReadAsync(siteScoped);

@@ -170,7 +170,7 @@ MAX_SUITE_ACTORS = 8
 # S04's accepted remainder journey adds exactly the L04-provenance preparer/loader pair to its existing
 # eight disposable actors. D-05 Inventory needs one ninth R14-only combined approver beside the old count-only and
 # scrap-only actors. Every other suite keeps the global cap; this is not a general expansion knob.
-SUITE_ACTOR_LIMITS = {"s04": 10, "r14": 9}
+SUITE_ACTOR_LIMITS = {"fin01": 9, "s04": 10, "r14": 9}
 SUITE_API_EXTENSIONS = {
     # U-02: the Product runtime's issuer binding, matching the suite seed's local user and
     # external identity (ÜRÜN, #319 P3). U-01-360 (#466, user decision 2026-09-27): one disposable
@@ -333,6 +333,12 @@ SUITE_IDENTITY_PERMISSIONS = {
         # allocation created from the imported open item. These are existing Finance permissions.
         "finance.allocation.read",
         "finance.allocation.write",
+        # FI04-FRONTEND-01: the open-item route and the amount disclosure remain two independent
+        # admission names. Listing them here only allows the FIN01 disposable fixture owner to
+        # build the reviewed metadata-only / metadata+amount / amount-only profiles; it does not
+        # assign either name to an actor or imply one from an allocation/receipt/payment grant.
+        "finance.open-items.read",
+        "finance.open-items.amount.read",
         "sales.drafts.create",
         "sales.drafts.read",
         "sales.orders.approve",
@@ -566,10 +572,19 @@ def validate_suite_identity(suite: str, extra: dict, actor_ids: list[str]) -> No
                                       "b4000000-0000-4000-8000-00000000f106"),
             "fin01-both-approver": ("b3000000-0000-4000-8000-00000000f107", "BROWSER_FIN01_COMBINED_APPROVER",
                                      "b4000000-0000-4000-8000-00000000f107"),
+            "fin01-open-items-metadata": (
+                "b3000000-0000-4000-8000-00000000f108", "BROWSER_FIN01_OPEN_ITEMS_METADATA",
+                "b4000000-0000-4000-8000-00000000f108"),
+            "fin01-open-items-visible": (
+                "b3000000-0000-4000-8000-00000000f109", "BROWSER_FIN01_OPEN_ITEMS_VISIBLE",
+                "b4000000-0000-4000-8000-00000000f109"),
+            "fin01-open-items-amount-only": (
+                "b3000000-0000-4000-8000-00000000f10a", "BROWSER_FIN01_OPEN_ITEMS_AMOUNT_ONLY",
+                "b4000000-0000-4000-8000-00000000f10a"),
         }
         require(set(actor_ids) == set(expected), "fin01 requires its exact disposable actor set")
-        require(len(roles) == 7 and len(grouped["Assignments"]) == 7,
-                "fin01 requires its six GDC roles plus one isolated GSP approval role")
+        require(len(roles) == 10 and len(grouped["Assignments"]) == 11,
+                "fin01 requires its nine GDC roles, one isolated GSP approval role and exact assignments")
         actor_users = {subject: identity_id for identity_id, subject in users.items()}
         for actor, (role_id, role_code, assignment_id) in expected.items():
             role = roles.get(role_id)
@@ -601,6 +616,9 @@ def validate_suite_identity(suite: str, extra: dict, actor_ids: list[str]) -> No
             "fin01-sales-approver": ("sales.drafts.read", "sales.orders.approve"),
             "fin01-both-approver": (
                 "finance.official-invoice-import.approve", "sales.drafts.read", "sales.orders.approve"),
+            "fin01-open-items-metadata": ("finance.open-items.read",),
+            "fin01-open-items-visible": ("finance.open-items.read", "finance.open-items.amount.read"),
+            "fin01-open-items-amount-only": ("finance.open-items.amount.read",),
         }
         for actor, permissions in work_permissions.items():
             role = roles[expected[actor][0]]
@@ -617,12 +635,22 @@ def validate_suite_identity(suite: str, extra: dict, actor_ids: list[str]) -> No
                     key=lambda key: int(key.rsplit("__", 1)[1])))
                 == ("finance.official-invoice-import.approve",),
                 "fin01 GSP role must contain only the existing official-invoice approval permission")
-        gsp_assignments = [row for row in grouped["Assignments"].values() if row["CompanyId"] == company_gsp]
-        require(len(gsp_assignments) == 1
-                and gsp_assignments[0]["Id"] == "b4000000-0000-4000-8000-00000000f104"
-                and gsp_assignments[0]["UserId"] == actor_users.get("fin01-approver")
-                and gsp_assignments[0]["RoleId"] == gsp_role_id,
+        gsp_approval_assignments = [
+            row for row in grouped["Assignments"].values()
+            if row["CompanyId"] == company_gsp and row["RoleId"] == gsp_role_id
+        ]
+        require(len(gsp_approval_assignments) == 1
+                and gsp_approval_assignments[0]["Id"] == "b4000000-0000-4000-8000-00000000f104"
+                and gsp_approval_assignments[0]["UserId"] == actor_users.get("fin01-approver"),
                 "fin01 GSP assignment must bind only the approver to the isolated approval role")
+        visible_other_assignments = [
+            row for row in grouped["Assignments"].values()
+            if row["CompanyId"] == company_gsp and row["UserId"] == actor_users.get("fin01-open-items-visible")
+        ]
+        require(len(visible_other_assignments) == 1
+                and visible_other_assignments[0]["Id"] == "b4000000-0000-4000-8000-00000000f10b"
+                and visible_other_assignments[0]["RoleId"] == "b3000000-0000-4000-8000-00000000f109",
+                "fin01 open-item visible actor must keep its exact other-company assignment")
     if suite == "pur01":
         expected = {
             "pur01-approver": ("BROWSER_PUR01_APPROVER",
@@ -852,6 +880,9 @@ SUITE_FIXTURE_OUTPUTS: dict[str, frozenset[str]] = {
     "fin01": frozenset({
         "companyId", "otherCompanyId", "partyId", "companyAccountId", "proposerActor", "approverActor", "readerActor",
         "salesPreparerActor", "financeOnlyActor", "salesOnlyActor", "bothActor", "neitherActor", "salesDraftId", "financeBatchId",
+        "openItemBatchId", "openItemPartyId", "openItemCompanyAccountId",
+        "openItemMetadataActor", "openItemVisibleActor", "openItemAmountOnlyActor", "openItemNeitherActor",
+        "openItemNewestId", "openItemContinuationId", "openItemEqualTimestampLowerId", "openItemCount",
     }),
     # SİPARİŞ's Suites/S04 seed: the three actors, the company and the one Preparing draft written through
     # the gated Sales draft writer (C01E2eSalesDraftFixtureWriter).
@@ -941,10 +972,15 @@ def seed_export(suite: str, seed: object) -> str:
                 and len(set(actor_values)) == len(actor_keys),
                 "u02 seed actors must be distinct and use the exact Inventory recorder")
     if suite == "fin01":
-        require(isinstance(seed["financeBatchId"], str)
-                and _ANY_GUID.fullmatch(seed["financeBatchId"]) is not None
-                and seed["financeBatchId"] != "00000000-0000-0000-0000-000000000000",
-                "fin01 financeBatchId must be a canonical nonzero lowercase GUID")
+        guid_keys = (
+            "financeBatchId", "openItemBatchId", "openItemPartyId", "openItemCompanyAccountId",
+            "openItemNewestId", "openItemContinuationId", "openItemEqualTimestampLowerId",
+        )
+        for key in guid_keys:
+            require(isinstance(seed[key], str)
+                    and _ANY_GUID.fullmatch(seed[key]) is not None
+                    and seed[key] != "00000000-0000-0000-0000-000000000000",
+                    f"fin01 {key} must be a canonical nonzero lowercase GUID")
         actors = [seed[key] for key in (
             "proposerActor", "approverActor", "readerActor", "salesPreparerActor",
             "salesOnlyActor", "bothActor", "neitherActor",
@@ -954,6 +990,18 @@ def seed_export(suite: str, seed: object) -> str:
                 "fin01 Finance-only persona must be the suite's real Finance approver")
         require(seed["neitherActor"] == "company-a-user",
                 "fin01 neither persona must be the canonical unauthorized actor")
+        open_item_actors = [seed[key] for key in (
+            "openItemMetadataActor", "openItemVisibleActor", "openItemAmountOnlyActor", "openItemNeitherActor",
+        )]
+        require(all(isinstance(value, str) and value for value in open_item_actors)
+                and len(set(open_item_actors)) == len(open_item_actors),
+                "fin01 open-item seed actors must be nonempty and distinct")
+        require(seed["openItemNeitherActor"] == "company-a-user",
+                "fin01 open-item neither persona must be the canonical unauthorized actor")
+        require(isinstance(seed["openItemCount"], str)
+                and re.fullmatch(r"[1-9][0-9]*", seed["openItemCount"]) is not None
+                and int(seed["openItemCount"]) >= 51,
+                "fin01 openItemCount must be a numeric string of at least 51")
         require(seed["companyId"] != seed["otherCompanyId"], "fin01 seed companies must be distinct")
     mfg_actor_keys = frozenset({"recorderActor", "readerActor", "closerActor"})
     mfg_exact_text = {
@@ -1033,9 +1081,11 @@ def seed_export(suite: str, seed: object) -> str:
             and value == "SENTETIK browser-suite:pur01 purchase candidate"
         is_r14_version = suite == "r14" and key in {"productVersion", "productUnitProfileVersion"} \
             and re.fullmatch(r"[1-9][0-9]*", value) is not None
+        is_fin01_count = suite == "fin01" and key == "openItemCount" \
+            and re.fullmatch(r"[1-9][0-9]*", value) is not None and int(value) >= 51
         require(is_guid or is_actor or is_s04_version or is_s04_code or is_s04_name
                 or is_pur01_version or is_pur01_code or is_pur01_name
-                or is_r14_version,
+                or is_r14_version or is_fin01_count,
                 f"seed output {key} must be a GUID or an actor id or an approved suite scalar value")
     if suite == "mfg":
         require(seed["outputOwnerId"] == seed["companyId"],

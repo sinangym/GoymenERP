@@ -48,6 +48,18 @@ internal static class BrowserSuiteSeedOutputValidator
                 continue;
             }
 
+            if (string.Equals(suite, "fin01", StringComparison.Ordinal)
+                && string.Equals(key, "openItemCount", StringComparison.Ordinal))
+            {
+                if (!IsSuiteSpecificScalar(suite, key, value))
+                {
+                    throw new InvalidOperationException(
+                        $"Seed output '{key}' must match its exact FIN01 open-item count contract.");
+                }
+
+                continue;
+            }
+
             if (string.Equals(suite, "r14", StringComparison.Ordinal)
                 && IsR14ProductScalarKey(key))
             {
@@ -169,6 +181,12 @@ internal static class BrowserSuiteSeedOutputValidator
             };
         }
 
+        if (string.Equals(suite, "fin01", StringComparison.Ordinal))
+        {
+            return string.Equals(key, "openItemCount", StringComparison.Ordinal)
+                   && IsFin01OpenItemCount(value);
+        }
+
         if (!string.Equals(suite, "pur01", StringComparison.Ordinal))
         {
             return false;
@@ -233,5 +251,16 @@ internal static class BrowserSuiteSeedOutputValidator
         }
 
         return true;
+    }
+
+    private static bool IsFin01OpenItemCount(string value)
+    {
+        if (!IsPositiveDecimal(value))
+        {
+            return false;
+        }
+
+        return value.Length > 2
+               || (value.Length == 2 && string.CompareOrdinal(value, "51") >= 0);
     }
 }

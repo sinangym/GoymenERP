@@ -35,6 +35,9 @@ public sealed class Fin01BrowserSeed : IBrowserSuiteFixture
     public const string SalesPreparerActor = "fin01-sales-preparer";
     public const string SalesApproverActor = "fin01-sales-approver";
     public const string BothApproverActor = "fin01-both-approver";
+    public const string OpenItemMetadataActor = "fin01-open-items-metadata";
+    public const string OpenItemVisibleActor = "fin01-open-items-visible";
+    public const string OpenItemAmountOnlyActor = "fin01-open-items-amount-only";
     public const string NeitherActor = "company-a-user";
 
     /// <summary>The GDC company of the built-in organization seed, whose approved TRY money profile Settings answers.</summary>
@@ -48,6 +51,8 @@ public sealed class Fin01BrowserSeed : IBrowserSuiteFixture
     private const string AllocationsPath = "/api/v1/finance/allocations";
     private const string PendingOfficialInvoiceBatchesPath = "/api/v1/finance/official-invoice-import-batches/pending";
     private const string OfficialInvoiceBatchesPath = "/api/v1/finance/official-invoice-import-batches";
+    private const string OfficialInvoiceImportsPath = "/api/v1/finance/official-invoice-imports";
+    private const string OpenItemsPath = "/api/v1/finance/open-items";
     private const string CurrencyCandidatesPath = "/api/v1/finance/bank-accounts/currency-candidates";
     private const string SalesDraftsPath = "/api/v1/sales/drafts";
     private const string WorkApprovalsPath = "/api/v1/work/approvals";
@@ -67,6 +72,7 @@ public sealed class Fin01BrowserSeed : IBrowserSuiteFixture
     private static readonly DateOnly SalesBusinessDate = new(2026, 10, 9);
     private static readonly DateOnly SalesEffectiveFrom = new(2026, 10, 1);
     private static readonly DateTimeOffset SalesCreatedAt = new(2026, 10, 9, 9, 0, 0, TimeSpan.Zero);
+    private static readonly Guid OpenItemBatchId = Guid.Parse("b6400000-0000-4000-8000-00000000f101");
 
     public string Suite => "fin01";
 
@@ -97,6 +103,12 @@ public sealed class Fin01BrowserSeed : IBrowserSuiteFixture
 
         var financeBatchId = await SeedPendingFinanceAsync(
             context, customer.PartyId, customer.AccountId, cancellationToken);
+
+        var openItemCustomer = await CariBrowserSeed.OpenPartyWithAccountAsync(
+            context, CariActor, CompanyGdc, "fi04-open-item-customer", "Açık kalem müşterisi", CustomerRole,
+            cancellationToken);
+        var openItems = await SeedOpenItemsAsync(
+            context, openItemCustomer.PartyId, openItemCustomer.AccountId, cancellationToken);
 
         SalesDraftFixtureOutcome salesDraft;
         await using (var scope = context.Services.CreateAsyncScope())
@@ -237,7 +249,161 @@ public sealed class Fin01BrowserSeed : IBrowserSuiteFixture
             ["neitherActor"] = NeitherActor,
             ["salesDraftId"] = SalesDraftId.ToString("D"),
             ["financeBatchId"] = financeBatchId.ToString("D"),
+            ["openItemBatchId"] = OpenItemBatchId.ToString("D"),
+            ["openItemPartyId"] = openItemCustomer.PartyId.ToString("D"),
+            ["openItemCompanyAccountId"] = openItemCustomer.AccountId.ToString("D"),
+            ["openItemMetadataActor"] = OpenItemMetadataActor,
+            ["openItemVisibleActor"] = OpenItemVisibleActor,
+            ["openItemAmountOnlyActor"] = OpenItemAmountOnlyActor,
+            ["openItemNeitherActor"] = NeitherActor,
+            ["openItemNewestId"] = openItems.NewestId.ToString("D"),
+            ["openItemContinuationId"] = openItems.ContinuationId.ToString("D"),
+            ["openItemEqualTimestampLowerId"] = openItems.EqualTimestampLowerId.ToString("D"),
+            ["openItemCount"] = openItems.Count.ToString(CultureInfo.InvariantCulture),
         };
+    }
+
+    private static async Task<OpenItemFixture> SeedOpenItemsAsync(
+        BrowserSuiteFixtureContext context,
+        Guid partyId,
+        Guid companyAccountId,
+        CancellationToken cancellationToken)
+    {
+        var candidates = await context.GetJsonAsync(
+            ProposerActor, CompanyGdc, CurrencyCandidatesPath, cancellationToken);
+        var tryCandidates = candidates.GetProperty("items").EnumerateArray()
+            .Where(candidate => candidate.GetProperty("code").GetString() == "TRY")
+            .ToArray();
+        if (candidates.GetProperty("companyId").GetGuid() != CompanyGdc || tryCandidates.Length != 1)
+        {
+            throw new InvalidOperationException("The real Finance currency candidates did not return one GDC TRY currency for FI04.");
+        }
+        var currencyId = tryCandidates[0].GetProperty("currencyId").GetGuid();
+
+        const int itemCount = 51;
+        const string batchVersion = "SENTETIK-browser-suite:fin01/FI04-OPEN-ITEMS-0001";
+        var csv = new StringBuilder(FinanceOfficialInvoiceImportTemplateV1.Header).Append('\n');
+        var ids = new Guid[itemCount];
+        for (var index = 1; index <= itemCount; index++)
+        {
+            var suffix = index.ToString("x12", CultureInfo.InvariantCulture);
+            var openItemId = Guid.Parse($"b6500000-0000-4000-8000-{suffix}");
+            ids[index - 1] = openItemId;
+            csv.AppendJoin(',',
+                openItemId.ToString("D"),
+                Guid.Parse($"b6600000-0000-4000-8000-{suffix}").ToString("D"),
+                Guid.Parse($"b6700000-0000-4000-8000-{suffix}").ToString("D"),
+                $"SENTETIK-fi04-invoice-v{index:D4}",
+                partyId.ToString("D"),
+                companyAccountId.ToString("D"),
+                currencyId.ToString("D"),
+                (1_000m + index / 100m).ToString("0.00", CultureInfo.InvariantCulture),
+                new DateOnly(2026, 11, 30).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
+            csv.Append('\n');
+        }
+        var utf8Csv = Convert.ToBase64String(Encoding.UTF8.GetBytes(csv.ToString()));
+
+        var uploaded = await context.PostJsonAsync(
+            ProposerActor,
+            CompanyGdc,
+            OfficialInvoiceBatchesPath,
+            new { batchId = OpenItemBatchId, batchVersion, utf8Csv },
+            "fi04-open-items-upload",
+            cancellationToken);
+        var uploadedResource = uploaded.GetProperty("resource");
+        if (uploaded.GetProperty("outcome").GetString() != "Succeeded"
+            || uploadedResource.GetProperty("batchId").GetGuid() != OpenItemBatchId
+            || uploadedResource.GetProperty("status").GetString() != "Pending"
+            || uploadedResource.GetProperty("rowCount").GetInt32() != itemCount)
+        {
+            throw new InvalidOperationException("The real Finance upload did not create the FI04 source carrier.");
+        }
+
+        var approved = await context.PostJsonAsync(
+            ApproverActor,
+            CompanyGdc,
+            $"{OfficialInvoiceBatchesPath}/{OpenItemBatchId:D}/approval",
+            new { batchId = OpenItemBatchId, expectedVersion = uploadedResource.GetProperty("version").GetString() },
+            "fi04-open-items-approve",
+            cancellationToken);
+        var approvedResource = approved.GetProperty("resource");
+        if (approved.GetProperty("outcome").GetString() != "Succeeded"
+            || approvedResource.GetProperty("batchId").GetGuid() != OpenItemBatchId
+            || approvedResource.GetProperty("status").GetString() != "Approved")
+        {
+            throw new InvalidOperationException("The real Finance checker did not approve the FI04 source carrier.");
+        }
+
+        var applied = await context.PostJsonAsync(
+            ApproverActor,
+            CompanyGdc,
+            $"{OfficialInvoiceImportsPath}/apply",
+            new { batchId = OpenItemBatchId, batchVersion, utf8Csv },
+            "fi04-open-items-apply",
+            cancellationToken);
+        if (!applied.GetProperty("preview").GetProperty("isValid").GetBoolean()
+            || applied.GetProperty("approvedSource").GetProperty("outcome").GetString() != "Found"
+            || applied.GetProperty("admission").GetProperty("outcome").GetString() != "Succeeded"
+            || applied.GetProperty("freshRead").GetProperty("resource").GetProperty("openItems").GetArrayLength() != itemCount)
+        {
+            throw new InvalidOperationException("The approved FI04 source was not admitted and reopened through Finance.");
+        }
+
+        var metadata = await context.GetJsonAsync(OpenItemMetadataActor, CompanyGdc, OpenItemsPath, cancellationToken);
+        var metadataItems = metadata.GetProperty("items");
+        var cursor = metadata.GetProperty("nextCursor").GetString();
+        if (metadata.GetProperty("companyId").GetGuid() != CompanyGdc
+            || metadataItems.GetArrayLength() != 50
+            || string.IsNullOrWhiteSpace(cursor)
+            || metadataItems[0].GetProperty("id").GetGuid() != ids[^1])
+        {
+            throw new InvalidOperationException("The FI04 metadata page did not preserve the expected page and ordering.");
+        }
+        foreach (var item in metadataItems.EnumerateArray())
+        {
+            if (item.GetProperty("status").ValueKind != System.Text.Json.JsonValueKind.Null
+                || item.GetProperty("initialAmount").GetProperty("disclosure").GetString() != "Redacted"
+                || item.GetProperty("initialAmount").GetProperty("money").ValueKind != System.Text.Json.JsonValueKind.Null
+                || item.GetProperty("outstandingAmount").GetProperty("disclosure").GetString() != "Redacted"
+                || item.GetProperty("outstandingAmount").GetProperty("money").ValueKind != System.Text.Json.JsonValueKind.Null)
+            {
+                throw new InvalidOperationException("The FI04 metadata-only fixture disclosed a status or amount.");
+            }
+        }
+
+        var continuation = await context.GetJsonAsync(
+            OpenItemMetadataActor,
+            CompanyGdc,
+            $"{OpenItemsPath}?cursor={Uri.EscapeDataString(cursor)}",
+            cancellationToken);
+        var continuationItems = continuation.GetProperty("items");
+        if (continuationItems.GetArrayLength() != 1
+            || continuationItems[0].GetProperty("id").GetGuid() != ids[0]
+            || continuation.GetProperty("nextCursor").ValueKind != System.Text.Json.JsonValueKind.Null)
+        {
+            throw new InvalidOperationException("The FI04 continuation did not return the first-page-outside item exactly once.");
+        }
+
+        var visible = await context.GetJsonAsync(OpenItemVisibleActor, CompanyGdc, OpenItemsPath, cancellationToken);
+        var visibleFirst = visible.GetProperty("items")[0];
+        if (visibleFirst.GetProperty("id").GetGuid() != ids[^1]
+            || visibleFirst.GetProperty("status").GetString() != "Open"
+            || visibleFirst.GetProperty("initialAmount").GetProperty("disclosure").GetString() != "Visible"
+            || visibleFirst.GetProperty("initialAmount").GetProperty("money").ValueKind != System.Text.Json.JsonValueKind.Object
+            || visibleFirst.GetProperty("outstandingAmount").GetProperty("disclosure").GetString() != "Visible"
+            || visibleFirst.GetProperty("outstandingAmount").GetProperty("money").ValueKind != System.Text.Json.JsonValueKind.Object)
+        {
+            throw new InvalidOperationException("The FI04 amount-authorized fixture did not disclose the stored status and amounts.");
+        }
+
+        var createdAt = metadataItems[0].GetProperty("createdAtUtc").GetDateTimeOffset();
+        if (metadataItems[1].GetProperty("createdAtUtc").GetDateTimeOffset() != createdAt
+            || metadataItems[1].GetProperty("id").GetGuid() != ids[^2])
+        {
+            throw new InvalidOperationException("The FI04 equal-timestamp ordering is not deterministic by descending id.");
+        }
+
+        return new(ids[^1], ids[0], ids[^2], itemCount);
     }
 
     private static async Task<Guid> SeedPendingFinanceAsync(
@@ -349,4 +515,10 @@ public sealed class Fin01BrowserSeed : IBrowserSuiteFixture
         }
         return newestBatchId ?? throw new InvalidOperationException("The Work Finance fixture has no pending batch.");
     }
+
+    private sealed record OpenItemFixture(
+        Guid NewestId,
+        Guid ContinuationId,
+        Guid EqualTimestampLowerId,
+        int Count);
 }

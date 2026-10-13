@@ -39,6 +39,7 @@ import {
 import { ManualBankPaymentStartPage, type ManualBankPaymentEntryContext } from './ManualBankPaymentStartPage'
 import { CustomerInstrumentPortfolioPage } from './CustomerInstrumentPortfolioPage'
 import { AllocationPage } from './AllocationPages'
+import { OpenItemDetailPage, OpenItemListPage } from './OpenItemReadPage'
 import {
   ManualBankPaymentCreatePage,
   ManualBankPaymentDetailPage,
@@ -194,5 +195,10 @@ export const financeRoutes: RouteObject[] = [
   {
     path: FINANCE_ROUTE.allocationsList.slice(1),
     element: gate(FINANCE_CAPABILITY.allocationsList, <AllocationPage />),
+  },
+  { path: FINANCE_ROUTE.openItemsList.slice(1), element: gate(FINANCE_CAPABILITY.openItemsList, <OpenItemListPage />) },
+  {
+    path: FINANCE_ROUTE.openItemsDetail.slice(1),
+    element: gate(FINANCE_CAPABILITY.openItemsDetail, <OpenItemDetailPage />),
   },
 ]

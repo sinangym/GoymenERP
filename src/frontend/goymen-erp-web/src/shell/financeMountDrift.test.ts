@@ -17,6 +17,7 @@ import {
   FINANCE_CAPABILITY,
   FINANCE_ROUTE,
   manualBankPaymentDetailPath,
+  openItemDetailPath,
   receiptDetailPath,
   receiptDraftPath,
 } from '../finance/capabilities'
@@ -37,6 +38,8 @@ const ROUTED = [
   [CAPABILITY.financeOfficialInvoiceImportApprove, FINANCE_CAPABILITY.officialInvoiceImportApprove,
     FINANCE_ROUTE.officialInvoiceImportApprove],
   [CAPABILITY.financeAllocationsList, FINANCE_CAPABILITY.allocationsList, FINANCE_ROUTE.allocationsList],
+  [CAPABILITY.financeOpenItemsList, FINANCE_CAPABILITY.openItemsList, FINANCE_ROUTE.openItemsList],
+  [CAPABILITY.financeOpenItemsDetail, FINANCE_CAPABILITY.openItemsDetail, FINANCE_ROUTE.openItemsDetail],
   [
     CAPABILITY.financeReceiptsReverseApprove,
     FINANCE_CAPABILITY.receiptsReverseApprove,
@@ -129,6 +132,20 @@ describe('shell ↔ Finance lane capability ids', () => {
       manualBankPaymentDetailPath(paymentId))?.params.paymentId).toBe(paymentId)
     expect(matchPath(CAPABILITY_ROUTE[CAPABILITY.financeManualBankPaymentsList],
       FINANCE_ROUTE.manualBankPaymentsCreate)).toBeNull()
+    const openItemId = '7b1c0f2e-0000-4a00-8000-000000000006'
+    expect(matchPath(CAPABILITY_ROUTE[CAPABILITY.financeOpenItemsDetail],
+      openItemDetailPath(openItemId))?.params.openItemId).toBe(openItemId)
+    expect(matchPath(CAPABILITY_ROUTE[CAPABILITY.financeOpenItemsList], openItemDetailPath(openItemId))).toBeNull()
+  })
+
+  it('mounts the FI04 open-item list and detail once each, and the amount authority is no capability', () => {
+    expect(financeRoutes.filter((route) => route.path === FINANCE_ROUTE.openItemsList.slice(1))).toHaveLength(1)
+    expect(financeRoutes.filter((route) => route.path === FINANCE_ROUTE.openItemsDetail.slice(1))).toHaveLength(1)
+    const ids = [...(Object.values(CAPABILITY) as string[]), ...(Object.values(FINANCE_CAPABILITY) as string[])]
+    expect(ids.filter((id) => id.startsWith('finance.open-items.')).sort()).toEqual([
+      'finance.open-items.detail', 'finance.open-items.detail', 'finance.open-items.list', 'finance.open-items.list',
+    ])
+    expect(ids).not.toContain('finance.open-items.amount.read')
   })
 
   it('gives the Finance work lists and import actions nav entries and the other finance routes none', () => {
@@ -142,6 +159,8 @@ describe('shell ↔ Finance lane capability ids', () => {
       'finance.official-invoice-import.upload': 'Onaylı fatura taksit kaynağı yükle',
       'finance.official-invoice-import.approve': 'Resmî fatura aktarım onayları',
       'finance.allocations.list': 'Finansal Dağıtımlar',
+      'finance.open-items.list': 'Açık kalemler',
+      'finance.open-items.detail': '',
       'finance.receipts.reverse.approve': 'Ters Kayıt Onayları',
       'finance.bank-accounts.list': 'Banka Hesapları',
       'finance.bank-accounts.propose': '',

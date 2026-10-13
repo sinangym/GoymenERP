@@ -176,6 +176,10 @@ export const CAPABILITY = {
   financeOfficialInvoiceImportUpload: 'finance.official-invoice-import.upload',
   financeOfficialInvoiceImportApprove: 'finance.official-invoice-import.approve',
   financeAllocationsList: 'finance.allocations.list',
+  /** FI04 open items, read-only. Route `/finans/acik-kalemler`. */
+  financeOpenItemsList: 'finance.open-items.list',
+  /** FI04 one open item. Route `/finans/acik-kalemler/:openItemId`; reached from a row. */
+  financeOpenItemsDetail: 'finance.open-items.detail',
   /** FIN-T06 pending reversal checker queue. Route `/finans/ters-kayit-onaylari`. */
   financeReceiptsReverseApprove: 'finance.receipts.reverse.approve',
   /** F-04 bank-account master. Route `/finans/banka-hesaplari`. */
@@ -304,6 +308,8 @@ export const CAPABILITY_ROUTE: Record<CapabilityId, string> = {
   [CAPABILITY.financeOfficialInvoiceImportUpload]: '/finans/onayli-fatura-taksit-kaynagi-yukle',
   [CAPABILITY.financeOfficialInvoiceImportApprove]: '/finans/resmi-fatura-aktarim-onaylari',
   [CAPABILITY.financeAllocationsList]: '/finans/dagitimlar',
+  [CAPABILITY.financeOpenItemsList]: '/finans/acik-kalemler',
+  [CAPABILITY.financeOpenItemsDetail]: '/finans/acik-kalemler/:openItemId',
   [CAPABILITY.financeReceiptsReverseApprove]: '/finans/ters-kayit-onaylari',
   [CAPABILITY.financeBankAccountsList]: '/finans/banka-hesaplari',
   [CAPABILITY.financeBankAccountsPropose]: '/finans/banka-hesaplari/yeni',

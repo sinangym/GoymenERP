@@ -252,6 +252,37 @@ public sealed class BrowserSuiteHostEnvelopeTests
     }
 
     [Fact]
+    public void Fin01_output_validation_accepts_only_its_closed_open_item_count_scalar_contract()
+    {
+        BrowserSuiteSeedOutputValidator.Validate(
+            "fin01",
+            new Dictionary<string, string> { ["openItemCount"] = "53" },
+            new HashSet<string>(StringComparer.Ordinal));
+
+        foreach (var value in new[]
+                 {
+                     "0",
+                     "50",
+                     "051",
+                     "51.0",
+                     "not-a-count",
+                     "10000000-0000-0000-0000-000000000001",
+                     "fin01-open-items-metadata",
+                 })
+        {
+            Assert.Throws<InvalidOperationException>(() => BrowserSuiteSeedOutputValidator.Validate(
+                "fin01",
+                new Dictionary<string, string> { ["openItemCount"] = value },
+                new HashSet<string>(["fin01-open-items-metadata"], StringComparer.Ordinal)));
+        }
+
+        Assert.Throws<InvalidOperationException>(() => BrowserSuiteSeedOutputValidator.Validate(
+            "s03",
+            new Dictionary<string, string> { ["openItemCount"] = "53" },
+            new HashSet<string>(StringComparer.Ordinal)));
+    }
+
+    [Fact]
     public void Mfg_output_validation_accepts_only_its_closed_fixture_scalar_contract()
     {
         BrowserSuiteSeedOutputValidator.Validate(
