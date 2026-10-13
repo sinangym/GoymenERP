@@ -30,7 +30,7 @@ export const GOODS_RECEIPT_TEXT = {
   noLocation: 'Yetkili kabul lokasyonu bulunamadı. Serbest kimlik girişi yapılamaz.',
   refresh: 'Kayıtları yenile',
   detail: 'Ayrıntı',
-  detailOf: (labelCode: string) => `${labelCode} mal kabul ayrıntısı`,
+  detailOf: (lineNo: string, quantity: string, recordedAt: string) => `Mal kabul ayrıntısı: satır ${lineNo}, miktar ${quantity}, ${recordedAt}`,
   detailHeading: 'Mal kabul ayrıntısı',
   detailLabel: 'Etiket',
   detailLabelLink: (labelCode: string) => `${labelCode} etiket kartını aç`,

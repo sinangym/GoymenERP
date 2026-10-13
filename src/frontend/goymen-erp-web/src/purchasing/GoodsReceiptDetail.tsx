@@ -1,4 +1,4 @@
-import { useId, useState } from 'react'
+import { useId, useLayoutEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link, useInRouterContext, useSearchParams } from 'react-router'
 import { fetchGoodsReceiptDetail } from './goodsReceiptApi'
@@ -16,23 +16,30 @@ import { Button } from '../ui/Button'
 import styles from './goodsReceiptDetail.module.css'
 
 /** Address parameter naming the one receipt whose detail is open, so Back from its label reopens the same receipt. */
-export const GOODS_RECEIPT_DETAIL_PARAM = 'kabul'
+const GOODS_RECEIPT_DETAIL_PARAM = 'kabul'
 
 interface Props {
   /** The caller's company/actor/session key: a read made under another key is never shown. */
   readonly binding: string
   readonly detail: PurchaseOrderDetail
   readonly acceptanceId: string
-  /** Names the control for a screen reader; the detail itself shows only what its own read answers. */
-  readonly labelCode: string
+  /** The control's accessible name: which receipt it opens. The detail itself shows only what its own read answers. */
+  readonly name: string
 }
 
 /**
- * "Ayrıntı" on one recorded receipt: the accepted detail read (`GET …/goods-receipts/{acceptanceId}`) on demand, shown
+ * "Ayrıntı" on one recorded receipt of the order that is open: the accepted detail read (`GET …/goods-receipts/{acceptanceId}`) on demand, shown
  * in place. Nothing is read until the user asks, and the read records nothing.
  */
 export function GoodsReceiptDetail(props: Props) {
   return useInRouterContext() ? <AddressedDetail {...props} /> : <LocalDetail {...props} />
+}
+
+/** The detail as a table row of its own, under its acceptance row in the order page's acceptance table. */
+export function GoodsReceiptDetailRow({ colSpan, ...props }: Props & { readonly colSpan: number }) {
+  return <tr role="row" className={styles.row} data-testid={`purchase-order-acceptance-detail-${props.acceptanceId}`}>
+    <td role="cell" className={styles.rowCell} colSpan={colSpan}><GoodsReceiptDetail {...props} /></td>
+  </tr>
 }
 
 function AddressedDetail(props: Props) {
@@ -52,19 +59,46 @@ function LocalDetail(props: Props) {
   return <Disclosure {...props} open={open} onToggle={() => setOpen((current) => !current)} linked={false} />
 }
 
-function Disclosure({ binding, detail, acceptanceId, labelCode, open, onToggle, linked }: Props & {
+function Disclosure({ binding, detail, acceptanceId, name, open, onToggle, linked }: Props & {
   readonly open: boolean
   readonly onToggle: () => void
   readonly linked: boolean
 }) {
   const regionId = useId()
-  return <div className={styles.detail}>
+  const frame = useRef<HTMLDivElement>(null)
+  useVisibleWidth(frame)
+  return <div className={styles.detail} ref={frame}>
     <Button type="button" variant="ghost" size="sm" aria-expanded={open} aria-controls={regionId}
-      aria-label={T.detailOf(labelCode)} onClick={onToggle}>{T.detail}</Button>
+      aria-label={name} onClick={onToggle}>{T.detail}</Button>
     <div id={regionId} hidden={!open}>
       {open ? <DetailRead binding={binding} detail={detail} acceptanceId={acceptanceId} linked={linked} /> : null}
     </div>
   </div>
+}
+
+/**
+ * Inside a table that scrolls sideways the row is as wide as the whole table, so the detail would run off the visible
+ * part. The frame is pinned to the visible edge by its stylesheet; this gives it the visible width to wrap within.
+ */
+function useVisibleWidth(frame: React.RefObject<HTMLDivElement | null>) {
+  useLayoutEffect(() => {
+    const element = frame.current
+    const cell = element?.closest('td') ?? null
+    if (element === null || cell === null || typeof ResizeObserver !== 'function') return
+    let port: HTMLElement | null = cell.parentElement
+    while (port !== null && !/auto|scroll/.test(getComputedStyle(port).overflowX)) port = port.parentElement
+    if (port === null) return
+    const scroller = port
+    const fit = () => {
+      const style = getComputedStyle(cell)
+      const room = scroller.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight)
+      element.style.setProperty('--goods-receipt-detail-width', `${Math.max(0, room)}px`)
+    }
+    fit()
+    const observer = new ResizeObserver(fit)
+    observer.observe(scroller)
+    return () => observer.disconnect()
+  }, [frame])
 }
 
 function DetailRead({ binding, detail, acceptanceId, linked }: {

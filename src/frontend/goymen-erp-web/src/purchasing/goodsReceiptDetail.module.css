@@ -55,3 +55,34 @@
   white-space: nowrap;
   overflow-wrap: normal;
 }
+
+/* In the order's acceptance table the detail is a row of its own under its acceptance. Where that table scrolls
+   sideways the detail stays at the visible edge and wraps within the visible width (set by the component). Below
+   768px the table draws every row as a labelled card; this row has no label of its own and joins the card above. */
+tr.row td.rowCell .detail {
+  position: sticky;
+  left: var(--goy-ds-space-3);
+  max-width: var(--goods-receipt-detail-width, 100%);
+}
+
+@media (max-width: 767px) {
+  tr.row td.rowCell .detail {
+    position: static;
+    max-width: 100%;
+  }
+
+  tr.row {
+    margin-top: calc(-1 * var(--goy-ds-space-2) - 1px);
+    border-top-color: transparent;
+    border-top-left-radius: 0;
+    border-top-right-radius: 0;
+  }
+
+  tr.row td.rowCell {
+    display: block;
+  }
+
+  tr.row td.rowCell::before {
+    content: none;
+  }
+}
