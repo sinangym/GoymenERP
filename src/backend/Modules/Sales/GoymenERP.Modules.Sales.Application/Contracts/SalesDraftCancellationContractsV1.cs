@@ -36,8 +36,9 @@ public sealed record SalesOrderLineAllocationV1(Guid OrderLineId, int ActiveCoun
 /// DEC-SAL-005 "irsaliyesiz yükleme": the Sales-declared read the LOADING OWNER answers (Logistics, whose loading-instruction
 /// lines are bound to a Sales order line — LOG-4 D4). The AT-024 <see cref="ISalesOrderDeliveryReadPortV1"/> answers only
 /// the definite shipped/delivered totals by design (an instructed or loaded line "adds nothing" there); a cancellation must
-/// also see a line that is only instructed or loaded, so this read answers every instruction line's totals. Main has no
-/// dispatch-note (irsaliye) record, so EVERY loading is "without a dispatch note". Same rules as the AT-024 port: no
+/// also see a line that is only instructed or loaded, so this read answers every instruction line's totals. Its
+/// cancellation-specific read also reports active approved dispatch-note invoice-source candidates; it does not claim
+/// invoice consumption. The category is then answered as None, Present or Unreadable. Same rules as the AT-024 port: no
 /// authority, the caller's company only, creates nothing.
 /// </summary>
 public interface ISalesOrderLoadingReadPortV1
@@ -48,10 +49,25 @@ public interface ISalesOrderLoadingReadPortV1
     /// the owner holds nothing for is absent. An unknown order answers an empty list.
     /// </summary>
     Task<SalesOrderLoadingReadAnswerV1> ReadOrderLoadingAsync(Guid orderId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// The cancellation-specific Logistics answer, including active approved dispatch-note invoice-source candidates.
+    /// Existing loading-only adapters remain source-compatible and answer zero until their owner implements the richer read.
+    /// </summary>
+    Task<SalesOrderLoadingReadAnswerV1> ReadOrderCancellationImpactAsync(Guid orderId,
+        CancellationToken cancellationToken = default) => ReadOrderLoadingAsync(orderId, cancellationToken);
 }
 
-/// <summary>The loading owner's answer for one Sales order in the context company.</summary>
-public sealed record SalesOrderLoadingReadAnswerV1(Guid CompanyId, Guid OrderId, IReadOnlyList<SalesOrderLineLoadingV1> Lines);
+/// <summary>
+/// The Logistics owner's answer for one Sales order in the context company. Besides loading totals it carries the number
+/// of approved, non-cancelled dispatch-note invoice-source candidates. Main has no accepted native invoice-consumption
+/// owner yet, so those candidates remain blockers rather than being silently treated as invoiced.
+/// </summary>
+public sealed record SalesOrderLoadingReadAnswerV1(
+    Guid CompanyId,
+    Guid OrderId,
+    IReadOnlyList<SalesOrderLineLoadingV1> Lines,
+    int ActiveApprovedDispatchNoteCount = 0);
 
 /// <summary>
 /// One Sales order line's loading-instruction lines in one unit: their count and exact totals. A positive count has a
@@ -76,7 +92,10 @@ public static class SalesCancellationImpactSourcesV1
     /// <summary>"irsaliyesiz yükleme" — Logistics's loading-instruction lines (owner port <see cref="ISalesOrderLoadingReadPortV1"/>).</summary>
     public const string LoadingWithoutDispatchNote = "logistics.loading-without-dispatch-note";
 
-    /// <summary>"faturalanmamış irsaliye" — no dispatch-note or invoice record exists on main: no source.</summary>
+    /// <summary>
+    /// "faturalanmamış irsaliye" — Logistics's active approved dispatch-note invoice-source candidates. Main has no
+    /// accepted native invoice-consumption owner yet, so an approved active candidate is not silently treated as invoiced.
+    /// </summary>
     public const string UninvoicedDispatchNotes = "invoicing.uninvoiced-dispatch-notes";
 
     /// <summary>"eşleşmemiş avans/dekont" — Finance records no link from an advance/receipt to a Sales order on main: no source.</summary>

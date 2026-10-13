@@ -15,7 +15,8 @@ namespace GoymenERP.Modules.Sales.Application;
 /// geçmişi silmez."
 /// <list type="bullet">
 /// <item><b>Preview</b> (GET, <c>sales.orders.cancel</c>): each DEC-SAL-005 category read from its OWNER through that owner's
-/// port — Inventory's active allocations, Logistics's loading-instruction lines — never from another module's tables; a
+/// port — Inventory's active allocations plus Logistics's loading-instruction lines and approved dispatch-note candidates —
+/// never from another module's tables; a
 /// category no module on main records is <see cref="SalesCancellationImpactStatusesV1.NoSource"/>, never an assumed zero; an
 /// owner that cannot answer is <see cref="SalesCancellationImpactStatusesV1.Unreadable"/> and its numbers are null.</item>
 /// <item><b>Fail-closed</b> (what blocks is not decided): an order is cancelled only when it is Approved, not cancelled, and no
@@ -236,6 +237,8 @@ public sealed partial class SalesDraftService
     /// <summary>Per line: the loading owner's instruction-line count and totals in the line's order unit.</summary>
     private sealed record LineLoading(int Count, decimal Instructed, decimal Loaded, decimal Shipped, decimal Delivered);
 
+    private sealed record LoadingImpact(Dictionary<Guid, LineLoading> Lines, int ActiveApprovedDispatchNoteCount);
+
     /// <summary>
     /// Reads every DEC-SAL-005 category of <paramref name="draft"/> from its owner, each read released only under the
     /// operation's name (measured after it). An owner that is not composed, throws or answers a malformed value is
@@ -244,7 +247,8 @@ public sealed partial class SalesDraftService
     private async Task<Impact> ReadImpactAsync(Scope scope, string? permission, SalesOrderDraft draft, CancellationToken cancellationToken)
     {
         var allocationsByLine = await ReadAllocationsAsync(scope, permission, draft, cancellationToken);
-        var loadingByLine = await ReadLoadingAsync(scope, permission, draft, cancellationToken);
+        var loadingImpact = await ReadLoadingImpactAsync(scope, permission, draft, cancellationToken);
+        var loadingByLine = loadingImpact?.Lines;
 
         var allocationStatus = allocationsByLine is null
             ? SalesCancellationImpactStatusesV1.Unreadable
@@ -252,11 +256,17 @@ public sealed partial class SalesDraftService
         var loadingStatus = loadingByLine is null
             ? SalesCancellationImpactStatusesV1.Unreadable
             : loadingByLine.Values.Any(line => line.Count > 0 || line.Instructed > 0m) ? SalesCancellationImpactStatusesV1.Present : SalesCancellationImpactStatusesV1.None;
+        var dispatchNoteStatus = loadingImpact is null
+            ? SalesCancellationImpactStatusesV1.Unreadable
+            : loadingImpact.ActiveApprovedDispatchNoteCount > 0
+                ? SalesCancellationImpactStatusesV1.Present
+                : SalesCancellationImpactStatusesV1.None;
         var sources = SalesCancellationImpactSourcesV1.All.Select(source => new SalesDraftCancellationImpactSourceV1(source, source switch
         {
             SalesCancellationImpactSourcesV1.ActiveAllocations => allocationStatus,
             SalesCancellationImpactSourcesV1.LoadingWithoutDispatchNote => loadingStatus,
-            // No module on main records these links to a Sales order: no owner to ask, shown as such — not as zero.
+            SalesCancellationImpactSourcesV1.UninvoicedDispatchNotes => dispatchNoteStatus,
+            // No module on main records these remaining links to a Sales order: no owner to ask, shown as such — not as zero.
             _ => SalesCancellationImpactStatusesV1.NoSource,
         })).ToArray();
 
@@ -338,7 +348,19 @@ public sealed partial class SalesDraftService
     /// delivered ≤ shipped ≤ loaded ≤ instructed ≤ ordered).
     /// </summary>
     private async Task<Dictionary<Guid, LineLoading>?> ReadLoadingAsync(Scope scope, string? permission, SalesOrderDraft draft,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken) =>
+        (await ReadLoadingAnswerAsync(scope, permission, draft, includeDispatchNoteCandidates: false, cancellationToken))?.Lines;
+
+    /// <summary>
+    /// The Logistics owner's combined cancellation-impact answer. Loading totals and active approved dispatch-note
+    /// candidate count share one company/order envelope and one guarded owner read.
+    /// </summary>
+    private Task<LoadingImpact?> ReadLoadingImpactAsync(Scope scope, string? permission, SalesOrderDraft draft,
+        CancellationToken cancellationToken) =>
+        ReadLoadingAnswerAsync(scope, permission, draft, includeDispatchNoteCandidates: true, cancellationToken);
+
+    private async Task<LoadingImpact?> ReadLoadingAnswerAsync(Scope scope, string? permission, SalesOrderDraft draft,
+        bool includeDispatchNoteCandidates, CancellationToken cancellationToken)
     {
         if (loadings is null)
         {
@@ -348,14 +370,19 @@ public sealed partial class SalesDraftService
         SalesOrderLoadingReadAnswerV1? answer;
         try
         {
-            answer = await GuardedAsync(scope, permission, () => loadings.ReadOrderLoadingAsync(draft.Id, cancellationToken), cancellationToken);
+            Func<Task<SalesOrderLoadingReadAnswerV1>> read = includeDispatchNoteCandidates
+                ? () => loadings.ReadOrderCancellationImpactAsync(draft.Id, cancellationToken)
+                : () => loadings.ReadOrderLoadingAsync(draft.Id, cancellationToken);
+            answer = await GuardedAsync(scope, permission,
+                read, cancellationToken);
         }
         catch (Exception exception) when (exception is not (OperationCanceledException or SalesDraftServiceException))
         {
             return null;
         }
 
-        if (answer is null || answer.Lines is null || answer.CompanyId != scope.CompanyId || answer.OrderId != draft.Id)
+        if (answer is null || answer.Lines is null || answer.CompanyId != scope.CompanyId || answer.OrderId != draft.Id
+            || (includeDispatchNoteCandidates && answer.ActiveApprovedDispatchNoteCount < 0))
         {
             return null;
         }
@@ -389,7 +416,7 @@ public sealed partial class SalesDraftService
             return null;
         }
 
-        return result;
+        return new LoadingImpact(result, includeDispatchNoteCandidates ? answer.ActiveApprovedDispatchNoteCount : 0);
     }
 
     private static bool FitsScale(decimal value, QuantityUnit unit)
