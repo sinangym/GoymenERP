@@ -671,6 +671,15 @@ tr:hover .filterButton,
   font-weight: var(--goy-ds-font-weight-semibold);
 }
 
+/* Beside the card's "İşlemler" button a long heat or coil number has less room than its own width at 320 px. It
+   wraps inside the card there instead of widening the page; one that fits still stays whole. */
+.card .sub .nowrap {
+  display: inline-block;
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
 .cardFacts dt,
 .cardQuantities dt {
   color: var(--goy-ds-color-text-tertiary);

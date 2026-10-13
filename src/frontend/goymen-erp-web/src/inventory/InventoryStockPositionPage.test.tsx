@@ -1831,5 +1831,23 @@ describe('ST-01 typed filters behind "Tüm filtreler"', () => {
       await waitFor(() => expect(api.page).toHaveBeenLastCalledWith(
         COMPANY, { ...NO_FILTERS, thicknessMm: '0.5' }, null, expect.any(AbortSignal)))
     })
+
+    it('lets a heat or coil number longer than its room wrap inside a card, and only there', () => {
+      const nodeProcess = (globalThis as unknown as { process: { cwd(): string; getBuiltinModule(name: string): unknown } }).process
+      const fs = nodeProcess.getBuiltinModule('node:fs') as { readFileSync(path: string, encoding: 'utf8'): string }
+      const css = fs.readFileSync(`${nodeProcess.cwd()}/src/inventory/stockPosition.module.css`, 'utf8')
+      const rule = (selector: string) => {
+        const at = css.indexOf(`
+${selector} {`)
+        expect(at, selector).toBeGreaterThanOrEqual(0)
+        return css.slice(at, css.indexOf('}', at))
+      }
+      // Real 320 px finding: a whole lot token beside "İşlemler" was wider than the card and the page scrolled sideways.
+      expect(rule('.card .sub .nowrap')).toContain('white-space: normal')
+      expect(rule('.card .sub .nowrap')).toContain('overflow-wrap: anywhere')
+      expect(rule('.card .sub .nowrap')).toContain('max-width: 100%')
+      // In the table a token still stays whole.
+      expect(rule('.nowrap')).toContain('white-space: nowrap')
+    })
   })
 })
