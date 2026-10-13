@@ -335,7 +335,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             ["src/backend/Modules/Organization/"
              + "GoymenERP.Modules.Organization.Infrastructure/Persistence/"
              + "OrganizationDbContext.cs"] =
-                "198fddce9a2fd4552850c2d1545b96b0030411d5d256a70ee932cf5173be2ff2",
+                // Re-fingerprinted for ORG-LOCATION-OPERATOR-CRUD-01A: one nullable OperatorPartyId and two
+                // fail-closed check constraints; the CompanyId query filters and tenant write guard are unchanged.
+                "03d7b655dfc9ed6a2586566e9a7cc11c342c81ed397d306a30b14e0b113b4751",
             ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/"
              + "Persistence/SettingsDbContext.cs"] =
                 "9129cc666fb0ff6f594a8190c76252e0c0eeadceb7324c03407191da83d21731",
@@ -688,11 +690,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // the Migrate/EnsureCreated branch and its token counts are unchanged.
                 // Re-fingerprinted for the bounded location-display batch reader: one more scoped Organization-owned
                 // read registration; the Migrate/EnsureCreated branch and its token counts are unchanged.
+                // Re-fingerprinted for ORG-LOCATION-OPERATOR-CRUD-01A: one fail-closed eligibility port and one
+                // company-scoped destination source registration; initialization behavior is unchanged.
                 ["src/backend/Modules/Organization/"
                  + "GoymenERP.Modules.Organization.Infrastructure/"
                  + "OrganizationModuleExtensions.cs"] =
                     new(
-                        "62780034e9ab9e02f13d50aa7960e9c0db39c3095655f6866d9b68131eefb55d",
+                        "b6cc927e0fba0f99307ee3198a0de3c36fc1a619d1cab0a818557704c494c668",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,

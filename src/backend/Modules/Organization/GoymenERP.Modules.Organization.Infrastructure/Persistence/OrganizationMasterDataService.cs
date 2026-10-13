@@ -26,6 +26,8 @@ internal sealed class OrganizationMasterDataService(
     ICurrentUser currentUser,
     ICompanyContext companyContext,
     IErpAuthorizationService authorizationService,
+    IErpAuthorityRevalidationService authorityRevalidationService,
+    IOrganizationLocationOperatorEligibilityPortV1 locationOperatorEligibility,
     IAuditEventCollector auditEventCollector,
     ILogger<OrganizationMasterDataService> logger)
     : IOrganizationMasterDataService
@@ -35,6 +37,7 @@ internal sealed class OrganizationMasterDataService(
     internal const string UpdateSiteCommandName = "organization.site.update.v1";
     internal const string CreateLocationCommandName = "organization.location.create.v1";
     internal const string UpdateLocationCommandName = "organization.location.update.v1";
+    internal const string SetLocationOperatorCommandName = "organization.location.operator.assign.v1";
     internal const string CreateWorkCenterCommandName = "organization.work-center.create.v1";
     internal const string UpdateWorkCenterCommandName = "organization.work-center.update.v1";
 
@@ -248,6 +251,159 @@ internal sealed class OrganizationMasterDataService(
             "organization.location.updated.v1",
             LocationEntityType,
             SerializeLocation,
+            cancellationToken);
+    }
+
+    public async Task<CommandExecutionResult> SetLocationOperatorAsync(
+        Guid id,
+        SetLocationOperator command,
+        CommandMetadata metadata,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(command);
+        ValidateCommandMetadata(metadata);
+        if (id == Guid.Empty || command.OperatorPartyId == Guid.Empty)
+        {
+            throw new ArgumentException("Lokasyon ve operatör cari kimlikleri boş olamaz.", nameof(command));
+        }
+
+        RequireExpectedVersion(command.ExpectedVersion);
+        var reason = RequireReason(command.Reason);
+        const string permission = OrganizationPermissionManifestV1.LocationsWrite;
+        var scope = await authorityRevalidationService.RevalidatePermissionScopeAsync(
+            permission, metadata.CompanyId, cancellationToken);
+        var request = CreateRequest(
+            SetLocationOperatorCommandName,
+            metadata,
+            new SetLocationOperatorFingerprint(
+                id,
+                command.OperatorPartyId,
+                command.ExpectedVersion,
+                reason));
+
+        var location = await OrganizationScopes.ApplyLocationScope(dbContext, dbContext.Locations, scope)
+            .SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
+        var existing = await FindCommandExecutionAsync(request, cancellationToken);
+        if (existing is not null)
+        {
+            return !scope.IsCompanyWide && location is null
+                ? NotRecordedNotFound(metadata)
+                : ResolveExistingExecution(existing, request, metadata);
+        }
+
+        if (location is null)
+        {
+            return await CompleteAsync(request, metadata, CommandResponses.For(CommandResult.NotFound), cancellationToken);
+        }
+
+        if (!location.IsExternal)
+        {
+            return await CompleteAsync(
+                request,
+                metadata,
+                CommandResponses.For(CommandResult.OperatorIneligible),
+                cancellationToken);
+        }
+
+        if (location.Version != command.ExpectedVersion)
+        {
+            return await CompleteAsync(
+                request,
+                metadata,
+                CommandResponses.VersionConflict(command.ExpectedVersion, location.Version),
+                cancellationToken);
+        }
+
+        var eligibility = await locationOperatorEligibility.CheckAsync(
+            metadata.CompanyId,
+            metadata.ActorId,
+            command.OperatorPartyId,
+            cancellationToken);
+
+        ValidateCommandMetadata(metadata);
+        var freshScope = await authorityRevalidationService.RevalidatePermissionScopeAsync(
+            permission, metadata.CompanyId, cancellationToken);
+        dbContext.ChangeTracker.Clear();
+        location = await OrganizationScopes.ApplyLocationScope(dbContext, dbContext.Locations, freshScope)
+            .SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
+        if (location is null)
+        {
+            // The actor lost the current company/row authority while the cross-module read was in flight.
+            // Do not persist a new receipt after revocation; answer the same non-disclosing 404 as the read fence.
+            return NotRecordedNotFound(metadata);
+        }
+
+        if (location.Version != command.ExpectedVersion)
+        {
+            return await CompleteAsync(
+                request,
+                metadata,
+                CommandResponses.VersionConflict(command.ExpectedVersion, location.Version),
+                cancellationToken);
+        }
+
+        if (eligibility.Status == OrganizationLocationOperatorEligibilityStatusV1.Unavailable)
+        {
+            return new CommandExecutionResult(
+                CommandResponses.For(CommandResult.DependencyUnavailable),
+                false,
+                metadata.CorrelationId);
+        }
+
+        if (eligibility.Status == OrganizationLocationOperatorEligibilityStatusV1.Denied)
+        {
+            return NotRecordedNotFound(metadata);
+        }
+
+        if (eligibility.Status is not OrganizationLocationOperatorEligibilityStatusV1.Eligible
+            || eligibility.PartyId != command.OperatorPartyId)
+        {
+            return await CompleteAsync(
+                request,
+                metadata,
+                CommandResponses.For(CommandResult.OperatorIneligible),
+                cancellationToken);
+        }
+
+        var versionBefore = location.Version;
+        var beforeJson = SerializeLocation(location, versionBefore);
+        var changed = location.AssignOperator(command.OperatorPartyId);
+        var versionAfter = changed ? versionBefore + 1 : versionBefore;
+        EnqueueAudit(
+            metadata,
+            freshScope,
+            permission,
+            "organization.location.operator.changed.v1",
+            LocationEntityType,
+            location.Id,
+            changed ? "Update" : "NoChange",
+            versionBefore,
+            versionAfter,
+            beforeJson,
+            SerializeLocation(location, versionAfter),
+            reason);
+
+        return await CompleteMutationAsync(
+            request,
+            metadata,
+            CommandResponses.For(CommandResult.Succeeded),
+            async (exception, token) =>
+            {
+                var currentVersion = await OrganizationScopes
+                    .ApplyLocationScope(dbContext, dbContext.Locations.AsNoTracking(), freshScope)
+                    .Where(x => x.Id == id)
+                    .Select(x => (long?)x.Version)
+                    .SingleOrDefaultAsync(token);
+                if (currentVersion is null)
+                {
+                    return CommandResponses.For(CommandResult.NotFound);
+                }
+
+                return exception is DbUpdateConcurrencyException || currentVersion.Value != command.ExpectedVersion
+                    ? CommandResponses.VersionConflict(command.ExpectedVersion, currentVersion.Value)
+                    : null;
+            },
+            location.Id,
             cancellationToken);
     }
 
@@ -607,6 +763,7 @@ internal sealed class OrganizationMasterDataService(
             || !string.Equals(response.Result.ToString(), execution.Outcome, StringComparison.Ordinal)
             || response.StatusCode != execution.HttpStatusCode
             || response.Result == CommandResult.IdempotencyConflict
+            || response.Result == CommandResult.DependencyUnavailable
             || (response.Result == CommandResult.Created) != (response.Created is not null))
         {
             throw new InvalidOperationException(
@@ -713,6 +870,16 @@ internal sealed class OrganizationMasterDataService(
         }
     }
 
+    private static string RequireReason(string reason)
+    {
+        if (!OrganizationMasterDataRules.IsValidReason(reason))
+        {
+            throw new ArgumentException("Gerekçe tanımlı sınırlar içinde olmalıdır.", nameof(reason));
+        }
+
+        return reason.Trim();
+    }
+
     private static string SerializeSite(Site site, long version) =>
         JsonSerializer.Serialize(new
         {
@@ -734,6 +901,7 @@ internal sealed class OrganizationMasterDataService(
             location.Code,
             location.Name,
             location.IsExternal,
+            location.OperatorPartyId,
             location.IsActive,
             Version = version,
         });
@@ -770,6 +938,12 @@ internal sealed class OrganizationMasterDataService(
         Guid Id,
         string Code,
         string Name,
+        long ExpectedVersion,
+        string Reason);
+
+    private sealed record SetLocationOperatorFingerprint(
+        Guid LocationId,
+        Guid OperatorPartyId,
         long ExpectedVersion,
         string Reason);
 }

@@ -48,6 +48,10 @@ public static class OrganizationProblemCodesV1
     /// <c>(CompanyId, Code)</c> unique index). Active and inactive records both hold their code.
     /// </summary>
     public const string CodeInUse = "organization_code_in_use";
+
+    public const string LocationOperatorIneligible = "organization_location_operator_ineligible";
+
+    public const string LocationOperatorDependencyUnavailable = "organization_location_operator_dependency_unavailable";
 }
 
 /// <summary>
@@ -137,6 +141,12 @@ public interface IOrganizationMasterDataService
     Task<CommandExecutionResult> UpdateLocationAsync(
         Guid id,
         UpdateLocation command,
+        CommandMetadata metadata,
+        CancellationToken cancellationToken);
+
+    Task<CommandExecutionResult> SetLocationOperatorAsync(
+        Guid id,
+        SetLocationOperator command,
         CommandMetadata metadata,
         CancellationToken cancellationToken);
 

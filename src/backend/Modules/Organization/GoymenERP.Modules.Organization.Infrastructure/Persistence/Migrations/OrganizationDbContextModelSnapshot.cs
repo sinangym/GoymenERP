@@ -53,6 +53,12 @@ namespace GoymenERP.Modules.Organization.Infrastructure.Persistence.Migrations
                     b.Property<string>("ApprovalContextJson")
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<string>("AuthorityRevision")
+                        .HasMaxLength(128)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(128)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
                     b.Property<string>("BeforeJson")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
@@ -66,7 +72,7 @@ namespace GoymenERP.Modules.Organization.Infrastructure.Persistence.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("nvarchar(64)");
 
-                    b.Property<Guid>("CompanyId")
+                    b.Property<Guid?>("CompanyId")
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("CorrelationId")
@@ -116,6 +122,9 @@ namespace GoymenERP.Modules.Organization.Infrastructure.Persistence.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("nvarchar(64)");
 
+                    b.Property<Guid?>("OriginCompanyId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<string>("Outcome")
                         .IsRequired()
                         .HasMaxLength(32)
@@ -144,6 +153,14 @@ namespace GoymenERP.Modules.Organization.Infrastructure.Persistence.Migrations
                         .HasMaxLength(32)
                         .HasColumnType("nvarchar(32)");
 
+                    b.Property<string>("SubjectKind")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)")
+                        .HasDefaultValue("Company")
+                        .UseCollation("Latin1_General_100_BIN2");
+
                     b.Property<string>("UserAgent")
                         .HasMaxLength(512)
                         .HasColumnType("nvarchar(512)");
@@ -156,6 +173,8 @@ namespace GoymenERP.Modules.Organization.Infrastructure.Persistence.Migrations
                         .IsDescending(false, true, true);
 
                     b.HasIndex("CompanyId", "EntityType", "EntityId", "OccurredAtUtc");
+
+                    b.HasIndex("SubjectKind", "EntityType", "EntityId", "OccurredAtUtc", "Id");
 
                     b.ToTable("AuditEvents", "audit", t =>
                         {
@@ -328,6 +347,9 @@ namespace GoymenERP.Modules.Organization.Infrastructure.Persistence.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
 
+                    b.Property<Guid?>("OperatorPartyId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<byte[]>("RowVersion")
                         .IsConcurrencyToken()
                         .IsRequired()
@@ -353,7 +375,12 @@ namespace GoymenERP.Modules.Organization.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("CompanyId", "SiteId");
 
-                    b.ToTable("Locations", "organization");
+                    b.ToTable("Locations", "organization", t =>
+                        {
+                            t.HasCheckConstraint("CK_Locations_InternalOperatorParty", "[IsExternal] = 1 OR [OperatorPartyId] IS NULL");
+
+                            t.HasCheckConstraint("CK_Locations_OperatorParty_NotEmpty", "[OperatorPartyId] IS NULL OR [OperatorPartyId] <> '00000000-0000-0000-0000-000000000000'");
+                        });
                 });
 
             modelBuilder.Entity("GoymenERP.Modules.Organization.Domain.Sites.Site", b =>

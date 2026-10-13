@@ -75,6 +75,11 @@ public sealed record SetLocationActiveState(
     [property: JsonRequired] long ExpectedVersion,
     string Reason);
 
+public sealed record SetLocationOperator(
+    [property: JsonRequired] Guid OperatorPartyId,
+    [property: JsonRequired] long ExpectedVersion,
+    string Reason);
+
 public sealed record CommandMetadata(
     Guid CompanyId,
     string ActorId,
@@ -93,6 +98,8 @@ public enum CommandResult
     IdempotencyConflict = 4,
     Created = 5,
     CodeInUse = 6,
+    OperatorIneligible = 7,
+    DependencyUnavailable = 8,
 }
 
 public sealed record CommandExecutionResult(
@@ -144,6 +151,16 @@ public static class CommandResponses
                 422,
                 "Kod kullanımda.",
                 "Bu kod şirketteki başka bir kayıtta kullanılıyor; farklı bir kod girin."),
+            CommandResult.OperatorIneligible => new CommandResponseSnapshot(
+                result,
+                422,
+                "Lokasyon operatörü uygun değil.",
+                "Seçilen cari bu şirketin harici lokasyon operatörü olarak kullanılamıyor."),
+            CommandResult.DependencyUnavailable => new CommandResponseSnapshot(
+                result,
+                503,
+                "Lokasyon operatörü doğrulanamadı.",
+                "Cari uygunluğu şu anda doğrulanamıyor; daha sonra yeniden deneyin."),
             CommandResult.Created => throw new ArgumentException(
                 "Created cevabı oluşturulan kaydın kimliğini ve sürümünü içermelidir.",
                 nameof(result)),

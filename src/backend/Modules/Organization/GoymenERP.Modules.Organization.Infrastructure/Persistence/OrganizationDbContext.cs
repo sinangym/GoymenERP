@@ -106,6 +106,15 @@ public sealed class OrganizationDbContext(
     {
         var entity = modelBuilder.Entity<Location>();
         ConfigureTenantEntity(entity, "Locations");
+        entity.ToTable("Locations", "organization", table =>
+        {
+            table.HasCheckConstraint(
+                "CK_Locations_InternalOperatorParty",
+                "[IsExternal] = 1 OR [OperatorPartyId] IS NULL");
+            table.HasCheckConstraint(
+                "CK_Locations_OperatorParty_NotEmpty",
+                "[OperatorPartyId] IS NULL OR [OperatorPartyId] <> '00000000-0000-0000-0000-000000000000'");
+        });
         entity.HasOne<Site>()
             .WithMany()
             .HasForeignKey(x => new { x.CompanyId, x.SiteId })
