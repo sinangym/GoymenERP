@@ -1,0 +1,57 @@
+/* One recorded receipt's detail, opened in place under its history row. */
+.detail {
+  display: grid;
+  justify-items: start;
+  gap: var(--goy-ds-space-2);
+  min-width: 0;
+  margin-top: var(--goy-ds-space-2);
+}
+
+.detail > div {
+  width: 100%;
+  min-width: 0;
+}
+
+.body {
+  min-width: 0;
+  padding: var(--goy-ds-space-3);
+  border: 1px solid var(--goy-ds-color-border);
+  border-radius: var(--goy-ds-radius-md);
+  background: var(--goy-ds-color-surface);
+}
+
+/* Label above value; as many columns as fit, one on a phone. */
+.facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
+  gap: var(--goy-ds-space-2) var(--goy-ds-space-4);
+  margin: 0;
+}
+
+.facts > div {
+  min-width: 0;
+}
+
+.facts .wide {
+  grid-column: 1 / -1;
+}
+
+.facts dt {
+  color: var(--goy-ds-color-text-tertiary);
+  font-size: var(--goy-ds-font-size-xs);
+  line-height: 16px;
+}
+
+/* A long label code is shown whole on as many lines as it needs. */
+.facts dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* A quantity and its unit stay together and whole. */
+.facts .quantity {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow-wrap: normal;
+}
