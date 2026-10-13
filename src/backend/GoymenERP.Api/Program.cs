@@ -9,6 +9,7 @@ using GoymenERP.Api.PurchasingRuntime;
 using GoymenERP.Api.Search;
 using GoymenERP.Api.Observability;
 using GoymenERP.Api.OpenApi;
+using GoymenERP.Api.OrganizationRuntime;
 using GoymenERP.Api.ProductRuntime;
 using GoymenERP.Api.Security;
 using GoymenERP.Api.Shell;
@@ -44,6 +45,7 @@ using GoymenERP.Modules.Purchasing.Infrastructure.Shell;
 using GoymenERP.Modules.Manufacturing.Infrastructure;
 using GoymenERP.Modules.Manufacturing.Infrastructure.Shell;
 using GoymenERP.Modules.Organization.Infrastructure;
+using GoymenERP.Modules.Organization.Application.Contracts;
 using GoymenERP.Modules.Identity.Infrastructure;
 using GoymenERP.Modules.Product.Application.Contracts;
 using GoymenERP.Modules.Product.Infrastructure.PriceLists;
@@ -245,6 +247,9 @@ builder.Services.AddCounterpartyModule(
         builder.Environment.IsDevelopment()
         || builder.Environment.IsEnvironment("Testing")
         || isOpenApiDocumentGeneration);
+builder.Services.AddScoped<
+    IOrganizationLocationOperatorEligibilityPortV1,
+    CounterpartyOrganizationLocationOperatorEligibilityPortV1>();
 builder.Services.AddInventoryModule(
     builder.Configuration,
     (services, options) => options.AddInterceptors(
