@@ -761,6 +761,9 @@ public sealed partial class OpenApiContractGenerationTests
         new("get", "/api/v1/purchasing/orders/{id}/goods-receipts/{acceptanceId}/quantity-comparison", "GetPurchaseGoodsReceiptQuantityComparisonV1",
             AuthenticatedResponses("200:application/json", "404:application/problem+json", "503:application/problem+json"),
             ParameterValues: ["path:id:true:type:string;format:uuid", "path:acceptanceId:true:type:string;format:uuid"]),
+        new("get", "/api/v1/purchasing/orders/{id}/goods-receipts/{acceptanceId}", "GetPurchaseGoodsReceiptV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "404:application/problem+json", "503:application/problem+json"),
+            ParameterValues: ["path:id:true:type:string;format:uuid", "path:acceptanceId:true:type:string;format:uuid"]),
         new("get", "/api/v1/purchasing/orders/{id}/lines/{lineId}/goods-receipt-options", "GetPurchaseGoodsReceiptOptionsV1",
             AuthenticatedResponses("200:application/json", "404:application/problem+json", "503:application/problem+json"),
             ParameterValues: ["path:id:true:type:string;format:uuid", "path:lineId:true:type:string;format:uuid"]),
@@ -1103,6 +1106,7 @@ public sealed partial class OpenApiContractGenerationTests
             ["GetPurchaseOrderV1"] = "ref:PurchaseOrderReadDetailViewV1",
             ["ApprovePurchaseOrderV1"] = "ref:PurchaseOrderResponse",
             ["GetPurchaseGoodsReceiptsV1"] = "ref:PurchaseGoodsReceiptPageV1",
+            ["GetPurchaseGoodsReceiptV1"] = "ref:PurchaseGoodsReceiptDetailV1",
             ["GetPurchaseGoodsReceiptQuantityComparisonV1"] = "ref:PurchaseGoodsReceiptQuantityComparisonV1",
             ["GetPurchaseGoodsReceiptOptionsV1"] = "ref:PurchaseGoodsReceiptOptionsV1",
             ["RecordPurchaseGoodsReceiptV1"] = "ref:PurchaseGoodsReceiptResponseV1",
@@ -1321,6 +1325,7 @@ public sealed partial class OpenApiContractGenerationTests
         "GetPurchaseOrderV1",
         "ApprovePurchaseOrderV1",
         "GetPurchaseGoodsReceiptsV1",
+        "GetPurchaseGoodsReceiptV1",
         "GetPurchaseGoodsReceiptQuantityComparisonV1",
         "GetPurchaseGoodsReceiptOptionsV1",
         "RecordPurchaseGoodsReceiptV1",
@@ -1909,6 +1914,7 @@ public sealed partial class OpenApiContractGenerationTests
         "GetPurchaseOrderV1:404",
         "ApprovePurchaseOrderV1:404",
         "GetPurchaseGoodsReceiptsV1:404",
+        "GetPurchaseGoodsReceiptV1:404",
         "GetPurchaseGoodsReceiptQuantityComparisonV1:404",
         "GetPurchaseGoodsReceiptOptionsV1:404",
         "RecordPurchaseGoodsReceiptV1:404",
@@ -2414,6 +2420,7 @@ public sealed partial class OpenApiContractGenerationTests
             ["ApprovePurchaseOrderV1:409"] = ["concurrent_change", "purchasing_order_state", "purchasing_request_line_over_sourced", "same_key_payload_mismatch", "version_conflict"],
             ["ApprovePurchaseOrderV1:422"] = ["validation_failed"],
             ["GetPurchaseGoodsReceiptsV1:400"] = ["validation_failed"],
+            ["GetPurchaseGoodsReceiptV1:400"] = ["validation_failed"],
             ["RecordPurchaseGoodsReceiptV1:400"] =
                 ["command_metadata_invalid", "inventory_goods_receipt_invalid_request", "inventory_goods_receipt_quantity_invalid", "inventory_goods_receipt_version_invalid", "validation_failed"],
             ["RecordPurchaseGoodsReceiptV1:409"] =
@@ -3016,6 +3023,9 @@ public sealed partial class OpenApiContractGenerationTests
                     ("receipt", "ref:PurchaseGoodsReceiptViewV1"),
                     ("isReplay", "type:boolean"),
                     ("originalCorrelationId", "type:string")),
+                ["PurchaseGoodsReceiptDetailV1"] = ObjectSchema(
+                    ["receipt"],
+                    ("receipt", "ref:PurchaseGoodsReceiptViewV1")),
                 ["PurchaseGoodsReceiptViewV1"] = ObjectSchema(
                     ["companyId", "acceptanceId", "purchaseOrderId", "purchaseOrderLineId", "purchaseOrderVersion", "productId", "productVersion", "unitId", "acceptedQuantity", "remainingQuantity", "lotId", "labelId", "labelCode", "labelVersion", "movementId", "locationId", "measuredQuantityKg", "initialBlock", "occurredAtUtc"],
                     ("companyId", "type:string;format:uuid"),

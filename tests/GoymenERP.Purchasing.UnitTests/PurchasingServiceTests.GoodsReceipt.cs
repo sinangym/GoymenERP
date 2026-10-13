@@ -1,11 +1,105 @@
 using System.Text.Json;
 using GoymenERP.Modules.Purchasing.Application.Contracts;
+using GoymenERP.Modules.Purchasing.Domain.Quantities;
 
 namespace GoymenERP.Purchasing.UnitTests;
 
 // Synthetic owner-protocol evidence only. Real SQL rollback/reopen and actual authority remain independent host gates.
 public sealed partial class PurchasingServiceTests
 {
+    [Fact]
+    public async Task Receipt_detail_reopens_the_exact_owner_source_without_mutating_the_order()
+    {
+        var (world, reader, orderId, _, receipt) = await ReceiptDetailWorldAsync();
+        var stored = await world.Store.FindOrderAsync(orderId);
+        var version = stored!.Order.Version;
+        var acceptances = stored.Order.Acceptances.Count;
+
+        var detail = await world.Service(reads: reader).GetGoodsReceiptAsync(orderId, receipt.AcceptanceId);
+
+        Assert.Equal(receipt, detail.Receipt);
+        Assert.Equal(1, reader.Calls);
+        Assert.Equal((version, acceptances), (stored.Order.Version, stored.Order.Acceptances.Count));
+    }
+
+    [Fact]
+    public async Task Receipt_detail_rechecks_read_authority_after_the_owner_read()
+    {
+        var (world, reader, orderId, _, receipt) = await ReceiptDetailWorldAsync();
+        reader.BeforeReturn = () => world.Authority.Granted = false;
+
+        var refusal = await Assert.ThrowsAsync<PurchasingServiceException>(() =>
+            world.Service(reads: reader).GetGoodsReceiptAsync(orderId, receipt.AcceptanceId));
+
+        Assert.Equal(403, refusal.Status);
+        Assert.Equal(1, reader.Calls);
+    }
+
+    [Fact]
+    public async Task Receipt_detail_does_not_ask_the_owner_for_an_unknown_acceptance()
+    {
+        var (world, reader, orderId, _, _) = await ReceiptDetailWorldAsync();
+
+        var refusal = await Assert.ThrowsAsync<PurchasingServiceException>(() =>
+            world.Service(reads: reader).GetGoodsReceiptAsync(orderId, Guid.NewGuid()));
+
+        Assert.Equal((404, "not_found"), (refusal.Status, refusal.Code));
+        Assert.Equal(0, reader.Calls);
+    }
+
+    [Theory]
+    [InlineData("company")]
+    [InlineData("order")]
+    [InlineData("acceptance")]
+    [InlineData("line")]
+    [InlineData("product")]
+    [InlineData("product-version")]
+    [InlineData("unit")]
+    [InlineData("accepted")]
+    [InlineData("order-version")]
+    [InlineData("lot")]
+    [InlineData("label")]
+    [InlineData("label-code")]
+    [InlineData("label-version")]
+    [InlineData("movement")]
+    [InlineData("location")]
+    [InlineData("measured")]
+    [InlineData("remaining")]
+    [InlineData("block")]
+    [InlineData("time")]
+    public async Task Receipt_detail_refuses_an_inconsistent_owner_source(string fault)
+    {
+        var (world, reader, orderId, _, receipt) = await ReceiptDetailWorldAsync();
+        reader.Receipt = fault switch
+        {
+            "company" => receipt with { CompanyId = Guid.NewGuid() },
+            "order" => receipt with { PurchaseOrderId = Guid.NewGuid() },
+            "acceptance" => receipt with { AcceptanceId = Guid.NewGuid() },
+            "line" => receipt with { PurchaseOrderLineId = Guid.NewGuid() },
+            "product" => receipt with { ProductId = Guid.NewGuid() },
+            "product-version" => receipt with { ProductVersion = "8" },
+            "unit" => receipt with { UnitId = Guid.NewGuid() },
+            "accepted" => receipt with { AcceptedQuantity = "1.9" },
+            "order-version" => receipt with { PurchaseOrderVersion = "5" },
+            "lot" => receipt with { LotId = Guid.Empty },
+            "label" => receipt with { LabelId = Guid.Empty },
+            "label-code" => receipt with { LabelCode = " " },
+            "label-version" => receipt with { LabelVersion = "01" },
+            "movement" => receipt with { MovementId = Guid.Empty },
+            "location" => receipt with { LocationId = Guid.Empty },
+            "measured" => receipt with { MeasuredQuantityKg = "1.900" },
+            "remaining" => receipt with { RemainingQuantity = "08" },
+            "block" => receipt with { InitialBlock = "Unknown" },
+            "time" => receipt with { OccurredAtUtc = receipt.OccurredAtUtc.AddMinutes(1) },
+            _ => throw new ArgumentOutOfRangeException(nameof(fault)),
+        };
+
+        var refusal = await Assert.ThrowsAsync<PurchasingServiceException>(() =>
+            world.Service(reads: reader).GetGoodsReceiptAsync(orderId, receipt.AcceptanceId));
+
+        Assert.Equal((503, PurchaseGoodsReceiptCodesV1.SourceInvalid), (refusal.Status, refusal.Code));
+    }
+
     [Fact]
     public async Task Receipt_uses_post_stage_purchase_version_and_Free_with_two_independent_quantities()
     {
@@ -138,6 +232,56 @@ public sealed partial class PurchasingServiceTests
         var created = await world.Service().CreateOrderAsync(OrderOf(null, null, "10"), Metadata("create"));
         await world.Service().ApproveOrderAsync(created.Detail.Order.Id, new("2"), Metadata("approve"));
         return (world, new ReceiptRunner(), created.Detail.Order.Id, created.Detail.Lines[0].LineId);
+    }
+
+    private static async Task<(World World, ReceiptReader Reader, Guid Order, Guid Line, PurchaseGoodsReceiptViewV1 Receipt)>
+        ReceiptDetailWorldAsync()
+    {
+        var (world, _, orderId, lineId) = await ReceiptWorldAsync();
+        var request = ReceiptRequest();
+        var stored = await world.Store.FindOrderAsync(orderId) ?? throw new InvalidOperationException("Synthetic order is missing.");
+        var line = stored.Order.Lines.Single(candidate => candidate.Id == lineId);
+        stored.Order.RecordAcceptance(stored.Order.Version, request.AcceptanceId, lineId,
+            Quantity.Of(2m, QuantityUnit.Kilogram), request.OccurredAtUtc);
+        var receipt = new PurchaseGoodsReceiptViewV1(
+            Company,
+            request.AcceptanceId,
+            orderId,
+            lineId,
+            stored.Order.Version.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            line.ProductId,
+            "7",
+            line.UnitId,
+            "2",
+            "8",
+            request.LotId,
+            request.LabelId,
+            request.LabelCode,
+            "1",
+            request.MovementId,
+            request.LocationId,
+            request.MeasuredQuantityKg,
+            "Free",
+            request.OccurredAtUtc);
+        return (world, new ReceiptReader(receipt), orderId, lineId, receipt);
+    }
+
+    private sealed class ReceiptReader(PurchaseGoodsReceiptViewV1 receipt) : IPurchaseGoodsReceiptReadsV1
+    {
+        public PurchaseGoodsReceiptViewV1? Receipt { get; set; } = receipt;
+        public Action? BeforeReturn { get; set; }
+        public int Calls { get; private set; }
+
+        public Task<PurchaseGoodsReceiptOptionsV1> GetOptionsAsync(PurchaseReceiptSourceV1 source,
+            CancellationToken cancellationToken) => throw new NotSupportedException();
+
+        public Task<PurchaseGoodsReceiptViewV1?> GetReceiptAsync(Guid orderId, Guid acceptanceId,
+            CancellationToken cancellationToken)
+        {
+            Calls++;
+            BeforeReturn?.Invoke();
+            return Task.FromResult(Receipt);
+        }
     }
 
     private sealed class ReceiptRunner : IPurchaseGoodsReceiptTransactionV1, IPurchaseGoodsReceiptParticipantsV1

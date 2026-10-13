@@ -436,6 +436,77 @@ public sealed class PurchasingHttpAcceptanceTests(GoymenErpApiFactory factory) :
         Assert.DoesNotContain(ProductId.ToString(), payload, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public async Task Goods_receipt_detail_reopens_the_exact_stored_receipt_with_private_cache_headers()
+    {
+        var receipt = ReceiptDetail();
+        var service = new StubService
+        {
+            Receipt = (orderId, acceptanceId) =>
+            {
+                Assert.Equal(PurchaseOrderId, orderId);
+                Assert.Equal(AcceptanceId, acceptanceId);
+                return Task.FromResult(new PurchaseGoodsReceiptDetailV1(receipt));
+            }
+        };
+        using var host = CreateHost(service);
+        using var client = CreateClient(host);
+        using var response = await client.GetAsync(ReceiptPath(PurchaseOrderId, AcceptanceId));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        AssertPrivateNoStore(response);
+        var actual = await response.Content.ReadFromJsonAsync<PurchaseGoodsReceiptDetailV1>();
+        Assert.Equal(receipt, actual?.Receipt);
+        Assert.Equal(1, service.Calls);
+        Assert.False(response.Headers.Contains("Idempotency-Replayed"));
+    }
+
+    [Theory]
+    [InlineData(403, "forbidden")]
+    [InlineData(404, "not_found")]
+    [InlineData(503, "purchasing_goods_receipt_source_invalid")]
+    public async Task Goods_receipt_detail_refusal_exposes_no_protected_record(int status, string code)
+    {
+        var service = new StubService { Receipt = (_, _) => throw new PurchasingServiceException(status, code) };
+        using var host = CreateHost(service);
+        using var client = CreateClient(host);
+        using var response = await client.GetAsync(ReceiptPath(PurchaseOrderId, AcceptanceId));
+
+        Assert.Equal((HttpStatusCode)status, response.StatusCode);
+        AssertPrivateNoStore(response);
+        var payload = await response.Content.ReadAsStringAsync();
+        Assert.DoesNotContain(PurchaseOrderId.ToString(), payload, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(AcceptanceId.ToString(), payload, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("SENTETIK-RECEIPT-DETAIL", payload, StringComparison.Ordinal);
+        if (status == 503) Assert.DoesNotContain(code, payload, StringComparison.Ordinal);
+        else if (status == 403)
+            Assert.Equal("forbidden", JsonDocument.Parse(payload).RootElement.GetProperty("code").GetString());
+        else Assert.False(JsonDocument.Parse(payload).RootElement.TryGetProperty("code", out _));
+    }
+
+    [Fact]
+    public async Task Goods_receipt_detail_rejects_unknown_queries_before_owner_read_and_requires_authentication()
+    {
+        var service = new StubService { Receipt = (_, _) => Task.FromResult(new PurchaseGoodsReceiptDetailV1(ReceiptDetail())) };
+        using var host = CreateHost(service);
+        using var client = CreateClient(host);
+        using var invalid = await client.GetAsync(ReceiptPath(PurchaseOrderId, AcceptanceId) + "?unknown=1");
+        Assert.Equal(HttpStatusCode.BadRequest, invalid.StatusCode);
+        AssertPrivateNoStore(invalid);
+        using var anonymous = host.CreateClient();
+        using var denied = await anonymous.GetAsync(ReceiptPath(PurchaseOrderId, AcceptanceId));
+        Assert.Equal(HttpStatusCode.Unauthorized, denied.StatusCode);
+        Assert.Equal(0, service.Calls);
+    }
+
+    private static string ReceiptPath(Guid orderId, Guid acceptanceId) =>
+        $"{PurchasingApiV1.OrdersPath}/{orderId:D}/goods-receipts/{acceptanceId:D}";
+
+    private static PurchaseGoodsReceiptViewV1 ReceiptDetail() => new(
+        CompanyA, AcceptanceId, PurchaseOrderId, PurchaseOrderLineId, "7", ProductId, "3", UnitId,
+        "100.25", "400.75", Guid.NewGuid(), Guid.NewGuid(), "SENTETIK-RECEIPT-DETAIL", "1",
+        Guid.NewGuid(), Guid.NewGuid(), "101.75", "Blocked", DateTimeOffset.Parse("2026-10-13T00:00:00Z"));
+
     private static string OrderBody(bool sourceRequest = true, bool boundLine = true)
     {
         var source = sourceRequest ? $"\"{Guid.NewGuid():D}\"" : "null";
@@ -469,6 +540,7 @@ public sealed class PurchasingHttpAcceptanceTests(GoymenErpApiFactory factory) :
         {
             services.Replace(ServiceDescriptor.Scoped<IPurchasingService>(_ => service));
             services.Replace(ServiceDescriptor.Scoped<IPurchaseGoodsReceiptQuantityComparisonServiceV1>(_ => service));
+            services.Replace(ServiceDescriptor.Scoped<IPurchaseGoodsReceiptServiceV1>(_ => service));
             if (orderSource is not null)
             {
                 services.RemoveAll<IPurchasingOrderRecordReadSourceV1>();
@@ -505,7 +577,8 @@ public sealed class PurchasingHttpAcceptanceTests(GoymenErpApiFactory factory) :
         Assert.True(response.Headers.CacheControl?.NoStore);
     }
 
-    private sealed class StubService : IPurchasingService, IPurchaseGoodsReceiptQuantityComparisonServiceV1
+    private sealed class StubService : IPurchasingService, IPurchaseGoodsReceiptQuantityComparisonServiceV1,
+        IPurchaseGoodsReceiptServiceV1
     {
         public int Calls { get; private set; }
         public Func<Task<PurchaseRequestResponse>> CreateRequest { get; set; } = () => throw new InvalidOperationException("not expected");
@@ -515,6 +588,25 @@ public sealed class PurchasingHttpAcceptanceTests(GoymenErpApiFactory factory) :
         public Func<Guid, Task<PurchaseOrderDetailView>> GetOrder { get; set; } = _ => throw new InvalidOperationException("not expected");
         public Func<Guid, Guid, Task<PurchaseGoodsReceiptQuantityComparisonV1>> Comparison { get; set; }
             = (_, _) => throw new InvalidOperationException("not expected");
+        public Func<Guid, Guid, Task<PurchaseGoodsReceiptDetailV1>> Receipt { get; set; }
+            = (_, _) => throw new InvalidOperationException("not expected");
+
+        public Task<PurchaseGoodsReceiptDetailV1> GetGoodsReceiptAsync(Guid orderId, Guid acceptanceId,
+            CancellationToken cancellationToken = default)
+        {
+            Calls++;
+            return Receipt(orderId, acceptanceId);
+        }
+
+        public Task<PurchaseGoodsReceiptResponseV1> RecordGoodsReceiptAsync(Guid orderId, Guid lineId,
+            RecordPurchaseGoodsReceiptV1 request, PurchasingCommandMetadata metadata,
+            CancellationToken cancellationToken = default) => throw new InvalidOperationException("not expected");
+
+        public Task<PurchaseGoodsReceiptOptionsV1> GetGoodsReceiptOptionsAsync(Guid orderId, Guid lineId,
+            CancellationToken cancellationToken = default) => throw new InvalidOperationException("not expected");
+
+        public Task<PurchaseGoodsReceiptPageV1> GetGoodsReceiptsAsync(Guid orderId, int limit = 100,
+            CancellationToken cancellationToken = default) => throw new InvalidOperationException("not expected");
 
         public Task<PurchaseGoodsReceiptQuantityComparisonV1> GetGoodsReceiptQuantityComparisonAsync(
             Guid purchaseOrderId, Guid acceptanceId, CancellationToken cancellationToken = default)
