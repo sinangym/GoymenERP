@@ -197,8 +197,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // Record-bound Purchasing projection: +1 company/actor-fenced, single-query and non-disclosing SQL fact.
             // Contact information fresh authority: +5 late-revocation, replay, no-op and winner SQL facts.
             // GOY-UX-TEXT-FILTER-01: +1 same-address-row, pre-pagination address-filter SQL fact.
+            // Location operator eligibility: +1 exact-party, supplier-only, company/actor-fenced read-only SQL fact.
             ["tools/relational_inventory/counterparty.txt"] =
-                "170534ae1133deae2d0ee58303dd9dbcdaaec9d71c1b107805c1612500ddd195",
+                "39d6ec80210580f12fde1a889187802d772815e9192407722b357dd4ce26fe2b",
 
             // finance
             // DEC-FIN-014: +3 POS collection SQL facts (b18c13d9… -> 7af8ecf1…).
