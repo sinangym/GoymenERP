@@ -1,0 +1,199 @@
+/* FI04 open items on GOY-DS-001. The table's layout is the shared ui/DataTable; this file places the page's
+   heading, cells, phone cards and the detail's facts on the --goy-ds-* tokens. Nothing is hidden or cut to fit:
+   a long source kind or identity wraps on as many lines as it needs. */
+
+.page {
+  display: grid;
+  gap: var(--goy-ds-space-3);
+  padding: var(--goy-ds-space-1) 0 var(--goy-ds-space-4);
+  min-width: 0;
+  font-family: var(--goy-ds-font-sans);
+  color: var(--goy-ds-color-text);
+}
+
+.title {
+  margin: 0;
+  font-size: 1.25rem;
+  line-height: 28px;
+  font-weight: var(--goy-ds-font-weight-semibold);
+}
+
+/* What the view is ordered by and what it does not show, said once and quietly. */
+.note {
+  margin: 0;
+  color: var(--goy-ds-color-text-secondary);
+  font-size: var(--goy-ds-font-size-sm);
+  line-height: 18px;
+}
+
+.back,
+.recordLink,
+.facts a {
+  color: var(--goy-ds-color-accent-text);
+  font-weight: var(--goy-ds-font-weight-medium);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.back {
+  justify-self: start;
+  font-size: var(--goy-ds-font-size-sm);
+}
+
+.back:focus-visible,
+.recordLink:focus-visible,
+.facts a:focus-visible,
+.technical summary:focus-visible {
+  outline: 2px solid var(--goy-ds-color-accent);
+  outline-offset: 2px;
+}
+
+/* ── Cells ── */
+.nowrap {
+  white-space: nowrap;
+}
+
+/* The item is known by the end of its record id: the read carries no document number. */
+.recordLink,
+.record {
+  font-family: var(--goy-ds-font-mono);
+  font-size: var(--goy-ds-font-size-sm);
+}
+
+.kind {
+  min-width: 9rem;
+  overflow-wrap: anywhere;
+}
+
+/* An amount stays whole on one line, in tabular figures. */
+.amount {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* A withheld amount or status is said in words, quieter than a value. */
+.withheld {
+  color: var(--goy-ds-color-text-secondary);
+  font-size: var(--goy-ds-font-size-sm);
+}
+
+/* ── Continuation ── */
+.continuation {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--goy-ds-space-2);
+}
+
+/* ── Phone: one card per open item, every fact labelled ── */
+.cards {
+  display: grid;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--goy-ds-color-border);
+  border-radius: var(--goy-ds-radius-md);
+  background: var(--goy-ds-color-surface);
+}
+
+.card {
+  display: grid;
+  gap: var(--goy-ds-space-2);
+  padding: var(--goy-ds-space-3);
+  border-bottom: 1px solid var(--goy-ds-color-border);
+  font-size: var(--goy-ds-font-size-md);
+  line-height: 18px;
+  min-width: 0;
+}
+
+.card:last-child {
+  border-bottom: 0;
+}
+
+.cardHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--goy-ds-space-1) var(--goy-ds-space-2);
+}
+
+.cardRecord {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.label,
+.facts dt {
+  color: var(--goy-ds-color-text-tertiary);
+  font-size: var(--goy-ds-font-size-xs);
+  line-height: 16px;
+}
+
+/* Label above value, two columns; a wide fact takes the whole row. */
+.facts {
+  display: grid;
+  gap: 6px var(--goy-ds-space-3);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 0;
+}
+
+.facts div {
+  min-width: 0;
+}
+
+.facts .wide {
+  grid-column: 1 / -1;
+}
+
+.facts dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* A card's facts sit side by side only where two whole values fit; on the narrowest phone they stack. */
+.cardFacts {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 10.5rem), 1fr));
+}
+
+/* ── Detail ── */
+.detailFacts {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
+  gap: var(--goy-ds-space-3) var(--goy-ds-space-4);
+  padding: var(--goy-ds-space-3);
+  border: 1px solid var(--goy-ds-color-border);
+  border-radius: var(--goy-ds-radius-md);
+  background: var(--goy-ds-color-surface);
+  font-size: var(--goy-ds-font-size-md);
+  line-height: 18px;
+}
+
+/* The record's identities: out of the way until asked for, whole and selectable when open. */
+.technical {
+  display: grid;
+  gap: var(--goy-ds-space-2);
+  min-width: 0;
+  font-size: var(--goy-ds-font-size-md);
+}
+
+.technical summary {
+  justify-self: start;
+  cursor: pointer;
+  color: var(--goy-ds-color-text-secondary);
+  font-weight: var(--goy-ds-font-weight-medium);
+}
+
+.technical[open] summary {
+  margin-bottom: var(--goy-ds-space-2);
+}
+
+.ids {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr));
+  margin-top: var(--goy-ds-space-2);
+}
+
+.ids dd {
+  font-family: var(--goy-ds-font-mono);
+  font-size: var(--goy-ds-font-size-sm);
+}
