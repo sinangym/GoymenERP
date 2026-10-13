@@ -1339,6 +1339,7 @@ describe('ST-01 typed filters behind "Tüm filtreler"', () => {
     ['a dot', '1.5', 'Yalnız rakam yazın; ondalık için virgül kullanın, binlik ayırıcı kullanmayın (ör. 1250 veya 1,5).'],
     ['a grouped thousand', '1.250', 'Yalnız rakam yazın; ondalık için virgül kullanın, binlik ayırıcı kullanmayın (ör. 1250 veya 1,5).'],
     ['a fourth fraction digit', '1,2345', 'En çok üç ondalık basamak yazılabilir; değer yuvarlanmaz.'],
+    ['a leading zero', '03', 'Sayının başına sıfır yazmayın (ör. 3 veya 0,5).'],
     ['zero', '0', 'Sıfırdan büyük bir değer yazın.'],
   ])('refuses %s in a measure: said at the field, focused, nothing read and nothing rounded', async (_, typed, message) => {
     const user = userEvent.setup()
@@ -1656,5 +1657,179 @@ describe('ST-01 typed filters behind "Tüm filtreler"', () => {
     expect(rule('.filterPanel .select')).toContain('max-width: 100%')
     // Nothing here changes how text is written.
     expect(css).not.toMatch(/text-transform/)
+  })
+
+  describe('follow-up: what stays visible, connected and typed', () => {
+    const shown = (element: Element) => element.closest('[hidden]') === null
+    const describedText = (element: Element) => (element.getAttribute('aria-describedby') ?? '')
+      .split(' ').filter((id) => id !== '').map((id) => document.getElementById(id)?.textContent ?? null)
+
+    it('says a failed family read of a deep link with the panel closed, and reads it again from there', async () => {
+      const user = userEvent.setup()
+      api.families
+        .mockResolvedValueOnce({ type: 'http', status: 503, body: null })
+        .mockResolvedValue(familiesReady())
+      mount(`/stok/pozisyonlar?aile=${FAMILY_2}`)
+      await screen.findByRole('link', { name: 'ROLL-1' })
+      const alert = await screen.findByRole('alert')
+      expect(alert.textContent).toBe('Ürün ailesi listesi okunamadı.')
+      // The panel was never opened; the reason and the retry are outside it.
+      expect(screen.getByRole('button', { name: 'Tüm filtreler (1)' }).getAttribute('aria-expanded')).toBe('false')
+      expect(shown(alert)).toBe(true)
+      const retry = screen.getByRole('button', { name: 'Yeniden dene' })
+      expect(shown(retry)).toBe(true)
+      expect(chipTexts()).toEqual(['Ürün ailesi: seçili ürün ailesi'])
+      // The stock list answered for itself and is not read again by the retry.
+      expect(api.page).toHaveBeenCalledTimes(1)
+
+      await user.click(retry)
+      await waitFor(() => expect(chipTexts()).toEqual(['Ürün ailesi: Sac levha']))
+      // The retry button is gone with the failure; the focus is not dropped with it.
+      expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Tüm filtreler (1)' }))
+      expect(api.families).toHaveBeenCalledTimes(2)
+      expect(screen.queryByRole('alert')).toBeNull()
+      expect(screen.queryByRole('button', { name: 'Yeniden dene' })).toBeNull()
+      expect(api.page).toHaveBeenCalledTimes(1)
+    })
+
+    it('says a refused family read of a deep link with the panel closed, without a retry', async () => {
+      api.families.mockResolvedValue({ type: 'http', status: 403, body: null })
+      mount(`/stok/pozisyonlar?aile=${FAMILY_2}`)
+      await screen.findByRole('link', { name: 'ROLL-1' })
+      const alert = await screen.findByRole('alert')
+      expect(alert.textContent).toBe('Ürün ailesi listesini görme yetkiniz yok.')
+      expect(shown(alert)).toBe(true)
+      expect(screen.queryByRole('button', { name: 'Yeniden dene' })).toBeNull()
+      expect(auth.report).not.toHaveBeenCalled()
+    })
+
+    it('says the failure once: beside the selector when the panel is open, outside it when closed', async () => {
+      const user = userEvent.setup()
+      api.families.mockResolvedValue({ type: 'http', status: 503, body: null })
+      mount(`/stok/pozisyonlar?aile=${FAMILY_2}`)
+      await screen.findByRole('alert')
+      const panel = document.getElementById('stock-other-filters')!
+      expect(panel.contains(screen.getByRole('alert'))).toBe(false)
+
+      await openFilters(user)
+      expect(screen.getAllByRole('alert')).toHaveLength(1)
+      expect(panel.contains(screen.getByRole('alert'))).toBe(true)
+      expect(screen.getAllByRole('button', { name: 'Yeniden dene' })).toHaveLength(1)
+
+      await openFilters(user)
+      expect(screen.getAllByRole('alert')).toHaveLength(1)
+      expect(shown(screen.getByRole('alert'))).toBe(true)
+    })
+
+    it('does not say a family failure outside the panel when no family is filtered', async () => {
+      const user = userEvent.setup()
+      api.families.mockResolvedValue({ type: 'http', status: 503, body: null })
+      mount()
+      await screen.findByRole('link', { name: 'ROLL-1' })
+      await openFilters(user)
+      await screen.findByRole('alert')
+      await openFilters(user)
+      expect(screen.queryByRole('alert')).toBeNull()
+      expect(screen.queryByRole('button', { name: 'Yeniden dene' })).toBeNull()
+    })
+
+    it('describes the family selector by its loading and failure text, and by nothing once the list is read', async () => {
+      const user = userEvent.setup()
+      let answer: (value: unknown) => void = () => {}
+      api.families
+        .mockReturnValueOnce(new Promise((resolve) => { answer = resolve }))
+        .mockResolvedValue(familiesReady())
+      mount()
+      await screen.findByRole('link', { name: 'ROLL-1' })
+      await openFilters(user)
+      expect(describedText(family())).toEqual(['Ürün aileleri yükleniyor…'])
+
+      answer({ type: 'http', status: 503, body: null })
+      await screen.findByRole('alert')
+      expect(describedText(family())).toEqual(['Ürün ailesi listesi okunamadı.'])
+
+      await user.click(screen.getByRole('button', { name: 'Yeniden dene' }))
+      await waitFor(() => expect(family().disabled).toBe(false))
+      expect(family().getAttribute('aria-describedby')).toBeNull()
+    })
+
+    it('describes the selector by "not permitted" on a 403', async () => {
+      const user = userEvent.setup()
+      api.families.mockResolvedValue({ type: 'http', status: 403, body: null })
+      mount()
+      await screen.findByRole('link', { name: 'ROLL-1' })
+      await openFilters(user)
+      await screen.findByRole('alert')
+      expect(describedText(family())).toEqual(['Ürün ailesi listesini görme yetkiniz yok.'])
+    })
+
+    it('keeps what was typed for the other measure when one applied measure chip is removed', async () => {
+      const user = userEvent.setup()
+      mount('/stok/pozisyonlar?kalinlik=1.5')
+      await screen.findByRole('link', { name: 'ROLL-1' })
+      await openFilters(user)
+      await user.selectOptions(screen.getByRole('combobox', { name: 'En koşulu' }), 'Aralık')
+      await user.type(screen.getByRole('textbox', { name: 'En alt sınır (mm)' }), '1000')
+      await user.type(screen.getByRole('textbox', { name: 'En üst sınır (mm)' }), '1250')
+      expect(api.page).toHaveBeenCalledTimes(1)
+
+      await user.click(screen.getByRole('button', { name: 'Kalınlık: 1,5 mm filtresini kaldır' }))
+      await waitFor(() => expect(api.page).toHaveBeenLastCalledWith(COMPANY, NO_FILTERS, null, expect.any(AbortSignal)))
+      // One read for the removed chip; the unapplied width was not sent and is still in its fields.
+      expect(api.page).toHaveBeenCalledTimes(2)
+      expect(address()).toBe('/stok/pozisyonlar')
+      expect((screen.getByRole('textbox', { name: 'Kalınlık (mm)' }) as HTMLInputElement).value).toBe('')
+      expect((screen.getByRole('combobox', { name: 'En koşulu' }) as HTMLSelectElement).value).toBe('range')
+      expect((screen.getByRole('textbox', { name: 'En alt sınır (mm)' }) as HTMLInputElement).value).toBe('1000')
+      expect((screen.getByRole('textbox', { name: 'En üst sınır (mm)' }) as HTMLInputElement).value).toBe('1250')
+
+      // The kept draft is applied as typed.
+      await apply(user)
+      await waitFor(() => expect(api.page).toHaveBeenLastCalledWith(
+        COMPANY, { ...NO_FILTERS, widthMinMm: '1000', widthMaxMm: '1250' }, null, expect.any(AbortSignal)))
+    })
+
+    it('keeps a refused draft and its reason on the other measure when a chip is removed', async () => {
+      const user = userEvent.setup()
+      mount('/stok/pozisyonlar?kalinlik=1.5')
+      await screen.findByRole('link', { name: 'ROLL-1' })
+      await openFilters(user)
+      const width = screen.getByRole('textbox', { name: 'En (mm)' }) as HTMLInputElement
+      await user.type(width, '03')
+      await apply(user)
+      await waitFor(() => expect(width.getAttribute('aria-invalid')).toBe('true'))
+      expect(describedText(width).at(-1)).toBe('Sayının başına sıfır yazmayın (ör. 3 veya 0,5).')
+      expect(api.page).toHaveBeenCalledTimes(1)
+
+      await user.click(screen.getByRole('button', { name: 'Kalınlık: 1,5 mm filtresini kaldır' }))
+      await waitFor(() => expect(api.page).toHaveBeenCalledTimes(2))
+      const still = screen.getByRole('textbox', { name: 'En (mm)' }) as HTMLInputElement
+      expect(still.value).toBe('03')
+      expect(still.getAttribute('aria-invalid')).toBe('true')
+      expect(address()).toBe('/stok/pozisyonlar')
+    })
+
+    it('still empties typed and unapplied measures on "Filtreleri temizle"', async () => {
+      const user = userEvent.setup()
+      mount('/stok/pozisyonlar?kalinlik=1.5')
+      await screen.findByRole('link', { name: 'ROLL-1' })
+      await openFilters(user)
+      await user.type(screen.getByRole('textbox', { name: 'En (mm)' }), '1250')
+      await user.click(screen.getByRole('button', { name: 'Filtreleri temizle' }))
+      await waitFor(() => expect(api.page).toHaveBeenLastCalledWith(COMPANY, NO_FILTERS, null, expect.any(AbortSignal)))
+      expect((screen.getByRole('textbox', { name: 'Kalınlık (mm)' }) as HTMLInputElement).value).toBe('')
+      expect((screen.getByRole('textbox', { name: 'En (mm)' }) as HTMLInputElement).value).toBe('')
+    })
+
+    it('accepts 0,5 and sends it as typed', async () => {
+      const user = userEvent.setup()
+      mount()
+      await screen.findByRole('link', { name: 'ROLL-1' })
+      await openFilters(user)
+      await user.type(screen.getByRole('textbox', { name: 'Kalınlık (mm)' }), '0,5')
+      await apply(user)
+      await waitFor(() => expect(api.page).toHaveBeenLastCalledWith(
+        COMPANY, { ...NO_FILTERS, thicknessMm: '0.5' }, null, expect.any(AbortSignal)))
+    })
   })
 })
