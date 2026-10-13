@@ -46,6 +46,10 @@ export const FINANCE_CAPABILITY = {
   officialInvoiceImportApprove: 'finance.official-invoice-import.approve',
   allocationsList: 'finance.allocations.list',
   allocationsWrite: 'finance.allocations.write',
+  /** FI04 Açık kalemler — the company's admitted open items, read-only. */
+  openItemsList: 'finance.open-items.list',
+  /** FI04 — one open item, reached from a row. Money and status stay the amount authority's (not a capability). */
+  openItemsDetail: 'finance.open-items.detail',
 } as const
 
 export type FinanceCapabilityId = (typeof FINANCE_CAPABILITY)[keyof typeof FINANCE_CAPABILITY]
@@ -65,9 +69,13 @@ export const FINANCE_ROUTE = {
   officialInvoiceImportUpload: '/finans/onayli-fatura-taksit-kaynagi-yukle',
   officialInvoiceImportApprove: '/finans/resmi-fatura-aktarim-onaylari',
   allocationsList: '/finans/dagitimlar',
+  openItemsList: '/finans/acik-kalemler',
+  openItemsDetail: '/finans/acik-kalemler/:openItemId',
 } as const
 
 export const receiptDetailPath = (sourceId: string) => `/finans/tahsilatlar/${encodeURIComponent(sourceId)}`
+
+export const openItemDetailPath = (openItemId: string) => `/finans/acik-kalemler/${encodeURIComponent(openItemId)}`
 
 export const manualBankPaymentDetailPath = (paymentId: string) =>
   `/finans/odemeler/${encodeURIComponent(paymentId)}`

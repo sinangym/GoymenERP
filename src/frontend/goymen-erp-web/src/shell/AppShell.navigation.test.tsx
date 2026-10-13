@@ -245,6 +245,18 @@ describe('navigation groups are headings, never permissions', () => {
       .toBeNull()
   })
 
+  it('lists Açık kalemler under Finans for the open-item list capability, and never for the detail alone', async () => {
+    const navigation = await renderShell('/', [CAPABILITY.financeOpenItemsList, CAPABILITY.financeOpenItemsDetail])
+
+    expect(within(navigation).getAllByRole('button').map((button) => button.textContent)).toEqual(['Finans'])
+    const link = within(navigation).getByRole('link', { name: 'Açık kalemler' })
+    expect(link.getAttribute('href')).toBe(CAPABILITY_ROUTE[CAPABILITY.financeOpenItemsList])
+    expect(CAPABILITY_NAV_LABEL[CAPABILITY.financeOpenItemsDetail]).toBe('')
+    const finance = NAV_GROUPS.find((group) => group.id === 'finance')
+    expect(finance?.entries).toContain(CAPABILITY.financeOpenItemsList)
+    expect(finance?.entries).not.toContain(CAPABILITY.financeOpenItemsDetail)
+  })
+
   it('hides every group, but keeps the home link and the honest empty state, when nothing is granted', async () => {
     const navigation = await renderShell('/', [])
 
