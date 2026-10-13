@@ -659,6 +659,32 @@ describe('ST-01 on a phone', () => {
     expect(screen.getByRole('table')).toBeTruthy()
     expect(api.page).toHaveBeenCalledTimes(1)
   })
+
+  // The shell keeps its sidebar from 768px, so the pinned columns leave the Product column no room there: the name
+  // ended up under "Etiket" (real R14 finding at 768). The cards therefore reach up to 1023px, not only the phone.
+  it.each([
+    [320, 'cards'], [390, 'cards'], [767, 'cards'], [768, 'cards'], [769, 'cards'], [800, 'cards'], [1023, 'cards'],
+    [1024, 'table'], [1366, 'table'], [1440, 'table'],
+  ] as const)('at a %ipx window the rows are %s', async (width, layout) => {
+    vi.stubGlobal('matchMedia', vi.fn((query: string) => {
+      const limit = /^\(max-width: (\d+)px\)$/.exec(query)
+      if (limit === null) throw new Error(`unexpected media query: ${query}`)
+      return {
+        matches: width <= Number(limit[1]), media: query, onchange: null,
+        addEventListener: () => {}, removeEventListener: () => {}, addListener: () => {}, removeListener: () => {},
+        dispatchEvent: () => false,
+      }
+    }))
+    mount()
+    await screen.findByRole('link', { name: 'ROLL-1' })
+    expect(screen.queryByRole('table') === null ? 'cards' : 'table').toBe(layout)
+    expect(screen.queryByTestId('stock-position-cards') === null ? 'table' : 'cards').toBe(layout)
+    // One DOM per row in either layout, with the four quantities.
+    expect(screen.getAllByRole('link', { name: 'ROLL-1' })).toHaveLength(1)
+    for (const quantity of ['Fiziksel kg', 'Bloklu kg', 'Tahsisli kg', 'Kullanılabilir kg']) {
+      expect(screen.getAllByText(quantity).length).toBeGreaterThan(0)
+    }
+  })
 })
 
 /**

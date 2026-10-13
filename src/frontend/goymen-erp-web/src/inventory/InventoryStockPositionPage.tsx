@@ -317,8 +317,13 @@ type FamilyState =
   | { readonly type: 'ready'; readonly items: readonly StockProductFamilyOption[] }
   | { readonly type: 'failed'; readonly forbidden: boolean }
 
-/** The shell's phone width (`AppShell` COMPACT_VIEWPORT): rows become cards instead of a squeezed table. */
-const CARD_VIEWPORT = '(max-width: 767px)'
+/**
+ * Below this width rows are cards instead of a squeezed table. It is wider than the shell's phone width on purpose:
+ * from 768px the shell keeps its sidebar, so the list has about 280px less than the window, and the pinned Etiket,
+ * Kullanılabilir and İşlemler columns then leave the scrolling columns a band narrower than the Product column —
+ * its name ends up under a pinned column. At 1024px the band is still wider than that column.
+ */
+const CARD_VIEWPORT = '(max-width: 1023px)'
 
 function subscribeCards(onChange: () => void): () => void {
   if (typeof window.matchMedia !== 'function') return () => {}
