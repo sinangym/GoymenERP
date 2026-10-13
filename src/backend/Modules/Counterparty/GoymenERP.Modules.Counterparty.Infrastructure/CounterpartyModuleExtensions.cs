@@ -55,6 +55,9 @@ public static class CounterpartyModuleExtensions
             ICounterpartyInventoryStockOwnerDisplaySourceV1,
             CounterpartyInventoryStockOwnerDisplaySourceV1>();
         services.AddScoped<
+            ICounterpartyLocationOperatorEligibilitySourceV1,
+            CounterpartyLocationOperatorEligibilitySourceV1>();
+        services.AddScoped<
             ICounterpartyManufacturingPartyAccountSourceV1,
             CounterpartyManufacturingPartyAccountSourceV1>();
         services.AddScoped<ICounterpartyLinkCandidateReadService, CounterpartyLinkCandidateReadService>();
@@ -72,6 +75,9 @@ public static class CounterpartyModuleExtensions
         services.TryAddSingleton<
             ICounterpartyInventoryStockOwnerDisplaySqlObserver,
             NullCounterpartyInventoryStockOwnerDisplaySqlObserver>();
+        services.TryAddSingleton<
+            ICounterpartyLocationOperatorEligibilitySqlObserver,
+            NullCounterpartyLocationOperatorEligibilitySqlObserver>();
         services.TryAddSingleton<
             ICounterpartyLinkCandidateSqlObserver,
             NullCounterpartyLinkCandidateSqlObserver>();

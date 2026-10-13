@@ -3,6 +3,18 @@
 Only the AT-009 slice is described here; the earlier Cari slices are documented in `docs/features/CARI_*` and
 `docs/handoffs/CARI_*`.
 
+## Location operator eligibility source v1
+
+`ICounterpartyLocationOperatorEligibilitySourceV1` is the exact, company-scoped Cari
+answer for an Organization location command that has already authorized its own operation.
+It accepts the current server company/actor and one proposed `PartyId`; it never exposes a
+Cari list, search or card endpoint and grants no authority. An eligible operator is an active
+Party with an active, unique account in that company carrying the existing `Supplier` role.
+`Tolling` remains independent and does not substitute for `Supplier`. Missing/foreign,
+inactive and non-supplier records are closed outcomes with no display payload. The source
+writes no assignment, audit, idempotency, outbox or domain record; Organization relation
+storage and seed Party mapping are separate delivery slices.
+
 ## AT-009 — VKN/TCKN on the Cari card (user decision 2026-09-30)
 
 | Rule | Behaviour |
