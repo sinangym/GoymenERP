@@ -1041,7 +1041,7 @@ class WorkflowTests(unittest.TestCase):
         )
 
         creator_assignments = [
-            index for index in range(7, 13)
+            index for index in range(7, 14)
             if environment[f"IdentitySeed__Assignments__{index}__UserId"]
             == "b2000000-0000-4000-8000-000000000603"
         ]
@@ -1069,7 +1069,10 @@ class WorkflowTests(unittest.TestCase):
             "Scopes__0__Type", "Scopes__0__Id",
         ):
             del missing_creator_other[f"IdentitySeed__Assignments__12__{field}"]
-        with self.assertRaisesRegex(ValueError, "exactly six assignments"):
+        with self.assertRaisesRegex(
+            ValueError,
+            "suite assignments must continue the built-in seed contiguously from index 7",
+        ):
             validator.validate_suite_extensions("pur01", missing_creator_other)
 
         leaked_to_reader = dict(environment)
@@ -1097,6 +1100,42 @@ class WorkflowTests(unittest.TestCase):
         del missing_product_read["IdentitySeed__Roles__9__Permissions__2"]
         with self.assertRaisesRegex(ValueError, "pur01-stock-reader requires its exact isolated permissions"):
             validator.validate_suite_extensions("pur01", missing_product_read)
+
+    def test_pur01_receipt_detail_reader_combines_only_existing_read_fences_and_fails_closed_on_drift(self):
+        environment = self._pur01_environment()
+
+        validator.validate_suite_extensions("pur01", environment)
+
+        self.assertEqual(
+            (
+                "purchasing.orders.read",
+                "inventory.labels.read",
+                "inventory.balances.read",
+                "product.operational-selection.read",
+            ),
+            tuple(environment[f"IdentitySeed__Roles__10__Permissions__{index}"] for index in range(4)),
+        )
+        self.assertEqual(
+            "BROWSER_PUR01_RECEIPT_DETAIL_READER",
+            environment["IdentitySeed__Roles__10__Code"],
+        )
+
+        command_grant = self._pur01_environment()
+        command_grant["IdentitySeed__Roles__10__Permissions__4"] = "purchasing.goods-receipts.record"
+        with self.assertRaisesRegex(
+            ValueError,
+            "pur01-receipt-detail-reader requires its exact isolated permissions",
+        ):
+            validator.validate_suite_extensions("pur01", command_grant)
+
+        company_drift = self._pur01_environment()
+        company_drift["IdentitySeed__Assignments__13__CompanyId"] = "10000000-0000-0000-0000-000000000002"
+        company_drift["IdentitySeed__Assignments__13__Scopes__0__Id"] = "10000000-0000-0000-0000-000000000002"
+        with self.assertRaisesRegex(
+            ValueError,
+            "pur01-receipt-detail-reader requires its exact isolated company assignments",
+        ):
+            validator.validate_suite_extensions("pur01", company_drift)
 
     def test_pur01_document_permission_drift_fails_closed(self):
         reader_grant = self._pur01_environment()

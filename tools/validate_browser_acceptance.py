@@ -387,7 +387,8 @@ SUITE_IDENTITY_PERMISSIONS = {
     # this closed list grants nothing outside the disposable normal profile.
     # PUR-HOST (#478, user decision #5831467690): the disposable receiver adds only goods-receipts.record, and a
     # separate stock reader adds the two Inventory label reads plus Product's operational-selection owner read
-    # required by the Inventory screen that shows the SAME received label.
+    # required by the Inventory screen that shows the SAME received label. The read-only receipt-detail actor
+    # combines those existing reads with orders.read; it owns no receipt command.
     "pur01": ("purchasing.orders.read", "purchasing.orders.approve", "purchasing.orders.create",
               "counterparty.parties.read", "product.operational-selection.read",
               "documents.files.read", "documents.files.upload",
@@ -638,10 +639,15 @@ def validate_suite_identity(suite: str, extra: dict, actor_ids: list[str]) -> No
             "pur01-stock-reader": ("BROWSER_PUR01_STOCK_READER",
                                    ("inventory.labels.read", "inventory.balances.read",
                                     "product.operational-selection.read")),
+            "pur01-receipt-detail-reader": (
+                "BROWSER_PUR01_RECEIPT_DETAIL_READER",
+                ("purchasing.orders.read", "inventory.labels.read", "inventory.balances.read",
+                 "product.operational-selection.read"),
+            ),
         }
         require(set(actor_ids) == set(expected), "pur01 requires its exact disposable actor set")
-        require(len(roles) == len(expected) and len(grouped["Assignments"]) == 6,
-                "pur01 requires five isolated roles and exactly six assignments")
+        require(len(roles) == len(expected) and len(grouped["Assignments"]) == 7,
+                "pur01 requires six isolated roles and exactly seven assignments")
         actor_users = {subject: identity_id for identity_id, subject in users.items()}
         company_gdc = "10000000-0000-0000-0000-000000000001"
         company_other = "10000000-0000-0000-0000-000000000002"
