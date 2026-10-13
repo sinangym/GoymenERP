@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { fetchGoodsReceiptOptions, fetchGoodsReceiptQuantityComparison, fetchGoodsReceipts, recordGoodsReceipt } from './goodsReceiptApi'
 import { receiptQuantityInput, type GoodsReceipt, type GoodsReceiptRequest, type GoodsReceiptResponse } from './goodsReceiptContract'
 import { recallReceiptAttempt, receiptIdentity, reserveReceiptAttempt, settleReceiptAttempt, type ReceiptAttempt } from './goodsReceiptAttempt'
+import { GoodsReceiptDetail } from './GoodsReceiptDetail'
 import { GoodsReceiptQuantityComparison } from './GoodsReceiptQuantityComparison'
 import { GOODS_RECEIPT_TEXT as T } from './goodsReceiptText'
 import type { PurchaseOrderDetail, PurchaseOrderLine } from './contract'
@@ -66,6 +67,7 @@ function ReceiptHistoryItem({ binding, detail, receipt }: {
       : <StateBlock subject={T.comparisonHeading}
           state={comparison.data === undefined ? { kind: 'initial-loading' } : classifyOutcome(comparison.data)}
           onRetry={() => void comparison.refetch()} />}
+    <GoodsReceiptDetail binding={binding} detail={detail} acceptanceId={receipt.acceptanceId} labelCode={receipt.labelCode} />
   </li>
 }
 

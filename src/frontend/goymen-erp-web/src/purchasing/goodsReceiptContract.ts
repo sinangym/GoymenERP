@@ -97,6 +97,17 @@ export function decodeGoodsReceiptPage(value: unknown, detail: PurchaseOrderDeta
   return { items, searchWindowFull: body.searchWindowFull }
 }
 
+/**
+ * GET one receipt (`PurchaseGoodsReceiptDetailV1`): exactly `{ receipt }` — not the command answer (`isReplay`,
+ * `originalCorrelationId`) and not a page. The receipt must be the one that was asked for, in the order that is open.
+ */
+export function decodeGoodsReceiptDetail(value: unknown, detail: PurchaseOrderDetail, acceptanceId: string): GoodsReceipt | null {
+  const body = record(value)
+  if (body === null || Object.keys(body).length !== 1 || !('receipt' in body)) return null
+  const receipt = decodeGoodsReceipt(body.receipt, detail)
+  return receipt === null || receipt.acceptanceId !== acceptanceId ? null : receipt
+}
+
 export function decodeGoodsReceiptOptions(value: unknown, detail: PurchaseOrderDetail, line: PurchaseOrderLine): GoodsReceiptOptions | null {
   const body = record(value)
   const source = record(body?.source)
