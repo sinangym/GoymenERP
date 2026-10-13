@@ -70321,8 +70321,7 @@
       "FinanceOpenItemStatusV1": {
         "enum": [
           "Open",
-          "Closed",
-          null
+          "Closed"
         ]
       },
       "FinanceOpenItemViewV1": {

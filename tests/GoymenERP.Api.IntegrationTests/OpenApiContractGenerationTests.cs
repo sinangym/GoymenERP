@@ -4081,7 +4081,7 @@ public sealed partial class OpenApiContractGenerationTests
                     ("createdAtUtc", "type:string;format:date-time"),
                     ("initialAmount", "ref:AmountView"),
                     ("outstandingAmount", "ref:AmountView")),
-                ["FinanceOpenItemStatusV1"] = ScalarSchema("enum:Open|Closed|"),
+                ["FinanceOpenItemStatusV1"] = ScalarSchema("enum:Open|Closed"),
                 ["PartyLedgerCarryForward"] = ScalarSchema("enum:NoneOpen018"),
                 ["PartyLedgerCurrency"] = ObjectSchema(
                     ["currencyId", "entries", "debitTotal", "creditTotal", "closingBalance"],

@@ -72,6 +72,7 @@ public sealed class FinanceOpenItemReadHttpAcceptanceTests(GoymenErpApiFactory f
         Assert.Equal(["companyId", "items", "nextCursor"], body.RootElement.EnumerateObject().Select(p => p.Name).Order().ToArray());
         var item = Assert.Single(body.RootElement.GetProperty("items").EnumerateArray());
         Assert.Equal(JsonValueKind.Null, item.GetProperty("status").ValueKind);
+        AssertStatusMatchesExactlyOnePublishedBranch(item.GetProperty("status"));
         foreach (var property in new[] { "initialAmount", "outstandingAmount" })
         {
             var amount = item.GetProperty(property);
@@ -87,10 +88,20 @@ public sealed class FinanceOpenItemReadHttpAcceptanceTests(GoymenErpApiFactory f
         Assert.Equal(TestCompanyIds.CompanyA, service.Context?.CompanyId);
     }
 
-    [Fact]
-    public async Task Owner_disclosed_money_and_source_versions_round_trip_without_transformation()
+    [Theory]
+    [InlineData(FinanceOpenItemStatusV1.Open)]
+    [InlineData(FinanceOpenItemStatusV1.Closed)]
+    public async Task Owner_disclosed_money_and_source_versions_round_trip_without_transformation(FinanceOpenItemStatusV1 status)
     {
-        var service = new CapturingService { Resource = Item(visible: true) };
+        var service = new CapturingService
+        {
+            Resource = Item(visible: true) with
+            {
+                Status = status,
+                OutstandingAmount = new(AmountDisclosure.Visible,
+                    new MoneyText(status == FinanceOpenItemStatusV1.Closed ? "0" : "99999.01", CurrencyId)),
+            },
+        };
         using var host = Host(service);
         using var client = Client(host);
         using var response = await client.GetAsync(DetailPath);
@@ -101,6 +112,8 @@ public sealed class FinanceOpenItemReadHttpAcceptanceTests(GoymenErpApiFactory f
         Assert.Equal(ItemId, service.ItemId);
         Assert.Equal("9007199254740993", result?.SourceVersion);
         Assert.Equal("123456.78", result?.InitialAmount.Money?.Amount);
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        AssertStatusMatchesExactlyOnePublishedBranch(body.RootElement.GetProperty("status"));
     }
 
     [Theory]
@@ -185,6 +198,38 @@ public sealed class FinanceOpenItemReadHttpAcceptanceTests(GoymenErpApiFactory f
         Assert.True(response.Headers.CacheControl?.Private);
         Assert.True(response.Headers.CacheControl?.NoStore);
         Assert.Contains("no-cache", response.Headers.Pragma.ToString(), StringComparison.Ordinal);
+    }
+
+    // Validates the oneOf/null/ref/enum status fragment against actual HTTP JSON; not a full schema validator.
+    // The previous generated enum included null as well, so an actual redacted null matched two branches.
+    private static void AssertStatusMatchesExactlyOnePublishedBranch(JsonElement actualStatus)
+    {
+        var root = new DirectoryInfo(AppContext.BaseDirectory);
+        while (root is not null && !File.Exists(Path.Combine(root.FullName, "artifacts", "openapi.json")))
+            root = root.Parent;
+        Assert.NotNull(root);
+        using var contract = JsonDocument.Parse(File.ReadAllBytes(Path.Combine(root.FullName, "artifacts", "openapi.json")));
+        var schemas = contract.RootElement.GetProperty("components").GetProperty("schemas");
+        var status = schemas.GetProperty(nameof(FinanceOpenItemViewV1)).GetProperty("properties").GetProperty("status");
+        var branches = status.GetProperty("oneOf").EnumerateArray().ToArray();
+        Assert.Equal(2, branches.Length);
+        var matches = 0;
+        foreach (var branch in branches)
+        {
+            if (branch.TryGetProperty("type", out var type))
+            {
+                Assert.Equal("null", type.GetString());
+                if (actualStatus.ValueKind == JsonValueKind.Null) matches++;
+            }
+            else
+            {
+                var reference = branch.GetProperty("$ref").GetString();
+                Assert.Equal("#/components/schemas/FinanceOpenItemStatusV1", reference);
+                var values = schemas.GetProperty(nameof(FinanceOpenItemStatusV1)).GetProperty("enum").EnumerateArray();
+                if (values.Any(value => JsonElement.DeepEquals(value, actualStatus))) matches++;
+            }
+        }
+        Assert.Equal(1, matches);
     }
 
     private static FinanceOpenItemViewV1 Item(bool visible = false) => new(
