@@ -255,8 +255,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // organization
             // ORG master edit: +2 OrganizationMasterDataSqlServerRelationalAcceptanceTests facts (6b504dac… -> 3bad6ad8…).
             // Location display reader: +1 real-SQL tenant/display identity fact.
+            // ORG-LOCATION-OPERATOR-CRUD-01A: +1 real-SQL persistence/concurrency/destination-read fact.
             ["tools/relational_inventory/organization.txt"] =
-                "f10ed555fa8ca86e164ed096eb4196307e5712f709e36878d4ad9f83594bb6b2",
+                "efe72cd6a27a4a84ec51baaa23da3401359f4a9e5b97362b0d435a2383278ea8",
 
             // platform
             // AT-002: +2 GlobalSearchSqlServerRelationalAcceptanceTests facts (5bc60202… -> a5df5046…).
