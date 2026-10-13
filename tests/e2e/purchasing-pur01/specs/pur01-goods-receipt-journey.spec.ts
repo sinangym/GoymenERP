@@ -239,8 +239,11 @@ async function assertReceiptDetailLabelRoundTrip(page: Page, orderId: string, re
 
     const detailPath = `${ORDERS_PATH}/${orderId}/goods-receipts/${receipt.acceptanceId}`
     const detailAnswer = page.waitForResponse((response) => isCall(response, 'GET', detailPath))
-    await page.getByTestId(`purchase-order-acceptance-${receipt.acceptanceId}`)
-      .getByRole('button', { name: 'Mal kabulü ayrıntısını aç', exact: true }).click()
+    const detailRow = page.getByTestId(`purchase-order-acceptance-detail-${receipt.acceptanceId}`)
+    await detailRow.getByRole('button', {
+      name: `Mal kabul ayrıntısı: satır 1, miktar ${receipt.acceptedQuantity}, ${receipt.occurredAtUtc}`,
+      exact: true,
+    }).click()
     expect((await detailAnswer).status()).toBe(200)
 
     const detail = page.getByTestId(`goods-receipt-detail-${receipt.acceptanceId}`)
@@ -251,7 +254,7 @@ async function assertReceiptDetailLabelRoundTrip(page: Page, orderId: string, re
 
     const labelAnswer = page.waitForResponse((response) =>
       isCall(response, 'GET', `/api/v1/inventory/labels/${receipt.labelId}/detail`))
-    await detail.getByRole('link', { name: receipt.labelCode, exact: true }).click()
+    await detail.getByRole('link', { name: `${receipt.labelCode} etiket kartını aç`, exact: true }).click()
     expect((await labelAnswer).status()).toBe(200)
     await expect(page.getByRole('heading', { level: 1, name: receipt.labelCode, exact: true })).toBeVisible()
 
