@@ -25,6 +25,7 @@ const LIST_ROUTE = '/satinalma/siparisler'
 const LABEL_ROUTE = '/stok/etiket'
 const RECEIPT_CAPABILITY = 'purchasing.goods-receipts.record'
 const STOCK_LABEL_CAPABILITY = 'inventory.stock-positions.list'
+const RECEIPT_DETAIL_READER_ACTOR = 'pur01-receipt-detail-reader'
 const EFFECTIVE_ON = '2026-09-18'
 const ORDER_LINE_ID = '7b1c0f2e-0000-4a00-8000-000000000201'
 const ORDERED = '10'
@@ -230,6 +231,36 @@ function lineRow(page: Page) {
   return page.getByTestId('purchase-order-line-1').filter({ hasText: productId })
 }
 
+async function assertReceiptDetailLabelRoundTrip(page: Page, orderId: string, receipt: Receipt): Promise<void> {
+  for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
+    await page.setViewportSize(viewport)
+    await signInAs(page, RECEIPT_DETAIL_READER_ACTOR)
+    await openOrderFromList(page, orderId)
+
+    const detailPath = `${ORDERS_PATH}/${orderId}/goods-receipts/${receipt.acceptanceId}`
+    const detailAnswer = page.waitForResponse((response) => isCall(response, 'GET', detailPath))
+    await page.getByTestId(`purchase-order-acceptance-${receipt.acceptanceId}`)
+      .getByRole('button', { name: 'Mal kabulü ayrıntısını aç', exact: true }).click()
+    expect((await detailAnswer).status()).toBe(200)
+
+    const detail = page.getByTestId(`goods-receipt-detail-${receipt.acceptanceId}`)
+    await expect(detail).toBeVisible()
+    await expect(detail).toContainText(receipt.labelCode)
+    await expect(detail).toContainText(receipt.acceptedQuantity)
+    await expect(detail).toContainText(receipt.measuredQuantityKg)
+
+    const labelAnswer = page.waitForResponse((response) =>
+      isCall(response, 'GET', `/api/v1/inventory/labels/${receipt.labelId}/detail`))
+    await detail.getByRole('link', { name: receipt.labelCode, exact: true }).click()
+    expect((await labelAnswer).status()).toBe(200)
+    await expect(page.getByRole('heading', { level: 1, name: receipt.labelCode, exact: true })).toBeVisible()
+
+    await page.goBack()
+    await expect(page.getByTestId(`goods-receipt-detail-${receipt.acceptanceId}`)).toBeVisible()
+    await expect(page.getByText(orderId, { exact: true })).toBeVisible()
+  }
+}
+
 /**
  * Closes whatever is open by going to the real list, then opens the order from its own record there (row or card,
  * by the viewport). `arm` runs once the list is on screen and before the order's link is clicked, so a response
@@ -317,7 +348,7 @@ const ONCE: ReceiptEffects = {
   receiptMovementById: 1, labelMovementLines: 1, inventoryCommands: 1,
 }
 
-test('PUR01-GR records one partial receipt in the browser, reopens it, finds the same Free company label in Inventory and replays the same key once; non-receivers get no control', async ({ page }) => {
+test('PUR01-GR records once, reopens, follows the read-only receipt detail to the same label and back at 1440/390, then replays once; non-receivers get no control', async ({ page }) => {
   test.setTimeout(240_000)
   const pool = await new sql.ConnectionPool(sqlConnection).connect()
   try {
@@ -331,6 +362,11 @@ test('PUR01-GR records one partial receipt in the browser, reopens it, finds the
     const stockCapabilities = await capabilitiesOf(page, stockReaderActor)
     expect(stockCapabilities).toContain(STOCK_LABEL_CAPABILITY)
     expect(stockCapabilities.filter((id) => id.startsWith('purchasing.'))).toEqual([])
+    const receiptDetailReaderCapabilities = await capabilitiesOf(page, RECEIPT_DETAIL_READER_ACTOR)
+    expect(receiptDetailReaderCapabilities).toEqual(expect.arrayContaining([
+      'purchasing.orders.list', 'purchasing.orders.detail', STOCK_LABEL_CAPABILITY,
+    ]))
+    expect(receiptDetailReaderCapabilities).not.toContain(RECEIPT_CAPABILITY)
 
     const approved = await arrangeApprovedOrder(page)
     const orderId = approved.order.id
@@ -440,6 +476,11 @@ test('PUR01-GR records one partial receipt in the browser, reopens it, finds the
     })
     expect(Date.parse(postReceiptOrder.acceptances[0].recordedAtUtc)).toBe(Date.parse(sent.occurredAtUtc))
     await expect(acceptanceRow.getByRole('cell').nth(3)).toHaveText(postReceiptOrder.acceptances[0].recordedAtUtc)
+    expect(await readReceiptEffects(pool, identity)).toEqual(ONCE)
+
+    // The read-only cross-module journey uses the accepted detail GET and the native Inventory label screen.
+    // It never receives the receipt command, and Back must restore the same selected immutable acceptance.
+    await assertReceiptDetailLabelRoundTrip(page, orderId, recorded.receipt)
     expect(await readReceiptEffects(pool, identity)).toEqual(ONCE)
     const comparisonResponse = await page.request.get(`${env.apiBaseUrl}${comparisonPath(sent.acceptanceId)}`, {
       headers: apiHeaders(receiverActor),
@@ -571,7 +612,7 @@ test('PUR01-GR records one partial receipt in the browser, reopens it, finds the
     expect(afterReplayLabel.movementTimeline.entries.map((entry) => entry.movementId)).toEqual([sent.movementId])
 
     // 6. Approver and reader can open the same approved order but never get the receipt control or command.
-    for (const actor of [approverActor, readerActor]) {
+    for (const actor of [approverActor, readerActor, RECEIPT_DETAIL_READER_ACTOR]) {
       const published = await capabilitiesOf(page, actor)
       expect(published).toContain('purchasing.orders.detail')
       expect(published).not.toContain(RECEIPT_CAPABILITY)
