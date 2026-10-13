@@ -13,6 +13,12 @@
  *   proposerActor    — Development user proposing the account and preparing the draft
  *   approverActor    — another Development user, who approves (Ö4: never the proposer)
  *   readerActor      — allocation.read-only Development user; never receives allocation.write
+ *   openItemMetadataActor   — FI04 list/detail metadata only; money and status stay redacted
+ *   openItemVisibleActor    — FI04 list/detail metadata plus the independent amount disclosure
+ *   openItemAmountOnlyActor — amount permission only; it cannot enter or GET FI04
+ *   openItemNeitherActor    — neither FI04 permission
+ *   openItem*Id/count       — one approved official-invoice source admitted through Finance,
+ *                            including a deterministic first-page-outside item
  *
  * The Finance capabilities come from the NORMAL host: the provider is published since FIN-UI-1c, and a
  * screen opens only for an actor holding its own Finance permission (the suite override's grants).
@@ -26,6 +32,17 @@ export interface Fin01Seed {
   readonly proposerActor: string
   readonly approverActor: string
   readonly readerActor: string
+  readonly openItemBatchId: string
+  readonly openItemPartyId: string
+  readonly openItemCompanyAccountId: string
+  readonly openItemMetadataActor: string
+  readonly openItemVisibleActor: string
+  readonly openItemAmountOnlyActor: string
+  readonly openItemNeitherActor: string
+  readonly openItemNewestId: string
+  readonly openItemContinuationId: string
+  readonly openItemEqualTimestampLowerId: string
+  readonly openItemCount: string
 }
 
 export interface Fin01Environment {
@@ -61,9 +78,31 @@ export function readEnvironment(): Fin01Environment {
     proposerActor: text(raw, 'proposerActor'),
     approverActor: text(raw, 'approverActor'),
     readerActor: text(raw, 'readerActor'),
+    openItemBatchId: text(raw, 'openItemBatchId', true),
+    openItemPartyId: text(raw, 'openItemPartyId', true),
+    openItemCompanyAccountId: text(raw, 'openItemCompanyAccountId', true),
+    openItemMetadataActor: text(raw, 'openItemMetadataActor'),
+    openItemVisibleActor: text(raw, 'openItemVisibleActor'),
+    openItemAmountOnlyActor: text(raw, 'openItemAmountOnlyActor'),
+    openItemNeitherActor: text(raw, 'openItemNeitherActor'),
+    openItemNewestId: text(raw, 'openItemNewestId', true),
+    openItemContinuationId: text(raw, 'openItemContinuationId', true),
+    openItemEqualTimestampLowerId: text(raw, 'openItemEqualTimestampLowerId', true),
+    openItemCount: text(raw, 'openItemCount'),
   }
-  if (new Set([seed.proposerActor, seed.approverActor, seed.readerActor]).size !== 3) {
-    throw new Error('BROWSER_E2E_FIN01_SEED must bind distinct proposer, approver and reader actors')
+  if (!/^\d+$/.test(seed.openItemCount) || Number(seed.openItemCount) < 51) {
+    throw new Error('BROWSER_E2E_FIN01_SEED must bind at least 51 FI04 open items')
+  }
+  if (new Set([
+    seed.proposerActor,
+    seed.approverActor,
+    seed.readerActor,
+    seed.openItemMetadataActor,
+    seed.openItemVisibleActor,
+    seed.openItemAmountOnlyActor,
+    seed.openItemNeitherActor,
+  ]).size !== 7) {
+    throw new Error('BROWSER_E2E_FIN01_SEED must bind distinct command, FI04 and ungranted actors')
   }
   return { unauthorizedBaseUrl: required('BROWSER_E2E_UNAUTHORIZED_BASE_URL'), seed }
 }
