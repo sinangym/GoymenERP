@@ -36,8 +36,9 @@ public sealed record SalesOrderLineAllocationV1(Guid OrderLineId, int ActiveCoun
 /// DEC-SAL-005 "irsaliyesiz yükleme": the Sales-declared read the LOADING OWNER answers (Logistics, whose loading-instruction
 /// lines are bound to a Sales order line — LOG-4 D4). The AT-024 <see cref="ISalesOrderDeliveryReadPortV1"/> answers only
 /// the definite shipped/delivered totals by design (an instructed or loaded line "adds nothing" there); a cancellation must
-/// also see a line that is only instructed or loaded, so this read answers every instruction line's totals. Main has no
-/// dispatch-note (irsaliye) record, so EVERY loading is "without a dispatch note". Same rules as the AT-024 port: no
+/// also see a line that is only instructed or loaded, so this read answers every instruction line's totals. Its
+/// cancellation-specific read also reports active approved dispatch-note invoice-source candidates; it does not claim
+/// invoice consumption. The category is then answered as None, Present or Unreadable. Same rules as the AT-024 port: no
 /// authority, the caller's company only, creates nothing.
 /// </summary>
 public interface ISalesOrderLoadingReadPortV1
