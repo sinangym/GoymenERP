@@ -58,6 +58,7 @@ class U02InventoryRecorderContractTests(unittest.TestCase):
     def test_exact_recorder_identity_permissions_and_existing_issuer(self):
         environment = self.environment()
         self.assertEqual(8, validator.MAX_SUITE_ACTORS)
+        self.assertEqual(9, validator.SUITE_ACTOR_LIMITS["fin01"])
         self.assertNotIn("u02", validator.SUITE_ACTOR_LIMITS)
         self.assertEqual(
             ("identity.profile.read", "inventory.opening-stock.record",
@@ -694,16 +695,26 @@ class WorkflowTests(unittest.TestCase):
             permissions.index("finance.open-items.amount.read"),
         )
 
-        # Closed-list admission is not a disposable grant. The fixture owner must still place each
-        # permission on the exact reviewed FIN01 profile in its own separately claimed files.
         environment = self._fin01_environment()
-        granted = {
-            value
-            for key, value in environment.items()
-            if key.startswith("IdentitySeed__Roles__") and "__Permissions__" in key
+        expected = {
+            12: ("BROWSER_FIN01_OPEN_ITEMS_METADATA", ("finance.open-items.read",)),
+            13: ("BROWSER_FIN01_OPEN_ITEMS_VISIBLE", (
+                "finance.open-items.read", "finance.open-items.amount.read")),
+            14: ("BROWSER_FIN01_OPEN_ITEMS_AMOUNT_ONLY", ("finance.open-items.amount.read",)),
         }
-        self.assertNotIn("finance.open-items.read", granted)
-        self.assertNotIn("finance.open-items.amount.read", granted)
+        for role_index, (code, expected_permissions) in expected.items():
+            prefix = f"IdentitySeed__Roles__{role_index}__"
+            self.assertEqual(code, environment[prefix + "Code"])
+            actual_permissions = tuple(
+                environment[prefix + f"Permissions__{index}"] for index in range(len(expected_permissions)))
+            self.assertEqual(expected_permissions, actual_permissions)
+            self.assertFalse(any(
+                key.startswith(prefix + "Permissions__")
+                and int(key.rsplit("__", 1)[1]) >= len(expected_permissions)
+                for key in environment
+            ))
+
+        validator.validate_suite_extensions("fin01", environment)
 
     @staticmethod
     def _fin01_environment():
@@ -787,6 +798,17 @@ class WorkflowTests(unittest.TestCase):
             "neitherActor": "company-a-user",
             "salesDraftId": "b5000000-0000-4000-8000-00000000f101",
             "financeBatchId": "b6000000-0000-4000-8000-000000000033",
+            "openItemBatchId": "b6000000-0000-4000-8000-000000000044",
+            "openItemPartyId": "b1000000-0000-4000-8000-00000000f201",
+            "openItemCompanyAccountId": "b1000000-0000-4000-8000-00000000f202",
+            "openItemMetadataActor": "fin01-open-items-metadata",
+            "openItemVisibleActor": "fin01-open-items-visible",
+            "openItemAmountOnlyActor": "fin01-open-items-amount-only",
+            "openItemNeitherActor": "company-a-user",
+            "openItemNewestId": "b6500000-0000-4000-8000-000000000051",
+            "openItemContinuationId": "b6500000-0000-4000-8000-000000000002",
+            "openItemEqualTimestampLowerId": "b6500000-0000-4000-8000-000000000001",
+            "openItemCount": "53",
         }
 
         exported = validator.seed_export("fin01", seed)
@@ -795,7 +817,7 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual("BROWSER_E2E_FIN01_SEED", prefix)
         self.assertEqual(seed, json.loads(payload))
         self.assertEqual(frozenset(seed), validator.SUITE_FIXTURE_OUTPUTS["fin01"])
-        for key in ("salesOnlyActor", "financeBatchId", "unexpectedActor"):
+        for key in ("salesOnlyActor", "financeBatchId", "openItemCount", "unexpectedActor"):
             malformed = dict(seed)
             if key != "unexpectedActor":
                 malformed.pop(key)
@@ -806,11 +828,30 @@ class WorkflowTests(unittest.TestCase):
                     validator.seed_export("fin01", malformed)
 
         for value in (None, "", "not-a-guid", "fin01-proposer", "00000000-0000-0000-0000-000000000000"):
+            for key in ("financeBatchId", "openItemBatchId", "openItemPartyId", "openItemCompanyAccountId",
+                        "openItemNewestId", "openItemContinuationId", "openItemEqualTimestampLowerId"):
+                malformed = dict(seed)
+                malformed[key] = value
+                with self.subTest(key=key, value=value):
+                    with self.assertRaises(validator.ContractError):
+                        validator.seed_export("fin01", malformed)
+
+        for value in (None, "", "0", "50", "51.0", "not-a-count"):
             malformed = dict(seed)
-            malformed["financeBatchId"] = value
-            with self.subTest(financeBatchId=value):
+            malformed["openItemCount"] = value
+            with self.subTest(openItemCount=value):
                 with self.assertRaises(validator.ContractError):
                     validator.seed_export("fin01", malformed)
+
+        duplicate_open_item_actor = dict(seed)
+        duplicate_open_item_actor["openItemVisibleActor"] = duplicate_open_item_actor["openItemMetadataActor"]
+        with self.assertRaisesRegex(validator.ContractError, "open-item seed actors must be nonempty and distinct"):
+            validator.seed_export("fin01", duplicate_open_item_actor)
+
+        wrong_open_item_neither = dict(seed)
+        wrong_open_item_neither["openItemNeitherActor"] = "fin01-neither"
+        with self.assertRaisesRegex(validator.ContractError, "open-item neither persona"):
+            validator.seed_export("fin01", wrong_open_item_neither)
 
         duplicate = dict(seed)
         duplicate["salesOnlyActor"] = duplicate["approverActor"]
