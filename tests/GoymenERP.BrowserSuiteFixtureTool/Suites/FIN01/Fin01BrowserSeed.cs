@@ -105,7 +105,8 @@ public sealed class Fin01BrowserSeed : IBrowserSuiteFixture
             context, customer.PartyId, customer.AccountId, cancellationToken);
 
         var openItemCustomer = await CariBrowserSeed.OpenPartyWithAccountAsync(
-            context, CariActor, CompanyGdc, "customer", "Açık kalem müşterisi", CustomerRole, cancellationToken);
+            context, CariActor, CompanyGdc, "fi04-open-item-customer", "Açık kalem müşterisi", CustomerRole,
+            cancellationToken);
         var openItems = await SeedOpenItemsAsync(
             context, openItemCustomer.PartyId, openItemCustomer.AccountId, cancellationToken);
 
