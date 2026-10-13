@@ -333,6 +333,12 @@ SUITE_IDENTITY_PERMISSIONS = {
         # allocation created from the imported open item. These are existing Finance permissions.
         "finance.allocation.read",
         "finance.allocation.write",
+        # FI04-FRONTEND-01: the open-item route and the amount disclosure remain two independent
+        # admission names. Listing them here only allows the FIN01 disposable fixture owner to
+        # build the reviewed metadata-only / metadata+amount / amount-only profiles; it does not
+        # assign either name to an actor or imply one from an allocation/receipt/payment grant.
+        "finance.open-items.read",
+        "finance.open-items.amount.read",
         "sales.drafts.create",
         "sales.drafts.read",
         "sales.orders.approve",
