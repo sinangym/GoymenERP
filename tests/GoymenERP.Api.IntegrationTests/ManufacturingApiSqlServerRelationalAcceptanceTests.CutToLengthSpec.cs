@@ -80,14 +80,30 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
             "cut-lines-save");
         Assert.Equal(HttpStatusCode.Conflict, conflictingReplay.StatusCode);
 
+        var createdReopened = (await client.GetFromJsonAsync<PlanViewV1>($"{Base}/plans/{planId:D}"))!;
+        Assert.Equal(
+            [(lineA, 40, "6000", 3), (lineB, -7, "2500.5", 2)],
+            createdReopened.CutToLengthSpec!.Lines.Select(line =>
+                (line.LineId, line.Sequence, line.LengthMm, line.Count)));
+        var createdHistory = (await client.GetFromJsonAsync<PlanRevisionListViewV1>(
+            $"{Base}/plans/{planId:D}/revisions"))!;
+        var createdRevision = Assert.Single(createdHistory.Revisions);
+        Assert.Equal(0, createdRevision.Revision);
+        Assert.Equal(
+            [(lineA, 40, "6000", 3), (lineB, -7, "2500.5", 2)],
+            createdRevision.CutToLengthSpec!.Lines.Select(line =>
+                (line.LineId, line.Sequence, line.LengthMm, line.Count)));
+
         var revisedSpec = new CutToLengthSpecRequestV1(
         [
             new CutToLengthLineRequestV1(lineB, 90, "2500.500", 4),
             new CutToLengthLineRequestV1(lineA, 5, "6000", 1),
         ]);
+        var revise = new RevisePlanRequestV1(
+            1, workCenter, inputs, target, "Kesim sırası değişti", revisedSpec);
         using var revisedResponse = await client.PostWithKeyAsync(
             $"{Base}/plans/{planId:D}/revision",
-            new RevisePlanRequestV1(1, workCenter, inputs, target, "Kesim sırası değişti", revisedSpec),
+            revise,
             "cut-lines-revise");
         Assert.Equal(HttpStatusCode.OK, revisedResponse.StatusCode);
         var revised = (await revisedResponse.Content.ReadFromJsonAsync<PlanViewV1>())!;
@@ -95,6 +111,13 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
             [(lineB, 90, "2500.5", 4), (lineA, 5, "6000", 1)],
             revised.CutToLengthSpec!.Lines.Select(line =>
                 (line.LineId, line.Sequence, line.LengthMm, line.Count)));
+
+        using var reviseReplayResponse = await client.PostWithKeyAsync(
+            $"{Base}/plans/{planId:D}/revision", revise, "cut-lines-revise");
+        Assert.Equal(HttpStatusCode.OK, reviseReplayResponse.StatusCode);
+        Assert.Equal("true", Assert.Single(reviseReplayResponse.Headers.GetValues("Idempotency-Replayed")));
+        var reviseReplay = (await reviseReplayResponse.Content.ReadFromJsonAsync<PlanViewV1>())!;
+        Assert.Equal(JsonSerializer.Serialize(revised), JsonSerializer.Serialize(reviseReplay));
 
         var reopened = (await client.GetFromJsonAsync<PlanViewV1>($"{Base}/plans/{planId:D}"))!;
         Assert.Equal(JsonSerializer.Serialize(revised), JsonSerializer.Serialize(reopened));
@@ -110,21 +133,23 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
             history.Revisions[1].CutToLengthSpec!.Lines.Select(line =>
                 (line.LineId, line.Sequence, line.LengthMm, line.Count)));
 
-        Assert.Equal(2, await run.ScalarAsync<int>(
-            "SELECT COUNT(*) FROM manufacturing.PlanCutLines WHERE CompanyId = @c AND PlanId = @p",
-            ("@c", CompanyA), ("@p", planId)));
-        Assert.Equal(1, await run.ScalarAsync<int>(
-            "SELECT COUNT(*) FROM manufacturing.PlanCutLines WHERE CompanyId = @c AND PlanId = @p "
-            + "AND LineId = @line AND Ordinal = 2 AND Sequence = -7 AND LengthMm = 2500.500 AND [Count] = 2",
-            ("@c", CompanyA), ("@p", planId), ("@line", lineB)));
-        Assert.Equal(2, await run.ScalarAsync<int>(
-            "SELECT COUNT(*) FROM manufacturing.PlanRevisionCutLines WHERE CompanyId = @c AND PlanId = @p AND RevisionNo = 1",
-            ("@c", CompanyA), ("@p", planId)));
-        Assert.Equal(1, await run.ScalarAsync<int>(
-            "SELECT COUNT(*) FROM manufacturing.PlanRevisionCutLines WHERE CompanyId = @c AND PlanId = @p "
-            + "AND RevisionNo = 1 AND LineId = @line AND Ordinal = 1 AND Sequence = 90 "
-            + "AND LengthMm = 2500.500 AND [Count] = 4",
-            ("@c", CompanyA), ("@p", planId), ("@line", lineB)));
+        var storedCreatedLines = JsonSerializer.Deserialize<CutLineSqlRow[]>(await run.ScalarAsync<string>(
+            "SELECT (SELECT LineId, Ordinal, Sequence, LengthMm, [Count] FROM manufacturing.PlanCutLines "
+            + "WHERE CompanyId = @c AND PlanId = @p ORDER BY Ordinal FOR JSON PATH)",
+            ("@c", CompanyA), ("@p", planId)))!;
+        Assert.Equal(
+            [(lineA, 1, 40, 6000.000m, 3), (lineB, 2, -7, 2500.500m, 2)],
+            storedCreatedLines.Select(line =>
+                (line.LineId, line.Ordinal, line.Sequence, line.LengthMm, line.Count)));
+        var storedRevisionLines = JsonSerializer.Deserialize<CutLineSqlRow[]>(await run.ScalarAsync<string>(
+            "SELECT (SELECT LineId, Ordinal, Sequence, LengthMm, [Count] "
+            + "FROM manufacturing.PlanRevisionCutLines WHERE CompanyId = @c AND PlanId = @p AND RevisionNo = 1 "
+            + "ORDER BY Ordinal FOR JSON PATH)",
+            ("@c", CompanyA), ("@p", planId)))!;
+        Assert.Equal(
+            [(lineB, 1, 90, 2500.500m, 4), (lineA, 2, 5, 6000.000m, 1)],
+            storedRevisionLines.Select(line =>
+                (line.LineId, line.Ordinal, line.Sequence, line.LengthMm, line.Count)));
 
         var legacyPlanId = Guid.NewGuid();
         using var legacyResponse = await client.PostWithKeyAsync(
@@ -136,10 +161,30 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
             "SELECT COUNT(*) FROM manufacturing.PlanCutLines WHERE CompanyId = @c AND PlanId = @p",
             ("@c", CompanyA), ("@p", legacyPlanId)));
 
+        using var legacyRevisedResponse = await client.PostWithKeyAsync(
+            $"{Base}/plans/{legacyPlanId:D}/revision",
+            new RevisePlanRequestV1(1, workCenter, inputs, null, "Kesim satırı olmayan plan", null),
+            "cut-lines-legacy-revise");
+        Assert.Equal(HttpStatusCode.OK, legacyRevisedResponse.StatusCode);
+        var legacyRevised = (await legacyRevisedResponse.Content.ReadFromJsonAsync<PlanViewV1>())!;
+        Assert.Null(legacyRevised.CutToLengthSpec);
+        var legacyReopened = (await client.GetFromJsonAsync<PlanViewV1>($"{Base}/plans/{legacyPlanId:D}"))!;
+        Assert.Equal(JsonSerializer.Serialize(legacyRevised), JsonSerializer.Serialize(legacyReopened));
+        Assert.Null(legacyReopened.CutToLengthSpec);
+        var legacyHistory = (await client.GetFromJsonAsync<PlanRevisionListViewV1>(
+            $"{Base}/plans/{legacyPlanId:D}/revisions"))!;
+        Assert.Equal([0, 1], legacyHistory.Revisions.Select(revision => revision.Revision));
+        Assert.All(legacyHistory.Revisions, revision => Assert.Null(revision.CutToLengthSpec));
+        Assert.Equal(0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM manufacturing.PlanRevisionCutLines WHERE CompanyId = @c AND PlanId = @p",
+            ("@c", CompanyA), ("@p", legacyPlanId)));
+
         var userB = await run.GrantAsync(TestUsers.CompanyB, CompanyB, ErpPermissions.ManufacturingPlansRead);
         using var otherCompany = run.ClientFor(userB, CompanyB);
         using var hidden = await otherCompany.GetAsync($"{Base}/plans/{planId:D}");
         Assert.Equal(HttpStatusCode.NotFound, hidden.StatusCode);
         Assert.DoesNotContain("\"code\"", await hidden.Content.ReadAsStringAsync(), StringComparison.Ordinal);
     }
+
+    private sealed record CutLineSqlRow(Guid LineId, int Ordinal, int Sequence, decimal LengthMm, int Count);
 }
