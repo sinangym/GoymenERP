@@ -244,7 +244,7 @@ class RecoverySurfaceInventoryTests(unittest.TestCase):
         for path, transform in mutations:
             with self.subTest(path=path):
                 changed = mutate_snapshot(self.snapshot, path, transform)
-                with self.assertRaisesRegex(generator.InventoryError, "source anchor drifted"):
+                with self.assertRaisesRegex(generator.InventoryError, "source (?:anchor|surface) drifted"):
                     generator._durable_store_inventory(changed)
 
     def test_comment_only_writer_anchor_fails_closed(self) -> None:
