@@ -489,6 +489,90 @@ describe('planPreviewInput', () => {
   })
 })
 
+describe('planPreviewInput — authored cut lines (M01.3)', () => {
+  const ID_A = 'c0000000-0000-4000-8000-0000000000aa'
+  const ID_B = 'c0000000-0000-4000-8000-0000000000bb'
+  function authored(...lines: { lineId: string; sequence: string; lengthMm: string; count: string }[]) {
+    return { authored: lines.map((line, index) => ({ ...line, label: `Kesim satırı ${index + 1}` })) }
+  }
+
+  it('sends explicit signed sequences, the typed lengths and counts in source order, with no renumbering or rounding', () => {
+    const input = planPreviewInput(WORK_CENTER, [row('12.5')], '', '', undefined, authored(
+      { lineId: ID_B, sequence: '40', lengthMm: '6000.000', count: '3' },
+      { lineId: ID_A, sequence: '-7', lengthMm: '2500.5', count: '2' },
+    ))
+    expect(input).toEqual({
+      type: 'ready',
+      request: {
+        workCenterId: WORK_CENTER,
+        inputs: [{ parentRollId: ROLL, plannedKg: '12.5', expectedLabelVersion: '7' }],
+        target: null,
+        cutToLengthSpec: {
+          lines: [
+            { lineId: ID_B, sequence: 40, lengthMm: '6000.000', count: 3 },
+            { lineId: ID_A, sequence: -7, lengthMm: '2500.5', count: 2 },
+          ],
+        },
+      },
+    })
+    // The int32 bounds are the contract's, not a business range: both ends are lossless.
+    expect(planPreviewInput(WORK_CENTER, [row('1')], '', '', undefined, authored(
+      { lineId: ID_A, sequence: '-2147483648', lengthMm: '0.001', count: '2147483647' },
+      { lineId: ID_B, sequence: '2147483647', lengthMm: '1', count: '1' },
+    ))).toMatchObject({
+      type: 'ready',
+      request: { cutToLengthSpec: { lines: [{ sequence: -2147483648, count: 2147483647 }, { sequence: 2147483647 }] } },
+    })
+  })
+
+  it('an incomplete or invalid authored row issues no preview and never becomes an omitted or cleared definition', () => {
+    const cases: readonly [Parameters<typeof authored>[0], string][] = [
+      [{ lineId: ID_A, sequence: '', lengthMm: '6000', count: '3' }, 'Kesim satırı 1: Sıra no'],
+      [{ lineId: ID_A, sequence: '-0', lengthMm: '6000', count: '3' }, 'Kesim satırı 1: Sıra no'],
+      [{ lineId: ID_A, sequence: '1.5', lengthMm: '6000', count: '3' }, 'Kesim satırı 1: Sıra no'],
+      [{ lineId: ID_A, sequence: '2147483648', lengthMm: '6000', count: '3' }, 'Kesim satırı 1: Sıra no'],
+      [{ lineId: ID_A, sequence: '-2147483649', lengthMm: '6000', count: '3' }, 'Kesim satırı 1: Sıra no'],
+      [{ lineId: ID_A, sequence: '40', lengthMm: '', count: '3' }, 'Kesim satırı 1: uzunluk'],
+      [{ lineId: ID_A, sequence: '40', lengthMm: '6000.0000', count: '3' }, 'Kesim satırı 1: uzunluk'],
+      [{ lineId: ID_A, sequence: '40', lengthMm: '0', count: '3' }, 'Kesim satırı 1: uzunluk'],
+      [{ lineId: ID_A, sequence: '40', lengthMm: '-5', count: '3' }, 'Kesim satırı 1: uzunluk'],
+      [{ lineId: ID_A, sequence: '40', lengthMm: '6000', count: '' }, 'Kesim satırı 1: adet'],
+      [{ lineId: ID_A, sequence: '40', lengthMm: '6000', count: '0' }, 'Kesim satırı 1: adet'],
+      [{ lineId: ID_A, sequence: '40', lengthMm: '6000', count: '2147483648' }, 'Kesim satırı 1: adet'],
+    ]
+    for (const [line, reason] of cases) {
+      const input = planPreviewInput(WORK_CENTER, [row('12.5')], '', '', undefined, authored(line))
+      expect(input.type, JSON.stringify(line)).toBe('incomplete')
+      expect(input.type === 'incomplete' ? input.reasons.join(' ') : '', JSON.stringify(line)).toContain(reason)
+    }
+    // An authored definition with no row is a refusal, not "no cut lines".
+    const empty = planPreviewInput(WORK_CENTER, [row('12.5')], '', '', undefined, { authored: [] })
+    expect(empty).toEqual({ type: 'incomplete', reasons: ['Boy kesme tanımı için en az bir kesim satırı gereklidir.'] })
+  })
+
+  it('an invalid authored row sends nothing and leaves the last answer not current', async () => {
+    const valid = planPreviewInput(WORK_CENTER, [row('5')], '', '', undefined, authored(
+      { lineId: ID_A, sequence: '40', lengthMm: '6000', count: '3' },
+    ))
+    const invalid = planPreviewInput(WORK_CENTER, [row('5')], '', '', undefined, authored(
+      { lineId: ID_A, sequence: '40', lengthMm: '6000', count: '0' },
+    ))
+    const { result, rerender } = renderHook(({ value }) => usePlanPreview(COMPANY, value, authBoundary), {
+      initialProps: { value: valid },
+    })
+    await elapse(PLAN_PREVIEW_DEBOUNCE_MS)
+    respond(0)
+    await flush()
+    expect(result.current.current).toBe(true)
+
+    rerender({ value: invalid })
+    await elapse(PLAN_PREVIEW_DEBOUNCE_MS * 2)
+    expect(pending).toHaveLength(1)
+    expect(result.current.current).toBe(false)
+    expect(result.current.status.type).toBe('incomplete')
+  })
+})
+
 describe('decodePlanPreview', () => {
   const request: PlanPreviewRequest = {
     workCenterId: WORK_CENTER,

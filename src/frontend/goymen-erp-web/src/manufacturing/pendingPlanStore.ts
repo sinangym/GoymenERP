@@ -12,6 +12,46 @@ const VERSION = /^[1-9][0-9]*$/
 const KG = /^(0|[1-9][0-9]{0,17})(\.[0-9]{1,20})?$/
 const MM = /^(?=.*[1-9])(?:0|[1-9][0-9]*)(?:\.[0-9]{1,3})?$/
 const INT32_MAX = 2_147_483_647
+const INT32_MIN = -2_147_483_648
+const NIL_UUID = '00000000-0000-0000-0000-000000000000'
+
+function exactKeys(value: object, keys: readonly string[]): boolean {
+  const own = Object.keys(value)
+  return own.length === keys.length && keys.every((key) => own.includes(key))
+}
+
+/**
+ * M01.3: an authored cut definition is replayed only as the strict `CutToLengthSpecRequestV1` it was sent as: absent
+ * (no lines), or at least one line with a non-nil unique id, a signed int32 sequence, a positive length with at most
+ * three decimals and a positive int32 count — nothing else. A stored null or empty set is refused (never a clear).
+ */
+function validCutToLengthSpec(value: unknown): boolean {
+  if (value === undefined) return true
+  if (typeof value !== 'object' || value === null || Array.isArray(value) || !exactKeys(value, ['lines'])) return false
+  const lines = (value as { readonly lines: unknown }).lines
+  if (!Array.isArray(lines) || lines.length === 0) return false
+  const ids = new Set<string>()
+  for (const line of lines as unknown[]) {
+    if (typeof line !== 'object' || line === null || Array.isArray(line)
+      || !exactKeys(line, ['lineId', 'sequence', 'lengthMm', 'count'])) return false
+    const { lineId, sequence, lengthMm, count } = line as Record<string, unknown>
+    if (typeof lineId !== 'string' || !UUID.test(lineId) || lineId === NIL_UUID || ids.has(lineId.toLowerCase())) return false
+    ids.add(lineId.toLowerCase())
+    if (typeof sequence !== 'number' || !Number.isInteger(sequence) || sequence < INT32_MIN || sequence > INT32_MAX) return false
+    if (typeof lengthMm !== 'string' || !MM.test(lengthMm)) return false
+    if (typeof count !== 'number' || !Number.isInteger(count) || count <= 0 || count > INT32_MAX) return false
+  }
+  return true
+}
+
+/** The recalled attempt is immutable: a later UI change cannot reach the request it replays. */
+function deepFreeze<T>(value: T): T {
+  if (typeof value === 'object' && value !== null && !Object.isFrozen(value)) {
+    Object.freeze(value)
+    for (const child of Object.values(value)) deepFreeze(child)
+  }
+  return value
+}
 
 function validSlittingSpec(value: SavePlanRequest['slittingSpec']): boolean {
   // This is an additive request field: legacy snapshots may omit it or store explicit null.
@@ -85,7 +125,8 @@ function decode(value: unknown): PendingPlanCreate | null {
     return null
   }
   if (!validSlittingSpec(request.slittingSpec)) return null
-  return candidate as PendingPlanCreate
+  if (!validCutToLengthSpec((request as { readonly cutToLengthSpec?: unknown }).cutToLengthSpec)) return null
+  return deepFreeze(candidate as PendingPlanCreate)
 }
 
 export function recallPendingPlanCreate(key: string | null): PendingPlanCreate | null {
