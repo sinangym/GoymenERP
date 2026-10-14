@@ -42,25 +42,42 @@ DOCUMENT_CONFIGURATION_KEYS = (
     "Documents:Scanner:Defender:TimeoutSeconds",
     "Documents:Scanner:Mode",
 )
+DOCUMENT_RUNTIME_PATH = "src/backend/GoymenERP.Api/DocumentsRuntime/DocumentsRuntimeExtensions.cs"
+DOCUMENT_MODULE_PATH = (
+    "src/backend/Modules/Documents/"
+    "GoymenERP.Modules.Documents.Infrastructure/DocumentsModuleExtensions.cs"
+)
+DOCUMENT_SCANNER_PATH = (
+    "src/backend/Modules/Documents/"
+    "GoymenERP.Modules.Documents.Infrastructure/Scanning/WindowsDefenderDocumentScanner.cs"
+)
+DOCUMENT_README_PATH = "src/backend/Modules/Documents/README.md"
 DOCUMENT_SOURCE_PATHS = (
-    "src/backend/GoymenERP.Api/DocumentsRuntime/DocumentsRuntimeExtensions.cs",
-    "src/backend/Modules/Documents/GoymenERP.Modules.Documents.Infrastructure/DocumentsModuleExtensions.cs",
-    "src/backend/Modules/Documents/GoymenERP.Modules.Documents.Infrastructure/Storage/FileSystemDocumentObjectStore.cs",
-    "src/backend/Modules/Documents/GoymenERP.Modules.Documents.Infrastructure/Storage/ServerDirectoryDocumentObjectStore.cs",
-    "src/backend/Modules/Documents/GoymenERP.Modules.Documents.Infrastructure/Scanning/WindowsDefenderDocumentScanner.cs",
-    "src/backend/Modules/Documents/README.md",
+    DOCUMENT_RUNTIME_PATH,
+    DOCUMENT_MODULE_PATH,
+    DOCUMENT_SCANNER_PATH,
+    DOCUMENT_README_PATH,
 )
-DOCUMENT_ADAPTERS = (
-    (
-        "FileSystemDocumentObjectStore",
-        "src/backend/Modules/Documents/GoymenERP.Modules.Documents.Infrastructure/Storage/FileSystemDocumentObjectStore.cs",
-    ),
-    (
-        "ServerDirectoryDocumentObjectStore",
-        "src/backend/Modules/Documents/GoymenERP.Modules.Documents.Infrastructure/Storage/ServerDirectoryDocumentObjectStore.cs",
-    ),
-)
+DOCUMENTS_SOURCE_ROOT = "src/backend/Modules/Documents/"
 DOCUMENT_OBJECT_KEY_PATTERN = "^companies/[0-9a-f]{32}/sha256/[0-9a-f]{64}$"
+MESSAGE_ENTITY_NAME_PATTERN = re.compile(
+    r"(?:outbox|inbox|deliver|message|dedup)",
+    re.IGNORECASE,
+)
+MESSAGE_TABLE_NAME_PATTERN = re.compile(
+    r"(?:outbox|inbox|deliver|message|dedup)",
+    re.IGNORECASE,
+)
+MESSAGE_MODEL_ANCHORS = (
+    "ConsumedAtUtc",
+    "DispatchedAtUtc",
+    "MessageId",
+    "ObservationOrdinal",
+    "PayloadJson",
+    "PayloadSha256",
+    "PayloadUtf8",
+    "ProcessedAtUtc",
+)
 EXPECTED_OUTBOX_CONTRACT_PATHS = (
     "src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Application/InventoryCustomerReturnOutboxV1.cs",
     "src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Application/InventoryDefiniteShipmentOutboxV1.cs",
@@ -121,6 +138,13 @@ class SourceEvidence(NamedTuple):
     path: str
     required_tokens: tuple[str, ...]
     live_code: bool = False
+
+
+class ModelTableMapping(NamedTuple):
+    entity_type: str
+    schema: str
+    table: str
+    property_names: tuple[str, ...]
 
 
 class DurableStoreSpec(NamedTuple):
@@ -598,32 +622,30 @@ def _mask_csharp_strings(content: str) -> str:
     return "".join(result)
 
 
-def _mask_literal_false_preprocessor(content: str) -> str:
-    frames: list[list[bool]] = []
+def _mask_conditional_preprocessor_regions(content: str) -> str:
+    """Mask every conditional branch whose active symbols are unavailable here."""
+
+    depth = 0
     result: list[str] = []
     directive_pattern = re.compile(r"^\s*#\s*(if|elif|else|endif)\b(.*)$", re.IGNORECASE)
     for line in content.splitlines(keepends=True):
         directive = directive_pattern.match(line)
         if directive is not None:
             command = directive.group(1).casefold()
-            expression = directive.group(2).strip()
-            literal_false = expression.strip("()").strip().casefold() == "false"
             if command == "if":
-                frames.append([literal_false, literal_false])
-            elif command == "elif" and frames:
-                if frames[-1][0]:
-                    frames[-1][1] = literal_false
-            elif command == "else" and frames:
-                if frames[-1][0]:
-                    frames[-1][1] = False
-            elif command == "endif" and frames:
-                frames.pop()
+                depth += 1
+            elif depth == 0:
+                raise InventoryError("C# source contains an unmatched conditional directive.")
+            elif command == "endif":
+                depth -= 1
             result.append(_blank_csharp_region(line))
             continue
-        if any(frame[1] for frame in frames):
+        if depth:
             result.append(_blank_csharp_region(line))
         else:
             result.append(line)
+    if depth:
+        raise InventoryError("C# source contains an unterminated conditional directive.")
     return "".join(result)
 
 
@@ -660,7 +682,7 @@ def _live_csharp_code(content: str) -> str:
     """Mask literals and statically disabled regions before live-code anchor checks."""
 
     without_literals = _mask_csharp_strings(content)
-    without_disabled_directives = _mask_literal_false_preprocessor(without_literals)
+    without_disabled_directives = _mask_conditional_preprocessor_regions(without_literals)
     return _mask_literal_false_if_blocks(without_disabled_directives)
 
 
@@ -795,63 +817,111 @@ def _require_tokens(content: str, relative_path: str, tokens: Sequence[str]) -> 
             raise InventoryError(f"Required source anchor drifted: {relative_path}.")
 
 
+def _is_live_csharp_span(
+    content: str,
+    live_content: str,
+    start: int,
+    end: int,
+) -> bool:
+    return live_content[start:end] == _live_csharp_code(content[start:end])
+
+
+def _require_live_csharp_tokens(
+    content: str,
+    relative_path: str,
+    tokens: Sequence[str],
+) -> None:
+    live_content = _live_csharp_code(content)
+    for token in tokens:
+        start = 0
+        while (index := content.find(token, start)) >= 0:
+            end = index + len(token)
+            if _is_live_csharp_span(content, live_content, index, end):
+                break
+            start = index + 1
+        else:
+            raise InventoryError(f"Required source anchor drifted: {relative_path}.")
+
+
+def _discover_document_object_store_adapters(
+    snapshot: SourceSnapshot,
+) -> tuple[tuple[str, str], ...]:
+    declaration = re.compile(
+        r"\bclass\s+(?P<name>[A-Za-z_][A-Za-z0-9_]*)\b[^;{}]*"
+        r":\s*[^;{}]*\bIDocumentObjectStoreV1\b",
+        re.DOTALL,
+    )
+    adapters: list[tuple[str, str]] = []
+    for relative_path in sorted(
+        path
+        for path in snapshot.files
+        if path.startswith(DOCUMENTS_SOURCE_ROOT) and path.endswith(".cs")
+    ):
+        _require_repo_relative_path(relative_path)
+        live_content = _live_csharp_code(_read_csharp(snapshot, relative_path))
+        for match in declaration.finditer(live_content):
+            adapters.append((match.group("name"), relative_path))
+
+    if len(adapters) < 2:
+        raise InventoryError("Documents object-store adapter surface drifted.")
+    folded_names = [name.casefold() for name, _ in adapters]
+    if len(folded_names) != len(set(folded_names)):
+        raise InventoryError("Documents object-store adapters duplicate a class name.")
+    return tuple(sorted(adapters, key=lambda item: (item[0].casefold(), item[1])))
+
+
 def _documents_inventory(snapshot: SourceSnapshot) -> dict[str, Any]:
-    module_path = DOCUMENT_SOURCE_PATHS[1]
+    module_path = DOCUMENT_MODULE_PATH
     module_content = _read_csharp(snapshot, module_path)
+    live_module_content = _live_csharp_code(module_content)
+    configuration_key_pattern = re.compile(
+        r'public const string [A-Za-z][A-Za-z0-9]*Key\s*=\s*"(Documents:[^"]+)";'
+    )
     discovered_keys = tuple(
         sorted(
-            re.findall(
-                r'public const string [A-Za-z][A-Za-z0-9]*Key\s*=\s*"(Documents:[^"]+)";',
-                module_content,
+            match.group(1)
+            for match in configuration_key_pattern.finditer(module_content)
+            if _is_live_csharp_span(
+                module_content, live_module_content, match.start(), match.end()
             )
         )
     )
     if discovered_keys != DOCUMENT_CONFIGURATION_KEYS:
         raise InventoryError("Documents configuration-key surface drifted.")
 
-    storage_directory = PurePosixPath(
-        "src/backend/Modules/Documents/GoymenERP.Modules.Documents.Infrastructure/Storage"
-    )
-    discovered_adapter_paths = sorted(
-        path
-        for path in snapshot.files
-        if PurePosixPath(path).parent == storage_directory
-        and PurePosixPath(path).name.endswith("DocumentObjectStore.cs")
-    )
-    expected_adapter_paths = sorted(path for _, path in DOCUMENT_ADAPTERS)
-    if discovered_adapter_paths != expected_adapter_paths:
-        raise InventoryError("Documents object-store adapter surface drifted.")
-
+    discovered_adapters = _discover_document_object_store_adapters(snapshot)
     adapter_records: list[dict[str, str]] = []
-    for adapter_name, relative_path in DOCUMENT_ADAPTERS:
+    for adapter_name, relative_path in discovered_adapters:
         content = _read_csharp(snapshot, relative_path)
-        declaration = re.compile(
-            rf"\bclass\s+{re.escape(adapter_name)}\b[^:]*:\s*IDocumentObjectStoreV1\b",
-            re.DOTALL,
-        )
-        if declaration.search(content) is None:
-            raise InventoryError(f"Documents adapter declaration drifted: {relative_path}.")
-        _require_tokens(
+        _require_live_csharp_tokens(
             content,
             relative_path,
             (
-                DOCUMENT_OBJECT_KEY_PATTERN,
                 "DocumentContentHash.Compute",
             ),
         )
+        live_content = _live_csharp_code(content)
+        key_pattern = re.compile(
+            rf"\bGeneratedRegex\s*\(\s*{re.escape(json.dumps(DOCUMENT_OBJECT_KEY_PATTERN))}"
+        )
+        if not any(
+            _is_live_csharp_span(content, live_content, match.start(), match.end())
+            for match in key_pattern.finditer(content)
+        ):
+            raise InventoryError(f"Documents object-key contract drifted: {relative_path}.")
         adapter_records.append({"name": adapter_name, "path": relative_path})
 
-    runtime_content = _read_csharp(snapshot, DOCUMENT_SOURCE_PATHS[0])
-    _require_tokens(
+    runtime_content = _read_csharp(snapshot, DOCUMENT_RUNTIME_PATH)
+    _require_live_csharp_tokens(
         runtime_content,
-        DOCUMENT_SOURCE_PATHS[0],
+        DOCUMENT_RUNTIME_PATH,
         (
             "AddDocumentsRuntime",
             "allowDevelopmentStorageAndScanner",
             "services.AddDocumentsModule(",
         ),
     )
-    _require_tokens(
+    _require_live_csharp_tokens(
         module_content,
         module_path,
         (
@@ -861,8 +931,8 @@ def _documents_inventory(snapshot: SourceSnapshot) -> dict[str, Any]:
         ),
     )
 
-    readme_path = DOCUMENT_SOURCE_PATHS[-1]
-    scanner_path = DOCUMENT_SOURCE_PATHS[4]
+    readme_path = DOCUMENT_README_PATH
+    scanner_path = DOCUMENT_SCANNER_PATH
     scanner = _read_csharp(snapshot, scanner_path)
     live_scanner = _live_csharp_code(scanner)
     _require_tokens(
@@ -872,11 +942,11 @@ def _documents_inventory(snapshot: SourceSnapshot) -> dict[str, Any]:
             "private static void TryDelete(string path)",
         ),
     )
-    scan_body = _live_csharp_code(_csharp_braced_body(
-        scanner,
+    scan_body = _csharp_braced_body(
+        live_scanner,
         r"\bpublic\s+async\s+Task<DocumentScanVerdictV1>\s+ScanAsync\s*\(",
         scanner_path,
-    ))
+    )
     if "var copy = Path.Combine(options.QuarantineDirectory" not in scan_body:
         raise InventoryError(f"Documents quarantine-copy lifecycle drifted: {scanner_path}.")
     cleanup = re.compile(
@@ -885,11 +955,11 @@ def _documents_inventory(snapshot: SourceSnapshot) -> dict[str, Any]:
     )
     if cleanup.search(scan_body) is None:
         raise InventoryError(f"Documents transient cleanup lifecycle drifted: {scanner_path}.")
-    try_delete_body = _live_csharp_code(_csharp_braced_body(
-        scanner,
+    try_delete_body = _csharp_braced_body(
+        live_scanner,
         r"\bprivate\s+static\s+void\s+TryDelete\s*\(\s*string\s+path\s*\)",
         scanner_path,
-    ))
+    )
     delete_sequence = re.compile(
         r"\bif\s*\(\s*File\.Exists\(path\)\s*\)\s*\{\s*File\.Delete\(path\);\s*\}",
         re.DOTALL,
@@ -916,62 +986,274 @@ def _documents_inventory(snapshot: SourceSnapshot) -> dict[str, Any]:
             for key, classification in DOCUMENT_PATH_CLASSIFICATIONS
         ],
         "sourceFiles": [
-            _source_file_record(snapshot, path) for path in DOCUMENT_SOURCE_PATHS
+            _source_file_record(snapshot, path)
+            for path in (
+                *DOCUMENT_SOURCE_PATHS,
+                *sorted({path for _, path in discovered_adapters}),
+            )
         ],
     }
 
 
-def _discover_message_delivery_tables(snapshot: SourceSnapshot) -> tuple[tuple[str, str], ...]:
-    tables: set[tuple[str, str]] = set()
-    context_paths = sorted(path for path in snapshot.files if path.endswith("DbContext.cs"))
-    table_pattern = re.compile(r'ToTable\(\s*"(?P<table>[^"]+)"')
-    for relative_path in context_paths:
-        _require_repo_relative_path(relative_path)
-        content = _read_csharp(snapshot, relative_path)
-        schema_match = re.search(r'\bconst\s+string\s+Schema\s*=\s*"([^"]+)"\s*;', content)
-        for match in table_pattern.finditer(content):
-            table = match.group("table")
-            lowered = table.lower()
-            if not any(marker in lowered for marker in ("outbox", "inbox", "deliver")):
-                continue
-            tail = content[match.end() :]
-            explicit_schema = re.match(r'\s*,\s*"([^"]+)"', tail)
-            schema_constant = re.match(r"\s*,\s*Schema\b", tail)
-            default_schema = re.match(r"\s*(?:\)|,\s*[A-Za-z][A-Za-z0-9]*\s*=>)", tail)
-            if explicit_schema is not None:
-                schema = explicit_schema.group(1)
-            elif schema_constant is not None or default_schema is not None:
-                if schema_match is None:
-                    raise InventoryError(f"Message/delivery schema cannot be resolved: {relative_path}.")
-                schema = schema_match.group(1)
-            else:
-                raise InventoryError(f"Message/delivery mapping shape drifted: {relative_path}.")
-            tables.add((schema, table))
-    return tuple(sorted(tables))
+def _csharp_call_arguments(
+    content: str,
+    live_content: str,
+    opening_parenthesis: int,
+) -> tuple[str, ...]:
+    if live_content[opening_parenthesis : opening_parenthesis + 1] != "(":
+        raise InventoryError("C# call shape drifted while discovering durable mappings.")
+    arguments: list[str] = []
+    start = opening_parenthesis + 1
+    parenthesis_depth = 1
+    brace_depth = 0
+    bracket_depth = 0
+    for index in range(start, len(live_content)):
+        character = live_content[index]
+        if character == "(":
+            parenthesis_depth += 1
+        elif character == ")":
+            parenthesis_depth -= 1
+            if parenthesis_depth == 0:
+                arguments.append(content[start:index].strip())
+                return tuple(argument for argument in arguments if argument)
+        elif character == "{":
+            brace_depth += 1
+        elif character == "}":
+            brace_depth -= 1
+        elif character == "[":
+            bracket_depth += 1
+        elif character == "]":
+            bracket_depth -= 1
+        elif (
+            character == ","
+            and parenthesis_depth == 1
+            and brace_depth == 0
+            and bracket_depth == 0
+        ):
+            arguments.append(content[start:index].strip())
+            if len(arguments) == 2:
+                return tuple(arguments)
+            start = index + 1
+        if parenthesis_depth < 1 or brace_depth < 0 or bracket_depth < 0:
+            break
+    raise InventoryError("C# call is unterminated while discovering durable mappings.")
 
 
-def _discover_idempotency_key_tables(snapshot: SourceSnapshot) -> tuple[tuple[str, str], ...]:
+def _csharp_literal_identifier(argument: str) -> str | None:
+    match = re.fullmatch(r'\s*"([A-Za-z][A-Za-z0-9_]*)"\s*', argument)
+    return match.group(1) if match is not None else None
+
+
+def _context_schema_constant(content: str, live_content: str, relative_path: str) -> str | None:
+    values: set[str] = set()
+    declaration = re.compile(r"\bconst\s+string\s+Schema\s*=")
+    for match in declaration.finditer(live_content):
+        literal = re.match(r'\s*"([a-z][a-z0-9_]*)"\s*;', content[match.end() :])
+        if literal is None:
+            raise InventoryError(f"DbContext Schema constant drifted: {relative_path}.")
+        values.add(literal.group(1))
+    if len(values) > 1:
+        raise InventoryError(f"DbContext has ambiguous Schema constants: {relative_path}.")
+    return next(iter(values), None)
+
+
+def _is_message_or_dedup_mapping(
+    entity_type: str,
+    table: str,
+    model_region: str,
+) -> bool:
+    if (
+        MESSAGE_ENTITY_NAME_PATTERN.search(entity_type) is not None
+        or MESSAGE_TABLE_NAME_PATTERN.search(table) is not None
+    ):
+        return True
+    return sum(anchor in model_region for anchor in MESSAGE_MODEL_ANCHORS) >= 2
+
+
+def _resolve_table_mapping(
+    content: str,
+    live_content: str,
+    opening_parenthesis: int,
+    schema_constant: str | None,
+    relative_path: str,
+) -> tuple[str, str] | None:
+    arguments = _csharp_call_arguments(content, live_content, opening_parenthesis)
+    if not arguments:
+        return None
+    table = _csharp_literal_identifier(arguments[0])
+    if table is None:
+        return None
+
+    schema: str | None = None
+    if len(arguments) >= 2:
+        schema = _csharp_literal_identifier(arguments[1])
+        if schema is None and re.fullmatch(r"\s*Schema\s*", arguments[1]) is None:
+            if "=>" not in arguments[1]:
+                raise InventoryError(f"Message/dedup mapping schema drifted: {relative_path}.")
+    if schema is None:
+        schema = schema_constant
+    if schema is None:
+        raise InventoryError(f"Message/dedup mapping schema cannot be resolved: {relative_path}.")
+    return schema, table
+
+
+def _discover_snapshot_table_mappings(snapshot: SourceSnapshot) -> tuple[ModelTableMapping, ...]:
     entity_pattern = re.compile(
-        r'modelBuilder\.Entity\("[^"]+", b =>\s*\{(.*?)\n\s*\}\);',
+        r'modelBuilder\.Entity\("(?P<entity>[^"]+)",\s*b\s*=>\s*\{'
+        r'(?P<body>.*?)\n\s*\}\);',
         re.DOTALL,
     )
-    table_pattern = re.compile(r'b\.ToTable\("([^"]+)",\s*"([^"]+)"')
-    tables: set[tuple[str, str]] = set()
+    property_pattern = re.compile(
+        r'\bb\.Property(?:<[^>]+>)?\(\s*"(?P<property>[A-Za-z_][A-Za-z0-9_]*)"\s*\)'
+    )
+    table_pattern = re.compile(
+        r'\bb\.ToTable\(\s*"(?P<table>[A-Za-z][A-Za-z0-9_]*)"\s*,'
+        r'\s*"(?P<schema>[a-z][a-z0-9_]*)"'
+    )
+    mappings: list[ModelTableMapping] = []
     snapshot_paths = sorted(path for path in snapshot.files if path.endswith("ModelSnapshot.cs"))
     for relative_path in snapshot_paths:
         _require_repo_relative_path(relative_path)
         content = _read_csharp(snapshot, relative_path)
-        for body in entity_pattern.findall(content):
-            if "IdempotencyKeyHash" not in body:
+        live_content = _live_csharp_code(content)
+        for entity_match in entity_pattern.finditer(content):
+            if not _is_live_csharp_span(
+                content, live_content, entity_match.start(), entity_match.end()
+            ):
                 continue
-            match = table_pattern.search(body)
-            if match is None:
-                raise InventoryError(
-                    f"Idempotency-key snapshot mapping drifted: {relative_path}."
+            body = entity_match.group("body")
+            body_start = entity_match.start("body")
+            live_tables = [
+                match
+                for match in table_pattern.finditer(body)
+                if _is_live_csharp_span(
+                    content,
+                    live_content,
+                    body_start + match.start(),
+                    body_start + match.end(),
                 )
-            table, schema = match.groups()
-            tables.add((schema, table))
+            ]
+            if not live_tables:
+                continue
+            if len(live_tables) != 1:
+                raise InventoryError(f"Model snapshot table mapping is ambiguous: {relative_path}.")
+            properties = tuple(
+                sorted(
+                    {
+                        match.group("property")
+                        for match in property_pattern.finditer(body)
+                        if _is_live_csharp_span(
+                            content,
+                            live_content,
+                            body_start + match.start(),
+                            body_start + match.end(),
+                        )
+                    }
+                )
+            )
+            table_match = live_tables[0]
+            mappings.append(
+                ModelTableMapping(
+                    entity_match.group("entity").rsplit(".", 1)[-1],
+                    table_match.group("schema"),
+                    table_match.group("table"),
+                    properties,
+                )
+            )
+    return tuple(
+        sorted(
+            mappings,
+            key=lambda item: (item.schema, item.table, item.entity_type, item.property_names),
+        )
+    )
+
+
+def _discover_message_delivery_tables(snapshot: SourceSnapshot) -> tuple[tuple[str, str], ...]:
+    tables: set[tuple[str, str]] = {
+        (mapping.schema, mapping.table)
+        for mapping in _discover_snapshot_table_mappings(snapshot)
+        if _is_message_or_dedup_mapping(
+            mapping.entity_type,
+            mapping.table,
+            "\n".join(mapping.property_names),
+        )
+    }
+    context_paths = sorted(path for path in snapshot.files if path.endswith("DbContext.cs"))
+    declaration_pattern = re.compile(
+        r"\b(?P<builder>[A-Za-z_][A-Za-z0-9_]*)\s*=\s*"
+        r"[A-Za-z_][A-Za-z0-9_]*\s*\.\s*Entity\s*<(?P<entity>[A-Za-z_][A-Za-z0-9_.]*)>"
+        r"\s*\(\s*\)\s*;"
+    )
+    direct_pattern = re.compile(
+        r"\b[A-Za-z_][A-Za-z0-9_]*\s*\.\s*Entity\s*<(?P<entity>[A-Za-z_][A-Za-z0-9_.]*)>"
+        r"\s*\(\s*\)\s*\.\s*ToTable\s*\("
+    )
+    builder_table_pattern = re.compile(
+        r"\b(?P<builder>[A-Za-z_][A-Za-z0-9_]*)\s*\.\s*ToTable\s*\("
+    )
+
+    for relative_path in context_paths:
+        _require_repo_relative_path(relative_path)
+        content = _read_csharp(snapshot, relative_path)
+        live_content = _live_csharp_code(content)
+        schema_constant = _context_schema_constant(content, live_content, relative_path)
+        declarations = list(declaration_pattern.finditer(live_content))
+
+        for match in direct_pattern.finditer(live_content):
+            entity_type = match.group("entity").rsplit(".", 1)[-1]
+            opening = live_content.rfind("(", match.start(), match.end())
+            mapping = _resolve_table_mapping(
+                content, live_content, opening, schema_constant, relative_path
+            )
+            if mapping is not None and _is_message_or_dedup_mapping(
+                entity_type, mapping[1], ""
+            ):
+                tables.add(mapping)
+
+        for table_match in builder_table_pattern.finditer(live_content):
+            builder = table_match.group("builder")
+            candidates = [
+                declaration
+                for declaration in declarations
+                if declaration.start() < table_match.start()
+                and declaration.group("builder") == builder
+            ]
+            if not candidates:
+                continue
+            declaration = candidates[-1]
+            next_declaration_start = next(
+                (
+                    candidate.start()
+                    for candidate in declarations
+                    if candidate.start() > declaration.start()
+                ),
+                len(live_content),
+            )
+            if table_match.start() >= next_declaration_start:
+                continue
+            entity_type = declaration.group("entity").rsplit(".", 1)[-1]
+            model_region = live_content[declaration.start() : next_declaration_start]
+            opening = live_content.rfind("(", table_match.start(), table_match.end())
+            mapping = _resolve_table_mapping(
+                content, live_content, opening, schema_constant, relative_path
+            )
+            if mapping is not None and _is_message_or_dedup_mapping(
+                entity_type, mapping[1], model_region
+            ):
+                tables.add(mapping)
     return tuple(sorted(tables))
+
+
+def _discover_idempotency_key_tables(snapshot: SourceSnapshot) -> tuple[tuple[str, str], ...]:
+    return tuple(
+        sorted(
+            {
+                (mapping.schema, mapping.table)
+                for mapping in _discover_snapshot_table_mappings(snapshot)
+                if "IdempotencyKeyHash" in mapping.property_names
+            }
+        )
+    )
 
 
 def _require_discovered_durable_surfaces(snapshot: SourceSnapshot) -> None:
@@ -1031,8 +1313,7 @@ def _durable_store_inventory(snapshot: SourceSnapshot) -> list[dict[str, Any]]:
         source_files: list[dict[str, str]] = []
         for evidence in sorted(spec.evidence, key=lambda item: item.path):
             content = _read_csharp(snapshot, evidence.path)
-            anchor_content = _live_csharp_code(content) if evidence.live_code else content
-            _require_tokens(anchor_content, evidence.path, evidence.required_tokens)
+            _require_live_csharp_tokens(content, evidence.path, evidence.required_tokens)
             source_files.append(_source_file_record(snapshot, evidence.path))
         records.append(
             {
@@ -1533,6 +1814,9 @@ def _load_source_snapshot(repository_root: Path, source_commit: str) -> SourceSn
         raise InventoryError("Source commit must resolve exactly to the current Git HEAD.")
     _require_inventory_inputs_clean(root)
     files = _read_commit_blobs(root, source_commit)
+    if _git_source_commit(root) != source_commit:
+        raise InventoryError("Git HEAD changed while exact commit blobs were read.")
+    _require_inventory_inputs_clean(root)
     for required_path in (SCHEMA_PATH.as_posix(), GENERATOR_PATH.as_posix()):
         if required_path not in files:
             raise InventoryError(f"Exact commit is missing required inventory input: {required_path}.")

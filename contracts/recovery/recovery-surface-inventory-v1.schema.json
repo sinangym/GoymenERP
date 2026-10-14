@@ -132,18 +132,7 @@
         },
         "objectStoreAdapters": {
           "type": "array",
-          "const": [
-            {
-              "name": "FileSystemDocumentObjectStore",
-              "path": "src/backend/Modules/Documents/GoymenERP.Modules.Documents.Infrastructure/Storage/FileSystemDocumentObjectStore.cs"
-            },
-            {
-              "name": "ServerDirectoryDocumentObjectStore",
-              "path": "src/backend/Modules/Documents/GoymenERP.Modules.Documents.Infrastructure/Storage/ServerDirectoryDocumentObjectStore.cs"
-            }
-          ],
           "minItems": 2,
-          "maxItems": 2,
           "uniqueItems": true,
           "items": {
             "type": "object",
@@ -155,11 +144,11 @@
             "properties": {
               "name": {
                 "type": "string",
-                "pattern": "^[A-Za-z][A-Za-z0-9]*DocumentObjectStore$"
+                "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
               },
               "path": {
                 "type": "string",
-                "pattern": "^src/backend/Modules/Documents/(?:[A-Za-z0-9][A-Za-z0-9._-]*/)*[A-Za-z0-9][A-Za-z0-9._-]*DocumentObjectStore\\.cs$"
+                "pattern": "^src/backend/Modules/Documents/(?:[A-Za-z0-9][A-Za-z0-9._-]*/)*[A-Za-z0-9][A-Za-z0-9._-]*\\.cs$"
               }
             }
           }
@@ -206,7 +195,6 @@
         "sourceFiles": {
           "type": "array",
           "minItems": 6,
-          "maxItems": 6,
           "uniqueItems": true,
           "items": {
             "type": "object",

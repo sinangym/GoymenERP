@@ -87,6 +87,22 @@ def mutate_snapshot(snapshot: object, relative_path: str, transform: object) -> 
     return generator.SourceSnapshot(snapshot.repository_root, snapshot.source_commit, files)  # type: ignore[attr-defined]
 
 
+def snapshot_with_file(snapshot: object, relative_path: str, content: str) -> object:
+    files = dict(snapshot.files)  # type: ignore[attr-defined]
+    if relative_path in files:
+        raise AssertionError(f"Test path already exists: {relative_path}.")
+    files[relative_path] = content.encode("utf-8")
+    return generator.SourceSnapshot(snapshot.repository_root, snapshot.source_commit, files)  # type: ignore[attr-defined]
+
+
+def extract_csharp_method(text: str, signature: str) -> str:
+    start = text.index(signature)
+    structural = generator._mask_csharp_strings(generator._strip_csharp_comments(text))
+    opening = structural.index("{", start)
+    closing = generator._matching_brace(structural, opening)
+    return text[start : closing + 1]
+
+
 def accounting_writer_in_disabled_region(text: str) -> str:
     signature = "    private void AddCommand(Guid companyId, AccountingCommandRecord record) =>"
     start = text.index(signature)
@@ -100,6 +116,12 @@ def accounting_writer_in_disabled_region(text: str) -> str:
         + "\n#endif\n    }"
     )
     return text[:start] + replacement + text[end:]
+
+
+def accounting_writer_in_unknown_preprocessor_region(text: str) -> str:
+    return accounting_writer_in_disabled_region(text).replace(
+        "#if false", "#if R05_NEVER_DEFINED", 1
+    )
 
 
 def accounting_writer_in_string_only(text: str) -> str:
@@ -199,6 +221,9 @@ class RecoverySurfaceInventoryTests(unittest.TestCase):
             'modelBuilder.Entity<RecoveryDeliveryRow>().ToTable("RecoveryDeliveries", Schema);',
             'modelBuilder.Entity<RecoveryDeliveryRow>().ToTable("RecoveryDeliveries", "accounting");',
             'modelBuilder.Entity<RecoveryDeliveryRow>().ToTable("RecoveryDeliveries");',
+            'modelBuilder.Entity<ProcessedMessageRow>().ToTable("Receipts", Schema);',
+            'modelBuilder.Entity<X>().ToTable("ProcessedMessages", Schema);',
+            'm.Entity<X>().ToTable("ProcessedMessages", Schema);',
         )
         for snippet in live_snippets:
             with self.subTest(snippet=snippet):
@@ -210,20 +235,75 @@ class RecoverySurfaceInventoryTests(unittest.TestCase):
                 with self.assertRaisesRegex(generator.InventoryError, "source surface drifted"):
                     generator._require_discovered_durable_surfaces(changed)
 
-        for comment in (
+        for non_live_source in (
             '// modelBuilder.Entity<X>().ToTable("RecoveryDeliveries", Schema);',
             '/* modelBuilder.Entity<X>().ToTable("RecoveryDeliveries", Schema); */',
+            '_ = "modelBuilder.Entity<X>().ToTable(\\\"RecoveryDeliveries\\\", Schema);";',
+            '_ = """modelBuilder.Entity<X>().ToTable("RecoveryDeliveries", Schema);""";',
+            '#if R05_NEVER_DEFINED\nmodelBuilder.Entity<X>().ToTable("RecoveryDeliveries", Schema);\n#endif',
+            'if (false) { modelBuilder.Entity<X>().ToTable("RecoveryDeliveries", Schema); }',
         ):
-            with self.subTest(comment=comment):
+            with self.subTest(non_live_source=non_live_source):
                 changed = mutate_snapshot(
                     self.snapshot,
                     generator.ACCOUNTING_CONTEXT,
-                    lambda text, comment=comment: text + f"\n{comment}\n",
+                    lambda text, non_live_source=non_live_source: text + f"\n{non_live_source}\n",
                 )
                 self.assertEqual(discovered, set(generator._discover_message_delivery_tables(changed)))
 
+        renamed_with_string_decoy = mutate_snapshot(
+            self.snapshot,
+            generator.ACCOUNTING_CONTEXT,
+            lambda text: text.replace(
+                'entity.ToTable("Deliveries", Schema',
+                'entity.ToTable("Receipts", Schema',
+                1,
+            )
+            + '\n_ = """entity.ToTable("Deliveries", Schema""";\n',
+        )
+        with self.assertRaisesRegex(generator.InventoryError, "source surface drifted"):
+            generator._durable_store_inventory(renamed_with_string_decoy)
+
+    def test_snapshot_message_and_dedup_mappings_use_live_model_evidence(self) -> None:
+        snapshot_path = next(
+            path
+            for path in self.snapshot.files
+            if path.endswith("AccountingDbContextModelSnapshot.cs")
+        )
+        mapping = '''modelBuilder.Entity("Test.ProcessedMessageRow", b =>
+        {
+            b.Property<string>("IdempotencyKeyHash");
+            b.Property<string>("MessageId");
+            b.Property<DateTimeOffset>("ProcessedAtUtc");
+            b.ToTable("ProcessedMessages", "accounting");
+        });'''
+        live = mutate_snapshot(
+            self.snapshot,
+            snapshot_path,
+            lambda text: text + "\n" + mapping + "\n",
+        )
+        with self.assertRaisesRegex(generator.InventoryError, "surface drifted"):
+            generator._require_discovered_durable_surfaces(live)
+
+        baseline = generator._discover_snapshot_table_mappings(self.snapshot)
+        for decoy in (
+            '_ = """\n' + mapping + '\n""";',
+            "#if R05_NEVER_DEFINED\n" + mapping + "\n#endif",
+            "if (false) {\n" + mapping + "\n}",
+        ):
+            with self.subTest(decoy=decoy.splitlines()[0]):
+                changed = mutate_snapshot(
+                    self.snapshot,
+                    snapshot_path,
+                    lambda text, decoy=decoy: text + "\n" + decoy + "\n",
+                )
+                self.assertEqual(
+                    baseline,
+                    generator._discover_snapshot_table_mappings(changed),
+                )
+
     def test_documents_scanner_hash_and_transient_cleanup_are_bound(self) -> None:
-        scanner_path = generator.DOCUMENT_SOURCE_PATHS[4]
+        scanner_path = generator.DOCUMENT_SCANNER_PATH
         document_sources = {
             record["path"]: record["sha256"]
             for record in self.inventory["documents"]["sourceFiles"]
@@ -261,6 +341,146 @@ class RecoverySurfaceInventoryTests(unittest.TestCase):
                 with self.assertRaises(generator.InventoryError):
                     generator._documents_inventory(changed)
 
+    def test_documents_scanner_whole_declaration_decoys_fail_closed(self) -> None:
+        scanner_path = generator.DOCUMENT_SCANNER_PATH
+        scan_signature = (
+            "    public async Task<DocumentScanVerdictV1> ScanAsync(ReadOnlyMemory<byte> content, "
+            "DocumentFileKind kind, CancellationToken cancellationToken = default)"
+        )
+        delete_signature = "    private static void TryDelete(string path)"
+        scan_stub = (
+            scan_signature
+            + "\n    {\n        await Task.Yield();\n"
+            + "        return DocumentScanVerdictV1.Unavailable;\n    }"
+        )
+        delete_stub = delete_signature + "\n    {\n        GC.KeepAlive(path);\n    }"
+
+        def raw_scan_decoy(text: str) -> str:
+            method = extract_csharp_method(text, scan_signature)
+            replacement = (
+                '    private const string RecoveryScanDecoy = """\n'
+                + method
+                + '\n""";\n\n'
+                + scan_stub
+            )
+            return text.replace(method, replacement, 1)
+
+        def conditional_scan_decoy(text: str) -> str:
+            method = extract_csharp_method(text, scan_signature)
+            replacement = (
+                "#if R05_NEVER_DEFINED\n"
+                + method
+                + "\n#endif\n"
+                + scan_stub
+            )
+            return text.replace(method, replacement, 1)
+
+        def raw_delete_decoy(text: str) -> str:
+            method = extract_csharp_method(text, delete_signature)
+            replacement = (
+                '    private const string RecoveryDeleteDecoy = """\n'
+                + method
+                + '\n""";\n\n'
+                + delete_stub
+            )
+            return text.replace(method, replacement, 1)
+
+        def conditional_delete_decoy(text: str) -> str:
+            method = extract_csharp_method(text, delete_signature)
+            replacement = (
+                "#if R05_NEVER_DEFINED\n"
+                + method
+                + "\n#endif\n"
+                + delete_stub
+            )
+            return text.replace(method, replacement, 1)
+
+        for transform in (
+            raw_scan_decoy,
+            conditional_scan_decoy,
+            raw_delete_decoy,
+            conditional_delete_decoy,
+        ):
+            with self.subTest(transform=transform):
+                changed = mutate_snapshot(self.snapshot, scanner_path, transform)
+                with self.assertRaises(generator.InventoryError):
+                    generator._documents_inventory(changed)
+
+    def test_document_object_store_implementers_are_recursive_and_hash_bound(self) -> None:
+        adapter_path = (
+            "src/backend/Modules/Documents/"
+            "GoymenERP.Modules.Documents.Infrastructure/Storage/Cloud/S3BlobStore.cs"
+        )
+        adapter_source = f'''namespace Test;
+
+internal sealed partial class S3BlobStore : IDocumentObjectStoreV1
+{{
+    [GeneratedRegex("{generator.DOCUMENT_OBJECT_KEY_PATTERN}")]
+    private static partial Regex KeyPattern();
+    private static string Hash(byte[] content) => DocumentContentHash.Compute(content);
+}}
+'''
+        changed = snapshot_with_file(self.snapshot, adapter_path, adapter_source)
+        documents = generator._documents_inventory(changed)
+        self.assertIn(
+            {"name": "S3BlobStore", "path": adapter_path},
+            documents["objectStoreAdapters"],
+        )
+        sources = {record["path"]: record["sha256"] for record in documents["sourceFiles"]}
+        self.assertEqual(hashlib.sha256(adapter_source.encode("utf-8")).hexdigest(), sources[adapter_path])
+        self.assertEqual(7, len(sources))
+        generated = generator._build_inventory_from_snapshot(changed)
+        self.assertEqual(documents, generated["documents"])
+        self.assertEqual(20, generated["counts"]["durableStores"])
+
+        second_adapter = adapter_source + f'''
+internal sealed partial class ColdArchive : IDocumentObjectStoreV1
+{{
+    [GeneratedRegex("{generator.DOCUMENT_OBJECT_KEY_PATTERN}")]
+    private static partial Regex KeyPattern();
+    private static string Hash(byte[] content) => DocumentContentHash.Compute(content);
+}}
+'''
+        shared_file = snapshot_with_file(self.snapshot, adapter_path, second_adapter)
+        shared_documents = generator._documents_inventory(shared_file)
+        shared_paths = [record["path"] for record in shared_documents["sourceFiles"]]
+        self.assertEqual(1, shared_paths.count(adapter_path))
+        self.assertEqual(7, len(shared_paths))
+        self.assertEqual(4, len(shared_documents["objectStoreAdapters"]))
+
+        dead_adapter = snapshot_with_file(
+            self.snapshot,
+            adapter_path,
+            '''namespace Test;
+internal sealed class S3BlobStore
+{
+    private const string Fake = """class S3BlobStore : IDocumentObjectStoreV1""";
+}
+''',
+        )
+        self.assertEqual(
+            self.inventory["documents"]["objectStoreAdapters"],
+            generator._documents_inventory(dead_adapter)["objectStoreAdapters"],
+        )
+
+        existing_path = next(
+            adapter["path"]
+            for adapter in self.inventory["documents"]["objectStoreAdapters"]
+            if adapter["name"] == "FileSystemDocumentObjectStore"
+        )
+        removed_live_interface = mutate_snapshot(
+            self.snapshot,
+            existing_path,
+            lambda text: text.replace(
+                "FileSystemDocumentObjectStore : IDocumentObjectStoreV1",
+                "FileSystemDocumentObjectStore",
+                1,
+            )
+            + '\n_ = """class FileSystemDocumentObjectStore : IDocumentObjectStoreV1""";\n',
+        )
+        with self.assertRaisesRegex(generator.InventoryError, "adapter surface drifted"):
+            generator._documents_inventory(removed_live_interface)
+
     def test_mapping_and_schema_anchor_mutations_fail_closed(self) -> None:
         mutations = (
             (
@@ -286,6 +506,7 @@ class RecoverySurfaceInventoryTests(unittest.TestCase):
             lambda text: text.replace(token, f"// {token}", 1),
             lambda text: text.replace(token, f"/* {token} */", 1),
             accounting_writer_in_disabled_region,
+            accounting_writer_in_unknown_preprocessor_region,
             accounting_writer_in_string_only,
         )
         for transform in transforms:
@@ -330,6 +551,16 @@ class RecoverySurfaceInventoryTests(unittest.TestCase):
         changed["sourceCommit"] = "0" * 40
         with self.assertRaisesRegex(generator.InventoryError, "current Git HEAD"):
             generator.validate_inventory(REPOSITORY_ROOT, changed)
+
+    def test_provenance_rechecks_head_after_commit_blobs_are_read(self) -> None:
+        with mock.patch.object(
+            generator,
+            "_git_source_commit",
+            side_effect=(SOURCE_COMMIT, "0" * 40),
+        ) as read_head:
+            with self.assertRaisesRegex(generator.InventoryError, "HEAD changed"):
+                generator._load_source_snapshot(REPOSITORY_ROOT, SOURCE_COMMIT)
+        self.assertEqual(2, read_head.call_count)
 
     def test_provenance_rejects_untracked_inventory_shadow(self) -> None:
         original = generator._run_git_text
