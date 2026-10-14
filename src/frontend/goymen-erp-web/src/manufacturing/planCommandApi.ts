@@ -332,8 +332,13 @@ const pendingLifecycle = new Map<string, PendingPlanLifecycle>()
  *
  * The slot name is the full context key (session epoch, actor, company, plan). A recalled record is never trusted: it
  * must be exactly this contract AND name the very context of the slot it was read from; only then is it deep-frozen and
- * used. A malformed or foreign record is not replayed and is left in place (never silently deleted); the server's
- * expected-version fence still refuses any second revise built on a version that the first one already moved.
+ * used. A malformed or foreign record is not replayed and is left in place (never silently deleted).
+ *
+ * M01.3 (K2 #727/6178721152): an unreadable slot is NOT an empty one. When the first revise was processed and only its
+ * answer was lost, a fresh read already shows the moved version, so the expected-version fence would accept a second,
+ * newly keyed revise. The slot therefore reads as `absent`, `pending` or `unreadable`; only proven absence lets a new
+ * command in, a revise is sent only once its exact attempt is durably stored, and an unresolved revise is never
+ * displaced by another command of the same slot.
  */
 const STORED_REVISE_PREFIX = 'goymen.manufacturing.plan-revise.v1:'
 
@@ -457,13 +462,30 @@ function deepFreeze<T>(value: T): T {
   return value
 }
 
-function storedRevise(key: string): PendingPlanLifecycle | null {
+/** What the slot holds: proven nothing, one valid frozen attempt, or something that cannot be trusted either way. */
+export type PendingPlanSlot =
+  | { readonly state: 'absent' }
+  | { readonly state: 'pending'; readonly pending: PendingPlanLifecycle }
+  | { readonly state: 'unreadable' }
+
+const ABSENT: PendingPlanSlot = { state: 'absent' }
+const UNREADABLE: PendingPlanSlot = { state: 'unreadable' }
+
+/** The stored side alone: a read failure, a malformed record and a foreign record are all `unreadable`, never absent. */
+function storedSlot(key: string): PendingPlanSlot {
+  let raw: string | null
   try {
-    const raw = sessionStorage.getItem(STORED_REVISE_PREFIX + key)
-    return raw === null ? null : decodeStoredRevise(key, raw)
+    raw = sessionStorage.getItem(STORED_REVISE_PREFIX + key)
   } catch {
-    return null
+    return UNREADABLE
   }
+  if (raw === null) return ABSENT
+  const pending = decodeStoredRevise(key, raw)
+  return pending === null ? UNREADABLE : { state: 'pending', pending }
+}
+
+function sameAttempt(left: PendingPlanLifecycle, right: PendingPlanLifecycle): boolean {
+  return JSON.stringify(left) === JSON.stringify(right)
 }
 
 export function pendingPlanLifecycleKey(
@@ -477,42 +499,69 @@ export function pendingPlanLifecycleKey(
     : JSON.stringify([sessionEpoch, actorId, companyId, planId])
 }
 
-export function recallPendingPlanLifecycle(key: string | null): PendingPlanLifecycle | null {
-  if (key === null) return null
+/** The slot of a context: the in-memory attempt first, then — after a reload — the stored one, strictly decoded. */
+export function readPendingPlanLifecycle(key: string | null): PendingPlanSlot {
+  if (key === null) return ABSENT
   const held = pendingLifecycle.get(key)
-  if (held !== undefined) return held
-  // After a reload: only a strictly valid revise of exactly this context, frozen before use.
-  const recalled = storedRevise(key)
-  if (recalled !== null) pendingLifecycle.set(key, recalled)
-  return recalled
+  if (held !== undefined) return { state: 'pending', pending: held }
+  const stored = storedSlot(key)
+  if (stored.state === 'pending') pendingLifecycle.set(key, stored.pending)
+  return stored
 }
 
-/** Reserve before sending so a route remount — or, for a revise, a page reload — cannot mint a second command. */
-export function reservePendingPlanLifecycle(key: string | null, pending: PendingPlanLifecycle): void {
-  if (key === null) return
-  pendingLifecycle.set(key, pending)
-  try {
-    if (pending.snapshot.kind === 'revise') {
-      sessionStorage.setItem(STORED_REVISE_PREFIX + key, JSON.stringify(pending))
-    } else {
-      // A newer command took this slot: the stored revise is replaced here exactly as it is in memory.
-      sessionStorage.removeItem(STORED_REVISE_PREFIX + key)
-    }
-  } catch {
-    // The in-memory slot still holds the immutable attempt for this module life.
+export type PlanLifecycleReservation =
+  /** The attempt holds the slot (a revise also durably stored): it may be sent. */
+  | { readonly type: 'reserved' }
+  /** Another unresolved revise holds the slot; only that exact attempt may be sent. */
+  | { readonly type: 'occupied'; readonly pending: PendingPlanLifecycle }
+  /** The slot cannot be read or holds an untrusted record: nothing may be sent for it. */
+  | { readonly type: 'unreadable' }
+  /** The revise could not be stored for a reload: it is not sent and not held. */
+  | { readonly type: 'not-durable' }
+
+/**
+ * Reserve before sending so a route remount — or, for a revise, a page reload — cannot mint a second command. Nothing
+ * may be sent unless this returns `reserved`.
+ */
+export function reservePendingPlanLifecycle(key: string | null, pending: PendingPlanLifecycle): PlanLifecycleReservation {
+  if (key === null) return { type: 'unreadable' }
+  const stored = storedSlot(key)
+  if (stored.state === 'unreadable') return { type: 'unreadable' }
+  const held = pendingLifecycle.get(key) ?? (stored.state === 'pending' ? stored.pending : undefined)
+  if (held !== undefined && held.snapshot.kind === 'revise' && !sameAttempt(held, pending)) {
+    return { type: 'occupied', pending: held }
   }
+  if (pending.snapshot.kind === 'revise' && !(stored.state === 'pending' && sameAttempt(stored.pending, pending))) {
+    const raw = JSON.stringify(pending)
+    try {
+      sessionStorage.setItem(STORED_REVISE_PREFIX + key, raw)
+      if (sessionStorage.getItem(STORED_REVISE_PREFIX + key) !== raw) return { type: 'not-durable' }
+    } catch {
+      return { type: 'not-durable' }
+    }
+  }
+  pendingLifecycle.set(key, pending)
+  return { type: 'reserved' }
 }
 
-/** Release only the command that settled; a newer frozen command in the same slot is never removed. */
+/**
+ * Release only the command that settled; a newer frozen command in the same slot is never removed. Memory follows
+ * storage: if the stored attempt cannot be proven gone, the same attempt stays held (it can only replay its own key and
+ * body).
+ */
 export function releasePendingPlanLifecycle(key: string | null, idempotencyKey: string): void {
   if (key === null) return
-  if (pendingLifecycle.get(key)?.snapshot.idempotencyKey === idempotencyKey) pendingLifecycle.delete(key)
-  if (storedRevise(key)?.snapshot.idempotencyKey !== idempotencyKey) return
-  try {
-    sessionStorage.removeItem(STORED_REVISE_PREFIX + key)
-  } catch {
-    // A stale stored attempt stays fail-closed: it can only replay the same key and body in the same context.
+  const held = pendingLifecycle.get(key)
+  const stored = storedSlot(key)
+  if (stored.state === 'unreadable' && held?.snapshot.kind === 'revise') return
+  if (stored.state === 'pending' && stored.pending.snapshot.idempotencyKey === idempotencyKey) {
+    try {
+      sessionStorage.removeItem(STORED_REVISE_PREFIX + key)
+    } catch {
+      return
+    }
   }
+  if (held?.snapshot.idempotencyKey === idempotencyKey) pendingLifecycle.delete(key)
 }
 
 /** Test isolation only. */
