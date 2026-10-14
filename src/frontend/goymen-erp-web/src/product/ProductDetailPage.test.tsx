@@ -201,6 +201,31 @@ describe('references', () => {
     expect(screen.getByTestId('product-unit-production').textContent).toBe('atanmadı')
   })
 
+  it('shows the server familyFacts Cins/Tür/Tip and keeps the three closed unit roles unassigned', async () => {
+    installFetch({
+      capabilities: DETAIL_ONLY,
+      onCard: () =>
+        json(
+          productCard({
+            product: productCore({
+              familyId: FAMILY_FLAT,
+              labels: {
+                group: 'Sac', class: null, family: 'Soğuk hadde', primaryStockUnit: 'kg',
+                familyFacts: { cins: 'Metal', tur: 'Sac', tip: 'Düz' },
+              },
+            }),
+          }),
+        ),
+    })
+    renderProductApp(PATH)
+
+    await cardVisible()
+    const factOf = (term: string) => screen.getByText(term, { selector: 'dt' }).nextElementSibling?.textContent
+    expect([factOf('Cins'), factOf('Tür'), factOf('Tip')]).toEqual(['Metal', 'Sac', 'Düz'])
+    for (const role of ['price', 'production', 'package'])
+      expect(screen.getByTestId(`product-unit-${role}`).textContent).toBe('atanmadı')
+  })
+
   it('shows the SERVER-resolved labels, never a client lookup', async () => {
     installFetch({ capabilities: DETAIL_ONLY })
     renderProductApp(PATH)
