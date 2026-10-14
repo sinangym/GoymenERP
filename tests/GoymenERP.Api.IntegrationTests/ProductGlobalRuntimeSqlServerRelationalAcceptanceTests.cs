@@ -480,7 +480,7 @@ public sealed class ProductGlobalRuntimeSqlServerRelationalAcceptanceTests
                 var definitionBefore = await new SqlProductFamilyDefinitionSource(genuineOnly).GetAsync(default);
                 var groupsBefore = (await genuineOnly.CodeGroups.AsNoTracking().ToListAsync())
                     .Select(row => row.ToContract()).OrderBy(row => row.Id).ToArray();
-                Assert.Equal((4, 1, 4, 5, 5), before);
+                Assert.Equal((5, 2, 5, 11, 5), before);
                 var store = new ProductStockDisplayQualifiedFixtureStore(
                     genuineOnly,
                     new ProductUnitProfileAdapter(
@@ -566,6 +566,8 @@ public sealed class ProductGlobalRuntimeSqlServerRelationalAcceptanceTests
                 option => option.FamilyId == ProductTechnicalCardFixture.FamilyId);
             Assert.Contains(familyOptions.Items,
                 option => option.FamilyId == ProductInitialTechnicalDefinitionV1.HotRolledSlitCoilFamilyId);
+            Assert.Contains(familyOptions.Items,
+                option => option.FamilyId == ProductInitialTechnicalDefinitionV1.HotRolledCutSheetPlateFamilyId);
             Assert.All(authority.Permissions,
                 permission => Assert.Equal(ProductPermissionManifestV1.OperationalSelectionRead, permission));
 
@@ -574,6 +576,110 @@ public sealed class ProductGlobalRuntimeSqlServerRelationalAcceptanceTests
             Assert.Equal(2, await product.CodeGroups.CountAsync());
             Assert.Single(await product.CodeRegistrations.ToListAsync());
             Assert.Single(await product.CodeCounters.ToListAsync());
+        });
+
+    [SqlServerFact]
+    public Task Cut_sheet_plate_requires_length_and_reopens_the_exact_length_in_the_Product_snapshot() =>
+        WithDatabaseAsync(async (factory, _) =>
+        {
+            using var client = factory.CreateClientFor("group-bootstrap-admin", CompanyA);
+            ProductReferences References(bool includeLength)
+            {
+                var attributes = new Dictionary<string, JsonElement>(StringComparer.Ordinal)
+                {
+                    ["thickness-mm"] = JsonSerializer.SerializeToElement(3m),
+                    ["width-mm"] = JsonSerializer.SerializeToElement(1250m),
+                    ["steel-grade"] = JsonSerializer.SerializeToElement("S235JR"),
+                    ["coating"] = JsonSerializer.SerializeToElement("uncoated"),
+                };
+                if (includeLength) attributes["length-mm"] = JsonSerializer.SerializeToElement(2500.125m);
+                return new(ProductInitialTechnicalDefinitionV1.HotRolledCutSheetPlateTemplateId, "1", attributes,
+                    new(Stock: SettingsUnitIdentitiesV1.Kilogram, Sales: SettingsUnitIdentitiesV1.Kilogram));
+            }
+
+            async Task<ProductMutationResponse> CreateAsync(bool includeLength, string key)
+            {
+                var draft = new CreateProductDraftRequest(
+                    includeLength ? "S235JR 3 × 1250 × 2500,125 kesilmiş sac" : "Boyu eksik kesilmiş sac",
+                    ProductInitialCodeGroupV1.SacGroupId,
+                    FamilyId: ProductInitialTechnicalDefinitionV1.HotRolledCutSheetPlateFamilyId,
+                    References: References(includeLength));
+                using var message = new HttpRequestMessage(HttpMethod.Post, "/api/v1/products")
+                { Content = JsonContent.Create(draft) };
+                message.Headers.Add(ProductApiV1.IdempotencyHeader, key);
+                using var response = await client.SendAsync(message);
+                Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+                return (await response.Content.ReadFromJsonAsync<ProductMutationResponse>())!;
+            }
+
+            async Task<HttpResponseMessage> ActivateAsync(Guid productId, string key)
+            {
+                var message = new HttpRequestMessage(HttpMethod.Post, $"/api/v1/products/{productId:D}/activation")
+                { Content = JsonContent.Create(new ActivateProductRequest("1")) };
+                message.Headers.Add(ProductApiV1.IdempotencyHeader, key);
+                return await client.SendAsync(message);
+            }
+
+            var incomplete = await CreateAsync(false, "product-cut-sheet-missing-length");
+            using (var refused = await ActivateAsync(incomplete.Card.Product.Id,
+                       "product-cut-sheet-missing-length-activate"))
+            {
+                Assert.Equal(HttpStatusCode.UnprocessableEntity, refused.StatusCode);
+                var body = await refused.Content.ReadAsStringAsync();
+                Assert.Contains("references.attributes.length-mm", body, StringComparison.Ordinal);
+                Assert.Contains(ProductFamilyPolicyCodesV1.Required, body, StringComparison.Ordinal);
+            }
+
+            var created = await CreateAsync(true, "product-cut-sheet-exact-length");
+            using var activatedResponse = await ActivateAsync(created.Card.Product.Id,
+                "product-cut-sheet-exact-length-activate");
+            Assert.Equal(HttpStatusCode.OK, activatedResponse.StatusCode);
+            var activated = (await activatedResponse.Content.ReadFromJsonAsync<ProductMutationResponse>())!;
+            Assert.Equal((created.Card.Product.Id, "Active", "2"),
+                (activated.Card.Product.Id, activated.Card.Product.Lifecycle, activated.Card.Product.Version));
+
+            await using (var setup = factory.Services.CreateAsyncScope())
+            {
+                var identity = setup.ServiceProvider.GetRequiredService<IdentityDbContext>();
+                if (!await identity.Users.AnyAsync(user => user.Id == ActorId))
+                    identity.Users.Add(new UserAccount(ActorId, "Disposable Product snapshot actor", null));
+                var roleId = Guid.NewGuid();
+                var role = new RoleDefinition(roleId, $"PRODUCT-CUT-SNAPSHOT-{roleId:N}",
+                    "Disposable cut-sheet Product snapshot actor", true);
+                role.AddPermission(ProductPermissionManifestV1.OperationalSelectionRead);
+                var assignment = new RoleAssignment(Guid.NewGuid(), ActorId, roleId, CompanyA,
+                    DateTimeOffset.UtcNow.AddMinutes(-1), null, approvedByUserId: null);
+                assignment.AddScope(AccessScopeType.Company, CompanyA);
+                identity.Roles.Add(role);
+                identity.RoleAssignments.Add(assignment);
+                await identity.SaveChangesAsync();
+            }
+
+            await using var scope = factory.Services.CreateAsyncScope();
+            var accessor = scope.ServiceProvider.GetRequiredService<IHttpContextAccessor>();
+            accessor.HttpContext = new DefaultHttpContext
+            {
+                User = new ClaimsPrincipal(new ClaimsIdentity([
+                    new Claim(GoymenClaimTypes.UserId, ActorId.ToString("D")),
+                    new Claim(GoymenClaimTypes.CompanyAccess, CompanyA.ToString("D")),
+                ], "IsolatedSqlFixture")),
+            };
+            scope.ServiceProvider.GetRequiredService<ICompanyContext>().Set(CompanyA);
+            var result = await scope.ServiceProvider.GetRequiredService<IProductManufacturingTechnicalSnapshotV1>()
+                .ReadAsync(new(created.Card.Product.Id, activated.Card.Product.Version, new(2026, 10, 15)), default);
+
+            Assert.Empty(result.Errors);
+            var snapshot = Assert.IsType<ProductManufacturingTechnicalSnapshotV1>(result.Snapshot);
+            Assert.Equal((created.Card.Product.Id, "2", 3m, 1250m, 2500.125m),
+                (snapshot.ProductId, snapshot.ProductVersion, snapshot.ThicknessMm, snapshot.WidthMm,
+                    snapshot.LengthMm));
+            Assert.Equal((ProductInitialTechnicalDefinitionV1.HotRolledCutSheetPlateFamilyId,
+                    ProductInitialTechnicalDefinitionV1.CutSheetPlateSourceRef),
+                (snapshot.Family.FamilyId, snapshot.Family.SourceRevision));
+            Assert.Equal((ProductInitialTechnicalDefinitionV1.HotRolledCutSheetPlateTemplateId, "1",
+                    ProductInitialTechnicalDefinitionV1.CutSheetPlateSourceRef),
+                (snapshot.Template.TemplateId, snapshot.Template.TemplateVersion,
+                    snapshot.Template.SourceRevision));
         });
 
     [SqlServerFact]
@@ -847,6 +953,7 @@ public sealed class ProductGlobalRuntimeSqlServerRelationalAcceptanceTests
                 Assert.Equal((first.Card.Product.Id, "2", 3m, 248m, effectiveOn),
                     (snapshot.ProductId, snapshot.ProductVersion, snapshot.ThicknessMm,
                         snapshot.WidthMm, snapshot.EffectiveOn));
+                Assert.Null(snapshot.LengthMm);
                 Assert.Equal((ProductInitialTechnicalDefinitionV1.HotRolledSlitCoilFamilyId,
                     ProductInitialTechnicalDefinitionV1.SourceRef),
                     (snapshot.Family.FamilyId, snapshot.Family.SourceRevision));
