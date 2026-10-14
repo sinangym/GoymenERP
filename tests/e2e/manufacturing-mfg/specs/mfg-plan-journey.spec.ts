@@ -106,10 +106,16 @@ async function expectCutToLengthRows(page: Page, expected: readonly CutToLengthL
 }
 
 async function expectCutToLengthLines(page: Page) {
-  await expectCutToLengthRows(page, [
-    { lineId: '', sequence: 40, lengthMm: '6000', count: 3 },
-    { lineId: '', sequence: -7, lengthMm: '2500.5', count: 2 },
-  ])
+  const detail = page.getByRole('region', { name: 'Boy kesme ayrıntısı' })
+  await expect(detail).toBeVisible()
+  const rows = detail.getByRole('table').locator('tbody tr')
+  await expect(rows).toHaveCount(2)
+  await expect(rows.nth(0).getByRole('rowheader')).toHaveText('40')
+  await expect(rows.nth(0).getByRole('cell').nth(0)).toHaveText(/^6000(?:[.,]0+)? mm$/)
+  await expect(rows.nth(0).getByRole('cell').nth(1)).toHaveText('3')
+  await expect(rows.nth(1).getByRole('rowheader')).toHaveText('-7')
+  await expect(rows.nth(1).getByRole('cell').nth(0)).toHaveText(/^2500[.,]5 mm$/)
+  await expect(rows.nth(1).getByRole('cell').nth(1)).toHaveText('2')
 }
 
 async function asActor(context: BrowserContext, actor: string): Promise<Set<Request>> {
@@ -1161,6 +1167,7 @@ test.describe('MFG plan create and reopen (real Inventory parent roll)', () => {
         (entry) => PLAN_POST_RE.test(entry.url()) && entry.method() === 'POST',
       ).length
       await page.getByRole('button', { name: /Kesim satırı ekle/i }).click()
+      await expect(page.getByLabel(/Sıra no$/)).toHaveValue('')
       await page.getByLabel(/Sıra no$/).fill('40')
       await page.waitForTimeout(600)
       expect([...rewritten].filter(
@@ -1188,6 +1195,7 @@ test.describe('MFG plan create and reopen (real Inventory parent roll)', () => {
       await page.getByLabel(/Uzunluk \(mm\)$/).fill('6000.000')
       await page.getByLabel(/Adet$/).fill('3')
       await page.getByRole('button', { name: /Kesim satırı ekle/i }).click()
+      await expect(page.getByLabel(/Sıra no$/).nth(1)).toHaveValue('')
       await page.getByLabel(/Sıra no$/).nth(1).fill('-7')
       await page.getByLabel(/Uzunluk \(mm\)$/).nth(1).fill('2500.5')
 
@@ -1273,7 +1281,18 @@ test.describe('MFG plan create and reopen (real Inventory parent roll)', () => {
         }],
       })
       expect(firstCreateBody.cutToLengthSpec).toEqual(authoredSpec)
-      await expect(page.getByLabel(/Sıra no$/).first()).toBeDisabled()
+      for (const field of [
+        page.getByRole('combobox', { name: 'İş merkezi' }),
+        page.getByRole('textbox', { name: `${env.seed.rolls.process.CutToLength.labelCode} planlanan kg` }),
+        page.getByLabel(/Sıra no$/).nth(0),
+        page.getByLabel(/Sıra no$/).nth(1),
+        page.getByLabel(/Uzunluk \(mm\)$/).nth(0),
+        page.getByLabel(/Uzunluk \(mm\)$/).nth(1),
+        page.getByLabel(/Adet$/).nth(0),
+        page.getByLabel(/Adet$/).nth(1),
+      ]) {
+        await expect(field).toBeDisabled()
+      }
 
       // Reload proves that the pending-create snapshot, rather than current form state, owns the retry.
       await page.reload()
