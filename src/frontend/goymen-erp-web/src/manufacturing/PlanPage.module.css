@@ -11,6 +11,8 @@
 .searchRow, .actions { display: flex; flex-wrap: wrap; align-items: center; gap: .7rem; }
 .actions button, .primaryLink { border: 1px solid #236442; border-radius: .45rem; background: #236442; color: #fff; padding: .55rem .9rem; font: inherit; font-weight: 700; cursor: pointer; text-decoration: none; }
 .actions button:disabled { cursor: progress; opacity: .65; }
+/* M01.3: an end cut-line row's impossible move stays focusable (aria-disabled) but must look unavailable; focus ring kept. */
+.actions button[aria-disabled="true"] { border-color: #a9b5ad; background: #e4e9e5; color: #4f5f55; cursor: not-allowed; }
 .secondary { border: 1px solid #63766b; border-radius: .45rem; background: #fff; color: #294535; padding: .5rem .85rem; text-decoration: none; }
 .tableWrap { overflow-x: auto; border: 1px solid #d7ddd8; border-radius: .8rem; background: #fff; }
 .table { width: 100%; border-collapse: collapse; }
