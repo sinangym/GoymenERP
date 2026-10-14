@@ -1814,9 +1814,9 @@ def _load_source_snapshot(repository_root: Path, source_commit: str) -> SourceSn
         raise InventoryError("Source commit must resolve exactly to the current Git HEAD.")
     _require_inventory_inputs_clean(root)
     files = _read_commit_blobs(root, source_commit)
+    _require_inventory_inputs_clean(root)
     if _git_source_commit(root) != source_commit:
         raise InventoryError("Git HEAD changed while exact commit blobs were read.")
-    _require_inventory_inputs_clean(root)
     for required_path in (SCHEMA_PATH.as_posix(), GENERATOR_PATH.as_posix()):
         if required_path not in files:
             raise InventoryError(f"Exact commit is missing required inventory input: {required_path}.")
