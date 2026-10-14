@@ -25,6 +25,7 @@ import { MANUFACTURING_BASE } from './api'
 import { decodePlanList } from './planListContract'
 import { decodePlanRevisions } from './planRevisionContract'
 import type { RevisePlanRequest } from './planCommandApi'
+import { planPreviewInput } from './usePlanPreview'
 import {
   cutToLengthSpec,
   massBalance,
@@ -343,6 +344,36 @@ describe('Manufacturing port ↔ canonical OpenAPI', () => {
     expect(Object.keys(cutRequest).sort()).toEqual(names('RevisePlanRequestV1'))
     expect(Object.keys(cutRequest.cutToLengthSpec ?? {}).sort()).toEqual(names('CutToLengthSpecRequestV1'))
     expect(Object.keys(cutRequest.cutToLengthSpec?.lines[0] ?? {}).sort()).toEqual(names('CutToLengthLineRequestV1'))
+  })
+
+  it('sends exactly the properties PlanPreviewRequestV1 declares, the cut lines optional and nullable', () => {
+    const plans = `${MANUFACTURING_BASE.replace(/^.*\/api\/v1/, '/api/v1')}/plans`
+    expect(requestSchemaName(`${plans}/preview`)).toBe('PlanPreviewRequestV1')
+    expect([...(schema('PlanPreviewRequestV1').required ?? [])].sort()).toEqual(['inputs', 'target', 'workCenterId'])
+    expectOptionalCutToLength('PlanPreviewRequestV1', 'CutToLengthSpecRequestV1')
+    // The preview and the revision declare the very same cut-line member.
+    expect(schema('PlanPreviewRequestV1').properties?.[CUT_TO_LENGTH])
+      .toEqual(schema('RevisePlanRequestV1').properties?.[CUT_TO_LENGTH])
+
+    const rows = [{
+      parentRollId: ROLL_1,
+      label: 'LBL-0001',
+      labelVersion: '7',
+      commercialContext: null,
+      plannedKg: '800',
+    }]
+    const workCenterId = 'd0000000-0000-4000-8000-000000000003'
+    const legacy = planPreviewInput(workCenterId, rows, '', '')
+    const cut = planPreviewInput(workCenterId, rows, '', '', undefined, { lines: cutToLengthSpec().lines })
+    if (legacy.type !== 'ready' || cut.type !== 'ready') throw new Error('the preview content is not ready')
+    // Legacy: exactly the required members, no cut member at all.
+    expect(Object.keys(legacy.request).sort()).toEqual(['inputs', 'target', 'workCenterId'])
+    // A cut plan's edit preview: every declared member except the slitting one an edit never sends.
+    expect(Object.keys(cut.request).sort())
+      .toEqual(names('PlanPreviewRequestV1').filter((property) => property !== 'slittingSpec'))
+    expect(Object.keys(cut.request.inputs[0]).sort()).toEqual(names('PlannedInputRequestV1'))
+    expect(Object.keys(cut.request.cutToLengthSpec ?? {}).sort()).toEqual(names('CutToLengthSpecRequestV1'))
+    expect(Object.keys(cut.request.cutToLengthSpec?.lines[0] ?? {}).sort()).toEqual(names('CutToLengthLineRequestV1'))
   })
 
   it('reads exactly the properties PlanRevisionListViewV1 and its parts declare, all required, on the history route', () => {

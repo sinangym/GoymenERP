@@ -9,6 +9,8 @@ import userEvent from '@testing-library/user-event'
 import { MANUFACTURING_CAPABILITY } from './capabilities'
 import { decodePlanRevisions } from './planRevisionContract'
 import { revisePlan, type RevisePlanRequest } from './planCommandApi'
+import type { PlanPreviewRequest } from './planPreview'
+import { parameterLabel } from './planPreviewText'
 import {
   APPROVER,
   COMPANY_A,
@@ -23,6 +25,7 @@ import {
   installFetch,
   json,
   plan,
+  planCalculation,
   planRevision,
   planRevisions,
   plannedInput,
@@ -45,6 +48,25 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
+/**
+ * The preview answer for a content, shaped like the server's: a CutToLength content previewed WITHOUT its cut lines
+ * gets the calculator's placeholder line and so names the line inputs missing (ProductionPlanCalculatorV1). That is
+ * the materially false answer an edit preview must never produce for a plan that has stored lines.
+ */
+function previewAnswer(body: PlanPreviewRequest, process: unknown) {
+  const lineMissing = process === 'CutToLength' && body.cutToLengthSpec == null
+    ? ['lines[0].count', 'lines[0].targetLengthMm']
+    : []
+  return planCalculation({
+    workCenterId: body.workCenterId,
+    process,
+    plannedRollCount: body.inputs.length,
+    plannedInputKg: String(body.inputs.reduce((sum, input) => sum + Number(input.plannedKg), 0)),
+    rolls: body.inputs.map((input) => ({ parentRollId: input.parentRollId, plannedKg: input.plannedKg, answers: [] })),
+    missingParameters: ['densityKgPerCubicMetre', ...lineMissing].sort(),
+  })
+}
+
 /** A stateful synthetic server: the plan, its history and one revision endpoint answering `answer`. */
 function server(
   answer?: (body: RevisePlanRequest, count: number) => Response | 'throw' | undefined,
@@ -62,6 +84,9 @@ function server(
         { id: WORK_CENTER, locationId: WORK_CENTER, code: 'DL-1', name: 'Dilme 1', kind: 'Slitting', isActive: true, canOpenLocationDetail: false },
         { id: OTHER_LINE, locationId: WORK_CENTER, code: 'DL-2', name: 'Dilme 2', kind: 'Slitting', isActive: true, canOpenLocationDetail: false },
       ])
+    }
+    if (url.endsWith('/manufacturing/plans/preview') && init?.method === 'POST') {
+      return json(previewAnswer(JSON.parse(init.body as string) as PlanPreviewRequest, storedPlan.process))
     }
     if (url.endsWith(`/manufacturing/plans/${PLAN}/revision`) && init?.method === 'POST') {
       revisions += 1
@@ -125,6 +150,10 @@ async function changeFirstRollKg(user: ReturnType<typeof userEvent.setup>, kg: s
   await user.type(field, kg)
   await user.type(screen.getByRole('textbox', { name: 'Düzenleme gerekçesi' }), reason)
   await user.click(screen.getByRole('button', { name: 'Değişikliği kaydet' }))
+}
+
+function previews(recorded: ReturnType<typeof installFetch>): PlanPreviewRequest[] {
+  return requestsFor(recorded, '/manufacturing/plans/preview', 'POST').map((request) => request.body as PlanPreviewRequest)
 }
 
 async function openEditForm(user: ReturnType<typeof userEvent.setup>) {
@@ -252,6 +281,9 @@ describe('plan edit on the detail screen', () => {
     renderAt(`/uretim/plan/${PLAN}`)
 
     await openEditForm(user)
+    // The preview of a legacy plan keeps the legacy request shape too.
+    await waitFor(() => expect(previews(recorded).length).toBeGreaterThan(0))
+    expect(previews(recorded).every((body) => !Object.hasOwn(body, 'cutToLengthSpec'))).toBe(true)
     await changeFirstRollKg(user, '900', 'Eski plan kg düzeltmesi')
 
     expect(await screen.findByText('Plan güncellendi (sürüm 2); güncel kayıt ve geçmiş yeniden okundu.')).toBeTruthy()
@@ -291,6 +323,47 @@ describe('plan edit on the detail screen', () => {
     const second = requestsFor(recorded, `/manufacturing/plans/${PLAN}/revision`, 'POST')[1]
     expect(second.body).toMatchObject({ expectedVersion: 2, workCenterId: OTHER_LINE, cutToLengthSpec: { lines: STORED_CUT_LINES } })
     expect(fake.stored().history.at(-1)).toMatchObject({ cutToLengthSpec: { lines: STORED_CUT_LINES } })
+  })
+
+  it('previews exactly the cut lines the revision then saves, never a calculation without them', async () => {
+    const user = userEvent.setup()
+    const fake = server(
+      undefined,
+      [planRevision({ cutToLengthSpec: cutToLengthSpec() })],
+      plan({ process: 'CutToLength', cutToLengthSpec: cutToLengthSpec() }),
+    )
+    const recorded = installFetch({ capabilities: EDITOR_CAPABILITIES, respond: fake.respond })
+    renderAt(`/uretim/plan/${PLAN}`)
+
+    await openEditForm(user)
+    const kg = screen.getByRole('textbox', { name: `${ROLL_1} planlanan kg` })
+    await user.clear(kg)
+    await user.type(kg, '900')
+    await waitFor(() => expect(previews(recorded).some((body) => body.inputs[0]?.plannedKg === '900')).toBe(true))
+    const previewed = previews(recorded).at(-1)!
+    // Ordered ids, signed sequences, canonical lengths and counts exactly as stored — in every preview sent.
+    expect(previewed.cutToLengthSpec).toEqual({ lines: STORED_CUT_LINES })
+    expect(previews(recorded).every((body) => JSON.stringify(body.cutToLengthSpec) === JSON.stringify({ lines: STORED_CUT_LINES })))
+      .toBe(true)
+    // The current preview is the server's answer for those lines: it names no cut-line input as missing.
+    const missing = await screen.findByRole('list', { name: 'Eksik parametreler' })
+    await waitFor(() => expect(within(missing).getByText(parameterLabel('densityKgPerCubicMetre'))).toBeTruthy())
+    expect(within(missing).queryByText(parameterLabel('lines[0].targetLengthMm'))).toBeNull()
+    expect(within(missing).queryByText(parameterLabel('lines[0].count'))).toBeNull()
+
+    await user.type(screen.getByRole('textbox', { name: 'Düzenleme gerekçesi' }), 'Kg değişti, kesim aynı')
+    await user.click(screen.getByRole('button', { name: 'Değişikliği kaydet' }))
+    expect(await screen.findByText('Plan güncellendi (sürüm 2); güncel kayıt ve geçmiş yeniden okundu.')).toBeTruthy()
+    const [sent] = requestsFor(recorded, `/manufacturing/plans/${PLAN}/revision`, 'POST')
+    const saved = sent.body as RevisePlanRequest
+    // preview = saved content: the calculated members of the revision are exactly the previewed body.
+    expect(previewed).toEqual({
+      workCenterId: saved.workCenterId,
+      inputs: saved.inputs,
+      target: saved.target,
+      cutToLengthSpec: saved.cutToLengthSpec,
+    })
+    expect(fake.stored().plan.cutToLengthSpec).toEqual({ lines: STORED_CUT_LINES })
   })
 
   it.each([

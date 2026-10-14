@@ -11,7 +11,7 @@
  */
 
 import { MANUFACTURING_BASE, devHeaders } from './api'
-import type { PlanTargetBasis, SlittingSpecRequest } from './planCommandApi'
+import type { CutToLengthSpecRequest, PlanTargetBasis, SlittingSpecRequest } from './planCommandApi'
 import type { CapturedPlanCommercialContext } from './planRevisionContract'
 
 import { decodePlanPreview, type PlanPreview } from './planPreviewContract'
@@ -36,6 +36,11 @@ export interface PlanPreviewRequest {
   }[]
   readonly target: { readonly basis: PlanTargetBasis; readonly kg: string } | null
   readonly slittingSpec?: SlittingSpecRequest | null
+  /**
+   * M01.2: an edit preview sends the plan's stored cut lines exactly as its revision will (`CutToLengthSpecRequestV1`);
+   * without them the server would calculate a placeholder line. Omitted for a plan without lines (legacy shape).
+   */
+  readonly cutToLengthSpec?: CutToLengthSpecRequest
 }
 
 export type PlanPreviewOutcome =
