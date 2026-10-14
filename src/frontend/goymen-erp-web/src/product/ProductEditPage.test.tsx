@@ -8,6 +8,7 @@ import {
   CLASS_FLAT,
   COMPANY_A,
   COMPANY_B,
+  FAMILY_FLAT,
   GROUP_SAC,
   PRODUCT_1,
   installFetch,
@@ -16,6 +17,7 @@ import {
   productCard,
   productCore,
   referenceOptions,
+  references,
   renderProductApp,
 } from './testHarness'
 
@@ -742,5 +744,66 @@ describe('scope', () => {
 
     await formVisible()
     expect(screen.getByText(/her iki şirkette de görünür/)).toBeTruthy()
+  })
+})
+
+describe('technical card: fixed family facts and the three open unit roles (P03.1 r2)', () => {
+  const TEMPLATE = '81000000-0000-4000-8000-000000000001'
+  const KG = '81000000-0000-4000-8000-000000000002'
+  const PIECE = '81000000-0000-4000-8000-000000000003'
+  const technicalOptions = () => referenceOptions({
+    templates: [{ id: TEMPLATE, version: '1', displayName: 'Sentetik sac şablonu', fields: [{ key: 'thickness',
+      kind: 'measureMillimetre', role: null, required: true, dictionary: null, allowsCandidate: false,
+      appliesWhenField: null, appliesWhenCode: null, parentField: null }] }],
+    familyFacts: [{ id: FAMILY_FLAT, code: 'TEST', displayName: 'Sentetik aile', cins: 'Metal', tur: 'Sac', tip: 'Düz',
+      templateId: TEMPLATE, templateVersion: '1' }],
+    dictionaries: [],
+    units: [{ id: KG, displayName: 'Kilogram', symbol: 'kg', isKilogram: true },
+      { id: PIECE, displayName: 'Adet', symbol: 'adet', isKilogram: false }],
+  })
+  const card = (units: Record<string, string | null>) => productCard({
+    product: productCore({ familyId: FAMILY_FLAT }),
+    references: references({ templateId: TEMPLATE, templateVersion: '1', attributes: { thickness: 1.25 },
+      units: { ...references().units, stock: KG, sales: KG, ...units } }),
+  })
+  const factOf = (term: string) => screen.getByText(term, { selector: 'dt' }).nextElementSibling?.textContent
+
+  it('shows the server Cins/Tür/Tip read-only and offers no editor for the closed roles', async () => {
+    const loaded = card({})
+    installFetch({ capabilities: EDIT_ONLY, onOptions: () => json(technicalOptions()), onCard: () => json(loaded) })
+    renderProductApp(`/urun/${String(loaded.product.id)}/duzenle`)
+    await screen.findByLabelText(/thickness/)
+    expect([factOf('Cins'), factOf('Tür'), factOf('Tip')]).toEqual(['Metal', 'Sac', 'Düz'])
+    expect(screen.queryByRole('textbox', { name: /Cins|Tür|Tip/ })).toBeNull()
+    for (const label of ['Fiyat birimi', 'Üretim birimi', 'Paket birimi'])
+      expect(screen.queryByRole('combobox', { name: label })).toBeNull()
+    expect((screen.getByLabelText('Stok birimi (kg)') as HTMLSelectElement).value).toBe(KG)
+    expect((screen.getByLabelText('Alış birimi') as HTMLSelectElement).value).toBe('')
+    expect(screen.queryByText(/henüz yazmaya açık olmayan/)).toBeNull()
+  })
+
+  it('keeps a stored closed-role value visible, never sends it, and shows the server refusal next to it', async () => {
+    const loaded = card({ price: PIECE })
+    const { calls } = installFetch({ capabilities: EDIT_ONLY, onOptions: () => json(technicalOptions()),
+      onCard: () => json(loaded),
+      onEdit: () => json({ code: 'validation_failed',
+        errors: [{ field: 'references.units.price', code: 'invalid_reference' }] }, 400) })
+    renderProductApp(`/urun/${String(loaded.product.id)}/duzenle`)
+    await screen.findByLabelText(/thickness/)
+    const stored = screen.getByTestId('product-closed-unit-price')
+    expect(stored.textContent).toContain('Kayıtlı değer: Adet (adet)')
+    expect(screen.getByText(/henüz yazmaya açık olmayan/)).toBeTruthy()
+    expect(screen.queryByRole('combobox', { name: 'Fiyat birimi' })).toBeNull()
+
+    await userEvent.selectOptions(screen.getByLabelText('Alış birimi'), PIECE)
+    await userEvent.type(screen.getByLabelText('Değişiklik gerekçesi'), 'Alış birimi seçildi')
+    await userEvent.click(screen.getByRole('button', { name: 'Değişiklikleri kaydet' }))
+    await waitFor(() => expect(calls.some(c => c.method === 'PATCH')).toBe(true))
+    const patch = JSON.parse(calls.find(c => c.method === 'PATCH')!.body!)
+    expect(patch.changes.references).toEqual({ units: { purchase: PIECE } })
+
+    const refusal = await within(screen.getByTestId('product-closed-unit-price')).findByRole('alert')
+    expect(refusal.textContent).toBe('Seçilen referans geçersiz veya artık mevcut değil.')
+    expect(screen.getByTestId('product-closed-unit-price').textContent).toContain('Kayıtlı değer: Adet (adet)')
   })
 })
