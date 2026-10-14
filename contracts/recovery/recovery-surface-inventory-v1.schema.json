@@ -67,7 +67,7 @@
           },
           "path": {
             "type": "string",
-            "pattern": "^src/backend/.+DbContext\\.cs$"
+            "pattern": "^src/backend/(?:[A-Za-z0-9][A-Za-z0-9._-]*/)*[A-Za-z0-9][A-Za-z0-9._-]*DbContext\\.cs$"
           },
           "sha256": {
             "type": "string",
@@ -91,7 +91,7 @@
         "properties": {
           "path": {
             "type": "string",
-            "pattern": "^src/backend/.+/Migrations/[0-9]{14}_[A-Za-z0-9]+\\.cs$"
+            "pattern": "^src/backend/(?:[A-Za-z0-9][A-Za-z0-9._-]*/)+Migrations/[0-9]{14}_[A-Za-z0-9]+\\.cs$"
           },
           "sha256": {
             "type": "string",
@@ -113,6 +113,15 @@
       "properties": {
         "configurationKeys": {
           "type": "array",
+          "const": [
+            "Documents:MaximumUploadBytes",
+            "Documents:ObjectStore:RootPath",
+            "Documents:Scanner:Defender:ExecutablePath",
+            "Documents:Scanner:Defender:MaximumConcurrentScans",
+            "Documents:Scanner:Defender:QuarantinePath",
+            "Documents:Scanner:Defender:TimeoutSeconds",
+            "Documents:Scanner:Mode"
+          ],
           "minItems": 7,
           "maxItems": 7,
           "uniqueItems": true,
@@ -123,6 +132,16 @@
         },
         "objectStoreAdapters": {
           "type": "array",
+          "const": [
+            {
+              "name": "FileSystemDocumentObjectStore",
+              "path": "src/backend/Modules/Documents/GoymenERP.Modules.Documents.Infrastructure/Storage/FileSystemDocumentObjectStore.cs"
+            },
+            {
+              "name": "ServerDirectoryDocumentObjectStore",
+              "path": "src/backend/Modules/Documents/GoymenERP.Modules.Documents.Infrastructure/Storage/ServerDirectoryDocumentObjectStore.cs"
+            }
+          ],
           "minItems": 2,
           "maxItems": 2,
           "uniqueItems": true,
@@ -140,7 +159,7 @@
               },
               "path": {
                 "type": "string",
-                "pattern": "^src/backend/Modules/Documents/.+DocumentObjectStore\\.cs$"
+                "pattern": "^src/backend/Modules/Documents/(?:[A-Za-z0-9][A-Za-z0-9._-]*/)*[A-Za-z0-9][A-Za-z0-9._-]*DocumentObjectStore\\.cs$"
               }
             }
           }
@@ -150,6 +169,16 @@
         },
         "pathClassifications": {
           "type": "array",
+          "const": [
+            {
+              "configurationKey": "Documents:ObjectStore:RootPath",
+              "classification": "RECOVERY_SET_CONTENT"
+            },
+            {
+              "configurationKey": "Documents:Scanner:Defender:QuarantinePath",
+              "classification": "TRANSIENT_EXCLUDED"
+            }
+          ],
           "minItems": 2,
           "maxItems": 2,
           "uniqueItems": true,
@@ -176,8 +205,8 @@
         },
         "sourceFiles": {
           "type": "array",
-          "minItems": 5,
-          "maxItems": 5,
+          "minItems": 6,
+          "maxItems": 6,
           "uniqueItems": true,
           "items": {
             "type": "object",
@@ -189,7 +218,7 @@
             "properties": {
               "path": {
                 "type": "string",
-                "minLength": 1
+                "pattern": "^src/backend/(?:[A-Za-z0-9][A-Za-z0-9._-]*/)*[A-Za-z0-9][A-Za-z0-9._-]*$"
               },
               "sha256": {
                 "type": "string",
@@ -287,7 +316,7 @@
               "properties": {
                 "path": {
                   "type": "string",
-                  "pattern": "^src/backend/.+\\.cs$"
+                  "pattern": "^src/backend/(?:[A-Za-z0-9][A-Za-z0-9._-]*/)*[A-Za-z0-9][A-Za-z0-9._-]*\\.cs$"
                 },
                 "sha256": {
                   "type": "string",
@@ -314,27 +343,35 @@
       ],
       "properties": {
         "sourceOnly": {
+          "type": "boolean",
           "const": true
         },
         "containsSecrets": {
+          "type": "boolean",
           "const": false
         },
         "containsConfigurationValues": {
+          "type": "boolean",
           "const": false
         },
         "selectsProvider": {
+          "type": "boolean",
           "const": false
         },
         "performsBackupOrRestore": {
+          "type": "boolean",
           "const": false
         },
         "mutatesInfrastructure": {
+          "type": "boolean",
           "const": false
         },
         "mutatesData": {
+          "type": "boolean",
           "const": false
         },
         "deploys": {
+          "type": "boolean",
           "const": false
         }
       }

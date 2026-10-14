@@ -6,16 +6,18 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import re
 import subprocess
 import sys
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, NamedTuple, Sequence
 
 
 SCHEMA_VERSION = "goymenerp.recovery-surface-inventory.v1"
 INVENTORY_MODE = "SOURCE_ONLY"
 SCHEMA_PATH = Path("contracts/recovery/recovery-surface-inventory-v1.schema.json")
+GENERATOR_PATH = Path("tools/generate_recovery_surface_inventory.py")
 BACKEND_ROOT = Path("src/backend")
 
 EXPECTED_DB_CONTEXT_COUNT = 18
@@ -45,6 +47,7 @@ DOCUMENT_SOURCE_PATHS = (
     "src/backend/Modules/Documents/GoymenERP.Modules.Documents.Infrastructure/DocumentsModuleExtensions.cs",
     "src/backend/Modules/Documents/GoymenERP.Modules.Documents.Infrastructure/Storage/FileSystemDocumentObjectStore.cs",
     "src/backend/Modules/Documents/GoymenERP.Modules.Documents.Infrastructure/Storage/ServerDirectoryDocumentObjectStore.cs",
+    "src/backend/Modules/Documents/GoymenERP.Modules.Documents.Infrastructure/Scanning/WindowsDefenderDocumentScanner.cs",
     "src/backend/Modules/Documents/README.md",
 )
 DOCUMENT_ADAPTERS = (
@@ -61,20 +64,6 @@ DOCUMENT_OBJECT_KEY_PATTERN = "^companies/[0-9a-f]{32}/sha256/[0-9a-f]{64}$"
 EXPECTED_OUTBOX_CONTRACT_PATHS = (
     "src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Application/InventoryCustomerReturnOutboxV1.cs",
     "src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Application/InventoryDefiniteShipmentOutboxV1.cs",
-)
-EXPECTED_OUTBOX_INBOX_TABLES = (
-    (
-        "src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventoryDbContext.cs",
-        "OutboxMessages",
-    ),
-    (
-        "src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Persistence/WorkDbContext.cs",
-        "ObservationInbox",
-    ),
-    (
-        "src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Persistence/WorkDbContext.cs",
-        "OutboxMessages",
-    ),
 )
 EXPECTED_IDEMPOTENCY_KEY_TABLES = (
     ("accounting", "Commands"),
@@ -102,10 +91,30 @@ EXPECTED_MESSAGE_DELIVERY_TABLES = (
     ("work", "ObservationInbox"),
     ("work", "OutboxMessages"),
 )
+NON_MESSAGE_DELIVERY_TABLES = (
+    ("sales", "DraftDeliveryScheduleDates"),
+    ("sales", "DraftDeliverySchedules"),
+    ("sales", "DraftDeliverySlices"),
+)
+DOCUMENT_PATH_CLASSIFICATIONS = (
+    ("Documents:ObjectStore:RootPath", "RECOVERY_SET_CONTENT"),
+    ("Documents:Scanner:Defender:QuarantinePath", "TRANSIENT_EXCLUDED"),
+)
+INVENTORY_INPUT_PATHS = (
+    BACKEND_ROOT.as_posix(),
+    SCHEMA_PATH.as_posix(),
+    GENERATOR_PATH.as_posix(),
+)
 
 
 class InventoryError(ValueError):
     """A fail-closed source inventory error that is safe to report."""
+
+
+class SourceSnapshot(NamedTuple):
+    repository_root: Path
+    source_commit: str
+    files: dict[str, bytes]
 
 
 class SourceEvidence(NamedTuple):
@@ -421,36 +430,170 @@ SUPPORTED_SCHEMA_KEYWORDS = {
 }
 
 
-def _relative_path(repository_root: Path, path: Path) -> str:
-    return path.relative_to(repository_root).as_posix()
+def _require_repo_relative_path(relative_path: str, *, backend_only: bool = True) -> None:
+    if (
+        not relative_path
+        or "\\" in relative_path
+        or ":" in relative_path
+        or "\x00" in relative_path
+        or relative_path.startswith("/")
+        or relative_path.endswith("/")
+    ):
+        raise InventoryError(f"Repository path is not canonical: {relative_path!r}.")
+    segments = relative_path.split("/")
+    if any(segment in {"", ".", ".."} for segment in segments):
+        raise InventoryError(f"Repository path is not segment-safe: {relative_path!r}.")
+    pure_path = PurePosixPath(relative_path)
+    if pure_path.is_absolute() or pure_path.as_posix() != relative_path:
+        raise InventoryError(f"Repository path is not canonical: {relative_path!r}.")
+    if backend_only and not relative_path.startswith(f"{BACKEND_ROOT.as_posix()}/"):
+        raise InventoryError(f"Repository source path is outside src/backend: {relative_path!r}.")
 
 
-def _sha256_file(path: Path) -> str:
-    digest = hashlib.sha256()
+def _read_source(snapshot: SourceSnapshot, relative_path: str) -> str:
+    _require_repo_relative_path(relative_path, backend_only=False)
+    content = snapshot.files.get(relative_path)
+    if content is None:
+        raise InventoryError(f"Required source blob is missing: {relative_path}.")
     try:
-        with path.open("rb") as stream:
-            for block in iter(lambda: stream.read(1024 * 1024), b""):
-                digest.update(block)
-    except OSError as exc:
-        raise InventoryError(f"Source file cannot be read: {path.name}.") from exc
-    return digest.hexdigest()
+        return content.decode("utf-8")
+    except UnicodeError as exc:
+        raise InventoryError(f"Required source blob is not readable UTF-8: {relative_path}.") from exc
 
 
-def _read_source(repository_root: Path, relative_path: str) -> str:
-    path = repository_root / Path(relative_path)
-    if not path.is_file() or path.is_symlink():
-        raise InventoryError(f"Required source file is missing or unsafe: {relative_path}.")
-    try:
-        return path.read_text(encoding="utf-8")
-    except (OSError, UnicodeError) as exc:
-        raise InventoryError(f"Required source file is not readable UTF-8: {relative_path}.") from exc
+def _source_file_record(snapshot: SourceSnapshot, relative_path: str) -> dict[str, str]:
+    _require_repo_relative_path(relative_path)
+    content = snapshot.files.get(relative_path)
+    if content is None:
+        raise InventoryError(f"Required source blob is missing: {relative_path}.")
+    return {"path": relative_path, "sha256": hashlib.sha256(content).hexdigest()}
 
 
-def _source_file_record(repository_root: Path, relative_path: str) -> dict[str, str]:
-    path = repository_root / Path(relative_path)
-    if not path.is_file() or path.is_symlink():
-        raise InventoryError(f"Required source file is missing or unsafe: {relative_path}.")
-    return {"path": relative_path, "sha256": _sha256_file(path)}
+def _strip_csharp_comments(content: str) -> str:
+    """Remove C# comments while preserving strings and line structure."""
+
+    result: list[str] = []
+    index = 0
+    length = len(content)
+    while index < length:
+        if content.startswith("//", index):
+            newline = content.find("\n", index + 2)
+            if newline < 0:
+                result.append(" " * (length - index))
+                break
+            result.append(" " * (newline - index))
+            index = newline
+            continue
+        if content.startswith("/*", index):
+            end = content.find("*/", index + 2)
+            if end < 0:
+                raise InventoryError("C# source contains an unterminated block comment.")
+            comment = content[index : end + 2]
+            result.append("".join("\n" if character == "\n" else " " for character in comment))
+            index = end + 2
+            continue
+
+        character = content[index]
+        if character == '"':
+            quote_count = 1
+            while index + quote_count < length and content[index + quote_count] == '"':
+                quote_count += 1
+            if quote_count >= 3:
+                delimiter = '"' * quote_count
+                end = content.find(delimiter, index + quote_count)
+                if end < 0:
+                    raise InventoryError("C# source contains an unterminated raw string.")
+                end += quote_count
+                result.append(content[index:end])
+                index = end
+                continue
+
+            verbatim = index > 0 and content[index - 1] == "@"
+            start = index
+            index += 1
+            while index < length:
+                if verbatim and content.startswith('""', index):
+                    index += 2
+                    continue
+                if content[index] == '"':
+                    index += 1
+                    break
+                if not verbatim and content[index] == "\\" and index + 1 < length:
+                    index += 2
+                else:
+                    index += 1
+            result.append(content[start:index])
+            continue
+        if character == "'":
+            start = index
+            index += 1
+            while index < length:
+                if content[index] == "\\" and index + 1 < length:
+                    index += 2
+                    continue
+                if content[index] == "'":
+                    index += 1
+                    break
+                index += 1
+            result.append(content[start:index])
+            continue
+
+        result.append(character)
+        index += 1
+    return "".join(result)
+
+
+def _read_csharp(snapshot: SourceSnapshot, relative_path: str) -> str:
+    return _strip_csharp_comments(_read_source(snapshot, relative_path))
+
+
+def _csharp_braced_body(content: str, declaration_pattern: str, relative_path: str) -> str:
+    declaration = re.search(declaration_pattern, content)
+    if declaration is None:
+        raise InventoryError(f"Required C# declaration drifted: {relative_path}.")
+    opening = content.find("{", declaration.end())
+    if opening < 0:
+        raise InventoryError(f"Required C# block drifted: {relative_path}.")
+
+    depth = 0
+    index = opening
+    while index < len(content):
+        character = content[index]
+        if character in {'"', "'"}:
+            delimiter = character
+            verbatim = delimiter == '"' and index > 0 and content[index - 1] == "@"
+            quote_count = 1
+            if delimiter == '"':
+                while index + quote_count < len(content) and content[index + quote_count] == '"':
+                    quote_count += 1
+            if delimiter == '"' and quote_count >= 3:
+                raw_delimiter = '"' * quote_count
+                end = content.find(raw_delimiter, index + quote_count)
+                if end < 0:
+                    raise InventoryError(f"Required C# block contains an unterminated string: {relative_path}.")
+                index = end + quote_count
+                continue
+            index += 1
+            while index < len(content):
+                if verbatim and content.startswith('""', index):
+                    index += 2
+                    continue
+                if content[index] == delimiter:
+                    index += 1
+                    break
+                if not verbatim and content[index] == "\\" and index + 1 < len(content):
+                    index += 2
+                else:
+                    index += 1
+            continue
+        if character == "{":
+            depth += 1
+        elif character == "}":
+            depth -= 1
+            if depth == 0:
+                return content[opening + 1 : index]
+        index += 1
+    raise InventoryError(f"Required C# block is unterminated: {relative_path}.")
 
 
 def _path_set_fingerprint(paths: Sequence[str]) -> str:
@@ -474,12 +617,11 @@ def _require_path_set(
         )
 
 
-def _db_context_inventory(repository_root: Path) -> list[dict[str, str]]:
-    backend = repository_root / BACKEND_ROOT
+def _db_context_inventory(snapshot: SourceSnapshot) -> list[dict[str, str]]:
     paths = sorted(
-        _relative_path(repository_root, path)
-        for path in backend.rglob("*DbContext.cs")
-        if path.is_file()
+        path
+        for path in snapshot.files
+        if path.startswith(f"{BACKEND_ROOT.as_posix()}/") and path.endswith("DbContext.cs")
     )
     _require_path_set(
         "DbContext",
@@ -491,41 +633,43 @@ def _db_context_inventory(repository_root: Path) -> list[dict[str, str]]:
     result: list[dict[str, str]] = []
     for relative_path in paths:
         context_name = Path(relative_path).stem
-        content = _read_source(repository_root, relative_path)
+        _require_repo_relative_path(relative_path)
+        content = _read_csharp(snapshot, relative_path)
         declaration = re.compile(
             rf"\bclass\s+{re.escape(context_name)}\s*\([^)]*\)\s*:\s*DbContext\s*\(",
             re.DOTALL,
         )
         if declaration.search(content) is None:
             raise InventoryError(f"DbContext declaration drifted: {relative_path}.")
-        record = _source_file_record(repository_root, relative_path)
+        record = _source_file_record(snapshot, relative_path)
         result.append(
             {"name": context_name, "path": record["path"], "sha256": record["sha256"]}
         )
     return result
 
 
-def _migration_inventory(repository_root: Path) -> list[dict[str, str]]:
-    backend = repository_root / BACKEND_ROOT
-    migration_paths = sorted(
+def _migration_inventory(snapshot: SourceSnapshot) -> list[dict[str, str]]:
+    paths = sorted(
         path
-        for path in backend.rglob("*.cs")
-        if path.is_file()
-        and "Migrations" in path.parts
-        and not path.name.endswith(".Designer.cs")
-        and not path.name.endswith("ModelSnapshot.cs")
+        for path in snapshot.files
+        if path.startswith(f"{BACKEND_ROOT.as_posix()}/")
+        and path.endswith(".cs")
+        and "Migrations" in PurePosixPath(path).parts
+        and not path.endswith(".Designer.cs")
+        and not path.endswith("ModelSnapshot.cs")
     )
-    paths = [_relative_path(repository_root, path) for path in migration_paths]
     _require_path_set(
         "Migration",
         paths,
         EXPECTED_MIGRATION_COUNT,
         EXPECTED_MIGRATION_PATH_FINGERPRINT,
     )
-    for path in migration_paths:
-        if MIGRATION_NAME_PATTERN.fullmatch(path.name) is None:
-            raise InventoryError(f"Migration filename is not canonical: {path.name}.")
-    return [_source_file_record(repository_root, path) for path in paths]
+    for path in paths:
+        _require_repo_relative_path(path)
+        name = PurePosixPath(path).name
+        if MIGRATION_NAME_PATTERN.fullmatch(name) is None:
+            raise InventoryError(f"Migration filename is not canonical: {name}.")
+    return [_source_file_record(snapshot, path) for path in paths]
 
 
 def _require_tokens(content: str, relative_path: str, tokens: Sequence[str]) -> None:
@@ -534,9 +678,9 @@ def _require_tokens(content: str, relative_path: str, tokens: Sequence[str]) -> 
             raise InventoryError(f"Required source anchor drifted: {relative_path}.")
 
 
-def _documents_inventory(repository_root: Path) -> dict[str, Any]:
+def _documents_inventory(snapshot: SourceSnapshot) -> dict[str, Any]:
     module_path = DOCUMENT_SOURCE_PATHS[1]
-    module_content = _read_source(repository_root, module_path)
+    module_content = _read_csharp(snapshot, module_path)
     discovered_keys = tuple(
         sorted(
             re.findall(
@@ -548,14 +692,14 @@ def _documents_inventory(repository_root: Path) -> dict[str, Any]:
     if discovered_keys != DOCUMENT_CONFIGURATION_KEYS:
         raise InventoryError("Documents configuration-key surface drifted.")
 
-    storage_directory = (
-        repository_root
-        / "src/backend/Modules/Documents/GoymenERP.Modules.Documents.Infrastructure/Storage"
+    storage_directory = PurePosixPath(
+        "src/backend/Modules/Documents/GoymenERP.Modules.Documents.Infrastructure/Storage"
     )
     discovered_adapter_paths = sorted(
-        _relative_path(repository_root, path)
-        for path in storage_directory.glob("*DocumentObjectStore.cs")
-        if path.is_file()
+        path
+        for path in snapshot.files
+        if PurePosixPath(path).parent == storage_directory
+        and PurePosixPath(path).name.endswith("DocumentObjectStore.cs")
     )
     expected_adapter_paths = sorted(path for _, path in DOCUMENT_ADAPTERS)
     if discovered_adapter_paths != expected_adapter_paths:
@@ -563,7 +707,7 @@ def _documents_inventory(repository_root: Path) -> dict[str, Any]:
 
     adapter_records: list[dict[str, str]] = []
     for adapter_name, relative_path in DOCUMENT_ADAPTERS:
-        content = _read_source(repository_root, relative_path)
+        content = _read_csharp(snapshot, relative_path)
         declaration = re.compile(
             rf"\bclass\s+{re.escape(adapter_name)}\b[^:]*:\s*IDocumentObjectStoreV1\b",
             re.DOTALL,
@@ -580,14 +724,14 @@ def _documents_inventory(repository_root: Path) -> dict[str, Any]:
         )
         adapter_records.append({"name": adapter_name, "path": relative_path})
 
-    runtime_content = _read_source(repository_root, DOCUMENT_SOURCE_PATHS[0])
+    runtime_content = _read_csharp(snapshot, DOCUMENT_SOURCE_PATHS[0])
     _require_tokens(
         runtime_content,
         DOCUMENT_SOURCE_PATHS[0],
         (
             "AddDocumentsRuntime",
             "allowDevelopmentStorageAndScanner",
-            "Documents:ObjectStore:RootPath",
+            "services.AddDocumentsModule(",
         ),
     )
     _require_tokens(
@@ -601,7 +745,37 @@ def _documents_inventory(repository_root: Path) -> dict[str, Any]:
     )
 
     readme_path = DOCUMENT_SOURCE_PATHS[-1]
-    readme = " ".join(_read_source(repository_root, readme_path).split())
+    scanner_path = DOCUMENT_SOURCE_PATHS[4]
+    scanner = _read_csharp(snapshot, scanner_path)
+    _require_tokens(
+        scanner,
+        scanner_path,
+        (
+            "private static void TryDelete(string path)",
+        ),
+    )
+    scan_body = _csharp_braced_body(
+        scanner,
+        r"\bpublic\s+async\s+Task<DocumentScanVerdictV1>\s+ScanAsync\s*\(",
+        scanner_path,
+    )
+    if "var copy = Path.Combine(options.QuarantineDirectory" not in scan_body:
+        raise InventoryError(f"Documents quarantine-copy lifecycle drifted: {scanner_path}.")
+    cleanup = re.compile(
+        r"finally\s*\{\s*TryDelete\(copy\);\s*gate\.Release\(\);\s*\}",
+        re.DOTALL,
+    )
+    if cleanup.search(scan_body) is None:
+        raise InventoryError(f"Documents transient cleanup lifecycle drifted: {scanner_path}.")
+    try_delete_body = _csharp_braced_body(
+        scanner,
+        r"\bprivate\s+static\s+void\s+TryDelete\s*\(\s*string\s+path\s*\)",
+        scanner_path,
+    )
+    if "File.Delete(path);" not in try_delete_body:
+        raise InventoryError(f"Documents transient deletion implementation drifted: {scanner_path}.")
+
+    readme = " ".join(_read_source(snapshot, readme_path).split())
     _require_tokens(
         readme,
         readme_path,
@@ -616,52 +790,55 @@ def _documents_inventory(repository_root: Path) -> dict[str, Any]:
         "objectStoreAdapters": adapter_records,
         "objectKeyPattern": DOCUMENT_OBJECT_KEY_PATTERN,
         "pathClassifications": [
-            {
-                "configurationKey": "Documents:ObjectStore:RootPath",
-                "classification": "RECOVERY_SET_CONTENT",
-            },
-            {
-                "configurationKey": "Documents:Scanner:Defender:QuarantinePath",
-                "classification": "TRANSIENT_EXCLUDED",
-            },
+            {"configurationKey": key, "classification": classification}
+            for key, classification in DOCUMENT_PATH_CLASSIFICATIONS
         ],
         "sourceFiles": [
-            _source_file_record(repository_root, path) for path in DOCUMENT_SOURCE_PATHS
+            _source_file_record(snapshot, path) for path in DOCUMENT_SOURCE_PATHS
         ],
     }
 
 
-def _discover_outbox_inbox_tables(repository_root: Path) -> tuple[tuple[str, str], ...]:
+def _discover_message_delivery_tables(snapshot: SourceSnapshot) -> tuple[tuple[str, str], ...]:
     tables: set[tuple[str, str]] = set()
-    for path in (repository_root / BACKEND_ROOT).rglob("*DbContext.cs"):
-        if not path.is_file():
-            continue
-        relative_path = _relative_path(repository_root, path)
-        content = _read_source(repository_root, relative_path)
-        for table in re.findall(r'ToTable\(\s*"([^"]+)"', content):
+    context_paths = sorted(path for path in snapshot.files if path.endswith("DbContext.cs"))
+    table_pattern = re.compile(r'ToTable\(\s*"(?P<table>[^"]+)"')
+    for relative_path in context_paths:
+        _require_repo_relative_path(relative_path)
+        content = _read_csharp(snapshot, relative_path)
+        schema_match = re.search(r'\bconst\s+string\s+Schema\s*=\s*"([^"]+)"\s*;', content)
+        for match in table_pattern.finditer(content):
+            table = match.group("table")
             lowered = table.lower()
-            if "outbox" in lowered or "inbox" in lowered:
-                tables.add((relative_path, table))
+            if not any(marker in lowered for marker in ("outbox", "inbox", "deliver")):
+                continue
+            tail = content[match.end() :]
+            explicit_schema = re.match(r'\s*,\s*"([^"]+)"', tail)
+            schema_constant = re.match(r"\s*,\s*Schema\b", tail)
+            default_schema = re.match(r"\s*(?:\)|,\s*[A-Za-z][A-Za-z0-9]*\s*=>)", tail)
+            if explicit_schema is not None:
+                schema = explicit_schema.group(1)
+            elif schema_constant is not None or default_schema is not None:
+                if schema_match is None:
+                    raise InventoryError(f"Message/delivery schema cannot be resolved: {relative_path}.")
+                schema = schema_match.group(1)
+            else:
+                raise InventoryError(f"Message/delivery mapping shape drifted: {relative_path}.")
+            tables.add((schema, table))
     return tuple(sorted(tables))
 
 
-def _discover_idempotency_key_tables(
-    repository_root: Path,
-) -> tuple[tuple[str, str], ...]:
+def _discover_idempotency_key_tables(snapshot: SourceSnapshot) -> tuple[tuple[str, str], ...]:
     entity_pattern = re.compile(
         r'modelBuilder\.Entity\("[^"]+", b =>\s*\{(.*?)\n\s*\}\);',
         re.DOTALL,
     )
     table_pattern = re.compile(r'b\.ToTable\("([^"]+)",\s*"([^"]+)"')
     tables: set[tuple[str, str]] = set()
-    snapshot_paths = sorted(
-        path
-        for path in (repository_root / BACKEND_ROOT).rglob("*ModelSnapshot.cs")
-        if path.is_file()
-    )
-    for path in snapshot_paths:
-        relative_path = _relative_path(repository_root, path)
-        content = _read_source(repository_root, relative_path)
+    snapshot_paths = sorted(path for path in snapshot.files if path.endswith("ModelSnapshot.cs"))
+    for relative_path in snapshot_paths:
+        _require_repo_relative_path(relative_path)
+        content = _read_csharp(snapshot, relative_path)
         for body in entity_pattern.findall(content):
             if "IdempotencyKeyHash" not in body:
                 continue
@@ -675,8 +852,8 @@ def _discover_idempotency_key_tables(
     return tuple(sorted(tables))
 
 
-def _require_discovered_durable_surfaces(repository_root: Path) -> None:
-    discovered_idempotency = _discover_idempotency_key_tables(repository_root)
+def _require_discovered_durable_surfaces(snapshot: SourceSnapshot) -> None:
+    discovered_idempotency = _discover_idempotency_key_tables(snapshot)
     if discovered_idempotency != EXPECTED_IDEMPOTENCY_KEY_TABLES:
         raise InventoryError("Durable idempotency-key table surface drifted.")
 
@@ -702,23 +879,26 @@ def _require_discovered_durable_surfaces(repository_root: Path) -> None:
     if specified_message_tables != EXPECTED_MESSAGE_DELIVERY_TABLES:
         raise InventoryError("Durable message/delivery specification drifted.")
 
+    discovered_message_tables = set(_discover_message_delivery_tables(snapshot))
+    excluded_business_tables = set(NON_MESSAGE_DELIVERY_TABLES)
+    if not excluded_business_tables.issubset(discovered_message_tables):
+        raise InventoryError("Non-message delivery classification drifted.")
+    if discovered_message_tables - excluded_business_tables != set(EXPECTED_MESSAGE_DELIVERY_TABLES):
+        raise InventoryError("Durable message/delivery source surface drifted.")
 
-def _durable_store_inventory(repository_root: Path) -> list[dict[str, Any]]:
-    modules = repository_root / "src/backend/Modules"
+
+def _durable_store_inventory(snapshot: SourceSnapshot) -> list[dict[str, Any]]:
     discovered_contracts = tuple(
         sorted(
-            _relative_path(repository_root, path)
-            for path in modules.rglob("*OutboxV1.cs")
-            if path.is_file()
+            path
+            for path in snapshot.files
+            if path.startswith("src/backend/Modules/") and path.endswith("OutboxV1.cs")
         )
     )
     if discovered_contracts != EXPECTED_OUTBOX_CONTRACT_PATHS:
         raise InventoryError("Durable outbox contract surface drifted.")
 
-    discovered_tables = _discover_outbox_inbox_tables(repository_root)
-    if discovered_tables != EXPECTED_OUTBOX_INBOX_TABLES:
-        raise InventoryError("Durable outbox/inbox table surface drifted.")
-    _require_discovered_durable_surfaces(repository_root)
+    _require_discovered_durable_surfaces(snapshot)
 
     physical_keys = [(spec.schema, spec.table) for spec in DURABLE_STORE_SPECS]
     if len(physical_keys) != len(set(physical_keys)):
@@ -728,9 +908,9 @@ def _durable_store_inventory(repository_root: Path) -> list[dict[str, Any]]:
     for spec in DURABLE_STORE_SPECS:
         source_files: list[dict[str, str]] = []
         for evidence in sorted(spec.evidence, key=lambda item: item.path):
-            content = _read_source(repository_root, evidence.path)
+            content = _read_csharp(snapshot, evidence.path)
             _require_tokens(content, evidence.path, evidence.required_tokens)
-            source_files.append(_source_file_record(repository_root, evidence.path))
+            source_files.append(_source_file_record(snapshot, evidence.path))
         records.append(
             {
                 "id": spec.identifier,
@@ -759,9 +939,9 @@ def _reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     return result
 
 
-def _load_schema(repository_root: Path) -> dict[str, Any]:
+def _load_schema(snapshot: SourceSnapshot) -> dict[str, Any]:
     relative_path = SCHEMA_PATH.as_posix()
-    text = _read_source(repository_root, relative_path)
+    text = _read_source(snapshot, relative_path)
     try:
         schema = json.loads(text, object_pairs_hook=_reject_duplicate_keys)
     except (json.JSONDecodeError, UnicodeError) as exc:
@@ -785,6 +965,39 @@ def _is_json_type(value: Any, expected: str) -> bool:
     raise InventoryError(f"Unsupported JSON Schema type: {expected}.")
 
 
+def _json_kind(value: Any) -> str:
+    if value is None:
+        return "null"
+    if isinstance(value, bool):
+        return "boolean"
+    if isinstance(value, (int, float)):
+        return "number"
+    if isinstance(value, str):
+        return "string"
+    if isinstance(value, list):
+        return "array"
+    if isinstance(value, dict):
+        return "object"
+    return "unsupported"
+
+
+def _json_equal(left: Any, right: Any) -> bool:
+    """Compare values with JSON value semantics instead of Python bool/int equality."""
+
+    if _json_kind(left) != _json_kind(right):
+        return False
+    if isinstance(left, list) and isinstance(right, list):
+        return len(left) == len(right) and all(
+            _json_equal(left_item, right_item)
+            for left_item, right_item in zip(left, right, strict=True)
+        )
+    if isinstance(left, dict) and isinstance(right, dict):
+        return left.keys() == right.keys() and all(
+            _json_equal(left[key], right[key]) for key in left
+        )
+    return bool(left == right)
+
+
 def _validate_against_schema(value: Any, schema: dict[str, Any], location: str = "$") -> None:
     unsupported = set(schema) - SUPPORTED_SCHEMA_KEYWORDS
     if unsupported:
@@ -792,9 +1005,9 @@ def _validate_against_schema(value: Any, schema: dict[str, Any], location: str =
             f"Recovery inventory schema uses unsupported keywords at {location}."
         )
 
-    if "const" in schema and value != schema["const"]:
+    if "const" in schema and not _json_equal(value, schema["const"]):
         raise InventoryError(f"Recovery inventory violates const at {location}.")
-    if "enum" in schema and value not in schema["enum"]:
+    if "enum" in schema and not any(_json_equal(value, item) for item in schema["enum"]):
         raise InventoryError(f"Recovery inventory violates enum at {location}.")
 
     expected_type = schema.get("type")
@@ -832,12 +1045,9 @@ def _validate_against_schema(value: Any, schema: dict[str, Any], location: str =
         if maximum is not None and len(value) > maximum:
             raise InventoryError(f"Recovery inventory has too many items at {location}.")
         if schema.get("uniqueItems") is True:
-            canonical = [
-                json.dumps(item, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-                for item in value
-            ]
-            if len(canonical) != len(set(canonical)):
-                raise InventoryError(f"Recovery inventory has duplicate items at {location}.")
+            for index, item in enumerate(value):
+                if any(_json_equal(item, previous) for previous in value[:index]):
+                    raise InventoryError(f"Recovery inventory has duplicate items at {location}.")
         item_schema = schema.get("items")
         if item_schema is not None:
             if not isinstance(item_schema, dict):
@@ -869,29 +1079,140 @@ def _validate_against_schema(value: Any, schema: dict[str, Any], location: str =
             raise InventoryError(f"Recovery inventory integer is too small at {location}.")
 
 
+def _require_source_records(
+    snapshot: SourceSnapshot,
+    records: Sequence[dict[str, Any]],
+    label: str,
+) -> None:
+    seen: set[str] = set()
+    for record in records:
+        relative_path = record["path"]
+        _require_repo_relative_path(relative_path)
+        folded_path = relative_path.casefold()
+        if folded_path in seen:
+            raise InventoryError(f"{label} contains a duplicate source path.")
+        seen.add(folded_path)
+        blob = snapshot.files.get(relative_path)
+        if blob is None:
+            raise InventoryError(f"{label} references a source outside the exact commit.")
+        if record.get("sha256") != hashlib.sha256(blob).hexdigest():
+            raise InventoryError(f"{label} source hash does not match the exact commit blob.")
+
+
+def _validate_inventory_semantics(snapshot: SourceSnapshot, inventory: dict[str, Any]) -> None:
+    if inventory["sourceCommit"] != snapshot.source_commit:
+        raise InventoryError("Inventory source commit does not match the exact Git snapshot.")
+
+    context_records = inventory["dbContexts"]
+    migration_records = inventory["migrations"]
+    document_inventory = inventory["documents"]
+    durable_records = inventory["durableStores"]
+    _require_source_records(snapshot, context_records, "DbContext inventory")
+    _require_source_records(snapshot, migration_records, "Migration inventory")
+    _require_source_records(snapshot, document_inventory["sourceFiles"], "Documents inventory")
+    for adapter in document_inventory["objectStoreAdapters"]:
+        _require_repo_relative_path(adapter["path"])
+        if adapter["path"] not in snapshot.files:
+            raise InventoryError("Documents adapter is outside the exact commit.")
+    for record in durable_records:
+        _require_source_records(snapshot, record["sourceFiles"], f"Durable store {record['id']}")
+
+    classification_keys = [
+        item["configurationKey"] for item in document_inventory["pathClassifications"]
+    ]
+    if len({key.casefold() for key in classification_keys}) != len(classification_keys):
+        raise InventoryError("Documents path classifications duplicate a configuration key.")
+    if document_inventory["pathClassifications"] != [
+        {"configurationKey": key, "classification": classification}
+        for key, classification in DOCUMENT_PATH_CLASSIFICATIONS
+    ]:
+        raise InventoryError("Documents recovery/transient path classification drifted.")
+
+    physical_keys = [
+        (record["schema"].casefold(), record["table"].casefold())
+        for record in durable_records
+    ]
+    if len(physical_keys) != len(set(physical_keys)):
+        raise InventoryError("Durable inventory duplicates a physical schema/table.")
+    identifiers = [record["id"] for record in durable_records]
+    if len(identifiers) != len(set(identifiers)):
+        raise InventoryError("Durable inventory duplicates a store id.")
+
+    expected_contexts = _db_context_inventory(snapshot)
+    expected_migrations = _migration_inventory(snapshot)
+    expected_documents = _documents_inventory(snapshot)
+    expected_durable = _durable_store_inventory(snapshot)
+    if context_records != expected_contexts:
+        raise InventoryError("DbContext inventory does not match the exact commit surface.")
+    if migration_records != expected_migrations:
+        raise InventoryError("Migration inventory does not match the exact commit surface.")
+    if document_inventory != expected_documents:
+        raise InventoryError("Documents inventory semantics drifted.")
+
+    expected_identities = {
+        (
+            spec.identifier,
+            spec.module,
+            spec.kind,
+            spec.db_context,
+            spec.entity_type,
+            spec.schema,
+            spec.table,
+            tuple(sorted(spec.contracts)),
+        )
+        for spec in DURABLE_STORE_SPECS
+    }
+    actual_identities = {
+        (
+            record["id"],
+            record["module"],
+            record["kind"],
+            record["dbContext"],
+            record["entityType"],
+            record["schema"],
+            record["table"],
+            tuple(record["contracts"]),
+        )
+        for record in durable_records
+    }
+    if actual_identities != expected_identities:
+        raise InventoryError("Durable store identity semantics drifted.")
+    if durable_records != expected_durable:
+        raise InventoryError("Durable store evidence does not match the exact commit.")
+
+    expected_counts = {
+        "dbContexts": len(expected_contexts),
+        "migrations": len(expected_migrations),
+        "durableStores": len(expected_durable),
+    }
+    if inventory["counts"] != expected_counts:
+        raise InventoryError("Inventory counts do not match the exact source surface.")
+
+
+def _validate_inventory_for_snapshot(snapshot: SourceSnapshot, inventory: dict[str, Any]) -> None:
+    _validate_against_schema(inventory, _load_schema(snapshot))
+    _validate_inventory_semantics(snapshot, inventory)
+
+
 def validate_inventory(repository_root: Path, inventory: dict[str, Any]) -> None:
-    """Validate an inventory against the committed schema using only stdlib."""
+    """Validate an inventory against one verified, immutable commit snapshot."""
 
-    _validate_against_schema(inventory, _load_schema(repository_root))
-
-
-def build_inventory(repository_root: Path, source_commit: str) -> dict[str, Any]:
-    """Build and schema-validate the source-only inventory for one exact commit."""
-
-    root = repository_root.resolve()
-    if COMMIT_PATTERN.fullmatch(source_commit) is None:
+    source_commit = inventory.get("sourceCommit")
+    if not isinstance(source_commit, str) or COMMIT_PATTERN.fullmatch(source_commit) is None:
         raise InventoryError("Source commit must be a lowercase 40-character Git SHA.")
-    if not (root / BACKEND_ROOT).is_dir():
-        raise InventoryError("Repository backend source root is missing.")
+    snapshot = _load_source_snapshot(repository_root, source_commit)
+    _validate_inventory_for_snapshot(snapshot, inventory)
 
-    db_contexts = _db_context_inventory(root)
-    migrations = _migration_inventory(root)
-    documents = _documents_inventory(root)
-    durable_stores = _durable_store_inventory(root)
+
+def _build_inventory_from_snapshot(snapshot: SourceSnapshot) -> dict[str, Any]:
+    db_contexts = _db_context_inventory(snapshot)
+    migrations = _migration_inventory(snapshot)
+    documents = _documents_inventory(snapshot)
+    durable_stores = _durable_store_inventory(snapshot)
     inventory: dict[str, Any] = {
         "schemaVersion": SCHEMA_VERSION,
         "inventoryMode": INVENTORY_MODE,
-        "sourceCommit": source_commit,
+        "sourceCommit": snapshot.source_commit,
         "counts": {
             "dbContexts": len(db_contexts),
             "migrations": len(migrations),
@@ -912,8 +1233,15 @@ def build_inventory(repository_root: Path, source_commit: str) -> dict[str, Any]
             "deploys": False,
         },
     }
-    validate_inventory(root, inventory)
+    _validate_inventory_for_snapshot(snapshot, inventory)
     return inventory
+
+
+def build_inventory(repository_root: Path, source_commit: str) -> dict[str, Any]:
+    """Build and schema-validate the source-only inventory for one exact commit."""
+
+    snapshot = _load_source_snapshot(repository_root, source_commit)
+    return _build_inventory_from_snapshot(snapshot)
 
 
 def canonical_json(inventory: dict[str, Any]) -> str:
@@ -922,7 +1250,16 @@ def canonical_json(inventory: dict[str, Any]) -> str:
     return json.dumps(inventory, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
 
 
-def _run_git(repository_root: Path, arguments: Sequence[str]) -> subprocess.CompletedProcess[str]:
+def canonical_bytes(inventory: dict[str, Any]) -> bytes:
+    """Serialize deterministic UTF-8 bytes with exactly one LF terminator."""
+
+    return canonical_json(inventory).encode("utf-8")
+
+
+def _run_git_text(
+    repository_root: Path,
+    arguments: Sequence[str],
+) -> subprocess.CompletedProcess[str]:
     try:
         return subprocess.run(
             ["git", "-C", str(repository_root), *arguments],
@@ -936,23 +1273,149 @@ def _run_git(repository_root: Path, arguments: Sequence[str]) -> subprocess.Comp
         raise InventoryError("Git is unavailable for exact source identification.") from exc
 
 
+def _run_git_bytes(
+    repository_root: Path,
+    arguments: Sequence[str],
+    *,
+    input_bytes: bytes | None = None,
+) -> subprocess.CompletedProcess[bytes]:
+    try:
+        return subprocess.run(
+            ["git", "-C", str(repository_root), *arguments],
+            check=False,
+            capture_output=True,
+            input=input_bytes,
+        )
+    except OSError as exc:
+        raise InventoryError("Git is unavailable for exact source identification.") from exc
+
+
+def _require_git_toplevel(repository_root: Path) -> Path:
+    try:
+        root = repository_root.resolve(strict=True)
+    except OSError as exc:
+        raise InventoryError("Repository root does not exist.") from exc
+    if not root.is_dir():
+        raise InventoryError("Repository root is not a directory.")
+    result = _run_git_text(root, ("rev-parse", "--show-toplevel"))
+    if result.returncode != 0:
+        raise InventoryError("Repository root is not inside a Git worktree.")
+    try:
+        top_level = Path(result.stdout.strip()).resolve(strict=True)
+    except OSError as exc:
+        raise InventoryError("Git top-level directory cannot be resolved.") from exc
+    canonical_root = os.path.normcase(os.path.realpath(str(root)))
+    canonical_top = os.path.normcase(os.path.realpath(str(top_level)))
+    if canonical_root != canonical_top:
+        raise InventoryError("Repository root must be the real Git top-level directory.")
+    return root
+
+
 def _git_source_commit(repository_root: Path) -> str:
-    result = _run_git(repository_root, ("rev-parse", "--verify", "HEAD^{commit}"))
-    commit = result.stdout.strip().lower()
+    result = _run_git_text(repository_root, ("rev-parse", "--verify", "HEAD^{commit}"))
+    commit = result.stdout.strip()
     if result.returncode != 0 or COMMIT_PATTERN.fullmatch(commit) is None:
         raise InventoryError("Exact source commit cannot be resolved.")
     return commit
 
 
-def _require_tracked_backend_clean(repository_root: Path) -> None:
-    result = _run_git(
+def _require_inventory_inputs_clean(repository_root: Path) -> None:
+    result = _run_git_text(
         repository_root,
-        ("diff", "--quiet", "HEAD", "--", BACKEND_ROOT.as_posix()),
+        (
+            "status",
+            "--porcelain=v1",
+            "-z",
+            "--untracked-files=all",
+            "--ignore-submodules=none",
+            "--",
+            *INVENTORY_INPUT_PATHS,
+        ),
     )
-    if result.returncode == 1:
-        raise InventoryError("Tracked backend inventory inputs differ from the exact source commit.")
     if result.returncode != 0:
-        raise InventoryError("Tracked backend inventory inputs cannot be verified.")
+        raise InventoryError("Recovery inventory inputs cannot be verified as clean.")
+    if result.stdout:
+        raise InventoryError("Recovery inventory inputs contain tracked or untracked worktree changes.")
+
+
+def _read_commit_blobs(
+    repository_root: Path,
+    source_commit: str,
+) -> dict[str, bytes]:
+    tree = _run_git_bytes(
+        repository_root,
+        ("ls-tree", "-r", "-z", "--full-tree", source_commit, "--", *INVENTORY_INPUT_PATHS),
+    )
+    if tree.returncode != 0:
+        raise InventoryError("Exact commit tree cannot be enumerated.")
+
+    entries: list[tuple[str, bytes]] = []
+    folded_paths: set[str] = set()
+    for raw_entry in tree.stdout.split(b"\x00"):
+        if not raw_entry:
+            continue
+        try:
+            metadata, raw_path = raw_entry.split(b"\t", 1)
+            mode, object_type, object_id = metadata.decode("ascii").split(" ")
+            relative_path = raw_path.decode("utf-8")
+        except (ValueError, UnicodeError) as exc:
+            raise InventoryError("Exact commit tree contains an unsupported path record.") from exc
+        _require_repo_relative_path(relative_path, backend_only=False)
+        if object_type != "blob" or mode not in {"100644", "100755"}:
+            raise InventoryError(f"Inventory input is not a regular Git blob: {relative_path}.")
+        folded_path = relative_path.casefold()
+        if folded_path in folded_paths:
+            raise InventoryError("Exact commit tree contains duplicate or case-colliding paths.")
+        folded_paths.add(folded_path)
+        entries.append((relative_path, object_id.encode("ascii")))
+
+    if not entries:
+        raise InventoryError("Exact commit contains no recovery inventory inputs.")
+    request = b"".join(object_id + b"\n" for _, object_id in entries)
+    batch = _run_git_bytes(repository_root, ("cat-file", "--batch"), input_bytes=request)
+    if batch.returncode != 0:
+        raise InventoryError("Exact commit blobs cannot be read.")
+
+    files: dict[str, bytes] = {}
+    cursor = 0
+    for relative_path, expected_object_id in entries:
+        header_end = batch.stdout.find(b"\n", cursor)
+        if header_end < 0:
+            raise InventoryError("Git blob batch response is truncated.")
+        header = batch.stdout[cursor:header_end].split()
+        if len(header) != 3 or header[0] != expected_object_id or header[1] != b"blob":
+            raise InventoryError("Git blob batch response does not match the exact tree.")
+        try:
+            size = int(header[2])
+        except ValueError as exc:
+            raise InventoryError("Git blob batch response has an invalid size.") from exc
+        content_start = header_end + 1
+        content_end = content_start + size
+        if content_end >= len(batch.stdout) or batch.stdout[content_end : content_end + 1] != b"\n":
+            raise InventoryError("Git blob batch response is truncated.")
+        files[relative_path] = batch.stdout[content_start:content_end]
+        cursor = content_end + 1
+    if cursor != len(batch.stdout):
+        raise InventoryError("Git blob batch response contains unexpected trailing bytes.")
+    return files
+
+
+def _load_source_snapshot(repository_root: Path, source_commit: str) -> SourceSnapshot:
+    if COMMIT_PATTERN.fullmatch(source_commit) is None:
+        raise InventoryError("Source commit must be a lowercase 40-character Git SHA.")
+    root = _require_git_toplevel(repository_root)
+    head = _git_source_commit(root)
+    resolved = _run_git_text(root, ("rev-parse", "--verify", f"{source_commit}^{{commit}}"))
+    if resolved.returncode != 0 or resolved.stdout.strip() != source_commit or head != source_commit:
+        raise InventoryError("Source commit must resolve exactly to the current Git HEAD.")
+    _require_inventory_inputs_clean(root)
+    files = _read_commit_blobs(root, source_commit)
+    for required_path in (SCHEMA_PATH.as_posix(), GENERATOR_PATH.as_posix()):
+        if required_path not in files:
+            raise InventoryError(f"Exact commit is missing required inventory input: {required_path}.")
+    if not any(path.startswith(f"{BACKEND_ROOT.as_posix()}/") for path in files):
+        raise InventoryError("Exact commit backend source root is missing.")
+    return SourceSnapshot(root, source_commit, files)
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -975,7 +1438,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         repository_root = arguments.repository_root.resolve()
         source_commit = _git_source_commit(repository_root)
-        _require_tracked_backend_clean(repository_root)
         inventory = build_inventory(repository_root, source_commit)
     except InventoryError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
@@ -983,7 +1445,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     except Exception:
         print("ERROR: Recovery source inventory generation failed closed.", file=sys.stderr)
         return 2
-    sys.stdout.write(canonical_json(inventory))
+    sys.stdout.buffer.write(canonical_bytes(inventory))
     return 0
 
 
