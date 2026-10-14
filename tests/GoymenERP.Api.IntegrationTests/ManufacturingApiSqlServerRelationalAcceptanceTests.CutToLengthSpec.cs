@@ -161,12 +161,14 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
             "SELECT COUNT(*) FROM manufacturing.PlanCutLines WHERE CompanyId = @c AND PlanId = @p",
             ("@c", CompanyA), ("@p", legacyPlanId)));
 
+        var legacyRevisedInputs = new[] { new PlannedInputRequestV1(roll.Id, "900", roll.Version) };
         using var legacyRevisedResponse = await client.PostWithKeyAsync(
             $"{Base}/plans/{legacyPlanId:D}/revision",
-            new RevisePlanRequestV1(1, workCenter, inputs, null, "Kesim satırı olmayan plan", null),
+            new RevisePlanRequestV1(1, workCenter, legacyRevisedInputs, null, "Kesim satırı olmayan plan", null),
             "cut-lines-legacy-revise");
         Assert.Equal(HttpStatusCode.OK, legacyRevisedResponse.StatusCode);
         var legacyRevised = (await legacyRevisedResponse.Content.ReadFromJsonAsync<PlanViewV1>())!;
+        Assert.Equal("900", Assert.Single(legacyRevised.Inputs).PlannedKg);
         Assert.Null(legacyRevised.CutToLengthSpec);
         var legacyReopened = (await client.GetFromJsonAsync<PlanViewV1>($"{Base}/plans/{legacyPlanId:D}"))!;
         Assert.Equal(JsonSerializer.Serialize(legacyRevised), JsonSerializer.Serialize(legacyReopened));
@@ -174,6 +176,8 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
         var legacyHistory = (await client.GetFromJsonAsync<PlanRevisionListViewV1>(
             $"{Base}/plans/{legacyPlanId:D}/revisions"))!;
         Assert.Equal([0, 1], legacyHistory.Revisions.Select(revision => revision.Revision));
+        Assert.Equal(["1000", "900"], legacyHistory.Revisions.Select(
+            revision => Assert.Single(revision.Inputs).PlannedKg));
         Assert.All(legacyHistory.Revisions, revision => Assert.Null(revision.CutToLengthSpec));
         Assert.Equal(0, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM manufacturing.PlanRevisionCutLines WHERE CompanyId = @c AND PlanId = @p",
