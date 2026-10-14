@@ -251,8 +251,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // Customer-owned input context: replace one obsolete refusal with three exact persistence/replay facts.
             // Slitting draft spec: +1 public API SQL fact (e6aa3795... -> 286281c0...).
             // Settings Manufacturing tolerance registry: +1 company/constraint/provider SQL fact.
+            // M01.2: +1 real-SQL lossless cut-line preview/save/replay/revise/reopen fact.
             ["tools/relational_inventory/manufacturing.txt"] =
-                "8a8f8016a5e52d0e80423542f15f2a03160c5ebc2acd9c26f22df932b85519f7",
+                "e4f7112187a56b8887546025d8b2a85718a1b84470a7de84f15c42f0ce19b693",
 
             // organization
             // ORG master edit: +2 OrganizationMasterDataSqlServerRelationalAcceptanceTests facts (6b504dac… -> 3bad6ad8…).
@@ -389,9 +390,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // Re-measured for MFG-PLAN-EDIT: the append-only PlanRevisions / PlanRevisionInputs tables, each with the
             // same CompanyId query filter and a company-leading key and FK to the plan.
             // Re-measured for immutable Product/Settings technical snapshots on creation and revision inputs.
+            // M01.2: plan and immutable revision cut lines carry the same CompanyId filter and company-leading keys.
             ["src/backend/Modules/Manufacturing/GoymenERP.Modules.Manufacturing.Infrastructure/"
              + "Persistence/ManufacturingDbContext.cs"] =
-                "d7e51922f4774d738bfc5b0f1b7a4c4220fa1dfc2711879b38efecece34a56b4",
+                "721abc94b3201b892879a578c72004a326ca5f0bbe1aa10f859585ebe0897e14",
             // FIN-T04a (#305): company-scoped like Organization; every tenant row and AuditEvent
             // carries the CompanyId filter. A standard entry, not an exception.
             // Re-measured for DEC-FIN-014: nullable POS fact columns on ReceiptDrafts and MoneyEvents; no new table,
@@ -1014,11 +1016,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // company-resolved through the filtered context; no connection, command or raw SQL; SqlClient count
                 // unchanged (1).
                 // Re-fingerprinted for technical snapshot persistence and stored-plan restoration; SqlClient count
-                // remains recognition-only and unchanged (1).
+                // remains recognition-only and unchanged (1). M01.2 adds lossless cut-line plan/revision persistence
+                // through the same filtered context; the reviewed SqlClient API count remains unchanged.
                 ["src/backend/Modules/Manufacturing/"
                  + "GoymenERP.Modules.Manufacturing.Infrastructure/Persistence/ManufacturingStore.cs"] =
                     new(
-                        "641e3e50b5f9a6e6bbbe83fb1b1a973dbccdc8ec4379e5f535ef77f8a67068d8",
+                        "7d3faa08abb84891049adf7e006678982d422bc1d5c79ac77ad7de002911f447",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -1400,6 +1403,17 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "20261001200000_AddManufacturingPlanTechnicalSnapshots.cs"] =
                     new(
                         "253f3953a27b7f1b6938e1bd16ef83bb9a55b6c093b51fa504271cdae2d56b7e",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 1
+                        }),
+                // M01.2 cut-line plan/revision history is durable; Down refuses destructive rollback while any
+                // cut line exists, before either table can be dropped.
+                ["src/backend/Modules/Manufacturing/"
+                 + "GoymenERP.Modules.Manufacturing.Infrastructure/Persistence/Migrations/"
+                 + "20261014120000_AddManufacturingPlanCutLines.cs"] =
+                    new(
+                        "f24f28df3aeb0970909cc32b9a93f1b9f15938660ebc70878cb8f2ec07d600da",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Sql"] = 1

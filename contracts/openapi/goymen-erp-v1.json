@@ -69111,6 +69111,108 @@
           }
         }
       },
+      "CutToLengthLineRequestV1": {
+        "required": [
+          "lineId",
+          "sequence",
+          "lengthMm",
+          "count"
+        ],
+        "type": "object",
+        "properties": {
+          "lineId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sequence": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "lengthMm": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "count": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          }
+        }
+      },
+      "CutToLengthLineViewV1": {
+        "required": [
+          "lineId",
+          "sequence",
+          "lengthMm",
+          "count"
+        ],
+        "type": "object",
+        "properties": {
+          "lineId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sequence": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "lengthMm": {
+            "type": "string"
+          },
+          "count": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          }
+        }
+      },
+      "CutToLengthSpecRequestV1": {
+        "required": [
+          "lines"
+        ],
+        "type": "object",
+        "properties": {
+          "lines": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/CutToLengthLineRequestV1"
+            }
+          }
+        }
+      },
+      "CutToLengthSpecViewV1": {
+        "required": [
+          "lines"
+        ],
+        "type": "object",
+        "properties": {
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CutToLengthLineViewV1"
+            }
+          }
+        }
+      },
       "DecideCounterpartyTaxIdentityChange": {
         "required": [
           "expectedVersion",
@@ -76360,6 +76462,16 @@
                 "$ref": "#/components/schemas/SlittingSpecRequestV1"
               }
             ]
+          },
+          "cutToLengthSpec": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/CutToLengthSpecRequestV1"
+              }
+            ]
           }
         }
       },
@@ -76558,6 +76670,16 @@
           "recordedAtUtc": {
             "type": "string",
             "format": "date-time"
+          },
+          "cutToLengthSpec": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/CutToLengthSpecViewV1"
+              }
+            ]
           }
         }
       },
@@ -76776,6 +76898,16 @@
               },
               {
                 "$ref": "#/components/schemas/SlittingSpecViewV1"
+              }
+            ]
+          },
+          "cutToLengthSpec": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/CutToLengthSpecViewV1"
               }
             ]
           }
@@ -80828,6 +80960,16 @@
               "null",
               "string"
             ]
+          },
+          "cutToLengthSpec": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/CutToLengthSpecRequestV1"
+              }
+            ]
           }
         }
       },
@@ -83659,6 +83801,16 @@
               },
               {
                 "$ref": "#/components/schemas/SlittingSpecRequestV1"
+              }
+            ]
+          },
+          "cutToLengthSpec": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/CutToLengthSpecRequestV1"
               }
             ]
           }
