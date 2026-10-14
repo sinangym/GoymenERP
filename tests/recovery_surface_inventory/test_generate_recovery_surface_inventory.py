@@ -87,6 +87,33 @@ def mutate_snapshot(snapshot: object, relative_path: str, transform: object) -> 
     return generator.SourceSnapshot(snapshot.repository_root, snapshot.source_commit, files)  # type: ignore[attr-defined]
 
 
+def accounting_writer_in_disabled_region(text: str) -> str:
+    signature = "    private void AddCommand(Guid companyId, AccountingCommandRecord record) =>"
+    start = text.index(signature)
+    end = text.index("        });", start) + len("        });")
+    method = text[start:end]
+    _, call = method.split("\n", 1)
+    replacement = (
+        signature.removesuffix(" =>")
+        + "\n    {\n#if false\n"
+        + call
+        + "\n#endif\n    }"
+    )
+    return text[:start] + replacement + text[end:]
+
+
+def accounting_writer_in_string_only(text: str) -> str:
+    signature = "    private void AddCommand(Guid companyId, AccountingCommandRecord record) =>"
+    start = text.index(signature)
+    end = text.index("        });", start) + len("        });")
+    token = "dbContext.Commands.Add(new AccountingCommandRow"
+    replacement = (
+        signature.removesuffix(" =>")
+        + f'\n    {{\n        _ = "{token}";\n    }}'
+    )
+    return text[:start] + replacement + text[end:]
+
+
 class RecoverySurfaceInventoryTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
@@ -215,6 +242,12 @@ class RecoverySurfaceInventoryTests(unittest.TestCase):
             ),
             lambda text: text.replace("TryDelete(copy);", "// TryDelete(copy);", 1),
             lambda text: text.replace("File.Delete(path);", "// File.Delete(path);", 1),
+            lambda text: text.replace(
+                "File.Delete(path);", "if (false) { File.Delete(path); }", 1
+            ),
+            lambda text: text.replace(
+                "File.Delete(path);", '_ = "File.Delete(path);";', 1
+            ),
             lambda text: text.replace("File.Delete(path);", "GC.KeepAlive(path);", 1).replace(
                 "private static void TryDelete(string path)",
                 "private static void OtherDelete(string path) { File.Delete(path); }\n\n"
@@ -247,14 +280,20 @@ class RecoverySurfaceInventoryTests(unittest.TestCase):
                 with self.assertRaisesRegex(generator.InventoryError, "source (?:anchor|surface) drifted"):
                     generator._durable_store_inventory(changed)
 
-    def test_comment_only_writer_anchor_fails_closed(self) -> None:
+    def test_non_live_writer_anchor_fails_closed(self) -> None:
         token = "dbContext.Commands.Add(new AccountingCommandRow"
-        for replacement in (f"// {token}", f"/* {token} */"):
-            with self.subTest(replacement=replacement[:2]):
+        transforms = (
+            lambda text: text.replace(token, f"// {token}", 1),
+            lambda text: text.replace(token, f"/* {token} */", 1),
+            accounting_writer_in_disabled_region,
+            accounting_writer_in_string_only,
+        )
+        for transform in transforms:
+            with self.subTest(transform=transform):
                 changed = mutate_snapshot(
                     self.snapshot,
                     generator.ACCOUNTING_STORE,
-                    lambda text, replacement=replacement: text.replace(token, replacement, 1),
+                    transform,
                 )
                 with self.assertRaisesRegex(generator.InventoryError, "source anchor drifted"):
                     generator._durable_store_inventory(changed)

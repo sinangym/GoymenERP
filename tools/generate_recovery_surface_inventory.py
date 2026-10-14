@@ -120,6 +120,7 @@ class SourceSnapshot(NamedTuple):
 class SourceEvidence(NamedTuple):
     path: str
     required_tokens: tuple[str, ...]
+    live_code: bool = False
 
 
 class DurableStoreSpec(NamedTuple):
@@ -134,8 +135,8 @@ class DurableStoreSpec(NamedTuple):
     evidence: tuple[SourceEvidence, ...]
 
 
-def _evidence(path: str, *tokens: str) -> SourceEvidence:
-    return SourceEvidence(path, tuple(tokens))
+def _evidence(path: str, *tokens: str, live_code: bool = False) -> SourceEvidence:
+    return SourceEvidence(path, tuple(tokens), live_code)
 
 
 def _store(
@@ -168,7 +169,7 @@ def _store(
             *mapping_tokens,
         ),
         _evidence(migration_path, f'name: "{table}"'),
-        _evidence(writer_path, *writer_tokens),
+        _evidence(writer_path, *writer_tokens, live_code=True),
         *extra_evidence,
     )
     return DurableStoreSpec(
@@ -303,6 +304,7 @@ DURABLE_STORE_SPECS = (
             _evidence(
                 "src/backend/Modules/Organization/GoymenERP.Modules.Organization.Infrastructure/Persistence/OrganizationService.cs",
                 "dbContext.CommandExecutions.Add(CommandExecution.Complete(",
+                live_code=True,
             ),
         ),
     ),
@@ -336,6 +338,7 @@ DURABLE_STORE_SPECS = (
                 "src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventoryCustomerReturnParticipant.cs",
                 "context.OutboxMessages.Add(new InventoryOutboxRow",
                 "EventType = InventoryCustomerReturnOutboxV1.EventType",
+                live_code=True,
             ),
         ),
     ),
@@ -547,6 +550,120 @@ def _read_csharp(snapshot: SourceSnapshot, relative_path: str) -> str:
     return _strip_csharp_comments(_read_source(snapshot, relative_path))
 
 
+def _blank_csharp_region(content: str) -> str:
+    return "".join("\n" if character == "\n" else " " for character in content)
+
+
+def _mask_csharp_strings(content: str) -> str:
+    result: list[str] = []
+    index = 0
+    while index < len(content):
+        character = content[index]
+        if character not in {'"', "'"}:
+            result.append(character)
+            index += 1
+            continue
+
+        start = index
+        delimiter = character
+        verbatim = delimiter == '"' and index > 0 and content[index - 1] == "@"
+        quote_count = 1
+        if delimiter == '"':
+            while index + quote_count < len(content) and content[index + quote_count] == '"':
+                quote_count += 1
+        if delimiter == '"' and quote_count >= 3:
+            raw_delimiter = '"' * quote_count
+            end = content.find(raw_delimiter, index + quote_count)
+            if end < 0:
+                raise InventoryError("C# source contains an unterminated raw string.")
+            index = end + quote_count
+            result.append(_blank_csharp_region(content[start:index]))
+            continue
+
+        index += 1
+        while index < len(content):
+            if verbatim and content.startswith('""', index):
+                index += 2
+                continue
+            if content[index] == delimiter:
+                index += 1
+                break
+            if not verbatim and content[index] == "\\" and index + 1 < len(content):
+                index += 2
+            else:
+                index += 1
+        else:
+            raise InventoryError("C# source contains an unterminated string or character literal.")
+        result.append(_blank_csharp_region(content[start:index]))
+    return "".join(result)
+
+
+def _mask_literal_false_preprocessor(content: str) -> str:
+    frames: list[list[bool]] = []
+    result: list[str] = []
+    directive_pattern = re.compile(r"^\s*#\s*(if|elif|else|endif)\b(.*)$", re.IGNORECASE)
+    for line in content.splitlines(keepends=True):
+        directive = directive_pattern.match(line)
+        if directive is not None:
+            command = directive.group(1).casefold()
+            expression = directive.group(2).strip()
+            literal_false = expression.strip("()").strip().casefold() == "false"
+            if command == "if":
+                frames.append([literal_false, literal_false])
+            elif command == "elif" and frames:
+                if frames[-1][0]:
+                    frames[-1][1] = literal_false
+            elif command == "else" and frames:
+                if frames[-1][0]:
+                    frames[-1][1] = False
+            elif command == "endif" and frames:
+                frames.pop()
+            result.append(_blank_csharp_region(line))
+            continue
+        if any(frame[1] for frame in frames):
+            result.append(_blank_csharp_region(line))
+        else:
+            result.append(line)
+    return "".join(result)
+
+
+def _matching_brace(content: str, opening: int) -> int:
+    depth = 0
+    for index in range(opening, len(content)):
+        if content[index] == "{":
+            depth += 1
+        elif content[index] == "}":
+            depth -= 1
+            if depth == 0:
+                return index
+    raise InventoryError("C# source contains an unterminated literal-false block.")
+
+
+def _mask_literal_false_if_blocks(content: str) -> str:
+    block_pattern = re.compile(r"\bif\s*\(\s*false\s*\)\s*\{", re.IGNORECASE)
+    while (match := block_pattern.search(content)) is not None:
+        opening = content.find("{", match.start(), match.end())
+        closing = _matching_brace(content, opening)
+        content = (
+            content[: match.start()]
+            + _blank_csharp_region(content[match.start() : closing + 1])
+            + content[closing + 1 :]
+        )
+    statement_pattern = re.compile(
+        r"\bif\s*\(\s*false\s*\)\s*(?!\{)[^;{}]*;",
+        re.IGNORECASE | re.DOTALL,
+    )
+    return statement_pattern.sub(lambda match: _blank_csharp_region(match.group(0)), content)
+
+
+def _live_csharp_code(content: str) -> str:
+    """Mask literals and statically disabled regions before live-code anchor checks."""
+
+    without_literals = _mask_csharp_strings(content)
+    without_disabled_directives = _mask_literal_false_preprocessor(without_literals)
+    return _mask_literal_false_if_blocks(without_disabled_directives)
+
+
 def _csharp_braced_body(content: str, declaration_pattern: str, relative_path: str) -> str:
     declaration = re.search(declaration_pattern, content)
     if declaration is None:
@@ -747,18 +864,19 @@ def _documents_inventory(snapshot: SourceSnapshot) -> dict[str, Any]:
     readme_path = DOCUMENT_SOURCE_PATHS[-1]
     scanner_path = DOCUMENT_SOURCE_PATHS[4]
     scanner = _read_csharp(snapshot, scanner_path)
+    live_scanner = _live_csharp_code(scanner)
     _require_tokens(
-        scanner,
+        live_scanner,
         scanner_path,
         (
             "private static void TryDelete(string path)",
         ),
     )
-    scan_body = _csharp_braced_body(
+    scan_body = _live_csharp_code(_csharp_braced_body(
         scanner,
         r"\bpublic\s+async\s+Task<DocumentScanVerdictV1>\s+ScanAsync\s*\(",
         scanner_path,
-    )
+    ))
     if "var copy = Path.Combine(options.QuarantineDirectory" not in scan_body:
         raise InventoryError(f"Documents quarantine-copy lifecycle drifted: {scanner_path}.")
     cleanup = re.compile(
@@ -767,12 +885,16 @@ def _documents_inventory(snapshot: SourceSnapshot) -> dict[str, Any]:
     )
     if cleanup.search(scan_body) is None:
         raise InventoryError(f"Documents transient cleanup lifecycle drifted: {scanner_path}.")
-    try_delete_body = _csharp_braced_body(
+    try_delete_body = _live_csharp_code(_csharp_braced_body(
         scanner,
         r"\bprivate\s+static\s+void\s+TryDelete\s*\(\s*string\s+path\s*\)",
         scanner_path,
+    ))
+    delete_sequence = re.compile(
+        r"\bif\s*\(\s*File\.Exists\(path\)\s*\)\s*\{\s*File\.Delete\(path\);\s*\}",
+        re.DOTALL,
     )
-    if "File.Delete(path);" not in try_delete_body:
+    if delete_sequence.search(try_delete_body) is None:
         raise InventoryError(f"Documents transient deletion implementation drifted: {scanner_path}.")
 
     readme = " ".join(_read_source(snapshot, readme_path).split())
@@ -909,7 +1031,8 @@ def _durable_store_inventory(snapshot: SourceSnapshot) -> list[dict[str, Any]]:
         source_files: list[dict[str, str]] = []
         for evidence in sorted(spec.evidence, key=lambda item: item.path):
             content = _read_csharp(snapshot, evidence.path)
-            _require_tokens(content, evidence.path, evidence.required_tokens)
+            anchor_content = _live_csharp_code(content) if evidence.live_code else content
+            _require_tokens(anchor_content, evidence.path, evidence.required_tokens)
             source_files.append(_source_file_record(snapshot, evidence.path))
         records.append(
             {
