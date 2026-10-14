@@ -679,6 +679,26 @@ partial class ManufacturingDbContextModelSnapshot : ModelSnapshot
             });
         });
 
+        modelBuilder.Entity("GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.PlanCutLineRow", b =>
+        {
+            b.Property<Guid>("CompanyId").HasColumnType("uniqueidentifier");
+            b.Property<Guid>("PlanId").HasColumnType("uniqueidentifier");
+            b.Property<Guid>("LineId").HasColumnType("uniqueidentifier");
+            b.Property<int>("Ordinal").HasColumnType("int");
+            b.Property<int>("Sequence").HasColumnType("int");
+            b.Property<decimal>("LengthMm").HasPrecision(18, 3).HasColumnType("decimal(18,3)");
+            b.Property<int>("Count").HasColumnType("int");
+            b.HasKey("CompanyId", "PlanId", "LineId");
+            b.HasIndex("CompanyId", "PlanId", "Ordinal").IsUnique();
+            b.ToTable("PlanCutLines", "manufacturing", t =>
+            {
+                t.HasCheckConstraint("CK_PlanCutLines_Identity",
+                    "[LineId] <> '00000000-0000-0000-0000-000000000000' AND [Ordinal] >= 1");
+                t.HasCheckConstraint("CK_PlanCutLines_Length", "[LengthMm] > 0");
+                t.HasCheckConstraint("CK_PlanCutLines_Count", "[Count] >= 1");
+            });
+        });
+
         modelBuilder.Entity("GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.PlanRevisionInputRow", b =>
         {
             b.Property<string>("CommercialAccountVersion")
@@ -806,6 +826,27 @@ partial class ManufacturingDbContextModelSnapshot : ModelSnapshot
                 t.HasCheckConstraint(
                     "CK_PlanRevisionInputs_TechnicalSnapshot",
                     "([TechnicalProductId] IS NULL AND [TechnicalProductVersion] IS NULL AND [TechnicalFamilyId] IS NULL AND [TechnicalFamilyCode] IS NULL AND [TechnicalFamilySourceRevision] IS NULL AND [TechnicalTemplateId] IS NULL AND [TechnicalTemplateVersion] IS NULL AND [TechnicalTemplateCode] IS NULL AND [TechnicalTemplateSourceRevision] IS NULL AND [TechnicalKilogramUnitCompanyId] IS NULL AND [TechnicalKilogramUnitId] IS NULL AND [TechnicalKilogramUnitCode] IS NULL AND [TechnicalKilogramProfileId] IS NULL AND [TechnicalKilogramProfileVersion] IS NULL AND [TechnicalEffectiveOn] IS NULL AND [TechnicalThicknessMm] IS NULL AND [TechnicalWidthMm] IS NULL) OR ([TechnicalProductId] IS NOT NULL AND [TechnicalProductId] <> '00000000-0000-0000-0000-000000000000' AND [TechnicalProductVersion] IS NOT NULL AND LEN([TechnicalProductVersion]) > 0 AND [TechnicalFamilyId] IS NOT NULL AND [TechnicalFamilyId] <> '00000000-0000-0000-0000-000000000000' AND [TechnicalFamilyCode] IS NOT NULL AND LEN([TechnicalFamilyCode]) > 0 AND [TechnicalFamilySourceRevision] IS NOT NULL AND LEN([TechnicalFamilySourceRevision]) > 0 AND [TechnicalTemplateId] IS NOT NULL AND [TechnicalTemplateId] <> '00000000-0000-0000-0000-000000000000' AND [TechnicalTemplateVersion] IS NOT NULL AND LEN([TechnicalTemplateVersion]) > 0 AND [TechnicalTemplateCode] IS NOT NULL AND LEN([TechnicalTemplateCode]) > 0 AND [TechnicalTemplateSourceRevision] IS NOT NULL AND LEN([TechnicalTemplateSourceRevision]) > 0 AND [TechnicalKilogramUnitCompanyId] IS NOT NULL AND [TechnicalKilogramUnitCompanyId] = [CompanyId] AND [TechnicalKilogramUnitId] IS NOT NULL AND [TechnicalKilogramUnitId] <> '00000000-0000-0000-0000-000000000000' AND [TechnicalKilogramUnitCode] IS NOT NULL AND LEN([TechnicalKilogramUnitCode]) > 0 AND [TechnicalKilogramProfileId] IS NOT NULL AND [TechnicalKilogramProfileId] <> '00000000-0000-0000-0000-000000000000' AND [TechnicalKilogramProfileVersion] IS NOT NULL AND LEN([TechnicalKilogramProfileVersion]) > 0 AND [TechnicalEffectiveOn] IS NOT NULL AND [TechnicalThicknessMm] IS NOT NULL AND [TechnicalThicknessMm] > 0 AND [TechnicalWidthMm] IS NOT NULL AND [TechnicalWidthMm] > 0)");
+            });
+        });
+
+        modelBuilder.Entity("GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.PlanRevisionCutLineRow", b =>
+        {
+            b.Property<Guid>("CompanyId").HasColumnType("uniqueidentifier");
+            b.Property<Guid>("PlanId").HasColumnType("uniqueidentifier");
+            b.Property<int>("RevisionNo").HasColumnType("int");
+            b.Property<Guid>("LineId").HasColumnType("uniqueidentifier");
+            b.Property<int>("Ordinal").HasColumnType("int");
+            b.Property<int>("Sequence").HasColumnType("int");
+            b.Property<decimal>("LengthMm").HasPrecision(18, 3).HasColumnType("decimal(18,3)");
+            b.Property<int>("Count").HasColumnType("int");
+            b.HasKey("CompanyId", "PlanId", "RevisionNo", "LineId");
+            b.HasIndex("CompanyId", "PlanId", "RevisionNo", "Ordinal").IsUnique();
+            b.ToTable("PlanRevisionCutLines", "manufacturing", t =>
+            {
+                t.HasCheckConstraint("CK_PlanRevisionCutLines_Identity",
+                    "[LineId] <> '00000000-0000-0000-0000-000000000000' AND [Ordinal] >= 1");
+                t.HasCheckConstraint("CK_PlanRevisionCutLines_Length", "[LengthMm] > 0");
+                t.HasCheckConstraint("CK_PlanRevisionCutLines_Count", "[Count] >= 1");
             });
         });
 
@@ -1062,7 +1103,26 @@ partial class ManufacturingDbContextModelSnapshot : ModelSnapshot
                 .IsRequired();
         });
 
+        modelBuilder.Entity("GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.PlanCutLineRow", b =>
+        {
+            b.HasOne("GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.PlanRow", null)
+                .WithMany()
+                .HasForeignKey("CompanyId", "PlanId")
+                .HasPrincipalKey("CompanyId", "Id")
+                .OnDelete(DeleteBehavior.Restrict)
+                .IsRequired();
+        });
+
         modelBuilder.Entity("GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.PlanRevisionInputRow", b =>
+        {
+            b.HasOne("GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.PlanRevisionRow", null)
+                .WithMany()
+                .HasForeignKey("CompanyId", "PlanId", "RevisionNo")
+                .OnDelete(DeleteBehavior.Restrict)
+                .IsRequired();
+        });
+
+        modelBuilder.Entity("GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.PlanRevisionCutLineRow", b =>
         {
             b.HasOne("GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.PlanRevisionRow", null)
                 .WithMany()
