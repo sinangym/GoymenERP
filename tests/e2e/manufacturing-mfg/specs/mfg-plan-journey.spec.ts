@@ -74,6 +74,30 @@ interface WorkCenterAnswer {
   readonly kind: CanonicalProcess
 }
 
+interface CutToLengthLineAnswer {
+  readonly lineId: string
+  readonly sequence: number
+  readonly lengthMm: string
+  readonly count: number
+}
+
+interface CutToLengthSpecAnswer {
+  readonly lines: readonly CutToLengthLineAnswer[]
+}
+
+async function expectCutToLengthLines(page: Page) {
+  const detail = page.getByRole('region', { name: 'Boy kesme ayrıntısı' })
+  await expect(detail).toBeVisible()
+  const rows = detail.getByRole('table').locator('tbody tr')
+  await expect(rows).toHaveCount(2)
+  await expect(rows.nth(0).getByRole('rowheader')).toHaveText('40')
+  await expect(rows.nth(0).getByRole('cell').nth(0)).toHaveText(/^6000(?:[.,]0+)? mm$/)
+  await expect(rows.nth(0).getByRole('cell').nth(1)).toHaveText('3')
+  await expect(rows.nth(1).getByRole('rowheader')).toHaveText('-7')
+  await expect(rows.nth(1).getByRole('cell').nth(0)).toHaveText(/^2500[.,]5 mm$/)
+  await expect(rows.nth(1).getByRole('cell').nth(1)).toHaveText('2')
+}
+
 async function asActor(context: BrowserContext, actor: string): Promise<Set<Request>> {
   const rewritten = new Set<Request>()
   await context.route('**/api/v1/**', async (route: Route) => {
@@ -859,6 +883,184 @@ test.describe('MFG plan create and reopen (real Inventory parent roll)', () => {
     } finally {
       await otherCompany.dispose()
     }
+  })
+
+  test('M01.2: a populated cut-to-length draft keeps its ordered lines through preview, unrelated edit and fresh reopen', async ({ page, context }) => {
+    const rewritten = await asActor(context, env.seed.recorderActor)
+    const answered = watchAnswers(page)
+    const candidate = await readParentRollCandidate(env, env.seed.rolls.process.CutToLength)
+    const api = await apiAs(env, env.seed.recorderActor)
+    const planId = randomUUID()
+    const lineA = randomUUID()
+    const lineB = randomUUID()
+    const requestedSpec: CutToLengthSpecAnswer = {
+      lines: [
+        { lineId: lineA, sequence: 40, lengthMm: '6000.000', count: 3 },
+        { lineId: lineB, sequence: -7, lengthMm: '2500.5', count: 2 },
+      ],
+    }
+    const storedSpec: CutToLengthSpecAnswer = {
+      lines: [
+        { lineId: lineA, sequence: 40, lengthMm: '6000', count: 3 },
+        { lineId: lineB, sequence: -7, lengthMm: '2500.5', count: 2 },
+      ],
+    }
+
+    try {
+      const workCenters = await readCanonicalWorkCenters(api)
+      const cutToLength = workCenters.get('CutToLength')!
+      const createdResponse = await api.post('/api/v1/manufacturing/plans', {
+        headers: { 'Idempotency-Key': randomUUID() },
+        data: {
+          planId,
+          workCenterId: cutToLength.id,
+          inputs: [{
+            parentRollId: candidate.labelId,
+            plannedKg: '1000',
+            expectedLabelVersion: candidate.labelVersion,
+          }],
+          target: null,
+          cutToLengthSpec: requestedSpec,
+        },
+      })
+      const createdText = await createdResponse.text()
+      expect(createdResponse.status(), createdText).toBe(201)
+      const created = JSON.parse(createdText) as {
+        process: string
+        status: string
+        version: number
+        cutToLengthSpec: CutToLengthSpecAnswer | null
+      }
+      expect(created).toMatchObject({ process: 'CutToLength', status: 'Draft', version: 1 })
+      expect(created.cutToLengthSpec).toEqual(storedSpec)
+
+      const initialPlanRead = page.waitForResponse(
+        (response) => PLAN_GET_RE.test(response.url()) && response.url().endsWith(planId)
+          && response.request().method() === 'GET',
+      )
+      const initialHistoryRead = page.waitForResponse(
+        (response) => PLAN_REVISIONS_RE.test(response.url()) && response.url().includes(planId)
+          && response.request().method() === 'GET',
+      )
+      await page.goto(`/uretim/plan/${planId}`)
+      const [initialPlanResponse, initialHistoryResponse] = await Promise.all([initialPlanRead, initialHistoryRead])
+      expect(initialPlanResponse.status()).toBe(200)
+      expect(initialHistoryResponse.status()).toBe(200)
+      expect(((await initialPlanResponse.json()) as { cutToLengthSpec: CutToLengthSpecAnswer | null }).cutToLengthSpec)
+        .toEqual(storedSpec)
+      expect(((await initialHistoryResponse.json()) as {
+        revisions: Array<{ revision: number; cutToLengthSpec: CutToLengthSpecAnswer | null }>
+      }).revisions).toMatchObject([{ revision: 0, cutToLengthSpec: storedSpec }])
+      await expect(page.getByRole('heading', { name: 'Plan yeniden açıldı' })).toBeVisible()
+      await expectCutToLengthLines(page)
+      await expect(page.getByRole('button', { name: 'Planı onayla', exact: true })).toBeVisible()
+
+      await page.getByRole('button', { name: 'Planı düzenle', exact: true }).click()
+      await expect(page.getByRole('heading', { name: 'Taslak planı düzenle' })).toBeVisible()
+      await page.getByRole('textbox', { name: 'Düzenleme gerekçesi' })
+        .fill('Tarayıcı kabulü: planlanan kg güncellendi')
+      const previewAnswer = page.waitForResponse((response) => {
+        if (!PLAN_PREVIEW_RE.test(response.url()) || response.request().method() !== 'POST') return false
+        const body = response.request().postDataJSON() as {
+          inputs?: Array<{ plannedKg?: string }>
+          cutToLengthSpec?: CutToLengthSpecAnswer
+        }
+        return body.inputs?.[0]?.plannedKg === '800'
+      })
+      await page.getByRole('textbox', { name: `${candidate.labelId} planlanan kg` }).fill('800')
+      const preview = await previewAnswer
+      expect(preview.status()).toBe(200)
+      const previewRequest = preview.request().postDataJSON() as {
+        inputs: Array<{ parentRollId: string; plannedKg: string; expectedLabelVersion: string }>
+        cutToLengthSpec?: CutToLengthSpecAnswer
+      }
+      expect(previewRequest.inputs).toMatchObject([{
+        parentRollId: candidate.labelId,
+        plannedKg: '800',
+        expectedLabelVersion: candidate.labelVersion,
+      }])
+      expect(previewRequest.cutToLengthSpec).toEqual(storedSpec)
+      await expect(page.getByTestId('plan-preview').getByText(/Önizleme güncel/)).toBeVisible()
+
+      const revisionAnswer = page.waitForResponse(
+        (response) => PLAN_REVISION_RE.test(response.url()) && response.request().method() === 'POST',
+      )
+      const revisedPlanRead = page.waitForResponse(
+        (response) => PLAN_GET_RE.test(response.url()) && response.url().endsWith(planId)
+          && response.request().method() === 'GET',
+      )
+      const revisedHistoryRead = page.waitForResponse(
+        (response) => PLAN_REVISIONS_RE.test(response.url()) && response.url().includes(planId)
+          && response.request().method() === 'GET',
+      )
+      await page.getByRole('button', { name: 'Değişikliği kaydet', exact: true }).click()
+      const revision = await revisionAnswer
+      expect(revision.status()).toBe(200)
+      const revisionRequest = revision.request().postDataJSON() as {
+        expectedVersion: number
+        inputs: Array<{ parentRollId: string; plannedKg: string; expectedLabelVersion: string }>
+        reason: string
+        cutToLengthSpec?: CutToLengthSpecAnswer
+      }
+      expect(revisionRequest).toMatchObject({
+        expectedVersion: 1,
+        inputs: [{
+          parentRollId: candidate.labelId,
+          plannedKg: '800',
+          expectedLabelVersion: candidate.labelVersion,
+        }],
+        reason: 'Tarayıcı kabulü: planlanan kg güncellendi',
+      })
+      expect(revisionRequest.cutToLengthSpec).toEqual(storedSpec)
+      expect(((await revision.json()) as { cutToLengthSpec: CutToLengthSpecAnswer | null }).cutToLengthSpec)
+        .toEqual(storedSpec)
+
+      const [revisedPlanResponse, revisedHistoryResponse] = await Promise.all([revisedPlanRead, revisedHistoryRead])
+      expect(revisedPlanResponse.status()).toBe(200)
+      expect(revisedHistoryResponse.status()).toBe(200)
+      expect(((await revisedPlanResponse.json()) as { cutToLengthSpec: CutToLengthSpecAnswer | null }).cutToLengthSpec)
+        .toEqual(storedSpec)
+      const revisedHistory = (await revisedHistoryResponse.json()) as {
+        revisions: Array<{ revision: number; cutToLengthSpec: CutToLengthSpecAnswer | null }>
+      }
+      expect(revisedHistory.revisions.map((entry) => entry.revision)).toEqual([0, 1])
+      expect(revisedHistory.revisions.map((entry) => entry.cutToLengthSpec)).toEqual([storedSpec, storedSpec])
+      await expect(page.getByText('Plan güncellendi (sürüm 2); güncel kayıt ve geçmiş yeniden okundu.', { exact: true }))
+        .toBeVisible()
+      await expectCutToLengthLines(page)
+
+      await page.goto('/uretim/emirler')
+      const listAnswer = page.waitForResponse(
+        (response) => PLAN_LIST_RE.test(response.url()) && response.request().method() === 'GET',
+      )
+      await page.getByRole('link', { name: 'Üretim planları', exact: true }).click()
+      expect((await listAnswer).status()).toBe(200)
+      const reference = planId.slice(-8)
+      const reopenedPlanRead = page.waitForResponse(
+        (response) => PLAN_GET_RE.test(response.url()) && response.url().endsWith(planId)
+          && response.request().method() === 'GET',
+      )
+      const reopenedHistoryRead = page.waitForResponse(
+        (response) => PLAN_REVISIONS_RE.test(response.url()) && response.url().includes(planId)
+          && response.request().method() === 'GET',
+      )
+      await page.getByRole('row', { name: new RegExp(reference) })
+        .getByRole('link', { name: new RegExp(reference) }).click()
+      const [reopenedPlanResponse, reopenedHistoryResponse] = await Promise.all([reopenedPlanRead, reopenedHistoryRead])
+      expect(reopenedPlanResponse.status()).toBe(200)
+      expect(reopenedHistoryResponse.status()).toBe(200)
+      expect(((await reopenedPlanResponse.json()) as { cutToLengthSpec: CutToLengthSpecAnswer | null }).cutToLengthSpec)
+        .toEqual(storedSpec)
+      const reopenedHistory = (await reopenedHistoryResponse.json()) as {
+        revisions: Array<{ cutToLengthSpec: CutToLengthSpecAnswer | null }>
+      }
+      expect(reopenedHistory.revisions.map((entry) => entry.cutToLengthSpec)).toEqual([storedSpec, storedSpec])
+      await expectCutToLengthLines(page)
+      await expect(page.getByRole('button', { name: 'Planı onayla', exact: true })).toBeVisible()
+    } finally {
+      await api.dispose()
+    }
+    expectEveryAnswerRewritten(answered, rewritten)
   })
 
   test('a draft plan is edited, closed and reopened with its history, and the approval and order read the edit', async ({ page, context }) => {
