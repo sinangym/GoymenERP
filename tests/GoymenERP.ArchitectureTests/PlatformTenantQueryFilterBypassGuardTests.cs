@@ -1911,6 +1911,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             "TreatWarningsAsErrors"
         };
 
+    private const string ReviewedRepositorySecurityPackage =
+        "System.Security.Cryptography.Pkcs";
+    private const string ReviewedRepositorySecurityPackageVersion = "10.0.13";
+
     [Fact]
     public void Platform_non_counterparty_bypass_surfaces_match_the_reviewed_inventory()
     {
@@ -3625,6 +3629,62 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         Assert.Contains(analysis.Errors, error => error.Contains(
             "Microsoft.OpenApi",
             StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Repository_build_security_pin_is_exact_and_fail_closed()
+    {
+        const string canonical = """
+            <Project>
+              <PropertyGroup>
+                <Deterministic>true</Deterministic>
+                <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+                <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+              </PropertyGroup>
+              <ItemGroup>
+                <PackageReference Include="System.Security.Cryptography.Pkcs" Version="10.0.13" />
+              </ItemGroup>
+            </Project>
+            """;
+        var canonicalErrors = new List<string>();
+        ValidateReviewedDirectoryBuildProps(
+            XDocument.Parse(canonical),
+            "Directory.Build.props",
+            canonicalErrors);
+        Assert.Empty(canonicalErrors);
+
+        var mutants = new[]
+        {
+            canonical.Replace("10.0.13", "10.0.12", StringComparison.Ordinal),
+            canonical.Replace(
+                "System.Security.Cryptography.Pkcs",
+                "PDFsharp",
+                StringComparison.Ordinal),
+            canonical.Replace(
+                " Version=\"10.0.13\"",
+                " Version=\"10.0.13\" Condition=\"'$(Configuration)' == 'Release'\"",
+                StringComparison.Ordinal),
+            canonical.Replace(
+                "</ItemGroup>",
+                "<PackageReference Include=\"PDFsharp\" Version=\"6.2.4\" /></ItemGroup>",
+                StringComparison.Ordinal),
+            canonical.Replace(
+                "  <ItemGroup>\n"
+                + "    <PackageReference Include=\"System.Security.Cryptography.Pkcs\" Version=\"10.0.13\" />\n"
+                + "  </ItemGroup>\n",
+                string.Empty,
+                StringComparison.Ordinal)
+        };
+
+        foreach (var mutant in mutants)
+        {
+            var errors = new List<string>();
+            ValidateReviewedDirectoryBuildProps(
+                XDocument.Parse(mutant),
+                "Directory.Build.props",
+                errors);
+            Assert.NotEmpty(errors);
+        }
     }
 
     [Theory]
@@ -5717,34 +5777,53 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             return;
         }
 
+        var reviewedSecurityPackageItemGroups = 0;
         foreach (var topLevel in root.Elements())
         {
-            if (topLevel.Name.LocalName != "PropertyGroup" || topLevel.Attributes().Any())
+            if (topLevel.Name.LocalName == "PropertyGroup" && !topLevel.Attributes().Any())
             {
-                errors.Add(
-                    $"Unreviewed repository build element {topLevel.Name.LocalName}: "
-                    + repositoryPath);
+                foreach (var property in topLevel.Elements())
+                {
+                    if (!ReviewedRepositoryBuildProperties.Contains(property.Name.LocalName)
+                        || property.Attributes().Any()
+                        || property.Elements().Any()
+                        || HasMsBuildIndirection(property.Value))
+                    {
+                        errors.Add(
+                            $"Unreviewed repository build property {property.Name.LocalName}: "
+                            + repositoryPath);
+                    }
+                }
+
                 continue;
             }
 
-            foreach (var property in topLevel.Elements())
+            if (topLevel.Name.LocalName == "ItemGroup" && !topLevel.Attributes().Any())
             {
-                if (!ReviewedRepositoryBuildProperties.Contains(property.Name.LocalName)
-                    || property.Attributes().Any()
-                    || property.Elements().Any()
-                    || HasMsBuildIndirection(property.Value))
-                {
-                    errors.Add(
-                        $"Unreviewed repository build property {property.Name.LocalName}: "
-                        + repositoryPath);
-                }
+                reviewedSecurityPackageItemGroups++;
+                ValidateReviewedRepositorySecurityPackage(
+                    topLevel,
+                    repositoryPath,
+                    errors);
+                continue;
             }
+
+            errors.Add(
+                $"Unreviewed repository build element {topLevel.Name.LocalName}: "
+                + repositoryPath);
+        }
+
+        if (reviewedSecurityPackageItemGroups != 1)
+        {
+            errors.Add(
+                "Repository build props must contain exactly one reviewed security "
+                + $"PackageReference ItemGroup: {repositoryPath}");
         }
 
         foreach (var element in document.Descendants())
         {
             var localName = element.Name.LocalName;
-            if (localName is "Compile" or "Import" or "PackageReference" or "Target"
+            if (localName is "Compile" or "Import" or "Target"
                 || ForbiddenGeneratedSourceItems.Contains(localName)
                 || localName.Contains("Generator", StringComparison.OrdinalIgnoreCase)
                 || localName.Contains("Razor", StringComparison.OrdinalIgnoreCase))
@@ -5753,6 +5832,32 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     $"Repository build definition has unreviewed compile/generator input "
                     + $"{localName}: {repositoryPath}");
             }
+        }
+    }
+
+    private static void ValidateReviewedRepositorySecurityPackage(
+        XElement itemGroup,
+        string repositoryPath,
+        ICollection<string> errors)
+    {
+        var items = itemGroup.Elements().ToArray();
+        if (items.Length != 1
+            || items[0].Name.LocalName != "PackageReference"
+            || items[0].Attributes().Count() != 2
+            || !string.Equals(
+                items[0].Attribute("Include")?.Value,
+                ReviewedRepositorySecurityPackage,
+                StringComparison.Ordinal)
+            || !string.Equals(
+                items[0].Attribute("Version")?.Value,
+                ReviewedRepositorySecurityPackageVersion,
+                StringComparison.Ordinal)
+            || items[0].Elements().Any())
+        {
+            errors.Add(
+                "Repository build security ItemGroup must contain only the exact, "
+                + "unconditional System.Security.Cryptography.Pkcs 10.0.13 reference: "
+                + repositoryPath);
         }
     }
 
