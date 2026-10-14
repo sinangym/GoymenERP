@@ -1184,19 +1184,19 @@ public sealed class ProductGlobalRuntimeSqlServerRelationalAcceptanceTests
                     CompanyA, planId);
                 await migrator.MigrateAsync(previousMigration);
                 Assert.DoesNotContain(lengthMigration, await manufacturing.Database.GetAppliedMigrationsAsync());
-                Assert.Null(await manufacturing.Database.SqlQueryRaw<int?>(
+                Assert.Null(await manufacturing.Database.SqlQueryRaw<long?>(
                         "SELECT COL_LENGTH(N'[manufacturing].[PlanInputs]', N'TechnicalLengthMm') AS [Value]")
                     .SingleAsync());
-                Assert.Null(await manufacturing.Database.SqlQueryRaw<int?>(
+                Assert.Null(await manufacturing.Database.SqlQueryRaw<long?>(
                         "SELECT COL_LENGTH(N'[manufacturing].[PlanRevisionInputs]', N'TechnicalLengthMm') AS [Value]")
                     .SingleAsync());
 
                 await migrator.MigrateAsync();
                 Assert.Equal(lengthMigration, (await manufacturing.Database.GetAppliedMigrationsAsync()).Last());
-                Assert.NotNull(await manufacturing.Database.SqlQueryRaw<int?>(
+                Assert.NotNull(await manufacturing.Database.SqlQueryRaw<long?>(
                         "SELECT COL_LENGTH(N'[manufacturing].[PlanInputs]', N'TechnicalLengthMm') AS [Value]")
                     .SingleAsync());
-                Assert.NotNull(await manufacturing.Database.SqlQueryRaw<int?>(
+                Assert.NotNull(await manufacturing.Database.SqlQueryRaw<long?>(
                         "SELECT COL_LENGTH(N'[manufacturing].[PlanRevisionInputs]', N'TechnicalLengthMm') AS [Value]")
                     .SingleAsync());
             }
