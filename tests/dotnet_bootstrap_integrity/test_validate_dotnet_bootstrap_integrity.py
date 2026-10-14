@@ -33,6 +33,9 @@ DIRECTORY_BUILD_PROPS_BYTES = b"""<Project>
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="System.Security.Cryptography.Pkcs" Version="10.0.13" />
+  </ItemGroup>
 </Project>
 """
 NUGET_CONFIG_BYTES = b"""<?xml version="1.0" encoding="utf-8"?>
