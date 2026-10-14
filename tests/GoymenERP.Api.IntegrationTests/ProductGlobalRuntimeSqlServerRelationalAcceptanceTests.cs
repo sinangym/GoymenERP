@@ -1157,20 +1157,24 @@ public sealed class ProductGlobalRuntimeSqlServerRelationalAcceptanceTests
                     Assert.Equal(expectedNonNullRows, await manufacturing.Database.SqlQueryRaw<int>(
                             """
                             SELECT (SELECT COUNT(*) FROM [manufacturing].[PlanInputs]
-                                    WHERE [TechnicalLengthMm] IS NOT NULL)
+                                    WHERE [CompanyId] = @company AND [PlanId] = @plan
+                                      AND [TechnicalLengthMm] IS NOT NULL)
                                  + (SELECT COUNT(*) FROM [manufacturing].[PlanRevisionInputs]
-                                    WHERE [TechnicalLengthMm] IS NOT NULL) AS [Value]
-                            """)
+                                    WHERE [CompanyId] = @company AND [PlanId] = @plan
+                                      AND [TechnicalLengthMm] IS NOT NULL) AS [Value]
+                            """,
+                            new SqlParameter("@company", CompanyA),
+                            new SqlParameter("@plan", planId))
                         .SingleAsync());
                 }
 
-                await AssertRollbackRefusedAsync(expectedNonNullRows: 3);
+                await AssertRollbackRefusedAsync(expectedNonNullRows: 2);
 
                 // Each side independently retains the downgrade guard; failed attempts do not mutate schema or rows.
                 await manufacturing.Database.ExecuteSqlRawAsync(
                     "UPDATE [manufacturing].[PlanInputs] SET [TechnicalLengthMm] = NULL WHERE [CompanyId] = {0} AND [PlanId] = {1}",
                     CompanyA, planId);
-                await AssertRollbackRefusedAsync(expectedNonNullRows: 2);
+                await AssertRollbackRefusedAsync(expectedNonNullRows: 1);
 
                 await manufacturing.Database.ExecuteSqlRawAsync(
                     "UPDATE [manufacturing].[PlanInputs] SET [TechnicalLengthMm] = {0} WHERE [CompanyId] = {1} AND [PlanId] = {2}; "
