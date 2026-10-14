@@ -10,6 +10,8 @@
  * - A content the form itself can already see is incomplete (no work center, no roll, a planned kg that is not a
  *   positive decimal, a half-given target) is not sent: the reasons are listed.
  * - The preview writes nothing and never blocks the save: the save sends its own content and the server decides.
+ * - M01.2: a plan's stored cut lines are part of the content — in the request body and so in its key — exactly as
+ *   given (order, ids, signed sequences, canonical lengths, counts). Without lines the member is not sent at all.
  */
 
 import { useEffect, useRef, useState } from 'react'
@@ -17,7 +19,7 @@ import type { SecuritySnapshot } from '../shell/authBoundary'
 import type { AuthBoundary } from '../shell/useAuthBoundary'
 import { isKilogramText } from './contract'
 import { previewPlan, type PlanPreview, type PlanPreviewRequest } from './planPreview'
-import type { PlanTargetBasis, SlittingSpecRequest } from './planCommandApi'
+import type { CutToLengthSpecRequest, PlanTargetBasis, SlittingSpecRequest } from './planCommandApi'
 import type { CapturedPlanCommercialContext } from './planRevisionContract'
 
 /** Inside DEC-PRDCT-005's locked 300–500 ms window. */
@@ -108,6 +110,7 @@ export function planPreviewInput(
   targetBasis: '' | PlanTargetBasis,
   targetKg: string,
   slitting?: SlittingSpecFormInput,
+  cutToLengthSpec?: CutToLengthSpecRequest | null,
 ): PlanPreviewInput {
   const reasons: string[] = []
   if (workCenterId === '') reasons.push('İş merkezi seçilmedi.')
@@ -133,6 +136,19 @@ export function planPreviewInput(
       })),
       target: targetBasis === '' ? null : { basis: targetBasis, kg: targetKg },
       ...(slitting === undefined ? {} : { slittingSpec }),
+      // Carried, never validated, sorted or renumbered here: these are the stored lines the server already accepted.
+      ...(cutToLengthSpec === undefined || cutToLengthSpec === null
+        ? {}
+        : {
+            cutToLengthSpec: {
+              lines: cutToLengthSpec.lines.map((line) => ({
+                lineId: line.lineId,
+                sequence: line.sequence,
+                lengthMm: line.lengthMm,
+                count: line.count,
+              })),
+            },
+          }),
     },
   }
 }

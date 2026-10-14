@@ -111,6 +111,18 @@ internal sealed class PlanSlitLineRow : IManufacturingTenantRow
     public int BandCount { get; set; }
 }
 
+/// <summary>One ordered coil-to-sheet cut line of the plan as created. Never changes.</summary>
+internal sealed class PlanCutLineRow : IManufacturingTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public Guid PlanId { get; set; }
+    public Guid LineId { get; set; }
+    public int Ordinal { get; set; }
+    public int Sequence { get; set; }
+    public decimal LengthMm { get; set; }
+    public int Count { get; set; }
+}
+
 /// <summary>
 /// MFG-PLAN-EDIT: one recorded Draft revision of a plan (append-only). Revision 0 is the plan's own rows as created
 /// and is never written here; a revision is the next number, with the complete work center and target it set, the
@@ -165,6 +177,19 @@ internal sealed class PlanRevisionInputRow : IManufacturingTenantRow, IPlanTechn
     public Guid? CommercialCompanyPartyAccountId { get; set; }
     public string? CommercialPartyVersion { get; set; }
     public string? CommercialAccountVersion { get; set; }
+}
+
+/// <summary>One ordered coil-to-sheet cut line of an append-only Draft revision.</summary>
+internal sealed class PlanRevisionCutLineRow : IManufacturingTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public Guid PlanId { get; set; }
+    public int RevisionNo { get; set; }
+    public Guid LineId { get; set; }
+    public int Ordinal { get; set; }
+    public int Sequence { get; set; }
+    public decimal LengthMm { get; set; }
+    public int Count { get; set; }
 }
 
 /// <summary>

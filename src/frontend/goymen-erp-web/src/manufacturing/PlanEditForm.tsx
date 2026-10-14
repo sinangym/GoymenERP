@@ -7,6 +7,10 @@
  * every rule again (`ProductionPlan.Revise`) and revalidates each roll's exact label version; this form only refuses
  * what it can already see (missing fields, a roll with no label version, a change of nothing) so nothing is sent for
  * it. Reads follow the create form's pattern: the auth boundary hears a 401/403 and a superseded read is dropped.
+ *
+ * M01.2: this form has no cut-line editor. A plan's stored cut lines (the current revision's) travel unchanged in every
+ * revision it sends — same order, ids, sequences, lengths and counts — because the server would read an omitted
+ * member as "no cut lines" and clear them.
  */
 
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
@@ -16,7 +20,7 @@ import { useAuthBoundary } from '../shell/useAuthBoundary'
 import { isKilogramText, type ProductionPlanView } from './contract'
 import { PLAN_EDIT_TEXT } from './planEditText'
 import type { CapturedPlanCommercialContext, PlanRevision } from './planRevisionContract'
-import type { PlanTargetBasis, RevisePlanRequest } from './planCommandApi'
+import type { CutToLengthSpecRequest, PlanTargetBasis, RevisePlanRequest } from './planCommandApi'
 import { fetchParentRollCandidates, type ParentRollCandidate, type ParentRollCandidates } from './planReferences'
 import { PlanPreviewPanel } from './PlanPreviewPanel'
 import { planPreviewInput, usePlanPreview } from './usePlanPreview'
@@ -79,6 +83,22 @@ function readFailure(subject: string, outcome: { readonly type: string; readonly
   return outcome.type === 'malformed'
     ? `${subject} kaynağı beklenen sözleşmeyle yanıt vermedi.`
     : `${subject} kaynağına ulaşılamadı.`
+}
+
+/**
+ * The current revision's stored cut lines as the one request member both the live preview and the revision send —
+ * same order, ids, signed sequences, canonical lengths and counts — or null for a plan without lines.
+ */
+function storedCutToLengthSpec(current: PlanRevision): CutToLengthSpecRequest | null {
+  if (current.cutToLengthSpec === null) return null
+  return {
+    lines: current.cutToLengthSpec.lines.map((line) => ({
+      lineId: line.lineId,
+      sequence: line.sequence,
+      lengthMm: line.lengthMm,
+      count: line.count,
+    })),
+  }
 }
 
 function sameContent(current: PlanRevision, request: RevisePlanRequest): boolean {
@@ -164,6 +184,9 @@ export function PlanEditForm({ companyId, plan, current, busy, onSubmit, onCance
     )
   }, [captureSecurity, companyId, reportSecurity, search])
 
+  // M01.2: the stored cut lines the revision carries unchanged; the preview answers for them too.
+  const cutToLengthSpec = storedCutToLengthSpec(current)
+
   // AT-061 / AT-062: the same button-less backend preview as the create form, for the content being edited. It writes
   // nothing and never gates the revision below (the reason is not part of what is calculated).
   const preview = usePlanPreview(companyId, planPreviewInput(
@@ -177,6 +200,8 @@ export function PlanEditForm({ companyId, plan, current, busy, onSubmit, onCance
     })),
     targetBasis,
     targetKg,
+    undefined,
+    cutToLengthSpec,
   ), authBoundary)
 
   function labelOf(parentRollId: string): string {
@@ -239,6 +264,7 @@ export function PlanEditForm({ companyId, plan, current, busy, onSubmit, onCance
       })),
       target: targetBasis === '' ? null : { basis: targetBasis, kg: targetKg },
       reason: trimmed,
+      ...(cutToLengthSpec === null ? {} : { cutToLengthSpec }),
     }
     if (sameContent(current, request)) {
       setFormError(PLAN_EDIT_TEXT.noChange)
